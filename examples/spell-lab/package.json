@@ -1,0 +1,27 @@
+{
+  "name": "spell-lab",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "build:desktop": "node ../../packages/runtime-native/scripts/bundle.mjs --project . --entry src/game.ts --target desktop --output dist/spell-lab-native.js",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "build:one-spell": "vite build --config vite.one-spell.config.ts"
+  },
+  "dependencies": {
+    "@threenative/core": "workspace:*",
+    "three": "catalog:"
+  },
+  "devDependencies": {
+    "@threenative/playtest": "workspace:*",
+    "@types/three": "0.185.3",
+    "@typescript/native": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:"
+  },
+  "optionalDependencies": {
+    "@threenative/runtime-native": "workspace:*"
+  }
+}

@@ -26,6 +26,9 @@ export default defineConfig({
   dts: true,
   sourcemap: false,
   clean: true,
-  splitting: false,
+  // Shared chunks, not copies. Two entries that both inline `GPUParticles3D` give the engine two
+  // class identities, and `ctx.add` recognises a compute-driven node by identity: the spells
+  // subpath built its own copy, so the engine never attached its emitters and no particle drew.
+  splitting: true,
   treeshake: true,
 });

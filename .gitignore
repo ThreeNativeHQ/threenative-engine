@@ -216,3 +216,5 @@ tools/unreal-reference/DerivedDataCache/
 tools/unreal-reference/Content/
 tools/unreal-reference/captures/
 tools/unreal-reference/gi/**/__pycache__/
+
+dist-one-spell/

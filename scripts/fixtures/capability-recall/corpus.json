@@ -6,7 +6,9 @@
       "query": "Use a forward-facing camera that makes the next obstacle and the player immediately readable.",
       "scope": "mechanic",
       "source": "brief:endless-runner#1",
-      "expect": ["defineGame"],
+      "expect": [
+        "defineGame"
+      ],
       "reject": []
     },
     {
@@ -14,7 +16,9 @@
       "query": "Move the player continuously and support lane changes plus a jump or slide.",
       "scope": "mechanic",
       "source": "brief:endless-runner#2",
-      "expect": ["CharacterBody3D"],
+      "expect": [
+        "CharacterBody3D"
+      ],
       "reject": []
     },
     {
@@ -22,7 +26,9 @@
       "query": "Spawn an unbounded-feeling sequence of obstacles and collectibles with increasing pace.",
       "scope": "mechanic",
       "source": "brief:endless-runner#3",
-      "expect": ["InstancedBatch"],
+      "expect": [
+        "InstancedBatch"
+      ],
       "reject": []
     },
     {
@@ -30,7 +36,10 @@
       "query": "Show distance, score, and the current speed in a readable HUD.",
       "scope": "mechanic",
       "source": "brief:endless-runner#4",
-      "expect": ["Text", "publishUiState"],
+      "expect": [
+        "Text",
+        "publishUiState"
+      ],
       "reject": []
     },
     {
@@ -38,7 +47,9 @@
       "query": "Make a collision restart the run without a page reload.",
       "scope": "mechanic",
       "source": "brief:endless-runner#5",
-      "expect": ["defineGame"],
+      "expect": [
+        "defineGame"
+      ],
       "reject": []
     },
     {
@@ -46,7 +57,9 @@
       "query": "Use a third-person camera and a compact hub that leads to at least two distinct areas. Name the starting area the literal `hub`; the proof compares `state.area` against that word.",
       "scope": "mechanic",
       "source": "brief:exploration#1",
-      "expect": ["defineGame"],
+      "expect": [
+        "defineGame"
+      ],
       "reject": []
     },
     {
@@ -54,7 +67,10 @@
       "query": "Let the player walk, inspect three points of interest, and return to the hub.",
       "scope": "mechanic",
       "source": "brief:exploration#2",
-      "expect": ["NavigationAgent3D", "PointerEvents3D"],
+      "expect": [
+        "NavigationAgent3D",
+        "PointerEvents3D"
+      ],
       "reject": []
     },
     {
@@ -62,7 +78,9 @@
       "query": "Load or reveal a different arrangement of props in each area, with a clear transition.",
       "scope": "mechanic",
       "source": "brief:exploration#3",
-      "expect": ["createAssetLoader"],
+      "expect": [
+        "createAssetLoader"
+      ],
       "reject": []
     },
     {
@@ -70,7 +88,10 @@
       "query": "Keep a journal or objective panel that records the inspected points of interest.",
       "scope": "mechanic",
       "source": "brief:exploration#4",
-      "expect": ["publishUiState", "Text"],
+      "expect": [
+        "publishUiState",
+        "Text"
+      ],
       "reject": [
         "Billboard3D",
         "ensureVelocityOutput",
@@ -84,7 +105,10 @@
       "query": "Make the world readable through deliberate lighting, landmarks, and a restrained palette.",
       "scope": "mechanic",
       "source": "brief:exploration#5",
-      "expect": ["Atmosphere", "ProbeVolume"],
+      "expect": [
+        "Atmosphere",
+        "ProbeVolume"
+      ],
       "reject": []
     },
     {
@@ -92,7 +116,9 @@
       "query": "First person. Eye height 1.66 m, walking 5.6 m/s, sprinting 8.2 m/s while not aiming.",
       "scope": "mechanic",
       "source": "brief:fps#1",
-      "expect": ["CharacterBody3D"],
+      "expect": [
+        "CharacterBody3D"
+      ],
       "reject": []
     },
     {
@@ -100,15 +126,21 @@
       "query": "Vertical field of view 70\u00b0, narrowing to 22\u00b0 while aiming down the sights, and mouse look is half as sensitive while aimed. Pitch is clamped roughly \u221266\u00b0 to +72\u00b0.",
       "scope": "mechanic",
       "source": "brief:fps#2",
-      "expect": ["defineGame"],
-      "reject": ["SpectralOcean"]
+      "expect": [
+        "defineGame"
+      ],
+      "reject": [
+        "SpectralOcean"
+      ]
     },
     {
       "id": "brief.fps.3",
       "query": "Health starts at 100 and never regenerates. There is no jump, no crouch and no stamina.",
       "scope": "mechanic",
       "source": "brief:fps#3",
-      "expect": ["defineGame"],
+      "expect": [
+        "defineGame"
+      ],
       "reject": []
     },
     {
@@ -116,7 +148,9 @@
       "query": "Spawns at the firing line facing down the range, with the nearest target on the crosshair.",
       "scope": "mechanic",
       "source": "brief:fps#4",
-      "expect": ["defineGame"],
+      "expect": [
+        "defineGame"
+      ],
       "reject": []
     },
     {
@@ -124,15 +158,21 @@
       "query": "One rifle, always equipped. **One round per press** \u2014 holding the fire input does not repeat.",
       "scope": "mechanic",
       "source": "brief:fps#5",
-      "expect": ["TracerPool3D"],
-      "reject": ["updateClusteredMeshes"]
+      "expect": [
+        "TracerPool3D"
+      ],
+      "reject": [
+        "updateClusteredMeshes"
+      ]
     },
     {
       "id": "brief.fps.6",
       "query": "Magazine 30, reserve 90. Reload moves rounds from the reserve into the magazine; the sights drop for about 0.7 s while it happens.",
       "scope": "mechanic",
       "source": "brief:fps#6",
-      "expect": ["defineGame"],
+      "expect": [
+        "defineGame"
+      ],
       "reject": []
     },
     {
@@ -140,31 +180,46 @@
       "query": "Hitscan along the exact camera forward axis out to 60 m. No spread, no bloom, no recoil kick, no damage falloff.",
       "scope": "mechanic",
       "source": "brief:fps#7",
-      "expect": ["PhysicsDirectSpaceState3D"],
-      "reject": ["defineGame"]
+      "expect": [
+        "PhysicsDirectSpaceState3D"
+      ],
+      "reject": [
+        "defineGame"
+      ]
     },
     {
       "id": "brief.fps.8",
       "query": "10 damage a round; 4\u00d7 in the top 12% of a body's height, 0.7\u00d7 below a third of it.",
       "scope": "mechanic",
       "source": "brief:fps#8",
-      "expect": ["PhysicsDirectSpaceState3D"],
-      "reject": ["GPUReadback"]
+      "expect": [
+        "PhysicsDirectSpaceState3D"
+      ],
+      "reject": [
+        "GPUReadback"
+      ]
     },
     {
       "id": "brief.fps.9",
       "query": "A target hit scores that target's value \u2014 100, 150, 250 or 300. The struck target drops below its stand, cannot be scored, and swings back up about 1.4 s later.",
       "scope": "mechanic",
       "source": "brief:fps#9",
-      "expect": ["publishUiState", "ScenePicker"],
-      "reject": ["connectDevicePlaytestBridge"]
+      "expect": [
+        "publishUiState",
+        "ScenePicker"
+      ],
+      "reject": [
+        "connectDevicePlaytestBridge"
+      ]
     },
     {
       "id": "brief.fps.10",
       "query": "**Patrols** a fixed six-point route, facing the way it walks.",
       "scope": "mechanic",
       "source": "brief:fps#10",
-      "expect": ["NavigationAgent3D"],
+      "expect": [
+        "NavigationAgent3D"
+      ],
       "reject": []
     },
     {
@@ -172,31 +227,48 @@
       "query": "**Hears** every player gunshot within 26 m and grows suspicious; **sees** the player within its vision cone when nothing blocks the line between them.",
       "scope": "mechanic",
       "source": "brief:fps#11",
-      "expect": ["NavigationAgent3D", "PhysicsDirectSpaceState3D"],
-      "reject": ["attachToBone", "Heightfield"]
+      "expect": [
+        "NavigationAgent3D",
+        "PhysicsDirectSpaceState3D"
+      ],
+      "reject": [
+        "attachToBone",
+        "Heightfield"
+      ]
     },
     {
       "id": "brief.fps.12",
       "query": "Once alerted it **closes to engagement range, strafes, and fires three-round bursts**; each round takes 9 health off the player, so a full burst costs 27.",
       "scope": "mechanic",
       "source": "brief:fps#12",
-      "expect": ["NavigationAgent3D", "CharacterBody3D"],
-      "reject": ["AtmosphereLuts"]
+      "expect": [
+        "NavigationAgent3D",
+        "CharacterBody3D"
+      ],
+      "reject": [
+        "AtmosphereLuts"
+      ]
     },
     {
       "id": "brief.fps.13",
       "query": "Losing sight of the player sends it to **search** the last place it saw them, then **return** to its route.",
       "scope": "mechanic",
       "source": "brief:fps#13",
-      "expect": ["NavigationAgent3D"],
-      "reject": ["attachToBone"]
+      "expect": [
+        "NavigationAgent3D"
+      ],
+      "reject": [
+        "attachToBone"
+      ]
     },
     {
       "id": "brief.fps.14",
       "query": "Dies at 0 health, ragdolls, and comes back. Killing it scores 300; wounding it scores 100.",
       "scope": "mechanic",
       "source": "brief:fps#14",
-      "expect": ["publishUiState"],
+      "expect": [
+        "publishUiState"
+      ],
       "reject": []
     },
     {
@@ -204,39 +276,59 @@
       "query": "Make the player walk across a continuous world at least 500 by 500 world units with visible terrain relief.",
       "scope": "mechanic",
       "source": "brief:open-world#1",
-      "expect": ["Heightfield"],
-      "reject": ["solarPosition"]
+      "expect": [
+        "Heightfield"
+      ],
+      "reject": [
+        "solarPosition"
+      ]
     },
     {
       "id": "brief.open-world.2",
       "query": "Stream or reveal terrain and content while the player travels across at least three chunk boundaries.",
       "scope": "mechanic",
       "source": "brief:open-world#2",
-      "expect": ["TerrainTiles"],
-      "reject": ["ClusteredMesh"]
+      "expect": [
+        "TerrainTiles"
+      ],
+      "reject": [
+        "ClusteredMesh"
+      ]
     },
     {
       "id": "brief.open-world.3",
       "query": "Keep the player and the next destination readable with a third-person or elevated camera.",
       "scope": "mechanic",
       "source": "brief:open-world#3",
-      "expect": ["defineGame"],
-      "reject": ["CameraShake"]
+      "expect": [
+        "defineGame"
+      ],
+      "reject": [
+        "CameraShake"
+      ]
     },
     {
       "id": "brief.open-world.4",
       "query": "Include at least two landmarks or points of interest that are separated by the traversal.",
       "scope": "mechanic",
       "source": "brief:open-world#4",
-      "expect": ["InstancedBatch"],
-      "reject": ["WaveField", "PhysicsDirectSpaceState3D", "softBodyCollision"]
+      "expect": [
+        "InstancedBatch"
+      ],
+      "reject": [
+        "WaveField",
+        "PhysicsDirectSpaceState3D",
+        "softBodyCollision"
+      ]
     },
     {
       "id": "brief.open-world.5",
       "query": "Keep the first playable screen visible without a user account or external asset service.",
       "scope": "mechanic",
       "source": "brief:open-world#5",
-      "expect": ["createAssetLoader"],
+      "expect": [
+        "createAssetLoader"
+      ],
       "reject": []
     },
     {
@@ -244,31 +336,52 @@
       "query": "Create a compact room with at least 30 dynamic bodies that stack, topple, collide, and come to rest after the initial drop.",
       "scope": "mechanic",
       "source": "brief:physics-puzzle#1",
-      "expect": ["RigidBody3D"],
-      "reject": ["softBodyCollision"]
+      "expect": [
+        "RigidBody3D"
+      ],
+      "reject": [
+        "softBodyCollision"
+      ]
     },
     {
       "id": "brief.physics-puzzle.2",
       "query": "Give the controlled character a visible controller that can push solid bodies and cannot walk through them.",
       "scope": "mechanic",
       "source": "brief:physics-puzzle#2",
-      "expect": ["CharacterBody3D"],
-      "reject": ["AnimationPlayer", "supportedGlyphs", "rapier", "RigidBody3D"]
+      "expect": [
+        "CharacterBody3D"
+      ],
+      "reject": [
+        "AnimationPlayer",
+        "supportedGlyphs",
+        "rapier",
+        "RigidBody3D"
+      ]
     },
     {
       "id": "brief.physics-puzzle.3",
       "query": "Include one body class that the controlled character passes through and another that blocks the controlled character; make the distinction visible in the scene.",
       "scope": "mechanic",
       "source": "brief:physics-puzzle#3",
-      "expect": ["CollisionShape3D"],
-      "reject": ["onUiIntent", "CharacterBody3D", "Joint3D", "rapier", "RigidBody3D"]
+      "expect": [
+        "CollisionShape3D"
+      ],
+      "reject": [
+        "onUiIntent",
+        "CharacterBody3D",
+        "Joint3D",
+        "rapier",
+        "RigidBody3D"
+      ]
     },
     {
       "id": "brief.physics-puzzle.4",
       "query": "Reach the destination only through simulated contact with the controlled character or a pushed body. A distance check or scripted timer is not a valid win condition. When it is reached, some gameplay state must read the literal `won`; the proof compares against that word and cannot infer it.",
       "scope": "mechanic",
       "source": "brief:physics-puzzle#4",
-      "expect": ["RigidBody3D"],
+      "expect": [
+        "RigidBody3D"
+      ],
       "reject": [
         "AnimationPlayer",
         "ClusteredBatch",
@@ -282,7 +395,10 @@
       "query": "Run the same input sequence twice with a fixed seed and fixed-step simulation, and expose whether the final state matched on both runs.",
       "scope": "mechanic",
       "source": "brief:physics-puzzle#5",
-      "expect": ["createReplayDriver", "replay"],
+      "expect": [
+        "createReplayDriver",
+        "replay"
+      ],
       "reject": [
         "ComputeDrivenRegistry",
         "Scheduler",
@@ -295,23 +411,37 @@
       "query": "Use an angled camera and a readable HUD so the controlled character, stack, pass-through body, and destination remain legible on the first screen.",
       "scope": "mechanic",
       "source": "brief:physics-puzzle#6",
-      "expect": ["Text", "publishUiState"],
-      "reject": ["supportedGlyphs", "CharacterBody3D", "rapier", "RigidBody3D"]
+      "expect": [
+        "Text",
+        "publishUiState"
+      ],
+      "reject": [
+        "supportedGlyphs",
+        "CharacterBody3D",
+        "rapier",
+        "RigidBody3D"
+      ]
     },
     {
       "id": "brief.physics-puzzle.8",
       "query": "The direct proof supplies no gameplay entity identifiers; the replay proof reads resource `state` paths `state.replayPhase` and `state.replayMatch`.",
       "scope": "mechanic",
       "source": "brief:physics-puzzle#8",
-      "expect": ["subscribeUiState"],
-      "reject": ["assertJsonSafe"]
+      "expect": [
+        "subscribeUiState"
+      ],
+      "reject": [
+        "assertJsonSafe"
+      ]
     },
     {
       "id": "brief.platformer.1",
       "query": "Use a third-person camera behind and above the player.",
       "scope": "mechanic",
       "source": "brief:platformer#1",
-      "expect": ["defineGame"],
+      "expect": [
+        "defineGame"
+      ],
       "reject": []
     },
     {
@@ -319,23 +449,36 @@
       "query": "Make the player run, jump, collect a visible line of coins, and reach a goal.",
       "scope": "mechanic",
       "source": "brief:platformer#2",
-      "expect": ["CharacterBody3D"],
-      "reject": ["NavigationAgent3D"]
+      "expect": [
+        "CharacterBody3D"
+      ],
+      "reject": [
+        "NavigationAgent3D"
+      ]
     },
     {
       "id": "brief.platformer.3",
       "query": "Include at least one raised platform, one gap, one enemy or hazard, and a restart path.",
       "scope": "mechanic",
       "source": "brief:platformer#3",
-      "expect": ["CharacterBody3D"],
-      "reject": ["PathFollow3D", "createAssetLoader", "onUiIntent", "softBodyCollision"]
+      "expect": [
+        "CharacterBody3D"
+      ],
+      "reject": [
+        "PathFollow3D",
+        "createAssetLoader",
+        "onUiIntent",
+        "softBodyCollision"
+      ]
     },
     {
       "id": "brief.platformer.4",
       "query": "Match the reference's bright sky, saturated green platforms, warm wood, and rounded toy-like silhouettes.",
       "scope": "mechanic",
       "source": "brief:platformer#4",
-      "expect": ["Atmosphere"],
+      "expect": [
+        "Atmosphere"
+      ],
       "reject": []
     },
     {
@@ -343,7 +486,9 @@
       "query": "Show the core objective and current collectible count in a readable HUD.",
       "scope": "mechanic",
       "source": "brief:platformer#5",
-      "expect": ["Text"],
+      "expect": [
+        "Text"
+      ],
       "reject": []
     },
     {
@@ -351,15 +496,22 @@
       "query": "Use an angled camera that keeps the player and the arena readable at once.",
       "scope": "mechanic",
       "source": "brief:topdown-action#1",
-      "expect": ["defineGame"],
-      "reject": ["Billboard3D", "AudioBus"]
+      "expect": [
+        "defineGame"
+      ],
+      "reject": [
+        "AudioBus"
+      ]
     },
     {
       "id": "brief.topdown-action.2",
       "query": "Let the player move in four directions, aim toward the pointer, and fire a visible attack.",
       "scope": "mechanic",
       "source": "brief:topdown-action#2",
-      "expect": ["PointerEvents3D", "CharacterBody3D"],
+      "expect": [
+        "PointerEvents3D",
+        "CharacterBody3D"
+      ],
       "reject": []
     },
     {
@@ -367,7 +519,9 @@
       "query": "Include three enemy targets, a short cooldown or reload feedback, and a win condition.",
       "scope": "mechanic",
       "source": "brief:topdown-action#3",
-      "expect": ["CharacterBody3D"],
+      "expect": [
+        "CharacterBody3D"
+      ],
       "reject": [
         "FrameBudget",
         "PathFollow3D",
@@ -380,7 +534,9 @@
       "query": "Build the arena from a few walls, floor markings, and pickups with a clear color hierarchy.",
       "scope": "mechanic",
       "source": "brief:topdown-action#4",
-      "expect": ["CollisionShape3D"],
+      "expect": [
+        "CollisionShape3D"
+      ],
       "reject": []
     },
     {
@@ -388,7 +544,10 @@
       "query": "Show health, score, and the current objective in a readable HUD.",
       "scope": "mechanic",
       "source": "brief:topdown-action#5",
-      "expect": ["Text", "publishUiState"],
+      "expect": [
+        "Text",
+        "publishUiState"
+      ],
       "reject": []
     },
     {
@@ -396,7 +555,9 @@
       "query": "walking feet sliding spinning",
       "scope": "mechanic",
       "source": "template:action-rpg#Start every change",
-      "expect": ["AnimationPlayer"],
+      "expect": [
+        "AnimationPlayer"
+      ],
       "reject": []
     },
     {
@@ -404,15 +565,19 @@
       "query": "build a racing game",
       "scope": "request",
       "source": "template:racing#AGENTS.md \u2014 __PROJECT_NAME__ racing",
-      "expect": ["PathFollow3D"],
+      "expect": [
+        "PathFollow3D"
+      ],
       "reject": []
     },
     {
       "id": "request.tower-defense-game",
       "query": "tower defense game",
       "scope": "request",
-      "source": "template:tower-defense#AGENTS.md — __PROJECT_NAME__ tower defense",
-      "expect": ["Scheduler"],
+      "source": "template:tower-defense#AGENTS.md \u2014 __PROJECT_NAME__ tower defense",
+      "expect": [
+        "Scheduler"
+      ],
       "reject": []
     },
     {
@@ -420,7 +585,9 @@
       "query": "make an inventory system",
       "scope": "request",
       "source": "template:action-rpg#AGENTS.md \u2014 __PROJECT_NAME__ action RPG",
-      "expect": ["assertPortableState"],
+      "expect": [
+        "assertPortableState"
+      ],
       "reject": [],
       "notOwned": "inventory"
     },
@@ -428,8 +595,11 @@
       "id": "request.enemy-ai",
       "query": "enemy AI that chases the player",
       "scope": "request",
-      "source": "template:shooter#AGENTS.md — __PROJECT_NAME__ first-person town firefight",
-      "expect": ["NavigationAgent3D", "CharacterBody3D"],
+      "source": "template:shooter#AGENTS.md \u2014 __PROJECT_NAME__ first-person town firefight",
+      "expect": [
+        "NavigationAgent3D",
+        "CharacterBody3D"
+      ],
       "reject": []
     },
     {
@@ -437,7 +607,9 @@
       "query": "third person camera follow",
       "scope": "request",
       "source": "template:platformer#AGENTS.md \u2014 __PROJECT_NAME__ platformer",
-      "expect": ["defineGame"],
+      "expect": [
+        "defineGame"
+      ],
       "reject": []
     },
     {
@@ -445,7 +617,9 @@
       "query": "save the player progress",
       "scope": "request",
       "source": "template:starter#AGENTS.md \u2014 __PROJECT_NAME__ starter",
-      "expect": ["assertPortableState"],
+      "expect": [
+        "assertPortableState"
+      ],
       "reject": [
         "Area3D",
         "PointerEvents3D",
@@ -462,8 +636,10 @@
       "id": "request.spawn-waves",
       "query": "spawn waves of enemies",
       "scope": "request",
-      "source": "template:tower-defense#AGENTS.md — __PROJECT_NAME__ tower defense",
-      "expect": ["Scheduler"],
+      "source": "template:tower-defense#AGENTS.md \u2014 __PROJECT_NAME__ tower defense",
+      "expect": [
+        "Scheduler"
+      ],
       "reject": [
         "WaveField",
         "Buoyancy3D",
@@ -486,8 +662,13 @@
       "query": "dialogue with an NPC",
       "scope": "request",
       "source": "template:sailing#AGENTS.md \u2014 __PROJECT_NAME__ sailing",
-      "expect": ["Text"],
-      "reject": ["NavigationAgent3D", "recast"],
+      "expect": [
+        "Text"
+      ],
+      "reject": [
+        "NavigationAgent3D",
+        "recast"
+      ],
       "notOwned": "dialogue"
     },
     {
@@ -495,15 +676,21 @@
       "query": "pick up an item",
       "scope": "request",
       "source": "template:minimal#AGENTS.md \u2014 __PROJECT_NAME__ minimal",
-      "expect": ["Area3D"],
-      "reject": ["ClusteredMesh"]
+      "expect": [
+        "Area3D"
+      ],
+      "reject": [
+        "ClusteredMesh"
+      ]
     },
     {
       "id": "request.multiplayer",
       "query": "exchange authenticated multiplayer messages over WebTransport",
       "scope": "request",
       "source": "template:starter#Ownership",
-      "expect": ["connect"],
+      "expect": [
+        "connect"
+      ],
       "reject": []
     },
     {
@@ -511,7 +698,9 @@
       "query": "authoritative replication",
       "scope": "request",
       "source": "template:starter#Ownership",
-      "expect": ["defineGame"],
+      "expect": [
+        "defineGame"
+      ],
       "reject": [],
       "notOwned": "networked-multiplayer"
     },
@@ -520,7 +709,9 @@
       "query": "client prediction",
       "scope": "request",
       "source": "template:starter#Ownership",
-      "expect": ["defineGame"],
+      "expect": [
+        "defineGame"
+      ],
       "reject": [],
       "notOwned": "networked-multiplayer"
     },
@@ -529,7 +720,9 @@
       "query": "make a platformer with double jump",
       "scope": "request",
       "source": "template:platformer#AGENTS.md \u2014 __PROJECT_NAME__ platformer",
-      "expect": ["CharacterBody3D"],
+      "expect": [
+        "CharacterBody3D"
+      ],
       "reject": []
     },
     {
@@ -537,7 +730,9 @@
       "query": "make a 3D platformer with a triple jump, long jump and wall kick",
       "scope": "request",
       "source": "template:collectathon#AGENTS.md \u2014 __PROJECT_NAME__ collectathon (Hop Garden)",
-      "expect": ["CharacterBody3D"],
+      "expect": [
+        "CharacterBody3D"
+      ],
       "reject": []
     },
     {
@@ -545,7 +740,9 @@
       "query": "make a 3D action adventure: the hero character runs, rolls and blocks with a shield, and enemies chase her around walls",
       "scope": "request",
       "source": "template:adventure#AGENTS.md \u2014 __PROJECT_NAME__ adventure",
-      "expect": ["CharacterBody3D"],
+      "expect": [
+        "CharacterBody3D"
+      ],
       "reject": []
     },
     {
@@ -553,7 +750,9 @@
       "query": "a kart racer with a particle burst of sparks when drifting",
       "scope": "request",
       "source": "template:kart#AGENTS.md \u2014 __PROJECT_NAME__ kart racer (Clover Cup)",
-      "expect": ["GPUParticles3D"],
+      "expect": [
+        "GPUParticles3D"
+      ],
       "reject": []
     },
     {
@@ -561,7 +760,9 @@
       "query": "only update world matrices of visible objects each frame instead of the whole scene",
       "scope": "mechanic",
       "source": "sandbox:midway#render/world.ts",
-      "expect": ["MatrixWorldPass"],
+      "expect": [
+        "MatrixWorldPass"
+      ],
       "reject": []
     },
     {
@@ -569,7 +770,9 @@
       "query": "freeze static meshes so their matrices are not recomputed every frame",
       "scope": "mechanic",
       "source": "sandbox:midway#render/world.ts",
-      "expect": ["markStatic"],
+      "expect": [
+        "markStatic"
+      ],
       "reject": []
     },
     {
@@ -577,7 +780,9 @@
       "query": "seeded deterministic random number generator like mulberry32",
       "scope": "mechanic",
       "source": "sandbox:midway#sim/math.ts",
-      "expect": ["createRandom"],
+      "expect": [
+        "createRandom"
+      ],
       "reject": []
     },
     {
@@ -585,7 +790,9 @@
       "query": "map WASD keys to a movement axis instead of checking keys.has in the update loop",
       "scope": "mechanic",
       "source": "sandbox:midway#scenes/Midway.ts",
-      "expect": ["InputMap"],
+      "expect": [
+        "InputMap"
+      ],
       "reject": []
     },
     {
@@ -593,7 +800,9 @@
       "query": "lock the mouse pointer for first-person mouse look",
       "scope": "mechanic",
       "source": "sandbox:midway#scenes/Midway.ts",
-      "expect": ["captureMouse"],
+      "expect": [
+        "captureMouse"
+      ],
       "reject": []
     },
     {
@@ -601,7 +810,9 @@
       "query": "pick a level of detail from the object's projected size in pixels on screen",
       "scope": "mechanic",
       "source": "sandbox:midway#render/airframe-lod.ts",
-      "expect": ["lodPixelScale"],
+      "expect": [
+        "lodPixelScale"
+      ],
       "reject": []
     },
     {
@@ -609,7 +820,9 @@
       "query": "on-screen frame time meter with p50 p95 p99 percentiles",
       "scope": "mechanic",
       "source": "sandbox:midway#ui/frame-meter.ts",
-      "expect": ["FrameBudget"],
+      "expect": [
+        "FrameBudget"
+      ],
       "reject": []
     },
     {
@@ -617,7 +830,9 @@
       "query": "merge many static geometries into one mesh to cut draw calls",
       "scope": "mechanic",
       "source": "sandbox:fps#render/facade.ts",
-      "expect": ["mergeParts"],
+      "expect": [
+        "mergeParts"
+      ],
       "reject": []
     },
     {
@@ -625,7 +840,9 @@
       "query": "leave footprints in deep snow that stay where the player walked",
       "scope": "mechanic",
       "source": "template:snow#Commands and map",
-      "expect": ["SnowField"],
+      "expect": [
+        "SnowField"
+      ],
       "reject": []
     },
     {
@@ -633,7 +850,9 @@
       "query": "fresh snowfall slowly fills old tracks back in",
       "scope": "mechanic",
       "source": "template:snow#Commands and map",
-      "expect": ["SnowField"],
+      "expect": [
+        "SnowField"
+      ],
       "reject": []
     },
     {
@@ -641,7 +860,9 @@
       "query": "show how packed the snow is where people have walked",
       "scope": "mechanic",
       "source": "template:snow#Commands and map",
-      "expect": ["SnowField"],
+      "expect": [
+        "SnowField"
+      ],
       "reject": []
     },
     {
@@ -649,7 +870,9 @@
       "query": "drop a heavy ball into powder snow so it sinks and settles in the crater it makes",
       "scope": "mechanic",
       "source": "template:snow#Commands and map",
-      "expect": ["attachSnowPhysics"],
+      "expect": [
+        "attachSnowPhysics"
+      ],
       "reject": []
     },
     {
@@ -657,7 +880,9 @@
       "query": "push a ball through snow so it rolls and carves a continuous track",
       "scope": "mechanic",
       "source": "template:snow#Commands and map",
-      "expect": ["attachSnowPhysics"],
+      "expect": [
+        "attachSnowPhysics"
+      ],
       "reject": []
     },
     {
@@ -665,7 +890,9 @@
       "query": "a crate and a fallen log press their own shapes into the snow they rest on",
       "scope": "mechanic",
       "source": "template:snow#Commands and map",
-      "expect": ["attachSnowPhysics"],
+      "expect": [
+        "attachSnowPhysics"
+      ],
       "reject": []
     },
     {
@@ -673,7 +900,9 @@
       "query": "falling snowflakes that thicken into a windy blizzard",
       "scope": "mechanic",
       "source": "template:snow#Commands and map",
-      "expect": ["GPUParticles3D"],
+      "expect": [
+        "GPUParticles3D"
+      ],
       "reject": []
     },
     {
@@ -681,7 +910,9 @@
       "query": "a puff of powder snow sprays up where a boot lands",
       "scope": "mechanic",
       "source": "template:snow#Commands and map",
-      "expect": ["GPUParticles3D"],
+      "expect": [
+        "GPUParticles3D"
+      ],
       "reject": []
     },
     {
@@ -689,7 +920,10 @@
       "query": "a snowy glade where an explorer leaves boot prints, a ball rolls through the powder carving a track, and snowfall turns into a blizzard",
       "scope": "request",
       "source": "template:snow#Commands and map",
-      "expect": ["SnowField", "attachSnowPhysics"],
+      "expect": [
+        "SnowField",
+        "attachSnowPhysics"
+      ],
       "reject": []
     },
     {
@@ -697,55 +931,83 @@
       "query": "procedural coastal storm with a road, forest, sea and wet reflections drawn from maths rather than geometry",
       "scope": "mechanic",
       "source": "template:rain#Ownership",
-      "expect": ["createWeatherWorld"],
-      "reject": ["Area3D", "NavigationAgent3D"]
+      "expect": [
+        "createWeatherWorld"
+      ],
+      "reject": [
+        "Area3D",
+        "NavigationAgent3D"
+      ]
     },
     {
       "id": "rain.noise-volume",
       "query": "generate a 3D noise volume for the clouds instead of shipping one as an asset",
       "scope": "mechanic",
       "source": "template:rain#Ownership",
-      "expect": ["createNoiseVolume"],
-      "reject": ["Area3D"]
+      "expect": [
+        "createNoiseVolume"
+      ],
+      "reject": [
+        "Area3D"
+      ]
     },
     {
       "id": "rain.storm-audio",
       "query": "rain hiss, wind bed and thunder delayed by how far away the strike was",
       "scope": "mechanic",
       "source": "template:rain#Ownership",
-      "expect": ["createStormAudio"],
-      "reject": ["Area3D"]
+      "expect": [
+        "createStormAudio"
+      ],
+      "reject": [
+        "Area3D"
+      ]
     },
     {
       "id": "rain.lightning",
       "query": "generate branching lightning ribbon geometry that flashes the scene",
       "scope": "mechanic",
       "source": "template:rain#Ownership",
-      "expect": ["createStormLightning"],
-      "reject": ["Area3D"]
+      "expect": [
+        "createStormLightning"
+      ],
+      "reject": [
+        "Area3D"
+      ]
     },
     {
       "id": "rain.streaks",
       "query": "thousands of falling rain streaks around the camera in one draw",
       "scope": "mechanic",
       "source": "template:rain#Ownership",
-      "expect": ["createStormRain", "GPUParticles3D"],
-      "reject": ["Area3D"]
+      "expect": [
+        "createStormRain",
+        "GPUParticles3D"
+      ],
+      "reject": [
+        "Area3D"
+      ]
     },
     {
       "id": "rain.round-time-limit",
       "query": "countdown timer that ends the round",
       "scope": "mechanic",
       "source": "template:rain#Ownership",
-      "expect": ["Scheduler"],
-      "reject": ["Area3D"]
+      "expect": [
+        "Scheduler"
+      ],
+      "reject": [
+        "Area3D"
+      ]
     },
     {
       "id": "request.drive-a-racing-kart",
       "query": "racing car racing kart drift vehicle go-kart",
       "scope": "request",
-      "source": "template:racing#AGENTS.md — __PROJECT_NAME__ racing",
-      "expect": ["VehicleBody3D"],
+      "source": "template:racing#AGENTS.md \u2014 __PROJECT_NAME__ racing",
+      "expect": [
+        "VehicleBody3D"
+      ],
       "reject": []
     },
     {
@@ -753,7 +1015,9 @@
       "query": "lumen reflections",
       "scope": "request",
       "source": "template:starter#Ownership",
-      "expect": ["TracedReflections"],
+      "expect": [
+        "TracedReflections"
+      ],
       "reject": []
     },
     {
@@ -761,31 +1025,39 @@
       "query": "dedicated reflection rays",
       "scope": "request",
       "source": "template:starter#Ownership",
-      "expect": ["TracedReflections"],
+      "expect": [
+        "TracedReflections"
+      ],
       "reject": []
     },
     {
       "id": "request.vehicle-suspension-grip",
       "query": "suspension wheel traction tyre grip",
       "scope": "request",
-      "source": "template:racing#AGENTS.md — __PROJECT_NAME__ racing",
-      "expect": ["VehicleBody3D"],
+      "source": "template:racing#AGENTS.md \u2014 __PROJECT_NAME__ racing",
+      "expect": [
+        "VehicleBody3D"
+      ],
       "reject": []
     },
     {
       "id": "request.vehicle-pedals-steering",
       "query": "accelerator pedal handbrake steering wheel",
       "scope": "request",
-      "source": "template:racing#AGENTS.md — __PROJECT_NAME__ racing",
-      "expect": ["VehicleBody3D"],
+      "source": "template:racing#AGENTS.md \u2014 __PROJECT_NAME__ racing",
+      "expect": [
+        "VehicleBody3D"
+      ],
       "reject": []
     },
     {
       "id": "request.vehicle-rescue-respawn",
       "query": "rescue respawn flip back on track",
       "scope": "request",
-      "source": "template:racing#AGENTS.md — __PROJECT_NAME__ racing",
-      "expect": ["VehicleBody3D"],
+      "source": "template:racing#AGENTS.md \u2014 __PROJECT_NAME__ racing",
+      "expect": [
+        "VehicleBody3D"
+      ],
       "reject": []
     },
     {
@@ -793,7 +1065,9 @@
       "query": "PCSS soft shadows",
       "scope": "request",
       "source": "sandbox:lamp-room#scenes/CalibrationScene.ts",
-      "expect": ["sourceRadiusShadowFilter"],
+      "expect": [
+        "sourceRadiusShadowFilter"
+      ],
       "reject": []
     },
     {
@@ -801,7 +1075,9 @@
       "query": "Substrate EON, Diffuse_EON, Diffuse_GGX_Rough, rough diffuse, Oren-Nayar",
       "scope": "request",
       "source": "sandbox:lamp-room#scenes/CalibrationScene.ts",
-      "expect": ["useRoughDiffuse"],
+      "expect": [
+        "useRoughDiffuse"
+      ],
       "reject": []
     },
     {
@@ -809,7 +1085,9 @@
       "query": "lumen surface cache",
       "scope": "request",
       "source": "template:starter#Quality and proof",
-      "expect": ["SurfaceCache"],
+      "expect": [
+        "SurfaceCache"
+      ],
       "reject": []
     },
     {
@@ -817,7 +1095,9 @@
       "query": "lumen visualize indirect diffuse only r.Lumen.Visualize.IndirectDiffuse",
       "scope": "request",
       "source": "template:starter#Quality and proof",
-      "expect": ["GIVisualize"],
+      "expect": [
+        "GIVisualize"
+      ],
       "reject": []
     },
     {
@@ -825,7 +1105,9 @@
       "query": "lumen scene",
       "scope": "request",
       "source": "template:starter#Quality and proof",
-      "expect": ["SurfaceCache"],
+      "expect": [
+        "SurfaceCache"
+      ],
       "reject": []
     },
     {
@@ -833,7 +1115,9 @@
       "query": "mesh cards",
       "scope": "request",
       "source": "template:starter#Quality and proof",
-      "expect": ["SurfaceCache"],
+      "expect": [
+        "SurfaceCache"
+      ],
       "reject": []
     },
     {
@@ -841,7 +1125,9 @@
       "query": "lumen translucency volume",
       "scope": "request",
       "source": "template:starter#Quality and proof",
-      "expect": ["ProbeVolume"],
+      "expect": [
+        "ProbeVolume"
+      ],
       "reject": []
     },
     {
@@ -849,23 +1135,29 @@
       "query": "translucency gi",
       "scope": "request",
       "source": "template:starter#Quality and proof",
-      "expect": ["ProbeVolume"],
+      "expect": [
+        "ProbeVolume"
+      ],
       "reject": []
     },
     {
       "id": "request.gi-quality-scalability",
       "query": "lumen scalability sg.GlobalIlluminationQuality final gather method",
       "scope": "request",
-      "source": "template:starter#AGENTS.md — __PROJECT_NAME__ starter",
-      "expect": ["GIBudget"],
+      "source": "template:starter#AGENTS.md \u2014 __PROJECT_NAME__ starter",
+      "expect": [
+        "GIBudget"
+      ],
       "reject": []
     },
     {
       "id": "request.shadow-quality-scalability",
       "query": "virtual shadow map scalability sg.ShadowQuality",
       "scope": "request",
-      "source": "template:starter#AGENTS.md — __PROJECT_NAME__ starter",
-      "expect": ["ShadowFilterBudget"],
+      "source": "template:starter#AGENTS.md \u2014 __PROJECT_NAME__ starter",
+      "expect": [
+        "ShadowFilterBudget"
+      ],
       "reject": []
     },
     {
@@ -873,7 +1165,69 @@
       "query": "two sided foliage",
       "scope": "request",
       "source": "sandbox:wildwood-backlit#scenes/CalibrationScene.ts",
-      "expect": ["addFoliageBackLight"],
+      "expect": [
+        "addFoliageBackLight"
+      ],
+      "reject": []
+    },
+    {
+      "id": "spell.fireball",
+      "query": "Cast a fireball at a target that explodes and scorches the floor.",
+      "scope": "mechanic",
+      "source": "template:action-rpg#Spells",
+      "expect": [
+        "createFireball"
+      ],
+      "reject": []
+    },
+    {
+      "id": "spell.thunderstrike",
+      "query": "Strike a point with a thunderbolt from the sky and leave a burnt mark.",
+      "scope": "mechanic",
+      "source": "template:action-rpg#Spells",
+      "expect": [
+        "createThunderstrike"
+      ],
+      "reject": []
+    },
+    {
+      "id": "spell.glacial-spike",
+      "query": "Fire an ice spike at a target that shatters and freezes the ground.",
+      "scope": "mechanic",
+      "source": "template:action-rpg#Spells",
+      "expect": [
+        "createGlacialSpike"
+      ],
+      "reject": []
+    },
+    {
+      "id": "spell.arcane-barrage",
+      "query": "Fire a volley of arcane missiles that pop on arrival.",
+      "scope": "mechanic",
+      "source": "template:action-rpg#Spells",
+      "expect": [
+        "createArcaneBarrage"
+      ],
+      "reject": []
+    },
+    {
+      "id": "spell.aegis",
+      "query": "Raise a shield around the caster that forms, holds and breaks outward.",
+      "scope": "mechanic",
+      "source": "template:action-rpg#Spells",
+      "expect": [
+        "createAegis"
+      ],
+      "reject": []
+    },
+    {
+      "id": "spell.inferno",
+      "query": "Erupt a pillar of fire at a point that keeps burning for seconds.",
+      "scope": "mechanic",
+      "source": "template:action-rpg#Spells",
+      "expect": [
+        "createInferno"
+      ],
       "reject": []
     }
   ]

@@ -12,7 +12,7 @@
  * from its own update and decides.
  */
 
-import { type Camera, Color, type Scene, Vector3 } from "three";
+import { type Camera, Color, type Object3D, type Scene, Vector3 } from "three";
 import { CameraShake, type CameraShakeCurve, type ICameraShakeOptions } from "../camera-shake.js";
 import type { ICastEnvironment } from "./cast-pool.js";
 import { type IReactionFieldOptions, ReactionField } from "./reaction-field.js";
@@ -50,6 +50,12 @@ export interface ISpellWorldOptions {
   readonly reducedFlashes?: boolean;
   /** Spells that shake the camera. `false` gives them nothing to shake. */
   readonly shake?: ISpellWorldShakeOptions | false;
+  /**
+   * Parent an object a spell built. A `GPUParticles3D` also needs a renderer before it can emit, and
+   * only the game knows its own context: pass the game context's `add`, which parents *and* attaches.
+   * The default parents to `scene`, which is enough for a test and not enough to draw.
+   */
+  readonly add?: (object: Object3D) => void;
 }
 
 /** The stock shake: one thump, gone in about a fifth of a second. */
@@ -80,6 +86,10 @@ export class SpellWorld implements ICastEnvironment {
   readonly reducedFlashes: boolean;
   /** Where a spell with no `from` starts: the caster's hand, in world metres. */
   readonly focus = new Vector3();
+  /** Parent a spell's pooled object. See `ISpellWorldOptions.add`. */
+  readonly add: (object: Object3D) => void;
+  /** Everything a spell has parented through `add`, in creation order. */
+  readonly objects: Object3D[] = [];
   /** Seconds since the world was created. */
   time = 0;
   /** Flashes the limiter refused, so a game can see its own accessibility setting working. */
@@ -95,6 +105,12 @@ export class SpellWorld implements ICastEnvironment {
     this.camera = options.camera;
     this.groundAt = options.groundAt;
     this.castSlots = options.castSlots ?? 16;
+    this.add = (object: Object3D) => {
+      if (this.objects.includes(object)) return;
+      this.objects.push(object);
+      if (options.add === undefined) options.scene.add(object);
+      else options.add(object);
+    };
     this.reducedFlashes = options.reducedFlashes ?? false;
     this.lights = new SpellLights({ count: options.lightCount ?? 4, parent: options.scene });
     this.reaction =

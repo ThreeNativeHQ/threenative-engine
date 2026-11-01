@@ -3330,6 +3330,140 @@ casts.cast(fireball, target, { from: hand });
 casts.update(dt);
 ```
 
+### `createAegis`
+
+`function` — A ward around the caster: it forms, holds, and breaks outward when it expires.
+
+```ts
+export function createAegis(world: SpellWorld, overrides: IFireSpellOverrides = { … }
+```
+
+- **Use when:** a shield spell a player casts on themselves · a magic barrier that forms around the caster · make a protective bubble spell · a defensive bubble that flashes when it breaks
+- **Constraints:** every colour, size, count and timing is a named override on the call
+- **Overrides:** core, highlight, charge, impact, linger, radius, light · core, highlight, charge, impact, linger, radius, light, shake
+
+```ts
+const aegis = createAegis(world);
+casts.cast(aegis, world.focus);
+```
+
+### `createArcaneBarrage`
+
+`function` — A volley of arcane missiles: fast, precise, and each one pops on arrival.
+
+```ts
+export function createArcaneBarrage(world: SpellWorld, overrides: IFireSpellOverrides = { … }
+```
+
+- **Use when:** an arcane missile spell that fires projectiles at a target · a magic barrage a mage class spams · make an arcane bolt spell · an arcane missile spell that fires several projectiles at a target · a pink energy bolt with a short charge
+- **Constraints:** every colour, size, count and timing is a named override on the call
+- **Overrides:** core, highlight, speed, charge, impact, linger, radius, burst, light
+
+```ts
+const barrage = createArcaneBarrage(world);
+casts.cast(barrage, target);
+```
+
+### `createFireball`
+
+`function` — A ball of fire that charges, crosses the room and leaves the floor burning.
+
+```ts
+export function createFireball(world: SpellWorld, overrides: IFireSpellOverrides = { … }
+```
+
+- **Use when:** a fireball spell the player casts at a target · a burning projectile that explodes and scorches the ground · a wizard's fire attack with a wind-up, a flight and an aftermath · make a fireball · a fireball spell a player casts at a target
+- **Constraints:** every colour, size, count and timing is a named override on the call · the first cast costs what the hundredth does: nothing is built at cast time · the stock look ships as the default, and no override rebuilds a pipeline
+- **Overrides:** core, highlight, speed, charge, impact, linger, radius, burst, trail, lingerBurst, light, shake, scorch
+
+```ts
+const fireball = createFireball(world);
+casts.cast(fireball, target);
+```
+
+### `createGlacialSpike`
+
+`function` — A shard of ice that flies flat and fast, and freezes the ground it breaks on.
+
+```ts
+export function createGlacialSpike(world: SpellWorld, overrides: IFireSpellOverrides = { … }
+```
+
+- **Use when:** an ice spike spell that flies at a target and shatters · a freezing projectile that leaves frost on the floor · make an ice spell · a cold spell with a charge, a flight and a lingering chill
+- **Constraints:** every colour, size, count and timing is a named override on the call
+- **Overrides:** core, highlight, speed, charge, impact, linger, radius, burst, trail, light
+
+```ts
+const spike = createGlacialSpike(world);
+casts.cast(spike, target);
+```
+
+### `createInferno`
+
+`function` — A pillar of fire that erupts where it lands and keeps burning.
+
+```ts
+export function createInferno(world: SpellWorld, overrides: IFireSpellOverrides = { … }
+```
+
+- **Use when:** a fire area spell that erupts at a point and burns there · an inferno column a boss drops on the arena · make a sustained fire area spell · a sustained flame that scorches the ground for seconds
+- **Constraints:** every colour, size, count and timing is a named override on the call
+- **Overrides:** core, highlight, charge, impact, linger, radius, burst, trail, light, shake, scorch
+
+```ts
+const inferno = createInferno(world);
+casts.cast(inferno, target);
+```
+
+### `createSpell`
+
+`function` — Build a spell from a recipe: four beats, a tint, and the numbers between them.
+
+```ts
+export function createSpell(world: SpellWorld, recipe: ISpellRecipe): ISpell { … }
+```
+
+- **Use when:** author a spell the catalog does not cover, out of the same beats
+- **Constraints:** read the world through SpellWorld only, so a game can swap the scene and the floor
+
+```ts
+const spell = createSpell(world, recipe);
+```
+
+### `createThunderstrike`
+
+`function` — A bolt out of the sky: it charges, strikes the point instantly, and the ground remembers it.
+
+```ts
+export function createThunderstrike(world: SpellWorld, overrides: IFireSpellOverrides = { … }
+```
+
+- **Use when:** a lightning strike spell that hits a point immediately · a thunderbolt with a wind-up and a burnt mark where it lands · make a lightning spell · an electrical spell with a column of light from above
+- **Constraints:** every colour, size, count and timing is a named override on the call
+- **Overrides:** core, highlight, charge, impact, linger, radius, light, shake, scorch
+
+```ts
+const bolt = createThunderstrike(world);
+casts.cast(bolt, target);
+```
+
+### `ParticleKindTable`
+
+`class` — Tune what a particle kind does, as data rather than a shader.
+
+```ts
+export class ParticleKindTable { … }
+```
+
+- **Use when:** retune a spell's particles at run time from a settings screen · change how long, how fast or how heavy a kind of particle is without a new pipeline
+- **Constraints:** set writes uniforms; no kernel, material or pipeline is rebuilt · a table knows only the kinds it was asked for, so an unused kind costs nothing
+- **Overrides:** lifetime, size, speed, cone, gravity, drag, buoyancy, alpha, colour and highlight
+
+```ts
+const kinds = new ParticleKindTable(["flame", "smoke"]);
+kinds.set("flame", { lifetime: [0.3, 0.6], colour: [0.4, 0.8, 1] });
+```
+
 ### `ReactionField`
 
 `class` — The marks a spell leaves on the floor: heat, char, wet, frost, crack and glow.
