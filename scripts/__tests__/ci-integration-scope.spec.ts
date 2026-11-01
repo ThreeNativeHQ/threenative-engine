@@ -140,7 +140,6 @@ describe("integration work applies to the changed source", () => {
       "fluid-particles": true,
       "fluid-native": true,
       exposure: true,
-      "cold-boot": true,
     });
   });
   it("retains both native integration consumers for native host changes", () => {
@@ -149,7 +148,6 @@ describe("integration work applies to the changed source", () => {
       decals: true,
       "fluid-native": true,
       exposure: true,
-      "cold-boot": true,
     });
   });
   it("retains shared playtest and workspace action consumers", () => {
@@ -162,14 +160,12 @@ describe("integration work applies to the changed source", () => {
       "fluid-particles": true,
       "fluid-native": true,
       exposure: true,
-      "cold-boot": true,
     });
     expect(select(workflow, [".github/actions/workspace-dist/action.yml"])).toEqual({
       ...none,
       decals: true,
       "fluid-native": true,
       exposure: true,
-      "cold-boot": true,
     });
     expect(select(workflow, [".github/actions/playwright-chromium/action.yml"])).toEqual({
       ...none,
@@ -178,7 +174,6 @@ describe("integration work applies to the changed source", () => {
       tone: true,
       "fluid-particles": true,
       exposure: true,
-      "cold-boot": true,
     });
   });
   it("retains every rendering consumer of the shared display harness", () => {
@@ -188,7 +183,6 @@ describe("integration work applies to the changed source", () => {
       tone: true,
       "fluid-particles": true,
       exposure: true,
-      "cold-boot": true,
     });
   });
   it("retains exposure coverage for each canonical or generated exposure module", () => {
@@ -343,6 +337,25 @@ describe("integration exact Git source selection", () => {
         expect(inventory.jobs).toContain("fluid-collision-native");
       }
       expect(preflight.jobs).toEqual(["csg"]);
+      // A push runs cold boot only when its own diff reaches exposure code; the nightly always does.
+      const pushPlan = selectionPlan("full", "push", [], head, true, 0, "main", true);
+      const inventory = (eventName: string) =>
+        integrationCandidatePreflight({ plan: pushPlan, eventName, target: "main" }).lanes;
+      expect(inventory("push")["cold-boot"]).toBe(false);
+      expect(inventory("workflow_dispatch")["cold-boot"]).toBe(true);
+      mkdirSync(path.join(root, "packages/core/src/look"), { recursive: true });
+      writeFileSync(path.join(root, "packages/core/src/look/exposure-graph.ts"), "");
+      git("add", ".");
+      git("commit", "-qm", "exposure");
+      const exposureHead = git("rev-parse", "HEAD");
+      expect(
+        integrationCandidatePreflight({
+          plan: selectionPlan("full", "push", [], exposureHead, true, 0, "main", true),
+          eventName: "push",
+          target: "main",
+        }).lanes["cold-boot"],
+      ).toBe(true);
+      git("checkout", "-q", head);
       const reviewPlan = selectionPlan(
         "ci",
         "review exemption",
@@ -417,7 +430,6 @@ describe("integration exact Git source selection", () => {
         "fluid-native": true,
         "fluid-particles": true,
         exposure: true,
-        "cold-boot": true,
       });
       git("rm", "scripts/verify-fluid-collision.ts");
       git("commit", "-qm", "delete browser verifier");
@@ -446,7 +458,7 @@ describe("merged world capture lane relevance", () => {
       expect(select(workflow, [file])).toEqual({
         ...none,
         "world-capture": true,
-        ...(file.startsWith("packages/core/src/") ? { exposure: true, "cold-boot": true } : {}),
+        ...(file.startsWith("packages/core/src/") ? { exposure: true } : {}),
       });
     }
   });

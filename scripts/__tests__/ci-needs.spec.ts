@@ -968,7 +968,11 @@ describe("a develop push qualifies its tree and still warms the caches every pul
         .filter(([, job]) => job.required)
         .map(([name]) => name)
         .sort(),
-    ).toEqual(Object.keys(jobs).sort());
+    ).toEqual(
+      Object.keys(jobs)
+        .filter((name) => name !== "template-engine-cost")
+        .sort(),
+    );
     expect(plan.nativeTier).toBe("full");
   });
 

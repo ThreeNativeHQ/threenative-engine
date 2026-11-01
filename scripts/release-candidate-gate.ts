@@ -42,7 +42,6 @@ export const REQUIRED_HOSTED_CAPABILITIES = [
 
 const REQUIRED_RUN_WORKFLOWS = {
   ci: ".github/workflows/ci.yml",
-  native: ".github/workflows/native-platforms.yml",
 } as const;
 
 type CredentialName = (typeof REQUIRED_CREDENTIALS)[number];
@@ -188,7 +187,7 @@ export interface IReleaseCandidate {
   readonly candidateSha: string;
   readonly runtimeVersion: string;
   readonly packageCohort: readonly IReleasePackage[];
-  readonly requiredRuns: { readonly ci: IReleaseRun; readonly native: IReleaseRun };
+  readonly requiredRuns: { readonly ci: IReleaseRun };
   readonly parity: IReleaseReport & { readonly verdict: "PASS" };
   readonly provenance: IReleaseReport & { readonly subjects: readonly string[] };
   readonly subjects: { readonly github: readonly string[]; readonly npm: readonly string[] };
@@ -225,7 +224,7 @@ export interface IReleaseCandidateRequest {
   readonly tag: string;
   readonly candidateSha: string;
   readonly runtimeVersion: string;
-  readonly requiredRunIds: { readonly ci: number; readonly native: number };
+  readonly requiredRunIds: { readonly ci: number };
   readonly reportArtifacts: {
     readonly parity: IReleaseReportReference;
     readonly provenance: IReleaseReportReference;
@@ -487,14 +486,7 @@ function validateRun(
     errors.push(`${where}.headSha must equal candidateSha.`);
   if (value.status !== "completed") errors.push(`${where}.status must be 'completed'.`);
   if (value.conclusion !== "success") errors.push(`${where}.conclusion must be 'success'.`);
-  // native-platforms.yml never runs on push on its own: ci.yml calls it as a reusable workflow, so
-  // the only standalone run of it is a manual dispatch on main. Demanding `push` for it made every
-  // release candidate unsatisfiable.
-  const events = workflowPath.endsWith("native-platforms.yml")
-    ? ["push", "workflow_dispatch"]
-    : ["push"];
-  if (typeof value.event !== "string" || !events.includes(value.event))
-    errors.push(`${where}.event must be ${events.map((event) => `'${event}'`).join(" or ")}.`);
+  if (value.event !== "push") errors.push(`${where}.event must be 'push'.`);
   if (value.headBranch !== "main") errors.push(`${where}.headBranch must be 'main'.`);
   if (value.workflowPath !== workflowPath)
     errors.push(`${where}.workflowPath must be '${workflowPath}'.`);
@@ -719,14 +711,14 @@ const RELEASE_REPORT_CONTRACTS: Readonly<Record<ReleaseReportType, IReleaseRepor
     artifactPath: "reports/parity.json",
     reportType: "parity",
     subjects: PARITY_REPORT_SUBJECTS,
-    workflowPath: ".github/workflows/native-platforms.yml",
+    workflowPath: REQUIRED_RUN_WORKFLOWS.ci,
   },
   provenance: {
     artifactName: "native-release-provenance",
     artifactPath: "reports/provenance.json",
     reportType: "provenance",
     subjects: expectedGithubSubjects(),
-    workflowPath: ".github/workflows/native-platforms.yml",
+    workflowPath: REQUIRED_RUN_WORKFLOWS.ci,
   },
 };
 
@@ -838,20 +830,12 @@ function validateRequiredEvidence(
 ): void {
   const evidenceRuns = new Map<number, string>();
   if (isRecord(input.requiredRuns)) {
-    checkKeys(input.requiredRuns, ["ci", "native"], "requiredRuns", errors);
+    checkKeys(input.requiredRuns, ["ci"], "requiredRuns", errors);
     const ci = input.requiredRuns.ci;
-    const native = input.requiredRuns.native;
     validateRun(ci, "requiredRuns.ci", candidateSha, REQUIRED_RUN_WORKFLOWS.ci, errors);
-    validateRun(native, "requiredRuns.native", candidateSha, REQUIRED_RUN_WORKFLOWS.native, errors);
     if (isRecord(ci) && typeof ci.databaseId === "number" && typeof ci.workflowPath === "string")
       evidenceRuns.set(ci.databaseId, ci.workflowPath);
-    if (
-      isRecord(native) &&
-      typeof native.databaseId === "number" &&
-      typeof native.workflowPath === "string"
-    )
-      evidenceRuns.set(native.databaseId, native.workflowPath);
-  } else errors.push("requiredRuns must contain ci and native objects.");
+  } else errors.push("requiredRuns must contain a ci object.");
   validateReport(input.parity, "parity", candidateSha, "parity", errors);
   validateReport(input.provenance, "provenance", candidateSha, "provenance", errors);
   validateReportSource(input.parity, "parity", evidenceRuns, errors);
@@ -1079,19 +1063,13 @@ function parseRequestIdentity(
   return { candidateSha, repository, runtimeVersion, tag };
 }
 
-function parseRequestRunIds(
-  value: unknown,
-  errors: string[],
-): { readonly ci: number | undefined; readonly native: number | undefined } {
+function parseRequestRunIds(value: unknown, errors: string[]): { readonly ci: number | undefined } {
   if (!isRecord(value)) {
-    errors.push("request.requiredRunIds must contain ci and native IDs.");
-    return { ci: undefined, native: undefined };
+    errors.push("request.requiredRunIds must contain the ci ID.");
+    return { ci: undefined };
   }
-  checkKeys(value, ["ci", "native"], "request.requiredRunIds", errors);
-  return {
-    ci: positiveId(value.ci, "request.requiredRunIds.ci", errors),
-    native: positiveId(value.native, "request.requiredRunIds.native", errors),
-  };
+  checkKeys(value, ["ci"], "request.requiredRunIds", errors);
+  return { ci: positiveId(value.ci, "request.requiredRunIds.ci", errors) };
 }
 
 function parseRequestArtifacts(
@@ -1136,7 +1114,7 @@ export function parseReleaseCandidateRequest(
     tag: identity.tag as string,
     candidateSha: identity.candidateSha as string,
     runtimeVersion: identity.runtimeVersion as string,
-    requiredRunIds: { ci: requiredRunIds.ci as number, native: requiredRunIds.native as number },
+    requiredRunIds: { ci: requiredRunIds.ci as number },
     reportArtifacts: {
       parity: reportArtifacts.parity as IReleaseReportReference,
       provenance: reportArtifacts.provenance as IReleaseReportReference,
@@ -2086,7 +2064,7 @@ function resolveRunResolver(
 async function resolveRequiredRuns(
   request: IReleaseCandidateRequest,
   runResolver: ReturnType<typeof resolveRunResolver>,
-): Promise<{ readonly ci: IReleaseRun; readonly native: IReleaseRun }> {
+): Promise<{ readonly ci: IReleaseRun }> {
   const ci = assertResolvedRun(
     await runResolver(
       request.repository,
@@ -2099,19 +2077,7 @@ async function resolveRequiredRuns(
     request.candidateSha,
     REQUIRED_RUN_WORKFLOWS.ci,
   );
-  const native = assertResolvedRun(
-    await runResolver(
-      request.repository,
-      request.requiredRunIds.native,
-      request.candidateSha,
-      REQUIRED_RUN_WORKFLOWS.native,
-    ),
-    "requiredRuns.native",
-    request.requiredRunIds.native,
-    request.candidateSha,
-    REQUIRED_RUN_WORKFLOWS.native,
-  );
-  return { ci, native };
+  return { ci };
 }
 
 function resolveReportResolver(

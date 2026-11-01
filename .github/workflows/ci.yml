@@ -921,6 +921,9 @@ jobs:
           pnpm --dir "$target" install
           pnpm --dir "$target" run check
       - name: Run the template's GPU-free scenarios
+        # Owner cut (2026-11-01): the board plays the starter through golden-path and keeps its
+        # pristine check above; its scenarios, 21 engine guards and parity pose run on the nightly.
+        if: matrix.template != 'starter' || github.event_name == 'schedule'
         run: |
           set -euo pipefail
           target="$RUNNER_TEMP/threenative-${{ matrix.template }}"
@@ -930,7 +933,9 @@ jobs:
           extras="$GITHUB_WORKSPACE/packages/create-threenative/template-playtests/${{ matrix.template }}"
           if [ -d "$extras" ]; then cp -r "$extras/." "$target/playtests/"; fi
           # The PRD-748 engine-cost row runs in `template-engine-cost`, beside this leg.
-          scenario_list=$(node "$GITHUB_WORKSPACE/scripts/non-visual-scenarios.mjs" "$target")
+          board=()
+          if [ "${{ github.event_name }}" != schedule ]; then board=(--board "${{ matrix.template }}"); fi
+          scenario_list=$(node "$GITHUB_WORKSPACE/scripts/non-visual-scenarios.mjs" "$target" "${board[@]}")
           mapfile -t scenarios <<< "$scenario_list"
           test "${#scenarios[@]}" -gt 0
           echo "${{ matrix.template }}: ${#scenarios[@]} nonvisual scenarios"
@@ -948,13 +953,14 @@ jobs:
       # 4x4 tile means (scripts/engine-parity.ts). Both arms share this runner's adapter, so a
       # software rasteriser still catches a wrong exposure, colour, fog or a missing object.
       - name: Compare the two engines on one pose
+        if: matrix.template != 'starter' || github.event_name == 'schedule'
         run: >-
           pnpm exec tsx scripts/engine-parity.ts
           --project "$RUNNER_TEMP/threenative-${{ matrix.template }}"
           --template ${{ matrix.template }}
           --out artifacts/engine-parity/${{ matrix.template }}
       - name: Retain the engine parity frames
-        if: always()
+        if: always() && (matrix.template != 'starter' || github.event_name == 'schedule')
         uses: actions/upload-artifact@v4
         with:
           name: engine-parity-${{ matrix.template }}-${{ github.run_id }}-${{ github.run_attempt }}
@@ -970,14 +976,14 @@ jobs:
           pnpm --dir "$target" exec threenative build --target web
           test -s "$target/dist/index.html"
 
-  # PRD-748's engine-cost contract row, every PR, per kit. It draws all 1260 ticks one by one for
-  # its four counter windows, and on hosted SwiftShader that alone took 14m51s (run 41170629638,
-  # adventure): inside a kit's 30-minute `template-nonvisual` leg it cancelled adventure and
-  # collectathon. It runs here in parallel, with the same scenario, bounds and ticks. A kit that
-  # opts out prints its reason and passes; `ci-required` gates this job like any other.
+  # PRD-748's engine-cost contract row, nightly only (owner, 2026-11-01), per kit. It draws all 1260
+  # ticks one by one for its four counter windows, and on hosted SwiftShader that alone took 14m51s
+  # (run 41170629638, adventure): inside a kit's 30-minute `template-nonvisual` leg it cancelled
+  # adventure and collectathon. It runs here in parallel, with the same scenario, bounds and ticks.
+  # A kit that opts out prints its reason and passes; `ci-required` gates the nightly's run.
   template-engine-cost:
     needs: [scope, build-artifacts]
-    if: ${{ (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template') }}
+    if: ${{ github.event_name == 'schedule' && (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template') }}
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.scope.outputs.plan).templateMatrix }}
@@ -1091,6 +1097,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - uses: ./.github/actions/workspace-dist
+        if: github.event_name == 'schedule'
         with:
           # Compiled once by build-artifacts and downloaded rather than rebuilt: this job is
           # ordered behind it above, so the upload always exists and the cache key never misses.
@@ -1098,13 +1105,19 @@ jobs:
           save-bundles: "false"
           pack-archives: "false"
       - run: pnpm tsx scripts/count-loc.ts --check
-      - run: pnpm --filter abyss-vanilla build
-      - run: pnpm --filter abyss-framework build
-      - run: pnpm exec vitest run scripts/__tests__/count-loc.spec.ts scripts/__tests__/score-blind.spec.ts
+      # Owner cut (2026-11-01): a board keeps `count-loc --check`; the rest runs on the nightly.
+      - if: github.event_name == 'schedule'
+        run: pnpm --filter abyss-vanilla build
+      - if: github.event_name == 'schedule'
+        run: pnpm --filter abyss-framework build
+      - if: github.event_name == 'schedule'
+        run: pnpm exec vitest run scripts/__tests__/count-loc.spec.ts scripts/__tests__/score-blind.spec.ts
       - uses: ./.github/actions/playwright-chromium
+        if: github.event_name == 'schedule'
       # `test:browser` is the test-browser job's gate; running it again here bought nothing but
       # a second copy of the slowest step in the workflow.
-      - run: sh scripts/xvfb.sh pnpm exec playwright test --config=benchmark.playwright.config.ts
+      - if: github.event_name == 'schedule'
+        run: sh scripts/xvfb.sh pnpm exec playwright test --config=benchmark.playwright.config.ts
 
   # visuals is NOT a job here any more. It captures frames from a WebGPU canvas, and this runner
   # has no GPU — its first execution in the repository's history failed on

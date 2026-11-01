@@ -13,7 +13,6 @@ const SELECTOR = "scripts/ci-integration-scope.mjs";
 const PACKAGE_LANES = [
   "animation",
   "exposure",
-  "cold-boot",
   "decals",
   "fog",
   "fluid-particles",
@@ -64,7 +63,7 @@ function dependencyLanes(file, current) {
   if (/^packages\/core\/src\//u.test(file)) {
     const module = /^packages\/core\/src\/([^/]+)\.ts$/u.exec(file)?.[1];
     return INDEPENDENT_CORE_MODULES.includes(module)
-      ? ["exposure", "cold-boot", ...(file.includes("/world-") ? ["world-capture"] : [])]
+      ? ["exposure", ...(file.includes("/world-") ? ["world-capture"] : [])]
       : ["fluid-particles", "fluid-native"];
   }
   if (PACKAGE_CONTRACT.test(file)) {
@@ -273,7 +272,9 @@ export function integrationSelection({ files, before, after }) {
       if (
         dependency === PACKAGE_LANES &&
         [...current.filters.keys()].some(
-          (lane) => !PACKAGE_LANES.includes(lane) && !["csg", "ik", "vegetation"].includes(lane),
+          (lane) =>
+            !PACKAGE_LANES.includes(lane) &&
+            !["csg", "ik", "vegetation", "cold-boot"].includes(lane),
         )
       )
         return all("unclassified additive producer consumer");
@@ -375,6 +376,13 @@ export function integrationCandidatePreflight({
   const selection = plan.qualification
     ? integrationSelection({ files: [SELECTOR], before: "", after })
     : integrationGitSelection(baseSha, candidate);
+  // Owner cut (2026-11-01): cold boot runs when exposure code changes and nightly. A push states no
+  // base, so its own diff is against its first parent: the squash on develop, the promotion on main.
+  if (plan.qualification && eventName === "push" && selection.lanes["cold-boot"])
+    selection.lanes["cold-boot"] = integrationGitSelection(
+      git("rev-parse", `${candidate}^1`).trim(),
+      candidate,
+    ).lanes["cold-boot"];
   return {
     candidateSha: candidate,
     lanes: selection.lanes,

@@ -48,7 +48,6 @@ function world(over: Partial<Record<string, unknown>> = {}) {
     candidate: [] as IFakeRun[],
     ci: [run(1, "push")] as IFakeRun[],
     main: SHA,
-    native: [run(2, "workflow_dispatch")] as IFakeRun[],
     npm: [] as string[],
     release: null as null | { isDraft: boolean; isPrerelease: boolean },
     tagCommit: undefined as string | undefined,
@@ -64,7 +63,6 @@ function world(over: Partial<Record<string, unknown>> = {}) {
         const workflow = args[args.indexOf("--workflow") + 1];
         const table: Record<string, IFakeRun[]> = {
           "ci.yml": state.ci,
-          "native-platforms.yml": state.native,
           "release-candidate.yml": state.candidate,
           "native-release.yml": state.tagRuns,
         };
@@ -106,7 +104,7 @@ function world(over: Partial<Record<string, unknown>> = {}) {
 }
 
 describe("pnpm release:ship --dry-run", () => {
-  it("finds both run ids, builds a request the gate accepts and dispatches nothing", async () => {
+  it("finds the CI run id, builds a request the gate accepts and dispatches nothing", async () => {
     const first = world();
     const acted = await ship(first.deps, { dryRun: true, sha: SHA });
     expect(acted).toEqual([]);
@@ -117,11 +115,11 @@ describe("pnpm release:ship --dry-run", () => {
     expect(request).toMatchObject({
       candidateSha: SHA,
       repository: REPOSITORY,
-      requiredRunIds: { ci: 1, native: 2 },
+      requiredRunIds: { ci: 1 },
       runtimeVersion: VERSION,
       tag: TAG,
     });
-    expect(request.reportArtifacts.parity).toEqual(expectedReleaseReportReference("parity", 2));
+    expect(request.reportArtifacts.parity).toEqual(expectedReleaseReportReference("parity", 1));
     expect(first.logs).toContain(`next: dispatch release-candidate.yml for ${SHA}.`);
 
     const second = world();
@@ -132,9 +130,7 @@ describe("pnpm release:ship --dry-run", () => {
   it("reports the run that blocks the plan, and a real run refuses to start", async () => {
     const queued = world({ ci: [run(1, "push", { conclusion: "", status: "queued" })] });
     await ship(queued.deps, { dryRun: true, sha: SHA });
-    expect(queued.logs).toContain(
-      "next: blocked: CI is not green (run 1 is queued); native-platforms is green (run 2).",
-    );
+    expect(queued.logs).toContain("next: blocked: CI is not green (run 1 is queued).");
     await expect(ship(queued.deps, { dryRun: false, sha: SHA })).rejects.toThrow(
       /TN_SHIP_EVIDENCE/u,
     );
@@ -145,7 +141,7 @@ describe("pnpm release:ship --dry-run", () => {
     await expect(ship(world().deps, { dryRun: false, sha: OTHER })).rejects.toThrow(
       /TN_SHIP_CHECKOUT/u,
     );
-    const { deps, logs } = world({ ci: [run(1, "push", { headSha: OTHER })], native: [] });
+    const { deps, logs } = world({ ci: [run(1, "push", { headSha: OTHER })] });
     await ship(deps, { dryRun: true, sha: OTHER });
     expect(logs[0]).toMatch(/^note: TN_SHIP_CHECKOUT/u);
   });
@@ -258,7 +254,6 @@ function stateOf(
     },
     ci: 1,
     mainHead: SHA,
-    native: 2,
     npmPublished: false,
     release: "none",
     tag: {},
