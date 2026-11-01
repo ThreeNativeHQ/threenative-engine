@@ -8,6 +8,7 @@ import {
   selectionPlan,
   validateEventPlan,
   validatePlan,
+  withCarriedLegs,
 } from "../ci-change-scope.mjs";
 import { integrationJobNamesByLane, integrationSelection } from "../ci-integration-scope.mjs";
 import {
@@ -478,6 +479,33 @@ describe("the walk over recent runs", () => {
         runJobs: () => ({ error: "502" }),
       }),
     ).toEqual([expect.stringContaining("could not be read")]);
+  });
+});
+
+describe("which runs may carry at all", () => {
+  const previous = process.env.GITHUB_ACTIONS;
+  beforeEach(() => {
+    process.env.GITHUB_ACTIONS = "true";
+  });
+  afterEach(() => {
+    process.env.GITHUB_ACTIONS = previous;
+  });
+
+  it.each([
+    ["a scheduled audit", { eventName: "schedule", root: "." }],
+    ["a cold or forced full run", { eventName: "workflow_dispatch", full: true, root: "." }],
+    ["a forced full push", { eventName: "push", full: true, root: "." }],
+    ["a run that asked for no reuse", { eventName: "push", noReuse: true, root: "." }],
+  ])("%s keeps every leg", async (_name, options) => {
+    const plan = fullPlan();
+    expect(await withCarriedLegs(plan, options)).toBe(plan);
+  });
+
+  it("a developer machine keeps every leg", async () => {
+    process.env.GITHUB_ACTIONS = "";
+    const plan = fullPlan();
+    for (const eventName of ["push", "workflow_dispatch"])
+      expect(await withCarriedLegs(plan, { eventName, root: "." })).toBe(plan);
   });
 });
 

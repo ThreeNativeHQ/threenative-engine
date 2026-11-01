@@ -1410,7 +1410,14 @@ export async function carryDeps(root, plan) {
 
 /** PRD-776: a full board drops each leg that already passed on the same inputs. */
 export async function withCarriedLegs(plan, options) {
-  if (plan.selection !== "full" || options.noReuse || !reuseEligible(options)) return plan;
+  // A manual run is no whole-tree reuse source, but its own legs still need not repeat. `--full` is
+  // how a person asks for fresh work, and the scheduled audit exists to find drift.
+  const manual =
+    options.eventName === "workflow_dispatch" &&
+    process.env.GITHUB_ACTIONS === "true" &&
+    !options.full;
+  if (plan.selection !== "full" || options.noReuse || !(manual || reuseEligible(options)))
+    return plan;
   if (options.eventName === "schedule") return plan;
   try {
     const deps = await carryDeps(options.root, plan);

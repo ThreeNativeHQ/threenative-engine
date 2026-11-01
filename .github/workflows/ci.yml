@@ -16,7 +16,14 @@ on:
       - develop
     # Drafts run nothing; marking one ready for review starts the board.
     types: [opened, synchronize, reopened, ready_for_review]
-  workflow_dispatch: {} # Explicit full audit; never a selectable exemption.
+  # A manual full run carries each job that already passed on the same inputs (PRD-776), which is
+  # how these runs stopped costing a quarter of all CI minutes. `cold` asks for fresh work everywhere.
+  workflow_dispatch:
+    inputs:
+      cold:
+        description: Run every job fresh, with nothing carried
+        type: boolean
+        default: false
   # PRD-481: the merge queue. GitHub tests the exact result a merge would produce, so two PRs
   # merged back to back can no longer put a tree on develop that nothing tested. Qualification
   # always runs fresh exhaustive coverage; unproven matrix verdict reuse remains disabled, with one
@@ -66,8 +73,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          # Manual full qualification does not consult history; automatic scope selection does.
-          fetch-depth: ${{ github.event_name == 'workflow_dispatch' && 1 || 0 }}
+          # Per-job reuse reads history on every event, a manual run included.
+          fetch-depth: 0
           # Scope reads commits and trees, never old file contents, so it fetches no blobs: every
           # branch of the 3.9 GB repository took over this job's 5 minutes on a loaded tn-local
           # runner (three cancels on PR #574), against 8 s and 20 MB blob-less with the same plan.
@@ -83,6 +90,7 @@ jobs:
           # the cache-warm lane on develop and keeps a push to main full.
           TN_CI_TARGET: ${{ github.base_ref || github.event.merge_group.base_ref || (github.event_name == 'push' && github.ref_name) || '' }}
           TN_CI_FORCE_FULL: ${{ vars.TN_CI_FORCE_FULL }}
+          TN_CI_COLD: ${{ inputs.cold }}
           TN_CI_QUEUE_REF: ${{ github.event.merge_group.head_ref }}
           TN_CI_BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
           TN_CI_HEAD: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
@@ -90,7 +98,7 @@ jobs:
         run: |
           set -euo pipefail
           extra=()
-          if [ "$TN_CI_FORCE_FULL" = true ]; then extra+=(--full); fi
+          if [ "$TN_CI_FORCE_FULL" = true ] || [ "$TN_CI_COLD" = true ]; then extra+=(--full); fi
           if [ -n "$TN_CI_QUEUE_REF" ]; then extra+=(--queue-ref "$TN_CI_QUEUE_REF"); fi
           node scripts/ci-change-scope.mjs "${extra[@]}" \
             --target "$TN_CI_TARGET" \
