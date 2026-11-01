@@ -19,8 +19,8 @@ import {
   sentenceOf,
   staleReason,
   valueColor,
-  webOf,
   verdictBanner,
+  webOf,
   withNav,
 } from "../perf-live.js";
 
