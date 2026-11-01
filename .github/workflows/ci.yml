@@ -999,6 +999,11 @@ jobs:
             pnpm-lock.yaml
             packages/create-threenative/templates/*/package.json
       - run: pnpm install --frozen-lockfile
+      # Before the row: its writer imports create-threenative, which needs this artifact's packages/*/dist.
+      - name: Take the packed workspace from build
+        uses: actions/download-artifact@v4
+        with:
+          name: workspace-packages
       - name: Write the kit's engine-cost row
         id: row
         run: |
@@ -1006,11 +1011,6 @@ jobs:
           mkdir -p "$RUNNER_TEMP/engine-cost-row"
           pnpm exec tsx scripts/kit-contract-row.ts engine-cost "${{ matrix.template }}" "$RUNNER_TEMP/engine-cost-row"
           if [ -f "$RUNNER_TEMP/engine-cost-row/contract-engine-cost.playtest.json" ]; then echo "applies=true" >> "$GITHUB_OUTPUT"; fi
-      - name: Take the packed workspace from build
-        if: steps.row.outputs.applies == 'true'
-        uses: actions/download-artifact@v4
-        with:
-          name: workspace-packages
       - name: Scaffold the template from local tarballs
         if: steps.row.outputs.applies == 'true'
         uses: ./.github/actions/scaffold-from-tarballs
