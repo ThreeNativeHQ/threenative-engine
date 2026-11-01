@@ -22679,3 +22679,48 @@ index 76303e765bc29853cfd7f139dd3ec76545b70798..7e77f7559b7e988777d22585c64f37f7
  				skeletonData.previousBoneMatrices.set( scheduledPrevious ?? skeleton.boneMatrices );
  
  			}
+diff --git a/build/three.webgpu.js b/build/three.webgpu.js
+index 754d9674a2398367cacecbfaaaca526db6edcf41..1d93cf3172dedd2317007a44cd39dc1da932e96d 100644
+--- a/build/three.webgpu.js
++++ b/build/three.webgpu.js
+@@ -26456,8 +26456,8 @@ class PMREMGenerator {
+ 		try {
+ 
+ 			this._init( cubeUVRenderTarget );
+-			// One fence covers as much queued work as the heaviest single face (the first GGX filter pass).
+-			this._fenceBudget = this._sizeLods[ 1 ] * this._sizeLods[ 1 ] * GGX_SAMPLES;
++			// One fence covers the heaviest single face (the first GGX filter pass), never less than a 256 cube's: a fence waits behind every queued frame.
++			this._fenceBudget = Math.max( 128 * 128, this._sizeLods[ 1 ] * this._sizeLods[ 1 ] ) * GGX_SAMPLES;
+ 			this._fencePending = 0;
+ 			await this._textureToCubeUVAsync( texture, cubeUVRenderTarget );
+ 			await this._applyPMREMAsync( cubeUVRenderTarget );
+diff --git a/build/three.webgpu.nodes.js b/build/three.webgpu.nodes.js
+index 46b9864470ab0489d095513c7ab6493e25ae5c17..aef965e3a94bfca6d3f04ebc2147bf03bdeff7c8 100644
+--- a/build/three.webgpu.nodes.js
++++ b/build/three.webgpu.nodes.js
+@@ -26438,8 +26438,8 @@ class PMREMGenerator {
+ 		try {
+ 
+ 			this._init( cubeUVRenderTarget );
+-			// One fence covers as much queued work as the heaviest single face (the first GGX filter pass).
+-			this._fenceBudget = this._sizeLods[ 1 ] * this._sizeLods[ 1 ] * GGX_SAMPLES;
++			// One fence covers the heaviest single face (the first GGX filter pass), never less than a 256 cube's: a fence waits behind every queued frame.
++			this._fenceBudget = Math.max( 128 * 128, this._sizeLods[ 1 ] * this._sizeLods[ 1 ] ) * GGX_SAMPLES;
+ 			this._fencePending = 0;
+ 			await this._textureToCubeUVAsync( texture, cubeUVRenderTarget );
+ 			await this._applyPMREMAsync( cubeUVRenderTarget );
+diff --git a/src/renderers/common/extras/PMREMGenerator.js b/src/renderers/common/extras/PMREMGenerator.js
+index ace19db76fab3f08ed4d581d1e272066a24c34aa..15a57eaa1364af2efe5596a7c78ab7c487216f66 100644
+--- a/src/renderers/common/extras/PMREMGenerator.js
++++ b/src/renderers/common/extras/PMREMGenerator.js
+@@ -419,8 +419,8 @@ class PMREMGenerator {
+ 		try {
+ 
+ 			this._init( cubeUVRenderTarget );
+-			// One fence covers as much queued work as the heaviest single face (the first GGX filter pass).
+-			this._fenceBudget = this._sizeLods[ 1 ] * this._sizeLods[ 1 ] * GGX_SAMPLES;
++			// One fence covers the heaviest single face (the first GGX filter pass), never less than a 256 cube's: a fence waits behind every queued frame.
++			this._fenceBudget = Math.max( 128 * 128, this._sizeLods[ 1 ] * this._sizeLods[ 1 ] ) * GGX_SAMPLES;
+ 			this._fencePending = 0;
+ 			await this._textureToCubeUVAsync( texture, cubeUVRenderTarget );
+ 			await this._applyPMREMAsync( cubeUVRenderTarget );
