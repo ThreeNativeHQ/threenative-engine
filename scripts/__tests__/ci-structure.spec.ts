@@ -3348,6 +3348,11 @@ describe("CI pipeline structure", () => {
     expect(job).toContain("--browser-recipe webgpu --headed");
     expect(job).toContain("timeout-minutes: 30");
     expect(requiredJob(ci, "ci-required")).toMatch(/needs: \[[^\]]*\btemplate-engine-cost\b/u);
+    // The row writer imports create-threenative, which needs the built `packages/*/dist` that only
+    // the workspace-packages artifact carries (run 41260320405: every leg failed at the row step).
+    const download = job.indexOf("name: workspace-packages");
+    expect(download).toBeGreaterThan(-1);
+    expect(download).toBeLessThan(job.indexOf("scripts/kit-contract-row.ts"));
   });
 
   it("a stalled apt mirror fails the Chromium dependency install and retries it", async () => {
