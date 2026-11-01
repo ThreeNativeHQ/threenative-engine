@@ -150,4 +150,78 @@ describe("CastPool", () => {
     const pool = new CastPool();
     expect(() => pool.cast(projectile(), new Vector3(0, Number.NaN, 0))).toThrow(TypeError);
   });
+
+  it("lands only on a spell's own word, and only while it is in the air", () => {
+    const pool = new CastPool();
+    let updates = 0;
+    // A spell that always answers "land me" must not land during charge or linger: doing so would
+    // re-fire its impact callback every frame and it would never reach the aftermath.
+    const cast = pool.cast(
+      projectile({
+        timing: { charge: 0.5, impact: 0.1, linger: 0.1, travel: 5 },
+        update: () => {
+          updates += 1;
+        },
+        travel: () => false,
+      }),
+      new Vector3(0, 0, 10),
+      { from: new Vector3() },
+    );
+    pool.update(0.5);
+    expect(updates).toBe(1);
+    // `travel` said no, so the ball is still flying.
+    expect(cast.phase).toBe("travel");
+  });
+
+  it("still integrates a spell that only wants a per-frame callback", () => {
+    const pool = new CastPool();
+    let updates = 0;
+    const cast = pool.cast(
+      projectile({
+        timing: { charge: 0, impact: 1, linger: 1, travel: 4 },
+        update: () => {
+          updates += 1;
+        },
+      }),
+      new Vector3(0, 0, 10),
+      { from: new Vector3() },
+    );
+    pool.update(0);
+    expect(cast.phase).toBe("travel");
+    pool.update(0.5);
+    // `update` alone never disables the pool's own straight-line integration.
+    expect(cast.pos.z).toBeCloseTo(5, 5);
+    expect(updates).toBe(2);
+  });
+
+  it("starts a cast with no origin at the world's focus, not at the slot's last start", () => {
+    const focus = new Vector3(1, 2, 3);
+    const pool = new CastPool({ focus });
+    const first = pool.cast(projectile(), new Vector3(0, 0, 5));
+    expect(first.from.toArray()).toEqual([1, 2, 3]);
+    // The slot kept its vector but the next cast starts where the caster is now.
+    focus.set(4, 5, 6);
+    pool.update(0.1);
+    const second = pool.cast(projectile(), new Vector3(0, 0, 5));
+    expect(second.from.toArray()).toEqual([4, 5, 6]);
+  });
+
+  it("does not recycle a beam the player is still holding while another slot is free", () => {
+    const pool = new CastPool({ castSlots: 2 });
+    const beam = pool.cast(
+      projectile({ shape: "beam", timing: { charge: 0, travel: 100 } }),
+      new Vector3(0, 0, 5),
+      { from: new Vector3(), held: true },
+    );
+    pool.update(0);
+    pool.update(1);
+    const shot = pool.cast(projectile(), new Vector3(0, 0, 5), { from: new Vector3() });
+    expect(shot).not.toBe(beam);
+    expect(beam.phase).toBe("travel");
+    // With every slot taken the pool recycles the shot, not the beam that is still in the air.
+    pool.update(0.1);
+    const third = pool.cast(projectile(), new Vector3(0, 0, 5), { from: new Vector3() });
+    expect(third).toBe(shot);
+    expect(beam.phase).toBe("travel");
+  });
 });

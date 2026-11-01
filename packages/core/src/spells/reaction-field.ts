@@ -41,7 +41,7 @@ export interface IReactionSplat {
   readonly radius: number;
   /** `radial` fades from the centre; `ring` leaves a rim; `streak` is stretched along `angle`. */
   readonly pattern?: ReactionPattern;
-  /** Metres across, for a `streak` or a `line` splat. */
+  /** Radians. Turns the `streak` axis, and is ignored by every other pattern. */
   readonly angle?: number;
   /** Pattern seed, so two impacts of the same spell are not the same mark. */
   readonly seed?: number;
@@ -240,8 +240,9 @@ export class ReactionField {
       for (const channel of REACTION_CHANNELS) (this.#channels[channel] as Float32Array).fill(0);
       this.#empty = true;
     } else {
+      const scratch = new Float32Array(this.resolution * this.resolution);
       for (const channel of REACTION_CHANNELS)
-        shift(this.#channels[channel], this.resolution, di, dj);
+        shift(this.#channels[channel], this.resolution, di, dj, scratch);
     }
     this.#markDirty(0, 0, this.resolution - 1, this.resolution - 1);
   }
@@ -289,7 +290,8 @@ export class ReactionField {
     const ix = ((splat.x - this.centerX) / this.size + 0.5) * n - 0.5;
     const iz = ((splat.z - this.centerZ) / this.size + 0.5) * n - 0.5;
     const cells = Math.max(0.75, radius / this.dx);
-    const reach = 2.2 * cells;
+    // A streak stretches 2.4x along its axis, so its reach has to cover that or the mark is cut off.
+    const reach = 2.2 * cells * (splat.pattern === "streak" ? 2.4 : 1);
     return {
       cells,
       hiX: Math.min(n - 1, Math.ceil(ix + reach)),
@@ -306,17 +308,10 @@ export class ReactionField {
     const data = this.#channels[channel];
     // exp2(-dt / halfLife): the fraction still left after this step.
     const keep = 2 ** (-dt / (this.#halfLife[channel] as number));
-    let touched = false;
-    let live = false;
-    for (let index = 0; index < data.length; index++) {
-      const value = data[index] as number;
-      if (value === 0) continue;
-      const next = value * keep;
-      data[index] = next < 1e-4 ? 0 : next;
-      touched = true;
-      if (data[index] !== 0) live = true;
-    }
-    if (touched) this.#markDirty(0, 0, this.resolution - 1, this.resolution - 1);
+    const extent = { hiX: -1, hiZ: -1, loX: this.resolution, loZ: this.resolution };
+    const live = decayCells(data, keep, this.resolution, extent);
+    // Only the cells that were lit changed, so an upload stays a strip and not the whole patch.
+    if (extent.hiX >= 0) this.#markDirty(extent.loX, extent.loZ, extent.hiX, extent.hiZ);
     return live;
   }
 
@@ -333,12 +328,44 @@ export class ReactionField {
   }
 }
 
+/** Decay one channel's cells in place, recording the lit rectangle and whether anything survives. */
+function decayCells(
+  data: Float32Array,
+  keep: number,
+  n: number,
+  extent: { loX: number; loZ: number; hiX: number; hiZ: number },
+): boolean {
+  let live = false;
+  for (let index = 0; index < data.length; index++) {
+    const value = data[index] as number;
+    if (value === 0) continue;
+    const next = value * keep;
+    data[index] = next < 1e-4 ? 0 : next;
+    const i = index % n;
+    const j = (index - i) / n;
+    if (i < extent.loX) extent.loX = i;
+    if (i > extent.hiX) extent.hiX = i;
+    if (j < extent.loZ) extent.loZ = j;
+    if (j > extent.hiZ) extent.hiZ = j;
+    if (data[index] !== 0) live = true;
+  }
+  return live;
+}
+
 /** Reject a splat that is not a real mark, before any of it is applied. */
 function validateSplat(splat: IReactionSplat): number {
   const radius = finite(splat.radius, "splat.radius");
   if (!(radius > 0)) throw new RangeError("splat.radius must be positive");
   if (!Number.isFinite(splat.x)) throw new TypeError("splat.x must be finite");
   if (!Number.isFinite(splat.z)) throw new TypeError("splat.z must be finite");
+  if (splat.angle !== undefined && !Number.isFinite(splat.angle))
+    throw new TypeError("splat.angle must be finite");
+  // A NaN amount would saturate nothing and never decay, leaving the patch permanently dirty.
+  for (const channel of REACTION_CHANNELS) {
+    const amount = splat[channel];
+    if (amount !== undefined && !Number.isFinite(amount))
+      throw new TypeError(`splat.${channel} must be finite`);
+  }
   return radius;
 }
 
@@ -374,8 +401,8 @@ function cellShape(
   return pattern === "ring" ? Math.exp(-((Math.sqrt(q) - 0.8) ** 2) * 6) : Math.exp(-q);
 }
 
-function shift(data: Float32Array, n: number, di: number, dj: number): void {
-  const scratch = new Float32Array(data.length);
+function shift(data: Float32Array, n: number, di: number, dj: number, scratch: Float32Array): void {
+  scratch.fill(0);
   const i0 = Math.max(0, -di);
   const i1 = Math.min(n, n - di);
   const j0 = Math.max(0, -dj);

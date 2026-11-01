@@ -100,4 +100,15 @@ describe("SpellWorld", () => {
     expect(world.focus).toBeInstanceOf(Vector3);
     expect(world.focus.toArray()).toEqual([1, 2, 3]);
   });
+
+  it("never hides a pooled light: a hidden light is a different light count", () => {
+    const scene = new Scene();
+    const world = new SpellWorld({ lightCount: 2, scene });
+    const color = world.lights.lights[0]?.color;
+    world.lights.flash({ color, intensity: 10, range: 8, seconds: 0.2, x: 0, y: 0, z: 0 } as never);
+    world.update(0.5);
+    // Three.js drops an invisible object before it collects lights, which would recompile.
+    for (const light of world.lights.lights) expect(light.visible).toBe(true);
+    expect(world.lights.lights[0]?.intensity).toBe(0);
+  });
 });

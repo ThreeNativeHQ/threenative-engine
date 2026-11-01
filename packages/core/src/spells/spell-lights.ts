@@ -71,7 +71,8 @@ export class SpellLights {
       light.name = `spell-light-${index}`;
       light.intensity = 0;
       light.castShadow = options.shadows ?? false;
-      light.visible = false;
+      // Never toggle `visible`: Three.js drops an invisible object before it collects lights, so the
+      // frame would see a different light count and recompile. A dark light is intensity 0.
       options.parent.add(light);
       return light;
     });
@@ -87,49 +88,49 @@ export class SpellLights {
   flash(request: ISpellLightFlash): PointLight | undefined {
     const seconds = finite(request.seconds, "flash.seconds");
     if (seconds <= 0) throw new RangeError("flash.seconds must be positive");
+    // Validate before a slot is claimed: a throw must not leave a light marked busy.
+    const intensity = finite(request.intensity, "flash.intensity");
+    const range = finite(request.range, "flash.range");
+    const x = finite(request.x, "flash.x");
+    const y = finite(request.y, "flash.y");
+    const z = finite(request.z, "flash.z");
     const index = this.#slots.findIndex((slot) => slot.remaining <= 0);
     if (index < 0) return undefined;
     const light = this.lights[index] as PointLight;
     const slot = this.#slots[index] as ISlotState;
-    const intensity = finite(request.intensity, "flash.intensity");
     slot.peak = Math.max(0, intensity);
     slot.duration = seconds;
     slot.remaining = seconds;
-    light.position.set(
-      finite(request.x, "flash.x"),
-      finite(request.y, "flash.y"),
-      finite(request.z, "flash.z"),
-    );
+    light.position.set(x, y, z);
     light.color.copy(request.color);
-    light.distance = Math.max(0, finite(request.range, "flash.range"));
+    light.distance = Math.max(0, range);
     light.intensity = slot.peak;
-    light.visible = slot.peak > 0;
     return light;
   }
 
   /** Put every light out now, without waiting for its decay. */
   clear(): void {
-    for (const [index, slot] of this.#slots.entries()) {
+    for (let index = 0; index < this.#slots.length; index++) {
+      const slot = this.#slots[index] as ISlotState;
       slot.remaining = 0;
       slot.peak = 0;
-      const light = this.lights[index] as PointLight;
-      light.intensity = 0;
-      light.visible = false;
+      (this.lights[index] as PointLight).intensity = 0;
     }
   }
 
   update(dt: number): void {
     if (!Number.isFinite(dt) || dt < 0)
       throw new RangeError("SpellLights.update delta must be finite and non-negative");
-    for (const [index, slot] of this.#slots.entries()) {
+    // Indexed loops: this runs every frame and allocating an entry iterator per light is waste.
+    for (let index = 0; index < this.#slots.length; index++) {
+      const slot = this.#slots[index] as ISlotState;
       if (slot.remaining <= 0) continue;
-      slot.remaining -= dt;
       const light = this.lights[index] as PointLight;
+      slot.remaining -= dt;
       if (slot.remaining <= 0) {
         slot.remaining = 0;
         slot.peak = 0;
         light.intensity = 0;
-        light.visible = false;
         continue;
       }
       light.intensity = slot.peak * (slot.remaining / slot.duration);

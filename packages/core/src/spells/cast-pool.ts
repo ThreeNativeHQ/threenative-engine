@@ -4,9 +4,9 @@
  * and the spell only answers "what does this phase look like".
  *
  * This is the upstream Ultra Elements `cast.js` phase machine, with the arena removed: a cast
- * never asks where the floor is. It integrates a projectile ballistically, hands the spell every
- * frame to steer, and retires each record back into a fixed pool. Nothing is allocated per cast,
- * so a game that casts on every frame at 60 Hz allocates nothing at all.
+ * never asks where the floor is. It integrates a projectile in a straight line, hands the spell
+ * every frame to steer, and retires each record back into a fixed pool. Nothing is allocated per
+ * cast, so a game that casts on every frame at 60 Hz allocates nothing at all.
  */
 
 import { Vector3 } from "three";
@@ -60,6 +60,8 @@ export interface ICast {
   held: boolean;
   /** Metres travelled. A spell may read it, the pool only accumulates it. */
   travelled: number;
+  /** Impact radius in metres, validated once when the cast started. */
+  radius: number;
   readonly durations: {
     charge: number;
     impact: number;
@@ -88,10 +90,13 @@ export interface ISpell {
   /** Called on each beat change, including `done`. */
   readonly phase?: (cast: ICast, phase: CastPhase) => void;
   /**
-   * Called once per frame while the cast is alive. Returns true when the spell wants to land now,
-   * which lets a homing spell or a beam decide the moment instead of the pool.
+   * Owns the travel step for a spell that steers or arcs. The pool then skips its own straight-line
+   * integration and floor test for this cast; return true to land it. A spell with no `travel` hook
+   * is integrated by the pool and cannot miss.
    */
-  readonly update?: (cast: ICast, dt: number) => boolean | undefined;
+  readonly travel?: (cast: ICast, dt: number) => boolean | undefined;
+  /** Called once per frame while the cast is alive, in every phase. */
+  readonly update?: (cast: ICast, dt: number) => void;
 }
 
 export interface ICastOptions {
@@ -111,6 +116,11 @@ export interface ICastEnvironment {
   readonly groundAt?: (x: number, z: number) => number;
   /** Records in the pool. Defaults to 16. */
   readonly castSlots?: number;
+  /**
+   * Where a cast with no `from` starts: the caster's hand. `SpellWorld` supplies its own `focus`,
+   * so a game that moves that point gets it here with no extra wiring.
+   */
+  readonly focus?: Vector3;
 }
 
 const finite = (value: number, label: string): number => {
@@ -145,12 +155,15 @@ function emptyRecord(index: number): ICast {
     spell: IDLE_SPELL,
     t: 0,
     to: new Vector3(),
+    radius: 0.3,
     travelled: 0,
     vel: new Vector3(),
   };
 }
 
 const scratch = new Vector3();
+/** Where a cast starts when neither the call nor the world named a point. */
+const ORIGIN = new Vector3();
 
 /**
  * Drive spell timelines from a fixed pool of records.
@@ -163,6 +176,7 @@ export class CastPool {
   /** Every slot, alive or not. Read `phase !== "done"` for the live ones. */
   readonly casts: readonly ICast[];
   readonly #groundAt: ((x: number, z: number) => number) | undefined;
+  readonly #focus: Vector3 | undefined;
   /** The newest live cast, or undefined. */
   #last: ICast | undefined;
   #seed = 0;
@@ -172,6 +186,7 @@ export class CastPool {
     if (!Number.isInteger(capacity) || capacity < 1 || capacity > 256)
       throw new RangeError("CastPool capacity must be an integer in 1..256");
     this.#groundAt = world.groundAt;
+    this.#focus = world.focus;
     this.casts = Array.from({ length: capacity }, (_, index) => emptyRecord(index));
   }
 
@@ -188,17 +203,44 @@ export class CastPool {
 
   /** Start a spell. Returns the record, which the caller may read but the pool advances. */
   cast(spell: ISpell, to: Vector3, options: ICastOptions = {}): ICast {
+    const record = this.#reserve();
+    // A cast with no origin starts at the caster's hand, never at whatever the slot last held.
+    const from = options.from ?? this.#focus ?? ORIGIN;
+    this.#validate(spell, to, from);
+    this.#arm(record, spell, to, from, options);
+    this.#enter(record, "charge");
+    this.#last = record;
+    return record;
+  }
+
+  /** The record this cast will use: a free slot, else the stale one, never a held beam if avoidable. */
+  #reserve(): ICast {
+    const free = this.casts.find((candidate) => candidate.phase === "done");
+    if (free !== undefined) return free;
+    // The cast alive longest is the one the player stopped watching, but a held beam is still under
+    // their finger, so it is only recycled when nothing else is left.
+    const unheld = this.casts.filter((candidate) => !candidate.held);
+    const pool = unheld.length > 0 ? unheld : this.casts;
+    const oldest = pool.reduce((a, b) => (b.age > a.age ? b : a));
+    this.#enter(oldest, "done");
+    return oldest;
+  }
+
+  /** Reject a cast the pool cannot honour, before any record is touched. */
+  #validate(spell: ISpell, to: Vector3, from: Vector3): void {
     finite(to.x, "to.x");
     finite(to.y, "to.y");
     finite(to.z, "to.z");
-    let record = this.casts.find((candidate) => candidate.phase === "done");
-    if (record === undefined) {
-      record = this.casts.reduce((oldest, candidate) =>
-        candidate.age > oldest.age ? candidate : oldest,
-      );
-      this.#enter(record, "done");
-    }
-    const from = options.from ?? record.from;
+    finite(from.x, "from.x");
+    finite(from.y, "from.y");
+    finite(from.z, "from.z");
+    const radius = spell.radius ?? 0.3;
+    if (!Number.isFinite(radius) || radius < 0)
+      throw new RangeError(`${spell.name}.radius must be finite and non-negative`);
+  }
+
+  /** Fill a reserved record for a new cast. */
+  #arm(record: ICast, spell: ISpell, to: Vector3, from: Vector3, options: ICastOptions): void {
     const durations = record.durations;
     const timing = spell.timing ?? {};
     durations.charge = finite(timing.charge ?? 0.5, "timing.charge");
@@ -207,6 +249,7 @@ export class CastPool {
     durations.linger = finite(timing.linger ?? 2, "timing.linger");
     record.spell = spell;
     record.shape = options.shape ?? spell.shape ?? "projectile";
+    record.radius = spell.radius ?? 0.3;
     record.held = options.held ?? false;
     record.t = 0;
     record.age = 0;
@@ -219,9 +262,6 @@ export class CastPool {
     if (record.dir.lengthSq() > 0) record.dir.normalize();
     else record.dir.set(0, 0, 1);
     record.vel.set(0, 0, 0);
-    this.#enter(record, "charge");
-    this.#last = record;
-    return record;
   }
 
   /** End every held beam. A game calls this when the button comes up. */
@@ -245,22 +285,26 @@ export class CastPool {
       if (cast.phase === "done") continue;
       cast.t += dt;
       cast.age += dt;
-      if (!this.#advanceBeat(cast, dt)) continue;
-      if (cast.spell.update?.(cast, dt) === true) this.#enter(cast, "impact");
+      const state = this.#advanceBeat(cast, dt);
+      if (state === "retired") continue;
+      cast.spell.update?.(cast, dt);
+      // A spell can only ask to land while it is in the air. Honouring the request in charge or
+      // linger would land it every frame and its impact callback would never stop firing.
+      if (state === "landed") this.#enter(cast, "impact");
     }
   }
 
-  /** Advance one record's beat. False when the cast retired, so no spell update runs on it. */
-  #advanceBeat(cast: ICast, dt: number): boolean {
+  /** Advance one record's beat: still running, landed on the spell's own word, or retired. */
+  #advanceBeat(cast: ICast, dt: number): "running" | "landed" | "retired" {
     if (cast.phase === "charge") this.#advanceCharge(cast);
-    else if (cast.phase === "travel") this.#advanceTravel(cast, dt);
+    else if (cast.phase === "travel") return this.#advanceTravel(cast, dt) ? "landed" : "running";
     else if (cast.phase === "impact") {
       if (cast.t >= cast.durations.impact) this.#enter(cast, "linger");
     } else if (cast.t >= cast.durations.linger) {
       this.#enter(cast, "done");
-      return false;
+      return "retired";
     }
-    return cast.phase !== "done";
+    return "running";
   }
 
   #advanceCharge(cast: ICast): void {
@@ -277,33 +321,35 @@ export class CastPool {
     }
   }
 
-  #advanceTravel(cast: ICast, dt: number): void {
+  /** True only when the spell's own travel hook says it landed; the pool lands its own shots. */
+  #advanceTravel(cast: ICast, dt: number): boolean {
     const spell = cast.spell;
     if (cast.shape !== "projectile") {
       if (!cast.held && cast.t >= cast.durations.travel) this.#enter(cast, "impact");
-      return;
+      return false;
     }
-    // A spell that defines `update` owns its own integration (a homing ball, a lobbed arc), and the
-    // pool only notices when it says it landed. That has to be decided before the default step so
-    // a spell is never integrated twice in one frame.
-    if (spell.update !== undefined) return;
+    // A spell with a `travel` hook owns its own integration (a homing ball, a lobbed arc); the pool
+    // then only steps the rest of the record and waits to be told it landed.
+    if (spell.travel !== undefined) return spell.travel(cast, dt) === true;
     cast.pos.addScaledVector(cast.vel, dt);
     cast.travelled += cast.vel.length() * dt;
-    const radius = finite(spell.radius ?? 0.3, `${spell.name}.radius`);
+    const radius = cast.radius;
     const past = scratch.subVectors(cast.to, cast.pos).dot(cast.dir) <= 0;
     const groundAt = this.#groundAt;
-    const buried =
-      groundAt !== undefined &&
-      cast.travelled > 1 &&
-      cast.pos.y < groundAt(cast.pos.x, cast.pos.z) + radius;
+    // A floor the game cannot answer for is not a floor: a NaN would make `buried` false forever and
+    // the cast would fly until its travel time ran out.
+    const floor =
+      groundAt === undefined ? Number.NEGATIVE_INFINITY : groundAt(cast.pos.x, cast.pos.z);
+    const buried = Number.isFinite(floor) && cast.travelled > 1 && cast.pos.y < floor + radius;
     // A ball that has passed its target lands on it, however late the frame notices. Only a spell
     // that never reached the target spends its whole travel time and stops where it is.
     if (past) {
       cast.pos.copy(cast.to);
       this.#enter(cast, "impact");
-      return;
+      return false;
     }
     if (buried || cast.t >= cast.durations.travel) this.#enter(cast, "impact");
+    return false;
   }
 
   #enter(cast: ICast, phase: CastPhase): void {
