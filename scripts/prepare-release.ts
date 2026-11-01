@@ -303,7 +303,11 @@ function run(command: string, args: readonly string[], label: string): void {
 async function main(): Promise<void> {
   const packages = publishSet(REPO);
   // `--bump`: npm cannot see a version whose runtime tag already holds a public GitHub release.
-  const selected = selectReleaseVersions(packages, npmLookup(REPO), process.argv.includes("--bump"));
+  const selected = selectReleaseVersions(
+    packages,
+    npmLookup(REPO),
+    process.argv.includes("--bump"),
+  );
   // Before a single file is written: 1.0.0 is refused while PRD-446's upgrade proof is still open,
   // so the version bump nobody wants to walk back never lands in the first place.
   if ([...selected.values()].some((state) => state.next === "1.0.0"))
