@@ -78,6 +78,28 @@ describe("measureStartupOffscreenBytes", () => {
     expect(report.fix).toContain("prefetch");
   });
 
+  it("should walk the scene under the observer mark, so the bridge census never bills its reads to the game", () => {
+    // Run 41262005879 attempt 3: the reveal frame landed on a census frame, and this one-off walk's
+    // re-reads of every Mesh.children failed shooter's aim-alignment with TN_BRIDGE_WARNING 0.047.
+    const host = globalThis as { __tnPlaytestObserving?: number };
+    const seen: (number | undefined)[] = [];
+    const root = placed("near.glb", -10);
+    const mesh = root.children[0] as Mesh;
+    const children = mesh.children;
+    Object.defineProperty(mesh, "children", {
+      get: () => {
+        seen.push(host.__tnPlaytestObserving);
+        return children;
+      },
+    });
+
+    measureStartupOffscreenBytes(resolvedModels({ "near.glb": 1_000 }), root, spawnCamera());
+
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.every((mark) => (mark ?? 0) > 0)).toBe(true);
+    expect(host.__tnPlaytestObserving ?? 0).toBe(0);
+  });
+
   it("should stay quiet when everything awaited is in view", () => {
     const scene = new Group();
     scene.add(placed("near.glb", -10));
