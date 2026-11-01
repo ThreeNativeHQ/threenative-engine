@@ -70,9 +70,6 @@
           "minChangedPixelRatio": 0.002
         }
       }
-    ],
-    "pipelineCensus": {
-      "maxRenderPipelineCreationsAfterWarmUpSettled": 0
-    }
+    ]
   }
 }

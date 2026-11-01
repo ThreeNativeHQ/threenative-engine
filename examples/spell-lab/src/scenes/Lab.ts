@@ -18,13 +18,14 @@ import {
   DoubleSide,
   Mesh,
   type PerspectiveCamera,
+  LinearFilter,
   PlaneGeometry,
   RGBAFormat,
   UnsignedByteType,
   Vector3,
 } from "three";
 import { MeshBasicNodeMaterial } from "three/webgpu";
-import { mix, texture, uv, vec2, vec4 } from "three/tsl";
+import { mix, texture, uniform, uv, vec2, vec4 } from "three/tsl";
 
 /** What the HUD shows and what a playtest reads back. */
 export interface LabState extends Record<string, unknown> {
@@ -34,7 +35,7 @@ export interface LabState extends Record<string, unknown> {
 
 /** The floor patch the spells paint, and the plane that shows it. They must cover the same square. */
 const PATCH = 120;
-const CELLS = 96;
+const CELLS = 256;
 
 /**
  * The six the first wave ships, as [input action, spell name] in number-key order. The two differ
@@ -104,7 +105,7 @@ export class Lab extends Scene<LabState> {
       thunderstrike: createThunderstrike(world),
     };
 
-    const refreshFloor = createFloor(ctx, world, observations);
+    const { refresh: refreshFloor, tint: floorTint } = createFloor(ctx, world, observations);
     const emitters = collectEmitters(world);
     createDummies(ctx);
 
@@ -115,6 +116,7 @@ export class Lab extends Scene<LabState> {
       casts.cast(spell, target, { from: world.focus });
       observations.spell = name;
       observations.casts += 1;
+      floorTint.value.copy(tintOf(name));
       events.push({ spell: name, type: "cast" });
     };
 
@@ -155,16 +157,21 @@ function createFloor(
   ctx: ICtx<LabState>,
   world: SpellWorld,
   observations: LabObservations,
-): () => void {
+): { refresh: () => void; tint: { value: Color } } {
   const field = world.reaction;
   const data = new Uint8Array(CELLS * CELLS * 4);
   const map = new DataTexture(data, CELLS, CELLS, RGBAFormat, UnsignedByteType);
+  map.minFilter = LinearFilter;
+  map.magFilter = LinearFilter;
   map.needsUpdate = true;
   const material = new MeshBasicNodeMaterial({ side: DoubleSide });
+  // The plane's v runs from the patch's +z edge upward, and a DataTexture's row 0 is its first
+  // row, so exactly one of the two ends has to be flipped. It happens here, once, not per cell.
   const sample = texture(map, vec2(uv().x, uv().y.oneMinus()));
   const base = new Color(0x59647a);
   const burn = new Color(0x2a1408);
-  const glow = new Color(0xff6a1e);
+  /** The newest cast's own colour, so lightning does not scorch in fireball orange. */
+  const glow = uniform(new Color(0xff6a1e));
   const cold = new Color(0x9fd8ff);
   material.colorNode = vec4(
     mix(
@@ -180,7 +187,7 @@ function createFloor(
   ctx.add(floor);
 
   let version = -1;
-  return () => {
+  const refresh = (): void => {
     if (field === undefined || field.version === version) return;
     version = field.version;
     const heat = field.data("heat");
@@ -188,11 +195,7 @@ function createFloor(
     const wet = field.data("wet");
     const frost = field.data("frost");
     for (let index = 0; index < CELLS * CELLS; index++) {
-      // Row 0 of the patch is its -z edge and the plane's v runs the other way, so the flip happens
-      // once here instead of on every pixel in the shader.
-      const row = Math.floor(index / CELLS);
-      const flipped = (CELLS - 1 - row) * CELLS + (index % CELLS);
-      const out = flipped * 4;
+      const out = index * 4;
       data[out] = Math.round((char[index] as number) * 255);
       data[out + 1] = Math.round((heat[index] as number) * 255);
       data[out + 2] = Math.round((frost[index] as number) * 255);
@@ -202,6 +205,23 @@ function createFloor(
     observations.floorMarks = field.version;
     events.push({ marks: field.version, type: "floor" });
   };
+  return { refresh, tint: glow as unknown as { value: Color } };
+}
+
+/** The floor colour a spell leaves behind. The spells own their tints; the lab only echoes one. */
+function tintOf(name: string): Color {
+  switch (name) {
+    case "thunderstrike":
+      return new Color(0x6f8cff);
+    case "glacial-spike":
+      return new Color(0x9fe4ff);
+    case "arcane-barrage":
+      return new Color(0xff6ae0);
+    case "aegis":
+      return new Color(0xd98cff);
+    default:
+      return new Color(0xff6a1e);
+  }
 }
 
 /** Every `GPUParticles3D` a spell added, so the lab can report what the engine thinks it did. */

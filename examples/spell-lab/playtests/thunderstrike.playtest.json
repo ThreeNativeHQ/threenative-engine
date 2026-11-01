@@ -34,7 +34,7 @@
     {
       "kind": "wait",
       "label": "linger",
-      "waitTicks": 55,
+      "waitTicks": 22,
       "release": true
     }
   ],
