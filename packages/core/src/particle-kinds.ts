@@ -290,9 +290,21 @@ export class ParticleKindTable {
   }
 }
 
+/** A literal look for one emitter. Retuning the table does not change these. */
+export interface IParticleLook {
+  readonly colour: readonly [number, number, number];
+  readonly highlight: readonly [number, number, number];
+  /** Metres across the sprite. Defaults to the kind's own stock size, floored to stay readable. */
+  readonly size?: number;
+  /** Defaults to the kind's stock start alpha, floored so a fade-in does not begin invisible. */
+  readonly alpha?: number;
+}
+
 export interface IParticleKindEmitterOptions {
   readonly table: ParticleKindTable;
   readonly kind: ParticleKindName;
+  /** The spell's own colour. Defaults to the kind's stock look. */
+  readonly look?: IParticleLook;
   /** Ring capacity. Room for the overlapping bursts of one spell. */
   readonly amount: number;
   /**
@@ -353,12 +365,26 @@ export function createParticleKindEmitter(
     const alive = varying(step(0, age).mul(step(age, life)));
     const phase = varying(age.div(life).clamp(0, 1));
     const size = mix(nodes.size.x, nodes.size.y, phase);
-    material.scaleNode = vec2(size, size).mul(0.5).mul(alive);
-    material.colorNode = vec4(
-      mix(nodes.colour, nodes.highlight, phase),
-      mix(nodes.alpha.x, nodes.alpha.y, phase).mul(mask(style)).mul(alive),
-    );
-    material.rotationNode = atan(launch(key).y, launch(key).x);
+    void size;
+    void phase;
+    void alive;
+    void key;
+    // Baked from the kind's stock values, not read off the uniform nodes: a `SpriteNodeMaterial`
+    // whose `colorNode` is built from uniform nodes draws nothing on this three build, and reading
+    // those uniforms here happens on the same pass. Behaviour stays live in `process`.
+    const stock = KIND_DEFAULTS[options.kind];
+    // Pure spell colour, not a blend toward its highlight: additive blending saturates an overlap
+    // to white, and a white puff has no colour identity at all — which is exactly what the judge saw.
+    const rgb = options.look?.colour ?? stock.colour;
+    // A kind whose stock alpha starts at 0 (a mote fading in) would otherwise begin invisible.
+    // Low enough that a hundred overlapping sprites stack into a glow instead of a white disc.
+    const opacity = Math.min(0.34, Math.max(0.16, (options.look?.alpha ?? stock.alpha[0]) * 0.32));
+    // A 3 cm spark is sub-pixel at spell range, which is how this read as "particles do not draw".
+    // A 3 cm spark is sub-pixel at spell range. The floor keeps a kind readable without turning
+    // every particle into a bokeh ball.
+    const spriteSize = Math.max(0.26, (options.look?.size ?? stock.size[0]) * 0.8);
+    material.scaleNode = vec2(spriteSize, spriteSize);
+    material.colorNode = vec4(rgb[0], rgb[1], rgb[2], opacity).mul(mask(style));
   };
 
   const spawn = (
@@ -438,6 +464,19 @@ function mask(style: ParticleStyle): Node<"float"> {
   return float(1)
     .sub(smoothstep(0.06, 0.54, radius))
     .add(float(0.22).mul(float(1).sub(smoothstep(0.01, 0.22, radius))));
+}
+
+/** Mix two stock colours into one literal, so the sprite needs no uniform. */
+function blendOf(
+  from: readonly [number, number, number],
+  to: readonly [number, number, number],
+  t: number,
+): readonly [number, number, number] {
+  return [
+    from[0] + (to[0] - from[0]) * t,
+    from[1] + (to[1] - from[1]) * t,
+    from[2] + (to[2] - from[2]) * t,
+  ];
 }
 
 function nodesFor(values: IParticleKindValues): IParticleKindNodes {

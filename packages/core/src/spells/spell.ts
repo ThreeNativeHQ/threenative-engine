@@ -197,12 +197,12 @@ function build(world: SpellWorld, recipe: ISpellRecipe): IBuilt {
     });
   }
   return {
-    burst: buildEmitter(world, table, recipe.burst, recipe.name, 1),
-    charge: buildEmitter(world, table, recipe.charge, recipe.name, 2),
+    burst: buildEmitter(world, table, recipe.burst, recipe.name, 1, recipe.tint),
+    charge: buildEmitter(world, table, recipe.charge, recipe.name, 2, recipe.tint),
     drawables: Array.from({ length: world.castSlots }, () => createDrawables(world.scene)),
-    linger: buildEmitter(world, table, recipe.linger, recipe.name, 3),
+    linger: buildEmitter(world, table, recipe.linger, recipe.name, 3, recipe.tint),
     scratch: Array.from({ length: world.castSlots }, () => ({ emitTimer: 0, sinceImpact: 0 })),
-    trail: buildEmitter(world, table, recipe.trail, recipe.name, 4),
+    trail: buildEmitter(world, table, recipe.trail, recipe.name, 4, recipe.tint),
   };
 }
 
@@ -344,6 +344,7 @@ function buildEmitter(
   role: ISpellEmitter | undefined,
   name: string,
   seedOffset: number,
+  tint: ISpellTint,
 ): GPUParticles3D | undefined {
   if (role === undefined) return undefined;
   const options = createParticleKindEmitter({

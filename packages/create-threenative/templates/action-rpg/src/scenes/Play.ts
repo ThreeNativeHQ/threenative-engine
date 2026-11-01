@@ -7,6 +7,7 @@ import {
   isMobile,
   isTouchscreenAvailable,
 } from "@threenative/core";
+import { CastPool, SpellWorld, createFireball } from "@threenative/core/spells";
 import { CollisionShape3D, type IPhysicsContext, buildStaticColliders } from "@threenative/physics";
 import { type PerspectiveCamera, type Texture, Vector3 } from "three";
 import { Ability } from "../abilities/Ability.js";
@@ -225,6 +226,21 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     const attackVfx = emitter(createAttackArc());
     const hitVfx = emitter(createHitBurst());
     const surgeVfx = emitter(createArcaneSurge());
+
+    // One spell slot, wired the way the kit's AGENTS.md tells a game to wire one. The world owns the
+    // pooled lights, the floor marks and the shake; damage stays here, in `strike`.
+    const spellWorld = new SpellWorld({
+      add: (object) => void ctx.add(object),
+      camera: ctx.camera,
+      castSlots: 8,
+      groundAt: () => 0,
+      scene: ctx.scene,
+    });
+    const casts = new CastPool(spellWorld);
+    const fireball = createFireball(spellWorld);
+    const spellTarget = new Vector3();
+    const spellObservations = { casts: 0 };
+    ctx.entities.add("spell", spellObservations);
     // A burst is a request: the engine gives it its own slots, so an older burst keeps flying where it began.
     const burst = (
       vfx: ReturnType<typeof emitter>,
@@ -519,6 +535,14 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         if (frameCtx.input.justPressed("ability") || touch?.abilityPressed === true) ability.cast();
         if (frameCtx.input.justPressed("dodge") && player.dodge())
           emitPlaytestEvent({ entity: "player", name: "dodged" });
+        if (frameCtx.input.justPressed("spell")) {
+          player.mesh.getWorldDirection(spellTarget);
+          spellTarget.multiplyScalar(7).add(player.mesh.position).setY(0.9);
+          spellWorld.focus.copy(player.mesh.position).setY(1.4);
+          casts.cast(fireball, spellTarget);
+          spellObservations.casts += 1;
+          emitPlaytestEvent({ entity: "player", name: "vfx-spell" });
+        }
       }
       if (frameCtx.input.justPressed("equip")) {
         if (inventory.equip("ember-blade")) {
@@ -541,6 +565,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
 
       player.update(frameCtx, dt, touch);
       ability.update(dt);
+      casts.update(dt);
+      spellWorld.update(dt);
       // Enemies act only once first-use compilation has settled. They damage the player, and the
       // combat scenario asserts an exact health at a labelled step — so stepping them during the
       // launch makes that number a function of how long the launch took. Measured as 90 on a

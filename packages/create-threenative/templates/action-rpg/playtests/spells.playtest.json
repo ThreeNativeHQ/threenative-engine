@@ -1,0 +1,20 @@
+{
+  "name": "action-rpg-fireball-slot",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 10,
+  "subject": "player",
+  "artifacts": { "screenshots": "before-after" },
+  "steps": [
+    { "kind": "wait", "label": "settled", "waitTicks": 12, "release": true },
+    { "kind": "input", "label": "spell", "press": "KeyG", "holdTicks": 1, "release": true },
+    { "kind": "wait", "label": "impact", "waitTicks": 45, "release": true },
+    { "kind": "wait", "label": "linger", "waitTicks": 40, "release": true }
+  ],
+  "assert": {
+    "components": [{ "entity": "spell", "component": "casts", "gte": 1 }],
+    "diagnostics": { "noConsoleErrors": true },
+    "visual": [{ "frameDiff": { "minChangedPixelRatio": 0.0005 } }]
+  }
+}

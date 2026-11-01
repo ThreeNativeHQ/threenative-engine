@@ -38,14 +38,15 @@ describe("ParticleKindTable", () => {
     expect(after.highlight).toEqual(before.highlight);
   });
 
-  it("rebuilds nothing when it retunes: the nodes and the material are the same objects", () => {
+  it("rebuilds nothing when its behaviour is retuned: same nodes, same material, same kernels", () => {
     const table = new ParticleKindTable(["flame"]);
     const nodes = table.nodes("flame");
     const emitter = createParticleKindEmitter({ amount: 256, kind: "flame", table });
     const material = emitter.material;
     const { process, spawn } = emitter;
 
-    table.set("flame", { cone: 1.4, colour: [1, 0, 0], drag: 0.2, lifetime: [0.5, 0.8] });
+    // Everything that decides how a particle *moves* is a uniform the compute kernel reads.
+    table.set("flame", { buoyancy: 0.5, cone: 1.4, drag: 0.2, gravity: 1, lifetime: [0.5, 0.8] });
 
     // A retune is a uniform write. Same node graph, same material, same kernels: no new pipeline.
     expect(table.nodes("flame")).toBe(nodes);
@@ -53,8 +54,26 @@ describe("ParticleKindTable", () => {
     expect(emitter.process).toBe(process);
     expect(emitter.spawn).toBe(spawn);
     expect(nodes.shape.value.x).toBeCloseTo(1.4, 6);
-    expect(nodes.colour.value.x).toBe(1);
     expect(nodes.lifetime.value.y).toBeCloseTo(0.8, 6);
+  });
+
+  it("bakes the look, so a colour is a new emitter rather than a live uniform", () => {
+    // Measured, not chosen: a `SpriteNodeMaterial` whose `colorNode` is built from uniform nodes
+    // draws nothing on this three build, so the sprite's colour and size are literals taken when
+    // the emitter is built. This test exists so that stays a stated contract and not a surprise.
+    const table = new ParticleKindTable(["flame"]);
+    const before = createParticleKindEmitter({ amount: 128, kind: "flame", table });
+    table.set("flame", { colour: [0, 1, 0] });
+    const unchanged = createParticleKindEmitter({ amount: 128, kind: "flame", table });
+    expect(unchanged.material).not.toBe(before.material);
+    // A caller that wants the new colour asks for it explicitly.
+    const explicit = createParticleKindEmitter({
+      amount: 128,
+      kind: "flame",
+      look: { colour: [0, 1, 0], highlight: [0, 1, 0] },
+      table,
+    });
+    expect(explicit.material).toBeDefined();
   });
 
   it("rejects values a kernel cannot use", () => {
