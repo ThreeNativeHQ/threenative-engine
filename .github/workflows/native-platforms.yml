@@ -1973,6 +1973,10 @@ jobs:
       # rcedit rewriting the PE no longer discards it and the container launches the real game.
       - name: Verify the relocated release container with the installed verifier
         shell: bash
+        env:
+          # The Windows runner's software adapter drew 300 frames at 0.6 to 1.3 s each on one tree
+          # (runs 41279577367, 41288321973), and the default 300 s bound cut it at frame 293.
+          TN_STARTER_TIMEOUT_MS: ${{ matrix.platform == 'Windows' && '600000' || '300000' }}
         run: |
           set -euo pipefail
           # Same POSIX normalisation as the relocate step, so the verifier sees one path style.
