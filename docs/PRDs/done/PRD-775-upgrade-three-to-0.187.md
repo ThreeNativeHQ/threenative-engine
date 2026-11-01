@@ -115,7 +115,8 @@ flowchart LR
 
 ## Blocked on
 
-- iOS and Android device runs of the native host — unblocked by an attached device or a running emulator; the CI native matrix covers Android otherwise.
+- Physical iOS and Android device runs of the native host — not run, and no acceptance box claims them. `adb devices` lists no device on 2026-11-01. An attached device unblocks them.
+- Emulator and simulator runs are done, CI run [41288721287](https://github.com/ThreeNativeHQ/threenative-engine/actions/runs/41288721287) on `c3f5598f7`: Android emulator visual parity 93 passed, 0 failed, 45 blocked by that machine's capabilities, 0 unexpectedly blocked. iOS simulator sustained-frames check passes; its prebuilt production step reports BLOCKED (`TN_PROD_PREBUILT_WORKLOAD`, no instrumented platformer receipt) and the job accepts that.
 
 ## Integration Ledger
 
