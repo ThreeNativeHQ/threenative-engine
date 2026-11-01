@@ -89,7 +89,8 @@ export function integrationEvidence(
   writeFileSync(apiFile, JSON.stringify([{ total_count: observed.length, jobs: observed }]));
   writeFileSync(
     path.join(directory, "gh"),
-    '#!/usr/bin/env node\nprocess.stdout.write(require("node:fs").readFileSync(process.env.CI_FIXTURE_API));\n',
+    // `<api>.<n>` overrides the listing of attempt n, as GitHub lists a partial rerun's attempt.
+    '#!/usr/bin/env node\nconst fs = require("node:fs");\nconst n = /\\/attempts\\/(\\d+)\\//.exec(process.argv.join(" "))?.[1];\nconst file = `${process.env.CI_FIXTURE_API}.${n}`;\nprocess.stdout.write(fs.readFileSync(n !== undefined && fs.existsSync(file) ? file : process.env.CI_FIXTURE_API));\n',
   );
   chmodSync(path.join(directory, "gh"), 0o755);
   return {
