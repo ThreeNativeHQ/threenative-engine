@@ -808,8 +808,12 @@ function parseAndroidConsoleEntries(
   return (
     output
       .split(/\r?\n/u)
-      // system_server and the compositor name the activity while reporting on themselves.
-      .filter((line) => !/^[VDIWEF]\/(?:SurfaceSyncGroup|TransitionController)\(/u.test(line))
+      // system_server and the compositor name the activity while reporting on themselves
+      // (AppHibernationService: during `adb install -r`, "Package <app> is not installed").
+      .filter(
+        (line) =>
+          !/^[VDIWEF]\/(?:SurfaceSyncGroup|TransitionController|AppHibernationService)\(/u.test(line),
+      )
       .filter((line) => {
         if (app === undefined) return /Mystral|THREENATIVE|chromium/u.test(line);
         if (app.pids.size === 0) return line.trim().length > 0;
