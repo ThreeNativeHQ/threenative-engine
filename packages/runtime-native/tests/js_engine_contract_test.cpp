@@ -1,7 +1,10 @@
 #include "mystral/js/engine.h"
 
+#include <atomic>
+#include <chrono>
 #include <cstdlib>
 #include <iostream>
+#include <thread>
 
 namespace {
 
@@ -163,6 +166,30 @@ bool checkNestedNativeCallbacks(mystral::js::Engine& engine) {
 
 }  // namespace
 
+// PR #595, macOS desktop core: a worker's loop pumps microtasks between its queue check and its
+// blocking wait. A wake posted in that gap was consumed by the pump, the wait then had no task,
+// and terminate() joined that worker forever on the main thread. The rescue thread keeps a
+// regression a failure with a message, not a hung test.
+bool checkConsumedWakeReleasesWait(mystral::js::Engine& engine) {
+    if (!engine.supportsBlockingTaskWait()) return true;
+    std::atomic<bool> returned{false};
+    std::atomic<bool> rescued{false};
+    std::thread rescue([&] {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+        while (!returned.load() && std::chrono::steady_clock::now() < deadline)
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        if (returned.load()) return;
+        rescued.store(true);
+        engine.wakeTaskWait();
+    });
+    engine.wakeTaskWait();
+    engine.processMicrotasks();
+    engine.waitForTask();
+    returned.store(true);
+    rescue.join();
+    return !rescued.load();
+}
+
 int main() {
     struct EngineCase {
         mystral::js::EngineType type;
@@ -196,6 +223,11 @@ int main() {
         if (engineCase.checkNestedCallbacks && !checkNestedNativeCallbacks(*engine)) {
             std::cerr << "js-engine-contract: " << engineCase.name
                       << " nested callback semantics failed" << std::endl;
+            return EXIT_FAILURE;
+        }
+        if (!checkConsumedWakeReleasesWait(*engine)) {
+            std::cerr << "js-engine-contract: " << engineCase.name
+                      << " a wake consumed before the wait stranded the wait" << std::endl;
             return EXIT_FAILURE;
         }
         std::cout << "js-engine-contract: engine=" << engineCase.name
