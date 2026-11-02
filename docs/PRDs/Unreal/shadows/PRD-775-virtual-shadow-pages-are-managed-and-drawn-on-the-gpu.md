@@ -179,7 +179,7 @@ GPU cost that `recordCost` reads; the pass time goes to the granted level, split
 - 2026-11-02 (prd-775 lane): Phase 1 arms run from one lab and one Wasm, with `?tnVsmGpuPages=0` as the off arm. Two
   labs of different age differ by about 2 % fps and 0.5 ms GPU p95, so rows #160-#177 do not count for the keep rule.
 
-- **Phase 2 change set, PROPOSAL, NOT DECIDED (lane, 2026-11-02).** Box 1 stays open and its text stays as it is. Measured: on the stress scene about 445 of 1,145 casters change on each frame, and an unchanged caster already costs about 0 in the bounds loop, so a change set saves about 0.1-0.2 ms there, not the 1.75 ms the Solution section gives. The largest term was the rig bone walk (1.25 ms), and the rig hold removed most of it. The database does not know which draws moved: TR1's stamp covers instance stores and FM1's guard covers materials, so a change set also needs a new world matrix compare per draw. The proposal: defer the change set with the revisit condition "a scene with many static casters and few changes, where the state and caster loops read over 0.3 ms", because a missed change is a stale shadow. The owner or the lead decides.
+- 2026-11-02 (lead): the Phase 2 caster change set is **Deferred**, not declined. Box 1 stays unticked and its text stays as it is. Measured ceiling on the stress scene: 0.1-0.2 ms against the 1.75 ms the Solution section claims, because about 445 of 1,145 casters change on each frame and an unchanged caster already costs about 0 in the bounds loop. The largest term was the rig bone walk (1.25 ms), and the rig hold removed most of it. The render database has no moved signal: TR1's stamp covers instance stores and FM1's guard covers materials. Revisit when a scene has most of its rigs standing still, or when a database moved signal exists for another reason.
 
 ## Execution phases
 
@@ -202,12 +202,12 @@ row (decision keep), a `PERFORMANCE-LEARNINGS.md` entry and the box ticked with 
 
 ### Phase 2 — The VSM stage reads the caster change set
 
-**Status:** IN PROGRESS
+**Status:** IN PROGRESS. The change set (box 1) is Deferred, see Decisions. The rig hold and the cheaper caster state are in, and their keep rule is open.
 **Files:** `renderer.cpp` (VSM stage), `render_database.{h,cpp}` (change set), `shadows/virtual/atlas.{h,cpp}`
 (`updateCasters` over changed casters), `tests/native-engine/vsm/vsm_atlas_test.cpp`.
 
 - [ ] A frame where no caster changed visits no caster state, and the move, settle and remove invalidations equal today's. proof: new case `virtual_shadow_caster_changes_are_pushed` in `tn-native-engine-render-database-test` (RED: develop visits every caster; GREEN: 0 visits) plus every `tn-native-engine-vsm-atlas-test` case green
-  Open: the case is not written. Measured on the stress scene (Wasm, real GPU, Xvfb, 16 windows per arm, ABBA, load 14-28, head e20f717de against that head with the Phase 2 commits reversed): `planVirtualPages` p50 1.88 -> 1.05 ms, `planShadowLists` p50 0.74 -> 0.71 ms (inside noise). Per frame: bone walks 240 -> 60, signature strings up to 3 x 1,145 -> 0, table probes about 2,500 -> 4.8. A frame still visits 1,145 caster states. See the Phase 2 proposal under Decisions.
+  Deferred: the case is not written. Measured on the stress scene (Wasm, real GPU, Xvfb, 16 windows per arm, ABBA, load 14-28, head e20f717de against that head with the Phase 2 commits reversed): `planVirtualPages` p50 1.88 -> 1.05 ms, `planShadowLists` p50 0.74 -> 0.71 ms (inside noise). Per frame: bone walks 240 -> 60, signature strings up to 3 x 1,145 -> 0, table probes about 2,500 -> 4.8. A frame still visits 1,145 caster states. See the 2026-11-02 change set entry under Decisions.
 - [ ] Phase 2 passes the keep rule on the stress lab. proof: ledger rows (decision keep), judge verdict, shooter holdout
 
 ### Phase 3 — The page table and physical pool live on the GPU
