@@ -5,7 +5,7 @@
 //
 // The arms run in ABBA order (the list, then the list reversed) in one clean browser: a fresh profile, 1280x720 at
 // DPR 1, no profiler, no tracing. The window holds the measurement lock and the build lock, waits for the GPU slot,
-// starts only after the 1-minute load stays under 4 for 60 s, and voids a run whose load rises above 6. A second
+// starts only after the 1-minute load stays under 12 for 60 s, and voids a run whose load rises above 18. A second
 // browser repeats the arms uncapped (`--disable-frame-rate-limit --disable-gpu-vsync`), so FPS above 60 shows.
 // Each arm's valid runs are pooled (mean) into one ledger row per pass.
 import { spawn, spawnSync } from "node:child_process";
@@ -203,7 +203,7 @@ const meanFields = (objects) =>
   );
 
 /**
- * One wrapper from an arm's runs: void runs (load above 6) leave out, the rest are averaged field by field.
+ * One wrapper from an arm's runs: void runs (load above LOAD_VOID) leave out, the rest are averaged field by field.
  * Every valid run must carry the same build, or the arm changed mid-window. Returns undefined with no valid run.
  */
 export function poolRuns(runs) {

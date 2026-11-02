@@ -626,15 +626,15 @@ describe("stress-loop record (PRD-770)", () => {
     );
   });
 
-  it("voids a run whose host load rose above 6", () => {
+  it("voids a run whose host load rose above 18", () => {
     expect(() =>
-      recordRun(readLedger(ledgerPath()), run({ load: [3, 6.1] }), { label: "x" }),
-    ).toThrow(/run void: host load 6\.1/u);
+      recordRun(readLedger(ledgerPath()), run({ load: [3, 18.1] }), { label: "x" }),
+    ).toThrow(/run void: host load 18\.1/u);
     expect(() => recordRun(readLedger(ledgerPath()), run({ load: [] }), { label: "x" })).toThrow(
       /load/u,
     );
     expect(() =>
-      recordRun(readLedger(ledgerPath()), run({ load: [3, 6] }), { label: "x" }),
+      recordRun(readLedger(ledgerPath()), run({ load: [3, 18] }), { label: "x" }),
     ).not.toThrow();
   });
 

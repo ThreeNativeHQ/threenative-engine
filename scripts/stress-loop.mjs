@@ -229,11 +229,15 @@ export function appendRow(
   return { ...ledger, iterations: [...ledger.iterations, next] };
 }
 
-/** PRD-770: a run whose 1-minute host load rose above this is void; the fair window starts only below QUIET_LOAD. */
-export const LOAD_VOID = 6;
+/**
+ * PRD-770: a run whose 1-minute host load rose above this is void; the fair window starts only below QUIET_LOAD. The
+ * stress page alone adds about 6 on this 24-thread host. Owner, 2026-11-01: raise the tolerance so the loop runs.
+ * These limits are not calibrated yet: a loaded row carries its load peak, and ABBA order cancels only slow drift.
+ */
+export const LOAD_VOID = 18;
 /** Two rows compare only when their main and shadow triangles are this close (owner, 2026-10-30: apples to apples). */
 const TRIANGLE_TOLERANCE = 0.02;
-export const QUIET_LOAD = 4;
+export const QUIET_LOAD = 12;
 
 /** `plain` is one ordinary sun map (vanilla three.js, or `?plainShadow`); `virtual` is ThreeNative's virtual shadow maps. */
 export const shadowModeOf = (engine, variant) =>
