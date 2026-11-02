@@ -157,3 +157,4 @@ Next release, projected from these runs: board 58 min, main 2 min, `ship` setup,
 ## Blocked on
 
 - AC-9 needs one more real release, with the two 0.3.9 fixes on main. Unblocked by the owner's next release.
+- The hosted post-publish clean room stays red on `native`: run 41438760299 on 892f796e3 reports `TN_PLAYTEST_COMPLETION_WINDOW_FAILED: fewer than 100 complete intervals`. The runner's CPU renderer draws fewer than 20 frames per second, and `measureCompletionWindow` refuses that. All other rows passed. `ship` publishes before this row, so the job goes red after `latest` moves. Unblocked by the owner's decision on that floor.
