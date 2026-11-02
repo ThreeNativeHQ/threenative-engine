@@ -517,6 +517,9 @@ function scoreGroups(rows, ctx) {
   ];
 }
 
+/** A row above this host load (the old fair-window limit) lost speed to other work: its score is not comparable with a quiet row. */
+const NOISY_LOAD = 6;
+
 /** A verdict older than this reads as history: a loop iteration takes under an hour, and the engine moves daily. */
 const STALE_HOURS = 12;
 
@@ -605,7 +608,7 @@ function scorePanel(rows, ctx) {
             mine.score,
             measured.map(({ score }) => score),
           );
-    const head = `<td class="score-name">${rank === "s-win" ? "✅ " : ""}${esc(name)}${row === undefined ? "" : `<br><span class="dim">#${row.id} · ${esc(row.at.slice(0, 10))} · ${esc(row.commit)}</span>`}</td>`;
+    const head = `<td class="score-name">${rank === "s-win" ? "✅ " : ""}${esc(name)}${row === undefined ? "" : `<br><span class="dim">#${row.id} · ${esc(row.at.slice(0, 10))} · ${esc(row.commit)}${row.load?.peak > NOISY_LOAD ? ` · <b>⚠️ noisy, load ${Math.round(row.load.peak)}</b>` : ""}</span>`}</td>`;
     if (mine === null)
       return `<tr>${head}<td class="score-cell">${bar(0, rank)}</td><td class="n dim">pending</td>${SCORE_PARTS.map(() => '<td class="n dim">-</td>').join("")}</tr>`;
     const parts = SCORE_PARTS.map(({ key, unit, part }, index) => {

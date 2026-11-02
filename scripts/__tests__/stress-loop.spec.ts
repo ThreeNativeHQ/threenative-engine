@@ -451,6 +451,22 @@ describe("stress-loop", () => {
     expect(verdictStrip(fresh)).not.toContain("WAS WINNING");
   });
 
+  it("marks a score row measured on a loaded host, so a lower score does not read as a regression", () => {
+    const row = (id: number, peak: number) => ({
+      ...report(),
+      id,
+      at: "2026-11-02T04:00:00.000Z",
+      commit: "core@0.3.8",
+      engine: WASM,
+      variant: "plainShadow&arm=head&uncapped",
+      pass: "uncapped",
+      decision: "measure",
+      load: { peak, samples: 10 },
+    });
+    expect(renderHtml({ iterations: [row(1, 11)] })).toContain("noisy, load 11");
+    expect(renderHtml({ iterations: [row(1, 5)] })).not.toContain("noisy, load");
+  });
+
   it("colors a bar green for the winner, yellow for a tie at the top and red for a loser", () => {
     expect(rankOf(10, [10, 5])).toBe("s-win");
     expect(rankOf(5, [10, 5])).toBe("s-lose");
