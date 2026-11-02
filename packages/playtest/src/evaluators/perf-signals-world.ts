@@ -20,7 +20,7 @@ export function emitPerfSignalsWorld(ctx: IEvaluationContext): void {
       budget.maxFrameMsP95 === undefined ? scenarioAssertions.performance : { ...scenarioAssertions.performance, maxFrameMsP95: budget.maxFrameMsP95 },
       input.report.observations?.performanceSeries,
       input.scenario.sourcePath,
-      { display: frameDisplay(), foreignGpu: foreignGpuProcesses(), ...gpuLane((input.report.observations?.console ?? []).map(({ text }) => text)) },
+      { display: frameDisplay(), target: input.report.target, foreignGpu: foreignGpuProcesses(), ...gpuLane((input.report.observations?.console ?? []).map(({ text }) => text)) },
     );
     // The budget rides on the rows that always exist, so a run says which budget held it, or why none did.
     assertions.push(...result.assertions.map((row) =>
