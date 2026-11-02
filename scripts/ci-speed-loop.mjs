@@ -313,8 +313,9 @@ function barChart(rows, title) {
 export function renderHtml(ledger, now = new Date()) {
   const live = ledger.iterations.filter(isLive);
   const latest = live.at(-1);
-  const base = live[0];
   const strip = GOALS.map((goal) => {
+    // A KPI added later starts from the first iteration that measured it, not from an empty #1.
+    const base = live.find((item) => (item.metrics[goal.key] ?? null) !== null);
     const current = latest?.metrics[goal.key] ?? null;
     const progress = progressToward(goal, base?.metrics[goal.key], current);
     const percent = progress === null ? null : Math.round(progress * 100);
@@ -383,7 +384,7 @@ svg{width:100%;height:auto}
 tr.out td{opacity:.55;text-decoration:line-through}tr.out td small{text-decoration:none}
 </style></head><body><main>
 <h1>CI speed loop</h1>
-<p class="dim">${header} Snapshot ${esc(now.toISOString())}. The <code>pnpm dashboard</code> CI speed tab renders <code>docs/ci-speed/ledger.json</code> on each load. Goal: a change merges within 30 minutes of its last push (PRD-550).</p>
+<p class="dim">${header} Snapshot ${esc(now.toISOString())}. The <code>pnpm dashboard</code> CI speed tab renders <code>docs/ci-speed/ledger.json</code> on each load. Goals: a change merges within 30 minutes of its last push (PRD-550), and the whole road to npm costs half or less (PRD-782).</p>
 <h2>Progress toward the goal</h2>
 <div class="scroll"><table><thead><tr><th>Metric</th><th>Baseline</th><th>Now</th><th>Goal</th><th>Progress</th><th></th></tr></thead><tbody>${strip}</tbody></table></div>
 <h2>Trend per iteration</h2>
@@ -404,6 +405,15 @@ function show(ledger) {
     );
   }
   if (ledger.iterations.length === 0) console.log("baseline pending: no iterations recorded");
+}
+
+/** The lint gate checks this file, so the writer leaves it in the shape the gate accepts. */
+function writeLedger(ledger) {
+  writeAtomic(LEDGER, `${JSON.stringify(ledger, null, 2)}\n`);
+  execFileSync("pnpm", ["exec", "biome", "format", "--write", LEDGER], {
+    cwd: ROOT,
+    stdio: "ignore",
+  });
 }
 
 function main(argv) {
@@ -436,10 +446,10 @@ function main(argv) {
       decision: get("--decision"),
       commit,
     });
-    writeAtomic(LEDGER, `${JSON.stringify(ledger, null, 2)}\n`);
+    writeLedger(ledger);
   } else if (command === "discard") {
     ledger = discardIteration(ledger, Number(get("--iteration")), get("--reason"));
-    writeAtomic(LEDGER, `${JSON.stringify(ledger, null, 2)}\n`);
+    writeLedger(ledger);
   } else if (command === "show") {
     return show(ledger);
   } else {

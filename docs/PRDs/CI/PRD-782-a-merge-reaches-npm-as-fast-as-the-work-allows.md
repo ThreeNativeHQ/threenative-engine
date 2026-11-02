@@ -45,7 +45,7 @@ is half the cost or better, the owner's "100% more efficient". A full board ran 
 | Machine minutes on runs that end green | 16.3% | ≥ 70% | The rest buys no release |
 | Full-board minutes after the first red leg | 37.4% | ≤ 10% | The cost of late failure |
 | Step minutes spent on setup | 12.4% (one board, run 41348117470) | ≤ 6% | Checkout, install, browser, cache. A compile that repeats is not counted yet |
-| First promotion PR to npm, open release included | see the ledger | ≤ 120 min | The owner's first question, and a stalled release cannot look fast |
+| First promotion PR to npm, open release included | 5,814 min, 0.3.7 still open (lower bound) | ≤ 120 min | The owner's first question, and a stalled release cannot look fast |
 
 Flake rate reads attempt 1 only, so a flake that a rerun hid does not count. PRD-550's five merge KPIs
 stay in the same ledger. Carry hit rate and per-cache hit rate wait until a board runs per-job reuse
@@ -74,7 +74,7 @@ and the scouts name the caches that matter.
 **Status:** IN PROGRESS
 
 - [x] The loop records 11 whole-road KPIs. proof: `pnpm exec vitest run scripts/__tests__/ci-board-kpis.spec.ts scripts/__tests__/ci-speed-loop.spec.ts` — 28 passed. The 14-day replay gives the baselines above, and 3 of them match the earlier separate analysis (37 of 166, 61 of 123, 16%).
-- [ ] The ledger holds the baseline iteration with every KPI. proof: `pnpm ci:speed show`.
+- [x] The ledger holds the baseline iteration with every KPI. proof: `pnpm ci:speed show` — iteration 38, 16 KPIs, none `n/a`. Window: 53 merged PRs, 78 merge groups, 166 finished full boards.
 - [ ] Every step and log of a full green board and of the tag run is classified, with key numbers rechecked. proof: findings table in this PRD, from `~/.cache/tmp-tn/ci-audit/out/scout-a.md`.
 - [ ] Every test is inventoried per job, with its red and flake count. proof: findings table in this PRD, from `~/.cache/tmp-tn/ci-audit/out/scout-b.md`.
 
