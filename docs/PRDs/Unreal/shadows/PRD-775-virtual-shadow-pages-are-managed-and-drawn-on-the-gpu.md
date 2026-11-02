@@ -1,6 +1,6 @@
 # PRD-775 — Virtual shadow pages are managed and drawn on the GPU, as in Unreal
 
-**Status:** PARTIAL — Phase 1 kept, Phases 2 and 3 open
+**Status:** PARTIAL — Phase 1 numbers and judge pass, its keep-rule box is open; Phases 2 and 3 open
 **Priority:** P1 — Phases 2 and 3 and both ACs are open: the stress lab `?stress` CPU frame (p50 12.82, p95 17.64 ms) is behind Unreal 5.8.3 (p50 9.45, p95 11.03 ms) on the same scene, and the gap is the virtual shadow map's CPU work.
 **Complexity:** 6 (MEDIUM) — 6-10 files (+2), a new GPU page module (+2), CPU/GPU page state in step (+2); risk override: HIGH, because every virtual-shadow game (the shooter kit ships VSM by default) takes the new path.
 **Owner:** João · 2026-10-30
@@ -171,9 +171,11 @@ GPU cost that `recordCost` reads; the pass time goes to the granted level, split
   one level unless an urgent eviction grants more, so this is one pass in practice, and `recordCost` keeps its exact
   per-level reading (risk d is gone). A device with no `clip-distances` keeps today's per-page path instead of a
   fragment discard: the path stays for mover maps anyway, and no early-depth loss ships (risk b is gone).
-- 2026-11-02 (prd-775 lane): the Phase 1 pixel target is at most 4 of 36,864 receiver pixels on the case, not max
-  channel diff 0. Risk (a) applies: the slot remap flips 1 receiver pixel (92 against 152, about 8 texels inside the
-  page). `ctest -R native_engine_render_vsm` stays green and the judge sees no seam.
+- 2026-11-02 (team lead, on the owner's delegation: "please decide pixel target for me"): the pixel target of
+  `virtual_shadow_pages_draw_from_gpu_rows` is at most 4 of 36,864 receiver pixels. The original text was receiver
+  pixels max channel diff 0. Reason: the judge read NEUTRAL on all 3 poses and the case flips 1 pixel (92 against 152,
+  about 8 texels inside the page), which is risk (a). The limit covers this case only. A later phase that flips more
+  pixels needs its own decision.
 - 2026-11-02 (prd-775 lane): Phase 1 arms run from one lab and one Wasm, with `?tnVsmGpuPages=0` as the off arm. Two
   labs of different age differ by about 2 % fps and 0.5 ms GPU p95, so rows #160-#177 do not count for the keep rule.
 
@@ -187,13 +189,14 @@ row (decision keep), a `PERFORMANCE-LEARNINGS.md` entry and the box ticked with 
 
 ### Phase 1 — One shadow pass per light draws GPU-culled page instances
 
-**Status:** DONE (kept 2026-11-02)
+**Status:** PARTIAL — numbers and judge pass, keep-rule box open
 **Files:** new `packages/runtime-native/src/engine/renderer/shadows/virtual/gpu_pages.{h,cpp}` (cull kernel, buffers);
 `renderer.cpp` (shadow stage, encode); the shadow vertex program generator under `engine/shader/` (page record path);
 `tests/native-engine/render_database_test.cpp`.
 
-- [x] A granted level draws in one render pass per light, from GPU rows. proof: new case `virtual_shadow_pages_draw_from_gpu_rows` in `tn-native-engine-render-database-test` — RED on develop (one pass per drawn page, 124+ passes); GREEN: one pass, the GPU's (page, instance) set equals FG1's CPU set (1,118 instances on 124 pages), receiver pixels within the target in Decisions on the case, `ctest -R native_engine_render_vsm` green. Result: 124 -> 1 passes, 1,118 of 1,118 records, 0 missing, 0 extra, 1 of 36,864 pixels differs, `ctest -L native-engine` 524 of 524 on a162e234d.
-- [x] Phase 1 passes the keep rule on the stress lab. proof: ledger rows (decision keep) from `measure.sh` and the fair window, judge verdict, shooter holdout. Result, off -> on, one lab and one Wasm at a162e234d: #236-#237 CPU p95 18.91 -> 17.83 (-5.7 %), p50 14.16 -> 14.42 (+1.8 %, inside the A/A band), GPU p95 7.30 -> 6.98, presented p95 19.83 -> 18.53; #241 and #240 CPU p95 22.11 -> 19.91 (-10.0 %), p50 16.61 -> 15.79, GPU p95 7.40 -> 6.95, presented p95 22.85 -> 20.95. Fresh Opus judge on 5 runs per arm: NEUTRAL on all 3 poses, no seam or lost shadow (orphan `prd-775-screenshots`, folder `phase1-judge-c`). Open flag: a crisp edge state appears in 6 of 10 AFTER frames and 2 of 10 BEFORE frames (Fisher p = 0.17), and both arms show it. Shooter holdout, 6 ABBA runs on c612e353d, before the pan fix: no effect (fps 59.95 both, CPU p95 6.59 -> 6.63, GPU p95 5.98 both); every run exits 1 on the frozen scenario's trivial `resource.state.phase` assertion in both arms. `pnpm budgets` exit 0.
+- [x] A granted level draws in one render pass per light, from GPU rows. proof: new case `virtual_shadow_pages_draw_from_gpu_rows` in `tn-native-engine-render-database-test` — RED on develop (one pass per drawn page, 124+ passes); GREEN: one pass, the GPU's (page, instance) set equals FG1's CPU set (1,118 instances on 124 pages), receiver pixels at most 4 of 36,864 (see Decisions) on the case, `ctest -R native_engine_render_vsm` green. Result on the merge with develop at de7584e47: 124 -> 1 passes, 1,118 of 1,118 records, 0 missing, 0 extra, 1 of 36,864 pixels differs (max channel diff 60), `ctest -R native_engine_render_vsm` 2 of 2, `ctest -L native-engine` exit 0.
+- [ ] Phase 1 passes the keep rule on the stress lab. proof: ledger rows (decision keep) from `measure.sh` and the fair window, judge verdict, shooter holdout. Result, off -> on, one lab and one Wasm at a162e234d: #236-#237 CPU p95 18.91 -> 17.83 (-5.7 %), p50 14.16 -> 14.42 (+1.8 %, inside the A/A band), GPU p95 7.30 -> 6.98, presented p95 19.83 -> 18.53; #241 and #240 CPU p95 22.11 -> 19.91 (-10.0 %), p50 16.61 -> 15.79, GPU p95 7.40 -> 6.95, presented p95 22.85 -> 20.95. Fresh Opus judge on 5 runs per arm: NEUTRAL on all 3 poses, no seam or lost shadow (orphan `prd-775-screenshots`, folder `phase1-judge-c`). Open flag, not closed by this verdict: a crisp edge state appears in 6 of 10 AFTER frames and 2 of 10 BEFORE frames (Fisher p = 0.17), both arms show it, the cause is unverified. `pnpm budgets` exit 0.
+  Open: the shooter holdout proves nothing yet. Its 6 ABBA runs ran on c612e353d, before the pan fix, and read no effect (fps 59.95 both, CPU p95 6.59 -> 6.63, GPU p95 5.98 both), but all 6 exit 1 with `TN_PLAYTEST_ASSERTION_TRIVIAL`: the frozen scenario asserts `phase` equals `playing`, which already holds before it runs. Rerun on the current head with that held invariant marked `allowTrivial` in a lane copy. The owner paused paired windows until Phase 2 code is green.
 
 ### Phase 2 — The VSM stage reads the caster change set
 

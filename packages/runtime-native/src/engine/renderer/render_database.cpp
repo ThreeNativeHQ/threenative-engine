@@ -914,10 +914,9 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
                         if (virtualShadows_ && mainPass && shadowCaster && !items.empty() && items.back().skinnedRig) {
                             // Same split as a page caster above: the rig's main-pass copy joins the palette
                             // batch, its shadow copy stays individual for the per-page cull.
-                            DrawItem shadow = items.back();
-                            shadow.mainPass = false;
-                            items.back().castShadow = false;
-                            items.push_back(shadow);
+                            items.emplace_back(items.back());
+                            items.back().mainPass = false;
+                            items[items.size() - 2].castShadow = false;
                         }
                         if (mesh.onBeforeRender && mainPass)
                             callbacks_.push_back({mesh.weak_from_this().lock(), &mesh, &r});
@@ -1255,8 +1254,8 @@ void RenderDatabase::batch(std::vector<DrawItem>& items, Object3D& scene,
     batchedOut_.reserve(items.size() - batchMembers_ + merged_.size());
     for (std::size_t i = 0; i < items.size(); ++i)
         if (!absorbed_[i])
-            batchedOut_.push_back(items[i]);
-    batchedOut_.insert(batchedOut_.end(), merged_.begin(), merged_.end());
+            batchedOut_.push_back(std::move(items[i]));
+    batchedOut_.insert(batchedOut_.end(), std::make_move_iterator(merged_.begin()), std::make_move_iterator(merged_.end()));
     items.swap(batchedOut_);
 }
 

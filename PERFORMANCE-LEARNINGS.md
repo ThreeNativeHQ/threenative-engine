@@ -1001,10 +1001,11 @@ no COOP/COEP); that lane is open.
   `/sys/class/drm/card1-*/status` before a window. Page counts under Xvfb on the real GPU stay valid; timing there is not a verdict.
 - Revisit when: a scene's casters span far more depth than its window (a high flyer), which re-fits and redraws the level each time.
 
-### 2026-11-02 — PRD-775 Phase 1: one shadow pass from GPU rows — KEEP
+### 2026-11-02 — PRD-775 Phase 1: one shadow pass from GPU rows — OPEN: numbers and judge pass, two terms open
 
 - Change: a granted level draws in one pass from a compute cull, not one pass per page. Native grant: 124 -> 1 passes, encode 1.25 -> 0.16-0.46 ms.
 - Off -> on, one lab, one Wasm: CPU p95 18.91 -> 17.83 and 22.11 -> 19.91 ms, GPU p95 7.30 -> 6.98 and 7.40 -> 6.95 ms (rows #236-#237, #240-#241). CPU p50 moved +0.26 and -0.82 ms, inside A/A. It is a tail lever, since only grants change.
 - Method trap: two labs of different age gave false terms, and 2 judge runs per arm gave a false REGRESSION. Window placement depends on history, so edge softness has 2 states per run in both arms. Use a URL lever in one lab and 5 runs per arm.
 - Refuted: the sharper edges do not come from cheaper levels reaching the adaptive refresh step. Level cost is far below the budget in both arms.
 - Open: the crisp state appears in 6 of 10 AFTER frames and 2 of 10 BEFORE frames (p = 0.17). The cause is unverified.
+- Open: the shooter holdout ran before the pan fix, and all 6 runs exit 1 with `TN_PLAYTEST_ASSERTION_TRIVIAL`. It proves nothing until it reruns on the current head.
