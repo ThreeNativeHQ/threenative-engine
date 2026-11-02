@@ -912,5 +912,21 @@ no COOP/COEP); that lane is open.
   by about 1 between windows, and single runs read 56.1-58.1. The dashboard reads a gap of 2 points or less as a tie.
 - Load limits stay at 12 and 18 by owner order. Data so far: about 1% at peak 7 or less, about 3% at peak 13, about 8% at
   sustained load 10-12. Peak alone does not predict the noise.
+- Revisit when: a display-side present timestamp is available on the web, which would check the frame-start reading.
 - Insight: log every callback's start beside its timestamp before you trust a tail number. The 0-5 ms bin held as many
   frames as the 30 ms bin, and a real tail has no such partner.
+
+### 2026-11-02 — Stress lab: from 32 rigs, each measures its animation rate one frame in four (FA1) — KEEP
+
+- Where: `packages/core/src/render-camera-cull.ts`, `prepareAnimation` and `#holdRate`. A smaller scene measures every frame.
+  A rig just shown measures at once. A nested rig or a stand-in keeps the full walk.
+- Result, rows #180-#183, four pairs that agree, load peak 7 or less: 66.5 to 72.2 fps (+8.6%), CPU p50 14.1 to 13.1 ms, CPU p95
+  19.4 to 17.9 ms, frame p95 19.9 to 18.5 ms. GPU p95, draws, triangles, uploads and bridge calls did not change.
+- The gain is near 1 ms against a 0.56 ms forecast from the profile's inclusive time. The extra is not attributed.
+- Judge: Opus NEUTRAL on 12 stills. Motion is unverified: a still cannot show a rate change stepping. The red-green test bounds
+  the lag: part measures over 4 frames fall from 160 to 40, and a new distance reaches every rig inside 4 frames.
+- Insight: an earlier hunt filed this as "no lever" (FU7) because it sat outside that lane's phase. Re-profile the whole frame
+  from a fresh tree, and read old "no lever" notes as "not in that lane".
+- Stage table for the next lever, PRD-775 Phase 1 build, p50 and p95 frames: plan 3.6 and 5.2 (virtual pages 1.7 and 2.7), update
+  2.3 and 4.3, JS before the engine 2.7 and 3.5 (bloom 0.9, auto exposure 0.7, local exposure 0.3), scene 2.8 and 3.3.
+- Revisit when: a walker close-up shows a step at a rate change, or a game with 32 or more rigs reports one.
