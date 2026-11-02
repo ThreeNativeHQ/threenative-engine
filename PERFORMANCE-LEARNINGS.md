@@ -968,3 +968,12 @@ no COOP/COEP); that lane is open.
 - Closed by reading, not measured: a number fast path in the uniform sync setter (hunt L3). `uniformLanes` and `sameLanes` on one
   number are a few operations, so 1340 calls a frame cost far less than the 0.2-0.3 ms the hunt estimated. Most of the time is in the
   callbacks and the object scan. Revisit when: a profile shows the setter by name.
+
+### 2026-11-02 — Stress lab: a clone keeps the skeleton its source meshes share (L4) — KEEP
+
+- What changed: `cloneSkeleton` maps each source `Skeleton` to one copy. A rig with several primitives now updates its bones once a frame,
+  not once per primitive.
+- Result, labs restarted cold together (rows #226-233, both arm orders, 8 of 8 pairs): fps 72.96 to 76.03 (+4.2%), frame p50 12.86 to
+  12.44 ms, frame p95 18.20 to 17.48 ms, presented p95 18.80 to 18.07 ms. GPU p95 did not change. Opus judge: NEUTRAL on 16 shots.
+- Revisit when: a game mutates one clone's skeleton and expects its sibling primitives to keep their own copy. No shipped code does this,
+  and the source already shares that skeleton.
