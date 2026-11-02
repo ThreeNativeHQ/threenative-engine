@@ -3,16 +3,20 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { makeTempDirSync } from "../../test-support/temp-dir.js";
-import {
+
+const {
   TEMPLATE_NAMES,
   carryDeps,
+  pathFamily,
   selectionPlan,
   validateEventPlan,
   validatePlan,
   withCarriedLegs,
-} from "../ci-change-scope.mjs";
-import { integrationJobNamesByLane, integrationSelection } from "../ci-integration-scope.mjs";
-import {
+} = await import(new URL("../ci-change-scope.mjs", import.meta.url).href);
+const { integrationJobNamesByLane, integrationSelection } = await import(
+  new URL("../ci-integration-scope.mjs", import.meta.url).href
+);
+const {
   CARRIABLE_JOBS,
   RELEASE_GATE_JOBS,
   applyCarried,
@@ -22,11 +26,9 @@ import {
   legsOf,
   reaches,
   versionOnly,
-} from "../ci-leg-carry.mjs";
-
+} = await import(new URL("../ci-leg-carry.mjs", import.meta.url).href);
 const SOURCE = "a".repeat(40);
 const CANDIDATE = "b".repeat(40);
-const { pathFamily } = await import(new URL("../ci-change-scope.mjs", import.meta.url).href);
 const isProse = (file: string) => file.endsWith(".md");
 const fullPlan = (sha = CANDIDATE) =>
   selectionPlan("full", "a test board", [], sha, true, 0, "main", true);
@@ -357,8 +359,10 @@ describe("the walk over recent runs", () => {
         "test-unit (1/4)",
       ]),
     );
-    expect(carried.filter((entry) => entry.job === "integration").length).toBeGreaterThan(5);
-    expect(carried.every((entry) => entry.sourceSha === source)).toBe(true);
+    expect(
+      carried.filter((entry: { job: string }) => entry.job === "integration").length,
+    ).toBeGreaterThan(5);
+    expect(carried.every((entry: { sourceSha: string }) => entry.sourceSha === source)).toBe(true);
     expect(
       carriedFailures(
         plan,
@@ -446,8 +450,8 @@ describe("the walk over recent runs", () => {
       plan,
       deps([run(2, newer), run(1, older)], (id) => greenJobs(plan, id === "2" ? ["budgets"] : [])),
     );
-    expect(carried.find((entry) => entry.leg === "budgets")?.runId).toBe(1);
-    expect(carried.find((entry) => entry.leg === "typecheck")?.runId).toBe(2);
+    expect(carried.find((entry: { leg: string }) => entry.leg === "budgets")?.runId).toBe(1);
+    expect(carried.find((entry: { leg: string }) => entry.leg === "typecheck")?.runId).toBe(2);
   });
 
   it.each(["failure", "timed_out"])(
@@ -631,24 +635,22 @@ describe("which runs may carry at all", () => {
 
 describe("the workflows honour a carried job", () => {
   const ci = readFileSync(".github/workflows/ci.yml", "utf8");
+  const gatedJobs: string[] = CARRIABLE_JOBS.filter((job: string) => job !== "native-platforms");
 
   // `&&` binds tighter than `||`, so a gate appended to `a || b` applies only to `b`.
-  it.each(CARRIABLE_JOBS.filter((job: string) => job !== "native-platforms"))(
-    "%s's gate applies to the whole condition",
-    (job) => {
-      const condition =
-        /^ {4}if: (?:\$\{\{ )?(.*?)(?: \}\})?$/mu.exec(jobText(ci, job) ?? "")?.[1] ?? "";
-      const gate = ` && !contains(fromJSON(needs.scope.outputs.plan).carriedJobs, '${job}')`;
-      expect(condition.endsWith(gate)).toBe(true);
-      let depth = 0;
-      const rest = condition.slice(0, -gate.length);
-      for (let index = 0; index < rest.length; index += 1) {
-        if (rest[index] === "(") depth += 1;
-        if (rest[index] === ")") depth -= 1;
-        if (depth === 0) expect(rest.slice(index, index + 2)).not.toBe("||");
-      }
-    },
-  );
+  it.each(gatedJobs)("%s's gate applies to the whole condition", (job: string) => {
+    const condition =
+      /^ {4}if: (?:\$\{\{ )?(.*?)(?: \}\})?$/mu.exec(jobText(ci, job) ?? "")?.[1] ?? "";
+    const gate = ` && !contains(fromJSON(needs.scope.outputs.plan).carriedJobs, '${job}')`;
+    expect(condition.endsWith(gate)).toBe(true);
+    let depth = 0;
+    const rest = condition.slice(0, -gate.length);
+    for (let index = 0; index < rest.length; index += 1) {
+      if (rest[index] === "(") depth += 1;
+      if (rest[index] === ")") depth -= 1;
+      if (depth === 0) expect(rest.slice(index, index + 2)).not.toBe("||");
+    }
+  });
 
   it("run-summary requires a performance lane only when its job ran", () => {
     const summary = jobText(ci, "run-summary") ?? "";
@@ -656,14 +658,11 @@ describe("the workflows honour a carried job", () => {
     expect(summary).toContain("carriedJobs, 'test-native'");
   });
 
-  it.each(CARRIABLE_JOBS.filter((job: string) => job !== "native-platforms"))(
-    "%s has a job gate",
-    (job) => {
-      expect(jobText(ci, job)).toContain(
-        `!contains(fromJSON(needs.scope.outputs.plan).carriedJobs, '${job}')`,
-      );
-    },
-  );
+  it.each(gatedJobs)("%s has a job gate", (job: string) => {
+    expect(jobText(ci, job)).toContain(
+      `!contains(fromJSON(needs.scope.outputs.plan).carriedJobs, '${job}')`,
+    );
+  });
 
   it("native-platforms reads the plan's required flag, which a carry clears", () => {
     expect(jobText(ci, "native-platforms")).toContain(
