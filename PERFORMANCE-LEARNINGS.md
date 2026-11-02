@@ -856,3 +856,29 @@ no COOP/COEP); that lane is open.
   (+12-15%), uncapped 20.1 against 19.2-19.9 (+1-5%, inside noise) (rows #141-#144).
 - Open: ThreeNative update p50 is still 28 ms against vanilla's 13 ms at load 4, and GPU p95 is 7.5 against 4.2 ms
   at load 2, 21-24 against 14 ms at load 4 and 44 against 21 ms at load 8.
+
+## Stress lab: three 0.187 (#597) against its merge base (2026-11-02)
+
+- Measured at PR head 4f0a79fad (Wasm c49dffb0a349) against merge base b0e1b9ebc (three 0.185.1, Wasm 497f863a1266),
+  fair ABBA, uncapped, loaded host (peak 8-13). The PR has since moved to 202ff22c7, which was not measured.
+- VSM (rows #158-#159): 55.8 against 57.3 fps, CPU p50 16.63 against 16.37 ms. Plain sun (rows #166-#167):
+  88.2 against 89.6 fps, CPU p50 10.77 against 10.63 ms. Pairs disagree: inside the noise. No regression.
+- GPU p50 is lower in all four pairs: 6.38 and 6.42 against 5.80 and 5.70 ms (VSM), 4.97 and 4.94 against 4.49 and
+  4.49 ms (plain sun), about 9-10%. GPU p95 is mixed. Same draws and triangles. The cause is unverified.
+- Risk: a game generated earlier fails `tsc` against 0.187 types at `src/render/temporalAAFrame.ts:40` and
+  `temporalResolveDepth.ts:141`. Vite still serves it. #597 changes both files in its templates.
+
+## Stress lab: the load gate, A/A noise and the first Unreal uncapped rows (2026-11-02)
+
+- The old gate (start under 4, void above 6) was never calibrated. It starved the loop for hours on a 24-thread host
+  where the stress page alone adds about 6. It is now 12 and 18 (owner order), and still not calibrated.
+- A/A at load 10-12: 50.4-59.4 fps, CPU p50 15.6-18.4 ms. That band settles engine gaps, not a 3% lever. Compare
+  only inside one window, and use a control: vanilla lost the same share as ThreeNative (-21% and -23%) under load.
+- Unreal uncapped (rows #162-#163): 68.8-70.0 fps, presented p95 18.8 ms, frame p50 13.0-13.4 ms, GPU p95 13.3-16.6 ms.
+  ThreeNative VSM: 48-57 fps, presented p95 33 ms, CPU p50 16-19 ms, GPU p95 8 ms. ThreeNative loses on CPU only.
+- FG2 (VSM depth band from the level, not the casters): open. Laptop median shadow draws 715-741 against 89-105, but
+  the desktop reads 9 on both arms, and no pair shows a frame-time gain. Judge NEUTRAL. A caster more than 200 m along
+  the light would lose its top shadow, so a keep needs a guard.
+- Traps: `fair` spawned through a forking browser wrapper leaves Brave alive, and it holds the laptop's GPU lock. A
+  stress lab needs `tn-native-engine-web.mjs` beside the threads pair (`TN_WASM_ENGINE_MISSING`). `fair` also holds
+  `build.lock` for its whole window, which starves a lane's build.
