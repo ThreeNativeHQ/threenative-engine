@@ -52,6 +52,8 @@ describe("the game loop reports frames the renderer declined to draw", () => {
       start: "test",
     });
     const requestFrame = globalThis.requestAnimationFrame;
+    // The loop's clock starts inside start(), so a real clock gives the first frame however long the host stalled: on a loaded runner that is extra ticks, and a window closes a frame early.
+    vi.spyOn(globalThis.performance, "now").mockReturnValue(0);
     Object.defineProperty(globalThis, "requestAnimationFrame", {
       configurable: true,
       value: (callback: (time: number) => void) => {
@@ -62,8 +64,7 @@ describe("the game loop reports frames the renderer declined to draw", () => {
     try {
       await game.start();
       if (!frame) throw new Error("Game did not start its loop");
-      const start = performance.now();
-      for (let index = 1; index <= 40; index += 1) frame(start + index * 16.7);
+      for (let index = 1; index <= 40; index += 1) frame(index * 16.7);
       const counted = windows.filter((w) => w.renderSkips !== undefined);
       expect(counted.length).toBeGreaterThan(0);
       expect(counted.every((w) => w.renderSkips === w.frames / 3)).toBe(true);
