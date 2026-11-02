@@ -9,11 +9,32 @@
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 
-const [projectRoot] = process.argv.slice(2);
-if (projectRoot === undefined) {
-  process.stderr.write("usage: non-visual-scenarios.mjs <project-root>\n");
+const [projectRoot, boardFlag, boardKit] = process.argv.slice(2);
+if (
+  projectRoot === undefined ||
+  (boardFlag !== undefined && (boardFlag !== "--board" || !boardKit))
+) {
+  process.stderr.write("usage: non-visual-scenarios.mjs <project-root> [--board <kit>]\n");
   process.exit(2);
 }
+// Owner cut (2026-11-01): on these kits a board leaves its longest scenarios to the nightly, which
+// runs every scenario. Frames, not files, cost the time, and a scenario's scripted ticks predict
+// its frames (run 41325468129: shooter debug-endurance 6866 ticks, 6846 frames).
+const BOARD_TRIMMED_KITS = new Set([
+  "shooter",
+  "collectathon",
+  "rain",
+  "adventure",
+  "platformer",
+  "kart",
+]);
+const BOARD_TICK_LIMIT = 500;
+const scriptedTicks = (scenario) =>
+  (scenario.warmupFrames ?? 0) +
+  (scenario.steps ?? []).reduce(
+    (total, step) => total + (step.holdTicks ?? 0) + (step.waitTicks ?? 0),
+    0,
+  );
 const directory = path.join(projectRoot, "playtests");
 const entries = readdirSync(directory).filter((name) => name.endsWith(".playtest.json"));
 if (entries.length === 0) {
@@ -60,13 +81,20 @@ const visual = (source) => {
 
 const kept = [];
 const skipped = [];
+const nightly = [];
 for (const name of entries.sort()) {
-  const file = path.join(directory, name);
-  (visual(readFileSync(file, "utf8")) ? skipped : kept).push(name);
+  const source = readFileSync(path.join(directory, name), "utf8");
+  if (visual(source)) skipped.push(name);
+  else if (
+    BOARD_TRIMMED_KITS.has(boardKit) &&
+    scriptedTicks(JSON.parse(source)) >= BOARD_TICK_LIMIT
+  )
+    nightly.push(name);
+  else kept.push(name);
 }
 // Never a silent narrowing: what this drops is printed where the job's log will carry it.
 process.stderr.write(
-  `non-visual scenarios: ${kept.length} kept, ${skipped.length} left to the lanes with hardware (${skipped.join(", ")})\n`,
+  `non-visual scenarios: ${kept.length} kept, ${skipped.length} left to the lanes with hardware (${skipped.join(", ")}), ${nightly.length} left to the nightly (${nightly.join(", ")})\n`,
 );
 if (kept.length === 0) {
   process.stderr.write("every scenario is visual; nothing would run\n");

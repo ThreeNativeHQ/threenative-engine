@@ -83,9 +83,8 @@ test('green native platform lane is required by primary CI', () => {
   expect(nativeJob).toContain('uses: ./.github/workflows/native-platforms.yml');
   expect(nativeJob).not.toMatch(/^\s+continue-on-error:/mu);
   expect(workflow).toContain('workflow_call:');
-  // PRD-629: the only push trigger is main, so the release candidate gets a standalone run.
-  expect(workflow).not.toMatch(/\n\x20{2}(?:pull_request|schedule):/u);
-  expect(workflow).toMatch(/\n\x20{2}push:\n\x20{4}branches: \[main\]\n/u);
+  // The release candidate reads its reports from the main CI run, so nothing starts this alone.
+  expect(workflow).not.toMatch(/\n\x20{2}(?:pull_request|schedule|push):/u);
   expect(ciWorkflow).toContain(
     "cancel-in-progress: ${{ github.event_name == 'pull_request' }}",
   );
@@ -389,6 +388,11 @@ test('iOS consumer launches the bundle identifier produced by its packager', () 
   expect(workflow).toContain('report="$app.json"');
   expect(workflow).toContain('--bundle-id "$bundle_id"');
   expect(workflow).not.toContain('--bundle-id dev.threenative.runtime');
+  // The release consumer hit this same mismatch on every tag run: the simulator never listed the id.
+  const release = readFileSync(new URL('../../../.github/workflows/native-release.yml', import.meta.url), 'utf8');
+  expect(release).toContain('echo "IOS_BUNDLE_ID=$bundle_id" >> "$GITHUB_ENV"');
+  expect(release).toContain('--bundle-id "$IOS_BUNDLE_ID"');
+  expect(release).not.toContain('--bundle-id dev.threenative.runtime');
 });
 
 test('iOS builds selected React UI from installed packages and checks full-screen pixels', () => {

@@ -76,15 +76,6 @@ function candidate(overrides: Partial<IReleaseCandidate> = {}): IReleaseCandidat
         headSha: CANDIDATE_SHA,
         workflowPath: ".github/workflows/ci.yml",
       },
-      native: {
-        databaseId: 102,
-        status: "completed",
-        conclusion: "success",
-        event: "push",
-        headBranch: "main",
-        headSha: CANDIDATE_SHA,
-        workflowPath: ".github/workflows/native-platforms.yml",
-      },
     },
     parity: {
       reportSchemaVersion: 1,
@@ -92,8 +83,8 @@ function candidate(overrides: Partial<IReleaseCandidate> = {}): IReleaseCandidat
       candidateSha: CANDIDATE_SHA,
       verdict: "PASS",
       reportSha256: "b".repeat(64),
-      sourceRunId: 102,
-      sourceWorkflowPath: ".github/workflows/native-platforms.yml",
+      sourceRunId: 101,
+      sourceWorkflowPath: ".github/workflows/ci.yml",
       artifactName: "native-release-parity",
       artifactPath: "reports/parity.json",
       subjects: expectedReleaseReportSubjects("parity"),
@@ -104,8 +95,8 @@ function candidate(overrides: Partial<IReleaseCandidate> = {}): IReleaseCandidat
       candidateSha: CANDIDATE_SHA,
       verdict: "PASS",
       reportSha256: "c".repeat(64),
-      sourceRunId: 102,
-      sourceWorkflowPath: ".github/workflows/native-platforms.yml",
+      sourceRunId: 101,
+      sourceWorkflowPath: ".github/workflows/ci.yml",
       artifactName: "native-release-provenance",
       artifactPath: "reports/provenance.json",
       subjects: expectedReleaseReportSubjects("provenance"),
@@ -137,16 +128,15 @@ function candidate(overrides: Partial<IReleaseCandidate> = {}): IReleaseCandidat
 }
 
 describe("release candidate gate", () => {
-  it("accepts a dispatched native-platforms run, the only standalone run that workflow can have", () => {
+  it("reads every report from the main push CI run, and refuses a second evidence run", () => {
     const base = candidate();
-    const dispatched = {
-      ...base,
-      requiredRuns: {
-        ...base.requiredRuns,
-        native: { ...base.requiredRuns.native, event: "workflow_dispatch" },
-      },
-    };
-    expect(validateReleaseCandidate(dispatched, "ThreeNativeHQ/threenative").errors).toEqual([]);
+    expect(validateReleaseCandidate(base, "ThreeNativeHQ/threenative").errors).toEqual([]);
+    expect(
+      validateReleaseCandidate(
+        { ...base, requiredRuns: { ...base.requiredRuns, native: base.requiredRuns.ci } },
+        "ThreeNativeHQ/threenative",
+      ).errors,
+    ).toContain("requiredRuns has unknown key 'native'.");
     const ciDispatched = {
       ...base,
       requiredRuns: {
@@ -589,13 +579,13 @@ describe("release candidate gate", () => {
       candidateSha: CANDIDATE_SHA,
       runtimeVersion: RUNTIME_VERSION,
       releaseScope: FULL_RELEASE_SCOPE,
-      requiredRunIds: { ci: 201, native: 202 },
+      requiredRunIds: { ci: 201 },
       reportArtifacts: {
         parity: {
-          ...expectedReleaseReportReference("parity", 202),
+          ...expectedReleaseReportReference("parity", 201),
         },
         provenance: {
-          ...expectedReleaseReportReference("provenance", 202),
+          ...expectedReleaseReportReference("provenance", 201),
         },
       },
     };
@@ -667,13 +657,13 @@ describe("release candidate gate", () => {
       candidateSha: CANDIDATE_SHA,
       runtimeVersion: RUNTIME_VERSION,
       releaseScope: FULL_RELEASE_SCOPE,
-      requiredRunIds: { ci: 201, native: 202 },
+      requiredRunIds: { ci: 201 },
       reportArtifacts: {
         parity: {
-          ...expectedReleaseReportReference("parity", 202),
+          ...expectedReleaseReportReference("parity", 201),
         },
         provenance: {
-          ...expectedReleaseReportReference("provenance", 202),
+          ...expectedReleaseReportReference("provenance", 201),
         },
       },
     };
