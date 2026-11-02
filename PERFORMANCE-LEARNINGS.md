@@ -985,12 +985,15 @@ no COOP/COEP); that lane is open.
 - Method trap: a whole-frame step in a screencast is a state change, so line its time up with the engine's grants before theorizing.
 - Open lever: level 0 still redraws all 256 pages in 51 of 53 grants, because the depth re-fit moves near and far by about 0.001 m.
 
-### 2026-11-02 — Virtual shadows: a level holds its depth range while its casters fit (FG3) — KEEP, 8-pair verdict open
+### 2026-11-02 — Virtual shadows: a level holds its depth range while its casters fit (FG3) — KEEP on GPU p95, frame p95 rule missed
 
 - What changed: a grant re-fits a level's depth range only when a caster leaves it or a re-fit would shrink it past 75%. A re-fit pads
   by the level's extent on each side.
 - Result: pages drawn 91 to 12.6 per frame, level 0 full redraws 88 to 7 in about 20 s. One real-display pair, load 12-15: presented p95
   27.95 to 25.43 ms, GPU p95 7.75 to 6.78 ms. Opus judge: NEUTRAL.
+- 8 real-display pairs (rows #244-259, both arm orders, load peak 9-15): GPU p95 7.51 to 6.75 ms in 8 of 8, frame p95 22.19 to 21.60 ms in 5 of
+  8, presented p95 23.34 to 22.71 ms in 5 of 8, fps 60.11 to 60.25. The rule set before the run asked frame p95 in 6 of 8, and this missed by one
+  pair. All 3 losses ran the FG3 arm at the higher load. Kept anyway on the 8 of 8 GPU win and no worse mean: a decision past the rule, not a pass.
 - Why a 2% pad was not enough: panning along V slides the ground's depth band by about 0.9 m per metre, so 41 pages per frame stayed.
 - Method trap: desktop monitors asleep stop the browser opening its DevTools port, and a private Xvfb under the wrapper does too. Check
   `/sys/class/drm/card1-*/status` before a window. Page counts under Xvfb on the real GPU stay valid; timing there is not a verdict.
