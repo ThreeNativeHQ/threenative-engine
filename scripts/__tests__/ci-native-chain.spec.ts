@@ -374,6 +374,7 @@ describe("actual native receipt writer, collector and protected verdict", () => 
       for (const name of [
         "ci-native-receipts.mjs",
         "ci-native-qualification.mjs",
+        "ci-leg-carry.mjs",
         "ci-attempt-receipts.mjs",
         "ci-change-scope.mjs",
       ])

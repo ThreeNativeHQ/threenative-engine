@@ -192,6 +192,22 @@ describe("required current-attempt integration receipts", () => {
       }),
     ).toThrow("CI_INTEGRATION_EMPTY_QUALIFICATION");
   });
+
+  it("accepts an empty qualification only when per-job reuse carried the lanes", () => {
+    expect(
+      validate(
+        { ...current, jobs: [], jobNames: {}, qualification: true, carriedLanes: ["browser"] },
+        [],
+        { totalCount: 0, jobs: [] },
+      ),
+    ).toBeUndefined();
+    expect(() =>
+      validate({ ...current, jobs: [], jobNames: {}, qualification: true, carriedLanes: [] }, [], {
+        totalCount: 0,
+        jobs: [],
+      }),
+    ).toThrow("CI_INTEGRATION_EMPTY_QUALIFICATION");
+  });
 });
 
 describe("reusable integration admission wiring", () => {
