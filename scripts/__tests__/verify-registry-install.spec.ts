@@ -1193,12 +1193,16 @@ describe("the PRD-446 upgrade proof", () => {
     const seen = { installs: [] as string[][], playtests: [] as string[][] };
     const upgrade = upgradeRunner(seen, candidate);
     const tests: string[] = [];
+    const browserBeforePlay: boolean[] = [];
+    let browser = false;
     const report = await verifyRegistryInstall({
       candidate,
       mcp: happyMcpRunner(),
       parent: await tempRoot(),
       run: (command, args, cwd) => {
         if (args[0] === "test") tests.push(command);
+        if (args.includes("pretest")) browser = true;
+        if (args.includes("threenative-playtest")) browserBeforePlay.push(browser);
         return upgrade(command, args, cwd);
       },
       surfaceCheck: () => {},
@@ -1206,9 +1210,14 @@ describe("the PRD-446 upgrade proof", () => {
     expect(report.exitCode).toBe(0);
     expect(tests).toEqual([]);
     // Left out, not reported green. The upgraded game still plays its scenario.
-    expect(report.steps.map((step) => step.name)).not.toContain("pnpm:test");
-    expect(report.steps.map((step) => step.name)).toContain("pnpm:gameplay");
+    const names = report.steps.map((step) => step.name);
+    expect(names).not.toContain("pnpm:test");
+    expect(names).toContain("pnpm:gameplay");
     expect(seen.playtests).toHaveLength(1);
+    // `pretest` is what installs Chromium: hosted run 41430307706 had no browser without it.
+    expect(names.indexOf("pnpm:browser")).toBeLessThan(names.indexOf("pnpm:gameplay"));
+    expect(names).toContain("pnpm:browser");
+    expect(browserBeforePlay).toEqual([true]);
   });
 
   it("upgrades the previous latest onto the packed candidate and plays that template's scenario", async () => {

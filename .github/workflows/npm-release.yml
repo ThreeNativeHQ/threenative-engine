@@ -72,7 +72,7 @@ jobs:
       - name: Install native desktop runtime dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libvulkan1 mesa-vulkan-drivers libwebkit2gtk-4.1-0
+          sudo apt-get install -y libvulkan1 mesa-vulkan-drivers libwebkit2gtk-4.1-0 x11-utils
       # The publish set, named one package per line so `pnpm publish:check` can assert that no
       # publishable package is missing from it. A package that exists, is not private, and is
       # absent here would be omitted from the release.
@@ -146,10 +146,11 @@ jobs:
       - run: pnpm install --frozen-lockfile
       # `libwebkit2gtk-4.1-0` is the desktop prebuilt's overlay webview: without it the host exits
       # 127 before `--version`, and doctor and the native step both fail on a loader error.
+      # `x11-utils` carries `xdpyinfo`, which the native step needs to verify its display.
       - name: Install native desktop runtime dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libvulkan1 mesa-vulkan-drivers libwebkit2gtk-4.1-0
+          sudo apt-get install -y libvulkan1 mesa-vulkan-drivers libwebkit2gtk-4.1-0 x11-utils
       # Proves the registry path, which no other gate in this repository exercises: the sandbox,
       # the sweeps and verify-golden-path all resolve `file:` tarballs by design.
       - name: Install from the registry in a directory with no workspace above it
