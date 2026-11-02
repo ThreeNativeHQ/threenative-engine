@@ -150,7 +150,7 @@ describe("pnpm release:native publishing", () => {
 
   it("runs the native step after the npm publish, and staging before it", () => {
     const source = readFileSync(new URL("../release.ts", import.meta.url), "utf8");
-    const publishLoop = source.indexOf("publish ${name}@${version}");
+    const publishLoop = source.indexOf("publish ${name}@${versionOf(name)}");
     const stage = source.indexOf("await stageNativeRelease(");
     const upload = source.indexOf("uploadNativeRelease({");
     expect(publishLoop).toBeGreaterThan(0);
