@@ -856,3 +856,10 @@ no COOP/COEP); that lane is open.
   (+12-15%), uncapped 20.1 against 19.2-19.9 (+1-5%, inside noise) (rows #141-#144).
 - Open: ThreeNative update p50 is still 28 ms against vanilla's 13 ms at load 4, and GPU p95 is 7.5 against 4.2 ms
   at load 2, 21-24 against 14 ms at load 4 and 44 against 21 ms at load 8.
+
+### 2026-11-02 — Virtual shadows: a pan kept the mirrored page (bug, not a lever) — FIXED
+
+- Symptom: dark roofs and wrong wall shapes in steps of 230-550 ms. Pan off in the same build removed all of them, so one A/B named the code.
+- Cause: page keys counted along the view axes, which are -U and -V, so kept pages sat 2 x the shift away. Full redraws hide this.
+- Method trap: a whole-frame step in a screencast is a state change, so line its time up with the engine's grants before theorizing.
+- Open lever: level 0 still redraws all 256 pages in 51 of 53 grants, because the depth re-fit moves near and far by about 0.001 m.
