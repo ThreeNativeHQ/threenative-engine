@@ -474,12 +474,15 @@ export function scoreOf(metrics) {
   return total;
 }
 
+/** Score points one build moved between A/A runs at load peak 7 or less: 56.1 to 58.1 (2026-11-02). A gap this small is a tie. */
+const TIE_POINTS = 2;
+
 /** Green wins, yellow ties at the top, red loses. A lone measured engine has nothing to beat, so it stays neutral. */
-export function rankOf(value, values) {
+export function rankOf(value, values, margin = 0) {
   if (values.length < 2) return "s-none";
   const top = Math.max(...values);
-  if (value < top) return "s-lose";
-  return values.filter((other) => other === top).length > 1 ? "s-tie" : "s-win";
+  if (value < top - margin) return "s-lose";
+  return values.filter((other) => other >= top - margin).length > 1 ? "s-tie" : "s-win";
 }
 
 const bar = (fraction, cls) =>
@@ -536,7 +539,12 @@ export function verdictOf(rows, ctx, now = Date.now()) {
       if (mine === null || theirs === null) return { name, mine, theirs, result: "pending" };
       compared.push(own, row);
       const [a, b] = [Math.round(mine), Math.round(theirs)];
-      return { name, mine: a, theirs: b, result: a > b ? "win" : a < b ? "lose" : "tie" };
+      return {
+        name,
+        mine: a,
+        theirs: b,
+        result: a - b > TIE_POINTS ? "win" : b - a > TIE_POINTS ? "lose" : "tie",
+      };
     }),
   );
   const count = (result) => rivals.filter((rival) => rival.result === result).length;
@@ -607,6 +615,7 @@ function scorePanel(rows, ctx) {
         : rankOf(
             mine.score,
             measured.map(({ score }) => score),
+            TIE_POINTS,
           );
     const head = `<td class="score-name">${rank === "s-win" ? "✅ " : ""}${esc(name)}${row === undefined ? "" : `<br><span class="dim">#${row.id} · ${esc(row.at.slice(0, 10))} · ${esc(row.commit)}${row.load?.peak > NOISY_LOAD ? ` · <b>⚠️ noisy, load ${Math.round(row.load.peak)}</b>` : ""}</span>`}</td>`;
     if (mine === null)

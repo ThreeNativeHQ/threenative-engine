@@ -476,6 +476,13 @@ describe("stress-loop", () => {
     expect(rankOf(10, [10])).toBe("s-none");
   });
 
+  it("reads a score gap inside the margin as a tie, for the bar and for the verdict", () => {
+    expect(rankOf(56, [56, 54], 2)).toBe("s-tie");
+    expect(rankOf(54, [56, 54], 2)).toBe("s-tie");
+    expect(rankOf(56, [56, 53], 2)).toBe("s-win");
+    expect(rankOf(53, [56, 53], 2)).toBe("s-lose");
+  });
+
   it("shows one score bar per engine at the top of the Overview, and pending for an engine with no valid run", () => {
     const metrics = (fps: number) => ({ metrics: { ...report().metrics, fps } });
     const ledger = [
@@ -483,7 +490,7 @@ describe("stress-loop", () => {
       { variant: "arm=vanilla&uncapped", engine: "three-vanilla", fps: 60 },
       { variant: "arm=develop&uncapped", engine: WASM, fps: 62 },
       { variant: "load=8&arm=l8&uncapped", engine: "three-vanilla", fps: 7.92 },
-      { variant: "tnmatched&uncapped", engine: "unreal", fps: 70 },
+      { variant: "tnmatched&uncapped", engine: "unreal", fps: 110 },
     ].reduce(
       (acc, { variant, engine, fps }) =>
         recordRun(
