@@ -317,10 +317,16 @@ function verifyOwnedDesktop({ frames, project, artifact, artifactDirectory, logP
       steps: [{ kind: 'wait', waitTicks: 1, label: 'native-smoke' }],
       assert: { diagnostics: { runtimeReady: true, noConsoleErrors: true, noRuntimeDiagnostics: true } },
       artifacts: { screenshots: 'after' } }));
-    const result = run(process.execPath, [cli, scenario, '--target', 'desktop', '--project', project,
-      '--artifacts', captures, '--executable', artifact, '--host-arg', '--windowed'], {
+    const runner = [cli, scenario, '--target', 'desktop', '--project', project,
+      '--artifacts', captures, '--executable', artifact, '--host-arg', '--windowed'];
+    // The completion window admits only a VSYNC=0 player and, on Linux, a named display. The private
+    // Xvfb is that display unless the caller opted into the session's with TN_PLAYTEST_HOST_DISPLAY.
+    const linux = process.platform === 'linux';
+    const result = run(linux ? 'sh' : process.execPath, linux
+      ? [join(dirname(fileURLToPath(import.meta.url)), 'xvfb.sh'), 'env', 'TN_PLAYTEST_HOST_DISPLAY=1', process.execPath, ...runner]
+      : runner, {
       cwd: project, encoding: 'utf8', timeout, maxBuffer: 32 * 1024 * 1024,
-      env: { ...env, TN_PLAYTEST_COMPLETION_WINDOW_LABEL: 'native-smoke',
+      env: { ...env, TN_PLAYER_VSYNC: '0', TN_PLAYTEST_COMPLETION_WINDOW_LABEL: 'native-smoke',
         TN_PLAYTEST_COMPLETION_WINDOW_MIN_FRAMES: String(frames),
         TN_PLAYTEST_COMPLETION_WINDOW_TIMEOUT_MS: String(Math.max(1, timeout - 10_000)) },
     });
