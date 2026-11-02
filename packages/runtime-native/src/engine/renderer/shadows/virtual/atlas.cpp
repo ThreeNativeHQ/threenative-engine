@@ -196,6 +196,7 @@ std::vector<AtlasPage> PageAtlas::update(const Vector3& eye, const Vector3& towa
         // A pan keeps the pages the window still covers (UE 5.8.3 clipmap panning): a page key names a
         // fixed world rect, so its slot stays valid while the depth mapping and page size hold.
         const bool panning = moved && level.mapped && !level.dirtyAll && options_.partialRedraw;
+        const double oldCenterW = level.centerW, oldEye = level.eye;
         const double oldDepthOrigin = level.centerW + level.eye, oldNear = level.near, oldFar = level.far;
         const double oldPageWorldSize = level.window.pageWorldSize;
         const std::set<int> oldSlots(level.slots.begin(), level.slots.end());
@@ -206,8 +207,12 @@ std::vector<AtlasPage> PageAtlas::update(const Vector3& eye, const Vector3& towa
         // `v` counts pages along the window's height: `vScale` metres of V each, so a texel along V is
         // `vScale` times its width and covers the same floor area a low sun stretches it over.
         const double vScale = clipmap_->vScale();
-        Vector3 target = clipmap_->basisU(); target.multiplyScalar(cu);
-        target.addScaledVector(clipmap_->basisV(), cv * vScale).addScaledVector(clipmap_->basisW(), center.w);
+        const auto targetAt = [&](double w) {
+            Vector3 point = clipmap_->basisU(); point.multiplyScalar(cu);
+            point.addScaledVector(clipmap_->basisV(), cv * vScale).addScaledVector(clipmap_->basisW(), w);
+            return point;
+        };
+        Vector3 target = targetAt(center.w);
         if (!level.mapped) {
             level.eye = options_.lightDistance;
             level.near = 1;
@@ -233,10 +238,22 @@ std::vector<AtlasPage> PageAtlas::update(const Vector3& eye, const Vector3& towa
                     high = std::max(high, delta.dot(direction) + radius);
                 }
             }
-            if (std::isfinite(low) && high > low) {
+            // The mapping holds while the casters fit and a re-fit would not shrink it much, so kept pages stay valid. A pan along
+            // V slides the ground's depth band, so a re-fit leaves a pad sized by the level, enough for several pans. An empty set
+            // keeps the last fitted span.
+            const bool fitted = std::isfinite(low) && high > low;
+            const double pad = window.extent;
+            const double heldEye = oldDepthOrigin - center.w;
+            const bool fits = fitted && heldEye - high >= level.near && heldEye - low <= level.far &&
+                              high - low + 2 * pad >= 0.75 * (level.far - level.near);
+            if (level.mapped && (!fitted || fits)) {
+                level.centerW = oldCenterW;
+                level.eye = oldEye;
+                target = targetAt(oldCenterW);
+            } else if (fitted) {
                 level.near = std::max(1.0, (high - low) * 0.02);
-                level.eye = high + level.near;
-                level.far = level.near + high - low;
+                level.eye = high + pad + level.near;
+                level.far = level.near + high - low + 2 * pad;
             }
         }
         Vector3 from = target; from.addScaledVector(clipmap_->basisW(), level.eye);

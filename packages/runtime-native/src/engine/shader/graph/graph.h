@@ -94,6 +94,7 @@ struct NodeData {
     struct Memo {
         mutable uint64_t keyId = 0;
         mutable std::shared_ptr<const std::vector<std::shared_ptr<const NodeData>>> uniforms;
+        mutable std::shared_ptr<const std::vector<const NodeData*>> computeBindings;
         Memo() = default;
         Memo(const Memo&) {}
         Memo& operator=(const Memo&) { return *this; }
@@ -298,6 +299,13 @@ uint64_t keyId(const Graph& graph);
 std::map<std::string, std::vector<double>> uniforms(const Graph& graph);
 /** How many maps uniforms() has built in this process; a steady frame builds none. */
 uint64_t uniformMapBuilds();
+/**
+ * The storage and texture nodes a compute kernel can bind, found once per graph: a kernel dispatches many times a frame
+ * and its structure does not change. Read each node's object at the use, since `.value` replaces a texture.
+ */
+const std::vector<const NodeData*>& computeBindingNodes(const Graph& graph);
+/** How many graphs computeBindingNodes() has walked in this process; a steady frame walks none. */
+uint64_t computeBindingWalks();
 /** Every uniform node reachable from the graph, in first-visit order, found once per graph; a node
  *  may hold no value (a renderer-fed uniform such as `viewMatrix`). */
 const std::vector<Node>& uniformList(const Graph& graph);

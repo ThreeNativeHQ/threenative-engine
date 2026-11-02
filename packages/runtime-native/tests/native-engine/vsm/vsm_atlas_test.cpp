@@ -430,7 +430,8 @@ void atlas() {
     const std::vector<Box3> casters{prop, remote};
     auto fitPages = fitted->update(eye, Vector3(0, 1, 0), false, casters);
     CHECK(!fitPages.empty());
-    CHECK(std::abs(fitted->table()[31] - std::sqrt(12.0)) < 1e-5);
+    // FG3: a re-fit pads the fitted span by the level's extent on each side, so a pan keeps the mapping.
+    CHECK(std::abs(fitted->table()[31] - (std::sqrt(12.0) + 2 * options.clipExtents[0])) < 1e-5);
     for (const auto& point : {prop.min, prop.max}) {
         Vector3 projected = point;
         projected.applyMatrix4(fitPages[0].view).applyMatrix4(fitPages[0].projection);
@@ -445,9 +446,9 @@ void atlas() {
     CHECK(!fitted->update(eye, Vector3(0, 1, 0), false, {prop}).empty());
     CHECK(fitted->table()[31] > fittedTable[31]);
     Box3 mass; mass.set(Vector3(-1000, -2, -1000), Vector3(1000, 0, 1000));
-    fitted->invalidateAll();
-    fitPages = fitted->update(eye, Vector3(0, 1, 0), false, {mass});
-    CHECK(fitted->table()[fitPages.front().level * 36 + 31] == 2);
+    auto massFit = PageAtlas::create(options, error);  // FG3: a mapped level holds a range that still fits, so a first fit
+    fitPages = massFit->update(eye, Vector3(0, 1, 0), false, {mass});
+    CHECK(massFit->table()[fitPages.front().level * 36 + 31] == float(2 + 2 * options.clipExtents[std::size_t(fitPages.front().level)]));
     // A sun below the derivation threshold keeps the configured fallback, as the JS node does.
     auto horizon = PageAtlas::create(options, error);
     horizon->update(eye, Vector3(1, 0, 0), false, casters);

@@ -191,6 +191,8 @@ describe("the frame budget names the surface the game's own loop drew", () => {
       start: "test",
     });
     const requestFrame = globalThis.requestAnimationFrame;
+    // The loop's clock starts inside start(), so a real clock gives the first frame however long the host stalled: on a loaded runner that is extra ticks, and a window closes a frame early.
+    const nowSpy = vi.spyOn(globalThis.performance, "now").mockReturnValue(0);
     Object.defineProperty(globalThis, "requestAnimationFrame", {
       configurable: true,
       value: (callback: (time: number) => void) => {
@@ -201,9 +203,8 @@ describe("the frame budget names the surface the game's own loop drew", () => {
     try {
       await game.start();
       if (frame === undefined) throw new Error("Game did not start its loop.");
-      const startTime = performance.now();
-      frame(startTime + 16.7);
-      frame(startTime + 33.4);
+      frame(16.7);
+      frame(33.4);
 
       const marker = lines.find((line) => line.startsWith(`${FRAME_BUDGET_MARKER}:`));
       expect(marker).toBeDefined();
@@ -219,6 +220,7 @@ describe("the frame budget names the surface the game's own loop drew", () => {
       });
     } finally {
       await game.stop();
+      nowSpy.mockRestore();
       Object.defineProperty(globalThis, "requestAnimationFrame", {
         configurable: true,
         value: requestFrame,

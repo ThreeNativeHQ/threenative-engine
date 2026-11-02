@@ -5,6 +5,7 @@ import {
   Frustum,
   Group,
   LoopOnce,
+  Matrix4,
   Mesh,
   MeshBasicMaterial,
   NumberKeyframeTrack,
@@ -1171,6 +1172,50 @@ describe("camera-rate walk cost", () => {
   // Lantern Vale on the web engine: the camera-rate pass walked every visible object to find the few
   // rigs, and each object's userData, geometry and parent read crossed into the engine. It was 41% of
   // the main thread. Scenery that no rig owns and no stand-in observes is not read at all.
+  it("with many rigs, each measures its rate one frame in four and a new distance reaches it inside that", () => {
+    const rigs = Array.from({ length: 40 }, () => {
+      const rig = player();
+      rig.root.add(new Mesh(new SphereGeometry(1, 8, 6), new MeshBasicMaterial()));
+      rig.root.position.set(2, 0, -60);
+      return rig;
+    });
+    const scene = new Scene();
+    for (const rig of rigs) scene.add(rig.root);
+    const camera = new PerspectiveCamera(60, 1, 0.1, 1000);
+    const cull = new RenderCameraCull();
+    const bounds = vi.spyOn(Matrix4.prototype, "getMaxScaleOnAxis");
+    const step = () => {
+      scene.updateMatrixWorld(true);
+      cull.prepareAnimation(scene, camera, 720);
+      cull.restore();
+      for (const rig of rigs) rig.update(1 / 60);
+    };
+    for (let frame = 0; frame < 4; frame += 1) step();
+    const far = rigs[0]?.updateRateReport.rate;
+    bounds.mockClear();
+    for (let frame = 0; frame < 4; frame += 1) step();
+    // Four frames at most one part measure per rig, and no rig fell to the rate of a rig nobody saw.
+    expect(bounds.mock.calls.length).toBe(rigs.length);
+    expect(rigs.every((rig) => rig.updateRateReport.rate === far)).toBe(true);
+    for (const rig of rigs) rig.root.position.set(2, 0, -8);
+    for (let frame = 0; frame < 4; frame += 1) step();
+    const near = rigs.map((rig) => rig.updateRateReport.rate);
+    expect(far).toBeGreaterThan(1);
+    expect(near.every((rate) => rate < (far as number))).toBe(true);
+    // A rig just shown does not wait for its turn.
+    const [first] = rigs;
+    if (first === undefined) throw new Error("no rig");
+    first.root.visible = false;
+    step();
+    first.root.visible = true;
+    bounds.mockClear();
+    step();
+    expect(bounds.mock.calls.length).toBeGreaterThanOrEqual(1);
+    cull.dispose();
+    bounds.mockRestore();
+    for (const rig of rigs) rig.dispose();
+  });
+
   it("reads nothing from scenery that carries no animation rate", () => {
     const rig = player(1);
     const view = rendered(rig, -20);

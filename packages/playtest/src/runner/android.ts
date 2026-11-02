@@ -430,6 +430,9 @@ export class AdbAndroidDriver implements IAndroidDriver {
         lastError = (error as Error).message;
         if (isAdbRefusal(lastError) || attempt === LOGCAT_ATTEMPTS) break;
         await this.adb(["wait-for-device"]).catch(() => undefined);
+        // `wait-for-device` can return while the transport is still down (native-release run
+        // 41372240200: the immediate re-read failed too).
+        await delay(LOGCAT_RETRY_MS);
       }
     }
     if (output === undefined) throw failedLogcat(args.join(" "), lastError);
@@ -701,10 +704,15 @@ export class AdbAndroidDriver implements IAndroidDriver {
       }
       return stdout;
     } catch (error) {
-      const detail = error as Error & { stderr?: string; stdout?: string };
-      throw new Error(
-        `adb ${args.join(" ")} failed: ${detail.stderr || detail.stdout || detail.message}`,
-      );
+      const detail = error as Error & {
+        code?: number | string;
+        signal?: string | null;
+        stderr?: string;
+        stdout?: string;
+      };
+      // A silent exit has only its status to report, so the next one names the cause.
+      const silent = `${detail.message.trim()} (exit ${String(detail.code)}, signal ${String(detail.signal)})`;
+      throw new Error(`adb ${args.join(" ")} failed: ${detail.stderr || detail.stdout || silent}`);
     }
   }
 
@@ -859,7 +867,8 @@ function isPlatformWebViewNoise(text: string): boolean {
 
 const TOUCH_AXIS_MAX = 32767;
 /** A dropped adb transport is re-read once; a device that never returns fails the run. */
-const LOGCAT_ATTEMPTS = 2;
+const LOGCAT_ATTEMPTS = 4;
+const LOGCAT_RETRY_MS = 1_000;
 /** Bytes of a failed dump kept in the error, so an 82 KB logcat never becomes the report. */
 const LOGCAT_ERROR_LIMIT = 2_000;
 
