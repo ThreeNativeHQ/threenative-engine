@@ -7572,6 +7572,24 @@ void virtualShadowPagesDrawFromGpuRows() {
             arms[arm].database.render(*arms[arm].renderer, arms[arm].scene, arms[arm].camera);
         settled[arm] = read(*arms[arm].renderer, arms[arm].events);
     }
+    // The CPU cost of a grant on this host, printed for the record: each arm re-grants the level by nudging the sun.
+    for (int arm = 0; arm < 2; ++arm) {
+        setVirtualPagesOnGpuLever(arm == 1);
+        Renderer& renderer = *arms[arm].renderer;
+        const auto stages = [&] { return std::array<double, 3>{renderer.cpuStageMs(Renderer::CpuVirtualPages), renderer.cpuStageMs(Renderer::CpuShadowBuild), renderer.cpuStageMs(Renderer::CpuEncode)}; };
+        std::array<double, 3> spent{};
+        constexpr int kGrants = 12;
+        for (int grant = 0; grant < kGrants; ++grant) {
+            arms[arm].sun.position.x += 0.02;
+            arms[arm].sun.updateMatrixWorld(true);
+            const auto before = stages();
+            arms[arm].database.render(renderer, arms[arm].scene, arms[arm].camera);
+            const auto after = stages();
+            for (int s = 0; s < 3; ++s) spent[s] += after[s] - before[s];
+        }
+        std::printf("gpu pages: arm %s, one grant: pages %.2f ms, shadow plan %.2f ms, encode %.2f ms (%d shadow draws last frame)\n", arm == 0 ? "cpu" : "gpu",
+                    spent[0] / kGrants, spent[1] / kGrants, spent[2] / kGrants, renderer.lastFrame().shadowDraws);
+    }
     setVirtualPagesOnGpuLever(true);
     // The GPU's (page, instance) set equals the geometry's, over the pages the CPU path planned: nothing lost, nothing extra.
     std::set<std::tuple<int, int, uint32_t>> expected, recorded;
