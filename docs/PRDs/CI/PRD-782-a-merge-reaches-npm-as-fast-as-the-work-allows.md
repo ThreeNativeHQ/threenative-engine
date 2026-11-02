@@ -104,6 +104,10 @@ An independent review caught the first design of the stop: `workflow_job` is not
 | --- | --- | --- | --- |
 | [41387367605](https://github.com/ThreeNativeHQ/threenative-engine/actions/runs/41387367605), `f80cb47e6` | Red at `test-native`. The other jobs were cancelled 20 s later. | 366 | 21 |
 | [41389827906](https://github.com/ThreeNativeHQ/threenative-engine/actions/runs/41389827906), `6db6944a8` | Green: 67 jobs passed, 11 skipped | 535 | 59 |
+| [41395557842](https://github.com/ThreeNativeHQ/threenative-engine/actions/runs/41395557842), `21c8fa429`, one docs commit | Green: 16 jobs passed, 30 carried or skipped | 55 (10%) | 14 |
+
+- ✅ Reuse: a docs-only commit costs 10% of the full board's machine minutes and 24% of its wall time.
+- ✅ First-red stop: a real red stopped the board in about 20 s, at minute 15, so a throwaway branch adds no proof.
 
 ## Levers, ranked
 
@@ -139,11 +143,9 @@ All are the owner's decision. Zero reds over 14 days is weak evidence, because a
 
 ## Blocked on
 
-- Proof on real boards that #601 has the gain above: one full board on #601's head, then one board after a docs-only commit, compared by machine minutes and wall time. Boards compete with the main board for runners, so this waits for the release session's all-clear after 0.3.8.
-- Proof of the first-red stop: one board on a throwaway branch with a failing unit spec, which must cancel after that red. Rounds per merge are checked after the merge. Same all-clear.
+- Rounds per merge, checked after #601 merges.
 - GitHub Team plan, 60 concurrent jobs against 20, or the `tn-local` pool. A plan costs money and the pool loads the owner's machines, so it is the owner's decision.
 - The removal candidates above — the owner decides each one.
-- The session that owns the 0.3.8 release now owns the main board redundancy, auto-publish on main and the hotfix override, on the owner's order: `scripts/release-ship.ts`, `scripts/release-candidate-gate.ts`, `native-release.yml` and the promotion reuse rule in `ci-change-scope.mjs` and `ci-required.mjs`. It hands its commits to #601 after 0.3.8 is out. Levers 6 and 7 touch those files, so they wait for that session. Android shards and any merge of #601 also wait for 0.3.8.
 
 ## Decisions
 
@@ -152,7 +154,8 @@ All are the owner's decision. Zero reds over 14 days is weak evidence, because a
   owner's later rule, after four incidents, is no extra PRs in a session, and the work is one chain.
 - 2026-11-01 (owner, relayed by the release session): a promotion with a green tree publishes with no new test run. The release session owns that work, and this PRD owns per-job reuse.
 - 2026-11-01 (agent): removals are proposals. A test leaves the board only on the owner's decision.
-- 2026-11-01 (owner): "must have a real gain to merge this, verify". #601 merges only after the real boards above show the gain.
+- 2026-11-01 (owner): "must have a real gain to merge this, verify". #601 merges only after the real boards above show the gain. The boards above met it on 2026-11-02.
+- 2026-11-02 (owner): "you can release another version if you want, no problem". The next release measures PRD-630 AC-9.
 - 2026-11-01 (agent): levers 9 and 10 are dropped because the measured gain is near zero. Levers 4, 5 and 8 are parked because this run cannot prove them.
 
 ## Execution Phases
