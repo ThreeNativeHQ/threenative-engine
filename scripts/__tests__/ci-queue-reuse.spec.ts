@@ -109,6 +109,8 @@ interface IStub {
   newer?: { conclusion: string; status?: string }[];
   /** The sha the source run's receipts name as its candidate. */
   candidate?: string;
+  carriedIntegration?: boolean;
+  webReference?: string;
   fail?: boolean;
 }
 
@@ -167,8 +169,15 @@ function stubApi(f: IFixture, stub: IStub = {}): void {
   write("artifacts.json", {
     total_count: 2,
     artifacts: [
-      { name: `ci-integration-receipt-${RUN_ID}-1-${candidate}-fog-native` },
-      { name: `ci-integration-receipt-${RUN_ID}-1-${candidate}-other` },
+      ...(stub.carriedIntegration === true
+        ? [{ name: `native-web-reference-${stub.webReference ?? candidate}` }]
+        : [
+            { name: `ci-integration-receipt-${RUN_ID}-1-${candidate}-fog-native` },
+            { name: `ci-integration-receipt-${RUN_ID}-1-${candidate}-other` },
+            ...(stub.webReference === undefined
+              ? []
+              : [{ name: `native-web-reference-${stub.webReference}` }]),
+          ]),
       { name: "unrelated-artifact" },
     ],
   });
@@ -402,6 +411,21 @@ describe("PRD-630 a main push rests on the green board of its promotion pull req
     const passed = mainVerdict(f, plan);
     expect(passed.status, passed.stderr).toBe(0);
     expect(passed.stdout).toContain(`CI run \`${RUN_ID}\``);
+  });
+
+  // The 0.3.9 promotion board carried every integration leg, so it wrote no integration receipt.
+  it("reuses a promotion board that carried its integration legs and wrote no receipt", () => {
+    const f = fixture();
+    stubApi(f, { event: "pull_request", carriedIntegration: true });
+    expect(main(f)).toMatchObject({ selection: "reused", reusedRunId: RUN_ID });
+  });
+
+  it("runs the board when the web reference and the receipts name different candidates", () => {
+    const f = fixture();
+    stubApi(f, { event: "pull_request", webReference: "a".repeat(40) });
+    const plan = main(f);
+    expect(plan.selection).toBe("full");
+    expect(plan.reason).toContain("names 2 tested candidates");
   });
 
   it("runs the board when main moved, so the merge has another tree", () => {
