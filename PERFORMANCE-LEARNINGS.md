@@ -895,3 +895,22 @@ no COOP/COEP); that lane is open.
   presented p95 31 ms against 19 ms. The tail is the larger gap. `?still` reads 20-23 ms, so camera motion drives it.
 - Insight: PRD-775 Phase 1 read as noise at load 11 (rows #160-#161) and its CPU p95 gain is -10.6% and -11.8% at load
   peak 7 (rows #174-#175). Run a 3% lever only on a calm host.
+
+### 2026-11-02 — Method: uncapped presented p95 read a rAF timestamp artifact — KEEP (measurement)
+
+- With vsync off the rAF timestamp misreads a saturated main thread: stamps read 33.6, 18.5, 1.2 ms where the frames
+  start 18.4, 18.5, 16.0 ms apart. Develop VSM read 32 ms and its real interval p95 is 21 ms. Vanilla read 30 ms and its
+  real one is 19 ms. Plain sun reads about the same either way (13 and 14 ms).
+- Unreal reports its real frame interval, so 35 of 100 score points compared unlike numbers. Uncapped `fair` rows now
+  read frame starts, in the harness, for every browser arm. `rafStampP95Ms` keeps the old reading. Vsync rows do not
+  change: there the stamp is right, and CPU p95 above 16.7 ms is a real 33 ms interval on a 60 Hz display.
+- This corrects the previous entry: the tail is not 31 ms against 19 ms. It is 21 ms against 19 ms, and PRD-775 Phase 1
+  reads 20.6 ms. The score moved by method: VSM 45 to 56, plain sun 63 to 75, vanilla to 60. The engine did not get faster.
+- First window (rows #176-#179): VSM 63.8 fps, frame p95 21.2 ms, CPU p95 20.5 ms, GPU p95 7.3 ms. Unreal no Lumen 70.0,
+  18.8, 18.3, 13.3. ThreeNative loses on fps, tail and CPU, and leads on GPU. The score reads a tie.
+- A/A on the corrected metric (two windows, load peak 7 or less): mean-of-2 scores differ by 0.1-0.5 inside a window and
+  by about 1 between windows, and single runs read 56.1-58.1. The dashboard reads a gap of 2 points or less as a tie.
+- Load limits stay at 12 and 18 by owner order. Data so far: about 1% at peak 7 or less, about 3% at peak 13, about 8% at
+  sustained load 10-12. Peak alone does not predict the noise.
+- Insight: log every callback's start beside its timestamp before you trust a tail number. The 0-5 ms bin held as many
+  frames as the 30 ms bin, and a real tail has no such partner.
