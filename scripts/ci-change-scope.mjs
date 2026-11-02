@@ -462,7 +462,9 @@ export function validateEventPlan(value, { eventName, baseRef, forceFull = false
   // PRD-776: a develop push may leave the board to its promotion pull request. `ci-required` confirms
   // that pull request from the commit itself.
   const yielded = event === "push" && target === "develop" && plan.selection === "warm";
-  if ((!review && !queue && !yielded) || forceFull) {
+  // PRD-630: a main push may rest on its promotion board. `ci-required` re-decides that rule.
+  const promoted = event === "push" && target === "main" && plan.selection === "reused";
+  if ((!review && !queue && !yielded && !promoted) || forceFull) {
     // The minimum reads what the plan owed: a carried leg still owes its proof, and `ci-required`
     // reads that proof from the source run.
     const owed = owedPlan(plan);
@@ -1252,14 +1254,50 @@ function decideQueueReuse({ root, plan, queueRef }) {
     return { error: `the head of pull request ${number} could not be read` };
   if (treeOfFetched(root, headSha) !== tree)
     return { error: `the tree differs from the head of pull request ${number}` };
+  return greenBoardOfHead({
+    root,
+    plan,
+    tree,
+    headSha,
+    target: "develop",
+    events: ["pull_request", "workflow_dispatch"],
+  });
+}
+
+/**
+ * PRD-630: the main push of a promotion repeats the tree its pull request's board just tested. It
+ * runs no board when that board is green. Every miss, a main that moved included, runs the board.
+ */
+export function promotionReuse({ root, plan }) {
+  try {
+    const tree = treeOf(root, plan.candidateSha);
+    if (tree === null) return { error: "the candidate's tree could not be resolved" };
+    const parents = git(root, ["rev-list", "--parents", "-n", "1", plan.candidateSha])
+      .stdout.trim()
+      .split(" ");
+    if (parents.length !== 3) return { error: "the main commit is not a promotion merge" };
+    if (treeOfFetched(root, parents[2]) !== tree)
+      return { error: "the main tree differs from the head of its promotion pull request" };
+    return greenBoardOfHead({
+      root,
+      plan,
+      tree,
+      headSha: parents[2],
+      target: "main",
+      events: ["pull_request"],
+    });
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+function greenBoardOfHead({ root, plan, tree, headSha, target, events }) {
   const listed = ghApi(`actions/workflows/ci.yml/runs?head_sha=${headSha}&per_page=100`);
   if ("error" in listed) return listed;
   // PRD-731: a pull-request run is the thin review lane and proves too little, so the run worth
   // citing is the full board an author dispatched on the branch. A pull-request run stays a
   // candidate only so that a newer red one still blocks.
-  const runs = listed.value?.workflow_runs?.filter?.((run) =>
-    ["pull_request", "workflow_dispatch"].includes(run?.event),
-  );
+  const runs = listed.value?.workflow_runs?.filter?.((run) => events.includes(run?.event));
   if (
     !Array.isArray(runs) ||
     runs.length === 0 ||
@@ -1275,9 +1313,13 @@ function decideQueueReuse({ root, plan, queueRef }) {
     jobs.jobs.some((job) => job.name === name && job.conclusion === "success");
   if (!succeeded("ci-required"))
     return { error: `CI run ${run.id} did not conclude ci-required as success` };
-  const owed = Object.entries(plan.jobs)
-    .filter(([, job]) => job.required)
-    .map(([name]) => name);
+  // A promotion board may carry a leg its `ci-required` proved, but it runs what the reports need.
+  const owed =
+    target === "main"
+      ? RELEASE_GATE_JOBS
+      : Object.entries(plan.jobs)
+          .filter(([, job]) => job.required)
+          .map(([name]) => name);
   const missing = owed.find(
     (name) =>
       !jobs.jobs.some((job) => boardName(job.name) === name && job.conclusion === "success"),
@@ -1316,7 +1358,7 @@ function decideQueueReuse({ root, plan, queueRef }) {
           root,
           base: parents[1],
           head: headSha,
-          target: "develop",
+          target,
           eventName: "pull_request",
           candidateSha: tested.sha,
           noReuse: true,
@@ -1360,6 +1402,20 @@ function reuseOrKeep(plan, options, candidateSha) {
     return selectionPlan(
       "reused",
       `queue tree ${hit.tree} equals the head of its pull request and already passed in CI run ${String(hit.runId)}`,
+      plan.files,
+      candidateSha,
+      plan.native,
+      hit.runId,
+      plan.target,
+    );
+  }
+  // PRD-630: main takes the green board of its promotion pull request, or the board runs.
+  if (options.eventName === "push" && plan.target === "main") {
+    const hit = promotionReuse({ root: options.root, plan });
+    if ("error" in hit) return unavailable(hit.error);
+    return selectionPlan(
+      "reused",
+      `main tree ${hit.tree} already passed in promotion CI run ${String(hit.runId)}`,
       plan.files,
       candidateSha,
       plan.native,
@@ -1431,7 +1487,8 @@ export async function withCarriedLegs(plan, options) {
   if (options.eventName === "schedule") return plan;
   try {
     const deps = await carryDeps(options.root, plan);
-    if (options.eventName === "push" && plan.target === "main") deps.reserved = RELEASE_GATE_JOBS;
+    // The promotion board produces the release reports, so it runs their job itself. PRD-630.
+    if (plan.target === "main") deps.reserved = RELEASE_GATE_JOBS;
     return applyCarried(plan, findCarried(plan, deps));
   } catch (error) {
     console.error(`per-job reuse unavailable, the board runs: ${String(error?.message ?? error)}`);

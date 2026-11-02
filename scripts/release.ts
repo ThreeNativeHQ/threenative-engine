@@ -389,6 +389,7 @@ export function assertCleanPackageTree(repo = REPO): void {
 export function unpublishedReleasePackages(
   packages: readonly IPublishPackage[],
   lookup: RegistryLookup,
+  resumeAfter?: string,
 ): readonly IPublishPackage[] {
   const states = packages.map((item) => {
     let facts: ReturnType<RegistryLookup>;
@@ -406,6 +407,16 @@ export function unpublishedReleasePackages(
     return { facts, item };
   });
   const present = states.filter(({ facts }) => facts.state === "present");
+  // A publish that crashed between levels finishes the same versions. A version published before
+  // this commit is a missed bump, not a crash, and a whole cohort has nothing left to finish.
+  const crashed = present.every(
+    ({ facts }) =>
+      resumeAfter !== undefined &&
+      facts.state === "present" &&
+      Date.parse(facts.published ?? "") >= Date.parse(resumeAfter),
+  );
+  if (present.length > 0 && present.length < states.length && crashed)
+    return states.filter(({ facts }) => facts.state !== "present").map(({ item }) => item);
   if (present.length > 0) {
     const state = states
       .map(({ facts, item }) => `${item.name}@${item.version}=${facts.state}`)
@@ -531,8 +542,11 @@ async function main(args: readonly string[]): Promise<void> {
   const lockOptions = lockPath === undefined ? {} : prebuiltFromLock(lockPath);
   const prepare = argv.includes("--prepare");
   const skipGates = argv.includes("--skip-gates");
+  // PRD-630: the admin path of `release:ship`. A red report prints and does not stop the publish.
+  const override = argv.includes("--override");
   const unknown = argv.filter(
-    (arg) => !["--yes", "--dry-run", "--prepare", "--skip-gates"].includes(arg),
+    (arg) =>
+      !["--yes", "--dry-run", "--prepare", "--skip-gates", "--resume", "--override"].includes(arg),
   );
   if (unknown.length > 0) throw new Error(`TN_RELEASE_UNKNOWN_FLAG: ${unknown.join(", ")}`);
   // A `--yes` release produces its prebuilt payload itself, so the preflight may acknowledge its
@@ -567,7 +581,7 @@ async function main(args: readonly string[]): Promise<void> {
     ...lockOptions,
   });
   process.stdout.write(`\n${formatPublishReport(report)}`);
-  if (report.exitCode !== 0)
+  if (report.exitCode !== 0 && !override)
     throw new Error("TN_RELEASE_PREFLIGHT_RED: pnpm publish:check refused this tree.");
 
   if (prepare) {
@@ -612,7 +626,7 @@ async function main(args: readonly string[]): Promise<void> {
     process.stdout.write(
       `\nPost-build publish preflight:\n${formatPublishReport(postBuildReport)}`,
     );
-    if (postBuildReport.exitCode !== 0)
+    if (postBuildReport.exitCode !== 0 && !override)
       throw new Error("TN_RELEASE_POST_BUILD_PREFLIGHT_RED: the built tree is not publishable.");
   }
 
@@ -625,6 +639,12 @@ async function main(args: readonly string[]): Promise<void> {
   const publishPackages = unpublishedReleasePackages(
     packages,
     dryRun ? () => ({ state: "absent" }) : npmLookup(REPO),
+    argv.includes("--resume")
+      ? execFileSync("git", ["show", "-s", "--format=%cI", "HEAD"], {
+          cwd: REPO,
+          encoding: "utf8",
+        }).trim()
+      : undefined,
   );
   const publishNames = new Set(publishPackages.map((item) => item.name));
 
@@ -635,14 +655,18 @@ async function main(args: readonly string[]): Promise<void> {
   try {
     const tarballs = packReleaseSet(packages, packed);
     // `--dry-run` stops at the pack: the upgrade proof needs the registry `latest` and a browser
-    // lane, which the npm-release workflow's dry run and the real release already carry.
+    // lane, which the real release carries.
     if (dryRun) {
       process.stdout.write(
         `\nDry run packed ${Object.keys(tarballs).length} package(s). Nothing was published.\n`,
       );
       return;
     }
-    const upgrades = await proveUpgradeFromLatest(packages, tarballs);
+    // A resumed publish proved this before its first upload, and `latest` has moved since then.
+    const upgrades =
+      override || publishPackages.length < packages.length
+        ? []
+        : await proveUpgradeFromLatest(packages, tarballs);
     for (const [index, report] of upgrades.entries()) {
       const template = UPGRADE_PROOF_TEMPLATES[index] as string;
       process.stdout.write(`\nUpgrade proof — ${template} (registry latest -> candidate):\n`);

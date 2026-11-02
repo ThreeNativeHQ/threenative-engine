@@ -676,17 +676,6 @@ describe("the workflows honour a carried job", () => {
       "contains(fromJSON(needs.scope.outputs.plan).carriedJobs, 'golden-path-template')",
     );
   });
-
-  it("a main push keeps every job the release gate reads", () => {
-    const release = readFileSync(".github/workflows/native-release.yml", "utf8");
-    const table = /const requiredNames = \[([\s\S]*?)\];/u.exec(release)?.[1] ?? "";
-    const names = [...table.matchAll(/"([^"]+)"/gu)].map((match) => match[1] ?? "");
-    expect(names.length).toBeGreaterThan(0);
-    for (const name of names) {
-      const job = name.startsWith("native-platforms / ") ? "native-platforms" : name;
-      if (CARRIABLE_JOBS.includes(job)) expect(RELEASE_GATE_JOBS).toContain(job);
-    }
-  });
 });
 
 it("a job's text stops at the next job and includes the workflow env", () => {

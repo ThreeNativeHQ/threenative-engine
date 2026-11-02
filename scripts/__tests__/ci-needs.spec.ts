@@ -812,7 +812,7 @@ describe("PRD-481 a reused verdict has to cover this run's validation profile", 
     const plan = classifyCandidate(fixture, fixture.candidate, { target: "main" });
     expect(plan).toMatchObject({ selection: "full" });
     expect(plan.reason).toContain("tree reuse unavailable");
-    expect(plan.reason).toContain("no authoritative complete expansion");
+    expect(plan.reason).toContain("not a promotion merge");
   });
 
   it("runs the full board when the source never ran a matrix leg this run requires", () => {

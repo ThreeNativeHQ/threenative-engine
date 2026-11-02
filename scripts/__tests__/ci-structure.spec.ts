@@ -1209,10 +1209,13 @@ describe("CI pipeline structure", () => {
       // never from a failure step, and never its own run id — all four pinned in its own case.
       // PRD-731 adds the second: `queue-watch` in ci.yml, which names the first red job on the pull
       // request before it cancels the rest. PRD-782 widens it to full boards (pinned below).
+      // PRD-630 adds the third: `ship` in npm-release.yml dispatches the release workflows.
       const writes =
         relative === ".github/workflows/ci.yml"
           ? source.replace(requiredJob(source, "queue-watch"), "")
-          : source;
+          : relative === ".github/workflows/npm-release.yml"
+            ? source.replace(requiredJob(source, "ship"), "")
+            : source;
       if (relative !== ".github/workflows/ci-janitor.yml") {
         expect(writes, `${relative} needs no actions: write`).not.toContain("actions: write");
       }
@@ -1924,20 +1927,10 @@ describe("CI pipeline structure", () => {
     expect(native).toContain("&& 'native-release-proof' ||");
     expect(native).toContain("cancel-in-progress: false");
     const triggers = triggerSection(native);
-    expect(triggers).toContain("workflow_run:");
-    expect(triggers).toContain("workflows: [CI]");
-    expect(triggers).toContain("types: [completed]");
-    const pushBlock = triggers.slice(
-      triggers.indexOf("\n  push:"),
-      triggers.indexOf("\n  pull_request:"),
-    );
-    expect(pushBlock, "a push-to-main trigger still feeds the evidence path").not.toContain(
-      "branches:",
-    );
-    expect(pushBlock, "the tag publish path lost its trigger").toContain("runtime-native-v*");
-    // Tag publication and manual proof keep the single-shot lookup they always had.
-    expect(native).toMatch(/gh run list .*--workflow ci\.yml --commit/u);
-    expect(npm).toContain('gh release view "runtime-native-v${native_version}"');
+    // PRD-630: the promotion PR holds the one proof, and `pnpm release:ship` dispatches the tag run.
+    expect(triggers).not.toContain("workflow_run:");
+    expect(triggers).not.toContain("\n  push:");
+    expect(triggerSection(npm)).toContain("workflow_run:");
   });
 
   it("holds every release proof in one cross-branch concurrency group", async () => {
@@ -2082,46 +2075,22 @@ describe("CI pipeline structure", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("requires the matching native release for a publishing dispatch", async () => {
+  it("ships from one job after a green main run, and provisions it before the command", async () => {
     const npm = await readFile(path.join(repo, ".github/workflows/npm-release.yml"), "utf8");
-    const publish = jobSections(npm).find(([job]) => job === "publish")?.[1];
-    expect(publish).toContain("if: github.event_name == 'push' || inputs.dry_run == false");
-  });
-
-  it("requires the matching native release to be published and ready", async () => {
-    const npm = await readFile(path.join(repo, ".github/workflows/npm-release.yml"), "utf8");
-    const publish = jobSections(npm).find(([job]) => job === "publish")?.[1];
-    expect(publish).toContain("--json isDraft,isPrerelease");
-    expect(publish).toContain(".isDraft == false and .isPrerelease == false");
-    expect(publish).toMatch(/\$\{release_state\}" != "ready"/u);
-  });
-
-  it("requires the matching native release tag to name the exact candidate commit", async () => {
-    const npm = await readFile(path.join(repo, ".github/workflows/npm-release.yml"), "utf8");
-    const publish = jobSections(npm).find(([job]) => job === "publish")?.[1];
-    expect(publish).toContain('native_tag="runtime-native-v${native_version}"');
-    expect(publish).toContain("scripts/verify-native-release-commit.ts");
-    expect(publish).toContain("native tag and the candidate SHA");
-  });
-
-  it("reuses the already verified native CI result in the guarded release job", async () => {
-    const npm = await readFile(path.join(repo, ".github/workflows/npm-release.yml"), "utf8");
-    const publish = jobSections(npm).find(([job]) => job === "publish")?.[1];
-    expect(publish).toBeDefined();
-    if (publish === undefined) return;
-    expect(publish).toContain("pnpm tsx scripts/release.ts --yes --skip-gates");
-    expect(publish).toContain("pnpm tsx scripts/release.ts --skip-gates");
-  });
-
-  it("provisions the desktop runtime prerequisites before the guarded publish command", async () => {
-    const npm = await readFile(path.join(repo, ".github/workflows/npm-release.yml"), "utf8");
-    const publish = jobSections(npm).find(([job]) => job === "publish")?.[1];
-    expect(publish).toBeDefined();
-    if (publish === undefined) return;
-    const prerequisites = publish.indexOf("libvulkan1 mesa-vulkan-drivers");
-    const release = publish.indexOf("pnpm tsx scripts/release.ts --yes");
-    expect(prerequisites).toBeGreaterThanOrEqual(0);
-    expect(release).toBeGreaterThan(prerequisites);
+    const ship = requiredJob(npm, "ship");
+    expect(ship).toContain("github.event.workflow_run.event == 'push'");
+    expect(ship).toContain("github.event.workflow_run.conclusion == 'success'");
+    expect(ship).toContain("ref: ${{ github.event.workflow_run.head_sha }}");
+    const command = ship.indexOf("pnpm release:ship --yes");
+    for (const need of [
+      "run: pnpm build",
+      "libvulkan1 mesa-vulkan-drivers",
+      "platforms;android-35",
+    ]) {
+      expect(ship.indexOf(need), need).toBeGreaterThanOrEqual(0);
+      expect(command, need).toBeGreaterThan(ship.indexOf(need));
+    }
+    expect(jobSections(npm).map(([job]) => job)).toEqual(["ship", "clean-room"]);
   });
 
   // The clean room's `android` step builds the APK in the published cohort. Without a JDK 17 and an
@@ -2145,47 +2114,12 @@ describe("CI pipeline structure", () => {
 
   // A clean-room-only dispatch re-proves the published cohort without a publish: it must never
   // reach `gates` or `publish`, and the clean room must still run after a real publish succeeds.
-  it("runs the clean room alone on a clean_room_only dispatch, never the publish", async () => {
+  it("runs the clean room alone on a dispatch", async () => {
     const npm = await readFile(path.join(repo, ".github/workflows/npm-release.yml"), "utf8");
-    const jobs = jobSections(npm);
-    const gates = jobs.find(([job]) => job === "gates")?.[1];
-    const cleanRoom = jobs.find(([job]) => job === "clean-room")?.[1];
-    expect(npm).toMatch(/clean_room_only:\n(?: {8}.+\n)*? {8}default: false/u);
-    expect(gates).toContain("if: inputs.clean_room_only != true");
-    expect(cleanRoom).toContain("inputs.clean_room_only == true");
+    const cleanRoom = jobSections(npm).find(([job]) => job === "clean-room")?.[1];
+    expect(cleanRoom).toContain("if: github.event_name == 'workflow_dispatch'");
     // The desktop prebuilt links the overlay webview; without it doctor and native exit 127.
     expect(cleanRoom).toContain("libwebkit2gtk-4.1-0");
-    expect(cleanRoom).toContain("needs.publish.result == 'success'");
-    expect(cleanRoom).toContain("!cancelled()");
-  });
-
-  it("requires native release CI to be a successful push on main", async () => {
-    const native = await readFile(path.join(repo, ".github/workflows/native-release.yml"), "utf8");
-    const gates = jobSections(native).find(([job]) => job === "gates")?.[1];
-    expect(gates).toContain("--json databaseId,status,conclusion,event,headBranch,headSha");
-    expect(gates).toContain('entry?.event === "push"');
-    expect(gates).toContain('entry?.headBranch === "main"');
-    expect(gates).toContain("entry?.headSha === candidateSha");
-    expect(gates).toContain("Number.isSafeInteger(entry?.databaseId)");
-    expect(gates).toContain("entry.databaseId > 0");
-    // The evidence path reads the triggering CI completion from the event payload -
-    // conclusion plus head SHA - and refuses anything but exact-candidate success.
-    // No step polls or holds a runner: the verdict runs on a single-digit-minute budget.
-    expect(gates).toContain("Require the triggering CI completion");
-    expect(gates).toContain("github.event.workflow_run.conclusion");
-    expect(gates).toContain("github.event.workflow_run.head_sha");
-    expect(gates).toContain("github.event.workflow_run.head_branch");
-    expect(gates).not.toContain("Wait for the exact main CI run to finish");
-    expect(gates).not.toContain("sleep 60");
-    const timeout = Number(gates?.match(/\n\s{4}timeout-minutes: (\d+)/u)?.[1]);
-    expect(timeout, "the gates verdict must not hold a runner").toBeLessThanOrEqual(9);
-    // Both verdict steps enforce the same required-job table: the event-payload verdict
-    // for `workflow_run` evidence and the single-shot lookup for tag/manual proof.
-    const tables = [...(gates?.matchAll(/const requiredNames = \[([\s\S]*?)\];/gu) ?? [])].map(
-      (match) => match[1],
-    );
-    expect(tables.length).toBe(2);
-    expect(tables[0]).toBe(tables[1]);
   });
 
   it("desktop parity runs against a captured web reference and fails closed", async () => {

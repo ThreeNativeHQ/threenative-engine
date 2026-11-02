@@ -358,6 +358,38 @@ describe("pnpm release cohort guards", () => {
     );
   });
 
+  it("finishes a cohort a crash left partial, and only that", () => {
+    const packages = [
+      candidate("@threenative/core", "0.3.0"),
+      candidate("@threenative/ui", "0.3.0"),
+    ];
+    const uiAt =
+      (published: string): RegistryLookup =>
+      (name) =>
+        name === "@threenative/core"
+          ? { state: "absent" }
+          : { published, state: "present", version: "0.3.0" };
+    const commit = "2026-11-02T00:00:00Z";
+
+    expect(
+      unpublishedReleasePackages(packages, uiAt("2026-11-02T01:00:00Z"), commit).map(
+        (item) => item.name,
+      ),
+    ).toEqual(["@threenative/core"]);
+    // Published before this commit: a package that missed its bump.
+    expect(() =>
+      unpublishedReleasePackages(packages, uiAt("2026-10-01T00:00:00Z"), commit),
+    ).toThrow(/TN_RELEASE_COHORT_PARTIAL/u);
+    const all: RegistryLookup = () => ({
+      published: "2026-11-02T01:00:00Z",
+      state: "present",
+      version: "0.3.0",
+    });
+    expect(() => unpublishedReleasePackages(packages, all, commit)).toThrow(
+      /TN_RELEASE_COHORT_ALREADY_PUBLISHED/u,
+    );
+  });
+
   it("returns a cohort only when every candidate version is absent", () => {
     const packages = [
       candidate("@threenative/core", "0.3.0"),

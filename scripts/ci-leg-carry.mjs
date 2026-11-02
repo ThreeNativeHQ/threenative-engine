@@ -77,15 +77,8 @@ const MATRIX_JOBS = {
 /** Every job a plan can carry, for the workflow's job gates. */
 export const CARRIABLE_JOBS = [...Object.keys(JOB_INPUTS), ...Object.keys(MATRIX_JOBS)];
 
-// `native-release.yml` reads these from the main push run itself, and the release reports come from
-// the native legs of that run. A main push keeps them until that gate can follow a carried leg.
-export const RELEASE_GATE_JOBS = [
-  "typecheck",
-  "test",
-  "budgets",
-  "test-native",
-  "native-platforms",
-];
+// The release reports come from this job's artifacts, so a promotion board runs it itself. PRD-630.
+export const RELEASE_GATE_JOBS = ["native-platforms"];
 
 /** The legs a plan owes, before anything is carried. */
 export function legsOf(plan) {

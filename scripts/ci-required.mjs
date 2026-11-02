@@ -10,7 +10,9 @@ import {
   currentRun,
   owedPlan,
   promotionOwnsCommit,
+  promotionReuse,
   queueHeadReuse,
+  selectionPlan,
   sourceVerdict,
   validateEventPlan,
   validatePlan,
@@ -122,6 +124,20 @@ try {
       "artifacts/ci-queue-reuse/receipt.json",
       `${JSON.stringify({ version: 1, ...queueReuse, candidateSha: plan.candidateSha, queueRef: process.env.TN_CI_QUEUE_REF, reusedBy: process.env.GITHUB_RUN_ID })}\n`,
     );
+  } else if (
+    plan.reusedRunId > 0 &&
+    process.env.TN_CI_EVENT === "push" &&
+    process.env.TN_CI_BASE_REF === "main"
+  ) {
+    // PRD-630. Same as the queue: this job re-decides the rule from the candidate.
+    const full = selectionPlan("full", "main owes", plan.files, plan.candidateSha, true, 0, "main");
+    const hit = promotionReuse({ root: process.cwd(), plan: full });
+    if ("error" in hit) throw new Error(`CI_REQUIRED_PROMOTION_REUSE: ${hit.error}`);
+    if (hit.runId !== plan.reusedRunId)
+      throw new Error(
+        `CI_REQUIRED_PROMOTION_REUSE: the plan cites run ${plan.reusedRunId}, the promotion rule confirms run ${hit.runId}`,
+      );
+    source = { profile: { target: "main", native: plan.nativeTier } };
   } else if (plan.reusedRunId > 0) {
     const target = process.env.TN_CI_BASE_REF ?? "";
     // A reuse plan states nothing about what was required — every job in it reads exempt — so the

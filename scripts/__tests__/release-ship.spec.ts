@@ -7,6 +7,7 @@ import {
   assertCandidateDispatchable,
   assertTagMovable,
   nextStep,
+  runShip,
   ship,
 } from "../release-ship.js";
 
@@ -47,6 +48,7 @@ function world(over: Partial<Record<string, unknown>> = {}) {
   const state = {
     candidate: [] as IFakeRun[],
     ci: [run(1, "push")] as IFakeRun[],
+    core: undefined as string[] | undefined,
     main: SHA,
     npm: [] as string[],
     release: null as null | { isDraft: boolean; isPrerelease: boolean },
@@ -72,10 +74,20 @@ function world(over: Partial<Record<string, unknown>> = {}) {
         if (state.release === null) throw new Error("release not found");
         return JSON.stringify(state.release);
       }
+      if (a === "api" && b === "--method") {
+        calls.push(`gh ${args.join(" ")}`);
+        state.tagCommit = SHA;
+        return "";
+      }
       if (a === "api") return `${state.main}\n`;
       if (a === "workflow") {
         calls.push(`gh ${args.join(" ")}`);
-        state.candidate.push(run(10, "workflow_dispatch"));
+        if (args[2] === "native-release.yml") {
+          state.tagRuns.push(
+            run(20 + state.tagRuns.length, "workflow_dispatch", { headBranch: TAG }),
+          );
+          state.release = { isDraft: false, isPrerelease: false };
+        } else state.candidate.push(run(10, "workflow_dispatch"));
         return "";
       }
       throw new Error(`unexpected gh ${args.join(" ")}`);
@@ -86,16 +98,15 @@ function world(over: Partial<Record<string, unknown>> = {}) {
       if (args[0] === "ls-remote")
         return state.tagCommit === undefined ? "" : `${state.tagCommit}\t${args[2]}\n`;
       calls.push(`git ${args.join(" ")}`);
-      if (args[0] === "push") {
-        state.tagCommit = SHA;
-        state.tagRuns.push(run(20, "push", { headBranch: TAG }));
-        state.release = { isDraft: false, isPrerelease: false };
-      }
       return "";
     },
     log: (line) => logs.push(line),
-    npmVersions: () => state.npm,
-    publish: () => calls.push("publish"),
+    cohort: () => [
+      { name: "@threenative/core", version: VERSION },
+      { name: "@threenative/runtime-native", version: VERSION },
+    ],
+    npmVersions: (name) => (name === "@threenative/core" ? (state.core ?? state.npm) : state.npm),
+    publish: (override) => calls.push(override ? "publish --override" : "publish"),
     repository: REPOSITORY,
     sleep: async () => undefined,
     verify: () => calls.push("verify"),
@@ -166,7 +177,7 @@ describe("pnpm release:ship refuses what cannot be undone", () => {
 
   it("does not move a tag while its run is still going", () => {
     const { state } = world({
-      tagRuns: [run(20, "push", { headBranch: TAG, status: "in_progress" })],
+      tagRuns: [run(20, "workflow_dispatch", { headBranch: TAG, status: "in_progress" })],
     });
     expect(() =>
       assertTagMovable({ ...stateOf(state), release: "none", tagRun: "running" }, TAG),
@@ -180,7 +191,7 @@ describe("pnpm release:ship refuses what cannot be undone", () => {
     );
     // The command never reaches the dispatch: the plan starts after the candidate step.
     await ship(deps, { dryRun: false, sha: SHA });
-    expect(calls.some((call) => call.startsWith("gh workflow run"))).toBe(false);
+    expect(calls.some((call) => call.includes("release-candidate.yml"))).toBe(false);
   });
 
   it("does not dispatch while a candidate run is in flight or main has moved on", () => {
@@ -198,19 +209,78 @@ describe("pnpm release:ship resumes", () => {
   it("runs every step from a green commit, in order", async () => {
     const { calls, deps } = world();
     const acted = await ship(deps, { dryRun: false, sha: SHA });
-    expect(acted).toEqual(["candidate", "tag", "publish"]);
-    expect(calls.map((call) => call.split(" ").slice(0, 3).join(" "))).toEqual([
-      "gh workflow run",
-      "git tag -f",
-      "git push --force",
+    expect(acted).toEqual(["candidate", "tag", "dispatch", "publish"]);
+    expect(calls.map((call) => call.split(" ").slice(0, 4).join(" "))).toEqual([
+      "gh workflow run release-candidate.yml",
+      "gh api --method POST",
+      "gh workflow run native-release.yml",
       "publish",
     ]);
+  });
+
+  it("dispatches a tag run once, while the run list lags", async () => {
+    const { calls, deps, state } = world({
+      candidate: [run(10, "workflow_dispatch")],
+      tagCommit: SHA,
+    });
+    const gh = deps.gh;
+    let lag = 2;
+    const lagging = {
+      ...deps,
+      gh: (args: readonly string[]) =>
+        args[0] === "run" && args.includes("native-release.yml") && lag-- > 0 ? "[]" : gh(args),
+    };
+    await ship(lagging, { dryRun: false, sha: SHA });
+    expect(calls.filter((call) => call.includes("native-release.yml"))).toHaveLength(1);
+    expect(state.tagRuns).toHaveLength(1);
+  });
+
+  it("finishes a cohort that a crash left half published", async () => {
+    const { calls, deps } = world({
+      candidate: [run(10, "workflow_dispatch")],
+      release: { isDraft: false, isPrerelease: false },
+      tagCommit: SHA,
+      tagRuns: [run(20, "workflow_dispatch", { headBranch: TAG })],
+      core: [VERSION],
+    });
+    expect(await ship(deps, { dryRun: false, sha: SHA })).toEqual(["publish"]);
+    expect(calls).toEqual(["publish"]);
+  });
+
+  it("does nothing in the CI lane when the cohort is already on npm", async () => {
+    const { calls, deps } = world({ npm: [VERSION] });
+    expect(await ship(deps, { auto: true, dryRun: false, sha: SHA })).toEqual([]);
+    expect(calls).toEqual([]);
+  });
+
+  it("an override goes straight to the tag run and names its reason there", async () => {
+    const { calls, deps } = world({ ci: [] });
+    const acted = await ship(deps, { dryRun: false, override: "hotfix", sha: SHA });
+    expect(acted).toEqual(["tag", "dispatch", "publish"]);
+    expect(calls).not.toContain(expect.stringContaining("release-candidate.yml"));
+    expect(calls.find((call) => call.includes("native-release.yml"))).toContain("override=hotfix");
+    expect(calls).toContain("publish --override");
+  });
+
+  it("an override starts a new tag run after a failed one", async () => {
+    const { calls, deps } = world({
+      ci: [],
+      tagCommit: SHA,
+      tagRuns: [run(20, "workflow_dispatch", { conclusion: "failure", headBranch: TAG })],
+    });
+    const acted = await ship(deps, { dryRun: false, override: "hotfix", sha: SHA });
+    expect(acted).toEqual(["dispatch", "publish"]);
+    expect(calls.filter((call) => call.includes("native-release.yml"))).toHaveLength(1);
+  });
+
+  it("refuses an override with no reason", async () => {
+    await expect(runShip(["--override", " "])).rejects.toThrow("TN_SHIP_OVERRIDE");
   });
 
   it("moves a tag that points at a commit with no release", async () => {
     const { calls, deps } = world({ candidate: [run(10, "workflow_dispatch")], tagCommit: OTHER });
     await ship(deps, { dryRun: false, sha: SHA });
-    expect(calls).toContain(`git tag -f ${TAG} ${SHA}`);
+    expect(calls.find((call) => call.includes("--method PATCH"))).toContain(`sha=${SHA}`);
   });
 
   it("skips what is done: a pushed tag and a public release go straight to the publish", async () => {
@@ -218,7 +288,7 @@ describe("pnpm release:ship resumes", () => {
       candidate: [run(10, "workflow_dispatch")],
       release: { isDraft: false, isPrerelease: false },
       tagCommit: SHA,
-      tagRuns: [run(20, "push", { headBranch: TAG })],
+      tagRuns: [run(20, "workflow_dispatch", { headBranch: TAG })],
     });
     expect(await ship(deps, { dryRun: false, sha: SHA })).toEqual(["publish"]);
     expect(calls).toEqual(["publish"]);
@@ -231,7 +301,7 @@ describe("pnpm release:ship resumes", () => {
       candidate: [run(10, "workflow_dispatch")],
       release: { isDraft: false, isPrerelease: false },
       tagCommit: SHA,
-      tagRuns: [run(20, "push", { conclusion: "failure", headBranch: TAG })],
+      tagRuns: [run(20, "workflow_dispatch", { conclusion: "failure", headBranch: TAG })],
     });
     expect(await ship(deps, { dryRun: false, sha: SHA })).toEqual(["publish"]);
     expect(calls).toEqual(["publish"]);
@@ -242,7 +312,7 @@ describe("pnpm release:ship resumes", () => {
       candidate: [run(10, "workflow_dispatch")],
       release: { isDraft: false, isPrerelease: true },
       tagCommit: SHA,
-      tagRuns: [run(20, "push", { conclusion: "failure", headBranch: TAG })],
+      tagRuns: [run(20, "workflow_dispatch", { conclusion: "failure", headBranch: TAG })],
     });
     await expect(ship(deps, { dryRun: false, sha: SHA })).rejects.toThrow("TN_SHIP_TAG_RUN_FAILED");
   });
@@ -259,7 +329,8 @@ describe("nextStep", () => {
     const { state } = world();
     const done = stateOf(state, { successes: 1 });
     expect(nextStep(done, SHA)).toBe("tag");
-    expect(nextStep({ ...done, tag: { commit: SHA } }, SHA)).toBe("wait");
+    expect(nextStep({ ...done, tag: { commit: SHA } }, SHA)).toBe("dispatch");
+    expect(nextStep({ ...done, tag: { commit: SHA }, tagRun: "running" }, SHA)).toBe("wait");
     expect(nextStep({ ...done, ci: "run 1 is queued" }, SHA)).toBe("evidence");
   });
 });
