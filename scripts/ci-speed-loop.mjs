@@ -410,7 +410,8 @@ function show(ledger) {
 /** The lint gate checks this file, so the writer leaves it in the shape the gate accepts. */
 function writeLedger(ledger) {
   writeAtomic(LEDGER, `${JSON.stringify(ledger, null, 2)}\n`);
-  execFileSync("pnpm", ["exec", "biome", "format", "--write", LEDGER], {
+  // Relative: an absolute path under .claude/worktrees matches Biome's ignore list and exits 1.
+  execFileSync("pnpm", ["exec", "biome", "format", "--write", "docs/ci-speed/ledger.json"], {
     cwd: ROOT,
     stdio: "ignore",
   });
