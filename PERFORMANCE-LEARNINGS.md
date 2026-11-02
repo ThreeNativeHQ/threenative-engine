@@ -857,7 +857,7 @@ no COOP/COEP); that lane is open.
 - Open: ThreeNative update p50 is still 28 ms against vanilla's 13 ms at load 4, and GPU p95 is 7.5 against 4.2 ms
   at load 2, 21-24 against 14 ms at load 4 and 44 against 21 ms at load 8.
 
-## Stress lab: three 0.187 (#597) against its merge base (2026-11-02)
+### 2026-11-02 — Stress lab: three 0.187 (#597) against its merge base: no regression
 
 - Measured at PR head 4f0a79fad (Wasm c49dffb0a349) against merge base b0e1b9ebc (three 0.185.1, Wasm 497f863a1266),
   fair ABBA, uncapped, loaded host (peak 8-13). The PR has since moved to 202ff22c7, which was not measured.
@@ -868,7 +868,7 @@ no COOP/COEP); that lane is open.
 - Risk: a game generated earlier fails `tsc` against 0.187 types at `src/render/temporalAAFrame.ts:40` and
   `temporalResolveDepth.ts:141`. Vite still serves it. #597 changes both files in its templates.
 
-## Stress lab: the load gate, A/A noise and the first Unreal uncapped rows (2026-11-02)
+### 2026-11-02 — Stress lab: the load gate, A/A noise and the first Unreal uncapped rows
 
 - The old gate (start under 4, void above 6) was never calibrated. It starved the loop for hours on a 24-thread host
   where the stress page alone adds about 6. It is now 12 and 18 (owner order), and still not calibrated.
