@@ -712,6 +712,8 @@ public:
         /** The instanced draws whose instance floats the plan copied into `instances`: a draw whose stores did not move
          *  since the GPU got its bytes is left alone (TR1b), so a static forest costs nothing here. */
         uint32_t instanceCopies = 0;
+        /** The grouped shadow rows the plan built (FM8): one per group per page, and mover pages share theirs. */
+        uint32_t shadowGroupRows = 0;
     };
     /** Why a recorded pass's key moved: the same draws in another order, the same order at other uniform offsets,
      *  another draw count, anything else (a first record included). */
