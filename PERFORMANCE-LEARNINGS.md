@@ -957,3 +957,14 @@ no COOP/COEP); that lane is open.
 - Method trap: a control must fail closed. `git apply -R` with the wrong flags did nothing, and rows #206 and #210 ran the patched Wasm.
 - Revisit when: a scene's batch palettes stop matching its shadow draws' bytes (placed primitives). The native case shows 9 copies
   for 8 rigs there, not 1.
+
+### 2026-11-02 — Stress lab: a compute kernel finds its bindings with one graph walk (L2) — KEEP
+
+- What changed: `graph::computeBindingNodes` keeps the kernel's storage and texture nodes in the node's memo. It replaces three walks per
+  dispatch, at 13.5 dispatches a frame.
+- Result, labs restarted cold together (rows #218-225, both arm orders, 7 of 8 pairs): fps 70.92 to 72.88 (+2.8%), frame p50 13.26 to
+  12.95 ms (forecast 0.3), frame p95 18.46 to 18.14 ms. GPU and upload did not change. The first 4 pairs read 3 of 4, so the rule was set
+  before the second window: 4 more pairs, keep at 6 of 8 with a mean past the 1% band.
+- Closed by reading, not measured: a number fast path in the uniform sync setter (hunt L3). `uniformLanes` and `sameLanes` on one
+  number are a few operations, so 1340 calls a frame cost far less than the 0.2-0.3 ms the hunt estimated. Most of the time is in the
+  callbacks and the object scan. Revisit when: a profile shows the setter by name.
