@@ -10995,6 +10995,128 @@
       "dpr": 1,
       "pass": "uncapped",
       "shadow": "virtual"
+    },
+    {
+      "id": 196,
+      "at": "2026-11-02T12:16:07.128Z",
+      "commit": "UnrealEngine-5.8.3-58210709",
+      "label": "UNREAL D10 window (stock&uncapped)",
+      "decision": "measure",
+      "engine": "unreal",
+      "variant": "stock&uncapped",
+      "notes": "Unreal 5.8.3 stock, uncapped pass, 1280x720 windowed on :0, 60 s settle + 15 s CSV profile (80 s wall), mean of 2 valid run(s) ['1', '4']; foreign load avg 2.65 peak 6.85; total load peak 11.78 (loadavg1 peak 8.65); void (foreign avg>12 or peak>18): none; gate: load<4 for 60 s, stray pages closed, VRAM<4000 MiB + util<10% x5 s. runs: sandbox/stress-lab-unreal/rows/",
+      "preset": "real",
+      "layers": ["trees", "rocks", "houses", "props", "crowd", "bodies", "fires", "lights"],
+      "adapter": "NVIDIA GeForce RTX 2080",
+      "viewport": "1280x720",
+      "seconds": 12,
+      "windows": 3,
+      "metrics": {
+        "presentedP50Ms": 13.155,
+        "presentedP95Ms": 16.75,
+        "rafStampP95Ms": null,
+        "fps": 74.77,
+        "gpuP50Ms": 12.705,
+        "gpuP95Ms": 14.33,
+        "renderP50Ms": 6.295,
+        "updateP50Ms": 10.17,
+        "frameP50Ms": 10.17,
+        "frameP95Ms": 13.02,
+        "mainDraws": null,
+        "shadowDraws": null,
+        "mainTrianglesM": null,
+        "shadowTrianglesM": null,
+        "hitchesPerMin": 0,
+        "longTasks": null,
+        "loadMs": 632.175,
+        "bridgeCrossingsP50": null,
+        "hostCallsP50": null,
+        "gpuUploadKbP50": null,
+        "jsAllocKbP50": null
+      },
+      "counts": {
+        "trees": 4000,
+        "rocks": 6000,
+        "houses": 120,
+        "props": 600,
+        "crowd": 120,
+        "bodies": 300,
+        "particles": null,
+        "lights": 16
+      },
+      "build": {
+        "kind": "native",
+        "sha256": "a12ef84ae3bf",
+        "commit": "UnrealEngine-5.8.3-58210709"
+      },
+      "load": {
+        "peak": 6.85,
+        "samples": 2
+      },
+      "dpr": 1,
+      "pass": "uncapped",
+      "shadow": "virtual"
+    },
+    {
+      "id": 197,
+      "at": "2026-11-02T12:16:07.547Z",
+      "commit": "UnrealEngine-5.8.3-58210709",
+      "label": "UNREAL D10 window (tnmatched&uncapped)",
+      "decision": "measure",
+      "engine": "unreal",
+      "variant": "tnmatched&uncapped",
+      "notes": "Unreal 5.8.3 tnmatched, uncapped pass, 1280x720 windowed on :0, 60 s settle + 15 s CSV profile (80 s wall), mean of 1 valid run(s) ['3']; foreign load avg 3.68 peak 13.42; total load peak 13.43 (loadavg1 peak 10.84); void (foreign avg>12 or peak>18): ['2 (foreign avg 9.61 peak 20.77)']; gate: load<4 for 60 s, stray pages closed, VRAM<4000 MiB + util<10% x5 s. runs: sandbox/stress-lab-unreal/rows/",
+      "preset": "real",
+      "layers": ["trees", "rocks", "houses", "props", "crowd", "bodies", "fires", "lights"],
+      "adapter": "NVIDIA GeForce RTX 2080",
+      "viewport": "1280x720",
+      "seconds": 14.54,
+      "windows": 4,
+      "metrics": {
+        "presentedP50Ms": 11.97,
+        "presentedP95Ms": 15.27,
+        "rafStampP95Ms": null,
+        "fps": 82.76,
+        "gpuP50Ms": 11.5,
+        "gpuP95Ms": 12.97,
+        "renderP50Ms": 5.77,
+        "updateP50Ms": 10.52,
+        "frameP50Ms": 10.52,
+        "frameP95Ms": 13.31,
+        "mainDraws": null,
+        "shadowDraws": null,
+        "mainTrianglesM": null,
+        "shadowTrianglesM": null,
+        "hitchesPerMin": 0,
+        "longTasks": null,
+        "loadMs": 722.24,
+        "bridgeCrossingsP50": null,
+        "hostCallsP50": null,
+        "gpuUploadKbP50": null,
+        "jsAllocKbP50": null
+      },
+      "counts": {
+        "trees": 4000,
+        "rocks": 6000,
+        "houses": 120,
+        "props": 600,
+        "crowd": 120,
+        "bodies": 300,
+        "particles": null,
+        "lights": 16
+      },
+      "build": {
+        "kind": "native",
+        "sha256": "a12ef84ae3bf",
+        "commit": "UnrealEngine-5.8.3-58210709"
+      },
+      "load": {
+        "peak": 13.42,
+        "samples": 2
+      },
+      "dpr": 1,
+      "pass": "uncapped",
+      "shadow": "virtual"
     }
   ]
 }

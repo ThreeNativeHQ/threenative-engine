@@ -908,6 +908,11 @@ no COOP/COEP); that lane is open.
   reads 20.6 ms. The score moved by method: VSM 45 to 56, plain sun 63 to 75, vanilla to 60. The engine did not get faster.
 - First window (rows #176-#179): VSM 63.8 fps, frame p95 21.2 ms, CPU p95 20.5 ms, GPU p95 7.3 ms. Unreal no Lumen 70.0,
   18.8, 18.3, 13.3. ThreeNative loses on fps, tail and CPU, and leads on GPU. The score reads a tie.
+- Those Unreal rows ran at load peak 7-15. On a calmer host (rows #196-#197, peak 7-13): stock 74.8 fps, frame p95 16.8, CPU p50 10.2,
+  CPU p95 13.0, GPU p95 14.3; no Lumen 82.8, 15.3, 10.5, 13.3, 13.0. Develop with FA1 (row #188): 65.8, 19.2, 14.5, 18.5, 6.9. The score
+  reads 58 against 59 and 64. The gap is CPU, about 4 ms at p50 and 5 ms at p95. Rerun every rival when the host calms.
+- Trap: `record_d10.py` records every file in `rows/`, so an uncapped rerun also adds the old vsync rows with a new date (#198-#199,
+  removed). Delete the extra rows before you commit.
 - A/A on the corrected metric (two windows, load peak 7 or less): mean-of-2 scores differ by 0.1-0.5 inside a window and
   by about 1 between windows, and single runs read 56.1-58.1. The dashboard reads a gap of 2 points or less as a tie.
 - Load limits stay at 12 and 18 by owner order. Data so far: about 1% at peak 7 or less, about 3% at peak 13, about 8% at
