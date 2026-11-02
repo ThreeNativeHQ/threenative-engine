@@ -12,6 +12,8 @@ const EXCLUDED_MARKDOWN = [
   /^docs\/verification\/worker-wake(?:-|\.)/u,
   /^docs\/verification\/native-(?:runtime-)?(?:census|coverage)(?:-|\.)/u,
   /^docs\/verification\/(?:round-|parity-|sweep-|tier-1-)/u,
+  // The scaffold reads these and throws when one is missing, so no scaffold starts.
+  /^packages\/create-threenative\/(?:agent-docs|agent-files)\//u,
 ];
 // Paths whose change the native platform matrix has to prove. Recorded as data beside the other
 // path classes: a new package or action that `native-platforms.yml` builds or consumes belongs in
@@ -967,7 +969,7 @@ function parseNameStatus(output) {
   return { paths: [...new Set(paths)].sort() };
 }
 
-function pathFamily(file, selective) {
+export function pathFamily(file, selective) {
   if (
     /^packages\/create-threenative\/templates\/[^/]+\/(?:AGENTS|CLAUDE)\.md$/u.test(file) &&
     selective

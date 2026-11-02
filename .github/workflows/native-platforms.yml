@@ -2592,47 +2592,10 @@ jobs:
     # every PR and every push, with no label to remember and no lane to opt into.
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
-      # The same compiler cache as the desktop legs: this leg compiled every file on every board, 19
-      # of its 60 minutes, because nothing here named a launcher.
-      CCACHE_DIR: ${{ github.workspace }}/.cache/ccache
-      CCACHE_MAXSIZE: 900M
-      CCACHE_COMPRESS: "1"
-      CMAKE_C_COMPILER_LAUNCHER: ccache
-      CMAKE_CXX_COMPILER_LAUNCHER: ccache
     steps:
       - uses: actions/checkout@v7
         with:
           ref: ${{ needs.scope.outputs.candidate_sha }}
-      - name: Restore native third-party dependencies
-        uses: actions/cache@v4
-        with:
-          path: packages/runtime-native/third_party
-          key: native-third-party-ios-${{ runner.arch }}-${{ hashFiles('packages/runtime-native/scripts/download-deps.mjs') }}
-      - name: Restore native compiler cache
-        uses: actions/cache@v4
-        with:
-          path: ${{ github.workspace }}/.cache/ccache
-          key: native-ccache-ios-${{ runner.arch }}-${{ hashFiles('packages/runtime-native/CMakeLists.txt', 'packages/runtime-native/cmake/ios.toolchain.cmake') }}-${{ github.sha }}
-          restore-keys: native-ccache-ios-${{ runner.arch }}-${{ hashFiles('packages/runtime-native/CMakeLists.txt', 'packages/runtime-native/cmake/ios.toolchain.cmake') }}-
-      # ccache makes this build faster; it never makes it correct. As on the desktop legs, a package
-      # feed that is down drops the launcher and the build still runs.
-      - name: Install ccache
-        shell: bash
-        run: |
-          ccache --version 2>/dev/null && exit 0
-          for attempt in 1 2 3; do
-            brew install ccache && ccache --version && exit 0
-            echo "brew install ccache failed (attempt $attempt)"
-          done
-          {
-            echo "CCACHE_UNAVAILABLE=1"
-            echo "CMAKE_C_COMPILER_LAUNCHER="
-            echo "CMAKE_CXX_COMPILER_LAUNCHER="
-          } >> "$GITHUB_ENV"
-          echo "::warning::ccache unavailable after 3 attempts; building without the compiler cache"
-      - name: Zero the compiler cache counters
-        if: env.CCACHE_UNAVAILABLE != '1'
-        run: ccache --zero-stats
       - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@v7
         with:
@@ -2674,9 +2637,6 @@ jobs:
           test -s "$snapshot"
       - run: rustup target add aarch64-apple-ios-sim
       - run: node packages/runtime-native/scripts/verify-ios-simulator.mjs
-      - name: Report the compiler cache hit rate
-        if: always() && env.CCACHE_UNAVAILABLE != '1'
-        run: ccache --show-stats
       - name: Archive the scenario-verified unsigned simulator host
         run: |
           app=$(find packages/runtime-native/build/tn-ios-simulator -name threenative-ios.app -type d -print -quit)

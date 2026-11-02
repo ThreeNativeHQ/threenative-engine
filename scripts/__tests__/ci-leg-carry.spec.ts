@@ -26,6 +26,7 @@ import {
 
 const SOURCE = "a".repeat(40);
 const CANDIDATE = "b".repeat(40);
+const { pathFamily } = await import(new URL("../ci-change-scope.mjs", import.meta.url).href);
 const isProse = (file: string) => file.endsWith(".md");
 const fullPlan = (sha = CANDIDATE) =>
   selectionPlan("full", "a test board", [], sha, true, 0, "main", true);
@@ -38,6 +39,15 @@ const kit = (name: string, value: string) => ({
 });
 
 describe("which changed path reaches a leg", () => {
+  it.each([
+    ["packages/create-threenative/agent-docs/references/finding-assets.md", false],
+    ["packages/create-threenative/agent-files/.agents/skills/ponytail/SKILL.md", false],
+    ["packages/create-threenative/README.md", true],
+    ["docs/PRDs/CI/PRD-1-x.md", true],
+  ])("treats %s as prose: %s, because the scaffold throws without the first two", (file, prose) => {
+    expect(pathFamily(file, true) === "prose").toBe(prose);
+  });
+
   const unit = { job: "test", leg: "test", inputs: "unit" };
   const workspace = { job: "typecheck", leg: "typecheck", inputs: "workspace" };
   const native = { job: "native-platforms", leg: "native-platforms", inputs: "native" };

@@ -51,6 +51,10 @@ Flake rate reads attempt 1 only, so a flake that a rerun hid does not count. PRD
 stay in the same ledger. Carry hit rate and per-cache hit rate wait until a board runs per-job reuse
 and the scouts name the caches that matter.
 
+## Lever candidates known before the audit
+
+- iOS compile, 19 minutes on each board. A CMake launcher has no effect with `-G Xcode`. It needs `CMAKE_XCODE_ATTRIBUTE_CC` with a wrapper, or the Ninja generator. The first proof is a macOS CI run.
+
 ## Blocked on
 
 - GitHub Team plan, 60 concurrent jobs against 20. It costs money, so it is the owner's decision.

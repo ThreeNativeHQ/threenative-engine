@@ -102,6 +102,7 @@ Risks:
 - The clean path to `latest` costs about 236 min, not 125 min or 3 h, because the promotion board and the main push board run in series: 64 + 64 + 5 + 60 + 43 min.
 - The "no capacity" decision in this PRD assumed a real cost. The GitHub Team plan raises hosted jobs from 20 to 60 for about $4 per seat per month (verify on the pricing page). The purchase is the owner's call.
 - A replay of 59 develop commits against their direct parents finds 24% of legs clean (kit legs about 35%, native 20%, unit legs 7%). Same-tree and version-only runs carry almost everything, so the release path gains most.
+- A second adversarial review found 3 more defects, all fixed: (1) a qualification plan with every integration lane carried threw `CI_INTEGRATION_EMPTY_QUALIFICATION`, so a green promotion PR blocked the main board. Empty is now valid only with carried lanes. (2) Markdown under `packages/create-threenative/agent-docs` and `agent-files` counted as prose, but the scaffold throws when a file is missing. It no longer counts as prose, for carry and for the selection. (3) The iOS ccache of `47055b355` did nothing: `verify-ios-simulator.mjs:317` uses `-G Xcode`, and CMake applies a compiler launcher only to Makefile and Ninja generators (from CMake documentation as recalled, no macOS run). Reverted. The iOS compile cache moves to PRD-782 as a lever.
 
 ## Execution Phases
 
