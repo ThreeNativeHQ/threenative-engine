@@ -98,6 +98,13 @@ Together: 32,807 to 52,639 machine minutes, 20.5% to 32.9%. That is a real gain 
 
 An independent review caught the first design of the stop: `workflow_job` is not a workflow trigger in GitHub's schema, so it would have made `ci-janitor.yml` invalid. The stop moved to `queue-watch`, which runs on a branch before any merge.
 
+### Real boards on #601
+
+| Board | Result | Machine min | Wall min |
+| --- | --- | --- | --- |
+| [41387367605](https://github.com/ThreeNativeHQ/threenative-engine/actions/runs/41387367605), `f80cb47e6` | Red at `test-native`. The other jobs were cancelled 20 s later. | 366 | 21 |
+| [41389827906](https://github.com/ThreeNativeHQ/threenative-engine/actions/runs/41389827906), `6db6944a8` | Green: 67 jobs passed, 11 skipped | 535 | 59 |
+
 ## Levers, ranked
 
 Each lever has one loop turn. The minutes overlap, so do not add them. An ESTIMATE is arithmetic on measured numbers, not a measured result.
