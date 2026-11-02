@@ -852,7 +852,7 @@ describe("acknowledging a missing prebuilt release", () => {
     expect(acknowledged).toHaveLength(1);
     // Still reported: an acknowledged finding that stopped being printed would be a silent one.
     expect(acknowledged[0]?.severity).toBe("warn");
-    expect(acknowledged[0]?.detail).toContain("--allow-missing-prebuilt");
+    expect(acknowledged[0]?.detail).toContain("stages it or publishes nothing");
     expect(acknowledged[0]?.detail).toContain("fails closed");
   });
 

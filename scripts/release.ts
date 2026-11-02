@@ -531,25 +531,18 @@ async function main(args: readonly string[]): Promise<void> {
   const lockOptions = lockPath === undefined ? {} : prebuiltFromLock(lockPath);
   const prepare = argv.includes("--prepare");
   const skipGates = argv.includes("--skip-gates");
-  // Publish the runtime package before its prebuilt release exists. A deliberate, named decision:
-  // `install-prebuilt.mjs` already treats a missing release as a packaging fact rather than a
-  // broken download — it warns, the install finishes, the web half of a game works, and every
-  // native lane fails closed later on the binary that is not there.
-  const allowMissingPrebuilt = argv.includes("--allow-missing-prebuilt");
   const unknown = argv.filter(
-    (arg) =>
-      !["--yes", "--dry-run", "--prepare", "--skip-gates", "--allow-missing-prebuilt"].includes(
-        arg,
-      ),
+    (arg) => !["--yes", "--dry-run", "--prepare", "--skip-gates"].includes(arg),
   );
   if (unknown.length > 0) throw new Error(`TN_RELEASE_UNKNOWN_FLAG: ${unknown.join(", ")}`);
-  // A `--yes` release that did not ask to publish ahead of its prebuilt payload produces that
-  // payload itself, so the preflight may acknowledge its absence and the run finishes the job.
+  // A `--yes` release produces its prebuilt payload itself, so the preflight may acknowledge its
+  // absence and the run finishes the job. A local run that publishes nothing has no payload to
+  // miss. No flag ships the npm cohort without its binaries (owner, 2026-11-01).
   // Never in CI: the npm-release lane runs on a binary-less runner against the release the native
   // lane already produced, and it holds no GitHub token here, so it must not try to stage one.
-  const willCreateNativeRelease =
-    publish && !allowMissingPrebuilt && process.env.GITHUB_ACTIONS !== "true";
-  const prebuiltAcknowledged = allowMissingPrebuilt || willCreateNativeRelease;
+  const local = process.env.GITHUB_ACTIONS !== "true";
+  const willCreateNativeRelease = publish && local;
+  const prebuiltAcknowledged = local;
 
   // Publish from a committed tree, always. The 0.2.x releases went out of a working tree and
   // were committed afterwards, so the artifacts on the registry correspond to no commit — and
