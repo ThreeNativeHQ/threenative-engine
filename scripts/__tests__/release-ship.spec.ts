@@ -262,6 +262,20 @@ describe("pnpm release:ship resumes", () => {
     expect(calls).toContain("publish --override");
   });
 
+  it("stops on a failed lookup, because a failed read is not a missing release", async () => {
+    const { calls, deps } = world({ ci: [], tagCommit: SHA });
+    const gh = deps.gh;
+    const down: typeof deps = {
+      ...deps,
+      gh: (args) => {
+        if (args[0] === "release") throw new Error("HTTP 502: bad gateway");
+        return gh(args);
+      },
+    };
+    await expect(ship(down, { dryRun: false, sha: SHA })).rejects.toThrow(/HTTP 502/u);
+    expect(calls.some((call) => call.includes("--method"))).toBe(false);
+  });
+
   it("an override starts a new tag run after a failed one", async () => {
     const { calls, deps } = world({
       ci: [],

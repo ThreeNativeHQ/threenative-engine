@@ -134,6 +134,11 @@ function describeMissing(all: readonly IRun[], sha: string): string {
     : `not green (run ${latest.databaseId} is ${latest.status}${latest.conclusion ? `/${latest.conclusion}` : ""})`;
 }
 
+function errorText(error: unknown): string {
+  const { message, stderr } = error as { message?: string; stderr?: string };
+  return `${message ?? ""}\n${stderr ?? ""}`;
+}
+
 function releaseState(deps: IShipDeps, tag: string): ReleaseState {
   let out: string;
   try {
@@ -146,8 +151,10 @@ function releaseState(deps: IShipDeps, tag: string): ReleaseState {
       "--json",
       "isDraft,isPrerelease",
     ]);
-  } catch {
-    return "none";
+  } catch (error) {
+    // Only a real miss is "none": a failed read here could move the tag of a public release.
+    if (/release not found/iu.test(errorText(error))) return "none";
+    throw error;
   }
   const release = JSON.parse(out) as { isDraft: boolean; isPrerelease: boolean };
   if (release.isDraft) return "draft";
@@ -476,8 +483,9 @@ function systemDeps(): IShipDeps {
       try {
         const out = run("npm", ["view", name, "versions", "--json"]);
         return JSON.parse(out) as string[];
-      } catch {
-        return [];
+      } catch (error) {
+        if (/E404|404 Not Found/u.test(errorText(error))) return [];
+        throw error;
       }
     },
     publish: (override) =>

@@ -650,6 +650,10 @@ jobs:
           else
             mode=(--verify-tag --title "ThreeNative runtime ${RELEASE_TAG:-}" --prerelease --latest=false --generate-notes)
           fi
+          # A rerun after a failed verify finds its own prerelease. A public release stays refused.
+          if [ "$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isPrerelease --jq .isPrerelease 2>/dev/null)" = true ]; then
+            gh release delete "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --yes
+          fi
           gh release create "$RELEASE_TAG" "${assets[@]}" \
             --repo "$GITHUB_REPOSITORY" \
             "${mode[@]}"

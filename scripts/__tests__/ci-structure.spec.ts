@@ -2114,6 +2114,14 @@ describe("CI pipeline structure", () => {
 
   // A clean-room-only dispatch re-proves the published cohort without a publish: it must never
   // reach `gates` or `publish`, and the clean room must still run after a real publish succeeds.
+  it("a tag run rerun replaces its own prerelease and leaves a public release alone", async () => {
+    const native = await readFile(path.join(repo, ".github/workflows/native-release.yml"), "utf8");
+    const step = native.slice(native.indexOf("- name: Publish runtimes and checksum lock"));
+    const guard = step.indexOf("--json isPrerelease --jq .isPrerelease");
+    expect(guard).toBeGreaterThan(0);
+    expect(guard).toBeLessThan(step.indexOf('gh release create "$RELEASE_TAG"'));
+  });
+
   it("runs the clean room alone on a dispatch", async () => {
     const npm = await readFile(path.join(repo, ".github/workflows/npm-release.yml"), "utf8");
     const cleanRoom = jobSections(npm).find(([job]) => job === "clean-room")?.[1];

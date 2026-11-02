@@ -32,7 +32,8 @@ jobs:
       github.event_name == 'workflow_run' && github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
-    timeout-minutes: 240
+    # The waits inside `release:ship` total 190 minutes, before the publish and the clean room.
+    timeout-minutes: 360
     permissions:
       actions: write
       contents: write
