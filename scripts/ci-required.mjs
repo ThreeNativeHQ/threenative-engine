@@ -2,7 +2,7 @@
 
 import { spawnSync } from "node:child_process";
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { readAttemptJobs } from "./ci-attempt-receipts.mjs";
+import { readAttemptJobs, readJobsAcrossAttempts } from "./ci-attempt-receipts.mjs";
 import {
   assertMergeParentCandidate,
   classify,
@@ -250,7 +250,7 @@ try {
       validateNativeReceipts(
         expected,
         summary,
-        readAttemptJobs({ repository, runId, runAttempt: summary.runAttempt }, "CI_NATIVE"),
+        readJobsAcrossAttempts({ repository, runId, runAttempt: summary.runAttempt }, "CI_NATIVE"),
       );
     } catch (error) {
       failures.push(error instanceof Error ? error.message : String(error));

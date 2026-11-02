@@ -1,0 +1,39 @@
+name: Restore the Rust crates of the native build
+description: >-
+  `native:build` compiles the physics crate and the ui-overlay crate. Rust took 112 s of 173 s in the
+  starter-linux x64 build (job 124904693949). Only a push saves, so the pull-request and queue boards
+  spend no cache budget. Cargo fingerprints content, so an older restore rebuilds only what moved.
+runs:
+  using: composite
+  steps:
+    # A `-sys` crate does not rerun when a system library changes, so the image and the two libraries
+    # it links to name the prefix, and no restore crosses them.
+    - id: identity
+      shell: bash
+      run: |
+        libs=""
+        if command -v dpkg-query >/dev/null; then
+          libs=$( (dpkg-query -W libwebkit2gtk-4.1-dev libgtk-3-dev 2>/dev/null || true) | sha256sum | cut -c1-12)
+        fi
+        rust=$( (rustc --version 2>/dev/null || echo none) | tr -c 'a-zA-Z0-9.\n' '-')
+        echo "prefix=cargo-v1-${{ runner.os }}-${{ runner.arch }}-${ImageVersion:-self}-$rust-$libs-" >> "$GITHUB_OUTPUT"
+    - if: github.event_name == 'push'
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git/db
+          packages/runtime-native/.runtime/physics-target
+          packages/runtime-native/native/ui-overlay/target
+        key: ${{ steps.identity.outputs.prefix }}${{ hashFiles('packages/runtime-native/native/**/Cargo.lock', 'packages/runtime-native/native/**/Cargo.toml', 'packages/runtime-native/native/**/*.rs', 'packages/runtime-native/scripts/build-native-physics.mjs', 'packages/runtime-native/scripts/native-build.mjs') }}
+        restore-keys: ${{ steps.identity.outputs.prefix }}
+    - if: github.event_name != 'push'
+      uses: actions/cache/restore@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git/db
+          packages/runtime-native/.runtime/physics-target
+          packages/runtime-native/native/ui-overlay/target
+        key: ${{ steps.identity.outputs.prefix }}${{ hashFiles('packages/runtime-native/native/**/Cargo.lock', 'packages/runtime-native/native/**/Cargo.toml', 'packages/runtime-native/native/**/*.rs', 'packages/runtime-native/scripts/build-native-physics.mjs', 'packages/runtime-native/scripts/native-build.mjs') }}
+        restore-keys: ${{ steps.identity.outputs.prefix }}

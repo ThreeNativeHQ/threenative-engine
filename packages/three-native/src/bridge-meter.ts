@@ -10,8 +10,9 @@
  * also takes one stack for each name read redundantly, so the verdict names the caller.
  *
  * **The rule is derived, never a constant an author revisits.** It fires when the redundant reads,
- * at this host's own measured cost per crossing, take more than `REDUNDANT_SHARE` of the frame's
- * median interval: the frame's own length, so the guard holds on Xvfb and on a loaded host. The line
+ * at this host's own measured cost per crossing, take more than `REDUNDANT_SHARE` of the frame: its
+ * median interval or the census frame's own length, the longer, so the guard holds on Xvfb, on a
+ * loaded host and across a frame that rebuilds a scene. The line
  * is `TN_BRIDGE_WARNING`, which a playtest fails on (`packages/playtest` perf warnings).
  *
  * What *all* crossings cost is an observation, not a defect: a game that reads 995 distinct
@@ -161,7 +162,9 @@ export function createBridgeMeter(host: IBridgeMeterHost): IBridgeMeter {
       );
     }
     if (redundant === 0 || intervals.length === 0) return;
-    const frameMs = medianFrameMs();
+    // The census frame's own length is the last interval. A scene rebuild reads a lot once in a frame
+    // of seconds; a steady waster's frame is as long as its median, so the next census names it.
+    const frameMs = Math.max(medianFrameMs(), intervals[intervals.length - 1] as number);
     const crossingUs = costMicros();
     const redundantMs = (redundant * crossingUs) / 1000;
     if (!(redundantMs > frameMs * REDUNDANT_SHARE)) return;

@@ -561,7 +561,10 @@ describe("PRD-373 fail-closed required verdict", () => {
     // When the plan exempts it the job is skipped and ci-required.mjs treats an exempt skip as a
     // pass, so the merge waits only for the cases the classifier could not clear.
     expect(declaredNeeds(job("ci-required"))).toContain("native-platforms");
-    const requiredCoverage = coverage.filter((name) => jobs[name]?.required);
+    // Only the nightly's plan requires the engine-cost row, and the verdict needs it there too.
+    const requiredCoverage = coverage.filter(
+      (name) => jobs[name]?.required || name === "template-engine-cost",
+    );
     expect(
       declaredNeeds(job("ci-required"))
         .filter((name) => name !== "scope")

@@ -625,7 +625,8 @@ export function defineWebRenderer(
       shadows.keptMaps = module._tnw_web_frame(40);
       this.info.engine.uniformBytes = module._tnw_web_frame(41);
       const split = this.info.engine.frameSplit;
-      split.shadowDraws = shadows.shadowDraws;
+      // Field 0 answers for the renderer that drew last and field 27 for the world's: an overlay has no shadow pass of its own.
+      split.shadowDraws = this.#overlay ? 0 : shadows.shadowDraws;
       split.shadowTriangles = module._tnw_web_frame(85);
       split.mainDraws = this.info.render.frameCalls - split.shadowDraws;
       split.mainTriangles = lastTriangles - split.shadowTriangles;

@@ -220,7 +220,7 @@ jobs:
           fi
           printf '{"databaseId":%s,"attempt":1,"status":"%s","conclusion":"%s","event":"%s","headBranch":"%s","headSha":"%s"}\n' \
             "$candidate_run" "$WORKFLOW_RUN_STATUS" "$WORKFLOW_RUN_CONCLUSION" "$WORKFLOW_RUN_EVENT" "$WORKFLOW_RUN_HEAD_BRANCH" "$candidate_sha" > "$evidence/ci-run.json"
-          gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/actions/runs/$candidate_run/jobs?filter=latest&per_page=100" > "$evidence/ci-jobs.json"
+          gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/actions/runs/$candidate_run/jobs?filter=latest&per_page=10" > "$evidence/ci-jobs.json"
           CANDIDATE_RUN_ID="$candidate_run" CANDIDATE_SHA="$candidate_sha" node --input-type=module <<'NODE'
           import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
           import { join } from "node:path";
@@ -323,7 +323,7 @@ jobs:
           NODE
           )"
           gh run view "$candidate_run" --repo "$GITHUB_REPOSITORY" --json databaseId,attempt,status,conclusion,event,headBranch,headSha > "$evidence/ci-run.json"
-          gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/actions/runs/$candidate_run/jobs?filter=latest&per_page=100" > "$evidence/ci-jobs.json"
+          gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/actions/runs/$candidate_run/jobs?filter=latest&per_page=10" > "$evidence/ci-jobs.json"
           CANDIDATE_RUN_ID="$candidate_run" node --input-type=module <<'NODE'
           import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
           import { join } from "node:path";
@@ -1403,6 +1403,10 @@ jobs:
           pnpm --dir "$IOS_RELEASE_CONSUMER" build --target ios
           test -d "$IOS_RELEASE_CONSUMER/dist-native/threenative-ios-release-consumer.app"
           test ! -e "$TN_IOS_TOOLCHAIN_LOG"
+          # The packager stamps the consumer's own app id into the bundle, so the build report names it.
+          bundle_id=$(node -p 'JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")).appId' "$IOS_RELEASE_CONSUMER/dist-native/threenative-ios-release-consumer.app.json")
+          test -n "$bundle_id"
+          echo "IOS_BUNDLE_ID=$bundle_id" >> "$GITHUB_ENV"
       - name: Boot a clean-consumer iOS simulator
         run: |
           device=$(xcrun simctl list devices available | awk -F '[()]' '/iPhone/{print $2; exit}')
@@ -1416,13 +1420,13 @@ jobs:
           app="$IOS_RELEASE_CONSUMER/dist-native/threenative-ios-release-consumer.app"
           node packages/playtest/dist/runner/cli.js \
             examples/native-smoke/playtests/device-smoke.playtest.json \
-            --target ios --app "$app" --bundle-id dev.threenative.runtime \
+            --target ios --app "$app" --bundle-id "$IOS_BUNDLE_ID" \
             --timeout 30000 \
             --artifacts packages/runtime-native/artifacts/ios/release-consumer-pass
           set +e
           node packages/playtest/dist/runner/cli.js \
             examples/native-smoke/playtests/device-smoke-wrong-value.playtest.json \
-            --target ios --app "$app" --bundle-id dev.threenative.runtime \
+            --target ios --app "$app" --bundle-id "$IOS_BUNDLE_ID" \
             --timeout 30000 \
             --artifacts packages/runtime-native/artifacts/ios/release-consumer-wrong \
             > "$RUNNER_TEMP/ios-wrong-value.log" 2>&1
@@ -1439,7 +1443,7 @@ jobs:
             scenario=$1
             artifacts=$2
             node packages/playtest/dist/runner/cli.js "$scenario" \
-              --target ios --app "$app" --bundle-id dev.threenative.runtime \
+              --target ios --app "$app" --bundle-id "$IOS_BUNDLE_ID" \
               --timeout 30000 \
               --artifacts "$artifacts"
           }
@@ -1765,7 +1769,7 @@ jobs:
 
   finalize:
     # iOS is not a supported target (owner, 2026-09-23): its consumer proof stays as evidence but
-    # does not gate promotion, and it has never completed green in a tag run.
+    # does not gate promotion.
     #
     # A proof run rehearses this job too (PRD-629): it checks the same release and skips only the
     # `gh release edit` that would make a release public.

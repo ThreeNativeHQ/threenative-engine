@@ -101,8 +101,15 @@ describe("frame budget from the adapter", () => {
   });
 
   it("refuses a looser number without a reason at load", () => {
-    expect(() => evaluate({ maxFrameMsP95: 33 }, frames(33.3, 33), RTX_2080)).toThrow(/maxFrameMsReason/u);
+    expect(() => evaluate({ maxFrameMsP95: 34 }, frames(33.3, 33), RTX_2080)).toThrow(/maxFrameMsReason/u);
     expect(() => evaluate({ maxFrameMsP95: 33, maxFrameMsReason: "  " }, frames(33.3, 33), RTX_2080)).toThrow(/maxFrameMsReason/u);
+  });
+
+  it("keeps a game scaffolded before 0.3.7 passing, and the report says what its 33 ms pin hides", () => {
+    const { budget, frame } = evaluate({ maxFrameMsP95: 33 }, frames(30, 33), RTX_2080);
+    expect(budget).toMatchObject({ maxFrameMsP95: 33, source: "scenario" });
+    expect((budget as { reason: string }).reason).toContain("passes at 30 fps");
+    expect(frame?.pass).toBe(true);
   });
 
   it("accepts a tighter number without a reason", () => {

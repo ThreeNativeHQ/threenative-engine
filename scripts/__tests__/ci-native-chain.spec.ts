@@ -265,7 +265,27 @@ describe("actual native receipt writer, collector and protected verdict", () => 
       f.publish();
       const scheduledVerdict = () =>
         f.run("ci-required.mjs", [], {
-          TN_CI_NEEDS: JSON.stringify(needs),
+          TN_CI_NEEDS: JSON.stringify({
+            ...needs,
+            scope: {
+              result: "success",
+              outputs: {
+                plan: JSON.stringify(
+                  selectionPlan(
+                    "full",
+                    "CPU qualification",
+                    [],
+                    f.sha,
+                    true,
+                    0,
+                    "develop",
+                    true,
+                    true,
+                  ),
+                ),
+              },
+            },
+          }),
           TN_CI_NATIVE_RECEIPT: summary,
           TN_CI_EVENT: "schedule",
           TN_CI_HEAD_SHA: "",
@@ -282,7 +302,7 @@ describe("actual native receipt writer, collector and protected verdict", () => 
       if (!windows) throw new Error("missing fixture Windows job");
       windows.run_attempt = 1;
       f.publish();
-      expect(verdict().stderr).toContain("CI_NATIVE_JOB_IDENTITY");
+      expect(verdict().stderr).toContain("CI_NATIVE_BUILD_IDENTITY");
       expect(
         f.run("ci-native-receipts.mjs", [
           "--collect",

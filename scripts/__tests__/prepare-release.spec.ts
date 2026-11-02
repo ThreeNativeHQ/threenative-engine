@@ -29,6 +29,15 @@ describe("release preparation", () => {
     ]);
   });
 
+  it("bumps an absent cohort when told to, because a runtime tag can hold a release npm cannot see", () => {
+    const selected = selectReleaseVersions(
+      [{ name: "@threenative/core", version: "0.3.7" }],
+      () => ({ state: "absent" }),
+      true,
+    );
+    expect([...selected.values()]).toEqual([{ current: "0.3.7", next: "0.3.8", published: false }]);
+  });
+
   it("bumps the entire cohort and skips occupied patch versions", () => {
     const packages = [
       { name: "@threenative/core", version: "0.3.0" },

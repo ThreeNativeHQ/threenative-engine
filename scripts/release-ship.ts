@@ -70,7 +70,6 @@ export interface IShipState {
   };
   readonly ci: number | string;
   readonly mainHead: string;
-  readonly native: number | string;
   readonly npmPublished: boolean;
   readonly release: ReleaseState;
   readonly tag: { readonly commit?: string };
@@ -159,9 +158,7 @@ export function readShipState(
   runtimeVersion: string,
 ): IShipState {
   const ciAll = runs(deps, "ci.yml", sha);
-  const nativeAll = runs(deps, "native-platforms.yml", sha);
   const ci = greenRun(ciAll, sha, ["push"]);
-  const native = greenRun(nativeAll, sha, ["push", "workflow_dispatch"]);
   const candidateRuns = runs(deps, "release-candidate.yml", sha).filter(
     (run) => run.headBranch === "main" && run.event === "workflow_dispatch",
   );
@@ -189,7 +186,6 @@ export function readShipState(
     },
     ci: ci?.databaseId ?? describeMissing(ciAll, sha),
     mainHead: deps.gh(["api", `repos/${deps.repository}/commits/main`, "--jq", ".sha"]).trim(),
-    native: native?.databaseId ?? describeMissing(nativeAll, sha),
     npmPublished: deps.npmVersions("@threenative/runtime-native").includes(runtimeVersion),
     release: releaseState(deps, tag),
     tag: { commit: tagCommit(deps, tag) },
@@ -202,7 +198,7 @@ export function buildCandidateRequest(
   repository: string,
   sha: string,
   runtimeVersion: string,
-  runIds: { readonly ci: number; readonly native: number },
+  ciRunId: number,
 ): IReleaseCandidateRequest {
   return {
     schemaVersion: 1,
@@ -210,10 +206,10 @@ export function buildCandidateRequest(
     tag: `runtime-native-v${runtimeVersion}`,
     candidateSha: sha,
     runtimeVersion,
-    requiredRunIds: { ci: runIds.ci, native: runIds.native },
+    requiredRunIds: { ci: ciRunId },
     reportArtifacts: {
-      parity: expectedReleaseReportReference("parity", runIds.native),
-      provenance: expectedReleaseReportReference("provenance", runIds.native),
+      parity: expectedReleaseReportReference("parity", ciRunId),
+      provenance: expectedReleaseReportReference("provenance", ciRunId),
     },
     releaseScope: SHIP_SCOPE,
   };
@@ -221,11 +217,13 @@ export function buildCandidateRequest(
 
 /** The first step that is not done. A second invocation resumes here. */
 export function nextStep(state: IShipState, sha: string): ShipStep {
-  if (typeof state.ci !== "number" || typeof state.native !== "number") return "evidence";
+  if (typeof state.ci !== "number") return "evidence";
   if (state.npmPublished) return "verify";
   if (state.candidate.successes === 0) return "candidate";
   if (state.tag.commit !== sha) return "tag";
-  if (state.release !== "public" || state.tagRun !== "success") return "wait";
+  // Promotion is the verdict: `finalize` makes a release public only after its gating consumers pass.
+  // The run's own conclusion also carries the iOS evidence job, which does not gate (owner, 2026-09-23).
+  if (state.release !== "public") return "wait";
   return "publish";
 }
 
@@ -259,7 +257,7 @@ const evidenceLabel = (value: number | string): string =>
 function describeStep(step: ShipStep, state: IShipState, sha: string, tag: string): string {
   switch (step) {
     case "evidence":
-      return `blocked: CI is ${evidenceLabel(state.ci)}; native-platforms is ${evidenceLabel(state.native)}.`;
+      return `blocked: CI is ${evidenceLabel(state.ci)}.`;
     case "candidate":
       return `dispatch release-candidate.yml for ${sha}.`;
     case "tag":
@@ -318,11 +316,8 @@ export async function ship(deps: IShipDeps, options: IShipOptions): Promise<read
     const state = readShipState(deps, sha, tag, version);
     const step = nextStep(state, sha);
     deps.log(`next: ${describeStep(step, state, sha, tag)}`);
-    if (typeof state.ci === "number" && typeof state.native === "number") {
-      const request = buildCandidateRequest(deps.repository, sha, version, {
-        ci: state.ci,
-        native: state.native,
-      });
+    if (typeof state.ci === "number") {
+      const request = buildCandidateRequest(deps.repository, sha, version, state.ci);
       // The gate's own parser: a request it would reject never reaches a dispatch.
       parseReleaseCandidateRequest(request, deps.repository, options.repo ?? REPO);
       deps.log(`request: ${JSON.stringify(request)}`);
@@ -335,10 +330,7 @@ export async function ship(deps: IShipDeps, options: IShipOptions): Promise<read
     acted.push(step);
     if (step === "candidate") {
       assertCandidateDispatchable(state, sha);
-      const request = buildCandidateRequest(deps.repository, sha, version, {
-        ci: state.ci as number,
-        native: state.native as number,
-      });
+      const request = buildCandidateRequest(deps.repository, sha, version, state.ci as number);
       deps.gh([
         "workflow",
         "run",
@@ -373,11 +365,12 @@ export async function ship(deps: IShipDeps, options: IShipOptions): Promise<read
         `${tag} run and release`,
         () => {
           const now = readShipState(deps, sha, tag, version);
+          if (now.release === "public") return true;
           if (now.tagRun === "failed")
             throw new Error(
               `TN_SHIP_TAG_RUN_FAILED: the ${tag} run failed. Fix it on main and ship the new commit.`,
             );
-          return now.release === "public" && now.tagRun === "success";
+          return false;
         },
         120,
       );

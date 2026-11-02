@@ -808,9 +808,8 @@ describe("CI pipeline structure", () => {
     expect(triggers).toContain("workflow_dispatch:");
     expect(triggers).toContain("workflow_call:");
     expect(triggers).toContain("ios_only:");
-    // PRD-629: the one push trigger is main, so the release candidate gets a standalone run.
-    expect(triggers).not.toMatch(/\n\s{2}(?:pull_request|schedule):/u);
-    expect(triggers).toMatch(/\n\s{2}push:\n\s{4}branches: \[main\]\n/u);
+    // The release candidate reads its reports from the main CI run, so nothing starts this alone.
+    expect(triggers).not.toMatch(/\n\s{2}(?:pull_request|schedule|push):/u);
   });
 
   it("never lets a draft pull request run cancel a ready one", async () => {
@@ -2425,8 +2424,7 @@ describe("CI pipeline structure", () => {
       "utf8",
     );
     expect(triggerSection(native)).toContain("workflow_call:");
-    expect(triggerSection(native)).not.toMatch(/\n\s{2}(?:pull_request|schedule):/u);
-    expect(triggerSection(native)).toMatch(/\n\s{2}push:\n\s{4}branches: \[main\]\n/u);
+    expect(triggerSection(native)).not.toMatch(/\n\s{2}(?:pull_request|schedule|push):/u);
   });
 
   it("both emulator lanes share the KVM provisioning commands", async () => {
@@ -3229,9 +3227,8 @@ describe("CI pipeline structure", () => {
     // The reusable workflow is invoked by ci.yml for every non-prose board selection.
     const triggers = triggerSection(native);
     expect(triggers).toContain("workflow_call:");
-    // PRD-629: the one push trigger is main, so the release candidate gets a standalone run.
-    expect(triggers).not.toMatch(/\n\s{2}(?:pull_request|schedule):/u);
-    expect(triggers).toMatch(/\n\s{2}push:\n\s{4}branches: \[main\]\n/u);
+    // The release candidate reads its reports from the main CI run, so nothing starts this alone.
+    expect(triggers).not.toMatch(/\n\s{2}(?:pull_request|schedule|push):/u);
 
     const android = requiredJob(native, "android-emulator-parity");
     expect(android).not.toContain("continue-on-error: true");
@@ -4647,6 +4644,24 @@ describe("a CI-configuration-only pull request", () => {
       expect(refused.stderr).toContain("CI_SCOPE_INVALID_PLAN");
     } finally {
       await removeFixture(fixture.root);
+    }
+  });
+
+  it("reads a run's job list in small pages, because a large page answers 502 after a --failed rerun", async () => {
+    // Run 41288322050 attempt 3: `jobs?filter=latest&per_page=100` answered 502 at 10.6 s on 9 of 9
+    // reads, and the release gate of tag runtime-native-v0.3.7 could not read its own CI run.
+    const sources = [
+      ".github/workflows/ci.yml",
+      ".github/workflows/ci-janitor.yml",
+      ".github/workflows/native-release.yml",
+      "scripts/ci-queue-watch.mjs",
+      "scripts/ci-merge-latency.mjs",
+    ];
+    for (const source of sources) {
+      const large = (await readFile(source, "utf8"))
+        .split("\n")
+        .filter((line) => /\/jobs\?[^"'`\s]*per_page=(?:[2-9]\d|\d{3})/u.test(line));
+      expect({ source, large }).toEqual({ source, large: [] });
     }
   });
 });

@@ -129,8 +129,11 @@ describe("exact-candidate qualification minimum", () => {
       expect(plan.templateMatrix.template).toEqual(TEMPLATE_NAMES);
       expect(plan.goldenMatrix.template).toEqual(["starter", "platformer"]);
       expect(plan.unitMatrix.shard).toEqual(["1/4", "2/4", "3/4", "4/4"]);
+      // Every job but the engine-cost row, which only the nightly owes.
+      const { "template-engine-cost": engineCost, ...others } = plan.jobs;
+      expect(engineCost.required).toBe(false);
       expect(
-        Object.values(plan.jobs).every((job: unknown) => (job as { required: boolean }).required),
+        Object.values(others).every((job: unknown) => (job as { required: boolean }).required),
       ).toBe(true);
       expect(validatePlan(plan)).toEqual(plan);
     } finally {
@@ -432,5 +435,29 @@ describe("PRD-731 the review lane", () => {
     expect(coverageMiss(view(queue), { profile: pull, jobs: [] })).toContain("lane");
     expect(coverageMiss(view(push), { profile: queue, jobs: [] })).toContain("lane");
     expect(coverageMiss(view(pull), { profile: queue, jobs: [] })).not.toContain("lane");
+  });
+});
+
+describe("the nightly owns the engine-cost row", () => {
+  const sha = "a".repeat(40);
+  const plan = (nightly: boolean) =>
+    selectionPlan("full", "fixture", [], sha, true, 0, "", true, nightly);
+  it("requires the row on a scheduled run and on nothing else", () => {
+    expect(plan(true).jobs["template-engine-cost"].required).toBe(true);
+    expect(plan(false).jobs["template-engine-cost"].required).toBe(false);
+    expect(validateEventPlan(plan(true), { eventName: "schedule" }).nightly).toBe(true);
+    expect(validateEventPlan(plan(false), { eventName: "push", baseRef: "main" }).nightly).toBe(
+      false,
+    );
+  });
+  it("refuses a scheduled run that does not owe the row", () => {
+    expect(() => validateEventPlan(plan(false), { eventName: "schedule" })).toThrow(
+      "CI_REQUIRED_QUALIFICATION_MINIMUM",
+    );
+  });
+  it("still refuses a push that waives any other job", () => {
+    const waived = plan(false);
+    waived.jobs.benchmark.required = false;
+    expect(() => validatePlan(waived)).toThrow("CI_SCOPE_INVALID_PLAN");
   });
 });
