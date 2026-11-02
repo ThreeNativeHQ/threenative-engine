@@ -51,13 +51,66 @@ Flake rate reads attempt 1 only, so a flake that a rerun hid does not count. PRD
 stay in the same ledger. Carry hit rate and per-cache hit rate wait until a board runs per-job reuse
 and the scouts name the caches that matter.
 
-## Lever candidates known before the audit
+## What the audit found
 
-- iOS compile, 19 minutes on each board. A CMake launcher has no effect with `-G Xcode`. It needs `CMAKE_XCODE_ATTRIBUTE_CC` with a wrapper, or the Ninja generator. The first proof is a macOS CI run.
+Audited: `ci.yml` run 41348117470 attempt 1, `native-release.yml` run 41348667449, `release-candidate.yml` run 41348747260, 14 days of job history and the newest 139 failed job logs. The full scout reports are in a comment on PR #601.
+
+Run 41348117470 is not a green board: attempt 1 has 3 reds (Windows desktop core and two verdict jobs that follow it). Its timing is still valid.
+
+Where the cost is, rechecked against the API or the repo:
+
+- Setup is 54.7 of 477.2 machine minutes, 11.5%. The board is limited by work and by queue, so caches recover little.
+- 86 runs of more than 50 minutes repeated a commit that had already run: 46,270 of 179,237 machine minutes. Of those, 51 were full boards: 30,318 minutes.
+- Outside the merge queue, legs that started after a real red cost 33,652 minutes. `queue-watch` stops this only on `merge_group` (`ci.yml:1567`).
+- 16 template jobs run their scenarios in series for 6,902 s, and `packages/playtest/src` has no concurrency flag.
+- Android spends 2,279 s in one emulator step, with `-no-snapshot` (`native-platforms.yml:732`).
+- Flakes by leg, green on another board of the same commit against all reds: Desktop web/native parity 11 of 15, `template-nonvisual (racing)` 5 of 9, macOS desktop core 5 of 8, Windows desktop core 5 of 7.
+- All board jobs but the two native floor legs were ready at minute 4.2, so they wait for a slot and not for a dependency (scout claim, not rechecked).
+
+Scout claims that the recheck rejected:
+
+- The log classes "18 real, 75 environmental, 46 unknown" are not reliable. `CI_NATIVE_BUILD_EVIDENCE`, in 23 logs, prints after the job has already failed (`TN_CI_JOB_RESULT: failure`), so it is a symptom. The receipt reds also follow other failures. The true cause of most reds remains unknown.
+- The savings for `template-engine-cost`, the engine parity step and `benchmark` come from before the 2026-11-01 cut. On the audited board `template-engine-cost` is skipped and `benchmark` takes 0.5 minutes. `csg`, `ik` and `vegetation` take 0.3 to 0.4 minutes each, so merging them recovers almost nothing.
+- A ccache key that ends in the run id is the normal pattern, not a defect.
+- npm publish parallelism is already on #601 (`47c3520b7`). The scout marked it unused.
+- The second release run on a commit is not a stray duplicate: the `workflow_run` is the rehearsal (PRD-629) and the tag run is the real one. The fix is PRD-630, not one entry point.
+
+## Levers, ranked
+
+Each lever has one loop turn. The minutes overlap, so do not add them. An ESTIMATE is arithmetic on measured numbers, not a measured result.
+
+| # | Lever | Recovers | State |
+| --- | --- | --- | --- |
+| 1 | One board per tree, and per-job reuse (PRD-776) | Up to 46,270 machine min per 14 days, about 15 wall min per board | On #601, waits for the all-clear |
+| 2 | Stop starting legs after the first real red, on every event | Up to 33,652 machine min per 14 days. Risk: fewer reds shown per round | Not started |
+| 3 | Find and fix the real cause of the 4 flaky legs above | A red board costs a second board of about 538 machine min | Not started. Needs each cause read from the failing step, not from the verdict line |
+| 4 | Two browser sessions per template job | ESTIMATE 48 machine min and 8 wall min per board. Needs proof on the software adapter | Not started, needs a playtest runner flag |
+| 5 | Split Android and iOS, the two floor legs | ESTIMATE floor 49 to about 25 min. Only both together move it | Android job name is gate-read, so it waits for the all-clear or stays as an aggregator job |
+| 6 | Reuse the proof run's binaries in the tag run (PRD-630) | 98 machine min and 31 wall min per release (PRD-630 table) | Waits for the all-clear |
+| 7 | Run `clean-consumer` and `clean-consumer-windows` together | ESTIMATE 6 wall min per release | Waits for the all-clear |
+| 8 | iOS compile cache. A CMake launcher has no effect with `-G Xcode`, so use `CMAKE_XCODE_ATTRIBUTE_CC` with a wrapper or Ninja | 19 min of compile per board at most. First proof is a macOS CI run | Not started |
+| 9 | Delete the integration `paths` job: pass the lane list in the plan | 878 machine min per 14 days. No proof lost if the plan holds the same lanes | Not started |
+| 10 | Balance `test-unit` shards by measured time | ESTIMATE longest shard 8.9 to 5.4 min, 0 machine min | Not started |
+
+Techniques with no case to add: setup and browser caches (lever size under 1%), new cache families and an AVD snapshot (PRD-726 rejected them, the 10 GB cache budget was full at 10.8 GB), `CCACHE_SLOPPINESS` (PRD-628 reverted it, zero new hits), precompiled headers (reverted, `ci.yml:361-372`), and skipping redraws in playtests (PRD-727 rejected it, it breaks temporal accumulation). A larger runner costs money, so it goes with the plan decision below.
+
+With levers 1, 5, 6 and the main board reuse, the clean path is about 25 + 5 + 5 + 30 min plus the npm cohort, which is unmeasured since `47c3520b7`. That total is an ESTIMATE. Only a release can prove it.
+
+## Removal candidates
+
+All are the owner's decision. Zero reds over 14 days is weak evidence, because a gate only goes red when a regression happens.
+
+| Candidate | Move | Saves | Proof lost |
+| --- | --- | --- | --- |
+| `integration / auto-exposure`, 8.8 min, 14 reds, load-sensitive | Run on exposure changes and nightly, as its cold boot sibling does | 8.8 machine min per board | An unrelated change that breaks exposure is found at night, not on the board |
+| Engine parity step on the hosted software adapter, `TN_ENGINE_PARITY_WORLD_NOT_DRAWN` in 13 logs | Nightly on a hardware runner | Unmeasured | The nightly web-against-native pose check per kit on hosted runners |
+| `starter-look` pixel gate on a software adapter | Nightly on hardware | ESTIMATE 200 machine min per 14 days | The board's starter look baseline |
+| `template-engine-cost`, 16 kits, nightly | 4 kits | ESTIMATE about 1,965 machine min per 14 days, nightly only | The per-kit cost row of PRD-748 for 12 kits |
 
 ## Blocked on
 
-- GitHub Team plan, 60 concurrent jobs against 20. It costs money, so it is the owner's decision.
+- GitHub Team plan, 60 concurrent jobs against 20, or the `tn-local` pool. A plan costs money and the pool loads the owner's machines, so it is the owner's decision.
+- The removal candidates above — the owner decides each one.
 - The all-clear from the session that owns the 0.3.8 release. These wait for it: the main push carries
   gate jobs, Android shards, PRD-630 binary reuse, and any merge of draft PR #601.
 
@@ -71,18 +124,19 @@ and the scouts name the caches that matter.
 ## Execution Phases
 
 #### Phase 1: measure every step, every log and every test
-**Status:** IN PROGRESS
+**Status:** PARTIAL
 
 - [x] The loop records 11 whole-road KPIs. proof: `pnpm exec vitest run scripts/__tests__/ci-board-kpis.spec.ts scripts/__tests__/ci-speed-loop.spec.ts` — 28 passed. The 14-day replay gives the baselines above, and 3 of them match the earlier separate analysis (37 of 166, 61 of 123, 16%).
 - [x] The ledger holds the baseline iteration with every KPI. proof: `pnpm ci:speed show` — iteration 38, 16 KPIs, none `n/a`. Window: 53 merged PRs, 78 merge groups, 166 finished full boards.
-- [ ] Every step and log of a full green board and of the tag run is classified, with key numbers rechecked. proof: findings table in this PRD, from `~/.cache/tmp-tn/ci-audit/out/scout-a.md`.
-- [ ] Every test is inventoried per job, with its red and flake count. proof: findings table in this PRD, from `~/.cache/tmp-tn/ci-audit/out/scout-b.md`.
+- [x] Every step and log of a full board, the rehearsal run and the candidate run is classified, with key numbers rechecked. proof: "What the audit found" in this PRD — run 41348117470 has 78 jobs, 3 red, the 6,902 s and 2,279 s steps match the API. The audited board is not green, and the tag run itself was not read beyond its timing.
+- [ ] Every test is inventoried per job, with its red and flake count. proof: Scout B's inventory in the PR #601 comment.
+  Open: counts are per job and per leg. Red logs were sampled (139 of 1,187) and most causes stay unknown, so a per-test flake count does not exist yet.
 
 #### Phase 2: rank every lever and every removal
-**Status:** NOT STARTED
+**Status:** DONE
 
-- [ ] Each technique has a state and each lever has its recovered minutes, ranked. proof: lever table in this PRD.
-- [ ] Each removal candidate names the proof that would be lost. proof: removal table in this PRD, sent to the owner.
+- [x] Each lever has its recovered minutes, ranked. proof: "Levers, ranked" in this PRD, and 30 technique states in the PR #601 comment.
+- [x] Each removal candidate names the proof that would be lost. proof: "Removal candidates" in this PRD.
 
 #### Phase 3: land the levers
 **Status:** NOT STARTED
