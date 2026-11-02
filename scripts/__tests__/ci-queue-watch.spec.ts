@@ -11,6 +11,7 @@ const {
   isInfraFailure,
   janitorSignatures,
   queuePullNumber,
+  shouldStopRun,
 } = await import(new URL("../ci-queue-watch.mjs", import.meta.url).href);
 const script = new URL("../ci-queue-watch.mjs", import.meta.url).pathname;
 
@@ -25,6 +26,108 @@ const job = (name: string, conclusion: string | null, completed = "2026-10-23T00
   status: conclusion === null ? "in_progress" : "completed",
   completed_at: conclusion === null ? null : completed,
   html_url: `https://example.invalid/jobs/${name}`,
+});
+
+describe("PRD-782 first red stops the board", () => {
+  const run = (over: Record<string, unknown> = {}) => ({
+    path: ".github/workflows/ci.yml",
+    status: "in_progress",
+    event: "pull_request",
+    head_branch: "develop",
+    ...over,
+  });
+  const red = job("typecheck", "failure");
+  const decide = (runOver = {}, theJob = red, log = "AssertionError") =>
+    shouldStopRun({ run: run(runOver), job: theJob, log, signatures: "shutdown signal" });
+
+  it.each([
+    ["a pull request", { event: "pull_request" }],
+    ["a manual run", { event: "workflow_dispatch" }],
+    ["a develop push", { event: "push", head_branch: "develop" }],
+  ])("stops %s at a real red", (_name, over) => {
+    expect(decide(over).stop).toBe(true);
+  });
+
+  it.each([
+    ["a scheduled audit, which reports every red", { event: "schedule" }],
+    ["a merge group, which queue-watch owns", { event: "merge_group" }],
+    ["a main push, which the release reads", { event: "push", head_branch: "main" }],
+    ["another workflow", { path: ".github/workflows/nightly.yml" }],
+    ["a run that already ended", { status: "completed" }],
+  ])("leaves %s alone", (_name, over) => {
+    expect(decide(over).stop).toBe(false);
+  });
+
+  it("does not stop for a verdict job that only echoes another job", () => {
+    expect(decide({}, job("ci-required", "failure")).stop).toBe(false);
+  });
+
+  it("does not stop for a job that did not fail", () => {
+    expect(decide({}, job("typecheck", "success")).stop).toBe(false);
+    expect(decide({}, job("typecheck", "cancelled")).stop).toBe(false);
+  });
+
+  it("leaves an infra failure to the janitor retry", () => {
+    expect(decide({}, red, "runner got a shutdown signal").stop).toBe(false);
+    expect(decide({}, { ...red, steps: [] }).stop).toBe(false);
+  });
+
+  /** Runs the handler against a stub `gh` and returns what it called. */
+  function handle(runOver: Record<string, unknown>, theJob: unknown) {
+    const root = makeTempDirSync("threenative-first-red-");
+    const bin = path.join(root, "bin");
+    mkdirSync(bin, { recursive: true });
+    writeFileSync(path.join(root, "run.json"), JSON.stringify(run(runOver)));
+    writeFileSync(path.join(root, "job.json"), JSON.stringify(theJob));
+    writeFileSync(
+      path.join(bin, "gh"),
+      `#!/bin/sh
+echo "$*" >> "${root}/calls.log"
+case "$*" in
+  *actions/jobs/7/logs*) echo AssertionError ;;
+  *actions/jobs/7*) cat "${root}/job.json" ;;
+  *actions/runs/99*) cat "${root}/run.json" ;;
+  *) ;;
+esac
+`,
+    );
+    chmodSync(path.join(bin, "gh"), 0o755);
+    const result = spawnSync(process.execPath, [script], {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        PATH: `${bin}:${process.env.PATH}`,
+        GITHUB_REPOSITORY: "o/r",
+        TN_CI_RED_RUN: "99",
+        TN_CI_RED_JOB: "7",
+      },
+    });
+    expect(result.status, result.stderr).toBe(0);
+    return readFileSync(path.join(root, "calls.log"), "utf8");
+  }
+
+  it("cancels the run for a real red, and does nothing else", () => {
+    const calls = handle({}, red);
+    expect(calls).toContain("run cancel 99 --repo o/r");
+    expect(calls).not.toContain("force-cancel");
+    expect(calls).not.toContain("comments");
+  });
+
+  it("does not cancel a merge group", () => {
+    expect(handle({ event: "merge_group" }, red)).not.toContain("run cancel");
+  });
+
+  it("wires the handler to every job completion, from the janitor", () => {
+    const janitor = readFileSync(
+      path.join(import.meta.dirname, "../../.github/workflows/ci-janitor.yml"),
+      "utf8",
+    );
+    expect(janitor).toMatch(/workflow_job:\n\s+types: \[completed\]/u);
+    expect(janitor).toContain("TN_CI_RED_JOB: ${{ github.event.workflow_job.id }}");
+    expect(janitor).toContain("node scripts/ci-queue-watch.mjs");
+    // Every run the handler creates is listed too, so the merge-group sweep must name its workflow.
+    expect(janitor).toMatch(/--event merge_group --json databaseId,status,headBranch --limit 100/u);
+  });
 });
 
 describe("PRD-731 queue watcher", () => {

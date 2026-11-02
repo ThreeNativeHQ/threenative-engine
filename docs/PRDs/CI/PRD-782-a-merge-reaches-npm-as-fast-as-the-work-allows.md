@@ -82,7 +82,7 @@ Each lever has one loop turn. The minutes overlap, so do not add them. An ESTIMA
 | # | Lever | Recovers | State |
 | --- | --- | --- | --- |
 | 1 | One board per tree, and per-job reuse (PRD-776) | Up to 46,270 machine min per 14 days, about 15 wall min per board | On #601, waits for the all-clear |
-| 2 | Stop starting legs after the first real red, on every event | Up to 33,652 machine min per 14 days. Risk: fewer reds shown per round | Not started |
+| 2 | Stop starting legs after the first real red, on every event | Up to 33,652 machine min per 14 days. Risk: fewer reds shown per round | Code and specs on #601. The janitor runs from main, so its first proof is a red board after this reaches main |
 | 3 | Find and fix the real cause of the 4 flaky legs above | A red board costs a second board of about 538 machine min | Not started. Needs each cause read from the failing step, not from the verdict line |
 | 4 | Two browser sessions per template job | ESTIMATE 48 machine min and 8 wall min per board. Needs proof on the software adapter | Not started, needs a playtest runner flag |
 | 5 | Split Android and iOS, the two floor legs | ESTIMATE floor 49 to about 25 min. Only both together move it | Android job name is gate-read, so it waits for the all-clear or stays as an aggregator job |

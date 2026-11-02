@@ -2010,7 +2010,7 @@ describe("CI pipeline structure", () => {
     expect(cancel).toContain('group_prefix="gh-readonly-queue/${BASE_REF}/pr-${PR_NUMBER}-"');
     expect(cancel).toContain("startswith($prefix)");
     expect(cancel).toContain(
-      'gh run list --repo "$GITHUB_REPOSITORY" --json databaseId,status,headBranch --limit 100',
+      'gh run list --repo "$GITHUB_REPOSITORY" --event merge_group --json databaseId,status,headBranch --limit 100',
     );
     // The run-sweeping predecessor this replaced reached across every branch in the repository;
     // every cancel here is scoped to the event's own repository and the closed PR's own ref.

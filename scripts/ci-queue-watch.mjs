@@ -51,6 +51,25 @@ export function allFinished(jobs) {
   return jobs.every((job) => job?.name === "queue-watch" || job?.status === "completed");
 }
 
+/**
+ * PRD-782. One red job of a `ci.yml` run. A watcher that polls holds a runner for the whole board, so
+ * outside the merge queue the janitor calls this once per red job, and a green board costs nothing.
+ * It leaves alone what must report every red (a scheduled audit), what `queue-watch` owns (a merge
+ * group) and what the release reads (a main push).
+ */
+export function shouldStopRun({ run, job, log, signatures }) {
+  const leave = (why) => ({ stop: false, why });
+  if (run?.path !== ".github/workflows/ci.yml") return leave("not a ci.yml run");
+  if (run.status === "completed") return leave("the run already ended");
+  if (run.event === "schedule") return leave("a scheduled audit reports every red");
+  if (run.event === "merge_group") return leave("queue-watch owns a merge group");
+  if (run.event === "push" && run.head_branch === "main") return leave("the release reads main");
+  if (!RED.has(job?.conclusion)) return leave("the job did not fail");
+  if (ECHOES.has(job.name)) return leave("the job only echoes another job");
+  if (isInfraFailure(job, log, signatures)) return leave("an infra failure goes to the janitor");
+  return { stop: true, why: `first red job ${job.name}` };
+}
+
 export function commentBody({ job, runId, repository }) {
   const run = `https://github.com/${repository}/actions/runs/${runId}`;
   return [
@@ -93,7 +112,17 @@ function sleep(seconds) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, seconds * 1000);
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(process.argv[1]).href &&
+  process.env.TN_CI_RED_JOB
+) {
+  stopAtRed({
+    repository: process.env.GITHUB_REPOSITORY,
+    runId: process.env.TN_CI_RED_RUN,
+    jobId: process.env.TN_CI_RED_JOB,
+  });
+} else if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const { GITHUB_REPOSITORY: repository, GITHUB_RUN_ID: runId, TN_CI_QUEUE_REF } = process.env;
   const number = queuePullNumber(TN_CI_QUEUE_REF);
   const interval = Number(process.env.TN_QUEUE_WATCH_SECONDS ?? 30);
@@ -127,4 +156,19 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     if (allFinished(jobs)) break;
     sleep(interval);
   }
+}
+
+function stopAtRed({ repository, runId, jobId }) {
+  const read = (route) => JSON.parse(gh(["api", `repos/${repository}/actions/${route}`]));
+  const signatures = janitorSignatures(
+    readFileSync(new URL("../.github/workflows/ci-janitor.yml", import.meta.url), "utf8"),
+  );
+  const decision = shouldStopRun({
+    run: read(`runs/${runId}`),
+    job: read(`jobs/${jobId}`),
+    log: jobLog(repository, jobId),
+    signatures,
+  });
+  console.log(`run ${runId}: ${decision.stop ? "cancelling" : "left running"}, ${decision.why}`);
+  if (decision.stop) gh(["run", "cancel", runId, "--repo", repository]);
 }
