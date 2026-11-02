@@ -274,10 +274,39 @@ async function launchBrowser({ pass, browser: executable }) {
   };
 }
 
+/** Page script: the start time of each frame's first rAF callback, in `globalThis.__TN_FRAME_STARTS__`. */
+export function recordFrameStarts() {
+  const raf = globalThis.requestAnimationFrame.bind(globalThis);
+  const starts = [];
+  let lastStamp;
+  globalThis.__TN_FRAME_STARTS__ = starts;
+  globalThis.requestAnimationFrame = (callback) =>
+    raf((stamp) => {
+      if (stamp !== lastStamp) starts.push(performance.now());
+      lastStamp = stamp;
+      callback(stamp);
+    });
+}
+
+/**
+ * Presented p50 and p95 of an uncapped run, from the frame starts in the report's own last `seconds`.
+ * With vsync off the rAF timestamp misreads a saturated main thread: stamps read 33.6, 18.5, 1.2 ms where the frames
+ * start 18.4, 18.5, 16.0 ms apart (`tail-probe`, 2026-11-02). Unreal already reports its real frame interval.
+ */
+export function presentedFromStarts(starts, seconds) {
+  const window = starts.filter((start) => start >= starts.at(-1) - seconds * 1000);
+  const gaps = window.slice(1).map((start, index) => start - window[index]);
+  if (gaps.length < 2) throw new Error(`stress-fair: ${gaps.length} frame intervals in the window`);
+  const sorted = gaps.sort((a, b) => a - b);
+  const at = (share) => sorted[Math.floor((sorted.length - 1) * share)];
+  return { presentedP50Ms: at(0.5), presentedP95Ms: at(0.95) };
+}
+
 /** One timing run: a fresh page at 1280x720, nothing attached but the page's own report. */
 async function measureArm(browser, arm, { pass, settle, commit }) {
   const context = browser.contexts()[0] ?? (await browser.newContext());
   const page = await context.newPage();
+  if (pass === "uncapped") await page.addInitScript(recordFrameStarts);
   const scripts = [];
   let wasm;
   page.on("response", (response) => {
@@ -298,6 +327,14 @@ async function measureArm(browser, arm, { pass, settle, commit }) {
     });
     const report = await page.evaluate(() => globalThis.__TN_STRESS__ ?? null);
     if (!report?.metrics) throw new Error(`no __TN_STRESS__ report on ${arm.url}`);
+    if (pass === "uncapped") {
+      const starts = await page.evaluate(() => globalThis.__TN_FRAME_STARTS__);
+      report.metrics = {
+        ...report.metrics,
+        rafStampP95Ms: report.metrics.presentedP95Ms,
+        ...presentedFromStarts(starts, report.seconds),
+      };
+    }
     const dpr = await page.evaluate(() => devicePixelRatio);
     const adapterInfo = await page.evaluate(async () => {
       const info = (await navigator.gpu?.requestAdapter())?.info;

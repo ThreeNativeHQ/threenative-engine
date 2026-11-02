@@ -156,6 +156,12 @@ export function measureReport(report, { counted = true } = {}) {
     metrics: {
       presentedP50Ms: metric(metrics, "presentedP50Ms"),
       presentedP95Ms: metric(metrics, "presentedP95Ms"),
+      // Uncapped fair runs only: the rAF timestamp p95 that `presentedP95Ms` replaced (stress-fair.mjs).
+      rafStampP95Ms: metric(
+        { rafStampP95Ms: metrics.rafStampP95Ms ?? null },
+        "rafStampP95Ms",
+        true,
+      ),
       fps: metric(metrics, "fps"),
       gpuP50Ms: metric(metrics, "gpuP50Ms", true),
       gpuP95Ms: metric(metrics, "gpuP95Ms", true),
