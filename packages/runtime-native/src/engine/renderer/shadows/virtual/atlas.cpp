@@ -253,12 +253,16 @@ std::vector<AtlasPage> PageAtlas::update(const Vector3& eye, const Vector3& towa
         waste::debugAdd(counts.shadowRefreshes);
         waste::debugAdd(!moved ? counts.shadowRefreshInvalidation : pan ? counts.shadowRefreshPan : counts.shadowRefreshRebuild);
         const std::size_t pagesBefore = pages.size();
+        // Every page of the new window is protected first: a page entering the window evicts one that left it, never one a later
+        // iteration would keep.
+        for (int y = 0; y < tiles(l); ++y) for (int x = 0; x < tiles(l); ++x)
+            protectedIds.insert(pageId(l, window.minX + x * options_.pageTexels, window.minY + y * options_.pageTexels));
         for (int y = 0; y < tiles(l); ++y) for (int x = 0; x < tiles(l); ++x) {
-            const uint64_t id = pageId(l, window.minX + x * options_.pageTexels, window.minY + y * options_.pageTexels);
+            // The view's axes are -U and -V, so page (x, y) sits (n-1-x, n-1-y) pages along U and V: the key names that rect.
+            const uint64_t id = pageId(l, window.minX + (tiles(l) - 1 - x) * options_.pageTexels, window.minY + (tiles(l) - 1 - y) * options_.pageTexels);
             const auto allocation = pool_->allocate(id, frame_, false, protectedIds);
             if (!allocation) { level.mapped = false; writeTable(); return {}; }
             if (allocation->hasEvicted) waste::debugAdd(counts.shadowPageEvictions);
-            protectedIds.insert(id);
             level.slots.push_back(allocation->entry.slot);
             const double texel = window.pageWorldSize, pad = options_.border * texel;
             const double texelV = texel * vScale, padV = options_.border * texelV;

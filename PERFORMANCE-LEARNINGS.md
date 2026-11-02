@@ -977,3 +977,10 @@ no COOP/COEP); that lane is open.
   12.44 ms, frame p95 18.20 to 17.48 ms, presented p95 18.80 to 18.07 ms. GPU p95 did not change. Opus judge: NEUTRAL on 16 shots.
 - Revisit when: a game mutates one clone's skeleton and expects its sibling primitives to keep their own copy. No shipped code does this,
   and the source already shares that skeleton.
+
+### 2026-11-02 — Virtual shadows: a pan kept the mirrored page (bug, not a lever) — FIXED
+
+- Symptom: dark roofs and wrong wall shapes in steps of 230-550 ms. Pan off in the same build removed all of them, so one A/B named the code.
+- Cause: page keys counted along the view axes, which are -U and -V, so kept pages sat 2 x the shift away. Full redraws hide this.
+- Method trap: a whole-frame step in a screencast is a state change, so line its time up with the engine's grants before theorizing.
+- Open lever: level 0 still redraws all 256 pages in 51 of 53 grants, because the depth re-fit moves near and far by about 0.001 m.
