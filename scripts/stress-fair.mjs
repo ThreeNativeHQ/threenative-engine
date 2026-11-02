@@ -252,12 +252,20 @@ async function launchBrowser({ pass, browser: executable }) {
       "--remote-debugging-port=0",
       "about:blank",
     ],
-    { stdio: "ignore" },
+    { stdio: "ignore", detached: true },
   );
+  // A wrapper script can fork the browser, so signal the whole group or the browser outlives this run.
+  const signal = (name) => {
+    try {
+      process.kill(-child.pid, name);
+    } catch {
+      // the group already exited
+    }
+  };
   const portFile = join(profile, "DevToolsActivePort");
   for (let i = 0; i < 60 && !existsSync(portFile); i += 1) await sleep(500);
   if (!existsSync(portFile)) {
-    child.kill("SIGKILL");
+    signal("SIGKILL");
     throw new Error(`${executable} did not open a DevTools port in 30 s`);
   }
   const port = readFileSync(portFile, "utf8").split("\n")[0];
@@ -266,9 +274,9 @@ async function launchBrowser({ pass, browser: executable }) {
     browser: connected,
     async close() {
       await connected.close().catch(() => undefined);
-      child.kill("SIGTERM");
+      signal("SIGTERM");
       await sleep(1000);
-      child.kill("SIGKILL");
+      signal("SIGKILL");
       rmSync(profile, { recursive: true, force: true });
     },
   };

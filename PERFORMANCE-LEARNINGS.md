@@ -994,6 +994,8 @@ no COOP/COEP); that lane is open.
 - 8 real-display pairs (rows #244-259, both arm orders, load peak 9-15): GPU p95 7.51 to 6.75 ms in 8 of 8, frame p95 22.19 to 21.60 ms in 5 of
   8, presented p95 23.34 to 22.71 ms in 5 of 8, fps 60.11 to 60.25. The rule set before the run asked frame p95 in 6 of 8, and this missed by one
   pair. All 3 losses ran the FG3 arm at the higher load. Kept anyway on the 8 of 8 GPU win and no worse mean: a decision past the rule, not a pass.
+- Quiet laptop, Intel GPU, load peak 3.7-4.8 (3 full pairs, not in the ledger): frame p95 24.35 to 20.75 ms in 3 of 3, fps 61.38 to 62.73 in 3 of 3.
+  The revert condition set before reading this was a worse mean frame p95, and it did not fire.
 - Why a 2% pad was not enough: panning along V slides the ground's depth band by about 0.9 m per metre, so 41 pages per frame stayed.
 - Method trap: desktop monitors asleep stop the browser opening its DevTools port, and a private Xvfb under the wrapper does too. Check
   `/sys/class/drm/card1-*/status` before a window. Page counts under Xvfb on the real GPU stay valid; timing there is not a verdict.
