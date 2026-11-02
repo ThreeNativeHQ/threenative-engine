@@ -1062,7 +1062,8 @@ function verifyNativeFrames(project: string, runner: CommandRunner): string {
       );
     return `${output}\nVerified ${report.assertions} playtest assertions on the engine player.`;
   }
-  if (report.pass !== true || report.frames !== 300)
+  // The engine player records its window until it holds 300 frames, so a fast machine reports more.
+  if (report.pass !== true || typeof report.frames !== "number" || report.frames < 300)
     throw new Error(
       `Native verifier did not prove 300 frames: pass=${String(report.pass)}, frames=${String(report.frames)}.`,
     );
