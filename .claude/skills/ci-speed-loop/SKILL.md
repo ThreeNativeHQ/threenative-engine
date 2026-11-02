@@ -1,6 +1,6 @@
 ---
 name: ci-speed-loop
-description: Run ThreeNative's CI speed loop — measure how long a change takes to merge, name the biggest cost from the first failing jobs and queue wait, change one thing, re-measure the same window, record the iteration. Use when asked to speed up CI or the merge queue, work PRD-550, check progress toward the 30-minute merge goal, or read the CI speed tab of `pnpm dashboard`. Not for runtime FPS (perf-loop).
+description: Run ThreeNative's CI speed loop — measure how long a change takes to merge and a release takes to reach npm, name the biggest cost from the first failing jobs, flakes, machine minutes and queue wait, change one thing, re-measure the same window, record the iteration. Use when asked to speed up CI, the merge queue or the release path, work PRD-550 or PRD-782, check flake rate or full-board time, or read the CI speed tab of `pnpm dashboard`. Not for runtime FPS (perf-loop).
 ---
 
 # CI speed loop
@@ -14,6 +14,22 @@ one named cost, one change, one re-measure. Record a turn that did not move the 
 | Merge queue passes on the first attempt | ≥ 90% |
 | Merge-group board wall time, median | ≤ 15 min |
 | Runner queue wait, p90 | ≤ 3 min |
+
+Goal (PRD-782): the whole road from a merge to npm costs half or less. `record` measures these from attempt 1 of each `ci.yml` run in the window.
+
+| Metric | Goal |
+| --- | --- |
+| Full board wall time, median | ≤ 30 min |
+| Longest job on a full board, median | ≤ 20 min |
+| Machine minutes per full board, median | ≤ 240 |
+| Machine minutes per week, all `ci.yml` runs | ≤ 40,000 |
+| Job queue wait on full boards, p90 | ≤ 3 min |
+| Full boards green on attempt 1 | ≥ 80% |
+| Flake rate: red legs green on another board of the same commit | ≤ 5% |
+| Machine minutes on runs that end green | ≥ 70% |
+| Full-board minutes after the first red leg | ≤ 10% |
+| Step minutes spent on setup | ≤ 6% |
+| First promotion PR to npm publish, newest release, open release included | ≤ 120 min |
 
 ```sh
 node scripts/ci-merge-latency.mjs --since 2026-10-09          # measure only, prints the table

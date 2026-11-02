@@ -47,7 +47,7 @@ export const MCP_SERVERS = Object.freeze({
 export const MCP_PACKAGES = Object.freeze({
   assets: Object.freeze({ name: "threenative-asset-mcp", version: "0.15.0" }),
   sculpt: Object.freeze({ name: "threenative-sculpt-mcp", version: "0.2.2" }),
-  engine: Object.freeze({ name: "threenative-engine-mcp", version: "0.2.8" }),
+  engine: Object.freeze({ name: "threenative-engine-mcp", version: "0.2.9" }),
   animation: Object.freeze({ name: "threenative-animation-mcp", version: "0.1.3" }),
   // `args` fixes the launch for every host. The Chrome flags are `WEBGPU_BROWSER_ARGS` from
   // `@threenative/playtest`, so a DevTools trace profiles the same adapter a playtest does and not

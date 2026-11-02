@@ -623,7 +623,7 @@ describe("PRD-373 fixed full candidates and current package products", () => {
   it("pins every worker checkout to the captured candidate, including reusable native jobs", () => {
     expect(job("scope")).toContain("vars.TN_DEVELOP_CI_ENABLED == 'true' && 'develop'");
     expect(source).toContain(
-      "github.event_name == 'pull_request' && !github.event.pull_request.draft && 'latest' || github.run_id",
+      "github.event_name == 'pull_request' && !github.event.pull_request.draft && 'latest' || github.event_name == 'push' && github.ref == 'refs/heads/develop' && 'latest' || github.run_id",
     );
     for (const relative of [".github/workflows/ci.yml", ".github/workflows/native-platforms.yml"]) {
       const workflow = readFileSync(path.join(repo, relative), "utf8");

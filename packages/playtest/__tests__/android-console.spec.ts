@@ -450,6 +450,32 @@ test("Android console capture retries a dropped logcat transport instead of fail
   expect(calls.filter((args) => args[0] === "wait-for-device")).toHaveLength(1);
 });
 
+test("Android console capture outlasts a transport that stays down past one re-read", async () => {
+  // native-release run 41372240200, clean-consumer: the second read failed too, right after
+  // `wait-for-device` returned, and a passing negative control died on TN_PLAYTEST_RUNNER_FAILED.
+  let logcatAttempts = 0;
+  const driver = new AdbAndroidDriver({
+    activity: "com.threenative.runtime.MystralActivity",
+    adbPath: "/nonexistent/adb",
+    packageName: "com.example.game",
+    user: "0",
+  });
+  (driver as unknown as { adb: (args: readonly string[]) => Promise<string> }).adb = async (args) => {
+    if (args[1] === "pidof") return "8001\n";
+    if (args[0] === "logcat" && args[1] === "-d") {
+      logcatAttempts += 1;
+      if (logcatAttempts < 4) throw new Error("adb logcat -d -v brief failed: Command failed");
+      return "I/SDL     ( 8001): [Mystral] Runtime initialized\n";
+    }
+    return "";
+  };
+
+  expect(await driver.captureConsole()).toEqual([
+    { text: "I/SDL     ( 8001): [Mystral] Runtime initialized", type: "log" },
+  ]);
+  expect(logcatAttempts).toBe(4);
+});
+
 test("Android console capture fails with a bounded excerpt once the transport is gone", async () => {
   let logcatAttempts = 0;
   const driver = new AdbAndroidDriver({
@@ -472,7 +498,7 @@ test("Android console capture fails with a bounded excerpt once the transport is
   expect(failure?.message).toMatch(/^adb logcat -d -v brief failed: /u);
   expect(failure?.message.length ?? 0).toBeLessThanOrEqual(2_200);
   expect(failure?.message).toMatch(/noise/u);
-  expect(logcatAttempts).toBe(2);
+  expect(logcatAttempts).toBe(4);
 });
 
 test("Android console capture does not retry a device that refuses the command", async () => {

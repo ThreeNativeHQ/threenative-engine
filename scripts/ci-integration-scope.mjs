@@ -358,6 +358,18 @@ export function integrationGitSelection(base, head) {
   }
 }
 
+/** The check names of each lane's jobs, for reading a source run's verdict on that lane. */
+export function integrationJobNamesByLane(source) {
+  const current = parse(source);
+  const names = {};
+  for (const [id, lane] of current.lanesByJob) {
+    const name = /^ {4}name: ([^\n]+)$/mu.exec(current.jobs.get(id) ?? "")?.[1] ?? id;
+    if (name.includes("${{") || !name.trim()) return {};
+    names[lane] = [...(names[lane] ?? []), `integration / ${name}`];
+  }
+  return names;
+}
+
 // Exact-candidate inventory shared by the reusable workflow and independent protected verdict.
 export function integrationCandidatePreflight({
   plan: value,
@@ -387,9 +399,17 @@ export function integrationCandidatePreflight({
     } catch {}
     selection.lanes["cold-boot"] = integrationGitSelection(parent, candidate).lanes["cold-boot"];
   }
+  // PRD-776: a carried lane passed on the same inputs in the run its entry names.
+  const carriedLanes = [];
+  for (const entry of plan.carried ?? [])
+    if (entry.job === "integration" && Object.hasOwn(selection.lanes, entry.lane)) {
+      selection.lanes[entry.lane] = false;
+      carriedLanes.push(entry.lane);
+    }
   return {
     candidateSha: candidate,
     lanes: selection.lanes,
+    carriedLanes,
     jobs: [...current.lanesByJob]
       .filter(([, lane]) => selection.lanes[lane])
       .map(([id]) => id)
@@ -415,7 +435,8 @@ export function integrationCandidatePreflight({
  * checked independently of the receipt.
  */
 export function validateIntegrationReceipts(expected, receipts, listing) {
-  if (expected.qualification && expected.jobs.length === 0)
+  // Every lane carried is the one honest empty set: `ci-required` rechecks each carried entry.
+  if (expected.qualification && expected.jobs.length === 0 && !expected.carriedLanes?.length)
     throw new Error("CI_INTEGRATION_EMPTY_QUALIFICATION");
   const bad = () =>
     new Error(

@@ -622,6 +622,31 @@ describe("pnpm tsx scripts/verify-registry-install.ts", () => {
     expect(report.steps.find((step) => step.name === "npm:native")?.detail).toMatch(/300 frames/u);
   });
 
+  it("accepts a window past 300 frames and refuses a short one", async () => {
+    // The engine player records until it holds 300 frames: a real display reported 1143 and 1251.
+    const row = async (frames: number) => {
+      const report = await verifyRegistryInstall({
+        mcp: happyMcpRunner(),
+        parent: await tempRoot(),
+        run: (command, args, cwd) => {
+          if (command === "node" && args[0]?.endsWith("verify-starter-desktop.mjs")) {
+            const artifacts = path.join(cwd, "artifacts", "native");
+            fs.mkdirSync(artifacts, { recursive: true });
+            fs.writeFileSync(
+              path.join(artifacts, "starter-desktop-report.json"),
+              JSON.stringify({ frames, pass: true }),
+            );
+            return "starter desktop gate passed";
+          }
+          return happyRunner()(command, args, cwd);
+        },
+      });
+      return report.steps.find((step) => step.name === "npm:native")?.ok;
+    };
+    expect(await row(1251)).toBe(true);
+    expect(await row(299)).toBe(false);
+  });
+
   it("accepts the engine player's playtest report and refuses an empty one (PRD-637)", async () => {
     const withReport = (gateReport: object) => async () =>
       verifyRegistryInstall({

@@ -197,6 +197,33 @@ describe("ci-speed-loop ledger", () => {
     expect(html).toContain("#2");
   });
 
+  it("starts each KPI's progress at the first iteration that measured it", () => {
+    const iteration = (id: number, metrics: Record<string, number>) => ({
+      id,
+      at: T(id),
+      commit: "",
+      label: `#${id}`,
+      notes: "",
+      decision: "baseline",
+      window: { since: T(0), base: "develop" },
+      metrics,
+      extra: {},
+      prs: [],
+      firstFailingJobs: [],
+    });
+    const html = renderHtml({
+      ...emptyLedger(),
+      iterations: [
+        iteration(1, { lastPushToMergeMedianMin: 100 }),
+        iteration(2, { lastPushToMergeMedianMin: 90, flakeRatePct: 45 }),
+        iteration(3, { lastPushToMergeMedianMin: 90, flakeRatePct: 25 }),
+      ],
+    });
+    const row = html.slice(html.indexOf("Red legs that went green"));
+    expect(row.slice(0, row.indexOf("</tr>"))).toContain("45%");
+    expect(row.slice(0, row.indexOf("</tr>"))).toContain("50%");
+  });
+
   it("re-rendering after an append keeps every earlier iteration", () => {
     let ledger = appendIteration(emptyLedger(), {
       measurement: measurement(),
