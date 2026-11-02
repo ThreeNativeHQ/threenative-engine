@@ -1,8 +1,8 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { makeTempDirSync } from "../../test-support/temp-dir.js";
 import {
   TEMPLATE_NAMES,
   carryDeps,
@@ -323,7 +323,7 @@ describe("the walk over recent runs", () => {
   const legs = (carried: { leg: string }[]) => carried.map((entry) => entry.leg);
 
   beforeEach(() => {
-    root = mkdtempSync(join(tmpdir(), "tn-leg-carry-"));
+    root = makeTempDirSync("tn-leg-carry-");
     process.env.GITHUB_REPOSITORY = "o/r";
     process.env.GITHUB_RUN_ID = "999";
     expect(git(["init", "-q"]).status).toBe(0);
@@ -337,7 +337,6 @@ describe("the walk over recent runs", () => {
   });
 
   afterEach(() => {
-    rmSync(root, { recursive: true, force: true });
     process.env.GITHUB_REPOSITORY = previousRepository;
     process.env.GITHUB_RUN_ID = previousRun;
   });
