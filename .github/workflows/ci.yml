@@ -1564,7 +1564,9 @@ jobs:
   # not green to the queue, which ejects the pull request.
   queue-watch:
     needs: scope
-    if: ${{ github.event_name == 'merge_group' }}
+    # PRD-782: a full board on a same-repository pull request or a manual run stops at its first
+    # red too. A develop push stays out: it has one concurrency slot and saves the caches.
+    if: ${{ github.event_name == 'merge_group' || (needs.scope.outputs.selection == 'full' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork))) }}
     # Hosted on purpose: it waits for the whole run, and a local light slot held for an hour would
     # queue the small joins behind it.
     runs-on: ubuntu-24.04

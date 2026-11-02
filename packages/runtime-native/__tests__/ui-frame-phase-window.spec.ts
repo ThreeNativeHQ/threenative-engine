@@ -48,6 +48,17 @@ describe("requireUiPhase", () => {
     expect(phase.skipped).toBe(1);
   });
 
+  it("fails a tail whose median is over the bound: the only frames after ui-ready", () => {
+    expect(() =>
+      requireUiPhase(
+        consoleLines([
+          { p95: 0.02, samples: 735 },
+          { p95: 10, samples: 11 },
+        ]),
+      ),
+    ).toThrow(/TN_FRAME_BUDGET_PHASE_OVER_BUDGET: the 'ui' phase is 5 ms at p50 over 11 frame/u);
+  });
+
   it("fails a full first window over the 2 ms bound", () => {
     expect(() =>
       requireUiPhase(

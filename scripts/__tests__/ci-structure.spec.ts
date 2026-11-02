@@ -1207,8 +1207,8 @@ describe("CI pipeline structure", () => {
       // Nothing calls the Actions API to cancel its own run, so nothing may ask to write to it.
       // `ci-janitor.yml` is the single named exception: it cancels *other* runs, on a closed PR,
       // never from a failure step, and never its own run id — all four pinned in its own case.
-      // PRD-731 adds the second: `queue-watch` in ci.yml, for a merge group only, which names the
-      // first red job on the pull request before it cancels the rest (pinned below).
+      // PRD-731 adds the second: `queue-watch` in ci.yml, which names the first red job on the pull
+      // request before it cancels the rest. PRD-782 widens it to full boards (pinned below).
       const writes =
         relative === ".github/workflows/ci.yml"
           ? source.replace(requiredJob(source, "queue-watch"), "")
@@ -1695,7 +1695,13 @@ describe("CI pipeline structure", () => {
   it("names the first red job on the pull request before the queue run is cancelled", async () => {
     const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
     const watch = requiredJob(ci, "queue-watch");
-    expect(watch).toContain("if: ${{ github.event_name == 'merge_group' }}");
+    const gate = /^ {4}if: (.*)$/mu.exec(watch)?.[1] ?? "";
+    expect(gate).toContain("github.event_name == 'merge_group'");
+    expect(gate).toContain("needs.scope.outputs.selection == 'full'");
+    expect(gate).toContain("!github.event.pull_request.head.repo.fork");
+    // A develop push has one concurrency slot, and main feeds the release.
+    expect(gate).not.toContain("'push'");
+    expect(gate).not.toContain("'schedule'");
     expect(watch).toContain("github.event.merge_group.head_ref");
     const script = await readFile(path.join(repo, "scripts/ci-queue-watch.mjs"), "utf8");
     expect(script.indexOf("/comments")).toBeGreaterThan(0);
@@ -1733,7 +1739,7 @@ describe("CI pipeline structure", () => {
       if (name === "ci-required" || name === "scope") continue;
       // PRD-731: the watcher is no gate. It runs for a merge group only and has no selection.
       if (name === "queue-watch") {
-        expect(section).toContain("if: ${{ github.event_name == 'merge_group' }}");
+        expect(section).toContain("github.event_name == 'merge_group'");
         continue;
       }
       expect(section, `${name} does not name the selection it admits`).toContain(
@@ -2010,7 +2016,7 @@ describe("CI pipeline structure", () => {
     expect(cancel).toContain('group_prefix="gh-readonly-queue/${BASE_REF}/pr-${PR_NUMBER}-"');
     expect(cancel).toContain("startswith($prefix)");
     expect(cancel).toContain(
-      'gh run list --repo "$GITHUB_REPOSITORY" --event merge_group --json databaseId,status,headBranch --limit 100',
+      'gh run list --repo "$GITHUB_REPOSITORY" --json databaseId,status,headBranch --limit 100',
     );
     // The run-sweeping predecessor this replaced reached across every branch in the repository;
     // every cancel here is scoped to the event's own repository and the closed PR's own ref.

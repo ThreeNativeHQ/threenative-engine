@@ -638,11 +638,15 @@ function promotionOnHead(candidateSha) {
  */
 export function promotionOwnsCommit(sha) {
   const listed = ghApi(`commits/${sha}/pulls`);
-  return (
-    !("error" in listed) &&
-    Array.isArray(listed.value) &&
-    listed.value.some((pull) => pull?.base?.ref === "main" && pull?.head?.ref === "develop")
-  );
+  if (
+    "error" in listed ||
+    !Array.isArray(listed.value) ||
+    !listed.value.some((pull) => pull?.base?.ref === "main" && pull?.head?.ref === "develop")
+  )
+    return false;
+  // `mergeable` reads null just after a push, and GitHub starts no run on a conflict. No run: no board.
+  const runs = ghApi(`actions/workflows/ci.yml/runs?event=pull_request&head_sha=${sha}&per_page=1`);
+  return !("error" in runs) && runs.value?.total_count > 0;
 }
 
 /**

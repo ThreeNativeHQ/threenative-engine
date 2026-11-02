@@ -3,6 +3,7 @@
 // first red job names the cause. This watcher tells the pull request which job failed and cancels
 // the rest, so a red costs minutes of runners and the author does not read a wall of cancelled
 // checks. The failed job keeps its own conclusion: only jobs still in flight are cancelled.
+// PRD-782: a full board on a pull request or a manual run stops the same way, with no comment.
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
@@ -11,6 +12,8 @@ import { pathToFileURL } from "node:url";
 const ECHOES = new Set(["ci-required", "golden-path", "run-summary", "queue-watch"]);
 const QUEUE_REF = /^(?:refs\/heads\/)?gh-readonly-queue\/[^/]+\/pr-(\d+)-[0-9a-f]{40}$/u;
 const RED = new Set(["failure", "timed_out", "startup_failure"]);
+// `continue-on-error` in native-platforms.yml: its red does not fail the board, so it stops nothing.
+const NON_BLOCKING = /^native-platforms \/ iOS simulator/u;
 
 /** The pull request a queue ref names, or null. */
 export function queuePullNumber(queueRef) {
@@ -34,13 +37,19 @@ export function janitorSignatures(workflow) {
 export function isInfraFailure(job, log, signatures) {
   const ran = (job?.steps ?? []).some((step) => step?.conclusion && step.conclusion !== "skipped");
   if (!ran) return true;
+  // An unread log proves nothing. A wrong stop costs more than a late one.
+  if (log === "") return true;
   return signatures !== "" && new RegExp(signatures, "u").test(log);
 }
 
 /** The earliest-completed red job that is not an aggregate, or null while nothing is red. */
 export function firstRedJob(jobs, ignore = new Set()) {
   const red = jobs.filter(
-    (job) => RED.has(job?.conclusion) && !ECHOES.has(job?.name) && !ignore.has(job?.id),
+    (job) =>
+      RED.has(job?.conclusion) &&
+      !ECHOES.has(job?.name) &&
+      !NON_BLOCKING.test(job?.name ?? "") &&
+      !ignore.has(job?.id),
   );
   red.sort((a, b) => String(a.completed_at).localeCompare(String(b.completed_at)));
   return red[0] ?? null;
@@ -49,25 +58,6 @@ export function firstRedJob(jobs, ignore = new Set()) {
 /** True once every job other than the watcher has finished. */
 export function allFinished(jobs) {
   return jobs.every((job) => job?.name === "queue-watch" || job?.status === "completed");
-}
-
-/**
- * PRD-782. One red job of a `ci.yml` run. A watcher that polls holds a runner for the whole board, so
- * outside the merge queue the janitor calls this once per red job, and a green board costs nothing.
- * It leaves alone what must report every red (a scheduled audit), what `queue-watch` owns (a merge
- * group) and what the release reads (a main push).
- */
-export function shouldStopRun({ run, job, log, signatures }) {
-  const leave = (why) => ({ stop: false, why });
-  if (run?.path !== ".github/workflows/ci.yml") return leave("not a ci.yml run");
-  if (run.status === "completed") return leave("the run already ended");
-  if (run.event === "schedule") return leave("a scheduled audit reports every red");
-  if (run.event === "merge_group") return leave("queue-watch owns a merge group");
-  if (run.event === "push" && run.head_branch === "main") return leave("the release reads main");
-  if (!RED.has(job?.conclusion)) return leave("the job did not fail");
-  if (ECHOES.has(job.name)) return leave("the job only echoes another job");
-  if (isInfraFailure(job, log, signatures)) return leave("an infra failure goes to the janitor");
-  return { stop: true, why: `first red job ${job.name}` };
 }
 
 export function commentBody({ job, runId, repository }) {
@@ -123,21 +113,12 @@ function sleep(seconds) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, seconds * 1000);
 }
 
-if (
-  process.argv[1] &&
-  import.meta.url === pathToFileURL(process.argv[1]).href &&
-  process.env.TN_CI_RED_JOB
-) {
-  stopAtRed({
-    repository: process.env.GITHUB_REPOSITORY,
-    runId: process.env.TN_CI_RED_RUN,
-    jobId: process.env.TN_CI_RED_JOB,
-  });
-} else if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const { GITHUB_REPOSITORY: repository, GITHUB_RUN_ID: runId, TN_CI_QUEUE_REF } = process.env;
   const number = queuePullNumber(TN_CI_QUEUE_REF);
   const interval = Number(process.env.TN_QUEUE_WATCH_SECONDS ?? 30);
-  if (number === null || !repository || !runId) {
+  // Only a merge group has a queue ref and a pull request to tell.
+  if ((number === null && TN_CI_QUEUE_REF) || !repository || !runId) {
     console.error("CI_QUEUE_WATCH_INPUT: the queue ref, repository or run id is missing");
     process.exit(2);
   }
@@ -154,32 +135,19 @@ if (
       infra.add(red.id);
     } else if (red !== null) {
       // The comment first: a cancel that fails must not hide the cause.
-      gh([
-        "api",
-        `repos/${repository}/issues/${number}/comments`,
-        "-f",
-        `body=${commentBody({ job: red, runId, repository })}`,
-      ]);
+      if (number !== null) {
+        gh([
+          "api",
+          `repos/${repository}/issues/${number}/comments`,
+          "-f",
+          `body=${commentBody({ job: red, runId, repository })}`,
+        ]);
+      }
       gh(["run", "cancel", runId, "--repo", repository]);
-      console.log(`first red job ${red.name}: commented on #${number} and cancelled run ${runId}`);
+      console.log(`first red job ${red.name}: cancelled run ${runId}`);
       break;
     }
     if (allFinished(jobs)) break;
     sleep(interval);
   }
-}
-
-function stopAtRed({ repository, runId, jobId }) {
-  const read = (route) => JSON.parse(gh(["api", `repos/${repository}/actions/${route}`]));
-  const signatures = janitorSignatures(
-    readFileSync(new URL("../.github/workflows/ci-janitor.yml", import.meta.url), "utf8"),
-  );
-  const decision = shouldStopRun({
-    run: read(`runs/${runId}`),
-    job: read(`jobs/${jobId}`),
-    log: jobLog(repository, jobId),
-    signatures,
-  });
-  console.log(`run ${runId}: ${decision.stop ? "cancelling" : "left running"}, ${decision.why}`);
-  if (decision.stop) gh(["run", "cancel", runId, "--repo", repository]);
 }

@@ -195,8 +195,9 @@ export function versionOnly(path, before, after) {
 
 /** Whether a changed path can reach a leg. Deny-by-default: no rule below means it can. */
 export function reaches(leg, path, isProse) {
-  if (isProse(path)) return false;
+  // Doc links and doc-reading specs run in the unit legs on a full board, so prose reaches them.
   if (leg.inputs === "unit") return true;
+  if (isProse(path)) return false;
   if (WORKFLOWS.test(path) && !(leg.inputs === "native" && path === NATIVE_WORKFLOW)) return false;
   if (leg.inputs === "workspace") return true;
   if ([...AUTHORING, ROOT_SPECS, ...BOARD_SCRIPTS].some((pattern) => pattern.test(path)))

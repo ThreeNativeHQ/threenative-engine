@@ -520,6 +520,7 @@ function fakeActionsApi(fixture: IReuseFixture, api: IStubApi = {}): void {
   const sourceLabels = api.sourceLabels ?? HOSTED;
   const selfLabels = api.selfLabels ?? HOSTED;
   const page = (jobs: IStubJob[]) => ({ total_count: jobs.length, jobs });
+  writeFileSync(path.join(fixture.root, "promotion-runs.json"), JSON.stringify({ total_count: 1 }));
   writeFileSync(
     path.join(fixture.root, "record.json"),
     JSON.stringify({
@@ -596,6 +597,7 @@ case "$*" in
   */pulls) cat "$TN_FIXTURE/pulls.json" ;;
   *"/runs/$TN_FIXTURE_SELF/jobs"*) cat "$TN_FIXTURE/self-jobs.json" ;;
   */jobs*) cat "$TN_FIXTURE/jobs.json" ;;
+  *workflows*event=pull_request*) cat "$TN_FIXTURE/promotion-runs.json" ;;
   *workflows*) cat "$TN_FIXTURE/runs.json" ;;
   *) cat "$TN_FIXTURE/record.json" ;;
 esac
@@ -1117,6 +1119,24 @@ describe("a develop push qualifies its tree and still warms the caches every pul
       );
       const accepted = verifyWarmPlan(fixture, plan);
       expect(accepted.status, accepted.stderr).toBe(0);
+    });
+
+    it("refuses a head whose promotion pull request started no board", () => {
+      // `mergeable` reads null just after a push, and GitHub starts no run on a conflict.
+      const fixture = reuseFixture();
+      fakeActionsApi(fixture, { promotions: [{ mergeable: null }] });
+      const plan = warmPlan(fixture);
+      writeFileSync(
+        path.join(fixture.root, "pulls.json"),
+        JSON.stringify([{ number: 600, base: { ref: "main" }, head: { ref: "develop" } }]),
+      );
+      writeFileSync(
+        path.join(fixture.root, "promotion-runs.json"),
+        JSON.stringify({ total_count: 0 }),
+      );
+      const refused = verifyWarmPlan(fixture, plan);
+      expect(refused.status).toBe(1);
+      expect(refused.stderr).toContain("CI_REQUIRED_PROMOTION_MISSING");
     });
 
     it("rejects a yielding plan on every other event", () => {

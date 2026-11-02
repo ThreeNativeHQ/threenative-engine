@@ -77,7 +77,7 @@ Scout claims that the recheck rejected:
 
 Causes read from the failing step of 63 flaky reds and all 34 boards with a red Desktop parity job:
 
-- Desktop web/native parity, UI-frame gate: 21 reds. 16 are `TN_FRAME_BUDGET_PHASE_OVER_BUDGET`. A window closes every 300 ticks, so a run reports about 735 frames and then a tail of 7 to 16, and the gate read the tail, where a p95 is the worst frame. The same local run reads 0.02 ms on the full window. It was the only real red on 9 boards. The per-frame page that `f6587fc22` proposed is not needed, because the full window already holds hundreds of samples. Its cost was not measured.
+- Desktop web/native parity, UI-frame gate: 21 reds. 16 are `TN_FRAME_BUDGET_PHASE_OVER_BUDGET`. A window closes every 300 ticks, so a run reports about 735 frames and then a tail of 7 to 16, and the gate read the tail, where a p95 is the worst frame. The same local run reads 0.02 ms on the full window. The gate now takes the p95 from a window of 300 or more frames (AC-6) and also fails a tail whose p50 is over the bound, because the tail is the only sample after `ui-ready`. It was the only real red on 9 boards. The per-frame page that `f6587fc22` proposed is not needed, because the full window already holds hundreds of samples. Its cost was not measured.
 - Engine parity step: about 12 reds across 7 kits (`TN_ENGINE_PARITY_WORLD_NOT_DRAWN`, `TN_ENGINE_PARITY_ENVIRONMENT_NOT_BA...`, a score of 0.823 against 0.12). See "Removal candidates".
 - Desktop parity, Crowd rate scenario: 6 reds. Browser reference comparison: 3 reds. Not read further.
 - Windows and macOS core: mixed (`TN_PROD_STARTUP_BUDGET`, `TN_PROD_PACKAGE_FLAG_UNSUPPORTED`, `native:verify:desktop`). Not fixed.
@@ -89,11 +89,14 @@ Owner, 2026-11-01: "must have a real gain to merge this, verify". This replay fe
 
 | Change | Machine min per 14 days | Share | Wall median | Risk found |
 | --- | --- | --- | --- | --- |
-| Per-job reuse | 18,328 (21,851 if a PR head stands for its merge commit) | 11.4% (13.6%) | 0 min on each event: the native legs set the wall time and do not carry | 14 carried reds. 8 are green elsewhere on the commit. The other 6 are 3 upload or receipt failures, 2 unit flakes and 1 engine parity flake. None is a regression |
-| First-red stop | 42,736 gross, 23,630 net if each of 83 stops with a later non-flake red costs one more round | 14.8% to 26.7% | Not replayed | 83 of 132 stops hide a later red until the next round |
+| Per-job reuse | 18,074 (21,587 if a PR head stands for its merge commit) | 11.3% (13.5%) | 0 min on each event: the native legs set the wall time and do not carry | 13 carried reds. 7 are green elsewhere on the commit. The other 6 are 3 upload or receipt failures, 2 unit flakes and 1 engine parity flake. None is a regression |
+| A develop push yields to a promotion PR on the same commit | 10,629 more, on 17 pushes | 6.6% | Not replayed | A head can have no board when the PR conflicts. `ci-required` now refuses that |
+| First-red stop on PR and manual full boards, by `queue-watch` | 31,964 gross. Less 20% on flakes and 5,148 for the watcher: 20,423. Less 16,319 if each of 70 stops with a later non-flake red costs one more round: 4,104 | 2.6% to 12.8% | Not replayed | 70 of 97 stops hide a later red until the next round. A stop on a flake reruns the cancelled legs |
 | UI-frame gate fix | Up to 9 boards no longer red for this reason alone | Green at once 15.1% to at most 18.3% (42 to 51 of 279) | None | Hosted-runner window size is unproven |
 
-Together: 41,958 to 64,587 machine minutes, 26% to 40%. That is a real gain in machine minutes and free slots. It does not reach the goal of half, and the replay shows no wall time gain. Lower queue wait is likely but not measured. A 5-minute grace on the stop drops the hidden count from 83 to 68 and the gross saving from 46,241 to 38,479 minutes (before reuse), so the stop stays at the first red.
+Together: 32,807 to 52,639 machine minutes, 20.5% to 32.9%. That is a real gain in machine minutes and free slots. It does not reach the goal of half, and the replay shows no wall time gain. Lower queue wait is likely but not measured. A 5-minute grace on the stop drops the hidden count from 83 to 68 and the gross saving from 46,241 to 38,479 minutes (all events, before reuse), so the stop stays at the first red.
+
+An independent review caught the first design of the stop: `workflow_job` is not a workflow trigger in GitHub's schema, so it would have made `ci-janitor.yml` invalid. The stop moved to `queue-watch`, which runs on a branch before any merge.
 
 ## Levers, ranked
 
@@ -102,7 +105,7 @@ Each lever has one loop turn. The minutes overlap, so do not add them. An ESTIMA
 | # | Lever | Recovers | State |
 | --- | --- | --- | --- |
 | 1 | One board per tree, and per-job reuse (PRD-776) | Up to 46,270 machine min per 14 days, about 15 wall min per board | On #601, waits for the all-clear |
-| 2 | Stop starting legs after the first real red, on every event | Up to 33,652 machine min per 14 days. Risk: fewer reds shown per round | Code and specs on #601. The janitor runs from main, so its first proof is a red board after this reaches main |
+| 2 | Stop starting legs after the first real red, on every event | Up to 33,652 machine min per 14 days. Risk: fewer reds shown per round | On #601, in `queue-watch`, for PR and manual full boards. A develop push keeps its board: one concurrency slot, and it saves the caches. Proof is a real red board on the branch |
 | 3 | Find and fix the real cause of the 4 flaky legs above | A red board costs a second board of about 538 machine min | UI-frame gate fix and gh log fix on #601. Engine parity is an owner decision. Crowd rate and core legs are not fixed |
 | 4 | Two browser sessions per template job | ESTIMATE 48 machine min and 8 wall min per board. Needs proof on the software adapter | Parked: more load per job can raise the flake rate, and this run made no software-adapter proof |
 | 5 | Split Android and iOS, the two floor legs | ESTIMATE floor 49 to about 25 min. Only both together move it | Android job name is gate-read, so it waits for the all-clear or stays as an aggregator job |
@@ -130,7 +133,7 @@ All are the owner's decision. Zero reds over 14 days is weak evidence, because a
 ## Blocked on
 
 - Proof on real boards that #601 has the gain above: one full board on #601's head, then one board after a docs-only commit, compared by machine minutes and wall time. Boards compete with the main board for runners, so this waits for the release session's all-clear after 0.3.8.
-- First proof of the first-red stop: the janitor runs from main, so it needs #601 on main and a red board. Its stop count and rounds per merge are checked then.
+- Proof of the first-red stop: one board on a throwaway branch with a failing unit spec, which must cancel after that red. Rounds per merge are checked after the merge. Same all-clear.
 - GitHub Team plan, 60 concurrent jobs against 20, or the `tn-local` pool. A plan costs money and the pool loads the owner's machines, so it is the owner's decision.
 - The removal candidates above — the owner decides each one.
 - The session that owns the 0.3.8 release now owns the main board redundancy, auto-publish on main and the hotfix override, on the owner's order: `scripts/release-ship.ts`, `scripts/release-candidate-gate.ts`, `native-release.yml` and the promotion reuse rule in `ci-change-scope.mjs` and `ci-required.mjs`. It hands its commits to #601 after 0.3.8 is out. Levers 6 and 7 touch those files, so they wait for that session. Android shards and any merge of #601 also wait for 0.3.8.

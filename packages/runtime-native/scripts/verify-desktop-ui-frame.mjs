@@ -90,11 +90,12 @@ const UI_PHASE_P95_MS = 2.0;
  * window's "p95" *is* its 11th frame: one slow frame on a shared runner takes it over any bound.
  * CI run 41129808033 failed this gate at `3.13 ms at p95 over 11 frame(s)` on a tree whose pull
  * request run passed — the window was where the runner's pace put the run's last boundary, not a
- * regression. At 120 samples the p95 is the seventh-worst frame, which one frame cannot own.
+ * regression. At 300 samples, AC-6's count, the p95 is the sixteenth-worst frame, which one frame
+ * cannot own.
  * A run that collected fewer samples than this has measured no p95, and refuses in its own name
  * rather than judging the worst frame it happened to see.
  */
-const UI_PHASE_MIN_SAMPLES = 120;
+const UI_PHASE_MIN_SAMPLES = 300;
 /**
  * Wall clock between the runner and every fixed-step advance it asks the host for.
  *
@@ -399,11 +400,11 @@ function requireHitRegions(lines, gameRegions) {
  * 6. The composite's own cost, as the run reported it.
  *
  * A window closes every 300 simulation ticks, however many frames those ticks drew, so this run
- * reports one window of about 735 frames and then a tail of 7 to 16. AC-6 asks for at least 300
- * frames. The worst window with enough samples to have a p95 is the judgement. It includes the
- * first window, which also carries the page attach and the first upload, so it can only read
- * higher than a steady window would. A skip of that window left this run with nothing to measure
- * (CI run 41178046079, reverted in f6587fc22).
+ * reports one window of about 735 frames, which closes at `ui-ready`, and then a tail of 5 to 16.
+ * AC-6 asks for at least 300 frames, so the worst window with that many is the p95 judgement. A skip
+ * of the first window left this run with nothing to measure (CI run 41178046079, reverted in
+ * f6587fc22). The tail is the only sample after `ui-ready`. One slow frame owns its p95 but not its
+ * p50, so its p50 stays under the same bound: a composite that turns slow once the game runs fails.
  */
 export function requireUiPhase(lines, boundMs = UI_PHASE_P95_MS) {
   const windows = parseMarker(lines, "TN_FRAME_BUDGET");
@@ -437,6 +438,13 @@ export function requireUiPhase(lines, boundMs = UI_PHASE_P95_MS) {
     throw new Error(
       `TN_FRAME_BUDGET_PHASE_UNDERSAMPLED: the run measured ${samples} 'ui' sample(s) over ${measured.length} window(s) and the fullest carried ${fullest}, under the ${UI_PHASE_MIN_SAMPLES} a p95 needs, so no p95 was measured.`,
     );
+  }
+  for (const { index, phase } of measured) {
+    if (phase.samples < UI_PHASE_MIN_SAMPLES && !(phase.p50 < boundMs)) {
+      throw new Error(
+        `TN_FRAME_BUDGET_PHASE_OVER_BUDGET: the 'ui' phase is ${phase.p50} ms at p50 over ${phase.samples} frame(s) in reported window ${index} of ${windows.length}, which is not under ${boundMs} ms.`,
+      );
+    }
   }
   const pooled = complete.reduce((total, entry) => total + entry.phase.samples, 0);
   const worst = complete.reduce((most, entry) => (entry.phase.p95 > most.phase.p95 ? entry : most));

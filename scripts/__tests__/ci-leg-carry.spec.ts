@@ -60,9 +60,10 @@ describe("which changed path reaches a leg", () => {
       expect(reaches(leg, "tools/brand-new-input.mjs", isProse)).toBe(true);
   });
 
-  it("keeps prose out of every leg", () => {
-    for (const leg of [unit, workspace, native, shooter])
+  it("keeps prose out of every leg but the unit legs, which run the doc checks", () => {
+    for (const leg of [workspace, native, shooter])
       expect(reaches(leg, "README.md", isProse)).toBe(false);
+    expect(reaches(unit, "README.md", isProse)).toBe(true);
   });
 
   it("keeps a spec file in the unit legs and out of the kit legs", () => {

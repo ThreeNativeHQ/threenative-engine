@@ -14,11 +14,6 @@ on:
   workflow_run:
     workflows: [CI]
     types: [completed]
-  # PRD-782: a real red stops the rest of a CI run. One short job per red job, and none on a green
-  # board, where a polling watcher would hold a runner for the whole run. Runs from the default
-  # branch's copy of this file, so its first proof is a red board after this reaches main.
-  workflow_job:
-    types: [completed]
 
 # Cancelling a run is an Actions write, and this is the one workflow here that asks for one. A
 # token that cannot do it reports a green job while cancelling nothing, which is the exact
@@ -27,26 +22,6 @@ permissions:
   actions: write
 
 jobs:
-  stop-at-first-red:
-    # Not the janitor's own jobs, so a red here cannot wake this job again.
-    if: >-
-      github.event_name == 'workflow_job' &&
-      github.event.workflow_job.workflow_name != 'CI janitor' &&
-      contains(fromJSON('["failure","timed_out"]'), github.event.workflow_job.conclusion)
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      actions: write
-      contents: read
-    steps:
-      - uses: actions/checkout@v7
-      - name: Cancel the run when this red job is real
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TN_CI_RED_RUN: ${{ github.event.workflow_job.run_id }}
-          TN_CI_RED_JOB: ${{ github.event.workflow_job.id }}
-        run: node scripts/ci-queue-watch.mjs
-
   retry-flakes:
     if: >-
       github.event_name == 'workflow_run' &&
@@ -115,7 +90,7 @@ jobs:
           runs="$(gh run list --repo "$GITHUB_REPOSITORY" --branch "$HEAD_REF" \
             --json databaseId,status,headBranch \
             --jq '.[] | select(.status == "queued" or .status == "in_progress") | [.databaseId, .headBranch] | @tsv'
-            gh run list --repo "$GITHUB_REPOSITORY" --event merge_group --json databaseId,status,headBranch --limit 100 \
+            gh run list --repo "$GITHUB_REPOSITORY" --json databaseId,status,headBranch --limit 100 \
               | jq -r --arg prefix "$group_prefix" '.[] | select(.status == "queued" or .status == "in_progress") | select(.headBranch | startswith($prefix)) | [.databaseId, .headBranch] | @tsv'
           )"
           cancelled=0
