@@ -88,12 +88,23 @@ function gh(args) {
   return result.stdout;
 }
 
-function jobLog(repository, jobId) {
-  try {
-    return gh(["api", `repos/${repository}/actions/jobs/${jobId}/logs`]);
-  } catch {
-    return "";
+/**
+ * gh 2.102 exits 1 on a log with terminal escape sequences unless told to allow them, and an older
+ * gh rejects that flag. An empty read would turn every infrastructure failure into a real red.
+ */
+export function jobLog(repository, jobId) {
+  const logs = `repos/${repository}/actions/jobs/${jobId}/logs`;
+  for (const args of [
+    ["api", "--allow-escape-sequences", logs],
+    ["api", logs],
+  ]) {
+    try {
+      return gh(args);
+    } catch {
+      // Try the next form. Both failing leaves no log to read.
+    }
   }
+  return "";
 }
 
 function runJobs(repository, runId) {
