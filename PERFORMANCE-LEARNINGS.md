@@ -938,3 +938,22 @@ no COOP/COEP); that lane is open.
 - Stage table for the next lever, PRD-775 Phase 1 build, p50 and p95 frames: plan 3.6 and 5.2 (virtual pages 1.7 and 2.7), update
   2.3 and 4.3, JS before the engine 2.7 and 3.5 (bloom 0.9, auto exposure 0.7, local exposure 0.3), scene 2.8 and 3.3.
 - Revisit when: a walker close-up shows a step at a rate change, or a game with 32 or more rigs reports one.
+
+### 2026-11-02 — Stress lab: one rig's bone palette reaches the GPU once (FP1b) — KEEP
+
+- What changed: `Renderer` shares palette copies by bytes, not by pointer. The crowd wrote 4 copies a rig: 2 primitives, main batch and
+  shadow draw. Upload fell from 2304 to 841 KB a frame. The palette write fell from 1,996,800 to 499,200 bytes.
+- Result against a rebuilt control in a lab of the same age (rows #212-217, both arm orders, load peak 5.6 or less, 4 of 4 pairs):
+  fps 68.97 to 72.15 (+4.6%), frame p50 13.64 to 13.03 ms (matches the 0.5-0.64 ms forecast), frame p95 18.91 to 18.19 ms, presented
+  p95 19.43 to 18.47 ms, GPU p95 7.38 to 7.36 ms. Native: 18 writes to 9, same pixel hash. Judge: Opus NEUTRAL on 16 shots. One orange
+  prop differs in one AFTER closeup (`after-run1-2`) and not in the other. That difference is not explained.
+- **First attempt, FP1, did nothing and still read +3.2% fps.** A dedupe by pointer left the write at 1,996,800 bytes, because
+  `SkeletonUtils.clone` gives each primitive its own Skeleton. Rows #198-201 carry no lever. Read the byte count before the timing.
+- **Two labs with the same bytes differ.** Same Wasm hash, same `src/`, same packages, ports 5783 and 5787: fps 67.47 and 68.97, frame
+  p50 14.28 and 13.64 ms, GPU p95 6.91 and 7.38 ms, in all 4 runs of each. The cause is unknown; the old lab's dev server had run for
+  2.5 hours. So the same-lab A/A band of about 1% does not cover two labs: compare arms from labs started the same way, or expect
+  about 2% fps and 0.5 ms GPU p95 from the lab alone.
+- FA1 compared two labs (rows from `fa1*`). Its +7-8% fps stays above that band, but a same-lab recheck has not run.
+- Method trap: a control must fail closed. `git apply -R` with the wrong flags did nothing, and rows #206 and #210 ran the patched Wasm.
+- Revisit when: a scene's batch palettes stop matching its shadow draws' bytes (placed primitives). The native case shows 9 copies
+  for 8 rigs there, not 1.

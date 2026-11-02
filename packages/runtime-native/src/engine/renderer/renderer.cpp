@@ -3315,9 +3315,40 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     struct Deform {
         double boneBase = 0, morphBase = 0, morphInfluenceBase = 0, morphVertexCount = 0, morphBaseInfluence = 1;
     };
-    // FrameStats::paletteWrites: the palettes copied above, one per rig, whatever the number of pages that draw it.
+    // FrameStats::paletteWrites: the palettes copied below. Bytes decide, not pointers: SkeletonUtils.clone gives each
+    // primitive its own Skeleton over the same bones, and a palette batch holds a copy of each rig's matrices, so one
+    // rig reaches this list four times (two primitives, main batch and shadow draw) with the same bytes. Each palette's
+    // rig starts are keyed by their first matrix, so a draw reuses a batch's slot. A batch reads contiguous rigs, so
+    // batches go first and only draws with the same bytes in the same order share one.
     uint32_t paletteWrites = 0;
     std::unordered_map<const DrawItem*, Deform> deforms;
+    std::unordered_multimap<uint64_t, uint32_t> paletteStarts;
+    const auto firstMatrixKey = [](const float* matrix) {
+        uint64_t key = 14695981039346656037ull;
+        for (int i = 0; i < 16; ++i) key = (key ^ std::bit_cast<uint32_t>(matrix[i])) * 1099511628211ull;
+        return key;
+    };
+    const auto placePalette = [&](const std::vector<float>& matrices, uint32_t stride) {
+        const auto baseOf = [&](std::size_t at) { return double(jointPrefix / 64 + at / 16); };
+        if (matrices.size() < 16) return baseOf(bones.size());
+        const auto [from, to] = paletteStarts.equal_range(firstMatrixKey(matrices.data()));
+        for (auto start = from; start != to; ++start) {
+            if (start->second + matrices.size() <= bones.size() &&
+                std::memcmp(bones.data() + start->second, matrices.data(), matrices.size() * sizeof(float)) == 0)
+                return baseOf(start->second);
+        }
+        const std::size_t at = bones.size();
+        const std::size_t step = stride ? std::size_t{stride} * 16 : matrices.size();
+        for (std::size_t o = 0; o + 16 <= matrices.size(); o += step)
+            paletteStarts.emplace(firstMatrixKey(matrices.data() + o), uint32_t(at + o));
+        bones.insert(bones.end(), matrices.begin(), matrices.end());
+        ++paletteWrites;
+        return baseOf(at);
+    };
+    for (const auto& [depthKey, drawn] : opaque) {
+        if (drawn->boneMatrices && drawn->boneStride && !drawn->gpuJoints)
+            deforms[drawn].boneBase = placePalette(*drawn->boneMatrices, drawn->boneStride);
+    }
     std::vector<uint32_t> jointOutputs(jointPrefix ? gpuJoints_->rigs.size() : 0, UINT32_MAX);
     uint32_t jointWritten = 0;
     for (const auto& [depthKey, drawn] : opaque) {
@@ -3336,10 +3367,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 if (drawn->gpuJointRigs.empty()) place(drawn->gpuJointRig);
                 else for (uint32_t rig : drawn->gpuJointRigs) place(rig);
                 paletteWrites += drawn->gpuJointRigs.empty() ? 1u : uint32_t(drawn->gpuJointRigs.size());
-            } else {
-                d.boneBase = double(jointPrefix / 64 + bones.size() / 16);
-                bones.insert(bones.end(), drawn->boneMatrices->begin(), drawn->boneMatrices->end());
-                ++paletteWrites;  // one copy per skinned draw, whatever the number of shadow pages that draw it
+            } else if (!drawn->boneStride) {
+                d.boneBase = placePalette(*drawn->boneMatrices, 0);
             }
         }
         if (const BufferGeometry* g = drawn->morphGeometry) {

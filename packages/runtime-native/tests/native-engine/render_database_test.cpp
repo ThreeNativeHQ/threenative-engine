@@ -7251,7 +7251,7 @@ void setShadowInstanceLever(bool on) {
     else setenv("TN_SHADOW_INSTANCE_GROUPS", "0", 1);
 }
 
-void buildSkinnedShadowInstanceArm(ShadowInstanceArm& arm, mystral::webgpu::Context& context) {
+void buildSkinnedShadowInstanceArm(ShadowInstanceArm& arm, mystral::webgpu::Context& context, bool clonedSkeletons = false) {
     arm.renderer = std::make_unique<Renderer>(context.getInstance(), context.getDevice(), context.getQueue(), arm.events);
     arm.renderer->setSize(192, 192);
     arm.scene.enableTrackedTransform();
@@ -7305,14 +7305,16 @@ void buildSkinnedShadowInstanceArm(ShadowInstanceArm& arm, mystral::webgpu::Cont
             auto rig = std::make_shared<SkinnedMesh>(geometry, material);
             rig->frustumCulled = false;
             rig->setCastShadow(true);
-            rig->position.y = height;
+            rig->position.y = clonedSkeletons ? 0.55 : height;  // a clone's primitives share one bind pose
             rig->enableTrackedTransform();
             root->add(*rig);
             arm.keep.push_back(rig);
             rigs.push_back(rig);
         }
         root->updateMatrixWorld(true);
-        for (const auto& rig : rigs) rig->bind(skeleton);
+        // SkeletonUtils.clone gives each primitive its own Skeleton over the same bones.
+        for (const auto& rig : rigs)
+            rig->bind(clonedSkeletons ? std::make_shared<Skeleton>(std::vector<std::shared_ptr<Bone>>{bone}) : skeleton);
         arm.keep.insert(arm.keep.end(), {root, bone});
         arm.bones.push_back(bone.get());
     }
@@ -7529,6 +7531,37 @@ void virtualShadowPageDrawsOnlyItsInstances() {
     CHECK(countedInstances == bigDrawn && countedRows >= bigPages);
 }
 
+// One rig reaches the palette list once per primitive per pass, each with its own vector. Same bytes get one copy:
+// 8 rigs x 2 primitives wrote 18 palettes (16 shadow draws, 2 main batches), and now 9 (8 shadow draws, 1 batch). This
+// scene's batch is relative to its placed primitives, so its bytes differ from a shadow draw's. The stress crowd's do
+// not, so its 4 copies a rig become 1: 1,996,800 bytes a frame to 499,200.
+void skinnedPalettesShareByBytes() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    ShadowInstanceArm arm;
+    buildSkinnedShadowInstanceArm(arm, context, true);
+    for (int frame = 0; frame < 6; ++frame) {
+        for (std::size_t b = 0; b < arm.bones.size(); ++b) arm.bones[b]->rotation.z = 0.15 * std::sin(0.4 * (frame + 3.0 * double(b)));
+        arm.scene.updateMatrixWorld(true);
+        arm.database.render(*arm.renderer, arm.scene, arm.camera);
+    }
+    const ShadowPlanCapture capture = captureShadowPlan(*arm.renderer, arm.events);
+    std::size_t covered = 0;
+    int low = 255, high = 0;
+    for (std::size_t p = 0; p + 3 < capture.pixels.size(); p += 4) {
+        low = std::min(low, int(capture.pixels[p]));
+        high = std::max(high, int(capture.pixels[p]));
+        covered += capture.pixels[p] + capture.pixels[p + 1] + capture.pixels[p + 2] > 0;
+    }
+    uint64_t hash = 14695981039346656037ull;
+    for (uint8_t byte : capture.pixels) hash = (hash ^ byte) * 1099511628211ull;
+    std::printf("shared palettes: %u writes, %u shadow draws, %zu covered, red %d..%d, pixels %016llx\n", capture.stats.paletteWrites,
+                capture.stats.shadowDraws, covered, low, high, static_cast<unsigned long long>(hash));
+    CHECK(capture.stats.paletteWrites == 9);
+    CHECK(covered > 10000);
+    CHECK(high > 32 && low < high / 2);
+}
+
 void shadowPagesInstanceSkinnedCasters() {
     mystral::webgpu::Context context;
     CHECK(context.initializeHeadless());
@@ -7597,7 +7630,8 @@ void shadowPagesInstanceSkinnedCasters() {
     }
     // (d) set once: the palette is written once per rig per frame, not once per page, and a grouped row is a batch.
     CHECK(capture[0].stats.paletteWrites == capture[1].stats.paletteWrites);
-    CHECK(capture[0].stats.paletteWrites > 0 && capture[0].stats.paletteWrites < 48);
+    // Old code: 18 writes. 16 shadow draws read 8 skeletons' bytes, so 8 copies, plus 2 main batches whose bind matrices differ.
+    CHECK(capture[0].stats.paletteWrites == 10);
     CHECK(capture[0].stats.shadowSkinned.exactDraws == 48 && capture[0].stats.shadowSkinned.batches == 0);
     CHECK(capture[1].stats.shadowSkinned.exactDraws == 0 && capture[1].stats.shadowSkinned.batches == capture[1].rows.size());
     // (e) the static arm: a caster that straddles two pages groups inside each page, a page that selects one
@@ -8490,7 +8524,7 @@ void staticInstancesAreNotRecopied() {
     CHECK(frame(-12).copies == 0);
 }
 
-TN_TEST_MAIN({"virtual_shadow_page_jobs", virtualShadowPageJobs}, {"caster_record_allocates_per_frame", casterRecordAllocatesPerFrame}, {"virtual_shadow_instance_pages", virtualShadowInstancePages}, {"virtual_shadow_page_draws_only_its_instances", virtualShadowPageDrawsOnlyItsInstances},{"virtual_shadow_bounds_cache", virtualShadowBoundsCache}, {"gpu_joint_production", gpuJointProduction}, {"virtual_shadow_casters_batch_in_main_pass", virtualShadowCastersBatchInMainPass}, {"virtual_shadow_rigs_batch_in_main_pass", virtualShadowRigsBatchInMainPass}, {"virtual_shadow_pages_instance_skinned_casters", shadowPagesInstanceSkinnedCasters}, {"bone_reach_bounds_hold_posed_vertices", boneReachBoundsHoldPosedVertices}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"content_identical_geometry_batches", contentIdenticalGeometryBatches}, {"steady_state", steadyState}, {"steady_state_draw_refresh_work", steadyStateDrawRefreshWork}, {"draw_refresh_guard_holes", drawRefreshGuardHoles}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"depth_test_off_draws_over_nearer", depthTestOffDrawsOverNearer}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"scene_stage_is_metered", sceneStageIsMetered}, {"overlay_leaves_stage_totals", overlayLeavesStageTotals}, {"present_direct", presentDirect}, {"canvas_layer_overlay", canvasLayerOverlay}, {"post_survives_overlay", postSurvivesOverlay}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"target_samples_late_traa_output", targetSamplesLateTraaOutput}, {"unchanged_frame_storage", unchangedFrameStorage}, {"static_instances_are_not_recopied", staticInstancesAreNotRecopied}, {"instance_places_survive_a_draw_leaving_the_view", instancePlacesSurviveADrawLeavingTheView}, {"instance_upload_is_stable_across_a_camera_turn", instanceUploadIsStableAcrossACameraTurn}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene}, {"frame_slab_is_per_program", frameSlabIsPerProgram},
+TN_TEST_MAIN({"virtual_shadow_page_jobs", virtualShadowPageJobs}, {"caster_record_allocates_per_frame", casterRecordAllocatesPerFrame}, {"virtual_shadow_instance_pages", virtualShadowInstancePages}, {"virtual_shadow_page_draws_only_its_instances", virtualShadowPageDrawsOnlyItsInstances},{"virtual_shadow_bounds_cache", virtualShadowBoundsCache}, {"gpu_joint_production", gpuJointProduction}, {"virtual_shadow_casters_batch_in_main_pass", virtualShadowCastersBatchInMainPass}, {"virtual_shadow_rigs_batch_in_main_pass", virtualShadowRigsBatchInMainPass}, {"virtual_shadow_pages_instance_skinned_casters", shadowPagesInstanceSkinnedCasters}, {"skinned_palettes_share_by_bytes", skinnedPalettesShareByBytes}, {"bone_reach_bounds_hold_posed_vertices", boneReachBoundsHoldPosedVertices}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"content_identical_geometry_batches", contentIdenticalGeometryBatches}, {"steady_state", steadyState}, {"steady_state_draw_refresh_work", steadyStateDrawRefreshWork}, {"draw_refresh_guard_holes", drawRefreshGuardHoles}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"depth_test_off_draws_over_nearer", depthTestOffDrawsOverNearer}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"scene_stage_is_metered", sceneStageIsMetered}, {"overlay_leaves_stage_totals", overlayLeavesStageTotals}, {"present_direct", presentDirect}, {"canvas_layer_overlay", canvasLayerOverlay}, {"post_survives_overlay", postSurvivesOverlay}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"target_samples_late_traa_output", targetSamplesLateTraaOutput}, {"unchanged_frame_storage", unchangedFrameStorage}, {"static_instances_are_not_recopied", staticInstancesAreNotRecopied}, {"instance_places_survive_a_draw_leaving_the_view", instancePlacesSurviveADrawLeavingTheView}, {"instance_upload_is_stable_across_a_camera_turn", instanceUploadIsStableAcrossACameraTurn}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene}, {"frame_slab_is_per_program", frameSlabIsPerProgram},
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"virtual_sun_room_seam", virtualSunRoomSeam},
