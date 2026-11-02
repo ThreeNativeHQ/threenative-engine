@@ -193,6 +193,7 @@ void onDevice(WGPURequestDeviceStatus status, WGPUDevice result, WGPUStringView 
     device = result;
     queue = wgpuDeviceGetQueue(device);
     setenv("TN_GPU_PASSES", EM_ASM_INT({ return globalThis.TN_GPU_PASSES === true; }) ? "1" : "0", 1);
+    if (EM_ASM_INT({ return new URLSearchParams(globalThis.location?.search ?? "").get("tnVsmRigHold") === "0"; })) setenv("TN_VSM_RIG_HOLD", "0", 1);
     // PRD-775's lever on the web: `?tnVsmGpuPages=0` keeps one CPU-planned pass per page, so one build holds both arms.
     if (EM_ASM_INT({ return new URLSearchParams(globalThis.location?.search ?? "").get("tnVsmGpuPages") === "0"; })) setenv("TN_VSM_GPU_PAGES", "0", 1);
     renderer = std::make_unique<Renderer>(instance, device, queue, events);

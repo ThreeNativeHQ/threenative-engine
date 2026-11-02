@@ -324,6 +324,11 @@ WGPUBufferUsage storageUsage(std::string_view name) {
 
 // PRD-775's lever: TN_VSM_GPU_PAGES=0 keeps one CPU-planned pass per page. Read per frame, so a test plans both arms in one
 // process and holds the GPU rows to the CPU's as their oracle.
+bool rigBoundsHoldEnabled() {
+    const char* flag = std::getenv("TN_VSM_RIG_HOLD");
+    return flag == nullptr || std::strcmp(flag, "0") != 0;
+}
+
 bool virtualPagesOnGpuEnabled() {
     const char* flag = std::getenv("TN_VSM_GPU_PAGES");
     return flag == nullptr || std::strcmp(flag, "0") != 0;
@@ -690,8 +695,24 @@ struct Renderer::FrameJob {
     std::vector<std::vector<uint64_t>> shadowKeys;
 };
 
-const std::pair<Box3, double>& DrawCache::virtualShadowBounds(const DrawItem& item) {
+// One walk in four: the rate FA1 measures a rig's animation at. UE 5.8.3: Engine/Source/Runtime/Engine/Private/PhysicsEngine/
+// PhysAnim.cpp:496 skips a skinned mesh's bounds update on its interpolated ticks.
+static constexpr uint64_t kRigBoundsHoldFrames = 4;
+
+const std::pair<Box3, double>& DrawCache::virtualShadowBounds(const DrawItem& item, uint64_t frame) {
     const bool cacheable = !item.boneMatrices && !item.morphGeometry && !item.gpuJoints && !item.positionNode && !item.nodes->positionNode;
+    // A skinned box costs a walk of the rig's bones, and only the limbs' swing moves it inside the mesh's space. Between
+    // walks the mesh's matrix still places the box, padded by the distance the box moved between the last two walks.
+    // ponytail: bones that teleport inside a static mesh lag up to 3 frames; a camera cut walks, as frame is then 0.
+    const auto* rig = item.boneMatrices && !item.morphGeometry && item.shadowObject && item.shadowObject->type() == "SkinnedMesh"
+        ? static_cast<const SkinnedMesh*>(item.shadowObject) : nullptr;
+    if (rig && frame != 0 && shadowRigFrame != 0 && frame - shadowRigFrame < kRigBoundsHoldFrames &&
+        std::get<0>(shadowRigKey) == item.positions && std::get<1>(shadowRigKey) == item.positions->version() && !shadowPositionsOwner.expired()) {
+        Matrix4 model; model.elements = item.matrixWorld;
+        shadowBounds.first = shadowLocalBounds;
+        shadowBounds.first.expandByScalar(shadowRigPad).applyMatrix4(model);
+        return shadowBounds;
+    }
     const BufferStore* instances = item.instanceMatrices;
     const ShadowBoundsKey key{item.positions, item.positions->version(), item.positions->epoch(), item.positions->writes(),
                              instances, instances ? instances->version() : 0, instances ? instances->epoch() : 0,
@@ -704,8 +725,6 @@ const std::pair<Box3, double>& DrawCache::virtualShadowBounds(const DrawItem& it
     Box3 bounds;
     // A rig's box comes from its bones (O(bones)); skinning each vertex on the CPU here cost the
     // stress lab's 120-rig crowd about 760 ms a frame.
-    const auto* rig = item.boneMatrices && !item.morphGeometry && item.shadowObject && item.shadowObject->type() == "SkinnedMesh"
-        ? static_cast<const SkinnedMesh*>(item.shadowObject) : nullptr;
     if (rig && rig->boneReachBounds(bounds)) {
     } else if (item.positions->scalar() == Scalar::F32) {
         for (uint64_t idx = 0; idx + 2 < item.positions->count(); idx += 3) {
@@ -719,6 +738,15 @@ const std::pair<Box3, double>& DrawCache::virtualShadowBounds(const DrawItem& it
         }
     }
     Matrix4 model; model.elements = item.matrixWorld;
+    if (rig) {
+        const double moved = shadowRigFrame == 0 ? 0.0 : std::max({std::abs(bounds.min.x - shadowLocalBounds.min.x), std::abs(bounds.min.y - shadowLocalBounds.min.y),
+            std::abs(bounds.min.z - shadowLocalBounds.min.z), std::abs(bounds.max.x - shadowLocalBounds.max.x), std::abs(bounds.max.y - shadowLocalBounds.max.y),
+            std::abs(bounds.max.z - shadowLocalBounds.max.z)});
+        shadowRigPad = std::isfinite(moved) ? moved : 0;
+        const uint64_t spread = shadowRigFrame == 0 && frame >= kRigBoundsHoldFrames ? item.key % kRigBoundsHoldFrames : 0;
+        shadowRigFrame = frame == 0 ? 0 : frame - spread;
+        shadowRigKey = {item.positions, item.positions->version()};
+    }
     shadowLocalBounds = bounds;
     shadowLargestInstance = Vector3();
     const double localDiameter = bounds.min.distanceTo(bounds.max);
@@ -3069,6 +3097,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     // not receive shadows takes the lower-case layout, as three keys a program on receiveShadow.
     DrawCache uncachedBounds;
     std::map<std::size_t, std::vector<shadows::AtlasPage>> virtualPages;
+    ++virtualBoundsFrame_;
+    const uint64_t rigBoundsFrame = rigBoundsHoldEnabled() && !virtualCut_ ? virtualBoundsFrame_ : 0;
     for (auto& [i, shadow] : virtualShadows_) {
         if (compilation) continue;
         if (i >= lights.direct.size() || lights.direct[i].kind != DirectLight::Kind::Directional || !lights.direct[i].shadow)
@@ -3079,14 +3109,17 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         // caster into each, and two descents per draw to rebuild the states.
         auto& record = casterRecords_[i];
         record.assign(items.size(), {});
-        std::vector<Box3> depthCasters, receivers;
+        std::vector<Box3>& depthCasters = depthCasters_;
+        std::vector<Box3>& receivers = shadowReceivers_;
+        depthCasters.clear();
+        receivers.clear();
         for (const DrawItem& item : items) {
             if ((!item.castShadow && !item.receiveShadow) || !item.positions || item.instanceCount == 0 || (item.layers & (mask | (1u << 29) | (1u << 28))) == 0) continue;
             // Bind-pose bounds cannot fit a GPU-displaced caster without clipping its shadow.
             if (item.castShadow && shadow.atlas.options().autoDepth &&
                 (item.positionNode || item.nodes->positionNode || item.gpuJoints))
                 throw std::runtime_error("TN_VIRTUAL_SHADOW_UNSUPPORTED: automatic depth for GPU-deformed casters; supply lightDistance and depthRange");
-            const auto& [bounds, diameter] = (item.cache ? *item.cache : uncachedBounds).virtualShadowBounds(item);
+            const auto& [bounds, diameter] = (item.cache ? *item.cache : uncachedBounds).virtualShadowBounds(item, rigBoundsFrame);
             if (item.castShadow)  // FG1: an uncached draw shares `uncachedBounds`, so it has no per-instance boxes to keep
                 record[std::size_t(&item - items.data())] = CasterRecord{bounds, diameter, true,
                     item.cache && item.cache->shadowInstanceBoxes.size() == item.instanceCount ? &item.cache->shadowInstanceBoxes : nullptr};
@@ -3101,29 +3134,30 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         if (!std::isfinite(radius) || radius < 0 ||
             (!lights.direct[i].shadow->sourceAngleFilter && radius + 0.5 > shadow.atlas.options().border))
             throw std::runtime_error("TN_VIRTUAL_SHADOW_UNSUPPORTED: PCF radius exceeds page guard texels");
-        std::vector<shadows::CasterState> states;
+        std::vector<shadows::CasterState>& states = casterStates_;
+        states.clear();
+        const auto& control = *shadow.atlas.options().control;
+        const bool controlled = !control.tracked.empty() || !control.pinned.empty();
         for (const DrawItem& item : items) {
             const CasterRecord& caster = record[std::size_t(&item - items.data())];
             if (!caster.casts) continue;
-            shadows::CasterState state;
+            shadows::CasterState& state = states.emplace_back();
             state.key = item.key; state.bounds = caster.bounds;
             state.world.elements = item.matrixWorld;
-            state.signature = std::to_string(item.positions->version());
-            if (item.instanceMatrices) state.signature += ":" + std::to_string(item.instanceMatrices->version()) + ":" + std::to_string(item.instanceCount);
+            state.signature = {item.positions->version(), item.instanceMatrices ? item.instanceMatrices->version() : 0, item.instanceMatrices ? item.instanceCount : 0};
             state.deforming = item.positionNode || item.nodes->positionNode || item.boneMatrices || item.morphGeometry;
             state.tracked = (item.layers & (1u << 29)) != 0;
             state.automatic = (item.layers & 1u) != 0;
-            const auto& control = *shadow.atlas.options().control;
+            if (!controlled) continue;
             for (auto* object = item.shadowObject; object; object = object->parent) {
                 state.tracked |= control.tracked.count(object->id()) != 0;
                 state.pinned |= control.pinned.count(object->id()) != 0;
             }
-            states.push_back(std::move(state));
         }
-        auto& control = *shadow.atlas.options().control;
-        if (control.invalidateAll) { shadow.atlas.invalidateAll(); control.invalidateAll = false; }
-        for (const auto& region : control.regions) shadow.atlas.invalidate(region);
-        control.regions.clear();
+        auto& writes = *shadow.atlas.options().control;
+        if (writes.invalidateAll) { shadow.atlas.invalidateAll(); writes.invalidateAll = false; }
+        for (const auto& region : writes.regions) shadow.atlas.invalidate(region);
+        writes.regions.clear();
         shadow.atlas.updateCasters(states);
         {
             std::lock_guard lock(shadow.costs->mutex);

@@ -77,7 +77,7 @@ struct CasterState {
     uint64_t key = 0;
     Box3 bounds;
     Matrix4 world;
-    std::string signature;
+    std::array<uint64_t, 3> signature{};  // positions version, instances version, instance count
     bool deforming = false, tracked = false, pinned = false, automatic = true;
 };
 
@@ -157,8 +157,10 @@ private:
         int quiet = 0;
         bool moving = false;
         uint32_t settling = 0;
+        uint64_t seen = 0;  // the updateCasters pass that last named this caster
     };
-    std::map<uint64_t, Motion> motion_;
+    std::unordered_map<uint64_t, Motion> motion_;
+    uint64_t casterPass_ = 0;
     void writeTable();
     AtlasOptions options_;
     std::optional<DirectionalClipmap> clipmap_;

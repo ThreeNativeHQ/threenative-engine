@@ -127,7 +127,11 @@ struct DrawCache {
     std::optional<ShadowBoundsKey> shadowBoundsKey;
     std::weak_ptr<const BufferStore> shadowPositionsOwner, shadowInstancesOwner;
     uint64_t shadowBoundsBuilds = 0;
-    const std::pair<Box3, double>& virtualShadowBounds(const DrawItem& item);
+    // PRD-775: a rig walks its bones one frame in `kRigBoundsHoldFrames` (0 walks every time).
+    const std::pair<Box3, double>& virtualShadowBounds(const DrawItem& item, uint64_t frame = 0);
+    uint64_t shadowRigFrame = 0;  // the frame of the rig's last walk, spread over the hold by the draw's key
+    double shadowRigPad = 0;      // how far the rig's local box moved between its last two walks
+    std::pair<const BufferStore*, uint32_t> shadowRigKey{nullptr, 0};  // the positions the rig's reach was measured on
 };
 
 /** One opaque draw. The render database (PRD-514 phase 1) fills these from the scene graph. */
@@ -1323,6 +1327,10 @@ private:
     uint64_t renderId_ = 0;
     std::array<std::atomic<double>, kCpuStageCount> cpuStageMs_{};
     bool cpuMetered_ = true;
+    uint64_t virtualBoundsFrame_ = 0;  // PRD-775: counts plans, for the rigs' bound hold
+    // PRD-775: kept between frames, so a frame allocates no list per light.
+    std::vector<shadows::CasterState> casterStates_;
+    std::vector<Box3> depthCasters_, shadowReceivers_;
     /** Adds the ms since `started` to a stage; the encode half adds its own from the render thread. */
     void addCpuStage(CpuStage stage, double started);
     struct CpuStageMeter {

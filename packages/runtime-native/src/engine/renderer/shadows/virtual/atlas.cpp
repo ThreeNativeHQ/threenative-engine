@@ -332,11 +332,13 @@ bool PageAtlas::drawsStatic(uint64_t key) const {
 }
 
 void PageAtlas::updateCasters(const std::vector<CasterState>& casters) {
-    std::set<uint64_t> present;
+    ++casterPass_;
+    std::size_t named = 0;
     for (const auto& caster : casters) {
-        present.insert(caster.key);
         auto [it, inserted] = motion_.try_emplace(caster.key);
         auto& m = it->second;
+        named += m.seen != casterPass_;
+        m.seen = casterPass_;
         const bool changed = !inserted && (caster.world.elements != m.caster.world.elements || caster.signature != m.caster.signature);
         const bool moving = caster.tracked || (!caster.pinned && caster.automatic && (caster.deforming || changed));
         if (moving) {
@@ -354,8 +356,9 @@ void PageAtlas::updateCasters(const std::vector<CasterState>& casters) {
         } else if (inserted) invalidate(caster.bounds);
         m.caster = caster;
     }
+    if (named == motion_.size()) return;  // none left the list
     for (auto it = motion_.begin(); it != motion_.end();) {
-        if (present.count(it->first)) { ++it; continue; }
+        if (it->second.seen == casterPass_) { ++it; continue; }
         if (!it->second.moving) invalidate(it->second.caster.bounds);
         it = motion_.erase(it);
     }
