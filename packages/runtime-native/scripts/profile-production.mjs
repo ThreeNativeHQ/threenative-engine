@@ -989,6 +989,12 @@ function createDesktopDriver(artifactPath, project, options, mailboxRoot, mailbo
       const deadline = Date.now() + DESKTOP_SCREENSHOT_TIMEOUT_MS;
       while (Date.now() < deadline) {
         if (await nonBlankPng(path)) return;
+        // The host consumed the one request, so a blank capture stays blank until asked again. A frame read while
+        // pipelines still compile can be all zero (hosted Metal, run 41356903254).
+        if (await blankPng(path)) {
+          await rm(path, { force: true }).catch(() => undefined);
+          await mailbox.write(screenshotRequestPath, path);
+        }
         await new Promise((resolve) => setTimeout(resolve, 25));
       }
       throw new Error('TN_PROD_NATIVE_SCREENSHOT_UNAVAILABLE');
@@ -2454,6 +2460,16 @@ async function listFiles(directory) {
 async function nonBlankPng(path) {
   try {
     return isNonBlankFrame(await readFile(path));
+  } catch {
+    return false;
+  }
+}
+
+async function blankPng(path) {
+  try {
+    const value = await readFile(path);
+    PNG.sync.read(value);
+    return !isNonBlankFrame(value);
   } catch {
     return false;
   }

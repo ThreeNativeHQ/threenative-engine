@@ -228,6 +228,39 @@ test('native report retention redacts unsafe host console paths without dropping
   assert.equal(report.observations.console[1].text, 'TN_NATIVE_SMOKE_READY:webgpu');
 });
 
+test('a blank desktop capture asks for the next frame instead of waiting out the deadline on a consumed request', async () => {
+  // Hosted macOS, run 41356903254: the host took the one request, read an all-zero frame while pipelines still compiled,
+  // and drew 5 more seconds of good frames that nobody asked to capture, so the cold start failed for a healthy game.
+  const source = readFileSync(new URL('../scripts/profile-production.mjs', import.meta.url), 'utf8');
+  const driverSource = sliceSource(source, 'function createDesktopDriver(', 'export async function installNativeProfileEntry(');
+  let capture = 'none';
+  const writes = [];
+  const removed = [];
+  const context = {
+    join,
+    process: { platform: 'linux', env: {} },
+    blankPng: async () => capture === 'blank',
+    nonBlankPng: async () => capture === 'frame',
+    rm: async (path) => {
+      removed.push(path);
+      capture = 'none';
+    },
+    setTimeout,
+    DESKTOP_SCREENSHOT_TIMEOUT_MS: 500,
+  };
+  runInNewContext(driverSource, context);
+  const mailbox = {
+    write: async (path) => {
+      writes.push(path);
+      capture = writes.length === 1 ? 'blank' : 'frame';
+    },
+  };
+  const driver = context.createDesktopDriver('/fixture/mystral', '/fixture/scaffold', {}, '/fixture/mailbox', mailbox);
+  await driver.screenshot('/fixture/capture.png');
+  assert.equal(writes.length, 2);
+  assert.deepEqual(removed, ['/fixture/capture.png']);
+});
+
 test('desktop child receives the transport mailbox root and writes a raw post-present screenshot request', async () => {
   const source = readFileSync(new URL('../scripts/profile-production.mjs', import.meta.url), 'utf8');
   const driverSource = sliceSource(source, 'function createDesktopDriver(', 'export async function installNativeProfileEntry(');
