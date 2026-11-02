@@ -174,10 +174,8 @@ describe("stress-fair (PRD-770)", () => {
   });
 
   describe("presentedFromStarts", () => {
-    const seriesOf = (gaps: number[]) => {
-      let at = 0;
-      return [0, ...gaps.map((gap) => (at += gap))];
-    };
+    const seriesOf = (gaps: number[]) =>
+      gaps.reduce<number[]>((starts, gap) => [...starts, (starts.at(-1) ?? 0) + gap], [0]);
 
     it("reads the real frame interval, with the p95 tail from the frame starts", () => {
       const gaps = Array.from({ length: 100 }, (_, index) => (index % 10 === 0 ? 20 : 15));
