@@ -95,6 +95,8 @@ void Bone::materializeWorldTransformIfPending() {
 
 Skeleton::Skeleton(std::vector<std::shared_ptr<Bone>> bones, std::vector<Matrix4> boneInverses)
     : bones(bones.begin(), bones.end()), boneInverses(std::move(boneInverses)) {
+    boneAddresses_.reserve(bones.size());
+    for (const auto& bone : bones) boneAddresses_.push_back(bone.get());
     init();
 }
 
@@ -266,8 +268,12 @@ bool SkinnedMesh::boneReachBounds(Box3& target) const {
         matrix.multiplyMatrices(bone->matrixWorld, skeleton->boneInverses[j]);
         center.setFromMatrixPosition(bone->matrixWorld).applyMatrix4(bindMatrixInverse);
         const double radius = boneReach_[j] * stretch(matrix) * meshScale;
-        target.expandByPoint(Vector3(center.x - radius, center.y - radius, center.z - radius));
-        target.expandByPoint(Vector3(center.x + radius, center.y + radius, center.z + radius));
+        target.min.x = std::min(target.min.x, center.x - radius);
+        target.min.y = std::min(target.min.y, center.y - radius);
+        target.min.z = std::min(target.min.z, center.z - radius);
+        target.max.x = std::max(target.max.x, center.x + radius);
+        target.max.y = std::max(target.max.y, center.y + radius);
+        target.max.z = std::max(target.max.z, center.z + radius);
     }
     return !target.isEmpty();
 }

@@ -7845,6 +7845,13 @@ void boneReachBoundsHoldPosedVertices() {
     geometry->setAttribute("skinWeight", BufferAttribute::fromFloats(weights, 4));
     Box3 box;
     CHECK(!rig->boneReachBounds(box));
+    // The slot stays weak: a bone nothing else holds reads as absent, not as its old address.
+    auto held = std::make_shared<Bone>();
+    Skeleton skeleton({held});
+    CHECK(skeleton.bone(0) == held.get());
+    CHECK(skeleton.bone(1) == nullptr);
+    held.reset();
+    CHECK(skeleton.bone(0) == nullptr);
 }
 
 void virtualShadowBoundsCache() {
