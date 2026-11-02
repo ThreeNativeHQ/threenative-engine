@@ -922,7 +922,10 @@ no COOP/COEP); that lane is open.
   A rig just shown measures at once. A nested rig or a stand-in keeps the full walk.
 - Result, rows #180-#183, four pairs that agree, load peak 7 or less: 66.5 to 72.2 fps (+8.6%), CPU p50 14.1 to 13.1 ms, CPU p95
   19.4 to 17.9 ms, frame p95 19.9 to 18.5 ms. GPU p95, draws, triangles, uploads and bridge calls did not change.
-- The gain is near 1 ms against a 0.56 ms forecast from the profile's inclusive time. The extra is not attributed.
+- Recheck, because the same lab read 66 fps in a later window (rows from `fa1c`, `fa1d`, both arm orders, load peak 8 or less):
+  63.1 to 67.5 fps (+7.0%), CPU p50 14.8 to 14.3 ms (-3.6%), CPU p95 20.8 to 17.8 ms (-14.6%), frame p95 22.0 to 18.5 ms. All 8 pairs
+  across the four windows favor FA1. Both arms fell together between windows, so compare only inside one window.
+- The first windows' p50 gain is near 1 ms against a 0.56 ms forecast from the profile's inclusive time. The extra is not attributed.
 - Judge: Opus NEUTRAL on 12 stills. Motion is unverified: a still cannot show a rate change stepping. The red-green test bounds
   the lag: part measures over 4 frames fall from 160 to 40, and a new distance reaches every rig inside 4 frames.
 - Insight: an earlier hunt filed this as "no lever" (FU7) because it sat outside that lane's phase. Re-profile the whole frame
