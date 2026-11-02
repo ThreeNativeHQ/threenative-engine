@@ -984,3 +984,14 @@ no COOP/COEP); that lane is open.
 - Cause: page keys counted along the view axes, which are -U and -V, so kept pages sat 2 x the shift away. Full redraws hide this.
 - Method trap: a whole-frame step in a screencast is a state change, so line its time up with the engine's grants before theorizing.
 - Open lever: level 0 still redraws all 256 pages in 51 of 53 grants, because the depth re-fit moves near and far by about 0.001 m.
+
+### 2026-11-02 — Virtual shadows: a level holds its depth range while its casters fit (FG3) — KEEP, 8-pair verdict open
+
+- What changed: a grant re-fits a level's depth range only when a caster leaves it or a re-fit would shrink it past 75%. A re-fit pads
+  by the level's extent on each side.
+- Result: pages drawn 91 to 12.6 per frame, level 0 full redraws 88 to 7 in about 20 s. One real-display pair, load 12-15: presented p95
+  27.95 to 25.43 ms, GPU p95 7.75 to 6.78 ms. Opus judge: NEUTRAL.
+- Why a 2% pad was not enough: panning along V slides the ground's depth band by about 0.9 m per metre, so 41 pages per frame stayed.
+- Method trap: desktop monitors asleep stop the browser opening its DevTools port, and a private Xvfb under the wrapper does too. Check
+  `/sys/class/drm/card1-*/status` before a window. Page counts under Xvfb on the real GPU stay valid; timing there is not a verdict.
+- Revisit when: a scene's casters span far more depth than its window (a high flyer), which re-fits and redraws the level each time.
