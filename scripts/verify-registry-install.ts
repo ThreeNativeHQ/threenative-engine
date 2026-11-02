@@ -827,9 +827,19 @@ function step(name: string, work: () => string): IRegistryInstallStep {
 
 /** Every step after `install`, in run order. The not-run bookkeeping is this list, not a copy. */
 function stepPlan(upgrade: boolean): readonly string[] {
-  return upgrade
+  const plan = upgrade
     ? ["lockfile", "surface", "upgrade", "edit", "build", "test", "gameplay"]
     : ["lockfile", "edit", "build", "test", "gameplay", "doctor", "native", "android", "mcp"];
+  return softwareAdapter() ? plan.filter((name) => name !== "test") : plan;
+}
+
+/**
+ * The runner says it has no GPU. A kit's own `test` holds frame budgets and screenshots, which a CPU
+ * rasteriser cannot meet however correct the game is. That row stays out of the report rather than
+ * green: `gameplay` still plays the installed game, and `template-nonvisual` ran the kit on the board.
+ */
+function softwareAdapter(): boolean {
+  return process.env.TN_PLAYTEST_ALLOW_SOFTWARE === "1";
 }
 
 /** `step` for work that has to await: reading the installed package's ES modules cannot be sync. */
@@ -1383,7 +1393,9 @@ export async function verifyRegistryInstall(
         step(prefix("edit"), () => `Applied the game-only edit to ${applyGameOnlyEdit(project)}.`),
       );
       steps.push(step(prefix("build"), () => run(command, script("build"), project)));
-      steps.push(step(prefix("test"), () => run(command, testCommand, project)));
+      if (softwareAdapter())
+        process.stdout.write(`${prefix("test")}: not run, this runner has no GPU.\n`);
+      else steps.push(step(prefix("test"), () => run(command, testCommand, project)));
       steps.push(
         step(prefix("gameplay"), () => {
           const families = assertScenarioAssertions(
