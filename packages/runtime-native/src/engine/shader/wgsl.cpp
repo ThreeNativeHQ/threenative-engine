@@ -325,6 +325,12 @@ void WgslEmitter::block(uint32_t index, int depth, std::string& out) const {
             case Kind::Continue: out += indent + "continue;\n"; break;
             case Kind::Output: {
                 const std::string& name = p_.names_[p_.outputs_[s.a].name];
+                // WGSL's clip_distances is an array: a vec4 cannot be assigned to it.
+                if (name == "clipDistances") {
+                    const std::string value = expr(s.b);
+                    out += indent + "{ let d = " + value + "; out.clipDistances = array<f32, 4>(d.x, d.y, d.z, d.w); }\n";
+                    break;
+                }
                 out += indent + "out." + (name == "position" || name == "color" ? name : name == "fragDepth" ? "depth" : "o_" + name) + " = " +
                        expr(s.b) + ";\n";
                 break;
@@ -364,6 +370,7 @@ WgslModule WgslEmitter::emit(const Program& program, uint32_t group) {
     static std::atomic<uint64_t> nextId{1};
     module.id = nextId.fetch_add(1, std::memory_order_relaxed);
     std::string& out = module.code;
+    if (program.hasOutput("clipDistances")) out += "enable clip_distances;\n";
     // WGSLNodeBuilder's header outside Firefox: a texture sampled inside a branch (a TSL If, as core's
     // WaterSurface3D refraction is) is legal, as it is in three's shaders.
     if (program.stage() == Stage::Fragment) out += "diagnostic(off, derivative_uniformity);\n";
@@ -431,6 +438,7 @@ WgslModule WgslEmitter::emit(const Program& program, uint32_t group) {
             if (name == "position") out += std::string("  ") + (program.invariantPosition_ ? "@invariant " : "") + "@builtin(position) position: vec4<f32>,\n";
             else if (name == "color") out += "  @location(0) color: vec4<f32>,\n";
             else if (name == "fragDepth") out += "  @builtin(frag_depth) depth: f32,\n";
+            else if (name == "clipDistances") out += "  @builtin(clip_distances) clipDistances: array<f32, 4>,\n";
             else out += "  " + std::string(slot.type.scalar == Type::Scalar::I32 || slot.type.scalar == Type::Scalar::U32 ? "@interpolate(flat) " : "") + "@location(" + std::to_string(location++) + ") o_" + name + ": " + e.type(slot.type) + ",\n";
         }
         if (program.outputs_.empty()) {

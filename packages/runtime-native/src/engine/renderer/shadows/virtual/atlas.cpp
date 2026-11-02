@@ -102,28 +102,32 @@ bool PageAtlas::overlaps(const AtlasPage& page, const Box3& bounds) const {
     return u.low <= page.highU && u.high >= page.lowU && v.low <= page.highV && v.high >= page.lowV;
 }
 
+std::optional<PageAtlas::PageGrid> PageAtlas::pageGrid(int level) const {
+    if (level < 0 || level >= int(levels_.size())) return std::nullopt;
+    const auto& pages = levels_[std::size_t(level)].pages;
+    if (pages.empty()) return std::nullopt;  // not mapped this frame: no page can be reached
+    // `update` lays a level's pages y-major from its (0,0) cell, and every page of a level shares the level's
+    // axes and cell size. A page's rect is `overlaps`' rect exactly, so the grid is read off page 0's own numbers.
+    const AtlasPage& first = pages.front();
+    const double cellU = options_.pageTexels * levels_[std::size_t(level)].window.pageWorldSize;
+    if (!(cellU > 0) || !std::isfinite(cellU)) return std::nullopt;
+    return PageGrid{first.axisU, first.axisV, first.lowU, first.highU, first.lowV, first.highV, cellU, cellU * clipmap_->vScale()};
+}
+
 void PageAtlas::pageRange(int level, const Box3& bounds, int& x0, int& x1, int& y0, int& y1) const {
     x0 = y0 = 1;  // an empty range is `x1 < x0`, never a page 0
     x1 = y1 = 0;
-    if (level < 0 || level >= int(levels_.size())) return;
-    const auto& pages = levels_[std::size_t(level)].pages;
-    if (pages.empty()) return;  // not mapped this frame: no page can be reached
-    // `update` lays a level's pages y-major from its (0,0) cell, and every page of a level shares the level's
-    // axes and cell size. A page's rect is `overlaps`' rect exactly, so the range is read off page 0's own
-    // numbers: page x spans [lowU + x*cell, highU + x*cell], the border padding included on both edges.
-    const AtlasPage& first = pages.front();
-    const double cellU = options_.pageTexels * levels_[std::size_t(level)].window.pageWorldSize;
-    if (!(cellU > 0) || !std::isfinite(cellU)) return;
-    const double cellV = cellU * clipmap_->vScale();
+    const auto grid = pageGrid(level);
+    if (!grid) return;
     // ponytail: 1e-6 of a cell of slack, so a box whose edge lands on a cell boundary rounds into both cells.
     const auto span = [](double low, double high, double pageLow, double pageHigh, double cell, int& from, int& to) {
         const double slop = 1e-6 * cell;
         from = int(std::ceil((low - slop - pageHigh) / cell));
         to = int(std::floor((high + slop - pageLow) / cell));
     };
-    const auto u = projectBounds(bounds, first.axisU), v = projectBounds(bounds, first.axisV);
-    span(u.low, u.high, first.lowU, first.highU, cellU, x0, x1);
-    span(v.low, v.high, first.lowV, first.highV, cellV, y0, y1);
+    const auto u = projectBounds(bounds, grid->axisU), v = projectBounds(bounds, grid->axisV);
+    span(u.low, u.high, grid->lowU, grid->highU, grid->cellU, x0, x1);
+    span(v.low, v.high, grid->lowV, grid->highV, grid->cellV, y0, y1);
     const int last = tiles(level) - 1;
     x0 = std::max(x0, 0); x1 = std::min(x1, last);
     y0 = std::max(y0, 0); y1 = std::min(y1, last);

@@ -225,7 +225,8 @@ void onAdapter(WGPURequestAdapterStatus status, WGPUAdapter adapter, WGPUStringV
     std::vector<WGPUFeatureName> features;
     for (WGPUFeatureName feature : {WGPUFeatureName_TimestampQuery, WGPUFeatureName_Float32Filterable, WGPUFeatureName_Float32Blendable,
                                     WGPUFeatureName_RG11B10UfloatRenderable, WGPUFeatureName_TextureCompressionBC,
-                                    WGPUFeatureName_TextureCompressionETC2, WGPUFeatureName_TextureCompressionASTC})
+                                    WGPUFeatureName_TextureCompressionETC2, WGPUFeatureName_TextureCompressionASTC,
+                                    WGPUFeatureName_ClipDistances})  // PRD-775: virtual shadow rows clip to their page
         if (wgpuAdapterHasFeature(adapter, feature)) features.push_back(feature);
     WGPUDeviceDescriptor desc = {};
     desc.requiredFeatureCount = features.size();

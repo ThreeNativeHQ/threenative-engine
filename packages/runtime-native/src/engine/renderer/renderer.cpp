@@ -6,10 +6,12 @@
 #include "engine/renderer/render_target_pass.h"
 #include "engine/renderer/material_uniforms.h"
 #include "engine/renderer/shadows/lamp_resolution.h"
+#include "engine/renderer/shadows/virtual/gpu_pages.h"
 
 #include <algorithm>
 #include <bit>
 #include <cassert>
+#include <climits>
 #include <exception>
 #include <span>
 #include <deque>
@@ -196,7 +198,7 @@ constexpr const char* kSlotNames[] = {
     "specularIntensityMapUvTransform", "clearcoatMapUvTransform", "clearcoatRoughnessMapUvTransform",
     "clearcoatNormalMapUvTransform", "aoMapIntensity", "clearcoat", "clearcoatRoughness", "clearcoatNormalScale", "bumpScale",
     "pmremTexelWidth", "pmremTexelHeight", "pmremMaxMip", "pmremRotation", "screenSize", "cameraNear", "cameraFar",
-    "modelNormalMatrix", "subsurfaceColor", "shadowNoiseFrame"};
+    "modelNormalMatrix", "subsurfaceColor", "shadowNoiseFrame", "vsmRecordBase"};
 constexpr const char* kLightFieldNames[] = {"Color",       "Direction",        "Position",     "Distance",
                                             "Decay",       "Axis",             "ConeCos",      "PenumbraCos",
                                             "ShadowMatrix", "ShadowBias",      "ShadowNormalBias", "ShadowRadius",
@@ -312,6 +314,18 @@ bool shadowGroupsEnabled() {
 // again. Read per frame, not once, so a test and the stress lab's paired runs plan both arms in one process.
 bool shadowInstanceCullEnabled() {
     const char* flag = std::getenv("TN_SHADOW_INSTANCE_CULL");
+    return flag == nullptr || std::strcmp(flag, "0") != 0;
+}
+
+// PRD-775: the rows' indirect arguments are the one frame storage a draw also reads as arguments.
+WGPUBufferUsage storageUsage(std::string_view name) {
+    return WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst | WGPUBufferUsage_CopySrc | (name == "vsmArgs" ? WGPUBufferUsage_Indirect : WGPUBufferUsage_None);
+}
+
+// PRD-775's lever: TN_VSM_GPU_PAGES=0 keeps one CPU-planned pass per page. Read per frame, so a test plans both arms in one
+// process and holds the GPU rows to the CPU's as their oracle.
+bool virtualPagesOnGpuEnabled() {
+    const char* flag = std::getenv("TN_VSM_GPU_PAGES");
     return flag == nullptr || std::strcmp(flag, "0") != 0;
 }
 
@@ -529,6 +543,9 @@ struct Renderer::Planned {
     // empty for a row that draws the one caster it points at.
     const DrawItem* const* members = nullptr;
     uint32_t memberCount = 0;
+    // PRD-775: a virtual shadow row counts its instances on the GPU: its byte offset in `vsmArgs`, or none.
+    static constexpr uint64_t kNotIndirect = UINT64_MAX;
+    uint64_t indirectOffset = kNotIndirect;
 };
 
 /**
@@ -611,6 +628,11 @@ struct Renderer::ShadowPass {
     bool lamp = false;  // a spot or point light's own map (PRD-650): counted and timed apart from the sun's
     bool mover = false;  // one light's mover map, drawn for the casters that are moving this frame
     int x = 0, y = 0, size = 0; // zero: ordinary map; otherwise one atlas page's guarded viewport
+    // PRD-775: the pass draws a whole level's pages from GPU rows, and `pageSources` names each row's caster (null for a
+    // group row, which names its members). `clearsPage` is false for a page's own pass after that level's rows pass.
+    bool pageRows = false, clearsPage = true;
+    uint32_t firstPage = 0, pageCount = 0;
+    std::vector<const DrawItem*> pageSources;
     // The camera this pass draws through, kept so the retained draws pack after the lamp cache decides.
     Matrix view{}, projection{};
     std::vector<Planned> draws;
@@ -641,6 +663,14 @@ struct Renderer::FrameJob {
     WGPURenderPassDepthStencilAttachment depth{};
     WGPUCommandEncoder encoder = nullptr;
     WGPURenderPipeline pageClear = nullptr;
+    // PRD-775: this frame's GPU rows: the cull dispatch, the clear draw's pipeline and groups, the rows' arguments.
+    WGPURenderPipeline pageRowsClear = nullptr;
+    Program* pageRowsClearProgram = nullptr;
+    uint32_t pageChunks = 0, pageChunkBase = 0;
+    WGPUBuffer pageArgs = nullptr;
+    std::array<Handle, 4> pageCullStorage{};
+    struct PageRowRead { uint64_t key = 0; uint32_t recordBase = 0, countWord = 0; };
+    std::vector<PageRowRead> pageRowReads;
     CameraState camera;
     LightState lights;
     WGPUTextureView presentTarget = nullptr;
@@ -689,6 +719,8 @@ const std::pair<Box3, double>& DrawCache::virtualShadowBounds(const DrawItem& it
         }
     }
     Matrix4 model; model.elements = item.matrixWorld;
+    shadowLocalBounds = bounds;
+    shadowLargestInstance = Vector3();
     const double localDiameter = bounds.min.distanceTo(bounds.max);
     double diameter = localDiameter * model.getMaxScaleOnAxis();
     if (item.instanceMatrices) {
@@ -705,7 +737,14 @@ const std::pair<Box3, double>& DrawCache::virtualShadowBounds(const DrawItem& it
             instances.unionWith(box);
             transform.premultiply(model);
             diameter = std::max(diameter, localDiameter * transform.getMaxScaleOnAxis());
-            if (perInstance) shadowInstanceBoxes.push_back(Box3(bounds).applyMatrix4(transform));
+            if (perInstance) {
+                shadowInstanceBoxes.push_back(Box3(bounds).applyMatrix4(transform));
+                const Box3& placed = shadowInstanceBoxes.back();
+                const auto widest = [](double& largest, double extent) { largest = std::isfinite(extent) ? std::max(largest, extent) : INFINITY; };
+                widest(shadowLargestInstance.x, placed.max.x - placed.min.x);
+                widest(shadowLargestInstance.y, placed.max.y - placed.min.y);
+                widest(shadowLargestInstance.z, placed.max.z - placed.min.z);
+            }
         }
         bounds = instances;
     }
@@ -756,11 +795,10 @@ Renderer::Renderer(WGPUInstance instance, WGPUDevice device, WGPUQueue queue, Ev
     // traaPrevious_boneMatrices and traaPrevious_instances: the previous frame's palette and instances, copied after the
     // velocity pass.
     for (const char* name : {"boneMatrices", "morphData", "morphInfluences", "instances", "traaPrevious_boneMatrices",
-                             "traaPrevious_instances"}) {
+                             "traaPrevious_instances", "vsmPlan", "vsmRecords", "vsmArgs"}) {
         FrameStorage& storage = storages_[name];
         storage.capacity = 64;
-        storage.buffer = gpu_.createBuffer(storage.capacity,
-            WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst | WGPUBufferUsage_CopySrc);
+        storage.buffer = gpu_.createBuffer(storage.capacity, storageUsage(name));
     }
     gpu_.writeBuffer(outputTriangle_, 0, triangle, sizeof triangle);
     outputUniforms_ = gpu_.createBuffer(16, WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
@@ -771,6 +809,7 @@ Renderer::Renderer(WGPUInstance instance, WGPUDevice device, WGPUQueue queue, Ev
     nearest.maxAnisotropy = 1;
     outputSampler_ = wgpuDeviceCreateSampler(device, &nearest);
     passTimer_ = std::make_shared<FrameGpuTimer>(device);
+    clipDistances_ = wgpuDeviceHasFeature(device_, WGPUFeatureName_ClipDistances);
     setOutput(OutputState{});
     setSize(1, 1);
 }
@@ -2763,6 +2802,37 @@ std::vector<std::pair<double, const DrawItem*>> Renderer::sortDraws(std::span<co
     return opaque;
 }
 
+GpuStatus Renderer::readPageRecords(std::function<void(std::vector<PageRecord>)> done) {
+    const auto reads = job_ ? job_->pageRowReads : std::vector<FrameJob::PageRowRead>{};
+    const auto plan = storages_["vsmPlan"].data;
+    const uint64_t edge = virtualShadows_.empty() ? 0 : uint64_t(virtualShadows_.begin()->second.atlas.edge());
+    const auto& recordStore = storages_["vsmRecords"];
+    const auto& argsStore = storages_["vsmArgs"];
+    const auto args = std::make_shared<std::vector<uint8_t>>();
+    const Handle records = recordStore.buffer;
+    const uint64_t recordBytes = recordStore.gpuBytes;
+    return gpu_.readBuffer(argsStore.buffer, 0, uint64_t(reads.size()) * 20,
+        [this, args, reads, plan, edge, records, recordBytes, done](GpuStatus status, std::vector<uint8_t> words) {
+            if (status != GpuStatus::Ok) return done({});
+            *args = std::move(words);
+            gpu_.readBuffer(records, 0, recordBytes, [args, reads, plan, edge, done](GpuStatus read, std::vector<uint8_t> bytes) {
+                if (read != GpuStatus::Ok) return done({});
+                const auto* count = reinterpret_cast<const uint32_t*>(args->data());
+                const auto* record = reinterpret_cast<const uint32_t*>(bytes.data());
+                std::vector<PageRecord> out;
+                for (const auto& row : reads) {
+                    for (uint32_t n = 0; n < count[row.countWord]; ++n) {
+                        const uint32_t instance = record[(uint64_t(row.recordBase) + n) * 2], pageAt = record[(uint64_t(row.recordBase) + n) * 2 + 1];
+                        const float* rect = plan.data() + (uint64_t(pageAt) + 1) * 4;
+                        out.push_back({row.key, instance, int(std::lround((rect[0] + 1) / 2 * double(edge))),
+                                       int(std::lround((1 - rect[3]) / 2 * double(edge)))});
+                    }
+                }
+                done(std::move(out));
+            });
+        });
+}
+
 std::vector<Renderer::ShadowPlanRow> Renderer::shadowPlan() const {
     std::vector<ShadowPlanRow> rows;
     if (!job_) return rows;
@@ -3470,6 +3540,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     if (!compilation && !job_) job_ = std::make_unique<FrameJob>();
     FrameJob& job = compilation ? compileJob : *job_;
     job.plan.clear(); job.velocityPlan.clear(); job.auxPlan.clear(); job.shadowPasses.clear(); job.shadowLodItems.clear();
+    job.pageChunks = 0; job.pageRowReads.clear();
     job.shadowGroupItems.clear(); job.shadowGroups.clear();
     job.previousBytes = {}; job.previousSeed = false; job.keptShadowMaps = 0; job.paletteWrites = paletteWrites; job.instanceCopies = instanceCopies;
     job.deformationFrames.clear();
@@ -3622,6 +3693,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 cache->kind = item.kind; cache->variant = variant; cache->lightsKey = lightsKey;
                 cache->program = built; cache->pipeline = nullptr; cache->targetKey = 0;
                 cache->depthProgram = nullptr; cache->depthPipeline = nullptr;
+                cache->pageRowsProgram = nullptr; cache->pageRowsPipeline = nullptr;
             }
         }
         Program& program = *built;
@@ -3746,12 +3818,13 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     // Each shadow-casting light's depth pass: every caster through the shadow camera, back faces for
     // front-sided materials (three's _shadowSide), depth only. Order is free: depth keeps the nearest.
     std::vector<ShadowPass>& shadowPasses = job.shadowPasses;
+    shadows::GpuPagePlan pagePlan(storages_["vsmPlan"].data, storages_["vsmArgs"].data);
+    const bool pagesOnGpu = clipDistances_ && virtualPagesOnGpuEnabled();
     for (std::size_t i = 0; i < lights.direct.size(); ++i) {
         if (!lights.direct[i].shadow) continue;
         const DirectLight::Shadow& shadow = *lights.direct[i].shadow;
         const auto virtualIt = virtualShadows_.find(i);
         const bool virtualMap = virtualIt != virtualShadows_.end();
-        const int passCount = compilation ? 1 : virtualMap ? int(virtualPages[i].size()) : shadow.cube ? 6 : 1;
         const std::size_t firstPass = shadowPasses.size();
         const bool lampMap = lights.direct[i].kind != DirectLight::Kind::Directional && !virtualMap;
         const bool lamp = lampMap && !compilation;
@@ -3787,6 +3860,30 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         const auto bounded = [](const DrawItem* const drawn) {
             return !drawn->positionNode && !drawn->nodes->positionNode && !drawn->boneMatrices && !drawn->morphGeometry;
         };
+        // PRD-775: a granted level's static pages become one face, a pass of GPU rows (UE 5.8.3: Engine/Source/Runtime/
+        // Renderer/Private/VirtualShadowMaps/VirtualShadowMapArray.cpp:490-492, :637-639 batch every non-Nanite caster
+        // into one pass). A caster that writes clip space itself cannot be remapped, so its pages keep their own passes
+        // for that caster alone, after the rows pass. Mover maps keep theirs (see the PRD's decisions).
+        std::map<int, std::vector<shadows::AtlasPage>> rowLevels;
+        if (virtualMap && !compilation && pagesOnGpu) {
+            auto& pages = virtualPages[i];
+            for (const shadows::AtlasPage& page : pages)
+                if (!page.mover) rowLevels[page.level].push_back(page);
+            if (!rowLevels.empty()) {
+                std::vector<shadows::AtlasPage> faces;
+                for (const auto& [level, drawn] : rowLevels) {
+                    shadows::AtlasPage& stand = faces.emplace_back(drawn.front());
+                    stand.gpuRows = 1;
+                }
+                if (std::any_of(opaque.begin(), opaque.end(), [&](const auto& entry) { return entry.second->nodes->vertexNode && mayCast(entry.second); }))
+                    for (const auto& [level, drawn] : rowLevels)
+                        for (const shadows::AtlasPage& page : drawn) faces.emplace_back(page).gpuRows = 2;
+                for (const shadows::AtlasPage& page : pages)
+                    if (page.mover) faces.push_back(page);
+                pages = std::move(faces);
+            }
+        }
+        const int passCount = compilation ? 1 : virtualMap ? int(virtualPages[i].size()) : shadow.cube ? 6 : 1;
         // FG1: an instanced caster's instances by page cell of one level, counting-sorted: cell c is reached by the
         // instances list[first[c] .. first[c + 1]), ascending.
         struct InstanceCells {
@@ -3863,6 +3960,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             bool anyMover = false;
             for (const shadows::AtlasPage& page : virtualPages[i]) {
                 if (page.mover) { anyMover = true; continue; }
+                if (page.gpuRows != 0) continue;  // PRD-775: chosen below, by the GPU
                 if (!levelSlot.emplace(page.level, levelPages.size()).second) continue;
                 const std::size_t side = std::size_t(atlas.tiles(page.level));
                 LevelPages& added = levelPages.emplace_back();
@@ -3909,7 +4007,30 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 const shadows::AtlasPage* page = virtualMap && !compilation ? &virtualPages[i][face] : nullptr;
                 std::vector<const DrawItem*>& selected = selectedCasters[face];
                 const std::vector<const DrawItem*>* candidates = nullptr;
-                if (pageIndex) {
+                if (page && page->gpuRows == 1) {
+                    // PRD-775's coarse cull: one test per caster against the rectangle of the level's drawn pages. The
+                    // kernel places its instances against the pages themselves.
+                    const auto& atlas = virtualIt->second.atlas;
+                    const auto& drawn = rowLevels.at(page->level);
+                    int left = INT_MAX, right = INT_MIN, top = INT_MAX, bottom = INT_MIN;
+                    for (const shadows::AtlasPage& p : drawn) {
+                        left = std::min(left, p.x); right = std::max(right, p.x);
+                        top = std::min(top, p.y); bottom = std::max(bottom, p.y);
+                    }
+                    const double gate = atlas.casterGate(page->level);
+                    for (const auto& [depthKey, caster] : opaque) {
+                        if (caster->nodes->vertexNode || !mayCast(caster) || !atlas.drawsStatic(caster->key)) continue;
+                        if (bounded(caster)) {
+                            if (casterOf(caster).diameter < gate) continue;
+                            if (!caster->gpuJoints) {
+                                int x0, x1, y0, y1;
+                                atlas.pageRange(page->level, casterOf(caster).bounds, x0, x1, y0, y1);
+                                if (x1 < x0 || y1 < y0 || x1 < left || x0 > right || y1 < top || y0 > bottom) continue;
+                            }
+                        }
+                        selected.push_back(caster);
+                    }
+                } else if (pageIndex && page->gpuRows == 0) {
                     const auto& atlas = virtualIt->second.atlas;
                     candidates = page->mover ? &moverCasters
                         : &levelPages[levelSlot.at(page->level)].cell[std::size_t(page->y) * std::size_t(atlas.tiles(page->level)) + std::size_t(page->x)];
@@ -3925,6 +4046,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                     for (const auto& [depthKey, drawn] : opaque) {
                         if (!mayCast(drawn)) continue;
                         if (page) {
+                            if (page->gpuRows == 2 && !drawn->nodes->vertexNode) continue;  // the rows pass drew it
                             if (page->mover ? !atlas.isMover(drawn->key) : !atlas.drawsStatic(drawn->key)) continue;
                             if (!page->mover && bounded(drawn) &&
                                 casterOf(drawn).diameter < atlas.casterGate(page->level)) continue;
@@ -3950,6 +4072,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         for (const std::exception_ptr& failure : failedFace) if (failure) std::rethrow_exception(failure);
         for (int face = 0; face < passCount; ++face) {
         const shadows::AtlasPage* page = virtualMap && !compilation ? &virtualPages[i][face] : nullptr;
+        const bool rows = page && page->gpuRows == 1;  // PRD-775
         const Matrix& view = page ? page->view.elements : shadow.cube ? shadow.faceViews[face] : shadow.view;
         ShadowPass& pass = shadowPasses.emplace_back();
         pass.lamp = lamp; pass.virtualLight = i;
@@ -3962,6 +4085,9 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             pass.x = x; pass.y = y; pass.size = page->mover ? atlas.options().moverMapSize + 2 * atlas.options().border : atlas.stride();
             pass.mover = page->mover;
             if (!page->mover) { pass.virtualLight = i; pass.virtualLevel = page->level; }
+            pass.pageRows = rows;
+            pass.clearsPage = page->gpuRows != 2;
+            if (rows) { pass.x = pass.y = 0; pass.size = atlas.edge(); }
         }
         // The error a coarser rung may have on this page: its texels in world units, along the window's
         // wider axis (see PageAtlas::update), times the budget the node allows.
@@ -3974,6 +4100,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             Program* program = nullptr;
             WGPURenderPipeline pipeline = nullptr;
             double instanceBase = 0;
+            const DrawItem* source = nullptr;  // the draw-list caster behind `item`, its LOD copy or its page cut
         };
         std::vector<PageCaster> pageCasters;
         pageCasters.reserve(selectedCasters[std::size_t(face)].size());
@@ -3985,9 +4112,9 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             // over every instance. A caster none of whose instances reaches the page has no row.
             std::span<const uint32_t> pageInstances;
             bool trimmed = false;  // pageInstances names this caster's instances on the page
-            if (page && !page->mover && instanceBoxes(drawn) != nullptr) {
+            if (page && !page->mover && !rows && instanceBoxes(drawn) != nullptr) {
                 const auto& atlas = virtualIt->second.atlas;
-                if (pageIndex) {
+                if (pageIndex && page->gpuRows == 0) {
                     const LevelPages& level = levelPages[levelSlot.at(page->level)];
                     const auto cells = level.instances.find(drawn);
                     if (cells != level.instances.end()) {
@@ -4037,13 +4164,19 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             const bool masked = item.material->alphaTest > 0;
             DrawCache* cache = item.cache;
             Program* cachedDepth = nullptr;
-            if (cache && cache->depthProgram && cache->variant == variant && cache->depthMasked == masked)
-                cachedDepth = static_cast<Program*>(cache->depthProgram);
+            const bool cacheHolds = cache && cache->variant == variant && cache->depthMasked == masked;
+            if (cacheHolds && (rows ? cache->pageRowsProgram : cache->depthProgram))
+                cachedDepth = static_cast<Program*>(rows ? cache->pageRowsProgram : cache->depthProgram);
             else {
-                cachedDepth = &depthProgram(variant, masked);
+                shader::VertexVariant drawnVariant = variant;
+                drawnVariant.virtualPages = rows;
+                cachedDepth = &depthProgram(drawnVariant, masked);
                 if (cache) {
+                    if (!cacheHolds) { cache->depthProgram = cache->depthPipeline = cache->pageRowsProgram = cache->pageRowsPipeline = nullptr; }
                     cache->variant = variant;  // a shadow-only draw has no main program to set it
-                    cache->depthProgram = cachedDepth; cache->depthPipeline = nullptr; cache->depthTargetKey = 0;
+                    (rows ? cache->pageRowsProgram : cache->depthProgram) = cachedDepth;
+                    (rows ? cache->pageRowsPipeline : cache->depthPipeline) = nullptr;
+                    (rows ? cache->pageRowsTargetKey : cache->depthTargetKey) = 0;
                     cache->depthMasked = masked;
                 }
             }
@@ -4067,16 +4200,29 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             if (lampBackFace) target.depthBias = -kLampBackFaceBias;
             if (compilation) {
                 compilation->push_back(pipelines_->getAsync(program.vertex, depthFragment, target));
+                // PRD-775: the same caster as a GPU row, so that its first granted level compiles nothing.
+                if (virtualMap && pagesOnGpu && !item.nodes->vertexNode) {
+                    shader::VertexVariant rowVariant = variant;
+                    rowVariant.virtualPages = true;
+                    Program& rowProgram = depthProgram(rowVariant, masked);
+                    PipelineTarget rowTarget = target;
+                    rowTarget.layout = rowProgram.pipelineLayout;
+                    rowTarget.instanceStepMask = instanceStepMask(rowProgram.vertex, item);
+                    compilation->push_back(pipelines_->getAsync(rowProgram.vertex, depthFragment ? &rowProgram.fragment : nullptr, rowTarget));
+                }
                 continue;
             }
             const uint64_t depthTargetKey = drawTargetKey(item, program.vertex) * 6 + (faces == 2 ? 0 : faces == 0 ? 1 : 2) + (lampBackFace ? 3 : 0);  // a virtual page and a lamp cull one caster differently
             WGPURenderPipeline pipeline;
-            if (cache && cache->depthPipeline && cache->depthTargetKey == depthTargetKey) {
-                pipeline = static_cast<WGPURenderPipeline>(cache->depthPipeline);
+            if (cache && (rows ? cache->pageRowsPipeline : cache->depthPipeline) && (rows ? cache->pageRowsTargetKey : cache->depthTargetKey) == depthTargetKey) {
+                pipeline = static_cast<WGPURenderPipeline>(rows ? cache->pageRowsPipeline : cache->depthPipeline);
             } else {
                 pipeline = pipelines_->get(program.vertex, depthFragment, target);
                 if (!pipeline) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: shadow depth program");
-                if (cache) { cache->depthTargetKey = depthTargetKey; cache->depthPipeline = pipeline; }
+                if (cache) {
+                    (rows ? cache->pageRowsTargetKey : cache->depthTargetKey) = depthTargetKey;
+                    (rows ? cache->pageRowsPipeline : cache->depthPipeline) = pipeline;
+                }
             }
             // packed below, after the lamp cache decides which passes run
             const DrawItem* rowItem = &item;
@@ -4096,9 +4242,10 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             }
             if (page && !page->mover) {
                 waste::debugAdd(waste::counters().shadowPageRows);
-                waste::debugAdd(waste::counters().shadowPageInstances, rowItem->instanceMatrices ? rowItem->instanceCount : 0);
+                // A GPU row's instances are counted on the GPU (Renderer::readPageRecords).
+                if (!rows) waste::debugAdd(waste::counters().shadowPageInstances, rowItem->instanceMatrices ? rowItem->instanceCount : 0);
             }
-            pageCasters.push_back({rowItem, &program, pipeline, rowBase});
+            pageCasters.push_back({rowItem, &program, pipeline, rowBase, drawn});
         }
         // FM8: a page drew one row per caster, so a crowd's 240 casters cost 720 rows under a three-level sun.
         // The casters this page selected that share a depth program, a material and their vertex buffers draw
@@ -4195,6 +4342,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             const PageCaster& caster = pageCasters[c];
             if (groupOf[c] == kNoGroup) {
                 pass.draws.push_back({caster.item, caster.program, caster.pipeline, 0, 0, caster.instanceBase});
+                if (rows) pass.pageSources.push_back(caster.source);
                 continue;
             }
             const std::size_t at = groupOf[c];
@@ -4232,7 +4380,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 instances.insert(instances.end(), {1.0f, 1.0f, 1.0f, 0.0f});  // no instance colour: a depth pass reads none
             }
             const bool masked = row.material->alphaTest > 0;
-            const shader::VertexVariant variant = variantOf(row);
+            shader::VertexVariant variant = variantOf(row);
+            variant.virtualPages = rows;
             Program& program = depthProgram(variant, masked);
             const shader::StageModule* depthFragment = (masked || variant.alphaHash) ? &program.fragment : nullptr;
             const uint8_t derivedFaces = row.side == 2 ? 2 : row.side == 1 || virtualMap ? 0 : 1;
@@ -4250,6 +4399,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             Planned& planned = pass.draws.emplace_back(Planned{&row, &program, pipeline, 0, 0, instanceBase});
             planned.members = recorded.data();
             planned.memberCount = uint32_t(recorded.size());
+            if (rows) pass.pageSources.push_back(nullptr);
         }
         }
         // PRD-650: a lamp keeps last frame's map while nothing it draws changed: its cameras, its map
@@ -4294,7 +4444,15 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         // Pack only the passes that run: a kept map's casters never allocate, fill or upload a slice.
         for (std::size_t k = firstPass; k < shadowPasses.size(); ++k) {
             ShadowPass& kept = shadowPasses[k];
-            for (Planned& planned : kept.draws) {
+            shadows::GpuPagePlan::Level rowLevel;
+            if (kept.pageRows) {
+                const auto& drawn = rowLevels.at(kept.virtualLevel);
+                rowLevel = pagePlan.addLevel(virtualIt->second.atlas, kept.virtualLevel, drawn, drawn.front());
+                kept.firstPage = rowLevel.firstPage;
+                kept.pageCount = rowLevel.pageCount;
+            }
+            for (std::size_t d = 0; d < kept.draws.size(); ++d) {
+                Planned& planned = kept.draws[d];
                 const DrawItem& item = *planned.item;
                 Program& program = *planned.program;
                 const bool masked = item.material->alphaTest > 0;
@@ -4312,6 +4470,45 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 }
                 put(frameUniforms_, v, program.vertexSlots[kModelMatrix], item.matrixWorld);
                 if (item.instanceMatrices) put(frameUniforms_, v, program.vertexSlots[kInstanceBase], std::array<double, 1>{planned.instanceBase});
+                if (kept.pageRows) {
+                    shadows::GpuPagePlan::Row row;
+                    row.instances = item.instanceCount;
+                    row.instanceBase = planned.instanceBase;
+                    row.drawCount = uint32_t(item.indices ? item.indices->count() : item.positions->count() / 3);
+                    const DrawItem* source = kept.pageSources[d];
+                    const auto largestOf = [](const Box3& box) { Vector3 size; box.getSize(size); return size; };
+                    if (source == nullptr) {
+                        // A group's instances are its members, placed by their own world matrices.
+                        const DrawItem& front = *planned.members[0];
+                        if (bounded(&front) && !front.gpuJoints && front.cache) {
+                            row.cull = shadows::GpuPagePlan::Cull::EachInstance;
+                            row.box = front.cache->shadowLocalBounds;
+                            for (uint32_t m = 0; m < planned.memberCount; ++m) {
+                                const Vector3 size = largestOf(casterOf(planned.members[m]).bounds);
+                                row.largest.x = std::max(row.largest.x, size.x);
+                                row.largest.y = std::max(row.largest.y, size.y);
+                                row.largest.z = std::max(row.largest.z, size.z);
+                            }
+                        } else {
+                            row.cull = shadows::GpuPagePlan::Cull::Everywhere;
+                        }
+                    } else if (!bounded(source) || source->gpuJoints) {
+                        row.cull = shadows::GpuPagePlan::Cull::Everywhere;
+                    } else if (instanceBoxes(source) != nullptr && source->cache) {
+                        row.cull = shadows::GpuPagePlan::Cull::EachInstance;
+                        row.box = source->cache->shadowLocalBounds;
+                        row.model = &source->matrixWorld;
+                        row.largest = source->cache->shadowLargestInstance;
+                    } else {
+                        row.cull = shadows::GpuPagePlan::Cull::OwnBox;
+                        row.box = casterOf(source).bounds;
+                        row.largest = largestOf(row.box);
+                    }
+                    const uint32_t recordBase = pagePlan.addRow(virtualIt->second.atlas, kept.virtualLevel, rowLevel, row);
+                    put(frameUniforms_, v, program.vertexSlots[kVsmRecordBase], std::array<double, 1>{double(recordBase)});
+                    planned.indirectOffset = uint64_t(pagePlan.rowCount() - 1) * 20;
+                    job.pageRowReads.push_back({item.key, recordBase, (pagePlan.rowCount() - 1) * 5 + 1});
+                }
                 put(frameUniforms_, v, program.vertexSlots[kViewMatrix], kept.view);
                 put(frameUniforms_, v, program.vertexSlots[kProjectionMatrix], kept.projection);
                 // r185 draws a caster through the shadow camera, so TSL's camera accessors (a billboard's
@@ -4331,6 +4528,16 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         }
     }
 
+    if (pagePlan.rowCount() != 0) {
+        pagePlan.finish();
+        job.pageChunks = pagePlan.chunkCount();
+        job.pageChunkBase = pagePlan.chunkBase();
+        storages_["vsmRecords"].gpuBytes = pagePlan.recordBytes();
+        if (!pageCullPass_) {
+            pageCullPass_ = std::make_unique<ComputePass>(device_, gpu_, shadows::pageCullProgram());
+            if (!pageCullPass_->error().empty()) throw std::runtime_error(pageCullPass_->error());
+        }
+    }
     addCpuStage(CpuShadowBuild, stageStarted);
     // One buffer for the frame's uniforms, grown (and its bind groups rebuilt) when it is too small,
     // written once: a queue write, so it lands before this frame's commands and after the last's.
@@ -4598,6 +4805,22 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             pageClear = pipelines_->get(vertex, nullptr, target);
             if (!pageClear) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: virtual page clear");
         }
+        // PRD-775: a rows pass clears its pages with instanced quads, one per drawn slot.
+        if (clipDistances_) {
+            const auto found = programs_.find("vsm-page-rows-clear");
+            shader::StageModule empty;
+            empty.stage = shader::Stage::Fragment;
+            Program& rowsClear = found != programs_.end() ? *found->second
+                : add("vsm-page-rows-clear", shader::buildStage(shadows::pageClearProgram(), 0), std::move(empty));
+            PipelineTarget rowsTarget = target;
+            rowsTarget.layout = rowsClear.pipelineLayout;
+            if (compilation) compilation->push_back(pipelines_->getAsync(rowsClear.vertex, nullptr, rowsTarget));
+            else {
+                job.pageRowsClear = pipelines_->get(rowsClear.vertex, nullptr, rowsTarget);
+                job.pageRowsClearProgram = &rowsClear;
+                if (!job.pageRowsClear) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: virtual page rows clear");
+            }
+        }
     }
     if (compilation) {
         planAux();
@@ -4680,11 +4903,12 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     bool instancesUploaded = false;
     for (auto& [name, storage] : storages_) {
         const uint64_t prefix = name == "boneMatrices" ? jointPrefix : 0;
-        if (prefix + storage.data.size() * 4 > storage.capacity) {
+        const uint64_t needed = prefix + std::max<uint64_t>(storage.data.size() * 4, storage.gpuBytes);
+        if (needed > storage.capacity) {
             gpu_.destroy(storage.buffer);
-            storage.capacity = std::max<uint64_t>((prefix + storage.data.size() * 4) * 2, 64 * 1024);
+            storage.capacity = std::max<uint64_t>(needed * 2, 64 * 1024);
             jointBufferMoved = jointBufferMoved || (name == "boneMatrices" && jointPrefix);
-            storage.buffer = gpu_.createBuffer(storage.capacity, WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst | WGPUBufferUsage_CopySrc);
+            storage.buffer = gpu_.createBuffer(storage.capacity, storageUsage(name));
             storage.uploaded.clear();
             storage.uploadedBuffer = Handle{};
             rebuildGroups();
@@ -4710,7 +4934,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             else ranges.emplace_back(at, end - at);
         };
         if (name != "instances") {  // the palettes change whole each frame: one compare that stops at the first difference, one write
-            if (held == bytes && storage.uploaded.size() == bytes && std::memcmp(storage.uploaded.data(), source, bytes) == 0) continue;
+            // PRD-775: the kernel counts into the GPU's copy of `vsmArgs`, so its zeroes are written every time.
+            if (name != "vsmArgs" && held == bytes && storage.uploaded.size() == bytes && std::memcmp(storage.uploaded.data(), source, bytes) == 0) continue;
             if (gpu_.writeBuffer(target, prefix, source, bytes) == GpuStatus::Ok) {
                 storage.uploaded.assign(source, source + bytes);
                 storage.uploadedBuffer = target;
@@ -5025,6 +5250,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             };
             appendStore(item.indices);
             for (const auto& attribute : p.program->vertex.attributes) appendStore(vertexSourceOf(item, attribute));
+            if (p.indirectOffset != Planned::kNotIndirect)  // a shadow row: only its pass's key carries these words
+                key.insert(key.end(), {p.indirectOffset, reinterpret_cast<uintptr_t>(gpu_.buffer(storages_["vsmArgs"].buffer))});
         }
     };
     bundleKeyOf(plan, job.bundleKey, &job.bundleRows);
@@ -5393,6 +5620,10 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     }
     job.camera = camera; job.lights = lights;
     job.pageClear = pageClear;
+    if (job.pageChunks != 0) {
+        job.pageArgs = gpu_.buffer(storages_["vsmArgs"].buffer);
+        job.pageCullStorage = {storages_["vsmPlan"].buffer, storages_["instances"].buffer, storages_["vsmRecords"].buffer, storages_["vsmArgs"].buffer};
+    }
     job.presentTarget = presentTarget;
     job.presentFormat = presentFormat;
     pendingEncode_ = true;
@@ -5485,14 +5716,22 @@ void Renderer::encodeFrame(FrameJob& job) {
                 boundIndex = item.indices;
             }
             const uint32_t count = static_cast<uint32_t>(indices.bytes / (wide ? 4 : 2));
-            TN_ENCODE(DrawIndexed, count, item.instanceCount, 0, 0, 0);
-            if (tally != Tally::Extra)
-                (counted ? lastFrame_.triangles : lastFrame_.shadowTriangles) += uint64_t{item.instanceCount} * (count / 3);  // three's Info.update
+            if (p.indirectOffset != Planned::kNotIndirect) {
+                TN_ENCODE(DrawIndexedIndirect, job.pageArgs, p.indirectOffset);  // its triangles are the GPU's count
+            } else {
+                TN_ENCODE(DrawIndexed, count, item.instanceCount, 0, 0, 0);
+                if (tally != Tally::Extra)
+                    (counted ? lastFrame_.triangles : lastFrame_.shadowTriangles) += uint64_t{item.instanceCount} * (count / 3);  // three's Info.update
+            }
         } else {
             const uint32_t count = static_cast<uint32_t>(geometry_->cache.resolved(*item.positions).bytes / 12);
-            TN_ENCODE(Draw, count, item.instanceCount, 0, 0);
-            if (tally != Tally::Extra)
-                (counted ? lastFrame_.triangles : lastFrame_.shadowTriangles) += uint64_t{item.instanceCount} * (count / 3);
+            if (p.indirectOffset != Planned::kNotIndirect) {
+                TN_ENCODE(DrawIndirect, job.pageArgs, p.indirectOffset);
+            } else {
+                TN_ENCODE(Draw, count, item.instanceCount, 0, 0);
+                if (tally != Tally::Extra)
+                    (counted ? lastFrame_.triangles : lastFrame_.shadowTriangles) += uint64_t{item.instanceCount} * (count / 3);
+            }
         }
         if (tally == Tally::Main) ++lastFrame_.draws;
         else if (tally == Tally::Shadow) ++lastFrame_.shadowDraws;
@@ -5527,6 +5766,9 @@ void Renderer::encodeFrame(FrameJob& job) {
     if (timed) timerBeganAtShadow_ = shadowTimed;
     std::map<std::pair<std::size_t, int>, double> shadowCosts;
     std::map<size_t, std::pair<std::weak_ptr<VirtualShadowCosts>, int>> shadowQueries;
+    if (job.pageChunks != 0 && !pageCullPass_->dispatch(encoder, job.pageCullStorage, job.pageChunks,
+            {{"pageChunkBase", double(job.pageChunkBase)}, {"pageChunkCount", double(job.pageChunks)}}))
+        throw std::runtime_error(pageCullPass_->error());
     for (const ShadowPass& shadowPlan : shadowPasses) {
         const auto shadowStarted = std::chrono::steady_clock::now();
         const double shadowMeter = meterMs(), recordedBefore = lastFrame_.recordMs;
@@ -5546,11 +5788,20 @@ void Renderer::encodeFrame(FrameJob& job) {
         }
         if (shadowPlan.virtualLevel >= 0 && passTimer_->segments.size() > query)
             shadowQueries[query] = {virtualShadows_.at(shadowPlan.virtualLight).costs, shadowPlan.virtualLevel};
-        if (shadowPlan.size) {
+        if (shadowPlan.pageRows) {
+            // PRD-775: the whole atlas is the viewport; the rows' clip distances bound each slot.
+            const Program& clear = *job.pageRowsClearProgram;
+            wgpuRenderPassEncoderSetPipeline(shadowPass, job.pageRowsClear);
+            wgpuRenderPassEncoderSetBindGroup(shadowPass, 0, clear.groups[0], 0, nullptr);
+            wgpuRenderPassEncoderSetBindGroup(shadowPass, 1, clear.groups[1], 0, nullptr);
+            wgpuRenderPassEncoderDraw(shadowPass, 6, shadowPlan.pageCount, 0, shadowPlan.firstPage);
+        } else if (shadowPlan.size) {
             wgpuRenderPassEncoderSetViewport(shadowPass, shadowPlan.x, shadowPlan.y, shadowPlan.size, shadowPlan.size, 0, 1);
             wgpuRenderPassEncoderSetScissorRect(shadowPass, shadowPlan.x, shadowPlan.y, shadowPlan.size, shadowPlan.size);
-            wgpuRenderPassEncoderSetPipeline(shadowPass, pageClear);
-            wgpuRenderPassEncoderDraw(shadowPass, 3, 1, 0, 0);
+            if (shadowPlan.clearsPage) {
+                wgpuRenderPassEncoderSetPipeline(shadowPass, pageClear);
+                wgpuRenderPassEncoderDraw(shadowPass, 3, 1, 0, 0);
+            }
         }
         // The pass replays its draws from a bundle recorded once per key (PRD-754): a caster's matrix is a uniform
         // write, so a moved caster draws from the same commands. The viewport and the page clear are pass state.

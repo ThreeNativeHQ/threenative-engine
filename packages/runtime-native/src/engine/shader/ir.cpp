@@ -124,6 +124,7 @@ ExprId Program::varying(std::string_view name, Type type, Where where) {
 }
 
 ExprId Program::builtin(std::string_view name, Where where) {
+    if (instanceIndex_ != kInvalid && name == "instanceIndex") return instanceIndex_;
     for (const BuiltinInfo& info : kBuiltins) {
         if (name != info.name) continue;
         if ((info.stages & bit(stage_)) == 0) {
@@ -812,6 +813,10 @@ void Program::output(std::string_view name, ExprId value, Where where) {
     }
     if (color && (stage_ != Stage::Fragment || type != Type::vec(4))) {
         fail("output color", "a fragment stage writes color as vec4<f32>", where);
+        return;
+    }
+    if (name == "clipDistances" && (stage_ != Stage::Vertex || type != Type::vec(4))) {
+        fail("output clipDistances", "a vertex stage writes four clip distances as vec4<f32>", where);
         return;
     }
     if (name == "fragDepth" && (stage_ != Stage::Fragment || type != Type::f32())) {

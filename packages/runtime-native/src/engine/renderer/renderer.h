@@ -109,8 +109,16 @@ struct DrawCache {
     bool depthMasked = false;     // the depth program runs the material's alpha test (PRD-651)
     void* pipeline = nullptr;
     void* depthPipeline = nullptr;
+    // PRD-775: the same two for a virtual shadow row drawn over all its level's pages (shader::VertexVariant::virtualPages).
+    void* pageRowsProgram = nullptr;
+    void* pageRowsPipeline = nullptr;
+    uint64_t pageRowsTargetKey = 0;
     void* mapGroup = nullptr;
     std::pair<Box3, double> shadowBounds;
+    // PRD-775: the geometry's own box, and the largest of `shadowInstanceBoxes` per axis (infinity for a box that is
+    // not finite): the GPU places instances from the first and sizes their records from the second.
+    Box3 shadowLocalBounds;
+    Vector3 shadowLargestInstance;
     // FG1: an instanced draw's world box per instance, built with `shadowBounds` under the same key; empty for any
     // other draw. A virtual shadow page draws only the instances whose box can reach it.
     std::vector<Box3> shadowInstanceBoxes;
@@ -747,6 +755,14 @@ public:
     };
     /** The shadow draws the last planned frame kept, in pass order, and one row per draw in draw order. */
     std::vector<ShadowPlanRow> shadowPlan() const;
+    /** PRD-775: one drawn (instance, page) as the GPU recorded it: its caster, and the page's slot in the atlas. */
+    struct PageRecord {
+        uint64_t key = 0;
+        uint32_t instance = 0;
+        int x = 0, y = 0;
+    };
+    /** For tests: reads back the last planned frame's GPU rows, after that frame's submit. */
+    GpuStatus readPageRecords(std::function<void(std::vector<PageRecord>)> done);
     /** The bytes `shadowPlan()`'s offsets point into: one buffer per planned frame, written once. */
     std::span<const uint8_t> frameUniformBytes() const { return frameUniforms_; }
     /** Game thread, with the render thread idle: publishes the stats of the frame `encodePending` last finished. */
@@ -867,7 +883,7 @@ private:
         kSpecularIntensityMapUvTransform, kClearcoatMapUvTransform, kClearcoatRoughnessMapUvTransform,
         kClearcoatNormalMapUvTransform, kAoMapIntensity, kClearcoat, kClearcoatRoughness, kClearcoatNormalScale, kBumpScale,
         kPmremTexelWidth, kPmremTexelHeight, kPmremMaxMip, kPmremRotation, kScreenSize, kCameraNear, kCameraFar,
-        kModelNormalMatrix, kSubsurfaceColor, kShadowNoiseFrame, kSlotCount
+        kModelNormalMatrix, kSubsurfaceColor, kShadowNoiseFrame, kVsmRecordBase, kSlotCount
     };
     // Per direct light i, `light{i}<Field>` (shader::LightLayout).
     enum LightField : uint8_t { kLightColor, kLightDirection, kLightPosition, kLightDistance, kLightDecay, kLightAxis,
@@ -1425,6 +1441,7 @@ private:
         std::vector<uint8_t> uploaded;
         Handle uploadedBuffer;
         uint64_t uploadedPrefix = 0;
+        uint64_t gpuBytes = 0;  // PRD-775: the bytes the GPU itself writes this frame: a size, with no CPU copy
     };
     struct ProbeTexture {
         WGPUTexture texture = nullptr;
@@ -1439,6 +1456,8 @@ private:
     uint64_t gpuJointScan_ = ~uint64_t(0);
     Handle gpuJointLocals_;
     std::unique_ptr<JointComputePass> gpuJointPass_;
+    std::unique_ptr<ComputePass> pageCullPass_;  // PRD-775: built by the first frame that plans GPU page rows
+    bool clipDistances_ = false;                 // the device has `clip-distances`; without it pages keep their own passes
     std::unique_ptr<GraphCompute> graphCompute_;
     GraphCompute& graphCompute();
     bool bindGpuJoints(const std::shared_ptr<GpuJointScene>& plan);

@@ -38,6 +38,7 @@
 #include <cstdio>
 #include <numeric>
 #include <set>
+#include <tuple>
 #include <string>
 #include <thread>
 
@@ -7361,6 +7362,72 @@ void buildStaticShadowInstanceArm(ShadowInstanceArm& arm, mystral::webgpu::Conte
     caster(small, 12, 12);  // alone in its page
 }
 
+// A side x side grid of boxes `spacing` apart over a level of (mapSize / 128)^2 pages and a window 2 x extent wide.
+// The geometry, independent of the engine's own page test: a page is its projection's frustum, a box reaches it
+// when its centre and half extents along the view's x and y axes overlap that frustum's range.
+bool boxReachesPage(const Renderer::ShadowPlanRow& row, const Box3& box) {
+    const auto& view = row.view;
+    const auto& projection = row.projection;
+    Vector3 centre, size;
+    box.getCenter(centre);
+    box.getSize(size);
+    for (int axis = 0; axis < 2; ++axis) {
+        const double middle = view[axis] * centre.x + view[4 + axis] * centre.y + view[8 + axis] * centre.z + view[12 + axis];
+        const double reach = (std::abs(view[axis]) * size.x + std::abs(view[4 + axis]) * size.y + std::abs(view[8 + axis]) * size.z) / 2;
+        double low = (-1 - projection[12 + axis]) / projection[axis * 5];
+        double high = (1 - projection[12 + axis]) / projection[axis * 5];
+        if (low > high) std::swap(low, high);
+        if (middle + reach < low || middle - reach > high) return false;
+    }
+    return true;
+}
+
+uint64_t buildInstanceGridArm(mystral::webgpu::Context& context, ShadowInstanceArm& built, uint32_t side, double spacing,
+                          double extent, int mapSize, std::vector<Box3>& placed) {
+    const double scale = extent / 16;
+    built.renderer = std::make_unique<Renderer>(context.getInstance(), context.getDevice(), context.getQueue(), built.events);
+    built.renderer->setSize(192, 192);
+    built.camera.position.set(0, 28 * scale, 0.001);
+    built.camera.fov = 60;
+    built.camera.lookAt(0, 0, 0);
+    built.camera.updateProjectionMatrix();
+    built.database.shadowMapEnabled = true;
+    built.database.batching = false;
+    built.sun.position.set(6, 14, 4);
+    built.sun.setCastShadow(true);
+    // Pages of 8 m x scale, on a fixed depth range so the frame's plan repeats.
+    shadows::AtlasOptions atlas;
+    atlas.clipExtents = {extent};
+    atlas.mapSize = mapSize;
+    atlas.pageTexels = 128;
+    atlas.adaptiveRefresh = false;
+    atlas.adaptiveCasterGate = false;
+    atlas.lightDistance = 60 * scale;
+    atlas.depthRange = 120 * scale;
+    built.sun.shadow.virtualShadow = std::make_shared<const shadows::AtlasOptions>(std::move(atlas));
+    built.scene.add(built.sun);
+    auto material = std::make_shared<Material>(MaterialType::Standard);
+    auto ground = std::make_shared<Mesh>(makeBoxGeometry(48 * scale, 0.2, 48 * scale), material);
+    ground->position.y = -0.1;
+    ground->setReceiveShadow(true);
+    built.scene.add(*ground);
+    built.keep.push_back(ground);
+    auto forest = std::make_shared<InstancedMesh>(makeBoxGeometry(1.5, 1.5, 1.5), material, side * side);
+    placed.clear();
+    const double first = -spacing * double(side - 1) / 2;
+    for (uint32_t i = 0; i < side * side; ++i) {
+        const Vector3 at(first + spacing * double(i % side), 0.75, first + spacing * double(i / side));
+        Matrix4 matrix;
+        matrix.makeTranslation(at.x, at.y, at.z);
+        forest->setMatrixAt(i, matrix);
+        placed.push_back(Box3().setFromCenterAndSize(at, Vector3(1.5, 1.5, 1.5)));
+    }
+    forest->setCastShadow(true);
+    built.scene.add(*forest);
+    built.keep.push_back(forest);
+    return forest->id();
+}
+
 // FG1: one InstancedMesh row spans the union of its instances, so every page of a level that union reached drew every
 // instance: a camera move refills up to 256 pages, and the stress lab's 14,000 instanced trunks, canopies and rocks
 // were drawn 256 times. A page now draws the instances whose own box reaches it. This case plans one 8 x 8 grid of boxes
@@ -7383,51 +7450,8 @@ void virtualShadowPageDrawsOnlyItsInstances() {
     std::array<ShadowPlanCapture, 2> capture;
     std::array<std::vector<uint8_t>, 2> settled;
     std::array<uint64_t, 2> meshId{};
-    // A side x side grid of boxes `spacing` apart over a level of (mapSize / 128)^2 pages and a window 2 x extent wide.
-    const auto build = [&](ShadowInstanceArm& built, uint32_t side, double spacing, double extent, int mapSize,
-                           std::vector<Box3>& placed) {
-        const double scale = extent / 16;
-        built.renderer = std::make_unique<Renderer>(context.getInstance(), context.getDevice(), context.getQueue(), built.events);
-        built.renderer->setSize(192, 192);
-        built.camera.position.set(0, 28 * scale, 0.001);
-        built.camera.fov = 60;
-        built.camera.lookAt(0, 0, 0);
-        built.camera.updateProjectionMatrix();
-        built.database.shadowMapEnabled = true;
-        built.database.batching = false;
-        built.sun.position.set(6, 14, 4);
-        built.sun.setCastShadow(true);
-        // Pages of 8 m x scale, on a fixed depth range so the frame's plan repeats.
-        shadows::AtlasOptions atlas;
-        atlas.clipExtents = {extent};
-        atlas.mapSize = mapSize;
-        atlas.pageTexels = 128;
-        atlas.adaptiveRefresh = false;
-        atlas.adaptiveCasterGate = false;
-        atlas.lightDistance = 60 * scale;
-        atlas.depthRange = 120 * scale;
-        built.sun.shadow.virtualShadow = std::make_shared<const shadows::AtlasOptions>(std::move(atlas));
-        built.scene.add(built.sun);
-        auto material = std::make_shared<Material>(MaterialType::Standard);
-        auto ground = std::make_shared<Mesh>(makeBoxGeometry(48 * scale, 0.2, 48 * scale), material);
-        ground->position.y = -0.1;
-        ground->setReceiveShadow(true);
-        built.scene.add(*ground);
-        built.keep.push_back(ground);
-        auto forest = std::make_shared<InstancedMesh>(makeBoxGeometry(1.5, 1.5, 1.5), material, side * side);
-        placed.clear();
-        const double first = -spacing * double(side - 1) / 2;
-        for (uint32_t i = 0; i < side * side; ++i) {
-            const Vector3 at(first + spacing * double(i % side), 0.75, first + spacing * double(i / side));
-            Matrix4 matrix;
-            matrix.makeTranslation(at.x, at.y, at.z);
-            forest->setMatrixAt(i, matrix);
-            placed.push_back(Box3().setFromCenterAndSize(at, Vector3(1.5, 1.5, 1.5)));
-        }
-        forest->setCastShadow(true);
-        built.scene.add(*forest);
-        built.keep.push_back(forest);
-        return forest->id();
+    const auto build = [&](ShadowInstanceArm& built, uint32_t side, double spacing, double extent, int mapSize, std::vector<Box3>& placed) {
+        return buildInstanceGridArm(context, built, side, spacing, extent, mapSize, placed);
     };
     for (int arm = 0; arm < 2; ++arm) meshId[arm] = build(arms[arm], kSide, 4.0, 16, 512, boxes);
     for (int arm = 0; arm < 2; ++arm) {
@@ -7441,24 +7465,6 @@ void virtualShadowPageDrawsOnlyItsInstances() {
     }
     setShadowInstanceCullLever(true);
     if (external != nullptr) setenv("TN_SHADOW_INSTANCE_CULL", external, 1);
-    // The geometry, independent of the engine's own page test: a page is its projection's frustum, a box reaches it
-    // when its centre and half extents along the view's x and y axes overlap that frustum's range.
-    const auto reaches = [](const Renderer::ShadowPlanRow& row, const Box3& box) {
-        const auto& view = row.view;
-        const auto& projection = row.projection;
-        Vector3 centre, size;
-        box.getCenter(centre);
-        box.getSize(size);
-        for (int axis = 0; axis < 2; ++axis) {
-            const double middle = view[axis] * centre.x + view[4 + axis] * centre.y + view[8 + axis] * centre.z + view[12 + axis];
-            const double reach = (std::abs(view[axis]) * size.x + std::abs(view[4 + axis]) * size.y + std::abs(view[8 + axis]) * size.z) / 2;
-            double low = (-1 - projection[12 + axis]) / projection[axis * 5];
-            double high = (1 - projection[12 + axis]) / projection[axis * 5];
-            if (low > high) std::swap(low, high);
-            if (middle + reach < low || middle - reach > high) return false;
-        }
-        return true;
-    };
     std::array<uint64_t, 2> drawn{};
     std::array<std::size_t, 2> pages{};
     for (int arm = 0; arm < 2; ++arm) {
@@ -7467,7 +7473,7 @@ void virtualShadowPageDrawsOnlyItsInstances() {
             ++pages[arm];
             drawn[arm] += row.instanceCount;
             uint32_t expected = 0;
-            for (const Box3& box : boxes) expected += reaches(row, box);
+            for (const Box3& box : boxes) expected += boxReachesPage(row, box);
             if (arm == 1 && row.instanceCount != expected)
                 std::printf("instance cull: page %d,%d draws %u instances, the geometry says %u\n", row.x, row.y, row.instanceCount, expected);
             // the old row draws the whole mesh on every page its union reached; the new one, what the page reaches
@@ -7527,6 +7533,77 @@ void virtualShadowPageDrawsOnlyItsInstances() {
     CHECK(bigPages > 100);
     CHECK(bigDrawn <= 4ull * placed.size());
     CHECK(countedInstances == bigDrawn && countedRows >= bigPages);
+}
+
+// PRD-775: a granted level draws in one render pass from rows the GPU built (UE 5.8.3: Engine/Shaders/Private/
+// VirtualShadowMaps/VirtualShadowMapBuildPerPageDrawCommands.usf:155 culls instances per page; Engine/Source/Runtime/
+// Renderer/Private/VirtualShadowMaps/VirtualShadowMapArray.cpp:637-639 draws them in one pass). TN_VSM_GPU_PAGES=0 keeps
+// the CPU's per-page passes: they are this case's oracle.
+void setVirtualPagesOnGpuLever(bool on) {
+    if (on) unsetenv("TN_VSM_GPU_PAGES");
+    else setenv("TN_VSM_GPU_PAGES", "0", 1);
+}
+
+void virtualShadowPagesDrawFromGpuRows() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    std::array<ShadowInstanceArm, 2> arms;
+    std::vector<Box3> boxes;
+    std::array<uint64_t, 2> meshId{};
+    std::array<std::vector<Renderer::ShadowPlanRow>, 2> plans;
+    std::array<std::vector<uint8_t>, 2> settled;
+    std::vector<Renderer::PageRecord> records;
+    for (int arm = 0; arm < 2; ++arm) {
+        meshId[arm] = buildInstanceGridArm(context, arms[arm], 32, 3.5, 64, 2048, boxes);
+        setVirtualPagesOnGpuLever(arm == 1);
+        arms[arm].database.render(*arms[arm].renderer, arms[arm].scene, arms[arm].camera);
+        plans[arm] = arms[arm].renderer->shadowPlan();
+        if (arm == 1) {
+            bool done = false;
+            arms[arm].renderer->readPageRecords([&](std::vector<Renderer::PageRecord> read) { records = std::move(read); done = true; });
+            for (int i = 0; i < 4000 && !done; ++i) {
+                arms[arm].renderer->poll();
+                arms[arm].events.drain();
+                if (!done) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            CHECK(done);
+        }
+        for (int frame = 0; frame < 2; ++frame)
+            arms[arm].database.render(*arms[arm].renderer, arms[arm].scene, arms[arm].camera);
+        settled[arm] = read(*arms[arm].renderer, arms[arm].events);
+    }
+    setVirtualPagesOnGpuLever(true);
+    // The GPU's (page, instance) set equals the geometry's, over the pages the CPU path planned: nothing lost, nothing extra.
+    std::set<std::tuple<int, int, uint32_t>> expected, recorded;
+    for (const Renderer::ShadowPlanRow& row : plans[0]) {
+        if (row.mover || row.virtualLevel < 0 || row.key != meshId[0]) continue;
+        for (uint32_t i = 0; i < boxes.size(); ++i)
+            if (boxReachesPage(row, boxes[i])) expected.insert({row.x, row.y, i});
+    }
+    for (const Renderer::PageRecord& record : records)
+        if (record.key == meshId[1]) recorded.insert({record.x, record.y, record.instance});
+    std::size_t missing = 0, extra = 0;
+    for (const auto& entry : expected) missing += !recorded.contains(entry);
+    for (const auto& entry : recorded) extra += !expected.contains(entry);
+    std::printf("gpu pages: %zu (page, instance) records, the geometry says %zu; %zu missing, %zu extra\n", recorded.size(), expected.size(), missing, extra);
+    CHECK(!expected.empty() && missing == 0 && extra == 0);
+    std::array<std::set<std::size_t>, 2> passes;
+    for (int arm = 0; arm < 2; ++arm)
+        for (const Renderer::ShadowPlanRow& row : plans[arm])
+            if (!row.mover && row.virtualLevel >= 0) passes[arm].insert(row.pass);
+    std::printf("gpu pages: %zu passes on the CPU path, %zu on the GPU path\n", passes[0].size(), passes[1].size());
+    CHECK(passes[0].size() > 100);
+    CHECK(passes[1].size() == 1);
+    int worst = 0;
+    CHECK(!settled[0].empty() && settled[0].size() == settled[1].size());
+    for (std::size_t p = 0; p < settled[0].size(); ++p) worst = std::max(worst, std::abs(int(settled[0][p]) - int(settled[1][p])));
+    std::size_t differing = 0;
+    for (std::size_t p = 0; p + 3 < settled[0].size(); p += 4)
+        differing += settled[0][p] != settled[1][p] || settled[0][p + 1] != settled[1][p + 1] || settled[0][p + 2] != settled[1][p + 2];
+    std::printf("gpu pages: %zu of %zu receiver pixels differ, max channel diff %d\n", differing, settled[0].size() / 4, worst);
+    // The slot remap is float math a viewport did not need, and a triangle that crosses its slot's edge is clipped into
+    // new vertices, so a shadow edge can land one texel over: one receiver pixel of 36,864 here (PRD-775, Decisions).
+    CHECK(differing <= 4);
 }
 
 void shadowPagesInstanceSkinnedCasters() {
@@ -8065,6 +8142,7 @@ void shadowPageRangeCoversEveryOverlappingPage() {
 }
 
 void virtualShadowPageJobs() {
+    setVirtualPagesOnGpuLever(false);  // this case's jobs select casters for the per-page passes
     mystral::webgpu::Context context;
     CHECK(context.initializeHeadless());
     std::array<ShadowPageArm, 2> arms;
@@ -8201,6 +8279,7 @@ void virtualShadowPageJobs() {
     }
     shadowPageRangeCoversEveryOverlappingPage();
     JobPool::resetShared(0);
+    setVirtualPagesOnGpuLever(true);
 }
 
 // FS11: the caster record is one flat vector per light, one entry per position in the frame's frozen draw list. It
@@ -8490,7 +8569,7 @@ void staticInstancesAreNotRecopied() {
     CHECK(frame(-12).copies == 0);
 }
 
-TN_TEST_MAIN({"virtual_shadow_page_jobs", virtualShadowPageJobs}, {"caster_record_allocates_per_frame", casterRecordAllocatesPerFrame}, {"virtual_shadow_instance_pages", virtualShadowInstancePages}, {"virtual_shadow_page_draws_only_its_instances", virtualShadowPageDrawsOnlyItsInstances},{"virtual_shadow_bounds_cache", virtualShadowBoundsCache}, {"gpu_joint_production", gpuJointProduction}, {"virtual_shadow_casters_batch_in_main_pass", virtualShadowCastersBatchInMainPass}, {"virtual_shadow_rigs_batch_in_main_pass", virtualShadowRigsBatchInMainPass}, {"virtual_shadow_pages_instance_skinned_casters", shadowPagesInstanceSkinnedCasters}, {"bone_reach_bounds_hold_posed_vertices", boneReachBoundsHoldPosedVertices}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"content_identical_geometry_batches", contentIdenticalGeometryBatches}, {"steady_state", steadyState}, {"steady_state_draw_refresh_work", steadyStateDrawRefreshWork}, {"draw_refresh_guard_holes", drawRefreshGuardHoles}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"depth_test_off_draws_over_nearer", depthTestOffDrawsOverNearer}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"scene_stage_is_metered", sceneStageIsMetered}, {"overlay_leaves_stage_totals", overlayLeavesStageTotals}, {"present_direct", presentDirect}, {"canvas_layer_overlay", canvasLayerOverlay}, {"post_survives_overlay", postSurvivesOverlay}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"target_samples_late_traa_output", targetSamplesLateTraaOutput}, {"unchanged_frame_storage", unchangedFrameStorage}, {"static_instances_are_not_recopied", staticInstancesAreNotRecopied}, {"instance_places_survive_a_draw_leaving_the_view", instancePlacesSurviveADrawLeavingTheView}, {"instance_upload_is_stable_across_a_camera_turn", instanceUploadIsStableAcrossACameraTurn}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene}, {"frame_slab_is_per_program", frameSlabIsPerProgram},
+TN_TEST_MAIN({"virtual_shadow_pages_draw_from_gpu_rows", virtualShadowPagesDrawFromGpuRows}, {"virtual_shadow_page_jobs", virtualShadowPageJobs}, {"caster_record_allocates_per_frame", casterRecordAllocatesPerFrame}, {"virtual_shadow_instance_pages", virtualShadowInstancePages}, {"virtual_shadow_page_draws_only_its_instances", virtualShadowPageDrawsOnlyItsInstances},{"virtual_shadow_bounds_cache", virtualShadowBoundsCache}, {"gpu_joint_production", gpuJointProduction}, {"virtual_shadow_casters_batch_in_main_pass", virtualShadowCastersBatchInMainPass}, {"virtual_shadow_rigs_batch_in_main_pass", virtualShadowRigsBatchInMainPass}, {"virtual_shadow_pages_instance_skinned_casters", shadowPagesInstanceSkinnedCasters}, {"bone_reach_bounds_hold_posed_vertices", boneReachBoundsHoldPosedVertices}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"content_identical_geometry_batches", contentIdenticalGeometryBatches}, {"steady_state", steadyState}, {"steady_state_draw_refresh_work", steadyStateDrawRefreshWork}, {"draw_refresh_guard_holes", drawRefreshGuardHoles}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"depth_test_off_draws_over_nearer", depthTestOffDrawsOverNearer}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"scene_stage_is_metered", sceneStageIsMetered}, {"overlay_leaves_stage_totals", overlayLeavesStageTotals}, {"present_direct", presentDirect}, {"canvas_layer_overlay", canvasLayerOverlay}, {"post_survives_overlay", postSurvivesOverlay}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"target_samples_late_traa_output", targetSamplesLateTraaOutput}, {"unchanged_frame_storage", unchangedFrameStorage}, {"static_instances_are_not_recopied", staticInstancesAreNotRecopied}, {"instance_places_survive_a_draw_leaving_the_view", instancePlacesSurviveADrawLeavingTheView}, {"instance_upload_is_stable_across_a_camera_turn", instanceUploadIsStableAcrossACameraTurn}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene}, {"frame_slab_is_per_program", frameSlabIsPerProgram},
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"virtual_sun_room_seam", virtualSunRoomSeam},

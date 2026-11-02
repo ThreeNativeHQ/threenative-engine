@@ -65,6 +65,9 @@ struct AtlasOptions {
 struct AtlasPage {
     int level = 0, x = 0, y = 0, slot = 0;
     bool mover = false;
+    /** PRD-775: 0 a page's own pass; 1 this page stands for all its level's drawn pages in one pass of GPU rows;
+     *  2 a page's own pass for the casters that write clip space themselves, after the rows pass (no page clear). */
+    uint8_t gpuRows = 0;
     Matrix4 view, projection;
     Vector3 axisU, axisV;
     double lowU = 0, highU = 0, lowV = 0, highV = 0;
@@ -127,6 +130,13 @@ public:
      * (`high < low`) means no page of the level: the box is outside its window, or the level is not mapped.
      */
     void pageRange(int level, const Box3& bounds, int& x0, int& x1, int& y0, int& y1) const;
+    /** A level's page lattice: page (x, y) spans [lowU + x * cellU, highU + x * cellU] along axisU, the border
+     *  padding included, and the same along axisV. Empty when the level holds no pages this frame. */
+    struct PageGrid {
+        Vector3 axisU, axisV;
+        double lowU = 0, highU = 0, lowV = 0, highV = 0, cellU = 0, cellV = 0;
+    };
+    std::optional<PageGrid> pageGrid(int level) const;
 
 private:
     struct Level {

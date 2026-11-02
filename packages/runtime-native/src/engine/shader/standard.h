@@ -129,6 +129,12 @@ struct VertexVariant {
      */
     bool skinInstanceValues = false;
     /**
+     * PRD-775: a virtual shadow row drawn over all its level's pages. Each instance is a record of `vsmRecords` from
+     * `vsmRecordBase` on: (the caster's instance, the page's offset in `vsmPlan`). The clip position is scaled and
+     * biased into the page's atlas slot and four clip distances bound it there, as a per-page viewport did.
+     */
+    bool virtualPages = false;
+    /**
      * three's morphReference(): `morphTargets` targets read from the storage buffer `morphData`
      * (vec4 per vertex and target; a normal entry after each position one when `morphNormals`) from
      * `morphBase`, with `morphVertexCount` vertices per target; influences from `morphInfluences` at
@@ -181,7 +187,7 @@ struct VertexVariant {
     /** A stable key: two variants with the same key build the same program. */
     [[nodiscard]] std::string key() const {
         return std::to_string(fog) + (alphaHash ? "alphaHash|" : "") + (background ? "background|" : "") + std::string(sprite ? "sprite|" : "") + (backSide ? "back|" : "") + (doubleSide ? "double|" : "") + (leafReceiver ? "leaf|" : "") + (twoSidedFoliage ? "foliage|" : "") + (roughDiffuse ? "eon|" : "") + (flatShading ? "flat|" : "") + std::to_string(instanced) + std::to_string(instanceColor) + "vc" + std::to_string(vertexColors) + std::to_string(skinned) +
-               std::to_string(skinnedPalette) + (skinInstanceValues ? "S" : "") + (instanceStorage ? "storage" : "") + "m" + std::to_string(morphTargets) + (morphNormals ? "n" : "") +
+               std::to_string(skinnedPalette) + (skinInstanceValues ? "S" : "") + (virtualPages ? "V" : "") + (instanceStorage ? "storage" : "") + "m" + std::to_string(morphTargets) + (morphNormals ? "n" : "") +
                (map ? "t" : "") + (normalMap ? "N" : "") + (pbrMaps ? "P" + std::to_string(pbrMaps) : "") + (mapSRGB ? "s" : "") + (environment ? "e" : "") + (clearcoat ? "c" : "") + (invariantPosition ? "i" : "") +
                (positionNode ? "p:" + positionNode->key : "") + "|nodes:" + nodes.key();
     }

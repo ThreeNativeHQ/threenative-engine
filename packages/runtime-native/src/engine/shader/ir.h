@@ -97,6 +97,8 @@ public:
     ExprId varying(std::string_view name, Type type, Where where = Where::current());
     /** Stage builtins: position, instanceIndex, vertexIndex, frontFacing, globalInvocationId. */
     ExprId builtin(std::string_view name, Where where = Where::current());
+    /** From now on `builtin("instanceIndex")` answers `value`: a draw whose instances are records (PRD-775). */
+    void redirectInstanceIndex(ExprId value) { instanceIndex_ = value; }
 
     ExprId add(ExprId a, ExprId b, Where where = Where::current());
     ExprId sub(ExprId a, ExprId b, Where where = Where::current());
@@ -203,6 +205,7 @@ public:
 
 private:
     uint32_t loopDepth_ = 0;
+    ExprId instanceIndex_ = kInvalid;
     friend class WgslEmitter;
     friend StageModule buildStage(const Program& program, uint32_t group);
 

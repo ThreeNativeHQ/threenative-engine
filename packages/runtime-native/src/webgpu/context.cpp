@@ -443,6 +443,7 @@ static void reportGrantedFeatures(WGPUDevice device) {
         {WGPUFeatureName_TextureCompressionETC2, "texture-compression-etc2"},
         {WGPUFeatureName_TextureCompressionASTC, "texture-compression-astc"},
         {WGPUFeatureName_IndirectFirstInstance, "indirect-first-instance"},
+        {WGPUFeatureName_ClipDistances, "clip-distances"},
         {WGPUFeatureName_RG11B10UfloatRenderable, "rg11b10ufloat-renderable"},
         {WGPUFeatureName_Float32Blendable, "float32-blendable"},
 #if defined(MYSTRAL_WEBGPU_DAWN)
@@ -508,6 +509,7 @@ static RequiredFeatures buildRequiredFeatures(WGPUAdapter adapter,
     appendIfSupported(WGPUFeatureName_TextureCompressionBC, "texture-compression-bc");
     appendIfSupported(WGPUFeatureName_TextureCompressionETC2, "texture-compression-etc2");
     appendIfSupported(WGPUFeatureName_TextureCompressionASTC, "texture-compression-astc");
+    appendIfSupported(WGPUFeatureName_ClipDistances, "clip-distances");  // PRD-775: virtual shadow rows clip to their page
     result.hasTimestampQuery =
         appendIfSupported(WGPUFeatureName_TimestampQuery, "timestamp-query");
 #if defined(MYSTRAL_WGPU_PIPELINE_CACHE)

@@ -289,6 +289,7 @@ struct LocalVertex {
     ExprId normal;        // vec3; kInvalid without one
     ExprId instanceColor; // vec3; kInvalid without one (outputInstanceColor)
     ExprId uv;            // vec2; kInvalid without a map (outputMapUv)
+    ExprId pageRecord = kInvalid;  // vec2<u32>: PRD-775's (instance, page offset), else kInvalid
 };
 
 // The slot's requested type is three's subBuild/vecN/float conversion, including vector padding.
@@ -333,6 +334,13 @@ static LocalVertex localVertex(Program& v, const VertexVariant& variant, bool wi
             if (normals)
                 normal = v.add(normal, v.mul(v.swizzle(v.loadStorage(data, v.add(at, v.construct(Type::u32(), {v.constant(1)}))), "xyz"), influence));
         }
+    }
+    // PRD-775: from here on the draw's instance index names the record's caster instance, wherever a stage reads it.
+    ExprId pageRecord = kInvalid;
+    if (variant.virtualPages) {
+        pageRecord = v.loadStorage(v.storageBuffer("vsmRecords", Type::vec(2, Type::Scalar::U32)),
+                                   v.add(v.construct(Type::u32(), {v.uniform("vsmRecordBase", Type::f32())}), v.builtin("instanceIndex")));
+        v.redirectInstanceIndex(v.swizzle(pageRecord, "x"));
     }
     uint32_t instances = 0;
     ExprId instanceBase = kInvalid;
@@ -439,12 +447,26 @@ static LocalVertex localVertex(Program& v, const VertexVariant& variant, bool wi
             : v.mul(v.construct(Type::vec(4), {instanceColor, v.constant(1.0f)}), vertexColor);
     }
     const ExprId uv = (variant.map || variant.normalMap || variant.pbrMaps) && !variant.background ? v.attribute("uv", Type::vec(2)) : kInvalid;
-    return {v.construct(Type::vec(4), {position, v.constant(1.0f)}), normal, instanceColor, uv};
+    return {v.construct(Type::vec(4), {position, v.constant(1.0f)}), normal, instanceColor, uv, pageRecord};
 }
 
 // NodeMaterial.setupVertex: a vertexNode is the clip-space position itself; positionLocal (after
 // morph, skinning, instancing and positionNode) is what it reads.
 static ExprId clipPosition(Program& v, const VertexVariant& variant, const LocalVertex& local, ExprId clip) {
+    if (local.pageRecord != kInvalid) {
+        // PRD-775: into the record's page slot, and clipped to it (UE 5.8.3: Engine/Shaders/Private/
+        // ShadowDepthVertexShader.usf:42-63). The sun's projection is orthographic, so w is one.
+        const auto plan = v.storageBuffer("vsmPlan", Type::vec(4));
+        const auto at = v.swizzle(local.pageRecord, "y");
+        const auto page = v.loadStorage(plan, at);
+        const auto rect = v.loadStorage(plan, v.add(at, v.construct(Type::u32(), {v.constant(int32_t(1))})));
+        const auto scale = v.swizzle(page, "x");
+        const auto x = v.add(v.mul(v.swizzle(clip, "x"), scale), v.swizzle(page, "y"));
+        const auto y = v.add(v.mul(v.swizzle(clip, "y"), scale), v.swizzle(page, "z"));
+        v.output("clipDistances", v.construct(Type::vec(4), {v.sub(x, v.swizzle(rect, "x")), v.sub(v.swizzle(rect, "z"), x),
+                                                              v.sub(y, v.swizzle(rect, "y")), v.sub(v.swizzle(rect, "w"), y)}));
+        return v.construct(Type::vec(4), {x, y, v.swizzle(clip, "z"), v.swizzle(clip, "w")});
+    }
     if (!variant.nodes.vertexNode) return clip;
     tsl::Build build(v);
     return nodeType(v, graph::lower(variant.nodes.vertexNode, v, {{"positionLocal", v.swizzle(local.position, "xyz")}}),

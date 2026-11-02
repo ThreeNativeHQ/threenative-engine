@@ -157,7 +157,7 @@ target_include_directories(tn_engine_probes PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/s
 set(TN_ENGINE_RENDERER_SOURCES src/engine/renderer/gpu_resources.cpp src/engine/renderer/device_state.cpp
     src/engine/renderer/presentation.cpp src/engine/renderer/package_loader.cpp
     src/engine/renderer/geometry_cache.cpp src/engine/renderer/pipeline_cache.cpp src/engine/renderer/renderer.cpp
-    src/engine/renderer/render_database.cpp src/engine/renderer/compute.cpp
+    src/engine/renderer/render_database.cpp src/engine/renderer/compute.cpp src/engine/renderer/shadows/virtual/gpu_pages.cpp
     src/engine/renderer/post/traa.cpp src/engine/renderer/post/effects.cpp src/engine/renderer/probes/capture.cpp
     src/engine/renderer/render_target_pass.cpp)
 if(EMSCRIPTEN)
