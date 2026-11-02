@@ -882,3 +882,16 @@ no COOP/COEP); that lane is open.
 - Traps: `fair` spawned through a forking browser wrapper leaves Brave alive, and it holds the laptop's GPU lock. A
   stress lab needs `tn-native-engine-web.mjs` beside the threads pair (`TN_WASM_ENGINE_MISSING`). `fair` also holds
   `build.lock` for its whole window, which starves a lane's build.
+
+### 2026-11-02 — Stress lab: a calm host settles what load hid; FG2 not kept
+
+- A/A at load peak 7-13, same lab, ABBA (`aacalm`, one window): 67.6 against 65.9 fps, CPU p50 13.78 against 14.26 ms,
+  presented p95 30.9 against 31.7 ms. That is about 3%, against about 8% at sustained load 10-12. One window is a first
+  band, not a calibration.
+- FG2 (rows #172-#173): 65.0 against 66.1 fps, presented p95 31.8 against 31.6 ms, and the CPU p95 pairs disagree. Not
+  kept: the lever exists to cut the presented tail, and the tail did not move. Revisit when a scene draws many casters
+  per page on the desktop GPU: the laptop's 86% shadow draw cut does not appear here (9 on both arms).
+- This corrects the entry above. On a calm host ThreeNative does not lose on CPU p50 alone: 66 fps against Unreal 69, but
+  presented p95 31 ms against 19 ms. The tail is the larger gap. `?still` reads 20-23 ms, so camera motion drives it.
+- Insight: PRD-775 Phase 1 read as noise at load 11 (rows #160-#161) and its CPU p95 gain is -10.6% and -11.8% at load
+  peak 7 (rows #174-#175). Run a 3% lever only on a calm host.
