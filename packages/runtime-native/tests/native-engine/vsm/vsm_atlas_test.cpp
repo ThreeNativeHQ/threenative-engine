@@ -326,6 +326,24 @@ void policies() {
     for (int frame = 0; frame < 120; ++frame) atlas->update(eye, sun);
     caster.world.makeRotationY(1); atlas->updateCasters({caster});
     CHECK(!atlas->isMover(1));
+    // PRD-775: a list that keeps its order probes no table, and the positional reads agree with the keyed ones.
+    {
+        CasterState still; still.key = 77; still.bounds = caster.bounds;
+        CasterState walker; walker.key = 78; walker.bounds = caster.bounds; walker.deforming = true;
+        atlas->updateCasters({still, walker});
+        const uint64_t probes = atlas->casterProbes;
+        for (int frame = 0; frame < 5; ++frame) atlas->updateCasters({still, walker});
+        CHECK(atlas->casterProbes == probes);
+        CHECK(!atlas->isMoverAt(0) && atlas->drawsStaticAt(0));
+        CHECK(atlas->isMoverAt(1) && !atlas->drawsStaticAt(1));
+        atlas->updateCasters({walker, still});  // a new order probes, and the reads follow the list
+        CHECK(atlas->casterProbes == probes + 2);
+        CHECK(atlas->isMoverAt(0) == atlas->isMover(78) && atlas->isMoverAt(1) == atlas->isMover(77));
+        CHECK(atlas->drawsStaticAt(0) == atlas->drawsStatic(78) && atlas->drawsStaticAt(1) == atlas->drawsStatic(77));
+        atlas->updateCasters({still});  // one leaves the list
+        CHECK(!atlas->isMover(78) && atlas->drawsStatic(78));
+        CHECK(!atlas->isMoverAt(0));
+    }
     atlas->updateCasters({});
     CHECK(!atlas->isMover(1));
 

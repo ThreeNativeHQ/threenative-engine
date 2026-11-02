@@ -495,6 +495,7 @@ public:
         double diameter = 0;
         bool casts = false;
         const std::vector<Box3>* instances = nullptr;  // FG1: the draw cache's per-instance boxes, one per instance
+        uint32_t state = 0;  // PRD-775: its position in the atlas' caster list
     };
     [[nodiscard]] const std::map<std::size_t, std::vector<CasterRecord>>& casterRecords() const { return casterRecords_; }
     void cutVirtualShadows() { virtualCut_ = true; }

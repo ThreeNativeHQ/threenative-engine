@@ -334,9 +334,20 @@ bool PageAtlas::drawsStatic(uint64_t key) const {
 void PageAtlas::updateCasters(const std::vector<CasterState>& casters) {
     ++casterPass_;
     std::size_t named = 0;
-    for (const auto& caster : casters) {
-        auto [it, inserted] = motion_.try_emplace(caster.key);
-        auto& m = it->second;
+    const std::size_t previous = casterMotion_.size();
+    casterMotion_.resize(casters.size());
+    for (std::size_t n = 0; n < casters.size(); ++n) {
+        const auto& caster = casters[n];
+        bool inserted = false;
+        Motion* held = n < previous ? casterMotion_[n] : nullptr;
+        if (!held || held->caster.key != caster.key) {
+            ++casterProbes;
+            const auto [it, added] = motion_.try_emplace(caster.key);
+            held = &it->second;
+            inserted = added;
+        }
+        casterMotion_[n] = held;
+        auto& m = *held;
         named += m.seen != casterPass_;
         m.seen = casterPass_;
         const bool changed = !inserted && (caster.world.elements != m.caster.world.elements || caster.signature != m.caster.signature);

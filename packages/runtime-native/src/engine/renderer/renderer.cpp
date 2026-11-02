@@ -3139,8 +3139,9 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         const auto& control = *shadow.atlas.options().control;
         const bool controlled = !control.tracked.empty() || !control.pinned.empty();
         for (const DrawItem& item : items) {
-            const CasterRecord& caster = record[std::size_t(&item - items.data())];
+            CasterRecord& caster = record[std::size_t(&item - items.data())];
             if (!caster.casts) continue;
+            caster.state = uint32_t(states.size());
             shadows::CasterState& state = states.emplace_back();
             state.key = item.key; state.bounds = caster.bounds;
             state.world.elements = item.matrixWorld;
@@ -4034,12 +4035,12 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             // settling between moving and still is on the static pages and the mover page at once.
             if (anyMover)
                 for (const auto& [depthKey, drawn] : opaque)
-                    if (mayCast(drawn) && atlas.isMover(drawn->key)) moverCasters.push_back(drawn);
+                    if (mayCast(drawn) && atlas.isMoverAt(casterOf(drawn).state)) moverCasters.push_back(drawn);
             for (LevelPages& level : levelPages) {
                 const std::size_t side = std::size_t(atlas.tiles(level.level));
                 const double gate = atlas.casterGate(level.level);
                 for (const auto& [depthKey, drawn] : opaque) {
-                    if (!mayCast(drawn) || !atlas.drawsStatic(drawn->key)) continue;
+                    if (!mayCast(drawn) || !atlas.drawsStaticAt(casterOf(drawn).state)) continue;
                     // The gate the scan applied to a caster with fixed bounds, and then the bounds themselves: a
                     // GPU-displaced one has none to index by, so it stays on every page.
                     if (bounded(drawn)) {
@@ -4082,7 +4083,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                     }
                     const double gate = atlas.casterGate(page->level);
                     for (const auto& [depthKey, caster] : opaque) {
-                        if (caster->nodes->vertexNode || !mayCast(caster) || !atlas.drawsStatic(caster->key)) continue;
+                        if (caster->nodes->vertexNode || !mayCast(caster) || !atlas.drawsStaticAt(casterOf(caster).state)) continue;
                         if (bounded(caster)) {
                             if (casterOf(caster).diameter < gate) continue;
                             if (!caster->gpuJoints) {
@@ -4110,7 +4111,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                         if (!mayCast(drawn)) continue;
                         if (page) {
                             if (page->gpuRows == 2 && !drawn->nodes->vertexNode) continue;  // the rows pass drew it
-                            if (page->mover ? !atlas.isMover(drawn->key) : !atlas.drawsStatic(drawn->key)) continue;
+                            if (page->mover ? !atlas.isMoverAt(casterOf(drawn).state) : !atlas.drawsStaticAt(casterOf(drawn).state)) continue;
                             if (!page->mover && bounded(drawn) &&
                                 casterOf(drawn).diameter < atlas.casterGate(page->level)) continue;
                             if (!page->mover && bounded(drawn) && !drawn->gpuJoints &&

@@ -93,6 +93,10 @@ public:
     void updateCasters(const std::vector<CasterState>& casters);
     bool isMover(uint64_t key) const;
     bool drawsStatic(uint64_t key) const;
+    // PRD-775: the same two for the i-th caster of the last updateCasters list, with no table probe.
+    bool isMoverAt(std::size_t i) const { return casterMotion_[i]->moving || casterMotion_[i]->settling != 0; }
+    bool drawsStaticAt(std::size_t i) const { return !casterMotion_[i]->moving; }
+    uint64_t casterProbes = 0;  // updateCasters' table probes: 0 on a frame whose list kept its order
     void appendMoverPages(std::vector<AtlasPage>& pages) const;
     std::pair<int, int> moverOrigin(int level) const;
     void recordCost(int level, double milliseconds, double frameSeconds);
@@ -160,6 +164,7 @@ private:
         uint64_t seen = 0;  // the updateCasters pass that last named this caster
     };
     std::unordered_map<uint64_t, Motion> motion_;
+    std::vector<Motion*> casterMotion_;  // the last list, by position: a list that keeps its order probes nothing
     uint64_t casterPass_ = 0;
     void writeTable();
     AtlasOptions options_;
