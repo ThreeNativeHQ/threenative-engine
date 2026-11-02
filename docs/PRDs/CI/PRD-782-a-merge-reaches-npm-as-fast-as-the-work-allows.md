@@ -94,7 +94,7 @@ Each lever has one loop turn. The minutes overlap, so do not add them. An ESTIMA
 
 Techniques with no case to add: setup and browser caches (lever size under 1%), new cache families and an AVD snapshot (PRD-726 rejected them, the 10 GB cache budget was full at 10.8 GB), `CCACHE_SLOPPINESS` (PRD-628 reverted it, zero new hits), precompiled headers (reverted, `ci.yml:361-372`), and skipping redraws in playtests (PRD-727 rejected it, it breaks temporal accumulation). A larger runner costs money, so it goes with the plan decision below.
 
-With levers 1, 5, 6 and the main board reuse, the clean path is about 25 + 5 + 5 + 30 min plus the npm cohort, which is unmeasured since `47c3520b7`. That total is an ESTIMATE. Only a release can prove it.
+With levers 1, 5, 6 and that session's main board reuse, the clean path is about 25 + 5 + 5 + 30 min plus the npm cohort, which is unmeasured since `47c3520b7`. That total is an ESTIMATE. Only a release can prove it.
 
 ## Removal candidates
 
@@ -111,14 +111,14 @@ All are the owner's decision. Zero reds over 14 days is weak evidence, because a
 
 - GitHub Team plan, 60 concurrent jobs against 20, or the `tn-local` pool. A plan costs money and the pool loads the owner's machines, so it is the owner's decision.
 - The removal candidates above — the owner decides each one.
-- The all-clear from the session that owns the 0.3.8 release. These wait for it: the main push carries
-  gate jobs, Android shards, PRD-630 binary reuse, and any merge of draft PR #601.
+- The session that owns the 0.3.8 release now owns the main board redundancy, auto-publish on main and the hotfix override, on the owner's order: `scripts/release-ship.ts`, `scripts/release-candidate-gate.ts`, `native-release.yml` and the promotion reuse rule in `ci-change-scope.mjs` and `ci-required.mjs`. It hands its commits to #601 after 0.3.8 is out. Levers 6 and 7 touch those files, so they wait for that session. Android shards and any merge of #601 also wait for 0.3.8.
 
 ## Decisions
 
 - 2026-11-01 (agent, under the owner's "whatever you want to add as a KPI"): the KPI set and the goals above.
 - 2026-11-01 (agent): this PRD shares draft PR #601 with PRD-776. The root rule says one PR per PRD. The
   owner's later rule, after four incidents, is no extra PRs in a session, and the work is one chain.
+- 2026-11-01 (owner, relayed by the release session): a promotion with a green tree publishes with no new test run. The release session owns that work, and this PRD owns per-job reuse.
 - 2026-11-01 (agent): removals are proposals. A test leaves the board only on the owner's decision.
 
 ## Execution Phases
