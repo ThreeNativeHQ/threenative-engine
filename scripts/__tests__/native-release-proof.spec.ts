@@ -1,26 +1,13 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { test } from "vitest";
+import { describe, it, test } from "vitest";
 import { makeTempDirSync } from "../../test-support/temp-dir.js";
 
 const root = resolve(import.meta.dirname, "../..");
 const workflow = readFileSync(join(root, ".github/workflows/native-release.yml"), "utf8");
 const sha = "a".repeat(40);
-const names = [
-  "typecheck",
-  "lint",
-  "test",
-  "budgets",
-  "build",
-  "test-native",
-  "native-platforms / Windows desktop core",
-  "native-platforms / macOS desktop core",
-  "native-platforms / Scaffolded starter desktop artifact (linux-x64)",
-  "native-platforms / Desktop web/native parity",
-  "native-platforms / Android emulator visual parity",
-];
 
 function job(name: string): string {
   const start = workflow.indexOf(`\n  ${name}:\n`);
@@ -66,7 +53,17 @@ function allowed(
       "clean-consumer",
       "clean-consumer-ios",
       "clean-consumer-windows",
-    ].map((key) => [key, { result: results[key] ?? "success", outputs: { candidate_sha: sha } }]),
+    ].map((key) => [
+      key,
+      {
+        result: results[key] ?? "success",
+        outputs: {
+          candidate_sha: sha,
+          proof_run: results.proofRun ?? "",
+          override: results.override ?? "",
+        },
+      },
+    ]),
   );
   const validation = needs["validate-tag"];
   assert.ok(validation);
@@ -102,109 +99,41 @@ function allowed(
   );
 }
 
-function runGate(change: "none" | "wrong-sha" | "missing-job" | "skipped-job") {
-  const directory = makeTempDirSync("threenative-release-gate-");
-  const run = {
-    databaseId: 123,
-    attempt: 1,
-    status: "completed",
-    conclusion: "success",
-    event: "push",
-    headBranch: "main",
-    headSha: change === "wrong-sha" ? "b".repeat(40) : sha,
-  };
-  const jobs = names.map((name, index) => ({
-    id: index + 1,
-    name,
-    run_id: 123,
-    head_sha: sha,
-    status: "completed",
-    conclusion: "success",
-  }));
-  if (change === "missing-job") jobs.pop();
-  if (change === "skipped-job") {
-    assert.ok(jobs[0]);
-    jobs[0].conclusion = "skipped";
-  }
-  writeFileSync(join(directory, "runs.json"), JSON.stringify([run]));
-  writeFileSync(join(directory, "run.json"), JSON.stringify(run));
-  writeFileSync(join(directory, "jobs.json"), JSON.stringify([{ total_count: jobs.length, jobs }]));
-  const bin = join(directory, "bin");
-  mkdirSync(bin);
-  writeFileSync(
-    join(bin, "gh"),
-    '#!/bin/sh\ncase "$1 $2" in\n"run list") cat "$FIXTURES/runs.json";;\n"run view") cat "$FIXTURES/run.json";;\n"api --paginate") cat "$FIXTURES/jobs.json";;\n*) exit 91;;\nesac\n',
-  );
-  chmodSync(join(bin, "gh"), 0o755);
-  const result = spawnSync(
-    "bash",
-    ["-e", "-o", "pipefail", "-c", script("Require a green CI run for this commit")],
-    {
-      cwd: directory,
-      encoding: "utf8",
-      timeout: 10000,
-      env: {
-        ...process.env,
-        FORCE_COLOR: "0",
-        FIXTURES: directory,
-        PATH: `${bin}:${process.env.PATH}`,
-        RUNNER_TEMP: directory,
-        GITHUB_SHA: sha,
-        GITHUB_REPOSITORY: "ThreeNativeHQ/threenative",
-        GITHUB_STEP_SUMMARY: join(directory, "summary.md"),
-      },
-    },
-  );
-  assert.ifError(result.error);
-  return { ...result, directory, evidence: join(directory, "native-release-prerequisites") };
-}
-
-test("offers non-publishing PR and manual proof entry points in the existing workflow", () => {
+test("a release starts by a dispatch on its tag, and main CI starts nothing here", () => {
   const triggers = workflow.split("\npermissions:")[0] ?? "";
-  assert.match(triggers, /\n\x20{2}pull_request:/u);
-  assert.match(triggers, /\n\x20{2}workflow_dispatch:/u);
-  assert.doesNotMatch(triggers, /pull_request_target/u);
-});
-
-test("main evidence arrives via CI completion, never via a push-to-main trigger", () => {
-  const triggers = workflow.split("\npermissions:")[0] ?? "";
-  assert.match(triggers, /\n\x20{2}workflow_run:/u);
-  assert.match(triggers, /workflows: \[CI\]/u);
-  assert.match(triggers, /types: \[completed\]/u);
-  const pushBlock = triggers.split("\n  push:")[1]?.split("\n  pull_request:")[0] ?? "";
-  assert.ok(pushBlock.length > 0, "the workflow declares no push trigger block");
-  assert.doesNotMatch(
-    pushBlock,
-    /branches:/u,
-    "a push-to-main trigger still feeds the evidence path",
-  );
-  assert.match(pushBlock, /runtime-native-v\*/u);
+  assert.doesNotMatch(triggers, /workflow_run:/u);
+  assert.doesNotMatch(triggers, /\n\x20{2}push:/u);
+  assert.match(triggers, /\n\x20{2}workflow_dispatch:\n\x20{4}inputs:\n\x20{6}override:/u);
 });
 
 for (const name of ["validate-tag", "cleanup-failed-release"]) {
-  test(`${name} cannot mutate releases from a pull request or manual invocation`, () => {
+  test(`${name} cannot mutate releases from a pull request or a branch dispatch`, () => {
     assert.equal(allowed(name, "pull_request", "branch"), false);
     assert.equal(allowed(name, "workflow_dispatch", "branch"), false);
-    assert.equal(allowed(name, "workflow_dispatch", "tag"), false);
   });
 }
 
+test("validate-tag runs on a dispatch of the tag", () => {
+  assert.equal(allowed("validate-tag", "workflow_dispatch", "tag"), true);
+});
+
 // PRD-629: `publish` and `finalize` also run on a proof run, as a rehearsal against a draft named
-// `rehearsal-<run id>`. Only a `push` of a validated tag may touch the real release.
+// `rehearsal-<run id>`. Only a validated tag may touch the real release.
 for (const name of ["publish", "finalize"]) {
-  test(`${name} touches the real release only from a validated tag push`, () => {
-    assert.equal(allowed(name, "workflow_dispatch", "tag"), false);
-    assert.equal(allowed(name, "pull_request", "tag"), false);
-    // A tag push whose candidate gate failed (`validate-tag` skipped, so no candidate SHA).
-    assert.equal(allowed(name, "push", "tag", { "validate-tag": "skipped" }), false);
-    assert.equal(allowed(name, "push", "tag"), true);
+  test(`${name} touches the real release only from a validated tag`, () => {
+    // A tag run whose candidate gate failed (`validate-tag` skipped, so no candidate SHA).
+    const tag = { gates: "skipped" } as const;
+    assert.equal(
+      allowed(name, "workflow_dispatch", "tag", { ...tag, "validate-tag": "skipped" }),
+      false,
+    );
+    assert.equal(allowed(name, "workflow_dispatch", "tag", tag), true);
   });
 
   test(`${name} rehearses on a proof run and not on an ordinary pull request`, () => {
     const proof = { "validate-tag": "skipped" } as const;
     assert.equal(allowed(name, "pull_request", "branch", proof, "push", { base: "main" }), true);
     assert.equal(allowed(name, "workflow_dispatch", "branch", proof), true);
-    assert.equal(allowed(name, "workflow_run", "branch", proof), true);
     assert.equal(
       allowed(name, "pull_request", "branch", { ...proof, gates: "skipped", publish: "skipped" }),
       false,
@@ -320,12 +249,9 @@ test("the release proof runs only for a promotion PR, the release-proof label, d
     false,
     "an unrelated label must not buy a release proof",
   );
-  // Manual dispatch, the main CI completion and a `runtime-native-v*` tag keep their proof. The
-  // tag route carries its own `validate-tag` gate, so it is asserted with that gate green.
+  // A manual dispatch keeps the proof. A tag run has `validate-tag`, so it does not need `gates`.
   assert.equal(allowed("gates", "workflow_dispatch", "branch", proof), true);
-  assert.equal(allowed("gates", "workflow_run", "branch", proof), true);
-  assert.equal(allowed("gates", "push", "tag", { publish: "skipped" }), true);
-  assert.equal(allowed("gates", "push", "tag", proof), false);
+  assert.equal(allowed("gates", "workflow_dispatch", "tag"), false);
 });
 
 test("a pull request reaches the proof through an event that can carry its label", () => {
@@ -346,15 +272,6 @@ test("a pull request reaches the proof through an event that can carry its label
   );
 });
 
-test("the npm v* release lane still runs its proof", () => {
-  // npm-release.yml does not call the native proof; it is the other half of "a release still
-  // spends runners on itself", so narrowing the native trigger must not narrow this one.
-  const npm = readFileSync(join(root, ".github/workflows/npm-release.yml"), "utf8");
-  const triggers = npm.split("\nconcurrency:")[0] ?? "";
-  assert.match(triggers, /push:\n\x20{4}tags:\n\x20{6}- "v\*"/u);
-  assert.match(triggers, /\n\x20{2}workflow_dispatch:/u);
-});
-
 test("native builds and consumers refuse failed dependencies rather than treating always as success", () => {
   for (const name of ["build", "build-android"]) {
     assert.equal(
@@ -370,7 +287,10 @@ test("native builds and consumers refuse failed dependencies rather than treatin
     }),
     false,
   );
-  assert.equal(allowed("clean-consumer", "push", "tag", { publish: "failure" }), false);
+  assert.equal(
+    allowed("clean-consumer", "workflow_dispatch", "tag", { publish: "failure" }),
+    false,
+  );
   assert.equal(
     allowed("clean-consumer-windows", "pull_request", "branch", {
       "validate-tag": "skipped",
@@ -379,124 +299,11 @@ test("native builds and consumers refuse failed dependencies rather than treatin
     }),
     false,
   );
-  assert.equal(allowed("clean-consumer-windows", "push", "tag", { publish: "failure" }), false);
-});
-
-test("the actual prerequisite shell accepts complete exact-candidate evidence", () => {
-  const result = runGate("none");
-  assert.equal(result.status, 0, result.stderr);
-  const report = JSON.parse(readFileSync(join(result.evidence, "validation.json"), "utf8"));
-  assert.equal(report.requiredJobs.length, 11);
-  assert.deepEqual(report.failures, []);
-});
-
-for (const control of ["wrong-sha", "missing-job", "skipped-job"] as const) {
-  test(`the actual prerequisite shell refuses ${control} with retained exit evidence`, () => {
-    const result = runGate(control);
-    assert.equal(result.status, 1, result.stdout + result.stderr);
-    assert.match(readFileSync(join(result.evidence, "status.txt"), "utf8"), /exit_code=1/u);
-    assert.match(
-      result.stderr,
-      control === "wrong-sha"
-        ? /exact candidate SHA/u
-        : control === "missing-job"
-          ? /Android emulator visual parity: 0 result/u
-          : /typecheck: 1 result\(s\), completed\/skipped/u,
-    );
-  });
-}
-
-// The evidence-path verdict reads the triggering CI completion from the `workflow_run`
-// event payload instead of searching for it with `gh run list`: the candidate SHA is the
-// event's head SHA (GITHUB_SHA is the default-branch head here and must be ignored), and
-// the only `gh` call reads the run's jobs once. A red or mismatched completion refuses.
-function runWorkflowRunGate(
-  change: "none" | "failed-conclusion" | "wrong-branch" | "missing-job" | "skipped-job",
-) {
-  const directory = makeTempDirSync("threenative-release-workflow-run-gate-");
-  const jobs = names.map((name, index) => ({
-    id: index + 1,
-    name,
-    run_id: 456,
-    head_sha: sha,
-    status: "completed",
-    conclusion: "success",
-  }));
-  if (change === "missing-job") jobs.pop();
-  if (change === "skipped-job") {
-    assert.ok(jobs[0]);
-    jobs[0].conclusion = "skipped";
-  }
-  writeFileSync(join(directory, "jobs.json"), JSON.stringify([{ total_count: jobs.length, jobs }]));
-  const bin = join(directory, "bin");
-  mkdirSync(bin);
-  writeFileSync(
-    join(bin, "gh"),
-    '#!/bin/sh\ncase "$1 $2" in\n"api --paginate") cat "$FIXTURES/jobs.json";;\n*) exit 91;;\nesac\n',
+  assert.equal(
+    allowed("clean-consumer-windows", "workflow_dispatch", "tag", { publish: "failure" }),
+    false,
   );
-  chmodSync(join(bin, "gh"), 0o755);
-  const result = spawnSync(
-    "bash",
-    ["-e", "-o", "pipefail", "-c", script("Require the triggering CI completion")],
-    {
-      cwd: directory,
-      encoding: "utf8",
-      timeout: 10000,
-      env: {
-        ...process.env,
-        FORCE_COLOR: "0",
-        FIXTURES: directory,
-        PATH: `${bin}:${process.env.PATH}`,
-        RUNNER_TEMP: directory,
-        // Deliberately not the candidate: the verdict must source the SHA from the event.
-        GITHUB_SHA: "d".repeat(40),
-        GITHUB_REPOSITORY: "ThreeNativeHQ/threenative",
-        GITHUB_STEP_SUMMARY: join(directory, "summary.md"),
-        WORKFLOW_RUN_CONCLUSION: change === "failed-conclusion" ? "failure" : "success",
-        WORKFLOW_RUN_STATUS: "completed",
-        WORKFLOW_RUN_EVENT: "push",
-        WORKFLOW_RUN_HEAD_BRANCH: change === "wrong-branch" ? "develop" : "main",
-        WORKFLOW_RUN_HEAD_SHA: sha,
-        WORKFLOW_RUN_ID: "456",
-        WORKFLOW_RUN_NAME: "CI",
-      },
-    },
-  );
-  assert.ifError(result.error);
-  return { ...result, directory, evidence: join(directory, "native-release-prerequisites") };
-}
-
-test("the event-payload verdict accepts complete exact-candidate evidence", () => {
-  const result = runWorkflowRunGate("none");
-  assert.equal(result.status, 0, result.stderr);
-  const report = JSON.parse(readFileSync(join(result.evidence, "validation.json"), "utf8"));
-  assert.equal(report.candidateSha, sha);
-  assert.equal(report.requiredJobs.length, 11);
-  assert.deepEqual(report.failures, []);
 });
-
-for (const control of [
-  "failed-conclusion",
-  "wrong-branch",
-  "missing-job",
-  "skipped-job",
-] as const) {
-  test(`the event-payload verdict refuses ${control} with retained exit evidence`, () => {
-    const result = runWorkflowRunGate(control);
-    assert.equal(result.status, 1, result.stdout + result.stderr);
-    assert.match(readFileSync(join(result.evidence, "status.txt"), "utf8"), /exit_code=1/u);
-    assert.match(
-      result.stderr,
-      control === "failed-conclusion"
-        ? /non-success main-push CI completion/u
-        : control === "wrong-branch"
-          ? /non-success main-push CI completion/u
-          : control === "missing-job"
-            ? /Android emulator visual parity: 0 result/u
-            : /typecheck: 1 result\(s\), completed\/skipped/u,
-    );
-  });
-}
 
 test("the hosted release entry point executes refusal controls before native work", () => {
   assert.match(
@@ -513,11 +320,6 @@ test("proof artifact transport is loopback-only and never applies to tag publica
   assert.match(consumer, /THREENATIVE_PREBUILT_MANIFEST/u);
   assert.match(consumer, /Stop the proof asset server/u);
   assert.doesNotMatch(job("publish"), /THREENATIVE_ALLOW_INSECURE_PREBUILT/u);
-});
-
-test("the PR proof is not reported as accepted main release prerequisites", () => {
-  assert.match(script("Record PR-only proof scope"), /not-release-acceptance/u);
-  assert.match(script("Record PR-only proof scope"), /headSha/u);
 });
 
 function runEvidence(
@@ -682,27 +484,6 @@ for (const change of [
   });
 }
 
-test("the main prerequisite verdict reads the event instead of holding a runner", () => {
-  const gatesJob = job("gates");
-  // The evidence path used to `sleep 60`-poll for the CI run on a 150-minute budget while
-  // holding a runner; at this repo's push cadence arrivals outran the org's concurrency.
-  // The verdict now reads the triggering CI completion from the event payload once.
-  assert.doesNotMatch(
-    gatesJob,
-    /Wait for the exact main CI run to finish/u,
-    "a polling wait still holds a runner",
-  );
-  assert.doesNotMatch(gatesJob, /sleep 60/u, "a polling interval still holds a runner");
-  assert.match(gatesJob, /Require the triggering CI completion/u);
-  assert.match(gatesJob, /github\.event\.workflow_run\.conclusion/u);
-  assert.match(gatesJob, /github\.event\.workflow_run\.head_sha/u);
-  const timeout = Number(gatesJob.match(/\n\s{4}timeout-minutes: (\d+)/u)?.[1]);
-  assert.ok(
-    Number.isSafeInteger(timeout) && timeout <= 9,
-    `gates timeout-minutes ${timeout} is a wait budget, not a verdict budget`,
-  );
-});
-
 // `clean-consumer-ios` relies on implicit skip-propagation rather than an explicit event
 // condition, so it is worth pinning. Its guard is already correct; this closes a coverage gap.
 test("clean-consumer-ios stays out of every non-tag proof route", () => {
@@ -719,18 +500,18 @@ test("clean-consumer-ios stays out of every non-tag proof route", () => {
     allowed("clean-consumer-ios", "workflow_dispatch", "tag", { "validate-tag": "skipped" }),
     false,
   );
-  // And the skip has to be able to propagate: no `always()`/`!cancelled()` escape, and the
-  // dependency that does the holding must still be declared.
+  // The dependency that does the holding must still be declared. PRD-630: the condition reads it
+  // explicitly, because a tag run skips `gates`, and an implicit success() would skip this job too.
   const body = job("clean-consumer-ios").split("\n    steps:")[0] ?? "";
   assert.match(body, /\n\x20{4}needs: \[?[^\n]*validate-tag/u);
-  assert.doesNotMatch(body, /always\(\)|!cancelled\(\)/u);
+  assert.match(body, /needs\.validate-tag\.outputs\.candidate_sha == github\.sha/u);
 });
 
 // PRD-629: the published matrix includes the simulator asset, so a proof run builds it and the
 // rehearsal lock is the lock the tag run generates. A tag run still builds it only for the
 // candidate commit, and a proof run skips it when the gates fail.
 test("build-ios-simulator runs on proof runs and on the candidate's tag run only", () => {
-  for (const event of ["pull_request", "workflow_dispatch", "push"] as const) {
+  for (const event of ["pull_request", "workflow_dispatch"] as const) {
     assert.equal(
       allowed("build-ios-simulator", event, "branch", { "validate-tag": "skipped" }),
       true,
@@ -743,8 +524,15 @@ test("build-ios-simulator runs on proof runs and on the candidate's tag run only
       false,
     );
   }
-  assert.equal(allowed("build-ios-simulator", "push", "tag"), true);
-  assert.equal(allowed("build-ios-simulator", "push", "tag", { "validate-tag": "skipped" }), false);
+  const tag = { gates: "skipped" } as const;
+  assert.equal(allowed("build-ios-simulator", "workflow_dispatch", "tag", tag), true);
+  assert.equal(
+    allowed("build-ios-simulator", "workflow_dispatch", "tag", {
+      ...tag,
+      "validate-tag": "skipped",
+    }),
+    false,
+  );
 });
 
 test("a rehearsal publish waits for the simulator asset", () => {
@@ -841,43 +629,75 @@ test("at most one release proof holds runners at a time, across branches", () =>
   assert.match(settings, /^\x20{2}cancel-in-progress: false$/mu);
 });
 
-test.each(["schedule", "workflow_dispatch", "pull_request"])(
-  "CI completion from %s does not enter main-push release qualification",
-  (event) => {
-    assert.equal(
-      allowed("gates", "workflow_run", "branch", { "validate-tag": "skipped" }, event),
-      false,
-    );
-    for (const name of ["build", "build-android", "clean-consumer", "clean-consumer-windows"]) {
-      assert.equal(
-        allowed(
-          name,
-          "workflow_run",
-          "branch",
-          { "validate-tag": "skipped", gates: "skipped" },
-          event,
-        ),
-        false,
-      );
-    }
-  },
-);
+// PRD-630: the tag run republishes what the promotion proof built and installed.
+describe("a tag run with a promotion proof", () => {
+  const tag = (extra: Record<string, string> = {}) => ({
+    gates: "skipped",
+    build: "skipped",
+    "build-android": "skipped",
+    "build-ios-simulator": "skipped",
+    "clean-consumer": "skipped",
+    "clean-consumer-windows": "skipped",
+    ...extra,
+  });
 
-test("workflow_run evidence runs proof without a release candidate", () => {
-  for (const name of ["gates", "build", "build-android", "clean-consumer"]) {
+  it("builds nothing and installs nothing again", () => {
+    for (const name of [
+      "build",
+      "build-android",
+      "build-ios-simulator",
+      "clean-consumer",
+      "clean-consumer-windows",
+      "clean-consumer-ios",
+    ]) {
+      assert.equal(allowed(name, "workflow_dispatch", "tag", tag({ proofRun: "7" })), false, name);
+    }
+  });
+
+  it("publishes, promotes and keeps the release", () => {
+    const run = tag({ proofRun: "7" });
+    assert.equal(allowed("publish", "workflow_dispatch", "tag", run), true);
+    assert.equal(allowed("finalize", "workflow_dispatch", "tag", run), true);
+    assert.equal(allowed("cleanup-failed-release", "workflow_dispatch", "tag", run), false);
+  });
+
+  it("builds and proves as a first run when no proof qualifies", () => {
+    const run = { gates: "skipped" };
+    for (const name of ["build", "build-android", "clean-consumer", "clean-consumer-windows"])
+      assert.equal(allowed(name, "workflow_dispatch", "tag", run), true, name);
+    assert.equal(allowed("publish", "workflow_dispatch", "tag", tag()), false);
     assert.equal(
-      allowed(name, "workflow_run", "branch", { "validate-tag": "skipped", publish: "success" }),
-      true,
-      `${name} does not run on the workflow_run evidence path`,
-    );
-  }
-  for (const name of ["validate-tag", "cleanup-failed-release"]) {
-    assert.equal(
-      allowed(name, "workflow_run", "branch"),
+      allowed("finalize", "workflow_dispatch", "tag", {
+        gates: "skipped",
+        "clean-consumer": "failure",
+      }),
       false,
-      `${name} must stay tag-only on the workflow_run evidence path`,
     );
-  }
+    assert.equal(
+      allowed("cleanup-failed-release", "workflow_dispatch", "tag", {
+        gates: "skipped",
+        "clean-consumer": "failure",
+      }),
+      true,
+    );
+  });
+
+  it("lets an admin override skip the consumer proofs but keeps the build", () => {
+    const run = { gates: "skipped", override: "true" };
+    assert.equal(allowed("build", "workflow_dispatch", "tag", run), true);
+    assert.equal(allowed("clean-consumer", "workflow_dispatch", "tag", run), false);
+    const done = { ...run, "clean-consumer": "skipped", "clean-consumer-windows": "skipped" };
+    assert.equal(allowed("finalize", "workflow_dispatch", "tag", done), true);
+    assert.equal(allowed("cleanup-failed-release", "workflow_dispatch", "tag", done), false);
+  });
+
+  it("refuses an override from anyone but an admin, before any side effect", () => {
+    const body = job("validate-tag");
+    assert.match(body, /collaborators\/\$GITHUB_ACTOR\/permission/u);
+    assert.match(body, /test "\$role" = admin/u);
+    // A step-level input goes through env, so a reason cannot inject shell.
+    assert.doesNotMatch(body, /run: .*inputs\.override/u);
+  });
 });
 
 test("the scaffolded consumer receives every module its entry imports", () => {

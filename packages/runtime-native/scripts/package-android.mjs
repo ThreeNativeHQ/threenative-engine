@@ -125,6 +125,32 @@ export function androidSigningGradleEnvironment(signing, environment = process.e
   };
 }
 
+// Gradle 8.13, the wrapper this project pins, runs on JDK 23 or earlier. On a newer one it stops with
+// the bare version string as its only message ("27.0.1.0.3" on JDK 27).
+const ANDROID_GRADLE_NEWEST_JDK = 23;
+
+/**
+ * The environment Gradle needs, decided where the tools can be measured: the SDK at the default path
+ * that `doctor` and `findAndroidBuildTool` already read, and a JDK Gradle can run on.
+ */
+export function androidGradleEnvironment(environment = process.env, { home = homedir() } = {}) {
+  if (environment.ANDROID_HOME || environment.ANDROID_SDK_ROOT) return environment;
+  const sdk = join(home, 'Android', 'Sdk');
+  return existsSync(sdk) ? { ...environment, ANDROID_HOME: sdk } : environment;
+}
+
+/** Gradle on a JDK it cannot read prints only the version string, so a failure names the JDK itself. */
+export function androidGradleFailure(status, environment = process.env, spawn = spawnSync) {
+  const java = environment.JAVA_HOME ? join(environment.JAVA_HOME, 'bin', 'java') : 'java';
+  const probe = spawn(java, ['-version'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 5_000 });
+  const major = /version "(\d+)/u.exec(`${probe?.stdout ?? ''}${probe?.stderr ?? ''}`)?.[1];
+  const jdk =
+    major !== undefined && Number(major) > ANDROID_GRADLE_NEWEST_JDK
+      ? ` TN_ANDROID_JDK_UNSUPPORTED: ${java} is JDK ${major}, and Android builds run on JDK ${ANDROID_GRADLE_NEWEST_JDK} or earlier. Install JDK 17 and set JAVA_HOME to it.`
+      : '';
+  return `Gradle exited with code ${status ?? 'unknown'}.${jdk}`;
+}
+
 /** Locate an Android build tool on `PATH`, then in the SDK's `build-tools/<version>/`. */
 export function findAndroidBuildTool(name, environment = process.env) {
   const suffix = process.platform === 'win32' ? '.bat' : '';
@@ -1152,19 +1178,17 @@ export async function packageAndroid(
     ];
     const args = process.platform === 'win32' ? baseArgs : [gradlew, ...baseArgs];
     const spawn = options.spawnSync ?? spawnSync;
+    const gradleEnvironment = androidGradleEnvironment(environment);
     const result = spawn(command, args, {
       cwd: androidRoot,
       encoding: 'utf8',
       // The signing values reach Gradle only as project properties from the game's environment; the
       // keystore path was resolved against the consumer project above. Nothing here logs them.
-      ...(signing === undefined
-        ? {}
-        : { env: androidSigningGradleEnvironment(signing, environment) }),
+      env: signing === undefined ? gradleEnvironment : androidSigningGradleEnvironment(signing, gradleEnvironment),
       stdio: 'inherit',
     });
     if (result.error) throw result.error;
-    if (result.status !== 0)
-      throw new Error(`Gradle exited with code ${result.status ?? 'unknown'}.`);
+    if (result.status !== 0) throw new Error(androidGradleFailure(result.status, gradleEnvironment, spawn));
     const candidates = androidArtifactCandidates(packageRoot, request);
     const artifact = candidates.find((candidate) => existsSync(candidate));
     if (artifact === undefined) {

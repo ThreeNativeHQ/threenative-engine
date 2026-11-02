@@ -505,30 +505,6 @@ describe("pnpm publish:check", () => {
     );
   });
 
-  it("keeps the coordinated pin opt-in explicit in the npm release workflow", () => {
-    const workflow = fs.readFileSync(
-      path.resolve(import.meta.dirname, "../../.github/workflows/npm-release.yml"),
-      "utf8",
-    );
-    expect(workflow).toContain("run: pnpm publish:check --allow-current-publish-set-pins");
-  });
-
-  it("reuses the exact commit's green CI result instead of rerunning generic gates", () => {
-    const workflow = fs.readFileSync(
-      path.resolve(import.meta.dirname, "../../.github/workflows/npm-release.yml"),
-      "utf8",
-    );
-    const gates = workflow.match(/ {2}gates:\n([\s\S]*?)\n {2}publish:/u)?.[1];
-    expect(gates).toBeDefined();
-    expect(gates).toContain("Require a green CI run for this commit");
-    expect(gates).toContain('--repo "$GITHUB_REPOSITORY"');
-    expect(gates).toContain("--workflow ci.yml");
-    expect(gates).toContain('--commit "$GITHUB_SHA"');
-    expect(gates).not.toContain("run: pnpm typecheck");
-    expect(gates).not.toContain("run: pnpm lint");
-    expect(gates).not.toContain("run: pnpm test");
-  });
-
   it("passes a template pin resolved by the registry", async () => {
     const root = await fixture();
     expect(templatePinCensus(root, () => ({ state: "present", version: "0.1.0" }))).toEqual([]);
@@ -852,7 +828,7 @@ describe("acknowledging a missing prebuilt release", () => {
     expect(acknowledged).toHaveLength(1);
     // Still reported: an acknowledged finding that stopped being printed would be a silent one.
     expect(acknowledged[0]?.severity).toBe("warn");
-    expect(acknowledged[0]?.detail).toContain("--allow-missing-prebuilt");
+    expect(acknowledged[0]?.detail).toContain("stages it or publishes nothing");
     expect(acknowledged[0]?.detail).toContain("fails closed");
   });
 

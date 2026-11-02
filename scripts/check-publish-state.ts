@@ -470,7 +470,7 @@ export function prebuiltReleaseCensus(
     return [
       {
         detail: acknowledged
-          ? `No prebuilt release exists at ${url}. Publishing anyway, acknowledged with ${ALLOW_MISSING_PREBUILT}: installs will warn and continue, and every native lane fails closed on the missing binary until runtime-native-v${version} is published.`
+          ? `No prebuilt release exists at ${url}. Acknowledged because this run stages it or publishes nothing: installs will warn and continue, and every native lane fails closed on the missing binary until runtime-native-v${version} is published.`
           : `No prebuilt release exists at ${url}; publish runtime-native-v${version} before publishing the runtime package.`,
         package: "@threenative/runtime-native",
         severity: acknowledged ? "warn" : "fail",
@@ -946,10 +946,9 @@ export function formatPublishReport(report: IPublishReport): string {
 }
 
 const ALLOW_CURRENT_PUBLISH_SET_PINS = "--allow-current-publish-set-pins";
-const ALLOW_MISSING_PREBUILT = "--allow-missing-prebuilt";
 
 async function main(argv: readonly string[] = process.argv.slice(2)): Promise<void> {
-  const supported = new Set([ALLOW_CURRENT_PUBLISH_SET_PINS, ALLOW_MISSING_PREBUILT]);
+  const supported = new Set([ALLOW_CURRENT_PUBLISH_SET_PINS]);
   const unknown = argv.filter((argument) => !supported.has(argument));
   if (unknown.length > 0) {
     process.stderr.write(
@@ -960,7 +959,6 @@ async function main(argv: readonly string[] = process.argv.slice(2)): Promise<vo
   }
   const report = await checkPublishState({
     allowCurrentPublishSetPins: argv.includes(ALLOW_CURRENT_PUBLISH_SET_PINS),
-    allowMissingPrebuilt: argv.includes(ALLOW_MISSING_PREBUILT),
   });
   process.stdout.write(formatPublishReport(report));
   process.exitCode = report.exitCode;
