@@ -51,8 +51,7 @@ Lane state at 2026-10-30 06:00Z, all uncommitted:
 
 ### Phase 2 — TR3: a pooled draw pack
 
-- [ ] The per-draw pack becomes a flat, slot-addressed schedule run on `JobPool::forEach`, with output byte-identical to the serial pack. proof: native case
-- [ ] Paired A/B: CPU frame p50 lower by more than 3% against Phase 1. proof: PRD-770 window rows
+Closed without code: see the 2026-10-30 lane decision under `## Decisions`.
 
 ### Phase 3 — TR2: the plan overlaps the next update
 
@@ -69,3 +68,6 @@ Lane state at 2026-10-30 06:00Z, all uncommitted:
 
 - 2026-10-30, coordinator: no prototype of the full overlap in one step. Lane TR2 showed the plan touches the GPU and
   live scene memory, so the order is TR1, TR3, then TR2.
+- 2026-10-30, lane 774: TR3 rejected on the stage meters, and its two boxes are deleted as moot. `planDraws` reads p50 0.07 ms,
+  p95 0.09 ms (`hunt/s771-b5-on.json`, frame p50 14.7 ms). The pack cannot clear a 0.5 ms bar, and the pool join costs the same order.
+  Recorded here on 2026-11-02 from `.worktrees/stress-fix-tr2/FIX-REPORT.md`.
