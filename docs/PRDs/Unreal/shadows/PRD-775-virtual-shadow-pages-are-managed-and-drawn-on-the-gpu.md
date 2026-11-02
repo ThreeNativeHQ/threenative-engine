@@ -138,12 +138,6 @@ GPU cost that `recordCost` reads; the pass time goes to the granted level, split
 - [ ] AC-1 [local]: In a PRD-770 fair window, `?stress` CPU frame p95 is below 11.03 ms and p50 below 9.45 ms, GPU p95 is not worse than develop. proof: `TN_STRESS_LEDGER=/home/joao/projects/threenative/threenative-engine/docs/stress-loop/ledger.json node scripts/stress-loop.mjs fair ...` (ledger row)
 - [ ] AC-2 [local]: A fresh Opus visual judge returns NEUTRAL or IMPROVEMENT for the whole stack against develop on `?stress&freezeAt=12` and `?stress&closeup`, 2+ runs per arm. proof: judge verdict on the PR (orphan `prd-775-screenshots` branch)
 
-## Blocked on
-
-- The keep rule for Phase 1: it cuts granting frames (12-15 % of frames), so it moves CPU p95, not p50. The brief's
-  rule asks for CPU p50 better by more than 3 %. Unblocked by the coordinator (stress-120): accept "CPU p95 better
-  by more than 3 % in both ABBA pairs, p50 not worse" for Phase 1, or keep the brief's rule.
-
 ## Integration ledger
 
 | Capability | Reachable consumer/trigger | Replaces / disposition | Evidence |
@@ -168,6 +162,15 @@ GPU cost that `recordCost` reads; the pass time goes to the granted level, split
   (`native-engine-vsm`, `-deformation`, `-cut`) are this PRD's pixel gates where they exist; PRD-652's tier
   `maxPhysicalPages` sizes the GPU pool; PRD-773 Phase 3 (FG2 depth band) stays there; PRD-774 moves the plan off the
   main thread and is independent of this work.
+- 2026-11-01 (coordinator): the Phase 1 keep rule is "CPU p95 better by more than 3 % in both ABBA pairs, CPU p50 not
+  worse, GPU p95 not worse, judge NEUTRAL or IMPROVEMENT, shooter holdout gain or no effect, `pnpm budgets` green",
+  because Phase 1 cuts granting frames (12-15 % of frames). Phases run in the order 1, 2, 3. A phase that fails its
+  keep rule is reverted with `git revert`, recorded as REJECT in `PERFORMANCE-LEARNINGS.md`, and the lane continues
+  from fresh attribution.
+- 2026-11-01 (prd-775 lane): one pass per granted level per light, not one pass per light across levels. A frame grants
+  one level unless an urgent eviction grants more, so this is one pass in practice, and `recordCost` keeps its exact
+  per-level reading (risk d is gone). A device with no `clip-distances` keeps today's per-page path instead of a
+  fragment discard: the path stays for mover maps anyway, and no early-depth loss ships (risk b is gone).
 
 ## Execution phases
 
