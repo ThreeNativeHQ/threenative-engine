@@ -421,6 +421,36 @@ describe("stress-loop", () => {
     expect(strip).toContain('data-verdict="winning"');
   });
 
+  it("says WAS WINNING in grey when the rows behind the verdict are old, so old data does not read as now", () => {
+    const ctx = { loadVoid: 6, shadowOf: (row: { shadow: string }) => row.shadow };
+    const row = (engine: string, fps: number, at: string, commit: string) => ({
+      engine,
+      at,
+      commit,
+      shadow: "plain",
+      variant: engine === WASM ? "plainShadow&arm=develop&uncapped" : "arm=v&uncapped",
+      pass: "uncapped",
+      load: { peak: 1 },
+      decision: "measure",
+      metrics: { presentedP95Ms: 12, fps, frameP95Ms: 12, gpuP95Ms: 12, hitchesPerMin: 0 },
+    });
+    const rows = [
+      row(WASM, 100, "2026-10-31T06:00:00.000Z", "core@0.3.7"),
+      row("three-vanilla", 50, "2026-10-31T12:00:00.000Z", "three@0.185.1"),
+    ];
+    const old = verdictOf(rows, ctx, Date.parse("2026-11-02T02:00:00.000Z"));
+    // The oldest compared row sets the age: one fresh rival does not freshen an old baseline.
+    expect(old).toMatchObject({ status: "winning", stale: true, ageHours: 44 });
+    const strip = verdictStrip(old);
+    expect(strip).toContain("WAS WINNING");
+    expect(strip).toContain("44 h old");
+    expect(strip).not.toContain("#14803f");
+
+    const fresh = verdictOf(rows, ctx, Date.parse("2026-10-31T13:00:00.000Z"));
+    expect(fresh).toMatchObject({ stale: false, ageHours: 7 });
+    expect(verdictStrip(fresh)).not.toContain("WAS WINNING");
+  });
+
   it("colors a bar green for the winner, yellow for a tie at the top and red for a loser", () => {
     expect(rankOf(10, [10, 5])).toBe("s-win");
     expect(rankOf(5, [10, 5])).toBe("s-lose");

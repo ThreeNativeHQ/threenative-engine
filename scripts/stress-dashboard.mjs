@@ -517,16 +517,21 @@ function scoreGroups(rows, ctx) {
   ];
 }
 
+/** A verdict older than this reads as history: a loop iteration takes under an hour, and the engine moves daily. */
+const STALE_HOURS = 12;
+
 /**
  * The one-second answer: ThreeNative against each rival in its group. Scores compare as shown (rounded). A rival with
  * no valid run is `pending` and never counts as a win.
  */
-export function verdictOf(rows, ctx) {
+export function verdictOf(rows, ctx, now = Date.now()) {
+  const compared = [];
   const rivals = scoreGroups(rows, ctx).flatMap(([, [[, own], ...others]]) =>
     others.map(([name, row]) => {
       const mine = own === undefined ? null : scoreOf(own.metrics);
       const theirs = row === undefined ? null : scoreOf(row.metrics);
       if (mine === null || theirs === null) return { name, mine, theirs, result: "pending" };
+      compared.push(own, row);
       const [a, b] = [Math.round(mine), Math.round(theirs)];
       return { name, mine: a, theirs: b, result: a > b ? "win" : a < b ? "lose" : "tie" };
     }),
@@ -541,21 +546,42 @@ export function verdictOf(rows, ctx) {
         : count("lose") === measured
           ? "losing"
           : "mixed";
-  return { status, wins: count("win"), measured, pending: count("pending"), rivals };
+  // The oldest compared row sets the age: one fresh rival does not freshen an old baseline.
+  const times = compared.map((row) => Date.parse(row.at)).filter(Number.isFinite);
+  const ageHours = times.length === 0 ? null : Math.round((now - Math.min(...times)) / 3_600_000);
+  const stale = ageHours !== null && ageHours > STALE_HOURS;
+  return {
+    status,
+    wins: count("win"),
+    measured,
+    pending: count("pending"),
+    rivals,
+    ageHours,
+    stale,
+  };
 }
 
 /** The verdict strip: inline styles, so it reads the same on every dashboard tab, whatever that page's CSS is. */
 export function verdictStrip(verdict) {
-  const [bg, fg, word] = {
-    winning: ["#14803f", "#fff", "✅ WINNING"],
-    losing: ["#c0341d", "#fff", "❌ LOSING"],
-    mixed: ["#e0b400", "#1d1d1b", "⚠️ MIXED"],
-    none: ["#6b6b66", "#fff", "NO DATA"],
-  }[verdict.status];
+  const [bg, fg, word] = verdict.stale
+    ? [
+        "#6b6b66",
+        "#fff",
+        { winning: "WAS WINNING", losing: "WAS LOSING", mixed: "WAS MIXED" }[verdict.status],
+      ]
+    : {
+        winning: ["#14803f", "#fff", "✅ WINNING"],
+        losing: ["#c0341d", "#fff", "❌ LOSING"],
+        mixed: ["#e0b400", "#1d1d1b", "⚠️ MIXED"],
+        none: ["#6b6b66", "#fff", "NO DATA"],
+      }[verdict.status];
+  const age = verdict.stale
+    ? `<span style="padding:2px 9px;border-radius:999px;background:#e0b400;color:#1d1d1b;white-space:nowrap">⚠️ STALE: ${verdict.ageHours} h old, no fresh run</span>`
+    : "";
   const rival = ({ name, mine, theirs, result }) =>
     `<span style="padding:2px 9px;border-radius:999px;background:rgba(0,0,0,.2);white-space:nowrap">${{ win: "✅", lose: "❌", tie: "⚠️", pending: "⏳" }[result]} vs ${esc(name)}: ${result === "pending" ? "not measured" : `<b>${mine}</b> to ${theirs}`}</span>`;
   const tally = `${verdict.wins} of ${verdict.measured} measured${verdict.pending > 0 ? `, ${verdict.pending} not measured` : ""}`;
-  return `<a class="tn-verdict" data-verdict="${verdict.status}" href="/stress-lab" style="display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;max-width:1240px;margin:0 auto 12px;padding:9px 16px;box-sizing:border-box;background:${bg};color:${fg};text-decoration:none;font:600 13px/1.4 system-ui,sans-serif"><span style="font-size:22px;font-weight:800;white-space:nowrap">ThreeNative: ${word}</span><span>${esc(tally)}</span>${verdict.rivals.map(rival).join("")}</a>`;
+  return `<a class="tn-verdict" data-verdict="${verdict.status}" href="/stress-lab" style="display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;max-width:1240px;margin:0 auto 12px;padding:9px 16px;box-sizing:border-box;background:${bg};color:${fg};text-decoration:none;font:600 13px/1.4 system-ui,sans-serif"><span style="font-size:22px;font-weight:800;white-space:nowrap">ThreeNative: ${word}</span>${age}<span>${esc(tally)}</span>${verdict.rivals.map(rival).join("")}</a>`;
 }
 
 /** One bar per engine on the same scene. A group ranks only engines with the same shadow technique. */
@@ -579,7 +605,7 @@ function scorePanel(rows, ctx) {
             mine.score,
             measured.map(({ score }) => score),
           );
-    const head = `<td class="score-name">${rank === "s-win" ? "✅ " : ""}${esc(name)}${row === undefined ? "" : `<br><span class="dim">#${row.id} · ${esc(row.at.slice(0, 10))}</span>`}</td>`;
+    const head = `<td class="score-name">${rank === "s-win" ? "✅ " : ""}${esc(name)}${row === undefined ? "" : `<br><span class="dim">#${row.id} · ${esc(row.at.slice(0, 10))} · ${esc(row.commit)}</span>`}</td>`;
     if (mine === null)
       return `<tr>${head}<td class="score-cell">${bar(0, rank)}</td><td class="n dim">pending</td>${SCORE_PARTS.map(() => '<td class="n dim">-</td>').join("")}</tr>`;
     const parts = SCORE_PARTS.map(({ key, unit, part }, index) => {
@@ -598,8 +624,9 @@ function scorePanel(rows, ctx) {
       return `<tr class="sec"><td colspan="${3 + SCORE_PARTS.length}">${esc(title)}</td></tr>${arms.map((arm) => rowHtml(arm, measured)).join("")}`;
     })
     .join("");
-  return `<figure class="card mb-3"><figcaption>Engine score <span class="dim">(uncapped, load 1, same scene and GPU: 100 = the 120 fps goal)</span></figcaption>
-<div class="scroll"><table class="t score"><thead><tr><th>Engine</th><th>Score</th><th class="n">/100</th>${SCORE_PARTS.map(({ short, weight }) => `<th class="n">${esc(short)} <span class="dim">${weight}%</span></th>`).join("")}</tr></thead><tbody>${body}</tbody></table></div>
+  const { stale, ageHours } = verdictOf(rows, ctx);
+  return `<figure class="card mb-3"><figcaption>Engine score <span class="dim">(uncapped, load 1, same scene and GPU: 100 = the 120 fps goal)</span>${stale ? ` <b>⚠️ STALE: these rows are ${ageHours} h old, the current engine has no score yet</b>` : ""}</figcaption>
+<div class="scroll"${stale ? ' style="opacity:.5"' : ""}><table class="t score"><thead><tr><th>Engine</th><th>Score</th><th class="n">/100</th>${SCORE_PARTS.map(({ short, weight }) => `<th class="n">${esc(short)} <span class="dim">${weight}%</span></th>`).join("")}</tr></thead><tbody>${body}</tbody></table></div>
 <p class="mt-1 text-[11px] text-dim">Green wins its group, yellow ties at the top, red loses, grey has nothing to compare with yet. Each timing earns goal / value, so half the speed earns half its points, capped at the goal. The small bar under a value is its share of the goal. Compare only inside one group: the groups have different shadow work. Unreal stock also pays for Lumen, a richer picture.</p></figure>`;
 }
 
