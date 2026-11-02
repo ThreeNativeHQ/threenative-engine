@@ -76,7 +76,40 @@ Risks:
 - The carried reports name a commit that no job ran on. The tree check in `ci-required` is what makes that true: the same tree is the same input.
 - The tag run no longer installs the public release. The upload check and the clean-room registry install still run, and the clean-room install runs after the first npm upload.
 - The clean-room row `native` fails on Linux on 0.3.8 (release session, cause known, unverified on CI, the release session owns the fix). `ship` runs that verifier after the upload, so a red there marks the job red with npm already published.
-- `ship` has not run on CI. The upgrade proof runs before the first upload, so a red there publishes nothing, and `pnpm release:ship --yes` from a checkout does the same work.
+- `ship` on CI has not reached the publish. The upgrade proof runs before the first upload, so a red there publishes nothing, and `pnpm release:ship --yes` from a checkout does the same work.
+- A local release needs the real display (`TN_PLAYTEST_HOST_DISPLAY=1 DISPLAY=:0`). On private Xvfb the starter's `play` scenario misses its frame budget on 0.3.8 and on 0.3.9: 19.12 to 20.73 ms against 16.7 ms.
+- With no GPU, `ship` does not check frame budgets before the publish. The nightly and a local release do.
+
+## 0.3.9, the first real release
+
+Clock: promotion PR #603 opened at 06:53:34Z. The last package reached `latest` at 10:28:37Z.
+
+| KPI | 0.3.8 | Goal | 0.3.9 measured | Result |
+| --- | --- | --- | --- | --- |
+| Full boards | 4 | 1 | 1, plus `native-platforms` again on main | ❌ |
+| Native release builds | 4 | 1 | 1: the proof. The tag run built nothing | ✅ |
+| Machine minutes | 2,485 | 650 or less | 695 on CI | ❌ |
+| Promotion PR to `latest` | about 4 h | 100 min or less | 215 min | ❌ |
+
+| Stage | Run | Machine min | Wall min |
+| --- | --- | --- | --- |
+| Develop push | [41402695974](https://github.com/ThreeNativeHQ/threenative-engine/actions/runs/41402695974) | 15 | 11 |
+| Promotion board | [41402792920](https://github.com/ThreeNativeHQ/threenative-engine/actions/runs/41402792920) | 283 | 58 |
+| Native proof | [41402793035](https://github.com/ThreeNativeHQ/threenative-engine/actions/runs/41402793035) | 117 | 42 |
+| Main push, should be thin | [41409195649](https://github.com/ThreeNativeHQ/threenative-engine/actions/runs/41409195649) | 225 | 59 |
+| Pipeline cache verification | [41409195557](https://github.com/ThreeNativeHQ/threenative-engine/actions/runs/41409195557) | 12 | 7 |
+| `ship` on CI, red at the upgrade proof | [41416259680](https://github.com/ThreeNativeHQ/threenative-engine/actions/runs/41416259680) | 39 | 39 |
+| Release candidate | [41416796998](https://github.com/ThreeNativeHQ/threenative-engine/actions/runs/41416796998) | 2 | 2 |
+| Tag run, published the proof's bytes | [41417218675](https://github.com/ThreeNativeHQ/threenative-engine/actions/runs/41417218675) | 2 | 2 |
+
+Two bugs caused the misses, and both have a red-green test:
+
+1. **Main ran `native-platforms` again.** The promotion board carried every integration leg, so it wrote no Integration receipt, and the planner read the tested commit only from those receipts. It now also reads `native-web-reference-<sha>`. A replay of the real main push returns run 41402792920.
+2. **`ship` ran the kit's own test on a CPU rasteriser.** Frame budgets and screenshots cannot pass there (314 s red, 900 s timeout). Every other row passed on CI, `pnpm:gameplay` included. With `TN_PLAYTEST_ALLOW_SOFTWARE=1` the row now stays out of the report, as in `verify-golden-path`.
+
+The rest of the time was the local finish: 3 local attempts, then the publish from `1c2e968ca` on the real display. The clean room passed with 0 failed rows.
+
+Next release, projected from these runs: board 58 min, main 2 min, `ship` setup, candidate, tag run and proof about 15 min, publish about 20 min. That is about 95 min and about 450 machine minutes. Only a real release can prove it, and the time has little margin.
 
 ## Integration Ledger
 
@@ -119,8 +152,8 @@ Risks:
 
 - [x] AC-7 [local]: `release:ship` runs candidate, tag, dispatch once, publish. It finishes a partial cohort, and in `--auto` it does nothing when the cohort is on npm. proof: `release-ship.spec.ts`, `release.spec.ts`.
 - [x] AC-8 [local]: An override skips the evidence and the candidate, and it needs a reason. The tag run refuses a non-admin. proof: `release-ship.spec.ts`, `native-release-proof.spec.ts`. The admin read itself has not run with a workflow token.
-- [ ] AC-9 [shared]: The next real release goes from merge to `latest` with no board on main, no build in the tag run and no hand step. Record each job time beside the 0.3.8 path. proof: the run ids of that release. Evidence: pending.
+- [ ] AC-9 [shared]: The next real release goes from merge to `latest` with no board on main, no build in the tag run and no hand step. Record each job time beside the 0.3.8 path. proof: the run ids of that release. Evidence: 0.3.9 did not meet this. The tag run built nothing, main ran `native-platforms` again, and the publish needed a local command. See "0.3.9, the first real release".
 
 ## Blocked on
 
-- AC-9 needs a real release after this PR merges. Unblocked by the owner's next merge to main.
+- AC-9 needs one more real release, with the two 0.3.9 fixes on main. Unblocked by the owner's next release.
