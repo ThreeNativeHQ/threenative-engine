@@ -1,10 +1,6 @@
 import type { IThreeNativeConfig } from "@threenative/core";
 
 const config: IThreeNativeConfig = {
-  // Pinned to the legacy engine (PRD-573 slice 8): the native engine's sun shadow pass draws 47,924 triangles
-  // where `production-performance` allows 45,000 (PRD-617 AC-6, 2026-11-02), and the excess is casters it keeps
-  // that three culls. Delete this line when `pnpm test` passes without it, and the game runs on the native engine.
-  engine: "threejs",
   app: {
     id: "com.threenative.__PROJECT_ID__",
     name: "__PROJECT_NAME__",

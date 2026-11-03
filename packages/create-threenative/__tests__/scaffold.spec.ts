@@ -368,7 +368,9 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // (it was a dark patch under a HUD card) and the top-location separator reaches 3:1 on the ink plate.
   // Then the UI final pass: a counted selection band, garrison and blocked-exit cards, overview, hotkeys, edge-scroll toggle, refusal toasts (imports sorted by biome).
   rts: "0da9e8433f88defea093798346a366e8f52edce6400c2d367ad8479cd41c27fd",
-  runner: "225931b0f243a796d6f60c13a3717ed445f9c6f8ae3524afcbd9603ee541fd21",
+  // Re-pinned 2026-11-03 (PRD-617): the sun's shadow box travels with the runner (`lighting.follow`)
+  // and the engine pin goes, so the tree moves. Measured by this test.
+  runner: "38c875a1ceeabcf8f6e4df69bca5bec7fbf12be70bcb27554ff08f2f2b5f9582",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
   sailing: "37027775b81b3c2b92df8be363a1e24a060bdb366564091ab114e35143653690",
   // Recomputed 2026-10-26 (PRD-746): the scene merges the town through mergeByMaterial (src/townBatch.ts).
