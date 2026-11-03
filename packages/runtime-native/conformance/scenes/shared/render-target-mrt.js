@@ -4,7 +4,7 @@ import { startVisualScene } from "./scene-support.js";
 
 // three's MRT render target (PRD-777): a RenderTarget made with `count: 3`, drawn once with each material's mrtNode
 // writing a named output per texture, an additive CustomBlending quad accumulating into all three (the weighted OIT
-// shape of the spell port), then each texture shown on its own panel.
+// shape of the spell port), then each texture shown on its own panel. `accum` alone samples a texture.
 export async function startScene(canvas, dimensions) {
   return startVisualScene(canvas, dimensions, "render-target-mrt", ({ renderer, scene }) => {
     const target = new THREE.RenderTarget(64, 64, { count: 3, type: THREE.HalfFloatType });
@@ -16,8 +16,16 @@ export async function startScene(canvas, dimensions) {
     inner.background = new THREE.Color(0x102030);
     const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 4);
     camera.position.z = 2;
+    // A texture read only inside mrtNode (no colour slot names it) still binds: a 2x2 checker in `accum`.
+    const checker = new THREE.DataTexture(
+      new Uint8Array([255, 64, 0, 255, 0, 64, 255, 255, 0, 64, 255, 255, 255, 64, 0, 255]),
+      2,
+      2,
+    );
+    checker.magFilter = THREE.NearestFilter;
+    checker.needsUpdate = true;
     const board = new THREE.MeshBasicNodeMaterial();
-    board.mrtNode = mrt({ base: vec4(uv(), 0.25, 1), accum: vec4(0.1, 0.2, 0.3, 1), reveal: float(0.6) });
+    board.mrtNode = mrt({ base: vec4(uv(), 0.25, 1), accum: vec4(texture(checker).rgb.mul(0.5), 1), reveal: float(0.6) });
     const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), board);
     // One/One adds into every attachment: the material's blending writes each one, as three's does without a renderer MRT.
     const glow = new THREE.MeshBasicNodeMaterial({

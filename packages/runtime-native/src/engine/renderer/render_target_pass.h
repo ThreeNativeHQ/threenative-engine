@@ -30,10 +30,15 @@ class Object3D;
  *
  * A target with MRT textures (`target.more`) draws once per texture, each with the material mrtNode output of that
  * texture's name; `primary` is false for those attachment draws (their unnamed outputs write zero).
+ *
+ * `autoClear` false (three's renderer.autoClear) draws over the target's colour and depth instead of clearing them first.
  */
 std::vector<std::string> renderToTarget(Renderer& main, RenderTarget& target, Object3D& root, Camera& camera,
                                         std::array<double, 4> clear, bool shadowMap, bool deferred = false,
-                                        bool primary = true);
+                                        bool primary = true, bool autoClear = true);
+
+/** three's renderer.clear(color, depth) while `target` is set: clears its colour to `clear` and/or its depth, every MRT texture. */
+void clearRenderTarget(Renderer& main, RenderTarget& target, std::array<double, 4> clear, bool color, bool depth);
 
 /** The colour view a material samples for `target`, drawing an empty frame first if it never rendered. */
 WGPUTextureView renderTargetView(Renderer& main, RenderTarget& target);
