@@ -346,3 +346,23 @@ not: with the same anchor and frame count, HUD `ELAPSED` reads 4.5 s on the nati
 legacy arm, so the ship and buoys sit elsewhere, and the native sky carries a radial banding pattern
 the legacy sky does not. The sailing pair is indicative only: the pose mismatch limits a judge's
 conclusion, and the sky banding needs its own investigation. No verdict is claimed.
+
+2026-11-02 fix round, sailing's normal target (engine layer, `packages/runtime-native`). The previous
+commit a2750b7db was wrong about three 0.187: `src/nodes/accessors/Normal.js:95-119` makes the
+fragment-stage `normalView` the value of `builder.context.setupNormal()`, and
+`src/materials/nodes/NodeMaterial.js:952` returns `vec3(this.normalNode)` when the material authors
+one. So three's MRT normal target holds the AUTHORED normal, and the native engine now writes the same
+value: `StandardPrograms::normal` (`standard.h`, set at `standard.cpp` beside the albedo and emissive
+exports) is the lit fragment's own normal, and `Renderer::normalTarget` writes it for a draw whose
+material authors a `normalNode`, through that draw's own lit fragment (`Renderer::auxFragment`) instead
+of the shared geometry-normal pass. `native_engine_renderer_aux_targets_normal_node` asserts the
+read-back equals the authored tilt, `normalize(0, 0.5, 1)` = `(0, 0.4472, 0.8944)` with the alpha that
+packs metalness 7 and roughness 0.5, on both masks (normal alone, and all four targets). RED on
+a2750b7db's renderer: `got 0 0 1 14.5, want 0 0.447214 0.894427 14.5`. GREEN after the fix, together
+with `aux_targets_one_pass`, `aux_targets_alpha_tested`, `denoise_face_normal`, `emissive_target`,
+`emissive_validation`, `raw_target_scene_only`, `output_ramp` and the four lit references (renderer-test,
+headless Vulkan, RTX 2080). The Wasm engine was rebuilt with `pnpm wasm:build` and reinstalled into the
+template projects; sailing's web playtests then pass 8 of 8 scenarios (`capsize-is-a-loss`, both
+`sailing-hull-floats` scenarios, `sails-fill-with-wind`, `round-four-course-buoys`, `survives`,
+`sailing-touch-controls` and `production-performance`), with no `TN_POST_NORMAL_UNSUPPORTED`,
+`TN_WASM_COMPILE` or `TN_WASM_RENDERER_LOST` line in the run.

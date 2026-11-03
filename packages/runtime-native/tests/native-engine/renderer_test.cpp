@@ -3401,7 +3401,8 @@ void auxTargets(bool normalOnly, float alphaTest, float opacity, uint32_t sample
     shader::MaterialNodes nodes;  // the draw points at a graph it does not own
     if (authoredNormal) {
         item.nodes = &nodes;
-        // A normal tilted away from the plane's own face: it changes the lighting, never the normal target.
+        // A normal tilted away from the plane's own face. three's normal target holds it: NodeMaterial.setupNormal
+        // returns vec3(normalNode), so the fragment's `normalView` is the authored value.
         nodes.normalNode = g::normalize(g::vec3({g::float_(0), g::float_(0.5f), g::float_(1)}));
     }
     item.key = item.id = 1;
@@ -3444,7 +3445,11 @@ void auxTargets(bool normalOnly, float alphaTest, float opacity, uint32_t sample
         return same;
     };
     // The plane faces the camera; its alpha packs metalness level 7 and roughness 0.5: 2 * 7 + 0.25 + 0.25.
-    CHECK(near(centre(&Renderer::readNormalPixels), cut ? std::array<float, 4>{0, 0, 0, 0} : std::array<float, 4>{0, 0, 1, 14.5f}));
+    // An authored normalNode replaces that facing with its own tilt, as three's setupNormal does; nothing else moves.
+    const std::array<float, 4> targetFacing{0, 0, 1, 14.5f};
+    const std::array<float, 4> targetAuthored{0, 0.4472136f, 0.8944272f, 14.5f};  // normalize(0, 0.5, 1)
+    CHECK(near(centre(&Renderer::readNormalPixels),
+               cut ? std::array<float, 4>{0, 0, 0, 0} : authoredNormal ? targetAuthored : targetFacing));
     if (normalOnly) return;
     CHECK(near(centre(&Renderer::readAlbedoPixels), cut ? std::array<float, 4>{0, 0, 0, 0} : std::array<float, 4>{0.25f, 0.5f, 1, 1}));
     CHECK(near(centre(&Renderer::readEmissivePixels), cut ? std::array<float, 4>{0, 0, 0, 0} : std::array<float, 4>{4, 2, 0, 1}));
@@ -3505,9 +3510,13 @@ void denoiseFaceNormal() {
     CHECK(centre[0] > 20);                 // the patch is there
     CHECK(centre[2] > 20);                 // and its lit neighbours filter into it
 }
-// A material that authors its own normal (three's `normalNode`) writes the view-space GEOMETRY normal to the normal
-// target, as three's MRT slot does, so a post graph that reads it draws instead of refusing the frame.
-void auxTargetsNormalNode() { auxTargets(true, 0, 1, 1, false, true); }
+// A material that authors its own normal (three's `normalNode`) writes that normal to the normal target, as three's
+// `normalView` MRT slot does, so a post graph that reads it draws the surface it lights. Both masks: the normal alone
+// and the normal beside the other three targets.
+void auxTargetsNormalNode() {
+    auxTargets(true, 0, 1, 1, false, true);
+    auxTargets(false, 0, 1, 1, false, true);
+}
 void auxTargetsOnePass() { auxTargets(false, 0, 1); }
 void auxTargetsAlphaTested() {
     auxTargets(false, 0.5f, 1);

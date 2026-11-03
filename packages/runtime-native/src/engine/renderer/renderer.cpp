@@ -2580,23 +2580,29 @@ Renderer::Program* Renderer::program(MaterialKind kind, const shader::VertexVari
     return &built;
 }
 
-// The normal target's value (three's MRT `normalView`): the interpolated view-space normal, or a flat face's from the
-// derivatives of positionView as the colour fragment takes it (flat vertices carry zero normals), flipped on a
-// DoubleSide back face. For post passes that read metalness and roughness, a Standard or Physical surface packs both
+// The normal target's value (three's MRT `normalView`): the fragment's own normal, which is the material's normalNode
+// result when it authors one (`authored`, the value the lit fragment shades with: three's NodeMaterial.setupNormal
+// returns vec3(normalNode), so no face flip and no map). Without one it is the interpolated view-space normal, or a flat
+// face's from the derivatives of positionView as the colour fragment takes it (flat vertices carry zero normals), flipped
+// on a DoubleSide back face. For post passes that read metalness and roughness, a Standard or Physical surface packs both
 // into the alpha:
 //   alpha = 2 * round(7 * metalness) + 0.25 + 0.5 * roughness
 // so the integer half is the metalness level, the fraction is roughness, and 0 (nothing written) is no surface at all.
 // Half-float spacing stays well under the 0.25 offset. The material's own `metalness` and `roughness` uniforms are
 // read, so a fragment that declares only these two finds them at the lit block's offsets 0 and 4.
-static shader::ExprId normalTarget(shader::Program& f, bool flat, bool doubleSide, bool surface) {
-    auto normal = f.varying("normalView", shader::Type::vec(3));
-    if (flat) {
-        const auto position = f.varying("positionView", shader::Type::vec(3));
-        normal = f.call("cross", {f.call("dFdx", {position}), f.call("dFdy", {position})});
+static shader::ExprId normalTarget(shader::Program& f, bool flat, bool doubleSide, bool surface,
+                                   shader::ExprId authored = shader::kInvalid) {
+    shader::ExprId normal = authored;
+    if (normal == shader::kInvalid) {
+        normal = f.varying("normalView", shader::Type::vec(3));
+        if (flat) {
+            const auto position = f.varying("positionView", shader::Type::vec(3));
+            normal = f.call("cross", {f.call("dFdx", {position}), f.call("dFdy", {position})});
+        }
+        normal = f.call("normalize", {normal});
+        if (doubleSide && !flat)
+            normal = f.mul(normal, f.select(f.builtin("frontFacing"), f.constant(1.f), f.constant(-1.f)));
     }
-    normal = f.call("normalize", {normal});
-    if (doubleSide && !flat)
-        normal = f.mul(normal, f.select(f.builtin("frontFacing"), f.constant(1.f), f.constant(-1.f)));
     auto alpha = f.constant(0.f);
     if (surface) {
         const auto clamp01 = [&](shader::ExprId v) { return f.call("clamp", {v, f.constant(0.f), f.constant(1.f)}); };
@@ -2630,7 +2636,11 @@ const shader::StageModule* Renderer::auxFragment(Program& program, uint8_t mask)
         const bool surface = (program.kind == MaterialKind::Standard || program.kind == MaterialKind::Physical) &&
                              !variant.nodes.metalnessNode && !variant.nodes.roughnessNode;
         std::vector<shader::ExprId> outputs;
-        if (mask & kAuxNormal) outputs.push_back(normalTarget(f, variant.flatShading, variant.doubleSide, surface));
+        // A material that authors a normalNode writes that normal to the normal target (three's setupNormal), so the
+        // target needs this draw's own lit fragment, not the shared geometry-normal one.
+        if (mask & kAuxNormal)
+            outputs.push_back(normalTarget(f, variant.flatShading, variant.doubleSide, surface,
+                                           variant.nodes.normalNode ? source.normal : shader::kInvalid));
         if (mask & kAuxMaterial)
             outputs.push_back(source.materialProperties != shader::kInvalid ? source.materialProperties :
                 f.construct(shader::Type::vec(4), {f.constant(0.f), f.constant(1.f), f.constant(0.f), f.constant(1.f)}));
@@ -4583,12 +4593,14 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 if (std::find(diagnostics_.begin(), diagnostics_.end(), note) == diagnostics_.end()) diagnostics_.push_back(note);
                 continue;
             }
-            // A material that authors its own normal (three's `normalNode`) still writes the view-space GEOMETRY
-            // normal here: three's MRT slot names `normalView`, and the authored normal changes lighting only. So
-            // this target matches the legacy engine for every lit draw, authored normal or not.
+            // three's normal target holds the material's own normal: NodeMaterial.setupNormal returns
+            // vec3(normalNode) for a material that authors one, so that draw writes the target from its own lit
+            // fragment. The shared geometry-normal pass covers every other draw.
             const bool cut = item.material->alphaTest > 0 || item.material->alphaHash;
-            const shader::StageModule* fragment =
-                auxMask == kAuxNormal && !cut ? normalFragment(draw) : auxFragment(*draw.program, auxMask);
+            const bool authoredNormal = item.nodes->normalNode != nullptr;
+            const shader::StageModule* fragment = auxMask == kAuxNormal && !cut && !authoredNormal
+                                                      ? normalFragment(draw)
+                                                      : auxFragment(*draw.program, auxMask);
             if (!fragment) {
                 const std::string note = "TN_POST_AUX_SKIPPED: a draw's program has no post-target fragment on its own layout";
                 if (std::find(diagnostics_.begin(), diagnostics_.end(), note) == diagnostics_.end()) diagnostics_.push_back(note);
