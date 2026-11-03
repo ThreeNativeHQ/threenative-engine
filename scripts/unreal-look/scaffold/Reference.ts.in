@@ -380,15 +380,15 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
           model,
         );
       if (level >= 9) {
-        // setupPost reads the `high` preset by reference, so the ablation switches go there.
-        for (const name of OFF) Object.assign(qualityPreset("high"), STAGE_OFF[name]);
-        Object.assign(qualityPreset("high"), gtaoKnobs());
+        // setupPost reads the tier's preset by reference, so the ablation switches go there.
+        for (const name of OFF) Object.assign(qualityPreset(TIER), STAGE_OFF[name]);
+        Object.assign(qualityPreset(TIER), gtaoKnobs());
         // The template arm hands its post chain the scene's triangles, as a game with a chrome surface does: Unreal's
         // reflections trace the scene from L8 (the tuned arm registers its own trace above). Diagnosis knob off=traced.
         const templateTrace = !TUNED && !OFF.has("traced") ? new TracedReflections(model) : undefined;
         const post = setupPost(ctx.renderer, scene, camera, {
           godraysLight: key,
-          tier: "high",
+          tier: TIER,
           ...(templateTrace === undefined ? {} : { reflectionTrace: templateTrace }),
         });
         postDebug = () => post.debug();
