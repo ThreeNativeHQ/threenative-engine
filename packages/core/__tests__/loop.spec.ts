@@ -445,6 +445,25 @@ describe("FixedStepLoop", () => {
     expect(() => loop.freezeClock(1.5)).toThrow(/settleSteps/u);
   });
 
+  it("hands a live clock back live after a settle", () => {
+    // A wall-clock run measures a moving game. Settling spends counted steps, and a counted step
+    // froze the clock unconditionally: the profile then reported a frame rate for a game that had
+    // stopped playing. Only a settle asked of an already-frozen loop leaves it frozen.
+    const dts: number[] = [];
+    const loop = new FixedStepLoop({ onUpdate: (dt) => dts.push(dt) });
+    loop._setClockMode("wall-clock");
+    loop.start(0);
+    loop.stepFrame(0);
+    loop.settleNow(60);
+    expect(dts).toHaveLength(60);
+    expect(loop.clockFrozen).toBe(false);
+    // The first live frame after the settle banks nothing, so the one after it is the first tick.
+    loop.stepFrame(0);
+    loop.stepFrame(16.6667);
+    expect(dts).toHaveLength(61);
+    expect(loop.tick()).toBe(61);
+  });
+
   /**
    * One tick-counted run of 300 presented frames, with a 10-tick `advance()` batch before every
    * other frame when `batches` is on. The clock is frozen, so a live frame simulates nothing and the

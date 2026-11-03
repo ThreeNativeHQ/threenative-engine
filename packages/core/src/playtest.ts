@@ -240,8 +240,14 @@ export function playtest<
         // once the start scene has entered: a loop that spends it on its first live frame settles
         // whatever scene that frame draws, and the 60 steps it ran then reach no world clock at
         // all. That made the same anchor 1.0 s apart between two engines on the sailing pose, by
-        // their boot order alone. A runtime with no `settleClock` keeps the frame's own settle.
-        if (!wallClock) runtime?.freezeClock?.(runtime.settleClock === undefined ? undefined : 0);
+        // their boot order alone. Only a hold can spend it on demand: a game that asked for no
+        // hold (`holdUntilAttached: false`) has no `describe()` to settle from, so a zero freeze
+        // there would leave the world as the game built it for the whole run. A runtime with no
+        // `settleClock` keeps the frame's own settle, for the same reason.
+        if (!wallClock)
+          runtime?.freezeClock?.(
+            shouldHoldUntilAttached(options) && runtime.settleClock !== undefined ? 0 : undefined,
+          );
       }
       dispose = installation.dispose;
       attached = holdUntilAttached(
@@ -249,7 +255,11 @@ export function playtest<
         options,
         () => startSceneEntered,
         runtime?.startSceneLoaded,
-        runtime,
+        // The live mode, not the one this setup started with: a run that switched to the wall
+        // clock mid-run measures frames, and a settle would re-freeze the loop it just released.
+        () => {
+          if (clockMode !== "wall-clock") runtime?.settleClock?.();
+        },
       );
       const cleanup = () => {
         if (!clockDisposed && clockRuntime?._setClockMode !== undefined)
@@ -402,7 +412,7 @@ function holdUntilAttached(
   options: IPlaytestOptions,
   startSceneEntered: () => Promise<void> | undefined,
   startSceneLoaded?: () => Promise<void>,
-  runtime?: Pick<IGamePluginRuntime, "settleClock">,
+  settleClock?: () => void,
 ): Promise<void> | undefined {
   if (!shouldHoldUntilAttached(options)) return undefined;
   const timeoutMs = options.attachTimeoutMs ?? PLAYTEST_ATTACH_TIMEOUT_MS;
@@ -416,7 +426,7 @@ function holdUntilAttached(
   const settle = () => {
     if (worldSettled) return;
     worldSettled = true;
-    runtime?.settleClock?.();
+    settleClock?.();
   };
   return new Promise<void>((resolve, reject) => {
     let settled = false;
