@@ -1860,8 +1860,10 @@ uint64_t RenderDatabase::render(Renderer& renderer, Object3D& scene, Camera& cam
         std::tie(cameraState_.near, cameraState_.far) = std::pair{perspective->near, perspective->far};
     else if (const auto* orthographic = dynamic_cast<const OrthographicCamera*>(&camera))
         std::tie(cameraState_.near, cameraState_.far) = std::pair{orthographic->near, orthographic->far};
-    if (const auto* world = dynamic_cast<const Scene*>(&scene); world && world->background)
-        clear = {world->background->r, world->background->g, world->background->b, 1};
+    const auto* world = dynamic_cast<const Scene*>(&scene);
+    if (world && world->background) clear = {world->background->r, world->background->g, world->background->b, 1};
+    const bool keep = !autoClear && !(world && world->background);
+    renderer.keepContents(keep, keep);
     const auto prepared = cpuMs ? Clock::now() : Clock::time_point{};
     chargeScene();
     uint64_t result;

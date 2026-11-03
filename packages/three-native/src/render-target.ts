@@ -53,16 +53,18 @@ export function pixelsOfType(
 
 /** The engine's two calls for a back end's render targets. */
 export interface IRenderTargetEngine {
-  /** Draws `root` through `camera` into `target`; throws the engine's refusal. */
+  /** Draws `root` through `camera` into `target` (over its contents when the renderer's autoClear is false); throws the engine's refusal. */
   draw(target: unknown, root: unknown, camera: unknown): void;
+  /** Clears `target`'s colour (to the renderer's clear colour) and/or depth. */
+  clear(target: unknown, color: boolean, depth: boolean): void;
   /** The region's rows in the target's format (see targetTexelBytes), top row first. */
   read(target: unknown, x: number, y: number, width: number, height: number): Promise<Uint8Array>;
 }
 
 /**
- * Adds three's setRenderTarget, getRenderTarget, getActiveCubeFace, getActiveMipmapLevel and
- * readRenderTargetPixelsAsync to a renderer facade's prototype, and routes its render() into the
- * current target. `engineOf(renderer)` reaches the engine for that renderer.
+ * Adds three's setRenderTarget, getRenderTarget, getActiveCubeFace, getActiveMipmapLevel, clear,
+ * clearColor, clearDepth, clearStencil and readRenderTargetPixelsAsync to a renderer facade's prototype,
+ * and routes its render() into the current target. `engineOf(renderer)` reaches the engine for that renderer.
  */
 export function defineRenderTargets(
   prototype: { render(scene: unknown, camera: unknown): void },
@@ -97,6 +99,18 @@ export function defineRenderTargets(
       if (target === null || target === undefined) render.call(this, scene, camera);
       else engineOf(this).draw(target, scene, camera);
     },
+    // ponytail: on the canvas clear() is a no-op, because the canvas render clears every frame. A target has no stencil.
+    clear(this: object, color = true, depth = true): void {
+      const target = targets.get(this);
+      if (target !== null && target !== undefined) engineOf(this).clear(target, color, depth);
+    },
+    clearColor(this: { clear(color: boolean, depth: boolean): void }): void {
+      this.clear(true, false);
+    },
+    clearDepth(this: { clear(color: boolean, depth: boolean): void }): void {
+      this.clear(false, true);
+    },
+    clearStencil(): void {},
     async readRenderTargetPixelsAsync(
       this: object,
       target: IRenderTargetLike,

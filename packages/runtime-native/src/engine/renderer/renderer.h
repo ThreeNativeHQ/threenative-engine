@@ -441,6 +441,8 @@ public:
     }
     /** A render target's renderer is read through `sceneColorView()` and `readProbePixels()`, never as a finished frame: its output pass would draw an image nothing reads. */
     void skipOutputPass() { writesOutput_ = false; }
+    /** three's autoClear false / clear(color, depth): the next renders load the scene colour or depth instead of clearing it. */
+    void keepContents(bool color, bool depth) { keepColor_ = color; keepDepth_ = depth; }
     /** The renderer whose post render-to-texture passes this target's materials sample (a material node may read one). */
     void setPostSource(const Renderer* main) { postSource_ = main; }
     WGPUTextureView sceneDepthView() const { return depthView_; }
@@ -1198,6 +1200,7 @@ private:
     WGPUTexture depth_ = nullptr;
     WGPUTextureView colorView_ = nullptr;
     bool sceneOnly_ = false;  // raw render targets expose sceneColorView(), not the RGBA8 output frame
+    bool keepColor_ = false, keepDepth_ = false;  // keepContents()
     WGPUTextureView depthView_ = nullptr;
     WGPUTexture sceneColor_ = nullptr;  // linear HDR, what materials draw into
     WGPUTextureFormat sceneFormat_ = WGPUTextureFormat_RGBA16Float;

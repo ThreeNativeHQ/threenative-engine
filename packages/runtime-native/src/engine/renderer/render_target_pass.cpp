@@ -57,7 +57,8 @@ TargetGpu& gpuOf(Renderer& main, RenderTarget& target) {
 }  // namespace
 
 std::vector<std::string> renderToTarget(Renderer& main, RenderTarget& target, Object3D& root, Camera& camera,
-                                        std::array<double, 4> clear, bool shadowMap, bool deferred, bool primary) {
+                                        std::array<double, 4> clear, bool shadowMap, bool deferred, bool primary,
+                                        bool autoClear) {
     if (deferred && target.depthTexture)
         return {"TN_NATIVE_DEFERRED_TARGET_DEPTH: a deferred render target cannot carry a depth texture"};
     main.flushDeferred(&target);  // an earlier plan for this target is recorded first, never dropped or drawn twice
@@ -69,6 +70,7 @@ std::vector<std::string> renderToTarget(Renderer& main, RenderTarget& target, Ob
         gpu.database->mrtPrimary = primary;
     }
     gpu.database->shadowMapEnabled = shadowMap;
+    gpu.database->autoClear = autoClear;
     gpu.renderer->setSourceAttachments(main.sceneColorView(), main.sceneDepthView());
     gpu.renderer->setPostSource(&main);
     if (deferred) {
@@ -88,9 +90,19 @@ std::vector<std::string> renderToTarget(Renderer& main, RenderTarget& target, Ob
     std::vector<std::string> diagnostics = gpu.database->diagnostics();
     for (const std::string& message : gpu.renderer->diagnostics()) diagnostics.push_back(message);
     for (const auto& attachment : target.more)
-        for (std::string& message : renderToTarget(main, *attachment, root, camera, clear, shadowMap, deferred, false))
+        for (std::string& message : renderToTarget(main, *attachment, root, camera, clear, shadowMap, deferred, false, autoClear))
             diagnostics.push_back(std::move(message));
     return diagnostics;
+}
+
+void clearRenderTarget(Renderer& main, RenderTarget& target, std::array<double, 4> clear, bool color, bool depth) {
+    if (!color && !depth) return;
+    main.flushDeferred(&target);  // a planned draw lands before the clear, as it was issued
+    TargetGpu& gpu = gpuOf(main, target);
+    gpu.renderer->keepContents(!color, !depth);
+    gpu.renderer->render({}, CameraState{}, LightState{}, clear);  // an empty pass: only its load ops act
+    gpu.rendered = true;
+    for (const auto& attachment : target.more) clearRenderTarget(main, *attachment, clear, color, depth);
 }
 
 WGPUTextureView renderTargetView(Renderer& main, RenderTarget& target) {

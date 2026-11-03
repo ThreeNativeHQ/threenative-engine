@@ -117,6 +117,8 @@ class RenderDatabase {
      *  when the mrt() does not name it). Set once, before the first render: the records resolve it as they are built. */
     std::string mrtName;
     bool mrtPrimary = true;
+    /** three's `renderer.autoClear`: false loads the target's colour and depth, except a Color background clears (Background.js forceClear). */
+    bool autoClear = true;
     /** three's `renderer.shadowMap.type`: PCFShadowMap (1) or PCFSoftShadowMap (2). */
     int shadowMapType = 1;
     static constexpr std::size_t kMinBatchMembers = 4;

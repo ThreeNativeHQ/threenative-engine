@@ -3055,7 +3055,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     } else {
         color.view = sceneView_;
     }
-    color.loadOp = WGPULoadOp_Clear;
+    color.loadOp = keepColor_ ? WGPULoadOp_Load : WGPULoadOp_Clear;
     color.storeOp = WGPUStoreOp_Store;
     color.clearValue = {clear[0], clear[1], clear[2], clear[3]};
 #if defined(MYSTRAL_WEBGPU_DAWN)
@@ -3063,7 +3063,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
 #endif
     WGPURenderPassDepthStencilAttachment depth = {};
     depth.view = sampleCount_ == 4 ? msaaDepthView_ : depthView_;
-    depth.depthLoadOp = WGPULoadOp_Clear;
+    depth.depthLoadOp = keepDepth_ ? WGPULoadOp_Load : WGPULoadOp_Clear;
     depth.depthStoreOp = WGPUStoreOp_Store;
     depth.depthClearValue = 1.0f;
     const bool timed = ownsPassTimer_ && passTimer_->active();
