@@ -1,9 +1,9 @@
+import { Matrix4, Scene, Vector3 } from "three";
 import { describe, expect, it } from "vitest";
 import { GRAVITY, HITBOX, JUMP_SPEED } from "../templates/runner/src/entities/Runner.js";
 import { setupLighting } from "../templates/runner/src/render/lighting.js";
 import { OBSTACLE_SIZE } from "../templates/runner/src/render/shapes.js";
 import { SUN_DIRECTION } from "../templates/runner/src/render/sky.js";
-import { Matrix4, Scene, Vector3 } from "three";
 
 describe("the runner's jump", () => {
   it("lifts the hitbox over a block for long enough to pass it at the start speed", () => {
