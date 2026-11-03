@@ -79,6 +79,12 @@ jobs:
           # branch of the 3.9 GB repository took over this job's 5 minutes on a loaded tn-local
           # runner (three cancels on PR #574), against 8 s and 20 MB blob-less with the same plan.
           filter: blob:none
+          # blob:none still fetched every HEAD blob (488 MB) to fill the working tree, and that
+          # checkout alone took 3m20s of the 5 minutes on a loaded runner (runs 41688746026,
+          # 41702153229). The scripts read only scripts/ and each kit.json: about 20 MB.
+          sparse-checkout: |
+            scripts
+            packages/create-threenative/templates
           # Until protected develop exists, retain the qualified-main scheduled flow.
           ref: ${{ github.event_name == 'schedule' && vars.TN_DEVELOP_CI_ENABLED == 'true' && 'develop' || github.sha }}
       - id: classify
