@@ -1303,8 +1303,10 @@ bool TslScopes::call(const std::string& name, const TslArg* receiver, const std:
     };
     out = {};
     if (name == "scope:open") {
-        arity(0);
-        open_.push_back({++nextBody_, {}});
+        // scope:open("Fn") opens a Fn call's body; If, Else and Loop bodies open without an argument.
+        if (args.size() > 1 || (args.size() == 1 && (args[0].kind != TslArg::Kind::String || args[0].text != "Fn")))
+            throw std::runtime_error("expected no argument or \"Fn\"");
+        open_.push_back({++nextBody_, {}, args.size() == 1});
         return true;
     }
     if (name == "scope:close") {
@@ -1323,6 +1325,9 @@ bool TslScopes::call(const std::string& name, const TslArg* receiver, const std:
         // keeps the value: the Body lowers its statements, then yields args[0].
         if (!args.empty()) node->args = {input(args[0])};
         out = node;
+        // A Fn called inside another body runs its statements at the call, before what follows it reads the variables
+        // they assign (GLSL's `out` arguments); its value is read where it is used, without running them again.
+        if (closed.fn && !open_.empty()) open_.back().statements.push_back(node);
         return true;
     }
     if (name == "textureStore") {
@@ -1376,10 +1381,17 @@ bool TslScopes::call(const std::string& name, const TslArg* receiver, const std:
     }
     if (name == "toVar") {
         arity(0);
-        auto& statements = open().back().statements;
         g::Block block;
         out = block.var(input(*receiver)).declaration;
-        statements.push_back(out);
+        if (!open_.empty()) {
+            open().back().statements.push_back(out);
+            return true;
+        }
+        // Outside a Fn there is no body to declare it in: a variable a Fn is handed as its `out` argument (GLSL's
+        // impactWeights). Lowering declares it at the top of the program, before any statement reads or assigns it.
+        auto hoisted = std::make_shared<g::NodeData>(*out);
+        hoisted->bits = 1;
+        out = hoisted;
         return true;
     }
     // r185's `<op>Assign` (TSLCore.js): assign(this, op(this, value)).

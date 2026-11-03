@@ -1239,9 +1239,12 @@ if (runtime.tsl !== undefined) {
     typeof tsl.notEqual(1, 2)[TSL_NODE] === "number",
     "notEqual(a, b) creates a valid TSL node",
   );
-  // rain's fragment node names its terms with toVar outside any Fn: the expression is the value.
+  // rain's fragment node names its terms with toVar outside any Fn: a variable the program declares first.
   const outside = tsl.float(2).mul(3);
-  check(outside.toVar() === outside, "toVar outside a function body answers the expression itself");
+  check(
+    typeof outside.toVar()[TSL_NODE] === "number",
+    "toVar outside a function body makes a variable node",
+  );
   // sailing's swell slope and rain's declared variables (PRD-617): both exist in the shared table.
   const viewNormal = tsl.transformNormalToView(tsl.vec3(0, 1, 0));
   check(
@@ -1382,6 +1385,32 @@ if (runtime.tsl !== undefined) {
       typeof cut[TSL_NODE] === "number",
       "Discard() and Discard(condition) build a fragment graph",
     );
+    // An `out` parameter (GLSL's volumeSample, impactWeights): a Fn assigns the variable it is handed, as three's
+    // inlined Fn does, whether the caller made it inside a Fn or at the top level.
+    for (const inside of [true, false]) {
+      let outThrew = "";
+      try {
+        const twice = tsl.Fn(
+          ([x, o]: [{ mul(by: number): unknown }, { assign(v: unknown): void }]) => {
+            o.assign(x.mul(2));
+            return x;
+          },
+        );
+        if (inside)
+          tsl.Fn(() => {
+            const o = tsl.float(0).toVar();
+            twice(tsl.float(1), o);
+            return o;
+          })();
+        else twice(tsl.float(1), tsl.float(0).toVar());
+      } catch (error) {
+        outThrew = String(error);
+      }
+      check(
+        outThrew === "",
+        `a Fn assigns its out parameter (${inside ? "inside a Fn" : "top level"}) ${outThrew}`,
+      );
+    }
     // three's MRT on a render target (PRD-777): `count` colour textures, and a material mrtNode of named outputs.
     const { RenderTarget: EngineRenderTarget } = engine.classes as unknown as {
       RenderTarget: new (

@@ -68,6 +68,11 @@ public:
         : custom_(custom), program_(program), inputs_(inputs), toneMapping_(toneMapping), srgb_(srgb) {}
 
     void analyze(Node node);
+    /** Declares the top-level variables analyze found (hoisted_), so every scope after reads and assigns the one variable. */
+    void declareHoisted() {
+        for (const Node& var : hoisted_) (void)ensureVar(var);
+        hoisted_.clear();
+    }
     ExprId expression(Node node);
     void statements(const std::vector<Node>& list);
 
@@ -90,6 +95,8 @@ private:
     std::unordered_map<const NodeData*, std::pair<uint32_t, ExprId>> temps_;
     std::unordered_map<const NodeData*, std::vector<ExprId>> aggregates_;
     std::unordered_map<const NodeData*, VarId> vars_;
+    /** Variables made outside any Fn (toVar at the top level), found by analyze: declared before the graph lowers. */
+    std::vector<Node> hoisted_;
     std::unordered_map<const NodeData*, ExprId> loopIndex_;
     // A Fn result that ran statements is one Body node read at every use. Its statements lower once per
     // lexical scope: `scopes_` is the open If/Loop blocks, `bodyScope_` where each Body already lowered.
@@ -131,6 +138,7 @@ ExprId Lowerer::index(const Node& element) {
 // Node.analyze r185 counts each incoming use, descending into children only on the first.
 void Lowerer::analyze(Node node) {
     if (!node || ++uses_[node.get()] != 1) return;
+    if (node->kind == Kind::Var && node->bits == 1) hoisted_.push_back(node);
     if (node->kind == Kind::Call) return; // each invocation owns its analysis and early returns
     for (const auto& arg : node->args) analyze(arg);
     for (const auto& child : node->body) analyze(child);
@@ -511,10 +519,17 @@ void Lowerer::statement(Node node) {
         case Kind::Break: program_.breakLoop(); return;
         case Kind::Continue: program_.continueLoop(); return;
         case Kind::Discard: program_.discard(); return;
-        case Kind::Body:
+        case Kind::Body: {
+            // A Fn body run at its call (TslScopes scope:close): an expression read of its value later in this scope
+            // finds it lowered and runs its statements no second time.
+            const auto lowered = bodyScope_.find(&s);
+            if (lowered != bodyScope_.end() && std::find(scopes_.begin(), scopes_.end(), lowered->second) != scopes_.end()) return;
             statements(s.body);
+            bodyScope_[&s] = scopes_.back();
+            exprs_.clear();
             if (!s.args.empty()) statement(s.args[0]);
             return;
+        }
         case Kind::Call: case Kind::AtomicAdd: (void)expression(node); return;
         case Kind::TextureStore: {
             const auto* texture = static_cast<const tn::engine::Texture*>(s.object.get());
@@ -953,6 +968,7 @@ ExprId lower(const Graph& graph, Program& program, const std::unordered_map<std:
     if (!graph) return kInvalid;
     Lowerer lowerer(program, inputs, toneMapping, srgb, custom);
     lowerer.analyze(graph);
+    lowerer.declareHoisted();
     return lowerer.expression(graph);
 }
 
@@ -969,6 +985,7 @@ Lowering::Lowering(Program& program, std::unordered_map<std::string, ExprId> inp
 Lowering::~Lowering() = default;
 ExprId Lowering::lower(const Graph& graph) {
     impl_->lowerer.analyze(graph);
+    impl_->lowerer.declareHoisted();
     return graph ? impl_->lowerer.expression(graph) : kInvalid;
 }
 
