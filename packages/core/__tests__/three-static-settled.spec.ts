@@ -446,9 +446,8 @@ describe("a settled static object skips the per-object draw work", () => {
     const written = draw(mesh, observer, undefined, attributes);
     expect(written.settled).toBe(true);
     expect(written.counts.attributeScans).toBe(1);
-    expect(
-      written.counts.uploads.filter((attribute) => Reflect.get(attribute, "data") === data),
-    ).toHaveLength(1);
+    // r187 uploads the shared InterleavedBuffer itself (`backend.getBufferAttribute`), once per write.
+    expect(written.counts.uploads.filter((attribute) => attribute === data)).toHaveLength(1);
     const quiet = draw(mesh, observer, undefined, attributes);
     expect.soft(quiet.counts.attributeScans, "the buffer write is spent after one upload").toBe(0);
     expect.soft(quiet.counts.uploads.length).toBe(0);
