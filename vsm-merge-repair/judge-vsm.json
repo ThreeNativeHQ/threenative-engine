@@ -1,0 +1,220 @@
+{
+  "status": "COMPLETE",
+  "judgedAt": "2026-11-03T17:53:28.213Z",
+  "model": "claude-opus-5-5",
+  "effort": "high",
+  "sessionId": "ad431455-4622-4faf-bb25-0ccdce8d9cc6",
+  "costUsd": 0.8463794,
+  "durationMs": 88474,
+  "imagesRead": 45,
+  "criteria": {
+    "file": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/prd632/artifacts/prd632/judge-vsm.md",
+    "sha256": "29e1f51d7989382e4fad6a7bdafb7b4f7093f211c8529714c36f97d759c8335a"
+  },
+  "expect": "improvement",
+  "tier": "high",
+  "runs": {
+    "before": 2,
+    "after": 2
+  },
+  "sets": {
+    "before": [
+      "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-vsm/merged",
+      "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-vsm/merged-2"
+    ],
+    "after": [
+      "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-vsm/fix2",
+      "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-vsm/fix2-b"
+    ],
+    "unreal": "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-vsm/unreal"
+  },
+  "frames": [
+    {
+      "id": "L5/L5_sun15_exterior",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "CLOSE",
+      "reasons": "Box room: the lit back-wall strip (about x 309-388, y 315-345), the lit left-wall wedge and the diagonal shadow edge are the same in both BEFORE runs and both AFTER runs. The roof underside, floor shadows of the spheres, capsule and wall, and the right wall show no change. With the low sun there is no leak band under the roof in either arm.",
+      "differences": "Unreal's box room interior is a lighter grey-brown, while ThreeNative's is near black. Unreal's sky has whiter, differently shaped clouds; ThreeNative's are pinker. The chrome sphere reflection differs slightly.",
+      "layer": "L5",
+      "unreal": "L5",
+      "files": {
+        "before": [
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-vsm/merged/L5/L5_sun15_exterior.png",
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-vsm/merged-2/L5/L5_sun15_exterior.png"
+        ],
+        "after": [
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-vsm/fix2/L5/L5_sun15_exterior.png",
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-vsm/fix2-b/L5/L5_sun15_exterior.png"
+        ],
+        "unreal": "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-vsm/unreal/L5/L5_sun15_exterior.png"
+      }
+    },
+    {
+      "id": "L5/L5_sun60_exterior",
+      "verdict": "IMPROVEMENT",
+      "vsUnreal": "CLOSE",
+      "reasons": "Under the box room roof, on the inner left wall: BEFORE (both runs) shows a lit band about 15-17 px tall below the roof edge, with a slightly saw-toothed lower edge. AFTER (both runs) cuts it to about 8-10 px. Unreal shows only a hairline there. The back-wall top edge is also tighter in AFTER. Contact shadows under the spheres and capsule, the shadow wedge at the right wall, the floor and the sky are unchanged. I saw no new acne, banding or detached shadow.",
+      "differences": "AFTER still has a thin lit strip under the roof that Unreal does not have. ThreeNative's box room interior is near black navy, while Unreal's is a lighter blue-grey from bounce light. Clouds and sky tint differ.",
+      "layer": "L5",
+      "unreal": "L5",
+      "files": {
+        "before": [
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-vsm/merged/L5/L5_sun60_exterior.png",
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-vsm/merged-2/L5/L5_sun60_exterior.png"
+        ],
+        "after": [
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-vsm/fix2/L5/L5_sun60_exterior.png",
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-vsm/fix2-b/L5/L5_sun60_exterior.png"
+        ],
+        "unreal": "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-vsm/unreal/L5/L5_sun60_exterior.png"
+      }
+    },
+    {
+      "id": "L6/L6_sun60_exterior",
+      "verdict": "IMPROVEMENT",
+      "vsUnreal": "CLOSE",
+      "reasons": "Box room roof underside and left inner wall: BEFORE has a band of sunlight about 15 px tall below the roof. AFTER narrows it to about 8-10 px and gives the shadowed left wall a cleaner top edge, closer to Unreal. The back wall, the floor shadows under the spheres and capsule, and the right wall's floor shadow are the same in both arms. I saw no new artefact.",
+      "differences": "AFTER keeps a thin lit strip under the roof where Unreal has almost none. ThreeNative's interior is much darker than Unreal's blue-grey ambient fill. The sky and clouds differ.",
+      "layer": "L6",
+      "unreal": "L6",
+      "files": {
+        "before": [
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-vsm/merged/L6/L6_sun60_exterior.png",
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-vsm/merged-2/L6/L6_sun60_exterior.png"
+        ],
+        "after": [
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-vsm/fix2/L6/L6_sun60_exterior.png",
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-vsm/fix2-b/L6/L6_sun60_exterior.png"
+        ],
+        "unreal": "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-vsm/unreal/L6/L6_sun60_exterior.png"
+      }
+    },
+    {
+      "id": "L6/L6_sun60_spheres",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "CLOSE",
+      "reasons": "Close-up of the spheres, capsule, red cube and white cube: the terminator lines, the capsule's self-shadow on its middle section, the floor contact shadows and the cast shadow of the capsule are identical in both BEFORE runs and both AFTER runs. I saw no acne or detached shadow.",
+      "differences": "In Unreal the shadowed sides of the spheres and capsule are a bit bluer and lighter, and the chrome sphere reflects a different sky and horizon. Cloud layout differs. Shadow shapes match.",
+      "layer": "L6",
+      "unreal": "L6",
+      "files": {
+        "before": [
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-vsm/merged/L6/L6_sun60_spheres.png",
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-vsm/merged-2/L6/L6_sun60_spheres.png"
+        ],
+        "after": [
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-vsm/fix2/L6/L6_sun60_spheres.png",
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-vsm/fix2-b/L6/L6_sun60_spheres.png"
+        ],
+        "unreal": "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-vsm/unreal/L6/L6_sun60_spheres.png"
+      }
+    },
+    {
+      "id": "L7/L7_sun15_exterior",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "CLOSE",
+      "reasons": "Box room interior (the lit back wall, the lit left-wall wedge and the warm-lit ceiling area), the long shadows of the spheres and capsule on the floor, the emissive sphere's glow, and the right wall all look the same in both arms. No leak band under the roof in either arm at this low sun angle.",
+      "differences": "In Unreal the chrome sphere looks like matte grey, and ThreeNative's is reflective. Unreal's interior is a little darker and greyer. Sky and cloud shapes differ.",
+      "layer": "L7",
+      "unreal": "L7",
+      "files": {
+        "before": [
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-vsm/merged/L7/L7_sun15_exterior.png",
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-vsm/merged-2/L7/L7_sun15_exterior.png"
+        ],
+        "after": [
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-vsm/fix2/L7/L7_sun15_exterior.png",
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-vsm/fix2-b/L7/L7_sun15_exterior.png"
+        ],
+        "unreal": "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-vsm/unreal/L7/L7_sun15_exterior.png"
+      }
+    },
+    {
+      "id": "L7/L7_sun60_exterior",
+      "verdict": "IMPROVEMENT",
+      "vsUnreal": "CLOSE",
+      "reasons": "Box room left inner wall just below the roof: BEFORE shows a lit band about 15 px tall with a jagged edge. AFTER shrinks it to a thin strip of about 8 px. Unreal has essentially none. The shadowed left wall and back wall, the floor, the sphere and capsule contact shadows and the right wall are unchanged. I saw no new artefact.",
+      "differences": "A thin residual lit strip remains under the roof in AFTER. In Unreal the chrome sphere is matte grey. Sky and clouds differ.",
+      "layer": "L7",
+      "unreal": "L7",
+      "files": {
+        "before": [
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-vsm/merged/L7/L7_sun60_exterior.png",
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-vsm/merged-2/L7/L7_sun60_exterior.png"
+        ],
+        "after": [
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-vsm/fix2/L7/L7_sun60_exterior.png",
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-vsm/fix2-b/L7/L7_sun60_exterior.png"
+        ],
+        "unreal": "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-vsm/unreal/L7/L7_sun60_exterior.png"
+      }
+    },
+    {
+      "id": "L8/L8_sun60_exterior",
+      "verdict": "IMPROVEMENT",
+      "vsUnreal": "CLOSE",
+      "reasons": "Under the box room roof on the left inner wall, BEFORE (both runs) has a lit band about 15 px tall. AFTER (both runs) cuts it to about 8 px, so the wall shadow now starts close to the roof, as in Unreal. Floor, spheres, emissive glow and the right wall's shadow are unchanged. I saw no new acne or black patch.",
+      "differences": "A thin lit strip under the roof remains in AFTER that Unreal does not show. Sky and clouds differ. The chrome sphere reflection differs slightly.",
+      "layer": "L8",
+      "unreal": "L8",
+      "files": {
+        "before": [
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-vsm/merged/L8/L8_sun60_exterior.png",
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-vsm/merged-2/L8/L8_sun60_exterior.png"
+        ],
+        "after": [
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-vsm/fix2/L8/L8_sun60_exterior.png",
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-vsm/fix2-b/L8/L8_sun60_exterior.png"
+        ],
+        "unreal": "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-vsm/unreal/L8/L8_sun60_exterior.png"
+      }
+    },
+    {
+      "id": "L9/L9_sun60_exterior",
+      "verdict": "IMPROVEMENT",
+      "vsUnreal": "CLOSE",
+      "reasons": "Box room roof edge and left inner wall: BEFORE shows a band of sunlight about 15 px tall under the roof with a saw-toothed lower edge. AFTER narrows it to about 8 px. Unreal shows the wall shadow starting right at the roof. The floor, contact shadows, emissive sphere and right wall look the same across arms. I saw no new artefact.",
+      "differences": "AFTER keeps a thin lit strip under the roof where Unreal has none. Unreal's floor is slightly warmer and darker, and its sky and clouds differ.",
+      "layer": "L9",
+      "unreal": "L9",
+      "files": {
+        "before": [
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-vsm/merged/L9/L9_sun60_exterior.png",
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-vsm/merged-2/L9/L9_sun60_exterior.png"
+        ],
+        "after": [
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-vsm/fix2/L9/L9_sun60_exterior.png",
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-vsm/fix2-b/L9/L9_sun60_exterior.png"
+        ],
+        "unreal": "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-vsm/unreal/L9/L9_sun60_exterior.png"
+      }
+    },
+    {
+      "id": "L9/L9_sun60_interior",
+      "verdict": "IMPROVEMENT",
+      "vsUnreal": "CLOSE",
+      "reasons": "In BEFORE (both runs) a bright, jagged line of sunlight runs along the top-left wall/ceiling seam, from about (30,10) to (280,135), with a fainter one at the top-right seam. In AFTER (both runs) both lines are gone and the seams are soft and evenly shaded, like Unreal. The back wall, floor and corner occlusion are unchanged. I saw no new artefact.",
+      "differences": "Unreal's walls and floor are slightly cooler and bluer, and the top corners of its ceiling are a little brighter. The shadows and seams otherwise look the same.",
+      "layer": "L9",
+      "unreal": "L9",
+      "files": {
+        "before": [
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-vsm/merged/L9/L9_sun60_interior.png",
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-vsm/merged-2/L9/L9_sun60_interior.png"
+        ],
+        "after": [
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-vsm/fix2/L9/L9_sun60_interior.png",
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-vsm/fix2-b/L9/L9_sun60_interior.png"
+        ],
+        "unreal": "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-vsm/unreal/L9/L9_sun60_interior.png"
+      }
+    }
+  ],
+  "overall": {
+    "verdict": "IMPROVEMENT",
+    "vsUnreal": "CLOSE",
+    "reasons": "In all five sun60 exterior and interior frames (L5, L6, L7, L8, L9), AFTER narrows the sunlit band under the box room roof. In the L9 interior it removes the jagged light line along the wall/ceiling seam. Both AFTER runs agree in every frame. The sun15 frames and the sphere close-up do not change. No frame shows a new artefact (acne, banding, detached or missing contact shadow, black patch) or a regression elsewhere. Compared with Unreal, the result is close: a thin residual strip under the roof remains in the exterior sun60 views. The darker ambient light in ThreeNative's interior, the sky and clouds, and the chrome-sphere look differ in both arms, so this change did not cause them."
+  },
+  "blockedBy": [],
+  "file": "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-vsm.json"
+}
