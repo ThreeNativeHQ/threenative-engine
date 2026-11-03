@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-539 — A lower internal raster reconstructs into a stable full-resolution frame
 
-**Status:** NOT STARTED — successor to [PRD-455](../../done/PRD-455-temporal-reconstruction-from-dynamic-resolution.md); no reconstructor has cleared the quality gate (2026-10-07).  
+**Status:** PARTIAL — levers 1 and 2 measured (2026-11-02); successor to [PRD-455](../../done/PRD-455-temporal-reconstruction-from-dynamic-resolution.md); no reconstructor has cleared the quality gate (2026-10-07).  
 **Priority:** P1 — Carried over unchanged from PRD-455, whose own note ranked it the highest-value rendering project; the owner may lower it.  
 **Complexity:** 8 → HIGH. Five candidates failed the same gate on hardware; the next one is a new design, not a parameter change.  
 **Numbering:** filed in #398 as PRD-537; #464 took that number for the far-hills PRD first, so this PRD is PRD-539 (2026-10-08).  
@@ -69,10 +69,13 @@ One reconstructor that, at a sub-1.0 internal raster, produces a stable display-
 
 ### Phase 1 — A reconstructor that clears the unchanged quality gate
 
-- [ ] One-variable control for the `.010` drift loss: the same reconstructor with history at 200% against 100% of output resolution, everything else equal, reports moving- and static-camera edge error for both arms. proof: `sh scripts/xvfb.sh node --import tsx scripts/verify-temporal-motion.ts` run once per arm on hardware WebGPU.
-- [ ] A velocity-clamped history weight (Unreal's TSR keeps about 4 samples of history at 1 px/frame of motion) runs as one gate arm. proof: `sh scripts/xvfb.sh node --import tsx scripts/verify-temporal-motion.ts` run once per arm on hardware WebGPU.
+- [x] One-variable control for the `.010` drift loss: the same reconstructor with history at 200% against 100% of output resolution, everything else equal, reports moving- and static-camera edge error for both arms. proof: `sh scripts/xvfb.sh node --import tsx scripts/verify-temporal-motion.ts` run once per arm on hardware WebGPU.
+  Result 2026-11-02, nvidia/turing, `3edfb89c7` (static: `TN_STATIC_CAMERA=1`): `temporal` moving `.05648` / static `.04682` (drift loss `.0097`, reproduces PRD-455); `history200` moving `.04850` / static `.05001` (drift loss gone). History resampling is the drift loss. The static cost `.0032` stays. A first run that also switched a full-resolution input to the Gaussian gather read `.05525` / `.05311`, so the one-variable arm keeps the owned point sample.
+- [x] A velocity-clamped history weight (Unreal's TSR keeps about 4 samples of history at 1 px/frame of motion) runs as one gate arm. proof: `sh scripts/xvfb.sh node --import tsx scripts/verify-temporal-motion.ts` run once per arm on hardware WebGPU.
+  Result 2026-11-02, same runs: `velocity-clamp` moving `.05647` / static `.04533`. With 200% history (`history200-clamp`): moving `.04566` / static `.03850`, both under the full-resolution `<.04778` bar and under 0.95× the no-AA reference (`.04616`). Static residual instability rises (`.0079` to `.0192`). Low input: `quality-history200-clamp` `.07388` beats spatial `.07514` but is far from `<.04687`. Port: `UE 5.8.3: Engine/Source/Runtime/Renderer/Private/PostProcess/TemporalSuperResolution.cpp:3219-3224`, `Engine/Shaders/Private/TemporalSuperResolution/TSRUpdateHistory.usf:1262-1276`.
 
 - [ ] Thin fences, foliage, sub-pixel edges, a moving character and an instanced object stay within the pinned temporal thresholds against a full-resolution reference, and the temporal arm beats the spatial arm on the named stability metric. proof: an automated frame-sequence report records edge flicker, rejected-history ratio and image delta for full-res, low-res spatial upscale and temporal reconstruction; `sh scripts/xvfb.sh node --import tsx scripts/verify-temporal-motion.ts` exits 0 on hardware WebGPU with the original thresholds (`edge <.04778` full-res, `<.04687` low-input).
+  Open. Gate run 3 (2026-11-02, nvidia/turing) added Unreal's alignment refine (`tsr` = `history200-clamp` + refine, `UE 5.8.3: Engine/Shaders/Private/TemporalSuperResolution/TSRUpdateHistory.usf:1106-1168`, kernel `TSRKernels.ush:438-446`): moving `.05962` / static `.04982`, low input `.08079`. All three are worse than `history200-clamp`, so the refine is rejected. Moving residual instability drops (`.0317` to `.0285`). The gate still exits 1 (`edgeImprovement`, `qualityEdgeImprovement`, `qualityRevealRecovery`). Left: lever 3 (spatial AA of rejected input) and lever 4 (flicker-aware rejection) on the low-input family.
 - [ ] Newly revealed surfaces do not inherit stale colour, and disabling disocclusion rejection fails the check. proof: the same command, `revealRecovery` and `qualityRevealRecovery` true (`<=1%` stale after one frame).
 
 ### Phase 2 — Keep it only if it buys frame time
