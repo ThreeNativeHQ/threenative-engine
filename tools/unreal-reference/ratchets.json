@@ -10474,12 +10474,13 @@
       "cell": "sun60_interior",
       "region": "Floor",
       "metric": "deltaE",
-      "bound": 3.613,
-      "value": 3.299,
+      "bound": 4.324,
+      "value": 4.01,
       "spread": 0.31415,
-      "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "runs": 3,
+      "since": "57f8925b8",
+      "date": "2026-11-03",
+      "reason": "Deferred (PRD-632 Blocked on): judge REGRESSION in this frame from a gap the base's 1.31x sun hid; re-tighten when PRD-640 AC-1 (indoor sky light, L7/L8 interior) or PRD-633 AC-2 (4 degree sky-to-sun, L9 sun04) passes"
     },
     {
       "scene": "reference",
@@ -10487,12 +10488,13 @@
       "cell": "sun60_interior",
       "region": "Floor",
       "metric": "dP50",
-      "bound": 0.23334,
-      "value": 0.2,
+      "bound": 0.36667,
+      "value": 0.3333,
       "spread": 0.033334,
-      "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "runs": 3,
+      "since": "57f8925b8",
+      "date": "2026-11-03",
+      "reason": "Deferred (PRD-632 Blocked on): judge REGRESSION in this frame from a gap the base's 1.31x sun hid; re-tighten when PRD-640 AC-1 (indoor sky light, L7/L8 interior) or PRD-633 AC-2 (4 degree sky-to-sun, L9 sun04) passes"
     },
     {
       "scene": "reference",
@@ -10500,12 +10502,13 @@
       "cell": "sun60_interior",
       "region": "LitFloor",
       "metric": "deltaE",
-      "bound": 3.6135,
-      "value": 3.299,
+      "bound": 4.1953,
+      "value": 3.881,
       "spread": 0.31415,
-      "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "runs": 3,
+      "since": "57f8925b8",
+      "date": "2026-11-03",
+      "reason": "Deferred (PRD-632 Blocked on): judge REGRESSION in this frame from a gap the base's 1.31x sun hid; re-tighten when PRD-640 AC-1 (indoor sky light, L7/L8 interior) or PRD-633 AC-2 (4 degree sky-to-sun, L9 sun04) passes"
     },
     {
       "scene": "reference",
@@ -10513,12 +10516,13 @@
       "cell": "sun60_interior",
       "region": "LitFloor",
       "metric": "dP50",
-      "bound": 0.23334,
-      "value": 0.2,
+      "bound": 0.33334,
+      "value": 0.3,
       "spread": 0.033334,
-      "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "runs": 3,
+      "since": "57f8925b8",
+      "date": "2026-11-03",
+      "reason": "Deferred (PRD-632 Blocked on): judge REGRESSION in this frame from a gap the base's 1.31x sun hid; re-tighten when PRD-640 AC-1 (indoor sky light, L7/L8 interior) or PRD-633 AC-2 (4 degree sky-to-sun, L9 sun04) passes"
     },
     {
       "scene": "reference",
@@ -10539,12 +10543,13 @@
       "cell": "sun60_interior",
       "region": "Room",
       "metric": "dP50",
-      "bound": 0.02817,
-      "value": 0.01408,
+      "bound": 0.12677,
+      "value": 0.1127,
       "spread": 0.014085,
-      "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "runs": 3,
+      "since": "57f8925b8",
+      "date": "2026-11-03",
+      "reason": "Deferred (PRD-632 Blocked on): judge REGRESSION in this frame from a gap the base's 1.31x sun hid; re-tighten when PRD-640 AC-1 (indoor sky light, L7/L8 interior) or PRD-633 AC-2 (4 degree sky-to-sun, L9 sun04) passes"
     },
     {
       "scene": "reference",
@@ -10552,12 +10557,13 @@
       "cell": "sun60_interior",
       "region": "ShadowedFloor",
       "metric": "deltaE",
-      "bound": 2.2223,
-      "value": 2.015,
+      "bound": 2.4433,
+      "value": 2.237,
       "spread": 0.20671,
-      "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "runs": 3,
+      "since": "57f8925b8",
+      "date": "2026-11-03",
+      "reason": "Deferred (PRD-632 Blocked on): judge REGRESSION in this frame from a gap the base's 1.31x sun hid; re-tighten when PRD-640 AC-1 (indoor sky light, L7/L8 interior) or PRD-633 AC-2 (4 degree sky-to-sun, L9 sun04) passes"
     },
     {
       "scene": "reference",
@@ -10565,12 +10571,13 @@
       "cell": "sun60_interior",
       "region": "ShadowedFloor",
       "metric": "dP50",
-      "bound": 0.14286,
-      "value": 0.07143,
+      "bound": 0.42858,
+      "value": 0.3571,
       "spread": 0.071429,
-      "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "runs": 3,
+      "since": "57f8925b8",
+      "date": "2026-11-03",
+      "reason": "Deferred (PRD-632 Blocked on): judge REGRESSION in this frame from a gap the base's 1.31x sun hid; re-tighten when PRD-640 AC-1 (indoor sky light, L7/L8 interior) or PRD-633 AC-2 (4 degree sky-to-sun, L9 sun04) passes"
     },
     {
       "scene": "reference",
@@ -11804,12 +11811,13 @@
       "cell": "sun60_interior",
       "region": "Floor",
       "metric": "deltaE",
-      "bound": 3.5954,
-      "value": 3.281,
+      "bound": 4.3522,
+      "value": 4.038,
       "spread": 0.31415,
-      "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "runs": 3,
+      "since": "57f8925b8",
+      "date": "2026-11-03",
+      "reason": "Deferred (PRD-632 Blocked on): judge REGRESSION in this frame from a gap the base's 1.31x sun hid; re-tighten when PRD-640 AC-1 (indoor sky light, L7/L8 interior) or PRD-633 AC-2 (4 degree sky-to-sun, L9 sun04) passes"
     },
     {
       "scene": "reference",
@@ -11817,12 +11825,13 @@
       "cell": "sun60_interior",
       "region": "Floor",
       "metric": "dP50",
-      "bound": 0.23334,
-      "value": 0.2,
+      "bound": 0.36667,
+      "value": 0.3333,
       "spread": 0.033334,
-      "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "runs": 3,
+      "since": "57f8925b8",
+      "date": "2026-11-03",
+      "reason": "Deferred (PRD-632 Blocked on): judge REGRESSION in this frame from a gap the base's 1.31x sun hid; re-tighten when PRD-640 AC-1 (indoor sky light, L7/L8 interior) or PRD-633 AC-2 (4 degree sky-to-sun, L9 sun04) passes"
     },
     {
       "scene": "reference",
@@ -11830,12 +11839,13 @@
       "cell": "sun60_interior",
       "region": "LitFloor",
       "metric": "deltaE",
-      "bound": 3.5954,
-      "value": 3.281,
+      "bound": 4.3522,
+      "value": 4.038,
       "spread": 0.31415,
-      "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "runs": 3,
+      "since": "57f8925b8",
+      "date": "2026-11-03",
+      "reason": "Deferred (PRD-632 Blocked on): judge REGRESSION in this frame from a gap the base's 1.31x sun hid; re-tighten when PRD-640 AC-1 (indoor sky light, L7/L8 interior) or PRD-633 AC-2 (4 degree sky-to-sun, L9 sun04) passes"
     },
     {
       "scene": "reference",
@@ -11843,12 +11853,13 @@
       "cell": "sun60_interior",
       "region": "LitFloor",
       "metric": "dP50",
-      "bound": 0.23334,
-      "value": 0.2,
+      "bound": 0.36667,
+      "value": 0.3333,
       "spread": 0.033334,
-      "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "runs": 3,
+      "since": "57f8925b8",
+      "date": "2026-11-03",
+      "reason": "Deferred (PRD-632 Blocked on): judge REGRESSION in this frame from a gap the base's 1.31x sun hid; re-tighten when PRD-640 AC-1 (indoor sky light, L7/L8 interior) or PRD-633 AC-2 (4 degree sky-to-sun, L9 sun04) passes"
     },
     {
       "scene": "reference",
@@ -11869,12 +11880,13 @@
       "cell": "sun60_interior",
       "region": "Room",
       "metric": "dP50",
-      "bound": 0.014085,
-      "value": 0,
+      "bound": 0.14085,
+      "value": 0.1268,
       "spread": 0.014085,
-      "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "runs": 3,
+      "since": "57f8925b8",
+      "date": "2026-11-03",
+      "reason": "Deferred (PRD-632 Blocked on): judge REGRESSION in this frame from a gap the base's 1.31x sun hid; re-tighten when PRD-640 AC-1 (indoor sky light, L7/L8 interior) or PRD-633 AC-2 (4 degree sky-to-sun, L9 sun04) passes"
     },
     {
       "scene": "reference",
@@ -11882,12 +11894,13 @@
       "cell": "sun60_interior",
       "region": "ShadowedFloor",
       "metric": "deltaE",
-      "bound": 2.1731,
-      "value": 1.966,
+      "bound": 2.4804,
+      "value": 2.274,
       "spread": 0.20671,
-      "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "runs": 3,
+      "since": "57f8925b8",
+      "date": "2026-11-03",
+      "reason": "Deferred (PRD-632 Blocked on): judge REGRESSION in this frame from a gap the base's 1.31x sun hid; re-tighten when PRD-640 AC-1 (indoor sky light, L7/L8 interior) or PRD-633 AC-2 (4 degree sky-to-sun, L9 sun04) passes"
     },
     {
       "scene": "reference",
@@ -11895,12 +11908,13 @@
       "cell": "sun60_interior",
       "region": "ShadowedFloor",
       "metric": "dP50",
-      "bound": 0.14286,
-      "value": 0.07143,
+      "bound": 0.42858,
+      "value": 0.3571,
       "spread": 0.071429,
-      "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "runs": 3,
+      "since": "57f8925b8",
+      "date": "2026-11-03",
+      "reason": "Deferred (PRD-632 Blocked on): judge REGRESSION in this frame from a gap the base's 1.31x sun hid; re-tighten when PRD-640 AC-1 (indoor sky light, L7/L8 interior) or PRD-633 AC-2 (4 degree sky-to-sun, L9 sun04) passes"
     },
     {
       "scene": "reference",
@@ -12111,12 +12125,13 @@
       "cell": "sun04_exterior",
       "region": "BacklitWall",
       "metric": "deltaE",
-      "bound": 1.2792,
-      "value": 1.045,
+      "bound": 2.3743,
+      "value": 2.14,
       "spread": 0.23455,
-      "runs": 5,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "runs": 3,
+      "since": "57f8925b8",
+      "date": "2026-11-03",
+      "reason": "Deferred (PRD-632 Blocked on): judge REGRESSION in this frame from a gap the base's 1.31x sun hid; re-tighten when PRD-640 AC-1 (indoor sky light, L7/L8 interior) or PRD-633 AC-2 (4 degree sky-to-sun, L9 sun04) passes"
     },
     {
       "scene": "reference",
@@ -12124,12 +12139,13 @@
       "cell": "sun04_exterior",
       "region": "Capsule",
       "metric": "deltaE",
-      "bound": 0.45823,
-      "value": 0.2383,
+      "bound": 2.6147,
+      "value": 2.395,
       "spread": 0.21995,
-      "runs": 5,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "runs": 3,
+      "since": "57f8925b8",
+      "date": "2026-11-03",
+      "reason": "Deferred (PRD-632 Blocked on): judge REGRESSION in this frame from a gap the base's 1.31x sun hid; re-tighten when PRD-640 AC-1 (indoor sky light, L7/L8 interior) or PRD-633 AC-2 (4 degree sky-to-sun, L9 sun04) passes"
     },
     {
       "scene": "reference",
@@ -12189,12 +12205,13 @@
       "cell": "sun04_exterior",
       "region": "Room",
       "metric": "deltaE",
-      "bound": 0.81012,
-      "value": 0.5902,
+      "bound": 1.3914,
+      "value": 1.171,
       "spread": 0.21995,
-      "runs": 5,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "runs": 3,
+      "since": "57f8925b8",
+      "date": "2026-11-03",
+      "reason": "Deferred (PRD-632 Blocked on): judge REGRESSION in this frame from a gap the base's 1.31x sun hid; re-tighten when PRD-640 AC-1 (indoor sky light, L7/L8 interior) or PRD-633 AC-2 (4 degree sky-to-sun, L9 sun04) passes"
     },
     {
       "scene": "reference",
@@ -12202,12 +12219,13 @@
       "cell": "sun04_exterior",
       "region": "Room",
       "metric": "dP50",
-      "bound": 0.0088106,
-      "value": 0.004405,
+      "bound": 0.026432,
+      "value": 0.02203,
       "spread": 0.0044053,
-      "runs": 5,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "runs": 3,
+      "since": "57f8925b8",
+      "date": "2026-11-03",
+      "reason": "Deferred (PRD-632 Blocked on): judge REGRESSION in this frame from a gap the base's 1.31x sun hid; re-tighten when PRD-640 AC-1 (indoor sky light, L7/L8 interior) or PRD-633 AC-2 (4 degree sky-to-sun, L9 sun04) passes"
     },
     {
       "scene": "reference",
