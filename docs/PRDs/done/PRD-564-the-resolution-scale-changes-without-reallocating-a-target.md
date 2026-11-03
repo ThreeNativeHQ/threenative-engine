@@ -5,7 +5,7 @@
 **Priority:** P2
 **Complexity:** 9 (HIGH) — 11+ authored implementation files including per-kit stage declarations (3), retained-target lifecycle module (+2), temporal GPU state and graph replacement (+2), native build boundary (+2); risk override: none
 **Owner:** João, agent (implementation); Phase 1 decline decided by the agent under the owner's "sort this out" delegation (D2)
-**Depends on:** [PRD-384](PRD-384-adaptive-resolution-gpu-headroom.md) (the GPU-headroom policy this keeps unchanged). Related: [PRD-549](../performance/PRD-549-the-engine-holds-60-fps-on-a-weak-gpu.md) (it fixes the scaler's gates and adds an MSAA rung below the floor; this PRD changes what a scale step costs, and duplicates none of its boxes), [PRD-539](../Unreal/performance/PRD-539-low-resolution-temporal-reconstruction-quality-and-cost.md) (a reconstructor needs a scale that can change often and cheaply).
+**Depends on:** [PRD-384](PRD-384-adaptive-resolution-gpu-headroom.md) (the GPU-headroom policy this keeps unchanged). Related: [PRD-549](../performance/PRD-549-the-engine-holds-60-fps-on-a-weak-gpu.md) (it fixes the scaler's gates and adds an MSAA rung below the floor; this PRD changes what a scale step costs, and duplicates none of its boxes), [PRD-539](PRD-539-low-resolution-temporal-reconstruction-quality-and-cost.md) (a reconstructor needs a scale that can change often and cheaply).
 
 ## Context
 

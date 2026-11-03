@@ -172,6 +172,17 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
         material.twoSidedFoliage = true;
         material.subsurfaceColor = new Color(...colour);
       }
+    // `anisotropy=<n>`: the base colour maps' anisotropic filter, as Unreal's r.MaxAnisotropy (8 at Epic,
+    // BaseScalability.ini [TextureQuality@3]) filters a World-group texture. Unset keeps three's default of 1.
+    const anisotropy = params.get("anisotropy");
+    if (anisotropy !== null) {
+      const value = Number(anisotropy);
+      if (!Number.isInteger(value) || value < 1 || value > 16) throw new Error("anisotropy must be an integer 1..16");
+      for (const mesh of meshes)
+        for (const material of [mesh.material].flat() as MeshStandardMaterial[])
+          if (material.map) material.map.anisotropy = value;
+      console.info(`TN_CALIBRATION_ANISOTROPY ${value}`);
+    }
 
     scene.background = new Color(0x000000);
     scene.environment = null;
