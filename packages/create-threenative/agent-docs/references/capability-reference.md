@@ -3372,7 +3372,7 @@ casts.cast(barrage, target);
 export function createFireball(world: SpellWorld, overrides: IFireSpellOverrides = { … }
 ```
 
-- **Use when:** a fireball spell the player casts at a target · a burning projectile that explodes and scorches the ground · a wizard's fire attack with a wind-up, a flight and an aftermath · make a fireball · a fireball spell a player casts at a target
+- **Use when:** a fireball spell the player casts at an enemy · a burning projectile that explodes and scorches the ground · a wizard's fire attack with a wind-up, a flight and an aftermath · make a fireball · a fireball spell a player casts at an enemy
 - **Constraints:** every colour, size, count and timing is a named override on the call · the first cast costs what the hundredth does: nothing is built at cast time · the stock look ships as the default, and no override rebuilds a pipeline
 - **Overrides:** core, highlight, speed, charge, impact, linger, radius, burst, trail, lingerBurst, light, shake, scorch
 

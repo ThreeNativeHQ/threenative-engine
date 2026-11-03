@@ -77,7 +77,7 @@ export type { ISpellWorldOptions, ISpellWorldShakeOptions } from "./spell-world.
 
 /**
  * A ball of fire that charges, crosses the room and leaves the floor burning.
- * @situation a fireball spell the player casts at a target
+ * @situation a fireball spell the player casts at an enemy
  * @situation a burning projectile that explodes and scorches the ground
  * @situation a wizard's fire attack with a wind-up, a flight and an aftermath
  * @situation make a fireball

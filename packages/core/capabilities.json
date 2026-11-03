@@ -4335,11 +4335,11 @@
       "package": "@threenative/core",
       "signature": "export function createFireball(world: SpellWorld, overrides: IFireSpellOverrides = { … }",
       "situations": [
-        "a fireball spell the player casts at a target",
+        "a fireball spell the player casts at an enemy",
         "a burning projectile that explodes and scorches the ground",
         "a wizard's fire attack with a wind-up, a flight and an aftermath",
         "make a fireball",
-        "a fireball spell a player casts at a target"
+        "a fireball spell a player casts at an enemy"
       ],
       "summary": "A ball of fire that charges, crosses the room and leaves the floor burning.",
       "supersedes": [],

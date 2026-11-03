@@ -74,7 +74,7 @@ function recipe(base: ISpellRecipe, overrides: IFireSpellOverrides): ISpellRecip
 
 /**
  * A ball of fire that charges in the hand, crosses the room and leaves the floor burning.
- * @situation a fireball spell a player casts at a target
+ * @situation a fireball spell a player casts at an enemy
  * @situation a burning projectile that explodes and scorches the ground
  * @situation a wizard's fire attack with a wind-up, a flight and an aftermath
  * @constraint every colour, size, count and timing is a named override on the call
