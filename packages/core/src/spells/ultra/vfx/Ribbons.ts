@@ -45,7 +45,7 @@ import {
   vec4,
 } from "three/tsl";
 import { MeshBasicNodeMaterial, type Node } from "three/webgpu";
-import { FX_ADDITIVE, LINES_BLENDING, U, fxOutDistort, softFade } from "./common.js";
+import { FX_DISTORT_BLENDING, LINES_BLENDING, U, fxOutDistort, softFade } from "./common.js";
 
 type F = Node<"float">;
 type V2 = Node<"vec2">;
@@ -62,7 +62,7 @@ type V4 = Node<"vec4">;
 // Distortion amounts everywhere are metres of apparent displacement at the strip's depth, so a far
 // effect bends the background less than a near one.
 // Engine: every 'fx' strip composites its emission and distortion through fxOutDistort (common.ts)
-// with FX_ADDITIVE; the 'lines' strips keep LINES_BLENDING (additive, alpha 1).
+// with FX_DISTORT_BLENDING; the 'lines' strips keep LINES_BLENDING (additive, alpha 1).
 
 // projectionMatrix[1][1]
 const proj11 = (): F =>
@@ -208,7 +208,7 @@ function trailNodes(tex: DataTexture, P: number, uTrailTime: F, fx: boolean) {
     const g = max(exp(v.mul(v).mul(-4.0)).sub(0.0183), 0.0); // gaussian, zero at the strip edge
     // derivative-of-gaussian profile: the centreline acts as a cylindrical lens (pushes outward)
     const d = vDist.mul(v.mul(exp(v.mul(v).mul(-3.0))).mul(2.33));
-    fragmentNode = fxOutDistort(vColor.mul(g).mul(softFade(vViewZ, 0.4)), d);
+    fragmentNode = fxOutDistort(vColor.mul(g).mul(softFade(vViewZ, 0.4)), d, vec3(0.0), float(0.0));
   } else {
     // TRAIL_LINES_FRAG
     const v = float(1.0).sub(vUv.y.mul(vUv.y));
@@ -311,7 +311,7 @@ export class TrailRibbons {
       return mesh;
     };
     this.lines = make(LINES_BLENDING, false);
-    this.fx = make(FX_ADDITIVE, true);
+    this.fx = make(FX_DISTORT_BLENDING, true);
 
     const owner = this;
     this.trails = Array.from(
@@ -510,9 +510,8 @@ function analyticNodes(segments: number, path: RibbonPath, shade: RibbonShade, f
     const e = shade(r, media, alpha, distortion);
     if (!fx) return vec4(e.mul(vAA), 1.0);
     const s = softFade(vViewZ, 0.3).mul(vAA);
-    // ENGINE-GAP: no CustomBlending / MRT, so an 'fx' ribbon composites its emission and distortion
-    // additively (fxOutDistort); the shade's media and alpha (WBOIT coverage) are not drawn yet
-    return fxOutDistort(e.mul(s), vDist.mul(distortion).mul(s));
+    // fxOut(media, alpha * s, e * s, vDist * distortion * s, vViewZ)
+    return fxOutDistort(e.mul(s), vDist.mul(distortion).mul(s), media, alpha.mul(s));
   })();
   return { vertexNode, fragmentNode };
 }
@@ -568,7 +567,7 @@ export class AnalyticRibbons {
     this.uniforms = { ...U, ...uniforms, uSegments: { value: segments } };
     const fx = target === "fx";
     const material = new MeshBasicNodeMaterial({
-      ...(fx ? FX_ADDITIVE : LINES_BLENDING),
+      ...(fx ? FX_DISTORT_BLENDING : LINES_BLENDING),
       side: DoubleSide,
     });
     material.fog = false;

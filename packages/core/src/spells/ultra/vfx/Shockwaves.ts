@@ -9,6 +9,7 @@ import {
   Vector3,
 } from "three";
 import {
+  Discard,
   Fn,
   abs,
   attribute,
@@ -33,7 +34,7 @@ import {
 } from "three/tsl";
 import { MeshBasicNodeMaterial, type Node } from "three/webgpu";
 import { instanced } from "./Ribbons.js";
-import { FX_ADDITIVE, U, fxOutDistort, softFade } from "./common.js";
+import { FX_DISTORT_BLENDING, U, fxOutDistort, softFade } from "./common.js";
 
 type F = Node<"float">;
 type V2 = Node<"vec2">;
@@ -49,7 +50,7 @@ type V4 = Node<"vec4">;
 // Radius follows a blast-wave curve r0 + (r1 - r0) x^0.4 (Sedov-Taylor r ~ t^0.4); emission decays
 // as (1 - x)^3 (a flash), distortion as (1 - x)^1.5 after a 5% attack. distortion is metres of
 // apparent displacement at the shell's depth.
-// Engine: the distortion and the emission composite through fxOutDistort (common.ts), FX_ADDITIVE.
+// Engine: the distortion and the emission composite through fxOutDistort (common.ts), FX_DISTORT_BLENDING.
 
 // projectionMatrix[1][1]
 const proj11 = (): F =>
@@ -117,6 +118,7 @@ function shockNodes() {
     const chord = sqrt(max(ro.mul(ro).sub(rho2), 0.0)).sub(sqrt(max(ri.mul(ri).sub(rho2), 0.0)));
     const profSphere = chord.div(sqrt(max(ro.mul(ro).sub(ri.mul(ri)), 1e-6)));
     const prof = select(vS0.w.greaterThan(0.5), profGround, profSphere).toVar();
+    Discard(prof.lessThan(1e-3));
     // gl_FragCoord in fx pixels, GL orientation (y up)
     const frag = vec2(screenUV.x, screenUV.y.oneMinus()).mul(U.uFxResolution);
     const dir0 = frag.sub(vCentre);
@@ -131,9 +133,12 @@ function shockNodes() {
       .mul(s);
     // emission hugs the rim (seen through, the shell's two walls would otherwise glow as a dome)
     const p2 = prof.mul(prof);
-    const out = fxOutDistort(vS2.rgb.mul(p2).mul(p2).mul(softFade(vViewZ, 0.3)), dist);
-    // ENGINE-GAP: no TSL Discard; `if (prof < 1e-3) discard;` adds nothing instead (FX_ADDITIVE)
-    return select(prof.lessThan(1e-3), vec4(0.0), out);
+    return fxOutDistort(
+      vS2.rgb.mul(p2).mul(p2).mul(softFade(vViewZ, 0.3)),
+      dist,
+      vec3(0.0),
+      float(0.0),
+    );
   })();
   return { vertexNode, fragmentNode };
 }
@@ -170,7 +175,7 @@ export class Shockwaves {
     this.attrs = ["aS0", "aS1", "aS2"].map((n) => instanced(geo, n, max));
     geo.instanceCount = 0;
     this.geometry = geo;
-    const material = new MeshBasicNodeMaterial({ ...FX_ADDITIVE, side: DoubleSide });
+    const material = new MeshBasicNodeMaterial({ ...FX_DISTORT_BLENDING, side: DoubleSide });
     material.fog = false;
     const nodes = shockNodes();
     material.vertexNode = nodes.vertexNode;

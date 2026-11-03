@@ -15,18 +15,23 @@
 //   - no CustomBlending and no multi-target render target: see FX_BLENDING and fxOut below.
 //   - uSceneDepth is the engine's viewportDepthTexture() (the frame's depth as drawn before the FX).
 import {
+  AddEquation,
   AdditiveBlending,
   Color,
+  CustomBlending,
   Data3DTexture,
   DataTexture,
   FloatType,
   type Matrix3,
   NearestFilter,
   NormalBlending,
+  OneFactor,
+  OneMinusSrcAlphaFactor,
   RGBAFormat,
   Vector2,
   Vector3,
   Vector4,
+  ZeroFactor,
 } from "three";
 import {
   Break,
@@ -1152,11 +1157,25 @@ export function setGroundTexture(holder: { value: unknown }, tex: object): void 
 // FxTarget's composite distortion and distortion-driven chromatic aberration, for one FX layer:
 //   scene = (uScene(suv + ca).r, uScene(suv).g, uScene(suv - ca).b), suv = vUv + dist * distortion
 // Engine (see FX_BLENDING): there is no WBOIT target to resolve, so a distorting layer reads the
-// frame drawn so far (viewportSharedTexture) and adds the displaced scene minus the scene under it,
-// plus its emission, with FX_ADDITIVE into the float HDR target: layers drawn under it stay.
-// dist is upstream's screen-UV offset (GL, y up); screenUV runs y down.
+// frame drawn so far (viewportSharedTexture) and writes one premultiplied colour under
+// FX_DISTORT_BLENDING: fxOut's media over alpha coverage, its emission, and the displaced scene minus
+// the scene under it, seen through (1 - alpha). Layers drawn under it stay; with alpha 0 it adds.
+// dist is upstream's screen-UV offset (GL, y up); screenUV runs y down. Arguments as upstream's
+// fxOut(media, alpha, emit, dist, viewZ), reordered: (emit, dist, media, alpha).
+export const FX_DISTORT_BLENDING = {
+  transparent: true,
+  depthWrite: false,
+  depthTest: true,
+  blending: CustomBlending,
+  blendEquation: AddEquation,
+  blendSrc: OneFactor,
+  blendDst: OneMinusSrcAlphaFactor,
+  blendEquationAlpha: AddEquation,
+  blendSrcAlpha: ZeroFactor, // destination alpha kept (see LINES_BLENDING)
+  blendDstAlpha: OneFactor,
+};
 const SCENE_COLOR = {};
-export const fxOutDistort = Fn(([emit, dist0]: [V3, V2]) => {
+export const fxOutDistort = Fn(([emit, dist0, media, a0]: [V3, V2, V3, F]) => {
   const scene = textureNode(SCENE_COLOR, () => viewportSharedTexture()) as unknown as {
     sample(uv: V2): V4;
   };
@@ -1164,5 +1183,13 @@ export const fxOutDistort = Fn(([emit, dist0]: [V3, V2]) => {
   const suv = screenUV.add(dist);
   const ca = dist.mul(U.uFxParams.z.mul(0.6));
   const col = vec3(scene.sample(suv.add(ca)).r, scene.sample(suv).g, scene.sample(suv.sub(ca)).b);
-  return vec4(col.sub(scene.sample(screenUV).rgb).add(emit), 1.0);
+  const a = clamp(a0, 0.0, 0.999);
+  const seen = col.sub(scene.sample(screenUV).rgb).mul(float(1.0).sub(a));
+  return vec4(
+    media
+      .mul(a)
+      .add(emit.mul(mix(1.0, float(1.0).sub(a), U.uFxParams.x)))
+      .add(seen),
+    a,
+  );
 });

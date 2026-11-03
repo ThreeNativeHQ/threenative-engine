@@ -1,13 +1,15 @@
 // Ported from Ultra Elements src/vfx/GroundField.js @698b720 (MIT, Copyright (c) 2026 Humpalumps). JavaScript copied verbatim; GLSL transliterated to TSL.
 import {
-  AdditiveBlending,
+  AddEquation,
   type Camera,
   Color,
+  CustomBlending,
   DataTexture,
   FloatType,
   HalfFloatType,
   LinearFilter,
   NearestFilter,
+  OneFactor,
   OrthographicCamera,
   RGBAFormat,
   RenderTarget,
@@ -113,13 +115,19 @@ export const FISSURE_B = Array.from({ length: 4 }, () => new Vector4());
 
 // particle paint: upstream's RawShaderMaterial (GLSL3) with ...PAINT_BLENDING and PAINT_FRAG_HEAD
 // (two outputs), drawn into paintScene with paintCamera (ortho, ground rect). Outputs are per-frame
-// increments. ENGINE-GAP: no MRT and no CustomBlending (One, One): a painter adds into A from
-// paintScene and into B from paintSceneB, with AdditiveBlending (SrcAlpha, One) and alpha 1.
+// increments. ENGINE-GAP: the MRT draw of SIM_FRAG kills the tab (see IFieldTarget): a painter adds
+// into A from paintScene and into B from paintSceneB.
 export const PAINT_BLENDING = {
   transparent: true,
   depthTest: false,
   depthWrite: false,
-  blending: AdditiveBlending,
+  blending: CustomBlending,
+  blendEquation: AddEquation,
+  blendSrc: OneFactor,
+  blendDst: OneFactor,
+  blendEquationAlpha: AddEquation,
+  blendSrcAlpha: OneFactor,
+  blendDstAlpha: OneFactor,
 };
 
 // per-frame helpers live at module level: no closures allocated in update()
@@ -718,7 +726,10 @@ export interface IFieldRenderer {
   info?: { engine?: { frameGateSkips?: number } };
 }
 
-// ENGINE-GAP: no MRT; one ping-pong state is a pair of targets (A, B), read as textures[0] / [1]
+// ENGINE-GAP: MRT (count: 2, mrtNode = mrt({ oA, oB })) kills the tab here: the engine binds only the
+// fragmentNode's textures ("t_nodeMapN has no texture this draw" with fragmentNode = oA), and
+// fragmentNode = oA + oB * 0 (FluidVolume's workaround) closes the renderer with no console error.
+// One ping-pong state stays a pair of targets (A, B), read as textures[0] / [1].
 interface IFieldTarget {
   a: RenderTarget;
   b: RenderTarget;
