@@ -36,7 +36,11 @@ flowchart TD
 | 7 | [PRD-731](PRD-731-the-full-ci-board-runs-once-in-the-merge-queue.md) | NEW 2026-10-23. A PR run and a queue run both run the selected board (#541: 51 + 54 + 50 min). Proposal: PRs run a fast review lane, the queue runs the full board once | PRD-730 (owner signed off the policy 2026-10-23) |
 
 Each PRD's 7-day runner-minute acceptance (PRD-380, 481, 482 AC-1) can only be measured a week after its phases land.
-PRD-480 AC-2 (summed queue wait < 60 min) is measured and not met: 317 min, with 42 min wall against 39 hosted.
+PRD-480 AC-2 (summed queue wait < 60 min) is measured and not met: 196.7-239.8 min on the three newest
+full boards with the pool up (2026-11-03), against 100-129 min for the best possible schedule of the same
+jobs on today's 26 slots. Below 60 min needs 36 slots even for a perfect scheduler and about 50 in
+practice, or half the board's work. Two boards of 2026-11-01 measured 705.9 and 1057.8 min with the pool
+off. It needs an owner call: a second machine, fewer full-board lanes, or a per-job criterion.
 It needs an owner call: more slots, or overflow part of the board to hosted runners.
 
 Rows with the same number can run as parallel lanes. Before parallel lanes edit `ci.yml`, they agree on

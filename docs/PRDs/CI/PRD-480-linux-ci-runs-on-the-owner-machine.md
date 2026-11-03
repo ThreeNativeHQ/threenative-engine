@@ -4,7 +4,9 @@ prd_contract: v1
 
 # PRD-480 — Linux CI runs on the owner's machine
 
-**Status:** PARTIAL — phases 1 and 3 verified (#404, #410); AC-1 green; AC-2 measured, needs the owner's call
+**Status:** PARTIAL — phases 1 and 3 verified (#404, #410); AC-1 green; AC-2 measured again 2026-11-03 on the
+five newest full boards at 196.7-239.8 min against 60, with a floor of 100-129 min at today's capacity, so
+it needs the owner's call
 **Priority:** P1 — AC-2 open: prove queue waiting time meets budget; runs waited up to 239 minutes.
 **Complexity:** 5 (HIGH)
 **Owner:** CI tooling
@@ -111,10 +113,46 @@ while `TN_RUNNER` is set: jobs queue until the switch is cleared.
   Evidence: CI run 37070815769 (PR #404, head 94732de65, 2026-10-02): conclusion success, `ci-required` success. 39 jobs succeeded: 33 on `tn-local`, 5 on `tn-local-light`, 1 hosted (`supply-chain`); `native-platforms` skipped by scope.
 - [ ] AC-2 [shared]: proof: per-job `started_at − created_at` summed with the baseline's script. Total time
   jobs spent waiting for a runner on a full-board PR drops below 60 min (baseline 239 min, run
-  37043413533). Measured, not met: run 37070815769 waited 317 min in total across 40 jobs on 5 heavy +
+  37043413533). Measured, not met. Run 37070815769 waited 317 min in total across 40 jobs on 5 heavy +
   1 light slots, with 42 min wall against the baseline's 39 min wall and zero hosted minutes. A 40-job board on
   six slots queues by construction, so this criterion needs either more slots or overflow to hosted
   runners. Owner decision pending.
+  Re-measured 2026-11-02/03 with the same per-job definition (`started_at − created_at` over every job
+  that started, clamping negative to zero: the filter `scripts/ci-merge-latency.mjs` uses). The instrument
+  reproduces the baseline exactly: run 37043413533 → 239.5 min summed wait and 19.3 min longest wait,
+  against the recorded 239 and 19.3. Per run:
+  `gh api "repos/<repo>/actions/runs/<id>/attempts/1/jobs?per_page=100" --jq '[.jobs[] | select(.started_at != null and .conclusion != "skipped") | (((.started_at|fromdateiso8601) - (.created_at|fromdateiso8601)) / 60) | if . < 0 then 0 else . end] | (add*10|round/10)'`.
+  The five newest full boards (`gh run list --workflow ci.yml`; merge-group or `develop`-push runs that
+  ran the full selected board):
+
+  | Run | Event | Jobs | Summed wait | Wall | Longest wait | Wait on `tn-local` |
+  |---|---|---|---|---|---|---|
+  | 41569108715 | merge_group (cancelled by its queue entry) | 74 | 225.1 min | 48.1 min | 14.2 min | 0.6 min |
+  | 41441113316 | push `develop` | 72 | 239.8 min | 56.6 min | 13.4 min | 0.5 min |
+  | 41430297261 | push `develop` | 72 | 196.7 min | 59.5 min | 10.1 min | 1.2 min |
+  | 41360381968 | push `develop` | 72 | 1057.8 min | 68.5 min | 43.6 min | 0 (pool off, all 72 hosted) |
+  | 41356900471 | push `develop` (cancelled) | 66 | 705.9 min | 42.2 min | 33.5 min | 0 (pool off) |
+
+  The queue is the hosted pool, not the pool switch. With `tn-local` up (first three runs), 57-59 of the
+  72-74 jobs run hosted and carry 99.8% of the wait, while all `tn-local` jobs together queue 1.2 min; the
+  board peaks at 21-25 jobs running at once, 19-20 of them hosted. The pool cannot grow here:
+  `scripts/ci-runners.sh plan` hands out all 24 threads of this host as 3 heavy slots of 3 cores, 3 light
+  slots and 4 host threads. With the boards' own job durations, the optimal summed wait (shortest job
+  first, no dependencies) is 126-164 min on 23 slots (20 hosted + 3 heavy) and 100-129 min on 26 (the pool
+  added). Below 60 min needs 36 slots even for a perfect scheduler (53.6 min floor at that size for run
+  41441113316, against 115.3 min at today's 26) and about 50 at the 1.6× gap between that board's observed
+  239.8 min and its 145.4 min floor, or about half of the board's 432-538 min of work. Most of the current
+  wait sits on the 35 `template-nonvisual` and `integration` legs (208 of the 240 min, with 222 min of work
+  on run 41441113316), which the caller releases together once `build-artifacts` lands, about 4 minutes in.
+  Re-measure with `node -e 'import("./scripts/ci-board-kpis.mjs").then((m) => console.log(m.measureBoards({ since: "2026-11-02" }).fullBoardQueueSumMedianMin))'`:
+  196.7 min as the median of the window's five finished full boards, and the field is covered by
+  `scripts/__tests__/ci-board-kpis.spec.ts`. Options, smallest change first: (1) restate AC-2 per job or as
+  p90, because a sum scales with board width (72 jobs today against 39 at baseline: 6.1 min of wait per job
+  then, 2.7-3.3 min now, longest wait 19.3 → 13.4); (2) add a second machine to the pool, which needs no
+  code; (3) move the `template-nonvisual` block to the nightly run, which brings the 26-slot floor to
+  36.5 min but reverses the 2026-09-01 owner call that every template proves itself on every pull request;
+  (4) halve the `integration` lanes. Owner decision pending; nothing here is a configuration change, so this
+  PRD implements none of them.
 
 ## Blocked on
 
@@ -129,6 +167,13 @@ while `TN_RUNNER` is set: jobs queue until the switch is cleared.
 | Runner lifecycle and kill switch | `scripts/ci-runners.sh up/down` → compose stack + `TN_RUNNER` variable | New | Phase 1 |
 
 ## Decisions
+
+- 2026-11-03 (measured): the 60-minute sum is arithmetically out of reach at today's board width. The
+  three full boards with the pool up measure 196.7-239.8 min of summed wait, 0.5-1.2 min of it on
+  `tn-local`, and the two with the pool off 705.9 and 1057.8 min. The best possible schedule of the same
+  jobs on 26 slots still waits 100-129 min. The pool is fully allocated on this 24-thread host, so the
+  remaining levers are capacity (another machine), board width, or a per-job criterion.
+  `fullBoardQueueSumMedianMin` in `scripts/ci-board-kpis.mjs` now records the number.
 
 - 2026-10-03 (measured): the pool is overflow capacity, not the default. The repository is public, so
   hosted runners cost nothing and run ~20 jobs at once; routing every Linux job to 5 local slots made
@@ -265,3 +310,5 @@ Decisions this phase had to make, 2026-10-02:
   parity, release evidence reports, collector coverage. On `tn-local-light`: caller selection, networking
   matrix. Hosted as designed: macOS, Windows, iOS, linux-arm64, and the emulator exception above.
 - [ ] Waiting time meets AC-2. proof: the AC-2 measurement on a full-board PR after this phase.
+  Measured 2026-11-03 and not met: 196.7-239.8 min on the three newest full boards with the pool up (see
+  AC-2 for the table and the capacity floor).
