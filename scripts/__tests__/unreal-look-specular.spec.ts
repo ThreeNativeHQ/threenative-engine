@@ -15,8 +15,8 @@ function source(): MeshStandardMaterial {
   return material;
 }
 
-describe("?specular=0, the harness's ShowFlag.Specular (PRD-646 round 7)", () => {
-  it("zeroes F0 and leaves F90 at 1, the pair Unreal's SpecularColor override reads", () => {
+describe("?specular, the harness's ShowFlag.Specular (PRD-646 rounds 7-8)", () => {
+  it("zeroes F0 and F90 together, which is what Unreal's flag does", () => {
     const twin = noSpecularTwin(source());
     expect(twin).toBeInstanceOf(MeshPhysicalMaterial);
     // F0 = min(((ior - 1) / (ior + 1))^2 * specularColor, 1) * specularIntensity, F90 = mix(specularIntensity, 1, metalness).
@@ -24,10 +24,20 @@ describe("?specular=0, the harness's ShowFlag.Specular (PRD-646 round 7)", () =>
       ((twin.ior - 1) / (twin.ior + 1)) ** 2 * twin.specularColor.r * twin.specularIntensity;
     expect(f0).toBe(0);
     expect(twin.ior).toBe(1);
-    expect(twin.specularIntensity).toBe(1);
-    // F_Schlick(F0, F90, VoH) keeps a grazing lobe at F0 = 0, which is what the flag leaves in place.
-    expect(twin.specularIntensity).toBe(1);
+    // Unreal: the flag writes F0 = 0 into the G-buffer (BasePassPixelShader.usf:1280, Substrate.ush:3438), and
+    // the slab then collapses F90 as well (SubstrateEvaluation.ush:488): F90 *= saturate(50 * F0) is 0 at F0 = 0.
+    // Both halves of F_Schlick(F0, F90, VoH) are therefore 0 and the whole lobe goes, at every angle.
+    expect(twin.specularIntensity).toBe(0);
     expect(twin.metalness).toBe(0);
+  });
+
+  it("keeps round 7's F0-only ablation on its own name, so its recorded arms stay reproducible", () => {
+    const twin = noSpecularTwin(source(), true);
+    const f0 =
+      ((twin.ior - 1) / (twin.ior + 1)) ** 2 * twin.specularColor.r * twin.specularIntensity;
+    expect(f0).toBe(0);
+    // F_Schlick(0, 1, VoH) = (1 - VoH)^5: the grazing lobe round 7's twin left in place.
+    expect(twin.specularIntensity).toBe(1);
   });
 
   it("keeps every field the frame is drawn with: the albedo, the map, the roughness, the sides and the name", () => {
@@ -55,8 +65,9 @@ describe("?specular=0, the harness's ShowFlag.Specular (PRD-646 round 7)", () =>
     // CalibrationScene.ts: a knob in one of them is half a knob.
     for (const scene of ["CalibrationScene", "Reference"]) {
       const source = readFileSync(`scripts/unreal-look/scaffold/${scene}.ts.in`, "utf8");
-      expect(source).toMatch(/if \(params\.get\("specular"\) === "0"\)/u);
-      expect(source).toMatch(/noSpecularTwin\(/u);
+      expect(source).toMatch(/const specular = params\.get\("specular"\)/u);
+      expect(source).toMatch(/if \(specular !== null\)/u);
+      expect(source).toMatch(/noSpecularTwin\(m[^)]*, specular === "f0"\)/u);
     }
   });
 });

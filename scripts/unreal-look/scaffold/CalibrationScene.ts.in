@@ -195,12 +195,14 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
       (ctx.renderer.raw as unknown as { shadowMap: { enabled: boolean } }).shadowMap.enabled = shadows;
       // Diagnosis knob: ?specular=0 takes the specular off every surface, as Unreal's ShowFlag.Specular does
       // (render/specular.ts carries both citations), so its share of a direct-light row can be read on both engines.
+      // ?specular=f0 is round 7's F0-only reading, kept so its recorded arms stay reproducible.
       // It runs before the shadowSide loop and before `shadeLikeSubstrate`, so both mark the twin.
-      if (params.get("specular") === "0")
+      const specular = params.get("specular");
+      if (specular !== null)
         for (const mesh of meshes)
           mesh.material = Array.isArray(mesh.material)
-            ? mesh.material.map((m) => noSpecularTwin(m as MeshStandardMaterial))
-            : noSpecularTwin(mesh.material as MeshStandardMaterial);
+            ? mesh.material.map((m) => noSpecularTwin(m as MeshStandardMaterial, specular === "f0"))
+            : noSpecularTwin(mesh.material as MeshStandardMaterial, specular === "f0");
       // Casters keep three's derived shadowSide (back faces of a front-sided material). Those leak a
       // bright line at a box's far foot; the owned engine stores a lamp's back faces a few depth steps
       // nearer, which closes it (native_engine_contact_shadow_foot), and front faces instead add acne on

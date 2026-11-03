@@ -203,12 +203,14 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
       const { key } = setupLighting(scene, ctx.renderer.raw as Parameters<typeof setupLighting>[1]);
       // Diagnosis knob ?specular=0, the same pair as the calibration scene's (render/specular.ts carries the
       // citations): it runs before `shadeLikeSubstrate`, so the twin takes the substrate diffuse too.
-      if (params.get("specular") === "0")
+      // ?specular=f0 is round 7's F0-only reading, kept so its recorded arms stay reproducible.
+      const specular = params.get("specular");
+      if (specular !== null)
         model.traverse((object) => {
           if (!(object instanceof Mesh)) return;
           object.material = Array.isArray(object.material)
-            ? object.material.map((m) => noSpecularTwin(m as MeshStandardMaterial))
-            : noSpecularTwin(object.material as MeshStandardMaterial);
+            ? object.material.map((m) => noSpecularTwin(m as MeshStandardMaterial, specular === "f0"))
+            : noSpecularTwin(object.material as MeshStandardMaterial, specular === "f0");
         });
       // PRD-653: the sun meets a rough surface as Unreal's Substrate does. Diagnosis knob off=roughDiffuse is plain Lambert.
       if (TUNED && !OFF.has("roughDiffuse")) shadeLikeSubstrate(model);
