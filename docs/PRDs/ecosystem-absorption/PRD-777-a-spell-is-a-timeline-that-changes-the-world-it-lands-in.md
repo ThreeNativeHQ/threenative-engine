@@ -112,6 +112,7 @@ This PRD has 11 boxes, over the cap of about 8. The foundation, its one-spell co
 - 2026-10-31 (Claude): the catalog goes on a `@threenative/core/spells` subpath, not in a new package, because it carries no new dependency.
 - 2026-10-31 (Claude): upstream GLSL stays out of the repository, and the algorithms are ported to TSL. A WebGL2 path is closed by the renderer rule and has no native proof.
 - 2026-11-03 (owner, overrides the behaviour-only port): "its a MIT project, just copy". The from-scratch spells drew a white dot and an orange smudge. Upstream's JavaScript is copied verbatim under `packages/core/src/spells/ultra/`, mirroring its file names. Only what the engine cannot run changes: each GLSL program becomes TSL line by line (same maths, same constants), and each `WebGLRenderTarget` becomes a `RenderTarget`. It runs on the default engine, the Wasm build over WebGPU, never on upstream three's WebGL2 (owner: "webgl is trash, it will be slow FPS"). Fireball's closure lands and passes the judge before the other five.
+- 2026-11-03 (owner, on PR #598): "just wrap up this PR and merge". This PRD ships the Ultra Elements foundation, the Fireball port and the engine gaps it closed. The other five spells, the from-scratch spell deletion, and the desktop, frame-budget and six-spell judge boxes (old Phase 3) moved to [PRD-789](PRD-789-the-other-five-ultra-elements-spells-on-our-engine.md).
 
 ## Execution Phases
 
@@ -146,18 +147,7 @@ This PRD has 11 boxes, over the cap of about 8. The foundation, its one-spell co
 
 - [x] spell-lab boots on the default engine, the Wasm build of this branch, over WebGPU. proof: `doctor --url` names the engine and a hardware adapter, and `node scripts/web-engine-stamp.mjs --check` passes. — Evidence (2026-11-03): `doctor --url http://127.0.0.1:5391 --text` exits 0 with `adapter nvidia turing`, `console 0 errors`. The doctor prints no engine name, so the DevTools MCP read the page: it loads `tn-native-engine-web-threads.wasm`, `__tnWebThreads` is `on (8)` and `crossOriginIsolated` is true. `web-engine-stamp.mjs --check` exits 0 after the Wasm rebuild from `d16a7bff9`.
 - [ ] Fireball is upstream's code and reads as upstream's Fireball in its five beats (charge, release, impact, overview, after). proof: Opus visual judge against upstream's `dev/tools/sheet.mjs` beats, headed, `--browser-recipe webgpu`.
-- [ ] Thunderstrike, Glacial Spike, Arcane Barrage, Aegis and Inferno are upstream's code and pass the same judge. proof: as above, per spell.
-- [ ] The from-scratch spell files are deleted, and the capability entries point at the ported factories. proof: `pnpm caps:recall` exits 0 and recalls each spell first.
-
-#### Phase 3: It holds on native, on budget and to the eye
-
-**Status:** NOT STARTED
-**Files:** `examples/spell-lab/playtests/spell-lab.playtest.json`, spell default values only.
-**Implementation:** Capture each spell at the charge, impact and linger poses. Use upstream `?shot=<spell>&t=<s>` frames from the pinned commit as the reference for silhouette and timeline. Do not use them as a pixel target, because the engine's look wins. The judge is a fresh read-only Opus subagent.
-
-- [ ] All six spells cast on the desktop host. proof: `node packages/playtest/dist/runner/cli.js examples/spell-lab/playtests/spell-lab.playtest.json --target desktop`
-- [ ] Casting all six in sequence from a cold start stays inside the frame budget of the kit's `performance.playtest.json`. proof: `TN_FRAME_BUDGET` presented p95 and worst frame in `spell-lab.playtest.json`
-- [ ] A visual judge returns IMPROVEMENT over the kit's current effects for all six spells, with readable silhouette, four-beat timeline and visible world response. proof: before and after sheets on the PR, headed, `--browser-recipe webgpu`, `adapter.info` checked, two runs per arm
+Thunderstrike, Glacial Spike, Arcane Barrage, Aegis and Inferno, and the deletion of the from-scratch spells, moved to [PRD-789](PRD-789-the-other-five-ultra-elements-spells-on-our-engine.md) (owner, 2026-11-03).
 
 ## Acceptance criteria
 

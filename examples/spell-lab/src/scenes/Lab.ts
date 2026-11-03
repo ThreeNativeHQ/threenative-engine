@@ -189,7 +189,10 @@ export class Lab extends Scene<LabState> {
     };
     let previouslyLanded = 0;
 
-    return (_frameCtx: ICtx<LabState>, dt: number) => {
+    // ?slow=0.1: slow motion for beat captures, so a screenshot's own latency barely moves the spell
+    const slow = Number(new URLSearchParams(globalThis.location?.search ?? "").get("slow") ?? 1);
+    return (_frameCtx: ICtx<LabState>, frameDt: number) => {
+      const dt = frameDt * slow;
       // upstream tick: the rig's shake and FOV punch go on the camera for this frame only
       ultra.fx.rig.restore(camera);
       ultra.fx.rig.apply(camera, dt);
