@@ -26,7 +26,7 @@ import { createArena, platform } from "../render/arena.js";
 import { createSpringArm } from "../render/camera.js";
 import { pickupRiseEase } from "../render/easing.js";
 import { type IEnvironmentSample, sampleEnvironment } from "../render/environmentSampling.js";
-import { setupLighting } from "../render/lighting.js";
+import { setupLighting, shadeLikeSubstrate } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
 import { createMaterialLighting } from "../render/materialLighting.js";
 import { createPennantMaterial, propMaterial } from "../render/materials.js";
@@ -296,6 +296,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     // `load()` above, which is what the native asset gate greps for.
     const goal = ctx.entities.add("goal", new Goal(ctx, this.#assetProof));
     // All borrowed materials, including the cloned skinned mannequin and arena, now exist.
+    shadeLikeSubstrate(ctx.scene);
     this.#materialLighting = ctx.entities.add(
       "material-lighting",
       createMaterialLighting(ctx.scene, ctx.camera, key, {

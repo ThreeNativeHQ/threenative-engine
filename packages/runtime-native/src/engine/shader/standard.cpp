@@ -1430,7 +1430,13 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
         // diffuse layer loses.
         const ExprId halfDir = f.call("normalize", {f.add(light.direction, positionViewDirection)});
         const ExprId dotVH = t.saturate(t.dot(positionViewDirection, halfDir));
-        const ExprId oneMinusF = t.oneMinus(fSchlick(t, f0Dielectric, specularF90, dotVH));
+        // A fresh Unreal project's Substrate slab (GBuffer format 0) compiles with its energy conservation off: the
+        // diffuse keeps all the light and the specular lobe takes no multi-scattering weight. UE 5.8.3:
+        // Engine/Shaders/Private/ShadingEnergyConservation.ush:7-31, ShadingEnergyConservationTemplate.ush:73-78 and
+        // :134-135, used at Substrate/SubstrateEvaluation.ush:585-589 and :836.
+        const ExprId oneMinusF =
+            variant.roughDiffuse ? t.f(1) : t.oneMinus(fSchlick(t, f0Dielectric, specularF90, dotVH));
+        const ExprId specularWeight = variant.roughDiffuse ? t.f(1) : multiScatteringCompensation;
         ExprId diffuseBrdf = brdfLambert;
         if (variant.roughDiffuse) {
             // EON's roughness is 0.4 x the material's, fading to Lambert as the lamp's Source Radius reaches 20 cm.
@@ -1441,7 +1447,7 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
         }
         directDiffuse = f.add(directDiffuse, f.mul(f.mul(irradiance, diffuseBrdf), oneMinusF));
         directSpecular =
-            f.add(directSpecular, f.mul(f.mul(irradiance, brdfGgx(t, surface, light.direction)), multiScatteringCompensation));
+            f.add(directSpecular, f.mul(f.mul(irradiance, brdfGgx(t, surface, light.direction)), specularWeight));
         if (subsurface != kInvalid) {
             const ExprId wrap = t.saturate(f.div(f.add(f.neg(t.dot(n, light.direction)), t.f(0.5f)), t.f(2.25f)));
             const ExprId scatter = dGgx(t, t.f(0.6f), t.saturate(f.neg(t.dot(positionViewDirection, light.direction))));

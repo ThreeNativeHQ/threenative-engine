@@ -4,7 +4,6 @@
 export { installGi, markTwoSidedFoliage } from "../render/giCache.js";
 export { type IGlbMaterialImages, fetchGlbMaterialImages } from "../render/glbImages.js";
 export { watchGi } from "../render/giTier.js";
-export { shadeLikeSubstrate } from "../render/lighting.js";
 export { EPIC_SSGI, type FinalGatherMethod, giPreset, shadowPreset } from "../render/quality.js";
 export { captureReflections } from "../render/reflectionCapture.js";
 export { reflectionTrace } from "../render/reflectionTrace.js";

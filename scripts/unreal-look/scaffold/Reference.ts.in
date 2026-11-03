@@ -30,7 +30,8 @@ import {
   type Texture,
   Vector3,
 } from "three";
-import { setupLighting } from "../render/lighting.js";
+import { SUN_KELVIN, temperatureColour } from "../render/atmosphere.js";
+import { setupLighting, shadeLikeSubstrate } from "../render/lighting.js";
 import { setupPost } from "../render/postprocessing.js";
 import { qualityPreset, resolveQualityTier } from "../render/quality.js";
 import * as skyModule from "../render/sky.js";
@@ -50,7 +51,6 @@ import {
   installGi,
   markTwoSidedFoliage,
   reflectionTrace,
-  shadeLikeSubstrate,
   shadowPreset,
   unrealSunDiscScale,
   watchGi,
@@ -199,8 +199,12 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
       raw.toneMapping = NoToneMapping;
     } else {
       const { key } = setupLighting(scene, ctx.renderer.raw as Parameters<typeof setupLighting>[1]);
-      // PRD-653: the sun meets a rough surface as Unreal's Substrate does. Diagnosis knob off=roughDiffuse is plain Lambert.
-      if (TUNED && !OFF.has("roughDiffuse")) shadeLikeSubstrate(model);
+      // Below L2 Unreal draws no atmosphere (r.SkyAtmosphere 0), so no air dims or tints the sun.
+      // The template's sun carries the air's transmittance from creation, so both arms reset it here.
+      if (level < 2) key.color.setRGB(...temperatureColour(SUN_KELVIN));
+      // PRD-653, PRD-632: the sun meets a rough surface as Unreal's Substrate does, in both arms (the template ships it).
+      // Diagnosis knob off=roughDiffuse is three's Lambert with its energy conservation.
+      if (!OFF.has("roughDiffuse")) shadeLikeSubstrate(model);
       // Diagnosis knob sunShadow=0: the sun casts no shadow (is a seam line a shadow leak at all?).
       key.castShadow = level >= 5 && params.get("sunShadow") !== "0" && SHADOW.castShadows;
       // Diagnosis knob shadowSide=front|back|double: the caster faces. Unset keeps the engine's rule:
