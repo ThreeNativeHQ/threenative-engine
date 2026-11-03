@@ -117,3 +117,7 @@ export const Stack = unsupportedExport("Stack");
 export const getShadowMaterial = unsupportedExport("getShadowMaterial");
 export const shadow = unsupportedExport("shadow");
 export const shadowPositionWorld = unsupportedExport("shadowPositionWorld");
+// Core's rough diffuse lighting model reads these on three's renderer only; the engine shades roughDiffuse in C++.
+export const F_Schlick = unsupportedExport("F_Schlick");
+export const specularColor = unsupportedExport("specularColor");
+export const specularF90 = unsupportedExport("specularF90");
