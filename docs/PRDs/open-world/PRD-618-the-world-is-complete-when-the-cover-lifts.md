@@ -181,6 +181,7 @@ The boxes live in the phases below; each names the AC it proves.
     - Haze variance is closed: within one run the sky RMSE is 0.0007, and the far band is identical across runs in each arm. The earlier veil came from the old cook.
     - The alpine rockface loads as PNG on the Wasm engine with no `TN_NATIVE_KTX2_UNSUPPORTED` refusal.
     - The overview reports 65,049 shadow draws against 52 main draws on a shadow redraw frame. A code read finds one virtual-shadow level redrawn on 256 pages x about 251 caster rows (`atlas.h:41` page size 128). Lever candidate, not measured.
+    - Overview GPU attribution (Wasm engine, DevTools console toggles, GPU ms medians): whole frame 58; terrain hidden 21; terrain with a plain standard material 18.6; horizon props hidden 43; sun shadows off 51; local props, lake, river and atmosphere under 1 ms each. The ground material in `src/render/terrain.ts` costs about 35 to 40 ms, and its cost falls with resolution (14 ms at half scale). It blends six layers with about seven albedo taps and seven relief taps each, at anisotropy 8, and none is skipped at zero weight. One shared noise node instead of one per tap gave no gain beyond run noise in paired loads (terrain 33.4 and 41.0 ms against 39.8 ms), so it was reverted. The next lever is weight-gated sampling, which needs `textureSampleGrad` because WGSL forbids `textureSample` in non-uniform control flow, plus a visual judge.
 
 
 **Phase 3 implementation and focused checks (2026-10-15):**
