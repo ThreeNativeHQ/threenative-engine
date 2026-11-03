@@ -314,8 +314,15 @@ async function farLevelDocument(bytes: Uint8Array, keep: number): Promise<Docume
     if (extension.extensionName === TN_DISCRETE_LOD) extension.dispose();
   try {
     thinFoliageCards(doc, keep);
-  } catch {
-    return undefined;
+  } catch (error) {
+    // Only the documented "these cards cannot be thinned" refusals keep the authored chain; any
+    // other error is a defect and must not silently drop every far level.
+    if (
+      error instanceof Error &&
+      /^thinFoliageCards (requires static|cannot reduce)/.test(error.message)
+    )
+      return undefined;
+    throw error;
   }
   simplifySolidParts(doc, keep);
   // Drop the vertices no kept triangle reaches, so a far level does not stream the mid's buffers.
