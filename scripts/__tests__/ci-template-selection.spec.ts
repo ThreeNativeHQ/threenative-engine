@@ -95,9 +95,7 @@ describe("impact-driven template coverage", () => {
     "packages/create-threenative/src/scaffold.ts",
     "scripts/stamp-template-render.ts",
     "packages/core/src/index.ts",
-    "packages/core/patches/three@0.185.1.patch",
-    "packages/core/patches/three@0.185.1-prd269-upgrade.patch",
-    "packages/core/scripts/generate-three-patch.mjs",
+    "packages/core/patches/three@0.187.0.patch",
     "packages/create-threenative/templates/shooter-lookalike/src/main.ts",
     "unknown/meaningful.ts",
   ])("retains full fanout for shared or unknown %s", (file) => {

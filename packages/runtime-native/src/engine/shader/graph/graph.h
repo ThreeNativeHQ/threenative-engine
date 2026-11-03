@@ -171,9 +171,9 @@ Node textureObject(std::shared_ptr<const void> texture, std::string_view name, N
  */
 Node objectTexture(std::shared_ptr<const void> texture, std::string name, Node uvs);
 /**
- * TSL's `pmremTexture(texture, direction, level)`: the texture's PMREM (prefiltered radiance, cubeUV
- * layout) sampled along `direction` at roughness `level`. `texture` is the engine Texture the
- * renderer prefilters; the program samples it as "pmrem".
+ * TSL's `pmremTexture(texture, direction, level)`: the texture's PMREM (prefiltered radiance, a cube
+ * whose mips are the roughness steps) sampled along `direction` at roughness `level`. `texture` is
+ * the engine Texture the renderer prefilters; the program samples it as "pmrem".
  */
 Node pmremTexture(std::shared_ptr<const void> texture, Node direction, Node level);
 /**

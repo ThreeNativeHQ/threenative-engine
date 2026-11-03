@@ -42,7 +42,7 @@ import {
 
 /**
  * One compressed GPU format and the block geometry a bounded write must respect. The table is
- * pinned to the installed Three release (see `three-patch/pin.json`); the GPU format strings are
+ * pinned to the installed Three release (see `patches/three@0.187.0.patch`); the GPU format strings are
  * the WebGPU enum values Three maps its public texture constants to. `feature` is the WebGPU
  * `device.features` name the format needs, checked before any allocation.
  */

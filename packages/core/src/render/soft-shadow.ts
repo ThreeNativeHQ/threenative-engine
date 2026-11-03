@@ -24,13 +24,12 @@ import {
   renderGroup,
   sqrt,
   step,
-  type texture,
   textureLoad,
   uniform,
   vec2,
   vec3,
 } from "three/tsl";
-import type { Node } from "three/webgpu";
+import type { Node, TextureNode } from "three/webgpu";
 
 /**
  * A shadow input in the render group. The patched renderer skips object-group uploads for a settled static
@@ -230,8 +229,7 @@ export function sourceAngleShadowFilter({
     ).div(shadowInput(reference("zoom", "float", camera)));
     const texel = vec2(1).div(size);
     const isArray = "isArrayTexture" in depthTexture && depthTexture.isArrayTexture === true;
-    const withLayer = (sample: ReturnType<typeof texture>) =>
-      isArray ? sample.depth(float(depthLayer)) : sample;
+    const withLayer = (sample: TextureNode) => (isArray ? sample.depth(float(depthLayer)) : sample);
     const linearDepth = (depth: Node<"float">) => (reversed ? depth.oneMinus() : depth);
     return Fn(
       (_inputs: unknown, builder: { readonly material?: Parameters<typeof isLeafReceiver>[0] }) => {

@@ -22,6 +22,13 @@
  */
 
 import type { IFrameCounters } from "./profiling/FrameCounters.js";
+import { type IFrameStageSample, RENDER_STAGES, STAGE_PARTS } from "./profiling/FrameStages.js";
+import {
+  countDebug,
+  debugHotCalls,
+  debugRequested,
+  formatDebugReport,
+} from "./profiling/debug-telemetry.js";
 import {
   FRAME_PASS_KINDS,
   type FramePassKind,
@@ -255,13 +262,19 @@ export interface IFrameBudgetPassSummary {
  * it were a player's — `threenative-playtest perf` refuses to (`TN_PERF_VIRTUAL_DISPLAY`).
  */
 export interface IFrameBudgetWindow {
-  /** Browser Long Tasks, independent of vsync/GPU waits. Unavailable on hosts without this API. */
+  /**
+   * Browser Long Tasks, independent of vsync/GPU waits. Unavailable on hosts without this API.
+   * `count` and `longestMs` describe this window; `afterFirstFrameMs` is the run's startup figure.
+   */
   readonly longTasks:
     | { readonly available: false }
     | {
         readonly available: true;
+        /** Long Tasks observed inside this window, not since the page started. */
         readonly count: number;
+        /** This window's longest Long Task; 0 when it saw none. */
         readonly longestMs: number;
+        /** The run's longest task after the first frame: a startup number, not this window's. */
         readonly afterFirstFrameMs: number;
       };
   /** 1 for the first reported window, incrementing thereafter. */
@@ -270,6 +283,8 @@ export interface IFrameBudgetWindow {
   readonly threads?: string;
   /** Loop frames counted in this window, hitches excluded — one per present on the web. */
   readonly frames: number;
+  /** Debug-only elapsed time between completed report boundaries; absent on the first window. */
+  readonly durationMs?: number;
   /** Fixed simulation ticks in this window multiplied by the loop's step, when supplied. */
   readonly simulatedSeconds?: number;
   /** Frames excluded from the window because their present gap exceeded `hitchMs`. */
@@ -443,9 +458,28 @@ export interface IFrameBudgetWindow {
     readonly jsAllocBytes?: IFrameBudgetSummary;
     /** JS->Wasm crossings per frame, when the back end counts them (`createCrossingReader`). */
     readonly bridgeCrossings?: IFrameBudgetSummary;
+    readonly dirtyTransforms?: IFrameBudgetSummary;
+    readonly castersMoving?: IFrameBudgetSummary;
     /** Engine work counts per frame by name, when a playtest asked for them (`createEngineCounterReader`). */
     readonly engine?: Readonly<Record<string, IFrameBudgetSummary>>;
     readonly simulationTick?: number;
+  };
+  /**
+   * Where the callback's frame went (PRD-771), per stage in ms, one series per name. The render phase's
+   * stages (`RENDER_STAGES`) plus the `update`, `overlay`, `ui` and `residual` phases partition `frame`;
+   * `stageSum` is each frame's sum of those, so a window whose `stageSum` trails `frame` says how much
+   * time no stage named. `STAGE_PARTS` are pieces of `wasmPlan`, published beside it and not in the sum.
+   * Absent until a frame reported stages, and a name nothing measured is absent, never zero.
+   */
+  readonly stages?: Readonly<Record<string, IFrameBudgetSummary>>;
+  readonly stageSum?: IFrameBudgetSummary;
+  /**
+   * The mean of each stage over the window's slowest frames, the ones whose `stageSum` reaches its own p95: where
+   * the p95 frame goes, to read beside the stage's p50. `frames` is how many that was.
+   */
+  readonly stagesAtP95?: {
+    readonly frames: number;
+    readonly stages: Readonly<Record<string, number>>;
   };
 }
 
@@ -513,6 +547,16 @@ const DEFAULT_REPORT_EVERY = 300;
 const DEFAULT_HITCH_MS = 2_000;
 const DEFAULT_CAPACITY = 1_024;
 
+/** The series a window's `stages` can hold: the render stages, the parts of `wasmPlan`, then the phases that complete the frame. */
+const STAGE_NAMES = [
+  ...RENDER_STAGES,
+  ...STAGE_PARTS,
+  "update",
+  "overlay",
+  "ui",
+  "residual",
+] as const;
+
 function requirePositiveInteger(value: number | undefined, fallback: number, name: string): number {
   if (value === undefined) return fallback;
   if (!Number.isInteger(value) || value < 1)
@@ -565,6 +609,18 @@ class Ring {
     this.#count = 0;
     this.#cursor = 0;
     this.#total = 0;
+  }
+
+  /** Mean of this series over the frames where `gate` reaches `floor`. The rings fill and reset in step, so a slot is one frame. */
+  meanWhere(gate: Ring, floor: number): { readonly frames: number; readonly mean: number } {
+    let frames = 0;
+    let total = 0;
+    for (let index = 0; index < this.#count; index += 1) {
+      if ((gate.#buffer[index] ?? 0) < floor) continue;
+      frames += 1;
+      total += this.#buffer[index] ?? 0;
+    }
+    return { frames, mean: frames === 0 ? 0 : total / frames };
   }
 
   summarize(scratch: Float64Array): IFrameBudgetSummary {
@@ -627,6 +683,8 @@ function round1(value: number): number {
  * exception is `addSimulation`, which reports simulation that ran outside any frame — see it.
  */
 export class FrameBudget {
+  readonly #debug = debugRequested();
+  #debugWindowBoundary: number | undefined;
   #taskObserver: PerformanceObserver | undefined;
   #taskCount = 0;
   #longestTaskMs = 0;
@@ -669,7 +727,13 @@ export class FrameBudget {
   #gpuBytes: Ring;
   #jsAllocBytes: Ring;
   #bridgeCrossings: Ring;
+  #dirtyTransforms: Ring;
+  #castersMoving: Ring;
   #engine = new Map<string, Ring>();
+  /** One ring per name in `STAGE_NAMES`, made on the first `addStages` so a meter-off run allocates none. */
+  #stageRings: Ring[] | undefined;
+  #stageSumRing: Ring | undefined;
+  #stagesThisFrame: IFrameStageSample | undefined;
   readonly #capacity: number;
   #countersThisFrame: IFrameCounters | undefined;
   // The latest tick fed this window. It is not a boundary count and does not sum across frames: it
@@ -739,6 +803,10 @@ export class FrameBudget {
     if (globalThis.PerformanceObserver?.supportedEntryTypes.includes("longtask")) {
       this.#taskObserver = new PerformanceObserver((list) => {
         for (const entry of list.getEntries()) {
+          if (this.#debug) {
+            countDebug("longTasks", 1, "host", "PerformanceObserver.longtask");
+            countDebug("longTaskMs", entry.duration, "host", "PerformanceObserver.longtask", "ms");
+          }
           this.#taskCount++;
           this.#longestTaskMs = Math.max(this.#longestTaskMs, entry.duration);
           if (
@@ -768,6 +836,8 @@ export class FrameBudget {
     this.#gpuBytes = new Ring(capacity);
     this.#jsAllocBytes = new Ring(capacity);
     this.#bridgeCrossings = new Ring(capacity);
+    this.#dirtyTransforms = new Ring(capacity);
+    this.#castersMoving = new Ring(capacity);
     this.#phaseRings = {
       hostGap: new Ring(capacity),
       overlay: new Ring(capacity),
@@ -987,11 +1057,18 @@ export class FrameBudget {
    */
   addCounters(counters: IFrameCounters): void {
     if (!this.#open) throw new Error("FrameBudget.addCounters called outside a frame.");
+    if (this.#debug)
+      for (const [name, value] of Object.entries(counters.engine ?? {})) {
+        if (!Number.isFinite(value) || value < 0)
+          throw new Error(`Frame budget engine counter ${name} must be non-negative and finite.`);
+      }
     for (const [name, value] of [
       ["hostCalls", counters.hostCalls],
       ["gpuBytes", counters.gpuBytes],
       ["jsAllocBytes", counters.jsAllocBytes],
       ["bridgeCrossings", counters.bridgeCrossings],
+      ["dirtyTransforms", counters.dirtyTransforms],
+      ["castersMoving", counters.castersMoving],
     ] as const) {
       if (value === undefined) continue;
       if (!Number.isFinite(value) || value < 0)
@@ -1024,6 +1101,15 @@ export class FrameBudget {
         );
       this.#passesThisFrame.push(pass);
     }
+  }
+
+  /**
+   * Records the frame's render-phase stages, from `createStageReader`. At most one call per frame; the
+   * object is read at `endFrame`, so a caller may reuse one sample across frames.
+   */
+  addStages(stages: IFrameStageSample): void {
+    if (!this.#open) throw new Error("FrameBudget.addStages called outside a frame.");
+    this.#stagesThisFrame = stages;
   }
 
   /**
@@ -1073,6 +1159,7 @@ export class FrameBudget {
       // The gap is excluded, so the next drawn interval must not start before it.
       if (!drawn) this.#lastDrawnTimestamp = undefined;
       this.#passesThisFrame.length = 0;
+      this.#stagesThisFrame = undefined;
       this.#hitchesInWindow += 1;
       this.#report(
         `${FRAME_HITCH_MARKER}:${JSON.stringify({
@@ -1102,6 +1189,7 @@ export class FrameBudget {
     this.#phaseRings.overlay.push(this.#overlayMs);
     this.#phaseRings.residual.push(residual);
     this.#phaseRings.ui.push(this.#uiMs);
+    this.#pushStages(update, residual);
     if (this.#gpuThisFrame !== undefined) {
       this.#gpu.push(this.#gpuThisFrame);
       if (this.#gpuFrameThisFrame === undefined) this.#gpuUnframed = true;
@@ -1151,6 +1239,9 @@ export class FrameBudget {
     if (counters?.jsAllocBytes !== undefined) this.#jsAllocBytes.push(counters.jsAllocBytes);
     if (counters?.bridgeCrossings !== undefined)
       this.#bridgeCrossings.push(counters.bridgeCrossings);
+    if (counters?.dirtyTransforms !== undefined)
+      this.#dirtyTransforms.push(counters.dirtyTransforms);
+    if (counters?.castersMoving !== undefined) this.#castersMoving.push(counters.castersMoving);
     for (const [name, value] of Object.entries(counters?.engine ?? {})) {
       let ring = this.#engine.get(name);
       if (ring === undefined) {
@@ -1225,17 +1316,27 @@ export class FrameBudget {
       this.#bridgeCrossings.count === 0
         ? undefined
         : this.#bridgeCrossings.summarize(this.#scratch);
+    const dirtyTransforms =
+      this.#dirtyTransforms.count === 0
+        ? undefined
+        : this.#dirtyTransforms.summarize(this.#scratch);
+    const castersMoving =
+      this.#castersMoving.count === 0 ? undefined : this.#castersMoving.summarize(this.#scratch);
     const simulationTick = this.#simulationTick;
     const counters =
       hostCalls === undefined &&
       gpuBytes === undefined &&
       jsAllocBytes === undefined &&
       bridgeCrossings === undefined &&
+      dirtyTransforms === undefined &&
+      castersMoving === undefined &&
       this.#engine.size === 0 &&
       simulationTick === undefined
         ? undefined
         : {
             ...(bridgeCrossings === undefined ? {} : { bridgeCrossings }),
+            ...(castersMoving === undefined ? {} : { castersMoving }),
+            ...(dirtyTransforms === undefined ? {} : { dirtyTransforms }),
             ...(this.#engine.size === 0
               ? {}
               : {
@@ -1248,6 +1349,18 @@ export class FrameBudget {
             ...(jsAllocBytes === undefined ? {} : { jsAllocBytes }),
             ...(simulationTick === undefined ? {} : { simulationTick }),
           };
+    const stageRings = this.#stageRings;
+    const stages =
+      stageRings === undefined || (stageRings[0]?.count ?? 0) === 0
+        ? undefined
+        : Object.fromEntries(
+            STAGE_NAMES.flatMap((name, index) => {
+              const ring = stageRings[index];
+              return ring === undefined || ring.count === 0
+                ? []
+                : [[name, ring.summarize(this.#scratch)]];
+            }),
+          );
     const gpuSummary = this.#gpu.summarize(this.#scratch);
     const gpu = gpuSummary.samples === 0 ? undefined : gpuSummary;
     const gpuBucket = (bucket: FrameGpuBucket): number | undefined => {
@@ -1290,6 +1403,9 @@ export class FrameBudget {
       fps: presented.mean === 0 ? 0 : round(1_000 / presented.mean),
       frame: this.#frame.summarize(this.#scratch),
       frames: this.#framesInWindow,
+      ...(this.#debug && this.#debugWindowBoundary !== undefined && this.#lastFrameEnd !== undefined
+        ? { durationMs: Math.max(0, this.#lastFrameEnd - this.#debugWindowBoundary) }
+        : {}),
       // The Wasm engine's job pool (PRD-752 phase 4), as its facade reports it: `on (N)` or `off (<reason>)`.
       ...(typeof (globalThis as { __tnWebThreads?: unknown }).__tnWebThreads === "string"
         ? { threads: (globalThis as { __tnWebThreads?: string }).__tnWebThreads }
@@ -1342,6 +1458,13 @@ export class FrameBudget {
       ...(overTarget === undefined ? {} : { overTarget }),
       ...(surface === undefined ? {} : { surface }),
       ...(counters === undefined ? {} : { counters }),
+      ...(stages === undefined || this.#stageSumRing === undefined
+        ? {}
+        : {
+            stages,
+            stageSum: this.#stageSumRing.summarize(this.#scratch),
+            stagesAtP95: this.#stagesAtP95(this.#stageSumRing, stageRings),
+          }),
       window: this.#windowIndex + 1,
       // Appended after every existing field so a parser that reads this line as JSON keeps the
       // keys it already knew; the per-bucket p50s are the only additions.
@@ -1385,6 +1508,57 @@ export class FrameBudget {
     return Math.max(0, this.#lastFrameEnd - this.#firstFrameStart);
   }
 
+  /** The stages' means over the frames at or above the sum's p95 (see `IFrameBudgetWindow.stagesAtP95`). */
+  #stagesAtP95(
+    sumRing: Ring,
+    stageRings: readonly Ring[] | undefined,
+  ): NonNullable<IFrameBudgetWindow["stagesAtP95"]> {
+    const floor = sumRing.summarize(this.#scratch).p95;
+    const stages: Record<string, number> = {};
+    let frames = 0;
+    for (let index = 0; index < STAGE_NAMES.length; index += 1) {
+      const ring = stageRings?.[index];
+      // A ring that missed frames is out of step with the sum, so its slots are not this tail's frames.
+      if (ring === undefined || ring.count === 0 || ring.count !== sumRing.count) continue;
+      const at = ring.meanWhere(sumRing, floor);
+      frames = at.frames;
+      stages[STAGE_NAMES[index] as string] = round(at.mean);
+    }
+    return { frames, stages };
+  }
+
+  /** Pushes this frame's stages, with the phases that complete the partition of `frame`. */
+  #pushStages(update: number, residual: number): void {
+    const sample = this.#stagesThisFrame;
+    this.#stagesThisFrame = undefined;
+    if (sample === undefined) return;
+    let rings = this.#stageRings;
+    if (rings === undefined) {
+      rings = STAGE_NAMES.map(() => new Ring(this.#capacity));
+      this.#stageRings = rings;
+      this.#stageSumRing = new Ring(this.#capacity);
+    }
+    let sum = 0;
+    for (let index = 0; index < STAGE_NAMES.length; index += 1) {
+      const name = STAGE_NAMES[index] as (typeof STAGE_NAMES)[number];
+      const value =
+        name === "update"
+          ? update
+          : name === "overlay"
+            ? this.#overlayMs
+            : name === "ui"
+              ? this.#uiMs
+              : name === "residual"
+                ? residual
+                : sample[name];
+      // A stage the engine did not measure this frame has no sample: absent, never zero.
+      if (value === undefined) continue;
+      rings[index]?.push(value);
+      if (!(STAGE_PARTS as readonly string[]).includes(name)) sum += value;
+    }
+    this.#stageSumRing?.push(sum);
+  }
+
   #countPresents(): void {
     const read = this.#readPresentCount;
     if (read === undefined) return;
@@ -1416,7 +1590,13 @@ export class FrameBudget {
     if (elapsed < this.reportEvery || this.#framesInWindow < this.minFrames) return;
     const completed = this.window();
     this.#report(`${FRAME_BUDGET_MARKER}:${JSON.stringify(completed)}`);
+    if (this.#debug) {
+      this.#report(formatDebugReport(completed));
+      const hotCalls = debugHotCalls(completed);
+      if (hotCalls !== undefined) this.#report(hotCalls);
+    }
     this.#windowIndex += 1;
+    if (this.#debug) this.#debugWindowBoundary = this.#lastFrameEnd;
     this.#presented.reset();
     this.#drawn.reset();
     this.#drawnInWindow = 0;
@@ -1433,7 +1613,11 @@ export class FrameBudget {
     this.#gpuBytes.reset();
     this.#jsAllocBytes.reset();
     this.#bridgeCrossings.reset();
+    this.#dirtyTransforms.reset();
+    this.#castersMoving.reset();
     this.#engine.clear();
+    for (const ring of this.#stageRings ?? []) ring.reset();
+    this.#stageSumRing?.reset();
     this.#simulationTick = undefined;
     this.#gpuStaleInWindow = 0;
     this.#renderSkipsInWindow = 0;
@@ -1447,6 +1631,8 @@ export class FrameBudget {
     this.#framesInWindow = 0;
     this.#windowStartTick = this.#simulation?.tick();
     this.#hitchesInWindow = 0;
+    this.#taskCount = 0;
+    this.#longestTaskMs = 0;
     this.#renderOverTarget = 0;
     this.#gpuOverTarget = 0;
     this.#presentsInWindow = 0;

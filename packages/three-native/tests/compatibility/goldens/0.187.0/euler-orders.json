@@ -1,0 +1,248 @@
+{
+  "name": "euler-orders",
+  "threeVersion": "0.187.0",
+  "adaptedFrom": "three@0.185.1 test/unit/src/math/Euler.tests.js — setFromRotationMatrix over all six orders",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "source",
+      "kind": "number",
+      "path": "x",
+      "value": "n:3fd3333333333333",
+      "decimal": "0.3"
+    },
+    {
+      "index": 1,
+      "id": "source",
+      "kind": "number",
+      "path": "y",
+      "value": "n:bfd999999999999a",
+      "decimal": "-0.4"
+    },
+    {
+      "index": 2,
+      "id": "source",
+      "kind": "number",
+      "path": "z",
+      "value": "n:3ff3333333333333",
+      "decimal": "1.2"
+    },
+    {
+      "index": 3,
+      "id": "source",
+      "kind": "string",
+      "path": "order",
+      "value": "s:XYZ",
+      "decimal": "XYZ"
+    },
+    {
+      "index": 4,
+      "id": "e_XYZ",
+      "kind": "number",
+      "path": "x",
+      "value": "n:3fd3333333333333",
+      "decimal": "0.3"
+    },
+    {
+      "index": 5,
+      "id": "e_XYZ",
+      "kind": "number",
+      "path": "y",
+      "value": "n:bfd9999999999999",
+      "decimal": "-0.39999999999999997"
+    },
+    {
+      "index": 6,
+      "id": "e_XYZ",
+      "kind": "number",
+      "path": "z",
+      "value": "n:3ff3333333333334",
+      "decimal": "1.2000000000000002"
+    },
+    {
+      "index": 7,
+      "id": "e_XYZ",
+      "kind": "string",
+      "path": "order",
+      "value": "s:XYZ",
+      "decimal": "XYZ"
+    },
+    {
+      "index": 8,
+      "id": "e_YZX",
+      "kind": "number",
+      "path": "x",
+      "value": "n:3fe14cdeaaf3851b",
+      "decimal": "0.5406335200206372"
+    },
+    {
+      "index": 9,
+      "id": "e_YZX",
+      "kind": "number",
+      "path": "y",
+      "value": "n:bfec693d8233ad5f",
+      "decimal": "-0.8878467123990211"
+    },
+    {
+      "index": 10,
+      "id": "e_YZX",
+      "kind": "number",
+      "path": "z",
+      "value": "n:3ff03777f9970f46",
+      "decimal": "1.013542151414144"
+    },
+    {
+      "index": 11,
+      "id": "e_YZX",
+      "kind": "string",
+      "path": "order",
+      "value": "s:YZX",
+      "decimal": "YZX"
+    },
+    {
+      "index": 12,
+      "id": "e_ZXY",
+      "kind": "number",
+      "path": "x",
+      "value": "n:bfcefa4fb49ea0b9",
+      "decimal": "-0.24201389617269856"
+    },
+    {
+      "index": 13,
+      "id": "e_ZXY",
+      "kind": "number",
+      "path": "y",
+      "value": "n:bfdbebc3b713d9d0",
+      "decimal": "-0.43626492384592286"
+    },
+    {
+      "index": 14,
+      "id": "e_ZXY",
+      "kind": "number",
+      "path": "z",
+      "value": "n:3ff15b8caae2bf85",
+      "decimal": "1.084850947878267"
+    },
+    {
+      "index": 15,
+      "id": "e_ZXY",
+      "kind": "string",
+      "path": "order",
+      "value": "s:ZXY",
+      "decimal": "ZXY"
+    },
+    {
+      "index": 16,
+      "id": "e_XZY",
+      "kind": "number",
+      "path": "x",
+      "value": "n:bfdf1e364b302770",
+      "decimal": "-0.486218999315148"
+    },
+    {
+      "index": 17,
+      "id": "e_XZY",
+      "kind": "number",
+      "path": "y",
+      "value": "n:bfeb974dd623032d",
+      "decimal": "-0.8622197325094924"
+    },
+    {
+      "index": 18,
+      "id": "e_XZY",
+      "kind": "number",
+      "path": "z",
+      "value": "n:3ff0842c6132b4d4",
+      "decimal": "1.0322688862609555"
+    },
+    {
+      "index": 19,
+      "id": "e_XZY",
+      "kind": "string",
+      "path": "order",
+      "value": "s:XZY",
+      "decimal": "XZY"
+    },
+    {
+      "index": 20,
+      "id": "e_YXZ",
+      "kind": "number",
+      "path": "x",
+      "value": "n:3fd1a495ad6af4df",
+      "decimal": "0.2756704515011971"
+    },
+    {
+      "index": 21,
+      "id": "e_YXZ",
+      "kind": "number",
+      "path": "y",
+      "value": "n:bfdaaa6158689896",
+      "decimal": "-0.4166491855015776"
+    },
+    {
+      "index": 22,
+      "id": "e_YXZ",
+      "kind": "number",
+      "path": "z",
+      "value": "n:3ff148282c248e5e",
+      "decimal": "1.080116436417391"
+    },
+    {
+      "index": 23,
+      "id": "e_YXZ",
+      "kind": "string",
+      "path": "order",
+      "value": "s:YXZ",
+      "decimal": "YXZ"
+    },
+    {
+      "index": 24,
+      "id": "e_ZYX",
+      "kind": "number",
+      "path": "x",
+      "value": "n:bfd104b6ecb445c7",
+      "decimal": "-0.2659127532543519"
+    },
+    {
+      "index": 25,
+      "id": "e_ZYX",
+      "kind": "number",
+      "path": "y",
+      "value": "n:bfdb0dd907c0a6e7",
+      "decimal": "-0.4227202010830368"
+    },
+    {
+      "index": 26,
+      "id": "e_ZYX",
+      "kind": "number",
+      "path": "z",
+      "value": "n:3ff3235330204e42",
+      "decimal": "1.1961242561273058"
+    },
+    {
+      "index": 27,
+      "id": "e_ZYX",
+      "kind": "string",
+      "path": "order",
+      "value": "s:ZYX",
+      "decimal": "ZYX"
+    },
+    {
+      "index": 28,
+      "id": "a_YZX",
+      "kind": "number",
+      "path": "0",
+      "value": "n:3fe14cdeaaf3851b",
+      "decimal": "0.5406335200206372"
+    },
+    {
+      "index": 29,
+      "id": "a_YZX",
+      "kind": "string",
+      "path": "3",
+      "value": "s:YZX",
+      "decimal": "YZX"
+    }
+  ]
+}

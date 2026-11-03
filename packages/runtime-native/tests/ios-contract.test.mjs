@@ -121,7 +121,7 @@ test('Linux can validate the iOS lane without claiming simulator execution', () 
   const report = JSON.parse(result.stdout);
   assert.equal(report.checked, true);
   assert.equal(report.execution, false);
-  assert.equal(report.threeVersion, '0.185.1');
+  assert.equal(report.threeVersion, '0.187.0');
 });
 
 test('JSC prototype installation uses the three-argument Xcode 16.4 API', () => {

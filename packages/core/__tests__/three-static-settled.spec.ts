@@ -5,8 +5,11 @@ import {
   InterleavedBuffer,
   InterleavedBufferAttribute,
   Quaternion,
+  RenderObjectRefreshType,
 } from "three";
 import Bindings from "three/src/renderers/common/Bindings.js";
+// @ts-expect-error Three's private chain map has no public declarations.
+import ChainMap from "three/src/renderers/common/ChainMap.js";
 import Geometries from "three/src/renderers/common/Geometries.js";
 import Renderer from "three/src/renderers/common/Renderer.js";
 // @ts-expect-error Three's node manager has no public declarations.
@@ -73,15 +76,31 @@ interface ICounted {
   bindGroupsRebuilt: number;
 }
 
+/** The renderer slice r187's observer reads for its output target; `getMRT` answers the velocity question. */
+const canvasTarget = {};
+function rendererStub(getMRT: () => unknown = () => null) {
+  return {
+    getMRT,
+    getRenderTarget: () => null,
+    getOutputRenderTarget: () => null,
+    getCanvasTarget: () => canvasTarget,
+  };
+}
+
+/** r187 snapshots the geometry attribute manager's dispose version when it first observes a render object. */
+const geometryAttributes = { disposeVersion: 0 };
+
 function worldFor(mesh: InstancedMesh) {
   return {
     object: mesh,
     geometry: mesh.geometry,
     material: mesh.material,
     bundle: null as null,
-    lightsNode: { getLights: () => [] },
-    scene: { environmentIntensity: 1, environmentRotation: new Quaternion() },
-    renderer: {} as { _tnPmremSwaps?: number },
+    renderer: rendererStub(),
+    context: { width: 1, height: 1 },
+    _geometries: { attributes: geometryAttributes },
+    lightsNode: { getBuiltinLights: () => [] },
+    scene: { environment: null, environmentIntensity: 1, environmentRotation: new Quaternion() },
   };
 }
 
@@ -109,7 +128,7 @@ function cachedWorld(mesh: InstancedMesh) {
 
 /** The one question the renderer asks first on every draw, answered with no motion vectors. */
 function prime(mesh: InstancedMesh, observer: ReturnType<typeof observerFor>): void {
-  observer.needsRefresh(cachedWorld(mesh), { renderer: { getMRT: () => null } });
+  observer.needsRefresh(cachedWorld(mesh), { renderer: rendererStub() });
 }
 
 function litMesh(): InstancedMesh {
@@ -165,7 +184,7 @@ function draw(
   renderCalls.set(mesh, renderId);
   currentCall.id = renderId;
   currentCounts = counts;
-  const render = { renderId, frameId: renderId, renderer: { getMRT: () => null } };
+  const render = { renderId, frameId: renderId, renderer: rendererStub() };
   (renderObject as { frame?: unknown }).frame = render;
   const nodes = {
     isSettled: () => observer.isSettled(renderObject),
@@ -192,30 +211,36 @@ function draw(
 
   let manager = geometries.get(mesh);
   if (manager === undefined) {
-    manager = Object.assign(
-      new Geometries(
-        {
-          update: (attribute: object) => {
-            liveCounts().uploads.push(attribute);
-          },
-          delete: () => undefined,
-        },
-        {
-          memory: { geometries: 0 },
-          render: {
-            get calls() {
-              return currentCall.id;
-            },
-          },
-        },
-      ),
-      {
-        updateAttributes(this: object, target: unknown) {
-          liveCounts().attributeScans += 1;
-          return Geometries.prototype.updateAttributes.call(this, target);
+    manager = {
+      attributeCall: new WeakMap(),
+      wireframes: new WeakMap(),
+      _settledAttributes: new WeakMap(),
+      has: () => true,
+      backend: {
+        getBufferAttribute: (attribute: { data?: object }) => attribute.data ?? attribute,
+      },
+      updateAttributes(this: object, target: unknown) {
+        liveCounts().attributeScans += 1;
+        return Geometries.prototype.updateAttributes.call(this, target);
+      },
+      updateAttribute: Geometries.prototype.updateAttribute,
+      getIndex: Geometries.prototype.getIndex,
+      attributesChanged: Geometries.prototype.attributesChanged,
+      attributes: {
+        // Geometries reads the uploaded version to re-upload a buffer written twice in one call.
+        get: () => ({}),
+        update: (attribute: object) => {
+          liveCounts().uploads.push(attribute);
         },
       },
-    );
+      info: {
+        render: {
+          get calls() {
+            return currentCall.id;
+          },
+        },
+      },
+    };
     geometries.set(mesh, manager);
   }
   // One manager per mesh, not per draw: the settled snapshot it keeps is the whole point, and a
@@ -261,7 +286,7 @@ function draw(
         backend,
         isSettled: () => observer.isSettled(renderObject),
         updateGroup: NodeManager.prototype.updateGroup,
-        groupsData: new Map(),
+        groupsData: new ChainMap(),
       },
       backend,
       get: (key: object) => backend.get(key),
@@ -269,7 +294,8 @@ function draw(
       _createBindings: Bindings.prototype._createBindings,
       textures: {
         get: () => ({ generation: textureGeneration, bindGroups: new Set() }),
-        updateTexture: () => undefined,
+        // r187 returns the generation of the GPU texture behind the binding.
+        updateTexture: () => textureGeneration,
         needsMipmaps: () => false,
       },
       pipelines: {},
@@ -591,19 +617,21 @@ describe("a settled static object skips the per-object draw work", () => {
     const frame = (renderId: number) =>
       ({
         renderId,
-        renderer: { getMRT: () => null },
+        renderer: rendererStub(),
       }) as never;
 
     // The renderer asks once per draw and the frame's id is the same for every object in it.
-    expect(observer.needsRefresh(world, frame(1))).toBe(true);
-    expect(observer.needsRefresh(world, frame(1))).toBe(false);
+    // Three 0.187 answers SHARED on the frame's first non-initial ask (its shared-UBO pass), so
+    // "does not refresh again" is "not FULL".
+    expect(observer.needsRefresh(world, frame(1))).toBe(RenderObjectRefreshType.FULL);
+    expect(observer.needsRefresh(world, frame(1))).not.toBe(RenderObjectRefreshType.FULL);
 
     // A static object that moved has to refresh like any other: the object uniforms it skipped
     // are the ones its world matrix feeds.
     mesh.position.x = 4;
     mesh.updateMatrixWorld();
-    expect(observer.needsRefresh(world, frame(2))).toBe(true);
-    expect(observer.needsRefresh(world, frame(2))).toBe(false);
+    expect(observer.needsRefresh(world, frame(2))).toBe(RenderObjectRefreshType.FULL);
+    expect(observer.needsRefresh(world, frame(2))).not.toBe(RenderObjectRefreshType.FULL);
   });
 
   it("uploads an instance write on a settled static InstancedMesh", () => {
@@ -729,7 +757,7 @@ describe("a settled static object skips the per-object draw work", () => {
 
     // A render that produces motion vectors needs every frame's values, static or not.
     const world = cachedWorld(mesh);
-    (world as { frame?: unknown }).frame = { renderer: { getMRT: () => ({ has: () => true }) } };
+    (world as { frame?: unknown }).frame = { renderer: rendererStub(() => ({ has: () => true })) };
     observer.needsRefresh(world, world.frame);
     expect(observer.isSettled(world)).toBe(false);
   });

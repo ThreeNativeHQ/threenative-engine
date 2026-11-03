@@ -10,8 +10,8 @@
 // (Engine/Source/Runtime/Renderer/Private/Lumen/LumenReflectionTracing.cpp). Without a surface cache the hit
 // takes the sun with one shadow ray, the world-space radiance cache for the bounce, and its own emission.
 
-import type { DirectionalLight, PerspectiveCamera, PointLight, SpotLight } from "three";
-import { HalfFloatType } from "three";
+import type { DirectionalLight, PerspectiveCamera, PointLight, SpotLight, Texture } from "three";
+import { HalfFloatType, SRGBColorSpace } from "three";
 import {
   Fn,
   If,
@@ -69,6 +69,78 @@ export interface ITracedReflectionStage {
   /** Metres a ray travels before it counts as a miss. Unset: the whole scene, and no fade. */
   readonly maxDistance?: number;
   readonly resolutionScale?: number;
+  /**
+   * The sky light a hit takes when no world-space radiance cache is registered: E / pi on the six axes
+   * (+X, -X, +Y, -Y, +Z, -Z), from `skyAmbientCube`. Unset: a hit in shadow is black.
+   */
+  readonly skyIrradiance?: readonly (readonly [number, number, number])[];
+}
+
+/** The environment's pixels as linear radiance per channel, or undefined when they are not on the CPU. */
+function linearPixels(
+  environment: Texture | null | undefined,
+): { width: number; height: number; at: (index: number) => number } | undefined {
+  const image = environment?.image as
+    | { data?: ArrayLike<number>; width?: number; height?: number }
+    | undefined;
+  const data = image?.data;
+  const width = image?.width ?? 0;
+  const height = image?.height ?? 0;
+  if (data === undefined || width < 1 || height < 1 || data.length < width * height * 4)
+    return undefined;
+  if (data instanceof Float32Array) return { width, height, at: (index) => data[index] ?? 0 };
+  if (!(data instanceof Uint8Array || data instanceof Uint8ClampedArray)) return undefined;
+  const srgb = environment?.colorSpace === SRGBColorSpace;
+  return {
+    width,
+    height,
+    at: (index) => {
+      const v = (data[index] ?? 0) / 255;
+      if (!srgb) return v;
+      return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+    },
+  };
+}
+
+/**
+ * The sky light a surface facing each axis receives, E / pi on +X, -X, +Y, -Y, +Z, -Z, from an equirectangular
+ * environment whose pixels are on the CPU (a `DataTexture`): Unreal lights a reflection hit with the sky light
+ * among the rest (Lumen's surface cache carries it). Undefined when the pixels are not readable (an image, a GPU
+ * target): the hit then takes no sky light.
+ */
+export function skyAmbientCube(
+  environment: Texture | null | undefined,
+  intensity = 1,
+): [number, number, number][] | undefined {
+  const pixels = linearPixels(environment);
+  if (pixels === undefined) return undefined;
+  const { width, height } = pixels;
+  // +X, -X, +Y, -Y, +Z, -Z: a direction lights the axis on its own side of each component by that component.
+  const sums = Array.from({ length: 6 }, () => [0, 0, 0] as [number, number, number]);
+  // three's equirectUV: u = atan2(z, x) / 2pi + 0.5, v = asin(y) / pi + 0.5, with row 0 at v = 0 (no flip).
+  for (let row = 0; row < height; row++) {
+    const elevation = ((row + 0.5) / height - 0.5) * Math.PI;
+    // The texel's solid angle, (2 pi / width) (pi / height) cos(elevation), over pi.
+    const weight = (2 * Math.PI * Math.cos(elevation) * intensity) / (width * height);
+    for (let column = 0; column < width; column++) {
+      const azimuth = ((column + 0.5) / width - 0.5) * 2 * Math.PI;
+      const direction = [
+        Math.cos(elevation) * Math.cos(azimuth),
+        Math.sin(elevation),
+        Math.cos(elevation) * Math.sin(azimuth),
+      ] as const;
+      const at = (row * width + column) * 4;
+      const radiance = [pixels.at(at), pixels.at(at + 1), pixels.at(at + 2)] as const;
+      direction.forEach((cosine, axis) => {
+        const sum = sums[2 * axis + (cosine >= 0 ? 0 : 1)] as [number, number, number];
+        const share = Math.abs(cosine) * weight;
+        sum[0] += radiance[0] * share;
+        sum[1] += radiance[1] * share;
+        sum[2] += radiance[2] * share;
+      });
+    }
+  }
+  return sums;
 }
 
 /** With a `maxDistance`, a hit's reflection fades out over the last half of the reach, so a far surface does not pop. */
@@ -80,6 +152,20 @@ const START_OFFSET_PER_METRE = 0.004;
 const SHADOW_OFFSET = 0.02;
 const SHADOW_FAR = 2000;
 const NO_CACHE_RADIANCE = 0;
+
+/** The six-axis sky light at a normal, weighted by the normal's squared components (the ambient cube). */
+function ambientCube(
+  cube: ITracedReflectionStage["skyIrradiance"],
+  normal: Node<"vec3">,
+): Node<"vec3"> {
+  if (cube === undefined || cube.length !== 6) return vec3(NO_CACHE_RADIANCE);
+  const face = (index: number) => vec3(...(cube[index] as [number, number, number]));
+  const squared = normal.mul(normal);
+  return select(normal.x.greaterThanEqual(0), face(0), face(1))
+    .mul(squared.x)
+    .add(select(normal.y.greaterThanEqual(0), face(2), face(3)).mul(squared.y))
+    .add(select(normal.z.greaterThanEqual(0), face(4), face(5)).mul(squared.z));
+}
 /** Share of a metal's colour, per unit of roughness, that a hit takes as diffuse: calibrated on the rough metal sphere. */
 const METAL_DIFFUSE = 0.12;
 
@@ -211,7 +297,9 @@ export function tracedReflections(stage: ITracedReflectionStage): Node<"vec4"> {
         });
         const sunDirect = sunRadiance.mul(facing).mul(float(1).sub(blocked));
         const direct = lamps.reduce((sum, lamp) => sum.add(lampDirect(lamp, hit)), sunDirect);
-        const indirect = giCache.irradiance?.(hit.position, hit.normal) ?? vec3(NO_CACHE_RADIANCE);
+        const indirect =
+          giCache.irradiance?.(hit.position, hit.normal) ??
+          ambientCube(stage.skyIrradiance, hit.normal);
         // A metal has almost no diffuse colour: the sun and the bounce light it only a little, more the rougher it is
         // (Unreal's reflection hit shows a rough metal as a dark shape, not black and not a lit diffuse one).
         const metalShare = hit.roughness.mul(METAL_DIFFUSE);

@@ -84,6 +84,20 @@ function holders(root: Object3D, camera: Camera): Map<string, { shown: boolean; 
 }
 
 /**
+ * A one-off measurement walk, like the playtest observer's, under the same mark: three-native's
+ * bridge census then never bills its re-reads of every child to the game's frame.
+ */
+export function unbilled<T>(work: () => T): T {
+  const host = globalThis as { __tnPlaytestObserving?: number };
+  host.__tnPlaytestObserving = (host.__tnPlaytestObserving ?? 0) + 1;
+  try {
+    return work();
+  } finally {
+    host.__tnPlaytestObserving -= 1;
+  }
+}
+
+/**
  * Split the bytes a reveal waited for into what the spawn camera shows and what it does not.
  *
  * `resolved` is `ctx.assets.resolved` at the reveal: every path that settled by then, with the
@@ -96,7 +110,7 @@ export function measureStartupOffscreenBytes(
   root: Object3D,
   camera: Camera,
 ): IStartupOffscreenBytes {
-  const objects = holders(root, camera);
+  const objects = unbilled(() => holders(root, camera));
   let awaitedBytes = 0;
   let visibleBytes = 0;
   let unattributedBytes = 0;

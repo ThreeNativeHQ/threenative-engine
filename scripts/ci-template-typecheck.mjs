@@ -31,7 +31,12 @@ function completeOwnership({ plan: value, candidateSha, eventName, target, templ
     !Array.isArray(templates) ||
     !templates.length ||
     new Set(templates).size !== templates.length ||
-    templates.some((name) => !plan.templateMatrix.template.includes(name))
+    // PRD-776: a carried kit's compiler step passed in the run its entry names.
+    templates.some(
+      (name) =>
+        !plan.templateMatrix.template.includes(name) &&
+        !plan.carried?.some((entry) => entry.leg === `template-nonvisual (${name})`),
+    )
   )
     failure("INCOMPLETE_OWNER");
   const matches = [
@@ -44,7 +49,7 @@ function completeOwnership({ plan: value, candidateSha, eventName, target, templ
     /^ {4}continue-on-error:/mu.test(body) ||
     !body.includes("    needs: [scope, build-artifacts]\n") ||
     !body.includes(
-      "    if: ${{ (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template') }}\n",
+      "    if: ${{ (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template') && !contains(fromJSON(needs.scope.outputs.plan).carriedJobs, 'template-nonvisual') }}\n",
     ) ||
     !body.includes("      matrix: ${{ fromJSON(needs.scope.outputs.plan).templateMatrix }}\n") ||
     !body.includes("          ref: ${{ needs.scope.outputs.candidate_sha || github.sha }}\n") ||

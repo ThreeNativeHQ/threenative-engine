@@ -2,6 +2,14 @@
   "version": 1,
   "shims": [
     {
+      "name": "__tnEngineCounters",
+      "evidence": "packages/runtime-native/src/engine/player/v8_main.cpp"
+    },
+    {
+      "name": "__THREENATIVE_DEBUG__",
+      "evidence": "packages/runtime-native/src/engine/player/v8_main.cpp"
+    },
+    {
       "name": "__tnGameSpan",
       "evidence": "packages/runtime-native/src/engine/player/v8_main.cpp"
     },

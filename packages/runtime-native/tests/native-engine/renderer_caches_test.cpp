@@ -1,4 +1,5 @@
 #include "check.h"
+#include "engine/foundation/waste_counters.h"
 #include "engine/renderer/geometry_cache.h"
 #include "engine/renderer/compute.h"
 #include "engine/renderer/pipeline_cache.h"
@@ -383,6 +384,107 @@ void siblingTextureChangeSettles() {
     CHECK(bindGroupsCreated() == groups);
 }
 
+// A box whose Basic material's map is the whole frame's centre pixel: the map's bytes are the pixel, so a
+// readback says whether the frame sampled them. Built on a real adapter (a readback of a texture's content
+// is what the assert needs); `initializeHeadless` names the adapter it picked.
+struct MappedMesh {
+    mystral::webgpu::Context context;
+    EventQueue events;
+    std::unique_ptr<Renderer> renderer;
+    RenderDatabase database;
+    Scene scene;
+    PerspectiveCamera camera{50, 1, 0.1, 100};
+    std::shared_ptr<Material> material;
+    std::shared_ptr<DataTexture> map;
+    // The scene holds the mesh by reference, so it outlives the frames.
+    std::unique_ptr<Mesh> mesh;
+    bool ok = false;
+    MappedMesh() {
+        ok = context.initializeHeadless();
+        if (!ok) return;
+        renderer = std::make_unique<Renderer>(context.getInstance(), context.getDevice(), context.getQueue(), events);
+        renderer->setSize(64, 64);
+        camera.position.set(0, 0, 5);
+        material = std::make_shared<Material>(MaterialType::Basic);
+        map = std::make_shared<DataTexture>();
+        map->setImage({255, 0, 0, 255}, "Uint8Array", 1, 1, kTextureRGBAFormat, kTextureUnsignedByteType);
+        material->maps["map"] = map;
+        mesh = std::make_unique<Mesh>(makeBoxGeometry(2, 2, 2), material);
+        scene.add(*mesh);
+    }
+    void frames(int count) {
+        for (int i = 0; i < count; ++i) database.render(*renderer, scene, camera);
+    }
+    /** The pixel at the frame's centre, or (-1,-1,-1) when the readback never came back. */
+    std::array<int, 3> centre() {
+        std::vector<uint8_t> pixels;
+        bool done = false;
+        renderer->readPixels([&](GpuStatus status, std::vector<uint8_t> bytes) {
+            if (status == GpuStatus::Ok) pixels = std::move(bytes);
+            done = true;
+        });
+        for (int i = 0; i < 4000 && !done; ++i) {
+            renderer->poll();
+            events.drain();
+            if (!done) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        if (pixels.size() < 64 * 64 * 4) return {-1, -1, -1};
+        const std::size_t at = (32 * 64 + 32) * 4;
+        return {pixels[at], pixels[at + 1], pixels[at + 2]};
+    }
+};
+
+// The RTS kit's 56x56 fog-of-war texture changes its bytes up to 20 times a second. Releasing the record for a
+// new texture whose view may reuse the old address dropped every material bind group and re-recorded every
+// draw bundle: this update must write into the texture that is already there and keep both.
+void textureUpdateInPlace() {
+    waste::setDebugEnabled(true);
+    MappedMesh box;
+    CHECK(box.ok);
+    if (!box.ok) return;
+    box.frames(3);
+    const auto red = box.centre();
+    const auto frame = box.renderer->lastFrame();
+    std::fprintf(stderr, "texture update in place: centre (%d,%d,%d) draws %u recorded %u\n", red[0], red[1], red[2],
+                 frame.draws, frame.mainRecorded);
+    CHECK(red[0] > 200 && red[2] < 30);  // the map's red texel reached the screen
+    const uint64_t groups = bindGroupsCreated();
+    const uint64_t uploads = box.renderer->textureUploadBytes();
+    const uint64_t created = waste::counters().textureCreatedBytes.load();
+    box.map->data.assign({0, 0, 255, 255});
+    box.map->needsUpdate();
+    box.frames(1);
+    const auto blue = box.centre();
+    CHECK(bindGroupsCreated() == groups);  // no map group was rebuilt
+    CHECK(box.renderer->lastFrame().mainRecorded == 0);  // and no bundle was re-recorded
+    CHECK(waste::counters().textureCreatedBytes.load() == created);  // the texture stayed where it was
+    CHECK(box.renderer->textureUploadBytes() == uploads + 4);  // its pixels did not
+    CHECK(blue[0] < 30 && blue[2] > 200);  // the frame sampled the new texel
+}
+
+// An update that changes the extent cannot be written into the existing texture: the record is rebuilt, the
+// groups that bound its view are dropped, and the frame still draws the new pixels.
+void textureUpdateReallocates() {
+    waste::setDebugEnabled(true);
+    MappedMesh box;
+    CHECK(box.ok);
+    if (!box.ok) return;
+    box.frames(3);
+    CHECK(box.centre()[0] > 200);
+    const uint64_t groups = bindGroupsCreated();
+    const uint64_t uploads = box.renderer->textureUploadBytes();
+    const uint64_t created = waste::counters().textureCreatedBytes.load();
+    box.map->setImage({0, 255, 0, 255, 0, 255, 0, 255, 0, 255, 0, 255, 0, 255, 0, 255}, "Uint8Array", 2, 2,
+                       kTextureRGBAFormat, kTextureUnsignedByteType);
+    box.frames(1);
+    const auto green = box.centre();
+    CHECK(bindGroupsCreated() > groups);  // the groups of the old view went
+    CHECK(box.renderer->lastFrame().mainRecorded > 0);  // and the bundle with them
+    CHECK(waste::counters().textureCreatedBytes.load() == created + 16);  // a 2x2 RGBA8 texture
+    CHECK(box.renderer->textureUploadBytes() == uploads + 16);
+    CHECK(green[0] < 30 && green[1] > 200 && green[2] < 30);  // the new pixels are what is drawn
+}
+
 void compileBeforeRender() {
     CompileDevice d;
     CHECK(d.device != nullptr);
@@ -684,7 +786,7 @@ void recentBindGroups() {
     groups.clear();
 }
 
-TN_TEST_MAIN({"attribute_disposal_lifetime", attributeDisposalLifetime}, {"geometry", geometry}, {"pipelines", pipelines}, {"sibling_pipelines", siblingSharesPipelines}, {"sibling_texture_change", siblingTextureChangeSettles}, {"compile_before_render", compileBeforeRender}, {"init_texture", initializeTexture}, {"recent_bind_groups", recentBindGroups}, {"line_depth_bias", lineDepthBias}
+TN_TEST_MAIN({"attribute_disposal_lifetime", attributeDisposalLifetime}, {"geometry", geometry}, {"pipelines", pipelines}, {"sibling_pipelines", siblingSharesPipelines}, {"sibling_texture_change", siblingTextureChangeSettles}, {"texture_update_in_place", textureUpdateInPlace}, {"texture_update_reallocates", textureUpdateReallocates}, {"compile_before_render", compileBeforeRender}, {"init_texture", initializeTexture}, {"recent_bind_groups", recentBindGroups}, {"line_depth_bias", lineDepthBias}
 #ifdef TN_TEST_PIPELINE_WORKERS
     , {"failed_ticket", failedTicket}, {"synchronous_adoption", synchronousAdoption},
     {"shutdown_queue", shutdownQueue}, {"nonstandard_exception", nonStandardException}

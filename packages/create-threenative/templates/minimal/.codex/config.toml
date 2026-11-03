@@ -14,9 +14,7 @@ args = ["./node_modules/@threenative/core/mcp/sculpt.mjs"]
 command = "node"
 args = ["./node_modules/@threenative/core/mcp/engine.mjs"]
 
-[mcp_servers.threenative-blender]
-command = "node"
-args = ["./node_modules/@threenative/core/mcp/blender.mjs"]
+["./node_modules/@threenative/core/mcp/blender.mjs"]
 
 [mcp_servers.threenative-animation]
 command = "node"
@@ -25,3 +23,7 @@ args = ["./node_modules/@threenative/core/mcp/animation.mjs"]
 [mcp_servers.threenative-terrain]
 command = "node"
 args = ["./node_modules/@threenative/core/mcp/terrain.mjs"]
+
+[mcp_servers.threenative-devtools]
+command = "node"
+args = ["./node_modules/@threenative/core/mcp/devtools.mjs"]

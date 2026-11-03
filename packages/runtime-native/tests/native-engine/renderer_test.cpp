@@ -1,6 +1,7 @@
 #include "check.h"
 #include "fixture/traa_dump.h"
 #include "engine/foundation/math/Matrix.h"
+#include "engine/foundation/waste_counters.h"
 #include "engine/renderer/render_database.h"
 #include "engine/scene/geometries.h"
 #include "engine/scene/lights.h"
@@ -311,7 +312,6 @@ void traaValidation() {
                 for (int j = 0; j < 16; ++j) std::cout << (j ? "," : "") << matrix[j];
                 std::cout << "]";
                 const auto encoder = wgpuDeviceCreateCommandEncoder(device, nullptr);
-                jitter.seedHistory(encoder, beauty);
                 jitter.resolve(encoder, beauty, beautyView, depth, depthView);
                 const auto commands = wgpuCommandEncoderFinish(encoder, nullptr);
                 wgpuQueueSubmit(queue, 1, &commands);
@@ -421,7 +421,6 @@ void traaValidation() {
             for (int frame = 0; frame < (dump ? 20 : 3); ++frame) {
                 const auto encoder = wgpuDeviceCreateCommandEncoder(device, nullptr);
                 upscale.begin(identity, identity, identity);
-                upscale.seedHistory(encoder, beauty);
                 upscale.fillVelocity(encoder, depthView);
                 upscale.resolve(encoder, beauty, beautyView, depth, depthView, output, outputView);
                 const auto commands = wgpuCommandEncoderFinish(encoder, nullptr);
@@ -700,6 +699,38 @@ void outputScreenSize() {
     if (pixels.size() == 64 * 32 * 4)
         for (const size_t texel : {size_t{0}, size_t{16 * 64 + 32}, size_t{64 * 32 - 1}})
             for (int c = 0; c < 3; ++c) CHECK(std::abs(int(pixels[texel * 4 + c]) - 128) <= 1);
+}
+
+// PRD-771: the post effects' and output pass's CPU is a stage of its own, nested in the encode half, and the meters'
+// switch stops every stage so the cost of the meters can be measured with them off.
+void postStageIsMetered() {
+    namespace g = shader::graph;
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    CHECK(rendersPixels(context));
+    if (!rendersPixels(context)) return;
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(64, 32);
+    renderer.setOutput(OutputState{std::nullopt, 1, false});
+    CameraState camera;
+    camera.projectionMatrix = camera.matrixWorld = camera.matrixWorldInverse =
+        {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    renderer.setPostGraph(g::vec4({g::swizzle(g::texture("scene", g::uv()), "xyz"), g::float_(1)}));
+    const auto stages = [&] {
+        std::array<double, Renderer::kCpuStageCount> now{};
+        for (size_t i = 0; i < now.size(); ++i) now[i] = renderer.cpuStageMs(Renderer::CpuStage(i));
+        return now;
+    };
+    CHECK(Renderer::cpuMeters());
+    for (int frame = 0; frame < 3; ++frame) renderer.render({}, camera, LightState{}, {1, 1, 1, 1});
+    const auto metered = stages();
+    CHECK(metered[Renderer::CpuPost] > 0);
+    CHECK(metered[Renderer::CpuPost] <= metered[Renderer::CpuEncode]);
+    Renderer::setCpuMeters(false);
+    for (int frame = 0; frame < 3; ++frame) renderer.render({}, camera, LightState{}, {1, 1, 1, 1});
+    Renderer::setCpuMeters(true);
+    CHECK(stages() == metered);
 }
 
 // A static instance uses the same camera/object velocity as an ordinary rigid draw of the same surface.
@@ -1014,12 +1045,14 @@ void traaDeformationVelocity() {
         renderer.setPostGraph(g::vec4({motion, g::swizzle(temporal, "x"), g::float_(0), g::float_(1)}));
         const auto offset = g::uniform("deformationOffset", shader::Type::f32(), {0});
         DrawItem item;
+        shader::MaterialNodes nodes;  // the draw points at a graph it does not own
+        item.nodes = &nodes;
         shader::StandardMaterial material;
         item.key = item.id = 1; item.kind = MaterialKind::Basic;
         item.positions = &ball->positions; item.indices = &ball->indices; item.material = &material;
         item.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
         const auto deformation = timed ? g::mul(g::uniform("time", shader::Type::f32()), g::float_(0.5f)) : offset;
-        item.nodes.positionNode = g::add(g::positionLocal(), g::vec3({deformation, g::float_(0), g::float_(0)}));
+        item.nodes->positionNode = g::add(g::positionLocal(), g::vec3({deformation, g::float_(0), g::float_(0)}));
         BufferStore matrices(Scalar::F32, 16);
         std::array<float, 16> matrix{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
         matrices.write(0, matrix.data(), sizeof matrix);
@@ -1223,7 +1256,6 @@ void traaHistoryClipping() {
             wgpuRenderPassEncoderEnd(clearing); wgpuRenderPassEncoderRelease(clearing);
             if (cut && frame == 18) temporal.cameraCut();
             temporal.begin(identity, identity, identity);
-            temporal.seedHistory(encoder, beauty);
             temporal.fillVelocity(encoder, depthView);
             {
                 // Blue: 1 is known static, 3 is known dynamic, 0 is unknown geometry; identity motion remains zero in RG.
@@ -1594,8 +1626,10 @@ void traaResetSeed() {
     };
     const auto history = bytes("frame-20-history.bin");
     CHECK(history.size() == 16 * 16 * 4 * sizeof(float));
-    CHECK(history == bytes("frame-19-beauty.bin"));
-    CHECK(history != bytes("frame-20-beauty.bin"));
+    // r187 TRAANode.js:390-400 resets the history from the beauty buffer of the frame it resolves: the cut frame seeds
+    // its own image, not the frame before it.
+    CHECK(history == bytes("frame-20-beauty.bin"));
+    CHECK(history != bytes("frame-19-beauty.bin"));
 }
 
 // Pixels that differ from the clear colour (black), and whether the centre pixel is lit.
@@ -1652,9 +1686,9 @@ void resizeReadback() {
     CHECK(renderer.geometry().stats().fullUploads == uploads);
 }
 
-// three@0.185.1 in Chromium (WebGPU, NVIDIA Turing), tonemap-ramp-* goldens: the 8-bit sRGB output
+// three@0.187.0 in Chromium (WebGPU, NVIDIA Turing), tonemap-ramp-* goldens: the 8-bit sRGB output
 // of linear grey 0..8 under each tone mapping, exposure 1. Read from the golden PNGs
-// (packages/three-native/tests/compatibility/goldens/0.185.1/tonemap-ramp-<mapping>.png, strip centres).
+// (packages/three-native/tests/compatibility/goldens/0.187.0/tonemap-ramp-<mapping>.png, strip centres).
 extern "C" unsigned char* stbi_load(const char* filename, int* x, int* y, int* comp, int req_comp);
 extern "C" void stbi_image_free(void* data);
 extern "C" int stbi_write_png(const char* filename, int w, int h, int comp, const void* data, int stride);
@@ -1668,7 +1702,7 @@ constexpr Ramp kRamps[] = {
     {"linear", shader::ToneMapping::Linear, {0, 255, 255, 255, 255, 255, 255, 255, 255}},
     {"reinhard", shader::ToneMapping::Reinhard, {0, 188, 213, 225, 231, 235, 238, 240, 242}},
     {"cineon", shader::ToneMapping::Cineon, {0, 216, 233, 240, 244, 246, 247, 248, 249}},
-    {"aces", shader::ToneMapping::ACESFilmic, {0, 227, 242, 247, 250, 251, 252, 253, 253}},
+    {"aces", shader::ToneMapping::ACESFilmic, {0, 226, 242, 247, 250, 251, 252, 253, 253}},
     {"agx", shader::ToneMapping::AgX, {0, 202, 224, 233, 239, 242, 245, 246, 248}},
     {"neutral", shader::ToneMapping::Neutral, {0, 240, 250, 252, 253, 254, 254, 254, 254}},
 };
@@ -1935,13 +1969,16 @@ void siblingReadsTheLiveScene() {
     main.setOutput(OutputState{std::nullopt, 1, false});
     const auto board = plane(2, 2);  // fills the clip space under the identity camera
     shader::StandardMaterial paint, copy;
+    shader::MaterialNodes wallNodes, mirrorNodes;  // the draws point at graphs they do not own
     DrawItem wall;
     wall.key = wall.id = 1; wall.kind = MaterialKind::Basic;
+    wall.nodes = &wallNodes;
     wall.positions = &board->positions; wall.indices = &board->indices; wall.material = &paint;
     wall.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0.5, 1};
     DrawItem mirror = wall;
     mirror.key = mirror.id = 2; mirror.material = &copy;
-    mirror.nodes.fragmentNode = g::texture("scene", g::screenUV());
+    mirror.nodes = &mirrorNodes;
+    mirror.nodes->fragmentNode = g::texture("scene", g::screenUV());
     CameraState flat;
     flat.projectionMatrix = flat.matrixWorld = flat.matrixWorldInverse = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
     const auto target = main.sibling();
@@ -2155,8 +2192,16 @@ void traaRejection() {
         }
         return counted;
     };
+    auto& debug = waste::counters();
+    const auto active = debug.temporalActiveFrames.load();
+    const auto measured = debug.temporalMeasuredPixels.load();
+    waste::setDebugEnabled(true);
     const auto still = run(0);
     const auto sliding = run(0.4);
+    waste::setDebugEnabled(false);
+    CHECK(debug.temporalActiveFrames.load() == active + 2 * (frames + 1));
+    CHECK(debug.temporalMeasuredPixels.load() > measured);
+    CHECK(debug.velocityCandidates.load() > 0);
     // History frames 16, 32, 48 and 64 are counted; the last one arrives with the render after it.
     CHECK(still.size() >= 3 && sliding.size() >= 3);
     if (still.size() < 3 || sliding.size() < 3) return;
@@ -3503,7 +3548,7 @@ TN_TEST_MAIN({"history_depth_rows", historyDepthRows}, {"raw_target_scene_only",
              {"traa_mover_over_dynamic_ground", traaMoverOverDynamicGround},
              {"traa_responsive_transparent", traaResponsiveTransparent},
              {"traa_fast_pan_edges", traaFastPanEdges},
-             {"output_screen_size", outputScreenSize},
+             {"output_screen_size", outputScreenSize}, {"post_stage_is_metered", postStageIsMetered},
 #if defined(MYSTRAL_WEBGPU_DAWN)
              {"traa_velocity_footprint", traaVelocityFootprint},
              {"traa_validation", traaValidation},

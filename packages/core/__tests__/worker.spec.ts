@@ -96,6 +96,81 @@ afterEach(() => {
 });
 
 describe("worker game host (PRD-752)", () => {
+  it.each([false, true])(
+    "observes worker and HUD traffic only with debug enabled (%s)",
+    async (enabled) => {
+      const totals: Record<string, number> = {};
+      const sources: Record<string, { unit: string; caller: string }> = {};
+      vi.stubGlobal("__THREENATIVE_DEBUG__", enabled);
+      vi.stubGlobal("__tnEngineCost", totals);
+      vi.stubGlobal("__tnDebugSources", sources);
+      const { scope, worker, toWorker } = link();
+      const { container, view } = page();
+      let now = 0;
+      const clock = vi.spyOn(performance, "now").mockImplementation(() => {
+        now += 2;
+        return now;
+      });
+      scope.__tnUiGameReceive = () => undefined;
+      serveWorkerGame({ start: async () => undefined }, scope);
+      const handle = startWorkerGame(
+        worker as unknown as Worker,
+        container as unknown as HTMLElement,
+      );
+      await handle.ready;
+      const receivedBefore = totals.workerReceivedMessages ?? 0;
+      const stringify = vi.spyOn(JSON, "stringify");
+      try {
+        view.dispatchEvent(keyEvent("keydown", "KeyW"));
+        (scope.__tnUiPost as (frame: string) => void)("é🙂");
+        (view.tnHost as { postMessage(frame: string): void }).postMessage("👍");
+        await tick(30);
+        expect(toWorker.map(({ type }) => type)).toEqual([
+          "tn-worker-init",
+          "tn-worker-gamepads",
+          "tn-worker-event",
+        ]);
+        expect(stringify).not.toHaveBeenCalled();
+        if (enabled) {
+          expect(totals.workerReceivedMessages).toBe(receivedBefore + 1);
+          expect(totals.workerPostMessages).toBe(2); // ready and started
+          expect(totals.workerReceivedUnmeasuredFields).toBeGreaterThan(0); // cloned nested input data
+          expect(totals.workerUiPostMessages).toBe(1);
+          expect(totals.workerUiPostEstimatedBytes).toBe(6); // three UTF-16 code units, no clone envelope estimate
+          expect(totals.workerUiReceivedMessages).toBe(1);
+          expect(totals.workerUiReceivedEstimatedBytes).toBe(4);
+          expect(totals.workerUiPostDispatchMs).toBe(2);
+          expect(totals.workerPostDispatchMs).toBe(4);
+          expect(sources.workerUiPostEstimatedBytes?.unit).toBe("estimated-bytes");
+          expect(sources.workerUiPostDispatchMs?.unit).toBe("ms");
+        } else {
+          expect(totals).toEqual({});
+          expect(clock).not.toHaveBeenCalled();
+        }
+      } finally {
+        stringify.mockRestore();
+        clock.mockRestore();
+        handle.stop();
+      }
+    },
+  );
+
+  it("forwards the page debug query before the worker starts", async () => {
+    vi.stubGlobal("location", { search: "?tnDebug=1" });
+    const { scope, worker } = link();
+    const { container } = page();
+    serveWorkerGame({ start: async () => undefined }, scope);
+    const handle = startWorkerGame(
+      worker as unknown as Worker,
+      container as unknown as HTMLElement,
+    );
+    try {
+      await handle.ready;
+      expect(scope.__THREENATIVE_DEBUG__).toBe(true);
+    } finally {
+      handle.stop();
+    }
+  });
   it("forwards gamepad snapshots each connected frame and stops polling on disconnect or stop", async () => {
     const { scope, worker, toWorker } = link();
     const { container, view, frame, frames } = page();

@@ -29,6 +29,7 @@ import { describe, expect, it, vi } from "vitest";
  * rule. The fix lives in `patches/three@0.185.1.patch`.
  */
 interface IBackendLike {
+  readonly getBufferAttribute: (attribute: { data?: object }) => object;
   readonly get: (object: object) => { buffer?: { destroy: () => void } };
   readonly delete: (object: object) => boolean;
 }
@@ -42,6 +43,7 @@ function backendStub(): IBackendStub {
   const store = new WeakMap<object, { buffer?: { destroy: () => void } }>();
   const stub: IBackendStub = {
     backend: {
+      getBufferAttribute: (attribute) => attribute.data ?? attribute,
       get: (object) => {
         const found = store.get(object);
         if (found !== undefined) return found;
@@ -265,6 +267,7 @@ function uploadedInterleavedFixture(dynamic = false, storage = false) {
       return data;
     },
     delete: (object: object) => store.delete(object),
+    getBufferAttribute: (attribute: { data?: object }) => attribute.data ?? attribute,
     device: {
       createBuffer({ size }: { size: number }): IByteBuffer {
         allocations += 1;
@@ -298,7 +301,12 @@ function uploadedInterleavedFixture(dynamic = false, storage = false) {
   };
   const utils = new WebGPUAttributeUtils(backend);
   const manager = new Attributes(backend, { createAttribute() {}, createStorageAttribute() {} });
-  const geometries = new Geometries(manager, backend.renderer.info);
+  // @types/three 0.187 still declares the r185 two-argument constructor.
+  const geometries: Geometries = Reflect.construct(Geometries, [
+    backend,
+    manager,
+    backend.renderer.info,
+  ]);
   const matrix = storage
     ? new StorageBufferAttribute(new Float32Array(16), 4)
     : new InterleavedBuffer(new Float32Array(16), 16);

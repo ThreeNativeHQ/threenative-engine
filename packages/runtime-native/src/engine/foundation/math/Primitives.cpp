@@ -629,36 +629,73 @@ bool Ray::intersectsBox(const Box3& box) const {
 
 bool Ray::intersectTriangle(const Vector3& a, const Vector3& b, const Vector3& c, bool backfaceCulling,
                             Vector3& target) const {
-    // from https://github.com/pmjoniak/GeometricTools GteIntrRay3Triangle3.h
-    static Vector3 edge1, edge2, normal;
-    edge1.subVectors(b, a);
-    edge2.subVectors(c, a);
-    normal.crossVectors(edge1, edge2);
-    double DdN = direction.dot(normal);
-    double sign = 0;
-    if (DdN > 0) {
-        if (backfaceCulling) return false;
-        sign = 1;
-    } else if (DdN < 0) {
-        sign = -1;
-        DdN = -DdN;
+    // Watertight ray/triangle intersection, three r187 src/math/Ray.js:538-662: Woop, Benthin, Wald,
+    // "Watertight Ray/Triangle Intersection", JCGT vol. 2 no. 1 (2013), Appendix A. A shared edge
+    // evaluates identically for both adjacent triangles, so a ray cannot fall between them.
+    const double dx = direction.x;
+    const double dy = direction.y;
+    const double dz = direction.z;
+    // triangle vertices relative to the ray origin
+    const double aox = a.x - origin.x, aoy = a.y - origin.y, aoz = a.z - origin.z;
+    const double box = b.x - origin.x, boy = b.y - origin.y, boz = b.z - origin.z;
+    const double cox = c.x - origin.x, coy = c.y - origin.y, coz = c.z - origin.z;
+    // the axis of the maximal direction component is the projection axis (kz); kx and ky swap
+    // when that component is negative, to preserve the winding order of triangles
+    const double adx = std::fabs(dx), ady = std::fabs(dy), adz = std::fabs(dz);
+    double dkx = 0, dky = 0, dkz = 0;
+    double akx = 0, aky = 0, akz = 0, bkx = 0, bky = 0, bkz = 0, ckx = 0, cky = 0, ckz = 0;
+    if (adx >= ady && adx >= adz) {
+        dkz = dx; akz = aox; bkz = box; ckz = cox;
+        if (dx >= 0) {
+            dkx = dy; dky = dz;
+            akx = aoy; aky = aoz; bkx = boy; bky = boz; ckx = coy; cky = coz;
+        } else {
+            dkx = dz; dky = dy;
+            akx = aoz; aky = aoy; bkx = boz; bky = boy; ckx = coz; cky = coy;
+        }
+    } else if (ady >= adz) {
+        dkz = dy; akz = aoy; bkz = boy; ckz = coy;
+        if (dy >= 0) {
+            dkx = dz; dky = dx;
+            akx = aoz; aky = aox; bkx = boz; bky = box; ckx = coz; cky = cox;
+        } else {
+            dkx = dx; dky = dz;
+            akx = aox; aky = aoz; bkx = box; bky = boz; ckx = cox; cky = coz;
+        }
     } else {
+        dkz = dz; akz = aoz; bkz = boz; ckz = coz;
+        if (dz >= 0) {
+            dkx = dx; dky = dy;
+            akx = aox; aky = aoy; bkx = box; bky = boy; ckx = cox; cky = coy;
+        } else {
+            dkx = dy; dky = dx;
+            akx = aoy; aky = aox; bkx = boy; bky = box; ckx = coy; cky = cox;
+        }
+    }
+    // a zero direction has no maximal axis and cannot intersect
+    if (dkz == 0) return false;
+    // shear constants that align the ray with the +kz axis
+    const double sx = dkx / dkz, sy = dky / dkz, sz = 1 / dkz;
+    // sheared and scaled vertices
+    const double ax = akx - sx * akz, ay = aky - sy * akz;
+    const double bx = bkx - sx * bkz, by = bky - sy * bkz;
+    const double cx = ckx - sx * ckz, cy = cky - sy * ckz;
+    // scaled barycentric coordinates (signed edge functions)
+    const double u = cx * by - cy * bx;
+    const double v = ax * cy - ay * cx;
+    const double w = bx * ay - by * ax;
+    if (backfaceCulling) {
+        if (u < 0 || v < 0 || w < 0) return false;
+    } else if ((u < 0 || v < 0 || w < 0) && (u > 0 || v > 0 || w > 0)) {
         return false;
     }
-    static Vector3 diff;
-    diff.subVectors(origin, a);
-    const double DdQxE2 = sign * direction.dot(edge2.crossVectors(diff, edge2));
-    // b1 < 0: no intersection
-    if (DdQxE2 < 0) return false;
-    const double DdE1xQ = sign * direction.dot(edge1.cross(diff));
-    // b2 < 0: no intersection
-    if (DdE1xQ < 0) return false;
-    // b1 + b2 > 1: no intersection
-    if (DdQxE2 + DdE1xQ > DdN) return false;
-    const double QdN = -sign * diff.dot(normal);
-    // t < 0: no intersection
-    if (QdN < 0) return false;
-    at(QdN / DdN, target);
+    const double det = u + v + w;
+    // ray is co-planar with the triangle
+    if (det == 0) return false;
+    // scaled hit distance; t = tScaled / det must lie in front of the origin
+    const double tScaled = sz * (u * akz + v * bkz + w * ckz);
+    if (det > 0 ? tScaled < 0 : tScaled > 0) return false;
+    at(tScaled / det, target);
     return true;
 }
 

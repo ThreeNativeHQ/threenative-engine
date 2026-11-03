@@ -189,7 +189,7 @@ it("accepts native command edits but rejects dependency or compiler identity cha
 
 it("accepts unrelated workspace lock drift while retaining game and emitted package identity", () => {
   const gamePackage = { name: "strata-terrain-preview", dependencies: { three: "catalog:" } };
-  const packages = [{ name: "three", version: "0.185.1" }];
+  const packages = [{ name: "three", version: "0.187.0" }];
   const compilerPackages = ["vite@8.2.0_patch_hash=abc/node_modules/vite", "rolldown@1.2.1"];
   const vitePatchSha256 = "a".repeat(64);
   expect(() =>
@@ -220,7 +220,7 @@ it("rejects an emitted third-party package version change", () => {
     verifyStartupBuildIdentity(
       {
         gamePackage,
-        bundledPackages: [{ name: "three", version: "0.185.1" }],
+        bundledPackages: [{ name: "three", version: "0.187.0" }],
         compilerPackages,
         vitePatchSha256,
       },
@@ -238,7 +238,7 @@ it("rejects Vite transitive compiler changes and missing compiler metadata", () 
   const gamePackage = { name: "strata-terrain-preview" };
   const baseline = {
     gamePackage,
-    bundledPackages: [{ name: "three", version: "0.185.1" }],
+    bundledPackages: [{ name: "three", version: "0.187.0" }],
     compilerPackages: ["vite@8.2.0/node_modules/vite", "rolldown@1.2.1"],
     vitePatchSha256: "c".repeat(64),
   };

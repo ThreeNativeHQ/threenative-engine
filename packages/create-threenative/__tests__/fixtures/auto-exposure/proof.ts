@@ -199,7 +199,10 @@ function assertExposureSampleSequence(
       !Number.isInteger(value.nodeFrameId) ||
       value.nodeFrameId <= previous.nodeFrameId ||
       !Number.isFinite(value.nodeTime) ||
-      value.nodeTime <= previous.nodeTime ||
+      // three's first node frame runs at time 0, so a warmup may open on it (a compile-only warm-up advances none).
+      (index === 0 && phase === "warmup"
+        ? value.nodeTime < previous.nodeTime
+        : value.nodeTime <= previous.nodeTime) ||
       !Number.isFinite(value.realConsumedSeconds) ||
       value.realConsumedSeconds < previous.realConsumedSeconds ||
       !Number.isFinite(value.consumedSeconds) ||

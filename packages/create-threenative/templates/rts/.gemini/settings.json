@@ -22,12 +22,6 @@
         "./node_modules/@threenative/core/mcp/engine.mjs"
       ]
     },
-    "threenative-blender": {
-      "command": "node",
-      "args": [
-        "./node_modules/@threenative/core/mcp/blender.mjs"
-      ]
-    },
     "threenative-animation": {
       "command": "node",
       "args": [
@@ -38,6 +32,12 @@
       "command": "node",
       "args": [
         "./node_modules/@threenative/core/mcp/terrain.mjs"
+      ]
+    },
+    "threenative-devtools": {
+      "command": "node",
+      "args": [
+        "./node_modules/@threenative/core/mcp/devtools.mjs"
       ]
     }
   }

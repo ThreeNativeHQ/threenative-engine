@@ -697,6 +697,8 @@ std::shared_ptr<BufferGeometry> makeLatheGeometry(const std::vector<Vector2>& po
     Vector3 prevNormal;
     for (size_t j = 0; j <= last; ++j) {
         if (j == last) {
+            // three r187 src/geometries/LatheGeometry.js:106 normalizes the last point's normal.
+            prevNormal.normalize();
             initNormals.insert(initNormals.end(), {prevNormal.x, prevNormal.y, prevNormal.z});
             continue;
         }

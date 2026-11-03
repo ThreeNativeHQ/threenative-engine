@@ -13,7 +13,6 @@ const SELECTOR = "scripts/ci-integration-scope.mjs";
 const PACKAGE_LANES = [
   "animation",
   "exposure",
-  "cold-boot",
   "decals",
   "fog",
   "fluid-particles",
@@ -45,10 +44,10 @@ export const INDEPENDENT_PACKAGES = [
   "raw-unreal",
   "ueformat",
   "engine-mcp",
-  "blender-mcp",
+  "blender-bridge",
 ];
 const OWNED_PACKAGES =
-  "core|physics|playtest|assets|ui|runtime-native|create-threenative|terrain|metahuman|raw-unreal|ueformat|engine-mcp|blender-mcp";
+  "core|physics|playtest|assets|ui|runtime-native|create-threenative|terrain|metahuman|raw-unreal|ueformat|engine-mcp|blender-bridge";
 const PACKAGE_CONTRACT = new RegExp(
   `^packages/(?:${OWNED_PACKAGES})/(?:__tests__/.*\\.spec\\.ts|tests/.*\\.test\\.mjs)$`,
   "u",
@@ -64,7 +63,7 @@ function dependencyLanes(file, current) {
   if (/^packages\/core\/src\//u.test(file)) {
     const module = /^packages\/core\/src\/([^/]+)\.ts$/u.exec(file)?.[1];
     return INDEPENDENT_CORE_MODULES.includes(module)
-      ? ["exposure", "cold-boot", ...(file.includes("/world-") ? ["world-capture"] : [])]
+      ? ["exposure", ...(file.includes("/world-") ? ["world-capture"] : [])]
       : ["fluid-particles", "fluid-native"];
   }
   if (PACKAGE_CONTRACT.test(file)) {
@@ -87,7 +86,9 @@ function dependencyLanes(file, current) {
   // New terrain/editor and import-package sources are built/unit-tested by the ordinary board,
   // and none of the retained integration fixtures imports these packages.
   if (
-    /^packages\/(?:terrain|metahuman|raw-unreal|ueformat|engine-mcp|blender-mcp)\/src\//u.test(file)
+    /^packages\/(?:terrain|metahuman|raw-unreal|ueformat|engine-mcp|blender-bridge)\/src\//u.test(
+      file,
+    )
   )
     return [];
   return undefined;
@@ -271,7 +272,9 @@ export function integrationSelection({ files, before, after }) {
       if (
         dependency === PACKAGE_LANES &&
         [...current.filters.keys()].some(
-          (lane) => !PACKAGE_LANES.includes(lane) && !["csg", "ik", "vegetation"].includes(lane),
+          (lane) =>
+            !PACKAGE_LANES.includes(lane) &&
+            !["csg", "ik", "vegetation", "cold-boot"].includes(lane),
         )
       )
         return all("unclassified additive producer consumer");
@@ -355,6 +358,18 @@ export function integrationGitSelection(base, head) {
   }
 }
 
+/** The check names of each lane's jobs, for reading a source run's verdict on that lane. */
+export function integrationJobNamesByLane(source) {
+  const current = parse(source);
+  const names = {};
+  for (const [id, lane] of current.lanesByJob) {
+    const name = /^ {4}name: ([^\n]+)$/mu.exec(current.jobs.get(id) ?? "")?.[1] ?? id;
+    if (name.includes("${{") || !name.trim()) return {};
+    names[lane] = [...(names[lane] ?? []), `integration / ${name}`];
+  }
+  return names;
+}
+
 // Exact-candidate inventory shared by the reusable workflow and independent protected verdict.
 export function integrationCandidatePreflight({
   plan: value,
@@ -373,9 +388,28 @@ export function integrationCandidatePreflight({
   const selection = plan.qualification
     ? integrationSelection({ files: [SELECTOR], before: "", after })
     : integrationGitSelection(baseSha, candidate);
+  // Owner cut (2026-11-01): cold boot runs when exposure code changes and nightly. A push states no
+  // base, so its own diff is against its first parent: the squash on develop, the promotion on main.
+  if (plan.qualification && eventName === "push" && selection.lanes["cold-boot"]) {
+    // A leg's one-commit checkout has no parent, and a missing base keeps cold boot selected. Only
+    // that leg's receipt writer reads this; the paths job and both joins fetch full history.
+    let parent = "";
+    try {
+      parent = git("rev-parse", "--verify", "--quiet", `${candidate}^1`).trim();
+    } catch {}
+    selection.lanes["cold-boot"] = integrationGitSelection(parent, candidate).lanes["cold-boot"];
+  }
+  // PRD-776: a carried lane passed on the same inputs in the run its entry names.
+  const carriedLanes = [];
+  for (const entry of plan.carried ?? [])
+    if (entry.job === "integration" && Object.hasOwn(selection.lanes, entry.lane)) {
+      selection.lanes[entry.lane] = false;
+      carriedLanes.push(entry.lane);
+    }
   return {
     candidateSha: candidate,
     lanes: selection.lanes,
+    carriedLanes,
     jobs: [...current.lanesByJob]
       .filter(([, lane]) => selection.lanes[lane])
       .map(([id]) => id)
@@ -401,7 +435,8 @@ export function integrationCandidatePreflight({
  * checked independently of the receipt.
  */
 export function validateIntegrationReceipts(expected, receipts, listing) {
-  if (expected.qualification && expected.jobs.length === 0)
+  // Every lane carried is the one honest empty set: `ci-required` rechecks each carried entry.
+  if (expected.qualification && expected.jobs.length === 0 && !expected.carriedLanes?.length)
     throw new Error("CI_INTEGRATION_EMPTY_QUALIFICATION");
   const bad = () =>
     new Error(

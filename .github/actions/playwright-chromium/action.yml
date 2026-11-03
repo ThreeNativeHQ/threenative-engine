@@ -23,13 +23,41 @@ runs:
         for source in /etc/apt/sources.list /etc/apt/sources.list.d/ubuntu.sources; do
           [ ! -f "$source" ] || sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g; s|https://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' "$source"
         done
+    # apt checks each .deb against its index, so a stale file is only unused. A push saves.
+    - name: Record the apt package cache identity
+      id: debs
+      shell: bash
+      run: |
+        echo "key=playwright-debs-v1-${{ runner.os }}-${{ runner.arch }}-${ImageVersion:-self}-${{ steps.version.outputs.value }}" >> "$GITHUB_OUTPUT"
+        mkdir -p ~/playwright-debs
+    - name: Restore the Chromium system packages
+      id: debs-restore
+      uses: actions/cache/restore@v4
+      with:
+        path: ~/playwright-debs
+        key: ${{ steps.debs.outputs.key }}
+    - name: Offer the restored packages to apt
+      shell: bash
+      run: sudo find ~/playwright-debs -name '*.deb' -exec cp -t /var/cache/apt/archives/ {} +
     # The browser binary caches; its shared libraries are apt packages that do not, so
-    # `--with-deps` still runs. On a cache hit that is the only work left.
+    # `install-deps` still runs. On a cache hit that is the only work left.
+    # It takes 11-114 s; a mirror that trickles held it 29 minutes (run 41249368283), so each
+    # attempt is cut at 240 s and retried. Root runs the timeout, so it can kill apt's fetchers.
     - name: Install Chromium and its system dependencies
       shell: bash
       run: |
-        if [ "${{ steps.cache.outputs.cache-hit }}" = "true" ]; then
-          pnpm exec playwright install-deps chromium
-        else
-          pnpm exec playwright install --with-deps chromium
+        if [ "${{ steps.cache.outputs.cache-hit }}" != "true" ]; then
+          pnpm exec playwright install chromium
         fi
+        sh scripts/retry-download.sh sudo timeout --kill-after=15 240 env "PATH=$PATH" node_modules/.bin/playwright install-deps chromium
+    - name: Keep the packages apt fetched
+      if: github.event_name == 'push' && steps.debs-restore.outputs.cache-hit != 'true'
+      shell: bash
+      run: find /var/cache/apt/archives -maxdepth 1 -name '*.deb' -exec cp -t ~/playwright-debs/ {} +
+    - name: Save the Chromium system packages
+      if: github.event_name == 'push' && steps.debs-restore.outputs.cache-hit != 'true'
+      continue-on-error: true
+      uses: actions/cache/save@v4
+      with:
+        path: ~/playwright-debs
+        key: ${{ steps.debs.outputs.key }}

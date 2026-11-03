@@ -13,6 +13,8 @@
 //   - `Math.min`/`Math.max` poison on NaN and respect signed zero (`jsMin`/`jsMax`);
 //   - a page key is a string, compared byte for byte, and a Map's insertion order is kept;
 //   - every division is binary64; no integer division is used.
+// A page's identity is three integers (`pageId`); the `level:x:y` string is its rendering, built only
+// where a key is read out (a demand request, an invalidation, a dump), never on a frame's hot path.
 
 #include <cstddef>
 #include <cstdint>
@@ -21,6 +23,8 @@
 #include <set>
 #include <string>
 #include <string_view>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "engine/foundation/math/Primitives.h"
@@ -56,6 +60,21 @@ struct PageAddress {
 /** The string key of a virtual page: `level:x:y`. Negative coordinates keep their sign. */
 std::string makePageKey(int level, int x, int y);
 
+/** The packable range of an axis in `pageId`: 24 bits, signed. A window outside it has no identity. */
+inline constexpr int kPageAxisLimit = 0x7FFFFF;
+
+/**
+ * A page's numeric identity: `level` above 48 bits, `x` and `y` in 24 bits each. Two pages share an id only when
+ * they are the same page, for a coordinate inside `[-kPageAxisLimit, kPageAxisLimit]`.
+ */
+inline uint64_t pageId(int level, int x, int y) {
+    return (uint64_t(uint16_t(level)) << 48) | (uint64_t(uint32_t(x) & 0xFFFFFFu) << 24) |
+           uint64_t(uint32_t(y) & 0xFFFFFFu);
+}
+
+/** The `level:x:y` bytes of an id: what `makePageKey` writes for the page it names. */
+std::string pageKeyOf(uint64_t id);
+
 /** Parses a canonical key; returns false (never a throw) for anything else. */
 bool parsePageKey(std::string_view key, PageAddress& out);
 
@@ -72,7 +91,7 @@ struct LightSpacePoint {
 
 /** One resident physical page. `slot` is the atlas layer that holds it. */
 struct PhysicalPageEntry {
-    std::string key;
+    uint64_t id = 0;
     int slot = 0;
     bool pinned = false;
     bool dirty = true;
@@ -80,18 +99,18 @@ struct PhysicalPageEntry {
     double lastUsedFrame = 0;
 };
 
-/** The result of one allocation: the entry (a value copy), and what was evicted to make room. */
+/** The result of one allocation: the entry (a value copy), and which page was evicted to make room. */
 struct PhysicalPageAllocation {
     PhysicalPageEntry entry;
     bool reused = false;
     bool hasEvicted = false;
-    std::string evictedKey;
+    uint64_t evictedId = 0;
 };
 
 /**
  * A bounded set of physical page slots with deterministic least-recently-used eviction.
  *
- * Pinned entries and entries in `protectedKeys` are never evicted; when nothing else can go,
+ * Pinned entries and entries in `protectedIds` are never evicted; when nothing else can go,
  * `allocate` returns `std::nullopt` and counts an overflow rather than silently reusing a page.
  */
 class PhysicalPagePool {
@@ -104,19 +123,19 @@ class PhysicalPagePool {
     [[nodiscard]] uint32_t evictions() const { return evictions_; }
     [[nodiscard]] uint32_t overflow() const { return overflow_; }
 
-    [[nodiscard]] bool has(const std::string& key) const { return resident_.count(key) != 0; }
+    [[nodiscard]] bool has(uint64_t id) const { return resident_.count(id) != 0; }
 
-    [[nodiscard]] const PhysicalPageEntry* get(const std::string& key) const;
+    [[nodiscard]] const PhysicalPageEntry* get(uint64_t id) const;
 
     /** Resident entries ordered by slot, as the reference's `entries()`. */
     [[nodiscard]] std::vector<PhysicalPageEntry> entries() const;
 
     /**
-     * Allocates `key`, or returns `std::nullopt` when every candidate is pinned or protected.
+     * Allocates page `id`, or returns `std::nullopt` when every candidate is pinned or protected.
      * `frame` is a JavaScript number and stays binary64.
      */
-    std::optional<PhysicalPageAllocation> allocate(const std::string& key, double frame, bool pinned = false,
-                                                   const std::set<std::string>& protectedKeys = {});
+    std::optional<PhysicalPageAllocation> allocate(uint64_t id, double frame, bool pinned = false,
+                                                   const std::unordered_set<uint64_t>& protectedIds = {});
 
   private:
     PhysicalPagePool() = default;
@@ -125,7 +144,8 @@ class PhysicalPagePool {
     uint32_t evictions_ = 0;
     uint32_t overflow_ = 0;
     uint64_t generation_ = 0;
-    std::map<std::string, PhysicalPageEntry> resident_;
+    // Keyed by `pageId`: a probe is an integer hash, and the eviction scan's per-candidate protected test with it.
+    std::unordered_map<uint64_t, PhysicalPageEntry> resident_;
     std::vector<int> freeSlots_;
 };
 
@@ -169,6 +189,10 @@ struct DirectionalClipmapOptions {
     double minAspect = 1;
     /** Texels per edge of each level, finest first, the last standing in for the rest; empty: `pagesPerAxis`. */
     std::vector<int> levelPages;
+    /** A pan (`updateCenter(point, true)`) moves a window by whole multiples of this many texels, a
+     * physical page's width, so the atlas keeps the pages it still covers (UE 5.8.3 clipmap panning).
+     * The first placement and a cut keep the exact texel origin. 1 = any texel. */
+    int alignTexels = 1;
 };
 
 /** Inclusive integer page range an axis-aligned box covers on one level. */
@@ -201,7 +225,7 @@ class DirectionalClipmap {
     [[nodiscard]] LightSpacePoint project(const Vector3& worldPoint) const;
 
     /** Re-snaps every level's window around `worldPoint`; returns the current windows. */
-    const std::vector<ClipWindow>& updateCenter(const Vector3& worldPoint);
+    const std::vector<ClipWindow>& updateCenter(const Vector3& worldPoint, bool pan = false);
 
     void setRefreshStep(int level, double step) { refreshStep_.at(level) = step; }
 
@@ -233,6 +257,7 @@ class DirectionalClipmap {
 
     std::vector<double> clipExtents_;
     std::vector<int> pagesPerAxis_;
+    int alignTexels_ = 1;
     std::vector<double> refreshStep_;
     std::vector<double> selectionGuard_;
     int levelCount_ = 0;

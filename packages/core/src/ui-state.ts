@@ -1,3 +1,4 @@
+import { countDebug, debugRequested, measureDebug } from "./profiling/debug-telemetry.js";
 import {
   GAME_STATE_MESSAGE,
   type IUiBridge,
@@ -88,6 +89,13 @@ export function publishUiState<T>(
     );
   }
   const schedule = options.schedule ?? microtask;
+  const debug = debugRequested();
+  const serialize = debug
+    ? (state: T): string => {
+        countDebug("uiSerializations", 1, "ui", "publishUiState");
+        return measureDebug("uiSerialize", "ui", "publishUiState", () => serializeUiState(state));
+      }
+    : serializeUiState;
   const read = (): T =>
     store.getPublishedState === undefined ? store.getState() : store.getPublishedState();
   let stopped = false;
@@ -97,12 +105,21 @@ export function publishUiState<T>(
   const send = (state: T, frame: string): void => {
     lastFrame = frame;
     postUiState(bridge, state, frame);
+    if (debug) {
+      countDebug("uiMessages", 1, "ui", "publishUiState");
+      countDebug(
+        "uiMessageBytes",
+        new TextEncoder().encode(frame).byteLength,
+        "ui",
+        "publishUiState",
+      );
+    }
   };
 
   const publish = (): void => {
     if (stopped) return;
     const state = read();
-    send(state, serializeUiState(state));
+    send(state, serialize(state));
   };
 
   const flush = (): void => {
@@ -115,7 +132,7 @@ export function publishUiState<T>(
     // Skip a publication that would carry the bytes the UI already has. A store that writes the
     // same value every tick is common and must not become a message per tick.
     const state = read();
-    const frame = serializeUiState(state);
+    const frame = serialize(state);
     if (frame === lastFrame) return;
     send(state, frame);
   };

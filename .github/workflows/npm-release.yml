@@ -1,5 +1,6 @@
-# The npm release lane runs on a `v*` tag push only. A publish is irreversible — a version can be
-# deprecated but never recalled — so this must not be reachable from an ordinary commit.
+# The npm release lane publishes from `ship`, after a green CI run on main (PRD-630, owner,
+# 2026-11-02: "once it hit main it simply auto publishes without new test runs"). A main commit
+# whose version is already on npm does nothing. A dispatch runs only the clean room.
 #
 # `pnpm publish`, never `npm publish`: the workspace declares dependencies as `catalog:` and
 # `workspace:*`, and only pnpm rewrites those to resolved versions on pack. A raw `npm publish`
@@ -7,19 +8,13 @@
 name: npm release
 
 on:
-  push:
-    tags:
-      - "v*"
+  # PRD-630: a green main commit publishes itself, if its version is not on npm yet.
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  # Runs only the clean room, against the published `latest`.
   workflow_dispatch:
-    inputs:
-      dry_run:
-        description: Pack every package and run the preflight without publishing
-        type: boolean
-        default: true
-      clean_room_only:
-        description: Skip gates and publish; run only the clean room against the published latest cohort
-        type: boolean
-        default: false
 
 concurrency:
   group: npm-release
@@ -30,61 +25,23 @@ permissions:
   actions: read
 
 jobs:
-  gates:
-    if: inputs.clean_room_only != true
+  # `pnpm release:ship` is the one release path: resumable, and the same command a person runs when
+  # this job fails. Its upgrade proof runs before the first upload, so a red there publishes nothing.
+  ship:
+    if: >-
+      github.event_name == 'workflow_run' && github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          # check-publish-state counts commits to a package's source since its published
-          # version went up, which a shallow clone cannot see.
-          fetch-depth: 0
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 20.19.0
-          cache: pnpm
-          registry-url: https://registry.npmjs.org
-      - run: pnpm install --frozen-lockfile
-      # The release packs runtime-native, whose `files` list the built web engine. pnpm pack drops a
-      # missing entry silently, so the engine is built first and publish:check fails if it is absent.
-      - uses: ./.github/actions/native-engine-wasm
-      # Also listed in runtime-native `files` and downloaded, not tracked.
-      - run: node packages/runtime-native/scripts/download-deps.mjs --only gradle-wrapper
-      # CI already ran the generic gates on this exact tree. Query that immutable result instead of
-      # rebuilding the workspace and running the same typecheck, lint and unit suite a second time.
-      # A manual dry run remains useful before a commit reaches main, so only a publishing run
-      # requires the completed push result.
-      - name: Require a green CI run for this commit
-        if: github.event_name == 'push' || inputs.dry_run == false
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          successful_runs="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$GITHUB_SHA" --limit 20 --json status,conclusion,event,headBranch --jq '[.[] | select(.status == "completed" and .conclusion == "success" and .event == "push" and .headBranch == "main")] | length')"
-          test "$successful_runs" -gt 0 || {
-            echo "No completed successful CI push run on main found for $GITHUB_SHA." >&2
-            exit 1
-          }
-      - name: Refuse a stale or incomplete publish set
-        # The release is the only caller allowed to admit exact pins for packages published in this
-        # coordinated set. Ordinary `pnpm publish:check` remains fail-closed for those pins.
-        run: pnpm publish:check --allow-current-publish-set-pins
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-      - name: Prepare the exact candidate cohort without publishing
-        run: pnpm release --prepare --skip-gates
-
-  publish:
-    needs: gates
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # The waits inside `release:ship` total 190 minutes, before the publish and the clean room.
+    timeout-minutes: 360
     permissions:
-      contents: read
+      actions: write
+      contents: write
       id-token: write
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
@@ -92,62 +49,37 @@ jobs:
           node-version: 20.19.0
           cache: pnpm
           registry-url: https://registry.npmjs.org
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools
+      - run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      # The upgrade proof installs the previous `latest`, whose packager needs this key.
+      - name: Create the default Android debug keystore
+        run: |
+          mkdir -p ~/.android
+          test -f ~/.android/debug.keystore || keytool -genkeypair -keystore ~/.android/debug.keystore \
+            -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 \
+            -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
       - run: pnpm install --frozen-lockfile
       - uses: ./.github/actions/native-engine-wasm
-      # Also listed in runtime-native `files` and downloaded, not tracked.
       - run: node packages/runtime-native/scripts/download-deps.mjs --only gradle-wrapper
+      # `release.ts` checks the bundled MCP servers before it builds anything.
       - run: pnpm build
-      - name: Install native desktop runtime dependencies for the guarded verifier
+      - name: Install native desktop runtime dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libvulkan1 mesa-vulkan-drivers
-      - name: Install the pinned Blender used by the registry verifier
-        env:
-          BLENDER_VERSION: 5.2.0
-        run: |
-          archive="${RUNNER_TEMP}/blender-${BLENDER_VERSION}-linux-x64.tar.xz"
-          checksums="${RUNNER_TEMP}/blender-${BLENDER_VERSION}.sha256"
-          install_root="${RUNNER_TEMP}/blender-${BLENDER_VERSION}-linux-x64"
-          curl --fail --location --retry 3 --retry-delay 2 \
-            "https://download.blender.org/release/Blender5.2/blender-${BLENDER_VERSION}-linux-x64.tar.xz" \
-            --output "$archive"
-          curl --fail --location --retry 3 --retry-delay 2 \
-            "https://download.blender.org/release/Blender5.2/blender-${BLENDER_VERSION}.sha256" \
-            --output "$checksums"
-          test -s "$archive"
-          (
-            cd "$RUNNER_TEMP"
-            sha256sum --ignore-missing --check "$(basename "$checksums")"
-          )
-          tar -xJf "$archive" -C "$RUNNER_TEMP"
-          blender="${install_root}/blender"
-          test -x "$blender"
-          actual_version="$("$blender" --version | awk 'NR == 1 { print $2 }')"
-          test "$actual_version" = "$BLENDER_VERSION" || {
-            echo "Expected Blender ${BLENDER_VERSION}, received ${actual_version}." >&2
-            exit 1
-          }
-          echo "THREENATIVE_BLENDER_PATH=${blender}" >> "$GITHUB_ENV"
+          sudo apt-get install -y libvulkan1 mesa-vulkan-drivers libwebkit2gtk-4.1-0 x11-utils
       # The publish set, named one package per line so `pnpm publish:check` can assert that no
       # publishable package is missing from it. A package that exists, is not private, and is
       # absent here would be omitted from the release.
       #
-      - name: Require the matching native runtime release
-        if: github.event_name == 'push' || inputs.dry_run == false
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          native_version="$(node -p 'JSON.parse(require("fs").readFileSync("packages/runtime-native/package.json", "utf8")).version')"
-          native_tag="runtime-native-v${native_version}"
-          release_state="$(gh release view "runtime-native-v${native_version}" --repo "${{ github.repository }}" --json isDraft,isPrerelease --jq 'if .isDraft == false and .isPrerelease == false then "ready" else "not-ready" end')"
-          if [[ "${release_state}" != "ready" ]]; then
-            echo "Matching native runtime release is draft or prerelease; refusing npm publish."
-            exit 1
-          fi
-          # Require the native tag and the candidate SHA to identify the same commit.
-          pnpm tsx scripts/verify-native-release-commit.ts "$native_tag"
       # BEGIN GENERATED WORKSPACE PUBLISH SET
       #   @threenative/assets
+      #   @threenative/blender-bridge
       #   @threenative/core
       #   @threenative/metahuman
       #   @threenative/physics
@@ -161,29 +93,19 @@ jobs:
       #   @threenative/ui
       #   create-threenative
       #   threenative-animation-mcp
-      #   threenative-blender-mcp
       #   threenative-engine-mcp
       # END GENERATED WORKSPACE PUBLISH SET
-      - name: Run the single guarded release path
-        run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.dry_run }}" == "true" ]]; then
-            pnpm tsx scripts/release.ts --skip-gates
-          else
-            # The gates job already required the exact commit's successful CI run, including the
-            # separately provisioned native contract job. Do not rerun pnpm test here: this runner
-            # has no native host executable, and the release's own build/preflight still run below.
-            pnpm tsx scripts/release.ts --yes --skip-gates
-          fi
+      - name: Ship this commit
         env:
+          GH_TOKEN: ${{ github.token }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+          TN_PLAYTEST_ALLOW_SOFTWARE: "1"
+        # A rerun leaves out `--auto`, so a failed clean room cannot turn green with no new check.
+        run: pnpm release:ship --yes --sha "$SHA" ${{ github.run_attempt == 1 && '--auto' || '' }}
 
   clean-room:
-    needs: publish
-    # `!cancelled()` lets a clean_room_only dispatch run with `publish` skipped; every other run
-    # still requires a successful publish first.
-    if: >-
-      !cancelled() && (inputs.clean_room_only == true ||
-      ((github.event_name == 'push' || inputs.dry_run == false) && needs.publish.result == 'success'))
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     # Raised from 20 when the `android` step joined this job, then from 30 when the first hosted
     # run (37709499660) was killed by its own clock inside the verifier: both managers each pay a
@@ -224,37 +146,11 @@ jobs:
       - run: pnpm install --frozen-lockfile
       # `libwebkit2gtk-4.1-0` is the desktop prebuilt's overlay webview: without it the host exits
       # 127 before `--version`, and doctor and the native step both fail on a loader error.
+      # `x11-utils` carries `xdpyinfo`, which the native step needs to verify its display.
       - name: Install native desktop runtime dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libvulkan1 mesa-vulkan-drivers libwebkit2gtk-4.1-0
-      - name: Install the pinned Blender used by the MCP conversion proof
-        env:
-          BLENDER_VERSION: 5.2.0
-        run: |
-          archive="${RUNNER_TEMP}/blender-${BLENDER_VERSION}-linux-x64.tar.xz"
-          checksums="${RUNNER_TEMP}/blender-${BLENDER_VERSION}.sha256"
-          install_root="${RUNNER_TEMP}/blender-${BLENDER_VERSION}-linux-x64"
-          curl --fail --location --retry 3 --retry-delay 2 \
-            "https://download.blender.org/release/Blender5.2/blender-${BLENDER_VERSION}-linux-x64.tar.xz" \
-            --output "$archive"
-          curl --fail --location --retry 3 --retry-delay 2 \
-            "https://download.blender.org/release/Blender5.2/blender-${BLENDER_VERSION}.sha256" \
-            --output "$checksums"
-          test -s "$archive"
-          (
-            cd "$RUNNER_TEMP"
-            sha256sum --ignore-missing --check "$(basename "$checksums")"
-          )
-          tar -xJf "$archive" -C "$RUNNER_TEMP"
-          blender="${install_root}/blender"
-          test -x "$blender"
-          actual_version="$("$blender" --version | awk 'NR == 1 { print $2 }')"
-          test "$actual_version" = "$BLENDER_VERSION" || {
-            echo "Expected Blender ${BLENDER_VERSION}, received ${actual_version}." >&2
-            exit 1
-          }
-          echo "THREENATIVE_BLENDER_PATH=${blender}" >> "$GITHUB_ENV"
+          sudo apt-get install -y libvulkan1 mesa-vulkan-drivers libwebkit2gtk-4.1-0 x11-utils
       # Proves the registry path, which no other gate in this repository exercises: the sandbox,
       # the sweeps and verify-golden-path all resolve `file:` tarballs by design.
       - name: Install from the registry in a directory with no workspace above it

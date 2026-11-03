@@ -1,3 +1,5 @@
+#include "engine/foundation/job_pool.h"
+#include "engine/foundation/waste_counters.h"
 #include "engine/shader/wgsl_strip.h"
 #include "renderer.h"
 #include "engine/renderer/pipeline_cache.h"
@@ -7,6 +9,8 @@
 
 #include <algorithm>
 #include <bit>
+#include <cassert>
+#include <exception>
 #include <span>
 #include <deque>
 #include <numeric>
@@ -14,6 +18,7 @@
 #include <iomanip>
 #include <cstdio>
 #include <cctype>
+#include <cstdlib>
 #include <cmath>
 #include <ctime>
 #include <unordered_map>
@@ -24,6 +29,9 @@
 #include <type_traits>
 #include <typeinfo>
 #include <vector>
+#if defined(__wasm_simd128__)
+#include <wasm_simd128.h>
+#endif
 
 #include "engine/shader/dfg_lut.h"
 #include "engine/shader/sprite.h"
@@ -42,6 +50,22 @@
 namespace tn::engine {
 
 namespace {
+
+// TR1: are two byte runs equal? musl's memcmp is a word loop on Wasm (about 5 GB/s with the engine's flags); 64 bytes a
+// step with SIMD runs at about 15, and the storage upload scans every byte of a still `instances` array each plan.
+bool sameBytes(const uint8_t* a, const uint8_t* b, std::size_t n) {
+    std::size_t i = 0;
+#if defined(__wasm_simd128__)
+    for (; i + 64 <= n; i += 64) {
+        v128_t diff = wasm_v128_xor(wasm_v128_load(a + i), wasm_v128_load(b + i));
+        diff = wasm_v128_or(diff, wasm_v128_xor(wasm_v128_load(a + i + 16), wasm_v128_load(b + i + 16)));
+        diff = wasm_v128_or(diff, wasm_v128_xor(wasm_v128_load(a + i + 32), wasm_v128_load(b + i + 32)));
+        diff = wasm_v128_or(diff, wasm_v128_xor(wasm_v128_load(a + i + 48), wasm_v128_load(b + i + 48)));
+        if (wasm_v128_any_true(diff)) return false;
+    }
+#endif
+    return std::memcmp(a + i, b + i, n - i) == 0;
+}
 
 bool gpuJointAncestorEligible(const Object3D& ancestor, const SkinnedMesh& rig) {
     const auto* flags = ancestor.ownTransformTracking();
@@ -166,12 +190,12 @@ constexpr const char* kSlotNames[] = {
     "metalness", "emissive", "specular", "shininess", "ior", "specularIntensity", "specularColor", "uvTransform",
     "hemisphereSky", "hemisphereGround", "hemisphereDirection", "ambient", "boneBase", "bindMatrix",
     "bindMatrixInverse", "morphBase", "morphInfluenceBase", "morphVertexCount", "morphBaseInfluence",
-    "envMapIntensity", "cameraWorldMatrix", "envMapTexelWidth", "envMapTexelHeight", "envMapMaxMip", "boneStride", "fogColor", "fogNear", "fogFar", "fogDensity", "backgroundRotation", "envRotation", "instanceBase", "normalScale", "normalUvTransform", "cameraPosition", "cameraProjectionMatrix",
+    "envMapIntensity", "cameraWorldMatrix", "envMapMaxMip", "boneStride", "fogColor", "fogNear", "fogFar", "fogDensity", "backgroundRotation", "envRotation", "instanceBase", "normalScale", "normalUvTransform", "cameraPosition", "cameraProjectionMatrix",
     "roughnessMapUvTransform", "metalnessMapUvTransform", "aoMapUvTransform", "emissiveMapUvTransform",
     "bumpMapUvTransform", "specularColorMapUvTransform",
     "specularIntensityMapUvTransform", "clearcoatMapUvTransform", "clearcoatRoughnessMapUvTransform",
     "clearcoatNormalMapUvTransform", "aoMapIntensity", "clearcoat", "clearcoatRoughness", "clearcoatNormalScale", "bumpScale",
-    "pmremTexelWidth", "pmremTexelHeight", "pmremMaxMip", "pmremRotation", "screenSize", "cameraNear", "cameraFar",
+    "pmremMaxMip", "pmremRotation", "screenSize", "cameraNear", "cameraFar",
     "modelNormalMatrix", "subsurfaceColor", "shadowNoiseFrame"};
 constexpr const char* kLightFieldNames[] = {"Color",       "Direction",        "Position",     "Distance",
                                             "Decay",       "Axis",             "ConeCos",      "PenumbraCos",
@@ -185,6 +209,9 @@ constexpr uint64_t kUniformAlign = 256;  // minUniformBufferOffsetAlignment's We
 // along the crate's far foot. The back faces go this many depth steps nearer the lamp, so a tie is a block
 // (native_engine_contact_shadow_foot needs 2; the lamp-room crate, 1).
 constexpr int32_t kLampBackFaceBias = 8;
+// The page x caster pairs below which one light's caster selection stays on the caller: a proposed gate, not a
+// measured crossover (a whole light's pairs below it cost less than a dispatch).
+constexpr uint64_t kShadowPageJobPairs = 16384;
 uint64_t aligned(uint64_t size) { return (size + kUniformAlign - 1) / kUniformAlign * kUniformAlign; }
 
 WGPUTextureView view2d(WGPUTexture texture, WGPUTextureFormat format) {
@@ -253,7 +280,7 @@ BufferStore* vertexSourceOf(const DrawItem& item, const shader::VertexAttribute&
                           : a.name == "skinWeight"    ? item.skinWeights
                           : column                   ? item.instanceMatrices : nullptr;
     // Any other name is one of the geometry's own attributes (TSL attribute(name)).
-    for (const DrawItem::CustomAttribute& custom : item.attributes)
+    for (const DrawItem::CustomAttribute& custom : *item.attributes)
         if (!source && custom.name == a.name) source = custom.store;
     return source;
 }
@@ -262,9 +289,30 @@ BufferStore* vertexSourceOf(const DrawItem& item, const shader::VertexAttribute&
 uint64_t instanceStepMask(const shader::StageModule& vertex, const DrawItem& item) {
     uint64_t mask = 0;
     for (std::size_t i = 0; i < vertex.attributes.size() && i < 64; ++i)
-        for (const DrawItem::CustomAttribute& custom : item.attributes)
+        for (const DrawItem::CustomAttribute& custom : *item.attributes)
             if (custom.perInstance && custom.name == vertex.attributes[i].name) mask |= uint64_t(1) << i;
     return mask;
+}
+
+// A grouped shadow row's per-instance bytes live in the frame's `instances` storage, so this store only marks
+// the draw instanced: no buffer is read through it (FM8).
+BufferStore& shadowGroupInstances() {
+    static BufferStore store(Scalar::F32, 0);
+    return store;
+}
+
+// FM8's lever: TN_SHADOW_INSTANCE_GROUPS=0 plans one row per caster per page again. Read per frame, not once,
+// so a test and the stress lab's paired runs plan both arms in one process.
+bool shadowGroupsEnabled() {
+    const char* flag = std::getenv("TN_SHADOW_INSTANCE_GROUPS");
+    return flag == nullptr || std::strcmp(flag, "0") != 0;
+}
+
+// FG1's lever: TN_SHADOW_INSTANCE_CULL=0 draws every instance of an instanced caster on each page its union box reaches
+// again. Read per frame, not once, so a test and the stress lab's paired runs plan both arms in one process.
+bool shadowInstanceCullEnabled() {
+    const char* flag = std::getenv("TN_SHADOW_INSTANCE_CULL");
+    return flag == nullptr || std::strcmp(flag, "0") != 0;
 }
 
 // A viewport texture binding: the frame's colour or depth as drawn before this draw.
@@ -274,16 +322,19 @@ bool viewportBinding(std::string_view name) {
 }
 
 bool readsPostTexture(const shader::StageModule& stage) {
+    waste::debugAdd(waste::counters().programProbeScans);
     return std::any_of(stage.bindings.begin(), stage.bindings.end(),
                        [](const shader::Binding& binding) { return postTextureBinding(binding.name); });
 }
 
 bool readsViewport(const shader::StageModule& stage) {
+    waste::debugAdd(waste::counters().programProbeScans);
     return std::any_of(stage.bindings.begin(), stage.bindings.end(),
                        [](const shader::Binding& binding) { return viewportBinding(binding.name); });
 }
 
 bool perDrawFragment(const shader::StageModule& stage) {
+    waste::debugAdd(waste::counters().programProbeScans);
     for (const shader::Binding& binding : stage.bindings)
         if (binding.name == "t_map" || binding.name == "t_normalMap" || binding.name == "t_env" ||
             binding.name == "t_reflector" || graphTextureBinding(binding.name) ||
@@ -294,94 +345,99 @@ bool perDrawFragment(const shader::StageModule& stage) {
 
 // A vertex stage that samples a graph texture (a positionNode's displacement map) binds it per draw.
 bool perDrawVertex(const shader::StageModule& stage) {
+    waste::debugAdd(waste::counters().programProbeScans);
     return std::any_of(stage.bindings.begin(), stage.bindings.end(),
                        [](const shader::Binding& binding) { return graphTextureBinding(binding.name); });
 }
 
-// The PMREM generator's shaders, three's PMREMGenerator/PMREMUtils WGSL, ported operation for
-// operation: getDirection/getFace/getUV/roughnessToMip/bilinearCubeUV/textureCubeUV and the GGX
-// VNDF convolution (512 samples). Hand-written because the material IR has no u32 loop or bit ops;
-// this is renderer-internal plumbing, not a material.
+// three@0.187.0 PMREMGenerator's constants (renderers/common/extras/PMREMGenerator.js:29-45): a cube
+// no smaller than 256, a roughest mip LOD_MIN steps below the face size, 256 VNDF samples a sharp
+// level, and the last three mips integrated from a 16px source mip.
+constexpr uint32_t kPmremMinSize = 256;
+constexpr uint32_t kPmremLodMin = 3;
+constexpr uint32_t kPmremGgxSamples = 256;
+constexpr uint32_t kPmremIntegrationSize = 16;
+constexpr uint32_t kPmremIntegrationLevels = 3;
+// PmremUniforms: roughness, lodBias, sourceLod, pad, then the face's mat4x4.
+constexpr uint32_t kEnvUniformSize = 16 + 16 * 4;
+
+// The PMREM generator's shaders: three@0.187.0's PMREMGenerator (renderers/common/extras) and
+// PMREMUtils (nodes/pmrem) ported operation for operation — the equirect-to-cube conversion with its
+// four subpixel taps, the source cube's mip chain, the GGX VNDF convolution (256 samples, filtered
+// importance sampling) and the integration tail that weights every texel of a 16px source mip. Each
+// pass renders one face of one mip of a cube render target. Hand-written because the material IR has
+// no u32 loop or bit ops; this is renderer-internal plumbing, not a material.
+//
+// A face's fragment reads the direction three's box gives it (`positionWorldDirection`,
+// accessors/Position.js:74): the cube camera's view matrix (`u.face`, CubeCamera's WebGPU branch)
+// applied to the ray through the face texel, normalized. Both the equirect conversion and the
+// premultiplied bake draw their faces the same way, so the cube they write is the cube three writes.
 TN_WGSL_STRIPPED(kPmremPrelude, R"WGSL(
 struct PmremUniforms {
-  roughness: f32, mipInt: f32, texelWidth: f32, texelHeight: f32,
-  maxMip: f32, pad0: f32, pad1: f32, pad2: f32,
+  roughness: f32, lodBias: f32, sourceLod: f32, pad: f32,
+  face: mat4x4<f32>,
 };
 @group(0) @binding(0) var<uniform> u: PmremUniforms;
-@group(0) @binding(1) var t_src: texture_2d<f32>;
-@group(0) @binding(2) var s_src: sampler;
 struct VsOut {
   @builtin(position) position: vec4<f32>,
-  @location(0) uv: vec2<f32>,
-  @location(1) face: f32,
+  @location(0) ndc: vec2<f32>,
 };
-@vertex fn vs(@location(0) a_pos: vec3<f32>, @location(1) a_uv: vec2<f32>, @location(2) a_face: f32) -> VsOut {
+@vertex fn vs(@builtin(vertex_index) index: u32) -> VsOut {
+  // WebGPUTexturePassUtils' mainVS: one oversized triangle over the whole face.
+  let corners = array<vec2<f32>, 3>(vec2<f32>(-1.0, -1.0), vec2<f32>(3.0, -1.0), vec2<f32>(-1.0, 3.0));
   var out: VsOut;
-  out.position = vec4<f32>(a_pos.xy, 0.0, 1.0);
-  out.uv = a_uv;
-  out.face = a_face;
+  out.position = vec4<f32>(corners[index], 0.0, 1.0);
+  out.ndc = corners[index];
   return out;
 }
-fn pmremFace(direction: vec3<f32>) -> f32 {
-  let a = abs(direction);
-  var face = -1.0;
-  if (a.x > a.z) {
-    if (a.x > a.y) { face = select(3.0, 0.0, direction.x > 0.0); }
-    else { face = select(4.0, 1.0, direction.y > 0.0); }
-  } else {
-    if (a.z > a.y) { face = select(5.0, 2.0, direction.z > 0.0); }
-    else { face = select(4.0, 1.0, direction.y > 0.0); }
-  }
-  return face;
+fn pmremDirection(ndc: vec2<f32>) -> vec3<f32> {
+  return normalize((u.face * vec4<f32>(-ndc.x, -ndc.y, -1.0, 0.0)).xyz);
 }
-fn pmremUv(direction: vec3<f32>, face: f32) -> vec2<f32> {
-  var uv = vec2<f32>(0.0);
-  let a = abs(direction);
-  if (face == 0.0) { uv = vec2<f32>(direction.z, direction.y) / a.x; }
-  else if (face == 1.0) { uv = vec2<f32>(-direction.x, -direction.z) / a.y; }
-  else if (face == 2.0) { uv = vec2<f32>(-direction.x, direction.y) / a.z; }
-  else if (face == 3.0) { uv = vec2<f32>(-direction.z, direction.y) / a.x; }
-  else if (face == 4.0) { uv = vec2<f32>(-direction.x, direction.z) / a.y; }
-  else { uv = vec2<f32>(direction.x, direction.y) / a.z; }
-  return 0.5 * (uv + vec2<f32>(1.0));
-}
-fn pmremDirection(uvIn: vec2<f32>, face: f32) -> vec3<f32> {
-  let uv = uvIn * 2.0 - 1.0;
-  var d = vec3<f32>(uv, 1.0);
-  if (face == 0.0) { d = d.zyx; }
-  else if (face == 1.0) { d = d.xzy; d = vec3<f32>(-d.x, d.y, -d.z); }
-  else if (face == 2.0) { d.x *= -1.0; }
-  else if (face == 3.0) { d = d.zyx; d = vec3<f32>(-d.x, d.y, -d.z); }
-  else if (face == 4.0) { d = d.xzy; d = vec3<f32>(-d.x, -d.y, d.z); }
-  else { d.z *= -1.0; }
-  return d;
+// CubeTextureNode.setupUV (accessors/CubeTextureNode.js:115) negates x for the WebGPU coordinate
+// system: every cube three renders (CubeCamera faces included) is read through that flip.
+fn pmremCube(direction: vec3<f32>, lod: f32, sampler: sampler, texture: texture_cube<f32>) -> vec3<f32> {
+  return textureSampleLevel(texture, sampler, vec3<f32>(-direction.x, direction.y, direction.z), lod).rgb;
 }
 )WGSL");
 
+// The equirect-to-cube conversion, PMREMGenerator.js:647 `_getEquirectMaterial`: four subpixel taps
+// offset by the direction's derivatives, so a small bright feature survives the face resampling.
 const char* kPmremEquirect = R"WGSL(
+@group(0) @binding(1) var t_src: texture_2d<f32>;
+@group(0) @binding(2) var s_src: sampler;
+fn equirectTexel(direction: vec3<f32>) -> vec3<f32> {
+  // EquirectUV.js: atan(z, x) / 2pi + 0.5 and asin(y) / pi + 0.5.
+  let dir = normalize(direction);
+  let uEquirect = atan2(dir.z, dir.x) * 0.15915494309189535 + 0.5;
+  let vEquirect = asin(clamp(dir.y, -1.0, 1.0)) * 0.3183098861837907 + 0.5;
+  return textureSampleLevel(t_src, s_src, vec2<f32>(uEquirect, vEquirect), 0.0).rgb;
+}
 @fragment fn fs(in: VsOut) -> @location(0) vec4<f32> {
-  let direction = normalize(pmremDirection(in.uv, in.face));
-  let uEq = atan2(direction.z, direction.x) * 0.15915494309189535 + 0.5;
-  let vEq = asin(clamp(direction.y, -1.0, 1.0)) * 0.3183098861837907 + 0.5;
-  return textureSampleLevel(t_src, s_src, vec2<f32>(uEq, vEq), 0.0);
+  let direction = pmremDirection(in.ndc);
+  let dx = dpdx(direction) * 0.25;
+  let dy = dpdy(direction) * 0.25;
+  let color = equirectTexel(direction - dx - dy) + equirectTexel(direction + dx - dy)
+            + equirectTexel(direction - dx + dy) + equirectTexel(direction + dx + dy);
+  return vec4<f32>(color * 0.25, 1.0);
+}
+)WGSL";
+
+// The source cube's mip chain, WebGPUTexturePassUtils.generateMipmaps: each level is the previous
+// one sampled at its own texel centers through a linear filter, a 2x2 box down at the face edges.
+const char* kPmremMip = R"WGSL(
+@group(0) @binding(1) var t_src: texture_2d<f32>;
+@group(0) @binding(2) var s_src: sampler;
+@fragment fn fs(in: VsOut) -> @location(0) vec4<f32> {
+  // A face's stored row 0 is the top of the face, so the destination row reads the source at the
+  // other end of clip-space y: v = 0.5 - ndc.y * 0.5. The two direction passes read ndc as a
+  // direction, not as a uv, and take no flip.
+  return textureSampleLevel(t_src, s_src, vec2<f32>(in.ndc.x * 0.5 + 0.5, 0.5 - in.ndc.y * 0.5), 0.0);
 }
 )WGSL";
 
 TN_WGSL_STRIPPED(kPmremGgx, R"WGSL(
-fn pmremBilinear(directionIn: vec3<f32>, mipIn: f32) -> vec3<f32> {
-  var mip = mipIn;
-  var face = pmremFace(directionIn);
-  let filterInt = max(4.0 - mip, 0.0);
-  mip = max(mip, 4.0);
-  let faceSize = exp2(mip);
-  var uv = pmremUv(directionIn, face) * (faceSize - 2.0) + 1.0;
-  if (face > 2.0) { uv.y += faceSize; face -= 3.0; }
-  uv.x += face * faceSize;
-  uv.x += filterInt * 48.0;
-  uv.y += 4.0 * (exp2(u.maxMip) - faceSize);
-  uv *= vec2<f32>(u.texelWidth, u.texelHeight);
-  return textureSampleLevel(t_src, s_src, uv, 0.0).xyz;
-}
+@group(0) @binding(1) var t_src: texture_cube<f32>;
+@group(0) @binding(2) var s_src: sampler;
 fn radicalInverse(bitsIn: u32) -> f32 {
   var bits = bitsIn;
   bits = (bits << 16u) | (bits >> 16u);
@@ -391,47 +447,105 @@ fn radicalInverse(bitsIn: u32) -> f32 {
   bits = ((bits & 0x00FF00FFu) << 8u) | ((bits & 0xFF00FF00u) >> 8u);
   return f32(bits) * 2.3283064365386963e-10;
 }
-fn importanceSampleGGX_VNDF(Xi: vec2<f32>, V: vec3<f32>, roughness: f32) -> vec3<f32> {
-  let alpha = roughness * roughness;
-  let T1 = vec3<f32>(1.0, 0.0, 0.0);
-  let T2 = cross(V, T1);
-  let r = sqrt(Xi.x);
-  let phi = (2.0 * 3.14159265359) * Xi.y;
-  let t1 = r * cos(phi);
-  var t2 = r * sin(phi);
-  let s = 0.5 * (V.z + 1.0);
-  t2 = (1.0 - s) * sqrt(1.0 - t1 * t1) + s * t2;
-  let Nh = T1 * t1 + T2 * t2 + V * sqrt(max(0.0, 1.0 - (t1 * t1 + t2 * t2)));
-  return normalize(vec3<f32>(alpha * Nh.x, alpha * Nh.y, max(0.0, Nh.z)));
-}
+// PMREMUtils.js:88 ggxConvolution, V = N so the reflected direction is sampled directly, and each
+// sample reads the source mip level that matches its solid angle (filtered importance sampling).
 @fragment fn fs(in: VsOut) -> @location(0) vec4<f32> {
-  let N = normalize(pmremDirection(in.uv, in.face));
+  let N = pmremDirection(in.ndc);
   var prefiltered = vec3<f32>(0.0);
-  var totalWeight = 0.0;
   if (u.roughness < 0.001) {
-    prefiltered = pmremBilinear(N, u.mipInt);
+    prefiltered = pmremCube(N, 0.0, s_src, t_src);
   } else {
+    let alpha = u.roughness * u.roughness;
+    let alpha2 = alpha * alpha;
     let up = select(vec3<f32>(1.0, 0.0, 0.0), vec3<f32>(0.0, 0.0, 1.0), abs(N.z) < 0.999);
     let tangent = normalize(cross(up, N));
     let bitangent = cross(N, tangent);
-    for (var i = 0u; i < 512u; i = i + 1u) {
-      let Xi = vec2<f32>(f32(i) / 512.0, radicalInverse(i));
-      let Ht = importanceSampleGGX_VNDF(Xi, vec3<f32>(0.0, 0.0, 1.0), u.roughness);
-      let H = normalize(tangent * Ht.x + bitangent * Ht.y + N * Ht.z);
-      let L = normalize(H * (dot(N, H) * 2.0) - N);
-      let NdotL = max(dot(N, L), 0.0);
+    var totalWeight = 0.0;
+    for (var i = 0u; i < 256u; i = i + 1u) {
+      let Xi = vec2<f32>(f32(i) / 256.0, radicalInverse(i));
+      let invQ = 1.0 / (1.0 - Xi.x + alpha2 * Xi.x);
+      let NdotL = (1.0 - Xi.x - alpha2 * Xi.x) * invQ;
       if (NdotL > 0.0) {
-        prefiltered += pmremBilinear(L, u.mipInt) * NdotL;
+        let phi = Xi.y * 6.283185307179586;
+        let sinTheta = alpha * 2.0 * sqrt(Xi.x * (1.0 - Xi.x)) * invQ;
+        let L = N * NdotL + (tangent * cos(phi) + bitangent * sin(phi)) * sinTheta;
+        // The mip whose texel solid angle matches 1 / (GGX_SAMPLES * pdf), with the half-mip bias.
+        let lod = max(log2(alpha2 * invQ) + u.lodBias, 0.0);
+        prefiltered += pmremCube(L, lod, s_src, t_src) * NdotL;
         totalWeight += NdotL;
       }
     }
-    if (totalWeight > 0.0) { prefiltered /= totalWeight; }
+    prefiltered = prefiltered / totalWeight;
   }
   return vec4<f32>(prefiltered, 1.0);
 }
 )WGSL");
 
+TN_WGSL_STRIPPED(kPmremIntegration, R"WGSL(
+@group(0) @binding(1) var t_src: texture_cube<f32>;
+@group(0) @binding(2) var s_src: sampler;
+// PMREMUtils.js:147 ggxIntegration: every texel of the 16px source mip, over three faces, weighted
+// by the GGX lobe. Opposite texels pair up: only the one in N's hemisphere contributes.
+@fragment fn fs(in: VsOut) -> @location(0) vec4<f32> {
+  let N = pmremDirection(in.ndc);
+  let alpha = u.roughness * u.roughness;
+  let alpha2 = alpha * alpha;
+  let texelSize = 2.0 / 16.0;
+  var prefiltered = vec3<f32>(0.0);
+  var totalWeight = 0.0;
+  for (var face = 0; face < 3; face = face + 1) {
+    for (var y = 0; y < 16; y = y + 1) {
+      for (var x = 0; x < 16; x = x + 1) {
+        let uv = (vec2<f32>(f32(x), f32(y)) + 0.5) * texelSize - 1.0;
+        // select( face == 0, vec3( 1.0, uv ), select( face == 1, vec3( uv.x, 1.0, uv.y ), vec3( uv, 1.0 ) ) ):
+        // three builds vec3(1.0, uv) by flattening the scalar first, so face 0 is (1, uv.x, uv.y).
+        var texelDirection = select(select(vec3<f32>(uv, 1.0), vec3<f32>(uv.x, 1.0, uv.y), face == 1),
+                                    vec3<f32>(1.0, uv.x, uv.y), face == 0);
+        let invDistance = inverseSqrt(dot(uv, uv) + 1.0);
+        var NdotL = dot(N, texelDirection);
+        texelDirection = texelDirection * select(1.0, -1.0, NdotL < 0.0);
+        NdotL = abs(NdotL) * invDistance;
+        let d = alpha2 + 1.0 + (alpha2 - 1.0) * NdotL;
+        let weight = NdotL * invDistance * invDistance * invDistance / (d * d);
+        prefiltered += pmremCube(texelDirection, u.sourceLod, s_src, t_src) * weight;
+        totalWeight += weight;
+      }
+    }
+  }
+  return vec4<f32>(prefiltered / totalWeight, 1.0);
+}
+)WGSL");
+
 }  // namespace
+
+// FM3: the four probes above are pure functions of a program's stage modules, which never change once it
+// is built, so a draw reads the answer instead of scanning the bindings again every pass of every frame.
+// TN_PROGRAM_PROBES=per-draw resolves them on every call again (diagnostic): a test renders both arms and
+// compares the pixels.
+bool& perDrawProbes() {
+    static bool perDraw = [] {
+        const char* flag = std::getenv("TN_PROGRAM_PROBES");
+        return flag && std::strcmp(flag, "per-draw") == 0;
+    }();
+    return perDraw;
+}
+
+// FS9: a page selects its casters from a per-page index of the casters whose bounds can reach it, built once per
+// granted level, instead of scanning the whole draw list once per page. TN_SHADOW_PAGE_SCAN=flat scans the whole
+// list again (diagnostic): a test renders both arms and compares the shadow plans draw for draw.
+bool& flatShadowSelection() {
+    static bool flat = [] {
+        const char* flag = std::getenv("TN_SHADOW_PAGE_SCAN");
+        return flag && std::strcmp(flag, "flat") == 0;
+    }();
+    return flat;
+}
+
+Renderer::DrawProbes Renderer::probesOf(const Program& program) {
+    if (!perDrawProbes()) return program.probes;
+    return {perDrawFragment(program.fragment), perDrawVertex(program.vertex), readsViewport(program.fragment),
+            readsPostTexture(program.fragment)};
+}
 
 // What a frame's plan holds for its encode half (PRD-613): everything renderPrepared resolved from
 // scene-owned data, so encodeFrame needs none of it. One job lives in the renderer and is reused.
@@ -444,6 +558,10 @@ struct Renderer::Planned {
     WGPUBindGroup mapGroup = nullptr;  // a mapped material's fragment group, else the program's
     WGPUBindGroup vertexGroup = nullptr;  // a vertex stage's per-draw group (graph textures), else the program's
     uint64_t slot = 0;  // a main draw's uniform slot (PRD-754), 0 when its blocks were appended
+    // A shadow row that draws several casters in one instanced draw names them, in instance order (FM8);
+    // empty for a row that draws the one caster it points at.
+    const DrawItem* const* members = nullptr;
+    uint32_t memberCount = 0;
 };
 
 /**
@@ -524,6 +642,7 @@ struct Renderer::ShadowPass {
     std::size_t virtualLight = 0;  // the light the pass draws for
     int virtualLevel = -1;
     bool lamp = false;  // a spot or point light's own map (PRD-650): counted and timed apart from the sun's
+    bool mover = false;  // one light's mover map, drawn for the casters that are moving this frame
     int x = 0, y = 0, size = 0; // zero: ordinary map; otherwise one atlas page's guarded viewport
     // The camera this pass draws through, kept so the retained draws pack after the lamp cache decides.
     Matrix view{}, projection{};
@@ -544,7 +663,13 @@ struct Renderer::FrameJob {
     std::vector<ShadowPass> shadowPasses;
     uint32_t keptShadowMaps = 0;  // FrameStats::keptShadowMaps, counted by the plan
     uint64_t uniformBytes = 0;  // FrameStats::uniformBytes, written by the plan
+    uint32_t paletteWrites = 0;  // FrameStats::paletteWrites, counted by the plan
+    uint32_t instanceCopies = 0;  // FrameStats::instanceCopies, counted by the plan
     std::deque<DrawItem> shadowLodItems;
+    // FM8: a page's grouped casters as rows (one per page and group) and each row's member list. Both are
+    // deques: a plan's row points at its members' array until the frame is encoded.
+    std::deque<DrawItem> shadowGroupItems;
+    std::deque<std::vector<const DrawItem*>> shadowGroups;
     WGPURenderPassColorAttachment color{};
     WGPURenderPassDepthStencilAttachment depth{};
     WGPUCommandEncoder encoder = nullptr;
@@ -554,6 +679,7 @@ struct Renderer::FrameJob {
     WGPUTextureView presentTarget = nullptr;
     WGPUTextureFormat presentFormat = WGPUTextureFormat_Undefined;
     bool timed = false;
+    bool debugTimestampRequested = true;
     uint8_t auxMask = 0;  // the AuxTarget bits the aux pass writes, in attachment order
     uint64_t source = 0;  // the caller frame id this frame's timed sample is reported under
     // The main, aux and velocity bundles' inputs, built while the draws' stores were live; and each shadow pass's.
@@ -566,6 +692,63 @@ struct Renderer::FrameJob {
     PassRows mainRows, auxRows, velocityRows;
     std::vector<std::vector<uint64_t>> shadowKeys;
 };
+
+const std::pair<Box3, double>& DrawCache::virtualShadowBounds(const DrawItem& item) {
+    const bool cacheable = !item.boneMatrices && !item.morphGeometry && !item.gpuJoints && !item.positionNode && !item.nodes->positionNode;
+    const BufferStore* instances = item.instanceMatrices;
+    const ShadowBoundsKey key{item.positions, item.positions->version(), item.positions->epoch(), item.positions->writes(),
+                             instances, instances ? instances->version() : 0, instances ? instances->epoch() : 0,
+                             instances ? instances->writes() : 0, item.instanceCount, item.matrixWorld};
+    // A released store's address can be reused with the same revisions.
+    if (cacheable && shadowBoundsKey == key && !shadowPositionsOwner.expired() &&
+        (!instances || !shadowInstancesOwner.expired())) return shadowBounds;
+    ++shadowBoundsBuilds;
+    shadowInstanceBoxes.clear();
+    Box3 bounds;
+    // A rig's box comes from its bones (O(bones)); skinning each vertex on the CPU here cost the
+    // stress lab's 120-rig crowd about 760 ms a frame.
+    const auto* rig = item.boneMatrices && !item.morphGeometry && item.shadowObject && item.shadowObject->type() == "SkinnedMesh"
+        ? static_cast<const SkinnedMesh*>(item.shadowObject) : nullptr;
+    if (rig && rig->boneReachBounds(bounds)) {
+    } else if (item.positions->scalar() == Scalar::F32) {
+        for (uint64_t idx = 0; idx + 2 < item.positions->count(); idx += 3) {
+            float p[3]; item.positions->read(idx * 4, p, sizeof(p));
+            Vector3 vertex(p[0], p[1], p[2]);
+            if ((item.boneMatrices || item.morphGeometry) && item.shadowObject) {
+                const auto* mesh = dynamic_cast<const Mesh*>(item.shadowObject);
+                if (mesh) mesh->getVertexPosition(idx / 3, vertex);
+            }
+            bounds.expandByPoint(vertex);
+        }
+    }
+    Matrix4 model; model.elements = item.matrixWorld;
+    const double localDiameter = bounds.min.distanceTo(bounds.max);
+    double diameter = localDiameter * model.getMaxScaleOnAxis();
+    if (item.instanceMatrices) {
+        Box3 instances;
+        diameter = 0;
+        const auto* matrices = reinterpret_cast<const float*>(static_cast<const BufferStore&>(*item.instanceMatrices).data());
+        // FG1: a geometry with no vertices has no box to place an instance by; the draw keeps one box for all.
+        const bool perInstance = !bounds.isEmpty();
+        if (perInstance) shadowInstanceBoxes.reserve(item.instanceCount);
+        for (uint32_t instance = 0; instance < item.instanceCount; ++instance) {
+            Matrix4 transform;
+            for (int e = 0; e < 16; ++e) transform.elements[e] = matrices[instance * 16 + e];
+            Box3 box = bounds; box.applyMatrix4(transform);
+            instances.unionWith(box);
+            transform.premultiply(model);
+            diameter = std::max(diameter, localDiameter * transform.getMaxScaleOnAxis());
+            if (perInstance) shadowInstanceBoxes.push_back(Box3(bounds).applyMatrix4(transform));
+        }
+        bounds = instances;
+    }
+    bounds.applyMatrix4(model);
+    shadowBounds = {bounds, diameter};
+    shadowBoundsKey = cacheable ? std::optional<ShadowBoundsKey>(key) : std::nullopt;
+    shadowPositionsOwner = item.positions->weak_from_this();
+    shadowInstancesOwner = instances ? instances->weak_from_this() : std::weak_ptr<const BufferStore>{};
+    return shadowBounds;
+}
 
 Renderer::Renderer(WGPUInstance instance, WGPUDevice device, WGPUQueue queue, EventQueue& events)
     : instance_(instance), device_(device), queue_(queue), events_(events), gpu_(instance, device, queue, events, 1), geometry_(std::make_shared<GeometryCopies>(instance, device, queue, events)), pipelines_(std::make_shared<PipelineCache>(device)), layouts_(std::make_shared<PipelineLayoutCache>(device)), retired_(TextureId::watch()) {
@@ -1174,6 +1357,9 @@ void Renderer::readTraaCounts() {
         if (status != GpuStatus::Ok || bytes.size() != 8) return;
         uint32_t values[2];
         std::memcpy(values, bytes.data(), sizeof values);
+        waste::debugAdd(waste::counters().temporalRejectedPixels, values[0]);
+        waste::debugAdd(waste::counters().temporalClampedPixels, values[1]);
+        waste::debugAdd(waste::counters().temporalMeasuredPixels, measure.pixels);
         counts->rejected = values[0];
         counts->clamped = values[1];
         counts->pixels = measure.pixels;
@@ -1419,6 +1605,10 @@ WGPUBindGroup Renderer::bindGroup(WGPUBindGroupLayout layout, const shader::Stag
         } else if (b.kind == shader::BindingKind::Storage && storages_.count(b.name.substr(2))) {
             const FrameStorage& storage = storages_.at(b.name.substr(2)); // "s_<name>"
             e.buffer = gpu_.buffer(storage.buffer);
+            // A storage a program names before the frame's upload pass has allocated it (a new one, such as
+            // `shadowSkin` on its first grouped page) has no buffer yet: the pass allocates it and rebuildGroups
+            // follows before the draw is encoded, so never build a group around a null buffer.
+            if (e.buffer == nullptr) return nullptr;
             e.size = storage.capacity;
         } else if (sourceScene_ && &stage != &outputFragment_ && &stage != &blitFragment_ &&
                    (b.name == "t_scene" || b.name == "smp_scene" || b.name == "t_depth" ||
@@ -1530,160 +1720,202 @@ void Renderer::copyTextureToTexture(const Texture& source, const Texture& destin
     uint32_t levels = 1;
     for (uint32_t size = std::max(destination.width, destination.height); size > 1; size >>= 1) ++levels;
     if (levels == 1) return;
-    generateMipmaps(to->texture, textureFormat(destination), levels, destination.array ? destination.depth : 1);
+    generateMipmaps(to->texture, textureFormat(destination), levels, to->key.array ? to->key.depth : 1);
     flushMipmaps();
 }
 
-const Renderer::MaterialTexture* Renderer::materialTexture(const Texture& texture) {
-    // A render target's texture is that target's last render, borrowed from its own renderer.
-    if (const auto target = std::static_pointer_cast<RenderTarget>(texture.renderTarget.lock())) {
-        MaterialTexture& sampled = renderTargetTextures_[texture.ident.value()];
-        const WGPUTextureView view = renderTargetView(*this, *target);
-        if (sampled.view != view) {
-            if (sampled.view) dropMapGroups();  // a resized target's old view address may come back
-            sampled.view = view;
-            sampled.sampler = linearClampSampler();
-        }
-        return &sampled;
-    }
-    if (texture.storageTexture) (void)texture.storageFormat();
-    MaterialTexture& record = textures_->records[texture.ident.value()];
-    if (record.view != nullptr && record.version == texture.version()) return &record;
-    if (record.view) texturesChanged();  // its old view's address may be reused by the new one
-    record.release();
+Renderer::MaterialTexture::Key Renderer::materialTextureKey(const Texture& texture) {
+    MaterialTexture::Key key;
+    key.width = texture.width;
+    key.height = texture.height;
+    // A DataArrayTexture stores `depth` 2D images in one 2D texture; a Data3DTexture is one 3D image.
+    key.depth = texture.volume || texture.array ? texture.depth : 1;
+    key.array = texture.array;
+    key.texelBytes = texture.bytesPerTexel();
+    key.wrapS = texture.wrapS;
+    key.wrapT = texture.wrapT;
+    key.wrapR = texture.wrapR;
+    key.magFilter = texture.magFilter;
+    key.minFilter = texture.minFilter;
+    key.anisotropy = texture.anisotropy;
     if (texture.depthTexture) {
-        WGPUTextureDescriptor desc{};
-        desc.dimension = WGPUTextureDimension_2D;
-        desc.size = {texture.width, texture.height, 1};
-        desc.format = WGPUTextureFormat_Depth32Float;
-        desc.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopySrc | WGPUTextureUsage_CopyDst;
-        desc.sampleCount = desc.mipLevelCount = 1;
-        record.texture = wgpuDeviceCreateTexture(device_, &desc);
-        record.view = wgpuTextureCreateView(record.texture, nullptr);
-        WGPUSamplerDescriptor sampler{};
-        sampler.compare = WGPUCompareFunction_LessEqual; sampler.maxAnisotropy = 1;
-        record.sampler = samplerFor(sampler);
-        record.version = texture.version();
-        return &record;
-    }
-    // Match WebGPUTextureUtils: FloatType stays RGBA32Float, HalfFloatType RGBA16Float; sRGB byte
-    // textures decode before filtering in the GPU, not after filtering in the material/PMREM shader.
-    if (texture.isFloat() && !wgpuDeviceHasFeature(device_, WGPUFeatureName_Float32Filterable))
-        throw std::runtime_error("TN_NATIVE_TEXTURE_UNSUPPORTED: FloatType requires float32-filterable");
-    const WGPUTextureFormat format = texture.storageTexture && !texture.isFloat() && !texture.isHalfFloat()
-                                         ? WGPUTextureFormat_RGBA8Unorm : textureFormat(texture);
-    if (texture.storageTexture) {
-        WGPUTextureDescriptor desc{};
-        desc.dimension = WGPUTextureDimension_2D;
-        desc.size = {texture.width, texture.height, 1};
-        desc.format = format;
-        desc.usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_StorageBinding | WGPUTextureUsage_CopySrc;
-        desc.sampleCount = desc.mipLevelCount = 1;
-        record.texture = wgpuDeviceCreateTexture(device_, &desc);
-        record.view = wgpuTextureCreateView(record.texture, nullptr);
+        key.kind = MaterialTexture::kDepth;
+        key.format = WGPUTextureFormat_Depth32Float;
+        key.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopySrc |
+                    WGPUTextureUsage_CopyDst;
+        key.texelBytes = 4;
+    } else if (texture.storageTexture) {
+        key.kind = MaterialTexture::kStorage;
+        key.format = !texture.isFloat() && !texture.isHalfFloat() ? WGPUTextureFormat_RGBA8Unorm : textureFormat(texture);
+        key.usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_StorageBinding | WGPUTextureUsage_CopySrc;
+    } else if (texture.hasImage() && texture.array && texture.external) {
+        throw std::runtime_error("TN_NATIVE_TEXTURE_UNSUPPORTED: a host image in a DataArrayTexture");
     } else if (texture.hasImage() && texture.volume) {
         // A Data3DTexture: one 3D texture of `depth` slices, one level (ponytail: a volume's
         // generateMipmaps is ignored; no corpus game turns it on).
-        if (texture.flipY) throw std::runtime_error("TN_NATIVE_TEXTURE_UNSUPPORTED: flipY on a Data3DTexture");
-        const uint64_t expected = uint64_t(texture.width) * texture.height * texture.depth * texture.bytesPerTexel();
-        if (texture.data.size() != expected) throw std::runtime_error("TN_NATIVE_TEXTURE_INVALID: RGBA volume byte count");
-        WGPUTextureDescriptor desc = {};
-        desc.dimension = WGPUTextureDimension_3D;
-        desc.size = {texture.width, texture.height, texture.depth};
-        desc.format = format;
-        desc.usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst;
-        desc.mipLevelCount = 1;
-        desc.sampleCount = 1;
-        record.texture = wgpuDeviceCreateTexture(device_, &desc);
-        WGPUImageCopyTexture_Compat destination = {};
-        destination.texture = record.texture;
-        destination.aspect = WGPUTextureAspect_All;
-        WGPUTextureDataLayout_Compat layout = {};
-        layout.bytesPerRow = texture.width * texture.bytesPerTexel();
-        layout.rowsPerImage = texture.height;
-        const WGPUExtent3D extent = {texture.width, texture.height, texture.depth};
-        gpu_.sync();  // ordered after any submit still on the GPU thread
-        wgpuQueueWriteTexture(queue_, &destination, texture.data.data(), texture.data.size(), &layout, &extent);
-        textures_->uploadBytes += texture.data.size();
-        WGPUTextureViewDescriptor view = {};
-        view.dimension = WGPUTextureViewDimension_3D;
-        view.mipLevelCount = 1;
-        view.arrayLayerCount = 1;
-        view.format = format;
-        record.view = wgpuTextureCreateView(record.texture, &view);
+        key.kind = MaterialTexture::kVolume;
+        key.format = textureFormat(texture);
+        key.usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst;
     } else if (texture.hasImage()) {
         // three generates mipmaps for every Texture that is not a DataTexture; float images stay at one level.
         const bool mipmaps = texture.generateMipmaps && texture.bytesPerTexel() == 4;
-        uint32_t levels = 1;
-        for (uint32_t extent = std::max(texture.width, texture.height); mipmaps && extent > 1; extent >>= 1) ++levels;
-        // A DataArrayTexture is `layers` 2D images stored one after another, each with its own mip chain.
-        const uint32_t layers = texture.array ? texture.depth : 1;
-        if (texture.array && texture.flipY) throw std::runtime_error("TN_NATIVE_TEXTURE_UNSUPPORTED: flipY on a DataArrayTexture");
-        if (texture.array && texture.external) throw std::runtime_error("TN_NATIVE_TEXTURE_UNSUPPORTED: a host image in a DataArrayTexture");
-        const uint64_t expected = uint64_t(texture.width) * texture.height * layers * texture.bytesPerTexel();
-        if (!texture.external && texture.dataReady && texture.data.size() != expected)
-            throw std::runtime_error("TN_NATIVE_TEXTURE_INVALID: RGBA image byte count");
-        if (texture.external && (!textures_->copyExternal || texture.bytesPerTexel() != 4))
+        for (uint32_t extent = std::max(texture.width, texture.height); mipmaps && extent > 1; extent >>= 1) ++key.levels;
+        key.kind = texture.external ? MaterialTexture::kExternal : MaterialTexture::kImage;
+        key.format = textureFormat(texture);
+        // copyExternalImageToTexture writes through a render pass, as the mip chain does. `CopySrc` because
+        // `copyTextureToTexture` reads a level back out of this texture (three's texture atlas copies).
+        key.usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst | WGPUTextureUsage_CopySrc |
+                    (key.levels > 1 || texture.external ? WGPUTextureUsage_RenderAttachment : WGPUTextureUsage_None);
+    } else {
+        key.texelBytes = 0;  // nothing is created until the texture has an image
+    }
+    return key;
+}
+
+WGPUTexture Renderer::createMaterialTexture(const MaterialTexture::Key& key) {
+    WGPUTextureDescriptor desc = {};
+    desc.dimension = key.kind == MaterialTexture::kVolume ? WGPUTextureDimension_3D : WGPUTextureDimension_2D;
+    desc.size = {key.width, key.height, key.depth};
+    desc.format = key.format;
+    desc.usage = key.usage;
+    desc.mipLevelCount = key.levels;
+    desc.sampleCount = 1;
+    const WGPUTexture texture = wgpuDeviceCreateTexture(device_, &desc);
+    // GpuResources::createTexture counts the handles it owns; a material map never passes through it, so
+    // `?tnDebug=1` would report every one of these as zero bytes allocated and zero uploaded.
+    waste::debugAdd(waste::counters().textureCreatedBytes, key.bytes());
+    return texture;
+}
+
+// The one upload both the create path and an in-place update run, so a re-upload of the same extent writes
+// exactly what the first upload wrote.
+void Renderer::uploadMaterialTexture(WGPUTexture destination, const Texture& texture, const MaterialTexture::Key& key) {
+    WGPUImageCopyTexture_Compat image = {};
+    image.texture = destination;
+    image.aspect = WGPUTextureAspect_All;
+    WGPUTextureDataLayout_Compat layout = {};
+    layout.bytesPerRow = texture.width * texture.bytesPerTexel();
+    layout.rowsPerImage = texture.height;
+    const WGPUExtent3D extent = {key.width, key.height, key.depth};
+    const auto counted = [&] {
+        textures_->uploadBytes += texture.data.size();
+        waste::debugAdd(waste::counters().textureUploadBytes, texture.data.size());
+    };
+    if (key.kind == MaterialTexture::kVolume) {
+        if (texture.flipY) throw std::runtime_error("TN_NATIVE_TEXTURE_UNSUPPORTED: flipY on a Data3DTexture");
+        const uint64_t expected = uint64_t(texture.width) * texture.height * texture.depth * texture.bytesPerTexel();
+        if (texture.data.size() != expected) throw std::runtime_error("TN_NATIVE_TEXTURE_INVALID: RGBA volume byte count");
+        gpu_.sync();  // ordered after any submit still on the GPU thread
+        wgpuQueueWriteTexture(queue_, &image, texture.data.data(), texture.data.size(), &layout, &extent);
+        counted();
+        return;
+    }
+    if (key.kind == MaterialTexture::kExternal) {
+        if (!textures_->copyExternal || texture.bytesPerTexel() != 4)
             throw std::runtime_error("TN_NATIVE_TEXTURE_UNSUPPORTED: a host image needs the host's copy and RGBA8");
-        std::vector<uint8_t> flipped;
-        const uint8_t* pixels = texture.data.data();
-        if (texture.flipY && !texture.external) {
-            const size_t row = size_t(texture.width) * texture.bytesPerTexel();
-            flipped.resize(texture.data.size());
-            for (uint32_t y = 0; y < texture.height; ++y)
-                std::memcpy(flipped.data() + size_t(y) * row, texture.data.data() + size_t(texture.height - 1 - y) * row, row);
-            pixels = flipped.data();
-        }
-        WGPUTextureDescriptor desc = {};
-        desc.dimension = WGPUTextureDimension_2D;
-        desc.size = {texture.width, texture.height, layers};
-        desc.format = format;
-        // copyExternalImageToTexture writes through a render pass, as the mip chain does.
-        desc.usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst | WGPUTextureUsage_CopySrc |
-                     (levels > 1 || texture.external ? WGPUTextureUsage_RenderAttachment : WGPUTextureUsage_None);
-        desc.mipLevelCount = levels;
-        desc.sampleCount = 1;
-        record.texture = wgpuDeviceCreateTexture(device_, &desc);
-        WGPUImageCopyTexture_Compat destination = {};
-        destination.texture = record.texture;
-        destination.aspect = WGPUTextureAspect_All;
-        WGPUTextureDataLayout_Compat layout = {};
-        layout.bytesPerRow = texture.width * texture.bytesPerTexel();
-        layout.rowsPerImage = texture.height;
-        const WGPUExtent3D extent = {texture.width, texture.height, layers};
         gpu_.sync();  // both uploads are queue work: ordered after any submit still on the GPU thread
-        if (texture.external) {
-            if (!textures_->copyExternal(texture.external->id, record.texture, texture.flipY))
-                throw std::runtime_error("TN_NATIVE_TEXTURE_UPLOAD_FAILED: the host could not copy its image");
-        } else if (texture.dataReady) {
-            wgpuQueueWriteTexture(queue_, &destination, pixels, texture.data.size(), &layout, &extent);
-            textures_->uploadBytes += texture.data.size();
+        if (!textures_->copyExternal(texture.external->id, destination, texture.flipY))
+            throw std::runtime_error("TN_NATIVE_TEXTURE_UPLOAD_FAILED: the host could not copy its image");
+    } else {
+        // A DataArrayTexture is `layers` 2D images stored one after another, each with its own mip chain.
+        const uint32_t layers = key.array ? key.depth : 1;
+        if (key.array && texture.flipY)
+            throw std::runtime_error("TN_NATIVE_TEXTURE_UNSUPPORTED: flipY on a DataArrayTexture");
+        const uint64_t expected = uint64_t(texture.width) * texture.height * layers * texture.bytesPerTexel();
+        // `dataReady` false is a texture whose texels are written on the GPU (three's dataReady contract), so it
+        // has no CPU image to validate or upload yet.
+        if (texture.dataReady && texture.data.size() != expected)
+            throw std::runtime_error("TN_NATIVE_TEXTURE_INVALID: RGBA image byte count");
+        if (texture.dataReady) {
+            std::vector<uint8_t> flipped;
+            const uint8_t* pixels = texture.data.data();
+            if (texture.flipY) {
+                const size_t row = size_t(texture.width) * texture.bytesPerTexel();
+                flipped.resize(texture.data.size());
+                for (uint32_t y = 0; y < texture.height; ++y)
+                    std::memcpy(flipped.data() + size_t(y) * row, texture.data.data() + size_t(texture.height - 1 - y) * row, row);
+                pixels = flipped.data();
+            }
+            gpu_.sync();  // the upload is queue work: ordered after any submit still on the GPU thread
+            wgpuQueueWriteTexture(queue_, &image, pixels, texture.data.size(), &layout, &extent);
+            counted();
         }
-        // A texture whose texels are written on the GPU (dataReady false) has none to build a chain from yet.
-        if (levels > 1 && texture.dataReady) generateMipmaps(record.texture, format, levels, layers);
+    }
+    // A texture whose texels are written on the GPU (dataReady false) has none to build a chain from yet.
+    if (key.levels > 1 && texture.dataReady)
+        generateMipmaps(destination, key.format, key.levels, key.array ? key.depth : 1);
+}
+
+const Renderer::MaterialTexture* Renderer::materialTexture(const Texture& texture) {
+    // A render target's texture is that target's last render, borrowed from its own renderer; every other
+    // texture answers from its own record below. Ask the weak_ptr which one this is before locking it: a
+    // texture that never had a target holds no control block, and that is the shape most draws sample (FM3).
+    if (!texture.renderTarget.expired()) {
+        waste::debugAdd(waste::counters().textureTargetLocks);
+        const auto target = std::static_pointer_cast<RenderTarget>(texture.renderTarget.lock());
+        if (target) {
+            MaterialTexture& sampled = renderTargetTextures_[texture.ident.value()];
+            const WGPUTextureView view = renderTargetView(*this, *target);
+            if (sampled.view != view) {
+                if (sampled.view) dropMapGroups();  // a resized target's old view address may come back
+                sampled.view = view;
+                sampled.sampler = linearClampSampler();
+            }
+            return &sampled;
+        }
+    }
+    if (texture.storageTexture) (void)texture.storageFormat();
+    // Match WebGPUTextureUtils: FloatType stays RGBA32Float, HalfFloatType RGBA16Float; sRGB byte
+    // textures decode before filtering in the GPU, not after filtering in the material/PMREM shader.
+    if (!texture.depthTexture && texture.isFloat() && !wgpuDeviceHasFeature(device_, WGPUFeatureName_Float32Filterable))
+        throw std::runtime_error("TN_NATIVE_TEXTURE_UNSUPPORTED: FloatType requires float32-filterable");
+    MaterialTexture& record = textures_->records[texture.ident.value()];
+    if (record.view != nullptr && record.version == texture.version()) return &record;
+    const MaterialTexture::Key key = materialTextureKey(texture);
+    // three's `needsUpdate` on the same extent writes into the texture that is already here: its view, its
+    // sampler, every bind group that bound them and every recorded bundle stay valid. Releasing the record
+    // instead builds a new texture whose view can reuse the old one's address, so every group and bundle made
+    // for that address is stale — a fog-of-war texture updated 20 times a second rebuilt all of them.
+    if (record.view != nullptr && record.key == key && key.updatesInPlace()) {
+        uploadMaterialTexture(record.texture, texture, key);
+        record.version = texture.version();
+        return &record;
+    }
+    if (record.view) texturesChanged();  // its old view's address may be reused by the new one
+    record.release();
+    if (key.kind != MaterialTexture::kNone) {
+        record.texture = createMaterialTexture(key);
+        if (key.kind != MaterialTexture::kStorage) uploadMaterialTexture(record.texture, texture, key);
         WGPUTextureViewDescriptor view = {};
-        view.dimension = texture.array ? WGPUTextureViewDimension_2DArray : WGPUTextureViewDimension_2D;
-        view.mipLevelCount = levels;
-        view.arrayLayerCount = layers;
-        view.format = format;
+        view.dimension = key.kind == MaterialTexture::kVolume ? WGPUTextureViewDimension_3D
+                        : key.array ? WGPUTextureViewDimension_2DArray : WGPUTextureViewDimension_2D;
+        view.mipLevelCount = key.levels;
+        view.arrayLayerCount = key.array ? key.depth : 1;
+        view.format = key.format;
         record.view = wgpuTextureCreateView(record.texture, &view);
     }
+    record.key = key;
     WGPUSamplerDescriptor sampler = {};
-    sampler.addressModeU = addressMode(texture.wrapS);
-    sampler.addressModeV = addressMode(texture.wrapT);
-    sampler.addressModeW = addressMode(texture.wrapR);
-    sampler.magFilter = filterMode(texture.magFilter);
-    sampler.minFilter = filterMode(texture.minFilter);
-    // NearestMipmapLinear and LinearMipmapLinear blend between two levels, the other filters take one.
-    sampler.mipmapFilter = texture.minFilter == static_cast<uint16_t>(TextureFilter::NearestMipmapLinear) ||
-                                   texture.minFilter == static_cast<uint16_t>(TextureFilter::LinearMipmapLinear)
-                               ? WGPUMipmapFilterMode_Linear : WGPUMipmapFilterMode_Nearest;
-    sampler.lodMaxClamp = 32;  // a zeroed C descriptor clamps the level of detail to 0, which hides the chain
-    // WebGPUTextureUtils: anisotropy only when every filter is linear; WebGPU clamps it to 16.
-    sampler.maxAnisotropy = sampler.magFilter == WGPUFilterMode_Linear && sampler.minFilter == WGPUFilterMode_Linear &&
-                                    sampler.mipmapFilter == WGPUMipmapFilterMode_Linear
-                                ? static_cast<uint16_t>(std::min(texture.anisotropy, 16.0))
-                                : 1;
+    if (key.kind == MaterialTexture::kDepth) {
+        sampler.compare = WGPUCompareFunction_LessEqual;
+        sampler.maxAnisotropy = 1;
+    } else {
+        sampler.addressModeU = addressMode(texture.wrapS);
+        sampler.addressModeV = addressMode(texture.wrapT);
+        sampler.addressModeW = addressMode(texture.wrapR);
+        sampler.magFilter = filterMode(texture.magFilter);
+        sampler.minFilter = filterMode(texture.minFilter);
+        // NearestMipmapLinear and LinearMipmapLinear blend between two levels, the other filters take one.
+        sampler.mipmapFilter = texture.minFilter == static_cast<uint16_t>(TextureFilter::NearestMipmapLinear) ||
+                                       texture.minFilter == static_cast<uint16_t>(TextureFilter::LinearMipmapLinear)
+                                   ? WGPUMipmapFilterMode_Linear : WGPUMipmapFilterMode_Nearest;
+        sampler.lodMaxClamp = 32;  // a zeroed C descriptor clamps the level of detail to 0, which hides the chain
+        // WebGPUTextureUtils: anisotropy only when every filter is linear; WebGPU clamps it to 16.
+        sampler.maxAnisotropy = sampler.magFilter == WGPUFilterMode_Linear && sampler.minFilter == WGPUFilterMode_Linear &&
+                                        sampler.mipmapFilter == WGPUMipmapFilterMode_Linear
+                                    ? static_cast<uint16_t>(std::min(texture.anisotropy, 16.0))
+                                    : 1;
+    }
     record.sampler = samplerFor(sampler);
     record.version = texture.version();
     return &record;
@@ -1861,11 +2093,16 @@ void Renderer::sweepTextures() {
             dropGroups();
             if (envPrep_ && envPrep_->ident == id) abandonEnvironment();  // a disposed source never publishes
             EnvironmentGpu& e = env->second;
+            for (WGPUTextureView view : e.targetViews)
+                if (view) wgpuTextureViewRelease(view);
+            for (WGPUTextureView view : e.sourceViews)
+                if (view) wgpuTextureViewRelease(view);
             if (e.view) wgpuTextureViewRelease(e.view);
-            if (e.pingView) wgpuTextureViewRelease(e.pingView);
+            if (e.sourceView) wgpuTextureViewRelease(e.sourceView);
             if (e.texture) wgpuTextureRelease(e.texture);
-            if (e.pingpong) wgpuTextureRelease(e.pingpong);
+            if (e.sourceCube) wgpuTextureRelease(e.sourceCube);
             if (e.sampler) wgpuSamplerRelease(e.sampler);
+            if (e.blitSampler) wgpuSamplerRelease(e.blitSampler);
             environments_.erase(env);
         }
         if (const auto record = textures_->records.find(id); record != textures_->records.end()) {
@@ -1879,64 +2116,66 @@ void Renderer::sweepTextures() {
 void Renderer::releaseEnvironments() {
     abandonEnvironment();  // release the in-flight packet's bind group before the shared buffers go
     for (auto& [texture, env] : environments_) {
+        for (WGPUTextureView view : env.targetViews)
+            if (view) wgpuTextureViewRelease(view);
+        for (WGPUTextureView view : env.sourceViews)
+            if (view) wgpuTextureViewRelease(view);
         if (env.view) wgpuTextureViewRelease(env.view);
-        if (env.pingView) wgpuTextureViewRelease(env.pingView);
+        if (env.sourceView) wgpuTextureViewRelease(env.sourceView);
         if (env.texture) wgpuTextureRelease(env.texture);
-        if (env.pingpong) wgpuTextureRelease(env.pingpong);
+        if (env.sourceCube) wgpuTextureRelease(env.sourceCube);
         if (env.sampler) wgpuSamplerRelease(env.sampler);
+        if (env.blitSampler) wgpuSamplerRelease(env.blitSampler);
     }
     environments_.clear();
     if (envEquirectPipeline_) wgpuRenderPipelineRelease(envEquirectPipeline_);
+    if (envMipPipeline_) wgpuRenderPipelineRelease(envMipPipeline_);
     if (envGgxPipeline_) wgpuRenderPipelineRelease(envGgxPipeline_);
+    if (envIntegrationPipeline_) wgpuRenderPipelineRelease(envIntegrationPipeline_);
     if (envPipelineLayout_) wgpuPipelineLayoutRelease(envPipelineLayout_);
+    if (envCubePipelineLayout_) wgpuPipelineLayoutRelease(envCubePipelineLayout_);
     if (envLayout_) wgpuBindGroupLayoutRelease(envLayout_);
-    envEquirectPipeline_ = envGgxPipeline_ = nullptr;
-    envPipelineLayout_ = nullptr;
-    envLayout_ = nullptr;
+    if (envCubeLayout_) wgpuBindGroupLayoutRelease(envCubeLayout_);
+    envEquirectPipeline_ = envMipPipeline_ = envGgxPipeline_ = envIntegrationPipeline_ = nullptr;
+    envPipelineLayout_ = envCubePipelineLayout_ = nullptr;
+    envLayout_ = envCubeLayout_ = nullptr;
 }
 
 void Renderer::buildEnvironmentPipelines() {
     if (envGgxPipeline_) return;
-    WGPUBindGroupLayoutEntry entries[3] = {};
-    entries[0].binding = 0;
-    entries[0].visibility = WGPUShaderStage_Vertex | WGPUShaderStage_Fragment;
-    entries[0].buffer.type = WGPUBufferBindingType_Uniform;
-    entries[0].buffer.minBindingSize = 32;
-    entries[1].binding = 1;
-    entries[1].visibility = WGPUShaderStage_Fragment;
-    entries[1].texture.sampleType = WGPUTextureSampleType_Float;
-    entries[1].texture.viewDimension = WGPUTextureViewDimension_2D;
-    entries[2].binding = 2;
-    entries[2].visibility = WGPUShaderStage_Fragment;
-    entries[2].sampler.type = WGPUSamplerBindingType_Filtering;
-    WGPUBindGroupLayoutDescriptor layoutDesc = {};
-    layoutDesc.entryCount = 3;
-    layoutDesc.entries = entries;
-    envLayout_ = wgpuDeviceCreateBindGroupLayout(device_, &layoutDesc);
+    // Every pass binds the packet's uniform slice, the source texture and a sampler; the source is a
+    // 2D view of the equirect shape (the conversion, the mip chain) or the cube (the GGX convolution,
+    // the integration tail), and the two cannot share a layout.
+    const auto makeLayout = [&](WGPUTextureViewDimension dimension) {
+        WGPUBindGroupLayoutEntry entries[3] = {};
+        entries[0].binding = 0;
+        entries[0].visibility = WGPUShaderStage_Vertex | WGPUShaderStage_Fragment;
+        entries[0].buffer.type = WGPUBufferBindingType_Uniform;
+        entries[0].buffer.minBindingSize = kEnvUniformSize;
+        entries[1].binding = 1;
+        entries[1].visibility = WGPUShaderStage_Fragment;
+        entries[1].texture.sampleType = WGPUTextureSampleType_Float;
+        entries[1].texture.viewDimension = dimension;
+        entries[2].binding = 2;
+        entries[2].visibility = WGPUShaderStage_Fragment;
+        entries[2].sampler.type = WGPUSamplerBindingType_Filtering;
+        WGPUBindGroupLayoutDescriptor layoutDesc = {};
+        layoutDesc.entryCount = 3;
+        layoutDesc.entries = entries;
+        return wgpuDeviceCreateBindGroupLayout(device_, &layoutDesc);
+    };
+    envLayout_ = makeLayout(WGPUTextureViewDimension_2D);
+    envCubeLayout_ = makeLayout(WGPUTextureViewDimension_Cube);
     WGPUPipelineLayoutDescriptor pipelineLayoutDesc = {};
     pipelineLayoutDesc.bindGroupLayoutCount = 1;
     pipelineLayoutDesc.bindGroupLayouts = &envLayout_;
     envPipelineLayout_ = wgpuDeviceCreatePipelineLayout(device_, &pipelineLayoutDesc);
+    pipelineLayoutDesc.bindGroupLayouts = &envCubeLayout_;
+    envCubePipelineLayout_ = wgpuDeviceCreatePipelineLayout(device_, &pipelineLayoutDesc);
 
-    WGPUVertexAttribute attributes[3] = {};
-    attributes[0].format = WGPUVertexFormat_Float32x3;
-    attributes[0].offset = 0;
-    attributes[0].shaderLocation = 0;
-    attributes[1].format = WGPUVertexFormat_Float32x2;
-    attributes[1].offset = 12;
-    attributes[1].shaderLocation = 1;
-    attributes[2].format = WGPUVertexFormat_Float32;
-    attributes[2].offset = 20;
-    attributes[2].shaderLocation = 2;
-    WGPUVertexBufferLayout vertexBuffer = {};
-    vertexBuffer.arrayStride = 24;
-    vertexBuffer.stepMode = WGPUVertexStepMode_Vertex;
-    vertexBuffer.attributeCount = 3;
-    vertexBuffer.attributes = attributes;
-
-    auto pipeline = [&](const char* fragment) {
-        std::string code = kPmremPrelude;
-        code += fragment;
+    // WebGPUTexturePassUtils' faces are one oversized triangle (`@builtin(vertex_index)`), so none of
+    // these passes reads a vertex buffer.
+    auto pipeline = [&](const std::string& code, WGPUPipelineLayout layout) {
         WGPUShaderModuleWGSLDescriptor_Compat wgsl = {};
         WGPUShaderModuleDescriptor shaderDesc = {};
         setupShaderModuleWGSL(&shaderDesc, &wgsl, code.c_str());
@@ -1950,11 +2189,9 @@ void Renderer::buildEnvironmentPipelines() {
         fragmentState.targetCount = 1;
         fragmentState.targets = &color;
         WGPURenderPipelineDescriptor desc = {};
-        desc.layout = envPipelineLayout_;
+        desc.layout = layout;
         desc.vertex.module = module;
         WGPU_SET_ENTRY_POINT(desc.vertex, "vs");
-        desc.vertex.bufferCount = 1;
-        desc.vertex.buffers = &vertexBuffer;
         desc.primitive.topology = WGPUPrimitiveTopology_TriangleList;
         desc.primitive.cullMode = WGPUCullMode_None;
         desc.primitive.frontFace = WGPUFrontFace_CCW;
@@ -1965,13 +2202,17 @@ void Renderer::buildEnvironmentPipelines() {
         wgpuShaderModuleRelease(module);
         return created;
     };
-    envEquirectPipeline_ = pipeline(kPmremEquirect);
-    envGgxPipeline_ = pipeline(kPmremGgx);
+    const std::string prelude = kPmremPrelude;
+    envEquirectPipeline_ = pipeline(prelude + kPmremEquirect, envPipelineLayout_);
+    envMipPipeline_ = pipeline(prelude + kPmremMip, envPipelineLayout_);
+    envGgxPipeline_ = pipeline(prelude + kPmremGgx, envCubePipelineLayout_);
+    envIntegrationPipeline_ = pipeline(prelude + kPmremIntegration, envCubePipelineLayout_);
 }
 
-// One face of a pass: its viewport spans the 3x2 face layout; the GGX filter takes 512 samples.
+// One face in fragment samples: a GGX face reads 256 source taps a pixel, an integration face every
+// texel of a 16px mip over three faces, the equirect conversion four taps, a mip chain step one.
 uint64_t Renderer::pmremPacketCost(const PmremPacket& packet) {
-    return uint64_t(packet.w / 3.0f) * uint64_t(packet.h / 2.0f) * (packet.roughness > 0.0f ? 512u : 1u);
+    return uint64_t(packet.width) * uint64_t(packet.height) * packet.samples;
 }
 
 void Renderer::beginEnvironment(const Texture& equirect) {
@@ -1983,149 +2224,170 @@ void Renderer::beginEnvironment(const Texture& equirect) {
         throw std::runtime_error("TN_NATIVE_ENVIRONMENT_INVALID: requires decoded RGBA equirectangular pixels, width >= 64");
     abandonEnvironment();  // one active preparation globally: envUniforms_ is shared
     EnvironmentGpu& env = environments_[equirect.ident.value()];
+    for (WGPUTextureView view : env.targetViews)
+        if (view) wgpuTextureViewRelease(view);
+    for (WGPUTextureView view : env.sourceViews)
+        if (view) wgpuTextureViewRelease(view);
     if (env.view) wgpuTextureViewRelease(env.view);
-    if (env.pingView) wgpuTextureViewRelease(env.pingView);
+    if (env.sourceView) wgpuTextureViewRelease(env.sourceView);
     if (env.texture) wgpuTextureRelease(env.texture);
-    if (env.pingpong) wgpuTextureRelease(env.pingpong);
+    if (env.sourceCube) wgpuTextureRelease(env.sourceCube);
     if (env.sampler) wgpuSamplerRelease(env.sampler);
+    if (env.blitSampler) wgpuSamplerRelease(env.blitSampler);
     env = EnvironmentGpu{};
     env.source = &equirect;
     env.version = equirect.version();
     env.ready = false;  // a re-bake never reads as ready until its last packet completes
     const MaterialTexture* source = materialTexture(equirect);
     if (source->view == nullptr) throw std::runtime_error("TN_NATIVE_ENVIRONMENT_UPLOAD_FAILED");
-    // three's _setSizeFromTexture: an equirect's cube size is image.width / 4.
+    // PMREMGenerator._setSize (:344): an equirect's cube size is image.width / 4, floored to a power
+    // of two and no smaller than MIN_SIZE (:29), so a 64x32 sky is upsampled to a 256 cube.
     uint32_t cubeSize = std::max(equirect.width / 4, 1u);
-    uint32_t lodMax = 0;
-    while ((2u << lodMax) <= cubeSize) ++lodMax;
-    cubeSize = 1u << lodMax;
+    uint32_t sizeLog2 = 0;
+    while ((2u << sizeLog2) <= cubeSize) ++sizeLog2;
+    cubeSize = std::max(1u << sizeLog2, kPmremMinSize);
     env.cubeSize = cubeSize;
-    env.lodMax = lodMax;
-    env.lods = lodMax - 4 + 1 + 6;  // LOD_MIN=4, EXTRA_LOD_SIGMA.length=6 in pinned PMREMGenerator
-    // _createPlanes computes positions and each LOD's expanded UVs in JS doubles, then stores
-    // Float32Arrays. Expanding base UVs in the vertex shader adds a second, different f32 rounding.
-    std::vector<float> data;
-    data.reserve(env.lods * 36 * 6);
-    static const unsigned kFaceLib[6] = {3, 1, 5, 0, 4, 2};
-    for (uint32_t i = 0; i < env.lods; ++i) {
-        const double size = double(1u << std::max(int(lodMax) - int(i), 4));
-        const double texelSize = 1.0 / (size - 2);
-        const float min = float(-texelSize), max = float(1.0 + texelSize);
-        const float uv[6][2] = {{min, min}, {max, min}, {max, max}, {min, min}, {max, max}, {min, max}};
-        std::array<float, 36 * 6> vertices{};
-        for (unsigned face = 0; face < 6; ++face) {
-            const double x = double(face % 3) * 2.0 / 3.0 - 1.0;
-            const double y = face > 2 ? 0.0 : -1.0;
-            const double coordinates[6][3] = {{x, y, 0}, {x + 2.0 / 3.0, y, 0}, {x + 2.0 / 3.0, y + 1, 0},
-                                              {x, y, 0}, {x + 2.0 / 3.0, y + 1, 0}, {x, y + 1, 0}};
-            const unsigned faceIdx = kFaceLib[face];
-            for (unsigned v = 0; v < 6; ++v) {
-                const unsigned offset = (faceIdx * 6 + v) * 6;
-                for (unsigned c = 0; c < 3; ++c) vertices[offset + c] = float(coordinates[v][c]);
-                vertices[offset + 3] = uv[v][0];
-                vertices[offset + 4] = uv[v][1];
-                vertices[offset + 5] = float(faceIdx);
+    // _allocateTarget (:371): one mip per roughness step, the roughest LOD_MIN steps down from the
+    // face size (256 -> mips 0..5 at 256, 128, 64, 32, 16, 8).
+    env.maxLod = std::max(uint32_t(std::bit_width(cubeSize) - 1), kPmremLodMin) - kPmremLodMin;
+    const uint32_t sourceMips = uint32_t(std::bit_width(cubeSize) - 1) + 1;
+    const float sourceLod = float(std::bit_width(cubeSize) - 1 - uint32_t(std::bit_width(kPmremIntegrationSize) - 1));
+
+    // The cube three renders into and filters from (HalfFloatType, LinearMipmapLinearFilter, a full
+    // mip chain: the GGX convolution reads it at the lod each sample's solid angle needs).
+    const auto createCube = [&](uint32_t mipLevels) {
+        WGPUTextureDescriptor desc = {};
+        desc.dimension = WGPUTextureDimension_2D;
+        desc.size = {cubeSize, cubeSize, 6};
+        desc.format = WGPUTextureFormat_RGBA16Float;
+        desc.mipLevelCount = mipLevels;
+        desc.sampleCount = 1;
+        desc.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding;
+        return wgpuDeviceCreateTexture(device_, &desc);
+    };
+    env.texture = createCube(env.maxLod + 1);
+    env.sourceCube = createCube(sourceMips);
+    const auto cubeView = [&](WGPUTexture texture, uint32_t mips) {
+        WGPUTextureViewDescriptor desc = {};
+        desc.dimension = WGPUTextureViewDimension_Cube;
+        desc.arrayLayerCount = 6;
+        desc.mipLevelCount = mips;
+        return wgpuTextureCreateView(texture, &desc);
+    };
+    env.view = cubeView(env.texture, env.maxLod + 1);
+    env.sourceView = cubeView(env.sourceCube, sourceMips);
+    // One 2D view per face of each mip, the attachment a pass renders into.
+    const auto faceViews = [](WGPUTexture texture, uint32_t mips) {
+        std::vector<WGPUTextureView> views;
+        views.reserve(size_t(mips) * 6);
+        for (uint32_t mip = 0; mip < mips; ++mip)
+            for (uint32_t face = 0; face < 6; ++face) {
+                WGPUTextureViewDescriptor desc = {};
+                desc.dimension = WGPUTextureViewDimension_2D;
+                desc.baseMipLevel = mip;
+                desc.mipLevelCount = 1;
+                desc.baseArrayLayer = face;
+                desc.arrayLayerCount = 1;
+                views.push_back(wgpuTextureCreateView(texture, &desc));
             }
-        }
-        data.insert(data.end(), vertices.begin(), vertices.end());
-    }
-    const uint64_t vertexBytes = data.size() * sizeof(float);
-    if (envVertex_.type == 0 || envVertexCapacity_ < vertexBytes) {
-        if (envVertex_.type != 0) gpu_.destroy(envVertex_);
-        envVertexCapacity_ = vertexBytes;
-        envVertex_ = gpu_.createBuffer(vertexBytes, WGPUBufferUsage_Vertex | WGPUBufferUsage_CopyDst);
-    }
-    gpu_.writeBuffer(envVertex_, 0, data.data(), vertexBytes);
-    const uint32_t width = 3 * std::max(cubeSize, 112u);
-    const uint32_t height = 4 * cubeSize;
-    env.width = width;
-    env.height = height;
-    env.texelWidth = 1.0f / float(width);
-    env.texelHeight = 1.0f / float(height);
-    env.maxMip = float(lodMax);
-    WGPUTextureDescriptor target = {};
-    target.dimension = WGPUTextureDimension_2D;
-    target.size = {width, height, 1};
-    target.format = WGPUTextureFormat_RGBA16Float;
-    target.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding;
-    target.mipLevelCount = 1;
-    target.sampleCount = 1;
-    env.texture = wgpuDeviceCreateTexture(device_, &target);
-    env.pingpong = wgpuDeviceCreateTexture(device_, &target);
-    env.view = view2d(env.texture, WGPUTextureFormat_RGBA16Float);
-    env.pingView = view2d(env.pingpong, WGPUTextureFormat_RGBA16Float);
-    WGPUSamplerDescriptor sampler = {};
-    sampler.magFilter = sampler.minFilter = WGPUFilterMode_Linear;
-    sampler.addressModeU = sampler.addressModeV = sampler.addressModeW = WGPUAddressMode_ClampToEdge;
-    sampler.maxAnisotropy = 1;
-    env.sampler = wgpuDeviceCreateSampler(device_, &sampler);
+        return views;
+    };
+    env.targetViews = faceViews(env.texture, env.maxLod + 1);
+    env.sourceViews = faceViews(env.sourceCube, sourceMips);
+
+    // Both cubes are read through a trilinear clamp sampler with the whole chain reachable:
+    // CubeRenderTarget's LinearMipmapLinearFilter, and a zeroed C descriptor would clamp lod to 0.
+    const auto sampler = [&](WGPUMipmapFilterMode mipmap) {
+        WGPUSamplerDescriptor desc = {};
+        desc.magFilter = desc.minFilter = WGPUFilterMode_Linear;
+        desc.mipmapFilter = mipmap;
+        desc.addressModeU = desc.addressModeV = desc.addressModeW = WGPUAddressMode_ClampToEdge;
+        desc.maxAnisotropy = 1;
+        desc.lodMaxClamp = 32;
+        return wgpuDeviceCreateSampler(device_, &desc);
+    };
+    env.sampler = sampler(WGPUMipmapFilterMode_Linear);
+    env.blitSampler = sampler(WGPUMipmapFilterMode_Nearest);
     buildEnvironmentPipelines();
 
-    // Every pass's uniform slice, then the passes themselves.
+    // Three's order: the equirect becomes the source cube's level 0, the source cube grows its mip
+    // chain, then every PMREM mip is filtered from it. Each is one face of one target per packet.
     struct Pass {
         WGPUTextureView target;
         WGPUTextureView source;
         WGPUSampler sampler;
         WGPURenderPipeline pipeline;
-        float x, y, w, h;
-        float roughness, mipInt;
-        uint64_t vertexOffset;
+        uint32_t size;
+        uint32_t samples;
+        float roughness, lodBias, sourceLod;
+        uint32_t face;
     };
     std::vector<Pass> passes;
-    passes.push_back({env.view, source->view, source->sampler, envEquirectPipeline_, 0, 0,
-                      float(3 * cubeSize), float(2 * cubeSize), 0.0f, 0.0f, 0});
-    int lod = int(lodMax);
-    for (int i = 1; i < int(env.lods); ++i) {
-        if (lod > 4) --lod;
-        const float size = float(1u << lod);
-        // _applyGGXFilter computes these in JavaScript doubles and rounds once, on upload to f32.
-        const double targetRoughness = double(i) / double(env.lods - 1);
-        const double sourceRoughness = double(i - 1) / double(env.lods - 1);
-        const double incremental = std::sqrt(targetRoughness * targetRoughness - sourceRoughness * sourceRoughness);
-        const float adjusted = float(incremental * (0.0 + targetRoughness * 1.25));
-        const float x = 3.0f * size * float(i > int(lodMax) - 4 ? i - int(lodMax) + 4 : 0);
-        const float y = 4.0f * float(cubeSize - unsigned(size));
-        // Render the GGX result into the ping-pong, then copy it back (roughness 0).
-        passes.push_back({env.pingView, env.view, env.sampler, envGgxPipeline_, x, y, 3.0f * size, 2.0f * size,
-                          adjusted, shader::pmremMip(lodMax, i - 1), uint64_t(i) * 36 * 24});
-        passes.push_back({env.view, env.pingView, env.sampler, envGgxPipeline_, x, y, 3.0f * size, 2.0f * size,
-                          0.0f, shader::pmremMip(lodMax, i), uint64_t(i) * 36 * 24});
+    passes.reserve(6 + 6 * (size_t(sourceMips) - 1) + 6 * size_t(env.maxLod + 1));
+    for (uint32_t face = 0; face < 6; ++face)
+        passes.push_back({env.sourceViews[face], source->view, source->sampler, envEquirectPipeline_,
+                          cubeSize, 4, 0.0f, 0.0f, 0.0f, face});
+    for (uint32_t mip = 1; mip < sourceMips; ++mip) {
+        const uint32_t size = cubeSize >> mip;
+        for (uint32_t face = 0; face < 6; ++face)
+            passes.push_back({env.sourceViews[size_t(mip) * 6 + face], env.sourceViews[size_t(mip - 1) * 6 + face],
+                              env.blitSampler, envMipPipeline_, size, 1, 0.0f, 0.0f, 0.0f, face});
     }
-    const uint64_t stride = aligned(32);
+    for (uint32_t lod = 0; lod <= env.maxLod; ++lod) {
+        // lodToRoughness (:336): 1 - sqrt(1 - lod/maxLod); the last INTEGRATION_LEVELS integrate a
+        // 16px source mip instead of importance sampling. lodBias (:514) matches the source texel
+        // solid angle to 1 / (GGX_SAMPLES * pdf), with a half-mip bias against sampling noise.
+        const float roughness = float(1.0 - std::sqrt(1.0 - double(lod) / double(env.maxLod)));
+        const bool integrate = lod > env.maxLod - kPmremIntegrationLevels;
+        const double bias = roughness > 0.0f
+            ? std::log2(double(cubeSize)) + 0.5 * std::log2(6.0 / (kPmremGgxSamples * std::pow(double(roughness), 4.0))) + 0.5
+            : 0.0;
+        const uint32_t size = cubeSize >> lod;
+        for (uint32_t face = 0; face < 6; ++face)
+            passes.push_back({env.targetViews[size_t(lod) * 6 + face], env.sourceView, env.sampler,
+                              integrate ? envIntegrationPipeline_ : envGgxPipeline_, size,
+                              integrate ? kPmremIntegrationSize * kPmremIntegrationSize * 3u : kPmremGgxSamples,
+                              roughness, float(bias), sourceLod, face});
+    }
+
+    const uint64_t stride = aligned(kEnvUniformSize);
     const uint64_t total = stride * passes.size();
     if (envUniforms_.type == 0 || envUniformCapacity_ < total) {
         if (envUniforms_.type != 0) gpu_.destroy(envUniforms_);
         envUniformCapacity_ = std::max<uint64_t>(total, 4096);
         envUniforms_ = gpu_.createBuffer(envUniformCapacity_, WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
     }
+    // PMREMGenerator's material draws a 5x5x5 box from inside: the face's direction is the box
+    // position, which is CubeCamera's view matrix applied to the ray through the face texel
+    // (backgroundCube's rotations, so both cubes share one orientation).
+    const Vector3 directions[6] = {{-1, 0, 0}, {1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
+    const Vector3 ups[6] = {{0, -1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}, {0, -1, 0}, {0, -1, 0}};
+    std::array<Matrix4, 6> rotations;
+    for (uint32_t face = 0; face < 6; ++face) rotations[face].lookAt(Vector3{}, directions[face], ups[face]);
     std::vector<float> uniforms(envUniformCapacity_ / 4, 0.0f);
     for (std::size_t p = 0; p < passes.size(); ++p) {
         float* slice = uniforms.data() + (p * stride) / 4;
         slice[0] = passes[p].roughness;
-        slice[1] = passes[p].mipInt;
-        slice[2] = env.texelWidth;
-        slice[3] = env.texelHeight;
-        slice[4] = env.maxMip;
+        slice[1] = passes[p].lodBias;
+        slice[2] = passes[p].sourceLod;
+        for (uint32_t c = 0; c < 16; ++c) slice[4 + c] = float(rotations[passes[p].face].elements[c]);
     }
     gpu_.writeBuffer(envUniforms_, 0, uniforms.data(), uniforms.size() * 4);
 
-    // Retain every full-quality pass/face packet; pumpEnvironment submits one cost-bounded group per
-    // call, only after the previous group's completion serial is observed. Never enqueue them all.
+    // Retain every full-quality packet; pumpEnvironment submits one cost-bounded group per call,
+    // only after the previous group's completion serial is observed. Never enqueue them all.
     EnvironmentPreparation prep;
     prep.ident = equirect.ident.value();
     prep.version = env.version;
     prep.source = &equirect;
     prep.stride = stride;
-    prep.packets.reserve(passes.size() * 6);
+    prep.packets.reserve(passes.size());
     for (std::size_t p = 0; p < passes.size(); ++p)
-        for (uint32_t face = 0; face < 6; ++face)
-            prep.packets.push_back({passes[p].target, passes[p].source, passes[p].sampler, passes[p].pipeline,
-                                    passes[p].x, passes[p].y, passes[p].w, passes[p].h, passes[p].roughness,
-                                    passes[p].mipInt, passes[p].vertexOffset, uint32_t(p), face, p == 0 && face == 0});
+        prep.packets.push_back({passes[p].target, passes[p].source, passes[p].sampler, passes[p].pipeline,
+                                passes[p].size, passes[p].size, passes[p].samples, uint32_t(p)});
     for (const PmremPacket& packet : prep.packets) prep.budget = std::max(prep.budget, pmremPacketCost(packet));
     envPrep_ = std::move(prep);
 }
-
 void Renderer::abandonEnvironment() {
     if (!envPrep_) return;
     if (envPrep_->group) wgpuBindGroupRelease(envPrep_->group);
@@ -2157,29 +2419,32 @@ bool Renderer::pumpEnvironment() {
     do {
     const PmremPacket& packet = prep.packets[prep.next];
     spent += pmremPacketCost(packet);
-    if (prep.groupPass != packet.pass) {
+    if (prep.groupUniform != packet.uniform) {
         if (prep.group) wgpuBindGroupRelease(prep.group);
+        // The uniform carries this face's rotation, so every packet has its own slice and group; the
+        // source's view dimension picks which layout the packet's pipeline was built against.
         WGPUBindGroupEntry entries[3] = {};
         entries[0].binding = 0;
         entries[0].buffer = gpu_.buffer(envUniforms_);
-        entries[0].offset = packet.pass * prep.stride;
-        entries[0].size = 32;
+        entries[0].offset = packet.uniform * prep.stride;
+        entries[0].size = kEnvUniformSize;
         entries[1].binding = 1;
         entries[1].textureView = packet.source;
         entries[2].binding = 2;
         entries[2].sampler = packet.sampler;
         WGPUBindGroupDescriptor groupDesc = {};
-        groupDesc.layout = envLayout_;
+        groupDesc.layout = packet.pipeline == envEquirectPipeline_ || packet.pipeline == envMipPipeline_
+                               ? envLayout_ : envCubeLayout_;
         groupDesc.entryCount = 3;
         groupDesc.entries = entries;
         prep.group = createBindGroup(device_, &groupDesc);
-        prep.groupPass = packet.pass;
+        prep.groupUniform = packet.uniform;
     }
     WGPUCommandEncoderDescriptor encoderDesc = {};
     WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(device_, &encoderDesc);
     WGPURenderPassColorAttachment color = {};
     color.view = packet.target;
-    color.loadOp = packet.clear ? WGPULoadOp_Clear : WGPULoadOp_Load;
+    color.loadOp = WGPULoadOp_Clear;  // every packet writes a whole face, and nothing else writes it
     color.storeOp = WGPUStoreOp_Store;
     color.clearValue = {0, 0, 0, 1};
 #if defined(MYSTRAL_WEBGPU_DAWN)
@@ -2189,12 +2454,9 @@ bool Renderer::pumpEnvironment() {
     passDesc.colorAttachmentCount = 1;
     passDesc.colorAttachments = &color;
     WGPURenderPassEncoder pass = beginTimedRenderPass(encoder, &passDesc);
-    wgpuRenderPassEncoderSetViewport(pass, packet.x, packet.y, packet.w, packet.h, 0.0f, 1.0f);
-    wgpuRenderPassEncoderSetScissorRect(pass, uint32_t(packet.x), uint32_t(packet.y), uint32_t(packet.w), uint32_t(packet.h));
     wgpuRenderPassEncoderSetPipeline(pass, packet.pipeline);
     wgpuRenderPassEncoderSetBindGroup(pass, 0, prep.group, 0, nullptr);
-    wgpuRenderPassEncoderSetVertexBuffer(pass, 0, gpu_.buffer(envVertex_), packet.vertexOffset, 36 * 24);
-    wgpuRenderPassEncoderDraw(pass, 6, 1, packet.face * 6, 0);
+    wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0);  // one oversized triangle covers the face
     wgpuRenderPassEncoderEnd(pass);
     wgpuRenderPassEncoderRelease(pass);
     WGPUCommandBufferDescriptor commandDesc = {};
@@ -2301,13 +2563,17 @@ void Renderer::buildLayouts(Program& program, const std::string& key) {
         for (int field = 0; field < kLightFieldCount; ++field)
             if (f.name.compare(end, std::string::npos, kLightFieldNames[field]) == 0) program.lightSlots[index][field] = &f;
     }
+    // FM3: what the stage modules alone decide about a draw of this program, resolved once here beside the
+    // slots above. A program is immutable once built, so every draw of every pass of every frame reads these
+    // instead of scanning the bindings again (perDrawFragment and its siblings).
+    program.probes = {perDrawFragment(program.fragment), perDrawVertex(program.vertex), readsViewport(program.fragment),
+                      readsPostTexture(program.fragment)};
 }
 
-Renderer::Program* Renderer::program(MaterialKind kind, const shader::VertexVariant& vv, const std::string& lights,
-                                     bool softShadows) {
+Renderer::Program* Renderer::program(MaterialKind kind, const shader::VertexVariant& vv, const std::string& lights) {
     ++programKeyBuilds_;
     ++programLookups_;
-    const std::string key = std::to_string(static_cast<int>(kind)) + "|" + vv.key() + "|" + lights + (softShadows ? "|soft" : "");
+    const std::string key = std::to_string(static_cast<int>(kind)) + "|" + vv.key() + "|" + lights;
     const auto refuse = [&](const std::string& reason) -> Program* {
         if (std::find(diagnostics_.begin(), diagnostics_.end(), reason) == diagnostics_.end()) diagnostics_.push_back(reason);
         return nullptr;
@@ -2326,7 +2592,7 @@ Renderer::Program* Renderer::program(MaterialKind kind, const shader::VertexVari
         if (backgroundNode) throw std::runtime_error(message);
         return refuse(message);
     };
-    const shader::LightLayout layout{lights, softShadows};
+    const shader::LightLayout layout{lights};
     shader::StandardPrograms source;
     try {
         switch (kind) {
@@ -2353,7 +2619,7 @@ Renderer::Program* Renderer::program(MaterialKind kind, const shader::VertexVari
         return refuseBuild(errors.empty() ? "no reason" : errors.front());
     }
     Program& built = add(key, std::move(vertex), std::move(fragment));
-    built.kind = kind; built.variant = vv; built.lightKinds = lights; built.softShadows = softShadows;
+    built.kind = kind; built.variant = vv; built.lightKinds = lights;
     return &built;
 }
 
@@ -2399,7 +2665,7 @@ const shader::StageModule* Renderer::auxFragment(Program& program, uint8_t mask)
     if (program.auxBuilt >> mask & 1u) return program.aux[mask].get();
     program.auxBuilt |= uint16_t(1u << mask);
     const shader::VertexVariant& variant = program.variant;
-    const shader::LightLayout layout{program.lightKinds, program.softShadows};
+    const shader::LightLayout layout{program.lightKinds};
     try {
         shader::StandardPrograms source;
         switch (program.kind) {
@@ -2477,7 +2743,8 @@ Renderer::Program& Renderer::depthProgram(const shader::VertexVariant& variant, 
     // three's shadow pass draws with the default positionNode, the same transform as a basic material.
     const auto source = kind.alphaHash ? shader::buildDepth(kind) : shader::buildBasic(kind);
     shader::StageModule vertex = shader::buildStage(source.vertex, 0);
-    if (!vertex.wgsl.ok()) throw std::runtime_error("TN_NATIVE_SHADER_INVALID: shadow depth program");
+    if (!vertex.wgsl.ok()) throw std::runtime_error("TN_NATIVE_SHADER_INVALID: shadow depth program: " +
+        (vertex.wgsl.errors.empty() ? std::string("no reason") : vertex.wgsl.errors.front()));
     shader::StageModule fragment;
     fragment.stage = shader::Stage::Fragment;
     if (kind.alphaHash) {
@@ -2509,9 +2776,10 @@ Renderer::Program& Renderer::add(const std::string& key, shader::StageModule ver
     }
     buildLayouts(*built, key);
     if (uniformCapacity_ != 0) {
+        const DrawProbes probes = probesOf(*built);
         for (int g = 0; g < 2; ++g) {
-            if (g == 1 && perDrawFragment(built->fragment)) continue;  // per-draw groups instead
-            if (g == 0 && perDrawVertex(built->vertex)) continue;
+            if (g == 1 && probes.fragmentPerDraw) continue;  // per-draw groups instead
+            if (g == 0 && probes.vertexPerDraw) continue;
             built->groups[g] = bindGroup(built->layouts[g], g == 0 ? built->vertex : built->fragment, uniformBuffer_,
                                          lutView_, lutSampler_);
         }
@@ -2527,9 +2795,10 @@ void Renderer::rebuildGroups() {
     ++groupEpoch_;
     for (auto& [key, program] : programs_) {
         if (!program) continue;  // a refused program
+        const DrawProbes probes = probesOf(*program);
         for (int g = 0; g < 2; ++g) {
             if (program->groups[g]) wgpuBindGroupRelease(program->groups[g]);
-            program->groups[g] = (g == 1 && perDrawFragment(program->fragment)) || (g == 0 && perDrawVertex(program->vertex))
+            program->groups[g] = (g == 1 && probes.fragmentPerDraw) || (g == 0 && probes.vertexPerDraw)
                                      ? nullptr
                                      : bindGroup(program->layouts[g], g == 0 ? program->vertex : program->fragment,
                                                  uniformBuffer_, lutView_, lutSampler_);
@@ -2627,6 +2896,47 @@ std::vector<std::pair<double, const DrawItem*>> Renderer::sortDraws(std::span<co
     return opaque;
 }
 
+std::vector<Renderer::ShadowPlanRow> Renderer::shadowPlan() const {
+    std::vector<ShadowPlanRow> rows;
+    if (!job_) return rows;
+    const std::vector<ShadowPass>& passes = job_->shadowPasses;
+    for (std::size_t p = 0; p < passes.size(); ++p) {
+        const ShadowPass& pass = passes[p];
+        for (const Planned& draw : pass.draws) {
+            const DrawItem& item = *draw.item;
+            ShadowPlanRow row;
+            row.pass = p;
+            row.virtualLight = pass.virtualLight; row.virtualLevel = pass.virtualLevel;
+            row.lamp = pass.lamp; row.mover = pass.mover;
+            row.x = pass.x; row.y = pass.y; row.size = pass.size;
+            std::copy(std::begin(pass.view), std::end(pass.view), row.view.begin());
+            std::copy(std::begin(pass.projection), std::end(pass.projection), row.projection.begin());
+            row.key = item.key;
+            row.indices = item.indices;
+            row.instanceCount = item.instanceCount;
+            row.instanceBase = draw.instanceBase;
+            std::copy(std::begin(item.matrixWorld), std::end(item.matrixWorld), row.matrixWorld.begin());
+            row.vertexOffset = draw.vertexOffset; row.fragmentOffset = draw.fragmentOffset;
+            row.vertexBytes = uint32_t(aligned(draw.program->vertex.uniformBlockSize));
+            row.fragmentBytes = draw.fragmentOffset ? uint32_t(aligned(draw.program->fragment.uniformBlockSize)) : 0;
+            if (draw.members != nullptr) {
+                row.members.reserve(draw.memberCount);
+                for (uint32_t m = 0; m < draw.memberCount; ++m) {
+                    ShadowPlanRow::Member member;
+                    member.key = draw.members[m]->key;
+                    std::copy(std::begin(draw.members[m]->matrixWorld), std::end(draw.members[m]->matrixWorld),
+                              member.matrixWorld.begin());
+                    row.members.push_back(member);
+                }
+            } else {
+                row.members.push_back({row.key, row.matrixWorld});
+            }
+            rows.push_back(std::move(row));
+        }
+    }
+    return rows;
+}
+
 uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& camera, const LightState& lights,
                           std::array<double, 4> clear) {
     return renderPrepared(items, camera, lights, clear, nullptr, WGPUTextureFormat_RGBA8Unorm);
@@ -2680,10 +2990,35 @@ std::vector<std::shared_ptr<PipelineCompilation>> Renderer::compileAsync(std::sp
     return compilation;
 }
 
+static std::atomic<bool> cpuMetersOn{true};
+
+void Renderer::setCpuMeters(bool enabled) {
+    cpuMetersOn.store(enabled, std::memory_order_relaxed);
+    waste::meterEnabled().store(enabled, std::memory_order_relaxed);
+}
+bool Renderer::cpuMeters() { return cpuMetersOn.load(std::memory_order_relaxed); }
+
+// A stage opened while the meters are off carries a negative start and adds nothing, so flipping the switch inside a
+// frame never charges the clock's epoch to a stage.
+static double meterStart(bool on) { return on && cpuMetersOn.load(std::memory_order_relaxed) ? meterMs() : -1; }
+
+void Renderer::addCpuStage(CpuStage stage, double started) {
+    if (started < 0) return;
+    cpuStageMs_[stage].store(cpuStageMs_[stage].load(std::memory_order_relaxed) + meterMs() - started, std::memory_order_relaxed);
+}
+
+Renderer::CpuStageMeter::CpuStageMeter(std::atomic<double>& total, bool on) : total(total), started(meterStart(on)) {}
+
+Renderer::CpuStageMeter::~CpuStageMeter() {
+    if (started < 0) return;
+    total.store(total.load(std::memory_order_relaxed) + meterMs() - started, std::memory_order_relaxed);
+}
+
 uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraState& inputCamera,
                                   const LightState& lights, std::array<double, 4> clear,
                                   std::vector<std::shared_ptr<PipelineCompilation>>* compilation,
                                   WGPUTextureFormat outputFormat, bool defer) {
+    const double prepareStarted = meterStart(cpuMetered_);
     FrameGpuTimer::Scope timerScope(compilation ? nullptr : passTimer_.get());
     // One frame in flight per renderer: the game thread may not plan while the encode half is pending or running.
     if (!compilation && (pendingEncode_ || encoding_))
@@ -2723,10 +3058,15 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     if (!compilation) {
         readTraaCounts();
         const auto status = traa_ ? traa_->status() : TraaPass::Status{};
+        if (traa_) {
+            waste::debugAdd(waste::counters().temporalActiveFrames);
+            if (!status.historyValid) waste::debugAdd(waste::counters().temporalInvalidFrames);
+        }
         temporalStatus_ = {traa_ != nullptr, status.historyValid, status.frame, status.jitterX, status.jitterY,
                            traaCounts_->rejected, traaCounts_->clamped, traaCounts_->pixels, traaCounts_->frame};
     }
     const Matrix& view = camera.matrixWorldInverse;
+    ++planSerial_;  // FM2: a program's frame slab is one plan old at most
     geometry_->cache.sweep();  // GPU copies of attributes released since the last frame
     sweepTextures();    // ...and of textures that no longer exist
     // A sibling replaced or released a shared map texture: this renderer's groups may bind its old view.
@@ -2786,56 +3126,33 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
 
     const auto opaque = sortDraws(items, camera, stablePasses_ && stableRows_);
 
+    double stageStarted = meterStart(cpuMetered_);
     // The light layout every lit program this frame is specialized for, in three's light order.
     // Upper case: the light casts a shadow, which a receiving mesh's program reads; a mesh that does
     // not receive shadows takes the lower-case layout, as three keys a program on receiveShadow.
+    DrawCache uncachedBounds;
     std::map<std::size_t, std::vector<shadows::AtlasPage>> virtualPages;
-    std::map<std::size_t, std::map<uint64_t, Box3>> casterBounds;
-    std::map<std::size_t, std::map<uint64_t, double>> casterDiameters;
     for (auto& [i, shadow] : virtualShadows_) {
         if (compilation) continue;
         if (i >= lights.direct.size() || lights.direct[i].kind != DirectLight::Kind::Directional || !lights.direct[i].shadow)
             throw std::runtime_error("TN_VIRTUAL_SHADOW_UNSUPPORTED: requires a shadow-casting directional light");
         const uint32_t mask = lights.direct[i].shadow->layersMask;
-        auto& lightCasterBounds = casterBounds[i];
+        // FS11: one record per draw list position, sized to the frozen list and kept between frames. The two maps
+        // this replaced were rebuilt from scratch every frame: a tree node allocated per caster, an insert per
+        // caster into each, and two descents per draw to rebuild the states.
+        auto& record = casterRecords_[i];
+        record.assign(items.size(), {});
         std::vector<Box3> depthCasters, receivers;
         for (const DrawItem& item : items) {
             if ((!item.castShadow && !item.receiveShadow) || !item.positions || item.instanceCount == 0 || (item.layers & (mask | (1u << 29) | (1u << 28))) == 0) continue;
             // Bind-pose bounds cannot fit a GPU-displaced caster without clipping its shadow.
             if (item.castShadow && shadow.atlas.options().autoDepth &&
-                (item.positionNode || item.nodes.positionNode || item.gpuJoints))
+                (item.positionNode || item.nodes->positionNode || item.gpuJoints))
                 throw std::runtime_error("TN_VIRTUAL_SHADOW_UNSUPPORTED: automatic depth for GPU-deformed casters; supply lightDistance and depthRange");
-            Box3 bounds;
-            if (item.positions->scalar() == Scalar::F32) {
-                for (uint64_t idx = 0; idx + 2 < item.positions->count(); idx += 3) {
-                    float p[3]; item.positions->read(idx * 4, p, sizeof(p));
-                    Vector3 vertex(p[0], p[1], p[2]);
-                    if ((item.boneMatrices || item.morphGeometry) && item.shadowObject) {
-                        const auto* mesh = dynamic_cast<const Mesh*>(item.shadowObject);
-                        if (mesh) mesh->getVertexPosition(idx / 3, vertex);
-                    }
-                    bounds.expandByPoint(vertex);
-                }
-            }
-            Matrix4 model; model.elements = item.matrixWorld;
-            const double localDiameter = bounds.min.distanceTo(bounds.max);
-            double diameter = localDiameter * model.getMaxScaleOnAxis();
-            if (item.instanceMatrices) {
-                Box3 instances;
-                diameter = 0;
-                const auto* matrices = reinterpret_cast<const float*>(static_cast<const BufferStore&>(*item.instanceMatrices).data());
-                for (uint32_t instance = 0; instance < item.instanceCount; ++instance) {
-                    Matrix4 transform;
-                    for (int e = 0; e < 16; ++e) transform.elements[e] = matrices[instance * 16 + e];
-                    Box3 box = bounds; box.applyMatrix4(transform);
-                    instances.unionWith(box);
-                    transform.premultiply(model);
-                    diameter = std::max(diameter, localDiameter * transform.getMaxScaleOnAxis());
-                }
-                bounds = instances;
-            }
-            bounds.applyMatrix4(model);
-            if (item.castShadow) { lightCasterBounds[item.key] = bounds; casterDiameters[i][item.key] = diameter; }
+            const auto& [bounds, diameter] = (item.cache ? *item.cache : uncachedBounds).virtualShadowBounds(item);
+            if (item.castShadow)  // FG1: an uncached draw shares `uncachedBounds`, so it has no per-instance boxes to keep
+                record[std::size_t(&item - items.data())] = CasterRecord{bounds, diameter, true,
+                    item.cache && item.cache->shadowInstanceBoxes.size() == item.instanceCount ? &item.cache->shadowInstanceBoxes : nullptr};
             depthCasters.push_back(bounds);
             if (item.receiveShadow) receivers.push_back(bounds);
         }
@@ -2849,13 +3166,14 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             throw std::runtime_error("TN_VIRTUAL_SHADOW_UNSUPPORTED: PCF radius exceeds page guard texels");
         std::vector<shadows::CasterState> states;
         for (const DrawItem& item : items) {
-            if (!lightCasterBounds.count(item.key)) continue;
+            const CasterRecord& caster = record[std::size_t(&item - items.data())];
+            if (!caster.casts) continue;
             shadows::CasterState state;
-            state.key = item.key; state.bounds = lightCasterBounds.at(item.key);
+            state.key = item.key; state.bounds = caster.bounds;
             state.world.elements = item.matrixWorld;
             state.signature = std::to_string(item.positions->version());
             if (item.instanceMatrices) state.signature += ":" + std::to_string(item.instanceMatrices->version()) + ":" + std::to_string(item.instanceCount);
-            state.deforming = item.positionNode || item.nodes.positionNode || item.boneMatrices || item.morphGeometry;
+            state.deforming = item.positionNode || item.nodes->positionNode || item.boneMatrices || item.morphGeometry;
             state.tracked = (item.layers & (1u << 29)) != 0;
             state.automatic = (item.layers & 1u) != 0;
             const auto& control = *shadow.atlas.options().control;
@@ -2890,6 +3208,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
 
     if (!compilation) virtualCut_ = false;
 
+    addCpuStage(CpuVirtualPages, stageStarted);
     // PRD-650: a lamp's map is as fine as the finest pixel footprint over the visible receivers it
     // lights (shadows/lamp_resolution.h). A shadow.mapSize other than three's 512² is the game's override.
     std::map<std::size_t, uint32_t> lampSizes;
@@ -3069,18 +3388,51 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     std::vector<float>& morphInfluences = storages_["morphInfluences"].data;
     std::vector<float>& instances = storages_["instances"].data;
     std::unordered_map<const DrawItem*, double> instanceBases;
-    // Twenty floats per instance: its matrix, then its colour and a pad. The storage keeps its
-    // elements between frames, so a steady crowd overwrites memory it owns instead of zero-filling
-    // and appending; it is cut to what this frame wrote after the loop.
-    std::size_t written = 0;
+    // Twenty floats per instance: its matrix, then its colour and a pad. TR1: a draw keeps its place from plan to
+    // plan (instanceSlots_), so a depth reorder or a draw that leaves the view moves no other draw's bytes, and the
+    // upload below sends only the bytes that changed. The storage keeps its elements between plans, so a steady
+    // crowd overwrites memory it owns; the shadow rows append past instanceTop_ and the next plan cuts them off.
+    if (planSerial_ % 256 == 0) {  // a place unasked for in a long time goes; when the gaps outweigh the live places, start over
+        uint64_t live = 0;
+        for (auto slot = instanceSlots_.begin(); slot != instanceSlots_.end();) {
+            if (planSerial_ - slot->second.seen > kInstanceSlotPlans) slot = instanceSlots_.erase(slot);
+            else live += (slot++)->second.count;
+        }
+        if (instanceTop_ > 2 * live + 20 * 1024) { instanceSlots_.clear(); instanceTop_ = 0; }
+    }
+    instancePlanned_.clear();
+    instanceDirty_.clear();
+    uint32_t instanceCopies = 0;
     for (const auto& [depth, drawn] : opaque) {
         if (!drawn->instanceMatrices) continue;
-        instanceBases[drawn] = double(written / 4);
-        const auto* matrices = reinterpret_cast<const float*>(static_cast<const BufferStore&>(*drawn->instanceMatrices).data());
-        const auto* colors = drawn->instanceColors ? reinterpret_cast<const float*>(static_cast<const BufferStore&>(*drawn->instanceColors).data()) : nullptr;
-        const std::size_t end = written + std::size_t{drawn->instanceCount} * 20;
-        if (instances.size() < end) instances.resize(end);
-        float* out = instances.data() + written;
+        const uint64_t floats = uint64_t{drawn->instanceCount} * 20;
+        const BufferStore& matrixStore = *drawn->instanceMatrices;
+        const BufferStore* colorStore = drawn->instanceColors;
+        InstanceSlot& slot = instanceSlots_[{matrixStore.id(), colorStore ? colorStore->id() : 0}];
+        bool placed = false;
+        if (slot.count < floats) {  // new, or grown past its place: the last place grows in place, any other takes the end
+            if (slot.count != 0 && slot.offset + slot.count == instanceTop_) {
+                instanceTop_ += floats - slot.count;
+            } else {
+                slot.offset = instanceTop_;
+                instanceTop_ += floats;
+            }
+            slot.count = floats;
+            placed = true;
+        }
+        slot.seen = planSerial_;
+        instanceBases[drawn] = double(slot.offset / 4);
+        // Three's rule: a store whose epoch, write count and version did not move has the bytes it had. A place that
+        // moved or grew has nothing on the GPU yet, so it copies whatever its stamp says.
+        const InstanceStamp stamp{matrixStore.epoch(), matrixStore.writes(), matrixStore.version(),
+                                  colorStore ? colorStore->epoch() : 0, colorStore ? colorStore->writes() : 0,
+                                  colorStore ? colorStore->version() : 0, drawn->instanceCount};
+        instancePlanned_.emplace_back(&slot, stamp);
+        if (!placed && slot.stamped && slot.stamp == stamp) continue;
+        const auto* matrices = reinterpret_cast<const float*>(matrixStore.data());
+        const auto* colors = colorStore ? reinterpret_cast<const float*>(colorStore->data()) : nullptr;
+        if (instances.size() < instanceTop_) instances.resize(instanceTop_);
+        float* out = instances.data() + slot.offset;
         for (uint32_t i = 0; i < drawn->instanceCount; ++i, out += 20) {
             std::memcpy(out, matrices + i * 16, 16 * sizeof(float));
             out[16] = colors ? colors[i * 3] : 1;
@@ -3088,12 +3440,16 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             out[18] = colors ? colors[i * 3 + 2] : 1;
             out[19] = 0;
         }
-        written = end;
+        slot.stamped = false;  // until the upload below has gone through
+        ++instanceCopies;
+        instanceDirty_.emplace_back(slot.offset, floats);
     }
-    instances.resize(written);
+    instances.resize(instanceTop_);
     struct Deform {
         double boneBase = 0, morphBase = 0, morphInfluenceBase = 0, morphVertexCount = 0, morphBaseInfluence = 1;
     };
+    // FrameStats::paletteWrites: the palettes copied above, one per rig, whatever the number of pages that draw it.
+    uint32_t paletteWrites = 0;
     std::unordered_map<const DrawItem*, Deform> deforms;
     std::vector<uint32_t> jointOutputs(jointPrefix ? gpuJoints_->rigs.size() : 0, UINT32_MAX);
     uint32_t jointWritten = 0;
@@ -3112,9 +3468,11 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 };
                 if (drawn->gpuJointRigs.empty()) place(drawn->gpuJointRig);
                 else for (uint32_t rig : drawn->gpuJointRigs) place(rig);
+                paletteWrites += drawn->gpuJointRigs.empty() ? 1u : uint32_t(drawn->gpuJointRigs.size());
             } else {
                 d.boneBase = double(jointPrefix / 64 + bones.size() / 16);
                 bones.insert(bones.end(), drawn->boneMatrices->begin(), drawn->boneMatrices->end());
+                ++paletteWrites;  // one copy per skinned draw, whatever the number of shadow pages that draw it
             }
         }
         if (const BufferGeometry* g = drawn->morphGeometry) {
@@ -3186,12 +3544,13 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         v.instanceStorage = v.instanced;
         v.skinned = item.boneMatrices != nullptr;
         v.skinnedPalette = item.boneStride != 0;
+        v.skinInstanceValues = item.shadowGroup && item.boneMatrices != nullptr;
         if (item.morphGeometry) {
             v.morphTargets = static_cast<uint8_t>(item.morphGeometry->morphPositions.size());
             v.morphNormals = !item.morphGeometry->morphNormals.empty();
         }
         v.positionNode = item.positionNode;
-        v.nodes = item.nodes;
+        v.nodes = *item.nodes;
         v.environment = item.envMap != nullptr;
         v.map = item.map != nullptr;
         v.normalMap = item.normalMap != nullptr;
@@ -3215,12 +3574,11 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     const uint64_t unshadowedKindsKey = hashBytes(unshadowedKinds.data(), unshadowedKinds.size());
     const uint64_t basicLightsKey = hashBytes("", 0) ^ 0x5bf03635ull;
     const auto drawLightsKey = [&](const DrawItem& item) {
-        uint64_t key = item.kind == MaterialKind::Basic ? basicLightsKey
-                       : item.receiveShadow              ? lightKindsKey
-                                                          : unshadowedKindsKey;
-        // A receiving mesh takes the soft-shadow filter (three keys a program on receiveShadow + type).
-        if (item.receiveShadow && lights.softShadows) key ^= 0x9e3779b97f4a7c15ull;
-        return key;
+        // A receiving mesh reads its lights' shadow maps, any other the unshadowed kinds: three keys a program on
+        // receiveShadow, and r187 has one shadow filter, so the map type no longer enters the key.
+        return item.kind == MaterialKind::Basic ? basicLightsKey
+               : item.receiveShadow            ? lightKindsKey
+                                               : unshadowedKindsKey;
     };
     // The pipeline target inputs not already in the VertexVariant: side, blending, depth state and
     // the vertex layout. Equal keys mean the same pipeline, so the cached handle can be reused.
@@ -3238,12 +3596,14 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         return h;
     };
 
+    stageStarted = meterStart(cpuMetered_);
     // Plan: each draw's program, pipeline and uniform slices, all uniforms into one CPU block.
     FrameJob compileJob;  // a compile plans pipelines only: it never touches a pending frame's job
     if (!compilation && !job_) job_ = std::make_unique<FrameJob>();
     FrameJob& job = compilation ? compileJob : *job_;
     job.plan.clear(); job.velocityPlan.clear(); job.auxPlan.clear(); job.shadowPasses.clear(); job.shadowLodItems.clear();
-    job.previousBytes = {}; job.previousSeed = false; job.keptShadowMaps = 0;
+    job.shadowGroupItems.clear(); job.shadowGroups.clear();
+    job.previousBytes = {}; job.previousSeed = false; job.keptShadowMaps = 0; job.paletteWrites = paletteWrites; job.instanceCopies = instanceCopies;
     job.deformationFrames.clear();
     std::vector<Planned>& plan = job.plan;
     std::vector<Planned>& velocityPlan = job.velocityPlan;
@@ -3292,7 +3652,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     } else {
         frameUniforms_.clear();
     }
-    const auto uniformBlocks = [&](uint64_t slotKey, uint64_t bytes) -> uint64_t {
+    const auto uniformBlocks = [&](uint64_t slotKey, uint64_t bytes, bool zero = true) -> uint64_t {
         const auto append = [&] {
             const uint64_t at = frameUniforms_.size();
             frameUniforms_.resize(at + bytes, 0);
@@ -3313,8 +3673,65 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             slot = uniformSlots_.find(slotKey);
         }
         slot->second.seen = slotFrame_;
-        std::memset(frameUniforms_.data() + slot->second.offset, 0, bytes);
+        if (zero) std::memset(frameUniforms_.data() + slot->second.offset, 0, bytes);
         return slot->second.offset;
+    };
+    // FM2: the fields every draw of a frame writes the same bytes for — the light slab, the camera slots, the
+    // shadow noise term, hemisphere and ambient — in a slot's own layout (v then f). A draw used to evaluate
+    // them into its own slot: roughly two thirds of a lit draw's slot writes, and the reason a whole arena was
+    // re-uploaded every frame. They are frame-constant, so this writes them where the caller says: once into a
+    // program's slab, and no longer once per draw. `fog` stays per draw: `item.fog` is the draw's own pointer, so a
+    // slab would need every draw of the program to share one.
+    const std::array<double, 3> cameraPosition{camera.matrixWorld[12], camera.matrixWorld[13], camera.matrixWorld[14]};
+    const auto putFrameConstants = [&](std::vector<uint8_t>& block, uint64_t v, uint64_t f, Program& program) {
+        waste::count(waste::counters().uniformFrameConstantEvaluations);
+        const auto* vs = program.vertexSlots;
+        const auto* fs = program.fragmentSlots;
+        put(block, v, vs[kViewMatrix], view);
+        put(block, v, vs[kProjectionMatrix], camera.projectionMatrix);
+        put(block, f, fs[kViewMatrix], view);  // normalWorld is derived in the fragment, as three does
+        for (const auto [base, slots] : {std::pair{v, vs}, std::pair{f, fs}}) {
+            put(block, base, slots[kCameraPosition], cameraPosition);  // TSL's camera accessors, either stage
+            put(block, base, slots[kCameraProjectionMatrix], camera.projectionMatrix);
+            put(block, base, slots[kCameraWorldMatrix], camera.matrixWorld);
+            put(block, base, slots[kCameraNear], std::array<double, 1>{camera.near});
+            put(block, base, slots[kCameraFar], std::array<double, 1>{camera.far});
+            put(block, base, slots[kScreenSize], std::array<double, 2>{double(inputWidth_), double(inputHeight_)});  // a vertex stage projects by hand
+        }
+        for (std::size_t i = 0; i < lights.direct.size() && i < program.lightSlots.size(); ++i) {
+            const DirectLight& l = lights.direct[i];
+            const auto& slot = program.lightSlots[i];
+            put(block, f, slot[kLightColor], l.color);
+            put(block, f, slot[kLightDirection], rotate(view, l.direction));
+            put(block, f, slot[kLightAxis], rotate(view, l.direction));
+            put(block, f, slot[kLightPosition], transformPoint(view, l.position));
+            put(block, f, slot[kLightDistance], std::array<double, 1>{l.distance});
+            put(block, f, slot[kLightDecay], std::array<double, 1>{l.decay});
+            put(block, f, slot[kLightSourceRadius], std::array<double, 1>{l.sourceRadius});
+            put(block, f, slot[kLightConeCos], std::array<double, 1>{l.coneCos});
+            put(block, f, slot[kLightPenumbraCos], std::array<double, 1>{l.penumbraCos});
+            if (l.shadow) {
+                put(block, f, slot[kLightShadowMatrix], l.shadow->matrix);
+                put(block, f, slot[kLightShadowBias], std::array<double, 1>{l.shadow->bias});
+                put(block, f, slot[kLightShadowNormalBias], std::array<double, 1>{l.shadow->normalBias});
+                put(block, f, slot[kLightShadowRadius], std::array<double, 1>{l.shadow->radius});
+                put(block, f, slot[kLightShadowMapSize],
+                    std::array<double, 2>{double(mapExtent(i)[0]), double(mapExtent(i)[1])});
+                put(block, f, slot[kLightShadowIntensity], std::array<double, 1>{l.shadow->intensity});
+                put(block, f, slot[kLightShadowNear], std::array<double, 1>{l.shadow->near});
+                put(block, f, slot[kLightShadowFar], std::array<double, 1>{l.shadow->far});
+                if (const auto& soft = l.shadow->sourceRadiusFilter) {
+                    put(block, f, slot[kLightShadowSourceRadius],
+                        std::array<double, 4>{(*soft)[0], l.shadow->tanHalfFov, (*soft)[1], (*soft)[2]});
+                    put(block, f, slot[kLightShadowPenumbraScale], std::array<double, 1>{(*soft)[3]});
+                }
+            }
+        }
+        put(block, f, fs[kShadowNoiseFrame], std::array<double, 1>{shadowNoiseFrame()});
+        put(block, f, fs[kHemisphereSky], lights.hemisphereSky);
+        put(block, f, fs[kHemisphereGround], lights.hemisphereGround);
+        put(block, f, fs[kHemisphereDirection], lights.hemisphereUp);  // world space: it meets normalWorld
+        put(block, f, fs[kAmbient], lights.ambient);
     };
     for (const auto& [depthKey, drawn] : opaque) {
         const DrawItem& item = *drawn;
@@ -3330,8 +3747,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             built = this->program(item.kind, variant,
                                   item.kind == MaterialKind::Basic ? ""
                                   : item.receiveShadow            ? lightKinds
-                                                                  : unshadowedKinds,
-                                  item.receiveShadow && lights.softShadows);
+                                                                  : unshadowedKinds);
             if (!built) continue;
             if (cache) {
                 cache->kind = item.kind; cache->variant = variant; cache->lightsKey = lightsKey;
@@ -3363,33 +3779,30 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         const uint64_t slotKey = stablePasses_ && item.key && !item.transparent
                                      ? item.key * 0x9e3779b97f4a7c15ull + slotUses_[item.key]++
                                      : 0;
-        const uint64_t v = uniformBlocks(slotKey, aligned(program.vertex.uniformBlockSize) + aligned(program.fragment.uniformBlockSize));
+        const uint64_t slotBytes = aligned(program.vertex.uniformBlockSize) + aligned(program.fragment.uniformBlockSize);
+        if (program.frameSlabSerial != planSerial_) {  // once per program per frame, not once per draw
+            program.frameSlab.assign(slotBytes, 0);
+            putFrameConstants(program.frameSlab, 0, aligned(program.vertex.uniformBlockSize), program);
+            program.frameSlabSerial = planSerial_;
+        }
+        const uint64_t v = uniformBlocks(slotKey, slotBytes, false);  // the copy below writes every byte
         const uint64_t f = v + aligned(program.vertex.uniformBlockSize);
         const auto* vs = program.vertexSlots;
         const auto* fs = program.fragmentSlots;
+        std::memcpy(frameUniforms_.data() + v, program.frameSlab.data(), slotBytes);
         put(frameUniforms_, v, vs[kModelMatrix], item.matrixWorld);
         if (item.instanceMatrices) put(frameUniforms_, v, vs[kInstanceBase], std::array<double, 1>{instanceBases.at(&item)});
-        put(frameUniforms_, v, vs[kViewMatrix], view);
-        put(frameUniforms_, v, vs[kProjectionMatrix], camera.projectionMatrix);
         put(frameUniforms_, v, vs[kNormalMatrix], normalMatrix(multiply(view, item.matrixWorld)));
         putSkin(v, vs, item);
         const shader::StandardMaterial& m = *item.material;
         put(frameUniforms_, f, fs[kDiffuse], std::array<double, 4>{m.color[0], m.color[1], m.color[2], m.opacity});
-        put(frameUniforms_, f, fs[kViewMatrix], view);  // normalWorld is derived in the fragment, as three does
         put(frameUniforms_, f, fs[kModelMatrix], item.matrixWorld);
-        // TSL's camera accessors, read by node graphs in either stage.
-        const std::array<double, 3> cameraPosition{camera.matrixWorld[12], camera.matrixWorld[13], camera.matrixWorld[14]};
         // three's modelNormalMatrix (transformNormalToView), only for a program that reads it.
         const bool modelNormal = vs[kModelNormalMatrix] || fs[kModelNormalMatrix];
         const std::array<double, 9> modelNormalMatrix = modelNormal ? normalMatrix(item.matrixWorld) : std::array<double, 9>{};
-        for (const auto [base, slots] : {std::pair{v, vs}, std::pair{f, fs}}) {
-            if (modelNormal) put(frameUniforms_, base, slots[kModelNormalMatrix], modelNormalMatrix);
-            put(frameUniforms_, base, slots[kCameraPosition], cameraPosition);
-            put(frameUniforms_, base, slots[kCameraProjectionMatrix], camera.projectionMatrix);
-            put(frameUniforms_, base, slots[kCameraWorldMatrix], camera.matrixWorld);
-            put(frameUniforms_, base, slots[kCameraNear], std::array<double, 1>{camera.near});
-            put(frameUniforms_, base, slots[kCameraFar], std::array<double, 1>{camera.far});
-            put(frameUniforms_, base, slots[kScreenSize], std::array<double, 2>{double(inputWidth_), double(inputHeight_)});  // a vertex stage projects by hand
+        if (modelNormal) {
+            put(frameUniforms_, v, vs[kModelNormalMatrix], modelNormalMatrix);
+            put(frameUniforms_, f, fs[kModelNormalMatrix], modelNormalMatrix);
         }
         put(frameUniforms_, f, fs[kAlphaTest], std::array<double, 1>{m.alphaTest});
         // NodeMaterial forces alpha to 1 only on an opaque NormalBlending material.
@@ -3429,59 +3842,21 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             const EnvironmentGpu& env = environment(*item.envMap);
             put(frameUniforms_, f, fs[kEnvRotation], item.envRotation);
             put(frameUniforms_, f, fs[kEnvMapIntensity], std::array<double, 1>{item.envMapIntensity});
-            put(frameUniforms_, f, fs[kEnvMapTexelWidth], std::array<double, 1>{env.texelWidth});
-            put(frameUniforms_, f, fs[kEnvMapTexelHeight], std::array<double, 1>{env.texelHeight});
-            put(frameUniforms_, f, fs[kEnvMapMaxMip], std::array<double, 1>{env.maxMip});
+            put(frameUniforms_, f, fs[kEnvMapMaxMip], std::array<double, 1>{double(env.maxLod)});
         }
         if (item.pmremMap) {
             const EnvironmentGpu& pmrem = environment(*item.pmremMap);
             put(frameUniforms_, f, fs[kPmremRotation], item.pmremRotation);
-            put(frameUniforms_, f, fs[kPmremTexelWidth], std::array<double, 1>{pmrem.texelWidth});
-            put(frameUniforms_, f, fs[kPmremTexelHeight], std::array<double, 1>{pmrem.texelHeight});
-            put(frameUniforms_, f, fs[kPmremMaxMip], std::array<double, 1>{pmrem.maxMip});
+            put(frameUniforms_, f, fs[kPmremMaxMip], std::array<double, 1>{double(pmrem.maxLod)});
         }
-        for (std::size_t i = 0; i < lights.direct.size() && i < program.lightSlots.size(); ++i) {
-            const DirectLight& l = lights.direct[i];
-            const auto& slot = program.lightSlots[i];
-            put(frameUniforms_, f, slot[kLightColor], l.color);
-            put(frameUniforms_, f, slot[kLightDirection], rotate(view, l.direction));
-            put(frameUniforms_, f, slot[kLightAxis], rotate(view, l.direction));
-            put(frameUniforms_, f, slot[kLightPosition], transformPoint(view, l.position));
-            put(frameUniforms_, f, slot[kLightDistance], std::array<double, 1>{l.distance});
-            put(frameUniforms_, f, slot[kLightDecay], std::array<double, 1>{l.decay});
-            put(frameUniforms_, f, slot[kLightSourceRadius], std::array<double, 1>{l.sourceRadius});
-            put(frameUniforms_, f, slot[kLightConeCos], std::array<double, 1>{l.coneCos});
-            put(frameUniforms_, f, slot[kLightPenumbraCos], std::array<double, 1>{l.penumbraCos});
-            if (l.shadow) {
-                put(frameUniforms_, f, slot[kLightShadowMatrix], l.shadow->matrix);
-                put(frameUniforms_, f, slot[kLightShadowBias], std::array<double, 1>{l.shadow->bias});
-                put(frameUniforms_, f, slot[kLightShadowNormalBias], std::array<double, 1>{l.shadow->normalBias});
-                put(frameUniforms_, f, slot[kLightShadowRadius], std::array<double, 1>{l.shadow->radius});
-                put(frameUniforms_, f, slot[kLightShadowMapSize],
-                    std::array<double, 2>{double(mapExtent(i)[0]), double(mapExtent(i)[1])});
-                put(frameUniforms_, f, slot[kLightShadowIntensity], std::array<double, 1>{l.shadow->intensity});
-                put(frameUniforms_, f, slot[kLightShadowNear], std::array<double, 1>{l.shadow->near});
-                put(frameUniforms_, f, slot[kLightShadowFar], std::array<double, 1>{l.shadow->far});
-                if (const auto& soft = l.shadow->sourceRadiusFilter) {
-                    put(frameUniforms_, f, slot[kLightShadowSourceRadius],
-                        std::array<double, 4>{(*soft)[0], l.shadow->tanHalfFov, (*soft)[1], (*soft)[2]});
-                    put(frameUniforms_, f, slot[kLightShadowPenumbraScale], std::array<double, 1>{(*soft)[3]});
-                }
-            }
-        }
-        put(frameUniforms_, f, fs[kShadowNoiseFrame], std::array<double, 1>{shadowNoiseFrame()});
-        put(frameUniforms_, f, fs[kHemisphereSky], lights.hemisphereSky);
-        put(frameUniforms_, f, fs[kHemisphereGround], lights.hemisphereGround);
-        put(frameUniforms_, f, fs[kHemisphereDirection], lights.hemisphereUp);  // world space: it meets normalWorld
-        put(frameUniforms_, f, fs[kAmbient], lights.ambient);
         if (item.sprite) for (const auto& field : program.vertex.uniforms) {
             if (field.name == "spriteCenter") put(frameUniforms_, v, &field, item.spriteCenter);
             if (field.name == "spriteRotation") put(frameUniforms_, v, &field, std::array<double, 1>{item.spriteRotation});
             if (field.name == "spriteNoAttenuation") put(frameUniforms_, v, &field,
                 std::array<double, 1>{!item.spriteSizeAttenuation && camera.projectionMatrix[11] == -1 ? 1.0 : 0.0});
         }
-        putNodes(frameUniforms_, v, program.vertex, item.nodes, frameTime_, frameDelta_, lights);
-        putNodes(frameUniforms_, f, program.fragment, item.nodes, frameTime_, frameDelta_, lights);
+        putNodes(frameUniforms_, v, program.vertex, *item.nodes, frameTime_, frameDelta_, lights);
+        putNodes(frameUniforms_, f, program.fragment, *item.nodes, frameTime_, frameDelta_, lights);
         plan.push_back({&item, &program, pipeline, static_cast<uint32_t>(v), static_cast<uint32_t>(f)});
         plan.back().slot = slotKey;
     }
@@ -3493,6 +3868,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             slot = uniformSlots_.erase(slot);
         }
 
+    addCpuStage(CpuPlan, stageStarted);
+    stageStarted = meterStart(cpuMetered_);
     // Each shadow-casting light's depth pass: every caster through the shadow camera, back faces for
     // front-sided materials (three's _shadowSide), depth only. Order is free: depth keeps the nearest.
     std::vector<ShadowPass>& shadowPasses = job.shadowPasses;
@@ -3505,6 +3882,199 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         const std::size_t firstPass = shadowPasses.size();
         const bool lampMap = lights.direct[i].kind != DirectLight::Kind::Directional && !virtualMap;
         const bool lamp = lampMap && !compilation;
+        // Every page selects its casters from the same frozen draw list with the same read-only reducer, so the
+        // pages are independent: each one collects its own list, and a light worth splitting hands the pages to
+        // the pool. Only the selection moves — the programs, pipelines, LOD copies and uniform slices below stay
+        // on the caller, in page and render-list order.
+        //
+        // FS9: that reducer is the same for every page of a level, so a granted level is indexed once — a caster's
+        // bounds project to a range of that level's page cells (PageAtlas::pageRange) and it is appended to each of
+        // them in draw-list order. A page then reads its own few casters instead of the whole list: on a granting
+        // frame in the stress lab the scan judged 259 pages x 1316 casters and 0.47% of them became a draw.
+        const auto mayCast = [&](const DrawItem* drawn) {
+            if (!drawn->castShadow || drawn->instanceCount == 0 || !drawn->positions) return false;
+            if ((drawn->layers & (shadow.layersMask | (virtualMap ? (1u << 29) | (1u << 28) : 0u))) == 0) return false;
+            // A caster wholly beyond the lamp camera's far plane writes no depth: skip it, so it moving there
+            // neither costs a draw nor invalidates the lamp's cached map (PRD-650).
+            if (!lamp || shadow.far <= 0 || !drawn->shadowObject || drawn->positionNode || drawn->nodes->positionNode ||
+                drawn->boneMatrices || drawn->morphGeometry) return true;
+            const Sphere* local = drawn->shadowObject->type() == "InstancedMesh"
+                ? static_cast<const InstancedMesh*>(drawn->shadowObject)->boundingSphere.get()
+                : drawn->shadowObject->type() == "Mesh" && static_cast<const Mesh*>(drawn->shadowObject)->geometry
+                    ? static_cast<const Mesh*>(drawn->shadowObject)->geometry->boundingSphere.get() : nullptr;
+            if (!local) return true;
+            Sphere world = *local;
+            Matrix4 model; model.elements = drawn->matrixWorld;
+            world.applyMatrix4(model);
+            const auto& at = lights.direct[i].position;
+            return !(world.center.distanceTo(Vector3(at[0], at[1], at[2])) - world.radius > shadow.far);
+        };
+        // A caster whose bounds move with its node graph, its skin or its morph targets is on every page, as the
+        // scan admitted it: there is no rectangle to index it by.
+        const auto bounded = [](const DrawItem* const drawn) {
+            return !drawn->positionNode && !drawn->nodes->positionNode && !drawn->boneMatrices && !drawn->morphGeometry;
+        };
+        // FG1: an instanced caster's instances by page cell of one level, counting-sorted: cell c is reached by the
+        // instances list[first[c] .. first[c + 1]), ascending.
+        struct InstanceCells {
+            std::vector<uint32_t> first, list;
+        };
+        struct LevelPages {
+            int level = 0;
+            std::vector<std::vector<const DrawItem*>> cell;  // tiles(level)^2 lists, each in draw-list order
+            std::unordered_map<const DrawItem*, InstanceCells> instances;
+        };
+        const bool pageIndex = virtualMap && !compilation && passCount > 0 && !flatShadowSelection();
+        // FS11: a draw's position in the frame's frozen list is its caster record. `opaque` holds pointers into the
+        // same span (`sortDraws` pushes `&item`), so the subtraction is exact, not a lookup.
+        const std::vector<CasterRecord>* const record = virtualMap ? &casterRecords_[i] : nullptr;
+        const auto casterOf = [&](const DrawItem* drawn) -> const CasterRecord& {
+            const std::size_t index = std::size_t(drawn - items.data());
+            assert(record != nullptr && index < items.size() && drawn == &items[index]);
+            return (*record)[index];
+        };
+        // FG1: Unreal culls a virtual shadow page's instances one by one (UE 5.8.3: Engine/Shaders/Private/
+        // VirtualShadowMaps/VirtualShadowMapBuildPerPageDrawCommands.usf:206-215 reads each instance's own bounds, :307
+        // turns them into a rect of pages, :350-352 adds the instance to every page of that rect; dispatched by
+        // Engine/Source/Runtime/Renderer/Private/VirtualShadowMaps/VirtualShadowMapArray.cpp:3765 FCullPerPageDrawCommandsCs),
+        // where one InstancedMesh row spans the union of its instances and so reached every page of a level. An
+        // instanced caster with a box per instance is placed instance by instance: a page draws only the instances
+        // whose own box can reach it. The same product of the same float32 values reaches the vertex stage, so the
+        // depth a page writes is unchanged and only the instances its scissor clipped are gone.
+        const bool cullInstances = virtualMap && shadowInstanceCullEnabled();
+        const auto instanceBoxes = [&](const DrawItem* drawn) -> const std::vector<Box3>* {
+            if (!cullInstances || !drawn->instanceMatrices || !bounded(drawn) || drawn->gpuJoints) return nullptr;
+            return casterOf(drawn).instances;
+        };
+        // The cells a box reaches. A box with no finite extent (a NaN matrix) cannot be placed: it reaches every cell,
+        // as the whole-caster row did.
+        const auto instanceRange = [](const shadows::PageAtlas& atlas, int level, const Box3& box,
+                                      int& x0, int& x1, int& y0, int& y1) {
+            if (std::isfinite(box.min.x + box.min.y + box.min.z + box.max.x + box.max.y + box.max.z)) {
+                atlas.pageRange(level, box, x0, x1, y0, y1);
+            } else {
+                x0 = y0 = 0;
+                x1 = y1 = atlas.tiles(level) - 1;
+            }
+        };
+        // Once per granted level: O(instances x cells an instance reaches), never instances x pages. The caster joins
+        // the cells some instance reaches, in draw-list order like any other.
+        const auto indexInstances = [&](LevelPages& level, const shadows::PageAtlas& atlas, const DrawItem* drawn,
+                                        const std::vector<Box3>& boxes) {
+            const std::size_t side = std::size_t(atlas.tiles(level.level));
+            InstanceCells& cells = level.instances[drawn];
+            cells.first.assign(side * side + 1, 0);
+            std::vector<std::array<int, 4>> reach(boxes.size());
+            for (std::size_t j = 0; j < boxes.size(); ++j) {
+                auto& [x0, x1, y0, y1] = reach[j];
+                instanceRange(atlas, level.level, boxes[j], x0, x1, y0, y1);
+                for (int y = y0; y <= y1; ++y)
+                    for (int x = x0; x <= x1; ++x) ++cells.first[std::size_t(y) * side + std::size_t(x) + 1];
+            }
+            for (std::size_t c = 0; c < side * side; ++c) cells.first[c + 1] += cells.first[c];
+            cells.list.resize(cells.first.back());
+            std::vector<uint32_t> next(cells.first.begin(), cells.first.end() - 1);
+            for (std::size_t j = 0; j < boxes.size(); ++j) {
+                const auto& [x0, x1, y0, y1] = reach[j];
+                for (int y = y0; y <= y1; ++y)
+                    for (int x = x0; x <= x1; ++x) cells.list[next[std::size_t(y) * side + std::size_t(x)]++] = uint32_t(j);
+            }
+            for (std::size_t c = 0; c < side * side; ++c)
+                if (cells.first[c + 1] > cells.first[c]) level.cell[c].push_back(drawn);
+        };
+        std::vector<LevelPages> levelPages;
+        std::vector<const DrawItem*> moverCasters;
+        std::map<int, std::size_t> levelSlot;
+        if (pageIndex) {
+            const auto& atlas = virtualIt->second.atlas;
+            bool anyMover = false;
+            for (const shadows::AtlasPage& page : virtualPages[i]) {
+                if (page.mover) { anyMover = true; continue; }
+                if (!levelSlot.emplace(page.level, levelPages.size()).second) continue;
+                const std::size_t side = std::size_t(atlas.tiles(page.level));
+                LevelPages& added = levelPages.emplace_back();
+                added.level = page.level;
+                added.cell.resize(side * side);
+            }
+            // A mover page draws every moving caster wherever it is (the scan tests no bounds for it), and a caster
+            // settling between moving and still is on the static pages and the mover page at once.
+            if (anyMover)
+                for (const auto& [depthKey, drawn] : opaque)
+                    if (mayCast(drawn) && atlas.isMover(drawn->key)) moverCasters.push_back(drawn);
+            for (LevelPages& level : levelPages) {
+                const std::size_t side = std::size_t(atlas.tiles(level.level));
+                const double gate = atlas.casterGate(level.level);
+                for (const auto& [depthKey, drawn] : opaque) {
+                    if (!mayCast(drawn) || !atlas.drawsStatic(drawn->key)) continue;
+                    // The gate the scan applied to a caster with fixed bounds, and then the bounds themselves: a
+                    // GPU-displaced one has none to index by, so it stays on every page.
+                    if (bounded(drawn)) {
+                        if (casterOf(drawn).diameter < gate) continue;
+                        if (drawn->gpuJoints) {
+                            for (auto& cell : level.cell) cell.push_back(drawn);
+                            continue;
+                        }
+                        if (const std::vector<Box3>* boxes = instanceBoxes(drawn)) {
+                            indexInstances(level, atlas, drawn, *boxes);
+                            continue;
+                        }
+                        int x0, x1, y0, y1;
+                        atlas.pageRange(level.level, casterOf(drawn).bounds, x0, x1, y0, y1);
+                        for (int y = y0; y <= y1; ++y)
+                            for (int x = x0; x <= x1; ++x)
+                                level.cell[std::size_t(y) * side + std::size_t(x)].push_back(drawn);
+                        continue;
+                    }
+                    for (auto& cell : level.cell) cell.push_back(drawn);
+                }
+            }
+        }
+        std::vector<std::vector<const DrawItem*>> selectedCasters(static_cast<std::size_t>(passCount));
+        std::vector<std::exception_ptr> failedFace(selectedCasters.size());
+        const auto selectFace = [&](std::size_t face) {
+            try {
+                const shadows::AtlasPage* page = virtualMap && !compilation ? &virtualPages[i][face] : nullptr;
+                std::vector<const DrawItem*>& selected = selectedCasters[face];
+                const std::vector<const DrawItem*>* candidates = nullptr;
+                if (pageIndex) {
+                    const auto& atlas = virtualIt->second.atlas;
+                    candidates = page->mover ? &moverCasters
+                        : &levelPages[levelSlot.at(page->level)].cell[std::size_t(page->y) * std::size_t(atlas.tiles(page->level)) + std::size_t(page->x)];
+                    // The index is conservative, so the bounds test still decides — as it did for every caster of
+                    // the flat scan — and a caster on a page's edge is on every cell it reaches.
+                    for (const DrawItem* drawn : *candidates) {
+                        if (!page->mover && bounded(drawn) && !drawn->gpuJoints &&
+                            !atlas.overlaps(*page, casterOf(drawn).bounds)) continue;
+                        selected.push_back(drawn);
+                    }
+                } else {
+                    const auto& atlas = virtualIt->second.atlas;
+                    for (const auto& [depthKey, drawn] : opaque) {
+                        if (!mayCast(drawn)) continue;
+                        if (page) {
+                            if (page->mover ? !atlas.isMover(drawn->key) : !atlas.drawsStatic(drawn->key)) continue;
+                            if (!page->mover && bounded(drawn) &&
+                                casterOf(drawn).diameter < atlas.casterGate(page->level)) continue;
+                            if (!page->mover && bounded(drawn) && !drawn->gpuJoints &&
+                                !atlas.overlaps(*page, casterOf(drawn).bounds)) continue;
+                        }
+                        selected.push_back(drawn);
+                    }
+                }
+                waste::debugAdd(waste::counters().shadowPageSelectionProbes,
+                                candidates ? candidates->size() : opaque.size());
+            } catch (...) {
+                failedFace[face] = std::current_exception();  // rethrown on the caller, in page order
+            }
+        };
+        // The gate is a proposed one, not a measured crossover: a whole light's page x caster pairs below it
+        // cost less than a dispatch. The pool starts here, on the caller, never inside a job.
+        const bool split = !compilation && passCount >= 2 && !JobPool::inJob() &&
+            uint64_t(passCount) * opaque.size() >= kShadowPageJobPairs;
+        JobPool* pool = split && JobPool::shared().workers() > 0 ? &JobPool::shared() : nullptr;
+        if (pool) pool->forEach(uint32_t(selectedCasters.size()), [&](uint32_t face) { selectFace(face); });
+        else for (std::size_t face = 0; face < selectedCasters.size(); ++face) selectFace(face);
+        for (const std::exception_ptr& failure : failedFace) if (failure) std::rethrow_exception(failure);
         for (int face = 0; face < passCount; ++face) {
         const shadows::AtlasPage* page = virtualMap && !compilation ? &virtualPages[i][face] : nullptr;
         const Matrix& view = page ? page->view.elements : shadow.cube ? shadow.faceViews[face] : shadow.view;
@@ -3517,6 +4087,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             const auto& atlas = virtualIt->second.atlas;
             const auto [x, y] = page->mover ? atlas.moverOrigin(page->level) : atlas.origin(page->slot);
             pass.x = x; pass.y = y; pass.size = page->mover ? atlas.options().moverMapSize + 2 * atlas.options().border : atlas.stride();
+            pass.mover = page->mover;
             if (!page->mover) { pass.virtualLight = i; pass.virtualLevel = page->level; }
         }
         // The error a coarser rung may have on this page: its texels in world units, along the window's
@@ -3524,8 +4095,47 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         const double lodBudget = page && !page->mover
             ? (page->highU - page->lowU) / double(virtualIt->second.atlas.options().pageTexels + 2 * virtualIt->second.atlas.options().border) *
                   virtualIt->second.atlas.options().shadowLodTexels : 0;
-        for (const auto& [depthKey, drawn] : opaque) {
+        // FM8: the page's casters as this loop resolves them, before they become rows.
+        struct PageCaster {
+            const DrawItem* item = nullptr;
+            Program* program = nullptr;
+            WGPURenderPipeline pipeline = nullptr;
+            double instanceBase = 0;
+        };
+        std::vector<PageCaster> pageCasters;
+        pageCasters.reserve(selectedCasters[std::size_t(face)].size());
+        std::vector<uint32_t> flatInstances;  // FG1: the flat scan's instances of one caster on this page
+        for (const DrawItem* drawn : selectedCasters[std::size_t(face)]) {
             const DrawItem* selected = drawn;
+            // FG1: an instanced caster draws, on a static page, only the instances that can reach it: the page's cell
+            // of the level index, or - in the diagnostic flat scan, which keeps no index - the same range test run
+            // over every instance. A caster none of whose instances reaches the page has no row.
+            std::span<const uint32_t> pageInstances;
+            bool trimmed = false;  // pageInstances names this caster's instances on the page
+            if (page && !page->mover && instanceBoxes(drawn) != nullptr) {
+                const auto& atlas = virtualIt->second.atlas;
+                if (pageIndex) {
+                    const LevelPages& level = levelPages[levelSlot.at(page->level)];
+                    const auto cells = level.instances.find(drawn);
+                    if (cells != level.instances.end()) {
+                        const std::size_t cell = std::size_t(page->y) * std::size_t(atlas.tiles(page->level)) + std::size_t(page->x);
+                        pageInstances = std::span<const uint32_t>(cells->second.list).subspan(
+                            cells->second.first[cell], cells->second.first[cell + 1] - cells->second.first[cell]);
+                        trimmed = true;
+                    }
+                } else {
+                    flatInstances.clear();
+                    const std::vector<Box3>& boxes = *instanceBoxes(drawn);
+                    for (std::size_t j = 0; j < boxes.size(); ++j) {
+                        int x0, x1, y0, y1;
+                        instanceRange(atlas, page->level, boxes[j], x0, x1, y0, y1);
+                        if (page->x >= x0 && page->x <= x1 && page->y >= y0 && page->y <= y1) flatInstances.push_back(uint32_t(j));
+                    }
+                    pageInstances = flatInstances;
+                    trimmed = true;
+                }
+                if (trimmed && pageInstances.empty()) continue;
+            }
             if (page && !page->mover && page->level > 0 && virtualIt->second.atlas.options().shadowLodBias && drawn->shadowObject) {
                 const auto& lods = virtualIt->second.atlas.options().control->lods;
                 const auto lod = lods.find(drawn->shadowObject->id());
@@ -3547,35 +4157,9 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 }
             }
             const DrawItem& item = *selected;
-            if (!item.castShadow || item.instanceCount == 0 || !item.positions) continue;
-            if ((item.layers & (shadow.layersMask | (virtualMap ? (1u << 29) | (1u << 28) : 0u))) == 0) continue;
-            // A caster wholly beyond the lamp camera's far plane writes no depth: skip it, so it moving
-            // there neither costs a draw nor invalidates the lamp's cached map (PRD-650).
-            if (lamp && shadow.far > 0 && item.shadowObject && !item.positionNode && !item.nodes.positionNode && !item.boneMatrices && !item.morphGeometry) {
-                const Sphere* local = item.shadowObject->type() == "InstancedMesh"
-                    ? static_cast<const InstancedMesh*>(item.shadowObject)->boundingSphere.get()
-                    : item.shadowObject->type() == "Mesh" && static_cast<const Mesh*>(item.shadowObject)->geometry
-                        ? static_cast<const Mesh*>(item.shadowObject)->geometry->boundingSphere.get() : nullptr;
-                if (local) {
-                    Sphere world = *local;
-                    Matrix4 model; model.elements = item.matrixWorld;
-                    world.applyMatrix4(model);
-                    const auto& at = lights.direct[i].position;
-                    if (world.center.distanceTo(Vector3(at[0], at[1], at[2])) - world.radius > shadow.far) continue;
-                }
-            }
-            if (page) {
-                const auto& atlas = virtualIt->second.atlas;
-                if (page->mover ? !atlas.isMover(item.key) : !atlas.drawsStatic(item.key)) continue;
-                if (!page->mover && !item.positionNode && !item.nodes.positionNode && !item.boneMatrices && !item.morphGeometry) {
-                    if (casterDiameters.at(i).at(item.key) < atlas.casterGate(page->level)) continue;
-                }
-            }
-            if (page && !page->mover && !item.positionNode && !item.nodes.positionNode && !item.boneMatrices && !item.morphGeometry &&
-                !item.instanceMatrices && !virtualIt->second.atlas.overlaps(*page, casterBounds.at(i).at(item.key))) continue;
             shader::VertexVariant variant = variantOf(item);
             // shortcut: shadow coverage reads opacity/map; lower node and vertex alpha before admitting those casters.
-            if (variant.alphaHash && (item.nodes.colorNode || item.nodes.opacityNode || variant.vertexColors == 4))
+            if (variant.alphaHash && (item.nodes->colorNode || item.nodes->opacityNode || variant.vertexColors == 4))
                 throw std::runtime_error("TN_NATIVE_SHADOW_ALPHA_UNSUPPORTED: alphaHash shadow supports material opacity and diffuse-map alpha only");
             const bool masked = item.material->alphaTest > 0;
             DrawCache* cache = item.cache;
@@ -3621,8 +4205,178 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 if (!pipeline) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: shadow depth program");
                 if (cache) { cache->depthTargetKey = depthTargetKey; cache->depthPipeline = pipeline; }
             }
-            pass.draws.push_back({&item, &program, pipeline, 0, 0,
-                                  item.instanceMatrices ? instanceBases.at(drawn) : 0.0});  // packed below, after the lamp cache decides
+            // packed below, after the lamp cache decides which passes run
+            const DrawItem* rowItem = &item;
+            double rowBase = item.instanceMatrices ? instanceBases.at(drawn) : 0.0;
+            if (trimmed && pageInstances.size() < item.instanceCount) {
+                // FG1: the page's instances as a compacted copy of their 20 floats each at the end of the frame's
+                // instance storage (as FM8's grouped rows put theirs), drawn by a row of that many instances. The
+                // matrix, the colour and the item's own world matrix are the bytes the whole-caster row read.
+                DrawItem& cut = job.shadowGroupItems.emplace_back(item);
+                cut.instanceCount = uint32_t(pageInstances.size());
+                const std::size_t from = std::size_t(rowBase) * 4, at = instances.size();
+                rowBase = double(at / 4);
+                instances.resize(at + pageInstances.size() * 20);
+                for (std::size_t n = 0; n < pageInstances.size(); ++n)
+                    std::memcpy(&instances[at + n * 20], &instances[from + std::size_t(pageInstances[n]) * 20], 20 * sizeof(float));
+                rowItem = &cut;
+            }
+            if (page && !page->mover) {
+                waste::debugAdd(waste::counters().shadowPageRows);
+                waste::debugAdd(waste::counters().shadowPageInstances, rowItem->instanceMatrices ? rowItem->instanceCount : 0);
+            }
+            pageCasters.push_back({rowItem, &program, pipeline, rowBase});
+        }
+        // FM8: a page drew one row per caster, so a crowd's 240 casters cost 720 rows under a three-level sun.
+        // The casters this page selected that share a depth program, a material and their vertex buffers draw
+        // as one instanced row. The members are exactly this page's selection — never a superset, because a
+        // caster whose bounds miss the page's window must not write depth into it. A page that selects one
+        // caster, or a caster a row cannot reproduce (a morph target, a node-graph position, a GPU-deformed
+        // rig, a mirrored winding, an already instanced draw), keeps the plain row it had: no work is added.
+        struct CasterGroup {
+            Program* program = nullptr;
+            WGPURenderPipeline pipeline = nullptr;
+            const void* positions = nullptr; const void* indices = nullptr; const void* uvs = nullptr;
+            const void* normals = nullptr; const void* colors = nullptr;
+            const void* skinIndices = nullptr; const void* skinWeights = nullptr;
+            const std::vector<DrawItem::CustomAttribute>* attributes = nullptr;
+            // What a depth stage reads of the material: a masked or hashed caster's cut, its opacity and its
+            // map's transform. The record copies the material, so two casters' pointers never match.
+            const void* map = nullptr;
+            float alphaTest = 0, opacity = 1, color[3] = {1, 1, 1};
+            uint8_t side = 0, shadowSide = 255;
+            bool skinned = false;
+            std::vector<const DrawItem*> members;
+        };
+        // The other attributes a program reads are the record's, one list per object: equal contents mean the
+        // same vertex sources (a caster with its own TSL attribute keeps its own row).
+        const auto sameAttributes = [](const std::vector<DrawItem::CustomAttribute>& a,
+                                       const std::vector<DrawItem::CustomAttribute>& b) {
+            if (a.size() != b.size()) return false;
+            for (std::size_t i = 0; i < a.size(); ++i)
+                if (a[i].name != b[i].name || a[i].store != b[i].store || a[i].perInstance != b[i].perInstance)
+                    return false;
+            return true;
+        };
+        constexpr std::size_t kNoGroup = std::size_t(-1);
+        std::vector<CasterGroup> groups;
+        std::vector<std::size_t> groupOf(pageCasters.size(), kNoGroup);
+        if (page != nullptr && pageCasters.size() > 1 && shadowGroupsEnabled()) {
+            // ponytail: a page with more groups than this is not a crowd, and the search below is linear in
+            // them; past the bound every caster keeps its own row (no regression, bounded work).
+            constexpr std::size_t kMaxGroupsPerPage = 64;
+            const auto reproducible = [&](const PageCaster& caster) {
+                const DrawItem& item = *caster.item;
+                if (item.morphGeometry || item.morphInfluences || item.positionNode) return false;
+                if (item.nodes->positionNode || item.nodes->vertexNode) return false;
+                if (item.instanceMatrices || item.gpuJoints || item.sprite || item.background) return false;
+                if (item.nodeTextures || item.nodeStorages || item.reflectorView) return false;
+                if (item.boneStride || item.positions == nullptr) return false;
+                if (item.boneMatrices && (item.skinnedRig == nullptr || item.skinnedRig->skeleton == nullptr ||
+                                          item.skinnedRig->skeleton->bones.empty())) return false;
+                // A rig with no palette this frame (an AutoLOD rung's copy) keeps its own row.
+                if (item.boneMatrices && deforms.find(&item) == deforms.end()) return false;
+                // A mirrored caster's front face is its own row's pipeline state, not its instance's.
+                return item.frontFace() == WGPUFrontFace_CCW;
+            };
+            for (std::size_t c = 0; c < pageCasters.size(); ++c) {
+                const PageCaster& caster = pageCasters[c];
+                if (groups.size() >= kMaxGroupsPerPage || !reproducible(caster)) continue;
+                const DrawItem& item = *caster.item;
+                std::size_t at = kNoGroup;
+                for (std::size_t g = 0; g < groups.size() && at == kNoGroup; ++g) {
+                    const CasterGroup& group = groups[g];
+                    if (group.program == caster.program && group.pipeline == caster.pipeline &&
+                        group.positions == item.positions && group.indices == item.indices && group.uvs == item.uvs &&
+                        group.normals == item.normals && group.colors == item.colors &&
+                        group.skinIndices == item.skinIndices && group.skinWeights == item.skinWeights &&
+                        sameAttributes(*group.attributes, *item.attributes) && group.map == item.map &&
+                        group.alphaTest == item.material->alphaTest && group.opacity == item.material->opacity &&
+                        group.color[0] == item.material->color[0] && group.color[1] == item.material->color[1] &&
+                        group.color[2] == item.material->color[2] && group.side == item.side &&
+                        group.shadowSide == item.shadowSide && group.skinned == (item.boneMatrices != nullptr)) at = g;
+                }
+                if (at == kNoGroup) {
+                    at = groups.size();
+                    CasterGroup group;
+                    group.program = caster.program; group.pipeline = caster.pipeline;
+                    group.positions = item.positions; group.indices = item.indices; group.uvs = item.uvs;
+                    group.normals = item.normals; group.colors = item.colors;
+                    group.skinIndices = item.skinIndices; group.skinWeights = item.skinWeights;
+                    group.attributes = item.attributes; group.map = item.map;
+                    group.alphaTest = item.material->alphaTest; group.opacity = item.material->opacity;
+                    for (int k = 0; k < 3; ++k) group.color[k] = item.material->color[k];
+                    group.side = item.side; group.shadowSide = item.shadowSide;
+                    group.skinned = item.boneMatrices != nullptr;
+                    groups.push_back(std::move(group));
+                }
+                groups[at].members.push_back(caster.item);
+                groupOf[c] = at;
+            }
+            // A group of one adds a row and saves none.
+            for (std::size_t c = 0; c < pageCasters.size(); ++c)
+                if (groupOf[c] != kNoGroup && groups[groupOf[c]].members.size() < 2) groupOf[c] = kNoGroup;
+        }
+        std::vector<bool> emitted(groups.size(), false);
+        for (std::size_t c = 0; c < pageCasters.size(); ++c) {
+            const PageCaster& caster = pageCasters[c];
+            if (groupOf[c] == kNoGroup) {
+                pass.draws.push_back({caster.item, caster.program, caster.pipeline, 0, 0, caster.instanceBase});
+                continue;
+            }
+            const std::size_t at = groupOf[c];
+            if (emitted[at]) continue;
+            emitted[at] = true;
+            // One instanced row draws the group: the members' placements in the frame's `instances` storage,
+            // and, for a skinned group, each member's own palette base and bind pair in `shadowSkin`. The
+            // frame's bone palette holds one copy per rig, so every page that draws that rig reads it rather
+            // than writing it again.
+            std::vector<const DrawItem*>& recorded = job.shadowGroups.emplace_back(groups[at].members);
+            DrawItem& row = job.shadowGroupItems.emplace_back(*recorded.front());
+            row.matrixWorld = Matrix4{}.elements;
+            row.shadowGroup = true;
+            row.instanceColors = nullptr;
+            row.instanceCount = uint32_t(recorded.size());
+            row.instanceMatrices = &shadowGroupInstances();
+            row.bindMatrix = row.bindMatrixInverse = Matrix4{}.elements;
+            row.boneStride = 0;
+            const double instanceBase = double(instances.size() / 4);  // the storage indexes in vec4s
+            if (row.boneMatrices) {
+                std::vector<float>& skin = storages_["shadowSkin"].data;
+                const double skinBase = double(skin.size() / 4);
+                for (const DrawItem* member : recorded) {
+                    const auto deform = deforms.find(member);
+                    if (deform == deforms.end())
+                        throw std::runtime_error("TN_SHADOW_GROUP_PALETTE: a grouped caster has no palette this frame");
+                    skin.insert(skin.end(), {float(deform->second.boneBase), 0.0f, 0.0f, 0.0f});
+                    for (double e : member->bindMatrix) skin.push_back(float(e));
+                    for (double e : member->bindMatrixInverse) skin.push_back(float(e));
+                }
+                deforms[&row].boneBase = skinBase;
+            }
+            for (const DrawItem* member : recorded) {
+                for (double e : member->matrixWorld) instances.push_back(float(e));
+                instances.insert(instances.end(), {1.0f, 1.0f, 1.0f, 0.0f});  // no instance colour: a depth pass reads none
+            }
+            const bool masked = row.material->alphaTest > 0;
+            const shader::VertexVariant variant = variantOf(row);
+            Program& program = depthProgram(variant, masked);
+            const shader::StageModule* depthFragment = (masked || variant.alphaHash) ? &program.fragment : nullptr;
+            const uint8_t derivedFaces = row.side == 2 ? 2 : row.side == 1 || virtualMap ? 0 : 1;
+            const uint8_t faces = row.shadowSide != 255 ? row.shadowSide : derivedFaces;
+            const WGPUCullMode cull =
+                faces == 2 ? WGPUCullMode_None : faces == 0 ? WGPUCullMode_Back : WGPUCullMode_Front;
+            PipelineTarget target{WGPUTextureFormat_Undefined, WGPUTextureFormat_Depth24Plus, cull};
+            target.layout = program.pipelineLayout;
+            target.frontFace = row.frontFace();
+            target.skinIndex = skinIndexFormat(row);
+            target.instanceStepMask = instanceStepMask(program.vertex, row);
+            if (lampMap && faces == 1) target.depthBias = -kLampBackFaceBias;
+            WGPURenderPipeline pipeline = pipelines_->get(program.vertex, depthFragment, target);
+            if (!pipeline) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: shadow depth program");
+            Planned& planned = pass.draws.emplace_back(Planned{&row, &program, pipeline, 0, 0, instanceBase});
+            planned.members = recorded.data();
+            planned.memberCount = uint32_t(recorded.size());
         }
         }
         // PRD-650: a lamp keeps last frame's map while nothing it draws changed: its cameras, its map
@@ -3649,7 +4403,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 mix(reinterpret_cast<uintptr_t>(shadowPasses[k].target));
                 for (const Planned& p : shadowPasses[k].draws) {
                     const DrawItem& item = *p.item;
-                    animated |= item.positionNode || item.nodes.positionNode || item.boneMatrices || item.morphGeometry || item.gpuJoints;
+                    animated |= item.positionNode || item.nodes->positionNode || item.boneMatrices || item.morphGeometry || item.gpuJoints;
                     mix(item.key); mixMatrix(item.matrixWorld); mix(item.instanceCount);
                     mixStore(item.positions); mixStore(item.indices); mixStore(item.instanceMatrices); mixStore(item.uvs);
                     mix(reinterpret_cast<uintptr_t>(p.pipeline)); mix(reinterpret_cast<uintptr_t>(item.map)); mix(item.map ? item.map->version() : 0);
@@ -3697,26 +4451,29 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 put(frameUniforms_, v, program.vertexSlots[kCameraPosition], shadowPosition);
                 put(frameUniforms_, v, program.vertexSlots[kCameraProjectionMatrix], kept.projection);
                 putSkin(v, program.vertexSlots, item);
-                putNodes(frameUniforms_, v, program.vertex, item.nodes, frameTime_, frameDelta_, lights);
+                putNodes(frameUniforms_, v, program.vertex, *item.nodes, frameTime_, frameDelta_, lights);
                 planned.vertexOffset = static_cast<uint32_t>(v);
                 planned.fragmentOffset = static_cast<uint32_t>(fragmentBlock ? f : 0);
             }
         }
     }
 
+    addCpuStage(CpuShadowBuild, stageStarted);
     // One buffer for the frame's uniforms, grown (and its bind groups rebuilt) when it is too small,
     // written once: a queue write, so it lands before this frame's commands and after the last's.
     // Transparent draws replayed into the motion target, appended once their bind groups are chosen.
     std::vector<std::pair<size_t, WGPURenderPipeline>> responsiveDraws;
     if (traa_) {
         for (const Planned& draw : plan) {
+            if (!compilation) waste::debugAdd(waste::counters().velocityCandidates);
             const DrawItem& item = *draw.item;
             const auto& variant = draw.program->variant;
             // Alpha-tested and alpha-hashed draws need no coverage test here: the equal depth test keeps only the
             // fragments the main pass kept (UE 5.8.3 writes velocity for masked materials).
             const bool unsupported = item.morphGeometry || item.sprite || item.background ||
-                item.positionNode || item.nodes.vertexNode || item.transparent;
+                item.positionNode || item.nodes->vertexNode || item.transparent;
             const auto skip = [&](const char* reason) {
+                if (!compilation) waste::debugAdd(waste::counters().velocitySkipped);
                 const std::string note = std::string("TN_TRAA_VELOCITY_SKIPPED: ") + reason +
                     "; camera motion only";
                 if (std::find(diagnostics_.begin(), diagnostics_.end(), note) == diagnostics_.end()) diagnostics_.push_back(note);
@@ -3733,6 +4490,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 const auto pipeline = pipelines_->get(draw.program->vertex, &draw.program->fragment, target);
                 if (!pipeline) throw std::runtime_error("TN_TRAA_RESPONSIVE_PIPELINE_REFUSED");
                 responsiveDraws.emplace_back(size_t(&draw - plan.data()), pipeline);
+                if (!compilation) waste::debugAdd(waste::counters().velocitySkipped);
                 continue;
             }
             if (unsupported) { skip("unsupported vertex/coverage"); continue; }
@@ -3793,11 +4551,11 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                     std::memcpy(frameUniforms_.data() + offset + field.offset,
                         frameUniforms_.data() + draw.vertexOffset + from->offset, field.size);
             }
-            putNodes(frameUniforms_, offset, velocity.vertex, item.nodes, frameTime_, frameDelta_, lights);
+            putNodes(frameUniforms_, offset, velocity.vertex, *item.nodes, frameTime_, frameDelta_, lights);
             const auto previousModel = traa_->previousModel(item.key, item.matrixWorld);
             const bool instancesMoved = item.instanceMatrices && (!previous || previous->instanceHash != current.instanceHash);
             const std::array<double, 1> dynamic{
-                previousModel != item.matrixWorld || item.nodes.positionNode || item.boneMatrices || instancesMoved ? 1.0 : 0.0};
+                previousModel != item.matrixWorld || item.nodes->positionNode || item.boneMatrices || instancesMoved ? 1.0 : 0.0};
             for (const auto& field : velocity.vertex.uniforms) {
                 if (field.name == "unjitteredProjection") put(frameUniforms_, offset, &field, unjitteredCamera.projectionMatrix);
                 if (field.name == "previousModel") put(frameUniforms_, offset, &field, previousModel);
@@ -3814,7 +4572,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                     ? previous->uniforms.data() : frameUniforms_.data() + offset;
                 std::memcpy(frameUniforms_.data() + offset + field.offset, retained + from->offset, field.size);
             }
-            if (item.nodes.positionNode || item.boneMatrices || item.instanceMatrices)  // previous boneBase, instanceBase
+            if (item.nodes->positionNode || item.boneMatrices || item.instanceMatrices)  // previous boneBase, instanceBase
                 current.uniforms.assign(frameUniforms_.begin() + offset,
                     frameUniforms_.begin() + offset + velocity.vertex.uniformBlockSize);
             const bool changedBuffers = previous && previous->buffers != current.buffers;
@@ -3865,7 +4623,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         // Standard and Physical programs lead their fragment block with metalness and roughness.
         // A material node that replaces either one has no such field: the draw writes no surface (alpha 0).
         const bool surface = (item.kind == MaterialKind::Standard || item.kind == MaterialKind::Physical) &&
-                             !item.nodes.metalnessNode && !item.nodes.roughnessNode;
+                             !item.nodes->metalnessNode && !item.nodes->roughnessNode;
         auto& fragment = (surface ? surfaceFragments_ : normalFragments_)[item.flatShading ? 2 : size_t(item.side == 2)];
         if (fragment.wgsl.code.empty()) {
             shader::Program f{shader::Stage::Fragment};
@@ -3897,7 +4655,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 continue;
             }
             // A normalNode draw takes the merged fragment, which evaluates the node with the program's own layout.
-            const bool nodeNormal = normalPass && item.nodes.normalNode;
+            const bool nodeNormal = normalPass && item.nodes->normalNode;
             const bool cut = item.material->alphaTest > 0 || item.material->alphaHash;
             const shader::StageModule* fragment =
                 auxMask == kAuxNormal && !cut && !nodeNormal ? normalFragment(draw) : auxFragment(*draw.program, auxMask);
@@ -4002,14 +4760,57 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         if (uniformCapacity_ != 0) gpu_.destroy(uniformBuffer_);
         uniformCapacity_ = std::max<uint64_t>(frameUniforms_.size() * 2, 64 * 1024);
         uniformBuffer_ = gpu_.createBuffer(uniformCapacity_, WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
+        uploadedUniforms_.clear();  // a new buffer has nothing of the old arena in it
         rebuildGroups();
     } else if (shadowMapsChanged_) {
         rebuildGroups();
     }
     shadowMapsChanged_ = false;
-    if (!frameUniforms_.empty()) gpu_.writeBuffer(uniformBuffer_, 0, frameUniforms_.data(), frameUniforms_.size());
+    // FM2: only the bytes that changed since the last upload cross to the GPU, so a frame whose slots did not move —
+    // a still camera over still objects — sends nothing instead of the whole arena. A moving camera still rewrites
+    // every slot, because each draw's block carries the view and the view-space light slab: only a second binding
+    // for the frame's own slab takes that share out of every draw's block. The scan is per uniform block (a slot is
+    // 256-byte aligned, so a slot that moved re-sends whole), and a mostly-dirty arena still makes one write, so
+    // this never costs more calls than the single write it replaced.
+    const uint64_t uniformBytes = frameUniforms_.size();
+    if (uniformBytes != 0 && uploadedUniforms_.size() != uniformBytes) {
+        gpu_.writeBuffer(uniformBuffer_, 0, frameUniforms_.data(), uniformBytes);  // a grown arena: all of it once
+        uploadedUniforms_.assign(frameUniforms_.begin(), frameUniforms_.end());
+    } else if (uniformBytes != 0 && std::memcmp(uploadedUniforms_.data(), frameUniforms_.data(), uniformBytes) != 0) {
+        constexpr uint64_t kUniformBlock = kUniformAlign;  // one block's granularity
+        // Every block is kUniformAlign bytes, so a run's length is a multiple of 4, as writeBuffer requires.
+        static_assert(kUniformAlign % 4 == 0);
+        uniformDirtyRanges_.clear();
+        uint64_t runStart = 0, runEnd = 0;
+        const auto closeRun = [&] {
+            if (runEnd != runStart) uniformDirtyRanges_.emplace_back(runStart, runEnd - runStart);
+            runStart = runEnd = 0;
+        };
+        for (uint64_t at = 0; at < uniformBytes; at += kUniformBlock) {
+            const uint64_t end = std::min(at + kUniformBlock, uniformBytes);
+            if (std::memcmp(frameUniforms_.data() + at, uploadedUniforms_.data() + at, end - at) != 0) {
+                if (runEnd == runStart) runStart = at;
+                runEnd = end;
+            } else {
+                closeRun();
+            }
+        }
+        closeRun();
+        uint64_t dirty = 0;
+        for (const auto& range : uniformDirtyRanges_) dirty += range.second;
+        if (dirty * 2 >= uniformBytes) {  // mostly dirty: one write is cheaper than the calls
+            gpu_.writeBuffer(uniformBuffer_, 0, frameUniforms_.data(), uniformBytes);
+            uploadedUniforms_.assign(frameUniforms_.begin(), frameUniforms_.end());
+        } else {
+            for (const auto& [offset, length] : uniformDirtyRanges_) {
+                gpu_.writeBuffer(uniformBuffer_, offset, frameUniforms_.data() + offset, length);
+                std::memcpy(uploadedUniforms_.data() + offset, frameUniforms_.data() + offset, length);
+            }
+        }
+    }
     job.uniformBytes = frameUniforms_.size();
     bool jointBufferMoved = false;
+    bool instancesUploaded = false;
     for (auto& [name, storage] : storages_) {
         const uint64_t prefix = name == "boneMatrices" ? jointPrefix : 0;
         if (prefix + storage.data.size() * 4 > storage.capacity) {
@@ -4029,16 +4830,76 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                                 storage.uploadedBuffer.context == target.context &&
                                 storage.uploadedBuffer.index == target.index &&
                                 storage.uploadedBuffer.generation == target.generation;
-        if (sameBuffer && storage.uploadedPrefix == prefix && storage.uploaded.size() == bytes &&
-            std::memcmp(storage.uploaded.data(), source, bytes) == 0)
+        // TR1: of the bytes the GPU already holds at this offset only the blocks that differ cross to it, and the bytes
+        // past the old end are new; a buffer or offset that moved starts over with all of it. A draw whose bytes did not
+        // change (a still crowd, a draw that kept its place in `instances`) sends nothing, whatever its neighbours do.
+        const uint64_t held = sameBuffer && storage.uploadedPrefix == prefix ? std::min<uint64_t>(storage.uploaded.size(), bytes) : 0;
+        constexpr uint64_t kStorageBlock = 256;  // a multiple of 4: writeBuffer takes whole words
+        constexpr std::size_t kMaxWrites = 32;
+        auto& ranges = uniformDirtyRanges_;  // the uniform upload above is done with it
+        ranges.clear();
+        const auto dirty = [&](uint64_t at, uint64_t end) {
+            if (!ranges.empty() && ranges.back().first + ranges.back().second == at) ranges.back().second = end - ranges.back().first;
+            else ranges.emplace_back(at, end - at);
+        };
+        if (name != "instances") {  // the palettes change whole each frame: one compare that stops at the first difference, one write
+            if (held == bytes && storage.uploaded.size() == bytes && std::memcmp(storage.uploaded.data(), source, bytes) == 0) continue;
+            if (gpu_.writeBuffer(target, prefix, source, bytes) == GpuStatus::Ok) {
+                storage.uploaded.assign(source, source + bytes);
+                storage.uploadedBuffer = target;
+                storage.uploadedPrefix = prefix;
+            }
             continue;
-        if (gpu_.writeBuffer(target, prefix, storage.data.data(), bytes) == GpuStatus::Ok) {
-            storage.uploaded.assign(source, source + bytes);
+        }
+        // `instances` scans only what this plan copied (a place whose stores did not move was left alone and already
+        // matches the GPU) and the shadow rows past the places.
+        auto& spans = instanceScan_;
+        spans.clear();
+        std::sort(instanceDirty_.begin(), instanceDirty_.end());
+        for (const auto& [offset, count] : instanceDirty_) {
+            const uint64_t at = offset * 4, end = std::min((offset + count) * 4, held);
+            if (at >= end) continue;
+            if (!spans.empty() && at <= spans.back().second) spans.back().second = std::max(spans.back().second, end);
+            else spans.emplace_back(at, end);
+        }
+        const uint64_t tail = std::min(instanceTop_ * 4, held);
+        if (tail < held) spans.emplace_back(tail, held);
+        for (const auto& [from, to] : spans) {
+            for (uint64_t at = from; at < to; at += kStorageBlock) {
+                const uint64_t end = std::min(at + kStorageBlock, to);
+                if (!sameBytes(source + at, storage.uploaded.data() + at, end - at)) dirty(at, end);
+            }
+        }
+        if (bytes > held) dirty(held, bytes);
+        if (ranges.empty()) {
+            storage.uploaded.resize(bytes);  // it shrank: the bytes that remain are the ones the GPU holds
+            instancesUploaded = true;
+            continue;
+        }
+        const uint64_t first = ranges.front().first, last = ranges.back().first + ranges.back().second;
+        uint64_t dirtyBytes = 0;
+        for (const auto& range : ranges) dirtyBytes += range.second;
+        if (ranges.size() > kMaxWrites || dirtyBytes * 2 >= last - first) {  // mostly dirty, or many runs: one write over them all
+            ranges.assign(1, {first, last - first});
+        }
+        storage.uploaded.resize(bytes);
+        bool written = true;
+        for (const auto& [offset, length] : ranges) {
+            if (gpu_.writeBuffer(target, prefix + offset, source + offset, length) != GpuStatus::Ok) { written = false; break; }
+            std::memcpy(storage.uploaded.data() + offset, source + offset, length);
+        }
+        if (written) {
             storage.uploadedBuffer = target;
             storage.uploadedPrefix = prefix;
+            instancesUploaded = true;
+        } else {  // the copy no longer says what the GPU holds: the next frame sends all of it
+            storage.uploaded.clear();
+            storage.uploadedBuffer = Handle{};
         }
     }
 
+    if (instancesUploaded)  // the GPU holds what these places hold: the next plan may leave a place with this stamp alone
+        for (auto& [slot, stamp] : instancePlanned_) slot->stamp = stamp, slot->stamped = true;
     if (jointPrefix && !compilation) {
         if (jointBufferMoved && !bindGpuJoints(gpuJoints_)) throw std::runtime_error("TN_GPU_JOINTS: output resize refused");
         // Culled rigs keep disjoint trailing slots; no Bone data is inspected or repacked.
@@ -4068,7 +4929,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     // A vertex stage that samples graph textures (a positionNode's displacement map) binds them per
     // draw, in the main pass and the shadow passes alike; `graphKey` names the draw's textures.
     const auto vertexGroupOf = [&](const Planned& p, const std::string& graphKey) -> WGPUBindGroup {
-        if (!perDrawVertex(p.program->vertex)) return nullptr;
+        if (!probesOf(*p.program).vertexPerDraw) return nullptr;
         const std::string vertexKey = "vertex|" + std::to_string(reinterpret_cast<uintptr_t>(p.program)) + graphKey;
         const auto found = mapGroups_.find(vertexKey);
         if (found != mapGroups_.end()) return found->second;
@@ -4164,8 +5025,9 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         const GraphTextures* graphTextures = p.item->nodeTextures;
         std::string graphKey = graphKeyOf(*p.item);
         p.vertexGroup = vertexGroupOf(p, graphKey);
-        const bool viewport = readsViewport(p.program->fragment);
-        const bool postTexture = readsPostTexture(p.program->fragment);
+        const DrawProbes probes = probesOf(*p.program);
+        const bool viewport = probes.viewport;
+        const bool postTexture = probes.postTexture;
         if (!p.item->map && !p.item->envMap && !p.item->normalMap && !readsPbr && !p.item->pmremMap &&
             !p.item->reflectorView && !graphTextures && !viewport && !postTexture) continue;
         DrawCache* cache = p.item->cache;
@@ -4216,7 +5078,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     // A masked caster's depth program samples the caster's map: its group binds that texture (PRD-651).
     for (ShadowPass& pass : shadowPasses)
         for (Planned& draw : pass.draws) {
-            if (!draw.item->map || !perDrawFragment(draw.program->fragment)) continue;
+            if (!draw.item->map || !probesOf(*draw.program).fragmentPerDraw) continue;
             const MaterialTexture* map = materialTexture(*draw.item->map);
             const std::string key = "depth|" + std::to_string(reinterpret_cast<uintptr_t>(draw.program)) + "|" +
                                     std::to_string(reinterpret_cast<uintptr_t>(map->view)) + "|" +
@@ -4265,7 +5127,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     };
     const auto syncNamed = [&](const Planned& p) {
         const DrawItem& item = *p.item;
-        if (!item.colors && !item.instanceMatrices && !item.instanceColors && item.attributes.empty()) return;
+        if (!item.colors && !item.instanceMatrices && !item.instanceColors && item.attributes->empty()) return;
         for (const shader::VertexAttribute& a : p.program->vertex.attributes)
             if (BufferStore* source = vertexSourceOf(item, a)) geometry_->cache.sync(*source, WGPUBufferUsage_Vertex);
     };
@@ -4307,7 +5169,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     for (std::size_t k = 0; k < job.shadowKeys.size(); ++k) bundleKeyOf(shadowPasses[k].draws, job.shadowKeys[k]);
     job.auxKey.push_back(auxMask);
     job.bundleKey.push_back(static_cast<std::size_t>(
-        std::find_if(plan.begin(), plan.end(), [](const Planned& p) { return readsViewport(p.program->fragment); }) -
+        std::find_if(plan.begin(), plan.end(), [&](const Planned& p) { return probesOf(*p.program).viewport; }) -
         plan.begin()));
     // PRD-754: a pass as retained rows (UE 5.8.3: Engine/Source/Runtime/Renderer/Private/MeshDrawCommands.cpp keeps
     // cached draw commands across frames; only the visible set and instance counts change). A draw out of view keeps its
@@ -4648,6 +5510,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     job.color = color;
     job.depth = depth;
     job.timed = timed;
+    job.debugTimestampRequested = debugTimestampRequested_;
     job.source = sourceFrame_;
     job.groupEpoch = groupsChosenAt;
     job.auxMask = auxMask;
@@ -4666,12 +5529,14 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     job.presentTarget = presentTarget;
     job.presentFormat = presentFormat;
     pendingEncode_ = true;
+    addCpuStage(CpuPrepare, prepareStarted);
     if (defer) return id;
     encodePending();
     return id;
 }
 
 void Renderer::encodeFrame(FrameJob& job) {
+    const CpuStageMeter encodeMeter(cpuStageMs_[CpuEncode], cpuMetered_);
     FrameGpuTimer::Scope timerScope(passTimer_.get());
     // The encode half (PRD-613): records and submits what renderPrepared planned. It reads the job,
     // the renderer's own GPU state and the geometry cache's resolved handles, and nothing the game writes.
@@ -4767,7 +5632,7 @@ void Renderer::encodeFrame(FrameJob& job) {
         if (item.boneMatrices && tally != Tally::Extra) {
             auto& stats = counted ? lastFrame_.mainSkinned : lastFrame_.shadowSkinned;
             ++stats.draws;
-            if (item.boneStride) {
+            if (item.boneStride || item.shadowGroup) {
                 ++stats.batches;
                 stats.instances += item.instanceCount;
             } else {
@@ -4872,15 +5737,13 @@ void Renderer::encodeFrame(FrameJob& job) {
     // Like core's CPU measurement when timestamp queries are unavailable; never mix CPU and GPU samples.
     if (!passTimer_->queries)
         for (const auto& [key, ms] : shadowCosts) virtualShadows_.at(key.first).atlas.recordCost(key.second, ms, frameDelta_);
-    // A resolve over a frame the graph draws seeds from that frame, in its own pass.
-    if (traa_ && !lateTraa_) traa_->seedHistory(encoder, sceneColor_);
     WGPURenderPassEncoder pass = beginTimedRenderPass(encoder, &passDesc, ownsPassTimer_ ? 1 : 2, {"scene", inputWidth_, inputHeight_});
     bound = nullptr;
     boundIndex = nullptr;
     // three's viewport textures copy the frame at the first draw that reads one: the main pass splits
     // there, the scene colour and depth are copied, and the rest draws in a second pass that loads them.
     const std::size_t viewportSplit = static_cast<std::size_t>(
-        std::find_if(plan.begin(), plan.end(), [](const Planned& p) { return readsViewport(p.program->fragment); }) -
+        std::find_if(plan.begin(), plan.end(), [&](const Planned& p) { return probesOf(*p.program).viewport; }) -
         plan.begin());
     const std::vector<uint64_t>& bundleKey = job.bundleKey;
     // A pass's retained rows, recorded with each draw's counts read from its indirect record (firstInstance 0).
@@ -5213,12 +6076,12 @@ void Renderer::encodeFrame(FrameJob& job) {
         WGPUCommandEncoderDescriptor next = {};
         return wgpuDeviceCreateCommandEncoder(device_, &next);
     };
+    const double postStarted = meterStart(cpuMetered_);
     if (postEffects_) {
         // three's Info counts each fullscreen effect pass as one draw of one triangle, like the output pass below.
         postEffects_->setHost(lateTraa_ ? PostEffects::HostPass([this](WGPUCommandEncoder resolveEncoder, WGPUTexture beauty,
                                                                      WGPUTextureView beautyView, WGPUTexture output,
                                                                      WGPUTextureView outputView) {
-                                  traa_->seedHistory(resolveEncoder, beauty);
                                   traa_->resolve(resolveEncoder, beauty, beautyView, depth_, depthView_, output, outputView);
                               })
                               : PostEffects::HostPass());
@@ -5234,6 +6097,7 @@ void Renderer::encodeFrame(FrameJob& job) {
     }
     encoder = recordSampledTargets(encoder);
     if (!sceneOnly_ && (writesOutput_ || presentTarget)) outputPass(encoder, presentTarget, presentFormat);
+    addCpuStage(CpuPost, postStarted);
     const auto segments = passTimer_->segments;
     const auto passInfo = passTimer_->passes;
     const std::array<uint32_t, 4> extent{inputWidth_, inputHeight_, width_, height_};
@@ -5242,6 +6106,8 @@ void Renderer::encodeFrame(FrameJob& job) {
         if (!timestampResolve_.type)
             timestampResolve_ = gpu_.createBuffer(FrameGpuTimer::maxPasses * 16, WGPUBufferUsage_QueryResolve | WGPUBufferUsage_CopySrc);
         wgpuCommandEncoderResolveQuerySet(encoder, passTimer_->queries, 0, uint32_t(segments.size()) * 2, gpu_.buffer(timestampResolve_), 0);
+        waste::debugAdd(waste::counters().timestampResolves);
+        if (!job.debugTimestampRequested) waste::debugAdd(waste::counters().gpuTimestampUnrequestedSamples);
     }
     WGPUCommandBufferDescriptor commandDesc = {};
     submit(wgpuCommandEncoderFinish(encoder, &commandDesc));
@@ -5299,6 +6165,7 @@ void Renderer::encodeFrame(FrameJob& job) {
             t->passes = uint32_t(segments.size());
             t->source = source;
             ++t->samples;
+            waste::debugAdd(waste::counters().timestampSamplesDelivered);
         });
     }
     if (ownsPassTimer_) {
@@ -5310,6 +6177,13 @@ void Renderer::encodeFrame(FrameJob& job) {
         std::lock_guard lock(frameMailMutex_);
         lastFrame_.keptShadowMaps = job.keptShadowMaps;
         lastFrame_.uniformBytes = job.uniformBytes;
+        lastFrame_.paletteWrites = job.paletteWrites;
+        lastFrame_.instanceCopies = job.instanceCopies;
+        waste::debugAdd(waste::counters().renderFrames);
+        waste::debugAdd(waste::counters().renderDraws, lastFrame_.draws);
+        waste::debugAdd(waste::counters().shadowDraws, lastFrame_.shadowDraws);
+        waste::debugAdd(waste::counters().auxPasses, lastFrame_.auxPasses);
+        waste::debugAdd(waste::counters().uniformUploadBytes, job.uniformBytes);
         frameMail_ = lastFrame_;
     }
 }

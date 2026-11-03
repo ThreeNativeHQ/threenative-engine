@@ -72,6 +72,27 @@ describe("starter post import bindings", () => {
     expect(await readFile(outfile, "utf8")).not.toContain("TN_NATIVE_ENGINE_UNBOUND:");
   });
 
+  // `version` is the one value core declares in the barrel itself rather than re-exporting, so a
+  // binding list that only read `export { … } from` refused it: every game that stamps the engine
+  // version into its HUD could not be packaged for the native engine (TN_NATIVE_ENGINE_UNBOUND).
+  it("binds a value core declares in its own barrel", async () => {
+    const directory = await mkdtemp(path.resolve("packages/runtime-native/.starter-post-"));
+    directories.push(directory);
+    const entry = path.join(directory, "entry.ts");
+    const outfile = path.join(directory, "game.js");
+    await writeFile(
+      entry,
+      `import { version } from "@threenative/core"; globalThis.bound = version;`,
+    );
+    await bundleNativeEngine({ entry, outfile, boot: false, host: false });
+    const bundle = await readFile(outfile, "utf8");
+    expect(bundle).not.toContain("TN_NATIVE_ENGINE_UNBOUND:");
+    const declaration = /^export const version = "([^"]+)";$/mu.exec(
+      await readFile("packages/core/src/index.ts", "utf8"),
+    );
+    expect(bundle).toContain(declaration?.[1]);
+  });
+
   it.each([
     "atomicAdd",
     "atomicStore",

@@ -2200,7 +2200,7 @@ private:
         // counts as on, and a host that publishes a flag never decides it twice. Listed rather
         // than pattern-matched on a prefix: publishing every `TN_*` variable a machine happens to
         // carry is a leak, and one line per flag is the price of not having one.
-        for (const char* flag : {"TN_FRAME_SPANS", "TN_RENDERLIST_VALIDATE"}) {
+        for (const char* flag : {"TN_FRAME_SPANS", "TN_RENDERLIST_VALIDATE", "TN_DEBUG"}) {
             const char* value = std::getenv(flag);
             if (value != nullptr && value[0] != '\0') {
                 jsEngine_->setProperty(env, flag, jsEngine_->newString(value));

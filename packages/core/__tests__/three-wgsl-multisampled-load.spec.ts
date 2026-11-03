@@ -95,6 +95,9 @@ describe("SMAA weights texture sampling", () => {
       "getUniformBufferLimit",
     ).mockReturnValue(65_536);
     vi.spyOn(renderer, "hasFeature").mockReturnValue(false);
+    // r187 builders share bind groups through renderer._bindings, which init() creates. A fresh
+    // Bindings returns an unseen group as is.
+    Reflect.set(renderer, "_bindings", { getSharedBindGroup: (group: object) => group });
     const input = new RenderTarget(64, 64);
     const effect = smaa(texture(input.texture));
     const geometry = new PlaneGeometry();

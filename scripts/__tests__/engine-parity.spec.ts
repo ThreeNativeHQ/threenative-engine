@@ -11,6 +11,7 @@ import {
   sameFixedStepPose,
   sideBySide,
   verdict,
+  waitForEnvironmentBake,
   waitForWorld,
   withBrowserWatchdogArtifact,
   withEngine,
@@ -50,6 +51,12 @@ describe("engine parity guard", () => {
     expect(worldDrawn(frames(100, 30, 40, 0, 20))).toBe(false);
     // Drawn frames older than the inspected window do not count.
     expect(worldDrawn([...frames(90, 90), ...frames(0, 0, 0, 0, 0, 0, 0, 0)])).toBe(false);
+    // CI run 41262005879: shooter's first frames draw each mesh (780 main draws), then the same
+    // triangles batch into 157. A busiest sample older than the window must not hold the world
+    // undrawn for the whole wait, which a 1,024-sample series on a software adapter never rolls.
+    expect(
+      worldDrawn([...frames(867, 863, 863), ...frames(101, 101, 101, 101, 0, 101, 101, 101)]),
+    ).toBe(true);
   });
 
   it("waits for the world to draw, then fails closed when it never does", async () => {
@@ -79,6 +86,30 @@ describe("engine parity guard", () => {
     await expect(
       waitForWorld({ bridge: { sample: async () => ({}) }, page } as never),
     ).rejects.toThrow("TN_ENGINE_PARITY_WORLD_UNOBSERVABLE");
+  });
+
+  it("waits for a started environment bake to finish, then fails closed when it never does", async () => {
+    // CI run 41204117871: a software adapter drew minimal's threejs arm before the bake landed.
+    const entries: { text: string }[] = [{ text: "TN_ENVIRONMENT_BAKE:started" }];
+    const page = {
+      evaluate: vi.fn(async () => {
+        if (page.evaluate.mock.calls.length === 2)
+          entries.push({ text: "TN_ENVIRONMENT_BAKE:finished ready=true" });
+      }),
+    };
+    const baked = await waitForEnvironmentBake({ consoleEntries: entries, page } as never);
+    expect(baked).toMatchObject({ started: 1, finished: 1 });
+    expect(page.evaluate).toHaveBeenCalledTimes(2);
+    await expect(
+      waitForEnvironmentBake(
+        { consoleEntries: [{ text: "TN_ENVIRONMENT_BAKE:started" }], page } as never,
+        0,
+      ),
+    ).rejects.toThrow("TN_ENGINE_PARITY_ENVIRONMENT_NOT_BAKED");
+    // A page that never started a bake has nothing to wait for.
+    await expect(
+      waitForEnvironmentBake({ consoleEntries: [], page } as never),
+    ).resolves.toMatchObject({ started: 0, finished: 0 });
   });
 
   it("persists Chromium watchdog evidence when a capture fails, then rethrows that failure", async () => {

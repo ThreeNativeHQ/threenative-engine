@@ -2,6 +2,14 @@ import type { PNG } from "pngjs";
 
 export type PixelBounds = { bottom: number; left: number; right: number; top: number };
 
+/**
+ * The 3D view of the 1280x720 starter frame, clear of the HUD. The controls bar starts at y 644, so
+ * a stage reaching 660 counted its pixels as world: an unpainted SwiftShader frame (cover and HUD
+ * over one flat colour) then read 96.1% flat instead of 98.5% and was judged as a look failure
+ * (PR #595 run 41275660116, `contact-shadow coverage 0.0000`).
+ */
+export const STARTER_LOOK_STAGE: PixelBounds = { bottom: 640, left: 220, right: 1060, top: 160 };
+
 type ColorComponent = { bounds: PixelBounds; count: number };
 type ColorObject = { bounds?: PixelBounds; count: number };
 

@@ -1,5 +1,6 @@
 import {
   ACESFilmicToneMapping,
+  type Color,
   CustomToneMapping,
   PerspectiveCamera,
   type RenderTarget,
@@ -21,6 +22,7 @@ import {
 import { afterEach, expect, it, vi } from "vitest";
 import { qualityPreset } from "../src/look/quality.js";
 import { type OutputRenderer, WorldEnvironment } from "../src/look/world-environment.js";
+import { readRenderChainObservation } from "../src/render/chain.js";
 import { ResolutionSubrect } from "../src/render/resolution-subrect.js";
 
 const host = vi.hoisted(() => ({ native: false }));
@@ -238,6 +240,20 @@ it.each([
           getRenderTarget: () => null,
           getDrawingBufferSize: (size: Vector2) => size.set(1920, 1080),
           setRenderTarget: vi.fn(),
+          // r187 RTTNode saves, resets and restores the whole renderer state around its draw.
+          getActiveCubeFace: () => 0,
+          getActiveMipmapLevel: () => 0,
+          getRenderObjectFunction: () => null,
+          getPixelRatio: () => 1,
+          getMRT: () => null,
+          getClearColor: (colour: Color) => colour,
+          getClearAlpha: () => 1,
+          getScissorTest: () => false,
+          setMRT: vi.fn(),
+          setRenderObjectFunction: vi.fn(),
+          setClearColor: vi.fn(),
+          setPixelRatio: vi.fn(),
+          setScissorTest: vi.fn(),
         },
       } as unknown as NodeFrame;
       producer.updateBefore(frame);
@@ -293,3 +309,37 @@ it.each([
     material.dispose();
   },
 );
+
+const noPost = {
+  autoExposureEnabled: false,
+  bloomEnabled: false,
+  godraysEnabled: false,
+  motionBlurEnabled: false,
+  sharpenEnabled: false,
+  ssgiEnabled: false,
+  ssrEnabled: false,
+  gtaoEnabled: false,
+  localExposureEnabled: false,
+  renderChainTier: "low",
+  screenSpaceAA: "disabled",
+  vignetteAmount: 0,
+} as const;
+
+it("still reports its render-chain tier when every post stage is off", () => {
+  const raw = {};
+  const lines: string[] = [];
+  vi.spyOn(console, "log").mockImplementation((line: string) => lines.push(line));
+  const applied = new WorldEnvironment(noPost).apply(
+    renderer("webgpu", raw).target,
+    new Scene(),
+    new PerspectiveCamera(),
+  );
+  const marker = lines.find((line) => line.startsWith("TN_RENDER_CHAIN:"));
+  expect(JSON.parse(marker?.slice("TN_RENDER_CHAIN:".length) ?? "{}").applied).toMatchObject({
+    stages: [],
+    tier: "low",
+  });
+  expect(readRenderChainObservation(raw)).toMatchObject({ stages: [], tier: "low" });
+  applied.dispose?.();
+  expect(readRenderChainObservation(raw)).toBeUndefined();
+});

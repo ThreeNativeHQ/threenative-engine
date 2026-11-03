@@ -126,14 +126,14 @@ describe("genre sandbox", () => {
   it("packs the native runtime and capability server with the user-facing packages", () => {
     expect(PACKAGES).toContain("runtime-native");
     expect(PACKAGES).toContain("engine-mcp");
-    expect(PACKAGES).toContain("blender-mcp");
+    expect(PACKAGES).toContain("blender-bridge");
     expect(PACKAGES).toContain("raw-unreal");
     expect(sandboxWorkspacePackages()).toContain("@threenative/runtime-native");
   });
 
   it("resolves unscoped package names through their actual workspace directories", () => {
     expect(sandboxPackageDirectory("threenative-engine-mcp")).toBe("packages/engine-mcp");
-    expect(sandboxPackageDirectory("threenative-blender-mcp")).toBe("packages/blender-mcp");
+    expect(sandboxPackageDirectory("@threenative/blender-bridge")).toBe("packages/blender-bridge");
   });
 
   it("defaults to the workspace sandbox and keeps package staging inside it", async () => {
@@ -279,7 +279,7 @@ describe("genre sandbox", () => {
           : workspacePackageSourceFlag(dependency);
       expect(scaffold, dependency).toContain(flag);
     }
-    expect(scaffold).toContain(workspacePackageSourceFlag("threenative-blender-mcp"));
+    expect(scaffold).toContain(workspacePackageSourceFlag("@threenative/blender-bridge"));
     expect(scaffold).toContain(workspacePackageSourceFlag("@threenative/raw-unreal"));
   }, 30_000);
 

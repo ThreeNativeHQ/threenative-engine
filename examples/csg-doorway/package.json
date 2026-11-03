@@ -22,7 +22,7 @@
   "devDependencies": {
     "@threenative/playtest": "workspace:*",
     "@threenative/runtime-native": "workspace:*",
-    "@types/three": "0.185.3",
+    "@types/three": "0.187.0",
     "typescript": "catalog:",
     "vite": "catalog:",
     "@typescript/native": "catalog:"

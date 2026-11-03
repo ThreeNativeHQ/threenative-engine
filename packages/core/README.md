@@ -40,13 +40,11 @@ export default game;
 
 ## Licensing
 
-The runtime and TypeScript source in this package are MIT licensed. The bundled Blender conversion
-scripts under `gpl/` are GPL-2.0-or-later licensed and ship with their license text at
-[`gpl/LICENSE.GPL`](gpl/LICENSE.GPL). The package metadata declares the aggregate SPDX expression
-`MIT AND GPL-2.0-or-later`; apply the license that belongs to each part you use.
+The runtime and TypeScript source in this package are MIT licensed. Blender conversion is not part
+of this package: `@threenative/blender-bridge` owns the GPL-2.0-or-later scripts that run inside
+Blender, beside their own license text.
 
 - [MIT License](https://github.com/ThreeNativeHQ/threenative/blob/main/LICENSE)
-- [GPL-2.0-or-later](gpl/LICENSE.GPL)
 
 ## Links
 

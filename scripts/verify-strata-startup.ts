@@ -291,10 +291,7 @@ export function collectBundledThirdPartyPackages(outputs: readonly unknown[]) {
 
 function collectThreePatchDigests(worktreeRoot: string) {
   const files = [
-    "packages/core/patches/three@0.185.1.patch",
-    "packages/core/patches/three@0.185.1-prd269-upgrade.patch",
-    "packages/core/three-patch/pin.json",
-    "packages/core/three-patch/source-delta.patch",
+    "packages/core/patches/three@0.187.0.patch",
   ];
   return Object.fromEntries(
     files

@@ -494,20 +494,20 @@
 <rect x="891.6418686226451" y="578.9915914304552" width="115.57909605303769" height="65.41848771309697" rx="4" fill="#232826"/>
 <text x="895.6418686226451" y="589.9915914304552" class="s">Sky atmosphere</text>
 <rect x="892.6418686226451" y="591.9915914304552" width="36.666609040601884" height="50.418487713096965" rx="2" fill="#d9961f"><title>Sky atmosphere · C++ orchestration (all stages) · In progress</title></rect>
-<rect x="892.6418686226451" y="639.4100791435521" width="3.3333280946001715" height="3" fill="#fff" opacity=".85"/>
+<rect x="892.6418686226451" y="639.4100791435521" width="6.11110150676698" height="3" fill="#fff" opacity=".85"/>
 <text x="895.6418686226451" y="602.9915914304552" class="l">C++ …</text>
 <rect x="930.308477663247" y="591.9915914304552" width="31.74988738038826" height="50.418487713096965" rx="2" fill="#d9961f"><title>Sky atmosphere · Shader kernels (all LUTs + render) · In progress</title></rect>
-<rect x="930.308477663247" y="639.4100791435521" width="2.8863533982171146" height="3" fill="#fff" opacity=".85"/>
+<rect x="930.308477663247" y="639.4100791435521" width="5.2916478967313765" height="3" fill="#fff" opacity=".85"/>
 <text x="933.308477663247" y="602.9915914304552" class="l">Sha…</text>
 <rect x="963.0583650436353" y="591.9915914304552" width="42.162599632047545" height="23.489001513111702" rx="2" fill="#d9961f"><title>Sky atmosphere · Real-time sky light capture · In progress</title></rect>
-<rect x="963.0583650436353" y="612.4805929435669" width="3.8329636029134133" height="3" fill="#fff" opacity=".85"/>
+<rect x="963.0583650436353" y="612.4805929435669" width="7.02709993867459" height="3" fill="#fff" opacity=".85"/>
 <text x="966.0583650436353" y="602.9915914304552" class="l">Real-…</text>
 <rect x="963.0583650436353" y="616.4805929435669" width="20.581299816023716" height="12.464743099992688" rx="2" fill="#d9961f"><title>Sky atmosphere · Transmittance LUT · In progress</title></rect>
-<rect x="963.0583650436353" y="625.9453360435596" width="2" height="3" fill="#fff" opacity=".85"/>
+<rect x="963.0583650436353" y="625.9453360435596" width="3.4302166360039523" height="3" fill="#fff" opacity=".85"/>
 <rect x="963.0583650436353" y="629.9453360435596" width="20.581299816023716" height="12.464743099992575" rx="2" fill="#d9961f"><title>Sky atmosphere · Multi-scattering LUT · In progress</title></rect>
-<rect x="963.0583650436353" y="639.4100791435521" width="2" height="3" fill="#fff" opacity=".85"/>
+<rect x="963.0583650436353" y="639.4100791435521" width="3.4302166360039523" height="3" fill="#fff" opacity=".85"/>
 <rect x="984.639664859659" y="616.4805929435669" width="20.58129981602383" height="12.464743099992688" rx="2" fill="#d9961f"><title>Sky atmosphere · Sky-view LUT · In progress</title></rect>
-<rect x="984.639664859659" y="625.9453360435596" width="2" height="3" fill="#fff" opacity=".85"/>
+<rect x="984.639664859659" y="625.9453360435596" width="3.4302166360039714" height="3" fill="#fff" opacity=".85"/>
 <rect x="984.639664859659" y="629.9453360435596" width="20.58129981602383" height="12.464743099992575" rx="2" fill="#4a86d6"><title>Sky atmosphere · Aerial perspective volume · Not started</title></rect>
 <rect x="891.6418686226451" y="646.4100791435521" width="115.57909605303769" height="59.58992085644786" rx="4" fill="#232826"/>
 <text x="895.6418686226451" y="657.4100791435521" class="s">Volumetric clouds</text>

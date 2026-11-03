@@ -377,10 +377,13 @@ describe("threenative build", () => {
     const runtime = path.join(root, "node_modules/@threenative/runtime-native");
     await mkdir(path.join(runtime, "build/web"), { recursive: true });
     await writeFile(path.join(runtime, "package.json"), '{"name":"@threenative/runtime-native"}');
-    await writeFile(
-      path.join(runtime, "build/web/tn-native-engine-web.mjs"),
-      "export default async function createModule() { return {}; }\n",
-    );
+    // The Wasm engine ships as a pair: `web-engine.ts` loads the threaded module only and refuses a
+    // project that carries the single-thread build alone.
+    for (const name of ["tn-native-engine-web.mjs", "tn-native-engine-web-threads.mjs"])
+      await writeFile(
+        path.join(runtime, "build/web", name),
+        "export default async function createModule() { return {}; }\n",
+      );
     await writeFile(
       path.join(root, "threenative.config.ts"),
       'export default { engine: "threenative" };\n',

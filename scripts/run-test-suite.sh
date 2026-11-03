@@ -240,7 +240,7 @@ verify_prebuilt_outputs() {
 
   for config in packages/*/tsup.config.ts; do
     package_directory="${config%/tsup.config.ts}"
-    output="$package_directory/dist/index.js"
+    output="$package_directory/$(node -p "require('./$package_directory/package.json').main.replace(/^\\.\\//, '')")"
     if [[ ! -f "$output" ]]; then
       missing+=("$output")
     fi

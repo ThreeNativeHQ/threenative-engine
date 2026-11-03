@@ -66,9 +66,24 @@ export async function captureReflections(
     throw error;
   }
   console.info(
-    `TN_REFLECTION_CAPTURE ${JSON.stringify({ objects: meshes.length, faceSize: 256, milliseconds: Math.round(performance.now() - started) })}`,
+    `TN_REFLECTION_CAPTURE ${JSON.stringify({ objects: meshes.length, faceSize: 256, milliseconds: Math.round(performance.now() - started), zenith: textures.map(zenithMean) })}`,
   );
   return () => {
     for (const texture of textures) texture.dispose();
   };
+}
+
+/**
+ * Mean RGB radiance of the capture's zenith cap, the rows above 45 degrees (from the north pole, as the engine writes
+ * them): only sky is there, so a capture whose faces missed the sky reads about zero. Null without RGBA data.
+ */
+function zenithMean(texture: Texture): number[] | null {
+  const image = texture.image as { data?: ArrayLike<number>; width?: number; height?: number };
+  const { data, width = 0, height = 0 } = image ?? {};
+  if (data === undefined || data.length !== width * height * 4) return null;
+  const texels = width * Math.max(1, Math.floor(height / 4));
+  const sum = [0, 0, 0];
+  for (let i = 0; i < texels; i++)
+    for (let c = 0; c < 3; c++) sum[c] = (sum[c] ?? 0) + (data[i * 4 + c] ?? 0);
+  return sum.map((v) => Number((v / texels).toFixed(3)));
 }

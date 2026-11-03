@@ -1,6 +1,6 @@
 {
   "name": "@threenative/core",
-  "version": "0.3.7",
+  "version": "0.3.10",
   "license": "MIT AND GPL-2.0-or-later",
   "description": "The small vanilla Three.js game runtime foundation.",
   "keywords": [
@@ -27,7 +27,6 @@
     "dist",
     "LICENSE",
     "mcp",
-    "gpl",
     "scripts/apply-three-patch.mjs",
     "scripts/ensure-mcp.mjs",
     "scripts/postinstall.mjs",
@@ -84,15 +83,15 @@
   "sideEffects": false,
   "scripts": {
     "postinstall": "node ./scripts/postinstall.mjs",
-    "patch:generate": "node scripts/generate-three-patch.mjs",
-    "build": "node scripts/generate-version.mjs && tsup --config tsup.config.ts && node scripts/bundle-engine-mcp.mjs && node scripts/bundle-blender-mcp.mjs && node scripts/bundle-animation-mcp.mjs && publint",
+    "build": "node scripts/generate-version.mjs && tsup --config tsup.config.ts && node scripts/bundle-engine-mcp.mjs && node scripts/bundle-animation-mcp.mjs && publint",
     "typecheck": "tsc --noEmit",
     "test": "publint --strict"
   },
   "dependencies": {
+    "chrome-devtools-mcp": "1.11.0",
     "three": "catalog:",
     "three-mesh-bvh": "catalog:",
-    "threenative-asset-mcp": "0.14.0",
+    "threenative-asset-mcp": "0.15.0",
     "threenative-sculpt-mcp": "0.2.2",
     "zustand": "catalog:"
   },
@@ -100,19 +99,18 @@
     "@threenative/playtest": "workspace:*",
     "@types/react": "catalog:",
     "@types/react-reconciler": "0.32.1",
-    "@types/three": "0.185.3",
+    "@types/three": "0.187.0",
     "publint": "0.3.22",
     "react": "catalog:",
     "react-reconciler": "0.33.0",
     "threenative-animation-mcp": "workspace:*",
-    "threenative-blender-mcp": "workspace:*",
     "threenative-engine-mcp": "workspace:*",
     "tsup": "8.5.1",
     "typescript": "catalog:",
     "@typescript/native": "catalog:"
   },
   "peerDependencies": {
-    "@threenative/playtest": ">=0.3.7 <0.4.0",
+    "@threenative/playtest": ">=0.3.10 <0.4.0",
     "react": ">=19.2.0 <20",
     "react-reconciler": ">=0.33.0 <0.34"
   },

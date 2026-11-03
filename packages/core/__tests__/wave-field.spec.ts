@@ -54,17 +54,16 @@ interface IWaveNode {
   readonly getOutputNode?: (builder: unknown) => unknown;
 }
 
+// r187 TSL returns the call node itself; the r185 proxy wrapper (`.node`) is gone.
 interface IWaveGraphInternals {
-  readonly node?: {
-    readonly shaderNode?: {
-      readonly jsFunc?: unknown;
-    };
-    readonly getOutputNode?: (builder: unknown) => unknown;
+  readonly shaderNode?: {
+    readonly jsFunc?: unknown;
   };
+  readonly getOutputNode?: (builder: unknown) => unknown;
 }
 
 function graphShaderSource(graph: unknown): string {
-  const shaderNode = (graph as IWaveGraphInternals).node?.shaderNode;
+  const shaderNode = (graph as IWaveGraphInternals).shaderNode;
   if (typeof shaderNode?.jsFunc !== "function")
     throw new Error("wave graph shader function missing");
   return String(shaderNode.jsFunc);
@@ -128,6 +127,8 @@ function evaluateTslGraph(
 
 function evaluateNode(candidate: IWaveNode, context: IWaveEvaluationContext): NumericValue {
   if (candidate === context.positionNode) return context.position;
+  const hoisted = context.values.get(candidate);
+  if (hoisted !== undefined && !candidate.isVarNode) return hoisted;
   if (candidate.isStackNode) return evaluateStack(candidate, context);
   if (candidate.isAssignNode) {
     assignNode(candidate, context);
@@ -149,6 +150,9 @@ function evaluateNode(candidate: IWaveNode, context: IWaveEvaluationContext): Nu
 function evaluateStack(candidate: IWaveNode, context: IWaveEvaluationContext): NumericValue {
   for (const child of candidate.nodes ?? []) {
     if (child.isAssignNode) assignNode(child, context);
+    // r187 hoists an expression into a `let` at its stack position; read it once, there, so a
+    // later assignment to a variable it reads (the warp moving x and z) cannot change it.
+    else if (!child.isVarNode) context.values.set(child, evaluateNode(child, context));
     else evaluateNode(child, context);
   }
   return candidate.outputNode === null || candidate.outputNode === undefined
@@ -230,7 +234,7 @@ function assignNode(candidate: IWaveNode, context: IWaveEvaluationContext): void
 }
 
 function expandTslGraph(graph: unknown): IWaveNode {
-  const graphNode = requireNode((graph as IWaveGraphInternals).node, "wave graph call");
+  const graphNode = requireNode(graph, "wave graph call");
   if (typeof graphNode.getOutputNode !== "function")
     throw new Error("wave graph output builder missing");
   const object = new Mesh(new BufferGeometry(), new MeshBasicNodeMaterial());

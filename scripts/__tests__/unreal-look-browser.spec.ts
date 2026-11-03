@@ -138,3 +138,22 @@ describe("the capture scripts", () => {
     },
   );
 });
+
+describe("assertConfigEcho", () => {
+  const url = "http://127.0.0.1:5173/main.html?tnRef=L9&sun=15,25&baseline=1";
+
+  it("stops a capture whose page read no query (the starter's worker page)", async () => {
+    const { assertConfigEcho } = await import("../unreal-look/browser.js");
+    expect(() => assertConfigEcho(url, {})).toThrow(
+      /TN_UNREAL_LOOK_CONFIG_MISMATCH.*tnRef, sun, baseline/u,
+    );
+    expect(() => assertConfigEcho(url, undefined)).toThrow(/TN_UNREAL_LOOK_CONFIG_MISMATCH/u);
+  });
+
+  it("passes a page that read every requested parameter", async () => {
+    const { assertConfigEcho } = await import("../unreal-look/browser.js");
+    expect(() =>
+      assertConfigEcho(url, { tnRef: "L9", sun: "15,25", baseline: "1", extra: "x" }),
+    ).not.toThrow();
+  });
+});

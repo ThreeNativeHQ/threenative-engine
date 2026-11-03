@@ -16,7 +16,14 @@ on:
       - develop
     # Drafts run nothing; marking one ready for review starts the board.
     types: [opened, synchronize, reopened, ready_for_review]
-  workflow_dispatch: {} # Explicit full audit; never a selectable exemption.
+  # A manual full run carries each job that already passed on the same inputs (PRD-776), which is
+  # how these runs stopped costing a quarter of all CI minutes. `cold` asks for fresh work everywhere.
+  workflow_dispatch:
+    inputs:
+      cold:
+        description: Run every job fresh, with nothing carried
+        type: boolean
+        default: false
   # PRD-481: the merge queue. GitHub tests the exact result a merge would produce, so two PRs
   # merged back to back can no longer put a tree on develop that nothing tested. Qualification
   # always runs fresh exhaustive coverage; unproven matrix verdict reuse remains disabled, with one
@@ -27,8 +34,12 @@ on:
   schedule:
     - cron: "17 3 * * *"
 
+# A develop push shares one group and cancels nothing: one board runs, the newest push waits, and a
+# push it replaces never starts. Each push once had its own group, so three quick pushes ran three
+# full boards at once and a board that overlapped others took 105 min against 57 alone. The newer
+# board covers the skipped commits, and the running one still saves its caches.
 concurrency:
-  group: ci-${{ github.event_name }}-${{ github.ref }}-${{ github.event_name == 'pull_request' && !github.event.pull_request.draft && 'latest' || github.run_id }}
+  group: ci-${{ github.event_name }}-${{ github.ref }}-${{ github.event_name == 'pull_request' && !github.event.pull_request.draft && 'latest' || github.event_name == 'push' && github.ref == 'refs/heads/develop' && 'latest' || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # Read-only. The workflow used to hold Actions write access so a failing job could cancel its own
@@ -63,8 +74,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          # Manual full qualification does not consult history; automatic scope selection does.
-          fetch-depth: ${{ github.event_name == 'workflow_dispatch' && 1 || 0 }}
+          # Per-job reuse reads history on every event, a manual run included.
+          fetch-depth: 0
           # Scope reads commits and trees, never old file contents, so it fetches no blobs: every
           # branch of the 3.9 GB repository took over this job's 5 minutes on a loaded tn-local
           # runner (three cancels on PR #574), against 8 s and 20 MB blob-less with the same plan.
@@ -80,6 +91,7 @@ jobs:
           # the cache-warm lane on develop and keeps a push to main full.
           TN_CI_TARGET: ${{ github.base_ref || github.event.merge_group.base_ref || (github.event_name == 'push' && github.ref_name) || '' }}
           TN_CI_FORCE_FULL: ${{ vars.TN_CI_FORCE_FULL }}
+          TN_CI_COLD: ${{ inputs.cold }}
           TN_CI_QUEUE_REF: ${{ github.event.merge_group.head_ref }}
           TN_CI_BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
           TN_CI_HEAD: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
@@ -87,7 +99,7 @@ jobs:
         run: |
           set -euo pipefail
           extra=()
-          if [ "$TN_CI_FORCE_FULL" = true ]; then extra+=(--full); fi
+          if [ "$TN_CI_FORCE_FULL" = true ] || [ "$TN_CI_COLD" = true ]; then extra+=(--full); fi
           if [ -n "$TN_CI_QUEUE_REF" ]; then extra+=(--queue-ref "$TN_CI_QUEUE_REF"); fi
           node scripts/ci-change-scope.mjs "${extra[@]}" \
             --target "$TN_CI_TARGET" \
@@ -129,7 +141,7 @@ jobs:
   # The cheap gates now start together, and the expensive ones name the gate they wait on.
   typecheck:
     needs: [scope, build-artifacts]
-    if: ${{ (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template' || needs.scope.outputs.selection == 'review') || needs.scope.outputs.selection == 'ci' }}
+    if: ${{ ((needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template' || needs.scope.outputs.selection == 'review') || needs.scope.outputs.selection == 'ci') && !contains(fromJSON(needs.scope.outputs.plan).carriedJobs, 'typecheck') }}
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), 'ci:typecheck')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 15
     env:
@@ -218,7 +230,7 @@ jobs:
 
   test:
     needs: scope
-    if: ${{ needs.scope.outputs.selection == 'full' || (needs.scope.outputs.selection == 'review' && fromJSON(needs.scope.outputs.plan).jobs.test.required) }}
+    if: ${{ (needs.scope.outputs.selection == 'full' || (needs.scope.outputs.selection == 'review' && fromJSON(needs.scope.outputs.plan).jobs.test.required)) && !contains(fromJSON(needs.scope.outputs.plan).carriedJobs, 'test') }}
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), 'ci:test')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 45
     env:
@@ -267,7 +279,7 @@ jobs:
   # one more runner, so four is the whole of it.
   test-unit:
     needs: [scope, build-artifacts]
-    if: ${{ (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template' || needs.scope.outputs.selection == 'review') || needs.scope.outputs.selection == 'ci' }}
+    if: ${{ ((needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template' || needs.scope.outputs.selection == 'review') || needs.scope.outputs.selection == 'ci') && !contains(fromJSON(needs.scope.outputs.plan).carriedJobs, 'test-unit') }}
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), format('ci:test-unit:{0}', matrix.shard))) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 30
     strategy:
@@ -335,7 +347,7 @@ jobs:
     # `warm` too: this job saves `native-build-*`, `native-third-party-*` and its ccache through the
     # cache action's post step, which is the product every pull request into develop reads. No step
     # below is gated on a full selection, so a develop push warms them.
-    if: ${{ (needs.scope.outputs.selection == 'full' && fromJSON(needs.scope.outputs.plan).jobs['test-native'].required) || needs.scope.outputs.selection == 'warm' }}
+    if: ${{ ((needs.scope.outputs.selection == 'full' && fromJSON(needs.scope.outputs.plan).jobs['test-native'].required) || needs.scope.outputs.selection == 'warm') && !contains(fromJSON(needs.scope.outputs.plan).carriedJobs, 'test-native') }}
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), 'ci:test-native')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 75
     env:
@@ -635,7 +647,7 @@ jobs:
 
   test-browser:
     needs: [scope, build-artifacts]
-    if: ${{ needs.scope.outputs.selection == 'full' }}
+    if: ${{ needs.scope.outputs.selection == 'full' && !contains(fromJSON(needs.scope.outputs.plan).carriedJobs, 'test-browser') }}
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), 'ci:test-browser')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 30
     env:
@@ -689,7 +701,7 @@ jobs:
 
   test-playtest:
     needs: [scope, build-artifacts]
-    if: ${{ needs.scope.outputs.selection == 'full' }}
+    if: ${{ needs.scope.outputs.selection == 'full' && !contains(fromJSON(needs.scope.outputs.plan).carriedJobs, 'test-playtest') }}
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), 'ci:test-playtest')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 30
     env:
@@ -770,7 +782,7 @@ jobs:
 
   golden-path-template:
     needs: [scope, build-artifacts]
-    if: ${{ (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template' || needs.scope.outputs.selection == 'review') }}
+    if: ${{ (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template' || needs.scope.outputs.selection == 'review') && !contains(fromJSON(needs.scope.outputs.plan).carriedJobs, 'golden-path-template') }}
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.scope.outputs.plan).goldenMatrix }}
@@ -907,7 +919,7 @@ jobs:
     # non-visually on every PR too, so a template regression is reported by the PR that caused it
     # instead of by the merge that shipped it. `golden-path` above still owns the visual proof.
     needs: [scope, build-artifacts]
-    if: ${{ (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template') }}
+    if: ${{ (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template') && !contains(fromJSON(needs.scope.outputs.plan).carriedJobs, 'template-nonvisual') }}
     # One scaffold/install/typecheck/cook per selected kit; every nonvisual scenario still executes.
     # Each leg routes to idle tn-local first with hosted fallback; no second workflow cap holds kits back.
     strategy:
@@ -971,6 +983,9 @@ jobs:
           pnpm --dir "$target" install
           pnpm --dir "$target" run check
       - name: Run the template's GPU-free scenarios
+        # Owner cut (2026-11-01): the board plays the starter through golden-path and keeps its
+        # pristine check above; its scenarios, 21 engine guards and parity pose run on the nightly.
+        if: matrix.template != 'starter' || github.event_name == 'schedule'
         run: |
           set -euo pipefail
           target="$RUNNER_TEMP/threenative-${{ matrix.template }}"
@@ -979,9 +994,10 @@ jobs:
           # in, or this lane would quietly stop covering 21 scenarios it has always covered.
           extras="$GITHUB_WORKSPACE/packages/create-threenative/template-playtests/${{ matrix.template }}"
           if [ -d "$extras" ]; then cp -r "$extras/." "$target/playtests/"; fi
-          # PRD-748: the engine-cost contract row runs on every PR, for every kit that does not opt out.
-          pnpm exec tsx scripts/kit-contract-row.ts engine-cost "${{ matrix.template }}" "$target/playtests"
-          scenario_list=$(node "$GITHUB_WORKSPACE/scripts/non-visual-scenarios.mjs" "$target")
+          # The PRD-748 engine-cost row runs in `template-engine-cost`, beside this leg.
+          board=()
+          if [ "${{ github.event_name }}" != schedule ]; then board=(--board "${{ matrix.template }}"); fi
+          scenario_list=$(node "$GITHUB_WORKSPACE/scripts/non-visual-scenarios.mjs" "$target" "${board[@]}")
           mapfile -t scenarios <<< "$scenario_list"
           test "${#scenarios[@]}" -gt 0
           echo "${{ matrix.template }}: ${#scenarios[@]} nonvisual scenarios"
@@ -1006,13 +1022,14 @@ jobs:
       # 4x4 tile means (scripts/engine-parity.ts). Both arms share this runner's adapter, so a
       # software rasteriser still catches a wrong exposure, colour, fog or a missing object.
       - name: Compare the two engines on one pose
+        if: matrix.template != 'starter' || github.event_name == 'schedule'
         run: >-
           pnpm exec tsx scripts/engine-parity.ts
           --project "$RUNNER_TEMP/threenative-${{ matrix.template }}"
           --template ${{ matrix.template }}
           --out artifacts/engine-parity/${{ matrix.template }}
       - name: Retain the engine parity frames
-        if: always()
+        if: always() && (matrix.template != 'starter' || github.event_name == 'schedule')
         uses: actions/upload-artifact@v4
         with:
           name: engine-parity-${{ matrix.template }}-${{ github.run_id }}-${{ github.run_attempt }}
@@ -1027,6 +1044,72 @@ jobs:
           target="$RUNNER_TEMP/threenative-platformer"
           pnpm --dir "$target" exec threenative build --target web
           test -s "$target/dist/index.html"
+
+  # PRD-748's engine-cost contract row, nightly only (owner, 2026-11-01), per kit. It draws all 1260
+  # ticks one by one for its four counter windows, and on hosted SwiftShader that alone took 14m51s
+  # (run 41170629638, adventure): inside a kit's 30-minute `template-nonvisual` leg it cancelled
+  # adventure and collectathon. It runs here in parallel, with the same scenario, bounds and ticks.
+  # A kit that opts out prints its reason and passes; `ci-required` gates the nightly's run.
+  template-engine-cost:
+    needs: [scope, build-artifacts]
+    if: ${{ github.event_name == 'schedule' && (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template') }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.scope.outputs.plan).templateMatrix }}
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), format('ci:template-engine-cost:{0}', matrix.template))) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    # 45, owner-approved for this job only (2026-10-31): on 813c0166a the row step alone ran
+    # 964-1775+ s on hosted SwiftShader (VM speed spread 1.75x, 99% raster hostGap), and rain,
+    # adventure (twice) and shooter hit 30. Ticks, windows, bounds and every threshold are unchanged.
+    timeout-minutes: 45
+    env:
+      TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
+      TN_PLAYTEST_ALLOW_SOFTWARE: "1"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.scope.outputs.candidate_sha || github.sha }}
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            packages/create-threenative/templates/*/package.json
+      - run: pnpm install --frozen-lockfile
+      # Before the row: its writer imports create-threenative, which needs this artifact's packages/*/dist.
+      - name: Take the packed workspace from build
+        uses: actions/download-artifact@v4
+        with:
+          name: workspace-packages
+      - name: Write the kit's engine-cost row
+        id: row
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/engine-cost-row"
+          pnpm exec tsx scripts/kit-contract-row.ts engine-cost "${{ matrix.template }}" "$RUNNER_TEMP/engine-cost-row"
+          if [ -f "$RUNNER_TEMP/engine-cost-row/contract-engine-cost.playtest.json" ]; then echo "applies=true" >> "$GITHUB_OUTPUT"; fi
+      - name: Scaffold the template from local tarballs
+        if: steps.row.outputs.applies == 'true'
+        uses: ./.github/actions/scaffold-from-tarballs
+        with:
+          archives-directory: ${{ github.workspace }}/artifacts/workspace-packages
+          specs-file: ${{ github.workspace }}/artifacts/workspace-packages/specs
+          target: ${{ runner.temp }}/threenative-${{ matrix.template }}
+          template: ${{ matrix.template }}
+      - uses: ./.github/actions/playwright-chromium
+        if: steps.row.outputs.applies == 'true'
+      - name: Run the engine-cost row
+        if: steps.row.outputs.applies == 'true'
+        run: |
+          set -euo pipefail
+          target="$RUNNER_TEMP/threenative-${{ matrix.template }}"
+          pnpm --dir "$target" install
+          cp "$RUNNER_TEMP/engine-cost-row/contract-engine-cost.playtest.json" "$target/playtests/"
+          # `--server-timeout` as in template-nonvisual: the first asset cook holds the dev port.
+          pnpm --dir "$target" exec threenative-playtest --scenario playtests/contract-engine-cost.playtest.json \
+            --browser-recipe webgpu --headed --no-screenshots --server-timeout 120000 \
+            --server-command "pnpm dev --host 127.0.0.1 --port \$PORT --strictPort"
 
   # `golden-path` is a required status check in the `main protection` ruleset, and required checks
   # match the reported context by exact string. A matrix job does not report its own name — it
@@ -1061,13 +1144,17 @@ jobs:
             echo "golden-path templates: not applicable (explicit selective exemption)"
             exit 0
           fi
+          if [ "${{ contains(fromJSON(needs.scope.outputs.plan).carriedJobs, 'golden-path-template') }}" = true ]; then
+            echo "golden-path templates: carried, ci-required reads their proof from the source run"
+            exit 0
+          fi
           result='${{ needs.golden-path-template.result }}'
           echo "golden-path templates: $result"
           test "$result" = "success"
 
   benchmark:
     needs: [scope, build-artifacts]
-    if: ${{ needs.scope.outputs.selection == 'full' }}
+    if: ${{ needs.scope.outputs.selection == 'full' && !contains(fromJSON(needs.scope.outputs.plan).carriedJobs, 'benchmark') }}
     runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-24.04' || ((!vars.TN_RUNNER_GPU_HEAD || (github.event.pull_request.head.sha || github.event.merge_group.head_sha || (github.event_name == 'push' && github.sha) || '') == vars.TN_RUNNER_GPU_HEAD) && vars.TN_RUNNER_GPU || '') || ((!vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), 'ci:benchmark')) && 'ubuntu-24.04' || vars.TN_RUNNER) }}
     timeout-minutes: 25
     env:
@@ -1083,6 +1170,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - uses: ./.github/actions/workspace-dist
+        if: github.event_name == 'schedule'
         with:
           # Compiled once by build-artifacts and downloaded rather than rebuilt: this job is
           # ordered behind it above, so the upload always exists and the cache key never misses.
@@ -1090,13 +1178,19 @@ jobs:
           save-bundles: "false"
           pack-archives: "false"
       - run: pnpm tsx scripts/count-loc.ts --check
-      - run: pnpm --filter abyss-vanilla build
-      - run: pnpm --filter abyss-framework build
-      - run: pnpm exec vitest run scripts/__tests__/count-loc.spec.ts scripts/__tests__/score-blind.spec.ts
+      # Owner cut (2026-11-01): a board keeps `count-loc --check`; the rest runs on the nightly.
+      - if: github.event_name == 'schedule'
+        run: pnpm --filter abyss-vanilla build
+      - if: github.event_name == 'schedule'
+        run: pnpm --filter abyss-framework build
+      - if: github.event_name == 'schedule'
+        run: pnpm exec vitest run scripts/__tests__/count-loc.spec.ts scripts/__tests__/score-blind.spec.ts
       - uses: ./.github/actions/playwright-chromium
+        if: github.event_name == 'schedule'
       # `test:browser` is the test-browser job's gate; running it again here bought nothing but
       # a second copy of the slowest step in the workflow.
-      - run: sh scripts/xvfb.sh pnpm exec playwright test --config=benchmark.playwright.config.ts
+      - if: github.event_name == 'schedule'
+        run: sh scripts/xvfb.sh pnpm exec playwright test --config=benchmark.playwright.config.ts
       # Software startup regression contract only; hardware and visual acceptance remain separate.
       - uses: actions/checkout@v7
         with:
@@ -1186,12 +1280,6 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # Check before restoring or publishing workspace builds, including the develop warm lane.
-      # The pinned upstream archive is downloaded fresh; cache: pnpm does not cache its npm build.
-      # Bash time reports the download + own-build wall cost and preserves failures (PRD-593 AC-2).
-      - name: Verify the generated Three.js patch has not drifted
-        shell: bash
-        run: time pnpm --filter @threenative/core patch:generate --check
 # Before the pack inside workspace-dist: runtime-native lists the web engine in `files`, and
       # `pnpm pack` drops a file that is not there yet.
       - uses: ./.github/actions/native-engine-wasm
@@ -1225,7 +1313,7 @@ jobs:
 
   performance-contracts:
     needs: scope
-    if: ${{ needs.scope.outputs.selection == 'full' && !cancelled() }}
+    if: ${{ needs.scope.outputs.selection == 'full' && !cancelled() && !contains(fromJSON(needs.scope.outputs.plan).carriedJobs, 'performance-contracts') }}
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), 'ci:performance-contracts')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 2
     env:
@@ -1291,7 +1379,7 @@ jobs:
 
   budgets:
     needs: [scope, build-artifacts]
-    if: ${{ (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template' || needs.scope.outputs.selection == 'review') || needs.scope.outputs.selection == 'ci' }}
+    if: ${{ ((needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template' || needs.scope.outputs.selection == 'review') || needs.scope.outputs.selection == 'ci') && !contains(fromJSON(needs.scope.outputs.plan).carriedJobs, 'budgets') }}
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), 'ci:budgets')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 15
     env:
@@ -1357,7 +1445,7 @@ jobs:
   # sibling lanes restored each other's objects) and a cached emsdk pinned by tag and SDK version.
   native-engine:
     needs: scope
-    if: ${{ (needs.scope.outputs.selection == 'native-engine' || needs.scope.outputs.selection == 'full') && fromJSON(needs.scope.outputs.plan).jobs['native-engine'].required }}
+    if: ${{ (needs.scope.outputs.selection == 'native-engine' || needs.scope.outputs.selection == 'full') && fromJSON(needs.scope.outputs.plan).jobs['native-engine'].required && !contains(fromJSON(needs.scope.outputs.plan).carriedJobs, 'native-engine') }}
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), 'ci:native-engine')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 30
     env:
@@ -1448,8 +1536,9 @@ jobs:
           ctest --test-dir build/native-engine-wasm -L native-engine --no-tests=error --output-on-failure
 
   integration:
-    needs: scope
-    if: needs.scope.result == 'success' && fromJSON(needs.scope.outputs.plan).jobs.integration.required
+    needs: [scope, build-artifacts]
+    # `!cancelled()`: a skipped or failed build-artifacts only means each leg builds its own workspace.
+    if: ${{ !cancelled() && needs.scope.result == 'success' && fromJSON(needs.scope.outputs.plan).jobs.integration.required }}
     permissions:
       contents: read
       actions: read
@@ -1459,6 +1548,7 @@ jobs:
       candidate_sha: ${{ needs.scope.outputs.candidate_sha }}
       runner_admission: ${{ needs.scope.outputs.runner_admission }}
       base_sha: ${{ needs.scope.outputs.base_sha }}
+      workspace_artifact: ${{ needs.build-artifacts.result == 'success' && 'workspace-packages' || '' }}
 
   supply-chain:
     needs: scope
@@ -1557,7 +1647,9 @@ jobs:
   # not green to the queue, which ejects the pull request.
   queue-watch:
     needs: scope
-    if: ${{ github.event_name == 'merge_group' }}
+    # PRD-782: a full board on a same-repository pull request or a manual run stops at its first
+    # red too. A develop push stays out: it has one concurrency slot and saves the caches.
+    if: ${{ github.event_name == 'merge_group' || (needs.scope.outputs.selection == 'full' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork))) }}
     # Hosted on purpose: it waits for the whole run, and a local light slot held for an hour would
     # queue the small joins behind it.
     runs-on: ubuntu-24.04
@@ -1580,7 +1672,7 @@ jobs:
   # The only required context after protected-develop cutover. Explicit exemptions are not passes.
   # Legacy main contexts stay in place until the owner changes protection after full qualification.
   ci-required:
-    needs: [scope, integration, native-platforms, native-engine, typecheck, lint, test, test-unit, test-native, test-browser, test-playtest, strata, golden-path-template, template-nonvisual, golden-path, benchmark, build, build-artifacts, budgets, performance-contracts, supply-chain]
+    needs: [scope, integration, native-platforms, native-engine, typecheck, lint, test, test-unit, test-native, test-browser, test-playtest, strata, golden-path-template, template-nonvisual, template-engine-cost, golden-path, benchmark, build, build-artifacts, budgets, performance-contracts, supply-chain]
     if: ${{ always() && !github.event.pull_request.draft }}
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER_LIGHT) && 'ubuntu-24.04' || vars.TN_RUNNER_LIGHT }}
     # 15, not 5: `fetch-depth: 0` pulls every branch and tag, which takes over five minutes on a
@@ -1621,6 +1713,33 @@ jobs:
         with:
           name: ci-queue-reuse-receipt-${{ github.run_id }}-${{ github.run_attempt }}
           path: artifacts/ci-queue-reuse/receipt.json
+      # PRD-630: the release gate reads parity and provenance reports from the main run, and each
+      # report names its commit. The verdict above proved this tree is the tree they describe.
+      - name: Carry the promotion board's release reports to this commit
+        id: release-reports
+        if: ${{ github.event_name == 'push' && github.ref_name == 'main' && needs.scope.outputs.selection == 'reused' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN: ${{ fromJSON(needs.scope.outputs.plan).reusedRunId }}
+          CANDIDATE: ${{ needs.scope.outputs.candidate_sha }}
+        run: |
+          set -euo pipefail
+          for report in parity provenance; do
+            gh run download "$SOURCE_RUN" --repo "$GITHUB_REPOSITORY" --name "native-release-$report" --dir carried
+            node -e 'const f=process.argv[1];const fs=require("fs");const r=JSON.parse(fs.readFileSync(f));r.candidateSha=process.argv[2];fs.writeFileSync(f,JSON.stringify(r))' "carried/reports/$report.json" "$CANDIDATE"
+          done
+      - uses: actions/upload-artifact@v7
+        if: steps.release-reports.conclusion == 'success'
+        with:
+          name: native-release-parity
+          path: "carried/*/parity.json"
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v7
+        if: steps.release-reports.conclusion == 'success'
+        with:
+          name: native-release-provenance
+          path: "carried/*/provenance.json"
+          if-no-files-found: error
 
   # PRD-296 item 3. Three gates once sat behind a permanently red one and were skipped on every
   # run this repository had ever produced; nobody had seen any of them fail because nobody had
@@ -1651,6 +1770,7 @@ jobs:
       - strata
       - golden-path-template
       - template-nonvisual
+      - template-engine-cost
       - golden-path
       - benchmark
       - build
@@ -1688,7 +1808,7 @@ jobs:
           # with `--jq` or `--template`"), so the flatten of the paginated pages happens here. Paired
           # wrongly, the call failed, the guard below wrote `[]`, and every run's timing table was
           # header-only — an empty measurement read as a measured one.
-          if ! gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs?per_page=100" \
+          if ! gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs?per_page=10" \
             | node -e 'let raw = ""; process.stdin.on("data", (chunk) => { raw += chunk; }).on("end", () => { process.stdout.write(JSON.stringify(JSON.parse(raw).flatMap((page) => page.jobs ?? []))); });' \
             > "$RUNNER_TEMP/job-timings.json"; then
             echo '[]' > "$RUNNER_TEMP/job-timings.json"
@@ -1734,7 +1854,13 @@ jobs:
           set -euo pipefail
           required_lanes=""
           if [ "$TN_CI_SCOPE" = full ]; then
-            required_lanes="performance-contracts,native-linux-contract"
+            # A carried job left its evidence in the run that `ci-required` names for it.
+            if [ "${{ contains(fromJSON(needs.scope.outputs.plan).carriedJobs, 'performance-contracts') }}" != true ]; then
+              required_lanes="performance-contracts"
+            fi
+            if [ "${{ contains(fromJSON(needs.scope.outputs.plan).carriedJobs, 'test-native') }}" != true ]; then
+              required_lanes="${required_lanes:+$required_lanes,}native-linux-contract"
+            fi
           else
             echo "performance collector evidence: not applicable (explicit selective exemption)"
           fi

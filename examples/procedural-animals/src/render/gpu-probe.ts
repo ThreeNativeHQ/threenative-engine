@@ -25,6 +25,7 @@ export class AnimalGPUProbe
   readonly processCadence = "render";
   readonly warmupNodes = [];
   readonly #compute;
+  readonly #buffers;
   #renderer: ProbeRenderer | undefined;
   #owned = false;
   readonly #bake: IAnimalBake;
@@ -61,6 +62,7 @@ export class AnimalGPUProbe
       weights: instancedArray(bake.skinWeight.slice(), "vec4"),
       output: instancedArray(bake.nV * 2, "vec4"),
     };
+    this.#buffers = buffers;
     // Referenced vertex attributes give these compute buffers normal Three geometry ownership.
     this.material.positionNode = vec3(buffers.position.toAttribute())
       .add(buffers.normal.toAttribute())
@@ -160,6 +162,8 @@ export class AnimalGPUProbe
       () => this.#readback.dispose(),
       () => this.#compute.dispose(),
       () => this.geometry.dispose(),
+      // Three 0.187 frees a storage buffer on its own dispose, not on the geometry's.
+      ...Object.values(this.#buffers).map((buffer) => () => buffer.value.dispose()),
       () => this.material.dispose(),
       () => this.#texture.dispose(),
       () => this.removeFromParent(),

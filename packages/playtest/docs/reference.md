@@ -322,7 +322,9 @@ the web back end's `childrenReads`, `walkVisits` and `hierarchyMoves`, the engin
 `share`, `shareHits`, `shareMints`, `contentClassOf`, `contentVersionKeys`, `classify`, `buffers` and
 `textures`, and every name a module adds to `globalThis.__tnEngineCost` (core's `cullRigRebuilds` and
 `cullRigWalks`, physics' `physicsTransformReads` and `physicsForceResets`). `counters.bridgeCrossings`
-joins as `bridgeCrossings`. `maxPerFrame` bounds a window's mean and `maxInFrame` its largest frame.
+joins as `bridgeCrossings`. A name that multiplies with content — one per asset URL, one per bridged
+property (`bridge:…`) — is deliberately not a per-frame series, so it cannot be bounded here: the
+`TN_DEBUG_REPORT` ranks the largest ten of the run's totals under `contentScaled` instead. `maxPerFrame` bounds a window's mean and `maxInFrame` its largest frame.
 `skipWindows` (default 0) leaves the first windows, the boot, unbounded. Every later window must hold
 every top-level bound; `still: { windows, maxPerFrame }` bounds only the first `windows` of them, which
 the scenario keeps still, and `moving: { maxPerFrame?, maxInFrame? }` only the
@@ -330,6 +332,12 @@ windows after them. Fewer windows than `minWindows` (default 1), an unreadable w
 counter a window omits fails `TN_PLAYTEST_ENGINE_COST_UNOBSERVED` or `TN_PLAYTEST_ENGINE_COST_OVER_BOUND`;
 an over-bound message names the counter, the window and the top caller of the three-native
 `TN_BRIDGE_CENSUS` printed before it. `source` states where each bound came from.
+
+The same name-based bounds accept debug-only counters after a pre-boot `TN_DEBUG=1`, `?tnDebug=1`
+or `__THREENATIVE_DEBUG__ = true` request. An absent or malformed summary, including a zero-sample
+summary, fails closed. `TN_DEBUG_REPORT` is informational; bounds read the numeric
+`TN_FRAME_BUDGET.counters.engine` source. Counts/bytes and getter-equivalent estimates retain
+their units and must not be described as measured CPU time.
 
 `assert.hudAudit: { noDebugText?, minContrast? }` reads the text the page draws after the last step.
 `noDebugText` (only `true`) fails when an item reads like developer copy — debug, TODO, FIXME,
@@ -363,7 +371,8 @@ presented frames. A performance scenario sets `"clock": "wall-clock"` (target `w
 [determinism.md](determinism.md)). Below 20 samples the p95 is the maximum. 3 is chosen, not measured:
 it is the least that stops one query deciding the verdict. There is no tolerance multiplier.
 
-**An engine performance warning fails the run.** Any `TN_SCENE_WARNING` console line, and any
+**An engine performance warning fails the run.** Any `TN_SCENE_WARNING`, `TN_BRIDGE_WARNING` or
+`TN_HOT_CALL` console line, and any
 `TN_RENDER_PROJECTION` line with `projecting: false`, fails the `diagnostics` row with
 `TN_PLAYTEST_PERF_WARNING`, whatever the console-error policy. The report prints the marker text and,
 for a projection decline, the `cause` code (`uniqueGeometry` or `uniqueMaterial`) with its hint.

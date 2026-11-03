@@ -95,6 +95,9 @@ preference; it is the difference between the two outcomes.
    result matches, and the committed ledger path. The comparison and the friction record
    are the point of the exercise.
 
+For performance work, use the existing stress scene instead of a new game:
+[stress-scene.md](stress-scene.md) says where it is, what it loads, and how to measure it.
+
 ## Rules
 
 - **Work only inside your game folder.** `../sandbox/<name>/` is yours; the sandbox root and

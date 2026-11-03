@@ -1,4 +1,5 @@
 #include "handles.h"
+#include "waste_counters.h"
 
 namespace tn::engine {
 
@@ -16,6 +17,7 @@ Handle HandleTable::allocate(uint16_t type) {
     slot.type = type;
     slot.live = true;
     ++live_;
+    waste::debugAdd(waste::counters().handleCreates);
     return Handle{type, context_, index, slot.generation};
 }
 
@@ -27,6 +29,7 @@ HandleError HandleTable::release(Handle handle) {
     const HandleError error = check(handle);
     if (error != HandleError::None) return error;
     Slot& slot = slots_[handle.index];
+    waste::debugAdd(waste::counters().handleReleases);
     slot.live = false;
     slot.type = 0;
     // ponytail: a slot retires after 2^32 - 1 reuses rather than wrapping to a generation an old

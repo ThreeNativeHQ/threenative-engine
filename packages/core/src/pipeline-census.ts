@@ -971,12 +971,28 @@ export class PipelineCensus {
       pipeline,
       compute,
       renderObject: undefined,
-      mode: "sync",
+      mode: asyncPromises(args[2]).length > 0 ? "async" : "sync",
     });
     const started = this.#now();
     try {
       const result = this.#throughBackend(() => original.apply(backend, [...args]));
-      this.#settleEvent(backend, event, started, undefined);
+      // Three creates a compute pipeline asynchronously when it is handed a compilation promise
+      // list, which is what `compileComputeAsync` does (src/renderers/common/Renderer.js:1359), and
+      // installs the handle only when that promise resolves. Read it then, not before: three calls
+      // the device synchronously in both paths, so the settle order is the only difference.
+      const promises = asyncPromises(args[2]);
+      if (promises.length > 0) {
+        event.mode = "async";
+        event.status = "pending";
+        event.pending = true;
+        this.#pending += 1;
+        void Promise.all(promises).then(
+          () => this.#settleEvent(backend, event, started, undefined),
+          (error: unknown) => this.#settleEvent(backend, event, started, error),
+        );
+      } else {
+        this.#settleEvent(backend, event, started, undefined);
+      }
       return result;
     } catch (error) {
       this.#settleEvent(backend, event, started, error);

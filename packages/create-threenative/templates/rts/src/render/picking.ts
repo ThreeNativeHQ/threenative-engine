@@ -15,6 +15,24 @@ export interface IPoint2 {
   readonly y: number;
 }
 
+/** A drag shorter than this is a click, not a box. */
+export const DRAG_SLOP = 4;
+
+/**
+ * The rubber band, in client pixels: `[left, top, width, height]` from a press and its pointer.
+ *
+ * Dragging in any direction gives the same rectangle — the top-left corner is the smaller of the
+ * two coordinates and the size is the gap — and a press that has not travelled past `DRAG_SLOP` is
+ * `null` rather than a two-pixel band: under it the gesture is a click, and a band that flashes on
+ * every press is a selection the player did not make.
+ */
+export function dragBoxRect(from: IPoint2, to: IPoint2): [number, number, number, number] | null {
+  const width = Math.abs(to.x - from.x);
+  const height = Math.abs(to.y - from.y);
+  if (Math.hypot(width, height) <= DRAG_SLOP) return null;
+  return [Math.min(from.x, to.x), Math.min(from.y, to.y), width, height];
+}
+
 /** What a click landed on: a unit or a building, or nothing. */
 export type PickTarget = IEntity | undefined;
 

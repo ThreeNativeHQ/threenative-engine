@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cstring>
 #include <utility>
 
@@ -133,10 +134,12 @@ GpuResources::~GpuResources() {
 
 void GpuResources::release(Record& record) {
     if (record.buffer) {
+        waste::debugAdd(waste::counters().bufferFreedBytes, record.size);
         wgpuBufferDestroy(record.buffer);
         wgpuBufferRelease(record.buffer);
     }
     if (record.texture) {
+        waste::debugAdd(waste::counters().textureFreedBytes, record.size);
         wgpuTextureDestroy(record.texture);
         wgpuTextureRelease(record.texture);
     }
@@ -177,6 +180,8 @@ Handle GpuResources::createBuffer(uint64_t size, WGPUBufferUsage usage, const vo
     const Handle handle = handles_.allocate(kBuffer);
     if (records_.size() <= handle.index) records_.resize(handle.index + 1);
     records_[handle.index] = Record{buffer, nullptr, size, 0, 0};
+    waste::debugAdd(waste::counters().bufferCreatedBytes, size);
+    if (desc.mappedAtCreation) waste::debugAdd(waste::counters().bufferUploadBytes, bytes);
     return handle;
 }
 
@@ -196,6 +201,7 @@ Handle GpuResources::createTexture(uint32_t width, uint32_t height, WGPUTextureF
     if (records_.size() <= handle.index) records_.resize(handle.index + 1);
     const uint32_t bpp = bytesPerPixel(format);
     records_[handle.index] = Record{nullptr, texture, uint64_t{width} * height * bpp, width, height, bpp};
+    waste::debugAdd(waste::counters().textureCreatedBytes, uint64_t{width} * height * bpp);
     return handle;
 }
 
@@ -232,6 +238,7 @@ GpuStatus GpuResources::writeBuffer(Handle buffer, uint64_t offset, const void* 
     } else {
         wgpuQueueWriteBuffer(queue_, target->buffer, offset, data, size);
     }
+    waste::debugAdd(waste::counters().bufferUploadBytes, size);
     queueWriteBytes_ += size;
     return GpuStatus::Ok;
 }
@@ -266,6 +273,7 @@ GpuStatus GpuResources::writeTexture(Handle texture, const void* pixels, uint64_
     } else {
         wgpuQueueWriteTexture(queue_, &destination, pixels, size, &layout, &extent);
     }
+    waste::debugAdd(waste::counters().textureUploadBytes, size);
     return GpuStatus::Ok;
 }
 
@@ -347,7 +355,11 @@ void GpuResources::readInto(WGPUCommandEncoder encoder, WGPUBuffer staging, uint
         });
     };
     // After the submit that fills it: mapping a buffer an unsubmitted copy still writes is an error.
-    post([staging, size, info] { wgpuBufferMapAsync(staging, WGPUMapMode_Read, 0, size, info); });
+    post([staging, size, info] {
+        waste::debugAdd(waste::counters().readbackMaps);
+        waste::debugAdd(waste::counters().readbackBytes, size);
+        wgpuBufferMapAsync(staging, WGPUMapMode_Read, 0, size, info);
+    });
 }
 
 GpuStatus GpuResources::readBuffer(Handle buffer, uint64_t offset, uint64_t size, ReadbackCallback done) {
@@ -449,10 +461,14 @@ void onWorkDone(WGPUQueue queue, std::weak_ptr<void> owner, EventQueue* events, 
         EventQueue* events;
         uint64_t serial;
         void (*complete)(const std::shared_ptr<void>&, uint64_t);
+        bool timed;
+        std::chrono::steady_clock::time_point submitted;
     };
+    const bool timed = waste::debugEnabled().load(std::memory_order_relaxed);
+    const auto submitted = timed ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
     WGPUQueueWorkDoneCallbackInfo info = {};
     info.mode = WGPUCallbackMode_AllowProcessEvents;
-    info.userdata1 = new WorkDone{std::move(owner), events, serial, complete};
+    info.userdata1 = new WorkDone{std::move(owner), events, serial, complete, timed, submitted};
     info.callback = [](WGPUQueueWorkDoneStatus,
 #if defined(MYSTRAL_WEBGPU_DAWN)
                        WGPUStringView,
@@ -462,8 +478,18 @@ void onWorkDone(WGPUQueue queue, std::weak_ptr<void> owner, EventQueue* events, 
         // A backend may fire this at device release, after the resource table and the event queue
         // it posts to are gone (wgpu does); the queue outlives the table, so a live owner is the test.
         if (done->owner.expired()) return;
-        done->events->post([owner = done->owner, serial = done->serial, complete = done->complete]() {
-            if (auto shared = owner.lock()) complete(shared, serial);
+        const auto callback = done->timed ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+        if (done->timed) {
+            waste::counters().queueCallbackMicros.fetch_add(
+                std::chrono::duration_cast<std::chrono::microseconds>(callback - done->submitted).count(), std::memory_order_relaxed);
+            waste::count(waste::counters().queueCallbacks);
+        }
+        done->events->post([owner = done->owner, serial = done->serial, complete = done->complete, timed = done->timed, callback]() {
+            if (auto shared = owner.lock()) {
+                if (timed) waste::counters().queueDeliveryMicros.fetch_add(
+                    std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - callback).count(), std::memory_order_relaxed);
+                complete(shared, serial);
+            }
         });
     };
     wgpuQueueOnSubmittedWorkDone(queue, info);
@@ -498,6 +524,7 @@ void GpuResources::flushSubmits() {
     commands.reserve(b.waiting.size());
     for (const Batched& entry : b.waiting) commands.push_back(entry.commands);
     wgpuQueueSubmit(b.queue, commands.size(), commands.data());
+    waste::debugAdd(waste::counters().queueSubmits);
     ++b.queueSubmits;
     for (WGPUCommandBuffer command : commands) wgpuCommandBufferRelease(command);
     // Completion is in order: one callback per submission table, for the last serial it waited with.
@@ -555,6 +582,7 @@ uint64_t GpuResources::submit(WGPUCommandBuffer commands, bool batch_, std::vect
     }
     post([queue = queue_, commands, owner = std::weak_ptr<void>(shared_), events = &events_, serial] {
         wgpuQueueSubmit(queue, 1, &commands);
+        waste::debugAdd(waste::counters().queueSubmits);
         ++batch().queueSubmits;
         wgpuCommandBufferRelease(commands);
         onWorkDone(queue, owner, events, serial, complete);

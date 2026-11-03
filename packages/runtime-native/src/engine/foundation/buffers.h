@@ -79,6 +79,8 @@ public:
     uint64_t byteLength() const { return bytes_.size(); }
     /** Changes whenever the storage reallocates; a view compares it to know it must re-resolve. */
     uint64_t epoch() const { return epoch_; }
+    /** Never reused: a cache keyed by it cannot mistake a new store for a dead one that had the same address. */
+    uint64_t id() const { return id_; }
     /** Moves on every `write`, resize and mutable `data()`: a JS copy of the bytes is current while it holds. */
     uint64_t writes() const { return writes_; }
     std::byte* data() {
@@ -93,6 +95,7 @@ public:
 
 private:
     static inline std::atomic<uint64_t> released_{0};
+    static inline std::atomic<uint64_t> nextId_{0};
     // Storage left unwritten when made: a deferred store's pull writes it, and one that dies unread
     // never touches its pages. `unfilled_` zeroes what no pull wrote before the first use.
     template <typename T>
@@ -112,6 +115,7 @@ private:
     }
     void fill() const;
 
+    const uint64_t id_ = nextId_.fetch_add(1, std::memory_order_relaxed) + 1;
     Scalar scalar_;
     std::vector<std::byte, Uninitialized<std::byte>> bytes_;
     mutable bool unfilled_ = true;

@@ -12,6 +12,8 @@ import {
   prepareReleaseCohort,
   proveUpgradeFromLatest,
   provisionReleaseArtifacts,
+  publishCohort,
+  releaseLevels,
   releaseOrder,
   unpublishedReleasePackages,
   validateReleaseCohort,
@@ -103,6 +105,181 @@ describe("pnpm release ordering", () => {
     expect(order).toHaveLength(publishSet(repo).length);
   });
 
+  it("groups packages into levels that depend only on earlier levels", async () => {
+    const levels = releaseLevels(
+      await manifests([
+        { deps: ["@threenative/ui"], name: "create-threenative" },
+        { deps: ["@threenative/core"], name: "@threenative/ui" },
+        { deps: ["@threenative/core"], name: "@threenative/physics" },
+        { name: "@threenative/core" },
+      ]),
+    );
+
+    expect(levels.map((level) => [...level].sort())).toEqual([
+      ["@threenative/core"],
+      ["@threenative/physics", "@threenative/ui"],
+      ["create-threenative"],
+    ]);
+  });
+
+  it("puts every real workspace package in exactly one level, after its dependencies", () => {
+    const repo = path.resolve(import.meta.dirname, "../..");
+    const packages = publishSet(repo);
+    const levels = releaseLevels(packages);
+    const levelOf = new Map(
+      levels.flatMap((level, index) => level.map((n) => [n, index] as const)),
+    );
+
+    expect([...levelOf.keys()].sort()).toEqual(packages.map((item) => item.name).sort());
+    expect(levels.flat()).toHaveLength(packages.length);
+    const declared = (item: IPublishPackage): readonly string[] => {
+      const manifest = JSON.parse(fs.readFileSync(item.manifest, "utf8")) as Record<
+        string,
+        Record<string, string> | undefined
+      >;
+      return ["dependencies", "peerDependencies", "optionalDependencies"].flatMap((field) =>
+        Object.keys(manifest[field] ?? {}),
+      );
+    };
+    for (const item of packages)
+      for (const dependency of declared(item).filter((name) => levelOf.has(name)))
+        if (dependency !== item.name)
+          expect(levelOf.get(dependency)).toBeLessThan(levelOf.get(item.name) ?? -1);
+  });
+
+  it("puts the scaffolder after every package its templates may pin", async () => {
+    // No manifest declares those pins. With manifest dependencies alone the scaffolder went out with
+    // core, before `@threenative/ui`, and a new project could pin a version npm did not serve yet.
+    const repo = path.resolve(import.meta.dirname, "../..");
+    expect(releaseLevels(publishSet(repo)).at(-1)).toEqual(["create-threenative"]);
+  });
+
+  it("still publishes a package that depends on the scaffolder after it", async () => {
+    const levels = releaseLevels(
+      await manifests([
+        { deps: ["create-threenative"], name: "@threenative/scaffolder-consumer" },
+        { name: "create-threenative" },
+        { name: "@threenative/core" },
+      ]),
+    );
+
+    expect(levels).toEqual([
+      ["@threenative/core"],
+      ["create-threenative"],
+      ["@threenative/scaffolder-consumer"],
+    ]);
+  });
+
+  it("refuses a dependency cycle when it builds levels", async () => {
+    await expect(
+      manifests([
+        { deps: ["@threenative/b"], name: "@threenative/a" },
+        { deps: ["@threenative/a"], name: "@threenative/b" },
+      ]).then(releaseLevels),
+    ).rejects.toThrow(/TN_RELEASE_DEPENDENCY_CYCLE/u);
+  });
+});
+
+describe("pnpm release publishing", () => {
+  const tick = () => new Promise((resolve) => setTimeout(resolve, 1));
+
+  it("starts a level only after the level before it is readable on the registry", async () => {
+    const trace: string[] = [];
+    await publishCohort([["a", "b"], ["c"]], {
+      publish: async (name) => {
+        trace.push(`publish ${name}`);
+        await tick();
+      },
+      visible: async (name) => {
+        await tick();
+        trace.push(`visible ${name}`);
+      },
+    });
+
+    expect(trace.indexOf("publish c")).toBeGreaterThan(trace.indexOf("visible a"));
+    expect(trace.indexOf("publish c")).toBeGreaterThan(trace.indexOf("visible b"));
+    expect(trace.at(-1)).toBe("visible c");
+  });
+
+  it("publishes a level concurrently, up to the limit", async () => {
+    let active = 0;
+    let peak = 0;
+    await publishCohort(
+      [["a", "b", "c", "d", "e", "f"]],
+      {
+        publish: async () => {
+          active += 1;
+          peak = Math.max(peak, active);
+          await tick();
+          active -= 1;
+        },
+        visible: async () => undefined,
+      },
+      3,
+    );
+
+    expect(peak).toBe(3);
+  });
+
+  it("waits for a whole level to be readable at once, not one package at a time", async () => {
+    // The registry wait is the cost this exists to cut: 0.3.6 spent 43 minutes on 16 packages, and
+    // a 31 KB package took 7 of them. Every wait of a level has to run at the same time.
+    let waiting = 0;
+    let peak = 0;
+    await publishCohort(
+      [["a", "b", "c", "d", "e", "f"]],
+      {
+        publish: async () => undefined,
+        visible: async () => {
+          waiting += 1;
+          peak = Math.max(peak, waiting);
+          await tick();
+          waiting -= 1;
+        },
+      },
+      2,
+    );
+
+    expect(peak).toBe(6);
+  });
+
+  it("names the failed package, publishes nothing after it and no later level", async () => {
+    const published: string[] = [];
+    await expect(
+      publishCohort(
+        [["a", "b", "c"], ["d"]],
+        {
+          publish: async (name) => {
+            published.push(name);
+            if (name === "a") throw new Error("registry said no");
+          },
+          visible: async () => undefined,
+        },
+        1,
+      ),
+    ).rejects.toThrow(/TN_RELEASE_STEP_FAILED: a: registry said no/u);
+
+    expect(published).toEqual(["a"]);
+  });
+
+  it("does not start the next level when a published package never becomes readable", async () => {
+    const published: string[] = [];
+    await expect(
+      publishCohort([["a"], ["b"]], {
+        publish: async (name) => {
+          published.push(name);
+        },
+        visible: async () => {
+          throw new Error("TN_RELEASE_NOT_VISIBLE: a");
+        },
+      }),
+    ).rejects.toThrow(/TN_RELEASE_NOT_VISIBLE: a/u);
+
+    expect(published).toEqual(["a"]);
+  });
+});
+
+describe("pnpm release cohort guards", () => {
   it("keeps the guarded release path aligned with its current-set pin exception", async () => {
     const source = await fs.promises.readFile(
       path.resolve(import.meta.dirname, "../release.ts"),
@@ -119,9 +296,9 @@ describe("pnpm release ordering", () => {
       "threenative-assets",
       "threenative-sculpt",
       "threenative-engine",
-      "threenative-blender",
       "threenative-terrain",
       "threenative-animation",
+      "threenative-devtools",
     ]);
     expect(cohort.templatePins).toEqual([]);
     expect(cohort.order).toContain("create-threenative");
@@ -179,6 +356,38 @@ describe("pnpm release ordering", () => {
 
     expect(() => unpublishedReleasePackages(packages, lookup)).toThrow(
       /TN_RELEASE_COHORT_PARTIAL.*@threenative\/ui@0\.3\.0/u,
+    );
+  });
+
+  it("finishes a cohort a crash left partial, and only that", () => {
+    const packages = [
+      candidate("@threenative/core", "0.3.0"),
+      candidate("@threenative/ui", "0.3.0"),
+    ];
+    const uiAt =
+      (published: string): RegistryLookup =>
+      (name) =>
+        name === "@threenative/core"
+          ? { state: "absent" }
+          : { published, state: "present", version: "0.3.0" };
+    const commit = "2026-11-02T00:00:00Z";
+
+    expect(
+      unpublishedReleasePackages(packages, uiAt("2026-11-02T01:00:00Z"), commit).map(
+        (item) => item.name,
+      ),
+    ).toEqual(["@threenative/core"]);
+    // Published before this commit: a package that missed its bump.
+    expect(() =>
+      unpublishedReleasePackages(packages, uiAt("2026-10-01T00:00:00Z"), commit),
+    ).toThrow(/TN_RELEASE_COHORT_PARTIAL/u);
+    const all: RegistryLookup = () => ({
+      published: "2026-11-02T01:00:00Z",
+      state: "present",
+      version: "0.3.0",
+    });
+    expect(() => unpublishedReleasePackages(packages, all, commit)).toThrow(
+      /TN_RELEASE_COHORT_ALREADY_PUBLISHED/u,
     );
   });
 

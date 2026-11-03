@@ -74,6 +74,8 @@ async function run(
     start: "test",
   });
   const requestFrame = globalThis.requestAnimationFrame;
+  // The loop's clock starts inside start(), so a real clock gives the first frame however long the host stalled: on a loaded runner that is extra ticks, and a window closes a frame early.
+  const nowSpy = vi.spyOn(globalThis.performance, "now").mockReturnValue(0);
   Object.defineProperty(globalThis, "requestAnimationFrame", {
     configurable: true,
     value: (callback: (time: number) => void) => {
@@ -84,7 +86,7 @@ async function run(
   try {
     await game.start();
     if (frame === undefined) throw new Error("Game did not start its loop.");
-    let time = performance.now();
+    let time = 0;
     // Reach readiness before measuring anything. The scaler deliberately ignores windows that
     // close before the world is up — the ones that close during a launch are asset decode, scene
     // construction and first-use compilation, not the game — and this harness used to drive
@@ -136,6 +138,7 @@ async function run(
       scaleSource: surface?.scaleSource ?? "?",
     };
   } finally {
+    nowSpy.mockRestore();
     releaseCompile();
     await game.stop();
     Object.defineProperty(globalThis, "requestAnimationFrame", {

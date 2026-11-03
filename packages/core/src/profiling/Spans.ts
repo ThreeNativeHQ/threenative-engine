@@ -25,6 +25,8 @@
  */
 
 /** Marker printed once per report window when spans are installed. */
+import { countDebug, debugRequested } from "./debug-telemetry.js";
+
 export const SPANS_MARKER = "TN_FRAME_SPANS";
 
 /**
@@ -250,6 +252,7 @@ class Ring {
  * than a loud failure in a mode a game opted into.
  */
 export class SpanRecorder {
+  readonly #debug = debugRequested();
   readonly capacity: number;
   readonly #stackId = new Int32Array(MAX_DEPTH);
   readonly #stackStart = new Float64Array(MAX_DEPTH);
@@ -307,6 +310,8 @@ export class SpanRecorder {
       );
     this.#depth = depth;
     const ms = now - (this.#stackStart[depth] ?? now);
+    if (this.#debug)
+      countDebug(`span.${SPAN_NAMES[id]}Ms`, ms, "renderer", `Spans.${SPAN_NAMES[id]}`, "ms");
     this.#own[id] = (this.#own[id] ?? 0) + ms;
     this.#attribute(ms);
   }
@@ -317,6 +322,8 @@ export class SpanRecorder {
    * bracketed one would.
    */
   add(id: SpanId, ms: number): void {
+    if (this.#debug)
+      countDebug(`span.${SPAN_NAMES[id]}Ms`, ms, "renderer", `Spans.${SPAN_NAMES[id]}`, "ms");
     this.#own[id] = (this.#own[id] ?? 0) + ms;
     this.#entries[id] = (this.#entries[id] ?? 0) + 1;
     this.#attribute(ms);
@@ -528,6 +535,7 @@ export function addSpan(id: SpanId, ms: number): void {
  * `globalThis.__tnFrameSpans` before the game boots.
  */
 export function spansRequested(): boolean {
+  if (debugRequested()) return true;
   const host = globalThis as {
     process?: { env?: Record<string, unknown> };
     __tnFrameSpans?: unknown;

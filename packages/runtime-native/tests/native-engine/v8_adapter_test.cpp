@@ -6,6 +6,7 @@
 #include "engine/animation/mixer.h"
 #include "engine/animation/skinning/skeleton.h"
 #include "engine/foundation/ThreeConstants.h"
+#include "engine/foundation/waste_counters.h"
 #include "engine/foundation/math/Color.h"
 #include "engine/shader/standard.h"
 #include "engine/shader/tsl/tsl.h"
@@ -1340,14 +1341,16 @@ void raycasterLOD() {
         root.updateMatrixWorld(true);
         const r = new Raycaster(new Vector3(0.2, -0.3, 5), new Vector3(0,0,-1));
         const hits = r.intersectObject(root);
-        assert(hits.length === 2 && hits[0].object === mesh && hits[0].distance === 4.5);
+        // three r187's watertight intersection (src/math/Ray.js:538) answers this box face with
+        // 4.500000000000001 (0x4012000000000001), where r185's GeometricTools port gave 4.5.
+        assert(hits.length === 2 && hits[0].object === mesh && hits[0].distance === 4.500000000000001);
         assert(hits[0].point instanceof Vector3 && hits[0].uv instanceof Vector2);
         assert(hits[0].normal instanceof Vector3 && hits[0].face.normal instanceof Vector3);
         assert(hits[0].faceIndex >= 0 && hits[0].barycoord instanceof Vector3);
         assert(r.ray instanceof Ray && r.ray === r.ray && r.ray.origin.z === 5);
         assert(r.intersectObjects([root]).length === 2 && r.intersectObjects([]).length === 0);
         const target = [hits[1]];
-        assert(r.intersectObject(root, true, target) === target && target.length === 3 && target[0].distance === 4.5);
+        assert(r.intersectObject(root, true, target) === target && target.length === 3 && target[0].distance === 4.500000000000001);
         assert(r.intersectObject(root, false).length === 0);
         r.near = 5; assert(r.intersectObject(root).length === 1);
         r.far = 5.1; assert(r.intersectObject(root).length === 0);
@@ -2179,9 +2182,37 @@ void templateRanges() {
     CHECK(got == "[object Object]");
 }
 
+void gcTelemetry() {
+    namespace waste = tn::engine::waste;
+    CHECK(!waste::debugFlagEnabled(nullptr));
+    CHECK(!waste::debugFlagEnabled(""));
+    CHECK(!waste::debugFlagEnabled("0"));
+    CHECK(!waste::debugFlagEnabled("yes"));
+    CHECK(!waste::debugFlagEnabled("true"));
+    CHECK(waste::debugFlagEnabled("1"));
+    Runtime rt;
+    v8::Isolate::Scope isolateScope(rt.isolate);
+    auto& counts = waste::counters();
+    const auto before = counts.gcPauses.load();
+    const auto elapsedBefore = counts.gcPauseMicros.load();
+    {
+        Adapter adapter(rt.isolate, rt.context);
+        rt.isolate->LowMemoryNotification();
+        CHECK(counts.gcPauses.load() == before);
+        adapter.enableGcTelemetry();
+        adapter.enableGcTelemetry();  // Repeated activation must not install duplicate callbacks.
+        rt.isolate->LowMemoryNotification();
+        CHECK(counts.gcPauses.load() > before);
+        CHECK(counts.gcPauseMicros.load() > elapsedBefore);
+    }
+    const auto after = counts.gcPauses.load();
+    rt.isolate->LowMemoryNotification();
+    CHECK(counts.gcPauses.load() == after);
+}
+
 }  // namespace
 
-TN_TEST_MAIN({"template_material", templateMaterial}, {"template_bounds", templateBounds}, {"template_ranges", templateRanges}, {"handles", handles}, {"fast_paths", fastPaths}, {"structure_stamp", structureStamp}, {"crossing_histogram", crossingHistogram}, {"collect_visits", collectVisits}, {"native_matrix_world", nativeMatrixWorld}, {"native_projection_report", nativeProjectionReport}, {"unsupported", unsupported}, {"gc_release", gcRelease},
+TN_TEST_MAIN({"gc_telemetry", gcTelemetry}, {"template_material", templateMaterial}, {"template_bounds", templateBounds}, {"template_ranges", templateRanges}, {"handles", handles}, {"fast_paths", fastPaths}, {"structure_stamp", structureStamp}, {"crossing_histogram", crossingHistogram}, {"collect_visits", collectVisits}, {"native_matrix_world", nativeMatrixWorld}, {"native_projection_report", nativeProjectionReport}, {"unsupported", unsupported}, {"gc_release", gcRelease},
              {"runtime_churn", runtimeChurn}, {"fog_node", fogNode}, {"node_material_fragment", nodeMaterialFragment},
              {"crossing_bench", crossingBench},
              {"scene", scene}, {"raycaster_lod", raycasterLOD}, {"object_raycast", objectRaycast},

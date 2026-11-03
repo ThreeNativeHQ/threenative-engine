@@ -740,32 +740,11 @@ function classifyScope(
 }
 
 describe("CI pipeline structure", () => {
-  it("checks generated Three.js patches before publishing even cached workspace builds", async () => {
-    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
-    const build = requiredJob(ci, "build-artifacts");
-    const step = "Verify the generated Three.js patch has not drifted";
-    expect(build).toContain(`- name: ${step}`);
-    expect(build.indexOf(step)).toBeLessThan(
-      build.indexOf("uses: ./.github/actions/workspace-dist"),
-    );
-    expect(build).toContain("needs.scope.outputs.selection == 'warm'");
-    const check = build.slice(
-      build.indexOf(`      - name: ${step}`),
-      build.indexOf("      - uses: ./.github/actions/workspace-dist"),
-    );
-    expect(check).toContain("shell: bash");
-    expect(check).toContain("run: time pnpm --filter @threenative/core patch:generate --check");
-    expect(check).not.toMatch(/continue-on-error:|if:|\|\||--archive/u);
-    expect(ci.match(/patch:generate --check/gu)).toHaveLength(1);
-  });
-
   it("uses one fail-closed scope decision before expensive CI and native jobs", async () => {
     const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
     const scope = requiredJob(ci, "scope");
     expect(scope).toContain("scripts/ci-change-scope.mjs");
-    expect(scope).toContain(
-      "fetch-depth: ${{ github.event_name == 'workflow_dispatch' && 1 || 0 }}",
-    );
+    expect(scope).toContain("fetch-depth: 0");
     expect(scope).toContain("scope: ${{ steps.classify.outputs.scope }}");
     expect(scope).toContain("selection: ${{ steps.classify.outputs.selection }}");
     expect(scope).toContain("reason: ${{ steps.classify.outputs.reason }}");
@@ -828,9 +807,8 @@ describe("CI pipeline structure", () => {
     expect(triggers).toContain("workflow_dispatch:");
     expect(triggers).toContain("workflow_call:");
     expect(triggers).toContain("ios_only:");
-    // PRD-629: the one push trigger is main, so the release candidate gets a standalone run.
-    expect(triggers).not.toMatch(/\n\s{2}(?:pull_request|schedule):/u);
-    expect(triggers).toMatch(/\n\s{2}push:\n\s{4}branches: \[main\]\n/u);
+    // The release candidate reads its reports from the main CI run, so nothing starts this alone.
+    expect(triggers).not.toMatch(/\n\s{2}(?:pull_request|schedule|push):/u);
   });
 
   it("never lets a draft pull request run cancel a ready one", async () => {
@@ -859,9 +837,13 @@ describe("CI pipeline structure", () => {
       );
     }
     expect(duplicateCommitTriggers(ci)).toEqual([]);
-    // Each push run gets its own concurrency group (the group ends in its run id unless it is a
-    // ready pull request) and nothing but a pull request cancels in progress, so a second push to
-    // develop cannot kill the first one while it is saving.
+    // Develop pushes share one group, so the next push waits instead of starting a board beside the
+    // running one. Nothing but a pull request cancels in progress, so that push cannot kill the
+    // running board while it is saving.
+    const group = /^concurrency:\n {2}group: (.*)$/mu.exec(ci)?.[1] ?? "";
+    expect(group).toContain(
+      "github.event_name == 'push' && github.ref == 'refs/heads/develop' && 'latest'",
+    );
     expect(ci).toContain("cancel-in-progress: ${{ github.event_name == 'pull_request' }}");
   });
 
@@ -874,7 +856,10 @@ describe("CI pipeline structure", () => {
     expect(performance).toContain("TN_CI_SCOPE: ${{ needs.scope.outputs.selection }}");
     expect(performance).toContain('required_lanes=""');
     expect(performance).toContain('if [ "$TN_CI_SCOPE" = full ]; then');
-    expect(performance).toContain('required_lanes="performance-contracts,native-linux-contract"');
+    expect(performance).toContain('required_lanes="performance-contracts"');
+    expect(performance).toContain(
+      'required_lanes="${required_lanes:+$required_lanes,}native-linux-contract"',
+    );
     expect(performance).toContain('--required-lanes "$required_lanes"');
     expect(performance).not.toContain(
       "--required-lanes performance-contracts,native-linux-contract",
@@ -1223,12 +1208,15 @@ describe("CI pipeline structure", () => {
       // Nothing calls the Actions API to cancel its own run, so nothing may ask to write to it.
       // `ci-janitor.yml` is the single named exception: it cancels *other* runs, on a closed PR,
       // never from a failure step, and never its own run id — all four pinned in its own case.
-      // PRD-731 adds the second: `queue-watch` in ci.yml, for a merge group only, which names the
-      // first red job on the pull request before it cancels the rest (pinned below).
+      // PRD-731 adds the second: `queue-watch` in ci.yml, which names the first red job on the pull
+      // request before it cancels the rest. PRD-782 widens it to full boards (pinned below).
+      // PRD-630 adds the third: `ship` in npm-release.yml dispatches the release workflows.
       const writes =
         relative === ".github/workflows/ci.yml"
           ? source.replace(requiredJob(source, "queue-watch"), "")
-          : source;
+          : relative === ".github/workflows/npm-release.yml"
+            ? source.replace(requiredJob(source, "ship"), "")
+            : source;
       if (relative !== ".github/workflows/ci-janitor.yml") {
         expect(writes, `${relative} needs no actions: write`).not.toContain("actions: write");
       }
@@ -1579,6 +1567,7 @@ describe("CI pipeline structure", () => {
     ["ci.yml:test-unit", heavyMatrix("ci:test-unit:{0}", "matrix.shard")],
     ["ci.yml:golden-path-template", heavyMatrix("ci:golden-path-template:{0}", "matrix.template")],
     ["ci.yml:template-nonvisual", gpuHeavyMatrix("ci:template-nonvisual:{0}", "matrix.template")],
+    ["ci.yml:template-engine-cost", heavyMatrix("ci:template-engine-cost:{0}", "matrix.template")],
     ["ci.yml:native-engine", heavy("ci:native-engine")],
     ["integration.yml:animation", heavy("integration:animation", "paths")],
     ["integration.yml:capture", heavy("integration:capture", "paths")],
@@ -1945,7 +1934,13 @@ describe("CI pipeline structure", () => {
   it("names the first red job on the pull request before the queue run is cancelled", async () => {
     const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
     const watch = requiredJob(ci, "queue-watch");
-    expect(watch).toContain("if: ${{ github.event_name == 'merge_group' }}");
+    const gate = /^ {4}if: (.*)$/mu.exec(watch)?.[1] ?? "";
+    expect(gate).toContain("github.event_name == 'merge_group'");
+    expect(gate).toContain("needs.scope.outputs.selection == 'full'");
+    expect(gate).toContain("!github.event.pull_request.head.repo.fork");
+    // A develop push has one concurrency slot, and main feeds the release.
+    expect(gate).not.toContain("'push'");
+    expect(gate).not.toContain("'schedule'");
     expect(watch).toContain("github.event.merge_group.head_ref");
     const script = await readFile(path.join(repo, "scripts/ci-queue-watch.mjs"), "utf8");
     expect(script.indexOf("/comments")).toBeGreaterThan(0);
@@ -1983,7 +1978,7 @@ describe("CI pipeline structure", () => {
       if (name === "ci-required" || name === "scope") continue;
       // PRD-731: the watcher is no gate. It runs for a merge group only and has no selection.
       if (name === "queue-watch") {
-        expect(section).toContain("if: ${{ github.event_name == 'merge_group' }}");
+        expect(section).toContain("github.event_name == 'merge_group'");
         continue;
       }
       expect(section, `${name} does not name the selection it admits`).toContain(
@@ -2168,20 +2163,10 @@ describe("CI pipeline structure", () => {
     expect(native).toContain("&& 'native-release-proof' ||");
     expect(native).toContain("cancel-in-progress: false");
     const triggers = triggerSection(native);
-    expect(triggers).toContain("workflow_run:");
-    expect(triggers).toContain("workflows: [CI]");
-    expect(triggers).toContain("types: [completed]");
-    const pushBlock = triggers.slice(
-      triggers.indexOf("\n  push:"),
-      triggers.indexOf("\n  pull_request:"),
-    );
-    expect(pushBlock, "a push-to-main trigger still feeds the evidence path").not.toContain(
-      "branches:",
-    );
-    expect(pushBlock, "the tag publish path lost its trigger").toContain("runtime-native-v*");
-    // Tag publication and manual proof keep the single-shot lookup they always had.
-    expect(native).toMatch(/gh run list .*--workflow ci\.yml --commit/u);
-    expect(npm).toContain('gh release view "runtime-native-v${native_version}"');
+    // PRD-630: the promotion PR holds the one proof, and `pnpm release:ship` dispatches the tag run.
+    expect(triggers).not.toContain("workflow_run:");
+    expect(triggers).not.toContain("\n  push:");
+    expect(triggerSection(npm)).toContain("workflow_run:");
   });
 
   it("holds every release proof in one cross-branch concurrency group", async () => {
@@ -2326,50 +2311,22 @@ describe("CI pipeline structure", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("requires the matching native release for a publishing dispatch", async () => {
+  it("ships from one job after a green main run, and provisions it before the command", async () => {
     const npm = await readFile(path.join(repo, ".github/workflows/npm-release.yml"), "utf8");
-    const publish = jobSections(npm).find(([job]) => job === "publish")?.[1];
-    expect(publish).toContain("if: github.event_name == 'push' || inputs.dry_run == false");
-  });
-
-  it("requires the matching native release to be published and ready", async () => {
-    const npm = await readFile(path.join(repo, ".github/workflows/npm-release.yml"), "utf8");
-    const publish = jobSections(npm).find(([job]) => job === "publish")?.[1];
-    expect(publish).toContain("--json isDraft,isPrerelease");
-    expect(publish).toContain(".isDraft == false and .isPrerelease == false");
-    expect(publish).toMatch(/\$\{release_state\}" != "ready"/u);
-  });
-
-  it("requires the matching native release tag to name the exact candidate commit", async () => {
-    const npm = await readFile(path.join(repo, ".github/workflows/npm-release.yml"), "utf8");
-    const publish = jobSections(npm).find(([job]) => job === "publish")?.[1];
-    expect(publish).toContain('native_tag="runtime-native-v${native_version}"');
-    expect(publish).toContain("scripts/verify-native-release-commit.ts");
-    expect(publish).toContain("native tag and the candidate SHA");
-  });
-
-  it("reuses the already verified native CI result in the guarded release job", async () => {
-    const npm = await readFile(path.join(repo, ".github/workflows/npm-release.yml"), "utf8");
-    const publish = jobSections(npm).find(([job]) => job === "publish")?.[1];
-    expect(publish).toBeDefined();
-    if (publish === undefined) return;
-    expect(publish).toContain("pnpm tsx scripts/release.ts --yes --skip-gates");
-    expect(publish).toContain("pnpm tsx scripts/release.ts --skip-gates");
-  });
-
-  it("provisions the registry verifier before the guarded publish command", async () => {
-    const npm = await readFile(path.join(repo, ".github/workflows/npm-release.yml"), "utf8");
-    const publish = jobSections(npm).find(([job]) => job === "publish")?.[1];
-    expect(publish).toBeDefined();
-    if (publish === undefined) return;
-    const prerequisites = publish.indexOf(
-      "Install the pinned Blender used by the registry verifier",
-    );
-    const release = publish.indexOf("pnpm tsx scripts/release.ts --yes");
-    expect(prerequisites).toBeGreaterThanOrEqual(0);
-    expect(publish).toContain("libvulkan1 mesa-vulkan-drivers");
-    expect(publish).toContain("THREENATIVE_BLENDER_PATH");
-    expect(release).toBeGreaterThan(prerequisites);
+    const ship = requiredJob(npm, "ship");
+    expect(ship).toContain("github.event.workflow_run.event == 'push'");
+    expect(ship).toContain("github.event.workflow_run.conclusion == 'success'");
+    expect(ship).toContain("ref: ${{ github.event.workflow_run.head_sha }}");
+    const command = ship.indexOf("pnpm release:ship --yes");
+    for (const need of [
+      "run: pnpm build",
+      "libvulkan1 mesa-vulkan-drivers",
+      "platforms;android-35",
+    ]) {
+      expect(ship.indexOf(need), need).toBeGreaterThanOrEqual(0);
+      expect(command, need).toBeGreaterThan(ship.indexOf(need));
+    }
+    expect(jobSections(npm).map(([job]) => job)).toEqual(["ship", "clean-room"]);
   });
 
   // The clean room's `android` step builds the APK in the published cohort. Without a JDK 17 and an
@@ -2393,47 +2350,20 @@ describe("CI pipeline structure", () => {
 
   // A clean-room-only dispatch re-proves the published cohort without a publish: it must never
   // reach `gates` or `publish`, and the clean room must still run after a real publish succeeds.
-  it("runs the clean room alone on a clean_room_only dispatch, never the publish", async () => {
-    const npm = await readFile(path.join(repo, ".github/workflows/npm-release.yml"), "utf8");
-    const jobs = jobSections(npm);
-    const gates = jobs.find(([job]) => job === "gates")?.[1];
-    const cleanRoom = jobs.find(([job]) => job === "clean-room")?.[1];
-    expect(npm).toMatch(/clean_room_only:\n(?: {8}.+\n)*? {8}default: false/u);
-    expect(gates).toContain("if: inputs.clean_room_only != true");
-    expect(cleanRoom).toContain("inputs.clean_room_only == true");
-    // The desktop prebuilt links the overlay webview; without it doctor and native exit 127.
-    expect(cleanRoom).toContain("libwebkit2gtk-4.1-0");
-    expect(cleanRoom).toContain("needs.publish.result == 'success'");
-    expect(cleanRoom).toContain("!cancelled()");
+  it("a tag run rerun replaces its own prerelease and leaves a public release alone", async () => {
+    const native = await readFile(path.join(repo, ".github/workflows/native-release.yml"), "utf8");
+    const step = native.slice(native.indexOf("- name: Publish runtimes and checksum lock"));
+    const guard = step.indexOf("--json isPrerelease --jq .isPrerelease");
+    expect(guard).toBeGreaterThan(0);
+    expect(guard).toBeLessThan(step.indexOf('gh release create "$RELEASE_TAG"'));
   });
 
-  it("requires native release CI to be a successful push on main", async () => {
-    const native = await readFile(path.join(repo, ".github/workflows/native-release.yml"), "utf8");
-    const gates = jobSections(native).find(([job]) => job === "gates")?.[1];
-    expect(gates).toContain("--json databaseId,status,conclusion,event,headBranch,headSha");
-    expect(gates).toContain('entry?.event === "push"');
-    expect(gates).toContain('entry?.headBranch === "main"');
-    expect(gates).toContain("entry?.headSha === candidateSha");
-    expect(gates).toContain("Number.isSafeInteger(entry?.databaseId)");
-    expect(gates).toContain("entry.databaseId > 0");
-    // The evidence path reads the triggering CI completion from the event payload -
-    // conclusion plus head SHA - and refuses anything but exact-candidate success.
-    // No step polls or holds a runner: the verdict runs on a single-digit-minute budget.
-    expect(gates).toContain("Require the triggering CI completion");
-    expect(gates).toContain("github.event.workflow_run.conclusion");
-    expect(gates).toContain("github.event.workflow_run.head_sha");
-    expect(gates).toContain("github.event.workflow_run.head_branch");
-    expect(gates).not.toContain("Wait for the exact main CI run to finish");
-    expect(gates).not.toContain("sleep 60");
-    const timeout = Number(gates?.match(/\n\s{4}timeout-minutes: (\d+)/u)?.[1]);
-    expect(timeout, "the gates verdict must not hold a runner").toBeLessThanOrEqual(9);
-    // Both verdict steps enforce the same required-job table: the event-payload verdict
-    // for `workflow_run` evidence and the single-shot lookup for tag/manual proof.
-    const tables = [...(gates?.matchAll(/const requiredNames = \[([\s\S]*?)\];/gu) ?? [])].map(
-      (match) => match[1],
-    );
-    expect(tables.length).toBe(2);
-    expect(tables[0]).toBe(tables[1]);
+  it("runs the clean room alone on a dispatch", async () => {
+    const npm = await readFile(path.join(repo, ".github/workflows/npm-release.yml"), "utf8");
+    const cleanRoom = jobSections(npm).find(([job]) => job === "clean-room")?.[1];
+    expect(cleanRoom).toContain("if: github.event_name == 'workflow_dispatch'");
+    // The desktop prebuilt links the overlay webview; without it doctor and native exit 127.
+    expect(cleanRoom).toContain("libwebkit2gtk-4.1-0");
   });
 
   it("desktop parity runs against a captured web reference and fails closed", async () => {
@@ -2685,8 +2615,7 @@ describe("CI pipeline structure", () => {
       "utf8",
     );
     expect(triggerSection(native)).toContain("workflow_call:");
-    expect(triggerSection(native)).not.toMatch(/\n\s{2}(?:pull_request|schedule):/u);
-    expect(triggerSection(native)).toMatch(/\n\s{2}push:\n\s{4}branches: \[main\]\n/u);
+    expect(triggerSection(native)).not.toMatch(/\n\s{2}(?:pull_request|schedule|push):/u);
   });
 
   it("both emulator lanes share the KVM provisioning commands", async () => {
@@ -3285,6 +3214,9 @@ describe("CI pipeline structure", () => {
     expect(ios).toContain("cmp -s");
     expect(ios).toContain("TN_IOS_PACKAGE_OUTPUTS_CHANGED");
     expect(ios).toContain("TN_IOS_PACKAGE_OUTPUTS_MISSING");
+    expect(ios, "the output snapshot reads each package main, not dist/index.js").toContain(
+      "package.json').main",
+    );
     expect(packSection).toContain("workspace-packages.ts --archives");
     expect(packSection).toContain('pnpm --filter "$package_name" pack --pack-destination');
     expect(packSection).not.toContain("--if-present run build");
@@ -3486,9 +3418,8 @@ describe("CI pipeline structure", () => {
     // The reusable workflow is invoked by ci.yml for every non-prose board selection.
     const triggers = triggerSection(native);
     expect(triggers).toContain("workflow_call:");
-    // PRD-629: the one push trigger is main, so the release candidate gets a standalone run.
-    expect(triggers).not.toMatch(/\n\s{2}(?:pull_request|schedule):/u);
-    expect(triggers).toMatch(/\n\s{2}push:\n\s{4}branches: \[main\]\n/u);
+    // The release candidate reads its reports from the main CI run, so nothing starts this alone.
+    expect(triggers).not.toMatch(/\n\s{2}(?:pull_request|schedule|push):/u);
 
     const android = requiredJob(native, "android-emulator-parity");
     expect(android).not.toContain("continue-on-error: true");
@@ -3593,6 +3524,45 @@ describe("CI pipeline structure", () => {
     expect(job).toContain("run: pnpm verify:golden-path");
   });
 
+  it("the engine-cost row runs in its own required leg per kit, not inside the kit's 30 minutes", async () => {
+    // Its 1260 drawn ticks took 14m51s on hosted SwiftShader (run 41170629638), so inside
+    // template-nonvisual it cancelled adventure and collectathon at 30 minutes.
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    expect(requiredJob(ci, "template-nonvisual")).not.toContain("kit-contract-row.ts");
+    const job = requiredJob(ci, "template-engine-cost");
+    expect(job).toContain("matrix: ${{ fromJSON(needs.scope.outputs.plan).templateMatrix }}");
+    expect(job).toContain('scripts/kit-contract-row.ts engine-cost "${{ matrix.template }}"');
+    expect(job).toContain("--scenario playtests/contract-engine-cost.playtest.json");
+    expect(job).toContain("--browser-recipe webgpu --headed");
+    // 45 for this job only (owner, 2026-10-31: hosted SwiftShader ran the row 964-1775+ s); the
+    // kit legs keep their own caps.
+    expect(job).toContain("timeout-minutes: 45");
+    expect(requiredJob(ci, "template-nonvisual")).toContain(
+      "timeout-minutes: ${{ matrix.template == 'shooter' && 60 || matrix.template == 'rain' && 60 || 30 }}",
+    );
+    expect(requiredJob(ci, "ci-required")).toMatch(/needs: \[[^\]]*\btemplate-engine-cost\b/u);
+    // The row writer imports create-threenative, which needs the built `packages/*/dist` that only
+    // the workspace-packages artifact carries (run 41260320405: every leg failed at the row step).
+    const download = job.indexOf("name: workspace-packages");
+    expect(download).toBeGreaterThan(-1);
+    expect(download).toBeLessThan(job.indexOf("scripts/kit-contract-row.ts"));
+  });
+
+  it("a stalled apt mirror fails the Chromium dependency install and retries it", async () => {
+    // Run 41249368283: `playwright install-deps` trickled from archive.ubuntu.com for 29 minutes and
+    // the tower-defense and animation jobs hit their 30-minute limit. A hang is not a failure, so
+    // retry-download.sh never retried it. Root runs the timeout, so it can kill apt's fetchers.
+    const action = await readFile(
+      path.join(repo, ".github/actions/playwright-chromium/action.yml"),
+      "utf8",
+    );
+    expect(action).toContain(
+      'sh scripts/retry-download.sh sudo timeout --kill-after=15 240 env "PATH=$PATH" node_modules/.bin/playwright install-deps chromium',
+    );
+    expect(action).not.toContain("pnpm exec playwright install-deps");
+    expect(action).not.toContain("--with-deps");
+  });
+
   it("the review unit leg prepares what `vitest related` may select (PRD-731)", async () => {
     // #560's first review run: `vitest related` picked the browser e2e specs for a playtest change
     // and every one died on a missing Chromium, because the install step ran for `full` only.
@@ -3647,7 +3617,7 @@ describe("CI pipeline structure", () => {
       expect(source, relative).not.toContain("unsupported workspace package");
       callers += occurrences(source, /uses: \.\/\.github\/actions\/scaffold-from-tarballs/gu);
     }
-    expect(callers).toBe(10);
+    expect(callers).toBe(11);
   });
 
   it("selects QuickJS for the packaged fallback without changing native features", async () => {
@@ -4940,6 +4910,24 @@ describe("a CI-configuration-only pull request", () => {
       expect(refused.stderr).toContain("CI_SCOPE_INVALID_PLAN");
     } finally {
       await removeFixture(fixture.root);
+    }
+  });
+
+  it("reads a run's job list in small pages, because a large page answers 502 after a --failed rerun", async () => {
+    // Run 41288322050 attempt 3: `jobs?filter=latest&per_page=100` answered 502 at 10.6 s on 9 of 9
+    // reads, and the release gate of tag runtime-native-v0.3.7 could not read its own CI run.
+    const sources = [
+      ".github/workflows/ci.yml",
+      ".github/workflows/ci-janitor.yml",
+      ".github/workflows/native-release.yml",
+      "scripts/ci-queue-watch.mjs",
+      "scripts/ci-merge-latency.mjs",
+    ];
+    for (const source of sources) {
+      const large = (await readFile(source, "utf8"))
+        .split("\n")
+        .filter((line) => /\/jobs\?[^"'`\s]*per_page=(?:[2-9]\d|\d{3})/u.test(line));
+      expect({ source, large }).toEqual({ source, large: [] });
     }
   });
 });

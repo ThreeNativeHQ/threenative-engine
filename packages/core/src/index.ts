@@ -6,7 +6,7 @@
  * unavoidable here — core is bundled for browsers and cannot read `package.json` at runtime — so
  * the spec now asserts this equals the manifest instead of asserting a number somebody typed.
  */
-export const version = "0.3.7";
+export const version = "0.3.10";
 
 /**
  * Play a skinned or sprite animation from game code.
@@ -820,8 +820,8 @@ export type { ICounterDevice, IFrameCounters } from "./profiling/FrameCounters.j
 /**
  * Warn the agent that built the scene before a human plays it: a frame whose GPU is idle while its
  * JS render phase is longer than the display's own period is a scene-shape problem, and the engine
- * already has the shape. On by default, printed at most once per reported window as
- * `TN_SCENE_WARNING`, and silent on a scene that is honestly GPU-bound.
+ * already has the shape. On by default in a debug launch, printed at most once per reported window
+ * as `TN_SCENE_WARNING`, and silent on a scene that is honestly GPU-bound.
  * @situation find out whether a slow frame is the scene's shape or the device
  * @situation tell an authoring agent what to reduce before it promises a merge
  * @constraint the rule is derived from the frame's own numbers; the display period comes from the host's presentation cap or the game's declared target, never a constant

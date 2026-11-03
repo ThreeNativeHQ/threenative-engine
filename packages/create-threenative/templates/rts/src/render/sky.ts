@@ -2,8 +2,8 @@
 //
 // The sky is a photograph: `assets/sky.jpg`, Poly Haven's "Kloofendal 48d Partly Cloudy (Pure Sky)"
 // by Greg Zaal and Jarod Guest, CC0 (https://polyhaven.com/a/kloofendal_48d_partly_cloudy_puresky).
-// The same image is the background, the environment light every surface reflects and is filled by,
-// and — through `SUN_DIRECTION` — the direction the sun's shadows fall. Swap the file for any
+// The same image is the background and — through `SUN_DIRECTION` — the direction the sun's shadows
+// fall. It is not the environment light: AstraCraft lights with a hemisphere (`lighting.ts`). Swap the file for any
 // equirectangular sky and re-aim `SUN_DIRECTION` at its sun.
 import {
   EquirectangularReflectionMapping,
@@ -14,7 +14,7 @@ import {
   Vector3,
 } from "three";
 import { HEIGHT_FOG, type HeightFogParams, heightFogDepth, heightFogNode } from "./heightFog.js";
-import { palette } from "./palette.js";
+import { legacyColor, palette } from "./palette.js";
 
 /**
  * How the JPEG was made from the 4k HDR: linear radiance × 0.4, clipped, sRGB-encoded — so white
@@ -23,11 +23,11 @@ import { palette } from "./palette.js";
  */
 const SKY_RANGE = 2.5;
 
-/** Unit vector toward the photographed sun: 47.9° up, measured from the source HDR. */
-export const SUN_DIRECTION = new Vector3(0.555, 0.742, 0.38).normalize();
+/** Unit vector toward the sun: high and from the north-west, so mesas throw their shadow toward the camera's right. */
+export const SUN_DIRECTION = new Vector3(-35, 70, -20).normalize();
 
 /** The look this fog replaced: FogExp2 at 0.0035, measured at 150 m from 20 m up. */
-const EYE_LEVEL = { density: 0.0035, distance: 150, cameraHeight: 20 };
+const EYE_LEVEL = { density: 0.0021, distance: 150, cameraHeight: 20 };
 
 /**
  * The distance term's density that, with the height term, keeps the old eye-level haze: at
@@ -47,18 +47,15 @@ export function setupSky(scene: Scene, sky: Texture): void {
   sky.colorSpace = SRGBColorSpace;
   scene.background = sky;
   scene.backgroundIntensity = SKY_RANGE;
-  // three prefilters an equirectangular `scene.environment` itself (PMREM), on WebGPU and WebGL.
-  // It is what makes a standard material read as a material: sky-blue fill on faces the sun
-  // misses, and a sky to reflect, sharper as roughness drops.
-  scene.environment = sky;
-  scene.environmentIntensity = SKY_RANGE;
+  // No `scene.environment`: AstraCraft has none, and the photograph's fill lifted the ground 0.03
+  // to 0.06 lighter and warmer than the reference frame (PRD-765). Set it back to light with the sky.
   // Tuned for a 224 m battlefield rather than a 36 m arena, and then tuned again: the first
   // value meant to hide the map's far edge (0.0075) hazed the fog of war away with it, because a
   // cell the player has never seen is 60 m away and a distant cell is 150. At 0.0035 the far corner
   // is a quarter hazed and an unexplored cell next to the camera is 4% — the haze stays a horizon
   // instead of becoming the map.
   // `scene.fog` stays the distance term; `scene.fogNode` is what three applies and adds the height term.
-  const distanceFog = new FogExp2(palette.horizon, distanceDensity());
+  const distanceFog = new FogExp2(legacyColor(palette.horizon), distanceDensity());
   scene.fog = distanceFog;
   scene.fogNode = heightFogNode(distanceFog, HEIGHT_FOG, SUN_DIRECTION);
 }

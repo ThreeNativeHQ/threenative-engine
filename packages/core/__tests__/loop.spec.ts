@@ -107,15 +107,33 @@ describe("FixedStepLoop", () => {
     expect(updates).toBe(30);
   });
 
-  it("should clamp catch-up to 5 steps after a long stall", () => {
+  it("should add at most 1/20 s of simulated time per frame by default", () => {
+    // After Unreal's MaxPhysicsDeltaTime (UE 5.8.3: PhysicsSettings.cpp:22, PhysLevel.cpp:212). Five
+    // catch-up ticks let an overloaded frame run five whole game updates: the stress lab at load 4
+    // spent 52 ms of an 83 ms frame there, which made the next frame slower still.
     let updates = 0;
     const loop = new FixedStepLoop({ onUpdate: () => updates++ });
-
     loop.stepFrame(0);
-    const catchUp = loop.stepFrame(10_000);
+    expect(loop.stepFrame(10_000)).toBe(3);
+    expect(updates).toBe(3);
 
-    expect(catchUp).toBe(5);
-    expect(updates).toBe(5);
+    // The leftover of a clamped frame is kept, so a steady 30 fps keeps real time.
+    let thirty = 0;
+    const steady = new FixedStepLoop({ onUpdate: () => thirty++ });
+    steady.stepFrame(0);
+    for (let frame = 1; frame <= 30; frame++) steady.stepFrame(Math.round((frame * 1_000) / 30));
+    expect(thirty).toBe(60);
+
+    // The named override turns the clamp off; maxSteps still bounds the frame.
+    const legacy = new FixedStepLoop({
+      onUpdate: () => undefined,
+      maxPhysicsDeltaTime: Number.POSITIVE_INFINITY,
+    });
+    legacy.stepFrame(0);
+    expect(legacy.stepFrame(10_000)).toBe(5);
+    expect(() => new FixedStepLoop({ onUpdate: () => undefined, maxPhysicsDeltaTime: 0 })).toThrow(
+      /maxPhysicsDeltaTime/u,
+    );
   });
 
   it("should absorb a backgrounded app's time jump without a burst of updates", () => {
@@ -129,8 +147,8 @@ describe("FixedStepLoop", () => {
 
     loop.stepFrame(0);
     const afterTenMinutes = loop.stepFrame(600_000);
-    expect(afterTenMinutes).toBe(5);
-    expect(steps).toHaveLength(5);
+    expect(afterTenMinutes).toBe(3);
+    expect(steps).toHaveLength(3);
     expect(steps.every((step) => step > 0)).toBe(true);
 
     // A clock that went backwards must produce no update at all, never a negative one...

@@ -576,6 +576,50 @@ describe("render camera cull", () => {
     });
   });
 
+  it("asks no per-part visibility call on a rig whose parts it keeps", () => {
+    // On the Wasm engine every kept rig part answered visibility with one engine call
+    // (`__tnVisibleInWorld`), 240 crossings a frame on the stress lab's crowd: `visible` is an engine
+    // field and `parent` a kept answer, so the walk that call made is free here.
+    const calls = vi.fn();
+    // The engine's own rule (bindings_scene.cpp), counted: every node up to the root visible.
+    const answerInEngine = (object: Object3D): void => {
+      Object.defineProperty(object, "__tnVisibleInWorld", {
+        configurable: true,
+        value: () => {
+          calls();
+          for (let node: Object3D | null = object; node !== null; node = node.parent)
+            if (!node.visible) return false;
+          return true;
+        },
+      });
+    };
+    const run = (shown: boolean) => {
+      const rig = new Group();
+      const holder = new Group();
+      holder.visible = shown;
+      rig.add(holder);
+      const part = ball(1, -60);
+      // Off the camera's forward ray: that is where the rig's band rate is measured (test above).
+      part.position.x = 8;
+      part.updateMatrixWorld();
+      holder.add(part);
+      const state = rateState();
+      trackAnimationRate(rig, state);
+      const scene = sceneWith(rig);
+      for (const object of [scene, rig, holder, part]) answerInEngine(object);
+      const cull = new RenderCameraCull();
+      cull.prepareAnimation(scene, camera(), 720);
+      return state;
+    };
+    const shown = run(true);
+    const hidden = run(false);
+
+    expect(calls).not.toHaveBeenCalled();
+    // The frame reached the rig, so zero calls is not zero work: the shown part took the rig's band
+    // rate and the one under the hidden group was left alone, as a scene walk leaves it.
+    expect([shown.rate, hidden.rate]).toEqual([4, 1]);
+  });
+
   it("rejects a threshold that is not false or a positive finite number", () => {
     expect(() => new RenderCameraCull({ minimumPixels: 0 })).toThrow(/minimumProjectedPixels/);
     expect(() => new RenderCameraCull({ minimumPixels: -1 })).toThrow(/minimumProjectedPixels/);

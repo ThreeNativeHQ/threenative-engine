@@ -30,6 +30,7 @@ import {
 } from "./browser-renderer.js";
 import { type ITslRuntime, defineTsl, isTslNode } from "./browser-tsl.js";
 import type { CatalogEntry, ICatalog } from "./catalog.js";
+import { CPU_STAGE_FIELDS } from "./gpu-stages.js";
 import { withMathUtilsExtras } from "./math-utils.js";
 import {
   Material,
@@ -132,10 +133,18 @@ export function webThreadsReport(module: object, isolated: boolean): string {
 }
 
 export async function bindWebEngine(
-  createModule: () => Promise<TnAbiModule>,
+  createModule: (options?: {
+    print: (line: string) => void;
+    printErr: (line: string) => void;
+  }) => Promise<TnAbiModule>,
   names: readonly string[],
 ): Promise<Record<string, unknown>> {
-  const module = await createModule();
+  // Emscripten binds `console.log` once, at load; these read the console per line, so the quiet-marker
+  // routing core installs at `start()` also reaches the engine's own TN_RENDERER notes.
+  const module = await createModule({
+    print: (line) => console.log(line),
+    printErr: (line) => console.error(line),
+  });
   // The engine's linear memory, for a bench page's memory report (`memory.buffer` survives growth).
   const memory = (module as { wasmMemory?: WebAssembly.Memory }).wasmMemory;
   if (memory !== undefined)
@@ -155,8 +164,18 @@ export async function bindWebEngine(
   // Engine crossings so far, for a bench page's per-frame bridgeCalls (the pair's crossing budget).
   (globalThis as { __tnCrossingCount?: () => number }).__tnCrossingCount = crossings;
   // The engine's running work totals by name, which core puts per frame into TN_FRAME_BUDGET.counters.engine.
+  // The renderer's CPU stage totals ride beside them, so a slow frame names its costly stage.
   (globalThis as { __tnEngineCounters?: () => Record<string, number> }).__tnEngineCounters =
-    counters;
+    isWebHostModule(module)
+      ? () => {
+          const totals = { ...counters() };
+          // Off, the engine reads no clock and the totals stand at their last value: listing them would report a stale cost.
+          if (module._tnw_web_frame(84) !== 0)
+            for (const [name, field] of Object.entries(CPU_STAGE_FIELDS))
+              totals[name] = module._tnw_web_frame(field);
+          return totals;
+        }
+      : counters;
   defineTypeFlags(classes);
   defineReleaseNoops(classes);
   // attributes/groups, shape.holes and the abstract Material, as on the V8 player (object-surface.ts).

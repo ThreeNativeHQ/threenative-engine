@@ -252,12 +252,16 @@ interface IMcpFixturePaths {
 const MCP_SAFE_TOOLS: Readonly<Record<string, string>> = {
   "threenative-animation": "animation_inspect",
   "threenative-assets": "asset_search_sources",
-  "threenative-blender": "blender_status",
+  "threenative-devtools": "performance_start_trace",
   "threenative-engine": "engine_search_capabilities",
   "threenative-sculpt": "sculpt_grimoire",
   // A patch with no commands round-trips a recipe and never cooks.
   "threenative-terrain": "terrain_patch",
 };
+
+/** Servers checked by `initialize` and `tools/list` alone. Every Chrome DevTools tool starts a
+ * headed Chrome, which a registry lane has no display for, so the advertised tool is the proof. */
+const MCP_LIST_ONLY: ReadonlySet<string> = new Set(["threenative-devtools"]);
 
 function safeOperation(
   serverName: string,
@@ -304,13 +308,9 @@ export function mcpRequests(
     },
     { jsonrpc: "2.0", method: "notifications/initialized" },
     { id: 2, jsonrpc: "2.0", method: "tools/list", params: {} },
-    { id: 3, jsonrpc: "2.0", method: "tools/call", params: operation },
   ];
-  if (serverName === "threenative-blender" && operation.name === "blender_convert") {
-    const argumentsValue = operation.arguments as Record<string, unknown>;
-    argumentsValue.source = fixture.source;
-    argumentsValue.out = fixture.out;
-  }
+  if (!MCP_LIST_ONLY.has(serverName))
+    requests.push({ id: 3, jsonrpc: "2.0", method: "tools/call", params: operation });
   return `${requests.map((request) => JSON.stringify(request)).join("\n")}\n`;
 }
 
@@ -422,6 +422,7 @@ function assertMcpHandshake(serverName: string, output: string, expectedTool: st
   );
   if (!names.includes(expectedTool))
     throw new Error(`MCP server '${serverName}' tools/list does not advertise '${expectedTool}'.`);
+  if (MCP_LIST_ONLY.has(serverName)) return { messages, operation: {} };
   const operation = requireMcpResponse(messages, serverName, 3);
   return { messages, operation };
 }
@@ -833,9 +834,21 @@ function step(name: string, work: () => string): IRegistryInstallStep {
 
 /** Every step after `install`, in run order. The not-run bookkeeping is this list, not a copy. */
 function stepPlan(upgrade: boolean): readonly string[] {
-  return upgrade
+  const plan = upgrade
     ? ["lockfile", "surface", "upgrade", "edit", "build", "test", "gameplay"]
     : ["lockfile", "edit", "build", "test", "gameplay", "doctor", "native", "android", "mcp"];
+  return softwareAdapter() ? plan.map((name) => (name === "test" ? "browser" : name)) : plan;
+}
+
+/**
+ * The runner says it has no GPU. A kit's own `test` holds frame budgets and screenshots, which a CPU
+ * rasteriser cannot meet however correct the game is. That row stays out of the report rather than
+ * green: `gameplay` still plays the installed game, and `template-nonvisual` ran the kit on the board.
+ * The kit's `pretest` still runs as the `browser` row, because it installs the Chromium `gameplay`
+ * and `doctor` need, at the Playwright version this kit pins.
+ */
+function softwareAdapter(): boolean {
+  return process.env.TN_PLAYTEST_ALLOW_SOFTWARE === "1";
 }
 
 /** `step` for work that has to await: reading the installed package's ES modules cannot be sync. */
@@ -1068,7 +1081,8 @@ function verifyNativeFrames(project: string, runner: CommandRunner): string {
       );
     return `${output}\nVerified ${report.assertions} playtest assertions on the engine player.`;
   }
-  if (report.pass !== true || report.frames !== 300)
+  // The engine player records its window until it holds 300 frames, so a fast machine reports more.
+  if (report.pass !== true || typeof report.frames !== "number" || report.frames < 300)
     throw new Error(
       `Native verifier did not prove 300 frames: pass=${String(report.pass)}, frames=${String(report.frames)}.`,
     );
@@ -1127,14 +1141,9 @@ function mcpStep(project: string, runner: McpRunner): string {
         : {};
     try {
       const fixture: IMcpFixturePaths =
-        name === "threenative-blender"
-          ? {
-              out: path.join(project, ".registry-mcp", "triangle.glb"),
-              source: path.join(project, ".registry-mcp", "triangle.obj"),
-            }
-          : name === "threenative-animation"
-            ? { glb: path.join(project, ".registry-mcp", "empty.glb") }
-            : {};
+        name === "threenative-animation"
+          ? { glb: path.join(project, ".registry-mcp", "empty.glb") }
+          : {};
       if (fixture.glb !== undefined) {
         fs.mkdirSync(path.dirname(fixture.glb), { recursive: true });
         fs.writeFileSync(fixture.glb, emptyGlb());
@@ -1158,6 +1167,10 @@ function mcpStep(project: string, runner: McpRunner): string {
         ),
         MCP_SAFE_TOOLS[name] as string,
       );
+      if (MCP_LIST_ONLY.has(name)) {
+        results.push(`${name}: initialize and tools/list ok`);
+        continue;
+      }
       const payload = parseToolPayload(first.operation, name);
       const record = objectRecord(payload);
       if (name === "threenative-assets") {
@@ -1231,39 +1244,6 @@ function mcpStep(project: string, runner: McpRunner): string {
         if (record === undefined || !Array.isArray(record.layers) || record.version !== 1)
           throw new Error("terrain_patch returned no terrain recipe document.");
         results.push(`${name}: initialize, tools/list and terrain_patch ok`);
-      } else if (name === "threenative-blender") {
-        if (record === undefined || record.available !== true) {
-          const detail = isNonEmptyString(record?.detail)
-            ? record.detail
-            : "Blender is unavailable";
-          const install = isNonEmptyString(record?.installCommand)
-            ? ` Install it with: ${record.installCommand}`
-            : "";
-          throw new Error(`TN_REGISTRY_INSTALL_BLENDER_UNAVAILABLE: ${detail}.${install}`);
-        }
-        const conversion = assertMcpHandshake(
-          name,
-          runner(
-            name,
-            server.command,
-            server.args as string[],
-            project,
-            env,
-            mcpRequests(name, fixture, {
-              arguments: { out: fixture.out, source: fixture.source },
-              name: "blender_convert",
-            }),
-          ),
-          "blender_convert",
-        );
-        const conversionPayload = objectRecord(parseToolPayload(conversion.operation, name));
-        if (
-          conversionPayload?.ok !== true ||
-          fixture.out === undefined ||
-          !fs.existsSync(fixture.out)
-        )
-          throw new Error("blender_convert did not produce a GLB from the owned OBJ fixture.");
-        results.push(`${name}: initialize, tools/list, status and conversion ok`);
       }
     } catch (error) {
       throw new Error(
@@ -1426,7 +1406,10 @@ export async function verifyRegistryInstall(
         step(prefix("edit"), () => `Applied the game-only edit to ${applyGameOnlyEdit(project)}.`),
       );
       steps.push(step(prefix("build"), () => run(command, script("build"), project)));
-      steps.push(step(prefix("test"), () => run(command, testCommand, project)));
+      if (softwareAdapter()) {
+        process.stdout.write(`${prefix("test")}: not run, this runner has no GPU.\n`);
+        steps.push(step(prefix("browser"), () => run(command, script("pretest"), project)));
+      } else steps.push(step(prefix("test"), () => run(command, testCommand, project)));
       steps.push(
         step(prefix("gameplay"), () => {
           const families = assertScenarioAssertions(

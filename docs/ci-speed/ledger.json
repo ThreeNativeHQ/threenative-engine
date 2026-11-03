@@ -40,6 +40,94 @@
       "unit": "min",
       "goal": 3,
       "better": "lower"
+    },
+    {
+      "key": "fullBoardWallMedianMin",
+      "short": "Full board wall",
+      "label": "Full board wall time, median",
+      "unit": "min",
+      "goal": 30,
+      "better": "lower"
+    },
+    {
+      "key": "longestLegMedianMin",
+      "short": "Longest leg",
+      "label": "Longest job on a full board, median (the floor no runner count can beat)",
+      "unit": "min",
+      "goal": 20,
+      "better": "lower"
+    },
+    {
+      "key": "fullBoardMachineMedianMin",
+      "short": "Board machine-min",
+      "label": "Machine minutes per full board, median",
+      "unit": "min",
+      "goal": 240,
+      "better": "lower"
+    },
+    {
+      "key": "machineMinPerWeek",
+      "short": "Minutes per week",
+      "label": "Machine minutes per week, all ci.yml runs",
+      "unit": "min",
+      "goal": 40000,
+      "better": "lower"
+    },
+    {
+      "key": "boardQueueP90Min",
+      "short": "Board queue p90",
+      "label": "Job queue wait on full boards, p90",
+      "unit": "min",
+      "goal": 3,
+      "better": "lower"
+    },
+    {
+      "key": "boardGreenFirstPct",
+      "short": "Green at once",
+      "label": "Full boards green on attempt 1",
+      "unit": "%",
+      "goal": 80,
+      "better": "higher"
+    },
+    {
+      "key": "flakeRatePct",
+      "short": "Flake rate",
+      "label": "Red legs that went green on another board of the same commit",
+      "unit": "%",
+      "goal": 5,
+      "better": "lower"
+    },
+    {
+      "key": "greenMinutesPct",
+      "short": "Useful minutes",
+      "label": "Machine minutes on runs that end green",
+      "unit": "%",
+      "goal": 70,
+      "better": "higher"
+    },
+    {
+      "key": "minutesAfterFirstRedPct",
+      "short": "After first red",
+      "label": "Full-board machine minutes spent after the first red leg",
+      "unit": "%",
+      "goal": 10,
+      "better": "lower"
+    },
+    {
+      "key": "setupSharePct",
+      "short": "Setup share",
+      "label": "Full-board step minutes spent on setup, not on the job's work",
+      "unit": "%",
+      "goal": 6,
+      "better": "lower"
+    },
+    {
+      "key": "releaseLeadMin",
+      "short": "Promotion→npm",
+      "label": "First promotion PR to the npm publish, newest release in the window",
+      "unit": "min",
+      "goal": 120,
+      "better": "lower"
     }
   ],
   "iterations": [
@@ -5371,6 +5459,599 @@
           "jobs_file": "docs/ci-speed/runs/39070176677.jobs.json"
         }
       }
+    },
+    {
+      "id": 38,
+      "at": "2026-11-02T00:07:01.104Z",
+      "commit": "a3b609116",
+      "label": "PRD-782 baseline: the whole road to npm, before per-job reuse",
+      "notes": "Window 2026-10-18 to 2026-11-01, 516 ci.yml runs, attempt 1, 166 finished full boards. Replayed from a saved job history with scripts/ci-board-kpis.mjs. setupSharePct is from one green board, run 41348117470, because the saved history has no steps. releaseLeadMin counts the open release as a lower bound. Flake rate reads attempt 1 only. Goals are PRD-782.",
+      "decision": "baseline",
+      "source": "measured",
+      "window": {
+        "since": "2026-10-18",
+        "base": "develop"
+      },
+      "metrics": {
+        "lastPushToMergeMedianMin": 53.3,
+        "lastPushToMergeP90Min": 409.1,
+        "firstAttemptSuccessPct": 26.7,
+        "boardWallMedianMin": 54.8,
+        "queueWaitP90Min": 16,
+        "fullBoardWallMedianMin": 88.3,
+        "longestLegMedianMin": 50.8,
+        "fullBoardMachineMedianMin": 537.9,
+        "machineMinPerWeek": 84454,
+        "boardQueueP90Min": 24.2,
+        "boardGreenFirstPct": 22.3,
+        "flakeRatePct": 49.6,
+        "greenMinutesPct": 16.3,
+        "minutesAfterFirstRedPct": 37.4,
+        "setupSharePct": 12.4,
+        "releaseLeadMin": 5814
+      },
+      "extra": {
+        "prCount": 53,
+        "mergeGroupRuns": 78,
+        "mergeGroupRunSuccessPct": 55.2,
+        "enqueueToMergeMedianMin": 99.3,
+        "queueWaitJobs": 4178
+      },
+      "prs": [
+        {
+          "number": 594,
+          "title": "Stress lab to 120 fps: fair comparison, VSM culling, crowd GPU joints, CPU attribution, plan off the main thread",
+          "lastPushToMergeMin": 0.4,
+          "enqueueToMergeMin": null,
+          "attempts": 0,
+          "firstAttempt": null,
+          "firstFailingJob": null
+        },
+        {
+          "number": 592,
+          "title": "chore(deps): pin threenative-asset-mcp 0.15.0 (mesh optimization)",
+          "lastPushToMergeMin": 1,
+          "enqueueToMergeMin": null,
+          "attempts": 0,
+          "firstAttempt": null,
+          "firstFailingJob": null
+        },
+        {
+          "number": 590,
+          "title": "RTS starter kit: AstraCraft look and HUD (PRD-765)",
+          "lastPushToMergeMin": 61.2,
+          "enqueueToMergeMin": 487.2,
+          "attempts": 3,
+          "firstAttempt": "cancelled",
+          "firstFailingJob": null
+        },
+        {
+          "number": 589,
+          "title": "Fix develop red: the RTS kit's render source imports no package",
+          "lastPushToMergeMin": 26,
+          "enqueueToMergeMin": 17,
+          "attempts": 1,
+          "firstAttempt": "cancelled",
+          "firstFailingJob": null
+        },
+        {
+          "number": 588,
+          "title": "#574 follow-up: harden guard tests and the temporal resolve swaps its history (PRD-755)",
+          "lastPushToMergeMin": 159.7,
+          "enqueueToMergeMin": null,
+          "attempts": 0,
+          "firstAttempt": null,
+          "firstFailingJob": null
+        },
+        {
+          "number": 587,
+          "title": "0.3.7: bump the release cohort, and release prep works from a fresh checkout",
+          "lastPushToMergeMin": 7.5,
+          "enqueueToMergeMin": null,
+          "attempts": 0,
+          "firstAttempt": null,
+          "firstFailingJob": null
+        },
+        {
+          "number": 585,
+          "title": "Develop is red: wire the animation MCP into every contract that enumerates servers, and derive the collector's package flags from the shared rule",
+          "lastPushToMergeMin": 10,
+          "enqueueToMergeMin": null,
+          "attempts": 0,
+          "firstAttempt": null,
+          "firstFailingJob": null
+        },
+        {
+          "number": 583,
+          "title": "Animation MCP measures, repairs and draws motion an agent cannot see (PRD-760 phase 2)",
+          "lastPushToMergeMin": 160.2,
+          "enqueueToMergeMin": 254,
+          "attempts": 5,
+          "firstAttempt": "cancelled",
+          "firstFailingJob": null
+        },
+        {
+          "number": 582,
+          "title": "Animation MCP answers through an installed bin and keeps stdout to JSON-RPC (PRD-760)",
+          "lastPushToMergeMin": 0.7,
+          "enqueueToMergeMin": null,
+          "attempts": 0,
+          "firstAttempt": null,
+          "firstFailingJob": null
+        },
+        {
+          "number": 581,
+          "title": "Animation MCP: inspect, attach and bake character animation (PRD-760)",
+          "lastPushToMergeMin": 0.9,
+          "enqueueToMergeMin": null,
+          "attempts": 0,
+          "firstAttempt": null,
+          "firstFailingJob": null
+        },
+        {
+          "number": 579,
+          "title": "Hook reference search to the new data repository and its release shape",
+          "lastPushToMergeMin": 0.6,
+          "enqueueToMergeMin": null,
+          "attempts": 0,
+          "firstAttempt": null,
+          "firstFailingJob": null
+        },
+        {
+          "number": 577,
+          "title": "Native player main thread 3-7 ms faster on Midway: held batch decision + render thread on by default (PRD-613)",
+          "lastPushToMergeMin": 175,
+          "enqueueToMergeMin": 192.7,
+          "attempts": 4,
+          "firstAttempt": "cancelled",
+          "firstFailingJob": null
+        },
+        {
+          "number": 574,
+          "title": "Starter kits: Unreal look, shooter revamp, performance by construction, kit contract and worker mode (PRD-723/746/747/748/749/752)",
+          "lastPushToMergeMin": 36.9,
+          "enqueueToMergeMin": 698.2,
+          "attempts": 10,
+          "firstAttempt": "cancelled",
+          "firstFailingJob": null
+        },
+        {
+          "number": 572,
+          "title": "PRD-743: Load web game assets on demand and keep them on disk",
+          "lastPushToMergeMin": 78.8,
+          "enqueueToMergeMin": 53.5,
+          "attempts": 1,
+          "firstAttempt": "success",
+          "firstFailingJob": null
+        },
+        {
+          "number": 571,
+          "title": "Route game authoring through focused delegation and mechanics playtests",
+          "lastPushToMergeMin": 38.7,
+          "enqueueToMergeMin": 27.2,
+          "attempts": 1,
+          "firstAttempt": "cancelled",
+          "firstFailingJob": null
+        },
+        {
+          "number": 568,
+          "title": "Temporal upsampling resolves scaled scene inputs into the display frame (PRD-741)",
+          "lastPushToMergeMin": 83.7,
+          "enqueueToMergeMin": 349,
+          "attempts": 2,
+          "firstAttempt": "cancelled",
+          "firstFailingJob": null
+        },
+        {
+          "number": 565,
+          "title": "test(clouds): budget the CPU bake at 1000 ms on hosted runners",
+          "lastPushToMergeMin": 61.2,
+          "enqueueToMergeMin": 43.7,
+          "attempts": 1,
+          "firstAttempt": "cancelled",
+          "firstFailingJob": null
+        },
+        {
+          "number": 564,
+          "title": "fix(engine): fix all 14 findings from the 2026-10-23 bug hunt",
+          "lastPushToMergeMin": 60.6,
+          "enqueueToMergeMin": 89.1,
+          "attempts": 2,
+          "firstAttempt": "cancelled",
+          "firstFailingJob": null
+        },
+        {
+          "number": 563,
+          "title": "Three starter kits and every kit on core's Unreal look (PRD-732/733/734/735, folds #562 #569 #567)",
+          "lastPushToMergeMin": 102.5,
+          "enqueueToMergeMin": 68.5,
+          "attempts": 1,
+          "firstAttempt": "cancelled",
+          "firstFailingJob": null
+        },
+        {
+          "number": 561,
+          "title": "Asset pipeline gets a performance dashboard and a measured loop (PRD-729)",
+          "lastPushToMergeMin": 86.6,
+          "enqueueToMergeMin": 117.8,
+          "attempts": 2,
+          "firstAttempt": "success",
+          "firstFailingJob": null
+        },
+        {
+          "number": 560,
+          "title": "CI runs the full board once per change, and the shooter's black sky and white scope are fixed",
+          "lastPushToMergeMin": 66.5,
+          "enqueueToMergeMin": 44.9,
+          "attempts": 1,
+          "firstAttempt": "cancelled",
+          "firstFailingJob": null
+        },
+        {
+          "number": 558,
+          "title": "Flat-shaded surfaces no longer turn the owned-engine world black on the high tier",
+          "lastPushToMergeMin": 53.3,
+          "enqueueToMergeMin": null,
+          "attempts": 0,
+          "firstAttempt": null,
+          "firstFailingJob": null
+        },
+        {
+          "number": 557,
+          "title": "Fix the develop lint job: format the Unreal research docs",
+          "lastPushToMergeMin": 758,
+          "enqueueToMergeMin": 603.6,
+          "attempts": 5,
+          "firstAttempt": "cancelled",
+          "firstFailingJob": "test-unit (2/4)"
+        },
+        {
+          "number": 556,
+          "title": "Unreal deep dive: internals of Lumen, Nanite, Niagara, shadows and TSR, plus a burn-up chart",
+          "lastPushToMergeMin": 0.3,
+          "enqueueToMergeMin": null,
+          "attempts": 0,
+          "firstAttempt": null,
+          "firstFailingJob": null
+        },
+        {
+          "number": 555,
+          "title": "Unreal feature map: what each system costs and what to port first",
+          "lastPushToMergeMin": 0.4,
+          "enqueueToMergeMin": null,
+          "attempts": 0,
+          "firstAttempt": null,
+          "firstFailingJob": null
+        },
+        {
+          "number": 554,
+          "title": "Fix the xvfb.sh compositor wait that made xvfb.spec.ts flaky",
+          "lastPushToMergeMin": 1542.4,
+          "enqueueToMergeMin": 1431.5,
+          "attempts": 4,
+          "firstAttempt": "failure",
+          "firstFailingJob": "native-platforms / Android emulator visual parity"
+        },
+        {
+          "number": 553,
+          "title": "docs(PRD-637): second sandbox run for cloth-catcher-v2, fox-native, ue-static-import, midway",
+          "lastPushToMergeMin": 1504.8,
+          "enqueueToMergeMin": 1105,
+          "attempts": 6,
+          "firstAttempt": "failure",
+          "firstFailingJob": "lint"
+        },
+        {
+          "number": 552,
+          "title": "The native engine runs StorageTexture and the metalness/roughness pass targets (PRD-652)",
+          "lastPushToMergeMin": 718.8,
+          "enqueueToMergeMin": 1112.7,
+          "attempts": 6,
+          "firstAttempt": "failure",
+          "firstFailingJob": "lint"
+        },
+        {
+          "number": 551,
+          "title": "PRD-637: name why each sandbox game fails on 0.3.6",
+          "lastPushToMergeMin": 9.7,
+          "enqueueToMergeMin": 4.7,
+          "attempts": 1,
+          "firstAttempt": "success",
+          "firstFailingJob": null
+        },
+        {
+          "number": 550,
+          "title": "PRD-637: drop the iOS consumer box, iOS is not a supported target",
+          "lastPushToMergeMin": 10.6,
+          "enqueueToMergeMin": 4.5,
+          "attempts": 1,
+          "firstAttempt": "success",
+          "firstFailingJob": null
+        },
+        {
+          "number": 549,
+          "title": "0.3.6 is published and its clean room is green; 5 sandbox games run it (PRD-637)",
+          "lastPushToMergeMin": 11.4,
+          "enqueueToMergeMin": 4,
+          "attempts": 1,
+          "firstAttempt": "success",
+          "firstFailingJob": null
+        },
+        {
+          "number": 548,
+          "title": "feat(PRD-626): generated games ship a default quality check",
+          "lastPushToMergeMin": 170.5,
+          "enqueueToMergeMin": 64.8,
+          "attempts": 1,
+          "firstAttempt": "cancelled",
+          "firstFailingJob": null
+        },
+        {
+          "number": 546,
+          "title": "Racing waits for its sky, so engine parity stops failing (PRD-637)",
+          "lastPushToMergeMin": 120.6,
+          "enqueueToMergeMin": 52.2,
+          "attempts": 1,
+          "firstAttempt": "cancelled",
+          "firstFailingJob": null
+        },
+        {
+          "number": 542,
+          "title": "0.3.6: a restart keeps the world and a fresh install installs, launches and builds (PRD-637)",
+          "lastPushToMergeMin": 423.2,
+          "enqueueToMergeMin": 109.4,
+          "attempts": 1,
+          "firstAttempt": "cancelled",
+          "firstFailingJob": null
+        },
+        {
+          "number": 541,
+          "title": "New scenes look like a fresh Unreal 5.8.3 project by default (Unreal-look epic)",
+          "lastPushToMergeMin": 201.6,
+          "enqueueToMergeMin": 148.9,
+          "attempts": 2,
+          "firstAttempt": "failure",
+          "firstFailingJob": "native-platforms / Desktop web/native parity"
+        },
+        {
+          "number": 540,
+          "title": "The tag run publishes the binaries the main proof built (PRD-630)",
+          "lastPushToMergeMin": 12.9,
+          "enqueueToMergeMin": 5.9,
+          "attempts": 1,
+          "firstAttempt": "success",
+          "firstFailingJob": null
+        },
+        {
+          "number": 539,
+          "title": "A green main commit ships to npm in one command (PRD-629)",
+          "lastPushToMergeMin": 212.8,
+          "enqueueToMergeMin": 430.3,
+          "attempts": 2,
+          "firstAttempt": "failure",
+          "firstFailingJob": "test-native"
+        },
+        {
+          "number": 537,
+          "title": "fix(release): publish prebuilts from the renamed engine repository",
+          "lastPushToMergeMin": 0.6,
+          "enqueueToMergeMin": null,
+          "attempts": 0,
+          "firstAttempt": null,
+          "firstFailingJob": null
+        },
+        {
+          "number": 535,
+          "title": "ci: reread the integration listing while a finished leg reads as queued",
+          "lastPushToMergeMin": 0.6,
+          "enqueueToMergeMin": null,
+          "attempts": 0,
+          "firstAttempt": null,
+          "firstFailingJob": null
+        },
+        {
+          "number": 533,
+          "title": "ci: back the receipt reader off for two minutes, not fifteen seconds",
+          "lastPushToMergeMin": 0.5,
+          "enqueueToMergeMin": null,
+          "attempts": 0,
+          "firstAttempt": null,
+          "firstFailingJob": null
+        },
+        {
+          "number": 531,
+          "title": "fix(release): build the engine player on every desktop release leg",
+          "lastPushToMergeMin": 36.4,
+          "enqueueToMergeMin": null,
+          "attempts": 0,
+          "firstAttempt": null,
+          "firstFailingJob": null
+        },
+        {
+          "number": 529,
+          "title": "ci: give load-bound waits room for a loaded runner",
+          "lastPushToMergeMin": 0.8,
+          "enqueueToMergeMin": null,
+          "attempts": 0,
+          "firstAttempt": null,
+          "firstFailingJob": null
+        },
+        {
+          "number": 528,
+          "title": "test(config): give vitest hooks the 60 s test budget",
+          "lastPushToMergeMin": 0.4,
+          "enqueueToMergeMin": null,
+          "attempts": 0,
+          "firstAttempt": null,
+          "firstFailingJob": null
+        },
+        {
+          "number": 526,
+          "title": "test(ci): follow the paths job cap in the scope edit case",
+          "lastPushToMergeMin": 0.5,
+          "enqueueToMergeMin": null,
+          "attempts": 0,
+          "firstAttempt": null,
+          "firstFailingJob": null
+        },
+        {
+          "number": 524,
+          "title": "ci: load margins for three CI reds on the 0.3.5 release run",
+          "lastPushToMergeMin": 0.5,
+          "enqueueToMergeMin": null,
+          "attempts": 0,
+          "firstAttempt": null,
+          "firstFailingJob": null
+        },
+        {
+          "number": 522,
+          "title": "ci: fix the 0.3.5 release-run flakes and the shooter timeout",
+          "lastPushToMergeMin": 0.6,
+          "enqueueToMergeMin": null,
+          "attempts": 0,
+          "firstAttempt": null,
+          "firstFailingJob": null
+        },
+        {
+          "number": 520,
+          "title": "fix(release): a 0.3.4 game upgrades onto 0.3.5 (PRD-624)",
+          "lastPushToMergeMin": 1.2,
+          "enqueueToMergeMin": null,
+          "attempts": 0,
+          "firstAttempt": null,
+          "firstFailingJob": null
+        },
+        {
+          "number": 518,
+          "title": "docs(PRD-626): propose generated authoring quality defaults",
+          "lastPushToMergeMin": 55.7,
+          "enqueueToMergeMin": 47.7,
+          "attempts": 2,
+          "firstAttempt": "success",
+          "firstFailingJob": null
+        },
+        {
+          "number": 517,
+          "title": "feat(core,create-threenative): opt-in realistic open ocean from web-ocean (PRD-648)",
+          "lastPushToMergeMin": 214.7,
+          "enqueueToMergeMin": 87.7,
+          "attempts": 1,
+          "firstAttempt": "success",
+          "firstFailingJob": null
+        },
+        {
+          "number": 513,
+          "title": "ci: run heavy jobs on idle local runners first, overflow to hosted (PRD-620)",
+          "lastPushToMergeMin": 352.6,
+          "enqueueToMergeMin": null,
+          "attempts": 0,
+          "firstAttempt": null,
+          "firstFailingJob": null
+        },
+        {
+          "number": 503,
+          "title": "PRD-478: open-world frame architecture done; fix settled-texture blank frame; walking target moves to PRD-625",
+          "lastPushToMergeMin": 693.9,
+          "enqueueToMergeMin": 614.1,
+          "attempts": 1,
+          "firstAttempt": "failure",
+          "firstFailingJob": "integration / capture"
+        },
+        {
+          "number": 493,
+          "title": "feat(core): PRD-624 release the native engine as the default (PRD-573 v1)",
+          "lastPushToMergeMin": 167.7,
+          "enqueueToMergeMin": null,
+          "attempts": 0,
+          "firstAttempt": null,
+          "firstFailingJob": null
+        },
+        {
+          "number": 487,
+          "title": "PRD-570: a character costs what the camera sees of it",
+          "lastPushToMergeMin": 70,
+          "enqueueToMergeMin": 513.2,
+          "attempts": 7,
+          "firstAttempt": "cancelled",
+          "firstFailingJob": null
+        }
+      ],
+      "firstFailingJobs": [
+        {
+          "job": "lint",
+          "count": 6
+        },
+        {
+          "job": "native-platforms / Android emulator visual parity",
+          "count": 2
+        },
+        {
+          "job": "test-unit (2/4)",
+          "count": 2
+        },
+        {
+          "job": "integration / capture",
+          "count": 1
+        },
+        {
+          "job": "native-platforms / Desktop web/native parity",
+          "count": 1
+        },
+        {
+          "job": "test-native",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "id": 39,
+      "at": "2026-11-02T10:35:48.869Z",
+      "commit": "31e620b4d",
+      "label": "0.3.9 first release on the one-proof path",
+      "notes": "Promotion PR to latest 215 min. Main re-ran native-platforms and ship stopped at the hosted upgrade proof; both fixed on develop, not yet proven by a release.",
+      "decision": "provisional",
+      "source": "measured",
+      "window": {
+        "since": "2026-11-02",
+        "base": "develop"
+      },
+      "metrics": {
+        "lastPushToMergeMedianMin": 51,
+        "lastPushToMergeP90Min": 51,
+        "firstAttemptSuccessPct": 0,
+        "boardWallMedianMin": null,
+        "queueWaitP90Min": 0,
+        "fullBoardWallMedianMin": 54.3,
+        "longestLegMedianMin": 50.4,
+        "fullBoardMachineMedianMin": 520,
+        "machineMinPerWeek": 34749,
+        "boardQueueP90Min": 8.3,
+        "boardGreenFirstPct": 50,
+        "flakeRatePct": null,
+        "greenMinutesPct": 82.3,
+        "minutesAfterFirstRedPct": 23.4,
+        "setupSharePct": 13.2,
+        "releaseLeadMin": 206
+      },
+      "extra": {
+        "prCount": 1,
+        "mergeGroupRuns": 1,
+        "mergeGroupRunSuccessPct": null,
+        "enqueueToMergeMedianMin": 10.2,
+        "queueWaitJobs": 11
+      },
+      "prs": [
+        {
+          "number": 601,
+          "title": "CI and release take less time: per-job reuse, first-red stop, one proof per release, 0.3.9",
+          "lastPushToMergeMin": 51,
+          "enqueueToMergeMin": 10.2,
+          "attempts": 1,
+          "firstAttempt": "cancelled",
+          "firstFailingJob": null
+        }
+      ],
+      "firstFailingJobs": []
     }
   ]
 }

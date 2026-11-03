@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { FrameBudget } from "../../core/src/frame-budget.js";
+
 import { evaluateRichPlaytestAssertions } from "../src/index.js";
 import type { IPlaytestReport } from "../src/report.js";
 import { validatePlaytestScenario } from "../src/scenario.js";
@@ -41,6 +43,34 @@ function evaluate(lines: string[], engineCost: Record<string, unknown> = BOUNDS)
 }
 
 describe("engineCost", () => {
+  it("bounds debug telemetry by name from actual frame-budget output", () => {
+    const lines: string[] = [];
+    const budget = new FrameBudget({ report: (text) => lines.push(text), reportEvery: 2 });
+    for (let frame = 0; frame < 2; frame += 1) {
+      budget.beginFrame(frame * 16, frame * 16);
+      budget.addCounters({ engine: { bridgeWidenedBytes: 64, sceneCallbacksCalls: frame + 1 } });
+      budget.endFrame(frame * 16 + 1);
+    }
+    const bounds = { maxInFrame: { sceneCallbacksCalls: 2 }, maxPerFrame: { bridgeWidenedBytes: 64 }, source: "two deterministic engine frames: 64 bytes and one/two callbacks" };
+    expect(evaluate(lines, bounds).cost.every(({ pass }) => pass)).toBe(true);
+    const red = evaluate(lines, { ...bounds, maxInFrame: { sceneCallbacksCalls: 1 } });
+    expect(red.cost.find(({ id }) => id === "engineCost.maxInFrame.sceneCallbacksCalls")?.pass).toBe(false);
+  });
+
+  it("fails closed on malformed or unmeasured engine summaries instead of throwing or accepting zero", () => {
+    const bounds = { maxPerFrame: { sceneCallbacksCalls: 10 }, source: "measured callback counter required" };
+    for (const report of [
+      null,
+      { counters: { engine: null } },
+      { counters: { engine: { sceneCallbacksCalls: null } } },
+      { counters: { engine: { sceneCallbacksCalls: { mean: 0, max: 0, samples: 0 } } } },
+      { counters: { engine: { sceneCallbacksCalls: { mean: -1, max: 0, samples: 1 } } } },
+    ]) {
+      expect(evaluate([`TN_FRAME_BUDGET:${JSON.stringify(report)}`], bounds).diagnostics.map(({ code }) => code))
+        .toEqual(["TN_PLAYTEST_ENGINE_COST_UNOBSERVED"]);
+    }
+  });
+
   it("passes when every window holds every bound", () => {
     const { cost, diagnostics } = evaluate([line(1, { crossings: 800, redundantReads: 2 }), line(2, { crossings: 1000, redundantReads: 0 })]);
     expect(cost.length).toBe(4);

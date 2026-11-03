@@ -20,11 +20,11 @@ int main() {
     CHECK(draws.size() == 1);
     if (draws.size() != 1) return 1;
     CHECK(draws[0].background && !draws[0].map && !draws[0].depthWrite);
-    CHECK(draws[0].nodes.colorNode == scene.backgroundNode);
+    CHECK(draws[0].nodes->colorNode == scene.backgroundNode);
     CHECK(draws[0].material->color[0] == 2);
     sun->values[0] = 0.25;
     draws = database.prepare(scene, camera, lights);
-    CHECK(shader::graph::uniformList(draws[0].nodes.colorNode)[0]->values[0] == 0.25);
+    CHECK(shader::graph::uniformList(draws[0].nodes->colorNode)[0]->values[0] == 0.25);
     Scene copy; copy.copy(scene); CHECK(copy.backgroundNode == scene.backgroundNode);
     auto texture = std::make_shared<DataTexture>();
     scene.backgroundTexture = texture; // the node takes precedence, even over an unsupported texture background

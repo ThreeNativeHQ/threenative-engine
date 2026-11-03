@@ -3,6 +3,7 @@
 // first red job names the cause. This watcher tells the pull request which job failed and cancels
 // the rest, so a red costs minutes of runners and the author does not read a wall of cancelled
 // checks. The failed job keeps its own conclusion: only jobs still in flight are cancelled.
+// PRD-782: a full board on a pull request or a manual run stops the same way, with no comment.
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
@@ -11,6 +12,8 @@ import { pathToFileURL } from "node:url";
 const ECHOES = new Set(["ci-required", "golden-path", "run-summary", "queue-watch"]);
 const QUEUE_REF = /^(?:refs\/heads\/)?gh-readonly-queue\/[^/]+\/pr-(\d+)-[0-9a-f]{40}$/u;
 const RED = new Set(["failure", "timed_out", "startup_failure"]);
+// `continue-on-error` in native-platforms.yml: its red does not fail the board, so it stops nothing.
+const NON_BLOCKING = /^native-platforms \/ iOS simulator/u;
 
 /** The pull request a queue ref names, or null. */
 export function queuePullNumber(queueRef) {
@@ -34,13 +37,19 @@ export function janitorSignatures(workflow) {
 export function isInfraFailure(job, log, signatures) {
   const ran = (job?.steps ?? []).some((step) => step?.conclusion && step.conclusion !== "skipped");
   if (!ran) return true;
+  // An unread log proves nothing. A wrong stop costs more than a late one.
+  if (log === "") return true;
   return signatures !== "" && new RegExp(signatures, "u").test(log);
 }
 
 /** The earliest-completed red job that is not an aggregate, or null while nothing is red. */
 export function firstRedJob(jobs, ignore = new Set()) {
   const red = jobs.filter(
-    (job) => RED.has(job?.conclusion) && !ECHOES.has(job?.name) && !ignore.has(job?.id),
+    (job) =>
+      RED.has(job?.conclusion) &&
+      !ECHOES.has(job?.name) &&
+      !NON_BLOCKING.test(job?.name ?? "") &&
+      !ignore.has(job?.id),
   );
   red.sort((a, b) => String(a.completed_at).localeCompare(String(b.completed_at)));
   return red[0] ?? null;
@@ -69,12 +78,23 @@ function gh(args) {
   return result.stdout;
 }
 
-function jobLog(repository, jobId) {
-  try {
-    return gh(["api", `repos/${repository}/actions/jobs/${jobId}/logs`]);
-  } catch {
-    return "";
+/**
+ * gh 2.102 exits 1 on a log with terminal escape sequences unless told to allow them, and an older
+ * gh rejects that flag. An empty read would turn every infrastructure failure into a real red.
+ */
+export function jobLog(repository, jobId) {
+  const logs = `repos/${repository}/actions/jobs/${jobId}/logs`;
+  for (const args of [
+    ["api", "--allow-escape-sequences", logs],
+    ["api", logs],
+  ]) {
+    try {
+      return gh(args);
+    } catch {
+      // Try the next form. Both failing leaves no log to read.
+    }
   }
+  return "";
 }
 
 function runJobs(repository, runId) {
@@ -83,7 +103,7 @@ function runJobs(repository, runId) {
       "api",
       "--paginate",
       "--slurp",
-      `repos/${repository}/actions/runs/${runId}/jobs?filter=latest&per_page=100`,
+      `repos/${repository}/actions/runs/${runId}/jobs?filter=latest&per_page=10`,
     ]),
   );
   return pages.flatMap((page) => page.jobs ?? []);
@@ -97,7 +117,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const { GITHUB_REPOSITORY: repository, GITHUB_RUN_ID: runId, TN_CI_QUEUE_REF } = process.env;
   const number = queuePullNumber(TN_CI_QUEUE_REF);
   const interval = Number(process.env.TN_QUEUE_WATCH_SECONDS ?? 30);
-  if (number === null || !repository || !runId) {
+  // Only a merge group has a queue ref and a pull request to tell.
+  if ((number === null && TN_CI_QUEUE_REF) || !repository || !runId) {
     console.error("CI_QUEUE_WATCH_INPUT: the queue ref, repository or run id is missing");
     process.exit(2);
   }
@@ -114,14 +135,16 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       infra.add(red.id);
     } else if (red !== null) {
       // The comment first: a cancel that fails must not hide the cause.
-      gh([
-        "api",
-        `repos/${repository}/issues/${number}/comments`,
-        "-f",
-        `body=${commentBody({ job: red, runId, repository })}`,
-      ]);
+      if (number !== null) {
+        gh([
+          "api",
+          `repos/${repository}/issues/${number}/comments`,
+          "-f",
+          `body=${commentBody({ job: red, runId, repository })}`,
+        ]);
+      }
       gh(["run", "cancel", runId, "--repo", repository]);
-      console.log(`first red job ${red.name}: commented on #${number} and cancelled run ${runId}`);
+      console.log(`first red job ${red.name}: cancelled run ${runId}`);
       break;
     }
     if (allFinished(jobs)) break;

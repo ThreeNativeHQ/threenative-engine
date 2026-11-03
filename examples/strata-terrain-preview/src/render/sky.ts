@@ -15,7 +15,7 @@ import { denoise } from "three/addons/tsl/display/DenoiseNode.js";
 import { ao } from "three/addons/tsl/display/GTAONode.js";
 import { traa } from "three/addons/tsl/display/TRAANode.js";
 import {
-  PCFSoftShadowFilter,
+  PCFShadowFilter,
   abs,
   cameraPosition,
   dot,
@@ -128,8 +128,10 @@ export function createOutdoorSky(camera: Object3D, biome?: IBiome): IOutdoorSky 
   sun.castShadow = true;
   sun.shadow.radius = biome?.sun.shadowRadius ?? BIOMES.forest.sun.shadowRadius;
   if ((biome ?? BIOMES.forest).world === "forest") {
-    // The deterministic tent filter avoids the forest's fine screen-space PCF rotation hatching.
-    (sun.shadow as typeof sun.shadow & { filterNode?: unknown }).filterNode = PCFSoftShadowFilter;
+    // The deterministic filter avoids the forest's fine screen-space rotation hatching. r186 removed
+    // `PCFSoftShadowFilter` (WebGPU's `PCFSoftShadowMap` falls back to PCF), so `PCFShadowFilter` is
+    // the only filter left that carries a render group to share; see `three-shared-render-group.spec.ts`.
+    (sun.shadow as typeof sun.shadow & { filterNode?: unknown }).filterNode = PCFShadowFilter;
   }
   if (omitted.has("sun")) sun.intensity = 0;
   const farShadows = biome?.world === "alpine" || biome?.world === "desert";

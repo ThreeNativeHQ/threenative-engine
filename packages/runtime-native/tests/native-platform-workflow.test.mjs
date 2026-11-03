@@ -83,9 +83,8 @@ test('green native platform lane is required by primary CI', () => {
   expect(nativeJob).toContain('uses: ./.github/workflows/native-platforms.yml');
   expect(nativeJob).not.toMatch(/^\s+continue-on-error:/mu);
   expect(workflow).toContain('workflow_call:');
-  // PRD-629: the only push trigger is main, so the release candidate gets a standalone run.
-  expect(workflow).not.toMatch(/\n\x20{2}(?:pull_request|schedule):/u);
-  expect(workflow).toMatch(/\n\x20{2}push:\n\x20{4}branches: \[main\]\n/u);
+  // The release candidate reads its reports from the main CI run, so nothing starts this alone.
+  expect(workflow).not.toMatch(/\n\x20{2}(?:pull_request|schedule|push):/u);
   expect(ciWorkflow).toContain(
     "cancel-in-progress: ${{ github.event_name == 'pull_request' }}",
   );
@@ -389,6 +388,11 @@ test('iOS consumer launches the bundle identifier produced by its packager', () 
   expect(workflow).toContain('report="$app.json"');
   expect(workflow).toContain('--bundle-id "$bundle_id"');
   expect(workflow).not.toContain('--bundle-id dev.threenative.runtime');
+  // The release consumer hit this same mismatch on every tag run: the simulator never listed the id.
+  const release = readFileSync(new URL('../../../.github/workflows/native-release.yml', import.meta.url), 'utf8');
+  expect(release).toContain('echo "IOS_BUNDLE_ID=$bundle_id" >> "$GITHUB_ENV"');
+  expect(release).toContain('--bundle-id "$IOS_BUNDLE_ID"');
+  expect(release).not.toContain('--bundle-id dev.threenative.runtime');
 });
 
 test('iOS builds selected React UI from installed packages and checks full-screen pixels', () => {
@@ -530,142 +534,6 @@ test('clean desktop consumer provisions software Vulkan and prints its log on fa
   expect(launch).toContain('trap - ERR');
 });
 
-// PRD-078: execute the live workflow shell; only the external GitHub API is stubbed.
-const releaseGateScript = releaseWorkflow.match(
-  /- name: Require a green CI run for this commit[\s\S]*?\n {8}run: \|\n([\s\S]*?)(?=\n {6}- |\n\n {2}build:)/u,
-)?.[1]?.split('\n').map((line) => line.replace(/^ {10}/u, '')).join('\n');
-const requiredCiJobs = [
-  'typecheck', 'lint', 'test', 'budgets', 'build', 'test-native',
-  'native-platforms / Windows desktop core',
-  'native-platforms / macOS desktop core',
-  'native-platforms / Scaffolded starter desktop artifact (linux-x64)',
-  'native-platforms / Desktop web/native parity',
-  'native-platforms / Android emulator visual parity',
-];
-const candidateSha = 'a'.repeat(40);
-const candidateRun = {
-  databaseId: 123, attempt: 1, status: 'completed', conclusion: 'success',
-  event: 'push', headBranch: 'main', headSha: candidateSha,
-};
-const candidateJobs = requiredCiJobs.map((name, index) => ({
-  id: index + 1, run_id: 123, head_sha: candidateSha, name,
-  status: 'completed', conclusion: 'success',
-}));
-
-function runReleaseGate({ runs = [candidateRun], detail = candidateRun, jobs = candidateJobs,
-  pages = [{ total_count: jobs.length, jobs }], failure = '' } = {}) {
-  assert.ok(releaseGateScript, 'the existing release entry point must be present');
-  const directory = makeTempDirSync('threenative-prd-078-gate-');
-  writeFileSync(join(directory, 'gh'), `#!/bin/sh
-case "$1 $2" in
-  'run list') test "$MOCK_GH_FAILURE" != list || exit 42; printf '%s' "$MOCK_GH_RUNS" ;;
-  'run view') test "$2" = view || exit 64; test "$MOCK_GH_FAILURE" != view || exit 42; printf '%s' "$MOCK_GH_DETAIL" ;;
-  'api --paginate') test "$2" = --paginate || exit 64; test "$3" = --slurp || exit 64; test "$4" = 'repos/ThreeNativeHQ/threenative/actions/runs/123/jobs?filter=latest&per_page=100' || exit 64; test "$MOCK_GH_FAILURE" != jobs || exit 42; printf '%s' "$MOCK_GH_PAGES" ;;
-  *) exit 64 ;;
-esac
-`);
-  chmodSync(join(directory, 'gh'), 0o755);
-  // NB: never pass -euo as separate argv entries; bash reads the first as $0
-  // with `set -u` active and aborts on `$1`. Set options inside the script.
-  const result = spawnSync('bash', ['-c', `set -euo pipefail\n${releaseGateScript}`], {
-    env: { ...process.env, GITHUB_REPOSITORY: 'ThreeNativeHQ/threenative',
-      GITHUB_SHA: candidateSha, RUNNER_TEMP: directory, GITHUB_STEP_SUMMARY: join(directory, 'summary'),
-      MOCK_GH_RUNS: JSON.stringify(runs), MOCK_GH_DETAIL: JSON.stringify(detail),
-      MOCK_GH_PAGES: JSON.stringify(pages), MOCK_GH_FAILURE: failure,
-      PATH: `${directory}:${process.env.PATH}` }, encoding: 'utf8',
-  });
-  assert.equal(result.error, undefined);
-  return { ...result, directory };
-}
-
-test('release gate accepts complete exact-candidate evidence across job pages', () => {
-  const result = runReleaseGate({ pages: [
-    { total_count: candidateJobs.length, jobs: candidateJobs.slice(0, 5) },
-    { total_count: candidateJobs.length, jobs: candidateJobs.slice(5) },
-  ] });
-  assert.equal(result.status, 0, result.stderr);
-  const report = JSON.parse(readFileSync(join(result.directory, 'native-release-prerequisites/validation.json'), 'utf8'));
-  assert.equal(report.candidateSha, candidateSha);
-  assert.equal(report.run.databaseId, 123);
-  assert.equal(report.run.attempt, 1);
-  assert.deepEqual(report.failures, []);
-  assert.deepEqual(report.requiredJobs.map((job) => job.name), requiredCiJobs);
-  assert.ok(report.requiredJobs.every((job) => job.status === 'completed' && job.conclusion === 'success'));
-  assert.match(readFileSync(join(result.directory, 'summary'), 'utf8'), /Android emulator visual parity/u);
-});
-
-test('should reject release prerequisites when the successful run belongs to a different source SHA', () => {
-  // Observed successful main CI 34437894675 is not proof for this candidate.
-  const result = runReleaseGate({ runs: [{ ...candidateRun,
-    databaseId: 34437894675, headSha: '6972d87c1881a021afb041f44d4fcddcb469e971' }] });
-  assert.equal(result.status, 1);
-  assert.ok(result.stderr.includes(candidateSha));
-});
-
-test('release gate refuses an absent run or invalid run identity', () => {
-  for (const runs of [[], ...[null, '123', 0, -1, 1.5, undefined].map(
-    (databaseId) => [{ ...candidateRun, databaseId }],
-  )]) {
-    const result = runReleaseGate({ runs });
-    assert.equal(result.status, 1, JSON.stringify(runs));
-    assert.ok(result.stderr.includes(candidateSha));
-  }
-});
-
-test('release gate rejects every missing required job even when the run is green', () => {
-  for (const name of requiredCiJobs) {
-    const result = runReleaseGate({ jobs: candidateJobs.filter((job) => job.name !== name) });
-    assert.equal(result.status, 1, `aggregate success must not hide missing ${name}`);
-    assert.ok(result.stderr.includes(name), result.stderr);
-  }
-});
-
-test('release gate rejects skipped cancelled failed and unfinished required jobs', () => {
-  for (const [status, conclusion] of [
-    ['completed', 'skipped'], ['completed', 'cancelled'], ['completed', 'failure'],
-    ['completed', 'neutral'], ['in_progress', null], ['queued', null],
-  ]) {
-    const jobs = candidateJobs.map((job, index) => index === 0 ? { ...job, status, conclusion } : job);
-    const result = runReleaseGate({ jobs });
-    assert.equal(result.status, 1, `${status}/${conclusion}`);
-    assert.ok(result.stderr.includes('typecheck'));
-  }
-});
-
-test('release gate revalidates the selected run instead of trusting the list response', () => {
-  for (const change of [
-    { headSha: 'b'.repeat(40) }, { databaseId: 124 }, { attempt: 0 },
-    { status: 'in_progress' }, { conclusion: 'failure' },
-    { event: 'pull_request' }, { headBranch: 'topic' },
-  ]) {
-    const result = runReleaseGate({ detail: { ...candidateRun, ...change } });
-    assert.equal(result.status, 1, JSON.stringify(change));
-    assert.ok(result.stderr.includes(candidateSha));
-  }
-});
-
-test('release gate fails closed on incomplete pages and malformed or crossed job evidence', () => {
-  for (const pages of [[], {}, [{ total_count: candidateJobs.length, jobs: candidateJobs.slice(1) }],
-    [{ total_count: candidateJobs.length, jobs: null }],
-    ...[null, { ...candidateJobs[0], id: 0 }, { ...candidateJobs[0], run_id: 124 },
-      { ...candidateJobs[0], head_sha: 'b'.repeat(40) }].map((job) => [
-      { total_count: candidateJobs.length, jobs: [job, ...candidateJobs.slice(1)] },
-    ]),
-    [{ total_count: candidateJobs.length + 1, jobs: [...candidateJobs, candidateJobs[0]] }],
-  ]) {
-    const result = runReleaseGate({ pages });
-    assert.equal(result.status, 1, JSON.stringify(pages));
-  }
-});
-
-test('release gate preserves non-success diagnostics when GitHub queries fail', () => {
-  for (const failure of ['list', 'view', 'jobs']) {
-    const result = runReleaseGate({ failure });
-    assert.equal(result.status, 42);
-    assert.equal(readFileSync(join(result.directory, 'native-release-prerequisites/status.txt'), 'utf8'), 'exit_code=42\n');
-  }
-});
-
 test('release prerequisite and desktop diagnostic artifacts survive failed gates', () => {
   for (const name of ['release-prerequisites-${{ github.sha }}-${{ github.run_attempt }}', 'evidence-desktop-${{ matrix.key }}']) {
     const upload = releaseWorkflow.split('      - ').find((step) => step.includes(`name: ${name}`));
@@ -724,7 +592,7 @@ test('release side effects require the exact releaseCandidateV1 preflight', () =
   const preflight = 'pnpm tsx scripts/release-candidate-gate.ts validate --candidate release/release-candidate.json';
   expect(releaseWorkflow).toContain(preflight);
   expect(releaseWorkflow).toMatch(
-    /validate-tag:\n {4}outputs:\n {6}candidate_sha: \$\{\{ steps\.release-candidate\.outputs\.candidate_sha \}\}/u,
+    /validate-tag:\n {4}outputs:\n {6}candidate_sha: \$\{\{ steps\.release-candidate\.outputs\.candidate_sha \|\| steps\.override\.outputs\.candidate_sha \}\}/u,
   );
   expect(releaseWorkflow).toContain('id: release-candidate');
   expect(releaseWorkflow).toContain('echo "candidate_sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"');

@@ -1,6 +1,6 @@
 import { VirtualShadowNode } from "@threenative/core";
 import { PerspectiveCamera } from "three";
-import { PCFSoftShadowFilter } from "three/tsl";
+import { PCFShadowFilter } from "three/tsl";
 import { expect, it } from "vitest";
 import { BIOMES } from "../src/render/biomes.js";
 import { createOutdoorSky } from "../src/render/sky.js";
@@ -14,7 +14,7 @@ it.each(Object.values(BIOMES))("sets $world shadow contact bias as intended", (b
   expect(sky.sun.shadow.radius).toBe(biome.sun.shadowRadius);
   if (biome.world === "forest") {
     expect((sky.sun.shadow as typeof sky.sun.shadow & { filterNode?: unknown }).filterNode).toBe(
-      PCFSoftShadowFilter,
+      PCFShadowFilter,
     );
   } else {
     expect((sky.sun.shadow as typeof sky.sun.shadow & { filterNode?: unknown }).filterNode).toBe(
@@ -39,7 +39,7 @@ it.each(Object.values(BIOMES))("sets $world shadow contact bias as intended", (b
 it("uses the forest shadow filter when no biome is selected", () => {
   const sky = createOutdoorSky(new PerspectiveCamera());
   expect((sky.sun.shadow as typeof sky.sun.shadow & { filterNode?: unknown }).filterNode).toBe(
-    PCFSoftShadowFilter,
+    PCFShadowFilter,
   );
   sky.sun.shadow.shadowNode?.dispose();
   sky.sun.dispose();

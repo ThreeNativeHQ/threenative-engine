@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -30,7 +31,7 @@ beforeAll(async () => {
   }
   await writeFile(join(root, "package.json"), '{"type":"module"}\n');
   if (process.env.TN_THREE_PATCH_STOCK === "1") {
-    const patch = readFileSync(new URL("../patches/three@0.185.1.patch", import.meta.url), "utf8")
+    const patch = readFileSync(new URL("../patches/three@0.187.0.patch", import.meta.url), "utf8")
       .split(/(?=^diff --git )/mu)
       .filter((block) => files.includes(/^diff --git a\/(\S+) /mu.exec(block)?.[1] ?? ""))
       .join("");
@@ -46,8 +47,9 @@ beforeAll(async () => {
         .split(/(?=^diff --git )/mu)
         .find((section) => section.startsWith(`diff --git a/${file} `));
       const expected = /^index ([a-f0-9]{40})/mu.exec(block ?? "")?.[1];
-      // @ts-expect-error -- the generator is plain ESM with no type declarations.
-      const { blobHash } = await import("../scripts/generate-three-patch.mjs");
+      // The git blob id of the bytes, which is what a `diff --git` `index` line records.
+      const blobHash = (contents: string): string =>
+        createHash("sha1").update(`blob ${Buffer.byteLength(contents)}\0`).update(contents).digest("hex");
       expect(blobHash(await readFile(join(root, file), "utf8"))).toBe(expected);
     }
   }

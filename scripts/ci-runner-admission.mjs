@@ -19,8 +19,9 @@ import { integrationGitSelection } from "./ci-integration-scope.mjs";
 export const ADMISSION_NAMESPACES = Object.freeze(["ci", "integration", "native"]);
 
 // The eligible HEAVY set: every Linux job on the TN_RUNNER heavy switch, per its matrix —
-// 34 ci + 13 integration + 4 native = 51 instances (one template-nonvisual leg per shipped kit,
-// plus strata). The order is the default admission preference (CPU-heavy lanes first); the caller
+// 50 ci + 13 integration + 4 native = 67 instances (one template-nonvisual and one
+// template-engine-cost leg per shipped kit, plus strata).
+// The order is the default admission preference (CPU-heavy lanes first); the caller
 // passes its own actual selected order instead.
 const INVENTORY = Object.freeze({
   ci: Object.freeze({
@@ -38,6 +39,7 @@ const INVENTORY = Object.freeze({
     strata: Object.freeze([null]),
     "golden-path-template": Object.freeze(["starter", "platformer"]),
     "template-nonvisual": Object.freeze(TEMPLATE_NAMES),
+    "template-engine-cost": Object.freeze(TEMPLATE_NAMES),
     "native-engine": Object.freeze([null]),
   }),
   integration: Object.freeze(
@@ -198,6 +200,10 @@ export function selectInstances(plan, integrationLanes = {}) {
     for (const template of plan?.templateMatrix?.template ?? [])
       if (INVENTORY.ci["template-nonvisual"].includes(template))
         ids.push(`ci:template-nonvisual:${template}`);
+  if (job["template-engine-cost"]?.required)
+    for (const template of plan?.templateMatrix?.template ?? [])
+      if (INVENTORY.ci["template-engine-cost"].includes(template))
+        ids.push(`ci:template-engine-cost:${template}`);
   if (job["native-engine"]?.required) ids.push("ci:native-engine");
   if (job.integration?.required)
     for (const lane of Object.keys(INVENTORY.integration))

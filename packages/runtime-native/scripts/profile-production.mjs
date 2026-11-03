@@ -3,7 +3,7 @@
 import { createServer } from 'node:http';
 import { execFile, execFileSync, spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { cp, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import { cp, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
@@ -861,7 +861,7 @@ async function runDesktopBridgeScenario(project, scenarioPath, artifactDirectory
   const runner = await import(pathToFileURL(modulePath).href);
   const mailbox = new runner.LocalDeviceMailbox();
   const innerTransport = new runner.DeviceMailboxTransport(mailbox, { request: requestPath, response: responsePath });
-  const driver = createDesktopDriver(artifactPath, project, options, mailboxRoot);
+  const driver = createDesktopDriver(artifactPath, project, options, mailboxRoot, mailbox);
   const transport = {
     capabilities: innerTransport.capabilities,
     call: innerTransport.call.bind(innerTransport),
@@ -916,6 +916,9 @@ export function desktopFailureRun(error, consoleOutput, elapsedMs, cleanupError 
     try { return sanitizeManifest(value); } catch { return fallback; }
   };
   const diagnostic = cleanupError?.diagnostic ?? error?.diagnostic;
+  // The code and the syscall name carry no path, so a redacted failure can still name its cause.
+  const cause = [/^(?:E[A-Z]{2,}|TN_[A-Z0-9_]+)\b/u.exec(error?.message ?? '')?.[0], /^[a-z]+$/u.exec(error?.syscall ?? '')?.[0]]
+    .filter(Boolean).join(' ');
   return {
     elapsedMs, status: 2, screenshot: undefined, series: undefined,
     report: {
@@ -923,7 +926,7 @@ export function desktopFailureRun(error, consoleOutput, elapsedMs, cleanupError 
       diagnostics: [retain(diagnostic ?? {
         code: 'TN_PROD_PLAYTEST_FAILED', severity: 'error',
         message: error instanceof Error ? error.message : String(error),
-      }, { code: 'TN_PROD_REDACTION', severity: 'error', message: 'Unsafe native error details withheld.' })],
+      }, { code: 'TN_PROD_REDACTION', severity: 'error', message: `Unsafe native error details withheld${cause ? ` (${cause})` : ''}.` })],
       observations: { console: consoleOutput.map((entry) => retain(entry, {
         type: 'error', text: 'TN_PROD_REDACTION: unsafe native console entry withheld.',
       })) },
@@ -961,7 +964,7 @@ async function readResolutionScaleSetting(project, options) {
   return rendererResolutionScaleSetting(config, options.target);
 }
 
-function createDesktopDriver(artifactPath, project, options, mailboxRoot) {
+function createDesktopDriver(artifactPath, project, options, mailboxRoot, mailbox) {
   let child;
   let output = '';
   let stopping;
@@ -983,12 +986,16 @@ function createDesktopDriver(artifactPath, project, options, mailboxRoot) {
     readFile: async (path) => readFile(path, 'utf8').catch((error) => error?.code === 'ENOENT' ? undefined : Promise.reject(error)),
     removeFile: async (path) => rm(path, { force: true }).catch(() => undefined),
     screenshot: async (path) => {
-      const temporary = `${screenshotRequestPath}.tmp`;
-      await writeFile(temporary, path, 'utf8');
-      await rename(temporary, screenshotRequestPath);
+      await mailbox.write(screenshotRequestPath, path);
       const deadline = Date.now() + DESKTOP_SCREENSHOT_TIMEOUT_MS;
       while (Date.now() < deadline) {
         if (await nonBlankPng(path)) return;
+        // The host consumed the one request, so a blank capture stays blank until asked again. A frame read while
+        // pipelines still compile can be all zero (hosted Metal, run 41356903254).
+        if (await blankPng(path)) {
+          await rm(path, { force: true }).catch(() => undefined);
+          await mailbox.write(screenshotRequestPath, path);
+        }
         await new Promise((resolve) => setTimeout(resolve, 25));
       }
       throw new Error('TN_PROD_NATIVE_SCREENSHOT_UNAVAILABLE');
@@ -2454,6 +2461,16 @@ async function listFiles(directory) {
 async function nonBlankPng(path) {
   try {
     return isNonBlankFrame(await readFile(path));
+  } catch {
+    return false;
+  }
+}
+
+async function blankPng(path) {
+  try {
+    const value = await readFile(path);
+    PNG.sync.read(value);
+    return !isNonBlankFrame(value);
   } catch {
     return false;
   }

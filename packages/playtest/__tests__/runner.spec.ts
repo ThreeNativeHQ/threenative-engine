@@ -1590,6 +1590,25 @@ test("an authored hold counts for a pointer step, not only a key press", () => {
 /** The engine meter's GPU reading: the frame bound judges CPU and GPU cost, so a fixture needs both. */
 const GPU_METER = `TN_FRAME_BUDGET:${JSON.stringify({ gpu: { p95: 4, samples: 8 } })}`;
 
+test("runner measures the frames after the baseline, not the launch before it", () => {
+  const currentScenario = scenario({ performance: { maxDrawCalls: 320 } });
+  const launch = { frameMs: 16, drawCalls: 731, phases: { render: 1, update: 0.1 }, sequence: 30, triangles: 12 };
+  const played = { frameMs: 16, drawCalls: 104, phases: { render: 1, update: 0.1 }, sequence: 31, triangles: 12 };
+  const before: IPlaytestObservationSnapshot = {
+    clock: { mode: "render-frame", timeMs: 16 },
+    runtimeDiagnosticsSeries: [launch],
+  };
+  const after: IPlaytestObservationSnapshot = {
+    clock: { mode: "render-frame", timeMs: 32 },
+    runtimeDiagnosticsSeries: [launch, played],
+  };
+
+  const result = buildReport(CONFIG, currentScenario, before, after, [{ text: GPU_METER, type: "log" }], []);
+
+  expect(result.observations?.performanceSeries).toEqual([played]);
+  expect(result.assertionResults?.find(({ id }) => id === "performance.maxDrawCalls")?.pass).toBe(true);
+});
+
 test("runner carries performance samples in their separate report channel", () => {
   const currentScenario = scenario({ performance: { maxFrameMsP95: 20 } });
   const snapshot: IPlaytestObservationSnapshot = {

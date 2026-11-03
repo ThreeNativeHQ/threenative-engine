@@ -150,7 +150,7 @@ describe("pnpm release:native publishing", () => {
 
   it("runs the native step after the npm publish, and staging before it", () => {
     const source = readFileSync(new URL("../release.ts", import.meta.url), "utf8");
-    const publishLoop = source.indexOf("publish ${name}@${version}");
+    const publishLoop = source.indexOf("publish ${name}@${versionOf(name)}");
     const stage = source.indexOf("await stageNativeRelease(");
     const upload = source.indexOf("uploadNativeRelease({");
     expect(publishLoop).toBeGreaterThan(0);
@@ -158,10 +158,13 @@ describe("pnpm release:native publishing", () => {
     expect(upload).toBeGreaterThan(0);
     expect(stage).toBeLessThan(publishLoop);
     expect(upload).toBeGreaterThan(publishLoop);
-    // The publish-ahead escape hatch must not silently create a release, and CI must never stage.
-    expect(source).toMatch(
-      /willCreateNativeRelease\s*=\s*publish && !allowMissingPrebuilt && process\.env\.GITHUB_ACTIONS !== "true"/u,
-    );
+    // CI must never stage, and no flag ships the npm cohort without its binaries (owner, 2026-11-01).
+    expect(source).toMatch(/const local = process\.env\.GITHUB_ACTIONS !== "true"/u);
+    expect(source).toMatch(/willCreateNativeRelease = publish && local/u);
+    expect(source).not.toContain("allow-missing-prebuilt");
+    expect(
+      readFileSync(new URL("../check-publish-state.ts", import.meta.url), "utf8"),
+    ).not.toContain("allow-missing-prebuilt");
     expect(source).toContain("skipIfReleased: true");
   });
 

@@ -29,7 +29,8 @@ it.each([undefined, 0, 4])(
       new Scene(),
       new PerspectiveCamera(),
     );
-    expect(observed).toBe(samples);
+    // An omitted option inherits the high tier, whose world pass is 4x MSAA (owner, 2026-10-28).
+    expect(observed).toBe(samples ?? 4);
     expect(requested).toContain("antialias");
     applied.dispose?.();
   },

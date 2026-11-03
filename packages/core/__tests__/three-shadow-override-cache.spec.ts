@@ -133,7 +133,7 @@ type InternalNodeMaterial = NodeMaterial & {
 interface IRenderObjectProbe {
   readonly geometry: BufferGeometry;
   readonly _sourceMaterial: NodeMaterial | null;
-  readonly sourceVersion: number;
+  readonly sourceMaterialVersion: number;
   readonly version: number;
   readonly needsUpdate: boolean;
   getCacheKey: () => number;
@@ -179,13 +179,14 @@ function renderObjectsProbe(): {
   const nodes = {
     delete: vi.fn(),
     getCacheKey: vi.fn(() => 0),
+    getCustomProgramCacheKey: vi.fn(() => 0),
   };
   const pipelines = { delete: vi.fn() };
   const bindings = { deleteForRender: vi.fn() };
   const manager = new RenderObjects(
     renderer,
     nodes,
-    { getIndex: () => null, releaseRenderObject: vi.fn() },
+    { deleteNodeAttributes: vi.fn(), deleteVertexState: vi.fn(), getIndex: () => null, releaseRenderObject: vi.fn() },
     pipelines,
     bindings,
     {},
@@ -195,7 +196,7 @@ function renderObjectsProbe(): {
   const scene = new Scene();
   const camera = new Camera();
   const renderContext = { id: 1 };
-  const lightsNode = {};
+  const lightsNode = { addEventListener: vi.fn(), removeEventListener: vi.fn() };
 
   return {
     get: (object, source, drawCamera = camera) => {
@@ -404,7 +405,7 @@ describe("three RenderObjects source invalidation", () => {
     source.alphaTest = 0;
     const refreshed = probe.get(object, source);
 
-    expect(source.version).toBeGreaterThan(renderObject.sourceVersion);
+    expect(source.version).toBeGreaterThan(renderObject.sourceMaterialVersion);
     expect(getCacheKey).toHaveBeenCalledTimes(1);
     expect(refreshed).not.toBe(renderObject);
     expect(refreshed._sourceMaterial).toBe(source);

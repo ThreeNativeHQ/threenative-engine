@@ -99,6 +99,28 @@ describe("AutoBatch", () => {
     expect(batch.census).toMatchObject({ meshes: 40, draws: 2, optedOut: 0, restored: 0 });
   });
 
+  it("walks the scene under the observer mark, so the bridge census never bills the pass to the game", () => {
+    // PR #595 run 41279573156: the walk landed on a census frame in collectathon-collect, and its
+    // __attributeNames re-reads pushed TN_BRIDGE_WARNING to 0.029 (limit 0.02) on a timing flake.
+    const host = globalThis as { __tnPlaytestObserving?: number };
+    const scene = new Scene();
+    const group = new Group();
+    scene.add(group);
+    town(4, group);
+    const seen: (number | undefined)[] = [];
+    const children = group.children;
+    Object.defineProperty(group, "children", {
+      get: () => {
+        seen.push(host.__tnPlaytestObserving);
+        return children;
+      },
+    });
+    run(new AutoBatch(scene, { settleFrames: 3 }), 8);
+    // Only the snapshot passes hold the mark; the merge itself stays billed.
+    expect(seen.some((mark) => (mark ?? 0) > 0)).toBe(true);
+    expect(host.__tnPlaytestObserving ?? 0).toBe(0);
+  });
+
   it("keeps an opted-out subtree separate and reports it", () => {
     const scene = new Scene();
     const group = new Group();

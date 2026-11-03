@@ -1,9 +1,9 @@
 /**
  * PRD-278 §5 — does `renderer.toneMappingExposure` reach the frame once
- * an output pipeline is installed, on `three@0.185.1`?
+ * an output pipeline is installed, on `three@0.187.0`?
  *
  * The mined `lumen-hall` WorldEnvironment says it does not ("moving it from 0.85 to
- * 1.45 changed nothing at all on screen"); reading `three@0.185.1` says it does
+ * 1.45 changed nothing at all on screen"); reading `three@0.187.0` says it does
  * (`RenderPipeline.outputColorTransform` defaults to true, and `ToneMappingNode`'s
  * default `exposureNode` is a live `rendererReference('toneMappingExposure')`).
  * AC7 refuses to ship the file until one A/B capture settles it.

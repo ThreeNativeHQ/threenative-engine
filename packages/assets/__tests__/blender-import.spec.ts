@@ -1,6 +1,6 @@
 import { copyFile, mkdir, readFile, readdir, rm } from "node:fs/promises";
 import path from "node:path";
-import { resolveBlender } from "threenative-blender-mcp/bridge";
+import { resolveBlender } from "@threenative/blender-bridge/bridge";
 import { describe, expect, it } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { classify, compileAssets } from "../src/compile.js";

@@ -66,6 +66,27 @@ Read it in this order, because each line rules out a whole class of fix:
 
 Only then open the raw trace file, and only if the summary points somewhere specific.
 
+## Go deeper with the `threenative-devtools` MCP server
+
+Every project wires Chrome DevTools as the `threenative-devtools` MCP server. Use it after
+`playtest trace`, when the summary points at one place and you need to look inside it. It launches
+Chrome with the same WebGPU recipe as a playtest, in a temporary profile. Chrome starts only on the
+first tool call.
+
+1. `navigate_page` to `http://127.0.0.1:<port>/?tnFrameSpans=1`, then hold the movement keys with
+   `press_key`, because a parked camera hides the cost of a moving one.
+2. `performance_start_trace`, play for at least 10 s, then `performance_stop_trace`.
+3. `performance_analyze_insight` on the insight the trace names.
+4. `list_console_messages` for `TN_FRAME_BUDGET`, `TN_FRAME_SPANS` and `TN_SCENE_WARNING`.
+
+Use it for GPU timing, A/B deltas inside one page, the network and asset waterfall, heap snapshots
+(`take_heapsnapshot`) and console output. **Do not quote its CPU times as absolute numbers.** Its
+browser keeps async call stacks on, and the engine wraps every GPU callback in a promise. On one
+game that read main render as 8.3 ms per frame against 1.3 ms in a clean browser, and a trace added
+3.9 ms per frame. An absolute CPU number comes from `playtest trace`. A ratio between two arms in
+the same DevTools page is fine. The server sees only the browser: a native or Android frame goes
+through `npx @threenative/playtest perf --target <platform>`.
+
 ## The trap that produces a confident wrong number
 
 **A frame rate measured on a virtual display is wrong, not missing.** Under a private Xvfb there

@@ -41,12 +41,16 @@ export function readAttemptJobs(
       pages = JSON.parse(response);
     } catch (error) {
       const stderr = String(error.stderr ?? "");
+      // A read past the 30 s timeout is a transport outage too: the Windows leg of run 41129808033 lost its
+      // receipt (and the coverage receipt and ci-required behind it) to one `spawnSync gh ETIMEDOUT`.
+      const timedOut = error.code === "ETIMEDOUT";
       if (
         attempt === MAX_ATTEMPTS - 1 ||
-        error.status !== 1 ||
-        error.signal ||
-        !/error connecting to api\.github\.com|HTTP (?:500|502|503|504)\b/iu.test(stderr) ||
-        /HTTP (?:401|403|404|429)\b/iu.test(stderr)
+        (!timedOut &&
+          (error.status !== 1 ||
+            error.signal ||
+            !/error connecting to api\.github\.com|HTTP (?:500|502|503|504)\b/iu.test(stderr) ||
+            /HTTP (?:401|403|404|429)\b/iu.test(stderr)))
       )
         throw error;
       // Retry only the same read endpoint after 1, 2, 4 ... 64 seconds; no stale page, receipt or permission fallback.
@@ -81,6 +85,41 @@ export function readAttemptJobs(
     }
     return listing;
   }
+}
+
+/**
+ * Jobs of attempts 1..current, each as the attempt that really ran it. `gh run rerun --failed`
+ * lists every carried job in the later attempt as a copy: new id, later `run_attempt`, same start,
+ * end and runner (PR #595 run 41262008820: 124718810548 -> 124750441136). A copy is not a rerun, so
+ * the first record stays and the receipt that names it still matches. The current attempt is read
+ * last and carries the settled-name wait.
+ */
+export function readJobsAcrossAttempts(identity, prefix = "CI_INTEGRATION", settledNames = []) {
+  const current = Number(identity.runAttempt);
+  const listings = [];
+  for (let attempt = 1; attempt <= current; attempt++)
+    listings.push(
+      readAttemptJobs(
+        { ...identity, runAttempt: String(attempt) },
+        prefix,
+        attempt === current ? settledNames : [],
+      ),
+    );
+  return mergeAttemptListings(listings);
+}
+
+export function mergeAttemptListings(listings) {
+  const ran = new Set();
+  const jobs = new Map();
+  for (const listing of listings)
+    for (const job of listing.jobs) {
+      const finished = job.started_at && job.completed_at;
+      const key = `${job.name}\0${job.started_at}\0${job.completed_at}\0${job.runner_name}`;
+      if (finished && ran.has(key)) continue;
+      if (finished) ran.add(key);
+      jobs.set(job.id, job);
+    }
+  return { totalCount: jobs.size, jobs: [...jobs.values()] };
 }
 
 export function receiptFiles(directory, prefix = "CI_INTEGRATION") {

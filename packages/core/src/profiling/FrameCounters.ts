@@ -1,3 +1,5 @@
+import { countDebug, debugRequested, isContentScaled } from "./debug-telemetry.js";
+
 /**
  * Host-boundary counters, default-off, on the frame budget's own record.
  *
@@ -40,6 +42,10 @@ export interface IFrameCounters {
    * Absent on a host whose back end keeps no such count.
    */
   readonly bridgeCrossings?: number;
+  /** Transforms the game moved this frame (the owned engine's `markLocalTransformDirty` calls; PRD-771). */
+  readonly dirtyTransforms?: number;
+  /** Shadow casters the virtual atlas judged moving this frame, each one invalidating its pages (PRD-771). */
+  readonly castersMoving?: number;
   /**
    * This frame's engine work counts by name (`createEngineCounterReader`): the web back end's and the
    * engine's own totals, and `globalThis.__tnEngineCost`, differenced per frame. Absent unless a
@@ -67,6 +73,18 @@ const SKIP: Record<string, true> = {
   dispatchEvent: true,
   onuncapturederror: true,
   removeEventListener: true,
+};
+
+const GPU_COUNTERS: Readonly<Record<string, string>> = {
+  createBuffer: "gpuBufferCreates",
+  createTexture: "gpuTextureCreates",
+  createBindGroup: "gpuBindGroupCreates",
+  createRenderPipeline: "gpuPipelineCompiles",
+  createRenderPipelineAsync: "gpuPipelineCompiles",
+  mapAsync: "gpuReadbackMaps",
+  submit: "gpuQueueSubmits",
+  resolveQuerySet: "gpuQueryResolves",
+  beginRenderPass: "gpuRenderPasses",
 };
 
 /**
@@ -127,6 +145,7 @@ export function counterDeviceOf(raw: unknown): unknown {
  * allocation. Install once per renderer; `read` returns the counts since the previous `read`.
  */
 export class FrameCounters {
+  readonly #debug = debugRequested();
   #hostCalls = 0;
   #gpuBytes = 0;
   #lastHeapBytes: number | undefined;
@@ -136,9 +155,15 @@ export class FrameCounters {
   private constructor(device: ICounterDevice) {
     // A new encoder per pass, so an encoder's methods are wrapped the first time it is seen rather
     // than once at install: a wrapper installed on one encoder would miss every later pass.
-    this.#wrap(device, ["createCommandEncoder", "createRenderBundleEncoder"], (_name, result) => {
-      if (typeof result === "object" && result !== null) this.#wrapEncoder(result);
-    });
+    this.#wrap(
+      device,
+      this.#debug ? methodNames(device) : ["createCommandEncoder", "createRenderBundleEncoder"],
+      (name, result) => {
+        if (typeof result !== "object" || result === null) return;
+        if (name.endsWith("Encoder")) this.#wrapEncoder(result);
+        if (this.#debug && name === "createBuffer") this.#wrap(result, ["mapAsync"], undefined);
+      },
+    );
     const queue = device.queue;
     if (typeof queue === "object" && queue !== null)
       this.#wrap(queue, methodNames(queue), undefined);
@@ -171,6 +196,7 @@ export class FrameCounters {
       if (original === undefined) continue;
       const wrapped = (...args: unknown[]): unknown => {
         this.#hostCalls += 1;
+        const start = this.#debug ? performance.now() : undefined;
         if (name === "writeBuffer") {
           // `writeBuffer(buffer, offset, data, dataOffset, size)`; `size` defaults to the rest of
           // the source, exactly as the spec says, so the count matches the bytes the driver sees.
@@ -184,16 +210,33 @@ export class FrameCounters {
             typeof data.byteLength === "number"
               ? data.byteLength
               : 0;
-          this.#gpuBytes += size ?? Math.max(0, available - dataOffset);
+          const elementBytes =
+            ArrayBuffer.isView(data) &&
+            "BYTES_PER_ELEMENT" in data &&
+            typeof data.BYTES_PER_ELEMENT === "number"
+              ? data.BYTES_PER_ELEMENT
+              : 1;
+          this.#gpuBytes +=
+            size === undefined
+              ? Math.max(0, available - dataOffset * elementBytes)
+              : size * elementBytes;
         }
         const result = original.apply(owner, args);
+        if (this.#debug) {
+          const field = GPU_COUNTERS[name];
+          if (field !== undefined) countDebug(field, 1, "gpu", `WebGPU.${name}`);
+          if (start !== undefined)
+            countDebug(`gpu.${name}Ms`, performance.now() - start, "gpu", `WebGPU.${name}`, "ms");
+        }
         after?.(name, result);
         return result;
       };
       try {
         target[name] = wrapped;
+        const weak = new WeakRef(target);
         this.#restore.push(() => {
-          target[name] = original;
+          const live = weak.deref();
+          if (live !== undefined) live[name] = original;
         });
       } catch {
         // A native binding may expose a non-writable method. Losing that one from the count is a
@@ -215,6 +258,16 @@ export class FrameCounters {
     if (heap !== undefined) {
       const previous = this.#lastHeapBytes;
       this.#lastHeapBytes = heap;
+      if (this.#debug) {
+        countDebug("jsHeapBytesSampled", heap, "memory", "performance.memory.usedJSHeapSize");
+        if (previous !== undefined)
+          countDebug(
+            heap >= previous ? "jsHeapGrowthBytes" : "jsHeapShrinkBytes",
+            Math.abs(heap - previous),
+            "memory",
+            "performance.memory.usedJSHeapSize",
+          );
+      }
       if (previous !== undefined && heap >= previous)
         return { ...counters, jsAllocBytes: heap - previous };
       return counters;
@@ -258,11 +311,26 @@ function readHeapBytes(): number | undefined {
 export const ENGINE_COST_KNOB = "__THREENATIVE_ENGINE_COST__";
 
 interface IEngineCounterHost {
+  readonly __tnDebugSources?: Readonly<Record<string, { readonly unit?: string }>>;
   readonly __THREENATIVE_ENGINE_COST__?: unknown;
   /** The web back end's running totals by name (three-native browser-entry.ts). */
   readonly __tnEngineCounters?: () => Readonly<Record<string, number>>;
   /** Totals any module counts by name (`bag[name] = (bag[name] ?? 0) + 1`), on every engine. */
   readonly __tnEngineCost?: Readonly<Record<string, number>>;
+  /** Installed by the reader while it is on: drops the counts since the last frame's read. */
+  __tnEngineCounterRebase?: () => void;
+}
+
+/**
+ * Leaves the work done since the last frame out of the next frame's engine counts. A caller that does
+ * work between frames which is not the game's (the playtest bridge answering an observation walks the
+ * scene for `debug()`) calls this when it is done; without it the next frame is billed for the walk
+ * and a bound on one frame's cost fails on a measurement of the harness, on a timing race.
+ */
+export function discardEngineCountsSinceLastFrame(
+  host: Pick<IEngineCounterHost, "__tnEngineCounterRebase"> = globalThis as IEngineCounterHost,
+): void {
+  host.__tnEngineCounterRebase?.();
 }
 
 /**
@@ -274,20 +342,34 @@ interface IEngineCounterHost {
 export function createEngineCounterReader(
   host: IEngineCounterHost = globalThis as IEngineCounterHost,
 ): () => Record<string, number> | undefined {
+  const debug = debugRequested();
   let last: Record<string, number> | undefined;
+  const read = (): Record<string, number> => ({
+    ...host.__tnEngineCost,
+    ...host.__tnEngineCounters?.(),
+  });
   return () => {
-    if (host.__THREENATIVE_ENGINE_COST__ !== true) return undefined;
-    const totals: Record<string, number> = {
-      ...host.__tnEngineCost,
-      ...host.__tnEngineCounters?.(),
+    if (!debug && host.__THREENATIVE_ENGINE_COST__ !== true) return undefined;
+    host.__tnEngineCounterRebase ??= () => {
+      if (last !== undefined) last = read();
     };
+    const totals = read();
     const previous = last;
     last = totals;
     if (previous === undefined) return undefined;
     const frame: Record<string, number> = {};
     // A name first counted this frame started from zero after the baseline.
-    for (const [name, total] of Object.entries(totals))
-      if (Number.isFinite(total)) frame[name] = Math.max(0, total - (previous[name] ?? 0));
+    for (const [name, total] of Object.entries(totals)) {
+      if (!Number.isFinite(total) || total < 0)
+        throw new Error(`TN_DEBUG: invalid ${name} counter.`);
+      // One name per asset URL or bridged property would add a ring per item the scene loads; the
+      // report ranks the run's largest ten of them instead (`isContentScaled`).
+      if (isContentScaled(name)) continue;
+      frame[name] =
+        debug && host.__tnDebugSources?.[name]?.unit === "gauge"
+          ? total
+          : Math.max(0, total - (previous[name] ?? 0));
+    }
     return frame;
   };
 }

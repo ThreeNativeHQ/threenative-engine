@@ -1,6 +1,7 @@
 import { cp, readFile, rm, unlink, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import path from "node:path";
+import { PNG } from "pngjs";
 import { describe, expect, it } from "vitest";
 import { makeTempDir } from "../../test-support/temp-dir.js";
 import {
@@ -14,6 +15,7 @@ import {
   validateVisualScores,
   visualServerProcessGroup,
   withVisualCaptureLease,
+  waitForPaintedFrame,
 } from "../visual-gate.js";
 
 describe("visual gate", () => {
@@ -245,5 +247,50 @@ describe("visual gate", () => {
       parity: { framework: 4, vanilla: 4 },
     });
     expect(scores.templates).toEqual(templates);
+  });
+});
+
+describe("waitForPaintedFrame", () => {
+  const blank = async (): Promise<Buffer> => {
+    const png = new PNG({ height: 8, width: 8 });
+    png.data.fill(200);
+    return PNG.sync.write(png);
+  };
+  const painted = (): Promise<Buffer> =>
+    readFile(path.join(process.cwd(), "docs/verification/visuals/starter.png"));
+
+  it("keeps looking while the loading cover is up and returns the first painted frame", async () => {
+    const frames = [blank, blank, painted];
+    let taken = 0;
+    const result = await waitForPaintedFrame(
+      () => {
+        const frame = frames[taken] ?? painted;
+        taken += 1;
+        return frame();
+      },
+      "shooter",
+      { pollMs: 1, timeoutMs: 5_000 },
+    );
+    expect(taken).toBe(3);
+    expect(result.stats.distinctColors).toBeGreaterThan(1);
+  });
+
+  it("still fails as blank when the cover never lifts", async () => {
+    await expect(
+      waitForPaintedFrame(blank, "shooter", { pollMs: 1, timeoutMs: 20 }),
+    ).rejects.toThrow("TN_CAPTURE_BLANK");
+  });
+
+  it("does not wait out the deadline on a failure that is not a blank frame", async () => {
+    await expect(
+      waitForPaintedFrame(
+        () => Promise.reject(new Error("TN_VISUAL_PAGE_ERROR: boom")),
+        "shooter",
+        {
+          pollMs: 1,
+          timeoutMs: 60_000,
+        },
+      ),
+    ).rejects.toThrow("TN_VISUAL_PAGE_ERROR");
   });
 });

@@ -1843,7 +1843,6 @@ export class WorldCells extends Group implements IComputeDriven {
         (camera === undefined || (!this.#render.shadowMoved && !this.#refilterOwed)),
     };
   }
-
   /** Use the same authored placement bounds and distance test as admission, even before residency. */
   #cellInView(cell: IWorldCell, eye: Vector3): boolean {
     const cached = this.#readinessVisible.get(cell);
@@ -1986,7 +1985,7 @@ export class WorldCells extends Group implements IComputeDriven {
     }
   }
 
-  dispose(): void {
+  override dispose(): void {
     if (this.#released) return;
     this.#released = true;
     // A world torn down mid-wait must not leave a game awaiting its spawn gate, nor a deadline
@@ -2019,6 +2018,9 @@ export class WorldCells extends Group implements IComputeDriven {
     drainMeshPool();
     this.#terrain?.dispose();
     this.removeFromParent();
+    // r186's Object3D.dispose() dispatches the dispose event the renderer frees this object's
+    // render objects on, so an override must reach it.
+    super.dispose();
   }
 
   #updateResidency(followCell: { x: number; z: number }, x: number, z: number): void {
