@@ -41,7 +41,6 @@ full boards with the pool up (2026-11-03), against 100-129 min for the best poss
 jobs on today's 26 slots. Below 60 min needs 36 slots even for a perfect scheduler and about 50 in
 practice, or half the board's work. Two boards of 2026-11-01 measured 705.9 and 1057.8 min with the pool
 off. It needs an owner call: a second machine, fewer full-board lanes, or a per-job criterion.
-It needs an owner call: more slots, or overflow part of the board to hosted runners.
 
 Rows with the same number can run as parallel lanes. Before parallel lanes edit `ci.yml`, they agree on
 which jobs each one touches.
