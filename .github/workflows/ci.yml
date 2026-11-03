@@ -16,7 +16,14 @@ on:
       - develop
     # Drafts run nothing; marking one ready for review starts the board.
     types: [opened, synchronize, reopened, ready_for_review]
-  workflow_dispatch: {} # Explicit full audit; never a selectable exemption.
+  # A manual full run carries each job that already passed on the same inputs (PRD-776), which is
+  # how these runs stopped costing a quarter of all CI minutes. `cold` asks for fresh work everywhere.
+  workflow_dispatch:
+    inputs:
+      cold:
+        description: Run every job fresh, with nothing carried
+        type: boolean
+        default: false
   # PRD-481: the merge queue. GitHub tests the exact result a merge would produce, so two PRs
   # merged back to back can no longer put a tree on develop that nothing tested. Qualification
   # always runs fresh exhaustive coverage; unproven matrix verdict reuse remains disabled, with one
@@ -27,8 +34,12 @@ on:
   schedule:
     - cron: "17 3 * * *"
 
+# A develop push shares one group and cancels nothing: one board runs, the newest push waits, and a
+# push it replaces never starts. Each push once had its own group, so three quick pushes ran three
+# full boards at once and a board that overlapped others took 105 min against 57 alone. The newer
+# board covers the skipped commits, and the running one still saves its caches.
 concurrency:
-  group: ci-${{ github.event_name }}-${{ github.ref }}-${{ github.event_name == 'pull_request' && !github.event.pull_request.draft && 'latest' || github.run_id }}
+  group: ci-${{ github.event_name }}-${{ github.ref }}-${{ github.event_name == 'pull_request' && !github.event.pull_request.draft && 'latest' || github.event_name == 'push' && github.ref == 'refs/heads/develop' && 'latest' || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # Read-only. The workflow used to hold Actions write access so a failing job could cancel its own
@@ -62,8 +73,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          # Manual full qualification does not consult history; automatic scope selection does.
-          fetch-depth: ${{ github.event_name == 'workflow_dispatch' && 1 || 0 }}
+          # Per-job reuse reads history on every event, a manual run included.
+          fetch-depth: 0
           # Scope reads commits and trees, never old file contents, so it fetches no blobs: every
           # branch of the 3.9 GB repository took over this job's 5 minutes on a loaded tn-local
           # runner (three cancels on PR #574), against 8 s and 20 MB blob-less with the same plan.
@@ -79,6 +90,7 @@ jobs:
           # the cache-warm lane on develop and keeps a push to main full.
           TN_CI_TARGET: ${{ github.base_ref || github.event.merge_group.base_ref || (github.event_name == 'push' && github.ref_name) || '' }}
           TN_CI_FORCE_FULL: ${{ vars.TN_CI_FORCE_FULL }}
+          TN_CI_COLD: ${{ inputs.cold }}
           TN_CI_QUEUE_REF: ${{ github.event.merge_group.head_ref }}
           TN_CI_BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
           TN_CI_HEAD: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
@@ -86,7 +98,7 @@ jobs:
         run: |
           set -euo pipefail
           extra=()
-          if [ "$TN_CI_FORCE_FULL" = true ]; then extra+=(--full); fi
+          if [ "$TN_CI_FORCE_FULL" = true ] || [ "$TN_CI_COLD" = true ]; then extra+=(--full); fi
           if [ -n "$TN_CI_QUEUE_REF" ]; then extra+=(--queue-ref "$TN_CI_QUEUE_REF"); fi
           node scripts/ci-change-scope.mjs "${extra[@]}" \
             --target "$TN_CI_TARGET" \
@@ -125,7 +137,7 @@ jobs:
   # The cheap gates now start together, and the expensive ones name the gate they wait on.
   typecheck:
     needs: [scope, build-artifacts]
-    if: ${{ (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template' || needs.scope.outputs.selection == 'review') || needs.scope.outputs.selection == 'ci' }}
+    if: ${{ ((needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template' || needs.scope.outputs.selection == 'review') || needs.scope.outputs.selection == 'ci') && !contains(fromJSON(needs.scope.outputs.plan).carriedJobs, 'typecheck') }}
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), 'ci:typecheck')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 15
     env:
@@ -214,7 +226,7 @@ jobs:
 
   test:
     needs: scope
-    if: ${{ needs.scope.outputs.selection == 'full' || (needs.scope.outputs.selection == 'review' && fromJSON(needs.scope.outputs.plan).jobs.test.required) }}
+    if: ${{ (needs.scope.outputs.selection == 'full' || (needs.scope.outputs.selection == 'review' && fromJSON(needs.scope.outputs.plan).jobs.test.required)) && !contains(fromJSON(needs.scope.outputs.plan).carriedJobs, 'test') }}
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), 'ci:test')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 45
     env:
@@ -263,7 +275,7 @@ jobs:
   # one more runner, so four is the whole of it.
   test-unit:
     needs: [scope, build-artifacts]
-    if: ${{ (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template' || needs.scope.outputs.selection == 'review') || needs.scope.outputs.selection == 'ci' }}
+    if: ${{ ((needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template' || needs.scope.outputs.selection == 'review') || needs.scope.outputs.selection == 'ci') && !contains(fromJSON(needs.scope.outputs.plan).carriedJobs, 'test-unit') }}
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), format('ci:test-unit:{0}', matrix.shard))) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 30
     strategy:
@@ -331,7 +343,7 @@ jobs:
     # `warm` too: this job saves `native-build-*`, `native-third-party-*` and its ccache through the
     # cache action's post step, which is the product every pull request into develop reads. No step
     # below is gated on a full selection, so a develop push warms them.
-    if: ${{ (needs.scope.outputs.selection == 'full' && fromJSON(needs.scope.outputs.plan).jobs['test-native'].required) || needs.scope.outputs.selection == 'warm' }}
+    if: ${{ ((needs.scope.outputs.selection == 'full' && fromJSON(needs.scope.outputs.plan).jobs['test-native'].required) || needs.scope.outputs.selection == 'warm') && !contains(fromJSON(needs.scope.outputs.plan).carriedJobs, 'test-native') }}
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), 'ci:test-native')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 75
     env:
@@ -631,7 +643,7 @@ jobs:
 
   test-browser:
     needs: [scope, build-artifacts]
-    if: ${{ needs.scope.outputs.selection == 'full' }}
+    if: ${{ needs.scope.outputs.selection == 'full' && !contains(fromJSON(needs.scope.outputs.plan).carriedJobs, 'test-browser') }}
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), 'ci:test-browser')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 30
     env:
@@ -685,7 +697,7 @@ jobs:
 
   test-playtest:
     needs: [scope, build-artifacts]
-    if: ${{ needs.scope.outputs.selection == 'full' }}
+    if: ${{ needs.scope.outputs.selection == 'full' && !contains(fromJSON(needs.scope.outputs.plan).carriedJobs, 'test-playtest') }}
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), 'ci:test-playtest')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 30
     env:
@@ -720,7 +732,7 @@ jobs:
 
   golden-path-template:
     needs: [scope, build-artifacts]
-    if: ${{ (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template' || needs.scope.outputs.selection == 'review') }}
+    if: ${{ (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template' || needs.scope.outputs.selection == 'review') && !contains(fromJSON(needs.scope.outputs.plan).carriedJobs, 'golden-path-template') }}
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.scope.outputs.plan).goldenMatrix }}
@@ -857,7 +869,7 @@ jobs:
     # non-visually on every PR too, so a template regression is reported by the PR that caused it
     # instead of by the merge that shipped it. `golden-path` above still owns the visual proof.
     needs: [scope, build-artifacts]
-    if: ${{ (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template') }}
+    if: ${{ (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template') && !contains(fromJSON(needs.scope.outputs.plan).carriedJobs, 'template-nonvisual') }}
     # One scaffold/install/typecheck/cook per selected kit; every nonvisual scenario still executes.
     # Each leg routes to idle tn-local first with hosted fallback; no second workflow cap holds kits back.
     strategy:
@@ -1075,13 +1087,17 @@ jobs:
             echo "golden-path templates: not applicable (explicit selective exemption)"
             exit 0
           fi
+          if [ "${{ contains(fromJSON(needs.scope.outputs.plan).carriedJobs, 'golden-path-template') }}" = true ]; then
+            echo "golden-path templates: carried, ci-required reads their proof from the source run"
+            exit 0
+          fi
           result='${{ needs.golden-path-template.result }}'
           echo "golden-path templates: $result"
           test "$result" = "success"
 
   benchmark:
     needs: [scope, build-artifacts]
-    if: ${{ needs.scope.outputs.selection == 'full' }}
+    if: ${{ needs.scope.outputs.selection == 'full' && !contains(fromJSON(needs.scope.outputs.plan).carriedJobs, 'benchmark') }}
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), 'ci:benchmark')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 25
     env:
@@ -1214,7 +1230,7 @@ jobs:
 
   performance-contracts:
     needs: scope
-    if: ${{ needs.scope.outputs.selection == 'full' && !cancelled() }}
+    if: ${{ needs.scope.outputs.selection == 'full' && !cancelled() && !contains(fromJSON(needs.scope.outputs.plan).carriedJobs, 'performance-contracts') }}
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), 'ci:performance-contracts')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 2
     env:
@@ -1280,7 +1296,7 @@ jobs:
 
   budgets:
     needs: [scope, build-artifacts]
-    if: ${{ (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template' || needs.scope.outputs.selection == 'review') || needs.scope.outputs.selection == 'ci' }}
+    if: ${{ ((needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template' || needs.scope.outputs.selection == 'review') || needs.scope.outputs.selection == 'ci') && !contains(fromJSON(needs.scope.outputs.plan).carriedJobs, 'budgets') }}
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), 'ci:budgets')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 15
     env:
@@ -1346,7 +1362,7 @@ jobs:
   # sibling lanes restored each other's objects) and a cached emsdk pinned by tag and SDK version.
   native-engine:
     needs: scope
-    if: ${{ (needs.scope.outputs.selection == 'native-engine' || needs.scope.outputs.selection == 'full') && fromJSON(needs.scope.outputs.plan).jobs['native-engine'].required }}
+    if: ${{ (needs.scope.outputs.selection == 'native-engine' || needs.scope.outputs.selection == 'full') && fromJSON(needs.scope.outputs.plan).jobs['native-engine'].required && !contains(fromJSON(needs.scope.outputs.plan).carriedJobs, 'native-engine') }}
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), 'ci:native-engine')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 30
     env:
@@ -1548,7 +1564,9 @@ jobs:
   # not green to the queue, which ejects the pull request.
   queue-watch:
     needs: scope
-    if: ${{ github.event_name == 'merge_group' }}
+    # PRD-782: a full board on a same-repository pull request or a manual run stops at its first
+    # red too. A develop push stays out: it has one concurrency slot and saves the caches.
+    if: ${{ github.event_name == 'merge_group' || (needs.scope.outputs.selection == 'full' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork))) }}
     # Hosted on purpose: it waits for the whole run, and a local light slot held for an hour would
     # queue the small joins behind it.
     runs-on: ubuntu-24.04
@@ -1612,6 +1630,33 @@ jobs:
         with:
           name: ci-queue-reuse-receipt-${{ github.run_id }}-${{ github.run_attempt }}
           path: artifacts/ci-queue-reuse/receipt.json
+      # PRD-630: the release gate reads parity and provenance reports from the main run, and each
+      # report names its commit. The verdict above proved this tree is the tree they describe.
+      - name: Carry the promotion board's release reports to this commit
+        id: release-reports
+        if: ${{ github.event_name == 'push' && github.ref_name == 'main' && needs.scope.outputs.selection == 'reused' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN: ${{ fromJSON(needs.scope.outputs.plan).reusedRunId }}
+          CANDIDATE: ${{ needs.scope.outputs.candidate_sha }}
+        run: |
+          set -euo pipefail
+          for report in parity provenance; do
+            gh run download "$SOURCE_RUN" --repo "$GITHUB_REPOSITORY" --name "native-release-$report" --dir carried
+            node -e 'const f=process.argv[1];const fs=require("fs");const r=JSON.parse(fs.readFileSync(f));r.candidateSha=process.argv[2];fs.writeFileSync(f,JSON.stringify(r))' "carried/reports/$report.json" "$CANDIDATE"
+          done
+      - uses: actions/upload-artifact@v7
+        if: steps.release-reports.conclusion == 'success'
+        with:
+          name: native-release-parity
+          path: "carried/*/parity.json"
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v7
+        if: steps.release-reports.conclusion == 'success'
+        with:
+          name: native-release-provenance
+          path: "carried/*/provenance.json"
+          if-no-files-found: error
 
   # PRD-296 item 3. Three gates once sat behind a permanently red one and were skipped on every
   # run this repository had ever produced; nobody had seen any of them fail because nobody had
@@ -1725,7 +1770,13 @@ jobs:
           set -euo pipefail
           required_lanes=""
           if [ "$TN_CI_SCOPE" = full ]; then
-            required_lanes="performance-contracts,native-linux-contract"
+            # A carried job left its evidence in the run that `ci-required` names for it.
+            if [ "${{ contains(fromJSON(needs.scope.outputs.plan).carriedJobs, 'performance-contracts') }}" != true ]; then
+              required_lanes="performance-contracts"
+            fi
+            if [ "${{ contains(fromJSON(needs.scope.outputs.plan).carriedJobs, 'test-native') }}" != true ]; then
+              required_lanes="${required_lanes:+$required_lanes,}native-linux-contract"
+            fi
           else
             echo "performance collector evidence: not applicable (explicit selective exemption)"
           fi

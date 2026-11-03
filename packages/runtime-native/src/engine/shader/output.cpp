@@ -5,7 +5,10 @@
 namespace tn::engine::shader {
 
 ExprId srgbTransferOetf(Program& p, ExprId linear) {
-    const ExprId a = p.sub(p.mul(p.call("pow", {linear, p.construct(Type::vec(3), {p.constant(1 / 2.4f)})}), p.constant(1.055f)),
+    // three's shipped build spells the exponent 0.41666, not the src's 1/2.4: ColorSpaceFunctions.js says
+    // `pow( color, vec3( 1 / 2.4 ) )` but build/three.tsl.js:9382 (what the reference renders through) says
+    // `color.pow( 0.41666 )`. One 8-bit level of a dark tone separates them, and a golden is the build's frame.
+    const ExprId a = p.sub(p.mul(p.call("pow", {linear, p.construct(Type::vec(3), {p.constant(0.41666f)})}), p.constant(1.055f)),
                            p.constant(0.055f));
     const ExprId b = p.mul(linear, p.constant(12.92f));
     const ExprId le = p.call("step", {linear, p.construct(Type::vec(3), {p.constant(0.0031308f)})});  // 1 where linear <= cutoff

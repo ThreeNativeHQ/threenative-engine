@@ -13,8 +13,8 @@
     "test": "npm run build && npm run test:contracts && npm run test:integration && npm run test:admission"
   },
   "dependencies": {
-    "three": "0.185.1",
+    "three": "0.187.0",
     "closed-chain-ik": "git+https://github.com/gkjohnson/closed-chain-ik-js.git#38a7e273082311e69c84c35a7c8f64e510e188a5"
   },
-  "devDependencies": { "typescript": "5.9.3", "@types/three": "0.185.3", "@types/node": "24.3.0" }
+  "devDependencies": { "typescript": "5.9.3", "@types/three": "0.187.0", "@types/node": "24.3.0" }
 }

@@ -565,6 +565,8 @@ export interface IPlaytestFramePassSample {
 export interface IPlaytestRuntimeDiagnosticsSample {
   drawCalls?: number;
   frameMs: number;
+  /** The frame's number in this run, when the engine counts them. */
+  sequence?: number;
   /**
    * Supplied by an engine that measures its own frame — `@threenative/core` fills it from the
    * frame budget. Absent for a plain Three.js bridge.

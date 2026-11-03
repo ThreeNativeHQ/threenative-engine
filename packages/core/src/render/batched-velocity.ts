@@ -4,7 +4,8 @@ const THREE_NATIVE_BATCHED_VELOCITY_PATCH = "threeNativeBatchedVelocityPatch";
 
 interface IBatchedMeshVelocityState {
   _matricesTexture: Texture | null;
-  _previousMatricesTexture?: Texture;
+  /** Three.js 0.187 owns this field and sets it to `null` while no previous texture exists. */
+  _previousMatricesTexture?: Texture | null;
 }
 
 interface IBatchedMatrixImage {
@@ -34,7 +35,7 @@ function state(mesh: BatchedMesh): IBatchedMeshVelocityState {
 export function ensureBatchedMeshVelocity(mesh: BatchedMesh): void {
   const current = state(mesh)._matricesTexture;
   if (current === null) throw new Error("BatchedMesh has no current matrix texture.");
-  if (state(mesh)._previousMatricesTexture !== undefined) return;
+  if (state(mesh)._previousMatricesTexture != null) return;
   const image = matrixImage(current);
   const previous = new DataTexture(
     image.data.slice(),
@@ -105,12 +106,12 @@ export function setBatchedMeshPreviousMatrices(
 export function disposeBatchedMeshVelocity(mesh: BatchedMesh): void {
   const previous = state(mesh)._previousMatricesTexture;
   previous?.dispose();
-  state(mesh)._previousMatricesTexture = undefined;
+  state(mesh)._previousMatricesTexture = null;
 }
 
 /** Returns the previous texture for focused conformance tests and renderer adapters. */
 export function readBatchedMeshPreviousMatrices(mesh: BatchedMesh): Texture | undefined {
-  return state(mesh)._previousMatricesTexture;
+  return state(mesh)._previousMatricesTexture ?? undefined;
 }
 
 function matrixImage(texture: Texture): IBatchedMatrixImage {

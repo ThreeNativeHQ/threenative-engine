@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { qualifyColdBoot, qualifyColdBootSpread } from "./fixtures/auto-exposure/coldBootProof.js";
 
-function report() {
+function report(firstNodeFrame = false) {
   const measurement = {
     measured: true,
     applied: true,
@@ -10,13 +10,15 @@ function report() {
     targetStops: -4.436,
     settled: true,
   };
+  // `firstNodeFrame`: the first update lands on three's first node frame (id 1, time 0, delta 0).
+  const step = (updates: number) => (firstNodeFrame ? updates - 1 : updates);
   const samples = [1, 2, 3].map((updates) => ({
     updates,
-    consumedSeconds: updates * 0.07,
-    realConsumedSeconds: updates * 0.07,
-    nodeFrameId: updates * 2 + 6,
-    nodeTime: updates * 0.08,
-    deltaSeconds: 0.07,
+    consumedSeconds: step(updates) * 0.07,
+    realConsumedSeconds: step(updates) * 0.07,
+    nodeFrameId: firstNodeFrame && updates === 1 ? 1 : updates * 2 + 6,
+    nodeTime: step(updates) * 0.08,
+    deltaSeconds: firstNodeFrame && updates === 1 ? 0 : 0.07,
     clock: "live",
     measurement,
   }));
@@ -48,6 +50,10 @@ function report() {
 }
 
 describe("cold-boot exposure proof", () => {
+  it("accepts a first sample on three's first node frame, at node time 0", () => {
+    // A compile-only warm-up advances no node frame: the first live update is frame 1, time 0, delta 0.
+    expect(qualifyColdBoot(report(true))).toMatchObject({ updates: 3, consumedSeconds: 2 * 0.07 });
+  });
   it("uses shared named-frame tone after exactly three accepted live-clock samples", () => {
     expect(qualifyColdBoot(report())).toMatchObject({
       p99: 168,

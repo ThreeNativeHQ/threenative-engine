@@ -12,7 +12,7 @@
     {
       "kind": "wait",
       "label": "expire-wind-before-observation",
-      "waitTicks": 7200,
+      "waitTicks": 7260,
       "release": true
     },
     {

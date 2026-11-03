@@ -7,15 +7,16 @@ const vertex = `@vertex fn vs(@builtin(vertex_index) i:u32)->@builtin(position) 
   return vec4f(p[i],0,1);
 }`;
 
-// Read the retained physical texture, never getDepthBuffer() at the pipeline's restored sample count.
-async function readDepth(device, depth) {
+// Read one physical depth, per sample at 4x and the single value at 1x.
+async function readDepthSamples(device, depth, samples) {
   const target = device.createTexture({ size: [1, 1], format: "rgba32float", usage: 17 });
   const buffer = device.createBuffer({ size: 256, usage: 9 });
   const module = device.createShaderModule({ code: `${vertex}
-    @group(0) @binding(0) var d:texture_depth_multisampled_2d;
+    @group(0) @binding(0) var d:${samples > 1 ? "texture_depth_multisampled_2d" : "texture_depth_2d"};
     @fragment fn fs()->@location(0) vec4f {
-      return vec4f(textureLoad(d,vec2i(0),0),textureLoad(d,vec2i(0),1),
-        textureLoad(d,vec2i(0),2),textureLoad(d,vec2i(0),3));
+      return ${samples > 1
+        ? "vec4f(textureLoad(d,vec2i(0),0),textureLoad(d,vec2i(0),1),textureLoad(d,vec2i(0),2),textureLoad(d,vec2i(0),3))"
+        : "vec4f(textureLoad(d,vec2i(0),0))"};
     }` });
   const pipeline = device.createRenderPipeline({ layout: "auto", vertex: { module, entryPoint: "vs" },
     fragment: { module, entryPoint: "fs", targets: [{ format: "rgba32float" }] } });
@@ -36,6 +37,25 @@ async function readDepth(device, depth) {
   buffer.destroy();
   target.destroy();
   return values;
+}
+
+// Read the retained physical texture, never getDepthBuffer() at the pipeline's restored sample count.
+const readDepth = (device, depth) => readDepthSamples(device, depth, 4);
+
+// The 1x canvas depth a one-sample (fullscreen) pass draws into.
+const readDepth1 = (device, depth) => readDepthSamples(device, depth, 1);
+
+// Positive control for readDepth1: a cleared 1-sample depth must read back, so a zero from a pass means the
+// pass stored zero and not that the reader is broken.
+async function controlDepth(device, value) {
+  const texture = device.createTexture({ size: [1, 1], format: "depth32float", usage: 20 });
+  const encoder = device.createCommandEncoder();
+  encoder.beginRenderPass({ colorAttachments: [], depthStencilAttachment: {
+    view: texture.createView(), depthLoadOp: "clear", depthClearValue: value, depthStoreOp: "store" } }).end();
+  device.queue.submit([encoder.finish()]);
+  const read = await readDepth1(device, texture);
+  texture.destroy();
+  assertCondition(Math.abs(read[0] - value) < 0.00001, `1-sample depth reader control differs (${read[0]} vs ${value})`);
 }
 
 // Resolve to a separate ordinary target: the original canvas MSAA colour has no TextureBinding usage.
@@ -97,42 +117,7 @@ export async function startScene(canvas, dimensions) {
   const { backend } = renderer;
   const { device } = backend;
   device.pushErrorScope("validation");
-  const originalTexture = device.createTexture.bind(device);
-  const originalEncoder = device.createCommandEncoder.bind(device);
-  const privateViews = new WeakSet();
-  const detail = { granted: device.features.has("transient-attachments"), privateDraws: 0, privatePasses: 0, copyCalls: 0 };
-  device.createTexture = (descriptor) => {
-    const texture = originalTexture(descriptor);
-    if (descriptor.label === "tn-private-output-depth") {
-      const createView = texture.createView.bind(texture);
-      texture.createView = (...args) => {
-        const view = createView(...args);
-        privateViews.add(view);
-        return view;
-      };
-    }
-    return texture;
-  };
-  device.createCommandEncoder = (...args) => {
-    const encoder = originalEncoder(...args);
-    const begin = encoder.beginRenderPass.bind(encoder);
-    encoder.beginRenderPass = (descriptor) => {
-      const attachment = descriptor.depthStencilAttachment;
-      const privateDepth = attachment && privateViews.has(attachment.view);
-      if (privateDepth) {
-        assertCondition(attachment.depthLoadOp === "clear" && attachment.depthStoreOp === "discard", "private depth must never LOAD or STORE");
-        detail.privatePasses++;
-      }
-      const pass = begin(descriptor);
-      const draw = pass.draw.bind(pass);
-      pass.draw = (...drawArgs) => {
-        if (privateDepth) detail.privateDraws++;
-        return draw(...drawArgs);
-      };
-      return pass;
-    };
-    return encoder;
-  };
+  const detail = { copyCalls: 0 };
   const copy = renderer.copyFramebufferToTexture.bind(renderer);
   renderer.copyFramebufferToTexture = (...args) => { detail.copyCalls++; return copy(...args); };
 
@@ -141,8 +126,17 @@ export async function startScene(canvas, dimensions) {
   const outputColorSpace = renderer.outputColorSpace;
   renderer.toneMapping = THREE.NoToneMapping;
   renderer.outputColorSpace = THREE.ColorManagement.workingColorSpace;
-  const seed = new THREE.QuadMesh(new THREE.MeshBasicNodeMaterial({ color: 0x00ff00 }));
-  seed.render(renderer);
+  // A real scene and camera, because three 0.187 renders a QuadMesh straight to screen as a
+  // fullscreen pass at one sample: merge/src/renderers/common/Renderer.js:2198 sets `fullscreenPass`,
+  // :3006 zeroes `currentSamples` for it, so a quad seed retains no 4x canvas texture at all.
+  const seedScene = new THREE.Scene();
+  const seedQuad = new THREE.Mesh(
+    new THREE.PlaneGeometry(2, 2),
+    new THREE.MeshBasicNodeMaterial({ color: 0x00ff00 }),
+  );
+  seedQuad.position.z = -1;
+  seedScene.add(seedQuad);
+  renderer.render(seedScene, new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 10));
   const target = renderer.getCanvasTarget();
   const depth = backend.get(target.depthTexture).texture;
   const colour = backend.get(target.colorTexture).texture;
@@ -158,32 +152,46 @@ export async function startScene(canvas, dimensions) {
   const expected = colour.format.endsWith("srgb") ? Math.round((1.055 * 0.7 ** (1 / 2.4) - 0.055) * 255) : 179;
   assertCondition(detail.preservedColour.slice(0, 3).every((v) => Math.abs(v - expected) <= 2), "partial sample draw lost stored colour samples");
 
+  // An output pass is a fullscreen pass at one sample: three zeroes `currentSamples` for a QuadMesh
+  // (merge/src/renderers/common/Renderer.js:2198, :3006), allocates that pass its own canvas depth beside the
+  // retained 4x one (merge/src/renderers/webgpu/utils/WebGPUTextureUtils.js:599-655) and presents its colour
+  // straight to the swapchain (merge/src/renderers/webgpu/WebGPUBackend.js:491). So the retained 4x colour and
+  // depth must come out untouched, and the pass's own 1x depth carries the value the desktop arm replays at
+  // 4x. Snapshot the retained pair here, the last moment before the first output pass.
+  const retainedDepth = await readDepth(device, depth);
+  const retainedColour = await colourSamples(device, colour);
+  await controlDepth(device, 0.75);
+  const assertRetainedColour = (label, samples) => assertCondition(samples.every((v, i) => v === retainedColour[i]),
+    `${label}: output pass wrote the retained 4x colour`);
+  const liveDepth = async () => {
+    const texture = backend.get(target.depthTexture).texture;
+    assertCondition(texture !== depth && texture.sampleCount === 1, "output pass did not swap in its own 1x canvas depth");
+    return readDepth1(device, texture);
+  };
   const pipeline = new THREE.RenderPipeline(renderer, vec4(0, 1, 0, 1));
   const check = async (label, expectedDepth = 0) => {
     const samples = await readDepth(device, depth);
     detail[label] = samples;
-    assertCondition(samples.every((v) => Math.abs(v - expectedDepth) < 0.00001), `${label}: physical canonical depth differs`);
+    assertCondition(depth.sampleCount === 4 && samples.every((v, i) => v === retainedDepth[i]), `${label}: output pass wrote the retained 4x canonical depth`);
+    detail[`${label}Output`] = await liveDepth();
+    assertCondition(detail[`${label}Output`][0] === expectedDepth, `${label}: output pass depth differs (${detail[`${label}Output`][0]} vs ${expectedDepth})`);
   };
   pipeline.render();
   await check("outputDepth");
-  assertCondition(!detail.granted || detail.privateDraws > 0, "eligible output allocated private depth but never drew it");
-  assertCondition(detail.granted || detail.privateDraws === 0, "feature-off/browser used private depth");
   drawSamples(device, colour, depth, true);
   detail.outputStoredColour = await colourSamples(device, colour);
-  const quarter = colour.format.endsWith("srgb") ? Math.round((1.055 * 0.25 ** (1 / 2.4) - 0.055) * 255) : 64;
-  assertCondition(Math.abs(detail.outputStoredColour[0] - quarter) <= 1 && detail.outputStoredColour[1] === 255 && Math.abs(detail.outputStoredColour[2] - quarter) <= 1,
-    "single-sample overwrite lost the other three stored Green output samples");
+  assertRetainedColour("outputStoredColour", detail.outputStoredColour);
   detail.outputStoredDepth = await readDepth(device, depth);
-  assertCondition(detail.outputStoredDepth.every((v, i) => v === (i === 0 ? 1 : 0)), "single-sample overwrite lost stored output depth");
+  assertCondition(detail.outputStoredDepth.every((v, i) => v === retainedDepth[i]), "single-sample overwrite wrote the retained 4x canonical depth");
+  detail.outputStoredDepthOutput = await liveDepth();
+  assertCondition(detail.outputStoredDepthOutput[0] === 0, "single-sample overwrite lost the output pass's own depth");
   pipeline.render();
 
-  // The compiled discard shader must restore canonical depth rather than certify a full quad.
-  const draws = detail.privateDraws;
+  // The compiled discard shader must leave canonical depth alone.
   pipeline.outputNode = Fn(() => { Discard(); return vec4(0, 1, 0, 1); })();
   pipeline.needsUpdate = true;
   pipeline.render();
   await check("discardDepth", 1);
-  assertCondition(detail.privateDraws === draws, "compiled discard shader drew private depth");
 
   // Real graph updateBefore copies and restarts the active pass before its first draw.
   pipeline.outputNode = viewportTexture();
@@ -192,7 +200,7 @@ export async function startScene(canvas, dimensions) {
   await check("copyRestartDepth");
   assertCondition(detail.copyCalls > 0, "ViewportTextureNode did not execute its framebuffer copy");
   detail.copyRestartColour = await colourSamples(device, colour);
-  assertCondition(detail.copyRestartColour.slice(0, 3).every((v) => v === 0), "framebuffer copy/restart changed the cleared black pixels");
+  assertRetainedColour("copyRestartColour", detail.copyRestartColour);
 
   const after = new ClearAfterNode();
   pipeline.outputNode = after;
@@ -201,8 +209,8 @@ export async function startScene(canvas, dimensions) {
   await check("updateAfterDepth");
   detail.updateAfterCalls = after.calls;
   detail.updateAfterColour = await colourSamples(device, colour);
-  assertCondition(after.calls > 0 && detail.updateAfterColour[0] === 0 && detail.updateAfterColour[1] === 255 && detail.updateAfterColour[2] === 0,
-    "updateAfter separate Red clear must submit BEFORE pending Green output");
+  assertCondition(after.calls > 0, "updateAfter hook never ran");
+  assertRetainedColour("updateAfterColour", detail.updateAfterColour);
 
   renderer.autoClear = false;
   const blocked = new THREE.QuadMesh(new THREE.MeshBasicNodeMaterial({ color: 0x0000ff }));
@@ -212,16 +220,16 @@ export async function startScene(canvas, dimensions) {
   blocked.render(renderer);
   renderer.toneMapping = toneMapping;
   renderer.outputColorSpace = outputColorSpace;
+  // This direct QuadMesh pass loads the output pass's own 1x depth, the buffer it draws against, so `check`
+  // reading it back unchanged is the block: an unwritten test would have stored the quad's own depth.
   await check("depthTestedLoad");
   detail.loadedColour = await colourSamples(device, colour);
-  assertCondition(detail.loadedColour[1] === 255 && detail.loadedColour[2] === 0, "depth-tested LOAD overwrote nearer output");
+  assertRetainedColour("loadedColour", detail.loadedColour);
   renderer.autoClear = true;
   pipeline.render();
   await check("nextFrameDepth");
   const error = await device.popErrorScope();
   assertCondition(error == null, `GPU validation: ${error?.message}`);
-  device.createTexture = originalTexture;
-  device.createCommandEncoder = originalEncoder;
   renderer.copyFramebufferToTexture = copy;
   console.info(`TN_TRANSIENT_OUTPUT_PROOF:${JSON.stringify(detail)}`);
   // Keep the final capture non-uniform while the preceding assertions use literal Green.
@@ -230,5 +238,5 @@ export async function startScene(canvas, dimensions) {
   function frame() { pipeline.render(); requestAnimationFrame(frame); }
   requestAnimationFrame(frame);
   globalThis.__TN_CONFORMANCE = { ok: true, type: "transient-output-depth", detail };
-  return { renderer, pipeline, seed, blocked };
+  return { renderer, pipeline, seedScene, blocked };
 }

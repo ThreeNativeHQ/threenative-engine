@@ -1,17 +1,17 @@
 import { HalfFloatType, LinearFilter, RenderTarget, Vector2 } from "three";
 import { Fn, Loop, float, nodeObject, texture, uniform, uv, vec2, vec3, vec4 } from "three/tsl";
 import {
-  type Node,
+  Node,
   type NodeBuilder,
   type NodeFrame,
   NodeMaterial,
   NodeUpdateType,
   QuadMesh,
   RendererUtils,
-  TempNode,
+  type TextureNode,
 } from "three/webgpu";
 
-type ColourTexture = ReturnType<typeof texture>;
+type ColourTexture = TextureNode;
 
 /** The look: Scene.cpp defaults. Stage 1 is the tightest, stage 6 the widest. */
 const unrealBloomSettings = {
@@ -95,7 +95,7 @@ interface IStage {
 }
 
 /** Owns scratch targets only. Never draws the world or installs another output transform. */
-export class UnrealBloomNode extends TempNode<"vec3"> {
+export class UnrealBloomNode extends Node<"vec3"> {
   static get type(): string {
     return "UnrealBloomNode";
   }
@@ -103,7 +103,7 @@ export class UnrealBloomNode extends TempNode<"vec3"> {
   static readonly schedule = bloomSchedule;
   readonly input: ColourTexture;
   readonly #size = new Vector2();
-  readonly #quad = new QuadMesh();
+  readonly #quad: QuadMesh;
   readonly #downMaterials: NodeMaterial[] = [];
   readonly #downTargets: RenderTarget[] = [];
   readonly #downTextures: ColourTexture[] = [];
@@ -142,6 +142,8 @@ export class UnrealBloomNode extends TempNode<"vec3"> {
       })();
       this.#downMaterials.push(material);
     }
+    // Three 0.187's QuadMesh takes its material in the constructor; each pass replaces it before drawing.
+    this.#quad = new QuadMesh(this.#downMaterials[0] as NodeMaterial);
     // Stage 1 is Bloom1 (tightest, level 1); stage 6 is Bloom6 (widest, level 6). Unreal runs them
     // widest first, each adding the one before it.
     const { sizes, tints, intensity, gaussianIntensity } = unrealBloomSettings;

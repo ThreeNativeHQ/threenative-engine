@@ -1,0 +1,35 @@
+{
+  "name": "screen-uv",
+  "threeVersion": "0.187.0",
+  "adaptedFrom": "original — screenUV in a mesh material (three r185 ScreenNode.js): fragment coordinate over the drawing-buffer size, flipped in x as ReflectorNode samples it",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "camera",
+      "kind": "numbers",
+      "path": "projectionMatrix.elements",
+      "value": "n:3ff9bbecddd39c58,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:400127f33e8d12e5,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:bff0083340520083,n:bff0000000000000,n:0000000000000000,n:0000000000000000,n:bfc9a02900419a02,n:0000000000000000",
+      "decimal": "1.608380190382169, 0, 0, 0, 0, 2.1445069205095586, 0, 0, 0, 0, -1.002002002002002, -1, 0, 0, -0.20020020020020018, 0"
+    },
+    {
+      "index": 1,
+      "id": "scene",
+      "kind": "pixels",
+      "value": "s:0ae201478bdb150d0c58fb48c3ef2e6239ab51bf388839dab619aa890a089834",
+      "decimal": "0ae201478bdb150d0c58fb48c3ef2e6239ab51bf388839dab619aa890a089834"
+    }
+  ],
+  "render": {
+    "png": "screen-uv.png",
+    "pngSha256": "0ae201478bdb150d0c58fb48c3ef2e6239ab51bf388839dab619aa890a089834",
+    "width": 320,
+    "height": 240,
+    "adapter": {
+      "architecture": "turing",
+      "description": "",
+      "device": "",
+      "vendor": "nvidia"
+    }
+  }
+}
