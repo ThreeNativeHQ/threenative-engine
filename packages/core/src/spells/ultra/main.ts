@@ -15,6 +15,7 @@ import {
 } from "three";
 import { Q } from "./engine/quality.js";
 import { Casts, type ICast, type ISpell } from "./spells/cast.js";
+import { FluidVolume } from "./vfx/FluidVolume.js";
 import { FxTarget } from "./vfx/FxTarget.js";
 import { type IParticleGround, Particles } from "./vfx/Particles.js";
 import { Volumes } from "./vfx/Volumes.js";
@@ -126,7 +127,16 @@ export function createFx(o: IFxOptions) {
     trails: o.trails ?? NULL_TRAILS,
     volumes,
     shocks: o.shocks as IShocks | undefined,
-    fluid: o.fluid ?? NULL_FLUID,
+    // the shared combustion fluid (upstream FluidVolume.get(fx)): built on first use, inside the spell's
+    // create(), so its box meshes count as that spell's objects and warmSpell compiles them
+    get fluid(): IFluid {
+      return o.fluid ?? (fx.renderer ? FluidVolume.get(fx) : NULL_FLUID);
+    },
+    fluidVolume: undefined as FluidVolume | undefined,
+    // the raw renderer the GPU systems draw their passes with (ctx.renderer.raw on ThreeNative)
+    renderer: ((o.renderer as { raw?: unknown } | undefined)?.raw ?? o.renderer) as
+      | ConstructorParameters<typeof FluidVolume>[0]["renderer"]
+      | undefined,
     rig: o.rig ?? NULL_RIG,
     lights,
     forces,
