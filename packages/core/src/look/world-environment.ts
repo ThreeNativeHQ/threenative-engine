@@ -1239,8 +1239,9 @@ export class WorldEnvironment {
           // The gathered light is incident radiance (E / pi). The surface returns it times its own
           // albedo, which the scene pass writes as the `diffuseColor` target, and a metal returns none
           // of it as diffuse. `ssgiIntensity` is the game's dial on that term.
-          // The owned engine's gather answers occlusion with a constant 1 (GTAO is its own stage): nothing to denoise.
-          const occlusion = wasmEngine ? gi.getAONode() : giDenoise(gi.getAONode());
+          // Both engines answer the occlusion from their own gather, and both are denoised: the gather traces a few
+          // rays a pixel, so an undenoised occlusion reads as a speckle rather than a shadowed corner.
+          const occlusion = giDenoise(gi.getAONode());
           const indirect = giDenoise(gi.getGINode());
           if (options.denoiseEnabled && options.ssgiDenoiseRadius !== undefined)
             (indirect as typeof indirect & { radius: { value: number } }).radius.value =
