@@ -45,6 +45,8 @@ test("spends the settling pass after the start scene enters, not on the first li
       loop.settleNow(steps);
     },
     tick: loop.tick,
+    // The settle path never steps on demand; a stepping playtest would.
+    fixedStep: () => 0,
     step: 1 / 60,
     seed: null,
     observations: { contribute: () => () => undefined, contributions: () => [] },
@@ -173,6 +175,8 @@ function stubRuntime(
     },
     _setClockMode: (mode) => loop._setClockMode(mode),
     tick: loop.tick,
+    // The settle path never steps on demand; a stepping playtest would.
+    fixedStep: () => 0,
     step: 1 / 60,
     seed: null,
     observations: { contribute: () => () => undefined, contributions: () => [] },

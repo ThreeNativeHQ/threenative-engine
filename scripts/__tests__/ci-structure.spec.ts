@@ -541,18 +541,6 @@ function triggerPaths(source: string): readonly string[] {
   return entries;
 }
 
-function jobSections(source: string): readonly [string, string][] {
-  const jobsIndex = source.indexOf("\njobs:\n");
-  if (jobsIndex < 0) throw new Error("CI workflow did not include a jobs mapping.");
-  const jobs = source.slice(jobsIndex);
-  const matches = [...jobs.matchAll(/^ {2}([A-Za-z0-9_-]+):\n/gm)];
-  return matches.map((match, index) => {
-    const name = match[1];
-    if (name === undefined) throw new Error("CI job heading did not include a name.");
-    return [name, jobs.slice(match.index, matches[index + 1]?.index ?? jobs.length)];
-  });
-}
-
 function requiredJob(source: string, name: string): string {
   const section = jobSections(source).find(([job]) => job === name)?.[1];
   if (section === undefined) throw new Error(`CI job ${name} was not found.`);
