@@ -42,6 +42,8 @@ describe("summarizeBoards", () => {
     expect(s.fullBoardMachineMedianMin).toBe(100);
     expect(s.machineMinPerWeek).toBe(100);
     expect(s.boardGreenFirstPct).toBe(100);
+    // PRD-480 AC-2: the android leg queued 10 min, every filler leg and `t` started at once.
+    expect(s.fullBoardQueueSumMedianMin).toBe(10);
   });
 
   it("keeps a thin lane out of the board numbers and in the weekly minutes", () => {
@@ -58,6 +60,7 @@ describe("summarizeBoards", () => {
     });
     expect(s.fullBoards).toBe(0);
     expect(s.fullBoardWallMedianMin).toBeNull();
+    expect(s.fullBoardQueueSumMedianMin).toBeNull();
     expect(s.boardGreenFirstPct).toBeNull();
     expect(s.machineMinPerWeek).toBe(5);
   });
