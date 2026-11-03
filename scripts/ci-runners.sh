@@ -179,7 +179,7 @@ free_gb_or_floor() {
 # containers a killed loop left behind. Never a tagged image in use, never a running container.
 prune() {
   need docker
-  docker info >/dev/null 2>&1 || fail 2 "docker is not usable without sudo; add $USER to the docker group and log in again"
+  docker info >/dev/null 2>&1 || fail 2 "docker is not usable without sudo; add ${USER:-$(id -un)} to the docker group and log in again"
   local before after
   # The two numbers below are the report, not a decision: a host whose `df` fails still prunes.
   before="$(free_gb "$(disk_path)")" || before="?"
@@ -479,7 +479,7 @@ install() {
   need docker
   need gh
   need git
-  docker info >/dev/null 2>&1 || fail 2 "docker is not usable without sudo; add $USER to the docker group and log in again"
+  docker info >/dev/null 2>&1 || fail 2 "docker is not usable without sudo; add ${USER:-$(id -un)} to the docker group and log in again"
   gh auth status >/dev/null 2>&1 || fail 2 "gh is not logged in; run 'gh auth login' first"
   load_config
   local branch root worktree
