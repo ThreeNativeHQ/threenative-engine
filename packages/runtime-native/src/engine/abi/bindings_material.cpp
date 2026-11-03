@@ -719,7 +719,10 @@ void registerTextureFields(ClassBinding& b, const char* cls) {
     };
     b.getters["version"] = [](void* self) { return Value::of(double(as<Texture>(self)->version())); };
     // three's Texture.dispose(): the renderer frees the GPU copy; the texture stays usable and uploads again.
-    b.methods["dispose"] = [](void* self, const Args&, Store&) { as<Texture>(self)->needsUpdate(); return Value{}; };
+    b.methods["dispose"] = [](void* self, const Args&, Store&) { as<Texture>(self)->dispose(); return Value{}; };
+    // three's Texture extends EventDispatcher and dispatches `dispose`.
+    registerEventBindings(b, [](void* self) -> EventDispatcher* { return static_cast<EventDispatcher*>(as<Texture>(self)); },
+                          {"dispose"});
     b.setters["needsUpdate"] = [](void* self, const Value& v) {
         if (flag(v)) as<Texture>(self)->needsUpdate();
     };
@@ -1010,6 +1013,10 @@ void registerTextureBindings(Registry& classes) {
         as<RenderTarget>(self)->dispose();
         return Value{};
     };
+    // three's RenderTarget extends EventDispatcher and dispatches `dispose`.
+    registerEventBindings(
+        target, [](void* self) -> EventDispatcher* { return static_cast<EventDispatcher*>(as<RenderTarget>(self)); },
+        {"dispose"});
     // three's CanvasTexture: the canvas's RGBA pixels as a DataTexture with Texture's own defaults
     // (flipped rows, linear filters, a generated mip chain). Each back end reads the canvas
     // (getImageData) and passes (pixels, width, height, mapping, wrapS, wrapT, magFilter, minFilter).

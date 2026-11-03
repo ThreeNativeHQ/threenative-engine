@@ -4,6 +4,7 @@
 // into and a material samples. This layer holds only that state; the renderer keeps what it builds
 // for the target in `gpu` (renderer/render_target_pass.h), so the bindings never depend on it.
 
+#include "engine/scene/event.h"
 #include "engine/scene/texture.h"
 
 #include <algorithm>
@@ -12,7 +13,7 @@
 
 namespace tn::engine {
 
-class RenderTarget : public std::enable_shared_from_this<RenderTarget> {
+class RenderTarget : public std::enable_shared_from_this<RenderTarget>, public EventDispatcher {
 public:
     /** `type` is three's texture type constant (UnsignedByteType, HalfFloatType, FloatType). */
     static std::shared_ptr<RenderTarget> make(uint32_t width, uint32_t height, uint16_t type) {
@@ -36,8 +37,16 @@ public:
             depthTexture->width = width; depthTexture->height = height; depthTexture->needsUpdate();
         }
     }
-    /** three's dispose: the GPU state goes; the target can render again and rebuilds it. */
-    void dispose() { gpu.reset(); }
+    /**
+     * three's dispose: the GPU state goes, the target can render again and rebuilds it, and `dispose`
+     * is dispatched on the target (then its texture's own `dispose`, as three does).
+     */
+    void dispose() {
+        gpu.reset();
+        Event event{"dispose"};
+        dispatchEvent(event);
+        if (texture) texture->dispose();
+    }
 
     uint32_t width = 1, height = 1;
     std::shared_ptr<Texture> depthTexture;

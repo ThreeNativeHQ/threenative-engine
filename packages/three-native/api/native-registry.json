@@ -807,6 +807,7 @@
       "constructor": true,
       "methods": [
         "__mergeFrom",
+        "addEventListener",
         "addGroup",
         "applyMatrix4",
         "center",
@@ -816,11 +817,14 @@
         "computeBoundingSphere",
         "computeVertexNormals",
         "deleteAttribute",
+        "dispatchEvent",
         "dispose",
         "getAttribute",
         "getIndex",
         "hasAttribute",
+        "hasEventListener",
         "normalizeNormals",
+        "removeEventListener",
         "rotateX",
         "rotateY",
         "rotateZ",
@@ -880,7 +884,7 @@
         "morphAttributes.position"
       ],
       "callbacks": [],
-      "events": [],
+      "events": ["dispose"],
       "fixedMembers": [],
       "fields": {}
     },
@@ -940,6 +944,7 @@
       "constructor": true,
       "methods": [
         "__mergeFrom",
+        "addEventListener",
         "addGroup",
         "applyMatrix4",
         "center",
@@ -949,11 +954,14 @@
         "computeBoundingSphere",
         "computeVertexNormals",
         "deleteAttribute",
+        "dispatchEvent",
         "dispose",
         "getAttribute",
         "getIndex",
         "hasAttribute",
+        "hasEventListener",
         "normalizeNormals",
+        "removeEventListener",
         "rotateX",
         "rotateY",
         "rotateZ",
@@ -1013,7 +1021,7 @@
         "morphAttributes.position"
       ],
       "callbacks": [],
-      "events": [],
+      "events": ["dispose"],
       "fixedMembers": [],
       "fields": {}
     },
@@ -1198,7 +1206,14 @@
     },
     "CanvasTexture": {
       "constructor": true,
-      "methods": ["clone", "dispose"],
+      "methods": [
+        "addEventListener",
+        "clone",
+        "dispatchEvent",
+        "dispose",
+        "hasEventListener",
+        "removeEventListener"
+      ],
       "getters": [
         "anisotropy",
         "center.x",
@@ -1248,7 +1263,7 @@
       ],
       "members": ["center", "offset", "repeat", "source"],
       "callbacks": [],
-      "events": [],
+      "events": ["dispose"],
       "fixedMembers": ["center", "offset", "repeat", "source"],
       "fields": {}
     },
@@ -1256,6 +1271,7 @@
       "constructor": true,
       "methods": [
         "__mergeFrom",
+        "addEventListener",
         "addGroup",
         "applyMatrix4",
         "center",
@@ -1265,11 +1281,14 @@
         "computeBoundingSphere",
         "computeVertexNormals",
         "deleteAttribute",
+        "dispatchEvent",
         "dispose",
         "getAttribute",
         "getIndex",
         "hasAttribute",
+        "hasEventListener",
         "normalizeNormals",
+        "removeEventListener",
         "rotateX",
         "rotateY",
         "rotateZ",
@@ -1329,7 +1348,7 @@
         "morphAttributes.position"
       ],
       "callbacks": [],
-      "events": [],
+      "events": ["dispose"],
       "fixedMembers": [],
       "fields": {}
     },
@@ -1360,6 +1379,7 @@
       "constructor": true,
       "methods": [
         "__mergeFrom",
+        "addEventListener",
         "addGroup",
         "applyMatrix4",
         "center",
@@ -1369,11 +1389,14 @@
         "computeBoundingSphere",
         "computeVertexNormals",
         "deleteAttribute",
+        "dispatchEvent",
         "dispose",
         "getAttribute",
         "getIndex",
         "hasAttribute",
+        "hasEventListener",
         "normalizeNormals",
+        "removeEventListener",
         "rotateX",
         "rotateY",
         "rotateZ",
@@ -1433,7 +1456,7 @@
         "morphAttributes.position"
       ],
       "callbacks": [],
-      "events": [],
+      "events": ["dispose"],
       "fixedMembers": [],
       "fields": {}
     },
@@ -1485,6 +1508,7 @@
       "constructor": true,
       "methods": [
         "__mergeFrom",
+        "addEventListener",
         "addGroup",
         "applyMatrix4",
         "center",
@@ -1494,11 +1518,14 @@
         "computeBoundingSphere",
         "computeVertexNormals",
         "deleteAttribute",
+        "dispatchEvent",
         "dispose",
         "getAttribute",
         "getIndex",
         "hasAttribute",
+        "hasEventListener",
         "normalizeNormals",
+        "removeEventListener",
         "rotateX",
         "rotateY",
         "rotateZ",
@@ -1558,7 +1585,7 @@
         "morphAttributes.position"
       ],
       "callbacks": [],
-      "events": [],
+      "events": ["dispose"],
       "fixedMembers": [],
       "fields": {}
     },
@@ -1566,6 +1593,7 @@
       "constructor": true,
       "methods": [
         "__mergeFrom",
+        "addEventListener",
         "addGroup",
         "applyMatrix4",
         "center",
@@ -1575,11 +1603,14 @@
         "computeBoundingSphere",
         "computeVertexNormals",
         "deleteAttribute",
+        "dispatchEvent",
         "dispose",
         "getAttribute",
         "getIndex",
         "hasAttribute",
+        "hasEventListener",
         "normalizeNormals",
+        "removeEventListener",
         "rotateX",
         "rotateY",
         "rotateZ",
@@ -1639,13 +1670,20 @@
         "morphAttributes.position"
       ],
       "callbacks": [],
-      "events": [],
+      "events": ["dispose"],
       "fixedMembers": [],
       "fields": {}
     },
     "Data3DTexture": {
       "constructor": true,
-      "methods": ["clone", "dispose"],
+      "methods": [
+        "addEventListener",
+        "clone",
+        "dispatchEvent",
+        "dispose",
+        "hasEventListener",
+        "removeEventListener"
+      ],
       "getters": [
         "anisotropy",
         "center.x",
@@ -1697,13 +1735,20 @@
       ],
       "members": ["center", "offset", "repeat", "source"],
       "callbacks": [],
-      "events": [],
+      "events": ["dispose"],
       "fixedMembers": ["center", "offset", "repeat", "source"],
       "fields": {}
     },
     "DataArrayTexture": {
       "constructor": true,
-      "methods": ["clone", "dispose"],
+      "methods": [
+        "addEventListener",
+        "clone",
+        "dispatchEvent",
+        "dispose",
+        "hasEventListener",
+        "removeEventListener"
+      ],
       "getters": [
         "anisotropy",
         "center.x",
@@ -1753,13 +1798,20 @@
       ],
       "members": ["center", "offset", "repeat", "source"],
       "callbacks": [],
-      "events": [],
+      "events": ["dispose"],
       "fixedMembers": ["center", "offset", "repeat", "source"],
       "fields": {}
     },
     "DataTexture": {
       "constructor": true,
-      "methods": ["clone", "dispose"],
+      "methods": [
+        "addEventListener",
+        "clone",
+        "dispatchEvent",
+        "dispose",
+        "hasEventListener",
+        "removeEventListener"
+      ],
       "getters": [
         "anisotropy",
         "center.x",
@@ -1809,13 +1861,20 @@
       ],
       "members": ["center", "offset", "repeat", "source"],
       "callbacks": [],
-      "events": [],
+      "events": ["dispose"],
       "fixedMembers": ["center", "offset", "repeat", "source"],
       "fields": {}
     },
     "DepthTexture": {
       "constructor": true,
-      "methods": ["clone", "dispose"],
+      "methods": [
+        "addEventListener",
+        "clone",
+        "dispatchEvent",
+        "dispose",
+        "hasEventListener",
+        "removeEventListener"
+      ],
       "getters": [
         "anisotropy",
         "center.x",
@@ -1864,7 +1923,7 @@
       ],
       "members": ["center", "offset", "repeat", "source"],
       "callbacks": [],
-      "events": [],
+      "events": ["dispose"],
       "fixedMembers": ["center", "offset", "repeat", "source"],
       "fields": {}
     },
@@ -2095,6 +2154,7 @@
       "constructor": true,
       "methods": [
         "__mergeFrom",
+        "addEventListener",
         "addGroup",
         "applyMatrix4",
         "center",
@@ -2104,11 +2164,14 @@
         "computeBoundingSphere",
         "computeVertexNormals",
         "deleteAttribute",
+        "dispatchEvent",
         "dispose",
         "getAttribute",
         "getIndex",
         "hasAttribute",
+        "hasEventListener",
         "normalizeNormals",
+        "removeEventListener",
         "rotateX",
         "rotateY",
         "rotateZ",
@@ -2168,7 +2231,7 @@
         "morphAttributes.position"
       ],
       "callbacks": [],
-      "events": [],
+      "events": ["dispose"],
       "fixedMembers": [],
       "fields": {}
     },
@@ -2198,6 +2261,7 @@
       "constructor": true,
       "methods": [
         "__mergeFrom",
+        "addEventListener",
         "addGroup",
         "applyMatrix4",
         "center",
@@ -2207,11 +2271,14 @@
         "computeBoundingSphere",
         "computeVertexNormals",
         "deleteAttribute",
+        "dispatchEvent",
         "dispose",
         "getAttribute",
         "getIndex",
         "hasAttribute",
+        "hasEventListener",
         "normalizeNormals",
+        "removeEventListener",
         "rotateX",
         "rotateY",
         "rotateZ",
@@ -2271,7 +2338,7 @@
         "morphAttributes.position"
       ],
       "callbacks": [],
-      "events": [],
+      "events": ["dispose"],
       "fixedMembers": [],
       "fields": {}
     },
@@ -2758,6 +2825,7 @@
       "constructor": true,
       "methods": [
         "__mergeFrom",
+        "addEventListener",
         "addGroup",
         "applyMatrix4",
         "center",
@@ -2767,11 +2835,14 @@
         "computeBoundingSphere",
         "computeVertexNormals",
         "deleteAttribute",
+        "dispatchEvent",
         "dispose",
         "getAttribute",
         "getIndex",
         "hasAttribute",
+        "hasEventListener",
         "normalizeNormals",
+        "removeEventListener",
         "rotateX",
         "rotateY",
         "rotateZ",
@@ -2831,7 +2902,7 @@
         "morphAttributes.position"
       ],
       "callbacks": [],
-      "events": [],
+      "events": ["dispose"],
       "fixedMembers": [],
       "fields": {}
     },
@@ -2892,6 +2963,7 @@
       "constructor": true,
       "methods": [
         "__mergeFrom",
+        "addEventListener",
         "addGroup",
         "applyMatrix4",
         "center",
@@ -2901,11 +2973,14 @@
         "computeBoundingSphere",
         "computeVertexNormals",
         "deleteAttribute",
+        "dispatchEvent",
         "dispose",
         "getAttribute",
         "getIndex",
         "hasAttribute",
+        "hasEventListener",
         "normalizeNormals",
+        "removeEventListener",
         "rotateX",
         "rotateY",
         "rotateZ",
@@ -2967,7 +3042,7 @@
         "morphAttributes.position"
       ],
       "callbacks": [],
-      "events": [],
+      "events": ["dispose"],
       "fixedMembers": [],
       "fields": {}
     },
@@ -3468,6 +3543,7 @@
       "constructor": true,
       "methods": [
         "__mergeFrom",
+        "addEventListener",
         "addGroup",
         "applyMatrix4",
         "center",
@@ -3477,11 +3553,14 @@
         "computeBoundingSphere",
         "computeVertexNormals",
         "deleteAttribute",
+        "dispatchEvent",
         "dispose",
         "getAttribute",
         "getIndex",
         "hasAttribute",
+        "hasEventListener",
         "normalizeNormals",
+        "removeEventListener",
         "rotateX",
         "rotateY",
         "rotateZ",
@@ -3541,7 +3620,7 @@
         "morphAttributes.position"
       ],
       "callbacks": [],
-      "events": [],
+      "events": ["dispose"],
       "fixedMembers": [],
       "fields": {}
     },
@@ -5852,6 +5931,7 @@
       "constructor": true,
       "methods": [
         "__mergeFrom",
+        "addEventListener",
         "addGroup",
         "applyMatrix4",
         "center",
@@ -5861,11 +5941,14 @@
         "computeBoundingSphere",
         "computeVertexNormals",
         "deleteAttribute",
+        "dispatchEvent",
         "dispose",
         "getAttribute",
         "getIndex",
         "hasAttribute",
+        "hasEventListener",
         "normalizeNormals",
+        "removeEventListener",
         "rotateX",
         "rotateY",
         "rotateZ",
@@ -5925,7 +6008,7 @@
         "morphAttributes.position"
       ],
       "callbacks": [],
-      "events": [],
+      "events": ["dispose"],
       "fixedMembers": [],
       "fields": {}
     },
@@ -6386,6 +6469,7 @@
       "constructor": true,
       "methods": [
         "__mergeFrom",
+        "addEventListener",
         "addGroup",
         "applyMatrix4",
         "center",
@@ -6395,11 +6479,14 @@
         "computeBoundingSphere",
         "computeVertexNormals",
         "deleteAttribute",
+        "dispatchEvent",
         "dispose",
         "getAttribute",
         "getIndex",
         "hasAttribute",
+        "hasEventListener",
         "normalizeNormals",
+        "removeEventListener",
         "rotateX",
         "rotateY",
         "rotateZ",
@@ -6459,7 +6546,7 @@
         "morphAttributes.position"
       ],
       "callbacks": [],
-      "events": [],
+      "events": ["dispose"],
       "fixedMembers": [],
       "fields": {}
     },
@@ -6785,12 +6872,19 @@
     },
     "RenderTarget": {
       "constructor": true,
-      "methods": ["dispose", "setSize"],
+      "methods": [
+        "addEventListener",
+        "dispatchEvent",
+        "dispose",
+        "hasEventListener",
+        "removeEventListener",
+        "setSize"
+      ],
       "getters": ["height", "width"],
       "setters": ["depthTexture"],
       "members": ["depthTexture", "texture"],
       "callbacks": [],
-      "events": [],
+      "events": ["dispose"],
       "fixedMembers": ["texture"],
       "fields": {}
     },
@@ -6798,6 +6892,7 @@
       "constructor": true,
       "methods": [
         "__mergeFrom",
+        "addEventListener",
         "addGroup",
         "applyMatrix4",
         "center",
@@ -6807,11 +6902,14 @@
         "computeBoundingSphere",
         "computeVertexNormals",
         "deleteAttribute",
+        "dispatchEvent",
         "dispose",
         "getAttribute",
         "getIndex",
         "hasAttribute",
+        "hasEventListener",
         "normalizeNormals",
+        "removeEventListener",
         "rotateX",
         "rotateY",
         "rotateZ",
@@ -6871,7 +6969,7 @@
         "morphAttributes.position"
       ],
       "callbacks": [],
-      "events": [],
+      "events": ["dispose"],
       "fixedMembers": [],
       "fields": {}
     },
@@ -6879,6 +6977,7 @@
       "constructor": true,
       "methods": [
         "__mergeFrom",
+        "addEventListener",
         "addGroup",
         "applyMatrix4",
         "center",
@@ -6888,11 +6987,14 @@
         "computeBoundingSphere",
         "computeVertexNormals",
         "deleteAttribute",
+        "dispatchEvent",
         "dispose",
         "getAttribute",
         "getIndex",
         "hasAttribute",
+        "hasEventListener",
         "normalizeNormals",
+        "removeEventListener",
         "rotateX",
         "rotateY",
         "rotateZ",
@@ -6952,7 +7054,7 @@
         "morphAttributes.position"
       ],
       "callbacks": [],
-      "events": [],
+      "events": ["dispose"],
       "fixedMembers": [],
       "fields": {}
     },
@@ -7184,6 +7286,7 @@
       "constructor": true,
       "methods": [
         "__mergeFrom",
+        "addEventListener",
         "addGroup",
         "applyMatrix4",
         "center",
@@ -7193,11 +7296,14 @@
         "computeBoundingSphere",
         "computeVertexNormals",
         "deleteAttribute",
+        "dispatchEvent",
         "dispose",
         "getAttribute",
         "getIndex",
         "hasAttribute",
+        "hasEventListener",
         "normalizeNormals",
+        "removeEventListener",
         "rotateX",
         "rotateY",
         "rotateZ",
@@ -7257,7 +7363,7 @@
         "morphAttributes.position"
       ],
       "callbacks": [],
-      "events": [],
+      "events": ["dispose"],
       "fixedMembers": [],
       "fields": {}
     },
@@ -7646,6 +7752,7 @@
       "constructor": true,
       "methods": [
         "__mergeFrom",
+        "addEventListener",
         "addGroup",
         "applyMatrix4",
         "center",
@@ -7655,11 +7762,14 @@
         "computeBoundingSphere",
         "computeVertexNormals",
         "deleteAttribute",
+        "dispatchEvent",
         "dispose",
         "getAttribute",
         "getIndex",
         "hasAttribute",
+        "hasEventListener",
         "normalizeNormals",
+        "removeEventListener",
         "rotateX",
         "rotateY",
         "rotateZ",
@@ -7719,7 +7829,7 @@
         "morphAttributes.position"
       ],
       "callbacks": [],
-      "events": [],
+      "events": ["dispose"],
       "fixedMembers": [],
       "fields": {}
     },
@@ -8435,7 +8545,15 @@
     },
     "StorageTexture": {
       "constructor": true,
-      "methods": ["clone", "dispose", "setSize"],
+      "methods": [
+        "addEventListener",
+        "clone",
+        "dispatchEvent",
+        "dispose",
+        "hasEventListener",
+        "removeEventListener",
+        "setSize"
+      ],
       "getters": [
         "anisotropy",
         "center.x",
@@ -8487,13 +8605,20 @@
       ],
       "members": ["center", "offset", "repeat", "source"],
       "callbacks": [],
-      "events": [],
+      "events": ["dispose"],
       "fixedMembers": ["center", "offset", "repeat", "source"],
       "fields": {}
     },
     "Texture": {
       "constructor": true,
-      "methods": ["clone", "dispose"],
+      "methods": [
+        "addEventListener",
+        "clone",
+        "dispatchEvent",
+        "dispose",
+        "hasEventListener",
+        "removeEventListener"
+      ],
       "getters": [
         "anisotropy",
         "center.x",
@@ -8542,7 +8667,7 @@
       ],
       "members": ["center", "offset", "repeat", "source"],
       "callbacks": [],
-      "events": [],
+      "events": ["dispose"],
       "fixedMembers": ["center", "offset", "repeat", "source"],
       "fields": {}
     },
@@ -8550,6 +8675,7 @@
       "constructor": true,
       "methods": [
         "__mergeFrom",
+        "addEventListener",
         "addGroup",
         "applyMatrix4",
         "center",
@@ -8559,11 +8685,14 @@
         "computeBoundingSphere",
         "computeVertexNormals",
         "deleteAttribute",
+        "dispatchEvent",
         "dispose",
         "getAttribute",
         "getIndex",
         "hasAttribute",
+        "hasEventListener",
         "normalizeNormals",
+        "removeEventListener",
         "rotateX",
         "rotateY",
         "rotateZ",
@@ -8623,7 +8752,7 @@
         "morphAttributes.position"
       ],
       "callbacks": [],
-      "events": [],
+      "events": ["dispose"],
       "fixedMembers": [],
       "fields": {}
     },
@@ -8631,6 +8760,7 @@
       "constructor": true,
       "methods": [
         "__mergeFrom",
+        "addEventListener",
         "addGroup",
         "applyMatrix4",
         "center",
@@ -8640,11 +8770,14 @@
         "computeBoundingSphere",
         "computeVertexNormals",
         "deleteAttribute",
+        "dispatchEvent",
         "dispose",
         "getAttribute",
         "getIndex",
         "hasAttribute",
+        "hasEventListener",
         "normalizeNormals",
+        "removeEventListener",
         "rotateX",
         "rotateY",
         "rotateZ",
@@ -8704,7 +8837,7 @@
         "morphAttributes.position"
       ],
       "callbacks": [],
-      "events": [],
+      "events": ["dispose"],
       "fixedMembers": [],
       "fields": {}
     },
@@ -8712,6 +8845,7 @@
       "constructor": true,
       "methods": [
         "__mergeFrom",
+        "addEventListener",
         "addGroup",
         "applyMatrix4",
         "center",
@@ -8721,11 +8855,14 @@
         "computeBoundingSphere",
         "computeVertexNormals",
         "deleteAttribute",
+        "dispatchEvent",
         "dispose",
         "getAttribute",
         "getIndex",
         "hasAttribute",
+        "hasEventListener",
         "normalizeNormals",
+        "removeEventListener",
         "rotateX",
         "rotateY",
         "rotateZ",
@@ -8785,7 +8922,7 @@
         "morphAttributes.position"
       ],
       "callbacks": [],
-      "events": [],
+      "events": ["dispose"],
       "fixedMembers": [],
       "fields": {}
     },

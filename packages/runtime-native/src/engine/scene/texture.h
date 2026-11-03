@@ -19,6 +19,7 @@
 #include <utility>
 #include <vector>
 
+#include "engine/scene/event.h"
 #include "engine/foundation/math/Vector.h"
 
 namespace tn::engine {
@@ -133,7 +134,7 @@ struct TextureSource {
     std::shared_ptr<const ExternalImage> external;
 };
 
-class Texture {
+class Texture : public EventDispatcher {
 public:
     // Copies share the image source; sampler state, transforms and GPU identity stay per texture.
     const std::shared_ptr<TextureSource> imageSource = std::make_shared<TextureSource>();
@@ -183,6 +184,16 @@ public:
 
     /** three.js `texture.needsUpdate`: a GPU record rebuilds when its counter moves. */
     void needsUpdate() { ++version_; ++imageSource->version; }
+
+    /**
+     * three's `Texture.dispose()`: the renderer lets the GPU copy go and the texture uploads again on
+     * its next use, so the version moves; then `dispose` is dispatched, as three does.
+     */
+    void dispose() {
+        needsUpdate();
+        Event event{"dispose"};
+        dispatchEvent(event);
+    }
     [[nodiscard]] uint32_t version() const { return version_; }
 
     [[nodiscard]] std::string storageFormat() const {

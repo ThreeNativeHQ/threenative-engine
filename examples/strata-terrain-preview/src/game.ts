@@ -246,7 +246,7 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
       const arm =
         world === "forest" ? forestStageArm(globalThis.location?.search ?? "") : undefined;
       if (arm) {
-        this.#sky = createOutdoorSky(ctx.camera, this.#biome);
+        this.#sky = createOutdoorSky(ctx.camera, this.#biome, ctx.renderer);
         const load = ++this.#stageLoad;
         const stage = await addForestStage(ctx, ctx.camera, arm, () => this.#stageLoad === load);
         if (this.#stageLoad === load) {
@@ -260,7 +260,7 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
       [this.#scatter] = await Promise.all([loadPlacements(ctx.assets, world), horizonLoad]);
       // Prepare scenery while the scene loads; enter only attaches it.
       this.#terrain = createTerrain(this.#data, ctx.assets, this.#biome);
-      this.#sky = createOutdoorSky(ctx.camera, this.#biome);
+      this.#sky = createOutdoorSky(ctx.camera, this.#biome, ctx.renderer);
       if (world === "coastal") {
         this.#ocean = createOcean();
         this.#water = createWaterMesh(this.#ocean, this.#data);

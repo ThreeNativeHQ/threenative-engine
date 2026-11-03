@@ -3476,6 +3476,100 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "addEventListener",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "type",
+                  "type": "string",
+                  "optional": false
+                },
+                {
+                  "name": "listener",
+                  "type": "EventListener",
+                  "optional": false,
+                  "callback": "EventListener"
+                }
+              ],
+              "returns": "void"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "removeEventListener",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "type",
+                  "type": "string",
+                  "optional": false
+                },
+                {
+                  "name": "listener",
+                  "type": "EventListener",
+                  "optional": false,
+                  "callback": "EventListener"
+                }
+              ],
+              "returns": "void"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "hasEventListener",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "type",
+                  "type": "string",
+                  "optional": false
+                },
+                {
+                  "name": "listener",
+                  "type": "EventListener",
+                  "optional": false,
+                  "callback": "EventListener"
+                }
+              ],
+              "returns": "boolean"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "dispatchEvent",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "event",
+                  "type": "BaseEvent",
+                  "optional": false
+                }
+              ],
+              "returns": "void"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
         }
       ]
     },
@@ -19067,6 +19161,100 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "addEventListener",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "type",
+                  "type": "string",
+                  "optional": false
+                },
+                {
+                  "name": "listener",
+                  "type": "EventListener",
+                  "optional": false,
+                  "callback": "EventListener"
+                }
+              ],
+              "returns": "void"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "removeEventListener",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "type",
+                  "type": "string",
+                  "optional": false
+                },
+                {
+                  "name": "listener",
+                  "type": "EventListener",
+                  "optional": false,
+                  "callback": "EventListener"
+                }
+              ],
+              "returns": "void"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "hasEventListener",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "type",
+                  "type": "string",
+                  "optional": false
+                },
+                {
+                  "name": "listener",
+                  "type": "EventListener",
+                  "optional": false,
+                  "callback": "EventListener"
+                }
+              ],
+              "returns": "boolean"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "dispatchEvent",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "event",
+                  "type": "BaseEvent",
+                  "optional": false
+                }
+              ],
+              "returns": "void"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
         }
       ]
     },
@@ -21484,6 +21672,100 @@
             {
               "parameters": [],
               "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "addEventListener",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "type",
+                  "type": "string",
+                  "optional": false
+                },
+                {
+                  "name": "listener",
+                  "type": "EventListener",
+                  "optional": false,
+                  "callback": "EventListener"
+                }
+              ],
+              "returns": "void"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "removeEventListener",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "type",
+                  "type": "string",
+                  "optional": false
+                },
+                {
+                  "name": "listener",
+                  "type": "EventListener",
+                  "optional": false,
+                  "callback": "EventListener"
+                }
+              ],
+              "returns": "void"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "hasEventListener",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "type",
+                  "type": "string",
+                  "optional": false
+                },
+                {
+                  "name": "listener",
+                  "type": "EventListener",
+                  "optional": false,
+                  "callback": "EventListener"
+                }
+              ],
+              "returns": "boolean"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "dispatchEvent",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "event",
+                  "type": "BaseEvent",
+                  "optional": false
+                }
+              ],
+              "returns": "void"
             }
           ],
           "status": {

@@ -633,6 +633,11 @@ void registerBufferGeometry(ClassBinding& b) {
         as<BufferGeometry>(self)->dispose();
         return Value{Value::Kind::Undefined};
     };
+    // three's BufferGeometry extends EventDispatcher and dispatches `dispose`; a game hooks it to free
+    // whatever it derived from the geometry, which the engine cannot know about.
+    registerEventBindings(
+        b, [](void* self) -> EventDispatcher* { return static_cast<EventDispatcher*>(as<BufferGeometry>(self)); },
+        {"dispose"});
     // morphAttributes.position / .normal read back as three's arrays of the attributes themselves.
     for (const bool normals : {false, true}) {
         b.members[normals ? "morphAttributes.normal" : "morphAttributes.position"] =

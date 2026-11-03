@@ -107,7 +107,16 @@ export interface IOutdoorSky {
 }
 
 /** Shared daylight plumbing with game-owned LUT sky, clouds and surface air. */
-export function createOutdoorSky(camera: Object3D, biome?: IBiome): IOutdoorSky {
+/**
+ * `renderer` is read only to tell the two engines apart: the owned engine publishes `info.engine`,
+ * upstream three does not. It filters its own virtual shadows and refuses upstream's TSL filter
+ * nodes by name (`TN_NATIVE_UNCATALOGUED_PCFSHADOWFILTER`).
+ */
+export function createOutdoorSky(
+  camera: Object3D,
+  biome?: IBiome,
+  renderer?: { readonly info?: unknown },
+): IOutdoorSky {
   const direction = biome ? new Vector3(...biome.sun.direction) : SUN.direction;
   const sunColor = biome ? new Color(biome.sun.color) : SUN.colour;
   const rig = biome
@@ -127,7 +136,10 @@ export function createOutdoorSky(camera: Object3D, biome?: IBiome): IOutdoorSky 
   sun.name = "temperate-sun";
   sun.castShadow = true;
   sun.shadow.radius = biome?.sun.shadowRadius ?? BIOMES.forest.sun.shadowRadius;
-  if ((biome ?? BIOMES.forest).world === "forest") {
+  // engine-override: the owned engine filters its own virtual shadow maps and has no upstream TSL
+  // filter node, so the forest's filter is a three.js-path setting only.
+  const engineInfo = (renderer?.info as { engine?: unknown } | null | undefined)?.engine;
+  if (engineInfo === undefined && (biome ?? BIOMES.forest).world === "forest") {
     // The deterministic filter avoids the forest's fine screen-space rotation hatching. r186 removed
     // `PCFSoftShadowFilter` (WebGPU's `PCFSoftShadowMap` falls back to PCF), so `PCFShadowFilter` is
     // the only filter left that carries a render group to share; see `three-shared-render-group.spec.ts`.
