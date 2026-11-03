@@ -795,3 +795,11 @@ on either engine here, so no evidence ties it to the native engine. On this priv
 tower-defense loop free-runs (`fps` about 2500 and `renderSkips` about 12,000 per window), so its
 `presented` p95 is the loop's own cost and is not comparable between arms; the gate decides on cost p95,
 which is GPU-bound and passes on both.
+
+One extra run reproduces the condition the earlier tower-defense sample came from:
+`TN_TEMPLATE_ONLY=tower-defense TN_KIT_CONTRACT=0 pnpm test:templates` on the same tree, private Xvfb,
+headed WebGPU, passed 12 of 12 scenarios and `pnpm test:tone`. Its `production-performance` result is
+cost p95 10.7 ms (GPU 10.7, CPU 0.13, 14 GPU samples), 24,291 triangles and 124 draws against the
+16.7 ms, 29,000 and 340 bounds, which matches the paired native runs. The 17.53 ms sample therefore does
+not reproduce in the kit sweep either. Log:
+`~/.cache/tmp-tn/prd-goal-1102/scratch/617-look-b6/logs/b6-td-sweep.log`.
