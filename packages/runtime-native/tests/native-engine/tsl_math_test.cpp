@@ -250,6 +250,37 @@ void compute_texture_load() {
         CHECK((module.wgsl.code.find("smp_world") != std::string::npos) == sampled);
     }
 }
+// three's implicit integer conversions in a compute kernel (PRD-777): a JS number assigned into an int variable
+// (AssignNode formats the value to the variable's type), and max/min/mod of an int with a whole JS number on
+// either side, typed from the int operand as the binary operators are.
+void compute_int_literals() {
+    uint64_t serial = 0;
+    tn::abi::TslScopes scopes;
+    g::Node out, index, done;
+    CHECK(scopes.call("scope:open", nullptr, {}, out));
+    const TslArg zero = TslArg::of(g::int_(0));
+    CHECK(scopes.call("toVar", &zero, {}, index));
+    const TslArg variable = TslArg::of(index);
+    std::string error;
+    try {
+        scopes.call("assign", &variable, {TslArg::of(3.0)}, done);
+        const auto top = tn::abi::tslCall("max", &variable, {TslArg::of(2.0)}, serial);
+        const auto rest = tn::abi::tslCall("mod", &variable, {TslArg::of(2.0)}, serial);
+        const auto low = tn::abi::tslCall("min", nullptr, {TslArg::of(1.0), variable}, serial);
+        const auto sum = g::add(g::add(top, rest), low);
+        CHECK(scopes.call("scope:close", nullptr, {TslArg::of(g::float_(sum))}, out));
+    } catch (const std::exception& thrown) {
+        error = thrown.what();
+    }
+    CHECK(error.empty());
+    if (!error.empty()) std::fprintf(stderr, "compute int literals: %s\n", error.c_str());
+    Program p(Stage::Compute);
+    tsl::Build build(p);
+    const ExprId value = out ? g::lower(out, p) : kInvalid;
+    for (const auto& d : p.diagnostics()) std::fprintf(stderr, "%s %s: %s\n", d.code.c_str(), d.node.c_str(), d.reason.c_str());
+    CHECK(value != kInvalid && p.ok());
+}
 }  // namespace
 
-TN_TEST_MAIN({"math", math}, {"spell_port", spell_port}, {"compute_texture_load", compute_texture_load})
+TN_TEST_MAIN({"math", math}, {"spell_port", spell_port}, {"compute_texture_load", compute_texture_load},
+             {"compute_int_literals", compute_int_literals})

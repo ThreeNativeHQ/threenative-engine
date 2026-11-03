@@ -325,7 +325,8 @@ tn_native_engine_test(tn-native-engine-frame-gate-test tests/native-engine/frame
     native_engine_frame_gate_gpu_behind=gpu_behind_is_declined
     native_engine_frame_gate_unthrottled=unthrottled_loop_stays_bounded)
 tn_native_engine_test(tn-native-engine-tsl-math-test tests/native-engine/tsl_math_test.cpp
-    native_engine_tsl_math=math native_engine_tsl_spell_port=spell_port native_engine_tsl_compute_texture_load=compute_texture_load)
+    native_engine_tsl_math=math native_engine_tsl_spell_port=spell_port native_engine_tsl_compute_texture_load=compute_texture_load
+    native_engine_tsl_compute_int_literals=compute_int_literals)
 target_link_libraries(tn-native-engine-tsl-math-test PRIVATE tn_engine_abi)
 
 tn_native_engine_test(tn-native-engine-shader-ir-test tests/native-engine/shader_ir_test.cpp
