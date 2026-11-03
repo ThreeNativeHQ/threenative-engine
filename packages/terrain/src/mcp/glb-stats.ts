@@ -39,6 +39,11 @@ function jsonChunk(bytes: Uint8Array): IGltfJson {
   if (bytes.byteLength < 20 || view.getUint32(0, true) !== GLB_MAGIC) {
     throw new Error("glb-stats: not a GLB, the glTF binary header is missing.");
   }
+  if (view.getUint32(4, true) !== 2 || view.getUint32(8, true) !== bytes.byteLength) {
+    throw new Error(
+      "glb-stats: the GLB version is not 2 or its header length is not the file size.",
+    );
+  }
   const length = view.getUint32(12, true);
   if (view.getUint32(16, true) !== JSON_CHUNK || 20 + length > bytes.byteLength) {
     throw new Error("glb-stats: the first GLB chunk is not a complete JSON chunk.");

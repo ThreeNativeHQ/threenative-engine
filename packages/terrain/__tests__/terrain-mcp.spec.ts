@@ -473,6 +473,15 @@ describe("measureGlb", () => {
     expect(stats).toEqual({ draws: 2, instances: 0, triangles: 3 });
   });
 
+  it("fails closed on a truncated GLB or another container version (audit TERRAIN-23)", () => {
+    const glb = glbOf({ asset: { version: "2.0" }, scenes: [{ nodes: [] }] });
+    expect(() => measureGlb(glb.subarray(0, glb.length - 4))).toThrow(/header length/);
+    const v1 = glb.slice();
+    new DataView(v1.buffer).setUint32(4, 1, true);
+    expect(() => measureGlb(v1)).toThrow(/version/);
+    expect(measureGlb(glb)).toEqual({ draws: 0, instances: 0, triangles: 0 });
+  });
+
   it("fails closed on bytes that are not a GLB and on a dangling accessor", () => {
     expect(() => measureGlb(new Uint8Array(32))).toThrow(/not a GLB/);
     expect(() =>
