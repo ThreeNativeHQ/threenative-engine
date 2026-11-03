@@ -231,5 +231,25 @@ void spell_port() {
         if (loaded) CHECK(fragment(loaded).find("textureLoad(") != std::string::npos);
     }
 }
+// A compute kernel that reads a texture only with textureLoad declares no sampler: the auto pipeline layout drops an
+// unused one, and the bind group that still bound it lost the device (the particle sim's world texture, PRD-777).
+void compute_texture_load() {
+    for (const bool sampled : {false, true}) {
+        Program c{Stage::Compute};
+        const uint32_t world = c.texture2d("world");
+        const ExprId at = c.construct(Type::vec(2, Type::Scalar::I32), {c.constant(int32_t(1)), c.constant(int32_t(2))});
+        ExprId value = c.textureLoad(world, at, c.constant(int32_t(0)));
+        if (sampled) value = c.add(value, c.sampleLevel(world, c.construct(Type::vec(2), {c.constant(0.5f), c.constant(0.5f)}), c.constant(0.0f)));
+        c.load(c.var(Type::vec(4), value));
+        const StageModule module = buildStage(c, 0);
+        bool sampler = false;
+        for (const Binding& b : module.bindings) sampler = sampler || b.kind == BindingKind::Sampler;
+        std::fprintf(stderr, "compute texture (%s): sampler binding %d, smp_ in WGSL %d\n", sampled ? "sampled" : "loaded", sampler,
+                     module.wgsl.code.find("smp_world") != std::string::npos);
+        CHECK(sampler == sampled);
+        CHECK((module.wgsl.code.find("smp_world") != std::string::npos) == sampled);
+    }
 }
-TN_TEST_MAIN({"math", math}, {"spell_port", spell_port})
+}  // namespace
+
+TN_TEST_MAIN({"math", math}, {"spell_port", spell_port}, {"compute_texture_load", compute_texture_load})
