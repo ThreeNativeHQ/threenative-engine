@@ -49,6 +49,10 @@ jobs:
           node-version: 20.19.0
           cache: pnpm
           registry-url: https://registry.npmjs.org
+      # npm Trusted Publishing: `pnpm publish` hands the tarball to the npm CLI, which trades this
+      # job's OIDC token for a publish token only from npm 11.5.1. Node 20.19 bundles npm 10, which
+      # falls back to NPM_TOKEN, and that secret was rejected with E404 on 0.3.10 and 0.3.11.
+      - run: npm install -g npm@11.18.0
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
