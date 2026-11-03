@@ -2147,6 +2147,20 @@
       },
       "desktopGate": true,
       "required": true
+    },
+    {
+      "id": "material-custom-blending",
+      "title": "CustomBlending, separate alpha state and premultipliedAlpha blend modes",
+      "category": "webgpu-tsl",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/material-custom-blending.js",
+      "browserRecipe": "webgpu",
+      "tolerance": {
+        "pixelMismatchRatio": 0.04,
+        "perceptualDeltaE": 3
+      },
+      "desktopGate": false,
+      "required": false
     }
   ],
   "generatedPlaytestProofs": [

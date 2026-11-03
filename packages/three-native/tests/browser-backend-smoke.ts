@@ -76,6 +76,38 @@ check(v.x === 7, "a setter reaches the engine");
 const material = new MeshStandardMaterial();
 const mesh = new Mesh(new BoxGeometry(1, 1, 1), material);
 // A dotted getter with no setter is still a holder (rain's lightning reads geometry.drawRange.count).
+// three's CustomBlending state and premultipliedAlpha reach the engine (PRD-777: the spell port's OIT accumulation).
+{
+  const blended = new MeshBasicNodeMaterial() as unknown as Record<string, unknown>;
+  check(
+    blended.premultipliedAlpha === false && blended.blendSrc === 204 && blended.blendDstAlpha === null,
+    `three's blend defaults (premultipliedAlpha ${String(blended.premultipliedAlpha)}, blendSrc ${String(blended.blendSrc)}, blendDstAlpha ${String(blended.blendDstAlpha)})`,
+  );
+  Object.assign(blended, {
+    blending: 5, // CustomBlending
+    blendSrc: 201, // OneFactor
+    blendDst: 201,
+    blendEquation: 100, // AddEquation
+    blendSrcAlpha: 200, // ZeroFactor
+    blendDstAlpha: 205, // OneMinusSrcAlphaFactor
+    blendEquationAlpha: 102, // ReverseSubtractEquation
+    premultipliedAlpha: true,
+  });
+  check(
+    blended.blending === 5 && blended.blendSrc === 201 && blended.blendSrcAlpha === 200 &&
+      blended.blendDstAlpha === 205 && blended.blendEquationAlpha === 102 && blended.premultipliedAlpha === true,
+    "CustomBlending, its factors and premultipliedAlpha read back from the engine",
+  );
+  blended.blendDstAlpha = null;
+  check(blended.blendDstAlpha === null, "blendDstAlpha = null reads back null");
+  let refused = "";
+  try {
+    blended.blendSrc = 999;
+  } catch (error) {
+    refused = String(error);
+  }
+  check(refused.includes("blendSrc"), `an unknown blend factor is refused by name: ${refused}`);
+}
 const ranged = new BoxGeometry(1, 1, 1);
 ranged.setDrawRange(0, 0);
 check(

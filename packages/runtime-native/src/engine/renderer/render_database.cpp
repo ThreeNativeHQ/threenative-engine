@@ -296,6 +296,7 @@ std::size_t materialSignature(const Material& m) {
         mix(bits ^ (bits >> 32));
     }
     mix(static_cast<uint64_t>(m.blending));
+    mix(m.blendFactors());
     mix(m.shadowSide ? 1 + static_cast<uint64_t>(*m.shadowSide) : 0);
     // Sorted by slot name (a std::map): a renamed slot moves uniformHash, so only the bit can change here.
     for (const auto& entry : m.maps) mix(entry.second && entry.second->sampleable() ? 1 : 0);
@@ -546,6 +547,7 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
     d.twoSidedFoliage = material->twoSidedFoliage;
     d.roughDiffuse = material->roughDiffuse;
     d.blending = static_cast<uint8_t>(material->blending);
+    d.blendFactors = material->blendFactors();
     r.drawable = d.positions != nullptr;
     return r;
 }
@@ -578,6 +580,7 @@ DrawItem& RenderDatabase::refresh(const Mesh& mesh, Record& r) {
         d.twoSidedFoliage = r.material->twoSidedFoliage;
         d.roughDiffuse = r.material->roughDiffuse;
         d.blending = static_cast<uint8_t>(r.material->blending);
+        d.blendFactors = r.material->blendFactors();
         d.positionNode = r.material->positionNode;
         ++projection::detail::materialNodeCopyCount();
         r.draw->nodes = r.material->nodes;

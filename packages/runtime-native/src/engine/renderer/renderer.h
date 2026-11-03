@@ -229,7 +229,8 @@ struct DrawItem {
     bool flatShading = false;   // material.flatShading: the face normal replaces the vertex normal
     bool twoSidedFoliage = false;  // material.twoSidedFoliage: Unreal's Two Sided Foliage receiver (PRD-651)
     bool roughDiffuse = false;     // material.roughDiffuse: Unreal's Substrate rough diffuse, EON (PRD-653)
-    uint8_t blending = 1;       // material.blending: 0 NoBlending, 1 NormalBlending, 2 AdditiveBlending
+    uint8_t blending = 1;       // material.blending: three's NoBlending 0 ... CustomBlending 5
+    uint64_t blendFactors = 0;  // Material::blendFactors(): premultipliedAlpha and the custom factors
     // InstancedMesh: one mat4 (16 floats) per instance, an optional rgb per instance, and how many draw.
     BufferStore* instanceMatrices = nullptr;
     BufferStore* instanceColors = nullptr;

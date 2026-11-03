@@ -194,6 +194,7 @@ inline bool sameUniforms(const Material& a, const Material& b) {
            a.depthTest == b.depthTest && a.depthWrite == b.depthWrite && a.colorWrite == b.colorWrite && a.forceSinglePass == b.forceSinglePass &&
            a.polygonOffset == b.polygonOffset && a.polygonOffsetFactor == b.polygonOffsetFactor &&
            a.polygonOffsetUnits == b.polygonOffsetUnits &&
+           a.blending == b.blending && a.blendFactors() == b.blendFactors() &&
            a.side == b.side && a.visible == b.visible &&
            a.toneMapped == b.toneMapped && a.fog == b.fog &&
            ((a.opacity == b.opacity) & (a.alphaTest == b.alphaTest) & (a.alphaHash == b.alphaHash) & eq(a.emissive, b.emissive) &
