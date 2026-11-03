@@ -499,7 +499,9 @@ export function defineTsl(
   const node = (id: number): TslArgValue => ({ kind: "node", node: id });
   const capture = (form: string, callback: unknown, input?: unknown): number => {
     if (typeof callback !== "function") throw new TypeError(`TN_TSL ${form}: expected a callback`);
-    runtime.release(runtime.call("scope:open", null, []));
+    runtime.release(
+      runtime.call("scope:open", null, form === "Fn" ? [{ kind: "string", text: "Fn" }] : []),
+    );
     depth++;
     let returned: TslArgValue[] = [];
     try {
@@ -522,9 +524,8 @@ export function defineTsl(
     if (depth === 0) throw new TypeError(`TN_TSL ${form}: statement outside Fn`);
   };
   prototype.toVar = function (this: ITslNode) {
-    // Outside a function body there is no stack to declare a variable in (rain's fragment node names its
-    // terms this way); the expression itself is the value, read where it is used.
-    if (depth === 0) return this;
+    // Outside a function body the engine declares the variable at the top of the program (rain's fragment node
+    // names its terms this way; a Fn assigns one handed to it as an `out` argument).
     return wrap(runtime.call("toVar", this[TSL_NODE], []));
   };
   prototype.assign = function (this: ITslNode, value: unknown) {

@@ -218,9 +218,9 @@ v8::Local<v8::Object> Tsl::wrap(g::Node node) {
     return object;
 }
 
-g::Node Tsl::capture(v8::Local<v8::Function> callback, v8::Local<v8::Value> argument) {
+g::Node Tsl::capture(v8::Local<v8::Function> callback, v8::Local<v8::Value> argument, bool fn) {
     g::Node node;
-    scopes_.call("scope:open", nullptr, {}, node);
+    scopes_.call("scope:open", nullptr, fn ? std::vector<abi::TslArg>{abi::TslArg::of(std::string("Fn"))} : std::vector<abi::TslArg>{}, node);
     v8::Local<v8::Value> result;
     const auto ctx = isolate_->GetCurrentContext();
     const bool ok =
@@ -405,7 +405,7 @@ void Tsl::call(const Call& call, const v8::FunctionCallbackInfo<v8::Value>& info
                             argument = list;
                         }
                         call.GetReturnValue().Set(
-                            tsl->wrap(tsl->capture(data->Get(context, 1).ToLocalChecked().As<v8::Function>(), argument)));
+                            tsl->wrap(tsl->capture(data->Get(context, 1).ToLocalChecked().As<v8::Function>(), argument, true)));
                     } catch (const JsFailure&) {
                         // The original JS exception is still pending.
                     } catch (const std::exception& error) {
