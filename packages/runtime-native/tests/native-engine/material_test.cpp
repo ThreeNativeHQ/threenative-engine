@@ -60,13 +60,17 @@ void alphaHash() {
         if (!vs.wgsl.ok() || !fs.wgsl.ok()) continue;
         CHECK(fs.wgsl.code.find("dpdx(") != std::string::npos);
         CHECK(fs.wgsl.code.find("i_positionLocal") != std::string::npos);
+        // PRD-539 lever 7: the map reads at the renderer's view mip bias, Unreal's upscaled-view rule.
+        CHECK(fs.wgsl.code.find("textureSampleBias(t_map, smp_map,") != std::string::npos);
+        CHECK(fs.wgsl.code.find("u.f_viewMipBias") != std::string::npos);
         stagesAgree(p.fragment, vs.wgsl.code, fs.wgsl.code);
     }
     const auto depth = buildDepth(variant);
     const auto vs = buildStage(depth.vertex, 0), fs = buildStage(depth.fragment, 1);
     CHECK(vs.wgsl.ok() && fs.wgsl.ok());
     CHECK(fs.wgsl.code.find("@builtin(frag_depth)") != std::string::npos);
-    CHECK(fs.wgsl.code.find("textureSample(") != std::string::npos);
+    // The shadow pass leaves viewMipBias zero-filled: Unreal's shadow views sample at bias 0.
+    CHECK(fs.wgsl.code.find("textureSampleBias(t_map") != std::string::npos);
     CHECK(fs.wgsl.code.find("dpdx(") != std::string::npos);
     stagesAgree(depth.fragment, vs.wgsl.code, fs.wgsl.code);
     CHECK(variant.key() != VertexVariant{}.key());

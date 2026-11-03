@@ -196,7 +196,7 @@ constexpr const char* kSlotNames[] = {
     "specularIntensityMapUvTransform", "clearcoatMapUvTransform", "clearcoatRoughnessMapUvTransform",
     "clearcoatNormalMapUvTransform", "aoMapIntensity", "clearcoat", "clearcoatRoughness", "clearcoatNormalScale", "bumpScale",
     "pmremMaxMip", "pmremRotation", "screenSize", "cameraNear", "cameraFar",
-    "modelNormalMatrix", "subsurfaceColor", "shadowNoiseFrame"};
+    "modelNormalMatrix", "subsurfaceColor", "shadowNoiseFrame", "viewMipBias"};
 constexpr const char* kLightFieldNames[] = {"Color",       "Direction",        "Position",     "Distance",
                                             "Decay",       "Axis",             "ConeCos",      "PenumbraCos",
                                             "ShadowMatrix", "ShadowBias",      "ShadowNormalBias", "ShadowRadius",
@@ -1471,6 +1471,13 @@ void Renderer::resolveDepth(WGPUCommandEncoder encoder) {
     wgpuRenderPassEncoderRelease(pass);
     wgpuBindGroupRelease(group);
     wgpuBindGroupLayoutRelease(layout);
+}
+
+double Renderer::viewMipBias() const {
+    if (!temporalStatus_.active) return 0;
+    const double fraction = traa_ ? double(renderScale_) : 1.0;
+    const double bias = std::clamp(std::max(-std::max(-std::log2(fraction), 0.0) - 0.3, -2.0), -4.0, 4.0);
+    return std::ceil(bias * 128.0) / 128.0;  // 1024 steps over [-4, 4]
 }
 
 void Renderer::setRenderScale(float scale) {
@@ -3659,6 +3666,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             }
         }
         put(block, f, fs[kShadowNoiseFrame], std::array<double, 1>{shadowNoiseFrame()});
+        put(block, f, fs[kViewMipBias], std::array<double, 1>{viewMipBias()});
         put(block, f, fs[kHemisphereSky], lights.hemisphereSky);
         put(block, f, fs[kHemisphereGround], lights.hemisphereGround);
         put(block, f, fs[kHemisphereDirection], lights.hemisphereUp);  // world space: it meets normalWorld
