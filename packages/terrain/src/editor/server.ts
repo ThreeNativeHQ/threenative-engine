@@ -360,6 +360,7 @@ export function terrainEditor(options: {
   const sessionId = randomUUID();
   let origin: string | undefined;
   let url: string | undefined;
+  let exporting = false;
   const clients = new Set<ServerResponse>();
   const unsubscribe = document.subscribe((snapshot) => {
     for (const response of clients)
@@ -492,8 +493,17 @@ export function terrainEditor(options: {
                 Array.isArray(input.preparedWorld)
               )
                 throw new Error("Expected preparedWorld glTF JSON");
-              const cooker = await loadCooker(vite.config.root);
-              const cooked = await cooker.cookTerrainWorld({ preparedWorld: input.preparedWorld });
+              // ponytail: the cook still runs in this process; one at a time bounds the load.
+              // Move it into the MCP cook child (`runIsolated`) if a single cook must be killable.
+              if (exporting) throw new EditorError(409, "An export is already running");
+              exporting = true;
+              let cooked: { worldGlb: Uint8Array };
+              try {
+                const cooker = await loadCooker(vite.config.root);
+                cooked = await cooker.cookTerrainWorld({ preparedWorld: input.preparedWorld });
+              } finally {
+                exporting = false;
+              }
               if (document.snapshot().revision !== snapshot.revision)
                 throw new EditorError(409, "World changed while exporting");
               response.writeHead(200, {

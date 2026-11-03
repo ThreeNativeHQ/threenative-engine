@@ -1,4 +1,4 @@
-import { readFileSync, renameSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { createServer as createHttpServer, request } from "node:http";
 import { join } from "node:path";
 import { Terrain } from "@threenative/terrain";
@@ -527,5 +527,42 @@ describe("project terrain editor document", () => {
     const missing = await send({ baseRevision: snapshot.revision, preparedWorld: {} });
     expect(missing.status).toBe(400);
     expect((await missing.json()).error).toContain("@threenative/assets");
+  });
+
+  it("refuses a second export while one cook is running (audit TERRAIN-07)", async () => {
+    const { root, base, get } = await api();
+    const pkg = join(root, "node_modules", "@threenative", "assets");
+    mkdirSync(pkg, { recursive: true });
+    writeFileSync(
+      join(pkg, "package.json"),
+      JSON.stringify({ name: "@threenative/assets", type: "module", main: "index.js" }),
+    );
+    // The fake cook stays open until the test removes the gate file.
+    const gate = join(root, "gate");
+    writeFileSync(gate, "");
+    writeFileSync(
+      join(pkg, "index.js"),
+      `import { existsSync } from "node:fs";
+export async function cookTerrainWorld() {
+  while (existsSync(${JSON.stringify(gate)})) await new Promise((r) => setTimeout(r, 10));
+  return { worldGlb: new Uint8Array([1]) };
+}`,
+    );
+    const { revision } = await get();
+    const send = () =>
+      fetch(`${base}export`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ baseRevision: revision, preparedWorld: {} }),
+      });
+    const first = send();
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    const second = await send();
+    expect(second.status).toBe(409);
+    expect((await second.json()).error).toBe("An export is already running");
+    // The editor keeps answering while the cook runs.
+    expect((await fetch(`${base}document`)).status).toBe(200);
+    rmSync(gate);
+    expect((await first).status).toBe(200);
   });
 });
