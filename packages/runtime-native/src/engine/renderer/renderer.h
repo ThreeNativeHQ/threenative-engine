@@ -447,7 +447,7 @@ public:
     WGPUTextureView sceneColorView() const { return sceneView_; }
     /** The RGBA8 output frame a render() with no present target draws, and blitTo copies to the window. */
     WGPUTextureView outputColorView() const { return colorView_; }
-    /** The format the scene colour is drawn and read in: RGBA16Float, or RGBA32Float for a FloatType render target (a 32-bit target is never multisampled). */
+    /** The format the scene colour is drawn and read in: RGBA16Float, RGBA32Float for a FloatType render target, RG16Float/RG32Float for an RGFormat one (a 32-bit target is never multisampled). */
     void setSceneFormat(WGPUTextureFormat format);
     /** True when a blended draw into RGBA32Float is valid on this device (float32-blendable); `forceHalfFloatTargets` says no, for tests. */
     bool float32Blendable() const { return !forceHalfFloatTargets_ && wgpuDeviceHasFeature(device_, WGPUFeatureName_Float32Blendable); }

@@ -42,7 +42,10 @@ TargetGpu& gpuOf(Renderer& main, RenderTarget& target) {
             std::fprintf(stderr, "TN_NATIVE_FLOAT_TARGET_HALF: a FloatType render target is stored as half float "
                                  "because the device lacks float32-blendable\n");
         }
-        gpu->renderer->setSceneFormat(float32 ? WGPUTextureFormat_RGBA32Float : WGPUTextureFormat_RGBA16Float);
+        // three's RGFormat stores two channels; a material reads it as (r, g, 0, 1).
+        const bool rg = target.texture->format == kTextureRGFormat;
+        gpu->renderer->setSceneFormat(rg ? (float32 ? WGPUTextureFormat_RG32Float : WGPUTextureFormat_RG16Float)
+                                         : (float32 ? WGPUTextureFormat_RGBA32Float : WGPUTextureFormat_RGBA16Float));
         gpu->database = std::make_unique<RenderDatabase>();
         target.gpu = std::move(gpu);
     }
@@ -109,14 +112,16 @@ GpuStatus readRenderTarget(RenderTarget& target, uint32_t x, uint32_t y, uint32_
     const uint32_t full = target.width;
     const bool floatType = target.texture->isFloat();
     const bool stored32 = floatType && !target.halfPrecision;  // what the GPU texture holds
+    const uint32_t channels = target.texture->format == kTextureRGFormat ? 2 : 4;
     return gpu.renderer->readProbePixels(
-        [x, y, width, height, full, floatType, stored32, done = std::move(done)](GpuStatus status,
+        [x, y, width, height, full, floatType, stored32, channels, done = std::move(done)](GpuStatus status,
                                                                                 std::vector<uint8_t> bytes) {
             if (status != GpuStatus::Ok) {
                 done(status, {});
                 return;
             }
-            const uint32_t stored = stored32 ? 16 : 8, out = floatType ? 16 : 8;  // a FloatType read is always float32 rows
+            // A FloatType read is always float32 rows.
+            const uint32_t stored = (stored32 ? 4 : 2) * channels, out = (floatType ? 4 : 2) * channels;
             std::vector<uint8_t> region(std::size_t(width) * height * out);
             for (uint32_t row = 0; row < height; ++row) {
                 const uint8_t* source = bytes.data() + (std::size_t(y + row) * full + x) * stored;
@@ -125,7 +130,7 @@ GpuStatus readRenderTarget(RenderTarget& target, uint32_t x, uint32_t y, uint32_
                     std::memcpy(destination, source, std::size_t(width) * out);
                     continue;
                 }
-                for (std::size_t i = 0; i < std::size_t(width) * 4; ++i) {  // half float rows widened for a FloatType read
+                for (std::size_t i = 0; i < std::size_t(width) * channels; ++i) {  // half float rows widened for a FloatType read
                     uint16_t bits;
                     std::memcpy(&bits, source + i * 2, 2);
                     const float value = halfToFloat(bits);

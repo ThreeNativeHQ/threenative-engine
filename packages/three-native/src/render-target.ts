@@ -7,6 +7,7 @@
 
 const HALF_FLOAT_TYPE = 1016; // three's HalfFloatType
 const FLOAT_TYPE = 1015; // three's FloatType
+const RG_FORMAT = 1030; // three's RGFormat
 
 interface IRenderTargetLike {
   readonly texture: { readonly type: number };
@@ -27,9 +28,9 @@ function halfToFloat(bits: number): number {
   return bits & 0x8000 ? -magnitude : magnitude;
 }
 
-/** Bytes a pixel in the rows `read` returns: a FloatType target is RGBA32Float, any other RGBA16Float. */
-export function targetTexelBytes(type: number): number {
-  return type === FLOAT_TYPE ? 16 : 8;
+/** Bytes a pixel in the rows `read` returns: float32 channels for FloatType, else half; two for RGFormat, else four. */
+export function targetTexelBytes(type: number, format?: number): number {
+  return (type === FLOAT_TYPE ? 4 : 2) * (format === RG_FORMAT ? 2 : 4);
 }
 
 /**

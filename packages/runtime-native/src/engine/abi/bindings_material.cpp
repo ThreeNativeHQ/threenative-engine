@@ -766,7 +766,7 @@ void registerTextureFields(ClassBinding& b, const char* cls) {
         as<Texture>(self)->flipY = flag(v);
         as<Texture>(self)->needsUpdate();
     };
-    // three's `texture.type` and `format` (UnsignedByteType, HalfFloatType, FloatType; RGBAFormat): fixed
+    // three's `texture.type` and `format` (UnsignedByteType, HalfFloatType, FloatType; RGBAFormat, or RGFormat on a render target): fixed
     // by the constructor or the render target that owns the texture. Writing the value a texture already
     // has is accepted (the rain template restates them); another value is refused by name.
     b.getters["type"] = [](void* self) { return Value::of(double(as<Texture>(self)->type)); };
@@ -987,7 +987,8 @@ void registerTextureBindings(Registry& classes) {
         if (!(width >= 1) || !(height >= 1) || width > 16384 || height > 16384)
             throw Unsupported{"RenderTarget size must be 1 to 16384"};
         uint16_t type = kTextureUnsignedByteType;
-        std::optional<uint16_t> minFilter, magFilter;
+        std::optional<uint16_t> minFilter, magFilter, wrapS, wrapT;
+        uint16_t format = kTextureRGBAFormat;
         uint32_t count = 1;
         if (a.size() > 2 && a[2].kind == Value::Kind::Record)
             for (const auto& [key, value] : a[2].fields) {
@@ -1002,7 +1003,19 @@ void registerTextureBindings(Registry& classes) {
                     if (type != kTextureUnsignedByteType && type != kTextureHalfFloatType && type != kTextureFloatType)
                         throw Unsupported{"RenderTarget type must be UnsignedByteType, HalfFloatType or FloatType"};
                 } else if (key == "format") {
-                    if (number(value) != kTextureRGBAFormat) throw Unsupported{"RenderTarget format must be RGBAFormat"};
+                    format = static_cast<uint16_t>(number(value));
+                    if (format != kTextureRGBAFormat && format != kTextureRGFormat)
+                        throw Unsupported{"RenderTarget format must be RGBAFormat or RGFormat"};
+                } else if (key == "wrapS" || key == "wrapT") {
+                    const auto wrap = static_cast<uint16_t>(number(value));
+                    if (wrap != uint16_t(TextureWrap::Repeat) && wrap != uint16_t(TextureWrap::ClampToEdge) &&
+                        wrap != uint16_t(TextureWrap::MirroredRepeat))
+                        throw Unsupported{"RenderTarget " + key + " must be a wrapping constant"};
+                    (key == "wrapS" ? wrapS : wrapT) = wrap;
+                } else if (key == "generateMipmaps") {
+                    // A target holds one level; a mip chain after each draw is not built natively.
+                    if (value.kind != Value::Kind::Bool || value.flag)
+                        throw Unsupported{"RenderTarget generateMipmaps must be false natively"};
                 } else if (key == "count") {
                     // three's MRT: one colour texture per output, 8 at most (WebGPU's maxColorAttachments).
                     const double n = number(value);
@@ -1016,6 +1029,9 @@ void registerTextureBindings(Registry& classes) {
         for (const auto& texture : RenderTarget::texturesOf(*target)) {
             if (minFilter) texture->minFilter = *minFilter;
             if (magFilter) texture->magFilter = *magFilter;
+            if (wrapS) texture->wrapS = *wrapS;
+            if (wrapT) texture->wrapT = *wrapT;
+            texture->format = format;
         }
         return target;
     };
