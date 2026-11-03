@@ -110,10 +110,13 @@ describe("one contract row for a CI job", () => {
       assert: { engineCost?: object };
     };
     expect(scenario.assert.engineCost).toBeDefined();
+    // Snow left the pinned list with PRD-620 and declares its own bounds, so it writes a row now.
+    expect(await writeKitContractRow("engine-cost", "snow", path.join(root, "snow"))).toBeDefined();
+    // Runner still pins engine "threejs", so it has no web engine counters to bound.
     expect(
-      await writeKitContractRow("engine-cost", "snow", path.join(root, "snow")),
+      await writeKitContractRow("engine-cost", "runner", path.join(root, "runner")),
     ).toBeUndefined();
-    await expect(readdir(path.join(root, "snow"))).rejects.toThrow();
+    await expect(readdir(path.join(root, "runner"))).rejects.toThrow();
     await expect(writeKitContractRow("no-such-row", "shooter", root)).rejects.toThrow(
       /no such row/u,
     );
