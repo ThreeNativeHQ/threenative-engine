@@ -30,7 +30,10 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const RAW4 = process.env.TN_RAW4 === "1";
 // PRD-539 static-camera control: the same corpus with the camera held still.
 const STATIC_CAMERA = process.env.TN_STATIC_CAMERA === "1";
-const output = path.join(root, `artifacts/temporal-aa/motion${RAW4 ? "-raw4" : ""}${STATIC_CAMERA ? "-static" : ""}`);
+const output = path.join(
+  root,
+  `artifacts/temporal-aa/motion${RAW4 ? "-raw4" : ""}${STATIC_CAMERA ? "-static" : ""}`,
+);
 const scenario = JSON.parse(
   await readFile(
     path.join(root, "examples/abyss-framework/playtests/temporal-motion.playtest.json"),
