@@ -25,13 +25,21 @@ export {
 } from "./main.js";
 export type { ICast, ISpell, ISpellInstance, Phase } from "./spells/cast.js";
 export { default as fire } from "./spells/fire.js";
-export { U } from "./vfx/common.js";
+/** The fixed arena layout the spells and the ground field read (floor, pool, dummies, caster focus). */
+export { ARENA, U } from "./vfx/common.js";
 /**
  * CPU bake of the Ultra Elements 3D noise, curl and blackbody textures that every spell volume samples.
  * @situation the noise and blackbody textures an Ultra Elements spell needs before it first draws
  * @constraint costs about 0.6 s at 64^3 and about 5 s at 128^3 on the main thread; bake once at load
  */
 export { bakeNoise, type IBakedNoise } from "./vfx/noise.js";
+/**
+ * The Ultra Elements arena floor's response to the ground field and spell impacts (scorch, char, wet,
+ * glowing hot ground) as nodes for a game's own floor material: `color`, `roughness`, `metalness`,
+ * `emissive` from the floor's own surface at a world position.
+ * @situation a floor that shows the Fireball's scorch and hot ground cooling over seconds
+ */
+export { groundShade, type IGroundSurface } from "./scene/arenaMaterial.js";
 /**
  * The Ultra Elements GPU particle system behind `fx.particles`: a spell's kinds, emitters and field emitters.
  * @situation the flames, embers, sparks, smoke and debris an Ultra Elements spell emits as it charges, flies and hits

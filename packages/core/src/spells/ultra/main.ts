@@ -13,11 +13,15 @@ import {
   type Scene,
   type Vector3,
 } from "three";
+import { CameraRig } from "./engine/camera.js";
 import { Q } from "./engine/quality.js";
 import { Casts, type ICast, type ISpell } from "./spells/cast.js";
 import { FluidVolume } from "./vfx/FluidVolume.js";
 import { FxTarget } from "./vfx/FxTarget.js";
+import { GroundField, type IFieldRenderer } from "./vfx/GroundField.js";
 import { type IParticleGround, Particles } from "./vfx/Particles.js";
+import { TrailRibbons } from "./vfx/Ribbons.js";
+import { Shockwaves } from "./vfx/Shockwaves.js";
 import { Volumes } from "./vfx/Volumes.js";
 import {
   ARENA,
@@ -72,6 +76,11 @@ export interface IRig {
   shake(amount: number, frequency: number): void;
   punch(amount: number, seconds: number): void;
   hitstop(seconds: number): void;
+  /** main multiplies the simulation dt by this (hitstop) */
+  readonly timeScale: number;
+  /** after the game's camera update: adds the shake and FOV punch; restore() takes them back */
+  apply(camera: Camera, dt: number): void;
+  restore(camera: Camera): void;
 }
 export interface IArena {
   focus: { color: Color };
@@ -83,10 +92,8 @@ export interface IDummy {
   hit(dir: Vector3, amount: number): void;
 }
 
-const NULL_TRAILS: ITrails = { acquire: () => null };
 const NULL_GROUND: IGround = { splat() {} };
 const NULL_FLUID: IFluid = { res: 0, acquire: () => null };
-const NULL_RIG: IRig = { shake() {}, punch() {}, hitstop() {} };
 
 export interface IFxOptions {
   camera: Camera;
@@ -110,11 +117,23 @@ export interface IFxOptions {
 }
 
 // the shared world every spell gets (PLAN 2.4). Spells only touch what's in here.
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: upstream main.js's world, one function
 export function createFx(o: IFxOptions) {
   let seed = o.seed ?? 1;
   const fxTarget = new FxTarget();
   const volumes = new Volumes();
   const flashes: number[] = [];
+  // upstream main.js: GroundField, TrailRibbons, Shockwaves and CameraRig, shared by every spell.
+  // The field draws its sim passes with the raw renderer; it is built first, before any material
+  // that reads U.uGroundA/B (common.ts setGroundTexture). A game passes its own to override one.
+  const raw = (o.renderer as { raw?: unknown } | undefined)?.raw ?? o.renderer;
+  const groundField =
+    o.ground === undefined && raw !== undefined
+      ? new GroundField(raw as IFieldRenderer, Q.groundSize)
+      : undefined;
+  const trailRibbons =
+    o.trails === undefined ? new TrailRibbons({ max: 64, points: 48 }) : undefined;
+  const shockwaves = o.shocks === undefined ? new Shockwaves() : undefined;
   const fx = {
     camera: o.camera,
     scenes: { fx: fxTarget.scene },
@@ -122,11 +141,11 @@ export function createFx(o: IFxOptions) {
     Q,
     ARENA,
     arena: o.arena ?? { focus: { color: { r: 1, g: 1, b: 1 } as Color }, setFocus() {} },
-    ground: o.ground ?? NULL_GROUND,
+    ground: o.ground ?? groundField ?? NULL_GROUND,
     particles: null as unknown as Particles,
-    trails: o.trails ?? NULL_TRAILS,
+    trails: (o.trails ?? trailRibbons) as ITrails,
     volumes,
-    shocks: o.shocks as IShocks | undefined,
+    shocks: (o.shocks ?? shockwaves) as IShocks | undefined,
     // the shared combustion fluid (upstream FluidVolume.get(fx)): built on first use, inside the spell's
     // create(), so its box meshes count as that spell's objects and warmSpell compiles them
     get fluid(): IFluid {
@@ -140,7 +159,7 @@ export function createFx(o: IFxOptions) {
     renderer: ((o.renderer as { raw?: unknown } | undefined)?.raw ?? o.renderer) as
       | ConstructorParameters<typeof FluidVolume>[0]["renderer"]
       | undefined,
-    rig: o.rig ?? NULL_RIG,
+    rig: o.rig ?? (new CameraRig() as IRig),
     lights,
     forces,
     impacts,
@@ -167,6 +186,10 @@ export function createFx(o: IFxOptions) {
     casts: null as unknown as Casts,
   };
   fxTarget.scene.add(volumes.group);
+  // shared meshes go in first, so what each spell's create() adds can be told apart
+  // (upstream: trails.lines in the lines scene, trails.fx and shocks.mesh in the fx scene)
+  if (trailRibbons) fxTarget.scene.add(trailRibbons.lines, trailRibbons.fx);
+  if (shockwaves) fxTarget.scene.add(shockwaves.mesh);
   const points = Array.from({ length: o.pointLights ?? 4 }, (_, i) => {
     const l = new PointLight(0xffffff, 0, 8, 2);
     l.name = `ultra-spell-light-${i}`;
@@ -189,8 +212,10 @@ export function createFx(o: IFxOptions) {
   let simTime = 0;
   let w = 0;
   let h = 0;
-  // the CPU half of upstream's renderFrame(dt)
-  function renderFrame(dt: number): void {
+  // the CPU half of upstream's renderFrame(dt). dt: real seconds; the sim runs at the rig's time
+  // scale (hitstop), upstream's sdt
+  function renderFrame(realDt: number): void {
+    const dt = realDt * fx.rig.timeScale;
     const s = o.size();
     if (s.width !== w || s.height !== h) {
       w = s.width;
@@ -210,10 +235,13 @@ export function createFx(o: IFxOptions) {
       (sp.inst as { tick?(dt: number): void } | undefined)?.tick?.(dt);
     packWorld(dt, { maxLights: Q.maxLights, maxShadowed: Q.shadowLights });
     mirrorLights(points);
+
     buildParticles();
     particles.update(dt, simTime);
-
+    groundField?.update(dt);
+    trailRibbons?.update(dt);
     volumes.update(o.camera);
+    shockwaves?.update(dt);
     for (const sys of fx.systems) sys.update(dt, o.camera);
     fxTarget.render();
     fx.flashAmount = Math.max(0, fx.flashAmount - dt * 6);

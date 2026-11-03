@@ -20,6 +20,8 @@ import {
 import {
   bakeNoise,
   createFx,
+  groundShade,
+  ARENA as ultraArena,
   fire as ultraFire,
   U as ultraU,
 } from "@threenative/core/spells/ultra";
@@ -38,7 +40,7 @@ import {
   UnsignedByteType,
   Vector3,
 } from "three";
-import { mix, texture, uniform, uv, vec2, vec4 } from "three/tsl";
+import { float, mix, positionWorld, texture, uniform, uv, vec2, vec4 } from "three/tsl";
 import { MeshStandardNodeMaterial } from "three/webgpu";
 
 /** What the HUD shows and what a playtest reads back. */
@@ -130,6 +132,8 @@ export class Lab extends Scene<LabState> {
     // is baked once before the spell builds its materials; 64^3 is upstream's low-tier size, the
     // 128^3 high tier costs ~5 s of CPU on this path (see noise.ts).
     bakeNoise({ noiseSize: 64 });
+    // The lab's floor has no pool: upstream's arena keeps one wet (the ground field stamps it each step).
+    ultraArena.pool.half.set(0, 0);
     const ultra = createFx({
       camera,
       size: () => ({
@@ -186,6 +190,9 @@ export class Lab extends Scene<LabState> {
     let previouslyLanded = 0;
 
     return (_frameCtx: ICtx<LabState>, dt: number) => {
+      // upstream tick: the rig's shake and FOV punch go on the camera for this frame only
+      ultra.fx.rig.restore(camera);
+      ultra.fx.rig.apply(camera, dt);
       casts.update(dt);
       world.update(dt);
       ultra.renderFrame(dt);
@@ -232,10 +239,17 @@ function createFloor(
   /** The newest cast's own colour, so lightning does not scorch in fireball orange. */
   const glow = uniform(new Color(0xff6a1e));
   const cold = new Color(0x9fd8ff);
-  material.colorNode = vec4(
-    mix(mix(mix(base, burn, sample.g.mul(1.6)), glow, sample.r.mul(0.9)), cold, sample.b.mul(0.8)),
-    1,
+  const albedo = mix(
+    mix(mix(base, burn, sample.g.mul(1.6)), glow, sample.r.mul(0.9)),
+    cold,
+    sample.b.mul(0.8),
   );
+  // The Ultra Elements ground field (the ported Fireball's scorch and hot ground) over that surface.
+  const shaded = groundShade(positionWorld, { albedo, rough: float(0.85), metal: float(0) });
+  material.colorNode = vec4(shaded.color, 1);
+  material.roughnessNode = shaded.roughness;
+  material.metalnessNode = shaded.metalness;
+  material.emissiveNode = shaded.emissive;
   const floor = new Mesh(new PlaneGeometry(PATCH, PATCH), material);
   floor.rotation.x = -Math.PI / 2;
   floor.name = "spell-floor";

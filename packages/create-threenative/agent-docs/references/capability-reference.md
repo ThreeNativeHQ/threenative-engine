@@ -3538,6 +3538,16 @@ export function createFx(o: IFxOptions) { … }
 - **Use when:** an Ultra Elements spell such as the raymarched teardrop Fireball cast at a target · a volumetric fire spell drawn through the Three.js TSL node API on WebGPU
 - **Constraints:** call bakeNoise first: the volume shaders sample its noise, curl and blackbody textures
 
+### `groundShade`
+
+`function` — The Ultra Elements arena floor's response to the ground field and spell impacts (scorch, char, wet, glowing hot ground) as nodes for a game's own floor material: `color`, `roughness`, `metalness`, `emissive` from the floor's own surface at a world position.
+
+```ts
+export function groundShade(wp: V3, surface: IGroundSurface) { … }
+```
+
+- **Use when:** a floor that shows the Fireball's scorch and hot ground cooling over seconds
+
 ### `Particles`
 
 `class` — The Ultra Elements GPU particle system behind `fx.particles`: a spell's kinds, emitters and field emitters.

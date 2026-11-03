@@ -4550,6 +4550,22 @@
       "constraints": [],
       "example": "",
       "importPath": "@threenative/core/spells/ultra",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function groundShade(wp: V3, surface: IGroundSurface) { … }",
+      "situations": [
+        "a floor that shows the Fireball's scorch and hot ground cooling over seconds"
+      ],
+      "summary": "The Ultra Elements arena floor's response to the ground field and spell impacts (scorch, char, wet, glowing hot ground) as nodes for a game's own floor material: `color`, `roughness`, `metalness`, `emissive` from the floor's own surface at a world position.",
+      "supersedes": [],
+      "symbol": "groundShade"
+    },
+    {
+      "aliases": [],
+      "constraints": [],
+      "example": "",
+      "importPath": "@threenative/core/spells/ultra",
       "kind": "class",
       "overrides": [],
       "package": "@threenative/core",

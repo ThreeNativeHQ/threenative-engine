@@ -71,6 +71,7 @@ import {
   vec3,
   vec4,
   viewportDepthTexture,
+  viewportSharedTexture,
 } from "three/tsl";
 import type { Node } from "three/webgpu";
 
@@ -136,8 +137,9 @@ export const U = {
   uNoise3D: { value: placeholder3D }, // noise.js: 128^3 RGBA8 tileable (r perlin-worley fbm, gba worley f2/f4/f8)
   uCurl3D: { value: placeholder3D }, // noise.js: 64^3 RGBA8 tileable curl, rgb = curl * 0.5 + 0.5
   uBlackbody: { value: placeholder2D }, // noise.js: 256x1 RGBA16F, see blackbody() below for the mapping
-  uGroundA: { value: placeholder2D }, // GroundField: heat, char, wet, frost
-  uGroundB: { value: placeholder2D }, // GroundField: crack, acid, corruption, glow
+  // its own placeholder: GroundField moves a holder's shared texture node, so A, B and uBlackbody must not share one
+  uGroundA: { value: placeholder2D.clone() }, // GroundField: heat, char, wet, frost
+  uGroundB: { value: placeholder2D.clone() }, // GroundField: crack, acid, corruption, glow
   uGroundRect: uniform(
     new Vector4(ARENA.ground.min.x, ARENA.ground.min.y, ARENA.ground.size, 1 / ARENA.ground.size),
   ),
@@ -1135,3 +1137,35 @@ export function setMat3Rows(rows: IMat3Rows, m: Matrix3): void {
 }
 export const mulMat3Rows = (rows: IMat3Rows, v: V3): V3 =>
   vec3(dot(rows.x, v), dot(rows.y, v), dot(rows.z, v));
+
+// --- added for the GroundField, Ribbons and Shockwaves port -------------------------------------
+// GroundField ping-pongs U.uGroundA/B between two targets each step. A material's graph holds the
+// shared texture node of the texture it was built with, so the node follows the holder to its new
+// texture (one node per texture, see textureNode above). So each holder starts on its own placeholder.
+export function setGroundTexture(holder: { value: unknown }, tex: object): void {
+  const node = shared.get(holder.value as object);
+  if (node !== undefined && holder.value !== tex) {
+    shared.delete(holder.value as object);
+    (node as unknown as { value: object }).value = tex;
+    shared.set(tex, node);
+  }
+  holder.value = tex;
+}
+
+// FxTarget's composite distortion and distortion-driven chromatic aberration, for one FX layer:
+//   scene = (uScene(suv + ca).r, uScene(suv).g, uScene(suv - ca).b), suv = vUv + dist * distortion
+// Engine (see FX_BLENDING): there is no WBOIT target to resolve, so a distorting layer reads the
+// frame drawn so far (viewportSharedTexture) and adds the displaced scene minus the scene under it,
+// plus its emission, with FX_ADDITIVE into the float HDR target: layers drawn under it stay.
+// dist is upstream's screen-UV offset (GL, y up); screenUV runs y down.
+const SCENE_COLOR = {};
+export const fxOutDistort = Fn(([emit, dist0]: [V3, V2]) => {
+  const scene = textureNode(SCENE_COLOR, () => viewportSharedTexture()) as unknown as {
+    sample(uv: V2): V4;
+  };
+  const dist = vec2(dist0.x, dist0.y.negate()).mul(U.uFxParams.y);
+  const suv = screenUV.add(dist);
+  const ca = dist.mul(U.uFxParams.z.mul(0.6));
+  const col = vec3(scene.sample(suv.add(ca)).r, scene.sample(suv).g, scene.sample(suv.sub(ca)).b);
+  return vec4(col.sub(scene.sample(screenUV).rgb).add(emit), 1.0);
+});

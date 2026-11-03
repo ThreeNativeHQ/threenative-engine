@@ -65,6 +65,7 @@
         "@threenative/core/react#View": "export function View(props: IViewProps): ReactNode { … }",
         "@threenative/core/spells/ultra#bakeNoise": "export function bakeNoise( { … }",
         "@threenative/core/spells/ultra#createFx": "export function createFx(o: IFxOptions) { … }",
+        "@threenative/core/spells/ultra#groundShade": "export function groundShade(wp: V3, surface: IGroundSurface) { … }",
         "@threenative/core/spells/ultra#Particles": "export class Particles { … }",
         "@threenative/core/spells#CastPool": "export class CastPool { … }",
         "@threenative/core/spells#createAegis": "export function createAegis(world: SpellWorld, overrides: IFireSpellOverrides = { … }",
