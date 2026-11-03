@@ -531,3 +531,47 @@ mechanism is a threshold question and neither is fixed here: the batch's merged 
 member that does not cast without a per-member caster index, and the shadow pass does not consult the
 main pass's LOD selection. `maxTriangles` is unchanged, as the brief requires, and this stays an open
 engine question with the two mechanisms named.
+
+2026-11-03 AC-5 and AC-6 desktop half (lane goal-617-v8, NVIDIA RTX 2080 / nvidia turing, private
+Xvfb). Player `tn-native-engine-player-v8` built from this tree
+(`cmake --preset tn-linux -B build/tn-engine-ui -DTN_ENGINE_ONLY=ON -DTN_ENGINE_PLAYER=ON
+-DTN_ENGINE_PLAYER_UI_OVERLAY=ON -DTN_ENABLE_NATIVE_PHYSICS=ON -DTN_ENABLE_UI_OVERLAY=ON`, `-j4`).
+Each template was scaffolded from this worktree's tarballs into a scratch directory outside the repo
+(`pnpm install --ignore-scripts`) and built with `pnpm build:desktop`.
+AC-5 boot (`./tn-native-engine-player-v8 ./game.js --check-game`, headless):
+platformer `shadowMap=on:2`, tower-defense `off:1`, racing `on:2`, rts `on:2`, shooter `on:2`,
+action-rpg `on:2` — all `engine=native gameRuntime=v8 startup=passed`. rain cannot answer the
+headless check: it boots the scene and then its own first boot render asks for a render target, which
+the check refuses by name (`TN_NATIVE_RENDER_TARGET: the player has no renderer before its first
+frame`, `v8_main.cpp:767`). Its windowed desktop boot is the proof instead: `native-playtests/boot`
+passes 4/4 (elapsed changes, renderChain tier high with `stormPost`, no diagnostics) on the same
+adapter. Pins: `LEGACY_PINNED_TEMPLATES` is `["runner", "snow"]`, and runner was unpinned in the
+scratch copy only for this sweep; snow's pin stays (PRD-620), so AC-5 stays open.
+AC-6 desktop playtests (`--target desktop --executable dist-native/<name>/<name>`, counted ticks):
+racing `native-playtests/survives` pass; sailing `native-playtests/float` and `survives` pass;
+snow `native-playtests/snow-physics` and `survives` pass on its pinned legacy host, so they are not
+native-engine evidence; rain `boot` pass, `lightning` fails. Ten templates without a
+`native-playtests/` directory were run twice: their shipped `playtests/survives` is refused by the
+harness on desktop (`TN_PLAYTEST_UNSUPPORTED_ON_TARGET`: desktop evaluates no `visual` metrics), and
+a scratch `native-playtests/survives` copy with the same steps and bounds minus the `visual` block
+and the `visibility` block (desktop has no `runtimeDiagnostics` observation; both are named refusals,
+not game failures) passes for platformer, tower-defense, shooter, action-rpg and runner, and rts's
+shipped scenario needs neither and passes as-is. rain `lightning` fails at its first labelled step:
+the scenario assumes the web view reports `prefers-reduced-motion: reduce` ("the storm boots with
+flashes suppressed"), and the desktop target has no such media query, so `state.safe` boots false,
+`strikes` 1 and `status` "steady"; the `audio.thunder` cue is also unobserved (0 plays) on the
+private display, which has no audio device. The same scenario's `thunderVoices` assertion already
+fails on the legacy host and on Wasm (2026-10-16 note above). No bound was changed.
+Two engine bugs found and fixed (engine layer, `packages/runtime-native`, with CTest red-green):
+rain refused the V8 player with `TN_TSL Loop: expected 2 arguments`. three's `Loop(...params,
+callback)` takes one parameter per dimension and nests them, and `condition: "<="` runs up to and
+including the end; three's own GLSL transpiler emits that shape for rain's bloom and ripple kernels.
+The browser back end already nests it (`browser-tsl.ts`), the V8 facade demanded exactly two
+arguments and refused every condition but `<`, and the shared lowering refused a negative `start`.
+The facade now lowers one loop per parameter (opening every body, running the game's callback once
+with the whole index set, closing innermost first), answers `toVar` outside a function body with the
+expression itself as `browser-tsl.ts` does (rain's `exp(...).toVar()` in a fragment node), and the
+lowering counts `<=` as `end - start + 1` and accepts a signed start. `native_engine_abi_tsl_loop_nested`
+covers it: RED on the pre-fix lowering (`tn_tsl_call(ctx, "Loop", … 6 args)` not `TN_OK`), GREEN now,
+with `native_engine_abi_tsl_statements` still passing; `native_engine_player_imports` adds the facade
+half (a nested `<=` loop and a `toVar` outside `Fn` through the player bundle).

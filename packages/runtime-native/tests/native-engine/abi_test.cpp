@@ -1469,6 +1469,66 @@ void tsl_statements() {
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 
+// PRD-617 AC-5: three's Loop(...params, callback) takes one parameter per dimension and nests them, and
+// `condition: "<="` runs up to and including the end. three's own GLSL transpiler emits that shape for a
+// 2D kernel (rain's bloom and ripple shaders, `Loop({ start: int(-1), end: int(1), condition: "<=" },
+// { ... }, ({ i, j }) => ...)`), and the V8 facade used to refuse it with "expected 2 arguments".
+void tsl_loop_nested() {
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+    const auto number = [](double n) { tn_tsl_arg_t a{}; a.kind = TN_TSL_ARG_NUMBER; a.number = n; return a; };
+    const auto nodeArg = [](uint64_t id) { tn_tsl_arg_t a{}; a.kind = TN_TSL_ARG_NODE; a.node = id; return a; };
+    const auto open = [&] { uint64_t none = 0; return tn_tsl_call(ctx, "scope:open", nullptr, nullptr, 0, &none, &d.value); };
+    const auto close = [&](const tn_tsl_arg_t* result, uint64_t* out) {
+        return tn_tsl_call(ctx, "scope:close", nullptr, result, result ? 1 : 0, out, &d.value);
+    };
+    const tn_tsl_arg_t zero = number(0), minusOne = number(-1), one = number(1), two = number(2), inclusive = number(1);
+    uint64_t acc = 0, outerIndex = 0, innerIndex = 0, inner = 0, level = 0, outer = 0, fn = 0, done = 0;
+    CHECK(open() == TN_OK);
+    CHECK(tn_tsl_call(ctx, "float", nullptr, &zero, 1, &done, &d.value) == TN_OK);
+    CHECK(tn_tsl_call(ctx, "toVar", &done, nullptr, 0, &acc, &d.value) == TN_OK);
+    // Two open bodies: the outer loop's and the inner loop's, so a statement lands in the innermost.
+    CHECK(tn_tsl_call(ctx, "Loop:index", nullptr, nullptr, 0, &outerIndex, &d.value) == TN_OK);
+    CHECK(open() == TN_OK);
+    CHECK(tn_tsl_call(ctx, "Loop:index", nullptr, nullptr, 0, &innerIndex, &d.value) == TN_OK);
+    CHECK(open() == TN_OK);
+    CHECK(tn_tsl_call(ctx, "assign", &acc, &one, 1, &done, &d.value) == TN_OK);
+    CHECK(close(nullptr, &inner) == TN_OK);
+    // The inner loop, -1 to 1 inclusive: three iterations, counted from the inclusive end.
+    const tn_tsl_arg_t innerArgs[6] = {one, nodeArg(innerIndex), nodeArg(inner), minusOne, one, inclusive};
+    CHECK(tn_tsl_call(ctx, "Loop", nullptr, innerArgs, 6, &inner, &d.value) == TN_OK);
+    CHECK(close(nullptr, &level) == TN_OK);
+    // The outer loop, 0 to 2 exclusive: the body is that one statement.
+    const tn_tsl_arg_t outerArgs[6] = {two, nodeArg(outerIndex), nodeArg(level), zero, one, zero};
+    CHECK(tn_tsl_call(ctx, "Loop", nullptr, outerArgs, 6, &outer, &d.value) == TN_OK);
+    CHECK(close(nullptr, &fn) == TN_OK);
+
+    namespace g = tn::engine::shader::graph;
+    tn_handle_t material{};
+    CHECK(tn_construct(ctx, "MeshBasicNodeMaterial", nullptr, 0, &material, &d.value) == TN_OK);
+    CHECK(tn_tsl_set(ctx, material, "colorNode", fn, &d.value) == TN_OK);
+    const g::Node function = tn::abi::shaderNode(material, "colorNode");
+    CHECK(function && function->kind == g::Kind::Body);
+    // The body also holds the toVar declaration; the loop is the statement it was written for.
+    const auto firstLoop = [](const g::Node& body) {
+        for (const auto& statement : body->body) if (statement->kind == g::Kind::Loop) return statement;
+        return g::Node{};
+    };
+    const g::Node outerLoop = firstLoop(function);
+    CHECK(outerLoop && outerLoop->kind == g::Kind::Loop);
+    // 0 to 2 exclusive with step one: the count is the end itself and no start or step argument is recorded.
+    CHECK(outerLoop->args.size() == 2 && g::key(outerLoop->args[0]) == g::key(g::int_(2)));
+    const g::Node innerLoop = firstLoop(outerLoop);
+    CHECK(innerLoop->kind == g::Kind::Loop && innerLoop->args.size() == 4);
+    // -1 to 1 inclusive is three iterations: (end - start) + 1, recorded with its start and step.
+    CHECK(g::key(innerLoop->args[0]) == g::key(g::add(g::sub(g::int_(1), g::int_(-1)), g::int_(1))));
+    CHECK(g::key(innerLoop->args[2]) == g::key(g::int_(-1)) && g::key(innerLoop->args[3]) == g::key(g::int_(1)));
+    CHECK(innerLoop->body.size() == 1 && innerLoop->body.at(0)->kind == g::Kind::Assign);
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
 // PRD-540: a live post effect's scalar uniform through the C ABI (lane-531's tslEffectParameter), as
 // three's `ao(...).radius.value`; an omitted optional input is an OTHER argument.
 void tsl_effect_parameter() {
@@ -3010,6 +3070,6 @@ void binding_fn() {
 
 TN_TEST_MAIN({"denoise_over_a_red_field_keeps_one_lane", denoise_over_a_red_field_keeps_one_lane}, {"binding_fn", binding_fn}, {"tsl_ssr_parameters", tsl_ssr_parameters}, {"tsl_texture_store", tsl_texture_store}, {"tsl_mat4_element", tsl_mat4_element}, {"body_result_lowers_once", body_result_lowers_once}, {"body_result_in_a_branch", body_result_in_a_branch}, {"join_converts_integer_parts", join_converts_integer_parts}, {"struct_function_return", struct_function_return}, {"authored_output", authored_output}, {"fragment_node_vec3_is_opaque", fragment_node_vec3_is_opaque}, {"rtt_quad_depth_has_a_vertex_output", rtt_quad_depth_has_a_vertex_output}, {"post_output_depth_has_a_vertex_output", post_output_depth_has_a_vertex_output}, {"skinned_bounds_before_the_first_frame", skinned_bounds_before_the_first_frame}, {"tsl_mat2_scalar_order", tsl_mat2_scalar_order}, {"starter_post_bindings", starter_post_bindings}, {"gpu_bind_escape", gpu_bind_escape}, {"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene},
              {"unsupported_member", unsupported_member}, {"material", material}, {"light", light}, {"spot_target_in_scene", spot_target_in_scene}, {"hierarchy_revision", hierarchy_revision}, {"matrix_evaluations", matrix_evaluations}, {"source_guard", source_guard}, {"shadow_camera_in_scene", shadow_camera_in_scene}, {"lifetime", lifetime},
-             {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_matrix_columns", tsl_matrix_columns}, {"tsl_statements", tsl_statements}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind}, {"euler_order_field", euler_order_field}, {"object_addresses", object_addresses}, {"geometry_shapes", geometry_shapes}, {"typed_bytes", typed_bytes}, {"array_offset", array_offset}, {"data_texture_bytes", data_texture_bytes}, {"attribute_view_writes", attribute_view_writes},
+             {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_matrix_columns", tsl_matrix_columns}, {"tsl_statements", tsl_statements}, {"tsl_loop_nested", tsl_loop_nested}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind}, {"euler_order_field", euler_order_field}, {"object_addresses", object_addresses}, {"geometry_shapes", geometry_shapes}, {"typed_bytes", typed_bytes}, {"array_offset", array_offset}, {"data_texture_bytes", data_texture_bytes}, {"attribute_view_writes", attribute_view_writes},
              {"attribute_defer", attribute_defer}, {"material_uuid", material_uuid}, {"material_alpha_hash", material_alpha_hash}, {"matrix_walk_count", matrix_walk_count}, {"geometry_index_null", geometry_index_null}, {"world_space_conversions", world_space_conversions},
              {"projected_cull_list", projected_cull_list}, {"projected_cull_held_restore", projected_cull_held_restore})
