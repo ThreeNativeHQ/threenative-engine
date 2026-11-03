@@ -2619,6 +2619,9 @@ static shader::ExprId normalTarget(shader::Program& f, bool flat, bool doubleSid
 const shader::StageModule* Renderer::auxFragment(Program& program, uint8_t mask) {
     if (program.auxBuilt >> mask & 1u) return program.aux[mask].get();
     program.auxBuilt |= uint16_t(1u << mask);
+    // A full lit MRT program per (program, mask), which `aux_routes_written_normals` bounds: only a material kind
+    // whose lit fragment exports `out.normal` may leave the shared geometry-normal pass.
+    waste::count(waste::counters().auxFragments);
     const shader::VertexVariant& variant = program.variant;
     const shader::LightLayout layout{program.lightKinds};
     try {
@@ -4595,9 +4598,12 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             }
             // three's normal target holds the material's own normal: NodeMaterial.setupNormal returns
             // vec3(normalNode) for a material that authors one, so that draw writes the target from its own lit
-            // fragment. The shared geometry-normal pass covers every other draw.
+            // fragment. The shared geometry-normal pass covers every other draw. Only Standard and Physical read
+            // the authored node and export `out.normal`; buildLit (Lambert, Phong) ignores it, so routing those
+            // through their own aux fragment would pay for a program that writes the geometry normal anyway.
             const bool cut = item.material->alphaTest > 0 || item.material->alphaHash;
-            const bool authoredNormal = item.nodes->normalNode != nullptr;
+            const bool authoredNormal = item.nodes->normalNode != nullptr &&
+                (item.kind == MaterialKind::Standard || item.kind == MaterialKind::Physical);
             const shader::StageModule* fragment = auxMask == kAuxNormal && !cut && !authoredNormal
                                                       ? normalFragment(draw)
                                                       : auxFragment(*draw.program, auxMask);
