@@ -225,6 +225,20 @@ after the deferred-settle fix and now reaches an equal pose on both arms (HUD `E
 `WIND 97%`, `NEAREST MARK 21 m`); the native sky still carries the radial banding the legacy frame does
 not. The coordinator runs the judge. No verdict is claimed.
 
+Update 2026-11-03, platformer waterfall (lane 617-look-b round 3): the judge read the waterfall sheet as paler and
+more transparent on the native arm. The engine sorted transparent draws by the object's origin, and three r187 sorts
+them by the geometry's bounding-sphere centre in world space (`StandardDrawingPipeline.js:236-241`). The waterfall's
+inner sheet sits 0.25 m nearer the camera and its narrower arc puts its centre farther, so the engine drew the pale
+inner sheet last. Fixed in `packages/runtime-native/src/engine/renderer/` (the draw carries the box centre, three's
+sphere centre; `sortDraws` transforms it by `matrixWorld`). RED on the previous engine, GREEN now: CTest
+`native_engine_transparent_sort_uses_geometry_center` gives `127 0 64` against `64 0 127` before and `127 0 64` both
+ways after; `native_engine_alpha_scene` still matches the browser golden, worst 0. Waterfall body median, two runs per
+arm, NVIDIA RTX 2080, 1280x720, contact occlusion, SSGI and SSR off in both arms: legacy `68,149,180` / `69,149,180`,
+native `108,166,185` / `108,166,185` before, and `68,149,180` / `69,149,180` against `67,149,180` / `69,149,181` after
+(`captures/617-final` against `captures/617-final-r2`). Every arm outside the waterfalls moved by less than the
+same-arm run-to-run noise. The default chain keeps a smaller residual that the contact occlusion and SSGI explain, not
+blending. The coordinator runs the judge; no verdict is claimed.
+
 2026-10-16 Snow Heightfield candidate validation (`13b7733b5`): four desktop runs (two baseline, two candidate) passed all eight unchanged nonvisual footsteps assertions. The original full-frame 1280×720 `minNonblankPixelRatio: 0.01` guard was evaluated separately with the runner's exported `regionMetrics`; all four passed at 1.0. Desktop CLI still rejects `visual` assertions, so this is eight CLI assertions plus a separate identical pixel check, not nine CLI assertions. Four original browser footsteps runs also passed. Fresh read-only visual judge `/root/heightfield_visual_judge` inspected both pairs on both platforms and returned NEUTRAL for every pair and overall: no visible terrain, footprint, lighting, material or ground-contact regression. Native pair 2 differs by one simulation tick and slight settling/contact state; the judge found that this limits exact pose equivalence but does not prevent appearance assessment. Raw captures and BEFORE/AFTER comparison figures: `/tmp/pr493-heightfield-native-proof/`; posting figures on the PR remains pending. Five paired render measurements against the measured 8.0 ms A/A noise band are running; no performance acceptance is claimed yet.
 
 2026-10-16 portable-test triage: the five affected files rerun on the desktop passed 253 tests and failed two. The remaining failures are stale expectations: the legacy-pin ratchet still lists 12 templates although recovered configs pin five, and the dev-watcher check assumes single-line formatting. Correcting those tests does not qualify any recovered pin removal. Racing, RTS, shooter and tower-defense still need fresh native/web matrix proof; starter's broader CPU/legacy comparison and Snow's performance qualification remain open. The laptop's Git-metadata and absent-Wasm fixture failures did not reproduce on the desktop.
