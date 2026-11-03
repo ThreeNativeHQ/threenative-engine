@@ -4,9 +4,8 @@ prd_contract: v1
 
 # PRD-480 — Linux CI runs on the owner's machine
 
-**Status:** PARTIAL — phases 1 and 3 verified (#404, #410); AC-1 green; AC-2 measured again 2026-11-03 on the
-five newest full boards at 196.7-239.8 min against 60, with a floor of 100-129 min at today's capacity, so
-it needs the owner's call
+**Status:** PARTIAL — phases 1 and 3 verified (#404, #410); AC-1 green; AC-2 restated 2026-11-03 as a
+per-job wait p90 of at most 10 min, measured at a median of 11.2 min on the three newest full boards
 **Priority:** P1 — AC-2 open: prove queue waiting time meets budget; runs waited up to 239 minutes.
 **Complexity:** 5 (HIGH)
 **Owner:** CI tooling
@@ -111,9 +110,13 @@ while `TN_RUNNER` is set: jobs queue until the switch is cleared.
   PR's `CI` run executes every Linux job except `supply-chain` on a `tn-local` runner, and `ci-required`
   passes. Evidence: pending.
   Evidence: CI run 37070815769 (PR #404, head 94732de65, 2026-10-02): conclusion success, `ci-required` success. 39 jobs succeeded: 33 on `tn-local`, 5 on `tn-local-light`, 1 hosted (`supply-chain`); `native-platforms` skipped by scope.
-- [ ] AC-2 [shared]: proof: per-job `started_at − created_at` summed with the baseline's script. Total time
-  jobs spent waiting for a runner on a full-board PR drops below 60 min (baseline 239 min, run
-  37043413533). Measured, not met. Run 37070815769 waited 317 min in total across 40 jobs on 5 heavy +
+- [ ] AC-2 [shared]: proof: per-job `started_at − created_at` on each full board. The 90th percentile of
+  the per-job runner wait is at most 10 min on the median of the three newest full boards with the pool
+  up (baseline p90 14.8 min, run 37043413533). Restated 2026-11-03 from the earlier summed target of
+  60 min (see `## Decisions`). Measured 2026-11-03, not met: p90 11.6 min (41569108715), 11.2 min
+  (41441113316) and 9.1 min (41430297261), median 11.2 min. Re-measure with `boardQueueP90Min` of
+  `scripts/ci-board-kpis.mjs` (10.3 min over the 2026-11-02 window). The earlier summed-wait record:
+  Measured, not met. Run 37070815769 waited 317 min in total across 40 jobs on 5 heavy +
   1 light slots, with 42 min wall against the baseline's 39 min wall and zero hosted minutes. A 40-job board on
   six slots queues by construction, so this criterion needs either more slots or overflow to hosted
   runners. Owner decision pending.
@@ -168,6 +171,8 @@ while `TN_RUNNER` is set: jobs queue until the switch is cleared.
 
 ## Decisions
 
+- 2026-11-03 (João): restate AC-2 as a per-job p90 of at most 10 min. A summed wait grows with board
+  width (39 jobs at baseline, 72-74 now), so it cannot compare boards of different widths. The p90 does.
 - 2026-11-03 (measured): the 60-minute sum is arithmetically out of reach at today's board width. The
   three full boards with the pool up measure 196.7-239.8 min of summed wait, 0.5-1.2 min of it on
   `tn-local`, and the two with the pool off 705.9 and 1057.8 min. The best possible schedule of the same
@@ -310,5 +315,5 @@ Decisions this phase had to make, 2026-10-02:
   parity, release evidence reports, collector coverage. On `tn-local-light`: caller selection, networking
   matrix. Hosted as designed: macOS, Windows, iOS, linux-arm64, and the emulator exception above.
 - [ ] Waiting time meets AC-2. proof: the AC-2 measurement on a full-board PR after this phase.
-  Measured 2026-11-03 and not met: 196.7-239.8 min on the three newest full boards with the pool up (see
-  AC-2 for the table and the capacity floor).
+  Measured 2026-11-03 and not met: per-job wait p90 median 11.2 min against 10 min on the three newest
+  full boards with the pool up (see AC-2).
