@@ -265,6 +265,26 @@ translucent tower dome now reads like the legacy arm's instead of the darker nat
 the sheet pixel where three's gather darkens it (the SSGI row of PRD-723), not the occlusion. Captures, sheets:
 `~/.cache/tmp-tn/prd-goal-1102/captures/617-final-r3/`. The coordinator runs the judge; no verdict is claimed.
 
+Update 2026-11-02, the translucent pass's cost (lane 617-look-b round 5): the second draw of the transparent draws is
+cheap and it is already gated, so nothing changed. Paired A/B from one code state: `?tnTranslucent=0` (also
+`TN_TRANSLUCENT=0`, or `__tnTranslucent = false`) ends the graph's read of the target, so the same frame pays nothing for
+it, and `TN_GPU_PASSES` names the pass's own GPU milliseconds and the draws it encoded (the trace now carries `draws` per
+pass). Native arm, default set, NVIDIA RTX 2080 (nvidia/turing), headed private Xvfb, 1280x720, alternating A1 B1 A2 B2
+A3 B3, five pairs on the two kits that draw it; `TN_FRAME_BUDGET` frame p50/p95 over each 300-tick window, the median of
+a run's windows as the run's figure. **platformer** re-draws 71 transparent draws for 0.0173 to 0.0191 ms of GPU time,
+and its frame p50 reads A 4.84 ms against B 4.89 (paired deltas -0.20, +0.42, -0.10, -0.10, -0.55, median -0.10).
+**tower-defense** re-draws 5 for 0.0064 to 0.0076 ms, and its p50 reads A 3.15 against B 3.03 (paired +0.11, +0.13, -0.05,
++0.25, -0.48, median +0.11). **rain** and **snow** never draw it: rain's chain applies no stage that reads the target
+(`TN_RENDER_CHAIN_COST_OVERRIDE` turns SSGI, SSG and the gather off; stages `antialias` and `stormPost`), and snow
+requests the contact occlusion but the chain drops it (`TN_AO_INDIRECT_UNSUPPORTED`), which leaves no consumer for the
+target; neither arm carries a `translucent` pass and their pairs move by +0.09 and +0.24 ms at p50, which is the
+instrument's own noise. The noise floor is about 0.25 ms: two reverse-order pairs on tower-defense (B then A) read -0.23
+and +0.14, the same spread with the opposite sign. No kit reaches 0.3 ms at p50 and no pass reaches 0.3 ms of GPU time, so
+no fix was made. The legacy arm's one more MRT output is not in this measurement (the brief's native arm); it is priced
+the same way from a `engine: "threejs"` twin of the same scaffold. Captures, logs and the parser:
+`~/.cache/tmp-tn/prd-goal-1102/captures/617-b5/` and `~/.cache/tmp-tn/prd-goal-1102/scratch/617-look-b5/`. The coordinator
+runs the judge; no verdict is claimed.
+
 2026-10-16 Snow Heightfield candidate validation (`13b7733b5`): four desktop runs (two baseline, two candidate) passed all eight unchanged nonvisual footsteps assertions. The original full-frame 1280×720 `minNonblankPixelRatio: 0.01` guard was evaluated separately with the runner's exported `regionMetrics`; all four passed at 1.0. Desktop CLI still rejects `visual` assertions, so this is eight CLI assertions plus a separate identical pixel check, not nine CLI assertions. Four original browser footsteps runs also passed. Fresh read-only visual judge `/root/heightfield_visual_judge` inspected both pairs on both platforms and returned NEUTRAL for every pair and overall: no visible terrain, footprint, lighting, material or ground-contact regression. Native pair 2 differs by one simulation tick and slight settling/contact state; the judge found that this limits exact pose equivalence but does not prevent appearance assessment. Raw captures and BEFORE/AFTER comparison figures: `/tmp/pr493-heightfield-native-proof/`; posting figures on the PR remains pending. Five paired render measurements against the measured 8.0 ms A/A noise band are running; no performance acceptance is claimed yet.
 
 2026-10-16 portable-test triage: the five affected files rerun on the desktop passed 253 tests and failed two. The remaining failures are stale expectations: the legacy-pin ratchet still lists 12 templates although recovered configs pin five, and the dev-watcher check assumes single-line formatting. Correcting those tests does not qualify any recovered pin removal. Racing, RTS, shooter and tower-defense still need fresh native/web matrix proof; starter's broader CPU/legacy comparison and Snow's performance qualification remain open. The laptop's Git-metadata and absent-Wasm fixture failures did not reproduce on the desktop.
