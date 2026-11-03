@@ -680,19 +680,10 @@ bool RenderDatabase::boundingSphereOf(Object3D& object, std::string_view type, S
         if (instanced.boundingSphere == nullptr) return false;
         sphere.copy(*instanced.boundingSphere);
     } else if (type == "SkinnedMesh") {
-        // three reads `SkinnedMesh.boundingSphere`, computed from the posed vertices, so a rig outside a
-        // light's shadow box is not drawn into that map. The bones' reach bounds every posed vertex
-        // (UE 5.8.3 fits skinned bounds to bones, not to skinned vertices), so it is the bound to test:
-        // O(bones) per frame, and a mesh-space box turned into a world sphere here.
-        auto& skinned = static_cast<SkinnedMesh&>(object);
-        // A detached bind keeps `bindMatrixInverse` off the mesh's own world matrix, so the reach is
-        // not in this object's space: a bound nothing can place always draws, never culls.
-        Box3 reach;
-        if (!skinned.attached || !skinned.boneReachBounds(reach) || reach.isEmpty()) return false;
-        Vector3 centre, size;
-        reach.getCenter(centre);
-        reach.getSize(size);
-        sphere.set(centre, size.length() * 0.5);
+        // three reads `SkinnedMesh.boundingSphere`, computed from the posed vertices. A pose can reach
+        // far past the bind pose, so only the posed bound may cull: `rigCastsShadow` asks it, and this
+        // answer keeps the main camera's culling where it was, none.
+        return false;
     } else {
         auto& mesh = static_cast<Mesh&>(object);
         // ponytail: a morphed mesh relies on morph targets, whose posed bounds native does not measure
@@ -720,6 +711,42 @@ bool RenderDatabase::inShadowFrustum(const Object3D& object, const Sphere* spher
         if ((mask & sf.layersMask) != 0 && sf.frustum.intersectsSphere(*sphere)) return true;
     }
     return false;
+}
+
+// A rig's shadow bound, cheapest first. A rig no shadow frustum's layers see never casts, and that
+// answer needs no bound. Its bind-pose sphere proves it inside one without reading a bone. Only when
+// that misses does the posed reach decide: O(bones) per frame, and it publishes a deferred pose and
+// joins its palette, which `gpu_joint_production` counts. A reach nothing can place always casts,
+// because the bind pose alone would wrongly cull a rig whose pose reaches into the box.
+bool RenderDatabase::rigCastsShadow(Object3D& object) {
+    if (shadowPointLightActive_ || virtualShadows_) return true;
+    if (shadowFrustums_.empty()) return false;
+    const uint32_t mask = Layers::bits(object.layers().mask);
+    if (std::none_of(shadowFrustums_.begin(), shadowFrustums_.end(),
+                     [&](const ShadowFrustum& sf) { return (mask & sf.layersMask) != 0; }))
+        return false;
+    auto& rig = static_cast<SkinnedMesh&>(object);
+    Sphere sphere;
+    const auto inside = [&] {
+        sphere.applyMatrix4(object.matrixWorld);
+        return inShadowFrustum(object, &sphere);
+    };
+    if (rig.geometry) {
+        if (rig.geometry->boundingSphere == nullptr) rig.geometry->computeBoundingSphere();
+        if (rig.geometry->boundingSphere != nullptr) {
+            sphere.copy(*rig.geometry->boundingSphere);
+            if (inside()) return true;
+        }
+    }
+    // A detached bind keeps `bindMatrixInverse` off the mesh's own world matrix, so the reach is not in
+    // this object's space; a bound nothing can place keeps the rig a caster.
+    Box3 reach;
+    if (!rig.attached || !rig.boneReachBounds(reach) || reach.isEmpty()) return true;
+    Vector3 centre, size;
+    reach.getCenter(centre);
+    reach.getSize(size);
+    sphere.set(centre, size.length() * 0.5);
+    return inside();
 }
 
 void RenderDatabase::collectShadowFrustums(Object3D& root, const Camera& mainCamera) {
@@ -845,7 +872,9 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
                     return bounded;
                 };
                 if (mainPass && measure() && !frustum_.intersectsSphere(sphere)) mainPass = false;
-                if (shadowCaster && !inShadowFrustum(object, measure() ? &sphere : nullptr)) shadowCaster = false;
+                if (shadowCaster)
+                    shadowCaster = type == "SkinnedMesh" ? rigCastsShadow(object)
+                                                         : inShadowFrustum(object, measure() ? &sphere : nullptr);
             }
             if (!mainPass && !shadowCaster) {
                 if (mesh.frustumCulled && !cullExempt_) waste::debugAdd(waste::counters().culledObjects);

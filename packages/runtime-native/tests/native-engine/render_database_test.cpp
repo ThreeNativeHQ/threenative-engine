@@ -7221,8 +7221,13 @@ void gpuJointProduction() {
         if (reflection) for (const auto& draw : reflection->drawn()) if (draw.gpuJoints) {
             ++mirrorGpu; mirrorInstances += draw.instanceCount;
         }
-        CHECK(mirrorGpu == (frame == 1 ? 2 : 1));
-        CHECK(mirrorInstances == (frame == 2 ? 1 : 3));
+        // One GPU-joint draw reaches the reflection: the main-pass batch of the rigs its camera sees. The
+        // rig on layer 1 casts for a light whose mask holds that layer, and the reflection's sun mask is
+        // the virtual camera's (layer 0, effectiveShadowLayersMask), so its shadow-only item is culled: the
+        // second draw this check used to count at frame 1 was that caster, kept by the old "a rig has no
+        // bounds, so it always casts" answer. Instances are 3 / 2 / 1 / 3 as the parked rigs come and go.
+        CHECK(mirrorGpu == 1);
+        CHECK(mirrorInstances == (frame == 1 ? 2 : frame == 2 ? 1 : 3));
         std::printf("GPU batching frame %d: main %zu draws/%zu instances, reflection %zu draws/%zu instances, shadow %u batches\n",
                     frame, admitted, instances, mirrorGpu, mirrorInstances, gpu.lastFrame().shadowSkinned.batches);
         CHECK(accelerated.tips[0]->skipsGpuJointSubtree());

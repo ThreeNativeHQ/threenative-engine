@@ -235,6 +235,7 @@ class RenderDatabase {
     void collectShadowFrustums(Object3D& root, const Camera& mainCamera);
     bool boundingSphereOf(Object3D& object, std::string_view type, Sphere& sphere);
     bool inShadowFrustum(const Object3D& object, const Sphere* sphere);
+    bool rigCastsShadow(Object3D& object);
     std::vector<std::unique_ptr<SkinnedPalette>> skinnedPalettes_; // borrowed by this frame's draws
     // core's DECLINE_RESCAN_FRAMES: a settled projection decline re-judges on this cadence, not per
     // frame. Starts at the interval so the first batch always scans.
