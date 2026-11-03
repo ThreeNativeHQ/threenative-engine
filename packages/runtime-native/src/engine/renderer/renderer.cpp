@@ -4605,11 +4605,11 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         if (!auxMask && !translucentPass) return;
         for (const Planned& draw : plan) {
             const DrawItem& item = *draw.item;
-            // A translucent draw composites its own colour over the frame, lit or not. The occlusion a screen-space
-            // effect gathers at that pixel belongs to the opaque surface behind it, so the draw goes to its own target
-            // and the post graph restores it after the occlusion (Unreal applies AO to the opaque lighting, before
-            // translucency). Its own program draws it, unchanged, so the target holds exactly what the colour target
-            // took from it. The sky is not one of them: it is the background, not a sheet over the scene.
+            // A translucent draw composites its own colour over the frame, lit or not: the waterfall's sheet, a
+            // glass dome, the sky dome's fade. The occlusion a screen-space effect gathers at that pixel belongs to the
+            // opaque surface behind it, so the draw goes to its own target and the post graph restores it after the
+            // occlusion (Unreal applies AO to the opaque lighting, before translucency). Its own program draws it,
+            // unchanged, so the target holds exactly what the colour target took from it.
             if (item.transparent && translucentPass && item.colorWrite) {
                 PipelineTarget target = colourTarget(item, *draw.program);
                 target.color = WGPUTextureFormat_RGBA16Float;
