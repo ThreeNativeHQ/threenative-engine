@@ -167,7 +167,7 @@ The boxes live in the phases below; each names the AC it proves.
 - [ ] AC-6 impostors drawn past 150 m. proof: AC-1 scenario from the `overview` view.
 - [x] AC-9 focused dither contract: both levels submit in view/shadow, shared masks use complementary `<` / `>=` comparisons including equality, and the source retires after the band. proof: `pnpm exec vitest run packages/core/__tests__/world-cells-data.spec.ts packages/core/__tests__/world-impostor-surface.spec.ts` (included in the 130/130 green focused run below). Shader graphs and CPU submission are tested; headed GPU/judge proof remains AC-7.
 - [ ] AC-7 judge IMPROVEMENT. proof: judge subagent verdict on the PR — D1 (2026-10-18) is still open: fresh verdict REGRESSION overall, with overview IMPROVEMENT and river NEUTRAL.
-- [ ] AC-8 frame time holds. proof: `measure-steady-state-fps`.
+- [x] AC-8 frame time holds. proof: `measure-steady-state-fps` (2026-11-03, Wasm engine, NVIDIA/Turing, 1920x1080, headed DevTools Chrome, overview after reveal + 15 s settle, 1,000 rAF frames over 56 s per run; empty-page control 16.70 ms): AFTER p50 50.01 ms / p95 66.71 ms and 50.01 / 66.94 ms against BEFORE p50 50.00 / p95 66.67 ms, inside the +5% bar. Both arms are GPU-bound at the 20 FPS vsync divisor, so the overview frame is a separate open performance problem.
   - 2026-11-03 progress, not AC-7 or AC-8 proof:
     - The licensed forest now loads and draws on the Wasm engine (commits `3b2e13bc6` and `4776f2d51`).
     - A fresh Sonnet judge returned IMPROVEMENT at the spawn view: procedural fallback against licensed assets, two playtest runs per arm, NVIDIA/Turing. The images are on `pr483-screenshots/wasm-forest-licensed-2026-11-03/`.
@@ -176,11 +176,11 @@ The boxes live in the phases below; each names the AC it proves.
     - The overview and river views have not been judged.
   - 2026-11-03 later, re-imported Project Nature packs cooked decoder-free (no KTX2, no meshopt, 357.5 MiB), Wasm engine, 1920x1080, two headed runs per arm (`views.playtest.json`):
     - The first AFTER runs aborted with Wasm OOM: every model decoded its own copy of each shared uri image. Fixed in the engine (`49a926148`: decode a shared uri image once). The fix is red-green in `gltf_hierarchy_test.cpp`.
-    - AC-7 fresh Opus judge: overall IMPROVEMENT; overview IMPROVEMENT x2, river NEUTRAL x2. Criteria 1 to 4 pass on stills. Shimmer is unverified, because stills cannot show it. The box stays open until a motion check runs. Images: `pr483-screenshots/ac7-overview-river-2026-11-03/` (`8d35cc757`).
+    - AC-7 fresh Opus judge: overall IMPROVEMENT; overview IMPROVEMENT x2, river NEUTRAL x2. Criteria 1 to 4 pass on stills. Shimmer is unverified, because stills cannot show it. The box stays open: a motion check (12 consecutive overview frames per run, two runs per arm, pixels whose luminance reverses at least 3 times by more than 12/255) finds far-band flicker on 0.111% and 0.104% of pixels AFTER against 0.099% and 0.094% BEFORE, and mid-band 0.169% and 0.156% against 0.174% and 0.174%. Temporal std is about 70% higher AFTER (far 0.59 and 0.64 against 0.37 and 0.36), consistent with wind on the full-resolution cards. Shimmer is about the same as BEFORE, not removed, and no judge has rated motion. Images: `pr483-screenshots/ac7-overview-river-2026-11-03/` (`8d35cc757`).
     - The judge names the remaining AAA defects: the forest stops at a hard edge at far left and far right, a bluish smear at about (1150, 515), a lake edge with no shoreline, washed-out grass and flat foliage cards.
     - Haze variance is closed: within one run the sky RMSE is 0.0007, and the far band is identical across runs in each arm. The earlier veil came from the old cook.
     - The alpine rockface loads as PNG on the Wasm engine with no `TN_NATIVE_KTX2_UNSUPPORTED` refusal.
-    - AC-8 is unverified: the control was valid (16.70 ms p50), but another agent's GPU browser held the GPU at 100% during the AFTER reading. That reading (presented p50 50.0 ms, GPU 59 ms) is diagnostic only. It reports 65,049 shadow draws against 52 main draws.
+    - The overview reports 65,049 shadow draws against 52 main draws on a shadow redraw frame. A code read finds one virtual-shadow level redrawn on 256 pages x about 251 caster rows (`atlas.h:41` page size 128). Lever candidate, not measured.
 
 
 **Phase 3 implementation and focused checks (2026-10-15):**
