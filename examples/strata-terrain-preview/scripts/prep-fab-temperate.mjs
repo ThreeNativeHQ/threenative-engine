@@ -353,6 +353,9 @@ await compileAssets({
   source: ".",
   output: cooked,
   cwd: STAGE,
+  // The game runs `engine: "threenative"` (threenative.config.ts), whose web engine decodes neither
+  // KTX2 nor Meshopt (create-threenative `webRuntimeDecoders`); compileAssets' own default is both on.
+  runtimeDecoders: { ktx2: false, meshopt: false },
   config: { models: { textures: { maxSize: 2048 }, virtual: "none" }, textures: { maxSize: 2048 } },
 });
 const manifest = JSON.parse(readFileSync(join(cooked, "assets.manifest.json"), "utf8"));
@@ -361,7 +364,7 @@ for (const [logical, entry] of Object.entries(manifest.entries))
   if (logical.endsWith(".glb")) copyFileSync(join(OUT, entry.output), join(OUT, logical));
   else if (logical.startsWith("rockface/")) {
     mkdirSync(join(OUT, "rockface"), { recursive: true });
-    copyFileSync(join(OUT, entry.output), join(OUT, logical.replace(/\.png$/, ".ktx2")));
+    copyFileSync(join(OUT, entry.output), join(OUT, logical));
   }
 if (incremental && previous) {
   manifest.entries = { ...previous.entries, ...manifest.entries };
@@ -382,4 +385,6 @@ const live = new Set(
 );
 const total = [...live].reduce((sum, path) => sum + statSync(join(OUT, path)).size, 0);
 console.log(`[prep] ${selected.length} models, ${(total / 1048576).toFixed(1)} MiB (local-only)`);
-if (total > 130_000_000) throw new Error("Cook exceeds 130 MB");
+// Decoder-free PNG at 2048 px measured 357.5 MiB on 2026-11-03 (the KTX2 cook fit in 130 MB); the gate
+// still catches a pack or a size cap that doubles the download.
+if (total > 400_000_000) throw new Error("Cook exceeds 400 MB");

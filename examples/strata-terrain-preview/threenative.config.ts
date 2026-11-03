@@ -8,15 +8,9 @@ import type { IThreeNativeConfig } from "@threenative/core";
  * upstream-three path every existing playtest and CI lane of this example measures, so switching
  * the measured engine is a deliberate choice and not a silent one.
  *
- * KNOWN BLOCKED (2026-11-03): the engine build boots — worker threads on, `path: "host"`, 60.0 fps
- * presented on an RTX 2080 — and then dies in the forest world builder with
- * `TN_STARTUP_FAILED: i.addEventListener is not a function`. The game hooks `dispose` on its own
- * geometry, materials and render targets (`src/render/terrain.ts`, `ocean.ts`, `waterProof.ts`);
- * `Geometry` derives `EventDispatcher` in C++ but the ABI never exposes `addEventListener`, and
- * `Material`/`Texture`/`RenderTarget` do not derive it at all. three dispatches `dispose` on all of
- * them (r186+), so games legitimately rely on it. Until the engine binds and dispatches those
- * events (an ABI change), this lane cannot run the preview. Also needs the page served with
- * COOP/COEP, or the threaded engine refuses with `TN_WEB_THREADS_OFF`.
+ * `TN_ENGINE=threenative pnpm dev` serves this lane (2026-11-03: the licensed forest loads and draws
+ * on it, `wasmPlan` stages in `TN_FRAME_BUDGET`). The page needs COOP/COEP, which that plugin sets,
+ * or the threaded engine refuses with `TN_WEB_THREADS_OFF`.
  */
 const config: IThreeNativeConfig = {
   app: {
