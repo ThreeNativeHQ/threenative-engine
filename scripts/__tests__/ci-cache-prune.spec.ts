@@ -255,7 +255,17 @@ describe("the hot keys the janitor must keep", () => {
     const declared = declaredCachePrefixes();
     // The three the review added: a cargo registry, a wgpu pipeline cache and the host deps of the
     // pipeline-cache workflow. A prefix with no declaration in this tree would protect nothing.
-    for (const prefix of ["cargo-v1-", "wgpu-cache-", "pipeline-cache-host-deps-"]) {
+    // Round 5 added the Android lane's three downloads and the web-wasm payload: each is the only
+    // copy of something a miss re-downloads, and the plan used to delete them first.
+    for (const prefix of [
+      "cargo-v1-",
+      "wgpu-cache-",
+      "pipeline-cache-host-deps-",
+      "gradle-",
+      "cargo-android-",
+      "native-android-third-party-",
+      "native-engine-web-wasm-v2-",
+    ]) {
       expect(HOT_PREFIXES).toContain(prefix);
       expect(
         declared.some((candidate) => candidate.startsWith(prefix)),
