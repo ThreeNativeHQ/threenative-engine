@@ -41,6 +41,8 @@ function uniformsOf(filter: Node): Array<Node & { groupNode?: Node }> {
       isWebGPUBackend: true,
       utils: { getTextureSampleData: () => ({ primarySamples: 1 }) },
     },
+    // r187's node builder reads the diagnostics switches off `renderer.debug`.
+    debug: { diagnostics: { keywords: false } },
     hasCompatibility: () => true,
     hasFeature: () => false,
     library: { fromMaterial: () => null },
