@@ -137,6 +137,12 @@ const CAUSAL: Record<string, string[]> = {
   ],
   quality: ["quality-temporal", "quality-zero-velocity", "quality-unchecked-history"],
 };
+// Diagnostic only: `TN_TEMPORAL_PROBE=arm,arm` captures those arms and their family reference,
+// prints their edge error and exits without any check.
+const PROBE = process.env.TN_TEMPORAL_PROBE?.split(",");
+if (PROBE !== undefined)
+  for (const [family, arms] of Object.entries(FAMILIES))
+    FAMILIES[family] = arms.filter((arm) => arm === REFERENCE[family] || PROBE.includes(arm));
 for (const [family, arms] of Object.entries(FAMILIES))
   for (const variant of arms) {
     const artifactDirectory = path.join(output, variant);
@@ -386,6 +392,20 @@ for (const [family, arms] of Object.entries(FAMILIES))
     }
     provenance.push({ variant, capture: report.capture, hashes });
   }
+if (PROBE !== undefined) {
+  for (const [family, arms] of Object.entries(FAMILIES))
+    for (const arm of arms.filter((name) => name !== REFERENCE[family])) {
+      const { edgeError, residualInstability, neighbourhoodOvershootFraction } = measureSequence(
+        frames[REFERENCE[family] ?? ""] ?? [],
+        frames[arm] ?? [],
+        8,
+      );
+      console.log(
+        JSON.stringify({ arm, edgeError, residualInstability, neighbourhoodOvershootFraction }),
+      );
+    }
+  process.exit(0);
+}
 const results: Record<string, ReturnType<typeof measureSequence>> = {};
 const causalReveals: Record<string, ReturnType<typeof measureCausalReveal>> = {};
 for (const [family, arms] of Object.entries(FAMILIES)) {
