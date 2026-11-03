@@ -1,8 +1,8 @@
-import { GPUParticles3D, type ICtx, type SceneFrame, Scene } from "@threenative/core";
+import { GPUParticles3D, type ICtx, Scene, type SceneFrame } from "@threenative/core";
 import {
+  CastPool,
   type ICast,
   type ISpell,
-  CastPool,
   SpellWorld,
   createAegis,
   createArcaneBarrage,
@@ -16,16 +16,16 @@ import {
   CylinderGeometry,
   DataTexture,
   DoubleSide,
+  LinearFilter,
   Mesh,
   type PerspectiveCamera,
-  LinearFilter,
   PlaneGeometry,
   RGBAFormat,
   UnsignedByteType,
   Vector3,
 } from "three";
-import { MeshBasicNodeMaterial } from "three/webgpu";
 import { mix, texture, uniform, uv, vec2, vec4 } from "three/tsl";
+import { MeshBasicNodeMaterial } from "three/webgpu";
 
 /** What the HUD shows and what a playtest reads back. */
 export interface LabState extends Record<string, unknown> {
@@ -174,11 +174,7 @@ function createFloor(
   const glow = uniform(new Color(0xff6a1e));
   const cold = new Color(0x9fd8ff);
   material.colorNode = vec4(
-    mix(
-      mix(mix(base, burn, sample.g.mul(1.6)), glow, sample.r.mul(0.9)),
-      cold,
-      sample.b.mul(0.8),
-    ),
+    mix(mix(mix(base, burn, sample.g.mul(1.6)), glow, sample.r.mul(0.9)), cold, sample.b.mul(0.8)),
     1,
   );
   const floor = new Mesh(new PlaneGeometry(PATCH, PATCH), material);
@@ -226,9 +222,7 @@ function tintOf(name: string): Color {
 
 /** Every `GPUParticles3D` a spell added, so the lab can report what the engine thinks it did. */
 function collectEmitters(world: SpellWorld): (GPUParticles3D | undefined)[] {
-  return world.objects.filter(
-    (child): child is GPUParticles3D => child instanceof GPUParticles3D,
-  );
+  return world.objects.filter((child): child is GPUParticles3D => child instanceof GPUParticles3D);
 }
 
 /** Three dummies to aim at, matching the row the upstream spells were built against. */
