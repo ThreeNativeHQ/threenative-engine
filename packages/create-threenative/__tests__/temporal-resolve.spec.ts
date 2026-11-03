@@ -238,21 +238,23 @@ describe("authored temporal reconstruction kernel", () => {
     // The update pass compiles too, with no literal WGSL cannot parse (gate run 5 lost an arm to one).
     const node = build(true);
     const moire = createTemporalMoire(node);
-    const drawn: { material?: { fragmentNode: unknown } } = {};
+    const drawn: { fragmentNode: unknown }[] = [];
     moire.update(
       { initRenderTarget: () => {}, setRenderTarget: () => {} } as never,
       {
         render: () => {},
         set material(value: { fragmentNode: unknown }) {
-          drawn.material = value;
+          drawn.push(value);
         },
       } as never,
       createTemporalDepthRejection(node, renderer),
       new Vector2(64, 36),
     );
-    const update = fragment(renderer, mesh, drawn.material?.fragmentNode);
-    expect(update).toContain("0.95");
-    expect(update).not.toMatch(/Infinity|NaN/u);
+    // Detection, then the 5x5 dilation and accumulation.
+    expect(drawn).toHaveLength(2);
+    const passes = drawn.map((material) => fragment(renderer, mesh, material.fragmentNode));
+    for (const code of passes) expect(code).not.toMatch(/Infinity|NaN/u);
+    expect(passes[1]).toContain("0.95");
     moire.dispose();
   });
   it("compiles both depth supports in the actual rejection-count compute dispatch", async () => {

@@ -5,7 +5,21 @@
 // 381-455,477-490,586-593; the 2-frame period and the 0.95 decay come from
 // Engine/Source/Runtime/Renderer/Private/PostProcess/TemporalSuperResolution.cpp:177-193,3005-3007.
 import { HalfFloatType, NearestFilter, type Vector2 } from "three";
-import { Fn, abs, float, int, max, min, mix, texture, uv, vec2, vec3, vec4 } from "three/tsl";
+import {
+  Fn,
+  abs,
+  float,
+  int,
+  ivec2,
+  max,
+  min,
+  mix,
+  texture,
+  uv,
+  vec2,
+  vec3,
+  vec4,
+} from "three/tsl";
 import {
   type Node,
   NodeMaterial,
@@ -38,16 +52,17 @@ function stillness(speedPx: Node<"float">, displayWidth: Node<"float">) {
 }
 
 export function createTemporalMoire(node: TemporalResolveNode) {
-  const targets = [0, 1].map(() => {
+  const targets = [0, 1, 2].map(() => {
     const target = new RenderTarget(1, 1, { depthBuffer: false, type: HalfFloatType });
     target.texture.minFilter = NearestFilter;
     target.texture.magFilter = NearestFilter;
     return target;
   });
+  const [first, , scratch] = targets as [RenderTarget, RenderTarget, RenderTarget];
   let read = 0;
   // x: last luma gradient, y: total flicker variation, z: flicker count. Both decay by 0.95 a frame.
-  const previous: TextureNode = texture(targets[0]?.texture);
-  let update: { material: NodeMaterial; equations: TemporalDepthRejection } | undefined;
+  const previous: TextureNode = texture(first.texture);
+  let passes: { materials: NodeMaterial[]; equations: TemporalDepthRejection } | undefined;
 
   /** The clip box widened by the moire error the history has measured at this pixel. `speedPx`
    * counts history pixels, so the parallax limit scales with the history raster. */
@@ -72,19 +87,17 @@ export function createTemporalMoire(node: TemporalResolveNode) {
     return { low: min(low, high.sub(size)), high: max(high, low.add(size)) };
   }
 
-  function material(equations: TemporalDepthRejection): NodeMaterial {
+  /** Pass 1, per pixel: this frame's gradient, and whether it turned against the last one. */
+  function detect(equations: TemporalDepthRejection): NodeMaterial {
     const resolved = texture(node._resolveRenderTarget.texture);
     const history = texture(node._historyRenderTarget.texture);
     const result = new NodeMaterial();
-    result.name = "Temporal AA moire";
+    result.name = "Temporal AA moire detect";
     result.fragmentNode = Fn(() => {
       const pixel = uv();
       const validity = equations.historyValidity(pixel);
-      const valid = validity.get("hasValidHistory") as Node<"float">;
       const historyUV = validity.get("historyUV") as Node<"vec2">;
-      const size = vec2(previous.size(int(0)) as Node<"uvec2">);
-      const speed = pixel.sub(historyUV).mul(size).length();
-      const state = previous.sample(historyUV);
+      const last = previous.sample(historyUV).x;
       // What the output did against pure ghosting (5% current), clamped like Unreal's gradient.
       const ghost = mix(
         luma(history.sample(historyUV)),
@@ -92,17 +105,42 @@ export function createTemporalMoire(node: TemporalResolveNode) {
         0.05,
       );
       const gradient = luma(resolved.sample(pixel)).sub(ghost).clamp(-1, 1);
-      const turned = gradient.mul(state.x).lessThan(0);
-      const strong = min(abs(gradient), abs(state.x)).greaterThanEqual(MIN_GRADIENT);
-      const flicker = turned.and(strong).select(float(1), float(0)).mul(valid);
+      const turned = gradient.mul(last).lessThan(0);
+      const strong = min(abs(gradient), abs(last)).greaterThanEqual(MIN_GRADIENT);
+      const flicker = turned
+        .and(strong)
+        .select(float(1), float(0))
+        .mul(validity.get("hasValidHistory") as Node<"float">);
+      return vec4(gradient, min(abs(gradient), abs(last)).mul(flicker), flicker, 1);
+    })();
+    return result;
+  }
+
+  /** Pass 2: the flicker and its variation dilated over 5x5 (Unreal's max3x3 of max3x3), then
+   * accumulated into the decayed state of still, valid pixels. */
+  function accumulate(equations: TemporalDepthRejection): NodeMaterial {
+    const detected = texture(scratch.texture);
+    const result = new NodeMaterial();
+    result.name = "Temporal AA moire accumulate";
+    result.fragmentNode = Fn(() => {
+      const pixel = uv();
+      const validity = equations.historyValidity(pixel);
+      const historyUV = validity.get("historyUV") as Node<"vec2">;
+      const size = vec2(previous.size(int(0)) as Node<"uvec2">);
+      const centre = ivec2(pixel.mul(size));
+      let peak: Node<"vec4"> = detected.load(centre) as Node<"vec4">;
+      for (let y = -2; y <= 2; y++)
+        for (let x = -2; x <= 2; x++)
+          if (x !== 0 || y !== 0) {
+            const at = ivec2(vec2(centre.add(ivec2(x, y))).clamp(vec2(0), size.sub(1)));
+            peak = max(peak, detected.load(at) as Node<"vec4">);
+          }
+      const state = previous.sample(historyUV);
+      const speed = pixel.sub(historyUV).mul(size).length();
+      const valid = validity.get("hasValidHistory") as Node<"float">;
       const keep = stillness(speed, size.x).mul(valid).mul(DECAY);
-      // ponytail: no 5x5 dilation of the flicker (Unreal's max3x3 twice); add a pass if lone pixels miss.
-      return vec4(
-        gradient,
-        state.y.mul(keep).add(min(abs(gradient), abs(state.x)).mul(flicker)),
-        state.z.mul(keep).add(flicker),
-        1,
-      );
+      const own = detected.load(centre) as Node<"vec4">;
+      return vec4(own.x, state.y.mul(keep).add(peak.y), state.z.mul(keep).add(peak.z), 1);
     })();
     return result;
   }
@@ -121,21 +159,25 @@ export function createTemporalMoire(node: TemporalResolveNode) {
           target.setSize(history.x, history.y);
           renderer.initRenderTarget(target);
         }
-      if (update?.equations !== equations) {
-        update?.material.dispose();
-        update = { material: material(equations), equations };
+      if (passes?.equations !== equations) {
+        for (const material of passes?.materials ?? []) material.dispose();
+        passes = { materials: [detect(equations), accumulate(equations)], equations };
       }
       const write = targets[1 - read];
-      if (write === undefined) return;
+      const [detection, accumulation] = passes.materials;
+      if (write === undefined || detection === undefined || accumulation === undefined) return;
+      renderer.setRenderTarget(scratch);
+      quadMesh.material = detection;
+      quadMesh.render(renderer);
       renderer.setRenderTarget(write);
-      quadMesh.material = update.material;
+      quadMesh.material = accumulation;
       quadMesh.render(renderer);
       read = 1 - read;
       previous.value = write.texture;
     },
     dispose() {
       for (const target of targets) target.dispose();
-      update?.material.dispose();
+      for (const material of passes?.materials ?? []) material.dispose();
     },
   };
 }
