@@ -81,6 +81,16 @@ One reconstructor that, at a sub-1.0 internal raster, produces a stable display-
 ### Phase 2 — Keep it only if it buys frame time
 
 - [ ] On a GPU-bound representative game, sub-1.0 rendering plus reconstruction lowers GPU/render p95 versus full resolution while meeting the Phase 1 thresholds. proof: paired fixed-route browser WebGPU and desktop-native table of internal pixels, reconstruction cost, GPU/render p50/p95 and visual metrics (no FPS-only verdict).
+  Open: no representative game yet. Same-scene calibration, 2026-11-02, gi:cornell at 1280×720, RTX 2080, shared GPU (12-72% busy from other work), 2 runs per arm:
+
+  | Arm | Internal pixels | GPU p50 (ms) | Reconstruction p50 (ms) | Edge error vs own 100% (pan 0-60) |
+  |---|---|---|---|---|
+  | Unreal 5.8.3 TSR 100% (Epic, history 200%) | 1280×720 | 6.83 / 6.78 | TSR 1.81 / 1.82 | reference |
+  | Unreal 5.8.3 TSR 50% | 640×360 | 4.30 / 4.64 | TSR 0.90 / 0.93 | `.00583` |
+  | ThreeNative engine TRAA 100% | 1280×720 | corner 7.65-7.70 / 7.63-7.69; cornell 7.57-9.55 / 13.70-13.86 | unverified (no GPU stage split) | reference |
+  | ThreeNative engine TRAA 50% | 640×360 | corner 4.60-11.18 / 3.48-3.55; cornell 2.88-3.47 / 2.78-3.78 | unverified | `.00566` |
+
+  Unreal times the pan motion run (CSV profiler, `GPUTime` over 1 ms, `GPU/TemporalSuperResolution`). ThreeNative times the still poses (`--measure 20`, `TN_FRAME_BUDGET` gpu window p50). Distance to Unreal is the same at both scales (mean absolute error `.0277` at 100%, `.0274` at 50%). Sheets: branch `prd-539-screenshots`, `benchmark-cornell-pan/`. The 50% capture needed one engine fix: the lamp shadow-map size now reads the unjittered camera. Before it, TRAA jitter flipped the cornell lamp between two mips every frame and the Wasm engine lost the device in 120 frames (red-green `lamp_size_ignores_temporal_jitter`; visual judge NEUTRAL, mean absolute error `.0002` over 180 frames).
 - [ ] Automatic resolution moves between at least three scales in one run without history corruption, allocation growth or a reconstruction cost spike larger than the saved raster cost. proof: scripted scaler route recording transitions, history resets, render-target allocation count and per-stage cost; repeated cycles end at the initial allocation baseline.
 
 ## Decisions
