@@ -1,6 +1,6 @@
 # PRD-617 — Every template runs on the native engine
 
-**Status:** IN PROGRESS
+**Status:** DONE (2026-11-03)
 **Priority:** P0 — the owner blocks the v1 release until AC-1 to AC-7 pass (Decisions, 2026-10-15); 11 of 13 templates, the starter among them, still pin `engine: "legacy"`.
 **Complexity:** 4 (MEDIUM)
 **Owner:** João
@@ -180,6 +180,8 @@ same frame count on both arms.
 
 AC-1 to AC-4 sit under Phase 1 and AC-5 to AC-7 under Phase 2, each with its proof.
 
+- [x] AC-1 to AC-7 are ticked under Phase 1 and Phase 2. proof: the phase boxes and their evidence lines, 2026-11-03; no template pins `engine: "threejs"` (`LEGACY_PINNED_TEMPLATES` is `[]`).
+
 ## Integration Ledger
 
 | Capability | Reachable consumer/trigger | Replaces / disposition | Evidence |
@@ -201,7 +203,7 @@ AC-1 to AC-4 sit under Phase 1 and AC-5 to AC-7 under Phase 2, each with its pro
 ## Execution Phases
 
 #### Phase 1: The starter runs on the native engine
-**Status:** NOT STARTED
+**Status:** DONE (2026-11-03)
 **Files:** `packages/three-native/src/addons/post-effects.ts`, `packages/runtime-native/src/engine/player/core-addons.mjs`, the native pass sources under `packages/runtime-native/src/engine/renderer/`, the native TSL and V8 binding sources, `templates/starter/threenative.config.ts`.
 **Implementation:** Bind the starter's 18 refused imports as in the Solution, starting with `traa` (the pass exists). Delete the starter pin when the ratchet test reports it clean.
 **Verification:**
@@ -211,7 +213,7 @@ AC-1 to AC-4 sit under Phase 1 and AC-5 to AC-7 under Phase 2, each with its pro
 - [x] AC-4 [local]: Starter main-thread CPU per frame on native is at or below legacy on desktop, at the same pose and frame count. proof: playtest `perf --executable` paired runs, host load recorded — Evidence: 2026-10-16 at f34bd6ade (the owned player was built from f34bd6ade plus then-uncommitted additive binding edits, the `Matrix4.setPosition(x,y,z)` overload and TSL `setGroup` on textures, `notEqual` and swizzle `assign`, all of which landed in ad3d21181; the starter calls none of them), RTX 2080, Xvfb 1280x720, 1800-frame soak per run, order L,O,O,L then a load-gated L,O. The owned player runs its game loop off the process leader thread, so the game-thread figure is the busiest thread name, with same-named threads summed; for owned this adds its idle leader (about 2 ms), so the figure is conservative. Later runs read the per-thread `cpu.summary.busiestThread`. Busiest thread name ms/frame, runs in order L,O,O,L,L,O: 52.4 / 37.1 / 36.0 / 45.9 / 53.3 / 38.4. Process ms/frame: 54.4 / 38.0 / 36.7 / 48.4 / 54.9 / 39.5. load1 6.84 / 7.45 / 6.33 / 8.71 / 20.81 / 3.75; the fifth run (legacy) is flagged invalid-absolute by load, and owned is lower in every run including it. Two earlier runs at load1 18 and 58 were discarded. Both arms pay the Xvfb present path, so absolute values are not display-representative.
 
 #### Phase 2: The other ten templates run on the native engine
-**Status:** NOT STARTED
+**Status:** DONE (2026-11-03)
 **Files:** the bindings that Phase 1 did not cover, the V8 runtime binding sources, and the ten template configs.
 **Implementation:** Bind the three runtime members first (platformer, tower-defense, racing, rts), then each remaining refused import from the ratchet lists. Delete each pin when its template runs.
 **Verification:**

@@ -53,7 +53,7 @@ shares: animation about 13%, cull and project about 11%, `Renderer::render` 21%,
   Phase v1.10).
 - 2026-10-15 (owner): the native engine stays the default, and there is no legacy fallback. A legacy
   pin (`engine: "legacy"` in `threenative.config.ts`) is temporary debt. Each template loses its pin
-  when its web and desktop rows both pass on the engine ([PRD-617](PRD-617-every-template-runs-on-the-native-engine.md)).
+  when its web and desktop rows both pass on the engine ([PRD-617](../done/PRD-617-every-template-runs-on-the-native-engine.md)).
   The engine exposes the upstream Three.js API, and a game uses the same source on every back end.
   This refines the previous decision: the default is not reverted while templates remain pinned.
 - 2026-10-26 (owner): the worker HUD contract is confirmed (one state snapshot per frame out, intents back): "Yes, and v5.2 threads too". Cycle v5 moves to [PRD-752](./PRD-752-web-games-run-in-a-worker-so-the-page-cannot-stall-them.md).
