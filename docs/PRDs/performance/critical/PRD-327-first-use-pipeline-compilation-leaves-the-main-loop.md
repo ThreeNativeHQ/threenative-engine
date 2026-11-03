@@ -194,6 +194,12 @@ presents within the stall bar → `TN_STALL_SEGMENTS.pipelineCompile.ms ≤ 500`
 **What does this replace?** `install-async-pipelines.js` (deleted in Phase 1) and the
 `warmUp: false` native default (flipped in Phase 2).
 
+## three.js 0.187.0 levers (2026-11-02)
+
+- r186 adds `compileComputeAsync()` (three#32551) and skips shadow-map draws during precompile (three#33924). r187 shares node builds across call depths (three#35014) and speeds up TSL builds (three#34815). Re-measure the first-use hitch on 0.187.0 before the remaining phases.
+
+Adoption rule: the owned engine is the default, and it runs a three symbol only when its API catalog covers it (`docs/architecture/NATIVE-ENGINE-DECISION.md`). So use the upstream piece first as a measured reference arm on `engine: "threejs"`. A template uses it only after a catalog row and a native parity case land.
+
 ## 5. Execution phases
 
 #### Phase 0: The backends' async entries are measured, and the mechanism is chosen

@@ -80,6 +80,12 @@ One reconstructor that, at a sub-1.0 internal raster, produces a stable display-
 - [ ] On a GPU-bound representative game, sub-1.0 rendering plus reconstruction lowers GPU/render p95 versus full resolution while meeting the Phase 1 thresholds. proof: paired fixed-route browser WebGPU and desktop-native table of internal pixels, reconstruction cost, GPU/render p50/p95 and visual metrics (no FPS-only verdict).
 - [ ] Automatic resolution moves between at least three scales in one run without history corruption, allocation growth or a reconstruction cost spike larger than the saved raster cost. proof: scripted scaler route recording transitions, history resets, render-target allocation count and per-stage cost; repeated cycles end at the initial allocation baseline.
 
+## three.js 0.187.0 levers (2026-11-02)
+
+- r186 adds `TAAUtils`, the shared functions of the TAA nodes (three#34458). r187 registers `TAAUNode` inputs before their consumers (three#34565) and updates the depth pass before `TemporalReprojectNode` (three#34823). Recapture the low-resolution corpus on 0.187.0 before the quality numbers of this PRD are compared, because the upstream temporal nodes changed.
+
+Adoption rule: the owned engine is the default, and it runs a three symbol only when its API catalog covers it (`docs/architecture/NATIVE-ENGINE-DECISION.md`). So use the upstream piece first as a measured reference arm on `engine: "threejs"`. A template uses it only after a catalog row and a native parity case land.
+
 ## Decisions
 
 - The thresholds and the 31-arm corpus carry over unchanged; a candidate that needs them relaxed is rejected, not merged.

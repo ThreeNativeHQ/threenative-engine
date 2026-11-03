@@ -856,3 +856,164 @@ no COOP/COEP); that lane is open.
   (+12-15%), uncapped 20.1 against 19.2-19.9 (+1-5%, inside noise) (rows #141-#144).
 - Open: ThreeNative update p50 is still 28 ms against vanilla's 13 ms at load 4, and GPU p95 is 7.5 against 4.2 ms
   at load 2, 21-24 against 14 ms at load 4 and 44 against 21 ms at load 8.
+
+### 2026-11-02 — Stress lab: three 0.187 (#597) against its merge base: no regression
+
+- Measured at PR head 4f0a79fad (Wasm c49dffb0a349) against merge base b0e1b9ebc (three 0.185.1, Wasm 497f863a1266),
+  fair ABBA, uncapped, loaded host (peak 8-13). The PR has since moved to 202ff22c7, which was not measured.
+- VSM (rows #158-#159): 55.8 against 57.3 fps, CPU p50 16.63 against 16.37 ms. Plain sun (rows #166-#167):
+  88.2 against 89.6 fps, CPU p50 10.77 against 10.63 ms. Pairs disagree: inside the noise. No regression.
+- GPU p50 is lower in all four pairs: 6.38 and 6.42 against 5.80 and 5.70 ms (VSM), 4.97 and 4.94 against 4.49 and
+  4.49 ms (plain sun), about 9-10%. GPU p95 is mixed. Same draws and triangles. The cause is unverified.
+- Risk: a game generated earlier fails `tsc` against 0.187 types at `src/render/temporalAAFrame.ts:40` and
+  `temporalResolveDepth.ts:141`. Vite still serves it. #597 changes both files in its templates.
+
+### 2026-11-02 — Stress lab: the load gate, A/A noise and the first Unreal uncapped rows
+
+- The old gate (start under 4, void above 6) was never calibrated. It starved the loop for hours on a 24-thread host
+  where the stress page alone adds about 6. It is now 12 and 18 (owner order), and still not calibrated.
+- A/A at load 10-12: 50.4-59.4 fps, CPU p50 15.6-18.4 ms. That band settles engine gaps, not a 3% lever. Compare
+  only inside one window, and use a control: vanilla lost the same share as ThreeNative (-21% and -23%) under load.
+- Unreal uncapped (rows #162-#163): 68.8-70.0 fps, presented p95 18.8 ms, frame p50 13.0-13.4 ms, GPU p95 13.3-16.6 ms.
+  ThreeNative VSM: 48-57 fps, presented p95 33 ms, CPU p50 16-19 ms, GPU p95 8 ms. ThreeNative loses on CPU only.
+- FG2 (VSM depth band from the level, not the casters): open. Laptop median shadow draws 715-741 against 89-105, but
+  the desktop reads 9 on both arms, and no pair shows a frame-time gain. Judge NEUTRAL. A caster more than 200 m along
+  the light would lose its top shadow, so a keep needs a guard.
+- Traps: `fair` spawned through a forking browser wrapper leaves Brave alive, and it holds the laptop's GPU lock. A
+  stress lab needs `tn-native-engine-web.mjs` beside the threads pair (`TN_WASM_ENGINE_MISSING`). `fair` also holds
+  `build.lock` for its whole window, which starves a lane's build.
+
+### 2026-11-02 — Stress lab: a calm host settles what load hid; FG2 not kept
+
+- A/A at load peak 7-13, same lab, ABBA (`aacalm`, one window): 67.6 against 65.9 fps, CPU p50 13.78 against 14.26 ms,
+  presented p95 30.9 against 31.7 ms. That is about 3%, against about 8% at sustained load 10-12. One window is a first
+  band, not a calibration.
+- FG2 (rows #172-#173): 65.0 against 66.1 fps, presented p95 31.8 against 31.6 ms, and the CPU p95 pairs disagree. Not
+  kept: the lever exists to cut the presented tail, and the tail did not move. Revisit when a scene draws many casters
+  per page on the desktop GPU: the laptop's 86% shadow draw cut does not appear here (9 on both arms).
+- This corrects the entry above. On a calm host ThreeNative does not lose on CPU p50 alone: 66 fps against Unreal 69, but
+  presented p95 31 ms against 19 ms. The tail is the larger gap. `?still` reads 20-23 ms, so camera motion drives it.
+- Insight: PRD-775 Phase 1 read as noise at load 11 (rows #160-#161) and its CPU p95 gain is -10.6% and -11.8% at load
+  peak 7 (rows #174-#175). Run a 3% lever only on a calm host.
+
+### 2026-11-02 — Method: uncapped presented p95 read a rAF timestamp artifact — KEEP (measurement)
+
+- With vsync off the rAF timestamp misreads a saturated main thread: stamps read 33.6, 18.5, 1.2 ms where the frames
+  start 18.4, 18.5, 16.0 ms apart. Develop VSM read 32 ms and its real interval p95 is 21 ms. Vanilla read 30 ms and its
+  real one is 19 ms. Plain sun reads about the same either way (13 and 14 ms).
+- Unreal reports its real frame interval, so 35 of 100 score points compared unlike numbers. Uncapped `fair` rows now
+  read frame starts, in the harness, for every browser arm. `rafStampP95Ms` keeps the old reading. Vsync rows do not
+  change: there the stamp is right, and CPU p95 above 16.7 ms is a real 33 ms interval on a 60 Hz display.
+- This corrects the previous entry: the tail is not 31 ms against 19 ms. It is 21 ms against 19 ms, and PRD-775 Phase 1
+  reads 20.6 ms. The score moved by method: VSM 45 to 56, plain sun 63 to 75, vanilla to 60. The engine did not get faster.
+- First window (rows #176-#179): VSM 63.8 fps, frame p95 21.2 ms, CPU p95 20.5 ms, GPU p95 7.3 ms. Unreal no Lumen 70.0,
+  18.8, 18.3, 13.3. ThreeNative loses on fps, tail and CPU, and leads on GPU. The score reads a tie.
+- Those Unreal rows ran at load peak 7-15. On a calmer host (rows #196-#197, peak 7-13): stock 74.8 fps, frame p95 16.8, CPU p50 10.2,
+  CPU p95 13.0, GPU p95 14.3; no Lumen 82.8, 15.3, 10.5, 13.3, 13.0. Develop with FA1 (row #188): 65.8, 19.2, 14.5, 18.5, 6.9. The score
+  reads 58 against 59 and 64. The gap is CPU, about 4 ms at p50 and 5 ms at p95. Rerun every rival when the host calms.
+- Trap: `record_d10.py` records every file in `rows/`, so an uncapped rerun also adds the old vsync rows with a new date (#198-#199,
+  removed). Delete the extra rows before you commit.
+- A/A on the corrected metric (two windows, load peak 7 or less): mean-of-2 scores differ by 0.1-0.5 inside a window and
+  by about 1 between windows, and single runs read 56.1-58.1. The dashboard reads a gap of 2 points or less as a tie.
+- Load limits stay at 12 and 18 by owner order. Data so far: about 1% at peak 7 or less, about 3% at peak 13, about 8% at
+  sustained load 10-12. Peak alone does not predict the noise.
+- Revisit when: a display-side present timestamp is available on the web, which would check the frame-start reading.
+- Insight: log every callback's start beside its timestamp before you trust a tail number. The 0-5 ms bin held as many
+  frames as the 30 ms bin, and a real tail has no such partner.
+
+### 2026-11-02 — Stress lab: from 32 rigs, each measures its animation rate one frame in four (FA1) — KEEP
+
+- Where: `packages/core/src/render-camera-cull.ts`, `prepareAnimation` and `#holdRate`. A smaller scene measures every frame.
+  A rig just shown measures at once. A nested rig or a stand-in keeps the full walk.
+- Result, rows #180-#183, four pairs that agree, load peak 7 or less: 66.5 to 72.2 fps (+8.6%), CPU p50 14.1 to 13.1 ms, CPU p95
+  19.4 to 17.9 ms, frame p95 19.9 to 18.5 ms. GPU p95, draws, triangles, uploads and bridge calls did not change.
+- Recheck, because the same lab read 66 fps in a later window (rows from `fa1c`, `fa1d`, both arm orders, load peak 8 or less):
+  63.1 to 67.5 fps (+7.0%), CPU p50 14.8 to 14.3 ms (-3.6%), CPU p95 20.8 to 17.8 ms (-14.6%), frame p95 22.0 to 18.5 ms. All 8 pairs
+  across the four windows favor FA1. Both arms fell together between windows, so compare only inside one window.
+- The first windows' p50 gain is near 1 ms against a 0.56 ms forecast from the profile's inclusive time. The extra is not attributed.
+- Judge: Opus NEUTRAL on 12 stills. Motion is unverified: a still cannot show a rate change stepping. The red-green test bounds
+  the lag: part measures over 4 frames fall from 160 to 40, and a new distance reaches every rig inside 4 frames.
+- Insight: an earlier hunt filed this as "no lever" (FU7) because it sat outside that lane's phase. Re-profile the whole frame
+  from a fresh tree, and read old "no lever" notes as "not in that lane".
+- Stage table for the next lever, PRD-775 Phase 1 build, p50 and p95 frames: plan 3.6 and 5.2 (virtual pages 1.7 and 2.7), update
+  2.3 and 4.3, JS before the engine 2.7 and 3.5 (bloom 0.9, auto exposure 0.7, local exposure 0.3), scene 2.8 and 3.3.
+- Revisit when: a walker close-up shows a step at a rate change, or a game with 32 or more rigs reports one.
+
+### 2026-11-02 — Stress lab: one rig's bone palette reaches the GPU once (FP1b) — KEEP
+
+- What changed: `Renderer` shares palette copies by bytes, not by pointer. The crowd wrote 4 copies a rig: 2 primitives, main batch and
+  shadow draw. Upload fell from 2304 to 841 KB a frame. The palette write fell from 1,996,800 to 499,200 bytes.
+- Result against a rebuilt control in a lab of the same age (rows #212-217, both arm orders, load peak 5.6 or less, 4 of 4 pairs):
+  fps 68.97 to 72.15 (+4.6%), frame p50 13.64 to 13.03 ms (matches the 0.5-0.64 ms forecast), frame p95 18.91 to 18.19 ms, presented
+  p95 19.43 to 18.47 ms, GPU p95 7.38 to 7.36 ms. Native: 18 writes to 9, same pixel hash. Judge: Opus NEUTRAL on 16 shots. One orange
+  prop differs in one AFTER closeup (`after-run1-2`) and not in the other. That difference is not explained.
+- **First attempt, FP1, did nothing and still read +3.2% fps.** A dedupe by pointer left the write at 1,996,800 bytes, because
+  `SkeletonUtils.clone` gives each primitive its own Skeleton. Rows #198-201 carry no lever. Read the byte count before the timing.
+- **Two labs with the same bytes differ.** Same Wasm hash, same `src/`, same packages, ports 5783 and 5787: fps 67.47 and 68.97, frame
+  p50 14.28 and 13.64 ms, GPU p95 6.91 and 7.38 ms, in all 4 runs of each. The cause is unknown; the old lab's dev server had run for
+  2.5 hours. So the same-lab A/A band of about 1% does not cover two labs: compare arms from labs started the same way, or expect
+  about 2% fps and 0.5 ms GPU p95 from the lab alone.
+- FA1 compared two labs (rows from `fa1*`). Its +7-8% fps stays above that band, but a same-lab recheck has not run.
+- Method trap: a control must fail closed. `git apply -R` with the wrong flags did nothing, and rows #206 and #210 ran the patched Wasm.
+- Revisit when: a scene's batch palettes stop matching its shadow draws' bytes (placed primitives). The native case shows 9 copies
+  for 8 rigs there, not 1.
+
+### 2026-11-02 — Stress lab: a compute kernel finds its bindings with one graph walk (L2) — KEEP
+
+- What changed: `graph::computeBindingNodes` keeps the kernel's storage and texture nodes in the node's memo. It replaces three walks per
+  dispatch, at 13.5 dispatches a frame.
+- Result, labs restarted cold together (rows #218-225, both arm orders, 7 of 8 pairs): fps 70.92 to 72.88 (+2.8%), frame p50 13.26 to
+  12.95 ms (forecast 0.3), frame p95 18.46 to 18.14 ms. GPU and upload did not change. The first 4 pairs read 3 of 4, so the rule was set
+  before the second window: 4 more pairs, keep at 6 of 8 with a mean past the 1% band.
+- Closed by reading, not measured: a number fast path in the uniform sync setter (hunt L3). `uniformLanes` and `sameLanes` on one
+  number are a few operations, so 1340 calls a frame cost far less than the 0.2-0.3 ms the hunt estimated. Most of the time is in the
+  callbacks and the object scan. Revisit when: a profile shows the setter by name.
+
+### 2026-11-02 — Stress lab: a clone keeps the skeleton its source meshes share (L4) — KEEP
+
+- What changed: `cloneSkeleton` maps each source `Skeleton` to one copy. A rig with several primitives now updates its bones once a frame,
+  not once per primitive.
+- Result, labs restarted cold together (rows #226-233, both arm orders, 8 of 8 pairs): fps 72.96 to 76.03 (+4.2%), frame p50 12.86 to
+  12.44 ms, frame p95 18.20 to 17.48 ms, presented p95 18.80 to 18.07 ms. GPU p95 did not change. Opus judge: NEUTRAL on 16 shots.
+- Revisit when: a game mutates one clone's skeleton and expects its sibling primitives to keep their own copy. No shipped code does this,
+  and the source already shares that skeleton.
+
+### 2026-11-02 — Virtual shadows: a pan kept the mirrored page (bug, not a lever) — FIXED
+
+- Symptom: dark roofs and wrong wall shapes in steps of 230-550 ms. Pan off in the same build removed all of them, so one A/B named the code.
+- Cause: page keys counted along the view axes, which are -U and -V, so kept pages sat 2 x the shift away. Full redraws hide this.
+- Method trap: a whole-frame step in a screencast is a state change, so line its time up with the engine's grants before theorizing.
+- Open lever: level 0 still redraws all 256 pages in 51 of 53 grants, because the depth re-fit moves near and far by about 0.001 m.
+
+### 2026-11-02 — Virtual shadows: a level holds its depth range while its casters fit (FG3) — KEEP on GPU p95, frame p95 rule missed
+
+- What changed: a grant re-fits a level's depth range only when a caster leaves it or a re-fit would shrink it past 75%. A re-fit pads
+  by the level's extent on each side.
+- Result: pages drawn 91 to 12.6 per frame, level 0 full redraws 88 to 7 in about 20 s. One real-display pair, load 12-15: presented p95
+  27.95 to 25.43 ms, GPU p95 7.75 to 6.78 ms. Opus judge: NEUTRAL.
+- 8 real-display pairs (rows #244-259, both arm orders, load peak 9-15): GPU p95 7.51 to 6.75 ms in 8 of 8, frame p95 22.19 to 21.60 ms in 5 of
+  8, presented p95 23.34 to 22.71 ms in 5 of 8, fps 60.11 to 60.25. The rule set before the run asked frame p95 in 6 of 8, and this missed by one
+  pair. All 3 losses ran the FG3 arm at the higher load. Kept anyway on the 8 of 8 GPU win and no worse mean: a decision past the rule, not a pass.
+- Quiet laptop, Intel GPU, load peak 3.7-4.8 (3 full pairs, not in the ledger): frame p95 24.35 to 20.75 ms in 3 of 3, fps 61.38 to 62.73 in 3 of 3.
+  The revert condition set before reading this was a worse mean frame p95, and it did not fire.
+- Why a 2% pad was not enough: panning along V slides the ground's depth band by about 0.9 m per metre, so 41 pages per frame stayed.
+- Method trap: desktop monitors asleep stop the browser opening its DevTools port, and a private Xvfb under the wrapper does too. Check
+  `/sys/class/drm/card1-*/status` before a window. Page counts under Xvfb on the real GPU stay valid; timing there is not a verdict.
+- Revisit when: a scene's casters span far more depth than its window (a high flyer), which re-fits and redraws the level each time.
+
+### 2026-11-02 — Virtual shadows: bone lookups take no lock, one shadow copy per draw (L5), and mover pages share one row plan (L6) — KEEP
+
+- L5 (`de7584e47`): `Skeleton::bone(i)` reads a cached raw pointer, not a `weak_ptr::lock`. A shadow copy of a draw is made once and moved,
+  not copied twice. Bone reach bounds inline min and max.
+- L6 (`474232822`): every mover page of a light draws the same moving casters, so the first mover page plans the rows and the others reuse
+  them. Only the camera differs, and that is a per-pass uniform. Test: rows built 6 of 6 to 2 of 6, pixel hash the same.
+- Stack window, FG3 against L5+L6, labs restarted cold together (rows #267-280, 6 valid pairs, both arm orders, load peak 9-18): fps 53.3 to
+  59.0 (+10.7%, 5 of 6), frame p50 17.82 to 15.55 ms, presented p95 26.87 to 24.40 ms (5 of 6), GPU p95 7.17 to 6.71 ms (4 of 6).
+- Score after the stack (rows #284-288): VSM 54 against Unreal 56 without Lumen and 52 stock, both ties. Unreal fps is still higher, 72.4.
+- Opus judge (fresh, read-only, 4 poses x 2-3 runs per arm plus 2 startup recordings per arm, NVIDIA Turing, headed): NEUTRAL on every
+  pair. Pixel differences sit at walker limbs and match the run-to-run noise inside one arm (108-134 px).
+- Method trap: FG3 left `native_engine_vsm_atlas` red because only the render database cases ran. Run `ctest -L native-engine` before a commit.
+- Method trap: a holdout runner passed its assertions at 1 Hz with monitors asleep. Pass or fail cannot see that, only fps can: refuse a run
+  when `/sys/class/drm/card1-*/status` shows no `connected`.
+- Revisit when: a game changes the bone list of a live skeleton (the raw pointers then need a rebuild), or a light has mover pages with
+  different caster sets.

@@ -3,8 +3,17 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { makeTempDirSync } from "../../test-support/temp-dir.js";
 
-const { abba, closeStrayPages, fileName, parseArm, poolRuns, saveRun, waitGpuIdle, waitQuiet } =
-  await import(new URL("../stress-fair.mjs", import.meta.url).href);
+const {
+  abba,
+  closeStrayPages,
+  fileName,
+  parseArm,
+  poolRuns,
+  presentedFromStarts,
+  saveRun,
+  waitGpuIdle,
+  waitQuiet,
+} = await import(new URL("../stress-fair.mjs", import.meta.url).href);
 
 /** A clock and a /proc/loadavg stub: one reading per `pollMs` step. */
 const clock = (loads: number[]) => {
@@ -35,35 +44,35 @@ describe("stress-fair (PRD-770)", () => {
     expect(() => parseArm("http://x/")).toThrow(/engine/u);
   });
 
-  it("starts only after the load stays under 4 for 60 s", async () => {
+  it("starts only after the load stays under 12 for 60 s", async () => {
     // 5 s polls: loud, then quiet readings for 60+ s
-    const stub = clock([9, 7, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3]);
+    const stub = clock([19, 15, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3]);
     const load = await waitQuiet({ ...stub, pollMs: 5000 });
     expect(load).toBe(3);
     expect(stub.now()).toBe(10_000 + 60_000 + 0);
   });
 
   it("restarts the 60 s hold when the load spikes, and times out inside the lock", async () => {
-    const spike = clock([3, 3, 3, 3, 3, 3, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3]);
+    const spike = clock([3, 3, 3, 3, 3, 3, 13, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3]);
     await waitQuiet({ ...spike, pollMs: 5000 });
     expect(spike.now()).toBeGreaterThanOrEqual(30_000 + 5000 + 60_000);
-    const busy = clock([9]);
+    const busy = clock([19]);
     await expect(waitQuiet({ ...busy, pollMs: 5000, timeoutMs: 20 * 60_000 })).rejects.toThrow(
       /lock released/u,
     );
   });
 
-  it("pools the valid runs and drops a run whose load rose above 6", () => {
+  it("pools the valid runs and drops a run whose load rose above 18", () => {
     const run = (fps: number, load: number[], sha = "aaaaaaaaaaaa") => ({
       url: "u",
       load,
       build: { kind: "wasm", sha256: sha, commit: "c" },
       report: { metrics: { fps, gpuP95Ms: null }, counts: {} },
     });
-    const pooled = poolRuns([run(40, [3, 4]), run(50, [3, 7.5]), run(60, [2, 3])]);
+    const pooled = poolRuns([run(40, [3, 4]), run(50, [3, 18.5]), run(60, [2, 3])]);
     expect(pooled).toMatchObject({ runs: 2, voidRuns: 1 });
     expect(pooled.report.metrics).toEqual({ fps: 50, gpuP95Ms: null });
-    expect(poolRuns([run(40, [8])])).toBeUndefined();
+    expect(poolRuns([run(40, [19])])).toBeUndefined();
     expect(() => poolRuns([run(40, [3]), run(50, [3], "bbbbbbbbbbbb")])).toThrow(
       /different builds/u,
     );
@@ -162,5 +171,30 @@ describe("stress-fair (PRD-770)", () => {
         report: { metrics: { fps: 60 }, counts: {} },
       });
     expect(readdirSync(outDir)).toHaveLength(4);
+  });
+
+  describe("presentedFromStarts", () => {
+    const seriesOf = (gaps: number[]) => {
+      const starts = [0];
+      for (const gap of gaps) starts.push((starts.at(-1) ?? 0) + gap);
+      return starts;
+    };
+
+    it("reads the real frame interval, with the p95 tail from the frame starts", () => {
+      const gaps = Array.from({ length: 100 }, (_, index) => (index % 10 === 0 ? 20 : 15));
+      expect(presentedFromStarts(seriesOf(gaps), 60)).toEqual({
+        presentedP50Ms: 15,
+        presentedP95Ms: 20,
+      });
+    });
+
+    it("counts only the report's own last seconds, so load and warm-up frames stay out", () => {
+      const starts = seriesOf([...Array(10).fill(500), ...Array(100).fill(10)]);
+      expect(presentedFromStarts(starts, 1).presentedP95Ms).toBe(10);
+    });
+
+    it("fails closed when the window holds no intervals", () => {
+      expect(() => presentedFromStarts([5], 60)).toThrow(/frame intervals/u);
+    });
   });
 });
