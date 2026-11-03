@@ -326,6 +326,7 @@ describe("a streamed world's caster prewarm", () => {
       {
         // r187's observer snapshots the attribute manager's dispose counter.
         attributes: { disposeVersion: 0 },
+        deleteNodeAttributes: vi.fn(),
         deleteVertexState: vi.fn(),
         getIndex: (object: { geometry: BufferGeometry }) => object.geometry.index,
         releaseRenderObject: vi.fn(),

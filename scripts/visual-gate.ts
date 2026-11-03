@@ -485,36 +485,18 @@ const captureTemplate: CaptureTemplate = async (
         if ((await page.locator('[data-threenative-canvas="true"]').count()) > 0)
           await page.waitForSelector('[data-threenative-startup="ready"]', { timeout: 30_000 });
         else await page.waitForTimeout(2_000);
+        const takeFrame = (): Promise<Buffer> => {
+          if (pageErrors.length > 0)
+            throw new Error(`TN_VISUAL_PAGE_ERROR: ${pageErrors.join(" | ")}`);
+          return page.screenshot({ type: "png" });
+        };
+        await waitForPaintedFrame(takeFrame, template);
         await page.waitForTimeout(250);
-        if (pageErrors.length > 0)
-          throw new Error(`TN_VISUAL_PAGE_ERROR: ${pageErrors.join(" | ")}`);
-        const content = await page.screenshot({ type: "png" });
-        const stats = assertFrameShowsSomething(content, template);
-        return { content, stats };
+        return await waitForPaintedFrame(takeFrame, template);
       } finally {
         await browser.close();
       }
     });
-    try {
-      const page = await browser.newPage({ viewport: { height: 720, width: 1280 } });
-      const pageErrors: string[] = [];
-      page.on("pageerror", (error) => pageErrors.push(error.message));
-      await page.goto(`http://127.0.0.1:${port}/`, { waitUntil: "domcontentloaded" });
-      await page.waitForSelector("canvas", { timeout: 30_000 });
-      if ((await page.locator('[data-threenative-canvas="true"]').count()) > 0)
-        await page.waitForSelector('[data-threenative-startup="ready"]', { timeout: 30_000 });
-      else await page.waitForTimeout(2_000);
-      const takeFrame = (): Promise<Buffer> => {
-        if (pageErrors.length > 0)
-          throw new Error(`TN_VISUAL_PAGE_ERROR: ${pageErrors.join(" | ")}`);
-        return page.screenshot({ type: "png" });
-      };
-      await waitForPaintedFrame(takeFrame, template);
-      await page.waitForTimeout(250);
-      return await waitForPaintedFrame(takeFrame, template);
-    } finally {
-      await browser.close();
-    }
   } catch (error) {
     throw new Error(
       `${error instanceof Error ? error.message : String(error)}\n${output.join("").slice(-4_000)}`,

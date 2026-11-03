@@ -26,6 +26,14 @@ import {
   sourceRadiusShadowFilter,
 } from "../src/render/soft-shadow.js";
 
+/** The builder shape three calls at runtime; r187's declarations omit these entry points. */
+interface INodeBuilder {
+  camera: PerspectiveCamera;
+  readonly nodes: Set<Node>;
+  setShaderStage(shaderStage: "fragment"): void;
+  flowStagesNode(node: Node, output: "float"): void;
+}
+
 /** The CPU-written scalar and vector uniforms a filter's graph reads once compiled, without a GPU. */
 function uniformsOf(filter: Node): Array<Node & { groupNode?: Node }> {
   const renderer = {
@@ -38,14 +46,16 @@ function uniformsOf(filter: Node): Array<Node & { groupNode?: Node }> {
     library: { fromMaterial: () => null },
     shadowMap: { enabled: true, type: 1 },
   };
+  // r187's typings no longer declare the stage-flow entry points three itself still has, so the
+  // builder is used through the shape three calls, as `three-shared-render-group.spec.ts` does.
   const builder = new WGSLNodeBuilder(
     new Mesh(new BoxGeometry(), new MeshBasicMaterial()),
     renderer as never,
-  );
+  ) as unknown as INodeBuilder;
   builder.camera = new PerspectiveCamera();
   builder.setShaderStage("fragment");
   builder.flowStagesNode(filter, "float");
-  return [...(builder as unknown as { nodes: Set<Node> }).nodes].filter((node) => {
+  return [...builder.nodes].filter((node) => {
     const value = (node as { value?: unknown }).value;
     return (
       (node as { isUniformNode?: boolean }).isUniformNode === true &&
