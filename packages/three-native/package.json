@@ -6,7 +6,7 @@
   "keywords": ["threenative", "three", "native", "abi", "gamedev"],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ThreeNativeHQ/threenative.git",
+    "url": "git+https://github.com/ThreeNativeHQ/threenative-engine.git",
     "directory": "packages/three-native"
   },
   "type": "module",
