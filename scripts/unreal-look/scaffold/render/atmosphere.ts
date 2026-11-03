@@ -388,34 +388,12 @@ export const SUN_LUX = 6;
 export const SUN_KELVIN = 6500;
 
 /**
- * The sun in three's light units. Unreal renders a lit diffuse surface as albedo x lux x cos(theta);
- * three's Lambert BRDF carries a 1/pi, so the same lux is pi times as large here. Measured on the
- * Unreal L1 cells (no atmosphere, scene-linear EXR): a 0.18 floor under the 60 degree sun reads
- * 0.874 luminance, within 7% of 0.18 x 6 x sin(60 deg) = 0.935 (the residual is checked on the
- * engine's own L1 capture).
+ * The sun in three's light units, which are Unreal's: both shade a diffuse surface as
+ * albedo / pi x lux x cos(theta) (Diffuse_Lambert, Engine/Shaders/Private/BRDF.ush:157), and the
+ * sky is radiance in the same units. The frame's brightness is the exposure's job, not the light's:
+ * with its meter off Unreal exposes by 2.4 (`qualityPreset`), and the L1 cells match at that value.
  */
-export const SUN_ILLUMINANCE = SUN_LUX * Math.PI;
-
-/**
- * Emissive in the sun's units. Unreal shades a lit diffuse surface as albedo / pi x lux x cos(theta)
- * (Diffuse_Lambert, Engine/Shaders/Private/BRDF.ush:157, used at Engine/Shaders/Private/
- * ShadingModels.ush:260-262) and adds a material's emissive as it stands: the glTF importer only
- * multiplies texture, factor and strength (Engine/Plugins/Interchange/Runtime/Source/Import/Private/
- * Gltf/InterchangeGLTFMaterial.cpp:481-487). Emissive 5 therefore outshines a white surface under the
- * 6 lux sun by 5 / (6 / pi) = 2.6x. `SUN_ILLUMINANCE` carries a pi, so a white surface here reads 6;
- * the emissive takes the same pi to keep that ratio. Applied where the scene's materials load.
- */
-export const EMISSIVE_UNITS = Math.PI;
-
-/**
- * Sky radiance relative to the sun, as Unreal renders it. TEMPORARY, measured and not derived: with
- * the sun at 6 lux the model above is 1.3x too bright against the Unreal L2 frames, flat across
- * channels and across the 15 and 4 degree suns (1.30 / 1.30 / 1.35 at 19 degrees elevation), so
- * the sky is scaled by 1/1.3. The lens attenuation constant 0.78 (PostProcessEyeAdaptation.cpp,
- * r.EyeAdaptation.LensAttenuation) has the right size but the path that would apply it to the
- * atmosphere and not to the sun is not found in the source yet.
- */
-export const SKY_TO_SUN = 0.78;
+export const SUN_ILLUMINANCE = SUN_LUX;
 
 /**
  * Colour of a black-body-like light at `kelvin` as linear sRGB with unit luminance: the Planckian

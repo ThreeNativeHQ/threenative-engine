@@ -52,7 +52,9 @@ export const neutralLook: IWorldEnvironmentOptions = {
   // ACES at a fixed exposure: core's filmic curve and metered exposure read yellowish on this town.
   tonemapMode: "aces",
   autoExposureEnabled: false,
-  exposure: 0.62,
+  // 0.62 was chosen under a sun of 6 x pi; the sun is Unreal's 6 lux now (PRD-632), so pi keeps the sunlit
+  // surfaces where the owner picked them.
+  exposure: 0.62 * Math.PI,
   // The kit's bloom: a low threshold that lifts the sunlit whitewash a little.
   bloomRadius: 0.5,
   bloomStrength: 0.7,

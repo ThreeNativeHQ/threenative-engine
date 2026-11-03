@@ -110,11 +110,13 @@ const shared: IWorldEnvironmentOptions = {
   bloomRadius: 0.6,
   bloomStrength: 0.22,
   bloomThreshold: 1,
-  // Unreal's fixed exposure scale is 1.0: its scene-linear EXR passed through the filmic curve alone
-  // reproduces its PNG (mean error 0.4/255 over 72000 pixels, L1 and L2). Light units, not this
-  // number, set the level: the sun is 6 lux (`atmosphere.ts`). With auto exposure on this is only
-  // the value used while the meter is off.
-  exposure: 1,
+  // Unreal's exposure with its meter off: the project setting pins the average luminance to mid grey
+  // under a 1 cd/m2 white point at a 1.2 saturation constant (SceneView.cpp:2060-2069), and the meter's
+  // rule key / average then gives 0.36 / (0.18 / 1.2) = 2.4 (PostProcessEyeAdaptation.cpp:810-821).
+  // The L1 cells, lit by the 6 lux sun (`atmosphere.ts`), match Unreal's at this value. With auto
+  // exposure on this is only the value used while the meter is off. The key is `exposure.ts`'s, written
+  // out here because this file loads without it (unreal-look-gi-tier.spec); core's preset derives it.
+  exposure: (0.18 * 2 ** 1) / (0.18 / 1.2),
   tonemapMode: "filmic",
   // Unreal's VignetteIntensity, cosine-fourth law (Scene.cpp, FPostProcessSettings constructor).
   vignetteAmount: 0.4,

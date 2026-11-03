@@ -29,8 +29,8 @@ describe("calibration scene units (PRD-646)", () => {
 
   it("fails a unit it does not know, lux included: a sun is not a punctual light", () => {
     expect(() => candela(6, "lux")).toThrow("TN_CALIBRATION_SCENE_UNIT: lux");
-    // The template scenes take their sun through one constant: Unreal's 6 lux is pi times that in three's Lambert.
-    expect(SUN_ILLUMINANCE).toBeCloseTo(6 * Math.PI, 12);
+    // The template scenes take their sun through one constant: Unreal's 6 lux, in the same units in three.
+    expect(SUN_ILLUMINANCE).toBe(6);
   });
 
   it("fails a light class the loader does not build", () => {

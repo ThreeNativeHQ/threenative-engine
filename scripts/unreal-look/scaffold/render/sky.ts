@@ -21,7 +21,6 @@ import {
   Vector3,
 } from "three";
 import {
-  SKY_TO_SUN,
   SUN_ILLUMINANCE,
   SUN_KELVIN,
   bakeSkyRadiance,
@@ -178,11 +177,7 @@ function atmosphereSky(clouds = false): Texture | undefined {
   if (clouds) bakeCloudRadiance(radiance, SUN_DIRECTION, w, h);
   const tint = temperatureColour(SUN_KELVIN);
   // The world-space light cache gathers this same sky, unclipped, in the sun's units.
-  const scale = [0, 1, 2].map((c) => (tint[c] ?? 1) * SUN_ILLUMINANCE * SKY_TO_SUN) as [
-    number,
-    number,
-    number,
-  ];
+  const scale = [0, 1, 2].map((c) => (tint[c] ?? 1) * SUN_ILLUMINANCE) as [number, number, number];
   skyRadiance.current = { data: radiance, width: w, height: h, scale };
   const canvas = new OffscreenCanvas(w, h);
   const context = canvas.getContext("2d");
@@ -190,7 +185,7 @@ function atmosphereSky(clouds = false): Texture | undefined {
   const image = context.createImageData(w, h);
   for (let i = 0; i < w * h; i += 1) {
     for (let c = 0; c < 3; c += 1) {
-      const value = (radiance[i * 3 + c] ?? 0) * (tint[c] ?? 1) * SUN_ILLUMINANCE * SKY_TO_SUN;
+      const value = (radiance[i * 3 + c] ?? 0) * (tint[c] ?? 1) * SUN_ILLUMINANCE;
       image.data[i * 4 + c] = Math.round(255 * linearToSrgb(Math.min(1, value / SKY_RANGE)));
     }
     image.data[i * 4 + 3] = 255;

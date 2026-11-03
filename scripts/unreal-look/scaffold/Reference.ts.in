@@ -41,7 +41,6 @@ import { Play } from "./Play.js";
 import { FOLIAGE } from "./referenceFoliage.js";
 import { POSES } from "./referencePoses.js";
 import {
-  EMISSIVE_UNITS,
   EPIC_SSGI,
   type FinalGatherMethod,
   type IGlbMaterialImages,
@@ -212,7 +211,6 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
       ];
       // Unreal's static meshes cast and receive shadows by default; three's meshes do neither
       // until asked. Both arms (baseline and tuned) need this, so it is not tuning.
-      const emissiveSeen = new Set<unknown>();
       model.traverse((object) => {
         if (object instanceof Mesh) {
           object.castShadow = true;
@@ -221,12 +219,6 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
             for (const m of [object.material].flat())
               m.shadowSide = m.side === DoubleSide && !params.has("shadowSide") ? DoubleSide : casterSide;
           object.receiveShadow = true;
-          // Unreal's emissive is radiance as it stands, the sun is lux / pi (EMISSIVE_UNITS).
-          const material = object.material as MeshStandardMaterial;
-          if (!emissiveSeen.has(material)) {
-            emissiveSeen.add(material);
-            material.emissiveIntensity *= EMISSIVE_UNITS;
-          }
         }
       });
       // three's WebGPU ShadowNode reads `shadow.filterNode`; its types do not declare it yet.

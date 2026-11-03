@@ -54,7 +54,6 @@ import {
   MIE_SCATTER,
   OZONE,
   RAYLEIGH,
-  SKY_TO_SUN,
   SUN_ILLUMINANCE,
   SUN_KELVIN,
   TOP_KM,
@@ -299,7 +298,7 @@ export class GpuSkyNode extends TempNode<"vec3"> {
   readonly #quad: QuadMesh;
   readonly #noise = cloudNoise();
   readonly #fog = uniform(new Color());
-  readonly #scale = vec3(...temperatureColour(SUN_KELVIN)).mul(SUN_ILLUMINANCE * SKY_TO_SUN);
+  readonly #scale = vec3(...temperatureColour(SUN_KELVIN)).mul(SUN_ILLUMINANCE);
   readonly #light = uniform(new Vector3());
   readonly #ambient = uniform(new Vector3());
   #last = new Vector3(Number.NaN, 0, 0);
@@ -615,9 +614,7 @@ export class GpuSkyNode extends TempNode<"vec3"> {
       .greaterThanEqual(Math.cos(SUN_RADIUS))
       .and(skyDisc.greaterThan(0.5))
       .select(
-        this.#light
-          .mul(this.clouds ? cloud.a : float(1))
-          .div(PI * Math.sin(SUN_RADIUS) ** 2 * SKY_TO_SUN),
+        this.#light.mul(this.clouds ? cloud.a : float(1)).div(PI * Math.sin(SUN_RADIUS) ** 2),
         vec3(0),
       );
     const colour = sky.add(disc).mul(this.#scale);
@@ -711,7 +708,7 @@ export function atmosphereFogColour(clear: {
   }
   const tint = temperatureColour(SUN_KELVIN);
   return new Color(
-    ...(sum.map((v, c) => (v / weights) * (tint[c] ?? 1) * SUN_ILLUMINANCE * SKY_TO_SUN) as [
+    ...(sum.map((v, c) => (v / weights) * (tint[c] ?? 1) * SUN_ILLUMINANCE) as [
       number,
       number,
       number,
@@ -724,7 +721,7 @@ export function distantFogColour(sun: Vector3): Color {
   const tint = temperatureColour(SUN_KELVIN);
   const light = viewDistanceSkyLight(sun);
   return new Color(
-    ...([0, 1, 2].map((c) => (light[c] ?? 0) * (tint[c] ?? 1) * SUN_ILLUMINANCE * SKY_TO_SUN) as [
+    ...([0, 1, 2].map((c) => (light[c] ?? 0) * (tint[c] ?? 1) * SUN_ILLUMINANCE) as [
       number,
       number,
       number,
@@ -756,7 +753,7 @@ export function createGpuSky(
     const clear = data.slice();
     environment.userData.clearRadiance = { data: clear, width: w, height: h };
     if (clouds) bakeCloudRadiance(data, sun, w, h);
-    const scale = temperatureColour(SUN_KELVIN).map((v) => v * SUN_ILLUMINANCE * SKY_TO_SUN) as [
+    const scale = temperatureColour(SUN_KELVIN).map((v) => v * SUN_ILLUMINANCE) as [
       number,
       number,
       number,

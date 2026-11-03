@@ -26,8 +26,8 @@ afterEach(() => vi.restoreAllMocks());
 test("minimal preserves its authored sun and independent convention overrides", () => {
   const scene = new Scene();
   const { key } = setupLighting(scene, { shadowMap: { enabled: false, type: 0 } });
-  // The atmosphere sun (PRD-633): Unreal's 6 lux in three's units, tinted warm by the air.
-  expect(key.intensity).toBeCloseTo(6 * Math.PI, 6);
+  // The atmosphere sun (PRD-633, PRD-632): Unreal's 6 lux, the same number in three's light units.
+  expect(key.intensity).toBe(6);
   expect(key.color.r).toBeGreaterThan(key.color.b);
   const convention = createLightingConvention({ rimGain: 0 });
   expect(convention.rimGain).toBe(0);
