@@ -30,67 +30,67 @@
       "perAdapter": {
         "integrated": {
           "contributions": {
-            "graphOutputChanged": ["ambientOcclusion", "traa", "bloom", "vignette"]
+            "graphOutputChanged": ["ambientOcclusion", "ssr", "bloom", "vignette", "antialias"]
           },
           "stages": {
-            "includes": ["ambientOcclusion", "traa", "bloom", "vignette"],
-            "excludes": ["motionBlur", "grade", "grain"],
-            "order": ["ambientOcclusion", "traa", "bloom", "vignette"]
+            "excludes": ["ssgi", "traa", "motionBlur", "grade", "grain"],
+            "includes": ["ambientOcclusion", "ssr", "bloom", "vignette", "antialias"],
+            "order": ["ambientOcclusion", "ssr", "bloom", "vignette", "antialias"]
           },
           "tier": "medium"
         },
         "mobile-high": {
           "contributions": {
-            "graphOutputChanged": ["ambientOcclusion", "traa", "bloom", "vignette"]
+            "graphOutputChanged": ["ambientOcclusion", "ssr", "bloom", "vignette", "antialias"]
           },
           "stages": {
-            "includes": ["ambientOcclusion", "traa", "bloom", "vignette"],
-            "excludes": ["motionBlur", "grade", "grain"],
-            "order": ["ambientOcclusion", "traa", "bloom", "vignette"]
+            "excludes": ["ssgi", "traa", "motionBlur", "grade", "grain"],
+            "includes": ["ambientOcclusion", "ssr", "bloom", "vignette", "antialias"],
+            "order": ["ambientOcclusion", "ssr", "bloom", "vignette", "antialias"]
           },
           "tier": "medium"
         },
         "mobile-low": {
           "contributions": {
-            "graphOutputChanged": ["bloom", "vignette", "antialias"]
+            "graphOutputChanged": ["ssr", "bloom", "vignette", "antialias"]
           },
           "stages": {
-            "includes": ["bloom", "vignette", "antialias"],
-            "excludes": ["ambientOcclusion", "motionBlur", "grade", "grain"],
-            "order": ["bloom", "vignette", "antialias"]
+            "excludes": ["ambientOcclusion", "ssgi", "traa", "motionBlur", "grade", "grain"],
+            "includes": ["ssr", "bloom", "vignette", "antialias"],
+            "order": ["ssr", "bloom", "vignette", "antialias"]
           },
           "tier": "low"
         },
         "mobile-mid": {
           "contributions": {
-            "graphOutputChanged": ["bloom", "vignette", "antialias"]
+            "graphOutputChanged": ["ssr", "bloom", "vignette", "antialias"]
           },
           "stages": {
-            "includes": ["bloom", "vignette", "antialias"],
-            "excludes": ["ambientOcclusion", "motionBlur", "grade", "grain"],
-            "order": ["bloom", "vignette", "antialias"]
+            "excludes": ["ambientOcclusion", "ssgi", "traa", "motionBlur", "grade", "grain"],
+            "includes": ["ssr", "bloom", "vignette", "antialias"],
+            "order": ["ssr", "bloom", "vignette", "antialias"]
           },
           "tier": "low"
         },
         "software": {
           "contributions": {
-            "graphOutputChanged": ["bloom", "vignette", "antialias"]
+            "graphOutputChanged": ["ssr", "bloom", "vignette", "antialias"]
           },
           "stages": {
-            "includes": ["bloom", "vignette", "antialias"],
-            "excludes": ["ambientOcclusion", "motionBlur", "grade", "grain"],
-            "order": ["bloom", "vignette", "antialias"]
+            "excludes": ["ambientOcclusion", "ssgi", "traa", "motionBlur", "grade", "grain"],
+            "includes": ["ssr", "bloom", "vignette", "antialias"],
+            "order": ["ssr", "bloom", "vignette", "antialias"]
           },
           "tier": "low"
         }
       },
       "stages": {
-        "includes": ["ambientOcclusion", "traa", "motionBlur", "bloom", "vignette"],
-        "excludes": ["grade", "grain"],
-        "order": ["ambientOcclusion", "traa", "motionBlur", "bloom", "vignette"]
+        "excludes": ["traa", "motionBlur", "grade", "grain"],
+        "includes": ["ambientOcclusion", "ssgi", "ssr", "bloom", "vignette", "antialias"],
+        "order": ["ambientOcclusion", "ssgi", "ssr", "bloom", "vignette", "antialias"]
       },
       "contributions": {
-        "graphOutputChanged": ["ambientOcclusion", "traa", "motionBlur", "bloom", "vignette"]
+        "graphOutputChanged": ["ambientOcclusion", "ssgi", "ssr", "bloom", "vignette", "antialias"]
       }
     },
     "resources": [
