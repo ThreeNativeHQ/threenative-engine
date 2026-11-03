@@ -6,6 +6,7 @@ import type TRAANode from "three/addons/tsl/display/TRAANode.js";
 import { Fn, add, float, int, luminance, max, mix, texture, uv, uvec2, vec2 } from "three/tsl";
 import type { Node } from "three/webgpu";
 import type { TemporalCurrentFootprint } from "./temporalCurrentFootprint.js";
+import type { TemporalMoire } from "./temporalMoire.js";
 import {
   type TemporalDepthRejection,
   type TemporalResolveNode,
@@ -26,6 +27,8 @@ export { CATMULL_ROM_BASIS } from "./temporalResolveMath.js";
 export interface ITemporalHistoryWeighting {
   historyScale: number;
   velocityWeightClamp: boolean;
+  /** Unreal TSR lever 4: widen the clip box where output luma flickers (`temporalMoire.ts`). */
+  flickerRejection?: boolean;
 }
 
 /**
@@ -101,6 +104,7 @@ export function createExperimentalTemporalResolve(
   ),
   current?: TemporalCurrentFootprint,
   weighting: ITemporalHistoryWeighting = { historyScale: 1, velocityWeightClamp: false },
+  moire?: TemporalMoire,
 ) {
   const { historyScale, velocityWeightClamp } = weighting;
   const node = source as TemporalResolveNode;
@@ -176,8 +180,9 @@ export function createExperimentalTemporalResolve(
     // Reasonable gamma range is [0.75, 2]
     const varianceGamma = mix(0.5, 1, motionFactor.oneMinus().pow2());
     const variance = (reconstruction.get("variance") as Node<"vec4">).mul(varianceGamma);
-    const minColor = mean.sub(variance);
-    const maxColor = mean.add(variance);
+    const box = { low: mean.sub(variance), high: mean.add(variance) };
+    const { low: minColor, high: maxColor } =
+      moire?.widen(box.low, box.high, historyUV, outputPixelSpeed.mul(historyScale)) ?? box;
     const clippedHistoryColor = clipAABB(
       mean.clamp(minColor, maxColor),
       historyColor,

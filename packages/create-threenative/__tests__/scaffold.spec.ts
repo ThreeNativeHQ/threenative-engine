@@ -378,7 +378,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-31: core key 0.36, traced reflections, the crate contact blob, the portable trace type (PRD-633); measured by this test.
   // Recomputed 2026-10-31 (PRD-775): temporalAAHooks.ts claims the 0.187 render pipeline's view
   // offset and drives its callback lists, so starter's render source moves again. Measured by this test.
-  starter: "30b1fa3287846dd848fd0769cb4626742f54ab8dd1b53974be9f92239ed79437",
+  starter: "b2d241e27c76fa8bd8fdb2de71a8327ff1ec1850650262b1ab55dabdfa496d35",
   "tower-defense": "bce1b6cab442c4275afade3a0ef9034726b0c29295d5514e2175214f14b00f00",
 };
 
@@ -503,6 +503,7 @@ const STARTER_PATHS = [
   "src/render/temporalCurrentSelection.ts",
   "src/render/temporalCurrentVisibility.ts",
   "src/render/temporalHistoryResolve.ts",
+  "src/render/temporalMoire.ts",
   "src/render/temporalResolve.ts",
   "src/render/exposure.ts",
   "src/render/volumetricFog.ts",

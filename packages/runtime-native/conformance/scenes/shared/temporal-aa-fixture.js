@@ -112,6 +112,8 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
     history100,
     history200: { historyScale: 2, velocityWeightClamp: false },
     "velocity-clamp": { historyScale: 1, velocityWeightClamp: true },
+    // Lever 4: the default plus Unreal's flicker-aware rejection.
+    flicker: { historyScale: 2, velocityWeightClamp: true, flickerRejection: true },
   }[policy] ?? (followsDefault.includes(policy) ? undefined : history100);
   // The roles that must genuinely request nothing: no reconstruction stage, no velocity MRT. The
   // spatial role still renders its low input and presents it through the ordinary texture upsample.

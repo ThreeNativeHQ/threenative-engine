@@ -12,6 +12,7 @@ import {
 } from "three/webgpu";
 import { createTemporalAAInput } from "./temporalAAInput.js";
 import { createHistoryPresent } from "./temporalHistoryResolve.js";
+import type { TemporalMoire } from "./temporalMoire.js";
 import {
   type ITemporalRejectionCounter,
   type ITemporalRejectionMeasurement,
@@ -38,6 +39,7 @@ export function createTemporalAAFrame(
   rejection: () => TemporalDepthRejection | undefined,
   publishCurrentDepth?: (renderer: Renderer) => void,
   historyScale = 1,
+  moire?: TemporalMoire,
 ) {
   // Three 0.187's QuadMesh takes a material in the constructor; the draw replaces it before rendering.
   const quadMesh = new QuadMesh(internals._resolveMaterial);
@@ -136,6 +138,7 @@ export function createTemporalAAFrame(
         }
         counter ??= createTemporalRejectionCounter(equations);
         counter.sample(renderer, frame, display.x, display.y);
+        moire?.update(renderer, quadMesh, equations, history);
       }
       publishCurrentDepth?.(renderer);
       // History is the resolve this frame produced, at the same size, so the copy never crosses rasters.
@@ -184,6 +187,7 @@ export function createTemporalAAFrame(
       previousDepth = null;
       depthReady = false;
       present?.dispose();
+      moire?.dispose();
     },
   };
 }

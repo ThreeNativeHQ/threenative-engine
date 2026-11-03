@@ -89,6 +89,8 @@ const FAMILIES: Record<string, string[]> = {
     "velocity-clamp-open",
     "history100",
     "history100-open",
+    "flicker",
+    "flicker-open",
     "strict-rejection-open",
     "unchecked-history-open",
     "nearest-history",
@@ -114,6 +116,7 @@ const FAMILIES: Record<string, string[]> = {
     "quality-history200",
     "quality-velocity-clamp",
     "quality-history100",
+    "quality-flicker",
     "quality-zero-velocity-open",
     "quality-unchecked-history-open",
   ],
@@ -408,9 +411,11 @@ const LEVER_ARMS: Array<{ arm: string; open: string | null }> = [
   { arm: "history200", open: "history200-open" },
   { arm: "velocity-clamp", open: "velocity-clamp-open" },
   { arm: "history100", open: "history100-open" },
+  { arm: "flicker", open: "flicker-open" },
   { arm: "quality-history200", open: null },
   { arm: "quality-velocity-clamp", open: null },
   { arm: "quality-history100", open: null },
+  { arm: "quality-flicker", open: null },
 ];
 const leverArms = Object.fromEntries(
   LEVER_ARMS.map(({ arm, open }) => {

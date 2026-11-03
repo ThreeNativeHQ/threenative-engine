@@ -58,6 +58,7 @@ export function createTemporalAA(
     resolve.equations,
     currentProducer?.publishDepth,
     weighting.historyScale,
+    resolve.moire,
   );
   const hooks = createTemporalAAHooks(frames.jitterInput, () => internals.clearViewOffset());
   let ownedViewOffset: { width: number; height: number } | null = null;

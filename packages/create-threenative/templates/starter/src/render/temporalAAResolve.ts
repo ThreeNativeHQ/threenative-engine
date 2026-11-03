@@ -7,6 +7,7 @@ import {
   createTemporalCurrentFootprint,
 } from "./temporalCurrentFootprint.js";
 import type { TemporalCurrentProducer } from "./temporalCurrentProducer.js";
+import { createTemporalMoire } from "./temporalMoire.js";
 import {
   type ITemporalHistoryWeighting,
   createExperimentalTemporalResolve,
@@ -24,6 +25,7 @@ export function createTemporalAAResolve(
   weighting?: ITemporalHistoryWeighting,
 ) {
   const internals = node as unknown as ITemporalAANode;
+  const moire = weighting?.flickerRejection === true ? createTemporalMoire(node) : undefined;
   let rejection: TemporalDepthRejection | undefined;
   let currentFootprint: TemporalCurrentFootprint | undefined;
   function configure(renderer: Renderer): void {
@@ -56,11 +58,13 @@ export function createTemporalAAResolve(
       rejection,
       currentFootprint,
       weighting,
+      moire,
     );
     internals._resolveMaterial.needsUpdate = true;
   }
   return {
     equations: () => rejection,
+    moire,
     configure,
     invalidate: (renderer: Renderer) => {
       rejection = undefined;

@@ -5,6 +5,7 @@ import type { Node } from "three/webgpu";
 import { MeshBasicNodeMaterial, WGSLNodeBuilder, WebGPURenderer } from "three/webgpu";
 import { describe, expect, it, vi } from "vitest";
 import { createTemporalAA } from "../templates/starter/src/render/temporalAA.js";
+import { createTemporalMoire } from "../templates/starter/src/render/temporalMoire.js";
 import { createTemporalRejectionCounter } from "../templates/starter/src/render/temporalRejectionCounter.js";
 import {
   CATMULL_ROM_BASIS,
@@ -202,6 +203,57 @@ describe("authored temporal reconstruction kernel", () => {
       mesh.geometry.dispose();
       mesh.material.dispose();
     }
+  });
+  it("compiles lever 4's widened clip and its moire update to WGSL (PRD-539)", () => {
+    const renderer = offlineRenderer();
+    const camera = new PerspectiveCamera();
+    const scenePass = pass(new Scene(), camera);
+    scenePass.setSize(1280, 720);
+    const build = (flickerRejection: boolean) => {
+      const temporal = createTemporalAA(
+        scenePass.getTextureNode(),
+        scenePass.getTextureNode("depth"),
+        scenePass.getTextureNode("velocity"),
+        camera,
+        undefined,
+        { historyScale: 2, velocityWeightClamp: true, flickerRejection },
+      );
+      const builder = new WGSLNodeBuilder(null as never, renderer) as WGSLNodeBuilder & {
+        context: Record<string, unknown>;
+        setBuildStage(stage: string): void;
+      };
+      builder.setBuildStage("setup");
+      builder.context.velocity = velocity;
+      temporal.node.setup(builder);
+      return temporal.node as unknown as TemporalResolveNode & {
+        _resolveMaterial: { colorNode: unknown };
+      };
+    };
+    const mesh = new Mesh(new PlaneGeometry(2, 2), new MeshBasicNodeMaterial());
+    // The moire ramp, saturate(count * (1 - 0.95^2) - 0.5), exists only where the lever is on.
+    expect(fragment(renderer, mesh, build(true)._resolveMaterial.colorNode)).toContain("0.0975");
+    expect(fragment(renderer, mesh, build(false)._resolveMaterial.colorNode)).not.toContain(
+      "0.0975",
+    );
+    // The update pass compiles too, with no literal WGSL cannot parse (gate run 5 lost an arm to one).
+    const node = build(true);
+    const moire = createTemporalMoire(node);
+    const drawn: { material?: { fragmentNode: unknown } } = {};
+    moire.update(
+      { initRenderTarget: () => {}, setRenderTarget: () => {} } as never,
+      {
+        render: () => {},
+        set material(value: { fragmentNode: unknown }) {
+          drawn.material = value;
+        },
+      } as never,
+      createTemporalDepthRejection(node, renderer),
+      new Vector2(64, 36),
+    );
+    const update = fragment(renderer, mesh, drawn.material?.fragmentNode);
+    expect(update).toContain("0.95");
+    expect(update).not.toMatch(/Infinity|NaN/u);
+    moire.dispose();
   });
   it("compiles both depth supports in the actual rejection-count compute dispatch", async () => {
     const renderer = offlineRenderer();
