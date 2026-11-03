@@ -432,19 +432,34 @@ export function unpublishedReleasePackages(
   return states.map(({ item }) => item);
 }
 
+/**
+ * Whether an installer can resolve `name@version` yet: the abbreviated packument `npm install` and
+ * `npm create` read lists it. The per-version endpoint answers before that packument's CDN cache
+ * does, so 0.3.10 and 0.3.11 started the clean room on it and `npm create` failed with ETARGET.
+ */
+export async function installableOnRegistry(
+  name: string,
+  version: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<boolean> {
+  const response = await fetchImpl(`https://registry.npmjs.org/${name.replace("/", "%2f")}`, {
+    headers: { accept: "application/vnd.npm.install-v1+json" },
+  });
+  if (!response.ok) return false;
+  const packument = (await response.json()) as { versions?: Record<string, unknown> };
+  return packument.versions?.[version] !== undefined;
+}
+
 async function waitForRegistry(name: string, version: string): Promise<void> {
   // A brand-new scoped package is not readable the instant it is published, and publishing the
   // scaffolder before its dependencies are visible produces an install nobody can reproduce.
-  // The version endpoint is served straight from publish rather than through the packument's CDN
-  // cache, so it reflects a new version sooner; the deadline is generous because a real 0.3.1
-  // publish aborted after 180s while npm was still propagating (npm itself said "a few minutes").
+  // The deadline is generous because a real 0.3.1 publish aborted after 180s while npm was still
+  // propagating (npm itself said "a few minutes").
   const timeoutMs = 15 * 60_000;
   const deadline = Date.now() + timeoutMs;
-  const url = `https://registry.npmjs.org/${name.replace("/", "%2f")}/${encodeURIComponent(version)}`;
   while (Date.now() < deadline) {
     try {
-      const response = await fetch(url);
-      if (response.ok) return;
+      if (await installableOnRegistry(name, version)) return;
     } catch {
       // Not visible yet; the deadline is the only thing that ends this loop.
     }

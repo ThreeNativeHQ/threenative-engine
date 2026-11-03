@@ -8,6 +8,7 @@ import { type IPublishPackage, type RegistryLookup, publishSet } from "../check-
 import {
   UPGRADE_PROOF_TEMPLATES,
   assertCleanPackageTree,
+  installableOnRegistry,
   packedTarballName,
   prepareReleaseCohort,
   proveUpgradeFromLatest,
@@ -276,6 +277,28 @@ describe("pnpm release publishing", () => {
     ).rejects.toThrow(/TN_RELEASE_NOT_VISIBLE: a/u);
 
     expect(published).toEqual(["a"]);
+  });
+
+  it("waits for the install packument, not the per-version endpoint", async () => {
+    // 0.3.10 and 0.3.11: the version endpoint answered first, and `npm create` in the clean room
+    // read a packument that did not list the new version yet (ETARGET).
+    const requests: { url: string; accept: string }[] = [];
+    const registry = (versions: Record<string, unknown>) =>
+      (async (url: string | URL | Request, init?: RequestInit) => {
+        requests.push({ url: String(url), accept: new Headers(init?.headers).get("accept") ?? "" });
+        return new Response(JSON.stringify({ versions }), { status: 200 });
+      }) as typeof fetch;
+
+    expect(
+      await installableOnRegistry("create-threenative", "0.2.15", registry({ "0.2.14": {} })),
+    ).toBe(false);
+    expect(
+      await installableOnRegistry("@threenative/core", "0.3.11", registry({ "0.3.11": {} })),
+    ).toBe(true);
+    expect(requests.at(-1)).toEqual({
+      url: "https://registry.npmjs.org/@threenative%2fcore",
+      accept: "application/vnd.npm.install-v1+json",
+    });
   });
 });
 
