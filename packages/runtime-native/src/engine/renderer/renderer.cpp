@@ -3144,9 +3144,11 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     if (!compilation) {
         std::vector<std::size_t> autoLamps;
         std::vector<shadows::LampDemand> demands;
-        Matrix4 view; view.elements = camera.matrixWorldInverse;
-        Matrix4 viewProjection; viewProjection.elements = camera.projectionMatrix; viewProjection.multiply(view);
-        const auto& p = camera.projectionMatrix;
+        // The unjittered view: a pixel's footprint does not move with the TRAA subpixel offset, and a jittered
+        // frustum flips a receiver on the view's edge in and out, which reallocated the map every frame (PRD-539).
+        Matrix4 view; view.elements = unjitteredCamera.matrixWorldInverse;
+        Matrix4 viewProjection; viewProjection.elements = unjitteredCamera.projectionMatrix; viewProjection.multiply(view);
+        const auto& p = unjitteredCamera.projectionMatrix;
         const double screenRadius = std::min(1 / (inputWidth_ * std::abs(p[0])), 1 / (inputHeight_ * std::abs(p[5])));
         const WGPULimits& limits = deviceLimits();
         for (std::size_t i = 0; i < lights.direct.size(); ++i) {
