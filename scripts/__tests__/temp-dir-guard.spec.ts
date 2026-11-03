@@ -245,8 +245,16 @@ const allowedProductionCreators = new Map<string, string>([
   ],
 ]);
 
+/** Other specs create and remove temporary projects under packages/ while this walk runs. */
+function unlessGone<T>(fallback: T): (error: NodeJS.ErrnoException) => T {
+  return (error) => {
+    if (error.code === "ENOENT") return fallback;
+    throw error;
+  };
+}
+
 async function sourceFiles(directory: string): Promise<string[]> {
-  const entries = await readdir(directory, { withFileTypes: true });
+  const entries = await readdir(directory, { withFileTypes: true }).catch(unlessGone([]));
   const files: string[] = [];
   for (const entry of entries) {
     const absolute = path.join(directory, entry.name);
@@ -264,17 +272,21 @@ async function sourceFiles(directory: string): Promise<string[]> {
 }
 
 async function unregisteredTempCreators(): Promise<string[]> {
-  const files = [
+  return creatorsIn([
     ...(await sourceFiles(path.join(repositoryRoot, "packages"))),
     ...(await sourceFiles(path.join(repositoryRoot, "scripts"))),
     path.join(repositoryRoot, "playwright.config.ts"),
-  ];
+  ]);
+}
+
+async function creatorsIn(files: readonly string[]): Promise<string[]> {
   const offenders: string[] = [];
   for (const file of files) {
     const relative = path.relative(repositoryRoot, file).split(path.sep).join("/");
     if (relative === "test-support/temp-dir.ts" || allowedProductionCreators.has(relative))
       continue;
-    if (tempCreatorPattern.test(await readFile(file, "utf8"))) offenders.push(relative);
+    const source = await readFile(file, "utf8").catch(unlessGone(""));
+    if (tempCreatorPattern.test(source)) offenders.push(relative);
   }
   return offenders.sort();
 }
@@ -283,5 +295,11 @@ describe("temporary directory guard", () => {
   it("requires every test-owned temporary directory to register cleanup", async () => {
     const offenders = await unregisteredTempCreators();
     expect(offenders, "unregistered temporary directory creators").toEqual([]);
+  });
+
+  it("does not fail on a temporary project another spec removes during the walk", async () => {
+    const gone = path.join(repositoryRoot, "packages", ".temp-dir-guard-gone");
+    await expect(sourceFiles(gone)).resolves.toEqual([]);
+    await expect(creatorsIn([path.join(gone, "entry.ts")])).resolves.toEqual([]);
   });
 });

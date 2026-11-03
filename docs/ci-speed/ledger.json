@@ -3,7 +3,7 @@
   "goals": [
     {
       "key": "lastPushToMergeMedianMin",
-      "short": "Push\u2192merge p50",
+      "short": "Push→merge p50",
       "label": "Last push to merge, median",
       "unit": "min",
       "goal": 30,
@@ -11,7 +11,7 @@
     },
     {
       "key": "lastPushToMergeP90Min",
-      "short": "Push\u2192merge p90",
+      "short": "Push→merge p90",
       "label": "Last push to merge, p90",
       "unit": "min",
       "goal": 45,
@@ -123,7 +123,7 @@
     },
     {
       "key": "releaseLeadMin",
-      "short": "Promotion\u2192npm",
+      "short": "Promotion→npm",
       "label": "First promotion PR to the npm publish, newest release in the window",
       "unit": "min",
       "goal": 120,
@@ -214,7 +214,7 @@
         },
         {
           "number": 457,
-          "title": "PRD-210: native host survives backgrounding and crashes \u2014 device proofs",
+          "title": "PRD-210: native host survives backgrounding and crashes — device proofs",
           "lastPushToMergeMin": 436,
           "enqueueToMergeMin": 432.7,
           "attempts": 4,
@@ -223,7 +223,7 @@
         },
         {
           "number": 456,
-          "title": "docs(prd-211): Android APK boots from real Ogg assets \u2014 close PRD-211",
+          "title": "docs(prd-211): Android APK boots from real Ogg assets — close PRD-211",
           "lastPushToMergeMin": 764.7,
           "enqueueToMergeMin": 892.1,
           "attempts": 9,
@@ -533,7 +533,7 @@
       "prs": [
         {
           "number": 470,
-          "title": "PRD-461: view distance basics \u2014 terrain radius, near-only colliders, recipe fog",
+          "title": "PRD-461: view distance basics — terrain radius, near-only colliders, recipe fog",
           "lastPushToMergeMin": 477.4,
           "enqueueToMergeMin": 363.9,
           "attempts": 4,
@@ -610,7 +610,7 @@
       "prs": [
         {
           "number": 470,
-          "title": "PRD-461: view distance basics \u2014 terrain radius, near-only colliders, recipe fog",
+          "title": "PRD-461: view distance basics — terrain radius, near-only colliders, recipe fog",
           "lastPushToMergeMin": 477.4,
           "enqueueToMergeMin": 363.9,
           "attempts": 4,
@@ -687,7 +687,7 @@
       "prs": [
         {
           "number": 470,
-          "title": "PRD-461: view distance basics \u2014 terrain radius, near-only colliders, recipe fog",
+          "title": "PRD-461: view distance basics — terrain radius, near-only colliders, recipe fog",
           "lastPushToMergeMin": 477.4,
           "enqueueToMergeMin": 363.9,
           "attempts": 4,
@@ -768,7 +768,7 @@
       "prs": [
         {
           "number": 470,
-          "title": "PRD-461: view distance basics \u2014 terrain radius, near-only colliders, recipe fog",
+          "title": "PRD-461: view distance basics — terrain radius, near-only colliders, recipe fog",
           "lastPushToMergeMin": 477.4,
           "enqueueToMergeMin": 363.9,
           "attempts": 4,
@@ -853,7 +853,7 @@
       "prs": [
         {
           "number": 470,
-          "title": "PRD-461: view distance basics \u2014 terrain radius, near-only colliders, recipe fog",
+          "title": "PRD-461: view distance basics — terrain radius, near-only colliders, recipe fog",
           "lastPushToMergeMin": 477.4,
           "enqueueToMergeMin": 363.9,
           "attempts": 4,
@@ -946,7 +946,7 @@
       "prs": [
         {
           "number": 470,
-          "title": "PRD-461: view distance basics \u2014 terrain radius, near-only colliders, recipe fog",
+          "title": "PRD-461: view distance basics — terrain radius, near-only colliders, recipe fog",
           "lastPushToMergeMin": 477.4,
           "enqueueToMergeMin": 363.9,
           "attempts": 4,
@@ -1047,7 +1047,7 @@
       "prs": [
         {
           "number": 470,
-          "title": "PRD-461: view distance basics \u2014 terrain radius, near-only colliders, recipe fog",
+          "title": "PRD-461: view distance basics — terrain radius, near-only colliders, recipe fog",
           "lastPushToMergeMin": 477.4,
           "enqueueToMergeMin": 363.9,
           "attempts": 4,
@@ -1148,7 +1148,7 @@
       "prs": [
         {
           "number": 470,
-          "title": "PRD-461: view distance basics \u2014 terrain radius, near-only colliders, recipe fog",
+          "title": "PRD-461: view distance basics — terrain radius, near-only colliders, recipe fog",
           "lastPushToMergeMin": 477.4,
           "enqueueToMergeMin": 363.9,
           "attempts": 4,
@@ -1249,7 +1249,7 @@
       "prs": [
         {
           "number": 470,
-          "title": "PRD-461: view distance basics \u2014 terrain radius, near-only colliders, recipe fog",
+          "title": "PRD-461: view distance basics — terrain radius, near-only colliders, recipe fog",
           "lastPushToMergeMin": 477.4,
           "enqueueToMergeMin": 363.9,
           "attempts": 4,
@@ -1350,7 +1350,7 @@
       "prs": [
         {
           "number": 470,
-          "title": "PRD-461: view distance basics \u2014 terrain radius, near-only colliders, recipe fog",
+          "title": "PRD-461: view distance basics — terrain radius, near-only colliders, recipe fog",
           "lastPushToMergeMin": 477.4,
           "enqueueToMergeMin": 363.9,
           "attempts": 4,
@@ -1451,7 +1451,7 @@
       "prs": [
         {
           "number": 473,
-          "title": "fix(world): PRD-494 \u2014 bundle-safety walk stops reading pixels; main pass draw budget measured",
+          "title": "fix(world): PRD-494 — bundle-safety walk stops reading pixels; main pass draw budget measured",
           "lastPushToMergeMin": 317.9,
           "enqueueToMergeMin": 454.8,
           "attempts": 5,
@@ -1469,7 +1469,7 @@
         },
         {
           "number": 470,
-          "title": "PRD-461: view distance basics \u2014 terrain radius, near-only colliders, recipe fog",
+          "title": "PRD-461: view distance basics — terrain radius, near-only colliders, recipe fog",
           "lastPushToMergeMin": 477.4,
           "enqueueToMergeMin": 363.9,
           "attempts": 4,
@@ -1579,7 +1579,7 @@
       "prs": [
         {
           "number": 473,
-          "title": "fix(world): PRD-494 \u2014 bundle-safety walk stops reading pixels; main pass draw budget measured",
+          "title": "fix(world): PRD-494 — bundle-safety walk stops reading pixels; main pass draw budget measured",
           "lastPushToMergeMin": 317.9,
           "enqueueToMergeMin": 454.8,
           "attempts": 5,
@@ -1597,7 +1597,7 @@
         },
         {
           "number": 470,
-          "title": "PRD-461: view distance basics \u2014 terrain radius, near-only colliders, recipe fog",
+          "title": "PRD-461: view distance basics — terrain radius, near-only colliders, recipe fog",
           "lastPushToMergeMin": 477.4,
           "enqueueToMergeMin": 363.9,
           "attempts": 4,
@@ -1707,7 +1707,7 @@
       "prs": [
         {
           "number": 473,
-          "title": "fix(world): PRD-494 \u2014 bundle-safety walk stops reading pixels; main pass draw budget measured",
+          "title": "fix(world): PRD-494 — bundle-safety walk stops reading pixels; main pass draw budget measured",
           "lastPushToMergeMin": 317.9,
           "enqueueToMergeMin": 454.8,
           "attempts": 5,
@@ -1734,7 +1734,7 @@
         },
         {
           "number": 470,
-          "title": "PRD-461: view distance basics \u2014 terrain radius, near-only colliders, recipe fog",
+          "title": "PRD-461: view distance basics — terrain radius, near-only colliders, recipe fog",
           "lastPushToMergeMin": 477.4,
           "enqueueToMergeMin": 363.9,
           "attempts": 4,
@@ -1819,7 +1819,7 @@
       "id": 19,
       "at": "2026-10-10T07:20:48.411Z",
       "commit": "77bb0ee57",
-      "label": "PR476 candidate 77bb in CI \u2014 unmerged baseline",
+      "label": "PR476 candidate 77bb in CI — unmerged baseline",
       "notes": "Fresh develop baseline while PR476 remains unmerged. CI run38033595736 targets candidate77bb; verification is pending. This audit does not measure PR476 effect.",
       "decision": "provisional",
       "source": "measured",
@@ -1862,7 +1862,7 @@
         },
         {
           "number": 473,
-          "title": "fix(world): PRD-494 \u2014 bundle-safety walk stops reading pixels; main pass draw budget measured",
+          "title": "fix(world): PRD-494 — bundle-safety walk stops reading pixels; main pass draw budget measured",
           "lastPushToMergeMin": 317.9,
           "enqueueToMergeMin": 454.8,
           "attempts": 5,
@@ -1889,7 +1889,7 @@
         },
         {
           "number": 470,
-          "title": "PRD-461: view distance basics \u2014 terrain radius, near-only colliders, recipe fog",
+          "title": "PRD-461: view distance basics — terrain radius, near-only colliders, recipe fog",
           "lastPushToMergeMin": 477.4,
           "enqueueToMergeMin": 363.9,
           "attempts": 4,
@@ -1974,7 +1974,7 @@
       "id": 20,
       "at": "2026-10-10T12:55:25.811Z",
       "commit": "77bb0ee57",
-      "label": "Current queue comparison \u2014 PR476 still unmerged",
+      "label": "Current queue comparison — PR476 still unmerged",
       "notes": "Refreshed after user requested current queue comparison and continued speed work. PR476 remains unmerged; no measured impact attribution.",
       "decision": "provisional",
       "source": "measured",
@@ -2017,7 +2017,7 @@
         },
         {
           "number": 473,
-          "title": "fix(world): PRD-494 \u2014 bundle-safety walk stops reading pixels; main pass draw budget measured",
+          "title": "fix(world): PRD-494 — bundle-safety walk stops reading pixels; main pass draw budget measured",
           "lastPushToMergeMin": 317.9,
           "enqueueToMergeMin": 454.8,
           "attempts": 5,
@@ -2044,7 +2044,7 @@
         },
         {
           "number": 470,
-          "title": "PRD-461: view distance basics \u2014 terrain radius, near-only colliders, recipe fog",
+          "title": "PRD-461: view distance basics — terrain radius, near-only colliders, recipe fog",
           "lastPushToMergeMin": 477.4,
           "enqueueToMergeMin": 363.9,
           "attempts": 4,
@@ -2601,7 +2601,7 @@
               "run_id": "38856119345",
               "run_attempt": "1"
             },
-            "evidence": "ci-required log: Selection: `full` \u2014 event \"workflow_dispatch\" requires complete verification; Native matrix: `full`; every selected job success; native and integration coverage receipts name this candidate/run/attempt."
+            "evidence": "ci-required log: Selection: `full` — event \"workflow_dispatch\" requires complete verification; Native matrix: `full`; every selected job success; native and integration coverage receipts name this candidate/run/attempt."
           },
           "source_workflows": [
             ".github/workflows/ci.yml",
@@ -2682,10 +2682,10 @@
               }
             },
             "original_11_keys_14_legs": [
-              "ci: typecheck, test, test-unit\u00d74, test-native, test-browser, test-playtest, benchmark, build-artifacts, budgets",
+              "ci: typecheck, test, test-unit×4, test-native, test-browser, test-playtest, benchmark, build-artifacts, budgets",
               "native: desktop-parity, starter-linux/linux-x64"
             ],
-            "new_19_keys_32_instances": "ci: lint, golden-path-template\u00d72, template-nonvisual\u00d713, performance-contracts; native: web-reference, android-v8-source; integration: 13 keys (csg, ik, vegetation, decals, tone, temporal, velocity, animation, fog, capture, fluid-collision, exposure, cold-boot)",
+            "new_19_keys_32_instances": "ci: lint, golden-path-template×2, template-nonvisual×13, performance-contracts; native: web-reference, android-v8-source; integration: 13 keys (csg, ik, vegetation, decals, tone, temporal, velocity, animation, fog, capture, fluid-collision, exposure, cold-boot)",
             "hosted_overflow_included": true,
             "note": "The median is computed over all 46 HEAVY instances regardless of the actual runner, so hosted overflow counts."
           },
@@ -4222,9 +4222,9 @@
             "failed_step": "Run impacted unit contracts",
             "step_started_at": "2026-10-16T21:18:55Z",
             "step_completed_at": "2026-10-16T21:25:44Z",
-            "test": "packages/create-threenative/__tests__/build.spec.ts \u2014 does not allow the mutation \"audio worker pool remains referenced after build completion\"",
+            "test": "packages/create-threenative/__tests__/build.spec.ts — does not allow the mutation \"audio worker pool remains referenced after build completion\"",
             "ceiling": "the test spawns the built CLI and, on 60_000 ms, SIGKILLs the child and resolves {code:null, timedOut:true} (build.spec.ts:195-202); the assertion at build.spec.ts:209-215 requires {code:0, timedOut:false}",
-            "observed": "{code:null, timedOut:true} \u2014 the child did not exit within 60s",
+            "observed": "{code:null, timedOut:true} — the child did not exit within 60s",
             "cause": "UNKNOWN; runner slowness suspected. The captured output tail shows asset-encoding lines, but that does NOT prove the child was actively progressing for the full 60s, and it does not identify the root cause. The test's own comment (build.spec.ts:192-194) admits a slow healthy build and a never-exit worker-pool defect produce the identical {code:null, timedOut:true}.",
             "source_log": "the failing job log (prd620-final-unit-failure.log) tail at the 60s kill; no root cause is asserted from it."
           },
@@ -4286,8 +4286,8 @@
           },
           "no_publisher_mutation": true,
           "build_cache_comparability_unknowns": {
-            "native_ccache": "UNKNOWN for this routed run \u2014 its test-native log was not pulled this pass; not asserted.",
-            "native_third_party": "UNKNOWN for this routed run \u2014 not asserted.",
+            "native_ccache": "UNKNOWN for this routed run — its test-native log was not pulled this pass; not asserted.",
+            "native_third_party": "UNKNOWN for this routed run — not asserted.",
             "v8_payload": "the Android V8 source-payload job 117199915259 succeeded on the unchanged recipe 1a2463b539e99c9fd7d87bd4bdd3ef86f2b61e42969a587f134e35f23d343607; its published-vs-build step timing was not pulled this pass.",
             "note": "No native-cache comparability is claimed for this nonqualifying run; the matched hosted control (iteration 31) carries the recorded cache lines."
           },
@@ -6002,6 +6002,56 @@
           "count": 1
         }
       ]
+    },
+    {
+      "id": 39,
+      "at": "2026-11-02T10:35:48.869Z",
+      "commit": "31e620b4d",
+      "label": "0.3.9 first release on the one-proof path",
+      "notes": "Promotion PR to latest 215 min. Main re-ran native-platforms and ship stopped at the hosted upgrade proof; both fixed on develop, not yet proven by a release.",
+      "decision": "provisional",
+      "source": "measured",
+      "window": {
+        "since": "2026-11-02",
+        "base": "develop"
+      },
+      "metrics": {
+        "lastPushToMergeMedianMin": 51,
+        "lastPushToMergeP90Min": 51,
+        "firstAttemptSuccessPct": 0,
+        "boardWallMedianMin": null,
+        "queueWaitP90Min": 0,
+        "fullBoardWallMedianMin": 54.3,
+        "longestLegMedianMin": 50.4,
+        "fullBoardMachineMedianMin": 520,
+        "machineMinPerWeek": 34749,
+        "boardQueueP90Min": 8.3,
+        "boardGreenFirstPct": 50,
+        "flakeRatePct": null,
+        "greenMinutesPct": 82.3,
+        "minutesAfterFirstRedPct": 23.4,
+        "setupSharePct": 13.2,
+        "releaseLeadMin": 206
+      },
+      "extra": {
+        "prCount": 1,
+        "mergeGroupRuns": 1,
+        "mergeGroupRunSuccessPct": null,
+        "enqueueToMergeMedianMin": 10.2,
+        "queueWaitJobs": 11
+      },
+      "prs": [
+        {
+          "number": 601,
+          "title": "CI and release take less time: per-job reuse, first-red stop, one proof per release, 0.3.9",
+          "lastPushToMergeMin": 51,
+          "enqueueToMergeMin": 10.2,
+          "attempts": 1,
+          "firstAttempt": "cancelled",
+          "firstFailingJob": null
+        }
+      ],
+      "firstFailingJobs": []
     }
   ]
 }

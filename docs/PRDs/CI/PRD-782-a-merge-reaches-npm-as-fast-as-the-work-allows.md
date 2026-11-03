@@ -108,6 +108,7 @@ An independent review caught the first design of the stop: `workflow_job` is not
 
 - ✅ Reuse: a docs-only commit costs 10% of the full board's machine minutes and 24% of its wall time.
 - ✅ First-red stop: a real red stopped the board in about 20 s, at minute 15, so a throwaway branch adds no proof.
+- ❌ First promotion PR to npm: 215 min on 0.3.9, against 120. PRD-630 has the stage table and the two fixes.
 
 ## Levers, ranked
 

@@ -18,9 +18,11 @@ import { VelocityTracker } from "../src/render/velocity.js";
 /** Three's runtime builder methods are not included in its published declarations. */
 interface IInstanceBuilder extends WGSLNodeBuilder {
   setShaderStage(stage: string): void;
-  flowStagesNode(node: Node, output: string): void;
+  /** Three's declarations omit this method, and declare `instance()` void though it builds and returns a node. */
+  flowStagesNode(node: unknown, output: string): void;
   buildUpdateNodes(): void;
   nodes: Node[];
+  updateAfterNodes: Node[];
   updateBeforeNodes: Node[];
   updateNodes: Node[];
 }
@@ -35,6 +37,7 @@ function fixture(dynamic: boolean, temporal = true, scheduled = temporal) {
   const tracker = new VelocityTracker();
   if (scheduled) tracker.update(scene);
   const builder = new WGSLNodeBuilder(crowd, {
+    debug: { diagnostics: { keywords: false } },
     backend: { capabilities: { getUniformBufferLimit: () => 65536 } },
     getMRT: () => (temporal ? new Set(["velocity"]) : null),
   } as never) as IInstanceBuilder;
@@ -53,8 +56,9 @@ function fixture(dynamic: boolean, temporal = true, scheduled = temporal) {
   if (!current || (temporal && !previous)) throw new Error("Real instance attributes missing");
   const uploaded = new Map<object, Float32Array>();
   let updates = 0;
-  const upload = (attribute: InterleavedBufferAttribute) => {
-    uploaded.set(attribute.data, Float32Array.from(attribute.data.array));
+  // r187 hands the backend the buffer an interleaved column views (`backend.getBufferAttribute`).
+  const upload = (attribute: InterleavedBufferAttribute["data"]) => {
+    uploaded.set(attribute, Float32Array.from(attribute.array));
     updates += 1;
   };
   const manager = new Attributes(
@@ -74,11 +78,17 @@ function fixture(dynamic: boolean, temporal = true, scheduled = temporal) {
       updateForRender: () => {
         for (const node of builder.updateNodes) frame.updateNode(node);
       },
-      updateAfter() {},
+      // r187 retains Three's draw-time history in an after-object event node, run after the draw.
+      updateAfter: () => {
+        // @types/three 0.187 does not declare NodeFrame.updateAfterNode.
+        for (const node of builder.updateAfterNodes)
+          Reflect.get(frame, "updateAfterNode").call(frame, node);
+      },
     },
     _geometries: {
       updateForRender: () => {
-        for (const attribute of attributes) manager.update(attribute, AttributeType.VERTEX);
+        for (const attribute of attributes)
+          manager.update(attribute.data as never, AttributeType.VERTEX);
       },
     },
     _bindings: { updateForRender() {} },

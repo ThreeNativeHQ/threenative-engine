@@ -151,9 +151,18 @@ export async function bundleNativeEngine({ entry, outfile, boot = true, define =
     const declaration = coreIndex.statements.find((node) => ts.isExportDeclaration(node) &&
       !node.isTypeOnly && node.exportClause && ts.isNamedExports(node.exportClause) &&
       node.exportClause.elements.some((item) => !item.isTypeOnly && item.name.text === name));
-    if (!declaration?.moduleSpecifier)
+    // A value core declares in the barrel itself (`export const version`) re-exports from no
+    // module, so reading it as unbound refused every game that names the engine version it runs.
+    const local = declaration === undefined && coreIndex.statements.some((node) => {
+      const exported = node.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword) === true;
+      if (!exported) return false;
+      if (ts.isVariableStatement(node))
+        return node.declarationList.declarations.some((item) => ts.isIdentifier(item.name) && item.name.text === name);
+      return (ts.isFunctionDeclaration(node) || ts.isClassDeclaration(node)) && node.name?.text === name;
+    });
+    if (!local && !declaration?.moduleSpecifier)
       throw new Error(`TN_NATIVE_ENGINE_UNBOUND: @threenative/core:${name}`);
-    const source = JSON.stringify(resolve(core, "src", declaration.moduleSpecifier.text));
+    const source = JSON.stringify(resolve(core, "src", local ? "index.ts" : declaration.moduleSpecifier.text));
     if (name === "defineGame") return `import { defineGame as coreDefineGame } from ${source};
       import { platform } from ${JSON.stringify(resolve(player, "core-host.mjs"))};
       export function defineGame(options) { return coreDefineGame({ ...options, platform: options.platform ?? platform }); }`;

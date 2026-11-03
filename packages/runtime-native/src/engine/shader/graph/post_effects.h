@@ -42,8 +42,13 @@ struct PostPass {
     uint32_t width = 0, height = 0; // RTT fixed dimensions; zero uses viewport
     uint32_t mipLevel = 0; // SSR's separately rendered blur levels, sized from the rounded base extent
     bool floorSize = false, autoUpdate = true, visible = true;
-    // GTAONode uses RedFormat + UnsignedByteType (R8Unorm), not an HDR colour target.
+    // GTAONode uses RedFormat + UnsignedByteType (R8Unorm), not an HDR colour target; so does a denoise of that
+    // red-only field, whose value is one channel (see `denoiseOfOneField`).
     bool redFormat = false;
+    // The effect computes its value in the consuming fragment shader in three (DenoiseNode inlines, r187
+    // examples/jsm/tsl/display/DenoiseNode.js: a plain Node, as r185's TempNode also was), so its result never sees
+    // a half-float round trip. A pass target keeps that value whole only at fp32.
+    bool float32 = false;
     float clear = 0;
     bool temporal = false;
     /** The effect whose parameters this pass draws with, read each frame (null: `uniforms` only). */

@@ -40,7 +40,7 @@ const templates =
 const [native, tint, work] = process.argv.slice(2);
 if (!native || !tint || !work)
   throw new Error("Usage: template-post-packages.ts <compiler> <tint> <build-dir>");
-if (REVISION !== "185") throw new Error(`Expected three r185, got r${REVISION}`);
+if (REVISION !== "187") throw new Error(`Expected three r187, got r${REVISION}`);
 const directory = mkdtempSync(path.join(work, "template-post-"));
 // SMAA embeds two PNG lookup tables. Decode those real tables on CPU; no DOM or GPU is needed
 // to construct the shader graph. Do not replace the textures or the antialiasing node.

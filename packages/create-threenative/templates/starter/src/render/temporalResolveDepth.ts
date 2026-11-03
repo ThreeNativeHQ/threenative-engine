@@ -69,7 +69,7 @@ export interface ITemporalResolvePinned {
   _previousCameraWorldMatrix: Node<"mat4"> & ITemporalUniform<Matrix4>;
   _previousCameraProjectionMatrixInverse: Node<"mat4"> & ITemporalUniform<Matrix4>;
   /** Installed by `createTemporalAA`. 0 on a reset frame, which then weights current colour only. */
-  _historyValidUniform?: ITemporalUniform<number>;
+  _historyValidUniform?: Node<"float"> & ITemporalUniform<number>;
   /** Input-pixel jitter for current-frame reconstruction, captured beside the depth matrices. */
   _reconstructionJitterOffset?: Node<"vec2"> & ITemporalUniform<Vector2>;
   /** Actual input jitter, in input-raster UVs, captured beside the matching depth matrices. */
@@ -138,7 +138,7 @@ export function createTemporalDepthRejection(
     offsetUV: "vec2",
   });
   // Absent on a standalone node, which then keeps upstream's own history reuse unchanged.
-  const historyValid = (node._historyValidUniform ?? float(1)) as Node<"float">;
+  const historyValid = node._historyValidUniform ?? float(1);
   /**
    * The one history-validity decision, parameterised by the pixel's own UV: `historyValid ∧ validUV
    * ∧ ¬disocclusion`. The resolve weights its blend with this, and the rejection counter calls the

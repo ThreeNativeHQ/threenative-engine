@@ -1,4 +1,4 @@
-// Ported from three@0.185.1 src/nodes/display/ToneMappingFunctions.js. Two matrix spellings there:
+// Ported from three@0.187.0 src/nodes/display/ToneMappingFunctions.js. Two matrix spellings there:
 // mat3(vec3, vec3, vec3) takes columns, but mat3(9 scalars) becomes `new Matrix3(...)`, whose set()
 // takes ROWS (NodeUtils.getValueFromType). mat3() below takes columns, mat3Rows() rows.
 
@@ -27,7 +27,8 @@ ExprId saturate(Program& p, ExprId x) { return p.call("clamp", {x, f(p, 0), f(p,
 
 ExprId rrtAndOdtFit(Program& p, ExprId color) {
     const ExprId a = p.sub(p.mul(color, p.add(color, f(p, 0.0245786f))), f(p, 0.000090537f));
-    const ExprId b = p.add(p.mul(color, p.mul(p.add(color, f(p, 0.4329510f)), f(p, 0.983729f))), f(p, 0.238081f));
+    // r187's denominator fit: 0.983729 scales the squared term, not the whole `color + 0.4329510`.
+    const ExprId b = p.add(p.mul(color, p.add(p.mul(color, f(p, 0.983729f)), f(p, 0.4329510f))), f(p, 0.238081f));
     return p.div(a, b);
 }
 

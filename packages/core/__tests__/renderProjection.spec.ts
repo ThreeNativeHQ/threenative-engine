@@ -127,7 +127,8 @@ function findInstancedBatch(root: Object3D): InstancedMesh {
 function preparedSubDraws(batch: BatchedMesh, root: Scene, camera: PerspectiveCamera): number {
   root.updateMatrixWorld(true);
   batch.onBeforeRender(
-    undefined as never,
+    // r187 BatchedMesh.onBeforeRender takes the CPU draw-parameter path only for a non-WebGPU renderer.
+    { isWebGPURenderer: false } as never,
     root,
     camera,
     batch.geometry,
@@ -589,7 +590,8 @@ describe("SceneRenderProjection", () => {
       camera.updateMatrixWorld(true);
       projection.root.updateMatrixWorld(true);
       batch.onBeforeRender(
-        undefined as never,
+        // r187 BatchedMesh.onBeforeRender takes the CPU draw-parameter path only for a non-WebGPU renderer.
+        { isWebGPURenderer: false } as never,
         projection.root,
         camera,
         batch.geometry,

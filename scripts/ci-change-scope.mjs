@@ -1210,9 +1210,15 @@ function treeOfFetched(root, sha) {
   return treeOf(root, sha);
 }
 
-/** The tested candidate of a CI run: the one sha its Integration receipt artifacts name. */
+/**
+ * The tested candidate of a CI run: the one sha its artifacts name. A board that carries every
+ * integration leg writes no Integration receipt, so the native web reference names it there.
+ */
 function receiptCandidate(runId) {
-  const receipt = new RegExp(`^ci-integration-receipt-${runId}-\\d+-([0-9a-f]{40})-`, "u");
+  const receipt = new RegExp(
+    `^(?:ci-integration-receipt-${runId}-\\d+-|native-web-reference-)([0-9a-f]{40})(?:-|$)`,
+    "u",
+  );
   const shas = new Set();
   for (let page = 1; page <= 5; page += 1) {
     const listed = ghApi(`actions/runs/${runId}/artifacts?per_page=100&page=${page}`);

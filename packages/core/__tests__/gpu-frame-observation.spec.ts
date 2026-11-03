@@ -307,7 +307,8 @@ it("rejects a saturated real pool with unknown allocation loss", () => {
   try {
     const t = observed(undefined, 4);
     t.allocate(0, 3);
-    expect(t.pool.currentQueryIndex).toBe(4);
+    // r187 does not stop at a full pool: the third pass resolves it and restarts at slot 0, leaving two slots.
+    expect(t.pool.currentQueryIndex).toBe(2);
     expect(t.observation.capture()).toBeUndefined();
     expect(() => t.observation.take()).toThrow("SATURATED_POOL");
     expect(t.observation.status().allocationLoss).toBe("unknown-after-saturation");

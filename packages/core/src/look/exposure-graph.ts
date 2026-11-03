@@ -9,16 +9,15 @@ import {
   mix,
   screenCoordinate,
   smoothstep,
-  type texture,
   textureLoad,
   textureSize,
   vec2,
   vec4,
 } from "three/tsl";
-import type { Node } from "three/webgpu";
+import type { Node, TextureNode } from "three/webgpu";
 import type { IExposureSettings } from "./exposure-settings.js";
 
-export type ColourTexture = ReturnType<typeof texture>;
+export type ColourTexture = TextureNode;
 export type Meter = (colour: Node<"vec4">, uv: Node<"vec2">) => Node<"vec2">;
 export type Decode = (mean: Node<"float">) => Node<"float">;
 

@@ -167,8 +167,8 @@ native-engine independence must be inspected and proved as one, not assumed from
 
 ## 7. The pinned reference
 
-**`three@0.185.1` plus the ThreeNative patch
-[`packages/core/patches/three@0.185.1.patch`](../../packages/core/patches/three@0.185.1.patch) is
+**`three@0.187.0` plus the ThreeNative patch
+[`packages/core/patches/three@0.187.0.patch`](../../packages/core/patches/three@0.187.0.patch) is
 the behavioural oracle.** Every compatibility claim — object semantics, numerics, animation,
 materials, shader packages — is measured against that exact pair, resolved through the workspace
 `catalog:` in [`pnpm-workspace.yaml`](../../pnpm-workspace.yaml).

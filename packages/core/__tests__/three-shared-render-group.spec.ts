@@ -1,9 +1,10 @@
 import { BoxGeometry, DepthTexture, DirectionalLight, Mesh, MeshBasicMaterial } from "three";
+import Bindings from "three/src/renderers/common/Bindings.js";
 // @ts-expect-error Three's private chain map has no public declarations.
 import ChainMap from "three/src/renderers/common/ChainMap.js";
 // @ts-expect-error Three's node manager has no public declarations.
 import NodeManager from "three/src/renderers/common/nodes/NodeManager.js";
-import { PCFShadowFilter, PCFSoftShadowFilter, renderGroup, vec3, vec4 } from "three/tsl";
+import { PCFShadowFilter, renderGroup, vec3, vec4 } from "three/tsl";
 import { type Node, WGSLNodeBuilder } from "three/webgpu";
 import { describe, expect, it } from "vitest";
 
@@ -30,27 +31,34 @@ interface IRecordBuilder {
 }
 
 /** One renderer for every material of the test, as one render context holds them all. */
+const backend = {
+  isWebGPUBackend: true,
+  utils: { getTextureSampleData: () => ({ primarySamples: 1 }) },
+  renderer: undefined as unknown,
+};
 const renderer = {
-  backend: {
-    isWebGPUBackend: true,
-    utils: { getTextureSampleData: () => ({ primarySamples: 1 }) },
-  },
+  backend,
+  debug: { diagnostics: { keywords: false } },
   hasCompatibility: () => true,
   hasFeature: () => false,
   library: { fromMaterial: () => null },
   reversedDepthBuffer: false,
   shadowMap: { enabled: true, type: 1 },
+  // r187 builds a shared bind group through the renderer's bindings manager, which caches it per render context.
+  _bindings: new Bindings(backend, {}, {}, {}, {}, {}),
+  _currentRenderContext: {},
 };
+backend.renderer = renderer;
 
-/** A material that samples `shadow` through `filter`, built by its own node builder as three does. */
-function record(shadow: DirectionalLight["shadow"], filter = PCFShadowFilter): IRecordBuilder {
+/** A material that samples `shadow` through three's PCF filter, built by its own node builder as three does. */
+function record(shadow: DirectionalLight["shadow"]): IRecordBuilder {
   const builder = new WGSLNodeBuilder(
     new Mesh(new BoxGeometry(), new MeshBasicMaterial()),
     renderer as never,
   ) as unknown as IRecordBuilder;
   builder.setShaderStage("fragment");
   // The typings declare the filter's three-argument TSL form; three calls it with one inputs object.
-  const sampled = (filter as unknown as (inputs: object) => Node)({
+  const sampled = (PCFShadowFilter as unknown as (inputs: object) => Node)({
     depthTexture: new DepthTexture(1024, 1024),
     shadow,
     shadowCoord: vec3(0.5, 0.5, 0.5),
@@ -107,17 +115,16 @@ function renderCall(
 }
 
 describe("a shadow filter's render-group uniforms are shared by every material", () => {
-  it.each([
-    ["PCF", PCFShadowFilter],
-    ["PCF soft", PCFSoftShadowFilter],
-  ])("two materials sampling one %s shadow bind one render group", (_name, filter) => {
+  // r186 removed `PCFSoftShadowFilter`: WebGPU's `PCFSoftShadowMap` now falls back to PCF, so PCF is
+  // the only filter left that carries a render group to share.
+  it("two materials sampling one PCF shadow bind one render group", () => {
     // A filter body runs once per node builder. Before, it made new mapSize/radius reference nodes
     // in every build, and three keys a shared bind group on its uniforms' node ids - so every
     // material got a private render-group buffer. On the Machinefall walk that was 338 render
     // groups in two seconds, each compared and written per render call.
     const shadow = new DirectionalLight().shadow;
-    const first = renderBindGroup(record(shadow, filter));
-    const second = renderBindGroup(record(shadow, filter));
+    const first = renderBindGroup(record(shadow));
+    const second = renderBindGroup(record(shadow));
     expect(second, "one render bind group for both materials").toBe(first);
   });
 

@@ -27,20 +27,25 @@ interface IStubDevice {
   createRenderPipeline: (descriptor: Record<string, unknown>) => unknown;
   createRenderPipelineAsync: (descriptor: Record<string, unknown>) => Promise<unknown>;
   createComputePipeline: (descriptor: Record<string, unknown>) => unknown;
+  createComputePipelineAsync: (descriptor: Record<string, unknown>) => Promise<unknown>;
 }
 
 interface IStubBackend {
   device: IStubDevice;
   createProgram: (program: Record<string, unknown>) => void;
   createRenderPipeline: (renderObject?: Record<string, unknown>, promises?: unknown) => void;
-  createComputePipeline: (pipeline: Record<string, unknown>) => void;
+  createComputePipeline: (
+    pipeline: Record<string, unknown>,
+    bindings?: unknown,
+    promises?: unknown,
+  ) => void;
   get: (key: object) => Record<string, unknown>;
 }
 
 /** three's Pipelines: every stage becomes a module before the backend is asked for a pipeline. */
 interface IStubPipelines {
   getForRender: (renderObject: Record<string, unknown>, promises: unknown) => void;
-  getForCompute: (pipeline: Record<string, unknown>) => void;
+  getForCompute: (pipeline: Record<string, unknown>, promises?: unknown) => void;
 }
 
 /**
@@ -56,6 +61,9 @@ function webgpuStub(): { backend: IStubBackend; device: IStubDevice; pipelines: 
       _pipelineId: ++pipelineId,
     }),
     createComputePipeline: (_descriptor: Record<string, unknown>) => ({
+      _pipelineId: ++pipelineId,
+    }),
+    createComputePipelineAsync: async (_descriptor: Record<string, unknown>) => ({
       _pipelineId: ++pipelineId,
     }),
   };
@@ -104,11 +112,25 @@ function webgpuStub(): { backend: IStubBackend; device: IStubDevice; pipelines: 
       }
       get(pipeline).pipeline = device.createRenderPipeline(descriptor);
     },
-    createComputePipeline: (pipeline: Record<string, unknown>) => {
-      get(pipeline).pipeline = device.createComputePipeline({
+    createComputePipeline: (
+      pipeline: Record<string, unknown>,
+      _bindings?: unknown,
+      promises?: unknown,
+    ) => {
+      const descriptor = {
         label: "computePipeline",
         compute: stageOf(pipeline.computeProgram),
-      });
+      };
+      if (Array.isArray(promises)) {
+        const created = device.createComputePipelineAsync(descriptor) as Promise<unknown>;
+        promises.push(
+          created.then((handle) => {
+            get(pipeline).pipeline = handle;
+          }),
+        );
+        return;
+      }
+      get(pipeline).pipeline = device.createComputePipeline(descriptor);
     },
   };
   const program = (candidate: unknown): Record<string, unknown> | undefined =>
@@ -124,10 +146,10 @@ function webgpuStub(): { backend: IStubBackend; device: IStubDevice; pipelines: 
       }
       backend.createRenderPipeline(renderObject, promises);
     },
-    getForCompute: (pipeline: Record<string, unknown>) => {
+    getForCompute: (pipeline: Record<string, unknown>, promises?: unknown) => {
       const owned = program(pipeline.computeProgram);
       if (owned !== undefined) createProgram(owned);
-      backend.createComputePipeline(pipeline);
+      backend.createComputePipeline(pipeline, null, promises);
     },
   };
   return { backend, device, pipelines };
@@ -196,6 +218,24 @@ describe("pipeline census", () => {
       "native-render-2",
       "native-compute-3",
     ]);
+    expect(report.complete).toBe(true);
+  });
+
+  it("reads a compute pipeline the backend created asynchronously", async () => {
+    const { backend, pipelines } = webgpuStub();
+    const census = createPipelineCensus({ kind: "webgpu" });
+    census.installRenderer({ backend });
+    const promises: Promise<unknown>[] = [];
+    // `compileComputeAsync` hands three a promise list, so the pipeline is built on the device's
+    // async path and the handle lands only when that promise resolves
+    // (three src/renderers/webgpu/utils/WebGPUPipelineUtils.js createComputePipeline).
+    pipelines.getForCompute({ computeProgram: { code: source("compute-async") } }, promises);
+    await Promise.all(promises);
+    census.firstPresent();
+    const report = census.snapshot();
+    expect(report.events[0]).toMatchObject({ kind: "compute", mode: "async", status: "created" });
+    expect(report.events[0]?.error).toBeUndefined();
+    expect(report.counts.failures).toBe(0);
     expect(report.complete).toBe(true);
   });
 

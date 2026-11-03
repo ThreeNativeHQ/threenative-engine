@@ -3,7 +3,7 @@ import fs from "node:fs";
 import { rm } from "node:fs/promises";
 import path from "node:path";
 import { deflateRawSync } from "node:zlib";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { readZipEntries } from "../../packages/runtime-native/scripts/check-android-16kb-alignment.mjs";
 import { makeTempDir } from "../../test-support/temp-dir.js";
 import {
@@ -1100,6 +1100,7 @@ describe("pnpm tsx scripts/verify-registry-install.ts", () => {
 // project, not about whether an install command exited 0.
 describe("the PRD-446 upgrade proof", () => {
   afterEach(async () => {
+    vi.unstubAllEnvs();
     await Promise.all(roots.splice(0).map((root) => rm(root, { force: true, recursive: true })));
   });
 
@@ -1184,6 +1185,40 @@ describe("the PRD-446 upgrade proof", () => {
       return happyRunner()(command, args, cwd);
     };
   }
+
+  // Ship run 41416259680: a kit's frame budgets and screenshots cannot pass on a hosted CPU rasteriser.
+  it("leaves the kit's own test out where the runner names a software adapter", async () => {
+    vi.stubEnv("TN_PLAYTEST_ALLOW_SOFTWARE", "1");
+    const candidate = await packedCandidate();
+    const seen = { installs: [] as string[][], playtests: [] as string[][] };
+    const upgrade = upgradeRunner(seen, candidate);
+    const tests: string[] = [];
+    const browserBeforePlay: boolean[] = [];
+    let browser = false;
+    const report = await verifyRegistryInstall({
+      candidate,
+      mcp: happyMcpRunner(),
+      parent: await tempRoot(),
+      run: (command, args, cwd) => {
+        if (args[0] === "test") tests.push(command);
+        if (args.includes("pretest")) browser = true;
+        if (args.includes("threenative-playtest")) browserBeforePlay.push(browser);
+        return upgrade(command, args, cwd);
+      },
+      surfaceCheck: () => {},
+    });
+    expect(report.exitCode).toBe(0);
+    expect(tests).toEqual([]);
+    // Left out, not reported green. The upgraded game still plays its scenario.
+    const names = report.steps.map((step) => step.name);
+    expect(names).not.toContain("pnpm:test");
+    expect(names).toContain("pnpm:gameplay");
+    expect(seen.playtests).toHaveLength(1);
+    // `pretest` is what installs Chromium: hosted run 41430307706 had no browser without it.
+    expect(names.indexOf("pnpm:browser")).toBeLessThan(names.indexOf("pnpm:gameplay"));
+    expect(names).toContain("pnpm:browser");
+    expect(browserBeforePlay).toEqual([true]);
+  });
 
   it("upgrades the previous latest onto the packed candidate and plays that template's scenario", async () => {
     const candidate = await packedCandidate();

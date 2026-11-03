@@ -110,6 +110,18 @@ const deterministicExpectation = {
 };
 
 describe("runtime exposure proof", () => {
+  it("accepts a warmup whose first sample is three's first node frame, at node time 0", () => {
+    // A compile-only warm-up advances no node frame, so the first GPU update is frame 1 at time 0.
+    const value = deterministicReport(true);
+    const first = value.observations.console.find(({ text }) =>
+      text.startsWith("TN_EXPOSURE_SAMPLE:"),
+    );
+    if (first === undefined) throw new Error("sample missing");
+    first.text = `TN_EXPOSURE_SAMPLE:${JSON.stringify({ ...JSON.parse(first.text.slice(19)), nodeTime: 0, nodeFrameId: 1 })}`;
+    expect(() =>
+      qualifyExposureCase(value, { ...deterministicExpectation, reject: undefined }),
+    ).not.toThrow();
+  });
   it.each(["repeated-frame", "live-clock", "jumped-time"] as const)(
     "rejects %s in the warmup sequence",
     (fault) => {

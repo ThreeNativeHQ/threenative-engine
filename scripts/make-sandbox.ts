@@ -441,10 +441,10 @@ function vanillaPackageJson(projectName: string, playtestTarball: string): strin
       },
       dependencies: {
         "@threenative/playtest": `file:${playtestTarball}`,
-        three: "0.185.1",
+        three: "0.187.0",
       },
       devDependencies: {
-        "@types/three": "0.185.3",
+        "@types/three": "0.187.0",
         playwright: "1.62.1",
         typescript: "7.0.2",
         vite: "8.2.0",
