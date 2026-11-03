@@ -321,8 +321,8 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // these kits' AGENTS.md say so, and rts drops its TRAA and blur overrides.
   // Re-pinned 2026-10-31: the starter crate gets a stacked-disc contact shadow (render/contactShadow.ts)
   // that keeps its contact coverage above the 0.02 floor at the core +1 EV key.
-  // Re-pinned 2026-11-03: PRD-777 adds the Spells section to the action-rpg AGENTS.md.
-  "action-rpg": "00804703081daa689f17521e90ba1fccb1523e36a5f21dcf5946f46651258499",
+  // Re-pinned 2026-11-03: PRD-777 adds the Spells section and the diablo/arpg aliases to action-rpg.
+  "action-rpg": "e842f1b69051a295bee4bfcd340397992940269fe90fb19e26f55ba52c6c2772",
   // PRD-732 (2026-10-23): the new Hop Garden kit, measured through createProject (method checked
   // against platformer's unchanged value). Recomputed 2026-10-24 for the PRD-732 polish round: the
   // new hero, the dust and sparkle effects and the effects scenario. Recomputed 2026-10-24 for

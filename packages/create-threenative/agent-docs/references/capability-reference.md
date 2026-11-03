@@ -3355,7 +3355,7 @@ casts.cast(aegis, world.focus);
 export function createArcaneBarrage(world: SpellWorld, overrides: IFireSpellOverrides = { … }
 ```
 
-- **Use when:** an arcane missile spell that fires projectiles at a target · a magic barrage a mage class spams · make an arcane bolt spell · an arcane missile spell that fires several projectiles at a target · a pink energy bolt with a short charge
+- **Use when:** an arcane missile spell that fires projectiles at a target · a magic barrage a mage class spams · a magic missile spell · make an arcane bolt spell · an arcane missile spell that fires several projectiles at a target · a pink energy bolt with a short charge
 - **Constraints:** every colour, size, count and timing is a named override on the call
 - **Overrides:** core, highlight, speed, charge, impact, linger, radius, burst, light
 

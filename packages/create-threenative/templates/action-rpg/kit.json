@@ -3,5 +3,6 @@
   "title": "Action RPG",
   "blurb": "A three-room grid dungeon of mannequin fighters: melee, the Arcane Surge, loot, equipment, persistence, and a real character sheet.",
   "genre": "action-rpg",
+  "aliases": ["diablo", "arpg", "hack-and-slash", "dungeon-crawler", "action-rpg"],
   "kit": true
 }

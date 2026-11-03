@@ -4310,6 +4310,7 @@
       "situations": [
         "an arcane missile spell that fires projectiles at a target",
         "a magic barrage a mage class spams",
+        "a magic missile spell",
         "make an arcane bolt spell",
         "an arcane missile spell that fires several projectiles at a target",
         "a pink energy bolt with a short charge"
@@ -9365,7 +9366,7 @@
       "blurb": "A three-room grid dungeon of mannequin fighters: melee, the Arcane Surge, loot, equipment, persistence, and a real character sheet.",
       "name": "action-rpg",
       "title": "Action RPG",
-      "words": ["action-rpg"]
+      "words": ["action-rpg", "diablo", "arpg", "hack-and-slash", "dungeon-crawler"]
     },
     {
       "blurb": "Wren crosses a sunlit clearing and a three-room moss dungeon with lock-on sword combat, a shield, a block-and-switch puzzle, a small key and the Stone Warden mini-boss.",

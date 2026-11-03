@@ -117,6 +117,7 @@ export { createGlacialSpike } from "./spells.js";
  * A volley of arcane missiles: fast, precise, and each one pops on arrival.
  * @situation an arcane missile spell that fires projectiles at a target
  * @situation a magic barrage a mage class spams
+ * @situation a magic missile spell
  * @situation make an arcane bolt spell
  * @constraint every colour, size, count and timing is a named override on the call
  * @override core, highlight, speed, charge, impact, linger, radius, burst, light
