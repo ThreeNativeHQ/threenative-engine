@@ -174,6 +174,13 @@ The boxes live in the phases below; each names the AC it proves.
     - The judge reported that haze differs between the two AFTER runs.
     - In MCP Chrome, `planVirtualPages` dropped from 39.5 ms to 0.29 ms, and the CPU frame p50 from 44 ms to 4.9 ms. MCP Chrome inflates CPU, so this is not a `measure-steady-state-fps` reading.
     - The overview and river views have not been judged.
+  - 2026-11-03 later, re-imported Project Nature packs cooked decoder-free (no KTX2, no meshopt, 357.5 MiB), Wasm engine, 1920x1080, two headed runs per arm (`views.playtest.json`):
+    - The first AFTER runs aborted with Wasm OOM: every model decoded its own copy of each shared uri image. Fixed in the engine (`49a926148`: decode a shared uri image once). The fix is red-green in `gltf_hierarchy_test.cpp`.
+    - AC-7 fresh Opus judge: overall IMPROVEMENT; overview IMPROVEMENT x2, river NEUTRAL x2. Criteria 1 to 4 pass on stills. Shimmer is unverified, because stills cannot show it. The box stays open until a motion check runs. Images: `pr483-screenshots/ac7-overview-river-2026-11-03/` (`8d35cc757`).
+    - The judge names the remaining AAA defects: the forest stops at a hard edge at far left and far right, a bluish smear at about (1150, 515), a lake edge with no shoreline, washed-out grass and flat foliage cards.
+    - Haze variance is closed: within one run the sky RMSE is 0.0007, and the far band is identical across runs in each arm. The earlier veil came from the old cook.
+    - The alpine rockface loads as PNG on the Wasm engine with no `TN_NATIVE_KTX2_UNSUPPORTED` refusal.
+    - AC-8 is unverified: the control was valid (16.70 ms p50), but another agent's GPU browser held the GPU at 100% during the AFTER reading. That reading (presented p50 50.0 ms, GPU 59 ms) is diagnostic only. It reports 65,049 shadow draws against 52 main draws.
 
 
 **Phase 3 implementation and focused checks (2026-10-15):**
