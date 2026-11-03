@@ -1070,7 +1070,7 @@ index 7c8d2322834904c1247c79cda31beff8e2bfc497..280b26c639fda6b63a7fb58a83846adc
  
  			}
 diff --git a/build/three.webgpu.js b/build/three.webgpu.js
-index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f88449a909d3 100644
+index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..699d280d73a106a93e12b2731b71000933754232 100644
 --- a/build/three.webgpu.js
 +++ b/build/three.webgpu.js
 @@ -5182,7 +5182,7 @@ class Animation {
@@ -1127,7 +1127,15 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  		return hashArray( _cacheKeyValues$1 );
  
  	}
-@@ -6947,6 +6957,14 @@ class Geometries extends DataMap {
+@@ -6485,6 +6495,7 @@ class RenderObjects {
+ 			this.pipelines.delete( renderObject );
+ 			this.bindings.deleteForRender( renderObject );
+ 			this.nodes.delete( renderObject );
++			this.geometries.releaseRenderObject( renderObject );
+ 
+ 			chainMap.delete( renderObject.getChainArray() );
+ 
+@@ -6947,6 +6958,17 @@ class Geometries extends DataMap {
  		 */
  		this._registry = new FinalizationRegistry( ( ref ) => this._tracked.delete( ref ) );
  
@@ -1138,14 +1146,19 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
 +		 * @type {WeakMap<RenderObject,Map<BufferAttribute,number>>}
 +		 */
 +		this._settledAttributes = new WeakMap();
++		this._geometryAttributeOwners = new WeakMap();
++		this._sharedAttributeOwners = new WeakMap();
++		this._renderObjectAttributeGeometry = new WeakMap();
 +
  	}
  
  	/**
-@@ -6972,10 +6990,69 @@ class Geometries extends DataMap {
+@@ -6971,11 +6993,173 @@ class Geometries extends DataMap {
+ 		const geometry = renderObject.geometry;
  
  		if ( this.has( geometry ) === false ) this.initGeometry( geometry );
- 
++		if ( this.geometryAttributesChanged( renderObject ) ) this.syncGeometryAttributes( renderObject );
++
 +		// A settled static object has no attribute that could have changed since the last refresh,
 +		// unless a writer bumped one. An InstancedMesh's instance buffer is a vertex attribute of
 +		// this draw, and a BufferGeometry carries no version of its own to announce the write, so
@@ -1154,7 +1167,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
 +		const monitor = renderObject.getMonitor();
 +
 +		if ( monitor !== undefined && monitor.isSettled( renderObject ) === true && this.attributesChanged( renderObject ) === false ) return;
-+
+ 
  		this.updateAttributes( renderObject );
  
  	}
@@ -1209,10 +1222,139 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
 +
 +	}
 +
++	/** Compare the published attribute identities without allocating on settled frames. */
++	geometryAttributesChanged( renderObject ) {
++
++		const geometry = renderObject.geometry;
++		const owner = this._geometryAttributeOwners.get( geometry )?.get( renderObject );
++		if ( owner === undefined || owner.index !== geometry.index ) return true;
++
++		const attributes = renderObject.getAttributes();
++		if ( owner.attributes.length !== attributes.length ) return true;
++		for ( let i = 0; i < attributes.length; i ++ ) {
++			const attribute = attributes[ i ];
++			if ( owner.attributes[ i ] !== ( attribute.isInterleavedBufferAttribute ? attribute.data : attribute ) ) return true;
++		}
++
++		return false;
++
++	}
++
++	/** Add this render object's current geometry attributes to the renderer's shared-resource owners. */
++	syncGeometryAttributes( renderObject ) {
++
++		const { geometry } = renderObject;
++		const previousGeometry = this._renderObjectAttributeGeometry.get( renderObject );
++		if ( previousGeometry !== undefined && previousGeometry !== geometry ) this.releaseRenderObject( renderObject );
++		this._renderObjectAttributeGeometry.set( renderObject, geometry );
++		let geometryOwners = this._geometryAttributeOwners.get( geometry );
++
++		if ( geometryOwners === undefined ) {
++			geometryOwners = new Map();
++			this._geometryAttributeOwners.set( geometry, geometryOwners );
++		}
++
++		const previous = geometryOwners.get( renderObject )?.keys ?? new Map();
++		const current = new Map();
++		const attributes = renderObject.getAttributes();
++		const attributeKeys = [];
++
++		for ( const attribute of attributes ) {
++			const key = attribute.isInterleavedBufferAttribute ? attribute.data : attribute;
++			current.set( key, true );
++			attributeKeys.push( key );
++		}
++		const index = geometry.index;
++		if ( index !== null ) current.set( index, true );
++
++		for ( const key of current.keys() ) {
++			let record = this._sharedAttributeOwners.get( key );
++			if ( record === undefined ) record = { owners: new Set() };
++			if ( previous.has( key ) === false ) record.owners.add( renderObject );
++			this._sharedAttributeOwners.set( key, record );
++		}
++
++		for ( const key of previous.keys() ) {
++			if ( current.has( key ) === false ) this.releaseSharedAttribute( key, renderObject );
++		}
++
++		geometryOwners.set( renderObject, { keys: current, attributes: attributeKeys, index } );
++
++	}
++
++	/** Drop a render object from its geometry before its material-owned node attributes go stale. */
++	releaseRenderObject( renderObject ) {
++
++		const geometry = this._renderObjectAttributeGeometry.get( renderObject );
++		if ( geometry === undefined ) return;
++		const geometryOwners = this._geometryAttributeOwners.get( geometry );
++		const owned = geometryOwners?.get( renderObject )?.keys;
++		if ( owned !== undefined ) {
++			for ( const key of owned.keys() ) this.releaseSharedAttribute( key, renderObject );
++			geometryOwners.delete( renderObject );
++			if ( geometryOwners.size === 0 ) this._geometryAttributeOwners.delete( geometry );
++		}
++		this._renderObjectAttributeGeometry.delete( renderObject );
++
++	}
++
++	/** Release a shared GPU resource only after its last live geometry render object lets it go. */
++	releaseSharedAttribute( key, owner ) {
++
++		const record = this._sharedAttributeOwners.get( key );
++		if ( record === undefined ) return;
++		record.owners.delete( owner );
++		if ( record.owners.size !== 0 ) return;
++
++		this.attributes.delete( key );
++		this._sharedAttributeOwners.delete( key );
++
++	}
++
++	/** Release the recorded sets, not a potentially replaced render object's current attributes. */
++	releaseGeometryAttributes( geometry ) {
++
++		const geometryOwners = this._geometryAttributeOwners.get( geometry );
++		if ( geometryOwners === undefined ) return;
++		for ( const [ owner, attributes ] of geometryOwners ) {
++			for ( const key of attributes.keys.keys() ) this.releaseSharedAttribute( key, owner );
++			this._renderObjectAttributeGeometry.delete( owner );
++		}
++		this._geometryAttributeOwners.delete( geometry );
++
++	}
++
  	/**
  	 * Initializes the given geometry.
  	 *
-@@ -7100,8 +7177,10 @@ class Geometries extends DataMap {
+@@ -6993,23 +7177,10 @@ class Geometries extends DataMap {
+ 
+ 			this.info.memory.geometries --;
+ 
+-			// index
+-
+-			const index = geometry.index;
+-
+-			if ( index !== null ) {
+-
+-				this.attributes.delete( index );
+-
+-			}
+-
+-			// geometry attributes
++			// index and geometry attributes: release this geometry's owners, so a buffer another
++			// geometry still draws stays alive until its last owner lets it go
+ 
+-			for ( const attribute of Object.values( geometry.attributes ) ) {
+-
+-				this.attributes.delete( this.backend.getBufferAttribute( attribute ) );
+-
+-			}
++			this.releaseGeometryAttributes( geometry );
+ 
+ 			// wireframe attributes
+ 
+@@ -7100,8 +7271,10 @@ class Geometries extends DataMap {
  		const callId = this.info.render.calls;
  
  		const bufferAttribute = this.backend.getBufferAttribute( attribute );
@@ -1224,7 +1366,27 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  
  			this.attributes.update( bufferAttribute, type );
  
-@@ -8688,7 +8767,7 @@ class Bindings extends DataMap {
+@@ -7185,17 +7358,9 @@ class Geometries extends DataMap {
+ 	 */
+ 	deleteNodeAttributes( renderObject ) {
+ 
+-		const currentAttributes = new Set( Object.values( renderObject.geometry.attributes ) );
+-
+-		for ( const attribute of renderObject.getAttributes() ) {
+-
+-			if ( currentAttributes.has( attribute ) === false ) {
++		// node attributes can be shared with other render objects: release this object's owners
+ 
+-				this.attributes.delete( this.backend.getBufferAttribute( attribute ) );
+-
+-			}
+-
+-		}
++		this.releaseRenderObject( renderObject );
+ 
+ 	}
+ 
+@@ -8688,7 +8853,7 @@ class Bindings extends DataMap {
  	 */
  	updateForRender( renderObject ) {
  
@@ -1233,7 +1395,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  
  	}
  
-@@ -8786,10 +8865,16 @@ class Bindings extends DataMap {
+@@ -8786,10 +8951,16 @@ class Bindings extends DataMap {
  
  					} else if ( binding.isSampledTexture ) {
  
@@ -1250,7 +1412,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  						binding.samplerKey = this.textures.updateSampler( binding );
  
  					} else if ( binding.isStorageBuffer ) {
-@@ -8834,6 +8919,21 @@ class Bindings extends DataMap {
+@@ -8834,6 +9005,21 @@ class Bindings extends DataMap {
  
  			if ( groupData.usedTimes === 0 ) {
  
@@ -1272,7 +1434,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  				for ( const binding of bindGroup.bindings ) {
  
  					if ( binding.isUniformBuffer ) {
-@@ -8886,12 +8986,13 @@ class Bindings extends DataMap {
+@@ -8886,12 +9072,13 @@ class Bindings extends DataMap {
  	 * Updates the given array of bindings.
  	 *
  	 * @param {Array<BindGroup>} bindings - The bind groups.
@@ -1288,7 +1450,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  
  		}
  
-@@ -8902,12 +9003,32 @@ class Bindings extends DataMap {
+@@ -8902,12 +9089,32 @@ class Bindings extends DataMap {
  	 *
  	 * @param {BindGroup} bindGroup - The bind group to update.
  	 * @param {Array<BindGroup>} bindings - The bind groups.
@@ -1323,7 +1485,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  		let cacheBindings = true;
  		let cacheKeyLength = 0;
  		let version = 0;
-@@ -8916,12 +9037,32 @@ class Bindings extends DataMap {
+@@ -8916,12 +9123,32 @@ class Bindings extends DataMap {
  
  		for ( const binding of bindGroup.bindings ) {
  
@@ -1358,20 +1520,20 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  
  			//
  
-@@ -8989,12 +9130,20 @@ class Bindings extends DataMap {
+@@ -8989,12 +9216,20 @@ class Bindings extends DataMap {
  
  					}
  
 -					// keep track which bind groups refer to the current texture (this is needed for dispose)
 +				}
-+
+ 
+-					texturesTextureData.bindGroups.add( bindGroup );
 +				// keep track which bind groups refer to the current texture (this is needed for dispose),
 +				// also when the binding's first update reported no change: a destroy must reach this group
 +
 +				texturesTextureData.bindGroups.add( bindGroup );
 +				if ( bindingsData.trackedTextures === undefined ) {
- 
--					texturesTextureData.bindGroups.add( bindGroup );
++
 +					bindingsData.trackedTextures = new Set();
  
  				}
@@ -1381,7 +1543,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  				const textureData = backend.get( texture );
  
  				if ( textureData.externalTexture !== undefined || texturesTextureData.isDefaultTexture ) {
-@@ -9061,6 +9210,7 @@ class Bindings extends DataMap {
+@@ -9061,6 +9296,7 @@ class Bindings extends DataMap {
  			const cacheKey = cacheBindings ? _cacheKeyIds.join( ',' ) : '';
  
  			this.backend.updateBindings( bindGroup, bindings, cacheKey, version );
@@ -1389,7 +1551,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  
  		}
  
-@@ -10053,7 +10203,8 @@ class RenderContexts {
+@@ -10053,7 +10289,8 @@ class RenderContexts {
  
  		}
  
@@ -1399,7 +1561,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  
  		renderState.clearDepthValue = this.renderer.getClearDepth();
  		renderState.clearStencilValue = this.renderer.getClearStencil();
-@@ -10135,6 +10286,10 @@ class Textures extends DataMap {
+@@ -10135,6 +10372,10 @@ class Textures extends DataMap {
  		 * @type {Set<HTMLTexture>}
  		 */
  		this._htmlTextures = new Set();
@@ -1410,7 +1572,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  
  		/**
  		 * Stores weak references to the textures and render targets
-@@ -10162,6 +10317,12 @@ class Textures extends DataMap {
+@@ -10162,6 +10403,12 @@ class Textures extends DataMap {
  	 */
  	dispose() {
  
@@ -1423,7 +1585,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  		for ( const ref of this._tracked ) {
  
  			const object = ref.deref();
-@@ -10339,7 +10500,16 @@ class Textures extends DataMap {
+@@ -10339,7 +10586,16 @@ class Textures extends DataMap {
  	 */
  	updateTexture( texture, options = {} ) {
  
@@ -1440,7 +1602,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  		if ( textureData.initialized === true && textureData.version === texture.version ) return textureData.generation;
  
  		// render target textures are created with their render target
-@@ -10354,6 +10524,8 @@ class Textures extends DataMap {
+@@ -10354,6 +10610,8 @@ class Textures extends DataMap {
  
  		}
  
@@ -1449,7 +1611,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  		const isRenderTarget = texture.isRenderTargetTexture || texture.isDepthTexture || texture.isFramebufferTexture;
  		const backend = this.backend;
  
-@@ -10363,6 +10535,22 @@ class Textures extends DataMap {
+@@ -10363,6 +10621,22 @@ class Textures extends DataMap {
  
  			backend.destroyTexture( texture );
  
@@ -1472,19 +1634,19 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  		}
  
  		//
-@@ -10502,9 +10690,18 @@ class Textures extends DataMap {
+@@ -10502,9 +10776,18 @@ class Textures extends DataMap {
  
  					if ( texture.source.dataReady === true ) {
  
 -						backend.updateTexture( texture, options );
 +						if ( upload ) {
-+
+ 
+-						texture.clearUpdateRanges();
 +							this._initializeTexture( texture, textureData );
 +							uploadPromise = upload( texture, options );
 +
 +						} else {
- 
--						texture.clearUpdateRanges();
++
 +							backend.updateTexture( texture, options );
 +
 +							texture.clearUpdateRanges();
@@ -1493,7 +1655,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  
  					}
  
-@@ -10514,7 +10711,7 @@ class Textures extends DataMap {
+@@ -10514,7 +10797,7 @@ class Textures extends DataMap {
  
  					}
  
@@ -1502,7 +1664,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  
  				}
  
-@@ -10531,6 +10728,20 @@ class Textures extends DataMap {
+@@ -10531,6 +10814,20 @@ class Textures extends DataMap {
  
  		}
  
@@ -1523,7 +1685,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  		// dispose handler
  
  		if ( textureData.initialized !== true ) {
-@@ -10573,11 +10784,119 @@ class Textures extends DataMap {
+@@ -10573,11 +10870,119 @@ class Textures extends DataMap {
  
  		}
  
@@ -1646,7 +1808,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  
  	}
  
-@@ -10649,7 +10968,11 @@ class Textures extends DataMap {
+@@ -10649,7 +11054,11 @@ class Textures extends DataMap {
  
  		} else {
  
@@ -1659,7 +1821,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  
  		}
  
-@@ -10762,6 +11085,8 @@ class Textures extends DataMap {
+@@ -10762,6 +11171,8 @@ class Textures extends DataMap {
  	 */
  	_destroyTexture( texture ) {
  
@@ -1668,7 +1830,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  		if ( this.has( texture ) === true ) {
  
  			const textureData = this.get( texture );
-@@ -10791,6 +11116,7 @@ class Textures extends DataMap {
+@@ -10791,6 +11202,7 @@ class Textures extends DataMap {
  
  					bindingsData.groups = undefined;
  					bindingsData.versions = undefined;
@@ -1676,7 +1838,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  
  					// go through all bindings and if one points to the destroyed texture, trigger dispose as well
  
-@@ -13129,7 +13455,7 @@ class NodeBuilder {
+@@ -13129,7 +13541,7 @@ class NodeBuilder {
  
  		let bindGroup = new BindGroup( groupName, bindings );
  
@@ -1685,7 +1847,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  
  			bindGroup = this.renderer._bindings.getSharedBindGroup( bindGroup );
  
-@@ -16304,7 +16630,7 @@ class NodeBuilder {
+@@ -16304,7 +16716,7 @@ class NodeBuilder {
  
  		const mrt = this.renderer.getMRT();
  
@@ -1694,7 +1856,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  
  	}
  
-@@ -17783,15 +18109,17 @@ class NodeManager extends DataMap {
+@@ -17783,15 +18195,17 @@ class NodeManager extends DataMap {
  	 * Returns `true` if the given node uniforms group must be updated or not.
  	 *
  	 * @param {NodeUniformsGroup} nodeUniformsGroup - The node uniforms group.
@@ -1715,7 +1877,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  
  		// check for update
  
-@@ -18742,6 +19070,21 @@ class NodeManager extends DataMap {
+@@ -18742,6 +19156,21 @@ class NodeManager extends DataMap {
  
  	}
  
@@ -1737,7 +1899,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  	/**
  	 * Triggers the call of `updateBefore()` methods
  	 * for all nodes of the given render object.
-@@ -18751,9 +19094,14 @@ class NodeManager extends DataMap {
+@@ -18751,9 +19180,14 @@ class NodeManager extends DataMap {
  	updateBefore( renderObject ) {
  
  		const nodeBuilder = renderObject.getNodeBuilderState();
@@ -1752,7 +1914,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  			// update frame state for each node
  
  			this.getNodeFrameForRender( renderObject ).updateBeforeNode( node );
-@@ -18771,10 +19119,11 @@ class NodeManager extends DataMap {
+@@ -18771,10 +19205,11 @@ class NodeManager extends DataMap {
  	updateAfter( renderObject ) {
  
  		const nodeBuilder = renderObject.getNodeBuilderState();
@@ -1765,7 +1927,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  
  			this.getNodeFrameForRender( renderObject ).updateAfterNode( node );
  
-@@ -18851,9 +19200,14 @@ class NodeManager extends DataMap {
+@@ -18851,9 +19286,14 @@ class NodeManager extends DataMap {
  
  		const nodeFrame = this.getNodeFrameForRender( renderObject );
  		const nodeBuilder = renderObject.getNodeBuilderState();
@@ -1780,7 +1942,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  			nodeFrame.updateNode( node );
  
  		}
-@@ -22707,6 +23061,14 @@ class Renderer {
+@@ -22707,6 +23147,14 @@ class Renderer {
  		 */
  		this._bundles = null;
  
@@ -1795,7 +1957,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  		/**
  		 * A reference to a renderer module for managing render lists.
  		 *
-@@ -24638,6 +25000,18 @@ class Renderer {
+@@ -24638,6 +25086,18 @@ class Renderer {
  
  	}
  
@@ -1814,7 +1976,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  	/**
  	 * Can be used to transfer buffer data from a storage buffer attribute
  	 * from the GPU to the CPU in context of compute shaders.
-@@ -25675,6 +26049,34 @@ class Renderer {
+@@ -25675,6 +26135,34 @@ class Renderer {
  
  	}
  
@@ -1849,7 +2011,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  	/**
  	 * Initializes the given render target.
  	 *
-@@ -25999,7 +26401,8 @@ class Renderer {
+@@ -25999,7 +26487,8 @@ class Renderer {
  				version,
  				colorNode,
  				depthNode,
@@ -1859,7 +2021,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  			};
  
  			this._cacheShadowNodes.set( material, cache );
-@@ -26148,6 +26551,8 @@ class Renderer {
+@@ -26148,6 +26637,8 @@ class Renderer {
  		let materialDisplacementMap;
  		let materialDisplacementScale;
  		let materialDisplacementBias;
@@ -1868,7 +2030,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  
  		const previousSourceMaterial = this._currentSourceMaterial;
  
-@@ -26173,6 +26578,8 @@ class Renderer {
+@@ -26173,6 +26664,8 @@ class Renderer {
  			materialDisplacementMap = overrideMaterial.displacementMap;
  			materialDisplacementScale = overrideMaterial.displacementScale;
  			materialDisplacementBias = overrideMaterial.displacementBias;
@@ -1877,7 +2039,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  
  			if ( material.positionNode && material.positionNode.isNode ) {
  
-@@ -26191,7 +26598,7 @@ class Renderer {
+@@ -26191,7 +26684,7 @@ class Renderer {
  
  			if ( overrideMaterial.isShadowPassMaterial ) {
  
@@ -1886,7 +2048,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  
  				if ( this.shadowMap.type === VSMShadowMap ) {
  
-@@ -26203,6 +26610,7 @@ class Renderer {
+@@ -26203,6 +26696,7 @@ class Renderer {
  
  				}
  
@@ -1894,7 +2056,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  				if ( colorNode !== null ) overrideMaterial.colorNode = colorNode;
  				if ( depthNode !== null ) overrideMaterial.depthNode = depthNode;
  				if ( positionNode !== null ) overrideMaterial.positionNode = positionNode;
-@@ -26242,6 +26650,8 @@ class Renderer {
+@@ -26242,6 +26736,8 @@ class Renderer {
  			scene.overrideMaterial.displacementMap = materialDisplacementMap;
  			scene.overrideMaterial.displacementScale = materialDisplacementScale;
  			scene.overrideMaterial.displacementBias = materialDisplacementBias;
@@ -1903,7 +2065,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  
  		}
  
-@@ -26303,25 +26713,18 @@ class Renderer {
+@@ -26303,25 +26799,18 @@ class Renderer {
  
  		//
  
@@ -1940,7 +2102,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  
  		this._pipelines.updateForRender( renderObject );
  
-@@ -26331,7 +26734,7 @@ class Renderer {
+@@ -26331,7 +26820,7 @@ class Renderer {
  
  			this.backend.draw( renderObject, this.info );
  
@@ -1949,7 +2111,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  
  		} else if ( this._currentRenderBundle !== null ) {
  
-@@ -40878,6 +41281,9 @@ class WebGPUTextureUtils {
+@@ -40878,6 +41367,9 @@ class WebGPUTextureUtils {
  		 */
  		this._samplerCache = new Map();
  
@@ -1959,7 +2121,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  	}
  
  	/**
-@@ -41110,7 +41516,12 @@ class WebGPUTextureUtils {
+@@ -41110,7 +41602,12 @@ class WebGPUTextureUtils {
  
  		}
  
@@ -1973,7 +2135,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  
  			usage |= GPUTextureUsage.RENDER_ATTACHMENT;
  
-@@ -41216,6 +41627,23 @@ class WebGPUTextureUtils {
+@@ -41216,6 +41713,23 @@ class WebGPUTextureUtils {
  	destroyTexture( texture, isDefaultTexture = false ) {
  
  		const backend = this.backend;
@@ -1997,7 +2159,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  		const textureData = backend.get( texture );
  
  		if ( textureData.texture !== undefined && isDefaultTexture === false && texture.isExternalTexture !== true && textureData.externalTexture !== true ) textureData.texture.destroy();
-@@ -41311,64 +41739,59 @@ class WebGPUTextureUtils {
+@@ -41311,64 +41825,59 @@ class WebGPUTextureUtils {
  		const canvasTarget = backend.renderer.getCanvasTarget();
  		const { width, height } = backend.getDrawingBufferSize();
  		const samples = backend.renderer.currentSamples;
@@ -2012,13 +2174,13 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
 -			depthTexture.samples === samples &&
 -			depthTexture.depth === depth &&
 -			depthTexture.stencil === stencil ) {
--
--			return backend.get( depthTexture ).texture;
 +		let cache = this._depthBuffers.get( depthTexture );
  
--		}
+-			return backend.get( depthTexture ).texture;
 +		if ( cache !== undefined && ( cache.width !== width || cache.height !== height || cache.format !== format || cache.type !== type ) ) {
  
+-		}
+-
 -		//
 -
 -		const depthTextureGPU = backend.get( depthTexture ).texture;
@@ -2047,17 +2209,17 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  		}
  
 -		if ( depthTextureGPU !== undefined ) {
+-
+-			if ( depthTexture.image.width === width && depthTexture.image.height === height && depthTexture.format === format && depthTexture.type === type && depthTexture.samples === samples ) {
+-
+-				return depthTextureGPU;
 +		// Output and direct overlay passes alternate effective samples 4 and 1.
 +		// Retain at most those two buffers for this canvas size and depth format.
 +		let buffer = cache.textures.get( sampleCount );
  
--			if ( depthTexture.image.width === width && depthTexture.image.height === height && depthTexture.format === format && depthTexture.type === type && depthTexture.samples === samples ) {
+-			}
 +		if ( buffer === undefined ) {
  
--				return depthTextureGPU;
--
--			}
--
 -			this.destroyTexture( depthTexture );
 +			buffer = new DepthTexture( width, height, type );
 +			buffer.name = 'depthBuffer';
@@ -2090,7 +2252,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  	/**
  	 * Uploads the updated texture data to the GPU.
  	 *
-@@ -41531,6 +41954,143 @@ class WebGPUTextureUtils {
+@@ -41531,6 +42040,143 @@ class WebGPUTextureUtils {
  
  	}
  
@@ -2234,7 +2396,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  	/**
  	 * Returns texture data as a typed array.
  	 *
-@@ -41615,6 +42175,8 @@ class WebGPUTextureUtils {
+@@ -41615,6 +42261,8 @@ class WebGPUTextureUtils {
  	 */
  	dispose() {
  
@@ -2243,7 +2405,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  		this._samplerCache.clear();
  
  	}
-@@ -43612,7 +44174,7 @@ class WGSLNodeBuilder extends NodeBuilder {
+@@ -43612,7 +44260,7 @@ class WGSLNodeBuilder extends NodeBuilder {
  	 * @param {?string} offsetSnippet - A WGSL snippet that represents the offset that will be applied to the unnormalized texture coordinate before sampling the texture.
  	 * @return {string} The WGSL snippet.
  	 */
@@ -2252,7 +2414,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  
  		if ( levelSnippet === null ) levelSnippet = '0u';
  
-@@ -43630,7 +44192,14 @@ class WGSLNodeBuilder extends NodeBuilder {
+@@ -43630,7 +44278,14 @@ class WGSLNodeBuilder extends NodeBuilder {
  
  		} else {
  
@@ -2268,7 +2430,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  
  			if ( this.renderer.backend.compatibilityMode && texture.isDepthTexture ) {
  
-@@ -44258,7 +44827,7 @@ class WGSLNodeBuilder extends NodeBuilder {
+@@ -44258,7 +44913,7 @@ class WGSLNodeBuilder extends NodeBuilder {
  
  				// Cube textures always need samplers (they use textureSampleLevel, not textureLoad)
  				// Also textureGather always need sampler.
@@ -2277,7 +2439,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  
  				if ( needsSampler ) {
  
-@@ -44671,7 +45240,10 @@ ${ flowData.code }
+@@ -44671,7 +45326,10 @@ ${ flowData.code }
  
  			for ( const { name, property, type } of builtins.values() ) {
  
@@ -2289,7 +2451,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  
  				snippets.push( `${ invariant }@builtin( ${name} ) ${property} : ${type}` );
  
-@@ -44975,6 +45547,8 @@ ${ flowData.code }
+@@ -44975,6 +45633,8 @@ ${ flowData.code }
  	getVaryings( shaderStage ) {
  
  		const snippets = [];
@@ -2298,7 +2460,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  
  		if ( shaderStage === 'vertex' ) {
  
-@@ -44997,7 +45571,12 @@ ${ flowData.code }
+@@ -44997,7 +45657,12 @@ ${ flowData.code }
  
  					let attributesSnippet = `@location( ${ varyingIndex ++ } )`;
  
@@ -2312,7 +2474,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  
  						const samplingSnippet = varying.interpolationSampling !== null ? `, ${ varying.interpolationSampling } )` : ' )';
  
-@@ -45059,9 +45638,12 @@ ${ flowData.code }
+@@ -45059,9 +45724,12 @@ ${ flowData.code }
  				const textureNode = uniform.node;
  				const texture = textureNode.value;
  
@@ -2328,7 +2490,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  
  				if ( needsSampler ) {
  
-@@ -45083,7 +45665,7 @@ ${ flowData.code }
+@@ -45083,7 +45751,7 @@ ${ flowData.code }
  
  				const { primarySamples } = backend.utils.getTextureSampleData( texture );
  
@@ -2337,7 +2499,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  
  					multisampled = '_multisampled';
  
-@@ -45883,6 +46465,15 @@ class WebGPUAttributeUtils {
+@@ -45883,6 +46551,15 @@ class WebGPUAttributeUtils {
  			buffer.unmap();
  
  			bufferData.buffer = buffer;
@@ -2353,7 +2515,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  
  		}
  
-@@ -45902,6 +46493,11 @@ class WebGPUAttributeUtils {
+@@ -45902,6 +46579,11 @@ class WebGPUAttributeUtils {
  		const bufferData = backend.get( bufferAttribute );
  		const buffer = backend.get( bufferAttribute ).buffer;
  
@@ -2365,7 +2527,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  		let array = bufferAttribute.array;
  
  		const itemSize = bufferData._itemSize;
-@@ -45990,6 +46586,9 @@ class WebGPUAttributeUtils {
+@@ -45990,6 +46672,9 @@ class WebGPUAttributeUtils {
  
  		}
  
@@ -2375,7 +2537,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  	}
  
  	/**
-@@ -46104,9 +46703,14 @@ class WebGPUAttributeUtils {
+@@ -46104,9 +46789,14 @@ class WebGPUAttributeUtils {
  		const bufferAttribute = backend.getBufferAttribute( attribute );
  		const data = backend.get( bufferAttribute );
  
@@ -2392,7 +2554,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  
  	}
  
-@@ -46389,18 +46993,16 @@ class WebGPUBindingUtils {
+@@ -46389,18 +47079,16 @@ class WebGPUBindingUtils {
  
  		const bindingsData = backend.get( bindGroup );
  
@@ -2403,10 +2565,10 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  		if ( bindingsData.layout ) {
  
 -			return bindingsData.layout.layoutGPU;
--
--		}
 +			if ( bindingsData.layoutKey === bindGroupLayoutKey ) return bindingsData.layout.layoutGPU;
  
+-		}
+-
 -		// if not, assing one
 +			this.deleteBindGroupData( bindGroup );
  
@@ -2416,7 +2578,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  
  		// try to find an existing layout in the cache
  
-@@ -46621,7 +47223,20 @@ class WebGPUBindingUtils {
+@@ -46621,7 +47309,20 @@ class WebGPUBindingUtils {
  
  				let resourceGPU;
  
@@ -2438,7 +2600,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  
  					resourceGPU = device.importExternalTexture( { source: textureData.externalTexture } );
  
-@@ -46798,7 +47413,7 @@ class WebGPUBindingUtils {
+@@ -46798,7 +47499,7 @@ class WebGPUBindingUtils {
  
  				const { primarySamples } = backend.utils.getTextureSampleData( binding.texture );
  
@@ -2447,7 +2609,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  
  					texture.multisampled = true;
  
-@@ -46840,7 +47455,7 @@ class WebGPUBindingUtils {
+@@ -46840,7 +47541,7 @@ class WebGPUBindingUtils {
  
  					} else if ( type === FloatType ) {
  
@@ -2456,7 +2618,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  
  							texture.sampleType = GPUTextureSampleType.Float;
  
-@@ -46932,6 +47547,9 @@ class WebGPUBindingUtils {
+@@ -46932,6 +47633,9 @@ class WebGPUBindingUtils {
  
  		}
  
@@ -2466,7 +2628,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  	}
  
  	/**
-@@ -47356,7 +47974,13 @@ class WebGPUPipelineUtils {
+@@ -47356,7 +48060,13 @@ class WebGPUPipelineUtils {
  
  					// Pop the error scope before awaiting the pipeline, so several pipelines
  					// can be created at the same time without mixing their error scopes.
@@ -2481,7 +2643,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  
  					if ( pipelinePromise !== null ) {
  
-@@ -48693,6 +49317,27 @@ class WebGPUBackend extends Backend {
+@@ -48693,6 +49403,27 @@ class WebGPUBackend extends Backend {
  		 */
  		this.compatibilityMode = null;
  
@@ -2509,7 +2671,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  		/**
  		 * A reference to the device.
  		 *
-@@ -48805,7 +49450,11 @@ class WebGPUBackend extends Backend {
+@@ -48805,7 +49536,11 @@ class WebGPUBackend extends Backend {
  				xrCompatible: renderer.xr.enabled
  			};
  
@@ -2522,7 +2684,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  
  			if ( adapter === null ) {
  
-@@ -49033,7 +49682,9 @@ class WebGPUBackend extends Backend {
+@@ -49033,7 +49768,9 @@ class WebGPUBackend extends Backend {
  
  		let descriptor = canvasData.descriptor;
  
@@ -2533,7 +2695,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  
  			descriptor = new GPURenderPassDescriptor();
  			descriptor.colorAttachments.push( new GPURenderPassColorAttachment() );
-@@ -49060,6 +49711,9 @@ class WebGPUBackend extends Backend {
+@@ -49060,6 +49797,9 @@ class WebGPUBackend extends Backend {
  
  			canvasData.descriptor = descriptor;
  			canvasData.samples = samples;
@@ -2543,7 +2705,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  
  		}
  
-@@ -51001,6 +51655,7 @@ class WebGPUBackend extends Backend {
+@@ -51001,6 +51741,7 @@ class WebGPUBackend extends Backend {
  		const utils = this.utils;
  
  		const sampleCount = utils.getSampleCountRenderContext( renderObject.context );
@@ -2551,7 +2713,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  		const colorSpace = utils.getCurrentColorSpace( renderObject.context );
  		const colorFormat = utils.getCurrentColorFormat( renderObject.context );
  		const depthStencilFormat = utils.getCurrentDepthStencilFormat( renderObject.context );
-@@ -51025,7 +51680,8 @@ class WebGPUBackend extends Backend {
+@@ -51025,7 +51766,8 @@ class WebGPUBackend extends Backend {
  			data.primitiveTopology !== primitiveTopology || data.stripIndexFormat !== stripIndexFormat ||
  			data.frontFaceCW !== frontFaceCW ||
  			data.geometryVersion !== renderObject.geometryVersion ||
@@ -2561,7 +2723,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  		) {
  
  			data.material = material; data.materialVersion = material.version;
-@@ -51048,6 +51704,7 @@ class WebGPUBackend extends Backend {
+@@ -51048,6 +51790,7 @@ class WebGPUBackend extends Backend {
  			data.frontFaceCW = frontFaceCW;
  			data.geometryVersion = renderObject.geometryVersion;
  			data.clippingContextCacheKey = renderObject.clippingContextCacheKey;
@@ -2569,7 +2731,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  
  			needsUpdate = true;
  
-@@ -51069,6 +51726,7 @@ class WebGPUBackend extends Backend {
+@@ -51069,6 +51812,7 @@ class WebGPUBackend extends Backend {
  
  		const utils = this.utils;
  		const renderContext = renderObject.context;
@@ -2577,7 +2739,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  
  		// meshes with negative scale have a different frontFace render pipeline
  		// descriptor value so the following must be honored in the cache key
-@@ -51088,9 +51746,11 @@ class WebGPUBackend extends Backend {
+@@ -51088,9 +51832,11 @@ class WebGPUBackend extends Backend {
  			material.side, material.alphaToCoverage,
  			frontFaceCW,
  			utils.getSampleCountRenderContext( renderContext ),
@@ -2589,7 +2751,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  			renderObject.clippingContextCacheKey
  		].join();
  
-@@ -51158,6 +51818,12 @@ class WebGPUBackend extends Backend {
+@@ -51158,6 +51904,12 @@ class WebGPUBackend extends Backend {
  
  	}
  
@@ -2603,7 +2765,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..c6347ec06fba6ba55d07862751f2f884
  	 * Generates mipmaps for the given texture.
  	 *
 diff --git a/build/three.webgpu.nodes.js b/build/three.webgpu.nodes.js
-index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a35a0b03d 100644
+index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..6ef531e66e0e930c1ad57f43e1555b8047a29fd4 100644
 --- a/build/three.webgpu.nodes.js
 +++ b/build/three.webgpu.nodes.js
 @@ -179,6 +179,15 @@ class NodeMaterialObserver {
@@ -3552,7 +3714,15 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  		return hashArray( _cacheKeyValues$1 );
  
  	}
-@@ -33481,6 +34090,14 @@ class Geometries extends DataMap {
+@@ -33019,6 +33628,7 @@ class RenderObjects {
+ 			this.pipelines.delete( renderObject );
+ 			this.bindings.deleteForRender( renderObject );
+ 			this.nodes.delete( renderObject );
++			this.geometries.releaseRenderObject( renderObject );
+ 
+ 			chainMap.delete( renderObject.getChainArray() );
+ 
+@@ -33481,6 +34091,17 @@ class Geometries extends DataMap {
  		 */
  		this._registry = new FinalizationRegistry( ( ref ) => this._tracked.delete( ref ) );
  
@@ -3563,14 +3733,19 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
 +		 * @type {WeakMap<RenderObject,Map<BufferAttribute,number>>}
 +		 */
 +		this._settledAttributes = new WeakMap();
++		this._geometryAttributeOwners = new WeakMap();
++		this._sharedAttributeOwners = new WeakMap();
++		this._renderObjectAttributeGeometry = new WeakMap();
 +
  	}
  
  	/**
-@@ -33506,10 +34123,69 @@ class Geometries extends DataMap {
+@@ -33505,11 +34126,173 @@ class Geometries extends DataMap {
+ 		const geometry = renderObject.geometry;
  
  		if ( this.has( geometry ) === false ) this.initGeometry( geometry );
- 
++		if ( this.geometryAttributesChanged( renderObject ) ) this.syncGeometryAttributes( renderObject );
++
 +		// A settled static object has no attribute that could have changed since the last refresh,
 +		// unless a writer bumped one. An InstancedMesh's instance buffer is a vertex attribute of
 +		// this draw, and a BufferGeometry carries no version of its own to announce the write, so
@@ -3579,7 +3754,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
 +		const monitor = renderObject.getMonitor();
 +
 +		if ( monitor !== undefined && monitor.isSettled( renderObject ) === true && this.attributesChanged( renderObject ) === false ) return;
-+
+ 
  		this.updateAttributes( renderObject );
  
  	}
@@ -3634,10 +3809,139 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
 +
 +	}
 +
++	/** Compare the published attribute identities without allocating on settled frames. */
++	geometryAttributesChanged( renderObject ) {
++
++		const geometry = renderObject.geometry;
++		const owner = this._geometryAttributeOwners.get( geometry )?.get( renderObject );
++		if ( owner === undefined || owner.index !== geometry.index ) return true;
++
++		const attributes = renderObject.getAttributes();
++		if ( owner.attributes.length !== attributes.length ) return true;
++		for ( let i = 0; i < attributes.length; i ++ ) {
++			const attribute = attributes[ i ];
++			if ( owner.attributes[ i ] !== ( attribute.isInterleavedBufferAttribute ? attribute.data : attribute ) ) return true;
++		}
++
++		return false;
++
++	}
++
++	/** Add this render object's current geometry attributes to the renderer's shared-resource owners. */
++	syncGeometryAttributes( renderObject ) {
++
++		const { geometry } = renderObject;
++		const previousGeometry = this._renderObjectAttributeGeometry.get( renderObject );
++		if ( previousGeometry !== undefined && previousGeometry !== geometry ) this.releaseRenderObject( renderObject );
++		this._renderObjectAttributeGeometry.set( renderObject, geometry );
++		let geometryOwners = this._geometryAttributeOwners.get( geometry );
++
++		if ( geometryOwners === undefined ) {
++			geometryOwners = new Map();
++			this._geometryAttributeOwners.set( geometry, geometryOwners );
++		}
++
++		const previous = geometryOwners.get( renderObject )?.keys ?? new Map();
++		const current = new Map();
++		const attributes = renderObject.getAttributes();
++		const attributeKeys = [];
++
++		for ( const attribute of attributes ) {
++			const key = attribute.isInterleavedBufferAttribute ? attribute.data : attribute;
++			current.set( key, true );
++			attributeKeys.push( key );
++		}
++		const index = geometry.index;
++		if ( index !== null ) current.set( index, true );
++
++		for ( const key of current.keys() ) {
++			let record = this._sharedAttributeOwners.get( key );
++			if ( record === undefined ) record = { owners: new Set() };
++			if ( previous.has( key ) === false ) record.owners.add( renderObject );
++			this._sharedAttributeOwners.set( key, record );
++		}
++
++		for ( const key of previous.keys() ) {
++			if ( current.has( key ) === false ) this.releaseSharedAttribute( key, renderObject );
++		}
++
++		geometryOwners.set( renderObject, { keys: current, attributes: attributeKeys, index } );
++
++	}
++
++	/** Drop a render object from its geometry before its material-owned node attributes go stale. */
++	releaseRenderObject( renderObject ) {
++
++		const geometry = this._renderObjectAttributeGeometry.get( renderObject );
++		if ( geometry === undefined ) return;
++		const geometryOwners = this._geometryAttributeOwners.get( geometry );
++		const owned = geometryOwners?.get( renderObject )?.keys;
++		if ( owned !== undefined ) {
++			for ( const key of owned.keys() ) this.releaseSharedAttribute( key, renderObject );
++			geometryOwners.delete( renderObject );
++			if ( geometryOwners.size === 0 ) this._geometryAttributeOwners.delete( geometry );
++		}
++		this._renderObjectAttributeGeometry.delete( renderObject );
++
++	}
++
++	/** Release a shared GPU resource only after its last live geometry render object lets it go. */
++	releaseSharedAttribute( key, owner ) {
++
++		const record = this._sharedAttributeOwners.get( key );
++		if ( record === undefined ) return;
++		record.owners.delete( owner );
++		if ( record.owners.size !== 0 ) return;
++
++		this.attributes.delete( key );
++		this._sharedAttributeOwners.delete( key );
++
++	}
++
++	/** Release the recorded sets, not a potentially replaced render object's current attributes. */
++	releaseGeometryAttributes( geometry ) {
++
++		const geometryOwners = this._geometryAttributeOwners.get( geometry );
++		if ( geometryOwners === undefined ) return;
++		for ( const [ owner, attributes ] of geometryOwners ) {
++			for ( const key of attributes.keys.keys() ) this.releaseSharedAttribute( key, owner );
++			this._renderObjectAttributeGeometry.delete( owner );
++		}
++		this._geometryAttributeOwners.delete( geometry );
++
++	}
++
  	/**
  	 * Initializes the given geometry.
  	 *
-@@ -33634,8 +34310,10 @@ class Geometries extends DataMap {
+@@ -33527,23 +34310,10 @@ class Geometries extends DataMap {
+ 
+ 			this.info.memory.geometries --;
+ 
+-			// index
+-
+-			const index = geometry.index;
+-
+-			if ( index !== null ) {
+-
+-				this.attributes.delete( index );
+-
+-			}
+-
+-			// geometry attributes
+-
+-			for ( const attribute of Object.values( geometry.attributes ) ) {
+-
+-				this.attributes.delete( this.backend.getBufferAttribute( attribute ) );
++			// index and geometry attributes: release this geometry's owners, so a buffer another
++			// geometry still draws stays alive until its last owner lets it go
+ 
+-			}
++			this.releaseGeometryAttributes( geometry );
+ 
+ 			// wireframe attributes
+ 
+@@ -33634,8 +34404,10 @@ class Geometries extends DataMap {
  		const callId = this.info.render.calls;
  
  		const bufferAttribute = this.backend.getBufferAttribute( attribute );
@@ -3649,7 +3953,27 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  
  			this.attributes.update( bufferAttribute, type );
  
-@@ -35222,7 +35900,7 @@ class Bindings extends DataMap {
+@@ -33719,17 +34491,9 @@ class Geometries extends DataMap {
+ 	 */
+ 	deleteNodeAttributes( renderObject ) {
+ 
+-		const currentAttributes = new Set( Object.values( renderObject.geometry.attributes ) );
+-
+-		for ( const attribute of renderObject.getAttributes() ) {
+-
+-			if ( currentAttributes.has( attribute ) === false ) {
+-
+-				this.attributes.delete( this.backend.getBufferAttribute( attribute ) );
++		// node attributes can be shared with other render objects: release this object's owners
+ 
+-			}
+-
+-		}
++		this.releaseRenderObject( renderObject );
+ 
+ 	}
+ 
+@@ -35222,7 +35986,7 @@ class Bindings extends DataMap {
  	 */
  	updateForRender( renderObject ) {
  
@@ -3658,7 +3982,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  
  	}
  
-@@ -35320,10 +35998,16 @@ class Bindings extends DataMap {
+@@ -35320,10 +36084,16 @@ class Bindings extends DataMap {
  
  					} else if ( binding.isSampledTexture ) {
  
@@ -3675,7 +3999,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  						binding.samplerKey = this.textures.updateSampler( binding );
  
  					} else if ( binding.isStorageBuffer ) {
-@@ -35368,6 +36052,21 @@ class Bindings extends DataMap {
+@@ -35368,6 +36138,21 @@ class Bindings extends DataMap {
  
  			if ( groupData.usedTimes === 0 ) {
  
@@ -3697,7 +4021,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  				for ( const binding of bindGroup.bindings ) {
  
  					if ( binding.isUniformBuffer ) {
-@@ -35420,12 +36119,13 @@ class Bindings extends DataMap {
+@@ -35420,12 +36205,13 @@ class Bindings extends DataMap {
  	 * Updates the given array of bindings.
  	 *
  	 * @param {Array<BindGroup>} bindings - The bind groups.
@@ -3713,7 +4037,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  
  		}
  
-@@ -35436,12 +36136,32 @@ class Bindings extends DataMap {
+@@ -35436,12 +36222,32 @@ class Bindings extends DataMap {
  	 *
  	 * @param {BindGroup} bindGroup - The bind group to update.
  	 * @param {Array<BindGroup>} bindings - The bind groups.
@@ -3748,7 +4072,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  		let cacheBindings = true;
  		let cacheKeyLength = 0;
  		let version = 0;
-@@ -35450,12 +36170,32 @@ class Bindings extends DataMap {
+@@ -35450,12 +36256,32 @@ class Bindings extends DataMap {
  
  		for ( const binding of bindGroup.bindings ) {
  
@@ -3783,7 +4107,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  
  			//
  
-@@ -35523,12 +36263,20 @@ class Bindings extends DataMap {
+@@ -35523,12 +36349,20 @@ class Bindings extends DataMap {
  
  					}
  
@@ -3806,7 +4130,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  				const textureData = backend.get( texture );
  
  				if ( textureData.externalTexture !== undefined || texturesTextureData.isDefaultTexture ) {
-@@ -35595,6 +36343,7 @@ class Bindings extends DataMap {
+@@ -35595,6 +36429,7 @@ class Bindings extends DataMap {
  			const cacheKey = cacheBindings ? _cacheKeyIds.join( ',' ) : '';
  
  			this.backend.updateBindings( bindGroup, bindings, cacheKey, version );
@@ -3814,7 +4138,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  
  		}
  
-@@ -36587,7 +37336,8 @@ class RenderContexts {
+@@ -36587,7 +37422,8 @@ class RenderContexts {
  
  		}
  
@@ -3824,7 +4148,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  
  		renderState.clearDepthValue = this.renderer.getClearDepth();
  		renderState.clearStencilValue = this.renderer.getClearStencil();
-@@ -36669,6 +37419,10 @@ class Textures extends DataMap {
+@@ -36669,6 +37505,10 @@ class Textures extends DataMap {
  		 * @type {Set<HTMLTexture>}
  		 */
  		this._htmlTextures = new Set();
@@ -3835,7 +4159,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  
  		/**
  		 * Stores weak references to the textures and render targets
-@@ -36696,6 +37450,12 @@ class Textures extends DataMap {
+@@ -36696,6 +37536,12 @@ class Textures extends DataMap {
  	 */
  	dispose() {
  
@@ -3848,7 +4172,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  		for ( const ref of this._tracked ) {
  
  			const object = ref.deref();
-@@ -36873,7 +37633,16 @@ class Textures extends DataMap {
+@@ -36873,7 +37719,16 @@ class Textures extends DataMap {
  	 */
  	updateTexture( texture, options = {} ) {
  
@@ -3865,7 +4189,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  		if ( textureData.initialized === true && textureData.version === texture.version ) return textureData.generation;
  
  		// render target textures are created with their render target
-@@ -36888,6 +37657,8 @@ class Textures extends DataMap {
+@@ -36888,6 +37743,8 @@ class Textures extends DataMap {
  
  		}
  
@@ -3874,7 +4198,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  		const isRenderTarget = texture.isRenderTargetTexture || texture.isDepthTexture || texture.isFramebufferTexture;
  		const backend = this.backend;
  
-@@ -36897,6 +37668,22 @@ class Textures extends DataMap {
+@@ -36897,6 +37754,22 @@ class Textures extends DataMap {
  
  			backend.destroyTexture( texture );
  
@@ -3897,7 +4221,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  		}
  
  		//
-@@ -37036,9 +37823,18 @@ class Textures extends DataMap {
+@@ -37036,9 +37909,18 @@ class Textures extends DataMap {
  
  					if ( texture.source.dataReady === true ) {
  
@@ -3918,7 +4242,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  
  					}
  
-@@ -37048,7 +37844,7 @@ class Textures extends DataMap {
+@@ -37048,7 +37930,7 @@ class Textures extends DataMap {
  
  					}
  
@@ -3927,7 +4251,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  
  				}
  
-@@ -37065,6 +37861,20 @@ class Textures extends DataMap {
+@@ -37065,6 +37947,20 @@ class Textures extends DataMap {
  
  		}
  
@@ -3948,7 +4272,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  		// dispose handler
  
  		if ( textureData.initialized !== true ) {
-@@ -37107,11 +37917,119 @@ class Textures extends DataMap {
+@@ -37107,11 +38003,119 @@ class Textures extends DataMap {
  
  		}
  
@@ -4071,7 +4395,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  
  	}
  
-@@ -37183,7 +38101,11 @@ class Textures extends DataMap {
+@@ -37183,7 +38187,11 @@ class Textures extends DataMap {
  
  		} else {
  
@@ -4084,7 +4408,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  
  		}
  
-@@ -37296,6 +38218,8 @@ class Textures extends DataMap {
+@@ -37296,6 +38304,8 @@ class Textures extends DataMap {
  	 */
  	_destroyTexture( texture ) {
  
@@ -4093,7 +4417,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  		if ( this.has( texture ) === true ) {
  
  			const textureData = this.get( texture );
-@@ -37325,6 +38249,7 @@ class Textures extends DataMap {
+@@ -37325,6 +38335,7 @@ class Textures extends DataMap {
  
  					bindingsData.groups = undefined;
  					bindingsData.versions = undefined;
@@ -4101,7 +4425,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  
  					// go through all bindings and if one points to the destroyed texture, trigger dispose as well
  
-@@ -43390,7 +44315,8 @@ class VelocityNode extends Node {
+@@ -43390,7 +44401,8 @@ class VelocityNode extends Node {
  
  		const previousModelMatrix = getPreviousMatrix( object );
  
@@ -4111,7 +4435,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  
  		//
  
-@@ -43917,7 +44843,7 @@ class PassMultipleTextureNode extends PassTextureNode {
+@@ -43917,7 +44929,7 @@ class PassMultipleTextureNode extends PassTextureNode {
  	 * @param {string} textureName - The output texture name.
  	 * @param {boolean} [previousTexture=false] - Whether previous frame data should be used or not.
  	 */
@@ -4120,7 +4444,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  
  		// null is passed to the super call since this class does not
  		// use an external texture for rendering pass data into. Instead
-@@ -43938,6 +44864,8 @@ class PassMultipleTextureNode extends PassTextureNode {
+@@ -43938,6 +44950,8 @@ class PassMultipleTextureNode extends PassTextureNode {
  		 * @type {boolean}
  		 */
  		this.previousTexture = previousTexture;
@@ -4129,7 +4453,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  
  		/**
  		 * This flag can be used for type testing.
-@@ -43959,17 +44887,33 @@ class PassMultipleTextureNode extends PassTextureNode {
+@@ -43959,17 +44973,33 @@ class PassMultipleTextureNode extends PassTextureNode {
  
  	}
  
@@ -4164,7 +4488,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  		newNode.uvNode = this.uvNode;
  		newNode.levelNode = this.levelNode;
  		newNode.biasNode = this.biasNode;
-@@ -44200,6 +45144,8 @@ class PassNode extends Node {
+@@ -44200,6 +45230,8 @@ class PassNode extends Node {
  		 * @type {Object<string, TextureNode>}
  		 */
  		this._textureNodes = {};
@@ -4173,7 +4497,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  
  		/**
  		 * A dictionary holding the internal depth nodes.
-@@ -44512,12 +45458,33 @@ class PassNode extends Node {
+@@ -44512,12 +45544,33 @@ class PassNode extends Node {
  			this._previousTextures[ name ] = texture;
  
  			this._textureNodes[ name ].updateTexture();
@@ -4207,7 +4531,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  	/**
  	 * Returns the texture node for the given output name.
  	 *
-@@ -44915,6 +45882,7 @@ class PassNode extends Node {
+@@ -44915,6 +45968,7 @@ class PassNode extends Node {
  
  		super.dispose();
  
@@ -4215,7 +4539,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  		this.renderTarget.dispose();
  
  	}
-@@ -48431,6 +49399,17 @@ const shadowPositionWorld = /*@__PURE__*/ property( 'vec3', 'shadowPositionWorld
+@@ -48431,6 +49485,17 @@ const shadowPositionWorld = /*@__PURE__*/ property( 'vec3', 'shadowPositionWorld
  
  const _shadowUniforms = /*@__PURE__*/ new WeakMap();
  
@@ -4233,7 +4557,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  function getShadowUniforms( shadow ) {
  
  	let uniforms = _shadowUniforms.get( shadow );
-@@ -48439,7 +49418,10 @@ function getShadowUniforms( shadow ) {
+@@ -48439,7 +49504,10 @@ function getShadowUniforms( shadow ) {
  
  		uniforms = {
  			mapSize: reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup ),
@@ -4245,7 +4569,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  		};
  
  		_shadowUniforms.set( shadow, uniforms );
-@@ -49487,11 +50469,7 @@ const BasicPointShadowFilter = /*@__PURE__*/ Fn( ( { depthTexture, bd3D, dp } )
+@@ -49487,11 +50555,7 @@ const BasicPointShadowFilter = /*@__PURE__*/ Fn( ( { depthTexture, bd3D, dp } )
   */
  const PointShadowFilter = /*@__PURE__*/ Fn( ( { depthTexture, bd3D, distance, shadow }, builder ) => {
  
@@ -4258,7 +4582,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  
  	const texelSize = radius.div( mapSize.x ).toConst();
  
-@@ -49534,9 +50512,7 @@ const pointShadowFilter = /*@__PURE__*/ Fn( ( { filterFn, depthTexture, shadowCo
+@@ -49534,9 +50598,7 @@ const pointShadowFilter = /*@__PURE__*/ Fn( ( { filterFn, depthTexture, shadowCo
  	const shadowPositionAbs = shadowPosition.abs().toConst();
  	const viewZ = shadowPositionAbs.x.max( shadowPositionAbs.y ).max( shadowPositionAbs.z );
  
@@ -4269,7 +4593,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  
  	const result = float( 1.0 ).toVar();
  
-@@ -54331,7 +55307,7 @@ class NodeBuilder {
+@@ -54331,7 +55393,7 @@ class NodeBuilder {
  
  		let bindGroup = new BindGroup( groupName, bindings );
  
@@ -4278,7 +4602,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  
  			bindGroup = this.renderer._bindings.getSharedBindGroup( bindGroup );
  
-@@ -57506,7 +58482,7 @@ class NodeBuilder {
+@@ -57506,7 +58568,7 @@ class NodeBuilder {
  
  		const mrt = this.renderer.getMRT();
  
@@ -4287,7 +4611,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  
  	}
  
-@@ -58985,15 +59961,17 @@ class NodeManager extends DataMap {
+@@ -58985,15 +60047,17 @@ class NodeManager extends DataMap {
  	 * Returns `true` if the given node uniforms group must be updated or not.
  	 *
  	 * @param {NodeUniformsGroup} nodeUniformsGroup - The node uniforms group.
@@ -4308,7 +4632,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  
  		// check for update
  
-@@ -59944,6 +60922,21 @@ class NodeManager extends DataMap {
+@@ -59944,6 +61008,21 @@ class NodeManager extends DataMap {
  
  	}
  
@@ -4330,7 +4654,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  	/**
  	 * Triggers the call of `updateBefore()` methods
  	 * for all nodes of the given render object.
-@@ -59953,9 +60946,14 @@ class NodeManager extends DataMap {
+@@ -59953,9 +61032,14 @@ class NodeManager extends DataMap {
  	updateBefore( renderObject ) {
  
  		const nodeBuilder = renderObject.getNodeBuilderState();
@@ -4345,7 +4669,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  			// update frame state for each node
  
  			this.getNodeFrameForRender( renderObject ).updateBeforeNode( node );
-@@ -59973,10 +60971,11 @@ class NodeManager extends DataMap {
+@@ -59973,10 +61057,11 @@ class NodeManager extends DataMap {
  	updateAfter( renderObject ) {
  
  		const nodeBuilder = renderObject.getNodeBuilderState();
@@ -4358,7 +4682,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  
  			this.getNodeFrameForRender( renderObject ).updateAfterNode( node );
  
-@@ -60053,9 +61052,14 @@ class NodeManager extends DataMap {
+@@ -60053,9 +61138,14 @@ class NodeManager extends DataMap {
  
  		const nodeFrame = this.getNodeFrameForRender( renderObject );
  		const nodeBuilder = renderObject.getNodeBuilderState();
@@ -4373,7 +4697,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  			nodeFrame.updateNode( node );
  
  		}
-@@ -63909,6 +64913,14 @@ class Renderer {
+@@ -63909,6 +64999,14 @@ class Renderer {
  		 */
  		this._bundles = null;
  
@@ -4388,7 +4712,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  		/**
  		 * A reference to a renderer module for managing render lists.
  		 *
-@@ -65840,6 +66852,18 @@ class Renderer {
+@@ -65840,6 +66938,18 @@ class Renderer {
  
  	}
  
@@ -4407,7 +4731,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  	/**
  	 * Can be used to transfer buffer data from a storage buffer attribute
  	 * from the GPU to the CPU in context of compute shaders.
-@@ -66877,6 +67901,34 @@ class Renderer {
+@@ -66877,6 +67987,34 @@ class Renderer {
  
  	}
  
@@ -4442,7 +4766,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  	/**
  	 * Initializes the given render target.
  	 *
-@@ -67201,7 +68253,8 @@ class Renderer {
+@@ -67201,7 +68339,8 @@ class Renderer {
  				version,
  				colorNode,
  				depthNode,
@@ -4452,7 +4776,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  			};
  
  			this._cacheShadowNodes.set( material, cache );
-@@ -67350,6 +68403,8 @@ class Renderer {
+@@ -67350,6 +68489,8 @@ class Renderer {
  		let materialDisplacementMap;
  		let materialDisplacementScale;
  		let materialDisplacementBias;
@@ -4461,7 +4785,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  
  		const previousSourceMaterial = this._currentSourceMaterial;
  
-@@ -67375,6 +68430,8 @@ class Renderer {
+@@ -67375,6 +68516,8 @@ class Renderer {
  			materialDisplacementMap = overrideMaterial.displacementMap;
  			materialDisplacementScale = overrideMaterial.displacementScale;
  			materialDisplacementBias = overrideMaterial.displacementBias;
@@ -4470,7 +4794,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  
  			if ( material.positionNode && material.positionNode.isNode ) {
  
-@@ -67393,7 +68450,7 @@ class Renderer {
+@@ -67393,7 +68536,7 @@ class Renderer {
  
  			if ( overrideMaterial.isShadowPassMaterial ) {
  
@@ -4479,7 +4803,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  
  				if ( this.shadowMap.type === VSMShadowMap ) {
  
-@@ -67405,6 +68462,7 @@ class Renderer {
+@@ -67405,6 +68548,7 @@ class Renderer {
  
  				}
  
@@ -4487,7 +4811,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  				if ( colorNode !== null ) overrideMaterial.colorNode = colorNode;
  				if ( depthNode !== null ) overrideMaterial.depthNode = depthNode;
  				if ( positionNode !== null ) overrideMaterial.positionNode = positionNode;
-@@ -67444,6 +68502,8 @@ class Renderer {
+@@ -67444,6 +68588,8 @@ class Renderer {
  			scene.overrideMaterial.displacementMap = materialDisplacementMap;
  			scene.overrideMaterial.displacementScale = materialDisplacementScale;
  			scene.overrideMaterial.displacementBias = materialDisplacementBias;
@@ -4496,7 +4820,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  
  		}
  
-@@ -67505,25 +68565,18 @@ class Renderer {
+@@ -67505,25 +68651,18 @@ class Renderer {
  
  		//
  
@@ -4533,7 +4857,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  
  		this._pipelines.updateForRender( renderObject );
  
-@@ -67533,7 +68586,7 @@ class Renderer {
+@@ -67533,7 +68672,7 @@ class Renderer {
  
  			this.backend.draw( renderObject, this.info );
  
@@ -4542,7 +4866,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  
  		} else if ( this._currentRenderBundle !== null ) {
  
-@@ -82080,6 +83133,9 @@ class WebGPUTextureUtils {
+@@ -82080,6 +83219,9 @@ class WebGPUTextureUtils {
  		 */
  		this._samplerCache = new Map();
  
@@ -4552,7 +4876,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  	}
  
  	/**
-@@ -82312,7 +83368,12 @@ class WebGPUTextureUtils {
+@@ -82312,7 +83454,12 @@ class WebGPUTextureUtils {
  
  		}
  
@@ -4566,7 +4890,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  
  			usage |= GPUTextureUsage.RENDER_ATTACHMENT;
  
-@@ -82418,6 +83479,23 @@ class WebGPUTextureUtils {
+@@ -82418,6 +83565,23 @@ class WebGPUTextureUtils {
  	destroyTexture( texture, isDefaultTexture = false ) {
  
  		const backend = this.backend;
@@ -4590,7 +4914,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  		const textureData = backend.get( texture );
  
  		if ( textureData.texture !== undefined && isDefaultTexture === false && texture.isExternalTexture !== true && textureData.externalTexture !== true ) textureData.texture.destroy();
-@@ -82513,64 +83591,59 @@ class WebGPUTextureUtils {
+@@ -82513,64 +83677,59 @@ class WebGPUTextureUtils {
  		const canvasTarget = backend.renderer.getCanvasTarget();
  		const { width, height } = backend.getDrawingBufferSize();
  		const samples = backend.renderer.currentSamples;
@@ -4683,7 +5007,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  	/**
  	 * Uploads the updated texture data to the GPU.
  	 *
-@@ -82733,6 +83806,143 @@ class WebGPUTextureUtils {
+@@ -82733,6 +83892,143 @@ class WebGPUTextureUtils {
  
  	}
  
@@ -4827,7 +5151,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  	/**
  	 * Returns texture data as a typed array.
  	 *
-@@ -82817,6 +84027,8 @@ class WebGPUTextureUtils {
+@@ -82817,6 +84113,8 @@ class WebGPUTextureUtils {
  	 */
  	dispose() {
  
@@ -4836,7 +5160,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  		this._samplerCache.clear();
  
  	}
-@@ -84814,7 +86026,7 @@ class WGSLNodeBuilder extends NodeBuilder {
+@@ -84814,7 +86112,7 @@ class WGSLNodeBuilder extends NodeBuilder {
  	 * @param {?string} offsetSnippet - A WGSL snippet that represents the offset that will be applied to the unnormalized texture coordinate before sampling the texture.
  	 * @return {string} The WGSL snippet.
  	 */
@@ -4845,7 +5169,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  
  		if ( levelSnippet === null ) levelSnippet = '0u';
  
-@@ -84832,7 +86044,14 @@ class WGSLNodeBuilder extends NodeBuilder {
+@@ -84832,7 +86130,14 @@ class WGSLNodeBuilder extends NodeBuilder {
  
  		} else {
  
@@ -4861,7 +5185,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  
  			if ( this.renderer.backend.compatibilityMode && texture.isDepthTexture ) {
  
-@@ -85460,7 +86679,7 @@ class WGSLNodeBuilder extends NodeBuilder {
+@@ -85460,7 +86765,7 @@ class WGSLNodeBuilder extends NodeBuilder {
  
  				// Cube textures always need samplers (they use textureSampleLevel, not textureLoad)
  				// Also textureGather always need sampler.
@@ -4870,7 +5194,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  
  				if ( needsSampler ) {
  
-@@ -85873,7 +87092,10 @@ ${ flowData.code }
+@@ -85873,7 +87178,10 @@ ${ flowData.code }
  
  			for ( const { name, property, type } of builtins.values() ) {
  
@@ -4882,7 +5206,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  
  				snippets.push( `${ invariant }@builtin( ${name} ) ${property} : ${type}` );
  
-@@ -86177,6 +87399,8 @@ ${ flowData.code }
+@@ -86177,6 +87485,8 @@ ${ flowData.code }
  	getVaryings( shaderStage ) {
  
  		const snippets = [];
@@ -4891,7 +5215,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  
  		if ( shaderStage === 'vertex' ) {
  
-@@ -86199,7 +87423,12 @@ ${ flowData.code }
+@@ -86199,7 +87509,12 @@ ${ flowData.code }
  
  					let attributesSnippet = `@location( ${ varyingIndex ++ } )`;
  
@@ -4905,7 +5229,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  
  						const samplingSnippet = varying.interpolationSampling !== null ? `, ${ varying.interpolationSampling } )` : ' )';
  
-@@ -86261,9 +87490,12 @@ ${ flowData.code }
+@@ -86261,9 +87576,12 @@ ${ flowData.code }
  				const textureNode = uniform.node;
  				const texture = textureNode.value;
  
@@ -4921,7 +5245,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  
  				if ( needsSampler ) {
  
-@@ -86285,7 +87517,7 @@ ${ flowData.code }
+@@ -86285,7 +87603,7 @@ ${ flowData.code }
  
  				const { primarySamples } = backend.utils.getTextureSampleData( texture );
  
@@ -4930,7 +5254,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  
  					multisampled = '_multisampled';
  
-@@ -87085,6 +88317,15 @@ class WebGPUAttributeUtils {
+@@ -87085,6 +88403,15 @@ class WebGPUAttributeUtils {
  			buffer.unmap();
  
  			bufferData.buffer = buffer;
@@ -4946,7 +5270,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  
  		}
  
-@@ -87104,6 +88345,11 @@ class WebGPUAttributeUtils {
+@@ -87104,6 +88431,11 @@ class WebGPUAttributeUtils {
  		const bufferData = backend.get( bufferAttribute );
  		const buffer = backend.get( bufferAttribute ).buffer;
  
@@ -4958,7 +5282,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  		let array = bufferAttribute.array;
  
  		const itemSize = bufferData._itemSize;
-@@ -87192,6 +88438,9 @@ class WebGPUAttributeUtils {
+@@ -87192,6 +88524,9 @@ class WebGPUAttributeUtils {
  
  		}
  
@@ -4968,7 +5292,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  	}
  
  	/**
-@@ -87306,9 +88555,14 @@ class WebGPUAttributeUtils {
+@@ -87306,9 +88641,14 @@ class WebGPUAttributeUtils {
  		const bufferAttribute = backend.getBufferAttribute( attribute );
  		const data = backend.get( bufferAttribute );
  
@@ -4985,7 +5309,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  
  	}
  
-@@ -87591,18 +88845,16 @@ class WebGPUBindingUtils {
+@@ -87591,18 +88931,16 @@ class WebGPUBindingUtils {
  
  		const bindingsData = backend.get( bindGroup );
  
@@ -5009,7 +5333,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  
  		// try to find an existing layout in the cache
  
-@@ -87823,7 +89075,20 @@ class WebGPUBindingUtils {
+@@ -87823,7 +89161,20 @@ class WebGPUBindingUtils {
  
  				let resourceGPU;
  
@@ -5031,7 +5355,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  
  					resourceGPU = device.importExternalTexture( { source: textureData.externalTexture } );
  
-@@ -88000,7 +89265,7 @@ class WebGPUBindingUtils {
+@@ -88000,7 +89351,7 @@ class WebGPUBindingUtils {
  
  				const { primarySamples } = backend.utils.getTextureSampleData( binding.texture );
  
@@ -5040,7 +5364,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  
  					texture.multisampled = true;
  
-@@ -88042,7 +89307,7 @@ class WebGPUBindingUtils {
+@@ -88042,7 +89393,7 @@ class WebGPUBindingUtils {
  
  					} else if ( type === FloatType ) {
  
@@ -5049,7 +5373,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  
  							texture.sampleType = GPUTextureSampleType.Float;
  
-@@ -88134,6 +89399,9 @@ class WebGPUBindingUtils {
+@@ -88134,6 +89485,9 @@ class WebGPUBindingUtils {
  
  		}
  
@@ -5059,7 +5383,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  	}
  
  	/**
-@@ -88558,7 +89826,13 @@ class WebGPUPipelineUtils {
+@@ -88558,7 +89912,13 @@ class WebGPUPipelineUtils {
  
  					// Pop the error scope before awaiting the pipeline, so several pipelines
  					// can be created at the same time without mixing their error scopes.
@@ -5074,7 +5398,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  
  					if ( pipelinePromise !== null ) {
  
-@@ -89895,6 +91169,27 @@ class WebGPUBackend extends Backend {
+@@ -89895,6 +91255,27 @@ class WebGPUBackend extends Backend {
  		 */
  		this.compatibilityMode = null;
  
@@ -5102,7 +5426,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  		/**
  		 * A reference to the device.
  		 *
-@@ -90007,7 +91302,11 @@ class WebGPUBackend extends Backend {
+@@ -90007,7 +91388,11 @@ class WebGPUBackend extends Backend {
  				xrCompatible: renderer.xr.enabled
  			};
  
@@ -5115,7 +5439,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  
  			if ( adapter === null ) {
  
-@@ -90235,7 +91534,9 @@ class WebGPUBackend extends Backend {
+@@ -90235,7 +91620,9 @@ class WebGPUBackend extends Backend {
  
  		let descriptor = canvasData.descriptor;
  
@@ -5126,7 +5450,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  
  			descriptor = new GPURenderPassDescriptor();
  			descriptor.colorAttachments.push( new GPURenderPassColorAttachment() );
-@@ -90262,6 +91563,9 @@ class WebGPUBackend extends Backend {
+@@ -90262,6 +91649,9 @@ class WebGPUBackend extends Backend {
  
  			canvasData.descriptor = descriptor;
  			canvasData.samples = samples;
@@ -5136,7 +5460,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  
  		}
  
-@@ -92203,6 +93507,7 @@ class WebGPUBackend extends Backend {
+@@ -92203,6 +93593,7 @@ class WebGPUBackend extends Backend {
  		const utils = this.utils;
  
  		const sampleCount = utils.getSampleCountRenderContext( renderObject.context );
@@ -5144,7 +5468,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  		const colorSpace = utils.getCurrentColorSpace( renderObject.context );
  		const colorFormat = utils.getCurrentColorFormat( renderObject.context );
  		const depthStencilFormat = utils.getCurrentDepthStencilFormat( renderObject.context );
-@@ -92227,7 +93532,8 @@ class WebGPUBackend extends Backend {
+@@ -92227,7 +93618,8 @@ class WebGPUBackend extends Backend {
  			data.primitiveTopology !== primitiveTopology || data.stripIndexFormat !== stripIndexFormat ||
  			data.frontFaceCW !== frontFaceCW ||
  			data.geometryVersion !== renderObject.geometryVersion ||
@@ -5154,7 +5478,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  		) {
  
  			data.material = material; data.materialVersion = material.version;
-@@ -92250,6 +93556,7 @@ class WebGPUBackend extends Backend {
+@@ -92250,6 +93642,7 @@ class WebGPUBackend extends Backend {
  			data.frontFaceCW = frontFaceCW;
  			data.geometryVersion = renderObject.geometryVersion;
  			data.clippingContextCacheKey = renderObject.clippingContextCacheKey;
@@ -5162,7 +5486,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  
  			needsUpdate = true;
  
-@@ -92271,6 +93578,7 @@ class WebGPUBackend extends Backend {
+@@ -92271,6 +93664,7 @@ class WebGPUBackend extends Backend {
  
  		const utils = this.utils;
  		const renderContext = renderObject.context;
@@ -5170,7 +5494,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  
  		// meshes with negative scale have a different frontFace render pipeline
  		// descriptor value so the following must be honored in the cache key
-@@ -92290,9 +93598,11 @@ class WebGPUBackend extends Backend {
+@@ -92290,9 +93684,11 @@ class WebGPUBackend extends Backend {
  			material.side, material.alphaToCoverage,
  			frontFaceCW,
  			utils.getSampleCountRenderContext( renderContext ),
@@ -5182,7 +5506,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..798cdfa31f24112484bbfdfe4529a07a
  			renderObject.clippingContextCacheKey
  		].join();
  
-@@ -92360,6 +93670,12 @@ class WebGPUBackend extends Backend {
+@@ -92360,6 +93756,12 @@ class WebGPUBackend extends Backend {
  
  	}
  
@@ -6215,10 +6539,10 @@ index 54665d3ce701defa5242517ab4be343888ce4956..a0423e27dde75aaf072c8b26eb510105
  		}
  
 diff --git a/src/renderers/common/Geometries.js b/src/renderers/common/Geometries.js
-index 086ab906cd5b6a91552d2afbecceb006332815e9..3a2dc2e7be14bfca44fd67fbe7fd0d1bd2fe0f25 100644
+index 086ab906cd5b6a91552d2afbecceb006332815e9..5d9268aecd1189ff355055e120a8993cb1be48cc 100644
 --- a/src/renderers/common/Geometries.js
 +++ b/src/renderers/common/Geometries.js
-@@ -161,6 +161,14 @@ class Geometries extends DataMap {
+@@ -161,6 +161,17 @@ class Geometries extends DataMap {
  		 */
  		this._registry = new FinalizationRegistry( ( ref ) => this._tracked.delete( ref ) );
  
@@ -6229,14 +6553,19 @@ index 086ab906cd5b6a91552d2afbecceb006332815e9..3a2dc2e7be14bfca44fd67fbe7fd0d1b
 +		 * @type {WeakMap<RenderObject,Map<BufferAttribute,number>>}
 +		 */
 +		this._settledAttributes = new WeakMap();
++		this._geometryAttributeOwners = new WeakMap();
++		this._sharedAttributeOwners = new WeakMap();
++		this._renderObjectAttributeGeometry = new WeakMap();
 +
  	}
  
  	/**
-@@ -186,10 +194,69 @@ class Geometries extends DataMap {
+@@ -185,11 +196,173 @@ class Geometries extends DataMap {
+ 		const geometry = renderObject.geometry;
  
  		if ( this.has( geometry ) === false ) this.initGeometry( geometry );
- 
++		if ( this.geometryAttributesChanged( renderObject ) ) this.syncGeometryAttributes( renderObject );
++
 +		// A settled static object has no attribute that could have changed since the last refresh,
 +		// unless a writer bumped one. An InstancedMesh's instance buffer is a vertex attribute of
 +		// this draw, and a BufferGeometry carries no version of its own to announce the write, so
@@ -6245,7 +6574,7 @@ index 086ab906cd5b6a91552d2afbecceb006332815e9..3a2dc2e7be14bfca44fd67fbe7fd0d1b
 +		const monitor = renderObject.getMonitor();
 +
 +		if ( monitor !== undefined && monitor.isSettled( renderObject ) === true && this.attributesChanged( renderObject ) === false ) return;
-+
+ 
  		this.updateAttributes( renderObject );
  
  	}
@@ -6300,10 +6629,139 @@ index 086ab906cd5b6a91552d2afbecceb006332815e9..3a2dc2e7be14bfca44fd67fbe7fd0d1b
 +
 +	}
 +
++	/** Compare the published attribute identities without allocating on settled frames. */
++	geometryAttributesChanged( renderObject ) {
++
++		const geometry = renderObject.geometry;
++		const owner = this._geometryAttributeOwners.get( geometry )?.get( renderObject );
++		if ( owner === undefined || owner.index !== geometry.index ) return true;
++
++		const attributes = renderObject.getAttributes();
++		if ( owner.attributes.length !== attributes.length ) return true;
++		for ( let i = 0; i < attributes.length; i ++ ) {
++			const attribute = attributes[ i ];
++			if ( owner.attributes[ i ] !== ( attribute.isInterleavedBufferAttribute ? attribute.data : attribute ) ) return true;
++		}
++
++		return false;
++
++	}
++
++	/** Add this render object's current geometry attributes to the renderer's shared-resource owners. */
++	syncGeometryAttributes( renderObject ) {
++
++		const { geometry } = renderObject;
++		const previousGeometry = this._renderObjectAttributeGeometry.get( renderObject );
++		if ( previousGeometry !== undefined && previousGeometry !== geometry ) this.releaseRenderObject( renderObject );
++		this._renderObjectAttributeGeometry.set( renderObject, geometry );
++		let geometryOwners = this._geometryAttributeOwners.get( geometry );
++
++		if ( geometryOwners === undefined ) {
++			geometryOwners = new Map();
++			this._geometryAttributeOwners.set( geometry, geometryOwners );
++		}
++
++		const previous = geometryOwners.get( renderObject )?.keys ?? new Map();
++		const current = new Map();
++		const attributes = renderObject.getAttributes();
++		const attributeKeys = [];
++
++		for ( const attribute of attributes ) {
++			const key = attribute.isInterleavedBufferAttribute ? attribute.data : attribute;
++			current.set( key, true );
++			attributeKeys.push( key );
++		}
++		const index = geometry.index;
++		if ( index !== null ) current.set( index, true );
++
++		for ( const key of current.keys() ) {
++			let record = this._sharedAttributeOwners.get( key );
++			if ( record === undefined ) record = { owners: new Set() };
++			if ( previous.has( key ) === false ) record.owners.add( renderObject );
++			this._sharedAttributeOwners.set( key, record );
++		}
++
++		for ( const key of previous.keys() ) {
++			if ( current.has( key ) === false ) this.releaseSharedAttribute( key, renderObject );
++		}
++
++		geometryOwners.set( renderObject, { keys: current, attributes: attributeKeys, index } );
++
++	}
++
++	/** Drop a render object from its geometry before its material-owned node attributes go stale. */
++	releaseRenderObject( renderObject ) {
++
++		const geometry = this._renderObjectAttributeGeometry.get( renderObject );
++		if ( geometry === undefined ) return;
++		const geometryOwners = this._geometryAttributeOwners.get( geometry );
++		const owned = geometryOwners?.get( renderObject )?.keys;
++		if ( owned !== undefined ) {
++			for ( const key of owned.keys() ) this.releaseSharedAttribute( key, renderObject );
++			geometryOwners.delete( renderObject );
++			if ( geometryOwners.size === 0 ) this._geometryAttributeOwners.delete( geometry );
++		}
++		this._renderObjectAttributeGeometry.delete( renderObject );
++
++	}
++
++	/** Release a shared GPU resource only after its last live geometry render object lets it go. */
++	releaseSharedAttribute( key, owner ) {
++
++		const record = this._sharedAttributeOwners.get( key );
++		if ( record === undefined ) return;
++		record.owners.delete( owner );
++		if ( record.owners.size !== 0 ) return;
++
++		this.attributes.delete( key );
++		this._sharedAttributeOwners.delete( key );
++
++	}
++
++	/** Release the recorded sets, not a potentially replaced render object's current attributes. */
++	releaseGeometryAttributes( geometry ) {
++
++		const geometryOwners = this._geometryAttributeOwners.get( geometry );
++		if ( geometryOwners === undefined ) return;
++		for ( const [ owner, attributes ] of geometryOwners ) {
++			for ( const key of attributes.keys.keys() ) this.releaseSharedAttribute( key, owner );
++			this._renderObjectAttributeGeometry.delete( owner );
++		}
++		this._geometryAttributeOwners.delete( geometry );
++
++	}
++
  	/**
  	 * Initializes the given geometry.
  	 *
-@@ -314,8 +381,10 @@ class Geometries extends DataMap {
+@@ -207,23 +380,10 @@ class Geometries extends DataMap {
+ 
+ 			this.info.memory.geometries --;
+ 
+-			// index
+-
+-			const index = geometry.index;
+-
+-			if ( index !== null ) {
+-
+-				this.attributes.delete( index );
+-
+-			}
++			// index and geometry attributes: release this geometry's owners, so a buffer another
++			// geometry still draws stays alive until its last owner lets it go
+ 
+-			// geometry attributes
+-
+-			for ( const attribute of Object.values( geometry.attributes ) ) {
+-
+-				this.attributes.delete( this.backend.getBufferAttribute( attribute ) );
+-
+-			}
++			this.releaseGeometryAttributes( geometry );
+ 
+ 			// wireframe attributes
+ 
+@@ -314,8 +474,10 @@ class Geometries extends DataMap {
  		const callId = this.info.render.calls;
  
  		const bufferAttribute = this.backend.getBufferAttribute( attribute );
@@ -6314,6 +6772,26 @@ index 086ab906cd5b6a91552d2afbecceb006332815e9..3a2dc2e7be14bfca44fd67fbe7fd0d1b
 +		if ( this.attributeCall.get( bufferAttribute ) !== callId || ( attributeData.version !== undefined && attributeData.version < bufferAttribute.version ) ) {
  
  			this.attributes.update( bufferAttribute, type );
+ 
+@@ -399,17 +561,9 @@ class Geometries extends DataMap {
+ 	 */
+ 	deleteNodeAttributes( renderObject ) {
+ 
+-		const currentAttributes = new Set( Object.values( renderObject.geometry.attributes ) );
+-
+-		for ( const attribute of renderObject.getAttributes() ) {
++		// node attributes can be shared with other render objects: release this object's owners
+ 
+-			if ( currentAttributes.has( attribute ) === false ) {
+-
+-				this.attributes.delete( this.backend.getBufferAttribute( attribute ) );
+-
+-			}
+-
+-		}
++		this.releaseRenderObject( renderObject );
+ 
+ 	}
  
 diff --git a/src/renderers/common/RenderContexts.js b/src/renderers/common/RenderContexts.js
 index 63cde4c5c1cb0eed01313ddd5a08e0bf6e803441..2bcdeba31fbab75bf5cf37875ca410c8253ad953 100644
@@ -6387,6 +6865,18 @@ index 8dd6bfdeee6d2601a87c97c1f8ad66a716386d00..44549f85b88dab756632b9c845cc7588
  		return hashArray( _cacheKeyValues );
  
  	}
+diff --git a/src/renderers/common/RenderObjects.js b/src/renderers/common/RenderObjects.js
+index 882a39dcc5ab9e62236c2e02e20aa282b90ee421..99d89385ccc4eef01c8072f809f976db455a66a0 100644
+--- a/src/renderers/common/RenderObjects.js
++++ b/src/renderers/common/RenderObjects.js
+@@ -244,6 +244,7 @@ class RenderObjects {
+ 			this.pipelines.delete( renderObject );
+ 			this.bindings.deleteForRender( renderObject );
+ 			this.nodes.delete( renderObject );
++			this.geometries.releaseRenderObject( renderObject );
+ 
+ 			chainMap.delete( renderObject.getChainArray() );
+ 
 diff --git a/src/renderers/common/Renderer.js b/src/renderers/common/Renderer.js
 index fb1255af55606f4ab915e2798a9174e9e00ee209..7e6cae39fc140fb39868c6c77f1a6b1d358b0866 100644
 --- a/src/renderers/common/Renderer.js

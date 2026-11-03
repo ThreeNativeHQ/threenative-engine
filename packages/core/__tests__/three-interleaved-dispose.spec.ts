@@ -1,6 +1,7 @@
 import {
   BufferGeometry,
   DynamicDrawUsage,
+  EventDispatcher,
   Float32BufferAttribute,
   InterleavedBuffer,
   InterleavedBufferAttribute,
@@ -82,6 +83,14 @@ describe("WebGPUAttributeUtils interleaved dispose", () => {
   });
 });
 
+/** The backend slice r187's Geometries reads: the shared buffer behind an attribute, and vertex state. */
+function geometryBackend() {
+  return {
+    getBufferAttribute: (attribute: { data?: object }) => attribute.data ?? attribute,
+    deleteVertexState: () => undefined,
+  };
+}
+
 describe("shared geometry attribute disposal", () => {
   it("retains a shared position/index buffer until the last geometry releases it", () => {
     const buffers = new Map<object, object>();
@@ -90,6 +99,8 @@ describe("shared geometry attribute disposal", () => {
       attribute: object & { isInterleavedBufferAttribute?: boolean; data?: object },
     ) => (attribute.isInterleavedBufferAttribute ? (attribute.data as object) : attribute);
     const attributes = {
+      // r187 reads the uploaded version to re-upload a buffer written twice in one call.
+      get: () => ({}),
       update: (attribute: object & { isInterleavedBufferAttribute?: boolean; data?: object }) => {
         const key = keyOf(attribute);
         if (!buffers.has(key)) buffers.set(key, {});
@@ -100,7 +111,12 @@ describe("shared geometry attribute disposal", () => {
       },
     };
     const info = { memory: { geometries: 0 }, render: { calls: 1 } };
-    const geometries = new Geometries(attributes as never, info as never);
+    // r187's constructor takes the backend first; the manager reads buffers through it.
+    const geometries: Geometries = Reflect.construct(Geometries, [
+      geometryBackend(),
+      attributes,
+      info,
+    ]);
     const position = new Float32BufferAttribute([0, 0, 0], 3);
     const index = new Uint16BufferAttribute([0], 1);
     const morph = new Float32BufferAttribute([0, 1, 0], 3);
@@ -119,7 +135,12 @@ describe("shared geometry attribute disposal", () => {
       getMonitor: () => undefined,
     });
     const firstObject = renderObject(first);
-    const nodes = { getCacheKey: () => 0, delete: () => undefined };
+    // r187's RenderObject asks the node manager for the material's custom program key.
+    const nodes = {
+      getCacheKey: () => 0,
+      getCustomProgramCacheKey: () => "",
+      delete: () => undefined,
+    };
     const renderer = { contextNode: { id: 1, version: 1 }, _currentSourceMaterial: null };
     const renderObjects = new RenderObjects(
       renderer as never,
@@ -133,11 +154,12 @@ describe("shared geometry attribute disposal", () => {
       nodes as never,
       geometries as never,
       renderer as never,
-      { geometry: second, receiveShadow: false } as never,
+      // r187's RenderObject listens for the object's and the lights node's dispose events.
+      Object.assign(new EventDispatcher(), { geometry: second, receiveShadow: false }) as never,
       new MeshBasicMaterial(),
       {} as never,
       { isArrayCamera: false } as never,
-      {} as never,
+      new EventDispatcher() as never,
       { sampleCount: 1 } as never,
       null as never,
     );
@@ -203,6 +225,8 @@ describe("shared geometry attribute disposal", () => {
       attribute: object & { isInterleavedBufferAttribute?: boolean; data?: object },
     ) => (attribute.isInterleavedBufferAttribute ? (attribute.data as object) : attribute);
     const attributes = {
+      // r187 reads the uploaded version to re-upload a buffer written twice in one call.
+      get: () => ({}),
       update: (attribute: object & { isInterleavedBufferAttribute?: boolean; data?: object }) => {
         const key = keyOf(attribute);
         if (!buffers.has(key)) buffers.set(key, {});
@@ -213,7 +237,12 @@ describe("shared geometry attribute disposal", () => {
       },
     };
     const info = { memory: { geometries: 0 }, render: { calls: 1 } };
-    const geometries = new Geometries(attributes as never, info as never);
+    // r187's constructor takes the backend first; the manager reads buffers through it.
+    const geometries: Geometries = Reflect.construct(Geometries, [
+      geometryBackend(),
+      attributes,
+      info,
+    ]);
     const interleaved = new InterleavedBuffer(new Float32Array(6), 6);
     const position = new InterleavedBufferAttribute(interleaved, 3, 0);
     const normal = new InterleavedBufferAttribute(interleaved, 3, 3);

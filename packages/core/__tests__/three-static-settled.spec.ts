@@ -226,12 +226,22 @@ function draw(
       updateAttribute: Geometries.prototype.updateAttribute,
       getIndex: Geometries.prototype.getIndex,
       attributesChanged: Geometries.prototype.attributesChanged,
+      // The patched r187 manager syncs shared-attribute owners on each draw.
+      _geometryAttributeOwners: new WeakMap(),
+      _sharedAttributeOwners: new WeakMap(),
+      _renderObjectAttributeGeometry: new WeakMap(),
+      geometryAttributesChanged: Reflect.get(Geometries.prototype, "geometryAttributesChanged"),
+      syncGeometryAttributes: Reflect.get(Geometries.prototype, "syncGeometryAttributes"),
+      releaseRenderObject: Reflect.get(Geometries.prototype, "releaseRenderObject"),
+      releaseSharedAttribute: Reflect.get(Geometries.prototype, "releaseSharedAttribute"),
       attributes: {
         // Geometries reads the uploaded version to re-upload a buffer written twice in one call.
         get: () => ({}),
         update: (attribute: object) => {
           liveCounts().uploads.push(attribute);
         },
+        // A swapped-out buffer with no owner left is released.
+        delete: () => undefined,
       },
       info: {
         render: {
