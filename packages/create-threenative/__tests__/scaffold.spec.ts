@@ -369,8 +369,10 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Then the UI final pass: a counted selection band, garrison and blocked-exit cards, overview, hotkeys, edge-scroll toggle, refusal toasts (imports sorted by biome).
   rts: "0da9e8433f88defea093798346a366e8f52edce6400c2d367ad8479cd41c27fd",
   // Re-pinned 2026-11-03 (PRD-617): the sun's shadow box travels with the runner (`lighting.follow`)
-  // and the engine pin goes, so the tree moves. Measured by this test.
-  runner: "38c875a1ceeabcf8f6e4df69bca5bec7fbf12be70bcb27554ff08f2f2b5f9582",
+  // and the engine pin goes, so the tree moves. Measured again the same day for the corrected
+  // `performance.maxTriangles` bound (45,000 to 54,000), which is a scenario file in the tree.
+  // Measured by this test.
+  runner: "1c560fad4720a21d68106ebb02d7da90655d0d1086adcb04d1e62282c9a9225f",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
   sailing: "37027775b81b3c2b92df8be363a1e24a060bdb366564091ab114e35143653690",
   // Recomputed 2026-10-26 (PRD-746): the scene merges the town through mergeByMaterial (src/townBatch.ts).
