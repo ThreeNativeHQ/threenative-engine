@@ -389,3 +389,27 @@ eight template legs. Guarded by a new spec in `scripts/__tests__/ci-structure.sp
 `on.schedule` crons and the job's `if:`, and requires the condition to name the weekly cron and no other,
 the two build actions to precede `pnpm test:templates`, and the software acceptance. Next scheduled run
 is the proof; this lane cannot dispatch one, so the green weekly run is unverified here.
+
+2026-11-02 the sailing capture pose mismatch, cause and fix (harness layer, `packages/core`). The two
+arms reached the same scenario anchor (`startTick` 240) and the same frame count, but the sailing
+HUD read `ELAPSED` 4.5 s on the native arm and 3.5 s on the legacy arm — exactly the 60 fixed steps of
+`FROZEN_SETTLE_STEPS`. The game's clock is the number of `update` calls (`Sailing.ts`:
+`elapsed += deltaTime`), while the run's clock is `FixedStepLoop.tick()`, and the settling pass a
+freeze owes the world was spent by the first live frame after the hold was released
+(`#primeFrame`). `describe()` releases that hold before it awaits `startSceneEntered()`, so whether
+that first live frame lands on the loading scene or on the sailing scene is a race with boot: where it
+lands, those 60 fixed steps advanced `tick()` without ever reaching the sailing scene's own clock. The
+legacy arm lost them, the native arm did not, and the same anchor therefore described different game
+state. Fix: `FixedStepLoop.settleNow()` spends the settling pass on demand, `Game` exposes it as the
+optional `settleClock` runtime seam, and the playtest plugin freezes with zero steps and settles once,
+after `startSceneEntered()` resolves, so the pass lands on the world scene on every engine. A runtime
+without `settleClock` keeps the frame's own settle. Red-green:
+`packages/core/__tests__/playtest-settle.spec.ts` installs the production plugin against a fake runtime
+whose world scene enters only after the hold is released, and requires the freeze to name zero steps,
+no frame before scene entry to move the clock, one settle at tick 0 after entry (60 steps, 60 ticks),
+and no second settle on a repeated `describe()`. RED with the frame-based settle restored:
+`expected [ undefined ] to deeply equal [ +0 ]`. GREEN after. `packages/core/__tests__/loop.spec.ts`
+adds the loop half: a zero freeze settles nothing on frames, `settleNow()` spends exactly 60 once,
+rejects a negative or fractional count, and no later frame settles again. `loop.spec.ts`,
+`playtest-settle.spec.ts` and `game.spec.ts` pass 124/124; `packages/core` typecheck passes and Biome
+reports no error on the changed files.

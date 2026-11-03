@@ -235,7 +235,13 @@ export function playtest<
         // measures a frame rate for a game, and the frozen loop's presented frames repeat a
         // standing state while the scenario's ticks arrive in bursts — a profile of a game that is
         // not playing. It asked by name, so it is not frozen.
-        if (!wallClock) runtime?.freezeClock?.();
+        //
+        // The settling pass the freeze owes the world is named zero here, and spent by `describe()`
+        // once the start scene has entered: a loop that spends it on its first live frame settles
+        // whatever scene that frame draws, and the 60 steps it ran then reach no world clock at
+        // all. That made the same anchor 1.0 s apart between two engines on the sailing pose, by
+        // their boot order alone. A runtime with no `settleClock` keeps the frame's own settle.
+        if (!wallClock) runtime?.freezeClock?.(runtime.settleClock === undefined ? undefined : 0);
       }
       dispose = installation.dispose;
       attached = holdUntilAttached(
@@ -243,6 +249,7 @@ export function playtest<
         options,
         () => startSceneEntered,
         runtime?.startSceneLoaded,
+        runtime,
       );
       const cleanup = () => {
         if (!clockDisposed && clockRuntime?._setClockMode !== undefined)
@@ -395,6 +402,7 @@ function holdUntilAttached(
   options: IPlaytestOptions,
   startSceneEntered: () => Promise<void> | undefined,
   startSceneLoaded?: () => Promise<void>,
+  runtime?: Pick<IGamePluginRuntime, "settleClock">,
 ): Promise<void> | undefined {
   if (!shouldHoldUntilAttached(options)) return undefined;
   const timeoutMs = options.attachTimeoutMs ?? PLAYTEST_ATTACH_TIMEOUT_MS;
@@ -403,6 +411,13 @@ function holdUntilAttached(
   }
   const describe = bridge.describe;
   const applySetup = bridge.applySetup;
+  // Once per run: the settle is a settling pass, not a step every describe repeats.
+  let worldSettled = false;
+  const settle = () => {
+    if (worldSettled) return;
+    worldSettled = true;
+    runtime?.settleClock?.();
+  };
   return new Promise<void>((resolve, reject) => {
     let settled = false;
     const timer = setTimeout(() => {
@@ -445,6 +460,7 @@ function holdUntilAttached(
     bridge.describe = async () => {
       release();
       await startSceneEntered();
+      settle();
       return describe();
     };
   });
