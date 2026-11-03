@@ -137,12 +137,14 @@ export class Lab extends Scene<LabState> {
         height: Math.round((globalThis.innerHeight ?? 720) * (globalThis.devicePixelRatio ?? 1)),
       }),
       seed: 777,
+      renderer: ctx.renderer as unknown as Parameters<typeof createFx>[0]["renderer"],
     });
     ultraU.uSunDir.value.copy(sun.position).normalize();
     ultraU.uSunColor.value.set(1, 0.82, 0.66).multiplyScalar(0.8);
     ultraU.uAmbient.value.set(0.12, 0.14, 0.18);
     ctx.add(ultra.fx.scenes.fx);
     const fireball = ultra.addSpell(ultraFire);
+    void ultra.warmSpell(fireball); // upstream warmSpell: compile before the first cast
     const spells: Record<string, ISpell> = {
       aegis: createAegis(world),
       "arcane-barrage": createArcaneBarrage(world),

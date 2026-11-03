@@ -5,7 +5,7 @@
 // PostFX, GUI and capture are not ported: the game's scene, its lights and WorldEnvironment replace
 // them. The services later slices port (particles, trails, ground, shocks, fluid, rig, arena focus)
 // are typed seams below; until a slice lands, each is an inert stand-in that keeps the spell code verbatim.
-import { type Camera, type Color, PointLight, Vector3 } from "three";
+import { type Camera, type Color, type Object3D, PointLight, type Scene, Vector3 } from "three";
 import { Q } from "./engine/quality.js";
 import { Casts, type ICast, type ISpell } from "./spells/cast.js";
 import { FxTarget } from "./vfx/FxTarget.js";
@@ -109,6 +109,8 @@ const NULL_RIG: IRig = { shake() {}, punch() {}, hitstop() {} };
 
 export interface IFxOptions {
   camera: Camera;
+  /** compiles each spell's pipelines before its first cast (warmSpell); upstream: renderer.compileAsync */
+  renderer?: { compileAsync(object: Object3D, camera: Camera, scene?: Scene): Promise<unknown> };
   /** drawing-buffer size in pixels (upstream: renderer.getDrawingBufferSize) */
   size: () => { width: number; height: number };
   seed?: number;
@@ -210,16 +212,55 @@ export function createFx(o: IFxOptions) {
     fx.flashAmount = Math.max(0, fx.flashAmount - dt * 6);
   }
 
-  // spell modules: create() once each (upstream: the SPELLS loop in main.js)
+  // spell modules: create() once each (upstream: the SPELLS loop in main.js). Remember the scene
+  // objects it added: its programs are compiled and warmed on their own (warmSpell).
+  const sceneObjects = () => {
+    const set = new Set<Object3D>();
+    fxTarget.scene.traverse((o) => set.add(o));
+    return set;
+  };
+  const spellObjects = new Map<ISpell, Object3D[]>();
+  const warming = new Map<ISpell, Promise<void>>();
   function addSpell<S extends ISpell & { create(fx: Fx): NonNullable<ISpell["inst"]> }>(s: S): S {
     (s as { defaults?: object }).defaults = { ...s.params };
     s.params = { ...s.params };
+    const before = sceneObjects();
     s.inst = s.create(fx);
+    spellObjects.set(
+      s,
+      [...sceneObjects()].filter((o) => !before.has(o)),
+    );
     fx.spells[s.id] = s;
     return s;
   }
+  // per-spell warm-up (upstream warmSpell): compile its pipelines with its objects forced on, so the
+  // first cast does not compile mid-frame. Engine: the compile reads the scene when it is called, so
+  // the objects are on for that call only and no presented frame draws them with unset uniforms.
+  // Upstream's second step, one draw into a 4x4 target, has no engine route: the Wasm renderer's
+  // setRenderTarget refuses any target (three-native browser-renderer.ts setRenderTarget).
+  function warmSpell(s: ISpell): Promise<void> {
+    let job = warming.get(s);
+    if (job === undefined) {
+      const objects = spellObjects.get(s) ?? [];
+      const saved = objects.map((obj) => obj.visible);
+      for (const obj of objects) obj.visible = true;
+      let root: Object3D = fxTarget.scene;
+      while (root.parent !== null) root = root.parent; // upstream sceneOf: the scene's lights pick the variant
+      try {
+        job = (
+          o.renderer?.compileAsync(fxTarget.scene, o.camera, root as Scene) ?? Promise.resolve()
+        ).then(() => undefined);
+      } finally {
+        objects.forEach((obj, i) => {
+          obj.visible = saved[i] as boolean;
+        });
+      }
+      warming.set(s, job);
+    }
+    return job;
+  }
 
-  return { fx, casts, renderFrame, addSpell, pointLights: points };
+  return { fx, casts, renderFrame, addSpell, warmSpell, pointLights: points };
 }
 export type Fx = ReturnType<typeof createFx>["fx"];
 export type { ICast };
