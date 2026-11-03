@@ -1,12 +1,12 @@
 {
   "name": "@threenative/three-native",
-  "version": "0.3.7",
+  "version": "0.3.11",
   "license": "MIT",
   "description": "The native engine's machine-readable compatibility catalog and the generators that adapt it to TypeScript declarations and the C binding ABI.",
   "keywords": ["threenative", "three", "native", "abi", "gamedev"],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ThreeNativeHQ/threenative.git",
+    "url": "git+https://github.com/ThreeNativeHQ/threenative-engine.git",
     "directory": "packages/three-native"
   },
   "type": "module",
@@ -18,7 +18,7 @@
     "typecheck": "pnpm run generate && tsc --noEmit -p tsconfig.json"
   },
   "devDependencies": {
-    "@types/three": "0.185.3",
+    "@types/three": "0.187.0",
     "publint": "0.3.22",
     "three": "catalog:",
     "typescript": "catalog:"

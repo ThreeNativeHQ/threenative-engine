@@ -2,12 +2,17 @@
 
 import { spawnSync } from "node:child_process";
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { readAttemptJobs } from "./ci-attempt-receipts.mjs";
+import { readAttemptJobs, readJobsAcrossAttempts } from "./ci-attempt-receipts.mjs";
 import {
   assertMergeParentCandidate,
+  carryDeps,
   classify,
   currentRun,
+  owedPlan,
+  promotionOwnsCommit,
+  promotionReuse,
   queueHeadReuse,
+  selectionPlan,
   sourceVerdict,
   validateEventPlan,
   validatePlan,
@@ -17,6 +22,7 @@ import {
   integrationCandidatePreflight,
   validateIntegrationReceipts,
 } from "./ci-integration-scope.mjs";
+import { carriedFailures } from "./ci-leg-carry.mjs";
 import { nativeCandidatePreflight, validateNativeReceipts } from "./ci-native-qualification.mjs";
 import {
   discoverTypecheckTemplates,
@@ -54,6 +60,14 @@ try {
     baseRef: process.env.TN_CI_BASE_REF,
     forceFull: process.env.TN_CI_FORCE_FULL === "true",
   });
+  if (
+    process.env.TN_CI_EVENT === "push" &&
+    plan.selection === "warm" &&
+    !promotionOwnsCommit(plan.candidateSha)
+  )
+    throw new Error(
+      `CI_REQUIRED_PROMOTION_MISSING: ${plan.candidateSha} skipped the board for a promotion pull request it does not belong to`,
+    );
   if (process.env.TN_CI_EVENT === "pull_request") {
     // The candidate is frozen by the exact base/head parent assertion below, not by the head
     // branch's name. A `promotion/<head-sha>` ref restated a SHA that check already verifies.
@@ -110,6 +124,20 @@ try {
       "artifacts/ci-queue-reuse/receipt.json",
       `${JSON.stringify({ version: 1, ...queueReuse, candidateSha: plan.candidateSha, queueRef: process.env.TN_CI_QUEUE_REF, reusedBy: process.env.GITHUB_RUN_ID })}\n`,
     );
+  } else if (
+    plan.reusedRunId > 0 &&
+    process.env.TN_CI_EVENT === "push" &&
+    process.env.TN_CI_BASE_REF === "main"
+  ) {
+    // PRD-630. Same as the queue: this job re-decides the rule from the candidate.
+    const full = selectionPlan("full", "main owes", plan.files, plan.candidateSha, true, 0, "main");
+    const hit = promotionReuse({ root: process.cwd(), plan: full });
+    if ("error" in hit) throw new Error(`CI_REQUIRED_PROMOTION_REUSE: ${hit.error}`);
+    if (hit.runId !== plan.reusedRunId)
+      throw new Error(
+        `CI_REQUIRED_PROMOTION_REUSE: the plan cites run ${plan.reusedRunId}, the promotion rule confirms run ${hit.runId}`,
+      );
+    source = { profile: { target: "main", native: plan.nativeTier } };
   } else if (plan.reusedRunId > 0) {
     const target = process.env.TN_CI_BASE_REF ?? "";
     // A reuse plan states nothing about what was required — every job in it reads exempt — so the
@@ -161,8 +189,18 @@ try {
     if (name !== "scope" && !Object.hasOwn(plan.jobs, name))
       failures.push(`CI_REQUIRED_UNMAPPED_JOB: ${name}`);
   }
-  if (plan.qualification) {
+  if (plan.carried?.length) {
+    const owed = owedPlan(plan);
+    for (const entry of plan.carried)
+      lines.push(`- carried: ${entry.leg} from CI run ${entry.runId} (\`${entry.sourceSha}\`)`);
+    failures.push(...carriedFailures(plan, owed, await carryDeps(process.cwd(), owed)));
+  }
+  if (plan.qualification && plan.jobs["template-nonvisual"].required) {
     try {
+      // A carried kit's compiler step passed in the run its entry names, checked above.
+      const compiledHere = discoverTypecheckTemplates().filter((template) =>
+        plan.templateMatrix.template.includes(template),
+      );
       const identity = {
         repository: process.env.GITHUB_REPOSITORY,
         runId: process.env.GITHUB_RUN_ID,
@@ -176,7 +214,7 @@ try {
           workflowHeadSha: process.env.TN_CI_HEAD_SHA || process.env.GITHUB_SHA,
           eventName: process.env.TN_CI_EVENT,
           target: process.env.TN_CI_BASE_REF,
-          templates: discoverTypecheckTemplates(),
+          templates: compiledHere,
           workflow: readFileSync(".github/workflows/ci.yml", "utf8"),
         },
         readAttemptJobs(identity, "CI_TEMPLATE_TYPECHECK"),
@@ -250,7 +288,7 @@ try {
       validateNativeReceipts(
         expected,
         summary,
-        readAttemptJobs({ repository, runId, runAttempt: summary.runAttempt }, "CI_NATIVE"),
+        readJobsAcrossAttempts({ repository, runId, runAttempt: summary.runAttempt }, "CI_NATIVE"),
       );
     } catch (error) {
       failures.push(error instanceof Error ? error.message : String(error));

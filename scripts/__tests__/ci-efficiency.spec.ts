@@ -561,7 +561,10 @@ describe("PRD-373 fail-closed required verdict", () => {
     // When the plan exempts it the job is skipped and ci-required.mjs treats an exempt skip as a
     // pass, so the merge waits only for the cases the classifier could not clear.
     expect(declaredNeeds(job("ci-required"))).toContain("native-platforms");
-    const requiredCoverage = coverage.filter((name) => jobs[name]?.required);
+    // Only the nightly's plan requires the engine-cost row, and the verdict needs it there too.
+    const requiredCoverage = coverage.filter(
+      (name) => jobs[name]?.required || name === "template-engine-cost",
+    );
     expect(
       declaredNeeds(job("ci-required"))
         .filter((name) => name !== "scope")
@@ -620,7 +623,7 @@ describe("PRD-373 fixed full candidates and current package products", () => {
   it("pins every worker checkout to the captured candidate, including reusable native jobs", () => {
     expect(job("scope")).toContain("vars.TN_DEVELOP_CI_ENABLED == 'true' && 'develop'");
     expect(source).toContain(
-      "github.event_name == 'pull_request' && !github.event.pull_request.draft && 'latest' || github.run_id",
+      "github.event_name == 'pull_request' && !github.event.pull_request.draft && 'latest' || github.event_name == 'push' && github.ref == 'refs/heads/develop' && 'latest' || github.run_id",
     );
     for (const relative of [".github/workflows/ci.yml", ".github/workflows/native-platforms.yml"]) {
       const workflow = readFileSync(path.join(repo, relative), "utf8");

@@ -93,6 +93,12 @@ order of clusters is mechanism, so the work lives in `packages/core/src/clustere
 renderer already), per-triangle sorting, and order-independent transparency (a look decision for
 the template).
 
+## three.js 0.187.0 levers (2026-11-02)
+
+- r186 adds `OITPassNode` (three#34253): order-independent transparency. If the judge sees a sort artifact on the cluster cut, measure this node before a per-cluster sort is written.
+
+Adoption rule: the owned engine is the default, and it runs a three symbol only when its API catalog covers it (`docs/architecture/NATIVE-ENGINE-DECISION.md`). So use the upstream piece first as a measured reference arm on `engine: "threejs"`. A template uses it only after a catalog row and a native parity case land.
+
 ## Acceptance Criteria
 
 - [ ] AC-1 [local]: The glass and water fixtures render as `virtual` within the judged tolerance of `dense` at three distances, and the far distance submits at least 30% fewer triangles. proof: `pnpm visuals:ab --before <dense> --after <virtual> --raters 3` plus a fresh judge subagent on the same poses — Evidence: pending.

@@ -19,6 +19,7 @@ import {
   type IPlaytestDiagnostic,
   type IPlaytestFramebufferCoverageObservation,
   type IPlaytestObservationSnapshot,
+  type IPlaytestRuntimeDiagnosticsSample,
   type IPlaytestObservations,
   type IPlaytestPathAssertion,
   type IPlaytestProtocolDiagnostic,
@@ -210,6 +211,21 @@ function isSoftwareDeviceLossEntry(entry: IRunnerConsoleEntry): boolean {
     && SOFTWARE_DEVICE_LOSS.test(entry.text);
 }
 
+/**
+ * An engine's frame history starts during the launch, and the baseline is read from a game already
+ * running. A scenario answers for the frames after it: the launch ran behind the cover, where a kit's
+ * resident pools draw on purpose. A host that does not number its frames keeps its whole series.
+ */
+function framesAfterBaseline(
+  before: IPlaytestRuntimeDiagnosticsSample[] | undefined,
+  after: IPlaytestRuntimeDiagnosticsSample[] | undefined,
+): IPlaytestRuntimeDiagnosticsSample[] | undefined {
+  if (after === undefined || before === undefined) return after ?? before;
+  const baseline = before.at(-1)?.sequence;
+  if (baseline === undefined || before === after) return after;
+  return after.filter(({ sequence }) => sequence === undefined || sequence > baseline);
+}
+
 export function buildReport(
   config: IStandalonePlaytestConfig,
   scenario: IPlaytestScenario,
@@ -285,7 +301,7 @@ export function buildReport(
   const performanceSeries = scenario.assert?.performance === undefined
       && scenario.assert?.parity === undefined
     ? undefined
-    : afterSnapshot?.runtimeDiagnosticsSeries ?? beforeSnapshot?.runtimeDiagnosticsSeries;
+    : framesAfterBaseline(beforeSnapshot?.runtimeDiagnosticsSeries, afterSnapshot?.runtimeDiagnosticsSeries);
   // A declared software lane is the one place a lost WebGPU device is an environment artifact
   // rather than a game defect: SwiftShader's fallback adapter drops the wire Instance under a slow
   // frame and Chromium restarts the GPU process behind it, which surfaces as a device-lost cascade

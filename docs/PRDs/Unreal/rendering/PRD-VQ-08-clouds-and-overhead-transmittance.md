@@ -84,6 +84,12 @@ All proof paths below are **planned implementation targets**, not existing passi
 - [ ] The cloud/ground-footprint trace passes on WebGPU, including zero coverage, sun rotation and teleport. proof: `node packages/playtest/dist/runner/cli.js examples/abyss-framework/playtests/vq-clouds-and-overhead-transmittance.playtest.json --url ${VQ_URL:?} --browser-recipe webgpu`.
 - [ ] The same trace and parameter set pass on Linux native; record the actual cloud path and attenuation generation. proof: `node packages/playtest/dist/runner/cli.js examples/abyss-framework/playtests/vq-clouds-and-overhead-transmittance.playtest.json --target desktop --executable ${VQ_NATIVE_EXECUTABLE:?}`.
 
+## three.js 0.187.0 levers (2026-11-02)
+
+- r186 makes the clouds of the `Sky` and `SkyMesh` addons more realistic (three#33942). They are drawn in the sky shader, not as a volume, so they give no overhead transmittance. Use them only as a cheap reference look, not as the port.
+
+Adoption rule: the owned engine is the default, and it runs a three symbol only when its API catalog covers it (`docs/architecture/NATIVE-ENGINE-DECISION.md`). So use the upstream piece first as a measured reference arm on `engine: "threejs"`. A template uses it only after a catalog row and a native parity case land.
+
 ## Acceptance criteria
 
 - [ ] Visible cloud motion and ground attenuation agree on the authored field, while no-cloud mode preserves the preexisting scene. proof: the completed Phase 3 scenario outputs, with the named fixture, package/cohort and adapter recorded inline here.

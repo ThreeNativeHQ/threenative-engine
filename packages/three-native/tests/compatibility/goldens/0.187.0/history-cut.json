@@ -1,0 +1,27 @@
+{
+  "name": "history-cut",
+  "threeVersion": "0.187.0",
+  "adaptedFrom": "PRD-526/523: real TRAANode, 20 moving frames, complementary dense pattern on a camera cut, capture first cut frame (stale ghost must exceed 2% pixels in red control)",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "scene",
+      "kind": "pixels",
+      "value": "s:00bd7557a34a14e70fa5378d1d38090cc24a9a5df9715fc127bef183f53d59b1",
+      "decimal": "00bd7557a34a14e70fa5378d1d38090cc24a9a5df9715fc127bef183f53d59b1"
+    }
+  ],
+  "render": {
+    "png": "history-cut.png",
+    "pngSha256": "00bd7557a34a14e70fa5378d1d38090cc24a9a5df9715fc127bef183f53d59b1",
+    "width": 320,
+    "height": 240,
+    "adapter": {
+      "architecture": "turing",
+      "description": "",
+      "device": "",
+      "vendor": "nvidia"
+    }
+  }
+}

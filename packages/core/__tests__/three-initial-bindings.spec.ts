@@ -80,6 +80,7 @@ function samplerBindingBuilder(): ISamplerBindingBuilder {
     },
     hasCompatibility: () => true,
     hasFeature: () => false,
+    debug: { diagnostics: { keywords: false } },
   } as never;
   return new WGSLNodeBuilder(
     new Mesh(undefined, undefined),

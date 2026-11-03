@@ -1,0 +1,27 @@
+{
+  "name": "materials-bump-map",
+  "threeVersion": "0.187.0",
+  "adaptedFrom": "original — MeshStandardMaterial.bumpMap: an 8x8 height texture repeated 3x2 with bumpScale 3 on a lit plate, three's BumpMapNode (height derivatives from three samples, perturbNormalArb)",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "scene",
+      "kind": "pixels",
+      "value": "s:d77039cad5211f22477d41e3c7e519aa87e92e54c422c6b19c5ea921c96606a4",
+      "decimal": "d77039cad5211f22477d41e3c7e519aa87e92e54c422c6b19c5ea921c96606a4"
+    }
+  ],
+  "render": {
+    "png": "materials-bump-map.png",
+    "pngSha256": "d77039cad5211f22477d41e3c7e519aa87e92e54c422c6b19c5ea921c96606a4",
+    "width": 300,
+    "height": 200,
+    "adapter": {
+      "architecture": "turing",
+      "description": "",
+      "device": "",
+      "vendor": "nvidia"
+    }
+  }
+}

@@ -411,6 +411,44 @@ describe("the bridge census", () => {
     expect(frames(500)).toEqual([]);
   });
 
+  it("judges a census frame by its own length, so a scene rebuild is not steady waste", () => {
+    // PR run 41302359332: shooter `debug-restart` failed when the census landed on the restart
+    // frame, where Play.enter rebuilt the town: 77,840 redundant reads, 16 ms of a frame of seconds,
+    // judged as 16% of the 98 ms median. The next ordinary census still names a real waster.
+    host.__THREENATIVE_BRIDGE_CACHE__ = false;
+    const clock = { ms: 0 };
+    vi.spyOn(performance, "now").mockImplementation(() => clock.ms);
+    const warnings: string[] = [];
+    vi.spyOn(console, "warn").mockImplementation((line: unknown) => {
+      warnings.push(String(line));
+    });
+    const { Light, collect } = scene(clock);
+    const key = new Light(0xffffff, 3);
+    const read = () => {
+      for (let at = 0; at < 500; at++) if (!(key.intensity >= 0)) throw new Error("bad");
+    };
+    const census = (safePoint: number) =>
+      safePoint > WARMUP_FRAMES && safePoint % WINDOW_FRAMES === 0;
+    let safePoints = 0;
+    let rebuild = true;
+    let seen = 0;
+    const bridgeWarnings = () => warnings.filter((line) => line.startsWith(BRIDGE_WARNING_MARKER));
+    while (seen < 2) {
+      collect();
+      safePoints += 1;
+      clock.ms += 16;
+      if (!census(safePoints)) continue;
+      seen += 1;
+      read();
+      if (rebuild) clock.ms += 5000;
+      rebuild = false;
+      collect();
+      safePoints += 1;
+      if (seen === 1) expect(bridgeWarnings()).toEqual([]);
+    }
+    expect(bridgeWarnings()).toHaveLength(1);
+  });
+
   it("leaves the playtest observer's reads out, which no player run makes", () => {
     // Hosted CI's adventure `puzzle` run failed on 45,920 redundant reads, led by the playtest
     // sample's own scene walk (countMaterials, Box3.setFromObject) inside the census frame.

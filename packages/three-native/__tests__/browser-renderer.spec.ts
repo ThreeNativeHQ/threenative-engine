@@ -620,6 +620,28 @@ describe("the Wasm engine's WebGPURenderer sample count", () => {
     errors.mockRestore();
   });
 
+  it("splits an overlay draw on the overlay's own counts, so its main pass is never negative", async () => {
+    // Field 0 answers for the renderer that drew last (the overlay's few draws) and field 27 for the world's renderer
+    // (its shadow pass), so a loading cover over a shadowed world read 2 - 15 = -13 main draws, and one negative pass
+    // made a playtest throw away the whole render sample series.
+    const { Renderer, canvas, scene, camera } = host((field) =>
+      field === 0 ? 2 : field === 1 ? 6 : field === 27 ? 15 : 0,
+    );
+    const renderer = new Renderer({ canvas }) as {
+      info: { engine: { frameSplit: Record<string, number> } };
+      init(): Promise<unknown>;
+      renderOverlay(scene: unknown, camera: unknown): void;
+    };
+    await renderer.init();
+    renderer.renderOverlay(scene, camera);
+    expect(renderer.info.engine.frameSplit).toEqual({
+      mainDraws: 2,
+      mainTriangles: 6,
+      shadowDraws: 0,
+      shadowTriangles: 0,
+    });
+  });
+
   it("draws renderOverlay as the host's overlay, so the canvas layer skips the world's post and temporal state", async () => {
     // Through render(), core's loading screen ran the world renderer's post chain and temporal step: the world
     // came back ghosted and blurred after the cover lifted (Lantern Vale, Hop Garden).

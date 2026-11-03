@@ -21,7 +21,7 @@
   "devDependencies": {
     "@threenative/assets": "workspace:*",
     "@types/pngjs": "6.0.5",
-    "@types/three": "0.185.3",
+    "@types/three": "0.187.0",
     "pngjs": "7.0.0",
     "tsx": "4.23.5",
     "typescript": "catalog:",

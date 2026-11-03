@@ -10,16 +10,9 @@ name: Native platform evidence
 # whole 24-minute matrix twice per PR.
 #
 # This file is a reusable workflow called by ci.yml, where the `native-platforms` job is a required
-# member of the primary board. Manual dispatch remains available for an isolated platform run.
-#
-# PRD-629: a push to main also starts it on its own. The release candidate needs a standalone run of
-# this file on the candidate commit (its parity and provenance reports), and the manual
-# `gh workflow run native-platforms.yml --ref main` that used to start it gave a new run id on every
-# re-dispatch. A standalone push run has no caller plan, so it takes the same full-coverage path as a
-# dispatch.
+# member of the primary board. Manual dispatch remains available for an isolated platform run. The
+# release candidate reads its parity and provenance reports from the main CI run that called this.
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
     inputs:
       ios_only:
@@ -1204,6 +1197,7 @@ jobs:
       - name: Zero the compiler cache counters
         shell: bash
         run: ccache --zero-stats
+      - uses: ./.github/actions/native-rust-cache
       - name: Build the native host
         run: pnpm --filter @threenative/runtime-native native:build
       - name: Verify the shipped Crowd rate scenario on desktop
@@ -1488,6 +1482,7 @@ jobs:
         run: >-
           & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install
           "curl:x64-windows-static" "zlib:x64-windows-static"
+      - uses: ./.github/actions/native-rust-cache
       - name: Build native runtime with MSVC
         if: runner.os == 'Windows'
         shell: cmd
@@ -1563,6 +1558,10 @@ jobs:
           engine: threejs
       - name: Build and verify the starter's WebView HUD
         shell: bash
+        env:
+          # Same 300 frames on the same software adapter as the relocated container step below:
+          # 0.3.9 used 271 s of the 300 s bound (run 41402792920), and run 41575190769 was cut at frame 273.
+          TN_STARTER_TIMEOUT_MS: ${{ matrix.platform == 'Windows' && '600000' || '300000' }}
         run: |
           set -euo pipefail
           target="$RUNNER_TEMP/threenative-starter-native"
@@ -1973,6 +1972,10 @@ jobs:
       # rcedit rewriting the PE no longer discards it and the container launches the real game.
       - name: Verify the relocated release container with the installed verifier
         shell: bash
+        env:
+          # The Windows runner's software adapter drew 300 frames at 0.6 to 1.3 s each on one tree
+          # (runs 41279577367, 41288321973), and the default 300 s bound cut it at frame 293.
+          TN_STARTER_TIMEOUT_MS: ${{ matrix.platform == 'Windows' && '600000' || '300000' }}
         run: |
           set -euo pipefail
           # Same POSIX normalisation as the relocate step, so the verifier sees one path style.
@@ -2265,6 +2268,7 @@ jobs:
       - name: Zero the compiler cache counters
         shell: bash
         run: ccache --zero-stats
+      - uses: ./.github/actions/native-rust-cache
       - name: Build and pack the scaffold dependencies
         run: |
           pnpm --filter @threenative/runtime-native native:build
@@ -2338,7 +2342,8 @@ jobs:
           sh scripts/xvfb.sh "$artifact/tn-native-engine-player-v8" "$artifact/game.js" --check-game 2>&1 | tee "$RUNNER_TEMP/starter-default-boot.log"
           grep -q 'TN_PLAYER_V8_GAME_CHECK: engine=native gameRuntime=v8 startup=passed' "$RUNNER_TEMP/starter-default-boot.log"
       - name: Compare paired starter JS frame duration on Linux ARM64
-        if: matrix.platform == 'linux-arm64'
+        # Nightly only (owner, 2026-11-01): 18 job-minutes a board.
+        if: matrix.platform == 'linux-arm64' && github.event_name == 'schedule'
         shell: bash
         env:
           TN_PLAYTEST_ALLOW_SOFTWARE: "1"
@@ -2406,7 +2411,7 @@ jobs:
             done
           done
       - name: Upload paired starter JS frame evidence
-        if: always() && matrix.platform == 'linux-arm64'
+        if: always() && matrix.platform == 'linux-arm64' && github.event_name == 'schedule'
         uses: actions/upload-artifact@v7
         with:
           name: native-starter-js-frame-pair-linux-arm64
@@ -2860,7 +2865,7 @@ jobs:
           ref: ${{ needs.scope.outputs.candidate_sha || inputs.candidate_sha || github.sha }}
       - uses: actions/download-artifact@v7
         with:
-          pattern: ci-native-receipt-${{ github.run_id }}-${{ github.run_attempt }}-*
+          pattern: ci-native-receipt-${{ github.run_id }}-*
           path: artifacts/ci-native-receipts
       - id: collect
         env:

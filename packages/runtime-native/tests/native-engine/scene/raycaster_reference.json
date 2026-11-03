@@ -1,5 +1,5 @@
 {
- "three": "0.185.1",
+ "three": "0.187.0",
  "scene": {
   "name": "root",
   "kind": "group",
@@ -1863,11 +1863,11 @@
    "multiple": false,
    "hits": [
     {
-     "distance": "4020000000000000",
+     "distance": "401ffffffffffffe",
      "point": [
-      "3fb999999999998f",
+      "3fb999999999998a",
       "400e666666666666",
-      "bff0000000000000"
+      "bff0000000000006"
      ],
      "object": "instances",
      "faceIndex": 1,
@@ -1884,23 +1884,23 @@
       "materialIndex": 0
      },
      "uv": [
-      "3fdffffffffffffe",
+      "3fe0000000000000",
       "3fe0000000000000"
      ],
      "uv1": [
-      "3fd9999993ffffff",
+      "3fd9999994000000",
       "3fe1999994000000"
      ],
      "normal": [
-      "3c799999a0000000",
-      "bfc333333fffffff",
+      "8000000000000000",
+      "bfc3333340000000",
       "bff0000000000000"
      ],
      "instanceId": 0,
      "barycoord": [
       "3fe0000000000000",
-      "3fdffffffffffffe",
-      "3ca0000000000000"
+      "3fe0000000000000",
+      "0000000000000000"
      ]
     }
    ]

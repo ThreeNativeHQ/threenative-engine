@@ -302,6 +302,10 @@ export function validateDeviceMetricsAssertion(value: unknown, scenarioPath: str
   return assertion;
 }
 
+const LEGACY_SCAFFOLD_FRAME_MS = 33;
+const LEGACY_SCAFFOLD_FRAME_REASON =
+  "Scaffolded before 0.3.7 with a 33 ms pin, which passes at 30 fps. Drop maxFrameMsP95 to hold this game to 16.7 ms.";
+
 export function validatePerformanceAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestPerformanceAssertion {
   const record = requireRecord(value, scenarioPath, objectPath);
   rejectUnknownKeys(record, ["maxDrawCalls", "maxFrameMsP95", "maxFrameMsReason", "maxPassDrawCalls", "maxPassTriangles", "maxPhaseMsP95", "maxTriangles", "minFps"], scenarioPath, objectPath);
@@ -315,6 +319,11 @@ export function validatePerformanceAssertion(value: unknown, scenarioPath: strin
     ...present("maxTriangles", optionalNonNegativeNumber(record, "maxTriangles", scenarioPath, objectPath)),
     ...present("minFps", optionalNonNegativeNumber(record, "minFps", scenarioPath, objectPath)),
   };
+  // Every scaffold up to 0.3.6 pins exactly this number with no reason. Those games keep passing
+  // after an upgrade, and the report's budget reason says what the pin hides.
+  if (assertion.maxFrameMsP95 === LEGACY_SCAFFOLD_FRAME_MS && record.maxFrameMsReason === undefined) {
+    return { ...assertion, maxFrameMsReason: LEGACY_SCAFFOLD_FRAME_REASON };
+  }
   if (assertion.maxFrameMsP95 !== undefined && assertion.maxFrameMsP95 > 16.7 && (assertion.maxFrameMsReason ?? "").trim() === "") {
     throw invalidScenario(
       scenarioPath,

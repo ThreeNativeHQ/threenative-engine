@@ -74,6 +74,13 @@ prd_contract: v1
 `globalIlluminationQuality` mirrors `sg.GlobalIlluminationQuality` as a read-only report field. The
 `GIBudget` entry carries `@alias global illumination quality` and `@alias lumen scalability`.
 
+## three.js 0.187.0 levers (2026-11-02)
+
+- r186 adds `VXGINode` (three#34402). Upstream positions it between `SSGINode` and `LightProbeGrid` in quality and cost. Measure its GPU time on the calibration scenes as one more candidate for the Medium or High tier, beside the tier plan in this PRD.
+- r186 adds `SSAONode` (three#33921): a cheap AO with a depth-aware blur and no temporal pass. It is a candidate AO source for the tiers without Lumen (see PRD-635).
+
+Adoption rule: the owned engine is the default, and it runs a three symbol only when its API catalog covers it (`docs/architecture/NATIVE-ENGINE-DECISION.md`). So use the upstream piece first as a measured reference arm on `engine: "threejs"`. A template uses it only after a catalog row and a native parity case land.
+
 ## Acceptance Criteria
 
 - [ ] AC-1 [local]: Each ThreeNative tier matches its own Unreal level within the PRD-631 thresholds on every registered calibration scene at L7: `low` against Low, `medium` against Medium, `high` against Epic. proof: `pnpm unreal-look:compare --scene gi --layer L7 --unreal-level 0|1|3` — Evidence: open, measured 2026-10-21. `high` is byte-identical to the pre-change `L7` in all 8 poses (maximum difference 0). `medium` removes the screen-space stipple and keeps the pre-change dE (`sunlit-room` 4.77 to 4.60, `cornell` 10.10 to 8.53). `low` lifts `sunlit-room` from a black interior to the Unreal Low look (mean dE 36.60 to 10.54, `cornell` 2.97 to 0.83). `low` stays open for one gap: its ceilings read 0 to 1 where Unreal Low reads 72 to 112 (dE 24 to 38), see `## Decisions`. Re-judged 2026-10-22 on head `2a824a22e`, because the epic changed the `high` gather after the 2026-10-21 round (the byte-identical claim holds only against the older base). The judge command (Sonnet, 2 AFTER runs, 1 BEFORE run: the tier state of 2026-10-21 cannot be captured again, so `--min-runs 1`) returned IMPROVEMENT overall at `low`, `medium` and `high`, and CLOSE to Unreal `L7-Low`, `L7-Medium` and `L7-Epic` on 8 of 8 frames each. The gains come from the epic's merges since then (smoother walls, no corner leak line), not from these commits, which change no pixels. The two AFTER runs differ by at most 0.09 mean levels. The judge saw one run-to-run change: the bright patch on the right wall of `sun60-leak` at `high` is present in run 1 and absent in run 2. The ceiling gap of `low` stays.

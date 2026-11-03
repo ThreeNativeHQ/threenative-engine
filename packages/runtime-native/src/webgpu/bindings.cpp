@@ -2747,6 +2747,13 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
     engine->setProperty(gpuMapMode, "WRITE", engine->newNumber(0x2));
     engine->setGlobalProperty("GPUMapMode", gpuMapMode);
 
+    // three 0.187 asks `currentPass instanceof GPURenderBundleEncoder` on every draw. Host objects are
+    // plain objects, so the class answers by the brand createRenderBundleEncoder puts on its encoders.
+    engine->eval(
+        "globalThis.GPURenderBundleEncoder = class GPURenderBundleEncoder {"
+        " static [Symbol.hasInstance](value) { return value != null && value.__tnRenderBundleEncoder === true; } };",
+        "gpu-render-bundle-encoder.js");
+
     // =========================================================================
     // createImageBitmap() - Standard Web API for image decoding
     // =========================================================================

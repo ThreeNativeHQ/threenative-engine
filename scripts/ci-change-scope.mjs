@@ -3,6 +3,7 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync, readdirSync } from "node:fs";
 import { pathToFileURL } from "node:url";
+import { RELEASE_GATE_JOBS, applyCarried, findCarried } from "./ci-leg-carry.mjs";
 
 const EXCLUDED_MARKDOWN = [
   /^docs\/PRDs\/realism-effects\/README\.md$/u,
@@ -11,6 +12,8 @@ const EXCLUDED_MARKDOWN = [
   /^docs\/verification\/worker-wake(?:-|\.)/u,
   /^docs\/verification\/native-(?:runtime-)?(?:census|coverage)(?:-|\.)/u,
   /^docs\/verification\/(?:round-|parity-|sweep-|tier-1-)/u,
+  // The scaffold reads these and throws when one is missing, so no scaffold starts.
+  /^packages\/create-threenative\/(?:agent-docs|agent-files)\//u,
 ];
 // Paths whose change the native platform matrix has to prove. Recorded as data beside the other
 // path classes: a new package or action that `native-platforms.yml` builds or consumes belongs in
@@ -197,6 +200,7 @@ export function selectionPlan(
   reusedRunId = 0,
   target = "",
   qualification = selection === "full" && target !== "develop",
+  nightly = false,
 ) {
   const full = selection === "full";
   const reused = selection === "reused";
@@ -230,22 +234,20 @@ export function selectionPlan(
       // producers; neither widens one, so any other job is exempt exactly as it is for prose.
       // The engine job is the one lane a full board owes only conditionally: when the diff reaches the
       // engine tree, or when the run qualifies a whole candidate. Every other full diff reads as before.
+      // The engine-cost row is nightly only (owner, 2026-11-01): it costs 180 job-minutes a board.
       const required =
-        name === "native-engine"
-          ? engine || (full && (qualification || files.some(isEnginePath)))
-          : (full && (name !== "test-native" || native)) ||
-            ((ciLane || template) && CI_JOBS.has(name)) ||
-            (template &&
-              [
-                "template-nonvisual",
-                "template-engine-cost",
-                "golden-path-template",
-                "golden-path",
-              ].includes(name)) ||
-            (review &&
-              (REVIEW_JOBS.includes(name) ||
-                (name === "test" && files.some((file) => file.startsWith("packages/"))))) ||
-            (warm && WARM_JOBS.includes(name));
+        name === "template-engine-cost"
+          ? nightly && (full || template)
+          : name === "native-engine"
+            ? engine || (full && (qualification || files.some(isEnginePath)))
+            : (full && (name !== "test-native" || native)) ||
+              ((ciLane || template) && CI_JOBS.has(name)) ||
+              (template &&
+                ["template-nonvisual", "golden-path-template", "golden-path"].includes(name)) ||
+              (review &&
+                (REVIEW_JOBS.includes(name) ||
+                  (name === "test" && files.some((file) => file.startsWith("packages/"))))) ||
+              (warm && WARM_JOBS.includes(name));
       return [
         name,
         {
@@ -326,6 +328,7 @@ export function selectionPlan(
   return {
     version: 2,
     qualification,
+    nightly,
     files,
     reason,
     scope: selection,
@@ -362,12 +365,28 @@ export function selectionPlan(
   };
 }
 
+/** What a plan owed before any leg was carried: the full requirement a carried leg answers to. */
+export function owedPlan(value) {
+  return selectionPlan(
+    value.selection,
+    value.reason,
+    value.files,
+    value.candidateSha,
+    value.native,
+    value.reusedRunId,
+    value.target,
+    value.qualification,
+    value.nightly,
+  );
+}
+
 export function validatePlan(value) {
   if (
     !value ||
     typeof value !== "object" ||
     value.version !== 2 ||
     typeof value.qualification !== "boolean" ||
+    typeof value.nightly !== "boolean" ||
     (value.qualification &&
       (value.selection !== "full" || !value.native || value.reusedRunId !== 0)) ||
     !SELECTIONS.has(value.selection) ||
@@ -397,16 +416,7 @@ export function validatePlan(value) {
       "CI_SCOPE_INVALID_PLAN: missing or malformed selection, paths, native requirement, reason, reused run or candidate SHA",
     );
   }
-  const expected = selectionPlan(
-    value.selection,
-    value.reason,
-    value.files,
-    value.candidateSha,
-    value.native,
-    value.reusedRunId,
-    value.target,
-    value.qualification,
-  );
+  const expected = applyCarried(owedPlan(value), value.carried);
   for (const field of [
     "scope",
     "checks",
@@ -416,6 +426,7 @@ export function validatePlan(value) {
     "templateMatrix",
     "goldenMatrix",
     "unitMatrix",
+    "carriedJobs",
   ]) {
     if (JSON.stringify(value[field]) !== JSON.stringify(expected[field])) {
       throw new Error(`CI_SCOPE_INVALID_PLAN: ${field} does not match the selected check families`);
@@ -426,6 +437,12 @@ export function validatePlan(value) {
 
 export function validateEventPlan(value, { eventName, baseRef, forceFull = false } = {}) {
   const plan = validatePlan(value);
+  // A scheduled audit exists to find drift that an unchanged tree cannot show, and a forced full run
+  // is a person asking for fresh work, so neither takes a carried leg.
+  if (plan.carried?.length && (eventName === "schedule" || forceFull))
+    throw new Error(
+      "CI_REQUIRED_QUALIFICATION_MINIMUM: event requires fresh exhaustive candidate verification",
+    );
   // Event minima are independent of the plan's self-description. A valid review plan does not
   // qualify a queue candidate, promotion, audit or unknown event, even with green aggregate jobs.
   const event = eventName;
@@ -442,17 +459,28 @@ export function validateEventPlan(value, { eventName, baseRef, forceFull = false
     throw new Error(
       "CI_REQUIRED_REVIEW_LANE: the review lane only gates a pull request into develop; the queue, pushes, audits and main need the full selected board",
     );
-  if ((!review && !queue) || forceFull) {
+  // PRD-776: a develop push may leave the board to its promotion pull request. `ci-required` confirms
+  // that pull request from the commit itself.
+  const yielded = event === "push" && target === "develop" && plan.selection === "warm";
+  // PRD-630: a main push may rest on its promotion board. `ci-required` re-decides that rule.
+  const promoted = event === "push" && target === "main" && plan.selection === "reused";
+  if ((!review && !queue && !yielded && !promoted) || forceFull) {
+    // The minimum reads what the plan owed: a carried leg still owes its proof, and `ci-required`
+    // reads that proof from the source run.
+    const owed = owedPlan(plan);
     if (
-      !plan.qualification ||
-      plan.selection !== "full" ||
-      !plan.native ||
-      plan.nativeTier !== "full" ||
-      plan.reusedRunId !== 0 ||
-      Object.values(plan.jobs).some((job) => !job.required) ||
-      JSON.stringify(plan.templateMatrix.template) !== JSON.stringify(TEMPLATE_NAMES) ||
-      JSON.stringify(plan.goldenMatrix.template) !== JSON.stringify(["starter", "platformer"]) ||
-      JSON.stringify(plan.unitMatrix.shard) !== JSON.stringify(["1/4", "2/4", "3/4", "4/4"])
+      !owed.qualification ||
+      owed.selection !== "full" ||
+      !owed.native ||
+      owed.nativeTier !== "full" ||
+      owed.reusedRunId !== 0 ||
+      // Only the nightly owes the engine-cost row.
+      Object.entries(owed.jobs).some(
+        ([name, job]) => !job.required && (name !== "template-engine-cost" || event === "schedule"),
+      ) ||
+      JSON.stringify(owed.templateMatrix.template) !== JSON.stringify(TEMPLATE_NAMES) ||
+      JSON.stringify(owed.goldenMatrix.template) !== JSON.stringify(["starter", "platformer"]) ||
+      JSON.stringify(owed.unitMatrix.shard) !== JSON.stringify(["1/4", "2/4", "3/4", "4/4"])
     )
       throw new Error(
         "CI_REQUIRED_QUALIFICATION_MINIMUM: event requires fresh exhaustive candidate verification",
@@ -575,6 +603,52 @@ function ghApi(pathname) {
  */
 function isWarmRun(run) {
   return run?.event === "push" && run?.head_branch === "develop";
+}
+
+/**
+ * PRD-776. The one ready develop -> main pull request whose head is this commit. It runs the full
+ * board on the same head and minute as the push, so a second board only competes with it for the
+ * same hosted slots: PR #600 ran both on every head. Anything unreadable or doubtful is no promotion,
+ * and no promotion runs the board. GitHub runs no pull-request event for a conflict, so a known
+ * conflict keeps the board. `mergeable` is null while GitHub computes it, which is normal this soon
+ * after a push, and develop contains main, so a conflict is the rare case.
+ */
+function promotionOnHead(candidateSha) {
+  const repository = process.env.GITHUB_REPOSITORY ?? "";
+  const owner = repository.split("/")[0];
+  const listed = ghApi(`pulls?state=open&base=main&head=${owner}:develop&per_page=2`);
+  if ("error" in listed || !Array.isArray(listed.value) || listed.value.length !== 1)
+    return undefined;
+  const number = listed.value[0]?.number;
+  if (!Number.isInteger(number)) return undefined;
+  const pull = ghApi(`pulls/${number}`);
+  if ("error" in pull) return undefined;
+  const { base, draft, head, mergeable } = pull.value ?? {};
+  return draft === false &&
+    mergeable !== false &&
+    base?.ref === "main" &&
+    head?.ref === "develop" &&
+    head?.sha === candidateSha &&
+    head?.repo?.full_name === repository
+    ? number
+    : undefined;
+}
+
+/**
+ * The verdict's own read, independent of the plan. It runs after the scope job, when the pull request
+ * may already have moved on or merged, so it asks what the commit belongs to, not what is open now.
+ */
+export function promotionOwnsCommit(sha) {
+  const listed = ghApi(`commits/${sha}/pulls`);
+  if (
+    "error" in listed ||
+    !Array.isArray(listed.value) ||
+    !listed.value.some((pull) => pull?.base?.ref === "main" && pull?.head?.ref === "develop")
+  )
+    return false;
+  // `mergeable` reads null just after a push, and GitHub starts no run on a conflict. No run: no board.
+  const runs = ghApi(`actions/workflows/ci.yml/runs?event=pull_request&head_sha=${sha}&per_page=1`);
+  return !("error" in runs) && runs.value?.total_count > 0;
 }
 
 /**
@@ -901,7 +975,7 @@ function parseNameStatus(output) {
   return { paths: [...new Set(paths)].sort() };
 }
 
-function pathFamily(file, selective) {
+export function pathFamily(file, selective) {
   if (
     /^packages\/create-threenative\/templates\/[^/]+\/(?:AGENTS|CLAUDE)\.md$/u.test(file) &&
     selective
@@ -990,6 +1064,7 @@ export function classify(input) {
             0,
             target,
             qualification,
+            options.eventName === "schedule",
           ),
           options,
           candidateSha,
@@ -999,8 +1074,20 @@ export function classify(input) {
   // tree and qualifies that tree with every supported system, every kit and every native row. A
   // full selection still runs `build-artifacts` and `test-native`, so the base-branch caches every
   // pull request into develop reads keep being published here.
-  if (options.eventName === "push" && options.target === "develop")
+  if (options.eventName === "push" && options.target === "develop") {
+    const promotion = options.local ? undefined : promotionOnHead(candidateSha);
+    if (promotion !== undefined)
+      return selectionPlan(
+        "warm",
+        `promotion pull request #${String(promotion)} runs the full board on this head`,
+        [],
+        candidateSha,
+        false,
+        0,
+        target,
+      );
     return full("a develop push qualifies the exact tree with the full board");
+  }
   // Every event except a pull request and a merge group stays full, and so does every target but
   // develop. The narrowings below review a change on develop; the exhaustive board belongs to the
   // tree-qualifying events — a push, the nightly, an explicit audit and a promotion into main — which
@@ -1123,9 +1210,15 @@ function treeOfFetched(root, sha) {
   return treeOf(root, sha);
 }
 
-/** The tested candidate of a CI run: the one sha its Integration receipt artifacts name. */
+/**
+ * The tested candidate of a CI run: the one sha its artifacts name. A board that carries every
+ * integration leg writes no Integration receipt, so the native web reference names it there.
+ */
 function receiptCandidate(runId) {
-  const receipt = new RegExp(`^ci-integration-receipt-${runId}-\\d+-([0-9a-f]{40})-`, "u");
+  const receipt = new RegExp(
+    `^(?:ci-integration-receipt-${runId}-\\d+-|native-web-reference-)([0-9a-f]{40})(?:-|$)`,
+    "u",
+  );
   const shas = new Set();
   for (let page = 1; page <= 5; page += 1) {
     const listed = ghApi(`actions/runs/${runId}/artifacts?per_page=100&page=${page}`);
@@ -1167,14 +1260,50 @@ function decideQueueReuse({ root, plan, queueRef }) {
     return { error: `the head of pull request ${number} could not be read` };
   if (treeOfFetched(root, headSha) !== tree)
     return { error: `the tree differs from the head of pull request ${number}` };
+  return greenBoardOfHead({
+    root,
+    plan,
+    tree,
+    headSha,
+    target: "develop",
+    events: ["pull_request", "workflow_dispatch"],
+  });
+}
+
+/**
+ * PRD-630: the main push of a promotion repeats the tree its pull request's board just tested. It
+ * runs no board when that board is green. Every miss, a main that moved included, runs the board.
+ */
+export function promotionReuse({ root, plan }) {
+  try {
+    const tree = treeOf(root, plan.candidateSha);
+    if (tree === null) return { error: "the candidate's tree could not be resolved" };
+    const parents = git(root, ["rev-list", "--parents", "-n", "1", plan.candidateSha])
+      .stdout.trim()
+      .split(" ");
+    if (parents.length !== 3) return { error: "the main commit is not a promotion merge" };
+    if (treeOfFetched(root, parents[2]) !== tree)
+      return { error: "the main tree differs from the head of its promotion pull request" };
+    return greenBoardOfHead({
+      root,
+      plan,
+      tree,
+      headSha: parents[2],
+      target: "main",
+      events: ["pull_request"],
+    });
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+function greenBoardOfHead({ root, plan, tree, headSha, target, events }) {
   const listed = ghApi(`actions/workflows/ci.yml/runs?head_sha=${headSha}&per_page=100`);
   if ("error" in listed) return listed;
   // PRD-731: a pull-request run is the thin review lane and proves too little, so the run worth
   // citing is the full board an author dispatched on the branch. A pull-request run stays a
   // candidate only so that a newer red one still blocks.
-  const runs = listed.value?.workflow_runs?.filter?.((run) =>
-    ["pull_request", "workflow_dispatch"].includes(run?.event),
-  );
+  const runs = listed.value?.workflow_runs?.filter?.((run) => events.includes(run?.event));
   if (
     !Array.isArray(runs) ||
     runs.length === 0 ||
@@ -1190,9 +1319,13 @@ function decideQueueReuse({ root, plan, queueRef }) {
     jobs.jobs.some((job) => job.name === name && job.conclusion === "success");
   if (!succeeded("ci-required"))
     return { error: `CI run ${run.id} did not conclude ci-required as success` };
-  const owed = Object.entries(plan.jobs)
-    .filter(([, job]) => job.required)
-    .map(([name]) => name);
+  // A promotion board may carry a leg its `ci-required` proved, but it runs what the reports need.
+  const owed =
+    target === "main"
+      ? RELEASE_GATE_JOBS
+      : Object.entries(plan.jobs)
+          .filter(([, job]) => job.required)
+          .map(([name]) => name);
   const missing = owed.find(
     (name) =>
       !jobs.jobs.some((job) => boardName(job.name) === name && job.conclusion === "success"),
@@ -1231,7 +1364,7 @@ function decideQueueReuse({ root, plan, queueRef }) {
           root,
           base: parents[1],
           head: headSha,
-          target: "develop",
+          target,
           eventName: "pull_request",
           candidateSha: tested.sha,
           noReuse: true,
@@ -1266,6 +1399,7 @@ function reuseOrKeep(plan, options, candidateSha) {
       0,
       plan.target,
       plan.qualification,
+      plan.nightly,
     );
   // PRD-730: the queue takes its own narrow rule, never the generic cross-commit one below.
   if (options.eventName === "merge_group") {
@@ -1274,6 +1408,20 @@ function reuseOrKeep(plan, options, candidateSha) {
     return selectionPlan(
       "reused",
       `queue tree ${hit.tree} equals the head of its pull request and already passed in CI run ${String(hit.runId)}`,
+      plan.files,
+      candidateSha,
+      plan.native,
+      hit.runId,
+      plan.target,
+    );
+  }
+  // PRD-630: main takes the green board of its promotion pull request, or the board runs.
+  if (options.eventName === "push" && plan.target === "main") {
+    const hit = promotionReuse({ root: options.root, plan });
+    if ("error" in hit) return unavailable(hit.error);
+    return selectionPlan(
+      "reused",
+      `main tree ${hit.tree} already passed in promotion CI run ${String(hit.runId)}`,
       plan.files,
       candidateSha,
       plan.native,
@@ -1309,6 +1457,51 @@ function reuseOrKeep(plan, options, candidateSha) {
   );
 }
 
+/** What the carry rules read from outside themselves, for the planner and for the verdict. */
+export async function carryDeps(root, plan) {
+  const { integrationJobNamesByLane, integrationSelection } = await import(
+    "./ci-integration-scope.mjs"
+  );
+  const { nativeInventory } = await import("./ci-native-qualification.mjs");
+  return {
+    git: (args) => git(root, args),
+    gh: ghApi,
+    runJobs,
+    receiptCandidate,
+    isProse: (file) => pathFamily(file, true) === "prose",
+    integrationWorkflow: ".github/workflows/integration.yml",
+    integrationSelection,
+    integrationJobs: integrationJobNamesByLane,
+    // iOS is non-blocking in the verdict, so its red cannot hold the matrix's carry either.
+    nativeJobs: (owed) =>
+      nativeInventory(owed ?? plan)
+        .filter((leg) => leg.job !== "ios-simulator")
+        .map((leg) => leg.name),
+  };
+}
+
+/** PRD-776: a full board drops each leg that already passed on the same inputs. */
+export async function withCarriedLegs(plan, options) {
+  // A manual run is no whole-tree reuse source, but its own legs still need not repeat. `--full` is
+  // how a person asks for fresh work, and the scheduled audit exists to find drift.
+  const manual =
+    options.eventName === "workflow_dispatch" &&
+    process.env.GITHUB_ACTIONS === "true" &&
+    !options.full;
+  if (plan.selection !== "full" || options.noReuse || !(manual || reuseEligible(options)))
+    return plan;
+  if (options.eventName === "schedule") return plan;
+  try {
+    const deps = await carryDeps(options.root, plan);
+    // The promotion board produces the release reports, so it runs their job itself. PRD-630.
+    if (plan.target === "main") deps.reserved = RELEASE_GATE_JOBS;
+    return applyCarried(plan, findCarried(plan, deps));
+  } catch (error) {
+    console.error(`per-job reuse unavailable, the board runs: ${String(error?.message ?? error)}`);
+    return plan;
+  }
+}
+
 function output(result, format, base = "") {
   if (format === "json") return console.log(JSON.stringify(result));
   if (format === "github") {
@@ -1327,7 +1520,7 @@ function output(result, format, base = "") {
     console.log(`${job.required ? "Required" : "Exempt"}: ${name} — ${job.reason}`);
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+async function main() {
   try {
     const options = parseArgs(process.argv.slice(2));
     if (options.plan !== undefined) {
@@ -1348,10 +1541,14 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
           options.head,
         );
       }
-      output(classify(options), options.format, options.base);
+      output(await withCarriedLegs(classify(options), options), options.format, options.base);
     }
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
     process.exitCode = 2;
   }
 }
+
+// Not a top-level await: the carry rules import modules that import this one, and a module still
+// awaiting at its top level would deadlock them.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) void main();

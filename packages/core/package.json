@@ -1,6 +1,6 @@
 {
   "name": "@threenative/core",
-  "version": "0.3.7",
+  "version": "0.3.11",
   "license": "MIT AND GPL-2.0-or-later",
   "description": "The small vanilla Three.js game runtime foundation.",
   "keywords": [
@@ -19,7 +19,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ThreeNativeHQ/threenative.git",
+    "url": "git+https://github.com/ThreeNativeHQ/threenative-engine.git",
     "directory": "packages/core"
   },
   "type": "module",
@@ -103,7 +103,7 @@
     "@threenative/playtest": "workspace:*",
     "@types/react": "catalog:",
     "@types/react-reconciler": "0.32.1",
-    "@types/three": "0.185.3",
+    "@types/three": "0.187.0",
     "publint": "0.3.22",
     "react": "catalog:",
     "react-reconciler": "0.33.0",
@@ -114,7 +114,7 @@
     "@typescript/native": "catalog:"
   },
   "peerDependencies": {
-    "@threenative/playtest": ">=0.3.7 <0.4.0",
+    "@threenative/playtest": ">=0.3.11 <0.4.0",
     "react": ">=19.2.0 <20",
     "react-reconciler": ">=0.33.0 <0.34"
   },

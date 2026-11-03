@@ -13,6 +13,7 @@
 
 import { execFileSync } from "node:child_process";
 import path from "node:path";
+import { publishSet } from "./check-publish-state.js";
 import {
   type IReleaseCandidateRequest,
   type IReleaseScope,
@@ -44,8 +45,10 @@ export interface IShipDeps {
   readonly git: (args: readonly string[]) => string;
   readonly log: (line: string) => void;
   readonly npmVersions: (name: string) => readonly string[];
-  /** `pnpm release --yes --skip-gates`, then the clean-room verification. */
-  readonly publish: () => void;
+  /** Every package of the npm cohort. A crash between levels leaves only part of it published. */
+  readonly cohort: () => readonly { readonly name: string; readonly version: string }[];
+  /** `pnpm release --yes --skip-gates --resume`, then the clean-room verification. */
+  readonly publish: (override: boolean) => void;
   readonly repository: string;
   readonly sleep: (ms: number) => Promise<void>;
   readonly verify: () => void;
@@ -70,14 +73,22 @@ export interface IShipState {
   };
   readonly ci: number | string;
   readonly mainHead: string;
-  readonly native: number | string;
+  readonly latestTagRun?: number;
   readonly npmPublished: boolean;
   readonly release: ReleaseState;
   readonly tag: { readonly commit?: string };
   readonly tagRun: "none" | "running" | "success" | "failed";
 }
 
-export type ShipStep = "evidence" | "candidate" | "tag" | "wait" | "publish" | "verify" | "done";
+export type ShipStep =
+  | "evidence"
+  | "candidate"
+  | "tag"
+  | "dispatch"
+  | "wait"
+  | "publish"
+  | "verify"
+  | "done";
 
 const RUN_FIELDS = "databaseId,status,conclusion,event,headBranch,headSha";
 
@@ -123,6 +134,11 @@ function describeMissing(all: readonly IRun[], sha: string): string {
     : `not green (run ${latest.databaseId} is ${latest.status}${latest.conclusion ? `/${latest.conclusion}` : ""})`;
 }
 
+function errorText(error: unknown): string {
+  const { message, stderr } = error as { message?: string; stderr?: string };
+  return `${message ?? ""}\n${stderr ?? ""}`;
+}
+
 function releaseState(deps: IShipDeps, tag: string): ReleaseState {
   let out: string;
   try {
@@ -135,8 +151,10 @@ function releaseState(deps: IShipDeps, tag: string): ReleaseState {
       "--json",
       "isDraft,isPrerelease",
     ]);
-  } catch {
-    return "none";
+  } catch (error) {
+    // Only a real miss is "none": a failed read here could move the tag of a public release.
+    if (/release not found/iu.test(errorText(error))) return "none";
+    throw error;
   }
   const release = JSON.parse(out) as { isDraft: boolean; isPrerelease: boolean };
   if (release.isDraft) return "draft";
@@ -152,21 +170,14 @@ function tagCommit(deps: IShipDeps, tag: string): string | undefined {
 }
 
 /** Read every fact the plan depends on. Pure reads: safe in a dry run. */
-export function readShipState(
-  deps: IShipDeps,
-  sha: string,
-  tag: string,
-  runtimeVersion: string,
-): IShipState {
+export function readShipState(deps: IShipDeps, sha: string, tag: string): IShipState {
   const ciAll = runs(deps, "ci.yml", sha);
-  const nativeAll = runs(deps, "native-platforms.yml", sha);
   const ci = greenRun(ciAll, sha, ["push"]);
-  const native = greenRun(nativeAll, sha, ["push", "workflow_dispatch"]);
   const candidateRuns = runs(deps, "release-candidate.yml", sha).filter(
     (run) => run.headBranch === "main" && run.event === "workflow_dispatch",
   );
   const tagRuns = runs(deps, "native-release.yml", sha).filter(
-    (run) => run.event === "push" && run.headBranch === tag,
+    (run) => run.event === "workflow_dispatch" && run.headBranch === tag,
   );
   const latestTagRun = tagRuns.sort((a, b) => b.databaseId - a.databaseId)[0];
   let tagRun: IShipState["tagRun"] = "none";
@@ -178,6 +189,7 @@ export function readShipState(
           ? "success"
           : "failed";
   return {
+    ...(latestTagRun === undefined ? {} : { latestTagRun: latestTagRun.databaseId }),
     candidate: {
       failed: candidateRuns
         .filter((run) => run.status === "completed" && run.conclusion !== "success")
@@ -189,8 +201,9 @@ export function readShipState(
     },
     ci: ci?.databaseId ?? describeMissing(ciAll, sha),
     mainHead: deps.gh(["api", `repos/${deps.repository}/commits/main`, "--jq", ".sha"]).trim(),
-    native: native?.databaseId ?? describeMissing(nativeAll, sha),
-    npmPublished: deps.npmVersions("@threenative/runtime-native").includes(runtimeVersion),
+    npmPublished: deps
+      .cohort()
+      .every(({ name, version }) => deps.npmVersions(name).includes(version)),
     release: releaseState(deps, tag),
     tag: { commit: tagCommit(deps, tag) },
     tagRun,
@@ -202,7 +215,7 @@ export function buildCandidateRequest(
   repository: string,
   sha: string,
   runtimeVersion: string,
-  runIds: { readonly ci: number; readonly native: number },
+  ciRunId: number,
 ): IReleaseCandidateRequest {
   return {
     schemaVersion: 1,
@@ -210,22 +223,29 @@ export function buildCandidateRequest(
     tag: `runtime-native-v${runtimeVersion}`,
     candidateSha: sha,
     runtimeVersion,
-    requiredRunIds: { ci: runIds.ci, native: runIds.native },
+    requiredRunIds: { ci: ciRunId },
     reportArtifacts: {
-      parity: expectedReleaseReportReference("parity", runIds.native),
-      provenance: expectedReleaseReportReference("provenance", runIds.native),
+      parity: expectedReleaseReportReference("parity", ciRunId),
+      provenance: expectedReleaseReportReference("provenance", ciRunId),
     },
     releaseScope: SHIP_SCOPE,
   };
 }
 
 /** The first step that is not done. A second invocation resumes here. */
-export function nextStep(state: IShipState, sha: string): ShipStep {
-  if (typeof state.ci !== "number" || typeof state.native !== "number") return "evidence";
+export function nextStep(state: IShipState, sha: string, override = false): ShipStep {
   if (state.npmPublished) return "verify";
-  if (state.candidate.successes === 0) return "candidate";
+  if (!override && typeof state.ci !== "number") return "evidence";
+  if (!override && state.candidate.successes === 0) return "candidate";
   if (state.tag.commit !== sha) return "tag";
-  if (state.release !== "public" || state.tagRun !== "success") return "wait";
+  if (
+    state.release !== "public" &&
+    (state.tagRun === "none" || (override && state.tagRun === "failed"))
+  )
+    return "dispatch";
+  // Promotion is the verdict: `finalize` makes a release public only after its gating consumers pass.
+  // The run's own conclusion also carries the iOS evidence job, which does not gate (owner, 2026-09-23).
+  if (state.release !== "public") return "wait";
   return "publish";
 }
 
@@ -259,17 +279,19 @@ const evidenceLabel = (value: number | string): string =>
 function describeStep(step: ShipStep, state: IShipState, sha: string, tag: string): string {
   switch (step) {
     case "evidence":
-      return `blocked: CI is ${evidenceLabel(state.ci)}; native-platforms is ${evidenceLabel(state.native)}.`;
+      return `blocked: CI is ${evidenceLabel(state.ci)}.`;
     case "candidate":
       return `dispatch release-candidate.yml for ${sha}.`;
     case "tag":
       return state.tag.commit === undefined
         ? `create and push ${tag} at ${sha}.`
         : `move ${tag} from ${state.tag.commit} to ${sha}.`;
+    case "dispatch":
+      return `dispatch native-release.yml on ${tag}.`;
     case "wait":
       return `wait for the ${tag} run (${state.tagRun}) and a public release (${state.release}).`;
     case "publish":
-      return "publish the npm cohort with `pnpm release --yes --skip-gates`.";
+      return "publish the npm cohort with `pnpm release --yes --skip-gates --resume`.";
     case "verify":
       return "verify the registry install in a clean room.";
     case "done":
@@ -293,7 +315,11 @@ async function waitFor(
 }
 
 export interface IShipOptions {
+  /** The CI lane: a commit whose cohort is already on npm has nothing left to do. */
+  readonly auto?: boolean;
   readonly dryRun: boolean;
+  /** Admin only, enforced by the tag run: publish without CI evidence or consumer proofs. */
+  readonly override?: string;
   readonly repo?: string;
   readonly sha: string;
 }
@@ -315,18 +341,20 @@ export async function ship(deps: IShipDeps, options: IShipOptions): Promise<read
   const tag = `runtime-native-v${version}`;
   const acted: ShipStep[] = [];
   for (let guard = 0; guard < 8; guard += 1) {
-    const state = readShipState(deps, sha, tag, version);
-    const step = nextStep(state, sha);
+    const state = readShipState(deps, sha, tag);
+    const step = nextStep(state, sha, options.override !== undefined);
+    if (options.auto && step === "verify") {
+      deps.log(`${version} is already on npm. Nothing to ship.`);
+      return acted;
+    }
     deps.log(`next: ${describeStep(step, state, sha, tag)}`);
-    if (typeof state.ci === "number" && typeof state.native === "number") {
-      const request = buildCandidateRequest(deps.repository, sha, version, {
-        ci: state.ci,
-        native: state.native,
-      });
+    if (typeof state.ci === "number") {
+      const request = buildCandidateRequest(deps.repository, sha, version, state.ci);
       // The gate's own parser: a request it would reject never reaches a dispatch.
       parseReleaseCandidateRequest(request, deps.repository, options.repo ?? REPO);
       deps.log(`request: ${JSON.stringify(request)}`);
     }
+    if (options.override !== undefined) deps.log(`OVERRIDE: ${options.override}`);
     if (options.dryRun || step === "evidence") {
       if (!options.dryRun)
         throw new Error(`TN_SHIP_EVIDENCE: ${describeStep(step, state, sha, tag)}`);
@@ -335,10 +363,7 @@ export async function ship(deps: IShipDeps, options: IShipOptions): Promise<read
     acted.push(step);
     if (step === "candidate") {
       assertCandidateDispatchable(state, sha);
-      const request = buildCandidateRequest(deps.repository, sha, version, {
-        ci: state.ci as number,
-        native: state.native as number,
-      });
+      const request = buildCandidateRequest(deps.repository, sha, version, state.ci as number);
       deps.gh([
         "workflow",
         "run",
@@ -355,7 +380,7 @@ export async function ship(deps: IShipDeps, options: IShipOptions): Promise<read
         deps,
         "release-candidate",
         () => {
-          const now = readShipState(deps, sha, tag, version).candidate;
+          const now = readShipState(deps, sha, tag).candidate;
           const fresh = now.failed.filter((id) => !state.candidate.failed.includes(id));
           if (fresh.length > 0)
             throw new Error(`TN_SHIP_CANDIDATE_FAILED: release-candidate run ${fresh[0]} failed.`);
@@ -365,25 +390,66 @@ export async function ship(deps: IShipDeps, options: IShipOptions): Promise<read
       );
     } else if (step === "tag") {
       if (state.tag.commit !== undefined) assertTagMovable(state, tag);
-      deps.git(["tag", "-f", tag, sha]);
-      deps.git(["push", "--force", "origin", `refs/tags/${tag}`]);
+      // Through the API: a push would run this checkout's pre-push hook, which needs a built tree.
+      deps.gh(
+        state.tag.commit === undefined
+          ? [
+              "api",
+              "--method",
+              "POST",
+              `repos/${deps.repository}/git/refs`,
+              "-f",
+              `ref=refs/tags/${tag}`,
+              "-f",
+              `sha=${sha}`,
+            ]
+          : [
+              "api",
+              "--method",
+              "PATCH",
+              `repos/${deps.repository}/git/refs/tags/${tag}`,
+              "-f",
+              `sha=${sha}`,
+              "-F",
+              "force=true",
+            ],
+      );
+    } else if (step === "dispatch") {
+      deps.gh([
+        "workflow",
+        "run",
+        "native-release.yml",
+        "--repo",
+        deps.repository,
+        "--ref",
+        tag,
+        ...(options.override === undefined ? [] : ["-f", `override=${options.override}`]),
+      ]);
+      // The run list lags a dispatch, and a second dispatch would start a second release run.
+      await waitFor(
+        deps,
+        `the ${tag} run to start`,
+        () => readShipState(deps, sha, tag).latestTagRun !== state.latestTagRun,
+        10,
+      );
     } else if (step === "wait") {
       await waitFor(
         deps,
         `${tag} run and release`,
         () => {
-          const now = readShipState(deps, sha, tag, version);
+          const now = readShipState(deps, sha, tag);
+          if (now.release === "public") return true;
           if (now.tagRun === "failed")
             throw new Error(
-              `TN_SHIP_TAG_RUN_FAILED: the ${tag} run failed. Fix it on main and ship the new commit.`,
+              `TN_SHIP_TAG_RUN_FAILED: the ${tag} run failed. Rerun a flake with \`gh run rerun --failed\`, or fix it on main and ship the new commit.`,
             );
-          return now.release === "public" && now.tagRun === "success";
+          return false;
         },
         120,
       );
     } else if (step === "publish") {
       // `pnpm release --yes` ends with the clean-room registry install, so nothing follows it.
-      deps.publish();
+      deps.publish(options.override !== undefined);
       return acted;
     } else {
       deps.verify();
@@ -409,6 +475,7 @@ function systemDeps(): IShipDeps {
     ".nameWithOwner",
   ]).trim();
   return {
+    cohort: () => publishSet(REPO),
     gh: (args) => run("gh", args),
     git: (args) => run("git", args),
     log: (line) => process.stdout.write(`${line}\n`),
@@ -416,15 +483,17 @@ function systemDeps(): IShipDeps {
       try {
         const out = run("npm", ["view", name, "versions", "--json"]);
         return JSON.parse(out) as string[];
-      } catch {
-        return [];
+      } catch (error) {
+        if (/E404|404 Not Found/u.test(errorText(error))) return [];
+        throw error;
       }
     },
-    publish: () =>
-      void execFileSync("pnpm", ["release", "--yes", "--skip-gates"], {
-        cwd: REPO,
-        stdio: "inherit",
-      }),
+    publish: (override) =>
+      void execFileSync(
+        "pnpm",
+        ["release", "--yes", "--skip-gates", "--resume", ...(override ? ["--override"] : [])],
+        { cwd: REPO, stdio: "inherit" },
+      ),
     repository,
     sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
     verify: () =>
@@ -436,23 +505,33 @@ function systemDeps(): IShipDeps {
 }
 
 export async function runShip(argv: readonly string[]): Promise<void> {
-  const flags = new Set(argv.filter((arg) => arg.startsWith("--") && arg !== "--sha"));
-  const shaIndex = argv.indexOf("--sha");
-  const sha = shaIndex === -1 ? undefined : argv[shaIndex + 1];
+  const flagValue = (flag: string): string | undefined => {
+    const index = argv.indexOf(flag);
+    return index === -1 ? undefined : argv[index + 1];
+  };
+  const sha = flagValue("--sha");
+  const override = flagValue("--override");
   const unknown = argv.filter(
     (arg, index) =>
-      !["--yes", "--dry-run", "--sha"].includes(arg) &&
-      !(index === shaIndex + 1 && shaIndex !== -1),
+      !["--yes", "--dry-run", "--auto", "--sha", "--override"].includes(arg) &&
+      !["--sha", "--override"].includes(argv[index - 1] ?? ""),
   );
   if (unknown.length > 0) throw new Error(`TN_SHIP_UNKNOWN_FLAG: ${unknown.join(", ")}`);
-  if (flags.has("--yes") && flags.has("--dry-run"))
+  if (argv.includes("--yes") && argv.includes("--dry-run"))
     throw new Error("TN_SHIP_FLAGS_CONFLICT: --dry-run and --yes cannot be combined.");
-  if (shaIndex !== -1 && (sha === undefined || !SHA_PATTERN.test(sha)))
+  if (argv.includes("--sha") && (sha === undefined || !SHA_PATTERN.test(sha)))
     throw new Error("TN_SHIP_SHA: --sha needs a full 40-character commit SHA.");
+  if (argv.includes("--override") && !override?.trim())
+    throw new Error("TN_SHIP_OVERRIDE: --override needs a reason.");
   const deps = systemDeps();
   const resolved = sha ?? deps.git(["rev-parse", "HEAD"]).trim();
-  const dryRun = !flags.has("--yes");
-  await ship(deps, { dryRun, sha: resolved });
+  const dryRun = !argv.includes("--yes");
+  await ship(deps, {
+    auto: argv.includes("--auto"),
+    dryRun,
+    sha: resolved,
+    ...(override === undefined ? {} : { override }),
+  });
   if (dryRun)
     deps.log("Dry run: nothing was dispatched, tagged or published. Re-run with --yes to ship.");
 }

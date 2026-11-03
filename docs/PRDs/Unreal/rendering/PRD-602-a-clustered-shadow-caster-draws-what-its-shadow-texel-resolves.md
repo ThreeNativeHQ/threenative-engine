@@ -46,6 +46,12 @@ Nothing measures the cost. The quarry has a sun and no shadows (`examples/quarry
 
 **Left out on purpose:** local-light shadows (the clipmap is the directional path), tessellation and displacement fades in shadows (they need displacement materials, which decide the look), and any new time budget.
 
+## three.js 0.187.0 levers (2026-11-02)
+
+- `MeshletDrawingPipeline` (r187, three#35191) has `shadowLodThreshold`: the projected error in shadow-map texels below which a shadow caster takes a simpler cluster LOD. That is the rule of this PRD. Read its cut selection for shadow views before Phase 1, and use the pipeline as the reference arm for the texel-error metric.
+
+Adoption rule: the owned engine is the default, and it runs a three symbol only when its API catalog covers it (`docs/architecture/NATIVE-ENGINE-DECISION.md`). So use the upstream piece first as a measured reference arm on `engine: "threejs"`. A template uses it only after a catalog row and a native parity case land.
+
 ## Acceptance Criteria
 
 - [ ] AC-1 [local]: For 100 seeded pairs of texel size and window, the shadow cut equals an independent flat reference, contains 0 clusters that miss the window, leaves 0 open interior edges, and does not change when the camera moves. proof: red-green `pnpm exec vitest run packages/core/__tests__/clustered-mesh.spec.ts packages/core/__tests__/clustered-batch.spec.ts` — Evidence: pending.

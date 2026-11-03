@@ -5,7 +5,6 @@ import {
   HalfFloatType,
   Mesh,
   NoToneMapping,
-  type RenderTarget,
   Scene,
   SphereGeometry,
   type Texture,
@@ -85,7 +84,7 @@ export class SkyCapture {
   readonly #mask: Scene | undefined;
   readonly #maskMesh: Mesh<SphereGeometry, MeshBasicNodeMaterial> | undefined;
   #pmrem: PMREMGenerator | undefined;
-  #filtered: RenderTarget | undefined;
+  #filtered: CubeRenderTarget | undefined;
   #disposed = false;
 
   constructor(
