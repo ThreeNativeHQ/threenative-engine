@@ -97,6 +97,13 @@ ships either way.
 **Left out on purpose:** stereo views (no target ships), directional shadow levels (PRD-602), and
 non-raster consumers (PRD-694).
 
+## three.js 0.187.0 levers (2026-11-02)
+
+- r187 culls `ArrayCamera` draws per sub-camera (three#35164) and keeps occlusion query results per camera (three#35066). A shadow or probe view that draws through an `ArrayCamera` now gets its own culling result upstream.
+- `MeshletDrawingPipeline` (three#35191) selects one cut for the camera (`lodThreshold`) and one for shadow casters (`shadowLodThreshold`). Read how it keys the cut per view before Phase 1, and borrow the rule, not the code.
+
+Adoption rule: the owned engine is the default, and it runs a three symbol only when its API catalog covers it (`docs/architecture/NATIVE-ENGINE-DECISION.md`). So use the upstream piece first as a measured reference arm on `engine: "threejs"`. A template uses it only after a catalog row and a native parity case land.
+
 ## Acceptance Criteria
 
 - [ ] AC-1 [local]: A game with `projection: "orthogonal"` and a clustered mesh renders its frames with 0 console errors, and the drawn triangles fall when the orthographic size grows. proof: red-green `pnpm exec vitest run packages/core/__tests__/clustered-mesh.spec.ts packages/core/__tests__/game.spec.ts` — Evidence: pending.

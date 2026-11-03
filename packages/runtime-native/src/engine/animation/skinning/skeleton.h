@@ -106,10 +106,14 @@ class Skeleton {
     // reference would make mesh -> skeleton -> bone -> ... -> mesh a cycle that never frees (three's
     // GC collects it). A bone nothing else holds reads as three's `undefined` slot.
     std::vector<std::weak_ptr<Bone>> bones;
-    [[nodiscard]] Bone* bone(std::size_t i) const { return i < bones.size() ? bones[i].lock().get() : nullptr; }
+    // A lock is two atomic writes, on every bone of every rig every frame: the slot stays weak, its address is kept.
+    [[nodiscard]] Bone* bone(std::size_t i) const { return i < bones.size() && !bones[i].expired() ? boneAddresses_[i] : nullptr; }
     std::vector<Matrix4> boneInverses;
     /** `bones.size() * 16` floats, column-major per slot, three's flat `boneMatrices`. */
     std::vector<float> boneMatrices;
+
+  private:
+    std::vector<Bone*> boneAddresses_;  // `bones` is set once, by the constructor
 };
 
 /**

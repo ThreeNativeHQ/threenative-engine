@@ -47,6 +47,12 @@ All proof paths below are **planned implementation targets**, not existing passi
 - [ ] The overlapping-effects scene passes order permutations, occlusion and exclusion checks on browser WebGPU. proof: `node packages/playtest/dist/runner/cli.js examples/abyss-framework/playtests/vq-transparent-effects-composition.playtest.json --url ${VQ_URL:?} --browser-recipe webgpu`.
 - [ ] The same material-route and composition cases pass on Linux native with no unsupported attachment fallback hidden. proof: `node packages/playtest/dist/runner/cli.js examples/abyss-framework/playtests/vq-transparent-effects-composition.playtest.json --target desktop --executable ${VQ_NATIVE_EXECUTABLE:?}`.
 
+## three.js 0.187.0 levers (2026-11-02)
+
+- r186 adds `OITPassNode` (three#34253, `examples/jsm/tsl/display/OITPassNode.js`): order-independent transparency as a pass node. Qualify it as the correct path for overlapping transparent effects before a custom sort is written.
+
+Adoption rule: the owned engine is the default, and it runs a three symbol only when its API catalog covers it (`docs/architecture/NATIVE-ENGINE-DECISION.md`). So use the upstream piece first as a measured reference arm on `engine: "threejs"`. A template uses it only after a catalog row and a native parity case land.
+
 ## Acceptance criteria
 
 - [ ] The technique materially improves the demonstrated artifact and stays within its declared cost; otherwise retain the simpler existing routes and record a decline. proof: the completed Phase 3 scenario outputs, with the named fixture, package/cohort and adapter recorded inline here.

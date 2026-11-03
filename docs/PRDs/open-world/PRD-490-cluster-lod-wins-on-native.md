@@ -33,6 +33,12 @@ Measure first, then fix the cheapest cause the numbers name:
 
 The game's material still draws every cluster (the batch's rule 1).
 
+## three.js 0.187.0 levers (2026-11-02)
+
+- `MeshletDrawingPipeline` (r187, three#35191) draws clusters with GPU cluster LOD and indirect draws on the three.js engine. It gives a reference draw count and frame time for the same scene. It does not run on the native host, so it does not close this PRD.
+
+Adoption rule: the owned engine is the default, and it runs a three symbol only when its API catalog covers it (`docs/architecture/NATIVE-ENGINE-DECISION.md`). So use the upstream piece first as a measured reference arm on `engine: "threejs"`. A template uses it only after a catalog row and a native parity case land.
+
 ## Acceptance Criteria
 
 - [ ] AC-1 [local]: on native at 720p, the quarry's `virtual` arm costs less GPU time than `decimated` and is still closer to `dense` (the batch's decision 6). proof: `pnpm --filter quarry measure -- --arm virtual --target desktop`, the same for `--arm decimated`, and `pnpm --filter quarry compare -- --reference artifacts/quarry/native-dense --candidate artifacts/quarry/native-virtual` (and the same for `native-decimated`).

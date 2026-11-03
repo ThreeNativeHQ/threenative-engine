@@ -77,6 +77,13 @@ is the fallback and the whole-scene path is documented as unusable on native.
 `TN_COLD_START first_frame`, the loading screen. **Replaces:** the synchronous walk documented in
 `runtime-perf-state.md` §5a.
 
+## three.js 0.187.0 levers (2026-11-02)
+
+- r186 adds `compileComputeAsync()` (three#32551), node materials in `compile()` (three#34232) and no shadow-map draws during precompile (three#33924). r187 shares node builds across call depths (three#35014) and speeds up TSL builds (three#34815).
+- Re-measure the main-thread compile walk on 0.187.0 before Phase 1 starts. The upstream changes can lower the cost this PRD moves off the main thread.
+
+Adoption rule: the owned engine is the default, and it runs a three symbol only when its API catalog covers it (`docs/architecture/NATIVE-ENGINE-DECISION.md`). So use the upstream piece first as a measured reference arm on `engine: "threejs"`. A template uses it only after a catalog row and a native parity case land.
+
 ## Acceptance criteria
 
 1. Three cold launches of a Bayview-class game, physical Pixel 8, unplugged, thermal NONE:
