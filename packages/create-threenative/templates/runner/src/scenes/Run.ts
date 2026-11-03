@@ -69,7 +69,7 @@ export class Run extends Scene<GameState, RunnerPhysics> {
     if (this.#model === undefined)
       throw new Error("Run.enter ran before load() loaded mannequin.glb.");
     setupSky(ctx.scene, this.#sky, ctx.renderer.softwareAdapter !== undefined);
-    const { key } = setupLighting(
+    const lighting = setupLighting(
       ctx.scene,
       ctx.renderer.raw as Parameters<typeof setupLighting>[1],
       isMobile(),
@@ -89,7 +89,7 @@ export class Run extends Scene<GameState, RunnerPhysics> {
         materialTier = tier;
         this.#materialLighting?.setEnabled(materialLightingEnabled(tier, materialEnvironment));
       },
-      godraysLight: key,
+      godraysLight: lighting.key,
       mobile: isMobile(),
       software: ctx.renderer.softwareAdapter !== undefined,
       gpuClass: ctx.renderer.gpuClass?.class,
@@ -139,13 +139,14 @@ export class Run extends Scene<GameState, RunnerPhysics> {
     afterPhysics(ctx, (dt) => {
       const offset = shake.update(dt);
       chaseRunner(camera, runner.mesh.position, dt, offset.position);
+      lighting.follow(runner.mesh.position);
       dust.position.set(runner.mesh.position.x, 0.15, runner.mesh.position.z + 0.6);
     });
 
     // Collect only after the loaded character and scene receivers are attached.
     this.#materialLighting = ctx.entities.add(
       "material-lighting",
-      createMaterialLighting(ctx.scene, ctx.camera, key, {
+      createMaterialLighting(ctx.scene, ctx.camera, lighting.key, {
         ...materialEnvironment,
         enabled: materialLightingEnabled(materialTier, materialEnvironment),
         overrides: { fillGain: 0 },
