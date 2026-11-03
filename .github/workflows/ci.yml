@@ -443,8 +443,18 @@ jobs:
           # run after run instead of growing to hold what any one lane needs. A restore-key prefix
           # is a namespace; sharing one between jobs that build different things is a cache that
           # reports warm and behaves cold.
+          #
+          # The restore prefix stops at the lane. It used to repeat the key's own `hashFiles()` over
+          # `CMakeLists.txt` and every `*.cmake`, so a native change produced a prefix no saved entry
+          # could match, and run 41688813459 restored nothing while `native-engine` and both
+          # `starter-linux` legs reported 100% on the same board: this tree hashed to `…-gcc-ccb139…`
+          # and the entry the develop run had just saved was `…-gcc-3ea15707…`. ccache keys each
+          # object by its compiler, its flags and its source, so an object from another tree is
+          # either identical or a miss — a wider prefix cannot serve a wrong object, it can only
+          # turn a recompile into a hit. The exact key keeps the hash, so a save still describes the
+          # tree it came from, and keeps the run id last, so every run can store what it built.
           key: native-ccache-ci-test-native-${{ runner.os }}-${{ runner.arch }}-gcc-${{ hashFiles('packages/runtime-native/CMakeLists.txt', 'packages/runtime-native/CMakePresets.json', 'packages/runtime-native/**/*.cmake') }}-${{ github.run_id }}
-          restore-keys: native-ccache-ci-test-native-${{ runner.os }}-${{ runner.arch }}-gcc-${{ hashFiles('packages/runtime-native/CMakeLists.txt', 'packages/runtime-native/CMakePresets.json', 'packages/runtime-native/**/*.cmake') }}-
+          restore-keys: native-ccache-ci-test-native-${{ runner.os }}-${{ runner.arch }}-gcc-
       - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@v7
         with:
