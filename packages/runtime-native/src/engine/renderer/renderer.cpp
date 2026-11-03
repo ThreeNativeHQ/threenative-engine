@@ -178,8 +178,8 @@ void putNodes(std::vector<uint8_t>& block, size_t base, const shader::StageModul
         }
         const shader::BoundUniform* found = shader::findBoundUniform(values, field);
         if (found == nullptr) continue;
-        if (field.type.isMatrix() || field.type.scalar == shader::Type::Scalar::Bool ||
-            found->values.size() != field.type.rows)
+        if (field.type.scalar == shader::Type::Scalar::Bool ||
+            found->values.size() != size_t(field.type.rows) * field.type.cols)
             throw std::runtime_error("TN_TSL_UNIFORM_TYPE: " + field.name);
         shader::writeUniform(std::span(block).subspan(base), field, found->values);
     }

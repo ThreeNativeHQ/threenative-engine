@@ -75,7 +75,7 @@ void ComputePass::dispatchValues(WGPUCommandEncoder encoder, std::span<const Han
         if (found == uniforms.end())
             throw std::runtime_error("TN_COMPUTE_UNIFORM: " + f.name + " is the engine's own value and has no meaning in a compute kernel");
         const std::vector<double>& lanes = found->second;
-        if (f.type.isMatrix() || lanes.size() != f.type.rows)
+        if (lanes.size() != size_t(f.type.rows) * f.type.cols)
             throw std::runtime_error("TN_COMPUTE_UNIFORM: " + f.name + " is " + f.type.name() + " and the node holds " +
                                      std::to_string(lanes.size()) + " value(s)");
         shader::writeUniform(block, f, lanes);

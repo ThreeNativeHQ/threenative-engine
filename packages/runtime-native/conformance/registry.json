@@ -2161,6 +2161,20 @@
       },
       "desktopGate": false,
       "required": false
+    },
+    {
+      "id": "tsl-spell-port-nodes",
+      "title": "TSL Discard, Matrix3/Matrix4 uniforms, textureLoad on a DataTexture and a struct Fn argument",
+      "category": "webgpu-tsl",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/tsl-spell-port-nodes.js",
+      "browserRecipe": "webgpu",
+      "tolerance": {
+        "pixelMismatchRatio": 0.04,
+        "perceptualDeltaE": 3
+      },
+      "desktopGate": false,
+      "required": false
     }
   ],
   "generatedPlaytestProofs": [

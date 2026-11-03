@@ -38,12 +38,26 @@ function sameLanes(a: readonly number[] | undefined, b: readonly number[]): bool
   return true;
 }
 
+/** "mat3" or "mat4" for a three Matrix3 or Matrix4, the type its uniform is made at; otherwise undefined. */
+function matrixType(value: unknown): "mat3" | "mat4" | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const v = value as { isMatrix3?: unknown; isMatrix4?: unknown };
+  return v.isMatrix3 === true ? "mat3" : v.isMatrix4 === true ? "mat4" : undefined;
+}
+
 /**
- * One float per lane: a number, a Color's r, g, b, or a VectorN's x, y, z, w. `out`, when given,
- * receives the lanes and is returned, so a uniform can refill one bounded scratch array per sync.
+ * One float per lane: a number, a Color's r, g, b, a VectorN's x, y, z, w, or a Matrix3/Matrix4's
+ * elements (column-major, as three stores them). `out`, when given, receives the lanes and is
+ * returned, so a uniform can refill one bounded scratch array per sync.
  */
 export function uniformLanes(value: unknown, out?: number[]): number[] {
   const lanes = out ?? [];
+  if (matrixType(value) !== undefined) {
+    const elements = (value as { elements: ArrayLike<number> }).elements;
+    lanes.length = elements.length;
+    for (let i = 0; i < elements.length; i++) lanes[i] = elements[i] as number;
+    return lanes;
+  }
   if (typeof value === "number") {
     lanes.length = 1;
     lanes[0] = value;
@@ -67,7 +81,9 @@ export function uniformLanes(value: unknown, out?: number[]): number[] {
       return lanes;
     }
   }
-  throw new TypeError(`TN_TSL_UNIFORM_VALUE: ${String(value)} is not a number, Color or vector`);
+  throw new TypeError(
+    `TN_TSL_UNIFORM_VALUE: ${String(value)} is not a number, Color, vector or Matrix3/Matrix4`,
+  );
 }
 
 function referenceValue(property: string, type: string, object: unknown): unknown {
@@ -172,9 +188,17 @@ export function liveUniforms<TNode extends object>(
   };
   const live = {
     uniform(value: unknown, type?: unknown): TNode {
-      const node = type === undefined ? uniform(value) : uniform(value, type);
+      // A matrix uniform is made by its type name at identity, then given the matrix's elements.
+      const matrix = matrixType(value);
+      const node =
+        matrix !== undefined
+          ? uniform(matrix)
+          : type === undefined
+            ? uniform(value)
+            : uniform(value, type);
       const state: IUniformState = { value, scratch: [] };
       states.set(node, state);
+      if (matrix !== undefined) write(node, state, uniformLanes(value, state.scratch));
       Object.defineProperty(node, "value", {
         configurable: true,
         get: () => state.value,
