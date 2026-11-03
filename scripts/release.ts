@@ -436,6 +436,7 @@ export function unpublishedReleasePackages(
  * Whether an installer can resolve `name@version` yet: the abbreviated packument `npm install` and
  * `npm create` read lists it. The per-version endpoint answers before that packument's CDN cache
  * does, so 0.3.10 and 0.3.11 started the clean room on it and `npm create` failed with ETARGET.
+ * `npm create threenative@latest` resolves the `latest` tag first, so the tag must name it too.
  */
 export async function installableOnRegistry(
   name: string,
@@ -446,8 +447,11 @@ export async function installableOnRegistry(
     headers: { accept: "application/vnd.npm.install-v1+json" },
   });
   if (!response.ok) return false;
-  const packument = (await response.json()) as { versions?: Record<string, unknown> };
-  return packument.versions?.[version] !== undefined;
+  const packument = (await response.json()) as {
+    "dist-tags"?: Record<string, string>;
+    versions?: Record<string, unknown>;
+  };
+  return packument.versions?.[version] !== undefined && packument["dist-tags"]?.latest === version;
 }
 
 async function waitForRegistry(name: string, version: string): Promise<void> {

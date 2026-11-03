@@ -19,7 +19,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ThreeNativeHQ/threenative.git",
+    "url": "git+https://github.com/ThreeNativeHQ/threenative-engine.git",
     "directory": "packages/create-threenative"
   },
   "type": "module",
