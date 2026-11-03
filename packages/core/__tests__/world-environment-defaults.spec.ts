@@ -20,6 +20,7 @@ import {
   WebGPURenderer,
 } from "three/webgpu";
 import { afterEach, expect, it, vi } from "vitest";
+import { aoRefusal } from "../src/look/ao-admission.js";
 import { qualityPreset } from "../src/look/quality.js";
 import { type OutputRenderer, WorldEnvironment } from "../src/look/world-environment.js";
 import { readRenderChainObservation } from "../src/render/chain.js";
@@ -334,4 +335,45 @@ it("still reports its render-chain tier when every post stage is off", () => {
   expect(readRenderChainObservation(raw)).toMatchObject({ stages: [], tier: "low" });
   applied.dispose?.();
   expect(readRenderChainObservation(raw)).toBeUndefined();
+});
+
+// PRD-617: the contact occlusion applies on the owned engine and is dropped on the threejs arm, so a frame
+// without a baked world cache would show a contact shadow on one arm only. The stage refuses instead.
+it("refuses the screen-reach occlusion on a frame with no world cache, as the threejs arm does", () => {
+  vi.spyOn(console, "info").mockImplementation(() => {});
+  const target = renderer("webgpu", { info: { engine: "native" } }).target;
+  let refusal: unknown;
+  target.createRenderChain = ({ stages }) => {
+    const stage = stages?.find((entry) => entry.name === "ambientOcclusion");
+    if (!stage) throw new Error("missing AO stage");
+    try {
+      stage.build(vec4(1), { tier: "high" });
+    } catch (error) {
+      refusal = error;
+    }
+    return { applied: { stages: [], dropped: [] }, dispose() {} };
+  };
+  apply(
+    {
+      autoExposureEnabled: false,
+      bloomEnabled: false,
+      finalGatherMethod: "none",
+      gtaoEnabled: true,
+      tonemapMode: "aces",
+    },
+    target,
+  );
+  expect(String(refusal)).toMatch(/^Error: TN_AO_INDIRECT_UNSUPPORTED: /);
+});
+
+it.each([
+  { hasIndirect: false, indirectOnly: true, reach: true, refused: true },
+  { hasIndirect: true, indirectOnly: true, reach: true, refused: false },
+  { hasIndirect: true, indirectOnly: true, reach: false, refused: false },
+  { hasIndirect: false, indirectOnly: false, reach: true, refused: false },
+  { hasIndirect: false, indirectOnly: true, reach: false, refused: false },
+] as const)("admits the occlusion on %o", ({ refused, ...request }) => {
+  const message = aoRefusal(request);
+  expect(message === undefined).toBe(!refused);
+  if (refused) expect(message).toMatch(/^TN_AO_INDIRECT_UNSUPPORTED: /);
 });

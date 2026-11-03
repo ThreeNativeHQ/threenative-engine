@@ -364,6 +364,47 @@ ticked frames, one scenario per template in
 action-rpg, runner and sailing. Intended effect: none on appearance; the native back end must reproduce
 the legacy frame, and the sailing fix must restore the frame instead of refusing it.
 
+2026-11-02 racing halo root cause and engine fix (lane goal/617-look-b). The judge's soft dark halo on the
+road under and behind the car was the contact-occlusion stage, and nothing else: with the stage off in a
+throwaway copy of the racing template, the native frame and the legacy frame differ by RMSE 0.011 (the
+randomized foam and the cat pose), and the amplified AO-on/AO-off difference is the same picture as the
+amplified legacy/native difference, down to the road-edge and checkline lines. `TN_RENDER_CHAIN` named the
+divergence: the native arm **applied** `ambientOcclusion`, the legacy arm **dropped** it with
+`build:TN_AO_REACH_UNSUPPORTED` (PRD-635). Racing declares `finalGatherMethod: "none"`, so the frame carries
+no baked world cache and the native stage composed as a whole-frame multiply, which darkens the sun as well;
+Unreal's SSAO darkens indirect light only (UE 5.8.3: Engine/Shaders/Private/PostProcessAmbientOcclusion.usf).
+The reach form therefore cannot run on a frame with no indirect share. Fix in the engine
+(`packages/core/src/look/ao-admission.ts`, read by the AO stage's build): the screen-reach occlusion refuses
+such a frame with `TN_AO_INDIRECT_UNSUPPORTED`, so both arms drop the stage and the reason is printed. An
+authored `gtaoRadius`, `gtaoIndirectOnly: false`, or a declared GI tier still admits it. Red-green:
+`pnpm exec vitest run packages/core/__tests__/world-environment-defaults.spec.ts` passes 21/21; with the
+refusal disabled the new case fails on the message it gets instead. Recaptured racing, two runs per arm,
+NVIDIA RTX 2080 (nvidia/turing), headed private WebGPU, same pose: RMSE against the legacy arm 0.03297
+before and 0.000745 after, and the sampled road pixels under and behind the car are identical
+(`srgb(115,106,102)` at 620,600; `srgb(169,107,102)` at 600,470). Images and the labelled sheet:
+`~/.cache/tmp-tn/prd-goal-1102/captures/look-b/racing/{legacy,native}/run{1,2}/after.png` and
+`~/.cache/tmp-tn/prd-goal-1102/captures/look-b/sheets/racing.png`. AC-7 stays open: the coordinator runs the
+judge.
+
+2026-11-02 platformer residuals, cause named and not fixed (lane goal/617-look-b). The three reported
+symptoms are one cause: the native arm runs both screen-space stages the legacy arm cannot. (a) The coin and
+rope shadows are washed out, (b) the waterfall sheet is pale and (c) the frame is +2.3/+3.3/+6.6 of 255
+(cooler) because the native SSGI gather falls back to the baked world cache where a screen ray misses
+(`world-environment.ts`, the Lumen tiering in the SSGI stage), while the legacy arm's gather has no cache and
+its material adds no cache light; the cache also lifts the pixels inside every shadow. Proof: with
+`ssgiEnabled: false, ssrEnabled: false` in both arms, the waterfall sheet matches (native `srgb(67,145,177)`
+against legacy `srgb(64,146,179)` at 440,415, against `srgb(76,143,172)`/`srgb(43,126,161)` with SSGI on),
+and the same-class lift on brown surfaces falls from +23 to +3 in blue. Fog is not involved: a capture with
+`scene.fog` and `scene.fogNode` removed in both arms keeps the difference (RMSE 0.0294). The cloud
+"shaded undersides" are the contact occlusion darkening unlit geometry, which the legacy arm drops: exempting
+unlit pixels in the AO composite removes the creases but raises the whole-frame difference on that template
+(RMSE 0.0345 to 0.0512), because the same lift it was cancelling is the SSGI cache fallback, so that
+exemption is reverted rather than shipped alone. Images:
+`~/.cache/tmp-tn/prd-goal-1102/captures/look-b/platformer/{legacy,native}/run{1,2}/after.png`,
+`~/.cache/tmp-tn/prd-goal-1102/captures/look-b/sheets/platformer.png`. Open: decide whether the AC-7 criterion
+for these templates is legacy parity (then the native gather's cache fallback needs to be gated off, or the
+legacy arm needs the cache) or the more correct native frame.
+
 2026-11-02 platformer and tower-defense on the web Wasm engine (lane goal-617, RTX 2080
 nvidia/turing, headed private Xvfb, each template's own `pnpm test`). platformer: 17 of 18 scenarios
 pass; `production-performance` fails on two performance assertions, `performance.maxTriangles` 190,005

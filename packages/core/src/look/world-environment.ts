@@ -77,6 +77,7 @@ import {
 import { GIVisualize, type GIVisualizeMode } from "../render/gi-visualize.js";
 import type { TracedReflections } from "../render/traced-reflections.js";
 import { STARTUP_EXPOSURE } from "../renderer.js";
+import { aoRefusal } from "./ao-admission.js";
 import { AO_MULTIBOUNCE_FIT, UNREAL_AO_MULTIBOUNCE_ALBEDO } from "./ao-multibounce.js";
 import { UNREAL_AO_REACH_PX } from "./ao-reach.js";
 import { AutoExposureNode, applyExposure } from "./auto-exposure.js";
@@ -1283,6 +1284,16 @@ export class WorldEnvironment {
           releaseAo = () => {};
         },
         build: (input) => {
+          // The reach form occludes indirect light only, so a frame without a baked world cache cannot run it:
+          // the whole-frame multiply it would fall back to darkens the sun, and the threejs arm drops the stage.
+          const refusal = aoRefusal({
+            reach: options.gtaoRadius === undefined,
+            indirectOnly: options.gtaoIndirectOnly,
+            // The preset's own declaration covers the frame whose bake has not finished when the chain is built:
+            // the gather's fallback reads the cache at render time, and the registration is the other signal.
+            hasIndirect: options.finalGatherMethod !== "none" || giCache.irradiance !== undefined,
+          });
+          if (refusal !== undefined) throw new Error(refusal);
           // GTAO rebuilds the normal from the depth, so it agrees with the depth's facets. The pass's
           // smooth vertex normal against a faceted depth (a 32-sided capsule) read as one dark stripe per facet and a
           // stair-step band under the cap; the denoiser, GTAO scale and radius did not change them.
