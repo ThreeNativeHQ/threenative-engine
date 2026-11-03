@@ -1,4 +1,5 @@
 import type { Camera, Material, Matrix4, Object3D, Scene } from "three";
+import type { Node } from "three/webgpu";
 
 import type { IGeometryOwnership } from "./geometry-capture.js";
 import type { MatrixWorldPass } from "./matrix-world.js";
@@ -14,6 +15,19 @@ import {
 } from "./projection-plan.js";
 import { ProjectionStability } from "./projection-stability.js";
 import { VelocityTracker } from "./render/velocity.js";
+
+/**
+ * three r187's two node inputs on a scene. `@types/three` does not declare them, but the renderer
+ * reads both: `scene.fogNode` replaces the `scene.fog` factor (`NodeManager.getFogNode`,
+ * `renderers/common/nodes/NodeManager.js:636-641`, applied by `NodeMaterial.setupFog`,
+ * `materials/nodes/NodeMaterial.js:1150-1160`) and `scene.backgroundNode` replaces the background
+ * shader (`NodeManager.getBackgroundNode`, same file). The game authors them; the mirror has to
+ * carry them or the frame it draws is not the frame the game asked for.
+ */
+interface ISceneNodeInputs {
+  fogNode?: Node | null;
+  backgroundNode?: Node | null;
+}
 
 /**
  * An optimizer that the game never has to know about.
@@ -425,6 +439,14 @@ export class SceneRenderProjection {
     mirrorScene.background = this.#source.background;
     mirrorScene.environment = this.#source.environment;
     mirrorScene.fog = this.#source.fog;
+    // A fog or background NODE is not part of `scene.fog`/`scene.background`: a mirror that copies
+    // only those two renders a frame the game never asked for. The platformer's height fog is one:
+    // the authored scene draws it, the mirror drew `scene.fog` alone, so the same game came out
+    // hazy under the native host and clear in the browser (PRD-617).
+    const sourceNodes = this.#source as Scene & ISceneNodeInputs;
+    const mirrorNodes = mirrorScene as Scene & ISceneNodeInputs;
+    mirrorNodes.fogNode = sourceNodes.fogNode ?? null;
+    mirrorNodes.backgroundNode = sourceNodes.backgroundNode ?? null;
     mirrorScene.backgroundBlurriness = this.#source.backgroundBlurriness;
     mirrorScene.backgroundIntensity = this.#source.backgroundIntensity;
     mirrorScene.environmentIntensity = this.#source.environmentIntensity;
