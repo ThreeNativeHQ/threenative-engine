@@ -17,6 +17,7 @@ import { UpstreamVector3, defineMath } from "./browser-math.js";
 import type { ITslRuntime, TslArgValue } from "./browser-tsl.js";
 import { type DebugTelemetry, debugTelemetry } from "./debug-telemetry.js";
 import { detachVirtualShadow, shadowFilterOptions, virtualShadowOptions } from "./shadow-node.js";
+import { UNWATCH } from "./tsl-uniforms.js";
 import { withUpdateRanges } from "./update-ranges.js";
 
 export interface IRegistryClass {
@@ -969,6 +970,7 @@ export function defineBrowserClasses(
   };
   const promote = (value: IValueLanes, info: IValueClass): void => {
     const values = info.plan.read(value);
+    (value as { [UNWATCH]?: () => void })[UNWATCH]?.(); // a uniform's watched lanes go: scan it instead
     for (const key of info.plan.drop) delete value[key];
     Object.setPrototypeOf(value, info.engine);
     const built = engineArgs(info, values);
