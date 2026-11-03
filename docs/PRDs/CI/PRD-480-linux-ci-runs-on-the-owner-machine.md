@@ -317,3 +317,6 @@ Decisions this phase had to make, 2026-10-02:
 - [ ] Waiting time meets AC-2. proof: the AC-2 measurement on a full-board PR after this phase.
   Measured 2026-11-03 and not met: per-job wait p90 median 11.2 min against 10 min on the three newest
   full boards with the pool up (see AC-2).
+  Run 41688813459 (PR #605, 2026-11-03) does not count: the routing variable `TN_RUNNER` was re-set at
+  18:16Z, after the board's jobs were created at 18:08Z, so 55 of 64 jobs waited for hosted runners
+  (p90 48.4 min, max 53.6 min). A board only counts when the pool routes it from its first job.
