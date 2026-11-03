@@ -1,6 +1,6 @@
 # PRD-775 — Virtual shadow pages are managed and drawn on the GPU, as in Unreal
 
-**Status:** PARTIAL — Phase 1 numbers and judge pass, its keep-rule box is open; Phases 2 and 3 open
+**Status:** PARTIAL — Phase 1 numbers and judge pass, its keep-rule box is open; Phase 2 is parked on its branch with its keep rule and judge open, and its change set Deferred; Phase 3 open
 **Priority:** P1 — Phases 2 and 3 and both ACs are open: the stress lab `?stress` CPU frame (p50 12.82, p95 17.64 ms) is behind Unreal 5.8.3 (p50 9.45, p95 11.03 ms) on the same scene, and the gap is the virtual shadow map's CPU work.
 **Complexity:** 6 (MEDIUM) — 6-10 files (+2), a new GPU page module (+2), CPU/GPU page state in step (+2); risk override: HIGH, because every virtual-shadow game (the shooter kit ships VSM by default) takes the new path.
 **Owner:** João · 2026-10-30
@@ -209,6 +209,8 @@ row (decision keep), a `PERFORMANCE-LEARNINGS.md` entry and the box ticked with 
 - [ ] A frame where no caster changed visits no caster state, and the move, settle and remove invalidations equal today's. proof: new case `virtual_shadow_caster_changes_are_pushed` in `tn-native-engine-render-database-test` (RED: develop visits every caster; GREEN: 0 visits) plus every `tn-native-engine-vsm-atlas-test` case green
   Deferred: the case is not written. Measured on the stress scene (Wasm, real GPU, Xvfb, 16 windows per arm, ABBA, load 14-28, head e20f717de against that head with the Phase 2 commits reversed): `planVirtualPages` p50 1.88 -> 1.05 ms, `planShadowLists` p50 0.74 -> 0.71 ms (inside noise). Per frame: bone walks 240 -> 60, signature strings up to 3 x 1,145 -> 0, table probes about 2,500 -> 4.8. A frame still visits 1,145 caster states. See the 2026-11-02 change set entry under Decisions.
 - [ ] Phase 2 passes the keep rule on the stress lab. proof: ledger rows (decision keep), judge verdict, shooter holdout
+  Open: no keep pair and no judge ran on Phase 2, and it does not land now. Holdout on head (2026-11-02, base, on and off arms, 12 runs): 7 of 12 void, because the monitors slept (6 runs presented at 1 Hz, 1 presented no frame). No valid Phase 2 pair. Phase 1, off -> on, 2 valid pairs, load 7-12: CPU p50 6.12 -> 7.07 and 6.94 -> 6.47, GPU p95 5.92 -> 6.29 and 6.11 -> 5.97, signs differ, inconclusive. The Phase 1 keep-rule box stays open too.
+  Resume: build the merged head (the L6 merge is not compiled), run 4 cold pairs against the L5+L6 lab, rerun the holdout with a monitor check on every run, then run the judge.
 
 ### Phase 3 — The page table and physical pool live on the GPU
 
