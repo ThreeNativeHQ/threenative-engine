@@ -239,6 +239,32 @@ native `108,166,185` / `108,166,185` before, and `68,149,180` / `69,149,180` aga
 same-arm run-to-run noise. The default chain keeps a smaller residual that the contact occlusion and SSGI explain, not
 blending. The coordinator runs the judge; no verdict is claimed.
 
+Update 2026-11-03, platformer waterfall, the occlusion (lane 617-look-b round 4): the judge rated the default chain
+REGRESSION on both waterfalls and read it as a native screen-space stage multiplying the composited transparent sheet.
+It is one: the SSGI and contact-occlusion composites multiplied the whole composited frame by an occlusion gathered at
+the opaque surface's depth and normal, so the sheet over a cliff stripe took that stripe's occlusion. Ablation, default
+chain, native arm, one run each, 1280x720, NVIDIA RTX 2080 (nvidia/turing), waterfall body box (437,392)-(477,498): as
+authored `69,137,163`; SSGI off `64,144,176`; contact occlusion off `73,142,170`; SSR off `67,137,166`; all three off
+`68,149,180`. Both stages darken the sheet and the gather does most of it. Fixed in `packages/core` and the owned
+engine: the engine now draws the transparent draws once more, with their own lit program, into a `translucent` target
+over the colour pass's depth (`Renderer::planAux`), and both composites add that part back at full weight instead of
+darkening it, as they already do for emissive. Unreal applies AO to the opaque lighting only: the AO texture is read
+with the GBuffer data (`UE 5.8.3: Engine/Shaders/Private/DeferredShadingCommon.ush:1258`) and scales the deferred
+lighting (`UE 5.8.3: Engine/Shaders/Private/DeferredLightingCommon.ush:347`), and translucency is rendered after that
+lighting (`UE 5.8.3: Engine/Source/Runtime/Renderer/Private/DeferredShadingRenderer.cpp:3482-3491`). RED then GREEN:
+CTest `native_engine_renderer_translucent_target` reads the target through a post graph; with the target removed the
+readback is the frame (opaque wall 127, the wall under the sheet 115) and the case fails, and now the opaque wall
+writes nothing (0), a sheet behind it is depth-rejected, and the sheet in front reads its own colour times its opacity
+(51 at 0.5, 102 at 1.0). Recapture, two runs per arm, same pose and rig, sheet body box (447,420)-(468,470): legacy
+`61,145,177` / `62,145,177` against native `77,151,180` / `83,152,180`, from `53,133,166` against `68,135,158` in
+`captures/617-final-r2`; with the contact occlusion, SSGI and SSR off in both arms the two arms still match to 1/255
+(`69,150,181` in both) and the whole-frame mean difference is 0.130 / 0.129. Tower-defense moved by 0.024 (native,
+deterministic arm) and 0.059 / 0.207 (legacy, same-arm run-to-run 0.178-0.201) against `captures/617-final`: its
+translucent tower dome now reads like the legacy arm's instead of the darker native one. The native sheet keeps a
++16 residual in red against legacy in that box, which is the owned gather adding the cliff's albedo-weighted bounce at
+the sheet pixel where three's gather darkens it (the SSGI row of PRD-723), not the occlusion. Captures, sheets:
+`~/.cache/tmp-tn/prd-goal-1102/captures/617-final-r3/`. The coordinator runs the judge; no verdict is claimed.
+
 2026-10-16 Snow Heightfield candidate validation (`13b7733b5`): four desktop runs (two baseline, two candidate) passed all eight unchanged nonvisual footsteps assertions. The original full-frame 1280×720 `minNonblankPixelRatio: 0.01` guard was evaluated separately with the runner's exported `regionMetrics`; all four passed at 1.0. Desktop CLI still rejects `visual` assertions, so this is eight CLI assertions plus a separate identical pixel check, not nine CLI assertions. Four original browser footsteps runs also passed. Fresh read-only visual judge `/root/heightfield_visual_judge` inspected both pairs on both platforms and returned NEUTRAL for every pair and overall: no visible terrain, footprint, lighting, material or ground-contact regression. Native pair 2 differs by one simulation tick and slight settling/contact state; the judge found that this limits exact pose equivalence but does not prevent appearance assessment. Raw captures and BEFORE/AFTER comparison figures: `/tmp/pr493-heightfield-native-proof/`; posting figures on the PR remains pending. Five paired render measurements against the measured 8.0 ms A/A noise band are running; no performance acceptance is claimed yet.
 
 2026-10-16 portable-test triage: the five affected files rerun on the desktop passed 253 tests and failed two. The remaining failures are stale expectations: the legacy-pin ratchet still lists 12 templates although recovered configs pin five, and the dev-watcher check assumes single-line formatting. Correcting those tests does not qualify any recovered pin removal. Racing, RTS, shooter and tower-defense still need fresh native/web matrix proof; starter's broader CPU/legacy comparison and Snow's performance qualification remain open. The laptop's Git-metadata and absent-Wasm fixture failures did not reproduce on the desktop.
