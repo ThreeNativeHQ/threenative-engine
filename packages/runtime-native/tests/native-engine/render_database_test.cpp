@@ -4301,10 +4301,13 @@ void overlayOverFrame() {
         if (status == GpuStatus::Ok) presented = std::move(pixels);
         read = true;
     }) == GpuStatus::Ok);
-    for (int i = 0; i < 4000 && !read; ++i) {
+    // A time bound, not a poll count: on a loaded host 4000 polls can end before the readback lands.
+    for (const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+         !read && std::chrono::steady_clock::now() < until;) {
         renderer.poll();
         events.drain();
     }
+    CHECK(read);
     const size_t centre = (8 * 16 + 8) * 4;
     CHECK(presented.size() == 16 * 16 * 4 && presented[centre] == over[0] && presented[centre + 1] == over[1]);
     const uint64_t uploads = renderer.overlayUploads();
