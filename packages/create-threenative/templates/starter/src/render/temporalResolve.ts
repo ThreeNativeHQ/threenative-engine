@@ -28,6 +28,24 @@ export interface ITemporalHistoryWeighting {
   velocityWeightClamp: boolean;
 }
 
+/**
+ * Unreal TSR at the Epic tier (PRD-539): history at 200% of the display (UE 5.8.3:
+ * Engine/Config/BaseScalability.ini:89, r.TSR.History.ScreenPercentage; Low to High keep 100) and a
+ * history weight clamped by velocity. The raw4 current-footprint path was measured at 100% only, so
+ * it keeps that history. Name `{ historyScale: 1, velocityWeightClamp: false }` to opt out.
+ */
+export function historyWeighting(
+  requested: ITemporalHistoryWeighting | undefined,
+  raw4: boolean,
+): ITemporalHistoryWeighting {
+  if (requested !== undefined && requested.historyScale !== 1 && requested.historyScale !== 2)
+    throw new Error("Temporal AA historyScale must be 1 or 2.");
+  if (requested !== undefined) return requested;
+  return raw4
+    ? { historyScale: 1, velocityWeightClamp: false }
+    : { historyScale: 2, velocityWeightClamp: true };
+}
+
 /** Returns the amount of subpixel (expressed within [0, 1]) in the velocity. */
 const subpixelCorrection = Fn(([velocityUV, textureSize]: [Node<"vec2">, Node<"uvec2">]) => {
   const velocityTexel = velocityUV.mul(textureSize);

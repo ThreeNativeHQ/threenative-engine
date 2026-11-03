@@ -103,11 +103,16 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
   // PRD-539 Phase 1: Unreal TSR levers 1 and 2, each exactly the temporal arm with one weighting
   // change. `policy` already strips the quality prefix and the -open control suffix, so an
   // open-history control keeps the same weighting as its paired arm.
+  // The provider default is both levers (Unreal's Epic tier). Its own controls follow it; the
+  // fragment-replacing diagnostics keep the 100% history they were measured and written against.
+  const history100 = { historyScale: 1, velocityWeightClamp: false };
+  const followsDefault = ["temporal", "zero-velocity", "unchecked-history", "dynamic-instances", "recompile"];
   const weighting = {
+    // The pre-PRD-539 provider default, now a named override: the control the default is scored against.
+    history100,
     history200: { historyScale: 2, velocityWeightClamp: false },
     "velocity-clamp": { historyScale: 1, velocityWeightClamp: true },
-    "history200-clamp": { historyScale: 2, velocityWeightClamp: true },
-  }[policy];
+  }[policy] ?? (followsDefault.includes(policy) ? undefined : history100);
   // The roles that must genuinely request nothing: no reconstruction stage, no velocity MRT. The
   // spatial role still renders its low input and presents it through the ordinary texture upsample.
   const off = variant === "reference" || qualityRole === "reference" || qualityRole === "spatial";

@@ -230,7 +230,8 @@ function fixture(
     pipelineCallbacks?: PipelineCallbacks;
     current?: boolean;
     inputDraw?: () => void;
-    historyScale?: number;
+    /** `"default"` passes no weighting, so the provider picks its own. */
+    historyScale?: number | "default";
   } = {},
 ) {
   // GPU execution belongs to the runtime fixture. Unit tests isolate sizing, reset and lifetime.
@@ -260,7 +261,9 @@ function fixture(
     scenePass.getTextureNode("velocity"),
     camera,
     options.current ? scenePass : undefined,
-    { historyScale: options.historyScale ?? 1, velocityWeightClamp: false },
+    options.historyScale === "default"
+      ? undefined
+      : { historyScale: options.historyScale ?? 1, velocityWeightClamp: false },
   );
   const stub = stubRenderer(display);
   const frame = { renderer: stub.renderer } as unknown as NodeFrame;
@@ -492,6 +495,16 @@ describe("opt-in temporal AA", () => {
     temporal.dispose();
     scenePass.dispose();
     expect(() => fixture({ historyScale: 3 })).toThrow("historyScale must be 1 or 2");
+    // PRD-539: with no weighting named, the provider takes Unreal's Epic-tier 200% history.
+    const unnamed = fixture({ historyScale: "default" });
+    unnamed.temporal.node.updateBefore(unnamed.frame);
+    expect(unnamed.node._historyRenderTarget.width).toBe(DISPLAY.width * 2);
+    expect(outputRaster(unnamed.temporal.node)).toEqual({
+      width: DISPLAY.width,
+      height: DISPLAY.height,
+    });
+    unnamed.temporal.dispose();
+    unnamed.scenePass.dispose();
   });
 
   it("registers input-pass dependencies before temporal update and sizing", () => {

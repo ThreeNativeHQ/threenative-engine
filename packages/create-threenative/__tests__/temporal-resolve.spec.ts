@@ -188,7 +188,9 @@ describe("authored temporal reconstruction kernel", () => {
       expect(withFlag).not.toContain("( 1.0 > 0.5 )");
       // Production retains its named current weight: luminance reweighting biases alternating
       // linear coverage towards the darker sample even when history is correctly registered.
-      expect(withFlag).not.toContain("0.2126");
+      // The default's velocity clamp reads history and current luma once each (PRD-539); luminance
+      // reweighting would add two more reads.
+      expect(withFlag.match(/0\.2126/gu)).toHaveLength(2);
       // The chosen velocity texel and the reused centre colour have independent depth support.
       // An AND guard must read both previous depths; replacing the centre check admits stale red.
       expect(withFlag.match(/textureLoad\([^\n]*clamp\( floor\(/gu)).toHaveLength(2);

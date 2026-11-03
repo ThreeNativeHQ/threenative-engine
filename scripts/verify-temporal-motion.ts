@@ -87,8 +87,8 @@ const FAMILIES: Record<string, string[]> = {
     "history200-open",
     "velocity-clamp",
     "velocity-clamp-open",
-    "history200-clamp",
-    "history200-clamp-open",
+    "history100",
+    "history100-open",
     "strict-rejection-open",
     "unchecked-history-open",
     "nearest-history",
@@ -113,7 +113,7 @@ const FAMILIES: Record<string, string[]> = {
     "quality-temporal-open",
     "quality-history200",
     "quality-velocity-clamp",
-    "quality-history200-clamp",
+    "quality-history100",
     "quality-zero-velocity-open",
     "quality-unchecked-history-open",
   ],
@@ -402,15 +402,15 @@ for (const [family, arms] of Object.entries(FAMILIES)) {
     causalReveals[policy] = measureCausalReveal(reference, candidate, open, 8);
   }
 }
-// PRD-539 Phase 1: the new history-scale and velocity-clamp arms are measured beside their
-// installed-control numbers and reported here. This block adds no threshold and no check.
+// PRD-539: each lever alone, and the 100% control the two-lever default replaced, measured beside
+// the default's numbers and reported here. This block adds no threshold and no check.
 const LEVER_ARMS: Array<{ arm: string; open: string | null }> = [
   { arm: "history200", open: "history200-open" },
   { arm: "velocity-clamp", open: "velocity-clamp-open" },
-  { arm: "history200-clamp", open: "history200-clamp-open" },
+  { arm: "history100", open: "history100-open" },
   { arm: "quality-history200", open: null },
   { arm: "quality-velocity-clamp", open: null },
-  { arm: "quality-history200-clamp", open: null },
+  { arm: "quality-history100", open: null },
 ];
 const leverArms = Object.fromEntries(
   LEVER_ARMS.map(({ arm, open }) => {
@@ -504,7 +504,8 @@ const checks = {
     (qualityTemporal.movingEdgeError ?? Number.POSITIVE_INFINITY) * 1.02,
 };
 const linearProof = provenance.find((arm) => arm.variant === "resolve-linear");
-const installedProof = provenance.find((arm) => arm.variant === "temporal");
+// The authored linear resolve replicates the 100% history path, now the named history100 override.
+const installedProof = provenance.find((arm) => arm.variant === "history100");
 assert.ok(linearProof && installedProof);
 const authoredLinearEquivalent = linearProof.hashes.every(
   (frame, index) => frame.sha256 === installedProof.hashes[index]?.sha256,
