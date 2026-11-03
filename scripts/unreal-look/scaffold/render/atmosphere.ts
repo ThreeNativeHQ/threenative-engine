@@ -388,11 +388,21 @@ export const SUN_LUX = 6;
 export const SUN_KELVIN = 6500;
 
 /**
- * The sun in three's light units. Unreal renders a lit diffuse surface as albedo x lux x cos(theta);
- * three's Lambert BRDF carries a 1/pi, so the same lux is pi times as large here. Measured on the
- * Unreal L1 cells (no atmosphere, scene-linear EXR): a 0.18 floor under the 60 degree sun reads
- * 0.874 luminance, within 7% of 0.18 x 6 x sin(60 deg) = 0.935 (the residual is checked on the
- * engine's own L1 capture).
+ * The sun in three's light units, and it carries a pi the source does not have (PRD-646 round 5).
+ * Unreal passes a directional light's lux straight into the shading — `GetColoredLightBrightness`
+ * (Engine/Source/Runtime/Engine/Private/Components/LightComponent.cpp:1623-1634) is `Color x Intensity
+ * x Temperature`, and `GetLightExposureScale` returns 1 for a directional light (same file :404-425,
+ * `InverseExposureBlend` 0 at Engine/Private/Components/DirectionalLightComponent.cpp:413) — and the
+ * diffuse lobe divides by pi on both sides: `Diffuse_Lambert` (Engine/Shaders/Private/BRDF.ush:157-160,
+ * reached by Substrate at Engine/Shaders/Private/Substrate/SubstrateEvaluation.ush:565) and three's own
+ * `BRDF_Lambert`. So the same lux is the same light here and there, and this should be `SUN_LUX`.
+ *
+ * It is not, because the pair it forms with the exposure has never been measured separately: this
+ * harness exposes a template scene at 1 where Unreal's own L1 rule gives 2.4, and 2.4 / pi is the 0.764
+ * scale that takes `sunlit-room` L1 from 1.231 to 0.944 of Unreal (24 of 40 rows to 36 of 40, 2026-11-02).
+ * Landing the pi without the 2.4 makes the pair 2.5 times worse. Change both in one arm, with the
+ * ratchet board re-cut, and drop `EMISSIVE_UNITS` to 1 with them (the table in `## Decisions` of
+ * docs/PRDs/Unreal/gi/PRD-646 sums it up).
  */
 export const SUN_ILLUMINANCE = SUN_LUX * Math.PI;
 
@@ -404,6 +414,7 @@ export const SUN_ILLUMINANCE = SUN_LUX * Math.PI;
  * Gltf/InterchangeGLTFMaterial.cpp:481-487). Emissive 5 therefore outshines a white surface under the
  * 6 lux sun by 5 / (6 / pi) = 2.6x. `SUN_ILLUMINANCE` carries a pi, so a white surface here reads 6;
  * the emissive takes the same pi to keep that ratio. Applied where the scene's materials load.
+ * It follows `SUN_ILLUMINANCE`: drop the pi there and this becomes 1, keeping the ratio (PRD-646 §Decisions).
  */
 export const EMISSIVE_UNITS = Math.PI;
 
