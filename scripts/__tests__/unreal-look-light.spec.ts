@@ -139,7 +139,9 @@ describe("the harness lighting model against Unreal 5.8.3 frames (PRD-632, PRD-6
       const rad = (deg * Math.PI) / 180;
       const light = viewDistanceSkyLight({ x: Math.cos(rad), y: Math.sin(rad), z: 0 });
       // The frame Unreal draws is exposed at the level's fixed exposure: 2.4 (PRD-646 round 6).
-      const fog = light.map((v, c) => v * (tint[c] ?? 1) * SUN_ILLUMINANCE * SKY_TO_SUN * LEVEL_EXPOSURE);
+      const fog = light.map(
+        (v, c) => v * (tint[c] ?? 1) * SUN_ILLUMINANCE * SKY_TO_SUN * LEVEL_EXPOSURE,
+      );
       const shown = filmicToneMap(fog as [number, number, number]).map(encode);
       shown.forEach((v, c) => {
         const expected = unreal[deg][c];
