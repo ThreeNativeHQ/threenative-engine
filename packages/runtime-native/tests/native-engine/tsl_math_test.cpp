@@ -280,7 +280,29 @@ void compute_int_literals() {
     for (const auto& d : p.diagnostics()) std::fprintf(stderr, "%s %s: %s\n", d.code.c_str(), d.node.c_str(), d.reason.c_str());
     CHECK(value != kInvalid && p.ok());
 }
+// ivec3 / ivec4 and bool() (PRD-777: the fluid port's voxel index and its flags), as ConvertType builds them.
+void tsl_ivec_bool() {
+    uint64_t serial = 0;
+    const auto uniform = g::uniform("cell", Type::f32(), {2.5});
+    std::string error;
+    g::Node voxel, wide, flag;
+    try {
+        voxel = tn::abi::tslCall("ivec3", nullptr, {TslArg::of(1.0), TslArg::of(uniform), TslArg::of(g::int_(3))}, serial);
+        wide = tn::abi::tslCall("ivec4", nullptr, {TslArg::of(uniform)}, serial);
+        flag = tn::abi::tslCall("bool", nullptr, {TslArg::of(uniform)}, serial);
+    } catch (const std::exception& thrown) {
+        error = thrown.what();
+    }
+    if (!error.empty()) std::fprintf(stderr, "ivec3/bool: %s\n", error.c_str());
+    CHECK(error.empty());
+    CHECK(voxel && wide && flag);
+    if (!voxel || !wide || !flag) return;
+    CHECK(voxel->type == Type::vec(3, Type::Scalar::I32) && wide->type == Type::vec(4, Type::Scalar::I32));
+    const auto sum = g::add(g::float_(g::swizzle(voxel, "z")), g::float_(g::swizzle(wide, "w")));
+    const auto code = fragment(g::vec4({g::select(flag, sum, g::float_(0)), g::float_(0), g::float_(0), g::float_(1)}));
+    CHECK(code.find("vec3<i32>") != std::string::npos && code.find("vec4<i32>") != std::string::npos);
+}
 }  // namespace
 
 TN_TEST_MAIN({"math", math}, {"spell_port", spell_port}, {"compute_texture_load", compute_texture_load},
-             {"compute_int_literals", compute_int_literals})
+             {"compute_int_literals", compute_int_literals}, {"tsl_ivec_bool", tsl_ivec_bool})

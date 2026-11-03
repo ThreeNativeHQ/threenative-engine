@@ -1449,6 +1449,10 @@ if (runtime.tsl !== undefined) {
   // r185's local accessors the engine answers: a debris material rotates normalLocal in its vertex stage (PRD-777).
   for (const name of ["normalLocal", "tangentLocal", "positionPrevious"])
     check(tsl[name]?.isNode === true, `${name} is a TSL node`);
+  // ivec3 / ivec4 / bool, which the engine builds as ConvertType does (the fluid port's voxel index).
+  check(tsl.ivec3?.(1, 2, 3)?.isNode === true, "ivec3(1, 2, 3) is a TSL node");
+  check(tsl.ivec4?.(1)?.isNode === true, "ivec4(1) is a TSL node");
+  check(tsl.bool?.(tsl.float(1))?.isNode === true, "bool(float(1)) is a TSL node");
 
   // rain writes lanes of a variable (`rd.y.assign(abs(rd.y))`); the other lanes keep their value (PRD-617).
   const lanes = tsl.Fn(() => {
