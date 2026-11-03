@@ -203,3 +203,31 @@ Red-green specs ran from the repo root (`pnpm exec vitest run <spec>`) or the ex
 | STRATA-03, 06, 07, BROWSER-03, 04, 05 | ⏭️ no change | Rejected or tooling per the audit's own corrections. |
 
 Specs that fail in the example at this head, with and without these commits: `forest-stage` (stale-load route), `prop-streaming` (cutout LOD parts), `temporalAA` (beauty RTT). `outdoor-shadows` flaked once while other lanes edited. `terrain-splat-package` fails because of the uncommitted `vite.config.ts` edit, which imports `create-threenative` (lead lane).
+
+## Scout finding repairs (2026-11-03)
+
+TERRAIN-01, 04, 05, 06 and 19 were fixed before this pass (F03 to F08 above; spot-checked by grep and the green specs below). Each fix below went red then green on its own spec.
+
+| Finding | Status | Evidence |
+| --- | --- | --- |
+| TERRAIN-02 landform save dropped while another save runs | ✅ fixed | `selection.ts` `saveLayer` now says "Wait for the current landform save." like `save()`. `editor-mechanics.spec.ts` case red (message undefined), green after. |
+| TERRAIN-03 `reassign` leaves a stale snapshot | ✅ fixed | `reassign` adopts the commit result. Same spec: next save sent `baseRevision` "base", now "next". |
+| TERRAIN-07 `/api/export` runs cooks without a guard | ⚠️ partly fixed | One export at a time (409 "An export is already running"); `editor-document.spec.ts` red on the stale dist, green after rebuild. The cook still runs inside Vite: no kill deadline. Moving it into the MCP cook child is open (`ponytail:` note in `server.ts`). |
+| TERRAIN-08 deferred external snapshot is lost | ✅ fixed | `SaveQueue.defer()` plus a disk read when the queue drains (`evaluation.ts` calls it). `editor-save-queue.spec.ts`: a write that lands between a commit and its response left `queue.revision` stale; red with the reconcile call removed, green with it. |
+| TERRAIN-09 MCP token cost | ⏭️ deferred | Output size is the design (recipe echo); a diff or path return is a contract change, not a defect. |
+| TERRAIN-10 materials copied per node | ✅ fixed | One shared resolver for Material and Texture in `addInstancedSpeciesNode`. `terrain-world.spec.ts`: 4 materials before, one per level after. |
+| TERRAIN-11 alternate LODs inside `world.glb` | ⏭️ not reproduced / by design | The corrections section keeps requested LOD scenes. No census was run, so no cost is claimed. |
+| TERRAIN-12 any thinning error drops far levels | ✅ fixed | `farLevelDocument` keeps the authored chain only for the two documented refusals; others throw. New `terrain-world-far-levels.spec.ts`: resolved before, rejects after. |
+| TERRAIN-13 compile reads GLBs twice, literal cache key | ⏭️ not reproduced | No input varies `terrainPasses`, so no red test exists. The key holds today. The second read stays: no measured cost. |
+| TERRAIN-14 prop colliders rescan placements | ⏭️ deferred | Perf hypothesis, no measurement. The kit fixtures put records outside their cell, so a cell cull needs fixture changes first. |
+| TERRAIN-15 `editWorldPlacements` quadratic | ✅ fixed | ID index and one filter. 200k records, 8k ID edits: 49.6 s before, 1.9 s after (`placement-edits.spec.ts`, budget 8 s). |
+| TERRAIN-16 MCP child inherits inspector flags | ✅ fixed | `childExecArgv()` drops `--inspect*`, `--debug-port`, `--cpu-prof*`, `--heap-prof*`. `terrain-mcp.spec.ts`. |
+| TERRAIN-17 duplicate bake pipeline | ⏭️ deferred | Refactor, not a defect. |
+| TERRAIN-18 five starter `world.ts` | ⏭️ by design | Game-owned copied source (corrections section). |
+| TERRAIN-20 whole-document intent coupling | ⏭️ by design | Atomic refusal is conflict behavior (corrections section). |
+| TERRAIN-21 starter download unbounded | ✅ fixed | Content-Length check and a capped stream read. `kit-assets.spec.ts`: the old build tried a 6.5 GB allocation, the new one stops at the pinned size. |
+| TERRAIN-22 same version, API break | ⏭️ release step | Branch is 0.1.6, `develop` and npm are 0.1.7. The bump belongs to `release:prepare`. No code change. |
+| TERRAIN-23 `glb-stats` | ⚠️ mostly refuted | Line/point and strip counts are already covered by existing cases, and glTF has no restart index. Fixed the real gap: version and header length are checked. |
+| F04 drift (found on the way) | ✅ fixed | The merge left the GLB generator at 0.1.3 against package 0.1.6: `terrain-consumer.spec.ts` red, green after the string follows the version. |
+
+Checks run: `vitest run packages/terrain` plus the three assets terrain specs, 458 cases, all green after the F04 fix. `pnpm --filter @threenative/assets typecheck` clean. `@threenative/terrain` typecheck shows only the missing `@threenative/core` declarations (core is not built here). Specs that import `@threenative/terrain` resolve its `dist`, so run `pnpm --filter @threenative/terrain build` first.
