@@ -6368,6 +6368,65 @@ void shadowCasterFrustumCulling() {
     (void)inside; (void)farOutside; (void)unculledOutside;
 }
 
+// three's Frustum.intersectsObject reads `SkinnedMesh.boundingSphere`, computed from the posed
+// vertices, so a rig the shadow camera's box misses is not drawn into that map. Native answered "no
+// bounds" for a rig (`boundingSphereOf` refused one) and kept it a caster for every light: the runner
+// drew its mannequin into the sun's map 68 m from a 56 m box, 13,744 of a 47,924-triangle frame.
+void skinnedShadowCasterFrustumCulling() {
+    Scene scene; PerspectiveCamera camera; LightState lights; RenderDatabase database;
+    database.shadowMapEnabled = true;
+    database.batching = false;
+    camera.position.set(0, 0, 100);
+    camera.lookAt(0, 0, 200);
+    camera.near = 1; camera.far = 50;
+    camera.updateProjectionMatrix();
+
+    auto light = std::make_shared<DirectionalLight>(Color(1, 1, 1), 1.0);
+    light->setCastShadow(true);
+    light->position.set(0, 10, 0);
+    light->target->position.set(0, 0, 0);
+    auto& shadowCam = static_cast<OrthographicCamera&>(*light->shadow.camera);
+    shadowCam.left = -2; shadowCam.right = 2;
+    shadowCam.top = 2; shadowCam.bottom = -2;
+    shadowCam.near = 1; shadowCam.far = 20;
+    shadowCam.updateProjectionMatrix();
+    scene.add(*light);
+
+    const auto material = std::make_shared<Material>(MaterialType::Standard);
+    // One bone per rig, skinned to it at unit weight: the reach each vertex is measured over is the
+    // bind-pose distance from the bone, so the rig's own bounds are its own size.
+    const auto addRig = [&](const char* name, double x) {
+        auto geometry = makeBoxGeometry();
+        const uint64_t vertices = geometry->attributes.at("position")->count();
+        geometry->setAttribute("skinIndex",
+            BufferAttribute::fromDoubles(Scalar::U16, std::vector<double>(vertices * 4, 0), 4));
+        std::vector<double> weights(vertices * 4, 0);
+        for (std::size_t i = 0; i < vertices; ++i) weights[i * 4] = 1;
+        geometry->setAttribute("skinWeight", BufferAttribute::fromFloats(weights, 4));
+        auto rig = std::make_shared<SkinnedMesh>(geometry, material);
+        rig->name = name;
+        rig->position.set(x, 0, 0);
+        rig->setCastShadow(true);
+        auto bone = std::make_shared<Bone>();
+        bone->position.set(x, 0, 0);
+        scene.add(*rig);
+        scene.add(*bone);
+        scene.updateMatrixWorld(true);
+        rig->bind(std::make_shared<Skeleton>(std::vector<std::shared_ptr<Bone>>{bone}));
+        return rig;
+    };
+
+    const auto inside = addRig("inside", 0);
+    const auto outside = addRig("outside", 60);
+    const auto& items = database.prepare(scene, camera, lights);
+    std::size_t casters = 0;
+    for (const auto& item : items) casters += item.castShadow ? 1 : 0;
+    std::printf("skinned shadow caster culling: %zu casters of %zu items\n", casters, items.size());
+    // The rig inside the box still casts; the one 60 m out of a +/-2 m box does not.
+    CHECK(casters == 1);
+    (void)inside; (void)outside;
+}
+
 // The shadow-light list is cached across frames; it must still follow the hierarchy and visibility
 // the per-frame walk read: a hidden ancestor, a removed light and a re-added one.
 void shadowLightsFollowHierarchy() {
@@ -8569,7 +8628,7 @@ TN_TEST_MAIN({"virtual_shadow_page_jobs", virtualShadowPageJobs}, {"caster_recor
              {"virtual_sun_level_sizes", virtualSunLevelSizes},
              {"virtual_sun_auto_map_size", virtualSunAutoMapSize},
              {"batched_vs_unbatched", batchedVsUnbatched}, {"stable_passes_match_direct", stablePassesMatchDirect}, {"camera_cull_keeps_bundle", cameraCull}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_decline_cadence", skinnedDeclineCadence}, {"skinned_projecting_cadence", skinnedProjectingCadence}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"env_map_slot_is_read", envMapSlotIsRead}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_offscreen", gpuTimerCoversOffscreen}, {"gpu_timer_splits_the_gather", gpuTimerSplitsTheLabelledGather}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"flat_shading_needs_no_normals", flatShadingNeedsNoNormals}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"batch_keeps_member_id", batchKeepsMemberId}, {"frustum_culling", frustumCulling},
-             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"masked_shadow", maskedShadow}, {"leaf_receiver", leafReceiver}, {"shadow_noise_frame", shadowNoiseFrame},{"foliage_transmission", foliageTransmission}, {"rough_diffuse", roughDiffuse}, {"point_shadow_cube_faces", pointShadowCubeFaces}, {"lamp_source_radius", lampSourceRadius}, {"lamp_source_radius_wall", lampSourceRadiusWall}, {"lamp_source_radius_crate", lampSourceRadiusCrate}, {"contact_shadow_foot", contactShadowFoot}, {"virtual_sun_contact_foot", virtualSunContactFoot}, {"lamp_cache", lampCache}, {"cached_lamp_has_no_uniform_upload", cachedLampHasNoUniformUpload}, {"sun_cache", sunCache}, {"lamp_atlas", lampAtlas}, {"gpu_timer_splits_lamp_shadows", gpuTimerSplitsLampShadows}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse}, {"program_probes_are_resolved_once", programProbesAreResolvedOnce})
+             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"skinned_shadow_caster_frustum_culling", skinnedShadowCasterFrustumCulling}, {"masked_shadow", maskedShadow}, {"leaf_receiver", leafReceiver}, {"shadow_noise_frame", shadowNoiseFrame},{"foliage_transmission", foliageTransmission}, {"rough_diffuse", roughDiffuse}, {"point_shadow_cube_faces", pointShadowCubeFaces}, {"lamp_source_radius", lampSourceRadius}, {"lamp_source_radius_wall", lampSourceRadiusWall}, {"lamp_source_radius_crate", lampSourceRadiusCrate}, {"contact_shadow_foot", contactShadowFoot}, {"virtual_sun_contact_foot", virtualSunContactFoot}, {"lamp_cache", lampCache}, {"cached_lamp_has_no_uniform_upload", cachedLampHasNoUniformUpload}, {"sun_cache", sunCache}, {"lamp_atlas", lampAtlas}, {"gpu_timer_splits_lamp_shadows", gpuTimerSplitsLampShadows}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse}, {"program_probes_are_resolved_once", programProbesAreResolvedOnce})
 
 
 

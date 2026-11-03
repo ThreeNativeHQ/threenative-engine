@@ -656,11 +656,25 @@ bool RenderDatabase::boundingSphereOf(Object3D& object, std::string_view type, S
         if (instanced.boundingSphere == nullptr) instanced.computeBoundingSphere();
         if (instanced.boundingSphere == nullptr) return false;
         sphere.copy(*instanced.boundingSphere);
+    } else if (type == "SkinnedMesh") {
+        // three reads `SkinnedMesh.boundingSphere`, computed from the posed vertices, so a rig outside a
+        // light's shadow box is not drawn into that map. The bones' reach bounds every posed vertex
+        // (UE 5.8.3 fits skinned bounds to bones, not to skinned vertices), so it is the bound to test:
+        // O(bones) per frame, and a mesh-space box turned into a world sphere here.
+        auto& skinned = static_cast<SkinnedMesh&>(object);
+        // A detached bind keeps `bindMatrixInverse` off the mesh's own world matrix, so the reach is
+        // not in this object's space: a bound nothing can place always draws, never culls.
+        Box3 reach;
+        if (!skinned.attached || !skinned.boneReachBounds(reach) || reach.isEmpty()) return false;
+        Vector3 centre, size;
+        reach.getCenter(centre);
+        reach.getSize(size);
+        sphere.set(centre, size.length() * 0.5);
     } else {
         auto& mesh = static_cast<Mesh&>(object);
-        // ponytail: skinned and morphed meshes always draw; native bounds ignore bones and morph
-        // targets, which three's include. Add bone- and morph-aware spheres when they draw off screen.
-        if (type == "SkinnedMesh" || mesh.geometry == nullptr ||
+        // ponytail: a morphed mesh relies on morph targets, whose posed bounds native does not measure
+        // (three's geometry sphere ignores them too; this is stricter). Add one when it draws off screen.
+        if (mesh.geometry == nullptr ||
             (!mesh.geometry->morphPositions.empty() && !mesh.morphTargetInfluences.empty()))
             return false;
         if (mesh.geometry->boundingSphere == nullptr) mesh.geometry->computeBoundingSphere();
