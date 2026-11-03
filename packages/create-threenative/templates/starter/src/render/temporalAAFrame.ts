@@ -11,6 +11,7 @@ import {
   type TextureNode,
 } from "three/webgpu";
 import { createTemporalAAInput } from "./temporalAAInput.js";
+import type { TemporalClampRelease } from "./temporalClampRelease.js";
 import { createHistoryPresent } from "./temporalHistoryResolve.js";
 import type { TemporalMoire } from "./temporalMoire.js";
 import {
@@ -39,7 +40,7 @@ export function createTemporalAAFrame(
   rejection: () => TemporalDepthRejection | undefined,
   publishCurrentDepth?: (renderer: Renderer) => void,
   historyScale = 1,
-  moire?: TemporalMoire,
+  { moire, release }: { moire?: TemporalMoire; release?: TemporalClampRelease } = {},
 ) {
   // Three 0.187's QuadMesh takes a material in the constructor; the draw replaces it before rendering.
   const quadMesh = new QuadMesh(internals._resolveMaterial);
@@ -125,6 +126,8 @@ export function createTemporalAAFrame(
         internals._historyRenderTarget.height !== history.y
       )
         throw new Error("Temporal AA history and resolve must share the history raster.");
+      const before = rejection();
+      if (before !== undefined) release?.update(renderer, quadMesh, before, input);
       renderer.setRenderTarget(internals._resolveRenderTarget);
       quadMesh.material = internals._resolveMaterial;
       quadMesh.render(renderer);
@@ -188,6 +191,7 @@ export function createTemporalAAFrame(
       depthReady = false;
       present?.dispose();
       moire?.dispose();
+      release?.dispose();
     },
   };
 }

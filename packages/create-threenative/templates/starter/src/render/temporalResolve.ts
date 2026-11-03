@@ -5,6 +5,7 @@
 import type TRAANode from "three/addons/tsl/display/TRAANode.js";
 import { Fn, add, float, int, luminance, max, mix, texture, uv, uvec2, vec2 } from "three/tsl";
 import type { Node } from "three/webgpu";
+import type { TemporalClampRelease } from "./temporalClampRelease.js";
 import type { TemporalCurrentFootprint } from "./temporalCurrentFootprint.js";
 import type { TemporalMoire } from "./temporalMoire.js";
 import {
@@ -29,6 +30,8 @@ export interface ITemporalHistoryWeighting {
   velocityWeightClamp: boolean;
   /** Unreal TSR lever 4: widen the clip box where output luma flickers (`temporalMoire.ts`). */
   flickerRejection?: boolean;
+  /** Lever 6: release the clip where input and history agree at low frequency. */
+  clampRelease?: boolean;
 }
 
 /**
@@ -104,7 +107,7 @@ export function createExperimentalTemporalResolve(
   ),
   current?: TemporalCurrentFootprint,
   weighting: ITemporalHistoryWeighting = { historyScale: 1, velocityWeightClamp: false },
-  moire?: TemporalMoire,
+  levers: { moire?: TemporalMoire; release?: TemporalClampRelease } = {},
 ) {
   const { historyScale, velocityWeightClamp } = weighting;
   const node = source as TemporalResolveNode;
@@ -182,13 +185,9 @@ export function createExperimentalTemporalResolve(
     const variance = (reconstruction.get("variance") as Node<"vec4">).mul(varianceGamma);
     const box = { low: mean.sub(variance), high: mean.add(variance) };
     const { low: minColor, high: maxColor } =
-      moire?.widen(box.low, box.high, historyUV, outputPixelSpeed.mul(historyScale)) ?? box;
-    const clippedHistoryColor = clipAABB(
-      mean.clamp(minColor, maxColor),
-      historyColor,
-      minColor,
-      maxColor,
-    );
+      levers.moire?.widen(box.low, box.high, historyUV, outputPixelSpeed.mul(historyScale)) ?? box;
+    const clipped = clipAABB(mean.clamp(minColor, maxColor), historyColor, minColor, maxColor);
+    const clippedHistoryColor = levers.release?.apply(clipped, historyColor, uvNode) ?? clipped;
     // Every accepted history colour still passes the raw current-tap variance box.
     // Diagnostic only: ordinary blending isolates luminance reweighting at the same weight.
     return blend === "ordinary"

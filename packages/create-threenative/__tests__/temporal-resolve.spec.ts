@@ -5,6 +5,7 @@ import type { Node } from "three/webgpu";
 import { MeshBasicNodeMaterial, WGSLNodeBuilder, WebGPURenderer } from "three/webgpu";
 import { describe, expect, it, vi } from "vitest";
 import { createTemporalAA } from "../templates/starter/src/render/temporalAA.js";
+import { createTemporalClampRelease } from "../templates/starter/src/render/temporalClampRelease.js";
 import { createTemporalMoire } from "../templates/starter/src/render/temporalMoire.js";
 import { createTemporalRejectionCounter } from "../templates/starter/src/render/temporalRejectionCounter.js";
 import {
@@ -204,6 +205,60 @@ describe("authored temporal reconstruction kernel", () => {
       mesh.material.dispose();
     }
   });
+  it("compiles lever 6's clamp release and its six input-raster passes to WGSL (PRD-539)", () => {
+    const renderer = offlineRenderer();
+    const camera = new PerspectiveCamera();
+    const scenePass = pass(new Scene(), camera);
+    scenePass.setSize(1280, 720);
+    const build = (clampRelease: boolean) => {
+      const temporal = createTemporalAA(
+        scenePass.getTextureNode(),
+        scenePass.getTextureNode("depth"),
+        scenePass.getTextureNode("velocity"),
+        camera,
+        undefined,
+        { historyScale: 2, velocityWeightClamp: true, clampRelease },
+      );
+      const builder = new WGSLNodeBuilder(null as never, renderer) as WGSLNodeBuilder & {
+        context: Record<string, unknown>;
+        setBuildStage(stage: string): void;
+      };
+      builder.setBuildStage("setup");
+      builder.context.velocity = velocity;
+      temporal.node.setup(builder);
+      return temporal.node as unknown as TemporalResolveNode & {
+        _resolveMaterial: { colorNode: unknown };
+      };
+    };
+    const mesh = new Mesh(new PlaneGeometry(2, 2), new MeshBasicNodeMaterial());
+    const samples = (code: string) => code.match(/texture[A-Za-z]*\(/gu)?.length ?? 0;
+    // The kernel reads the release factor only where the lever is on.
+    expect(
+      samples(fragment(renderer, mesh, build(true)._resolveMaterial.colorNode)),
+    ).toBeGreaterThan(samples(fragment(renderer, mesh, build(false)._resolveMaterial.colorNode)));
+    const node = build(true);
+    const release = createTemporalClampRelease(node);
+    const drawn: { fragmentNode: unknown }[] = [];
+    release.update(
+      { initRenderTarget: () => {}, setRenderTarget: () => {} } as never,
+      {
+        render: () => {},
+        set material(value: { fragmentNode: unknown }) {
+          drawn.push(value);
+        },
+      } as never,
+      createTemporalDepthRejection(node, renderer),
+      { x: 64, y: 36 },
+    );
+    // Guide, input blur, history blur, rejection, median, min.
+    expect(drawn).toHaveLength(6);
+    const passes = drawn.map((material) => fragment(renderer, mesh, material.fragmentNode));
+    for (const code of passes) expect(code).not.toMatch(/Infinity|NaN/u);
+    // The rejection pass carries Unreal's 10-bit quantization step, 0.5 / 1024.
+    expect(passes[3]).toContain("0.00048828125");
+    release.dispose();
+  });
+
   it("compiles lever 4's widened clip and its moire update to WGSL (PRD-539)", () => {
     const renderer = offlineRenderer();
     const camera = new PerspectiveCamera();
