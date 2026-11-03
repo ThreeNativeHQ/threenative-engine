@@ -58,6 +58,12 @@ A settled scene and a scene that adds or removes one object per frame both pay f
 - [ ] Midway native and web: the Phase 1 share falls below 1% of the frame, with frame p50 and p95 no worse. Paired A/B from one code state with a knob (`TN_PROJECTION_CHANGE_SET=0` against `1`), three runs per arm, host load recorded. proof: `scripts/midway-bench/flight.sh` and `profile:wasm-page` pairs
 - [ ] The shooter and starter template scenarios pass, and a fresh visual judge returns NEUTRAL or IMPROVEMENT on BEFORE/AFTER frames (`--browser-recipe webgpu`, `adapter.info` checked, two runs per arm). proof: `pnpm test:templates` on both kits; the verdict in this box and images on PR #574
 
+## three.js 0.187.0 levers (2026-11-02)
+
+- r187 merges consecutive `BatchedMesh` draws that share a geometry range (three#35259) and uses `BatchedMesh` bounds in precise mode (three#34863). Re-measure the Phase 1 sizing on 0.187.0 before this PRD leaves DEFERRED: the draw count it sized may already be lower.
+
+Adoption rule: the owned engine is the default, and it runs a three symbol only when its API catalog covers it (`docs/architecture/NATIVE-ENGINE-DECISION.md`). So use the upstream piece first as a measured reference arm on `engine: "threejs"`. A template uses it only after a catalog row and a native parity case land.
+
 ## Done when
 
 Every box is ticked, `PERFORMANCE-LEARNINGS.md` has the lever entry (keep or reject), the feature map row for "Mesh draw commands and pass processors" names this PRD, and the file moves to `docs/PRDs/done/` in the commit that finishes it.

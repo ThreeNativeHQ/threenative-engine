@@ -278,6 +278,11 @@ export function syncSourceVersions(repo: string, versions: ReadonlyMap<string, s
       `$1${engineVersion}$2`,
     ],
     [
+      path.join(repo, "packages/core/mcp/servers.mjs"),
+      /(name: "@threenative\/terrain", version: ")[^"]+(")/u,
+      `$1${terrainVersion}$2`,
+    ],
+    [
       path.join(repo, "packages/terrain/src/core/io.ts"),
       /(generator: "@threenative\/terrain )[^"]+(")/u,
       `$1${terrainVersion}$2`,

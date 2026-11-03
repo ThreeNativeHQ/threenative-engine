@@ -61,6 +61,12 @@ Two more bake settings have never been swept. The group size is 4 (`DEFAULT_GROU
 
 - A textured dense body of 65,536 triangles or more, with UVs, to test UV weights. None is tracked in the repository. The owner or a sandbox build supplies one. Until then UV weights stay at the `lod/generate.ts` default and the PRD makes no claim about UV stretch.
 
+## three.js 0.187.0 levers (2026-11-02)
+
+- `VisibilityBufferDrawingPipeline` (r187, three#35191) writes a visibility buffer, then shades each pixel from the attributes of its source triangle, deformed by the material `positionNode`. Read how it keeps source normals and attributes on simplified clusters before Phase 1, and borrow the rule, not the code.
+
+Adoption rule: the owned engine is the default, and it runs a three symbol only when its API catalog covers it (`docs/architecture/NATIVE-ENGINE-DECISION.md`). So use the upstream piece first as a measured reference arm on `engine: "threejs"`. A template uses it only after a catalog row and a native parity case land.
+
 ## Acceptance Criteria
 
 - [ ] AC-1 [local]: On a seeded body with a crease and varied normals, the weighted bake's third-level mean normal deviation is below the position-only bake's. proof: red-green `pnpm exec vitest run packages/assets/__tests__/virtual-dag.spec.ts` — Evidence: pending.

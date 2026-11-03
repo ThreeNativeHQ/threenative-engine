@@ -84,6 +84,12 @@ Risks:
 - Double haze with PRD-560 height fog. The racing template calibrates both against one judged
   capture, and neither term is removed silently.
 
+## three.js 0.187.0 levers (2026-11-02)
+
+- r186 adds a post-processing volumetric fog example (three#34319, `webgpu_postprocessing_volumetric_fog`). Read it before Phase 1 as a TSL reference. Whether it uses a froxel volume is unverified.
+
+Adoption rule: the owned engine is the default, and it runs a three symbol only when its API catalog covers it (`docs/architecture/NATIVE-ENGINE-DECISION.md`). So use the upstream piece first as a measured reference arm on `engine: "threejs"`. A template uses it only after a catalog row and a native parity case land.
+
 ## Acceptance Criteria
 
 - [ ] AC-1 [local]: The racing frame with volume aerial perspective is judged at or above the current photographed-sky `FogExp2` frame, and far terrain toward a low sun reads warmer than far terrain away from it. proof: `pnpm visuals:ab --before <current racing> --after <volume AP racing> --raters 3` — Evidence: pending.
