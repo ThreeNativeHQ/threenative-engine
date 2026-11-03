@@ -432,7 +432,9 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
       (variant === "cut" && frame >= 20) || (lifecycle && frame >= LIFECYCLE_CUT_FRAME)
         ? 1.2
         : 0;
-    camera.position.x = Math.sin(pose / 50) * 0.15 + cut;
+    // PRD-539 static-camera control (`options.staticCamera`): the camera holds still and every object
+    // keeps its motion, so edge error isolates the camera-drift share of the loss.
+    camera.position.x = (options.staticCamera ? 0 : Math.sin(pose / 50) * 0.15) + cut;
     if (frame === 20 && variant === "cut") temporal?.resetHistory("camera-cut");
     if (frame === 20 && variant === "projection") { camera.fov = 65; camera.updateProjectionMatrix(); }
     if (frame === 20 && variant === "resize") { renderer.setSize(960, 540, false); camera.aspect = 960 / 540; camera.updateProjectionMatrix(); }
