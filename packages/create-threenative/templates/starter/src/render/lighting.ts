@@ -4,7 +4,14 @@
 // One sun. The sky in `sky.ts` is the fill light — its environment reaches every face the sun
 // misses — so there is no hemisphere or ambient light stacked on top to flatten the frame.
 import { useRoughDiffuse } from "@threenative/core";
-import { Color, DirectionalLight, type Object3D, PCFSoftShadowMap, type Scene, Vector3 } from "three";
+import {
+  Color,
+  DirectionalLight,
+  type Object3D,
+  PCFSoftShadowMap,
+  type Scene,
+  Vector3,
+} from "three";
 import { ARENA, GROUND_Y } from "./arena.js";
 import {
   SUN_ILLUMINANCE,

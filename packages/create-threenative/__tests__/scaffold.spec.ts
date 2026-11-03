@@ -379,7 +379,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-31 (PRD-775): temporalAAHooks.ts claims the 0.187 render pipeline's view
   // offset and drives its callback lists, so starter's render source moves again. Measured by this test.
   // Re-pinned 2026-11-02 (PRD-632): the atmosphere sun is 6 lux and the fixed exposure 2.4 in six kits.
-  starter: "0cba6be4f07eb9e9e8ad2e651cbd1a21c5c803f13c849b3a60c783beb4fc583a",
+  starter: "de9266247889d8816f758b25f1cb52ace31d23a632af02ac3ec03524234b4b0a",
   "tower-defense": "58761c7b56c49c070416c06ddfcd741fbdb01f21977503bbfc3bca9716ebb02e",
 };
 
