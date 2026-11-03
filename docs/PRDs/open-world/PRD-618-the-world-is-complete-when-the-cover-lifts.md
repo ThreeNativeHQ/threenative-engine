@@ -168,6 +168,12 @@ The boxes live in the phases below; each names the AC it proves.
 - [x] AC-9 focused dither contract: both levels submit in view/shadow, shared masks use complementary `<` / `>=` comparisons including equality, and the source retires after the band. proof: `pnpm exec vitest run packages/core/__tests__/world-cells-data.spec.ts packages/core/__tests__/world-impostor-surface.spec.ts` (included in the 130/130 green focused run below). Shader graphs and CPU submission are tested; headed GPU/judge proof remains AC-7.
 - [ ] AC-7 judge IMPROVEMENT. proof: judge subagent verdict on the PR — D1 (2026-10-18) is still open: fresh verdict REGRESSION overall, with overview IMPROVEMENT and river NEUTRAL.
 - [ ] AC-8 frame time holds. proof: `measure-steady-state-fps`.
+  - 2026-11-03 progress, not AC-7 or AC-8 proof:
+    - The licensed forest now loads and draws on the Wasm engine (commits `3b2e13bc6` and `4776f2d51`).
+    - A fresh Sonnet judge returned IMPROVEMENT at the spawn view: procedural fallback against licensed assets, two playtest runs per arm, NVIDIA/Turing. The images are on `pr483-screenshots/wasm-forest-licensed-2026-11-03/`.
+    - The judge reported that haze differs between the two AFTER runs.
+    - In MCP Chrome, `planVirtualPages` dropped from 39.5 ms to 0.29 ms, and the CPU frame p50 from 44 ms to 4.9 ms. MCP Chrome inflates CPU, so this is not a `measure-steady-state-fps` reading.
+    - The overview and river views have not been judged.
 
 
 **Phase 3 implementation and focused checks (2026-10-15):**
