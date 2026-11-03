@@ -16,12 +16,17 @@ function source(): MeshStandardMaterial {
 }
 
 describe("?specular=0, the harness's ShowFlag.Specular (PRD-646 round 7)", () => {
-  it("zeroes F0 and F90 so no direct or indirect specular term is left", () => {
+  it("zeroes F0 and leaves F90 at 1, the pair Unreal's SpecularColor override reads", () => {
     const twin = noSpecularTwin(source());
     expect(twin).toBeInstanceOf(MeshPhysicalMaterial);
     // F0 = min(((ior - 1) / (ior + 1))^2 * specularColor, 1) * specularIntensity, F90 = mix(specularIntensity, 1, metalness).
-    expect(twin.specularIntensity).toBe(0);
-    expect(twin.specularColor.getHex()).toBe(0x000000);
+    const f0 =
+      ((twin.ior - 1) / (twin.ior + 1)) ** 2 * twin.specularColor.r * twin.specularIntensity;
+    expect(f0).toBe(0);
+    expect(twin.ior).toBe(1);
+    expect(twin.specularIntensity).toBe(1);
+    // F_Schlick(F0, F90, VoH) keeps a grazing lobe at F0 = 0, which is what the flag leaves in place.
+    expect(twin.specularIntensity).toBe(1);
     expect(twin.metalness).toBe(0);
   });
 
@@ -45,9 +50,13 @@ describe("?specular=0, the harness's ShowFlag.Specular (PRD-646 round 7)", () =>
     expect((twin.subsurfaceColor as Color).getHex()).toBe(new Color(0.1, 0.2, 0.3).getHex());
   });
 
-  it("is wired to the calibration scene's query, so the knob cannot land as dead code", () => {
-    const scene = readFileSync("scripts/unreal-look/scaffold/CalibrationScene.ts.in", "utf8");
-    expect(scene).toMatch(/if \(params\.get\("specular"\) === "0"\)/u);
-    expect(scene).toMatch(/noSpecularTwin\(/u);
+  it("is wired to both scenes' queries, so the knob cannot land as dead code", () => {
+    // A template-lit scene (sunlit-room) is drawn by Reference.ts, every other calibration scene by
+    // CalibrationScene.ts: a knob in one of them is half a knob.
+    for (const scene of ["CalibrationScene", "Reference"]) {
+      const source = readFileSync(`scripts/unreal-look/scaffold/${scene}.ts.in`, "utf8");
+      expect(source).toMatch(/if \(params\.get\("specular"\) === "0"\)/u);
+      expect(source).toMatch(/noSpecularTwin\(/u);
+    }
   });
 });
