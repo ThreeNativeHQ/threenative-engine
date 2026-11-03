@@ -8,7 +8,7 @@ prd_contract: v1
 **Priority:** P3 — Phase 1 is open: no number says how long an uncovered surface stays soft in the default temporal resolve, and Unreal turns this feature on at Medium and above through its scalability file.
 **Complexity:** 6 (MEDIUM) — a second history layer (+2), 3–5 files (+1), the same rule on the owned engine (+2), a visual judge (+1); risk override: none
 **Owner:** João
-**Depends on:** [PRD-539](../../done/PRD-539-low-resolution-temporal-reconstruction-quality-and-cost.md) for the corpus. [PRD-717](PRD-717-a-pixel-a-moving-object-just-uncovered-reprojects-through-the-surface-that-left-it.md) for the reveal test, which decides when a pixel counts as uncovered.
+**Depends on:** [PRD-539](PRD-539-low-resolution-temporal-reconstruction-quality-and-cost.md) for the corpus. [PRD-717](PRD-717-a-pixel-a-moving-object-just-uncovered-reprojects-through-the-surface-that-left-it.md) for the reveal test, which decides when a pixel counts as uncovered.
 
 ## Context
 

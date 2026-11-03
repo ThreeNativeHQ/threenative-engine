@@ -8,7 +8,7 @@ prd_contract: v1
 **Priority:** P2 — Phase 1 is open: the default temporal resolve reads one input texel per output pixel and has no temporal quality tier, while Unreal reads a wider kernel where history is rejected and sets its width, its rejection anti-aliasing and its history size from four named levels.
 **Complexity:** 6 (MEDIUM) — 3–5 files (+1), a change in a shared resolve (+2), the same rule on the owned engine (+2), a visual judge (+1); risk override: none
 **Owner:** João
-**Depends on:** [PRD-539](../../done/PRD-539-low-resolution-temporal-reconstruction-quality-and-cost.md) for the corpus and the history-size arm. `docs/PRDs/Unreal/look/PRD-636-the-finishing-post-chain-matches-unreal-defaults.md` Phase 4 (on `feat/unreal-look-epic`) for the temporal default. Coordinates with `docs/PRDs/Unreal/shadows/PRD-652-the-shadow-tier-follows-unreal-shadow-quality-levels.md`, whose budget ladder Phase 3 reuses.
+**Depends on:** [PRD-539](PRD-539-low-resolution-temporal-reconstruction-quality-and-cost.md) for the corpus and the history-size arm. `docs/PRDs/Unreal/look/PRD-636-the-finishing-post-chain-matches-unreal-defaults.md` Phase 4 (on `feat/unreal-look-epic`) for the temporal default. Coordinates with `docs/PRDs/Unreal/shadows/PRD-652-the-shadow-tier-follows-unreal-shadow-quality-levels.md`, whose budget ladder Phase 3 reuses.
 
 ## Context
 

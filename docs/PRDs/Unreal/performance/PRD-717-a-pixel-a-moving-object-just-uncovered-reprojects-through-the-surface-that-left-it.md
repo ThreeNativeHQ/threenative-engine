@@ -8,7 +8,7 @@ prd_contract: v1
 **Priority:** P2 — Phase 1 is open: the default temporal resolve has no history at an uncovered pixel and no motion to borrow, and PRD-539 records a reveal check that fails (1.77% and 4.89% stale after one frame against 1%).
 **Complexity:** 6 (MEDIUM) — 3–5 files (+1), a new scatter buffer per frame (+2), the same rule on the owned engine (+2), a visual judge (+1); risk override: none
 **Owner:** João
-**Depends on:** [PRD-539](../../done/PRD-539-low-resolution-temporal-reconstruction-quality-and-cost.md) for the corpus, the thresholds and the verdict. This PRD supplies one gate arm for 539's reveal box and changes no threshold. `docs/PRDs/Unreal/look/PRD-636-the-finishing-post-chain-matches-unreal-defaults.md` Phase 4 (on `feat/unreal-look-epic`) for the temporal default.
+**Depends on:** [PRD-539](PRD-539-low-resolution-temporal-reconstruction-quality-and-cost.md) for the corpus, the thresholds and the verdict. This PRD supplies one gate arm for 539's reveal box and changes no threshold. `docs/PRDs/Unreal/look/PRD-636-the-finishing-post-chain-matches-unreal-defaults.md` Phase 4 (on `feat/unreal-look-epic`) for the temporal default.
 
 ## Context
 
