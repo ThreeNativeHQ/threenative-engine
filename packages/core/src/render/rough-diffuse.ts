@@ -144,11 +144,13 @@ function roughen(model: ILightingModel): ILightingModel {
     const albedo = diffuseColor.rgb.mul(metalness.oneMinus()) as Node<"vec3">;
     // three's diffuse lost 1 - F at the half vector; that never reaches 0 where N.L and N.V are both positive.
     const half = input.lightDirection.add(positionViewDirection).normalize();
-    const fresnel = F_Schlick({
+    const schlick = F_Schlick({
       f0: specularColor,
       f90: specularF90,
       dotVH: clamp(positionViewDirection.dot(half)),
-    }) as unknown as Node<"vec3">;
+    });
+    // quality-allow: three's types give F_Schlick an OperatorNode, which carries no vec3 component type; the node is a vec3 at run time
+    const fresnel = schlick as unknown as Node<"vec3">;
     const factor = roughDiffuseFactor(albedo, r, nov, nol, vol).div(
       fresnel.oneMinus().max(EPSILON),
     );
