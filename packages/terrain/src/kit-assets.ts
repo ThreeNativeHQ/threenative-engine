@@ -121,7 +121,17 @@ export async function starterAssetsDir(): Promise<string> {
     if (url.protocol !== "https:" && url.protocol !== "http:") fail("URL");
     const response = await fetch(url);
     if (!response.ok) fail(`HTTP: ${response.status} ${url.href}`);
-    archive = Buffer.from(await response.arrayBuffer());
+    const declared = Number(response.headers.get("content-length") ?? manifest.bytes);
+    if (declared !== manifest.bytes || !response.body) fail("SIZE");
+    // Read at most one byte past the pinned size, so a hostile endpoint cannot fill memory.
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    for await (const chunk of response.body) {
+      total += chunk.length;
+      if (total > manifest.bytes) fail("SIZE");
+      chunks.push(chunk);
+    }
+    archive = Buffer.concat(chunks);
   }
   if (archive.length !== manifest.bytes) fail("SIZE");
   if (createHash("sha256").update(archive).digest("hex") !== manifest.sha256) fail("SHA256");

@@ -158,6 +158,29 @@ describe("pinned starter assets", () => {
     await expect(fixture.resolve()).rejects.toThrow("TN_TERRAIN_ASSETS_SIZE");
   }, 30_000);
 
+  it("stops reading a download that outgrows the pinned size (audit TERRAIN-21)", async () => {
+    const fixture = await installed();
+    vi.stubEnv("THREENATIVE_TERRAIN_ASSETS_URL", "https://invalid.test/archive");
+    const chunk = new Uint8Array(64 * 1024);
+    let pulls = 0;
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulls += 1;
+        if (pulls > 100_000) controller.close();
+        else controller.enqueue(chunk);
+      },
+    });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(body)));
+    await expect(fixture.resolve()).rejects.toThrow("TN_TERRAIN_ASSETS_SIZE");
+    // Bounded by the pinned size plus the stream's own read-ahead, never the whole endless body.
+    expect(pulls * chunk.length).toBeLessThan(fixture.manifest.bytes + 4 * 1024 * 1024);
+    const declared = new Response(new Uint8Array(1), {
+      headers: { "content-length": String(fixture.manifest.bytes + 1) },
+    });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(declared));
+    await expect(fixture.resolve()).rejects.toThrow("TN_TERRAIN_ASSETS_SIZE");
+  }, 30_000);
+
   it("names HTTP failures", async () => {
     const fixture = await installed();
     vi.stubEnv("THREENATIVE_TERRAIN_ASSETS_URL", "https://invalid.test/archive");
