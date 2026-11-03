@@ -64,26 +64,30 @@ export function createTemporalMoire(node: TemporalResolveNode) {
   const previous: TextureNode = texture(first.texture);
   let passes: { materials: NodeMaterial[]; equations: TemporalDepthRejection } | undefined;
 
-  /** The clip box widened by the moire error the history has measured at this pixel. `speedPx`
-   * counts history pixels, so the parallax limit scales with the history raster. */
-  function widen(
-    low: Node<"vec4">,
-    high: Node<"vec4">,
-    historyUV: Node<"vec2">,
-    speedPx: Node<"float">,
-  ) {
+  /** The moire luma error the history has measured at this pixel. `speedPx` counts history pixels,
+   * so the parallax limit scales with the history raster. */
+  function error(historyUV: Node<"vec2">, speedPx: Node<"float">): Node<"float"> {
     const state = previous.sample(historyUV);
     const count = state.z;
     const ramp = count
       .mul(1 - DECAY ** PERIOD)
       .sub(0.5)
       .saturate();
-    const error = abs(state.y.div(max(count, 1e-4)))
+    return abs(state.y.div(max(count, 1e-4)))
       .add(count.div(127))
       .mul(ramp)
       .mul(stillness(speedPx, vec2(previous.size(int(0)) as Node<"uvec2">).x))
       .saturate();
-    const size = vec4(vec3(error.mul(LUMA_TO_CHANNEL)), 0);
+  }
+
+  /** The clip box widened by that error. */
+  function widen(
+    low: Node<"vec4">,
+    high: Node<"vec4">,
+    historyUV: Node<"vec2">,
+    speedPx: Node<"float">,
+  ) {
+    const size = vec4(vec3(error(historyUV, speedPx).mul(LUMA_TO_CHANNEL)), 0);
     return { low: min(low, high.sub(size)), high: max(high, low.add(size)) };
   }
 
@@ -146,6 +150,7 @@ export function createTemporalMoire(node: TemporalResolveNode) {
   }
 
   return {
+    error,
     widen,
     /** After the resolve, before the history copy: it reads last frame's history at this frame's UVs. */
     update(

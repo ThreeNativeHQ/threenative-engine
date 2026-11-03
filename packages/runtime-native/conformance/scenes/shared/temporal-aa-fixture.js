@@ -116,6 +116,13 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
     flicker: { historyScale: 2, velocityWeightClamp: true, flickerRejection: true },
     // Lever 6: the default plus Unreal's low-frequency clamp release.
     release: { historyScale: 2, velocityWeightClamp: true, clampRelease: true },
+    // Levers 4 and 6 together, as Unreal runs them: the moire error widens the release's comparison.
+    "flicker-release": {
+      historyScale: 2,
+      velocityWeightClamp: true,
+      flickerRejection: true,
+      clampRelease: true,
+    },
   }[policy] ?? (followsDefault.includes(policy) ? undefined : history100);
   // The roles that must genuinely request nothing: no reconstruction stage, no velocity MRT. The
   // spatial role still renders its low input and presents it through the ordinary texture upsample.

@@ -237,26 +237,32 @@ describe("authored temporal reconstruction kernel", () => {
       samples(fragment(renderer, mesh, build(true)._resolveMaterial.colorNode)),
     ).toBeGreaterThan(samples(fragment(renderer, mesh, build(false)._resolveMaterial.colorNode)));
     const node = build(true);
-    const release = createTemporalClampRelease(node);
-    const drawn: { fragmentNode: unknown }[] = [];
-    release.update(
-      { initRenderTarget: () => {}, setRenderTarget: () => {} } as never,
-      {
-        render: () => {},
-        set material(value: { fragmentNode: unknown }) {
-          drawn.push(value);
-        },
-      } as never,
-      createTemporalDepthRejection(node, renderer),
-      { x: 64, y: 36 },
-    );
+    const draw = (release: ReturnType<typeof createTemporalClampRelease>) => {
+      const drawn: { fragmentNode: unknown }[] = [];
+      release.update(
+        { initRenderTarget: () => {}, setRenderTarget: () => {} } as never,
+        {
+          render: () => {},
+          set material(value: { fragmentNode: unknown }) {
+            drawn.push(value);
+          },
+        } as never,
+        createTemporalDepthRejection(node, renderer),
+        { x: 64, y: 36 },
+      );
+      release.dispose();
+      return drawn.map((material) => fragment(renderer, mesh, material.fragmentNode));
+    };
     // Guide, input blur, history blur, rejection, median, min.
-    expect(drawn).toHaveLength(6);
-    const passes = drawn.map((material) => fragment(renderer, mesh, material.fragmentNode));
+    const passes = draw(createTemporalClampRelease(node));
+    expect(passes).toHaveLength(6);
     for (const code of passes) expect(code).not.toMatch(/Infinity|NaN/u);
     // The rejection pass carries Unreal's 10-bit quantization step, 0.5 / 1024.
     expect(passes[3]).toContain("0.00048828125");
-    release.dispose();
+    // With lever 4 the rejection also reads the moire state, as Unreal's combined analysis does.
+    const combined = draw(createTemporalClampRelease(node, createTemporalMoire(node)));
+    expect(combined[3]).not.toMatch(/Infinity|NaN/u);
+    expect(samples(combined[3] ?? "")).toBeGreaterThan(samples(passes[3] ?? ""));
   });
 
   it("compiles lever 4's widened clip and its moire update to WGSL (PRD-539)", () => {

@@ -5,7 +5,7 @@
 // UE 5.8.3: Engine/Shaders/Private/TemporalSuperResolution/TSRShadingAnalysis.ush:25,509-525,563-566,
 // 589-620,632-636; TSRRejectShading.usf:863; TSRUpdateHistory.usf:1256-1257; TSRColorSpace.ush:244-248.
 import { HalfFloatType, NearestFilter } from "three";
-import { Fn, float, int, ivec2, max, min, mix, texture, uv, vec2, vec4 } from "three/tsl";
+import { Fn, float, int, ivec2, max, min, mix, texture, uv, vec2, vec3, vec4 } from "three/tsl";
 import {
   type Node,
   NodeMaterial,
@@ -14,6 +14,7 @@ import {
   type Renderer,
   type TextureNode,
 } from "three/webgpu";
+import type { TemporalMoire } from "./temporalMoire.js";
 import type { TemporalDepthRejection, TemporalResolveNode } from "./temporalResolveDepth.js";
 
 // Unreal's 3x3 blur: centre 1, edges 0.5, corners 0.25, normalised by their sum.
@@ -46,28 +47,8 @@ function median(values: Node<"float">[]): Node<"float"> {
     v[b] = max(v[a] as Node<"float">, v[b] as Node<"float">);
     v[a] = low;
   };
-  for (const [a, b] of [
-    [1, 2],
-    [4, 5],
-    [7, 8],
-    [0, 1],
-    [3, 4],
-    [6, 7],
-    [1, 2],
-    [4, 5],
-    [7, 8],
-    [0, 3],
-    [5, 8],
-    [4, 7],
-    [3, 6],
-    [1, 4],
-    [2, 5],
-    [4, 7],
-    [4, 2],
-    [6, 4],
-    [4, 2],
-  ] as const)
-    sort(a, b);
+  for (const [a, b] of "12 45 78 01 34 67 12 45 78 03 58 47 36 14 25 47 42 64 42".split(" "))
+    sort(Number(a), Number(b));
   return v[4] as Node<"float">;
 }
 
@@ -78,7 +59,8 @@ function quad(name: string, fragment: () => Node<"vec4">): NodeMaterial {
   return material;
 }
 
-export function createTemporalClampRelease(node: TemporalResolveNode) {
+/** With `moire` (lever 4), the moire error widens the comparison, as in Unreal (TSRShadingAnalysis.ush:569-613). */
+export function createTemporalClampRelease(node: TemporalResolveNode, moire?: TemporalMoire) {
   const [guide, filteredInput, filteredHistory, raw, filtered, release] = [0, 1, 2, 3, 4, 5].map(
     () => {
       const target = new RenderTarget(1, 1, { depthBuffer: false, type: HalfFloatType });
@@ -127,9 +109,22 @@ export function createTemporalClampRelease(node: TemporalResolveNode) {
           const inputBlur = blurred[4] as Node<"vec4">;
           // ponytail: Unreal also widens by the blurred total variation of the input; add it if edges flip.
           const error = max(box.mul(FILTERING_WEIGHT * 0.25), QUANTIZATION).add(QUANTIZATION);
-          const low = blurred.reduce((a, b) => min(a, b)).sub(error);
-          const high = blurred.reduce((a, b) => max(a, b)).add(error);
-          const boxSize = box.mul(FILTERING_WEIGHT).add(QUANTIZATION * 2 * FILTERING_WEIGHT);
+          let low = blurred.reduce((a, b) => min(a, b)).sub(error);
+          let high = blurred.reduce((a, b) => max(a, b)).add(error);
+          let boxSize = box.mul(FILTERING_WEIGHT).add(QUANTIZATION * 2 * FILTERING_WEIGHT);
+          if (moire !== undefined) {
+            const historyUV = equations.historyValidity(uv()).get("historyUV") as Node<"vec2">;
+            const historySize = vec2(history.size(int(0)) as Node<"uvec2">);
+            const moireError = moire.error(
+              historyUV,
+              uv().sub(historyUV).mul(historySize).length(),
+            );
+            const size = vec4(vec3(moireError.mul(3)), 0);
+            [low, high] = [min(low, high.sub(size)), max(high, low.add(size))];
+            const energy = historyBlur.clamp(low, high).sub(historyBlur).abs();
+            const share = energy.div(max(energy.r.add(energy.g).add(energy.b), 1e-6));
+            boxSize = max(boxSize, share.mul(moireError.mul(FILTERING_WEIGHT * 3)));
+          }
           const delta = max(inputBlur.sub(historyBlur).abs(), boxSize);
           const factor = float(1)
             .sub(historyBlur.clamp(low, high).sub(historyBlur).abs().div(delta))
