@@ -146,7 +146,7 @@
       }
     },
     {
-      "include": ["packages/core/src/react-glyphs.ts"],
+      "include": ["packages/core/src/react-glyphs.ts", "packages/core/src/spells/ultra/**"],
       "linter": { "rules": { "style": { "useNamingConvention": "off" } } }
     },
     {
