@@ -4,12 +4,11 @@
 import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { starterAssetsDir } from "../../terrain/dist/kit.js";
 
 const KITS = ["alpine", "coastal", "desert", "forest", "tundra"];
 const INPUTS = ["assets.json", "bake.mjs", "heightmap.r16", "recipe.json", "surface.json"];
-// Each bakeKit call supplies the sky HDRI copied to sky.hdr.
-const SKY_SOURCE = /^\s*sky: "(hdri\/[^"]+\.hdr)",$/gmu;
+// Each bakeKit call supplies the sky HDRI copied to sky.hdr. Any layout of the call matches.
+const SKY_SOURCE = /\bsky:\s*"(hdri\/[^"]+\.hdr)"/gu;
 // The sky record names no set. These fields hold its own provenance.
 const SKY_FIELDS = ["asset", "author", "bytes", "license", "sha256", "url"];
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -110,6 +109,15 @@ async function writeKit(kit, credit) {
   await writeFile(path.join(out, "credits.json"), `${JSON.stringify(credit, null, 2)}\n`);
 }
 
+// The terrain package builds first. A cold tree has no dist/, so name the cause.
+const { starterAssetsDir } = await import("../../terrain/dist/kit.js").catch((error) => {
+  if (error?.code !== "ERR_MODULE_NOT_FOUND" || !error.message.includes("terrain/dist/kit.js"))
+    throw error;
+  throw new Error(
+    "TN_TERRAIN_STAGE_MISSING_BUILD: packages/terrain/dist/kit.js is missing. Run pnpm --filter @threenative/terrain build.",
+    { cause: error },
+  );
+});
 const credits = JSON.parse(
   await readFile(path.join(await starterAssetsDir(), "credits.json"), "utf8"),
 );
