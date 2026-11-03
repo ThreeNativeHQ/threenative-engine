@@ -3,6 +3,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { fileURLToPath } from "node:url";
 import { terrainEditor } from "@threenative/terrain/editor/server";
 import { starterAssetsDir } from "@threenative/terrain/kit";
+import { createWebBrandPlugin } from "create-threenative";
 import { type Plugin, defineConfig } from "vite";
 
 /**
@@ -113,6 +114,9 @@ export default defineConfig({
   // a build, and `ctx.assets` loads them by that path.
   publicDir: await starterAssetsDir(),
   plugins: [
+    // `TN_ENGINE=threenative pnpm dev` serves the forest on the owned Wasm engine (threenative.config.ts),
+    // with the same local art as the three.js path, so the two arms compare one asset set.
+    ...(process.env.TN_ENGINE === "threenative" ? [createWebBrandPlugin()] : []),
     terrainEditor({
       documentPath: fileURLToPath(new URL("./terrain/world.json", import.meta.url)),
     }),

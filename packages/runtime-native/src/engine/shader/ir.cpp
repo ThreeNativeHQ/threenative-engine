@@ -119,7 +119,7 @@ ExprId Program::attribute(std::string_view name, Type type, Where where) {
 }
 
 ExprId Program::varying(std::string_view name, Type type, Where where) {
-    if (stage_ != Stage::Fragment) return fail("varying", "varyings are fragment inputs", where);
+    if (stage_ != Stage::Fragment) return fail("varying " + std::string(name), "varyings are fragment inputs", where);
     return pure(Expr{Op::Varying, type, {}, 0, intern(name)});
 }
 
@@ -264,9 +264,9 @@ ExprId Program::construct(Type type, const std::vector<ExprId>& parts, Where whe
         if (parts[i] == kInvalid) return kInvalid;
         ExprId id = parts[i];
         Type part = exprs_[id].type;
-        // One numeric part of the same shape converts, as WGSL's u32(x) and vec3<f32>(v) do.
+        // One part of the same shape converts, as WGSL's u32(x), vec3<f32>(v) and f32(bool) (true is 1.0) do.
         const auto numeric = [](Type t) { return t.scalar != Type::Scalar::Bool && !t.isMatrix(); };
-        const bool conversion = parts.size() == 1 && numeric(part) && numeric(type) && part.rows == type.rows;
+        const bool conversion = parts.size() == 1 && !part.isMatrix() && !type.isMatrix() && part.rows == type.rows;
         // Several parts: three's JoinNode casts each input to the vector's element type, so ivec2(a, b) of
         // whole numbers and vec2(i32, f32) build. A scalar part converts first; WGSL has no implicit cast.
         if (parts.size() > 1 && part.isScalar() && numeric(part) && numeric(type) && part.scalar != type.scalar) {

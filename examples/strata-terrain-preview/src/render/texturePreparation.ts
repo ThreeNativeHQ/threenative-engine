@@ -63,6 +63,9 @@ function sampledTextures(nodes: Node[], textures: Set<Texture>): Node[] {
       textures.add(sampled.value);
       sampledNodes.push(node);
     }
+    // engine-override: an owned-engine node is opaque (no getChildren); the engine samples the textures
+    // in its graph directly, so only its material maps above take part in preparation.
+    if (typeof node.getChildren !== "function") continue;
     for (const child of node.getChildren()) nodes.push(child);
   }
   return sampledNodes;

@@ -432,6 +432,14 @@ readonly revision: number;
   copy(source: BufferGeometry): this;
 
   dispose(): void;
+  /** callback listener: EventListener */
+  addEventListener(type: string, listener: EventListener): void;
+  /** callback listener: EventListener */
+  removeEventListener(type: string, listener: EventListener): void;
+  /** callback listener: EventListener */
+  hasEventListener(type: string, listener: EventListener): boolean;
+
+  dispatchEvent(event: BaseEvent): void;
 }
 
 /** Catalog partial (native-not-implemented): three/ByteType. */
@@ -2388,6 +2396,14 @@ readonly texture: Texture;
   dispose(): void;
 
   setSize(width: number, height: number, depth?: number): void;
+  /** callback listener: EventListener */
+  addEventListener(type: string, listener: EventListener): void;
+  /** callback listener: EventListener */
+  removeEventListener(type: string, listener: EventListener): void;
+  /** callback listener: EventListener */
+  hasEventListener(type: string, listener: EventListener): boolean;
+
+  dispatchEvent(event: BaseEvent): void;
 }
 
 /** Catalog supported: three/RepeatWrapping. */
@@ -2748,6 +2764,14 @@ readonly center: Vector2;
   dispose(): void;
 
   clone(): this;
+  /** callback listener: EventListener */
+  addEventListener(type: string, listener: EventListener): void;
+  /** callback listener: EventListener */
+  removeEventListener(type: string, listener: EventListener): void;
+  /** callback listener: EventListener */
+  hasEventListener(type: string, listener: EventListener): boolean;
+
+  dispatchEvent(event: BaseEvent): void;
 }
 
 /** Catalog supported: three/webgpu/TorusGeometry. */

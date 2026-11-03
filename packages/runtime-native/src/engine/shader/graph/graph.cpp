@@ -90,6 +90,10 @@ private:
     std::unordered_map<const NodeData*, std::pair<uint32_t, ExprId>> temps_;
     std::unordered_map<const NodeData*, std::vector<ExprId>> aggregates_;
     std::unordered_map<const NodeData*, VarId> vars_;
+    // three r187's assignable nodes (Node.toAssignable): an expression a Fn assigns after making it, as SkyMesh's
+    // `Lin.mulAssign(...)`. The engine declares the variable at the first assignment, from the node's value there;
+    // later reads load it. The pair is the declaring scope and the variable.
+    std::unordered_map<const NodeData*, std::pair<uint32_t, VarId>> assigned_;
     std::unordered_map<const NodeData*, ExprId> loopIndex_;
     // A Fn result that ran statements is one Body node read at every use. Its statements lower once per
     // lexical scope: `scopes_` is the open If/Loop blocks, `bodyScope_` where each Body already lowered.
@@ -140,6 +144,12 @@ void Lowerer::analyze(Node node) {
 ExprId Lowerer::expression(Node node) {
     if (!node) return kInvalid;
     if (const auto effect = effects_.find(node.get()); effect != effects_.end()) return effect->second;
+    if (const auto held = assigned_.find(node.get()); held != assigned_.end()) {
+        if (std::find(scopes_.begin(), scopes_.end(), held->second.first) == scopes_.end())
+            throw std::runtime_error("TN_TSL_ASSIGNABLE_SCOPE: a node assigned inside a nested block is read outside it; "
+                                     "call toVar() where the node is made");
+        return program_.load(held->second.second);
+    }
     const auto temp = temps_.find(node.get());
     if (temp != temps_.end() && std::find(scopes_.begin(), scopes_.end(), temp->second.first) != scopes_.end())
         return temp->second.second;
@@ -587,6 +597,14 @@ void Lowerer::statement(Node node) {
             } else if (target->kind == Kind::StorageElement) {
                 const uint32_t buffer = ensureStorage(*target);
                 program_.store(buffer, index(target), convert(expression(s.args[1]), target->type));
+            } else {
+                auto held = assigned_.find(target.get());
+                if (held == assigned_.end()) {
+                    const ExprId initial = expression(target);
+                    held = assigned_.emplace(target.get(), std::pair{scopes_.back(), program_.var(program_.expr(initial).type, initial)}).first;
+                }
+                const VarId variable = held->second.second;
+                program_.assign(variable, convert(expression(s.args[1]), program_.expr(program_.load(variable)).type));
             }
             return;
         }
@@ -764,9 +782,11 @@ void setUniformValues(const Node& uniform, std::vector<double> values) {
     // A uniform built without a value (cameraViewMatrix, materialColor) is the engine's to fill.
     if (uniform->values.empty()) throw std::runtime_error("TN_TSL_UNIFORM_VALUE: " + uniform->name + " is engine-provided");
     const Type type = uniform->type;
-    if (type.isMatrix() || type.scalar == Type::Scalar::Bool || values.size() != type.rows)
+    // A matN uniform takes its column-major elements (three's Matrix.elements order).
+    const size_t lanes = size_t(type.rows) * type.cols;
+    if ((type.isMatrix() && type.scalar != Type::Scalar::F32) || type.scalar == Type::Scalar::Bool || values.size() != lanes)
         throw std::runtime_error("TN_TSL_UNIFORM_VALUE: " + uniform->name + " takes " +
-                                 std::to_string(type.rows) + " " + type.name() + " value(s)");
+                                 std::to_string(lanes) + " " + type.name() + " lane(s)");
     for (double& value : values) {
         if (type.scalar == Type::Scalar::F32) value = static_cast<float>(value);
         else {

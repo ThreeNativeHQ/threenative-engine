@@ -121,9 +121,22 @@ void order() {
 }
 
 // Each case must raise TN_TSL_TYPE at the line that authored it.
+// f32(bool) is WGSL's conversion (true is 1.0): three's float(a.lessThan(b)) in a post output program.
+void boolConversion() {
+    Program p(Stage::Fragment);
+    const auto lit = p.construct(Type::f32(), {p.less(p.uniform("a", Type::f32()), p.constant(0.5f))});
+    p.output("color", p.construct(Type::vec(4), {lit, lit, lit, lit}));
+    CHECK(p.ok());
+    const auto module = WgslEmitter::emit(p);
+    CHECK(module.ok() && module.code.find("f32(") != std::string::npos);
+    Program matrix(Stage::Fragment);
+    CHECK(matrix.construct(Type::mat(4, 4), {matrix.less(matrix.constant(0.f), matrix.constant(1.f))}) == kInvalid);
+}
+
 void types() {
     textureBias();
     sharedSamplers();
+    boolConversion();
     struct Case {
         const char* name;
         Stage stage;

@@ -202,6 +202,52 @@ static ExprId nodeType(Program& p, ExprId id, Type type) {
     return p.construct(type, {id});
 }
 
+// The engine TSL instanceMatrix(): the drawn instance's matrix, as graph inputs tnInstanceMatrix0..3 (a mat4 cannot
+// cross stages; each vec4 column can). Each is the column applyInstance reads, or identity for a draw that is not
+// instanced, so one node material serves instanced and plain meshes: what three's Fn reads through builder.object.
+static ExprId instanceColumn(Program& v, const VertexVariant& variant, int index, const std::string& previous = "") {
+    if (!variant.instanced) {
+        std::vector<ExprId> lanes;
+        for (int row = 0; row < 4; ++row) lanes.push_back(v.constant(row == index ? 1.0f : 0.0f));
+        return v.construct(Type::vec(4), lanes);
+    }
+    if (!variant.instanceStorage) return v.attribute("instanceMatrix" + std::to_string(index), Type::vec(4));
+    const uint32_t instances = v.storageBuffer(previous + "instances", Type::vec(4));
+    const ExprId base = v.add(v.construct(Type::u32(), {v.uniform(previous + "instanceBase", Type::f32())}),
+                              v.mul(v.builtin("instanceIndex"), v.construct(Type::u32(), {v.constant(5)})));
+    return v.loadStorage(instances, v.add(base, v.construct(Type::u32(), {v.constant(index)})));
+}
+static constexpr std::string_view kInstanceColumn = "tnInstanceMatrix";
+// True when `root` reads an attribute or named varying whose name starts with `prefix`.
+static bool readsInput(const graph::Node& root, std::string_view prefix) {
+    std::unordered_set<const graph::NodeData*> seen;
+    const std::function<bool(const graph::Node&)> visit = [&](const graph::Node& n) {
+        if (!n || !seen.insert(n.get()).second) return false;
+        if ((n->kind == graph::Kind::Attribute || n->kind == graph::Kind::Varying) && n->name.starts_with(prefix)) return true;
+        for (const auto* list : {&n->args, &n->body, &n->otherwise})
+            for (const auto& child : *list)
+                if (visit(child)) return true;
+        return false;
+    };
+    return visit(root);
+}
+// The inputs a vertex-stage lowering of `graph` reads beside positionLocal: r187's positionWorld and positionView
+// there are modelWorldMatrix (then the view) times positionLocal, computed in the stage rather than read as the
+// fragment's varyings (a wind-swayed caster's positionNode, Strata's forest). instanceMatrix()'s columns bind only
+// when the graph reads them.
+static void vertexInputs(Program& v, const VertexVariant& variant, const graph::Node& graph,
+                           std::unordered_map<std::string, ExprId>& inputs, const std::string& previous = "") {
+    const bool world = readsInput(graph, "positionWorld"), view = readsInput(graph, "positionView");
+    if (const auto local = inputs.find("positionLocal"); local != inputs.end() && (world || view)) {
+        const ExprId placed = v.mul(v.uniform("modelMatrix", Type::mat(4, 4)),
+                                    v.construct(Type::vec(4), {local->second, v.constant(1.0f)}));
+        if (world) inputs.try_emplace("positionWorld", v.swizzle(placed, "xyz"));
+        if (view) inputs.try_emplace("positionView", v.swizzle(v.mul(v.uniform("viewMatrix", Type::mat(4, 4)), placed), "xyz"));
+    }
+    if (!readsInput(graph, kInstanceColumn)) return;
+    for (int i = 0; i < 4; ++i) inputs[std::string(kInstanceColumn) + std::to_string(i)] = instanceColumn(v, variant, i, previous);
+}
+
 static LocalVertex localVertex(Program& v, const VertexVariant& variant, bool withNormal,
                                const std::unordered_map<std::string, ExprId>& uniformInputs = {},
                                bool previousFrame = false) {
@@ -322,6 +368,7 @@ static LocalVertex localVertex(Program& v, const VertexVariant& variant, bool wi
         tsl::Build build(v);
         auto inputs = uniformInputs;
         inputs["positionLocal"] = position;
+        vertexInputs(v, variant, variant.nodes.positionNode, inputs, previous);
         position = nodeType(v, graph::lower(variant.nodes.positionNode, v, inputs), Type::vec(3));
     }
     ExprId instanceColor = !variant.instanceColor ? kInvalid : variant.instanceStorage
@@ -344,8 +391,9 @@ static LocalVertex localVertex(Program& v, const VertexVariant& variant, bool wi
 static ExprId clipPosition(Program& v, const VertexVariant& variant, const LocalVertex& local, ExprId clip) {
     if (!variant.nodes.vertexNode) return clip;
     tsl::Build build(v);
-    return nodeType(v, graph::lower(variant.nodes.vertexNode, v, {{"positionLocal", v.swizzle(local.position, "xyz")}}),
-                    Type::vec(4));
+    std::unordered_map<std::string, ExprId> inputs{{"positionLocal", v.swizzle(local.position, "xyz")}};
+    vertexInputs(v, variant, variant.nodes.vertexNode, inputs);
+    return nodeType(v, graph::lower(variant.nodes.vertexNode, v, inputs), Type::vec(4));
 }
 
 OutputPrograms velocityPrograms(const VertexVariant& variant) {
@@ -652,7 +700,9 @@ void linkNodeVaryings(StandardPrograms& out, const VertexVariant& variant, ExprI
         ExprId value;
         if (const auto found = carried.find(name); found != carried.end()) {
             tsl::Build build(v);
-            value = graph::lower(found->second->args[0], v, {{"positionLocal", v.swizzle(position, "xyz")}});
+            std::unordered_map<std::string, ExprId> inputs{{"positionLocal", v.swizzle(position, "xyz")}};
+            vertexInputs(v, variant, found->second->args[0], inputs);
+            value = graph::lower(found->second->args[0], v, inputs);
         } else if (name == "positionWorldDirection")
             value = v.call("normalize", {v.swizzle(v.mul(v.uniform("modelMatrix", Type::mat(4, 4)),
                 v.construct(Type::vec(4), {v.swizzle(position, "xyz"), v.constant(0.0f)})), "xyz")});
@@ -673,6 +723,8 @@ void linkNodeVaryings(StandardPrograms& out, const VertexVariant& variant, ExprI
         else if (name == "normalWorldGeometry" && normal != kInvalid)
             value = v.mul(v.uniform("modelNormalMatrix", Type::mat(3, 3)), normal);
         else if (name == "instanceIndex" || name == "vertexIndex") value = v.builtin(name);
+        else if (name.starts_with(kInstanceColumn) && name.size() == kInstanceColumn.size() + 1)
+            value = instanceColumn(v, variant, name.back() - '0');
         else if (name == "positionGeometry") value = v.attribute("position", type);
         else if (name == "vertexColor") value = v.attribute("color", type);
         else value = v.attribute(name, type);

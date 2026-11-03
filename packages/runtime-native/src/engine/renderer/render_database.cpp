@@ -50,9 +50,15 @@ GraphFind findGraphSources(const Material& material) {
             found.texture = texture;
         } else if ((node->kind == shader::graph::Kind::Texture || node->kind == shader::graph::Kind::StorageTexture) && node->textureObject()) {
             const auto* texture = static_cast<const Texture*>(node->textureObject().get());
-            if (std::none_of(found.textures.begin(), found.textures.end(),
-                             [&](const auto& entry) { return entry.first == node->name; }))
+            const auto same = std::find_if(found.textures.begin(), found.textures.end(),
+                                           [&](const auto& entry) { return entry.first == node->name; });
+            if (same == found.textures.end())
                 { found.textures.emplace_back(node->name, texture); found.textureNodes.push_back(node); }
+            // Nodes over one texture share its binding (tsl_call.cpp "texture"); a `.value` that moved only one of
+            // them cannot be drawn from that one binding.
+            else if (same->second != texture)
+                throw std::runtime_error("TN_NATIVE_TEXTURE_VALUE_SHARED: " + node->name +
+                                         " is sampled by two nodes that now hold different textures; give each its own texture()");
         } else if (node->kind == shader::graph::Kind::StorageElement && node->object) {
             if (std::none_of(found.storages.begin(), found.storages.end(),
                              [&](const auto& entry) { return entry.first == node->name; }))

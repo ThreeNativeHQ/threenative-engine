@@ -38,12 +38,33 @@ function sameLanes(a: readonly number[] | undefined, b: readonly number[]): bool
   return true;
 }
 
+/** A three Matrix3 or Matrix4's elements (9 or 16 numbers), or undefined for any other value. */
+export function matrixElements(value: unknown): ArrayLike<number> | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const elements = (value as { elements?: unknown }).elements;
+  if (
+    (Array.isArray(elements) || ArrayBuffer.isView(elements)) &&
+    ((elements as ArrayLike<number>).length === 16 || (elements as ArrayLike<number>).length === 9)
+  )
+    return elements as ArrayLike<number>;
+  return undefined;
+}
+
 /**
  * One float per lane: a number, a Color's r, g, b, or a VectorN's x, y, z, w. `out`, when given,
  * receives the lanes and is returned, so a uniform can refill one bounded scratch array per sync.
  */
 export function uniformLanes(value: unknown, out?: number[]): number[] {
+  // A Matrix3 or Matrix4: its column-major elements, the order the engine writes a matN uniform in.
+  const elements = matrixElements(value);
+  if (elements === undefined) return valueLanes(value, out ?? []);
   const lanes = out ?? [];
+  lanes.length = elements.length;
+  for (let i = 0; i < elements.length; i += 1) lanes[i] = elements[i] as number;
+  return lanes;
+}
+
+function valueLanes(value: unknown, lanes: number[]): number[] {
   if (typeof value === "number") {
     lanes.length = 1;
     lanes[0] = value;

@@ -178,8 +178,8 @@ void putNodes(std::vector<uint8_t>& block, size_t base, const shader::StageModul
         }
         const shader::BoundUniform* found = shader::findBoundUniform(values, field);
         if (found == nullptr) continue;
-        if (field.type.isMatrix() || field.type.scalar == shader::Type::Scalar::Bool ||
-            found->values.size() != field.type.rows)
+        if (field.type.scalar == shader::Type::Scalar::Bool ||
+            found->values.size() != size_t(field.type.rows) * field.type.cols)
             throw std::runtime_error("TN_TSL_UNIFORM_TYPE: " + field.name);
         shader::writeUniform(std::span(block).subspan(base), field, found->values);
     }
@@ -907,10 +907,13 @@ void Renderer::setVirtualShadow(std::size_t light, const shadows::AtlasOptions& 
 void Renderer::syncVirtualShadows(const LightState& lights, double tanHalfFov) {
     // Unreal's texel rule on this view: a size change rebuilds that light's atlas.
     const WGPULimits limits = tanHalfFov > 0 && width_ > 0 ? deviceLimits() : WGPULimits{};
-    const auto measured = [&](const shadows::AtlasOptions& options) {
+    const auto measured = [&](const shadows::AtlasOptions& options, const auto& shadow) {
         auto resolved = options;
         if (options.autoMapSize && tanHalfFov > 0 && width_ > 0)
             resolved.levelMapSizes = shadows::clipmapMapSizes(options, tanHalfFov, width_, int(limits.maxTextureDimension2D));
+        // The page border holds the PCF footprint: a wider shadow.radius widens it (radius 1.7 needs 3 texels).
+        if (!shadow.sourceAngleFilter && std::isfinite(shadow.radius) && shadow.radius >= 0)
+            resolved.border = std::max(options.border, int(std::ceil(shadow.radius + 0.5)));
         return resolved;
     };
     // Facade configurations follow their light, not its sorted slot; remove stale GPU bindings.
@@ -918,8 +921,13 @@ void Renderer::syncVirtualShadows(const LightState& lights, double tanHalfFov) {
         const auto i = it->first;
         const auto source = i < lights.direct.size() && lights.direct[i].shadow
             ? lights.direct[i].shadow->virtualShadow : nullptr;
-        const bool resized = source && it->second.source == source && source->autoMapSize && tanHalfFov > 0 &&
-            measured(*source).levelMapSizes != it->second.atlas.options().levelMapSizes;
+        bool resized = false;
+        if (source && it->second.source == source) {
+            const auto now = measured(*source, *lights.direct[i].shadow);
+            const auto& built = it->second.atlas.options();
+            resized = now.border != built.border ||
+                (source->autoMapSize && tanHalfFov > 0 && now.levelMapSizes != built.levelMapSizes);
+        }
         if (!it->second.source || (it->second.source == source && !resized)) { ++it; continue; }
         auto& map = it->second.map;
         if (map.view) wgpuTextureViewRelease(map.view);
@@ -935,7 +943,7 @@ void Renderer::syncVirtualShadows(const LightState& lights, double tanHalfFov) {
     for (std::size_t i = 0; i < lights.direct.size(); ++i) {
         const auto& light = lights.direct[i];
         if (!light.shadow || !light.shadow->virtualShadow || virtualShadows_.count(i)) continue;
-        setVirtualShadow(i, measured(*light.shadow->virtualShadow));
+        setVirtualShadow(i, measured(*light.shadow->virtualShadow, *light.shadow));
         virtualShadows_.at(i).source = light.shadow->virtualShadow;
     }
 }

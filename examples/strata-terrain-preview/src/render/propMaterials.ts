@@ -195,6 +195,15 @@ export function lightNeedles(
     .clamp(0, 1)
     .pow(3);
   const albedo = (material.colorNode as Node<"vec4">).rgb;
+  // Green light scattered by neighbouring needles; the crown's occlusion retains dark interiors.
+  material.emissiveNode = albedo.mul(vec3(0.12, 0.8, 0.06)).mul(occlusion);
+  // engine-override: the owned engine has no setupLightingModel hook. Its Two Sided Foliage (PRD-643,
+  // core `twoSidedFoliage`) adds the same shadowed sun transmission through the card.
+  if (typeof material.setupLightingModel !== "function") {
+    material.twoSidedFoliage = true;
+    material.subsurfaceColor = new Color(0.3, 0.5, 0.1).multiplyScalar(translucency);
+    return;
+  }
   const through = albedo.mul(backlit.mul(translucency)).mul(smoothstep(0.16, 0.5, occlusion));
   // Add transmission where Three has already applied the sun's shadow to its light colour.
   // Reading the raw virtual-shadow node again in emissive broke forest→coast material bindings.
@@ -210,8 +219,6 @@ export function lightNeedles(
     };
     return model;
   };
-  // Green light scattered by neighbouring needles; the crown's occlusion retains dark interiors.
-  material.emissiveNode = albedo.mul(vec3(0.12, 0.8, 0.06)).mul(occlusion);
 }
 
 /** Alpha cutoff for every cutout surface. Half coverage: a needle card is mostly empty. */

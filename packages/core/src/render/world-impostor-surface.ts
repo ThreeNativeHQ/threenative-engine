@@ -53,6 +53,7 @@ import {
   vec3,
   vec4,
 } from "three/tsl";
+import * as threeTsl from "three/tsl";
 import {
   EventNode,
   MeshBasicNodeMaterial,
@@ -63,6 +64,18 @@ import {
   type NodeMaterial,
 } from "three/webgpu";
 import { IMPOSTOR_VIEW_GRID, type WorldImpostorAtlas } from "./world-impostor.js";
+
+type InstanceMatrixFn = () => Node<"mat4">;
+/**
+ * The owned engine's drawn-instance matrix, identity for a plain mesh. The engine compiles a node
+ * material once per variant, so a `Fn` cannot read `builder.object`; the web engine hands the node over
+ * in `__tnTsl`, the V8 player as a `three/tsl` name. Upstream three has neither and keeps the builder
+ * path below. Read through `Reflect` so a bundler does not resolve a name upstream does not export.
+ */
+const engineInstanceMatrix = (Reflect.get(threeTsl, "instanceMatrix") ??
+  (Reflect.get(threeTsl, "__tnTsl") as Record<string, unknown> | undefined)?.instanceMatrix) as
+  | InstanceMatrixFn
+  | undefined;
 
 /** The surface reconstructs alpha-covered ray/depth crossings in the three neighboring views. */
 export const IMPOSTOR_SURFACE_PARALLAX = true;
@@ -325,10 +338,7 @@ function instanceMatrixNode(
 
 /** `cameraViewMatrix * modelWorldMatrix * instanceMatrix`: asset-space to view-space per instance. */
 function instanceViewMatrixNode(builder: NodeBuilder): Node<"mat4"> {
-  const object = builder.object;
-  const attribute = (object as { instanceMatrix?: InstancedBufferAttribute }).instanceMatrix;
-  const instance =
-    attribute === undefined ? identityMat4() : instanceMatrixNode(attribute, builder);
+  const instance = userInstanceMatrix(builder);
   return cameraViewMatrix.mul(modelWorldMatrix).mul(instance) as Node<"mat4">;
 }
 
@@ -420,7 +430,6 @@ export class WorldImpostorSurface {
     const dirVarying = varyingProperty("vec3", `${name}Dir`);
 
     const positionNode = Fn((_inputs: unknown, builder: NodeBuilder) => {
-      const object = builder.object;
       const instance = userInstanceMatrix(builder);
       const view = cameraViewMatrix.mul(modelWorldMatrix).mul(instance);
       const centerView = view.mul(vec4(centerUniform, 1)).xyz;
@@ -517,6 +526,7 @@ let surfaceId = 0;
 
 /** The attribute node for the position pass; a plain `Mesh` falls back to the identity. */
 function userInstanceMatrix(builder: NodeBuilder): Node<"mat4"> {
+  if (engineInstanceMatrix !== undefined) return engineInstanceMatrix();
   const object = builder.object;
   const attribute = (object as { instanceMatrix?: InstancedBufferAttribute }).instanceMatrix;
   return attribute === undefined ? identityMat4() : instanceMatrixNode(attribute, builder);

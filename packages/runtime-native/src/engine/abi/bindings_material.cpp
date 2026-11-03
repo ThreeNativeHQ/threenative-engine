@@ -781,6 +781,20 @@ void checkHalfFloatBits(const std::vector<double>& values) {
             throw Unsupported{"HalfFloatType DataTexture data must be a Uint16Array of binary16 bits"};
 }
 
+/**
+ * A RedFormat texel as the RGBA texel three samples it as, (r, 0, 0, 1): the store and upload are RGBA only.
+ * ponytail: 4x the bytes of an R texture; add an R8/R16F/R32F upload path if a large red texture shows up.
+ */
+std::vector<double> widenRed(const std::vector<double>& red, uint16_t type) {
+    const double one = type == kTextureHalfFloatType ? 15360.0 : type == kTextureFloatType ? 1.0 : 255.0;
+    std::vector<double> rgba(red.size() * 4, 0.0);
+    for (std::size_t i = 0; i < red.size(); ++i) {
+        rgba[i * 4] = red[i];
+        rgba[i * 4 + 3] = one;
+    }
+    return rgba;
+}
+
 void registerTextureClass(ClassBinding& b, bool data, const char* cls) {
     b.ctor = [data](const Args& a, Store&) -> std::shared_ptr<void> {
         if (!data) return std::static_pointer_cast<void>(std::make_shared<Texture>());
@@ -790,18 +804,21 @@ void registerTextureClass(ClassBinding& b, bool data, const char* cls) {
             const uint32_t height = a.size() > 2 ? static_cast<uint32_t>(number(a[2])) : 1;
             const uint16_t format = a.size() > 3 ? static_cast<uint16_t>(number(a[3])) : kTextureRGBAFormat;
             const uint16_t type = a.size() > 4 ? static_cast<uint16_t>(number(a[4])) : kTextureUnsignedByteType;
-            if (format != kTextureRGBAFormat) throw Unsupported{"DataTexture format must be RGBAFormat"};
+            if (format != kTextureRGBAFormat && format != kTextureRedFormat)
+                throw Unsupported{"DataTexture format must be RGBAFormat or RedFormat"};
             if (type != kTextureUnsignedByteType && type != kTextureFloatType && type != kTextureHalfFloatType)
                 throw Unsupported{"DataTexture type must be UnsignedByteType, FloatType or HalfFloatType"};
             // The C ABI hands DataTexture its typed array's bytes (ctorTakesBytes); V8 hands numbers.
             if (a[0].bytes.empty() && a[0].number != 0)
                 throw Unsupported{"DataTexture data must arrive with its contents, not deferred"};
-            if (!a[0].bytes.empty() && texture->setImageBytes(a[0].bytes, a[0].text, width, height, format, type))
+            if (format == kTextureRGBAFormat && !a[0].bytes.empty() &&
+                texture->setImageBytes(a[0].bytes, a[0].text, width, height, format, type))
                 return std::static_pointer_cast<void>(texture);
-            const std::vector<double> values =
-                a[0].bytes.empty() ? a[0].numbers : typedArrayNumbers(a[0].text, a[0].bytes);
+            std::vector<double> values = a[0].bytes.empty() ? a[0].numbers : typedArrayNumbers(a[0].text, a[0].bytes);
             if (type == kTextureHalfFloatType) checkHalfFloatBits(values);
-            texture->setImage(values, a[0].text, width, height, format, type);
+            texture->redSource = format == kTextureRedFormat;
+            if (texture->redSource) values = widenRed(values, type);
+            texture->setImage(values, a[0].text, width, height, kTextureRGBAFormat, type);
         }
         return std::static_pointer_cast<void>(texture);
     };
@@ -815,15 +832,17 @@ void registerTextureClass(ClassBinding& b, bool data, const char* cls) {
         const std::size_t texels = std::size_t(texture->width) * texture->height;
         // The C ABI hands DataTexture its typed array's bytes (settersTakeBytes); V8 hands numbers.
         const std::size_t count = v.bytes.empty() ? v.numbers.size() : v.bytes.size() / typedArrayElementBytes(v.text);
-        if (v.kind != Value::Kind::Numbers || texels == 0 || count != texels * 4)
-            throw Unsupported{"image.data must be a typed array of width * height * 4 values"};
+        const std::size_t lanes = texture->redSource ? 1 : 4;
+        if (v.kind != Value::Kind::Numbers || texels == 0 || count != texels * lanes)
+            throw Unsupported{"image.data must be a typed array of width * height * " + std::to_string(lanes) + " values"};
         // three moves `version` on needsUpdate only, so the new texels wait for it.
-        if (!v.bytes.empty() && texture->setImageBytes(v.bytes, v.text, texture->width, texture->height,
+        if (!texture->redSource && !v.bytes.empty() && texture->setImageBytes(v.bytes, v.text, texture->width, texture->height,
                                                        texture->format, texture->type, false))
             return;
         const std::vector<double> values = v.bytes.empty() ? v.numbers : typedArrayNumbers(v.text, v.bytes);
         if (texture->isHalfFloat()) checkHalfFloatBits(values);
-        texture->setImage(values, v.text, texture->width, texture->height, texture->format, texture->type, false);
+        texture->setImage(texture->redSource ? widenRed(values, texture->type) : values, v.text, texture->width,
+                          texture->height, texture->format, texture->type, false);
     };
 }
 

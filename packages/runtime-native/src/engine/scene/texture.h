@@ -35,6 +35,7 @@ inline constexpr uint16_t kTextureUnsignedByteType = 1009;  // three's UnsignedB
 inline constexpr uint16_t kTextureFloatType = 1015;         // three's FloatType
 inline constexpr uint16_t kTextureHalfFloatType = 1016;     // three's HalfFloatType: IEEE binary16 bits
 inline constexpr uint16_t kTextureRGBAFormat = 1023;        // three's RGBAFormat
+inline constexpr uint16_t kTextureRedFormat = 1028;         // three's RedFormat (widened to RGBA)
 
 /**
  * A texture's identity for GPU caches: unique for the process lifetime, never reused (an address is),
@@ -235,6 +236,8 @@ public:
         format = kTextureRGBAFormat;
         type = kTextureUnsignedByteType;
     }
+    /** Built as RedFormat: stored as RGBA, so `image.data` takes one lane per texel and widens it too. */
+    bool redSource = false;
 
     void setImage(const std::vector<double>& values, const std::string& arrayType, uint32_t w, uint32_t h,
                   uint16_t fmt, uint16_t dataType, bool bump = true) {

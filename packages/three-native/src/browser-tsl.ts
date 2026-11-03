@@ -11,6 +11,7 @@ import {
   type ConstClasses,
   booleanUniforms,
   liveUniforms,
+  matrixElements,
   uniformLanes,
   withConstValues,
 } from "./tsl-uniforms.js";
@@ -156,7 +157,11 @@ const FUNCTIONS = [
   "reflector",
   "transformDirection",
   "transformNormalToView",
+  "getViewPosition",
+  "bumpMap",
   "property",
+  "varyingProperty",
+  "instanceMatrix",
   "radians",
   "degrees",
   "inverseSqrt",
@@ -209,6 +214,7 @@ const FUNCTIONS = [
 ] as const;
 /** The inputs TSL exports as values (tn::abi::tslConstants), each built once, when first read. */
 const CONSTANTS = [
+  "modelViewProjection",
   "viewportLinearDepth",
   "frameGroup",
   "renderGroup",
@@ -224,6 +230,9 @@ const CONSTANTS = [
   "normalWorld",
   "positionLocal",
   "positionWorld",
+  "positionView",
+  "frontFacing",
+  "faceDirection",
   "positionWorldDirection",
   "normalViewGeometry",
   "cameraViewMatrix",
@@ -306,6 +315,7 @@ const METHODS = [
   "smoothstep",
   "select",
   "sample",
+  "setInterpolation",
   "__rtt",
   "oneMinus",
   "dispose",
@@ -782,9 +792,22 @@ export function defineTsl(
       },
     });
   }
-  const live = liveUniforms(
-    exports.uniform as (value: unknown, type?: unknown) => ITslNode,
-    (node, lanes) => runtime.setUniform(node[TSL_NODE], lanes),
+  // uniform(matrix): the engine takes a matN uniform's first value as a constant matN, built here
+  // from the matrix's columns; later edits sync through uniformLanes (the 9 or 16 elements).
+  const valueUniform = exports.uniform as (value: unknown, type?: unknown) => ITslNode;
+  const vec = (n: number) => exports[`vec${n}`] as (...lanes: number[]) => ITslNode;
+  const matrixUniform = (value: unknown, type?: unknown): ITslNode => {
+    const elements = matrixElements(value);
+    if (elements === undefined)
+      return type === undefined ? valueUniform(value) : valueUniform(value, type);
+    const n = elements.length === 16 ? 4 : 3;
+    const columns = Array.from({ length: n }, (_, c) =>
+      vec(n)(...Array.from({ length: n }, (_, r) => elements[c * n + r] as number)),
+    );
+    return valueUniform((exports[`mat${n}`] as (...columns: ITslNode[]) => ITslNode)(...columns));
+  };
+  const live = liveUniforms(matrixUniform, (node, lanes) =>
+    runtime.setUniform(node[TSL_NODE], lanes),
   );
   exports.uniform = booleanUniforms(live.uniform, (scalar) =>
     wrap(call("notEqual", scalar[TSL_NODE], [0])),

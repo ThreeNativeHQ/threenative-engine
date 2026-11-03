@@ -152,12 +152,18 @@ export function createOutdoorSky(
   // offset to shadow resolution. Other worlds keep their judged bias until close-ups prove a change.
   const tightContacts = biome?.world === "coastal";
   sun.shadow.normalBias = tightContacts ? (2 * rig.shadowExtents[0]) / mapSize : 0.035;
+  const outerExtent = rig.shadowExtents[rig.shadowExtents.length - 1] ?? 320;
   const shadows = new VirtualShadowNode(sun, {
     clipExtents: [...rig.shadowExtents],
     mapSize,
     // engine-override: footprint-wide slope bias detaches low-relief contacts such as beach stones.
     ...(tightContacts ? { receiverPlaneBias: false } : {}),
     ...(farShadows ? { refreshStep: [0.2, 0.125] } : {}),
+    // engine-override: the owned engine cannot measure the depth of wind-swayed (GPU-deformed) casters, so
+    // its light-space depth spans the outer cascade's whole window. The three.js path keeps derived depth.
+    ...(engineInfo === undefined
+      ? {}
+      : { lightDistance: 2 * outerExtent, depthRange: 4 * outerExtent }),
   });
   // Fade the outer cascade before its cached window ends, including its refresh trail.
   const shadowSetup = shadows.setup.bind(shadows);
