@@ -186,7 +186,12 @@ function renderObjectsProbe(): {
   const manager = new RenderObjects(
     renderer,
     nodes,
-    { deleteNodeAttributes: vi.fn(), deleteVertexState: vi.fn(), getIndex: () => null, releaseRenderObject: vi.fn() },
+    {
+      deleteNodeAttributes: vi.fn(),
+      deleteVertexState: vi.fn(),
+      getIndex: () => null,
+      releaseRenderObject: vi.fn(),
+    },
     pipelines,
     bindings,
     {},

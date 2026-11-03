@@ -14,8 +14,8 @@ import {
   inspectAllTemplates,
   validateVisualScores,
   visualServerProcessGroup,
-  withVisualCaptureLease,
   waitForPaintedFrame,
+  withVisualCaptureLease,
 } from "../visual-gate.js";
 
 describe("visual gate", () => {

@@ -290,9 +290,7 @@ export function collectBundledThirdPartyPackages(outputs: readonly unknown[]) {
 }
 
 function collectThreePatchDigests(worktreeRoot: string) {
-  const files = [
-    "packages/core/patches/three@0.187.0.patch",
-  ];
+  const files = ["packages/core/patches/three@0.187.0.patch"];
   return Object.fromEntries(
     files
       .filter((file) => existsSync(path.join(worktreeRoot, file)))

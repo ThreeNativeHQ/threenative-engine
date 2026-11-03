@@ -2435,7 +2435,9 @@ describe("CI pipeline structure", () => {
     const job = requiredJob(ci, "template-nonvisual");
     // Runs on every event since 2026-09-01 (owner call): the PR skip reported nothing on the
     // branch where the regression was written, and the merge that shipped it reported too late.
-    expect(job).not.toMatch(/^\s+if:.*github\.event_name/mu);
+    // Only the job-level gate (4-space key) counts: since 2026-11-01 (owner) single steps such as
+    // the starter's scenarios run nightly only, which leaves the job itself on every event.
+    expect(job).not.toMatch(/^ {4}if:.*github\.event_name/mu);
     // An `if:` gate naming the event, not any mention of it: the TN_RUNNER routing expression
     // (PRD-480) reads `github.event.pull_request.head.repo.fork` in every routed job and gates
     // nothing on it. What this forbids is a gate that skips pull requests.
@@ -3517,7 +3519,7 @@ describe("CI pipeline structure", () => {
     // The lane it delegates to has to run the same classifier and runner, on every event.
     expect(nonVisual).toContain("non-visual-scenarios.mjs");
     expect(nonVisual).toContain("threenative-playtest");
-    expect(nonVisual).not.toMatch(/^\s+if:.*github\.event_name/mu);
+    expect(nonVisual).not.toMatch(/^ {4}if:.*github\.event_name/mu);
     // And it has to cover every template this matrix drives.
     const driven = matrixTemplates(goldenPath);
     expect(driven.length).toBeGreaterThan(0);
