@@ -49,7 +49,10 @@ beforeAll(async () => {
       const expected = /^index ([a-f0-9]{40})/mu.exec(block ?? "")?.[1];
       // The git blob id of the bytes, which is what a `diff --git` `index` line records.
       const blobHash = (contents: string): string =>
-        createHash("sha1").update(`blob ${Buffer.byteLength(contents)}\0`).update(contents).digest("hex");
+        createHash("sha1")
+          .update(`blob ${Buffer.byteLength(contents)}\0`)
+          .update(contents)
+          .digest("hex");
       expect(blobHash(await readFile(join(root, file), "utf8"))).toBe(expected);
     }
   }

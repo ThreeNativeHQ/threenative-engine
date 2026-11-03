@@ -250,7 +250,8 @@ function passKind(
 ): FramePassKind {
   if (name.startsWith("Shadow Map")) return "shadow";
   if (/reflect/iu.test(name)) return "reflection";
-  if (world !== undefined) return scene === world.scene && camera === world.camera ? "main" : "nested";
+  if (world !== undefined)
+    return scene === world.scene && camera === world.camera ? "main" : "nested";
   return depth === 0 ? "main" : "nested";
 }
 
