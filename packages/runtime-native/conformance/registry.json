@@ -2189,6 +2189,20 @@
       },
       "desktopGate": false,
       "required": false
+    },
+    {
+      "id": "compute-texture-load",
+      "title": "compute kernel reading a float DataTexture only with textureLoad (no sampler bound)",
+      "category": "webgpu-tsl",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/compute-texture-load.js",
+      "browserRecipe": "webgpu",
+      "tolerance": {
+        "pixelMismatchRatio": 0.04,
+        "perceptualDeltaE": 3
+      },
+      "desktopGate": false,
+      "required": false
     }
   ],
   "generatedPlaytestProofs": [
