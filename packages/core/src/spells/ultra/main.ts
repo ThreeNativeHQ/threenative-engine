@@ -130,7 +130,10 @@ export function createFx(o: IFxOptions) {
     // the shared combustion fluid (upstream FluidVolume.get(fx)): built on first use, inside the spell's
     // create(), so its box meshes count as that spell's objects and warmSpell compiles them
     get fluid(): IFluid {
-      return o.fluid ?? (fx.renderer ? FluidVolume.get(fx) : NULL_FLUID);
+      // TEMP lane gate (team-lead, removed at integration): build only with ?lane=fluid or ?lane=all
+      const lanes = new URLSearchParams(globalThis.location?.search ?? "").getAll("lane");
+      const on = lanes.includes("fluid") || lanes.includes("all");
+      return o.fluid ?? (fx.renderer && on ? FluidVolume.get(fx) : NULL_FLUID);
     },
     fluidVolume: undefined as FluidVolume | undefined,
     // the raw renderer the GPU systems draw their passes with (ctx.renderer.raw on ThreeNative)

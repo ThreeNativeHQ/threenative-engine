@@ -610,7 +610,7 @@ export function spellLightPBR(
 //   4 shock     expanding shell: t1 = (radius, thickness, impulse, -)
 //   5 push      cone gust: t2.xyz dir, t1 = (speed, radius, length, coupling)
 // kill: inout var
-// ENGINE-GAP: the Wasm engine's Fn passes its arguments as reads, so the inout `kill` cannot be
+// ENGINE-GAP: Fn out-param assign (engine-gaps gap 10). The Wasm engine's Fn passes its arguments as reads, so the inout `kill` cannot be
 // assigned ("assign requires a variable or storage element"). Inlined as a plain JS function: the
 // caller's kill var is assigned directly. Switch back to Fn once Fn arguments can be inout vars.
 export function forceAccel(p: V3, v: V3, kill: F): V3 {
