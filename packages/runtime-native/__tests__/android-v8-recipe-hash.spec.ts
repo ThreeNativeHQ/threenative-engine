@@ -111,14 +111,31 @@ describe("the Android V8 recipe hash", () => {
     }
   });
 
+  it("refuses an entry that is code, because a brace scanner cannot follow it", () => {
+    // The real entry is plain data, which is what makes the brace count safe.
+    const real = readFileSync(join(runtimeRoot, "scripts/download-deps.mjs"), "utf8");
+    expect(() => v8AndroidDependencyEntry(real)).not.toThrow();
+    expect(v8AndroidDependencyEntry(real)).not.toContain("`");
+
+    const template = "const DEPS = {\n  'v8-android': {\n    version: `11.${major}.1`,\n  },\n};\n";
+    expect(() => v8AndroidDependencyEntry(template)).toThrow("TN_V8_RECIPE_ENTRY_NOT_PLAIN");
+    // A regex literal may hold a brace or a quote, and its `}` ends the scan inside the entry.
+    const regex =
+      "const DEPS = {\n  'v8-android': {\n    version: '11.110.1',\n    tag: /^v8}-/u,\n  },\n};\n";
+    expect(() => v8AndroidDependencyEntry(regex)).toThrow("TN_V8_RECIPE_ENTRY_NOT_PLAIN");
+  });
+
   it("takes the recipe hash from the script rather than hashing whole files", () => {
     const recipe = action.slice(
       action.indexOf("- name: Compute the pinned V8 recipe hash"),
       action.indexOf("- name: Download the published Android V8 payload"),
     );
-    expect(recipe).toContain("node ${{ inputs.runtime-root }}/scripts/v8-recipe-hash.mjs");
     // `hashFiles('…/download-deps.mjs')` is the whole-file hash this key must never go back to: an
     // unrelated edit in that file then throws away a built V8.
     expect(recipe).not.toContain("hashFiles(");
+    // A failing node must fail the step: an `echo "hash=$(node …)"` wrote an empty name instead.
+    expect(recipe).toMatch(/^ {8}hash=\$\(node .+\)$/mu);
+    expect(recipe).toMatch(/^ {8}\[ -n "\$hash" \] \|\|/mu);
+    expect(recipe).not.toMatch(/echo "hash=\$\(/u);
   });
 });

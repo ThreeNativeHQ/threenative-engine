@@ -34,6 +34,12 @@ jobs:
     # and bounds the 3.2 GB resumable V8 state to one entry per recipe, so a save in one lane can no
     # longer evict another lane's hot key (PRD-628).
     if: github.event_name == 'workflow_run'
+    # Two janitors must not delete at once: both read the same cache list, so the second one's
+    # deletes land on entries the first already removed and the budget it computed is stale. A
+    # queued run waits for the running one instead of cancelling it.
+    concurrency:
+      group: ci-janitor-prune-cache
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

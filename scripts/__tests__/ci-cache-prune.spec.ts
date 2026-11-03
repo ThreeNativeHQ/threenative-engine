@@ -5,7 +5,11 @@
  * budget, bounds the resumable V8 state to one entry per recipe, and never deletes a hot key.
  */
 
-import { describe, expect, it } from "vitest";
+import { spawnSync } from "node:child_process";
+import { readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+import { makeTempDirSync } from "../../test-support/temp-dir.js";
 import {
   CACHE_BUDGET_BYTES,
   FAMILY_SHARES,
@@ -14,6 +18,9 @@ import {
   parseCaches,
   planCachePrune,
 } from "../ci-cache-prune.mjs";
+import { jobSections } from "../ci-workflow.js";
+
+const repo = join(import.meta.dirname, "..", "..");
 
 const GiB = 1024 ** 3;
 const MiB = 1024 ** 2;
@@ -53,7 +60,7 @@ describe("the cache janitor plan", () => {
     expect(plan.totalAfter).toBe(plan.totalBefore);
   });
 
-  it("keeps one resumable V8 state per recipe, the newest", () => {
+  it("keeps one resumable V8 state per recipe and ref, the newest", () => {
     const recipe = "android-v8-source-Linux-X64-3ea15707d0b3667e1a323f728a5339364";
     const older = entry(`${recipe}-41569108715-1`, 3.2, 5);
     const middle = entry(`${recipe}-41575174097-1`, 3.2, 3);
@@ -62,6 +69,19 @@ describe("the cache janitor plan", () => {
     const other = entry("android-v8-source-Linux-X64-9f8e7d6c-41575174097-1", 3.2, 2);
     const plan = planCachePrune({ caches: [older, middle, newest, other] });
     expect(plan.deleteIds.sort()).toEqual([older.id, middle.id].sort());
+  });
+
+  it("never lets one ref's newer state delete another ref's", () => {
+    const recipe = "android-v8-source-Linux-X64-3ea15707d0b3667e1a323f728a5339364";
+    // Caches are ref-scoped, so two pull requests' states never interact: the newer entry on ref B
+    // is not a reason to drop ref A's only entry.
+    const pullRequestA = entry(`${recipe}-41569108715-1`, 3.2, 5, "refs/pull/628/merge");
+    const pullRequestB = entry(`${recipe}-41575174097-1`, 3.2, 1, "refs/pull/629/merge");
+    const plan = planCachePrune({ caches: [pullRequestA, pullRequestB] });
+    expect(plan.deleteIds).toEqual([]);
+    // Within one ref the rule still applies.
+    const olderOnB = entry(`${recipe}-41590000001-1`, 3.2, 4, "refs/pull/629/merge");
+    expect(planCachePrune({ caches: [olderOnB, pullRequestB] }).deleteIds).toEqual([olderOnB.id]);
   });
 
   it("deletes the oldest cold entry first and never a hot key", () => {
@@ -114,5 +134,98 @@ describe("the cache janitor plan", () => {
       familyShares: {},
     });
     expect(plan.deleteIds).toHaveLength(1);
+  });
+});
+
+/** Every cache-key prefix this repository declares, literal head of a `key:` or of a `prefix=`. */
+function declaredCachePrefixes(): readonly string[] {
+  const files = [
+    ...readdirSync(join(repo, ".github/workflows")).map((name) =>
+      join(repo, ".github/workflows", name),
+    ),
+    ...readdirSync(join(repo, ".github/actions")).map((name) =>
+      join(repo, ".github/actions", name, "action.yml"),
+    ),
+  ];
+  const prefixes: string[] = [];
+  for (const file of files) {
+    const source = readFileSync(file, "utf8");
+    for (const match of source.matchAll(/^\s+(?:key|restore-keys): ([^\s$]+)/gmu))
+      prefixes.push(match[1] ?? "");
+    for (const match of source.matchAll(/prefix=([^\s$]+)/gu)) prefixes.push(match[1] ?? "");
+  }
+  return prefixes;
+}
+
+describe("the hot keys the janitor must never delete", () => {
+  it("names the prefixes the workflows actually declare, not a guess", () => {
+    const declared = declaredCachePrefixes();
+    // The three the review added: a cargo registry, a wgpu pipeline cache and the host deps of the
+    // pipeline-cache workflow. A prefix with no declaration in this tree would protect nothing.
+    for (const prefix of ["cargo-v1-", "wgpu-cache-", "pipeline-cache-host-deps-"]) {
+      expect(HOT_PREFIXES).toContain(prefix);
+      expect(
+        declared.some((candidate) => candidate.startsWith(prefix)),
+        `no cache key in .github/ starts with ${prefix}`,
+      ).toBe(true);
+    }
+  });
+
+  it("keeps a cargo registry, a wgpu cache and the host deps under budget pressure", () => {
+    const cargo = entry("cargo-v1-Linux-X64-image-rust1.90-abc-deadbeef", 0.15, 9);
+    const wgpu = entry("wgpu-cache-25.0.2.2-rust1.90-ndk27-x86_64-linux-android", 0.2, 8);
+    const hostDeps = entry("pipeline-cache-host-deps-Linux-abc", 0.05, 7);
+    const stale = entry("native-build-Linux-X64-oldimage-abc", 1.5, 6);
+    const plan = planCachePrune({
+      caches: [stale, cargo, wgpu, hostDeps],
+      budgetBytes: GiB,
+      familyShares: {},
+    });
+    expect(plan.deleteIds).toEqual([stale.id]);
+  });
+});
+
+describe("the janitor that applies the plan", () => {
+  const roots: string[] = [];
+  afterEach(() => {
+    for (const root of roots.splice(0)) rmSync(root, { force: true, recursive: true });
+  });
+
+  it("reports what it planned, because the caller does the deleting", () => {
+    const root = makeTempDirSync("tn-ci-cache-prune-");
+    roots.push(root);
+    const file = join(root, "caches.jsonl");
+    writeFileSync(
+      file,
+      `${JSON.stringify({
+        id: 1,
+        key: "native-build-Linux-X64-oldimage-abc",
+        ref: "refs/heads/develop",
+        // Over the 9 GiB budget on its own, so the plan names it.
+        size_in_bytes: 10 * GiB,
+        last_accessed_at: "2026-11-01T00:00:00Z",
+      })}\n`,
+    );
+    const result = spawnSync("node", [join(repo, "scripts/ci-cache-prune.mjs"), file], {
+      encoding: "utf8",
+      env: process.env,
+    });
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toBe("1\n");
+    expect(result.stderr).toContain("planned for deletion");
+    // "deleted" would be a lie: the workflow deletes them, and one may have expired first.
+    expect(result.stderr).not.toMatch(/\bdeleted\b/u);
+  });
+
+  it("serializes the deletes, so two janitors never race on the same list", () => {
+    const source = readFileSync(join(repo, ".github/workflows/ci-janitor.yml"), "utf8");
+    const job = jobSections(source).find(([name]) => name === "prune-cache")?.[1];
+    expect(job).toBeDefined();
+    const group = /^ {4}concurrency:\n {6}group: (\S+)\n {6}cancel-in-progress: (\w+)$/mu.exec(
+      job ?? "",
+    );
+    expect(group?.[1]).toBe("ci-janitor-prune-cache");
+    // A cancelled janitor could stop between its list and its last delete; the queued one must wait.
+    expect(group?.[2]).toBe("false");
   });
 });

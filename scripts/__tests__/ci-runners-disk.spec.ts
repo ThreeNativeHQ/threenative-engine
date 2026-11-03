@@ -26,13 +26,23 @@ afterEach(() => {
 function fakeHost({
   freeKb,
   dockerRoot = "/fake/docker",
-}: { freeKb: number; dockerRoot?: string }) {
+  dockerInfoFails = false,
+  dockerRootChanges = false,
+  dfFails = false,
+}: {
+  freeKb: number;
+  dockerRoot?: string;
+  dockerInfoFails?: boolean;
+  dockerRootChanges?: boolean;
+  dfFails?: boolean;
+}) {
   const root = makeTempDirSync("tn-ci-runners-");
   roots.push(root);
   const bin = join(root, "bin");
   mkdirSync(bin, { recursive: true });
   const calls = join(root, "calls.log");
   writeFileSync(calls, "");
+
   const stub = (name: string, body: string) => {
     const path = join(bin, name);
     writeFileSync(path, `#!/bin/sh\nprintf '%s %s\\n' "${name}" "$*" >> "${calls}"\n${body}\n`);
@@ -40,25 +50,50 @@ function fakeHost({
   };
   stub(
     "df",
-    `printf 'Filesystem 1024-blocks Used Available Capacity Mounted\\n/dev/fake 1000 0 ${freeKb} 1%% /fake\\n'`,
+    dfFails
+      ? "echo 'df: cannot read /fake: Input/output error' >&2\nexit 1"
+      : `printf 'Filesystem 1024-blocks Used Available Capacity Mounted\\n/dev/fake 1000 0 ${freeKb} 1%% /fake\\n'`,
   );
+  // A daemon whose root moves: the balancer must measure where the disk is now, not where it was.
+  const dockerInfo = dockerInfoFails
+    ? "exit 1"
+    : dockerRootChanges
+      ? `count=0
+         [ -f "${root}/root-reads" ] && count=$(cat "${root}/root-reads")
+         count=$((count + 1))
+         printf '%s' "$count" > "${root}/root-reads"
+         printf '/fake/docker-%s\\n' "$count"`
+      : `printf '${dockerRoot}\\n'`;
   stub(
     "docker",
     `case "$1" in
-       info) printf '${dockerRoot}\\n' ;;
+       info) ${dockerInfo} ;;
        image|builder|container) exit 0 ;;
        ps) exit 0 ;;
      esac`,
   );
   stub(
     "gh",
-    `case "$1 $2" in
+    `# The balancer does not create its state directory before it routes, so the stub must.
+     tn_stop() { mkdir -p "$(dirname "$TN_TEST_STOP_FILE")" && : > "$TN_TEST_STOP_FILE"; }
+     case "$1 $2" in
        "variable get") printf 'tn-local\\n' ;;
        "variable delete")
-         printf 'deleted\\n' > "${root}/deleted"
-         [ -z "\${TN_TEST_STOP_FILE:-}" ] || : > "$TN_TEST_STOP_FILE" ;;
+         printf 'deleted\\n' >> "${root}/deleted"
+         if [ -n "\${TN_TEST_STOP_FILE:-}" ]; then
+           count=$(wc -l < "${root}/deleted")
+           [ "\${TN_TEST_STOP_AFTER_DELETES:-1}" -gt "$count" ] || tn_stop
+         fi ;;
        "variable set") printf 'set\\n' > "${root}/set" ;;
-       "api "*) exit 0 ;;
+       "api "*)
+         case "$*" in
+           *actions/runners*)
+             printf 'run\\n' >> "${root}/runner-reads"
+             if [ -n "\${TN_TEST_STOP_AFTER_RUNNER_READS:-}" ]; then
+               count=$(wc -l < "${root}/runner-reads")
+               [ "$TN_TEST_STOP_AFTER_RUNNER_READS" -gt "$count" ] || tn_stop
+             fi ;;
+         esac ;;
      esac`,
   );
   // Eight whole cores on one socket, matching `nproc`, so `plan` accepts a one-slot pool.
@@ -90,6 +125,25 @@ function run(
   });
   assert.ifError(result.error);
   return { ...result, calls: readFileSync(host.calls, "utf8"), state };
+}
+
+/** The balancer, with a stop file a stub `gh` creates so the loop ends by itself. */
+function balance(host: ReturnType<typeof fakeHost>, extraEnv: Record<string, string> = {}) {
+  const result = spawnSync("bash", [script, "balance"], {
+    encoding: "utf8",
+    timeout: 8_000,
+    env: {
+      ...process.env,
+      PATH: `${host.bin}:${process.env.PATH ?? ""}`,
+      XDG_STATE_HOME: join(host.root, "state"),
+      HOME: host.root,
+      TN_RUNNER_POLL_SECONDS: "0.05",
+      TN_TEST_STOP_FILE: join(host.root, "state", "threenative/ci-runners/stop"),
+      ...extraEnv,
+    },
+  });
+  assert.ifError(result.error);
+  return result;
 }
 
 describe("the tn-local runner host disk budget", () => {
@@ -132,23 +186,48 @@ describe("the tn-local runner host disk budget", () => {
     const host = fakeHost({ freeKb: 3 * 1024 * 1024 });
     // The balancer loops until its stop file appears; a stub `gh variable delete` is what the
     // pause does, so the first delete ends the loop after the second one is recorded.
-    const result = spawnSync("bash", [script, "balance"], {
-      encoding: "utf8",
-      timeout: 8_000,
-      env: {
-        ...process.env,
-        PATH: `${host.bin}:${process.env.PATH ?? ""}`,
-        XDG_STATE_HOME: join(host.root, "state"),
-        HOME: host.root,
-        TN_RUNNER_POLL_SECONDS: "0.05",
-        TN_TEST_STOP_FILE: join(host.root, "state", "threenative/ci-runners/stop"),
-      },
-    });
-    assert.ifError(result.error);
+    const result = balance(host);
     expect(result.status, result.stderr).toBe(0);
     expect(result.stderr).toContain("disk 3 GB free, under the 20 GB floor: slots paused");
     expect(readFileSync(join(host.root, "deleted"), "utf8")).toContain("deleted");
     // A `variable set` would re-advertise the label on the same poll.
     expect(existsSync(join(host.root, "set"))).toBe(false);
+  });
+
+  it("keeps balancing when the prune cannot run", () => {
+    // A host whose docker daemon died still has to withdraw its slots: its disk is exactly the
+    // thing nobody can measure any more. `prune` calls `fail`, which exits, so the balancer must
+    // run it in a subshell — the old direct call ended the whole loop with status 2.
+    const host = fakeHost({ freeKb: 3 * 1024 * 1024, dockerInfoFails: true });
+    const result = balance(host);
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stderr).toContain("docker is not usable without sudo");
+    expect(result.stderr).toContain("slots paused");
+  });
+
+  it("does not read an unreadable df as an empty disk", () => {
+    // 0 GB free would pause every slot for a measurement error, so an unanswerable `df` keeps the
+    // current routing and says so. The label is withdrawn only because no runner is idle.
+    const host = fakeHost({ freeKb: 0, dfFails: true });
+    const result = balance(host, { TN_TEST_STOP_AFTER_RUNNER_READS: "1" });
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stderr).toContain(
+      "cannot read free space on /fake/docker; keeping the current routing",
+    );
+    expect(result.stderr).not.toContain("slots paused");
+    expect(existsSync(join(host.root, "set"))).toBe(false);
+  });
+
+  it("measures the docker root where it is now on every poll, because the loop runs for hours", () => {
+    // The path is not a constant of the process: a daemon whose root moves must be measured in its
+    // new place, so it is read per poll and not once at the start. Two polls plus the three reads
+    // `prune` makes for its own report are five; reading it once at start leaves four.
+    const host = fakeHost({ freeKb: 3 * 1024 * 1024, dockerRootChanges: true });
+    const result = balance(host, { TN_TEST_STOP_AFTER_DELETES: "4" });
+    expect(result.status, result.stderr).toBe(0);
+    const reads = readFileSync(host.calls, "utf8")
+      .split("\n")
+      .filter((line) => line.startsWith("docker info --format"));
+    expect(reads.length).toBeGreaterThanOrEqual(5);
   });
 });

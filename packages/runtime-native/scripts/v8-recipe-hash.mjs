@@ -41,6 +41,10 @@ function normalize(text) {
  * The `'v8-android': { … }` member of the provisioner's DEPS map, from its source text. A brace
  * counter that skips comments and string literals, because the entry is a comment-heavy object and
  * the first closing brace after it is not its own.
+ *
+ * The entry has to stay plain data. A template literal can hold a `}` this scanner would read as
+ * the entry's end, and a regex literal can hold a brace or a quote; neither can be scanned without
+ * a JavaScript parser, so both are refused by name instead of hashed as the wrong slice.
  */
 export function v8AndroidDependencyEntry(source) {
   const key = source.indexOf("'v8-android': {");
@@ -53,7 +57,6 @@ export function v8AndroidDependencyEntry(source) {
     if (quote) {
       if (char === '\\') index += 1;
       else if (char === quote) quote = '';
-      else if (quote === '`' && char === '$' && source[index + 1] === '{') quote = '';
       continue;
     }
     if (char === '/' && source[index + 1] === '/') {
@@ -67,7 +70,14 @@ export function v8AndroidDependencyEntry(source) {
       index += 1;
       continue;
     }
-    if (char === "'" || char === '"' || char === '`') {
+    if (char === '/' || char === '`') {
+      throw new Error(
+        `TN_V8_RECIPE_ENTRY_NOT_PLAIN: ${PROVISIONER}'s 'v8-android' entry holds a ${
+          char === '`' ? 'template literal' : 'regular expression'
+        }; keep it plain data so its brace can be found`,
+      );
+    }
+    if (char === "'" || char === '"') {
       quote = char;
       continue;
     }

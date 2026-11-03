@@ -43,7 +43,7 @@ const GATES = {
   "ios-simulator":
     "needs.scope.outputs.selection == 'full' && needs.scope.outputs.native_tier == 'full'",
   "publish-android-v8":
-    "needs.android-v8-source.outputs.published == 'false' && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')",
+    "needs.android-v8-source.outputs.built == 'true' && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')",
   "publish-linux-arm64-v8":
     "needs.linux-arm64-v8-source.outputs.published == 'false' && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')",
   completion: "${{ always() && inputs.ios_only != true }}",

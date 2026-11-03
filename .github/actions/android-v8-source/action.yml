@@ -14,6 +14,11 @@ outputs:
   published:
     description: "'true' when the payload came from the published release asset."
     value: ${{ steps.published.outputs.hit }}
+  built:
+    description: >-
+      'true' only when this run compiled the payload. A payload restored from an artifact is
+      somebody else's bytes, so it is never published as the trusted release asset.
+    value: ${{ steps.build.outputs.built }}
 
 runs:
   using: composite
@@ -26,8 +31,13 @@ runs:
     - name: Compute the pinned V8 recipe hash
       id: recipe
       shell: bash
-      run: >-
-        echo "hash=$(node ${{ inputs.runtime-root }}/scripts/v8-recipe-hash.mjs)" >> "$GITHUB_OUTPUT"
+      # The hash names the release asset and every cache key below, so a node failure that an
+      # `echo` swallowed would publish the payload under an empty name and miss every later run.
+      run: |
+        set -euo pipefail
+        hash=$(node "${{ inputs.runtime-root }}/scripts/v8-recipe-hash.mjs")
+        [ -n "$hash" ] || { echo "::error::the V8 recipe hash script printed nothing"; exit 1; }
+        echo "hash=$hash" >> "$GITHUB_OUTPUT"
     # The durable copy. The Actions cache alone could not hold the payload: the repository's 10 GiB
     # budget is shared by every lane, and on 2026-09-28 the nightly's payload (saved 12:06) was
     # evicted before 15:48, so every PR cold-built V8 for two hours. It was also branch-scoped: a
@@ -55,39 +65,55 @@ runs:
     # The store every ref can read. An Actions cache is scoped to the ref that saved it: a payload a
     # `workflow_dispatch` or push run on the head branch saved is invisible to that branch's pull
     # request runs, because a pull request reads only its own merge ref and its base branch (PRD-628
-    # finding 2). A workflow artifact has no ref scope, so the first run that builds this recipe
-    # hands the payload to every later run of any branch — the dispatch-then-push case included.
-    # Only a run that built the payload publishes it, so there is one upload per recipe hash; the
-    # build step below still verifies the receipt, exactly as it does for an Actions cache restore.
-    - name: Download the payload a run of this recipe published
+    # finding 2). A workflow artifact has no ref scope, so a pull request reads a payload any run of
+    # its head branch built — the dispatch-then-push case included.
+    #
+    # Any run can upload an artifact, a fork's pull request run included, and the payload's receipt
+    # is written by whoever built it. So only a pull request reads this store, `v8-artifact-pick.mjs`
+    # admits only this repository's own head on main, develop or this pull request's branch, and a
+    # payload that fails `--verify` is thrown away instead of failing the lane. A trusted ref never
+    # reads it at all: it has the release asset, and a poisoned payload must not reach the job that
+    # publishes one (`built` below is what that job requires).
+    - name: Download the payload a pull request run of this recipe published
       id: artifact
-      if: steps.published.outputs.hit != 'true'
+      if: steps.published.outputs.hit != 'true' && github.event_name == 'pull_request'
       shell: bash
       env:
         GH_TOKEN: ${{ github.token }}
         NAME: v8-android-${{ steps.recipe.outputs.hash }}
+        ROOT: ${{ inputs.runtime-root }}
         DEST: ${{ inputs.runtime-root }}/third_party/v8-android
+        BRANCHES: main develop ${{ github.head_ref }}
       run: |
         set -euo pipefail
+        : "${ROOT:?}" "${DEST:?}" "${RUNNER_TEMP:?}"
         if run_id=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=$NAME&per_page=100" \
-          --jq '[.artifacts[] | select(.expired | not)] | sort_by(.created_at) | reverse | .[0].workflow_run.id // empty'); then
+          | node "$ROOT/scripts/v8-artifact-pick.mjs" --branches "$BRANCHES"); then
           :
         else
-          # A missing read grant is not a reason to fail the lane; a cold build is the fallback.
-          echo "::warning::could not list the artifacts named $NAME; falling back to a source build"
+          # A missing read grant or an unreadable list is not a reason to fail the lane.
+          echo "::warning::could not list the artifacts named $NAME; cold-building instead"
           run_id=""
         fi
-        if [ -z "$run_id" ]; then
-          echo "No artifact named $NAME; falling back to the Actions cache and the source build."
-          echo "hit=false" >> "$GITHUB_OUTPUT"
-          exit 0
+        artifact_dir="$RUNNER_TEMP/v8-artifact"
+        rm -rf "$artifact_dir"
+        if [ -n "$run_id" ] && gh run download "$run_id" --repo "$GITHUB_REPOSITORY" \
+          --name "$NAME" --dir "$artifact_dir"; then
+          mkdir -p "$DEST"
+          cp -a "$artifact_dir/." "$DEST/"
+          if ( cd "$ROOT" && node scripts/build-android-v8.mjs --verify ); then
+            rm -rf "$artifact_dir"
+            echo "Restored the payload run $run_id published for $NAME."
+            echo "hit=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # An artifact that vanished between the list and the download, or that carries a payload
+          # failing its own receipt check, is a cold build — never a failed lane.
+          echo "::warning::the payload run $run_id published for $NAME failed its receipt check; cold-building instead"
         fi
-        gh run download "$run_id" --repo "$GITHUB_REPOSITORY" --name "$NAME" --dir "$RUNNER_TEMP/v8-artifact"
-        mkdir -p "$DEST"
-        cp -a "$RUNNER_TEMP/v8-artifact/." "$DEST/"
-        rm -rf "$RUNNER_TEMP/v8-artifact"
-        echo "Restored the payload run $run_id published for $NAME."
-        echo "hit=true" >> "$GITHUB_OUTPUT"
+        rm -rf "$artifact_dir" "$DEST"
+        echo "No usable artifact named $NAME; falling back to the Actions cache and the source build."
+        echo "hit=false" >> "$GITHUB_OUTPUT"
     # The built payload is the expensive thing and it is stable per recipe. Its key carries no run
     # id, so every run of the same recipe restores it instead of cold-building V8 into the timeout.
     - name: Restore the pinned Android V8 payload
@@ -114,7 +140,7 @@ runs:
           ${{ steps.recipe.outputs.hash }}-
     - name: Build the pinned Android V8 payload
       id: build
-      if: steps.payload.outputs.cache-hit != 'true'
+      if: steps.published.outputs.hit != 'true' && steps.artifact.outputs.hit != 'true' && steps.payload.outputs.cache-hit != 'true'
       working-directory: ${{ inputs.runtime-root }}
       shell: bash
       run: |
@@ -130,6 +156,10 @@ runs:
         export THREENATIVE_V8_BUILD_JOBS="${THREENATIVE_V8_BUILD_JOBS:-$(nproc)}"
         timeout --signal=TERM --kill-after=30s 180m \
           node scripts/download-deps.mjs --only v8-android
+        # This run compiled the payload, and only such a run may publish it: what `built` promises
+        # `publish-android-v8` in native-platforms.yml, so a downloaded payload never becomes the
+        # trusted release asset.
+        echo "built=true" >> "$GITHUB_OUTPUT"
     # Payload-only verification is valid: `--verify` inspects the installed payload and its receipt
     # under third_party/v8-android and never reads third_party/.v8-source.
     - name: Verify the complete Android V8 payload

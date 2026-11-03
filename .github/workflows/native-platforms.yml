@@ -205,6 +205,7 @@ jobs:
     outputs:
       recipe-hash: ${{ steps.v8.outputs.recipe-hash }}
       published: ${{ steps.v8.outputs.published }}
+      built: ${{ steps.v8.outputs.built }}
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
     steps:
@@ -239,14 +240,15 @@ jobs:
 
   # Publishes a freshly built payload as the release asset every later run downloads instead of
   # building V8 for two hours. Trusted refs only: a pull request's code never runs in a job holding a
-  # token that can write releases, and this job checks nothing out. A PR that changes the V8 recipe
-  # builds its own payload; dispatch this workflow on develop after it merges to publish the new one
-  # before the nightly does.
+  # token that can write releases, and this job checks nothing out. `built` says this run compiled
+  # the payload itself, so a payload restored from somebody else's artifact is never republished
+  # under the trusted name. A PR that changes the V8 recipe builds its own payload; dispatch this
+  # workflow on develop after it merges to publish the new one before the nightly does.
   publish-android-v8:
     name: Publish the Android V8 payload
     needs: [scope, android-v8-source]
     if: >-
-      needs.android-v8-source.outputs.published == 'false' &&
+      needs.android-v8-source.outputs.built == 'true' &&
       github.event_name != 'pull_request' &&
       (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
     # PRD-480 leaves this one on GitHub's machines: it is the release write itself — `contents:

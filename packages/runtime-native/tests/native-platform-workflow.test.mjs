@@ -249,8 +249,11 @@ wait "$child"
   const env = {
     ...process.env,
     ANDROID_NDK_HOME: root,
+    // Actions sets this for every `run:` step; the build shell writes `built=true` into it.
+    GITHUB_OUTPUT: join(root, 'output.txt'),
     PATH: `${bin}:${process.env.PATH ?? ''}`,
   };
+  writeFileSync(join(root, 'output.txt'), '');
   try {
     // Shorten only this fixture's clock; the extracted command is otherwise the action's exact
     // build shell. The timeout must fail after the fake Ninja state has been written.
@@ -269,6 +272,8 @@ wait "$child"
     );
     expect(resumed.status).toBe(0);
     expect(readFileSync(state, 'utf8')).toBe('resumed');
+    // Only a run that compiled the payload may publish it, and the publish job requires this.
+    expect(readFileSync(join(root, 'output.txt'), 'utf8')).toBe('built=true\n');
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

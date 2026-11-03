@@ -154,9 +154,25 @@ disk_path() {
   printf '%s\n' "${root:-${HOME:-/}}"
 }
 
-# Whole GB free, so the floor reads the same on every host and in every log line.
+# Whole GB free, so the floor reads the same on every host and in every log line. Fails when the
+# filesystem cannot be read at all, because an unanswerable `df` is not "0 GB free".
 free_gb() {
-  df -Pk "$1" | awk 'NR==2 { if ($4 ~ /^[0-9]+$/) printf "%d\n", $4 / 1048576; else exit 1 }'
+  df -Pk "$1" | awk '
+    NR == 2 && $4 ~ /^[0-9]+$/ { printf "%d\n", $4 / 1048576; measured = 1 }
+    END { exit measured ? 0 : 1 }'
+}
+
+# Free space for the routing decision, or the floor when the filesystem cannot be read: an
+# unanswerable `df` must not read as "0 GB free" and pause every slot. Says which of the two it was.
+free_gb_or_floor() {
+  local disk="$1" free
+  if free="$(free_gb "$disk" 2>/dev/null)"; then
+    printf '%s\n' "$free"
+    return 0
+  fi
+  printf '%s cannot read free space on %s; keeping the current routing\n' \
+    "$(date -u +%H:%M:%S)" "$disk" >&2
+  printf '%s\n' "$MIN_FREE_GB"
 }
 
 # What `prune` removes: layers no image references, build cache older than PRUNE_UNTIL, and
@@ -165,11 +181,12 @@ prune() {
   need docker
   docker info >/dev/null 2>&1 || fail 2 "docker is not usable without sudo; add $USER to the docker group and log in again"
   local before after
-  before="$(free_gb "$(disk_path)")"
+  # The two numbers below are the report, not a decision: a host whose `df` fails still prunes.
+  before="$(free_gb "$(disk_path)")" || before="?"
   docker image prune --force >/dev/null
   docker builder prune --force --filter "until=$PRUNE_UNTIL" >/dev/null
   docker container prune --force --filter label=tn-ci-runner=1 >/dev/null
-  after="$(free_gb "$(disk_path)")"
+  after="$(free_gb "$(disk_path)")" || after="?"
   mkdir -p "$STATE_DIR"
   date +%s >"$STATE_DIR/last-prune"
   printf 'prune: %s GB -> %s GB free on %s (floor %s GB)\n' \
@@ -299,18 +316,23 @@ balance() {
   local seen_heavy=0 seen_light=0
   local disk last_prune=0 free
   repo="$(repo_name)"
-  disk="$(disk_path)"
   while [ ! -e "$STATE_DIR/stop" ]; do
     # A host that fills mid-board withdraws both labels before a job lands on it: a queued job can
     # wait, a job that dies of ENOSPC takes a re-run and reports the wrong thing. Prune at most once
     # per ten minutes while the floor is breached, then re-check the same poll.
-    free="$(free_gb "$disk" 2>/dev/null || echo 0)"
+    # The docker root is read again every poll: this loop runs for hours, and a daemon whose root
+    # moves must be measured where it is now. `free_gb_or_floor` never answers 0 for an unreadable
+    # filesystem, so a broken `df` cannot pause the whole pool.
+    disk="$(disk_path)"
+    free="$(free_gb_or_floor "$disk")"
     if [ "$free" -lt "$MIN_FREE_GB" ]; then
       if [ $(( $(date +%s) - last_prune )) -ge 600 ]; then
         printf '%s disk low: %s GB free on %s, pruning\n' "$(date -u +%H:%M:%S)" "$free" "$disk" >&2
         last_prune=$(date +%s)
-        prune >&2 || true
-        free="$(free_gb "$disk" 2>/dev/null || echo 0)"
+        # A subshell: `prune` calls `fail`, which exits, and that must end the prune and not the
+        # balancer — a host with a dead docker daemon still has to withdraw its slots.
+        ( prune ) >&2 || true
+        free="$(free_gb_or_floor "$disk")"
       fi
       if [ "$free" -lt "$MIN_FREE_GB" ]; then
         printf '%s disk %s GB free, under the %s GB floor: slots paused\n' \

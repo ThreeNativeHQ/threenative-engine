@@ -36,8 +36,8 @@ export const FAMILY_SHARES = Object.freeze({
 /**
  * Keys a run reads on every board and that cost little: the compiler cache (20 MB), the pnpm store,
  * the Playwright browsers, the workspace bundles the shared action restores, and the V8 payload the
- * release asset falls back to. Evicting one of these costs a whole job; evicting a stale build tree
- * costs one rebuild.
+ * release asset falls back to. Evicting one of these costs a whole job; a stale build tree, a cargo
+ * registry or a wgpu pipeline cache costs one rebuild.
  */
 export const HOT_PREFIXES = Object.freeze([
   "node-cache-",
@@ -45,17 +45,25 @@ export const HOT_PREFIXES = Object.freeze([
   "playwright-",
   "workspace-dist-",
   "android-v8-payload-",
+  // The prefixes are read from the workflows, not guessed: `native-rust-cache/action.yml`
+  // `prefix=cargo-v1-…`, `pipeline-cache.yml` `wgpu-cache-…` and `pipeline-cache-host-deps-…`.
+  "cargo-v1-",
+  "wgpu-cache-",
+  "pipeline-cache-host-deps-",
 ]);
 
 function prefixOf(key, prefixes) {
   return prefixes.find((prefix) => key.startsWith(prefix)) ?? "";
 }
 
-function familyOf(key, families) {
-  const prefix = prefixOf(key, families);
+function familyOf(entry, families) {
+  const prefix = prefixOf(entry.key, families);
   if (prefix === "") return "";
   // A bounded family's key ends in `-<run id>-<attempt>`, so the recipe is everything before it.
-  return `${prefix}${key.slice(prefix.length).replace(/-\d+-\d+$/u, "")}`;
+  const recipe = entry.key.slice(prefix.length).replace(/-\d+-\d+$/u, "");
+  // Caches are ref-scoped: two pull requests never read each other's entries, so a newer state on
+  // one ref must not delete another ref's — the family name carries the ref for that reason.
+  return `${prefix}${entry.ref ?? ""}|${recipe}`;
 }
 
 function bytesOf(entry) {
@@ -76,12 +84,12 @@ function readEntries(caches) {
     .sort((left, right) => left.accessed - right.accessed);
 }
 
-/** One entry per bounded family, per recipe: the newest is the state a resume can read. */
+/** One entry per bounded family, per recipe and ref: the newest is the state a resume can read. */
 function boundFamilies(entries, familyShares, doomed) {
   const boundaries = Object.keys(familyShares);
   const families = new Map();
   for (const entry of entries) {
-    const family = familyOf(entry.key, boundaries);
+    const family = familyOf(entry, boundaries);
     if (family === "") continue;
     if (!families.has(family)) families.set(family, []);
     families.get(family).push(entry);
@@ -154,9 +162,11 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const plan = planCachePrune({ caches: parseCaches(readFileSync(file, "utf8")) });
   const GiB = 1024 * MiB;
   const over = plan.overBudget ? "; STILL OVER BUDGET with only hot keys left" : "";
+  // "planned for deletion": the caller deletes them, and an entry that expired between the two
+  // steps makes a count printed here a lie.
   console.error(
     `cache ${(plan.totalBefore / GiB).toFixed(2)} GiB -> ${(plan.totalAfter / GiB).toFixed(2)} GiB` +
-      ` of ${(plan.budgetBytes / GiB).toFixed(2)} GiB; ${plan.deleteIds.length} entr(ies) deleted${over}`,
+      ` of ${(plan.budgetBytes / GiB).toFixed(2)} GiB; ${plan.deleteIds.length} entr(ies) planned for deletion${over}`,
   );
   process.stdout.write(plan.deleteIds.map((id) => `${id}\n`).join(""));
 }
