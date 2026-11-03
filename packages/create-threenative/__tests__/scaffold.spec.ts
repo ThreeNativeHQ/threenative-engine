@@ -220,6 +220,9 @@ const BUG_REPORT_SKILL_PATHS = [
 // Recomputed 2026-10-28 (0.3.7): the cohort's own pins now hash as a placeholder, so a release bump
 // leaves every tree as it is; measured by this test.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
+  // 2026-11-03 (PRD-617, PRD-620): action-rpg and sailing drop their engine pin, runner re-pins with
+  // its reason, snow runs on the native engine, and the starter's render-chain row asserts the sharp-AA
+  // chain, so those five trees move. Measured by this test.
   // 2026-10-30: the Blender MCP server is gone, so every kit's seven host configs lose their
   // `threenative-blender` entry and all sixteen trees move. Measured by this test.
   // 2026-10-29: every kit's seven MCP host configs gain the `threenative-devtools` server, and its
@@ -321,7 +324,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // these kits' AGENTS.md say so, and rts drops its TRAA and blur overrides.
   // Re-pinned 2026-10-31: the starter crate gets a stacked-disc contact shadow (render/contactShadow.ts)
   // that keeps its contact coverage above the 0.02 floor at the core +1 EV key.
-  "action-rpg": "1144f092c833581efd85ff97d636ddfc4e9c57164f17b67e0f976e37f0c74899",
+  "action-rpg": "8610f5f46f5395effcc275f9d00c65d45f004a6bc5dfa6c7cc138a94caf61592",
   // PRD-732 (2026-10-23): the new Hop Garden kit, measured through createProject (method checked
   // against platformer's unchanged value). Recomputed 2026-10-24 for the PRD-732 polish round: the
   // new hero, the dust and sparkle effects and the effects scenario. Recomputed 2026-10-24 for
@@ -364,12 +367,12 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // (it was a dark patch under a HUD card) and the top-location separator reaches 3:1 on the ink plate.
   // Then the UI final pass: a counted selection band, garrison and blocked-exit cards, overview, hotkeys, edge-scroll toggle, refusal toasts (imports sorted by biome).
   rts: "0da9e8433f88defea093798346a366e8f52edce6400c2d367ad8479cd41c27fd",
-  runner: "09e1eb31c78f5432d2f659c592bd0e5210a85e2df772e81f59d4cb0fba2c24ec",
+  runner: "225931b0f243a796d6f60c13a3717ed445f9c6f8ae3524afcbd9603ee541fd21",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
-  sailing: "0a3337fb3db3e3afcbc5ea32a154fd228dcfb9a9863800ec19d6b9120ed0abef",
+  sailing: "37027775b81b3c2b92df8be363a1e24a060bdb366564091ab114e35143653690",
   // Recomputed 2026-10-26 (PRD-746): the scene merges the town through mergeByMaterial (src/townBatch.ts).
   shooter: "dc10aea9449f2342f1e7ec46ab6aae86cdc7ad6e3bf0cc574d910bd312f86c4a",
-  snow: "11e4e23a6053a32d73310e3610205dfa9fc2b4436fdb0e31d4b749137f4ccb8d",
+  snow: "4b9e7f0db51b4e31cc84ac8cf462d3754c865a1ca380da06cf208270696de99a",
   // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.
   // Recomputed 2026-10-16: starter's adaptiveQuality split its policy resolution into qualityPolicy.ts
   // to stay under the 200-line render-file cap; only starter's tree moves.
@@ -378,7 +381,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-31: core key 0.36, traced reflections, the crate contact blob, the portable trace type (PRD-633); measured by this test.
   // Recomputed 2026-10-31 (PRD-775): temporalAAHooks.ts claims the 0.187 render pipeline's view
   // offset and drives its callback lists, so starter's render source moves again. Measured by this test.
-  starter: "6bc9f844c67e33e9ab7d5275f7bb8eaf31181141687f70f860e0f4913ce8f130",
+  starter: "74cfd0bf430cb597b28dba6622bdaf48260bc2f3a72f71a72034b6e48ab8f926",
   "tower-defense": "bce1b6cab442c4275afade3a0ef9034726b0c29295d5514e2175214f14b00f00",
 };
 
