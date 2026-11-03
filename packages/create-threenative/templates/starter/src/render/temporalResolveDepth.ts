@@ -75,6 +75,8 @@ export interface ITemporalResolvePinned {
   /** Actual input jitter, in input-raster UVs, captured beside the matching depth matrices. */
   _currentJitterUV?: Node<"vec2"> & ITemporalUniform<Vector2>;
   _previousJitterUV?: Node<"vec2"> & ITemporalUniform<Vector2>;
+  /** The node the chain reads: Three's pass texture over the resolve target. */
+  _textureNode: TextureNode;
 }
 
 export type TemporalResolveNode = TRAANode & ITemporalResolvePinned;

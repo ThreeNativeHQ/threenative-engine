@@ -407,6 +407,11 @@ function chainFixture(lowResolutionPassthrough = false) {
 
 /** The raster a presented node publishes, whether it reconstructs one or samples the input. */
 function outputRaster(node: Node): { width: number; height: number } {
+  // A TRAANode presents whatever texture its output node reads, not its resolve target.
+  const presented = (node as { _textureNode?: TextureNode })._textureNode?.value.image as
+    | { width: number; height: number }
+    | undefined;
+  if (presented !== undefined) return { width: presented.width, height: presented.height };
   const reconstruction = node as { _resolveRenderTarget?: RenderTarget };
   const sampled = node as TextureNode & {
     isRTTNode?: boolean;
@@ -481,6 +486,8 @@ describe("opt-in temporal AA", () => {
     // The report still names the display raster as the output, and the history copy never
     // crosses from the input raster.
     expect(temporal.report()).toMatchObject({ outputWidth: DISPLAY.width, frame: 2 });
+    // Unreal's history resolve: the chain reads a display-sized Mitchell downsample of the 2x history.
+    expect(outputRaster(temporal.node)).toEqual({ width: DISPLAY.width, height: DISPLAY.height });
     expect(copies.some((copy) => copy.from === scenePass.renderTarget.texture)).toBe(false);
     temporal.dispose();
     scenePass.dispose();
