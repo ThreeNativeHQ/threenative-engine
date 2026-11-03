@@ -7,6 +7,7 @@
     "bake": "node scripts/bake.mjs",
     "dev": "pnpm bake && vite",
     "build": "pnpm bake && vite build",
+    "build:engine": "node ../../packages/create-threenative/dist/threenative.js build --target web --outDir dist-engine",
     "build:desktop": "pnpm bake && node scripts/stage-native-assets.mjs && node ../../packages/runtime-native/scripts/bundle.mjs --project . --entry src/game.ts --target desktop --output dist/strata-terrain-native.js",
     "typecheck": "pnpm bake && tsc --noEmit -p tsconfig.json",
     "test:terrain:web": "pnpm build && node ../../packages/playtest/dist/runner/cli.js playtests/terrain.playtest.json --url 'http://127.0.0.1:5196/?showcase=1&waterproof=1' --server-command 'pnpm exec vite preview --host 127.0.0.1 --port 5196 --strictPort' --browser-recipe webgpu --headed --artifacts artifacts/playtest/web && node scripts/verify-ocean.mjs artifacts/playtest/web --proof=water",
@@ -27,12 +28,14 @@
     "three": "catalog:"
   },
   "devDependencies": {
+    "@threenative/runtime-native": "workspace:*",
     "@threenative/terrain": "workspace:*",
     "@types/three": "catalog:",
+    "@typescript/native": "catalog:",
+    "create-threenative": "workspace:*",
     "geotiff": "^3.0.5",
     "proj4": "^2.22.0",
     "typescript": "catalog:",
-    "@typescript/native": "catalog:",
     "vite": "catalog:"
   }
 }

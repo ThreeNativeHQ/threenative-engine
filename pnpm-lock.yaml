@@ -949,6 +949,9 @@ importers:
         specifier: 0.187.0
         version: 0.187.0(patch_hash=829c15af51482b5ff95988a03da1e8ffc9b4e0b12d8f3071f5bc7dcb4dfb268b)
     devDependencies:
+      '@threenative/runtime-native':
+        specifier: workspace:*
+        version: link:../../packages/runtime-native
       '@threenative/terrain':
         specifier: workspace:*
         version: link:../../packages/terrain
@@ -958,6 +961,9 @@ importers:
       '@typescript/native':
         specifier: 'catalog:'
         version: typescript@7.0.2
+      create-threenative:
+        specifier: workspace:*
+        version: link:../../packages/create-threenative
       geotiff:
         specifier: ^3.0.5
         version: 3.0.5
