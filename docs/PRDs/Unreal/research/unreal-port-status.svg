@@ -2,8 +2,8 @@
 <defs><pattern id="gap" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="8" height="8" fill="#8a3b37"/><rect width="4" height="8" fill="#e0625a"/></pattern>
 <style>.a{fill:#9aa49f;font-size:10px;font-weight:600;letter-spacing:.06em}.s{fill:#e7ebe8;font-size:10.5px;font-weight:600}.l{fill:#fff;font-size:9.5px}.g{fill:#e7ebe8;font-size:12px}.h{fill:#e7ebe8;font-size:17px;font-weight:700}</style></defs>
 <rect width="1200" height="720" rx="10" fill="#121513"/>
-<text x="8" y="26" class="h">Unreal 5.8.3 → ThreeNative: 20% done, 24% in progress (share of 676K Unreal lines)</text>
-<rect x="8" y="40" width="11" height="11" rx="2" fill="#3aa56c"/><text x="24" y="50" class="g">Done 20%</text><rect x="93.4" y="40" width="11" height="11" rx="2" fill="#d9961f"/><text x="109.4" y="50" class="g">In progress 24%</text><rect x="225" y="40" width="11" height="11" rx="2" fill="#4a86d6"/><text x="241" y="50" class="g">Not started 34%</text><rect x="356.6" y="40" width="11" height="11" rx="2" fill="#6c7176"/><text x="372.6" y="50" class="g">Deferred 18%</text><rect x="468.40000000000003" y="40" width="11" height="11" rx="2" fill="url(#gap)"/><text x="484.40000000000003" y="50" class="g">No PRD 1%</text><rect x="567" y="40" width="11" height="11" rx="2" fill="#3b403d"/><text x="583" y="50" class="g">Out of scope by rule 1%</text><rect x="758" y="40" width="11" height="11" rx="2" fill="#2c322f"/><text x="774" y="50" class="g">Not split 1%</text>
+<text x="8" y="26" class="h">Unreal 5.8.3 → ThreeNative: 22% done, 23% in progress (share of 676K Unreal lines)</text>
+<rect x="8" y="40" width="11" height="11" rx="2" fill="#3aa56c"/><text x="24" y="50" class="g">Done 22%</text><rect x="93.4" y="40" width="11" height="11" rx="2" fill="#d9961f"/><text x="109.4" y="50" class="g">In progress 23%</text><rect x="225" y="40" width="11" height="11" rx="2" fill="#4a86d6"/><text x="241" y="50" class="g">Not started 34%</text><rect x="356.6" y="40" width="11" height="11" rx="2" fill="#6c7176"/><text x="372.6" y="50" class="g">Deferred 18%</text><rect x="468.40000000000003" y="40" width="11" height="11" rx="2" fill="url(#gap)"/><text x="484.40000000000003" y="50" class="g">No PRD 1%</text><rect x="567" y="40" width="11" height="11" rx="2" fill="#3b403d"/><text x="583" y="50" class="g">Out of scope by rule 1%</text><rect x="758" y="40" width="11" height="11" rx="2" fill="#2c322f"/><text x="774" y="50" class="g">Not split 1%</text>
 <rect x="10" y="66" width="343.60301046210975" height="644" rx="6" fill="#1a1e1c" stroke="#2c322f"/>
 <text x="17" y="79" class="a">LIGHTING &amp; GI · 199K</text>
 <rect x="14" y="85" width="335.60301046210975" height="246.81476595230424" rx="4" fill="#232826"/>
@@ -371,19 +371,16 @@
 <text x="813.7576551391769" y="96" class="s">Post chain</text>
 <rect x="810.7576551391769" y="98" width="89.42896722836485" height="121.59258859661315" rx="2" fill="#4a86d6"><title>Post chain · Depth of field (diaphragm) · Not started</title></rect>
 <text x="813.7576551391769" y="109" class="l">Depth of field…</text>
-<rect x="810.7576551391769" y="220.59258859661315" width="89.42896722836485" height="41.193919921709494" rx="2" fill="#d9961f"><title>Post chain · Tone map + LUT combine · In progress</title></rect>
-<rect x="810.7576551391769" y="258.78650851832265" width="86.3452097377316" height="3" fill="#fff" opacity=".85"/>
+<rect x="810.7576551391769" y="220.59258859661315" width="89.42896722836485" height="41.193919921709494" rx="2" fill="#3aa56c"><title>Post chain · Tone map + LUT combine · Done</title></rect>
 <text x="813.7576551391769" y="231.59258859661315" class="l">Tone map + LUT…</text>
 <rect x="901.1866223675418" y="98" width="51.15166904223315" height="69.03100946992117" rx="2" fill="#d9961f"><title>Post chain · Motion blur · In progress</title></rect>
 <rect x="901.1866223675418" y="164.03100946992117" width="31.74931181931713" height="3" fill="#fff" opacity=".85"/>
 <text x="904.1866223675418" y="109" class="l">Motion …</text>
 <rect x="953.3382914097749" y="98" width="50.177829522034244" height="69.03100946992117" rx="2" fill="#3aa56c"><title>Post chain · TAA (legacy) · Done</title></rect>
 <text x="956.3382914097749" y="109" class="l">TAA (le…</text>
-<rect x="901.1866223675418" y="168.03100946992117" width="65.67977265062837" height="52.521178769420914" rx="2" fill="#d9961f"><title>Post chain · Eye adaptation (histogram, basic) · In progress</title></rect>
-<rect x="901.1866223675418" y="217.5521882393421" width="63.56107030705971" height="3" fill="#fff" opacity=".85"/>
+<rect x="901.1866223675418" y="168.03100946992117" width="65.67977265062837" height="52.521178769420914" rx="2" fill="#3aa56c"><title>Post chain · Eye adaptation (histogram, basic) · Done</title></rect>
 <text x="904.1866223675418" y="179.03100946992117" class="l">Eye adapta…</text>
-<rect x="901.1866223675418" y="221.5521882393421" width="65.67977265062837" height="40.23432027898056" rx="2" fill="#d9961f"><title>Post chain · ACES transforms · In progress</title></rect>
-<rect x="901.1866223675418" y="258.78650851832265" width="62.824130361470615" height="3" fill="#fff" opacity=".85"/>
+<rect x="901.1866223675418" y="221.5521882393421" width="65.67977265062837" height="40.23432027898056" rx="2" fill="#3aa56c"><title>Post chain · ACES transforms · Done</title></rect>
 <text x="904.1866223675418" y="232.5521882393421" class="l">ACES trans…</text>
 <rect x="967.8663950181701" y="168.03100946992117" width="35.64972591363903" height="50.66255891269435" rx="2" fill="#d9961f"><title>Post chain · Bloom (Gaussian + FFT) · In progress</title></rect>
 <rect x="967.8663950181701" y="215.69356838261552" width="16.453719652448786" height="3" fill="#fff" opacity=".85"/>

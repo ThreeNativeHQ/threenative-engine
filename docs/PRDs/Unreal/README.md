@@ -126,7 +126,7 @@ A layer turns on by default only when five conditions hold:
 | Layer | Adds | Owner |
 | --- | --- | --- |
 | L0 | Geometry and camera alignment | [PRD-631](../done/PRD-631-an-unreal-reference-scene-measures-the-default-look.md) |
-| L1 | Tone curve, exposure, light units | [PRD-632](look/PRD-632-the-frame-is-exposed-and-tone-mapped-the-way-a-fresh-unreal-project-is.md) |
+| L1 | Tone curve, exposure, light units | [PRD-632](../done/PRD-632-the-frame-is-exposed-and-tone-mapped-the-way-a-fresh-unreal-project-is.md) |
 | L2 | Sky atmosphere and sky light capture | [PRD-633](look/PRD-633-the-sky-is-an-atmosphere-and-it-lights-the-scene.md) |
 | L3 | Height fog and aerial perspective | [PRD-562](rendering/PRD-562-aerial-perspective-from-a-froxel-volume.md) (amended) |
 | L4 | Volumetric clouds | [PRD-VQ-08](rendering/PRD-VQ-08-clouds-and-overhead-transmittance.md) (amended) |
@@ -134,7 +134,7 @@ A layer turns on by default only when five conditions hold:
 | L6 | Ambient occlusion on indirect light only | [PRD-635](look/PRD-635-ambient-occlusion-darkens-only-the-light-that-comes-from-around.md) |
 | L7 | Global illumination | The [GI set](#global-illumination-the-lumen-set-filed-2026-10-20) below: PRD-603 to PRD-605, PRD-638 to PRD-645, PRD-VQ-09; templates last through [PRD-267](../useful-defaults/PRD-267-screen-space-gi-ships-in-the-templates.md) (amended) |
 | L8 | Reflections | [PRD-642](gi/PRD-642-glossy-surfaces-reflect-what-the-camera-cannot-see.md) on `high`; [PRD-VQ-03](../rendering/PRD-VQ-03-local-reflection-probes.md) (amended) on `low` and `medium` |
-| L9 | Bloom, vignette, local exposure, motion blur, neutral grade | [PRD-636](look/PRD-636-the-finishing-post-chain-matches-unreal-defaults.md); anti-aliasing in [PRD-539](performance/PRD-539-low-resolution-temporal-reconstruction-quality-and-cost.md) (amended); exposure default in [PRD-632](look/PRD-632-the-frame-is-exposed-and-tone-mapped-the-way-a-fresh-unreal-project-is.md) |
+| L9 | Bloom, vignette, local exposure, motion blur, neutral grade | [PRD-636](look/PRD-636-the-finishing-post-chain-matches-unreal-defaults.md); anti-aliasing in [PRD-539](performance/PRD-539-low-resolution-temporal-reconstruction-quality-and-cost.md) (amended); exposure default in [PRD-632](../done/PRD-632-the-frame-is-exposed-and-tone-mapped-the-way-a-fresh-unreal-project-is.md) |
 
 Order: PRD-631 first, then PRD-632, because every later row is compared at matched exposure. After
 that, PRD-633 and PRD-635 can run in parallel, then the rest. Not filed: a surface BRDF PRD. three.js
