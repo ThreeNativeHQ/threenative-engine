@@ -1,6 +1,6 @@
 # Strata / PR #483 — audit repair pass
 
-**Date:** 2026-10-28. **Answers:** `docs/verification/strata-pr483-full-audit-2026-10-28.md` (the audit report this pass
+**Date:** 2026-10-28. **Answers:** `docs/PRDs/open-world/research/strata-pr483-full-audit-2026-10-28.md` (the audit report this pass
 was run from).
 
 **Worked on:** `pr483-recall` at `bb8657245`, the newest local continuation of the PR head

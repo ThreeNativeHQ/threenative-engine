@@ -129,7 +129,7 @@ The main pass is `renderer.render(renderRoot, camera)` in `packages/core/src/gam
 reaches `raw.render(scene, camera)` in `packages/core/src/renderer.ts:764` — three's
 `WebGPURenderer`, not the native engine. Four facts decided this phase's shape:
 
-1. **There is no prepass in three or in this engine.** `docs/verification/strata-pr483-audit-repairs-2026-10-28.md:183`
+1. **There is no prepass in three or in this engine.** `docs/PRDs/open-world/research/strata-pr483-audit-repairs-2026-10-28.md:183`
    already recorded it: "a masked depth prepass (Unreal `r.EarlyZPass` masked; none in the engine)".
    `scene.overrideMaterial` is one material for *every* object in the render root
    (`three/src/renderers/common/Renderer.js:748`, `:3591`), so it cannot carry the per-material alpha
