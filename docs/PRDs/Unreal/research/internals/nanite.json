@@ -34,16 +34,16 @@
           119,
           "Runs node and cluster culling in one kernel with a work queue and persistent threads.",
           "deferred",
-          "Off by default in Unreal (NaniteCullRaster.cpp:322-328) and WebGPU gives no forward-progress guarantee between workgroups. Revisit if WebGPU adds one and a pruned CPU walk (PRD-600) is the measured cost.",
-          []
+          "Off by default in Unreal (NaniteCullRaster.cpp:322-328) and WebGPU gives no forward-progress guarantee between workgroups. Revisit if WebGPU adds one and a pruned CPU walk (PRD-600) is the measured cost. PRD-788.",
+          ["788"]
         ],
         [
           "Frustum, clip-plane, draw-distance and WPO-distance tests",
           745,
           "Box tests with near and far flags, global clip plane, instance draw distance, and the distance past which world position offset stops and the fixed raster bin is used.",
           "partial",
-          "Frustum: PRD-600. WPO disable distance in shadow levels: PRD-651 (epic branch). Main-view WPO disable distance and pixel-programmable distance are per-primitive and default to 0 (off) in Unreal: deferred until a template ships a dense swaying mesh.",
-          ["600", "651"]
+          "Frustum: PRD-600. WPO disable distance in shadow levels: PRD-651 (epic branch). Main-view WPO disable distance and pixel-programmable distance are per-primitive and default to 0 (off) in Unreal: deferred until a template ships a dense swaying mesh. PRD-786.",
+          ["600", "651", "786"]
         ],
         [
           "Two-pass occlusion with HZB",
@@ -74,8 +74,8 @@
           2637,
           "Bins visible clusters by raster material (fixed function, masked, WPO, displaced) so each bin runs one indirect raster dispatch or draw.",
           "notfiled",
-          "Masked and WPO materials work by construction: the game's material draws the cluster. One draw per material for many meshes is PRD-490 (multi-draw on native). Gap: a positionNode can move a cluster outside its bounds; proposed as a PRD-600 box rather than a PRD.",
-          []
+          "Masked and WPO materials work by construction: the game's material draws the cluster. One draw per material for many meshes is PRD-490 (multi-draw on native). Gap: a positionNode can move a cluster outside its bounds; proposed as a PRD-600 box rather than a PRD. PRD-786.",
+          ["786"]
         ],
         [
           "Raster pipeline permutations and PSO precache",
@@ -130,16 +130,16 @@
           405,
           "Clears and allocates the 64-bit visibility buffer and decodes its depth.",
           "deferred",
-          "No visibility buffer (PRD-279 decision 1). Revisit if the owner reopens decision 1 for the owned engine and every shipped target has 64-bit atomics.",
-          []
+          "No visibility buffer (PRD-279 decision 1). Revisit if the owner reopens decision 1 for the owned engine and every shipped target has 64-bit atomics. PRD-785.",
+          ["785"]
         ],
         [
           "Async raster, shader bundles and work graphs",
           133,
           "Runs raster on async compute and dispatches bins as shader bundles or work graphs on platforms that support them.",
           "deferred",
-          "WebGPU exposes no async compute queue, shader bundles or work graphs (Unreal README, deferred until WebGPU exposes the API).",
-          []
+          "WebGPU exposes no async compute queue, shader bundles or work graphs (Unreal README, deferred until WebGPU exposes the API). PRD-788.",
+          ["788"]
         ],
         [
           "Imposters",
@@ -154,8 +154,8 @@
           2159,
           "Console variables, the renderer class, pass setup and the rasterize pass driver.",
           "notfiled",
-          "Glue for the internals above.",
-          []
+          "Glue for the internals above. PRD-786.",
+          ["786"]
         ]
       ]
     },
@@ -167,16 +167,16 @@
           1483,
           "Classifies every visibility-buffer pixel by shading material into bins, with counts, offsets and tile masks.",
           "deferred",
-          "Needs a visibility buffer that owns shading (PRD-279 decision 1). Revisit with that decision.",
-          []
+          "Needs a visibility buffer that owns shading (PRD-279 decision 1). Revisit with that decision. PRD-785.",
+          ["785"]
         ],
         [
           "Compute material shading and GBuffer export",
           2418,
           "Shades each bin once in compute (with optional software VRS) and exports the GBuffer.",
           "deferred",
-          "Same reason. Coarse shading rate is PRD-682 (hardware VRS). Far-cluster shading fidelity is a bake matter: PRD-601, listed under the builder internals.",
-          []
+          "Same reason. Coarse shading rate is PRD-682 (hardware VRS). Far-cluster shading fidelity is a bake matter: PRD-601, listed under the builder internals. PRD-785.",
+          ["785"]
         ],
         [
           "Raster and shading bin registries",
@@ -199,8 +199,8 @@
           1142,
           "Writes scene depth, stencil and velocity from the visibility buffer for the rest of the frame.",
           "deferred",
-          "No visibility buffer (PRD-279 decision 1). Hardware draws write depth and velocity already.",
-          []
+          "No visibility buffer (PRD-279 decision 1). Hardware draws write depth and velocity already. PRD-785.",
+          ["785"]
         ],
         [
           "Mesh pass draw lists",
@@ -210,7 +210,7 @@
           "By construction: three's render list.",
           []
         ],
-        ["Shared and glue", 331, "Console variables and helpers.", "notfiled", "Glue.", []]
+        ["Shared and glue", 331, "Console variables and helpers.", "notfiled", "Glue. PRD-785.", ["785"]]
       ]
     },
     {
@@ -221,32 +221,32 @@
           5157,
           "Builds cluster-level acceleration structures and BLASes from the streamed cut for hardware ray tracing.",
           "deferred",
-          "Hardware RT declined at its gate (PRD-645, done): the trace is 12-15x faster but no transport reaches 2x end to end. Revisit with PRD-645's revisit condition.",
-          []
+          "Hardware RT declined at its gate (PRD-645, done): the trace is 12-15x faster but no transport reaches 2x end to end. Revisit with PRD-645's revisit condition. PRD-787.",
+          ["787"]
         ],
         [
           "BLAS cache",
           259,
           "Reuses built BLASes while the cut stays within a relative error tolerance.",
           "deferred",
-          "Same as above.",
-          []
+          "Same as above. PRD-787.",
+          ["787"]
         ],
         [
           "Stream-out of the cut for ray tracing",
           1317,
           "Writes the view-dependent cut as plain triangles for BLAS builds.",
           "deferred",
-          "Same as above. ThreeNative's software trace reads a fixed fallback cut instead (PRD-694).",
-          []
+          "Same as above. ThreeNative's software trace reads a fixed fallback cut instead (PRD-694). PRD-787.",
+          ["787"]
         ],
         [
           "Ray-triangle decode for ray tracing",
           777,
           "Decodes cluster triangles and edges for ray hit shading.",
           "deferred",
-          "Same as above.",
-          []
+          "Same as above. PRD-787.",
+          ["787"]
         ]
       ]
     },
@@ -322,16 +322,16 @@
           229,
           "Non-shipping warnings when node, candidate or visible cluster buffers overflow.",
           "notfiled",
-          "Debug only. The CPU cut has no fixed GPU queues to overflow.",
-          []
+          "Debug only. The CPU cut has no fixed GPU queues to overflow. PRD-788.",
+          ["788"]
         ],
         [
           "Shared and glue",
           1574,
           "Shared types, global buffer sizes and scene data access.",
           "notfiled",
-          "Glue.",
-          []
+          "Glue. PRD-788.",
+          ["788"]
         ],
         [
           "[builder] Cluster build",
@@ -402,16 +402,16 @@
           364,
           "Builds meshes from instanced parts (outside the row sum).",
           "deferred",
-          "r.Nanite.AllowAssemblies is 0 and read-only (NaniteResources.cpp:124-128). Revisit when Unreal turns it on by default.",
-          []
+          "r.Nanite.AllowAssemblies is 0 and read-only (NaniteResources.cpp:124-128). Revisit when Unreal turns it on by default. PRD-788.",
+          ["788"]
         ],
         [
           "[builder] Mesh cards for Lumen",
           1172,
           "Places axis-aligned capture cards around a mesh for the Lumen surface cache (MeshUtilities, outside the row sum).",
           "notfiled",
-          "PRD-639 (epic branch) uses a UV-space cache, so no cards are needed. Lumen breakdown owns the decision.",
-          []
+          "PRD-639 (epic branch) uses a UV-space cache, so no cards are needed. Lumen breakdown owns the decision. PRD-788.",
+          ["788"]
         ],
         [
           "[runtime] Streaming manager",
@@ -447,8 +447,8 @@
           336,
           "Editor debug view modes (shader complexity, LOD colouring) for Nanite pixels.",
           "notfiled",
-          "Debug only; PRD-676 covers the views an agent reads.",
-          []
+          "Debug only; PRD-676 covers the views an agent reads. PRD-788.",
+          ["788"]
         ],
         [
           "Editor hit proxies and selection",
@@ -476,8 +476,8 @@
           1476,
           "Decodes and transforms curve control points per cluster.",
           "deferred",
-          "r.Nanite.AllowCurves is 0 and read-only. PRD-671 reads glTF LINES directly. Revisit when curves are on by default.",
-          []
+          "r.Nanite.AllowCurves is 0 and read-only. PRD-671 reads glTF LINES directly. Revisit when curves are on by default. PRD-788.",
+          ["788"]
         ]
       ]
     },
@@ -497,16 +497,16 @@
           484,
           "Bins bricks into 8x8 screen tiles for the compute trace.",
           "deferred",
-          "PRD-669 draws one instanced box per brick in hardware, so no tile binning. Revisit if its Phase 3 cost fails.",
-          []
+          "PRD-669 draws one instanced box per brick in hardware, so no tile binning. Revisit if its Phase 3 cost fails. PRD-788.",
+          ["788"]
         ],
         [
           "Auto voxel from depth",
           200,
           "Experimental voxelization of the depth buffer.",
           "deferred",
-          "Experimental in Unreal and off by default with voxels.",
-          []
+          "Experimental in Unreal and off by default with voxels. PRD-788.",
+          ["788"]
         ],
         ["Voxel renderer setup", 584, "Sets up the brick passes.", "open", "PRD-669.", ["669"]]
       ]

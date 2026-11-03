@@ -59,4 +59,16 @@ describe("hosted-software acceptance stays declared at the caller", () => {
     );
     expect(macOsLeg).not.toContain("TN_PLAYTEST_ALLOW_SOFTWARE");
   });
+
+  // The starter draws 300 frames at 0.6 to 1.3 s each on the software adapter. 0.3.9 used 271 s of
+  // the default 300 s bound, and run 41575190769 was cut at frame 273, so each step that launches
+  // it on the Windows leg carries the 600 s bound.
+  it.each([
+    "Build and verify the starter's WebView HUD",
+    "Verify the relocated release container with the installed verifier",
+  ])("%s gives the Windows software adapter the 600 s starter bound", (name) => {
+    expect(step(name)).toContain(
+      "TN_STARTER_TIMEOUT_MS: ${{ matrix.platform == 'Windows' && '600000' || '300000' }}",
+    );
+  });
 });

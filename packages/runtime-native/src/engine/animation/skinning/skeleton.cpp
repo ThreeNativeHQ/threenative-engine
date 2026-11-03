@@ -95,6 +95,8 @@ void Bone::materializeWorldTransformIfPending() {
 
 Skeleton::Skeleton(std::vector<std::shared_ptr<Bone>> bones, std::vector<Matrix4> boneInverses)
     : bones(bones.begin(), bones.end()), boneInverses(std::move(boneInverses)) {
+    boneAddresses_.reserve(bones.size());
+    for (const auto& bone : bones) boneAddresses_.push_back(bone.get());
     init();
 }
 
@@ -266,8 +268,12 @@ bool SkinnedMesh::boneReachBounds(Box3& target) const {
         matrix.multiplyMatrices(bone->matrixWorld, skeleton->boneInverses[j]);
         center.setFromMatrixPosition(bone->matrixWorld).applyMatrix4(bindMatrixInverse);
         const double radius = boneReach_[j] * stretch(matrix) * meshScale;
-        target.expandByPoint(Vector3(center.x - radius, center.y - radius, center.z - radius));
-        target.expandByPoint(Vector3(center.x + radius, center.y + radius, center.z + radius));
+        target.min.x = std::min(target.min.x, center.x - radius);
+        target.min.y = std::min(target.min.y, center.y - radius);
+        target.min.z = std::min(target.min.z, center.z - radius);
+        target.max.x = std::max(target.max.x, center.x + radius);
+        target.max.y = std::max(target.max.y, center.y + radius);
+        target.max.z = std::max(target.max.z, center.z + radius);
     }
     return !target.isEmpty();
 }
@@ -456,6 +462,9 @@ std::shared_ptr<Object3D> cloneSkeleton(const Object3D& source, std::string& err
     };
     auto root = clone(source);
     if (!root) return nullptr;
+    // A source's primitives that share a Skeleton keep sharing one. A Skeleton per primitive walks the same bones again for
+    // each primitive, every frame; three's clone makes one per mesh, and three's loader shares them, as this does.
+    std::unordered_map<const Skeleton*, std::shared_ptr<Skeleton>> skeletons;
     for (const auto& [from, to] : copies) {
         if (from->type() != "SkinnedMesh") continue;
         const auto& mesh = static_cast<const SkinnedMesh&>(*from);
@@ -465,6 +474,10 @@ std::shared_ptr<Object3D> cloneSkeleton(const Object3D& source, std::string& err
         next.bindMatrixInverse.copy(mesh.bindMatrixInverse);
         if (mesh.boundingBox) next.boundingBox = std::make_shared<Box3>(*mesh.boundingBox);
         if (!mesh.skeleton) continue;
+        if (const auto shared = skeletons.find(mesh.skeleton.get()); shared != skeletons.end()) {
+            next.bind(shared->second, &mesh.bindMatrix);
+            continue;
+        }
         std::vector<std::shared_ptr<Bone>> bones;
         for (size_t i = 0; i < mesh.skeleton->bones.size(); ++i) {
             const auto* bone = mesh.skeleton->bone(i);
@@ -476,7 +489,9 @@ std::shared_ptr<Object3D> cloneSkeleton(const Object3D& source, std::string& err
             }
             bones.push_back(std::static_pointer_cast<Bone>(found->second));
         }
-        next.bind(std::make_shared<Skeleton>(std::move(bones), mesh.skeleton->boneInverses), &mesh.bindMatrix);
+        auto copy = std::make_shared<Skeleton>(std::move(bones), mesh.skeleton->boneInverses);
+        skeletons.emplace(mesh.skeleton.get(), copy);
+        next.bind(std::move(copy), &mesh.bindMatrix);
     }
     return root;
 }

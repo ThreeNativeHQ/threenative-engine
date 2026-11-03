@@ -19,6 +19,7 @@ import {
   sentenceOf,
   staleReason,
   valueColor,
+  verdictBanner,
   webOf,
   withNav,
 } from "../perf-live.js";
@@ -793,6 +794,18 @@ describe("perf-live", () => {
         expect(html).toContain(`href="${href}"`);
       expect(html).toContain('<a href="/ci-speed" aria-current="page">');
       expect(html.match(/<nav class="tabs">/gu)).toHaveLength(1);
+    });
+
+    it("shows the ThreeNative verdict directly under the nav, and never a win from an unreadable ledger", async () => {
+      const page = await readFile(new URL("../perf-live.html", import.meta.url), "utf8");
+      const html = withNav(page, "/");
+      const nav = html.indexOf('<nav class="tabs">');
+      expect(html.match(/class="tn-verdict"/gu)).toHaveLength(1);
+      expect(html.indexOf('class="tn-verdict"')).toBeGreaterThan(nav);
+      const unreadable = await ledgerFile("{not json");
+      const banner = verdictBanner(unreadable);
+      expect(banner).toContain('data-verdict="unavailable"');
+      expect(banner).not.toContain("WINNING");
     });
 
     it("renders the CI speed and asset perf ledgers live", async () => {

@@ -1229,6 +1229,21 @@ describe("CI pipeline structure", () => {
     expect(requiredJob(ci, "golden-path-template")).toContain("needs: [scope, build-artifacts]");
   });
 
+  it("publishes through npm Trusted Publishing: an OIDC token and npm 11.5.1 or later", async () => {
+    // NPM_TOKEN was rejected with E404 on every PUT of 0.3.10 and 0.3.11; the OIDC exchange needs
+    // `id-token: write` and an npm CLI that knows it, and Node 20.19 bundles npm 10.
+    const ship = requiredJob(
+      await readFile(path.join(repo, ".github/workflows/npm-release.yml"), "utf8"),
+      "ship",
+    );
+    expect(ship).toContain("id-token: write");
+    const install = /npm install -g npm@(\d+)\.(\d+)\.(\d+)/u.exec(ship);
+    if (!install) throw new Error("ship installs no pinned npm before it publishes");
+    const [major = 0, minor = 0, patch = 0] = install.slice(1).map(Number);
+    expect(major * 1_000_000 + minor * 1_000 + patch).toBeGreaterThanOrEqual(11_005_001);
+    expect(ship.indexOf(install[0])).toBeLessThan(ship.indexOf("pnpm release:ship"));
+  });
+
   it("hands the emulator action a one-line script, so the arguments survive", async () => {
     // `android-emulator-runner` runs `script` through the emulator shell a line at a time. A
     // `\`-continued command therefore loses everything after its first line, and from 2026-09-01

@@ -664,6 +664,7 @@ struct Renderer::FrameJob {
     uint32_t keptShadowMaps = 0;  // FrameStats::keptShadowMaps, counted by the plan
     uint64_t uniformBytes = 0;  // FrameStats::uniformBytes, written by the plan
     uint32_t paletteWrites = 0;  // FrameStats::paletteWrites, counted by the plan
+    uint32_t shadowGroupRows = 0;  // FrameStats::shadowGroupRows, counted by the plan
     uint32_t instanceCopies = 0;  // FrameStats::instanceCopies, counted by the plan
     std::deque<DrawItem> shadowLodItems;
     // FM8: a page's grouped casters as rows (one per page and group) and each row's member list. Both are
@@ -3458,9 +3459,40 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     struct Deform {
         double boneBase = 0, morphBase = 0, morphInfluenceBase = 0, morphVertexCount = 0, morphBaseInfluence = 1;
     };
-    // FrameStats::paletteWrites: the palettes copied above, one per rig, whatever the number of pages that draw it.
+    // FrameStats::paletteWrites: the palettes copied below. Bytes decide, not pointers: SkeletonUtils.clone gives each
+    // primitive its own Skeleton over the same bones, and a palette batch holds a copy of each rig's matrices, so one
+    // rig reaches this list four times (two primitives, main batch and shadow draw) with the same bytes. Each palette's
+    // rig starts are keyed by their first matrix, so a draw reuses a batch's slot. A batch reads contiguous rigs, so
+    // batches go first and only draws with the same bytes in the same order share one.
     uint32_t paletteWrites = 0;
     std::unordered_map<const DrawItem*, Deform> deforms;
+    std::unordered_multimap<uint64_t, uint32_t> paletteStarts;
+    const auto firstMatrixKey = [](const float* matrix) {
+        uint64_t key = 14695981039346656037ull;
+        for (int i = 0; i < 16; ++i) key = (key ^ std::bit_cast<uint32_t>(matrix[i])) * 1099511628211ull;
+        return key;
+    };
+    const auto placePalette = [&](const std::vector<float>& matrices, uint32_t stride) {
+        const auto baseOf = [&](std::size_t at) { return double(jointPrefix / 64 + at / 16); };
+        if (matrices.size() < 16) return baseOf(bones.size());
+        const auto [from, to] = paletteStarts.equal_range(firstMatrixKey(matrices.data()));
+        for (auto start = from; start != to; ++start) {
+            if (start->second + matrices.size() <= bones.size() &&
+                std::memcmp(bones.data() + start->second, matrices.data(), matrices.size() * sizeof(float)) == 0)
+                return baseOf(start->second);
+        }
+        const std::size_t at = bones.size();
+        const std::size_t step = stride ? std::size_t{stride} * 16 : matrices.size();
+        for (std::size_t o = 0; o + 16 <= matrices.size(); o += step)
+            paletteStarts.emplace(firstMatrixKey(matrices.data() + o), uint32_t(at + o));
+        bones.insert(bones.end(), matrices.begin(), matrices.end());
+        ++paletteWrites;
+        return baseOf(at);
+    };
+    for (const auto& [depthKey, drawn] : opaque) {
+        if (drawn->boneMatrices && drawn->boneStride && !drawn->gpuJoints)
+            deforms[drawn].boneBase = placePalette(*drawn->boneMatrices, drawn->boneStride);
+    }
     std::vector<uint32_t> jointOutputs(jointPrefix ? gpuJoints_->rigs.size() : 0, UINT32_MAX);
     uint32_t jointWritten = 0;
     for (const auto& [depthKey, drawn] : opaque) {
@@ -3479,10 +3511,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 if (drawn->gpuJointRigs.empty()) place(drawn->gpuJointRig);
                 else for (uint32_t rig : drawn->gpuJointRigs) place(rig);
                 paletteWrites += drawn->gpuJointRigs.empty() ? 1u : uint32_t(drawn->gpuJointRigs.size());
-            } else {
-                d.boneBase = double(jointPrefix / 64 + bones.size() / 16);
-                bones.insert(bones.end(), drawn->boneMatrices->begin(), drawn->boneMatrices->end());
-                ++paletteWrites;  // one copy per skinned draw, whatever the number of shadow pages that draw it
+            } else if (!drawn->boneStride) {
+                d.boneBase = placePalette(*drawn->boneMatrices, 0);
             }
         }
         if (const BufferGeometry* g = drawn->morphGeometry) {
@@ -3613,7 +3643,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     FrameJob& job = compilation ? compileJob : *job_;
     job.plan.clear(); job.velocityPlan.clear(); job.auxPlan.clear(); job.shadowPasses.clear(); job.shadowLodItems.clear();
     job.shadowGroupItems.clear(); job.shadowGroups.clear();
-    job.previousBytes = {}; job.previousSeed = false; job.keptShadowMaps = 0; job.paletteWrites = paletteWrites; job.instanceCopies = instanceCopies;
+    job.previousBytes = {}; job.previousSeed = false; job.keptShadowMaps = 0; job.shadowGroupRows = 0; job.paletteWrites = paletteWrites; job.instanceCopies = instanceCopies;
     job.deformationFrames.clear();
     std::vector<Planned>& plan = job.plan;
     std::vector<Planned>& velocityPlan = job.velocityPlan;
@@ -4041,7 +4071,15 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         }
         std::vector<std::vector<const DrawItem*>> selectedCasters(static_cast<std::size_t>(passCount));
         std::vector<std::exception_ptr> failedFace(selectedCasters.size());
+        // Every mover page of a light draws the same moving casters wherever they are: only its camera differs, and
+        // that is a per-pass uniform. The first plans the rows, and the others draw them: their instance and skin
+        // floats would be the same bytes, once per level, every frame.
+        int firstMoverFace = passCount;
+        if (virtualMap && !compilation)
+            for (int face = passCount - 1; face >= 0 && virtualPages[i][std::size_t(face)].mover; --face) firstMoverFace = face;
+        std::size_t firstMoverPass = 0;
         const auto selectFace = [&](std::size_t face) {
+            if (int(face) > firstMoverFace) return;
             try {
                 const shadows::AtlasPage* page = virtualMap && !compilation ? &virtualPages[i][face] : nullptr;
                 std::vector<const DrawItem*>& selected = selectedCasters[face];
@@ -4099,6 +4137,11 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             pass.x = x; pass.y = y; pass.size = page->mover ? atlas.options().moverMapSize + 2 * atlas.options().border : atlas.stride();
             pass.mover = page->mover;
             if (!page->mover) { pass.virtualLight = i; pass.virtualLevel = page->level; }
+        }
+        if (face == firstMoverFace) firstMoverPass = shadowPasses.size() - 1;
+        if (face > firstMoverFace) {
+            pass.draws = shadowPasses[firstMoverPass].draws;
+            continue;
         }
         // The error a coarser rung may have on this page: its texels in world units, along the window's
         // wider axis (see PageAtlas::update), times the budget the node allows.
@@ -4343,6 +4386,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             // than writing it again.
             std::vector<const DrawItem*>& recorded = job.shadowGroups.emplace_back(groups[at].members);
             DrawItem& row = job.shadowGroupItems.emplace_back(*recorded.front());
+            ++job.shadowGroupRows;
             row.matrixWorld = Matrix4{}.elements;
             row.shadowGroup = true;
             row.instanceColors = nullptr;
@@ -4431,6 +4475,12 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         // Pack only the passes that run: a kept map's casters never allocate, fill or upload a slice.
         for (std::size_t k = firstPass; k < shadowPasses.size(); ++k) {
             ShadowPass& kept = shadowPasses[k];
+            // r185 draws a caster through the shadow camera, so TSL's camera accessors (a billboard's
+            // positionNode) read that camera here: its world matrix is the view's inverse.
+            Matrix4 shadowCamera;
+            shadowCamera.elements = kept.view;
+            shadowCamera.invert();
+            const std::array<double, 3> shadowPosition{shadowCamera.elements[12], shadowCamera.elements[13], shadowCamera.elements[14]};
             for (Planned& planned : kept.draws) {
                 const DrawItem& item = *planned.item;
                 Program& program = *planned.program;
@@ -4451,12 +4501,6 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 if (item.instanceMatrices) put(frameUniforms_, v, program.vertexSlots[kInstanceBase], std::array<double, 1>{planned.instanceBase});
                 put(frameUniforms_, v, program.vertexSlots[kViewMatrix], kept.view);
                 put(frameUniforms_, v, program.vertexSlots[kProjectionMatrix], kept.projection);
-                // r185 draws a caster through the shadow camera, so TSL's camera accessors (a billboard's
-                // positionNode) read that camera here: its world matrix is the view's inverse.
-                Matrix4 shadowCamera;
-                shadowCamera.elements = kept.view;
-                shadowCamera.invert();
-                const std::array<double, 3> shadowPosition{shadowCamera.elements[12], shadowCamera.elements[13], shadowCamera.elements[14]};
                 put(frameUniforms_, v, program.vertexSlots[kCameraWorldMatrix], shadowCamera.elements);
                 put(frameUniforms_, v, program.vertexSlots[kCameraPosition], shadowPosition);
                 put(frameUniforms_, v, program.vertexSlots[kCameraProjectionMatrix], kept.projection);
@@ -6188,6 +6232,7 @@ void Renderer::encodeFrame(FrameJob& job) {
         lastFrame_.keptShadowMaps = job.keptShadowMaps;
         lastFrame_.uniformBytes = job.uniformBytes;
         lastFrame_.paletteWrites = job.paletteWrites;
+        lastFrame_.shadowGroupRows = job.shadowGroupRows;
         lastFrame_.instanceCopies = job.instanceCopies;
         waste::debugAdd(waste::counters().renderFrames);
         waste::debugAdd(waste::counters().renderDraws, lastFrame_.draws);

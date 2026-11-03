@@ -1072,6 +1072,31 @@ const std::vector<Node>& uniformList(const Graph& graph) {
     return *graph->memo.uniforms;
 }
 
+namespace {
+uint64_t bindingWalks = 0;
+}  // namespace
+
+uint64_t computeBindingWalks() { return bindingWalks; }
+
+const std::vector<const NodeData*>& computeBindingNodes(const Graph& graph) {
+    if (!graph->memo.computeBindings) {
+        ++bindingWalks;
+        auto list = std::make_shared<std::vector<const NodeData*>>();
+        std::unordered_set<const NodeData*> seen;
+        const std::function<void(const Node&)> visit = [&](const Node& n) {
+            if (!n || !seen.insert(n.get()).second) return;
+            if (n->kind == Kind::StorageElement || n->kind == Kind::Texture || n->kind == Kind::StorageTexture ||
+                n->kind == Kind::TextureStore)
+                list->push_back(n.get());
+            for (const auto* children : {&n->args, &n->body, &n->otherwise})
+                for (const auto& child : *children) visit(child);
+        };
+        visit(graph);
+        graph->memo.computeBindings = std::move(list);
+    }
+    return *graph->memo.computeBindings;
+}
+
 std::vector<Node> uniformNodes(const Graph& graph) {
     std::vector<Node> result;
     if (!graph) return result;

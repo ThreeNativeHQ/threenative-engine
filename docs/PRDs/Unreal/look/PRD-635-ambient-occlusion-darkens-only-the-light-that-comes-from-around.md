@@ -49,6 +49,12 @@ so the surface BRDF itself needs no change.
    may already render depth and normals. Phase 1 measures whether the prepass can share an
    existing target before it adds one. The added cost is recorded against the `high` budget.
 
+## three.js 0.187.0 levers (2026-11-02)
+
+- r186 adds `SSAONode` (three#33921, `examples/jsm/tsl/display/SSAONode.js`): a Vogel-disk SSAO with one depth tap per sample and a separable depth-aware blur, so it needs no temporal accumulation. Unreal without Lumen uses SSAO at intensity 0.5 on the indirect term (`Engine/Source/Runtime/Engine/Private/Scene.cpp:567`, quoted above). Measure `SSAONode` as the source for that tier against GTAO on cost and on the judge.
+
+Adoption rule: the owned engine is the default, and it runs a three symbol only when its API catalog covers it (`docs/architecture/NATIVE-ENGINE-DECISION.md`). So use the upstream piece first as a measured reference arm on `engine: "threejs"`. A template uses it only after a catalog row and a native parity case land.
+
 ## Acceptance Criteria
 
 - [ ] AC-1 [local]: The starter L6 cells match the Unreal L6 cells within the PRD-631 thresholds in all 12 poses. The lit floor at the foot of the sunlit wall must not darken. proof: `pnpm unreal-look:compare --layer L6` — Evidence: pending.
