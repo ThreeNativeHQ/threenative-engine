@@ -94,15 +94,6 @@ export interface IDummy {
 
 const NULL_GROUND: IGround = { splat() {} };
 const NULL_FLUID: IFluid = { res: 0, acquire: () => null };
-const NULL_TRAILS: ITrails = { acquire: () => null };
-const NULL_RIG: IRig = {
-  shake() {},
-  punch() {},
-  hitstop() {},
-  timeScale: 1,
-  apply() {},
-  restore() {},
-};
 
 export interface IFxOptions {
   camera: Camera;
@@ -136,16 +127,13 @@ export function createFx(o: IFxOptions) {
   // The field draws its sim passes with the raw renderer; it is built first, before any material
   // that reads U.uGroundA/B (common.ts setGroundTexture). A game passes its own to override one.
   const raw = (o.renderer as { raw?: unknown } | undefined)?.raw ?? o.renderer;
-  // TEMP lane gate (team-lead, removed at integration): build only with ?lane=world or ?lane=all
-  const worldLanes = new URLSearchParams(globalThis.location?.search ?? "").getAll("lane");
-  const worldLane = worldLanes.includes("world") || worldLanes.includes("all");
   const groundField =
-    o.ground === undefined && raw !== undefined && worldLane
+    o.ground === undefined && raw !== undefined
       ? new GroundField(raw as IFieldRenderer, Q.groundSize)
       : undefined;
   const trailRibbons =
-    o.trails === undefined && worldLane ? new TrailRibbons({ max: 64, points: 48 }) : undefined;
-  const shockwaves = o.shocks === undefined && worldLane ? new Shockwaves() : undefined;
+    o.trails === undefined ? new TrailRibbons({ max: 64, points: 48 }) : undefined;
+  const shockwaves = o.shocks === undefined ? new Shockwaves() : undefined;
   const fx = {
     camera: o.camera,
     scenes: { fx: fxTarget.scene },
@@ -155,23 +143,20 @@ export function createFx(o: IFxOptions) {
     arena: o.arena ?? { focus: { color: { r: 1, g: 1, b: 1 } as Color }, setFocus() {} },
     ground: o.ground ?? groundField ?? NULL_GROUND,
     particles: null as unknown as Particles,
-    trails: o.trails ?? (trailRibbons as ITrails | undefined) ?? NULL_TRAILS,
+    trails: (o.trails ?? trailRibbons) as ITrails,
     volumes,
     shocks: (o.shocks ?? shockwaves) as IShocks | undefined,
     // the shared combustion fluid (upstream FluidVolume.get(fx)): built on first use, inside the spell's
     // create(), so its box meshes count as that spell's objects and warmSpell compiles them
     get fluid(): IFluid {
-      // TEMP lane gate (team-lead, removed at integration): build only with ?lane=fluid or ?lane=all
-      const lanes = new URLSearchParams(globalThis.location?.search ?? "").getAll("lane");
-      const on = lanes.includes("fluid") || lanes.includes("all");
-      return o.fluid ?? (fx.renderer && on ? FluidVolume.get(fx) : NULL_FLUID);
+      return o.fluid ?? (fx.renderer ? FluidVolume.get(fx) : NULL_FLUID);
     },
     fluidVolume: undefined as FluidVolume | undefined,
     // the raw renderer the GPU systems draw their passes with (ctx.renderer.raw on ThreeNative)
     renderer: ((o.renderer as { raw?: unknown } | undefined)?.raw ?? o.renderer) as
       | ConstructorParameters<typeof FluidVolume>[0]["renderer"]
       | undefined,
-    rig: o.rig ?? (worldLane ? (new CameraRig() as IRig) : NULL_RIG),
+    rig: o.rig ?? (new CameraRig() as IRig),
     lights,
     forces,
     impacts,
@@ -215,11 +200,8 @@ export function createFx(o: IFxOptions) {
   fx.particles = particles;
   // upstream builds once every spell has registered: here, before the first warm-up or frame.
   // Engine: one world scene, so glow (upstream: lines scene) and debris (opaque scene) join the fx group
-  // TEMP lane gate (team-lead, removed at integration): build only with ?lane=particles or ?lane=all
-  const lanes = new URLSearchParams(globalThis.location?.search ?? "").getAll("lane");
-  const particlesLane = lanes.includes("particles") || lanes.includes("all");
   function buildParticles(): void {
-    if (particles.built || !particlesLane) return;
+    if (particles.built) return;
     particles.build();
     fxTarget.scene.add(particles.glow, particles.media, ...particles.debris);
   }

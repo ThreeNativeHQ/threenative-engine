@@ -244,17 +244,12 @@ function createFloor(
     cold,
     sample.b.mul(0.8),
   );
-  material.colorNode = vec4(albedo, 1);
   // The Ultra Elements ground field (the ported Fireball's scorch and hot ground) over that surface.
-  // TEMP lane gate (team-lead, removed at integration): only with ?lane=world or ?lane=all
-  const lanes = new URLSearchParams(globalThis.location?.search ?? "").getAll("lane");
-  if (lanes.includes("world") || lanes.includes("all")) {
-    const shaded = groundShade(positionWorld, { albedo, rough: float(0.85), metal: float(0) });
-    material.colorNode = vec4(shaded.color, 1);
-    material.roughnessNode = shaded.roughness;
-    material.metalnessNode = shaded.metalness;
-    material.emissiveNode = shaded.emissive;
-  }
+  const shaded = groundShade(positionWorld, { albedo, rough: float(0.85), metal: float(0) });
+  material.colorNode = vec4(shaded.color, 1);
+  material.roughnessNode = shaded.roughness;
+  material.metalnessNode = shaded.metalness;
+  material.emissiveNode = shaded.emissive;
   const floor = new Mesh(new PlaneGeometry(PATCH, PATCH), material);
   floor.rotation.x = -Math.PI / 2;
   floor.name = "spell-floor";
