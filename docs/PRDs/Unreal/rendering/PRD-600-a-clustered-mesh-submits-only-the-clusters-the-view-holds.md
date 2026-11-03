@@ -95,4 +95,7 @@ Adoption rule: the owned engine is the default, and it runs a three symbol only 
 **Verification:** AC-1 and AC-3 close this phase. The visual judge compares route frames, with a camera turn mid-route.
 - [ ] The pruned walk matches the oracle on 200 seeded poses and a turn inside the margin does not re-cut. proof: red-green `pnpm exec vitest run packages/core/__tests__/clustered-mesh.spec.ts`
 - [ ] The quarry cliff walk time falls with the share of the view it sees, and the desktop route shows the same selection. proof: `pnpm --filter quarry measure -- --arm virtual --target desktop`
-- [ ] A clustered mesh whose material has a `positionNode` widens each cluster's bounds by the material's declared maximum offset before the frustum test, or keeps view pruning off and reports it (`UE 5.8.3: Engine/Shaders/Private/Nanite/NaniteClusterCulling.usf:168-169`). proof: red-green `pnpm exec vitest run packages/core/__tests__/clustered-mesh.spec.ts`
+
+## Decisions
+
+- 2026-11-02: the `positionNode` bounds box moved from Phase 3 to [PRD-786](PRD-786-a-cluster-that-its-material-moves-stays-culled-and-cut-by-the-bounds-it-really-covers.md), which owns material-moved clusters (declared offset, fail-closed report, kit lint). Phase 3 keeps the pruned walk. Reason: one PRD per outcome, so the box is not done twice.
