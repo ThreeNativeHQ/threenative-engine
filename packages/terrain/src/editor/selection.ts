@@ -169,7 +169,10 @@ export function createEditorSelection({
     }
   }
   async function saveLayer(layer: Layer, base = snapshot, remember = true): Promise<void> {
-    if (saving || !base) return;
+    if (saving || !base) {
+      message("Wait for the current landform save.");
+      return;
+    }
     saving = true;
     setSaving(true);
     gizmo.enabled = false;
@@ -421,10 +424,16 @@ export function createEditorSelection({
       const overrides = { ...current.document.placementOverrides, [selected]: value };
       delete overrides[id];
       try {
-        await controller.commit({
+        const next = await controller.commit({
           baseRevision: current.revision,
           document: { ...current.document, placementOverrides: overrides },
         });
+        if (
+          !snapshot ||
+          snapshot.revision === current.revision ||
+          snapshot.revision === next.revision
+        )
+          snapshot = next;
       } catch (error) {
         message(String(error));
       }

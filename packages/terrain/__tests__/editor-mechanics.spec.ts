@@ -217,6 +217,49 @@ describe("injected editor selection mechanics", () => {
     f.selection.dispose();
   });
 
+  it("adopts the reassign commit so the next save rebases on its revision (audit TERRAIN-03)", async () => {
+    const f = setup();
+    const value: IPlacementOverride = {
+      position: [1, 2, 3],
+      quaternion: [0, 0, 0, 1],
+      scale: [1, 1, 1],
+      grounding: false,
+    };
+    f.snapshot.document.placementOverrides = { orphan: value };
+    await f.selection.reassign("orphan");
+    expect(f.selection.snapshot?.revision).toBe("next");
+    f.selection.applyFields([4, 5, 6, 0, 0, 0, 1, 1, 1], true);
+    await vi.waitFor(() => expect(f.selection.saving).toBe(false));
+    expect(f.commit.mock.calls[1]?.[0].baseRevision).toBe("next");
+    f.selection.dispose();
+  });
+
+  it("tells the user when a landform save is refused while another save is in flight (audit TERRAIN-02)", async () => {
+    const f = setup();
+    const layer: Layer = {
+      id: "hill",
+      type: "stamp",
+      params: { at: [10, 20], offset: 3, radius: 8, amplitude: 40 },
+    };
+    f.snapshot.document.recipe.layers.push(layer);
+    f.selection.selectLayer("hill");
+    let release: () => void = () => {};
+    f.commit.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = () => resolve({ ...f.snapshot, revision: "next" });
+        }),
+    );
+    f.selection.applyFields([12, 5, 22, 0, 0, 0, 6, 2, 7], true);
+    expect(f.selection.saving).toBe(true);
+    f.selection.applyFields([14, 5, 22, 0, 0, 0, 6, 2, 7], true);
+    expect(f.commit).toHaveBeenCalledTimes(1);
+    expect(f.message).toHaveBeenLastCalledWith("Wait for the current landform save.");
+    release();
+    await vi.waitFor(() => expect(f.selection.saving).toBe(false));
+    f.selection.dispose();
+  });
+
   it("retains invalid or failed drafts and clears them explicitly", async () => {
     const f = setup();
     f.selection.applyFields([1, 2, 3, 0, 0, 0, 1, 0, 1], true);
