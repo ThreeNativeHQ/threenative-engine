@@ -102,7 +102,7 @@ const registry = JSON.parse(
 function standIn(exported: ReturnType<typeof exportTslGraph>): string[] {
   const rows = new Set<string>();
   const count = exported.nodes.length;
-  // Owned Wasm/V8 parity proves real GI and neutral AO=1 separately; upstream SSGI parity remains distinct.
+  // Owned Wasm/V8 parity proves real GI and the gather's own occlusion separately; upstream SSGI parity remains distinct.
   const giOwners = new Set(
     exported.nodes.flatMap((node, id) => (node.kind === "SSGINode" ? [id] : [])),
   );

@@ -1849,7 +1849,7 @@
       "tolerance": { "pixelMismatchRatio": 0.06, "perceptualDeltaE": 9.0 },
       "desktopGate": true,
       "required": true,
-      "reason": "The left half displays actual gathered GI; the right displays the public scalar AO output. The owned implementation deliberately answers AO with constant one because GTAO is a separate stage. Owned Wasm/V8 parity proves those owned outputs, not equivalence to upstream Three SSGI, whose AO and GI algorithms and defaults differ. The required upstream comparison and its tolerances remain unchanged."
+      "reason": "The left half displays actual gathered GI; the right displays the public scalar AO output. The owned gather answers the share of its rays an occluder blocked, in three's form (pow(clamp(1 - occludedShare), aoIntensity)), so the caller that multiplies its lit frame by the AO term darkens where geometry blocks (SSGINode.js:637-638, 651). Owned Wasm/V8 parity proves those owned outputs, not equivalence to upstream Three SSGI, whose AO and GI algorithms and defaults differ. The required upstream comparison and its tolerances remain unchanged."
     },
     {
       "id": "realism-ssr",
