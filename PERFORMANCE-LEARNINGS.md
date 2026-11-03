@@ -1000,3 +1000,20 @@ no COOP/COEP); that lane is open.
 - Method trap: desktop monitors asleep stop the browser opening its DevTools port, and a private Xvfb under the wrapper does too. Check
   `/sys/class/drm/card1-*/status` before a window. Page counts under Xvfb on the real GPU stay valid; timing there is not a verdict.
 - Revisit when: a scene's casters span far more depth than its window (a high flyer), which re-fits and redraws the level each time.
+
+### 2026-11-02 — Virtual shadows: bone lookups take no lock, one shadow copy per draw (L5), and mover pages share one row plan (L6) — KEEP
+
+- L5 (`de7584e47`): `Skeleton::bone(i)` reads a cached raw pointer, not a `weak_ptr::lock`. A shadow copy of a draw is made once and moved,
+  not copied twice. Bone reach bounds inline min and max.
+- L6 (`474232822`): every mover page of a light draws the same moving casters, so the first mover page plans the rows and the others reuse
+  them. Only the camera differs, and that is a per-pass uniform. Test: rows built 6 of 6 to 2 of 6, pixel hash the same.
+- Stack window, FG3 against L5+L6, labs restarted cold together (rows #267-280, 6 valid pairs, both arm orders, load peak 9-18): fps 53.3 to
+  59.0 (+10.7%, 5 of 6), frame p50 17.82 to 15.55 ms, presented p95 26.87 to 24.40 ms (5 of 6), GPU p95 7.17 to 6.71 ms (4 of 6).
+- Score after the stack (rows #284-288): VSM 54 against Unreal 56 without Lumen and 52 stock, both ties. Unreal fps is still higher, 72.4.
+- Opus judge (fresh, read-only, 4 poses x 2-3 runs per arm plus 2 startup recordings per arm, NVIDIA Turing, headed): NEUTRAL on every
+  pair. Pixel differences sit at walker limbs and match the run-to-run noise inside one arm (108-134 px).
+- Method trap: FG3 left `native_engine_vsm_atlas` red because only the render database cases ran. Run `ctest -L native-engine` before a commit.
+- Method trap: a holdout runner passed its assertions at 1 Hz with monitors asleep. Pass or fail cannot see that, only fps can: refuse a run
+  when `/sys/class/drm/card1-*/status` shows no `connected`.
+- Revisit when: a game changes the bone list of a live skeleton (the raw pointers then need a rebuild), or a light has mover pages with
+  different caster sets.
