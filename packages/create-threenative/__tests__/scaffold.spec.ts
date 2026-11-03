@@ -355,7 +355,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   platformer: "ddf011f80cd989685c4c78d080f4c54c3761c1339c6efcabeb12a41fdad4524a",
   puzzle: "8b3e69d0ba7e00082e9318c79194335bd208c502bcc63ea69f1faaa26a7c904c",
   racing: "1affb3d5e60b0cad1218aca2c66464d9f3bca0ec6d163de2e509cfa1f59bc6b9",
-  rain: "52d19ee5e5a8aefc63ef994206577bc524d6aea186055eb7c86c1525b1452aa0",
+  rain: "8d5c5c4ed1f2fc24aa714b152a7c643dc6f89ddddbfe01c6767ed2eb6e76582e",
   // Re-pinned 2026-10-28: the rts high tier turns camera motion blur off (an RTS pan smeared every unit).
   // Re-pinned 2026-10-28 (PRD-765): rts becomes AstraCraft — painted ground, mesas, scrub, ACES 1.02 look and the command HUD;
   // then its legacy-linear colours, gamma fog of war, no bloom or environment, and a frame-sized shadow window.
