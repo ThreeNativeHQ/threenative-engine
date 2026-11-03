@@ -219,6 +219,9 @@ struct StandardPrograms {
     /** A lit fragment's diffuse colour (map, tint and colorNode included, unfogged) and emitted radiance, both vec3:
      *  what the albedo and emissive post targets hold (Renderer::auxFragment). kInvalid for an unlit program. */
     ExprId albedo = kInvalid, emissive = kInvalid;
+    /** A Standard or Physical fragment's shading normal (view space, normalNode applied): what the post normal target
+     *  holds for a material with a normalNode. kInvalid elsewhere. */
+    ExprId normal = kInvalid;
     std::vector<std::string> diagnostics;  // TN_MATERIAL_UNSUPPORTED ...; empty when drawable
 };
 

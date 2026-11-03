@@ -472,6 +472,20 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
             : g::vec2({args.size() == 1 ? arg(0) : g::float_(0)})};
         return node;
     }
+    // ivec3 / ivec4 (ConvertType): each component an int, one argument splats.
+    if (name == "ivec3" || name == "ivec4") {
+        const uint8_t lanes = name == "ivec3" ? 3 : 4;
+        if (args.size() != 1 && args.size() != lanes) throw std::runtime_error("invalid " + name + " argument count");
+        auto node = std::make_shared<g::NodeData>();
+        node->kind = g::Kind::Join; node->type = Type::vec(lanes, Type::Scalar::I32);
+        for (size_t i = 0; i < args.size(); ++i) node->args.push_back(tslCall("int", nullptr, {args[i]}, serial));
+        return node;
+    }
+    // bool(x) (ConvertType): true where the number is not zero, as WGSL's bool() of it.
+    if (!method && name == "bool") {
+        arity(1);
+        return g::logicalNot(g::equal(g::float_(arg(0)), g::float_(0)));
+    }
     // lengthSq(v) is dot(v, v).
     if (name == "lengthSq") {
         arity(method ? 0 : 1);

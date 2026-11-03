@@ -383,15 +383,18 @@ ExprId Lowerer::emit(Node node) {
             const bool pairwise = d.name == "min" || d.name == "max" || d.name == "pow" || d.name == "step" || d.name == "mod";
             if (ids.size() == 2 && pairwise) {
                 if (ids[0] == kInvalid || ids[1] == kInvalid) return kInvalid;
-                // r185 types a whole JS divisor from the integer index, as the binary operators do.
-                if (d.name == "mod" && d.args[1]->kind == Kind::Constant) {
-                    const auto& divisor = program_.expr(ids[1]);
-                    const Type index = program_.expr(ids[0]).type;
-                    const float value = std::bit_cast<float>(static_cast<uint32_t>(divisor.immediate));
-                    if (divisor.op == Op::Constant && divisor.type == Type::f32() && value == std::floor(value) &&
-                        index.isScalar() && (index.scalar == Type::Scalar::U32 || index.scalar == Type::Scalar::I32))
-                        ids[1] = program_.construct(index, {ids[1]});
-                }
+                // r185 types a whole JS number beside an integer (mod's divisor, max(i, 0), min(1, i)) from the
+                // integer operand, as the binary operators do.
+                if (d.name == "mod" || d.name == "min" || d.name == "max")
+                    for (const std::size_t literal : {std::size_t(1), std::size_t(0)}) {
+                        if (d.args[literal]->kind != Kind::Constant) continue;
+                        const auto& number = program_.expr(ids[literal]);
+                        const Type index = program_.expr(ids[1 - literal]).type;
+                        const float value = std::bit_cast<float>(static_cast<uint32_t>(number.immediate));
+                        if (number.op == Op::Constant && number.type == Type::f32() && value == std::floor(value) &&
+                            index.isScalar() && (index.scalar == Type::Scalar::U32 || index.scalar == Type::Scalar::I32))
+                            ids[literal] = program_.construct(index, {ids[literal]});
+                    }
                 const auto a = program_.expr(ids[0]).type, b = program_.expr(ids[1]).type;
                 // A serialized graph converts any mismatch; an authored one only widens a float scalar to the other
                 // operand's lanes (TSL's mod(vec2, float)), so a real type error still reports.
@@ -570,7 +573,11 @@ void Lowerer::statement(Node node) {
         case Kind::Assign: {
             const Node& target = s.args[0];
             if (target->kind == Kind::Var) {
-                program_.assign(ensureVar(target), expression(s.args[1]));
+                // AssignNode formats the value to the variable's type (an int variable takes the JS number 3); a var
+                // typed by its initial value (Void here) keeps the value as it is.
+                const ExprId value = expression(s.args[1]);
+                program_.assign(ensureVar(target),
+                                target->type.scalar == Type::Scalar::Void ? value : convert(value, target->type));
             } else if (target->kind == Kind::Swizzle && target->args[0]->kind == Kind::Var) {
                 const VarId variable = ensureVar(target->args[0]);
                 const ExprId old = program_.load(variable), source = expression(s.args[1]);

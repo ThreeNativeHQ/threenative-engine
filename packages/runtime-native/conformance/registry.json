@@ -2219,6 +2219,20 @@
       "required": false
     },
     {
+      "id": "post-normal-node",
+      "title": "a material normalNode written to the scene pass normal target a post chain reads",
+      "category": "rendering",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/post-normal-node.js",
+      "browserRecipe": "webgpu",
+      "tolerance": {
+        "pixelMismatchRatio": 0.04,
+        "perceptualDeltaE": 3
+      },
+      "desktopGate": false,
+      "required": false
+    },
+    {
       "id": "compute-texture-load",
       "title": "compute kernel reading a float DataTexture only with textureLoad (no sampler bound)",
       "category": "webgpu-tsl",
