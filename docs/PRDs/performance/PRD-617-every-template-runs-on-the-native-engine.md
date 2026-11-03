@@ -413,3 +413,42 @@ adds the loop half: a zero freeze settles nothing on frames, `settleNow()` spend
 rejects a negative or fractional count, and no later frame settles again. `loop.spec.ts`,
 `playtest-settle.spec.ts` and `game.spec.ts` pass 124/124; `packages/core` typecheck passes and Biome
 reports no error on the changed files.
+
+2026-11-02 the rest of the AC-6 web sweep (lane goal-617, RTX 2080 nvidia/turing, headed private Xvfb,
+each template's own `pnpm test` on the native Wasm engine). racing 11 of 11 scenarios pass, rts 9 of 9,
+rain 15 of 16, shooter 34 of 37. rain's one failure is `rain-production-performance`
+`performance.maxFrameMsP95` 20.39 ms against 16.7 (GPU 20.39, CPU 0.83) — a GPU-bound run on a virtual
+display. shooter's three failures are one page crash and its fallout:
+`debug-fire` ("the page went away without navigating"), then `enemy-body-is-a-body` and
+`walkway-reachable` ("the bridge is not installed" / "the page navigated during the bridge handshake"),
+all three inside the same browser session. The 34 passing scenarios include every weapon, movement,
+enemy and `performance` scenario. So of the ten AC-5 templates the native engine now passes the whole
+web suite for action-rpg, sailing, racing and rts, and misses only performance bounds for platformer,
+tower-defense, rain and runner; snow is pinned (PRD-620) and shooter has the page crash above. The
+thresholds are unchanged.
+
+2026-11-02 the sailing capture pose is equal between arms (fix round, item 2). With the deferred settle
+in place, both arms reach `startTick` 240 plus 30 ticked frames with HUD `ELAPSED` 3.5 s, `BUOYS 0/4`,
+`WIND 97%` and `NEAREST MARK 21 m` — the same game state at the same anchor, which the previous pair
+did not have (4.5 s native against 3.5 s legacy). The remaining honest caveat: the settling pass's 60
+fixed steps now reach neither arm's sailing clock (both read 3.5 s rather than the 4.5 s the native arm
+used to read), so the pass still lands before the sailing scene installs its own clock on both engines.
+That is at least deterministic — the same anchor now describes the same state on every engine — but the
+harness question "should those 60 steps reach the world clock" is still open and needs its own lane.
+The native arm's sky still shows the radial banding/streak pattern the legacy arm does not; it is an
+appearance difference outside this lane's change and it is recorded for the judge.
+
+2026-11-02 the runner shadow pass, what it actually draws (fix round, item 4). A temporary caster dump
+in `Renderer::planShadow` (not committed) printed every draw of the sun's one shadow pass for the
+runner's own game on the desktop V8 player: `Mesh 'autobatch'` 10,800 triangles, `SkinnedMesh
+'Mannequin_1'` 5,732, `SkinnedMesh 'Mannequin_2'` 8,012, `InstancedMesh 'obstacles'` 3,600 (4
+instances); one shadow pass, four draws. The legacy arm's whole shadow pass is one draw of 3,600
+triangles, which is the `obstacles` instanced mesh. So the difference is not the shadow camera and not
+the frustum test: it is which objects the native engine admits as casters. The static world reaches the
+shadow pass as one auto-batched mesh, and `addBatchMesh` splits a batch by its members' `shadowCaster`
+flag, so that batch is all casters by construction; the two mannequins are the LOD pair of the same
+character mesh, and both are drawn into the shadow map where the main pass shows one figure. Neither
+mechanism is a threshold question and neither is fixed here: the batch's merged geometry cannot drop a
+member that does not cast without a per-member caster index, and the shadow pass does not consult the
+main pass's LOD selection. `maxTriangles` is unchanged, as the brief requires, and this stays an open
+engine question with the two mechanisms named.
