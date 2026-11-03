@@ -8,6 +8,29 @@ export interface IIsolatedRun {
   signal?: AbortSignal;
 }
 
+/**
+ * The parent's Node flags minus the ones that bind a port or write a file per process
+ * (`--inspect*`, `--debug-port`, `--cpu-prof*`, `--heap-prof*`): a child that inherits them fights
+ * the parent for the debugger port or overwrites its profile. Loader flags such as `--import` stay.
+ */
+export function childExecArgv(execArgv: readonly string[]): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < execArgv.length; i += 1) {
+    const flag = execArgv[i] as string;
+    if (
+      !/^--(inspect(-brk|-wait|-port|-publish-uid)?|debug-port|(cpu|heap)-prof(-[a-z]+)?)(=|$)/.test(
+        flag,
+      )
+    ) {
+      out.push(flag);
+      continue;
+    }
+    // `--flag value` carries its value as the next token.
+    if (!flag.includes("=") && /-(port|dir|name|interval|uid)$/.test(flag)) i += 1;
+  }
+  return out;
+}
+
 export interface IIsolatedResult {
   stdout: string;
   stderr: string;

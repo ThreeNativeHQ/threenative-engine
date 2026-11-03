@@ -4,7 +4,7 @@ import { rm } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
-import { IsolatedKillError, runIsolated } from "./child.js";
+import { IsolatedKillError, childExecArgv, runIsolated } from "./child.js";
 import {
   TERRAIN_TOOLS,
   parseGenerateInput,
@@ -54,7 +54,7 @@ async function callTool(name: string, args: unknown): Promise<ReturnType<typeof 
         command: process.execPath,
         // Inherits the parent's loader flags, so the same TypeScript runtime starts the child.
         args: [
-          ...process.execArgv,
+          ...childExecArgv(process.execArgv),
           COOK_CHILD,
           JSON.stringify({ ...input, out, projectRoot, assetSource }),
         ],

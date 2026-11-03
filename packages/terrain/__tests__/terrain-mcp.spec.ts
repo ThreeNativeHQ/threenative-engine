@@ -14,7 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { decodeRAW16 } from "../src/core/io.js";
 import type { ITerrainDocument } from "../src/core/types.js";
-import { IsolatedKillError, runIsolated } from "../src/mcp/child.js";
+import { IsolatedKillError, childExecArgv, runIsolated } from "../src/mcp/child.js";
 import { cookKit, loadCooker, parseBounds } from "../src/mcp/cook.js";
 import { measureGlb } from "../src/mcp/glb-stats.js";
 import {
@@ -781,4 +781,23 @@ describe("terrain_generate cold GLB handoff", () => {
       await rm(project, { recursive: true, force: true });
     }
   }, 65_000);
+});
+
+describe("cook child flags (audit TERRAIN-16)", () => {
+  it("drops debugger and profiler flags and keeps loader flags", () => {
+    expect(
+      childExecArgv([
+        "--inspect=0",
+        "--import",
+        "tsx",
+        "--inspect-brk",
+        "--cpu-prof",
+        "--cpu-prof-dir",
+        "out",
+        "--heap-prof-name=x",
+        "--debug-port=9229",
+        "--conditions=dev",
+      ]),
+    ).toEqual(["--import", "tsx", "--conditions=dev"]);
+  });
 });
