@@ -1,11 +1,9 @@
-import { texture, uniform } from "three/tsl";
+import { mrt, texture, uniform } from "three/tsl";
 // Ported from Ultra Elements src/vfx/FluidVolume.js @698b720 (MIT, Copyright (c) 2026 Humpalumps). JavaScript copied verbatim; GLSL transliterated to TSL.
 //
 // Engine (ThreeNative's C++ engine over WebGPU) differences, each forced:
 //  - the shader revisions upstream patches over FluidVolume.glsl.js at load (REACT's turbulence, soot
 //    cooling and erosion; RENDER_BODY) are written in place in FluidVolume.tsl.ts, marked "patch:".
-//  - ENGINE-GAP: no multi-target render target. A two-field target (velocity, scalars) is a Pair of
-//    single-colour RenderTargets with upstream's `textures` shape, and a two-output pass draws twice.
 //  - no render-target viewport: every pass draws the whole atlas. Texels past the used tiles get a
 //    value no lookup reads (gridTexel and gridSample stay inside the used tiles), so the result is
 //    upstream's; the cost is the unused corner of the atlas.
@@ -166,23 +164,11 @@ const atlasSize = (N: number) => {
   return [t * N, Math.ceil(N / t) * N] as const;
 };
 
-// ENGINE-GAP: no MRT. A two-field target is two single-colour targets with upstream's `textures` shape.
-class Pair {
-  readonly rts: RenderTarget[];
-  readonly textures: Texture[];
-  constructor(w: number, h: number) {
-    this.rts = [target(w, h), target(w, h)];
-    this.textures = this.rts.map((t) => t.texture);
-  }
-}
-type Target = RenderTarget | Pair;
-function target(w: number, h: number): RenderTarget;
-function target(w: number, h: number, count: 2): Pair;
-function target(w: number, h: number, count = 1): Target {
-  if (count === 2) return new Pair(w, h);
+function target(w: number, h: number, count = 1): RenderTarget {
   // ENGINE-GAP: a RenderTarget is RGBAFormat only (upstream: RGFormat pressure) and has no generateMipmaps
   // option (a target has no mip chain)
-  return new RenderTarget(w, h, {
+  const rt = new RenderTarget(w, h, {
+    count,
     type: HalfFloatType,
     format: RGBAFormat,
     minFilter: LinearFilter,
@@ -190,6 +176,10 @@ function target(w: number, h: number, count = 1): Target {
     depthBuffer: false,
     stencilBuffer: false,
   });
+  // MRT: an mrtNode output writes the texture of its name (upstream: layout(location = 0/1) out oV, oS)
+  const [oV, oS] = rt.textures;
+  if (count === 2 && oV && oS) [oV.name, oS.name] = ["oV", "oS"];
+  return rt;
 }
 
 // one emitter record (fire.ts's SRC)
@@ -244,8 +234,8 @@ class FluidDomain {
   H: number;
   cW: number;
   cH: number;
-  state: Pair[];
-  tmp: Pair;
+  state: RenderTarget[];
+  tmp: RenderTarget;
   curl: RenderTarget;
   press: RenderTarget[];
   light: RenderTarget;
@@ -328,13 +318,7 @@ class FluidDomain {
     this.curl = target(W, H);
     this.press = [target(W, H), target(W, H)];
     this.light = target(cW, cH);
-    this.all = [
-      ...(this.state[0] as Pair).rts,
-      ...(this.state[1] as Pair).rts,
-      ...this.tmp.rts,
-      this.curl,
-      ...this.press,
-    ];
+    this.all = [...this.state, this.tmp, this.curl, ...this.press];
     Object.assign(this, DEFAULTS);
   }
 
@@ -390,28 +374,33 @@ const quadCam = new OrthographicCamera();
 const EMPTY = new Scene();
 const _v = new Vector3();
 
-// one fullscreen pass (upstream FullscreenQuad over rawPass). `quads` holds one quad per output field.
+// one fullscreen pass (upstream FullscreenQuad over rawPass). A two-output pass writes (oV, oS)
+// through the material's mrtNode into a two-texture target.
 class FullscreenPass<O extends object> {
-  readonly quads: QuadMesh[];
+  readonly quad: QuadMesh;
   constructor(
     readonly uniforms: O,
     outputs: Node<"vec4">[],
   ) {
-    this.quads = outputs.map((node) => {
-      const m = new NodeMaterial();
-      m.fragmentNode = node;
-      m.depthTest = false;
-      m.blending = NoBlending; // every channel is data (alpha too)
-      m.depthWrite = false;
-      return new QuadMesh(m);
-    });
+    const m = new NodeMaterial();
+    const [oV, oS] = outputs as [Node<"vec4">, Node<"vec4"> | undefined];
+    m.fragmentNode = oV;
+    if (oS) {
+      m.mrtNode = mrt({ oV, oS });
+      // ENGINE-GAP: the engine finds a material's textures from its node slots, not its mrtNode
+      // (MaterialNodes::pointers() in position_node.h), so a texture only oS reads has no binding
+      // ("TN_NATIVE_BINDING_UNSUPPORTED: t_nodeMapN has no texture this draw"). The fragmentNode names
+      // both outputs; each attachment still draws its own mrtNode output. Back to `oV` once fixed.
+      m.fragmentNode = oV.add(oS.mul(0.0));
+    }
+    m.depthTest = false;
+    m.blending = NoBlending; // every channel is data (alpha too)
+    m.depthWrite = false;
+    this.quad = new QuadMesh(m);
   }
-  render(renderer: WebGPURenderer, out: Target): void {
-    const rts = out instanceof Pair ? out.rts : [out];
-    this.quads.forEach((q, i) => {
-      renderer.setRenderTarget(rts[i] as RenderTarget);
-      q.render(renderer);
-    });
+  render(renderer: WebGPURenderer, out: RenderTarget): void {
+    renderer.setRenderTarget(out);
+    this.quad.render(renderer);
   }
 }
 
@@ -538,7 +527,7 @@ export class FluidVolume {
     for (let i = 0; i < slots; i++) {
       const d = new FluidDomain(this, W, H, cW, cH);
       const m: IRenderUniforms = {
-        uS: texture((d.state[0] as Pair).textures[1] as Texture),
+        uS: texture((d.state[0] as RenderTarget).textures[1] as Texture),
         uL0: texture(d.light.texture),
         uDim: uniform(d.dim),
         uTiles: uniform(d.tiles),
@@ -645,7 +634,7 @@ export class FluidVolume {
     d.fresh = false;
   }
 
-  draw(name: keyof FluidVolume["passes"], out: Target) {
+  draw(name: keyof FluidVolume["passes"], out: RenderTarget) {
     const p = this.passes[name];
     p.render(this.renderer, out);
     return p.uniforms;
@@ -670,8 +659,8 @@ export class FluidVolume {
       (ob.z - d.origin.z) / d.h - 0.5,
       ob.w / d.h,
     );
-    const A = d.state[d.cur] as Pair;
-    const B = d.state[1 - d.cur] as Pair;
+    const A = d.state[d.cur] as RenderTarget;
+    const B = d.state[1 - d.cur] as RenderTarget;
     const [Av, As] = A.textures as [Texture, Texture];
     const [Bv, Bs] = B.textures as [Texture, Texture];
 
@@ -773,7 +762,7 @@ export class FluidVolume {
       su.uTiles.value.copy(d.tiles);
       su.uOrigin.value.copy(d.origin);
       su.uH.value = d.h;
-      L.uS.value = (d.state[d.cur] as Pair).textures[1] as Texture;
+      L.uS.value = (d.state[d.cur] as RenderTarget).textures[1] as Texture;
       L.uC.value = d.curl.texture;
       L.uCDim.value.copy(d.cdim);
       L.uCTiles.value.copy(d.ctiles);
@@ -782,7 +771,7 @@ export class FluidVolume {
       this.draw("light", d.light);
       // render uniforms
       const m = d.uniforms;
-      m.uS.value = (d.state[d.cur] as Pair).textures[1] as Texture;
+      m.uS.value = (d.state[d.cur] as RenderTarget).textures[1] as Texture;
       m.uH.value = d.h;
       this.setLook(d, m);
       // sample spacing: a fraction of a voxel, never finer than the pixel footprint at the domain's

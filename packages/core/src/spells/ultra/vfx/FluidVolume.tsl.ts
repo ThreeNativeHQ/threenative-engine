@@ -10,13 +10,11 @@ import { Vector3 } from "three";
 // Grid is a plain object of nodes (a struct as a Fn argument fails on the engine), GLSL `out`
 // parameters are var nodes the caller passes in, and each GLSL `uniform sampler2D` is one texture()
 // node per pass whose `.value` the JS swaps (upstream: `u.uV.value = ...`).
-// ENGINE-GAP: no multi-target render target. ADVECT, CORRECT, REACT and PROJECT wrote (oV, oS) in one
-// draw; here each builder takes `out` ("V" or "S") and the pass draws twice, once per field, with the
-// same maths (only the part reaching that output is built).
-// ENGINE-GAP: no TSL Discard: a discarded render fragment writes zero alpha (NormalBlending keeps the
-// scene).
+// ADVECT, CORRECT, REACT and PROJECT write (oV, oS): each builder takes `out` ("V" or "S") and builds
+// the part of the same maths that reaches that output; the pass hands both to the material's mrtNode.
 import {
   Break,
+  Discard,
   Fn,
   If,
   Loop,
@@ -738,126 +736,120 @@ export function RENDER(R: IRenderOwn) {
     const t1 = min(min(hi.x, hi.y), hi.z).toVar();
     const cosV = dot(rd, uCamFwd).toVar();
     t1.assign(min(t1, sceneViewZ().div(cosV)));
-    If(t1.greaterThan(t0), () => {
-      // else discard
-      const dt = R.uMarch.x;
-      const mu = dot(U.uSunDir, rd).toVar();
-      const g: IRay = {
-        // soot: forward lobe + a weak back lobe, normalised so isotropic = 1
-        gSunPh: mix(hgPhase(mu, R.uLit.x), hgPhase(mu, float(-0.25)), 0.25)
-          .mul(PI.mul(4.0))
-          .toVar(),
-        gFire: blackbody(kelvinOf(R, float(0.75)))
-          .mul(R.uTint)
-          .mul(R.uLit.w)
-          .toVar(),
-        gMs: clamp(dot(R.uSootColor, vec3(1.0)), 0.0, 1.0).toVar(),
-        // chroma > 0: a coloured gas (chlorine) takes its colour from depth, not from its albedo alone.
-        // The channels it absorbs (where the albedo is below its brightest) fade faster on the way in,
-        // so thin gas scatters near white and deep gas goes yellow-green; 0 = grey extinction
-        gKc: float(1.0)
-          .add(
-            R.uLook1.w.mul(
-              float(1.0).sub(
-                R.uSootColor.div(
-                  max(max(R.uSootColor.r, R.uSootColor.g), max(R.uSootColor.b, 1e-3)),
-                ),
-              ),
+    Discard(t1.lessThanEqual(t0));
+    const dt = R.uMarch.x;
+    const mu = dot(U.uSunDir, rd).toVar();
+    const g: IRay = {
+      // soot: forward lobe + a weak back lobe, normalised so isotropic = 1
+      gSunPh: mix(hgPhase(mu, R.uLit.x), hgPhase(mu, float(-0.25)), 0.25)
+        .mul(PI.mul(4.0))
+        .toVar(),
+      gFire: blackbody(kelvinOf(R, float(0.75)))
+        .mul(R.uTint)
+        .mul(R.uLit.w)
+        .toVar(),
+      gMs: clamp(dot(R.uSootColor, vec3(1.0)), 0.0, 1.0).toVar(),
+      // chroma > 0: a coloured gas (chlorine) takes its colour from depth, not from its albedo alone.
+      // The channels it absorbs (where the albedo is below its brightest) fade faster on the way in,
+      // so thin gas scatters near white and deep gas goes yellow-green; 0 = grey extinction
+      gKc: float(1.0)
+        .add(
+          R.uLook1.w.mul(
+            float(1.0).sub(
+              R.uSootColor.div(max(max(R.uSootColor.r, R.uSootColor.g), max(R.uSootColor.b, 1e-3))),
             ),
-          )
-          .toVar(),
-        gRd: rd,
-      };
-      const S0: IIntegrator = {
-        gT: float(1.0).toVar(),
-        gZs: float(0.0).toVar(),
-        gWs: float(0.0).toVar(),
-        gScat: vec3(0.0).toVar(),
-        gEmit: vec3(0.0).toVar(),
-      };
-      // the lattice: t0 + i dt, ending in a partial step at t1 (continuous in t0, t1 and dt)
-      const t = t0.toVar();
-      const sgP = float(0.0).toVar();
-      const scP = vec3(0.0).toVar();
-      const emP = vec3(0.0).toVar();
-      const occP = tap(R, g, t, sgP, scP, emP);
-      const empties = select(occP.greaterThan(0.5), float(0.0), float(1.0)).toVar();
-      const sg = float(0.0).toVar();
-      const sc = vec3(0.0).toVar();
-      const em = vec3(0.0).toVar();
-      const sgM = float(0.0).toVar();
-      const scM = vec3(0.0).toVar();
-      const emM = vec3(0.0).toVar();
-      const occ = float(0.0).toVar(); // engine: no bool(); 0/1
-      Loop({ start: 0, end: 256, type: "int", condition: "<" }, () => {
-        If(S0.gT.lessThan(0.03).or(t.greaterThanEqual(t1)), () => {
-          Break();
-        });
-        // stride over empty space (the occupancy is dilated ~3 voxels, so skipped points are empty)
-        const stride = clamp(empties.sub(1.0), 1.0, R.uDetail.w).toVar();
-        const tn = min(t.add(dt.mul(stride)), t1).toVar();
+          ),
+        )
+        .toVar(),
+      gRd: rd,
+    };
+    const S0: IIntegrator = {
+      gT: float(1.0).toVar(),
+      gZs: float(0.0).toVar(),
+      gWs: float(0.0).toVar(),
+      gScat: vec3(0.0).toVar(),
+      gEmit: vec3(0.0).toVar(),
+    };
+    // the lattice: t0 + i dt, ending in a partial step at t1 (continuous in t0, t1 and dt)
+    const t = t0.toVar();
+    const sgP = float(0.0).toVar();
+    const scP = vec3(0.0).toVar();
+    const emP = vec3(0.0).toVar();
+    const occP = tap(R, g, t, sgP, scP, emP);
+    const empties = select(occP.greaterThan(0.5), float(0.0), float(1.0)).toVar();
+    const sg = float(0.0).toVar();
+    const sc = vec3(0.0).toVar();
+    const em = vec3(0.0).toVar();
+    const sgM = float(0.0).toVar();
+    const scM = vec3(0.0).toVar();
+    const emM = vec3(0.0).toVar();
+    const occ = float(0.0).toVar(); // engine: no bool(); 0/1
+    Loop({ start: 0, end: 256, type: "int", condition: "<" }, () => {
+      If(S0.gT.lessThan(0.03).or(t.greaterThanEqual(t1)), () => {
+        Break();
+      });
+      // stride over empty space (the occupancy is dilated ~3 voxels, so skipped points are empty)
+      const stride = clamp(empties.sub(1.0), 1.0, R.uDetail.w).toVar();
+      const tn = min(t.add(dt.mul(stride)), t1).toVar();
+      occ.assign(tap(R, g, tn, sg, sc, em));
+      If(occ.greaterThan(0.5).and(stride.greaterThan(1.0)), () => {
+        // landed in gas: back onto the next lattice point
+        tn.assign(min(t.add(dt), t1));
         occ.assign(tap(R, g, tn, sg, sc, em));
-        If(occ.greaterThan(0.5).and(stride.greaterThan(1.0)), () => {
-          // landed in gas: back onto the next lattice point
-          tn.assign(min(t.add(dt), t1));
-          occ.assign(tap(R, g, tn, sg, sc, em));
-          empties.assign(0.0);
-        });
-        const L = tn.sub(t).toVar();
-        const w = smoothstep(0.8, 1.6, sg.add(sgP).mul(0.5).mul(L)).toVar();
-        If(w.greaterThan(0.0), () => {
-          // optically thick (a surface): also integrate it as two half slabs through the midpoint, and
-          // blend the two estimates by thickness, so the surface sits where it is, not on the lattice
-          const T0 = S0.gT.toVar();
-          const z0 = S0.gZs.toVar();
-          const w0 = S0.gWs.toVar();
-          const s0 = S0.gScat.toVar();
-          const e0 = S0.gEmit.toVar();
-          tap(R, g, t.add(L.mul(0.5)), sgM, scM, emM);
-          slab(S0, t, L.mul(0.5), sgP, scP, emP, sgM, scM, emM);
-          slab(S0, t.add(L.mul(0.5)), L.mul(0.5), sgM, scM, emM, sg, sc, em);
-          const T2 = S0.gT.toVar();
-          const z2 = S0.gZs.toVar();
-          const w2 = S0.gWs.toVar();
-          const s2 = S0.gScat.toVar();
-          const e2 = S0.gEmit.toVar();
-          S0.gT.assign(T0);
-          S0.gZs.assign(z0);
-          S0.gWs.assign(w0);
-          S0.gScat.assign(s0);
-          S0.gEmit.assign(e0);
-          If(w.lessThan(1.0), () => {
-            slab(S0, t, L, sgP, scP, emP, sg, sc, em);
-          });
-          S0.gT.assign(mix(S0.gT, T2, w));
-          S0.gZs.assign(mix(S0.gZs, z2, w));
-          S0.gWs.assign(mix(S0.gWs, w2, w));
-          S0.gScat.assign(mix(S0.gScat, s2, w));
-          S0.gEmit.assign(mix(S0.gEmit, e2, w));
-        }).Else(() => {
+        empties.assign(0.0);
+      });
+      const L = tn.sub(t).toVar();
+      const w = smoothstep(0.8, 1.6, sg.add(sgP).mul(0.5).mul(L)).toVar();
+      If(w.greaterThan(0.0), () => {
+        // optically thick (a surface): also integrate it as two half slabs through the midpoint, and
+        // blend the two estimates by thickness, so the surface sits where it is, not on the lattice
+        const T0 = S0.gT.toVar();
+        const z0 = S0.gZs.toVar();
+        const w0 = S0.gWs.toVar();
+        const s0 = S0.gScat.toVar();
+        const e0 = S0.gEmit.toVar();
+        tap(R, g, t.add(L.mul(0.5)), sgM, scM, emM);
+        slab(S0, t, L.mul(0.5), sgP, scP, emP, sgM, scM, emM);
+        slab(S0, t.add(L.mul(0.5)), L.mul(0.5), sgM, scM, emM, sg, sc, em);
+        const T2 = S0.gT.toVar();
+        const z2 = S0.gZs.toVar();
+        const w2 = S0.gWs.toVar();
+        const s2 = S0.gScat.toVar();
+        const e2 = S0.gEmit.toVar();
+        S0.gT.assign(T0);
+        S0.gZs.assign(z0);
+        S0.gWs.assign(w0);
+        S0.gScat.assign(s0);
+        S0.gEmit.assign(e0);
+        If(w.lessThan(1.0), () => {
           slab(S0, t, L, sgP, scP, emP, sg, sc, em);
         });
-        sgP.assign(sg);
-        scP.assign(sc);
-        emP.assign(em);
-        t.assign(tn);
-        empties.assign(select(occ.greaterThan(0.5), float(0.0), empties.add(1.0)));
+        S0.gT.assign(mix(S0.gT, T2, w));
+        S0.gZs.assign(mix(S0.gZs, z2, w));
+        S0.gWs.assign(mix(S0.gWs, w2, w));
+        S0.gScat.assign(mix(S0.gScat, s2, w));
+        S0.gEmit.assign(mix(S0.gEmit, e2, w));
+      }).Else(() => {
+        slab(S0, t, L, sgP, scP, emP, sg, sc, em);
       });
-      // stopped on opacity: the unmarched rest is more of the same gas, so renormalise to opaque
-      // (else the last 3% lets a bright HDR sky print its clouds through thick dark smoke)
-      If(S0.gT.lessThan(0.03), () => {
-        const k = float(1.0).div(float(1.0).sub(S0.gT)).toVar();
-        S0.gScat.mulAssign(k);
-        S0.gEmit.mulAssign(k);
-        S0.gT.assign(0.0);
-      });
-      const alpha = float(1.0).sub(S0.gT).toVar();
-      If(alpha.greaterThanEqual(0.002).or(dot(S0.gEmit, S0.gEmit).greaterThanEqual(1e-6)), () => {
-        // else discard
-        const z = select(S0.gWs.greaterThan(0.0), S0.gZs.div(S0.gWs), t0).mul(cosV);
-        out.assign(fxOut(S0.gScat.div(max(alpha, 1e-4)), alpha, S0.gEmit, vec2(0.0), z));
-      });
+      sgP.assign(sg);
+      scP.assign(sc);
+      emP.assign(em);
+      t.assign(tn);
+      empties.assign(select(occ.greaterThan(0.5), float(0.0), empties.add(1.0)));
     });
+    // stopped on opacity: the unmarched rest is more of the same gas, so renormalise to opaque
+    // (else the last 3% lets a bright HDR sky print its clouds through thick dark smoke)
+    If(S0.gT.lessThan(0.03), () => {
+      const k = float(1.0).div(float(1.0).sub(S0.gT)).toVar();
+      S0.gScat.mulAssign(k);
+      S0.gEmit.mulAssign(k);
+      S0.gT.assign(0.0);
+    });
+    const alpha = float(1.0).sub(S0.gT).toVar();
+    Discard(alpha.lessThan(0.002).and(dot(S0.gEmit, S0.gEmit).lessThan(1e-6)));
+    const z = select(S0.gWs.greaterThan(0.0), S0.gZs.div(S0.gWs), t0).mul(cosV);
+    out.assign(fxOut(S0.gScat.div(max(alpha, 1e-4)), alpha, S0.gEmit, vec2(0.0), z));
     return out;
   })();
 }
