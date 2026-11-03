@@ -1045,7 +1045,10 @@ static ExprId virtualShadowFactor(Program& f, Tsl& t, std::size_t index, int lev
         const ExprId footprint = f.add(f.call("max", {radius, t.f(0)}), t.f(1));
         // table entry.w carries receiverPlaneBias so changing the policy never changes a program.
         const ExprId slopeBias = f.mul(f.div(f.div(f.mul(slope, f.mul(extent, t.f(2))), mapSize), span), footprint);
-        const ExprId baseZ = f.add(f.swizzle(projected, "z"), f.uniform(at + "ShadowBias", Type::f32()));
+        // The bias is depth over the casters' fitted span (params.w); the level's range adds a pad for pans, which must not
+        // turn the same bias into more metres.
+        const ExprId baseZ = f.add(f.swizzle(projected, "z"),
+            f.mul(f.uniform(at + "ShadowBias", Type::f32()), f.div(f.swizzle(params, "w"), span)));
         const ExprId mover = f.loadStorage(table, f.construct(Type::u32(), {
             f.add(t.f(float(levels * 9 + l)), total)}));
         auto sampleLayer = [&](bool moving) {
@@ -1127,7 +1130,10 @@ static ExprId virtualShadowFactor(Program& f, Tsl& t, std::size_t index, int lev
                 return f.construct(Type::vec(2), {f.call("max", {texel, f.div(metres, width)}),
                                                   f.call("max", {texel, f.div(f.div(metres, width), aspect)})});
             };
-            const ExprId search = uvRadius(f.mul(f.mul(baseZ, span), tangent));
+            // No blocker is nearer the light than the top of the fitted casters, which sits half the pan pad,
+            // (span - fitted span) / 2, below the near plane: the search reaches from there, not from the plane.
+            const ExprId topCaster = f.mul(f.sub(span, f.swizzle(params, "w")), t.f(0.5f));
+            const ExprId search = uvRadius(f.mul(f.call("max", {t.f(0), f.sub(f.mul(baseZ, span), topCaster)}), tangent));
             const VarId blockerSum = f.var(Type::f32(), t.f(0)), blockerCount = f.var(Type::f32(), t.f(0));
             f.Loop(f.construct(Type::i32(), {blockers}), [&](ExprId i) {
                 const ExprId offset = f.mul(disk(i, blockers), search);

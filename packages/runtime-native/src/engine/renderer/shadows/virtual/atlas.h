@@ -132,6 +132,8 @@ private:
     struct Level {
         ClipWindow window;
         double centerW = 0, eye = 200, near = 1, far = 600;
+        // The casters' fitted depth span, without the pad a pan keeps: the span the authored bias is measured against.
+        double biasSpan = 599;
         bool mapped = false, dirty = false, urgent = false;
         double lastRender = -INFINITY, costMs = 0, gateScale = 1;
         int costReadings = 0;

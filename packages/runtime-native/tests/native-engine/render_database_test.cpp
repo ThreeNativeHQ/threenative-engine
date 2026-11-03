@@ -7614,6 +7614,10 @@ void virtualShadowDepthHoldsWhileCastersFit() {
     Vector3 eye(0, 4, 0);
     CHECK(atlas->update(eye, direction, true, {town, edge}, 1.0 / 60).size() == 16);
     const float range = atlas->table()[31];
+    // The authored bias is measured against the casters' fitted span, not the pad a pan keeps: a wider range must not
+    // turn the same bias into more metres, which lit a band under a roof (PRD-632).
+    const float biasSpan = atlas->table()[35];
+    CHECK(std::abs(biasSpan - (range - 2 * 16)) < 1e-3);
     // The pan leaves `edge` behind and moves the window's centre along the light: the range still holds, so one row is drawn.
     eye.addScaledVector(u, -8).addScaledVector(direction, 0.75);
     const auto panned = atlas->update(eye, direction, false, {town}, 1.0 / 60);
