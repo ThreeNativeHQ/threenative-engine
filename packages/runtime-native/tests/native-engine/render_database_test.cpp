@@ -5007,8 +5007,10 @@ void shadowNoiseFrame() {
 // PRD-653: a material marked roughDiffuse shades direct light with Unreal's Substrate rough diffuse (the EON
 // model) where three shades Lambert. A grey floor seen from above at 26.6 degrees and lit at 45 degrees from the
 // camera's side (back-scatter) or from the far side (forward scatter) differs between the two renders by EON's
-// factor on the diffuse term alone, whatever the specular does: E x N.L x albedo / pi x (g - 1). A lamp's Source
-// Radius fades the model's roughness to nothing at 20 cm, so a lamp that large shades Lambert.
+// factor and by the 1 - F the Lambert path takes from its diffuse: E x N.L x albedo / pi x (g - (1 - F)). PRD-632: the
+// Substrate path keeps all the diffuse, as a fresh Unreal project does (ShadingEnergyConservation.ush:7-31). The
+// specular weight it drops moves a roughness-1 floor by well under a level. A lamp's Source Radius fades the model's
+// roughness to nothing at 20 cm, so a lamp that large shades Lambert less the 1 - F.
 void roughDiffuse() {
     mystral::webgpu::Context context;
     CHECK(context.initializeHeadless());
@@ -5053,10 +5055,18 @@ void roughDiffuse() {
         CHECK(pixels.size() == size_t{96} * 96 * 4);
         return pixels.size() == size_t{96} * 96 * 4 ? double(pixels[(size_t{48} * 96 + 48) * 4]) : 0.0;
     };
-    // What the factor moves the pixel by: 255 x E x N.L x albedo / pi x (g - 1), for the light `towards` it.
+    // The Lambert path's Schlick Fresnel at the half vector, in the engine's form (f0 0.04, f90 1).
+    const auto fresnel = [&](const std::array<double, 3>& towards) {
+        const double vy = 1 / std::sqrt(5.0), vz = 2 / std::sqrt(5.0);
+        const double hy = vy + towards[1], hz = vz + towards[2], length = std::hypot(towards[0], hy, hz);
+        const double vh = std::clamp((vy * hy + vz * hz) / length, 0.0, 1.0);
+        const double e = std::exp2((vh * -5.55473 - 6.98316) * vh);
+        return 0.04 * (1 - e) + e;
+    };
+    // What the two paths differ by: 255 x E x N.L x albedo / pi x (g - (1 - F)), for the light `towards` it.
     const auto shift = [&](const std::array<double, 3>& towards, double r) {
         const double nol = towards[1], vol = nov * towards[1] + 2 / std::sqrt(5.0) * towards[2];
-        return 255 * irradiance * nol * albedo / M_PI * (factor(r, nol, vol) - 1);
+        return 255 * irradiance * nol * albedo / M_PI * (factor(r, nol, vol) - (1 - fresnel(towards)));
     };
     const std::array<double, 3> back{0, M_SQRT1_2, M_SQRT1_2}, forward{0, M_SQRT1_2, -M_SQRT1_2};
     const double backShift = centre(true, false, back, 0) - centre(false, false, back, 0);
@@ -5071,11 +5081,11 @@ void roughDiffuse() {
     const double point = centre(true, true, back, 0) - lambert;
     const double half = centre(true, true, back, 0.1) - lambert;
     const double large = centre(true, true, back, 0.2) - lambert;
-    std::printf("rough diffuse: lamp r0 %+.1f (expect %+.1f), r0.1 %+.1f (expect %+.1f), r0.2 %+.1f (expect 0)\n", point,
-                shift(back, 0.4), half, shift(back, 0.2), large);
+    std::printf("rough diffuse: lamp r0 %+.1f (expect %+.1f), r0.1 %+.1f (expect %+.1f), r0.2 %+.1f (expect %+.1f)\n",
+                point, shift(back, 0.4), half, shift(back, 0.2), large, shift(back, 0));
     CHECK(std::abs(point - shift(back, 0.4)) < 2.5);
     CHECK(std::abs(half - shift(back, 0.2)) < 2.5);
-    CHECK(std::abs(large) <= 1.5);
+    CHECK(std::abs(large - shift(back, 0)) <= 1.5);
 }
 
 // sourceRadiusShadowFilter on a lamp (PRD-650): a plate 2 m under a lamp 4 m above the floor throws an
