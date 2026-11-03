@@ -81,6 +81,13 @@ That is not Lumen's fully dynamic path and the docs must say so plainly rather t
 the same fix (sample the probe atlas as a rough reflection fallback). File it separately once the
 diffuse volume is measured; adding it here doubles a PRD that is already the batch's long pole.
 
+## three.js 0.187.0 levers (2026-11-02)
+
+- r187 `LightProbeGrid` batches probe capture through an `ArrayCamera` (about 4x faster bakes, three#34909) and places probes at cell centres (three#35265). Re-measure the bake cost on 0.187.0 before new probe code is written.
+- r186 `VXGINode` (three#34402) is a dynamic alternative: voxel cone-traced diffuse GI and AO with less light bleeding than the probe grid, at a higher GPU cost, for static geometry.
+
+Adoption rule: the owned engine is the default, and it runs a three symbol only when its API catalog covers it (`docs/architecture/NATIVE-ENGINE-DECISION.md`). So use the upstream piece first as a measured reference arm on `engine: "threejs"`. A template uses it only after a catalog row and a native parity case land.
+
 ## Acceptance criteria
 
 1. **A surface is lit by an emitter it cannot see.** A fixture scene places a saturated emissive
