@@ -50,6 +50,14 @@ The change has three steps. Step 1 decides whether steps 2 and 3 continue.
 
 **Left out on purpose:** persistent-thread culling (off by default in Unreal and unsafe on WebGPU), a normal-cone test (Unreal has none), and a depth-pyramid occlusion pass (PRD-284 and PRD-489 declined it on measurement).
 
+## three.js 0.187.0 levers (2026-11-02)
+
+- `MeshletDrawingPipeline` (r187, three#35191, `examples/jsm/pipelines/MeshletDrawingPipeline.js`) walks clusters on the GPU. It selects a cluster LOD by projected error in pixels (`lodThreshold`), drops objects below `minScreenRadius` and culls hidden clusters (`occlusionCulling`, on by default). Use it as the reference arm for the Phase 1 measurement: it gives a second answer for the share of triangles outside the view.
+- `VisibilityBufferDrawingPipeline` (same PR) adds a visibility buffer and a compute rasterizer for triangles under `maxRasterSize` (8 px). This is the Nanite HW/SW raster split. It is out of scope here; record it under `## Decisions` if Phase 1 shows small triangles dominate.
+- The occlusion pass that PRD-284 and PRD-489 declined is on by default upstream. Measure it once with the pipeline arm before the decline stays final.
+
+Adoption rule: the owned engine is the default, and it runs a three symbol only when its API catalog covers it (`docs/architecture/NATIVE-ENGINE-DECISION.md`). So use the upstream piece first as a measured reference arm on `engine: "threejs"`. A template uses it only after a catalog row and a native parity case land.
+
 ## Acceptance Criteria
 
 - [ ] AC-1 [local]: The pruned walk selects exactly the clusters the flat oracle selects that touch the widened frustum, with 0 differences over 200 seeded camera poses, and a stationary camera turned by less than the margin keeps its cut. proof: red-green `pnpm exec vitest run packages/core/__tests__/clustered-mesh.spec.ts packages/core/__tests__/clustered-batch.spec.ts` — Evidence: pending.
@@ -87,4 +95,7 @@ The change has three steps. Step 1 decides whether steps 2 and 3 continue.
 **Verification:** AC-1 and AC-3 close this phase. The visual judge compares route frames, with a camera turn mid-route.
 - [ ] The pruned walk matches the oracle on 200 seeded poses and a turn inside the margin does not re-cut. proof: red-green `pnpm exec vitest run packages/core/__tests__/clustered-mesh.spec.ts`
 - [ ] The quarry cliff walk time falls with the share of the view it sees, and the desktop route shows the same selection. proof: `pnpm --filter quarry measure -- --arm virtual --target desktop`
-- [ ] A clustered mesh whose material has a `positionNode` widens each cluster's bounds by the material's declared maximum offset before the frustum test, or keeps view pruning off and reports it (`UE 5.8.3: Engine/Shaders/Private/Nanite/NaniteClusterCulling.usf:168-169`). proof: red-green `pnpm exec vitest run packages/core/__tests__/clustered-mesh.spec.ts`
+
+## Decisions
+
+- 2026-11-02: the `positionNode` bounds box moved from Phase 3 to [PRD-786](PRD-786-a-cluster-that-its-material-moves-stays-culled-and-cut-by-the-bounds-it-really-covers.md), which owns material-moved clusters (declared offset, fail-closed report, kit lint). Phase 3 keeps the pruned walk. Reason: one PRD per outcome, so the box is not done twice.

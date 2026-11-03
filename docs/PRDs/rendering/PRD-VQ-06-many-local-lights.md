@@ -47,6 +47,12 @@ All proof paths below are **planned implementation targets**, not existing passi
 - [ ] The 256-light scene passes image/correctness checks and a paired GPU-cost comparison on a named WebGPU adapter. proof: `node packages/playtest/dist/runner/cli.js examples/abyss-framework/playtests/vq-many-local-lights.playtest.json --url ${VQ_URL:?} --browser-recipe webgpu`.
 - [ ] The same fixture passes on Linux native and records its own cost result; a browser speedup is not reused as a native result. proof: `node packages/playtest/dist/runner/cli.js examples/abyss-framework/playtests/vq-many-local-lights.playtest.json --target desktop --executable ${VQ_NATIVE_EXECUTABLE:?}`.
 
+## three.js 0.187.0 levers (2026-11-02)
+
+- r187 `ClusteredLightsNode` adds spot lights and a WebGL2 fallback (three#34978). `DynamicLightsNode` identifies batched lights by their class (three#35004). This is the upstream clustered path that this PRD qualifies: start the qualification from 0.187.0.
+
+Adoption rule: the owned engine is the default, and it runs a three symbol only when its API catalog covers it (`docs/architecture/NATIVE-ENGINE-DECISION.md`). So use the upstream piece first as a measured reference arm on `engine: "threejs"`. A template uses it only after a catalog row and a native parity case land.
+
 ## Acceptance criteria
 
 - [ ] The optimized route preserves the reference illumination and wins on the declared many-light workload; otherwise keep it opt-in or decline it with the measurement. proof: the completed Phase 3 scenario outputs, with the named fixture, package/cohort and adapter recorded inline here.

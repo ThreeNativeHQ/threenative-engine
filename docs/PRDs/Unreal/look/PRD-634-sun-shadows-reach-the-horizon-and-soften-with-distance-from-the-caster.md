@@ -60,6 +60,12 @@ A capsule's feet stay sharp, and a shadow cast from 10 m up spreads to about 9 c
    It replaces the fixed 3×3 on the native engine as well.
 3. **Contact shadows stay off**, as in Unreal (PRD-561 holds).
 
+## three.js 0.187.0 levers (2026-11-02)
+
+- r186 adds `SunLight` with cascaded shadow maps (`SunLightShadow`, three#34221). No action: the default engine accepts only `VirtualShadowNode`, and the 2026-10-22 decision below did not score cascades. Re-open only if the owned engine admits another shadow node.
+
+Adoption rule: the owned engine is the default, and it runs a three symbol only when its API catalog covers it (`docs/architecture/NATIVE-ENGINE-DECISION.md`). So use the upstream piece first as a measured reference arm on `engine: "threejs"`. A template uses it only after a catalog row and a native parity case land.
+
 ## Acceptance Criteria
 
 - [ ] AC-1 [local]: The starter L5 cells match the Unreal L5 cells within the PRD-631 thresholds in all 12 poses, including the shadowed-floor region of the exterior wide pose. proof: `pnpm unreal-look:compare --layer L5` — Evidence: pending.

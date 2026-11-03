@@ -176,6 +176,12 @@ One reconstructor that, at a sub-1.0 internal raster, produces a stable display-
 - [x] Automatic resolution changes keep history, allocations and cost safe. proof: Phase 2 box 2, conformance row `temporal-aa-scaler-route`.
 - [x] A representative game buys GPU time, and the cost in look is measured and stated. proof: Phase 2 box 1, the locked-clock table (GPU p50 -40% to -47%, p95 lower on web and desktop); judge 3 (2026-11-03) rates TRAA 0.667 against shipped 4x MSAA a REGRESSION with moderate softness (judge 2 had rated it NEUTRAL, slight), so TRAA stays opt-in as the Outcome states. Against the owner's bar the look cost equals Unreal TSR's at the same input (Phase 2 textured box, judge 5 PASS).
 
+## three.js 0.187.0 levers (2026-11-02)
+
+- r186 adds `TAAUtils`, the shared functions of the TAA nodes (three#34458). r187 registers `TAAUNode` inputs before their consumers (three#34565) and updates the depth pass before `TemporalReprojectNode` (three#34823). Recapture the low-resolution corpus on 0.187.0 before the quality numbers of this PRD are compared, because the upstream temporal nodes changed.
+
+Adoption rule: the owned engine is the default, and it runs a three symbol only when its API catalog covers it (`docs/architecture/NATIVE-ENGINE-DECISION.md`). So use the upstream piece first as a measured reference arm on `engine: "threejs"`. A template uses it only after a catalog row and a native parity case land.
+
 ## Decisions
 
 - The thresholds and the 31-arm corpus carry over unchanged; a candidate that needs them relaxed is rejected, not merged.

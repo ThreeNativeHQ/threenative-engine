@@ -330,6 +330,12 @@ not Lumen's fully dynamic path and the docs must say so plainly rather than impl
       The manifest entry is phrased so a plain-words search — *"light bouncing from a room I cannot
       see"* — finds it.
 
+## three.js 0.187.0 levers (2026-11-02)
+
+- r186 `VXGINode` (three#34402) gathers off-screen bounce light from a voxel volume. Upstream positions it between `SSGINode` and `LightProbeGrid` in quality and cost. Measure it as one more off-screen candidate before the template default is chosen.
+
+Adoption rule: the owned engine is the default, and it runs a three symbol only when its API catalog covers it (`docs/architecture/NATIVE-ENGINE-DECISION.md`). So use the upstream piece first as a measured reference arm on `engine: "threejs"`. A template uses it only after a catalog row and a native parity case land.
+
 ## Acceptance criteria
 
 Preserved from the four sources, one claim per box, each naming the proof that may tick it. Per-phase

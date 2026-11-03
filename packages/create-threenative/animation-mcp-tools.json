@@ -1,6 +1,6 @@
 {
-  "comment": "The animation MCP surface a generated project actually gets. `tools` is set-equal to the live tools/list response of version 0.1.7, packed from this workspace and installed from that tarball into a clean directory — never read from src/. `recommended` is the ordered loop the shipped agent docs describe. Regenerate with `pnpm tsx scripts/capture-mcp-tools.ts`.",
-  "version": "0.1.7",
+  "comment": "The animation MCP surface a generated project actually gets. `tools` is set-equal to the live tools/list response of version 0.1.8, packed from this workspace and installed from that tarball into a clean directory — never read from src/. `recommended` is the ordered loop the shipped agent docs describe. Regenerate with `pnpm tsx scripts/capture-mcp-tools.ts`.",
+  "version": "0.1.8",
   "serverInfo": {
     "name": "threenative-animation",
     "version": "0.1.3"

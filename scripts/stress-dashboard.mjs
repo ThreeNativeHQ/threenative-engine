@@ -282,7 +282,7 @@ function rampTab(rows, ctx) {
 }
 
 /** One Overview lane: where the develop baseline, the best kept arm and vanilla stand on the ladder. */
-function laneOf(rows, ctx, shadow, pass) {
+export function laneOf(rows, ctx, shadow, pass) {
   const mine = rows.filter(
     (row) => isValid(row, ctx.loadVoid) && passOf(row) === pass && loadOf(row.variant) === 1,
   );
@@ -451,6 +451,197 @@ function trendSection(rows, ctx, goals) {
   return `<details open><summary>Trend per iteration</summary><div class="mb-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-dim">${legend}<span>ThreeNative (Wasm), load 1 only; one line per setup. Dashed: rolling median of 5. Triangle on the bottom edge: a value of 0. Hover a dot for the row and arm.</span></div><div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">${goals.map((goal) => trendChart(goal, series, order)).join("")}</div></details>`;
 }
 
+/**
+ * The engine score, 100 at the 120 fps goal: what the player sees weighs most (presented p95, then FPS), then the two
+ * costs behind it, then hitches. A timing earns goal / value, so half the speed earns half the points. Capped at the goal.
+ */
+const SCORE_PARTS = [
+  { key: "presentedP95Ms", short: "Presented p95", unit: "ms", weight: 35, part: (v) => 8.33 / v },
+  { key: "fps", short: "FPS", unit: "", weight: 30, part: (v) => v / 120 },
+  { key: "frameP95Ms", short: "CPU p95", unit: "ms", weight: 15, part: (v) => 8.33 / v },
+  { key: "gpuP95Ms", short: "GPU p95", unit: "ms", weight: 15, part: (v) => 8.33 / v },
+  { key: "hitchesPerMin", short: "Hitches/min", unit: "", weight: 5, part: (v) => 1 / (1 + v) },
+];
+
+/** The score of one row's metrics, or null when a part is missing: never a low number for an unmeasured engine. */
+export function scoreOf(metrics) {
+  let total = 0;
+  for (const { key, weight, part } of SCORE_PARTS) {
+    const value = metrics?.[key];
+    if (!Number.isFinite(value) || value < 0) return null;
+    total += weight * Math.min(1, value === 0 && key !== "hitchesPerMin" ? 0 : part(value));
+  }
+  return total;
+}
+
+/** Score points one build moved between A/A runs at load peak 7 or less: 56.1 to 58.1 (2026-11-02). A gap this small is a tie. */
+const TIE_POINTS = 2;
+
+/** Green wins, yellow ties at the top, red loses. A lone measured engine has nothing to beat, so it stays neutral. */
+export function rankOf(value, values, margin = 0) {
+  if (values.length < 2) return "s-none";
+  const top = Math.max(...values);
+  if (value < top - margin) return "s-lose";
+  return values.filter((other) => other >= top - margin).length > 1 ? "s-tie" : "s-win";
+}
+
+const bar = (fraction, cls) =>
+  `<span class="score-track"><span class="score-fill ${cls}" style="width:${(Math.max(0, Math.min(1, fraction)) * 100).toFixed(1)}%"></span></span>`;
+
+/** The latest valid uncapped load 1 row of one Unreal setup. Each setup keeps its own bar: they are different pictures. */
+const unrealRow = (rows, ctx, setup) =>
+  rows.findLast(
+    (row) =>
+      row.engine === "unreal" &&
+      flagsOf(row.variant).includes(setup) &&
+      passOf(row) === "uncapped" &&
+      isValid(row, ctx.loadVoid),
+  );
+
+function scoreGroups(rows, ctx) {
+  const plain = laneOf(rows, ctx, "plain", "uncapped");
+  const virtual = laneOf(rows, ctx, "virtual", "uncapped");
+  return [
+    [
+      "One sun shadow map, the same on both",
+      [
+        ["ThreeNative (Wasm)", plain.baseline],
+        ["Vanilla three.js", plain.vanilla],
+      ],
+    ],
+    [
+      "Virtual shadows",
+      [
+        ["ThreeNative (Wasm)", virtual.baseline],
+        ["Unreal 5.8.3, no Lumen", unrealRow(rows, ctx, "tnmatched")],
+        ["Unreal 5.8.3, stock (Lumen on)", unrealRow(rows, ctx, "stock")],
+      ],
+    ],
+  ];
+}
+
+/** A row above this host load (the old fair-window limit) lost speed to other work: its score is not comparable with a quiet row. */
+const NOISY_LOAD = 6;
+
+/** A verdict older than this reads as history: a loop iteration takes under an hour, and the engine moves daily. */
+const STALE_HOURS = 12;
+
+/**
+ * The one-second answer: ThreeNative against each rival in its group. Scores compare as shown (rounded). A rival with
+ * no valid run is `pending` and never counts as a win.
+ */
+export function verdictOf(rows, ctx, now = Date.now()) {
+  const compared = [];
+  const rivals = scoreGroups(rows, ctx).flatMap(([, [[, own], ...others]]) =>
+    others.map(([name, row]) => {
+      const mine = own === undefined ? null : scoreOf(own.metrics);
+      const theirs = row === undefined ? null : scoreOf(row.metrics);
+      if (mine === null || theirs === null) return { name, mine, theirs, result: "pending" };
+      compared.push(own, row);
+      const [a, b] = [Math.round(mine), Math.round(theirs)];
+      return {
+        name,
+        mine: a,
+        theirs: b,
+        result: a - b > TIE_POINTS ? "win" : b - a > TIE_POINTS ? "lose" : "tie",
+      };
+    }),
+  );
+  const count = (result) => rivals.filter((rival) => rival.result === result).length;
+  const measured = rivals.length - count("pending");
+  const status =
+    measured === 0
+      ? "none"
+      : count("win") === measured
+        ? "winning"
+        : count("lose") === measured
+          ? "losing"
+          : "mixed";
+  // The oldest compared row sets the age: one fresh rival does not freshen an old baseline.
+  const times = compared.map((row) => Date.parse(row.at)).filter(Number.isFinite);
+  const ageHours = times.length === 0 ? null : Math.round((now - Math.min(...times)) / 3_600_000);
+  const stale = ageHours !== null && ageHours > STALE_HOURS;
+  return {
+    status,
+    wins: count("win"),
+    measured,
+    pending: count("pending"),
+    rivals,
+    ageHours,
+    stale,
+  };
+}
+
+/** The verdict strip: inline styles, so it reads the same on every dashboard tab, whatever that page's CSS is. */
+export function verdictStrip(verdict) {
+  const [bg, fg, word] = verdict.stale
+    ? [
+        "#6b6b66",
+        "#fff",
+        { winning: "WAS WINNING", losing: "WAS LOSING", mixed: "WAS MIXED" }[verdict.status],
+      ]
+    : {
+        winning: ["#14803f", "#fff", "✅ WINNING"],
+        losing: ["#c0341d", "#fff", "❌ LOSING"],
+        mixed: ["#e0b400", "#1d1d1b", "⚠️ MIXED"],
+        none: ["#6b6b66", "#fff", "NO DATA"],
+      }[verdict.status];
+  const age = verdict.stale
+    ? `<span style="padding:2px 9px;border-radius:999px;background:#e0b400;color:#1d1d1b;white-space:nowrap">⚠️ STALE: ${verdict.ageHours} h old, no fresh run</span>`
+    : "";
+  const rival = ({ name, mine, theirs, result }) =>
+    `<span style="padding:2px 9px;border-radius:999px;background:rgba(0,0,0,.2);white-space:nowrap">${{ win: "✅", lose: "❌", tie: "⚠️", pending: "⏳" }[result]} vs ${esc(name)}: ${result === "pending" ? "not measured" : `<b>${mine}</b> to ${theirs}`}</span>`;
+  const tally = `${verdict.wins} of ${verdict.measured} measured${verdict.pending > 0 ? `, ${verdict.pending} not measured` : ""}`;
+  return `<a class="tn-verdict" data-verdict="${verdict.status}" href="/stress-lab" style="display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;max-width:1240px;margin:0 auto 12px;padding:9px 16px;box-sizing:border-box;background:${bg};color:${fg};text-decoration:none;font:600 13px/1.4 system-ui,sans-serif"><span style="font-size:22px;font-weight:800;white-space:nowrap">ThreeNative: ${word}</span>${age}<span>${esc(tally)}</span>${verdict.rivals.map(rival).join("")}</a>`;
+}
+
+/** One bar per engine on the same scene. A group ranks only engines with the same shadow technique. */
+function scorePanel(rows, ctx) {
+  const groups = scoreGroups(rows, ctx);
+  /** What a reader sees: the rounded score, the rounded share of each goal. Equal numbers are a tie. */
+  const shown = (row) => {
+    const score = row === undefined ? null : scoreOf(row.metrics);
+    if (score === null) return null;
+    const parts = SCORE_PARTS.map(({ key, part }) =>
+      Math.round(Math.min(1, part(row.metrics[key])) * 100),
+    );
+    return { score: Math.round(score), parts };
+  };
+  const rowHtml = ([name, row], measured) => {
+    const mine = shown(row);
+    const rank =
+      mine === null
+        ? "s-none"
+        : rankOf(
+            mine.score,
+            measured.map(({ score }) => score),
+            TIE_POINTS,
+          );
+    const head = `<td class="score-name">${rank === "s-win" ? "✅ " : ""}${esc(name)}${row === undefined ? "" : `<br><span class="dim">#${row.id} · ${esc(row.at.slice(0, 10))} · ${esc(row.commit)}${row.load?.peak > NOISY_LOAD ? ` · <b>⚠️ noisy, load ${Math.round(row.load.peak)}</b>` : ""}</span>`}</td>`;
+    if (mine === null)
+      return `<tr>${head}<td class="score-cell">${bar(0, rank)}</td><td class="n dim">pending</td>${SCORE_PARTS.map(() => '<td class="n dim">-</td>').join("")}</tr>`;
+    const parts = SCORE_PARTS.map(({ key, unit, part }, index) => {
+      const value = row.metrics[key];
+      const partRank = rankOf(
+        mine.parts[index],
+        measured.map((arm) => arm.parts[index]),
+      );
+      return `<td class="n">${esc(`${Number(value.toFixed(1))}${unit === "" ? "" : ` ${unit}`}`)}${bar(part(value), `score-part ${partRank}`)}</td>`;
+    }).join("");
+    return `<tr>${head}<td class="score-cell">${bar(mine.score / 100, rank)}</td><td class="n"><b class="score-num">${mine.score}</b></td>${parts}</tr>`;
+  };
+  const body = groups
+    .map(([title, arms]) => {
+      const measured = arms.map(([, row]) => shown(row)).filter((arm) => arm !== null);
+      return `<tr class="sec"><td colspan="${3 + SCORE_PARTS.length}">${esc(title)}</td></tr>${arms.map((arm) => rowHtml(arm, measured)).join("")}`;
+    })
+    .join("");
+  const { stale, ageHours } = verdictOf(rows, ctx);
+  return `<figure class="card mb-3"><figcaption>Engine score <span class="dim">(uncapped, load 1, same scene and GPU: 100 = the 120 fps goal)</span>${stale ? ` <b>⚠️ STALE: these rows are ${ageHours} h old, the current engine has no score yet</b>` : ""}</figcaption>
+<div class="scroll"${stale ? ' style="opacity:.5"' : ""}><table class="t score"><thead><tr><th>Engine</th><th>Score</th><th class="n">/100</th>${SCORE_PARTS.map(({ short, weight }) => `<th class="n">${esc(short)} <span class="dim">${weight}%</span></th>`).join("")}</tr></thead><tbody>${body}</tbody></table></div>
+<p class="mt-1 text-[11px] text-dim">Green wins its group, yellow ties at the top, red loses, grey has nothing to compare with yet. Each timing earns goal / value, so half the speed earns half its points, capped at the goal. The small bar under a value is its share of the goal. Compare only inside one group: the groups have different shadow work. Unreal stock also pays for Lumen, a richer picture.</p></figure>`;
+}
+
 function overviewTab(rows, ctx, extra, goals) {
   const lanes = [];
   for (const shadow of ["virtual", "plain"])
@@ -476,7 +667,7 @@ function overviewTab(rows, ctx, extra, goals) {
         `<tr><td>${SHADOW[lane.shadow]}</td><td>${lane.pass}</td>${cell(lane.baseline)}${cell(lane.kept)}${lane.shadow === "plain" ? cell(lane.vanilla) : `<td class="dim">no equivalent</td>`}${verdict(lane)}</tr>`,
     )
     .join("")}</tbody></table></div>`;
-  return `<div class="grid items-start gap-3 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
+  return `${scorePanel(rows, ctx)}<div class="grid items-start gap-3 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
 <figure class="card"><figcaption>120 fps goal ladder · presented p95 <span class="dim">(ms, load 1)</span></figcaption>${ladder(lanes)}<p class="mt-1 text-[11px] text-dim"><span style="color:var(--s1)">●</span> latest develop baseline · <span style="color:var(--ok)">◆</span> best kept arm · <span style="color:var(--s3)">■</span> vanilla three.js (plain sun only) · rungs 8.33 / 11.1 / 16.67 ms</p></figure>
 <div><h2>Where it stands</h2>${table}<p class="mt-1 text-[11px] text-dim">VSM is <code>?stress</code>; plain sun is <code>?stress&amp;plainShadow</code>. A vsync pass floors at 16.7 ms on a 60 Hz display, so only the uncapped pass can show 90 or 120 fps. Baseline is the latest <code>develop</code>, <code>head</code> or <code>stack*</code> arm.</p></div></div>
 ${extra}
@@ -641,6 +832,7 @@ code{font-size:11.5px}.dim,small{color:var(--dim)}
 .t tbody tr:hover td{background:color-mix(in srgb,var(--accent) 7%,var(--card))}
 .t .d{display:block;font-size:10px;line-height:1.1}.t sup{font-size:9px;color:var(--dim)}
 .scroll{overflow-x:auto;max-width:100%}.scroll.tall{max-height:70vh;overflow:auto}.ledger thead th{position:sticky;top:0;z-index:1}
+.score-track{display:block;height:12px;min-width:180px;background:var(--bg);border:1px solid var(--line);border-radius:3px;overflow:hidden}.score-fill{display:block;height:100%}.s-win{background:var(--ok)}.s-tie{background:#e0b400}.s-lose{background:var(--miss)}.s-none{background:var(--dim)}td .score-track:has(.score-part){height:4px;min-width:64px;margin-top:2px}.score-num{font-size:15px}.score-name{white-space:nowrap}.score-cell{min-width:200px;vertical-align:middle}
 .t-ok{color:var(--ok-ink)}.t-mid{color:var(--goal)}.t-bad{color:var(--miss-ink)}
 .chip{display:inline-block;padding:0 6px;border-radius:99px;border:1px solid var(--line);font-size:10.5px;line-height:16px;color:var(--dim)}
 .chip.keep{color:var(--ok-ink);background:var(--ok-bg);border-color:transparent}.chip.reject{color:var(--miss-ink);background:var(--miss-bg);border-color:transparent}.chip.baseline{color:var(--accent)}
