@@ -470,14 +470,15 @@ export function levelExposure(exposure?: ILevelExposure): number {
 export const LEVEL_EXPOSURE = levelExposure();
 
 /**
- * Sky radiance relative to the sun, as Unreal renders it. TEMPORARY, measured and not derived: with
- * the sun at 6 lux the model above is 1.3x too bright against the Unreal L2 frames, flat across
- * channels and across the 15 and 4 degree suns (1.30 / 1.30 / 1.35 at 19 degrees elevation), so
- * the sky is scaled by 1/1.3. The lens attenuation constant 0.78 (PostProcessEyeAdaptation.cpp,
- * r.EyeAdaptation.LensAttenuation) has the right size but the path that would apply it to the
- * atmosphere and not to the sun is not found in the source yet.
+ * Sky radiance relative to the sun. It was 0.78, a fit: the model read 1.3x too bright against the
+ * Unreal L2 frames while this harness carried a pi on the sun and drew the frame at exposure 1, and
+ * 1 / 1.3 is the factor that measured it. The port above removes both halves of that error —
+ * `SUN_ILLUMINANCE` loses the pi and `LEVEL_EXPOSURE` gives 2^bias / whitePoint = 2.4 back — and
+ * 2.4 / pi = 1.309 is the same factor, so the fit is deleted rather than fitted again (PRD-646
+ * round 6). The fog model of `unreal-look-light.spec.ts` reads Unreal's own L3 void with this 1 in
+ * place, and the unit check holds the sun's pi and the exposure that replaces it.
  */
-export const SKY_TO_SUN = 0.78;
+export const SKY_TO_SUN = 1;
 
 /**
  * Colour of a black-body-like light at `kelvin` as linear sRGB with unit luminance: the Planckian

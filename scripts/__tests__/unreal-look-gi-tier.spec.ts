@@ -18,6 +18,11 @@ async function loadQuality(): Promise<{
     join(__dirname, "../unreal-look/scaffold/render/quality.ts"),
     join(dir, "quality.ts"),
   );
+  // `quality.ts` reads the level's fixed exposure from `atmosphere.ts` (PRD-646 round 6).
+  copyFileSync(
+    join(__dirname, "../unreal-look/scaffold/render/atmosphere.ts"),
+    join(dir, "atmosphere.ts"),
+  );
   copyFileSync(
     join(
       __dirname,
