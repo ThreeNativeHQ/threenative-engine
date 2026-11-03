@@ -4,6 +4,7 @@ import { readScene, validateSceneExport } from "../unreal-look/gi.js";
 import { SUN_ILLUMINANCE } from "../unreal-look/scaffold/render/atmosphere.js";
 import {
   type MotionRun,
+  SPOT_HALF_ANGLE_LIMIT_DEG,
   candela,
   checkMapped,
   lightCandela,
@@ -31,6 +32,31 @@ describe("calibration scene units (PRD-646)", () => {
     expect(() => candela(6, "lux")).toThrow("TN_CALIBRATION_SCENE_UNIT: lux");
     // The template scenes take their sun through one constant: Unreal's 6 lux is pi times that in three's Lambert.
     expect(SUN_ILLUMINANCE).toBeCloseTo(6 * Math.PI, 12);
+  });
+
+  it("spreads a spot light's lumens over its cone, not over the sphere", () => {
+    // Unreal: 100^2 / (2 pi (1 - cos halfConeAngle)) cm^2 to m^2 (LocalLightComponent.cpp:180-214),
+    // with the outer cone read from the axis and clamped at 88.9 degrees (SpotLightComponent.cpp:33-38, :54).
+    const solidAngle = (coneDeg: number) => 2 * Math.PI * (1 - Math.cos((coneDeg * Math.PI) / 180));
+    expect(candela(600, "lumens", 10)).toBeCloseTo(600 / solidAngle(10), 9);
+    expect(candela(600, "lumens", 35)).toBeCloseTo(600 / solidAngle(35), 9);
+    // The same lumens are 47.7 cd over the sphere and 6286 cd down a 10 degree cone.
+    expect(candela(600, "lumens", 10)).toBeCloseTo(6285.6, 0);
+    expect(candela(600, "lumens") / candela(600, "lumens", 35)).toBeCloseTo(
+      solidAngle(35) / (4 * Math.PI),
+      9,
+    );
+    expect(candela(600, "lumens", 120)).toBeCloseTo(candela(600, "lumens", 88.9), 9);
+    expect(candela(600, "candelas", 35)).toBe(600);
+  });
+
+  it("fails a spot light in lumens that carries no cone, and converts one that does", () => {
+    const spot = { name: "Spot", class: "SpotLight", intensity: 600, units: "lumens" };
+    expect(() => lightCandela(spot)).toThrow(
+      "TN_CALIBRATION_SCENE_LIGHT: Spot SpotLight has no outerConeDeg",
+    );
+    expect(lightCandela({ ...spot, outerConeDeg: 35 })).toBeCloseTo(528.03, 1);
+    expect(lightCandela({ ...spot, intensity: 600, units: "candelas" })).toBe(600);
   });
 
   it("fails a light class the loader does not build", () => {
