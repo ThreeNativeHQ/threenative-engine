@@ -6,9 +6,8 @@ and the three sphere markers (as 0.32 m cubes at their mean height). At 640x360 
 vertical field of view a bar is 0.7 output pixels wide, and 0.47 input pixels at 66.7% screen
 percentage, which is the low-input case the gate's quality family measures.
 Not carried: the diagonal rod (three.js rotates it about +z, which this format cannot name), the
-skinned limb, the moving objects, the occluder and the alpha-tested leaf cards. Unreal's
-Template_Default lighting replaces the fixture's hemisphere and sun, because this scene measures
-reconstruction, not the look.
+skinned limb, the moving objects, the occluder and the alpha-tested leaf cards. One point light replaces the
+fixture's hemisphere and sun, because this scene measures reconstruction, not the look.
 
 Capture at the gate raster: TN_UE_RESOLUTION=640x360.
 Coordinates: three.js (Y up, metres, right-handed). gi/export.py converts to Unreal and back.
@@ -24,21 +23,34 @@ SCENE = {
     # name: size [x, y, z] m, centre [x, y, z] m, material.
     "boxes": [
         *(
-            {"name": f"Bar_{i:02d}", "size": [0.012, 2.6, 0.02], "position": [(i - 20) * 0.125, 0, -0.6], "material": "White"}
+            {"name": f"Bar_{i:02d}", "size": [0.012, 2.6, 0.02], "position": [(i - 20) * 0.125, 0, -0.6], "material": "White", "region": "Fence"}
             for i in range(40)
         ),
         {"name": "Block", "size": [0.75, 0.9, 0.3], "position": [-1.5, 0.6, 0.4], "material": "Orange"},
         {"name": "Character", "size": [0.28, 1.4, 0.25], "position": [1.4, 0.25, 0.5], "material": "Magenta"},
         *(
-            {"name": f"Marker_{i}", "size": [0.32, 0.32, 0.32], "position": [-0.5 + i * 0.6, -0.9, 0.3], "material": "Cyan"}
+            {"name": f"Marker_{i}", "size": [0.32, 0.32, 0.32], "position": [-0.5 + i * 0.6, -0.9, 0.3], "material": "Cyan", "region": "Markers"}
             for i in range(3)
         ),
     ],
-    "lights": [],
-    "template": "default",
-    "suns": [{"name": "sun55", "elevationDeg": 55, "azimuthDeg": 30}],
+    # The fixture's sun direction (2, 5, 3) as one point light far along it; a template-lit scene takes no motion run.
+    "lights": [
+        {
+            "name": "Key",
+            "class": "PointLight",
+            "position": [4, 10, 6],
+            "intensity": 200000,
+            "units": "lumens",
+            "sourceRadiusM": 0.05,
+            "attenuationRadiusM": 40,
+            "color": [1, 1, 1],
+            "castShadows": True,
+        }
+    ],
+    "sky": None,
+    "sun": None,
     "fog": None,
-    "ev100": 0,  # unused: a template-lit scene takes its exposure from the layer (layers.json)
+    "ev100": 5,
     # The fixture camera: (0, 0.3, 6) looking down -z, vertical fov 50 at 16:9 = horizontal 79.32.
     "poses": [{"name": "fence", "position": [0, 0.3, 6], "target": [0, 0.3, -1], "hfovDeg": 79.32}],
     "motion": {
