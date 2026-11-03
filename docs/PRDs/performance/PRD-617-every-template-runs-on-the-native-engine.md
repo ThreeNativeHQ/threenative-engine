@@ -338,3 +338,11 @@ left unchanged. tower-defense: 11 of 12 scenarios pass; `production-performance`
 on a virtual display. Its legacy arm was not measured. racing, rts, rain and shooter were queued on the
 same sweep and had not reported when this lane stopped; the sweep keeps its logs in
 `/tmp/lane617/logs/web-<template>.log`.
+
+2026-11-02 AC-7 capture comparison notes (judge still pending). All twelve capture runs report
+`pass=True`, `clock=fixed-step` and `frames=30` after the `startTick` 240 anchor. action-rpg and runner
+reach equal poses between arms (same HUD state; action-rpg's native pair is byte-identical). Sailing does
+not: with the same anchor and frame count, HUD `ELAPSED` reads 4.5 s on the native arm and 3.5 s on the
+legacy arm, so the ship and buoys sit elsewhere, and the native sky carries a radial banding pattern
+the legacy sky does not. The sailing pair is indicative only: the pose mismatch limits a judge's
+conclusion, and the sky banding needs its own investigation. No verdict is claimed.
