@@ -7735,6 +7735,11 @@ void virtualShadowBoundsCache() {
     const auto settled = cache.shadowBoundsBuilds;
     sample();
     CHECK(cache.shadowBoundsBuilds == settled);
+    // A GPU positionNode leaves the bind-pose box unchanged: it stays cached.
+    item.positionNode = std::make_shared<const shader::PositionNode>();
+    sample(); sample();
+    CHECK(cache.shadowBoundsBuilds == settled);
+    item.positionNode = nullptr;
     std::vector<float> bones;
     item.boneMatrices = &bones;
     const auto deforming = cache.shadowBoundsBuilds;

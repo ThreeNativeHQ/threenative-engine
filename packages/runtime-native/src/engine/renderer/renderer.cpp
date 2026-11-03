@@ -694,7 +694,9 @@ struct Renderer::FrameJob {
 };
 
 const std::pair<Box3, double>& DrawCache::virtualShadowBounds(const DrawItem& item) {
-    const bool cacheable = !item.boneMatrices && !item.morphGeometry && !item.gpuJoints && !item.positionNode && !item.nodes->positionNode;
+    // A positionNode displaces on the GPU only: this box is the bind pose either way, so it caches like a rigid
+    // draw. Rebuilding it each frame walked every instance of a swaying forest (218k) for 40 ms of plan time.
+    const bool cacheable = !item.boneMatrices && !item.morphGeometry && !item.gpuJoints;
     const BufferStore* instances = item.instanceMatrices;
     const ShadowBoundsKey key{item.positions, item.positions->version(), item.positions->epoch(), item.positions->writes(),
                              instances, instances ? instances->version() : 0, instances ? instances->epoch() : 0,
