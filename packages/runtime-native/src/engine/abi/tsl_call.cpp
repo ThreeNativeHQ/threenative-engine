@@ -593,6 +593,28 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         if (args.size() == 3) node->args.push_back(arg(2));
         return node;
     }
+    if (!method && name == "mrt") {
+        // three's mrt({ name: node }) for a material's mrtNode: the back ends pass the names (comma-separated), then one
+        // node per name. Each output converts to its attachment's vec4, as MRTNode.setup does (resolveMrt picks one).
+        if (args.empty() || args[0].kind != TslArg::Kind::String) throw std::runtime_error("expected names then nodes");
+        auto node = std::make_shared<g::NodeData>();
+        node->kind = g::Kind::Struct;
+        node->name = "mrt";
+        std::size_t i = 1;
+        for (std::size_t start = 0; start <= args[0].text.size(); ++i) {
+            const std::size_t end = std::min(args[0].text.find(',', start), args[0].text.size());
+            if (i >= args.size()) throw std::runtime_error("expected one node per mrt output name");
+            auto converted = std::make_shared<g::NodeData>();
+            converted->kind = g::Kind::Convert;
+            converted->type = Type::vec(4);
+            converted->args = {arg(i)};
+            node->members.emplace_back(args[0].text.substr(start, end - start), Type::vec(4));
+            node->args.push_back(std::move(converted));
+            start = end + 1;
+        }
+        if (i != args.size()) throw std::runtime_error("expected one node per mrt output name");
+        return node;
+    }
     if (name == "uniform") {
         // A three Matrix3/Matrix4 value: the back ends make its uniform by type name ("mat3", "mat4"), at identity,
         // then write its elements (column-major, as three stores them) through tslSetUniform.

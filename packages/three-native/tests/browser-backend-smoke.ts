@@ -1365,7 +1365,12 @@ if (runtime.tsl !== undefined) {
       rotation.value = matrix;
       tslInstance.sync();
     }
-    const texels = new DataTexture(new Uint8Array(16), 2, 2);
+    const PixelTexture = DataTexture as unknown as new (
+      data: Uint8Array,
+      width: number,
+      height: number,
+    ) => object;
+    const texels = new PixelTexture(new Uint8Array(16), 2, 2);
     const texel = tsl.textureLoad(texels, tsl.ivec2(1, 0), tsl.int(0));
     check(typeof texel[TSL_NODE] === "number", "textureLoad loads from an engine texture itself");
     const cut = tsl.Fn(() => {
@@ -1377,6 +1382,40 @@ if (runtime.tsl !== undefined) {
       typeof cut[TSL_NODE] === "number",
       "Discard() and Discard(condition) build a fragment graph",
     );
+    // three's MRT on a render target (PRD-777): `count` colour textures, and a material mrtNode of named outputs.
+    const { RenderTarget: EngineRenderTarget } = engine.classes as unknown as {
+      RenderTarget: new (
+        width: number,
+        height: number,
+        options: object,
+      ) => { readonly texture: object; readonly textures: { name: string }[] };
+    };
+    const target = new EngineRenderTarget(4, 4, { count: 3, type: 1016 });
+    const textures = target.textures;
+    check(
+      textures.length === 3 && textures[0] === target.texture && textures[1] instanceof Texture,
+      `RenderTarget({ count: 3 }).textures holds 3 textures, texture first (${textures.length})`,
+    );
+    (textures[1] as { name: string }).name = "accum";
+    check(target.textures[1]?.name === "accum", "an MRT texture keeps its name");
+    let countThrew = false;
+    try {
+      new EngineRenderTarget(4, 4, { count: 9 });
+    } catch {
+      countThrew = true;
+    }
+    check(countThrew, "RenderTarget count over 8 is refused");
+    const outputs = tsl.mrt("accum,reveal", tsl.vec4(1, 0, 0, 1), tsl.float(0.5));
+    const mrtMaterial = new MeshBasicNodeMaterial() as unknown as Record<string, unknown>;
+    mrtMaterial.mrtNode = outputs;
+    check(mrtMaterial.mrtNode === outputs, "material.mrtNode takes an mrt() of named outputs");
+    let mrtThrew = false;
+    try {
+      mrtMaterial.mrtNode = tsl.vec4(1, 0, 0, 1);
+    } catch {
+      mrtThrew = true;
+    }
+    check(mrtThrew, "material.mrtNode refuses a node that is not an mrt()");
   }
 
   // rain writes lanes of a variable (`rd.y.assign(abs(rd.y))`); the other lanes keep their value (PRD-617).

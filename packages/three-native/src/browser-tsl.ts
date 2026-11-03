@@ -121,6 +121,7 @@ const FUNCTIONS = [
   "storageTexture",
   "textureLoad",
   "textureSize",
+  "mrt",
   "reflect",
   "dFdx",
   "dFdy",

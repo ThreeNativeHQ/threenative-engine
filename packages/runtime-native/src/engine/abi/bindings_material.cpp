@@ -337,7 +337,8 @@ void registerMeshMaterial(ClassBinding& b, MaterialType type, bool node = false,
              {"vertexNode", &Nodes::vertexNode},
              {"aoNode", &Nodes::aoNode},
              {"irradianceNode", &Nodes::irradianceNode},
-             {"depthNode", &Nodes::depthNode}}) {
+             {"depthNode", &Nodes::depthNode},
+             {"mrtNode", &Nodes::mrtNode}}) {
         if (raw && (std::string_view(name) == "emissiveNode" || std::string_view(name) == "roughnessNode" ||
                     std::string_view(name) == "metalnessNode"))
             continue;
@@ -345,6 +346,8 @@ void registerMeshMaterial(ClassBinding& b, MaterialType type, bool node = false,
         b.setters[name] = [field, name](void* self, const Value& v) {
             if (v.kind != Value::Kind::Null && (v.kind != Value::Kind::ShaderNode || !v.node))
                 throw Unsupported{std::string(name) + " must be a shader node or null"};
+            if (field == &Nodes::mrtNode && v.node && (v.node->kind != shader::graph::Kind::Struct || v.node->name != "mrt"))
+                throw Unsupported{"mrtNode must be an mrt() of named outputs"};
             as<Material>(self)->nodes.*field = v.node;
             as<Material>(self)->needsUpdate();
         };
@@ -985,6 +988,7 @@ void registerTextureBindings(Registry& classes) {
             throw Unsupported{"RenderTarget size must be 1 to 16384"};
         uint16_t type = kTextureUnsignedByteType;
         std::optional<uint16_t> minFilter, magFilter;
+        uint32_t count = 1;
         if (a.size() > 2 && a[2].kind == Value::Kind::Record)
             for (const auto& [key, value] : a[2].fields) {
                 if (key == "minFilter" || key == "magFilter") {
@@ -999,14 +1003,27 @@ void registerTextureBindings(Registry& classes) {
                         throw Unsupported{"RenderTarget type must be UnsignedByteType, HalfFloatType or FloatType"};
                 } else if (key == "format") {
                     if (number(value) != kTextureRGBAFormat) throw Unsupported{"RenderTarget format must be RGBAFormat"};
+                } else if (key == "count") {
+                    // three's MRT: one colour texture per output, 8 at most (WebGPU's maxColorAttachments).
+                    const double n = number(value);
+                    if (!(n >= 1 && n <= 8) || n != std::floor(n)) throw Unsupported{"RenderTarget count must be 1 to 8"};
+                    count = static_cast<uint32_t>(n);
                 } else if (key != "depthBuffer" && key != "stencilBuffer") {
                     throw Unsupported{"RenderTarget option " + key + " is not supported natively"};
                 }
             }
-        auto target = RenderTarget::make(static_cast<uint32_t>(width), static_cast<uint32_t>(height), type);
-        if (minFilter) target->texture->minFilter = *minFilter;
-        if (magFilter) target->texture->magFilter = *magFilter;
+        auto target = RenderTarget::make(static_cast<uint32_t>(width), static_cast<uint32_t>(height), type, count);
+        for (const auto& texture : RenderTarget::texturesOf(*target)) {
+            if (minFilter) texture->minFilter = *minFilter;
+            if (magFilter) texture->magFilter = *magFilter;
+        }
         return target;
+    };
+    // three's `textures`: every colour texture of the target, `texture` first; an MRT target has `count` of them.
+    target.members["textures"] = [](void* self, const Args&, Store& store) {
+        Args textures;
+        for (const auto& texture : RenderTarget::texturesOf(*as<RenderTarget>(self))) textures.push_back(store.share("Texture", texture));
+        return Value::array(std::move(textures));
     };
     fixedMember(target, "texture", [](void* self, const Args&, Store& store) {
         return store.share("Texture", as<RenderTarget>(self)->texture);

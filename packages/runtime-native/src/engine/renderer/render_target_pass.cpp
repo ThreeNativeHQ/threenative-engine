@@ -54,11 +54,17 @@ TargetGpu& gpuOf(Renderer& main, RenderTarget& target) {
 }  // namespace
 
 std::vector<std::string> renderToTarget(Renderer& main, RenderTarget& target, Object3D& root, Camera& camera,
-                                        std::array<double, 4> clear, bool shadowMap, bool deferred) {
+                                        std::array<double, 4> clear, bool shadowMap, bool deferred, bool primary) {
     if (deferred && target.depthTexture)
         return {"TN_NATIVE_DEFERRED_TARGET_DEPTH: a deferred render target cannot carry a depth texture"};
     main.flushDeferred(&target);  // an earlier plan for this target is recorded first, never dropped or drawn twice
     TargetGpu& gpu = gpuOf(main, target);
+    // three's MRT: each attachment draws the scene with the material outputs named after its texture (resolveMrt).
+    if (gpu.database->mrtName != target.texture->name || gpu.database->mrtPrimary != primary) {
+        gpu.database = std::make_unique<RenderDatabase>();
+        gpu.database->mrtName = target.texture->name;
+        gpu.database->mrtPrimary = primary;
+    }
     gpu.database->shadowMapEnabled = shadowMap;
     gpu.renderer->setSourceAttachments(main.sceneColorView(), main.sceneDepthView());
     gpu.renderer->setPostSource(&main);
@@ -78,6 +84,9 @@ std::vector<std::string> renderToTarget(Renderer& main, RenderTarget& target, Ob
     if (target.depthTexture) gpu.renderer->copyDepthToTexture(*target.depthTexture);
     std::vector<std::string> diagnostics = gpu.database->diagnostics();
     for (const std::string& message : gpu.renderer->diagnostics()) diagnostics.push_back(message);
+    for (const auto& attachment : target.more)
+        for (std::string& message : renderToTarget(main, *attachment, root, camera, clear, shadowMap, deferred, false))
+            diagnostics.push_back(std::move(message));
     return diagnostics;
 }
 

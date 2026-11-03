@@ -12088,6 +12088,15 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "mrtNode",
+          "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": [
@@ -13569,6 +13578,15 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "mrtNode",
+          "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": [
@@ -14228,6 +14246,15 @@
         {
           "name": "premultipliedAlpha",
           "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "mrtNode",
+          "type": "Node | null",
           "mutable": true,
           "lifetime": "owned",
           "status": {
@@ -19169,6 +19196,15 @@
         {
           "name": "texture",
           "type": "Texture",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "textures",
+          "type": "Texture[]",
           "mutable": false,
           "lifetime": "owned",
           "status": {

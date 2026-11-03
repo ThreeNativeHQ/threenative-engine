@@ -1542,6 +1542,7 @@ blendEquationAlpha: BlendingEquation | null;
 blendSrc: BlendingSrcFactor;
 blendSrcAlpha: BlendingSrcFactor | null;
 premultipliedAlpha: boolean;
+mrtNode: Node | null;
 
   clone(): this;
 
@@ -1707,6 +1708,7 @@ blendEquationAlpha: BlendingEquation | null;
 blendSrc: BlendingSrcFactor;
 blendSrcAlpha: BlendingSrcFactor | null;
 premultipliedAlpha: boolean;
+mrtNode: Node | null;
 
   clone(): this;
 
@@ -1828,6 +1830,7 @@ blendEquationAlpha: BlendingEquation | null;
 blendSrc: BlendingSrcFactor;
 blendSrcAlpha: BlendingSrcFactor | null;
 premultipliedAlpha: boolean;
+mrtNode: Node | null;
 
   clone(): this;
 
@@ -2428,6 +2431,7 @@ depthTexture: DepthTexture | null;
 readonly height: number;
 readonly width: number;
 readonly texture: Texture;
+readonly textures: Texture[];
 
   dispose(): void;
 

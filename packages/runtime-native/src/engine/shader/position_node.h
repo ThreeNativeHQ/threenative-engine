@@ -26,6 +26,9 @@ struct MaterialNodes {
     graph::Node scaleNode, rotationNode;
     /** The scene's `fogNode`, a vec4(color, factor) mixed into the finished colour; set on draw items, never on a material. */
     graph::Node fogNode;
+    /** NodeMaterial.mrtNode: an mrt() of named outputs. The render database resolves it to the fragmentNode of the
+     *  attachment it draws (RenderDatabase::mrtName) before a draw item is built, so no program reads it. */
+    graph::Node mrtNode;
     bool operator==(const MaterialNodes&) const = default;
     /** The material's own slots: the draw item's `fogNode` is the scene's, so no material owns it. */
     auto pointers() const {
