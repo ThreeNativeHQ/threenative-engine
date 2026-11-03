@@ -49,6 +49,7 @@ import {
   lightUnsupported,
   motionPose,
 } from "../render/calibrationUnits.js";
+import { LEVEL_EXPOSURE } from "../render/atmosphere.js";
 import { shadeLikeSubstrate } from "../render/lighting.js";
 import { watchShadowTier } from "../render/shadowTier.js";
 import { GLTF_IOR, refractBehind } from "../render/refraction.js";
@@ -83,7 +84,8 @@ const SHADOW = shadowPreset(SHADOW_TIER);
 const DATA = SCENES[NAME];
 // Diagnosis only: scales every light, so a capture can bracket a unit error. Unset in every judged capture.
 const LIGHT_SCALE = Number(params.get("lightScale") ?? 1);
-const EXPOSURE = Number(params.get("exposure") ?? DATA?.exposure?.exposureScale ?? 1);
+// A level with no post-process override keeps Unreal's engine-default exposure, not 1 (PRD-646 round 6).
+const EXPOSURE = Number(params.get("exposure") ?? DATA?.exposure?.exposureScale ?? LEVEL_EXPOSURE);
 
 export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
   static override readonly initialState: GameState = Play.initialState;

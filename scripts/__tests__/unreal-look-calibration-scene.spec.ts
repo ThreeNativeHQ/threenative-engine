@@ -1,7 +1,13 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { readScene, validateSceneExport } from "../unreal-look/gi.js";
-import { SUN_ILLUMINANCE } from "../unreal-look/scaffold/render/atmosphere.js";
+import {
+  EMISSIVE_UNITS,
+  LEVEL_EXPOSURE,
+  SUN_ILLUMINANCE,
+  SUN_LUX,
+  levelExposure,
+} from "../unreal-look/scaffold/render/atmosphere.js";
 import {
   type MotionRun,
   SPOT_HALF_ANGLE_LIMIT_DEG,
@@ -30,8 +36,10 @@ describe("calibration scene units (PRD-646)", () => {
 
   it("fails a unit it does not know, lux included: a sun is not a punctual light", () => {
     expect(() => candela(6, "lux")).toThrow("TN_CALIBRATION_SCENE_UNIT: lux");
-    // The template scenes take their sun through one constant: Unreal's 6 lux is pi times that in three's Lambert.
-    expect(SUN_ILLUMINANCE).toBeCloseTo(6 * Math.PI, 12);
+    // A directional light's lux is the shading input on both sides: the diffuse lobe divides by pi in Unreal
+    // (BRDF.ush Diffuse_Lambert) and in three (BRDF_Lambert), so the sun carries no extra pi (PRD-646 round 6).
+    expect(SUN_ILLUMINANCE).toBe(SUN_LUX);
+    expect(EMISSIVE_UNITS).toBe(1);
   });
 
   it("spreads a spot light's lumens over its cone, not over the sphere", () => {
@@ -111,6 +119,24 @@ describe("calibration scene units (PRD-646)", () => {
     expect(lampPlace).toEqual([0, 4.9, -2.75]);
     const source = readFileSync("scripts/unreal-look/scaffold/CalibrationScene.ts.in", "utf8");
     expect(source).toContain("point.position.fromArray(light.position)");
+  });
+});
+
+describe("the level's fixed exposure (PRD-646 round 6)", () => {
+  it("is 2^-5 on cornell's volume and 2.4 on a level with no override", () => {
+    const { scene } = readScene("gi:cornell");
+    // The scene's own post-process volume: Unreal's manual exposure, the exporter's 2^bias x lens / 0.78 rule.
+    expect(scene.exposure?.method).toBe("aem_manual");
+    expect(levelExposure({ bias: -5, method: "aem_manual" })).toBe(2 ** -5);
+    // `scene.json` carries the exporter's value, read back through Unreal's float32 lens attenuation.
+    expect(levelExposure({ bias: -5, method: "aem_manual" })).toBeCloseTo(
+      scene.exposure?.exposureScale ?? 0,
+      8,
+    );
+    // A level with no override: r.DefaultFeature.AutoExposure=0 clamps the meter to 1/1.2 and the engine's
+    // +1 EV bias multiplies it to 2.4 (SceneView.cpp:196-201, :2060-2071, PostProcessEyeAdaptation.cpp:446-460).
+    expect(levelExposure()).toBeCloseTo(2.4, 9);
+    expect(LEVEL_EXPOSURE).toBeCloseTo(2.4, 9);
   });
 });
 

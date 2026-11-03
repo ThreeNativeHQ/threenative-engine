@@ -66,6 +66,7 @@ import {
 import { BlendMode, type Node, type NodeBuilder, type TextureNode } from "three/webgpu";
 import { AO_MULTIBOUNCE_FIT, UNREAL_AO_MULTIBOUNCE_ALBEDO } from "./aoMultiBounce.js";
 import { UNREAL_AO_REACH_PX } from "./aoReach.js";
+import { LEVEL_EXPOSURE } from "./atmosphere.js";
 import { AutoExposureNode, applyExposure } from "./autoExposure.js";
 import { type IExposureSettings, exposureSettings } from "./exposure.js";
 import { cacheFallback, giCache } from "./giCache.js";
@@ -752,7 +753,9 @@ export class WorldEnvironment {
       tonemapMode,
       filmicCurve: options.filmicCurve ?? {},
       colorGrade: options.colorGrade ?? {},
-      exposure: options.exposure ?? 1,
+      // Unreal exposes a level with no post-process override at 2.4, not 1: `atmosphere.ts` derives it
+      // from the meter's white point and the engine's +1 EV bias (PRD-646 round 6).
+      exposure: options.exposure ?? LEVEL_EXPOSURE,
       autoExposureEnabled: options.autoExposureEnabled ?? false,
       localExposureEnabled: options.localExposureEnabled ?? false,
       unrealBloomEnabled: options.unrealBloomEnabled ?? false,

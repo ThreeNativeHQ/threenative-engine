@@ -145,7 +145,14 @@ export interface ISceneJson {
     innerConeDeg?: number;
     outerConeDeg?: number;
   }[];
-  exposure: { ev100: number; exposureScale: number } | null;
+  /** The level's fixed exposure. `method` and `bias` feed `levelExposure` (`scaffold/render/atmosphere.ts`). */
+  exposure: {
+    ev100: number;
+    exposureScale: number;
+    /** `aem_manual` when a post-process volume holds the level at one EV100. */
+    method?: string;
+    bias?: number;
+  } | null;
   /** An exponential height fog the scene carries (PRD-643), `null` or absent when it has none. */
   fog?: ISceneFog | null;
   /** `sun`: a template-lit scene's poses run once per sun, named `<sun>-<pose>` (PRD-649). */
