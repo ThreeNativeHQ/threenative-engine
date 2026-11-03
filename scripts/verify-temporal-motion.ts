@@ -78,6 +78,12 @@ const FAMILIES: Record<string, string[]> = {
     "strict-rejection",
     "recompile",
     "temporal-open",
+    "history200",
+    "history200-open",
+    "velocity-clamp",
+    "velocity-clamp-open",
+    "history200-clamp",
+    "history200-clamp-open",
     "strict-rejection-open",
     "unchecked-history-open",
     "nearest-history",
@@ -100,6 +106,9 @@ const FAMILIES: Record<string, string[]> = {
     "quality-zero-velocity",
     "quality-unchecked-history",
     "quality-temporal-open",
+    "quality-history200",
+    "quality-velocity-clamp",
+    "quality-history200-clamp",
     "quality-zero-velocity-open",
     "quality-unchecked-history-open",
   ],
@@ -388,6 +397,42 @@ for (const [family, arms] of Object.entries(FAMILIES)) {
     causalReveals[policy] = measureCausalReveal(reference, candidate, open, 8);
   }
 }
+// PRD-539 Phase 1: the new history-scale and velocity-clamp arms are measured beside their
+// installed-control numbers and reported here. This block adds no threshold and no check.
+const LEVER_ARMS: Array<{ arm: string; open: string | null }> = [
+  { arm: "history200", open: "history200-open" },
+  { arm: "velocity-clamp", open: "velocity-clamp-open" },
+  { arm: "history200-clamp", open: "history200-clamp-open" },
+  { arm: "quality-history200", open: null },
+  { arm: "quality-velocity-clamp", open: null },
+  { arm: "quality-history200-clamp", open: null },
+];
+const leverArms = Object.fromEntries(
+  LEVER_ARMS.map(({ arm, open }) => {
+    const result = results[arm];
+    assert.ok(result);
+    const family = arm.startsWith("quality-") ? "quality" : "motion";
+    const referenceName = REFERENCE[family];
+    const reference = referenceName === undefined ? undefined : frames[referenceName];
+    assert.ok(reference);
+    let openEdgeError: number | null = null;
+    if (open !== null) {
+      const openSequence = frames[open];
+      assert.ok(openSequence);
+      openEdgeError = measureSequence(reference, openSequence, 8).edgeError;
+    }
+    return [
+      arm,
+      {
+        edgeError: result.edgeError,
+        openEdgeError,
+        movingEdgeError: result.movingEdgeError,
+        residualInstability: result.residualInstability,
+        revealStaleFraction: result.reveal.slice(1).map((frame) => frame.staleFraction),
+      },
+    ];
+  }),
+);
 const temporal = results.temporal;
 const baseline = results.reference;
 const unchecked = results["unchecked-history"]?.reveal[1];
@@ -548,6 +593,7 @@ const summary = {
     "resolve-cubic-strict-ordinary changes only the final blend from luminance-reweighted flickerReduction to mix(clippedHistoryColor, currentColor, currentWeight). The previously computed currentWeight, sampling, clipping, rejection, jitter and history are identical. Fence profiles are diagnostic; a local contrast gain cannot qualify the whole image.",
   authoredLinearEquivalent,
   candidates,
+  leverArms,
   fenceProfiles,
   checks,
   results,

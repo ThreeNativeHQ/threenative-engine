@@ -36,11 +36,13 @@ export function createTemporalAAFrame(
   historyValid: { value: number },
   rejection: () => TemporalDepthRejection | undefined,
   publishCurrentDepth?: (renderer: Renderer) => void,
+  historyScale = 1,
 ) {
   // Three 0.187's QuadMesh takes a material in the constructor; the draw replaces it before rendering.
   const quadMesh = new QuadMesh(internals._resolveMaterial);
   quadMesh.name = "Temporal AA";
   const display = new Vector2();
+  const history = new Vector2();
   let previousDepth: DepthTexture | null = null;
   let depthReady = false;
   let disposed = false;
@@ -102,21 +104,22 @@ export function createTemporalAAFrame(
         renderer.copyTextureToTexture(depth.value, depthHistory);
         depthReady = true;
       }
-      // Resolve and history hold the display raster whatever the input raster is.
+      // Resolve and history hold the display raster times historyScale, whatever the input raster is.
+      history.copy(display).multiplyScalar(historyScale);
       const restarted =
-        internals._historyRenderTarget.width !== display.x ||
-        internals._historyRenderTarget.height !== display.y;
-      internals.setSize(display.x, display.y);
+        internals._historyRenderTarget.width !== history.x ||
+        internals._historyRenderTarget.height !== history.y;
+      internals.setSize(history.x, history.y);
       if (restarted) {
         // A resize disposes the targets, so they need fresh GPU storage before the draw.
         renderer.initRenderTarget(internals._historyRenderTarget);
         renderer.initRenderTarget(internals._resolveRenderTarget);
       }
       if (
-        internals._historyRenderTarget.width !== display.x ||
-        internals._historyRenderTarget.height !== display.y
+        internals._historyRenderTarget.width !== history.x ||
+        internals._historyRenderTarget.height !== history.y
       )
-        throw new Error("Temporal AA history and resolve must share the display raster.");
+        throw new Error("Temporal AA history and resolve must share the history raster.");
       renderer.setRenderTarget(internals._resolveRenderTarget);
       quadMesh.material = internals._resolveMaterial;
       quadMesh.render(renderer);

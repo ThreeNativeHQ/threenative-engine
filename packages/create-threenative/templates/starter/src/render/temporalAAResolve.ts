@@ -7,7 +7,10 @@ import {
   createTemporalCurrentFootprint,
 } from "./temporalCurrentFootprint.js";
 import type { TemporalCurrentProducer } from "./temporalCurrentProducer.js";
-import { createExperimentalTemporalResolve } from "./temporalResolve.js";
+import {
+  type ITemporalHistoryWeighting,
+  createExperimentalTemporalResolve,
+} from "./temporalResolve.js";
 import {
   type TemporalDepthRejection,
   type TemporalResolveNode,
@@ -18,6 +21,7 @@ export function createTemporalAAResolve(
   node: TemporalResolveNode,
   jitterOffset: Node<"vec2">,
   currentProducer?: TemporalCurrentProducer,
+  weighting?: ITemporalHistoryWeighting,
 ) {
   const internals = node as unknown as ITemporalAANode;
   let rejection: TemporalDepthRejection | undefined;
@@ -51,6 +55,7 @@ export function createTemporalAAResolve(
       "ordinary",
       rejection,
       currentFootprint,
+      weighting,
     );
     internals._resolveMaterial.needsUpdate = true;
   }

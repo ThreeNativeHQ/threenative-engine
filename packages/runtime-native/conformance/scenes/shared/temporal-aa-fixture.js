@@ -100,6 +100,14 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
   // deterministic alpha-tested foliage, which is why it scores against its own supersampled
   // reference. `qualityRole` stays null for every pre-existing arm, so their behaviour is untouched.
   const qualityRole = variant.startsWith("quality-") ? variant.slice(8).replace(/-open$/u, "") : null;
+  // PRD-539 Phase 1: Unreal TSR levers 1 and 2, each exactly the temporal arm with one weighting
+  // change. `policy` already strips the quality prefix and the -open control suffix, so an
+  // open-history control keeps the same weighting as its paired arm.
+  const weighting = {
+    history200: { historyScale: 2, velocityWeightClamp: false },
+    "velocity-clamp": { historyScale: 1, velocityWeightClamp: true },
+    "history200-clamp": { historyScale: 2, velocityWeightClamp: true },
+  }[policy];
   // The roles that must genuinely request nothing: no reconstruction stage, no velocity MRT. The
   // spatial role still renders its low input and presents it through the ordinary texture upsample.
   const off = variant === "reference" || qualityRole === "reference" || qualityRole === "spatial";
@@ -180,8 +188,8 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
       name: "traa",
       build: (input, context) => {
         temporal = options.raw4
-          ? createTemporalAA(input, scenePass.getTextureNode("depth"), context.velocityNode, camera, scenePass)
-          : createTemporalAA(input, scenePass.getTextureNode("depth"), context.velocityNode, camera);
+          ? createTemporalAA(input, scenePass.getTextureNode("depth"), context.velocityNode, camera, scenePass, weighting)
+          : createTemporalAA(input, scenePass.getTextureNode("depth"), context.velocityNode, camera, undefined, weighting);
         if (
           options.raw4 &&
           !ownsCurrentInput(input, scenePass.getTextureNode("depth"), context.velocityNode, camera, scenePass)

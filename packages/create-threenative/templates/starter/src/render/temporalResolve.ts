@@ -19,6 +19,15 @@ import {
 
 export { CATMULL_ROM_BASIS } from "./temporalResolveMath.js";
 
+/** PRD-539 gate arms, ported from Unreal TSR. `historyScale` stores history and resolve at that
+ * multiple of the display raster (Unreal's `r.TSR.History.ScreenPercentage` / 100, 1 or 2); the
+ * next stage samples the resolve bilinearly at display pixel centres, a 2x2 box down-resolve.
+ * `velocityWeightClamp` caps the accumulated history sample count under motion. */
+export interface ITemporalHistoryWeighting {
+  historyScale: number;
+  velocityWeightClamp: boolean;
+}
+
 /** Returns the amount of subpixel (expressed within [0, 1]) in the velocity. */
 const subpixelCorrection = Fn(([velocityUV, textureSize]: [Node<"vec2">, Node<"uvec2">]) => {
   const velocityTexel = velocityUV.mul(textureSize);
@@ -73,7 +82,9 @@ export function createExperimentalTemporalResolve(
     renderer,
   ),
   current?: TemporalCurrentFootprint,
+  weighting: ITemporalHistoryWeighting = { historyScale: 1, velocityWeightClamp: false },
 ) {
+  const { historyScale, velocityWeightClamp } = weighting;
   const node = source as TemporalResolveNode;
   const { historyValidity } = rejection;
   const { clipAABB } = createTemporalResolveMath(node);
@@ -106,16 +117,35 @@ export function createExperimentalTemporalResolve(
       interpolation === "linear"
         ? historyNode.sample(historyUV)
         : sampleCatmullRom(historyNode, historyUV).max(0);
-    const motionFactor = uvNode
-      .sub(historyUV)
-      .mul(displaySize)
-      .length()
-      .div(node.maxVelocityLength)
-      .saturate();
+    // Motion counts output pixels whatever the history raster, so a 2x history changes only the
+    // raster the history is stored at. Subpixel correction measures history-texel resampling and
+    // stays in history texels.
+    const outputPixelSpeed = uvNode.sub(historyUV).mul(displaySize).length().div(historyScale);
+    const motionFactor = outputPixelSpeed.div(node.maxVelocityLength).saturate();
     const currentWeight = float(0.05).toVar(); // A minimum weight
     if (node.useSubpixelCorrection) {
       // Increase the minimum weight towards the current frame when the velocity is more subpixel.
       currentWeight.addAssign(subpixelCorrection(offsetUV, displaySize).mul(0.25));
+    }
+    if (velocityWeightClamp) {
+      // Unreal TSR's velocity clamp (UE 5.8.3: Engine/Source/Runtime/Renderer/Private/PostProcess/
+      // TemporalSuperResolution.cpp:3219-3224, Engine/Shaders/Private/TemporalSuperResolution/
+      // TSRUpdateHistory.usf:1262-1276): a history pixel holds 16 / scale² samples; at 1 output
+      // px/frame its accumulated count clamps to 4, lerped by speed, unless the luma change between
+      // history and current is larger (stability on high-contrast edges). A history clamped to N
+      // samples blends the current frame at 1 / (N + 1).
+      const historySamples = 16 / (historyScale * historyScale);
+      const amplitude = Math.min(1, Math.max(0, 1 - 4 / historySamples));
+      const historyLuma = luminance(historyColor.rgb);
+      const currentLuma = luminance(currentColor.rgb);
+      const stability = historyLuma
+        .sub(currentLuma)
+        .abs()
+        .div(max(historyLuma, currentLuma, 0.00001));
+      const maxValidity = max(float(1).sub(outputPixelSpeed.saturate().mul(amplitude)), stability);
+      currentWeight.assign(
+        max(currentWeight, float(1).div(maxValidity.mul(historySamples).add(1))),
+      );
     }
     currentWeight.assign(hasValidHistory.select(currentWeight.add(motionFactor).saturate(), 1));
     // Reasonable gamma range is [0.75, 2]
