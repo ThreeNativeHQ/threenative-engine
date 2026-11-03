@@ -350,8 +350,10 @@ culling is its own change:
   rigs at all; with the lane's time gone the change was reverted unverified rather than shipped.
 - **Pin.** `templates/runner/threenative.config.ts` sets `engine: "threejs"` again and `runner` is back in
   `LEGACY_PINNED_TEMPLATES` (`packages/create-threenative/__tests__/config.spec.ts`, 114 tests pass).
-  `pnpm test` on the pinned project is the pair of frames in `captures/617/runner-r2/`. Next step, its own
-  lane: name the 4 casters with a per-caster diagnostic on the current engine and a visual judge.
+  `pnpm test` on the pinned project passes 5 of 5 scenarios (`/tmp/lane617-r2/logs/runner-test-pinned.log`,
+  maxTriangles 34,967, shadow 3,600 in 1 draw), and the frames are in `captures/617/runner-r2/pinned/`.
+  Next step, its own lane: name the 4 casters with a per-caster diagnostic on the current engine and a
+  visual judge.
 
 2026-11-02 AC-7 captures (judge pending, coordinator runs it). Same-pose frames per arm, two runs each,
 headed WebGPU on NVIDIA RTX 2080 (nvidia/turing), 1280x720, fixed-step anchor `startTick` 240 plus 30
