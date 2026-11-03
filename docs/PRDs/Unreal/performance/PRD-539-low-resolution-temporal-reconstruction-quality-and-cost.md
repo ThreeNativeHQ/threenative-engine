@@ -105,7 +105,22 @@ One reconstructor that, at a sub-1.0 internal raster, produces a stable display-
   | ThreeNative engine TRAA 50% | 640×360 | corner 4.60-11.18 / 3.48-3.55; cornell 2.88-3.47 / 2.78-3.78 | unverified | `.00566` |
 
   Unreal times the pan motion run (CSV profiler, `GPUTime` over 1 ms, `GPU/TemporalSuperResolution`). ThreeNative times the still poses (`--measure 20`, `TN_FRAME_BUDGET` gpu window p50). Distance to Unreal is the same at both scales (mean absolute error `.0277` at 100%, `.0274` at 50%). Sheets: branch `prd-539-screenshots`, `benchmark-cornell-pan/`. The 50% capture needed one engine fix: the lamp shadow-map size now reads the unjittered camera. Before it, TRAA jitter flipped the cornell lamp between two mips every frame and the Wasm engine lost the device in 120 frames (red-green `lamp_size_ignores_temporal_jitter`; visual judge NEUTRAL, mean absolute error `.0002` over 180 frames).
-- [ ] Automatic resolution moves between at least three scales in one run without history corruption, allocation growth or a reconstruction cost spike larger than the saved raster cost. proof: scripted scaler route recording transitions, history resets, render-target allocation count and per-stage cost; repeated cycles end at the initial allocation baseline.
+- [x] Automatic resolution moves between at least three scales in one run without history corruption, allocation growth or a reconstruction cost spike larger than the saved raster cost. proof: scripted scaler route recording transitions, history resets, render-target allocation count and per-stage cost; repeated cycles end at the initial allocation baseline.
+  Done 2026-11-03, browser WebGPU only (RTX 2080, `adapterInfo` nvidia/turing, shared GPU slot); desktop native unverified. Conformance row `temporal-aa-scaler-route` on the provider default (200% history, velocity clamp): 1280×720 display, input 1 → 0.75 → 0.5 → 0.75 → 1, twice, over an opaque backdrop with a per-pixel loop, so that the scene pass is raster bound. The row fails closed when half scale is not under 75% of full-scale GPU time. It asserts the following:
+  - Each of the 8 steps resets history on its own frame only (`resize`), and the next frame is valid with a rejection fraction under 1.
+  - The input raster is `floor(display × scale)`, and the display raster does not change.
+  - Textures and geometries are 9/8 at frame 7, and 9/8 again at frames 39 and 71 after each cycle.
+  - No step frame costs over 1.1 × its neighbour-frame median + 0.05 ms.
+
+  Per-stage GPU time from three's per-pass timestamps, 2 runs (scene pass / reconstruction, history resolve and present):
+
+  | Scale | Scene pass ms | Rest ms | Total ms | Step frames into this scale, total ms |
+  |---|---|---|---|---|
+  | 1 | 1.263 / 1.306 | 0.556 / 0.574 | 1.820 / 1.883 | 1.819, 1.880 / 1.881, 1.888 |
+  | 0.75 | 0.732 / 0.761 | 0.553 / 0.573 | 1.288 / 1.335 | 1.277, 1.283, 1.297, 1.295 / 1.365, 1.337, 1.357, 1.344 |
+  | 0.5 | 0.359 / 0.367 | 0.555 / 0.566 | 0.913 / 0.933 | 0.941, 0.911 / 0.951, 0.946 |
+
+  The largest step-frame excess over its scale's steady total is +0.06 ms. The total a downward step saves is 0.38–0.40 ms (0.75 → 0.5) and 0.53–0.55 ms (1 → 0.75). The reconstruction cost stays flat across scales, because the 2× history resolve runs at the display-relative history raster. A run without the backdrop showed 0.47–0.49 ms at every scale (saved raster cost about 0.015 ms), so the guard was added. Pre-existing on `origin/develop` and unchanged here: `temporal-aa-scaled` (opening reset, 128393 samples outside the oracle) and `temporal-aa-lifecycle` (resize reset, 74107 samples) fail with identical counts on develop's own template and fixture files. `temporal-aa`, `temporal-aa-upsampled`, `temporal-aa-scaled-unchecked-reset` and `temporal-aa-quality` pass.
 
 ## Decisions
 
