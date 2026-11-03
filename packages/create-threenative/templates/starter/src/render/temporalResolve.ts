@@ -26,10 +26,6 @@ export { CATMULL_ROM_BASIS } from "./temporalResolveMath.js";
 export interface ITemporalHistoryWeighting {
   historyScale: number;
   velocityWeightClamp: boolean;
-  /** Unreal TSR's refine rule (UE 5.8.3: TSRUpdateHistory.usf:1106-1168): while history is valid,
-   * the current frame enters each history pixel through the history-pixel kernel and weighs by how
-   * well its nearest jittered sample aligns with that pixel. Rejected pixels keep the coarse gather. */
-  alignmentRefine?: boolean;
 }
 
 /** Returns the amount of subpixel (expressed within [0, 1]) in the velocity. */
@@ -88,9 +84,7 @@ export function createExperimentalTemporalResolve(
   current?: TemporalCurrentFootprint,
   weighting: ITemporalHistoryWeighting = { historyScale: 1, velocityWeightClamp: false },
 ) {
-  const { historyScale, velocityWeightClamp, alignmentRefine = false } = weighting;
-  if (alignmentRefine && current !== undefined)
-    throw new Error("Temporal AA alignment refine does not take the raw4 current footprint.");
+  const { historyScale, velocityWeightClamp } = weighting;
   const node = source as TemporalResolveNode;
   const { historyValidity } = rejection;
   const { clipAABB } = createTemporalResolveMath(node);
@@ -119,24 +113,11 @@ export function createExperimentalTemporalResolve(
         : (uvec2(vec2(displaySize).div(historyScale).round()) as Node<"uvec2">);
     const reconstruction =
       current?.reconstruct(uvNode, displaySize) ??
-      reconstructNeighbourhood(
-        node.beautyNode,
-        uvNode,
-        inputSize,
-        jitterOffset,
-        outputSize,
-        alignmentRefine ? float(displaySize.x).div(float(inputSize.x)) : undefined,
-      );
+      reconstructNeighbourhood(node.beautyNode, uvNode, inputSize, jitterOffset, outputSize);
     const upsampled = inputSize.x.lessThan(displaySize.x).or(inputSize.y.lessThan(displaySize.y));
-    const coarseColor = upsampled.select(
+    const currentColor = upsampled.select(
       reconstruction.get("color") as Node<"vec4">,
       node.beautyNode.sample(uvNode),
-    ) as Node<"vec4">;
-    const alignment = reconstruction.get("alignment") as Node<"float">;
-    const currentColor = (
-      alignmentRefine
-        ? hasValidHistory.greaterThan(0.5).select(reconstruction.get("aligned"), coarseColor)
-        : coarseColor
     ) as Node<"vec4">;
     const mean = reconstruction.get("mean") as Node<"vec4">;
     const historyColor =
@@ -173,10 +154,7 @@ export function createExperimentalTemporalResolve(
         max(currentWeight, float(1).div(maxValidity.mul(historySamples).add(1))),
       );
     }
-    const blended = currentWeight.add(motionFactor).saturate();
-    currentWeight.assign(
-      hasValidHistory.select(alignmentRefine ? blended.mul(alignment) : blended, 1),
-    );
+    currentWeight.assign(hasValidHistory.select(currentWeight.add(motionFactor).saturate(), 1));
     // Reasonable gamma range is [0.75, 2]
     const varianceGamma = mix(0.5, 1, motionFactor.oneMinus().pow2());
     const variance = (reconstruction.get("variance") as Node<"vec4">).mul(varianceGamma);

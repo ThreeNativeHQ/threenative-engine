@@ -107,8 +107,6 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
     history200: { historyScale: 2, velocityWeightClamp: false },
     "velocity-clamp": { historyScale: 1, velocityWeightClamp: true },
     "history200-clamp": { historyScale: 2, velocityWeightClamp: true },
-    // Levers 1 and 2 plus Unreal TSR's alignment refine: the new reconstructor design.
-    tsr: { historyScale: 2, velocityWeightClamp: true, alignmentRefine: true },
   }[policy];
   // The roles that must genuinely request nothing: no reconstruction stage, no velocity MRT. The
   // spatial role still renders its low input and presents it through the ordinary texture upsample.
