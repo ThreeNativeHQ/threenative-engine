@@ -2,15 +2,17 @@
 """Same-scene benchmark sheet for Unreal's pan motion run: TSR at a low screen percentage vs ThreeNative.
 
     python3 -I scripts/unreal-look/side-by-side.py --out <dir> --frames 30,60,90,120 \
-        --crop x,y,w,h ARM...
+        [--metric-frames A-B] --crop x,y,w,h ARM...
 
 Each ARM is `<label>=<dir>[@<ref-label>]`. A dir holds `pan.NNNN.png` frames (also
 `pan.NNNN.0000.png`); the first integer after `pan.` is the frame number. An arm with a `@ref-label`
-is scored against that arm's dir over every frame both dirs hold, not only the requested frames.
+is scored against that arm's dir over every frame both dirs hold (or only frames in
+`--metric-frames A-B`, inclusive), not only the requested frames.
 
-Writes `<out>/sheet.png` (requested frames scaled to 640 px wide, one column per arm, a 2x crop row
-at the middle requested frame) and `<out>/metrics.json` (mae, edgeError and flicker against the
-reference), and prints the metrics table. Bad input exits 2.
+Writes `<out>/sheet.png` (one arm header row, requested frames scaled to 640 px wide on a uniform
+grid, a 3x crop row at the middle requested frame, a red rectangle on that row marking the crop)
+and `<out>/metrics.json` (mae, edgeError and flicker against the reference, with the metric frame
+range), and prints the metrics table. Bad input exits 2.
 """
 
 import argparse
@@ -110,11 +112,21 @@ def summary(values: list[float]) -> dict[str, float] | None:
     return {"mean": float(np.mean(values)), "p95": float(np.percentile(values, 95))}
 
 
-def compare(arm: Arm, reference: Arm) -> dict[str, Any]:
+def compare(
+    arm: Arm, reference: Arm, metric_frames: tuple[int, int] | None = None
+) -> dict[str, Any]:
     arm_frames = frame_paths(arm.directory)
     ref_frames = frame_paths(reference.directory)
     common = sorted(set(arm_frames) & set(ref_frames))
-    if not common:
+    if metric_frames is not None:
+        first, last = metric_frames
+        common = [frame for frame in common if first <= frame <= last]
+        if not common:
+            fail(
+                f"{arm.label} and {reference.label} share no frames in "
+                f"--metric-frames {first}-{last}"
+            )
+    elif not common:
         fail(f"{arm.label} and {reference.label} share no frames")
     mae: list[float] = []
     edge_error: list[float] = []
@@ -138,16 +150,19 @@ def compare(arm: Arm, reference: Arm) -> dict[str, Any]:
     return {
         "reference": reference.label,
         "frameCount": len(common),
+        "metricFrames": None if metric_frames is None else list(metric_frames),
         "mae": summary(mae),
         "edgeError": summary(edge_error),
         "flicker": summary(flicker),
     }
 
 
-def compute_metrics(arms: list[Arm]) -> dict[str, dict[str, Any]]:
+def compute_metrics(
+    arms: list[Arm], metric_frames: tuple[int, int] | None = None
+) -> dict[str, dict[str, Any]]:
     by_label = {arm.label: arm for arm in arms}
     return {
-        arm.label: compare(arm, by_label[arm.reference])
+        arm.label: compare(arm, by_label[arm.reference], metric_frames)
         for arm in arms
         if arm.reference is not None
     }
@@ -157,7 +172,11 @@ def format_stat(stat: dict[str, float] | None, key: str) -> str:
     return "-" if stat is None else f"{stat[key]:.6f}"
 
 
-def print_table(results: dict[str, dict[str, Any]]) -> None:
+def print_table(
+    results: dict[str, dict[str, Any]], metric_frames: tuple[int, int] | None = None
+) -> None:
+    range_text = "all" if metric_frames is None else f"{metric_frames[0]}-{metric_frames[1]}"
+    print(f"metric frames: {range_text}")
     print(
         f"{'arm':<16} {'ref':<16} {'frames':>6} "
         f"{'mae_mean':>10} {'mae_p95':>10} {'edge_mean':>10} {'edge_p95':>10} "
@@ -204,7 +223,7 @@ def build_sheet(
     paths = {arm.label: frame_paths(arm.directory) for arm in arms}
     bar_h = TEXT_PX + 2 * BAR_PAD
     middle = frames[len(frames) // 2]
-    crop_w, crop_h = crop[2] * 2, crop[3] * 2
+    crop_w, crop_h = crop[2] * 3, crop[3] * 3
 
     probe = ImageDraw.Draw(Image.new("RGB", (1, 1)))
     left_w = max(
@@ -212,47 +231,67 @@ def build_sheet(
     ) + 2 * BAR_PAD
 
     cells: dict[tuple[str, int], Image.Image | None] = {}
-    row_heights: list[int] = []
     for frame in frames:
-        tallest = 1
         for arm in arms:
             path = paths[arm.label].get(frame)
-            cell = None if path is None else scaled_frame(path)
-            cells[(arm.label, frame)] = cell
-            if cell is not None:
-                tallest = max(tallest, cell.height)
-        row_heights.append(bar_h + tallest)
+            cells[(arm.label, frame)] = None if path is None else scaled_frame(path)
+    cell_h = max((cell.height for cell in cells.values() if cell is not None), default=1)
+    for key, cell in cells.items():
+        if cell is not None and cell.height != cell_h:
+            cells[key] = cell.resize((CELL_W, cell_h), Image.Resampling.LANCZOS)
 
     width = max(left_w + len(arms) * CELL_W, left_w + len(arms) * crop_w)
-    height = sum(row_heights) + bar_h + crop_h
+    height = bar_h + len(frames) * cell_h + bar_h + crop_h
     sheet = Image.new("RGB", (width, height), (0, 0, 0))
     draw = ImageDraw.Draw(sheet)
 
-    y = 0
-    for frame, row_h in zip(frames, row_heights, strict=True):
-        draw_centered(draw, (0, y, left_w, row_h), str(frame), font)
+    for index, arm in enumerate(arms):
+        x = left_w + index * CELL_W
+        draw_centered(draw, (x, 0, x + CELL_W, bar_h), arm.label, font)
+
+    middle_index = frames.index(middle)
+    for row, frame in enumerate(frames):
+        y = bar_h + row * cell_h
+        draw_centered(draw, (0, y, left_w, y + cell_h), str(frame), font)
         for index, arm in enumerate(arms):
             x = left_w + index * CELL_W
-            draw_centered(draw, (x, y, x + CELL_W, y + bar_h), arm.label, font)
             cell = cells[(arm.label, frame)]
             if cell is None:
-                draw_centered(draw, (x, y + bar_h, x + CELL_W, y + row_h), f"no frame {frame}", font)
-            else:
-                sheet.paste(cell, (x, y + bar_h))
-        y += row_h
+                draw_centered(draw, (x, y, x + CELL_W, y + cell_h), f"no frame {frame}", font)
+                continue
+            sheet.paste(cell, (x, y))
+            if row != middle_index:
+                continue
+            path = paths[arm.label][frame]
+            with Image.open(path) as source:
+                source_w, source_h = source.size
+            scale_x, scale_y = CELL_W / source_w, cell_h / source_h
+            box = (
+                x + round(crop[0] * scale_x),
+                y + round(crop[1] * scale_y),
+                x + round((crop[0] + crop[2]) * scale_x),
+                y + round((crop[1] + crop[3]) * scale_y),
+            )
+            draw.rectangle(box, outline="red", width=2)
 
+    crop_y = bar_h + len(frames) * cell_h
     for index, arm in enumerate(arms):
         x = left_w + index * crop_w
-        draw_centered(draw, (x, y, x + crop_w, y + bar_h), arm.label, font)
+        draw_centered(draw, (x, crop_y, x + crop_w, crop_y + bar_h), arm.label, font)
         path = paths[arm.label].get(middle)
         if path is None:
-            draw_centered(draw, (x, y + bar_h, x + crop_w, y + bar_h + crop_h), f"no frame {middle}", font)
+            draw_centered(
+                draw,
+                (x, crop_y + bar_h, x + crop_w, crop_y + bar_h + crop_h),
+                f"no frame {middle}",
+                font,
+            )
         else:
             with Image.open(path) as source:
                 image = source.convert("RGB")
             box = (crop[0], crop[1], crop[0] + crop[2], crop[1] + crop[3])
             patch = image.crop(box).resize((crop_w, crop_h), Image.Resampling.NEAREST)
-            sheet.paste(patch, (x, y + bar_h))
+            sheet.paste(patch, (x, crop_y + bar_h))
 
     sheet.save(out / "sheet.png")
 
@@ -278,6 +317,16 @@ def parse_crop(value: str) -> tuple[int, int, int, int]:
         fail(f"--crop needs a positive width and height: {value!r}")
     x, y, width, height = crop
     return x, y, width, height
+
+
+def parse_metric_frames(value: str) -> tuple[int, int]:
+    match = re.fullmatch(r"\s*(\d+)\s*-\s*(\d+)\s*", value)
+    if match is None:
+        fail(f"--metric-frames is not an inclusive A-B integer range: {value!r}")
+    first, last = int(match.group(1)), int(match.group(2))
+    if first > last:
+        fail(f"--metric-frames starts after it ends: {value!r}")
+    return first, last
 
 
 def self_test() -> None:
@@ -311,6 +360,15 @@ def self_test() -> None:
         else:
             raise AssertionError("an unknown @ref did not exit 2")
 
+        for bad_range in ("100-200", "5-4"):
+            try:
+                with contextlib.redirect_stderr(io.StringIO()):
+                    compare(arms[0], arms[1], parse_metric_frames(bad_range))
+            except SystemExit as error:
+                assert error.code == 2, f"--metric-frames {bad_range} exits {error.code}, not 2"
+            else:
+                raise AssertionError(f"--metric-frames {bad_range} did not exit 2")
+
     print("self-test ok")
 
 
@@ -318,7 +376,10 @@ def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--out", type=Path, help="directory for sheet.png and metrics.json")
     parser.add_argument("--frames", help="comma-separated frame numbers for the sheet")
-    parser.add_argument("--crop", help="x,y,w,h in full-frame pixels for the 2x crop row")
+    parser.add_argument(
+        "--metric-frames", help="inclusive A-B frame range for the metrics; default all"
+    )
+    parser.add_argument("--crop", help="x,y,w,h in full-frame pixels for the 3x crop row")
     parser.add_argument("--self-test", action="store_true", help="run the synthetic checks and exit")
     parser.add_argument("arms", nargs="*", help="<label>=<dir>[@<ref-label>]")
     args = parser.parse_args(argv)
@@ -337,12 +398,13 @@ def main(argv: list[str]) -> int:
 
     arms = parse_arms(args.arms)
     frames = parse_frames(args.frames)
+    metric_frames = None if args.metric_frames is None else parse_metric_frames(args.metric_frames)
     crop = parse_crop(args.crop)
     args.out.mkdir(parents=True, exist_ok=True)
 
-    results = compute_metrics(arms)
+    results = compute_metrics(arms, metric_frames)
     (args.out / "metrics.json").write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8")
-    print_table(results)
+    print_table(results, metric_frames)
     build_sheet(arms, frames, crop, args.out)
     return 0
 
