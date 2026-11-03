@@ -5,7 +5,8 @@ prd_contract: v1
 # PRD-480 — Linux CI runs on the owner's machine
 
 **Status:** PARTIAL — phases 1 and 3 verified (#404, #410); AC-1 green; AC-2 restated 2026-11-03 as a
-per-job wait p90 of at most 10 min, measured at a median of 11.2 min on the three newest full boards
+per-job wait p90 of at most 10 min, measured at a median of 11.4 min on the three newest full boards
+(round 4, 2026-11-03)
 **Priority:** P1 — AC-2 open: prove queue waiting time meets budget; runs waited up to 239 minutes.
 **Complexity:** 5 (HIGH)
 **Owner:** CI tooling
@@ -156,6 +157,27 @@ while `TN_RUNNER` is set: jobs queue until the switch is cleared.
   36.5 min but reverses the 2026-09-01 owner call that every template proves itself on every pull request;
   (4) halve the `integration` lanes. Owner decision pending; nothing here is a configuration change, so this
   PRD implements none of them.
+
+  Round 4, 2026-11-03 (lane 628): the two boards created after 21:00Z plus the third newest, with the
+  per-job p90 of the same instrument (`quantile(waits, 0.9)` from `scripts/ci-merge-latency.mjs` over
+  the `ranJobs` filter, wait = `max(0, started_at − created_at)`):
+
+  | Run | Event | Jobs started | On `tn-` runners | p90 | Summed wait | Wall | Longest wait | State |
+  |---|---|---|---|---|---|---|---|---|
+  | 41718838521 | merge_group (PR #606) | 73 | 11 | 26.3 min | 436.4 min | 58.1 min | 33.9 min | 42 of 78 jobs cancelled |
+  | 41718807432 | workflow_dispatch (PR #605) | 69 | 11 | 7.8 min | 121.4 min | 44.9 min | 21.0 min | 55 of 78 jobs cancelled |
+  | 41569108715 | merge_group (PR #597) | 74 | 15 | 11.4 min | 225.1 min | 48.1 min | 14.2 min | cancelled by its queue entry |
+
+  Median p90 **11.4 min** against the 10 min target: not met. The two new runs launched 12 s apart,
+  so the hosted pool served two full boards at once. The merge-group board put 62 of its 73 jobs on
+  hosted runners and queued 26.3 min at the 90th percentile; the dispatch board, 12 s behind it and
+  cut short, measured 7.8 min. Recomputed with the same instrument, the three earlier boards read
+  11.4 (41569108715), 11.1 (41441113316) and 9.1 (41430297261); the 11.6/11.2/9.1 recorded above
+  differ by 0.2 min or less and do not change the verdict. Run 41688813459 reads p90 47.5 min over 71
+  started jobs and still does not count (recorded: 48.4). Both new boards were cancelled from outside
+  this lane, at 21:32Z (attempt 2 of 41688813459) and at 21:37Z (55 of 41718807432's 78 jobs), so a job
+  killed while still queued never enters the distribution and each of the two is a lower bound for
+  its own board.
 
 ## Blocked on
 
@@ -317,6 +339,10 @@ Decisions this phase had to make, 2026-10-02:
 - [ ] Waiting time meets AC-2. proof: the AC-2 measurement on a full-board PR after this phase.
   Measured 2026-11-03 and not met: per-job wait p90 median 11.2 min against 10 min on the three newest
   full boards with the pool up (see AC-2).
+  Round 4, 2026-11-03: the two full boards created after this phase — 41718807432 (dispatch, PR #605)
+  and 41718838521 (merge group, PR #606) — do not meet it either. Per-job p90 7.8 min and 26.3 min;
+  the median of the three newest full boards with the pool up is 11.4 min against 10 min (see AC-2).
+  Both boards were cancelled mid-flight from outside this lane.
   Run 41688813459 (PR #605, 2026-11-03) does not count: the routing variable `TN_RUNNER` was re-set at
   18:16Z, after the board's jobs were created at 18:08Z, so 55 of 64 jobs waited for hosted runners
   (p90 48.4 min, max 53.6 min). A board only counts when the pool routes it from its first job.
