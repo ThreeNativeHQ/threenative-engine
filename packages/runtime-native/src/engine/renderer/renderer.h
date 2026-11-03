@@ -1223,6 +1223,11 @@ private:
     WGPUTextureView albedoView_ = nullptr;
     WGPUTexture emissiveTexture_ = nullptr;
     WGPUTextureView emissiveView_ = nullptr;
+    /** What the transparent draws composited over the frame, for a post pass that must keep the occlusion off them
+     *  (three's MRT `translucent`): the same lit fragment each draw wrote to the colour target, drawn in its own pass
+     *  over the colour pass's depth. Created with the first such frame, released with the targets. */
+    WGPUTexture translucentTexture_ = nullptr;
+    WGPUTextureView translucentView_ = nullptr;
     /** The normal-target programs, one per face-normal variant: smooth, DoubleSide smooth, flat (see planAux). */
     std::array<shader::StageModule, 3> normalFragments_;
     /** normalFragments_ for Standard and Physical draws: the alpha also packs metalness and roughness. */
@@ -1240,6 +1245,8 @@ private:
     void applySampleCount();
     uint64_t postViewsStamp() const;
     void collectPostSources();
+    /** The post graph samples "translucent": the transparent draws get their own target and pass (planAux). */
+    bool translucentRequested_ = false;
     GraphTextures postTextures_;
     std::vector<shader::graph::Node> postTextureNodes_;
     struct RttTarget {

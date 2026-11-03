@@ -1783,6 +1783,87 @@ void alphaScene() {
     CHECK(worst <= 1);
 }
 
+// The occlusion and the gather a screen-space effect computes belong to the opaque surface: both read that
+// surface's depth and its normal. A translucent draw composites over it after the opaque pass, so under a sheet the
+// frame's pixel is the draw's own light. Core restores that part after the occlusion instead of darkening it
+// (world-environment.ts, the translucent restore: Unreal applies AO to the opaque lighting, before translucency).
+// This is the engine's half of that contract. The target carries what the transparent draws composited, nothing an
+// opaque draw wrote, and the sheet's value scales with its opacity. A post graph that reads "translucent" is what
+// draws it: before this target existed the graph had no such input and the readback had nothing to show.
+void translucentTarget() {
+    namespace g = shader::graph;
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(128, 96);
+    renderer.setOutput(OutputState{std::nullopt, 1, false});  // linear out: the bytes are the sampled values
+    // An opaque wall on the left, a translucent sheet in front of the empty background on the right, and a second
+    // sheet behind the wall. Only the two in front of the depth buffer's surface may reach the target.
+    Scene scene;
+    OrthographicCamera camera(-2, 2, 1.5, -1.5, 0.1, 10);
+    camera.position.z = 5;
+    auto wallMaterial = std::make_shared<Material>(MaterialType::Basic);
+    wallMaterial->color.setRGB(0.5, 0.5, 0.5);
+    Mesh wall(makePlaneGeometry(1.2, 1.2), wallMaterial);
+    wall.position.set(-0.9, 0, 0);
+    scene.add(wall);
+    auto sheetMaterial = std::make_shared<Material>(MaterialType::Basic);
+    sheetMaterial->color.setRGB(0.4, 0.1, 0.1);
+    sheetMaterial->transparent = true;
+    Mesh sheet(makePlaneGeometry(1.2, 1.2), sheetMaterial);
+    sheet.position.set(-0.2, 0, 1);  // over the wall's right edge and the empty background beside it
+    scene.add(sheet);
+    Mesh behind(makePlaneGeometry(1.2, 1.2), sheetMaterial);
+    behind.position.set(-0.9, 0, -1);
+    scene.add(behind);
+    RenderDatabase database;
+    // A post pass has to exist for the graph to sample an input (the real chain has the occlusion's and the gather's),
+    // and the contact occlusion's supplies one. Its own value is nulled so the readback is the target itself.
+    const auto depth = g::texture("depth", g::uv()), normal = g::texture("normal", g::uv());
+    auto contact = g::gtaoEffect(depth, normal);
+    contact->parameters["radius"] = {0.0001f};
+    contact->parameters["reachPx"] = {32.0f};
+    contact->parameters["thickness"] = {1.0f};
+    contact->parameters["distanceFallOff"] = {0.0f};
+    const auto frame = [&](double opacity) {
+        sheetMaterial->opacity = opacity;
+        scene.updateMatrixWorld(true);
+        renderer.setPostGraph(g::add(g::texture("translucent", g::uv()),
+                                     g::mul(g::swizzle(g::effectNode(contact), "x"), g::float_(0))));
+        database.render(renderer, scene, camera, {0, 0, 0, 1});
+        const std::vector<uint8_t> px = read(renderer, events);
+        CHECK(px.size() == size_t{128} * 96 * 4);
+        // 32 px per world unit, mid-frame (y px 48): the wall alone, the wall under the sheet, the sheet alone.
+        const auto at = [&](int x) {
+            if (px.size() != size_t{128} * 96 * 4) return std::array<int, 3>{-1, -1, -1};
+            const size_t i = (size_t{48} * 128 + size_t(x)) * 4;
+            return std::array<int, 3>{int(px[i]), int(px[i + 1]), int(px[i + 2])};
+        };
+        return std::array{at(25), at(45), at(70)};
+    };
+    const auto half = frame(0.5), full = frame(1.0);
+    const auto& wallOnly = half[0];
+    const auto& overHalf = half[1];
+    const auto& aloneHalf = half[2];
+    const auto& overFull = full[1];
+    const auto& aloneFull = full[2];
+    std::fprintf(stderr, "translucent target: wall %d %d %d, over the wall a0.5 %d %d %d, alone a0.5 %d %d %d, "
+                 "over a1.0 %d %d %d, alone a1.0 %d %d %d\n",
+                 wallOnly[0], wallOnly[1], wallOnly[2], overHalf[0], overHalf[1], overHalf[2], aloneHalf[0],
+                 aloneHalf[1], aloneHalf[2], overFull[0], overFull[1], overFull[2], aloneFull[0], aloneFull[1],
+                 aloneFull[2]);
+    // An opaque draw writes nothing here, and neither does a sheet behind the wall, which the depth test rejects.
+    CHECK(wallOnly[0] <= 1 && wallOnly[1] <= 1 && wallOnly[2] <= 1);
+    // The sheet in front is carried at its own colour times its opacity: 0.4 * 0.5 is 51 of 255, 0.4 is 102. Over the
+    // wall the frame's own pixel is 114, so a target that fell back to the frame would be caught here.
+    CHECK(overHalf[0] > 40 && overHalf[0] < 62);
+    CHECK(aloneHalf[0] > 40 && aloneHalf[0] < 62);
+    CHECK(overFull[0] > 92 && overFull[0] < 112 && aloneFull[0] > 92 && aloneFull[0] < 112);
+    CHECK(std::abs(aloneHalf[0] * 2 - aloneFull[0]) <= 3);
+    CHECK(aloneHalf[1] > 8 && aloneHalf[1] < 18 && aloneFull[1] > 19 && aloneFull[1] < 32);
+}
+
 // A draw's render-list depth is its geometry's bounding-sphere centre in world space, not its object
 // origin. three r187 reads the centre when it culls and sorts (renderers/common/StandardDrawingPipeline.js
 // :236-241: `geometry.boundingSphere.center` through `object.matrixWorld`) and draws transparent items
@@ -8672,7 +8753,7 @@ void staticInstancesAreNotRecopied() {
     CHECK(frame(-12).copies == 0);
 }
 
-TN_TEST_MAIN({"virtual_shadow_page_jobs", virtualShadowPageJobs}, {"caster_record_allocates_per_frame", casterRecordAllocatesPerFrame}, {"virtual_shadow_instance_pages", virtualShadowInstancePages}, {"virtual_shadow_page_draws_only_its_instances", virtualShadowPageDrawsOnlyItsInstances},{"virtual_shadow_bounds_cache", virtualShadowBoundsCache}, {"gpu_joint_production", gpuJointProduction}, {"virtual_shadow_casters_batch_in_main_pass", virtualShadowCastersBatchInMainPass}, {"virtual_shadow_rigs_batch_in_main_pass", virtualShadowRigsBatchInMainPass}, {"virtual_shadow_pages_instance_skinned_casters", shadowPagesInstanceSkinnedCasters}, {"bone_reach_bounds_hold_posed_vertices", boneReachBoundsHoldPosedVertices}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"content_identical_geometry_batches", contentIdenticalGeometryBatches}, {"steady_state", steadyState}, {"steady_state_draw_refresh_work", steadyStateDrawRefreshWork}, {"draw_refresh_guard_holes", drawRefreshGuardHoles}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"depth_test_off_draws_over_nearer", depthTestOffDrawsOverNearer}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"gtao_fade_distance", gtaoFadeDistance}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"scene_stage_is_metered", sceneStageIsMetered}, {"overlay_leaves_stage_totals", overlayLeavesStageTotals}, {"present_direct", presentDirect}, {"canvas_layer_overlay", canvasLayerOverlay}, {"post_survives_overlay", postSurvivesOverlay}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"target_samples_late_traa_output", targetSamplesLateTraaOutput}, {"unchanged_frame_storage", unchangedFrameStorage}, {"static_instances_are_not_recopied", staticInstancesAreNotRecopied}, {"instance_places_survive_a_draw_leaving_the_view", instancePlacesSurviveADrawLeavingTheView}, {"instance_upload_is_stable_across_a_camera_turn", instanceUploadIsStableAcrossACameraTurn}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene}, {"transparent_sort_uses_geometry_center", transparentSortUsesTheGeometryCenter}, {"frame_slab_is_per_program", frameSlabIsPerProgram},
+TN_TEST_MAIN({"virtual_shadow_page_jobs", virtualShadowPageJobs}, {"caster_record_allocates_per_frame", casterRecordAllocatesPerFrame}, {"virtual_shadow_instance_pages", virtualShadowInstancePages}, {"virtual_shadow_page_draws_only_its_instances", virtualShadowPageDrawsOnlyItsInstances},{"virtual_shadow_bounds_cache", virtualShadowBoundsCache}, {"gpu_joint_production", gpuJointProduction}, {"virtual_shadow_casters_batch_in_main_pass", virtualShadowCastersBatchInMainPass}, {"virtual_shadow_rigs_batch_in_main_pass", virtualShadowRigsBatchInMainPass}, {"virtual_shadow_pages_instance_skinned_casters", shadowPagesInstanceSkinnedCasters}, {"bone_reach_bounds_hold_posed_vertices", boneReachBoundsHoldPosedVertices}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"content_identical_geometry_batches", contentIdenticalGeometryBatches}, {"steady_state", steadyState}, {"steady_state_draw_refresh_work", steadyStateDrawRefreshWork}, {"draw_refresh_guard_holes", drawRefreshGuardHoles}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"depth_test_off_draws_over_nearer", depthTestOffDrawsOverNearer}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"gtao_fade_distance", gtaoFadeDistance}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"scene_stage_is_metered", sceneStageIsMetered}, {"overlay_leaves_stage_totals", overlayLeavesStageTotals}, {"present_direct", presentDirect}, {"canvas_layer_overlay", canvasLayerOverlay}, {"post_survives_overlay", postSurvivesOverlay}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"target_samples_late_traa_output", targetSamplesLateTraaOutput}, {"unchanged_frame_storage", unchangedFrameStorage}, {"static_instances_are_not_recopied", staticInstancesAreNotRecopied}, {"instance_places_survive_a_draw_leaving_the_view", instancePlacesSurviveADrawLeavingTheView}, {"instance_upload_is_stable_across_a_camera_turn", instanceUploadIsStableAcrossACameraTurn}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene}, {"transparent_sort_uses_geometry_center", transparentSortUsesTheGeometryCenter}, {"translucent_target", translucentTarget}, {"frame_slab_is_per_program", frameSlabIsPerProgram},
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"virtual_sun_room_seam", virtualSunRoomSeam},

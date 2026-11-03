@@ -314,6 +314,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_invalidation=invalidation
         native_engine_renderer_scene_alpha=alpha_scene
         native_engine_transparent_sort_uses_geometry_center=transparent_sort_uses_geometry_center
+        native_engine_renderer_translucent_target=translucent_target
         native_engine_standard_materials_unsupported=material_unsupported
         native_engine_renderer_shader_invalid=shader_invalid
         native_engine_renderer_time_uniform=time_uniform

@@ -1029,6 +1029,16 @@ export class WorldEnvironment {
     // Unreal's AO (indirect light only) leaves it. Without a cache (the three.js engine) the whole frame is dimmed.
     const indirectOcclusion =
       ownedEngine && giCache.irradiance !== undefined && options.gtaoIndirectOnly;
+    // Both screen-space stages below darken the frame with an occlusion gathered at the opaque surface's depth, so both
+    // must leave the draws composited over it alone (see the MRT's `translucent` output and `translucentFrame`).
+    const seesThrough = options.ssgiEnabled || options.gtaoEnabled;
+    // Upstream three has no scene-wide translucent target, so each material writes its own: its output, premultiplied
+    // by its alpha, and nothing at all from an opaque material (whose alpha is 1). The owned engine draws the
+    // transparent draws into the target itself (renderer.cpp, planAux), so it declares no output for it.
+    const translucentMaterial = (): Node<"vec4"> =>
+      vec4(output.rgb.mul(diffuseColor.a), diffuseColor.a).mul(
+        diffuseColor.a.lessThan(0.999).select(float(1), float(0)),
+      );
     const scenePass = pass(scene, camera, { samples: options.samples });
     const resolutionSubrect =
       requested.length === 0 || resolutionSubrectRefusal !== undefined
@@ -1057,8 +1067,16 @@ export class WorldEnvironment {
           : {}),
         // AO leaves emission alone: an emitter's underside stays its own radiance (Unreal's AO is indirect only).
         ...(options.gtaoEnabled || options.ssgiEnabled ? { emissive } : {}),
+        // The occlusion and the gather belong to the opaque surface. A translucent draw composites over it after the
+        // opaque pass, so a sheet over an occluded corner took the corner's occlusion with it (a waterfall showed the
+        // cliff's stripes). This target carries what those draws composited, and the two composites below add it back
+        // instead of darkening it, as they already do for `emissive`. Upstream three writes it from each material's
+        // own output; the owned engine draws those draws into it while the graph reads it (renderer.cpp, planAux).
+        ...(seesThrough && !ownedEngine ? { translucent: translucentMaterial() } : {}),
       });
       sceneMrt.setBlendMode("normal", new BlendMode(MaterialBlending));
+      if (seesThrough && !ownedEngine)
+        sceneMrt.setBlendMode("translucent", new BlendMode(MaterialBlending));
       scenePass.setMRT(sceneMrt);
     }
     // Requested lazily, and this is not a micro-optimisation. **Asking a pass for `normal`,
@@ -1103,6 +1121,12 @@ export class WorldEnvironment {
     const gain = exposure === undefined ? float(options.exposure) : exposure.exposureNode;
     const frameGain = localExposure === undefined ? gain : gain.mul(localExposure.gainNode);
     const exposed = applyExposure(colour, frameGain);
+    // What the transparent draws composited over the frame, in the frame's own units: scene-referred, so it takes the
+    // exposure multiplier the emitted radiance takes. The occlusion darkens the opaque surface only, and this part is
+    // added back instead (the `emissive` restore's twin). A frame that runs neither stage never asks for it.
+    const translucentFrame: Node<"vec3"> = seesThrough
+      ? textureNode("translucent").rgb.mul(gain)
+      : vec3(0);
     let released = false;
     const releaseGraph = (): void => {
       if (released) return;
@@ -1250,8 +1274,9 @@ export class WorldEnvironment {
             .rgb.mul(float(1).sub(metal().r))
             .mul(indirect.rgb)
             .mul(options.ssgiIntensity);
-          // The gather's own AO leaves emission alone too (see the GTAO stage).
-          const emitted = textureNode("emissive").rgb.mul(gain);
+          // The gather's own AO leaves emission alone too (see the GTAO stage), and a translucent draw's own colour
+          // is in the same position: the gather answered for the surface behind it.
+          const emitted = textureNode("emissive").rgb.mul(gain).add(translucentFrame);
           // The contact term multiplied the frame before this stage ran, and the correction below is the one
           // part of the light that frame never carried: it takes the same factor, or a hit darker than the
           // cache subtracts more than the frame still holds and a lit floor under a sphere clips to black.
@@ -1453,9 +1478,10 @@ export class WorldEnvironment {
             indirectOcclusion && options.gtaoMultiBounceAlbedo > 0 ? bounce() : undefined;
           contactOcclusion = keeps ?? occlusion.r;
           // Emission is radiance a surface gives off, not light it receives: AO keeps it, as Unreal's AO darkens only
-          // indirect light. The emitted part passes at full weight; the rest takes the occlusion.
+          // indirect light. The emitted part passes at full weight; the rest takes the occlusion. A translucent draw's
+          // own colour is in the same position: the occlusion was gathered for the surface behind it.
           // The chain reads exposed light, so the emitted radiance takes the frame's gain too.
-          const emitted = textureNode("emissive").rgb.mul(gain);
+          const emitted = textureNode("emissive").rgb.mul(gain).add(translucentFrame);
           // Scale the colour only: `input.mul(occlusion.r)` scales alpha too, which darkens the frame a second time.
           const composited = input
             .mul(vec4(occlusion.r, occlusion.r, occlusion.r, 1))
@@ -1500,9 +1526,13 @@ export class WorldEnvironment {
                 .rgb.mul(float(1).sub(metal().r))
                 .mul(cache(position, sceneNormal.normalize()))
                 .mul(frameGain);
+              // Only the opaque part of the frame carries that indirect light: a draw composited over it did not receive it.
+              const opaque = input.rgb.sub(translucentFrame);
               result.assign(
                 max(
-                  input.rgb.sub(indirect.mul(float(1).sub(keeps ?? occlusion.r))),
+                  opaque
+                    .sub(indirect.mul(float(1).sub(keeps ?? occlusion.r)))
+                    .add(translucentFrame),
                   composited.rgb,
                 ),
               );

@@ -658,7 +658,7 @@ struct Renderer::FrameJob {
     // velocity pass (zero copies nothing), and whether a seeded frame copies them before it too.
     std::array<uint64_t, 2> previousBytes{};
     bool previousSeed = false;
-    std::vector<Planned> plan, velocityPlan, auxPlan;
+    std::vector<Planned> plan, velocityPlan, auxPlan, translucentPlan;
     std::unordered_map<uint64_t, DeformationFrame> deformationFrames;
     std::vector<ShadowPass> shadowPasses;
     uint32_t keptShadowMaps = 0;  // FrameStats::keptShadowMaps, counted by the plan
@@ -681,6 +681,7 @@ struct Renderer::FrameJob {
     bool timed = false;
     bool debugTimestampRequested = true;
     uint8_t auxMask = 0;  // the AuxTarget bits the aux pass writes, in attachment order
+    bool translucentActive = false;  // the post graph reads "translucent": the transparent draws have their own pass
     uint64_t source = 0;  // the caller frame id this frame's timed sample is reported under
     // The main, aux and velocity bundles' inputs, built while the draws' stores were live; and each shadow pass's.
     std::vector<uint64_t> bundleKey, auxKey, velocityKey;
@@ -1179,6 +1180,9 @@ void Renderer::releaseTargets() {
     if (emissiveView_) wgpuTextureViewRelease(emissiveView_);
     if (emissiveTexture_) wgpuTextureRelease(emissiveTexture_);
     emissiveView_ = nullptr; emissiveTexture_ = nullptr;
+    if (translucentView_) wgpuTextureViewRelease(translucentView_);
+    if (translucentTexture_) wgpuTextureRelease(translucentTexture_);
+    translucentView_ = nullptr; translucentTexture_ = nullptr;
     if (materialView_) wgpuTextureViewRelease(materialView_);
     if (materialTexture_) wgpuTextureRelease(materialTexture_);
     if (viewportColorView_) wgpuTextureViewRelease(viewportColorView_);
@@ -1309,6 +1313,7 @@ void Renderer::collectPostSources() {
     postTextures_.clear();
     postTextureNodes_.clear();
     rttTargets_.clear();
+    translucentRequested_ = false;
     std::unordered_set<const shader::graph::NodeData*> seen;
     const std::function<void(shader::graph::Node)> collect = [&](shader::graph::Node node) {
         if (!node || !seen.insert(node.get()).second) return;
@@ -1317,6 +1322,9 @@ void Renderer::collectPostSources() {
                          [&](const auto& target) { return target.name == node->name; }))
             rttTargets_.push_back({node->name, node->rtt, node->rtt->material ? node->rtt->material->version() : 0,
                                    node->rtt->material.get()});
+        // The graph asks for the transparent draws' own target, in one of its passes or in the output program: the plan
+        // draws it and the post input is bound, or the graph would sample a slot nothing fills.
+        if (node->kind == shader::graph::Kind::Texture && node->name == "translucent") translucentRequested_ = true;
         if (node->kind == shader::graph::Kind::Texture && node->textureObject())
             { postTextures_.emplace_back(node->name, static_cast<const Texture*>(node->textureObject().get())); postTextureNodes_.push_back(node); }
         if (node->rtt && node->rtt->material)
@@ -3550,7 +3558,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     FrameJob compileJob;  // a compile plans pipelines only: it never touches a pending frame's job
     if (!compilation && !job_) job_ = std::make_unique<FrameJob>();
     FrameJob& job = compilation ? compileJob : *job_;
-    job.plan.clear(); job.velocityPlan.clear(); job.auxPlan.clear(); job.shadowPasses.clear(); job.shadowLodItems.clear();
+    job.plan.clear(); job.velocityPlan.clear(); job.auxPlan.clear(); job.translucentPlan.clear();
+    job.shadowPasses.clear(); job.shadowLodItems.clear();
     job.shadowGroupItems.clear(); job.shadowGroups.clear();
     job.previousBytes = {}; job.previousSeed = false; job.keptShadowMaps = 0; job.paletteWrites = paletteWrites; job.instanceCopies = instanceCopies;
     job.deformationFrames.clear();
@@ -4564,6 +4573,10 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     const bool materialPass = postEffects_ && (postEffects_->reads("metalness") || postEffects_->reads("roughness"));
     const bool albedoPass = postEffects_ && postEffects_->reads("albedo");
     const bool emissivePass = postEffects_ && postEffects_->reads("emissive");
+    // The target feeds a post pass: with no post graph there is nothing to bind it to, and the frame keeps its own
+    // colour alone. The graph asks for it by name (collectPostSources), in a pass or in the output program.
+    const bool translucentPass =
+        postEffects_ && (translucentRequested_ || postEffects_->reads("translucent"));
     const uint8_t auxMask = uint8_t((normalPass ? kAuxNormal : 0) | (materialPass ? kAuxMaterial : 0) |
                                     (albedoPass ? kAuxAlbedo : 0) | (emissivePass ? kAuxEmissive : 0));
     // A normal-only frame keeps the small normal fragment: the merged one is the whole lit program.
@@ -4589,9 +4602,35 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         return &fragment;
     };
     const auto planAux = [&] {
-        if (!auxMask) return;
+        if (!auxMask && !translucentPass) return;
         for (const Planned& draw : plan) {
             const DrawItem& item = *draw.item;
+            // A translucent draw composites its own colour over the frame, lit or not. The occlusion a screen-space
+            // effect gathers at that pixel belongs to the opaque surface behind it, so the draw goes to its own target
+            // and the post graph restores it after the occlusion (Unreal applies AO to the opaque lighting, before
+            // translucency). Its own program draws it, unchanged, so the target holds exactly what the colour target
+            // took from it. The sky is not one of them: it is the background, not a sheet over the scene.
+            if (item.transparent && translucentPass && item.colorWrite) {
+                PipelineTarget target = colourTarget(item, *draw.program);
+                target.color = WGPUTextureFormat_RGBA16Float;
+                target.sampleCount = 1;  // drawn single-sampled against the colour pass's resolved depth, as the aux pass
+                target.depthWrite = false;
+                // It blends over what is behind it, so the depth it must beat is the opaque surface's: equal passes, and
+                // at 4x the bias pulls it nearer by the half-pixel depth slope the aux pass already corrects for.
+                target.depthCompare = item.depthTest ? WGPUCompareFunction_LessEqual : WGPUCompareFunction_Always;
+                if (sampleCount_ == 4 && item.depthTest) {
+                    target.depthBias = -4; target.depthBiasSlopeScale = -1.5f;
+                }
+                if (compilation) {
+                    compilation->push_back(pipelines_->getAsync(draw.program->vertex, &draw.program->fragment, target));
+                } else {
+                    const auto pipeline = pipelines_->get(draw.program->vertex, &draw.program->fragment, target);
+                    if (!pipeline) throw std::runtime_error("TN_POST_TRANSLUCENT_PIPELINE_REFUSED");
+                    Planned sheet = draw;
+                    sheet.pipeline = pipeline;
+                    job.translucentPlan.push_back(sheet);
+                }
+            }
             // The sky and unlit materials write no view-space normal (their programs have no normalView).
             if (item.background || item.kind == MaterialKind::Basic) continue;
             // These draws write no normal, so the post pass reads its depth-derived one there. Named once a
@@ -4663,6 +4702,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         target(materialPass, materialTexture_, materialView_, {"metalness", "roughness"});
         target(albedoPass, albedoTexture_, albedoView_, {"albedo"});
         target(emissivePass, emissiveTexture_, emissiveView_, {"emissive"});
+        target(translucentPass, translucentTexture_, translucentView_, {"translucent"});
     };
     WGPURenderPipeline pageClear = nullptr;
     if (!virtualShadows_.empty()) {
@@ -5463,6 +5503,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     job.source = sourceFrame_;
     job.groupEpoch = groupsChosenAt;
     job.auxMask = auxMask;
+    job.translucentActive = translucentPass;
     // At 4x the velocity pass draws into a multisampled attachment and resolves it; allocated on first
     // use, so a frame without it pays nothing.
     if (sampleCount_ == 4 && traa_ && !msaaAuxColor_) {
@@ -5980,6 +6021,28 @@ void Renderer::encodeFrame(FrameJob& job) {
                auxDelta_, auxDeltaKey_, auxTail_, auxTailKey_);
         wgpuRenderPassEncoderEnd(auxPass); wgpuRenderPassEncoderRelease(auxPass);
         lastFrame_.auxPasses = 1;
+    }
+    if (job.translucentActive && translucentView_) {
+        // The transparent draws again, each with its own lit program, blending over a cleared target: what they
+        // composited over the frame. Drawn in one pass, in the main pass's order, so overlapping sheets accumulate
+        // exactly as they did there. Recorded directly (not a retained bundle): a translucent draw's depth order moves
+        // with every camera turn, and the main pass keeps those draws out of its rows for the same reason.
+        WGPURenderPassColorAttachment sheet = {};
+        sheet.view = translucentView_;
+        sheet.loadOp = WGPULoadOp_Clear;
+        sheet.storeOp = WGPUStoreOp_Store;
+        sheet.clearValue = {0, 0, 0, 0};
+#if defined(MYSTRAL_WEBGPU_DAWN)
+        sheet.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
+#endif
+        WGPURenderPassDepthStencilAttachment sheetDepth{};
+        sheetDepth.view = depthView_; sheetDepth.depthReadOnly = true;
+        WGPURenderPassDescriptor sheetDesc = {};
+        sheetDesc.colorAttachmentCount = 1; sheetDesc.colorAttachments = &sheet;
+        sheetDesc.depthStencilAttachment = &sheetDepth;
+        auto sheetPass = beginTimedRenderPass(encoder, &sheetDesc, 2, {"translucent", inputWidth_, inputHeight_});
+        for (const Planned& p : job.translucentPlan) encode(sheetPass, p, Tally::Extra);
+        wgpuRenderPassEncoderEnd(sheetPass); wgpuRenderPassEncoderRelease(sheetPass);
     }
     if (traa_) {
         traa_->fillVelocity(encoder, depthView_);
