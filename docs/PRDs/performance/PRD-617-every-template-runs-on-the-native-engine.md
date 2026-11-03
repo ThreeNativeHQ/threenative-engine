@@ -366,3 +366,26 @@ template projects; sailing's web playtests then pass 8 of 8 scenarios (`capsize-
 `sailing-hull-floats` scenarios, `sails-fill-with-wind`, `round-four-course-buoys`, `survives`,
 `sailing-touch-controls` and `production-performance`), with no `TN_POST_NORMAL_UNSUPPORTED`,
 `TN_WASM_COMPILE` or `TN_WASM_RENDERER_LOST` line in the run.
+
+2026-11-02 the weekly template rotation, cause and fix (`.github/workflows/performance-regression.yml`).
+The earlier note in this lane said the job is `skipped` on every scheduled run since 2026-09-29; that
+reading was wrong. Two crons fire, `47 4 * * *` daily and `17 4 * * 0` weekly, so GitHub opens two runs
+every Sunday. `gh run view` on the later run of each Sunday (41302075352, 40180485848, 39113895367, …)
+shows `Weekly full template workload rotation: skipped`, which is the daily cron behaving as its `if:`
+says. The earlier run of each Sunday (41301318744, 40179597056, 39113158066, 38133444402, 37195900318,
+36311245712, 35501956905, …) reaches the condition and the job there is `failure`, never `success`,
+since the job landed on 2026-09-06 (86e0b8a). It dies in about 20 seconds on
+`Error [ERR_MODULE_NOT_FOUND]: Cannot find module '…/packages/create-threenative/node_modules/@threenative/assets/dist/index.js' imported from …/packages/create-threenative/src/config.ts`:
+the job ran `pnpm install` and then `pnpm test:templates`, and nothing in it ever built the workspace.
+`@threenative/assets` reaches the verifier through the workspace symlink into `packages/assets/dist`,
+exactly the failure `golden-path`'s platformer leg had on run 33697267947. So no scheduled run has
+re-measured a template since 2026-09-06, and this PRD's template evidence went stale. The fix keeps the
+`if:` (it matches) and gives the job what it needs: the `workspace-dist` action builds the bundles
+(`pack-archives: false`, `save-bundles: false`; the develop push lane stays their only saver), the
+`native-engine-wasm` action supplies `packages/runtime-native/build/web`, which
+`packageLocalFramework` asserts before it packs, `TN_PLAYTEST_ALLOW_SOFTWARE=1` accepts the hosted
+runner's software adapter as `golden-path` already does, and the timeout goes from 30 to 120 minutes for
+eight template legs. Guarded by a new spec in `scripts/__tests__/ci-structure.spec.ts`: it parses the
+`on.schedule` crons and the job's `if:`, and requires the condition to name the weekly cron and no other,
+the two build actions to precede `pnpm test:templates`, and the software acceptance. Next scheduled run
+is the proof; this lane cannot dispatch one, so the green weekly run is unverified here.
