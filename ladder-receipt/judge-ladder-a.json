@@ -1,0 +1,440 @@
+{
+  "status": "COMPLETE",
+  "judgedAt": "2026-11-03T12:34:42.012Z",
+  "model": "claude-opus-5-5",
+  "effort": "high",
+  "sessionId": "5ebae25f-2ef1-4e25-a26a-d1b224f3ca92",
+  "costUsd": 1.9764771999999997,
+  "durationMs": 185100,
+  "imagesRead": 100,
+  "criteria": {
+    "file": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/prd632/artifacts/prd632/judge-ladder.md",
+    "sha256": "1268bbba65a8e2080a767a8cc4cb89e1e8efe9ea0584e8923fa6701b64b1bcb3"
+  },
+  "expect": "preserve",
+  "tier": "high",
+  "runs": {
+    "before": 2,
+    "after": 2
+  },
+  "sets": {
+    "before": [
+      "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/base",
+      "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/base-2"
+    ],
+    "after": [
+      "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/head",
+      "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/head-2"
+    ],
+    "unreal": "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/unreal"
+  },
+  "frames": [
+    {
+      "id": "L2/L2_sun04_interior",
+      "verdict": "IMPROVEMENT",
+      "vsUnreal": "CLOSE",
+      "reasons": "The back wall and left wall go from pale lemon-yellow in BEFORE to deeper orange-amber in AFTER, and now sit at almost exactly Unreal's tone. The lit floor is a touch darker and redder in AFTER than in BEFORE. BEFORE's floor was nearer to Unreal there, but only slightly, and a player would not clearly see it. The floor/wall seam and the wall corner are clean, with no banding or clipping. The two runs of each arm are identical.",
+      "differences": "The right wall and ceiling are pure black in ThreeNative. Unreal shows a faint lift there from bounce light. The AFTER lit floor is slightly darker and redder than Unreal's.",
+      "layer": "L2",
+      "unreal": "L2",
+      "files": {
+        "before": [
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/base/L2/L2_sun04_interior.png",
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/base-2/L2/L2_sun04_interior.png"
+        ],
+        "after": [
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/head/L2/L2_sun04_interior.png",
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/head-2/L2/L2_sun04_interior.png"
+        ],
+        "unreal": "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/unreal/L2/L2_sun04_interior.png"
+      }
+    },
+    {
+      "id": "L3/L3_sun04_interior",
+      "verdict": "IMPROVEMENT",
+      "vsUnreal": "CLOSE",
+      "reasons": "The back and left walls move from over-bright yellow in BEFORE to Unreal's amber level in AFTER. The lit floor is slightly darker in AFTER than in BEFORE and Unreal, a small difference that is not clearly visible. Corners and seams are clean, with no new artefacts. The two runs match.",
+      "differences": "Unreal's ceiling and right wall have a faint blue-grey ambient lift. ThreeNative renders them black. The AFTER floor is marginally darker than Unreal's.",
+      "layer": "L3",
+      "unreal": "L3",
+      "files": {
+        "before": [
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/base/L3/L3_sun04_interior.png",
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/base-2/L3/L3_sun04_interior.png"
+        ],
+        "after": [
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/head/L3/L3_sun04_interior.png",
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/head-2/L3/L3_sun04_interior.png"
+        ],
+        "unreal": "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/unreal/L3/L3_sun04_interior.png"
+      }
+    },
+    {
+      "id": "L3/L3_sun15_backlit",
+      "verdict": "IMPROVEMENT",
+      "vsUnreal": "CLOSE",
+      "reasons": "The right half of the floor, the tan area by the wall's right edge, is darker in AFTER and now matches Unreal's darker brown. The bright patch on the left floor is unchanged. The backlit wall is a near-identical dark slate in both arms. There is no banding, and the sun disc is the same.",
+      "differences": "Unreal's backlit wall is bluer, with a stronger vertical gradient from lighter at the top to darker at the bottom. Unreal's left horizon is a grey-brown haze where ThreeNative shows a blue ocean band.",
+      "layer": "L3",
+      "unreal": "L3",
+      "files": {
+        "before": [
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/base/L3/L3_sun15_backlit.png",
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/base-2/L3/L3_sun15_backlit.png"
+        ],
+        "after": [
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/head/L3/L3_sun15_backlit.png",
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/head-2/L3/L3_sun15_backlit.png"
+        ],
+        "unreal": "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/unreal/L3/L3_sun15_backlit.png"
+      }
+    },
+    {
+      "id": "L3/L3_sun15_spheres",
+      "verdict": "IMPROVEMENT",
+      "vsUnreal": "CLOSE",
+      "reasons": "The floor goes from light tan in BEFORE to Unreal's darker brown-tan in AFTER. The orange cube becomes more saturated, matching Unreal's. The capsule, spheres and the wall at the left are essentially unchanged. There are no new artefacts at the sphere edges or the floor/horizon line.",
+      "differences": "Unreal's chrome sphere shows a smoother sky and ground reflection with a horizon band. ThreeNative's chrome sphere is black in the lower half.",
+      "layer": "L3",
+      "unreal": "L3",
+      "files": {
+        "before": [
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/base/L3/L3_sun15_spheres.png",
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/base-2/L3/L3_sun15_spheres.png"
+        ],
+        "after": [
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/head/L3/L3_sun15_spheres.png",
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/head-2/L3/L3_sun15_spheres.png"
+        ],
+        "unreal": "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/unreal/L3/L3_sun15_spheres.png"
+      }
+    },
+    {
+      "id": "L3/L3_sun60_backlit",
+      "verdict": "IMPROVEMENT",
+      "vsUnreal": "CLOSE",
+      "reasons": "The lit floor is slightly greyer and darker in AFTER, closer to Unreal's level. The wall colour and gradient are the same in both arms, and the sky is unchanged. There is no clipping or banding at the wall's bottom edge.",
+      "differences": "Unreal's wall is a more saturated blue, with a stronger gradient from lighter at the top to darker at the bottom. ThreeNative's wall is flatter navy.",
+      "layer": "L3",
+      "unreal": "L3",
+      "files": {
+        "before": [
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/base/L3/L3_sun60_backlit.png",
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/base-2/L3/L3_sun60_backlit.png"
+        ],
+        "after": [
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/head/L3/L3_sun60_backlit.png",
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/head-2/L3/L3_sun60_backlit.png"
+        ],
+        "unreal": "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/unreal/L3/L3_sun60_backlit.png"
+      }
+    },
+    {
+      "id": "L4/L4_sun04_interior",
+      "verdict": "IMPROVEMENT",
+      "vsUnreal": "CLOSE",
+      "reasons": "Both lit walls move from pale yellow to Unreal's amber. The lit floor is slightly darker and redder in AFTER than in BEFORE, a small move away from Unreal that is not clearly visible. The seams are clean, and the two runs are identical.",
+      "differences": "Unreal's ceiling and right wall get a faint blue ambient lift. ThreeNative renders them black. The AFTER floor is a bit darker than Unreal's.",
+      "layer": "L4",
+      "unreal": "L4",
+      "files": {
+        "before": [
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/base/L4/L4_sun04_interior.png",
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/base-2/L4/L4_sun04_interior.png"
+        ],
+        "after": [
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/head/L4/L4_sun04_interior.png",
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/head-2/L4/L4_sun04_interior.png"
+        ],
+        "unreal": "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/unreal/L4/L4_sun04_interior.png"
+      }
+    },
+    {
+      "id": "L4/L4_sun04_spheres",
+      "verdict": "IMPROVEMENT",
+      "vsUnreal": "CLOSE",
+      "reasons": "The floor darkens toward Unreal's deep brown. The capsule, spheres and box go slightly deeper orange, as in Unreal. The orange cube is unchanged. There is no clipping on the white sphere at the right edge beyond what both arms show.",
+      "differences": "The sky clouds differ: pinkish in ThreeNative, grey-gold in Unreal. The chrome sphere reflection differs. Unreal has soft contact darkening on the floor under the spheres.",
+      "layer": "L4",
+      "unreal": "L4",
+      "files": {
+        "before": [
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/base/L4/L4_sun04_spheres.png",
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/base-2/L4/L4_sun04_spheres.png"
+        ],
+        "after": [
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/head/L4/L4_sun04_spheres.png",
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/head-2/L4/L4_sun04_spheres.png"
+        ],
+        "unreal": "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/unreal/L4/L4_sun04_spheres.png"
+      }
+    },
+    {
+      "id": "L4/L4_sun15_backlit",
+      "verdict": "IMPROVEMENT",
+      "vsUnreal": "CLOSE",
+      "reasons": "The right half of the floor darkens toward Unreal's brown. The wall is the same neutral dark grey in both arms. The cloud layer is identical between arms. There are no new artefacts.",
+      "differences": "Unreal's backlit wall is navy-blue with a vertical gradient. ThreeNative's wall is neutral charcoal. The cloud shapes differ, and Unreal's left horizon is a grey haze.",
+      "layer": "L4",
+      "unreal": "L4",
+      "files": {
+        "before": [
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/base/L4/L4_sun15_backlit.png",
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/base-2/L4/L4_sun15_backlit.png"
+        ],
+        "after": [
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/head/L4/L4_sun15_backlit.png",
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/head-2/L4/L4_sun15_backlit.png"
+        ],
+        "unreal": "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/unreal/L4/L4_sun15_backlit.png"
+      }
+    },
+    {
+      "id": "L4/L4_sun60_backlit",
+      "verdict": "IMPROVEMENT",
+      "vsUnreal": "CLOSE",
+      "reasons": "The lit floor is slightly darker and greyer in AFTER, matching Unreal's level better. The wall is unchanged between arms. The sky and clouds are identical between arms.",
+      "differences": "Unreal's wall is a noticeably bluer, more saturated navy with a stronger gradient. ThreeNative's wall is slate grey-blue. The cloud shapes differ.",
+      "layer": "L4",
+      "unreal": "L4",
+      "files": {
+        "before": [
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/base/L4/L4_sun60_backlit.png",
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/base-2/L4/L4_sun60_backlit.png"
+        ],
+        "after": [
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/head/L4/L4_sun60_backlit.png",
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/head-2/L4/L4_sun60_backlit.png"
+        ],
+        "unreal": "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/unreal/L4/L4_sun60_backlit.png"
+      }
+    },
+    {
+      "id": "L4/L4_sun60_spheres",
+      "verdict": "IMPROVEMENT",
+      "vsUnreal": "CLOSE",
+      "reasons": "The floor goes from a slightly-too-bright off-white to Unreal's greyer level. The red cube moves from salmon to Unreal's deeper coral. The spheres and capsule are unchanged. There is no clipping or banding on the white sphere at the right edge.",
+      "differences": "The chrome sphere reflection differs: Unreal shows ground and horizon. The cloud shapes differ. Unreal's sphere undersides show a slightly more varied blue bounce.",
+      "layer": "L4",
+      "unreal": "L4",
+      "files": {
+        "before": [
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/base/L4/L4_sun60_spheres.png",
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/base-2/L4/L4_sun60_spheres.png"
+        ],
+        "after": [
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/head/L4/L4_sun60_spheres.png",
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/head-2/L4/L4_sun60_spheres.png"
+        ],
+        "unreal": "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/unreal/L4/L4_sun60_spheres.png"
+      }
+    },
+    {
+      "id": "L5/L5_sun04_interior",
+      "verdict": "IMPROVEMENT",
+      "vsUnreal": "CLOSE",
+      "reasons": "The sunlit patch on the back wall and the left wall move from pale yellow to Unreal's amber. The sunlit floor patch is slightly darker in AFTER than in BEFORE and Unreal, a minor difference. The shadowed back-wall half and the shadowed floor are unchanged. The shadow edge is identical, with no banding.",
+      "differences": "Unreal shows more bounce light on the ceiling and right wall, plus a soft glow along the shadowed wall. ThreeNative is darker and flatter there.",
+      "layer": "L5",
+      "unreal": "L5",
+      "files": {
+        "before": [
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/base/L5/L5_sun04_interior.png",
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/base-2/L5/L5_sun04_interior.png"
+        ],
+        "after": [
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/head/L5/L5_sun04_interior.png",
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/head-2/L5/L5_sun04_interior.png"
+        ],
+        "unreal": "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/unreal/L5/L5_sun04_interior.png"
+      }
+    },
+    {
+      "id": "L5/L5_sun04_spheres",
+      "verdict": "IMPROVEMENT",
+      "vsUnreal": "CLOSE",
+      "reasons": "The sunlit floor on the left darkens toward Unreal's deeper brown. The objects are slightly deeper orange, as in Unreal. The shadowed floor on the right and the shadow edge are unchanged. There are no new artefacts at the capsule terminator.",
+      "differences": "Unreal's shadowed floor is darker and redder. The chrome reflection and the sky clouds differ.",
+      "layer": "L5",
+      "unreal": "L5",
+      "files": {
+        "before": [
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/base/L5/L5_sun04_spheres.png",
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/base-2/L5/L5_sun04_spheres.png"
+        ],
+        "after": [
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/head/L5/L5_sun04_spheres.png",
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/head-2/L5/L5_sun04_spheres.png"
+        ],
+        "unreal": "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/unreal/L5/L5_sun04_spheres.png"
+      }
+    },
+    {
+      "id": "L5/L5_sun15_backlit",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "CLOSE",
+      "reasons": "The wall, the shadowed floor in front of the wall, and the side floor patches look the same in both arms. At most, the right side floor is a hair darker in AFTER. There are no new artefacts.",
+      "differences": "Unreal's wall is navy with a gradient, against neutral charcoal in ThreeNative. Unreal's shadowed floor is darker and less blue. The clouds differ.",
+      "layer": "L5",
+      "unreal": "L5",
+      "files": {
+        "before": [
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/base/L5/L5_sun15_backlit.png",
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/base-2/L5/L5_sun15_backlit.png"
+        ],
+        "after": [
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/head/L5/L5_sun15_backlit.png",
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/head-2/L5/L5_sun15_backlit.png"
+        ],
+        "unreal": "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/unreal/L5/L5_sun15_backlit.png"
+      }
+    },
+    {
+      "id": "L5/L5_sun60_backlit",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "CLOSE",
+      "reasons": "The lit floor is very slightly darker in AFTER, toward Unreal. The wall and the shadow strip at its base are unchanged between arms. There is no banding at the shadow edge.",
+      "differences": "Unreal's shadow strip is a lighter grey-lavender. ThreeNative's strip is a saturated dark blue. Unreal's wall is bluer with a stronger gradient. The clouds differ.",
+      "layer": "L5",
+      "unreal": "L5",
+      "files": {
+        "before": [
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/base/L5/L5_sun60_backlit.png",
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/base-2/L5/L5_sun60_backlit.png"
+        ],
+        "after": [
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/head/L5/L5_sun60_backlit.png",
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/head-2/L5/L5_sun60_backlit.png"
+        ],
+        "unreal": "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/unreal/L5/L5_sun60_backlit.png"
+      }
+    },
+    {
+      "id": "L5/L5_sun60_spheres",
+      "verdict": "IMPROVEMENT",
+      "vsUnreal": "CLOSE",
+      "reasons": "The floor drops to Unreal's grey level, and the red cube deepens to Unreal's coral. The cast shadows of the spheres and capsule have the same shape and tone in both arms. There are no artefacts.",
+      "differences": "ThreeNative's cast shadows are bluer than Unreal's. The chrome sphere reflection and the clouds differ.",
+      "layer": "L5",
+      "unreal": "L5",
+      "files": {
+        "before": [
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/base/L5/L5_sun60_spheres.png",
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/base-2/L5/L5_sun60_spheres.png"
+        ],
+        "after": [
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/head/L5/L5_sun60_spheres.png",
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/head-2/L5/L5_sun60_spheres.png"
+        ],
+        "unreal": "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/unreal/L5/L5_sun60_spheres.png"
+      }
+    },
+    {
+      "id": "L6/L6_sun04_interior",
+      "verdict": "IMPROVEMENT",
+      "vsUnreal": "CLOSE",
+      "reasons": "Same as L5. The sunlit wall patch and the left wall move to Unreal's amber. The sunlit floor is slightly darker than Unreal's, a minor difference. The shadowed regions are unchanged, and there is no banding.",
+      "differences": "Unreal has more bounce on the ceiling, the right wall and the shadowed back wall. The AFTER lit floor is a touch darker than Unreal's.",
+      "layer": "L6",
+      "unreal": "L6",
+      "files": {
+        "before": [
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/base/L6/L6_sun04_interior.png",
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/base-2/L6/L6_sun04_interior.png"
+        ],
+        "after": [
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/head/L6/L6_sun04_interior.png",
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/head-2/L6/L6_sun04_interior.png"
+        ],
+        "unreal": "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/unreal/L6/L6_sun04_interior.png"
+      }
+    },
+    {
+      "id": "L6/L6_sun04_spheres",
+      "verdict": "IMPROVEMENT",
+      "vsUnreal": "CLOSE",
+      "reasons": "The sunlit floor and the orange objects deepen toward Unreal. The shadowed floor is unchanged, and there are no new artefacts.",
+      "differences": "Unreal's shadowed floor is darker and warmer. The chrome reflection and the clouds differ.",
+      "layer": "L6",
+      "unreal": "L6",
+      "files": {
+        "before": [
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/base/L6/L6_sun04_spheres.png",
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/base-2/L6/L6_sun04_spheres.png"
+        ],
+        "after": [
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/head/L6/L6_sun04_spheres.png",
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/head-2/L6/L6_sun04_spheres.png"
+        ],
+        "unreal": "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/unreal/L6/L6_sun04_spheres.png"
+      }
+    },
+    {
+      "id": "L6/L6_sun15_backlit",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "CLOSE",
+      "reasons": "The wall, the shadowed floor and the lit side floor show no visible difference between arms. There are no artefacts.",
+      "differences": "Unreal's wall is navy with a gradient, against neutral charcoal in ThreeNative. Unreal's shadowed floor is darker. The clouds differ.",
+      "layer": "L6",
+      "unreal": "L6",
+      "files": {
+        "before": [
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/base/L6/L6_sun15_backlit.png",
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/base-2/L6/L6_sun15_backlit.png"
+        ],
+        "after": [
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/head/L6/L6_sun15_backlit.png",
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/head-2/L6/L6_sun15_backlit.png"
+        ],
+        "unreal": "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/unreal/L6/L6_sun15_backlit.png"
+      }
+    },
+    {
+      "id": "L6/L6_sun60_backlit",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "CLOSE",
+      "reasons": "The lit floor is barely darker in AFTER. The wall and shadow strip are unchanged, with no banding.",
+      "differences": "Unreal's shadow strip is lighter grey-lavender, against saturated blue in ThreeNative. Unreal's wall is bluer with a stronger gradient. The clouds differ.",
+      "layer": "L6",
+      "unreal": "L6",
+      "files": {
+        "before": [
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/base/L6/L6_sun60_backlit.png",
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/base-2/L6/L6_sun60_backlit.png"
+        ],
+        "after": [
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/head/L6/L6_sun60_backlit.png",
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/head-2/L6/L6_sun60_backlit.png"
+        ],
+        "unreal": "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/unreal/L6/L6_sun60_backlit.png"
+      }
+    },
+    {
+      "id": "L6/L6_sun60_spheres",
+      "verdict": "IMPROVEMENT",
+      "vsUnreal": "CLOSE",
+      "reasons": "The floor greys down toward Unreal, and the red cube deepens to Unreal's coral. The shadows and spheres are unchanged. There are no artefacts.",
+      "differences": "ThreeNative's cast shadows are bluer than Unreal's. The chrome sphere reflection and the clouds differ.",
+      "layer": "L6",
+      "unreal": "L6",
+      "files": {
+        "before": [
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/base/L6/L6_sun60_spheres.png",
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/base-2/L6/L6_sun60_spheres.png"
+        ],
+        "after": [
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/head/L6/L6_sun60_spheres.png",
+          "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/head-2/L6/L6_sun60_spheres.png"
+        ],
+        "unreal": "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder/unreal/L6/L6_sun60_spheres.png"
+      }
+    }
+  ],
+  "overall": {
+    "verdict": "IMPROVEMENT",
+    "vsUnreal": "CLOSE",
+    "reasons": "No frame shows a clear regression or a new artefact (banding, clipping, leaks, black patches or hue shifts). In every frame, the main surfaces either move toward Unreal or stay as they were: over-bright yellow interior walls drop to Unreal's amber, outdoor floors darken to Unreal's level, and the red/orange cubes saturate as in Unreal. The one region that moved away is the sunlit floor in the interior poses (L2 to L6 sun04_interior). It is slightly darker and redder than Unreal, where BEFORE was nearer, but the gap is small and not clearly visible. The gaps that remain are the same in both arms: backlit walls are greyer than Unreal's navy, shadows are bluer, interiors get less bounce light, and the chrome reflection and clouds differ."
+  },
+  "blockedBy": [],
+  "file": "/tmp/claude-1000/-home-joao-projects-threenative-threenative-engine/6ad3a9f4-4c5a-4cc4-ad1f-dc1834cf7948/scratchpad/judge-ladder-a.json"
+}
