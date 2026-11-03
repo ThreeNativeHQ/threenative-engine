@@ -374,7 +374,9 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Measured by this test.
   runner: "1c560fad4720a21d68106ebb02d7da90655d0d1086adcb04d1e62282c9a9225f",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
-  sailing: "37027775b81b3c2b92df8be363a1e24a060bdb366564091ab114e35143653690",
+  // Re-measured 2026-11-03 (PRD-617): its AGENTS/CLAUDE engine section no longer claims an engine
+  // pin the template does not carry. Measured by this test.
+  sailing: "94a0912a6da7caeb5b8c6c438e16b0b0ccbc2b693a1ad4cf0b869f43fd189639",
   // Recomputed 2026-10-26 (PRD-746): the scene merges the town through mergeByMaterial (src/townBatch.ts).
   shooter: "dc10aea9449f2342f1e7ec46ab6aae86cdc7ad6e3bf0cc574d910bd312f86c4a",
   snow: "4b9e7f0db51b4e31cc84ac8cf462d3754c865a1ca380da06cf208270696de99a",
