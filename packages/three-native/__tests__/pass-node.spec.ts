@@ -135,6 +135,37 @@ describe("native scene pass emissive target", () => {
   });
 });
 
+describe("material MRT outputs", () => {
+  const calls: unknown[][] = [];
+  const api = definePass({
+    ...tsl,
+    mrt: (...args: unknown[]) => {
+      calls.push(args);
+      return { node: calls.length };
+    },
+  });
+  const a = { name: "a" };
+  const b = { name: "b" };
+
+  it("passes the output names and their nodes to the engine, keeping output for the material colour", () => {
+    const node = api.mrt({ output: api.output, oV: a, oS: b });
+    expect(calls.at(-1)).toEqual(["oV,oS", a, b]);
+    expect(node.isMRTNode).toBe(true);
+    expect(node.has("oS") && node.has("output") && !node.has("x")).toBe(true);
+    const mode = { blending: 5 };
+    expect(node.setBlendMode("oV", mode)).toBe(node);
+    expect(node.getBlendMode("oV")).toBe(mode);
+  });
+
+  it("refuses a pass slot beside material outputs, a comma in a name, and node outputs on a pass", () => {
+    expect(() => api.mrt({ oV: a, emissive: api.emissive })).toThrow(
+      /TN_NATIVE_MRT_UNSUPPORTED: emissive/u,
+    );
+    expect(() => api.mrt({ "o,V": a })).toThrow(/comma/u);
+    expect(() => api.pass({}, {}).setMRT(api.mrt({ oV: a }))).toThrow(/material\.mrtNode/u);
+  });
+});
+
 describe("native scene pass MRT", () => {
   it("accepts the normal target as normalView or as vec4(normalView, 0)", () => {
     expect(mrt({ output, normal: normalView }).outputs.normal).toBe(normalView);

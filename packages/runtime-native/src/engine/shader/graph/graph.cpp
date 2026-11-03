@@ -748,9 +748,10 @@ void setUniformValues(const Node& uniform, std::vector<double> values) {
     // A uniform built without a value (cameraViewMatrix, materialColor) is the engine's to fill.
     if (uniform->values.empty()) throw std::runtime_error("TN_TSL_UNIFORM_VALUE: " + uniform->name + " is engine-provided");
     const Type type = uniform->type;
-    if (type.isMatrix() || type.scalar == Type::Scalar::Bool || values.size() != type.rows)
+    const size_t lanes = size_t(type.rows) * type.cols;  // a matrix takes its elements, column by column
+    if (type.scalar == Type::Scalar::Bool || values.size() != lanes)
         throw std::runtime_error("TN_TSL_UNIFORM_VALUE: " + uniform->name + " takes " +
-                                 std::to_string(type.rows) + " " + type.name() + " value(s)");
+                                 std::to_string(lanes) + " " + type.name() + " value(s)");
     for (double& value : values) {
         if (type.scalar == Type::Scalar::F32) value = static_cast<float>(value);
         else {

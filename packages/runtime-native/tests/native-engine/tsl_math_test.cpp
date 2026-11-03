@@ -5,6 +5,8 @@
 #include "engine/shader/tsl/tsl.h"
 #include <cstdlib>
 #include "engine/shader/wgsl.h"
+#include "engine/scene/texture.h"
+#include <memory>
 #include <string>
 using namespace tn::engine::shader;
 namespace {
@@ -164,5 +166,70 @@ void math() {
     }
 
 }
+// The TSL the spell port needs (PRD-777): Discard() and Discard(cond) in a fragment, a matrix uniform with live
+// values, and textureLoad on an engine texture itself (three's textureLoad is texture(value).setSampler(false)).
+std::string fragment(const g::Node& graph) {
+    Program p(Stage::Fragment); tsl::Build build(p);
+    const ExprId value = g::lower(graph, p);
+    CHECK(value != kInvalid && p.ok());
+    if (value == kInvalid || !p.ok()) {
+        for (const auto& d : p.diagnostics()) std::fprintf(stderr, "%s %s: %s\n", d.code.c_str(), d.node.c_str(), d.reason.c_str());
+        return {};
+    }
+    p.output("color", value);
+    const auto wgsl = WgslEmitter::emit(p);
+    CHECK(wgsl.ok());
+    return wgsl.code;
 }
-TN_TEST_MAIN({"math", math})
+void spell_port() {
+    uint64_t serial = 0;
+    for (const bool conditional : {false, true}) {
+        tn::abi::TslScopes scopes;
+        g::Node out;
+        CHECK(scopes.call("scope:open", nullptr, {}, out));
+        const auto alpha = g::uniform("alpha", Type::f32(), {0.5});
+        std::vector<TslArg> args;
+        if (conditional) args.push_back(TslArg::of(g::lessThan(alpha, g::float_(0.1))));
+        bool known = false;
+        try {
+            known = scopes.call("Discard", nullptr, args, out);
+        } catch (const std::exception& error) {
+            std::fprintf(stderr, "Discard: %s\n", error.what());
+        }
+        CHECK(known);
+        CHECK(scopes.call("scope:close", nullptr, {TslArg::of(g::vec4({alpha, alpha, alpha, alpha}))}, out));
+        const auto code = fragment(out);
+        CHECK(code.find("discard;") != std::string::npos);
+        CHECK(!conditional || code.find("if (") != std::string::npos);
+    }
+    for (const int n : {3, 4}) {
+        const auto made = tn::abi::tslCall("uniform", nullptr, {TslArg::of("mat" + std::to_string(n))}, serial);
+        CHECK(made && made->type == Type::mat(n, n) && made->values.size() == size_t(n * n));
+        if (!made) continue;
+        std::vector<double> values(n * n);
+        for (int i = 0; i < n * n; ++i) values[i] = i + 1;
+        tn::abi::tslSetUniform(made, values.data(), values.size());
+        CHECK(made->values == values);
+        bool refused = false;
+        try { tn::abi::tslSetUniform(made, values.data(), 3); } catch (const std::exception&) { refused = true; }
+        CHECK(refused);
+        const auto axis = n == 3 ? g::vec4({g::mul(made, g::vec3({g::float_(1), g::float_(0), g::float_(0)})), g::float_(1)})
+                                 : g::mul(made, g::vec4({g::float_(1), g::float_(0), g::float_(0), g::float_(1)}));
+        CHECK(fragment(axis).find(n == 3 ? "mat3x3<f32>" : "mat4x4<f32>") != std::string::npos);
+    }
+    {
+        auto texture = std::make_shared<tn::engine::Texture>();
+        texture->width = texture->height = 4;
+        texture->data.assign(4 * 4 * 4, 255);
+        g::Node loaded;
+        try {
+            loaded = tn::abi::tslCall("textureLoad", nullptr, {TslArg::objectOf("DataTexture", texture), TslArg::of(tn::abi::tslCall("ivec2", nullptr, {TslArg::of(1.0), TslArg::of(2.0)}, serial)), TslArg::of(g::int_(0))}, serial);
+        } catch (const std::exception& error) {
+            std::fprintf(stderr, "textureLoad: %s\n", error.what());
+        }
+        CHECK(loaded != nullptr);
+        if (loaded) CHECK(fragment(loaded).find("textureLoad(") != std::string::npos);
+    }
+}
+}
+TN_TEST_MAIN({"math", math}, {"spell_port", spell_port})

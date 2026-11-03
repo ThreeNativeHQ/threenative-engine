@@ -564,6 +564,12 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         const bool dimensions = name == "textureSize";
         if ((dimensions && method) || args.size() < (dimensions ? 1u : 2u) || args.size() > (dimensions ? 2u : 3u))
             throw std::runtime_error(dimensions ? "expected texture and optional level" : "expected texture, coordinates and optional level");
+        // three's textureLoad(value, ...) is texture(value, ...).setSampler(false): an engine texture is its own node.
+        if (args[0].kind == TslArg::Kind::Object) {
+            std::vector<TslArg> loaded = args;
+            loaded[0] = TslArg::of(tslCall("texture", nullptr, {args[0]}, serial));
+            return tslCall(name, receiver, loaded, serial);
+        }
         std::string label;
         if (args[0].kind == TslArg::Kind::Node && args[0].node) {
             const auto& texture = args[0].node;
@@ -587,7 +593,37 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         if (args.size() == 3) node->args.push_back(arg(2));
         return node;
     }
+    if (!method && name == "mrt") {
+        // three's mrt({ name: node }) for a material's mrtNode: the back ends pass the names (comma-separated), then one
+        // node per name. Each output converts to its attachment's vec4, as MRTNode.setup does (resolveMrt picks one).
+        if (args.empty() || args[0].kind != TslArg::Kind::String) throw std::runtime_error("expected names then nodes");
+        auto node = std::make_shared<g::NodeData>();
+        node->kind = g::Kind::Struct;
+        node->name = "mrt";
+        std::size_t i = 1;
+        for (std::size_t start = 0; start <= args[0].text.size(); ++i) {
+            const std::size_t end = std::min(args[0].text.find(',', start), args[0].text.size());
+            if (i >= args.size()) throw std::runtime_error("expected one node per mrt output name");
+            auto converted = std::make_shared<g::NodeData>();
+            converted->kind = g::Kind::Convert;
+            converted->type = Type::vec(4);
+            converted->args = {arg(i)};
+            node->members.emplace_back(args[0].text.substr(start, end - start), Type::vec(4));
+            node->args.push_back(std::move(converted));
+            start = end + 1;
+        }
+        if (i != args.size()) throw std::runtime_error("expected one node per mrt output name");
+        return node;
+    }
     if (name == "uniform") {
+        // A three Matrix3/Matrix4 value: the back ends make its uniform by type name ("mat3", "mat4"), at identity,
+        // then write its elements (column-major, as three stores them) through tslSetUniform.
+        if (args.size() == 1 && args[0].kind == TslArg::Kind::String && (args[0].text == "mat3" || args[0].text == "mat4")) {
+            const uint8_t n = args[0].text == "mat3" ? 3 : 4;
+            std::vector<double> identity(n * n, 0.0);
+            for (uint8_t i = 0; i < n; ++i) identity[i * n + i] = 1;
+            return g::uniform("nodeUniform" + std::to_string(++serial), Type::mat(n, n), std::move(identity));
+        }
         // uniform(value) or three's uniform(value, type): a whole number takes "uint" or "int", anything else its own type.
         if (args.size() == 2 && args[0].kind == TslArg::Kind::Number) {
             const Type wanted = type(text(args[1]));
@@ -1388,6 +1424,23 @@ bool TslScopes::call(const std::string& name, const TslArg* receiver, const std:
         node->kind = name == "Break" ? g::Kind::Break : name == "Continue" ? g::Kind::Continue : g::Kind::Return;
         open().back().statements.push_back(node);
         out = node;
+        return true;
+    }
+    // three's Discard(conditional): the fragment ends here, under `If(conditional)` when one is given.
+    if (name == "Discard") {
+        if (args.size() > 1) throw std::runtime_error("expected an optional condition");
+        auto discard = std::make_shared<g::NodeData>();
+        discard->kind = g::Kind::Discard;
+        g::Node statement = discard;
+        if (!args.empty()) {
+            auto branch = std::make_shared<g::NodeData>();
+            branch->kind = g::Kind::If;
+            branch->args = {input(args[0])};
+            branch->body = {discard};
+            statement = branch;
+        }
+        open().back().statements.push_back(statement);
+        out = statement;
         return true;
     }
     if (name == "If") {

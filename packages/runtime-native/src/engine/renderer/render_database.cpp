@@ -256,6 +256,21 @@ MaterialKind kindOf(MaterialType type) {
     }
 }
 
+// three's MRT (MRTNode.setup): the material's mrtNode output named after the attachment this database draws is written
+// there as it is (no setupOutput), so it becomes the draw's fragmentNode. An attachment the mrt() does not name keeps the
+// material's own output when it is the target's first texture, and is written zero otherwise.
+// ponytail: each attachment is a scene draw of its own (render_target_pass.cpp), N draws for N textures; one pass with
+// N colour attachments when an MRT pass costs a frame.
+void resolveMrt(shader::MaterialNodes& nodes, const std::string& name, bool primary) {
+    const shader::graph::Node mrt = std::move(nodes.mrtNode);
+    nodes.mrtNode = nullptr;
+    if (!mrt) return;
+    for (std::size_t i = 0; i < mrt->members.size(); ++i)
+        if (mrt->members[i].first == name) { nodes.fragmentNode = mrt->args.at(i); return; }
+    if (!primary) nodes.fragmentNode = shader::graph::vec4({shader::graph::float_(0.0), shader::graph::float_(0.0),
+                                                            shader::graph::float_(0.0), shader::graph::float_(0.0)});
+}
+
 shader::StandardMaterial paramsOf(const Material& m) {
     shader::StandardMaterial p;
     p.color = {float(m.color.r), float(m.color.g), float(m.color.b)};
@@ -296,6 +311,7 @@ std::size_t materialSignature(const Material& m) {
         mix(bits ^ (bits >> 32));
     }
     mix(static_cast<uint64_t>(m.blending));
+    mix(m.blendFactors());
     mix(m.shadowSide ? 1 + static_cast<uint64_t>(*m.shadowSide) : 0);
     // Sorted by slot name (a std::map): a renamed slot moves uniformHash, so only the bit can change here.
     for (const auto& entry : m.maps) mix(entry.second && entry.second->sampleable() ? 1 : 0);
@@ -530,7 +546,9 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
     depthBiasOf(*material, d);
     geometryInputsOf(*r.canonical, d);
     d.matrixWorld = toArray(mesh.matrixWorld);
-    d.kind = material->nodes.fragmentNode ? MaterialKind::Basic : kindOf(material->type);
+    r.draw->nodes = material->nodes;
+    resolveMrt(r.draw->nodes, mrtName, mrtPrimary);
+    d.kind = r.draw->nodes.fragmentNode ? MaterialKind::Basic : kindOf(material->type);
     d.renderOrder = mesh.renderOrder();
     d.transparent = material->transparent;
     d.forceSinglePass = material->forceSinglePass;
@@ -539,13 +557,13 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
     d.colorWrite = material->colorWrite;
     d.materialKey = material;
     d.positionNode = material->positionNode;
-    r.draw->nodes = material->nodes;
     d.side = static_cast<uint8_t>(material->side);
     d.shadowSide = material->shadowSide ? static_cast<uint8_t>(*material->shadowSide) : 255;
     d.flatShading = material->flatShading;
     d.twoSidedFoliage = material->twoSidedFoliage;
     d.roughDiffuse = material->roughDiffuse;
     d.blending = static_cast<uint8_t>(material->blending);
+    d.blendFactors = material->blendFactors();
     r.drawable = d.positions != nullptr;
     return r;
 }
@@ -578,9 +596,12 @@ DrawItem& RenderDatabase::refresh(const Mesh& mesh, Record& r) {
         d.twoSidedFoliage = r.material->twoSidedFoliage;
         d.roughDiffuse = r.material->roughDiffuse;
         d.blending = static_cast<uint8_t>(r.material->blending);
+        d.blendFactors = r.material->blendFactors();
         d.positionNode = r.material->positionNode;
         ++projection::detail::materialNodeCopyCount();
         r.draw->nodes = r.material->nodes;
+        resolveMrt(r.draw->nodes, mrtName, mrtPrimary);
+        d.kind = r.draw->nodes.fragmentNode ? MaterialKind::Basic : kindOf(r.material->type);
         d.nodes = &r.draw->nodes;
         d.map = nullptr;
         d.normalMap = nullptr;

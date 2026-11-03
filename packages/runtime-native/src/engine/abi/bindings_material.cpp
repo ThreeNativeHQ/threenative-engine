@@ -180,14 +180,41 @@ void registerMaterialBase(ClassBinding& b) {
     };
     b.getters["blending"] = [](void* self) { return Value::of(double(as<Material>(self)->blending)); };
     b.setters["blending"] = [](void* self, const Value& v) {
-        // NoBlending 0, NormalBlending 1, AdditiveBlending 2; Subtractive and Multiply need
-        // premultipliedAlpha, which is not bound, and CustomBlending's factors are not either.
+        // NoBlending 0 ... CustomBlending 5; MaterialBlending (6) names a material's own, so a material cannot take it.
         const double blending = number(v);
-        if (blending != 0 && blending != 1 && blending != 2)
-            throw Unsupported{"blending must be NoBlending, NormalBlending or AdditiveBlending"};
+        if (blending != std::floor(blending) || blending < 0 || blending > 5)
+            throw Unsupported{"blending must be NoBlending, NormalBlending, AdditiveBlending, SubtractiveBlending, "
+                              "MultiplyBlending or CustomBlending"};
         as<Material>(self)->blending = static_cast<Blending>(static_cast<int>(blending));
         as<Material>(self)->needsUpdate();
     };
+    materialBool(b, "premultipliedAlpha", &Material::premultipliedAlpha);
+    // three's CustomBlending factors (ZeroFactor 200 ... OneMinusConstantAlphaFactor 214) and equations (AddEquation 100
+    // ... MaxEquation 104); the alpha ones also take null, which uses the colour one.
+    const auto blendConstant = [&b](const char* name, int16_t Material::*field, int16_t low, int16_t high, bool nullable) {
+        b.getters[name] = [field](void* self) {
+            const int16_t value = as<Material>(self)->*field;
+            return value < 0 ? Value{} : Value::of(double(value));
+        };
+        b.setters[name] = [name, field, low, high, nullable](void* self, const Value& v) {
+            auto& material = *as<Material>(self);
+            if (nullable && v.kind == Value::Kind::Null) material.*field = -1;
+            else {
+                const double value = number(v);
+                if (value != std::floor(value) || value < low || value > high)
+                    throw Unsupported{std::string(name) + " must be one of three's " +
+                                      (low == 100 ? "blend equations" : "blend factors") + (nullable ? " or null" : "")};
+                material.*field = static_cast<int16_t>(value);
+            }
+            material.needsUpdate();
+        };
+    };
+    blendConstant("blendSrc", &Material::blendSrc, 200, 214, false);
+    blendConstant("blendDst", &Material::blendDst, 200, 214, false);
+    blendConstant("blendEquation", &Material::blendEquation, 100, 104, false);
+    blendConstant("blendSrcAlpha", &Material::blendSrcAlpha, 200, 214, true);
+    blendConstant("blendDstAlpha", &Material::blendDstAlpha, 200, 214, true);
+    blendConstant("blendEquationAlpha", &Material::blendEquationAlpha, 100, 104, true);
 }
 
 /** A Color field read by component, as the member alias, and written whole. */
@@ -310,7 +337,8 @@ void registerMeshMaterial(ClassBinding& b, MaterialType type, bool node = false,
              {"vertexNode", &Nodes::vertexNode},
              {"aoNode", &Nodes::aoNode},
              {"irradianceNode", &Nodes::irradianceNode},
-             {"depthNode", &Nodes::depthNode}}) {
+             {"depthNode", &Nodes::depthNode},
+             {"mrtNode", &Nodes::mrtNode}}) {
         if (raw && (std::string_view(name) == "emissiveNode" || std::string_view(name) == "roughnessNode" ||
                     std::string_view(name) == "metalnessNode"))
             continue;
@@ -318,6 +346,8 @@ void registerMeshMaterial(ClassBinding& b, MaterialType type, bool node = false,
         b.setters[name] = [field, name](void* self, const Value& v) {
             if (v.kind != Value::Kind::Null && (v.kind != Value::Kind::ShaderNode || !v.node))
                 throw Unsupported{std::string(name) + " must be a shader node or null"};
+            if (field == &Nodes::mrtNode && v.node && (v.node->kind != shader::graph::Kind::Struct || v.node->name != "mrt"))
+                throw Unsupported{"mrtNode must be an mrt() of named outputs"};
             as<Material>(self)->nodes.*field = v.node;
             as<Material>(self)->needsUpdate();
         };
@@ -958,6 +988,7 @@ void registerTextureBindings(Registry& classes) {
             throw Unsupported{"RenderTarget size must be 1 to 16384"};
         uint16_t type = kTextureUnsignedByteType;
         std::optional<uint16_t> minFilter, magFilter;
+        uint32_t count = 1;
         if (a.size() > 2 && a[2].kind == Value::Kind::Record)
             for (const auto& [key, value] : a[2].fields) {
                 if (key == "minFilter" || key == "magFilter") {
@@ -972,14 +1003,27 @@ void registerTextureBindings(Registry& classes) {
                         throw Unsupported{"RenderTarget type must be UnsignedByteType, HalfFloatType or FloatType"};
                 } else if (key == "format") {
                     if (number(value) != kTextureRGBAFormat) throw Unsupported{"RenderTarget format must be RGBAFormat"};
+                } else if (key == "count") {
+                    // three's MRT: one colour texture per output, 8 at most (WebGPU's maxColorAttachments).
+                    const double n = number(value);
+                    if (!(n >= 1 && n <= 8) || n != std::floor(n)) throw Unsupported{"RenderTarget count must be 1 to 8"};
+                    count = static_cast<uint32_t>(n);
                 } else if (key != "depthBuffer" && key != "stencilBuffer") {
                     throw Unsupported{"RenderTarget option " + key + " is not supported natively"};
                 }
             }
-        auto target = RenderTarget::make(static_cast<uint32_t>(width), static_cast<uint32_t>(height), type);
-        if (minFilter) target->texture->minFilter = *minFilter;
-        if (magFilter) target->texture->magFilter = *magFilter;
+        auto target = RenderTarget::make(static_cast<uint32_t>(width), static_cast<uint32_t>(height), type, count);
+        for (const auto& texture : RenderTarget::texturesOf(*target)) {
+            if (minFilter) texture->minFilter = *minFilter;
+            if (magFilter) texture->magFilter = *magFilter;
+        }
         return target;
+    };
+    // three's `textures`: every colour texture of the target, `texture` first; an MRT target has `count` of them.
+    target.members["textures"] = [](void* self, const Args&, Store& store) {
+        Args textures;
+        for (const auto& texture : RenderTarget::texturesOf(*as<RenderTarget>(self))) textures.push_back(store.share("Texture", texture));
+        return Value::array(std::move(textures));
     };
     fixedMember(target, "texture", [](void* self, const Args&, Store& store) {
         return store.share("Texture", as<RenderTarget>(self)->texture);

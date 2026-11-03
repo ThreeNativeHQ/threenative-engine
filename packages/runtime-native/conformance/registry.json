@@ -2147,6 +2147,48 @@
       },
       "desktopGate": true,
       "required": true
+    },
+    {
+      "id": "material-custom-blending",
+      "title": "CustomBlending, separate alpha state and premultipliedAlpha blend modes",
+      "category": "webgpu-tsl",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/material-custom-blending.js",
+      "browserRecipe": "webgpu",
+      "tolerance": {
+        "pixelMismatchRatio": 0.04,
+        "perceptualDeltaE": 3
+      },
+      "desktopGate": false,
+      "required": false
+    },
+    {
+      "id": "tsl-spell-port-nodes",
+      "title": "TSL Discard, Matrix3/Matrix4 uniforms, textureLoad on a DataTexture and a struct Fn argument",
+      "category": "webgpu-tsl",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/tsl-spell-port-nodes.js",
+      "browserRecipe": "webgpu",
+      "tolerance": {
+        "pixelMismatchRatio": 0.04,
+        "perceptualDeltaE": 3
+      },
+      "desktopGate": false,
+      "required": false
+    },
+    {
+      "id": "render-target-mrt",
+      "title": "MRT render target: count 3, material mrtNode outputs by texture name, additive custom blending",
+      "category": "rendering",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/render-target-mrt.js",
+      "browserRecipe": "webgpu",
+      "tolerance": {
+        "pixelMismatchRatio": 0.04,
+        "perceptualDeltaE": 3
+      },
+      "desktopGate": false,
+      "required": false
     }
   ],
   "generatedPlaytestProofs": [

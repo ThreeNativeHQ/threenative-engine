@@ -178,8 +178,8 @@ void putNodes(std::vector<uint8_t>& block, size_t base, const shader::StageModul
         }
         const shader::BoundUniform* found = shader::findBoundUniform(values, field);
         if (found == nullptr) continue;
-        if (field.type.isMatrix() || field.type.scalar == shader::Type::Scalar::Bool ||
-            found->values.size() != field.type.rows)
+        if (field.type.scalar == shader::Type::Scalar::Bool ||
+            found->values.size() != size_t(field.type.rows) * field.type.cols)
             throw std::runtime_error("TN_TSL_UNIFORM_TYPE: " + field.name);
         shader::writeUniform(std::span(block).subspan(base), field, found->values);
     }
@@ -3496,6 +3496,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         v.twoSidedFoliage = item.twoSidedFoliage;
         v.roughDiffuse = item.roughDiffuse;
         v.flatShading = item.flatShading;
+        v.premultipliedAlpha = (item.blendFactors >> 54) & 1;  // Material::blendFactors: premultipliedAlpha
         v.vertexColors = item.colors ? item.colorSize : 0;
         v.instanced = item.instanceMatrices != nullptr;
         v.instanceColor = item.instanceColors != nullptr;
@@ -3544,7 +3545,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     const auto drawTargetKey = [&](const DrawItem& item, const shader::StageModule& vertex) {
         uint64_t h = 0xcbf29ce484222325ull;
         const auto mix = [&h](uint64_t v) { h = (h ^ v) * 0x100000001b3ull; };
-        mix(item.side); mix(item.shadowSide); mix(item.blending); mix(item.transparent); mix(item.depthWrite); mix(item.depthTest); mix(item.colorWrite);
+        mix(item.side); mix(item.shadowSide); mix(item.blending); mix(item.blendFactors); mix(item.transparent); mix(item.depthWrite); mix(item.depthTest); mix(item.colorWrite);
         mix(item.depthBias); mix(std::bit_cast<uint32_t>(item.depthBiasSlopeScale));
         mix(item.background); mix(item.frontFace() == WGPUFrontFace_CW);
         mix(static_cast<uint64_t>(item.topology));
@@ -3571,9 +3572,11 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         // material.side: FrontSide culls back faces, BackSide front faces, DoubleSide none.
         const WGPUCullMode cull = item.side == 2 ? WGPUCullMode_None : item.side == 1 ? WGPUCullMode_Front : WGPUCullMode_Back;
         // three blends unless NoBlending, or NormalBlending on a material that is not transparent.
-        const uint8_t blend = item.blending == 0 || (item.blending == 1 && !item.transparent) ? 0 : item.blending;
+        uint32_t blendState = 0;
+        const uint8_t blend = materialBlend(item.blending, item.transparent, item.blendFactors, blendState);
         PipelineTarget target{sceneFormat_, WGPUTextureFormat_Depth32Float, cull, blend,
                               item.depthWrite};
+        target.blendState = blendState;
         target.colorWrite = item.colorWrite;
         target.sampleCount = sampleCount_;
         target.layout = program.pipelineLayout;
