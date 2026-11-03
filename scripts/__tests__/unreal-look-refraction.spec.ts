@@ -39,6 +39,8 @@ function fragmentCode(camera: PerspectiveCamera, node: Node): string {
     getMRT: () => null,
     library: { fromMaterial: () => null },
     shadowMap: { enabled: true, type: 1 },
+    // Three 0.187's WGSLNodeBuilder.registerDeclaration reads the renderer's keyword diagnostics.
+    debug: { diagnostics: { keywords: false } },
   };
   const builder = new WGSLNodeBuilder(
     new Mesh(new BoxGeometry(), new MeshBasicMaterial()),

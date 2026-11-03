@@ -108,6 +108,8 @@ export class GpuFrameObservation implements IGpuFrameObservation {
   #stopFrame: number | undefined;
   #failure: string | undefined;
   #pool: IPool | undefined;
+  #watched = new WeakSet<object>();
+  #wrapped = false;
   #batches = new Map<number, IBatch>();
   #queue: IGpuObservedFrame[] = [];
   #nextBatch = 0;
@@ -152,6 +154,26 @@ export class GpuFrameObservation implements IGpuFrameObservation {
       throw new Error(`${PREFIX}LIMITS`);
     this.#maxFrames = options.maxFrames;
     this.#maxQueries = options.maxQueries;
+    this.#watch(getPool());
+  }
+  /**
+   * three 0.187 never leaves a pool full: an allocation past `maxQueries` resolves the pool by itself and
+   * restarts at slot 0, so the earlier queries vanish without a trace. Allocation is the one place a restart
+   * shows, as the index going backwards; r185 returned null there and left the pool full instead.
+   */
+  #watch(value: unknown) {
+    const pool = value as
+      | { currentQueryIndex?: number; allocateQueriesForContext?: unknown }
+      | undefined;
+    if (typeof pool?.allocateQueriesForContext !== "function" || this.#watched.has(pool)) return;
+    this.#watched.add(pool);
+    const allocate = pool.allocateQueriesForContext as (...args: unknown[]) => unknown;
+    pool.allocateQueriesForContext = (...args: unknown[]) => {
+      const before = pool.currentQueryIndex ?? 0;
+      const result = allocate.apply(pool, args);
+      if ((pool.currentQueryIndex ?? 0) < before) this.#wrapped = true;
+      return result;
+    };
   }
   #fail(reason: string) {
     if (this.#state === "failed" || this.#state === "disposed") return;
@@ -175,6 +197,7 @@ export class GpuFrameObservation implements IGpuFrameObservation {
   }
   #refreshUndrained(): IBatch | undefined {
     const value = this.getPool();
+    this.#watch(value);
     if (value === undefined && this.#pool === undefined) return;
     const pool = readPool(value);
     if (this.#pool !== undefined && this.#pool !== pool) throw new Error(`${PREFIX}POOL_RESET`);
@@ -219,7 +242,7 @@ export class GpuFrameObservation implements IGpuFrameObservation {
     const slots = [...selected.values()].reduce((sum, group) => sum + group.length * 2, 0);
     this.#undrainedFrames = selected.size;
     this.#undrainedQueries = slots;
-    if (pool.currentQueryIndex >= pool.maxQueries) {
+    if (pool.currentQueryIndex >= pool.maxQueries || this.#wrapped) {
       this.#allocationLoss = "unknown-after-saturation";
       throw new Error(`${PREFIX}SATURATED_POOL`);
     }

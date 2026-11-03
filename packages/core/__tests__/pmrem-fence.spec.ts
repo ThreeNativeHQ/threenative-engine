@@ -1,7 +1,16 @@
 // A software adapter spent 114 s baking a 64 x 32 sky: the patched PMREMGenerator fenced every cube face
 // of a small environment, and each fence waits behind the frame queued before it (about 3 s on
 // SwiftShader). The fence budget has a floor, so a small environment bakes behind one fence.
-import { DataTexture, EquirectangularReflectionMapping, RGBAFormat, UnsignedByteType } from "three";
+// three 0.187 bakes every environment into a cube of at least 256 (`MIN_SIZE`,
+// src/renderers/common/extras/PMREMGenerator.js), so a 64 x 32 sky and a 1k sky are the same bake
+// there and the floor changes no fence. These cases pin that bake's fence count instead.
+import {
+  DataTexture,
+  EquirectangularReflectionMapping,
+  RGBAFormat,
+  UnsignedByteType,
+  WebGPUCoordinateSystem,
+} from "three";
 import { PMREMGenerator } from "three/webgpu";
 import { describe, expect, it } from "vitest";
 
@@ -11,6 +20,10 @@ function fencedRenderer() {
   const target = { value: null as unknown };
   const renderer = {
     autoClear: true,
+    // three 0.187's generator renders its faces through a CubeCamera and toggles XR around it.
+    coordinateSystem: WebGPUCoordinateSystem,
+    reversedDepthBuffer: false,
+    xr: { enabled: false },
     backend: {
       isWebGPUBackend: true,
       device: {
@@ -54,12 +67,9 @@ async function bakeFences(width: number, height: number): Promise<number> {
 }
 
 describe("PMREM bake fences", () => {
-  it("fences a 64 x 32 environment once, not once per cube face", async () => {
-    // Before the floor this was 42 fences: six faces for each of seven filter passes.
-    expect(await bakeFences(64, 32)).toBeLessThanOrEqual(2);
-  });
-
-  it("keeps the fence cadence of a 1k equirect that the budget was sized for", async () => {
-    expect(await bakeFences(1024, 512)).toBeGreaterThan(6);
+  it("fences a 64 x 32 environment like the 256 cube it bakes, at most once per face per pass", async () => {
+    const small = await bakeFences(64, 32);
+    expect(small).toBe(await bakeFences(1024, 512));
+    expect(small).toBeLessThanOrEqual(15);
   });
 });

@@ -61,11 +61,12 @@ describe("GPU exposure lifecycle", () => {
   it("changes RGB without multiplying alpha into the compositor a second time", () => {
     const colour = vec4(0.8, 0.4, 0.2, 0.3);
     const exposed = applyExposure(colour, float(0.125));
-    const parts = Reflect.get(Reflect.get(exposed, "node"), "nodes") as unknown[];
+    // r187 TSL returns the node itself; the r185 proxy wrapper (`.node`) is gone.
+    const parts = Reflect.get(exposed, "nodes") as unknown[];
     expect(parts).toHaveLength(2);
     expect(parts[1]).toBe(colour.a);
     const rgb = parts[0];
-    expect(Reflect.get(Reflect.get(rgb as object, "node"), "aNode")).toBe(colour.rgb);
+    expect(Reflect.get(rgb as object, "aNode")).toBe(colour.rgb);
   });
   beforeEach(() => {
     vi.spyOn(QuadMesh.prototype, "render").mockImplementation(() => {});

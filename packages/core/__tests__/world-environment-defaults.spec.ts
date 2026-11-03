@@ -1,5 +1,6 @@
 import {
   ACESFilmicToneMapping,
+  type Color,
   CustomToneMapping,
   PerspectiveCamera,
   type RenderTarget,
@@ -231,6 +232,20 @@ it.each([
           getRenderTarget: () => null,
           getDrawingBufferSize: (size: Vector2) => size.set(1920, 1080),
           setRenderTarget: vi.fn(),
+          // r187 RTTNode saves, resets and restores the whole renderer state around its draw.
+          getActiveCubeFace: () => 0,
+          getActiveMipmapLevel: () => 0,
+          getRenderObjectFunction: () => null,
+          getPixelRatio: () => 1,
+          getMRT: () => null,
+          getClearColor: (colour: Color) => colour,
+          getClearAlpha: () => 1,
+          getScissorTest: () => false,
+          setMRT: vi.fn(),
+          setRenderObjectFunction: vi.fn(),
+          setClearColor: vi.fn(),
+          setPixelRatio: vi.fn(),
+          setScissorTest: vi.fn(),
         },
       } as unknown as NodeFrame;
       producer.updateBefore(frame);

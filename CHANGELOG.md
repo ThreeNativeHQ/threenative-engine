@@ -30,6 +30,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Breaking
 
+- `@threenative/core`'s `AutoExposureNode` extends Three's `Node` instead of the `TempNode` that
+  Three 0.187 deprecated (PRD-775), so its recorded signature changes. No game code names that
+  base class: `exposure` still returns the same node with the same constructor arguments, and the
+  `isTempNode` flag r187 no longer reads is gone (`isNode` answers instead).
+
 - `@threenative/blender-bridge` (formerly `threenative-blender-mcp`) is now private and ships
   no MCP server. The `threenative-blender` server is gone from `.mcp.json` and every other host
   config, along with the `blender_status`, `blender_inspect`, `blender_convert`,

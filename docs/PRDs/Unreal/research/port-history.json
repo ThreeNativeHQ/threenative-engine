@@ -137,6 +137,14 @@
   },
   {
     "date": "2026-10-31",
+    "done": 400,
+    "total": 1103,
+    "lookDone": 139,
+    "lookTotal": 490,
+    "open": 84
+  },
+  {
+    "date": "2026-11-01",
     "done": 393,
     "total": 1103,
     "lookDone": 139,

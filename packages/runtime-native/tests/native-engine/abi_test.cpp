@@ -2516,6 +2516,46 @@ void tsl_mat2_scalar_order() {
     CHECK(dumped({TslArg::of(1.0), node(2), TslArg::of(3.0), TslArg::of(4.0)}) == dumped({node(1), node(2), node(3), node(4)}));
 }
 
+// PRD-775: core denoises GTAO's red-only field (packages/core/src/look/world-environment.ts:1323-1378,
+// `denoise(contact.getTextureNode(), ...)` over a RedFormat contact target), so that pass's value is one channel and
+// its fp32 target keeps one lane (R32Float): the four-lane RGBA32Float it held costs 16 bytes per texel, 0.6 ms of the
+// stress lab's frame. The chain is authored through the same calls core makes, convertToTexture included.
+void denoise_over_a_red_field_keeps_one_lane() {
+    namespace g = tn::engine::shader::graph;
+    using tn::abi::TslArg;
+    uint64_t serial = 0;
+    const auto depth = g::texture("depth", g::uv());
+    const auto normal = g::texture("normal", g::uv());
+    const auto ao = tn::abi::tslCall("ao", nullptr, {TslArg::of(depth), TslArg::of(normal), TslArg::other()}, serial);
+    CHECK(ao && ao->post && ao->post->kind == "GTAONode");
+    // DenoiseNode converts its own input (DenoiseNode.js: convertToTexture(node)): the filter reads a copy target.
+    const auto filtered = tn::abi::tslCall(
+        "denoise", nullptr, {TslArg::of(ao), TslArg::of(depth), TslArg::of(normal), TslArg::other()}, serial);
+    CHECK(filtered && filtered->post && filtered->post->kind == "DenoiseNode");
+    const auto colour = tn::abi::tslCall(
+        "denoise", nullptr,
+        {TslArg::of(g::texture("ssgi", g::uv())), TslArg::of(depth), TslArg::of(normal), TslArg::other()}, serial);
+    CHECK(colour && colour->post && colour->post->kind == "DenoiseNode");
+    const auto passes = g::postPasses(g::add(g::swizzle(filtered, "r"), g::swizzle(colour, "r")));
+    const g::PostPass* contact = nullptr;
+    const g::PostPass* narrow = nullptr;
+    const g::PostPass* wide = nullptr;
+    for (const auto& pass : passes) {
+        if (pass.output == ao->name) contact = &pass;
+        if (pass.output == filtered->name) narrow = &pass;
+        if (pass.output == colour->name) wide = &pass;
+    }
+    // GTAO writes three's RedFormat + UnsignedByteType: R8Unorm.
+    CHECK(contact && contact->redFormat && !contact->float32);
+    // The denoise of that field is (occlusion, 0, 0, 1) over it: fp32, one lane.
+    CHECK(narrow && narrow->float32);
+    CHECK(narrow && narrow->redFormat);
+    CHECK(narrow && narrow->reads.at("input") == filtered->post->inputs.at(0)->name);
+    // A denoise of a colour field (SSGI's gather) keeps its lanes.
+    CHECK(wide && wide->float32);
+    CHECK(wide && !wide->redFormat);
+}
+
 void starter_post_bindings() {
     namespace g = tn::engine::shader::graph;
     using tn::abi::TslArg;
@@ -2968,7 +3008,7 @@ void binding_fn() {
     CHECK(watch.expired() && !copy);
 }
 
-TN_TEST_MAIN({"binding_fn", binding_fn}, {"tsl_ssr_parameters", tsl_ssr_parameters}, {"tsl_texture_store", tsl_texture_store}, {"tsl_mat4_element", tsl_mat4_element}, {"body_result_lowers_once", body_result_lowers_once}, {"body_result_in_a_branch", body_result_in_a_branch}, {"join_converts_integer_parts", join_converts_integer_parts}, {"struct_function_return", struct_function_return}, {"authored_output", authored_output}, {"fragment_node_vec3_is_opaque", fragment_node_vec3_is_opaque}, {"rtt_quad_depth_has_a_vertex_output", rtt_quad_depth_has_a_vertex_output}, {"post_output_depth_has_a_vertex_output", post_output_depth_has_a_vertex_output}, {"skinned_bounds_before_the_first_frame", skinned_bounds_before_the_first_frame}, {"tsl_mat2_scalar_order", tsl_mat2_scalar_order}, {"starter_post_bindings", starter_post_bindings}, {"gpu_bind_escape", gpu_bind_escape}, {"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene},
+TN_TEST_MAIN({"denoise_over_a_red_field_keeps_one_lane", denoise_over_a_red_field_keeps_one_lane}, {"binding_fn", binding_fn}, {"tsl_ssr_parameters", tsl_ssr_parameters}, {"tsl_texture_store", tsl_texture_store}, {"tsl_mat4_element", tsl_mat4_element}, {"body_result_lowers_once", body_result_lowers_once}, {"body_result_in_a_branch", body_result_in_a_branch}, {"join_converts_integer_parts", join_converts_integer_parts}, {"struct_function_return", struct_function_return}, {"authored_output", authored_output}, {"fragment_node_vec3_is_opaque", fragment_node_vec3_is_opaque}, {"rtt_quad_depth_has_a_vertex_output", rtt_quad_depth_has_a_vertex_output}, {"post_output_depth_has_a_vertex_output", post_output_depth_has_a_vertex_output}, {"skinned_bounds_before_the_first_frame", skinned_bounds_before_the_first_frame}, {"tsl_mat2_scalar_order", tsl_mat2_scalar_order}, {"starter_post_bindings", starter_post_bindings}, {"gpu_bind_escape", gpu_bind_escape}, {"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene},
              {"unsupported_member", unsupported_member}, {"material", material}, {"light", light}, {"spot_target_in_scene", spot_target_in_scene}, {"hierarchy_revision", hierarchy_revision}, {"matrix_evaluations", matrix_evaluations}, {"source_guard", source_guard}, {"shadow_camera_in_scene", shadow_camera_in_scene}, {"lifetime", lifetime},
              {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_matrix_columns", tsl_matrix_columns}, {"tsl_statements", tsl_statements}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind}, {"euler_order_field", euler_order_field}, {"object_addresses", object_addresses}, {"geometry_shapes", geometry_shapes}, {"typed_bytes", typed_bytes}, {"array_offset", array_offset}, {"data_texture_bytes", data_texture_bytes}, {"attribute_view_writes", attribute_view_writes},
              {"attribute_defer", attribute_defer}, {"material_uuid", material_uuid}, {"material_alpha_hash", material_alpha_hash}, {"matrix_walk_count", matrix_walk_count}, {"geometry_index_null", geometry_index_null}, {"world_space_conversions", world_space_conversions},

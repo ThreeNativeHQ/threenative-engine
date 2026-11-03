@@ -14,7 +14,7 @@
 
 namespace tn::engine {
 
-// TRAANode r185, including its intentional modulo (32 - 1), not a generic TAA preset.
+// TRAANode r187 (examples/jsm/tsl/display/TRAANode.js), including its 32-offset jitter, not a generic TAA preset.
 using graph::traaJitter;
 struct TraaOptions {
     float depthThreshold = 0.0005f;
@@ -49,7 +49,8 @@ public:
     // loads this target and overwrites the pixels of the rigid draws it knows. The sky and the draws it leaves out
     // (skinned, instanced, alpha-tested, transparent, sprites) keep the camera's motion instead of zero.
     void fillVelocity(WGPUCommandEncoder encoder, WGPUTextureView depthView);
-    void seedHistory(WGPUCommandEncoder encoder, WGPUTexture beauty);
+    // The resolve seeds its own history from the beauty it resolves (r187 TRAANode.updateBefore): the frame before the
+    // first, and the one after a cut or resize, would otherwise blend against a frame that is no longer on screen.
     // `output` and `outputView` take the resolved colour when the caller owns the target (a pass of the post graph, over a
     // frame the graph drew); left null, it lands in `resultView()`.
     void resolve(WGPUCommandEncoder encoder, WGPUTexture beauty, WGPUTextureView beautyView,
@@ -74,7 +75,7 @@ public:
         bool historyValid = false;
         uint32_t inputWidth = 0, inputHeight = 0, outputWidth = 0, outputHeight = 0;
         uint32_t depthHistoryWidth = 0, depthHistoryHeight = 0, historyWidth = 0, historyHeight = 0;
-        uint32_t jitterLength = 31;
+        uint32_t jitterLength = 32;
     };
     Status status() const {
         return {history_.frame(), jitter_[0], jitter_[1], history_.historyValid(0),

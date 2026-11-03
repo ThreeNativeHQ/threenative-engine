@@ -39,7 +39,7 @@
   },
   "devDependencies": {
     "@types/node": "20.19.43",
-    "@types/three": "0.185.3",
+    "@types/three": "0.187.0",
     "publint": "0.3.22",
     "tsup": "8.5.1",
     "typescript": "catalog:",

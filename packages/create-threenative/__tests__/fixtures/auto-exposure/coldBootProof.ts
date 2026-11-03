@@ -98,7 +98,8 @@ function validateColdBootSamples(
       !Number.isInteger(sample.nodeFrameId) ||
       sample.nodeFrameId <= previous.nodeFrameId ||
       !Number.isFinite(sample.nodeTime) ||
-      sample.nodeTime <= previous.nodeTime ||
+      // three's first node frame runs at time 0: the first sample may sit on it.
+      (index === 0 ? sample.nodeTime < previous.nodeTime : sample.nodeTime <= previous.nodeTime) ||
       !Number.isFinite(delta) ||
       delta < 0 ||
       !validLiveElapsed(sample, previous, delta) ||

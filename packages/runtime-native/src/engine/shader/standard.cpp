@@ -1,12 +1,15 @@
-// The standard materials, ported from three@0.185.1's TSL node chain line by line where order of
+// The standard materials, ported from three@0.187.0's TSL node chain line by line where order of
 // operations is observable: src/nodes/functions/BSDF/{F_Schlick,V_GGX_SmithCorrelated,D_GGX,
-// BRDF_GGX,BRDF_GGX_Multiscatter,BRDF_Lambert,DFGLUT}.js, functions/material/getRoughness.js,
-// functions/PhysicalLightingModel.js (direct, indirect diffuse), lighting/HemisphereLightNode.js.
-// Lambert and Phong come from functions/PhongLightingModel.js (its Blinn-Phong D_BlinnPhong and
-// BRDF_BlinnPhong) as materials/nodes/Mesh{Lambert,Phong}NodeMaterial.js wire them.
+// BRDF_GGX,BRDF_Lambert,DFGLUT}.js, functions/material/getRoughness.js,
+// functions/PhysicalLightingModel.js (start, direct, indirect diffuse, indirect specular),
+// lighting/HemisphereLightNode.js. Lambert and Phong come from functions/PhongLightingModel.js (its
+// Blinn-Phong D_BlinnPhong and BRDF_BlinnPhong) as materials/nodes/Mesh{Lambert,Phong}NodeMaterial.js
+// wire them. r186/r187 re-derived the energy conservation (PhysicalLightingModel.js:591-638, 675-703,
+// 786-798, 854-895): the DFG texel is sampled once in start() and shared, BRDF_GGX_Multiscatter is
+// gone, and both the direct and the indirect diffuse layers lose the energy the specular lobe keeps.
 
 #include "standard.h"
-#include "cube_uv.h"
+#include "pmrem.h"
 #include <stdexcept>
 #include <algorithm>
 #include "engine/shader/tsl/tsl.h"
@@ -73,10 +76,11 @@ struct Surface {
     uint32_t dfg;
 };
 
-// BRDF_GGX( lightDirection, f0, f90, roughness )
+// BRDF_GGX( lightDirection, f0, f90, roughness ). r187 BRDF_GGX.js:14 raises the roughness to 0.045
+// first: a punctual light needs a minimum roughness to show a highlight.
 ExprId brdfGgx(Tsl& t, const Surface& s, ExprId light) {
     Program& p = t.p;
-    const ExprId alpha = t.pow2(s.roughness);  // UE4's roughness
+    const ExprId alpha = t.pow2(p.call("max", {s.roughness, t.f(0.045f)}));  // UE4's roughness
     const ExprId half = p.call("normalize", {p.add(light, s.view)});
     const ExprId dotNL = t.saturate(t.dot(s.normal, light));
     const ExprId dotNV = t.saturate(t.dot(s.normal, s.view));
@@ -90,27 +94,6 @@ ExprId brdfGgx(Tsl& t, const Surface& s, ExprId light) {
 ExprId dfgLut(Tsl& t, const Surface& s, ExprId dotNV) {
     Program& p = t.p;
     return p.swizzle(p.sample(s.dfg, p.construct(Type::vec(2), {s.roughness, dotNV})), "xy");
-}
-
-// BRDF_GGX_Multiscatter
-ExprId brdfGgxMultiscatter(Tsl& t, const Surface& s, ExprId light) {
-    Program& p = t.p;
-    const ExprId singleScatter = brdfGgx(t, s, light);
-    const ExprId dotNL = t.saturate(t.dot(s.normal, light));
-    const ExprId dotNV = t.saturate(t.dot(s.normal, s.view));
-    const ExprId dfgV = dfgLut(t, s, dotNV);
-    const ExprId dfgL = dfgLut(t, s, dotNL);
-    const ExprId FssEssV = p.add(p.mul(s.f0, p.swizzle(dfgV, "x")), p.mul(s.f90, p.swizzle(dfgV, "y")));
-    const ExprId FssEssL = p.add(p.mul(s.f0, p.swizzle(dfgL, "x")), p.mul(s.f90, p.swizzle(dfgL, "y")));
-    const ExprId EssV = p.add(p.swizzle(dfgV, "x"), p.swizzle(dfgV, "y"));
-    const ExprId EssL = p.add(p.swizzle(dfgL, "x"), p.swizzle(dfgL, "y"));
-    const ExprId EmsV = p.sub(t.f(1), EssV);
-    const ExprId EmsL = p.sub(t.f(1), EssL);
-    const ExprId Favg = p.add(s.f0, p.mul(t.oneMinus(s.f0), t.f(0.047619f)));  // 1/21
-    const ExprId Fms = p.div(p.mul(p.mul(FssEssV, FssEssL), Favg),
-                             p.add(p.sub(t.f(1), p.mul(p.mul(p.mul(EmsV, EmsL), Favg), Favg)), t.f(kEpsilon)));
-    const ExprId compensationFactor = p.mul(EmsV, EmsL);
-    return p.add(singleScatter, p.mul(Fms, compensationFactor));
 }
 
 // D_BlinnPhong( dotNH ) = ( shininess * 0.5 + 1.0 ) * (1/pi) * pow( dotNH, shininess )
@@ -133,121 +116,28 @@ ExprId brdfBlinnPhong(Tsl& t, ExprId normalView, ExprId positionViewDirection, E
 }
 
 // ---------------------------------------------------------------------------------------------
-// Environment (IBL): three's PMREM cubeUV sampling, nodes/pmrem/PMREMUtils.js ported operation
-// for operation. getFace/getUV/roughnessToMip/bilinearCubeUV/textureCubeUV, with the cubeUV layout
-// constants the PMREM generator packs (r0=1, r1=0.8, r4=0.4, r5=0.305, r6=0.21 and their mips).
+// Environment (IBL): three@0.187.0's PMREM sampling, nodes/pmrem/PMREMNode.js:336 and
+// nodes/pmrem/PMREMUtils.js:19. The PMREM is a six-mip cube render target whose mip `lod` holds
+// the radiance for roughness `lodToRoughness(lod, maxLod) = 1 - sqrt(1 - lod/maxLod)`, inverted
+// here by roughnessToMip. The cubeUV atlas, its piecewise roughness ramp and its 16px filter tiles
+// are gone in r187, as is the render-target Y flip (that flip only ever cancelled the atlas layout).
 
-// getFace(direction): PMREM face index, RH/PMREM convention.
-ExprId cubeFace(Program& p, ExprId direction) {
+// roughnessToMip(roughness, maxLod): PMREMUtils.js:19, `maxLod * r * (2 - r)` with r clamped.
+ExprId roughnessToMip(Program& p, ExprId roughness, std::string_view prefix) {
     auto f = [&](float v) { return p.constant(v); };
-    const ExprId absDir = p.call("abs", {direction});
-    const VarId face = p.var(Type::f32(), f(-1));
-    auto pick = [&](const char* comp, float positive, float negative) {
-        return p.select(p.less(f(0), p.swizzle(direction, comp)), f(positive), f(negative));
-    };
-    const ExprId x = p.swizzle(absDir, "x"), y = p.swizzle(absDir, "y"), z = p.swizzle(absDir, "z");
-    p.If(p.less(z, x),
-         [&] {
-             p.If(p.less(y, x), [&] { p.assign(face, pick("x", 0, 3)); },
-                 [&] { p.assign(face, pick("y", 1, 4)); });
-         },
-         [&] {
-             p.If(p.less(y, z), [&] { p.assign(face, pick("z", 2, 5)); },
-                 [&] { p.assign(face, pick("y", 1, 4)); });
-         });
-    return p.load(face);
+    const ExprId r = p.call("clamp", {roughness, f(0), f(1)});
+    return p.mul(p.uniform(std::string(prefix) + "MaxMip", Type::f32()), p.mul(r, p.sub(f(2), r)));
 }
 
-// getUV(direction, face)
-ExprId cubeUv(Program& p, ExprId direction, ExprId face) {
-    auto f = [&](float v) { return p.constant(v); };
-    auto v2 = [&](ExprId x, ExprId y) { return p.construct(Type::vec(2), {x, y}); };
-    auto neg = [&](ExprId v) { return p.neg(v); };
-    const ExprId d = direction;
-    const ExprId ax = p.swizzle(p.call("abs", {d}), "x"), ay = p.swizzle(p.call("abs", {d}), "y"),
-                 az = p.swizzle(p.call("abs", {d}), "z");
-    const ExprId dx = p.swizzle(d, "x"), dy = p.swizzle(d, "y"), dz = p.swizzle(d, "z");
-    const VarId uv = p.var(Type::vec(2), v2(f(0), f(0)));
-    auto set = [&](ExprId value) { p.assign(uv, value); };
-    p.If(p.equal(face, f(0)), [&] { set(p.div(v2(dz, dy), ax)); }, [&] {
-        p.If(p.equal(face, f(1)), [&] { set(p.div(v2(neg(dx), neg(dz)), ay)); }, [&] {
-            p.If(p.equal(face, f(2)), [&] { set(p.div(v2(neg(dx), dy), az)); }, [&] {
-                p.If(p.equal(face, f(3)), [&] { set(p.div(v2(neg(dz), dy), ax)); }, [&] {
-                    p.If(p.equal(face, f(4)), [&] { set(p.div(v2(neg(dx), dz), ay)); },
-                         [&] { set(p.div(v2(dx, dy), az)); });
-                });
-            });
-        });
-    });
-    return p.mul(f(0.5f), p.add(p.load(uv), v2(f(1), f(1))));
-}
-
-// roughnessToMip(roughness)
-ExprId roughnessToMip(Program& p, ExprId roughness) {
-    auto f = [&](float v) { return p.constant(v); };
-    const VarId mip = p.var(Type::f32(), f(0));
-    auto segment = [&](double rHigh, double rLow, double mHigh, double mLow) {
-        // three emits unsuffixed WGSL literals: these constant subtractions fold as abstract-float,
-        // then convert to f32. Subtracting already-rounded f32 breakpoints changes two denominators.
-        return p.add(p.div(p.mul(p.sub(f(float(rHigh)), roughness), f(float(mLow - mHigh))),
-                           f(float(rHigh - rLow))), f(float(mHigh)));
-    };
-    p.If(p.call("greaterEqual", {roughness, f(0.8f)}), [&] { p.assign(mip, segment(1.0, 0.8, -2.0, -1.0)); }, [&] {
-        p.If(p.call("greaterEqual", {roughness, f(0.4f)}), [&] { p.assign(mip, segment(0.8, 0.4, -1.0, 2.0)); }, [&] {
-            p.If(p.call("greaterEqual", {roughness, f(0.305f)}), [&] { p.assign(mip, segment(0.4, 0.305, 2.0, 3.0)); }, [&] {
-                p.If(p.call("greaterEqual", {roughness, f(0.21f)}), [&] { p.assign(mip, segment(0.305, 0.21, 3.0, 4.0)); },
-                     [&] { p.assign(mip, p.mul(f(-2.0f), p.call("log2", {p.mul(f(1.16f), roughness)}))); });
-            });
-        });
-    });
-    return p.load(mip);
-}
-
-// bilinearCubeUV(envMap, direction, mipInt)
-ExprId bilinearCubeUV(Program& p, uint32_t env, ExprId direction, ExprId mipInt, const std::string& prefix) {
-    auto f = [&](float v) { return p.constant(v); };
-    auto v2 = [&](ExprId x, ExprId y) { return p.construct(Type::vec(2), {x, y}); };
-    const VarId face = p.var(Type::f32(), cubeFace(p, direction));
-    const ExprId filterInt = p.call("max", {p.sub(f(4), mipInt), f(0)});
-    const ExprId clamped = p.call("max", {mipInt, f(4)});
-    const ExprId faceSize = p.call("exp2", {clamped});
-    const VarId uv = p.var(Type::vec(2), p.add(p.mul(cubeUv(p, direction, p.load(face)), p.sub(faceSize, f(2))), v2(f(1), f(1))));
-    p.If(p.less(f(2), p.load(face)), [&] {
-        p.assign(uv, p.add(p.load(uv), v2(f(0), faceSize)));
-        p.assign(face, p.sub(p.load(face), f(3)));
-    });
-    ExprId x = p.add(p.swizzle(p.load(uv), "x"), p.mul(p.load(face), faceSize));
-    x = p.add(x, p.mul(filterInt, f(48)));  // 3 * minTileSize(16)
-    ExprId y = p.add(p.swizzle(p.load(uv), "y"),
-                     p.mul(f(4), p.sub(p.call("exp2", {p.uniform(prefix + "MaxMip", Type::f32())}), faceSize)));
-    x = p.mul(x, p.uniform(prefix + "TexelWidth", Type::f32()));
-    y = p.mul(y, p.uniform(prefix + "TexelHeight", Type::f32()));
-    return p.swizzle(p.sampleLevel(env, v2(x, y), f(0)), "xyz");
-}
-
-// textureCubeUV(envMap, sampleDir, roughness)
-ExprId textureCubeUV(Program& p, uint32_t env, ExprId direction, ExprId roughness, const std::string& prefix = "envMap") {
-    auto f = [&](float v) { return p.constant(v); };
-    const ExprId mip = p.call("clamp", {roughnessToMip(p, roughness), f(-2.0f), p.uniform(prefix + "MaxMip", Type::f32())});
-    const ExprId mipF = p.call("fract", {mip});
-    const ExprId mipInt = p.call("floor", {mip});
-    const VarId color = p.var(Type::vec(3), bilinearCubeUV(p, env, direction, mipInt, prefix));
-    p.If(p.equal(mipF, f(0)), [] {}, [&] {
-        const ExprId next = bilinearCubeUV(p, env, direction, p.add(mipInt, f(1)), prefix);
-        p.assign(color, p.call("mix", {p.load(color), next, mipF}));
-    });
-    return p.load(color);
-}
-
-// three's computeMultiscattering, returning (singleScatter, multiScatter) for one f0.
+// three's PhysicalLightingModel.computeMultiscattering (r187 :623), returning (singleScatter,
+// multiScatter) for one f0 from the DFG texel start() sampled once at dotNV.
 struct Multiscatter {
     ExprId single;
     ExprId multi;
 };
-Multiscatter computeMultiscattering(Tsl& t, ExprId roughness, ExprId dotNV, ExprId f0, ExprId specularF90, uint32_t dfg) {
+Multiscatter computeMultiscattering(Tsl& t, ExprId fab, ExprId f0, ExprId specularF90) {
     Program& p = t.p;
     auto f = [&](float v) { return p.constant(v); };
-    const ExprId fab = p.swizzle(p.sample(dfg, p.construct(Type::vec(2), {roughness, dotNV})), "xy");
     const ExprId FssEss = p.add(p.mul(f0, p.swizzle(fab, "x")), p.mul(specularF90, p.swizzle(fab, "y")));
     const ExprId Ess = p.add(p.swizzle(fab, "x"), p.swizzle(fab, "y"));
     const ExprId Ems = p.sub(f(1), Ess);
@@ -264,7 +154,14 @@ ExprId transformDirection(Program& p, ExprId m, ExprId v) {
 }  // namespace
 
 ExprId pmremSample(Program& p, uint32_t texture, ExprId direction, ExprId roughness, std::string_view prefix) {
-    return textureCubeUV(p, texture, direction, roughness, std::string(prefix));
+    // PMREMNode.setup (:336) samples the cube node with `materialEnvRotation.mul(uvNode)`;
+    // CubeTextureNode.setupUV (:115) then negates x for the WebGPU coordinate system, which is where
+    // the WebGPU cube face order puts three's: every cube the engine bakes is drawn the way
+    // CubeCamera draws it, so every read of one negates x too (backgroundCube does the same).
+    auto f = [&](float v) { return p.constant(v); };
+    const ExprId flipped = p.construct(Type::vec(3), {p.neg(p.swizzle(direction, "x")),
+                                                      p.swizzle(direction, "yz")});
+    return p.swizzle(p.sampleLevel(texture, flipped, roughnessToMip(p, roughness, prefix)), "rgb");
 }
 
 std::vector<std::string> unsupportedFeatures(const StandardMaterial& m) {
@@ -828,28 +725,9 @@ static constexpr float kLeafMinSourceTangent = 0.08748866f;
 // three's ShadowNode for a light's shadow under PCFShadowMap (the default type, with texture compare):
 // shadowPosition = shadowMatrix * (positionWorld + normalWorld * normalBias), divided by w, y flipped,
 // z biased; PCFShadowFilter's five Vogel-disk taps rotated by interleaved gradient noise of the
-// fragment coordinate; 1 outside the shadow frustum; then mix(1, shadow, intensity).
-// three's PCFSoftShadowFilter: the uv snapped to the texel grid, four gathers around it compared with
-// z, and the 3x3 texel footprint weighted by the fractional position, over nine.
-static ExprId softShadowSamples(Program& f, Tsl& t, uint32_t map, ExprId uv, ExprId z, ExprId mapSize) {
-    const ExprId texelSize = f.div(f.construct(Type::vec(2), {t.f(1)}), mapSize);
-    const ExprId fr = f.call("fract", {f.add(f.mul(uv, mapSize), f.construct(Type::vec(2), {t.f(0.5f)}))});
-    const ExprId snapped = f.sub(uv, f.mul(f.sub(fr, f.construct(Type::vec(2), {t.f(0.5f)})), texelSize));
-    const ExprId c1 = f.gatherCompare(map, snapped, z, -1, 1);
-    const ExprId c2 = f.gatherCompare(map, snapped, z, 1, 1);
-    const ExprId c3 = f.gatherCompare(map, snapped, z, -1, -1);
-    const ExprId c4 = f.gatherCompare(map, snapped, z, 1, -1);
-    const ExprId fx = f.swizzle(fr, "x"), fy = f.swizzle(fr, "y");
-    const auto lane = [&](ExprId v, const char* c) { return f.swizzle(v, c); };
-    const ExprId row1 = f.mul(f.add(f.add(f.call("mix", {lane(c1, "x"), lane(c2, "y"), fx}), lane(c1, "y")), lane(c2, "x")), fy);
-    const ExprId row2 = f.add(f.add(f.call("mix", {lane(c1, "w"), lane(c2, "z"), fx}), lane(c1, "z")), lane(c2, "w"));
-    const ExprId row3 = f.add(f.add(f.call("mix", {lane(c3, "x"), lane(c4, "y"), fx}), lane(c3, "y")), lane(c4, "x"));
-    const ExprId row4 = f.mul(f.add(f.add(f.call("mix", {lane(c3, "w"), lane(c4, "z"), fx}), lane(c3, "z")), lane(c4, "w")),
-                              t.oneMinus(fy));
-    return f.mul(f.add(f.add(f.add(row1, row2), row3), row4), t.f(1.0f / 9.0f));
-}
-
-static ExprId shadowFactor(Program& f, Tsl& t, std::size_t index, ExprId positionWorld, ExprId normalWorld, bool soft, bool leaf) {
+// fragment coordinate; 1 outside the shadow frustum; then mix(1, shadow, intensity). r187 deleted
+// PCFSoftShadowFilter (src/nodes/lighting/ShadowFilterNode.js), so this is every shadow filter three has.
+static ExprId shadowFactor(Program& f, Tsl& t, std::size_t index, ExprId positionWorld, ExprId normalWorld, bool leaf) {
     const std::string at = "light" + std::to_string(index);
     const uint32_t map = f.textureDepth("shadow" + std::to_string(index));
     const ExprId world = shadowWorld(f, positionWorld, normalWorld, at, leaf);
@@ -859,21 +737,17 @@ static ExprId shadowFactor(Program& f, Tsl& t, std::size_t index, ExprId positio
     const ExprId x = f.swizzle(projected, "x"), y = t.oneMinus(f.swizzle(projected, "y"));
     const ExprId z = f.add(f.swizzle(projected, "z"), f.uniform(at + "ShadowBias", Type::f32()));
     const ExprId uv = f.construct(Type::vec(2), {x, y});
-    ExprId shadow = kInvalid;
-    if (soft) {
-        shadow = softShadowSamples(f, t, map, uv, z, f.uniform(at + "ShadowMapSize", Type::vec(2)));
-    } else {
-        const ExprId texelSize = f.div(f.construct(Type::vec(2), {t.f(1)}), f.uniform(at + "ShadowMapSize", Type::vec(2)));
-        const ExprId radiusScaled = f.mul(f.uniform(at + "ShadowRadius", Type::f32()), f.swizzle(texelSize, "x"));
-        const ExprId phi = noisePhi(f, t);
-        ExprId sum = kInvalid;
-        for (int i = 0; i < 5; ++i) {
-            const ExprId disk = vogelDisk(f, t, i, phi);
-            const ExprId tap = f.sampleCompare(map, f.add(uv, f.mul(disk, radiusScaled)), z);
-            sum = sum == kInvalid ? tap : f.add(sum, tap);
-        }
-        shadow = f.mul(sum, t.f(1.0f / 5.0f));
+    // r187 ShadowFilterNode.js:96 `radiusScaled = radius.mul(texelSize)`: the radius scales each axis by its own texel.
+    const ExprId texelSize = f.div(f.construct(Type::vec(2), {t.f(1)}), f.uniform(at + "ShadowMapSize", Type::vec(2)));
+    const ExprId radiusScaled = f.mul(f.uniform(at + "ShadowRadius", Type::f32()), texelSize);
+    const ExprId phi = noisePhi(f, t);
+    ExprId sum = kInvalid;
+    for (int i = 0; i < 5; ++i) {
+        const ExprId disk = vogelDisk(f, t, i, phi);
+        const ExprId tap = f.sampleCompare(map, f.add(uv, f.mul(disk, radiusScaled)), z);
+        sum = sum == kInvalid ? tap : f.add(sum, tap);
     }
+    ExprId shadow = f.mul(sum, t.f(1.0f / 5.0f));
     // frustumTest: x and y in [0, 1] and z <= 1, else 1.
     shadow = f.select(f.less(x, t.f(0)), t.f(1), shadow);
     shadow = f.select(f.less(t.f(1), x), t.f(1), shadow);
@@ -1337,7 +1211,7 @@ static ExprId virtualShadowFactor(Program& f, Tsl& t, std::size_t index, int lev
 
 // `kind` upper case: the light casts a shadow this mesh receives; `positionWorld` is then read.
 static Incoming incoming(Program& f, Tsl& t, char kind, std::size_t index, ExprId positionView,
-                         ExprId positionWorld = kInvalid, ExprId normalWorld = kInvalid, bool softShadows = false, bool leaf = false, bool lampSize = false) {
+                         ExprId positionWorld = kInvalid, ExprId normalWorld = kInvalid, bool leaf = false, bool lampSize = false) {
     const std::string at = "light" + std::to_string(index);
     ExprId color = f.uniform(at + "Color", Type::vec(3));
     if (kind >= '1' && kind <= '8') {
@@ -1350,7 +1224,7 @@ static Incoming incoming(Program& f, Tsl& t, char kind, std::size_t index, ExprI
     }
     if (kind >= 'A' && kind <= 'Z') {
         const ExprId shadow = kind == 'P' ? pointShadowFactor(f, t, index, positionWorld, normalWorld, leaf)
-                                          : shadowFactor(f, t, index, positionWorld, normalWorld, softShadows, leaf);
+                                          : shadowFactor(f, t, index, positionWorld, normalWorld, leaf);
         color = f.mul(color, shadow); // colorNode.mul(shadowNode)
         kind = static_cast<char>(kind - 'A' + 'a');
     }
@@ -1460,19 +1334,20 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     const ExprId materialRoughness = slotValue(f, slots, variant.nodes.roughnessNode, Type::f32(), roughnessFactor);
     out.materialProperties = f.construct(Type::vec(4), {metalness, materialRoughness, t.f(0), t.f(1)});
 
-    // getRoughness: max(roughness, 0.0525) + getGeometryRoughness, capped at 1.
+    // getRoughness: max(roughness, 0.045) + getGeometryRoughness, capped at 1. r187 raises the floor from
+    // r185's 0.0525 to Filament's MIN_PERCEPTUAL_ROUGHNESS (getRoughness.js:10).
     const ExprId dxy = f.call("max", {f.call("abs", {f.call("dFdx", {normalViewGeometry})}),
                                       f.call("abs", {f.call("dFdy", {normalViewGeometry})})});
     const ExprId geometryRoughness =
         f.call("max", {f.call("max", {f.swizzle(dxy, "x"), f.swizzle(dxy, "y")}), f.swizzle(dxy, "z")});
-    ExprId roughness = f.call("min", {f.add(f.call("max", {materialRoughness, t.f(0.0525f)}),
+    ExprId roughness = f.call("min", {f.add(f.call("max", {materialRoughness, t.f(0.045f)}),
                                                   geometryRoughness), t.f(1)});
 
     // MeshStandardNodeMaterial.setupSpecular, or MeshPhysicalNodeMaterial's setupSpecular.
-    // Derivatives must execute before cubeUV's per-fragment branches (three's roughness variable).
+    // Derivatives must execute before the environment's per-fragment branches (three's roughness variable).
     if (variant.environment) roughness = f.load(f.var(Type::f32(), roughness));
-    // specularF90 (mix(specularIntensity, 1, metalness)) feeds only PhysicalLightingModel's indirect
-    // specular, which arrives with environment lighting; direct light passes f90: 1 for every material.
+    // specularF90 (mix(specularIntensity, 1, metalness)) is BRDF_GGX's f90 and F_Schlick's f90 in the direct
+    // term since r187 (PhysicalLightingModel.js:678-680), as well as the indirect term's.
     ExprId specularColorBlended;
     ExprId specularF90;
     ExprId f0Dielectric;
@@ -1496,11 +1371,26 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
         specularF90 = t.f(1);
     }
     const ExprId diffuseContribution = f.mul(diffuseColor, t.oneMinus(metalness));
-    const Surface surface{n, positionViewDirection, roughness, specularColorBlended, t.f(1), f.texture2d("dfg")};
+    // PhysicalLightingModel.start (r187 :591-607): the DFG texel at (roughness, dotNV) is sampled once and
+    // shared by the direct compensation and by both indirect paths, and the dielectric multiscattering is
+    // computed up front so the indirect diffuse layer can subtract it. specularColor is the PropertyNode
+    // (0.04 for a standard material, the physical program's f0).
+    const uint32_t dfg = f.texture2d("dfg");
+    const Surface surface{n, positionViewDirection, roughness, specularColorBlended, specularF90, dfg};
+    const ExprId dfgTexel =
+        f.load(f.var(Type::vec(2), dfgLut(t, surface, t.saturate(t.dot(n, positionViewDirection)))));
+    // Energy of the single-scattering lobe in a white furnace (F0 = F90 = 1); the energy lost to multiple
+    // scattering is added back, tinted by F0 (Practical Multiple Scattering Compensation, equation 16).
+    const ExprId ess = f.add(f.swizzle(dfgTexel, "x"), f.swizzle(dfgTexel, "y"));
+    const ExprId multiScatteringCompensation =
+        f.add(f.mul(specularColorBlended, f.sub(f.div(t.f(1), ess), t.f(1))), t.f(1));
+    const Multiscatter dielectric = computeMultiscattering(t, dfgTexel, f0Dielectric, specularF90);
+    const Multiscatter metallic = computeMultiscattering(t, dfgTexel, diffuseColor, specularF90);
+    const ExprId energyLoss = t.oneMinus(f.add(dielectric.single, dielectric.multi));
 
     // MeshPhysicalNodeMaterial.setupVariants with useClearcoat: clearcoat = materialClearcoat (times the
     // clearcoatMap's red), clearcoatRoughness = getRoughness(materialClearcoatRoughness, times the
-    // clearcoatRoughnessMap's red). PhysicalLightingModel's clearcoatF0 = vec3(0.04), clearcoatF90 = 1.
+    // clearcoatRoughnessMap's green). PhysicalLightingModel's clearcoatF0 = vec3(0.04), clearcoatF90 = 1.
     const bool coated = physical && variant.clearcoat;
     ExprId clearcoat = kInvalid, clearcoatNormalView = kInvalid;
     Surface coat{};
@@ -1510,9 +1400,10 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
         if (variant.reads(kClearcoatMap)) clearcoat = f.mul(clearcoat, f.swizzle(pbrTexel(f, variant, kClearcoatMap), "x"));
         ExprId clearcoatRoughnessFactor = f.uniform("clearcoatRoughness", Type::f32());
         if (variant.reads(kClearcoatRoughnessMap))
+            // MaterialNode.js:295 (r187) reads the clearcoat roughness map's GREEN channel; r185 read red.
             clearcoatRoughnessFactor =
-                f.mul(clearcoatRoughnessFactor, f.swizzle(pbrTexel(f, variant, kClearcoatRoughnessMap), "x"));
-        ExprId clearcoatRoughness = f.call("min", {f.add(f.call("max", {clearcoatRoughnessFactor, t.f(0.0525f)}), geometryRoughness), t.f(1)});
+                f.mul(clearcoatRoughnessFactor, f.swizzle(pbrTexel(f, variant, kClearcoatRoughnessMap), "y"));
+        ExprId clearcoatRoughness = f.call("min", {f.add(f.call("max", {clearcoatRoughnessFactor, t.f(0.045f)}), geometryRoughness), t.f(1)});
         // Its derivatives run before the environment's branches, as roughness's do.
         if (variant.environment) clearcoatRoughness = f.load(f.var(Type::f32(), clearcoatRoughness));
         clearcoatNormalView = clearcoatNormal(f, variant, n);
@@ -1521,7 +1412,9 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
         clearcoatSpecularDirect = f.construct(Type::vec(3), {t.f(0)});
     }
 
-    // PhysicalLightingModel.direct for each light, accumulated in three's order.
+    // PhysicalLightingModel.direct (r187 :648-703) for each light, accumulated in three's order. Light
+    // reflected by the specular interface is not available to the diffuse layer (glTF fresnel_mix), and the
+    // specular lobe is scaled by the multi-scattering compensation rather than adding a multi-scatter BRDF.
     const ExprId brdfLambert = f.mul(diffuseContribution, t.f(1 / kPi));
     const ExprId fragmentView = f.varying("positionView", Type::vec(3));
     ExprId directDiffuse = f.construct(Type::vec(3), {t.f(0)}), directSpecular = directDiffuse;
@@ -1531,8 +1424,13 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     // SubstrateEvaluation.ush:881-899 (the SSS_TYPE_TWO_SIDED_WRAP branch); Opacity 1 keeps the light's own shadow.
     const ExprId subsurface = variant.twoSidedFoliage ? f.uniform("subsurfaceColor", Type::vec(3)) : kInvalid;
     for (std::size_t i = 0; i < lights.kinds.size(); ++i) {
-        const Incoming light = incoming(f, t, lights.kinds[i], i, fragmentView, positionWorld, normalWorld, lights.softShadows, variant.leafReceiver, variant.roughDiffuse);
+        const Incoming light = incoming(f, t, lights.kinds[i], i, fragmentView, positionWorld, normalWorld, variant.leafReceiver, variant.roughDiffuse);
         const ExprId irradiance = f.mul(t.saturate(t.dot(n, light.direction)), light.color);
+        // PhysicalLightingModel.direct :675-678: F_Schlick on the specular interface at dotVH, which the
+        // diffuse layer loses.
+        const ExprId halfDir = f.call("normalize", {f.add(light.direction, positionViewDirection)});
+        const ExprId dotVH = t.saturate(t.dot(positionViewDirection, halfDir));
+        const ExprId oneMinusF = t.oneMinus(fSchlick(t, f0Dielectric, specularF90, dotVH));
         ExprId diffuseBrdf = brdfLambert;
         if (variant.roughDiffuse) {
             // EON's roughness is 0.4 x the material's, fading to Lambert as the lamp's Source Radius reaches 20 cm.
@@ -1541,8 +1439,9 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
                 r = f.mul(r, t.saturate(t.oneMinus(f.mul(light.sourceRadius, t.f(1 / kEonSizeLimit)))));
             diffuseBrdf = f.mul(brdfLambert, roughDiffuseFactor(f, t, diffuseContribution, r, n, positionViewDirection, light.direction));
         }
-        directDiffuse = f.add(directDiffuse, f.mul(irradiance, diffuseBrdf));
-        directSpecular = f.add(directSpecular, f.mul(irradiance, brdfGgxMultiscatter(t, surface, light.direction)));
+        directDiffuse = f.add(directDiffuse, f.mul(f.mul(irradiance, diffuseBrdf), oneMinusF));
+        directSpecular =
+            f.add(directSpecular, f.mul(f.mul(irradiance, brdfGgx(t, surface, light.direction)), multiScatteringCompensation));
         if (subsurface != kInvalid) {
             const ExprId wrap = t.saturate(f.div(f.add(f.neg(t.dot(n, light.direction)), t.f(0.5f)), t.f(2.25f)));
             const ExprId scatter = dGgx(t, t.f(0.6f), t.saturate(f.neg(t.dot(positionViewDirection, light.direction))));
@@ -1555,40 +1454,37 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
         }
     }
 
-    // Hemisphere and ambient irradiance, then PhysicalLightingModel.indirect diffuse.
+    // Hemisphere and ambient irradiance, then PhysicalLightingModel.indirectDiffuse (r187 :786-798): energy
+    // reflected by the specular lobe is not available to the diffuse layer.
     const ExprId hemiWeight = f.add(f.mul(t.dot(normalWorld, f.call("normalize", {f.uniform("hemisphereDirection", Type::vec(3))})), t.f(0.5f)), t.f(0.5f));
     const ExprId hemisphere = f.call("mix", {f.uniform("hemisphereGround", Type::vec(3)), f.uniform("hemisphereSky", Type::vec(3)), hemiWeight});
     const ExprId indirectIrradiance = f.add(hemisphere, f.uniform("ambient", Type::vec(3)));
-    const ExprId indirectDiffuse = f.mul(indirectIrradiance, brdfLambert);
+    const ExprId indirectDiffuse = f.mul(f.mul(indirectIrradiance, brdfLambert), energyLoss);
 
-    // EnvironmentNode: IBL irradiance (normalWorld, level 1) and radiance (the roughness-mixed
-    // reflection, level = roughness), then PhysicalLightingModel.indirect. The PMREM texture is a
-    // render target, so three negates the sample direction's y before textureCubeUV.
+    // EnvironmentNode: IBL irradiance (normalWorld at level 1, which roughnessToMip turns into the
+    // last mip) and radiance (the roughness-mixed reflection at level = roughness), then
+    // PhysicalLightingModel.indirect. r187's PMREM is a cube texture (EnvironmentNode.js:104-118),
+    // so it is sampled as one; the render-target Y flip is gone with the cubeUV atlas.
     ExprId environmentDiffuse = kInvalid, environmentSpecular = kInvalid;
     if (variant.environment) {
-        const uint32_t env = f.texture2d("env");
+        const uint32_t env = f.textureCube("env");
         const ExprId envIntensity = f.uniform("envMapIntensity", Type::f32());
-        auto flipped = [&](ExprId v) {
-            // PMREMNode flips the render target's Y before materialEnvRotation, not after it.
-            v = f.construct(Type::vec(3), {f.swizzle(v, "x"), f.neg(f.swizzle(v, "y")), f.swizzle(v, "z")});
+        auto rotated = [&](ExprId v) {
+            // PMREMNode.setup: materialEnvRotation turns the sample direction (:336); the x negation
+            // for WebGPU's cube face order is pmremSample's.
             return f.swizzle(f.mul(f.uniform("envRotation", Type::mat(4, 4)), f.construct(Type::vec(4), {v, t.f(0)})), "xyz");
         };
         // material.irradianceNode replaces the environment's diffuse irradiance (the PMREM level-1 sample, whose
         // blur leaks a bright horizon into a surface that faces down) with the author's own, already cosine-weighted.
         const ExprId iblIrradiance = variant.nodes.irradianceNode
             ? f.mul(slotValue(f, slots, variant.nodes.irradianceNode, Type::vec(3), kInvalid), t.f(kPi))
-            : f.mul(f.mul(textureCubeUV(f, env, flipped(normalWorld), t.f(1)), t.f(kPi)), envIntensity);
+            : f.mul(f.mul(pmremSample(f, env, rotated(normalWorld), t.f(1), "envMap"), t.f(kPi)), envIntensity);
         ExprId reflectVec = f.call("reflect", {f.neg(positionViewDirection), n});
         reflectVec = f.call("normalize", {f.call("mix", {reflectVec, n, f.mul(f.mul(t.pow2(roughness), roughness), roughness)})});
         reflectVec = transformDirection(f, f.uniform("cameraWorldMatrix", Type::mat(4, 4)), reflectVec);
-        const ExprId radiance = f.mul(textureCubeUV(f, env, flipped(reflectVec), roughness), envIntensity);
-        const ExprId dotNV = t.saturate(t.dot(n, positionViewDirection));
-        const uint32_t dfg = f.texture2d("dfg");
-        const Multiscatter dielectric = computeMultiscattering(t, roughness, dotNV, f0Dielectric, specularF90, dfg);
-        const Multiscatter metallic = computeMultiscattering(t, roughness, dotNV, diffuseColor, specularF90, dfg);
+        const ExprId radiance = f.mul(pmremSample(f, env, rotated(reflectVec), roughness, "envMap"), envIntensity);
         const ExprId single = f.call("mix", {dielectric.single, metallic.single, metalness});
         const ExprId multi = f.call("mix", {dielectric.multi, metallic.multi, metalness});
-        const ExprId energyLoss = t.oneMinus(f.add(dielectric.single, dielectric.multi));
         const ExprId cosineWeightedIrradiance = f.mul(iblIrradiance, t.f(1 / kPi));
         environmentSpecular = f.add(f.mul(radiance, single), f.mul(multi, cosineWeightedIrradiance));
         environmentDiffuse = f.mul(f.mul(diffuseContribution, energyLoss), cosineWeightedIrradiance);
@@ -1599,7 +1495,7 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
             ccReflect = f.call("normalize", {f.call("mix", {ccReflect, clearcoatNormalView,
                                                             f.mul(f.mul(t.pow2(coat.roughness), coat.roughness), coat.roughness)})});
             ccReflect = transformDirection(f, f.uniform("cameraWorldMatrix", Type::mat(4, 4)), ccReflect);
-            const ExprId clearcoatRadiance = f.mul(textureCubeUV(f, env, flipped(ccReflect), coat.roughness), envIntensity);
+            const ExprId clearcoatRadiance = f.mul(pmremSample(f, env, rotated(ccReflect), coat.roughness, "envMap"), envIntensity);
             const ExprId fab = dfgLut(t, coat, t.saturate(t.dot(clearcoatNormalView, positionViewDirection)));
             const ExprId clearcoatEnv = f.add(f.mul(coat.f0, f.swizzle(fab, "x")), f.mul(coat.f90, f.swizzle(fab, "y")));
             clearcoatSpecularIndirect = f.mul(clearcoatRadiance, clearcoatEnv);
@@ -1765,7 +1661,7 @@ StandardPrograms buildLit(bool phong, const VertexVariant& variant, const LightL
     const ExprId shininess = phong ? f.call("max", {f.uniform("shininess", Type::f32()), t.f(1e-4f)}) : kInvalid;
     ExprId directDiffuse = f.construct(Type::vec(3), {t.f(0)}), directSpecular = directDiffuse;
     for (std::size_t i = 0; i < lights.kinds.size(); ++i) {
-        const Incoming light = incoming(f, t, lights.kinds[i], i, fragmentView, positionWorld, normalWorld, lights.softShadows, variant.leafReceiver);
+        const Incoming light = incoming(f, t, lights.kinds[i], i, fragmentView, positionWorld, normalWorld, variant.leafReceiver);
         const ExprId irradiance = f.mul(t.saturate(t.dot(n, light.direction)), light.color);
         directDiffuse = f.add(directDiffuse, f.mul(irradiance, brdfLambert));
         if (phong)

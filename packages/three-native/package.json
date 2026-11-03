@@ -18,7 +18,7 @@
     "typecheck": "pnpm run generate && tsc --noEmit -p tsconfig.json"
   },
   "devDependencies": {
-    "@types/three": "0.185.3",
+    "@types/three": "0.187.0",
     "publint": "0.3.22",
     "three": "catalog:",
     "typescript": "catalog:"

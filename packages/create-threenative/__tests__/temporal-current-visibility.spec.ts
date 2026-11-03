@@ -106,8 +106,10 @@ describe("matched cheap visibility material", () => {
         if (object === instance) {
           for (const b of [beauty, cheap]) {
             const arrays = Reflect.get(b, "bufferAttributes").map(
-              (attribute: { node: { value: { array: Float32Array } } }) =>
-                attribute.node.value.array,
+              // r187 binds an object's own attribute through ReferenceBufferAttributeNode, which
+              // resolves it in setup() (nodes/accessors/ReferenceAttributeNode.js:45,120).
+              (attribute: { node: { attribute: { array: Float32Array } } }) =>
+                attribute.node.attribute.array,
             );
             expect(arrays).toContain(instance.instanceMatrix.array);
             expect(new Set(arrays).size).toBeGreaterThanOrEqual(2);

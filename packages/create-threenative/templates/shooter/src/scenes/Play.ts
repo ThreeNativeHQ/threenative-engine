@@ -317,9 +317,10 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     });
     // Thumb controls. Registered so a scenario can assert a finger actually drove the player,
     // and read every tick below before the player consumes its input.
-    // Two seconds in, every pooled pipeline has been through a real draw, so the unused slots can
-    // stop being submitted. Worth ~a third of the draw calls on a phone.
-    ctx.after(2, () => {
+    // Readiness follows a sustained window of real frames, so every pooled pipeline has been through
+    // a draw and the unused slots can stop being submitted. Worth ~a third of the draw calls on a
+    // phone. A fixed delay ran past the reveal once startup got faster: 731 draws where 104 hold.
+    void ctx.startup.whenReady().then(() => {
       decals.settle();
       smoke.settle();
       impacts.settle();

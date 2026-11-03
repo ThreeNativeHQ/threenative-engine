@@ -718,7 +718,7 @@ async function applyPackageSources(
 
 const FRAMEWORK_PATCH_DIRECTORY = "patches";
 const FRAMEWORK_PATCH_SOURCES: Readonly<Record<string, string>> = {
-  "three@0.185.1.patch": "../core/patches/three@0.185.1.patch",
+  "three@0.187.0.patch": "../core/patches/three@0.187.0.patch",
   "vite@8.2.0.patch": "../../patches/vite@8.2.0.patch",
   "@tailwindcss__node@4.3.3.patch": "../../patches/@tailwindcss__node@4.3.3.patch",
 };
