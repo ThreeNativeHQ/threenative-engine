@@ -40,8 +40,10 @@ describe("calibration scene units (PRD-646)", () => {
     const solidAngle = (coneDeg: number) => 2 * Math.PI * (1 - Math.cos((coneDeg * Math.PI) / 180));
     expect(candela(600, "lumens", 10)).toBeCloseTo(600 / solidAngle(10), 9);
     expect(candela(600, "lumens", 35)).toBeCloseTo(600 / solidAngle(35), 9);
-    // The same lumens are 47.7 cd over the sphere and 6286 cd down a 10 degree cone.
-    expect(candela(600, "lumens", 10)).toBeCloseTo(6285.6, 0);
+    // The same lumens are 47.7 cd over the sphere and 6286 cd down a 10 degree cone: the value the
+    // comment above `candela` names, to the candela.
+    expect(candela(600, "lumens", 10)).toBeCloseTo(6286, 0);
+    expect(600 / (2 * Math.PI * (1 - Math.cos((10 * Math.PI) / 180)))).toBeCloseTo(6285.6381, 4);
     expect(candela(600, "lumens") / candela(600, "lumens", 35)).toBeCloseTo(
       solidAngle(35) / (4 * Math.PI),
       9,

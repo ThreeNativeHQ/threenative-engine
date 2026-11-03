@@ -31,8 +31,9 @@ export const SPOT_HALF_ANGLE_LIMIT_DEG = 88.9;
  * light (no cone, cos = -1) spreads its lumens over the sphere and a spot light fills its cone
  * (UE 5.8.3: Engine/Source/Runtime/Engine/Private/Components/SpotLightComponent.cpp:54-98). A
  * spot's angle is the angle from its axis, which is three's `SpotLight.angle`, and Unreal clamps
- * it at 88.9 degrees. The same 600 lumens are 48 candela over the sphere and 3625 down a 10
- * degree cone; the conversion is the whole difference between a dim bulb and a torch.
+ * it at 88.9 degrees. The same 600 lumens are 47.7 candela over the sphere and 6286 down a 10
+ * degree cone (600 / (2 pi (1 - cos 10 deg))); the conversion is the whole difference between a
+ * dim bulb and a torch.
  */
 export function candela(intensity: number, units: string, outerConeDeg?: number): number {
   if (units === "candelas") return intensity;
