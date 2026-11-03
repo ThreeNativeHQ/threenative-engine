@@ -94,6 +94,15 @@ export interface IDummy {
 
 const NULL_GROUND: IGround = { splat() {} };
 const NULL_FLUID: IFluid = { res: 0, acquire: () => null };
+const NULL_TRAILS: ITrails = { acquire: () => null };
+const NULL_RIG: IRig = {
+  shake() {},
+  punch() {},
+  hitstop() {},
+  timeScale: 1,
+  apply() {},
+  restore() {},
+};
 
 export interface IFxOptions {
   camera: Camera;
@@ -127,13 +136,16 @@ export function createFx(o: IFxOptions) {
   // The field draws its sim passes with the raw renderer; it is built first, before any material
   // that reads U.uGroundA/B (common.ts setGroundTexture). A game passes its own to override one.
   const raw = (o.renderer as { raw?: unknown } | undefined)?.raw ?? o.renderer;
+  // TEMP lane gate (team-lead, removed at integration): build only with ?lane=world or ?lane=all
+  const worldLanes = new URLSearchParams(globalThis.location?.search ?? "").getAll("lane");
+  const worldLane = worldLanes.includes("world") || worldLanes.includes("all");
   const groundField =
-    o.ground === undefined && raw !== undefined
+    o.ground === undefined && raw !== undefined && worldLane
       ? new GroundField(raw as IFieldRenderer, Q.groundSize)
       : undefined;
   const trailRibbons =
-    o.trails === undefined ? new TrailRibbons({ max: 64, points: 48 }) : undefined;
-  const shockwaves = o.shocks === undefined ? new Shockwaves() : undefined;
+    o.trails === undefined && worldLane ? new TrailRibbons({ max: 64, points: 48 }) : undefined;
+  const shockwaves = o.shocks === undefined && worldLane ? new Shockwaves() : undefined;
   const fx = {
     camera: o.camera,
     scenes: { fx: fxTarget.scene },
@@ -143,7 +155,7 @@ export function createFx(o: IFxOptions) {
     arena: o.arena ?? { focus: { color: { r: 1, g: 1, b: 1 } as Color }, setFocus() {} },
     ground: o.ground ?? groundField ?? NULL_GROUND,
     particles: null as unknown as Particles,
-    trails: (o.trails ?? trailRibbons) as ITrails,
+    trails: o.trails ?? (trailRibbons as ITrails | undefined) ?? NULL_TRAILS,
     volumes,
     shocks: (o.shocks ?? shockwaves) as IShocks | undefined,
     // the shared combustion fluid (upstream FluidVolume.get(fx)): built on first use, inside the spell's
@@ -159,7 +171,7 @@ export function createFx(o: IFxOptions) {
     renderer: ((o.renderer as { raw?: unknown } | undefined)?.raw ?? o.renderer) as
       | ConstructorParameters<typeof FluidVolume>[0]["renderer"]
       | undefined,
-    rig: o.rig ?? (new CameraRig() as IRig),
+    rig: o.rig ?? (worldLane ? (new CameraRig() as IRig) : NULL_RIG),
     lights,
     forces,
     impacts,
@@ -198,8 +210,11 @@ export function createFx(o: IFxOptions) {
   });
   const casts = new Casts(fx);
   fx.casts = casts;
+  // one GPU particle pool for every spell (upstream main.js: new Particles(renderer, { ground }))
   const particles = new Particles(o.renderer ?? null, { ground: fx.ground as IParticleGround });
   fx.particles = particles;
+  // upstream builds once every spell has registered: here, before the first warm-up or frame.
+  // Engine: one world scene, so glow (upstream: lines scene) and debris (opaque scene) join the fx group
   // TEMP lane gate (team-lead, removed at integration): build only with ?lane=particles or ?lane=all
   const lanes = new URLSearchParams(globalThis.location?.search ?? "").getAll("lane");
   const particlesLane = lanes.includes("particles") || lanes.includes("all");
@@ -259,6 +274,8 @@ export function createFx(o: IFxOptions) {
   function addSpell<S extends ISpell & { create(fx: Fx): NonNullable<ISpell["inst"]> }>(s: S): S {
     (s as { defaults?: object }).defaults = { ...s.params };
     s.params = { ...s.params };
+    if (particles.built)
+      throw new Error(`addSpell(${s.id}): add every spell before the first frame`);
     for (const [k, def] of Object.entries((s as { kinds?: object }).kinds ?? {}))
       particles.addKind(`${s.id}.${k}`, def);
     const before = sceneObjects();
@@ -279,7 +296,7 @@ export function createFx(o: IFxOptions) {
     let job = warming.get(s);
     if (job === undefined) {
       buildParticles();
-      particles.warm(true);
+      particles.warm(true); // the particle draws compile with the first spell's warm-up
       const objects = spellObjects.get(s) ?? [];
       const saved = objects.map((obj) => obj.visible);
       for (const obj of objects) obj.visible = true;
