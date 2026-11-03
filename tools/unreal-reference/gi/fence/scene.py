@@ -17,9 +17,11 @@ WHITE = {"baseColor": [0.753, 0.82, 0.956], "roughness": 1.0, "metallic": 0.0}
 ORANGE = {"baseColor": [0.871, 0.287, 0.076], "roughness": 1.0, "metallic": 0.0}
 CYAN = {"baseColor": [0.117, 0.823, 0.672], "roughness": 1.0, "metallic": 0.0}
 MAGENTA = {"baseColor": [0.723, 0.168, 0.737], "roughness": 1.0, "metallic": 0.0}
+# The fixture's unlit red occluder: emissive only, bright enough to read as saturated red after the tone curve.
+RED = {"baseColor": [0.0, 0.0, 0.0], "roughness": 1.0, "metallic": 0.0, "emissive": [1.0, 0.0, 0.0], "emissiveStrength": 60.0}
 
 SCENE = {
-    "materials": {"White": WHITE, "Orange": ORANGE, "Cyan": CYAN, "Magenta": MAGENTA},
+    "materials": {"White": WHITE, "Orange": ORANGE, "Cyan": CYAN, "Magenta": MAGENTA, "Red": RED},
     # name: size [x, y, z] m, centre [x, y, z] m, material.
     "boxes": [
         *(
@@ -32,6 +34,9 @@ SCENE = {
             {"name": f"Marker_{i}", "size": [0.32, 0.32, 0.32], "position": [-0.5 + i * 0.6, -0.9, 0.3], "material": "Cyan", "region": "Markers"}
             for i in range(3)
         ),
+        # The fixture's occluder (a 0.8 m plane, here 1 cm thick): every motion run hides it but `reveal`, which shows it
+        # until its reveal frame, so newly revealed fence pixels measure stale history as the gate does.
+        {"name": "Occluder", "size": [0.8, 0.8, 0.01], "position": [0.25, 0.45, 1.3], "material": "Red", "hidden": True},
     ],
     # The fixture's sun direction (2, 5, 3) as one point light far along it; a template-lit scene takes no motion run.
     "lights": [
@@ -56,5 +61,7 @@ SCENE = {
     "motion": {
         # A still camera: what the history keeps of sub-texel bars once the jitter has cycled.
         "hold": {"frames": 60, "camera": {"kind": "pose", "pose": "fence"}},
+        # The same still camera; the occluder shows on frames 0-43 and is gone from frame 44, once the jitter has cycled.
+        "reveal": {"frames": 60, "camera": {"kind": "pose", "pose": "fence"}, "show": {"Occluder": 44}},
     },
 }

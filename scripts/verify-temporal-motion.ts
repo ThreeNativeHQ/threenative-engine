@@ -497,6 +497,14 @@ assert.ok(
 );
 // Pinned before the first runtime measurement. These are a narrow-fixture experimental bar,
 // not a claim of general image quality, native qualification or saved GPU time.
+// Owner decision 2026-11-03 (PRD-539 option 1): the low-input bar is Unreal TSR on the same scene and input.
+// Unreal 5.8.3 TSR at 66.7% (history 200%) on tools/unreal-reference/gi/fence reads .0816 edge error against
+// its own no-AA .0468 (each against its own 400% no-AA reference), so the low-input arm may cost at most 1.74x.
+const UNREAL_LOW_INPUT_EDGE_RATIO = 0.0816 / 0.0468;
+// The same scene's `reveal` run (the fixture's occluder, hidden at frame 44): Unreal TSR at 66.7% leaves
+// .0820-.0898 of the revealed pixels stale on frames 1-7 after the reveal (TSR at 100%: .0820-.1543). The
+// low-input arm may leave at most the lowest of them on every frame after the first.
+const UNREAL_LOW_INPUT_REVEAL_STALE = 0.082;
 const checks = {
   causalNegativeControl:
     causalReveals["unchecked-history"]?.every((frame) => frame.redTintFraction > 0.1) === true,
@@ -515,14 +523,15 @@ const checks = {
   revealRecovery: temporal.reveal.slice(1).every((frame) => frame.staleFraction <= 0.01),
   uncheckedHistoryDetected: unchecked.staleFraction > 0.1,
   zeroVelocityDetected: zeroVelocity.movingEdgeError > temporal.movingEdgeError * 1.02,
-  qualityEdgeImprovement: qualityTemporal.edgeError < qualityBaseline.edgeError * 0.95,
+  qualityEdgeImprovement:
+    qualityTemporal.edgeError < qualityBaseline.edgeError * UNREAL_LOW_INPUT_EDGE_RATIO,
   qualityStabilityImprovement:
     qualityTemporal.residualInstability < qualityBaseline.residualInstability * 0.95,
   qualityBeatsSpatialStability:
     qualityTemporal.residualInstability < (qualitySpatial.residualInstability ?? 0) * 0.95,
   qualityRevealRecovery: qualityTemporal.reveal
     .slice(1)
-    .every((frame) => frame.staleFraction <= 0.01),
+    .every((frame) => frame.staleFraction <= UNREAL_LOW_INPUT_REVEAL_STALE),
   qualityUncheckedHistoryDetected: qualityUnchecked.staleFraction > 0.1,
   qualityZeroVelocityDetected:
     (qualityZeroVelocity.movingEdgeError ?? 0) >
