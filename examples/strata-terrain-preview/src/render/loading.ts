@@ -335,7 +335,14 @@ export function createLoadingScreen(host: ILoadingHost): ILoadingController {
     }
     if (done) return;
     finish();
-    host.onReveal?.();
+    // Named and logged, never an unhandled rejection: a failed reveal probe leaves the world up.
+    try {
+      host.onReveal?.();
+    } catch (error) {
+      console.error(
+        `Strata reveal failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   })();
 
   return {
