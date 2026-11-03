@@ -65,19 +65,20 @@ function createHistoryResolve(resolve: TextureNode): NodeMaterial {
     const base = ivec2(uv().mul(size).sub(1.5).floor());
     const sum = vec4(0).toVar();
     const weightSum = float(0).toVar();
-    const low = vec4(Number.POSITIVE_INFINITY).toVar();
-    const high = vec4(0).toVar();
+    const samples: Node<"vec4">[] = [];
     for (let y = 0; y < 4; y++)
       for (let x = 0; x < 4; x++) {
         const at = ivec2(vec2(base.add(ivec2(x, y))).clamp(vec2(0), size.sub(1)));
-        const colour = resolve.load(at).max(0) as Node<"vec4">;
+        const colour = (resolve.load(at).max(0) as Node<"vec4">).toVar();
         const hdr = float(1).div(colour.r.add(colour.g.mul(2)).add(colour.b).add(4));
         const weight = hdr.mul((weights[x] ?? 0) * (weights[y] ?? 0));
         sum.addAssign(colour.mul(weight));
         weightSum.addAssign(weight);
-        low.assign(min(low, colour));
-        high.assign(max(high, colour));
+        samples.push(colour);
       }
+    // The range starts from a real sample: WGSL has no infinity literal.
+    const low = samples.reduce((a, b) => min(a, b));
+    const high = samples.reduce((a, b) => max(a, b));
     return sum.div(weightSum).clamp(low, high);
   })();
   return material;
