@@ -74,6 +74,8 @@ const reconstructionStruct = struct({
   color: "vec4",
   mean: "vec4",
   variance: "vec4",
+  aligned: "vec4",
+  alignment: "float",
 });
 
 /** Gaussian reconstruction on reduced axes at the samples' jittered centres. Native axes retain
@@ -85,6 +87,7 @@ export function reconstructNeighbourhood(
   inputSize: Node<"uvec2">,
   jitterOffset: Node<"vec2">,
   displaySize?: Node<"uvec2">,
+  historyFactor?: Node<"float">,
 ) {
   const inputSizeF = vec2(inputSize);
   const pIn = uvNode.mul(inputSizeF);
@@ -95,6 +98,12 @@ export function reconstructNeighbourhood(
   const sumWeight = float(0).toVar();
   const moment1 = vec4(0).toVar();
   const moment2 = vec4(0).toVar();
+  // PRD-539 refine kernel, Unreal TSR's sample weight (UE 5.8.3: Engine/Shaders/Private/
+  // TemporalSuperResolution/TSRKernels.ush:438-446): 1 - 1.9x² + 0.9x⁴ over the distance x in history
+  // pixels, so a jittered input sample feeds only the history pixels it actually lands near.
+  const alignedColor = vec4(0).toVar();
+  const alignedWeight = float(0).toVar();
+  const alignment = float(0).toVar();
   for (const [x, y] of offsets) {
     const tap = closestTap.add(ivec2(x, y));
     const tapCenter = vec2(tap).add(vec2(0.5).add(jitterOffset));
@@ -111,13 +120,24 @@ export function reconstructNeighbourhood(
     const sample = source.load(boundedTap).max(0);
     sumColor.addAssign(sample.mul(weight));
     sumWeight.addAssign(weight);
+    if (historyFactor !== undefined) {
+      const x2 = delta.mul(historyFactor).dot(delta.mul(historyFactor)).saturate();
+      const kernel = x2.mul(0.9).sub(1.9).mul(x2).add(1).saturate();
+      // Unreal's minimal spatial contribution keeps the gather defined where no sample is close.
+      alignedColor.addAssign(sample.mul(kernel.add(0.005)));
+      alignedWeight.addAssign(kernel.add(0.005));
+      alignment.assign(max(alignment, kernel));
+    }
     moment1.addAssign(sample);
     moment2.addAssign(sample.pow2());
   }
   const N = float(offsets.length);
   const mean = moment1.div(N);
   const variance = moment2.div(N).sub(mean.pow2()).max(0).sqrt();
-  return reconstructionStruct(sumColor.div(sumWeight.max(1e-6)), mean, variance);
+  const color = sumColor.div(sumWeight.max(1e-6));
+  return historyFactor === undefined
+    ? reconstructionStruct(color, mean, variance, color, float(1))
+    : reconstructionStruct(color, mean, variance, alignedColor.div(alignedWeight), alignment);
 }
 
 /**

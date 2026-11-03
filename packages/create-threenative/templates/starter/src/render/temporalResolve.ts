@@ -3,7 +3,7 @@
 // from this kernel; `temporalResolveMath.ts` and `temporalResolveDepth.ts` hold its equations.
 // Derived resolve source: three/examples/jsm/tsl/display/TRAANode.js (pinned 0.185.1).
 import type TRAANode from "three/addons/tsl/display/TRAANode.js";
-import { Fn, add, float, int, luminance, max, mix, texture, uv } from "three/tsl";
+import { Fn, add, float, int, luminance, max, mix, texture, uv, uvec2, vec2 } from "three/tsl";
 import type { Node } from "three/webgpu";
 import type { TemporalCurrentFootprint } from "./temporalCurrentFootprint.js";
 import {
@@ -26,6 +26,10 @@ export { CATMULL_ROM_BASIS } from "./temporalResolveMath.js";
 export interface ITemporalHistoryWeighting {
   historyScale: number;
   velocityWeightClamp: boolean;
+  /** Unreal TSR's refine rule (UE 5.8.3: TSRUpdateHistory.usf:1106-1168): while history is valid,
+   * the current frame enters each history pixel through the history-pixel kernel and weighs by how
+   * well its nearest jittered sample aligns with that pixel. Rejected pixels keep the coarse gather. */
+  alignmentRefine?: boolean;
 }
 
 /** Returns the amount of subpixel (expressed within [0, 1]) in the velocity. */
@@ -84,7 +88,9 @@ export function createExperimentalTemporalResolve(
   current?: TemporalCurrentFootprint,
   weighting: ITemporalHistoryWeighting = { historyScale: 1, velocityWeightClamp: false },
 ) {
-  const { historyScale, velocityWeightClamp } = weighting;
+  const { historyScale, velocityWeightClamp, alignmentRefine = false } = weighting;
+  if (alignmentRefine && current !== undefined)
+    throw new Error("Temporal AA alignment refine does not take the raw4 current footprint.");
   const node = source as TemporalResolveNode;
   const { historyValidity } = rejection;
   const { clipAABB } = createTemporalResolveMath(node);
@@ -104,13 +110,33 @@ export function createExperimentalTemporalResolve(
     // Reconstruction: gather the current frame's 3×3 input neighbourhood around the jittered sample
     // the scene pass drew, and read its moments for the variance clip from the same taps. At a 1:1
     // raster the plain current sample is exact; retain it instead of adding Gaussian blur.
+    // A full-resolution input under a 2x history keeps its owned point (the closest jittered tap)
+    // rather than the Gaussian gather: native axes are judged against the output raster, so the
+    // history scale is the only variable that changes.
+    const outputSize =
+      historyScale === 1
+        ? displaySize
+        : (uvec2(vec2(displaySize).div(historyScale).round()) as Node<"uvec2">);
     const reconstruction =
       current?.reconstruct(uvNode, displaySize) ??
-      reconstructNeighbourhood(node.beautyNode, uvNode, inputSize, jitterOffset, displaySize);
+      reconstructNeighbourhood(
+        node.beautyNode,
+        uvNode,
+        inputSize,
+        jitterOffset,
+        outputSize,
+        alignmentRefine ? float(displaySize.x).div(float(inputSize.x)) : undefined,
+      );
     const upsampled = inputSize.x.lessThan(displaySize.x).or(inputSize.y.lessThan(displaySize.y));
-    const currentColor = upsampled.select(
+    const coarseColor = upsampled.select(
       reconstruction.get("color") as Node<"vec4">,
       node.beautyNode.sample(uvNode),
+    ) as Node<"vec4">;
+    const alignment = reconstruction.get("alignment") as Node<"float">;
+    const currentColor = (
+      alignmentRefine
+        ? hasValidHistory.greaterThan(0.5).select(reconstruction.get("aligned"), coarseColor)
+        : coarseColor
     ) as Node<"vec4">;
     const mean = reconstruction.get("mean") as Node<"vec4">;
     const historyColor =
@@ -147,7 +173,10 @@ export function createExperimentalTemporalResolve(
         max(currentWeight, float(1).div(maxValidity.mul(historySamples).add(1))),
       );
     }
-    currentWeight.assign(hasValidHistory.select(currentWeight.add(motionFactor).saturate(), 1));
+    const blended = currentWeight.add(motionFactor).saturate();
+    currentWeight.assign(
+      hasValidHistory.select(alignmentRefine ? blended.mul(alignment) : blended, 1),
+    );
     // Reasonable gamma range is [0.75, 2]
     const varianceGamma = mix(0.5, 1, motionFactor.oneMinus().pow2());
     const variance = (reconstruction.get("variance") as Node<"vec4">).mul(varianceGamma);
