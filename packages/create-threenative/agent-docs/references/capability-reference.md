@@ -3538,6 +3538,16 @@ export function createFx(o: IFxOptions) { … }
 - **Use when:** an Ultra Elements spell such as the raymarched teardrop Fireball cast at a target · a volumetric fire spell drawn through the Three.js TSL node API on WebGPU
 - **Constraints:** call bakeNoise first: the volume shaders sample its noise, curl and blackbody textures
 
+### `Particles`
+
+`class` — The Ultra Elements GPU particle system behind `fx.particles`: a spell's kinds, emitters and field emitters.
+
+```ts
+export class Particles { … }
+```
+
+- **Use when:** the flames, embers, sparks, smoke and debris an Ultra Elements spell emits as it charges, flies and hits
+
 ## `@threenative/core/ui-layer`
 
 ### `connectUiBridge`

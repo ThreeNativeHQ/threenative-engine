@@ -4547,6 +4547,22 @@
     },
     {
       "aliases": [],
+      "constraints": [],
+      "example": "",
+      "importPath": "@threenative/core/spells/ultra",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export class Particles { … }",
+      "situations": [
+        "the flames, embers, sparks, smoke and debris an Ultra Elements spell emits as it charges, flies and hits"
+      ],
+      "summary": "The Ultra Elements GPU particle system behind `fx.particles`: a spell's kinds, emitters and field emitters.",
+      "supersedes": [],
+      "symbol": "Particles"
+    },
+    {
+      "aliases": [],
       "constraints": ["the transport is discovered, never configured; no game names the web view"],
       "example": "const bridge = connectUiBridge({ end: \"ui\" });",
       "importPath": "@threenative/core/ui-layer",

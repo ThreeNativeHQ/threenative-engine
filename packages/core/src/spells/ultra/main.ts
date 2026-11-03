@@ -5,10 +5,18 @@
 // PostFX, GUI and capture are not ported: the game's scene, its lights and WorldEnvironment replace
 // them. The services later slices port (particles, trails, ground, shocks, fluid, rig, arena focus)
 // are typed seams below; until a slice lands, each is an inert stand-in that keeps the spell code verbatim.
-import { type Camera, type Color, type Object3D, PointLight, type Scene, Vector3 } from "three";
+import {
+  type Camera,
+  type Color,
+  type Object3D,
+  PointLight,
+  type Scene,
+  type Vector3,
+} from "three";
 import { Q } from "./engine/quality.js";
 import { Casts, type ICast, type ISpell } from "./spells/cast.js";
 import { FxTarget } from "./vfx/FxTarget.js";
+import { type IParticleGround, Particles } from "./vfx/Particles.js";
 import { Volumes } from "./vfx/Volumes.js";
 import {
   ARENA,
@@ -21,21 +29,7 @@ import {
   packWorld,
 } from "./vfx/common.js";
 
-// --- service seams (Particles.js, Ribbons.js, GroundField.js, Shockwaves.js, FluidVolume.js, camera.js, arena.js) ---
-export interface IEmitter {
-  pos: Vector3;
-  vel: Vector3;
-  p: Vector3;
-  radius: number;
-  size: number;
-  rate(perSecond: number, dt: number): void;
-  burst(count: number): void;
-}
-export interface IParticles {
-  emitter(kind: string, options: Record<string, unknown>): IEmitter;
-  fieldEmitter(kind: string, options: Record<string, unknown>): void;
-  setKind(name: string, patch: object): void;
-}
+// --- service seams (Ribbons.js, GroundField.js, Shockwaves.js, FluidVolume.js, camera.js, arena.js) ---
 export interface ITrail {
   width: number;
   intensity: number;
@@ -88,20 +82,6 @@ export interface IDummy {
   hit(dir: Vector3, amount: number): void;
 }
 
-const inertEmitter = (): IEmitter => ({
-  pos: new Vector3(),
-  vel: new Vector3(),
-  p: new Vector3(),
-  radius: 0,
-  size: 1,
-  rate() {},
-  burst() {},
-});
-const NULL_PARTICLES: IParticles = {
-  emitter: () => inertEmitter(),
-  fieldEmitter() {},
-  setKind() {},
-};
 const NULL_TRAILS: ITrails = { acquire: () => null };
 const NULL_GROUND: IGround = { splat() {} };
 const NULL_FLUID: IFluid = { res: 0, acquire: () => null };
@@ -110,13 +90,15 @@ const NULL_RIG: IRig = { shake() {}, punch() {}, hitstop() {} };
 export interface IFxOptions {
   camera: Camera;
   /** compiles each spell's pipelines before its first cast (warmSpell); upstream: renderer.compileAsync */
-  renderer?: { compileAsync(object: Object3D, camera: Camera, scene?: Scene): Promise<unknown> };
+  renderer?: {
+    compileAsync(object: Object3D, camera: Camera, scene?: Scene): Promise<unknown>;
+    compute(node: unknown): unknown; // runs the particle sim kernel (Particles.ts)
+  };
   /** drawing-buffer size in pixels (upstream: renderer.getDrawingBufferSize) */
   size: () => { width: number; height: number };
   seed?: number;
   /** PointLights the spell lights drive (common.ts mirrorLights); parked at 0 when idle */
   pointLights?: number;
-  particles?: IParticles;
   trails?: ITrails;
   ground?: IGround;
   shocks?: IShocks;
@@ -140,7 +122,7 @@ export function createFx(o: IFxOptions) {
     ARENA,
     arena: o.arena ?? { focus: { color: { r: 1, g: 1, b: 1 } as Color }, setFocus() {} },
     ground: o.ground ?? NULL_GROUND,
-    particles: o.particles ?? NULL_PARTICLES,
+    particles: null as unknown as Particles,
     trails: o.trails ?? NULL_TRAILS,
     volumes,
     shocks: o.shocks as IShocks | undefined,
@@ -180,6 +162,13 @@ export function createFx(o: IFxOptions) {
   });
   const casts = new Casts(fx);
   fx.casts = casts;
+  const particles = new Particles(o.renderer ?? null, { ground: fx.ground as IParticleGround });
+  fx.particles = particles;
+  function buildParticles(): void {
+    if (particles.built) return;
+    particles.build();
+    fxTarget.scene.add(particles.glow, particles.media, ...particles.debris);
+  }
 
   let simTime = 0;
   let w = 0;
@@ -205,6 +194,8 @@ export function createFx(o: IFxOptions) {
       (sp.inst as { tick?(dt: number): void } | undefined)?.tick?.(dt);
     packWorld(dt, { maxLights: Q.maxLights, maxShadowed: Q.shadowLights });
     mirrorLights(points);
+    buildParticles();
+    particles.update(dt, simTime);
 
     volumes.update(o.camera);
     for (const sys of fx.systems) sys.update(dt, o.camera);
@@ -224,6 +215,8 @@ export function createFx(o: IFxOptions) {
   function addSpell<S extends ISpell & { create(fx: Fx): NonNullable<ISpell["inst"]> }>(s: S): S {
     (s as { defaults?: object }).defaults = { ...s.params };
     s.params = { ...s.params };
+    for (const [k, def] of Object.entries((s as { kinds?: object }).kinds ?? {}))
+      particles.addKind(`${s.id}.${k}`, def);
     const before = sceneObjects();
     s.inst = s.create(fx);
     spellObjects.set(
@@ -241,6 +234,8 @@ export function createFx(o: IFxOptions) {
   function warmSpell(s: ISpell): Promise<void> {
     let job = warming.get(s);
     if (job === undefined) {
+      buildParticles();
+      particles.warm(true);
       const objects = spellObjects.get(s) ?? [];
       const saved = objects.map((obj) => obj.visible);
       for (const obj of objects) obj.visible = true;
@@ -254,6 +249,7 @@ export function createFx(o: IFxOptions) {
         objects.forEach((obj, i) => {
           obj.visible = saved[i] as boolean;
         });
+        particles.warm(false);
       }
       warming.set(s, job);
     }

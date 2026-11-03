@@ -13,8 +13,6 @@ export {
   createFx,
   type Fx,
   type IFxOptions,
-  type IEmitter,
-  type IParticles,
   type ITrail,
   type ITrails,
   type IShocks,
@@ -34,3 +32,8 @@ export { U } from "./vfx/common.js";
  * @constraint costs about 0.6 s at 64^3 and about 5 s at 128^3 on the main thread; bake once at load
  */
 export { bakeNoise, type IBakedNoise } from "./vfx/noise.js";
+/**
+ * The Ultra Elements GPU particle system behind `fx.particles`: a spell's kinds, emitters and field emitters.
+ * @situation the flames, embers, sparks, smoke and debris an Ultra Elements spell emits as it charges, flies and hits
+ */
+export type { IEmitter, KindDef, Particles } from "./vfx/Particles.js";
