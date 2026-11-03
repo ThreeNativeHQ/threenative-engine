@@ -4583,8 +4583,9 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 if (std::find(diagnostics_.begin(), diagnostics_.end(), note) == diagnostics_.end()) diagnostics_.push_back(note);
                 continue;
             }
-            if (normalPass && item.nodes->normalNode)
-                throw std::runtime_error("TN_POST_NORMAL_UNSUPPORTED: a material normalNode is not written to the normal target");
+            // A material that authors its own normal (three's `normalNode`) still writes the view-space GEOMETRY
+            // normal here: three's MRT slot names `normalView`, and the authored normal changes lighting only. So
+            // this target matches the legacy engine for every lit draw, authored normal or not.
             const bool cut = item.material->alphaTest > 0 || item.material->alphaHash;
             const shader::StageModule* fragment =
                 auxMask == kAuxNormal && !cut ? normalFragment(draw) : auxFragment(*draw.program, auxMask);

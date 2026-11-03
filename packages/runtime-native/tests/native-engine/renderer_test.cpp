@@ -3371,7 +3371,8 @@ void emissiveValidation() { emissivePass(false); }
 // no draw. Each target still holds its own value at the lit plane's centre. An alpha-tested plane writes its targets
 // where its fragment survives the test and leaves them clear where it is cut, as three's MRT and Unreal's base pass do,
 // whether the graph reads every target or the normal alone.
-void auxTargets(bool normalOnly, float alphaTest, float opacity, uint32_t samples = 1, bool alphaHash = false) {
+void auxTargets(bool normalOnly, float alphaTest, float opacity, uint32_t samples = 1, bool alphaHash = false,
+                bool authoredNormal = false) {
     mystral::webgpu::Context context;
     const bool initialized = context.initializeHeadless();
     CHECK(initialized);
@@ -3397,6 +3398,12 @@ void auxTargets(bool normalOnly, float alphaTest, float opacity, uint32_t sample
     material.alphaTest = alphaTest; material.opacity = opacity; material.alphaHash = alphaHash;
     const bool cut = (alphaTest > 0 && opacity <= alphaTest) || (alphaHash && opacity == 0);
     DrawItem item;
+    shader::MaterialNodes nodes;  // the draw points at a graph it does not own
+    if (authoredNormal) {
+        item.nodes = &nodes;
+        // A normal tilted away from the plane's own face: it changes the lighting, never the normal target.
+        nodes.normalNode = g::normalize(g::vec3({g::float_(0), g::float_(0.5f), g::float_(1)}));
+    }
     item.key = item.id = 1;
     item.kind = MaterialKind::Standard;
     item.positions = &geometry->positions; item.normals = &geometry->normals; item.indices = &geometry->indices;
@@ -3498,6 +3505,9 @@ void denoiseFaceNormal() {
     CHECK(centre[0] > 20);                 // the patch is there
     CHECK(centre[2] > 20);                 // and its lit neighbours filter into it
 }
+// A material that authors its own normal (three's `normalNode`) writes the view-space GEOMETRY normal to the normal
+// target, as three's MRT slot does, so a post graph that reads it draws instead of refusing the frame.
+void auxTargetsNormalNode() { auxTargets(true, 0, 1, 1, false, true); }
 void auxTargetsOnePass() { auxTargets(false, 0, 1); }
 void auxTargetsAlphaTested() {
     auxTargets(false, 0.5f, 1);
@@ -3512,7 +3522,7 @@ void auxTargetsAlphaTested() {
 
 }  // namespace
 
-TN_TEST_MAIN({"history_depth_rows", historyDepthRows}, {"raw_target_scene_only", rawTargetOmitsUnusedOutput}, {"resize_readback", resizeReadback}, {"camera_turn_records", cameraTurnRecords}, {"coplanar_keeps_winner", coplanarKeepsWinner}, {"cull_keeps_main_bundle", cullKeepsMainBundle}, {"emissive_target", emissiveTarget}, {"aux_targets_one_pass", auxTargetsOnePass}, {"aux_targets_alpha_tested", auxTargetsAlphaTested}, {"denoise_face_normal", denoiseFaceNormal}, {"emissive_validation", emissiveValidation}, {"output_ramp", outputRamp},
+TN_TEST_MAIN({"history_depth_rows", historyDepthRows}, {"raw_target_scene_only", rawTargetOmitsUnusedOutput}, {"resize_readback", resizeReadback}, {"camera_turn_records", cameraTurnRecords}, {"coplanar_keeps_winner", coplanarKeepsWinner}, {"cull_keeps_main_bundle", cullKeepsMainBundle}, {"emissive_target", emissiveTarget}, {"aux_targets_one_pass", auxTargetsOnePass}, {"aux_targets_normal_node", auxTargetsNormalNode}, {"aux_targets_alpha_tested", auxTargetsAlphaTested}, {"denoise_face_normal", denoiseFaceNormal}, {"emissive_validation", emissiveValidation}, {"output_ramp", outputRamp},
              {"traa_alpha", traaAlpha},
              {"traa_reset_seed", traaResetSeed},
              {"traa_camera_velocity", traaCameraVelocity},
