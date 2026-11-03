@@ -1,6 +1,7 @@
 // Ported from Ultra Elements src/vfx/Particles.js @698b720 (MIT, Copyright (c) 2026 Humpalumps). JavaScript copied verbatim; GLSL transliterated to TSL.
 import {
   Break,
+  Discard,
   Fn,
   If,
   Loop,
@@ -18,6 +19,7 @@ import {
   instanceIndex,
   instancedArray,
   int,
+  ivec2,
   length,
   max,
   min,
@@ -32,6 +34,7 @@ import {
   sqrt,
   step,
   texture,
+  textureLoad,
   uniform,
   varying,
   vec2,
@@ -44,30 +47,35 @@ import {
   Color,
   type ColorRepresentation,
   CylinderGeometry,
-  type DataTexture,
+  DataTexture,
   DoubleSide,
   Float32BufferAttribute,
+  FloatType,
   FrontSide,
   IcosahedronGeometry,
   InstancedBufferGeometry,
   Mesh,
   MeshBasicNodeMaterial,
   MeshStandardNodeMaterial,
+  NearestFilter,
   type Node,
   PlaneGeometry,
+  RGBAFormat,
   Vector2,
   Vector3,
 } from "three/webgpu";
 import { Q } from "../engine/quality.js";
-import { simArenaNormal, simArenaSDF, simForceAccel, syncWorldMirror } from "./ParticlesWorld.js";
 import {
   ARENA,
   FX_BLENDING,
   LINES_BLENDING,
   U,
+  arenaNormal,
+  arenaSDF,
   basisFrom,
   blackbody,
   curl3,
+  forceAccel,
   fxOut,
   groundUV,
   hash11,
@@ -106,17 +114,13 @@ type I = Node<"int">;
 //    flames, frost mist) with no CPU involvement.
 //
 // Engine (ThreeNative's C++ engine over WebGPU) differences, each forced:
-//  - ENGINE-GAP: no multi-target render target. The state is three vec4 storage buffers (S0, S1,
+//  - compute in place of the MRT ping-pong (the brief allows it): the state is three vec4 storage buffers (S0, S1,
 //    S2, one element per texel, index = y * W + x) and the sim is one compute kernel over W x H
 //    threads with the same per-texel maths in the same order. Every thread reads and writes only
-//    its own element, so updating in place is the ping-pong. Kind, emission and field tables stay
-//    vec4 storage buffers too (element = row * width + texel; upstream: float DataTextures read with
-//    texelFetch). ENGINE-GAP: in a compute kernel a texture read only with textureLoad declares a
-//    sampler the WGSL never uses, the auto pipeline layout drops it and the bind group still passes
-//    it ("binding index 5 not present in the bind group layout"), so the sim cannot texelFetch.
+//    its own element, so updating in place is the ping-pong. Kind, emission and field tables are
+//    upstream's float DataTextures, read with texelFetch (textureLoad).
 //  - no int uniforms or uniform arrays: the int uniforms are float uniforms read through int(), and
 //    uSpan[6] is six vec2 uniforms.
-//  - ENGINE-GAP: no TSL Discard: the media fragment writes zero coverage instead.
 //  - no lines / opaque scenes: createFx adds all three styles to its fx group in the world scene;
 //    debris draws in the opaque queue, glow and media in the transparent one.
 //  - ENGINE-GAP: no multi-target render target and no point size, so painting the ground field
@@ -177,7 +181,7 @@ const KIND_DEFAULTS = {
 export type KindDef = typeof KIND_DEFAULTS;
 
 // --- shared GLSL ---------------------------------------------------------------------
-// STATE_GLSL: the state buffers and the kind table (one shared texture node, read with textureLoad)
+// STATE_GLSL: the state buffers and the kind table (one shared texture node, read with texelFetch)
 const storageOf = (n: number) => instancedArray(n, "vec4");
 type Storage = ReturnType<typeof storageOf>;
 const floatU = (v: number) => uniform(v);
@@ -186,21 +190,22 @@ const vec2U = (v: Vector2) => uniform(v);
 type UV2 = ReturnType<typeof vec2U>;
 const texOf = (t: DataTexture) => texture(t);
 type Tex = ReturnType<typeof texOf>;
-// a float table (kind / emission / field): one vec4 per texel, written from the CPU
-const tableOf = (data: Float32Array) => instancedArray(data, "vec4");
-type Table = ReturnType<typeof tableOf>;
-const arrayOf = (t: Table) => (t.value as unknown as { array: Float32Array }).array;
-const touch = (t: Table) => {
-  (t.value as unknown as { needsUpdate: boolean }).needsUpdate = true;
+// a float table (kind / emission / field): RGBA32F DataTexture written from the CPU, read with texelFetch
+const tableOf = (data: Float32Array, w: number, h: number) => {
+  const t = new DataTexture(data, w, h, RGBAFormat, FloatType);
+  t.magFilter = t.minFilter = NearestFilter;
+  return t;
 };
+// texelFetch(tex, ivec2(x, y), 0)
+const texelFetch = (tex: Tex, x: I, y: I): V4 =>
+  textureLoad(tex as Parameters<typeof textureLoad>[0], ivec2(x, y), int(0)) as unknown as V4;
 interface IState {
   uS0: Storage;
   uS1: Storage;
   uS2: Storage;
-  uKinds: Table;
+  uKinds: Tex;
 }
-const kindTexel = (st: IState, kind: I, i: number): V4 =>
-  st.uKinds.element(kind.mul(int(KW)).add(int(i))) as unknown as V4;
+const kindTexel = (st: IState, kind: I, i: number): V4 => texelFetch(st.uKinds, int(i), kind);
 const stateAt = (b: Storage, idx: I): V4 => b.element(idx) as unknown as V4;
 
 // INDEX_GLSL: instance -> texel: field blocks first, then the live window of the ring
@@ -263,18 +268,16 @@ function particleLook(st: IState, kind: I, t: F, sizeScale: F): ILook {
 
 // --- sim ---------------------------------------------------------------------------------
 interface ISimU {
-  uEmitTex: Table;
+  uEmitTex: Tex;
   uEmitCount: UF;
   uSpan: UV2[];
   uSpanCount: UF;
-  uFieldTex: Table;
+  uFieldTex: Tex;
   uFieldCount: UF;
   uSimDt: UF;
   uGroundA: Tex;
   uGroundB: Tex;
 }
-const tableTexel = (tex: Table, w: number, x: number, y: I): V4 =>
-  tex.element(y.mul(int(w)).add(int(x))) as unknown as V4;
 
 function simKernel(W: number, H: number, st: IState, u: ISimU) {
   // the sim reads the ground field from a compute kernel: level 0 (upstream's fragment derivatives)
@@ -311,13 +314,13 @@ function simKernel(W: number, H: number, st: IState, u: ISimU) {
           If(r.greaterThanEqual(int(u.uEmitCount)), () => {
             Break();
           });
-          const e0 = tableTexel(u.uEmitTex, REC_W, 0, r);
+          const e0 = texelFetch(u.uEmitTex, int(0), r);
           const j = idx.sub(int(e0.x)).toVar();
           If(j.greaterThanEqual(int(0)).and(j.lessThan(int(e0.y))), () => {
-            const e1 = tableTexel(u.uEmitTex, REC_W, 1, r);
-            const e2 = tableTexel(u.uEmitTex, REC_W, 2, r);
-            const e3 = tableTexel(u.uEmitTex, REC_W, 3, r);
-            const e4 = tableTexel(u.uEmitTex, REC_W, 4, r);
+            const e1 = texelFetch(u.uEmitTex, int(1), r);
+            const e2 = texelFetch(u.uEmitTex, int(2), r);
+            const e3 = texelFetch(u.uEmitTex, int(3), r);
+            const e4 = texelFetch(u.uEmitTex, int(4), r);
             const seed = fract(e3.w.add(float(j).mul(0.618034)))
               .mul(1000.0)
               .add(float(j).mul(0.001))
@@ -375,12 +378,12 @@ function simKernel(W: number, H: number, st: IState, u: ISimU) {
         If(f.greaterThanEqual(int(u.uFieldCount)), () => {
           Break();
         });
-        const f0 = tableTexel(u.uFieldTex, 4, 0, f);
+        const f0 = texelFetch(u.uFieldTex, int(0), f);
         const j = idx.sub(int(f0.x)).toVar();
         If(j.greaterThanEqual(int(0)).and(j.lessThan(int(f0.y))), () => {
-          const wa = tableTexel(u.uFieldTex, 4, 1, f);
-          const wb = tableTexel(u.uFieldTex, 4, 2, f);
-          const f3 = tableTexel(u.uFieldTex, 4, 3, f);
+          const wa = texelFetch(u.uFieldTex, int(1), f);
+          const wb = texelFetch(u.uFieldTex, int(2), f);
+          const f3 = texelFetch(u.uFieldTex, int(3), f);
           const seed = hash12(vec2(float(idx), mod(U.uFrame, 4096.0)))
             .mul(1000.0)
             .toVar();
@@ -468,7 +471,7 @@ function simKernel(W: number, H: number, st: IState, u: ISimU) {
             );
           });
           If(k1.y.notEqual(0.0), () => {
-            acc.addAssign(simForceAccel(pos, vel, kill).mul(k1.y));
+            acc.addAssign(forceAccel(pos, vel, kill).mul(k1.y));
           });
           vel.addAssign(acc.mul(dt));
           vel.mulAssign(exp(k0.x.negate().mul(dt)));
@@ -479,9 +482,9 @@ function simKernel(W: number, H: number, st: IState, u: ISimU) {
           const collide = s2.z.toVar();
           If(k1.z.greaterThanEqual(0.0), () => {
             const rad = max(mix(k2.z, k2.w, t).mul(sizeScale).mul(0.5), 0.01).toVar();
-            const d = simArenaSDF(np).toVar();
+            const d = arenaSDF(np).toVar();
             If(d.lessThan(rad), () => {
-              const n = simArenaNormal(np).toVar();
+              const n = arenaNormal(np).toVar();
               np.addAssign(n.mul(rad.sub(d)));
               const vn = dot(vel, n).toVar();
               If(vn.lessThan(0.0), () => {
@@ -717,9 +720,13 @@ function mediaMaterial(st: IState, su: IStyleU) {
 
   // MEDIA_FRAG
   mat.fragmentNode = Fn(() => {
+    If(vAlpha.lessThanEqual(0.001), () => {
+      Discard();
+    });
     const r2 = dot(vUv, vUv);
-    // ENGINE-GAP: no Discard: `if (vAlpha <= 0.001 || r2 >= 1.0) discard;` writes zero coverage
-    const kept = vAlpha.greaterThan(0.001).and(r2.lessThan(1.0));
+    If(r2.greaterThanEqual(1.0), () => {
+      Discard();
+    });
     // spherical billboard (Umenhoffer et al. 2006): visible thickness of a sphere, cut by the scene
     const h = sqrt(max(float(1.0).sub(r2), 0.0)).mul(vRadius);
     const sceneZ = sceneViewZ();
@@ -774,7 +781,7 @@ function mediaMaterial(st: IState, su: IStyleU) {
     // fire is hottest deep in a billow: thin edges and gaps run redder and much dimmer
     const core = b.mul(float(1.0).sub(r2));
     const emit = vEmit.mul(mix(vec3(0.5, 0.2, 0.08), vec3(1.5, 1.35, 1.2), core.mul(core)));
-    return select(kept, fxOut(vLit, a, emit.mul(a).mul(2.0), dist, vViewZ), vec4(0.0));
+    return fxOut(vLit, a, emit.mul(a).mul(2.0), dist, vViewZ);
   })();
   return mat;
 }
@@ -889,11 +896,11 @@ export class Particles {
   kindIndex = new Map<string, number>();
   fieldDefs: IFieldDef[] = []; // { kind, style, count, wa, wb, threshold, rate, lifeScale, sizeScale, up }
   kindData: Float32Array;
-  kindTex: Table;
+  kindTex: DataTexture;
   emitData: Float32Array;
-  emitTex: Table;
+  emitTex: DataTexture;
   fieldData: Float32Array;
-  fieldTex: Table;
+  fieldTex: DataTexture;
   recCount = 0;
   built = false;
   time = 0;
@@ -920,14 +927,11 @@ export class Particles {
     this.ground = ground;
     [this.W, this.H] = Q.particles as [number, number];
     this.kindData = new Float32Array(KW * MAX_KINDS * 4);
-    this.kindTex = tableOf(this.kindData);
-    this.kindData = arrayOf(this.kindTex);
+    this.kindTex = tableOf(this.kindData, KW, MAX_KINDS);
     this.emitData = new Float32Array(REC_W * MAX_REC * 4);
-    this.emitTex = tableOf(this.emitData);
-    this.emitData = arrayOf(this.emitTex);
+    this.emitTex = tableOf(this.emitData, REC_W, MAX_REC);
     this.fieldData = new Float32Array(4 * MAX_FIELD * 4);
-    this.fieldTex = tableOf(this.fieldData);
-    this.fieldData = arrayOf(this.fieldTex);
+    this.fieldTex = tableOf(this.fieldData, 4, MAX_FIELD);
   }
 
   // seeded LCG so ?shot / ?bench frames repeat exactly
@@ -961,7 +965,7 @@ export class Particles {
     Object.assign(k.def, patch);
     if (this.built) {
       this.writeKind(k);
-      touch(this.kindTex);
+      this.kindTex.needsUpdate = true;
     }
   }
 
@@ -1061,7 +1065,7 @@ export class Particles {
   build() {
     const { W, H } = this;
     for (const k of this.kinds) this.writeKind(k);
-    touch(this.kindTex);
+    this.kindTex.needsUpdate = true;
 
     // row ranges: debris rows sized to Q.debris, the rest split glow 55% / media 45%
     const debrisRows = Math.max(1, Math.ceil(Q.debris / W));
@@ -1113,23 +1117,23 @@ export class Particles {
       fi++;
     }
     this.fieldCount = fi;
-    touch(this.fieldTex);
+    this.fieldTex.needsUpdate = true;
 
-    // ENGINE-GAP: no MRT render target: storage buffers in place of the two RGBA32F MRT targets
+    // compute port: storage buffers in place of the two RGBA32F MRT targets
     const stateU: IState = {
       uS0: storageOf(W * H),
       uS1: storageOf(W * H),
       uS2: storageOf(W * H),
-      uKinds: this.kindTex,
+      uKinds: texOf(this.kindTex),
     };
     this.stateU = stateU;
     this.spans = Array.from({ length: 6 }, () => vec2U(new Vector2()));
     this.simU = {
-      uEmitTex: this.emitTex,
+      uEmitTex: texOf(this.emitTex),
       uEmitCount: uniform(0),
       uSpan: this.spans,
       uSpanCount: uniform(0),
-      uFieldTex: this.fieldTex,
+      uFieldTex: texOf(this.fieldTex),
       uFieldCount: uniform(this.fieldCount),
       uSimDt: uniform(1 / 60),
       uGroundA: texture(U.uGroundA.value),
@@ -1334,7 +1338,7 @@ export class Particles {
     }
     u.uSpanCount.value = sc;
     u.uEmitCount.value = this.recCount;
-    if (this.recCount) touch(this.emitTex);
+    if (this.recCount) this.emitTex.needsUpdate = true;
     u.uSimDt.value = dt;
     // field emitters read the ground field: off until GroundField has set its texture
     const groundReady = U.uGroundA.value !== GROUND_PLACEHOLDER;
@@ -1343,7 +1347,6 @@ export class Particles {
       u.uGroundB.value = U.uGroundB.value;
     }
     u.uFieldCount.value = groundReady ? this.fieldCount : 0;
-    syncWorldMirror(); // ENGINE-GAP (compute sampler): see ParticlesWorld.ts
     this.renderer?.compute(this.sim); // the state is read and written in place (see the header)
     this.recCount = 0;
 
