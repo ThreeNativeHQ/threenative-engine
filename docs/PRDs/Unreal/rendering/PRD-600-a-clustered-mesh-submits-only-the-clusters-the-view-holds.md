@@ -50,6 +50,14 @@ The change has three steps. Step 1 decides whether steps 2 and 3 continue.
 
 **Left out on purpose:** persistent-thread culling (off by default in Unreal and unsafe on WebGPU), a normal-cone test (Unreal has none), and a depth-pyramid occlusion pass (PRD-284 and PRD-489 declined it on measurement).
 
+## three.js 0.187.0 levers (2026-11-02)
+
+- `MeshletDrawingPipeline` (r187, three#35191, `examples/jsm/pipelines/MeshletDrawingPipeline.js`) walks clusters on the GPU. It selects a cluster LOD by projected error in pixels (`lodThreshold`), drops objects below `minScreenRadius` and culls hidden clusters (`occlusionCulling`, on by default). Use it as the reference arm for the Phase 1 measurement: it gives a second answer for the share of triangles outside the view.
+- `VisibilityBufferDrawingPipeline` (same PR) adds a visibility buffer and a compute rasterizer for triangles under `maxRasterSize` (8 px). This is the Nanite HW/SW raster split. It is out of scope here; record it under `## Decisions` if Phase 1 shows small triangles dominate.
+- The occlusion pass that PRD-284 and PRD-489 declined is on by default upstream. Measure it once with the pipeline arm before the decline stays final.
+
+Adoption rule: the owned engine is the default, and it runs a three symbol only when its API catalog covers it (`docs/architecture/NATIVE-ENGINE-DECISION.md`). So use the upstream piece first as a measured reference arm on `engine: "threejs"`. A template uses it only after a catalog row and a native parity case land.
+
 ## Acceptance Criteria
 
 - [ ] AC-1 [local]: The pruned walk selects exactly the clusters the flat oracle selects that touch the widened frustum, with 0 differences over 200 seeded camera poses, and a stationary camera turned by less than the margin keeps its cut. proof: red-green `pnpm exec vitest run packages/core/__tests__/clustered-mesh.spec.ts packages/core/__tests__/clustered-batch.spec.ts` — Evidence: pending.

@@ -104,6 +104,12 @@ metres and pixels, never Unreal centimetres. The manifest entries carry `@alias 
 the look, so they are literals in the template's `src/render/worldEnvironment.ts` (the harness
 overlay first, the templates through [PRD-267](../../useful-defaults/PRD-267-screen-space-gi-ships-in-the-templates.md)).
 
+## three.js 0.187.0 levers (2026-11-02)
+
+- `VXGINode` (r186, three#34402) gathers off-screen bounce light per pixel from a voxel volume, the role the radiance cache plays behind the screen probes. Static geometry only: a geometry change needs a re-voxelization (`needsUpdate`). Use it as a reference arm for the off-screen half of the gather while PRD-603 is open.
+
+Adoption rule: the owned engine is the default, and it runs a three symbol only when its API catalog covers it (`docs/architecture/NATIVE-ENGINE-DECISION.md`). So use the upstream piece first as a measured reference arm on `engine: "threejs"`. A template uses it only after a catalog row and a native parity case land.
+
 ## Acceptance Criteria
 
 - [ ] AC-1 [local]: The L7 cells on the owned engine match Unreal Epic within the PRD-631 thresholds on the interior and backlit poses of the reference scene. proof: `pnpm unreal-look:compare --layer L7` — Evidence: pending.

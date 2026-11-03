@@ -71,6 +71,12 @@ stays out of the API. The options keep Unreal's names in camelCase: `maxRoughnes
 `packages/core/src/render/`. The roughness limits are look values in the template's `src/render/`.
 `TN_REFLECTIONS` reports the traced share, the BVH-hit share and the rough-specular share.
 
+## three.js 0.187.0 levers (2026-11-02)
+
+- r187 `SSRNode` takes the material F0 and F90 in stochastic reflections (three#35242). The screen-space half of the reflections gets the right Fresnel per material without engine code. Recapture the reflection cells after the upgrade before the traced half is tuned against them.
+
+Adoption rule: the owned engine is the default, and it runs a three symbol only when its API catalog covers it (`docs/architecture/NATIVE-ENGINE-DECISION.md`). So use the upstream piece first as a measured reference arm on `engine: "threejs"`. A template uses it only after a catalog row and a native parity case land.
+
 ## Acceptance Criteria
 
 - [ ] AC-1 [local]: The L8 cells on the owned engine match Unreal Epic within the PRD-631 thresholds on the chrome and smooth-dielectric sphere regions. proof: `pnpm unreal-look:compare --layer L8` — Evidence: pending.
