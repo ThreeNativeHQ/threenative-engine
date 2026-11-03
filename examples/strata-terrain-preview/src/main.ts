@@ -14,7 +14,11 @@ if (world && Object.hasOwn(BIOMES, world)) game.resumeScene(world as WorldName);
 // `?capture=1`: the running game, so a capture script reads `ctx.renderer.gpuFrameMs()` and hides
 // one instanced batch by name from the same place a player's console can. Dev builds only.
 if (query.has("capture")) exposeDebug("game", game);
-void game.start().then(() => {
-  failures.ready();
-  game.state.setState({ showcase: query.has("showcase") });
-});
+// A rejected start() is already on the page: core reports `start-failed` through onLaunchFailure.
+void game.start().then(
+  () => {
+    failures.ready();
+    game.state.setState({ showcase: query.has("showcase") });
+  },
+  () => undefined,
+);
