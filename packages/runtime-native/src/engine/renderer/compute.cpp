@@ -331,13 +331,10 @@ namespace graph = shader::graph;
 
 namespace {
 // The BufferAttributes a compute graph's storage(attribute) / instancedArray nodes name, by binding name.
-void collectStorages(const graph::Node& node, std::unordered_map<std::string, std::shared_ptr<BufferAttribute>>& out,
-                     std::unordered_set<const graph::NodeData*>& seen) {
-    if (!node || !seen.insert(node.get()).second) return;
-    if (node->kind == graph::Kind::StorageElement && node->object)
-        out.emplace(node->name, std::const_pointer_cast<BufferAttribute>(std::static_pointer_cast<const BufferAttribute>(node->object)));
-    for (const auto* list : {&node->args, &node->body, &node->otherwise})
-        for (const auto& child : *list) collectStorages(child, out, seen);
+void collectStorages(const graph::Node& kernel, std::unordered_map<std::string, std::shared_ptr<BufferAttribute>>& out) {
+    for (const graph::NodeData* node : graph::computeBindingNodes(kernel))
+        if (node->kind == graph::Kind::StorageElement && node->object)
+            out.emplace(node->name, std::const_pointer_cast<BufferAttribute>(std::static_pointer_cast<const BufferAttribute>(node->object)));
 }
 
 // The lowered program of a compute node, built once per structure and shared by every GraphCompute: a
@@ -385,8 +382,7 @@ ComputePass& GraphCompute::prepare(const graph::Node& node) {
 std::vector<WGPUBuffer> GraphCompute::record(WGPUCommandEncoder encoder, const ComputeDispatch& dispatch, const FrameClock& clock, Renderer& renderer) {
     ComputePass& pass = prepare(dispatch.node);
     std::unordered_map<std::string, std::shared_ptr<BufferAttribute>> attributes;
-    std::unordered_set<const graph::NodeData*> seen;
-    collectStorages(dispatch.node, attributes, seen);
+    collectStorages(dispatch.node, attributes);
     std::vector<Handle> storage;
     for (const shader::Binding& b : pass.module().bindings) {
         if (b.kind != shader::BindingKind::Storage) continue;
@@ -399,16 +395,10 @@ std::vector<WGPUBuffer> GraphCompute::record(WGPUCommandEncoder encoder, const C
                                       WGPUBufferUsage_Storage | WGPUBufferUsage_CopySrc | WGPUBufferUsage_CopyDst));
     }
     std::unordered_map<std::string, std::shared_ptr<const Texture>> sources;
-    seen.clear();
-    const auto collect = [&](const auto& self, const graph::Node& node) -> void {
-        if (!node || !seen.insert(node.get()).second) return;
-        // A texture node keeps its object in the binding that `.value` replaces (graph.h textureObject()).
-        if (node->textureObject() && (node->kind == graph::Kind::Texture || node->kind == graph::Kind::StorageTexture || node->kind == graph::Kind::TextureStore))
+    // A texture node keeps its object in the binding that `.value` replaces (graph.h textureObject()).
+    for (const graph::NodeData* node : graph::computeBindingNodes(dispatch.node))
+        if (node->kind != graph::Kind::StorageElement && node->textureObject())
             sources.emplace(node->name, std::static_pointer_cast<const Texture>(node->textureObject()));
-        for (const auto* list : {&node->args, &node->body, &node->otherwise})
-            for (const auto& child : *list) self(self, child);
-    };
-    collect(collect, dispatch.node);
     std::vector<WGPUBindGroupEntry> textures;
     for (const auto& b : pass.module().bindings) {
         if (b.kind != shader::BindingKind::Texture && b.kind != shader::BindingKind::Sampler && b.kind != shader::BindingKind::StorageTexture) continue;
@@ -445,8 +435,7 @@ void ComputeQueue::bindDisposal(const std::shared_ptr<BufferAttribute>& attribut
 void ComputeQueue::dispatch(const graph::Node& node) {
     auto dispatch = ComputeDispatch::of(node);
     std::unordered_map<std::string, std::shared_ptr<BufferAttribute>> attributes;
-    std::unordered_set<const graph::NodeData*> seen;
-    collectStorages(node, attributes, seen);
+    collectStorages(node, attributes);
     for (const auto& [name, attribute] : attributes) bindDisposal(attribute);
     items_.push_back({std::move(dispatch), nullptr, {}, false});
 }

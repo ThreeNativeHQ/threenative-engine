@@ -46,6 +46,13 @@ The ingredients exist. `GPUSceneBVH` (`packages/core/src/gpu-scene-bvh.ts:354`) 
 - **Thin walls versus probe spacing.** A wall thinner than the ray spacing may escape the map. The fixture uses a 0.2 m wall at 2 m spacing, so the test is realistic.
 - **SH ringing.** Weighting does not fix L2 ringing. This PRD makes no claim about it.
 
+## three.js 0.187.0 levers (2026-11-02)
+
+- `VXGINode` and `VXGIVolume` (r186, three#34402, `examples/jsm/lighting/vxgi/`) voxelize the scene and cone-trace diffuse GI and AO. Its own documentation says it bleeds less light than `LightProbeGrid` and costs more. Use it as a leak reference: capture the same calibration cells with VXGI and with the probe grid, and score the leak metric of this PRD on both.
+- `LightProbeGrid` now places probes at cell centres (r187, three#35265). Re-read the grid placement before the visibility weight is tuned.
+
+Adoption rule: the owned engine is the default, and it runs a three symbol only when its API catalog covers it (`docs/architecture/NATIVE-ENGINE-DECISION.md`). So use the upstream piece first as a measured reference arm on `engine: "threejs"`. A template uses it only after a catalog row and a native parity case land.
+
 ## Acceptance Criteria
 
 - [ ] AC-4 [local]: On the PRD-638 `leak` pose and the PRD-631 backlit pose, the L7 cells on the owned engine match Unreal Epic within the PRD-631 thresholds, with the harness `giCache.ts` links replaced by the weighted sampler. — proof: `pnpm unreal-look:compare --scene gi --layer L7` and `pnpm unreal-look:compare --layer L7` — Evidence: pending.

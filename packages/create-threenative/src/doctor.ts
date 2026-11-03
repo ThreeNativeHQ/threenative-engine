@@ -209,7 +209,7 @@ interface IMcpServerSpec {
  * resolves, so it must name core — and core's own version, which `doctor.spec.ts` holds equal to
  * `packages/core/package.json`. */
 const CORE_PACKAGE_NAME = "@threenative/core";
-const CORE_PACKAGE_VERSION = "0.3.10";
+const CORE_PACKAGE_VERSION = "0.3.11";
 const CORE_RESOLVED_SERVERS: ReadonlySet<string> = new Set([
   "threenative-engine",
   "threenative-animation",
@@ -648,7 +648,7 @@ function probeMcpServer(projectRoot: string, spec: IMcpServerSpec): IMcpServerHe
     method: "initialize",
     params: {
       capabilities: {},
-      clientInfo: { name: "threenative-doctor", version: "0.3.10" },
+      clientInfo: { name: "threenative-doctor", version: "0.3.11" },
       protocolVersion: "2025-06-18",
     },
   });

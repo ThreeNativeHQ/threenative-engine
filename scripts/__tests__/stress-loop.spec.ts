@@ -14,6 +14,9 @@ const {
   readLedger,
   writeLedger,
 } = await import(new URL("../stress-loop.mjs", import.meta.url).href);
+const { rankOf, scoreOf, verdictOf, verdictStrip } = await import(
+  new URL("../stress-dashboard.mjs", import.meta.url).href
+);
 
 const report = (overrides: Record<string, unknown> = {}) => ({
   schema: "stress-lab-report/1",
@@ -336,6 +339,193 @@ describe("stress-loop", () => {
     expect(html.indexOf("Apples to apples")).toBeLessThan(html.indexOf("Virtual shadow maps"));
   });
 
+  it("anchors the KPI table on ThreeNative's VSM load 1 develop row, not the newest row of any arm", () => {
+    const metrics = (fps: number) => ({ metrics: { ...report().metrics, fps } });
+    const ledger = [
+      { variant: "arm=stack3&uncapped", pass: "uncapped", engine: WASM, fps: 62.7 },
+      { variant: "arm=comb2&uncapped", pass: "uncapped", engine: WASM, fps: 68.8 },
+      { variant: "plainShadow&arm=stack3&uncapped", pass: "uncapped", engine: WASM, fps: 103 },
+      { variant: "plainShadow&load=8&arm=l8", pass: "uncapped", engine: WASM, fps: 9.5 },
+      { variant: "load=8&arm=vanilla-l8", pass: "uncapped", engine: "three-vanilla", fps: 7.92 },
+    ].reduce(
+      (acc, { variant, pass, engine, fps }) =>
+        recordRun(
+          acc,
+          run(
+            {
+              pass,
+              url: `http://127.0.0.1:5740/main.html?stress&${variant}`,
+              build: { kind: engine === WASM ? "wasm" : "js", sha256: "4fb0aba5a921", commit: "a" },
+            },
+            metrics(fps),
+          ),
+          { label: variant, variant, engine, decision: "measure" },
+        ),
+      readLedger(ledgerPath()),
+    );
+    const html = renderHtml(ledger, new Date(0));
+    const kpiTable = html.slice(html.indexOf("KPI against goal"), html.indexOf("</details>"));
+    expect(kpiTable).toContain("62.7 fps");
+    expect(kpiTable).not.toContain("7.92");
+    expect(kpiTable).toContain("#1");
+  });
+
+  it("scores a row 0 to 100 against the 120 fps goal, and refuses a row with a missing metric", () => {
+    const goal = {
+      presentedP95Ms: 8.33,
+      fps: 120,
+      frameP95Ms: 8.33,
+      gpuP95Ms: 8.33,
+      hitchesPerMin: 0,
+    };
+    expect(scoreOf(goal)).toBe(100);
+    expect(scoreOf({ ...goal, fps: 500, gpuP95Ms: 1 })).toBe(100);
+    // Half the speed on every timing, no hitches: 95 points at half, plus all 5 hitch points.
+    expect(
+      scoreOf({ ...goal, presentedP95Ms: 16.66, fps: 60, frameP95Ms: 16.66, gpuP95Ms: 16.66 }),
+    ).toBeCloseTo(52.5);
+    expect(scoreOf({ ...goal, hitchesPerMin: 1 })).toBeCloseTo(97.5);
+    expect(scoreOf({ ...goal, gpuP95Ms: null })).toBeNull();
+  });
+
+  it("answers in one word whether ThreeNative wins against each measured rival", () => {
+    const ctx = { loadVoid: 6, shadowOf: (row: { shadow: string }) => row.shadow };
+    const row = (engine: string, shadow: string, fps: number, variant: string) => ({
+      engine,
+      shadow,
+      variant,
+      pass: "uncapped",
+      load: { peak: 1 },
+      decision: "measure",
+      metrics: { presentedP95Ms: 12, fps, frameP95Ms: 12, gpuP95Ms: 12, hitchesPerMin: 0 },
+    });
+    const tn = row(WASM, "plain", 100, "plainShadow&arm=develop&uncapped");
+    const tnVsm = row(WASM, "virtual", 60, "arm=develop&uncapped");
+    const vanilla = (fps: number) => row("three-vanilla", "plain", fps, "arm=v&uncapped");
+    const unreal = (fps: number) => row("unreal", "virtual", fps, "tnmatched&uncapped");
+
+    expect(verdictOf([], ctx).status).toBe("none");
+    // A rival with no valid run counts as neither a win nor a loss.
+    const onlyVanilla = verdictOf([tn, tnVsm, vanilla(50)], ctx);
+    expect(onlyVanilla).toMatchObject({ status: "winning", wins: 1, measured: 1, pending: 2 });
+    expect(verdictOf([tn, tnVsm, vanilla(110)], ctx).status).toBe("losing");
+    expect(verdictOf([tn, tnVsm, vanilla(50), unreal(90)], ctx)).toMatchObject({
+      status: "mixed",
+      wins: 1,
+      measured: 2,
+    });
+    expect(verdictOf([tn, tnVsm, vanilla(100)], ctx).status).toBe("mixed");
+    const strip = verdictStrip(onlyVanilla);
+    expect(strip).toContain("WINNING");
+    expect(strip).toContain("not measured");
+    expect(strip).toContain('data-verdict="winning"');
+  });
+
+  it("says WAS WINNING in grey when the rows behind the verdict are old, so old data does not read as now", () => {
+    const ctx = { loadVoid: 6, shadowOf: (row: { shadow: string }) => row.shadow };
+    const row = (engine: string, fps: number, at: string, commit: string) => ({
+      engine,
+      at,
+      commit,
+      shadow: "plain",
+      variant: engine === WASM ? "plainShadow&arm=develop&uncapped" : "arm=v&uncapped",
+      pass: "uncapped",
+      load: { peak: 1 },
+      decision: "measure",
+      metrics: { presentedP95Ms: 12, fps, frameP95Ms: 12, gpuP95Ms: 12, hitchesPerMin: 0 },
+    });
+    const rows = [
+      row(WASM, 100, "2026-10-31T06:00:00.000Z", "core@0.3.7"),
+      row("three-vanilla", 50, "2026-10-31T12:00:00.000Z", "three@0.185.1"),
+    ];
+    const old = verdictOf(rows, ctx, Date.parse("2026-11-02T02:00:00.000Z"));
+    // The oldest compared row sets the age: one fresh rival does not freshen an old baseline.
+    expect(old).toMatchObject({ status: "winning", stale: true, ageHours: 44 });
+    const strip = verdictStrip(old);
+    expect(strip).toContain("WAS WINNING");
+    expect(strip).toContain("44 h old");
+    expect(strip).not.toContain("#14803f");
+
+    const fresh = verdictOf(rows, ctx, Date.parse("2026-10-31T13:00:00.000Z"));
+    expect(fresh).toMatchObject({ stale: false, ageHours: 7 });
+    expect(verdictStrip(fresh)).not.toContain("WAS WINNING");
+  });
+
+  it("marks a score row measured on a loaded host, so a lower score does not read as a regression", () => {
+    const row = (id: number, peak: number) => ({
+      ...report(),
+      id,
+      at: "2026-11-02T04:00:00.000Z",
+      commit: "core@0.3.8",
+      engine: WASM,
+      variant: "plainShadow&arm=head&uncapped",
+      pass: "uncapped",
+      decision: "measure",
+      load: { peak, samples: 10 },
+    });
+    expect(renderHtml({ iterations: [row(1, 11)] })).toContain("noisy, load 11");
+    expect(renderHtml({ iterations: [row(1, 5)] })).not.toContain("noisy, load");
+  });
+
+  it("colors a bar green for the winner, yellow for a tie at the top and red for a loser", () => {
+    expect(rankOf(10, [10, 5])).toBe("s-win");
+    expect(rankOf(5, [10, 5])).toBe("s-lose");
+    expect(rankOf(10, [10, 10, 5])).toBe("s-tie");
+    expect(rankOf(5, [10, 10, 5])).toBe("s-lose");
+    // Nothing to beat is no win.
+    expect(rankOf(10, [10])).toBe("s-none");
+  });
+
+  it("reads a score gap inside the margin as a tie, for the bar and for the verdict", () => {
+    expect(rankOf(56, [56, 54], 2)).toBe("s-tie");
+    expect(rankOf(54, [56, 54], 2)).toBe("s-tie");
+    expect(rankOf(56, [56, 53], 2)).toBe("s-win");
+    expect(rankOf(53, [56, 53], 2)).toBe("s-lose");
+  });
+
+  it("shows one score bar per engine at the top of the Overview, and pending for an engine with no valid run", () => {
+    const metrics = (fps: number) => ({ metrics: { ...report().metrics, fps } });
+    const ledger = [
+      { variant: "plainShadow&arm=develop&uncapped", engine: WASM, fps: 100 },
+      { variant: "arm=vanilla&uncapped", engine: "three-vanilla", fps: 60 },
+      { variant: "arm=develop&uncapped", engine: WASM, fps: 62 },
+      { variant: "load=8&arm=l8&uncapped", engine: "three-vanilla", fps: 7.92 },
+      { variant: "tnmatched&uncapped", engine: "unreal", fps: 110 },
+    ].reduce(
+      (acc, { variant, engine, fps }) =>
+        recordRun(
+          acc,
+          run(
+            {
+              pass: "uncapped",
+              build: { kind: engine === WASM ? "wasm" : "js", sha256: "4fb0aba5a921", commit: "a" },
+            },
+            metrics(fps),
+          ),
+          { label: variant, variant, engine, decision: "measure" },
+        ),
+      readLedger(ledgerPath()),
+    );
+    const html = renderHtml(ledger, new Date(0));
+    const panel = html.slice(html.indexOf("Engine score"), html.indexOf("120 fps goal ladder"));
+    expect(panel).toContain("Vanilla three.js");
+    expect(panel).toContain("Unreal 5.8.3");
+    expect(panel).toContain("ThreeNative (Wasm)");
+    expect(panel.match(/class="score-fill s-/gu)?.length).toBe(5);
+    // Unreal stock has no row: it reads pending, never zero. The load 8 row is not an engine's score.
+    expect(panel).toContain("pending");
+    expect(panel).not.toContain("7.92");
+    // A group with one measured engine names no winner: both groups here have two.
+    expect(panel.match(/✅/gu)?.length).toBe(2);
+    // Vanilla loses its group on the score bar, and the equal metrics of the pair tie.
+    expect(panel).toContain('class="score-fill s-win"');
+    expect(panel).toContain('class="score-fill s-lose"');
+    expect(panel).toContain('class="score-fill score-part s-tie"');
+    expect(panel).toContain('class="score-fill s-none"');
+    // The panel comes before the ladder and is on the visible Overview tab.
+    expect(html.indexOf("Engine score")).toBeLessThan(html.indexOf("120 fps goal ladder"));
+  });
+
   it("defines the comparison colors for the light and the dark theme", () => {
     const html = renderHtml({ schemaVersion: 1, iterations: [] }, new Date(0));
     expect(html).toMatch(/:root\{[^}]*--ok-bg:/u);
@@ -459,15 +649,15 @@ describe("stress-loop record (PRD-770)", () => {
     );
   });
 
-  it("voids a run whose host load rose above 6", () => {
+  it("voids a run whose host load rose above 18", () => {
     expect(() =>
-      recordRun(readLedger(ledgerPath()), run({ load: [3, 6.1] }), { label: "x" }),
-    ).toThrow(/run void: host load 6\.1/u);
+      recordRun(readLedger(ledgerPath()), run({ load: [3, 18.1] }), { label: "x" }),
+    ).toThrow(/run void: host load 18\.1/u);
     expect(() => recordRun(readLedger(ledgerPath()), run({ load: [] }), { label: "x" })).toThrow(
       /load/u,
     );
     expect(() =>
-      recordRun(readLedger(ledgerPath()), run({ load: [3, 6] }), { label: "x" }),
+      recordRun(readLedger(ledgerPath()), run({ load: [3, 18] }), { label: "x" }),
     ).not.toThrow();
   });
 

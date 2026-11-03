@@ -1574,6 +1574,10 @@ jobs:
           engine: threejs
       - name: Build and verify the starter's WebView HUD
         shell: bash
+        env:
+          # Same 300 frames on the same software adapter as the relocated container step below:
+          # 0.3.9 used 271 s of the 300 s bound (run 41402792920), and run 41575190769 was cut at frame 273.
+          TN_STARTER_TIMEOUT_MS: ${{ matrix.platform == 'Windows' && '600000' || '300000' }}
         run: |
           set -euo pipefail
           target="$RUNNER_TEMP/threenative-starter-native"
