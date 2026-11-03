@@ -39,7 +39,6 @@ interface ILoadingHost {
   };
   /** Opt out while cold textures prepare; enable the layer again before draw-backed cell prewarm. */
   readonly keepWorldRendering?: boolean;
-  readonly renderer: { compileAsync(scene: Scene, camera: Camera): Promise<void> };
   readonly scene: Scene;
   readonly startup: {
     readonly progress: number;

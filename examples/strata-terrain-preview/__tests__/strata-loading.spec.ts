@@ -147,7 +147,6 @@ function host(ready: Promise<void>) {
   return {
     camera: new PerspectiveCamera(),
     scene: new Scene(),
-    renderer: { compileAsync: vi.fn(async () => undefined) },
     canvasLayer: {
       scene: new Scene(),
       camera: new OrthographicCamera(-400, 400, 300, -300, 0, 2),
