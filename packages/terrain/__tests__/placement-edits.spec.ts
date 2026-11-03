@@ -350,6 +350,49 @@ describe("editWorldPlacements", () => {
     expect(edited.manifest.cells).toEqual(rebaked.manifest.cells);
   });
 
+  it("applies many ID edits to many records in linear time (audit TERRAIN-15)", () => {
+    const count = 200_000;
+    const edits = 4_000;
+    const placements = new Float32Array(count * 8);
+    const ids = Array.from({ length: count }, (_, index) => `record-${String(index)}`);
+    for (let index = 0; index < count; index += 1) {
+      const offset = index * 8;
+      placements[offset] = (index % 1000) + 0.5;
+      placements[offset + 1] = 1;
+      placements[offset + 2] = Math.floor(index / 1000) + 0.5;
+      placements[offset + 6] = 1;
+      placements[offset + 7] = 1;
+    }
+    const manifest = {
+      assets: { rock: ASSETS.rock },
+      cellSize: 1000,
+      cells: [{ runs: [{ asset: "rock", count, offset: 0 }], x: 0, z: 0 }],
+      extent: { minX: 0, minZ: 0, sizeX: 1000, sizeZ: 1000 },
+      placementIds: "placement-ids.json",
+      placements: "placements.bin",
+      terrain: { ...HEIGHTMAP, columns: 2, rows: 2, spacing: 1000 },
+      version: 1,
+    } as TestManifest;
+    // Targets sit at the end of the record list: the worst case for a linear scan per edit.
+    const target = (index: number) => `record-${String(count - 1 - index)}`;
+    const overrides = Object.fromEntries(
+      Array.from({ length: edits }, (_, index) => [
+        target(index),
+        { ...transform([500.5, 1, 500.5]), grounding: false },
+      ]),
+    );
+    const remove = Array.from({ length: edits }, (_, index) => target(edits + index));
+    const started = performance.now();
+    const edited = editWorldPlacements(
+      { ids, manifest, placements: placements.buffer as ArrayBuffer },
+      { overrides, remove },
+      () => 0,
+    );
+    const elapsed = performance.now() - started;
+    expect(edited.ids).toHaveLength(count - edits);
+    expect(elapsed).toBeLessThan(8_000); // the per-edit scan took about 50 s here
+  });
+
   it("prints the edit time for 20,000 synthetic records", () => {
     const count = 20_000;
     const placements = new Float32Array(count * 8);

@@ -360,15 +360,19 @@ export function editWorldPlacements(
   const changedCells = new Set<string>();
   const unmatched: string[] = [];
   const removed: IRemovedPlacement[] = [];
+  // One ID index and one filter keep removals linear; the first record with an ID wins, as before.
+  const firstById = new Map<string, IEditablePlacement>();
+  for (const item of current)
+    if (item.id !== undefined && !firstById.has(item.id)) firstById.set(item.id, item);
+  const dropped = new Set<IEditablePlacement>();
   for (const placementId of remove) {
-    const index = current.findIndex((item) => item.id === placementId);
-    if (index < 0) {
+    const item = firstById.get(placementId);
+    if (item === undefined) {
       unmatched.push(placementId);
       continue;
     }
-    const [item] = current.splice(index, 1);
-    if (item === undefined)
-      throw new Error(`Placement '${placementId}' disappeared during removal.`);
+    firstById.delete(placementId);
+    dropped.add(item);
     if (item.originalCell !== undefined) changedCells.add(item.originalCell);
     removed.push({
       asset: item.asset,
@@ -378,6 +382,7 @@ export function editWorldPlacements(
       scale: item.scale[0] as number,
     });
   }
+  if (dropped.size > 0) current = current.filter((item) => !dropped.has(item));
   for (const clear of clears) {
     const radiusSquared = clear.radius * clear.radius;
     current = current.filter((item) => {
@@ -390,8 +395,11 @@ export function editWorldPlacements(
       return !hit;
     });
   }
+  const indexById = new Map<string, number>();
+  for (const [index, item] of current.entries())
+    if (item.id !== undefined && !indexById.has(item.id)) indexById.set(item.id, index);
   for (const [placementId, override] of Object.entries(overrides)) {
-    const index = current.findIndex((item) => item.id === placementId);
+    const index = indexById.get(placementId) ?? -1;
     if (index < 0) {
       unmatched.push(placementId);
       continue;
