@@ -139,6 +139,9 @@ class Texture : public EventDispatcher {
 public:
     // Copies share the image source; sampler state, transforms and GPU identity stay per texture.
     const std::shared_ptr<TextureSource> imageSource = std::make_shared<TextureSource>();
+    Texture() = default;
+    /** A fresh texture (default sampler state, its own GPU identity) over an image another texture decoded. */
+    explicit Texture(std::shared_ptr<TextureSource> source) : imageSource(std::move(source)) {}
     virtual ~Texture() = default;
 
     TextureId ident;  // identity for GPU caches; see TextureId

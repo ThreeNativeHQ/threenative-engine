@@ -519,6 +519,26 @@ int main() {
             asked != "pictures/pixel one.png") {
             std::printf("image textures: an image named by uri was not read through the host (%s, asked '%s')\n", read.error.c_str(), asked.c_str()); ++differ;
         }
+        // A second model naming the same image bytes shares the decoded pixels (one RGBA copy, not one per
+        // model) in a texture of its own; the same uri over different bytes decodes its own.
+        const auto mapOf = [](const gltf::LoadResult& result) -> const Texture* {
+            auto* found = result.scene && !result.scene->children.empty() ? dynamic_cast<Mesh*>(result.scene->children[0]) : nullptr;
+            return found && found->material && found->material->maps.count("map") ? found->material->maps.at("map").get() : nullptr;
+        };
+        auto again = gltf::load(bytes, options);
+        const Texture* shared = mapOf(again);
+        if (!map || !shared || shared == map || shared->imageSource != map->imageSource || shared->ident.value() == map->ident.value()) {
+            std::printf("image textures: a second model over the same uri image did not share its decoded pixels\n"); ++differ;
+        }
+        std::vector<uint8_t> otherPng = png;
+        otherPng.push_back(0);  // trailing bytes after IEND: the same pixels, different file bytes
+        gltf::LoadOptions otherOptions;
+        otherOptions.readUri = [&](const std::string&) -> std::span<const uint8_t> { return otherPng; };
+        auto other = gltf::load(bytes, otherOptions);
+        const Texture* own = mapOf(other);
+        if (!map || !own || !own->hasImage() || own->imageSource == map->imageSource) {
+            std::printf("image textures: different bytes under one uri shared another file's pixels\n"); ++differ;
+        }
         auto unread = gltf::load(bytes);
         auto* bare = unread.scene ? dynamic_cast<Mesh*>(unread.scene->children.empty() ? nullptr : unread.scene->children[0]) : nullptr;
         const Texture* none = bare && bare->material && bare->material->maps.count("map") ? bare->material->maps.at("map").get() : nullptr;

@@ -10,7 +10,9 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <iterator>
 #include <map>
+#include <mutex>
 #include <set>
 #include <string>
 
@@ -31,6 +33,28 @@ using animation::AnimationClip;
 using animation::Interpolation;
 using animation::KeyframeTrack;
 using animation::TrackType;
+
+/**
+ * Images a model names by uri (the cook's shared images), decoded once for every model that names the
+ * same bytes: ten spruce files over six 2048 px atlases held ten RGBA copies each and ran the web
+ * engine's 4 GB heap out mid-load. Weak, so the pixels go when the last texture over them does.
+ * Keyed by uri, size and FNV-1a of the bytes, so two files that reuse one name never share pixels.
+ */
+std::shared_ptr<TextureSource> decodedUriImage(const std::string& key, std::shared_ptr<TextureSource> store = {}) {
+    static std::mutex mutex;
+    static std::map<std::string, std::weak_ptr<TextureSource>> images;
+    std::lock_guard<std::mutex> lock(mutex);
+    if (store) return images[key] = store, store;
+    for (auto it = images.begin(); it != images.end();) it = it->second.expired() ? images.erase(it) : std::next(it);
+    const auto found = images.find(key);
+    return found == images.end() ? nullptr : found->second.lock();
+}
+
+std::string uriImageKey(const std::string& uri, std::span<const uint8_t> bytes) {
+    uint64_t hash = 14695981039346656037ull;
+    for (const uint8_t byte : bytes) hash = (hash ^ byte) * 1099511628211ull;
+    return uri + '\n' + std::to_string(bytes.size()) + '\n' + std::to_string(hash);
+}
 
 const Value* member(const Value* v, std::string_view key) { return v && v->isObject() ? v->find(key) : nullptr; }
 const Value* item(const Value* v, std::size_t i) {
@@ -779,15 +803,21 @@ class Builder {
         }
         std::shared_ptr<Texture>& texture = textures_[index];
         if (!texture) {
-            auto made = std::make_shared<Texture>();
-            made->name = text(member(def, "name"));
             // GLTFTextureWebPExtension: a texture with EXT_texture_webp draws its WebP source when
             // WebP decodes (checkExtensions refused the file otherwise); `source` is the fallback.
             const Value* webp = member(member(def, "extensions"), "EXT_texture_webp");
-            made->source = static_cast<int>(number(member(webp ? webp : def, "source"), -1));
+            const int source = static_cast<int>(number(member(webp ? webp : def, "source"), -1));
+            const std::string key = sharedImageKey(source);
+            std::shared_ptr<TextureSource> decoded = key.empty() ? nullptr : decodedUriImage(key);
+            auto made = decoded ? std::make_shared<Texture>(decoded) : std::make_shared<Texture>();
+            made->name = text(member(def, "name"));
+            made->source = source;
             made->flipY = false;
             applySampler(*made, index);
-            decodeImage(*made);
+            if (!decoded) {
+                decodeImage(*made);
+                if (!key.empty() && !made->data.empty()) decodedUriImage(key, made->imageSource);
+            }
             texture = made;
         }
         // GLTFTextureTransformExtension.extendTexture: a transform clones the texture (a new GPU identity,
@@ -842,6 +872,20 @@ class Builder {
     // The texture's image bytes (a GLB view or a base64 data URI) become RGBA8. A format this loader
     // does not decode, or an image in an external file the host cannot read, stays undecoded and the player refuses the
     // model by name; a PNG or JPEG that will not decode is a damaged file and fails the load.
+    /** The decode-once key of an image read through readUri; empty for embedded or host-decoded images. */
+    std::string sharedImageKey(int source) {
+        if (source < 0 || static_cast<std::size_t>(source) >= data_.images_count || options_.externalImage ||
+            !options_.readUri)
+            return {};
+        const cgltf_image& image = data_.images[source];
+        if (image.buffer_view || !image.uri || std::strncmp(image.uri, "data:", 5) == 0) return {};
+        std::string uri = image.uri;
+        cgltf_decode_uri(uri.data());
+        uri.resize(std::strlen(uri.c_str()));
+        const auto bytes = options_.readUri(uri);
+        return bytes.empty() ? std::string{} : uriImageKey(uri, bytes);
+    }
+
     void decodeImage(Texture& texture) {
         if (texture.source < 0 || static_cast<std::size_t>(texture.source) >= data_.images_count) return;
         if (options_.externalImage) {
