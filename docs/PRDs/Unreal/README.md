@@ -134,7 +134,7 @@ A layer turns on by default only when five conditions hold:
 | L6 | Ambient occlusion on indirect light only | [PRD-635](look/PRD-635-ambient-occlusion-darkens-only-the-light-that-comes-from-around.md) |
 | L7 | Global illumination | The [GI set](#global-illumination-the-lumen-set-filed-2026-10-20) below: PRD-603 to PRD-605, PRD-638 to PRD-645, PRD-VQ-09; templates last through [PRD-267](../useful-defaults/PRD-267-screen-space-gi-ships-in-the-templates.md) (amended) |
 | L8 | Reflections | [PRD-642](gi/PRD-642-glossy-surfaces-reflect-what-the-camera-cannot-see.md) on `high`; [PRD-VQ-03](../rendering/PRD-VQ-03-local-reflection-probes.md) (amended) on `low` and `medium` |
-| L9 | Bloom, vignette, local exposure, motion blur, neutral grade | [PRD-636](look/PRD-636-the-finishing-post-chain-matches-unreal-defaults.md); anti-aliasing in [PRD-539](performance/PRD-539-low-resolution-temporal-reconstruction-quality-and-cost.md) (amended); exposure default in [PRD-632](look/PRD-632-the-frame-is-exposed-and-tone-mapped-the-way-a-fresh-unreal-project-is.md) |
+| L9 | Bloom, vignette, local exposure, motion blur, neutral grade | [PRD-636](look/PRD-636-the-finishing-post-chain-matches-unreal-defaults.md); anti-aliasing in [PRD-539](../done/PRD-539-low-resolution-temporal-reconstruction-quality-and-cost.md) (amended); exposure default in [PRD-632](look/PRD-632-the-frame-is-exposed-and-tone-mapped-the-way-a-fresh-unreal-project-is.md) |
 
 Order: PRD-631 first, then PRD-632, because every later row is compared at matched exposure. After
 that, PRD-633 and PRD-635 can run in parallel, then the rest. Not filed: a surface BRDF PRD. three.js
@@ -261,7 +261,7 @@ PRD-459, PRD-486 and PRD-493 cite Unreal only in passing, so they stay in their 
 | [PRD-384](../done/PRD-384-adaptive-resolution-gpu-headroom.md) | Comparison with Unreal's dynamic-resolution controller; the gaps point to PRD-563, PRD-564 and PRD-549 |
 | [PRD-457](rendering/PRD-457-virtual-shadows-scale-by-measurement.md) | Pool-pressure resolution bias before falling back to cached levels; cross-reference to PRD-572 |
 | [PRD-538](../done/PRD-538-shadow-maps-redraw-only-what-streamed-in.md) | Per-page eviction and a nearest-first page budget |
-| [PRD-539](performance/PRD-539-low-resolution-temporal-reconstruction-quality-and-cost.md) | The TSR levers not yet tried, in order, starting with 200% history |
+| [PRD-539](../done/PRD-539-low-resolution-temporal-reconstruction-quality-and-cost.md) | The TSR levers not yet tried, in order, starting with 200% history |
 | [PRD-VQ-08](rendering/PRD-VQ-08-clouds-and-overhead-transmittance.md) | Three-channel cloud shadow map that serves receivers below and inside the cloud |
 | [PRD-459](../open-world/PRD-459-smooth-streaming-one-admission-budget-per-frame.md) | Texture uploads charged to the admission budget; stale Phase 1 status corrected |
 | [PRD-460](open-world/PRD-460-invisible-streaming-transitions.md) | Distance-driven cull fade, timed LOD fade, re-crossing and camera-cut rules |
@@ -318,7 +318,7 @@ not needed for its red-green test), then PRD-650 and the rest of PRD-651 in para
   shadow clipmap. PRD-649 measures it by ablation on `horizon`. A PRD follows only if they show,
   and then it traces `GPUSceneBVH`, as the GI set does.
 - **A shadow denoiser:** Unreal has none for virtual shadows. Its SMRT noise is resolved by temporal
-  reconstruction ([PRD-539](performance/PRD-539-low-resolution-temporal-reconstruction-quality-and-cost.md)).
+  reconstruction ([PRD-539](../done/PRD-539-low-resolution-temporal-reconstruction-quality-and-cost.md)).
   The `walk` and `sunturn` runs show whether ThreeNative needs more.
 - **Capsule shadows, ray-traced shadows, MegaLights, translucent coloured shadows, area-light
   shadows:** all off in a fresh Unreal project, so they are not the default look. Each waits for a
