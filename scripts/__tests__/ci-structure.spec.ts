@@ -748,6 +748,11 @@ describe("CI pipeline structure", () => {
     expect(scope).toContain("selection: ${{ steps.classify.outputs.selection }}");
     expect(scope).toContain("reason: ${{ steps.classify.outputs.reason }}");
     expect(scope).not.toContain("pnpm install");
+    // Scope reads only scripts/ and the kit.json files: a full blob-less checkout fetched every
+    // HEAD blob (488 MB) and outlasted the 5-minute bound on a loaded runner (runs 41688746026, 41702153229).
+    expect(scope).toMatch(
+      /sparse-checkout: \|\n\s+scripts\n\s+packages\/create-threenative\/templates\n/u,
+    );
 
     for (const name of [
       "typecheck",
