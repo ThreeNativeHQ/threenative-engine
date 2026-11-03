@@ -1064,4 +1064,89 @@ void Program::linkVaryings(const Program& fragment) {
     }
 }
 
+void Program::pruneDeadStatements() {
+    const auto grid = [&] {
+        std::vector<std::vector<uint8_t>> flags(blocks_.size());
+        for (std::size_t b = 0; b < blocks_.size(); ++b) flags[b].assign(blocks_[b].size(), 0);
+        return flags;
+    };
+    // An output that a later entry-block write of the same output replaces is dead, wherever it sits before that write.
+    auto shadowed = grid();
+    std::vector<uint8_t> written(outputs_.size());
+    const auto shadow = [&](auto& self, uint32_t block) -> void {
+        for (std::size_t i = 0; i < blocks_[block].size(); ++i) {
+            const Stmt& s = blocks_[block][i];
+            if (s.kind == StmtKind::Output && written[s.a]) shadowed[block][i] = 1;
+            if (s.kind == StmtKind::If || s.kind == StmtKind::Loop) self(self, s.body);
+            if (s.kind == StmtKind::If && s.otherwise) self(self, s.otherwise);
+        }
+    };
+    for (std::size_t i = blocks_[0].size(); i-- > 0;) {
+        const Stmt& s = blocks_[0][i];
+        if (s.kind == StmtKind::Output) {
+            shadowed[0][i] = written[s.a];
+            written[s.a] = 1;
+        } else if (s.kind == StmtKind::If || s.kind == StmtKind::Loop) {
+            shadow(shadow, s.body);
+            if (s.kind == StmtKind::If && s.otherwise) shadow(shadow, s.otherwise);
+        }
+    }
+    std::vector<uint8_t> liveExpr(exprs_.size()), liveVar(vars_.size());
+    bool grew = false;
+    const auto mark = [&](auto& self, ExprId id) -> void {
+        if (id == kInvalid || liveExpr[id]) return;
+        liveExpr[id] = 1;
+        grew = true;
+        const Expr& e = exprs_[id];
+        if (e.op == Op::LoadVar) liveVar[e.immediate] = 1;
+        for (uint8_t i = 0; i < e.argc; ++i) self(self, e.args[i]);
+    };
+    auto live = grid();
+    // Liveness only grows (a live load makes its variable's assignments live), so walking until nothing new is
+    // marked reaches the fixed point.
+    const auto walk = [&](auto& self, uint32_t block, bool loopLive) -> bool {
+        bool any = false;
+        for (std::size_t i = 0; i < blocks_[block].size(); ++i) {
+            const Stmt& s = blocks_[block][i];
+            bool on = false;
+            switch (s.kind) {
+            case StmtKind::Output: on = !shadowed[block][i]; if (on) mark(mark, s.b); break;
+            case StmtKind::Store:
+            case StmtKind::TextureStore: on = true; mark(mark, s.b); mark(mark, s.c); break;
+            case StmtKind::Discard:
+            case StmtKind::Return: on = true; break;
+            case StmtKind::Break:
+            case StmtKind::Continue: on = loopLive; break;
+            case StmtKind::Eval: on = liveExpr[s.b] || exprs_[s.b].op == Op::AtomicAdd; if (on) mark(mark, s.b); break;
+            case StmtKind::Assign: on = liveVar[s.a] != 0; if (on) mark(mark, s.b); break;
+            case StmtKind::If: {
+                const bool then = self(self, s.body, loopLive);
+                const bool otherwise = s.otherwise != 0 && self(self, s.otherwise, loopLive);
+                on = then || otherwise;
+                if (on) mark(mark, s.a);
+                break;
+            }
+            case StmtKind::Loop:
+                // A live loop keeps its own breaks and continues: they decide which iterations reach the live work.
+                on = self(self, s.body, false);
+                if (on) self(self, s.body, true), mark(mark, s.a);
+                break;
+            }
+            live[block][i] = on;
+            any = any || on;
+        }
+        return any;
+    };
+    do {
+        grew = false;
+        walk(walk, 0, false);
+    } while (grew);
+    for (std::size_t b = 0; b < blocks_.size(); ++b) {
+        std::vector<Stmt> kept;
+        for (std::size_t i = 0; i < blocks_[b].size(); ++i)
+            if (live[b][i]) kept.push_back(blocks_[b][i]);
+        blocks_[b] = std::move(kept);
+    }
+}
+
 }  // namespace tn::engine::shader

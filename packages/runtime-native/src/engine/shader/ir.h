@@ -214,6 +214,13 @@ public:
     [[nodiscard]] bool hasOutput(std::string_view name) const;
     /** Match vertex output locations to the fragment's first-use varying order. */
     void linkVaryings(const Program& fragment);
+    /**
+     * Drops every statement that no live output, store, discard or return depends on, and every output that a later
+     * unconditional write of the same output replaces. Renderer::auxFragment rebuilds a lit program to write one
+     * normal; without this its WGSL still evaluates the whole lit colour, shadow reads included. Uniforms, bindings,
+     * varyings and outputs are declared from their tables, so the stage's layout does not change.
+     */
+    void pruneDeadStatements();
 
 private:
     uint32_t loopDepth_ = 0;

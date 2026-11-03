@@ -2705,6 +2705,9 @@ const shader::StageModule* Renderer::auxFragment(Program& program, uint8_t mask)
         // The first target takes the colour output's location 0 (its last write wins), the rest 1, 2 and 3 in order.
         static constexpr const char* kOutputs[] = {"color", "aux1", "aux2", "aux3"};
         for (std::size_t i = 0; i < outputs.size(); ++i) f.output(kOutputs[i], outputs[i]);
+        // The lit colour these outputs replace is dead: without the prune the aux draw shades the whole program again,
+        // shadow reads included, to write one normal (a splatted ground paid that twice a frame).
+        f.pruneDeadStatements();
         if (!f.diagnostics().empty() || f.varyings().size() != varyings) return nullptr;
         auto module = std::make_unique<shader::StageModule>(shader::buildStage(f, 1));
         const auto& own = program.fragment;

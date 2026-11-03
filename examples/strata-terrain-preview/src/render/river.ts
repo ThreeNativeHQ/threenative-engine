@@ -114,8 +114,14 @@ const RIVER = {
 
 /** The lake's shape, and how its mirror is taken. Every number here is this game's. */
 const LAKE = {
-  /** Mirror pixels as a share of the frame's, how often it redraws, and the layer mask it draws. */
-  mirror: { resolutionScale: 1, refreshInterval: 2, layers: 1 << REFLECTED_LAYER },
+  /**
+   * Mirror pixels as a share of the frame's, how often it redraws, and the layer mask it draws. Half
+   * the frame's pixels, as Unreal's planar reflection takes by default (UE 5.8.3:
+   * Engine/Source/Runtime/Engine/Private/Components/SceneCaptureComponent.cpp:1136,
+   * `ScreenPercentage = 50`): the mirror draws the full ground material, and at full size it cost a
+   * third of the overview's ground time for a reflection the ripples scatter anyway.
+   */
+  mirror: { resolutionScale: 0.5, refreshInterval: 2, layers: 1 << REFLECTED_LAYER },
   /** Rings and spokes in the disc the basin is meshed as. */
   rings: 44,
   spokes: 88,

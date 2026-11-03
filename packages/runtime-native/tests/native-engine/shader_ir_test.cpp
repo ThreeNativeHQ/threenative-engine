@@ -285,6 +285,41 @@ void storageTextures() {
     CHECK(!p.ok() && p.diagnostics()[0].node == "storageTexture2d");
 }
 
+// The aux pass rebuilds a lit program and points `color` at the normal (Renderer::auxFragment): what only the replaced
+// colour read must leave the WGSL, while a discard, a live loop's break and the stage's layout stay.
+void pruneDead() {
+    Program p(Stage::Fragment);
+    const auto lit = p.texture2d("lit");
+    const auto cut = p.texture2d("cut");
+    const auto uv = p.varying("uv", Type::vec(2));
+    const auto shade = p.var(Type::vec(4), p.sample(lit, uv));
+    p.output("color", p.load(shade));
+    p.If(p.less(p.swizzle(p.sample(cut, uv), "w"), p.constant(0.5f)), [&] { p.discard(); });
+    const auto sum = p.var(Type::f32(), p.constant(0.f));
+    p.Loop(p.constant(int32_t(4)), [&](ExprId i) {
+        p.If(p.equal(i, p.constant(int32_t(2))), [&] { p.breakLoop(); });
+        p.assign(sum, p.add(p.load(sum), p.constant(1.f)));
+    });
+    const auto unused = p.var(Type::f32(), p.constant(3.f));
+    p.Loop(p.constant(int32_t(8)), [&](ExprId) {
+        p.assign(unused, p.add(p.load(unused), p.swizzle(p.sample(lit, uv), "x")));
+    });
+    p.output("color", p.construct(Type::vec(4), {p.load(sum), p.constant(0.f), p.constant(0.f), p.constant(1.f)}));
+    CHECK(p.ok());
+    const auto before = buildStage(p, 1);
+    CHECK(before.wgsl.ok() && before.wgsl.code.find("textureSample(t_lit") != std::string::npos);
+    p.pruneDeadStatements();
+    const auto after = buildStage(p, 1);
+    CHECK(after.wgsl.ok());
+    CHECK(after.wgsl.code.find("textureSample(t_lit") == std::string::npos);
+    CHECK(after.wgsl.code.find("textureSample(t_cut") != std::string::npos);
+    CHECK(after.wgsl.code.find("discard") != std::string::npos);
+    CHECK(after.wgsl.code.find("break") != std::string::npos);
+    CHECK(after.wgsl.code.find("var t_lit") != std::string::npos);
+    CHECK(after.bindings.size() == before.bindings.size() && after.uniformBlockSize == before.uniformBlockSize);
+    if (!after.wgsl.ok() || after.wgsl.code.find("textureSample(t_lit") != std::string::npos) std::fputs(after.wgsl.code.c_str(), stderr);
+}
+
 }  // namespace
 
-TN_TEST_MAIN({"storage_textures", storageTextures}, {"order", order}, {"types", types}, {"unsupported", unsupported})
+TN_TEST_MAIN({"storage_textures", storageTextures}, {"order", order}, {"types", types}, {"unsupported", unsupported}, {"prune_dead", pruneDead})
