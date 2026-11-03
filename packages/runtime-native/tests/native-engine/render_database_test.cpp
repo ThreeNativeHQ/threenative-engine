@@ -2588,18 +2588,27 @@ void gtaoFadeDistance() {
     s.camera.far = 400;
     auto floorMaterial = std::make_shared<Material>(MaterialType::Standard);
     floorMaterial->color.setRGB(0.8, 0.8, 0.8);
+    // A floor-and-wall corner that scales with the camera distance, so the corner keeps the same screen
+    // footprint at every distance and only the fade can change how much of it darkens.
+    Object3D corner;
     Mesh floor(makePlaneGeometry(40, 40), floorMaterial);
     floor.rotation.x = -1.5707963267948966;
     floor.position.y = -1;
-    s.scene.add(floor);
+    Mesh wall(makeBoxGeometry(8, 4, 0.5), floorMaterial);
+    wall.position.set(0, 1, -2);
+    corner.add(floor);
+    corner.add(wall);
+    s.scene.add(corner);
     s.camera.updateProjectionMatrix();
     s.scene.updateMatrixWorld(true);
     const auto colour = g::texture("scene", g::uv()), depth = g::texture("depth", g::uv()),
                normal = g::texture("normal", g::uv());
     RenderDatabase database;
     const auto frame = [&](float reachPx, double distance) {
-        s.camera.position.set(0, 1.4, distance);
-        s.camera.lookAt(0, 0, 0);
+        const double k = distance / 6.4;
+        corner.scale.setScalar(k);
+        s.camera.position.set(0, 1.4 * k, distance);
+        s.camera.lookAt(0, -0.5 * k, -1.5 * k);
         s.camera.updateProjectionMatrix();
         s.scene.updateMatrixWorld(true);
         auto contact = g::gtaoEffect(depth, normal);
