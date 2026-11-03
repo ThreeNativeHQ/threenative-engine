@@ -411,6 +411,7 @@ tn_native_engine_test(tn-native-engine-abi-test tests/native-engine/abi_test.cpp
     native_engine_abi_tsl_call=tsl_call
     native_engine_abi_tsl_mat2_scalar_order=tsl_mat2_scalar_order
     native_engine_abi_tsl_bump_map=tsl_bump_map
+    native_engine_abi_tsl_normal_map=tsl_normal_map
     native_engine_abi_tsl_flat_varying=tsl_flat_varying
     native_engine_abi_vertex_position_world=vertex_position_world
     native_engine_abi_tsl_uniform_value=tsl_uniform_value

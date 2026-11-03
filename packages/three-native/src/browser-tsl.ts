@@ -159,6 +159,7 @@ const FUNCTIONS = [
   "transformNormalToView",
   "getViewPosition",
   "bumpMap",
+  "normalMap",
   "property",
   "varyingProperty",
   "instanceMatrix",

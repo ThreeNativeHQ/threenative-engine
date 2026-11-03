@@ -382,6 +382,7 @@ interface IAttribute {
   getX(index: number): number;
   getY(index: number): number;
   getZ(index: number): number;
+  getComponent(index: number, component: number): number;
   setX(index: number, value: number): unknown;
   setY(index: number, value: number): unknown;
   setXYZ(index: number, x: number, y: number, z: number): unknown;
@@ -817,6 +818,32 @@ describe("BufferAttribute sync between the JS array and the engine, on the brows
     destination.copyAt(1, source, 0);
     destination.needsUpdate = true;
     expect(destination.getY(1)).toBe(9);
+  });
+
+  // core's pose measurement walks every vertex with getX/getY/getZ: one engine crossing each cost a
+  // licensed forest 15 s of load. The getters read the coherent shadow instead, fetched once.
+  it("reads per-vertex getters from the shadow without an engine call each", () => {
+    const { runtime, counts } = engine();
+    let invokes = 0;
+    const invoke = runtime.invoke.bind(runtime);
+    runtime.invoke = (self, method, args) => {
+      if (/^get[XYZW]$|^getComponent$/u.test(method)) invokes += 1;
+      return invoke(self, method, args);
+    };
+    const { classes } = defineBrowserClasses(registry, runtime, loadCatalog(REPO));
+    const Attribute = attributeClass(classes);
+    const p = new Attribute(
+      new Float32Array(3000 * 3).map((_, i) => i),
+      3,
+    );
+    let sum = 0;
+    for (let i = 0; i < 3000; i++) sum += p.getX(i) + p.getY(i) + p.getZ(i);
+    expect(sum).toBe(((9000 - 1) * 9000) / 2);
+    expect(invokes).toBe(0);
+    expect(counts.reads).toBeLessThanOrEqual(9000);
+    p.setY(5, -1);
+    expect(p.getY(5)).toBe(-1);
+    expect(p.getComponent(5, 1)).toBe(-1);
   });
 
   it("preserves a normalized integer attribute's raw bytes and type", () => {

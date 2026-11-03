@@ -1121,6 +1121,30 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         const g::Node grad = g::mul(g::sign(det), g::add(g::mul(dHdx, r1), g::mul(dHdy, r2)));
         return g::normalize(g::sub(g::mul(g::abs(det), normal), grad));
     }
+    // r187's normalMap(node, scale = vec2(1)) (display/NormalMapNode.js, tangent space): the texel decoded to
+    // [-1, 1], its xy times scale, then perturbNormal2Arb around normalView from the screen derivatives of
+    // positionView and the geometry uv. standard.cpp perturbedNormal runs the same steps for material.normalMap.
+    if (!method && name == "normalMap") {
+        if (args.empty() || args.size() > 2) throw std::runtime_error("expected a normal node and an optional scale");
+        const g::Node texel = g::swizzle(arg(0), "xyz");
+        const g::Node decoded = g::sub(g::mul(texel, g::float_(2)), g::float_(1));
+        const g::Node xy = args.size() > 1 ? g::mul(g::swizzle(decoded, "xy"), arg(1)) : g::swizzle(decoded, "xy");
+        const g::Node mapN = g::vec3({g::swizzle(xy, "x"), g::swizzle(xy, "y"), g::swizzle(decoded, "z")});
+        const g::Node normal = g::normalize(g::varying("normalView", Type::vec(3)));
+        const g::Node eye = g::varying("positionView", Type::vec(3));
+        const g::Node uv = g::uv();
+        const g::Node q0 = g::dFdx(eye), q1 = g::dFdy(eye);
+        const g::Node st0 = g::dFdx(uv), st1 = g::dFdy(uv);
+        const g::Node q1perp = g::cross(q1, normal), q0perp = g::cross(normal, q0);
+        const g::Node T = g::add(g::mul(q1perp, g::swizzle(st0, "x")), g::mul(q0perp, g::swizzle(st1, "x")));
+        const g::Node B = g::add(g::mul(q1perp, g::swizzle(st0, "y")), g::mul(q0perp, g::swizzle(st1, "y")));
+        const g::Node det = g::max(g::dot(T, T), g::dot(B, B));
+        const g::Node face = g::select(g::builtin("frontFacing"), g::float_(1), g::float_(-1));
+        const g::Node scale = g::mul(face, g::div(g::float_(1), g::sqrt(det)));
+        return g::normalize(g::add(g::add(g::mul(T, g::mul(g::swizzle(mapN, "x"), scale)),
+                                          g::mul(B, g::mul(g::swizzle(mapN, "y"), scale))),
+                                   g::mul(normal, g::swizzle(mapN, "z"))));
+    }
     // r185's cbrt (MathNode.js): sign(a) * pow(abs(a), 1 / 3).
     if (name == "cbrt") {
         arity(method ? 0 : 1);

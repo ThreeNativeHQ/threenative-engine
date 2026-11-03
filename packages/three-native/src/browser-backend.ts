@@ -153,6 +153,16 @@ type TypedArray =
   | Uint16Array
   | Int32Array
   | Uint32Array;
+/** three's MathUtils.denormalize: a normalized integer lane to [-1, 1] or [0, 1]. */
+function denormalize(value: number, array: TypedArray): number {
+  if (array instanceof Float32Array || array instanceof Float64Array) return value;
+  if (array instanceof Uint32Array) return value / 4294967295;
+  if (array instanceof Uint16Array) return value / 65535;
+  if (array instanceof Uint8Array) return value / 255;
+  if (array instanceof Int32Array) return Math.max(value / 2147483647, -1);
+  if (array instanceof Int16Array) return Math.max(value / 32767, -1);
+  return Math.max(value / 127, -1);
+}
 /** A number list that came from a typed array names it, so the engine keeps three's storage type. */
 const TYPED = Symbol("tn.typedArray");
 // The engine's Scalar order: F32, F64, I8, U8, I16, U16, I32, U32.
@@ -2276,6 +2286,57 @@ export function defineBrowserClasses(
           if (!flags.isStorageBufferAttribute && !flags.isStorageInstancedBufferAttribute)
             pending.add(this);
           return entry.array;
+        },
+      });
+      // three's per-element getters read the attribute's own array; one engine call each made a vertex
+      // walk (core's pose measurement over a licensed forest) cost 15 s of load. They read the shadow,
+      // which the engine's own mutators keep in step, fetched once without marking it pending: the game
+      // never holds this array, so there is no edit to write back.
+      const shadow = (attribute: object): TypedArray => {
+        let entry = arrays.get(attribute);
+        if (entry === undefined) {
+          entry = { array: attributeArray.call(runtime, refOf(attribute)) };
+          arrays.set(attribute, entry);
+        }
+        return entry.array;
+      };
+      const component = (attribute: object, index: number, lane: number): number => {
+        const array = shadow(attribute);
+        const value = Number(array[index * itemSizeOf(attribute) + lane]);
+        return (attribute as { normalized?: boolean }).normalized === true
+          ? denormalize(value, array)
+          : value;
+      };
+      Object.defineProperties(cls.prototype, {
+        getX: {
+          configurable: true,
+          value(this: object, i: number) {
+            return component(this, i, 0);
+          },
+        },
+        getY: {
+          configurable: true,
+          value(this: object, i: number) {
+            return component(this, i, 1);
+          },
+        },
+        getZ: {
+          configurable: true,
+          value(this: object, i: number) {
+            return component(this, i, 2);
+          },
+        },
+        getW: {
+          configurable: true,
+          value(this: object, i: number) {
+            return component(this, i, 3);
+          },
+        },
+        getComponent: {
+          configurable: true,
+          value(this: object, i: number, lane: number) {
+            return component(this, i, lane);
+          },
         },
       });
       // needsUpdate is a property write, not a call: it hands the shadow to the engine as it stands.
