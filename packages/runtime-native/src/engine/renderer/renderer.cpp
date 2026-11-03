@@ -6040,7 +6040,8 @@ void Renderer::encodeFrame(FrameJob& job) {
         WGPURenderPassDescriptor sheetDesc = {};
         sheetDesc.colorAttachmentCount = 1; sheetDesc.colorAttachments = &sheet;
         sheetDesc.depthStencilAttachment = &sheetDepth;
-        auto sheetPass = beginTimedRenderPass(encoder, &sheetDesc, 2, {"translucent", inputWidth_, inputHeight_});
+        auto sheetPass = beginTimedRenderPass(encoder, &sheetDesc, 2,
+            {"translucent", inputWidth_, inputHeight_, uint32_t(job.translucentPlan.size())});
         for (const Planned& p : job.translucentPlan) encode(sheetPass, p, Tally::Extra);
         wgpuRenderPassEncoderEnd(sheetPass); wgpuRenderPassEncoderRelease(sheetPass);
     }
@@ -6156,6 +6157,7 @@ void Renderer::encodeFrame(FrameJob& job) {
                 if (trace) profile << (i ? "," : "") << "{\"index\":" << i
                     << ",\"name\":" << std::quoted(passInfo[i].name)
                     << ",\"segment\":" << unsigned(segments[i])
+                    << ",\"draws\":" << passInfo[i].draws
                     << ",\"width\":" << passInfo[i].width << ",\"height\":" << passInfo[i].height
                     << ",\"begin\":" << double(ns[0] - first) / 1e6 << ",\"ms\":" << ms << '}';
                 if (const auto query = shadowQueries.find(i); query != shadowQueries.end())

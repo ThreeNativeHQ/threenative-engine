@@ -22,7 +22,11 @@ import {
 import { afterEach, expect, it, vi } from "vitest";
 import { aoRefusal } from "../src/look/ao-admission.js";
 import { qualityPreset } from "../src/look/quality.js";
-import { type OutputRenderer, WorldEnvironment } from "../src/look/world-environment.js";
+import {
+  type OutputRenderer,
+  WorldEnvironment,
+  translucentTargetWanted,
+} from "../src/look/world-environment.js";
 import { readRenderChainObservation } from "../src/render/chain.js";
 import { ResolutionSubrect } from "../src/render/resolution-subrect.js";
 
@@ -376,4 +380,33 @@ it.each([
   const message = aoRefusal(request);
   expect(message === undefined).toBe(!refused);
   if (refused) expect(message).toMatch(/^TN_AO_INDIRECT_UNSUPPORTED: /);
+});
+
+it("draws the transparent draws' own target unless a launch asks a measurement for it off", () => {
+  const host = globalThis as { __tnTranslucent?: unknown; process?: unknown };
+  const save = { host, env: host.process, location: globalThis.location };
+  try {
+    expect(translucentTargetWanted()).toBe(true);
+    // One launch names the switch once, on the three surfaces a launch has.
+    host.process = { env: { TN_TRANSLUCENT: "0" } };
+    expect(translucentTargetWanted()).toBe(false);
+    host.process = { env: {} };
+    Object.defineProperty(globalThis, "location", {
+      configurable: true,
+      value: new URL("http://127.0.0.1:5173/?tnTranslucent=0"),
+    });
+    expect(translucentTargetWanted()).toBe(false);
+    // Another query keeps the target: the switch is a name, not a substring.
+    Object.defineProperty(globalThis, "location", {
+      configurable: true,
+      value: new URL("http://127.0.0.1:5173/?tnTranslucentOn=0"),
+    });
+    expect(translucentTargetWanted()).toBe(true);
+    host.__tnTranslucent = false;
+    expect(translucentTargetWanted()).toBe(false);
+  } finally {
+    host.process = save.env;
+    Reflect.deleteProperty(host, "__tnTranslucent");
+    Object.defineProperty(globalThis, "location", { configurable: true, value: save.location });
+  }
 });

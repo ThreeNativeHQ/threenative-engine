@@ -141,6 +141,29 @@ const TONEMAP: Record<TonemapMode, number> = {
 };
 
 /**
+ * Whether this launch draws the transparent draws' own target (see `seesThrough` below).
+ *
+ * On unless a launch asks for it off: `TN_TRANSLUCENT=0`, `?tnTranslucent=0`, or the global
+ * `__tnTranslucent = false` a test sets. Only `0` and `false` count, so an old URL that never
+ * named the switch keeps the target. A frame without it takes the occlusion on its sheets, which
+ * is wrong to look at, so this is a measurement switch and not a look: a lane prices the pass by
+ * running the same pose both ways.
+ */
+export function translucentTargetWanted(): boolean {
+  const host = globalThis as { process?: { env?: Record<string, unknown> } } & Record<
+    string,
+    unknown
+  >;
+  const fromEnv = host.process?.env?.TN_TRANSLUCENT;
+  if (fromEnv === "0" || fromEnv === "false") return false;
+  const query = globalThis.location?.search;
+  if (typeof query === "string" && /[?&]tnTranslucent=(?:0|false)(?:&|$)/u.test(query))
+    return false;
+  const set = host.__tnTranslucent;
+  return !(set === false || set === 0 || set === "0" || set === "false");
+}
+
+/**
  * Publishes this install's exposure readiness for the startup's first visible frame
  * (`rendererFirstWorldFrame`): measured, settled, and within 3% of the meter's own target.
  *
@@ -1031,7 +1054,10 @@ export class WorldEnvironment {
       ownedEngine && giCache.irradiance !== undefined && options.gtaoIndirectOnly;
     // Both screen-space stages below darken the frame with an occlusion gathered at the opaque surface's depth, so both
     // must leave the draws composited over it alone (see the MRT's `translucent` output and `translucentFrame`).
-    const seesThrough = options.ssgiEnabled || options.gtaoEnabled;
+    // `TN_TRANSLUCENT=0` or `?tnTranslucent=0` keeps the target off the frame — the occlusion then darkens the sheets
+    // over the opaque surface, as it did before the target existed — so one launch can price the pass; a diagnostic,
+    // never a look.
+    const seesThrough = (options.ssgiEnabled || options.gtaoEnabled) && translucentTargetWanted();
     // Upstream three has no scene-wide translucent target, so each material writes its own: its output, premultiplied
     // by its alpha, and nothing at all from an opaque material (whose alpha is 1). The owned engine draws the
     // transparent draws into the target itself (renderer.cpp, planAux), so it declares no output for it.
