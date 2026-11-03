@@ -612,10 +612,7 @@ export function spellLightPBR(
 //   4 shock     expanding shell: t1 = (radius, thickness, impulse, -)
 //   5 push      cone gust: t2.xyz dir, t1 = (speed, radius, length, coupling)
 // kill: inout var
-// ENGINE-GAP: Fn out-param assign (engine-gaps gap 10). The Wasm engine's Fn passes its arguments as reads, so the inout `kill` cannot be
-// assigned ("assign requires a variable or storage element"). Inlined as a plain JS function: the
-// caller's kill var is assigned directly. Switch back to Fn once Fn arguments can be inout vars.
-export function forceAccel(p: V3, v: V3, kill: F): V3 {
+export const forceAccel = Fn(([p, v, kill]: [V3, V3, F]) => {
   const acc = vec3(0.0).toVar();
   const n = int(U.uWorldCounts.y);
   Loop({ start: 0, end: MAX_FORCES, type: "int", condition: "<" }, ({ i }: { i: I }) => {
@@ -721,7 +718,7 @@ export function forceAccel(p: V3, v: V3, kill: F): V3 {
       });
   });
   return acc;
-}
+});
 
 // IMPACTS_GLSL
 // Spherical "volume decals" for surfaces: weights per impact type at p (amount x falloff x fade).
