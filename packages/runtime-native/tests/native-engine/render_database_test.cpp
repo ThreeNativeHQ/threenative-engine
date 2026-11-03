@@ -1783,6 +1783,59 @@ void alphaScene() {
     CHECK(worst <= 1);
 }
 
+// A draw's render-list depth is its geometry's bounding-sphere centre in world space, not its object
+// origin. three r187 reads the centre when it culls and sorts (renderers/common/StandardDrawingPipeline.js
+// :236-241: `geometry.boundingSphere.center` through `object.matrixWorld`) and draws transparent items
+// back to front by it (RenderList.js:45-63, reversePainterSortStable). The platformer's waterfall is the
+// case that tells the two keys apart: the inner sheet sits 0.25 m nearer the camera than the outer one,
+// and its narrower arc carries its bounding-sphere centre farther, so origin order puts the pale inner
+// sheet on top and washes the sheet out.
+// Two overlapping half-opaque quads prove the key without the waterfall: the same red quad, twice, once
+// placed by its object and once with the same 2 m baked into its vertices. Both are one picture to the
+// eye, so both must give one pixel; only the geometry-centre key draws them in the same order.
+void transparentSortUsesTheGeometryCenter() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(64, 48);
+    renderer.setOutput(OutputState{std::nullopt, 1, false});  // linear out: the bytes are the sampled values
+    // z 2 over z 1, neither writing depth, so the pixel is whichever of them the render list draws last.
+    const auto pixel = [&](bool translateTheVertices) {
+        Scene scene;
+        OrthographicCamera camera(-1, 1, 1, -1, 0.1, 10);
+        camera.position.z = 5;
+        auto red = std::make_shared<Material>(MaterialType::Basic);
+        red->color.setRGB(1, 0, 0);
+        red->transparent = true;
+        red->opacity = 0.5;
+        red->depthWrite = false;
+        auto blue = std::make_shared<Material>(MaterialType::Basic);
+        blue->color.setRGB(0, 0, 1);
+        blue->transparent = true;
+        blue->opacity = 0.5;
+        blue->depthWrite = false;
+        const auto redGeometry = makePlaneGeometry(2, 2);
+        Mesh redQuad(redGeometry, red), blueQuad(makePlaneGeometry(2, 2), blue);
+        if (translateTheVertices) redGeometry->translate(0, 0, 2);  // the origin stays at z 0
+        else redQuad.position.z = 2;
+        blueQuad.position.z = 1;
+        scene.add(redQuad);
+        scene.add(blueQuad);
+        RenderDatabase database;
+        database.render(renderer, scene, camera, {0, 0, 0, 1});
+        const std::vector<uint8_t> px = read(renderer, events);
+        CHECK(px.size() == size_t{64} * 48 * 4);
+        if (px.size() != size_t{64} * 48 * 4) return std::array<int, 3>{-1, -1, -1};
+        const size_t at = (size_t{24} * 64 + 32) * 4;
+        return std::array<int, 3>{int(px[at]), int(px[at + 1]), int(px[at + 2])};
+    };
+    const std::array<int, 3> placed = pixel(false), baked = pixel(true);
+    std::fprintf(stderr, "transparent sort key: object at z 2 %d %d %d, vertices at z 2 %d %d %d\n", placed[0], placed[1],
+                 placed[2], baked[0], baked[1], baked[2]);
+    CHECK(placed == baked);
+}
+
 // An unported material property is refused by name and its mesh is not drawn, never silently drawn
 // with a simpler shader (PRD-514 decision 4); a supported material in the same scene still draws.
 void materialUnsupported() {
@@ -8619,7 +8672,7 @@ void staticInstancesAreNotRecopied() {
     CHECK(frame(-12).copies == 0);
 }
 
-TN_TEST_MAIN({"virtual_shadow_page_jobs", virtualShadowPageJobs}, {"caster_record_allocates_per_frame", casterRecordAllocatesPerFrame}, {"virtual_shadow_instance_pages", virtualShadowInstancePages}, {"virtual_shadow_page_draws_only_its_instances", virtualShadowPageDrawsOnlyItsInstances},{"virtual_shadow_bounds_cache", virtualShadowBoundsCache}, {"gpu_joint_production", gpuJointProduction}, {"virtual_shadow_casters_batch_in_main_pass", virtualShadowCastersBatchInMainPass}, {"virtual_shadow_rigs_batch_in_main_pass", virtualShadowRigsBatchInMainPass}, {"virtual_shadow_pages_instance_skinned_casters", shadowPagesInstanceSkinnedCasters}, {"bone_reach_bounds_hold_posed_vertices", boneReachBoundsHoldPosedVertices}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"content_identical_geometry_batches", contentIdenticalGeometryBatches}, {"steady_state", steadyState}, {"steady_state_draw_refresh_work", steadyStateDrawRefreshWork}, {"draw_refresh_guard_holes", drawRefreshGuardHoles}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"depth_test_off_draws_over_nearer", depthTestOffDrawsOverNearer}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"gtao_fade_distance", gtaoFadeDistance}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"scene_stage_is_metered", sceneStageIsMetered}, {"overlay_leaves_stage_totals", overlayLeavesStageTotals}, {"present_direct", presentDirect}, {"canvas_layer_overlay", canvasLayerOverlay}, {"post_survives_overlay", postSurvivesOverlay}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"target_samples_late_traa_output", targetSamplesLateTraaOutput}, {"unchanged_frame_storage", unchangedFrameStorage}, {"static_instances_are_not_recopied", staticInstancesAreNotRecopied}, {"instance_places_survive_a_draw_leaving_the_view", instancePlacesSurviveADrawLeavingTheView}, {"instance_upload_is_stable_across_a_camera_turn", instanceUploadIsStableAcrossACameraTurn}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene}, {"frame_slab_is_per_program", frameSlabIsPerProgram},
+TN_TEST_MAIN({"virtual_shadow_page_jobs", virtualShadowPageJobs}, {"caster_record_allocates_per_frame", casterRecordAllocatesPerFrame}, {"virtual_shadow_instance_pages", virtualShadowInstancePages}, {"virtual_shadow_page_draws_only_its_instances", virtualShadowPageDrawsOnlyItsInstances},{"virtual_shadow_bounds_cache", virtualShadowBoundsCache}, {"gpu_joint_production", gpuJointProduction}, {"virtual_shadow_casters_batch_in_main_pass", virtualShadowCastersBatchInMainPass}, {"virtual_shadow_rigs_batch_in_main_pass", virtualShadowRigsBatchInMainPass}, {"virtual_shadow_pages_instance_skinned_casters", shadowPagesInstanceSkinnedCasters}, {"bone_reach_bounds_hold_posed_vertices", boneReachBoundsHoldPosedVertices}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"content_identical_geometry_batches", contentIdenticalGeometryBatches}, {"steady_state", steadyState}, {"steady_state_draw_refresh_work", steadyStateDrawRefreshWork}, {"draw_refresh_guard_holes", drawRefreshGuardHoles}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"depth_test_off_draws_over_nearer", depthTestOffDrawsOverNearer}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"gtao_fade_distance", gtaoFadeDistance}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"scene_stage_is_metered", sceneStageIsMetered}, {"overlay_leaves_stage_totals", overlayLeavesStageTotals}, {"present_direct", presentDirect}, {"canvas_layer_overlay", canvasLayerOverlay}, {"post_survives_overlay", postSurvivesOverlay}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"target_samples_late_traa_output", targetSamplesLateTraaOutput}, {"unchanged_frame_storage", unchangedFrameStorage}, {"static_instances_are_not_recopied", staticInstancesAreNotRecopied}, {"instance_places_survive_a_draw_leaving_the_view", instancePlacesSurviveADrawLeavingTheView}, {"instance_upload_is_stable_across_a_camera_turn", instanceUploadIsStableAcrossACameraTurn}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene}, {"transparent_sort_uses_geometry_center", transparentSortUsesTheGeometryCenter}, {"frame_slab_is_per_program", frameSlabIsPerProgram},
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"virtual_sun_room_seam", virtualSunRoomSeam},

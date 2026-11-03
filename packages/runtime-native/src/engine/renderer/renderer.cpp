@@ -2794,13 +2794,20 @@ Renderer::RecordCause Renderer::recordCause(const std::vector<uint64_t>& was, co
 
 std::vector<std::pair<double, const DrawItem*>> Renderer::sortDraws(std::span<const DrawItem> items,
                                                                  const CameraState& camera, bool stateFirst) {
-    // RenderList: z is the object origin's clip-space depth (setFromMatrixPosition, then the
-    // projection-view matrix); painterSortStable for opaques, reversePainterSortStable for the rest.
+    // RenderList: z is the geometry's bounding-sphere centre in world space (StandardDrawingPipeline.js:236-241:
+    // geometry.boundingSphere.center through object.matrixWorld; a merged draw keeps its own origin instead),
+    // then the projection-view matrix; painterSortStable for opaques, reversePainterSortStable for the rest.
     const Matrix projView = multiply(camera.projectionMatrix, camera.matrixWorldInverse);
     std::vector<std::pair<double, const DrawItem*>> opaque, transparent;
     for (const DrawItem& item : items) {
         const Matrix& m = item.matrixWorld;
-        const auto origin = item.sortOrigin.value_or(std::array<double, 3>{m[12], m[13], m[14]});
+        std::array<double, 3> key{m[12], m[13], m[14]};
+        if (!item.sortOrigin && item.sortCenter) {
+            const std::array<double, 3>& c = *item.sortCenter;
+            key = {m[0] * c[0] + m[4] * c[1] + m[8] * c[2] + m[12], m[1] * c[0] + m[5] * c[1] + m[9] * c[2] + m[13],
+                   m[2] * c[0] + m[6] * c[1] + m[10] * c[2] + m[14]};
+        }
+        const auto origin = item.sortOrigin.value_or(key);
         const double z = projView[2] * origin[0] + projView[6] * origin[1] + projView[10] * origin[2] + projView[14];
         const double w = projView[3] * origin[0] + projView[7] * origin[1] + projView[11] * origin[2] + projView[15];
         (item.transparent ? transparent : opaque).push_back({z / w, &item});

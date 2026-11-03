@@ -360,6 +360,27 @@ void RenderDatabase::geometryInputsOf(const BufferGeometry& geometry, DrawItem& 
     if (geometry.instanced) d.instanceCount = instanceCountOf(geometry);
 }
 
+// three's render list keys a draw by the world position of its geometry's bounding-sphere centre
+// (renderers/common/StandardDrawingPipeline.js:236-241), computing the sphere on the first frame that needs
+// it, exactly as projectObject does. That is not the object's origin: a geometry whose vertices sit
+// off-centre, such as a waterfall's arc, ranks the other way round, and the wrong transparent order draws
+// the pale inner sheet over the outer one.
+void RenderDatabase::sortCenterOf(const BufferGeometry& geometry, DrawItem& d) {
+    const auto position = geometry.getAttribute("position");
+    if (!position) return;  // no vertices to centre on: the object origin stays the key
+    if (const Sphere* sphere = geometry.boundingSphere.get()) {  // already computed: one copy, no pass
+        d.sortCenter = std::array<double, 3>{sphere->center.x, sphere->center.y, sphere->center.z};
+        return;
+    }
+    // BufferGeometry.js:1074-1080: the sphere is centred on the box, so the box centre is the key.
+    Box3 box;
+    Vector3 point, center;
+    box.makeEmpty();
+    for (uint64_t i = 0, count = position->count(); i < count; ++i) box.expandByPoint(position->getXYZ(i, point));
+    box.getCenter(center);
+    d.sortCenter = std::array<double, 3>{center.x, center.y, center.z};
+}
+
 // three's polygonOffset as WebGPUPipelineUtils sets it: depthBias = units, slope scale = factor.
 void RenderDatabase::depthBiasOf(const Material& material, DrawItem& d) {
     d.depthBias = material.polygonOffset ? static_cast<int32_t>(material.polygonOffsetUnits) : 0;
@@ -529,6 +550,7 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
     vertexColorsOf(*r.canonical, *material, d);
     depthBiasOf(*material, d);
     geometryInputsOf(*r.canonical, d);
+    sortCenterOf(*r.canonical, d);
     d.matrixWorld = toArray(mesh.matrixWorld);
     d.kind = material->nodes.fragmentNode ? MaterialKind::Basic : kindOf(material->type);
     d.renderOrder = mesh.renderOrder();
@@ -600,6 +622,7 @@ DrawItem& RenderDatabase::refresh(const Mesh& mesh, Record& r) {
         if (r.canonical) vertexColorsOf(*r.canonical, *r.material, d);
         depthBiasOf(*r.material, d);
         if (r.canonical) geometryInputsOf(*r.canonical, d);
+        if (r.canonical) sortCenterOf(*r.canonical, d);
         // A non-float colour or custom attribute reaches the draw as a converted copy that `needsUpdate` replaces
         // without moving the geometry revision: such a record re-reads those inputs every frame, as before FM1.
         r.convertedInputs = false;
