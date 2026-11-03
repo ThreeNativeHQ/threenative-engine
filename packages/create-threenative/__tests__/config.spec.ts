@@ -1336,7 +1336,7 @@ it("rejects a lightmap atlas size that is not a multiple of four on both sides o
 
 // Templates whose imports the native engine does not bind yet (PRD-573 slice 8). Each pins
 // `engine: "threejs"` with a comment, and leaves this list when the pin goes.
-const LEGACY_PINNED_TEMPLATES = ["action-rpg", "runner", "sailing"];
+const LEGACY_PINNED_TEMPLATES: string[] = [];
 
 it("gives every freshly scaffolded template the threenative engine unless it names its threejs pin", async () => {
   const root = await makeTempDir("threenative-scaffold-engine-");
