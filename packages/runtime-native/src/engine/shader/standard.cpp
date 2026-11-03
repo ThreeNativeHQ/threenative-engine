@@ -566,7 +566,7 @@ static ExprId nodeValue(Program& f, const graph::Node& node, Type type, ExprId f
                         ExprId normalView, ExprId geometryNormal) {
     if (!node) return fallback;
     tsl::Build build(f);
-    std::unordered_map<std::string, ExprId> inputs;
+    std::unordered_map<std::string, ExprId> inputs{{"viewMipBias", kInvalid}};  // a material: its 2D texture() nodes take the view mip bias
     if (normalView != kInvalid) inputs.emplace("normalView", normalView);
     if (geometryNormal != kInvalid) inputs.emplace("normalViewGeometry", geometryNormal);
     return nodeType(f, graph::lower(node, f, inputs), type);
@@ -603,7 +603,7 @@ static void materialInputs(Program& f, const VertexVariant& variant,
 // A slot read through the program's one lowering: a node two slots share (a march feeding colour and
 // depth) lowers once, as three builds a material once. `normalView` is the slot input every slot sees.
 static graph::Lowering slotLowering(Program& f, const VertexVariant& variant, ExprId normalView) {
-    std::unordered_map<std::string, ExprId> inputs;
+    std::unordered_map<std::string, ExprId> inputs{{"viewMipBias", kInvalid}};  // a material: its 2D texture() nodes take the view mip bias
     if (normalView != kInvalid) inputs.emplace("normalView", normalView);
     materialInputs(f, variant, inputs);
     return graph::Lowering(f, std::move(inputs));

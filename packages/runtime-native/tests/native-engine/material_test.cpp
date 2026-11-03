@@ -785,4 +785,29 @@ void depthTextureLowering() {
 
 }  // namespace
 
-TN_TEST_MAIN({"alpha_hash", alphaHash}, {"ssr_passes", ssrPasses}, {"denoise_reads_raw_normals", denoiseReadsRawNormals}, {"ssr_rejects_inputs", ssrRejectsInputs}, {"depth_texture_lowering", depthTextureLowering}, {"depth_node_writes_frag_depth", depthNodeWritesFragDepth}, {"unsupported", unsupported}, {"emissive_output", emissiveOutput}, {"builds", builds}, {"fog", fog}, {"rough_diffuse", roughDiffuse}, {"fog_node_mixes_color", fogNodeMixesColor}, {"node_key", nodeKey}, {"bloom_passes", bloomPasses}, {"slots_share_one_lowering", slotsShareOneLowering})
+// PRD-539 lever 7: every implicit-LOD material texture reads at the view mip bias (UE 5.8.3:
+// SceneVisibility.cpp:5337-5351 sets MaterialTextureMipBias for all material samplers), including a
+// node material's texture() node, which Unreal compiles as a TextureSample of the material.
+void viewMipBiasSamples() {
+    namespace g = tn::engine::shader::graph;
+    VertexVariant variant;
+    variant.normalMap = true;
+    variant.pbrMaps = static_cast<uint16_t>(1u << kRoughnessMap);
+    VertexVariant bumped;  // three's BumpMapNode runs only without a normalMap
+    bumped.pbrMaps = static_cast<uint16_t>(1u << kBumpMap);
+    const std::string lit = WgslEmitter::emit(buildStandard({}, variant).fragment, 1).code +
+                            WgslEmitter::emit(buildStandard({}, bumped).fragment, 1).code;
+    for (const char* map : {"t_normalMap", "t_roughnessMap", "t_bumpMap"}) {
+        const bool biased = lit.find(std::string("textureSampleBias(") + map) != std::string::npos;
+        if (!biased) std::fprintf(stderr, "%s reads without the view mip bias\n", map);
+        CHECK(biased);
+    }
+    VertexVariant node;
+    node.nodes.colorNode = g::texture("detail", g::uv());
+    const auto colored = WgslEmitter::emit(buildBasic(node).fragment, 1);
+    CHECK(colored.ok());
+    CHECK(colored.code.find("textureSampleBias(t_detail") != std::string::npos);
+    CHECK(colored.code.find("u.f_viewMipBias") != std::string::npos);
+}
+
+TN_TEST_MAIN({"alpha_hash", alphaHash}, {"view_mip_bias_samples", viewMipBiasSamples}, {"ssr_passes", ssrPasses}, {"denoise_reads_raw_normals", denoiseReadsRawNormals}, {"ssr_rejects_inputs", ssrRejectsInputs}, {"depth_texture_lowering", depthTextureLowering}, {"depth_node_writes_frag_depth", depthNodeWritesFragDepth}, {"unsupported", unsupported}, {"emissive_output", emissiveOutput}, {"builds", builds}, {"fog", fog}, {"rough_diffuse", roughDiffuse}, {"fog_node_mixes_color", fogNodeMixesColor}, {"node_key", nodeKey}, {"bloom_passes", bloomPasses}, {"slots_share_one_lowering", slotsShareOneLowering})
