@@ -1,4 +1,10 @@
-import { GPUParticles3D, type ICtx, Scene, type SceneFrame } from "@threenative/core";
+import {
+  GPUParticles3D,
+  type ICtx,
+  Scene,
+  type SceneFrame,
+  WorldEnvironment,
+} from "@threenative/core";
 import {
   CastPool,
   type ICast,
@@ -12,10 +18,18 @@ import {
   createThunderstrike,
 } from "@threenative/core/spells";
 import {
+  bakeNoise,
+  createFx,
+  fire as ultraFire,
+  U as ultraU,
+} from "@threenative/core/spells/ultra";
+import {
   Color,
   CylinderGeometry,
   DataTexture,
+  DirectionalLight,
   DoubleSide,
+  HemisphereLight,
   LinearFilter,
   Mesh,
   type PerspectiveCamera,
@@ -25,7 +39,7 @@ import {
   Vector3,
 } from "three";
 import { mix, texture, uniform, uv, vec2, vec4 } from "three/tsl";
-import { MeshBasicNodeMaterial } from "three/webgpu";
+import { MeshStandardNodeMaterial } from "three/webgpu";
 
 /** What the HUD shows and what a playtest reads back. */
 export interface LabState extends Record<string, unknown> {
@@ -79,7 +93,23 @@ export class Lab extends Scene<LabState> {
     const camera = ctx.camera as PerspectiveCamera;
     camera.position.set(0, 7.4, 13.5);
     camera.lookAt(0, 1.1, -2.5);
+    // ?cam=x,y,z,tx,ty,tz: a close look for captures (upstream's ?campos)
+    const cam = new URLSearchParams(globalThis.location?.search ?? "")
+      .get("cam")
+      ?.split(",")
+      .map(Number);
+    if (cam?.length === 6) {
+      camera.position.set(cam[0] as number, cam[1] as number, cam[2] as number);
+      camera.lookAt(cam[3] as number, cam[4] as number, cam[5] as number);
+    }
     ctx.scene.background = new Color(0x1a2230);
+    // Lit floor and dummies, so a spell's light shows on them: a dusk sky and a low sun.
+    ctx.add(new HemisphereLight(0x6f86a8, 0x2a2622, 0.6));
+    const sun = new DirectionalLight(0xffd2a8, 0.8);
+    sun.position.set(-6, 5, 8);
+    ctx.add(sun);
+    // The stock look (filmic tone curve, metered exposure): the fire is HDR.
+    new WorldEnvironment().apply(ctx.renderer, ctx.scene, ctx.camera);
 
     const observations = new LabObservations();
     ctx.entities.add("spell-lab", observations);
@@ -96,6 +126,23 @@ export class Lab extends Scene<LabState> {
     world.focus.set(0, 1.4, 4.5);
 
     const casts = new CastPool(world);
+    // Key 1: the Ultra Elements Fireball, ported verbatim (@threenative/core/spells/ultra). The noise
+    // is baked once before the spell builds its materials; 64^3 is upstream's low-tier size, the
+    // 128^3 high tier costs ~5 s of CPU on this path (see noise.ts).
+    bakeNoise({ noiseSize: 64 });
+    const ultra = createFx({
+      camera,
+      size: () => ({
+        width: Math.round((globalThis.innerWidth ?? 1280) * (globalThis.devicePixelRatio ?? 1)),
+        height: Math.round((globalThis.innerHeight ?? 720) * (globalThis.devicePixelRatio ?? 1)),
+      }),
+      seed: 777,
+    });
+    ultraU.uSunDir.value.copy(sun.position).normalize();
+    ultraU.uSunColor.value.set(1, 0.82, 0.66).multiplyScalar(0.8);
+    ultraU.uAmbient.value.set(0.12, 0.14, 0.18);
+    ctx.add(ultra.fx.scenes.fx);
+    const fireball = ultra.addSpell(ultraFire);
     const spells: Record<string, ISpell> = {
       aegis: createAegis(world),
       "arcane-barrage": createArcaneBarrage(world),
@@ -111,9 +158,13 @@ export class Lab extends Scene<LabState> {
 
     const target = new Vector3(0, 0.9, -4.5);
     const cast = (name: string): void => {
-      const spell = spells[name];
-      if (spell === undefined) throw new Error(`spell-lab has no spell named ${name}`);
-      casts.cast(spell, target, { from: world.focus });
+      if (name === "fireball")
+        ultra.casts.cast(fireball, target, { form: "Fireball", from: world.focus });
+      else {
+        const spell = spells[name];
+        if (spell === undefined) throw new Error(`spell-lab has no spell named ${name}`);
+        casts.cast(spell, target, { from: world.focus });
+      }
       observations.spell = name;
       observations.casts += 1;
       floorTint.value.copy(tintOf(name));
@@ -121,18 +172,24 @@ export class Lab extends Scene<LabState> {
     };
 
     /** Casts that have reached their impact or linger this frame. */
-    const landed = (record: ICast): boolean =>
+    const landed = (record: { phase: string }): boolean =>
       record.phase === "impact" || record.phase === "linger";
 
+    const countLanded = (): number => {
+      let n = 0;
+      for (const record of casts.casts) if (landed(record)) n += 1;
+      for (const record of ultra.casts.list) if (record.alive && landed(record)) n += 1;
+      return n;
+    };
     let previouslyLanded = 0;
 
     return (_frameCtx: ICtx<LabState>, dt: number) => {
       casts.update(dt);
       world.update(dt);
-      observations.phase = casts.active?.phase ?? "none";
+      ultra.renderFrame(dt);
+      observations.phase = ultra.casts.active()?.phase ?? casts.active?.phase ?? "none";
       for (const [action, spell] of SPELL_KEYS) if (ctx.input.justPressed(action)) cast(spell);
-      let current = 0;
-      for (const record of casts.casts) if (landed(record)) current += 1;
+      const current = countLanded();
       if (current > previouslyLanded) {
         observations.impacts += current - previouslyLanded;
         events.push({ impacts: observations.impacts, type: "impact" });
@@ -164,7 +221,7 @@ function createFloor(
   map.minFilter = LinearFilter;
   map.magFilter = LinearFilter;
   map.needsUpdate = true;
-  const material = new MeshBasicNodeMaterial({ side: DoubleSide });
+  const material = new MeshStandardNodeMaterial({ side: DoubleSide, roughness: 0.85 });
   // The plane's v runs from the patch's +z edge upward, and a DataTexture's row 0 is its first
   // row, so exactly one of the two ends has to be flipped. It happens here, once, not per cell.
   const sample = texture(map, vec2(uv().x, uv().y.oneMinus()));
@@ -228,7 +285,7 @@ function collectEmitters(world: SpellWorld): (GPUParticles3D | undefined)[] {
 /** Three dummies to aim at, matching the row the upstream spells were built against. */
 function createDummies(ctx: ICtx<LabState>): void {
   const body = new CylinderGeometry(0.42, 0.5, 1.9, 16);
-  const material = new MeshBasicNodeMaterial({ color: new Color(0xaab6c8) });
+  const material = new MeshStandardNodeMaterial({ color: new Color(0xaab6c8), roughness: 0.7 });
   for (const [index, x] of [-4, 0, 4].entries()) {
     const dummy = new Mesh(body, material);
     dummy.position.set(x, 0.95, -4.5);

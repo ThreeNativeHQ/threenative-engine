@@ -3514,6 +3514,30 @@ const world = new SpellWorld({ scene, groundAt });
 const casts = new CastPool(world);
 ```
 
+## `@threenative/core/spells/ultra`
+
+### `bakeNoise`
+
+`function` — CPU bake of the Ultra Elements 3D noise, curl and blackbody textures that every spell volume samples.
+
+```ts
+export function bakeNoise( { … }
+```
+
+- **Use when:** the noise and blackbody textures an Ultra Elements spell needs before it first draws
+- **Constraints:** costs about 0.6 s at 64^3 and about 5 s at 128^3 on the main thread; bake once at load
+
+### `createFx`
+
+`function` — The shared Ultra Elements spell world: casts, volumes, spell lights and the per-frame CPU tick. Add `fx.scenes.fx` to the scene, `addSpell` each ported spell, call `renderFrame(dt)` each frame.
+
+```ts
+export function createFx(o: IFxOptions) { … }
+```
+
+- **Use when:** an Ultra Elements spell such as the raymarched teardrop Fireball cast at a target · a volumetric fire spell drawn through the Three.js TSL node API on WebGPU
+- **Constraints:** call bakeNoise first: the volume shaders sample its noise, curl and blackbody textures
+
 ## `@threenative/core/ui-layer`
 
 ### `connectUiBridge`

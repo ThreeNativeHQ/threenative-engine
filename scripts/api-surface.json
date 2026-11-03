@@ -46,6 +46,7 @@
         "./react",
         "./react-css",
         "./spells",
+        "./spells/ultra",
         "./ui-layer",
         "./worker",
         "./world"
@@ -62,6 +63,8 @@
         "@threenative/core/react#supportedStyleKeys": "export function supportedStyleKeys(): readonly string[] { … }",
         "@threenative/core/react#Text": "export function Text(props: ITextProps): ReactNode { … }",
         "@threenative/core/react#View": "export function View(props: IViewProps): ReactNode { … }",
+        "@threenative/core/spells/ultra#bakeNoise": "export function bakeNoise( { … }",
+        "@threenative/core/spells/ultra#createFx": "export function createFx(o: IFxOptions) { … }",
         "@threenative/core/spells#CastPool": "export class CastPool { … }",
         "@threenative/core/spells#createAegis": "export function createAegis(world: SpellWorld, overrides: IFireSpellOverrides = { … }",
         "@threenative/core/spells#createArcaneBarrage": "export function createArcaneBarrage(world: SpellWorld, overrides: IFireSpellOverrides = { … }",

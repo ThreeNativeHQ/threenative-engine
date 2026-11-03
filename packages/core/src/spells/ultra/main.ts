@@ -1,0 +1,225 @@
+// Ported from Ultra Elements src/main.js @698b720 (MIT, Copyright (c) 2026 Humpalumps). JavaScript copied verbatim; GLSL transliterated to TSL.
+//
+// Only the part of main.js every spell depends on: the shared `fx` world (main.js ~line 94) and the
+// CPU half of renderFrame (clock, casts, packWorld, systems). Upstream's renderer, arena, sky,
+// PostFX, GUI and capture are not ported: the game's scene, its lights and WorldEnvironment replace
+// them. The services later slices port (particles, trails, ground, shocks, fluid, rig, arena focus)
+// are typed seams below; until a slice lands, each is an inert stand-in that keeps the spell code verbatim.
+import { type Camera, type Color, PointLight, Vector3 } from "three";
+import { Q } from "./engine/quality.js";
+import { Casts, type ICast, type ISpell } from "./spells/cast.js";
+import { FxTarget } from "./vfx/FxTarget.js";
+import { Volumes } from "./vfx/Volumes.js";
+import {
+  ARENA,
+  U,
+  forces,
+  impacts,
+  lights,
+  mirrorLights,
+  occluders,
+  packWorld,
+} from "./vfx/common.js";
+
+// --- service seams (Particles.js, Ribbons.js, GroundField.js, Shockwaves.js, FluidVolume.js, camera.js, arena.js) ---
+export interface IEmitter {
+  pos: Vector3;
+  vel: Vector3;
+  p: Vector3;
+  radius: number;
+  size: number;
+  rate(perSecond: number, dt: number): void;
+  burst(count: number): void;
+}
+export interface IParticles {
+  emitter(kind: string, options: Record<string, unknown>): IEmitter;
+  fieldEmitter(kind: string, options: Record<string, unknown>): void;
+  setKind(name: string, patch: object): void;
+}
+export interface ITrail {
+  width: number;
+  intensity: number;
+  glow: number;
+  glowIntensity: number;
+  fadeTime: number;
+  distortion: number;
+  color: Color;
+  push(p: Vector3): void;
+  release(): void;
+}
+export interface ITrails {
+  acquire(): ITrail | null;
+}
+export interface IShocks {
+  spawn(shock: object): void;
+}
+export interface IGround {
+  splat(splat: object): void;
+}
+export interface IFluidDomain {
+  position: Vector3;
+  size: Vector3;
+  h: number;
+  heat: number;
+  tint: Color;
+  sootColor: Color;
+  detailCenter: Vector3;
+  obstacle: { set(x: number, y: number, z: number, r: number): void };
+  emit(source: object): void;
+  release(): void;
+  [field: string]: unknown;
+}
+export interface IFluid {
+  res: number;
+  acquire(options: { size: number[]; res?: number }): IFluidDomain | null;
+}
+export interface IRig {
+  shake(amount: number, frequency: number): void;
+  punch(amount: number, seconds: number): void;
+  hitstop(seconds: number): void;
+}
+export interface IArena {
+  focus: { color: Color };
+  setFocus(color: Color, intensity: number): void;
+}
+export interface IDummy {
+  pos: Vector3;
+  status: { burn: number };
+  hit(dir: Vector3, amount: number): void;
+}
+
+const inertEmitter = (): IEmitter => ({
+  pos: new Vector3(),
+  vel: new Vector3(),
+  p: new Vector3(),
+  radius: 0,
+  size: 1,
+  rate() {},
+  burst() {},
+});
+const NULL_PARTICLES: IParticles = {
+  emitter: () => inertEmitter(),
+  fieldEmitter() {},
+  setKind() {},
+};
+const NULL_TRAILS: ITrails = { acquire: () => null };
+const NULL_GROUND: IGround = { splat() {} };
+const NULL_FLUID: IFluid = { res: 0, acquire: () => null };
+const NULL_RIG: IRig = { shake() {}, punch() {}, hitstop() {} };
+
+export interface IFxOptions {
+  camera: Camera;
+  /** drawing-buffer size in pixels (upstream: renderer.getDrawingBufferSize) */
+  size: () => { width: number; height: number };
+  seed?: number;
+  /** PointLights the spell lights drive (common.ts mirrorLights); parked at 0 when idle */
+  pointLights?: number;
+  particles?: IParticles;
+  trails?: ITrails;
+  ground?: IGround;
+  shocks?: IShocks;
+  fluid?: IFluid;
+  rig?: IRig;
+  arena?: IArena;
+  dummies?: IDummy[];
+}
+
+// the shared world every spell gets (PLAN 2.4). Spells only touch what's in here.
+export function createFx(o: IFxOptions) {
+  let seed = o.seed ?? 1;
+  const fxTarget = new FxTarget();
+  const volumes = new Volumes();
+  const flashes: number[] = [];
+  const fx = {
+    camera: o.camera,
+    scenes: { fx: fxTarget.scene },
+    U,
+    Q,
+    ARENA,
+    arena: o.arena ?? { focus: { color: { r: 1, g: 1, b: 1 } as Color }, setFocus() {} },
+    ground: o.ground ?? NULL_GROUND,
+    particles: o.particles ?? NULL_PARTICLES,
+    trails: o.trails ?? NULL_TRAILS,
+    volumes,
+    shocks: o.shocks as IShocks | undefined,
+    fluid: o.fluid ?? NULL_FLUID,
+    rig: o.rig ?? NULL_RIG,
+    lights,
+    forces,
+    impacts,
+    occluders,
+    fxTarget,
+    dummies: o.dummies ?? [],
+    spells: {} as Record<string, ISpell>,
+    reduced: false,
+    systems: [] as { update(dt: number, camera: Camera): void }[], // extra GPU systems: { update(dt, camera) }, run in the timed sim section every frame
+    flashAmount: 0, // upstream: post.params.flash; the game's post reads it
+    rand() {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+      return seed / 4294967296;
+    },
+    // reduced-motion aware flash (WCAG 2.3.1: at most 3 flashes per second)
+    flash(amount: number) {
+      const now = globalThis.performance?.now() ?? Date.now();
+      while (flashes.length > 0 && now - (flashes[0] as number) >= 1000) flashes.shift();
+      // biome-ignore lint/style/noParameterAssign: upstream Ultra Elements code, copied verbatim
+      if (fx.reduced && (flashes.length >= 3 || amount > 0.3)) amount = Math.min(amount, 0.15);
+      flashes.push(now);
+      fx.flashAmount = Math.min(2, Math.max(fx.flashAmount, amount));
+    },
+    casts: null as unknown as Casts,
+  };
+  fxTarget.scene.add(volumes.group);
+  const points = Array.from({ length: o.pointLights ?? 4 }, (_, i) => {
+    const l = new PointLight(0xffffff, 0, 8, 2);
+    l.name = `ultra-spell-light-${i}`;
+    fxTarget.scene.add(l);
+    return l;
+  });
+  const casts = new Casts(fx);
+  fx.casts = casts;
+
+  let simTime = 0;
+  let w = 0;
+  let h = 0;
+  // the CPU half of upstream's renderFrame(dt)
+  function renderFrame(dt: number): void {
+    const s = o.size();
+    if (s.width !== w || s.height !== h) {
+      w = s.width;
+      h = s.height;
+      fxTarget.setSize(w, h, Q.fxScale);
+    }
+    simTime += dt;
+    U.uTime.value = simTime % 3600;
+    U.uDt.value = dt;
+    U.uFrame.value++;
+    const cam = o.camera as Camera & { near?: number; far?: number };
+    if (cam.near !== undefined && cam.far !== undefined) U.uNearFar.value.set(cam.near, cam.far);
+
+    // CPU: casts emit, lights/forces/impacts pack into the world texture
+    casts.update(dt);
+    for (const sp of Object.values(fx.spells))
+      (sp.inst as { tick?(dt: number): void } | undefined)?.tick?.(dt);
+    packWorld(dt, { maxLights: Q.maxLights, maxShadowed: Q.shadowLights });
+    mirrorLights(points);
+
+    volumes.update(o.camera);
+    for (const sys of fx.systems) sys.update(dt, o.camera);
+    fxTarget.render();
+    fx.flashAmount = Math.max(0, fx.flashAmount - dt * 6);
+  }
+
+  // spell modules: create() once each (upstream: the SPELLS loop in main.js)
+  function addSpell<S extends ISpell & { create(fx: Fx): NonNullable<ISpell["inst"]> }>(s: S): S {
+    (s as { defaults?: object }).defaults = { ...s.params };
+    s.params = { ...s.params };
+    s.inst = s.create(fx);
+    fx.spells[s.id] = s;
+    return s;
+  }
+
+  return { fx, casts, renderFrame, addSpell, pointLights: points };
+}
+export type Fx = ReturnType<typeof createFx>["fx"];
+export type { ICast };

@@ -4510,6 +4510,43 @@
     },
     {
       "aliases": [],
+      "constraints": [
+        "costs about 0.6 s at 64^3 and about 5 s at 128^3 on the main thread; bake once at load"
+      ],
+      "example": "",
+      "importPath": "@threenative/core/spells/ultra",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function bakeNoise( { … }",
+      "situations": [
+        "the noise and blackbody textures an Ultra Elements spell needs before it first draws"
+      ],
+      "summary": "CPU bake of the Ultra Elements 3D noise, curl and blackbody textures that every spell volume samples.",
+      "supersedes": [],
+      "symbol": "bakeNoise"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "call bakeNoise first: the volume shaders sample its noise, curl and blackbody textures"
+      ],
+      "example": "",
+      "importPath": "@threenative/core/spells/ultra",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function createFx(o: IFxOptions) { … }",
+      "situations": [
+        "an Ultra Elements spell such as the raymarched teardrop Fireball cast at a target",
+        "a volumetric fire spell drawn through the Three.js TSL node API on WebGPU"
+      ],
+      "summary": "The shared Ultra Elements spell world: casts, volumes, spell lights and the per-frame CPU tick. Add `fx.scenes.fx` to the scene, `addSpell` each ported spell, call `renderFrame(dt)` each frame.",
+      "supersedes": [],
+      "symbol": "createFx"
+    },
+    {
+      "aliases": [],
       "constraints": ["the transport is discovered, never configured; no game names the web view"],
       "example": "const bridge = connectUiBridge({ end: \"ui\" });",
       "importPath": "@threenative/core/ui-layer",
