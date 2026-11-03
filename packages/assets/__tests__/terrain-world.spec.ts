@@ -1102,6 +1102,27 @@ describe("cookTerrainWorld", () => {
     expect(result.placementCounts).toEqual({ fern: count("fern"), deadwood: count("deadwood") });
   });
 
+  it("keeps one material per species level for nodes that share one (audit TERRAIN-10)", async () => {
+    const species = await sharedMeshSpecies();
+    const result = await cookTerrainWorld({
+      state: evaluatedTerrain(),
+      species: { fir: { glb: species.glb } },
+      out: dir,
+    });
+    const doc = await io().readBinary(result.worldGlb);
+    const levels = doc
+      .getRoot()
+      .listNodes()
+      .filter((node) => node.getExtension("EXT_mesh_gpu_instancing") !== null);
+    // The fixture's two nodes share one material: it is copied once per level, not once per node.
+    expect(
+      doc
+        .getRoot()
+        .listMaterials()
+        .filter((material) => material.getName() === "shared"),
+    ).toHaveLength(levels.length);
+  });
+
   it("flattens one shared mesh at each node's own transform", async () => {
     const species = await sharedMeshSpecies();
     const state = evaluatedTerrain();

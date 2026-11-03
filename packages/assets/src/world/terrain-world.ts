@@ -620,8 +620,16 @@ function addInstancedSpeciesNode(
   }
 
   const combined = doc.createMesh(`${nodeName}_mesh`);
+  // Materials and their textures are shared across the species' nodes; geometry stays private
+  // because each node transforms its own copy in place.
+  const shared = createDefaultPropertyResolver(doc, speciesDoc);
   for (const { node, mesh } of meshNodesOf(speciesDoc)) {
-    const resolve = createDefaultPropertyResolver(doc, speciesDoc);
+    const own = createDefaultPropertyResolver(doc, speciesDoc);
+    const resolve: typeof own = (property) =>
+      property.propertyType === PropertyType.MATERIAL ||
+      property.propertyType === PropertyType.TEXTURE
+        ? shared(property)
+        : own(property);
     const targetMesh = copyToDocument(doc, speciesDoc, [mesh], resolve).get(mesh) as Mesh;
     const matrix = node.getWorldMatrix();
     dequantizeNormals(targetMesh);
