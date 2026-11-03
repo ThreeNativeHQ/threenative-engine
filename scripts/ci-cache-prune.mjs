@@ -7,7 +7,7 @@
  *
  * So the janitor keeps the total under a stated budget, and bounds the one family that saves a new
  * entry per run: the 3.2 GB resumable V8 source state, which exists to be resumed, never to be kept.
- * A hot key that every run reads is never the entry this deletes.
+ * The newest copy of a hot key that every run reads is never the entry this deletes.
  *
  * Usage:
  *   node scripts/ci-cache-prune.mjs <caches.jsonl>   # ids to delete, one per line; summary on stderr
@@ -36,8 +36,12 @@ export const FAMILY_SHARES = Object.freeze({
 /**
  * Keys a run reads on every board and that cost little: the compiler cache (20 MB), the pnpm store,
  * the Playwright browsers, the workspace bundles the shared action restores, and the V8 payload the
- * release asset falls back to. Evicting one of these costs a whole job; a stale build tree, a cargo
- * registry or a wgpu pipeline cache costs one rebuild.
+ * release asset falls back to. Evicting the newest copy of one of these costs a whole job; a stale
+ * build tree, a cargo registry or a wgpu pipeline cache costs one rebuild.
+ *
+ * Only the newest copy of a prefix in a ref is protected (see `protectedEntries`): each of these
+ * keys carries a source hash, so a saved copy that is no longer the newest is dead weight, and
+ * protecting every copy is what let the stale GBs sit under a budget that evicted hot small keys.
  */
 export const HOT_PREFIXES = Object.freeze([
   "node-cache-",
@@ -106,12 +110,28 @@ function boundFamilies(entries, familyShares, doomed) {
   }
 }
 
-/** Then the repository total, least recently accessed first, and never a hot key. */
+/**
+ * The hot entries a run can actually restore: the newest one per (prefix, ref). A newer key of the
+ * same prefix and ref is saved after every source change, so an older copy is stale — it is the
+ * entry a run would never read — and is evictable like any cold entry.
+ */
+function protectedEntries(entries, hotPrefixes) {
+  const newest = new Map();
+  // `entries` is oldest first, so the last copy of a scope seen here is that scope's newest.
+  for (const entry of entries) {
+    const prefix = prefixOf(entry.key, hotPrefixes);
+    if (prefix !== "") newest.set(`${prefix}${entry.ref ?? ""}`, entry.id);
+  }
+  return new Set(newest.values());
+}
+
+/** Then the repository total, least recently accessed first, and never the newest hot key. */
 function fitBudget(entries, budgetBytes, hotPrefixes, doomed) {
+  const kept = protectedEntries(entries, hotPrefixes);
   let total = entries.reduce((sum, entry) => (doomed.has(entry.id) ? sum : sum + entry.bytes), 0);
   for (const entry of entries) {
     if (total <= budgetBytes) break;
-    if (doomed.has(entry.id) || prefixOf(entry.key, hotPrefixes) !== "") continue;
+    if (doomed.has(entry.id) || kept.has(entry.id)) continue;
     doomed.add(entry.id);
     total -= entry.bytes;
   }

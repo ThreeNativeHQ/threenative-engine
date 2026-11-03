@@ -32,7 +32,8 @@ jobs:
     # just been evicted. GitHub evicts by last access, so the cheapest victim is the small hot key
     # every board needs. This job keeps the total under the stated budget (`scripts/ci-cache-prune`)
     # and bounds the 3.2 GB resumable V8 state to one entry per recipe, so a save in one lane can no
-    # longer evict another lane's hot key (PRD-628).
+    # longer evict another lane's hot key. A hot key keeps only its newest copy per ref: an older
+    # copy is one another key replaced, and it is what the plan drops first (PRD-628).
     if: github.event_name == 'workflow_run'
     # Two janitors must not delete at once: both read the same cache list, so the second one's
     # deletes land on entries the first already removed and the budget it computed is stale. A

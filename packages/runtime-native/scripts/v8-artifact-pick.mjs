@@ -56,7 +56,11 @@ export function pickPublishedArtifact(payload, branches) {
     }
     if (artifact.expired === true) return false;
     // A fork's pull request run uploads into this repository's artifact store, so the head
-    // repository is what tells its bytes apart from one this repository built.
+    // repository is what tells its bytes apart from one this repository built. Both ids must be
+    // numbers before they are compared: two missing ids are equal, and an artifact of unknown
+    // origin then read as this repository's own.
+    if (!Number.isSafeInteger(run.head_repository_id) || !Number.isSafeInteger(run.repository_id))
+      throw new Error(`${ARTIFACT_MALFORMED}: an artifact carries no numeric repository id`);
     if (run.head_repository_id !== run.repository_id) return false;
     return allowed.has(run.head_branch);
   });

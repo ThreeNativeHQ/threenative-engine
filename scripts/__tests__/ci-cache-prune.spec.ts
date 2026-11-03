@@ -2,7 +2,8 @@
  * The cache budget is 10 GiB for every lane together, and GitHub evicts by last access. That is why
  * a 20 MB compiler cache disappeared between two develop runs while a 1.5 GB build tree stayed: the
  * cheap victim is the hot key every board needs. This janitor plan keeps the total under a stated
- * budget, bounds the resumable V8 state to one entry per recipe, and never deletes a hot key.
+ * budget, bounds the resumable V8 state to one entry per recipe, and never deletes the newest copy
+ * of a hot key — an older copy of one is stale, because its key carries a source hash.
  */
 
 import { spawnSync } from "node:child_process";
@@ -84,7 +85,42 @@ describe("the cache janitor plan", () => {
     expect(planCachePrune({ caches: [olderOnB, pullRequestB] }).deleteIds).toEqual([olderOnB.id]);
   });
 
-  it("deletes the oldest cold entry first and never a hot key", () => {
+  it("protects only the newest copy of a hot prefix in one ref, so a stale copy stays evictable", () => {
+    // A hot prefix saves a new key per source change (`cargo-v1-<os>-<arch>-<image>-<source>`), so
+    // an older copy in the same ref is stale by construction. Treating every copy as hot made the
+    // family immortal: the budget then fitted cold keys only, and the stale GBs never left.
+    const newer = entry("cargo-v1-Linux-X64-image-rust1.90-bbb-222", 0.15, 1);
+    const older = entry("cargo-v1-Linux-X64-image-rust1.90-aaa-111", 0.5, 9);
+    const plan = planCachePrune({
+      caches: [older, newer],
+      budgetBytes: 0.3 * GiB,
+      familyShares: {},
+    });
+    expect(plan.deleteIds).toEqual([older.id]);
+    expect(plan.deleteIds).not.toContain(newer.id);
+    expect(plan.totalAfter).toBeLessThanOrEqual(0.3 * GiB);
+  });
+
+  it("protects the newest hot copy of each ref, never one ref's copy at another ref's expense", () => {
+    // Caches are ref-scoped: the newest entry of a prefix in ref A is the only copy A can restore,
+    // so ref B's newer copy must not make it the eviction victim.
+    const develop = entry("wgpu-cache-25.0.2.2-rust1.90-ndk27-aaa-111", 0.5, 9);
+    const pullRequest = entry(
+      "wgpu-cache-25.0.2.2-rust1.90-ndk27-bbb-222",
+      0.5,
+      1,
+      "refs/pull/700/merge",
+    );
+    const plan = planCachePrune({
+      caches: [develop, pullRequest],
+      budgetBytes: 0.3 * GiB,
+      familyShares: {},
+    });
+    expect(plan.deleteIds).toEqual([]);
+    expect(plan.overBudget).toBe(true);
+  });
+
+  it("deletes the oldest cold entry first and never the newest copy of a hot key", () => {
     const ccache = entry("native-ccache-ci-test-native-Linux-X64-gcc-3ea15707-1", 0.02, 9);
     const stale = entry("native-build-Linux-X64-oldimage-abc", 1.5, 7);
     const fresh = entry("native-engine-emsdk-Linux-X64-6.0.11", 0.47, 0.1);
@@ -157,7 +193,7 @@ function declaredCachePrefixes(): readonly string[] {
   return prefixes;
 }
 
-describe("the hot keys the janitor must never delete", () => {
+describe("the hot keys the janitor must keep", () => {
   it("names the prefixes the workflows actually declare, not a guess", () => {
     const declared = declaredCachePrefixes();
     // The three the review added: a cargo registry, a wgpu pipeline cache and the host deps of the

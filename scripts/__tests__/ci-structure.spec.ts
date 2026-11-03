@@ -1400,6 +1400,9 @@ describe("CI pipeline structure", () => {
         expect(section).toContain("uses: ./.github/actions/android-v8-source");
         expect(section).toContain("recipe-hash: ${{ steps.v8.outputs.recipe-hash }}");
         expect(section).toContain("published: ${{ steps.v8.outputs.published }}");
+        // The release write consumes `trusted`, not `built`: a develop or main push that hits its
+        // own cache must still be able to republish a missing asset (PRD-628 review round 2).
+        expect(section).toContain("trusted: ${{ steps.v8.outputs.trusted }}");
       }
     },
   );

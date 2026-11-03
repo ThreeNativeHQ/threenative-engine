@@ -18,6 +18,10 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { makeTempDirSync } from "../../test-support/temp-dir.js";
 import { declaredNeeds, jobSections } from "../ci-workflow.js";
+// The scheduler module ships no declarations; the spec reads one export from it (see ci-native-chain).
+const { validateNativeWorkflow } = await import(
+  new URL("../ci-native-qualification.mjs", import.meta.url).href
+);
 
 const repo = join(import.meta.dirname, "..", "..");
 const actionSource = readFileSync(
@@ -125,6 +129,88 @@ function jobOutputs(source: string, name: string): Record<string, string> {
   return Object.fromEntries(
     [...block.matchAll(/^ {6}([a-z-]+): (.+)$/gmu)].map((match) => [match[1], match[2]?.trim()]),
   );
+}
+
+/** The action's `outputs:` mapping, one value per output with its folded block joined. */
+function actionOutput(name: string): string {
+  const block = /^outputs:\n([\s\S]*?)^runs:/mu.exec(actionSource)?.[1];
+  if (block === undefined) throw new Error("the action declares no outputs");
+  const lines = block.split("\n");
+  const at = lines.indexOf(`  ${name}:`);
+  if (at < 0) throw new Error(`the action declares no ${name} output`);
+  const body: string[] = [];
+  for (const line of lines.slice(at + 1)) {
+    // The next output key at the mapping's own indentation ends this one.
+    if (/^ {2}\S/u.test(line)) break;
+    body.push(line);
+  }
+  const value = / {4}value: ([\s\S]*)$/u.exec(body.join("\n"))?.[1] ?? "";
+  return value
+    .replace(/^>-?\s*/u, "")
+    .replace(/\s+/gu, " ")
+    .trim();
+}
+
+/**
+ * The subset of the GitHub expression language these gates use: string comparisons over `==` and
+ * `!=`, joined by `&&`, `||` and parentheses. It refuses anything else rather than guessing, so a
+ * gate rewritten into a form this spec cannot read fails the spec instead of passing quietly.
+ */
+function evaluate(expression: string, operands: Readonly<Record<string, string>>): boolean {
+  // `if:` accepts a bare expression; an output value wraps it in `${{ }}`.
+  const trimmed = expression.trim();
+  const body = /^\$\{\{([\s\S]*)\}\}$/u.exec(trimmed)?.[1] ?? trimmed;
+  if (body === "") throw new Error("the spec evaluated an empty expression");
+  const tokens = body.match(/[A-Za-z_][\w.-]*|'[^']*'|==|!=|&&|\|\||\(|\)/gu) ?? [];
+  const unknown = body.replace(/[A-Za-z_][\w.-]*|'[^']*'|==|!=|&&|\|\||\(|\)|\s/gu, "");
+  if (unknown !== "") throw new Error(`unsupported expression syntax: ${unknown}`);
+  let at = 0;
+  const atom = (): boolean => {
+    if (tokens[at] === "(") {
+      at += 1;
+      const grouped = alts();
+      if (tokens[at] !== ")") throw new Error(`unbalanced expression: ${expression}`);
+      at += 1;
+      return grouped;
+    }
+    const left = operand();
+    const operator = tokens[at];
+    if (operator !== "==" && operator !== "!=") throw new Error(`expected a comparison: ${body}`);
+    at += 1;
+    return operator === "==" ? left === operand() : left !== operand();
+  };
+  const operand = (): string => {
+    const token = tokens[at] ?? "";
+    if (token.startsWith("'")) {
+      at += 1;
+      return token.slice(1, -1);
+    }
+    const value = operands[token];
+    if (value === undefined) throw new Error(`this spec has no value for ${token}`);
+    at += 1;
+    return value;
+  };
+  const conjunctions = (): boolean => {
+    let result = atom();
+    while (tokens[at] === "&&") {
+      at += 1;
+      const next = atom();
+      result = result && next;
+    }
+    return result;
+  };
+  const alts = (): boolean => {
+    let result = conjunctions();
+    while (tokens[at] === "||") {
+      at += 1;
+      const next = conjunctions();
+      result = result || next;
+    }
+    return result;
+  };
+  const answer = alts();
+  if (at !== tokens.length) throw new Error(`trailing expression tokens: ${tokens.slice(at)}`);
+  return answer;
 }
 
 /** Replaces the GitHub expressions a script carries, and refuses to run one it does not know. */
@@ -248,7 +334,7 @@ describe("the Android V8 payload bridge", () => {
     ]);
   });
 
-  it("publishes a release asset only from a payload this run built", () => {
+  it("publishes a release asset only from a payload this run built or restored from a trusted ref", () => {
     const outputs = /^outputs:\n([\s\S]*?)^runs:/mu.exec(actionSource)?.[1] ?? "";
     // The composite action exports `built`, wired to the step that compiles the payload.
     expect(
@@ -260,17 +346,121 @@ describe("the Android V8 payload bridge", () => {
     expect(build.run.split("\n").at(-1)).toBe('echo "built=true" >> "$GITHUB_OUTPUT"');
     expect(steps.filter((candidate) => candidate.run.includes("built=true"))).toEqual([build]);
 
-    // The job re-exports it, and the release write requires it.
+    // `trusted` is what a release write may consume. The cases the review named, evaluated against
+    // the shipped expression rather than a copy of it in prose.
+    const rule = actionOutput("trusted");
+    const cases = [
+      {
+        built: "true",
+        artifact: "",
+        cache: "",
+        event: "push",
+        ref: "refs/heads/develop",
+        trust: true,
+      },
+      {
+        built: "true",
+        artifact: "",
+        cache: "",
+        event: "push",
+        ref: "refs/heads/main",
+        trust: true,
+      },
+      {
+        built: "",
+        artifact: "",
+        cache: "true",
+        event: "push",
+        ref: "refs/heads/develop",
+        trust: true,
+      },
+      {
+        built: "",
+        artifact: "",
+        cache: "true",
+        event: "pull_request",
+        ref: "refs/pull/628/merge",
+        trust: false,
+      },
+      {
+        built: "",
+        artifact: "true",
+        cache: "",
+        event: "push",
+        ref: "refs/heads/develop",
+        trust: false,
+      },
+    ] as const;
+    for (const testCase of cases) {
+      const operands = {
+        "steps.build.outputs.built": testCase.built,
+        "steps.artifact.outputs.hit": testCase.artifact,
+        "steps.payload.outputs.cache-hit": testCase.cache,
+        "github.event_name": testCase.event,
+        "github.ref": testCase.ref,
+      };
+      const trusted = evaluate(rule, operands);
+      const label = `${testCase.event} on ${testCase.ref}: built=${testCase.built} artifact=${testCase.artifact} cache=${testCase.cache}`;
+      expect(trusted, label).toBe(testCase.trust);
+      // The release write consumes the output, so the same case must reach the same answer there.
+      expect(
+        evaluate(jobCondition(nativeSource, "publish-android-v8"), {
+          ...operands,
+          "needs.android-v8-source.outputs.trusted": trusted ? "true" : "",
+        }),
+        label,
+      ).toBe(testCase.trust);
+    }
+
+    // The job re-exports both facts, and the release write requires `trusted`.
     expect(jobOutputs(nativeSource, "android-v8-source").built).toBe(
       "${{ steps.v8.outputs.built }}",
+    );
+    expect(jobOutputs(nativeSource, "android-v8-source").trusted).toBe(
+      "${{ steps.v8.outputs.trusted }}",
     );
     expect(declaredNeeds(jobSection(nativeSource, "publish-android-v8"))).toEqual([
       "scope",
       "android-v8-source",
     ]);
     expect(jobCondition(nativeSource, "publish-android-v8")).toBe(
-      "needs.android-v8-source.outputs.built == 'true' && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')",
+      "needs.android-v8-source.outputs.trusted == 'true' && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')",
     );
+  });
+
+  it("leaves the release asset alone when one is already published", () => {
+    // The published-asset skip: a run that downloaded the asset neither built nor restored the
+    // payload, so it has nothing to trust and never re-publishes what already exists.
+    const operands = {
+      "steps.build.outputs.built": "",
+      "steps.artifact.outputs.hit": "",
+      "steps.payload.outputs.cache-hit": "",
+      "steps.published.outputs.hit": "true",
+      "github.event_name": "push",
+      "github.ref": "refs/heads/develop",
+    };
+    expect(evaluate(actionOutput("trusted"), operands)).toBe(false);
+    expect(
+      evaluate(jobCondition(nativeSource, "publish-android-v8"), {
+        ...operands,
+        "needs.android-v8-source.outputs.trusted": "",
+      }),
+    ).toBe(false);
+  });
+
+  it("pins the same publish gate in the scheduler that validates the workflow", () => {
+    // `ci-native-qualification.mjs` holds a copy of every job's `if:`; a gate that changed in one
+    // place only is a scheduler that disagrees with the workflow it dispatches.
+    expect(() => validateNativeWorkflow(nativeSource)).not.toThrow();
+    // Negative control: the gate this change replaced let a develop cache hit publish nothing.
+    expect(() =>
+      validateNativeWorkflow(
+        nativeSource.replace(
+          "needs.android-v8-source.outputs.trusted == 'true'",
+          "needs.android-v8-source.outputs.built == 'true'",
+        ),
+      ),
+    ).toThrow("CI_NATIVE_WORKFLOW_POLICY");
   });
 
   it("reads another run's artifact only on a pull request, from this repository, on a trusted branch", () => {

@@ -19,6 +19,14 @@ outputs:
       'true' only when this run compiled the payload. A payload restored from an artifact is
       somebody else's bytes, so it is never published as the trusted release asset.
     value: ${{ steps.build.outputs.built }}
+  trusted:
+    description: >-
+      'true' only when this run compiled the payload, or restored it from the Actions cache on a
+      push. A pull request's cache holds pull request code and an artifact is another run's bytes,
+      so neither may become the release asset; a trusted ref's cache is that ref's own payload.
+    value: >-
+      ${{ steps.build.outputs.built == 'true' ||
+      (github.event_name != 'pull_request' && steps.payload.outputs.cache-hit == 'true') }}
 
 runs:
   using: composite
@@ -73,7 +81,7 @@ runs:
     # admits only this repository's own head on main, develop or this pull request's branch, and a
     # payload that fails `--verify` is thrown away instead of failing the lane. A trusted ref never
     # reads it at all: it has the release asset, and a poisoned payload must not reach the job that
-    # publishes one (`built` below is what that job requires).
+    # publishes one (`trusted` below is what that job requires, and an artifact never sets it).
     - name: Download the payload a pull request run of this recipe published
       id: artifact
       if: steps.published.outputs.hit != 'true' && github.event_name == 'pull_request'
@@ -156,9 +164,9 @@ runs:
         export THREENATIVE_V8_BUILD_JOBS="${THREENATIVE_V8_BUILD_JOBS:-$(nproc)}"
         timeout --signal=TERM --kill-after=30s 180m \
           node scripts/download-deps.mjs --only v8-android
-        # This run compiled the payload, and only such a run may publish it: what `built` promises
-        # `publish-android-v8` in native-platforms.yml, so a downloaded payload never becomes the
-        # trusted release asset.
+        # This run compiled the payload. `built` states that fact, and `trusted` (the action's
+        # output) is what `publish-android-v8` in native-platforms.yml requires: a downloaded
+        # payload never becomes the trusted release asset.
         echo "built=true" >> "$GITHUB_OUTPUT"
     # Payload-only verification is valid: `--verify` inspects the installed payload and its receipt
     # under third_party/v8-android and never reads third_party/.v8-source.

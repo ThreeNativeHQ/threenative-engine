@@ -94,6 +94,29 @@ describe("the published V8 payload picker", () => {
     expect(pickPublishedArtifact({ artifacts: [] }, "goal/628")).toBeNull();
   });
 
+  it("refuses an artifact whose repository ids are missing, because two missing ids compare equal", () => {
+    // `head_repository_id !== repository_id` passed when the API answered without either field:
+    // undefined equals undefined, so an artifact of unknown origin read as this repository's own.
+    const noRepository = artifact(14);
+    (noRepository.workflow_run as { repository_id?: number }).repository_id = undefined;
+    expect(() => pickPublishedArtifact({ artifacts: [noRepository] }, "main")).toThrow(
+      ARTIFACT_MALFORMED,
+    );
+    const noHead = artifact(15);
+    (noHead.workflow_run as { head_repository_id?: number }).head_repository_id = undefined;
+    expect(() => pickPublishedArtifact({ artifacts: [noHead] }, "main")).toThrow(
+      ARTIFACT_MALFORMED,
+    );
+    // A string id is the same defect with a different spelling.
+    const stringIds = artifact(16);
+    (stringIds.workflow_run as { repository_id?: number | string }).repository_id = "903897353";
+    (stringIds.workflow_run as { head_repository_id?: number | string }).head_repository_id =
+      "903897353";
+    expect(() => pickPublishedArtifact({ artifacts: [stringIds] }, "main")).toThrow(
+      ARTIFACT_MALFORMED,
+    );
+  });
+
   it("fails closed on a list it cannot reason about, instead of reading it as no artifact", () => {
     // Every branch trusted is not a default this can take: the caller has to name them.
     expect(() => pickPublishedArtifact({ artifacts: [artifact(1)] }, "  ")).toThrow(
