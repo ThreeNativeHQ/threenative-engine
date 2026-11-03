@@ -121,7 +121,7 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
       if (!Number.isInteger(value) || value < 25 || value > 100)
         throw new Error("screenPercentage must be an integer 25..100");
       ctx.renderer.setResolutionScale(value / 100, "auto-pinned");
-      console.info(`TN_SCREEN_PERCENTAGE ${value}`);
+      console.info(`TN_CALIBRATION_SCREEN_PERCENTAGE ${value}`);
     }
     ctx.add(model);
     const scene = ctx.scene;
