@@ -27,7 +27,8 @@ struct MaterialNodes {
     /** The scene's `fogNode`, a vec4(color, factor) mixed into the finished colour; set on draw items, never on a material. */
     graph::Node fogNode;
     /** NodeMaterial.mrtNode: an mrt() of named outputs. The render database resolves it to the fragmentNode of the
-     *  attachment it draws (RenderDatabase::mrtName) before a draw item is built, so no program reads it. */
+     *  attachment it draws (RenderDatabase::mrtName) before a draw item is built, so no program reads it; it stays
+     *  in the slot lists so the textures, storages and uniforms only an output reads are found. */
     graph::Node mrtNode;
     bool operator==(const MaterialNodes&) const = default;
     /** The material's own slots: the draw item's `fogNode` is the scene's, so no material owns it. */
@@ -36,13 +37,13 @@ struct MaterialNodes {
                           emissiveNode.get(), roughnessNode.get(), metalnessNode.get(),
                           opacityNode.get(),  vertexNode.get(),    fragmentNode.get(),
                           scaleNode.get(),    rotationNode.get(),  depthNode.get(),
-                          aoNode.get(),       irradianceNode.get()};
+                          aoNode.get(),       irradianceNode.get(), mrtNode.get()};
     }
     auto graphs() const {
         return std::array{colorNode,     positionNode, normalNode, emissiveNode, roughnessNode,
                           metalnessNode, opacityNode,  vertexNode, fragmentNode,
                           scaleNode,     rotationNode, depthNode,
-                          aoNode,        irradianceNode, fogNode};
+                          aoNode,        irradianceNode, fogNode, mrtNode};
     }
     std::string key() const {
         std::string out;
