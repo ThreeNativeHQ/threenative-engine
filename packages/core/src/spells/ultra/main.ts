@@ -164,8 +164,11 @@ export function createFx(o: IFxOptions) {
   fx.casts = casts;
   const particles = new Particles(o.renderer ?? null, { ground: fx.ground as IParticleGround });
   fx.particles = particles;
+  // TEMP lane gate (team-lead, removed at integration): build only with ?lane=particles or ?lane=all
+  const lanes = new URLSearchParams(globalThis.location?.search ?? "").getAll("lane");
+  const particlesLane = lanes.includes("particles") || lanes.includes("all");
   function buildParticles(): void {
-    if (particles.built) return;
+    if (particles.built || !particlesLane) return;
     particles.build();
     fxTarget.scene.add(particles.glow, particles.media, ...particles.debris);
   }

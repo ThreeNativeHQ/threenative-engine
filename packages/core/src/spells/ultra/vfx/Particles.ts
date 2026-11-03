@@ -1375,6 +1375,7 @@ export class Particles {
 
   // everything visible for one warm-up frame (shader variants are built at first draw)
   warm(on: boolean) {
+    if (!this.built) return;
     for (const s of STYLES) {
       const st = this.style[s];
       if (on) this.setDraw(s, 0, 1);
