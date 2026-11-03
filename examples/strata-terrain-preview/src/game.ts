@@ -1528,9 +1528,6 @@ const game = defineGame<TerrainState, IPhysicsContext>({
     desert: { keys: ["Digit4"] },
     tundra: { keys: ["Digit5"] },
   },
-  // A short window so a playtest run actually closes one: the default 300 frames is longer than
-  // this scenario runs. The window is read into state, which is what puts the measured draw count
-  // and frame cost into the run report instead of only on a console line nobody reads.
   frameBudget: {
     // A short window so a playtest run actually closes one; the default 300 frames is longer than
     // this scenario runs. The scene reads the result into state, which is what puts the measured
