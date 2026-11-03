@@ -1,6 +1,6 @@
 import { MessageChannel } from "node:worker_threads";
 import { Terrain } from "@threenative/terrain";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { SaveQueue, diffLayers, externalSnapshotAction } from "../src/editor/saveQueue.js";
 import type {
   ISaveDocument,
@@ -487,6 +487,29 @@ describe("terrain editor save queue", () => {
     expect(externalSnapshotAction(queue, { ...server.snapshot(), revision: "newer" })).toBe(
       "apply",
     );
+  });
+
+  it("replays a deferred external snapshot once the queue drains (audit TERRAIN-08)", async () => {
+    const server = makeServer(doc(recipe()));
+    const saved: string[] = [];
+    // The commit lands on disk, then another lane writes before the response reaches the client.
+    const queue = new SaveQueue({
+      base: server.snapshot(),
+      commit: async (transaction) => {
+        const next = await server.commit(transaction);
+        server.externalMetadata({ cameras: [] });
+        return next;
+      },
+      getSnapshot: async () => server.snapshot(),
+      onSaved: (snapshot) => saved.push(snapshot.revision),
+    });
+    queue.record(doc(grow(server.document.recipe, "a", 5)));
+    // The broadcast of the other lane's write arrives while the commit is in flight.
+    expect(externalSnapshotAction(queue, server.snapshot())).toBe("defer");
+    queue.defer();
+    await queue.flush();
+    await vi.waitFor(() => expect(queue.revision).toBe(server.revision));
+    expect(saved.at(-1)).toBe(server.revision);
   });
 
   it("keeps remote fields and layers through a 409 rebase and a later whole save", async () => {

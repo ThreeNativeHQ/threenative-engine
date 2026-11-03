@@ -461,7 +461,10 @@ export function installEvaluation(c: EditorSession) {
   installSaveQueue(c);
   c.subscribe((snapshot) => {
     const action = externalSnapshotAction(c.saveQueue, snapshot);
-    if (action === "defer") return;
+    if (action === "defer") {
+      c.saveQueue.defer();
+      return;
+    }
     if (action === "ignore") {
       c.useSnapshot(snapshot);
       return;

@@ -183,6 +183,7 @@ export class SaveQueue {
   #onNotify: ((message: string) => void) | undefined;
   #onChange: (() => void) | undefined;
   #confirmed: ISaveSnapshot;
+  #deferred = false;
   #journal: ISaveIntent[] = [];
   #saving = false;
   #flushing: Promise<void> = Promise.resolve();
@@ -267,6 +268,31 @@ export class SaveQueue {
     this.#onChange?.();
   }
 
+  /**
+   * Note that an external snapshot arrived while local intent existed and was not adopted. When the
+   * queue drains it reads the disk once and adopts it, so the base revision and preview never stay
+   * stale behind a write from a lane that bypasses the queue.
+   */
+  defer(): void {
+    this.#deferred = true;
+  }
+
+  async #reconcile(): Promise<void> {
+    if (!this.#deferred || this.hasLocalIntent()) return;
+    this.#deferred = false;
+    try {
+      const fresh = await this.#getSnapshot();
+      if (this.hasLocalIntent()) {
+        this.#deferred = true;
+        return;
+      }
+      if (fresh.diagnostic || fresh.revision === this.#confirmed.revision) return;
+      this.#confirmed = fresh;
+      this.#onSaved?.(fresh, this.localDocument);
+      this.#onChange?.();
+    } catch {}
+  }
+
   /** Re-queue a refused intent in place, so retry keeps its order in the journal. */
   retry(edit: IUnsentEdit): void {
     const intent = this.#intent(edit.id);
@@ -282,6 +308,7 @@ export class SaveQueue {
     this.#journal = this.#journal.filter((intent) => intent.id !== edit.id);
     this.#onChange?.();
     void this.flush();
+    void this.#reconcile();
   }
 
   async flush(): Promise<void> {
@@ -389,5 +416,6 @@ export class SaveQueue {
       this.#onChange?.();
     }
     if (this.hasPending()) void this.flush();
+    else void this.#reconcile();
   }
 }
