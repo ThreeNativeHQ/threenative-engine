@@ -210,8 +210,10 @@ test('Android V8 interruption leaves time to cache and resume Ninja state', () =
   );
   expect(saveStep).toContain('always()');
   expect(saveStep).toContain("steps.build.outcome == 'failure'");
-  // A superseded pull request is not an interrupted build; its cancel must not save 3 GB.
-  expect(saveStep).toContain("github.event_name != 'pull_request'");
+  // PRD-628: a superseded pull request keeps its Ninja progress too. It is the only thing the next
+  // push can resume from, and it is bounded to one entry per recipe by ci-janitor's prune job.
+  expect(saveStep).toContain("steps.build.outcome == 'cancelled'");
+  expect(saveStep).not.toContain("github.event_name != 'pull_request'");
   expect(saveStep).toContain('third_party/.v8-source');
 
   const root = makeTempDirSync('tn-v8-resume-action-');

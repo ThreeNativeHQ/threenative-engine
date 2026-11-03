@@ -1123,6 +1123,11 @@ jobs:
       CCACHE_DIR: ${{ github.workspace }}/.cache/ccache
       CCACHE_MAXSIZE: 900M
       CCACHE_COMPRESS: "1"
+      # An object's hash covers the absolute path of every file the compile names, so the same
+      # source compiles to a different hash in `/home/runner/_work/…` than in a self-hosted
+      # checkout, and either build misses the other's objects. BASEDIR rewrites the paths under the
+      # checkout to relative ones, so the compiler cache is shared by every runner that builds it.
+      CCACHE_BASEDIR: ${{ github.workspace }}
       # CMake reads the launcher from these two environment variables (cmake-env-variables(7));
       # it does not read CMAKE_PROJECT_INCLUDE_BEFORE from the environment at all. Setting a file
       # there configured nothing: probed against cmake 4.4.2, the include-before env var leaves
@@ -1389,6 +1394,11 @@ jobs:
       CCACHE_DIR: ${{ github.workspace }}/.cache/ccache
       CCACHE_MAXSIZE: 900M
       CCACHE_COMPRESS: "1"
+      # An object's hash covers the absolute path of every file the compile names, so the same
+      # source compiles to a different hash in `/home/runner/_work/…` than in a self-hosted
+      # checkout, and either build misses the other's objects. BASEDIR rewrites the paths under the
+      # checkout to relative ones, so the compiler cache is shared by every runner that builds it.
+      CCACHE_BASEDIR: ${{ github.workspace }}
       # CMake reads the launcher from these two environment variables (cmake-env-variables(7));
       # it does not read CMAKE_PROJECT_INCLUDE_BEFORE from the environment at all. Setting a file
       # there configured nothing: probed against cmake 4.4.2, the include-before env var leaves
@@ -2209,6 +2219,11 @@ jobs:
       CCACHE_DIR: ${{ github.workspace }}/.cache/ccache
       CCACHE_MAXSIZE: 900M
       CCACHE_COMPRESS: "1"
+      # An object's hash covers the absolute path of every file the compile names, so the same
+      # source compiles to a different hash in `/home/runner/_work/…` than in a self-hosted
+      # checkout, and either build misses the other's objects. BASEDIR rewrites the paths under the
+      # checkout to relative ones, so the compiler cache is shared by every runner that builds it.
+      CCACHE_BASEDIR: ${{ github.workspace }}
       # CMake reads the launcher from these two environment variables (cmake-env-variables(7));
       # it does not read CMAKE_PROJECT_INCLUDE_BEFORE from the environment at all. Setting a file
       # there configured nothing: probed against cmake 4.4.2, the include-before env var leaves

@@ -43,9 +43,13 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # Read-only. The workflow used to hold Actions write access so a failing job could cancel its own
-# run; that mechanism is gone. Only run-summary additionally reads Actions timestamps.
+# run; that mechanism is gone. `actions: read` is the one Actions permission it needs, and it needs
+# it twice: run-summary reads run timestamps, and the `native-platforms` job it calls reads the
+# Android V8 payload artifact. A called workflow can only narrow its caller's grant, so a caller
+# without it would leave the callee's token unable to see the artifact and cold-build V8 (PRD-628).
 permissions:
   contents: read
+  actions: read
 
 jobs:
   # This is deliberately a native-Node decision job: a pull request must prove its complete
@@ -358,6 +362,11 @@ jobs:
       CCACHE_DIR: ${{ github.workspace }}/.cache/ccache
       CCACHE_MAXSIZE: 900M
       CCACHE_COMPRESS: "1"
+      # An object's hash covers the absolute path of every file the compile names, so the same
+      # source compiles to a different hash in `/home/runner/_work/…` than in a self-hosted
+      # checkout, and either build misses the other's objects. BASEDIR rewrites the paths under the
+      # checkout to relative ones, so the compiler cache is shared by every runner that builds it.
+      CCACHE_BASEDIR: ${{ github.workspace }}
       # Not `CCACHE_SLOPPINESS: pch_defines,time_macros`, tried and reverted. The verbose report
       # showed half of every compiler invocation was not a cache candidate at all — run
       # 33714810237, host build:
@@ -1370,6 +1379,11 @@ jobs:
       CCACHE_DIR: ${{ github.workspace }}/.cache/ccache
       CCACHE_MAXSIZE: 500M
       CCACHE_COMPRESS: "1"
+      # An object's hash covers the absolute path of every file the compile names, so the same
+      # source compiles to a different hash in `/home/runner/_work/…` than in a self-hosted
+      # checkout, and either build misses the other's objects. BASEDIR rewrites the paths under the
+      # checkout to relative ones, so the compiler cache is shared by every runner that builds it.
+      CCACHE_BASEDIR: ${{ github.workspace }}
       CMAKE_C_COMPILER_LAUNCHER: ccache
       CMAKE_CXX_COMPILER_LAUNCHER: ccache
       TN_EMSDK_VERSION: 6.0.11
