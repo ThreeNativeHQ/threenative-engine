@@ -927,6 +927,9 @@ importers:
       '@typescript/native':
         specifier: 'catalog:'
         version: typescript@7.0.2
+      create-threenative:
+        specifier: workspace:*
+        version: link:../../packages/create-threenative
       typescript:
         specifier: 'catalog:'
         version: '@typescript/typescript6@6.0.2'

@@ -111,6 +111,7 @@ This PRD has 11 boxes, over the cap of about 8. The foundation, its one-spell co
 - 2026-10-31 (João): "need all absorbed as engine capabilities". All 39 ship as importable core factories, and the agent's proposal to keep looks in kit source is rejected. This is a named exception to "never own the look", in the same form as the Unreal default: a stock look with an override on the same call. Phase 1 writes it into `AGENTS.md`.
 - 2026-10-31 (Claude): the catalog goes on a `@threenative/core/spells` subpath, not in a new package, because it carries no new dependency.
 - 2026-10-31 (Claude): upstream GLSL stays out of the repository, and the algorithms are ported to TSL. A WebGL2 path is closed by the renderer rule and has no native proof.
+- 2026-11-03 (owner, overrides the behaviour-only port): "its a MIT project, just copy". The from-scratch spells drew a white dot and an orange smudge. Upstream's JavaScript is copied verbatim under `packages/core/src/spells/ultra/`, mirroring its file names. Only what the engine cannot run changes: each GLSL program becomes TSL line by line (same maths, same constants), and each `WebGLRenderTarget` becomes a `RenderTarget`. It runs on the default engine, the Wasm build over WebGPU, never on upstream three's WebGL2 (owner: "webgl is trash, it will be slow FPS"). Fireball's closure lands and passes the judge before the other five.
 
 ## Execution Phases
 
@@ -136,6 +137,17 @@ This PRD has 11 boxes, over the cap of about 8. The foundation, its one-spell co
 - [x] A Fireball impact leaves a scorch on the floor that fades over time. proof: `node packages/playtest/dist/runner/cli.js examples/spell-lab/playtests/spell-lab.playtest.json --browser-recipe webgpu`, scorch step — Evidence: PASS on an NVIDIA RTX 2080 (turing, hardware adapter, headed, `--browser-recipe webgpu`). The scenario asserts `casts >= 1`, `impacts >= 1`, `floorMarks >= 1` (the `ReactionField` version moves only when a spell marks the floor) and a before/after frame change, and the capture shows a burnt-orange patch on the floor where the fireball landed.
 - [x] Thunderstrike, Glacial Spike, Arcane Barrage, Aegis and Inferno each cast and change the pixels at the target. proof: `spell-lab.playtest.json`, per-spell steps — Evidence: six scenario files, one per spell (`spell-lab`, `thunderstrike`, `glacial-spike`, `arcane-barrage`, `aegis`, `inferno`), all PASS on the RTX 2080 headed. One file per spell rather than six labelled steps, because the `visual` assertion diffs the whole scenario and a per-step diff is not available. Each asserts its cast, its impact, that particles spawned, no console errors and a before/after frame change.
 - [x] With reduced flashes on, a spell burst shows at most 3 flashes per second (WCAG 2.3.1, kept from upstream). proof: `pnpm exec vitest run packages/core/__tests__/spell-world.spec.ts` — Evidence: 9 tests pass. A fourth flash inside one second is refused and counted in `suppressedFlashes`, never dimmed, and the limiter allows the next flash once the window has passed. The pool itself never hides a light: Three.js drops an invisible object before it collects lights, so a hidden light would be the light-count change the pool exists to prevent.
+
+#### Phase 2b: The spells are upstream's code, on our engine
+
+**Status:** IN PROGRESS — owner decision 2026-11-03.
+**Files:** `packages/core/src/spells/ultra/` (new, upstream paths: `spells/cast.ts`, `spells/fire.ts`, `spells/lightning.ts`, `spells/ice.ts`, `spells/arcane.ts`, `vfx/common.ts`, `vfx/noise.ts`, `vfx/Particles.ts`, `vfx/GroundField.ts`, `vfx/Volumes.ts`, `vfx/FluidVolume.ts`, `vfx/Shockwaves.ts`, `vfx/Ribbons.ts`, `vfx/Bolts.ts`, `vfx/Spikes.ts`, `vfx/Sigils.ts`, `vfx/Refraction.ts`, `vfx/FxTarget.ts`), `examples/spell-lab/` (engine Wasm wiring, `vite.config.ts`), `THIRD_PARTY_NOTICES.md`.
+**Implementation:** Copy each upstream file. Keep its JavaScript, names and constants. Transliterate each GLSL program to TSL. Composite the FX target through `WorldEnvironment`'s `baseColour` hook, which sits where upstream composites: after the scene pass, before exposure and the tone curve. Our post chain replaces upstream `PostFX`. Delete the from-scratch spells once their port lands.
+
+- [ ] spell-lab boots on the default engine, the Wasm build of this branch, over WebGPU. proof: `doctor --url` names the engine and a hardware adapter, and `node scripts/web-engine-stamp.mjs --check` passes.
+- [ ] Fireball is upstream's code and reads as upstream's Fireball in its five beats (charge, release, impact, overview, after). proof: Opus visual judge against upstream's `dev/tools/sheet.mjs` beats, headed, `--browser-recipe webgpu`.
+- [ ] Thunderstrike, Glacial Spike, Arcane Barrage, Aegis and Inferno are upstream's code and pass the same judge. proof: as above, per spell.
+- [ ] The from-scratch spell files are deleted, and the capability entries point at the ported factories. proof: `pnpm caps:recall` exits 0 and recalls each spell first.
 
 #### Phase 3: It holds on native, on budget and to the eye
 

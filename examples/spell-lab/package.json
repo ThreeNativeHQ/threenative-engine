@@ -18,6 +18,7 @@
     "@threenative/playtest": "workspace:*",
     "@types/three": "0.187.0",
     "@typescript/native": "catalog:",
+    "create-threenative": "workspace:*",
     "typescript": "catalog:",
     "vite": "catalog:"
   },
