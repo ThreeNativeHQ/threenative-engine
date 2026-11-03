@@ -7855,6 +7855,14 @@ void shadowPagesInstanceSkinnedCasters() {
     CHECK(capture[0].stats.paletteWrites == 10);
     CHECK(capture[0].stats.shadowSkinned.exactDraws == 48 && capture[0].stats.shadowSkinned.batches == 0);
     CHECK(capture[1].stats.shadowSkinned.exactDraws == 0 && capture[1].stats.shadowSkinned.batches == capture[1].rows.size());
+    // Mover pages share their rows: three pages draw them, and one plans them.
+    CHECK(capture[1].rows.size() == capture[1].pageCount * capture[1].stats.shadowGroupRows);
+    {
+        uint64_t hash = 0xcbf29ce484222325ull;
+        for (const uint8_t byte : capture[1].pixels) hash = (hash ^ byte) * 0x100000001b3ull;
+        std::printf("page groups pixels fnv %016llx, uniform bytes %zu, rows built %u of %zu\n", static_cast<unsigned long long>(hash),
+                    capture[1].uniformBytes, capture[1].stats.shadowGroupRows, capture[1].rows.size());
+    }
     // (e) the static arm: a caster that straddles two pages groups inside each page, a page that selects one
     // caster keeps its plain row, and the pixels do not move.
     std::array<ShadowInstanceArm, 2> still;

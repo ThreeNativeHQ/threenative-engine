@@ -658,6 +658,7 @@ struct Renderer::FrameJob {
     uint32_t keptShadowMaps = 0;  // FrameStats::keptShadowMaps, counted by the plan
     uint64_t uniformBytes = 0;  // FrameStats::uniformBytes, written by the plan
     uint32_t paletteWrites = 0;  // FrameStats::paletteWrites, counted by the plan
+    uint32_t shadowGroupRows = 0;  // FrameStats::shadowGroupRows, counted by the plan
     uint32_t instanceCopies = 0;  // FrameStats::instanceCopies, counted by the plan
     std::deque<DrawItem> shadowLodItems;
     // FM8: a page's grouped casters as rows (one per page and group) and each row's member list. Both are
@@ -3606,7 +3607,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     job.plan.clear(); job.velocityPlan.clear(); job.auxPlan.clear(); job.shadowPasses.clear(); job.shadowLodItems.clear();
     job.pageChunks = 0; job.pageRowReads.clear();
     job.shadowGroupItems.clear(); job.shadowGroups.clear();
-    job.previousBytes = {}; job.previousSeed = false; job.keptShadowMaps = 0; job.paletteWrites = paletteWrites; job.instanceCopies = instanceCopies;
+    job.previousBytes = {}; job.previousSeed = false; job.keptShadowMaps = 0; job.shadowGroupRows = 0; job.paletteWrites = paletteWrites; job.instanceCopies = instanceCopies;
     job.deformationFrames.clear();
     std::vector<Planned>& plan = job.plan;
     std::vector<Planned>& velocityPlan = job.velocityPlan;
@@ -4066,7 +4067,15 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         }
         std::vector<std::vector<const DrawItem*>> selectedCasters(static_cast<std::size_t>(passCount));
         std::vector<std::exception_ptr> failedFace(selectedCasters.size());
+        // Every mover page of a light draws the same moving casters wherever they are: only its camera differs, and
+        // that is a per-pass uniform. The first plans the rows, and the others draw them: their instance and skin
+        // floats would be the same bytes, once per level, every frame.
+        int firstMoverFace = passCount;
+        if (virtualMap && !compilation)
+            for (int face = passCount - 1; face >= 0 && virtualPages[i][std::size_t(face)].mover; --face) firstMoverFace = face;
+        std::size_t firstMoverPass = 0;
         const auto selectFace = [&](std::size_t face) {
+            if (int(face) > firstMoverFace) return;
             try {
                 const shadows::AtlasPage* page = virtualMap && !compilation ? &virtualPages[i][face] : nullptr;
                 std::vector<const DrawItem*>& selected = selectedCasters[face];
@@ -4152,6 +4161,11 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             pass.pageRows = rows;
             pass.clearsPage = page->gpuRows != 2;
             if (rows) { pass.x = pass.y = 0; pass.size = atlas.edge(); }
+        }
+        if (face == firstMoverFace) firstMoverPass = shadowPasses.size() - 1;
+        if (face > firstMoverFace) {
+            pass.draws = shadowPasses[firstMoverPass].draws;
+            continue;
         }
         // The error a coarser rung may have on this page: its texels in world units, along the window's
         // wider axis (see PageAtlas::update), times the budget the node allows.
@@ -4418,6 +4432,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             // than writing it again.
             std::vector<const DrawItem*>& recorded = job.shadowGroups.emplace_back(groups[at].members);
             DrawItem& row = job.shadowGroupItems.emplace_back(*recorded.front());
+            ++job.shadowGroupRows;
             row.matrixWorld = Matrix4{}.elements;
             row.shadowGroup = true;
             row.instanceColors = nullptr;
@@ -4508,6 +4523,12 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         // Pack only the passes that run: a kept map's casters never allocate, fill or upload a slice.
         for (std::size_t k = firstPass; k < shadowPasses.size(); ++k) {
             ShadowPass& kept = shadowPasses[k];
+            // r185 draws a caster through the shadow camera, so TSL's camera accessors (a billboard's
+            // positionNode) read that camera here: its world matrix is the view's inverse.
+            Matrix4 shadowCamera;
+            shadowCamera.elements = kept.view;
+            shadowCamera.invert();
+            const std::array<double, 3> shadowPosition{shadowCamera.elements[12], shadowCamera.elements[13], shadowCamera.elements[14]};
             shadows::GpuPagePlan::Level rowLevel;
             if (kept.pageRows) {
                 const auto& drawn = rowLevels.at(kept.virtualLevel);
@@ -4575,12 +4596,6 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 }
                 put(frameUniforms_, v, program.vertexSlots[kViewMatrix], kept.view);
                 put(frameUniforms_, v, program.vertexSlots[kProjectionMatrix], kept.projection);
-                // r185 draws a caster through the shadow camera, so TSL's camera accessors (a billboard's
-                // positionNode) read that camera here: its world matrix is the view's inverse.
-                Matrix4 shadowCamera;
-                shadowCamera.elements = kept.view;
-                shadowCamera.invert();
-                const std::array<double, 3> shadowPosition{shadowCamera.elements[12], shadowCamera.elements[13], shadowCamera.elements[14]};
                 put(frameUniforms_, v, program.vertexSlots[kCameraWorldMatrix], shadowCamera.elements);
                 put(frameUniforms_, v, program.vertexSlots[kCameraPosition], shadowPosition);
                 put(frameUniforms_, v, program.vertexSlots[kCameraProjectionMatrix], kept.projection);
@@ -6363,6 +6378,7 @@ void Renderer::encodeFrame(FrameJob& job) {
         lastFrame_.keptShadowMaps = job.keptShadowMaps;
         lastFrame_.uniformBytes = job.uniformBytes;
         lastFrame_.paletteWrites = job.paletteWrites;
+        lastFrame_.shadowGroupRows = job.shadowGroupRows;
         lastFrame_.instanceCopies = job.instanceCopies;
         waste::debugAdd(waste::counters().renderFrames);
         waste::debugAdd(waste::counters().renderDraws, lastFrame_.draws);
