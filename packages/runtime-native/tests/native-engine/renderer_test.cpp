@@ -3403,7 +3403,7 @@ void auxTargets(bool normalOnly, float alphaTest, float opacity, uint32_t sample
     item.material = &material;
     item.matrixWorld = {1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1};
     // PRD-762: a normalNode (a constant +Y in view space) is what the draw writes, not its geometric +Z.
-    if (normalNode) item.nodes.normalNode = g::vec3({g::float_(0), g::float_(1), g::float_(0)});
+    if (normalNode) item.nodes->normalNode = g::vec3({g::float_(0), g::float_(1), g::float_(0)});
     for (int frame = 0; frame < 3; ++frame)
         renderer.render(std::span<const DrawItem>(&item, 1), camera(1), LightState{}, {0,0,0,0});
     std::printf("aux targets: %u pass(es), %u draw(s) recorded on a steady frame\n", renderer.lastFrame().auxPasses,
