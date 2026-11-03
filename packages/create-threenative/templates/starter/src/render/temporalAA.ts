@@ -13,8 +13,8 @@ import { createTemporalCurrentProducer } from "./temporalCurrentProducer.js";
 import { ownsCurrentInput } from "./temporalCurrentSelection.js";
 export type { ITemporalAAReport, TemporalResetReason } from "./temporalAAStage.js";
 import { createTemporalAAResolve } from "./temporalAAResolve.js";
-import type { TemporalResolveNode } from "./temporalResolveDepth.js";
 import type { ITemporalHistoryWeighting } from "./temporalResolve.js";
+import type { TemporalResolveNode } from "./temporalResolveDepth.js";
 
 /** Reuse TRAANode's jitter, depth rejection and variance clipping. In a RenderChain `traa` factory
  * pass context.velocityNode and the scene pass's depth, keep the scene pass single-sampled, reset
