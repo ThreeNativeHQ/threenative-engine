@@ -1,0 +1,77 @@
+{
+  "look": "alpine",
+  "landform": "alpine",
+  "sizeMeters": 512,
+  "seed": 41,
+  "foliage": [
+    {
+      "species": "spruce",
+      "density": 0,
+      "slope": [0, 32],
+      "height": [0, 52],
+      "spacing": [3.4, 3.4],
+      "collision": "trunk",
+      "far": null
+    }
+  ],
+  "grass": [
+    {
+      "species": "grass",
+      "density": 0,
+      "slope": [0, 0],
+      "height": null,
+      "spacing": 3.5
+    }
+  ],
+  "layers": [
+    {
+      "layer": "alpine",
+      "from": 0.06,
+      "to": 0.1
+    },
+    {
+      "layer": "rock",
+      "from": 0.02,
+      "to": 0.11
+    },
+    {
+      "layer": "treeline",
+      "from": 0.3,
+      "to": 0.55
+    },
+    {
+      "layer": "cap",
+      "from": 0.82,
+      "to": 1
+    },
+    {
+      "layer": "desertRock",
+      "from": 0.18,
+      "to": 0.48
+    },
+    {
+      "layer": "alpineRock",
+      "from": 0.06,
+      "to": 0.14
+    },
+    {
+      "layer": "alpineHollow",
+      "from": 0.05,
+      "to": 0.12
+    },
+    {
+      "layer": "snow",
+      "from": 0.6,
+      "to": 0.85,
+      "shedFrom": 0.16,
+      "shedTo": 0.39
+    }
+  ],
+  "water": [],
+  "spawn": {
+    "at": [180, -190],
+    "cameraOffset": [28, 24, 42],
+    "focus": [180, -190]
+  },
+  "aliases": ["alpine", "mountain", "mountains", "snowy", "peaks"]
+}

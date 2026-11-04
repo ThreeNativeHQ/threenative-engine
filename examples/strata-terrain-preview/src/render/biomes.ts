@@ -102,6 +102,18 @@ export interface IBiome {
   /** The tone curve this world was graded under. */
   readonly toneMapping: ToneMapping;
   readonly clouds: number;
+  /** The shadow filter this look was judged with: the forest's own screen-space filter, else none. */
+  readonly softShadowFilter: boolean;
+  /** Virtual shadow map size, texels: finer where a distant ridge casts onto a valley. */
+  readonly shadowMapSize: number;
+  /** A single texel of normal bias, which ties a contact to the shadow resolution. */
+  readonly tightShadowContacts: boolean;
+  /** Per-level refresh step where a shadow page is crossed slowly, else null for the default. */
+  readonly shadowRefreshStep: readonly [number, number] | null;
+  /** Temporal anti-aliasing on this look's still passes. */
+  readonly temporalAA: boolean;
+  /** This look carries the water-proof diagnostic arm. */
+  readonly waterProof: boolean;
 }
 
 const temperate: IBiome = {
@@ -168,6 +180,13 @@ const temperate: IBiome = {
   exposure: 2 ** 0.87,
   toneMapping: ACESFilmicToneMapping,
   clouds: 0.76,
+  // The deterministic filter avoids the forest's fine screen-space rotation hatching.
+  softShadowFilter: true,
+  shadowMapSize: 2048,
+  tightShadowContacts: false,
+  shadowRefreshStep: null,
+  temporalAA: true,
+  waterProof: false,
 };
 
 export const BIOMES: Record<WorldName, IBiome> = {
@@ -196,6 +215,12 @@ export const BIOMES: Record<WorldName, IBiome> = {
     },
     exposure: 2 ** -0.38,
     saturation: 0.93,
+    softShadowFilter: false,
+    // Coastal stones showed a lit rim at their base; one fine texel of normal bias ties the contact
+    // offset to the shadow resolution.
+    tightShadowContacts: true,
+    temporalAA: false,
+    waterProof: true,
   },
   alpine: {
     ...temperate,
@@ -246,6 +271,10 @@ export const BIOMES: Record<WorldName, IBiome> = {
     skySaturation: 0.9,
     fill: { sky: 0xb2c6de, ground: 0x656963, intensity: 0.85 },
     clouds: 0.34,
+    softShadowFilter: false,
+    shadowMapSize: 4096,
+    shadowRefreshStep: [0.2, 0.125],
+    temporalAA: false,
   },
   desert: {
     ...temperate,
@@ -300,6 +329,10 @@ export const BIOMES: Record<WorldName, IBiome> = {
     saturation: 0.94,
     exposure: 2 ** -0.52,
     clouds: 0.12,
+    softShadowFilter: false,
+    shadowMapSize: 4096,
+    shadowRefreshStep: [0.2, 0.125],
+    temporalAA: false,
   },
   tundra: {
     ...temperate,
@@ -348,6 +381,8 @@ export const BIOMES: Record<WorldName, IBiome> = {
     saturation: 0.96,
     exposure: 2 ** -0.28,
     clouds: 0.9,
+    softShadowFilter: false,
+    temporalAA: false,
   },
 };
 

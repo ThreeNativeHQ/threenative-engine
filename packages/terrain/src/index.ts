@@ -1,3 +1,13 @@
+export { validateBiome } from "./core/biome.js";
+export type {
+  IBiomeSpec,
+  IBiomeWaterBody,
+  IFarFieldRule,
+  IFoliageType,
+  IGrassType,
+  ILayerInfo,
+  ISpawnSpec,
+} from "./core/biome.js";
 export { Terrain, TerrainEvaluator } from "./core/terrain.js";
 export type { OperationOptions, LayerPatch, PatchCommand } from "./core/terrain.js";
 export { Mask, MATERIAL_IDS } from "./core/masks.js";

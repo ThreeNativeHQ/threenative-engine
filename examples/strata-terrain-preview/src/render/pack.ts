@@ -74,7 +74,7 @@ import {
 } from "./propMaterials.js";
 import type { IPropPart, PropRole } from "./props.js";
 
-interface IPackSpecies {
+export interface IPackSpecies {
   readonly asset: string;
   readonly variant: number;
   readonly path: string;
@@ -135,7 +135,8 @@ for (const [asset, heights] of Object.entries({
     species.push({ asset, variant, metres, path: `${asset}/${variant}` }),
   );
 }
-const STONE = new Set(["boulder", "riverrock", "scree", "cliff"]);
+/** The species drawn as stone: they stand on their lowest point and take a hull collider. */
+export const STONE = new Set(["boulder", "riverrock", "scree", "cliff"]);
 /** Meadow Flowers species: photographed petals kept, stems lifted, no foliage tint. */
 const FLOWERS = new Set(["poppy", "bloom"]);
 for (const one of WORLD_ROCKS) STONE.add(one.asset);
@@ -807,22 +808,11 @@ function prepareGeometry(
   return geometry;
 }
 
-export interface IPackProps {
-  readonly parts: Map<string, IPropPart[]>;
-  readonly dispose: () => void;
-}
-export async function loadPack(
-  assets?: IAssetLoader,
-  world: WorldName = "forest",
-  ground?: IPropGround,
-  comparison?: ICanopyComparison,
-  biome?: IWorldBiome,
-): Promise<IPackProps> {
-  const measured = biome ?? (ground ? measureBiome(BIOMES[world], ground.heights) : undefined);
-  if (!measured && (world === "alpine" || world === "tundra"))
-    throw new RangeError("Stone snow requires measured terrain elevations");
-  const parts = new Map<string, IPropPart[]>();
-  const built: { geometry: BufferGeometry; material: Material }[] = [];
+/**
+ * The species one world draws: the temperate understorey in full, else its own stone and shrub set,
+ * each world's own rocks appended, plus the mountain the two vista worlds share.
+ */
+export function speciesFor(world: WorldName): IPackSpecies[] {
   const selected = species
     .filter(
       (one) =>
@@ -861,6 +851,26 @@ export async function loadPack(
         path: one.path.replace(/^temperate\//, "").replace(/\.glb$/, ""),
       })),
     );
+  return selected;
+}
+
+export interface IPackProps {
+  readonly parts: Map<string, IPropPart[]>;
+  readonly dispose: () => void;
+}
+export async function loadPack(
+  assets?: IAssetLoader,
+  world: WorldName = "forest",
+  ground?: IPropGround,
+  comparison?: ICanopyComparison,
+  biome?: IWorldBiome,
+): Promise<IPackProps> {
+  const measured = biome ?? (ground ? measureBiome(BIOMES[world], ground.heights) : undefined);
+  if (!measured && (world === "alpine" || world === "tundra"))
+    throw new RangeError("Stone snow requires measured terrain elevations");
+  const parts = new Map<string, IPropPart[]>();
+  const built: { geometry: BufferGeometry; material: Material }[] = [];
+  const selected = speciesFor(world);
   const rockface =
     world === "alpine" && assets
       ? await Promise.all(

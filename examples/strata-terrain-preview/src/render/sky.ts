@@ -138,25 +138,25 @@ export function createOutdoorSky(
         exposure: biome.exposure,
       }
     : RIG;
+  const look = biome ?? BIOMES.forest;
   const sun = new DirectionalLight(sunColor, biome?.sun.intensity ?? SUN.intensity);
   sun.name = "temperate-sun";
   sun.castShadow = true;
   sun.shadow.radius = biome?.sun.shadowRadius ?? BIOMES.forest.sun.shadowRadius;
   // engine-override: the owned engine filters its own virtual shadow maps and has no upstream TSL
-  // filter node, so the forest's filter is a three.js-path setting only.
+  // filter node, so this look's filter is a three.js-path setting only.
   const engineInfo = (renderer?.info as { engine?: unknown } | null | undefined)?.engine;
-  if (engineInfo === undefined && (biome ?? BIOMES.forest).world === "forest") {
+  if (engineInfo === undefined && look.softShadowFilter) {
     // The deterministic filter avoids the forest's fine screen-space rotation hatching. r186 removed
     // `PCFSoftShadowFilter` (WebGPU's `PCFSoftShadowMap` falls back to PCF), so `PCFShadowFilter` is
     // the only filter left that carries a render group to share; see `three-shared-render-group.spec.ts`.
     (sun.shadow as typeof sun.shadow & { filterNode?: unknown }).filterNode = PCFShadowFilter;
   }
   if (omitted.has("sun")) sun.intensity = 0;
-  const farShadows = biome?.world === "alpine" || biome?.world === "desert";
-  const mapSize = farShadows ? 4096 : 2048;
-  // Coastal stones showed a lit rim at their base. One fine texel of normal bias ties the contact
-  // offset to shadow resolution. Other worlds keep their judged bias until close-ups prove a change.
-  const tightContacts = biome?.world === "coastal";
+  const mapSize = look.shadowMapSize;
+  // A look whose stones showed a lit rim wins a normal bias tied to the shadow resolution; every
+  // other look keeps its judged bias until close-ups prove a change.
+  const tightContacts = look.tightShadowContacts;
   sun.shadow.normalBias = tightContacts ? (2 * rig.shadowExtents[0]) / mapSize : 0.035;
   const outerExtent = rig.shadowExtents[rig.shadowExtents.length - 1] ?? 320;
   const shadows = new VirtualShadowNode(sun, {
@@ -164,7 +164,7 @@ export function createOutdoorSky(
     mapSize,
     // engine-override: footprint-wide slope bias detaches low-relief contacts such as beach stones.
     ...(tightContacts ? { receiverPlaneBias: false } : {}),
-    ...(farShadows ? { refreshStep: [0.2, 0.125] } : {}),
+    ...(look.shadowRefreshStep ? { refreshStep: [...look.shadowRefreshStep] } : {}),
     // engine-override: the owned engine cannot measure the depth of wind-swayed (GPU-deformed) casters, so
     // its light-space depth spans the outer cascade's whole window. The three.js path keeps derived depth.
     ...(engineInfo === undefined
@@ -286,11 +286,11 @@ export function installOutdoorOcclusion(
   // 4x MSAA is the anti-aliasing: TRAA left every still pixel jittering (frame-to-frame change 20x
   // MSAA's on a still camera). `?on=traa` is the opt-in; it needs a single-sample pass, since TRAA
   // copies this pass's depth and a multisampled target refuses that.
-  const temporal = look.world === "forest" && added.has("traa");
+  const temporal = look.temporalAA && added.has("traa");
   const world = pass(scene, camera, temporal ? { samples: 0 } : undefined);
-  // Proof opt-in, coastal only: keep the 4x MSAA pass and add one resolved RGBA16F diagnostic
-  // attachment. The forest's TRAA single-sample path is untouched.
-  const proofing = look.world === "coastal" && !temporal && waterProofEnabled();
+  // Proof opt-in, one look at a time: keep the 4x MSAA pass and add one resolved RGBA16F diagnostic
+  // attachment. A look with TRAA has a single-sample path, which this proof leaves alone.
+  const proofing = look.waterProof && !temporal && waterProofEnabled();
   world.setMRT(mrt({ output, normal: normalView, ...(proofing ? { diagnostic: vec4(0) } : {}) }));
   let disposeWaterProof: (() => void) | undefined;
   if (proofing) {

@@ -27,11 +27,15 @@ import { createRandom } from "@threenative/core";
 import { type IPlacement, createSegmentIndex } from "@threenative/terrain";
 import { type BufferAttribute, type BufferGeometry, MathUtils } from "three";
 import { ImprovedNoise } from "three/addons/math/ImprovedNoise.js";
+import type { WorldName } from "./biomes.js";
 import type { IBakedLake, IBakedRiver } from "./river.js";
 import { forestWeight } from "./scatter.js";
 
 export const FAR_FOREST =
   new URLSearchParams(globalThis.location?.search ?? "").get("farForest") === "on";
+
+/** The worlds that plant the collar past the square: the forest's surveyed valley. */
+export const FAR_FOREST_WORLDS: readonly WorldName[] = ["forest"];
 
 /** The layer `propStreaming.ts` reads to put a placement in the far, shadowless bucket. */
 export const FAR_FOREST_LAYER = "far-forest";

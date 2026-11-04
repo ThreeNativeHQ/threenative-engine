@@ -36,7 +36,12 @@ import {
 } from "three";
 import { BENCHMARK, type ViewName } from "./render/benchmark.js";
 import { BIOMES, type IWorldBiome, type WorldName, measureBiome } from "./render/biomes.js";
-import { FAR_FOREST, collarSampler, farForestPlacements } from "./render/farForest.js";
+import {
+  FAR_FOREST,
+  FAR_FOREST_WORLDS,
+  collarSampler,
+  farForestPlacements,
+} from "./render/farForest.js";
 import { createGroundSampler } from "./render/groundSampler.js";
 import {
   HORIZON_WALK_BAND,
@@ -79,6 +84,7 @@ import { type IOutdoorSky, createOutdoorSky, installOutdoorOcclusion } from "./r
 import { type IBakedWorld, OPEN_MEADOW, createTerrain } from "./render/terrain.js";
 import { preparePropTextures } from "./render/texturePreparation.js";
 import { sampleActiveWaterProof, waterProofEnabled } from "./render/waterProof.js";
+import { SPAWN_CAMERA_OFFSET, SPAWN_POINTS } from "./render/worldData.js";
 import {
   beginViewVisit,
   medianOfGrowingSamples as median,
@@ -685,24 +691,11 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
         new CapsuleGeometry(0.35, 1.0, 6, 12),
         new MeshStandardMaterial({ color: 0xffc76d }),
       );
-      const start =
-        world === "forest"
-          ? [-220, -165]
-          : world === "coastal"
-            ? [180, 65]
-            : world === "alpine"
-              ? [180, -190]
-              : [180, 160];
-      actor.position.set(
-        start[0] as number,
-        field.heightAt(start[0] as number, start[1] as number) + 2,
-        start[1] as number,
-      );
+      const start = SPAWN_POINTS[world];
+      actor.position.set(start[0], field.heightAt(start[0], start[1]) + 2, start[1]);
       actor.name = "player";
       // Freeze the launch region before gameplay or a review view can move its follow camera.
-      const spawn = actor.position
-        .clone()
-        .add(world === "coastal" ? new Vector3(28, 18, 34) : new Vector3(28, 24, 42));
+      const spawn = actor.position.clone().add(new Vector3(...SPAWN_CAMERA_OFFSET[world]));
       ctx.camera.position.copy(spawn);
       ctx.add(actor);
       const player = new CharacterBody3D({
@@ -1137,7 +1130,7 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
           // Spruce across the valley past the square; `?farForest=off` plants none.
           const vistaEye = BENCHMARK[world].poses.vista?.at;
           const far =
-            world === "forest" && FAR_FOREST && ridges instanceof Mesh
+            FAR_FOREST_WORLDS.includes(world) && FAR_FOREST && ridges instanceof Mesh
               ? farForestPlacements({
                   size: data.size,
                   resolution: data.resolution,
@@ -1816,8 +1809,7 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
         if (view === "player") {
           // Forest and tundra: the orbit camera framed the player after physics.
           if (!vista) return;
-          const offset = world === "coastal" ? new Vector3(28, 18, 34) : new Vector3(28, 24, 42);
-          ctx.camera.position.copy(actor.position).add(offset);
+          ctx.camera.position.copy(actor.position).add(new Vector3(...SPAWN_CAMERA_OFFSET[world]));
           if (world === "coastal")
             ctx.camera.lookAt(actor.position.x + 80, 1.5, actor.position.z + 190);
           else if (world === "alpine")

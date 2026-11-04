@@ -54,19 +54,26 @@ export interface IPlacementField {
 export function grassWeight(data: IPlacementField, x: number, z: number): number {
   // terrain.ts now blends by actual landform, not the bake's old brown palette.
   // Match its meadow/rock/alpine and beach reaches so a green surface grows real cover.
+  const rules = scatterRules(data.world);
   const height = clampedHeight(data, x, z);
-  if (data.world === "coastal" && data.waterLevel !== null)
+  if (rules.grassBeach && data.waterLevel !== null)
     return (
-      clamp01((height - data.waterLevel - 1.8) / 5.7) *
-      clamp01((42 - slopeDegrees(data, x, z)) / 20)
+      clamp01((height - data.waterLevel - rules.grassBeach[0]) / rules.grassBeach[1]) *
+      clamp01((rules.grassSlopeLimit - slopeDegrees(data, x, z)) / rules.grassSlopeFalloff)
     );
-  if (data.waterLevel !== null && height < data.waterLevel + 7.5) return 0;
+  if (data.waterLevel !== null && height < data.waterLevel + rules.grassWaterMargin) return 0;
   const slope = slopeDegrees(data, x, z);
-  if (data.world === "alpine") return 0; // This 3690 m glacial shoulder is above the treeline.
-  if (data.world === "desert") return clamp01((24 - slope) / 20) * 0.32;
+  if (rules.grassDensity === 0) return 0; // This 3690 m glacial shoulder is above the treeline.
+  const meadow = clamp01((rules.grassSlopeLimit - slope) / rules.grassSlopeFalloff);
+  if (data.world === "desert") return meadow * rules.grassDensity;
   if (data.world === "tundra")
-    return clamp01((30 - slope) / 22) * clamp01((forestWeight(x * 9.8, z * 8.7) - 0.47) / 0.3);
-  return clamp01((42 - slope) / 20) * clamp01((66 - height) / 28);
+    return meadow * clamp01((forestWeight(x * 9.8, z * 8.7) - 0.47) / 0.3);
+  return (
+    meadow *
+    (rules.grassHeight === null
+      ? 1
+      : clamp01((rules.grassHeight[0] - height) / rules.grassHeight[1]))
+  );
 }
 
 /** A value clamped to 0..1, because a density is a probability and a probability above one is a bug. */
@@ -129,6 +136,123 @@ export const SCATTER = {
   seed: 466_468,
 } as const;
 
+/**
+ * What the placement rule reads for one world: the same algorithm, tuned per biome.
+ *
+ * The rule is short and shared; only these numbers differ between a wood, a barren shoulder, a dune
+ * field and a tundra, so they are named here rather than inside the branches that use them.
+ */
+export interface IScatterRules {
+  /** The species a stand is made of. */
+  readonly treeAsset: "spruce" | "sapling";
+  /** How many trees the rule accepts. */
+  readonly treeCount: number;
+  /** Metres a trunk keeps from its neighbour at a closed stand core (first) and in the open. */
+  readonly treeSpacing: readonly [number, number];
+  /** Whether the tree's spacing follows the stand mask, or is the same everywhere. */
+  readonly treeStands: boolean;
+  /** Degrees: a tree will not stand on ground steeper than this. */
+  readonly treeSlopeLimit: number;
+  /** Metres above the playable floor a tree stops, where the treeline is below the peaks. */
+  readonly treeHeightCeiling: number | null;
+  /** The ground cover's grid cell, in metres. */
+  readonly grassCell: number;
+  /** How much of the ground this world covers; 0 leaves the bare rock bare. */
+  readonly grassDensity: number;
+  /** Degrees: the meadow runs out here, over the next `grassSlopeFalloff` degrees. */
+  readonly grassSlopeLimit: number;
+  readonly grassSlopeFalloff: number;
+  /** Metres above the waterline a plant stands at. */
+  readonly grassWaterMargin: number;
+  /** A beach that thins over `waterline + waterMargin`, over `width` metres; absent on dry worlds. */
+  readonly grassBeach: readonly [number, number] | null;
+  /** Ground height, and the metres it takes to fade, that keep a meadow off the peaks. */
+  readonly grassHeight: readonly [number, number] | null;
+}
+
+const SCATTER_RULES: Readonly<Record<WorldName, IScatterRules>> = {
+  forest: {
+    treeAsset: "spruce",
+    treeCount: SCATTER.spruceCount,
+    treeSpacing: [3.2, 6.4],
+    treeStands: true,
+    treeSlopeLimit: 32,
+    treeHeightCeiling: null,
+    grassCell: SCATTER.grassCell,
+    grassDensity: 1,
+    grassSlopeLimit: 42,
+    grassSlopeFalloff: 20,
+    grassWaterMargin: 7.5,
+    grassBeach: null,
+    grassHeight: [66, 28],
+  },
+  coastal: {
+    treeAsset: "spruce",
+    treeCount: SCATTER.spruceCount,
+    treeSpacing: [3.2, 6.4],
+    treeStands: true,
+    treeSlopeLimit: 32,
+    treeHeightCeiling: null,
+    grassCell: SCATTER.grassCell,
+    grassDensity: 1,
+    grassSlopeLimit: 42,
+    grassSlopeFalloff: 20,
+    grassWaterMargin: 7.5,
+    grassBeach: [1.8, 5.7],
+    grassHeight: null,
+  },
+  alpine: {
+    treeAsset: "spruce",
+    treeCount: 0,
+    treeSpacing: [3.4, 3.4],
+    treeStands: false,
+    treeSlopeLimit: 32,
+    treeHeightCeiling: 52,
+    grassCell: 3.5,
+    grassDensity: 0,
+    grassSlopeLimit: 0,
+    grassSlopeFalloff: 0,
+    grassWaterMargin: 7.5,
+    grassBeach: null,
+    grassHeight: null,
+  },
+  desert: {
+    treeAsset: "sapling",
+    treeCount: 0,
+    treeSpacing: [3.4, 3.4],
+    treeStands: false,
+    treeSlopeLimit: 32,
+    treeHeightCeiling: null,
+    grassCell: 7,
+    grassDensity: 0.32,
+    grassSlopeLimit: 24,
+    grassSlopeFalloff: 20,
+    grassWaterMargin: 7.5,
+    grassBeach: null,
+    grassHeight: null,
+  },
+  tundra: {
+    treeAsset: "sapling",
+    treeCount: 55,
+    treeSpacing: [3.4, 3.4],
+    treeStands: false,
+    treeSlopeLimit: 32,
+    treeHeightCeiling: null,
+    grassCell: 1.8,
+    grassDensity: 1,
+    grassSlopeLimit: 30,
+    grassSlopeFalloff: 22,
+    grassWaterMargin: 7.5,
+    grassBeach: null,
+    grassHeight: null,
+  },
+};
+
+/** The placement rules for one world; the shared baked pair read as the forest's. */
+export function scatterRules(world: WorldName | undefined): IScatterRules {
+  return SCATTER_RULES[world ?? "forest"];
+}
+
 export function scatterProps(
   data: IPlacementField,
   focus: { x: number; z: number },
@@ -138,7 +262,8 @@ export function scatterProps(
   const desert = data.world === "desert";
   const tundra = data.world === "tundra";
   const alpine = data.world === "alpine";
-  const treeLimit = temperate ? SCATTER.spruceCount : desert || alpine ? 0 : tundra ? 55 : 600;
+  const rules = scatterRules(data.world);
+  const treeLimit = rules.treeCount;
   const placements: IPlacement[] = [];
   const counts: Record<string, number> = Object.fromEntries(
     [
@@ -294,7 +419,7 @@ export function scatterProps(
           if (Math.hypot(tx - x, tz - z) < Math.max(reach, tr)) return true;
     return false;
   };
-  const treeAsset = temperate || alpine ? "spruce" : "sapling";
+  const treeAsset = rules.treeAsset;
   // Moisture is measured, not painted: a hollow sits below its neighbours and holds water, and that
   // is where ferns, litter and the riparian species go.
   const hollow = (x: number, z: number): number => {
@@ -315,17 +440,19 @@ export function scatterProps(
       !inside(x, z) ||
       wet(x, z) ||
       nearEye(x, z) ||
-      slopeDegrees(data, x, z) > 32 ||
+      slopeDegrees(data, x, z) > rules.treeSlopeLimit ||
       (temperate &&
         data.waterLevel !== null &&
         clampedHeight(data, x, z) < data.waterLevel + 7.5) ||
-      (data.world === "alpine" && clampedHeight(data, x, z) > 52) ||
+      (rules.treeHeightCeiling !== null && clampedHeight(data, x, z) > rules.treeHeightCeiling) ||
       grassWeight(data, x, z) < (temperate ? 0.3 : 0.18) ||
       forestWeight(x, z) < (temperate ? 0.3 : 0.42)
     )
       continue;
     const stand = forestWeight(x, z);
-    const reach = temperate ? 6.4 - 3.2 * clamp01((stand - 0.28) / 0.5) : 3.4;
+    const reach = rules.treeStands
+      ? rules.treeSpacing[1] - rules.treeSpacing[0] * clamp01((stand - 0.28) / 0.5)
+      : rules.treeSpacing[0];
     if (crowded(x, z, reach)) continue;
     const key = `${Math.floor(x / CELL)},${Math.floor(z / CELL)}`;
     const bucket = cells.get(key) ?? [];
@@ -557,16 +684,8 @@ export function scatterProps(
       put("bush", x + (random() - 0.5) * 2, z + (random() - 0.5) * 2, 0.6 + random() * 0.45);
   }
   // A cheap carpet on every grass cell; dense detail at all walking/benchmark eyes, not one disc.
-  for (
-    let z = -half + 3;
-    z < half - 3;
-    z += temperate ? SCATTER.grassCell : desert ? 7 : tundra ? 1.8 : 3.5
-  )
-    for (
-      let x = -half + 3;
-      x < half - 3;
-      x += temperate ? SCATTER.grassCell : desert ? 7 : tundra ? 1.8 : 3.5
-    )
+  for (let z = -half + 3; z < half - 3; z += rules.grassCell)
+    for (let x = -half + 3; x < half - 3; x += rules.grassCell)
       cover(
         x + (random() - 0.5) * (temperate ? 1.5 : desert ? 6 : tundra ? 1.7 : 3),
         z + (random() - 0.5) * (temperate ? 1.5 : desert ? 6 : tundra ? 1.7 : 3),

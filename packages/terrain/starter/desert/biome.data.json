@@ -1,0 +1,77 @@
+{
+  "look": "desert",
+  "landform": "desertMesa",
+  "sizeMeters": 512,
+  "seed": 97,
+  "foliage": [
+    {
+      "species": "sapling",
+      "density": 0,
+      "slope": [0, 32],
+      "height": null,
+      "spacing": [3.4, 3.4],
+      "collision": "trunk",
+      "far": null
+    }
+  ],
+  "grass": [
+    {
+      "species": "grass",
+      "density": 0.32,
+      "slope": [0, 24],
+      "height": null,
+      "spacing": 7
+    }
+  ],
+  "layers": [
+    {
+      "layer": "alpine",
+      "from": 0.28,
+      "to": 0.49
+    },
+    {
+      "layer": "rock",
+      "from": 0.08,
+      "to": 0.52
+    },
+    {
+      "layer": "treeline",
+      "from": 0.8,
+      "to": 1.8
+    },
+    {
+      "layer": "cap",
+      "from": 2,
+      "to": 2.8
+    },
+    {
+      "layer": "desertRock",
+      "from": 0.18,
+      "to": 0.48
+    },
+    {
+      "layer": "alpineRock",
+      "from": 0.06,
+      "to": 0.14
+    },
+    {
+      "layer": "alpineHollow",
+      "from": 0.05,
+      "to": 0.12
+    },
+    {
+      "layer": "snow",
+      "from": 2,
+      "to": 3,
+      "shedFrom": 0.04,
+      "shedTo": 0.22
+    }
+  ],
+  "water": [],
+  "spawn": {
+    "at": [180, 160],
+    "cameraOffset": [28, 24, 42],
+    "focus": [170, 180]
+  },
+  "aliases": ["desert", "dune", "dunes", "sand"]
+}

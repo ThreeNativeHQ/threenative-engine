@@ -1,0 +1,94 @@
+{
+  "look": "tundra",
+  "landform": "tundra",
+  "sizeMeters": 512,
+  "seed": 131,
+  "foliage": [
+    {
+      "species": "sapling",
+      "density": 55,
+      "slope": [0, 32],
+      "height": null,
+      "spacing": [3.4, 3.4],
+      "collision": "trunk",
+      "far": null
+    }
+  ],
+  "grass": [
+    {
+      "species": "grass",
+      "density": 1,
+      "slope": [0, 30],
+      "height": null,
+      "spacing": 1.8
+    }
+  ],
+  "layers": [
+    {
+      "layer": "alpine",
+      "from": 0.6,
+      "to": 1.2
+    },
+    {
+      "layer": "rock",
+      "from": 0.06,
+      "to": 1.25
+    },
+    {
+      "layer": "treeline",
+      "from": 6.5,
+      "to": 10
+    },
+    {
+      "layer": "cap",
+      "from": 14,
+      "to": 17
+    },
+    {
+      "layer": "desertRock",
+      "from": 0.18,
+      "to": 0.48
+    },
+    {
+      "layer": "alpineRock",
+      "from": 0.06,
+      "to": 0.14
+    },
+    {
+      "layer": "alpineHollow",
+      "from": 0.05,
+      "to": 0.12
+    },
+    {
+      "layer": "snow",
+      "from": 0.15,
+      "to": 0.45,
+      "shedFrom": 0.04,
+      "shedTo": 0.22
+    }
+  ],
+  "water": [
+    {
+      "kind": "river",
+      "width": 5.32
+    },
+    {
+      "kind": "river",
+      "width": 3.04
+    },
+    {
+      "kind": "lake",
+      "radius": 34
+    },
+    {
+      "kind": "lake",
+      "radius": 46
+    }
+  ],
+  "spawn": {
+    "at": [180, 160],
+    "cameraOffset": [28, 24, 42],
+    "focus": [150, 160]
+  },
+  "aliases": ["tundra", "arctic", "ice"]
+}
