@@ -1094,3 +1094,32 @@ no COOP/COEP); that lane is open.
   copy (30x a copy + 10 ms) that the character loop fails at 230 ms.
 - Revisit when: the walk's steady CPU frame (jsBefore ~4.5 ms + planShadowLists ~4.4 ms + planVirtualPages ~2.5 ms +
   encode ~2.7 ms) sits near 17 ms, so any extra work tips a frame over vsync.
+
+### 2026-11-04 — Strata forest load: pipelines compile off the queue while the loading cover holds — KEEP
+
+- Where: `tnw_web_set_presentation_hold` and field 72 in `packages/runtime-native/src/engine/wasm/web_host.cpp`,
+  `PipelineCache::pending` in `packages/runtime-native/src/engine/renderer/pipeline_cache.h`.
+- Cause: the Wasm host turned `deferUncompiledDraws` on only at the reveal, so every held loading frame compiled its
+  missing pipelines synchronously in the draw, one after another: the frame before the reveal spent 865-905 ms in
+  `wasmPlan`. Now deferral starts with the hold (Unreal's DelayUntilPSOPrecached), Chrome compiles them in parallel, and
+  field 72 (`shadowInputsReady`) stays false while a compile is pending, so the cover never reveals a skipped draw. Core's
+  3 s `TN_STARTUP_IMAGE_TIMEOUT` still caps the wait.
+- Result (forest, headed WebGPU, NVIDIA Turing, paired A/B, two runs per arm, alternating): time to ready 14.65/14.63 ->
+  13.77/13.61 s, pre-reveal `wasmPlan` peak 865/905 -> 384/396 ms, no image timeout, compiles 47 -> 46. The GPU wait after
+  it (`hostGap` peak about 1.0 s) did not move.
+- Test: `renderer_caches_test.cpp` `deferred_draw` asserts `pending()` is 1 while the compile runs and 0 once it lands.
+- Revisit when: the pre-reveal `hostGap` (about 1 s of Chrome GPU-process work) is the load's largest piece; shadow-depth
+  draws still compile in the draw (`pipelines_->get` in the shadow build) and the VSM page cache needs an invalidation
+  when a caster's pipeline lands before they can defer.
+
+### 2026-11-04 — Strata forest idle and walk: a 33 ms present every 256 frames — PARKED
+
+- Symptom: one frame presents at 33 ms every 4.28 s (256 frames at 60 Hz), at idle and in the walk; it is every walk and
+  idle hitch left. The frame's CPU (under 10 ms) and GPU timestamps (under 11 ms) are normal.
+- Ruled out, each measured: the main thread (a MessageChannel ticker saw no task over 5 ms around it), GPU headroom
+  (render scale 0.5 halved GPU 10.6 -> 5.2 ms, same beat), the page's WebGPU calls (a per-frame census of every
+  `GPU*` prototype call showed nothing unusual before it), the renderer's 256-plan instance-slot sweep (a probe: no
+  clear, 0 copies), the shadow build (a probe: 0.3 ms per frame, not the 4.4 ms an earlier entry estimated). The walk's
+  CPU frame measures 7.7 ms mean, 9.8 ms p95. A plain 2D canvas on the same tab stalled once in 12 s, not three times.
+- Revisit when: a quiet lane (no other GPU client: the desktop shares the GPU with KWin, a second browser and a CUDA
+  process) or a Chrome GPU-process trace can catch one; a 5 s DevTools trace started a fresh phase and caught none.

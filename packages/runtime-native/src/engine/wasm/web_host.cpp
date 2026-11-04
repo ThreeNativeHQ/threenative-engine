@@ -88,7 +88,8 @@ uint32_t sampleCount = 1;  // three's samples: 1 or 4x MSAA
 tn::engine::FrameGate frameGate;
 // Startup's first real frame (ABI 8). While the facade holds presentation every ordinary render still draws its
 // scene, shadow, post and temporal passes but takes no canvas texture, so a startup frame whose inputs are not
-// ready yet never reaches the display. `worldSubmissions` is field 71, `shadowInputsReady` field 72, and 72 is
+// ready yet never reaches the display. `worldSubmissions` is field 71, `shadowInputsReady` field 72 (its shadow atlases
+// walked and no pipeline still compiling, so no draw was skipped), and 72 is
 // recomputed only while the hold is up: it walks every active atlas, and nothing reads it once the cover is gone.
 bool presentationHeld = false;
 uint64_t worldSubmissions = 0;
@@ -197,6 +198,7 @@ void onDevice(WGPURequestDeviceStatus status, WGPUDevice result, WGPUStringView 
     setenv("TN_GPU_PASSES", EM_ASM_INT({ return globalThis.TN_GPU_PASSES === true; }) ? "1" : "0", 1);
     renderer = std::make_unique<Renderer>(instance, device, queue, events);
     renderer->setGpuTimer(timestampTracking);
+    if (presentationHeld) renderer->deferUncompiledDraws(true);
     configureWebSurface();
     renderer->setOutput(output);
     outputChanged = false;
@@ -355,10 +357,11 @@ extern "C" int tnw_web_resize(uint32_t w, uint32_t h) {
  * on the first frame whose inputs are ready (frame fields 71 and 72) and the next world frame is presented.
  */
 extern "C" void tnw_web_set_presentation_hold(int held) {
-    // The release is core's startup reveal: compileAsync built what the first frames draw, so a pipeline still missing
-    // after it (an object streamed in behind the camera, met on a turn) compiles off the queue and its draw waits, as
-    // Unreal's DelayUntilPSOPrecached default does. A synchronous compile there held Chrome's GPU queue 200 ms.
-    if (presentationHeld && !held && renderer) renderer->deferUncompiledDraws(true);
+    // From the hold on, a draw whose pipeline is missing compiles off the queue and waits, as Unreal's
+    // DelayUntilPSOPrecached default does. A synchronous compile held Chrome's GPU queue 200 ms after the reveal, and
+    // while the cover held, the forest's frame before the reveal compiled them in a row: 1368 ms of plan, then 2.5 s of
+    // GPU wait. Async compiles run in parallel in Chrome's GPU process; field 72 keeps the cover up until they land.
+    if ((held || presentationHeld) && renderer) renderer->deferUncompiledDraws(true);
     presentationHeld = held != 0;
 }
 
@@ -438,7 +441,9 @@ extern "C" int tnw_web_render(const tn_handle_t* sceneHandle, const tn_handle_t*
                 ++worldSubmissions;
                 presentedWorld = !presentationHeld;
                 // Every active atlas walked, so only a held frame asks: nothing reads this field once the cover is gone.
-                if (presentationHeld) shadowInputsReady = renderer->virtualShadowsInitialized();
+                // A held frame planned while a pipeline compiled skipped the draws that need it: not the first image.
+                if (presentationHeld)
+                    shadowInputsReady = renderer->virtualShadowsInitialized() && renderer->pipelinesCompiling() == 0;
             }
         }
     } catch (const std::exception& error) {

@@ -746,9 +746,11 @@ void deferredDraw() {
     const auto vs = shader::buildStage(standard.vertex, 0), fs = shader::buildStage(standard.fragment, 1);
     PipelineCache cache(d.device);
     bool deferred = false;
+    CHECK(cache.pending() == 0);
     CHECK(cache.getOrDefer(vs, &fs, PipelineTarget{}, deferred) == nullptr && deferred);
     waitFor([] { return workerCreates == 1; });
     CHECK(cache.getOrDefer(vs, &fs, PipelineTarget{}, deferred) == nullptr && deferred);  // still compiling: no second one
+    CHECK(cache.pending() == 1);  // the startup cover holds while this is nonzero (web_host.cpp field 72)
     holdWorkers = false;
     WGPURenderPipeline drawn = nullptr;
     for (int i = 0; i < 2000 && !drawn; ++i) {
@@ -756,6 +758,7 @@ void deferredDraw() {
         if (!drawn) std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
     CHECK(drawn && !deferred);
+    CHECK(cache.pending() == 0);
     CHECK(workerCreates == 1);
     CHECK(cache.compiles() == 1);
     CHECK(cache.get(vs, &fs, PipelineTarget{}) == drawn);

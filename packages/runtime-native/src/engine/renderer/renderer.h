@@ -533,6 +533,8 @@ public:
      * turns it on at core's startup reveal, after compileAsync built what the first frames draw.
      */
     void deferUncompiledDraws(bool on) { deferUncompiled_ = on; }
+    /** Pipelines still compiling off the queue: a frame planned while one is pending skipped the draws that need it. */
+    size_t pipelinesCompiling() { return pipelines_->pending(); }
     /** The multisampling the game asks for. A traa() effect in the post graph replaces it: see sampleCount(). */
     void setSampleCount(uint32_t samples);
     /** The samples the scene draws with: 1 while a traa() effect is in the post graph, otherwise the requested count. */

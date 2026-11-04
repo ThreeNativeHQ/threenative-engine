@@ -145,6 +145,8 @@ public:
     /** Lookups that had to build the text key: the ones an id did not answer. */
     uint64_t textLookups() const { return textLookups_; }
     size_t size() const { return pipelines_.size(); }
+    /** Async compiles not adopted yet. It polls first, so a compile that landed no longer counts. */
+    size_t pending() { poll(); return compiling_.size(); }
 
 private:
     /** The same pipeline by the ids of its stages' texts: a lookup that copies and hashes no WGSL. */
