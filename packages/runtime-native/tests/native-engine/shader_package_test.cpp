@@ -294,6 +294,43 @@ void version() {
     CHECK(refusal.rfind("TN_SHADER_PACKAGE_INVALID", 0) == 0);
 }
 
+// One TSL function called per material yields one WGSL text after these renames, so streamed batches share programs.
+// They run on every program the renderer adds, including each copy a streamed batch makes mid-walk.
+void positionalRenames() {
+    StageModule stage;
+    stage.stage = Stage::Fragment;
+    stage.bindings.push_back(Binding{1, 0, BindingKind::Texture, "t_nodeMapT12"});
+    stage.bindings.push_back(Binding{1, 1, BindingKind::Sampler, "smp_nodeMapT12"});
+    stage.wgsl.code = "let a = nodeUniform41 + nodeUniform41x + nodeUniformS0; var<private> nodeVarying7: f32;"
+                      " fn f() { return textureSample(t_nodeMapT12, smp_nodeMapT12, varyingProperty3) + nodeMapT99; }";
+    positionalGraphTextures(stage);
+    positionalSerialNames(stage);
+    CHECK(stage.bindings[0].name == "t_nodeMapP0" && stage.bindings[1].name == "smp_nodeMapP0");
+    CHECK(stage.wgsl.code ==
+          "let a = nodeUniformS0 + nodeUniform41x + nodeUniformS0; var<private> nodeVaryingS1: f32;"
+          " fn f() { return textureSample(t_nodeMapP0, smp_nodeMapP0, varyingPropertyS2) + nodeMapT99; }");
+
+    // The passes copy the text between names whole. Character at a time, a 140 KB fragment took 4.5 ms in Wasm, and a
+    // forest walk that copied three programs in one frame spent 15 ms there.
+    StageModule large;
+    large.stage = Stage::Fragment;
+    large.bindings.push_back(Binding{1, 0, BindingKind::Texture, "t_nodeMapT5"});
+    std::string filler;
+    while (filler.size() < 64 * 1024) filler += "  let n = normalize(in.normal) * vec3f(0.5, 1.0, 2.0); return n;\n";
+    for (int i = 0; i < 256; ++i) large.wgsl.code += filler + "nodeUniform" + std::to_string(i % 7) + " nodeMapT5 ";
+    const auto t0 = std::chrono::steady_clock::now();
+    const std::string copy = large.wgsl.code;
+    const auto t1 = std::chrono::steady_clock::now();
+    positionalGraphTextures(large);
+    positionalSerialNames(large);
+    const auto t2 = std::chrono::steady_clock::now();
+    CHECK(large.wgsl.code.size() == copy.size() + 256);  // nodeUniform<n> -> nodeUniformS<k> adds one, nodeMapT5 -> nodeMapP0 none
+    const double copyMs = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    const double renameMs = std::chrono::duration<double, std::milli>(t2 - t1).count();
+    std::printf("positional renames: %.2f ms for %zu bytes (a plain copy %.2f ms)\n", renameMs, copy.size(), copyMs);
+    CHECK(renameMs < 30.0 * copyMs + 10.0);  // measured: 25 ms here, 230 ms character at a time, a 2.4 ms copy
+}
+
 }  // namespace
 
-TN_TEST_MAIN({"layouts", layouts}, {"variants", variants}, {"version", version})
+TN_TEST_MAIN({"layouts", layouts}, {"variants", variants}, {"version", version}, {"positional_renames", positionalRenames})

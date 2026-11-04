@@ -1078,3 +1078,19 @@ no COOP/COEP); that lane is open.
 - Revisit when: the last turn hitch is a CPU plan spike (planDraws ~10 ms + planVirtualPages ~7 ms in one frame), and
   far trees hidden behind near crowns still draw: the GPU scene's Hi-Z test only measures (`TN_OCCLUSION=measure`)
   and the forest runs `gpuScene: false`. Real occlusion culling is the next GPU lever.
+
+### 2026-11-04 — Every added program: positional WGSL renames copy text in chunks — KEEP
+
+- Where: `positionalGraphTextures` and `positionalSerialNames` in `packages/runtime-native/src/engine/shader/package.cpp`,
+  which `Renderer::add` runs on every program, including each equal-structure copy a streamed batch makes.
+- Cause: both passes copied the 120-140 KB fragment WGSL one character at a time: 1.5 + 2.9 ms per program in Wasm
+  (a temporary timer split `add()`: layouts 0.1 ms). A forest walk copied three programs in one frame, so `planDraws`
+  hit 14.6-15.3 ms and the frame missed vsync. `std::string::find` alone did not help: WGSL is dense in `n`, the
+  prefixes' first letter, so the passes now skip with a Boyer-Moore-Horspool searcher and append the text between names.
+- Result (forest, headed WebGPU, NVIDIA Turing, two runs): walk `planDraws` peak 14.6-15.3 -> 3.0 ms, walk CPU p95 peak
+  28-32 -> 20 ms, turn frames over 20 ms 1 -> 1 / 0, pre-reveal frame `wasmPlan` 1368 -> 910 ms. Native: 16.8 MB of text
+  230 -> 26 ms.
+- Test: `shader_package_test.cpp` `positional_renames`: exact output on the edge cases, and a time bound against a plain
+  copy (30x a copy + 10 ms) that the character loop fails at 230 ms.
+- Revisit when: the walk's steady CPU frame (jsBefore ~4.5 ms + planShadowLists ~4.4 ms + planVirtualPages ~2.5 ms +
+  encode ~2.7 ms) sits near 17 ms, so any extra work tips a frame over vsync.

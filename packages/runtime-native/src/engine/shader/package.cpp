@@ -1,7 +1,9 @@
 #include "package.h"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
+#include <functional>
 #include <string_view>
 #include <bit>
 #include <cstring>
@@ -116,6 +118,25 @@ StageModule buildStage(const Program& program, uint32_t group) {
     return module;
 }
 
+namespace {
+/**
+ * Finds `pattern` in `code` from `from` on, skipping by the pattern's length (Boyer-Moore-Horspool). WGSL is dense in
+ * the patterns' first letter, so std::string::find, which stops at each one, was as slow as a character loop.
+ */
+class Finder {
+public:
+    explicit Finder(std::string_view pattern) : searcher_(pattern.begin(), pattern.end()) {}
+    size_t operator()(const std::string& code, size_t from) const {
+        if (from >= code.size()) return std::string::npos;
+        const auto found = std::search(code.begin() + std::ptrdiff_t(from), code.end(), searcher_);
+        return found == code.end() ? std::string::npos : size_t(found - code.begin());
+    }
+
+private:
+    std::boyer_moore_horspool_searcher<std::string_view::const_iterator> searcher_;
+};
+}  // namespace
+
 void positionalGraphTextures(StageModule& module) {
     static constexpr std::string_view prefix = "nodeMapT";
     auto& labels = module.graphTextureLabels;
@@ -135,20 +156,25 @@ void positionalGraphTextures(StageModule& module) {
         b.name = b.name.substr(0, at) + found->first;
     }
     if (labels.empty()) return;
+    // Jump between matches and copy the text between them whole: a character-at-a-time copy of a 140 KB fragment
+    // cost 1.5 ms in Wasm, paid again by every program a streamed batch copied mid-walk.
     const std::string& code = module.wgsl.code;
     std::string out;
-    out.reserve(code.size());
-    for (size_t i = 0; i < code.size();) {
-        const size_t end = code.compare(i, prefix.size(), prefix) == 0 ? digitsEnd(code, i + prefix.size()) : i;
-        if (end > i + prefix.size()) {
-            const std::string_view own(code.data() + i, end - i);
-            const auto found = std::find_if(labels.begin(), labels.end(), [&](const auto& label) { return label.second == own; });
-            out += found != labels.end() ? found->first : std::string(own);
-            i = end;
-        } else {
-            out += code[i++];
-        }
+    size_t from = 0;  // code[from, i) is not yet copied
+    const Finder find(prefix);
+    for (size_t i = find(code, 0); i != std::string::npos; i = find(code, i)) {
+        const size_t end = digitsEnd(code, i + prefix.size());
+        if (end == i + prefix.size()) { ++i; continue; }
+        const std::string_view own(code.data() + i, end - i);
+        const auto found = std::find_if(labels.begin(), labels.end(), [&](const auto& label) { return label.second == own; });
+        if (found == labels.end()) { i = end; continue; }  // not one of this stage's maps: the text stays
+        if (out.empty()) out.reserve(code.size());
+        out.append(code, from, i - from);
+        out += found->first;
+        from = i = end;
     }
+    if (from == 0) return;
+    out.append(code, from, std::string::npos);
     module.wgsl.code = std::move(out);
 }
 
@@ -157,28 +183,38 @@ void positionalSerialNames(StageModule& module) {
     const std::string& code = module.wgsl.code;
     const auto word = [](char c) { return std::isalnum(static_cast<unsigned char>(c)) || c == '_'; };
     std::vector<std::pair<std::string, std::string>> names;  // own serial name, positional name
+    // As positionalGraphTextures: jump to the nearest prefix and copy the text between matches whole (2.9 ms a
+    // 140 KB fragment, character at a time).
     std::string out;
-    out.reserve(code.size());
-    for (size_t i = 0; i < code.size();) {
-        size_t end = i;
-        for (const std::string_view prefix : prefixes) {
-            if (code.compare(i, prefix.size(), prefix) != 0) continue;
-            end = i + prefix.size();
-            while (end < code.size() && code[end] >= '0' && code[end] <= '9') ++end;
-            if (end == i + prefix.size() || (end < code.size() && word(code[end]))) end = i;  // a serial ends the word
-            if (end > i) {
-                const std::string_view own(code.data() + i, end - i);
-                auto found = std::find_if(names.begin(), names.end(), [&](const auto& name) { return name.first == own; });
-                if (found == names.end())
-                    found = names.insert(names.end(), {std::string(own), std::string(prefix) + "S" + std::to_string(names.size())});
-                out += found->second;
-            }
-            break;
+    size_t from = 0;  // code[from, i) is not yet copied
+    const std::array<Finder, std::size(prefixes)> finds{Finder(prefixes[0]), Finder(prefixes[1]), Finder(prefixes[2])};
+    std::array<size_t, std::size(prefixes)> next{};
+    for (size_t k = 0; k < next.size(); ++k) next[k] = finds[k](code, 0);
+    for (;;) {
+        const size_t k = size_t(std::min_element(next.begin(), next.end()) - next.begin());
+        const size_t i = next[k];
+        if (i == std::string::npos) break;
+        const std::string_view prefix = prefixes[k];
+        size_t end = i + prefix.size();
+        while (end < code.size() && code[end] >= '0' && code[end] <= '9') ++end;
+        if (end == i + prefix.size() || (end < code.size() && word(code[end]))) {  // a serial ends the word
+            next[k] = finds[k](code, i + 1);
+            continue;
         }
-        if (end > i) i = end;
-        else out += code[i++];
+        const std::string_view own(code.data() + i, end - i);
+        auto found = std::find_if(names.begin(), names.end(), [&](const auto& name) { return name.first == own; });
+        if (found == names.end())
+            found = names.insert(names.end(), {std::string(own), std::string(prefix) + "S" + std::to_string(names.size())});
+        if (out.empty()) out.reserve(code.size());
+        out.append(code, from, i - from);
+        out += found->second;
+        from = end;
+        for (size_t j = 0; j < next.size(); ++j)
+            if (next[j] != std::string::npos && next[j] < end) next[j] = finds[j](code, end);
     }
-    if (!names.empty()) module.wgsl.code = std::move(out);
+    if (names.empty()) return;
+    out.append(code, from, std::string::npos);
+    module.wgsl.code = std::move(out);
 }
 
 bool acceptPackage(const ShaderPackage& package, std::string& error) {
