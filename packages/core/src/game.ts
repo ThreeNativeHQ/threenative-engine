@@ -1042,6 +1042,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     this.#disconnectUi();
     this.#frameLoopDispose?.();
     this.#frameLoopDispose = undefined;
+    // After the loop that reports into it, and reached on every path: the field is set the moment
+    // the budget exists, so a launch that threw inside the frame-loop phase before it could answer
+    // still loses nothing here. This is the release the un-split `#teardown` performed.
+    this.#frameBudget?.dispose();
     this.#afterPhysicsPhase?.clear();
     this.#beforeRenderCallbacks.clear();
     this.#interpolation?.clear();

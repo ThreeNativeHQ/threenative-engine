@@ -143,7 +143,7 @@ export interface IGameBootGame<TState extends Record<string, unknown>, TPhysics>
 
 /** The frame loop, and the instruments that only exist while it runs. */
 export interface IGameFrameLoop {
-  /** Releases the loop and the frame budget it reports into, where `#teardown` always has. */
+  /** Stops the loop, where `#teardown` always stopped it. Its frame budget is `game.frameBudget`. */
   readonly dispose: PluginCleanup;
   readonly geometryCapture: GeometryCapture;
   readonly loop: FixedStepLoop;
@@ -988,10 +988,7 @@ export function startFrameLoop<TState extends Record<string, unknown>, TPhysics>
   loopState.current = gameLoop;
 
   return {
-    dispose: () => {
-      gameLoop.stop();
-      frameBudget?.dispose();
-    },
+    dispose: () => gameLoop.stop(),
     geometryCapture,
     loop: gameLoop,
   };

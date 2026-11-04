@@ -115,6 +115,63 @@ describe("IGame.stop release order", () => {
     }
   });
 
+  it("disposes the frame budget on the stop that releases a started loop", async () => {
+    const { FrameBudget } = await import("../src/frame-budget.js");
+    const budgetDispose = vi.spyOn(FrameBudget.prototype, "dispose");
+    class Plain extends SceneBase {
+      static override readonly initialState = {};
+    }
+    vi.stubGlobal("requestAnimationFrame", () => 1);
+    vi.stubGlobal("cancelAnimationFrame", () => undefined);
+    const game = await startGame(Plain, undefined, []);
+    try {
+      expect(budgetDispose).not.toHaveBeenCalled();
+      game.stop();
+      expect(budgetDispose).toHaveBeenCalledTimes(1);
+    } finally {
+      budgetDispose.mockRestore();
+      game.stop();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("releases the frame budget a launch acquired before it threw, on the stop that follows", async () => {
+    // The frame budget exists before the loop does (`startFrameLoop` builds the instrument, then
+    // the loop that reports into it), so a launch that throws between the two must still have its
+    // budget released. `maxSteps: 0` is the reachable throw: `startFrameLoop` hands it to
+    // `FixedStepLoop`, which rejects it after the budget was already created.
+    const { FrameBudget } = await import("../src/frame-budget.js");
+    const budgetDispose = vi.spyOn(FrameBudget.prototype, "dispose");
+    const canvas = testCanvas();
+    class Plain extends SceneBase {
+      static override readonly initialState = {};
+    }
+    const game = defineGame({
+      maxSteps: 0,
+      renderer: {
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          dispose: () => undefined,
+          domElement: canvas,
+          render: () => undefined,
+          setSize: () => undefined,
+        }),
+      },
+      scenes: { test: Plain },
+      start: "test",
+    });
+    try {
+      await expect(game.start()).rejects.toThrow(/maxSteps/u);
+      game.stop();
+      expect(budgetDispose).toHaveBeenCalledTimes(1);
+    } finally {
+      budgetDispose.mockRestore();
+      game.stop();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("drains a startup that threw before it could answer, on the stop that follows", async () => {
     // The boot registers its releases as it goes, so a launch that throws before the start scene
     // exists is still released by a later `stop()` — the asset loader here, whose decoder pool is

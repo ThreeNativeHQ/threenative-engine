@@ -314,7 +314,6 @@ export async function startGameWorld<TState extends Record<string, unknown>, TPh
     if (requestedBytes > 0) return 0.7 * Math.min(1, settledBytes / requestedBytes);
     return requested === 0 ? 0 : 0.7 * Math.min(1, settled / requested);
   };
-  const loadingFramePresented = false;
   let markProjectionSettled: () => void = () => undefined;
   let rejectProjection: (error: unknown) => void = () => undefined;
   const projectionReady = new Promise<void>((resolve, reject) => {
