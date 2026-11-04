@@ -4,7 +4,9 @@
 2026-11-03. Round 4 read four CI runs on 2026-11-03 and measured every remaining box: the payload
 restored in 1.4 s, a cancelled build resumed at 1724 edges instead of 3519, `test-native` reported
 21.28% ccache against 100% in three lanes, one full cache table and the cache budget at
-8.63 → 9.28 GiB. Each open box now names the one run that would close it.
+8.63 → 9.28 GiB. Each open box now names the one run that would close it. Round 6 (2026-11-04)
+closed the `test-native` ccache box (100% on a same-commit rerun, 96.47% on the next commit) and
+found the cache janitor has not run yet, because `workflow_run` reads `main`'s copy of the file.
 **Priority:** P0 — The release PR #493 waited 70+ minutes on a cold Android V8 build and lost two in-progress V8 builds to cancellation; open boxes below remove those waits from every release head.
 **Complexity:** MEDIUM (cache keys, scopes and save rules in existing workflows; no new workflow file)
 **Owner:** CI tooling
@@ -68,7 +70,7 @@ runs show.
 
 ### Phase 2 — compiler and dependency caches hit
 
-- [ ] ccache hits on a warm native job: stable source mtimes or `CCACHE_SLOPPINESS`, a base-dir that removes the checkout path, and a key that a PR can restore. proof: `test-native` reports at least 80% ccache hits on a second run of the same commit (job log "Hits" line) — **PARTIAL 2026-11-03.** Stable mtimes are already there (`restore-source-mtimes.mjs` plus the `native-build` tree). New: `CCACHE_BASEDIR: ${{ github.workspace }}` in all five ccache jobs (`ci.yml` `test-native` and `native-engine`, `native-platforms.yml` `desktop-parity`, `desktop` and `starter-linux`), so one runner's objects hash the same as another's. `CCACHE_SLOPPINESS` stays out on purpose: run 33714810237 showed the setting made SDL3's PCH objects eligible and produced no extra hits. Measured 2026-11-02, run 41441113316 `test-native`: `Cache hit for restore-key: native-ccache-ci-test-native-…-41430297261` (the previous develop run's entry, so a non-merge ref does restore) and `Hits: 256 / 459 (55.77%)`. The next warm develop run (41575174097) restored nothing — `Cache not found for input keys: native-ccache-ci-test-native-…` — and reports `Hits: 5 / 1076 (0.46%)`, because that 20 MB entry had been evicted; the janitor in Phase 3 is what keeps it. 80% still needs the second run after this lands.
+- [x] ccache hits on a warm native job: stable source mtimes or `CCACHE_SLOPPINESS`, a base-dir that removes the checkout path, and a key that a PR can restore. proof: `test-native` reports at least 80% ccache hits on a second run of the same commit (job log "Hits" line) — **DONE 2026-11-04** (round 6 below). **PARTIAL 2026-11-03.** Stable mtimes are already there (`restore-source-mtimes.mjs` plus the `native-build` tree). New: `CCACHE_BASEDIR: ${{ github.workspace }}` in all five ccache jobs (`ci.yml` `test-native` and `native-engine`, `native-platforms.yml` `desktop-parity`, `desktop` and `starter-linux`), so one runner's objects hash the same as another's. `CCACHE_SLOPPINESS` stays out on purpose: run 33714810237 showed the setting made SDL3's PCH objects eligible and produced no extra hits. Measured 2026-11-02, run 41441113316 `test-native`: `Cache hit for restore-key: native-ccache-ci-test-native-…-41430297261` (the previous develop run's entry, so a non-merge ref does restore) and `Hits: 256 / 459 (55.77%)`. The next warm develop run (41575174097) restored nothing — `Cache not found for input keys: native-ccache-ci-test-native-…` — and reports `Hits: 5 / 1076 (0.46%)`, because that 20 MB entry had been evicted; the janitor in Phase 3 is what keeps it. 80% still needs the second run after this lands.
   **Round 4 measurement, 2026-11-03.** `test-native` still does not reach 80%. In run 41688813459
   attempt 1 it restored nothing — `Cache not found for input keys:
   native-ccache-ci-test-native-Linux-X64-gcc-ccb139…-41688813459, …-ccb139…-` — and reports
@@ -97,6 +99,14 @@ runs show.
   (148.3 MiB). Protection is per lane per ref now, and an older copy of one lane stays evictable.
   Specs: `scripts/__tests__/ci-cache-keys.spec.ts` (red first: 3 failed) and three cases in
   `ci-cache-prune.spec.ts` (red first: 2 failed); both green. The hit rate still needs the run.
+  **Round 6 measurement, 2026-11-04 — box closed.** Develop push run 41833465433 (`d692aaa89`,
+  job 126588105066) restored `native-ccache-ci-test-native-…-gcc-ccb139…-41818164715`, a 20 MB entry
+  from main's scheduled run, and reports `Hits: 233 / 1076 (21.65%)`, then saved 39 MB as
+  `…-41833465433`. The same commit, rerun as attempt 2 (job 126648784152), restored that entry and
+  the exact `native-build-…-288a51…-4e1a…` tree and reports `Hits: 459 / 459 (100.0%)`. The next
+  develop push, run 41842254378 (`f129102dc`, 138 files changed, job 126622179941), missed
+  `native-build` on its changed tree, restored the same ccache entry, and reports
+  `Hits: 1038 / 1076 (96.47%)` (100% on each of the three build steps). Both are over 80%.
 - [ ] Every remaining cacheable input has a working cache, measured by hit rate: pnpm store, Playwright browsers, Gradle, Cargo, emsdk, third_party native deps. proof: a table of cache key and hit/miss per job from one full warm run, every row a hit — **PARTIAL 2026-11-03.** Table below is from full develop board run 41441113316 (2026-11-02, per-job logs, cache lines). One row missed and it is a key-input change, not a broken cache: `workspace-dist-v2-…-0fbb7f5f…` missed and saved because PR #597 had changed `pnpm-lock.yaml`. `test-native`'s `native-build-…` also missed on run 41575174097 because the runner image version had changed, and the key covers it on purpose.
 
 | Cache key | Jobs | Result in run 41441113316 |
@@ -158,6 +168,13 @@ job), and the key is one line now, which invalidates the one live 139.5 MiB entr
 `main`, so they still miss develop's copies; that is GitHub's scope rule, not a workflow rule, and
 the runs that prove this box are a PR board and a develop board after merge.
 
+**Round 6, 2026-11-04.** Still partial. In develop runs 41833465433 and 41842254378 `test-native`
+missed only `native-build-Linux-X64-288a51…-<tree hash>`: that key is the exact hash of the
+runtime-native sources with no restore key, so every commit that changes them misses by design,
+and ccache carries the reuse (96.47%, box above). The same-commit rerun hit it
+(`Cache restored from key: native-build-…-4e1a…`). A full table with every row a hit needs a full
+board on an unchanged tree, which this round did not run.
+
 ### Phase 3 — the cache stays healthy
 
 - [ ] The cache budget fits: large entries (V8 source state, native build trees) stay inside a stated share of the 10 GiB, and no lane evicts another lane's hot key during a full run. proof: `gh cache list` before and after one full run; no hot key evicted — **MECHANISM DONE, PROOF PENDING.** Stated budget: `CACHE_BUDGET_BYTES` = 9 GiB, under the 10 GiB GitHub evicts at; `android-v8-source-*` may hold 3.5 GiB (one state per recipe); a hot key `node-cache-`, `native-ccache-`, `playwright-`, `workspace-dist-`, `android-v8-payload-`, `cargo-v1-`, `wgpu-cache-`, `pipeline-cache-host-deps-` — keeps its newest copy per lane per ref and no more (round 5: per lane, because seven ccache lanes shared one slot), so a stale copy another key replaced is evictable while the copy a run would restore never is, and a bounded family is bounded per ref as well as per recipe, because caches are ref-scoped. `prune-cache` in `ci-janitor.yml` (after every CI run, `actions: write`) applies it. Plan on the live list, 2026-11-03: 56 entries, 10.00 GiB -> 8.51 GiB, 2 deletions — the merge-queue-scoped `native-build-…-6cb61af1…` (1518 MB) and `native-engine-web-wasm-v2-…` (2 MB); every develop-scoped hot key kept. Pending: the same `gh api …/actions/caches` before and after a full board.
@@ -191,6 +208,14 @@ the runs that prove this box are a PR board and a develop board after merge.
   future board leaves only protected entries over the budget, the step prints `STILL OVER BUDGET` and
   deletes nothing, and GitHub's own least-recently-used eviction takes over — visible, not silent.
   The run that closes this box is the same one.
+  **Round 6, 2026-11-04 — the janitor never ran.** Every `ci-janitor.yml` `workflow_run` run since
+  #605 merged reports `skipped` (for example 41842431461: `retry-flakes skipped`, `cancel skipped`).
+  A `workflow_run` event runs the default branch's copy of the file, and `main` (`827d5689a`) has
+  no `prune-cache` job yet. So GitHub's least-recently-used eviction still decides: the list held
+  62 entries and 10.14 GiB before develop run 41833465433 and 56 entries and 9.32 GiB after it,
+  and the evicted entries include main's only `native-ccache-Windows-…` copy and main's
+  `native-build-…` tree. The proof needs the next `develop -> main` promotion, then the same two
+  `gh cache list` snapshots around one full board.
 - [x] Self-hosted runner hosts stay inside their disk budget without manual cleanup: the runner service prunes dangling images, build cache and stale offload checkouts, and pauses its slots before a job could hit ENOSPC. proof: runner-host spec plus `laptop-runners.sh status` showing the prune and the free-space gate — **DONE 2026-11-03** (the script is `scripts/ci-runners.sh`; there is no `laptop-runners.sh`). `prune` drops dangling images, build cache older than `TN_RUNNER_PRUNE_UNTIL` (72 h) and stopped `tn-ci-runner=1` containers, and records the time; `up` prunes, then measures the filesystem the docker daemon fills (`docker info --format '{{.DockerRootDir}}'`) and refuses to start under `TN_RUNNER_MIN_FREE_GB` (20 GB); the balancer re-checks that floor on every poll, prunes at most once per ten minutes, withdraws `TN_RUNNER`, `TN_RUNNER_SLOTS` and `TN_RUNNER_LIGHT` while it is breached, and re-advertises when the space returns; the generated systemd unit runs `prune` as `ExecStartPre`. Spec: `scripts/__tests__/ci-runners-disk.spec.ts`, 7 cases against stubbed `docker`/`gh`/`df`/`lscpu`/`nproc` — status verdict, refusal under the floor naming the numbers and reaching no job, the exact three prune commands plus the recorded time, and the balancer pausing the slots without re-advertising (green); the balancer's routing fixture in `scripts/__tests__/ci-runners.spec.ts` stubs `df` too, so its 17 cases no longer read the host's own free space (2026-11-03: before that stub they failed on any host under the floor, which is what a 12 GB-free `/tmp` produced). Real host, 2026-11-03: `bash scripts/ci-runners.sh prune` prints `prune: 349 GB -> 349 GB free on /var/lib/docker (floor 20 GB)`, and `bash scripts/ci-runners.sh status` then prints `disk: 349 GB free on /var/lib/docker (floor 20 GB): ok` and `prune: 04:46:04Z (0 min ago)`. Operator docs: `tools/ci-runners/README.md` "The host disk budget".
 
 ## Blocked on
