@@ -191,6 +191,58 @@
   },
   {
    "scene": {
+    "name": "props-hook-below-floor",
+    "geometries": [
+     {
+      "id": "box",
+      "kind": "box"
+     },
+     {
+      "id": "rig",
+      "kind": "box",
+      "skinned": true
+     }
+    ],
+    "materials": [
+     {
+      "id": "std",
+      "type": "MeshStandardMaterial"
+     },
+     {
+      "id": "skin",
+      "type": "MeshStandardMaterial"
+     }
+    ],
+    "objects": [
+     {
+      "kind": "mesh",
+      "geometry": "box",
+      "material": "std",
+      "repeat": 49
+     },
+     {
+      "kind": "mesh",
+      "geometry": "box",
+      "material": "std",
+      "repeat": 1,
+      "hook": true
+     }
+    ]
+   },
+   "decision": {
+    "projecting": false,
+    "reasonCode": "belowMeshFloor",
+    "sourceRenderables": 50,
+    "projectedObjects": 0,
+    "instancedBatches": 0,
+    "materialBatches": 0,
+    "skinnedBatches": 0,
+    "exactObjects": 0,
+    "exact": {}
+   }
+  },
+  {
+   "scene": {
     "name": "crowd-8",
     "geometries": [
      {

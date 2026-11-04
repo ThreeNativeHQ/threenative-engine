@@ -61,6 +61,7 @@ All scripts, playtest definitions, manual preparation helpers and fixtures under
   - `playtests/editor-conflict.playtest.json`: checks concurrent editor saves preserve both clients’ edits.
   - `playtests/editor.playtest.json`: playtest scenario checking vertex count and appearance in the recovered editor view.
   - `playtests/export.playtest.json`: playtest scenario checking static GLB export loading and appearance.
+  - `playtests/loop.playtest.json`: checks the owner's loop (reveal, 10 s walk, camera turn, idle) builds no pipeline after the reveal.
   - `playtests/terrain.playtest.json`: primary playtest scenario for shared web/desktop showcase views.
   - `playtests/upload.playtest.json`: smoke scenario proving the forest world loads and renders on WebGPU with no console or runtime errors under the generated Three.js patch.
   - `playtests/walk.playtest.json`: playtest scenario checking baked terrain triangles and player walk stability.

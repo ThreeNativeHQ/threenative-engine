@@ -365,10 +365,30 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
         shadowInvalidated: -1,
         impostorPendingPeak: -1,
         pipelinesCreated: -1,
+        // A pipeline counter measured the reveal: the census, or the owned engine's compile count.
         pipelineCensusAvailable: false,
+        pipelineSource: "none",
+        // Device pipeline creations from the reveal to now, for the whole session: a walk and a
+        // camera turn must build none either (`playtests/loop.playtest.json`). -1: not measured.
+        pipelinesSinceReveal: -1,
       };
       let shadowAtReveal = -1;
       let pipelinesAtReveal: number | undefined;
+      // Pipelines built so far, from one source picked at the reveal: the census's device creations
+      // on three's backend, else the owned engine's compile count. The owned engine builds its
+      // pipelines inside Wasm, where the census sees none and stays incomplete.
+      let pipelineSource: "census" | "engine" | undefined;
+      const pipelineCount = (source: typeof pipelineSource): number | undefined => {
+        if (source === "census") {
+          const census = ctx.renderer.pipelineCensus?.();
+          return census?.complete === true ? census.counts.deviceCreations : undefined;
+        }
+        const engine = (ctx.renderer.raw as { info?: { engine?: { compiles?: unknown } } }).info
+          ?.engine;
+        return source === "engine" && typeof engine?.compiles === "number"
+          ? engine.compiles
+          : undefined;
+      };
       const revealFrustum = new Frustum();
       const revealMatrix = new Matrix4();
       const initializeRevealProbe = (): void => {
@@ -378,11 +398,12 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
         const shadows = this.#sky?.sun.shadow.shadowNode;
         if (!(shadows instanceof VirtualShadowNode))
           throw new Error("Reveal probe requires virtual shadows");
-        const creations = ctx.renderer.pipelineCensus?.()?.counts.deviceCreations;
+        pipelineSource = pipelineCount("census") !== undefined ? "census" : "engine";
         reveal.startedMs = performance.now();
         reveal.publishedBatchesInView = 0;
         shadowAtReveal = shadows.stats.byInvalidation;
-        pipelinesAtReveal = creations;
+        pipelinesAtReveal = pipelineCount(pipelineSource);
+        if (pipelinesAtReveal !== undefined) reveal.pipelineSource = pipelineSource;
         ctx.camera.updateMatrixWorld(true);
         revealFrustum.setFromProjectionMatrix(
           revealMatrix.multiplyMatrices(ctx.camera.projectionMatrix, ctx.camera.matrixWorldInverse),
@@ -401,8 +422,7 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
         const shadows = this.#sky?.sun.shadow.shadowNode;
         if (!(shadows instanceof VirtualShadowNode))
           throw new Error("Reveal probe requires virtual shadows");
-        const census = ctx.renderer.pipelineCensus?.();
-        const creations = census?.counts.deviceCreations;
+        const creations = pipelineCount(pipelineSource);
         reveal.samples++;
         reveal.elapsedMs = performance.now() - reveal.startedMs;
         reveal.shadowInvalidated = shadows.stats.byInvalidation - shadowAtReveal;
@@ -410,16 +430,16 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
           reveal.impostorPendingPeak,
           props?.worlds.reduce((sum, stream) => sum + stream.stats().impostor.pending, 0) ?? 0,
         );
-        reveal.pipelineCensusAvailable =
-          census?.complete === true && creations !== undefined && pipelinesAtReveal !== undefined;
-        if (
-          reveal.pipelineCensusAvailable &&
-          creations !== undefined &&
-          pipelinesAtReveal !== undefined
-        )
+        reveal.pipelineCensusAvailable = creations !== undefined && pipelinesAtReveal !== undefined;
+        if (creations !== undefined && pipelinesAtReveal !== undefined)
           reveal.pipelinesCreated = creations - pipelinesAtReveal;
         reveal.complete = reveal.elapsedMs >= 3000;
         if (reveal.complete) ctx.state.set({ revealComplete: true });
+      });
+      ctx.afterPhysics(() => {
+        if (released || pipelinesAtReveal === undefined) return;
+        const creations = pipelineCount(pipelineSource);
+        reveal.pipelinesSinceReveal = creations === undefined ? -1 : creations - pipelinesAtReveal;
       });
       const textureUploads = new AbortController();
       let propsStage = "waiting-for-physics";

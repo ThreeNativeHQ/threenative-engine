@@ -576,12 +576,14 @@ inline Decision decide(Object3D& scene, int minMeshes = 200, bool skinnedVerdict
         }
         for (auto it = object->children.rbegin(); it != object->children.rend(); ++it) stack.push_back(*it);
     }
-    if (!blocked.empty()) {
-        d.reasonCode = blocked;
-        return d;
-    }
+    // The floor first, as core's scanProjection: a scene too small to batch declines whatever it carries, so a
+    // hook there is not the reason. The walk counts every eligible mesh past a block.
     if (int(eligible.size()) + int(skinned.size()) * kSkinnedFloorWeight < minMeshes) {
         d.reasonCode = "belowMeshFloor";
+        return d;
+    }
+    if (!blocked.empty()) {
+        d.reasonCode = blocked;
         return d;
     }
 
