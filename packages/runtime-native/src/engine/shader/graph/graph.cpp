@@ -1013,11 +1013,29 @@ uint64_t keySerializations = 0;
 
 uint64_t keyBuilds() { return keySerializations; }
 
-std::string key(const Graph& graph) {
+bool serialName(std::string_view name) {
+    if (name.starts_with("tnFlat")) name.remove_prefix(6);
+    for (const std::string_view prefix : {std::string_view("nodeUniform"), std::string_view("nodeVarying"), std::string_view("varyingProperty")}) {
+        if (!name.starts_with(prefix) || name.size() == prefix.size()) continue;
+        return std::all_of(name.begin() + prefix.size(), name.end(), [](char c) { return c >= '0' && c <= '9'; });
+    }
+    return false;
+}
+
+namespace {
+std::string serialize(const Graph& graph, std::vector<std::string>* serials) {
     ++keySerializations;
     std::unordered_map<const NodeData*, size_t> ids;
     std::string out;
-    const auto text = [&](const std::string& s) { out += std::to_string(s.size()) + ":" + s; };
+    const auto text = [&](const std::string& s) {
+        if (serials && serialName(s)) {  // the number, not the name; a flat varying stays flat
+            auto found = std::find(serials->begin(), serials->end(), s);
+            if (found == serials->end()) found = serials->insert(serials->end(), s);
+            out += (s.starts_with("tnFlat") ? "tnFlat~" : "~") + std::to_string(found - serials->begin()) + ":";
+            return;
+        }
+        out += std::to_string(s.size()) + ":" + s;
+    };
     const std::function<void(Node)> visit = [&](Node n) {
         if (!n) { out += "null;"; return; }
         const auto [it, fresh] = ids.emplace(n.get(), ids.size());
@@ -1039,6 +1057,11 @@ std::string key(const Graph& graph) {
     visit(graph);
     return out;
 }
+}  // namespace
+
+std::string key(const Graph& graph) { return serialize(graph, nullptr); }
+
+std::string canonicalKey(const Graph& graph, std::vector<std::string>& serials) { return serialize(graph, &serials); }
 
 uint64_t keyId(const Graph& graph) {
     if (!graph) return 0;

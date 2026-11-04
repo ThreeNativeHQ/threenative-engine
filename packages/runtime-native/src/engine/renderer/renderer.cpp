@@ -2632,6 +2632,13 @@ Renderer::Program* Renderer::program(MaterialKind kind, const shader::VertexVari
         if (backgroundNode) throw std::runtime_error(message);
         return refuse(message);
     };
+    std::string canonical;
+    std::vector<std::string> serials;
+    if (auto stages = equalStages(key, vv.nodes, canonical, serials)) {
+        Program& built = add(key, std::move(stages->first), std::move(stages->second));
+        built.kind = kind; built.variant = vv; built.lightKinds = lights;
+        return &built;
+    }
     const shader::LightLayout layout{lights};
     shader::StandardPrograms source;
     try {
@@ -2660,6 +2667,7 @@ Renderer::Program* Renderer::program(MaterialKind kind, const shader::VertexVari
     }
     Program& built = add(key, std::move(vertex), std::move(fragment));
     built.kind = kind; built.variant = vv; built.lightKinds = lights;
+    rememberEqual(built, std::move(canonical), std::move(serials));
     return &built;
 }
 
@@ -2740,6 +2748,7 @@ const shader::StageModule* Renderer::auxFragment(Program& program, uint8_t mask)
         if (!f.diagnostics().empty() || f.varyings().size() != varyings) return nullptr;
         auto module = std::make_unique<shader::StageModule>(shader::buildStage(f, 1));
         shader::positionalGraphTextures(*module);
+        shader::positionalSerialNames(*module);
         const auto& own = program.fragment;
         bool same = module->wgsl.ok() && module->uniforms.size() == own.uniforms.size() &&
                     module->bindings.size() == own.bindings.size() && module->uniformBlockSize == own.uniformBlockSize;
@@ -2775,6 +2784,14 @@ Renderer::Program& Renderer::depthProgram(const shader::VertexVariant& variant, 
     kind.pbrMaps = 0;
     const std::string key = (masked ? "depth-masked|" : "depth|") + kind.key();
     if (const auto found = programs_.find(key); found != programs_.end()) return *found->second;
+    std::string canonical;
+    std::vector<std::string> serials;
+    if (auto stages = equalStages(key, kind.nodes, canonical, serials)) return add(key, std::move(stages->first), std::move(stages->second));
+    const auto built = [&](shader::StageModule vertex, shader::StageModule fragment) -> Program& {
+        Program& program = add(key, std::move(vertex), std::move(fragment));
+        rememberEqual(program, std::move(canonical), std::move(serials));
+        return program;
+    };
     if (masked) {
         const auto source = shader::buildMaskedDepth(kind);
         shader::StageModule vertex = shader::buildStage(source.vertex, 0), fragment = shader::buildStage(source.fragment, 1);
@@ -2782,7 +2799,7 @@ Renderer::Program& Renderer::depthProgram(const shader::VertexVariant& variant, 
             const auto& errors = vertex.wgsl.ok() ? fragment.wgsl.errors : vertex.wgsl.errors;
             throw std::runtime_error("TN_NATIVE_SHADER_INVALID: masked shadow depth program: " + (errors.empty() ? std::string("no reason") : errors.front()));
         }
-        return add(key, std::move(vertex), std::move(fragment));
+        return built(std::move(vertex), std::move(fragment));
     }
     // three's shadow pass draws with the default positionNode, the same transform as a basic material.
     const auto source = kind.alphaHash ? shader::buildDepth(kind) : shader::buildBasic(kind);
@@ -2795,13 +2812,41 @@ Renderer::Program& Renderer::depthProgram(const shader::VertexVariant& variant, 
         fragment = shader::buildStage(source.fragment, 1);
         if (!fragment.wgsl.ok()) throw std::runtime_error("TN_NATIVE_SHADER_INVALID: shadow alpha coverage");
     }
-    return add(key, std::move(vertex), std::move(fragment));
+    return built(std::move(vertex), std::move(fragment));
+}
+
+std::optional<std::pair<shader::StageModule, shader::StageModule>> Renderer::equalStages(
+    const std::string& key, const shader::MaterialNodes& nodes, std::string& canonical, std::vector<std::string>& serials) const {
+    canonical.clear();
+    serials.clear();
+    const std::string own = "nodes:" + nodes.key();
+    const size_t at = key.rfind(own);
+    if (at == std::string::npos) return std::nullopt;
+    const std::string canonicalNodes = nodes.canonicalKey(serials);
+    if (serials.empty()) return std::nullopt;  // no serial name: the own key is already the structure
+    canonical = key.substr(0, at) + "nodes:" + canonicalNodes + key.substr(at + own.size());
+    const auto found = equalPrograms_.find(canonical);
+    if (found == equalPrograms_.end() || found->second.serials.size() != serials.size()) return std::nullopt;
+    const auto& theirs = found->second.serials;
+    ++equalProgramReuses_;
+    auto stages = std::make_pair(found->second.program->vertex, found->second.program->fragment);
+    for (shader::StageModule* stage : {&stages.first, &stages.second})
+        for (auto& field : stage->uniforms)
+            if (const auto name = std::find(theirs.begin(), theirs.end(), field.name); name != theirs.end())
+                field = shader::UniformField{serials[size_t(name - theirs.begin())], field.type, field.offset, field.size, field.schedule};
+    return stages;
+}
+
+void Renderer::rememberEqual(const Program& built, std::string canonical, std::vector<std::string> serials) {
+    if (!canonical.empty()) equalPrograms_.try_emplace(std::move(canonical), EqualProgram{&built, std::move(serials)});
 }
 
 Renderer::Program& Renderer::add(const std::string& key, shader::StageModule vertex, shader::StageModule fragment) {
     // Materials that differ only in their maps share one text, so one module parse and one pipeline (see bindGroup's graph()).
     shader::positionalGraphTextures(vertex);
     shader::positionalGraphTextures(fragment);
+    shader::positionalSerialNames(vertex);
+    shader::positionalSerialNames(fragment);
     auto built = std::make_unique<Program>();
     built->vertex = std::move(vertex);
     built->fragment = std::move(fragment);
@@ -2821,6 +2866,10 @@ Renderer::Program& Renderer::add(const std::string& key, shader::StageModule ver
             }
         }
     }
+    // A program first built after the startup reveal is a precache miss (Unreal's PSO precache validation): its
+    // shader build and GPU compile land mid-play as a hitch. Debug runs name it so prewarm can cover it.
+    if (deferUncompiled_ && waste::debugEnabled().load(std::memory_order_relaxed))
+        std::fprintf(stderr, "TN_PROGRAM_LATE %s\n", key.substr(0, 240).c_str());
     buildLayouts(*built);
     if (uniformCapacity_ != 0) {
         const DrawProbes probes = probesOf(*built);

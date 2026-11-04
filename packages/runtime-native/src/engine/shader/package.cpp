@@ -1,6 +1,7 @@
 #include "package.h"
 
 #include <algorithm>
+#include <cctype>
 #include <string_view>
 #include <bit>
 #include <cstring>
@@ -149,6 +150,35 @@ void positionalGraphTextures(StageModule& module) {
         }
     }
     module.wgsl.code = std::move(out);
+}
+
+void positionalSerialNames(StageModule& module) {
+    static constexpr std::string_view prefixes[] = {"nodeUniform", "nodeVarying", "varyingProperty"};
+    const std::string& code = module.wgsl.code;
+    const auto word = [](char c) { return std::isalnum(static_cast<unsigned char>(c)) || c == '_'; };
+    std::vector<std::pair<std::string, std::string>> names;  // own serial name, positional name
+    std::string out;
+    out.reserve(code.size());
+    for (size_t i = 0; i < code.size();) {
+        size_t end = i;
+        for (const std::string_view prefix : prefixes) {
+            if (code.compare(i, prefix.size(), prefix) != 0) continue;
+            end = i + prefix.size();
+            while (end < code.size() && code[end] >= '0' && code[end] <= '9') ++end;
+            if (end == i + prefix.size() || (end < code.size() && word(code[end]))) end = i;  // a serial ends the word
+            if (end > i) {
+                const std::string_view own(code.data() + i, end - i);
+                auto found = std::find_if(names.begin(), names.end(), [&](const auto& name) { return name.first == own; });
+                if (found == names.end())
+                    found = names.insert(names.end(), {std::string(own), std::string(prefix) + "S" + std::to_string(names.size())});
+                out += found->second;
+            }
+            break;
+        }
+        if (end > i) i = end;
+        else out += code[i++];
+    }
+    if (!names.empty()) module.wgsl.code = std::move(out);
 }
 
 bool acceptPackage(const ShaderPackage& package, std::string& error) {

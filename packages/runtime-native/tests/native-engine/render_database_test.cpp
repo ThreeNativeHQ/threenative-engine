@@ -8510,6 +8510,74 @@ void mapsShareOnePipeline() {
     CHECK(renderer.diagnostics().empty());
 }
 
+// tsl_call names an unnamed uniform(value) and varying(node) by a process-wide serial, so one TSL function called once
+// per streamed batch (core's worldLodMaterial: a part's inverse matrix) gave every batch its own WGSL text. Each text
+// cost a module parse and a pipeline compile mid-walk (150-300 ms of Chrome GPU-process stall). As three's NodeBuilder
+// numbers a build's uniforms from 0, equal structures now share one text and one pipeline; each draw binds its own value.
+void serialUniformsShareOnePipeline() {
+    namespace g = shader::graph;
+    {
+        // The canonical key numbers serial names across a material's slots: one uniform two slots share is not two.
+        const auto u = [](int serial) { return g::uniform("nodeUniform" + std::to_string(serial), shader::Type::vec(4), {1, 0, 0, 1}); };
+        const auto nodes = [](g::Node colour, g::Node opacity) {
+            shader::MaterialNodes n;
+            n.colorNode = colour;
+            n.opacityNode = g::swizzle(opacity, "w");
+            return n;
+        };
+        const auto shared = u(5), other = u(9);
+        std::vector<std::string> a, b, c;
+        const std::string sharedKey = nodes(shared, shared).canonicalKey(a);
+        CHECK(sharedKey == nodes(other, other).canonicalKey(b));  // one function, two calls: one program
+        CHECK(sharedKey != nodes(u(11), u(12)).canonicalKey(c));  // two uniforms where one stood: not the same program
+        CHECK(a == std::vector<std::string>{"nodeUniform5"} && b == std::vector<std::string>{"nodeUniform9"});
+        CHECK(nodes(shared, shared).key() != nodes(other, other).key());  // the own keys still bind each draw by name
+    }
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(64, 64);
+    renderer.setOutput(OutputState{std::nullopt, 1, false});
+    OrthographicCamera camera(-2, 2, 2, -2, 0.1, 10);
+    camera.position.z = 5;
+    camera.updateMatrixWorld();
+    Scene scene;
+    const auto plane = [](double red, double green, int serial, double x) {
+        auto material = std::make_shared<Material>(MaterialType::Basic, true);
+        material->rawNodeMaterial = true;
+        // As tsl_call names them: uniform(value) and varying(node), each by the next serial.
+        const auto colour = g::uniform("nodeUniform" + std::to_string(serial), shader::Type::vec(4), {red, green, 0, 1});
+        const auto uv = g::varying(g::uv(), "nodeVarying" + std::to_string(serial + 1));
+        material->nodes.fragmentNode =
+            g::select(g::greaterThanEqual(g::swizzle(uv, "x"), g::float_(-1.0)), colour, g::splat(g::float_(0.0), 4));
+        auto mesh = std::make_shared<Mesh>(makePlaneGeometry(2, 2), material);
+        mesh->position.set(x, 0, 0);
+        return mesh;
+    };
+    const auto left = plane(1, 0, 264, -1), right = plane(0, 1, 270, 1);
+    scene.add(*left);
+    scene.updateMatrixWorld(true);
+    RenderDatabase database;
+    database.render(renderer, scene, camera, {0, 0, 0, 1});
+    CHECK(!read(renderer, events).empty());
+    const uint64_t compiled = renderer.pipelines().compiles();
+    scene.add(*right);
+    scene.updateMatrixWorld(true);
+    database.render(renderer, scene, camera, {0, 0, 0, 1});
+    const std::vector<uint8_t> pixels = read(renderer, events);
+    std::printf("serial uniforms share one pipeline: %llu compiled for the first batch, %llu more for the second\n",
+                (unsigned long long)compiled, (unsigned long long)(renderer.pipelines().compiles() - compiled));
+    CHECK(renderer.pipelines().compiles() == compiled);  // the second batch's draw compiled nothing
+    CHECK(renderer.equalProgramReuses() == 1);             // ...and generated no WGSL: it copied the first's stages
+    CHECK(pixels.size() == 64 * 64 * 4);
+    if (pixels.size() != 64 * 64 * 4) return;
+    const auto at = [&](int x, int y) { return &pixels[(size_t(y) * 64 + size_t(x)) * 4]; };
+    CHECK(at(16, 32)[0] > 200 && at(16, 32)[1] < 50);  // the left plane binds its own red
+    CHECK(at(48, 32)[1] > 200 && at(48, 32)[0] < 50);  // the right plane its own green
+    CHECK(renderer.diagnostics().empty());
+}
+
 // A mirror's first frame draws with the programs the warm-up compiled: compileAsync covers each reflector's
 // pass, seen or not, in the main renderer's own mirror renderer, so a throwaway compile database (core's
 // warm-up through tnw_web_compile_async) still leaves them where the frame's mirror draws. Unreal precaches
@@ -8791,7 +8859,7 @@ TN_TEST_MAIN({"virtual_shadow_depth_holds", virtualShadowDepthHoldsWhileCastersF
              {"virtual_sun_level_sizes", virtualSunLevelSizes},
              {"virtual_sun_auto_map_size", virtualSunAutoMapSize},
              {"batched_vs_unbatched", batchedVsUnbatched}, {"stable_passes_match_direct", stablePassesMatchDirect}, {"camera_cull_keeps_bundle", cameraCull}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_decline_cadence", skinnedDeclineCadence}, {"skinned_projecting_cadence", skinnedProjectingCadence}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"env_map_slot_is_read", envMapSlotIsRead}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_offscreen", gpuTimerCoversOffscreen}, {"gpu_timer_splits_the_gather", gpuTimerSplitsTheLabelledGather}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"flat_shading_needs_no_normals", flatShadingNeedsNoNormals}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"batch_keeps_member_id", batchKeepsMemberId}, {"frustum_culling", frustumCulling},
-             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"masked_shadow", maskedShadow}, {"leaf_receiver", leafReceiver}, {"shadow_noise_frame", shadowNoiseFrame},{"foliage_transmission", foliageTransmission}, {"rough_diffuse", roughDiffuse}, {"point_shadow_cube_faces", pointShadowCubeFaces}, {"lamp_source_radius", lampSourceRadius}, {"lamp_source_radius_wall", lampSourceRadiusWall}, {"lamp_source_radius_crate", lampSourceRadiusCrate}, {"contact_shadow_foot", contactShadowFoot}, {"virtual_sun_contact_foot", virtualSunContactFoot}, {"lamp_cache", lampCache}, {"cached_lamp_has_no_uniform_upload", cachedLampHasNoUniformUpload}, {"sun_cache", sunCache}, {"lamp_atlas", lampAtlas}, {"gpu_timer_splits_lamp_shadows", gpuTimerSplitsLampShadows}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse}, {"program_probes_are_resolved_once", programProbesAreResolvedOnce}, {"maps_share_one_pipeline", mapsShareOnePipeline}, {"mirror_programs_precompiled", mirrorProgramsPrecompiled})
+             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"masked_shadow", maskedShadow}, {"leaf_receiver", leafReceiver}, {"shadow_noise_frame", shadowNoiseFrame},{"foliage_transmission", foliageTransmission}, {"rough_diffuse", roughDiffuse}, {"point_shadow_cube_faces", pointShadowCubeFaces}, {"lamp_source_radius", lampSourceRadius}, {"lamp_source_radius_wall", lampSourceRadiusWall}, {"lamp_source_radius_crate", lampSourceRadiusCrate}, {"contact_shadow_foot", contactShadowFoot}, {"virtual_sun_contact_foot", virtualSunContactFoot}, {"lamp_cache", lampCache}, {"cached_lamp_has_no_uniform_upload", cachedLampHasNoUniformUpload}, {"sun_cache", sunCache}, {"lamp_atlas", lampAtlas}, {"gpu_timer_splits_lamp_shadows", gpuTimerSplitsLampShadows}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse}, {"program_probes_are_resolved_once", programProbesAreResolvedOnce}, {"maps_share_one_pipeline", mapsShareOnePipeline}, {"serial_uniforms_share_one_pipeline", serialUniformsShareOnePipeline}, {"mirror_programs_precompiled", mirrorProgramsPrecompiled})
 
 
 

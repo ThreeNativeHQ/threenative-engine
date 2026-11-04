@@ -969,6 +969,19 @@ private:
     /** The shadow pass's depth-only program for a vertex variant (0 plain, 1 instanced). */
     Program& depthProgram(const shader::VertexVariant& variant, bool masked);
     Program& add(const std::string& key, shader::StageModule vertex, shader::StageModule fragment);
+    /**
+     * The stages of a built program whose nodes differ from `nodes` only in tsl_call's serial names, each uniform field
+     * renamed to this material's own name (a draw binds by name), or nullopt. One TSL function called per material (a
+     * streamed batch's LOD surface) otherwise generated the same WGSL again for each: ~17 ms per program on the web, met
+     * mid-walk. `canonical` and `serials` come back for rememberEqual() once the program is built (empty: nothing to share).
+     */
+    std::optional<std::pair<shader::StageModule, shader::StageModule>> equalStages(
+        const std::string& key, const shader::MaterialNodes& nodes, std::string& canonical, std::vector<std::string>& serials) const;
+    void rememberEqual(const Program& built, std::string canonical, std::vector<std::string> serials);
+public:
+    /** Programs built from an equal structure's stages (equalStages) instead of generated; a test reads it. */
+    uint64_t equalProgramReuses() const { return equalProgramReuses_; }
+private:
     struct MaterialTexture;
     /** blitTo's pass-through copy into `format`, blended by PipelineTarget's `blend`. */
     WGPURenderPipeline copyPipeline(WGPUTextureFormat format, uint8_t blend,
@@ -1145,6 +1158,9 @@ private:
     // layout; held by pointer so a frame's plan keeps its addresses while new programs are added.
     std::map<std::string, std::unique_ptr<Program>> programs_;  // a null entry: refused, never retried
     std::map<std::string, std::string> refusedPrograms_;          // why, reported each frame it skips draws
+    struct EqualProgram { const Program* program; std::vector<std::string> serials; };
+    std::unordered_map<std::string, EqualProgram> equalPrograms_;  // by canonical key: see equalStages()
+    mutable uint64_t equalProgramReuses_ = 0;
     uint64_t programKeyBuilds_ = 0, programLookups_ = 0, samplersCreated_ = 0;
     // Moves whenever the per-draw bind groups (mapGroups_) are released, so a DrawCache's group
     // handles built under an older epoch are never reused.

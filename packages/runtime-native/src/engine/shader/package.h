@@ -135,6 +135,14 @@ StageModule buildStage(const Program& program, uint32_t group = 0);
  */
 void positionalGraphTextures(StageModule& module);
 
+/**
+ * Renumbers tsl_call's serial names (`nodeUniform<n>`, `nodeVarying<n>`, `varyingProperty<n>`: one process-wide count
+ * per unnamed uniform(value) or varying(node)) by first use in the stage's WGSL, as three's NodeBuilder numbers a build's
+ * uniforms from 0. One TSL function called per material (a streamed batch's LOD mask) then yields one WGSL text, so one
+ * shader module and one pipeline. The text alone changes: bindings and uniform fields keep the names each draw binds by.
+ */
+void positionalSerialNames(StageModule& module);
+
 /** Refuses a package of another revision before any pipeline is made. */
 bool acceptPackage(const ShaderPackage& package, std::string& error);
 

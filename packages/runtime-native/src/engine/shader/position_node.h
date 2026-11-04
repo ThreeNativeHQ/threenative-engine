@@ -66,6 +66,13 @@ struct MaterialNodes {
         }
         return out;
     }
+    /** key() with tsl_call's serial names numbered by first use across the slots (graph::canonicalKey): equal for two
+     *  materials one TSL function made, whose programs differ only in those names. Built once per program miss. */
+    std::string canonicalKey(std::vector<std::string>& serials) const {
+        std::string out;
+        for (const auto& node : graphs()) out += node ? "{" + graph::canonicalKey(node, serials) + "};" : "5:null;";
+        return out;
+    }
 };
 
 /**
