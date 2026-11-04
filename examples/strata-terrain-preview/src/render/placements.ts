@@ -143,7 +143,13 @@ export async function loadPlacements(
   assets: Pick<IAssetLoader, "resolve">,
   world: string,
 ): Promise<ReturnType<typeof decodePlacements>> {
-  const response = await fetchBakedFile(assets, `world/${world}.placements.bin`, "placement table");
+  // TEMP (lane meadow, river A/B): `?placementsFrom=prepared/<file>` reads a staged table instead.
+  const staged = new URLSearchParams(globalThis.location?.search ?? "").get("placementsFrom");
+  const response = await fetchBakedFile(
+    assets,
+    staged ?? `world/${world}.placements.bin`,
+    "placement table",
+  );
   return decodePlacements(await response.arrayBuffer());
 }
 

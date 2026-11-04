@@ -23,6 +23,12 @@
         "path": "currentViewWindows",
         "gte": 3,
         "allowTrivial": "The vista frame is taken after three measured windows in the view, not mid-transition."
+      },
+      {
+        "id": "GameState",
+        "path": "coverNearEye",
+        "gte": 3000,
+        "allowTrivial": "The open meadow's grass, flowers and stones drawn within 40 m of the vista eye; ?meadow=off draws none there and fails this floor."
       }
     ],
     "visual": [
@@ -65,6 +71,13 @@
     { "kind": "input", "label": "river-view", "press": "KeyV", "holdTicks": 2, "release": true },
     { "kind": "wait", "label": "settle-3", "waitTicks": 10, "release": true },
     { "kind": "input", "label": "vista-view", "press": "KeyV", "holdTicks": 2, "release": true },
+    { "kind": "wait", "label": "settle-4", "waitTicks": 30, "release": true },
+    {
+      "label": "vista-streamed",
+      "waitForResource": { "id": "GameState", "path": "streamingAdmissionBacklog", "equals": 0 },
+      "timeoutMs": 60000,
+      "release": true
+    },
     {
       "label": "vista",
       "release": true,

@@ -28,6 +28,8 @@ import {
   clamp,
   dot,
   float,
+  fract,
+  fwidth,
   max,
   mix,
   mx_noise_float,
@@ -171,6 +173,14 @@ const GROUND_SKY_LIGHT = 0.6;
 const FOREST_FLOOR = vec3(0.44, 0.38, 0.3);
 /** Turf multiplier for the backdrop's spruce stands: dark blue-green needles, as in the goal frame. */
 const BACKDROP_SPRUCE = vec3(0.2, 0.3, 0.2);
+/**
+ * The surveyed surroundings carry no stands (the bake plants only the playable square), so past the
+ * square's edge the forest hillside is an open sunlit meadow: lawn turf, no needle-soil patches, and
+ * the vista's ground cover (`meadowCover`). `?meadow=off` is the named override: the old olive turf
+ * with bare patches and no cover there.
+ */
+export const OPEN_MEADOW =
+  new URLSearchParams(globalThis.location?.search ?? "").get("meadow") !== "off";
 
 /** Continuous stochastic warp: no hard cell boundaries in colour or normals. */
 export function tiledUV(
@@ -216,6 +226,8 @@ export function groundTurf(
   sampled: Node<"vec3">,
   biome?: IBiome,
   hollow: Node<"float"> = float(0),
+  /** 0..1: how far a forest fragment is into open meadow, which takes the lawn turf instead. */
+  open: Node<"float"> = float(0),
 ): Node<"vec3"> {
   const distance = positionView.length();
   const broad = bakedFractalNoise(vec3(positionWorld.x, 0, positionWorld.z).mul(0.006), 2);
@@ -232,18 +244,31 @@ export function groundTurf(
     return mix(sampled.mul(tint), cover, smoothstep(65, 180, distance).mul(0.85));
   }
   const olive = biome?.world === "forest";
+  const lawn = mix(vec3(0.042, 0.072, 0.018), vec3(0.062, 0.102, 0.029), dry);
   const field = (
-    olive
-      ? mix(vec3(0.045, 0.062, 0.022), vec3(0.06, 0.082, 0.03), dry)
-      : mix(vec3(0.042, 0.072, 0.018), vec3(0.062, 0.102, 0.029), dry)
+    olive ? mix(mix(vec3(0.045, 0.062, 0.022), vec3(0.06, 0.082, 0.03), dry), lawn, open) : lawn
   )
     .mul(tufts)
     .mul(mix(0.92, 1.08, smoothstep(0.6, -0.6, hollow)));
-  return mix(
-    sampled.mul(olive ? FOREST_MEADOW : MEADOW),
-    field,
-    smoothstep(60, 220, distance).mul(0.55),
+  // Open meadow: sward patches metres across, sunlit and deep, so a slope past the grass draw reach
+  // still reads as grass rather than one flat tone.
+  const sward = mix(
+    0.5,
+    0.95,
+    smoothstep(
+      -0.45,
+      0.45,
+      bakedFractalNoise(vec3(positionWorld.x, 0, positionWorld.z).mul(0.09), 2),
+    ),
   );
+  return mix(
+    sampled.mul(olive ? mix(FOREST_MEADOW, MEADOW, open) : MEADOW),
+    field,
+    // Open meadow: the photograph's thatch (albedo 0.15) only carries detail under a dark lawn.
+    smoothstep(60, 220, distance)
+      .mul(0.55)
+      .max(open.mul(0.6)),
+  ).mul(mix(float(1), sward, open));
 }
 
 function rockLayer(
@@ -552,6 +577,11 @@ export async function createGroundMaterial(
   const hollow = curvature.node.mul(
     oneMinus(smoothstep(data.size / 2, data.size / 2 + 28, outside)),
   );
+  // Forest only: the open meadow past the square's edge (`OPEN_MEADOW`), eased in over 40 m.
+  const open =
+    OPEN_MEADOW && biome?.world === "forest"
+      ? smoothstep(data.size / 2, data.size / 2 + 40, outside)
+      : float(0);
   // Material placement follows the actual landform, never the bake's brown blob palette.
   const drainage = smoothstep(0.12, 0.65, curvature.flow);
   const deposits = smoothstep(0.08, 0.6, curvature.deposits);
@@ -651,7 +681,9 @@ export async function createGroundMaterial(
           -0.05,
           0.3,
           macro.add(mottling.mul(0.85)).sub(hollow.max(0).mul(0.2)),
-        ).mul(oneMinus(smoothstep(150, 350, positionView.length())));
+        )
+          .mul(oneMinus(smoothstep(150, 350, positionView.length())))
+          .mul(oneMinus(open));
         weights.dirt = weights.dirt.max(bare.mul(0.8));
         // The soil takes the litter's warm needle tint in full, not the dirt photograph's grey gravel.
         forestFloor = forestFloor.max(bare);
@@ -866,7 +898,7 @@ export async function createGroundMaterial(
           .add(microGrain().mul(oneMinus(smoothstep(12, 60, positionView.length()))));
         if (biome?.world === "desert")
           normal = normal.add(sandRipples(vec2(0.53, 0.85)).mul(weights.grass));
-        return { color: groundTurf(surface.rgb, biome, hollow), normal };
+        return { color: groundTurf(surface.rgb, biome, hollow, open), normal };
       },
       // Geometry, transport and curvature choose placement; the packaged masks remain authored data.
       layerWeight: (_masked, { layer: descriptor }) => {
@@ -928,6 +960,30 @@ export async function createGroundMaterial(
           : steep;
         // Talus at the feet of cliff bands: the same rock, finer and paler.
         const scree = collar ? collar.scree.mul(reliefWeight) : float(0);
+        // TEMP-PEAKS knob: remove before report.
+        const peaks =
+          collar !== undefined &&
+          new URLSearchParams(globalThis.location?.search ?? "").get("peaks") !== "before";
+        // Bedding: warped strata about 30 m thick on the steep rock, each a cliff under a ledge,
+        // as the goal frame's faces break into bands (owner, 2026-11-04). The phase is antialiased by
+        // its own screen derivative, so a band thinner than a pixel greys out instead of crawling.
+        const bedding = positionWorld.y
+          .add(bakedFractalNoise(positionWorld.mul(0.004), 2).mul(45))
+          .div(30);
+        const phase = fract(bedding);
+        const blur = fwidth(bedding).min(0.25);
+        const ledge = smoothstep(float(0.8).sub(blur), float(0.88).add(blur), phase).mul(
+          oneMinus(smoothstep(float(0.95).sub(blur), float(1).add(blur), phase)),
+        );
+        const wall = smoothstep(float(0.08).sub(blur), float(0.2).add(blur), phase).mul(
+          oneMinus(smoothstep(float(0.66).sub(blur), float(0.8).add(blur), phase)),
+        );
+        // Not every face is bedded: kilometre patches carry bands, the rest stays massive rock.
+        const bedded = peaks
+          ? smoothstep(-0.15, 0.25, bakedFractalNoise(positionWorld.mul(0.0018), 2)).mul(
+              reliefWeight,
+            )
+          : float(0);
         // Crag ribs that the prefiltered 10 m backdrop mesh cannot carry: 35 m across and 90 m down
         // the fall line, as couloirs and buttresses run. Their gradient tilts the normal and their
         // creases darken the rock, so cliff bands read at two kilometres.
@@ -965,7 +1021,13 @@ export async function createGroundMaterial(
                 patch.mul(0.25).add(0.15),
               )
         ).rgb
-          .mul(alpineBackdrop ? vec3(0.52, 0.55, 0.58) : vec3(0.62, 0.66, 0.67))
+          .mul(
+            alpineBackdrop
+              ? peaks
+                ? vec3(0.6, 0.59, 0.56)
+                : vec3(0.52, 0.55, 0.58)
+              : vec3(0.62, 0.66, 0.67),
+          )
           .mul(strata.mul(0.35).add(1))
           .mul(alpineBackdrop ? mix(0.6, 1.15, smoothstep(-0.4, 0.4, facet)) : float(1))
           // Kilometre-scale warm and cool rock, so whole faces do not read one flat grey.
@@ -987,6 +1049,7 @@ export async function createGroundMaterial(
           positionWorld.y.add(breakUp.mul(24)),
         );
         const face = smoothstep(0.14, 0.3, crestSteep.add(strata.mul(0.055)));
+        const bands = bedded.mul(face);
         const snowline = elevationBand(
           measured,
           measured.heightBands.cap,
@@ -999,13 +1062,20 @@ export async function createGroundMaterial(
             oneMinus(
               alpineBackdrop
                 ? smoothstep(
-                    collar ? 0.2 : 0.28,
-                    collar ? 0.36 : 0.5,
+                    collar ? (peaks ? 0.27 : 0.2) : 0.28,
+                    collar ? (peaks ? 0.44 : 0.36) : 0.5,
                     crestSteep.sub(facet.mul(0.2)),
-                  ).max(smoothstep(0.15, -0.15, bakedFractalNoise(positionWorld.mul(0.006), 2)))
+                  ).max(
+                    // Bare patches break the fields; the goal frame's upper third is mostly white.
+                    peaks
+                      ? smoothstep(-0.2, -0.45, bakedFractalNoise(positionWorld.mul(0.006), 2))
+                      : smoothstep(0.15, -0.15, bakedFractalNoise(positionWorld.mul(0.006), 2)),
+                  )
                 : smoothstep(0.18, 0.42, steep),
             ),
           )
+          // Ledges on the bedded faces hold snow the face itself sheds.
+          .max(snowline.mul(ledge).mul(bands).mul(0.9))
           // Gullies and hollows hold snow on steeper ground than open faces do.
           .max(
             collar
@@ -1016,8 +1086,10 @@ export async function createGroundMaterial(
               : float(0),
           );
         const snow = triplanarAlbedo(layer("snow").diffuse, "snow", 8).rgb;
+        // Each band is a darker wall under a paler ledge.
+        const banded = crag.mul(mix(float(1), mix(float(1.12), float(0.72), wall), bands));
         const mountain = mix(
-          mix(forest, mix(crag, rubble, scree), max(max(treeline, face), scree)),
+          mix(forest, mix(banded, rubble, scree), max(max(treeline, face), scree)),
           snow,
           cap,
         );
@@ -1068,7 +1140,17 @@ export async function createGroundMaterial(
           biome?.world === "alpine" ? mountainTilt.mul(weights.rock) : mountainTilt;
         const tilt = biome?.world === "tundra" ? normal : mix(normal, distantTilt, continuation);
         // Detail is tangential; it must not rotate the whole hillside towards a fixed diagonal.
-        const tangent = tilt.sub(surveyedNormal.mul(dot(surveyedNormal, tilt)));
+        const outward = normalize(
+          vec3(surveyedNormal.x, 0, surveyedNormal.z).add(vec3(0.0001, 0, 0)),
+        );
+        const bandTilt = vec3(0, 1, 0)
+          .sub(surveyedNormal)
+          .mul(ledge.mul(0.7))
+          .add(outward.sub(surveyedNormal).mul(wall.mul(0.35)))
+          .mul(bands);
+        const tangent = tilt
+          .add(bandTilt)
+          .sub(surveyedNormal.mul(dot(surveyedNormal, tilt.add(bandTilt))));
         const crystals = microGrain()
           .mul(snowCover)
           .mul(oneMinus(smoothstep(4, 22, positionView.length())));

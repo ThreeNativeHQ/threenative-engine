@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
 import { terrainStats } from "@threenative/terrain";
+import { Vector3 } from "three";
 import { describe, expect, it } from "vitest";
+import { BENCHMARK } from "../src/render/benchmark.js";
 import { BIOMES, measureBiome } from "../src/render/biomes.js";
 import { prefiltered } from "../src/render/horizon.js";
 
@@ -15,9 +17,57 @@ describe("forest backdrop", () => {
 
   it("keeps the real place's relief and a sharp, branching surface", () => {
     expect(stats.relief).toBeGreaterThan(800);
-    // Owner goal 2026-11-04 (rocky alpine peaks): ridged crests add ~100 m, so 950 became 1050.
-    expect(stats.relief).toBeLessThan(1050);
+    // Owner goal 2026-11-04 (rocky alpine peaks, then a near massif in the vista): 950 became 1200.
+    expect(stats.relief).toBeLessThan(1200);
     expect(stats.curvatureKurtosis).toBeGreaterThan(40);
+  });
+
+  it("stands the vista's near massif in the upper left of its frame", () => {
+    // Owner goal 2026-11-04 ("make sure we have the proper mountain on this capture"): the goal
+    // frame's summit is ~2% below its top edge and its massif fills the left ~45% of the width.
+    // The generated backdrop had a valley on that bearing, its skyline 27-42% down the frame.
+    const vista = BENCHMARK.forest.poses.vista;
+    if (!vista) throw new Error("The forest has no vista pose");
+    const { at, eyeY = 0, look, lookY = 0 } = vista;
+    const n = forest.resolution;
+    const cell = forest.size / (n - 1);
+    const sample = (row: number, column: number) => forest.heights[row * n + column] as number;
+    const height = (x: number, z: number) => {
+      const u = Math.min(Math.max((x + forest.size / 2) / cell, 0), n - 1.001);
+      const v = Math.min(Math.max((z + forest.size / 2) / cell, 0), n - 1.001);
+      const [i, j] = [Math.floor(u), Math.floor(v)];
+      const [a, b] = [u - i, v - j];
+      return (
+        (sample(j, i) * (1 - a) + sample(j, i + 1) * a) * (1 - b) +
+        (sample(j + 1, i) * (1 - a) + sample(j + 1, i + 1) * a) * b
+      );
+    };
+    // The game's camera: 60 degree vertical field, the playtest's 1280 x 720 viewport.
+    const forward = new Vector3(look[0] - at[0], lookY - eyeY, look[1] - at[1]).normalize();
+    const right = forward
+      .clone()
+      .cross(new Vector3(0, 1, 0))
+      .normalize();
+    const up = right.clone().cross(forward);
+    const t = Math.tan(Math.PI / 6);
+    const skyline: number[] = [];
+    for (let column = 0; column <= 576; column += 16) {
+      const ray = forward
+        .clone()
+        .addScaledVector(right, ((2 * (column + 0.5)) / 1280 - 1) * t * (16 / 9))
+        .setY(0)
+        .normalize();
+      let top = Number.NEGATIVE_INFINITY;
+      for (let d = 30; d < 4500; d += 5) {
+        const [x, z] = [at[0] + ray.x * d, at[1] + ray.z * d];
+        if (Math.max(Math.abs(x), Math.abs(z)) > 2356) break;
+        const toGround = new Vector3(x - at[0], height(x, z) - eyeY, z - at[1]);
+        top = Math.max(top, toGround.dot(up) / toGround.dot(forward));
+      }
+      skyline.push((1 - top / t) / 2);
+    }
+    expect(Math.min(...skyline)).toBeLessThan(0.1);
+    expect(skyline.reduce((sum, row) => sum + row, 0) / skyline.length).toBeLessThan(0.15);
   });
 
   it("breaks the massif into peaks with cliff faces, not one 30 degree wall", () => {

@@ -45,7 +45,13 @@ function boxPass(source: Float32Array, size: number, line: number, step: number)
 }
 
 /** Installs the surroundings `createHorizonGeometry` reads; call once before building terrain. */
-export function setHorizonSurroundings(distant: HorizonSurroundings): void {
+export function setHorizonSurroundings(baked: HorizonSurroundings): void {
+  // TEMP-MASSIF knob: remove before report.
+  const { "forest-before": before, ...current } = baked;
+  const distant =
+    before && new URLSearchParams(globalThis.location?.search ?? "").get("massif") === "before"
+      ? { ...current, forest: before }
+      : current;
   sources = distant;
   prefilteredFields = {};
   continuationFields = Object.fromEntries(

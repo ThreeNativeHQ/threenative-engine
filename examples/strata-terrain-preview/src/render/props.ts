@@ -31,7 +31,11 @@ export const VARIANTS = {
   bush: 2,
   fern: 3,
   grass: 4,
+  /** The open meadow's dense base layer (`meadowCover`). */
+  meadow: 2,
   poppy: 4,
+  /** The open meadow's white and violet wildflowers (`meadowCover`). */
+  bloom: 4,
   sapling: 3,
   scrub: 3,
   spruce: 5,
@@ -57,9 +61,12 @@ export const VARIANTS = {
  */
 export const DRAW_REACH: Record<string, number> = {
   grass: 112,
+  /** The vista meadow's base layer: `meadowCover` thins it with distance itself, so it is not faded. */
+  meadow: 230,
   scrub: 110,
   fern: 105,
   poppy: 65,
+  bloom: 65,
   sapling: 160,
   bush: 120,
   litter: 16,
@@ -85,8 +92,10 @@ export const NO_SHADOW_ASSETS = new Set([
   "sapling",
   "scrub",
   "grass",
+  "meadow",
   "fern",
   "poppy",
+  "bloom",
   "litter",
   "pebble",
 ]);
@@ -262,12 +271,15 @@ export function buildPropVariants(
       },
     ]);
   }
-  for (let i = 0; i < VARIANTS.grass; i += 1) {
-    const ready = prepared?.get(`grass:${i}`);
+  for (const [asset, i] of [
+    ...Array.from({ length: VARIANTS.grass }, (_, i) => ["grass", i] as const),
+    ...Array.from({ length: VARIANTS.meadow }, (_, i) => ["meadow", i] as const),
+  ]) {
+    const ready = prepared?.get(`${asset}:${i}`);
     // Imported grass draws as imported: a darkened procedural clump under each photographed tuft
     // read as a black star at every root.
     variants.set(
-      `grass:${i}`,
+      `${asset}:${i}`,
       ready ?? [
         {
           geometry: grassClump((VARIANTS.seed ^ (i * 0xc2b2ae35)) >>> 0, i),
@@ -277,14 +289,17 @@ export function buildPropVariants(
       ],
     );
   }
-  for (let i = 0; i < VARIANTS.poppy; i += 1) {
-    const ready = prepared?.get(`poppy:${i}`);
+  for (const [asset, i] of [
+    ...Array.from({ length: VARIANTS.poppy }, (_, i) => ["poppy", i] as const),
+    ...Array.from({ length: VARIANTS.bloom }, (_, i) => ["bloom", i] as const),
+  ]) {
+    const ready = prepared?.get(`${asset}:${i}`);
     if (ready) {
-      variants.set(`poppy:${i}`, [...ready]);
+      variants.set(`${asset}:${i}`, [...ready]);
       continue;
     }
     const cluster = poppyCluster((VARIANTS.seed ^ (i * 0x27d4eb2f)) >>> 0, POPPY_PETAL);
-    variants.set(`poppy:${i}`, [
+    variants.set(`${asset}:${i}`, [
       { geometry: cluster.stems, role: "stem", variant: i },
       { geometry: cluster.petals, role: "petal", variant: i },
     ]);

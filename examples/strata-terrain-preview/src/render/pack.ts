@@ -118,8 +118,11 @@ for (let i = 0; i < 5; i++) {
 for (const [asset, heights] of Object.entries({
   sapling: [1.1, 2.1, 3.0, 1.6],
   grass: [0.3, 0.55, 0.75, 0.45],
+  /** The meadow's dense base layer (`meadowCover`): Open World Demo field grass and a low mat. */
+  meadow: [0.42, 0.3],
   scrub: [0.085, 0.065, 0.018],
   poppy: [0.38, 0.5, 0.42, 0.4],
+  bloom: [0.35, 0.5, 0.4, 0.45],
   fern: [0.7, 0.6, 0.85],
   bush: [0.9, 0.55],
   litter: [0.42, 0.55],
@@ -133,6 +136,8 @@ for (const [asset, heights] of Object.entries({
   );
 }
 const STONE = new Set(["boulder", "riverrock", "scree", "cliff"]);
+/** Meadow Flowers species: photographed petals kept, stems lifted, no foliage tint. */
+const FLOWERS = new Set(["poppy", "bloom"]);
 for (const one of WORLD_ROCKS) STONE.add(one.asset);
 /** Needle-card triangles one far spruce draws past LOD_BANDS.far (its middle level draws 0.8-4.7k). */
 const FAR_NEEDLE_TRIANGLES = 1500;
@@ -148,9 +153,11 @@ const FAR_NEEDLE_TRIANGLES = 1500;
  */
 const TEMPERATE_PATHS: Record<string, readonly string[]> = {
   grass: ["fieldgrass/0", "field/0", "field/1", "field/2"],
+  meadow: ["fieldgrass/0", "mat/0"],
   scrub: ["scrub/0", "scrub/1", "scrub/2"],
   fern: ["fern/0", "fern/1", "bracken/0"],
   poppy: ["poppy/0", "poppy/1", "poppy/2", "poppy/3"],
+  bloom: ["bloom/0", "bloom/1", "bloom/2", "bloom/3"],
   bush: ["thicket/0", "thicket/1"],
   sapling: ["needle-spruce/0", "sapling/0", "sapling/1", "sprout/0"],
   litter: ["litter/0", "litter/1"],
@@ -337,7 +344,7 @@ function cutoutSurface(
     // card. The custom path only fills in where the art carries no map — an imported surface sets
     // `normalMap` and leaves the node to Three, which also applies the texture's own packing.
     if (world === "forest" && !source.normalMap) material.normalNode = normalViewGeometry;
-  } else if (asset === "poppy") {
+  } else if (FLOWERS.has(asset)) {
     // Keep the photographed red petals; lift only the nearly black stems/seed pods.
     const dark = smoothstep(0.045, 0.008, sampled.r.max(sampled.g).max(sampled.b));
     material.colorNode = mix(
@@ -373,7 +380,7 @@ function cutoutSurface(
     if (!otherBiome) material.emissiveNode = (material.emissiveNode as Node<"vec3">).mul(0.18);
     if (world === "alpine" && material.emissiveNode)
       material.emissiveNode = (material.emissiveNode as Node<"vec3">).mul(0.4);
-  } else if (asset !== "poppy")
+  } else if (!FLOWERS.has(asset))
     material.emissiveNode = (material.colorNode as Node<"vec3">).mul(0.025);
 }
 
@@ -393,11 +400,11 @@ function tintedFoliage(
       ? otherBiome
         ? ([0.3, 0.42, 0.32] as const)
         : ([0.6, 0.78, 0.34] as const)
-      : cutout && asset !== "poppy"
+      : cutout && !FLOWERS.has(asset)
         ? otherBiome
           ? ([0.55, 0.82, 0.42] as const)
           : ([0.6, 0.78, 0.45] as const)
-        : asset === "poppy"
+        : FLOWERS.has(asset)
           ? ([1, 1, 0.85] as const)
           : canopy && source.name === "branch"
             ? ([0.45, 0.38, 0.25] as const)
@@ -441,8 +448,8 @@ function tintedFoliage(
     );
     material.aoNode = mix(0.28, 0.9, smoothstep(0.0, 0.14, positionGeometry.y).oneMinus());
   }
-  if (!otherBiome && (asset === "grass" || asset === "scrub")) {
-    const tip = smoothstep(0.008, asset === "grass" ? 0.34 : 0.065, positionGeometry.y);
+  if (!otherBiome && (asset === "grass" || asset === "meadow" || asset === "scrub")) {
+    const tip = smoothstep(0.008, asset === "scrub" ? 0.065 : 0.34, positionGeometry.y);
     const dry = smoothstep(0.65, 0.92, sin(phase).mul(0.5).add(0.5));
     const dune = world === "coastal" ? smoothstep(7.5, 2.2, positionWorld.y) : float(0);
     const green = mix(vec3(0.32, 0.48, 0.18), vec3(0.84, 0.92, 0.46), tip);
@@ -532,7 +539,7 @@ function surface(
   const cutout = !stone && source.alphaTest > 0;
   const canopy = asset === "spruce" || asset === "sapling";
   const kite = source.name.startsWith("ScotsPine");
-  const fieldGrass = asset === "grass" && source.name === "open-world-demo";
+  const fieldGrass = (asset === "grass" || asset === "meadow") && source.name === "open-world-demo";
   const otherBiome = world !== "forest" && world !== "coastal";
   const context: ISurfaceContext = {
     source,
@@ -952,6 +959,21 @@ export async function loadPack(
         }
         entry.push({ ...part, geometry, level: 2 });
       }
+    // The meadow mat reaches 220 m from the eye, where a mat is a few pixels: past LOD_BANDS.mid it
+    // keeps a third of its blades and past far a tenth, each grown to hold the mat's area. UE grass
+    // steps down its static mesh's own LODs the same way (UE 5.8.3:
+    // Engine/Source/Runtime/Landscape/Classes/LandscapeGrassType.h:59-79, cull distances and MinLOD).
+    if (one.asset === "meadow")
+      for (const part of entry.filter((candidate) => (candidate.level ?? 0) === 0))
+        for (const [level, keep] of [
+          [1, 0.35],
+          [2, 0.12],
+        ] as const) {
+          if (!part.geometry.index || part.geometry.groups.length > 0 || !part.material) continue;
+          const geometry = thinCards(part.geometry, keep);
+          built.push({ geometry, material: part.material });
+          entry.push({ ...part, geometry, level });
+        }
     if (entry.some((part) => (part.level ?? 0) === 0))
       parts.set(`${one.asset}:${one.variant}`, entry);
   });

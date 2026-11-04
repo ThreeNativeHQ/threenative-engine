@@ -369,7 +369,7 @@ const forestBackdrop = landformBackdrop("temperateMountains", {
     forestSurvey.data.values[((forestSurvey.resolution - 1) / 2) * (forestSurvey.resolution + 1)],
 });
 const realContinuation = Object.fromEntries(
-  Object.keys(recipes).map((name) => {
+  Object.keys(recipes).flatMap((name) => {
     const source =
       name === "forest"
         ? {
@@ -381,14 +381,52 @@ const realContinuation = Object.fromEntries(
             },
           }
         : dem[`${name}-horizon`];
-    const surroundings = new Terrain({
-      size: source.size,
-      resolution: source.resolution,
-      seed: 1,
-    }).heightmap({ id: "usgs-surroundings", data: source.data });
-    return [name, name === "forest" ? alpineCrests(surroundings) : surroundings];
+    const surroundings = () =>
+      new Terrain({
+        size: source.size,
+        resolution: source.resolution,
+        seed: 1,
+      }).heightmap({ id: "usgs-surroundings", data: source.data });
+    // TEMP-MASSIF knob (`?massif=before` reads "forest-before"): remove before report.
+    return name === "forest"
+      ? [
+          [name, alpineCrests(nearMassif(surroundings()))],
+          ["forest-before", alpineCrests(surroundings())],
+        ]
+      : [[name, surroundings()]];
   }),
 );
+
+/**
+ * The vista's near massif (owner, 2026-11-04: "make sure we have the proper mountain on this
+ * capture"). The goal frame's mountain fills the upper left of the picture with its summit near the
+ * top edge; the generated backdrop had a valley on that bearing. A ridge 2.2 km long and a summit
+ * 1.25 km tall stand 1.1 to 2.4 km from the vista eye (`BENCHMARK.forest.poses.vista`), 15 to 40
+ * degrees left of its look line, so the playable forest and lake in front keep their ground.
+ * `forest-backdrop.spec.ts` measures the skyline from that eye.
+ */
+function nearMassif(terrain) {
+  return terrain
+    .stamp({
+      id: "massif-ridge",
+      shape: "ridge",
+      at: [-1420, -100],
+      radius: [1100, 600],
+      rotation: 90,
+      amplitude: 850,
+      roughness: 0.1,
+      blend: "max",
+    })
+    .stamp({
+      id: "massif-summit",
+      shape: "mountain",
+      at: [-1450, 0],
+      radius: 750,
+      amplitude: 1250,
+      roughness: 0.1,
+      blend: "max",
+    });
+}
 
 /**
  * The fluvial pass alone leaves one smooth 30 degree wall cut by straight, evenly spaced radial

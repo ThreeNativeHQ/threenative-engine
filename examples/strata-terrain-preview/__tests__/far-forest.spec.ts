@@ -1,0 +1,103 @@
+import { readFileSync } from "node:fs";
+import type { IPlacement } from "@threenative/terrain";
+import { BoxGeometry, BufferAttribute, MeshBasicMaterial, Vector3 } from "three";
+import { describe, expect, it } from "vitest";
+import { BENCHMARK } from "../src/render/benchmark.js";
+import { BIOMES, measureBiome } from "../src/render/biomes.js";
+import { FAR_FOREST_LAYER, collarSampler, farForestPlacements } from "../src/render/farForest.js";
+import {
+  type HorizonSurroundings,
+  createHorizonGeometry,
+  setHorizonSurroundings,
+} from "../src/render/horizon.js";
+import { createStreamedProps } from "../src/render/propStreaming.js";
+import { variantFor } from "../src/render/props.js";
+import type { IBakedWorld } from "../src/render/terrain.js";
+
+const read = (name: string) =>
+  JSON.parse(readFileSync(new URL(`../src/world/${name}`, import.meta.url), "utf8"));
+
+describe("far forest", () => {
+  setHorizonSurroundings(read("horizon.json") as HorizonSurroundings);
+  const data = (read("baked.json") as { forest: IBakedWorld }).forest;
+  const horizon = createHorizonGeometry(data, "mountain");
+  const position = horizon.getAttribute("position");
+  const collar = collarSampler(horizon, data.size, data.resolution);
+
+  it("reads the drawn collar's own heights and nothing inside the square", () => {
+    for (const vertex of [5000, 123_457, 300_001, 393_000]) {
+      const height = collar.at(position.getX(vertex), position.getZ(vertex));
+      expect(height).toBeCloseTo(position.getY(vertex), 3);
+    }
+    expect(collar.at(0, 0)).toBeNull();
+  });
+
+  it("plants the valley and lower slopes, never cliffs, peaks, the square or the vista meadow", () => {
+    const vista = BENCHMARK.forest.poses.vista;
+    if (!vista) throw new Error("forest has no vista pose");
+    const treeline = measureBiome(BIOMES.forest, data.heights).heightBands.treeline;
+    horizon.setAttribute("canopy", new BufferAttribute(new Float32Array(position.count), 1));
+    const trees = farForestPlacements({
+      size: data.size,
+      resolution: data.resolution,
+      horizon,
+      treeline,
+      rivers: data.rivers,
+      lakes: data.lakes,
+      clear: [[vista.at[0], vista.at[1], 55]],
+    });
+    expect(trees.length).toBeGreaterThan(20_000);
+    expect(trees.length).toBeLessThan(120_000);
+    let highest = 0;
+    for (const tree of trees) {
+      const [x, , z] = tree.position;
+      expect(tree.layer).toBe(FAR_FOREST_LAYER);
+      expect(Math.max(Math.abs(x), Math.abs(z))).toBeGreaterThan(data.size / 2);
+      expect(Math.hypot(x - vista.at[0], z - vista.at[1])).toBeGreaterThanOrEqual(55);
+      highest = Math.max(highest, collar.at(x, z) ?? 0);
+    }
+    expect(highest).toBeLessThan(treeline[1] + 30);
+    const canopy = horizon.getAttribute("canopy").array as Float32Array;
+    expect(canopy.some((value) => value > 0)).toBe(true);
+    console.log(`far forest: ${trees.length} trees, highest at ${highest.toFixed(0)} m`);
+  });
+
+  it("streams the far bucket with the licensed spruce's three-level chain", async () => {
+    // The pack spruce steps at 80 and 150 m; a terminal gate inside 150 m fails package validation.
+    const material = new MeshBasicMaterial();
+    const placements: IPlacement[] = [0, 1, 2, 3, 4, 5, 6, 7].map((i) => ({
+      id: `temperate-spruce:far-${i}`,
+      layer: FAR_FOREST_LAYER,
+      asset: "spruce",
+      position: [400 + i * 40, 0, -300],
+      rotation: 0,
+      scale: 1,
+      normal: [0, 1, 0],
+      alignToNormal: false,
+    }));
+    const parts = new Map(
+      placements.map((placement) => [
+        `spruce:${variantFor(placement, "spruce")}`,
+        [0, 1, 2].map((level) => ({
+          geometry: new BoxGeometry(1, 10, 1),
+          material,
+          role: "bark" as const,
+          variant: 0,
+          level,
+        })),
+      ]),
+    );
+    const streamed = await createStreamedProps({
+      placements,
+      groundAt: () => ({ height: 0, offset: 0 }),
+      parts,
+      materials: { bark: material } as never,
+      follow: { position: new Vector3(360, 70, 200) },
+      size: data.size,
+      horizonDistance: 5000,
+      whileCurrent: () => true,
+    });
+    expect(streamed?.worlds.map((world) => world.name)).toEqual(["strata-props:far:false"]);
+    streamed?.dispose();
+  });
+});

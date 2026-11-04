@@ -36,8 +36,10 @@ import {
 } from "three";
 import { BENCHMARK, type ViewName } from "./render/benchmark.js";
 import { BIOMES, type IWorldBiome, type WorldName, measureBiome } from "./render/biomes.js";
+import { FAR_FOREST, collarSampler, farForestPlacements } from "./render/farForest.js";
 import { createGroundSampler } from "./render/groundSampler.js";
 import {
+  HORIZON_WALK_BAND,
   type HorizonSurroundings,
   horizonWalkGeometry,
   setHorizonSurroundings,
@@ -72,8 +74,9 @@ import {
   variantFor,
 } from "./render/props.js";
 import { type IRiverWater, WATER_LAYER, createLakes, createRivers } from "./render/river.js";
+import { meadowCover } from "./render/scatter.js";
 import { type IOutdoorSky, createOutdoorSky, installOutdoorOcclusion } from "./render/sky.js";
-import { type IBakedWorld, createTerrain } from "./render/terrain.js";
+import { type IBakedWorld, OPEN_MEADOW, createTerrain } from "./render/terrain.js";
 import { preparePropTextures } from "./render/texturePreparation.js";
 import { sampleActiveWaterProof, waterProofEnabled } from "./render/waterProof.js";
 import {
@@ -229,6 +232,13 @@ const initialState = {
   propDraws: 0,
   propInstances: 0,
   propTriangles: 0,
+  /** Drawn prop instances within 40 m of the eye in a fixed view (0 in the player view). */
+  coverNearEye: 0,
+  /** Drawn grass instances 100-200 m from the eye in a fixed view: the far slopes' cover. */
+  coverFar: 0,
+  /** Spruce planted past the square (`farForest.ts`), and those drawn inside the view's frustum. */
+  farForest: 0,
+  farForestInView: 0,
   preparedLodBaseSpread: 0,
   compressedTexturesPrepared: 0,
   preparedLevelsWithoutSolid: 0,
@@ -981,7 +991,20 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
         mesh.updateMatrixWorld(true);
         mesh.geometry.computeBoundingBox();
         const top = mesh.geometry.boundingBox?.max.y ?? 0;
+        // The surroundings rise above the square's top, so their collider ray starts above both.
+        const ridges = mesh.getObjectByName("temperate-distant-ridges");
+        if (ridges instanceof Mesh) ridges.geometry.computeBoundingBox();
+        const rayTop =
+          Math.max(
+            top,
+            ridges instanceof Mesh ? (ridges.geometry.boundingBox?.max.y ?? top) : top,
+          ) + 2;
         const groundSample = createGroundSampler(field, mesh.geometry, mesh.matrixWorld);
+        // Past the walk band's collider the drawn collar is the ground (`farForest.ts`).
+        const collar =
+          ridges instanceof Mesh
+            ? collarSampler(ridges.geometry, data.size, data.resolution)
+            : undefined;
         const groundAt: PropGroundQuery = (placement, at) => {
           const [x, , z] = at;
           let visual = groundSample(x, z);
@@ -995,10 +1018,10 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
           }
           const physical = ctx.physics.directSpaceState.intersectRay({
             collisionMask: 8,
-            from: { x, y: top + 2, z },
+            from: { x, y: rayTop, z },
             to: { x, y: -100, z },
           });
-          let height = visual ?? physical?.position.y ?? null;
+          let height = visual ?? physical?.position.y ?? collar?.at(x, z) ?? null;
           if (
             height !== null &&
             (world === "forest" || world === "coastal") &&
@@ -1037,9 +1060,11 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
             }
           }
           const [originX, originY, originZ] = placement.position;
+          // Past the square there is no Heightfield: an authored y there is its own offset.
+          const resident = Math.abs(originX) <= data.size / 2 && Math.abs(originZ) <= data.size / 2;
           return {
             height,
-            offset: originY - field.heightAt(originX, originZ),
+            offset: resident ? originY - field.heightAt(originX, originZ) : originY,
           };
         };
         // The prepared art is asked for here rather than in `enter`, and the variants it fills are
@@ -1107,16 +1132,49 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
           );
           if (released) return;
           propsStage = "streaming";
+          // A fixed view standing on the surroundings gets the meadow the bake cannot place there.
+          const vista = OPEN_MEADOW ? BENCHMARK[world].poses.vista : undefined;
+          // Spruce across the valley past the square; `?farForest=off` plants none.
+          const vistaEye = BENCHMARK[world].poses.vista?.at;
+          const far =
+            world === "forest" && FAR_FOREST && ridges instanceof Mesh
+              ? farForestPlacements({
+                  size: data.size,
+                  resolution: data.resolution,
+                  horizon: ridges.geometry,
+                  treeline: biome.heightBands.treeline,
+                  rivers: data.rivers,
+                  lakes: data.lakes,
+                  clear: vistaEye ? [[vistaEye[0], vistaEye[1], 55]] : [],
+                })
+              : [];
+          farForestCount = far.length;
           props = await createStreamedProps({
-            placements: scatter.placements,
+            placements: [
+              ...scatter.placements,
+              ...(vista
+                ? meadowCover(
+                    { x: vista.at[0], z: vista.at[1] },
+                    { x: vista.look[0], z: vista.look[1] },
+                    data.size / 2,
+                    HORIZON_WALK_BAND - 12,
+                  )
+                : []),
+              ...far,
+            ],
             groundAt,
             parts: propParts,
             materials: surfaces.materials,
             assets: ctx.assets,
             // The player, not the orbiting eye: turning the camera in place must not swap tree LODs.
+            // A fixed view streams around its own eye, as UE grass follows the rendered view
+            // (UE 5.8.3: Engine/Source/Runtime/Landscape/Private/LandscapeSubsystem.cpp:641);
+            // `?meadow=off` keeps the player.
             follow: {
               get position() {
-                return followed();
+                return OPEN_MEADOW && ctx.state.getState().view !== "player"
+                  ? ctx.camera.position
+                  : followed();
               },
             },
             size: data.size,
@@ -1302,6 +1360,12 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
 
       let frames = 0;
       let propCounts = { draws: 0, instances: 0, triangles: 0 };
+      let coverNearEye = 0;
+      let coverFar = 0;
+      let farForestCount = 0;
+      let farForestInView = 0;
+      const farFrustum = new Frustum();
+      const farPoint = new Vector3();
       let travel = 0;
       // The owner's report, measured the same with or without prop collision: frames in which the
       // player's capsule, less a 5 cm skin, crosses into a rock or trunk body.
@@ -1502,6 +1566,65 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
               0,
             ),
           };
+          // What the vista's meadow puts in front of the eye; skipped in the player view.
+          coverNearEye = 0;
+          coverFar = 0;
+          if (ctx.state.getState().view !== "player") {
+            const eye = ctx.camera.position;
+            for (const draw of meshes) {
+              const grass = /^(grass|meadow):/.test(draw.name);
+              const local = draw.instanceMatrix.array;
+              const world = draw.matrixWorld.elements;
+              for (let i = 0; i < draw.count; i++) {
+                const x = local[i * 16 + 12] as number;
+                const y = local[i * 16 + 13] as number;
+                const z = local[i * 16 + 14] as number;
+                const dx =
+                  (world[0] as number) * x +
+                  (world[4] as number) * y +
+                  (world[8] as number) * z +
+                  (world[12] as number) -
+                  eye.x;
+                const dz =
+                  (world[2] as number) * x +
+                  (world[6] as number) * y +
+                  (world[10] as number) * z +
+                  (world[14] as number) -
+                  eye.z;
+                const square = dx * dx + dz * dz;
+                if (square < 1600) coverNearEye++;
+                if (grass && square >= 10000 && square < 40000) coverFar++;
+              }
+            }
+          }
+          // The far forest's drawn instances whose root is inside the camera's frustum.
+          farForestInView = 0;
+          const farWorld = props?.worlds.find((stream) => stream.name === "strata-props:far:false");
+          if (farWorld && ctx.state.getState().view !== "player") {
+            ctx.camera.updateMatrixWorld(true);
+            farFrustum.setFromProjectionMatrix(
+              revealMatrix.multiplyMatrices(
+                ctx.camera.projectionMatrix,
+                ctx.camera.matrixWorldInverse,
+              ),
+              ctx.camera.coordinateSystem,
+            );
+            farWorld.traverse((node) => {
+              if (!(node instanceof InstancedMesh) || !node.visible || !node.layers.isEnabled(0))
+                return;
+              const local = node.instanceMatrix.array;
+              for (let i = 0; i < node.count; i++) {
+                farPoint
+                  .set(
+                    local[i * 16 + 12] as number,
+                    local[i * 16 + 13] as number,
+                    local[i * 16 + 14] as number,
+                  )
+                  .applyMatrix4(node.matrixWorld);
+                if (farFrustum.containsPoint(farPoint)) farForestInView++;
+              }
+            });
+          }
         }
         const stagedStreaming = stage?.world.stats();
         const streaming = stagedStreaming
@@ -1626,6 +1749,10 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
           propDraws: propCounts.draws,
           propInstances: propCounts.instances,
           propTriangles: propCounts.triangles,
+          coverNearEye,
+          coverFar,
+          farForest: farForestCount,
+          farForestInView,
           preparedLodBaseSpread,
           compressedTexturesPrepared,
           preparedLevelsWithoutSolid,

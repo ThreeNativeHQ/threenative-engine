@@ -9,6 +9,7 @@ import {
 } from "@threenative/core/world";
 import type { IPlacement } from "@threenative/terrain";
 import { Box3, type Camera, Group, InstancedMesh, Mesh, Quaternion, Vector3 } from "three";
+import { FAR_FOREST_IMPOSTOR, FAR_FOREST_LAYER } from "./farForest.js";
 import type { IPropPreparationProgress } from "./propProgress.js";
 import {
   DRAW_REACH,
@@ -149,7 +150,7 @@ export async function createStreamedProps(options: IStreamOptions) {
         reach = 28 + (reach - 28) * (1 - Math.sqrt(seed));
       }
       records.push({ key, placement, pose, reach, ratio, position, quaternion, scale: scalar });
-      if (placement.asset === "spruce")
+      if (placement.asset === "spruce" && placement.layer !== FAR_FOREST_LAYER)
         minSpruceScaleByVariant.set(
           variant,
           Math.min(
@@ -178,7 +179,11 @@ export async function createStreamedProps(options: IStreamOptions) {
   startPhase("partition", "", records.length);
   if (
     !(await compile(records, (record) => {
-      const bucket = `${record.reach === Number.POSITIVE_INFINITY ? "horizon" : "local"}:${!NO_SHADOW_ASSETS.has(record.placement.asset)}`;
+      // The far forest is its own world: shadowless, and on the impostor sooner (`farForest.ts`).
+      const bucket =
+        record.placement.layer === FAR_FOREST_LAYER
+          ? "far:false"
+          : `${record.reach === Number.POSITIVE_INFINITY ? "horizon" : "local"}:${!NO_SHADOW_ASSETS.has(record.placement.asset)}`;
       const list = buckets.get(bucket) ?? [];
       list.push(record);
       buckets.set(bucket, list);
@@ -259,12 +264,18 @@ export async function createStreamedProps(options: IStreamOptions) {
             glb: `${record.key}/0.glb`,
             ...(record.key.startsWith("spruce:")
               ? {
-                  impostorDistance: impostorDistanceForScale(
-                    minSpruceScaleByVariant.get(
-                      `${record.placement.asset}:${variantFor(record.placement, record.placement.asset)}`,
-                    ) ?? record.scale,
-                    lods.at(-1)?.distance ?? 0,
-                  ),
+                  // The package rejects a terminal gate at or inside the last authored step.
+                  impostorDistance: bucket.startsWith("far:")
+                    ? Math.max(
+                        FAR_FOREST_IMPOSTOR,
+                        (lods.at(-1)?.distance ?? 0) * (1 + Number.EPSILON),
+                      )
+                    : impostorDistanceForScale(
+                        minSpruceScaleByVariant.get(
+                          `${record.placement.asset}:${variantFor(record.placement, record.placement.asset)}`,
+                        ) ?? record.scale,
+                        lods.at(-1)?.distance ?? 0,
+                      ),
                 }
               : {}),
             bounds: { min: bounds.min.toArray(), max: bounds.max.toArray() },
