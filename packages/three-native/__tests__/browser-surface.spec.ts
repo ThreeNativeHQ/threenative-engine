@@ -94,6 +94,27 @@ describe("browser back end object surface", () => {
     expect(material.isMeshStandardMaterial && material.isMaterial).toBe(true);
   });
 
+  it("fires three's dispose event from Object3D.dispose(), so a subclass's super.dispose() works", () => {
+    const { classes } = defineBrowserClasses(registry, sceneRuntime(new Map(), new Set()), catalog);
+    // WorldCells extends Group and ends its dispose() with super.dispose(), as three r187 allows.
+    const Group = classes.Group as Constructor;
+    class Cells extends Group {
+      dispose(): void {
+        (Group.prototype.dispose as (this: object) => void).call(this);
+      }
+    }
+    const cells = new Cells();
+    const disposed = vi.fn();
+    (cells.addEventListener as (type: string, fn: () => void) => void).call(
+      cells,
+      "dispose",
+      disposed,
+    );
+    (cells.dispose as () => void)();
+    expect(disposed).toHaveBeenCalledTimes(1);
+    expect(typeof (classes.Object3D as Constructor).prototype.dispose).toBe("function");
+  });
+
   it("keeps one userData object per engine object", () => {
     const { classes } = defineBrowserClasses(registry, sceneRuntime(new Map(), new Set()), catalog);
     const group = new (classes.Group as Constructor)();
