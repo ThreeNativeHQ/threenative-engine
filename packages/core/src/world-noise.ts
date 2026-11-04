@@ -71,7 +71,9 @@ export function mxPerlin3(x: number, y: number, z: number, period = 2 ** 31, zOf
   const fz = z - Z;
   const wrap = (i: number): number => ((i % period) + period) % period;
   const corner = (dx: number, dy: number, dz: number): number => {
-    const [gx, gy, gz] = gradient(mxHashInt3(wrap(X + dx) | 0, wrap(Y + dy) | 0, (wrap(Z + dz) + zOffset) | 0));
+    const [gx, gy, gz] = gradient(
+      mxHashInt3(wrap(X + dx) | 0, wrap(Y + dy) | 0, (wrap(Z + dz) + zOffset) | 0),
+    );
     return gx * (fx - dx) + gy * (fy - dy) + gz * (fz - dz);
   };
   const u = fade(fx);
@@ -99,7 +101,10 @@ export function bakeNoiseVolume(): Uint8Array {
       for (let y = 0; y < NOISE_PERIOD; y += 1)
         for (let x = 0; x < NOISE_PERIOD; x += 1) {
           const g = gradient(mxHashInt3(x, y, z + channel * 1031));
-          grads.set(g, ((channel * NOISE_PERIOD + z) * NOISE_PERIOD + y) * NOISE_PERIOD * 3 + x * 3);
+          grads.set(
+            g,
+            ((channel * NOISE_PERIOD + z) * NOISE_PERIOD + y) * NOISE_PERIOD * 3 + x * 3,
+          );
         }
   const frac = new Float32Array(NOISE_TEXELS);
   const weight = new Float32Array(NOISE_TEXELS);
@@ -150,7 +155,10 @@ export function bakeNoiseVolume(): Uint8Array {
           const x01 = c001 + (c101 - c001) * u;
           const x11 = c011 + (c111 - c011) * u;
           const n = 0.982 * ((x00 + (x10 - x00) * v) * (1 - w) + (x01 + (x11 - x01) * v) * w);
-          data[((tz * SIZE + ty) * SIZE + tx) * 4 + channel] = Math.max(0, Math.min(255, Math.round((n * 0.5 + 0.5) * 255)));
+          data[((tz * SIZE + ty) * SIZE + tx) * 4 + channel] = Math.max(
+            0,
+            Math.min(255, Math.round((n * 0.5 + 0.5) * 255)),
+          );
         }
       }
     }
@@ -196,7 +204,12 @@ type Scalar = Node<"float"> | number;
  * @override keep mx_noise_float where exact analytic noise matters more than the frame
  * @example const patch = smoothstep(-0.35, 0.35, bakedNoise(positionWorld.mul(0.025)));
  */
-export function bakedNoise(p: Node<"vec3">, amplitude: Scalar = 1, pivot: Scalar = 0, channel: 0 | 1 | 2 | 3 = 0): Node<"float"> {
+export function bakedNoise(
+  p: Node<"vec3">,
+  amplitude: Scalar = 1,
+  pivot: Scalar = 0,
+  channel: 0 | 1 | 2 | 3 = 0,
+): Node<"float"> {
   const sampled = texture3D(noiseVolume(), vec3(p).div(NOISE_PERIOD));
   const lane = (["r", "g", "b", "a"] as const)[channel];
   return sampled[lane].mul(2).sub(1).mul(amplitude).add(pivot) as Node<"float">;

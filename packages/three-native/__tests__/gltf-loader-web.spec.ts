@@ -89,7 +89,8 @@ describe("the web GLTFLoader's image files", () => {
     ]);
     expect(fetched).toEqual(["shared-load/a/shared/images/a%20b.jpg"]);
     expect(loadGltf).toHaveBeenCalledTimes(3);
-    for (const call of loadGltf.mock.calls) expect([...(call[1].get("shared/images/a b.jpg") ?? [])]).toEqual([7]);
+    for (const call of loadGltf.mock.calls)
+      expect([...(call[1].get("shared/images/a b.jpg") ?? [])]).toEqual([7]);
   });
 
   it("fails by name when an image file is missing, rather than loading the model bare", async () => {

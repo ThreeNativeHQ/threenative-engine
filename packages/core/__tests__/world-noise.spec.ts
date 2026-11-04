@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bakeNoiseVolume, mxPerlin3, NOISE_PERIOD, NOISE_TEXELS } from "../src/world-noise.js";
+import { NOISE_PERIOD, NOISE_TEXELS, bakeNoiseVolume, mxPerlin3 } from "../src/world-noise.js";
 
 const SIZE = NOISE_PERIOD * NOISE_TEXELS;
 
@@ -20,11 +20,14 @@ describe("baked MaterialX noise volume", () => {
 
   it("tiles: the wrapped lattice repeats every period and matches the unwrapped one inside it", () => {
     for (let i = 0; i < 200; i += 1) {
-      const [x, y, z] = [(i * 0.731) % NOISE_PERIOD, (i * 0.377) % NOISE_PERIOD, (i * 0.913) % NOISE_PERIOD];
-      expect(mxPerlin3(x + NOISE_PERIOD, y - NOISE_PERIOD, z + 2 * NOISE_PERIOD, NOISE_PERIOD)).toBeCloseTo(
-        mxPerlin3(x, y, z, NOISE_PERIOD),
-        5,
-      );
+      const [x, y, z] = [
+        (i * 0.731) % NOISE_PERIOD,
+        (i * 0.377) % NOISE_PERIOD,
+        (i * 0.913) % NOISE_PERIOD,
+      ];
+      expect(
+        mxPerlin3(x + NOISE_PERIOD, y - NOISE_PERIOD, z + 2 * NOISE_PERIOD, NOISE_PERIOD),
+      ).toBeCloseTo(mxPerlin3(x, y, z, NOISE_PERIOD), 5);
       // Away from the last cell (whose far corners wrap to 0) the tile is three's own field.
       if (x < NOISE_PERIOD - 1 && y < NOISE_PERIOD - 1 && z < NOISE_PERIOD - 1)
         expect(mxPerlin3(x, y, z, NOISE_PERIOD)).toBeCloseTo(mxPerlin3(x, y, z), 6);
@@ -41,11 +44,12 @@ describe("baked MaterialX noise volume", () => {
       const ty = (i * 61) % SIZE;
       const tz = (i * 29) % SIZE;
       const channel = i % 4;
-      const decoded = ((data[((tz * SIZE + ty) * SIZE + tx) * 4 + channel] as number) / 255) * 2 - 1;
+      const decoded =
+        ((data[((tz * SIZE + ty) * SIZE + tx) * 4 + channel] as number) / 255) * 2 - 1;
       const at = (t: number) => (t + 0.5) / NOISE_TEXELS;
-      expect(Math.abs(decoded - mxPerlin3(at(tx), at(ty), at(tz), NOISE_PERIOD, channel * 1031))).toBeLessThan(
-        1.01 / 255,
-      );
+      expect(
+        Math.abs(decoded - mxPerlin3(at(tx), at(ty), at(tz), NOISE_PERIOD, channel * 1031)),
+      ).toBeLessThan(1.01 / 255);
     }
     // Baked once per page on the main thread: keep it a loading-screen cost, not a stall.
     expect(ms).toBeLessThan(3000);
