@@ -246,11 +246,30 @@ describe("ScenePicker", () => {
   it("takes the accelerated path without patching any three prototype", () => {
     const target = plane("target", 0);
     const { picker } = scenePicker(target);
-    const stock = vi.spyOn(target, "raycast");
+    // On the prototype: an instance spy would be the game's own `raycast`, which picking honours.
+    const stock = vi.spyOn(Mesh.prototype, "raycast");
 
-    expect(picker.raycast()?.object.name).toBe("target");
-    expect(stock).not.toHaveBeenCalled();
+    try {
+      expect(picker.raycast()?.object.name).toBe("target");
+      // The empty root has no tree and takes the stock path; the target never does.
+      expect(stock.mock.contexts).not.toContain(target);
+    } finally {
+      stock.mockRestore();
+    }
     expect(Mesh.prototype.raycast).not.toBe(acceleratedRaycast);
+  });
+
+  it("honours a mesh's own no-op raycast without building its tree", () => {
+    const decor = plane("decor", 0);
+    // Unindexed, so a tree build is visible: MeshBVH writes an index into the geometry it reads.
+    decor.geometry = decor.geometry.toNonIndexed();
+    decor.raycast = () => undefined;
+    const behind = plane("behind", -2);
+    const { picker } = scenePicker(decor, behind);
+
+    const hit = picker.raycast({ origin: new Vector3(0, 0, 5), direction: new Vector3(0, 0, -1) });
+    expect(hit?.object.name).toBe("behind");
+    expect(decor.geometry.index).toBeNull();
   });
 
   it("falls back to the stock raycast for a morphed mesh", () => {

@@ -1058,6 +1058,9 @@ export function createTerrain(
   horizon.name = "temperate-distant-ridges";
   horizon.layers.enable(REFLECTED_LAYER);
   horizon.receiveShadow = true;
+  // Scenery beyond the collider: no ray stands on it, and a picking tree over its 1.5M triangles
+  // cost the first ground contact 1.1 s, which landed on the first rendered frame.
+  horizon.raycast = () => undefined;
   mesh.add(horizon);
   geometry.addEventListener("dispose", () => horizon.geometry.dispose());
 

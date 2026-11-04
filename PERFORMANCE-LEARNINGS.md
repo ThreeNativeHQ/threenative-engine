@@ -1030,3 +1030,16 @@ no COOP/COEP); that lane is open.
 - Test: `gltf_hierarchy_test` "a model's two images decode on the job pool" (0 pool items before, 2 after).
 - Revisit when: a single model holds most of the images (the pool then has nothing to share), or the per-model decode wall (about 150 ms
   for one 2048 px PNG in Wasm) matters. The next step there is GPU-compressed textures that the web engine reads without a decode.
+
+### 2026-11-04 — Strata forest boot: `ctx.raycast` honours an object's own `raycast`, so decoration never builds a picking tree — KEEP
+
+- Where: `packages/core/src/picking.ts` `ownsRaycast` (used by `#collect`, `#testBatched` and `#hitTest`), and the forest collar in
+  `examples/strata-terrain-preview/src/render/terrain.ts` (`horizon.raycast = () => undefined`).
+- Cause: the player's ground-contact ray targets the terrain mesh, which holds the decorative horizon collar (786K triangles) as a
+  child. `ScenePicker` built a MeshBVH for every mesh it reached and called `object.raycast` only for a mesh it could not build a tree
+  for, so three's standard opt-out (an instance `raycast`, honoured by a stock `Raycaster` and by three-mesh-bvh) did nothing.
+- Result (forest, headed WebGPU, NVIDIA Turing): the afterPhysics hook that holds the contact ray went from 1273 ms to 179 ms on its
+  first frame; the 165 ms left is the walkable terrain's own tree (131K triangles). Time to ready did not move (15.7, 16.9 s).
+- Test: `picking.spec.ts` "honours a mesh's own no-op raycast without building its tree"; `prop-surfaces.spec.ts` "keeps the
+  decorative horizon collar out of ground rays".
+- Revisit when: the 165 ms terrain tree matters. The field is a heightfield, so a grid walk answers the same ray with no tree.

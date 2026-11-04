@@ -285,3 +285,33 @@ it("continues tundra terrain normals through the first horizon collar ring", () 
     (mesh.material as import("three").Material).dispose();
   }
 });
+
+it("keeps the decorative horizon collar out of ground rays", async () => {
+  const { Raycaster, Vector3 } = await import("three");
+  setHorizonSurroundings(
+    JSON.parse(readFileSync(new URL("../src/world/horizon.json", import.meta.url), "utf8")),
+  );
+  const resolution = 9;
+  const { mesh } = createTerrain(
+    {
+      size: 512,
+      resolution,
+      heights: Array(resolution ** 2).fill(30),
+      colors: Array(resolution ** 2 * 3).fill(1),
+      waterLevel: null,
+    },
+    undefined,
+    BIOMES.tundra,
+  );
+  try {
+    mesh.updateMatrixWorld(true);
+    const down = (x: number) =>
+      new Raycaster(new Vector3(x, 2000, 0), new Vector3(0, -1, 0)).intersectObject(mesh, true);
+    // Inside the field the terrain answers; over the collar nothing does, so no ray builds its tree.
+    expect(down(0)[0]?.object).toBe(mesh);
+    expect(down(400)).toEqual([]);
+  } finally {
+    mesh.geometry.dispose();
+    (mesh.material as import("three").Material).dispose();
+  }
+});
