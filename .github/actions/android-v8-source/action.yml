@@ -77,14 +77,21 @@ runs:
     # its head branch built — the dispatch-then-push case included.
     #
     # Any run can upload an artifact, a fork's pull request run included, and the payload's receipt
-    # is written by whoever built it. So only a pull request reads this store, `v8-artifact-pick.mjs`
+    # is written by whoever built it. So only a pull request or a merge group reads this store, `v8-artifact-pick.mjs`
     # admits only this repository's own head on main, develop or this pull request's branch, and a
     # payload that fails `--verify` is thrown away instead of failing the lane. A trusted ref never
     # reads it at all: it has the release asset, and a poisoned payload must not reach the job that
     # publishes one (`trusted` below is what that job requires, and an artifact never sets it).
+    #
+    # A merge group reads it too, from its pull request's own head branch and its own queue branch.
+    # A pull request that changes the recipe has no release asset until develop publishes one after
+    # the merge, and a merge group cannot restore the pull request's cache, so its V8 built cold
+    # for over two hours and the queue dropped PR #605 at its 120-minute check timeout
+    # (`checks_timed_out`, run 41734911462) with every finished job green. The merge group runs the
+    # code that pull request run built, and the same picker and `--verify` still apply.
     - name: Download the payload a pull request run of this recipe published
       id: artifact
-      if: steps.published.outputs.hit != 'true' && github.event_name == 'pull_request'
+      if: steps.published.outputs.hit != 'true' && (github.event_name == 'pull_request' || github.event_name == 'merge_group')
       shell: bash
       env:
         GH_TOKEN: ${{ github.token }}
@@ -95,6 +102,17 @@ runs:
       run: |
         set -euo pipefail
         : "${ROOT:?}" "${DEST:?}" "${RUNNER_TEMP:?}"
+        if [ "${GITHUB_EVENT_NAME:-}" = merge_group ]; then
+          # `gh-readonly-queue/<base>/pr-<n>-<sha>` names the pull request. A fork's head is never
+          # added, and a failed lookup leaves main, develop and the queue branch.
+          pr=$(sed -nE 's#^gh-readonly-queue/[^/]+/pr-([0-9]+)-.*#\1#p' <<<"${GITHUB_REF_NAME:-}")
+          head=""
+          if [ -n "$pr" ]; then
+            head=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$pr" \
+              --jq "select(.head.repo.full_name == \"$GITHUB_REPOSITORY\") | .head.ref" 2>/dev/null) || head=""
+          fi
+          BRANCHES="$BRANCHES $GITHUB_REF_NAME $head"
+        fi
         if run_id=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=$NAME&per_page=100" \
           | node "$ROOT/scripts/v8-artifact-pick.mjs" --branches "$BRANCHES"); then
           :

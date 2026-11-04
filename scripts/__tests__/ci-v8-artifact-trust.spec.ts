@@ -463,12 +463,12 @@ describe("the Android V8 payload bridge", () => {
     ).toThrow("CI_NATIVE_WORKFLOW_POLICY");
   });
 
-  it("reads another run's artifact only on a pull request, from this repository, on a trusted branch", () => {
+  it("reads another run's artifact only on a pull request or a merge group, from this repository, on a trusted branch", () => {
     const artifact = step("Download the payload a pull request run of this recipe published");
     // A trusted ref keeps the release asset and never consumes an artifact: the artifact store is
     // the one any run can write.
     expect(artifact.if).toBe(
-      "steps.published.outputs.hit != 'true' && github.event_name == 'pull_request'",
+      "steps.published.outputs.hit != 'true' && (github.event_name == 'pull_request' || github.event_name == 'merge_group')",
     );
     expect(artifact.env.BRANCHES).toBe("main develop ${{ github.head_ref }}");
     // The list is filtered by the picker, which is what refuses a fork's artifact and every branch
@@ -514,6 +514,9 @@ describe("the artifact download step, run for real", () => {
     readonly artifacts: string;
     readonly download: "ok" | "vanished";
     readonly verify: "pass" | "fail";
+    /** A merge group's run: its queue branch, and what the pull request lookup answers. */
+    readonly mergeGroup?: string;
+    readonly pullHead?: string;
   }) {
     const root = tempRoot();
     const api = join(root, "artifacts.json");
@@ -529,6 +532,7 @@ describe("the artifact download step, run for real", () => {
       root,
       "gh",
       `case "$1 $2" in
+  "api repos/"*"/pulls/"*) printf '%s' "${options.pullHead ?? ""}" ;;
   "api repos/"*) cat "${api}" ;;
   "run download")
     dir=""
@@ -545,7 +549,7 @@ esac`,
     const artifactStep = step(stepName);
     const expressions = {
       "inputs.runtime-root": runtime,
-      "github.head_ref": "goal/628",
+      "github.head_ref": options.mergeGroup === undefined ? "goal/628" : "",
       // Not a credential: the stub `gh` never reaches the network.
       "github.token": "spec-token",
       "steps.recipe.outputs.hash": "abc123",
@@ -564,7 +568,12 @@ esac`,
       run: () =>
         runScript(script, {
           root,
-          env: { ...env, RUNNER_TEMP: join(root, "runner-temp") },
+          env: {
+            ...env,
+            RUNNER_TEMP: join(root, "runner-temp"),
+            GITHUB_EVENT_NAME: options.mergeGroup === undefined ? "pull_request" : "merge_group",
+            GITHUB_REF_NAME: options.mergeGroup ?? "",
+          },
           output,
         }),
     };
@@ -586,6 +595,59 @@ esac`,
     expect(result.stdout).toContain("Restored the payload run 4242 published for v8-android-");
     expect(existsSync(test.payload)).toBe(true);
     expect(test.calls()).toContain("gh run download");
+  });
+
+  it("restores, in a merge group, the payload its pull request's own run published", () => {
+    const test = setup({
+      artifacts: fixture({
+        repository_id: 903897353,
+        head_repository_id: 903897353,
+        head_branch: "goal/prd-p0-p1-1102",
+      }),
+      download: "ok",
+      verify: "pass",
+      mergeGroup: "gh-readonly-queue/develop/pr-605-e9707dd6cb5958ab0a529fc8e0e4a471e3ee41a6",
+      pullHead: "goal/prd-p0-p1-1102",
+    });
+    const result = test.run();
+    expect(result.status, result.stderr).toBe(0);
+    expect(test.output()).toBe("hit=true\n");
+    expect(test.calls()).toContain("gh api repos/ThreeNativeHQ/threenative/pulls/605");
+  });
+
+  it("restores, in a merge group, the payload an earlier run of its own queue branch published", () => {
+    const queue = "gh-readonly-queue/develop/pr-605-e9707dd6cb5958ab0a529fc8e0e4a471e3ee41a6";
+    const test = setup({
+      artifacts: fixture({
+        repository_id: 903897353,
+        head_repository_id: 903897353,
+        head_branch: queue,
+      }),
+      download: "ok",
+      verify: "pass",
+      mergeGroup: queue,
+    });
+    const result = test.run();
+    expect(result.status, result.stderr).toBe(0);
+    expect(test.output()).toBe("hit=true\n");
+  });
+
+  it("ignores, in a merge group, a branch that is neither its pull request's nor its queue's", () => {
+    const test = setup({
+      artifacts: fixture({
+        repository_id: 903897353,
+        head_repository_id: 903897353,
+        head_branch: "someone-else",
+      }),
+      download: "ok",
+      verify: "pass",
+      mergeGroup: "gh-readonly-queue/develop/pr-605-e9707dd6cb5958ab0a529fc8e0e4a471e3ee41a6",
+      pullHead: "goal/prd-p0-p1-1102",
+    });
+    const result = test.run();
+    expect(result.status, result.stderr).toBe(0);
+    expect(test.output()).toBe("hit=false\n");
+    expect(test.calls()).not.toContain("gh run download");
   });
 
   it("ignores an artifact a fork's run published", () => {
