@@ -209,6 +209,9 @@ describe("weathered rock geometry", () => {
     const geometry = new ConeGeometry(1.4, 6, 48, 12).translate(0.6, 3, -0.3).scale(1, 1, 0.7);
     const position = geometry.getAttribute("position");
     const matrix = new Matrix4();
+    // Each vertex the scan visits is one Math.min; a full scan would visit every vertex of every pose.
+    const visits = vi.spyOn(Math, "min");
+    let visited = 0;
     for (let i = 0; i < 240; i++) {
       const tilt = new Quaternion().setFromAxisAngle(
         new Vector3(Math.cos(i * 1.7), 0, Math.sin(i * 1.7)),
@@ -227,7 +230,13 @@ describe("weathered rock geometry", () => {
           full,
           position.getX(v) * e[1] + position.getY(v) * e[5] + position.getZ(v) * e[9] + e[13],
         );
-      expect(lowestY(geometry, matrix)).toBeCloseTo(full, 5);
+      const before = visits.mock.calls.length;
+      const lowest = lowestY(geometry, matrix);
+      visited += visits.mock.calls.length - before;
+      expect(lowest).toBeCloseTo(full, 5);
     }
+    visits.mockRestore();
+    // Measured 23% (40,482 of 176,160) over these tilts of up to 45 degrees.
+    expect(visited).toBeLessThan((240 * position.count) / 2);
   });
 });

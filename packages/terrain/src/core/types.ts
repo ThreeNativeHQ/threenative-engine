@@ -182,9 +182,9 @@ export interface IErodeParams extends IBrushParams {
   readonly iterations?: number;
   /** Maximum stable slope in degrees; `fluvial` also enforces it as its landslide threshold. */
   readonly talus?: number;
-  /** `fluvial`: rock uplift at the highest input point, m/yr (default 1e-4). Relief scales with uplift / erodibility. */
+  /** `fluvial`: rock uplift at the highest input point, m/yr (default 1e-3). Relief scales with uplift / erodibility. */
   readonly uplift?: number;
-  /** `fluvial`: stream-power erodibility K, m^(1-2m)/yr (default 1e-5). */
+  /** `fluvial`: stream-power erodibility K, m^(1-2m)/yr (default 5e-6). */
   readonly erodibility?: number;
   /** `fluvial`: years per step (default 2e4); the implicit solver is stable at any value. */
   readonly timeStep?: number;

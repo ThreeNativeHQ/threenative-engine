@@ -276,10 +276,12 @@ describe("ScenePicker", () => {
     const target = plane("morphed", 0);
     target.morphTargetInfluences = [0];
     const { picker } = scenePicker(target);
-    const stock = vi.spyOn(target, "raycast");
+    // Spy on the prototype: an instance spy is an own `raycast`, which takes the stock path by itself.
+    const stock = vi.spyOn(Mesh.prototype, "raycast");
 
     expect(picker.raycast()?.object.name).toBe("morphed");
-    expect(stock).toHaveBeenCalledTimes(1);
+    expect(stock.mock.contexts.filter((self) => self === target)).toHaveLength(1);
+    stock.mockRestore();
   });
 
   it("rebuilds the hierarchy when the geometry's positions change", () => {
