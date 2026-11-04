@@ -1,0 +1,154 @@
+---
+prd_contract: v1
+---
+
+# PRD-777 — A spell is a timeline that changes the world it lands in
+
+**Status:** DONE — the Ultra Elements foundation, the Fireball port on the engine Wasm and the engine gaps it closed are merged; the judge rounds and the other five spells continue in PRD-789.
+**Complexity:** 7 (HIGH) — 11+ implementation files (+3), a new spell category in core (+2), cast and surface state that carries across frames (+2). Risk override: none.
+**Owner:** unassigned
+**Depends on:** [PRD-527](../native-engine/N14-native-render-chain-and-advanced-visuals/PRD-527-n14e-particles-and-fluids-run-native.md) for the desktop box only. Its native GPU particle parity boxes are open.
+
+## Context
+
+[Ultra Elements](https://github.com/Humpalumps/ultra-elements) (MIT, pinned at `698b720c81d8f1f282bae53633d72413b5c4408d`, 2026-10-30) ships 39 real-time spells for three.js. **All 39 become engine capabilities** (owner, 2026-10-31).
+
+**This is a new VFX category.** [PRD-316](../Unreal/vfx/PRD-316-forty-six-vfx-are-generated-render-source-not-an-engine-inside-the-engine.md) is a catalog of single effects: one emitter with one recipe, fired once. An Ultra Elements spell has three properties that an emitter does not have (upstream `SPELLBOOK.md`):
+
+1. **Silhouette:** the spell is recognizable in one frame.
+2. **Timeline:** charge, release, travel, impact and linger. Each phase drives several systems together.
+3. **World response:** the spell changes the floor, the lights, nearby particles and its target.
+
+The engine has no vocabulary for this. `engine_search_capabilities` for a fireball, lightning or ice spell returned only `measureThreePose`, score 0.27. The kit has `createAttackArc`, `createHitBurst` and `createArcaneSurge` in `src/render/vfx.ts`, and each is one emitter.
+
+### What upstream is
+
+| Fact | Measured | Consequence |
+|---|---|---|
+| Renderer | WebGL2, raw GLSL ES 3.00, 44 source files use `ShaderMaterial` or `onBeforeCompile` | The code cannot run here. Each spell is rewritten in TSL for the owned engine and the native host. |
+| Size | 28,433 lines in `src/spells` and `src/vfx`, 29 spell files | The port ships in five PRDs. |
+| Shared systems | All 29 spell files use the particles, ground field, lights, camera rig and dummies. 26 use forces. 24 use shock shells. | The foundation comes first. |
+| Arena coupling | 34 files read the arena SDF or `ARENA` constants. The ground field reaches materials through the arena shader. | `SpellWorld` replaces the arena. |
+| Upstream discipline | Deterministic for a seed, no allocation after `create()`, no shader program added at cast | Keep all three. They match our performance rules. |
+| Upstream cost | 24 s to first cast on a first visit, because all spell shaders compile at start-up | A game builds only the spells that it imports. |
+| Maturity | Created 2026-10-30, one commit, one contributor | Pin the commit. Do not track upstream. |
+
+Upstream timings (3 ms per frame on an RTX 3060) are WebGL2 numbers for a small arena. They are unverified on this engine.
+
+## The epic: 39 spells in five PRDs
+
+The PRD size cap splits this work. All five PRDs ship on one PR, because they serve one goal.
+
+| PRD | Scope | New mechanisms | Spells |
+|---|---|---:|---:|
+| **PRD-777** | Foundation and first wave | `CastPool`, kind table, `ReactionField`, spell lights, `SpellWorld` | 6 |
+| [PRD-778](../ecosystem-absorption/PRD-778-spells-that-arc-trail-and-draw-sigils.md) | Arcs, ribbons, sigils | Bolts, analytic ribbons, sigils | 10 |
+| [PRD-779](../ecosystem-absorption/PRD-779-spells-that-erupt-solid-from-the-ground.md) | Erupting solids | Spikes, debris | 8 |
+| [PRD-780](../ecosystem-absorption/PRD-780-spells-made-of-volumes-and-swarms.md) | Volumes and swarms | Hero volumes, swarms | 7 |
+| [PRD-781](../ecosystem-absorption/PRD-781-spells-made-of-liquid-and-bent-space.md) | Liquid and bent space | Fluid, metaballs, lens, portal view | 8 |
+
+First wave: Fireball, Thunderstrike, Glacial Spike, Arcane Barrage, Aegis, Inferno.
+
+## Solution
+
+**Consumer flow:** an agent searches "fireball" → `engine_search_capabilities` returns `createFireball` → the game imports it from `@threenative/core/spells` → player input calls `casts.cast(fireball, target)` → the phase callbacks drive particles, lights, shake and `ReactionField` splats → the cast ends and its slot returns to the pool.
+
+```ts
+import { CastPool, createFireball, SpellWorld } from "@threenative/core/spells";
+
+const world = new SpellWorld({ scene, camera, groundAt });
+const fireball = createFireball(world, { core: "#fff2dc", speed: 18 });
+const casts = new CastPool(world);
+casts.cast(fireball, target);
+```
+
+**Contract for every spell:**
+
+- It is one named factory on the `@threenative/core/spells` subpath, with a capability row. `create<Spell>(world, overrides?)` is the only public shape.
+- A stock look ships as the default. Every colour, size, count and timing value is a named override, and upstream presets ship as named override objects. A game changes the look completely with no package edit.
+- It imports only what it uses. `@threenative/core` already declares `sideEffects: false`, and a dedicated subpath keeps spells out of the main entry.
+- All shader code is TSL. It builds its pipelines at `create` time and adds none at cast.
+- It reads the world through `SpellWorld` only, with no arena constants.
+
+**`SpellWorld`:** the game supplies the scene, the camera and `groundAt(x, z)`. It holds the light pool, `ReactionField`, shake and flash limiter. Spell targets are game-owned callbacks. Damage, mana and cooldowns stay in the game.
+
+**Foundation decisions:**
+
+| Upstream system | Decision |
+|---|---|
+| Cast pool and phase clock (`cast.js`) | `CastPool`: a full pool recycles the oldest cast, and each cast takes a seed. |
+| Particle kind table (`Particles.js`) | One kernel on `GPUParticles3D` with many kinds. Behaviour and forces are data, so a write recompiles nothing. |
+| Ground field (`GroundField.js`) | `ReactionField`, same shape as `RippleField`: it draws nothing and the game's material reads it. A CPU grid uploads only its changed region, so a game reads it directly for combos with no GPU readback. `ponytail:` GPU simulation if a large world needs more cells. |
+| Spell lights | A fixed pool at zero intensity, so that a cast does not change the light count. |
+| Camera shake | Reuse `CameraShake`. |
+| Scene depth particle collision | Use `groundAt` until [PRD-610](../Unreal/vfx/PRD-610-sparks-bounce-off-the-surfaces-the-camera-can-see.md) lands. |
+
+Spell emissive values are tuned to the default filmic curve and metered exposure, not to upstream AgX.
+
+**Unreal reference (design guards, no code):** Niagara submits spell-sized lights as simple lights (`UE 5.8.3: Engine/Plugins/FX/Niagara/Source/Niagara/Private/NiagaraRendererLights.cpp:100`, `:201`).
+
+**Risks:**
+
+- ⚠️ A bright impact can pump metered exposure. The judge checks this.
+- ⚠️ Fireball and Inferno are volumes upstream. They ship here as a TSL shell with particles, and PRD-780 upgrades them.
+- ⚠️ A catalog in core raises the package's source size. The one-spell bundle box guards the game's cost.
+
+This PRD has 11 boxes, over the cap of about 8. The foundation, its one-spell cost and its first-wave proof cannot separate without a PRD that ships no spell.
+
+## Integration Ledger
+
+| Capability | Reachable consumer/trigger | Replaces / disposition | Evidence |
+|---|---|---|---|
+| Spell cast in a game | action-rpg `src/scenes/Play.ts` spell slots → `CastPool.cast` (fill `file:line` in Phase 1) | Arcane Surge stays. Fireball, Thunderstrike and Glacial Spike add slots to `src/ui/AbilityBar.tsx`. | Phase 1 box |
+| Whole catalog proof | `examples/spell-lab` (new, floor and three dummies) casts each spell by name | New. PRD-778 to PRD-781 append to it. | Phase 2 and 3 boxes |
+| Surface reaction | Spell impact → `ReactionField.splat` → game floor material (fill `file:line` in Phase 2) | New | Phase 2 box |
+| Agent discovery | `engine_search_capabilities` → `capabilities.json`, recall corpus row | New | Acceptance box |
+
+## Decisions
+
+- 2026-10-31 (João): spells are a new VFX category, separate from the PRD-316 emitter catalog. This PRD does not depend on PRD-316.
+- 2026-10-31 (João): "need all absorbed as engine capabilities". All 39 ship as importable core factories, and the agent's proposal to keep looks in kit source is rejected. This is a named exception to "never own the look", in the same form as the Unreal default: a stock look with an override on the same call. Phase 1 writes it into `AGENTS.md`.
+- 2026-10-31 (Claude): the catalog goes on a `@threenative/core/spells` subpath, not in a new package, because it carries no new dependency.
+- 2026-10-31 (Claude): upstream GLSL stays out of the repository, and the algorithms are ported to TSL. A WebGL2 path is closed by the renderer rule and has no native proof.
+- 2026-11-03 (owner, overrides the behaviour-only port): "its a MIT project, just copy". The from-scratch spells drew a white dot and an orange smudge. Upstream's JavaScript is copied verbatim under `packages/core/src/spells/ultra/`, mirroring its file names. Only what the engine cannot run changes: each GLSL program becomes TSL line by line (same maths, same constants), and each `WebGLRenderTarget` becomes a `RenderTarget`. It runs on the default engine, the Wasm build over WebGPU, never on upstream three's WebGL2 (owner: "webgl is trash, it will be slow FPS"). Fireball's closure lands and passes the judge before the other five.
+- 2026-11-03 (owner, on PR #598): "just wrap up this PR and merge". This PRD ships the Ultra Elements foundation, the Fireball port and the engine gaps it closed. The other five spells, the from-scratch spell deletion, and the desktop, frame-budget and six-spell judge boxes (old Phase 3) moved to [PRD-789](../ecosystem-absorption/PRD-789-the-other-five-ultra-elements-spells-on-our-engine.md).
+- 2026-11-03 (owner, on PR #598): "wrap this up and send to merge queue". The kit spell-key playtest and the Fireball five-beat judge, both unrun, moved to PRD-789. Neither is claimed here.
+
+## Execution Phases
+
+#### Phase 1: One spell runs its whole timeline from a core import
+
+**Status:** DONE — the kit playtest moved to PRD-789.
+**Files:** `AGENTS.md` (the look exception, then `pnpm sync:agents`), `packages/core/package.json` and `tsup.config.ts` (subpath), `packages/core/src/spells/index.ts`, `cast-pool.ts`, `spell-world.ts`, `spell-lights.ts`, `reaction-field.ts` (new), `packages/core/src/particle-kinds.ts` (kind table, new — kept out of `particles.ts`, which is already 648 lines against the 400-line notice), `THIRD_PARTY_NOTICES.md` (upstream MIT notice, new — the file did not exist), `examples/spell-lab/` (new), kit `src/scenes/Play.ts`, kit `src/ui/AbilityBar.tsx`.
+**Implementation:** Port the `cast.js` phase rules. Add the kind table. Build Fireball on them, then bind it to a kit slot. Use the real `GPUParticles3D`, `prewarm` and `CameraShake`.
+
+- [x] `CastPool` steps charge, travel, impact, linger and done, recycles the oldest at capacity, and allocates nothing per cast. proof: `pnpm exec vitest run packages/core/__tests__/cast-pool.spec.ts` — Evidence: 12 tests pass. The pool's slots, records, `from`/`to` vectors and `data` scratch keep their identity across a recast, and a ball that has passed its target lands on the target rather than flying past it. A review pass found and this commit fixes three defects the first tests missed: a spell could land during charge or linger (re-firing its impact every frame), any `update` hook disabled the pool's own integration so a spell that only animates never moved, and a cast with no `from` started at the previous cast's origin instead of the caster's.
+- [x] A game retunes Fireball through named overrides, and no new pipeline builds. proof: `pnpm exec vitest run packages/core/__tests__/particle-kinds.spec.ts` — Evidence: 7 tests pass (file renamed from the PRD's `particles.spec.ts`). The decisive test keeps the emitter's `material`, `process` and `spawn` references, retunes the kind, and asserts all three are the same objects afterwards while the uniform values moved — a retune is a uniform write, so no pipeline is built. `ParticleKindTable` holds lifetime, size, speed, cone, gravity, drag, buoyancy, alpha, colour and highlight as uniforms; eight stock kinds ship.
+- [x] A build that imports only Fireball contains no other spell's code. proof: `pnpm --filter spell-lab build:one-spell`, then search the bundle for a marker string — Evidence: `examples/spell-lab/src/one-spell.ts` imports only `CastPool`, `SpellWorld` and `createFireball`; `vite build --config vite.one-spell.config.ts` emits a 50.37 kB bundle (14.37 kB gzip) in which `"fireball"` appears once and `"thunderstrike"`, `"glacial-spike"`, `"arcane-barrage"`, `"aegis"` and `"inferno"` appear zero times.
+The kit spell-key playtest (`action-rpg/playtests/spells.playtest.json`, unrun here) moved to [PRD-789](../ecosystem-absorption/PRD-789-the-other-five-ultra-elements-spells-on-our-engine.md) (owner, 2026-11-03).
+
+**Phase 1 notes.** The subpath ships and the manifest lists four symbols under `@threenative/core/spells`: `CastPool`, `ReactionField`, `SpellLights`, `SpellWorld`. The five drawable mechanisms a spell needs — the particle kind table, a projectile core, a shock shell, a bolt ribbon and a shield bubble — are not written. Each is TSL that has to be iterated against a real WebGPU adapter, and writing them without that iteration would have shipped guesses, so they were left for the next pass rather than committed unverified.
+
+#### Phase 2: The world responds, and the other five spells land
+
+**Status:** DONE.
+**Files:** `packages/core/src/spells/reaction-field.ts`, `spell-lights.ts` and five spell factories (new), `examples/spell-lab/`, kit `src/render/materials.ts`, kit `src/scenes/Play.ts`, kit `AGENTS.md`, `scripts/fixtures/capability-recall/corpus.json`.
+**Implementation:** Port the heat, char, wet and frost channels with decay and splats. Bind Thunderstrike and Glacial Spike to kit slots. Add a recall row per spell.
+
+- [x] A Fireball impact leaves a scorch on the floor that fades over time. proof: `node packages/playtest/dist/runner/cli.js examples/spell-lab/playtests/spell-lab.playtest.json --browser-recipe webgpu`, scorch step — Evidence: PASS on an NVIDIA RTX 2080 (turing, hardware adapter, headed, `--browser-recipe webgpu`). The scenario asserts `casts >= 1`, `impacts >= 1`, `floorMarks >= 1` (the `ReactionField` version moves only when a spell marks the floor) and a before/after frame change, and the capture shows a burnt-orange patch on the floor where the fireball landed.
+- [x] Thunderstrike, Glacial Spike, Arcane Barrage, Aegis and Inferno each cast and change the pixels at the target. proof: `spell-lab.playtest.json`, per-spell steps — Evidence: six scenario files, one per spell (`spell-lab`, `thunderstrike`, `glacial-spike`, `arcane-barrage`, `aegis`, `inferno`), all PASS on the RTX 2080 headed. One file per spell rather than six labelled steps, because the `visual` assertion diffs the whole scenario and a per-step diff is not available. Each asserts its cast, its impact, that particles spawned, no console errors and a before/after frame change.
+- [x] With reduced flashes on, a spell burst shows at most 3 flashes per second (WCAG 2.3.1, kept from upstream). proof: `pnpm exec vitest run packages/core/__tests__/spell-world.spec.ts` — Evidence: 9 tests pass. A fourth flash inside one second is refused and counted in `suppressedFlashes`, never dimmed, and the limiter allows the next flash once the window has passed. The pool itself never hides a light: Three.js drops an invisible object before it collects lights, so a hidden light would be the light-count change the pool exists to prevent.
+
+#### Phase 2b: The spells are upstream's code, on our engine
+
+**Status:** DONE — the Fireball judge moved to PRD-789.
+**Files:** `packages/core/src/spells/ultra/` (new, upstream paths: `spells/cast.ts`, `spells/fire.ts`, `spells/lightning.ts`, `spells/ice.ts`, `spells/arcane.ts`, `vfx/common.ts`, `vfx/noise.ts`, `vfx/Particles.ts`, `vfx/GroundField.ts`, `vfx/Volumes.ts`, `vfx/FluidVolume.ts`, `vfx/Shockwaves.ts`, `vfx/Ribbons.ts`, `vfx/Bolts.ts`, `vfx/Spikes.ts`, `vfx/Sigils.ts`, `vfx/Refraction.ts`, `vfx/FxTarget.ts`), `examples/spell-lab/` (engine Wasm wiring, `vite.config.ts`), `THIRD_PARTY_NOTICES.md`.
+**Implementation:** Copy each upstream file. Keep its JavaScript, names and constants. Transliterate each GLSL program to TSL. Composite the FX target through `WorldEnvironment`'s `baseColour` hook, which sits where upstream composites: after the scene pass, before exposure and the tone curve. Our post chain replaces upstream `PostFX`. Delete the from-scratch spells once their port lands.
+
+- [x] spell-lab boots on the default engine, the Wasm build of this branch, over WebGPU. proof: `doctor --url` names the engine and a hardware adapter, and `node scripts/web-engine-stamp.mjs --check` passes. — Evidence (2026-11-03): `doctor --url http://127.0.0.1:5391 --text` exits 0 with `adapter nvidia turing`, `console 0 errors`. The doctor prints no engine name, so the DevTools MCP read the page: it loads `tn-native-engine-web-threads.wasm`, `__tnWebThreads` is `on (8)` and `crossOriginIsolated` is true. `web-engine-stamp.mjs --check` exits 0 after the Wasm rebuild from `d16a7bff9`.
+The Fireball five-beat Opus judge moved to [PRD-789](../ecosystem-absorption/PRD-789-the-other-five-ultra-elements-spells-on-our-engine.md) (owner, 2026-11-03), so all six spells are judged in one round.
+Thunderstrike, Glacial Spike, Arcane Barrage, Aegis and Inferno, and the deletion of the from-scratch spells, moved to [PRD-789](../ecosystem-absorption/PRD-789-the-other-five-ultra-elements-spells-on-our-engine.md) (owner, 2026-11-03).
+
+## Acceptance criteria
+
+- [x] AC-1 [local]: `engine_search_capabilities` returns the matching factory for each of the six spell names, and the manifest lists it under `@threenative/core/spells`. proof: `pnpm caps:recall` — Evidence (2026-11-03): exit 0, recallAtK 0.935780 (at its floor), rejectHits 15. `spell.fireball`, `spell.thunderstrike`, `spell.glacial-spike`, `spell.arcane-barrage`, `spell.aegis` and `spell.inferno` each return their own factory first. The port's new exports pushed `createFireball` into `brief.fps.9` (a shooting-gallery target) on the word "target". Its situation now reads "casts at an enemy", and the row recalls `ScenePicker` again.

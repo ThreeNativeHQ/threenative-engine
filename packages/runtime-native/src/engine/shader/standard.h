@@ -103,6 +103,8 @@ struct VertexVariant {
     /** material.flatShading: the lit fragment's normal is the face normal from the position's screen-space
      *  derivatives (three's setupNormal), and the vertex stage reads no `normal` attribute. */
     bool flatShading = false;
+    /** material.premultipliedAlpha: NodeMaterial.setupOutput multiplies the colour by its alpha after the fog. */
+    bool premultipliedAlpha = false;
     bool instanced = false;
     bool instanceColor = false;
     /** three's material.vertexColors on a geometry with a `color` attribute: its item size (3 or 4), else 0.
@@ -177,7 +179,7 @@ struct VertexVariant {
     bool operator==(const VertexVariant&) const = default;
     /** A stable key: two variants with the same key build the same program. */
     [[nodiscard]] std::string key() const {
-        return std::to_string(fog) + (alphaHash ? "alphaHash|" : "") + (background ? "background|" : "") + std::string(sprite ? "sprite|" : "") + (backSide ? "back|" : "") + (doubleSide ? "double|" : "") + (leafReceiver ? "leaf|" : "") + (twoSidedFoliage ? "foliage|" : "") + (roughDiffuse ? "eon|" : "") + (flatShading ? "flat|" : "") + std::to_string(instanced) + std::to_string(instanceColor) + "vc" + std::to_string(vertexColors) + std::to_string(skinned) +
+        return std::to_string(fog) + (alphaHash ? "alphaHash|" : "") + (background ? "background|" : "") + std::string(sprite ? "sprite|" : "") + (backSide ? "back|" : "") + (doubleSide ? "double|" : "") + (leafReceiver ? "leaf|" : "") + (twoSidedFoliage ? "foliage|" : "") + (roughDiffuse ? "eon|" : "") + (flatShading ? "flat|" : "") + (premultipliedAlpha ? "premultiplied|" : "") + std::to_string(instanced) + std::to_string(instanceColor) + "vc" + std::to_string(vertexColors) + std::to_string(skinned) +
                std::to_string(skinnedPalette) + (skinInstanceValues ? "S" : "") + (instanceStorage ? "storage" : "") + "m" + std::to_string(morphTargets) + (morphNormals ? "n" : "") +
                (map ? "t" : "") + (normalMap ? "N" : "") + (pbrMaps ? "P" + std::to_string(pbrMaps) : "") + (mapSRGB ? "s" : "") + (environment ? "e" : "") + (clearcoat ? "c" : "") + (invariantPosition ? "i" : "") +
                (positionNode ? "p:" + positionNode->key : "") + "|nodes:" + nodes.key();

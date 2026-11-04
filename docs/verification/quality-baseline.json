@@ -2,10 +2,10 @@
   "version": 1,
   "generatedAt": "2026-08-24T14:44:20.985Z",
   "counts": {
-    "file-length": 33,
-    "suppression/unknown-cast": 26,
+    "file-length": 42,
+    "suppression/unknown-cast": 134,
     "interface-in-disguise": 13,
-    "suppression/biome-ignore": 7,
+    "suppression/biome-ignore": 46,
     "lint-coverage-hole": 1
   },
   "findings": [
@@ -243,6 +243,1098 @@
     {
       "file": "packages/core/src/scene.ts",
       "line": 45,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/spells/ultra/engine/camera.ts",
+      "line": 61,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/spells/ultra/engine/camera.ts",
+      "line": 70,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/spells/ultra/engine/camera.ts",
+      "line": 115,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/spells/ultra/engine/camera.ts",
+      "line": 119,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/spells/ultra/main.ts",
+      "line": 120,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/spells/ultra/main.ts",
+      "line": 145,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/main.ts",
+      "line": 178,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/spells/ultra/main.ts",
+      "line": 183,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/scene/arenaMaterial.ts",
+      "line": 61,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/spells/ultra/scene/arenaMaterial.ts",
+      "line": 143,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/scene/arenaMaterial.ts",
+      "line": 158,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/scene/arenaMaterial.ts",
+      "line": 161,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/scene/arenaMaterial.ts",
+      "line": 167,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/scene/arenaMaterial.ts",
+      "line": 319,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/scene/arenaMaterial.ts",
+      "line": 323,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/spells/cast.ts",
+      "line": 158,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/spells/ultra/spells/fire.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 1267,
+      "threshold": 800
+    },
+    {
+      "file": "packages/core/src/spells/ultra/spells/fire.ts",
+      "line": 376,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/spells/fire.ts",
+      "line": 401,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/spells/ultra/spells/fire.ts",
+      "line": 404,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/spells/ultra/spells/fire.ts",
+      "line": 429,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/spells/ultra/spells/fire.ts",
+      "line": 563,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/spells/fire.ts",
+      "line": 585,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/spells/ultra/spells/fire.ts",
+      "line": 600,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/spells/ultra/spells/fire.ts",
+      "line": 667,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/spells/ultra/spells/fire.ts",
+      "line": 784,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/spells/ultra/spells/fire.ts",
+      "line": 798,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/spells/ultra/spells/fire.ts",
+      "line": 890,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/spells/ultra/spells/fire.ts",
+      "line": 898,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/spells/ultra/spells/fire.ts",
+      "line": 1049,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/spells/ultra/spells/fire.ts",
+      "line": 1149,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/spells/ultra/spells/fire.ts",
+      "line": 1151,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/common.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 1195,
+      "threshold": 800
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/common.ts",
+      "line": 248,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/common.ts",
+      "line": 251,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/common.ts",
+      "line": 532,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/common.ts",
+      "line": 538,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/common.ts",
+      "line": 976,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/common.ts",
+      "line": 1151,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/common.ts",
+      "line": 1179,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/FluidVolume.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 816,
+      "threshold": 800
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/FluidVolume.ts",
+      "line": 343,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/FluidVolume.ts",
+      "line": 458,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/FluidVolume.ts",
+      "line": 478,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/FluidVolume.ts",
+      "line": 511,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/FluidVolume.ts",
+      "line": 514,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/FluidVolume.ts",
+      "line": 516,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/FluidVolume.ts",
+      "line": 520,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/FluidVolume.ts",
+      "line": 553,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/FluidVolume.ts",
+      "line": 745,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/FluidVolume.tsl.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 855,
+      "threshold": 800
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/FluidVolume.tsl.ts",
+      "line": 94,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/FluidVolume.tsl.ts",
+      "line": 106,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/FluidVolume.tsl.ts",
+      "line": 107,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/GroundField.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 1399,
+      "threshold": 800
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/GroundField.ts",
+      "line": 214,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/GroundField.ts",
+      "line": 300,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/GroundField.ts",
+      "line": 302,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/GroundField.ts",
+      "line": 451,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/GroundField.ts",
+      "line": 452,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/GroundField.ts",
+      "line": 459,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/GroundField.ts",
+      "line": 460,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/GroundField.ts",
+      "line": 461,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/GroundField.ts",
+      "line": 462,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/GroundField.ts",
+      "line": 465,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/GroundField.ts",
+      "line": 496,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/GroundField.ts",
+      "line": 514,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/GroundField.ts",
+      "line": 580,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/GroundField.ts",
+      "line": 581,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/GroundField.ts",
+      "line": 602,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/GroundField.ts",
+      "line": 623,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/GroundField.ts",
+      "line": 634,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/GroundField.ts",
+      "line": 679,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/GroundField.ts",
+      "line": 703,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/GroundField.ts",
+      "line": 705,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/GroundField.ts",
+      "line": 895,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/GroundField.ts",
+      "line": 900,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/GroundField.ts",
+      "line": 902,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/GroundField.ts",
+      "line": 904,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/GroundField.ts",
+      "line": 905,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/GroundField.ts",
+      "line": 906,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/GroundField.ts",
+      "line": 907,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/GroundField.ts",
+      "line": 940,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/GroundField.ts",
+      "line": 941,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/GroundField.ts",
+      "line": 942,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/GroundField.ts",
+      "line": 943,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/GroundField.ts",
+      "line": 948,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/GroundField.ts",
+      "line": 995,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/GroundField.ts",
+      "line": 1003,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/GroundField.ts",
+      "line": 1123,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/GroundField.ts",
+      "line": 1125,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/GroundField.ts",
+      "line": 1127,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/GroundField.ts",
+      "line": 1129,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/GroundField.ts",
+      "line": 1176,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/GroundField.ts",
+      "line": 1335,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/noise.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 441,
+      "threshold": 400
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/noise.ts",
+      "line": 199,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/noise.ts",
+      "line": 210,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/Particles.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 1475,
+      "threshold": 800
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/Particles.ts",
+      "line": 201,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/Particles.ts",
+      "line": 209,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/Particles.ts",
+      "line": 284,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/Particles.ts",
+      "line": 285,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/Particles.ts",
+      "line": 548,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/Particles.ts",
+      "line": 909,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/Particles.ts",
+      "line": 910,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/Particles.ts",
+      "line": 1313,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/Ribbons.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 645,
+      "threshold": 400
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/Ribbons.ts",
+      "line": 69,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/Ribbons.ts",
+      "line": 71,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/Ribbons.ts",
+      "line": 148,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/Ribbons.ts",
+      "line": 149,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/Ribbons.ts",
+      "line": 150,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/Ribbons.ts",
+      "line": 151,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/Ribbons.ts",
+      "line": 157,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/Ribbons.ts",
+      "line": 172,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/Ribbons.ts",
+      "line": 199,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/Ribbons.ts",
+      "line": 200,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/Ribbons.ts",
+      "line": 201,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/Ribbons.ts",
+      "line": 202,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/Ribbons.ts",
+      "line": 299,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/Ribbons.ts",
+      "line": 379,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/Ribbons.ts",
+      "line": 469,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/Ribbons.ts",
+      "line": 470,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/Ribbons.ts",
+      "line": 471,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/Ribbons.ts",
+      "line": 472,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/Ribbons.ts",
+      "line": 473,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/Ribbons.ts",
+      "line": 474,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/Ribbons.ts",
+      "line": 483,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/Ribbons.ts",
+      "line": 493,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/Ribbons.ts",
+      "line": 494,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/Ribbons.ts",
+      "line": 495,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/Ribbons.ts",
+      "line": 496,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/Ribbons.ts",
+      "line": 499,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/Ribbons.ts",
+      "line": 500,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/Ribbons.ts",
+      "line": 501,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/Ribbons.ts",
+      "line": 502,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/Ribbons.ts",
+      "line": 503,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/Ribbons.ts",
+      "line": 612,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/Shockwaves.ts",
+      "line": 57,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/Shockwaves.ts",
+      "line": 60,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/Shockwaves.ts",
+      "line": 61,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/Shockwaves.ts",
+      "line": 62,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/Shockwaves.ts",
+      "line": 63,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/Shockwaves.ts",
+      "line": 85,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/Shockwaves.ts",
+      "line": 86,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/Shockwaves.ts",
+      "line": 90,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/Shockwaves.ts",
+      "line": 92,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/Shockwaves.ts",
+      "line": 93,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/Shockwaves.ts",
+      "line": 94,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/Shockwaves.ts",
+      "line": 95,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/Shockwaves.ts",
+      "line": 96,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/Shockwaves.ts",
+      "line": 97,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/Volumes.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 489,
+      "threshold": 400
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/Volumes.ts",
+      "line": 373,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/Volumes.ts",
+      "line": 470,
       "signal": "suppression/biome-ignore",
       "value": "biome-ignore",
       "threshold": 1

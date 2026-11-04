@@ -178,8 +178,8 @@ void putNodes(std::vector<uint8_t>& block, size_t base, const shader::StageModul
         }
         const shader::BoundUniform* found = shader::findBoundUniform(values, field);
         if (found == nullptr) continue;
-        if (field.type.isMatrix() || field.type.scalar == shader::Type::Scalar::Bool ||
-            found->values.size() != field.type.rows)
+        if (field.type.scalar == shader::Type::Scalar::Bool ||
+            found->values.size() != size_t(field.type.rows) * field.type.cols)
             throw std::runtime_error("TN_TSL_UNIFORM_TYPE: " + field.name);
         shader::writeUniform(std::span(block).subspan(base), field, found->values);
     }
@@ -1396,7 +1396,8 @@ void Renderer::setSampleCount(uint32_t samples) {
 // Temporal AA replaces multisampling, as one method does in Unreal. The velocity pass tests depth Equal against the
 // colour pass, and 4x multisampling hands it one resolved sample of depth, so Equal fails on every sloped surface.
 void Renderer::applySampleCount() {
-    const uint32_t samples = traa_ || sceneFormat_ == WGPUTextureFormat_RGBA32Float ? 1 : requestedSamples_;  // RGBA32Float cannot resolve
+    const bool float32 = sceneFormat_ == WGPUTextureFormat_RGBA32Float || sceneFormat_ == WGPUTextureFormat_RG32Float;
+    const uint32_t samples = traa_ || float32 ? 1 : requestedSamples_;  // a float32 colour cannot resolve
     if (traa_ && requestedSamples_ == 4) {
         const std::string note = "TN_TRAA_MSAA_OFF: temporal AA replaces 4x multisampling, so the scene draws single-sampled";
         if (std::find(diagnostics_.begin(), diagnostics_.end(), note) == diagnostics_.end()) diagnostics_.push_back(note);
@@ -1537,10 +1538,10 @@ void Renderer::setSize(uint32_t width, uint32_t height) {
         msaaDesc.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding;
         msaaDepth_ = wgpuDeviceCreateTexture(device_, &msaaDesc);
         msaaDepthView_ = view2d(msaaDepth_, WGPUTextureFormat_Depth32Float);
-        msaaDesc.format = WGPUTextureFormat_RGBA16Float;
+        msaaDesc.format = sceneFormat_;  // resolves into sceneColor_
         msaaDesc.usage = WGPUTextureUsage_RenderAttachment;
         msaaColor_ = wgpuDeviceCreateTexture(device_, &msaaDesc);
-        msaaColorView_ = view2d(msaaColor_, WGPUTextureFormat_RGBA16Float);
+        msaaColorView_ = view2d(msaaColor_, sceneFormat_);
     }
     WGPUTextureDescriptor viewportDesc = sceneDesc;
     viewportDesc.usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst;
@@ -1831,10 +1832,23 @@ const Renderer::MaterialTexture* Renderer::materialTexture(const Texture& textur
         if (target) {
             MaterialTexture& sampled = renderTargetTextures_[texture.ident.value()];
             const WGPUTextureView view = renderTargetView(*this, *target);
-            if (sampled.view != view) {
+            // three samples a target's texture with its own wrap and filters, as any other texture.
+            if (sampled.view != view || sampled.key.wrapS != texture.wrapS || sampled.key.wrapT != texture.wrapT ||
+                sampled.key.magFilter != texture.magFilter || sampled.key.minFilter != texture.minFilter) {
                 if (sampled.view) dropMapGroups();  // a resized target's old view address may come back
                 sampled.view = view;
-                sampled.sampler = linearClampSampler();
+                sampled.key.wrapS = texture.wrapS; sampled.key.wrapT = texture.wrapT;
+                sampled.key.magFilter = texture.magFilter; sampled.key.minFilter = texture.minFilter;
+                WGPUSamplerDescriptor sampler = {};  // one level: the mip filter never applies
+                sampler.addressModeU = addressMode(texture.wrapS);
+                sampler.addressModeV = addressMode(texture.wrapT);
+                sampler.addressModeW = WGPUAddressMode_ClampToEdge;
+                sampler.magFilter = filterMode(texture.magFilter);
+                sampler.minFilter = filterMode(texture.minFilter);
+                sampler.mipmapFilter = WGPUMipmapFilterMode_Nearest;
+                sampler.maxAnisotropy = 1;
+                sampler.lodMaxClamp = 32;
+                sampled.sampler = samplerFor(sampler);
             }
             return &sampled;
         }
@@ -3076,7 +3090,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     } else {
         color.view = sceneView_;
     }
-    color.loadOp = WGPULoadOp_Clear;
+    color.loadOp = keepColor_ ? WGPULoadOp_Load : WGPULoadOp_Clear;
     color.storeOp = WGPUStoreOp_Store;
     color.clearValue = {clear[0], clear[1], clear[2], clear[3]};
 #if defined(MYSTRAL_WEBGPU_DAWN)
@@ -3084,7 +3098,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
 #endif
     WGPURenderPassDepthStencilAttachment depth = {};
     depth.view = sampleCount_ == 4 ? msaaDepthView_ : depthView_;
-    depth.depthLoadOp = WGPULoadOp_Clear;
+    depth.depthLoadOp = keepDepth_ ? WGPULoadOp_Load : WGPULoadOp_Clear;
     depth.depthStoreOp = WGPUStoreOp_Store;
     depth.depthClearValue = 1.0f;
     const bool timed = ownsPassTimer_ && passTimer_->active();
@@ -3533,6 +3547,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         v.twoSidedFoliage = item.twoSidedFoliage;
         v.roughDiffuse = item.roughDiffuse;
         v.flatShading = item.flatShading;
+        v.premultipliedAlpha = (item.blendFactors >> 54) & 1;  // Material::blendFactors: premultipliedAlpha
         v.vertexColors = item.colors ? item.colorSize : 0;
         v.instanced = item.instanceMatrices != nullptr;
         v.instanceColor = item.instanceColors != nullptr;
@@ -3581,7 +3596,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     const auto drawTargetKey = [&](const DrawItem& item, const shader::StageModule& vertex) {
         uint64_t h = 0xcbf29ce484222325ull;
         const auto mix = [&h](uint64_t v) { h = (h ^ v) * 0x100000001b3ull; };
-        mix(item.side); mix(item.shadowSide); mix(item.blending); mix(item.transparent); mix(item.depthWrite); mix(item.depthTest); mix(item.colorWrite);
+        mix(item.side); mix(item.shadowSide); mix(item.blending); mix(item.blendFactors); mix(item.transparent); mix(item.depthWrite); mix(item.depthTest); mix(item.colorWrite);
         mix(item.depthBias); mix(std::bit_cast<uint32_t>(item.depthBiasSlopeScale));
         mix(item.background); mix(item.frontFace() == WGPUFrontFace_CW);
         mix(static_cast<uint64_t>(item.topology));
@@ -3609,9 +3624,11 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         // material.side: FrontSide culls back faces, BackSide front faces, DoubleSide none.
         const WGPUCullMode cull = item.side == 2 ? WGPUCullMode_None : item.side == 1 ? WGPUCullMode_Front : WGPUCullMode_Back;
         // three blends unless NoBlending, or NormalBlending on a material that is not transparent.
-        const uint8_t blend = item.blending == 0 || (item.blending == 1 && !item.transparent) ? 0 : item.blending;
+        uint32_t blendState = 0;
+        const uint8_t blend = materialBlend(item.blending, item.transparent, item.blendFactors, blendState);
         PipelineTarget target{sceneFormat_, WGPUTextureFormat_Depth32Float, cull, blend,
                               item.depthWrite};
+        target.blendState = blendState;
         target.colorWrite = item.colorWrite;
         target.sampleCount = sampleCount_;
         target.layout = program.pipelineLayout;
@@ -6315,7 +6332,10 @@ void Renderer::outputPass(WGPUCommandEncoder encoder, WGPUTextureView present, W
 }
 
 GpuStatus Renderer::readProbePixels(ReadbackCallback done) {
-    return readRgba16(sceneColor_, std::move(done), sceneFormat_ == WGPUTextureFormat_RGBA32Float ? 16u : 8u);
+    const uint32_t texelBytes = sceneFormat_ == WGPUTextureFormat_RGBA32Float ? 16u
+                              : sceneFormat_ == WGPUTextureFormat_RG32Float  ? 8u
+                              : sceneFormat_ == WGPUTextureFormat_RG16Float  ? 4u : 8u;
+    return readRgba16(sceneColor_, std::move(done), texelBytes);
 }
 
 GpuStatus Renderer::readNormalPixels(ReadbackCallback done) { return readRgba16(normalTexture_, std::move(done)); }

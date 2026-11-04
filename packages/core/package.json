@@ -75,6 +75,14 @@
       "types": "./dist/net.d.ts",
       "import": "./dist/net.js"
     },
+    "./spells": {
+      "types": "./dist/spells/index.d.ts",
+      "import": "./dist/spells/index.js"
+    },
+    "./spells/ultra": {
+      "types": "./dist/spells/ultra/index.d.ts",
+      "import": "./dist/spells/ultra/index.js"
+    },
     "./package.json": "./package.json"
   },
   "publishConfig": {

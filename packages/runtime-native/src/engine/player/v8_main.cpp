@@ -326,6 +326,7 @@ class V8Game {
     double frameClockMs_ = 0;
     static void setPost(const v8::FunctionCallbackInfo<v8::Value>& info);
     static void renderTarget(const v8::FunctionCallbackInfo<v8::Value>& info);
+    static void clearTarget(const v8::FunctionCallbackInfo<v8::Value>& info);
     static void hasRenderer(const v8::FunctionCallbackInfo<v8::Value>& info);
     static void captureFace(const v8::FunctionCallbackInfo<v8::Value>& info);
     static void readTarget(const v8::FunctionCallbackInfo<v8::Value>& info);
@@ -765,8 +766,10 @@ void V8Game::renderTarget(const v8::FunctionCallbackInfo<v8::Value>& info) {
         isolate->ThrowException(v8::Exception::Error(v8str(isolate, reason)));
     };
     if (game.renderer_ == nullptr) return refuse("TN_NATIVE_RENDER_TARGET: the player has no renderer before its first frame");
-    // The optional fourth argument defers the draw to the frame that samples the target (an offscreen PassNode).
-    const bool shaped = info.Length() == 3 || (info.Length() == 4 && info[3]->IsBoolean());
+    // The optional fourth argument defers the draw to the frame that samples the target (an offscreen PassNode); the
+    // optional fifth is three's autoClear (false draws over the target's contents).
+    const bool shaped = info.Length() == 3 || (info.Length() == 4 && info[3]->IsBoolean()) ||
+                        (info.Length() == 5 && info[3]->IsBoolean() && info[4]->IsBoolean());
     auto* target = shaped ? game.engineObject(info[0], "RenderTarget") : nullptr;
     auto* root = shaped ? game.engineObject(info[1], "Object3D") : nullptr;
     auto* camera = shaped ? game.engineObject(info[2], "Camera") : nullptr;
@@ -777,8 +780,25 @@ void V8Game::renderTarget(const v8::FunctionCallbackInfo<v8::Value>& info) {
     // three's WebGPURenderer clears a target to its clear colour (setClearColor), black and opaque by default.
     const auto refused = renderToTarget(*game.renderer_, *static_cast<RenderTarget*>(target->ptr.get()),
                                         *static_cast<Object3D*>(root->ptr.get()), *static_cast<Camera*>(camera->ptr.get()),
-                                        game.clear_, game.shadowMap_, info.Length() == 4 && info[3]->BooleanValue(isolate));
+                                        game.clear_, game.shadowMap_, info.Length() >= 4 && info[3]->BooleanValue(isolate),
+                                        true, info.Length() < 5 || info[4]->BooleanValue(isolate));
     if (!refused.empty()) refuse(refused.front());
+}
+
+// `tn.clearTarget(target, color, depth)`: three's renderer.clear() while a render target is set, to the clear colour.
+void V8Game::clearTarget(const v8::FunctionCallbackInfo<v8::Value>& info) {
+    auto& game = *static_cast<V8Game*>(info.Data().As<v8::External>()->Value());
+    auto* isolate = info.GetIsolate();
+    if (game.renderer_ == nullptr) return;  // nothing drew into any target before the first frame
+    auto* target = info.Length() == 3 && info[1]->IsBoolean() && info[2]->IsBoolean()
+                       ? game.engineObject(info[0], "RenderTarget") : nullptr;
+    if (target == nullptr) {
+        isolate->ThrowException(v8::Exception::Error(v8str(isolate, "TN_NATIVE_CLEAR_TARGET: expected a RenderTarget and two booleans")));
+        return;
+    }
+    game.idleRenderer();
+    clearRenderTarget(*game.renderer_, *static_cast<RenderTarget*>(target->ptr.get()), game.clear_,
+                      info[1]->BooleanValue(isolate), info[2]->BooleanValue(isolate));
 }
 
 // `tn.hasRenderer()`: whether the player has opened its renderer. The game's startup runs before it,
@@ -1345,6 +1365,7 @@ bool V8Game::start(const std::string& path, std::string& error) {
     host->Set(ctx, v8str(isolate_, "renderOverlay"), v8::Function::New(ctx, &renderOverlay, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "captureFace"), v8::Function::New(ctx, &captureFace, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "readTarget"), v8::Function::New(ctx, &readTarget, self).ToLocalChecked()).Check();
+    host->Set(ctx, v8str(isolate_, "clearTarget"), v8::Function::New(ctx, &clearTarget, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "readFrame"), v8::Function::New(ctx, &readFrame, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "compute"), v8::Function::New(ctx, &compute, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "readStorage"), v8::Function::New(ctx, &readStorage, self).ToLocalChecked()).Check();

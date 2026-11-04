@@ -909,6 +909,38 @@ importers:
         specifier: 'catalog:'
         version: 8.2.0(patch_hash=c99095f3002ba7f0997f348d6c1bcf5952587ed5dee18c058269c0d634d146c1)(@types/node@20.19.43)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.5)(yaml@2.9.1)
 
+  examples/spell-lab:
+    dependencies:
+      '@threenative/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      three:
+        specifier: 0.187.0
+        version: 0.187.0(patch_hash=829c15af51482b5ff95988a03da1e8ffc9b4e0b12d8f3071f5bc7dcb4dfb268b)
+    devDependencies:
+      '@threenative/playtest':
+        specifier: workspace:*
+        version: link:../../packages/playtest
+      '@types/three':
+        specifier: 0.187.0
+        version: 0.187.0
+      '@typescript/native':
+        specifier: 'catalog:'
+        version: typescript@7.0.2
+      create-threenative:
+        specifier: workspace:*
+        version: link:../../packages/create-threenative
+      typescript:
+        specifier: 'catalog:'
+        version: '@typescript/typescript6@6.0.2'
+      vite:
+        specifier: 'catalog:'
+        version: 8.2.0(patch_hash=c99095f3002ba7f0997f348d6c1bcf5952587ed5dee18c058269c0d634d146c1)(@types/node@20.19.43)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.5)(yaml@2.9.1)
+    optionalDependencies:
+      '@threenative/runtime-native':
+        specifier: workspace:*
+        version: link:../../packages/runtime-native
+
   examples/startup-offscreen:
     dependencies:
       '@threenative/core':

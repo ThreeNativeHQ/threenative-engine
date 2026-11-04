@@ -1,0 +1,74 @@
+{
+  "name": "spell-lab-ultra-fireball",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 12,
+  "subject": "spell-lab",
+  "artifacts": {
+    "screenshots": "before-after"
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "settled",
+      "waitTicks": 30,
+      "release": true,
+      "screenshot": "idle"
+    },
+    {
+      "kind": "input",
+      "label": "cast",
+      "press": "Digit1",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "charge",
+      "waitTicks": 32,
+      "release": true,
+      "screenshot": "charge"
+    },
+    {
+      "kind": "wait",
+      "label": "flight",
+      "waitTicks": 20,
+      "release": true,
+      "screenshot": "flight"
+    },
+    {
+      "kind": "wait",
+      "label": "landed",
+      "waitTicks": 40,
+      "release": true
+    }
+  ],
+  "assert": {
+    "components": [
+      {
+        "entity": "spell-lab",
+        "component": "casts",
+        "gte": 1
+      },
+      {
+        "entity": "spell-lab",
+        "component": "impacts",
+        "gte": 1
+      }
+    ],
+    "diagnostics": {
+      "noConsoleErrors": true
+    },
+    "visual": [
+      {
+        "frameDiff": {
+          "minChangedPixelRatio": 0.001
+        }
+      }
+    ]
+  }
+}

@@ -132,7 +132,7 @@ g::Node Tsl::input(v8::Local<v8::Value> value) const {
 abi::TslArg Tsl::argument(const std::string& name, int index, int count, v8::Local<v8::Value> value) const {
     const auto ctx = isolate_->GetCurrentContext();
     Wrapper* w = wrapper(value);
-    // A texture names its map by the object's `name`; textureLoad also takes a texture node.
+    // A texture names its map by the object's `name`; textureLoad also takes a texture node or an engine texture.
     const bool texture = index == 0 && (name == "texture" || name == "textureValue");
     const bool textureLoad = index == 0 && (name == "textureLoad" || name == "textureSize");
     if (w && !texture && (w->node || !textureLoad)) return abi::TslArg::of(w->node);
@@ -157,8 +157,8 @@ abi::TslArg Tsl::argument(const std::string& name, int index, int count, v8::Loc
     if (value->IsString()) return abi::TslArg::of(text(isolate_, value));
     if (!value->IsObject()) return abi::TslArg::other();
     const auto object = value.As<v8::Object>();
-    // texture(engineTexture, uv) samples that texture itself; a plain object names a material map.
-    if (texture) {
+    // texture(engineTexture, uv) samples that texture itself (textureLoad loads from it); a plain object names a material map.
+    if (texture || textureLoad) {
         tn_handle_t handle{};
         const binding::Object* object = engineObject && engineObject(value, handle) ? abi::objectOf(handle) : nullptr;
         if (object != nullptr) return abi::TslArg::objectOf(object->cls, object->ptr);
@@ -219,9 +219,9 @@ v8::Local<v8::Object> Tsl::wrap(g::Node node) {
     return object;
 }
 
-g::Node Tsl::capture(v8::Local<v8::Function> callback, v8::Local<v8::Value> argument) {
+g::Node Tsl::capture(v8::Local<v8::Function> callback, v8::Local<v8::Value> argument, bool fn) {
     g::Node node;
-    scopes_.call("scope:open", nullptr, {}, node);
+    scopes_.call("scope:open", nullptr, fn ? std::vector<abi::TslArg>{abi::TslArg::of(std::string("Fn"))} : std::vector<abi::TslArg>{}, node);
     v8::Local<v8::Value> result;
     const auto ctx = isolate_->GetCurrentContext();
     const bool ok =
@@ -337,6 +337,11 @@ void Tsl::call(const Call& call, const v8::FunctionCallbackInfo<v8::Value>& info
         arity(0); statement();
         return result(scoped(name.c_str(), nullptr, {}));
     }
+    if (name == "Discard") {  // three's Discard(conditional): the fragment ends, under If(conditional) when given
+        if (info.Length() > 1) throw std::runtime_error("expected an optional condition");
+        statement();
+        return result(scoped("Discard", nullptr, info.Length() ? std::vector<abi::TslArg>{abi::TslArg::of(arg(0))} : std::vector<abi::TslArg>{}));
+    }
     if (name == "increment" || name == "decrement" || name == "incrementBefore" || name == "decrementBefore") {
         arity(call.method ? 0 : 1); statement();
         return result(scoped(name.c_str(), call.method ? &receiver : nullptr,
@@ -405,7 +410,7 @@ void Tsl::call(const Call& call, const v8::FunctionCallbackInfo<v8::Value>& info
                             argument = list;
                         }
                         call.GetReturnValue().Set(
-                            tsl->wrap(tsl->capture(data->Get(context, 1).ToLocalChecked().As<v8::Function>(), argument)));
+                            tsl->wrap(tsl->capture(data->Get(context, 1).ToLocalChecked().As<v8::Function>(), argument, true)));
                     } catch (const JsFailure&) {
                         // The original JS exception is still pending.
                     } catch (const std::exception& error) {
@@ -677,13 +682,13 @@ void Tsl::install(v8::Local<v8::Context> context, v8::Local<v8::Object> target) 
     nodeTemplate_.Reset(isolate_, node);
     const auto module = v8::Object::New(isolate_);
     for (const char* name : {"float",      "int",   "uint",    "vec2",      "vec3",   "vec4",     "uniform",
-                             "attribute",  "uv",    "texture", "Fn",        "If",     "Loop",   "Break", "Continue", "Return", "log",     "instancedArray", "storage",
+                             "attribute",  "uv",    "texture", "Fn",        "If",     "Loop",   "Break", "Continue", "Return", "Discard", "log",     "instancedArray", "storage",
                              "add",        "sub",   "mul",     "div",       "negate", "lessThan", "greaterThan",
                              "equal",      "lessThanEqual", "greaterThanEqual", "and", "or", "not", "all", "any", "abs",   "sin",     "cos",       "floor",  "fract",    "sqrt",
                              "exp",        "exp2",  "log2",    "normalize", "length", "atan",     "min",      "max",
                              "mod", "fwidth", "saturation", "mat2", "hash",
                              "pow",        "step",  "dot",     "distance",  "cross",  "mix",      "clamp",
-                             "smoothstep", "select", "nodeObject", "color", "ivec2", "uvec2", "storageTexture", "textureStore", "textureLoad", "textureSize", "reflect", "convertToTexture", "rtt",
+                             "smoothstep", "select", "nodeObject", "color", "ivec2", "ivec3", "ivec4", "uvec2", "bool", "storageTexture", "textureStore", "textureLoad", "textureSize", "reflect", "convertToTexture", "rtt", "mrt",
                              "dFdx", "dFdy", "lengthSq", "viewportSharedTexture", "viewportDepthTexture", "linearDepth",
                              "toneMappingColor", "ao", "ssr", "denoise", "smaa", "bloom", "traa", "film", "lut3D", "renderOutput", "pipelineOutput", "struct", "luminance", "viewZToOrthographicDepth", "viewZToPerspectiveDepth", "logarithmicDepthToViewZ", "oneMinus", "varying", "setUniform",
                              "mx_noise_float", "mx_worley_noise_float", "mx_worley_noise_vec2", "pmremTexture", "reflector", "transformDirection",

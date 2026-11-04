@@ -11,6 +11,8 @@ export default defineConfig({
     "src/worker.ts",
     "src/world.ts",
     "src/net.ts",
+    "src/spells/index.ts",
+    "src/spells/ultra/index.ts",
     // The terrain jobs' worker entry, emitted as its own file so `new Worker(new URL(...))` in
     // `world.js` resolves next to the bundle it is loaded from. The bundling entries above cannot
     // inline it: a worker URL is only meaningful as a sibling of the module that names it.
@@ -25,6 +27,9 @@ export default defineConfig({
   dts: true,
   sourcemap: false,
   clean: true,
-  splitting: false,
+  // Shared chunks, not copies. Two entries that both inline `GPUParticles3D` give the engine two
+  // class identities, and `ctx.add` recognises a compute-driven node by identity: the spells
+  // subpath built its own copy, so the engine never attached its emitters and no particle drew.
+  splitting: true,
   treeshake: true,
 });

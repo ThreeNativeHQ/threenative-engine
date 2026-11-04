@@ -8,7 +8,7 @@ prd_contract: v1
 **Priority:** P2 — Every box is open: 10 of the 39 spells the owner asked to absorb need bolts, analytic ribbons and sigils that core does not have.
 **Complexity:** 6 (MEDIUM) — 11+ implementation files (+3), new mechanisms (+2), a run-time cast state (+1). Risk override: none.
 **Owner:** unassigned
-**Depends on:** [PRD-777](PRD-777-a-spell-is-a-timeline-that-changes-the-world-it-lands-in.md)
+**Depends on:** [PRD-777](../done/PRD-777-a-spell-is-a-timeline-that-changes-the-world-it-lands-in.md)
 
 ## Context
 

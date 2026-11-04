@@ -1,5 +1,5 @@
 {
-  "recallAtK": 0.92,
+  "recallAtK": 0.9357798165137615,
   "recalledRows": [
     "brief.endless-runner.1",
     "brief.endless-runner.2",
@@ -15,6 +15,7 @@
     "brief.fps.2",
     "brief.fps.4",
     "brief.fps.5",
+    "brief.fps.6",
     "brief.fps.7",
     "brief.fps.9",
     "brief.fps.10",
@@ -53,6 +54,9 @@
     "request.pick-up-item",
     "request.multiplayer",
     "request.platformer-double-jump",
+    "request.collectathon-triple-jump",
+    "request.adventure-lock-on",
+    "request.kart-drift-sparks",
     "prd451.matrix-world",
     "prd451.mark-static",
     "prd451.create-random",
@@ -92,10 +96,16 @@
     "request.translucency-gi",
     "request.gi-quality-scalability",
     "request.shadow-quality-scalability",
-    "request.two-sided-foliage"
+    "request.two-sided-foliage",
+    "spell.fireball",
+    "spell.thunderstrike",
+    "spell.glacial-spike",
+    "spell.arcane-barrage",
+    "spell.aegis",
+    "spell.inferno"
   ],
   "rejectHits": 15,
-  "rowCount": 103,
+  "rowCount": 109,
   "rowIds": [
     "brief.endless-runner.1",
     "brief.endless-runner.2",
@@ -199,10 +209,16 @@
     "request.translucency-gi",
     "request.gi-quality-scalability",
     "request.shadow-quality-scalability",
-    "request.two-sided-foliage"
+    "request.two-sided-foliage",
+    "spell.fireball",
+    "spell.thunderstrike",
+    "spell.glacial-spike",
+    "spell.arcane-barrage",
+    "spell.aegis",
+    "spell.inferno"
   ],
   "version": 1,
-  "zeroResultRate": 0.05,
+  "zeroResultRate": 0.045871559633027525,
   "unresolvedResultRate": 0,
   "notOwnedRows": {
     "request.inventory-system": "inventory",

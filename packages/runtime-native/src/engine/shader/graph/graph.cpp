@@ -68,6 +68,11 @@ public:
         : custom_(custom), program_(program), inputs_(inputs), toneMapping_(toneMapping), srgb_(srgb) {}
 
     void analyze(Node node);
+    /** Declares the top-level variables analyze found (hoisted_), so every scope after reads and assigns the one variable. */
+    void declareHoisted() {
+        for (const Node& var : hoisted_) (void)ensureVar(var);
+        hoisted_.clear();
+    }
     ExprId expression(Node node);
     void statements(const std::vector<Node>& list);
 
@@ -90,6 +95,8 @@ private:
     std::unordered_map<const NodeData*, std::pair<uint32_t, ExprId>> temps_;
     std::unordered_map<const NodeData*, std::vector<ExprId>> aggregates_;
     std::unordered_map<const NodeData*, VarId> vars_;
+    /** Variables made outside any Fn (toVar at the top level), found by analyze: declared before the graph lowers. */
+    std::vector<Node> hoisted_;
     std::unordered_map<const NodeData*, ExprId> loopIndex_;
     // A Fn result that ran statements is one Body node read at every use. Its statements lower once per
     // lexical scope: `scopes_` is the open If/Loop blocks, `bodyScope_` where each Body already lowered.
@@ -131,6 +138,7 @@ ExprId Lowerer::index(const Node& element) {
 // Node.analyze r185 counts each incoming use, descending into children only on the first.
 void Lowerer::analyze(Node node) {
     if (!node || ++uses_[node.get()] != 1) return;
+    if (node->kind == Kind::Var && node->bits == 1) hoisted_.push_back(node);
     if (node->kind == Kind::Call) return; // each invocation owns its analysis and early returns
     for (const auto& arg : node->args) analyze(arg);
     for (const auto& child : node->body) analyze(child);
@@ -375,15 +383,18 @@ ExprId Lowerer::emit(Node node) {
             const bool pairwise = d.name == "min" || d.name == "max" || d.name == "pow" || d.name == "step" || d.name == "mod";
             if (ids.size() == 2 && pairwise) {
                 if (ids[0] == kInvalid || ids[1] == kInvalid) return kInvalid;
-                // r185 types a whole JS divisor from the integer index, as the binary operators do.
-                if (d.name == "mod" && d.args[1]->kind == Kind::Constant) {
-                    const auto& divisor = program_.expr(ids[1]);
-                    const Type index = program_.expr(ids[0]).type;
-                    const float value = std::bit_cast<float>(static_cast<uint32_t>(divisor.immediate));
-                    if (divisor.op == Op::Constant && divisor.type == Type::f32() && value == std::floor(value) &&
-                        index.isScalar() && (index.scalar == Type::Scalar::U32 || index.scalar == Type::Scalar::I32))
-                        ids[1] = program_.construct(index, {ids[1]});
-                }
+                // r185 types a whole JS number beside an integer (mod's divisor, max(i, 0), min(1, i)) from the
+                // integer operand, as the binary operators do.
+                if (d.name == "mod" || d.name == "min" || d.name == "max")
+                    for (const std::size_t literal : {std::size_t(1), std::size_t(0)}) {
+                        if (d.args[literal]->kind != Kind::Constant) continue;
+                        const auto& number = program_.expr(ids[literal]);
+                        const Type index = program_.expr(ids[1 - literal]).type;
+                        const float value = std::bit_cast<float>(static_cast<uint32_t>(number.immediate));
+                        if (number.op == Op::Constant && number.type == Type::f32() && value == std::floor(value) &&
+                            index.isScalar() && (index.scalar == Type::Scalar::U32 || index.scalar == Type::Scalar::I32))
+                            ids[literal] = program_.construct(index, {ids[literal]});
+                    }
                 const auto a = program_.expr(ids[0]).type, b = program_.expr(ids[1]).type;
                 // A serialized graph converts any mismatch; an authored one only widens a float scalar to the other
                 // operand's lanes (TSL's mod(vec2, float)), so a real type error still reports.
@@ -518,10 +529,17 @@ void Lowerer::statement(Node node) {
         case Kind::Break: program_.breakLoop(); return;
         case Kind::Continue: program_.continueLoop(); return;
         case Kind::Discard: program_.discard(); return;
-        case Kind::Body:
+        case Kind::Body: {
+            // A Fn body run at its call (TslScopes scope:close): an expression read of its value later in this scope
+            // finds it lowered and runs its statements no second time.
+            const auto lowered = bodyScope_.find(&s);
+            if (lowered != bodyScope_.end() && std::find(scopes_.begin(), scopes_.end(), lowered->second) != scopes_.end()) return;
             statements(s.body);
+            bodyScope_[&s] = scopes_.back();
+            exprs_.clear();
             if (!s.args.empty()) statement(s.args[0]);
             return;
+        }
         case Kind::Call: case Kind::AtomicAdd: (void)expression(node); return;
         case Kind::TextureStore: {
             const auto* texture = static_cast<const tn::engine::Texture*>(s.object.get());
@@ -562,7 +580,11 @@ void Lowerer::statement(Node node) {
         case Kind::Assign: {
             const Node& target = s.args[0];
             if (target->kind == Kind::Var) {
-                program_.assign(ensureVar(target), expression(s.args[1]));
+                // AssignNode formats the value to the variable's type (an int variable takes the JS number 3); a var
+                // typed by its initial value (Void here) keeps the value as it is.
+                const ExprId value = expression(s.args[1]);
+                program_.assign(ensureVar(target),
+                                target->type.scalar == Type::Scalar::Void ? value : convert(value, target->type));
             } else if (target->kind == Kind::Swizzle && target->args[0]->kind == Kind::Var) {
                 const VarId variable = ensureVar(target->args[0]);
                 const ExprId old = program_.load(variable), source = expression(s.args[1]);
@@ -755,9 +777,10 @@ void setUniformValues(const Node& uniform, std::vector<double> values) {
     // A uniform built without a value (cameraViewMatrix, materialColor) is the engine's to fill.
     if (uniform->values.empty()) throw std::runtime_error("TN_TSL_UNIFORM_VALUE: " + uniform->name + " is engine-provided");
     const Type type = uniform->type;
-    if (type.isMatrix() || type.scalar == Type::Scalar::Bool || values.size() != type.rows)
+    const size_t lanes = size_t(type.rows) * type.cols;  // a matrix takes its elements, column by column
+    if (type.scalar == Type::Scalar::Bool || values.size() != lanes)
         throw std::runtime_error("TN_TSL_UNIFORM_VALUE: " + uniform->name + " takes " +
-                                 std::to_string(type.rows) + " " + type.name() + " value(s)");
+                                 std::to_string(lanes) + " " + type.name() + " value(s)");
     for (double& value : values) {
         if (type.scalar == Type::Scalar::F32) value = static_cast<float>(value);
         else {
@@ -959,6 +982,7 @@ ExprId lower(const Graph& graph, Program& program, const std::unordered_map<std:
     if (!graph) return kInvalid;
     Lowerer lowerer(program, inputs, toneMapping, srgb, custom);
     lowerer.analyze(graph);
+    lowerer.declareHoisted();
     return lowerer.expression(graph);
 }
 
@@ -975,6 +999,7 @@ Lowering::Lowering(Program& program, std::unordered_map<std::string, ExprId> inp
 Lowering::~Lowering() = default;
 ExprId Lowering::lower(const Graph& graph) {
     impl_->lowerer.analyze(graph);
+    impl_->lowerer.declareHoisted();
     return graph ? impl_->lowerer.expression(graph) : kInvalid;
 }
 

@@ -5,6 +5,8 @@
 #include "engine/shader/tsl/tsl.h"
 #include <cstdlib>
 #include "engine/shader/wgsl.h"
+#include "engine/scene/texture.h"
+#include <memory>
 #include <string>
 using namespace tn::engine::shader;
 namespace {
@@ -164,5 +166,143 @@ void math() {
     }
 
 }
+// The TSL the spell port needs (PRD-777): Discard() and Discard(cond) in a fragment, a matrix uniform with live
+// values, and textureLoad on an engine texture itself (three's textureLoad is texture(value).setSampler(false)).
+std::string fragment(const g::Node& graph) {
+    Program p(Stage::Fragment); tsl::Build build(p);
+    const ExprId value = g::lower(graph, p);
+    CHECK(value != kInvalid && p.ok());
+    if (value == kInvalid || !p.ok()) {
+        for (const auto& d : p.diagnostics()) std::fprintf(stderr, "%s %s: %s\n", d.code.c_str(), d.node.c_str(), d.reason.c_str());
+        return {};
+    }
+    p.output("color", value);
+    const auto wgsl = WgslEmitter::emit(p);
+    CHECK(wgsl.ok());
+    return wgsl.code;
 }
-TN_TEST_MAIN({"math", math})
+void spell_port() {
+    uint64_t serial = 0;
+    for (const bool conditional : {false, true}) {
+        tn::abi::TslScopes scopes;
+        g::Node out;
+        CHECK(scopes.call("scope:open", nullptr, {}, out));
+        const auto alpha = g::uniform("alpha", Type::f32(), {0.5});
+        std::vector<TslArg> args;
+        if (conditional) args.push_back(TslArg::of(g::lessThan(alpha, g::float_(0.1))));
+        bool known = false;
+        try {
+            known = scopes.call("Discard", nullptr, args, out);
+        } catch (const std::exception& error) {
+            std::fprintf(stderr, "Discard: %s\n", error.what());
+        }
+        CHECK(known);
+        CHECK(scopes.call("scope:close", nullptr, {TslArg::of(g::vec4({alpha, alpha, alpha, alpha}))}, out));
+        const auto code = fragment(out);
+        CHECK(code.find("discard;") != std::string::npos);
+        CHECK(!conditional || code.find("if (") != std::string::npos);
+    }
+    for (const int n : {3, 4}) {
+        const auto made = tn::abi::tslCall("uniform", nullptr, {TslArg::of("mat" + std::to_string(n))}, serial);
+        CHECK(made && made->type == Type::mat(n, n) && made->values.size() == size_t(n * n));
+        if (!made) continue;
+        std::vector<double> values(n * n);
+        for (int i = 0; i < n * n; ++i) values[i] = i + 1;
+        tn::abi::tslSetUniform(made, values.data(), values.size());
+        CHECK(made->values == values);
+        bool refused = false;
+        try { tn::abi::tslSetUniform(made, values.data(), 3); } catch (const std::exception&) { refused = true; }
+        CHECK(refused);
+        const auto axis = n == 3 ? g::vec4({g::mul(made, g::vec3({g::float_(1), g::float_(0), g::float_(0)})), g::float_(1)})
+                                 : g::mul(made, g::vec4({g::float_(1), g::float_(0), g::float_(0), g::float_(1)}));
+        CHECK(fragment(axis).find(n == 3 ? "mat3x3<f32>" : "mat4x4<f32>") != std::string::npos);
+    }
+    {
+        auto texture = std::make_shared<tn::engine::Texture>();
+        texture->width = texture->height = 4;
+        texture->data.assign(4 * 4 * 4, 255);
+        g::Node loaded;
+        try {
+            loaded = tn::abi::tslCall("textureLoad", nullptr, {TslArg::objectOf("DataTexture", texture), TslArg::of(tn::abi::tslCall("ivec2", nullptr, {TslArg::of(1.0), TslArg::of(2.0)}, serial)), TslArg::of(g::int_(0))}, serial);
+        } catch (const std::exception& error) {
+            std::fprintf(stderr, "textureLoad: %s\n", error.what());
+        }
+        CHECK(loaded != nullptr);
+        if (loaded) CHECK(fragment(loaded).find("textureLoad(") != std::string::npos);
+    }
+}
+// A compute kernel that reads a texture only with textureLoad declares no sampler: the auto pipeline layout drops an
+// unused one, and the bind group that still bound it lost the device (the particle sim's world texture, PRD-777).
+void compute_texture_load() {
+    for (const bool sampled : {false, true}) {
+        Program c{Stage::Compute};
+        const uint32_t world = c.texture2d("world");
+        const ExprId at = c.construct(Type::vec(2, Type::Scalar::I32), {c.constant(int32_t(1)), c.constant(int32_t(2))});
+        ExprId value = c.textureLoad(world, at, c.constant(int32_t(0)));
+        if (sampled) value = c.add(value, c.sampleLevel(world, c.construct(Type::vec(2), {c.constant(0.5f), c.constant(0.5f)}), c.constant(0.0f)));
+        c.load(c.var(Type::vec(4), value));
+        const StageModule module = buildStage(c, 0);
+        bool sampler = false;
+        for (const Binding& b : module.bindings) sampler = sampler || b.kind == BindingKind::Sampler;
+        std::fprintf(stderr, "compute texture (%s): sampler binding %d, smp_ in WGSL %d\n", sampled ? "sampled" : "loaded", sampler,
+                     module.wgsl.code.find("smp_world") != std::string::npos);
+        CHECK(sampler == sampled);
+        CHECK((module.wgsl.code.find("smp_world") != std::string::npos) == sampled);
+    }
+}
+// three's implicit integer conversions in a compute kernel (PRD-777): a JS number assigned into an int variable
+// (AssignNode formats the value to the variable's type), and max/min/mod of an int with a whole JS number on
+// either side, typed from the int operand as the binary operators are.
+void compute_int_literals() {
+    uint64_t serial = 0;
+    tn::abi::TslScopes scopes;
+    g::Node out, index, done;
+    CHECK(scopes.call("scope:open", nullptr, {}, out));
+    const TslArg zero = TslArg::of(g::int_(0));
+    CHECK(scopes.call("toVar", &zero, {}, index));
+    const TslArg variable = TslArg::of(index);
+    std::string error;
+    try {
+        scopes.call("assign", &variable, {TslArg::of(3.0)}, done);
+        const auto top = tn::abi::tslCall("max", &variable, {TslArg::of(2.0)}, serial);
+        const auto rest = tn::abi::tslCall("mod", &variable, {TslArg::of(2.0)}, serial);
+        const auto low = tn::abi::tslCall("min", nullptr, {TslArg::of(1.0), variable}, serial);
+        const auto sum = g::add(g::add(top, rest), low);
+        CHECK(scopes.call("scope:close", nullptr, {TslArg::of(g::float_(sum))}, out));
+    } catch (const std::exception& thrown) {
+        error = thrown.what();
+    }
+    CHECK(error.empty());
+    if (!error.empty()) std::fprintf(stderr, "compute int literals: %s\n", error.c_str());
+    Program p(Stage::Compute);
+    tsl::Build build(p);
+    const ExprId value = out ? g::lower(out, p) : kInvalid;
+    for (const auto& d : p.diagnostics()) std::fprintf(stderr, "%s %s: %s\n", d.code.c_str(), d.node.c_str(), d.reason.c_str());
+    CHECK(value != kInvalid && p.ok());
+}
+// ivec3 / ivec4 and bool() (PRD-777: the fluid port's voxel index and its flags), as ConvertType builds them.
+void tsl_ivec_bool() {
+    uint64_t serial = 0;
+    const auto uniform = g::uniform("cell", Type::f32(), {2.5});
+    std::string error;
+    g::Node voxel, wide, flag;
+    try {
+        voxel = tn::abi::tslCall("ivec3", nullptr, {TslArg::of(1.0), TslArg::of(uniform), TslArg::of(g::int_(3))}, serial);
+        wide = tn::abi::tslCall("ivec4", nullptr, {TslArg::of(uniform)}, serial);
+        flag = tn::abi::tslCall("bool", nullptr, {TslArg::of(uniform)}, serial);
+    } catch (const std::exception& thrown) {
+        error = thrown.what();
+    }
+    if (!error.empty()) std::fprintf(stderr, "ivec3/bool: %s\n", error.c_str());
+    CHECK(error.empty());
+    CHECK(voxel && wide && flag);
+    if (!voxel || !wide || !flag) return;
+    CHECK(voxel->type == Type::vec(3, Type::Scalar::I32) && wide->type == Type::vec(4, Type::Scalar::I32));
+    const auto sum = g::add(g::float_(g::swizzle(voxel, "z")), g::float_(g::swizzle(wide, "w")));
+    const auto code = fragment(g::vec4({g::select(flag, sum, g::float_(0)), g::float_(0), g::float_(0), g::float_(1)}));
+    CHECK(code.find("vec3<i32>") != std::string::npos && code.find("vec4<i32>") != std::string::npos);
+}
+}  // namespace
+
+TN_TEST_MAIN({"math", math}, {"spell_port", spell_port}, {"compute_texture_load", compute_texture_load},
+             {"compute_int_literals", compute_int_literals}, {"tsl_ivec_bool", tsl_ivec_bool})

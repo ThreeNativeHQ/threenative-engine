@@ -2163,6 +2163,118 @@
       },
       "desktopGate": true,
       "required": true
+    },
+    {
+      "id": "material-custom-blending",
+      "title": "CustomBlending, separate alpha state and premultipliedAlpha blend modes",
+      "category": "webgpu-tsl",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/material-custom-blending.js",
+      "browserRecipe": "webgpu",
+      "tolerance": {
+        "pixelMismatchRatio": 0.04,
+        "perceptualDeltaE": 3
+      },
+      "desktopGate": false,
+      "required": false
+    },
+    {
+      "id": "tsl-spell-port-nodes",
+      "title": "TSL Discard, Matrix3/Matrix4 uniforms, textureLoad on a DataTexture and a struct Fn argument",
+      "category": "webgpu-tsl",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/tsl-spell-port-nodes.js",
+      "browserRecipe": "webgpu",
+      "tolerance": {
+        "pixelMismatchRatio": 0.04,
+        "perceptualDeltaE": 3
+      },
+      "desktopGate": false,
+      "required": false
+    },
+    {
+      "id": "render-target-mrt",
+      "title": "MRT render target: count 3, material mrtNode outputs by texture name, additive custom blending",
+      "category": "rendering",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/render-target-mrt.js",
+      "browserRecipe": "webgpu",
+      "tolerance": {
+        "pixelMismatchRatio": 0.04,
+        "perceptualDeltaE": 3
+      },
+      "desktopGate": false,
+      "required": false
+    },
+    {
+      "id": "render-target-options",
+      "title": "RenderTarget options: RGFormat HalfFloatType, RepeatWrapping, NearestFilter, generateMipmaps false",
+      "category": "rendering",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/render-target-options.js",
+      "browserRecipe": "webgpu",
+      "tolerance": {
+        "pixelMismatchRatio": 0.04,
+        "perceptualDeltaE": 3
+      },
+      "desktopGate": false,
+      "required": false
+    },
+    {
+      "id": "render-target-autoclear",
+      "title": "renderer.clear() then two autoClear false renders into one RenderTarget, colour and depth kept",
+      "category": "rendering",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/render-target-autoclear.js",
+      "browserRecipe": "webgpu",
+      "tolerance": {
+        "pixelMismatchRatio": 0.04,
+        "perceptualDeltaE": 3
+      },
+      "desktopGate": false,
+      "required": false
+    },
+    {
+      "id": "post-normal-node",
+      "title": "a material normalNode written to the scene pass normal target a post chain reads",
+      "category": "rendering",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/post-normal-node.js",
+      "browserRecipe": "webgpu",
+      "tolerance": {
+        "pixelMismatchRatio": 0.04,
+        "perceptualDeltaE": 3
+      },
+      "desktopGate": false,
+      "required": false
+    },
+    {
+      "id": "compute-texture-load",
+      "title": "compute kernel reading a float DataTexture only with textureLoad (no sampler bound)",
+      "category": "webgpu-tsl",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/compute-texture-load.js",
+      "browserRecipe": "webgpu",
+      "tolerance": {
+        "pixelMismatchRatio": 0.04,
+        "perceptualDeltaE": 3
+      },
+      "desktopGate": false,
+      "required": false
+    },
+    {
+      "id": "tsl-fn-out-param",
+      "title": "TSL Fn assigning an out argument, made inside a Fn and at the top level",
+      "category": "webgpu-tsl",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/tsl-fn-out-param.js",
+      "browserRecipe": "webgpu",
+      "tolerance": {
+        "pixelMismatchRatio": 0.04,
+        "perceptualDeltaE": 3
+      },
+      "desktopGate": false,
+      "required": false
     }
   ],
   "generatedPlaytestProofs": [

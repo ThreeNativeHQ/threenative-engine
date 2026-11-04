@@ -112,6 +112,13 @@ class RenderDatabase {
     [[nodiscard]] std::size_t lastReflectionItems() const { return reflectionItems_; }
     /** three's `renderer.shadowMap.enabled`: off, no light draws or reads a shadow map. */
     bool shadowMapEnabled = false;
+    /** three's MRT: the name of the render-target texture this database draws (a material's mrtNode output of that
+     *  name is written there), and whether it is the target's first texture (which keeps the material's own output
+     *  when the mrt() does not name it). Set once, before the first render: the records resolve it as they are built. */
+    std::string mrtName;
+    bool mrtPrimary = true;
+    /** three's `renderer.autoClear`: false loads the target's colour and depth, except a Color background clears (Background.js forceClear). */
+    bool autoClear = true;
     /** three's `renderer.shadowMap.type`: PCFShadowMap (1) or PCFSoftShadowMap (2). */
     int shadowMapType = 1;
     static constexpr std::size_t kMinBatchMembers = 4;
@@ -126,7 +133,7 @@ class RenderDatabase {
     // ponytail: entries for released materials stay until the database goes; prune if materials churn.
     struct GraphSources {
         uint32_t version = 0;
-        std::array<const void*, 14> roots{};  // one per MaterialNodes::pointers()
+        std::array<const void*, 15> roots{};  // one per MaterialNodes::pointers()
         const Texture* texture = nullptr;
         std::shared_ptr<const void> reflector;  // an engine::Reflector
         std::vector<std::pair<std::string, const Texture*>> textures;  // texture(object) samples

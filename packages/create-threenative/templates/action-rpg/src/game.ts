@@ -27,6 +27,7 @@ const game = defineGame<GameState, IPhysicsContext>({
     lethal: { keys: ["KeyX"] },
     loot: { keys: ["KeyL"] },
     restart: { keys: ["KeyR"] },
+    spell: { keys: ["KeyG"] },
     save: { keys: ["KeyC"] },
     unequip: { keys: ["KeyU"] },
   },
