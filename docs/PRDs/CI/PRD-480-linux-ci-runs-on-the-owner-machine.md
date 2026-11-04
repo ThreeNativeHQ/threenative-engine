@@ -346,3 +346,19 @@ Decisions this phase had to make, 2026-10-02:
   Run 41688813459 (PR #605, 2026-11-03) does not count: the routing variable `TN_RUNNER` was re-set at
   18:16Z, after the board's jobs were created at 18:08Z, so 55 of 64 jobs waited for hosted runners
   (p90 48.4 min, max 53.6 min). A board only counts when the pool routes it from its first job.
+  Round 5, 2026-11-04: not met, and further from it. Per-job p90 on the seven newest full boards with
+  the pool up: 7.9 (41842254378), 28.2 (41833465433), 32.8 (41832712689), 21.0 (41825090178),
+  14.3 (41821401230), 29.2 (41817290896) and 13.6 min (41814270759); the median of the three newest
+  is 28.2 min. The wait is all hosted: on 41833465433, 48 `ubuntu-24.04` jobs queued 637.5 min in
+  total (max 36.8 min) while 15 `tn-local` jobs queued 0.7 min (max 0.1 min); 41832712689 and
+  41817290896 split the same way (788.8 and 819.4 min hosted, 21.4 and 0.8 min local). Two causes,
+  both measured: (a) boards overlap — develop push 41833465433 started 5 min after merge group
+  41832712689, so two 48-job hosted blocks shared one hosted concurrency cap; (b) `scope` admits at
+  most `TN_RUNNER_SLOTS` heavy instances to `tn-local` (`scripts/ci-runner-admission.mjs`), the idle
+  count at the moment `scope` runs. It read `TN_RUNNER_SLOTS: 3` on 41833465433, so three heavy jobs
+  ran locally and the local slots then sat idle while the hosted queue was 36 min deep. The laptop's
+  three slots (`laptop-offload`) are paused since 2026-10-27 23:05 (`~/offload/ci-runners/pause`,
+  no reason recorded), so they add nothing. A fifth option joins the four above: (5) admit a queue
+  depth to `tn-local` (for example two jobs per idle slot), which moves work off the hosted cap
+  without a new machine. None of the five is taken here: (2), (3) and (4) are owner calls, and
+  (5) changes the PRD-620 admission budget, which is shared by every workflow.
