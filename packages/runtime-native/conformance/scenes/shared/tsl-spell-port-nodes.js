@@ -2,7 +2,7 @@ import * as THREE from "three/webgpu";
 import { Discard, Fn, float, int, ivec2, textureLoad, uniform, uv, vec3, vec4 } from "three/tsl";
 import { startVisualScene } from "./scene-support.js";
 
-// The TSL the Ultra Elements spell port needs (PRD-777): Discard() and Discard(condition), a Matrix3 and a
+// The TSL the Ultra Elements spell port needs (PRD-777): Discard(condition), a Matrix3 and a
 // Matrix4 uniform, textureLoad on a DataTexture itself, and a plain object of nodes as a Fn argument.
 export async function startScene(canvas, dimensions) {
   return startVisualScene(canvas, dimensions, "tsl-spell-port-nodes", ({ scene }) => {
@@ -28,15 +28,18 @@ export async function startScene(canvas, dimensions) {
       const lit = tint({ colour: vec3(1, 0.9, 0.8), gain: float(1.1) }, scaled);
       return vec4(lit, 1);
     });
+    // Upstream three writes a bare Discard() as `discard;` with the return after it, which naga
+    // (wgpu-native: the Android lane) refuses. A condition that holds on every fragment cuts the same
+    // plate on every lane; the owned engine's bare Discard() is proven by the discard_ends ctest.
     const cut = Fn(() => {
-      Discard();
+      Discard(uv().x.greaterThanEqual(0));
       return vec4(1, 0, 1, 1);
     });
     const material = new THREE.MeshBasicNodeMaterial();
     material.colorNode = shade();
     const plane = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 1.6), material);
     scene.add(plane);
-    // Discard() with no condition: this whole magenta plate is cut, so nothing of it reaches the frame.
+    // Discard on every fragment: this whole magenta plate is cut, so nothing of it reaches the frame.
     const hidden = new THREE.MeshBasicNodeMaterial();
     hidden.colorNode = cut();
     const plate = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.8), hidden);
