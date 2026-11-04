@@ -7,7 +7,7 @@ import { BufferGeometry, Float32BufferAttribute, Mesh } from "three";
 import { register } from "tsx/esm/api";
 
 register();
-import { MATERIAL_IDS, Mask, Terrain, bakeMesh } from "@threenative/terrain";
+import { MATERIAL_IDS, Mask, Terrain, bakeMesh, landformBackdrop } from "@threenative/terrain";
 import { terrainPalette } from "../src/render/palette.js";
 
 const { BIOMES } = await import("../src/render/biomes.js");
@@ -356,9 +356,31 @@ const recipes = { forest, coastal, alpine, desert, tundra };
 // to the initial page module.
 const drawn = new Set(["forest", "coastal"]);
 const outputDir = new URL("../src/world/", import.meta.url);
+// The forest's surveyed surroundings read as smooth rounded blobs at this resolution, so its
+// backdrop is generated instead: Glacier Creek's relief (865 m over 5 km, `forest-horizon.json`)
+// with fluvial drainage, a valley floor at the centre and the survey's own ground height there.
+const forestSurvey = dem["forest-horizon"];
+const forestBackdrop = landformBackdrop("temperateMountains", {
+  size: forestSurvey.size,
+  resolution: forestSurvey.resolution,
+  seed: 23,
+  relief: 865,
+  centerHeight:
+    forestSurvey.data.values[((forestSurvey.resolution - 1) / 2) * (forestSurvey.resolution + 1)],
+});
 const realContinuation = Object.fromEntries(
   Object.keys(recipes).map((name) => {
-    const source = dem[`${name}-horizon`];
+    const source =
+      name === "forest"
+        ? {
+            ...forestSurvey,
+            data: {
+              width: forestSurvey.resolution,
+              height: forestSurvey.resolution,
+              values: forestBackdrop.heights,
+            },
+          }
+        : dem[`${name}-horizon`];
     return [
       name,
       new Terrain({ size: source.size, resolution: source.resolution, seed: 1 }).heightmap({

@@ -6474,6 +6474,23 @@ export function landform(kind: LandformKind, options: ILandformOptions = { … }
 const terrain = landform("alpine", { size: 5000, resolution: 513, seed: 4 }); const state = terrain.evaluate();
 ```
 
+### `landformBackdrop`
+
+`function` — Distant mountains around a playable area: a landform window with a valley floor at its centre.
+
+```ts
+export function landformBackdrop( kind: LandformKind, options: IBackdropOptions = { … }
+```
+
+- **Use when:** add a mountain backdrop around a playable area that the game's detail terrain covers
+- **Constraints:** resolution up to 513: the window is cut from a world twice as wide at the same spacing; build script only · shape only; the game places, colours and fades it
+- **Requires:** npm i @threenative/terrain
+- **Overrides:** `relief` and `centerHeight` in metres; `size`, `resolution` and `seed` as in `landform`
+
+```ts
+const { size, resolution, heights } = landformBackdrop("temperateMountains", { seed: 7, centerHeight: 13 });
+```
+
 ### `makeExport`
 
 `function` — Recovered numerical/project exports; GLB/runtime outputs contain terrain only.

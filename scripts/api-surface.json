@@ -511,6 +511,7 @@
         "@threenative/terrain#encodeZIP": "export function encodeZIP(files: readonly IExportFile[]) { … }",
         "@threenative/terrain#gradientAt": "export function gradientAt(grid: ISampledGrid, x: number, z: number): [number, number] { … }",
         "@threenative/terrain#landform": "export function landform(kind: LandformKind, options: ILandformOptions = { … }",
+        "@threenative/terrain#landformBackdrop": "export function landformBackdrop( kind: LandformKind, options: IBackdropOptions = { … }",
         "@threenative/terrain#makeExport": "export function makeExport( state: ITerrainState | null, recipe: ITerrainDocument, kind: \"project\", ): Promise<IExportArchive>;",
         "@threenative/terrain#sampleHeight": "sampleHeight = (grid: ISampledGrid, x: number, z: number): number => sampleGrid( grid.height, grid.resolution, grid.resolution, x / grid.size + 0.5, z / grid.size + 0.5, )",
         "@threenative/terrain#slopeAtIndex": "export function slopeAtIndex(grid: ISampledGrid, i: number): number { … }",

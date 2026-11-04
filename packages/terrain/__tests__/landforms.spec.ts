@@ -1,6 +1,13 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { LANDFORMS, type LandformKind, Terrain, landform, terrainStats } from "../src/index.js";
+import {
+  LANDFORMS,
+  type LandformKind,
+  Terrain,
+  landform,
+  landformBackdrop,
+  terrainStats,
+} from "../src/index.js";
 
 // Calibration targets are measured from the USGS 3DEP 1/3 arc-second crops the strata preview
 // carries (5 km, 513 samples, ~9.8 m spacing). The generator is fitted to them at seeds 7 and 11;
@@ -139,5 +146,37 @@ describe("fluvial erode params", () => {
         if (!lower) pits += 1;
       }
     expect(pits).toBe(0);
+  });
+});
+
+describe("landformBackdrop", () => {
+  it("puts a valley floor at the centre and the requested ground height and relief around it", () => {
+    const { size, resolution, heights } = landformBackdrop("temperateMountains", {
+      seed: 23,
+      relief: 865,
+      centerHeight: 13.1,
+    });
+    const half = (resolution - 1) / 2;
+    const s = terrainStats(heights, resolution, size);
+    expect(heights[half * resolution + half]).toBeCloseTo(13.1, 3);
+    expect(s.relief).toBeGreaterThan(860);
+    expect(s.relief).toBeLessThan(870);
+    // Ground within 500 m of the centre stays low; the far ring holds the mountains.
+    const ring = (min: number, max: number): number => {
+      let top = Number.NEGATIVE_INFINITY;
+      for (let i = 0; i < heights.length; i += 1) {
+        const r =
+          Math.hypot((i % resolution) - half, Math.floor(i / resolution) - half) *
+          (size / (resolution - 1));
+        if (r >= min && r < max) top = Math.max(top, heights[i] as number);
+      }
+      return top;
+    };
+    expect(ring(0, 500) - 13.1).toBeLessThan(0.35 * s.relief);
+    expect(ring(1800, 2500) - 13.1).toBeGreaterThan(0.5 * s.relief);
+  }, 60_000);
+
+  it("rejects a resolution it cannot cut a window for", () => {
+    expect(() => landformBackdrop("alpine", { resolution: 1025 })).toThrow(RangeError);
   });
 });

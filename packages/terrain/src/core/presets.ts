@@ -1,5 +1,6 @@
 import { Terrain } from "./terrain.js";
 import type { ITerrainConfig } from "./types.js";
+import { RESOLUTIONS } from "./validation.js";
 
 export type LandformKind =
   | "alpine"
@@ -240,4 +241,88 @@ export function landform(kind: LandformKind, options: ILandformOptions = {}): Te
       break;
   }
   return t;
+}
+
+export interface ILandformBackdrop {
+  readonly size: number;
+  readonly resolution: number;
+  /** Row-major metres, centre sample at `centerHeight`. */
+  readonly heights: Float32Array;
+}
+
+export interface IBackdropOptions extends Partial<ITerrainConfig> {
+  /** Highest minus lowest height of the returned window, metres. Defaults to the kind's ratio times `size`. */
+  relief?: number;
+  /** Elevation of the centre sample, metres: the game's own ground height where the backdrop meets it. */
+  centerHeight?: number;
+}
+
+/**
+ * Distant mountains around a playable area: a landform window with a valley floor at its centre.
+ * @requires npm i @threenative/terrain
+ * @situation add a mountain backdrop around a playable area that the game's detail terrain covers
+ * @constraint resolution up to 513: the window is cut from a world twice as wide at the same spacing; build script only
+ * @constraint shape only; the game places, colours and fades it
+ * @example const { size, resolution, heights } = landformBackdrop("temperateMountains", { seed: 7, centerHeight: 13 });
+ * @override `relief` and `centerHeight` in metres; `size`, `resolution` and `seed` as in `landform`
+ */
+export function landformBackdrop(
+  kind: LandformKind,
+  options: IBackdropOptions = {},
+): ILandformBackdrop {
+  const { size = 5000, resolution = 513, seed = 73, centerHeight = 0 } = options;
+  const wide = 2 * (resolution - 1) + 1;
+  if (!(RESOLUTIONS as readonly number[]).includes(wide))
+    throw new RangeError(`Backdrop resolution ${resolution} needs a ${wide}-sample source`);
+  const relief = options.relief ?? LANDFORMS[kind].reliefRatio * size;
+  // The whole world is taller than any window of it, so ask for more and rescale the window below.
+  const source = landform(kind, {
+    size: 2 * size,
+    resolution: wide,
+    seed,
+    relief: relief * 1.4,
+  }).evaluate();
+  const h = source.height;
+  const half = (resolution - 1) / 2;
+  const stride = 8;
+  // The window whose centre is the lowest ground relative to its own range, and flat there.
+  let best = Number.POSITIVE_INFINITY;
+  let bx = half;
+  let bz = half;
+  for (let cz = half; cz <= wide - 1 - half; cz += stride)
+    for (let cx = half; cx <= wide - 1 - half; cx += stride) {
+      let lo = Number.POSITIVE_INFINITY;
+      let hi = Number.NEGATIVE_INFINITY;
+      for (let z = cz - half; z <= cz + half; z += 2 * stride)
+        for (let x = cx - half; x <= cx + half; x += 2 * stride) {
+          const v = h[z * wide + x] as number;
+          lo = Math.min(lo, v);
+          hi = Math.max(hi, v);
+        }
+      const centre = h[cz * wide + cx] as number;
+      const rough =
+        Math.abs((h[cz * wide + cx + 8] as number) - centre) +
+        Math.abs((h[(cz + 8) * wide + cx] as number) - centre);
+      const score = (centre - lo) / (hi - lo || 1) + rough / (hi - lo || 1);
+      if (score < best) {
+        best = score;
+        bx = cx;
+        bz = cz;
+      }
+    }
+  const heights = new Float32Array(resolution * resolution);
+  let low = Number.POSITIVE_INFINITY;
+  let high = Number.NEGATIVE_INFINITY;
+  for (let z = 0; z < resolution; z += 1)
+    for (let x = 0; x < resolution; x += 1) {
+      const v = h[(bz - half + z) * wide + bx - half + x] as number;
+      heights[z * resolution + x] = v;
+      low = Math.min(low, v);
+      high = Math.max(high, v);
+    }
+  const gain = relief / (high - low || 1);
+  const centre = heights[half * resolution + half] as number;
+  for (let i = 0; i < heights.length; i += 1)
+    heights[i] = centerHeight + ((heights[i] as number) - centre) * gain;
+  return { size, resolution, heights };
 }

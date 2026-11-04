@@ -7865,6 +7865,28 @@
     },
     {
       "aliases": [],
+      "constraints": [
+        "resolution up to 513: the window is cut from a world twice as wide at the same spacing; build script only",
+        "shape only; the game places, colours and fades it"
+      ],
+      "example": "const { size, resolution, heights } = landformBackdrop(\"temperateMountains\", { seed: 7, centerHeight: 13 });",
+      "importPath": "@threenative/terrain",
+      "kind": "function",
+      "overrides": [
+        "`relief` and `centerHeight` in metres; `size`, `resolution` and `seed` as in `landform`"
+      ],
+      "package": "@threenative/terrain",
+      "requires": ["npm i @threenative/terrain"],
+      "signature": "export function landformBackdrop( kind: LandformKind, options: IBackdropOptions = { … }",
+      "situations": [
+        "add a mountain backdrop around a playable area that the game's detail terrain covers"
+      ],
+      "summary": "Distant mountains around a playable area: a landform window with a valley floor at its centre.",
+      "supersedes": [],
+      "symbol": "landformBackdrop"
+    },
+    {
+      "aliases": [],
       "constraints": ["authoring data only; the game owns appearance, physics and rendering"],
       "example": "const terrain = new Terrain({ resolution: 17 }); const file = await makeExport(terrain.evaluate(), terrain.toJSON(), \"project\");",
       "importPath": "@threenative/terrain",
