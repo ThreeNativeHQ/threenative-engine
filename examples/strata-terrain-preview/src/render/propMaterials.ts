@@ -316,9 +316,9 @@ function windOffset(clock: Node<"float">, amplitude: number) {
 function sway(base: MeshStandardNodeMaterial, clock: Node<"float">, amplitude: number) {
   const offset = windOffset(clock, amplitude);
   base.positionNode = positionLocal.add(offset);
-  // Without this the tree's shadow stays put while the tree moves, and a windy meadow is covered in
-  // shadows belonging to trees that are no longer there.
-  base.castShadowPositionNode = positionLocal.add(offset);
+  // The shadow casts the rest pose. Virtual shadow pages are cached: a swaying cast froze the wind of the
+  // frame its page last drew, then snapped every nearby tree's shadow when walking re-rendered that page.
+  base.castShadowPositionNode = positionLocal;
   // engine-override: the farthest windOffset moves a vertex (both sines at a full weight along a unit
   // direction). The owned engine grows each tree's shadow box by it and culls the trees per shadow page.
   (base as MeshStandardNodeMaterial & { maxPositionOffset?: number }).maxPositionOffset =

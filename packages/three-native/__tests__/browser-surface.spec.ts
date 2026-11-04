@@ -201,4 +201,15 @@ it("bridges Scene.backgroundNode and live uniforms through the shared TSL runtim
   }).toThrow("TN_BROWSER_SHADER_NODE");
   scene.backgroundNode = null;
   expect(scene.backgroundNode).toBe(null);
+  // A camelCase slot (`castShadowPositionNode`) is a TSL slot too, not a plain ABI value.
+  const material = new (
+    classes.MeshStandardNodeMaterial as new () => { castShadowPositionNode: unknown }
+  )();
+  material.castShadowPositionNode = graph;
+  expect(material.castShadowPositionNode).toBe(graph);
+  expect(tslRuntime.set).toHaveBeenCalledWith(
+    engineRef(material),
+    "castShadowPositionNode",
+    graph[TSL_NODE],
+  );
 });

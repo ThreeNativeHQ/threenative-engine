@@ -702,7 +702,7 @@ const std::pair<Box3, double>& DrawCache::virtualShadowBounds(const DrawItem& it
     // A displaced caster's boxes grow by the farthest its positionNode moves a vertex (UE 5.8.3:
     // Engine/Source/Runtime/Engine/Private/InstancedStaticMesh/ISMInstanceDataManager.cpp:490 adds the material's
     // MaxWorldPositionOffsetDisplacement to every instance's bounds).
-    const double margin = item.material && (item.positionNode || item.nodes->positionNode) ? item.material->maxPositionOffset : 0;
+    const double margin = item.material && (item.positionNode || item.nodes->shadowPositionNode()) ? item.material->maxPositionOffset : 0;
     const ShadowBoundsKey key{item.positions, item.positions->version(), item.positions->epoch(), item.positions->writes(),
                              instances, instances ? instances->version() : 0, instances ? instances->epoch() : 0,
                              instances ? instances->writes() : 0, item.instanceCount, item.matrixWorld, margin};
@@ -2743,7 +2743,7 @@ Renderer::Program& Renderer::depthProgram(const shader::VertexVariant& variant, 
     kind.leafReceiver = false;       // a depth pass receives no shadow
     kind.twoSidedFoliage = false;    // ...and no light
     kind.roughDiffuse = false;       // ...and shades no diffuse
-    const auto positionGraph = kind.nodes.positionNode;
+    const auto positionGraph = kind.nodes.shadowPositionNode();  // three's castShadowPositionNode, else positionNode
     kind.nodes = {};
     kind.nodes.positionNode = positionGraph; // a depth pass reads no colour
     kind.nodes.vertexNode = variant.nodes.vertexNode;  // ...but casts where the vertexNode puts it
@@ -3176,7 +3176,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             }
             // Bind-pose bounds cannot fit a GPU-displaced caster without clipping its shadow.
             if (item.castShadow && shadow.atlas.options().autoDepth &&
-                (item.positionNode || item.nodes->positionNode || item.gpuJoints))
+                (item.positionNode || item.nodes->shadowPositionNode() || item.gpuJoints))
                 throw std::runtime_error("TN_VIRTUAL_SHADOW_UNSUPPORTED: automatic depth for GPU-deformed casters; supply lightDistance and depthRange");
             const auto& [bounds, diameter] = (item.cache ? *item.cache : uncachedBounds).virtualShadowBounds(item);
             if (item.castShadow)  // FG1: an uncached draw shares `uncachedBounds`, so it has no per-instance boxes to keep
@@ -3206,7 +3206,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             state.world.elements = item.matrixWorld;
             state.signature = std::to_string(item.positions->version());
             if (item.instanceMatrices) state.signature += ":" + std::to_string(item.instanceMatrices->version()) + ":" + std::to_string(item.instanceCount);
-            state.deforming = item.positionNode || item.nodes->positionNode || item.boneMatrices || item.morphGeometry;
+            state.deforming = item.positionNode || item.nodes->shadowPositionNode() || item.boneMatrices || item.morphGeometry;
             state.tracked = (item.layers & (1u << 29)) != 0;
             state.automatic = (item.layers & 1u) != 0;
             const auto& control = *shadow.atlas.options().control;
@@ -3961,7 +3961,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             if ((drawn->layers & (shadow.layersMask | (virtualMap ? (1u << 29) | (1u << 28) : 0u))) == 0) return false;
             // A caster wholly beyond the lamp camera's far plane writes no depth: skip it, so it moving there
             // neither costs a draw nor invalidates the lamp's cached map (PRD-650).
-            if (!lamp || shadow.far <= 0 || !drawn->shadowObject || drawn->positionNode || drawn->nodes->positionNode ||
+            if (!lamp || shadow.far <= 0 || !drawn->shadowObject || drawn->positionNode || drawn->nodes->shadowPositionNode() ||
                 drawn->boneMatrices || drawn->morphGeometry) return true;
             const Sphere* local = drawn->shadowObject->type() == "InstancedMesh"
                 ? static_cast<const InstancedMesh*>(drawn->shadowObject)->boundingSphere.get()
@@ -3977,7 +3977,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         // A caster whose bounds move with its node graph, its skin or its morph targets is on every page, as the
         // scan admitted it: there is no rectangle to index it by.
         // A positionNode caster is placed by its boxes grown by the material's maxPositionOffset (see virtualShadowBounds).
-        const auto displaced = [](const DrawItem* const drawn) { return drawn->positionNode || drawn->nodes->positionNode; };
+        const auto displaced = [](const DrawItem* const drawn) { return drawn->positionNode || drawn->nodes->shadowPositionNode(); };
         const auto bounded = [&](const DrawItem* const drawn) {
             return (!displaced(drawn) || (drawn->material && drawn->material->maxPositionOffset > 0)) && !drawn->boneMatrices &&
                    !drawn->morphGeometry;
@@ -4357,7 +4357,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             const auto reproducible = [&](const PageCaster& caster) {
                 const DrawItem& item = *caster.item;
                 if (item.morphGeometry || item.morphInfluences || item.positionNode) return false;
-                if (item.nodes->positionNode || item.nodes->vertexNode) return false;
+                if (item.nodes->shadowPositionNode() || item.nodes->vertexNode) return false;
                 if (item.instanceMatrices || item.gpuJoints || item.sprite || item.background) return false;
                 if (item.nodeTextures || item.nodeStorages || item.reflectorView) return false;
                 if (item.boneStride || item.positions == nullptr) return false;
@@ -4493,7 +4493,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 mix(reinterpret_cast<uintptr_t>(shadowPasses[k].target));
                 for (const Planned& p : shadowPasses[k].draws) {
                     const DrawItem& item = *p.item;
-                    animated |= item.positionNode || item.nodes->positionNode || item.boneMatrices || item.morphGeometry || item.gpuJoints;
+                    animated |= item.positionNode || item.nodes->shadowPositionNode() || item.boneMatrices || item.morphGeometry || item.gpuJoints;
                     mix(item.key); mixMatrix(item.matrixWorld); mix(item.instanceCount);
                     mixStore(item.positions); mixStore(item.indices); mixStore(item.instanceMatrices); mixStore(item.uvs);
                     mix(reinterpret_cast<uintptr_t>(p.pipeline)); mix(reinterpret_cast<uintptr_t>(item.map)); mix(item.map ? item.map->version() : 0);

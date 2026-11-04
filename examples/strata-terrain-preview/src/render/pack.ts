@@ -437,7 +437,8 @@ function applyWind(material: MeshPhysicalNodeMaterial, context: ISurfaceContext)
     positionLocal.z.add(bend.mul(0.55)),
   );
   material.positionNode = offset;
-  material.castShadowPositionNode = offset;
+  // Cached shadow pages cast the rest pose, so a page refresh redraws the same shadow (see propMaterials sway).
+  material.castShadowPositionNode = positionLocal;
 }
 
 function windStiffness(asset: string): number {

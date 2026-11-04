@@ -1778,7 +1778,7 @@ export function defineBrowserClasses(
     const setters = new Set(binding.setters);
     // A node material's TSL slots (`colorNode`) take an engine graph node, which no ABI value
     // carries: the graph goes in through the TSL runtime, and reading the slot answers the node set.
-    for (const property of binding.setters.filter((key) => /^[a-z]+Node$/u.test(key))) {
+    for (const property of binding.setters.filter((key) => /^[a-z][A-Za-z]*Node$/u.test(key))) {
       Object.defineProperty(prototype, property, {
         configurable: true,
         get(this: object) {

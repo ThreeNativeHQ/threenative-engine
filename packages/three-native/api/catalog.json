@@ -8371,6 +8371,15 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "maxPositionOffset",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": [
@@ -11746,6 +11755,15 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "maxPositionOffset",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": [
@@ -12136,6 +12154,24 @@
         {
           "name": "alphaHash",
           "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "castShadowPositionNode",
+          "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "maxPositionOffset",
+          "type": "number",
           "mutable": true,
           "lifetime": "owned",
           "status": {
@@ -13000,6 +13036,15 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "maxPositionOffset",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": [
@@ -13561,6 +13606,24 @@
         {
           "name": "alphaHash",
           "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "castShadowPositionNode",
+          "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "maxPositionOffset",
+          "type": "number",
           "mutable": true,
           "lifetime": "owned",
           "status": {
@@ -14164,6 +14227,24 @@
         {
           "name": "alphaHash",
           "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "castShadowPositionNode",
+          "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "maxPositionOffset",
+          "type": "number",
           "mutable": true,
           "lifetime": "owned",
           "status": {
@@ -20793,6 +20874,15 @@
         {
           "name": "alphaHash",
           "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "maxPositionOffset",
+          "type": "number",
           "mutable": true,
           "lifetime": "owned",
           "status": {
@@ -27712,6 +27802,15 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "maxPositionOffset",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": [
@@ -28045,6 +28144,15 @@
         {
           "name": "alphaHash",
           "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "maxPositionOffset",
+          "type": "number",
           "mutable": true,
           "lifetime": "owned",
           "status": {

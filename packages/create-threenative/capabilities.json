@@ -4476,7 +4476,7 @@
       "kind": "function",
       "overrides": ["keep mx_noise_float where exact analytic noise matters more than the frame"],
       "package": "@threenative/core",
-      "signature": "export function bakedNoise(p: Node<\"vec3\">, amplitude: Scalar = 1, pivot: Scalar = 0, channel: 0 | 1 | 2 | 3 = 0): Node<\"float\"> { … }",
+      "signature": "export function bakedNoise( p: Node<\"vec3\">, amplitude: Scalar = 1, pivot: Scalar = 0, channel: 0 | 1 | 2 | 3 = 0, ): Node<\"float\"> { … }",
       "situations": [
         "a terrain, foliage or water shader calls mx_noise_float per pixel and the frame is GPU bound",
         "open world ground material with procedural variation that must hold 60 FPS"

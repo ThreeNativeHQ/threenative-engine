@@ -7927,6 +7927,17 @@ void virtualShadowBoundsCache() {
     CHECK(sample().first.max.x == 17 && cache.shadowInstanceBoxes[0].min.x == 5);
     item.matrixWorld = model.elements;
     item.positionNode = nullptr;
+    // three's castShadowPositionNode: a node material that sways in its positionNode but casts from a bare
+    // positionLocal casts its rest pose, so its shadow box takes no wind margin (and a page refresh redraws the
+    // same shadow instead of snapping it to the wind of that frame).
+    shader::MaterialNodes windy;
+    windy.positionNode = shader::graph::positionLocal();
+    shader::MaterialNodes* const plain = item.nodes;
+    item.nodes = &windy;
+    CHECK(sample().first.max.x == 10);
+    windy.castShadowPositionNode = shader::graph::positionLocal();
+    CHECK(sample().first.max.x == 8);
+    item.nodes = plain;
     CHECK(sample().first.max.x == 8);
     item.material = nullptr;
     std::vector<float> bones;

@@ -83,15 +83,16 @@ function readable(name: string): string[] {
     (key) =>
       !key.includes(".") &&
       !binding.methods.includes(key) &&
-      // A node slot (`colorNode`) is no value field. It is a graph, set through the TSL runtime.
-      !(name.endsWith("NodeMaterial") && /^[a-z]+Node$/u.test(key)),
+      // A node slot (`colorNode`, `castShadowPositionNode`) is no value field. It is a graph, set
+      // through the TSL runtime, by the same rule as `browser-backend.ts`.
+      !(name.endsWith("NodeMaterial") && /^[a-z][A-Za-z]*Node$/u.test(key)),
   );
 }
 
 const MATERIALS = Object.keys(registry.classes).filter((name) => name.endsWith("Material"));
 
 /** Fields the engine adds to a material that three has not: a new one needs a line here and a reason. */
-const ENGINE_FIELDS = ["twoSidedFoliage", "roughDiffuse", "subsurfaceColor"];
+const ENGINE_FIELDS = ["twoSidedFoliage", "roughDiffuse", "subsurfaceColor", "maxPositionOffset"];
 
 describe("a native material's fields are enumerable", () => {
   it("covers the material classes of the registry", () => {

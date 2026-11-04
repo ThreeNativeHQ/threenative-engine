@@ -3499,7 +3499,7 @@ const macro = bakedFractalNoise(vec3(positionWorld.x, 0, positionWorld.z).mul(0.
 `function` — Drop-in for `mx_noise_float(p, amplitude, pivot)` on a vec3 `p`: one filtered read of the baked volume instead of the per-pixel Perlin. Only the 3D form: three's 2D Perlin is another function (0.66 scale), so a vec2 caller keeps `mx_noise_float`. `channel` 1 to 3 are independent fields.
 
 ```ts
-export function bakedNoise(p: Node<"vec3">, amplitude: Scalar = 1, pivot: Scalar = 0, channel: 0 | 1 | 2 | 3 = 0): Node<"float"> { … }
+export function bakedNoise( p: Node<"vec3">, amplitude: Scalar = 1, pivot: Scalar = 0, channel: 0 | 1 | 2 | 3 = 0, ): Node<"float"> { … }
 ```
 
 - **Use when:** a terrain, foliage or water shader calls mx_noise_float per pixel and the frame is GPU bound · open world ground material with procedural variation that must hold 60 FPS
