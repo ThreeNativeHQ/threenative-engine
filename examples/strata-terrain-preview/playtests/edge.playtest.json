@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "name": "strata-terrain-edge",
+  "subject": "The player walks into the playable edge and stays on ground that has a collider",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 90,
+  "artifacts": {
+    "screenshots": true,
+    "console": true
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "grounded",
+      "waitTicks": 120,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "walk-into-edge",
+      "press": "KeyW",
+      "holdTicks": 1500,
+      "release": true,
+      "screenshot": "forest-edge"
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "GameState",
+        "path": "grounded",
+        "equals": true,
+        "allowTrivial": "The character settles during warmup; grounded must still hold after 25 s pressed against the edge."
+      },
+      {
+        "id": "GameState",
+        "path": "travel",
+        "gte": 80,
+        "allowTrivial": "Spawn is 91 m from the edge; 80 m proves the walk reached it."
+      }
+    ]
+  }
+}

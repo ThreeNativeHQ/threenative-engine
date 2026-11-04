@@ -559,9 +559,29 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
             },
           ),
         });
+        // The playable square ends where the heightfield does. Four fixed walls 2 m inside its edge
+        // keep the player on ground that has a collider, as a level's blocking volumes do: past the
+        // edge there is no collider to stand on, only the horizon ring to fall past.
+        const edge = data.size / 2;
+        const walls = [-1, 1].flatMap((side) =>
+          [
+            { x: side * edge, z: 0, width: 4, depth: data.size },
+            { x: 0, z: side * edge, width: data.size, depth: 4 },
+          ].map(
+            ({ x, z, width, depth }) =>
+              new RigidBody3D({
+                physics: ctx.physics,
+                type: "fixed",
+                collisionLayer: 4,
+                position: { x, y: 0, z },
+                shape: CollisionShape3D.box(width, 4000, depth),
+              }),
+          ),
+        );
         ctx.entities.add("terrain", {
           mesh,
           dispose: () => {
+            for (const wall of walls) wall.dispose();
             ground.dispose();
             mesh.geometry.dispose();
             (mesh.material as MeshStandardMaterial).dispose();
