@@ -2,21 +2,14 @@
   "version": 1,
   "generatedAt": "2026-08-24T14:44:20.985Z",
   "counts": {
-    "file-cap": 4,
     "file-length": 33,
     "suppression/unknown-cast": 26,
     "interface-in-disguise": 13,
     "suppression/biome-ignore": 9,
+    "file-cap": 2,
     "lint-coverage-hole": 1
   },
   "findings": [
-    {
-      "file": "packages/assets/src/compile.ts",
-      "line": 1,
-      "signal": "file-cap",
-      "value": 3520,
-      "threshold": 3000
-    },
     {
       "file": "packages/assets/src/compile.ts",
       "line": 1,
@@ -583,13 +576,6 @@
       "signal": "lint-coverage-hole",
       "value": "ignored",
       "threshold": "linted"
-    },
-    {
-      "file": "packages/three-native/src/browser-backend.ts",
-      "line": 1,
-      "signal": "file-cap",
-      "value": 3405,
-      "threshold": 3000
     },
     {
       "file": "packages/three-native/src/tsl-extras.ts",
