@@ -161,10 +161,11 @@ export function liveUniforms<TNode extends object>(
     };
   };
   const states = new WeakMap<object, IUniformState>();
-  const objects = new Set<WeakRef<TNode>>();
-  // Strong: a hook's node is chained into a material and dropped, so the wrapper is all JS holds, and a
-  // collected wrapper silently ended its updates. ponytail: kept for the page's life; the engine release
-  // of such a node waits too. Release with the owning material if a game builds hooked uniforms in a loop.
+  // Strong, both: a hook's node or an object-valued node (`uniform(camera.matrixWorld)`) is chained into
+  // a material and dropped, so the wrapper is all JS holds, and a collected wrapper silently ended its
+  // updates (a stale eye in a post pass). ponytail: kept for the page's life; the engine release of such
+  // a node waits too. Release with the owning material if a game builds such uniforms in a loop.
+  const objects = new Set<TNode>();
   const updating = new Set<TNode>();
   let frameId = 0;
   // An unchanged value is not written again: an edited Color or vector is found by its lanes, and a
@@ -204,7 +205,7 @@ export function liveUniforms<TNode extends object>(
           state.value = next;
         },
       });
-      if (typeof value === "object" && value !== null) objects.add(new WeakRef(node));
+      if (typeof value === "object" && value !== null) objects.add(node);
       // three's UniformNode.onUpdate: the callback runs with the node as `this` and its result,
       // unless undefined, becomes the value. RENDER runs once per sync (one per render call); FRAME
       // runs once per renderer frame. A post chain renders about ten passes a frame (Lantern Vale), and
@@ -325,12 +326,7 @@ export function liveUniforms<TNode extends object>(
           } else next = state.update(frame);
           if (next !== undefined) (node as { value: unknown }).value = next;
         }
-        for (const ref of objects) {
-          const node = ref.deref();
-          if (node === undefined) {
-            objects.delete(ref);
-            continue;
-          }
+        for (const node of objects) {
           const state = states.get(node);
           if (state !== undefined) write(node, state, uniformLanes(state.value, state.scratch));
         }

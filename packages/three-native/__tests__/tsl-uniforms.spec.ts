@@ -41,6 +41,21 @@ describe("uniform update hooks", () => {
     expect(pushed.at(-1)).toEqual([0]);
   });
 
+  // The Strata haze composite is `uniform(camera.matrixWorld)`, chained into a post pass and dropped. The
+  // wrapper was collected, its edits stopped syncing, and the haze read the eye at the origin.
+  it("keeps syncing an edited object value after the game drops its node", async () => {
+    const { live, pushed } = setup();
+    const eye = { x: 0, y: 0, z: 0 };
+    live.uniform(eye);
+    for (let i = 0; i < 3; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      collectGarbage();
+    }
+    eye.y = 71;
+    live.sync();
+    expect(pushed.at(-1)).toEqual([0, 71, 0]);
+  });
+
   // The racing template's fog reads the camera's height in `onRenderUpdate(({ camera }) => ...)`, as three
   // passes it. Without a camera the callback fell back to height 0 and the distant ground fogged wrongly.
   it("hands the rendering camera to an update hook, as three's frame does", () => {
