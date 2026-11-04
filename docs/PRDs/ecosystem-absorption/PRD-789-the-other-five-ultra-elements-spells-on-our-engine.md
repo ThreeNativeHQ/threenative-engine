@@ -25,6 +25,8 @@ PRD-777 ported the Ultra Elements foundation and the Fireball (upstream `src/spe
 **Files:** `packages/core/src/spells/ultra/spells/{lightning,ice,arcane}.ts`, `ultra/vfx/{Bolts,Spikes,Sigils,Refraction}.ts`, the `createFx` seams in `ultra/main.ts`, `examples/spell-lab/src/scenes/Lab.ts`.
 **Implementation:** Copy each upstream file as PRD-777 did. Inferno (fire.js) reuses the ported fluid. Remove the remaining `ENGINE-GAP` workarounds as the engine closes each gap.
 
+- [ ] The ported Fireball reads as upstream's Fireball in its five beats (antic, release, impact, overview, after). proof: Opus visual judge, headed, `--browser-recipe webgpu`, real-time captures at `?slow=0.1`
+- [ ] Pressing a kit spell key in action-rpg casts Fireball, and its impact changes the pixels at the target. proof: `TN_TEMPLATE_ONLY=action-rpg pnpm test:templates` runs `playtests/spells.playtest.json`
 - [ ] Thunderstrike, Glacial Spike, Arcane Barrage, Aegis and Inferno are upstream's code and pass an Opus visual judge against upstream's five beats per spell. proof: Opus visual judge, headed, `--browser-recipe webgpu`, real-time captures
 - [ ] The from-scratch spell files (`spells/spells.ts`, `spell.ts`, `mechanisms.ts`, `particle-kinds.ts`) are deleted, and the capability entries point at the ported factories. proof: `pnpm capabilities:sync && pnpm caps:recall` exits 0 and recalls each spell first
 - [ ] All six spells hold 60 FPS and stay smooth while cast, on a quiet host. proof: Chrome DevTools MCP rAF probe plus `TN_FRAME_BUDGET` (presented p95, worst frame, frames over 20 ms)

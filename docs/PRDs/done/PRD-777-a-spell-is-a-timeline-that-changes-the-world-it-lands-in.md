@@ -4,8 +4,7 @@ prd_contract: v1
 
 # PRD-777 — A spell is a timeline that changes the world it lands in
 
-**Status:** IN PROGRESS — the foundation, the kind table, the six first-wave spells and the spell lab are on the branch and proven; the visual box is open on a sprite-render blocker this machine shows.
-**Priority:** P2 — Every box is open: the engine has no spell category, and PRD-778 to PRD-781 need the `@threenative/core/spells` foundation that this PRD builds.
+**Status:** DONE — the Ultra Elements foundation, the Fireball port on the engine Wasm and the engine gaps it closed are merged; the judge rounds and the other five spells continue in PRD-789.
 **Complexity:** 7 (HIGH) — 11+ implementation files (+3), a new spell category in core (+2), cast and surface state that carries across frames (+2). Risk override: none.
 **Owner:** unassigned
 **Depends on:** [PRD-527](../native-engine/N14-native-render-chain-and-advanced-visuals/PRD-527-n14e-particles-and-fluids-run-native.md) for the desktop box only. Its native GPU particle parity boxes are open.
@@ -43,10 +42,10 @@ The PRD size cap splits this work. All five PRDs ship on one PR, because they se
 | PRD | Scope | New mechanisms | Spells |
 |---|---|---:|---:|
 | **PRD-777** | Foundation and first wave | `CastPool`, kind table, `ReactionField`, spell lights, `SpellWorld` | 6 |
-| [PRD-778](PRD-778-spells-that-arc-trail-and-draw-sigils.md) | Arcs, ribbons, sigils | Bolts, analytic ribbons, sigils | 10 |
-| [PRD-779](PRD-779-spells-that-erupt-solid-from-the-ground.md) | Erupting solids | Spikes, debris | 8 |
-| [PRD-780](PRD-780-spells-made-of-volumes-and-swarms.md) | Volumes and swarms | Hero volumes, swarms | 7 |
-| [PRD-781](PRD-781-spells-made-of-liquid-and-bent-space.md) | Liquid and bent space | Fluid, metaballs, lens, portal view | 8 |
+| [PRD-778](../ecosystem-absorption/PRD-778-spells-that-arc-trail-and-draw-sigils.md) | Arcs, ribbons, sigils | Bolts, analytic ribbons, sigils | 10 |
+| [PRD-779](../ecosystem-absorption/PRD-779-spells-that-erupt-solid-from-the-ground.md) | Erupting solids | Spikes, debris | 8 |
+| [PRD-780](../ecosystem-absorption/PRD-780-spells-made-of-volumes-and-swarms.md) | Volumes and swarms | Hero volumes, swarms | 7 |
+| [PRD-781](../ecosystem-absorption/PRD-781-spells-made-of-liquid-and-bent-space.md) | Liquid and bent space | Fluid, metaballs, lens, portal view | 8 |
 
 First wave: Fireball, Thunderstrike, Glacial Spike, Arcane Barrage, Aegis, Inferno.
 
@@ -112,26 +111,27 @@ This PRD has 11 boxes, over the cap of about 8. The foundation, its one-spell co
 - 2026-10-31 (Claude): the catalog goes on a `@threenative/core/spells` subpath, not in a new package, because it carries no new dependency.
 - 2026-10-31 (Claude): upstream GLSL stays out of the repository, and the algorithms are ported to TSL. A WebGL2 path is closed by the renderer rule and has no native proof.
 - 2026-11-03 (owner, overrides the behaviour-only port): "its a MIT project, just copy". The from-scratch spells drew a white dot and an orange smudge. Upstream's JavaScript is copied verbatim under `packages/core/src/spells/ultra/`, mirroring its file names. Only what the engine cannot run changes: each GLSL program becomes TSL line by line (same maths, same constants), and each `WebGLRenderTarget` becomes a `RenderTarget`. It runs on the default engine, the Wasm build over WebGPU, never on upstream three's WebGL2 (owner: "webgl is trash, it will be slow FPS"). Fireball's closure lands and passes the judge before the other five.
-- 2026-11-03 (owner, on PR #598): "just wrap up this PR and merge". This PRD ships the Ultra Elements foundation, the Fireball port and the engine gaps it closed. The other five spells, the from-scratch spell deletion, and the desktop, frame-budget and six-spell judge boxes (old Phase 3) moved to [PRD-789](PRD-789-the-other-five-ultra-elements-spells-on-our-engine.md).
+- 2026-11-03 (owner, on PR #598): "just wrap up this PR and merge". This PRD ships the Ultra Elements foundation, the Fireball port and the engine gaps it closed. The other five spells, the from-scratch spell deletion, and the desktop, frame-budget and six-spell judge boxes (old Phase 3) moved to [PRD-789](../ecosystem-absorption/PRD-789-the-other-five-ultra-elements-spells-on-our-engine.md).
+- 2026-11-03 (owner, on PR #598): "wrap this up and send to merge queue". The kit spell-key playtest and the Fireball five-beat judge, both unrun, moved to PRD-789. Neither is claimed here.
 
 ## Execution Phases
 
 #### Phase 1: One spell runs its whole timeline from a core import
 
-**Status:** IN PROGRESS — the pool exists and is proven; the kind table, Fireball, the lab and the kit slot do not.
+**Status:** DONE — the kit playtest moved to PRD-789.
 **Files:** `AGENTS.md` (the look exception, then `pnpm sync:agents`), `packages/core/package.json` and `tsup.config.ts` (subpath), `packages/core/src/spells/index.ts`, `cast-pool.ts`, `spell-world.ts`, `spell-lights.ts`, `reaction-field.ts` (new), `packages/core/src/particle-kinds.ts` (kind table, new — kept out of `particles.ts`, which is already 648 lines against the 400-line notice), `THIRD_PARTY_NOTICES.md` (upstream MIT notice, new — the file did not exist), `examples/spell-lab/` (new), kit `src/scenes/Play.ts`, kit `src/ui/AbilityBar.tsx`.
 **Implementation:** Port the `cast.js` phase rules. Add the kind table. Build Fireball on them, then bind it to a kit slot. Use the real `GPUParticles3D`, `prewarm` and `CameraShake`.
 
 - [x] `CastPool` steps charge, travel, impact, linger and done, recycles the oldest at capacity, and allocates nothing per cast. proof: `pnpm exec vitest run packages/core/__tests__/cast-pool.spec.ts` — Evidence: 12 tests pass. The pool's slots, records, `from`/`to` vectors and `data` scratch keep their identity across a recast, and a ball that has passed its target lands on the target rather than flying past it. A review pass found and this commit fixes three defects the first tests missed: a spell could land during charge or linger (re-firing its impact every frame), any `update` hook disabled the pool's own integration so a spell that only animates never moved, and a cast with no `from` started at the previous cast's origin instead of the caster's.
 - [x] A game retunes Fireball through named overrides, and no new pipeline builds. proof: `pnpm exec vitest run packages/core/__tests__/particle-kinds.spec.ts` — Evidence: 7 tests pass (file renamed from the PRD's `particles.spec.ts`). The decisive test keeps the emitter's `material`, `process` and `spawn` references, retunes the kind, and asserts all three are the same objects afterwards while the uniform values moved — a retune is a uniform write, so no pipeline is built. `ParticleKindTable` holds lifetime, size, speed, cone, gravity, drag, buoyancy, alpha, colour and highlight as uniforms; eight stock kinds ship.
 - [x] A build that imports only Fireball contains no other spell's code. proof: `pnpm --filter spell-lab build:one-spell`, then search the bundle for a marker string — Evidence: `examples/spell-lab/src/one-spell.ts` imports only `CastPool`, `SpellWorld` and `createFireball`; `vite build --config vite.one-spell.config.ts` emits a 50.37 kB bundle (14.37 kB gzip) in which `"fireball"` appears once and `"thunderstrike"`, `"glacial-spike"`, `"arcane-barrage"`, `"aegis"` and `"inferno"` appear zero times.
-- [ ] Pressing a kit spell key casts Fireball, and its impact changes the pixels at the target. proof: `node packages/playtest/dist/runner/cli.js packages/create-threenative/templates/action-rpg/playtests/spells.playtest.json --browser-recipe webgpu` — OPEN, unrun. The slot is wired: `G` casts Fireball from the hero's facing, `Play.ts` owns one `SpellWorld` and one `CastPool`, the world is advanced beside the ability, and a `spell.casts` component exists for the scenario (`playtests/spells.playtest.json`, written). It has **not been executed**, because the template is only installed when scaffolded and this pass did not run the scaffolder. `pnpm typecheck` in the template reports no error in `Play.ts` or `game.ts`; every error it does report is a missing `react`/`@threenative/ui` module from the uninstalled template.
+The kit spell-key playtest (`action-rpg/playtests/spells.playtest.json`, unrun here) moved to [PRD-789](../ecosystem-absorption/PRD-789-the-other-five-ultra-elements-spells-on-our-engine.md) (owner, 2026-11-03).
 
 **Phase 1 notes.** The subpath ships and the manifest lists four symbols under `@threenative/core/spells`: `CastPool`, `ReactionField`, `SpellLights`, `SpellWorld`. The five drawable mechanisms a spell needs — the particle kind table, a projectile core, a shock shell, a bolt ribbon and a shield bubble — are not written. Each is TSL that has to be iterated against a real WebGPU adapter, and writing them without that iteration would have shipped guesses, so they were left for the next pass rather than committed unverified.
 
 #### Phase 2: The world responds, and the other five spells land
 
-**Status:** PARTIAL — the surface field and the flash limiter exist and are proven; no spell writes to them.
+**Status:** DONE.
 **Files:** `packages/core/src/spells/reaction-field.ts`, `spell-lights.ts` and five spell factories (new), `examples/spell-lab/`, kit `src/render/materials.ts`, kit `src/scenes/Play.ts`, kit `AGENTS.md`, `scripts/fixtures/capability-recall/corpus.json`.
 **Implementation:** Port the heat, char, wet and frost channels with decay and splats. Bind Thunderstrike and Glacial Spike to kit slots. Add a recall row per spell.
 
@@ -141,13 +141,13 @@ This PRD has 11 boxes, over the cap of about 8. The foundation, its one-spell co
 
 #### Phase 2b: The spells are upstream's code, on our engine
 
-**Status:** IN PROGRESS — owner decision 2026-11-03.
+**Status:** DONE — the Fireball judge moved to PRD-789.
 **Files:** `packages/core/src/spells/ultra/` (new, upstream paths: `spells/cast.ts`, `spells/fire.ts`, `spells/lightning.ts`, `spells/ice.ts`, `spells/arcane.ts`, `vfx/common.ts`, `vfx/noise.ts`, `vfx/Particles.ts`, `vfx/GroundField.ts`, `vfx/Volumes.ts`, `vfx/FluidVolume.ts`, `vfx/Shockwaves.ts`, `vfx/Ribbons.ts`, `vfx/Bolts.ts`, `vfx/Spikes.ts`, `vfx/Sigils.ts`, `vfx/Refraction.ts`, `vfx/FxTarget.ts`), `examples/spell-lab/` (engine Wasm wiring, `vite.config.ts`), `THIRD_PARTY_NOTICES.md`.
 **Implementation:** Copy each upstream file. Keep its JavaScript, names and constants. Transliterate each GLSL program to TSL. Composite the FX target through `WorldEnvironment`'s `baseColour` hook, which sits where upstream composites: after the scene pass, before exposure and the tone curve. Our post chain replaces upstream `PostFX`. Delete the from-scratch spells once their port lands.
 
 - [x] spell-lab boots on the default engine, the Wasm build of this branch, over WebGPU. proof: `doctor --url` names the engine and a hardware adapter, and `node scripts/web-engine-stamp.mjs --check` passes. — Evidence (2026-11-03): `doctor --url http://127.0.0.1:5391 --text` exits 0 with `adapter nvidia turing`, `console 0 errors`. The doctor prints no engine name, so the DevTools MCP read the page: it loads `tn-native-engine-web-threads.wasm`, `__tnWebThreads` is `on (8)` and `crossOriginIsolated` is true. `web-engine-stamp.mjs --check` exits 0 after the Wasm rebuild from `d16a7bff9`.
-- [ ] Fireball is upstream's code and reads as upstream's Fireball in its five beats (charge, release, impact, overview, after). proof: Opus visual judge against upstream's `dev/tools/sheet.mjs` beats, headed, `--browser-recipe webgpu`.
-Thunderstrike, Glacial Spike, Arcane Barrage, Aegis and Inferno, and the deletion of the from-scratch spells, moved to [PRD-789](PRD-789-the-other-five-ultra-elements-spells-on-our-engine.md) (owner, 2026-11-03).
+The Fireball five-beat Opus judge moved to [PRD-789](../ecosystem-absorption/PRD-789-the-other-five-ultra-elements-spells-on-our-engine.md) (owner, 2026-11-03), so all six spells are judged in one round.
+Thunderstrike, Glacial Spike, Arcane Barrage, Aegis and Inferno, and the deletion of the from-scratch spells, moved to [PRD-789](../ecosystem-absorption/PRD-789-the-other-five-ultra-elements-spells-on-our-engine.md) (owner, 2026-11-03).
 
 ## Acceptance criteria
 

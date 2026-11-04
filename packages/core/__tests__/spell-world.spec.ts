@@ -1,4 +1,4 @@
-import { Scene, Vector3 } from "three";
+import { Color, Scene, Vector3 } from "three";
 import { describe, expect, it } from "vitest";
 import { SpellWorld } from "../src/spells/spell-world.js";
 
@@ -33,7 +33,7 @@ describe("SpellWorld", () => {
 
   it("fades a flash to nothing and re-uses the same light", () => {
     const world = new SpellWorld({ lightCount: 1, scene: new Scene() });
-    const color = world.lights.lights[0]?.color;
+    const color = world.lights.lights[0]?.color ?? new Color();
     const light = world.lights.flash({
       color,
       intensity: 10,
