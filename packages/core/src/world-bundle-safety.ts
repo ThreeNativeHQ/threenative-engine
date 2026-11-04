@@ -105,7 +105,13 @@ export class BundleSurfaceSafety {
     this.#frameRows = 0;
   }
 
-  test(material: Material): IBundleMaterialCheck {
+  /**
+   * `deep: false` is for a renderer that records its own bundles from each frame's draws (the owned
+   * engine, PRD-754): it never replays three's recorded render objects, so a deep node edit cannot
+   * reach a stale record there and only the shallow witness re-checks. On the Wasm facade every
+   * deep row read crosses into the engine, which made the proof ~1 ms a walked frame.
+   */
+  test(material: Material, deep = true): IBundleMaterialCheck {
     this.stats.checks++;
     const previous = this.#checks.get(material);
     if (
@@ -115,6 +121,7 @@ export class BundleSurfaceSafety {
       previous.visible === material.visible &&
       previous.transmission === Reflect.get(material, "transmission")
     ) {
+      if (!deep) return previous;
       if (previous.testedFrame !== this.#frame) {
         previous.testedFrame = this.#frame;
         this.#frameRows += previous.rows.length;

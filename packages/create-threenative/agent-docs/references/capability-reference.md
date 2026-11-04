@@ -6468,7 +6468,7 @@ export function landform(kind: LandformKind, options: ILandformOptions = { … }
 - **Use when:** start an open world, a distant backdrop or a mountain level from a kind of place
 - **Constraints:** returns an ordinary `Terrain`: add roads, rivers, scatter or more layers, then `evaluate()` in a build script · shape only; materials, colours and textures belong to the game · calibrated at size 5000, resolution 513; other sizes keep the same slopes and scale the relief with `size`
 - **Requires:** npm i @threenative/terrain
-- **Overrides:** `relief` is the relief of the uplift envelope in metres (the finished relief lands within about 30% of it); `size`, `resolution` and `seed` as in `Terrain`
+- **Overrides:** `relief` is the highest-minus-lowest height in metres before the finishing passes shave a few percent; `size`, `resolution` and `seed` as in `Terrain`
 
 ```ts
 const terrain = landform("alpine", { size: 5000, resolution: 513, seed: 4 }); const state = terrain.evaluate();

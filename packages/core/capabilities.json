@@ -7851,7 +7851,7 @@
       "importPath": "@threenative/terrain",
       "kind": "function",
       "overrides": [
-        "`relief` is the relief of the uplift envelope in metres (the finished relief lands within about 30% of it); `size`, `resolution` and `seed` as in `Terrain`"
+        "`relief` is the highest-minus-lowest height in metres before the finishing passes shave a few percent; `size`, `resolution` and `seed` as in `Terrain`"
       ],
       "package": "@threenative/terrain",
       "requires": ["npm i @threenative/terrain"],

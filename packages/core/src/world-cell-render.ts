@@ -333,6 +333,7 @@ export class CellRender {
   readonly #shared = new Map<string, SharedBatch>();
 
   readonly #bundleSafety = new BundleSurfaceSafety();
+  #ownsBundles: boolean | undefined;
 
   /**
    * `asset:level:part` -> a released batch kept for the walk back over the same ground, oldest
@@ -1758,7 +1759,7 @@ export class CellRender {
     const arrayMaterial = Array.isArray(shared.mesh.material);
     const checked =
       reuseSafety && !arrayMaterial
-        ? this.#bundleSafety.test(shared.mesh.material as Material)
+        ? this.#bundleSafety.test(shared.mesh.material as Material, !this.ownsBundles())
         : undefined;
     shared.bundlable =
       lodChainOf(shared.mesh.geometry) === undefined &&
@@ -1815,6 +1816,19 @@ export class CellRender {
     if (group === undefined) return;
     if (shared.mesh.parent === group) group.remove(shared.mesh);
     this.bumpBundle(group);
+  }
+
+  /**
+   * Whether the renderer records its own bundles from each frame's draws, as the owned engine does
+   * (`info.engine`, the same check `game.ts` makes). Decided once a renderer is attached.
+   */
+  ownsBundles(): boolean {
+    if (this.#ownsBundles !== undefined) return this.#ownsBundles;
+    const renderer = this.#host.renderer();
+    if (renderer === undefined) return false;
+    const info = (renderer.raw as { info?: object } | undefined)?.info;
+    this.#ownsBundles = info !== undefined && "engine" in info;
+    return this.#ownsBundles;
   }
 
   /** One re-record, counted: `BundleGroup.needsUpdate` is a version bump, and nothing else. */

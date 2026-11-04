@@ -98,4 +98,19 @@ describe("BundleSurfaceSafety on a settled frame", () => {
     expect(proved.size).toBe(forest.length);
     expect(safety.stats.refreshes).toBe(forest.length);
   });
+
+  it("proves no deep row for a renderer that records its own bundles, and still refreshes on a version bump", () => {
+    const painted = material(chain(20));
+    const safety = new BundleSurfaceSafety();
+    for (let frame = 0; frame < 8; frame++) {
+      safety.beginFrame();
+      expect(safety.test(painted, false).safe).toBe(true);
+    }
+    expect(safety.stats.validations).toBe(0);
+    expect(safety.stats.refreshes).toBe(1);
+    painted.needsUpdate = true;
+    safety.beginFrame();
+    safety.test(painted, false);
+    expect(safety.stats.refreshes).toBe(2);
+  });
 });
