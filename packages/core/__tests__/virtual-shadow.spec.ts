@@ -70,10 +70,10 @@ import {
   VIRTUAL_SHADOW_REFRESH_MARKER,
   VIRTUAL_SHADOW_WIDE_CASTER_LAYER,
   VirtualShadowNode,
+  clipLadder,
   lampShadowMarker,
   readLampShadowMarker,
   readVirtualShadowMarker,
-  clipLadder,
 } from "../src/render/virtual-shadow.js";
 import { WorldImpostorSurface } from "../src/render/world-impostor-surface.js";
 import { WorldImpostorAtlas } from "../src/render/world-impostor.js";
