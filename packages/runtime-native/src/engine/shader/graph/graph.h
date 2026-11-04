@@ -294,7 +294,8 @@ std::string key(const Graph& graph);
 /** How many times key() has serialized a graph in this process; a steady frame serializes none. */
 uint64_t keyBuilds();
 /** tsl_call's serial names: an unnamed uniform(value) or varying(node) (`nodeUniform<n>`, `nodeVarying<n>`,
- *  `varyingProperty<n>`, flat as `tnFlat...`) named by a process-wide count, not by what it is. */
+ *  `varyingProperty<n>`, flat as `tnFlat...`) named by a process-wide count, not by what it is; and a graph texture
+ *  (`nodeMapT<ident>`), named by the texture it samples, which a draw binds by name as it binds its uniforms. */
 bool serialName(std::string_view name);
 /** key() with each serial name numbered by its first use, appended to `serials`: equal for two graphs that differ only
  *  in serial names. Pass one `serials` through a material's slots and a name two slots share stays one number. */

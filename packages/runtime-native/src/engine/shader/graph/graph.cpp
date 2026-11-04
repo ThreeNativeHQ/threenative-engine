@@ -1015,7 +1015,8 @@ uint64_t keyBuilds() { return keySerializations; }
 
 bool serialName(std::string_view name) {
     if (name.starts_with("tnFlat")) name.remove_prefix(6);
-    for (const std::string_view prefix : {std::string_view("nodeUniform"), std::string_view("nodeVarying"), std::string_view("varyingProperty")}) {
+    for (const std::string_view prefix : {std::string_view("nodeUniform"), std::string_view("nodeVarying"), std::string_view("varyingProperty"),
+                                          std::string_view("nodeMapT")}) {
         if (!name.starts_with(prefix) || name.size() == prefix.size()) continue;
         return std::all_of(name.begin() + prefix.size(), name.end(), [](char c) { return c >= '0' && c <= '9'; });
     }

@@ -8499,6 +8499,9 @@ void mapsShareOnePipeline() {
     std::printf("maps share one pipeline: %llu compiled for the first map, %llu more for the second\n",
                 (unsigned long long)compiled, (unsigned long long)(renderer.pipelines().compiles() - compiled));
     CHECK(renderer.pipelines().compiles() == compiled);  // the second map's draw compiled nothing
+    // ...and built no shader: a streamed forest batch whose maps were its own spent 5-8 ms a program generating the WGSL
+    // the first batch already had, 15-25 ms in one walk frame. Each draw still binds its own map (the pixels below).
+    CHECK(renderer.equalProgramReuses() == 1);
     // ...on a browser too, where every layout creation is a new handle: Dawn native dedupes equal layouts by content,
     // so the pipeline above would match there even if each program interned a layout of its own.
     CHECK(renderer.layouts().pipelineLayouts() == layouts);

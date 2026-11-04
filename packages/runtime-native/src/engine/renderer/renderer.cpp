@@ -2830,10 +2830,15 @@ std::optional<std::pair<shader::StageModule, shader::StageModule>> Renderer::equ
     const auto& theirs = found->second.serials;
     ++equalProgramReuses_;
     auto stages = std::make_pair(found->second.program->vertex, found->second.program->fragment);
-    for (shader::StageModule* stage : {&stages.first, &stages.second})
+    for (shader::StageModule* stage : {&stages.first, &stages.second}) {
         for (auto& field : stage->uniforms)
             if (const auto name = std::find(theirs.begin(), theirs.end(), field.name); name != theirs.end())
                 field = shader::UniformField{serials[size_t(name - theirs.begin())], field.type, field.offset, field.size, field.schedule};
+        // A positional map binds this material's own texture (bindGroup's graph()), not the first material's.
+        for (auto& label : stage->graphTextureLabels)
+            if (const auto name = std::find(theirs.begin(), theirs.end(), label.second); name != theirs.end())
+                label.second = serials[size_t(name - theirs.begin())];
+    }
     return stages;
 }
 
