@@ -26,8 +26,9 @@ export class DebugTelemetry {
     name: string,
     amount = 1,
     area = "bridge",
-    // The file that adds the counter names itself when it is not the classes' file (`browser-wasm-runtime.ts`,
-    // PRD-803); a counter the back end's own class code adds keeps this default.
+    // Every counter the back end adds keeps this name, including the ones `browser-wasm-runtime.ts`
+    // adds since PRD-803 split it out: the split moved code, so the attribution a debug report shows
+    // does not move with it.
     caller = "browser-backend.ts",
     unit?: string,
   ): void {
