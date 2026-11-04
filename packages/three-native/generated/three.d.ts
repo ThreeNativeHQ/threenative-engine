@@ -1104,6 +1104,7 @@ polygonOffsetFactor: number;
 polygonOffsetUnits: number;
 colorWrite: boolean;
 alphaHash: boolean;
+maxPositionOffset: number;
 
   clone(): this;
 
@@ -1472,6 +1473,7 @@ fog: boolean;
 alphaTest: number;
 readonly id: number;
 readonly type: string;
+maxPositionOffset: number;
 
   setValues(values?: MeshBasicMaterialParameters): void;
 
@@ -1522,6 +1524,8 @@ colorWrite: boolean;
 aoNode: Node | null;
 irradianceNode: Node | null;
 alphaHash: boolean;
+castShadowPositionNode: Node | null;
+maxPositionOffset: number;
 
   clone(): this;
 
@@ -1609,6 +1613,7 @@ readonly type: string;
 twoSidedFoliage: boolean;
 roughDiffuse: boolean;
 subsurfaceColor: Color | undefined;
+maxPositionOffset: number;
 
   setValues(values?: MeshStandardMaterialParameters): void;
 
@@ -1678,6 +1683,8 @@ twoSidedFoliage: boolean;
 roughDiffuse: boolean;
 subsurfaceColor: Color | undefined;
 alphaHash: boolean;
+castShadowPositionNode: Node | null;
+maxPositionOffset: number;
 
   clone(): this;
 
@@ -1792,6 +1799,8 @@ colorWrite: boolean;
 aoNode: Node | null;
 irradianceNode: Node | null;
 alphaHash: boolean;
+castShadowPositionNode: Node | null;
+maxPositionOffset: number;
 
   clone(): this;
 
@@ -2623,6 +2632,7 @@ polygonOffsetFactor: number;
 polygonOffsetUnits: number;
 colorWrite: boolean;
 alphaHash: boolean;
+maxPositionOffset: number;
 
   clone(): this;
 
@@ -3361,6 +3371,7 @@ colorWrite: boolean;
 twoSidedFoliage: boolean;
 subsurfaceColor: Color | undefined;
 alphaHash: boolean;
+maxPositionOffset: number;
 
   clone(): this;
 
@@ -3403,6 +3414,7 @@ colorWrite: boolean;
 twoSidedFoliage: boolean;
 subsurfaceColor: Color | undefined;
 alphaHash: boolean;
+maxPositionOffset: number;
 
   clone(): this;
 
