@@ -744,10 +744,15 @@ export function cellKey(x: number, z: number): string {
   return `${String(x)}:${String(z)}`;
 }
 
+/**
+ * Whether two batches publish the same levels per record. Records are `LOD_RANGE_STRIDE` (4) floats;
+ * only the levels (the first two) count: the fade a swap stamps describes the swap, not the answer.
+ */
 export function sameLodRanges(a: Float32Array | undefined, b: Float32Array | undefined): boolean {
   if (a === undefined || b === undefined) return a === b;
   if (a.length !== b.length) return false;
-  for (let index = 0; index < a.length; index += 1) if (a[index] !== b[index]) return false;
+  for (let index = 0; index < a.length; index += 4)
+    if (a[index] !== b[index] || a[index + 1] !== b[index + 1]) return false;
   return true;
 }
 

@@ -782,6 +782,12 @@ export function impostorFrameUv(
   };
 }
 
+/**
+ * How long a published level change fades, in seconds: UE 5.8.3 `lod.TemporalLag`
+ * (Engine/Source/Runtime/Engine/Private/SceneManagement.cpp:28-32).
+ */
+export const LOD_TEMPORAL_LAG = 0.5;
+
 /** Complementary LOD masks over the caller's distance bands, shared by colour and shadow passes. */
 export function worldLodMaterial(
   source: Material,
@@ -793,6 +799,7 @@ export function worldLodMaterial(
   distanceBias: Node<"float">,
   spatial: boolean,
   publishedRanges = false,
+  clock?: Node<"float">,
 ): NodeMaterial {
   const material = cloneLitMaterial(source);
   const inverse = uniform(local.clone().invert());
@@ -812,8 +819,9 @@ export function worldLodMaterial(
   // CPU-admitted batches publish the levels their instance currently has beside its matrix. During
   // a queued refilter, an old level outside that set remains whole until the replacement is swapped.
   // LOD indices are categorical; interpolating 2 below 2 can clip an otherwise whole tree.
+  // `.zw` is the fade a swap stamped: the level the record was whole at (-1: none) and when.
   const published = publishedRanges
-    ? varying(attribute("tnPublishedLodRange", "vec2") as Node<"vec2">).setInterpolation("flat")
+    ? varying(attribute("tnPublishedLodRange", "vec4") as Node<"vec4">).setInterpolation("flat")
     : undefined;
   let mask = float(1).greaterThan(0);
   for (let gate = 1; gate < distances.length; gate++) {
@@ -842,7 +850,20 @@ export function worldLodMaterial(
         );
     }
   }
-  material.maskNode = material.maskNode ? (material.maskNode as Node<"bool">).and(mask) : mask;
+  // A refilter that lands late turns a whole tree into a dithered pair in one frame. The colour pass
+  // keeps the old whole level on a shrinking share of pixels for `LOD_TEMPORAL_LAG`, as UE fades
+  // every LOD change in time; the shares stay complementary, so no pixel holds both or neither.
+  // Shadows take the new answer at once: a cached shadow page must not keep a frame of the fade.
+  let colour = mask;
+  if (published !== undefined && clock !== undefined) {
+    const progress = clock.sub(published.w).div(LOD_TEMPORAL_LAG);
+    const blend = fract(
+      sin(dot(floor(screenCoordinate.xy), vec2(39.3468, 11.1353))).mul(24634.6345),
+    );
+    const holdOld = published.z.greaterThanEqual(0).and(blend.greaterThanEqual(progress));
+    colour = select(holdOld, published.z.sub(level).abs().lessThan(0.5), mask);
+  }
+  material.maskNode = material.maskNode ? (material.maskNode as Node<"bool">).and(colour) : colour;
   material.maskShadowNode = material.maskShadowNode
     ? (material.maskShadowNode as Node<"bool">).and(mask)
     : mask;

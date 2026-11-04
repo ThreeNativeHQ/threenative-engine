@@ -471,6 +471,34 @@ it("opts CPU LOD masks into published per-instance ranges", () => {
   source.dispose();
 });
 
+it("fades a published level change in the colour pass only", () => {
+  const source = new MeshStandardMaterial();
+  const clock = uniform(0);
+  const material = worldLodMaterial(
+    source,
+    new Matrix4(),
+    [0, 60],
+    0,
+    0.2,
+    uniform(new Vector3()),
+    uniform(1),
+    false,
+    true,
+    clock,
+  );
+  const reaches = (root: unknown): boolean => {
+    let found = false;
+    (root as { traverse(visit: (node: unknown) => void): void }).traverse((node) => {
+      if (node === clock) found = true;
+    });
+    return found;
+  };
+  expect(reaches(material.maskNode), "the colour mask reads the fade clock").toBe(true);
+  expect(reaches(material.maskShadowNode), "shadows take the new answer at once").toBe(false);
+  material.dispose();
+  source.dispose();
+});
+
 it("Strata shadow cutout uses the view sampled alpha and mip-adjusted threshold", async () => {
   const { loadPack } = await import("../../../examples/strata-terrain-preview/src/render/pack.js");
   const { createAssetLoader } = await import("../src/assets.js");

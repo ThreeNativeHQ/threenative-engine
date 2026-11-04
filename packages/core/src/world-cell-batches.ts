@@ -77,6 +77,8 @@ let regroupScratch = new Float32Array(0);
 let lodRangeScratch = new Float32Array(0);
 
 const LOD_RANGE_ATTRIBUTE = "tnPublishedLodRange";
+/** Floats per record in it: the levels published (min, max), the level a fade starts from (-1: none) and when. */
+export const LOD_RANGE_STRIDE = 4;
 
 function lodScratchFor(floats: number): Float32Array {
   if (lodRangeScratch.length < floats) lodRangeScratch = new Float32Array(floats * 2);
@@ -288,7 +290,10 @@ export class SharedBatch {
     view.boundingSphere = source.boundingSphere;
     view.setDrawRange(source.drawRange.start, source.drawRange.count);
     view.userData.tnPublishedLodRangeView = true;
-    const ranges = new InstancedBufferAttribute(new Float32Array(capacity * 2), 2);
+    const ranges = new InstancedBufferAttribute(
+      new Float32Array(capacity * LOD_RANGE_STRIDE),
+      LOD_RANGE_STRIDE,
+    );
     ranges.setUsage(DynamicDrawUsage);
     view.setAttribute(LOD_RANGE_ATTRIBUTE, ranges);
     return view;
@@ -620,13 +625,17 @@ export class SharedBatch {
     const ranges = this.#lodRangeAttribute();
     if (ranges !== undefined) {
       const values = ranges.array as Float32Array;
-      if (lodRanges !== undefined) values.set(lodRanges.subarray(0, written * 2), start * 2);
+      if (lodRanges !== undefined)
+        values.set(lodRanges.subarray(0, written * LOD_RANGE_STRIDE), start * LOD_RANGE_STRIDE);
       else
         for (let index = 0; index < written; index += 1) {
-          values[(start + index) * 2] = this.#rangeLevel;
-          values[(start + index) * 2 + 1] = this.#rangeLevel;
+          const at = (start + index) * LOD_RANGE_STRIDE;
+          values[at] = this.#rangeLevel;
+          values[at + 1] = this.#rangeLevel;
+          values[at + 2] = -1;
+          values[at + 3] = 0;
         }
-      values.fill(0, (start + written) * 2, (start + reserved) * 2);
+      values.fill(0, (start + written) * LOD_RANGE_STRIDE, (start + reserved) * LOD_RANGE_STRIDE);
       ranges.needsUpdate = true;
     }
     array.fill(0, (start + written) * 16, (start + reserved) * 16);
@@ -672,7 +681,11 @@ export class SharedBatch {
     (this.mesh.instanceMatrix.array as Float32Array).fill(0, start * 16, (start + size) * 16);
     const ranges = this.#lodRangeAttribute();
     if (ranges !== undefined) {
-      (ranges.array as Float32Array).fill(0, start * 2, (start + size) * 2);
+      (ranges.array as Float32Array).fill(
+        0,
+        start * LOD_RANGE_STRIDE,
+        (start + size) * LOD_RANGE_STRIDE,
+      );
       ranges.needsUpdate = true;
     }
     this.#hole(start, start + size);
@@ -743,7 +756,11 @@ export class SharedBatch {
       const size = this.#size.get(top) ?? 0;
       if (size <= holeEnd - holeStart) {
         array.copyWithin(holeStart * 16, topFrom * 16, drawn * 16);
-        this.#lodRangeAttribute()?.array.copyWithin(holeStart * 2, topFrom * 2, drawn * 2);
+        this.#lodRangeAttribute()?.array.copyWithin(
+          holeStart * LOD_RANGE_STRIDE,
+          topFrom * LOD_RANGE_STRIDE,
+          drawn * LOD_RANGE_STRIDE,
+        );
         this.#start.set(top, holeStart);
         if (holeEnd - holeStart > size) this.#free[0] = [holeStart + size, holeEnd];
         else this.#free.shift();
@@ -753,7 +770,11 @@ export class SharedBatch {
       } else {
         const shift = holeEnd - holeStart;
         array.copyWithin(holeStart * 16, holeEnd * 16, drawn * 16);
-        this.#lodRangeAttribute()?.array.copyWithin(holeStart * 2, holeEnd * 2, drawn * 2);
+        this.#lodRangeAttribute()?.array.copyWithin(
+          holeStart * LOD_RANGE_STRIDE,
+          holeEnd * LOD_RANGE_STRIDE,
+          drawn * LOD_RANGE_STRIDE,
+        );
         this.#free.shift();
         for (const [handle, start] of this.#start) {
           if (start >= holeEnd) this.#start.set(handle, start - shift);
@@ -829,7 +850,8 @@ export class SharedBatch {
     let total = 0;
     for (const square of squares) total += sizeOf(square);
     const scratch = scratchFor(total * 16);
-    const rangeScratch = rangeArray === undefined ? undefined : lodScratchFor(total * 2);
+    const rangeScratch =
+      rangeArray === undefined ? undefined : lodScratchFor(total * LOD_RANGE_STRIDE);
     // The visible squares first. `filter` is stable, so both halves keep the order the buffer had
     // them in and a residency change lays out exactly what the last one did.
     const front = squares.filter((one) => visible?.has(one.cluster) ?? true);
@@ -846,7 +868,10 @@ export class SharedBatch {
       for (const [handle, start, count] of square.blocks) {
         scratch.set(array.subarray(start * 16, (start + count) * 16), written * 16);
         if (rangeScratch !== undefined && rangeArray !== undefined)
-          rangeScratch.set(rangeArray.subarray(start * 2, (start + count) * 2), written * 2);
+          rangeScratch.set(
+            rangeArray.subarray(start * LOD_RANGE_STRIDE, (start + count) * LOD_RANGE_STRIDE),
+            written * LOD_RANGE_STRIDE,
+          );
         // Read before it is overwritten: a block written back to its own offset is a record the GPU
         // already holds, and is the whole difference between a repack that costs nothing and one
         // that re-uploads the key.
@@ -865,7 +890,7 @@ export class SharedBatch {
     }
     array.set(scratch.subarray(0, written * 16));
     if (rangeArray !== undefined && rangeScratch !== undefined && rangeAttribute !== undefined) {
-      rangeArray.set(rangeScratch.subarray(0, written * 2));
+      rangeArray.set(rangeScratch.subarray(0, written * LOD_RANGE_STRIDE));
       rangeAttribute.needsUpdate = true;
     }
     this.#drawn = written;
@@ -1050,7 +1075,11 @@ export class SharedBatch {
     const ranges = this.#lodRangeAttribute();
     if (ranges !== undefined) {
       ranges.clearUpdateRanges();
-      if (high > low) ranges.addUpdateRange((low / 16) * 2, ((high - low) / 16) * 2);
+      if (high > low)
+        ranges.addUpdateRange(
+          (low / 16) * LOD_RANGE_STRIDE,
+          ((high - low) / 16) * LOD_RANGE_STRIDE,
+        );
       ranges.needsUpdate = true;
     }
     this.#publish(this.#drawn);

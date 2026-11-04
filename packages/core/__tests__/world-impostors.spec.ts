@@ -730,7 +730,7 @@ describe("WorldCells automatic impostors", () => {
       const mesh = partsOf(world, "pine", level, 0).find((candidate) => candidate.count > 0);
       const attribute = mesh?.geometry.getAttribute("tnPublishedLodRange");
       expect(attribute).toBeDefined();
-      return Array.from((attribute?.array as Float32Array).slice(instance * 2, instance * 2 + 2));
+      return Array.from((attribute?.array as Float32Array).slice(instance * 4, instance * 4 + 2));
     };
     const rootAt = (level: number, instance: number): Vector3 => {
       const mesh = partsOf(world, "pine", level, 0).find((candidate) => candidate.count > 0);
@@ -752,8 +752,8 @@ describe("WorldCells automatic impostors", () => {
         | undefined;
       expect(
         Array.from({ length: nearMesh?.count ?? 0 }, (_, index) => [
-          published?.[index * 2],
-          published?.[index * 2 + 1],
+          published?.[index * 4],
+          published?.[index * 4 + 1],
         ]).some(([min, max]) => min === 0 && max === 1),
       ).toBe(true);
       const nearIndex = Array.from({ length: nearMesh?.count ?? 0 }, (_, index) => index).find(
@@ -778,6 +778,53 @@ describe("WorldCells automatic impostors", () => {
       );
       expect(farIndex).toBeDefined();
       expect(range(1, farIndex ?? 0)).toEqual([1, 1]);
+    } finally {
+      world.dispose();
+    }
+  });
+
+  it("stamps a fade when a late refilter turns a whole far tree into a dithered pair", async () => {
+    // UE 5.8.3 fades every LOD change over lod.TemporalLag; a record that was whole at level 1 and
+    // now publishes 0..1 names level 1 as the level to fade from, with the time it reached the GPU.
+    stubManifestFetch(pineOnly());
+    const follow = { position: { x: -84, z: -64 } };
+    const world = await loadPine(treeLoader(), {
+      admissionBudgetMs: 2,
+      gpuScene: false,
+      lodHysteresis: 0.2,
+      follow,
+    });
+    const settle = async (): Promise<void> => {
+      for (let pass = 0; pass < 100; pass++) {
+        world.update();
+        await flush();
+      }
+    };
+    const records = (level: number): { root: Vector3; range: number[] }[] => {
+      const mesh = partsOf(world, "pine", level, 0).find((candidate) => candidate.count > 0);
+      const array = mesh?.geometry.getAttribute("tnPublishedLodRange")?.array as Float32Array;
+      const matrix = new Matrix4();
+      return Array.from({ length: mesh?.count ?? 0 }, (_, index) => {
+        mesh?.getMatrixAt(index, matrix);
+        return {
+          root: new Vector3().setFromMatrixPosition(matrix),
+          range: Array.from(array.slice(index * 4, index * 4 + 4)),
+        };
+      });
+    };
+    try {
+      await flushed(world);
+      await settle();
+      const whole = records(1).find(({ range }) => range[0] === 1 && range[1] === 1);
+      expect(whole, "a far tree published whole at level 1").toBeDefined();
+      expect(whole?.range[2], "nothing to fade on first admission").toBe(-1);
+      const root = whole?.root ?? new Vector3();
+      follow.position.x = root.x - 60;
+      follow.position.z = root.z;
+      await settle();
+      const pair = records(0).find(({ root: at }) => at.distanceTo(root) < 0.01);
+      expect(pair?.range.slice(0, 3), "now dithered 0..1, fading from 1").toEqual([0, 1, 1]);
+      expect(pair?.range[3] ?? 0, "stamped with the renderer clock").toBeGreaterThan(0);
     } finally {
       world.dispose();
     }

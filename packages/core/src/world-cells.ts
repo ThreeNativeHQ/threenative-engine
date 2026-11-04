@@ -100,7 +100,8 @@ import {
 import { type IAdmissionBudget, TerrainTileBudgetError, TerrainTiles } from "./world-tiles.js";
 
 const _readinessPosition = new Vector3();
-const LOD_RANGE_RECORD_BYTES = 8;
+// Four floats per record (`LOD_RANGE_STRIDE`): the published levels and the fade a swap stamps.
+const LOD_RANGE_RECORD_BYTES = 16;
 
 export { bundleSafeMaterial } from "./world-bundle-safety.js";
 
@@ -438,6 +439,8 @@ export class WorldCells extends Group implements IComputeDriven {
   readonly #hasColliders: boolean;
   readonly #lodHysteresis: number;
   readonly #placementLevels: Uint32Array | undefined;
+  /** Each record's last published levels, `(min + 1) | (max + 1) << 4` (0: none yet); see `#addPlacements`. */
+  readonly #placementRanges: Uint8Array | undefined;
   readonly #placementReach: Float32Array | undefined;
   readonly #reachRanges: Map<
     IWorldCell,
@@ -682,6 +685,10 @@ export class WorldCells extends Group implements IComputeDriven {
       this.#lodHysteresis > 0
         ? new Uint32Array(init.placements.byteLength / PLACEMENT_RECORD_BYTES)
         : undefined;
+    this.#placementRanges =
+      this.#placementLevels === undefined
+        ? undefined
+        : new Uint8Array(this.#placementLevels.length);
     this.#placementReach = init.placementReach;
     this.#reachRanges = init.reachRanges;
     this.#rebuildsPerUpdate = positiveInteger(init.rebuildsPerUpdate ?? 16, "rebuildsPerUpdate");
@@ -2434,6 +2441,26 @@ export class WorldCells extends Group implements IComputeDriven {
       }
       const minPublished = Math.min(...selected);
       const maxPublished = Math.max(...selected);
+      // A refilter that lands after the walk entered a dither band would swap a tree's look in one
+      // frame. UE 5.8.3 fades every LOD change over `lod.TemporalLag` (0.5 s,
+      // Engine/Source/Runtime/Engine/Private/SceneManagement.cpp:28): a record that was one whole
+      // level and now publishes two names that level, and the swap stamps when the fade starts.
+      let fadeFrom = -1;
+      if (this.#placementRanges !== undefined) {
+        const record = job.run.offset + index;
+        const before = this.#placementRanges[record] as number;
+        const beforeMin = (before & 15) - 1;
+        const beforeMax = (before >> 4) - 1;
+        if (
+          before !== 0 &&
+          beforeMin === beforeMax &&
+          minPublished !== maxPublished &&
+          beforeMin >= minPublished &&
+          beforeMin <= maxPublished
+        )
+          fadeFrom = beforeMin;
+        this.#placementRanges[record] = (minPublished + 1) | ((maxPublished + 1) << 4);
+      }
       // The record's own world bounds: the placement widened by the asset's authored bounds at the
       // scale it is drawn at. Read here because this loop already holds the placement and the scale,
       // and it is the one number the shadow levels' invalidation is tested against — the cell box is
@@ -2516,7 +2543,7 @@ export class WorldCells extends Group implements IComputeDriven {
           this.#instance.multiplyMatrices(this.#matrix, entry.local);
           (levelBatches[part] as InstancedBatch).add(this.#instance);
           const range = job.lodRanges?.[level]?.[part];
-          if (range !== undefined) range.push(minPublished, maxPublished);
+          if (range !== undefined) range.push(minPublished, maxPublished, fadeFrom, 0);
           const box = levelBoxes?.[part];
           if (box === undefined) continue;
           box.union(this.#recordBounds);

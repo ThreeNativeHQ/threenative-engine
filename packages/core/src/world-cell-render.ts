@@ -513,6 +513,11 @@ export class CellRender {
 
   readonly #lodDistanceBias = uniform(1).setGroup(renderGroup);
 
+  /** Seconds since this renderer started; a swap stamps it so `worldLodMaterial` can fade the change. */
+  readonly #lodClock = uniform(0).setGroup(renderGroup);
+
+  readonly #lodClockOrigin = performance.now();
+
   readonly #lodMaterials = new Map<
     string,
     { readonly source: Material; readonly material: Material }
@@ -835,6 +840,10 @@ export class CellRender {
     }
     for (const entry of job.fresh) {
       cell.batches.push(entry);
+      // When this answer reached the screen, so a record whose level set grew fades into it.
+      const ranges = entry.lodRanges;
+      if (ranges !== undefined)
+        for (let at = 3; at < ranges.length; at += 4) ranges[at] = this.#lodClock.value;
       if (entry.shared !== undefined)
         entry.shared.write(entry.segment, entry.batch, entry.lodRanges);
       if (this.#gpuScene.on) entry.gpu = this.placeSources(job, entry);
@@ -1519,6 +1528,7 @@ export class CellRender {
         this.#lodDistanceBias,
         this.#lodSpatial,
         publishedRanges,
+        this.#lodClock,
       );
       cached = { source, material };
       this.#lodMaterials.set(key, cached);
@@ -1528,6 +1538,7 @@ export class CellRender {
 
   updateLodEye(x: number, y: number, z: number): void {
     this.#lodEye.value.set(x, y, z);
+    this.#lodClock.value = (performance.now() - this.#lodClockOrigin) / 1000;
   }
 
   refreshLodMaterials(asset: IAssetState): void {
