@@ -16,20 +16,16 @@ import { markStatic } from "./static-transform.js";
 export const CHUNK_NAME = "world-chunk";
 
 /**
- * The layer the level shadow cameras render and the main camera does not; see
- * `VirtualShadowNode`'s `VIRTUAL_SHADOW_CASTER_LAYER`. Duplicated from `index.ts` rather than
- * imported, because the world chunk is separate from the main one and this is the one value the two
- * halves of the cascade have to agree on.
+ * The cascade's caster layers, re-exported: the chunk proxy stands in for merged geometry on the
+ * same bits the node and `WorldCells` use, so a drift here would put the world's casters on a layer
+ * no level camera reads.
  */
-export const VIRTUAL_SHADOW_CASTER_LAYER = 28;
-/**
- * The layer the wide shadow levels render and the fine ones do not: one caster mesh per
- * `asset:level:part` holding every cell's records, for a level whose window covers the whole
- * resident ring, where a cluster per square is a draw per square for the same pixels. Duplicated
- * from `index.ts` like the layer above, and a bit of its own so a level camera renders one caster
- * granularity or the other and never both.
- */
-export const VIRTUAL_SHADOW_WIDE_CASTER_LAYER = 27;
+import {
+  VIRTUAL_SHADOW_CASTER_LAYER,
+  VIRTUAL_SHADOW_WIDE_CASTER_LAYER,
+} from "./render/virtual-shadow-layers.js";
+
+export { VIRTUAL_SHADOW_CASTER_LAYER, VIRTUAL_SHADOW_WIDE_CASTER_LAYER };
 
 /**
  * The one surface each `side` of a chunk shadow proxy draws with, world-wide.
