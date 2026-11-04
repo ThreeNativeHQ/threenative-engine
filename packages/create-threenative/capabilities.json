@@ -7842,6 +7842,29 @@
     },
     {
       "aliases": [],
+      "constraints": [
+        "returns an ordinary `Terrain`: add roads, rivers, scatter or more layers, then `evaluate()` in a build script",
+        "shape only; materials, colours and textures belong to the game",
+        "calibrated at size 5000, resolution 513; other sizes keep the same slopes and scale the relief with `size`"
+      ],
+      "example": "const terrain = landform(\"alpine\", { size: 5000, resolution: 513, seed: 4 }); const state = terrain.evaluate();",
+      "importPath": "@threenative/terrain",
+      "kind": "function",
+      "overrides": [
+        "`relief` is the relief of the uplift envelope in metres (the finished relief lands within about 30% of it); `size`, `resolution` and `seed` as in `Terrain`"
+      ],
+      "package": "@threenative/terrain",
+      "requires": ["npm i @threenative/terrain"],
+      "signature": "export function landform(kind: LandformKind, options: ILandformOptions = { … }",
+      "situations": [
+        "start an open world, a distant backdrop or a mountain level from a kind of place"
+      ],
+      "summary": "One call, one landscape: a calibrated layer recipe for a kind of environment.",
+      "supersedes": [],
+      "symbol": "landform"
+    },
+    {
+      "aliases": [],
       "constraints": ["authoring data only; the game owns appearance, physics and rendering"],
       "example": "const terrain = new Terrain({ resolution: 17 }); const file = await makeExport(terrain.evaluate(), terrain.toJSON(), \"project\");",
       "importPath": "@threenative/terrain",
@@ -7958,6 +7981,23 @@
       "summary": "Recovered prefix-caching authoring evaluator. Returned buffers belong to the caller.",
       "supersedes": [],
       "symbol": "TerrainEvaluator"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "square grids only; compare crops of equal spacing, because slope and curvature depend on it"
+      ],
+      "example": "const stats = terrainStats(state.height, state.resolution, state.size);",
+      "importPath": "@threenative/terrain",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i @threenative/terrain"],
+      "signature": "export function terrainStats(height: ArrayLike<number>, n: number, size: number): ITerrainStats { … }",
+      "situations": ["compare generated terrain with a USGS or SRTM crop on the same footprint"],
+      "summary": "Landform statistics used to calibrate generators against real DEMs.",
+      "supersedes": [],
+      "symbol": "terrainStats"
     },
     {
       "aliases": [],

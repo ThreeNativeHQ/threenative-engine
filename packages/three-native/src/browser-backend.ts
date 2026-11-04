@@ -17,7 +17,7 @@ import { UpstreamVector3, defineMath } from "./browser-math.js";
 import type { ITslRuntime, TslArgValue } from "./browser-tsl.js";
 import { type DebugTelemetry, debugTelemetry } from "./debug-telemetry.js";
 import { detachVirtualShadow, shadowFilterOptions, virtualShadowOptions } from "./shadow-node.js";
-import { withUpdateRanges } from "./update-ranges.js";
+import { uploadRanges, withUpdateRanges } from "./update-ranges.js";
 
 export interface IRegistryClass {
   readonly constructor: boolean;
@@ -1572,6 +1572,10 @@ export function defineBrowserClasses(
       // kinds are exclusive, so an attribute setter never enumerates a geometry and vice versa.
       const rangeMethod = attributeClass && rangeMethods.has(method);
       const transformMethod = attributeClass && transformMethods.has(method);
+      // Update-range bookkeeping reads no attribute bytes, so it flushes no shadow: a streamed batch
+      // that clears and re-adds its range each write sent every pending array, whole, twice.
+      const bookkeeping =
+        attributeClass && (method === "clearUpdateRanges" || method === "addUpdateRange");
       const geometryWrite = geometryClass && geometryWrites.has(method);
       // A mesh-level write into an attribute a game can hold a shadow of (see `instanceItem`).
       const instanceWrite =
@@ -1622,7 +1626,7 @@ export function defineBrowserClasses(
           } else if (schedule === "all") scheduling = new WeakMap();
           // A per-vertex setter writes its own range and reads no kept array, so a whole-shadow flush
           // would cost O(N) a call; it syncs just its range back below. Anything else flushes edits.
-          if (pending.size > 0 && !rangeMethod) writeBack();
+          if (pending.size > 0 && !rangeMethod && !bookkeeping) writeBack();
           // A full-array attribute transform reads its own array: send the game's shadow first.
           if (transformMethod) {
             const entry = arrays.get(this);
@@ -2340,6 +2344,9 @@ export function defineBrowserClasses(
         },
       });
       // needsUpdate is a property write, not a call: it hands the shadow to the engine as it stands.
+      // Declared update ranges send only themselves, as three's own upload does
+      // (WebGPUAttributeUtils.updateAttribute): a 10,000-instance batch that rewrote 40 records sent
+      // all 10,000 each time. An edit outside the declared ranges stays unsent, as on three's GPU.
       const needsUpdate = Object.getOwnPropertyDescriptor(cls.prototype, "needsUpdate");
       if (needsUpdate?.set !== undefined)
         Object.defineProperty(cls.prototype, "needsUpdate", {
@@ -2347,7 +2354,18 @@ export function defineBrowserClasses(
           set(this: object, value: unknown) {
             const entry = arrays.get(this);
             if (value === true && entry !== undefined) {
-              attributeWrite.call(runtime, refOf(this), entry.array);
+              const ranges = uploadRanges(this);
+              if (ranges.length === 0) attributeWrite.call(runtime, refOf(this), entry.array);
+              for (const { start, count } of ranges) {
+                const end = Math.min(start + count, entry.array.length);
+                if (end > start)
+                  attributeWrite.call(
+                    runtime,
+                    refOf(this),
+                    entry.array.subarray(start, end),
+                    start,
+                  );
+              }
               pending.delete(this);
             }
             needsUpdate.set?.call(this, value);

@@ -6457,6 +6457,23 @@ export function gradientAt(grid: ISampledGrid, x: number, z: number): [number, n
 const gradient = gradientAt(new Terrain({ resolution: 17 }).evaluate(), 0, 0);
 ```
 
+### `landform`
+
+`function` — One call, one landscape: a calibrated layer recipe for a kind of environment.
+
+```ts
+export function landform(kind: LandformKind, options: ILandformOptions = { … }
+```
+
+- **Use when:** start an open world, a distant backdrop or a mountain level from a kind of place
+- **Constraints:** returns an ordinary `Terrain`: add roads, rivers, scatter or more layers, then `evaluate()` in a build script · shape only; materials, colours and textures belong to the game · calibrated at size 5000, resolution 513; other sizes keep the same slopes and scale the relief with `size`
+- **Requires:** npm i @threenative/terrain
+- **Overrides:** `relief` is the relief of the uplift envelope in metres (the finished relief lands within about 30% of it); `size`, `resolution` and `seed` as in `Terrain`
+
+```ts
+const terrain = landform("alpine", { size: 5000, resolution: 513, seed: 4 }); const state = terrain.evaluate();
+```
+
 ### `makeExport`
 
 `function` — Recovered numerical/project exports; GLB/runtime outputs contain terrain only.
@@ -6569,6 +6586,22 @@ export class TerrainEvaluator { … }
 
 ```ts
 const terrain = new Terrain({ resolution: 17 }); const evaluator = new TerrainEvaluator(); const state = evaluator.evaluate(terrain.toJSON());
+```
+
+### `terrainStats`
+
+`function` — Landform statistics used to calibrate generators against real DEMs.
+
+```ts
+export function terrainStats(height: ArrayLike<number>, n: number, size: number): ITerrainStats { … }
+```
+
+- **Use when:** compare generated terrain with a USGS or SRTM crop on the same footprint
+- **Constraints:** square grids only; compare crops of equal spacing, because slope and curvature depend on it
+- **Requires:** npm i @threenative/terrain
+
+```ts
+const stats = terrainStats(state.height, state.resolution, state.size);
 ```
 
 ### `validateDocument`

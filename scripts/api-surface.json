@@ -510,6 +510,7 @@
         "@threenative/terrain#encodeSplatPNGs": "export async function encodeSplatPNGs(state: ITerrainState) { … }",
         "@threenative/terrain#encodeZIP": "export function encodeZIP(files: readonly IExportFile[]) { … }",
         "@threenative/terrain#gradientAt": "export function gradientAt(grid: ISampledGrid, x: number, z: number): [number, number] { … }",
+        "@threenative/terrain#landform": "export function landform(kind: LandformKind, options: ILandformOptions = { … }",
         "@threenative/terrain#makeExport": "export function makeExport( state: ITerrainState | null, recipe: ITerrainDocument, kind: \"project\", ): Promise<IExportArchive>;",
         "@threenative/terrain#sampleHeight": "sampleHeight = (grid: ISampledGrid, x: number, z: number): number => sampleGrid( grid.height, grid.resolution, grid.resolution, x / grid.size + 0.5, z / grid.size + 0.5, )",
         "@threenative/terrain#slopeAtIndex": "export function slopeAtIndex(grid: ISampledGrid, i: number): number { … }",
@@ -517,6 +518,7 @@
         "@threenative/terrain#splinePoints": "export function splinePoints( points: readonly (readonly [number, number, number])[], step = 3, smooth = true, ): [number, number, number][] { … }",
         "@threenative/terrain#Terrain": "export class Terrain { … }",
         "@threenative/terrain#TerrainEvaluator": "export class TerrainEvaluator { … }",
+        "@threenative/terrain#terrainStats": "export function terrainStats(height: ArrayLike<number>, n: number, size: number): ITerrainStats { … }",
         "@threenative/terrain#validateDocument": "export function validateDocument(doc: ITerrainDocument): void { … }",
         "@threenative/terrain#validatePlacementOverrides": "export function validatePlacementOverrides( value: unknown = { … }"
       }

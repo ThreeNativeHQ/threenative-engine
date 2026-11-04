@@ -387,6 +387,8 @@ interface IAttribute {
   setY(index: number, value: number): unknown;
   setXYZ(index: number, x: number, y: number, z: number): unknown;
   copyAt(index: number, attribute: unknown, source: number): unknown;
+  addUpdateRange(start: number, count: number): unknown;
+  clearUpdateRanges(): unknown;
 }
 
 interface IGeometry {
@@ -458,7 +460,9 @@ describe("BufferAttribute sync between the JS array and the engine, on the brows
     const matrices = new Map<string, readonly number[]>();
     const instances = new Map<string, { matrices: IEngineRef; color: IEngineRef | null }>();
     // Every whole-array write the engine received, as the bytes three's own array would hold.
-    const writes: { key: string; values: number[] }[] = [];
+    const writes: { key: string; values: number[]; offset: number }[] = [];
+    // Each attribute's declared update ranges, as the engine keeps them for its next upload.
+    const updateRanges = new Map<string, { start: number; count: number }[]>();
     const counts = { reads: 0, writes: 0 };
     let next = 0;
     /** An engine-side attribute: its store, its item size, and the ref the game's `array` reads. */
@@ -548,6 +552,15 @@ describe("BufferAttribute sync between the JS array and the engine, on the brows
           for (let c = 0; c < lanes; c++) write(self, index, c, Number(args[1 + c]));
           return null;
         }
+        case "addUpdateRange":
+          updateRanges.set(self.key, [
+            ...(updateRanges.get(self.key) ?? []),
+            { start: Number(args[0]), count: Number(args[1]) },
+          ]);
+          return null;
+        case "clearUpdateRanges":
+          updateRanges.delete(self.key);
+          return null;
         case "copyAt": {
           const source = args[1] as IEngineRef;
           for (let c = 0; c < size(self); c++)
@@ -655,6 +668,7 @@ describe("BufferAttribute sync between the JS array and the engine, on the brows
           return attributes === undefined ? "" : [...attributes.keys()].join("\n");
         }
         if (property === "itemSize") return itemSizes.get(self.key) ?? 0;
+        if (property === "updateRanges") return JSON.stringify(updateRanges.get(self.key) ?? []);
         if (property === "count") {
           const stride = size(self);
           return stride === 0 ? 0 : store(self).length / stride;
@@ -676,7 +690,7 @@ describe("BufferAttribute sync between the JS array and the engine, on the brows
       attributeWrite: (self, array, offset = 0) => {
         store(self).set(array as never, offset);
         counts.writes += array.length;
-        writes.push({ key: self.key, values: Array.from(array as ArrayLike<number>) });
+        writes.push({ key: self.key, values: Array.from(array as ArrayLike<number>), offset });
       },
     };
     return { runtime, matrices, instances, counts, writes };
@@ -714,6 +728,29 @@ describe("BufferAttribute sync between the JS array and the engine, on the brows
     p.setXYZ(0, 1, 2, 3);
     p.needsUpdate = true;
     expect([p.getX(0), p.getY(0), p.getZ(0)]).toEqual([1, 2, 3]);
+  });
+
+  it("sends only the declared update ranges on needsUpdate, as three's upload does", () => {
+    const { classes, counts, writes } = facade();
+    const Attribute = attributeClass(classes);
+    const a = new Attribute(new Float32Array(64), 4);
+    a.needsUpdate = true; // the adopted array's first send, whole
+    const sent = counts.writes;
+    const array = a.array;
+    array.fill(3, 16, 32);
+    a.clearUpdateRanges();
+    a.addUpdateRange(16, 16);
+    a.needsUpdate = true;
+    // Bookkeeping flushed nothing, and the send was the one declared range, not the 64 elements.
+    expect(counts.writes - sent).toBe(16);
+    expect(writes.at(-1)).toMatchObject({ offset: 16, values: new Array(16).fill(3) });
+    expect(a.getX(4)).toBe(3);
+    // No range declared: the whole array, as before.
+    a.clearUpdateRanges();
+    array[0] = 9;
+    a.needsUpdate = true;
+    expect(counts.writes - sent).toBe(16 + 64);
+    expect(a.getX(0)).toBe(9);
   });
 
   it("still sends a direct array edit to the engine on needsUpdate", () => {
