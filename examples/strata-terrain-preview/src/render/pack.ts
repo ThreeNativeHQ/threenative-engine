@@ -924,10 +924,10 @@ export async function loadPack(
       for (const part of entry.filter((candidate) => candidate.level === 1)) {
         let geometry = horizon.get(part) ?? part.geometry;
         if (part.role === "pine" && geometry.index) {
-          geometry = thinCards(
-            geometry,
-            Math.min(1, FAR_NEEDLE_TRIANGLES / (geometry.index.count / 3)),
-          );
+          // A multi-material section draws a range of a shared index: its own triangles set the share.
+          const { start, count } = geometry.drawRange;
+          const drawn = (Math.min(geometry.index.count, start + count) - start) / 3;
+          geometry = thinCards(geometry, Math.min(1, FAR_NEEDLE_TRIANGLES / drawn));
           if (geometry !== part.geometry && part.material)
             built.push({ geometry, material: part.material });
         }

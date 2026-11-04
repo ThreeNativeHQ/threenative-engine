@@ -68,6 +68,18 @@ describe("thinCards", () => {
     expect(thinCards(source, 1)).toBe(source);
   });
 
+  it("thins only the drawn range of a section cut by setDrawRange, and draws all it keeps", () => {
+    const section = cards(100);
+    section.setDrawRange(300, 300); // cards 50..99: the second material section of a shared index
+    const far = thinCards(section, 0.4);
+    const index = far.index as BufferAttribute;
+    expect(index.count / 3).toBe(40);
+    for (let i = 0; i < index.count; i++) expect(index.getX(i)).toBeGreaterThanOrEqual(200);
+    expect(far.drawRange.start).toBe(0);
+    expect(far.drawRange.count).toBe(Number.POSITIVE_INFINITY);
+    expect(area(far)).toBeCloseTo(50, 3);
+  });
+
   it("fails closed on what it cannot thin", () => {
     expect(() => thinCards(cards(4), 0)).toThrow(/keep/);
     expect(() => thinCards(cards(4), 1.5)).toThrow(/keep/);

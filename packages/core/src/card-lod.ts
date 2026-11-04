@@ -13,18 +13,22 @@ import { type BufferGeometry, Vector3 } from "three";
  * A card is one island of triangles joined by shared vertex indices. The choice is deterministic: a
  * fixed-seed shuffle of the islands, taken until the triangle share is met. Positions move; every
  * other attribute is kept, and a uniform scale about the centre leaves normals and UVs valid.
+ *
+ * Only the drawn range counts: a material section cut from a shared index by `setDrawRange` thins its
+ * own triangles, and the result, whose index holds just the kept ones, draws its whole index.
  */
 export function thinCards(geometry: BufferGeometry, keep: number): BufferGeometry {
   if (!(keep > 0 && keep <= 1)) throw new Error(`thinCards keep must be in (0, 1], got ${keep}.`);
   const index = geometry.index;
   if (index === null) throw new Error("thinCards needs an indexed geometry.");
   if (geometry.groups.length > 0) throw new Error("thinCards cannot keep material groups.");
-  const triangles = index.count / 3;
+  const [first, end] = drawnRange(geometry);
+  const triangles = (end - first) / 3;
   const target = Math.max(1, Math.round(triangles * keep));
   if (target >= triangles) return geometry;
 
   const position = geometry.getAttribute("position");
-  const { kept, scale } = pickCards([...cardIslands(geometry).values()], target);
+  const { kept, scale } = pickCards([...cardIslands(geometry, first, end).values()], target);
 
   const out = geometry.clone();
   const moved = out.getAttribute("position");
@@ -46,6 +50,7 @@ export function thinCards(geometry: BufferGeometry, keep: number): BufferGeometr
   }
   moved.needsUpdate = true;
   out.setIndex(indices);
+  out.setDrawRange(0, Number.POSITIVE_INFINITY);
   out.computeBoundingBox();
   out.computeBoundingSphere();
   return out;
@@ -57,8 +62,20 @@ interface ICardIsland {
   readonly centre: Vector3;
 }
 
-/** Islands of triangles joined by shared vertex indices, with their area and area-weighted centre. */
-function cardIslands(geometry: BufferGeometry): Map<number, ICardIsland> {
+/** The index entries the geometry draws, [first, end), whole triangles. */
+function drawnRange(geometry: BufferGeometry): [number, number] {
+  const count = (geometry.index as NonNullable<BufferGeometry["index"]>).count;
+  const first = Math.min(count, Math.max(0, geometry.drawRange.start));
+  const end = Math.min(count, first + geometry.drawRange.count);
+  return [first - (first % 3), end - ((end - first) % 3)];
+}
+
+/** Islands of the drawn triangles joined by shared vertex indices, with their area and area-weighted centre. */
+function cardIslands(
+  geometry: BufferGeometry,
+  first: number,
+  end: number,
+): Map<number, ICardIsland> {
   const index = geometry.index as NonNullable<BufferGeometry["index"]>;
   const position = geometry.getAttribute("position");
   const parent = Int32Array.from({ length: position.count }, (_, i) => i);
@@ -70,7 +87,7 @@ function cardIslands(geometry: BufferGeometry): Map<number, ICardIsland> {
     }
     return at;
   };
-  for (let t = 0; t < index.count; t += 3) {
+  for (let t = first; t < end; t += 3) {
     const root = find(index.getX(t));
     parent[find(index.getX(t + 1))] = root;
     parent[find(index.getX(t + 2))] = root;
@@ -80,7 +97,7 @@ function cardIslands(geometry: BufferGeometry): Map<number, ICardIsland> {
   const a = new Vector3();
   const b = new Vector3();
   const c = new Vector3();
-  for (let t = 0; t < index.count; t += 3) {
+  for (let t = first; t < end; t += 3) {
     a.fromBufferAttribute(position, index.getX(t));
     b.fromBufferAttribute(position, index.getX(t + 1));
     c.fromBufferAttribute(position, index.getX(t + 2));
