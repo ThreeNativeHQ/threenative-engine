@@ -1,5 +1,10 @@
 import type { IAssetLoader } from "@threenative/core";
-import { Heightfield, loadTerrainSplat } from "@threenative/core/world";
+import {
+  Heightfield,
+  bakedFractalNoise,
+  bakedNoise,
+  loadTerrainSplat,
+} from "@threenative/core/world";
 import { createSegmentIndex } from "@threenative/terrain";
 import {
   type BufferGeometry,
@@ -25,7 +30,6 @@ import {
   float,
   max,
   mix,
-  mx_fractal_noise_float,
   mx_noise_float,
   normalWorld,
   normalWorldGeometry,
@@ -172,8 +176,8 @@ export function tiledUV(
 ): Node<"vec2"> {
   const base = plane.div(GROUND_TILE[key] * scale);
   const warp = vec2(
-    mx_noise_float(positionWorld.mul(0.025)),
-    mx_noise_float(positionWorld.mul(0.025).add(vec3(17, 0, 29))),
+    bakedNoise(positionWorld.mul(0.025)),
+    bakedNoise(positionWorld.mul(0.025).add(vec3(17, 0, 29))),
   );
   return rotateUV(base, float(scale === 1 ? 0.38 : -0.73), vec2(0)).add(warp.mul(0.35));
 }
@@ -184,7 +188,7 @@ export function groundLayer(
   key: LayerKey,
   plane = positionWorld.xz,
 ): Node<"vec4"> {
-  const patch = smoothstep(-0.35, 0.35, mx_noise_float(positionWorld.mul(0.025)));
+  const patch = smoothstep(-0.35, 0.35, bakedNoise(positionWorld.mul(0.025)));
   const far = smoothstep(10, 70, positionView.length());
   const mid = mix(
     texture(source, tiledUV(key, 1, plane)),
@@ -210,9 +214,9 @@ export function groundTurf(
   hollow: Node<"float"> = float(0),
 ): Node<"vec3"> {
   const distance = positionView.length();
-  const broad = mx_fractal_noise_float(vec3(positionWorld.x, 0, positionWorld.z).mul(0.006), 2);
+  const broad = bakedFractalNoise(vec3(positionWorld.x, 0, positionWorld.z).mul(0.006), 2);
   const dry = smoothstep(-0.45, 0.45, broad.sub(hollow.mul(0.06)));
-  const tufts = mx_noise_float(positionWorld.mul(0.75))
+  const tufts = bakedNoise(positionWorld.mul(0.75))
     .mul(0.22)
     .mul(oneMinus(smoothstep(45, 140, distance)))
     .add(1);
@@ -235,7 +239,7 @@ function rockLayer(
   biome?: IBiome,
   relief = false,
 ): Node<"vec4"> {
-  const patch = smoothstep(-0.35, 0.35, mx_noise_float(positionWorld.mul(0.025)));
+  const patch = smoothstep(-0.35, 0.35, bakedNoise(positionWorld.mul(0.025)));
   const tap = (scale: number, angle: number, offset: Node<"vec2">) => {
     const sampled = texture(source, rotateUV(plane.div(scale), float(angle), vec2(0)).add(offset));
     if (!relief) return sampled;
@@ -393,7 +397,7 @@ function sandRipples(direction?: Node<"vec2">): Node<"vec3"> {
     .mul(across.x)
     .add(positionWorld.z.mul(across.y))
     .mul(RIPPLE.frequency * Math.PI * 2);
-  const wobble = mx_noise_float(positionWorld.mul(0.09)).mul(RIPPLE.wander);
+  const wobble = bakedNoise(positionWorld.mul(0.09)).mul(RIPPLE.wander);
   const crest = phase.add(wobble).sin();
   // Subtle relief disappears before the crests become smaller than a pixel.
   return vec3(across.x, 0, across.y)
@@ -439,7 +443,7 @@ function triplanarAlbedo(source: Texture, key: LayerKey, scale = 1): Node<"vec4"
  * costs the eye the thing it was added for.
  */
 function microGrain(): Node<"vec3"> {
-  const field = (p: Node<"vec3">) => mx_fractal_noise_float(p.mul(2.6), 2, 2, 0.5);
+  const field = (p: Node<"vec3">) => bakedFractalNoise(p.mul(2.6), 2, 2, 0.5);
   const here = field(positionWorld);
   const step = float(0.22);
   const dx = here.sub(field(positionWorld.add(vec3(step, 0, 0))));
@@ -518,12 +522,12 @@ export async function createGroundMaterial(
   };
 
   const otherBiome = biome !== undefined && biome.world !== "forest" && biome.world !== "coastal";
-  const macro = mx_fractal_noise_float(vec3(positionWorld.x, 0, positionWorld.z).mul(0.014), 3);
-  const mottling = mx_noise_float(vec3(positionWorld.x, 0, positionWorld.z).mul(0.045));
+  const macro = bakedFractalNoise(vec3(positionWorld.x, 0, positionWorld.z).mul(0.014), 3);
+  const mottling = bakedNoise(vec3(positionWorld.x, 0, positionWorld.z).mul(0.045));
 
   // --- where each surface sits -------------------------------------------------------------
   const slope = normalWorldGeometry.y.abs().oneMinus();
-  const breakUp = mx_fractal_noise_float(positionWorld.mul(0.05), 3);
+  const breakUp = bakedFractalNoise(positionWorld.mul(0.05), 3);
   const steep = clamp(slope.add(breakUp.mul(0.05)), 0, 1);
   // +1 in a hollow, -1 on a rib. The two ends of the ground's own shape, which slope cannot tell
   // apart: a gully and a nose are both steep, and they are not the same surface.
@@ -561,7 +565,7 @@ export async function createGroundMaterial(
   const wetness = (): Node<"float"> => {
     if (data.waterLevel === null) return float(0);
     const above = positionWorld.y.sub(float(data.waterLevel));
-    const wander = mx_fractal_noise_float(positionWorld.mul(0.06), 3).mul(0.55).add(0.5);
+    const wander = bakedFractalNoise(positionWorld.mul(0.06), 3).mul(0.55).add(0.5);
     return float(1).sub(
       smoothstep(float(0), float(otherBiome ? 1.6 : WET_SAND.band), above.div(wander)),
     );
@@ -617,7 +621,7 @@ export async function createGroundMaterial(
       // at its edge. The old sine-sum stand mask no longer matched the value-noise scatter, and its
       // 38 m fade left every stand standing on meadow turf from any height.
       const litter = smoothstep(0, 0.6, attribute<"float">("canopy", "float"))
-        .mul(mix(0.72, 1, smoothstep(-0.5, 0.5, mx_noise_float(positionWorld.mul(2.2)))))
+        .mul(mix(0.72, 1, smoothstep(-0.5, 0.5, bakedNoise(positionWorld.mul(2.2)))))
         .mul(oneMinus(smoothstep(300, 600, positionView.length())))
         .mul(0.85);
       weights.dirt = weights.dirt.max(litter.mul(0.25));
@@ -642,7 +646,7 @@ export async function createGroundMaterial(
   // tile under the player's feet, a coarser one near the horizon, and no single lattice for the eye
   // to find anywhere between.
   const far = smoothstep(float(10), float(70), positionView.length());
-  const patch = smoothstep(-0.35, 0.35, mx_noise_float(positionWorld.mul(0.025)));
+  const patch = smoothstep(-0.35, 0.35, bakedNoise(positionWorld.mul(0.025)));
   const tileBlend = mix(patch.mul(0.65), patch.mul(0.5).add(0.25), far);
   // How much of a layer is projected onto the ground plane and how much onto the walls. Zero on the
   // meadow, one on a cliff, and eased across the thirty-five degrees where a planar projection stops
@@ -687,7 +691,7 @@ export async function createGroundMaterial(
     if (key === "rock") {
       const stone = stoneColor(blended.rgb, biome);
       // Resolved stone underfoot; broad weathering once the photograph's repeats become visible.
-      const weathering = mx_fractal_noise_float(positionWorld.mul(vec3(0.005, 0.011, 0.005)), 2)
+      const weathering = bakedFractalNoise(positionWorld.mul(vec3(0.005, 0.011, 0.005)), 2)
         .mul(0.18)
         .add(1);
       const large = triplanarAlbedo(diffuse, key, 16).rgb;
@@ -723,11 +727,11 @@ export async function createGroundMaterial(
             0.21,
             positionWorld.y
               .sub(2.1)
-              .sub(mx_noise_float(positionWorld.mul(0.05)).mul(0.5))
+              .sub(bakedNoise(positionWorld.mul(0.05)).mul(0.5))
               .abs(),
           ),
         )
-          .mul(smoothstep(-0.1, 0.15, mx_noise_float(positionWorld.mul(0.65))))
+          .mul(smoothstep(-0.1, 0.15, bakedNoise(positionWorld.mul(0.65))))
           // Subpixel wrack fragments read as brown loops from the overview.
           .mul(oneMinus(smoothstep(60, 120, positionView.length())));
     const sandColor = otherBiome
@@ -848,7 +852,7 @@ export async function createGroundMaterial(
         const rockHeight = dot(surface.rgb, vec3(0.2126, 0.7152, 0.0722))
           .sub(0.1)
           .mul(0.7)
-          .add(mx_noise_float(positionWorld.mul(0.65)).mul(0.16));
+          .add(bakedNoise(positionWorld.mul(0.65)).mul(0.16));
         const over =
           key === "snow" && otherBiome
             ? weight.mul(float(1).add(breakUp.mul(0.025))).clamp(0, 1)
@@ -868,7 +872,7 @@ export async function createGroundMaterial(
           ? smoothstep(
               -0.18,
               0.22,
-              mx_fractal_noise_float(positionWorld.mul(0.006), 3)
+              bakedFractalNoise(positionWorld.mul(0.006), 3)
                 .sub(hollow.mul(0.16))
                 .add(alpine.mul(0.06)),
             )
@@ -878,7 +882,7 @@ export async function createGroundMaterial(
           : mix(vec3(0.9, 0.95, 0.84), vec3(1.03, 1.04, 0.95), dryness);
         const vegetation = oneMinus(max(max(weights.rock, weights.snow), weights.sand));
         const continuation = smoothstep(data.size / 2 + 60, data.size / 2 + 280, outside);
-        const strata = mx_fractal_noise_float(positionWorld.mul(vec3(0.018, 0.035, 0.018)), 3);
+        const strata = bakedFractalNoise(positionWorld.mul(vec3(0.018, 0.035, 0.018)), 3);
         // Reuse the resident maps at massif scale: steep faces project onto their own axes.
         const forest = triplanarAlbedo(layer("grass").diffuse, "grass", 12)
           .rgb.mul(MEADOW)
@@ -918,7 +922,7 @@ export async function createGroundMaterial(
           mix(
             otherBiome ? 0.94 : mix(0.88, 0.98, dryness),
             float(0.91).sub(
-              smoothstep(0.48, 0.68, mx_noise_float(positionWorld.mul(60)))
+              smoothstep(0.48, 0.68, bakedNoise(positionWorld.mul(60)))
                 .mul(oneMinus(smoothstep(3, 14, positionView.length())))
                 .mul(0.5),
             ),

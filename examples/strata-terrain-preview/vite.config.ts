@@ -27,10 +27,14 @@ import { type Plugin, defineConfig } from "vite";
  * resolve its images without being repacked. The traversal check is therefore a
  * per-segment test rather than "no separator anywhere".
  */
+const MANNEQUIN = "../../packages/create-threenative/template-assets/assets/mannequin.glb";
+
 function preparedAssets(): Plugin {
   const roots: { mount: string; dir: string; flat: boolean; file?: string }[] = [
     { dir: "./src/world", flat: true, mount: "/world" },
     { dir: "./assets/assets.manifest.json", flat: true, mount: "/", file: "assets.manifest.json" },
+    // The player is the starter kit's mannequin, served from the scaffolder's tracked copy.
+    { dir: MANNEQUIN, flat: true, mount: "/", file: "mannequin.glb" },
     { dir: "./local-assets/temperate", flat: false, mount: "/temperate" },
     { dir: "./local-assets/temperate/basis", flat: true, mount: "/basis" },
     { dir: "./local-assets/prepared", flat: true, mount: "/prepared" },
@@ -98,6 +102,11 @@ function preparedAssets(): Plugin {
       for (const world of ["forest", "coastal", "alpine", "desert", "tundra"])
         for (const suffix of ["placements.bin", "world.json", "layers.json", "splat.rgba8"])
           files.push(`${world}.${suffix}`);
+      this.emitFile({
+        type: "asset",
+        fileName: "mannequin.glb",
+        source: readFileSync(fileURLToPath(new URL(MANNEQUIN, import.meta.url))),
+      });
       for (const file of files)
         this.emitFile({
           type: "asset",

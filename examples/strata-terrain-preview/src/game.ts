@@ -1,8 +1,10 @@
 import {
+  BlendSpace1D,
   type IAssetLoader,
   type ICtx,
   type IGamePluginRuntime,
   Scene,
+  SkeletalMesh3D,
   VirtualShadowNode,
   defineGame,
   markStatic,
@@ -17,6 +19,7 @@ import {
   rapier,
 } from "@threenative/physics";
 import {
+  type AnimationClip,
   CapsuleGeometry,
   Float32BufferAttribute,
   Frustum,
@@ -24,8 +27,10 @@ import {
   Matrix4,
   Mesh,
   MeshStandardMaterial,
+  type Object3D,
   OrthographicCamera,
   PerspectiveCamera,
+  Quaternion,
   Vector3,
 } from "three";
 import { BENCHMARK, type ViewName } from "./render/benchmark.js";
@@ -34,6 +39,7 @@ import { createGroundSampler } from "./render/groundSampler.js";
 import { type HorizonSurroundings, setHorizonSurroundings } from "./render/horizon.js";
 import { createLoadingScreen } from "./render/loading.js";
 import { createOcean, createWaterMesh } from "./render/ocean.js";
+import { type IOrbitCamera, type WallProbe, createOrbitCamera } from "./render/orbitCamera.js";
 import { type ICanopyComparison, loadPack, loadSkyLight } from "./render/pack.js";
 import { fetchBakedFile, loadPlacements } from "./render/placements.js";
 import { loadPreparedProps } from "./render/prepared.js";
@@ -227,6 +233,16 @@ const initialState = {
 type TerrainState = typeof initialState;
 type TerrainCtx = ICtx<TerrainState, IPhysicsContext>;
 
+/** The starter kit's mannequin (Quaternius Universal Animation Library, CC0). */
+interface IMannequin {
+  readonly scene: Object3D;
+  readonly animations: readonly AnimationClip[];
+}
+const CLIPS = { idle: "Idle_Loop", walk: "Walk_Loop", run: "Jog_Fwd_Loop", fall: "Jump_Loop" };
+/** Ground speeds in m/s: the jog the clip was authored for, and the Shift sprint. */
+const JOG = 6;
+const SPRINT = 9;
+
 export function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsContext> {
   return class TerrainScene extends Scene<TerrainState, IPhysicsContext> {
     static override readonly initialState = initialState;
@@ -238,8 +254,17 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
     #fallbackParts: ReturnType<typeof buildPropVariants> | undefined;
     #stage: ForestStageWorld | undefined;
     #stageLoad = 0;
+    #mannequin: IMannequin | undefined;
+    #figure: SkeletalMesh3D | undefined;
+    #orbit: IOrbitCamera | undefined;
+    #gaits = new BlendSpace1D([1.8, JOG]);
+    #heading = new Quaternion();
+    #airborne = 0;
     override async load(ctx: TerrainCtx): Promise<void> {
-      this.#data = await loadBakedWorld(ctx.assets, world);
+      [this.#data, this.#mannequin] = await Promise.all([
+        loadBakedWorld(ctx.assets, world),
+        ctx.assets.model<IMannequin>("mannequin.glb"),
+      ]);
       this.#biome = measureBiome(BIOMES[world], this.#data.heights);
       // `?stage=before|after` replaces this world's terrain, water, colliders and props with one
       // baked forest kit copy, streamed by the kit's own `addForest`; the sky, camera and views stay.
@@ -580,12 +605,61 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
         ...(stage ? {} : { collisionMask: 4 }),
       });
       this.#player = player;
+      // The starter kit's humanoid rides the capsule: the capsule is the collider, the mannequin is
+      // what the player sees. Its feet sit at the capsule's bottom (0.5 m half-height plus 0.35 m
+      // radius), sunk 1 cm like the starter's; the model faces +Z.
+      const mannequin = this.#mannequin;
+      if (!mannequin) throw new Error(`World ${world} mannequin was not loaded`);
+      const figure = new SkeletalMesh3D({
+        source: mannequin.scene,
+        clips: mannequin.animations,
+        requiredClips: Object.values(CLIPS),
+        strideRoot: actor,
+      });
+      figure.root.traverse((object) => {
+        object.castShadow = true;
+      });
+      figure.root.position.y = -0.86;
+      figure.root.rotation.y = Math.PI;
+      actor.material.visible = false;
+      actor.add(figure.root);
+      figure.play(CLIPS.idle);
+      this.#figure = figure;
+      // Third person: the collectathon kit's orbit camera, with the terrain as its walls. The three
+      // vista worlds keep their fixed player framing below.
+      const along = new Vector3();
+      const probe: WallProbe = (from, to) =>
+        along.subVectors(to, from).lengthSq() < 1e-8
+          ? undefined
+          : ctx.physics.directSpaceState.intersectRay({
+              ...(stage ? {} : { collisionMask: 4 }),
+              from,
+              to,
+            })?.distance;
+      const orbit = createOrbitCamera(ctx.camera);
+      orbit.snap(actor.position, 0, probe);
+      this.#orbit = orbit;
+      const vista = world === "coastal" || world === "alpine" || world === "desert";
+      ctx.afterPhysics((dt) => {
+        if (vista || ctx.state.getState().view !== "player") {
+          this.#sky?.focusShadows(undefined);
+          return;
+        }
+        // The mouse turns the camera only while the canvas holds the pointer lock a click took.
+        if (ctx.input.raw.pointer.captured) {
+          const look = ctx.input.vector("look");
+          orbit.look(look.x, look.y);
+        }
+        orbit.update(actor.position, player.velocity, dt, probe);
+        // Shadows centre on the hero, not the orbiting eye: a camera turn re-renders no shadow page.
+        this.#sky?.focusShadows(actor.position);
+      });
       ctx.entities.add("player", {
         mesh: actor,
         debug: () => ({
           grounded: player.grounded,
           position: actor.position.toArray(),
-          visible: actor.visible && actor.material.visible,
+          visible: actor.visible && figure.root.visible,
           horizon: mesh
             ? {
                 seamGap: mesh.userData.horizonSeamGap,
@@ -854,6 +928,12 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
         // loaders run together and fail soft per file, so one missing species costs that species and
         // nothing else. One load, because `afterPhysics` runs every frame.
         buildProps = async (): Promise<void> => {
+          // The capsule mesh named "player" (the body has no transform), looked up once, else the eye.
+          let actor: Object3D | undefined;
+          const followed = () => {
+            actor ??= ctx.scene.getObjectByName("player");
+            return actor?.position ?? ctx.camera.position;
+          };
           buildStartedAt = performance.now();
           propsStage = "assets";
           const [prepared, pack, skyLight] = await Promise.all([
@@ -912,7 +992,12 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
             parts: propParts,
             materials: surfaces.materials,
             assets: ctx.assets,
-            follow: ctx.camera,
+            // The player, not the orbiting eye: turning the camera in place must not swap tree LODs.
+            follow: {
+              get position() {
+                return followed();
+              },
+            },
             size: data.size,
             horizonDistance:
               ctx.camera instanceof PerspectiveCamera || ctx.camera instanceof OrthographicCamera
@@ -1393,8 +1478,10 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
           if (sample && age !== undefined) firstViewGpuFrame = sample.frame + age + 1;
         }
         const view = ctx.state.getState().view;
-        actor.material.visible = view === "player" && !ctx.state.getState().showcase;
+        figure.root.visible = view === "player" && !ctx.state.getState().showcase;
         if (view === "player") {
+          // Forest and tundra: the orbit camera framed the player after physics.
+          if (!vista) return;
           const offset = world === "coastal" ? new Vector3(28, 18, 34) : new Vector3(28, 24, 42);
           ctx.camera.position.copy(actor.position).add(offset);
           if (world === "coastal")
@@ -1405,13 +1492,12 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
               actor.position.y + 170,
               actor.position.z + 170,
             );
-          else if (world === "desert")
+          else
             ctx.camera.lookAt(
               actor.position.x - 180,
               actor.position.y + 30,
               actor.position.z - 160,
             );
-          else ctx.camera.lookAt(actor.position.x, actor.position.y + 2, actor.position.z - 12);
           return;
         }
         // A view this world has no framing for falls back to its overview rather than throwing:
@@ -1435,6 +1521,27 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
       ctx.state.set({ enterMs: performance.now() - enterStart });
     }
 
+    /** The starter's gait logic: face the travel direction, blend walk and jog by ground speed. */
+    #animate(dt: number, player: CharacterBody3D): void {
+      const figure = this.#figure;
+      if (!figure) return;
+      const { x, z } = player.velocity;
+      const speed = Math.hypot(x, z);
+      if (speed > 0.05) {
+        this.#heading.setFromAxisAngle(figure.root.up, Math.atan2(x, z));
+        figure.root.quaternion.slerp(this.#heading, Math.min(1, dt * 12));
+      }
+      this.#airborne = player.grounded ? 0 : this.#airborne + dt;
+      if (this.#airborne > 0.2) figure.play(CLIPS.fall, { fade: 0.15 });
+      else if (speed > 0.05) {
+        const weights = this.#gaits.sample(speed);
+        figure.playWeighted([
+          { clip: CLIPS.walk, weight: weights[0] ?? 0 },
+          { clip: CLIPS.run, weight: weights[1] ?? 0 },
+        ]);
+      } else figure.play(CLIPS.idle, { fade: 0.2 });
+      figure.update(dt);
+    }
     override update(ctx: TerrainCtx, dt: number): void {
       this.#elapsed += dt;
       this.#surfaces?.advance(this.#elapsed);
@@ -1479,12 +1586,17 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
       const player = this.#player;
       if (!player) return;
       const move = playable ? ctx.input.vector("move") : { x: 0, y: 0 };
-      player.velocity.x = move.x * 9;
-      player.velocity.z = move.y * 9;
+      // Camera-relative: up on the stick runs along the ground where the camera looks.
+      const yaw = this.#orbit?.yaw ?? 0;
+      const [forwardX, forwardZ] = [-Math.sin(yaw), -Math.cos(yaw)];
+      const pace = playable && ctx.input.pressed("sprint") ? SPRINT : JOG;
+      player.velocity.x = (forwardX * move.y - forwardZ * move.x) * pace;
+      player.velocity.z = (forwardZ * move.y + forwardX * move.x) * pace;
       if (playable && ctx.input.justPressed("jump") && player.grounded) player.velocity.y = 5;
       // A staged world streams its ground around the camera: in a benchmark view the player's
       // ground streams out, so the hidden player is held instead of falling through the map.
       if (!this.#stage || ctx.state.getState().view === "player") player.moveAndSlide(dt);
+      this.#animate(dt, player);
       if (!playable) return;
       for (const name of Object.keys(BIOMES) as WorldName[])
         if (name !== world && ctx.input.justPressed(name)) {
@@ -1519,6 +1631,8 @@ const game = defineGame<TerrainState, IPhysicsContext>({
       up: ["ArrowUp", "KeyW"],
     },
     jump: { keys: ["Space"] },
+    sprint: { keys: ["ShiftLeft", "ShiftRight"] },
+    look: { pointerRelative: true },
     view: { keys: ["KeyV"] },
     coast: { keys: ["KeyC"] },
     light: { keys: ["KeyL"] },

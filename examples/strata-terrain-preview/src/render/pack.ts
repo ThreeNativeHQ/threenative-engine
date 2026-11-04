@@ -1,5 +1,6 @@
-/** Game-owned Fab art. Optional, local-only; missing species keep their procedural fallback. */
 import { type IAssetLoader, baseGeometryOf, normaliseToMetres } from "@threenative/core";
+/** Game-owned Fab art. Optional, local-only; missing species keep their procedural fallback. */
+import { bakedNoise } from "@threenative/core/world";
 import {
   Box3,
   BufferAttribute,
@@ -29,7 +30,6 @@ import {
   log2,
   max,
   mix,
-  mx_noise_float,
   normalMap,
   normalViewGeometry,
   normalWorldGeometry,
@@ -211,7 +211,7 @@ function stoneSurface(
 ): void {
   const { source, world } = context;
   if (world === "coastal") material.shadowSide = FrontSide;
-  const growth = smoothstep(-0.15, 0.3, mx_noise_float(positionWorld.mul(2.1)));
+  const growth = smoothstep(-0.15, 0.3, bakedNoise(positionWorld.mul(2.1)));
   const moss = normalWorldGeometry.y
     .max(0)
     .mul(growth)

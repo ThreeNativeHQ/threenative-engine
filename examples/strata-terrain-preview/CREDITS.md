@@ -131,3 +131,6 @@ authored into the measured surface by the existing bake stages. Tundra retains t
 authored ponds and connecting meltwater channels at elevations fitted to its survey.
 These water beds are example modifications, not measured lidar bathymetry. Coastal
 water retains the example's 1.5 m sea level; the survey's marine flat is not bathymetry.
+
+The player figure is the starter kit's `mannequin.glb` (Quaternius, CC0), served from
+`packages/create-threenative/template-assets/assets/`.

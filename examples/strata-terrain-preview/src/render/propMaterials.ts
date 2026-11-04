@@ -1,3 +1,4 @@
+import type { IAssetLoader } from "@threenative/core";
 // The surfaces the starter props draw with, and the wind that moves them.
 //
 // All of it is appearance and all of it is this game's: which CC0 map goes on the bark, how the
@@ -12,7 +13,7 @@
 //      moment two branches cross on screen.
 //   2. The wind is a vertex-stage displacement weighted by the baked `sway` attribute, so a branch
 //      card and the trunk it hangs from move as one and the base of the tree never moves at all.
-import type { IAssetLoader } from "@threenative/core";
+import { bakedNoise } from "@threenative/core/world";
 import {
   Color,
   DataTexture,
@@ -42,7 +43,6 @@ import {
   log2,
   max,
   mix,
-  mx_noise_float,
   normalMap,
   normalViewGeometry,
   normalWorld,
@@ -408,7 +408,7 @@ function groundHeight(ground: IPropGround): {
  */
 function groundShare(height: Node<"float"> | undefined): Node<"float"> {
   if (height === undefined) return float(0);
-  const wander = mx_noise_float(positionWorld.mul(1.7)).mul(0.18);
+  const wander = bakedNoise(positionWorld.mul(1.7)).mul(0.18);
   const above = positionWorld.y.sub(height).add(wander);
   return float(1).sub(smoothstep(float(0.02), float(GROUND_BLEND.reach), above));
 }
@@ -464,7 +464,7 @@ export async function createRockGround(
       // World-space distance across the side gives a half-metre, noise-broken contact falloff.
       const radial = positionWorld.y.sub(under.node).div(length(normalWorldGeometry.xz).max(0.25));
       const share = float(1).sub(
-        smoothstep(0, 0.5, radial.add(mx_noise_float(positionWorld.mul(1.7)).mul(0.12))),
+        smoothstep(0, 0.5, radial.add(bakedNoise(positionWorld.mul(1.7)).mul(0.12))),
       );
       const floor = groundTurf(groundLayer(grass, "grass").rgb, biome);
       const slope = smoothstep(0.17, 0.33, under.normal.y.oneMinus());
@@ -478,7 +478,7 @@ export async function createRockGround(
             biome,
             float(1).sub(under.normal.y),
             float(0),
-            mx_noise_float(positionWorld.mul(0.05)),
+            bakedNoise(positionWorld.mul(0.05)),
           ).snow ?? float(0);
         contact = mix(contact, groundLayer(snow, "snow").rgb.mul(vec3(...biome.snowTint)), cover);
       }
@@ -1166,7 +1166,7 @@ export async function createPropSurfaces(
         biome,
         float(1).sub(normalWorldGeometry.y),
         float(0),
-        mx_noise_float(positionWorld.mul(0.05)),
+        bakedNoise(positionWorld.mul(0.05)),
       ).snow ?? float(0);
     const snow = rockSnow ? texture(rockSnow, positionWorld.xz.div(12)).rgb : vec3(0.82, 0.86, 0.9);
     const side = stoneMaterial.colorNode as Node<"vec3">;
