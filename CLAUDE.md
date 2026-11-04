@@ -66,7 +66,7 @@ pnpm check:docs && pnpm exec vitest run scripts/__tests__/check-doc-links.spec.t
 pnpm test:playtest                         # playtests against the in-repo example fixture
 pnpm test:templates                        # playtests against each scaffolded template
 pnpm budgets                               # hard invariants fail; LOC triggers only report
-pnpm quality                               # file length, suppressions, lint holes; never fatal
+pnpm quality                               # file length notices; a 3 000-line cap and suppressions are fatal
 pnpm sync:agents                           # regenerate CLAUDE.md mirrors
 pnpm prd:progress <prd file>               # PRD boxes -> prd:25/50/75/100 label; exit 1 = no phase boxes
 pnpm release:prepare                       # bump, build, preflight the release cohort
