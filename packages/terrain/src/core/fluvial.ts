@@ -22,6 +22,8 @@ const DX = Int8Array.of(-1, 0, 1, -1, 1, -1, 0, 1);
 const DZ = Int8Array.of(-1, -1, -1, 0, 0, 1, 1, 1);
 const DIST = Float64Array.from(DX, (dx, k) => Math.hypot(dx, DZ[k] as number));
 
+/** Slope the initial pit filling leaves on a filled flat (0.06 degrees), so flats still route. */
+const FILL_SLOPE = Math.tan((0.06 * Math.PI) / 180);
 /** Smallest rise a filled or routed cell keeps above its receiver, in metres. */
 const EPSILON = 1e-3;
 
@@ -196,7 +198,7 @@ export function fluvial(
       h[a * n] = Math.min(h[a * n] as number, h[a * n + d] as number);
       h[a * n + n - 1] = Math.min(h[a * n + n - 1] as number, h[a * n + n - 1 - d] as number);
     }
-  fillDepressions(h, n, Math.tan((Number(process.env.FILL_DEG ?? 0.06) * Math.PI) / 180) * spacing);
+  fillDepressions(h, n, FILL_SLOPE * spacing);
   let low = Number.POSITIVE_INFINITY;
   let high = Number.NEGATIVE_INFINITY;
   for (let i = 0; i < total; i += 1) {
