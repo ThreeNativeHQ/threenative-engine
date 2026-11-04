@@ -74,9 +74,18 @@ export interface IBridgeMeter {
 }
 
 /**
+ * The files a caller search looks through rather than names: the back end's own (`browser-backend.ts`
+ * and the modules it was split into, PRD-803) and this meter's two.
+ */
+const BACK_END_FILE =
+  /(?:browser-backend|browser-abi-types|browser-marshal|browser-wasm-runtime|browser-value-views|browser-attribute-sync|debug-telemetry|bridge-meter)\.[jt]s(?:[:?]|$)/u;
+
+/**
  * The first frame of `stack` outside the back end and this meter (the files of its first two frames:
  * the stack call, then `record`), and the two after it: `fn (file:line) < fn (file:line)`. A bundle
  * that puts the game in the back end's file falls back to the fourth frame, the one above the accessor.
+ * Every file the back end was split into (PRD-803) belongs here: a crossing it makes for a game's call
+ * is attributed to the game, never to the back end.
  */
 export function callerOf(stack: string | undefined): string {
   const frames = (stack ?? "")
@@ -87,9 +96,7 @@ export function callerOf(stack: string | undefined): string {
   const fileOf = (frame: string) => /\(?([^()\s]+?)(?::\d+){1,2}\)?$/u.exec(frame)?.[1] ?? frame;
   const own = new Set(frames.slice(0, 2).map(fileOf));
   let at = frames.findIndex(
-    (frame) =>
-      !own.has(fileOf(frame)) &&
-      !/(?:browser-backend|debug-telemetry|bridge-meter)\.[jt]s(?:[:?]|$)/u.test(fileOf(frame)),
+    (frame) => !own.has(fileOf(frame)) && !BACK_END_FILE.test(fileOf(frame)),
   );
   if (at < 0) at = Math.min(3, frames.length - 1);
   const short = (frame: string) =>
