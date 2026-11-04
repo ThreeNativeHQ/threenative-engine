@@ -1509,6 +1509,50 @@ describe("WorldCells", () => {
     world.dispose();
   });
 
+  // UE 5.8.3 streams around the view target (Engine/Source/Runtime/Engine/Private/PlayerController.cpp:3705)
+  // and picks instance LODs per view from the view origin
+  // (Engine/Source/Runtime/Engine/Private/HierarchicalInstancedStaticMesh.cpp:1652).
+  it.each([
+    ["camera", 300, undefined, 0, 85],
+    ["follow", 300, "follow" as const, 85, 0],
+    // Inside the world's first gate (a 30 m maxDistance) an orbit camera grades as the player does.
+    ["follow point", 25, undefined, 85, 0],
+  ])(
+    "picks a placement's level from the %s when the camera is %i m from the follow point",
+    async (_name, offset, lodFrom, near, far) => {
+      stubFixtureFetch();
+      const center = cellCenter(1, 1);
+      // The player stands among the cell's pines, every one inside the 60 m switch.
+      const follow = followAt(center.x, center.z);
+      const loader = levelLoader();
+      const world = await loadWorld({
+        budgets: largeBudgets,
+        follow,
+        loadModel: loader.load,
+        ring: 0,
+        surface,
+        url: "/world/world.json",
+        ...(lodFrom === undefined ? {} : { lodFrom }),
+      });
+      world.update();
+      await flushed(world);
+      expect(liveCount(levelMesh(world, "pine", 0))).toBe(85);
+
+      // The lens moves off while the player stands still: at 300 m every pine is past the switch.
+      const camera = new PerspectiveCamera(60, 1, 0.1, 2000);
+      camera.position.set(center.x + offset, 40, center.z);
+      camera.lookAt(center.x, 0, center.z);
+      camera.updateMatrixWorld(true);
+      world.update(undefined, camera);
+      await flushed(world);
+
+      expect(liveCount(levelMesh(world, "pine", 0))).toBe(near);
+      expect(liveCount(levelMesh(world, "pine", 1))).toBe(far);
+      expect(world.stats().lodFrom).toBe(lodFrom ?? "camera");
+      world.dispose();
+    },
+  );
+
   it("rebuilds nothing when no gate of a far cell's asset can have been crossed", async () => {
     // `pine`'s only gate is its 60 m level switch, and every cell kept here sits 135 m or more from
     // the follow point, so each cell's whole run draws with the lod and no move short of a cell

@@ -971,6 +971,11 @@ export function gpuSceneRequested(): boolean {
   return askedOff(GPU_SCENE_FLAG, "tnGpuScene", "__tnGpuScene") === false;
 }
 
+/** Did this launch ask the CPU path to grade levels from `follow`, the before arm of `lodFrom`? */
+export function lodFromFollowRequested(): boolean {
+  return askedOff("TN_LOD_FROM_CAMERA", "tnLodFromCamera", "__tnLodFromCamera");
+}
+
 /** The launch flag. */
 export const BUNDLE_FLAG = "TN_BUNDLES";
 

@@ -85,6 +85,7 @@ import {
   bundlesAsked,
   gpuSceneRequested,
   levelAtGates,
+  lodFromFollowRequested,
   shadowGpuKeysRequested,
 } from "./world-gpu-scene.js";
 import { heightSamplerFromHeightmap, loadWorldHeightmap } from "./world-heightmap.js";
@@ -392,6 +393,7 @@ function impostorFarOption(value: "ring" | "always" | undefined): "ring" | "alwa
  * @constraint `whenSpawnReady(position, radius, timeoutMs)` snapshots a fixed region and settles from existing updates or disposal; it does not drive streaming, and `prewarmed` remains the separate draw gate
  * @constraint model loads are bounded by `concurrency` (default 12) across every resident cell, not per cell
  * @constraint refilters are bounded by `rebuildsPerUpdate` (default 16) per update, nearest cell first
+ * @constraint residency and `placementReach` follow `follow`; levels and `maxDistance` are graded from the render camera, as UE picks instance LODs per view; `lodFrom: "follow"`, `?tnLodFromCamera=0` or `TN_LOD_FROM_CAMERA=0` grade from `follow`, reported as `TN_WORLD_MAIN_CULL lodFrom=`
  * @constraint admission is bounded by `admissionBudgetMs` (default 2) per update across every path, plus at most one unit each for terrain and props; while props are queued terrain takes at most half, so neither starves the other, and a deferred cell keeps drawing what it has
  * @constraint SkinnedMesh parts are skipped; an instanced copy would draw one rest pose
  * @constraint a baked chain's switch distances are measured against `autoLod` (default 4 px of error over 60° and 1080 raster rows), because an instanced draw cannot select a level per instance; an asset with nonempty authored `lods` never consults it; explicit empty lists enroll only unchanged static geometry/material parts
@@ -491,6 +493,8 @@ export class WorldCells extends Group implements IComputeDriven {
   #residencyCell: { readonly x: number; readonly z: number } | undefined;
   /** The follow point the last refilter pass ran for; see `#refilterStale`. */
   readonly #refilterPoint = new Vector3(Number.NaN, 0, Number.NaN);
+  /** The LOD eye the last refilter pass ran for; see `#refilterStale`. */
+  readonly #refilterEye = new Vector3(Number.NaN, 0, Number.NaN);
   /** Bumped by every admission and eviction, so a residency change owes a refilter that update. */
   #residencyEpoch = 0;
   /** The residency epoch the last refilter pass saw; see `#refilterStale`. */
@@ -562,6 +566,12 @@ export class WorldCells extends Group implements IComputeDriven {
         }
       : undefined;
   readonly #gpuWanted: boolean;
+  /** See `IWorldCellsLoadOptions.lodFrom`. */
+  readonly #lodFrom: "camera" | "follow";
+  /** The point levels and `maxDistance` are measured from this update; see `#updateEye`. */
+  readonly #eye = new Vector3();
+  /** The follow point `#updateEye` pulls the camera toward. */
+  readonly #eyeFollow = new Vector3();
   /** `gpuSceneValidate` as the load asked for it, before the query string and the environment. */
   readonly #gpuValidate: boolean | undefined;
   /**
@@ -747,6 +757,7 @@ export class WorldCells extends Group implements IComputeDriven {
     );
     this.#transparentScatter = init.transparentScatter ?? "cutout";
     this.#gpuWanted = init.gpuScene ?? gpuSceneRequested();
+    this.#lodFrom = init.lodFrom ?? (lodFromFollowRequested() ? "follow" : "camera");
     const asked = bundlesAsked();
     this.#bundlesWanted = init.bundles ?? asked !== "off";
     this.#bundleReason =
@@ -1306,13 +1317,14 @@ export class WorldCells extends Group implements IComputeDriven {
    */
   update(renderer?: IRendererLike, camera?: Camera): void {
     if (this.#released) return;
-    this.#render.updateLodEye(this.#follow.position.x, this.#followY(), this.#follow.position.z);
     for (const child of this.#snapshotChildren) this.remove(child);
     this.#snapshotChildren.length = 0;
     // Kept for the chunk warm-up below: a chunk is loaded asynchronously and compiled when it
     // arrives, which can be a frame or a loading screen after the frame that gave us these.
     if (renderer !== undefined) this.#chunks.renderer = renderer;
     if (camera !== undefined) this.#chunks.camera = camera;
+    this.#updateEye();
+    this.#render.updateLodEye(this.#eye.x, this.#eye.y, this.#eye.z);
     this.#render.flushCompiles(renderer);
     // The adaptive LOD bias, before the dispatch below reads the gates it scales.
     this.#adaptLodBias(renderer);
@@ -1382,16 +1394,6 @@ export class WorldCells extends Group implements IComputeDriven {
         ahead.x,
         ahead.z,
       );
-      // The refilter is a scan of every resident cell, so it runs on its own cadence rather than
-      // with the residency pass above; see `#refilterStale` and `LEVEL_REFILTER_STEP_METRES`.
-      // GPU source admission keeps every resident maxDistance candidate, so the dispatch's slot
-      // cull and level gates handle a moving camera without a CPU replacement. `#staleIn` still
-      // watches placementReach, whose per-record admission boundary has no GPU slot equivalent.
-      if (this.#refilterStale(x, z)) {
-        this.#refilterPoint.set(x, this.#followY(), z);
-        this.#refilterEpoch = this.#residencyEpoch;
-        this.#updateMaxDistance(x, z);
-      }
     } else if (
       // A blend in flight is not a settled ring, and the blend is advanced by `process` alone —
       // `follow` only re-levels tiles. A follow point standing still used to skip both, so a
@@ -1401,6 +1403,18 @@ export class WorldCells extends Group implements IComputeDriven {
       (this.#terrain?.blendingTiles ?? 0) > 0
     ) {
       this.#terrain?.process(renderer, camera, undefined, terrainView);
+    }
+    // The refilter is a scan of every resident cell, so it runs on its own cadence rather than
+    // with the residency pass above; see `#refilterStale` and `LEVEL_REFILTER_STEP_METRES`. Outside
+    // that pass, because a camera moving round a player standing still moves the LOD eye alone.
+    // GPU source admission keeps every resident maxDistance candidate, so the dispatch's slot
+    // cull and level gates handle a moving camera without a CPU replacement. `#staleIn` still
+    // watches placementReach, whose per-record admission boundary has no GPU slot equivalent.
+    if (this.#refilterStale(x, z)) {
+      this.#refilterPoint.set(x, this.#followY(), z);
+      this.#refilterEye.copy(this.#eye);
+      this.#refilterEpoch = this.#residencyEpoch;
+      this.#updateMaxDistance(x, z);
     }
     const props = new AdmissionBudget(budgetMs - Math.min(budget.spentMs, terrainMs), this.#now);
     this.#drain(props);
@@ -1512,8 +1526,38 @@ export class WorldCells extends Group implements IComputeDriven {
         x - this.#refilterPoint.x,
         this.#followY() - this.#refilterPoint.y,
         z - this.#refilterPoint.z,
-      ) >= this.#refilterStepMetres()
+      ) >= this.#refilterStepMetres() ||
+      // The GPU dispatch grades levels from the camera every frame; only the CPU path rebuilds.
+      (this.#render.gpuOn === false &&
+        this.#eye.distanceTo(this.#refilterEye) >= this.#refilterStepMetres())
     );
+  }
+
+  /**
+   * The LOD eye: the render camera's world position, or `follow` before a camera has reached
+   * `update` or under `lodFrom: "follow"`. Height counts only where `placementReach` makes the
+   * distances 3D, exactly as `#followY` does for the follow point. The camera's offset from
+   * `follow` counts only past the world's first gate: an orbit or chase camera inside it grades
+   * exactly as `follow` does, so turning in place swaps no level and pays no CPU rebuild, and a
+   * camera far off grades from a point at most that gate short of it. Continuous, so a camera
+   * resting near the gate does not flip the eye between the two.
+   */
+  #updateEye(): void {
+    const follow = this.#eyeFollow.set(
+      this.#follow.position.x,
+      this.#followY(),
+      this.#follow.position.z,
+    );
+    const camera = this.#lodFrom === "camera" ? this.#chunks.camera : undefined;
+    if (camera === undefined) {
+      this.#eye.copy(follow);
+      return;
+    }
+    this.#eye.setFromMatrixPosition(camera.matrixWorld);
+    if (this.#placementReach === undefined) this.#eye.y = 0;
+    const inside = this.#gates[0] ?? Number.POSITIVE_INFINITY;
+    const offset = this.#eye.distanceTo(follow);
+    this.#eye.lerp(follow, offset > inside ? inside / offset : 1);
   }
 
   process(renderer?: IRendererLike, camera?: Camera, covered = false): void {
@@ -1728,6 +1772,7 @@ export class WorldCells extends Group implements IComputeDriven {
       refilterEntries: this.#staleEntries,
       rebuilds: this.#rebuilds,
       levelRefilters: this.#levelRefilters,
+      lodFrom: this.#lodFrom,
       // The share of `rebuilds` the swap found unchanged, which is the honest report of how much of
       // the refilter pass is a bracket that was wider than any placement.
       unchanged: this.#unchanged,
@@ -2211,6 +2256,9 @@ export class WorldCells extends Group implements IComputeDriven {
       filterY: this.#followY(),
       filterX: this.#follow.position.x,
       filterZ: this.#follow.position.z,
+      lodX: this.#eye.x,
+      lodY: this.#eye.y,
+      lodZ: this.#eye.z,
       fresh: [],
       replacement: replace,
       next: 0,
@@ -2329,6 +2377,9 @@ export class WorldCells extends Group implements IComputeDriven {
       job.filterX = this.#follow.position.x;
       job.filterY = this.#followY();
       job.filterZ = this.#follow.position.z;
+      job.lodX = this.#eye.x;
+      job.lodY = this.#eye.y;
+      job.lodZ = this.#eye.z;
     }
     if (job.next < job.run.count) {
       job.batches ??= newBatches(job.asset);
@@ -2364,7 +2415,7 @@ export class WorldCells extends Group implements IComputeDriven {
    * because it is an explicit per-record source boundary.
    */
   #addPlacements(job: IBuildJob, from: number, to: number): void {
-    const { asset, filterX, filterZ } = job;
+    const { asset, filterX, filterZ, lodX, lodY, lodZ } = job;
     if (job.replacement && job.next === 0) this.#levelRefilters += 1;
     if (job.records === undefined) job.records = cellPlacements(this.#placements, job.run);
     const records = job.records;
@@ -2387,13 +2438,19 @@ export class WorldCells extends Group implements IComputeDriven {
       const x = records[base] as number;
       const y = records[base + 1] as number;
       const z = records[base + 2] as number;
-      const distance =
+      // Streaming reach from the follow point; level and `maxDistance` from the LOD eye, which is
+      // the camera the GPU dispatch measures from too. See `IWorldCellsLoadOptions.lodFrom`.
+      const reachDistance =
         this.#placementReach === undefined
           ? Math.hypot(x - filterX, z - filterZ)
           : Math.hypot(x - filterX, y - job.filterY, z - filterZ);
+      const distance =
+        this.#placementReach === undefined
+          ? Math.hypot(x - lodX, z - lodZ)
+          : Math.hypot(x - lodX, y - lodY, z - lodZ);
       if (this.#render.gpuOn === false && inner !== undefined && distance > inner) continue;
       const reach = this.#placementReach?.[job.run.offset + index];
-      if (reach !== undefined && distance > reach) continue;
+      if (reach !== undefined && reachDistance > reach) continue;
       this.#position.set(x, y, z);
       this.#rotation.set(
         records[base + 3] as number,
@@ -2580,7 +2637,7 @@ export class WorldCells extends Group implements IComputeDriven {
   #buildOne(job: IBuildJob, batches: readonly InstancedBatch[][]): void {
     const { asset } = job;
     const { cell } = job;
-    this.#widenFilterRange(cell, job.filterX, job.filterZ);
+    this.#widenFilterRange(cell, job.lodX, job.lodZ);
     let part = job.published;
     for (const [level, levelBatches] of batches.entries()) {
       if (part >= levelBatches.length) {
@@ -2600,6 +2657,9 @@ export class WorldCells extends Group implements IComputeDriven {
         lastFilterY: job.filterY,
         lastFilterX: job.filterX,
         lastFilterZ: job.filterZ,
+        lastLodX: job.lodX,
+        lastLodY: job.lodY,
+        lastLodZ: job.lodZ,
         level,
         lodRanges: job.lodRanges?.[level]?.[part]?.length
           ? Float32Array.from(job.lodRanges[level]?.[part] ?? [])
@@ -2719,45 +2779,62 @@ export class WorldCells extends Group implements IComputeDriven {
   #staleIn(cell: IResidentCell, x: number, z: number, near: number, far: number): void {
     const seen = this.#staleSeen;
     seen.clear();
+    const eye = this.#eye;
+    const [eyeNear, eyeFar] = this.#span(cell, eye.x, eye.z);
     for (const entry of cell.batches) {
       const reach = this.#reachRanges.get(cell.cell)?.get(entry.asset);
       if ((entry.threshold === undefined && reach === undefined) || seen.has(entry.asset)) continue;
       // Deferred runs of one asset can start at different camera snapshots. Only deduplicate
       // after one entry proves the asset stale: an earlier matching run cannot settle the others.
+      const step = (entry.threshold ?? 6) / 8;
       if (
         Math.hypot(
           x - entry.lastFilterX,
           this.#followY() - entry.lastFilterY,
           z - entry.lastFilterZ,
-        ) <=
-        (entry.threshold ?? 6) / 8
+        ) <= step &&
+        Math.hypot(eye.x - entry.lastLodX, eye.y - entry.lastLodY, eye.z - entry.lastLodZ) <= step
       )
         continue;
       const asset = this.#models.asset(entry.asset);
       if (asset === undefined) continue;
       // GPU dispatch handles maxDistance and LOD gates; placementReach remains a CPU boundary.
       const gates = this.#render.gpuOn ? [] : asset.gates;
-      const [builtNear, builtFar] = this.#span(cell, entry.lastFilterX, entry.lastFilterZ);
-      let low = Math.min(near, builtNear);
+      // Gates bracket the LOD eye's distances, reach the follow point's: see `#addPlacements`.
+      const [builtNear, builtFar] = this.#span(cell, entry.lastLodX, entry.lastLodZ);
+      let low = Math.min(eyeNear, builtNear);
       // Ends included, so a placement exactly on a gate is one of the reasons to rebuild.
-      let high = Math.max(far, builtFar);
+      let high = Math.max(eyeFar, builtFar);
       let reachCrossed = false;
       if (reach !== undefined) {
         const vertical = (y: number): [number, number] => [
           Math.max(reach.minY - y, y - reach.maxY, 0),
           Math.max(Math.abs(y - reach.minY), Math.abs(y - reach.maxY)),
         ];
+        const eyeNow = vertical(eye.y);
+        const eyeBefore = vertical(entry.lastLodY);
+        low = Math.min(Math.hypot(eyeNear, eyeNow[0]), Math.hypot(builtNear, eyeBefore[0]));
+        high = Math.max(Math.hypot(eyeFar, eyeNow[1]), Math.hypot(builtFar, eyeBefore[1]));
+        const [reachBuiltNear, reachBuiltFar] = this.#span(
+          cell,
+          entry.lastFilterX,
+          entry.lastFilterZ,
+        );
         const current = vertical(this.#followY());
         const previous = vertical(entry.lastFilterY);
-        const reachLow = Math.min(Math.hypot(near, current[0]), Math.hypot(builtNear, previous[0]));
-        const reachHigh = Math.max(Math.hypot(far, current[1]), Math.hypot(builtFar, previous[1]));
+        const reachLow = Math.min(
+          Math.hypot(near, current[0]),
+          Math.hypot(reachBuiltNear, previous[0]),
+        );
+        const reachHigh = Math.max(
+          Math.hypot(far, current[1]),
+          Math.hypot(reachBuiltFar, previous[1]),
+        );
         reachCrossed = reach.min <= reachHigh && reach.max >= reachLow;
-        low = reachLow;
-        high = reachHigh;
       }
       if (!reachCrossed && !gates.some((gate) => gate >= low && gate <= high)) continue;
       seen.add(entry.asset);
-      this.#stale.push({ cell, distance: near, id: entry.asset });
+      this.#stale.push({ cell, distance: eyeNear, id: entry.asset });
       this.#staleEntries += 1;
     }
   }
@@ -2826,10 +2903,12 @@ export class WorldCells extends Group implements IComputeDriven {
    */
   #collectStale(x: number, z: number): void {
     for (const cell of this.#resident.values()) {
-      const [near, far] = this.#span(cell, x, z);
-      const low = near < cell.filterNear ? near : cell.filterNear;
-      const high = far > cell.filterFar ? far : cell.filterFar;
+      // Gates are measured from the LOD eye, and `filterNear`/`filterFar` hold the eyes built from.
+      const [eyeNear, eyeFar] = this.#span(cell, this.#eye.x, this.#eye.z);
+      const low = eyeNear < cell.filterNear ? eyeNear : cell.filterNear;
+      const high = eyeFar > cell.filterFar ? eyeFar : cell.filterFar;
       if (!this.#reachRanges.has(cell.cell) && !crossesGate(this.#gates, low, high)) continue;
+      const [near, far] = this.#span(cell, x, z);
       this.#staleIn(cell, x, z, near, far);
     }
   }

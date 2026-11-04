@@ -861,7 +861,10 @@ export class CellRender {
       same.lastFilterY = fresh.lastFilterY;
       same.lastFilterX = fresh.lastFilterX;
       same.lastFilterZ = fresh.lastFilterZ;
-      this.#host.widenFilterRange(cell, fresh.lastFilterX, fresh.lastFilterZ);
+      same.lastLodX = fresh.lastLodX;
+      same.lastLodY = fresh.lastLodY;
+      same.lastLodZ = fresh.lastLodZ;
+      this.#host.widenFilterRange(cell, fresh.lastLodX, fresh.lastLodZ);
       job.fresh.splice(index, 1);
       // The batch that stays is the one that was already drawing, so its source records are its own
       // — and a cell the ring built before the scene came up has none. This is the only path that
@@ -1266,6 +1269,7 @@ export class CellRender {
       `TN_WORLD_MAIN_CULL instances=${String(instances)} drawn=${String(drawn)} ` +
         `hidden=${String(hidden)} castersHidden=${String(castersHidden)} repacks=${String(repacks)} ` +
         `refilters=${String(stats.refilters)} levelRefilters=${String(stats.levelRefilters)} ` +
+        `lodFrom=${stats.lodFrom} ` +
         `clusterTris=${String(clusterTriangles)} wideTris=${String(wideTriangles)} ` +
         `dressed=${String(dressed)}/${String(mainMeshes)}`,
     );

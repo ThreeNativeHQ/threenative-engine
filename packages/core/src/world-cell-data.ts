@@ -117,6 +117,16 @@ export interface IWorldCellsLoadOptions {
    * fades over half a second, so no placement stays mid-fade while the viewer stands still.
    * `"none"` pops whole at the gate. */
   readonly lodTransition?: "band" | "none" | "temporal";
+  /** Where the CPU path measures a placement's level and `maxDistance` cull from. `"camera"` (the
+   * default) is the render camera's world position, the eye the GPU dispatch already uses: UE 5.8.3
+   * picks instance LODs per view from the view origin
+   * (`Engine/Source/Runtime/Engine/Private/HierarchicalInstancedStaticMesh.cpp:1652`) and streams
+   * around the view target (`Engine/Source/Runtime/Engine/Private/PlayerController.cpp:3705`), so a
+   * camera far from the player no longer draws the player's full-detail trees. Residency and
+   * `placementReach` stay on `follow`. Until a camera reaches `update`, the eye is `follow`.
+   * `"follow"` is the named override, as are `TN_LOD_FROM_CAMERA=0` and `?tnLodFromCamera=0`;
+   * `stats().lodFrom` and `TN_WORLD_MAIN_CULL lodFrom=` report which one ran. */
+  readonly lodFrom?: "camera" | "follow";
   /** Preserve supplied part/material identity and exact authored LOD membership, including shadow batches. Automatic impostors require each asset to author `impostorDistance`.
    * Default content sharing and missing-alpha-part coverage remain enabled when omitted. */
   readonly preserveAuthoredParts?: boolean;
@@ -505,6 +515,10 @@ export interface ICellBatch {
   lastFilterY: number;
   lastFilterX: number;
   lastFilterZ: number;
+  /** The LOD eye the levels were picked from; see `IWorldCellsLoadOptions.lodFrom`. */
+  lastLodX: number;
+  lastLodY: number;
+  lastLodZ: number;
 }
 
 /** The geometry and material one batch draws; a part is one of these plus what it does not need. */
@@ -618,7 +632,7 @@ export interface IResidentCell {
   readonly z: number;
   readonly cell: IWorldCell;
   /**
-   * The union of the distances from every one of this cell's batches' own filter points to the cell's
+   * The union of the distances from every one of this cell's batches' own LOD eyes to the cell's
    * rectangle, widened as batches are built and never narrowed; see `#staleIn`. Monotone on purpose:
    * too wide a range means a cell the gate test does not reject, and too narrow one would drop a
    * rebuild the pass owes.
@@ -663,6 +677,10 @@ export interface IBuildJob {
   filterY: number;
   filterX: number;
   filterZ: number;
+  /** The LOD eye snapshot, taken with the follow snapshot; levels and `maxDistance` read it. */
+  lodX: number;
+  lodY: number;
+  lodZ: number;
   /** A refilter's outgoing batches, drawn until this job's own batches are attached. */
   replaced: ICellBatch[];
   readonly replacement: boolean;
@@ -816,6 +834,8 @@ export interface IWorldCellsStats {
    */
   readonly refilters: number;
   readonly levelRefilters: number;
+  /** Where the CPU path's levels were measured from; see `IWorldCellsLoadOptions.lodFrom`. */
+  readonly lodFrom: "camera" | "follow";
   /**
    * Cumulative stale cell-assets the refilter passes found, across every update. The pass walks every
    * resident cell and gates it as a whole before it looks at one batch, so a follow point that has
