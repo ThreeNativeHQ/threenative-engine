@@ -214,6 +214,14 @@ void binding() {
     set(&chained.shadow, lodCommand({rung, rung}, {0.25, 1.0}), geometries);
     const auto& chains = chained.shadow.virtualShadow->control->lods;
     CHECK(chains.count(7) == 1 && chains.at(7).rungs.size() == 2 && chains.at(7).errors == std::vector<double>({0.25, 1.0}));
+    // A chain redraws only its own caster's pages: a streamed forest registers one per arriving batch, and a blanket
+    // invalidation per chain redrew every level each time the player walked into a new cell.
+    auto& chainControl = *chained.shadow.virtualShadow->control;
+    CHECK(!chainControl.invalidateAll && chainControl.lodChanged.count(7) == 1);
+    chainControl.lodChanged.clear();
+    set(&chained.shadow, Value::record({{"command", Value{Value::Kind::String, 0, "unlod"}}, {"id", Value::of(7.0)}}), geometries);
+    CHECK(chains.count(7) == 0 && !chainControl.invalidateAll && chainControl.lodChanged.count(7) == 1);
+    set(&chained.shadow, lodCommand({rung, rung}, {0.25, 1.0}), geometries);
     const auto refusesLod = [&](Value command, bool known = true) {
         geometries.known = known;
         bool refused = false;
@@ -328,6 +336,25 @@ void policies() {
     CHECK(!atlas->isMover(1));
     atlas->updateCasters({});
     CHECK(!atlas->isMover(1));
+
+    // An owner-told caster (off layer 0) whose instance count falls to zero and comes back is the same
+    // content change as any other count change: its owner names the region, the atlas redraws nothing.
+    {
+        auto told = PageAtlas::create(options, error);
+        CasterState batch; batch.key = 9; batch.automatic = false; batch.signature = "1:1:40";
+        batch.bounds.set(Vector3(-20, 0, -20), Vector3(20, 4, 20));
+        told->updateCasters({batch});
+        for (int frame = 0; frame < 8; ++frame) told->update(eye, sun);
+        CHECK(told->update(eye, sun).empty());
+        told->updateCasters({}, {9});
+        CHECK(told->update(eye, sun).empty());
+        batch.signature = "1:2:12";
+        told->updateCasters({batch});
+        CHECK(told->update(eye, sun).empty() && told->update(eye, sun).empty());
+        // A caster that really leaves (not reported empty) still clears its pages.
+        told->updateCasters({});
+        CHECK(!told->update(eye, sun).empty());
+    }
 
     options.adaptiveRefresh = false; options.adaptiveCasterGate = false;
     options.invalidationDelay = {0.25, 0.75};
@@ -628,6 +655,40 @@ void mapSizes() {
 
 // A panned window keeps the pages it still covers, as Unreal's clipmap panning does: only the
 // pages that enter at the edge are drawn. A depth change or a dirty page still redraws.
+// A fixed depth range (autoDepth off) is Unreal's cached Z radius. Under a tilted sun a pan also moves the camera along
+// the light, and the level keeps its depth centre and its pages while that drift plus the level radius stays inside 0.9
+// of the radius (UE 5.8.3: VirtualShadowMapCacheManager.cpp:276). Re-centring on every pan redrew the whole level each
+// time the window moved: a walking forest player paid 2.6 million shadow instances, 410 ms of GPU, per step.
+void tiltedPanKeepsPages() {
+    std::string error;
+    AtlasOptions options;
+    options.clipExtents = {8, 24}; options.mapSize = 256; options.pageTexels = 64;
+    auto atlas = PageAtlas::create(options, error);
+    CHECK(atlas.has_value()); if (!atlas) return;
+    Vector3 sun(0.4, 1, 0.3);
+    sun.normalize();
+    for (int frame = 0; frame < 3; ++frame) atlas->update(Vector3(0, 0, 0), sun);
+    CHECK(atlas->update(Vector3(0, 0, 0), sun).empty());
+    waste::setDebugEnabled(true);
+    auto& counts = waste::counters();
+    const uint64_t rebuilds = counts.shadowRefreshRebuild.load(), pans = counts.shadowRefreshPan.load();
+    std::size_t fine = 0;
+    for (int frame = 0; frame < 3; ++frame)
+        for (const auto& page : atlas->update(Vector3(4.5, 0.5, 0), sun)) fine += page.level == 0;
+    const uint64_t panRebuilds = counts.shadowRefreshRebuild.load() - rebuilds, panned = counts.shadowRefreshPan.load() - pans;
+    std::printf("tilted pan: %zu fine page(s) redrawn, %llu pan(s), %llu rebuild(s)\n", fine,
+                (unsigned long long)panned, (unsigned long long)panRebuilds);
+    CHECK(fine > 0 && fine < 16);
+    CHECK(panned > 0);
+    CHECK(panRebuilds == 0);
+    // Past the guard band the level re-centres: climbing 240 m in 6 m steps (no camera cut) drifts the light depth past
+    // 0.9 x 199 m, and the depth range follows the camera instead of leaving it outside.
+    const uint64_t before = counts.shadowRefreshRebuild.load();
+    for (int frame = 1; frame <= 40; ++frame) atlas->update(Vector3(4.5, 0.5 + 6.0 * frame, 0), sun);
+    CHECK(counts.shadowRefreshRebuild.load() > before);
+    waste::setDebugEnabled(false);
+}
+
 void panKeepsPages() {
     std::string error;
     AtlasOptions options;
@@ -771,4 +832,4 @@ void initialized() {
     CHECK(atlas->initialized());
 }
 
-TN_TEST_MAIN({"atlas", atlas}, {"initialized", initialized}, {"pan_keeps_pages", panKeepsPages}, {"refresh_reasons", refreshReasons}, {"packing", packing}, {"map_sizes", mapSizes}, {"continuous_invalidation", continuousInvalidation}, {"sampling", sampling}, {"ground_window", groundWindow}, {"lod_rung", lodRung})
+TN_TEST_MAIN({"atlas", atlas}, {"initialized", initialized}, {"pan_keeps_pages", panKeepsPages}, {"tilted_pan_keeps_pages", tiltedPanKeepsPages}, {"refresh_reasons", refreshReasons}, {"packing", packing}, {"map_sizes", mapSizes}, {"continuous_invalidation", continuousInvalidation}, {"sampling", sampling}, {"ground_window", groundWindow}, {"lod_rung", lodRung})

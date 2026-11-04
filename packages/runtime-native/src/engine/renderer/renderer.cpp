@@ -3157,8 +3157,13 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         auto& record = casterRecords_[i];
         record.assign(items.size(), {});
         std::vector<Box3> depthCasters, receivers;
+        std::vector<uint64_t> emptied;
         for (const DrawItem& item : items) {
-            if ((!item.castShadow && !item.receiveShadow) || !item.positions || item.instanceCount == 0 || (item.layers & (mask | (1u << 29) | (1u << 28))) == 0) continue;
+            if ((!item.castShadow && !item.receiveShadow) || !item.positions || (item.layers & (mask | (1u << 29) | (1u << 28))) == 0) continue;
+            if (item.instanceCount == 0) {
+                if (item.castShadow) emptied.push_back(item.key);
+                continue;
+            }
             // Bind-pose bounds cannot fit a GPU-displaced caster without clipping its shadow.
             if (item.castShadow && shadow.atlas.options().autoDepth &&
                 (item.positionNode || item.nodes->positionNode || item.gpuJoints))
@@ -3179,9 +3184,13 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             (!lights.direct[i].shadow->sourceAngleFilter && radius + 0.5 > shadow.atlas.options().border))
             throw std::runtime_error("TN_VIRTUAL_SHADOW_UNSUPPORTED: PCF radius exceeds page guard texels");
         std::vector<shadows::CasterState> states;
+        std::vector<Box3> rungChanged;
         for (const DrawItem& item : items) {
             const CasterRecord& caster = record[std::size_t(&item - items.data())];
             if (!caster.casts) continue;
+            const auto& lodChanged = shadow.atlas.options().control->lodChanged;
+            if (!lodChanged.empty() && item.shadowObject && lodChanged.count(item.shadowObject->id()))
+                rungChanged.push_back(caster.bounds);
             shadows::CasterState state;
             state.key = item.key; state.bounds = caster.bounds;
             state.world.elements = item.matrixWorld;
@@ -3201,7 +3210,10 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         if (control.invalidateAll) { shadow.atlas.invalidateAll(); control.invalidateAll = false; }
         for (const auto& region : control.regions) shadow.atlas.invalidate(region);
         control.regions.clear();
-        shadow.atlas.updateCasters(states);
+        // A caster that left the scene with its chain is invalidated by updateCasters' removal pass.
+        for (const Box3& bounds : rungChanged) shadow.atlas.invalidate(bounds);
+        control.lodChanged.clear();
+        shadow.atlas.updateCasters(states, emptied);
         {
             std::lock_guard lock(shadow.costs->mutex);
             for (const auto& [level, reading] : shadow.costs->levels) {

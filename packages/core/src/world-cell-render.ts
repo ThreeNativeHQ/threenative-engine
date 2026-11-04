@@ -15,7 +15,7 @@ import type {
 } from "./world-cell-data.js";
 import { PLACEMENT_RECORD_FLOATS, cullDistance, isAlphaFoliage } from "./world-cell-impostors.js";
 
-import { clusterOf, sameLodRanges } from "./world-cell-data.js";
+import { PLACED_STRIDE, clusterOf, sameLodRanges } from "./world-cell-data.js";
 
 import {
   Box3,
@@ -127,6 +127,8 @@ const MAIN_CULL_MARKER_MS = 5e3;
  * nobody has annotated still gets the cull. `shadows.smallCasterMetres` is the override.
  */
 const VIRTUAL_SHADOW_SMALL_CASTER_LAYER = 26;
+/** Separate shadow regions one tell carries per kind before the last one absorbs the rest. */
+const SHADOW_REGION_CAP = 64;
 
 /**
  * The layer a GPU-driven shadow map draws: one mesh per `asset:level:part`, over the shadow twin of
@@ -374,8 +376,9 @@ export class CellRender {
    * Separate unions of evicted and admitted records since the levels were last told. An unknown
    * region sets `#shadowFull`, so a narrower later change cannot discard the blanket ask.
    */
-  #shadowRegion: IShadowRegion | undefined;
-  #shadowAdmissionRegion: IShadowRegion | undefined;
+  /** Changed records' boxes since the last tell, merged only where they overlap; see `shadowRecordsMoved`. */
+  readonly #shadowRegions: IShadowRegion[] = [];
+  readonly #shadowAdmissions: IShadowRegion[] = [];
   #shadowFull = false;
 
   /** When `TN_WORLD_MAIN_CULL` was last printed; see {@link #reportMainCull}. */
@@ -845,16 +848,44 @@ export class CellRender {
     // A batch the walk just wrote to, cleared or compacted holds new records, so the shadow levels
     // that drew the old ones are stale. One flag, told at most once a second.
     this.publishGpuGates(job.asset);
-    if (job.fresh.some((entry) => entry.batch.count > 0))
-      this.shadowRecordsMoved(this.changedBounds(job.fresh), true);
-    if (job.replaced.some((entry) => entry.batch.count > 0))
-      this.shadowRecordsMoved(this.changedBounds(job.replaced));
+    // A refilter tells the shadow levels only the placements that entered or left this cell's run,
+    // each with its own box. A placement that only changed level moved no caster: past `castLevels`
+    // a tree keeps casting in the coarsest casting shape (`castLevelOf`). The batch union this told
+    // before is the cell, which covers the finest level's whole window, so a walk through the forest
+    // redrew whole clip levels for a bush crossing its cull distance 60 m away.
+    const before = job.cell.placed?.get(job.run);
+    const after = job.placed ?? [];
+    job.cell.placed ??= new Map();
+    job.cell.placed.set(job.run, after);
+    if (job.replacement && before !== undefined) this.#tellPlacementChanges(before, after);
+    else {
+      if (job.fresh.some((entry) => entry.batch.count > 0))
+        this.shadowRecordsMoved(this.changedBounds(job.fresh), true);
+      if (job.replaced.some((entry) => entry.batch.count > 0))
+        this.shadowRecordsMoved(this.changedBounds(job.replaced));
+    }
     // This run's near representation is attached, so the far mesh stops drawing its original roots in
     // the same synchronous block: a cell is never drawn by both and never by neither. A no-op until
     // the asset's atlas lands; see `#syncFarSegments` for the build-time half and `#restoreFar`.
     this.#host.disableFar(job.run);
     return true;
   }
+
+  /** Tell each placement in only one of two `PLACED_STRIDE` lists, as an admission when it entered. */
+  #tellPlacementChanges(before: readonly number[], after: readonly number[]): void {
+    const gone = new Map<number, number>();
+    for (let at = 0; at < before.length; at += PLACED_STRIDE) gone.set(before[at] as number, at);
+    const box = this.#placedBox;
+    const tell = (list: readonly number[], at: number, admission: boolean): void => {
+      box.min.set(list[at + 1] as number, list[at + 2] as number, list[at + 3] as number);
+      box.max.set(list[at + 4] as number, list[at + 5] as number, list[at + 6] as number);
+      this.shadowRecordsMoved(box, admission);
+    };
+    for (let at = 0; at < after.length; at += PLACED_STRIDE)
+      if (!gone.delete(after[at] as number)) tell(after, at, true);
+    for (const at of gone.values()) tell(before, at, false);
+  }
+  readonly #placedBox = new Box3();
 
   /**
    * The world bounds of these records. A missing bound keeps the tell a blanket one.
@@ -952,8 +983,8 @@ export class CellRender {
    * and only for a game that passed the hook. The levels cull clusters themselves now, so nothing
    * has to be copied for them; the flag only says "what you last drew is out of date".
    *
-   * `bounds` is the records that changed and is kept until the tell, unioned with whatever else
-   * changed in the same second. A change with no bounds is a blanket one: it has to be, because
+   * `bounds` is the records that changed and is kept until the tell, unioned only with the boxes
+   * of the same second that it overlaps. A change with no bounds is a blanket one: it has to be, because
    * there is nothing narrower to say.
    */
   shadowRecordsMoved(bounds?: Box3, admission = false): void {
@@ -968,27 +999,47 @@ export class CellRender {
       this.#shadowFull = true;
       return;
     }
-    const current = admission ? this.#shadowAdmissionRegion : this.#shadowRegion;
-    if (current === undefined) {
-      const region: IShadowRegion = {
+    const regions = admission ? this.#shadowAdmissions : this.#shadowRegions;
+    // Boxes stay apart unless they overlap: one union of a bush 60 m north and a tree 150 m south
+    // covers the ground under the camera, and every clip level redrew whole for it. Past the cap the
+    // region whose ground grows least takes the box, which only widens a redraw and never drops one.
+    let into = regions.find(
+      (region) =>
+        region.min.x <= bounds.max.x &&
+        region.max.x >= bounds.min.x &&
+        region.min.y <= bounds.max.y &&
+        region.max.y >= bounds.min.y &&
+        region.min.z <= bounds.max.z &&
+        region.max.z >= bounds.min.z,
+    );
+    if (into === undefined && regions.length >= SHADOW_REGION_CAP) {
+      let least = Number.POSITIVE_INFINITY;
+      for (const region of regions) {
+        const growth =
+          (Math.max(region.max.x, bounds.max.x) - Math.min(region.min.x, bounds.min.x)) *
+            (Math.max(region.max.z, bounds.max.z) - Math.min(region.min.z, bounds.min.z)) -
+          (region.max.x - region.min.x) * (region.max.z - region.min.z);
+        if (growth < least) [least, into] = [growth, region];
+      }
+    }
+    if (into === undefined) {
+      regions.push({
         ...(admission ? { admission: true } : {}),
         max: { x: bounds.max.x, y: bounds.max.y, z: bounds.max.z },
         min: { x: bounds.min.x, y: bounds.min.y, z: bounds.min.z },
-      };
-      if (admission) this.#shadowAdmissionRegion = region;
-      else this.#shadowRegion = region;
+      });
       return;
     }
-    current.min.x = Math.min(current.min.x, bounds.min.x);
-    current.min.y = Math.min(current.min.y, bounds.min.y);
-    current.min.z = Math.min(current.min.z, bounds.min.z);
-    current.max.x = Math.max(current.max.x, bounds.max.x);
-    current.max.y = Math.max(current.max.y, bounds.max.y);
-    current.max.z = Math.max(current.max.z, bounds.max.z);
+    into.min.x = Math.min(into.min.x, bounds.min.x);
+    into.min.y = Math.min(into.min.y, bounds.min.y);
+    into.min.z = Math.min(into.min.z, bounds.min.z);
+    into.max.x = Math.max(into.max.x, bounds.max.x);
+    into.max.y = Math.max(into.max.y, bounds.max.y);
+    into.max.z = Math.max(into.max.z, bounds.max.z);
   }
 
   /**
-   * Tell the shadow levels in up to two calls; covered loading drains without the walk throttle.
+   * Tell the shadow levels one call per kept region; covered loading drains without the walk throttle.
    *
    * The companions used to make this the expensive call it still is; the levels redraw from
    * scratch, so the cadence is the only lever and once a second is the one that keeps a walk's
@@ -1003,8 +1054,8 @@ export class CellRender {
     // nothing left to do.
     if (this.#invalidateShadows === undefined) {
       this.#shadowMoved = false;
-      this.#shadowRegion = undefined;
-      this.#shadowAdmissionRegion = undefined;
+      this.#shadowRegions.length = 0;
+      this.#shadowAdmissions.length = 0;
       this.#shadowFull = false;
       return;
     }
@@ -1012,23 +1063,18 @@ export class CellRender {
     if (!covered && now - this.#shadowToldAt < 1e3) return;
     this.#shadowToldAt = now;
     this.#shadowMoved = false;
-    const region = this.#shadowRegion;
-    const admission = this.#shadowAdmissionRegion;
+    const regions = this.#shadowRegions.splice(0);
+    const admissions = this.#shadowAdmissions.splice(0);
     const full = this.#shadowFull;
-    this.#shadowRegion = undefined;
-    this.#shadowAdmissionRegion = undefined;
     this.#shadowFull = false;
-    if (full || (region === undefined && admission === undefined)) this.#invalidateShadows();
-    else {
-      if (region !== undefined) this.#invalidateShadows(region);
-      if (admission !== undefined) this.#invalidateShadows(admission);
-    }
+    if (full || regions.length + admissions.length === 0) this.#invalidateShadows();
+    else for (const region of [...regions, ...admissions]) this.#invalidateShadows(region);
   }
 
   resetShadows(): void {
     this.#shadowMoved = false;
-    this.#shadowRegion = undefined;
-    this.#shadowAdmissionRegion = undefined;
+    this.#shadowRegions.length = 0;
+    this.#shadowAdmissions.length = 0;
     this.#shadowFull = false;
   }
 

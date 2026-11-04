@@ -620,7 +620,16 @@ export interface IResidentCell {
    * levels; see `#releaseModelPaths`. Empty for a cell with no chunks or a `loadModel` override.
    */
   readonly retainedModelPaths: string[];
+  /**
+   * Per run, the placements its last swapped build kept, as `PLACED_STRIDE` numbers each: the
+   * placement index, then its world box (min xyz, max xyz). A refilter's swap tells the shadow levels
+   * only the placements that entered or left this list; see `WorldCellRender.swap`.
+   */
+  placed?: Map<IWorldRun, readonly number[]>;
 }
+
+/** Numbers per placement in `IBuildJob.placed` and `IResidentCell.placed`: index, then a box. */
+export const PLACED_STRIDE = 7;
 
 /**
  * One cell's asset run waiting to be built, in units small enough to fit a frame's admission
@@ -663,6 +672,8 @@ export interface IBuildJob {
   force: boolean;
   /** One world-bounds box per `(level, part)` batch, filled by `#addPlacements` and read on swap. */
   boxes: Box3[][] | undefined;
+  /** The placements this filter kept, `PLACED_STRIDE` numbers each; see `IResidentCell.placed`. */
+  placed: number[] | undefined;
   /** How many of the (level, part) meshes have been built. */
   published: number;
   /**

@@ -421,7 +421,10 @@ void registerLightShadow(ClassBinding& b, bool spot) {
                     std::any_of(chain.errors.begin(), chain.errors.end(), [](double e) { return !std::isfinite(e) || e < 0; }))
                     throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: lod rungs and errors"};
                 control.lods[uint64_t(id)] = std::move(chain);
-                control.invalidateAll = true; return;
+                // A chain changes the rung this one caster draws with, so only its pages redraw (Unreal invalidates
+                // the primitive, UE 5.8.3: VirtualShadowMapCacheManager.cpp:489). A streamed forest registers a chain
+                // per arriving batch: invalidating every level for each one redrew the whole cache as the player walked.
+                control.lodChanged.insert(uint64_t(id)); return;
             }
             const auto arg = std::find_if(value.fields.begin(), value.fields.end(), [&](const auto& f) { return f.first == (name == "invalidateRegion" ? "bounds" : "id"); });
             if (arg == value.fields.end()) throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: command argument"};
@@ -438,7 +441,7 @@ void registerLightShadow(ClassBinding& b, bool spot) {
             if (name == "pin") control.pinned.insert(uint64_t(id));
             else if (name == "track") control.tracked.insert(uint64_t(id));
             else if (name == "untrack") control.tracked.erase(uint64_t(id));
-            else if (name == "unlod") { control.lods.erase(uint64_t(id)); control.invalidateAll = true; }
+            else if (name == "unlod") { control.lods.erase(uint64_t(id)); control.lodChanged.insert(uint64_t(id)); }
             else throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: command"};
             return;
         }

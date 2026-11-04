@@ -214,6 +214,15 @@ std::vector<AtlasPage> PageAtlas::update(const Vector3& eye, const Vector3& towa
             level.near = 1;
             level.far = options_.lightDistance + options_.depthRange;
         }
+        // A fixed depth range is Unreal's cached Z radius: the level keeps its depth centre while the camera's drift
+        // along the light plus the level radius stays inside 0.9 of it (UE 5.8.3: Engine/Source/Runtime/Renderer/
+        // Private/VirtualShadowMaps/VirtualShadowMapCacheManager.cpp:276). Re-centring instead turned every pan under
+        // a tilted sun into a whole-level redraw.
+        if (!options_.autoDepth && level.mapped &&
+            std::abs(center.w - oldCenterW) + window.extent <= 0.9 * std::min(level.eye - level.near, level.far - level.eye)) {
+            level.centerW = oldCenterW;
+            target = targetAt(oldCenterW);
+        }
         // virtual-shadow.ts #deriveDepth: sideways overlap, sphere depth for props, box height
         // for masses wider than the window; a low sun or empty set keeps the last fitted span.
         if (options_.autoDepth && direction.y >= 0.05) {
@@ -327,8 +336,12 @@ bool PageAtlas::drawsStatic(uint64_t key) const {
     return it == motion_.end() || !it->second.moving;
 }
 
-void PageAtlas::updateCasters(const std::vector<CasterState>& casters) {
+void PageAtlas::updateCasters(const std::vector<CasterState>& casters, const std::vector<uint64_t>& emptied) {
     std::set<uint64_t> present;
+    for (const uint64_t key : emptied) {
+        const auto it = motion_.find(key);
+        if (it != motion_.end() && !it->second.moving && !it->second.caster.automatic) present.insert(key);
+    }
     for (const auto& caster : casters) {
         present.insert(caster.key);
         auto [it, inserted] = motion_.try_emplace(caster.key);
@@ -347,12 +360,18 @@ void PageAtlas::updateCasters(const std::vector<CasterState>& casters) {
                 if (levels_[l].mapped && std::any_of(levels_[l].pages.begin(), levels_[l].pages.end(),
                     [&](const auto& page) { return overlaps(page, caster.bounds); })) m.settling |= 1u << l;
             invalidate(caster.bounds);
-        } else if (inserted) invalidate(caster.bounds);
+        } else if (inserted) {
+            waste::debugAdd(waste::counters().shadowCasterChurn);
+            invalidate(caster.bounds);
+        }
         m.caster = caster;
     }
     for (auto it = motion_.begin(); it != motion_.end();) {
         if (present.count(it->first)) { ++it; continue; }
-        if (!it->second.moving) invalidate(it->second.caster.bounds);
+        if (!it->second.moving) {
+            waste::debugAdd(waste::counters().shadowCasterChurn);
+            invalidate(it->second.caster.bounds);
+        }
         it = motion_.erase(it);
     }
 }

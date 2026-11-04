@@ -33,6 +33,8 @@ struct AtlasControl {
     std::set<uint64_t> pinned, tracked;
     std::vector<Box3> regions;
     std::map<uint64_t, ShadowLodChain> lods;
+    /** Casters whose LOD chain arrived or left since the last frame: only their own pages redraw. */
+    std::set<uint64_t> lodChanged;
     bool invalidateAll = false;
 };
 struct AtlasOptions {
@@ -87,7 +89,10 @@ public:
     std::vector<AtlasPage> update(const Vector3& eye, const Vector3& direction, bool cameraCut = false,
                                   const std::vector<Box3>& casters = {}, double deltaSeconds = 1.0 / 60);
     void invalidate(const Box3& bounds, bool urgent = false);
-    void updateCasters(const std::vector<CasterState>& casters);
+    // `emptied`: keys of owner-told casters (not on layer 0) drawn this frame with no instances. They keep
+    // their last state, so a count that crosses zero is the content change any count change is: the owner
+    // names the region (the streamed world does, per changed batch) and the atlas redraws nothing for it.
+    void updateCasters(const std::vector<CasterState>& casters, const std::vector<uint64_t>& emptied = {});
     bool isMover(uint64_t key) const;
     bool drawsStatic(uint64_t key) const;
     void appendMoverPages(std::vector<AtlasPage>& pages) const;

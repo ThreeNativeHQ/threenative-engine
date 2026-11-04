@@ -2191,6 +2191,7 @@ export class WorldCells extends Group implements IComputeDriven {
       asset,
       batches: undefined,
       boxes: undefined,
+      placed: undefined,
       lodRanges: undefined,
       cell,
       force,
@@ -2438,6 +2439,17 @@ export class WorldCells extends Group implements IComputeDriven {
       // and it is the one number the shadow levels' invalidation is tested against — the cell box is
       // 64 m of it, so a level whose window is 48 m wide was redrawing over ground nothing in it.
       const bounds = asset.definition.bounds;
+      const placedBox = this.#boundsAt(bounds, this.#matrix);
+      job.placed ??= [];
+      job.placed.push(
+        index,
+        placedBox.min.x,
+        placedBox.min.y,
+        placedBox.min.z,
+        placedBox.max.x,
+        placedBox.max.y,
+        placedBox.max.z,
+      );
       // The far shadow of an asset that can bake a whole-asset impostor draws one quad per placement
       // at the placement root: the parts' own offsets are baked into the atlas, so composing a source
       // part's offset again would apply it twice. One root record per placement, beside the per-part
@@ -2821,6 +2833,7 @@ export class WorldCells extends Group implements IComputeDriven {
     // ring are ground the levels were drawing, and they are named one batch at a time.
     this.#render.shadowRecordsMoved(this.#render.changedBounds(cell.batches));
     cell.batches.length = 0;
+    cell.placed?.clear();
     // The cell's record of those chunks goes with them, so a replay can never draw a cell the world
     // has released — before they leave the group, which is where it counts what it holds. See
     // `#addChunk`.
