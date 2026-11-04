@@ -1051,7 +1051,10 @@ static ExprId virtualShadowFactor(Program& f, Tsl& t, std::size_t index, int lev
         const ExprId footprint = f.add(f.call("max", {radius, t.f(0)}), t.f(1));
         // table entry.w carries receiverPlaneBias so changing the policy never changes a program.
         const ExprId slopeBias = f.mul(f.div(f.div(f.mul(slope, f.mul(extent, t.f(2))), mapSize), span), footprint);
-        const ExprId baseZ = f.add(f.swizzle(projected, "z"), f.uniform(at + "ShadowBias", Type::f32()));
+        // The bias is depth over the casters' fitted span (params.w); the level's range adds a pad for pans, which must not
+        // turn the same bias into more metres.
+        const ExprId baseZ = f.add(f.swizzle(projected, "z"),
+            f.mul(f.uniform(at + "ShadowBias", Type::f32()), f.div(f.swizzle(params, "w"), span)));
         const ExprId mover = f.loadStorage(table, f.construct(Type::u32(), {
             f.add(t.f(float(levels * 9 + l)), total)}));
         auto sampleLayer = [&](bool moving) {
@@ -1133,7 +1136,10 @@ static ExprId virtualShadowFactor(Program& f, Tsl& t, std::size_t index, int lev
                 return f.construct(Type::vec(2), {f.call("max", {texel, f.div(metres, width)}),
                                                   f.call("max", {texel, f.div(f.div(metres, width), aspect)})});
             };
-            const ExprId search = uvRadius(f.mul(f.mul(baseZ, span), tangent));
+            // No blocker is nearer the light than the top of the fitted casters, which sits half the pan pad,
+            // (span - fitted span) / 2, below the near plane: the search reaches from there, not from the plane.
+            const ExprId topCaster = f.mul(f.sub(span, f.swizzle(params, "w")), t.f(0.5f));
+            const ExprId search = uvRadius(f.mul(f.call("max", {t.f(0), f.sub(f.mul(baseZ, span), topCaster)}), tangent));
             const VarId blockerSum = f.var(Type::f32(), t.f(0)), blockerCount = f.var(Type::f32(), t.f(0));
             f.Loop(f.construct(Type::i32(), {blockers}), [&](ExprId i) {
                 const ExprId offset = f.mul(disk(i, blockers), search);
@@ -1436,7 +1442,13 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
         // diffuse layer loses.
         const ExprId halfDir = f.call("normalize", {f.add(light.direction, positionViewDirection)});
         const ExprId dotVH = t.saturate(t.dot(positionViewDirection, halfDir));
-        const ExprId oneMinusF = t.oneMinus(fSchlick(t, f0Dielectric, specularF90, dotVH));
+        // A fresh Unreal project's Substrate slab (GBuffer format 0) compiles with its energy conservation off: the
+        // diffuse keeps all the light and the specular lobe takes no multi-scattering weight. UE 5.8.3:
+        // Engine/Shaders/Private/ShadingEnergyConservation.ush:7-31, ShadingEnergyConservationTemplate.ush:73-78 and
+        // :134-135, used at Substrate/SubstrateEvaluation.ush:585-589 and :836.
+        const ExprId oneMinusF =
+            variant.roughDiffuse ? t.f(1) : t.oneMinus(fSchlick(t, f0Dielectric, specularF90, dotVH));
+        const ExprId specularWeight = variant.roughDiffuse ? t.f(1) : multiScatteringCompensation;
         ExprId diffuseBrdf = brdfLambert;
         if (variant.roughDiffuse) {
             // EON's roughness is 0.4 x the material's, fading to Lambert as the lamp's Source Radius reaches 20 cm.
@@ -1447,7 +1459,7 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
         }
         directDiffuse = f.add(directDiffuse, f.mul(f.mul(irradiance, diffuseBrdf), oneMinusF));
         directSpecular =
-            f.add(directSpecular, f.mul(f.mul(irradiance, brdfGgx(t, surface, light.direction)), multiScatteringCompensation));
+            f.add(directSpecular, f.mul(f.mul(irradiance, brdfGgx(t, surface, light.direction)), specularWeight));
         if (subsurface != kInvalid) {
             const ExprId wrap = t.saturate(f.div(f.add(f.neg(t.dot(n, light.direction)), t.f(0.5f)), t.f(2.25f)));
             const ExprId scatter = dGgx(t, t.f(0.6f), t.saturate(f.neg(t.dot(positionViewDirection, light.direction))));

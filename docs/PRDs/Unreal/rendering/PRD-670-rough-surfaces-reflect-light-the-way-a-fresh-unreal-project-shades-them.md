@@ -8,7 +8,7 @@ prd_contract: v1
 **Priority:** P2 — Phase 1 is an unbuilt gate: a fresh Unreal 5.8.3 project turns Substrate on, and no measurement says whether its rough diffuse and forced energy conservation move the L1 sphere rows past the PRD-631 thresholds.
 **Complexity:** 5 (MEDIUM) — 1–5 implementation files (+1), a second Unreal capture project with one setting changed (+1), a lighting-model hook that the owned host must compile too (+2), a visual judge (+1); risk override: none
 **Owner:** João
-**Depends on:** `docs/PRDs/Unreal/look/PRD-631-an-unreal-reference-scene-measures-the-default-look.md` (on `origin/feat/unreal-look-epic`, all boxes ticked: the capture harness and the L1 thresholds). `docs/PRDs/Unreal/look/PRD-632-the-frame-is-exposed-and-tone-mapped-the-way-a-fresh-unreal-project-is.md` must close the L1 tone gap before Phase 2 judges a shading change, because a tone gap hides a BSDF gap.
+**Depends on:** `docs/PRDs/Unreal/look/PRD-631-an-unreal-reference-scene-measures-the-default-look.md` (on `origin/feat/unreal-look-epic`, all boxes ticked: the capture harness and the L1 thresholds). `docs/PRDs/done/PRD-632-the-frame-is-exposed-and-tone-mapped-the-way-a-fresh-unreal-project-is.md` must close the L1 tone gap before Phase 2 judges a shading change, because a tone gap hides a BSDF gap.
 
 ## Context
 
