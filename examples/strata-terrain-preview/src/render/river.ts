@@ -18,9 +18,10 @@
 //   water surface inside the mirrored pass samples a single-sampled depth target and fails WebGPU
 //   validation, taking the frame down with it.
 // - **The forest stream has no mirror.** It falls fifteen metres over its length, so a planar
-//   reflection would be right at one bend and wrong everywhere else; the sky comes back by fresnel
-//   over an analytic gradient. Tundra channels share the kettle ponds' existing mirrors, blended
-//   by elevation, so the stream and pond meet without a reflection-colour seam.
+//   reflection would be right at one bend and wrong everywhere else; the banks and the sky come back
+//   by a reflected-ray march over the frame (`traceReflection`), over an analytic sky where the ray
+//   leaves the screen. Tundra channels share the kettle ponds' existing mirrors, blended by
+//   elevation, so the stream and pond meet without a reflection-colour seam.
 //
 // Nothing here decides a colour for the engine: `WaterSurface3D` measures metres and hands back the
 // frame beneath the surface and the world mirrored in it, and every number under LOOK below is this
@@ -34,14 +35,19 @@ import { BufferAttribute, BufferGeometry, Color, DoubleSide, Mesh } from "three"
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import {
   attribute,
+  cameraFar,
+  cameraNear,
   cameraPosition,
   cameraProjectionMatrix,
   cameraViewMatrix,
   clamp,
   color,
+  dFdx,
+  dFdy,
   dot,
   exp,
   float,
+  linearDepth,
   max,
   min,
   mix,
@@ -56,6 +62,7 @@ import {
   vec2,
   vec3,
   vec4,
+  viewportDepthTexture,
   viewportSharedTexture,
 } from "three/tsl";
 import type { Node } from "three/webgpu";
@@ -100,17 +107,25 @@ const RIVER = {
   /** The wind patches on moving water: how big one is, how fast it crosses, and which way. */
   patch: { metres: 9, drift: 1.4, wind: [0.86, 0.51] as const },
   /**
-   * The three ripple scales, as metres of feature size, how fast each drifts downstream in metres a
-   * second, and how hard each bends the surface. Small ones only: the stream is read from two metres
-   * away, where a broad ripple is a smear across the whole channel rather than a wave in it. The
-   * finest is `fine`, and fades with distance like any ripple smaller than a pixel.
+   * The ripple scales: feature size across the current in metres, how much longer each is along it,
+   * how fast it drifts downstream in metres a second, and the slope it adds. A forest stream runs at
+   * about a metre a second and its surface tilts a few degrees: the old gains summed to slopes of
+   * one to four, a 45-75 degree chop that read as crumpled plastic. Each scale fades out once one
+   * pixel covers a fifth of it; see `footprint` in `createRivers`.
    */
   ripples: [
-    { metres: 1.9, drift: 1.5, gain: 0.55, fine: false },
-    { metres: 0.78, drift: 2.1, gain: 0.3, fine: false },
-    { metres: 0.33, drift: 2.8, gain: 0.16, fine: true },
+    { metres: 2.4, stretch: 1.7, drift: 0.8, slope: 0.09 },
+    { metres: 0.85, stretch: 1.5, drift: 1, slope: 0.08 },
+    { metres: 0.3, stretch: 1.3, drift: 1.2, slope: 0.06 },
   ],
 } as const;
+
+/**
+ * The reflected-ray march: steps, the first step in metres, how much each step grows, and the edge
+ * fade. Geometric steps resolve the bank a metre off and still reach the far shore. 14 steps reach
+ * 0.45 * (1.3^14 - 1) / 0.3 = 58 m. Past that, a direction read takes over; see `traceReflection`.
+ */
+const TRACE = { steps: 14, first: 0.45, growth: 1.3 } as const;
 
 /** The lake's shape, and how its mirror is taken. Every number here is this game's. */
 const LAKE = {
@@ -195,6 +210,25 @@ const REFLECT_BLUR_ASPECT = 0.5;
 
 /** The floor under Schlick: still water seen straight down is not perfectly clear. */
 const SKY_FLOOR = 0.045;
+
+/** The analytic sky's gain, to sit at the drawn sky's radiance where the two meet at a frame edge. */
+const SKY_GAIN = 0.65;
+
+/**
+ * Haze on a reflected far read: clear for the first metres, as the post's aerial perspective is
+ * (`atmosphere.ts`, 150 m), then an exponential toward the horizon colour.
+ */
+const HAZE_CLEAR = 150;
+const HAZE_METRES = 1600;
+
+/**
+ * GGX roughness of the capillary ripple below every drawn wave, and of a far lake whose waves the
+ * pixel averages: Unreal's water material ships a roughness of 0.1 for that reason.
+ */
+const ROUGHNESS_NEAR = 0.04;
+const ROUGHNESS_FAR = 0.13;
+/** Peak glint per unit of sun irradiance: a facet can be bright, not a white spark that blooms. */
+const GLINT_CAP = 3;
 
 /** Where the ripple may start, in metres of depth. Water at the gravel is glass. */
 const RIPPLE_DEPTH = 0.35;
@@ -322,11 +356,49 @@ interface IWaterShading {
   readonly bed: Node<"vec3">;
   /** The world mirrored in this surface: the mirror target for the lake, the sky for the stream. */
   readonly reflected: Node<"vec3">;
+  /**
+   * GGX roughness of the sun's lobe: a floor for the capillary ripple no normal draws, plus the
+   * slope of every ripple too fine for the pixel. A far pixel averages many facets, so its glint
+   * spreads into a glitter path instead of aliasing into separate white sparks.
+   */
+  readonly roughness: Node<"float">;
+  /** What this water absorbs and scatters back. The lake's own when omitted. */
+  readonly body?: IWaterBody;
 }
+
+/** A water body's colour: extinction per metre (linear RGB), and its scatter, shallow and deep. */
+interface IWaterBody {
+  readonly extinction: readonly [number, number, number];
+  readonly shallow: number;
+  readonly shallowGain: number;
+  readonly deep: number;
+  readonly deepGain: number;
+}
+
+const LAKE_BODY: IWaterBody = {
+  extinction: EXTINCTION,
+  shallow: TINT.silt,
+  shallowGain: TINT.shallow,
+  deep: TINT.deep,
+  deepGain: TINT.deepGain,
+};
+
+/**
+ * The forest stream's body: clear over the gravel, green-brown where it deepens. Leaf tannin takes
+ * blue first and red second, so a metre of it reads olive rather than the lake's teal.
+ */
+const STREAM_BODY: IWaterBody = {
+  extinction: [0.85, 0.55, 1.25],
+  shallow: 0x9a9468,
+  shallowGain: 0.07,
+  deep: 0x34401f,
+  deepGain: 0.3,
+};
 
 /** The composite: what comes up through the surface, what sits on it, and the sun's glint. */
 function compositeWater(surface: IWaterShading): Node<"vec3"> {
-  const { normal, depthM, bed, reflected } = surface;
+  const { normal, depthM, bed, reflected, roughness } = surface;
+  const water = surface.body ?? LAKE_BODY;
   const view = normalize(cameraPosition.sub(positionWorld));
   const facing = clamp(dot(normal, view), float(0), float(1));
   // Schlick at water's 1.333 index: F0 is 0.02, which is why still water at your feet is nearly
@@ -337,7 +409,9 @@ function compositeWater(surface: IWaterShading): Node<"vec3"> {
   // at a grazing angle it is far further, which is the whole reason water is clear at your feet and
   // opaque at the far bank. The floor on `facing` keeps a horizon fragment asking for a kilometre.
   const path = min(depthM.div(max(facing, float(0.12))), float(MAX_BAKED_DEPTH * 1.6));
-  const tint = exp(vec3(-EXTINCTION[0], -EXTINCTION[1], -EXTINCTION[2]).mul(path));
+  const tint = exp(
+    vec3(-water.extinction[0], -water.extinction[1], -water.extinction[2]).mul(path),
+  );
 
   // Caustics: the same analytic normal that bends the reflection focuses the sun onto the bed, so the
   // bright cells are where the surface happens to point at it, drifting with the ripple causing them.
@@ -348,8 +422,8 @@ function compositeWater(surface: IWaterShading): Node<"vec3"> {
 
   // What the water body itself scatters back: silt at the margin, the lake's own green in the middle.
   // The gains are small because these are radiances, not albedos: a fraction of what the bank returns.
-  const shallowBody = linear(TINT.silt, TINT.shallow).mul(vec3(1.06, 1, 0.74));
-  const deepBody = linear(TINT.deep, TINT.deepGain);
+  const shallowBody = linear(water.shallow, water.shallowGain).mul(vec3(1.06, 1, 0.74));
+  const deepBody = linear(water.deep, water.deepGain);
   const body = mix(shallowBody, deepBody, smoothstep(float(0.1), float(2.4), depthM));
 
   const submerged = bed
@@ -372,11 +446,21 @@ function compositeWater(surface: IWaterShading): Node<"vec3"> {
   const skyWeight = min(float(SKY_FLOOR).add(fresnel.mul(float(1 - SKY_FLOOR))), float(1));
   const composited = mix(underwater, reflected, skyWeight);
 
-  // Sun glint off the same analytic normal. A specular lobe on a non-repeating normal breaks into
-  // separate sparks by itself, which is what a glitter path looks like from the bank.
+  // The sun off the same normal, as GGX with Schlick's fresnel and the Kelemen visibility term: lit
+  // by the sun's own irradiance, so its brightness agrees with the ground it shines on. The cap
+  // keeps a single facet from blooming into a hard white spark.
   const halfway = normalize(view.add(SUN_VECTOR));
-  const glint = pow(clamp(dot(normal, halfway), float(0), float(1)), 170);
-  return composited.add(linear(SUN.colour, 0.75).mul(glint));
+  const nh = clamp(dot(normal, halfway), float(0), float(1));
+  const a2 = roughness.mul(roughness);
+  const lobe = nh.mul(nh).mul(a2.sub(1)).add(1);
+  const vh = clamp(dot(view, halfway), float(0.05), float(1));
+  const sunFresnel = float(0.02).add(pow(float(1).sub(vh), 5).mul(0.98));
+  const glint = a2
+    .div(lobe.mul(lobe).mul(Math.PI))
+    .mul(sunFresnel)
+    .mul(clamp(dot(normal, SUN_VECTOR), float(0), float(1)))
+    .div(vh.mul(vh).mul(4));
+  return composited.add(linear(SUN.colour, SUN.intensity).mul(min(glint, float(GLINT_CAP))));
 }
 
 /**
@@ -419,6 +503,104 @@ function slopeGain(
 /** The shore: the surface dissolves into the wet margin instead of ending on a triangle. */
 function shoreFade(depthM: Node<"float">): Node<"float"> {
   return smoothstep(float(0), float(SHORE_FADE), depthM);
+}
+
+/** The analytic sky along a reflected ray, at the frame's radiance, for rays off the screen. */
+function skyAlong(bounced: Node<"vec3">): Node<"vec3"> {
+  return mix(
+    color(TINT.skyHorizon),
+    color(TINT.skyZenith),
+    clamp(bounced.y, float(0), float(1)),
+  ).mul(SKY_GAIN);
+}
+
+/**
+ * The frame reflected along `direction` from this fragment, over `fallback` where the frame cannot
+ * say: what a planar mirror cannot give a stream that falls along its length, and what the lake's
+ * ground-only mirror leaves out, the spruces on the far bank.
+ *
+ * Unreal's single-layer water takes the scene's own screen-space reflections (UE 5.8.3:
+ * Engine/Source/Runtime/Renderer/Private/SingleLayerWaterRendering.cpp:69), marched in 16 steps at
+ * the default quality (Engine/Shaders/Private/SSRT/SSRTReflections.usf:203) and faded over the outer
+ * fifth of the screen (Engine/Shaders/Private/SSRT/SSRTRayCast.ush:674-680). Here the steps grow in
+ * metres instead (`TRACE`). Past the last step the ray's own direction is read off the screen: sky, a
+ * mountain or a stand of trees far enough away that the parallax a march corrects is under a pixel.
+ */
+function traceReflection(direction: Node<"vec3">, fallback: Node<"vec3">): Node<"vec3"> {
+  const span = cameraFar.sub(cameraNear);
+  const sceneMetres = (uv: Node<"vec2">): Node<"float"> =>
+    linearDepth(viewportDepthTexture(clamp(uv, vec2(0.001, 0.001), vec2(0.999, 0.999))))
+      .mul(span)
+      .add(cameraNear);
+  const screen = (clip: Node<"vec4">): { ndc: Node<"vec2">; uv: Node<"vec2"> } => {
+    const ndc = clip.xy.div(max(clip.w, float(0.0001)));
+    // Clip space has +1 at the top and the frame samples with 0 there; see the mirrored bed below.
+    return { ndc, uv: vec2(ndc.x.mul(0.5).add(0.5), ndc.y.mul(-0.5).add(0.5)) };
+  };
+  const inside = (ndc: Node<"vec2">): Node<"float"> =>
+    step(max(ndc.x.abs(), ndc.y.abs()), float(1));
+  const vignette = (ndc: Node<"vec2">): Node<"float"> => {
+    const edge = clamp(ndc.abs().mul(5).sub(4), vec2(0, 0), vec2(1, 1));
+    return clamp(float(1).sub(dot(edge, edge)), float(0), float(1));
+  };
+
+  let found: Node<"float"> = float(0);
+  let hitUv: Node<"vec2"> = vec2(0.5, 0.5);
+  let hitNdc: Node<"vec2"> = vec2(0, 0);
+  let stride: number = TRACE.first;
+  let reached = 0;
+  for (let index = 0; index < TRACE.steps; index += 1) {
+    reached += stride;
+    const point = positionWorld.add(direction.mul(reached));
+    const clip = cameraProjectionMatrix.mul(
+      cameraViewMatrix.mul(vec4(point.x, point.y, point.z, 1)),
+    );
+    const { ndc, uv } = screen(clip);
+    // `clip.w` is the point's metres in front of the eye, the same measure as the frame's depth.
+    const behind = clip.w.sub(sceneMetres(uv));
+    const hit = step(float(0), behind)
+      .mul(step(behind, float(stride * 1.6 + 0.25)))
+      .mul(inside(ndc))
+      .mul(step(float(0.05), clip.w));
+    const take = hit.mul(float(1).sub(found));
+    hitUv = mix(hitUv, uv, take);
+    hitNdc = mix(hitNdc, ndc, take);
+    found = found.add(take);
+    stride *= TRACE.growth;
+  }
+  const away = cameraProjectionMatrix.mul(
+    cameraViewMatrix.mul(vec4(direction.x, direction.y, direction.z, 0)),
+  );
+  const far = screen(away);
+  // A direction off the side of the frame reads its edge column (sky, the tree line) and fades out
+  // half a frame further; only the top and bottom take Unreal's vignette, so no seam crosses the water.
+  const farUv = vec2(clamp(far.uv.x, float(0.001), float(0.999)), far.uv.y);
+  const farMetres = sceneMetres(farUv);
+  const farWeight = step(float(0.02), away.w)
+    .mul(step(far.ndc.y.abs(), float(1)))
+    .mul(float(1).sub(smoothstep(float(1), float(1.5), far.ndc.x.abs())))
+    .mul(step(float(reached), farMetres))
+    .mul(vignette(vec2(0, far.ndc.y)));
+  // The haze is a post pass over the frame's depth, so a far read comes back clear and the water's
+  // own depth hazes it by the eye's leg only. The reflected leg is put back here, in the sky's
+  // horizon colour; the sky itself (depth at the far plane) takes none.
+  const hazed = float(1)
+    .sub(exp(farMetres.sub(HAZE_CLEAR).max(0).div(-HAZE_METRES)))
+    .mul(step(farMetres, cameraFar.mul(0.999)));
+  const distant = mix(
+    fallback,
+    mix(
+      viewportSharedTexture(farUv).rgb as unknown as Node<"vec3">,
+      color(TINT.skyHorizon).mul(SKY_GAIN),
+      hazed,
+    ),
+    farWeight,
+  );
+  return mix(
+    distant,
+    viewportSharedTexture(hitUv).rgb as unknown as Node<"vec3">,
+    found.mul(vignette(hitNdc)),
+  );
 }
 
 /**
@@ -471,6 +653,7 @@ function ribbon(
   river: IBakedRiver,
   positions: number[],
   flows: number[],
+  uvs: number[],
   depths: number[],
   indices: number[],
   limitToWidth: boolean,
@@ -483,7 +666,16 @@ function ribbon(
   const base = positions.length / 3;
   const columns = RIVER.across;
   const wet: number[] = [];
+  // Metres down the centreline: the ripples' along coordinate, as Unreal builds a river's sections
+  // by distance along its spline and carries the flow per vertex (UE 5.8.3:
+  // Engine/Plugins/Experimental/Water/Source/Runtime/Private/WaterBodyRiverComponent.cpp:104-138).
+  let downstream = 0;
   for (let k = 0; k < points.length; k += 1) {
+    if (k > 0) {
+      const [px = 0, , pz = 0] = points[k - 1] as readonly number[];
+      const [qx = 0, , qz = 0] = points[k] as readonly number[];
+      downstream += Math.hypot(qx - px, qz - pz);
+    }
     const before = points[Math.max(0, k - 1)] as readonly number[];
     const after = points[Math.min(points.length - 1, k + 1)] as readonly number[];
     let dx = (after[0] ?? 0) - (before[0] ?? 0);
@@ -499,6 +691,7 @@ function ribbon(
       const vz = z + dx * across;
       positions.push(vx, y, vz);
       flows.push(dx, dz);
+      uvs.push(downstream, across);
       const depth = Math.min(
         MAX_BAKED_DEPTH,
         Math.max(0, y - field.heightAt(vx, vz)),
@@ -546,17 +739,19 @@ export function createRivers(
   if (rivers.length === 0) return undefined;
   const positions: number[] = [];
   const flows: number[] = [];
+  const uvs: number[] = [];
   const depths: number[] = [];
   const indices: number[] = [];
   const groups: { start: number; count: number }[] = [];
   for (const river of rivers) {
     const start = indices.length;
-    ribbon(field, river, positions, flows, depths, indices, limitToFootprint);
+    ribbon(field, river, positions, flows, uvs, depths, indices, limitToFootprint);
     groups.push({ start, count: indices.length - start });
   }
   const geometry = new BufferGeometry();
   geometry.setAttribute("position", new BufferAttribute(new Float32Array(positions), 3));
   geometry.setAttribute("flow", new BufferAttribute(new Float32Array(flows), 2));
+  geometry.setAttribute("flowUv", new BufferAttribute(new Float32Array(uvs), 2));
   geometry.setAttribute("metres", new BufferAttribute(new Float32Array(depths), 1));
   geometry.setIndex(indices);
   for (const group of groups) geometry.addGroup(group.start, group.count, 0);
@@ -569,42 +764,55 @@ export function createRivers(
   const depthM = attribute<"float">("metres", "float");
   const heading = normalize(attribute<"vec2">("flow", "vec2"));
   const here = vec2(positionWorld.x, positionWorld.z);
-  const along = dot(here, heading);
-  const side = dot(here, vec2(heading.y.negate(), heading.x));
-  const eyeDistance = here.sub(vec2(cameraPosition.x, cameraPosition.z)).length();
-  const detail = float(1).sub(smoothstep(float(DETAIL_NEAR), float(DETAIL_FAR), eyeDistance));
+  // Metres down the centreline and metres across it, baked per vertex. These were once
+  // `dot(world xz, heading)`: 180 m from the origin, a 3 degree turn between two stations moved
+  // that frame by 9 m, so one metre of water read 3-6 m of noise and the ripples fanned out from
+  // the bends in radial streaks (stations 50-70 measured d(side)/ds = -1.4 to -5.9).
+  const flowUv = attribute<"vec2">("flowUv", "vec2");
+  const along = flowUv.x;
+  const side = flowUv.y;
+  // The long axis of the ellipse one pixel covers on the water, in metres. At a grazing angle it is
+  // metres long even near the eye, and a ripple finer than that aliases into streaks: each scale
+  // fades out between a pixel covering an eighth and nearly half of it, as a mip chain would.
+  const footprint = max(dFdx(flowUv).length(), dFdy(flowUv).length());
+  const octaves = RIVER.ripples.map((wave) => ({
+    ...wave,
+    weight: float(1).sub(
+      smoothstep(float(wave.metres * 0.12), float(wave.metres * 0.45), footprint),
+    ),
+  }));
 
-  // Ripples are noise stretched along the current and slid downstream: streaks that move, which is
-  // what tells a river from a pond at a glance. The height comes from the sum, and the normal from its
-  // gradient by finite difference in the current's own frame, then rotated back into the world's.
+  // Ripples are noise drawn longer along the current and slid downstream at the stream's pace. The
+  // height sums them in metres, and the normal is its gradient by finite difference in the current's
+  // own frame, rotated back into the world's by the baked heading.
   const height = (a: Node<"float">, b: Node<"float">): Node<"float"> => {
     let sum: Node<"float"> = float(0);
-    for (const wave of RIVER.ripples) {
-      const scale = 1 / wave.metres;
+    for (const wave of octaves) {
+      const length = wave.metres * wave.stretch;
       const octave = mx_noise_float(
-        vec3(a.mul(scale).sub(time.mul(wave.drift * scale)), b.mul(scale * 0.7), time.mul(0.09)),
-      ).mul(wave.gain);
-      sum = sum.add(wave.fine ? octave.mul(detail) : octave);
+        vec3(a.sub(time.mul(wave.drift)).div(length), b.div(wave.metres), time.mul(0.11)),
+      );
+      sum = sum.add(octave.mul(wave.weight.mul(wave.slope * wave.metres)));
     }
     return sum;
   };
   const h0 = height(along, side);
-  const delta = 0.18;
+  const delta = 0.03;
   const dAlong = height(along.add(delta), side).sub(h0).div(delta);
   const dSide = height(along, side.add(delta)).sub(h0).div(delta);
   const patch = windPatch(here, time, RIVER.patch.metres, RIVER.patch.drift, RIVER.patch.wind);
-  const gain = slopeGain(eyeDistance, patch, depthM).mul(mix(0.12, 1, detail));
-  const slant = (share: number): Node<"vec3"> => {
-    const alongSlope = dAlong.mul(gain.mul(share)).negate();
-    const sideSlope = dSide.mul(gain.mul(share)).negate();
-    return vec3(
+  const gain = mix(float(PATCH_CALM), float(1), patch).mul(
+    smoothstep(float(0), float(RIPPLE_DEPTH), depthM),
+  );
+  const alongSlope = dAlong.mul(gain).negate();
+  const sideSlope = dSide.mul(gain).negate();
+  const normal = normalize(
+    vec3(
       heading.x.mul(alongSlope).sub(heading.y.mul(sideSlope)),
       float(1),
       heading.y.mul(alongSlope).add(heading.x.mul(sideSlope)),
-    );
-  };
-  const normal = normalize(slant(1));
-  const reflectNormal = normalize(slant(REFLECT_SLOPE_SHARE));
+    ),
+  );
 
   // The normal's horizontal part is the screen offset, in fractions of the frame. Grazing fragments
   // slide further, because that is what a longer path through a tilted surface does — and the offset
@@ -617,18 +825,37 @@ export function createRivers(
     .mul(smoothstep(float(0), float(0.4), depthM));
   const bed = surface.refractionAt(offset);
 
-  // The forest stream falls fifteen metres. Its sky comes back by fresnel over
-  // an analytic gradient, on a floor of the wood that stands on both banks — see `TINT.bank`.
-  const bounced = view.negate().reflect(reflectNormal);
+  // The stream falls along its length, so no one planar mirror fits it: the banks and the sky come
+  // back by a reflected-ray march over the frame, with an analytic sky on a floor of the wood that
+  // stands on both banks (`TINT.bank`) wherever the ray leaves the screen.
+  const bounced = view.negate().reflect(normal);
   const sky = mix(
-    linear(TINT.bank, TINT.bankGain),
-    mix(color(TINT.skyHorizon), color(TINT.skyZenith), clamp(bounced.y, float(0), float(1))),
+    linear(TINT.bank, TINT.bankGain * SKY_GAIN),
+    skyAlong(bounced),
     // A low reflected ray hits the wooded bank. Blend its average green radiance into sky
     // over a broad angle; a hard dark cutoff makes moving facets flicker as black blobs.
     smoothstep(float(0.08), float(0.5), bounced.y),
   );
-  const reflected = lakeReflection ? lakeReflection(offset) : sky.mul(0.65);
-  const shaded = compositeWater({ normal, depthM, bed, reflected });
+  const reflected = traceReflection(bounced, lakeReflection ? lakeReflection(offset) : sky);
+  // The slope the faded scales would have drawn, as GGX roughness (alpha = sqrt(2) sigma).
+  const unresolved = octaves.reduce<Node<"float">>(
+    (sum, wave) =>
+      sum.add(
+        float(1)
+          .sub(wave.weight)
+          .mul(2 * wave.slope * wave.slope),
+      ),
+    float(ROUGHNESS_NEAR * ROUGHNESS_NEAR),
+  );
+  const shaded = compositeWater({
+    normal,
+    depthM,
+    bed,
+    reflected,
+    roughness: unresolved.sqrt(),
+    // A channel between kettle ponds takes the ponds' own water, so the two meet without a seam.
+    body: lakeReflection ? LAKE_BODY : STREAM_BODY,
+  });
 
   // White water where the current runs over a shallow bed, and a few streaks in the channel. Broken
   // rather than ruled: the shallows only whiten where the churn is high, so the edge reads as water
@@ -640,7 +867,9 @@ export function createRivers(
     .add(0.5);
   const shallows = float(1).sub(smoothstep(float(0.03), float(0.18).add(churn.mul(0.24)), depthM));
   const bank = shallows.mul(smoothstep(float(0.65), float(0.9), churn)).mul(0.12);
-  const streak = smoothstep(float(0.78), float(0.92), h0.mul(0.5).add(0.5)).mul(0.035);
+  // The height as a share of its peak, so the streak threshold reads on the same -1..1 as the noise.
+  const peak = RIVER.ripples.reduce((sum, wave) => sum + wave.slope * wave.metres, 0);
+  const streak = smoothstep(float(0.78), float(0.92), h0.div(peak).mul(0.5).add(0.5)).mul(0.035);
   const foam = max(bank, streak.mul(smoothstep(float(0), float(OPAQUE_DEPTH), depthM)));
 
   const material = new MeshBasicNodeMaterial({
@@ -932,7 +1161,25 @@ export function createLakes(
     .add(tap(0, -1).mul(0.16))
     .add(tap(1.3, 0.5).mul(0.16))
     .add(tap(-1.3, -0.5).mul(0.16)) as Node<"vec3">;
-  const shaded = compositeWater({ normal, depthM, bed, reflected: mirror });
+  // The mirror draws the ground only, and nothing where the sky is. The spruces on the far bank and
+  // the sky come from the frame; a steep ray that leaves the screen finds the analytic sky, a low
+  // one the mirrored ground.
+  const bounced = normalize(cameraPosition.sub(positionWorld)).negate().reflect(reflectNormal);
+  const reflected = traceReflection(
+    bounced,
+    mix(mirror, skyAlong(bounced), smoothstep(float(0.12), float(0.4), bounced.y)),
+  );
+  const shaded = compositeWater({
+    normal,
+    depthM,
+    bed,
+    reflected,
+    roughness: mix(
+      float(ROUGHNESS_NEAR),
+      float(ROUGHNESS_FAR),
+      smoothstep(float(DETAIL_NEAR), float(SLOPE_FADE_FAR * 2), eyeDistance),
+    ).mul(mix(float(0.7), float(1), patch)),
+  });
 
   // ---- and what the surface is from underneath ----------------------------------------------
   //
