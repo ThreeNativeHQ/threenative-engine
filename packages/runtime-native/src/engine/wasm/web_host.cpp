@@ -28,6 +28,7 @@
 #endif
 
 #include <emscripten/emscripten.h>
+#include <emscripten/console.h>
 
 #include <map>
 #include <memory>
@@ -452,7 +453,10 @@ extern "C" int tnw_web_render(const tn_handle_t* sceneHandle, const tn_handle_t*
         if (reported.insert(diagnostic).second) {
             const bool note = diagnostic.rfind("TN_POST_NORMAL_SKIPPED", 0) == 0 || diagnostic.rfind("TN_TRAA_VELOCITY_SKIPPED", 0) == 0 ||
                               diagnostic.rfind("TN_TRAA_MSAA_OFF", 0) == 0;
-            std::fprintf(note ? stdout : stderr, "TN_RENDERER: %s\n", diagnostic.c_str());
+            // A scene the engine draws correctly but slowly is a warning, which names what to change.
+            if (diagnostic.rfind("TN_SHADOW_UNBOUNDED_CASTER", 0) == 0)
+                emscripten_console_warn(("TN_RENDERER: " + diagnostic).c_str());
+            else std::fprintf(note ? stdout : stderr, "TN_RENDERER: %s\n", diagnostic.c_str());
         }
     if (!refused.empty()) return fail(refused);
     const RenderDatabase& drawn = overlay ? overlayDatabase : database;

@@ -699,9 +699,13 @@ const std::pair<Box3, double>& DrawCache::virtualShadowBounds(const DrawItem& it
     // draw. Rebuilding it each frame walked every instance of a swaying forest (218k) for 40 ms of plan time.
     const bool cacheable = !item.boneMatrices && !item.morphGeometry && !item.gpuJoints;
     const BufferStore* instances = item.instanceMatrices;
+    // A displaced caster's boxes grow by the farthest its positionNode moves a vertex (UE 5.8.3:
+    // Engine/Source/Runtime/Engine/Private/InstancedStaticMesh/ISMInstanceDataManager.cpp:490 adds the material's
+    // MaxWorldPositionOffsetDisplacement to every instance's bounds).
+    const double margin = item.material && (item.positionNode || item.nodes->positionNode) ? item.material->maxPositionOffset : 0;
     const ShadowBoundsKey key{item.positions, item.positions->version(), item.positions->epoch(), item.positions->writes(),
                              instances, instances ? instances->version() : 0, instances ? instances->epoch() : 0,
-                             instances ? instances->writes() : 0, item.instanceCount, item.matrixWorld};
+                             instances ? instances->writes() : 0, item.instanceCount, item.matrixWorld, margin};
     // A released store's address can be reused with the same revisions.
     if (cacheable && shadowBoundsKey == key && !shadowPositionsOwner.expired() &&
         (!instances || !shadowInstancesOwner.expired())) return shadowBounds;
@@ -726,10 +730,12 @@ const std::pair<Box3, double>& DrawCache::virtualShadowBounds(const DrawItem& it
     }
     Matrix4 model; model.elements = item.matrixWorld;
     const double localDiameter = bounds.min.distanceTo(bounds.max);
+    double reach = margin * model.getMaxScaleOnAxis();
     double diameter = localDiameter * model.getMaxScaleOnAxis();
     if (item.instanceMatrices) {
         Box3 instances;
         diameter = 0;
+        reach = 0;
         const auto* matrices = reinterpret_cast<const float*>(static_cast<const BufferStore&>(*item.instanceMatrices).data());
         // FG1: a geometry with no vertices has no box to place an instance by; the draw keeps one box for all.
         const bool perInstance = !bounds.isEmpty();
@@ -741,11 +747,15 @@ const std::pair<Box3, double>& DrawCache::virtualShadowBounds(const DrawItem& it
             instances.unionWith(box);
             transform.premultiply(model);
             diameter = std::max(diameter, localDiameter * transform.getMaxScaleOnAxis());
-            if (perInstance) shadowInstanceBoxes.push_back(Box3(bounds).applyMatrix4(transform));
+            // The offset is in the geometry's own units, so each instance's reach is the margin at its scale.
+            const double instanceReach = margin * transform.getMaxScaleOnAxis();
+            reach = std::max(reach, instanceReach);
+            if (perInstance) shadowInstanceBoxes.push_back(Box3(bounds).applyMatrix4(transform).expandByScalar(instanceReach));
         }
         bounds = instances;
     }
     bounds.applyMatrix4(model);
+    if (!bounds.isEmpty()) bounds.expandByScalar(reach);
     shadowBounds = {bounds, diameter};
     shadowBoundsKey = cacheable ? std::optional<ShadowBoundsKey>(key) : std::nullopt;
     shadowPositionsOwner = item.positions->weak_from_this();
@@ -3966,8 +3976,11 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         };
         // A caster whose bounds move with its node graph, its skin or its morph targets is on every page, as the
         // scan admitted it: there is no rectangle to index it by.
-        const auto bounded = [](const DrawItem* const drawn) {
-            return !drawn->positionNode && !drawn->nodes->positionNode && !drawn->boneMatrices && !drawn->morphGeometry;
+        // A positionNode caster is placed by its boxes grown by the material's maxPositionOffset (see virtualShadowBounds).
+        const auto displaced = [](const DrawItem* const drawn) { return drawn->positionNode || drawn->nodes->positionNode; };
+        const auto bounded = [&](const DrawItem* const drawn) {
+            return (!displaced(drawn) || (drawn->material && drawn->material->maxPositionOffset > 0)) && !drawn->boneMatrices &&
+                   !drawn->morphGeometry;
         };
         // FG1: an instanced caster's instances by page cell of one level, counting-sorted: cell c is reached by the
         // instances list[first[c] .. first[c + 1]), ascending.
@@ -4079,6 +4092,14 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                             for (int x = x0; x <= x1; ++x)
                                 level.cell[std::size_t(y) * side + std::size_t(x)].push_back(drawn);
                         continue;
+                    }
+                    // An instanced caster the engine cannot place draws all its instances on every page: say which, once.
+                    if (displaced(drawn) && drawn->instanceMatrices && !drawn->boneMatrices && !drawn->morphGeometry && !drawn->gpuJoints &&
+                        unboundedNoted_.insert(drawn->key).second) {
+                        const std::string note = "TN_SHADOW_UNBOUNDED_CASTER: " + std::to_string(drawn->instanceCount) +
+                            " instances of a positionNode caster" + (drawn->shadowObject && !drawn->shadowObject->name.empty() ? " '" + drawn->shadowObject->name + "'" : std::string()) +
+                            " draw on every virtual shadow page; set its material's maxPositionOffset to the farthest the positionNode moves a vertex, in metres";
+                        diagnostics_.push_back(note);
                     }
                     for (auto& cell : level.cell) cell.push_back(drawn);
                 }

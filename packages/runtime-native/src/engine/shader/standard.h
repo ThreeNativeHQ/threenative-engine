@@ -27,6 +27,7 @@ struct StandardMaterial {
     std::array<float, 3> color{1, 1, 1};
     float opacity = 1;
     float alphaTest = 0;  // > 0: fragments with opacity <= alphaTest are discarded
+    double maxPositionOffset = 0;  // Material::maxPositionOffset: how far a positionNode moves a vertex, 0 unknown
     bool alphaHash = false;
     float roughness = 1;
     float metalness = 0;

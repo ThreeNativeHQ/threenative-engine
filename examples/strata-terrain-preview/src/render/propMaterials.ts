@@ -319,6 +319,10 @@ function sway(base: MeshStandardNodeMaterial, clock: Node<"float">, amplitude: n
   // Without this the tree's shadow stays put while the tree moves, and a windy meadow is covered in
   // shadows belonging to trees that are no longer there.
   base.castShadowPositionNode = positionLocal.add(offset);
+  // engine-override: the farthest windOffset moves a vertex (both sines at a full weight along a unit
+  // direction). The owned engine grows each tree's shadow box by it and culls the trees per shadow page.
+  (base as MeshStandardNodeMaterial & { maxPositionOffset?: number }).maxPositionOffset =
+    amplitude * 1.55;
 }
 
 /**

@@ -157,6 +157,13 @@ void registerMaterialBase(ClassBinding& b) {
     materialBool(b, "fog", &Material::fog);
     materialNumber(b, "opacity", &Material::opacity);
     materialNumber(b, "alphaTest", &Material::alphaTest);
+    b.getters["maxPositionOffset"] = [](void* self) { return Value::of(as<Material>(self)->maxPositionOffset); };
+    b.setters["maxPositionOffset"] = [](void* self, const Value& v) {
+        const double metres = number(v);
+        if (!std::isfinite(metres) || metres < 0) throw Unsupported{"maxPositionOffset must be a finite distance of 0 or more"};
+        as<Material>(self)->maxPositionOffset = metres;
+        as<Material>(self)->needsUpdate();
+    };
     materialBool(b, "alphaHash", &Material::alphaHash);
     b.getters["side"] = [](void* self) { return Value::of(double(as<Material>(self)->side)); };
     b.setters["side"] = [](void* self, const Value& v) {

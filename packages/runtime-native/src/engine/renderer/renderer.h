@@ -12,6 +12,7 @@
 #include <span>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <memory>
 #include <tuple>
 #include <vector>
@@ -115,7 +116,7 @@ struct DrawCache {
     // other draw. A virtual shadow page draws only the instances whose box can reach it.
     std::vector<Box3> shadowInstanceBoxes;
     using ShadowBoundsKey = std::tuple<const BufferStore*, uint32_t, uint64_t, uint64_t,
-                                      const BufferStore*, uint32_t, uint64_t, uint64_t, uint32_t, Matrix>;
+                                      const BufferStore*, uint32_t, uint64_t, uint64_t, uint32_t, Matrix, double>;
     std::optional<ShadowBoundsKey> shadowBoundsKey;
     std::weak_ptr<const BufferStore> shadowPositionsOwner, shadowInstancesOwner;
     uint64_t shadowBoundsBuilds = 0;
@@ -1241,6 +1242,7 @@ private:
     WGPUTexture materialTexture_ = nullptr;
     WGPUTextureView materialView_ = nullptr;
     std::vector<std::string> diagnostics_;
+    std::unordered_set<uint64_t> unboundedNoted_;  // TN_SHADOW_UNBOUNDED_CASTER, once per draw key
     OutputState output_;
     std::shared_ptr<const shader::PostNode> post_;
     shader::graph::Node postGraph_;

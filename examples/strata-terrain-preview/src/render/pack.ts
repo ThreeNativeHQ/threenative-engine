@@ -430,9 +430,7 @@ function tintedFoliage(
 /** The wind a non-stone section bends with, per instance, from the geometry's own `sway` weights. */
 function applyWind(material: MeshPhysicalNodeMaterial, context: ISurfaceContext): void {
   if (context.stone) return;
-  const bend = gust
-    .mul(positionGeometry.y.max(0).pow(1.5))
-    .mul(context.asset === "spruce" ? 0.008 : 0.025);
+  const bend = gust.mul(positionGeometry.y.max(0).pow(1.5)).mul(windStiffness(context.asset));
   const offset = vec3(
     positionLocal.x.add(bend),
     positionLocal.y,
@@ -440,6 +438,27 @@ function applyWind(material: MeshPhysicalNodeMaterial, context: ISurfaceContext)
   );
   material.positionNode = offset;
   material.castShadowPositionNode = offset;
+}
+
+function windStiffness(asset: string): number {
+  return asset === "spruce" ? 0.008 : 0.025;
+}
+
+/**
+ * engine-override: the farthest applyWind moves a vertex of this section, its top bent by a full gust
+ * along (1, 0, 0.55). The owned engine grows each instance's shadow box by it, so a virtual shadow page
+ * draws only the trees that can reach it instead of the whole forest.
+ */
+function declareWindReach(
+  material: MeshPhysicalNodeMaterial,
+  asset: string,
+  geometry: BufferGeometry,
+): void {
+  geometry.computeBoundingBox();
+  const top = Math.max(0, geometry.boundingBox?.max.y ?? 0);
+  const reach = top ** 1.5 * windStiffness(asset) * Math.hypot(1, 0.55);
+  const swaying = material as MeshPhysicalNodeMaterial & { maxPositionOffset?: number };
+  swaying.maxPositionOffset = Math.max(swaying.maxPositionOffset ?? 0, reach);
 }
 
 function surface(
@@ -834,6 +853,7 @@ export async function loadPack(
             ? inherited
             : surface(source, one.asset, world, rockface[2], sky, comparison, measured);
         if (stone) rockGround?.apply(material);
+        else declareWindReach(material, one.asset, geometry);
         if (source !== section.material) source.dispose();
         built.push({ geometry, material });
         entry.push({ geometry, material, role, level: one.level ?? 0, variant: one.variant });

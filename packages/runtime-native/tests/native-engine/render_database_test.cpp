@@ -7914,7 +7914,21 @@ void virtualShadowBoundsCache() {
     item.positionNode = std::make_shared<const shader::PositionNode>();
     sample(); sample();
     CHECK(cache.shadowBoundsBuilds == settled);
+    // Its material's maxPositionOffset grows the union and every instance box by that many metres, so a page can
+    // place the swaying instances one by one (Unreal's MaxWorldPositionOffsetDisplacement); a rigid draw ignores it.
+    shader::StandardMaterial swaying;
+    swaying.maxPositionOffset = 2;
+    item.material = &swaying;
+    CHECK(sample().first.max.x == 10 && sample().first.min.x == 4);
+    CHECK(cache.shadowInstanceBoxes.size() == 1 && cache.shadowInstanceBoxes[0].max.x == 10 &&
+          cache.shadowInstanceBoxes[0].min.y == -3);
+    Matrix4 doubled; doubled.makeTranslation(3, 0, 0).scale(Vector3(2, 2, 2));
+    item.matrixWorld = doubled.elements;  // the offset is in the geometry's units: twice the size, twice the reach
+    CHECK(sample().first.max.x == 17 && cache.shadowInstanceBoxes[0].min.x == 5);
+    item.matrixWorld = model.elements;
     item.positionNode = nullptr;
+    CHECK(sample().first.max.x == 8);
+    item.material = nullptr;
     std::vector<float> bones;
     item.boneMatrices = &bones;
     const auto deforming = cache.shadowBoundsBuilds;

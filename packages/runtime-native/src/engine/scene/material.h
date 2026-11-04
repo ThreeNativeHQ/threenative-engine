@@ -88,6 +88,11 @@ public:
     bool forceSinglePass = false;  // three's: a transparent DoubleSide material draws in one pass
     double opacity = 1;
     double alphaTest = 0;
+    /** The farthest the positionNode moves a vertex, in the geometry's own units (Unreal's
+     *  MaxWorldPositionOffsetDisplacement). A displaced shadow caster's boxes grow by it at each instance's
+     *  scale, so a virtual shadow page draws only the instances that can reach it; 0 means unknown, and the
+     *  caster draws on every page. */
+    double maxPositionOffset = 0;
     bool alphaHash = false;
     bool depthTest = true;
     bool depthWrite = true;
