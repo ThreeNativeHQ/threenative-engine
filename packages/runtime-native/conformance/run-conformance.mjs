@@ -802,7 +802,13 @@ async function withServer(captureRoot, assetRoot, fn) {
     try {
       const file = assetFile && existsSync(assetFile) ? assetFile : runtimeFile;
       const data = readFileSync(file);
-      res.writeHead(200, { "content-type": contentType(file), "access-control-allow-origin": "*" });
+      // Cross-origin isolation: the owned Wasm engine starts its worker threads only on an isolated page.
+      res.writeHead(200, {
+        "content-type": contentType(file),
+        "access-control-allow-origin": "*",
+        "cross-origin-opener-policy": "same-origin",
+        "cross-origin-embedder-policy": "require-corp",
+      });
       res.end(data);
     } catch {
       res.writeHead(404);
@@ -1325,7 +1331,9 @@ export async function bundleOwnedWeb(entry, outfile, wasmEntry = ownedEngineWasm
   } finally {
     rmSync(pluginDir, { recursive: true, force: true });
   }
-  copyFileSync(wasmEntry.replace(/\.mjs$/u, ".wasm"), join(dirname(outfile), "tn-native-engine-web.wasm"));
+  // The page runs the threads engine on an isolated page (the plugin falls back to the single-thread one), so both go.
+  for (const name of ["tn-native-engine-web.wasm", "tn-native-engine-web-threads.wasm"])
+    copyFileSync(join(dirname(wasmEntry), name), join(dirname(outfile), name));
 }
 
 export function ownedEnginePlayerPath(env = process.env, platform = process.platform) {

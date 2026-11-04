@@ -8,7 +8,7 @@ prd_contract: v1
 **Priority:** P1 — the default look reaches the templates only when the starter and minimal port (PRD-722) lands, and five receipted lines wait for the same merge.
 **Complexity:** 3 (MEDIUM) — about 6 lane branches to merge and re-prove on one combined tree (+2), the template budgets need an owner decision (+1).
 **Owner:** João
-**Depends on:** [PRD-632](PRD-632-the-frame-is-exposed-and-tone-mapped-the-way-a-fresh-unreal-project-is.md) (park notes for PRD-722 and PRD-723), [PRD-636](PRD-636-the-finishing-post-chain-matches-unreal-defaults.md), [PRD-641](../gi/PRD-641-bounce-light-holds-still-while-the-camera-moves-and-follows-a-light-that-changes.md), [PRD-649](../shadows/PRD-649-shadow-calibration-scenes-are-built-in-unreal-and-judged-until-parity.md) and [PRD-697](../rendering/PRD-697-probe-volume-and-atmosphere-run-on-the-owned-engine.md).
+**Depends on:** [PRD-632](../../done/PRD-632-the-frame-is-exposed-and-tone-mapped-the-way-a-fresh-unreal-project-is.md) (park notes for PRD-722 and PRD-723), [PRD-636](PRD-636-the-finishing-post-chain-matches-unreal-defaults.md), [PRD-641](../gi/PRD-641-bounce-light-holds-still-while-the-camera-moves-and-follows-a-light-that-changes.md), [PRD-649](../shadows/PRD-649-shadow-calibration-scenes-are-built-in-unreal-and-judged-until-parity.md) and [PRD-697](../rendering/PRD-697-probe-volume-and-atmosphere-run-on-the-owned-engine.md).
 
 ## Context
 

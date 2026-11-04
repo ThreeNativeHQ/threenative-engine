@@ -8,7 +8,7 @@ prd_contract: v1
 **Priority:** P1 — the default look cannot ship until the exposure line lands: PRD-632's L1 and L9 checks need it, and it is held today because sunlit-room locks and ratchets break (Phase 3).
 **Complexity:** 4 (MEDIUM) — about 8 harness and core files (+2), the shared cloud and sky-light capture state that every scene reads (+2); risk override: the line moves every locked scene and layer, so every lock and ratchet is checked
 **Owner:** João
-**Depends on:** [PRD-632](PRD-632-the-frame-is-exposed-and-tone-mapped-the-way-a-fresh-unreal-project-is.md) (the exposure line is its Phase 2 work) and [PRD-633](PRD-633-the-sky-is-an-atmosphere-and-it-lights-the-scene.md) (the cloud deck and the sky capture)
+**Depends on:** [PRD-632](../../done/PRD-632-the-frame-is-exposed-and-tone-mapped-the-way-a-fresh-unreal-project-is.md) (the exposure line is its Phase 2 work) and [PRD-633](PRD-633-the-sky-is-an-atmosphere-and-it-lights-the-scene.md) (the cloud deck and the sky capture)
 
 ## Context
 

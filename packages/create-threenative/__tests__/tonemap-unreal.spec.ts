@@ -319,12 +319,16 @@ describe("white balance (Unreal WhiteBalance)", () => {
 });
 
 describe("the colour LUT domain", () => {
-  it("is Unreal's 43.7, and off by default so default pixels do not move", () => {
+  it("is Unreal's 43.7, and on by default as Unreal's LUT clips it (PRD-632 GAP-4)", () => {
     expect(LUT_CLIP).toBeGreaterThan(43.6);
     expect(LUT_CLIP).toBeLessThan(43.8);
-    expect(FILMIC_CURVE.lutClip).toBe(0);
-    const a = filmicToneMap([100, 5, 1]);
-    const b = filmicToneMap([CLIP, 5, 1]);
+    expect(FILMIC_CURVE.lutClip).toBe(LUT_CLIP);
+    near(filmicToneMap([100, 5, 1]), filmicToneMap([CLIP, 5, 1]), 1e-9);
+  });
+  it("leaves the channel unbounded under the named override lutClip: 0", () => {
+    const off = { ...FILMIC_CURVE, lutClip: 0 };
+    const a = filmicToneMap([100, 5, 1], 1, off);
+    const b = filmicToneMap([CLIP, 5, 1], 1, off);
     expect(Math.abs(at(a, 1) - at(b, 1))).toBeGreaterThan(1e-4);
   });
   it("clips each channel at 43.7 when switched on", () => {

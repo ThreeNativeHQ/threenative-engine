@@ -10,6 +10,7 @@ import { TEMPLATE_ROOT, allTemplates } from "../../../test-support/templates.js"
  * filmic curve with metered auto exposure.
  */
 const KITS = allTemplates();
+const LUX_SUN_KITS = new Set(["action-rpg", "shooter"]);
 const ASSET_ROOT = path.resolve("packages/create-threenative/template-assets");
 // Captured from origin/develop 53fbfa18b before replacing the vendored chain.
 const LEGACY_PRESETS = JSON.parse(
@@ -55,9 +56,9 @@ const VENDORED_RENDER_FILES = [
  */
 const LOOK_OVERRIDES: Readonly<Record<string, string>> = {
   "action-rpg":
-    "owner 2026-10-26 prefers the 7b546d6 neutral look (ACES, fixed exposure 0.62, no gather)",
+    "owner 2026-10-26 prefers the 7b546d6 neutral look (ACES, fixed exposure 0.62 under the old pi sun, 0.62 pi under the 6 lux sun, no gather)",
   shooter:
-    "owner 2026-10-26 prefers the 7b546d6 neutral look (ACES, fixed exposure 0.62, no gather)",
+    "owner 2026-10-26 prefers the 7b546d6 neutral look (ACES, fixed exposure 0.62 under the old pi sun, 0.62 pi under the 6 lux sun, no gather)",
   rts: "owner 2026-10-28 wants the AstraCraft reference look (ACES, fixed exposure 1.02, no bloom or local exposure), PRD-765",
 };
 
@@ -145,6 +146,9 @@ describe("PRD-723 phase 1 kit look defaults", () => {
             samples: previous.samples ?? 4,
             motionBlurEnabled: false,
             temporalAA: false,
+            // PRD-632: these kits light with the atmosphere sun, which went from 6 x pi to Unreal's 6 lux; the
+            // fixed exposure takes the pi back so the sunlit surfaces stay where the owner chose them.
+            ...(LUX_SUN_KITS.has(kit) ? { exposure: Number(previous.exposure) * Math.PI } : {}),
           };
           expect(
             Object.fromEntries(Object.keys(expected).map((key) => [key, Reflect.get(preset, key)])),
@@ -223,7 +227,7 @@ describe("PRD-723 phase 1 kit look defaults", () => {
       expect(quality.neutralLook).toEqual({
         tonemapMode: "aces",
         autoExposureEnabled: false,
-        exposure: 0.62,
+        exposure: 0.62 * Math.PI,
         bloomRadius: 0.5,
         bloomStrength: 0.7,
         bloomThreshold: 0.2,
@@ -305,7 +309,7 @@ describe("PRD-723 phase 1 kit look defaults", () => {
       expect(quality.neutralLook).toEqual({
         tonemapMode: "aces",
         autoExposureEnabled: false,
-        exposure: 0.62,
+        exposure: 0.62 * Math.PI,
         bloomRadius: 0.5,
         bloomStrength: 0.7,
         bloomThreshold: 0.2,

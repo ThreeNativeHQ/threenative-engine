@@ -3,7 +3,15 @@
 //
 // One sun. The sky in `sky.ts` is the fill light — its environment reaches every face the sun
 // misses — so there is no hemisphere or ambient light stacked on top to flatten the frame.
-import { Color, DirectionalLight, PCFSoftShadowMap, type Scene, Vector3 } from "three";
+import { useRoughDiffuse } from "@threenative/core";
+import {
+  Color,
+  DirectionalLight,
+  type Object3D,
+  PCFSoftShadowMap,
+  type Scene,
+  Vector3,
+} from "three";
 import { ARENA, GROUND_Y } from "./arena.js";
 import {
   SUN_ILLUMINANCE,
@@ -93,4 +101,13 @@ export function createLightingConvention(
     maxSourceTexels: 65536,
     ...overrides,
   };
+}
+
+/**
+ * Rough surfaces take the sun the way a fresh Unreal project's Substrate shades them: the EON diffuse in place of
+ * Lambert, with no energy conservation. Call it once the scene's models are attached; delete the call for three's
+ * Lambert, or set `material.roughDiffuse = false` on one material.
+ */
+export function shadeLikeSubstrate(root: Object3D): void {
+  useRoughDiffuse(root);
 }
