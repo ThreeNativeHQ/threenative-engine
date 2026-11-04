@@ -41,13 +41,8 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
   let dataView = new DataView(heap.buffer);
   let words = new Uint32Array(heap.buffer);
   const grown = () => {
-    debug?.add("wasmGrowthEvents", 1, "bridge", "browser-wasm-runtime.ts");
-    debug?.add(
-      "wasmGrowthBytes",
-      Math.max(0, abi.HEAPU8.byteLength - heapBytes),
-      "memory",
-      "browser-wasm-runtime.ts",
-    );
+    debug?.add("wasmGrowthEvents", 1, "bridge");
+    debug?.add("wasmGrowthBytes", Math.max(0, abi.HEAPU8.byteLength - heapBytes), "memory");
     heap = abi.HEAPU8;
     heapBytes = heap.byteLength;
     dataView = new DataView(heap.buffer);
@@ -71,7 +66,7 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
   const allocations: number[] = [];
   const alloc = (size: number): number => {
     const aligned = (size + 7) & ~7;
-    debug?.add("bridgeScratchBytes", aligned, "bridge", "browser-wasm-runtime.ts");
+    debug?.add("bridgeScratchBytes", aligned, "bridge");
     let pointer: number;
     if (arenaTop + aligned <= arenaBase + arenaSize) {
       pointer = arenaTop;
@@ -80,8 +75,8 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
       // `>>> 0`: the module addresses up to 4 GB, and an export returns a pointer as a signed i32.
       pointer = abi._malloc(aligned) >>> 0;
       allocations.push(pointer);
-      debug?.add("bridgeOverflowAllocations", 1, "bridge", "browser-wasm-runtime.ts");
-      debug?.add("bridgeOverflowBytes", aligned, "bridge", "browser-wasm-runtime.ts");
+      debug?.add("bridgeOverflowAllocations", 1, "bridge");
+      debug?.add("bridgeOverflowBytes", aligned, "bridge");
     }
     // A call's scratch is a few words (a handle, a value, a diagnostic): word stores beat a fill call.
     // `wordView` first: a `_malloc` above may have grown the memory.

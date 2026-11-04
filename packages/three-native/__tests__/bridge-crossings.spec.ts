@@ -560,10 +560,9 @@ describe("debug bridge ABI observations", () => {
 });
 
 describe("Wasm memory growth under the bridge", () => {
-  // The counters moved to the runtime with the split (PRD-803) and now name the file that adds
-  // them. This pins that on purpose: a reader sent to `browser-backend.ts` looks in a file that no
-  // longer grows the heap.
-  it("attributes a growth counter to the runtime that adds it", () => {
+  // A move, not a change: the counters keep the default attribution the back end always gave them,
+  // so a debug report reads the same across the split.
+  it("attributes a growth counter with the back end's default caller", () => {
     vi.stubEnv("TN_DEBUG", "1");
     vi.stubGlobal("__tnDebugSources", {});
     const { module, grow } = growableModule();
@@ -573,7 +572,7 @@ describe("Wasm memory growth under the bridge", () => {
     runtime.engineReferences?.([{ key: "6:0:1:2", type: 6 }]);
     const caller = (globalThis as { __tnDebugSources?: Record<string, { caller?: string }> })
       .__tnDebugSources?.wasmGrowthEvents?.caller;
-    expect(caller).toBe("browser-wasm-runtime.ts");
+    expect(caller).toBe("browser-backend.ts");
   });
 });
 
