@@ -28,8 +28,14 @@ export declare const CACHE_BUDGET_BYTES: number;
 /** The share each per-run family may hold, keyed by key prefix. */
 export declare const FAMILY_SHARES: Readonly<Record<string, number>>;
 
-/** Keys every board reads that the plan never deletes. */
+/** Keys every board reads that the plan never deletes: its newest copy per lane and ref. */
 export declare const HOT_PREFIXES: readonly string[];
+
+/**
+ * The lane a hot key belongs to: the key with its per-run and per-source-change tails removed. Two
+ * copies of one lane on one ref compete for one protected slot; two lanes never do.
+ */
+export declare function hotLaneOf(key: string, prefixes: readonly string[]): string;
 
 export declare function planCachePrune(options: {
   caches: readonly ICacheEntry[];

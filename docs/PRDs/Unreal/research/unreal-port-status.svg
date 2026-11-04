@@ -36,7 +36,7 @@
 <rect x="121.60793684813063" y="98" width="47.438993889788264" height="44.87013427162117" rx="2" fill="#3b403d"><title>Lumen · Stochastic direct lighting · Out of scope by rule</title></rect>
 <text x="124.60793684813063" y="109" class="l">Stocha…</text>
 <rect x="170.0469307379189" y="98" width="45.17608804918996" height="44.87013427162117" rx="2" fill="#d9961f"><title>Lumen · Lumen scene, reflection view and surface cache views · In progress</title></rect>
-<rect x="170.0469307379189" y="139.87013427162117" width="24.64150257228543" height="3" fill="#fff" opacity=".85"/>
+<rect x="170.0469307379189" y="139.87013427162117" width="26.694961119975886" height="3" fill="#fff" opacity=".85"/>
 <text x="173.0469307379189" y="109" class="l">Lumen …</text>
 <rect x="216.22301878710886" y="98" width="44.898561861192036" height="44.87013427162117" rx="2" fill="#d9961f"><title>Lumen · Shared and glue · In progress</title></rect>
 <rect x="216.22301878710886" y="139.87013427162117" width="23.518294308243448" height="3" fill="#fff" opacity=".85"/>

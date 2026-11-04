@@ -617,12 +617,12 @@ jobs:
         uses: actions/cache@v4
         with:
           path: packages/runtime-native/third_party
-          key: >-
-            native-android-third-party-${{ runner.os }}-${{ runner.arch }}-
-            ${{ hashFiles(
-              'packages/runtime-native/scripts/download-deps.mjs',
-              'packages/runtime-native/scripts/build-android-v8.mjs',
-              'packages/runtime-native/scripts/package-android.mjs') }}
+          # One line, not a `>-` block. A folded block joins its lines with a space, and the fold
+          # landed between the platform and the hash, so the saved key was
+          # `native-android-third-party-Linux-X64- 4c553d1e…` (run 41718838521's job log). A key is
+          # text: a space in it is a key nothing else in this workflow describes, and every
+          # `restore-keys` written the obvious way would miss it.
+          key: native-android-third-party-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/runtime-native/scripts/download-deps.mjs', 'packages/runtime-native/scripts/build-android-v8.mjs', 'packages/runtime-native/scripts/package-android.mjs') }}
       # No Actions cache for the SDK packages: sdkmanager installs platform, build-tools, NDK,
       # emulator and system image in about 30 seconds here, while saving them took four minutes per
       # run and multiple GB of the shared 10 GiB budget, evicting the Gradle and Cargo caches below.
