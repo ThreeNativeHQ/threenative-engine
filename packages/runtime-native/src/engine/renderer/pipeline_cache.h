@@ -13,6 +13,7 @@
 #endif
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -129,6 +130,14 @@ public:
     /** Missing keys compile on two native workers, or through WebGPU's browser async entry. */
     std::shared_ptr<PipelineCompilation> getAsync(const shader::StageModule& vertex,
         const shader::StageModule* fragment, const PipelineTarget& target);
+    /**
+     * Unreal's DelayUntilPSOPrecached (r.PSOPrecache.ProxyCreationStrategy 1, its default): a missing key starts its
+     * async compile and answers null with `deferred` set, so the caller skips that draw until the pipeline lands instead
+     * of holding the GPU queue behind a synchronous compile (a 138 KB lit fragment held Chrome's for 200 ms). A key whose
+     * async compile was refused compiles here synchronously, so the caller still reports the refusal.
+     */
+    WGPURenderPipeline getOrDefer(const shader::StageModule& vertex, const shader::StageModule* fragment,
+        const PipelineTarget& target, bool& deferred);
     /** Adopt completed pipelines on the renderer thread; workers never mutate the cache. */
     void poll();
 
@@ -154,6 +163,7 @@ private:
     static WGPURenderPipeline create(WGPUDevice device, const shader::StageModule& vertex,
         const shader::StageModule* fragment, const PipelineTarget& target, const std::shared_ptr<Pending>& pending = {});
     std::unordered_map<std::string, std::shared_ptr<Pending>> compiling_;
+    std::unordered_set<std::string> refused_;  // keys an async compile refused: getOrDefer compiles them in the draw
 #ifndef __EMSCRIPTEN__
     std::array<std::thread, 2> workers_;
     std::mutex workMutex_;
@@ -184,6 +194,8 @@ public:
 
     WGPUBindGroupLayout bindGroup(const std::string& key, const std::vector<WGPUBindGroupLayoutEntry>& entries);
     WGPUPipelineLayout pipeline(const std::string& key, WGPUBindGroupLayout first, WGPUBindGroupLayout second);
+    /** Distinct pipeline layouts: a browser hands out a new handle per creation, where Dawn native dedupes equal ones. */
+    size_t pipelineLayouts() const { return pipelines_.size(); }
 
 private:
     WGPUDevice device_;

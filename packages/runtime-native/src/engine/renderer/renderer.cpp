@@ -1593,8 +1593,11 @@ WGPUBindGroup Renderer::bindGroup(WGPUBindGroupLayout layout, const shader::Stag
     // A graph texture's GPU texture, by its `t_<name>` / `smp_<name>` binding; null for any other.
     const auto graph = [&](std::string_view name, bool sampler) -> const MaterialTexture* {
         if (!graphTextures) return nullptr;
-        for (const auto& [label, texture] : *graphTextures)
-            if (name == (sampler ? "smp_" : "t_") + label) return materialTexture(*texture);
+        std::string_view label = name.substr(sampler ? 4 : 2);
+        for (const auto& [positional, own] : stage.graphTextureLabels)  // positionalGraphTextures: the draw's own map
+            if (label == positional) { label = own; break; }
+        for (const auto& [own, texture] : *graphTextures)
+            if (label == own) return materialTexture(*texture);
         return nullptr;
     };
     // A PbrMap's texture or sampler, by its `t_<name>` / `smp_<name>` binding; null for any other.
@@ -2536,9 +2539,12 @@ Renderer::EnvironmentGpu& Renderer::environment(const Texture& equirect) {
 }
 
 // Each stage's layout from the bindings its package declares, the uniform block with a dynamic
-// offset; the uniform slots resolved to fields once, so a draw never looks a name up.
-void Renderer::buildLayouts(Program& program, const std::string& key) {
+// offset; the uniform slots resolved to fields once, so a draw never looks a name up. A layout is keyed by its own
+// entries, not by its program: programs with one binding structure (two materials that differ only in their maps)
+// intern one layout, so the WGSL text they share also shares one pipeline (PipelineCache keys the layout handle).
+void Renderer::buildLayouts(Program& program) {
     const shader::StageModule* stages[2] = {&program.vertex, &program.fragment};
+    std::string keys[2];
     for (int g = 0; g < 2; ++g) {
         std::vector<WGPUBindGroupLayoutEntry> entries;
         for (const shader::Binding& b : stages[g]->bindings) {
@@ -2565,9 +2571,15 @@ void Renderer::buildLayouts(Program& program, const std::string& key) {
             }
             entries.push_back(e);
         }
-        program.layouts[g] = layouts_->bindGroup(key + "\x1f" + (g == 0 ? "vs" : "fs"), entries);
+        keys[g] = g == 0 ? "vs" : "fs";
+        for (const WGPUBindGroupLayoutEntry& e : entries)
+            keys[g] += ";" + std::to_string(e.binding) + "," + std::to_string(int(e.buffer.type)) + "," +
+                       std::to_string(int(e.buffer.hasDynamicOffset)) + "," + std::to_string(e.buffer.minBindingSize) + "," +
+                       std::to_string(int(e.texture.sampleType)) + "," + std::to_string(int(e.texture.viewDimension)) + "," +
+                       std::to_string(int(e.sampler.type));
+        program.layouts[g] = layouts_->bindGroup(keys[g], entries);
     }
-    program.pipelineLayout = layouts_->pipeline(key, program.layouts[0], program.layouts[1]);
+    program.pipelineLayout = layouts_->pipeline(keys[0] + "\x1e" + keys[1], program.layouts[0], program.layouts[1]);
     for (int s = 0; s < kSlotCount; ++s) {
         for (const shader::UniformField& f : program.vertex.uniforms)
             if (f.name == kSlotNames[s]) program.vertexSlots[s] = &f;
@@ -2720,6 +2732,7 @@ const shader::StageModule* Renderer::auxFragment(Program& program, uint8_t mask)
         f.pruneDeadStatements();
         if (!f.diagnostics().empty() || f.varyings().size() != varyings) return nullptr;
         auto module = std::make_unique<shader::StageModule>(shader::buildStage(f, 1));
+        shader::positionalGraphTextures(*module);
         const auto& own = program.fragment;
         bool same = module->wgsl.ok() && module->uniforms.size() == own.uniforms.size() &&
                     module->bindings.size() == own.bindings.size() && module->uniformBlockSize == own.uniformBlockSize;
@@ -2779,6 +2792,9 @@ Renderer::Program& Renderer::depthProgram(const shader::VertexVariant& variant, 
 }
 
 Renderer::Program& Renderer::add(const std::string& key, shader::StageModule vertex, shader::StageModule fragment) {
+    // Materials that differ only in their maps share one text, so one module parse and one pipeline (see bindGroup's graph()).
+    shader::positionalGraphTextures(vertex);
+    shader::positionalGraphTextures(fragment);
     auto built = std::make_unique<Program>();
     built->vertex = std::move(vertex);
     built->fragment = std::move(fragment);
@@ -2798,7 +2814,7 @@ Renderer::Program& Renderer::add(const std::string& key, shader::StageModule ver
             }
         }
     }
-    buildLayouts(*built, key);
+    buildLayouts(*built);
     if (uniformCapacity_ != 0) {
         const DrawProbes probes = probesOf(*built);
         for (int g = 0; g < 2; ++g) {
@@ -3835,7 +3851,10 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         if (cache && cache->pipeline && cache->targetKey == targetKey) {
             pipeline = static_cast<WGPURenderPipeline>(cache->pipeline);
         } else {
-            pipeline = pipelines_->get(program.vertex, &program.fragment, target);
+            bool deferred = false;
+            pipeline = deferUncompiled_ ? pipelines_->getOrDefer(program.vertex, &program.fragment, target, deferred)
+                                        : pipelines_->get(program.vertex, &program.fragment, target);
+            if (deferred) continue;  // drawn, with its post targets, the frame its pipeline lands
             if (!pipeline) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: material program");
             if (cache) { cache->targetKey = targetKey; cache->pipeline = pipeline; }
         }
@@ -4781,7 +4800,10 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 compilation->push_back(pipelines_->getAsync(draw.program->vertex, fragment, target));
                 continue;
             }
-            const auto pipeline = pipelines_->get(draw.program->vertex, fragment, target);
+            bool deferred = false;
+            const auto pipeline = deferUncompiled_ ? pipelines_->getOrDefer(draw.program->vertex, fragment, target, deferred)
+                                                   : pipelines_->get(draw.program->vertex, fragment, target);
+            if (deferred) continue;  // its colour draws; the post pass derives its normal from depth there, as for a transparent draw
             if (!pipeline) throw std::runtime_error("TN_POST_AUX_PIPELINE_REFUSED");
             Planned aux = draw;
             aux.pipeline = pipeline;

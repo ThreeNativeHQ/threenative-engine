@@ -520,6 +520,12 @@ public:
     bool temporalUpscale() const { return traa_ != nullptr; }
     uint32_t inputWidth() const { return inputWidth_; }
     uint32_t inputHeight() const { return inputHeight_; }
+    /**
+     * From now on a main-pass or post-target draw whose pipeline is not built yet waits for its async compile instead of
+     * compiling in the draw (PipelineCache::getOrDefer). Off by default, as three compiles on first draw; the Wasm host
+     * turns it on at core's startup reveal, after compileAsync built what the first frames draw.
+     */
+    void deferUncompiledDraws(bool on) { deferUncompiled_ = on; }
     /** The multisampling the game asks for. A traa() effect in the post graph replaces it: see sampleCount(). */
     void setSampleCount(uint32_t samples);
     /** The samples the scene draws with: 1 while a traa() effect is in the post graph, otherwise the requested count. */
@@ -855,6 +861,7 @@ public:
     uint32_t deviceLimitReads() const { return deviceLimitReads_; }
     const GeometryCache& geometry() const { return geometry_->cache; }
     const PipelineCache& pipelines() const { return *pipelines_; }
+    const PipelineLayoutCache& layouts() const { return *layouts_; }
     /** Material programs built or refused so far; a steady frame adds none. */
     size_t programCount() const { return programs_.size(); }
     /** Program key strings built and Program* lookups done so far; a steady frame adds none. */
@@ -947,7 +954,7 @@ private:
      * the builder refuses the variant or the layout differs.
      */
     const shader::StageModule* auxFragment(Program& program, uint8_t mask);
-    void buildLayouts(Program& program, const std::string& key);
+    void buildLayouts(Program& program);
     /** The program for a material kind, vertex variant and light layout, built on first use; null
      *  when its WGSL is invalid, which is reported once in diagnostics() and its draws are skipped,
      *  as three logs a shader error and draws the rest of the scene. */
@@ -1124,6 +1131,7 @@ private:
     // Shared with every sibling(): a render target's renderer draws the same programs, and a pipeline
     // compiled for one layout serves them all only if the layout handles are the same too.
     std::shared_ptr<PipelineCache> pipelines_;
+    bool deferUncompiled_ = false;  // see deferUncompiledDraws(); a sibling() keeps three's draw-time compile
     std::shared_ptr<PipelineLayoutCache> layouts_;
     // By MaterialKind, vertex variant (0 plain, 1 instanced, 2 instanced with instanceColor) and light
     // layout; held by pointer so a frame's plan keeps its addresses while new programs are added.

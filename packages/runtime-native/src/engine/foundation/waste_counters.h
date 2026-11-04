@@ -30,7 +30,7 @@ namespace tn::engine::waste {
 #define TN_DEBUG_COUNTERS(X) \
     X(gateAttempts) X(gateDeclinedCapacity) X(gateDeclinedAge) \
     X(bufferCreatedBytes) X(textureCreatedBytes) X(bufferFreedBytes) X(textureFreedBytes) \
-    X(bufferUploadBytes) X(textureUploadBytes) X(bindGroups) X(pipelineCompiles) \
+    X(bufferUploadBytes) X(textureUploadBytes) X(bindGroups) X(pipelineCompiles) X(pipelineDeferredDraws) \
     X(sceneDirtyMarks) X(sceneVisits) X(sceneAdds) X(sceneRemoves) X(queueSubmits) \
     X(readbackMaps) X(readbackBytes) X(timestampResolves) X(timestampSamplesDelivered) X(gpuTimestampUnrequestedSamples) \
     X(velocityCandidates) X(velocitySkipped) X(temporalActiveFrames) X(temporalInvalidFrames) X(temporalRejectedPixels) \

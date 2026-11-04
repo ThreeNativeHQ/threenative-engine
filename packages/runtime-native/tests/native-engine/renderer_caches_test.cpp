@@ -734,6 +734,45 @@ void shutdownQueue() {
     CHECK(cancelled);
 }
 
+// Unreal's DelayUntilPSOPrecached: a draw-path miss starts one async compile and draws nothing until it lands, and a
+// refused compile still reaches the draw's synchronous path, so the caller names the refusal instead of waiting forever.
+void deferredDraw() {
+    CompileDevice d;
+    CHECK(d.device);
+    if (!d.device) return;
+    frameThread = std::this_thread::get_id();
+    workerCreates = 0; refusal = 0; holdWorkers = true;
+    const auto standard = shader::buildStandard(shader::StandardMaterial{});
+    const auto vs = shader::buildStage(standard.vertex, 0), fs = shader::buildStage(standard.fragment, 1);
+    PipelineCache cache(d.device);
+    bool deferred = false;
+    CHECK(cache.getOrDefer(vs, &fs, PipelineTarget{}, deferred) == nullptr && deferred);
+    waitFor([] { return workerCreates == 1; });
+    CHECK(cache.getOrDefer(vs, &fs, PipelineTarget{}, deferred) == nullptr && deferred);  // still compiling: no second one
+    holdWorkers = false;
+    WGPURenderPipeline drawn = nullptr;
+    for (int i = 0; i < 2000 && !drawn; ++i) {
+        drawn = cache.getOrDefer(vs, &fs, PipelineTarget{}, deferred);
+        if (!drawn) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    CHECK(drawn && !deferred);
+    CHECK(workerCreates == 1);
+    CHECK(cache.compiles() == 1);
+    CHECK(cache.get(vs, &fs, PipelineTarget{}) == drawn);
+    refusal = 1;
+    PipelineTarget refusedTarget; refusedTarget.depthBias = 3;
+    CHECK(cache.getOrDefer(vs, &fs, refusedTarget, deferred) == nullptr && deferred);
+    waitFor([] { return workerCreates == 2; });
+    bool answered = false;
+    for (int i = 0; i < 2000 && !answered; ++i) {
+        cache.getOrDefer(vs, &fs, refusedTarget, deferred);
+        answered = !deferred;
+        if (!answered) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    CHECK(answered);  // the refusal now compiles on the frame thread, which the hook lets through
+    refusal = 0;
+}
+
 void nonStandardException() {
     CompileDevice d;
     CHECK(d.device);
@@ -820,6 +859,7 @@ void recentBindGroups() {
 TN_TEST_MAIN({"attribute_disposal_lifetime", attributeDisposalLifetime}, {"compile_reaches_off_screen", compileReachesOffScreenDraws}, {"geometry", geometry}, {"pipelines", pipelines}, {"sibling_pipelines", siblingSharesPipelines}, {"sibling_texture_change", siblingTextureChangeSettles}, {"texture_update_in_place", textureUpdateInPlace}, {"texture_update_reallocates", textureUpdateReallocates}, {"compile_before_render", compileBeforeRender}, {"init_texture", initializeTexture}, {"recent_bind_groups", recentBindGroups}, {"line_depth_bias", lineDepthBias}
 #ifdef TN_TEST_PIPELINE_WORKERS
     , {"failed_ticket", failedTicket}, {"synchronous_adoption", synchronousAdoption},
-    {"shutdown_queue", shutdownQueue}, {"nonstandard_exception", nonStandardException}
+    {"shutdown_queue", shutdownQueue}, {"nonstandard_exception", nonStandardException},
+    {"deferred_draw", deferredDraw}
 #endif
 )

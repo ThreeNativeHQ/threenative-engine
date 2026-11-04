@@ -344,7 +344,13 @@ extern "C" int tnw_web_resize(uint32_t w, uint32_t h) {
  * player keeps seeing the cover. An overlay still presents over what is already on the canvas. Core releases the hold
  * on the first frame whose inputs are ready (frame fields 71 and 72) and the next world frame is presented.
  */
-extern "C" void tnw_web_set_presentation_hold(int held) { presentationHeld = held != 0; }
+extern "C" void tnw_web_set_presentation_hold(int held) {
+    // The release is core's startup reveal: compileAsync built what the first frames draw, so a pipeline still missing
+    // after it (an object streamed in behind the camera, met on a turn) compiles off the queue and its draw waits, as
+    // Unreal's DelayUntilPSOPrecached default does. A synchronous compile there held Chrome's GPU queue 200 ms.
+    if (presentationHeld && !held && renderer) renderer->deferUncompiledDraws(true);
+    presentationHeld = held != 0;
+}
 
 /**
  * Draws `scene` from `camera` into the canvas; the browser presents it at its animation boundary. A nonzero `overlay`

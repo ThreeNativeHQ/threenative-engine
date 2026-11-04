@@ -386,7 +386,8 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_reflection_reuse=reflection_reuse
         native_engine_renderer_depth_node_sets_fragment_depth=depth_node_sets_fragment_depth
         native_engine_renderer_depth_node_reaches_every_material_program=depth_node_reaches_every_material_program
-        native_engine_program_probes_are_resolved_once=program_probes_are_resolved_once)
+        native_engine_program_probes_are_resolved_once=program_probes_are_resolved_once
+        native_engine_maps_share_one_pipeline=maps_share_one_pipeline)
     # The skinned cases drive the player's SkinnedCrowd scene.
     target_link_libraries(tn-native-engine-render-database-test PRIVATE tn_engine_renderer tn_host_services tn_engine_player)
     target_compile_definitions(tn-native-engine-render-database-test PRIVATE
@@ -436,7 +437,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND MYSTRAL_USE_DAWN)
         target_compile_definitions(tn-native-engine-renderer-caches-test PRIVATE TN_TEST_PIPELINE_WORKERS)
         target_link_options(tn-native-engine-renderer-caches-test PRIVATE "-Wl,--wrap=wgpuDeviceCreateRenderPipeline")
-        foreach(case failed_ticket synchronous_adoption shutdown_queue nonstandard_exception)
+        foreach(case failed_ticket synchronous_adoption shutdown_queue nonstandard_exception deferred_draw)
             add_test(NAME native_engine_renderer_pipeline_${case} COMMAND tn-native-engine-renderer-caches-test ${case})
             set_tests_properties(native_engine_renderer_pipeline_${case} PROPERTIES LABELS "native-engine" TIMEOUT 10)
         endforeach()

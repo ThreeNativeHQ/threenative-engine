@@ -205,7 +205,10 @@ void PipelineCache::poll() {
         auto ready = it++;
         const std::string key = ready->first;
         compiling_.erase(ready);
-        if (request->status_.load(std::memory_order_acquire) < 0) continue;  // only its ticket rejects
+        if (request->status_.load(std::memory_order_acquire) < 0) {  // only its ticket rejects
+            refused_.insert(key);
+            continue;
+        }
         const auto pipeline = request->get();
         const auto [stored, inserted] = pipelines_.emplace(key, pipeline);
         if (inserted) wgpuRenderPipelineAddRef(pipeline);  // cache and completion each own a reference
@@ -237,6 +240,20 @@ WGPURenderPipeline PipelineCache::get(const shader::StageModule& vertex, const s
         found->second->complete(pipeline, {}, true);  // the draw fulfills the speculative ticket too
     }
     return pipeline;
+}
+
+WGPURenderPipeline PipelineCache::getOrDefer(const shader::StageModule& vertex, const shader::StageModule* fragment,
+                                             const PipelineTarget& target, bool& deferred) {
+    deferred = false;
+    poll();
+    if (vertex.wgsl.id != 0 && (!fragment || fragment->wgsl.id != 0))
+        if (const auto found = byId_.find(idKey(vertex, fragment, target)); found != byId_.end()) return found->second;
+    const std::string key = textKey(vertex, fragment, target);
+    if (pipelines_.contains(key) || refused_.contains(key)) return get(vertex, fragment, target);
+    if (!compiling_.contains(key)) getAsync(vertex, fragment, target);  // the ticket stays in compiling_ until poll adopts it
+    waste::debugAdd(waste::counters().pipelineDeferredDraws);
+    deferred = true;
+    return nullptr;
 }
 
 std::shared_ptr<PipelineCompilation> PipelineCache::getAsync(const shader::StageModule& vertex,

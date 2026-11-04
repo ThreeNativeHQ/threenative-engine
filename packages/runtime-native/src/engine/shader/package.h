@@ -4,6 +4,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "threenative/abi/tn_abi.h"
@@ -79,6 +80,8 @@ struct StageModule {
     Stage stage;
     WgslModule wgsl;
     std::vector<Binding> bindings;
+    /** After positionalGraphTextures: each positional graph-texture label (`nodeMapP<k>`) and the graph's own (`nodeMapT<ident>`). */
+    std::vector<std::pair<std::string, std::string>> graphTextureLabels;
     std::vector<UniformField> uniforms;
     uint32_t uniformBlockSize = 0;
     std::vector<VertexAttribute> attributes;
@@ -123,6 +126,14 @@ void writeUniform(std::span<uint8_t> block, const UniformField& field, std::span
 
 /** Builds a stage module: emits WGSL and derives the layouts that WGSL declares. */
 StageModule buildStage(const Program& program, uint32_t group = 0);
+
+/**
+ * Names each graph texture (tsl_call's `nodeMapT<ident>`, one per texture as three merges TextureNodes by uuid) by its
+ * position in the stage instead, in its WGSL and bindings, and records the mapping in `graphTextureLabels`. Two
+ * materials that differ only in their maps then share one WGSL text, so one shader module and one pipeline, as an
+ * Unreal material instance shares its parent's shader; each draw still binds its own maps through the labels.
+ */
+void positionalGraphTextures(StageModule& module);
 
 /** Refuses a package of another revision before any pipeline is made. */
 bool acceptPackage(const ShaderPackage& package, std::string& error);

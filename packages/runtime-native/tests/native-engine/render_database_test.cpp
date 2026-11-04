@@ -8454,6 +8454,62 @@ void casterRecordAllocatesPerFrame() {
     JobPool::resetShared(0);
 }
 
+// Two materials that differ only in their TSL texture(object) maps are one shader structure: as an Unreal material
+// instance shares its parent's shader, they share one WGSL text and one pipeline, and each draw still samples its own
+// map. tsl_call named each binding by its texture, so every map was a text of its own, and each text cost the browser a
+// module parse (100 ms for Strata's 138 KB foliage fragment) and a pipeline compile the first time a turn met it.
+void mapsShareOnePipeline() {
+    namespace g = shader::graph;
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(64, 64);
+    renderer.setOutput(OutputState{std::nullopt, 1, false});  // linear out: the bytes are the sampled values
+    OrthographicCamera camera(-2, 2, 2, -2, 0.1, 10);
+    camera.position.z = 5;
+    camera.updateMatrixWorld();
+    Scene scene;
+    const auto plane = [](uint8_t red, uint8_t green, double x) {
+        auto texture = std::make_shared<Texture>();
+        texture->width = texture->height = 2;
+        for (int i = 0; i < 4; ++i) texture->data.insert(texture->data.end(), {red, green, 0, 255});
+        texture->needsUpdate();
+        auto material = std::make_shared<Material>(MaterialType::Basic, true);
+        material->rawNodeMaterial = true;
+        // As tsl_call names a sampleable texture(object): by the texture's own identity.
+        material->nodes.fragmentNode =
+            g::objectTexture(texture, "nodeMapT" + std::to_string(texture->ident.value()), g::uv());
+        auto mesh = std::make_shared<Mesh>(makePlaneGeometry(2, 2), material);
+        mesh->position.set(x, 0, 0);
+        return mesh;
+    };
+    const auto left = plane(255, 0, -1), right = plane(0, 255, 1);
+    scene.add(*left);
+    scene.updateMatrixWorld(true);
+    RenderDatabase database;
+    database.render(renderer, scene, camera, {0, 0, 0, 1});
+    CHECK(!read(renderer, events).empty());
+    const uint64_t compiled = renderer.pipelines().compiles();
+    const size_t layouts = renderer.layouts().pipelineLayouts();
+    scene.add(*right);
+    scene.updateMatrixWorld(true);
+    database.render(renderer, scene, camera, {0, 0, 0, 1});
+    const std::vector<uint8_t> pixels = read(renderer, events);
+    std::printf("maps share one pipeline: %llu compiled for the first map, %llu more for the second\n",
+                (unsigned long long)compiled, (unsigned long long)(renderer.pipelines().compiles() - compiled));
+    CHECK(renderer.pipelines().compiles() == compiled);  // the second map's draw compiled nothing
+    // ...on a browser too, where every layout creation is a new handle: Dawn native dedupes equal layouts by content,
+    // so the pipeline above would match there even if each program interned a layout of its own.
+    CHECK(renderer.layouts().pipelineLayouts() == layouts);
+    CHECK(pixels.size() == 64 * 64 * 4);
+    if (pixels.size() != 64 * 64 * 4) return;
+    const auto at = [&](int x, int y) { return &pixels[(size_t(y) * 64 + size_t(x)) * 4]; };
+    CHECK(at(16, 32)[0] > 200 && at(16, 32)[1] < 50);  // the left plane samples its red map
+    CHECK(at(48, 32)[1] > 200 && at(48, 32)[0] < 50);  // the right plane its green one
+    CHECK(renderer.diagnostics().empty());
+}
+
 // FM3: a draw's four probes (perDrawFragment, perDrawVertex, readsViewport, readsPostTexture) are pure
 // functions of its program's stage modules, and a texture resolves to the same GPU record until its
 // version (or, for a render target, its view) moves. Before FM3 every draw of every pass of every frame
@@ -8707,7 +8763,7 @@ TN_TEST_MAIN({"virtual_shadow_depth_holds", virtualShadowDepthHoldsWhileCastersF
              {"virtual_sun_level_sizes", virtualSunLevelSizes},
              {"virtual_sun_auto_map_size", virtualSunAutoMapSize},
              {"batched_vs_unbatched", batchedVsUnbatched}, {"stable_passes_match_direct", stablePassesMatchDirect}, {"camera_cull_keeps_bundle", cameraCull}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_decline_cadence", skinnedDeclineCadence}, {"skinned_projecting_cadence", skinnedProjectingCadence}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"env_map_slot_is_read", envMapSlotIsRead}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_offscreen", gpuTimerCoversOffscreen}, {"gpu_timer_splits_the_gather", gpuTimerSplitsTheLabelledGather}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"flat_shading_needs_no_normals", flatShadingNeedsNoNormals}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"batch_keeps_member_id", batchKeepsMemberId}, {"frustum_culling", frustumCulling},
-             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"masked_shadow", maskedShadow}, {"leaf_receiver", leafReceiver}, {"shadow_noise_frame", shadowNoiseFrame},{"foliage_transmission", foliageTransmission}, {"rough_diffuse", roughDiffuse}, {"point_shadow_cube_faces", pointShadowCubeFaces}, {"lamp_source_radius", lampSourceRadius}, {"lamp_source_radius_wall", lampSourceRadiusWall}, {"lamp_source_radius_crate", lampSourceRadiusCrate}, {"contact_shadow_foot", contactShadowFoot}, {"virtual_sun_contact_foot", virtualSunContactFoot}, {"lamp_cache", lampCache}, {"cached_lamp_has_no_uniform_upload", cachedLampHasNoUniformUpload}, {"sun_cache", sunCache}, {"lamp_atlas", lampAtlas}, {"gpu_timer_splits_lamp_shadows", gpuTimerSplitsLampShadows}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse}, {"program_probes_are_resolved_once", programProbesAreResolvedOnce})
+             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"masked_shadow", maskedShadow}, {"leaf_receiver", leafReceiver}, {"shadow_noise_frame", shadowNoiseFrame},{"foliage_transmission", foliageTransmission}, {"rough_diffuse", roughDiffuse}, {"point_shadow_cube_faces", pointShadowCubeFaces}, {"lamp_source_radius", lampSourceRadius}, {"lamp_source_radius_wall", lampSourceRadiusWall}, {"lamp_source_radius_crate", lampSourceRadiusCrate}, {"contact_shadow_foot", contactShadowFoot}, {"virtual_sun_contact_foot", virtualSunContactFoot}, {"lamp_cache", lampCache}, {"cached_lamp_has_no_uniform_upload", cachedLampHasNoUniformUpload}, {"sun_cache", sunCache}, {"lamp_atlas", lampAtlas}, {"gpu_timer_splits_lamp_shadows", gpuTimerSplitsLampShadows}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse}, {"program_probes_are_resolved_once", programProbesAreResolvedOnce}, {"maps_share_one_pipeline", mapsShareOnePipeline})
 
 
 

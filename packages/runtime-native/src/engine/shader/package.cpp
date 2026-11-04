@@ -1,5 +1,6 @@
 #include "package.h"
 
+#include <algorithm>
 #include <string_view>
 #include <bit>
 #include <cstring>
@@ -112,6 +113,42 @@ StageModule buildStage(const Program& program, uint32_t group) {
             module.bindings.push_back(Binding{group, binding++, BindingKind::Sampler, "smp_" + name, 0, depth, cube, volume, values, array});
     }
     return module;
+}
+
+void positionalGraphTextures(StageModule& module) {
+    static constexpr std::string_view prefix = "nodeMapT";
+    auto& labels = module.graphTextureLabels;
+    const auto digitsEnd = [](std::string_view text, size_t from) {
+        while (from < text.size() && text[from] >= '0' && text[from] <= '9') ++from;
+        return from;
+    };
+    // Bindings first: they follow the stage's declaration order, so equal structures number their maps alike.
+    for (Binding& b : module.bindings) {
+        const size_t at = b.name.rfind(prefix, 4);
+        if (at != 2 && at != 4) continue;  // "t_nodeMapT12" or "smp_nodeMapT12"
+        if (b.name.substr(0, at) != (at == 2 ? "t_" : "smp_") || digitsEnd(b.name, at + prefix.size()) != b.name.size() ||
+            b.name.size() == at + prefix.size()) continue;
+        const std::string own = b.name.substr(at);
+        auto found = std::find_if(labels.begin(), labels.end(), [&](const auto& label) { return label.second == own; });
+        if (found == labels.end()) found = labels.insert(labels.end(), {"nodeMapP" + std::to_string(labels.size()), own});
+        b.name = b.name.substr(0, at) + found->first;
+    }
+    if (labels.empty()) return;
+    const std::string& code = module.wgsl.code;
+    std::string out;
+    out.reserve(code.size());
+    for (size_t i = 0; i < code.size();) {
+        const size_t end = code.compare(i, prefix.size(), prefix) == 0 ? digitsEnd(code, i + prefix.size()) : i;
+        if (end > i + prefix.size()) {
+            const std::string_view own(code.data() + i, end - i);
+            const auto found = std::find_if(labels.begin(), labels.end(), [&](const auto& label) { return label.second == own; });
+            out += found != labels.end() ? found->first : std::string(own);
+            i = end;
+        } else {
+            out += code[i++];
+        }
+    }
+    module.wgsl.code = std::move(out);
 }
 
 bool acceptPackage(const ShaderPackage& package, std::string& error) {
