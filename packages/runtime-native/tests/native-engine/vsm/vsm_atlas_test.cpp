@@ -519,16 +519,22 @@ void continuousInvalidation() {
 
 void sampling() {
     using namespace shader;
-    const auto standard = buildStandard({}, {}, {"2"});
-    const auto lambert = buildLambert({}, {"2"});
-    const auto phong = buildPhong({}, {"2"});
-    for (const auto* p : {&standard, &lambert, &phong}) {
-        const auto vertex = buildStage(p->vertex, 0), fragment = buildStage(p->fragment, 1);
-        CHECK(vertex.wgsl.ok() && fragment.wgsl.ok());
-        CHECK(fragment.wgsl.code.find("vsmTable0") != std::string::npos);
-        CHECK(fragment.wgsl.code.find("textureSampleCompare") != std::string::npos);
-        CHECK(fragment.wgsl.code.find("textureLoad") != std::string::npos);
-        CHECK(vertex.wgsl.code.find("positionWorld") != std::string::npos);
+    // "2": two levels of PCF. ":" ('8' + 2): the same with the source-angle filter, whose blocker search
+    // and filter taps are the only integer loads of the atlas. A light without the filter must not
+    // compile them: the dead branch cost the forest about 12% of its GPU frame in registers.
+    for (const char* kinds : {"2", ":"}) {
+        const bool sourceAngle = kinds[0] == ':';
+        const auto standard = buildStandard({}, {}, {kinds});
+        const auto lambert = buildLambert({}, {kinds});
+        const auto phong = buildPhong({}, {kinds});
+        for (const auto* p : {&standard, &lambert, &phong}) {
+            const auto vertex = buildStage(p->vertex, 0), fragment = buildStage(p->fragment, 1);
+            CHECK(vertex.wgsl.ok() && fragment.wgsl.ok());
+            CHECK(fragment.wgsl.code.find("vsmTable0") != std::string::npos);
+            CHECK(fragment.wgsl.code.find("textureSampleCompare") != std::string::npos);
+            CHECK((fragment.wgsl.code.find("textureLoad(t_vsm0") != std::string::npos) == sourceAngle);
+            CHECK(vertex.wgsl.code.find("positionWorld") != std::string::npos);
+        }
     }
 }
 

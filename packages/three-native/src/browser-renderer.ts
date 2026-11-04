@@ -671,6 +671,12 @@ export function defineWebRenderer(
           this.info.engine.gpuStages = stages;
           this.info.engine.shadows.sunGpuMs = module._tnw_web_frame(19);
           this.info.engine.shadows.lampGpuMs = module._tnw_web_frame(24);
+          // Opt-in, as `__tnPassLog`: a probe that sets `__tnGpuSegments` to an array gets each resolved sample's
+          // split (frame_gpu_timer.h segments: sun shadow, scene, other passes, output, gather, lamp shadow).
+          (globalThis as { __tnGpuSegments?: number[][] }).__tnGpuSegments?.push([
+            gpuMs,
+            ...[19, 20, 21, 22, 23, 24].map((field) => module._tnw_web_frame(field)),
+          ]);
         }
       }
       const engine = this.info.engine;

@@ -3416,7 +3416,9 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         unshadowedKinds += kind;
         // A lamp with sourceRadiusShadowFilter reads the soft filter: 'Q' a point light, 'R' a spot light.
         const char shadowed = l.shadow && l.shadow->sourceRadiusFilter ? (kind == 'p' ? 'Q' : 'R') : static_cast<char>(kind - 'a' + 'A');
-        lightKinds += virtualShadows_.count(i) ? char('0' + virtualShadows_.at(i).atlas.options().clipExtents.size()) : l.shadow ? shadowed : kind;
+        // A virtual shadow's kind counts its levels from '0', or from '8' when its source-angle filter is compiled in.
+        lightKinds += virtualShadows_.count(i) ? char((l.shadow->sourceAngleFilter ? '8' : '0') + virtualShadows_.at(i).atlas.options().clipExtents.size())
+                                               : l.shadow ? shadowed : kind;
         if (virtualShadows_.count(i)) {
             auto& shadow = virtualShadows_.at(i);
             if (shadow.map.texture) continue;

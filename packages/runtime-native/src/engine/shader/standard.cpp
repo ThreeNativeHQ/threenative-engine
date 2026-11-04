@@ -1047,7 +1047,7 @@ static ExprId lampSoftShadowFactor(Program& f, Tsl& t, std::size_t index, ExprId
 // VirtualShadowNode's stock PCF filter and coarse-to-fine guarded blending. Physical pages
 // replace only the texture addressing; all coordinates and filter operations remain level-local.
 static ExprId virtualShadowFactor(Program& f, Tsl& t, std::size_t index, int levels,
-                                  ExprId positionWorld, ExprId normalWorld, bool leaf) {
+                                  ExprId positionWorld, ExprId normalWorld, bool leaf, bool sourceAngle) {
     const std::string at = "light" + std::to_string(index);
     const uint32_t map = f.textureDepth("vsm" + std::to_string(index));
     const uint32_t table = f.storageBuffer("vsmTable" + std::to_string(index), Type::vec(4));
@@ -1129,7 +1129,10 @@ static ExprId virtualShadowFactor(Program& f, Tsl& t, std::size_t index, int lev
         }
         return f.mul(sum, t.f(1.0f / 5.0f));
         };
-        // The filter replaces the 5-tap PCF where it is on, so a pixel pays for one of the two.
+        // The filter replaces the 5-tap PCF where it is on, so a pixel pays for one of the two. A light without
+        // the filter compiles the PCF alone: the unused filter, once per level and layer, held registers that
+        // cost the forest about 12% of its GPU frame (lane-perf A/B, 2026-11-04).
+        if (!sourceAngle) return pcf();
         const VarId filtered = f.var(Type::f32(), t.f(1));
         const ExprId filterIndex = f.add(t.f(float(levels * 10)), total);
         const ExprId filter = f.loadStorage(table, f.construct(Type::u32(), {filterIndex}));
@@ -1273,8 +1276,10 @@ static Incoming incoming(Program& f, Tsl& t, char kind, std::size_t index, ExprI
                          ExprId positionWorld = kInvalid, ExprId normalWorld = kInvalid, bool leaf = false, bool lampSize = false) {
     const std::string at = "light" + std::to_string(index);
     ExprId color = f.uniform(at + "Color", Type::vec(3));
-    if (kind >= '1' && kind <= '8') {
-        color = f.mul(color, virtualShadowFactor(f, t, index, kind - '0', positionWorld, normalWorld, leaf));
+    if (kind >= '1' && kind <= '@') {  // '1'..'8' PCF, '9'..'@' the source-angle filter: the level count past '0' or '8'
+        const bool sourceAngle = kind > '8';
+        color = f.mul(color, virtualShadowFactor(f, t, index, kind - (sourceAngle ? '8' : '0'), positionWorld, normalWorld,
+                                                 leaf, sourceAngle));
         kind = 'd';
     }
     if (kind == 'Q' || kind == 'R') {  // a lamp with sourceRadiusShadowFilter: 'Q' point, 'R' spot
