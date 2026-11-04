@@ -341,7 +341,7 @@ describe("renderChain perAdapter selection", () => {
   // used against a `low` tier a software adapter had legitimately produced. These are the real
   // shapes: the identity string core builds, on the snapshot that carries it.
   describe("native adapter provenance from the pipeline census", () => {
-    const CENSUS_IDENTITY = [
+    const censusIdentity = [
       "webgpu:architecture=swiftshader",
       "description=Swift%20Shader%20Device%20(Subzero)",
       "device=llvmpipe",
@@ -370,7 +370,7 @@ describe("renderChain perAdapter selection", () => {
 
     it("classifies a native software adapter and applies its own branch", async () => {
       const scenario = await load(SCENARIO(ASSERTION));
-      const result = evaluateRichPlaytestAssertions({ report: censusReport(CENSUS_IDENTITY), scenario });
+      const result = evaluateRichPlaytestAssertions({ report: censusReport(censusIdentity), scenario });
 
       expect(result.assertions.filter((row) => row.pass === false)).toEqual([]);
       expect(result.assertions).toContainEqual(
@@ -384,12 +384,12 @@ describe("renderChain perAdapter selection", () => {
 
     it("classifies a native hardware adapter and keeps the flat high policy", async () => {
       const scenario = await load(SCENARIO(ASSERTION));
-      const hardware = CENSUS_IDENTITY.replace(/swiftshader|llvmpipe|google|Subzero/gu, "x");
+      const hardware = censusIdentity.replace(/swiftshader|llvmpipe|google|Subzero/gu, "x");
       const report = {
         ...censusReport("webgpu:architecture=turing|description=NVIDIA%3A%20615.71.09|device=NVIDIA%20GeForce%20RTX%202080|vendor=nvidia"),
         observations: { console: [], hud: {}, network: [], resources: {}, renderChain: HIGH },
       };
-      expect(hardware).not.toBe(CENSUS_IDENTITY);
+      expect(hardware).not.toBe(censusIdentity);
       const result = evaluateRichPlaytestAssertions({ report, scenario });
 
       expect(result.assertions.filter((row) => row.pass === false)).toEqual([]);
@@ -575,15 +575,16 @@ describe("renderChain perAdapter GPU families", () => {
   // `play` and `look` scenarios goes through the real loader and the evaluator, against the adapter
   // fields the Iris Xe laptop and the Pixel 8 report. The flat `high` alone failed both.
   // The Unreal finishing look (4d49b1fcd): grade and grain run at intensity 0, so the chain refuses both.
-  const LOOK_HIGH_STAGES = ["ambientOcclusion", "traa", "motionBlur", "bloom", "vignette"];
-  const LOOK_MEDIUM_STAGES = ["ambientOcclusion", "traa", "bloom", "vignette"];
-  const LOOK_LOW_STAGES = ["bloom", "vignette", "antialias"];
-  // The starter's native render-chain scenario runs the three.js host (CI pins engine "threejs"): no traa, spatial antialias.
-  // High and medium run the temporal pass (traa, Unreal's TAA default); only low keeps the SMAA antialias stage.
-  const NATIVE_CHAIN_HIGH_STAGES = ["ambientOcclusion", "traa", "motionBlur", "bloom", "vignette"];
-  const NATIVE_CHAIN_MEDIUM_STAGES = ["ambientOcclusion", "traa", "bloom", "vignette"];
+  // The owner's 2026-10-28 decision in `packages/core/src/look/quality.ts`: the high tier draws 4x MSAA with no
+  // camera motion blur and no temporal resolve, so no tier requests `traa` or `motionBlur` (PRD-620 round 2).
+  const lookHighStages = ["ambientOcclusion", "ssgi", "ssr", "bloom", "vignette", "antialias"];
+  const lookMediumStages = ["ambientOcclusion", "ssr", "bloom", "vignette", "antialias"];
+  const lookLowStages = ["ssr", "bloom", "vignette", "antialias"];
+  // The starter is no longer pinned to three.js, so the native render-chain scenario asserts the same preset chains.
+  const nativeChainHighStages = lookHighStages;
+  const nativeChainMediumStages = lookMediumStages;
   const lookChain = (tier: "high" | "low" | "medium"): IPlaytestRenderChainObservation => {
-    const stages = { high: LOOK_HIGH_STAGES, low: LOOK_LOW_STAGES, medium: LOOK_MEDIUM_STAGES }[tier];
+    const stages = { high: lookHighStages, low: lookLowStages, medium: lookMediumStages }[tier];
     return {
       ...HIGH,
       contributions: stages.map((name) => ({ graphOutputChanged: true, name })),
@@ -598,21 +599,21 @@ describe("renderChain perAdapter GPU families", () => {
     const parsed = JSON.parse(await readFile(file, "utf8")) as { assert: { renderChain: unknown } };
     return load(SCENARIO(parsed.assert.renderChain));
   };
-  const STARTER_PLAY = "templates/starter/playtests/play.playtest.json";
-  const STARTER_LOOK = "template-playtests/starter/look.playtest.json";
+  const starterPlay = "templates/starter/playtests/play.playtest.json";
+  const starterLook = "template-playtests/starter/look.playtest.json";
 
   it.each<[string, string, Record<string, string>, IPlaytestRenderChainObservation, boolean]>([
-    ["play on an Iris Xe", STARTER_PLAY, IRIS_XE, MEDIUM, true],
-    ["play on a Mali-G715", STARTER_PLAY, MALI_G715, MEDIUM, true],
-    ["play on a Mali-G78", STARTER_PLAY, MALI_G78, LOW, true],
-    ["play on a Mali-G52", STARTER_PLAY, MALI_G52, LOW, true],
-    ["play on an RTX card", STARTER_PLAY, TURING, HIGH, true],
-    ["play on an Iris Xe that stayed on high", STARTER_PLAY, IRIS_XE, HIGH, false],
-    ["look on an Iris Xe", STARTER_LOOK, IRIS_XE, lookChain("medium"), true],
-    ["look on a Mali-G715", STARTER_LOOK, MALI_G715, lookChain("medium"), true],
-    ["look on a Mali-G52", STARTER_LOOK, MALI_G52, lookChain("low"), true],
-    ["look on an RTX card", STARTER_LOOK, TURING, lookChain("high"), true],
-    ["look on an Iris Xe that stayed on high", STARTER_LOOK, IRIS_XE, lookChain("high"), false],
+    ["play on an Iris Xe", starterPlay, IRIS_XE, MEDIUM, true],
+    ["play on a Mali-G715", starterPlay, MALI_G715, MEDIUM, true],
+    ["play on a Mali-G78", starterPlay, MALI_G78, LOW, true],
+    ["play on a Mali-G52", starterPlay, MALI_G52, LOW, true],
+    ["play on an RTX card", starterPlay, TURING, HIGH, true],
+    ["play on an Iris Xe that stayed on high", starterPlay, IRIS_XE, HIGH, false],
+    ["look on an Iris Xe", starterLook, IRIS_XE, lookChain("medium"), true],
+    ["look on a Mali-G715", starterLook, MALI_G715, lookChain("medium"), true],
+    ["look on a Mali-G52", starterLook, MALI_G52, lookChain("low"), true],
+    ["look on an RTX card", starterLook, TURING, lookChain("high"), true],
+    ["look on an Iris Xe that stayed on high", starterLook, IRIS_XE, lookChain("high"), false],
   ])("holds the shipped starter %s to its own table", async (_name, relative, adapter, renderChain, passes) => {
     const scenario = await shipped(relative);
     const result = evaluateRichPlaytestAssertions({ report: report(renderChain, capture(adapter)), scenario });
@@ -626,7 +627,7 @@ describe("renderChain perAdapter GPU families", () => {
   // template authors at that tier: the starter drops ambientOcclusion and grain at low, while
   // sailing's bloom and rain's stormPost run at every tier, so their rows keep the stage check.
   it.each<[string, string, string[], string[], string[]?]>([
-    ["starter native render-chain", "templates/starter/native-playtests/render-chain.playtest.json", NATIVE_CHAIN_HIGH_STAGES, ["bloom", "vignette", "antialias"], NATIVE_CHAIN_MEDIUM_STAGES],
+    ["starter native render-chain", "templates/starter/native-playtests/render-chain.playtest.json", nativeChainHighStages, lookLowStages, nativeChainMediumStages],
     ["sailing native survives", "templates/sailing/native-playtests/survives.playtest.json", ["bloom"], ["bloom"]],
     ["rain native boot", "templates/rain/native-playtests/boot.playtest.json", ["stormPost"], ["stormPost"]],
     ["rain performance", "templates/rain/playtests/performance.playtest.json", ["stormPost"], ["stormPost"]],
@@ -655,7 +656,7 @@ describe("renderChain perAdapter GPU families", () => {
 
   it("keeps the starter native low row from accepting a chain that still runs occlusion or grain", async () => {
     const scenario = await shipped("templates/starter/native-playtests/render-chain.playtest.json");
-    const stages = NATIVE_CHAIN_HIGH_STAGES;
+    const stages = nativeChainHighStages;
     const heldHigh: IPlaytestRenderChainObservation = {
       ...HIGH,
       contributions: stages.map((name) => ({ graphOutputChanged: true, name })),

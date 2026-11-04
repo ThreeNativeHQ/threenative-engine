@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   EMISSIVE_UNITS,
+  LEVEL_EXPOSURE,
   SKY_TO_SUN,
   SUN_ILLUMINANCE,
   SUN_KELVIN,
@@ -22,8 +23,10 @@ describe("the harness lighting model against Unreal 5.8.3 frames (PRD-632, PRD-6
     expect(b / g).toBeCloseTo(0.9069 / 0.8596, 1);
   });
 
-  it("the sun is Unreal's 6 lux in three's units, pi times larger", () => {
-    expect(SUN_ILLUMINANCE).toBeCloseTo(6 * Math.PI, 10);
+  it("the sun is Unreal's 6 lux in three's units, with no pi", () => {
+    // Unreal passes a directional light's lux straight to the shading and both diffuse lobes divide by pi,
+    // so the same lux is the same light here (PRD-646 round 6).
+    expect(SUN_ILLUMINANCE).toBeCloseTo(6, 10);
   });
 
   it("emissive 5 outshines a white surface under the sun by Unreal's ratio, 5 / (6 / pi)", () => {
@@ -135,7 +138,10 @@ describe("the harness lighting model against Unreal 5.8.3 frames (PRD-632, PRD-6
     for (const deg of [60, 15] as const) {
       const rad = (deg * Math.PI) / 180;
       const light = viewDistanceSkyLight({ x: Math.cos(rad), y: Math.sin(rad), z: 0 });
-      const fog = light.map((v, c) => v * (tint[c] ?? 1) * SUN_ILLUMINANCE * SKY_TO_SUN);
+      // The frame Unreal draws is exposed at the level's fixed exposure: 2.4 (PRD-646 round 6).
+      const fog = light.map(
+        (v, c) => v * (tint[c] ?? 1) * SUN_ILLUMINANCE * SKY_TO_SUN * LEVEL_EXPOSURE,
+      );
       const shown = filmicToneMap(fog as [number, number, number]).map(encode);
       shown.forEach((v, c) => {
         const expected = unreal[deg][c];

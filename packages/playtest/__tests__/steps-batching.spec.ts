@@ -44,6 +44,51 @@ describe("fixed-step request scheduling", () => {
     expect(advances.reduce((total, ticks) => total + ticks, 0)).toBe(25);
     expect(bridge.sample).toHaveBeenCalledTimes(3);
   });
+
+  it("draws one frame every drawEvery ticks of a step, across the 10-tick path cadence", async () => {
+    // A readback-driven component samples per drawn frame, so a 120-tick step asking for a frame
+    // every 60 ticks must draw exactly twice however the runner batches its requests.
+    const calls: Array<{ options?: { render?: boolean }; ticks: number }> = [];
+    const bridge = {
+      advance: vi.fn(async (ticks: number, options?: { render?: boolean }) => {
+        calls.push({ ...(options === undefined ? {} : { options }), ticks });
+        return ticks;
+      }),
+      description: {
+        capabilities: ["runtime.fixedStep"],
+        limits: {},
+        name: "test-bridge",
+        protocolVersion: "0.1.0",
+      },
+      sample: vi.fn(async () => ({
+        clock: { mode: "fixed-step", tick: 0 },
+        diagnostics: [],
+        entities: [{ id: "player", transform: { position: [0, 0, 0] } }],
+      })),
+    } as unknown as IPlaytestBridgeClient;
+    const page = { evaluate: vi.fn(async () => undefined) } as unknown as Page;
+
+    await runStep(
+      page,
+      bridge,
+      { kind: "wait", release: false, waitTicks: 120 },
+      { height: 100, width: 100 },
+      "player",
+      [],
+      { heldKeys: new Set(), pointerButtons: 0, pointers: new Map() },
+      undefined,
+      false,
+      undefined,
+      false,
+      undefined,
+      undefined,
+      undefined,
+      60,
+    );
+
+    expect(calls.reduce((total, call) => total + call.ticks, 0)).toBe(120);
+    expect(calls.filter(({ options }) => options?.render === true)).toHaveLength(2);
+  });
 });
 
 it("uses an opted-in completion window without injecting simulation ticks", async () => {

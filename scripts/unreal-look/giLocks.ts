@@ -34,6 +34,7 @@ import {
 import os from "node:os";
 import path from "node:path";
 import { type IRow, ciede2000, lab } from "./compare.js";
+import { diagnosisCellsIn, refuseDiagnosis } from "./engineMode.js";
 import { compareGiToUnreal, sceneDir, sceneKey } from "./gi.js";
 import { type IRatchet, checkRatchets, readRatchets } from "./ratchet.js";
 
@@ -701,6 +702,7 @@ export function checkCommand(args: readonly string[], deps: ICheckDeps = default
   const captures = flagValues(args, "--captures");
   if (captures.length < 1)
     fail("TOO_FEW_RUNS", "no --captures folder: pass the runs of the capture");
+  for (const run of captures) refuseDiagnosis(diagnosisCellsIn(run), `${scene} lock check`);
   const locks = readGiLocks(flagValues(args, "--locks")[0] ?? GI_LOCK_FILE);
   const [ratchetFile] = flagValues(args, "--ratchets");
   const ratchets = (ratchetFile ? readRatchets(ratchetFile) : (deps.ratchets?.() ?? [])).filter(
@@ -816,7 +818,10 @@ export function lockCommand(args: readonly string[], deps: ICheckDeps = defaultC
   if (recut && (args.includes("--tighten") || args.includes("--relax")))
     fail("BAD_INPUT", "--recut already moves every bound: do not pass --tighten or --relax");
   const rowsOf = (run: string) => [...deps.compare(scene, layer, run)];
-  const captured = flagValues(args, "--captures").map(rowsOf);
+  const captured = flagValues(args, "--captures").map((run) => {
+    refuseDiagnosis(diagnosisCellsIn(run), `the ${scene} ${layer} lock`);
+    return rowsOf(run);
+  });
   // A lock exists only where the region is at parity with Unreal; --keep-off-parity cuts them all.
   const split = args.includes("--keep-off-parity")
     ? { runs: captured, off: [] as string[] }

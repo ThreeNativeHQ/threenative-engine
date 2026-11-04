@@ -22,6 +22,10 @@ struct FrameGpuTimer {
     struct PassInfo {
         const char* name;
         uint32_t width, height;
+        // The draws the pass encodes, where the caller knows them when the pass begins (the transparent draws' own
+        // pass, whose plan is fixed by then). 0 means "not counted here", never "drew nothing". Spelled out because a
+        // default member initializer is not available inside this class's own default arguments.
+        uint32_t draws;
     };
     WGPUQuerySet queries = nullptr;
     bool enabled = false, failed = false, trace = false;
@@ -51,7 +55,7 @@ struct FrameGpuTimer {
     // False when the stream is full: the pass runs untimed and the sample is refused, never a thrown
     // frame. Passes outside a frame (texture mips, compute dispatches) fill segments until the next
     // owner frame clears them, so a burst larger than maxPasses must not poison every later render.
-    template<class Writes> bool attach(Writes& writes, uint8_t segment, PassInfo info = {"other", 0, 0}) {
+    template<class Writes> bool attach(Writes& writes, uint8_t segment, PassInfo info = {"other", 0, 0, 0}) {
         if (segments.size() >= maxPasses) {
             failed = true;  // Refuse the entire sample rather than silently dropping a pass.
             return false;
@@ -75,7 +79,7 @@ struct FrameGpuTimer {
 
 inline WGPURenderPassEncoder beginTimedRenderPass(WGPUCommandEncoder encoder,
     const WGPURenderPassDescriptor* descriptor, uint8_t segment = 2,
-    FrameGpuTimer::PassInfo info = {"other", 0, 0}) {
+    FrameGpuTimer::PassInfo info = {"other", 0, 0, 0}) {
     auto desc = *descriptor;
     WGPURenderPassTimestampWrites_Compat writes{};
     if (auto* timer = FrameGpuTimer::current; timer && timer->measurePass()) {
@@ -86,7 +90,7 @@ inline WGPURenderPassEncoder beginTimedRenderPass(WGPUCommandEncoder encoder,
 
 inline WGPUComputePassEncoder beginTimedComputePass(WGPUCommandEncoder encoder,
     const WGPUComputePassDescriptor* descriptor,
-    FrameGpuTimer::PassInfo info = {"compute", 0, 0}) {
+    FrameGpuTimer::PassInfo info = {"compute", 0, 0, 0}) {
     auto desc = *descriptor;
     WGPUComputePassTimestampWrites_Compat writes{};
     if (auto* timer = FrameGpuTimer::current; timer && timer->measurePass()) {

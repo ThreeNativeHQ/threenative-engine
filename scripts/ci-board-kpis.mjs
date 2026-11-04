@@ -79,6 +79,17 @@ function minutesAfterFirstRed(boards) {
   return share(after, total);
 }
 
+/**
+ * PRD-480 AC-2: the summed per-job queue wait of one full board. Null when a running job cannot
+ * supply both timestamps, because a partial sum would read as an improvement.
+ */
+function boardQueueSum(run) {
+  const waits = run.ran.map((job) => minutes(job.createdAt, job.startedAt));
+  return waits.some((wait) => wait === null)
+    ? null
+    : round(waits.reduce((total, wait) => total + Math.max(0, wait), 0));
+}
+
 /** Null when no job carries steps: the value is unknown, not zero. */
 function setupShare(boards) {
   let setup = 0;
@@ -127,6 +138,7 @@ export function summarizeBoards({ runs, since, until }) {
     fullBoardMachineMedianMin: median(finished.map((run) => machineMinutes(run.ran))),
     machineMinPerWeek: weeks > 0 && all.length > 0 ? Math.round(totalMachine / weeks) : null,
     boardQueueP90Min: queueWaits.length === 0 ? null : round(quantile(queueWaits, 0.9)),
+    fullBoardQueueSumMedianMin: median(finished.map(boardQueueSum)),
     boardGreenFirstPct: share(green.length, finished.length),
     flakeRatePct: flakeRate(full),
     greenMinutesPct: share(greenMachine, totalMachine),

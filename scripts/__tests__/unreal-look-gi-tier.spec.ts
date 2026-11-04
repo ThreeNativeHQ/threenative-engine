@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 import { makeTempDirSync } from "../../test-support/temp-dir.js";
+import { LEVEL_EXPOSURE } from "../unreal-look/scaffold/render/atmosphere.js";
 
 /**
  * The scaffold copies the starter's `rendererGate.ts` beside `quality.ts`, which re-exports it. The
@@ -11,12 +12,18 @@ import { makeTempDirSync } from "../../test-support/temp-dir.js";
  */
 async function loadQuality(): Promise<{
   giPreset(tier: string): object;
+  qualityPreset(tier: string): { exposure?: number };
   shadowPreset(tier: string): object;
 }> {
   const dir = makeTempDirSync("tn-gi-tier-");
   copyFileSync(
     join(__dirname, "../unreal-look/scaffold/render/quality.ts"),
     join(dir, "quality.ts"),
+  );
+  // `quality.ts` reads the level's fixed exposure from `atmosphere.ts` (PRD-646 round 6).
+  copyFileSync(
+    join(__dirname, "../unreal-look/scaffold/render/atmosphere.ts"),
+    join(dir, "atmosphere.ts"),
   );
   copyFileSync(
     join(
@@ -52,6 +59,17 @@ describe("GI tier table (PRD-644)", () => {
   it("throws on a name that is not a tier", async () => {
     const { giPreset } = await loadQuality();
     expect(() => giPreset("ultra")).toThrow();
+  });
+});
+
+describe("the level's fixed exposure (PRD-646)", () => {
+  // A tier that states the exposure itself shadows the ported value and draws the wrong frame in silence: the
+  // first round-6 arm read 0.399 of Unreal because the preset's own `exposure: 1` won over the fallback.
+  it("draws every tier with LEVEL_EXPOSURE, so no preset can shadow the ported 2.4", async () => {
+    const { qualityPreset } = await loadQuality();
+    expect(LEVEL_EXPOSURE).toBeCloseTo(2.4, 9);
+    for (const tier of ["low", "medium", "high"])
+      expect(qualityPreset(tier).exposure).toBe(LEVEL_EXPOSURE);
   });
 });
 

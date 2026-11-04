@@ -774,8 +774,27 @@
       "restart-resets": "a weather sandbox with no run; KeyR resets the snow field",
       "foot-slip": "skinned rig whose sole nodes are not named, so footSlip cannot measure it yet; name the soles to join this row",
       "action-clip-completes": "no key plays an animation clip; the mechanic has no clip to complete",
-      "effect-follows-contact": "no melee or timed hit with a contact window",
-      "engine-cost": "pinned to engine \"threejs\" in threenative.config.ts: no JS-to-Wasm bridge, so there are no web engine counters to bound"
+      "effect-follows-contact": "no melee or timed hit with a contact window"
+    },
+    "engineCost": {
+      "source": "snow after-values, 2026-11-02, one Wasm-engine run at 640x360 on hardware NVIDIA/Turing (private Xvfb): steady-window (2-4) per-frame means childrenReads 2, contentClassOf 112, contentVersionKeys 69, hierarchyMoves 0, matrixEvaluations 110 to 124, physicsForceResets 3.07 to 3.08, physicsTransformReads 4.0 to 4.11, share 3.62 to 3.76, shareMints 0, textures 0, buffers 0.03, walkVisits 0; walkVisits frame max 0 after boot; bound = max(2x the measured worst, a floor the counter's size needs). One run and a virtual display, so the headroom is the repo's 1.5x doubled; tighten it on two hardware runs before trusting it",
+      "maxInFrame": {
+        "walkVisits": 300
+      },
+      "maxPerFrame": {
+        "buffers": 3,
+        "childrenReads": 6,
+        "contentClassOf": 180,
+        "contentVersionKeys": 110,
+        "hierarchyMoves": 1,
+        "matrixEvaluations": 200,
+        "physicsForceResets": 8,
+        "physicsTransformReads": 8,
+        "share": 8,
+        "shareMints": 5,
+        "textures": 2,
+        "walkVisits": 50
+      }
     }
   },
   "starter": {

@@ -22,6 +22,13 @@ import {
   scaffold,
   waitForServer,
 } from "./capture-threenative.js";
+import {
+  type CaptureEngine,
+  checkDrawnEngine,
+  engineName,
+  selectedEngine,
+  withEngine,
+} from "./engineMode.js";
 import { awaitExposureSettled, metersExposure, watchExposure } from "./exposureSettled.js";
 import { isManifestScene, readScene, sceneDir, sceneKey } from "./gi.js";
 import {
@@ -100,7 +107,11 @@ export function foliageOf(
   return out;
 }
 
-export async function patchGi(target: string, scenes: readonly string[]): Promise<void> {
+export async function patchGi(
+  target: string,
+  scenes: readonly string[],
+  engine: CaptureEngine = selectedEngine(),
+): Promise<void> {
   await cp(
     path.join(SCAFFOLD_DIR, "CalibrationScene.ts.in"),
     path.join(target, "src/scenes/CalibrationScene.ts"),
@@ -134,15 +145,14 @@ export async function patchGi(target: string, scenes: readonly string[]): Promis
   // instance meshes with equal geometry (cornell's floor and ceiling), so compaction is off.
   const config = path.join(target, "threenative.config.ts");
   const configSource = await readFile(config, "utf8");
-  if (!configSource.includes("compact: false")) {
+  let patched = withEngine(configSource, engine);
+  if (!patched.includes("compact: false")) {
     const anchor = '  nativeEntry: "src/game.ts",';
-    if (!configSource.includes(anchor))
+    if (!patched.includes(anchor))
       throw new Error(`TN_UNREAL_LOOK_PATCH: '${anchor}' not in ${config}`);
-    await writeFile(
-      config,
-      configSource.replace(anchor, `${anchor}\n  assets: { models: { compact: false } },`),
-    );
+    patched = patched.replace(anchor, `${anchor}\n  assets: { models: { compact: false } },`);
   }
+  if (patched !== configSource) await writeFile(config, patched);
   const game = path.join(target, "src/game.ts");
   let source = await readFile(game, "utf8");
   if (source.includes("CalibrationScene")) return;
@@ -174,10 +184,11 @@ export async function captureGiThreeNative(options: {
 }): Promise<number> {
   for (const layer of options.layers)
     if (!(layer in GI_LAYERS)) throw new Error(`TN_UNREAL_LOOK_BAD_INPUT: GI layer ${layer}`);
+  const engine = selectedEngine();
   const work =
     process.env.TN_UNREAL_LOOK_WORK ?? path.join(os.homedir(), ".cache/threenative/unreal-look");
   const target = await scaffold(work, options.reuse, false);
-  await patchGi(target, options.scenes);
+  await patchGi(target, options.scenes, engine);
   const port = await freePort();
   await assertVisualPortAvailable(port);
   const server = spawn(
@@ -278,13 +289,10 @@ export async function captureGiThreeNative(options: {
               );
             await page.waitForFunction(() => "__tnRef" in window, undefined, { timeout: 240_000 });
             assertConfigEcho(page.url(), await page.evaluate("window.__tnRef.config"));
-            const engine = await page.evaluate("window.__tnRef.engine");
-            if (engine !== "threenative")
-              throw new Error(
-                `TN_UNREAL_LOOK_WRONG_ENGINE: ${name} ${layer} drew on ${String(engine)}`,
-              );
+            const drawn = await page.evaluate("window.__tnRef.engine");
+            checkDrawnEngine(drawn, engine, `${name} ${layer}`);
             report[visit.key] = {
-              engine,
+              engine: engineName(engine),
               unsupported: await page.evaluate("window.__tnRef.unsupported"),
               probe: await page.evaluate("window.__tnRef.probe?.()"),
             };
@@ -371,9 +379,9 @@ export async function captureGiThreeNative(options: {
       await mkdir(options.out, { recursive: true });
       await writeFile(
         path.join(options.out, "gi-capture.json"),
-        `${JSON.stringify({ capturedAt: new Date().toISOString(), cells: count, ...report }, null, 2)}\n`,
+        `${JSON.stringify({ capturedAt: new Date().toISOString(), engine: engineName(engine), cells: count, ...report }, null, 2)}\n`,
       );
-      console.info(`TN_UNREAL_LOOK gi threenative engine=threenative cells=${count}`);
+      console.info(`TN_UNREAL_LOOK gi engine=${engineName(engine)} cells=${count}`);
     } finally {
       await browser.close();
     }
