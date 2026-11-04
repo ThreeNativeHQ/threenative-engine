@@ -723,7 +723,8 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         const auto* source = static_cast<const engine::Texture*>(args[0].object.get());
         if (!source->sampleable()) throw std::runtime_error("texture3D needs a Data3DTexture with texels");
         const auto half = [] { return g::float_(0.5); };
-        auto node = g::objectTexture(args[0].object, "nodeMap" + std::to_string(++serial),
+        // One binding per volume, as for texture() above: a baked noise read 44 times a pixel took 212 bindings.
+        auto node = g::objectTexture(args[0].object, "nodeMapT" + std::to_string(source->ident.value()),
                                      args.size() > 1 ? arg(1) : g::vec3({half(), half(), half()}));
         if (args.size() == 3) {
             auto level = std::make_shared<g::NodeData>(*node);

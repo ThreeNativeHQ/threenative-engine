@@ -3000,6 +3000,22 @@ void starter_post_bindings() {
     bool hasVolume = false;
     for (const auto& binding : grade.bindings) hasVolume |= binding.volume;
     CHECK(hasVolume);
+    // Two reads of one volume are one binding, as two texture() reads of one map are: a baked noise read 44
+    // times a pixel otherwise took 212 sampled textures, past the stage limit of 48.
+    {
+        const auto at = [&](double s) {
+            return call("texture3D", {TslArg::objectOf("Data3DTexture", volume),
+                                      TslArg::of(g::vec3({g::float_(s), g::float_(s), g::float_(s)}))});
+        };
+        const auto first = at(0.25), second = at(0.75);
+        CHECK(first && second);
+        if (first && second) {
+            const auto stage = compile(g::add(first, second));
+            int volumes = 0;
+            for (const auto& binding : stage.bindings) volumes += binding.volume && binding.name.rfind("t_", 0) == 0 ? 1 : 0;
+            CHECK(volumes == 1);
+        }
+    }
     // A DataArrayTexture samples as texture_2d_array: texture(array, uv).depth(layer) reads (uv, layer), and a
     // texture(array, uv) alone reads layer 0. A texture that is not an array refuses depth(layer).
     {

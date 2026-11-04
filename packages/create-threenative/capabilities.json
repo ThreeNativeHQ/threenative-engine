@@ -4451,6 +4451,40 @@
     },
     {
       "aliases": [],
+      "constraints": ["octaves is a build-time number; each octave is one filtered volume read"],
+      "example": "const macro = bakedFractalNoise(vec3(positionWorld.x, 0, positionWorld.z).mul(0.014), 3);",
+      "importPath": "@threenative/core/world",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function bakedFractalNoise( p: Node<\"vec3\">, octaves = 3, lacunarity = 2, diminish = 0.5, amplitude: Scalar = 1, ): Node<\"float\"> { … }",
+      "situations": ["fractal or fbm noise in a material costs too much GPU time per pixel"],
+      "summary": "Drop-in for `mx_fractal_noise_float(p, octaves, lacunarity, diminish, amplitude)`: one read an octave.",
+      "supersedes": [],
+      "symbol": "bakedFractalNoise"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "the field tiles every NOISE_PERIOD units of p; at p = world metres x 2.6 that is a 3 m repeat",
+        "vec3 input only: three's 2D Perlin is another function"
+      ],
+      "example": "const patch = smoothstep(-0.35, 0.35, bakedNoise(positionWorld.mul(0.025)));",
+      "importPath": "@threenative/core/world",
+      "kind": "function",
+      "overrides": ["keep mx_noise_float where exact analytic noise matters more than the frame"],
+      "package": "@threenative/core",
+      "signature": "export function bakedNoise(p: Node<\"vec3\">, amplitude: Scalar = 1, pivot: Scalar = 0, channel: 0 | 1 | 2 | 3 = 0): Node<\"float\"> { … }",
+      "situations": [
+        "a terrain, foliage or water shader calls mx_noise_float per pixel and the frame is GPU bound",
+        "open world ground material with procedural variation that must hold 60 FPS"
+      ],
+      "summary": "Drop-in for `mx_noise_float(p, amplitude, pivot)` on a vec3 `p`: one filtered read of the baked volume instead of the per-pixel Perlin. Only the 3D form: three's 2D Perlin is another function (0.66 scale), so a vec2 caller keeps `mx_noise_float`. `channel` 1 to 3 are independent fields.",
+      "supersedes": [],
+      "symbol": "bakedNoise"
+    },
+    {
+      "aliases": [],
       "constraints": [
         "the returned view aliases the caller's buffer; writing to it mutates the source"
       ],
@@ -4566,6 +4600,22 @@
       "summary": "Fetch a raw little-endian uint16 heightmap and expose it as samples.",
       "supersedes": [],
       "symbol": "loadWorldHeightmap"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "baked once per page on the main thread (about 0.15 s); every channel is an independent field"
+      ],
+      "example": "const volume = noiseVolume();",
+      "importPath": "@threenative/core/world",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function noiseVolume(): Data3DTexture { … }",
+      "situations": ["a material needs the raw baked noise texture to sample in its own TSL"],
+      "summary": "The one volume every material shares: baked on first use, 1 MiB of RGBA8 (it stays in L2).",
+      "supersedes": [],
+      "symbol": "noiseVolume"
     },
     {
       "aliases": [],

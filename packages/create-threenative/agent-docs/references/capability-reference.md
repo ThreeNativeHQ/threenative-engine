@@ -3479,6 +3479,37 @@ export async function applyTerrainSurface( root: Object3D, options: ILoadTerrain
 await applyTerrainSurface(world.scene, { assets: ctx.assets, renderer: ctx.renderer, url: "world/world.glb" });
 ```
 
+### `bakedFractalNoise`
+
+`function` — Drop-in for `mx_fractal_noise_float(p, octaves, lacunarity, diminish, amplitude)`: one read an octave.
+
+```ts
+export function bakedFractalNoise( p: Node<"vec3">, octaves = 3, lacunarity = 2, diminish = 0.5, amplitude: Scalar = 1, ): Node<"float"> { … }
+```
+
+- **Use when:** fractal or fbm noise in a material costs too much GPU time per pixel
+- **Constraints:** octaves is a build-time number; each octave is one filtered volume read
+
+```ts
+const macro = bakedFractalNoise(vec3(positionWorld.x, 0, positionWorld.z).mul(0.014), 3);
+```
+
+### `bakedNoise`
+
+`function` — Drop-in for `mx_noise_float(p, amplitude, pivot)` on a vec3 `p`: one filtered read of the baked volume instead of the per-pixel Perlin. Only the 3D form: three's 2D Perlin is another function (0.66 scale), so a vec2 caller keeps `mx_noise_float`. `channel` 1 to 3 are independent fields.
+
+```ts
+export function bakedNoise(p: Node<"vec3">, amplitude: Scalar = 1, pivot: Scalar = 0, channel: 0 | 1 | 2 | 3 = 0): Node<"float"> { … }
+```
+
+- **Use when:** a terrain, foliage or water shader calls mx_noise_float per pixel and the frame is GPU bound · open world ground material with procedural variation that must hold 60 FPS
+- **Constraints:** the field tiles every NOISE_PERIOD units of p; at p = world metres x 2.6 that is a 3 m repeat · vec3 input only: three's 2D Perlin is another function
+- **Overrides:** keep mx_noise_float where exact analytic noise matters more than the frame
+
+```ts
+const patch = smoothstep(-0.35, 0.35, bakedNoise(positionWorld.mul(0.025)));
+```
+
 ### `cellPlacements`
 
 `function` — Borrow the run's placement records as a live view over the placement buffer.
@@ -3571,6 +3602,21 @@ export async function loadWorldHeightmap(url: string): Promise<Uint16Array> { �
 
 ```ts
 const data = await loadWorldHeightmap("/world/terrain/heightmap.u16");
+```
+
+### `noiseVolume`
+
+`function` — The one volume every material shares: baked on first use, 1 MiB of RGBA8 (it stays in L2).
+
+```ts
+export function noiseVolume(): Data3DTexture { … }
+```
+
+- **Use when:** a material needs the raw baked noise texture to sample in its own TSL
+- **Constraints:** baked once per page on the main thread (about 0.15 s); every channel is an independent field
+
+```ts
+const volume = noiseVolume();
 ```
 
 ### `snowDiscFootprint`

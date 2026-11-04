@@ -784,6 +784,7 @@ export type {
 
 export { heightSamplerFromHeightmap, loadWorldHeightmap } from "./world-heightmap.js";
 export { applyTerrainSurface, loadTerrainSplat } from "./world-terrain-splat.js";
+export { bakedFractalNoise, bakedNoise, NOISE_PERIOD, NOISE_TEXELS, noiseVolume } from "./world-noise.js";
 export type {
   ILoadTerrainSplatOptions,
   ITerrainSplatLayer,
