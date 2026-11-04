@@ -63,16 +63,21 @@ test('static SDL is position independent for native PIE consumers', () => {
   expect(linuxPreset).toContain('"CMAKE_POSITION_INDEPENDENT_CODE": "ON"');
 });
 
-test('native compiler caches restore only the current CMake inputs', () => {
+test('native compiler caches restore only the current CMake inputs, except test-native', () => {
+  // PRD-628: test-native restores any tree's cache of its own lane. ccache keys each object by compiler,
+  // flags and source, so a cache from other CMake inputs only misses; the CMake hash cost 45% to 99% of hits.
+  const laneOnly = 'native-ccache-ci-test-native-${{ runner.os }}-${{ runner.arch }}-gcc-';
   for (const source of [workflow, ciWorkflow]) {
     const restoreKeys = [...source.matchAll(/^\s+restore-keys:\s*(native-ccache[^\n]+)$/gmu)].map(
       (match) => match[1] ?? '',
     );
     expect(restoreKeys.length).toBeGreaterThan(0);
     for (const restoreKey of restoreKeys) {
+      if (restoreKey === laneOnly) continue;
       expect(restoreKey).toContain('hashFiles(');
     }
   }
+  expect(ciWorkflow).toContain(`restore-keys: ${laneOnly}\n`);
 });
 
 test('green native platform lane is required by primary CI', () => {
