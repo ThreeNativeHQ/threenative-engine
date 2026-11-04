@@ -331,6 +331,7 @@ void traaValidation() {
         renderer.setOutput(OutputState{});
         renderer.setRenderScale(0.5f);
         CHECK(!renderer.temporalUpscale());
+        CHECK(renderer.viewMipBias() == 0);  // no temporal pass: Unreal biases only an upscaled view
         CHECK(renderer.inputWidth() == 32 && renderer.inputHeight() == 24);
         for (const float scale : {0.24f, 1.01f, std::nanf("")}) {
             bool invalidScale = false;
@@ -356,6 +357,16 @@ void traaValidation() {
         item.matrixWorld[12] += 0.01;
         renderer.render(items, camera, LightState{}, {0.1, 0.2, 0.3, 0.5});
         renderer.cutHistory();
+        renderer.render(items, camera, LightState{}, {0.1, 0.2, 0.3, 0.5});
+        // PRD-539 lever 7, Unreal's view mip bias: -log2(1 / fraction) - 0.3, at least -2, ceiled to 1/128.
+        CHECK(renderer.viewMipBias() == std::ceil((-1.0 - 0.3) * 128) / 128);  // 0.5
+        renderer.setRenderScale(1.0f);
+        renderer.render(items, camera, LightState{}, {0.1, 0.2, 0.3, 0.5});
+        CHECK(renderer.viewMipBias() == std::ceil(-0.3 * 128) / 128);  // TSR at 100% still biases
+        renderer.setRenderScale(0.25f);
+        renderer.render(items, camera, LightState{}, {0.1, 0.2, 0.3, 0.5});
+        CHECK(renderer.viewMipBias() == -2.0);  // -2.3 held at r.ViewTextureMipBias.Min
+        renderer.setRenderScale(0.5f);
         renderer.render(items, camera, LightState{}, {0.1, 0.2, 0.3, 0.5});
         renderer.setSize(16, 12);
         CHECK(renderer.inputWidth() == 8 && renderer.inputHeight() == 6);
@@ -3371,7 +3382,8 @@ void emissiveValidation() { emissivePass(false); }
 // no draw. Each target still holds its own value at the lit plane's centre. An alpha-tested plane writes its targets
 // where its fragment survives the test and leaves them clear where it is cut, as three's MRT and Unreal's base pass do,
 // whether the graph reads every target or the normal alone.
-void auxTargets(bool normalOnly, float alphaTest, float opacity, uint32_t samples = 1, bool alphaHash = false) {
+void auxTargets(bool normalOnly, float alphaTest, float opacity, uint32_t samples = 1, bool alphaHash = false,
+                bool authoredNormal = false, bool backFace = false) {
     mystral::webgpu::Context context;
     const bool initialized = context.initializeHeadless();
     CHECK(initialized);
@@ -3397,11 +3409,23 @@ void auxTargets(bool normalOnly, float alphaTest, float opacity, uint32_t sample
     material.alphaTest = alphaTest; material.opacity = opacity; material.alphaHash = alphaHash;
     const bool cut = (alphaTest > 0 && opacity <= alphaTest) || (alphaHash && opacity == 0);
     DrawItem item;
+    shader::MaterialNodes nodes;  // the draw points at a graph it does not own
+    if (authoredNormal) {
+        item.nodes = &nodes;
+        // A normal tilted away from the plane's own face, at length 2: three's setupNormal returns
+        // vec3(normalNode) and never normalizes it, so the target must hold the authored value as written.
+        nodes.normalNode = g::vec3({g::float_(0), g::float_(1), g::float_(1)});
+    }
     item.key = item.id = 1;
     item.kind = MaterialKind::Standard;
     item.positions = &geometry->positions; item.normals = &geometry->normals; item.indices = &geometry->indices;
     item.material = &material;
     item.matrixWorld = {1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1};
+    if (backFace) {
+        // The plane's front face points away: a DoubleSide draw keeps its pixels.
+        item.side = 2;
+        item.matrixWorld = {-1,0,0,0,0,1,0,0,0,0,-1,0,0,0,0,1};
+    }
     for (int frame = 0; frame < 3; ++frame)
         renderer.render(std::span<const DrawItem>(&item, 1), camera(1), LightState{}, {0,0,0,0});
     std::printf("aux targets: %u pass(es), %u draw(s) recorded on a steady frame\n", renderer.lastFrame().auxPasses,
@@ -3437,7 +3461,14 @@ void auxTargets(bool normalOnly, float alphaTest, float opacity, uint32_t sample
         return same;
     };
     // The plane faces the camera; its alpha packs metalness level 7 and roughness 0.5: 2 * 7 + 0.25 + 0.25.
-    CHECK(near(centre(&Renderer::readNormalPixels), cut ? std::array<float, 4>{0, 0, 0, 0} : std::array<float, 4>{0, 0, 1, 14.5f}));
+    // An authored normalNode replaces that facing with its own tilt, as three's setupNormal does, and is
+    // written unchanged: no normalize (this one is length 2) and no back-face flip. Without one the target
+    // holds the geometry normal flipped toward the camera on a DoubleSide back face, so it reads the same
+    // facing as the front does.
+    const std::array<float, 4> targetFacing{0, 0, 1, 14.5f};
+    const std::array<float, 4> targetAuthored{0, 1, 1, 14.5f};  // vec3(0, 1, 1), length 2
+    CHECK(near(centre(&Renderer::readNormalPixels),
+               cut ? std::array<float, 4>{0, 0, 0, 0} : authoredNormal ? targetAuthored : targetFacing));
     if (normalOnly) return;
     CHECK(near(centre(&Renderer::readAlbedoPixels), cut ? std::array<float, 4>{0, 0, 0, 0} : std::array<float, 4>{0.25f, 0.5f, 1, 1}));
     CHECK(near(centre(&Renderer::readEmissivePixels), cut ? std::array<float, 4>{0, 0, 0, 0} : std::array<float, 4>{4, 2, 0, 1}));
@@ -3498,6 +3529,69 @@ void denoiseFaceNormal() {
     CHECK(centre[0] > 20);                 // the patch is there
     CHECK(centre[2] > 20);                 // and its lit neighbours filter into it
 }
+// A material that authors its own normal (three's `normalNode`) writes that normal to the normal target, as three's
+// `normalView` MRT slot does, so a post graph that reads it draws the surface it lights. Both masks: the normal alone
+// and the normal beside the other three targets. The authored value may be any length (three does not normalize it),
+// an alpha-tested contriband must not carry it past the cut, and a DoubleSide back face holds it unflipped.
+void auxTargetsNormalNode() {
+    auxTargets(true, 0, 1, 1, false, true);
+    auxTargets(false, 0, 1, 1, false, true);
+    auxTargets(true, 0.5f, 1, 1, false, true);       // survives the alpha test: the authored normal is written
+    auxTargets(false, 0.5f, 0.4f, 1, false, true);   // cut: every target stays clear, the normal included
+    auxTargets(true, 0, 1, 1, false, true, true);    // a DoubleSide back face keeps vec3(normalNode) as authored
+    auxTargets(true, 0, 1, 1, false, false, true);   // and its geometry normal faces the camera
+}
+// buildLit (Lambert, Phong) never reads a material's `normalNode`, so its lit fragment exports no `out.normal`:
+// such a draw belongs to the shared geometry-normal pass, as every draw without an authored normal does. Routing it
+// to its own aux fragment built a whole lit MRT program per draw for the geometry normal the shared pass already
+// writes, so the count of aux fragments is the observable: zero for Lambert, one for Standard.
+void auxRoutesWrittenNormals() {
+    const auto auxFragments = [](bool authored, MaterialKind kind) {
+        mystral::webgpu::Context context;
+        const bool initialized = context.initializeHeadless();
+        CHECK(initialized);
+        if (!initialized) return uint64_t(0);
+        EventQueue events;
+        Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+        renderer.setSize(16, 16);
+        renderer.setOutput(OutputState{shader::ToneMapping::Linear, 1, false});
+        namespace g = shader::graph;
+        const auto lane = [](const char* name) { return g::swizzle(g::texture(name, g::uv()), "x"); };
+        renderer.setPostGraph(g::bloom(g::vec4({lane("normal"), g::float_(0), g::float_(0), g::float_(0)}), 0, 0, 0));
+        const auto geometry = plane(4, 4);
+        const float facing[12] = {0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1};
+        geometry->normals.resize(12);
+        geometry->normals.write(0, facing, sizeof facing);
+        shader::StandardMaterial material;
+        material.color = {0.25f, 0.5f, 1};
+        DrawItem item;
+        shader::MaterialNodes nodes;
+        if (authored) {
+            item.nodes = &nodes;
+            nodes.normalNode = g::vec3({g::float_(0), g::float_(1), g::float_(1)});
+        }
+        item.key = item.id = 1;
+        item.kind = kind;
+        item.positions = &geometry->positions; item.normals = &geometry->normals; item.indices = &geometry->indices;
+        item.material = &material;
+        item.matrixWorld = {1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1};
+        const uint64_t before = waste::counters().auxFragments.load();
+        for (int frame = 0; frame < 3; ++frame)
+            renderer.render(std::span<const DrawItem>(&item, 1), camera(1), LightState{}, {0,0,0,0});
+        CHECK(renderer.lastFrame().auxPasses == 1);
+        return waste::counters().auxFragments.load() - before;
+    };
+    const uint64_t lambertAuthored = auxFragments(true, MaterialKind::Lambert);
+    const uint64_t lambertPlain = auxFragments(false, MaterialKind::Lambert);
+    const uint64_t standardAuthored = auxFragments(true, MaterialKind::Standard);
+    const uint64_t standardPlain = auxFragments(false, MaterialKind::Standard);
+    std::printf("aux routing: Lambert %llu authored vs %llu plain, Standard %llu vs %llu; aux fragments built\n",
+                static_cast<unsigned long long>(lambertAuthored), static_cast<unsigned long long>(lambertPlain),
+                static_cast<unsigned long long>(standardAuthored), static_cast<unsigned long long>(standardPlain));
+    CHECK(lambertAuthored == 0 && lambertPlain == 0);
+    CHECK(standardAuthored == 1 && standardPlain == 0);
+}
+
 void auxTargetsOnePass() { auxTargets(false, 0, 1); }
 void auxTargetsAlphaTested() {
     auxTargets(false, 0.5f, 1);
@@ -3512,7 +3606,7 @@ void auxTargetsAlphaTested() {
 
 }  // namespace
 
-TN_TEST_MAIN({"history_depth_rows", historyDepthRows}, {"raw_target_scene_only", rawTargetOmitsUnusedOutput}, {"resize_readback", resizeReadback}, {"camera_turn_records", cameraTurnRecords}, {"coplanar_keeps_winner", coplanarKeepsWinner}, {"cull_keeps_main_bundle", cullKeepsMainBundle}, {"emissive_target", emissiveTarget}, {"aux_targets_one_pass", auxTargetsOnePass}, {"aux_targets_alpha_tested", auxTargetsAlphaTested}, {"denoise_face_normal", denoiseFaceNormal}, {"emissive_validation", emissiveValidation}, {"output_ramp", outputRamp},
+TN_TEST_MAIN({"history_depth_rows", historyDepthRows}, {"raw_target_scene_only", rawTargetOmitsUnusedOutput}, {"resize_readback", resizeReadback}, {"camera_turn_records", cameraTurnRecords}, {"coplanar_keeps_winner", coplanarKeepsWinner}, {"cull_keeps_main_bundle", cullKeepsMainBundle}, {"emissive_target", emissiveTarget}, {"aux_targets_one_pass", auxTargetsOnePass}, {"aux_targets_normal_node", auxTargetsNormalNode}, {"aux_routes_written_normals", auxRoutesWrittenNormals}, {"aux_targets_alpha_tested", auxTargetsAlphaTested}, {"denoise_face_normal", denoiseFaceNormal}, {"emissive_validation", emissiveValidation}, {"output_ramp", outputRamp},
              {"traa_alpha", traaAlpha},
              {"traa_reset_seed", traaResetSeed},
              {"traa_camera_velocity", traaCameraVelocity},

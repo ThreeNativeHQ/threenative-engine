@@ -52,8 +52,8 @@ The coast is one ray-marched screen quad, so it is marked with `alwaysRender`; s
 the bolt, whose quads are projected by their own vertex stage. Sound is three clips baked by
 `tools/make-storm-audio.mjs` and played through `AudioBus` in `src/audio/storm.ts`; audio starts on a
 gesture, and pause, mute and tab visibility each hold it. `safe` gates every strike at one door,
-and `prefers-reduced-motion` turns it on at boot. Keep `playtests/survives.playtest.json` as smoke
-proof, and `storm`, `lightning`, `reduced-motion` and `tiers` honest when you change what they assert.
+and `prefers-reduced-motion` turns it on at boot; `state.reducedMotion` publishes that answer for playtests.
+Keep `playtests/survives.playtest.json` as smoke proof, and `storm`, `lightning`, `reduced-motion` and `tiers` honest when you change what they assert.
 To build a game on the storm, keep its rules in a plain module and wire them in `src/scenes/Boot.ts`: `strike()` is the one door every strike passes (its distance and thunder delay are in scope), the frame function runs per-step rules after the camera moves, and the round's state is a `GameState` field the UI reads; `Billboard3D` turns world markers to the camera.
 
 ## Portable authoring contracts

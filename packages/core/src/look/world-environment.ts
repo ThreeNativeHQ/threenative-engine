@@ -77,6 +77,7 @@ import {
 import { GIVisualize, type GIVisualizeMode } from "../render/gi-visualize.js";
 import type { TracedReflections } from "../render/traced-reflections.js";
 import { STARTUP_EXPOSURE } from "../renderer.js";
+import { aoRefusal } from "./ao-admission.js";
 import { AO_MULTIBOUNCE_FIT, UNREAL_AO_MULTIBOUNCE_ALBEDO } from "./ao-multibounce.js";
 import { UNREAL_AO_REACH_PX } from "./ao-reach.js";
 import { AutoExposureNode, applyExposure } from "./auto-exposure.js";
@@ -137,6 +138,29 @@ const TONEMAP: Record<TonemapMode, number> = {
   filmic: CustomToneMapping,
   neutral: NeutralToneMapping,
 };
+
+/**
+ * Whether this launch draws the transparent draws' own target (see `seesThrough` below).
+ *
+ * On unless a launch asks for it off: `TN_TRANSLUCENT=0`, `?tnTranslucent=0`, or the global
+ * `__tnTranslucent = false` a test sets. Only `0` and `false` count, so an old URL that never
+ * named the switch keeps the target. A frame without it takes the occlusion on its sheets, which
+ * is wrong to look at, so this is a measurement switch and not a look: a lane prices the pass by
+ * running the same pose both ways.
+ */
+export function translucentTargetWanted(): boolean {
+  const host = globalThis as { process?: { env?: Record<string, unknown> } } & Record<
+    string,
+    unknown
+  >;
+  const fromEnv = host.process?.env?.TN_TRANSLUCENT;
+  if (fromEnv === "0" || fromEnv === "false") return false;
+  const query = globalThis.location?.search;
+  if (typeof query === "string" && /[?&]tnTranslucent=(?:0|false)(?:&|$)/u.test(query))
+    return false;
+  const set = host.__tnTranslucent;
+  return !(set === false || set === 0 || set === "0" || set === "false");
+}
 
 /**
  * Publishes this install's exposure readiness for the startup's first visible frame
@@ -1027,6 +1051,19 @@ export class WorldEnvironment {
     // Unreal's AO (indirect light only) leaves it. Without a cache (the three.js engine) the whole frame is dimmed.
     const indirectOcclusion =
       ownedEngine && giCache.irradiance !== undefined && options.gtaoIndirectOnly;
+    // Both screen-space stages below darken the frame with an occlusion gathered at the opaque surface's depth, so both
+    // must leave the draws composited over it alone (see the MRT's `translucent` output and `translucentFrame`).
+    // `TN_TRANSLUCENT=0` or `?tnTranslucent=0` keeps the target off the frame — the occlusion then darkens the sheets
+    // over the opaque surface, as it did before the target existed — so one launch can price the pass; a diagnostic,
+    // never a look.
+    const seesThrough = (options.ssgiEnabled || options.gtaoEnabled) && translucentTargetWanted();
+    // Upstream three has no scene-wide translucent target, so each material writes its own: its output, premultiplied
+    // by its alpha, and nothing at all from an opaque material (whose alpha is 1). The owned engine draws the
+    // transparent draws into the target itself (renderer.cpp, planAux), so it declares no output for it.
+    const translucentMaterial = (): Node<"vec4"> =>
+      vec4(output.rgb.mul(diffuseColor.a), diffuseColor.a).mul(
+        diffuseColor.a.lessThan(0.999).select(float(1), float(0)),
+      );
     const scenePass = pass(scene, camera, { samples: options.samples });
     const resolutionSubrect =
       requested.length === 0 || resolutionSubrectRefusal !== undefined
@@ -1055,8 +1092,16 @@ export class WorldEnvironment {
           : {}),
         // AO leaves emission alone: an emitter's underside stays its own radiance (Unreal's AO is indirect only).
         ...(options.gtaoEnabled || options.ssgiEnabled ? { emissive } : {}),
+        // The occlusion and the gather belong to the opaque surface. A translucent draw composites over it after the
+        // opaque pass, so a sheet over an occluded corner took the corner's occlusion with it (a waterfall showed the
+        // cliff's stripes). This target carries what those draws composited, and the two composites below add it back
+        // instead of darkening it, as they already do for `emissive`. Upstream three writes it from each material's
+        // own output; the owned engine draws those draws into it while the graph reads it (renderer.cpp, planAux).
+        ...(seesThrough && !ownedEngine ? { translucent: translucentMaterial() } : {}),
       });
       sceneMrt.setBlendMode("normal", new BlendMode(MaterialBlending));
+      if (seesThrough && !ownedEngine)
+        sceneMrt.setBlendMode("translucent", new BlendMode(MaterialBlending));
       scenePass.setMRT(sceneMrt);
     }
     // Requested lazily, and this is not a micro-optimisation. **Asking a pass for `normal`,
@@ -1101,6 +1146,12 @@ export class WorldEnvironment {
     const gain = exposure === undefined ? float(options.exposure) : exposure.exposureNode;
     const frameGain = localExposure === undefined ? gain : gain.mul(localExposure.gainNode);
     const exposed = applyExposure(colour, frameGain);
+    // What the transparent draws composited over the frame, in the frame's own units: scene-referred, so it takes the
+    // exposure multiplier the emitted radiance takes. The occlusion darkens the opaque surface only, and this part is
+    // added back instead (the `emissive` restore's twin). A frame that runs neither stage never asks for it.
+    const translucentFrame: Node<"vec3"> = seesThrough
+      ? textureNode("translucent").rgb.mul(gain)
+      : vec3(0);
     let released = false;
     const releaseGraph = (): void => {
       if (released) return;
@@ -1237,8 +1288,9 @@ export class WorldEnvironment {
           // The gathered light is incident radiance (E / pi). The surface returns it times its own
           // albedo, which the scene pass writes as the `diffuseColor` target, and a metal returns none
           // of it as diffuse. `ssgiIntensity` is the game's dial on that term.
-          // The owned engine's gather answers occlusion with a constant 1 (GTAO is its own stage): nothing to denoise.
-          const occlusion = wasmEngine ? gi.getAONode() : giDenoise(gi.getAONode());
+          // Both engines answer the occlusion from their own gather, and both are denoised: the gather traces a few
+          // rays a pixel, so an undenoised occlusion reads as a speckle rather than a shadowed corner.
+          const occlusion = giDenoise(gi.getAONode());
           const indirect = giDenoise(gi.getGINode());
           if (options.denoiseEnabled && options.ssgiDenoiseRadius !== undefined)
             (indirect as typeof indirect & { radius: { value: number } }).radius.value =
@@ -1247,8 +1299,9 @@ export class WorldEnvironment {
             .rgb.mul(float(1).sub(metal().r))
             .mul(indirect.rgb)
             .mul(options.ssgiIntensity);
-          // The gather's own AO leaves emission alone too (see the GTAO stage).
-          const emitted = textureNode("emissive").rgb.mul(gain);
+          // The gather's own AO leaves emission alone too (see the GTAO stage), and a translucent draw's own colour
+          // is in the same position: the gather answered for the surface behind it.
+          const emitted = textureNode("emissive").rgb.mul(gain).add(translucentFrame);
           // The contact term multiplied the frame before this stage ran, and the correction below is the one
           // part of the light that frame never carried: it takes the same factor, or a hit darker than the
           // cache subtracts more than the frame still holds and a lit floor under a sphere clips to black.
@@ -1282,6 +1335,16 @@ export class WorldEnvironment {
           releaseAo = () => {};
         },
         build: (input) => {
+          // The reach form occludes indirect light only, so a frame without a baked world cache cannot run it:
+          // the whole-frame multiply it would fall back to darkens the sun, and the threejs arm drops the stage.
+          const refusal = aoRefusal({
+            reach: options.gtaoRadius === undefined,
+            indirectOnly: options.gtaoIndirectOnly,
+            // The preset's own declaration covers the frame whose bake has not finished when the chain is built:
+            // the gather's fallback reads the cache at render time, and the registration is the other signal.
+            hasIndirect: options.finalGatherMethod !== "none" || giCache.irradiance !== undefined,
+          });
+          if (refusal !== undefined) throw new Error(refusal);
           // GTAO rebuilds the normal from the depth, so it agrees with the depth's facets. The pass's
           // smooth vertex normal against a faceted depth (a 32-sided capsule) read as one dark stripe per facet and a
           // stair-step band under the cap; the denoiser, GTAO scale and radius did not change them.
@@ -1440,9 +1503,10 @@ export class WorldEnvironment {
             indirectOcclusion && options.gtaoMultiBounceAlbedo > 0 ? bounce() : undefined;
           contactOcclusion = keeps ?? occlusion.r;
           // Emission is radiance a surface gives off, not light it receives: AO keeps it, as Unreal's AO darkens only
-          // indirect light. The emitted part passes at full weight; the rest takes the occlusion.
+          // indirect light. The emitted part passes at full weight; the rest takes the occlusion. A translucent draw's
+          // own colour is in the same position: the occlusion was gathered for the surface behind it.
           // The chain reads exposed light, so the emitted radiance takes the frame's gain too.
-          const emitted = textureNode("emissive").rgb.mul(gain);
+          const emitted = textureNode("emissive").rgb.mul(gain).add(translucentFrame);
           // Scale the colour only: `input.mul(occlusion.r)` scales alpha too, which darkens the frame a second time.
           const composited = input
             .mul(vec4(occlusion.r, occlusion.r, occlusion.r, 1))
@@ -1487,9 +1551,13 @@ export class WorldEnvironment {
                 .rgb.mul(float(1).sub(metal().r))
                 .mul(cache(position, sceneNormal.normalize()))
                 .mul(frameGain);
+              // Only the opaque part of the frame carries that indirect light: a draw composited over it did not receive it.
+              const opaque = input.rgb.sub(translucentFrame);
               result.assign(
                 max(
-                  input.rgb.sub(indirect.mul(float(1).sub(keeps ?? occlusion.r))),
+                  opaque
+                    .sub(indirect.mul(float(1).sub(keeps ?? occlusion.r)))
+                    .add(translucentFrame),
                   composited.rgb,
                 ),
               );

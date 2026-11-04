@@ -23,6 +23,9 @@ on:
 
 permissions:
   contents: read
+  # The Android V8 payload this pipeline-cache leg reuses is published as a workflow artifact, and
+  # the composite action reads it by name across runs (PRD-628).
+  actions: read
 
 concurrency:
   group: pipeline-cache-${{ github.head_ref || github.ref_name }}

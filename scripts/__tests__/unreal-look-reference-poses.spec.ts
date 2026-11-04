@@ -12,7 +12,7 @@ describe("the reference page starts at a capture pose, not inside the floor plan
     });
     expect(poses.cornell?.length).toBeGreaterThan(0);
     // A template-lit shadow scene opens through ?model=shadow/<name> (PRD-649).
-    expect(poses["shadow/foliage"]?.[0]).toMatchObject({ name: "sun60-canopy" });
+    expect(poses["shadow/wildwood"]?.[0]).toMatchObject({ name: "sun60-closeup" });
     for (const list of Object.values(poses))
       for (const pose of list) expect(pose.position[1]).not.toBe(0);
   });

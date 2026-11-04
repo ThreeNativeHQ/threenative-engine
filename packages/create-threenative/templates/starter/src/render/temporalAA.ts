@@ -13,6 +13,7 @@ import { createTemporalCurrentProducer } from "./temporalCurrentProducer.js";
 import { ownsCurrentInput } from "./temporalCurrentSelection.js";
 export type { ITemporalAAReport, TemporalResetReason } from "./temporalAAStage.js";
 import { createTemporalAAResolve } from "./temporalAAResolve.js";
+import { type ITemporalHistoryWeighting, historyWeighting } from "./temporalResolve.js";
 import type { TemporalResolveNode } from "./temporalResolveDepth.js";
 
 /** Reuse TRAANode's jitter, depth rejection and variance clipping. In a RenderChain `traa` factory
@@ -24,10 +25,11 @@ export function createTemporalAA(
   velocityInput: TextureNode,
   camera: PerspectiveCamera | OrthographicCamera,
   currentPass?: PassNode,
+  requested?: ITemporalHistoryWeighting,
 ) {
-  const currentProducer = ownsCurrentInput(colour, depthInput, velocityInput, camera, currentPass)
-    ? createTemporalCurrentProducer(currentPass)
-    : undefined;
+  const raw4 = ownsCurrentInput(colour, depthInput, velocityInput, camera, currentPass);
+  const weighting = historyWeighting(requested, raw4);
+  const currentProducer = raw4 ? createTemporalCurrentProducer(currentPass) : undefined;
   const depth = currentProducer?.depth ?? depthInput;
   const velocity = currentProducer?.motion ?? velocityInput;
   const node = traa(colour, depth, velocity, camera);
@@ -46,6 +48,7 @@ export function createTemporalAA(
     node as TemporalResolveNode,
     jitterOffset,
     currentProducer,
+    weighting,
   );
   const frames = createTemporalAAFrame(
     internals,
@@ -54,6 +57,8 @@ export function createTemporalAA(
     historyValid,
     resolve.equations,
     currentProducer?.publishDepth,
+    weighting.historyScale,
+    resolve.levers,
   );
   const hooks = createTemporalAAHooks(frames.jitterInput, () => internals.clearViewOffset());
   let ownedViewOffset: { width: number; height: number } | null = null;
@@ -152,10 +157,6 @@ export function createTemporalAA(
         pending = "resize";
       const reason = pending;
       frames.draw(frame.renderer, reason !== null, report.frame + 1);
-      if (reason !== null && width === frames.display.x && height === frames.display.y) {
-        frame.renderer.copyTextureToTexture(source.texture, internals._resolveRenderTarget.texture);
-        frame.renderer.copyTextureToTexture(source.texture, internals._historyRenderTarget.texture);
-      }
       report = {
         frame: report.frame + 1,
         historyValid: reason === null,

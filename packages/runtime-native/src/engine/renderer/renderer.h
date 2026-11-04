@@ -162,6 +162,10 @@ struct DrawItem {
     Matrix matrixWorld{};
     // A merged draw retains its first member's render-list origin when its model becomes identity.
     std::optional<std::array<double, 3>> sortOrigin;
+    /** The geometry's bounding-sphere centre, local: three's render list keys a mesh by that point in
+     *  world space, not by the object's origin (renderers/common/StandardDrawingPipeline.js:236-241), and
+     *  a shape whose vertices sit off-centre ranks the other way round. `sortOrigin` wins when it is set. */
+    std::optional<std::array<double, 3>> sortCenter;
     const shader::StandardMaterial* material = nullptr;
     /** The material's diffuse `map`, if any: the fragment samples it at `uvTransform * vec3(uv, 1)`. */
     const Texture* map = nullptr;
@@ -509,6 +513,14 @@ public:
     const TemporalStatus& temporalStatus() const { return temporalStatus_; }
     /** The PCF rotation's frame term (`shadowNoiseFrame`): the temporal pass's frame mod 8 (Unreal's StateFrameIndexMod8), else 0. */
     double shadowNoiseFrame() const { return temporalStatus_.active ? double(temporalStatus_.frame % 8) : 0; }
+    /**
+     * Unreal's automatic view mip bias under temporal upscaling (`viewMipBias`): material textures sample
+     * log2(scene fraction) - 0.3 mips sharper, at least -2, quantized to 1/128, so the jittered history gathers
+     * texture detail the input raster alone cannot hold (UE 5.8.3: Engine/Source/Runtime/Renderer/Private/
+     * SceneVisibility.cpp:5337-5351, r.ViewTextureMipBias.Offset -0.3, .Min -2, .Quantization 1024 at :179-194).
+     * 0 without a temporal pass, as Unreal's non-upscaled views.
+     */
+    double viewMipBias() const;
     void cutHistory();
     const OutputState& output() const { return output_; }
 
@@ -866,7 +878,7 @@ private:
         kSpecularIntensityMapUvTransform, kClearcoatMapUvTransform, kClearcoatRoughnessMapUvTransform,
         kClearcoatNormalMapUvTransform, kAoMapIntensity, kClearcoat, kClearcoatRoughness, kClearcoatNormalScale, kBumpScale,
         kPmremMaxMip, kPmremRotation, kScreenSize, kCameraNear, kCameraFar,
-        kModelNormalMatrix, kSubsurfaceColor, kShadowNoiseFrame, kSlotCount
+        kModelNormalMatrix, kSubsurfaceColor, kShadowNoiseFrame, kViewMipBias, kSlotCount
     };
     // Per direct light i, `light{i}<Field>` (shader::LightLayout).
     enum LightField : uint8_t { kLightColor, kLightDirection, kLightPosition, kLightDistance, kLightDecay, kLightAxis,
@@ -1221,6 +1233,11 @@ private:
     WGPUTextureView albedoView_ = nullptr;
     WGPUTexture emissiveTexture_ = nullptr;
     WGPUTextureView emissiveView_ = nullptr;
+    /** What the transparent draws composited over the frame, for a post pass that must keep the occlusion off them
+     *  (three's MRT `translucent`): the same lit fragment each draw wrote to the colour target, drawn in its own pass
+     *  over the colour pass's depth. Created with the first such frame, released with the targets. */
+    WGPUTexture translucentTexture_ = nullptr;
+    WGPUTextureView translucentView_ = nullptr;
     /** The normal-target programs, one per face-normal variant: smooth, DoubleSide smooth, flat (see planAux). */
     std::array<shader::StageModule, 3> normalFragments_;
     /** normalFragments_ for Standard and Physical draws: the alpha also packs metalness and roughness. */
@@ -1238,6 +1255,8 @@ private:
     void applySampleCount();
     uint64_t postViewsStamp() const;
     void collectPostSources();
+    /** The post graph samples "translucent": the transparent draws get their own target and pass (planAux). */
+    bool translucentRequested_ = false;
     GraphTextures postTextures_;
     std::vector<shader::graph::Node> postTextureNodes_;
     struct RttTarget {

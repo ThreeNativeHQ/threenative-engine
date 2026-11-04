@@ -19,6 +19,7 @@
 // probe on `scene.environment`, measured at **~6.3 ms of an 18-19 ms Pixel 8 frame**. It is set
 // in `sky.ts`, not in this file.
 //
+import { LEVEL_EXPOSURE } from "./atmosphere.js";
 import type { IGradeSettings } from "./grade.js";
 import type { IWorldEnvironmentOptions } from "./worldEnvironment.js";
 
@@ -110,13 +111,11 @@ const shared: IWorldEnvironmentOptions = {
   bloomRadius: 0.6,
   bloomStrength: 0.22,
   bloomThreshold: 1,
-  // Unreal's exposure with its meter off: the project setting pins the average luminance to mid grey
-  // under a 1 cd/m2 white point at a 1.2 saturation constant (SceneView.cpp:2060-2069), and the meter's
-  // rule key / average then gives 0.36 / (0.18 / 1.2) = 2.4 (PostProcessEyeAdaptation.cpp:810-821).
-  // The L1 cells, lit by the 6 lux sun (`atmosphere.ts`), match Unreal's at this value. With auto
-  // exposure on this is only the value used while the meter is off. The key is `exposure.ts`'s, written
-  // out here because this file loads without it (unreal-look-gi-tier.spec); core's preset derives it.
-  exposure: (0.18 * 2 ** 1) / (0.18 / 1.2),
+  // Unreal draws a level with no post-process override at 2.4, not 1 (PRD-646 round 6): the meter's
+  // white point is 1/1.2 and the engine's +1 EV bias multiplies it. `atmosphere.ts` derives it and
+  // carries the citations; the sun's lux there is the other half of the same port, so change both
+  // together. With auto exposure on this is only the value used while the meter is off.
+  exposure: LEVEL_EXPOSURE,
   tonemapMode: "filmic",
   // Unreal's VignetteIntensity, cosine-fourth law (Scene.cpp, FPostProcessSettings constructor).
   vignetteAmount: 0.4,

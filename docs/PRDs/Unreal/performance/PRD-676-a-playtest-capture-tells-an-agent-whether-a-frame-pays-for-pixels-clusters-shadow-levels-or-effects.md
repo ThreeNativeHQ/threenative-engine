@@ -70,7 +70,7 @@ capability manifest lists these readouts:
   (state, reason, transitions) per emitter. `ParticleSignificance.shed`
   (`packages/core/src/particle-significance.ts:77`) is the global effect budget.
 - PRD-539's `scripts/verify-temporal-motion.ts` reports a rejected-history ratio offline
-  ([PRD-539](PRD-539-low-resolution-temporal-reconstruction-quality-and-cost.md), its first box).
+  ([PRD-539](../../done/PRD-539-low-resolution-temporal-reconstruction-quality-and-cost.md), its first box).
 
 Two gaps are known. First, no number says how many fragments a pixel paid for. PRD-228 named the
 cost of that gap: a 9–11 ms flat town pass on Mali, and "nobody knows whether that is vertex/binning

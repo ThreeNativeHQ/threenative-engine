@@ -52,6 +52,7 @@ import {
   measure,
   passes,
 } from "./compare.js";
+import { diagnosisCellsIn, refuseDiagnosis } from "./engineMode.js";
 import { captureMotionRun, compareMotion } from "./motion-run.js";
 import { type IMotionRun, validateMotion } from "./motion.js";
 import { contactGap, linearLuminance, pairedPenumbra } from "./penumbra.js";
@@ -144,13 +145,22 @@ export interface ISceneJson {
     innerConeDeg?: number;
     outerConeDeg?: number;
   }[];
-  exposure: { ev100: number; exposureScale: number } | null;
+  /** The level's fixed exposure. `method` and `bias` feed `levelExposure` (`scaffold/render/atmosphere.ts`). */
+  exposure: {
+    ev100: number;
+    exposureScale: number;
+    /** `aem_manual` when a post-process volume holds the level at one EV100. */
+    method?: string;
+    bias?: number;
+  } | null;
   /** An exponential height fog the scene carries (PRD-643), `null` or absent when it has none. */
   fog?: ISceneFog | null;
   /** `sun`: a template-lit scene's poses run once per sun, named `<sun>-<pose>` (PRD-649). */
   poses: { name: string; position: Vec3; target: Vec3; hfovDeg: number; sun?: string }[];
   /** A template-lit scene: Unreal's default level, one level per sun. */
   template?: "default";
+  /** The level's sun light, which a template scene draws at this intensity (metres, lux); null when it has none. */
+  sun?: { intensityLux: number; temperatureK: number; sourceAngleDeg: number } | null;
   suns?: { name: string; elevationDeg: number; azimuthDeg: number }[];
   /** PRD-638 motion runs, as authored in scene.py (`pan`, `switch`): a Level Sequence per run. */
   motion?: Record<string, IMotionRun>;
@@ -1090,6 +1100,11 @@ export function compareGi(args: readonly string[]): number {
   const layerFlag = flag(args, "--layer");
   if (layerFlag !== undefined) {
     const root = path.resolve(flag(args, "--captures") ?? path.join(REFERENCE, "captures"));
+    // A frame drawn on the threejs diagnosis arm answers what a renderer draws; no verdict reads it (PRD-646).
+    refuseDiagnosis(
+      diagnosisCellsIn(path.join(root, "threenative")),
+      `the ${layerFlag} row verdict`,
+    );
     const value = flag(args, "--scene") ?? "gi";
     const names = sceneNames(
       value,
@@ -1182,6 +1197,16 @@ export function compareGi(args: readonly string[]): number {
       );
     }
     if (args.includes("--write-stats")) {
+      // The committed statistics are cut from the Unreal frames, but the run that asks for them holds
+      // the ThreeNative frames of the same round: a diagnosis arm may not seed a gate input either.
+      refuseDiagnosis(
+        diagnosisCellsIn(
+          path.resolve(
+            flag(args, "--threenative") ?? path.join(REFERENCE, "captures", "threenative"),
+          ),
+        ),
+        `${name} reference-stats.json`,
+      );
       if (!Object.keys(stats).length) fail("MISSING_CELL", `${name}: no captured variant`);
       // The ID frames are the region masks: a few kilobytes each, and what makes the offline compare exact.
       mkdirSync(path.join(sceneDir(name), "id"), { recursive: true });

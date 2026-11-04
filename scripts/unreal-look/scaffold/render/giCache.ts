@@ -1339,7 +1339,7 @@ const NOT_COPIED = /^(?:is[A-Z]|_)|^(?:constructor|id|uuid|version|type)$/;
  * cut-out, the sides and the blending carry over. three holds a field as an own property and the native engine as an accessor
  * on the class, which `for in` never lists, so the fields are found by walking the prototype chain's descriptors.
  */
-function copyFields(source: object, twin: Record<string, unknown>): void {
+export function copyFields(source: object, twin: Record<string, unknown>): void {
   for (
     let at: object | null = source;
     at !== null && at !== Object.prototype;

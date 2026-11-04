@@ -356,6 +356,35 @@ export class FixedStepLoop {
     this.#settleSteps = settleSteps;
     this.#lastTime = Number.POSITIVE_INFINITY;
   }
+
+  /**
+   * Spend the settling pass now, from a caller that knows the world's scene is live.
+   *
+   * A freeze names the steps the world needs; the loop waits for the first live frame to spend
+   * them. On a game that boots through a loading scene that frame is often still the loading
+   * scene: the steps ran, the world's own clock never saw them, and how many were lost depended on
+   * how fast the machine booted. Measured on the sailing template's pose at the same anchor, the
+   * native engine was 60 steps (1.0 s) ahead of the legacy one for exactly this reason. A runner
+   * freezes with zero steps and calls this once the start scene has entered, so the settle lands
+   * on the world on every engine.
+   */
+  settleNow(steps = FROZEN_SETTLE_STEPS): void {
+    if (!Number.isInteger(steps) || steps < 0)
+      throw new Error("settleNow steps must be a non-negative integer.");
+    this.#primePending = false;
+    if (steps === 0) return;
+    // `advance()` freezes the clock, because a counted step is a statement that the run counts
+    // ticks. A settle asked of a loop that was live makes no such statement — a wall-clock run
+    // measures frames — so it hands the loop back the way it found it instead of leaving a profile
+    // of a game that stopped playing.
+    const wasFrozen = this.#clockFrozen;
+    this.advance(steps);
+    if (wasFrozen) return;
+    // The transition back banks no elapsed time, exactly as `_setClockMode("wall-clock")` does:
+    // the 60 steps are already on the tick count, and the next live frame owns the time after it.
+    this.#clockFrozen = false;
+    this.#lastTime = undefined;
+  }
   /** True once the live clock no longer drives the simulation. */
   get clockFrozen(): boolean {
     return this.#clockFrozen;

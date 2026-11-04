@@ -1447,17 +1447,22 @@ bool TslScopes::call(const std::string& name, const TslArg* receiver, const std:
         return true;
     }
     if (name == "Loop") {
-        // Loop(end, index, body [, start [, step]]): the index runs start, start + step, ... while below `end`.
+        // Loop(end, index, body [, start [, step [, inclusive]]]): the index runs start, start + step, ...
+        // while below `end`, or while at most `end` when `inclusive` is set (three's `condition: "<="`).
         // `end` and `start` are whole numbers or integer nodes, `step` a positive whole number.
-        if (args.size() < 3 || args.size() > 5) throw std::runtime_error("expected 3 to 5 arguments");
+        if (args.size() < 3 || args.size() > 6) throw std::runtime_error("expected 3 to 6 arguments");
         auto& statements = open().back().statements;
-        const auto whole = [](double n) { return n >= 0 && n <= std::numeric_limits<int32_t>::max() && n == std::floor(n); };
-        const auto integer = [&](const TslArg& a, const char* what) -> g::Node {
+        const auto whole = [](double n, bool signed_) {
+            return (signed_ || n >= 0) && n >= std::numeric_limits<int32_t>::min() && n <= std::numeric_limits<int32_t>::max() &&
+                   n == std::floor(n);
+        };
+        const auto integer = [&](const TslArg& a, const char* what, bool signed_) -> g::Node {
+            const std::string expected = std::string(signed_ ? "an i32 " : "a nonnegative i32 ") + what;
             if (a.kind == TslArg::Kind::Number) {
-                if (!whole(a.number)) throw std::runtime_error(std::string("expected a nonnegative i32 ") + what);
+                if (!whole(a.number, signed_)) throw std::runtime_error("expected " + expected);
                 return g::int_(static_cast<int32_t>(a.number));
             }
-            if (a.kind != TslArg::Kind::Node || !a.node) throw std::runtime_error(std::string("expected a nonnegative i32 ") + what);
+            if (a.kind != TslArg::Kind::Node || !a.node) throw std::runtime_error("expected " + expected);
             if (a.node->type == Type::i32()) return a.node;
             auto convert = std::make_shared<g::NodeData>();
             convert->kind = g::Kind::Convert;
@@ -1465,15 +1470,18 @@ bool TslScopes::call(const std::string& name, const TslArg* receiver, const std:
             convert->args = {a.node};
             return convert;
         };
-        const g::Node end = integer(args[0], "count");
-        const g::Node start = args.size() > 3 ? integer(args[3], "start") : g::int_(0);
+        const g::Node end = integer(args[0], "count", false);
+        // A loop may start below zero: three's own transpiler writes `start: int(-1)` for a 2D kernel.
+        const g::Node start = args.size() > 3 ? integer(args[3], "start", true) : g::int_(0);
         const double step = args.size() > 4 && args[4].kind == TslArg::Kind::Number ? args[4].number : 1;
         if (args.size() > 4 && args[4].kind != TslArg::Kind::Number) throw std::runtime_error("Loop step must be a whole number");
-        if (step < 1 || !whole(step)) throw std::runtime_error("Loop step must be a positive whole number");
+        if (step < 1 || !whole(step, false)) throw std::runtime_error("Loop step must be a positive whole number");
         const auto constant = [](const g::Node& n) { return n->kind == g::Kind::Constant; };
+        const bool inclusive = args.size() > 5 && args[5].kind == TslArg::Kind::Number && args[5].number != 0;
         g::Node count = end;
         const bool startZero = constant(start) && start->bits == 0;
         if (!startZero) count = g::sub(end, start);
+        if (inclusive) count = g::add(count, g::int_(1));
         if (step > 1) count = g::div(g::add(count, g::int_(static_cast<int32_t>(step) - 1)), g::int_(static_cast<int32_t>(step)));
         if (args[1].kind != TslArg::Kind::Node || !args[1].node || args[1].node->kind != g::Kind::LoopIndex)
             throw std::runtime_error("Loop needs the index Loop:index made");

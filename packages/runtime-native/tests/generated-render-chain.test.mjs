@@ -32,37 +32,22 @@ test("the conformance registry binds the composed render-chain scenario to deskt
   const scenarioPath = join(runtimeRoot, entry.scenario);
   assert.ok(existsSync(scenarioPath), `scenario must exist: ${entry.scenario}`);
   const scenario = readJson(scenarioPath);
-  // High and medium run Unreal's temporal AA (traa) after AO; low keeps the SMAA antialias stage.
-  const finishing = ["bloom", "vignette"];
-  const lowFinishing = [...finishing, "antialias"];
-  const excluded = ["grade", "grain"];
-  const fullChain = {
-    contributions: { graphOutputChanged: ["ambientOcclusion", "traa", "motionBlur", ...finishing] },
+  // Sharp AA on every tier (owner, 2026-10-28): 4x MSAA plus the SMAA antialias stage, no temporal AA and no
+  // camera motion blur. High adds SSGI over medium; low drops the contact occlusion.
+  const finishing = ["bloom", "vignette", "antialias"];
+  const excluded = ["traa", "motionBlur", "grade", "grain"];
+  const chain = (stages, dropped, tier) => ({
+    contributions: { graphOutputChanged: [...stages, ...finishing] },
     stages: {
-      includes: ["ambientOcclusion", "traa", "motionBlur", ...finishing],
-      excludes: excluded,
-      order: ["ambientOcclusion", "traa", "motionBlur", ...finishing],
+      includes: [...stages, ...finishing],
+      excludes: [...dropped, ...excluded],
+      order: [...stages, ...finishing],
     },
-    tier: "high",
-  };
-  const mediumChain = {
-    contributions: { graphOutputChanged: ["ambientOcclusion", "traa", ...finishing] },
-    stages: {
-      includes: ["ambientOcclusion", "traa", ...finishing],
-      excludes: ["motionBlur", ...excluded],
-      order: ["ambientOcclusion", "traa", ...finishing],
-    },
-    tier: "medium",
-  };
-  const lowChain = {
-    contributions: { graphOutputChanged: lowFinishing },
-    stages: {
-      includes: lowFinishing,
-      excludes: ["ambientOcclusion", "motionBlur", ...excluded],
-      order: lowFinishing,
-    },
-    tier: "low",
-  };
+    tier,
+  });
+  const fullChain = chain(["ambientOcclusion", "ssgi", "ssr"], [], "high");
+  const mediumChain = chain(["ambientOcclusion", "ssr"], ["ssgi"], "medium");
+  const lowChain = chain(["ssr"], ["ambientOcclusion", "ssgi"], "low");
   assert.deepEqual(scenario.assert?.renderChain, {
     ...fullChain,
     perAdapter: {

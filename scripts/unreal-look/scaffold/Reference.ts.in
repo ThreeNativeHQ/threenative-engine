@@ -35,6 +35,7 @@ import { SUN_KELVIN, temperatureColour } from "../render/atmosphere.js";
 import { setupLighting, shadeLikeSubstrate } from "../render/lighting.js";
 import { setupPost } from "../render/postprocessing.js";
 import { qualityPreset, resolveQualityTier } from "../render/quality.js";
+import { noSpecularTwin } from "../render/specular.js";
 import * as skyModule from "../render/sky.js";
 import { SUN_DIRECTION, setupSky } from "../render/sky.js";
 import { WorldEnvironment } from "../render/worldEnvironment.js";
@@ -203,6 +204,17 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
       // Below L2 Unreal draws no atmosphere (r.SkyAtmosphere 0), so no air dims or tints the sun.
       // The template's sun carries the air's transmittance from creation, so both arms reset it here.
       if (level < 2) key.color.setRGB(...temperatureColour(SUN_KELVIN));
+      // Diagnosis knob ?specular=0, the same pair as the calibration scene's (render/specular.ts carries the
+      // citations): it runs before `shadeLikeSubstrate`, so the twin takes the substrate diffuse too.
+      // ?specular=f0 is round 7's F0-only reading, kept so its recorded arms stay reproducible.
+      const specular = params.get("specular");
+      if (specular !== null)
+        model.traverse((object) => {
+          if (!(object instanceof Mesh)) return;
+          object.material = Array.isArray(object.material)
+            ? object.material.map((m) => noSpecularTwin(m as MeshStandardMaterial, specular === "f0"))
+            : noSpecularTwin(object.material as MeshStandardMaterial, specular === "f0");
+        });
       // PRD-653, PRD-632: the sun meets a rough surface as Unreal's Substrate does, in both arms (the template ships it).
       // Diagnosis knob off=roughDiffuse is three's Lambert with its energy conservation.
       if (!OFF.has("roughDiffuse")) shadeLikeSubstrate(model);

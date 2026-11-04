@@ -1124,3 +1124,13 @@ test.each([-1, 0.5, Number.MAX_SAFE_INTEGER + 1, "600", null, true])("startTick 
   await writeFile(join(directory, "scenario.json"), JSON.stringify({ name: "anchor", schemaVersion: 1, startTick, steps: [{ waitFrames: 1 }] }));
   await expect(loadPlaytestScenario(directory, "scenario.json")).rejects.toThrow("startTick");
 });
+
+test("drawEvery preserves a positive safe integer and requires the fixed-step provider", async () => {
+  const directory = await makeTempDir("playtest-draw-every-");
+  for (const drawEvery of [1, 60, Number.MAX_SAFE_INTEGER]) {
+    await writeFile(join(directory, "scenario.json"), JSON.stringify({ drawEvery, name: "cadence", schemaVersion: 1, steps: [{ waitFrames: 1 }] }));
+    const parsed = await loadPlaytestScenario(directory, "scenario.json");
+    expect(parsed.drawEvery).toBe(drawEvery);
+    expect(requiredPlaytestCapabilities(parsed)).toContain("runtime.fixedStep");
+  }
+});
