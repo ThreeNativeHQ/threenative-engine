@@ -20,6 +20,7 @@ import {
 import { HDRLoader } from "three/addons/loaders/HDRLoader.js";
 import {
   attribute,
+  cameraProjectionMatrix,
   cameraViewMatrix,
   dFdx,
   dFdy,
@@ -35,14 +36,17 @@ import {
   normalWorldGeometry,
   positionGeometry,
   positionLocal,
+  positionView,
   positionWorld,
   sin,
   smoothstep,
   texture,
   time,
+  uniform,
   uv,
   vec2,
   vec3,
+  vec4,
 } from "three/tsl";
 import { MeshPhysicalNodeMaterial, type Node } from "three/webgpu";
 import { GROUND_MAPS, ROCKFACE_MAPS, WORLD_ROCKS } from "../world/terrainAssets.js";
@@ -245,6 +249,38 @@ function stoneSurface(
   material.roughnessNode = mix(0.96, 0.82, snow);
   if (source.normalMap)
     material.normalNode = normalMap(texture(source.normalMap), vec2(mix(1, 0.2, snow)));
+}
+
+/** Needle pixels nearer the lens than this are cut, in metres. */
+const CANOPY_NEAR = 1.2;
+/** Bark is cut only at the lens: a limb sliced further out shows a hollow, sawn end. */
+const BARK_NEAR = 0.4;
+/** Radius of the sight line kept clear of tree pixels from the lens to the hero, in metres. */
+const SIGHT_RADIUS = 1.2;
+
+/**
+ * The hero the orbit camera aims at, in world space. `game.ts` writes `aim` each frame and sets
+ * `radius` to {@link SIGHT_RADIUS} while the player view is live, 0 for the fixed views.
+ */
+export const sightLine = { aim: uniform(new Vector3()), radius: uniform(0) };
+export { SIGHT_RADIUS };
+
+/**
+ * The orbit camera swings through crowns: a branch a metre from the lens fills the screen, and a
+ * stand between the lens and the hero hides the hero. Tree pixels nearer than `CANOPY_NEAR`, or
+ * inside a capsule on the line from the lens to the hero, are cut, as a third-person camera fades
+ * the occluders of its character. The cut is hard: without TAA a dithered band reads as a grid.
+ * Only needles take the sight cut and the full near cut: sliced bark ends in mid-air or hollow.
+ * An orthographic view (P[3][3] = 1) is a shadow page or the impostor baker, so it keeps the tree.
+ */
+function nearCameraFade(material: MeshPhysicalNodeMaterial, needles: boolean): void {
+  const ortho = cameraProjectionMatrix.mul(vec4(0, 0, 0, 1)).w.greaterThan(0.5);
+  const aim = cameraViewMatrix.mul(vec4(sightLine.aim, 1)).xyz;
+  const along = dot(positionView, aim).div(dot(aim, aim).max(1e-4));
+  const off = length(positionView.sub(aim.mul(along.clamp(0, 1))));
+  const sight = along.greaterThan(0).and(along.lessThan(1)).and(off.lessThan(sightLine.radius));
+  const near = length(positionView).lessThan(needles ? CANOPY_NEAR : BARK_NEAR);
+  material.maskNode = ortho.or((needles ? near.or(sight) : near).not());
 }
 
 /** The coverage, interior depth and normal a cut-out section is drawn with. */
@@ -520,6 +556,7 @@ function surface(
     }
   } else if (source.map) tintedFoliage(material, context, snowMap);
   applyWind(material, context);
+  if (canopy) nearCameraFade(material, cutout);
   // Image-based sky light, as Wildwood lights the same Fab packs (Kloofendal at 1.8 × 0.629).
   // Without it a shaded needle card gets only the hemisphere fill and falls to one flat dark value.
   // Per material, not `scene.environment`: the ground is tuned to the fill alone and cannot opt out.

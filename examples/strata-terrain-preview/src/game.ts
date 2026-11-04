@@ -39,8 +39,19 @@ import { createGroundSampler } from "./render/groundSampler.js";
 import { type HorizonSurroundings, setHorizonSurroundings } from "./render/horizon.js";
 import { createLoadingScreen } from "./render/loading.js";
 import { createOcean, createWaterMesh } from "./render/ocean.js";
-import { type IOrbitCamera, type WallProbe, createOrbitCamera } from "./render/orbitCamera.js";
-import { type ICanopyComparison, loadPack, loadSkyLight } from "./render/pack.js";
+import {
+  CAMERA_RIG,
+  type IOrbitCamera,
+  type WallProbe,
+  createOrbitCamera,
+} from "./render/orbitCamera.js";
+import {
+  type ICanopyComparison,
+  SIGHT_RADIUS,
+  loadPack,
+  loadSkyLight,
+  sightLine,
+} from "./render/pack.js";
 import { fetchBakedFile, loadPlacements } from "./render/placements.js";
 import { loadPreparedProps } from "./render/prepared.js";
 import { createPropSurfaces } from "./render/propMaterials.js";
@@ -643,6 +654,7 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
       ctx.afterPhysics((dt) => {
         if (vista || ctx.state.getState().view !== "player") {
           this.#sky?.focusShadows(undefined);
+          sightLine.radius.value = 0;
           return;
         }
         // The mouse turns the camera only while the canvas holds the pointer lock a click took.
@@ -651,6 +663,12 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
           orbit.look(look.x, look.y);
         }
         orbit.update(actor.position, player.velocity, dt, probe);
+        sightLine.aim.value.set(
+          actor.position.x,
+          actor.position.y + CAMERA_RIG.aimHeight,
+          actor.position.z,
+        );
+        sightLine.radius.value = SIGHT_RADIUS;
         // Shadows centre on the hero, not the orbiting eye: a camera turn re-renders no shadow page.
         this.#sky?.focusShadows(actor.position);
       });
