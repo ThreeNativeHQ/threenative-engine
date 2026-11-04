@@ -36,7 +36,11 @@ import {
 import { BENCHMARK, type ViewName } from "./render/benchmark.js";
 import { BIOMES, type IWorldBiome, type WorldName, measureBiome } from "./render/biomes.js";
 import { createGroundSampler } from "./render/groundSampler.js";
-import { type HorizonSurroundings, setHorizonSurroundings } from "./render/horizon.js";
+import {
+  type HorizonSurroundings,
+  horizonWalkGeometry,
+  setHorizonSurroundings,
+} from "./render/horizon.js";
 import { createLoadingScreen } from "./render/loading.js";
 import { createOcean, createWaterMesh } from "./render/ocean.js";
 import {
@@ -194,6 +198,7 @@ const initialState = {
   erosionDepositSamples: 0,
   frames: 0,
   travel: 0,
+  edgeOvershoot: Number.NEGATIVE_INFINITY,
   grounded: false,
   contactSamples: 0,
   maxContactError: 0,
@@ -579,14 +584,25 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
             },
           ),
         });
-        // The playable square ends where the heightfield does. Four fixed walls 2 m inside its edge
-        // keep the player on ground that has a collider, as a level's blocking volumes do: past the
-        // edge there is no collider to stand on, only the horizon ring to fall past.
-        const edge = data.size / 2;
+        // The surveyed hills past the square are ground too, out to the walk band: their collider is
+        // the drawn triangles, so feet meet what the eye sees. Four fixed walls 2 m inside the band's
+        // outer edge are the level's blocking volumes; past them is only scenery.
+        const horizon = mesh.getObjectByName("temperate-distant-ridges");
+        if (!(horizon instanceof Mesh)) throw new Error(`World ${world} has no horizon ring`);
+        const band = horizonWalkGeometry(horizon.geometry);
+        const surroundings = new RigidBody3D({
+          physics: ctx.physics,
+          type: "fixed",
+          entity: "terrain",
+          collisionLayer: 4,
+          position: { x: mesh.position.x, y: mesh.position.y, z: mesh.position.z },
+          shape: CollisionShape3D.fromMesh(new Mesh(band.geometry), "trimesh"),
+        });
+        const edge = data.size / 2 + band.extent;
         const walls = [-1, 1].flatMap((side) =>
           [
-            { x: side * edge, z: 0, width: 4, depth: data.size },
-            { x: 0, z: side * edge, width: data.size, depth: 4 },
+            { x: side * edge, z: 0, width: 4, depth: edge * 2 },
+            { x: 0, z: side * edge, width: edge * 2, depth: 4 },
           ].map(
             ({ x, z, width, depth }) =>
               new RigidBody3D({
@@ -602,6 +618,7 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
           mesh,
           dispose: () => {
             for (const wall of walls) wall.dispose();
+            surroundings.dispose();
             ground.dispose();
             mesh.geometry.dispose();
             (mesh.material as MeshStandardMaterial).dispose();
@@ -1218,6 +1235,8 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
       let frames = 0;
       let propCounts = { draws: 0, instances: 0, triangles: 0 };
       let travel = 0;
+      // Metres past the playable square's edge the player reached: onto the surroundings' hills.
+      let edgeOvershoot = Number.NEGATIVE_INFINITY;
       currentView = `${world}:player`;
       viewVisit = beginViewVisit();
       firstViewGpuFrame = Number.POSITIVE_INFINITY;
@@ -1290,9 +1309,19 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
         // steps precede, so its contact is observed once its spawn region is ready.
         // A staged world streams around the camera, so a benchmark view far from the player has no
         // ground under it; the player is held there (see `update`) and its contact is not asked for.
+        // Past the square the player stands on the surroundings, whose collider is their drawn
+        // triangles (see the walls above): physics alone answers there, and no picking tree is built.
+        const onSurroundings =
+          !stage &&
+          Math.max(Math.abs(actor.position.x), Math.abs(actor.position.z)) > data.size / 2 - 1;
+        edgeOvershoot = Math.max(
+          edgeOvershoot,
+          Math.max(Math.abs(actor.position.x), Math.abs(actor.position.z)) - data.size / 2,
+        );
         if (!stage || (spawnReady && ctx.state.getState().view === "player")) {
           const terrainTargets = stage ? forestStageTerrainTargets(stage.world) : mesh;
           const visual =
+            !onSurroundings &&
             terrainTargets &&
             ctx.raycast({
               origin: new Vector3(actor.position.x, 300, actor.position.z),
@@ -1301,7 +1330,7 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
             });
           // The same line as the visual ray, started a metre above the feet: from 300 m, a stage
           // tree the player stands against is the first body under it, not the ground.
-          const start = stage ? actor.position.y + 1 : 300;
+          const start = stage || onSurroundings ? actor.position.y + 1 : 300;
           const lead = (300 - start) / 400;
           const physical = ctx.physics.directSpaceState.intersectRay({
             from: { x: actor.position.x + lead, y: start, z: actor.position.z + lead },
@@ -1309,15 +1338,21 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
             // The kit's ground keeps the default layer, like the player's mask above.
             collisionMask: stage ? 1 : 4,
           });
-          if (!visual || !physical || (stage && physical.body.id !== stage.ground.body.id))
+          if (
+            (!visual && !onSurroundings) ||
+            !physical ||
+            (stage && physical.body.id !== stage.ground.body.id)
+          )
             throw new Error(
               `Missing playable terrain contact: world=${world}, frame=${frames}, player=${actor.position.toArray()}, visual=${!!visual}, physical=${!!physical}, body=${physical?.body.id}:${physical?.body.entity}, expectedGround=${stage?.ground.body.id}, terrain=${mesh?.position.toArray() ?? "stage"}`,
             );
-          maxContactError = Math.max(
-            maxContactError,
-            Math.abs(visual.point.y - physical.position.y),
-          );
-          contactSamples++;
+          if (visual) {
+            maxContactError = Math.max(
+              maxContactError,
+              Math.abs(visual.point.y - physical.position.y),
+            );
+            contactSamples++;
+          }
         }
         const wave = ocean?.sampleHeight(130, 140);
         const east = ocean?.sampleHeight(131, 140);
@@ -1466,6 +1501,7 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
           sunX: sky.sunX,
           frames,
           travel,
+          edgeOvershoot,
           grounded: player.grounded,
           contactSamples,
           maxContactError,

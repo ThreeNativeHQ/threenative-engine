@@ -45,6 +45,12 @@
         "path": "travel",
         "gte": 80,
         "allowTrivial": "Spawn is 91 m from the edge; 80 m proves the walk reached it."
+      },
+      {
+        "id": "GameState",
+        "path": "edgeOvershoot",
+        "gte": 20,
+        "allowTrivial": "The surveyed hills past the 512 m square are ground out to a 200 m band: the walk climbs at least 20 m onto them. Before they had a collider the player stopped 2 m inside the edge (overshoot -2.2 m)."
       }
     ]
   }

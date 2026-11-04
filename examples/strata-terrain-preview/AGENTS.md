@@ -57,7 +57,7 @@ real controls, reloads it and reproduces `scripts/fixtures/editor-authored.json`
 All scripts, playtest definitions, manual preparation helpers and fixtures under `scripts/` and `playtests/`:
 
 - Playtest scenarios:
-  - `playtests/edge.playtest.json`: checks the player walks into the playable edge, stays grounded and logs no errors.
+  - `playtests/edge.playtest.json`: checks the player walks past the playable square onto the surrounding hills (their 200 m collider band), stays grounded and logs no errors.
   - `playtests/editor-conflict.playtest.json`: checks concurrent editor saves preserve both clients’ edits.
   - `playtests/editor.playtest.json`: playtest scenario checking vertex count and appearance in the recovered editor view.
   - `playtests/export.playtest.json`: playtest scenario checking static GLB export loading and appearance.

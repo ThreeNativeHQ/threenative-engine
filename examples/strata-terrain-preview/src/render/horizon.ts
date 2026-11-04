@@ -77,7 +77,47 @@ function prefilteredField(name: string): Heightfield | undefined {
   );
   return prefilteredFields[name];
 }
-/** Decorative land beyond the collider; the inner ring uses the bake's exact edge vertices. */
+/**
+ * How far past the playable square the surveyed surroundings are ground: a hill at the edge is
+ * climbable up to here, and the level's walls stand at this band's outer edge.
+ */
+export const HORIZON_WALK_BAND = 200;
+
+interface IHorizonWalk {
+  readonly rings: number;
+  readonly perimeter: number;
+  /** Metres past the square's edge where the band ends. */
+  readonly extent: number;
+}
+
+/**
+ * The walkable near band of the surroundings, as the drawn triangles themselves (a view of the same
+ * vertex buffer, not a resample), so a collider built from it is the ground the eye sees.
+ */
+export function horizonWalkGeometry(horizon: BufferGeometry): {
+  geometry: BufferGeometry;
+  extent: number;
+} {
+  const walk = horizon.userData.walk as IHorizonWalk | undefined;
+  const index = horizon.getIndex();
+  if (walk === undefined || index === null)
+    throw new RangeError("horizonWalkGeometry needs a createHorizonGeometry result");
+  const position = horizon.getAttribute("position").array as Float32Array;
+  const geometry = new BufferGeometry();
+  geometry.setAttribute(
+    "position",
+    new BufferAttribute(position.subarray(0, (walk.rings + 1) * walk.perimeter * 3), 3),
+  );
+  geometry.setIndex(
+    new BufferAttribute(
+      (index.array as Uint32Array).subarray(0, walk.rings * walk.perimeter * 6),
+      1,
+    ),
+  );
+  return { geometry, extent: walk.extent };
+}
+
+/** Land beyond the playable square; the inner ring uses the bake's exact edge vertices. */
 export function createHorizonGeometry(
   data: IBakedWorld,
   landform: "mountain" | "alpine" | "mesa" | "plain" = "mountain",
@@ -140,8 +180,11 @@ export function createHorizonGeometry(
   const indices = new Uint32Array(rings * perimeter * 6);
   let p = 0;
   let q = 0;
+  const ringDistance = (ring: number): number => (ring / rings) ** 1.65 * 2100;
+  let walkRings = 0;
+  while (walkRings < rings && ringDistance(walkRings + 1) <= HORIZON_WALK_BAND) walkRings++;
   for (let ring = 0; ring <= rings; ring++) {
-    const distance = (ring / rings) ** 1.65 * 2100;
+    const distance = ringDistance(ring);
     const scale = 1 + distance / (data.size / 2);
     const far = Math.min(1, Math.max(0, (distance - 300) / 600));
     const fade = Math.exp(-distance / 40);
@@ -177,5 +220,10 @@ export function createHorizonGeometry(
   geometry.setAttribute("color", new BufferAttribute(colors, 3));
   geometry.setIndex(new BufferAttribute(indices, 1));
   geometry.computeVertexNormals();
+  geometry.userData.walk = {
+    rings: walkRings,
+    perimeter,
+    extent: ringDistance(walkRings),
+  } satisfies IHorizonWalk;
   return geometry;
 }
