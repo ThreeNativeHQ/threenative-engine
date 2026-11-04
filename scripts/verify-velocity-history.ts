@@ -44,12 +44,9 @@ try {
   });
   const results = [];
   const variants = [
-    {
-      variant: "without-history",
-      query: "?without-history",
-      kind: "BatchedMesh",
-      failures: ["movingPixels", "oracleMaxErrorPixels", "footprintMaxErrorPixels"],
-    },
+    // three r187 keeps a BatchedMesh's previous-frame matrices itself (src/nodes/accessors/Batch.js:78,
+    // getPreviousMatricesTexture), so the accessor without core's scheduler is exact for a batch.
+    { variant: "without-history", query: "?without-history", kind: "BatchedMesh", failures: [] },
     { variant: "tracked", query: "", kind: "BatchedMesh", failures: [] },
     { variant: "instanced", query: "?instanced", kind: "InstancedMesh", failures: [] },
     {
@@ -241,14 +238,8 @@ try {
       diagnostics: costReport.diagnostics,
     });
   }
-  if (runHistory) {
-    assert.ok(
-      !(await readFile(path.join(output, "without-history/after.png"))).equals(
-        await readFile(path.join(output, "tracked/after.png")),
-      ),
-      "Actual velocity visualization must change when history is removed.",
-    );
-  }
+  // No "the image changes without history" check: three r187 keeps the batch history itself, and the
+  // without-history variant's own motion assertions above prove its velocity exact.
   const qualification = [
     runHistory && "actual WebGPU velocity MRT readback and screenshots",
     runCost &&

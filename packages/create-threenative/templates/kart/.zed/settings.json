@@ -25,18 +25,18 @@
         "./node_modules/@threenative/core/mcp/engine.mjs"
       ]
     },
-    "threenative-blender": {
-      "source": "custom",
-      "command": "node",
-      "args": [
-        "./node_modules/@threenative/core/mcp/blender.mjs"
-      ]
-    },
     "threenative-animation": {
       "source": "custom",
       "command": "node",
       "args": [
         "./node_modules/@threenative/core/mcp/animation.mjs"
+      ]
+    },
+    "threenative-devtools": {
+      "source": "custom",
+      "command": "node",
+      "args": [
+        "./node_modules/@threenative/core/mcp/devtools.mjs"
       ]
     }
   }

@@ -566,6 +566,8 @@ export function defineTsl(
   };
   const custom = defineTempNode(prototype);
   const exports: Record<string, unknown> = {};
+  // three r187's base class name; `TempNode` is the deprecated alias (src/nodes/core/TempNode.js:39).
+  exports.Node = custom.Node;
   exports.TempNode = custom.TempNode;
   exports.NodeUpdateType = NodeUpdateType;
   for (const name of FUNCTIONS)

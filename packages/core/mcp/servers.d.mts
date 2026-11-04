@@ -10,6 +10,8 @@ export interface IMcpServerEntry {
 }
 
 export interface IMcpPackage {
+  /** Fixed command-line arguments the shim passes to the server, in every host. */
+  readonly args?: readonly string[];
   readonly name: string;
   readonly version: string;
 }

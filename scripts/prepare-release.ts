@@ -100,12 +100,13 @@ function registryState(
 export function selectReleaseVersions(
   packages: readonly Pick<IPublishPackage, "name" | "version">[],
   lookup: RegistryLookup,
+  force = false,
 ): ReadonlyMap<string, IReleaseVersionState> {
   const states = packages.map((item) => ({
     item,
     state: registryState(item.name, item.version, lookup),
   }));
-  const bump = states.some(({ state }) => state === "present");
+  const bump = force || states.some(({ state }) => state === "present");
   const selected = new Map<string, IReleaseVersionState>();
   for (const { item, state } of states) {
     let candidate = bump ? nextPatch(item.version) : item.version;
@@ -226,8 +227,7 @@ function syncPeerRanges(repo: string, versions: ReadonlyMap<string, string>): nu
 export function syncSourceVersions(repo: string, versions: ReadonlyMap<string, string>): number {
   const coreVersion = versions.get("@threenative/core");
   const engineVersion = versions.get("threenative-engine-mcp");
-  const blenderVersion = versions.get("threenative-blender-mcp");
-  if (coreVersion === undefined || engineVersion === undefined || blenderVersion === undefined)
+  if (coreVersion === undefined || engineVersion === undefined)
     throw new Error("TN_RELEASE_COHORT_INCOMPLETE: required release package is missing.");
 
   const sourceUpdates: readonly [string, RegExp, string][] = [
@@ -257,19 +257,9 @@ export function syncSourceVersions(repo: string, versions: ReadonlyMap<string, s
       `$1${engineVersion}$2`,
     ],
     [
-      path.join(repo, "packages/blender-mcp/src/index.ts"),
-      /const SERVER_VERSION = "[^"]+";/u,
-      `const SERVER_VERSION = ${JSON.stringify(blenderVersion)};`,
-    ],
-    [
       path.join(repo, "packages/core/mcp/servers.mjs"),
       /(name: "threenative-engine-mcp", version: ")[^"]+(")/u,
       `$1${engineVersion}$2`,
-    ],
-    [
-      path.join(repo, "packages/core/mcp/servers.mjs"),
-      /(name: "threenative-blender-mcp", version: ")[^"]+(")/u,
-      `$1${blenderVersion}$2`,
     ],
     [
       path.join(repo, "packages/create-threenative/engine-mcp-tools.json"),
@@ -312,7 +302,12 @@ function run(command: string, args: readonly string[], label: string): void {
 
 async function main(): Promise<void> {
   const packages = publishSet(REPO);
-  const selected = selectReleaseVersions(packages, npmLookup(REPO));
+  // `--bump`: npm cannot see a version whose runtime tag already holds a public GitHub release.
+  const selected = selectReleaseVersions(
+    packages,
+    npmLookup(REPO),
+    process.argv.includes("--bump"),
+  );
   // Before a single file is written: 1.0.0 is refused while PRD-446's upgrade proof is still open,
   // so the version bump nobody wants to walk back never lands in the first place.
   if ([...selected.values()].some((state) => state.next === "1.0.0"))
@@ -328,12 +323,7 @@ async function main(): Promise<void> {
   );
 
   run("pnpm", ["build"], "pnpm build");
-  run("pnpm", ["tsx", "scripts/capture-blender-mcp-tools.ts"], "capture Blender MCP surface");
-  run(
-    "pnpm",
-    ["tsx", "scripts/capture-blender-mcp-tools.ts", "animation"],
-    "capture animation MCP surface",
-  );
+  run("pnpm", ["tsx", "scripts/capture-mcp-tools.ts"], "capture animation MCP surface");
 
   await provisionReleaseArtifacts(REPO);
   const report = await checkPublishState({

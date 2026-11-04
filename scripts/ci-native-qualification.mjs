@@ -43,7 +43,7 @@ const GATES = {
   "ios-simulator":
     "needs.scope.outputs.selection == 'full' && needs.scope.outputs.native_tier == 'full'",
   "publish-android-v8":
-    "needs.android-v8-source.outputs.published == 'false' && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')",
+    "needs.android-v8-source.outputs.trusted == 'true' && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')",
   "publish-linux-arm64-v8":
     "needs.linux-arm64-v8-source.outputs.published == 'false' && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')",
   completion: "${{ always() && inputs.ios_only != true }}",
@@ -205,14 +205,17 @@ export function nativeJobIdentity(expected, leg, listing, completed = true) {
     new Set(listing.jobs.map((job) => job.id)).size !== listing.jobs.length
   )
     fail("API_INCOMPLETE", "incomplete or duplicate attempt listing");
-  const matches = listing.jobs.filter((job) => job.name === leg.name);
+  // The attempt that last ran the leg decides: an earlier attempt's red never speaks for a rerun.
+  const named = listing.jobs.filter((job) => job.name === leg.name);
+  const latest = Math.max(0, ...named.map((job) => Number(job.run_attempt)));
+  const matches = named.filter((job) => Number(job.run_attempt) === latest);
   const job = matches[0];
   if (
     matches.length !== 1 ||
     !Number.isSafeInteger(job.id) ||
     job.id <= 0 ||
     String(job.run_id) !== expected.runId ||
-    String(job.run_attempt) !== expected.runAttempt ||
+    latest > Number(expected.runAttempt) ||
     job.head_sha !== expected.workflowHeadSha ||
     (completed && (job.status !== "completed" || job.conclusion !== "success"))
   )
@@ -246,7 +249,7 @@ export function validateNativeReceipts(expected, summary, listing) {
       receipt.version !== 1 ||
       receipt.candidateSha !== expected.candidateSha ||
       receipt.runId !== expected.runId ||
-      receipt.runAttempt !== expected.runAttempt ||
+      receipt.runAttempt !== String(job.run_attempt) ||
       receipt.planVersion !== expected.planVersion ||
       receipt.jobId !== String(job.id) ||
       receipt.conclusion !== "success" ||

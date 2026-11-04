@@ -61,6 +61,7 @@ function evaluate(
   return {
     budget: (byId("performance.samples")?.details as { frameBudget?: unknown } | undefined)?.frameBudget,
     codes: diagnostics.map(({ code }) => code),
+    fps: byId("performance.minFps"),
     frame: byId("performance.maxFrameMsP95"),
     messages: diagnostics.map(({ message }) => message),
   };
@@ -101,8 +102,15 @@ describe("frame budget from the adapter", () => {
   });
 
   it("refuses a looser number without a reason at load", () => {
-    expect(() => evaluate({ maxFrameMsP95: 33 }, frames(33.3, 33), RTX_2080)).toThrow(/maxFrameMsReason/u);
+    expect(() => evaluate({ maxFrameMsP95: 34 }, frames(33.3, 33), RTX_2080)).toThrow(/maxFrameMsReason/u);
     expect(() => evaluate({ maxFrameMsP95: 33, maxFrameMsReason: "  " }, frames(33.3, 33), RTX_2080)).toThrow(/maxFrameMsReason/u);
+  });
+
+  it("keeps a game scaffolded before 0.3.7 passing, and the report says what its 33 ms pin hides", () => {
+    const { budget, frame } = evaluate({ maxFrameMsP95: 33 }, frames(30, 33), RTX_2080);
+    expect(budget).toMatchObject({ maxFrameMsP95: 33, source: "scenario" });
+    expect((budget as { reason: string }).reason).toContain("passes at 30 fps");
+    expect(frame?.pass).toBe(true);
   });
 
   it("accepts a tighter number without a reason", () => {
@@ -115,6 +123,43 @@ describe("frame budget from the adapter", () => {
     expect((budget as { reason: string }).reason).toMatch(/software adapter swiftshader is unmeasurable/u);
     expect(frame?.pass).toBe(false);
     expect(codes).toContain("TN_PLAYTEST_PERFORMANCE_UNMEASURABLE");
+  });
+});
+
+describe("frame rate floor by display", () => {
+  // A fresh `pnpm test` failed on an RTX 2080 at "observed 20" on the private Xvfb and passed on the
+  // real display of the same machine: the floor read the timer the maximum already refuses to gate.
+  const floor = (interval: number, cost: number, gpu: number) => {
+    const scenario = evaluate({ maxDrawCalls: 600, minFps: 30 }, frames(interval, cost), RTX_2080, gpu);
+    return scenario.fps;
+  };
+
+  it("judges a virtual display on frame cost, whatever the Xvfb interval", () => {
+    expect(floor(50, 5, 5)).toMatchObject({
+      details: { basis: "frame-cost", interval: { gated: false, p95: 50 } },
+      pass: true,
+    });
+  });
+
+  it("still fails a virtual display when the frame costs more than the floor allows", () => {
+    expect(floor(16.7, 40, 5)?.pass).toBe(false);
+    expect(floor(16.7, 5, 40)?.pass).toBe(false);
+  });
+
+  it("keeps the interval for a device, whichever display the runner has", () => {
+    const series = frames(50, 5);
+    const lane = { display: "virtual" as const, gpuP95: 5, gpuSamples: 8 };
+    const row = (target: string) => evaluatePerformanceAssertion({ minFps: 30 }, series, undefined, { ...lane, target })
+      .assertions.find(({ id }) => id === "performance.minFps");
+    expect(row("android")).toMatchObject({ details: { actual: 20 }, pass: false });
+    expect(row("ios")?.pass).toBe(false);
+    expect(row("desktop")?.pass).toBe(true);
+  });
+
+  it("keeps the interval when the frame cost went unmeasured, so a low rate stays red", () => {
+    const row = evaluatePerformanceAssertion({ minFps: 30 }, frames(50, 5), undefined, { display: "virtual" })
+      .assertions.find(({ id }) => id === "performance.minFps");
+    expect(row).toMatchObject({ details: { actual: 20 }, pass: false });
   });
 });
 

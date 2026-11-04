@@ -140,8 +140,15 @@ export async function renderFixture(request) {
 
   const bound = await build(request.fixture, renderer, request);
   const render = bound.get("\u0001render");
-  if (render !== undefined) await render();
-  else renderer.render(bound.get(request.scene), bound.get(request.camera));
+  const draw = () =>
+    render !== undefined
+      ? render()
+      : renderer.render(bound.get(request.scene), bound.get(request.camera));
+  await draw();
+  // A queue-fenced backend bakes a PMREM asynchronously (the patch's `whenEnvironmentReady`), so
+  // the frame that starts the bake binds a placeholder environment. Draw the settled look once
+  // the bake has landed; a renderer without that gate draws the one frame it always drew.
+  if ((await renderer.whenEnvironmentReady?.()) === true) await draw();
   // The harness screenshots the presented frame, so wait for the work to land and for the
   // compositor to hold it before the page reports back.
   await renderer.backend.device.queue.onSubmittedWorkDone();

@@ -109,6 +109,8 @@ interface IStub {
   newer?: { conclusion: string; status?: string }[];
   /** The sha the source run's receipts name as its candidate. */
   candidate?: string;
+  carriedIntegration?: boolean;
+  webReference?: string;
   fail?: boolean;
 }
 
@@ -119,8 +121,8 @@ function boardJobs(base: string): string[] {
     if (!job.required) continue;
     if (name === "test-unit") {
       for (const shard of plan.unitMatrix.shard) names.push(`test-unit (${shard})`);
-    } else if (name === "template-nonvisual") {
-      for (const t of plan.templateMatrix.template) names.push(`template-nonvisual (${t})`);
+    } else if (name === "template-nonvisual" || name === "template-engine-cost") {
+      for (const t of plan.templateMatrix.template) names.push(`${name} (${t})`);
     } else if (name === "golden-path-template") {
       for (const t of plan.goldenMatrix.template) names.push(`golden-path-template (${t})`);
     } else names.push(name === "integration" ? "integration / fog-native" : name);
@@ -167,8 +169,15 @@ function stubApi(f: IFixture, stub: IStub = {}): void {
   write("artifacts.json", {
     total_count: 2,
     artifacts: [
-      { name: `ci-integration-receipt-${RUN_ID}-1-${candidate}-fog-native` },
-      { name: `ci-integration-receipt-${RUN_ID}-1-${candidate}-other` },
+      ...(stub.carriedIntegration === true
+        ? [{ name: `native-web-reference-${stub.webReference ?? candidate}` }]
+        : [
+            { name: `ci-integration-receipt-${RUN_ID}-1-${candidate}-fog-native` },
+            { name: `ci-integration-receipt-${RUN_ID}-1-${candidate}-other` },
+            ...(stub.webReference === undefined
+              ? []
+              : [{ name: `native-web-reference-${stub.webReference}` }]),
+          ]),
       { name: "unrelated-artifact" },
     ],
   });
@@ -200,7 +209,13 @@ function env(f: IFixture, extra: Record<string, string> = {}): NodeJS.ProcessEnv
 
 function classify(
   f: IFixture,
-  { event = "merge_group", head = f.queue, queueRef = f.queueRef, fail = false } = {},
+  {
+    event = "merge_group",
+    head = f.queue,
+    queueRef = f.queueRef,
+    fail = false,
+    target = "develop",
+  } = {},
 ) {
   const result = spawnSync(
     process.execPath,
@@ -215,7 +230,7 @@ function classify(
       "--candidate-sha",
       head,
       "--target",
-      "develop",
+      target,
       "--event-name",
       event,
       "--queue-ref",
@@ -360,5 +375,113 @@ describe("PRD-730 the merge queue reuses a green run of the same tree", () => {
     const unreadable = verdict(f, plan);
     expect(unreadable.status).toBe(1);
     expect(unreadable.stderr).toContain("CI_REQUIRED_QUEUE_REUSE");
+  });
+});
+
+describe("PRD-630 a main push rests on the green board of its promotion pull request", () => {
+  const main = (f: IFixture, plan = {}) =>
+    classify(f, { event: "push", head: f.merged, target: "main", ...plan });
+  const mainVerdict = (f: IFixture, plan: Record<string, unknown>) => {
+    const jobs = plan.jobs as Record<string, unknown>;
+    const needs = {
+      scope: { result: "success", outputs: { plan: JSON.stringify(plan) } },
+      ...Object.fromEntries(Object.keys(jobs).map((name) => [name, { result: "skipped" }])),
+    };
+    return spawnSync(process.execPath, [path.join(repo, "scripts/ci-required.mjs")], {
+      cwd: f.root,
+      encoding: "utf8",
+      env: env(f, {
+        TN_CI_NEEDS: JSON.stringify(needs),
+        TN_CI_EVENT: "push",
+        TN_CI_BASE_REF: "main",
+      }),
+    });
+  };
+
+  it("runs no board when the merge has the tree its pull request's green board tested", () => {
+    const f = fixture();
+    stubApi(f, { event: "pull_request" });
+    const plan = main(f);
+    expect(plan).toMatchObject({
+      selection: "reused",
+      reusedRunId: RUN_ID,
+      candidateSha: f.merged,
+    });
+    git(f.root, ["checkout", "--quiet", "--detach", f.merged]);
+    const passed = mainVerdict(f, plan);
+    expect(passed.status, passed.stderr).toBe(0);
+    expect(passed.stdout).toContain(`CI run \`${RUN_ID}\``);
+  });
+
+  // The 0.3.9 promotion board carried every integration leg, so it wrote no integration receipt.
+  it("reuses a promotion board that carried its integration legs and wrote no receipt", () => {
+    const f = fixture();
+    stubApi(f, { event: "pull_request", carriedIntegration: true });
+    expect(main(f)).toMatchObject({ selection: "reused", reusedRunId: RUN_ID });
+  });
+
+  it("runs the board when the web reference and the receipts name different candidates", () => {
+    const f = fixture();
+    stubApi(f, { event: "pull_request", webReference: "a".repeat(40) });
+    const plan = main(f);
+    expect(plan.selection).toBe("full");
+    expect(plan.reason).toContain("names 2 tested candidates");
+  });
+
+  it("runs the board when main moved, so the merge has another tree", () => {
+    const f = fixture();
+    stubApi(f, { event: "pull_request" });
+    const tree = git(f.root, ["rev-parse", `${f.queueMoved}^{tree}`]);
+    const moved = git(f.root, ["commit-tree", tree, "-p", f.base, "-p", f.head, "-m", "moved"]);
+    const plan = main(f, { head: moved });
+    expect(plan.selection).toBe("full");
+    expect(plan.reason).toContain("differs from the head of its promotion");
+  });
+
+  it("runs the board on a main commit that is no merge", () => {
+    const f = fixture();
+    stubApi(f, { event: "pull_request" });
+    const plan = main(f, { head: f.queue });
+    expect(plan.selection).toBe("full");
+    expect(plan.reason).toContain("not a promotion merge");
+  });
+
+  it("runs the board when the newest promotion board is red", () => {
+    const f = fixture();
+    stubApi(f, { event: "pull_request", newer: [{ conclusion: "failure" }] });
+    expect(main(f).selection).toBe("full");
+  });
+
+  it("runs the board when the promotion board did not run the native job that makes the reports", () => {
+    const f = fixture();
+    stubApi(f, { event: "pull_request", missing: ["native-platforms"] });
+    const plan = main(f);
+    expect(plan.selection).toBe("full");
+    expect(plan.reason).toContain("native-platforms");
+  });
+
+  it("does not take a dispatched run as the promotion board", () => {
+    const f = fixture();
+    stubApi(f, { event: "workflow_dispatch" });
+    expect(main(f).selection).toBe("full");
+  });
+
+  it("makes ci-required fail when the plan cites a run the rule does not confirm", () => {
+    const f = fixture();
+    stubApi(f, { event: "pull_request" });
+    const plan = main(f);
+    git(f.root, ["checkout", "--quiet", "--detach", f.merged]);
+    const forged = selectionPlan(
+      "reused",
+      "forged",
+      plan.files,
+      f.merged,
+      plan.native,
+      RUN_ID + 50,
+      "main",
+    );
+    const failed = mainVerdict(f, forged);
+    expect(failed.status).not.toBe(0);
+    expect(`${failed.stdout}${failed.stderr}`).toContain("CI_REQUIRED_PROMOTION_REUSE");
   });
 });

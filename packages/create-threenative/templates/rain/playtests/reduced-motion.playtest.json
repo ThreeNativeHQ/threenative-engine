@@ -44,6 +44,12 @@
     "resources": [
       {
         "id": "state",
+        "path": "reducedMotion",
+        "equals": true,
+        "allowTrivial": "the answer under test is what the page reads at boot: the runner emulates prefers-reduced-motion: reduce before the page loads, so the first snapshot already reports it and the value is a held invariant for the whole run"
+      },
+      {
+        "id": "state",
         "path": "safe",
         "equals": true,
         "allowTrivial": "prefers-reduced-motion turns photosensitivity mode on before the first observation; this scenario proves it stays on through a key strike, the strike button and 700 ticks"

@@ -146,7 +146,7 @@ describe("CharacterBody3D", () => {
     loop.stepFrame(0);
     loop.stepFrame(500);
 
-    expect(physicsSteps).toHaveLength(5);
+    expect(physicsSteps).toHaveLength(3); // a stall adds at most 1/20 s (core loop maxPhysicsDeltaTime)
     expect(physicsSteps.every((dt) => dt === 1 / 60)).toBe(true);
     expect(mesh.position.y).toBeGreaterThan(3.9);
     character.dispose();

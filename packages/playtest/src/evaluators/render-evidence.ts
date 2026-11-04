@@ -139,17 +139,29 @@ export function evaluatePerformanceAssertion(
     // wrong thing.
     // The verdict uses the exact fps. The report floors it to two places, so it never shows more
     // than was measured: 29.9967 reads 29.99, not 30.
-    const exact = fpsFromFrameTimes(frameTimes);
-    const observed = exact === undefined ? undefined : Math.floor(exact * 100) / 100;
+    // A private Xvfb paces frames on its own timer, so there the floor reads what `maxFrameMsP95`
+    // reads: the frame's cost. A device paints on its own screen, a real display gates what a player
+    // sees, and a run with no cost reading keeps the interval, so nothing passes unmeasured.
+    const onXvfb = lane?.display === "virtual" && lane.target !== "android" && lane.target !== "ios";
+    const costP95 = onXvfb ? frameCost(observed, samples.length, lane).costP95 : undefined;
+    const virtual = costP95 !== undefined && costP95 > 0;
+    const exact = virtual ? 1000 / costP95 : fpsFromFrameTimes(frameTimes);
+    const observedFps = exact === undefined ? undefined : Math.floor(exact * 100) / 100;
     const pass = samplesPass && exact !== undefined && exact >= assertion.minFps;
     results.push({
-      details: { actual: observed ?? null, expected: assertion.minFps, sampleCount: samples.length, unit: "fps" },
+      details: {
+        actual: observedFps ?? null,
+        expected: assertion.minFps,
+        sampleCount: samples.length,
+        unit: "fps",
+        ...(virtual ? { basis: "frame-cost", interval: { gated: false, p95: frameMsP95 ?? null, reason: XVFB_CADENCE } } : {}),
+      },
       id: "performance.minFps",
       pass,
     });
     if (!pass) diagnostics.push({
       code: "TN_PLAYTEST_PERFORMANCE_ASSERTION_FAILED",
-      message: `performance.minFps expected at least ${assertion.minFps} fps, observed ${observed ?? "unavailable"}.`,
+      message: `performance.minFps expected at least ${assertion.minFps} fps, observed ${observedFps ?? "unavailable"}${virtual ? " from frame cost on a virtual display" : ""}.`,
       observedRuntimePath: path,
       severity: "error",
       sourcePath,
@@ -238,6 +250,8 @@ export function evaluatePerformanceAssertion(
 /** What the frame-time bound needs besides the series: the display that paced it and the engine's GPU p95. */
 export interface IFrameLane {
   readonly display: FrameDisplay;
+  /** The run target. A device paints on its own screen, whichever display the runner has. */
+  readonly target?: string;
   readonly gpuP95?: number;
   /** The timestamp samples that GPU p95 rests on; absent when its window did not count them. */
   readonly gpuSamples?: number;
@@ -256,6 +270,23 @@ const XVFB_CADENCE = "display cadence, not gated: the runner's private Xvfb pace
  * because host gap only the interval sees is part of what a player feels. On a virtual display the
  * interval is reported and not gated. A missing CPU split or GPU reading fails closed.
  */
+/** The p95 cost of a frame on its slower side, CPU or GPU. Absent when either side went unmeasured. */
+function frameCost(
+  observed: readonly IPlaytestRuntimeDiagnosticsSample[],
+  sampleCount: number,
+  lane: IFrameLane,
+): { readonly costP95: number | undefined; readonly cpuP95: number | undefined; readonly hitches: number } {
+  const cpu = observed.flatMap(({ phases }) =>
+    phases === undefined || typeof phases.update !== "number" || typeof phases.render !== "number" ? [] : [phases.update + phases.render]);
+  // The engine's frame budget drops a hitch (a gap of 2 s or more, such as a startup stall) from its
+  // phase split and reports it as TN_FRAME_HITCH, so a sample without a split is a hitch, not
+  // missing evidence, only when its own interval is that long. Any other frame without one is unmeasured.
+  const hitches = observed.filter(({ frameMs, phases }) => phases === undefined && frameMs >= HITCH_MS).length;
+  const cpuP95 = cpu.length > 0 && cpu.length + hitches === sampleCount ? nearestRank(cpu, 0.95) : undefined;
+  const costP95 = cpuP95 === undefined || lane.gpuP95 === undefined ? undefined : Math.max(cpuP95, lane.gpuP95);
+  return { costP95, cpuP95, hitches };
+}
+
 function emitFrameBound(
   ceiling: number,
   intervalP95: number | undefined,
@@ -268,18 +299,11 @@ function emitFrameBound(
   path: string,
   sourcePath: string | undefined,
 ): void {
-  const cpu = observed.flatMap(({ phases }) =>
-    phases === undefined || typeof phases.update !== "number" || typeof phases.render !== "number" ? [] : [phases.update + phases.render]);
-  // The engine's frame budget drops a hitch (a gap of 2 s or more, such as a startup stall) from its
-  // phase split and reports it as TN_FRAME_HITCH, so a sample without a split is a hitch, not
-  // missing evidence, only when its own interval is that long. Any other frame without one is unmeasured.
-  const hitches = observed.filter(({ frameMs, phases }) => phases === undefined && frameMs >= HITCH_MS).length;
-  const cpuP95 = cpu.length > 0 && cpu.length + hitches === sampleCount ? nearestRank(cpu, 0.95) : undefined;
+  const { costP95, cpuP95, hitches } = frameCost(observed, sampleCount, lane);
   const missing = [
     ...(cpuP95 === undefined ? ["the CPU frame split (phases.update and phases.render)"] : []),
     ...(lane.gpuP95 === undefined ? ["the GPU time (a TN_FRAME_BUDGET window with a gpu reading)"] : []),
   ];
-  const costP95 = cpuP95 === undefined || lane.gpuP95 === undefined ? undefined : Math.max(cpuP95, lane.gpuP95);
   const virtual = lane.display === "virtual";
   const costPass = costP95 !== undefined && costP95 <= ceiling;
   const intervalPass = virtual || (intervalP95 !== undefined && intervalP95 <= ceiling);

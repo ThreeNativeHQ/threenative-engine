@@ -38,18 +38,18 @@
     "components": [
       {
         "entity": "smooth-motion",
-        "component": "samples",
+        "component": "tickSamples",
         "gte": 21
       },
       {
         "entity": "smooth-motion",
-        "component": "playerCv",
+        "component": "tickPlayerCv",
         "gte": 0,
         "lte": 0.1
       },
       {
         "entity": "smooth-motion",
-        "component": "cameraCv",
+        "component": "tickCameraCv",
         "gte": 0,
         "lte": 0.1
       }

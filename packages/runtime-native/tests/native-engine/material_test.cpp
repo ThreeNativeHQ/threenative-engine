@@ -60,13 +60,17 @@ void alphaHash() {
         if (!vs.wgsl.ok() || !fs.wgsl.ok()) continue;
         CHECK(fs.wgsl.code.find("dpdx(") != std::string::npos);
         CHECK(fs.wgsl.code.find("i_positionLocal") != std::string::npos);
+        // PRD-539 lever 7: the map reads at the renderer's view mip bias, Unreal's upscaled-view rule.
+        CHECK(fs.wgsl.code.find("textureSampleBias(t_map, smp_map,") != std::string::npos);
+        CHECK(fs.wgsl.code.find("u.f_viewMipBias") != std::string::npos);
         stagesAgree(p.fragment, vs.wgsl.code, fs.wgsl.code);
     }
     const auto depth = buildDepth(variant);
     const auto vs = buildStage(depth.vertex, 0), fs = buildStage(depth.fragment, 1);
     CHECK(vs.wgsl.ok() && fs.wgsl.ok());
     CHECK(fs.wgsl.code.find("@builtin(frag_depth)") != std::string::npos);
-    CHECK(fs.wgsl.code.find("textureSample(") != std::string::npos);
+    // The shadow pass leaves viewMipBias zero-filled: Unreal's shadow views sample at bias 0.
+    CHECK(fs.wgsl.code.find("textureSampleBias(t_map") != std::string::npos);
     CHECK(fs.wgsl.code.find("dpdx(") != std::string::npos);
     stagesAgree(depth.fragment, vs.wgsl.code, fs.wgsl.code);
     CHECK(variant.key() != VertexVariant{}.key());
@@ -524,21 +528,13 @@ void builds() {
             stagesAgree(p.fragment, vertex.wgsl.code, fragment.wgsl.code);
         }
     }
-    // Both GGX and copy passes must address all extra tiles, including negative mips.
-    for (uint32_t lodMax : {4u, 8u}) {
-        for (int lod = 1; lod <= int(lodMax) + 2; ++lod) {
-            CHECK(pmremMip(lodMax, lod - 1) == float(int(lodMax) - lod + 1));
-            CHECK(pmremMip(lodMax, lod) == float(int(lodMax) - lod));
-        }
-        // Last copy (mip -2): filterInt = 6, so it reads the sixth extra tile at x = 288.
-        CHECK((4.0f - pmremMip(lodMax, int(lodMax) + 2)) * 48.0f == 288.0f);
-    }
     const StandardPrograms programs = buildStandard(StandardMaterial{});
     for (const std::string& d : programs.diagnostics) std::fprintf(stderr, "%s\n", d.c_str());
     CHECK(programs.diagnostics.empty());
     CHECK(WgslEmitter::emit(programs.vertex, 0).ok());
     CHECK(WgslEmitter::emit(programs.fragment, 1).ok());
-    // The environment variant must emit explicit cubeUV taps and keep derivatives before branches.
+    // The environment variant samples the PMREM as a cube (r187 PMREMNode.setup), at
+    // roughnessToMip = maxLod * r * (2 - r), and keeps its derivatives before any branch.
     VertexVariant environment;
     environment.environment = true;
     CHECK(environment.key() != VertexVariant{}.key());
@@ -549,38 +545,43 @@ void builds() {
         const auto fragment = WgslEmitter::emit(lit.fragment, 1);
         CHECK(fragment.ok());
         CHECK(fragment.code.find("textureSampleLevel(t_env") != std::string::npos);
+        CHECK(fragment.code.find("var t_env: texture_cube<f32>") != std::string::npos);
         CHECK(fragment.code.find("f_envMapIntensity") != std::string::npos);
         CHECK(fragment.code.rfind("dpdx") < fragment.code.find("if ("));
         // EnvironmentNode's pow4 is ((r*r)*r)*r, not (r*r)*(r*r): f32 rounding is observable.
         bool reflectionMix = false;
-        unsigned rotatedFlips = 0;
-        bool mipDenominators = false;
+        unsigned cubeFlips = 0, roughnessRamps = 0;
         for (ExprId id = 1; id <= lit.fragment.exprCount(); ++id) {
             const Expr& mix = lit.fragment.expr(id);
-            // r185 PMREMNode rotates vec3(x, -y, z), for diffuse and reflection.
-            if (mix.op == Op::Mul && lit.fragment.expr(mix.args[0]).op == Op::Uniform &&
-                lit.fragment.expr(mix.args[0]).type == Type::mat(4, 4)) {
-                const Expr& vector = lit.fragment.expr(mix.args[1]);
-                if (vector.op == Op::Construct && vector.argc == 2) {
-                    const Expr& direction = lit.fragment.expr(vector.args[0]);
-                    if (direction.op == Op::Construct && direction.argc == 3 &&
-                        lit.fragment.expr(direction.args[1]).op == Op::Neg) ++rotatedFlips;
-                }
-            }
-            // three's unsuffixed WGSL breakpoint subtraction folds in abstract-float precision.
-            if (mix.op == Op::Div) {
-                const Expr& numerator = lit.fragment.expr(mix.args[0]);
-                if (numerator.op == Op::Mul) {
-                    const Expr& delta = lit.fragment.expr(numerator.args[0]);
-                    if (delta.op == Op::Sub && lit.fragment.expr(delta.args[0]).op == Op::Constant &&
-                        lit.fragment.expr(delta.args[1]).op == Op::LoadVar) {
-                        const float high = std::bit_cast<float>(uint32_t(lit.fragment.expr(delta.args[0]).immediate));
-                        const float expected = high == 1.0f ? 0.2f : high == 0.8f ? 0.4f : 0.095f;
-                        const Expr& denominator = lit.fragment.expr(mix.args[1]);
-                        CHECK(denominator.op == Op::Constant && denominator.immediate == std::bit_cast<uint32_t>(expected));
-                        mipDenominators = true;
-                    }
-                }
+            // Every PMREM read is a cube sample of the rotated direction with its x negated for
+            // WebGPU's cube face order (CubeTextureNode.setupUV), one per irradiance, radiance and
+            // clearcoat lobe, and none goes through a cubeUV atlas.
+            if (mix.op == Op::SampleLevel) {
+                const Expr& direction = lit.fragment.expr(mix.args[0]);
+                CHECK(direction.op == Op::Construct && direction.argc == 2);
+                const Expr& flip = lit.fragment.expr(direction.args[0]);
+                CHECK(flip.op == Op::Neg);
+                // materialEnvRotation is applied before the flip: PMREMNode.setup rotates, then samples.
+                const Expr& rotated = lit.fragment.expr(flip.args[0]);
+                CHECK(rotated.op == Op::Swizzle);
+                ExprId source = rotated.args[0];
+                while (lit.fragment.expr(source).op == Op::Swizzle) source = lit.fragment.expr(source).args[0];
+                const Expr& rotation = lit.fragment.expr(source);
+                CHECK(rotation.op == Op::Mul && lit.fragment.expr(rotation.args[0]).op == Op::Uniform &&
+                      lit.fragment.expr(rotation.args[0]).type == Type::mat(4, 4));
+                ++cubeFlips;
+                // roughnessToMip (:19): maxLod * clamp(r) * (2 - clamp(r)).
+                const Expr& level = lit.fragment.expr(mix.args[1]);
+                CHECK(level.op == Op::Mul);
+                const Expr& maxLod = lit.fragment.expr(level.args[0]);
+                CHECK(maxLod.op == Op::Uniform && maxLod.type == Type::f32());
+                const Expr& ramp = lit.fragment.expr(level.args[1]);
+                CHECK(ramp.op == Op::Mul);
+                const Expr& clamped = lit.fragment.expr(ramp.args[0]);
+                CHECK(clamped.op == Op::Call && clamped.argc == 3);
+                const Expr& twoMinus = lit.fragment.expr(ramp.args[1]);
+                CHECK(twoMinus.op == Op::Sub && lit.fragment.expr(twoMinus.args[1]).op == Op::Call);
+                ++roughnessRamps;
             }
             if (mix.op != Op::Call || mix.argc != 3) continue;
             const Expr& reflection = lit.fragment.expr(mix.args[0]);
@@ -595,9 +596,9 @@ void builds() {
             CHECK(second.op == Op::Mul && second.args[0] == fourth.args[1] && second.args[1] == fourth.args[1]);
             reflectionMix = true;
         }
-        CHECK(rotatedFlips == 2);
+        CHECK(cubeFlips == 2);
+        CHECK(roughnessRamps == 2);  // irradiance and radiance; the clearcoat lobe is opt-in
         CHECK(reflectionMix);
-        CHECK(mipDenominators);
     }
 }
 
@@ -784,4 +785,29 @@ void depthTextureLowering() {
 
 }  // namespace
 
-TN_TEST_MAIN({"alpha_hash", alphaHash}, {"ssr_passes", ssrPasses}, {"denoise_reads_raw_normals", denoiseReadsRawNormals}, {"ssr_rejects_inputs", ssrRejectsInputs}, {"depth_texture_lowering", depthTextureLowering}, {"depth_node_writes_frag_depth", depthNodeWritesFragDepth}, {"unsupported", unsupported}, {"emissive_output", emissiveOutput}, {"builds", builds}, {"fog", fog}, {"rough_diffuse", roughDiffuse}, {"fog_node_mixes_color", fogNodeMixesColor}, {"node_key", nodeKey}, {"bloom_passes", bloomPasses}, {"slots_share_one_lowering", slotsShareOneLowering})
+// PRD-539 lever 7: every implicit-LOD material texture reads at the view mip bias (UE 5.8.3:
+// SceneVisibility.cpp:5337-5351 sets MaterialTextureMipBias for all material samplers), including a
+// node material's texture() node, which Unreal compiles as a TextureSample of the material.
+void viewMipBiasSamples() {
+    namespace g = tn::engine::shader::graph;
+    VertexVariant variant;
+    variant.normalMap = true;
+    variant.pbrMaps = static_cast<uint16_t>(1u << kRoughnessMap);
+    VertexVariant bumped;  // three's BumpMapNode runs only without a normalMap
+    bumped.pbrMaps = static_cast<uint16_t>(1u << kBumpMap);
+    const std::string lit = WgslEmitter::emit(buildStandard({}, variant).fragment, 1).code +
+                            WgslEmitter::emit(buildStandard({}, bumped).fragment, 1).code;
+    for (const char* map : {"t_normalMap", "t_roughnessMap", "t_bumpMap"}) {
+        const bool biased = lit.find(std::string("textureSampleBias(") + map) != std::string::npos;
+        if (!biased) std::fprintf(stderr, "%s reads without the view mip bias\n", map);
+        CHECK(biased);
+    }
+    VertexVariant node;
+    node.nodes.colorNode = g::texture("detail", g::uv());
+    const auto colored = WgslEmitter::emit(buildBasic(node).fragment, 1);
+    CHECK(colored.ok());
+    CHECK(colored.code.find("textureSampleBias(t_detail") != std::string::npos);
+    CHECK(colored.code.find("u.f_viewMipBias") != std::string::npos);
+}
+
+TN_TEST_MAIN({"alpha_hash", alphaHash}, {"view_mip_bias_samples", viewMipBiasSamples}, {"ssr_passes", ssrPasses}, {"denoise_reads_raw_normals", denoiseReadsRawNormals}, {"ssr_rejects_inputs", ssrRejectsInputs}, {"depth_texture_lowering", depthTextureLowering}, {"depth_node_writes_frag_depth", depthNodeWritesFragDepth}, {"unsupported", unsupported}, {"emissive_output", emissiveOutput}, {"builds", builds}, {"fog", fog}, {"rough_diffuse", roughDiffuse}, {"fog_node_mixes_color", fogNodeMixesColor}, {"node_key", nodeKey}, {"bloom_passes", bloomPasses}, {"slots_share_one_lowering", slotsShareOneLowering})

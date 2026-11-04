@@ -324,7 +324,7 @@ async function main(): Promise<void> {
   const inputs = [
     "packages/core/src/fluid-particles.ts",
     "packages/core/src/gpu-readback.ts",
-    "packages/core/patches/three@0.185.1.patch",
+    "packages/core/patches/three@0.187.0.patch",
     "examples/prd476-fluid-particles/src/collision-proof.ts",
     "examples/prd476-fluid-particles/playtests/fluid-collision.playtest.json",
     "scripts/fluid-collision-proof.ts",

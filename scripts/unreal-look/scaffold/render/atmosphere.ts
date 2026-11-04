@@ -388,13 +388,20 @@ export const SUN_LUX = 6;
 export const SUN_KELVIN = 6500;
 
 /**
- * The sun in three's light units. Unreal renders a lit diffuse surface as albedo x lux x cos(theta);
- * three's Lambert BRDF carries a 1/pi, so the same lux is pi times as large here. Measured on the
- * Unreal L1 cells (no atmosphere, scene-linear EXR): a 0.18 floor under the 60 degree sun reads
- * 0.874 luminance, within 7% of 0.18 x 6 x sin(60 deg) = 0.935 (the residual is checked on the
- * engine's own L1 capture).
+ * The sun in three's light units: Unreal's lux as it stands, with no pi (PRD-646 round 6).
+ * Unreal passes a directional light's lux straight into the shading — `GetColoredLightBrightness`
+ * (Engine/Source/Runtime/Engine/Private/Components/LightComponent.cpp:1623-1634) is `Color x Intensity
+ * x Temperature`, and `GetLightExposureScale` returns 1 for a directional light (same file :404-425,
+ * `InverseExposureBlend` 0 at Engine/Private/Components/DirectionalLightComponent.cpp:413) — and the
+ * diffuse lobe divides by pi on both sides: `Diffuse_Lambert` (Engine/Shaders/Private/BRDF.ush:157-160,
+ * reached by Substrate at Engine/Shaders/Private/Substrate/SubstrateEvaluation.ush:565) and three's own
+ * `BRDF_Lambert`. So the same lux is the same light here and there.
+ *
+ * This carries the same port as `LEVEL_EXPOSURE` below, and the two only work together: the pi cost the
+ * pair 3.1416 and the level exposure gives 2.4 back, which is the 0.764 that took `sunlit-room` L1 from
+ * 1.231 to 0.944 of Unreal (19 of 40 rows to 36 of 40, 2026-11-02). Never land one without the other.
  */
-export const SUN_ILLUMINANCE = SUN_LUX * Math.PI;
+export const SUN_ILLUMINANCE = SUN_LUX;
 
 /**
  * Emissive in the sun's units. Unreal shades a lit diffuse surface as albedo / pi x lux x cos(theta)
@@ -404,18 +411,74 @@ export const SUN_ILLUMINANCE = SUN_LUX * Math.PI;
  * Gltf/InterchangeGLTFMaterial.cpp:481-487). Emissive 5 therefore outshines a white surface under the
  * 6 lux sun by 5 / (6 / pi) = 2.6x. `SUN_ILLUMINANCE` carries a pi, so a white surface here reads 6;
  * the emissive takes the same pi to keep that ratio. Applied where the scene's materials load.
+ * It follows `SUN_ILLUMINANCE`: with no pi there, this is 1, and the ratio holds (PRD-646 §Decisions).
  */
-export const EMISSIVE_UNITS = Math.PI;
+export const EMISSIVE_UNITS = 1;
+
+/** Unreal's engine default auto-exposure bias, +1 EV (`r.DefaultFeature.AutoExposure.Bias`, SceneView.cpp:196-201,
+ * read into the post settings at Scene.cpp:514-520). */
+const DEFAULT_EXPOSURE_BIAS_EV = 1;
+/** `r.EyeAdaptation.LensAttenuation`'s default (PostProcessEyeAdaptation.cpp:104-108). */
+const LENS_ATTENUATION = 0.78;
+/** The ISO 12232:2006 saturation speed constant (PostProcessEyeAdaptation.cpp:382-385). */
+const ISO_SATURATION_SPEED = 0.78;
+/** The `MaxLuminance` that `r.DefaultFeature.AutoExposure.ExtendDefaultLuminanceRange` writes into the meter's
+ * limits (SceneView.cpp:2060-2063). */
+const MAX_LUMINANCE = 1.2;
+
+/** `LuminanceMaxFromLensAttenuation()`: 0.78 over the lens attenuation, 1.0 at the default (PostProcessEyeAdaptation.cpp:376-389). */
+const LUMINANCE_MAX = ISO_SATURATION_SPEED / Math.max(LENS_ATTENUATION, 0.01);
+/** `EV100ToLuminance(LuminanceMax, EV100)` = `LuminanceMax * 2^EV100` (RenderUtils.h:744-747). */
+const ev100ToLuminance = (luminanceMax: number, ev100: number) => luminanceMax * 2 ** ev100;
+/** `LuminanceToEV100(LuminanceMax, Luminance)` = `log2(Luminance / LuminanceMax)` (RenderUtils.h:757-760). */
+const luminanceToEV100 = (luminanceMax: number, luminance: number) =>
+  Math.log2(luminance / luminanceMax);
+
+/** A level's fixed exposure settings, as `tools/unreal-reference/gi/export.py` reads them out of Unreal. */
+export interface ILevelExposure {
+  /** `AutoExposureBias`, which the meter applies as `2^bias` (PostProcessEyeAdaptation.cpp:446-460). */
+  bias: number;
+  /** `auto_exposure_method`: `aem_manual` when a post-process volume holds the level at one EV100. */
+  method?: string;
+}
 
 /**
- * Sky radiance relative to the sun, as Unreal renders it. TEMPORARY, measured and not derived: with
- * the sun at 6 lux the model above is 1.3x too bright against the Unreal L2 frames, flat across
- * channels and across the 15 and 4 degree suns (1.30 / 1.30 / 1.35 at 19 degrees elevation), so
- * the sky is scaled by 1/1.3. The lens attenuation constant 0.78 (PostProcessEyeAdaptation.cpp,
- * r.EyeAdaptation.LensAttenuation) has the right size but the path that would apply it to the
- * atmosphere and not to the sun is not found in the source yet.
+ * The exposure a level's frame is drawn at, below the auto-exposed L9 (PRD-646 round 6). Unreal's scale on the
+ * exposed image is `2^bias / whitePoint`, where the white point comes from the exposure method:
+ *
+ * - A level with no post-process override: `r.DefaultFeature.AutoExposure=0` (layers.json L0 to L8) writes
+ *   `AutoExposureMinBrightness = AutoExposureMaxBrightness = LuminanceToEV100(1.2, 1)` (SceneView.cpp:2060-2071),
+ *   the meter clamps the average luminance to that one stop (PostProcessEyeAdaptation.cpp:661-662), and the
+ *   white point is `EV100ToLuminance(LuminanceMax, -0.263)` = 1 / 1.2. With the engine's +1 EV bias: 2.4.
+ * - A scene's own volume in Unreal's manual method with the physical camera off: `CalculateManualAutoExposure`
+ *   returns `EV100ToLuminance(LuminanceMax, 0)` = the lens attenuation's 1.0 (PostProcessEyeAdaptation.cpp:520-531),
+ *   and the meter's mid-grey cancels against `GetEyeAdaptationFixedExposure`, so the frame reads `2^bias`.
+ *   That is `export.py`'s `2^bias x lens / 0.78`: `cornell` bias -5 gives 2^-5, the value its `scene.json` carries.
+ *
+ * Both numbers reproduce exactly; a unit check in `scripts/__tests__/unreal-look-calibration-scene.spec.ts` holds them.
  */
-export const SKY_TO_SUN = 0.78;
+export function levelExposure(exposure?: ILevelExposure): number {
+  const bias = exposure?.bias ?? DEFAULT_EXPOSURE_BIAS_EV;
+  const whitePoint =
+    exposure?.method === "aem_manual"
+      ? ev100ToLuminance(LUMINANCE_MAX, 0)
+      : ev100ToLuminance(LUMINANCE_MAX, luminanceToEV100(MAX_LUMINANCE, 1));
+  return 2 ** bias / whitePoint;
+}
+
+/** The exposure of a level that carries no post-process override: 2.4, where this harness drew 1 (PRD-646 round 6). */
+export const LEVEL_EXPOSURE = levelExposure();
+
+/**
+ * Sky radiance relative to the sun. It was 0.78, a fit: the model read 1.3x too bright against the
+ * Unreal L2 frames while this harness carried a pi on the sun and drew the frame at exposure 1, and
+ * 1 / 1.3 is the factor that measured it. The port above removes both halves of that error —
+ * `SUN_ILLUMINANCE` loses the pi and `LEVEL_EXPOSURE` gives 2^bias / whitePoint = 2.4 back — and
+ * 2.4 / pi = 1.309 is the same factor, so the fit is deleted rather than fitted again (PRD-646
+ * round 6). The fog model of `unreal-look-light.spec.ts` reads Unreal's own L3 void with this 1 in
+ * place, and the unit check holds the sun's pi and the exposure that replaces it.
+ */
+export const SKY_TO_SUN = 1;
 
 /**
  * Colour of a black-body-like light at `kelvin` as linear sRGB with unit luminance: the Planckian

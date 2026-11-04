@@ -58,8 +58,8 @@ export const CAPABILITY_PACKAGE_ALLOWLIST: Readonly<Record<string, string>> = {
     "Scaffold CLI implementation; game authors consume the generated project, not its helpers.",
   "threenative-animation-mcp":
     "MCP transport and build-time GLB editing; a game imports no symbol from it, only its tools.",
-  "threenative-blender-mcp":
-    "MCP transport and Blender process boundary; a game imports no symbol from it, only its tools.",
+  "@threenative/blender-bridge":
+    "Build-time Blender process boundary; a game imports no symbol from it.",
   "threenative-engine-mcp":
     "MCP transport implementation; the generated capability manifest is the authoring surface.",
 };

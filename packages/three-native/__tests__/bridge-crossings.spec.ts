@@ -9,6 +9,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
+import { Euler, Quaternion } from "three";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -18,6 +19,7 @@ import {
   type TnAbiModule,
   createWasmRuntime,
   defineBrowserClasses,
+  eulerFromQuaternion,
 } from "../src/browser-backend.js";
 
 afterEach(() => {
@@ -124,6 +126,117 @@ describe("transform writes on the browser back end", () => {
     }
     expect(heap[(base + 64) / 8 + 2]).toBe(4);
     expect(calls.filter((call) => /^(set|invoke) /u.test(call))).toHaveLength(crossingsBefore);
+  });
+});
+
+describe("an Object3D's rotation follows its quaternion on the browser back end", () => {
+  it("syncs without a crossing, bit for bit as three's Euler.setFromQuaternion", () => {
+    const { runtime, calls, heap, addresses } = memoryRuntime();
+    const { classes } = defineBrowserClasses(registry, runtime);
+    const Object3D = classes.Object3D as new () => {
+      quaternion: { set(x: number, y: number, z: number, w: number): unknown };
+      rotation: object;
+    };
+    const object = new Object3D();
+    const { quaternion, rotation } = object;
+    const at = addresses.get(engineKey(rotation)) as number;
+    const lanes = ["x", "y", "z"].map(
+      (key) => (registry.classes.Euler?.fields?.[key]?.[0] ?? 0) / 8,
+    );
+    const expected = new Euler();
+    for (let step = 0; step < 200; step += 1) {
+      const q = new Quaternion(
+        Math.sin(step),
+        Math.cos(step * 0.7),
+        step % 5,
+        1 + step,
+      ).normalize();
+      quaternion.set(q.x, q.y, q.z, q.w);
+      expected.setFromQuaternion(q, "XYZ");
+      expect(lanes.map((lane) => heap[at / 8 + lane])).toEqual([
+        expected.x,
+        expected.y,
+        expected.z,
+      ]);
+    }
+    expect(calls.filter((call) => call === "invoke setFromQuaternion")).toHaveLength(0);
+  });
+
+  it("matches three in every order, the gimbal-locked branch included", () => {
+    const orders = ["XYZ", "YXZ", "ZXY", "ZYX", "YZX", "XZY"] as const;
+    const quaternions = [
+      ...Array.from({ length: 50 }, (_, i) =>
+        new Quaternion(Math.sin(i * 1.3), Math.cos(i), Math.sin(i * 0.4), 0.5).normalize(),
+      ),
+      ...orders.map((order) =>
+        new Quaternion().setFromEuler(new Euler(Math.PI / 2, Math.PI / 2, 0.3, order)),
+      ),
+      new Quaternion(Math.SQRT1_2, 0, 0, Math.SQRT1_2),
+      new Quaternion(0, Math.SQRT1_2, 0, Math.SQRT1_2),
+      new Quaternion(0, 0, Math.SQRT1_2, Math.SQRT1_2),
+    ];
+    const expected = new Euler();
+    for (const order of orders)
+      for (const q of quaternions) {
+        expected.setFromQuaternion(q, order);
+        expect(eulerFromQuaternion(q.x, q.y, q.z, q.w, order)).toEqual([
+          expected.x,
+          expected.y,
+          expected.z,
+        ]);
+      }
+  });
+});
+
+describe("the world-matrix dirty flag", () => {
+  it("is armed in place, one byte, no crossing, as the engine's own walks write it", () => {
+    const bytes = new Uint8Array(256);
+    const calls: string[] = [];
+    const runtime: IBrowserRuntime = {
+      typeId: (name) => (name === "Mesh" ? 1 : 2),
+      construct: (name) => ({ key: `${name}:1`, type: 1 }),
+      invoke(_self, method) {
+        calls.push(`invoke ${method}`);
+        return null;
+      },
+      get(_self, property) {
+        // The flags block the class exposes as its `__address`.
+        if (property === "__address") return 64;
+        calls.push(`get ${property}`);
+        return property === "name" ? "" : 1;
+      },
+      set(_self, property) {
+        calls.push(`set ${property}`);
+      },
+      release: () => undefined,
+      setCallback: () => undefined,
+      readDoubles: (_address, count) => (count === 1 ? 0 : [0]),
+      writeDouble: () => undefined,
+      readByte: (address) => bytes[address] ?? 0,
+      writeByte: (address, value) => {
+        bytes[address] = value;
+      },
+    };
+    const { classes } = defineBrowserClasses(registry, runtime);
+    const Mesh = classes.Mesh as new () => {
+      matrixWorldNeedsUpdate: boolean;
+      matrixAutoUpdate: boolean;
+    };
+    const offset = registry.classes.Mesh?.fields?.matrixWorldNeedsUpdate?.[0] as number;
+    const mesh = new Mesh();
+    // What core's physics interpolation does to every body after the draw, once a frame.
+    mesh.matrixWorldNeedsUpdate = true;
+    expect(calls).toEqual([]);
+    expect(mesh.matrixWorldNeedsUpdate).toBe(true);
+    expect(calls).toEqual([]);
+    expect(bytes[64 + offset]).toBe(1);
+    // A write of the value the flag holds changes nothing, and a clear is the same one store.
+    mesh.matrixWorldNeedsUpdate = true;
+    mesh.matrixWorldNeedsUpdate = false;
+    expect(bytes[64 + offset]).toBe(0);
+    // The renderer's own flags keep their call: those setters bump render revisions.
+    mesh.matrixAutoUpdate = false;
+    expect(calls).toEqual(["set matrixAutoUpdate"]);
   });
 });
 

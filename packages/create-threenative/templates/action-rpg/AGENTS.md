@@ -23,7 +23,7 @@ When an `@threenative/*` API is broken, missing, or does not do what you need, r
 - `.agents/skills/threenative-playtest/SKILL.md` / `.claude/skills/threenative-playtest/SKILL.md` — diagnosis and proof.
 - `.agents/skills/threenative-assets/SKILL.md` / `.claude/skills/threenative-assets/SKILL.md` — assets and sculpting.
 - `.agents/skills/threenative-visuals/SKILL.md` / `.claude/skills/threenative-visuals/SKILL.md` — captures and look.
-- `.agents/skills/threenative-performance/SKILL.md` / `.claude/skills/threenative-performance/SKILL.md` — measured budgets.
+- `.agents/skills/threenative-performance/SKILL.md` / `.claude/skills/threenative-performance/SKILL.md` — measured budgets; read it first when the game is slow or stutters: `playtest trace`, then the `threenative-devtools` MCP server.
 - `.agents/skills/threenative-ui/SKILL.md` / `.claude/skills/threenative-ui/SKILL.md` — native-safe UI.
 - `.agents/skills/threenative-context/SKILL.md` / `.claude/skills/threenative-context/SKILL.md` — portable ctx APIs.
 - Confirmed framework bugs: use `file-engine-bug` in `.agents/skills/` or `.claude/skills/` after a minimal repro. A game-side `patches/` fix is temporary: once it is settled, it moves into the engine in one PR. Lazy-first: `.agents/skills/ponytail/SKILL.md` / `.claude/skills/ponytail/SKILL.md` — smallest correct change, and its reuse rung is the capability search above. Engine: The owned C++ engine is the default for a new game: the Wasm engine on web and the engine player on desktop. This template pins `engine: "threejs"` in `threenative.config.ts` because the native engine does not bind some of its imports yet. The pin keeps upstream Three.js on web and the legacy host on desktop. A native build names each unbound import with `TN_NATIVE_ENGINE_UNBOUND`. Android and iOS use the legacy host.
@@ -78,7 +78,7 @@ cancel and an axis-rolled limb is caught where a bone-direction check reads zero
 
 WebGPU reports `TN_GPU_CLASS` once per launch. Automatic `render.resolutionScale` starts at 0.85 for `mobile-low`, otherwise 1; a numeric value pins it. `TN_FRAME_BUDGET` reports the actual scale under both policies. `src/render/` is yours to edit and is where the base look lives: the prototype test scene, a metre
 grid in world UVs over a light floor and a dark structure, `palette.ts`'s five roles with exactly one
-saturated `accent` for anything you can touch, `sky.ts`'s photograph behind everything, and bevelled
+saturated `accent` for anything you can touch, Unreal's default sky behind everything (`sky.ts`; `SKY_OPTIONS` takes `sky: "photo"` for the photograph), and bevelled
 `RoundedBoxGeometry` sunk by its bevel radius. Torch point lights are the only warm light. Imported foliage (Fab/Megascans cutouts) draws with its own albedo, normal map and alpha cutoff under the environment light `sky.ts` makes — never tint it, fake its emission or flatten its normals to make up for missing light; `TN_UNLIT_FOLIAGE` names cutout materials drawn with no environment.
 `quality.ts` defines `low`, `medium`, and `high`; the GPU family from `ctx.renderer.gpuClass` sets the start (`discrete` `high`, `integrated` and `mobile-high` `medium`, other phones `low`); `isMobile()` chooses `low`, otherwise `high` when the family is `unknown`, and
 `setupPost(..., { tier: "low" })` is the named override — unknown tiers throw and `TN_QUALITY_TIER`

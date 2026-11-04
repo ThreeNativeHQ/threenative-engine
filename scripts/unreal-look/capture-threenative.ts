@@ -21,7 +21,7 @@ import {
   stopVisualServer,
 } from "../visual-gate.js";
 import { workspacePackages } from "../workspace-packages.js";
-import { launchWebgpuBrowser } from "./browser.js";
+import { assertConfigEcho, launchWebgpuBrowser } from "./browser.js";
 import { FRAME_GATE } from "./capture-motion-threenative.js";
 import { awaitExposureSettled, metersExposure, watchExposure } from "./exposureSettled.js";
 import {
@@ -166,6 +166,17 @@ export async function patchScaffold(
       ),
     );
   // The render modules that only the overlay has: the baseline arm gets inert stand-ins (the template look).
+  if (baseline)
+    await writeFile(
+      path.join(target, "src/render/specular.ts"),
+      [
+        "// The baseline arm draws the template look: the diagnosis knob changes nothing here.",
+        'import type { MeshPhysicalMaterial, MeshStandardMaterial } from "three";',
+        "export const noSpecularTwin = (source: MeshStandardMaterial) =>",
+        "  source as unknown as MeshPhysicalMaterial;",
+        "",
+      ].join("\n"),
+    );
   await cp(
     path.join(SCAFFOLD_DIR, baseline ? "tuningBaseline.ts.in" : "tuning.ts.in"),
     path.join(target, "src/scenes/tuning.ts"),
@@ -392,8 +403,9 @@ export async function captureThreeNative(options: IThreeNativeCaptureOptions): P
           );
           if (wanted.length === 0) continue;
           const started = Date.now();
+          // main.html runs the game on the page thread: index.html's worker cannot read the page's query.
           await page.goto(
-            `${origin}?tnRef=${layer}&sun=${sun.elevationDeg},${sun.azimuthDeg}${options.baseline ? "&baseline=1" : ""}${options.off ? `&off=${options.off}` : ""}${process.env.TN_UNREAL_LOOK_QUERY ?? ""}`,
+            `${origin}main.html?tnRef=${layer}&sun=${sun.elevationDeg},${sun.azimuthDeg}${options.baseline ? "&baseline=1" : ""}${options.off ? `&off=${options.off}` : ""}${process.env.TN_UNREAL_LOOK_QUERY ?? ""}`,
             {
               waitUntil: "domcontentloaded",
             },
@@ -403,6 +415,7 @@ export async function captureThreeNative(options: IThreeNativeCaptureOptions): P
           await page.waitForSelector('[data-threenative-startup="ready"]', { timeout: 600_000 });
           const readyMs = Date.now() - started;
           await page.waitForFunction(() => "__tnRef" in window, undefined, { timeout: 240_000 });
+          assertConfigEcho(page.url(), await page.evaluate("window.__tnRef.config"));
           // Page start to the scene being ready; the GI cache bake (TN_GI_CACHE) runs inside this.
           console.info(
             `TN_UNREAL_LOOK startup layer=${layer} ready=${readyMs}ms scene=${Date.now() - started}ms`,

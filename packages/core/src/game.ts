@@ -43,6 +43,11 @@ import {
   createEngineCounterReader,
 } from "./profiling/FrameCounters.js";
 import {
+  createStageReader,
+  createWorkReader,
+  stageMetersRequested,
+} from "./profiling/FrameStages.js";
+import {
   SPANS,
   SpanRecorder,
   addSpan,
@@ -97,6 +102,7 @@ import {
   type RendererKind,
   createRenderer,
   rendererFrameGateSkips,
+  rendererWorldPresented,
 } from "./renderer.js";
 import { RESOLUTION_SCALER, ResolutionScaler } from "./resolution-scaler.js";
 import type {
@@ -114,6 +120,7 @@ import {
   measureStartupOffscreenBytes,
 } from "./startup-offscreen-bytes.js";
 import {
+  type IStartupImageState,
   STARTUP_COMPILE_BUDGET_MS,
   STARTUP_STABLE_WINDOW_MS,
   STARTUP_STALL_MS,
@@ -204,8 +211,20 @@ export interface IGamePluginRuntime {
    * A run that counts fixed-step ticks must not also accumulate real seconds into the same
    * simulation, and the frames before its first `advance()` are exactly where a boot's seconds
    * used to land. Optional: a runtime without a clock just never freezes one.
+   *
+   * `settleSteps` is the settling pass the world is owed: a zero freeze lets `settleClock` spend it
+   * instead, once the world's scene is live.
    */
-  readonly freezeClock?: () => void;
+  readonly freezeClock?: (settleSteps?: number) => void;
+  /**
+   * Spend the settling pass now, from a caller that knows the world's scene is live.
+   *
+   * Present only when the runtime can spend it later than the freeze: a game that boots through a
+   * loading scene otherwise settles the loading scene, and the world's own clock misses those fixed
+   * steps — a playtest pose then depends on how fast the machine booted. Optional, and paired with
+   * `freezeClock(0)`: a runtime without it settles on its first live frame, as before.
+   */
+  readonly settleClock?: (steps?: number) => void;
   /**
    * Draw the current world once without advancing it, for a screenshot taken while the loop is
    * driven by `fixedStep` and presents nothing between ticks. Optional: a runtime without a frozen
@@ -1169,6 +1188,12 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       return;
     }
     this.#renderer = renderer;
+    // Before anything draws for this startup, including the warm-up and every covered world frame: the owned
+    // engine keeps drawing, but presents nothing until a frame's shadow and exposure inputs are ready, so the
+    // player never sees the two unsettled pictures a cold post chain produced (measured 185 -> 124 -> 108 mean
+    // brightness). A renderer without the seam presents every frame exactly as before.
+    renderer.setPresentationHeld?.(true);
+    this.#cleanup.push(() => renderer.setPresentationHeld?.(false));
     const canvas = renderer.domElement;
     const platform = this.#platform;
     const page = hostDocument();
@@ -1339,6 +1364,24 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       afterHolds: async () => {
         await warmUp("TN_STARTUP_WARMUP_HELD", Math.round(STARTUP_COMPILE_BUDGET_MS / 3), false);
       },
+      /**
+       * The renderer's own answer, which no timer may stand in for: a world frame whose shadow inputs are
+       * initialized and whose meter has measured within 3% of its target. On the owned engine the hidden world
+       * keeps drawing behind the cover, so this becomes true on its own; a renderer without the seam answers
+       * true, and its launch is exactly what it was. The answer names the input it is short of, so a launch that
+       * reached its deadline (`STARTUP_IMAGE_TIMEOUT_MS`) reports which one never arrived.
+       */
+      imageReady: (): boolean | IStartupImageState => {
+        // A cover the game asked not to draw the world behind has no frame to wait for, and waiting would
+        // hold it open forever; every other game keeps drawing and reaches this on its own.
+        if (
+          canvasLayer.opaque &&
+          !canvasLayer.renderWorldDuringStartup &&
+          !canvasLayer.keepWorldRendering
+        )
+          return true;
+        return renderer.firstWorldFrame?.() ?? true;
+      },
     });
     // Startup readiness does not wait on `ui-ready`, and cannot. The intent proves the page's
     // script ran, not that a pixel reached the screen, so waiting on it never closed the race it
@@ -1373,7 +1416,11 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
      * device, with the only account of either on a terminal the player does not have.
      */
     const stopStallWatch = watchStartupStall({
-      pending: () => [...assets.progress.pending, ...startupReadiness.pendingHolds],
+      pending: () => [
+        ...assets.progress.pending,
+        ...startupReadiness.pendingHolds,
+        ...startupReadiness.pendingImage,
+      ],
       progress: () => this.#ctx?.startup.progress ?? 0,
       workProgress: () => assets.progress.settled + startupReadiness.workProgress,
       stallMs: STARTUP_STALL_MS,
@@ -1403,6 +1450,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       timeline.frameworkReadyMs ??= now();
       timeline.readyMs ??= now();
       projectionSettled = true;
+      // The first world frame the player sees is the next one this renderer draws, so the hold comes off
+      // here and only here: every exit before it (abort, dispose, a failed launch) leaves the cover up.
+      renderer.setPresentationHeld?.(false);
       // What a game does on `whenReady()` (lift its cover, show its HUD) reaches the page with the
       // world frame, not before it: see `STARTUP_HANDOFF_FRAMES`.
       stateHandOffFrames = STARTUP_HANDOFF_FRAMES;
@@ -1753,20 +1803,22 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
               // same frames and a reader can subtract one from the other without a second clock.
               const spanWindow = spans?.window();
               if (spanWindow !== undefined) reportInfo(formatSpansWindow(spanWindow));
-              // The scene-shape verdict, on by default, from the census the frame already took.
-              // An agent building a scene of the wrong shape reads it in the log before a human
-              // ever plays the game and calls it slow.
+              // The scene-shape verdict, on by default in a debug launch, from the census the
+              // frame already took. An agent building a scene of the wrong shape reads it in the
+              // log before a human ever plays the game and calls it slow.
               const staticCensus = staticTransformCensus();
               if (staticCensus.roots > 0)
                 reportInfo(`${STATIC_TRANSFORM_MARKER}:${JSON.stringify(staticCensus)}`);
               const validation = renderListValidator?.report();
               if (validation !== undefined) reportInfo(formatValidationReport(validation));
-              const warning = sceneWarning(
-                reported,
-                describeSceneShape(reported, this.#cameraCull?.report),
-                target.targetFps,
-                renderer.gpuClass?.class,
-              );
+              const warning = devMetricsEnabled
+                ? sceneWarning(
+                    reported,
+                    describeSceneShape(reported, this.#cameraCull?.report),
+                    target.targetFps,
+                    renderer.gpuClass?.class,
+                  )
+                : undefined;
               if (warning !== undefined) reportWarning(formatSceneWarning(warning));
               // The same sentence goes to the UI on a dev launch, so a human watching the window
               // and an agent reading the log are told the same thing at the same time. No frame
@@ -1873,6 +1925,14 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     const geometryCapture = new GeometryCapture();
     this.#geometryCapture = geometryCapture;
     const budgetNow = (): number => globalThis.performance?.now() ?? Date.now();
+    // The stage meters split the render phase (PRD-771): three clock reads a frame and one difference of the
+    // engine's running totals. Decided once; `?tnStages=0` turns the whole path off, here and in the engine.
+    const stageMeters = frameBudget !== undefined && stageMetersRequested();
+    const readStages = stageMeters ? createStageReader(() => renderer.raw) : undefined;
+    const readWork = stageMeters ? createWorkReader(() => renderer.raw) : undefined;
+    if (!stageMeters)
+      (renderer.raw as { setStageMeters?: (enabled: boolean) => void }).setStageMeters?.(false);
+    let computeStageMs = 0;
     // The dev verdict is decided once per launch, and sent when it changes rather than on a timer:
     // a chip that re-sent an unchanged sentence four times a second would pay a JSON round trip to
     // say nothing new.
@@ -1945,6 +2005,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           (!startupCoverActive() || startupReadiness.compileSettled)
         ) {
           const computeStart = frameBudget === undefined ? 0 : budgetNow();
+          computeStageMs = 0;
           beginSpan(SPANS.compute);
           try {
             // The render camera comes with it, because a render-cadence consumer that culls by the
@@ -1959,7 +2020,8 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           } finally {
             endSpan(SPANS.compute);
           }
-          frameBudget?.addRender(budgetNow() - computeStart);
+          computeStageMs = frameBudget === undefined ? 0 : budgetNow() - computeStart;
+          frameBudget?.addRender(computeStageMs);
         }
         const waitingForFirstUse =
           firstWorldPass &&
@@ -2120,7 +2182,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
               if (scaler !== undefined)
                 renderer.setResolutionScale(scaler.scale, scaler.scaleSource);
             }
+            const engineStart = readStages === undefined ? 0 : budgetNow();
             renderer.render(renderRoot, camera);
+            const engineEnd = readStages === undefined ? 0 : budgetNow();
             renders += 1;
             // Count declined frames without treating them as drawn-frame render cost.
             const gateSkips = rendererFrameGateSkips(renderer.raw);
@@ -2141,7 +2205,17 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
             if (spans !== undefined) addSpan(SPANS.cull, spanNow() - cullRestoreStart);
             this.#projection?.commit();
             renderer.observeRenderChainFrame?.();
-            frameBudget?.addRender(budgetNow() - renderStart);
+            if (frameBudget !== undefined) {
+              const renderEnd = budgetNow();
+              frameBudget.addRender(renderEnd - renderStart);
+              const stages = readStages?.(
+                computeStageMs + (engineStart - renderStart),
+                engineEnd - engineStart,
+                renderEnd - engineEnd,
+              );
+              if (stages !== undefined) frameBudget.addStages(stages);
+            }
+            computeStageMs = 0;
             // Read the split before the overlay renders: the overlay is its own draw, not part of the
             // world pass, and the budget window already accounts for it in its own phase.
             worldPasses = renderPassBudget?.passes();
@@ -2264,7 +2338,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         }
         const boundary = frameCounters?.read();
         const engine = engineCounters();
+        // The owned engine's work counts; a JS back end with its own queue counters (`boundary`) outranks them.
+        const work = readWork?.(crossings);
         frameBudget?.addCounters({
+          ...(work ?? {}),
           ...(boundary ?? {}),
           ...(crossings === undefined ? {} : { bridgeCrossings: crossings }),
           ...(engine === undefined ? {} : { engine }),
@@ -2396,7 +2473,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         // the whole session. Past the window the cover lifts anyway, and says why.
         const handOffWaitedMs = now() - (timeline.readyMs ?? now());
         const handOffBounded = handOffWaitedMs >= STARTUP_STABLE_WINDOW_MS;
-        if (stateHandOffFrames > 0 && (!declined || handOffBounded)) {
+        // A draw the gate accepted is only queued: the cover lifts once the GPU has finished the first world frame.
+        const worldOnDisplay = rendererWorldPresented(renderer.raw) !== false;
+        if (stateHandOffFrames > 0 && ((!declined && worldOnDisplay) || handOffBounded)) {
           if (handOffBounded) {
             console.warn(
               `TN_STARTUP_HANDOFF_BOUNDED:${JSON.stringify({
@@ -2442,7 +2521,8 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         ),
       frameCounts: () => ({ updates, renders }),
       frameBudgetWindow: () => this.#frameBudget?.window(),
-      freezeClock: () => gameLoop.freezeClock(),
+      freezeClock: (settleSteps) => gameLoop.freezeClock(settleSteps),
+      settleClock: (steps) => gameLoop.settleNow(steps),
       renderCurrent: () => gameLoop.renderCurrentFrame(),
       enableRuntimeDiagnostics: () => {
         this.#renderMetricsEnabled = true;

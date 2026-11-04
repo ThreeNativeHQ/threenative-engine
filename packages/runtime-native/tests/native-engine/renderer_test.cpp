@@ -312,7 +312,6 @@ void traaValidation() {
                 for (int j = 0; j < 16; ++j) std::cout << (j ? "," : "") << matrix[j];
                 std::cout << "]";
                 const auto encoder = wgpuDeviceCreateCommandEncoder(device, nullptr);
-                jitter.seedHistory(encoder, beauty);
                 jitter.resolve(encoder, beauty, beautyView, depth, depthView);
                 const auto commands = wgpuCommandEncoderFinish(encoder, nullptr);
                 wgpuQueueSubmit(queue, 1, &commands);
@@ -332,6 +331,7 @@ void traaValidation() {
         renderer.setOutput(OutputState{});
         renderer.setRenderScale(0.5f);
         CHECK(!renderer.temporalUpscale());
+        CHECK(renderer.viewMipBias() == 0);  // no temporal pass: Unreal biases only an upscaled view
         CHECK(renderer.inputWidth() == 32 && renderer.inputHeight() == 24);
         for (const float scale : {0.24f, 1.01f, std::nanf("")}) {
             bool invalidScale = false;
@@ -357,6 +357,16 @@ void traaValidation() {
         item.matrixWorld[12] += 0.01;
         renderer.render(items, camera, LightState{}, {0.1, 0.2, 0.3, 0.5});
         renderer.cutHistory();
+        renderer.render(items, camera, LightState{}, {0.1, 0.2, 0.3, 0.5});
+        // PRD-539 lever 7, Unreal's view mip bias: -log2(1 / fraction) - 0.3, at least -2, ceiled to 1/128.
+        CHECK(renderer.viewMipBias() == std::ceil((-1.0 - 0.3) * 128) / 128);  // 0.5
+        renderer.setRenderScale(1.0f);
+        renderer.render(items, camera, LightState{}, {0.1, 0.2, 0.3, 0.5});
+        CHECK(renderer.viewMipBias() == std::ceil(-0.3 * 128) / 128);  // TSR at 100% still biases
+        renderer.setRenderScale(0.25f);
+        renderer.render(items, camera, LightState{}, {0.1, 0.2, 0.3, 0.5});
+        CHECK(renderer.viewMipBias() == -2.0);  // -2.3 held at r.ViewTextureMipBias.Min
+        renderer.setRenderScale(0.5f);
         renderer.render(items, camera, LightState{}, {0.1, 0.2, 0.3, 0.5});
         renderer.setSize(16, 12);
         CHECK(renderer.inputWidth() == 8 && renderer.inputHeight() == 6);
@@ -422,7 +432,6 @@ void traaValidation() {
             for (int frame = 0; frame < (dump ? 20 : 3); ++frame) {
                 const auto encoder = wgpuDeviceCreateCommandEncoder(device, nullptr);
                 upscale.begin(identity, identity, identity);
-                upscale.seedHistory(encoder, beauty);
                 upscale.fillVelocity(encoder, depthView);
                 upscale.resolve(encoder, beauty, beautyView, depth, depthView, output, outputView);
                 const auto commands = wgpuCommandEncoderFinish(encoder, nullptr);
@@ -701,6 +710,38 @@ void outputScreenSize() {
     if (pixels.size() == 64 * 32 * 4)
         for (const size_t texel : {size_t{0}, size_t{16 * 64 + 32}, size_t{64 * 32 - 1}})
             for (int c = 0; c < 3; ++c) CHECK(std::abs(int(pixels[texel * 4 + c]) - 128) <= 1);
+}
+
+// PRD-771: the post effects' and output pass's CPU is a stage of its own, nested in the encode half, and the meters'
+// switch stops every stage so the cost of the meters can be measured with them off.
+void postStageIsMetered() {
+    namespace g = shader::graph;
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    CHECK(rendersPixels(context));
+    if (!rendersPixels(context)) return;
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(64, 32);
+    renderer.setOutput(OutputState{std::nullopt, 1, false});
+    CameraState camera;
+    camera.projectionMatrix = camera.matrixWorld = camera.matrixWorldInverse =
+        {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    renderer.setPostGraph(g::vec4({g::swizzle(g::texture("scene", g::uv()), "xyz"), g::float_(1)}));
+    const auto stages = [&] {
+        std::array<double, Renderer::kCpuStageCount> now{};
+        for (size_t i = 0; i < now.size(); ++i) now[i] = renderer.cpuStageMs(Renderer::CpuStage(i));
+        return now;
+    };
+    CHECK(Renderer::cpuMeters());
+    for (int frame = 0; frame < 3; ++frame) renderer.render({}, camera, LightState{}, {1, 1, 1, 1});
+    const auto metered = stages();
+    CHECK(metered[Renderer::CpuPost] > 0);
+    CHECK(metered[Renderer::CpuPost] <= metered[Renderer::CpuEncode]);
+    Renderer::setCpuMeters(false);
+    for (int frame = 0; frame < 3; ++frame) renderer.render({}, camera, LightState{}, {1, 1, 1, 1});
+    Renderer::setCpuMeters(true);
+    CHECK(stages() == metered);
 }
 
 // A static instance uses the same camera/object velocity as an ordinary rigid draw of the same surface.
@@ -1015,12 +1056,14 @@ void traaDeformationVelocity() {
         renderer.setPostGraph(g::vec4({motion, g::swizzle(temporal, "x"), g::float_(0), g::float_(1)}));
         const auto offset = g::uniform("deformationOffset", shader::Type::f32(), {0});
         DrawItem item;
+        shader::MaterialNodes nodes;  // the draw points at a graph it does not own
+        item.nodes = &nodes;
         shader::StandardMaterial material;
         item.key = item.id = 1; item.kind = MaterialKind::Basic;
         item.positions = &ball->positions; item.indices = &ball->indices; item.material = &material;
         item.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
         const auto deformation = timed ? g::mul(g::uniform("time", shader::Type::f32()), g::float_(0.5f)) : offset;
-        item.nodes.positionNode = g::add(g::positionLocal(), g::vec3({deformation, g::float_(0), g::float_(0)}));
+        item.nodes->positionNode = g::add(g::positionLocal(), g::vec3({deformation, g::float_(0), g::float_(0)}));
         BufferStore matrices(Scalar::F32, 16);
         std::array<float, 16> matrix{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
         matrices.write(0, matrix.data(), sizeof matrix);
@@ -1224,7 +1267,6 @@ void traaHistoryClipping() {
             wgpuRenderPassEncoderEnd(clearing); wgpuRenderPassEncoderRelease(clearing);
             if (cut && frame == 18) temporal.cameraCut();
             temporal.begin(identity, identity, identity);
-            temporal.seedHistory(encoder, beauty);
             temporal.fillVelocity(encoder, depthView);
             {
                 // Blue: 1 is known static, 3 is known dynamic, 0 is unknown geometry; identity motion remains zero in RG.
@@ -1595,8 +1637,10 @@ void traaResetSeed() {
     };
     const auto history = bytes("frame-20-history.bin");
     CHECK(history.size() == 16 * 16 * 4 * sizeof(float));
-    CHECK(history == bytes("frame-19-beauty.bin"));
-    CHECK(history != bytes("frame-20-beauty.bin"));
+    // r187 TRAANode.js:390-400 resets the history from the beauty buffer of the frame it resolves: the cut frame seeds
+    // its own image, not the frame before it.
+    CHECK(history == bytes("frame-20-beauty.bin"));
+    CHECK(history != bytes("frame-19-beauty.bin"));
 }
 
 // Pixels that differ from the clear colour (black), and whether the centre pixel is lit.
@@ -1653,9 +1697,9 @@ void resizeReadback() {
     CHECK(renderer.geometry().stats().fullUploads == uploads);
 }
 
-// three@0.185.1 in Chromium (WebGPU, NVIDIA Turing), tonemap-ramp-* goldens: the 8-bit sRGB output
+// three@0.187.0 in Chromium (WebGPU, NVIDIA Turing), tonemap-ramp-* goldens: the 8-bit sRGB output
 // of linear grey 0..8 under each tone mapping, exposure 1. Read from the golden PNGs
-// (packages/three-native/tests/compatibility/goldens/0.185.1/tonemap-ramp-<mapping>.png, strip centres).
+// (packages/three-native/tests/compatibility/goldens/0.187.0/tonemap-ramp-<mapping>.png, strip centres).
 extern "C" unsigned char* stbi_load(const char* filename, int* x, int* y, int* comp, int req_comp);
 extern "C" void stbi_image_free(void* data);
 extern "C" int stbi_write_png(const char* filename, int w, int h, int comp, const void* data, int stride);
@@ -1669,7 +1713,7 @@ constexpr Ramp kRamps[] = {
     {"linear", shader::ToneMapping::Linear, {0, 255, 255, 255, 255, 255, 255, 255, 255}},
     {"reinhard", shader::ToneMapping::Reinhard, {0, 188, 213, 225, 231, 235, 238, 240, 242}},
     {"cineon", shader::ToneMapping::Cineon, {0, 216, 233, 240, 244, 246, 247, 248, 249}},
-    {"aces", shader::ToneMapping::ACESFilmic, {0, 227, 242, 247, 250, 251, 252, 253, 253}},
+    {"aces", shader::ToneMapping::ACESFilmic, {0, 226, 242, 247, 250, 251, 252, 253, 253}},
     {"agx", shader::ToneMapping::AgX, {0, 202, 224, 233, 239, 242, 245, 246, 248}},
     {"neutral", shader::ToneMapping::Neutral, {0, 240, 250, 252, 253, 254, 254, 254, 254}},
 };
@@ -1936,13 +1980,16 @@ void siblingReadsTheLiveScene() {
     main.setOutput(OutputState{std::nullopt, 1, false});
     const auto board = plane(2, 2);  // fills the clip space under the identity camera
     shader::StandardMaterial paint, copy;
+    shader::MaterialNodes wallNodes, mirrorNodes;  // the draws point at graphs they do not own
     DrawItem wall;
     wall.key = wall.id = 1; wall.kind = MaterialKind::Basic;
+    wall.nodes = &wallNodes;
     wall.positions = &board->positions; wall.indices = &board->indices; wall.material = &paint;
     wall.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0.5, 1};
     DrawItem mirror = wall;
     mirror.key = mirror.id = 2; mirror.material = &copy;
-    mirror.nodes.fragmentNode = g::texture("scene", g::screenUV());
+    mirror.nodes = &mirrorNodes;
+    mirror.nodes->fragmentNode = g::texture("scene", g::screenUV());
     CameraState flat;
     flat.projectionMatrix = flat.matrixWorld = flat.matrixWorldInverse = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
     const auto target = main.sibling();
@@ -3335,7 +3382,8 @@ void emissiveValidation() { emissivePass(false); }
 // no draw. Each target still holds its own value at the lit plane's centre. An alpha-tested plane writes its targets
 // where its fragment survives the test and leaves them clear where it is cut, as three's MRT and Unreal's base pass do,
 // whether the graph reads every target or the normal alone.
-void auxTargets(bool normalOnly, float alphaTest, float opacity, uint32_t samples = 1, bool alphaHash = false) {
+void auxTargets(bool normalOnly, float alphaTest, float opacity, uint32_t samples = 1, bool alphaHash = false,
+                bool authoredNormal = false, bool backFace = false) {
     mystral::webgpu::Context context;
     const bool initialized = context.initializeHeadless();
     CHECK(initialized);
@@ -3361,11 +3409,23 @@ void auxTargets(bool normalOnly, float alphaTest, float opacity, uint32_t sample
     material.alphaTest = alphaTest; material.opacity = opacity; material.alphaHash = alphaHash;
     const bool cut = (alphaTest > 0 && opacity <= alphaTest) || (alphaHash && opacity == 0);
     DrawItem item;
+    shader::MaterialNodes nodes;  // the draw points at a graph it does not own
+    if (authoredNormal) {
+        item.nodes = &nodes;
+        // A normal tilted away from the plane's own face, at length 2: three's setupNormal returns
+        // vec3(normalNode) and never normalizes it, so the target must hold the authored value as written.
+        nodes.normalNode = g::vec3({g::float_(0), g::float_(1), g::float_(1)});
+    }
     item.key = item.id = 1;
     item.kind = MaterialKind::Standard;
     item.positions = &geometry->positions; item.normals = &geometry->normals; item.indices = &geometry->indices;
     item.material = &material;
     item.matrixWorld = {1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1};
+    if (backFace) {
+        // The plane's front face points away: a DoubleSide draw keeps its pixels.
+        item.side = 2;
+        item.matrixWorld = {-1,0,0,0,0,1,0,0,0,0,-1,0,0,0,0,1};
+    }
     for (int frame = 0; frame < 3; ++frame)
         renderer.render(std::span<const DrawItem>(&item, 1), camera(1), LightState{}, {0,0,0,0});
     std::printf("aux targets: %u pass(es), %u draw(s) recorded on a steady frame\n", renderer.lastFrame().auxPasses,
@@ -3401,7 +3461,14 @@ void auxTargets(bool normalOnly, float alphaTest, float opacity, uint32_t sample
         return same;
     };
     // The plane faces the camera; its alpha packs metalness level 7 and roughness 0.5: 2 * 7 + 0.25 + 0.25.
-    CHECK(near(centre(&Renderer::readNormalPixels), cut ? std::array<float, 4>{0, 0, 0, 0} : std::array<float, 4>{0, 0, 1, 14.5f}));
+    // An authored normalNode replaces that facing with its own tilt, as three's setupNormal does, and is
+    // written unchanged: no normalize (this one is length 2) and no back-face flip. Without one the target
+    // holds the geometry normal flipped toward the camera on a DoubleSide back face, so it reads the same
+    // facing as the front does.
+    const std::array<float, 4> targetFacing{0, 0, 1, 14.5f};
+    const std::array<float, 4> targetAuthored{0, 1, 1, 14.5f};  // vec3(0, 1, 1), length 2
+    CHECK(near(centre(&Renderer::readNormalPixels),
+               cut ? std::array<float, 4>{0, 0, 0, 0} : authoredNormal ? targetAuthored : targetFacing));
     if (normalOnly) return;
     CHECK(near(centre(&Renderer::readAlbedoPixels), cut ? std::array<float, 4>{0, 0, 0, 0} : std::array<float, 4>{0.25f, 0.5f, 1, 1}));
     CHECK(near(centre(&Renderer::readEmissivePixels), cut ? std::array<float, 4>{0, 0, 0, 0} : std::array<float, 4>{4, 2, 0, 1}));
@@ -3462,6 +3529,69 @@ void denoiseFaceNormal() {
     CHECK(centre[0] > 20);                 // the patch is there
     CHECK(centre[2] > 20);                 // and its lit neighbours filter into it
 }
+// A material that authors its own normal (three's `normalNode`) writes that normal to the normal target, as three's
+// `normalView` MRT slot does, so a post graph that reads it draws the surface it lights. Both masks: the normal alone
+// and the normal beside the other three targets. The authored value may be any length (three does not normalize it),
+// an alpha-tested contriband must not carry it past the cut, and a DoubleSide back face holds it unflipped.
+void auxTargetsNormalNode() {
+    auxTargets(true, 0, 1, 1, false, true);
+    auxTargets(false, 0, 1, 1, false, true);
+    auxTargets(true, 0.5f, 1, 1, false, true);       // survives the alpha test: the authored normal is written
+    auxTargets(false, 0.5f, 0.4f, 1, false, true);   // cut: every target stays clear, the normal included
+    auxTargets(true, 0, 1, 1, false, true, true);    // a DoubleSide back face keeps vec3(normalNode) as authored
+    auxTargets(true, 0, 1, 1, false, false, true);   // and its geometry normal faces the camera
+}
+// buildLit (Lambert, Phong) never reads a material's `normalNode`, so its lit fragment exports no `out.normal`:
+// such a draw belongs to the shared geometry-normal pass, as every draw without an authored normal does. Routing it
+// to its own aux fragment built a whole lit MRT program per draw for the geometry normal the shared pass already
+// writes, so the count of aux fragments is the observable: zero for Lambert, one for Standard.
+void auxRoutesWrittenNormals() {
+    const auto auxFragments = [](bool authored, MaterialKind kind) {
+        mystral::webgpu::Context context;
+        const bool initialized = context.initializeHeadless();
+        CHECK(initialized);
+        if (!initialized) return uint64_t(0);
+        EventQueue events;
+        Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+        renderer.setSize(16, 16);
+        renderer.setOutput(OutputState{shader::ToneMapping::Linear, 1, false});
+        namespace g = shader::graph;
+        const auto lane = [](const char* name) { return g::swizzle(g::texture(name, g::uv()), "x"); };
+        renderer.setPostGraph(g::bloom(g::vec4({lane("normal"), g::float_(0), g::float_(0), g::float_(0)}), 0, 0, 0));
+        const auto geometry = plane(4, 4);
+        const float facing[12] = {0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1};
+        geometry->normals.resize(12);
+        geometry->normals.write(0, facing, sizeof facing);
+        shader::StandardMaterial material;
+        material.color = {0.25f, 0.5f, 1};
+        DrawItem item;
+        shader::MaterialNodes nodes;
+        if (authored) {
+            item.nodes = &nodes;
+            nodes.normalNode = g::vec3({g::float_(0), g::float_(1), g::float_(1)});
+        }
+        item.key = item.id = 1;
+        item.kind = kind;
+        item.positions = &geometry->positions; item.normals = &geometry->normals; item.indices = &geometry->indices;
+        item.material = &material;
+        item.matrixWorld = {1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1};
+        const uint64_t before = waste::counters().auxFragments.load();
+        for (int frame = 0; frame < 3; ++frame)
+            renderer.render(std::span<const DrawItem>(&item, 1), camera(1), LightState{}, {0,0,0,0});
+        CHECK(renderer.lastFrame().auxPasses == 1);
+        return waste::counters().auxFragments.load() - before;
+    };
+    const uint64_t lambertAuthored = auxFragments(true, MaterialKind::Lambert);
+    const uint64_t lambertPlain = auxFragments(false, MaterialKind::Lambert);
+    const uint64_t standardAuthored = auxFragments(true, MaterialKind::Standard);
+    const uint64_t standardPlain = auxFragments(false, MaterialKind::Standard);
+    std::printf("aux routing: Lambert %llu authored vs %llu plain, Standard %llu vs %llu; aux fragments built\n",
+                static_cast<unsigned long long>(lambertAuthored), static_cast<unsigned long long>(lambertPlain),
+                static_cast<unsigned long long>(standardAuthored), static_cast<unsigned long long>(standardPlain));
+    CHECK(lambertAuthored == 0 && lambertPlain == 0);
+    CHECK(standardAuthored == 1 && standardPlain == 0);
+}
+
 void auxTargetsOnePass() { auxTargets(false, 0, 1); }
 void auxTargetsAlphaTested() {
     auxTargets(false, 0.5f, 1);
@@ -3476,7 +3606,7 @@ void auxTargetsAlphaTested() {
 
 }  // namespace
 
-TN_TEST_MAIN({"history_depth_rows", historyDepthRows}, {"raw_target_scene_only", rawTargetOmitsUnusedOutput}, {"resize_readback", resizeReadback}, {"camera_turn_records", cameraTurnRecords}, {"coplanar_keeps_winner", coplanarKeepsWinner}, {"cull_keeps_main_bundle", cullKeepsMainBundle}, {"emissive_target", emissiveTarget}, {"aux_targets_one_pass", auxTargetsOnePass}, {"aux_targets_alpha_tested", auxTargetsAlphaTested}, {"denoise_face_normal", denoiseFaceNormal}, {"emissive_validation", emissiveValidation}, {"output_ramp", outputRamp},
+TN_TEST_MAIN({"history_depth_rows", historyDepthRows}, {"raw_target_scene_only", rawTargetOmitsUnusedOutput}, {"resize_readback", resizeReadback}, {"camera_turn_records", cameraTurnRecords}, {"coplanar_keeps_winner", coplanarKeepsWinner}, {"cull_keeps_main_bundle", cullKeepsMainBundle}, {"emissive_target", emissiveTarget}, {"aux_targets_one_pass", auxTargetsOnePass}, {"aux_targets_normal_node", auxTargetsNormalNode}, {"aux_routes_written_normals", auxRoutesWrittenNormals}, {"aux_targets_alpha_tested", auxTargetsAlphaTested}, {"denoise_face_normal", denoiseFaceNormal}, {"emissive_validation", emissiveValidation}, {"output_ramp", outputRamp},
              {"traa_alpha", traaAlpha},
              {"traa_reset_seed", traaResetSeed},
              {"traa_camera_velocity", traaCameraVelocity},
@@ -3505,7 +3635,7 @@ TN_TEST_MAIN({"history_depth_rows", historyDepthRows}, {"raw_target_scene_only",
              {"traa_mover_over_dynamic_ground", traaMoverOverDynamicGround},
              {"traa_responsive_transparent", traaResponsiveTransparent},
              {"traa_fast_pan_edges", traaFastPanEdges},
-             {"output_screen_size", outputScreenSize},
+             {"output_screen_size", outputScreenSize}, {"post_stage_is_metered", postStageIsMetered},
 #if defined(MYSTRAL_WEBGPU_DAWN)
              {"traa_velocity_footprint", traaVelocityFootprint},
              {"traa_validation", traaValidation},

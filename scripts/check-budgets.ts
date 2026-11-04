@@ -36,6 +36,7 @@ const SALVAGE_PACKAGES = new Set(["playtest", "asset-mcp", "shader-portable"]);
  * would notice it arriving.
  */
 const EXTERNAL_MCPS: ReadonlySet<string> = new Set([
+  "chrome-devtools-mcp",
   "threenative-asset-mcp",
   "threenative-sculpt-mcp",
 ]);

@@ -57,6 +57,23 @@ describe("native engine game spans", () => {
     expect(webHost).toMatch(/int tnw_web_render\([^)]*uint32_t sourceFrame\)/u);
   });
 
+  /**
+   * A canvas texture that has been taken presents even when the frame drew nothing into it (renderer.h
+   * `presentWhenDrawn`), so the world frame arms the lazy overload and decides the hold inside it. Arming
+   * `presentationHeld ? nullptr : acquire()` eagerly took the texture before `database.render`: a frame that
+   * returned 0 (an environment still baking) or threw after the hold released presented a blank canvas over
+   * the last real picture. The overlay draws always, so it keeps its eager arm.
+   */
+  it("asks the canvas for a texture only from the world frame that draws, in web_host.cpp", () => {
+    const webHost = readFileSync(
+      path.resolve("packages/runtime-native/src/engine/wasm/web_host.cpp"),
+      "utf8",
+    );
+    expect(webHost).toMatch(
+      /Renderer::PresentScope present\(\s*\*renderer,\s*\[&\]\(\) -> WGPUTextureView \{ return presentationHeld \? nullptr : acquire\(\); \},\s*surfaceFormat\);/u,
+    );
+  });
+
   it("reports the submitted frame id, captured at submission, in renderer.cpp", () => {
     const renderer = readFileSync(
       path.resolve("packages/runtime-native/src/engine/renderer/renderer.cpp"),

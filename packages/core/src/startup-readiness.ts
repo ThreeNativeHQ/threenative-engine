@@ -1,5 +1,31 @@
 export type StartupCompile = () => Promise<void> | void;
 
+/**
+ * The renderer's own first-frame answer, with the inputs it is still short of so a launch that reached its
+ * deadline can name what never arrived instead of reporting a bare timeout.
+ */
+export interface IStartupImageState {
+  /** The renderer's answer: a world frame a player may see exists. */
+  readonly ready: boolean;
+  /** The exposure meter measured within tolerance of the target it owns. */
+  readonly exposureSettled: boolean;
+  /** Every active virtual shadow mapped its clip levels, and an ordinary world frame drew. */
+  readonly shadowInputsReady: boolean;
+}
+
+/** The answer of a renderer with nothing to wait for, and of a predicate that threw. */
+const IMAGE_READY: IStartupImageState = {
+  exposureSettled: true,
+  ready: true,
+  shadowInputsReady: true,
+};
+/** A predicate that answers a plain `false` names no input: both are reported cold, which is its own answer. */
+const IMAGE_COLD: IStartupImageState = {
+  exposureSettled: false,
+  ready: false,
+  shadowInputsReady: false,
+};
+
 export interface IStartupReadinessOptions {
   /** Maximum wall-clock time spent waiting for first-use compilation. */
   readonly compileBudgetMs?: number;
@@ -19,6 +45,20 @@ export interface IStartupReadinessOptions {
   readonly stableWindowMs?: number;
   /** Default ceiling on a single `hold()`, when the caller does not give one. */
   readonly holdBudgetMs?: number;
+  /**
+   * Whether the renderer's own first real world frame exists. Read on every rendered frame, and required
+   * before readiness resolves, after the compile and stable-window budgets as well: those two timers answer
+   * what the *framework* cost, never that the picture behind the cover is the world. Absent means the caller
+   * has nothing to wait for (every renderer without the native presentation seam). A throwing predicate
+   * fails open, as a throwing hold does, so a broken read costs a frame the player did not see rather than a
+   * launch that never finishes.
+   *
+   * A predicate that says which input is still cold answers `IStartupImageState` instead of `false`; the
+   * deadline below prints that answer. One that never turns true — a black or unlit opening whose meter never
+   * measures, a sun that moves every frame and resets every shadow level, a target that keeps moving — costs
+   * `STARTUP_IMAGE_TIMEOUT_MS` of cover and then reveals, rather than costing the game its launch.
+   */
+  readonly imageReady?: () => boolean | IStartupImageState;
   /**
    * Run after every hold settles and before readiness resolves.
    *
@@ -71,6 +111,17 @@ export const STARTUP_STABLE_WINDOW_MS = 10_000;
  * poorer-looking game and never a game that does not start.
  */
 export const STARTUP_HOLD_BUDGET_MS = 45_000;
+/**
+ * How long the renderer's own first-frame wait may outlast the frame window before the cover lifts anyway.
+ *
+ * It is the one wait a game cannot bound for itself, and real openings leave it outstanding for good: a menu or
+ * a space scene that is genuinely black, where the exposure meter never measures; a sun direction that changes
+ * every frame, where `atlas.cpp` resets every level and grants one per frame, so the atlas never reports ready;
+ * a meter target that keeps moving. Three seconds covers a healthy startup's cold frames many times over — the
+ * shadow pages map in the first few held frames and the meter settles soon after — and is short enough that such
+ * an opening is a launch that worked instead of a launch that hung.
+ */
+export const STARTUP_IMAGE_TIMEOUT_MS = 3_000;
 
 /** One registered hold: the game's own launch work, and the bounded wait for it. */
 interface IHold {
@@ -98,6 +149,10 @@ export class StartupReadiness {
   readonly #holds = new Map<string, IHold>();
   #holdBudgetMs: number;
   #afterHolds: (() => Promise<void> | void) | undefined;
+  #imageReady: (() => boolean | IStartupImageState) | undefined;
+  #imageTimer: ReturnType<typeof setTimeout> | undefined;
+  #imageWaitedFrom = 0;
+  #imageTimedOut = false;
   #compileTimer: ReturnType<typeof setTimeout> | undefined;
   #windowTimer: ReturnType<typeof setTimeout> | undefined;
   #resolveReady: () => void = () => undefined;
@@ -127,6 +182,7 @@ export class StartupReadiness {
       "holdBudgetMs",
     );
     this.#afterHolds = options.afterHolds;
+    this.#imageReady = options.imageReady;
     this.#readyPromise = new Promise<void>((resolve) => {
       this.#resolveReady = resolve;
     });
@@ -174,6 +230,15 @@ export class StartupReadiness {
   /** Labels of holds that have not settled yet, in registration order. */
   get pendingHolds(): readonly string[] {
     return [...this.#holds.values()].filter((hold) => !hold.settled).map((hold) => hold.label);
+  }
+
+  /**
+   * The renderer's own wait, named for a stall report: the frame window is done and the first world frame is still
+   * cold. Empty before the frame window ends, after the deadline and once readiness resolves.
+   */
+  get pendingImage(): readonly string[] {
+    if (this.#ready || !this.#frameWindowDone || this.#imageTimedOut) return [];
+    return this.#imageReadiness() ? [] : ["the renderer's first world frame"];
   }
 
   /** Completed units from active holds; settled holds freeze their count. Display progress is separate. */
@@ -285,6 +350,62 @@ export class StartupReadiness {
     }
   }
 
+  /**
+   * The renderer's answer changes only on a frame it drew, so it is polled on rendered frames and not by a
+   * timer: the compile and stable-window budgets must not release a picture the renderer says is cold. The
+   * deadline armed at the frame window is the one bound on that wait.
+   */
+  #pollImage(): void {
+    if (this.#ready || this.#imageReady === undefined) return;
+    if (this.#imageReadiness()) this.#resolveIfComplete();
+  }
+
+  #imageReadiness(): boolean {
+    return this.#imageState().ready;
+  }
+
+  /** The renderer's answer as a state, failing open on a read that throws, like a throwing hold. */
+  #imageState(): IStartupImageState {
+    if (this.#imageReady === undefined) return IMAGE_READY;
+    try {
+      const answer = this.#imageReady();
+      return typeof answer === "boolean" ? (answer ? IMAGE_READY : IMAGE_COLD) : answer;
+    } catch {
+      return IMAGE_READY;
+    }
+  }
+
+  /**
+   * Bound the renderer's own wait, measured from the moment the framework's work ended.
+   *
+   * Everything else in a launch is bounded by its caller; this wait is not, so a game whose opening never
+   * satisfies it (`STARTUP_IMAGE_TIMEOUT_MS`) would keep its cover forever. Fails open like every other launch
+   * wait: the line names the input that never arrived, and the world shows.
+   */
+  #armImageDeadline(): void {
+    if (this.#imageTimer !== undefined || this.#imageTimedOut) return;
+    this.#imageWaitedFrom = Date.now();
+    this.#imageTimer = setTimeout(() => {
+      this.#imageTimer = undefined;
+      if (this.#ready) return;
+      const state = this.#imageState();
+      // It arrived on its own inside the deadline: there is nothing to report.
+      if (state.ready) {
+        this.#resolveIfComplete();
+        return;
+      }
+      this.#imageTimedOut = true;
+      console.warn(
+        `TN_STARTUP_IMAGE_TIMEOUT ${JSON.stringify({
+          exposureSettled: state.exposureSettled === true,
+          shadowInputsReady: state.shadowInputsReady === true,
+          waitedMs: Date.now() - this.#imageWaitedFrom,
+        })}`,
+      );
+      this.#resolveIfComplete();
+    }, STARTUP_IMAGE_TIMEOUT_MS);
+  }
+
   /** Begin the one-time first-use gate after the entered scene has been built. */
   start(compile?: StartupCompile): void {
     if (this.#started) return;
@@ -307,7 +428,10 @@ export class StartupReadiness {
 
   /** Feed actual callback wall time, not requestAnimationFrame timestamp spacing. */
   observe(frameMs: number): void {
-    if (!this.#ready) this.#pollHolds();
+    if (!this.#ready) {
+      this.#pollHolds();
+      this.#pollImage();
+    }
     if (!this.#started || this.#ready) return;
     if (
       this.#compileSettled &&
@@ -337,22 +461,33 @@ export class StartupReadiness {
     }, this.#stableWindowMs);
   }
 
-  /** The framework's own work is done. Whether the *world* is ready also depends on the holds. */
+  /** The framework's own work is done. Whether the *world* is ready also depends on the holds and the picture. */
   #finishFrameWindow(): void {
     if (this.#frameWindowDone) return;
     this.#frameWindowDone = true;
     if (this.#windowTimer !== undefined) clearTimeout(this.#windowTimer);
     this.#windowTimer = undefined;
     this.#resolveFrameworkReady();
+    if (!this.#imageReadiness()) this.#armImageDeadline();
     this.#resolveIfComplete();
   }
 
   #resolveIfComplete(): void {
     if (this.#ready || !this.#frameWindowDone) return;
     for (const hold of this.#holds.values()) if (!hold.settled) return;
+    // Last, because it is the only wait that is not the caller's: a renderer that has not drawn a world a
+    // player may see yet keeps the cover, whatever the timers say — and no longer than its own deadline.
+    if (!this.#imageTimedOut && !this.#imageReadiness()) {
+      // A picture that was warm when the frame window closed can go cold before a game hold settles
+      // (a camera cut, a streamed tier): arm the deadline here too, or nothing bounds that wait.
+      this.#armImageDeadline();
+      return;
+    }
     // Claim readiness before awaiting, so a hold that settles during `afterHolds` cannot re-enter
     // and run it twice.
     this.#ready = true;
+    if (this.#imageTimer !== undefined) clearTimeout(this.#imageTimer);
+    this.#imageTimer = undefined;
     const afterHolds = this.#afterHolds;
     // No holds means no second tier, which means the framework's own pass already saw the whole
     // scene. Resolving synchronously there keeps every game that does not stream exactly as it was.

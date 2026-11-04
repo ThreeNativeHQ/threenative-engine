@@ -6,19 +6,35 @@
 // that any two NaNs are equal.
 #include "check.h"
 #include "engine/renderer/shadows/virtual/pages.h"
+#include "engine/foundation/waste_counters.h"
 
 #include <bit>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <iterator>
-#include <set>
+#include <new>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 using namespace tn::engine;
 using namespace tn::engine::shadows;
+
+namespace {
+bool trackAllocation = false;
+std::size_t largestAllocation = 0;
+}
+
+void* operator new(std::size_t bytes) {
+    if (trackAllocation && bytes > largestAllocation) largestAllocation = bytes;
+    if (void* memory = std::malloc(bytes ? bytes : 1)) return memory;
+    throw std::bad_alloc();
+}
+void operator delete(void* memory) noexcept { std::free(memory); }
+void operator delete(void* memory, std::size_t) noexcept { std::free(memory); }
 
 namespace {
 
@@ -115,14 +131,15 @@ void vsmPages() {
             }
         }
 
-        std::set<std::string> protectedKeys;
+        std::unordered_set<uint64_t> protectedIds;
         for (const PageRequest& request : requests)
-            protectedKeys.insert(request.address.key);
+            protectedIds.insert(pageId(request.address.level, request.address.x, request.address.y));
 
         for (std::size_t i = 0; frameOk && i < requests.size(); ++i) {
             const RefAllocation& want = frame.allocations[i];
             const std::optional<PhysicalPageAllocation> allocation =
-                pool->allocate(requests[i].address.key, fromBits(frame.frame), requests[i].pinned, protectedKeys);
+                pool->allocate(pageId(requests[i].address.level, requests[i].address.x, requests[i].address.y),
+                               fromBits(frame.frame), requests[i].pinned, protectedIds);
             if (allocation.has_value() == want.overflow) {
                 frameOk = false;
                 std::fprintf(stderr, "frame %zu allocation %zu: overflow got %d want %d\n", frameIndex, i,
@@ -132,7 +149,8 @@ void vsmPages() {
             if (!allocation.has_value())
                 continue;
             const PhysicalPageAllocation& got = *allocation;
-            const std::string evicted = got.hasEvicted ? got.evictedKey : std::string();
+            // The identity is numeric; the reference's keys are formatted, so the comparison reads one back.
+            const std::string evicted = got.hasEvicted ? pageKeyOf(got.evictedId) : std::string();
             const std::string wantEvicted = want.hasEvicted ? std::string(want.evictedKey) : std::string();
             if (got.reused != want.reused || got.entry.slot != want.slot || got.hasEvicted != want.hasEvicted ||
                 evicted != wantEvicted) {
@@ -153,12 +171,13 @@ void vsmPages() {
         for (std::size_t i = 0; frameOk && i < entries.size(); ++i) {
             const RefPoolEntry& want = frame.poolEntries[i];
             const PhysicalPageEntry& got = entries[i];
-            if (got.key != want.key || got.slot != want.slot || got.pinned != want.pinned || got.dirty != want.dirty ||
+            const std::string key = pageKeyOf(got.id);
+            if (key != want.key || got.slot != want.slot || got.pinned != want.pinned || got.dirty != want.dirty ||
                 got.generation != want.generation || !sameDouble(got.lastUsedFrame, fromBits(want.lastUsedFrame))) {
                 frameOk = false;
                 std::fprintf(stderr,
                              "frame %zu pool entry %zu: got %s slot %d pinned %d dirty %d gen %llu used %.17g\n",
-                             frameIndex, i, got.key.c_str(), got.slot, got.pinned, got.dirty,
+                             frameIndex, i, key.c_str(), got.slot, got.pinned, got.dirty,
                              static_cast<unsigned long long>(got.generation), got.lastUsedFrame);
                 std::fprintf(stderr, "                        want %s slot %d pinned %d dirty %d gen %llu used %.17g\n",
                              want.key, want.slot, want.pinned, want.dirty,
@@ -176,6 +195,11 @@ void vsmPages() {
     }
 
     checkKeyCases(mismatched);
+    // A page's numeric identity and its key name the same page, signs and the packing's edges included.
+    for (const PageAddress& address : {PageAddress{0, 0, 0, {}}, PageAddress{3, -kPageAxisLimit, kPageAxisLimit, {}},
+                                       PageAddress{2, -7, -9, {}}})
+        CHECK(pageKeyOf(pageId(address.level, address.x, address.y)) ==
+              makePageKey(address.level, address.x, address.y));
     std::printf("vsm pages: %zu frames, %zu differ\n", frames, mismatched);
     CHECK(frames > 0 && mismatched == 0);
 }
@@ -232,6 +256,34 @@ void vsmInvalidation() {
     CHECK(moves > 0 && mismatched == 0);
 }
 
+void evictionAllocation() {
+    std::string error;
+    constexpr int capacity = 128;
+    auto pool = PhysicalPagePool::create(capacity, error);
+    CHECK(pool.has_value());
+    if (!pool) return;
+    // Level 0's first 128 pages, by identity: a page is three integers, never a formatted key.
+    const auto page = [](int x) { return pageId(0, x, 0); };
+    for (int i = 0; i < capacity; ++i) CHECK(pool->allocate(page(i), 1).has_value());
+    CHECK(pool->allocate(page(0), 1, true).has_value());
+    const std::unordered_set<uint64_t> protectedIds{page(1)};
+    largestAllocation = 0;
+    trackAllocation = true;
+    waste::setDebugEnabled(true);
+    const uint64_t candidatesBefore = waste::counters().shadowPageEvictionCandidates.load();
+    const auto allocation = pool->allocate(page(capacity), 2, false, protectedIds);
+    const uint64_t candidates = waste::counters().shadowPageEvictionCandidates.load() - candidatesBefore;
+    waste::setDebugEnabled(false);
+    trackAllocation = false;
+    CHECK(allocation && allocation->hasEvicted && allocation->evictedId == page(2) && allocation->entry.slot == 2);
+    // FS12's F3 shape: one eviction judges at most the pool's capacity, so a scan that grew past it (or one per
+    // page of a grant) fails here rather than showing up as frame time.
+    std::printf("eviction largest allocation: %zu bytes, pool snapshot: %zu bytes, %llu candidate(s) for one eviction\n",
+                largestAllocation, capacity * sizeof(PhysicalPageEntry), (unsigned long long)candidates);
+    CHECK(candidates > 0 && candidates <= std::uint64_t(2 * capacity));
+    CHECK(largestAllocation < capacity * sizeof(PhysicalPageEntry));
+}
+
 } // namespace
 
-TN_TEST_MAIN({"pages", vsmPages}, {"invalidation", vsmInvalidation})
+TN_TEST_MAIN({"pages", vsmPages}, {"invalidation", vsmInvalidation}, {"eviction_allocation", evictionAllocation})

@@ -99,6 +99,15 @@ export interface IAnimationRateState {
 export const animationRateStates = new WeakMap<Object3D, IAnimationRateState>();
 /** The roots that may hold a rate state, so the camera pass walks the rigs instead of the scene. */
 const animationRateRoots = new Set<WeakRef<Object3D>>();
+
+/**
+ * From this many rigs, each re-measures its rate on its own turn, one frame in {@link RATE_MEASURE_FRAMES}, and
+ * holds the rate between turns. The measure is per-part math, 0.75 ms a frame for the stress lab's 120 rigs.
+ * A smaller scene measures every frame. The rate is itself a pose period of 1 to 8 frames, so a hold of 3 lags it by
+ * no more than one rate 4 period.
+ */
+const RATE_HOLD_RIGS = 32;
+const RATE_MEASURE_FRAMES = 4;
 const animationRateRootRefs = new WeakMap<Object3D, WeakRef<Object3D>>();
 /** The stand-ins named in {@link animationRateSources}, so the pass can reach them without a scene walk. */
 const animationRateCarriers = new Set<WeakRef<Object3D>>();
@@ -227,12 +236,6 @@ function countEngineCost(name: string): void {
   host.__tnEngineCost[name] = (host.__tnEngineCost[name] ?? 0) + 1;
 }
 
-/** The native engine's one-call answer to "is it and every parent visible" (bindings_scene.cpp). */
-function visibleInWorld(object: unknown): boolean | undefined {
-  const host = (object as { __tnVisibleInWorld?: () => boolean }).__tnVisibleInWorld;
-  return typeof host === "function" ? host.call(object) : undefined;
-}
-
 function engineCullRoot(root: unknown): IEngineCullRoot | undefined {
   const candidate = root as Partial<IEngineCullRoot> | null;
   return typeof candidate?.__cullProjected === "function" &&
@@ -275,6 +278,8 @@ export class RenderCameraCull {
   readonly #animatedFrom: (Object3D | IAnimationRateState | number | undefined)[] = [];
   /** The renderables under each rate root, in walk order, from the same walk as {@link #animated}. */
   readonly #rigParts = new Map<Object3D, Object3D[]>();
+  /** A rig inside a rig: the inner rate comes from the outer walk, so no rig may skip its walk. */
+  #nestedRigs = false;
   #collectingParts: Object3D[] = [];
   readonly #collectAnimated: (object: Object3D) => void;
   /** The camera's descendants this frame, so camera attachment needs no walk up the parents. */
@@ -320,6 +325,7 @@ export class RenderCameraCull {
     this.#collectAnimated = (object) => {
       if (isRenderable(object)) this.#collectingParts.push(object);
       const outer = this.#animated.get(object);
+      if (outer !== undefined) this.#nestedRigs = true;
       // A rig nested in another rig answers to both roots.
       this.#animated.set(
         object,
@@ -359,6 +365,7 @@ export class RenderCameraCull {
     this.#animated.clear();
     this.#animatedFrom.length = 0;
     this.#rigParts.clear();
+    this.#nestedRigs = false;
     for (const ref of animationRateRoots) {
       const root = ref.deref() as Object3D;
       const state = animationRateStates.get(root) as IAnimationRateState;
@@ -410,10 +417,20 @@ export class RenderCameraCull {
     if (!this.#prepareAnimated()) return;
     // Start at each rig and each stand-in that observes one, never at the scene: the walk then visits
     // the same objects a scene walk would have acted on, and nothing else.
-    const rootShown = visibleInWorld(root) === true;
+    const rootShown = this.#isVisibleInWorld(root as Object3D);
+    // A stand-in's walk reads the rigs it draws, so with any stand-in every rig keeps its walk.
+    const holds =
+      rootShown &&
+      !this.#nestedRigs &&
+      animationRateCarriers.size === 0 &&
+      animationRateRoots.size >= RATE_HOLD_RIGS;
+    let turn = this.#animationFrame;
     for (const ref of animationRateRoots) {
       const rig = ref.deref();
-      if (rig !== undefined && this.#reaches(rig, root)) this.#visitRig(rig, rootShown);
+      if (rig === undefined || !this.#reaches(rig, root)) continue;
+      turn += 1;
+      if (!holds || turn % RATE_MEASURE_FRAMES === 0 || !this.#holdRate(rig))
+        this.#visitRig(rig, rootShown);
     }
     for (const ref of animationRateCarriers) {
       const carrier = ref.deref();
@@ -430,11 +447,23 @@ export class RenderCameraCull {
     }
   }
 
+  /** Carries a rig's rate into this frame; false when last frame did not measure or hold it, as for a rig just shown. */
+  #holdRate(rig: Object3D): boolean {
+    const state = animationRateStates.get(rig);
+    if (state?.source !== this || state.frame !== this.#animationFrame - 1) return false;
+    state.frame = this.#animationFrame;
+    return true;
+  }
+
   /**
    * The rig's visible walk, as `traverseVisible` would make it. Only its renderables act, so on the
-   * native engine, with the walk's root shown, each kept part asks once whether it is shown, rather
+   * native engine, with the walk's root shown, each kept part asks whether it is shown, rather
    * than the walk wrapping every bone across the boundary. A rig that reaches a shown root is itself
    * shown, so a part shown in the world is exactly a part its rig's walk reaches.
+   *
+   * The answer is this file's own walk, not the engine's `__tnVisibleInWorld`: that call was one
+   * crossing per kept part (240 a frame on the stress lab's crowd), while `visible` is an engine
+   * field and `parent` a kept hierarchy answer, so the same walk in JS crosses nothing.
    */
   #visitRig(rig: Object3D, rootShown: boolean): void {
     const parts = rootShown ? this.#rigParts.get(rig) : undefined;
@@ -446,7 +475,7 @@ export class RenderCameraCull {
       rig.traverseVisible(this.#animationVisitor);
       return;
     }
-    for (const part of parts) if (visibleInWorld(part) === true) this.#visitAnimation(part);
+    for (const part of parts) if (this.#isVisibleInWorld(part)) this.#visitAnimation(part);
   }
 
   /**

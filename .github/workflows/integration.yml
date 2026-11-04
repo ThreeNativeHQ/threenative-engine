@@ -16,6 +16,10 @@ on:
       runner_admission:
         type: string
         default: ""
+      # This run's compiled workspace from `build-artifacts`; empty builds it in the job.
+      workspace_artifact:
+        type: string
+        default: ""
       base_sha:
         type: string
         default: ""
@@ -92,7 +96,7 @@ jobs:
           # Exact source filters; workflow-only changes compare each job and filter separately.
           TN_LANE_FILTERS: |
             animation ^packages/core/src/animation\.ts$|^packages/core/__tests__/animation[^/]*\.spec\.ts$|^examples/abyss-framework/src/render/animation-reversal[^/]*\.ts$|^examples/abyss-framework/src/animation-reversal-main\.ts$|^examples/abyss-framework/animation-reversal\.html$|^examples/abyss-framework/playtests/animation-reversal\.playtest\.json$|^scripts/verify-animation-reversal\.ts$|^packages/core/__tests__/vq-locomotion-blend-spaces\.spec\.ts$|^examples/abyss-framework/src/render/locomotion-[^/]*\.ts$|^examples/abyss-framework/src/render/vq-locomotion-[^/]*\.ts$|^examples/abyss-framework/src/vq-locomotion-main\.ts$|^examples/abyss-framework/playtests/vq-locomotion-blend-spaces\.playtest\.json$|^examples/abyss-framework/assets/mannequin\.glb$|^scripts/verify-vq-locomotion\.ts$
-            cold-boot ^packages/create-threenative/(template-assets|templates/[^/]+/src/render)/(autoExposure|exposure|exposureGraph|exposureReadback|worldEnvironment)\.ts$|^packages/create-threenative/__tests__/auto-exposure[^/]*\.spec\.ts$|^packages/create-threenative/__tests__/fixtures/auto-exposure/.*$|^packages/core/src/.*$|^packages/core/patches/.*$|^packages/playtest/.*$|^packages/runtime-native/.*$|^pnpm-lock\.yaml$|^scripts/xvfb\.sh$|^\.github/actions/(workspace-dist|pnpm|playwright-chromium)/.*$
+            cold-boot ^packages/create-threenative/(template-assets|templates/[^/]+/src/render)/(autoExposure|exposure|exposureGraph|exposureReadback|worldEnvironment)\.ts$|^packages/create-threenative/__tests__/auto-exposure[^/]*\.spec\.ts$|^packages/create-threenative/__tests__/fixtures/auto-exposure/.*$|^packages/core/src/(.*/)?[^/]*[Ee]xposure[^/]*$
             exposure ^packages/create-threenative/(template-assets|templates/[^/]+/src/render)/(autoExposure|exposure|exposureGraph|exposureReadback|worldEnvironment)\.ts$|^packages/create-threenative/__tests__/auto-exposure[^/]*\.spec\.ts$|^packages/create-threenative/__tests__/fixtures/auto-exposure/.*$|^packages/core/src/.*$|^packages/core/patches/.*$|^packages/playtest/.*$|^packages/runtime-native/.*$|^pnpm-lock\.yaml$|^scripts/xvfb\.sh$|^\.github/actions/(workspace-dist|pnpm|playwright-chromium)/.*$
             csg ^examples/integrations/csg/.*$
             decals ^packages/playtest/.*$|^packages/create-threenative/templates/shooter/src/render/decals\.ts$|^packages/create-threenative/templates/shooter/src/scenes/Play\.ts$|^packages/create-threenative/__tests__/shooter-decals[^/]*\.spec\.ts$|^packages/create-threenative/__tests__/fixtures/bounded-decals/.*$|^packages/runtime-native/.*$|^scripts/xvfb\.sh$|^\.github/actions/workspace-dist/.*$|^\.github/actions/pnpm/.*$|^\.github/actions/playwright-chromium/.*$|^pnpm-lock\.yaml$
@@ -230,6 +234,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - uses: ./.github/actions/workspace-dist
         with:
+          shared-artifact: ${{ inputs.workspace_artifact }}
           pack-archives: 'false'
           save-bundles: 'false'
       - uses: ./.github/actions/playwright-chromium
@@ -281,6 +286,7 @@ jobs:
       - name: Build this source's public JavaScript packages
         uses: ./.github/actions/workspace-dist
         with:
+          shared-artifact: ${{ inputs.workspace_artifact }}
           save-bundles: 'false'
           pack-archives: 'false'
       - name: Verify native preflight and capture rejection controls
@@ -298,6 +304,7 @@ jobs:
           libxcursor-dev libxi-dev libxfixes-dev libxss-dev libxkbcommon-dev
           libgtk-3-dev libwebkit2gtk-4.1-dev libxcomposite-dev xcompmgr
           libvulkan1 mesa-vulkan-drivers vulkan-tools xvfb zlib1g-dev
+      - uses: ./.github/actions/native-rust-cache
       - name: Build the ordinary ARM desktop host
         run: pnpm --filter @threenative/runtime-native native:build
       - name: Run the same packaged decal scenarios and unchanged pixel gates
@@ -488,6 +495,7 @@ jobs:
       - uses: ./.github/actions/native-engine-wasm
       - uses: ./.github/actions/workspace-dist
         with:
+          shared-artifact: ${{ inputs.workspace_artifact }}
           pack-archives: 'false'
           save-bundles: 'false'
       - uses: ./.github/actions/playwright-chromium
@@ -545,6 +553,7 @@ jobs:
       - name: Build this source's public JavaScript packages
         uses: ./.github/actions/workspace-dist
         with:
+          shared-artifact: ${{ inputs.workspace_artifact }}
           save-bundles: 'false'
           pack-archives: 'false'
       - name: Restore checksum-provisioned native dependencies
@@ -560,6 +569,7 @@ jobs:
           libxcursor-dev libxi-dev libxfixes-dev libxss-dev libxkbcommon-dev
           libgtk-3-dev libwebkit2gtk-4.1-dev libxcomposite-dev xcompmgr
           libvulkan1 mesa-vulkan-drivers vulkan-tools xvfb zlib1g-dev
+      - uses: ./.github/actions/native-rust-cache
       - name: Build the ordinary ARM desktop host from this source
         run: pnpm --filter @threenative/runtime-native native:build
       - name: Bundle the authored locomotion entry for the native host
@@ -661,6 +671,7 @@ jobs:
       - name: Build this source's public JavaScript packages
         uses: ./.github/actions/workspace-dist
         with:
+          shared-artifact: ${{ inputs.workspace_artifact }}
           save-bundles: 'false'
           pack-archives: 'false'
       - name: Verify native preflight and capture rejection controls
@@ -678,6 +689,7 @@ jobs:
           libxcursor-dev libxi-dev libxfixes-dev libxss-dev libxkbcommon-dev
           libgtk-3-dev libwebkit2gtk-4.1-dev libxcomposite-dev xcompmgr
           libvulkan1 mesa-vulkan-drivers vulkan-tools xvfb zlib1g-dev
+      - uses: ./.github/actions/native-rust-cache
       - name: Build the ordinary ARM desktop host
         run: pnpm --filter @threenative/runtime-native native:build
       - name: Verify the compiled surface acquisition status contract
@@ -852,6 +864,7 @@ jobs:
       - name: Build this source's public JavaScript packages
         uses: ./.github/actions/workspace-dist
         with:
+          shared-artifact: ${{ inputs.workspace_artifact }}
           save-bundles: 'false'
           pack-archives: 'false'
       - name: Verify native preflight and capture rejection controls
@@ -869,6 +882,7 @@ jobs:
           libxcursor-dev libxi-dev libxfixes-dev libxss-dev libxkbcommon-dev
           libgtk-3-dev libwebkit2gtk-4.1-dev libxcomposite-dev xcompmgr
           libvulkan1 mesa-vulkan-drivers vulkan-tools xvfb zlib1g-dev
+      - uses: ./.github/actions/native-rust-cache
       - name: Build the ordinary ARM desktop host from this source
         run: pnpm --filter @threenative/runtime-native native:build
       - name: Run the same authored four-arm proof and missing-gate control
@@ -930,6 +944,7 @@ jobs:
       - name: Build this commit's JavaScript packages
         uses: ./.github/actions/workspace-dist
         with:
+          shared-artifact: ${{ inputs.workspace_artifact }}
           save-bundles: 'false'
           pack-archives: 'false'
       - name: Validate real compressed-source normalization and capture guards
@@ -951,6 +966,7 @@ jobs:
           libxcursor-dev libxi-dev libxfixes-dev libxss-dev libxkbcommon-dev
           libgtk-3-dev libwebkit2gtk-4.1-dev libxcomposite-dev xcompmgr
           libvulkan1 mesa-vulkan-drivers vulkan-tools xvfb zlib1g-dev
+      - uses: ./.github/actions/native-rust-cache
       - name: Build the QuickJS host required by the packaged fallback
         run: |
           pnpm --filter @threenative/runtime-native native:build
@@ -1002,6 +1018,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - uses: ./.github/actions/workspace-dist
         with:
+          shared-artifact: ${{ inputs.workspace_artifact }}
           pack-archives: 'false'
           save-bundles: 'false'
       - uses: ./.github/actions/playwright-chromium
@@ -1046,6 +1063,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - uses: ./.github/actions/workspace-dist
         with:
+          shared-artifact: ${{ inputs.workspace_artifact }}
           pack-archives: 'false'
           save-bundles: 'false'
       - uses: ./.github/actions/playwright-chromium

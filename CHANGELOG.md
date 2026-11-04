@@ -30,6 +30,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Breaking
 
+- `@threenative/core`'s `AutoExposureNode` extends Three's `Node` instead of the `TempNode` that
+  Three 0.187 deprecated (PRD-775), so its recorded signature changes. No game code names that
+  base class: `exposure` still returns the same node with the same constructor arguments, and the
+  `isTempNode` flag r187 no longer reads is gone (`isNode` answers instead).
+
+- `@threenative/blender-bridge` (formerly `threenative-blender-mcp`) is now private and ships
+  no MCP server. The `threenative-blender` server is gone from `.mcp.json` and every other host
+  config, along with the `blender_status`, `blender_inspect`, `blender_convert`,
+  `blender_recipes`, `blender_export_world` and `blender_run_python` tools. Blender conversion at
+  build time is unchanged: `blenderImportPass` still converts `.fbx`, `.blend`, `.obj` and `.dae`
+  through the same bridge, and the bpy recipes stay in `packages/blender-bridge/gpl/` to run with
+  `blender --background --python`. Remove the stale `threenative-blender` entry from an existing
+  project's MCP config; a fresh scaffold no longer writes it.
+
 - `@threenative/core#sceneWarning` takes an optional fourth `gpuClass` argument and
   returns no verdict for `"software"`: a CPU rasteriser puts the GPU's work inside the
   render phase, so "the GPU is idle" is false there. Existing three-argument callers

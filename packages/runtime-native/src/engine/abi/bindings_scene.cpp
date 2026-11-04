@@ -481,6 +481,10 @@ void registerObject3D(ClassBinding& b) {
     b.fields["visible"] = {flags.visible, 0};
     b.fields["castShadow"] = {flags.castShadow, 0};
     b.fields["receiveShadow"] = {flags.receiveShadow, 0};
+    // The world-matrix dirty flag: core's physics interpolation restores a body's solved pose after the draw
+    // and needs the next walk to compose it again (one crossing a body a frame on the stress lab: 300). A
+    // store is the whole of it — no revision, no deferred transform — so the Wasm back end also writes it here.
+    b.fields["matrixWorldNeedsUpdate"] = {flags.matrixWorldNeedsUpdate, 0};
     // The flags sit after pointers, so they count from the first flag: the registry is dumped by a
     // 64-bit build and read by the 32-bit Wasm one.
     b.getters["__address"] = [](void* self) { return Value::of(double(reinterpret_cast<uintptr_t>(as<Object3D>(self)->flags()))); };
@@ -1545,7 +1549,10 @@ void registerAnimationMixer(ClassBinding& b) {
     b.setters["timeScale"] = [](void* self, const Value& v) { as<AnimationMixer>(self)->timeScale = number(v); };
     // A game reads `time` every frame (Midway: 71 a frame); the Wasm back end reads it in place.
     static const AnimationMixer probe(std::make_shared<Object3D>());
-    b.fields = {{"time", {uint32_t(reinterpret_cast<const char*>(&probe.time) - reinterpret_cast<const char*>(&probe)), 1}}};
+    const auto timeAt = uint32_t(reinterpret_cast<const char*>(&probe.time) - reinterpret_cast<const char*>(&probe));
+    // timeScale follows time (an AnimationPlayer reads it every frame, stress lab: 360 crossings a frame).
+    static_assert(offsetof(AnimationMixer, timeScale) == offsetof(AnimationMixer, time) + 8);
+    b.fields = {{"time", {timeAt, 1}}, {"timeScale", {timeAt + 8, 1}}};
     b.getters["__address"] = [](void* self) { return Value::of(double(reinterpret_cast<uintptr_t>(self))); };
 }
 
@@ -1706,6 +1713,21 @@ void registerAnimationAction(ClassBinding& b) {
              {"weight", &AnimationAction::weight}, {"repetitions", &AnimationAction::repetitions}}) {
         b.getters[name] = [field](void* self) { return Value::of(as<AnimationAction>(self)->*field); };
         b.setters[name] = [field](void* self, const Value& v) { as<AnimationAction>(self)->*field = number(v); };
+    }
+    // An AnimationPlayer reads timeScale and paused on every action every frame (stress lab: 775 crossings a
+    // frame); the Wasm back end reads them in place. The block starts at `time`, so the offsets hold in the
+    // 64-bit build that dumps the registry and the 32-bit Wasm one that reads it.
+    {
+        static_assert(offsetof(AnimationAction, timeScale) == offsetof(AnimationAction, time) + 8 &&
+                          offsetof(AnimationAction, weight) == offsetof(AnimationAction, time) + 16 &&
+                          offsetof(AnimationAction, paused) == offsetof(AnimationAction, time) + 32 &&
+                          offsetof(AnimationAction, enabled) == offsetof(AnimationAction, time) + 33,
+                      "AnimationAction's field block moved: update the Wasm back end's offsets");
+        b.fields = {{"time", {0, 1}}, {"timeScale", {8, 1}}, {"weight", {16, 1}}, {"paused", {32, 0}},
+                    {"enabled", {33, 0}}};
+        b.getters["__address"] = [](void* self) {
+            return Value::of(double(reinterpret_cast<uintptr_t>(&as<AnimationAction>(self)->time)));
+        };
     }
     for (const auto& [name, field] : std::initializer_list<std::pair<const char*, bool AnimationAction::*>>{
              {"paused", &AnimationAction::paused}, {"enabled", &AnimationAction::enabled},

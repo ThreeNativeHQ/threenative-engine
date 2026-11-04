@@ -887,6 +887,13 @@ export interface IPlaytestScenario {
   sourcePath?: string;
   /** Absolute fixed-step tick reached after startup and warmup, before baseline and input. */
   startTick?: number;
+  /**
+   * Draw one frame every this many fixed-step ticks, in every tick-advancing step. A component
+   * that samples a GPU readback lands at most one sample per drawn frame, so without a cadence the
+   * number of samples a scenario gets is a property of the adapter's frame rate and not of its
+   * ticks. Absent, ticks advance undrawn as they always did.
+   */
+  drawEvery?: number;
   steps: IPlaytestStep[];
   subject?: string;
   target: PlaytestTarget;

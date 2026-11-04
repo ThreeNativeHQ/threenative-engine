@@ -232,18 +232,17 @@ directory anyway and the build converts it:
 build fails and names the install command for your platform — it does not copy the unusable file
 through and report success. Ask the user before installing anything; it is roughly 350 MB.
 
-The `threenative-blender` MCP server answers the rest:
+To see what a file contains before you commit it, ask Blender through the same converter the build
+uses — `packages/blender-bridge/gpl/convert.py` reports mesh, triangle, vertex and bone counts,
+material names, clip names and image names:
 
-- `blender_status` — can this machine convert at all? Never fails; with no Blender it returns
-  `available: false` and the install command. Call it first.
-- `blender_inspect` — what is in this file? Mesh, triangle, vertex and bone counts, material
-  names, clip names, image names. Use it before committing a download.
-- `blender_convert` — write a GLB somewhere other than the build's output. Zero meshes out is a
-  failure, never an empty GLB.
-- `blender_recipes` — the shipped bpy recipes (`decimate`, `unwrap`, `bake_ao`, `retarget`) and
-  their **full source text**. Read one and adapt it; do not write bpy cold.
-- `blender_run_python` — run a bpy script of your own. It is not a sandbox and does not claim to
-  be; it gives you a resolved Blender and the same fail-closed handling, not extra privilege.
+```sh
+blender --background --factory-startup --python packages/blender-bridge/gpl/convert.py -- \
+  '{"source": "assets/hero.fbx", "out": "/tmp/hero.glb"}'
+```
+
+For bpy work of your own — decimating a scan, unwrapping, baking AO, retargeting — write the script
+and run it with `blender --background --python`. Nothing here is a sandbox or claims to be.
 
 ## The narrower tools
 

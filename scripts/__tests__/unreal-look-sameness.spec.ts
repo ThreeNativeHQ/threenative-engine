@@ -511,7 +511,7 @@ describe("sameness gate: which poses it reads", () => {
         "sunlit-room",
         "shadow:penumbra-lab",
         "shadow:lamp-room",
-        "shadow:foliage",
+        "shadow:wildwood",
       ]),
     );
     expect(inputs.filter((i) => i.scene === "reference").map((i) => i.pose)).toEqual([

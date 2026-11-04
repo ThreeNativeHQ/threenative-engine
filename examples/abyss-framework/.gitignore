@@ -4,6 +4,7 @@ dist-native/
 # static files (favicon) stay in public/ and are committed; these outputs never are.
 public/assets.manifest.json
 public/bake.receipt.json
+public/.bake.pending-receipt.json
 public/basis/
 public/shared/
 public/world/

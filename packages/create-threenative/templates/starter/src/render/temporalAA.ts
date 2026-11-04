@@ -13,6 +13,7 @@ import { createTemporalCurrentProducer } from "./temporalCurrentProducer.js";
 import { ownsCurrentInput } from "./temporalCurrentSelection.js";
 export type { ITemporalAAReport, TemporalResetReason } from "./temporalAAStage.js";
 import { createTemporalAAResolve } from "./temporalAAResolve.js";
+import { type ITemporalHistoryWeighting, historyWeighting } from "./temporalResolve.js";
 import type { TemporalResolveNode } from "./temporalResolveDepth.js";
 
 /** Reuse TRAANode's jitter, depth rejection and variance clipping. In a RenderChain `traa` factory
@@ -24,10 +25,11 @@ export function createTemporalAA(
   velocityInput: TextureNode,
   camera: PerspectiveCamera | OrthographicCamera,
   currentPass?: PassNode,
+  requested?: ITemporalHistoryWeighting,
 ) {
-  const currentProducer = ownsCurrentInput(colour, depthInput, velocityInput, camera, currentPass)
-    ? createTemporalCurrentProducer(currentPass)
-    : undefined;
+  const raw4 = ownsCurrentInput(colour, depthInput, velocityInput, camera, currentPass);
+  const weighting = historyWeighting(requested, raw4);
+  const currentProducer = raw4 ? createTemporalCurrentProducer(currentPass) : undefined;
   const depth = currentProducer?.depth ?? depthInput;
   const velocity = currentProducer?.motion ?? velocityInput;
   const node = traa(colour, depth, velocity, camera);
@@ -46,6 +48,7 @@ export function createTemporalAA(
     node as TemporalResolveNode,
     jitterOffset,
     currentProducer,
+    weighting,
   );
   const frames = createTemporalAAFrame(
     internals,
@@ -54,10 +57,12 @@ export function createTemporalAA(
     historyValid,
     resolve.equations,
     currentProducer?.publishDepth,
+    weighting.historyScale,
+    resolve.levers,
   );
-  const hooks = createTemporalAAHooks(frames.jitterInput);
+  const hooks = createTemporalAAHooks(frames.jitterInput, () => internals.clearViewOffset());
   let ownedViewOffset: { width: number; height: number } | null = null;
-  const projection = new Matrix4().copy(camera.projectionMatrix);
+  let projection: Matrix4 | undefined;
   const setViewOffset = internals.setViewOffset.bind(node);
   const clearViewOffset = internals.clearViewOffset.bind(node);
   let pending: TemporalResetReason | null = "initial";
@@ -90,8 +95,10 @@ export function createTemporalAA(
     const aspect = (camera as PerspectiveCamera).aspect;
     if (ownedViewOffset !== null) camera.clearViewOffset();
     camera.updateProjectionMatrix();
-    if (!camera.projectionMatrix.equals(projection)) pending ??= "projection-change";
-    projection.copy(camera.projectionMatrix);
+    // The first observation is the baseline: the `initial` reset already drops history. Three 0.187
+    // asks for the offset from the pipeline's before-callback, after the frame cleared `pending`.
+    if (projection?.equals(camera.projectionMatrix) === false) pending ??= "projection-change";
+    projection = (projection ?? new Matrix4()).copy(camera.projectionMatrix);
     setViewOffset(width, height);
     if ((camera as PerspectiveCamera).aspect !== aspect) {
       (camera as PerspectiveCamera).aspect = aspect;
@@ -108,14 +115,13 @@ export function createTemporalAA(
     properties.temporalColour = node.beautyNode;
     properties.temporalDepth = depth;
     properties.temporalVelocity = velocity;
-    const pipeline = (builder.context as { renderPipeline?: { context: PipelineContext } })
-      .renderPipeline;
-    // The originals are read before upstream's setup writes the node's own pair over them.
-    if (pipeline !== undefined) hooks.captureBeforeSetup(pipeline.context);
+    const pipeline = (builder.context as { renderPipeline?: unknown }).renderPipeline;
+    if (pipeline !== undefined) hooks.claim(builder.context, node);
     const output = setup(builder);
     resolve.configure(builder.renderer);
     // Upstream's resolve is what this replaces, so the reset kernel runs by default.
-    if (pipeline !== undefined) hooks.installAfterSetup(pipeline.context, builder.renderer);
+    if (pipeline !== undefined)
+      hooks.installAfterSetup(builder.context as PipelineContext, builder.renderer);
     // VelocityNode keeps whichever projection source that input pass first compiles: prime ours.
     if (ownedViewOffset === null) {
       camera.updateProjectionMatrix();
@@ -151,10 +157,6 @@ export function createTemporalAA(
         pending = "resize";
       const reason = pending;
       frames.draw(frame.renderer, reason !== null, report.frame + 1);
-      if (reason !== null && width === frames.display.x && height === frames.display.y) {
-        frame.renderer.copyTextureToTexture(source.texture, internals._resolveRenderTarget.texture);
-        frame.renderer.copyTextureToTexture(source.texture, internals._historyRenderTarget.texture);
-      }
       report = {
         frame: report.frame + 1,
         historyValid: reason === null,

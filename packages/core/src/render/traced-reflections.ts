@@ -21,7 +21,7 @@ import {
   vec3,
   vec4,
 } from "three/tsl";
-import type { Node } from "three/webgpu";
+import type { Node, TextureNode } from "three/webgpu";
 import {
   EDGE_TOLERANCE,
   type ITraceScene,
@@ -133,9 +133,9 @@ export class TracedReflections {
   readonly maxRoughnessToEvaluateRoughSpecular: number;
   readonly roughSpecularFadeLength: number;
   readonly maxSteps: number;
-  readonly #nodes: ReturnType<typeof texture>;
-  readonly #triangles: ReturnType<typeof texture>;
-  readonly #materials: ReturnType<typeof texture>;
+  readonly #nodes: TextureNode;
+  readonly #triangles: TextureNode;
+  readonly #materials: TextureNode;
 
   constructor(root: Object3D, options: ITracedReflectionsOptions = {}) {
     const maxRoughnessToTrace = options.maxRoughnessToTrace ?? 0.4;
@@ -254,7 +254,7 @@ export class TracedReflections {
   }
 
   /** The texel at `index` of a row-major pack texture, `TRACE_TEXTURE_WIDTH` wide. */
-  #fetch(source: ReturnType<typeof texture>, index: Node<"float">): Node<"vec4"> {
+  #fetch(source: TextureNode, index: Node<"float">): Node<"vec4"> {
     const row = floor(index.div(TRACE_TEXTURE_WIDTH));
     const column = index.sub(row.mul(TRACE_TEXTURE_WIDTH));
     return textureLoad(source, ivec2(int(column), int(row)));

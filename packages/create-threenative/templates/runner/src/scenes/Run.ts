@@ -25,7 +25,7 @@ import {
   materialLightingEnabled,
 } from "../render/quality.js";
 import { OBSTACLE_SIZE } from "../render/shapes.js";
-import { setupSky } from "../render/sky.js";
+import { SKY_OPTIONS, setupSky } from "../render/sky.js";
 import { TouchControls } from "../render/touch-controls.js";
 import { type GameState, INITIAL_STATE } from "../state.js";
 import { Track } from "../track.js";
@@ -52,9 +52,10 @@ export class Run extends Scene<GameState, RunnerPhysics> {
   override async load(ctx: GameCtx): Promise<void> {
     [this.#model, this.#sky] = await Promise.all([
       ctx.assets.model<IRunnerModel>("mannequin.glb"),
-      ctx.assets.texture("sky.jpg"),
+      // Only the photo-sky override reads the photograph; the atmosphere sky is computed.
+      SKY_OPTIONS.sky === "photo" ? ctx.assets.texture("sky.jpg") : undefined,
     ]);
-    setupSky(ctx.scene, this.#sky);
+    setupSky(ctx.scene, this.#sky, ctx.renderer.softwareAdapter !== undefined);
     this.#environmentSample = await sampleEnvironment(ctx.renderer.raw, ctx.scene, {
       web: getPlatform().runtime === "web",
       rendererKind: ctx.renderer.kind,
@@ -65,10 +66,10 @@ export class Run extends Scene<GameState, RunnerPhysics> {
   }
 
   override enter(ctx: GameCtx): SceneFrame<GameState, RunnerPhysics> {
-    if (this.#model === undefined || this.#sky === undefined)
-      throw new Error("Run.enter ran before load() loaded mannequin.glb and sky.jpg.");
-    setupSky(ctx.scene, this.#sky);
-    const { key } = setupLighting(
+    if (this.#model === undefined)
+      throw new Error("Run.enter ran before load() loaded mannequin.glb.");
+    setupSky(ctx.scene, this.#sky, ctx.renderer.softwareAdapter !== undefined);
+    const lighting = setupLighting(
       ctx.scene,
       ctx.renderer.raw as Parameters<typeof setupLighting>[1],
       isMobile(),
@@ -88,7 +89,7 @@ export class Run extends Scene<GameState, RunnerPhysics> {
         materialTier = tier;
         this.#materialLighting?.setEnabled(materialLightingEnabled(tier, materialEnvironment));
       },
-      godraysLight: key,
+      godraysLight: lighting.key,
       mobile: isMobile(),
       software: ctx.renderer.softwareAdapter !== undefined,
       gpuClass: ctx.renderer.gpuClass?.class,
@@ -138,13 +139,14 @@ export class Run extends Scene<GameState, RunnerPhysics> {
     afterPhysics(ctx, (dt) => {
       const offset = shake.update(dt);
       chaseRunner(camera, runner.mesh.position, dt, offset.position);
+      lighting.follow(runner.mesh.position);
       dust.position.set(runner.mesh.position.x, 0.15, runner.mesh.position.z + 0.6);
     });
 
     // Collect only after the loaded character and scene receivers are attached.
     this.#materialLighting = ctx.entities.add(
       "material-lighting",
-      createMaterialLighting(ctx.scene, ctx.camera, key, {
+      createMaterialLighting(ctx.scene, ctx.camera, lighting.key, {
         ...materialEnvironment,
         enabled: materialLightingEnabled(materialTier, materialEnvironment),
         overrides: { fillGain: 0 },

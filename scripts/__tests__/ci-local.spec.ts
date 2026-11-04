@@ -176,7 +176,7 @@ describe("PRD-373 local selection", () => {
   async function selected(file: string, extra: string[] = []) {
     const fixture = await recorderRoot();
     await mkdir(path.join(fixture.root, "scripts"), { recursive: true });
-    for (const name of ["ci-local.sh", "ci-change-scope.mjs"]) {
+    for (const name of ["ci-local.sh", "ci-change-scope.mjs", "ci-leg-carry.mjs"]) {
       await copyFile(path.join(repo, "scripts", name), path.join(fixture.root, "scripts", name));
     }
     await mkdir(path.join(fixture.root, "packages/create-threenative/templates/starter"), {

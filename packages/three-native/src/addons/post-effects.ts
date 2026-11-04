@@ -196,7 +196,7 @@ export function definePostEffects(tsl: IEffectTsl) {
       const clearViewOffset = () => {
         viewCamera.clearViewOffset();
         node.__effect("viewOffset", 0);
-        jitterIndex = (jitterIndex + 1) % 31;
+        jitterIndex = (jitterIndex + 1) % 32; // r187 wraps over every offset; r185 wrapped at length - 1
       };
       Object.defineProperties(node, {
         setViewOffset: { value: setViewOffset, configurable: true },

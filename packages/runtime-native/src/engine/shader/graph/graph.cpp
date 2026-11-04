@@ -2,7 +2,7 @@
 #include "engine/scene/texture.h"
 
 #include "engine/shader/tsl/tsl.h"
-#include "engine/shader/cube_uv.h"
+#include "engine/shader/pmrem.h"
 #include "engine/shader/output.h"
 
 #include <algorithm>
@@ -434,14 +434,13 @@ ExprId Lowerer::emit(Node node) {
                                         program_.constant(int32_t(0)));
         }
         case Kind::Pmrem: {
-            // PMREMNode.setup: a render-target PMREM flips y, then materialEnvRotation turns it.
+            // PMREMNode.setup (r187 :336): materialEnvRotation turns the direction, then the PMREM
+            // cube is sampled at roughnessToMip(level). No render-target Y flip: r187 samples a cube.
             const ExprId direction = expression(d.args[0]), level = expression(d.args[1]);
             if (direction == kInvalid || level == kInvalid) return kInvalid;
-            const ExprId flipped = program_.construct(Type::vec(3), {program_.swizzle(direction, "x"),
-                program_.neg(program_.swizzle(direction, "y")), program_.swizzle(direction, "z")});
             const ExprId rotated = program_.swizzle(program_.mul(program_.uniform("pmremRotation", Type::mat(4, 4)),
-                program_.construct(Type::vec(4), {flipped, program_.constant(0.0f)})), "xyz");
-            return pmremSample(program_, program_.texture2d("pmrem"), rotated, level);
+                program_.construct(Type::vec(4), {direction, program_.constant(0.0f)})), "xyz");
+            return pmremSample(program_, program_.textureCube("pmrem"), rotated, level);
         }
         case Kind::PostEffect: {
             const auto sample = program_.sample(program_.texture2d(d.name), expression(uv()));
@@ -471,8 +470,15 @@ ExprId Lowerer::emit(Node node) {
                 return d.sampleBias ? program_.sampleBias(texture, coordinate, level)
                                     : program_.sampleLevel(texture, coordinate, level);
             }
-            return program_.sample(program_.expr(coordinate).type == Type::vec(3)
-                                       ? program_.texture3d(d.name) : program_.texture2d(d.name), coordinate);
+            const bool volume = program_.expr(coordinate).type == Type::vec(3);
+            const auto texture = volume ? program_.texture3d(d.name) : program_.texture2d(d.name);
+            // A material's 2D texture() reads at the view mip bias (PRD-539 lever 7): surface detail the
+            // reduced raster loses. The material lowering marks itself with a `viewMipBias` input and the
+            // uniform is declared here, at first use, so a node material without a texture keeps its
+            // layout. Volumes (probe GI, LUTs) and post or compute graphs keep the implicit LOD.
+            if (!volume && inputs_.count("viewMipBias") && program_.stage() == Stage::Fragment)
+                return program_.sampleBias(texture, coordinate, program_.uniform("viewMipBias", Type::f32()));
+            return program_.sample(texture, coordinate);
         }
         case Kind::StorageElement:
             return program_.loadStorage(ensureStorage(d), index(node));
@@ -1035,6 +1041,31 @@ const std::vector<Node>& uniformList(const Graph& graph) {
         graph->memo.uniforms = std::move(list);
     }
     return *graph->memo.uniforms;
+}
+
+namespace {
+uint64_t bindingWalks = 0;
+}  // namespace
+
+uint64_t computeBindingWalks() { return bindingWalks; }
+
+const std::vector<const NodeData*>& computeBindingNodes(const Graph& graph) {
+    if (!graph->memo.computeBindings) {
+        ++bindingWalks;
+        auto list = std::make_shared<std::vector<const NodeData*>>();
+        std::unordered_set<const NodeData*> seen;
+        const std::function<void(const Node&)> visit = [&](const Node& n) {
+            if (!n || !seen.insert(n.get()).second) return;
+            if (n->kind == Kind::StorageElement || n->kind == Kind::Texture || n->kind == Kind::StorageTexture ||
+                n->kind == Kind::TextureStore)
+                list->push_back(n.get());
+            for (const auto* children : {&n->args, &n->body, &n->otherwise})
+                for (const auto& child : *children) visit(child);
+        };
+        visit(graph);
+        graph->memo.computeBindings = std::move(list);
+    }
+    return *graph->memo.computeBindings;
 }
 
 std::vector<Node> uniformNodes(const Graph& graph) {

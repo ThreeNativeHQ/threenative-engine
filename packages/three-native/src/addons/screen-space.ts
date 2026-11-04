@@ -47,6 +47,7 @@ export interface IScreenSpaceTsl {
   readonly min: (a: TslNode, b: TslNode) => TslNode;
   readonly mix: (a: TslNode, b: TslNode, t: TslNode) => TslNode;
   readonly normalize: (value: TslNode) => TslNode;
+  readonly pow: (base: TslNode, exponent: TslNode) => TslNode;
   readonly reflect: (incident: TslNode, normal: TslNode) => TslNode;
   readonly rtt: (
     source: TslNode,
@@ -470,7 +471,11 @@ const GI_MAX_LUMINANCE = 40;
  * multiplies it by the receiver's albedo (`mrt({ diffuseColor })`) and adds it to the lit frame.
  *   rgb  mean over the rays of hit x (hit radiance - fallback)
  *   a    the share of rays that hit
- * `getAONode()` answers 1: occlusion is the GTAO stage's, and hits already darken through `hit - fallback`.
+ * `getAONode()` answers that share as occlusion, in the form the caller applies: three's SSGINode averages the occluded
+ * share of its rays and answers `pow(clamp(1 - occludedShare), aoIntensity)` for the caller to multiply the lit frame
+ * by (SSGINode.js:637-638, 651). This answers the same quantity as `pow(clamp(1 - a), aoIntensity)` over rgb. A
+ * constant 1 dropped the term: the frame kept the light the occluder blocked and SSGI only added its gather
+ * (2026-11-02, PRD-617 AC-7).
  */
 export function defineScreenSpaceGi(tsl: IScreenSpaceTsl) {
   return function ssgi(
@@ -479,8 +484,23 @@ export function defineScreenSpaceGi(tsl: IScreenSpaceTsl) {
     normalNode: TslNode,
     cameraOrOptions: IScreenSpaceCamera | IScreenSpaceGiOptions,
   ): TslNode {
-    const { Break, Fn, If, Loop, float, int, max, min, normalize, rtt, smoothstep, uniform, uv } =
-      tsl;
+    const {
+      Break,
+      Fn,
+      If,
+      Loop,
+      clamp,
+      float,
+      int,
+      max,
+      min,
+      normalize,
+      pow,
+      rtt,
+      smoothstep,
+      uniform,
+      uv,
+    } = tsl;
     const { vec2, vec3, vec4 } = tsl;
     const options: IScreenSpaceGiOptions =
       "camera" in cameraOrOptions ? cameraOrOptions : { camera: cameraOrOptions };
@@ -491,9 +511,16 @@ export function defineScreenSpaceGi(tsl: IScreenSpaceTsl) {
     const sliceCount = uniform(2);
     const stepCount = uniform(12);
     const intensity = uniform(1);
+    // three's `aoIntensity`: the power applied to the occlusion (SSGINode.js:129, default 1). The caller reads the
+    // occlusion through `.r`, so it is broadcast over rgb for a denoise pass to carry.
+    const aoIntensity = uniform(1);
     const screenEdgeFade = uniform(0.1);
     const probeJitter = uniform(1);
     const probeDebug = uniform(0);
+    const occlusion = (gather: TslNode): TslNode => {
+      const ao = pow(clamp(float(1).sub(gather.a), float(0), float(1)), aoIntensity);
+      return vec4(ao, ao, ao, 1);
+    };
     const { march, shade } = defineGiTrace(tsl, {
       colorNode,
       depthNode,
@@ -521,13 +548,14 @@ export function defineScreenSpaceGi(tsl: IScreenSpaceTsl) {
             sliceCount,
             stepCount,
             intensity,
+            aoIntensity,
             screenEdgeFade,
             probeJitter,
             probeDebug,
           }).map(([name, value]) => [name, { value }]),
         ),
         getGINode: { value: () => node },
-        getAONode: { value: () => tsl.vec4(1, 1, 1, 1) },
+        getAONode: { value: () => occlusion(node) },
         resolutionScale: {
           get: () => node.getResolutionScale(),
           set: (value: number) => node.setResolutionScale(value),
@@ -598,13 +626,21 @@ export function defineScreenSpaceGi(tsl: IScreenSpaceTsl) {
     })();
 
     const node = rtt(graph, null, null, { type: HALF_FLOAT_TYPE, gpuStage: GI_STAGE });
-    const uniformObjects = { radius, thickness, sliceCount, stepCount, intensity, screenEdgeFade };
+    const uniformObjects = {
+      radius,
+      thickness,
+      sliceCount,
+      stepCount,
+      intensity,
+      aoIntensity,
+      screenEdgeFade,
+    };
     return Object.defineProperties(node, {
       ...Object.fromEntries(
         Object.entries(uniformObjects).map(([name, value]) => [name, { value }]),
       ),
       getGINode: { value: () => node },
-      getAONode: { value: () => vec4(1, 1, 1, 1) },
+      getAONode: { value: () => occlusion(node) },
       resolutionScale: {
         get: () => node.getResolutionScale(),
         set: (value: number) => node.setResolutionScale(value),

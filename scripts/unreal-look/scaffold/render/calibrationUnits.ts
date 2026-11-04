@@ -12,18 +12,38 @@ export interface ICalibrationLight {
   intensity: number;
   units: string;
   sourceRadiusM?: number;
+  /** A spot light's outer cone angle in degrees, from its axis (Unreal's `OuterConeAngle`). */
+  outerConeDeg?: number;
 }
+
+/** Unreal's largest spot half cone angle, from `GetClampedConeAngles` (SpotLightComponent.cpp:33-38). */
+export const SPOT_HALF_ANGLE_LIMIT_DEG = 88.9;
 
 /**
  * Unreal light units to three's. three's punctual light intensity is candela, and its Lambert
  * BRDF carries the same 1 / pi as Unreal's (Engine/Shaders/Private/BRDF.ush, Diffuse_Lambert), so
  * the falloff and the window at the attenuation radius map one to one. A sun in lux is not a
  * punctual light: the template scenes take it through `SUN_ILLUMINANCE` (`atmosphere.ts`).
+ *
+ * Lumens divide by the solid angle the light fills, not by 4 pi always: Unreal's conversion is
+ * `100^2 / (2 pi (1 - cos halfConeAngle))` in square centimetres (UE 5.8.3:
+ * Engine/Source/Runtime/Engine/Private/Components/LocalLightComponent.cpp:180-214), so a point
+ * light (no cone, cos = -1) spreads its lumens over the sphere and a spot light fills its cone
+ * (UE 5.8.3: Engine/Source/Runtime/Engine/Private/Components/SpotLightComponent.cpp:54-98). A
+ * spot's angle is the angle from its axis, which is three's `SpotLight.angle`, and Unreal clamps
+ * it at 88.9 degrees. The same 600 lumens are 47.7 candela over the sphere and 6286 down a 10
+ * degree cone (600 / (2 pi (1 - cos 10 deg))); the conversion is the whole difference between a
+ * dim bulb and a torch.
  */
-export function candela(intensity: number, units: string): number {
+export function candela(intensity: number, units: string, outerConeDeg?: number): number {
   if (units === "candelas") return intensity;
-  // An unshaded point light spreads its lumens over the whole sphere (PointLightComponent.cpp).
-  if (units === "lumens") return intensity / (4 * Math.PI);
+  if (units === "lumens") {
+    const halfAngleRad =
+      outerConeDeg === undefined
+        ? Math.PI // A point light fills the sphere: 2 pi (1 - cos pi) = 4 pi.
+        : (Math.min(outerConeDeg, SPOT_HALF_ANGLE_LIMIT_DEG) * Math.PI) / 180;
+    return intensity / (2 * Math.PI * (1 - Math.cos(halfAngleRad)));
+  }
   throw new Error(`TN_CALIBRATION_SCENE_UNIT: ${units}`);
 }
 
@@ -31,7 +51,9 @@ export function candela(intensity: number, units: string): number {
 export function lightCandela(light: ICalibrationLight): number {
   if (light.class !== "PointLight" && light.class !== "SpotLight")
     throw new Error(`TN_CALIBRATION_SCENE_LIGHT: ${light.name} ${light.class}`);
-  return candela(light.intensity, light.units);
+  if (light.class === "SpotLight" && light.units === "lumens" && !light.outerConeDeg)
+    throw new Error(`TN_CALIBRATION_SCENE_LIGHT: ${light.name} SpotLight has no outerConeDeg`);
+  return candela(light.intensity, light.units, light.outerConeDeg);
 }
 
 /** What a light carries that three's punctual light has no field for. `sourceRadiusOff` is the diagnosis knob. */

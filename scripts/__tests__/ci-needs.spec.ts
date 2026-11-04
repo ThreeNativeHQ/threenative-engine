@@ -7,7 +7,9 @@ import { makeTempDirSync } from "../../test-support/temp-dir.js";
 import { formatJobTimings, formatRunSummary, summaryRows } from "../ci-run-summary.js";
 import { ciJobGraph, ciNeedsFindings, declaredNeeds, jobSections } from "../ci-workflow.js";
 
-const { selectionPlan } = await import(new URL("../ci-change-scope.mjs", import.meta.url).href);
+const { selectionPlan, validateEventPlan } = await import(
+  new URL("../ci-change-scope.mjs", import.meta.url).href
+);
 
 const repo = path.resolve(import.meta.dirname, "../..");
 const ciPath = path.join(repo, ".github/workflows/ci.yml");
@@ -475,6 +477,14 @@ interface IStubApi {
   selfJobLabels?: Record<string, string[]>;
   /** Every read refuses. */
   fail?: boolean;
+  /** The open develop -> main pull requests; none unless stated. */
+  promotions?: IStubPromotion[];
+}
+
+interface IStubPromotion {
+  draft?: boolean;
+  headSha?: string;
+  mergeable?: boolean | null;
 }
 
 interface IStubJob {
@@ -510,6 +520,7 @@ function fakeActionsApi(fixture: IReuseFixture, api: IStubApi = {}): void {
   const sourceLabels = api.sourceLabels ?? HOSTED;
   const selfLabels = api.selfLabels ?? HOSTED;
   const page = (jobs: IStubJob[]) => ({ total_count: jobs.length, jobs });
+  writeFileSync(path.join(fixture.root, "promotion-runs.json"), JSON.stringify({ total_count: 1 }));
   writeFileSync(
     path.join(fixture.root, "record.json"),
     JSON.stringify({
@@ -564,12 +575,29 @@ function fakeActionsApi(fixture: IReuseFixture, api: IStubApi = {}): void {
     path.join(fixture.root, "pulls.json"),
     JSON.stringify([{ number: 7, base: { ref: api.base ?? "develop" }, head: { ref: "branch" } }]),
   );
+  const promotions = (api.promotions ?? []).map((promotion, index) => ({
+    number: 600 + index,
+    draft: promotion.draft ?? false,
+    mergeable: promotion.mergeable ?? null,
+    base: { ref: "main" },
+    head: {
+      ref: "develop",
+      sha: promotion.headSha ?? fixture.candidate,
+      repo: { full_name: "three-native/fixture" },
+    },
+  }));
+  writeFileSync(path.join(fixture.root, "promotions.json"), JSON.stringify(promotions));
+  if (promotions[0] !== undefined)
+    writeFileSync(path.join(fixture.root, "promotion.json"), JSON.stringify(promotions[0]));
   const script = `#!/bin/sh
 if [ "$TN_FIXTURE_API_FAIL" = true ]; then echo "gh: HTTP 403: Resource not accessible" >&2; exit 1; fi
 case "$*" in
+  *"/pulls?"*) cat "$TN_FIXTURE/promotions.json" ;;
+  */pulls/600) cat "$TN_FIXTURE/promotion.json" ;;
   */pulls) cat "$TN_FIXTURE/pulls.json" ;;
   *"/runs/$TN_FIXTURE_SELF/jobs"*) cat "$TN_FIXTURE/self-jobs.json" ;;
   */jobs*) cat "$TN_FIXTURE/jobs.json" ;;
+  *workflows*event=pull_request*) cat "$TN_FIXTURE/promotion-runs.json" ;;
   *workflows*) cat "$TN_FIXTURE/runs.json" ;;
   *) cat "$TN_FIXTURE/record.json" ;;
 esac
@@ -784,7 +812,7 @@ describe("PRD-481 a reused verdict has to cover this run's validation profile", 
     const plan = classifyCandidate(fixture, fixture.candidate, { target: "main" });
     expect(plan).toMatchObject({ selection: "full" });
     expect(plan.reason).toContain("tree reuse unavailable");
-    expect(plan.reason).toContain("no authoritative complete expansion");
+    expect(plan.reason).toContain("not a promotion merge");
   });
 
   it("runs the full board when the source never ran a matrix leg this run requires", () => {
@@ -968,8 +996,164 @@ describe("a develop push qualifies its tree and still warms the caches every pul
         .filter(([, job]) => job.required)
         .map(([name]) => name)
         .sort(),
-    ).toEqual(Object.keys(jobs).sort());
+    ).toEqual(
+      Object.keys(jobs)
+        .filter((name) => name !== "template-engine-cost")
+        .sort(),
+    );
     expect(plan.nativeTier).toBe("full");
+  });
+
+  describe("while a promotion pull request runs the board on the same head", () => {
+    const cacheProducers = (plan: Record<string, unknown>) =>
+      Object.entries(plan.jobs as Record<string, { required: boolean }>)
+        .filter(([, job]) => job.required)
+        .map(([name]) => name)
+        .sort();
+
+    it("leaves the board to the pull request and still publishes the caches", () => {
+      // PR #600 ran both on every head: same tree, same minute, 20 hosted slots between them.
+      const fixture = reuseFixture();
+      fakeActionsApi(fixture, { promotions: [{ mergeable: true }] });
+      const plan = classifyCandidate(fixture, fixture.candidate, {
+        event: "push",
+        target: "develop",
+      });
+      expect(plan).toMatchObject({ selection: "warm", qualification: false, reusedRunId: 0 });
+      expect(String(plan.reason)).toContain("#600");
+      expect(cacheProducers(plan)).toEqual(["build-artifacts", "test-native"]);
+    });
+
+    it("yields while GitHub is still computing whether the pull request merges", () => {
+      const fixture = reuseFixture();
+      fakeActionsApi(fixture, { promotions: [{ mergeable: null }] });
+      expect(
+        classifyCandidate(fixture, fixture.candidate, { event: "push", target: "develop" }),
+      ).toMatchObject({ selection: "warm" });
+    });
+
+    it.each([
+      ["a draft runs nothing", { draft: true }],
+      ["GitHub runs no pull-request event for a conflict", { mergeable: false }],
+      ["the pull request's head moved past this commit", { headSha: "0".repeat(40) }],
+    ])("keeps the board when %s", (_reason, promotion) => {
+      const fixture = reuseFixture();
+      fakeActionsApi(fixture, { promotions: [promotion] });
+      expect(
+        classifyCandidate(fixture, fixture.candidate, { event: "push", target: "develop" }),
+      ).toMatchObject({ selection: "full", qualification: true });
+    });
+
+    it("keeps the board when two pull requests claim to be the promotion", () => {
+      const fixture = reuseFixture();
+      fakeActionsApi(fixture, { promotions: [{}, {}] });
+      expect(
+        classifyCandidate(fixture, fixture.candidate, { event: "push", target: "develop" }),
+      ).toMatchObject({ selection: "full" });
+    });
+
+    it("keeps the board when the API refuses, because a miss runs the work", () => {
+      const fixture = reuseFixture();
+      fakeActionsApi(fixture, { promotions: [{}] });
+      expect(
+        classifyCandidate(fixture, fixture.candidate, {
+          event: "push",
+          target: "develop",
+          apiFail: true,
+        }),
+      ).toMatchObject({ selection: "full" });
+    });
+
+    it("never yields a push to main", () => {
+      const fixture = reuseFixture();
+      fakeActionsApi(fixture, { promotions: [{}] });
+      expect(
+        classifyCandidate(fixture, fixture.candidate, { event: "push", target: "main" }),
+      ).toMatchObject({ selection: "full", qualification: true });
+    });
+
+    const verifyWarmPlan = (fixture: IReuseFixture, plan: Record<string, unknown>) => {
+      const jobs = plan.jobs as Record<string, { required: boolean }>;
+      const needs = {
+        scope: { result: "success", outputs: { plan: JSON.stringify(plan) } },
+        ...Object.fromEntries(
+          Object.entries(jobs).map(([name, job]) => [
+            name,
+            { result: job.required ? "success" : "skipped" },
+          ]),
+        ),
+      };
+      return spawnSync(process.execPath, [path.join(repo, "scripts/ci-required.mjs")], {
+        cwd: fixture.root,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          PATH: `${path.join(fixture.root, "bin")}:${process.env.PATH}`,
+          TN_CI_NEEDS: JSON.stringify(needs),
+          TN_CI_EVENT: "push",
+          TN_CI_BASE_REF: "develop",
+          TN_FIXTURE: fixture.root,
+          TN_FIXTURE_SELF: String(SELF_RUN_ID),
+          GITHUB_ACTIONS: "true",
+          GITHUB_REPOSITORY: "three-native/fixture",
+          GITHUB_RUN_ID: String(SELF_RUN_ID),
+        },
+      });
+    };
+
+    const warmPlan = (fixture: IReuseFixture) =>
+      classifyCandidate(fixture, fixture.candidate, { event: "push", target: "develop" });
+
+    it("passes ci-required only when the commit belongs to a promotion pull request", () => {
+      const fixture = reuseFixture();
+      fakeActionsApi(fixture, { promotions: [{}] });
+      const plan = warmPlan(fixture);
+      // The commit's pull requests are the independent read: this one is not a promotion.
+      const refused = verifyWarmPlan(fixture, plan);
+      expect(refused.status).toBe(1);
+      expect(refused.stderr).toContain("CI_REQUIRED_PROMOTION_MISSING");
+
+      writeFileSync(
+        path.join(fixture.root, "pulls.json"),
+        JSON.stringify([{ number: 600, base: { ref: "main" }, head: { ref: "develop" } }]),
+      );
+      const accepted = verifyWarmPlan(fixture, plan);
+      expect(accepted.status, accepted.stderr).toBe(0);
+    });
+
+    it("refuses a head whose promotion pull request started no board", () => {
+      // `mergeable` reads null just after a push, and GitHub starts no run on a conflict.
+      const fixture = reuseFixture();
+      fakeActionsApi(fixture, { promotions: [{ mergeable: null }] });
+      const plan = warmPlan(fixture);
+      writeFileSync(
+        path.join(fixture.root, "pulls.json"),
+        JSON.stringify([{ number: 600, base: { ref: "main" }, head: { ref: "develop" } }]),
+      );
+      writeFileSync(
+        path.join(fixture.root, "promotion-runs.json"),
+        JSON.stringify({ total_count: 0 }),
+      );
+      const refused = verifyWarmPlan(fixture, plan);
+      expect(refused.status).toBe(1);
+      expect(refused.stderr).toContain("CI_REQUIRED_PROMOTION_MISSING");
+    });
+
+    it("rejects a yielding plan on every other event", () => {
+      const fixture = reuseFixture();
+      fakeActionsApi(fixture, { promotions: [{}] });
+      const plan = warmPlan(fixture);
+      for (const [eventName, baseRef] of [
+        ["push", "main"],
+        ["pull_request", "main"],
+        ["schedule", ""],
+        ["workflow_dispatch", ""],
+      ] as const)
+        expect(() => validateEventPlan(plan, { eventName, baseRef })).toThrow();
+      expect(() =>
+        validateEventPlan(plan, { eventName: "push", baseRef: "develop", forceFull: true }),
+      ).toThrow();
+    });
   });
 
   it("keeps a push to main on the full board", () => {

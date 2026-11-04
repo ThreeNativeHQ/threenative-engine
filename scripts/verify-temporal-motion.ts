@@ -28,7 +28,12 @@ interface IVelocityProbe {
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const RAW4 = process.env.TN_RAW4 === "1";
-const output = path.join(root, `artifacts/temporal-aa/motion${RAW4 ? "-raw4" : ""}`);
+// PRD-539 static-camera control: the same corpus with the camera held still.
+const STATIC_CAMERA = process.env.TN_STATIC_CAMERA === "1";
+const output = path.join(
+  root,
+  `artifacts/temporal-aa/motion${RAW4 ? "-raw4" : ""}${STATIC_CAMERA ? "-static" : ""}`,
+);
 const scenario = JSON.parse(
   await readFile(
     path.join(root, "examples/abyss-framework/playtests/temporal-motion.playtest.json"),
@@ -78,6 +83,14 @@ const FAMILIES: Record<string, string[]> = {
     "strict-rejection",
     "recompile",
     "temporal-open",
+    "history200",
+    "history200-open",
+    "velocity-clamp",
+    "velocity-clamp-open",
+    "history100",
+    "history100-open",
+    "flicker-release",
+    "flicker-release-open",
     "strict-rejection-open",
     "unchecked-history-open",
     "nearest-history",
@@ -100,6 +113,10 @@ const FAMILIES: Record<string, string[]> = {
     "quality-zero-velocity",
     "quality-unchecked-history",
     "quality-temporal-open",
+    "quality-history200",
+    "quality-velocity-clamp",
+    "quality-history100",
+    "quality-flicker-release",
     "quality-zero-velocity-open",
     "quality-unchecked-history-open",
   ],
@@ -120,6 +137,12 @@ const CAUSAL: Record<string, string[]> = {
   ],
   quality: ["quality-temporal", "quality-zero-velocity", "quality-unchecked-history"],
 };
+// Diagnostic only: `TN_TEMPORAL_PROBE=arm,arm` captures those arms and their family reference,
+// prints their edge error and exits without any check.
+const PROBE = process.env.TN_TEMPORAL_PROBE?.split(",");
+if (PROBE !== undefined)
+  for (const [family, arms] of Object.entries(FAMILIES))
+    FAMILIES[family] = arms.filter((arm) => arm === REFERENCE[family] || PROBE.includes(arm));
 for (const [family, arms] of Object.entries(FAMILIES))
   for (const variant of arms) {
     const artifactDirectory = path.join(output, variant);
@@ -159,7 +182,7 @@ for (const [family, arms] of Object.entries(FAMILIES))
       },
       timeoutMs: 120_000,
       trace: false,
-      url: `http://127.0.0.1:5173/temporal.html?measure&variant=${variant}${RAW4 ? "&raw4" : ""}`,
+      url: `http://127.0.0.1:5173/temporal.html?measure&variant=${variant}${RAW4 ? "&raw4" : ""}${STATIC_CAMERA ? "&staticCamera" : ""}`,
     }).catch(async (error: unknown) => {
       await writeFile(
         path.join(artifactDirectory, "failure.json"),
@@ -369,6 +392,20 @@ for (const [family, arms] of Object.entries(FAMILIES))
     }
     provenance.push({ variant, capture: report.capture, hashes });
   }
+if (PROBE !== undefined) {
+  for (const [family, arms] of Object.entries(FAMILIES))
+    for (const arm of arms.filter((name) => name !== REFERENCE[family])) {
+      const { edgeError, residualInstability, neighbourhoodOvershootFraction } = measureSequence(
+        frames[REFERENCE[family] ?? ""] ?? [],
+        frames[arm] ?? [],
+        8,
+      );
+      console.log(
+        JSON.stringify({ arm, edgeError, residualInstability, neighbourhoodOvershootFraction }),
+      );
+    }
+  process.exit(0);
+}
 const results: Record<string, ReturnType<typeof measureSequence>> = {};
 const causalReveals: Record<string, ReturnType<typeof measureCausalReveal>> = {};
 for (const [family, arms] of Object.entries(FAMILIES)) {
@@ -388,6 +425,44 @@ for (const [family, arms] of Object.entries(FAMILIES)) {
     causalReveals[policy] = measureCausalReveal(reference, candidate, open, 8);
   }
 }
+// PRD-539: each lever alone, and the 100% control the two-lever default replaced, measured beside
+// the default's numbers and reported here. This block adds no threshold and no check.
+const LEVER_ARMS: Array<{ arm: string; open: string | null }> = [
+  { arm: "history200", open: "history200-open" },
+  { arm: "velocity-clamp", open: "velocity-clamp-open" },
+  { arm: "history100", open: "history100-open" },
+  { arm: "flicker-release", open: "flicker-release-open" },
+  { arm: "quality-history200", open: null },
+  { arm: "quality-velocity-clamp", open: null },
+  { arm: "quality-history100", open: null },
+  { arm: "quality-flicker-release", open: null },
+];
+const leverArms = Object.fromEntries(
+  LEVER_ARMS.map(({ arm, open }) => {
+    const result = results[arm];
+    assert.ok(result);
+    const family = arm.startsWith("quality-") ? "quality" : "motion";
+    const referenceName = REFERENCE[family];
+    const reference = referenceName === undefined ? undefined : frames[referenceName];
+    assert.ok(reference);
+    let openEdgeError: number | null = null;
+    if (open !== null) {
+      const openSequence = frames[open];
+      assert.ok(openSequence);
+      openEdgeError = measureSequence(reference, openSequence, 8).edgeError;
+    }
+    return [
+      arm,
+      {
+        edgeError: result.edgeError,
+        openEdgeError,
+        movingEdgeError: result.movingEdgeError,
+        residualInstability: result.residualInstability,
+        revealStaleFraction: result.reveal.slice(1).map((frame) => frame.staleFraction),
+      },
+    ];
+  }),
+);
 const temporal = results.temporal;
 const baseline = results.reference;
 const unchecked = results["unchecked-history"]?.reveal[1];
@@ -422,6 +497,14 @@ assert.ok(
 );
 // Pinned before the first runtime measurement. These are a narrow-fixture experimental bar,
 // not a claim of general image quality, native qualification or saved GPU time.
+// Owner decision 2026-11-03 (PRD-539 option 1): the low-input bar is Unreal TSR on the same scene and input.
+// Unreal 5.8.3 TSR at 66.7% (history 200%) on tools/unreal-reference/gi/fence reads .0816 edge error against
+// its own no-AA .0468 (each against its own 400% no-AA reference), so the low-input arm may cost at most 1.74x.
+const UNREAL_LOW_INPUT_EDGE_RATIO = 0.0816 / 0.0468;
+// The same scene's `reveal` run (the fixture's occluder, hidden at frame 44): Unreal TSR at 66.7% leaves
+// .0820-.0898 of the revealed pixels stale on frames 1-7 after the reveal (TSR at 100%: .0820-.1543). The
+// low-input arm may leave at most the lowest of them on every frame after the first.
+const UNREAL_LOW_INPUT_REVEAL_STALE = 0.082;
 const checks = {
   causalNegativeControl:
     causalReveals["unchecked-history"]?.every((frame) => frame.redTintFraction > 0.1) === true,
@@ -440,21 +523,23 @@ const checks = {
   revealRecovery: temporal.reveal.slice(1).every((frame) => frame.staleFraction <= 0.01),
   uncheckedHistoryDetected: unchecked.staleFraction > 0.1,
   zeroVelocityDetected: zeroVelocity.movingEdgeError > temporal.movingEdgeError * 1.02,
-  qualityEdgeImprovement: qualityTemporal.edgeError < qualityBaseline.edgeError * 0.95,
+  qualityEdgeImprovement:
+    qualityTemporal.edgeError < qualityBaseline.edgeError * UNREAL_LOW_INPUT_EDGE_RATIO,
   qualityStabilityImprovement:
     qualityTemporal.residualInstability < qualityBaseline.residualInstability * 0.95,
   qualityBeatsSpatialStability:
     qualityTemporal.residualInstability < (qualitySpatial.residualInstability ?? 0) * 0.95,
   qualityRevealRecovery: qualityTemporal.reveal
     .slice(1)
-    .every((frame) => frame.staleFraction <= 0.01),
+    .every((frame) => frame.staleFraction <= UNREAL_LOW_INPUT_REVEAL_STALE),
   qualityUncheckedHistoryDetected: qualityUnchecked.staleFraction > 0.1,
   qualityZeroVelocityDetected:
     (qualityZeroVelocity.movingEdgeError ?? 0) >
     (qualityTemporal.movingEdgeError ?? Number.POSITIVE_INFINITY) * 1.02,
 };
 const linearProof = provenance.find((arm) => arm.variant === "resolve-linear");
-const installedProof = provenance.find((arm) => arm.variant === "temporal");
+// The authored linear resolve replicates the 100% history path, now the named history100 override.
+const installedProof = provenance.find((arm) => arm.variant === "history100");
 assert.ok(linearProof && installedProof);
 const authoredLinearEquivalent = linearProof.hashes.every(
   (frame, index) => frame.sha256 === installedProof.hashes[index]?.sha256,
@@ -548,6 +633,7 @@ const summary = {
     "resolve-cubic-strict-ordinary changes only the final blend from luminance-reweighted flickerReduction to mix(clippedHistoryColor, currentColor, currentWeight). The previously computed currentWeight, sampling, clipping, rejection, jitter and history are identical. Fence profiles are diagnostic; a local contrast gain cannot qualify the whole image.",
   authoredLinearEquivalent,
   candidates,
+  leverArms,
   fenceProfiles,
   checks,
   results,

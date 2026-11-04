@@ -54,6 +54,13 @@ ThreeNative already has the substitute for the global field: a packed triangle B
 
 **Consumer flow.** The game builds `GPUSceneBVH` and `ProbeVolume({ bounds, density, trace })` and adds both with `ctx.add()`. The game calls `requestBake(scene)` once, or lets a lighting step call it. The refresh runs inside the render-phase slice that `process` already owns (`probe-volume.ts:603`). The game's materials call `sampleNode` and show the new light within the measured frame count.
 
+## three.js 0.187.0 levers (2026-11-02)
+
+- `LightProbeGrid` (r187) captures probes in batches through an `ArrayCamera`, about 4x faster bakes upstream (three#34909), and places probes at the cell centres (three#35265). This is the cheapest version of the six-draw refresh. Use it as the BEFORE arm: the traced refresh must beat it, not only the 0.185.1 path.
+- `LightMapper` (r187, three#34991) bakes diffuse light into light probes and VXGI. It is a bake, not a refresh, so it does not close this PRD.
+
+Adoption rule: the owned engine is the default, and it runs a three symbol only when its API catalog covers it (`docs/architecture/NATIVE-ENGINE-DECISION.md`). So use the upstream piece first as a measured reference arm on `engine: "threejs"`. A template uses it only after a catalog row and a native parity case land.
+
 ## Acceptance Criteria
 
 - [ ] AC-1 [local]: On the 676-probe `?world` volume, a full traced refresh finishes in at most 60 frames. No refresh slice exceeds 2.5 ms (the 2 ms budget plus `BAKE_BUDGET_SLACK_MS`). The volume adds 0 scene draw calls. — proof: `node packages/playtest/dist/runner/cli.js examples/abyss-framework/playtests/probe-cost.playtest.json --url 'http://127.0.0.1:5183/?world&probeCost=trace' --server-command 'pnpm --filter abyss-framework dev --host 127.0.0.1 --port 5183 --strictPort' --browser-recipe webgpu` — Evidence: pending.

@@ -277,7 +277,8 @@ function renderBatch(
   group: Group,
 ): void {
   batch.onBeforeRender(
-    undefined as never,
+    // r187 BatchedMesh.onBeforeRender takes the CPU draw-parameter path only for a non-WebGPU renderer.
+    { isWebGPURenderer: false } as never,
     root,
     camera,
     batch.geometry,

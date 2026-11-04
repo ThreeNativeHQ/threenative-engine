@@ -11,6 +11,9 @@ import {
   type TextureNode,
 } from "three/webgpu";
 import { createTemporalAAInput } from "./temporalAAInput.js";
+import type { TemporalClampRelease } from "./temporalClampRelease.js";
+import { createHistoryPresent } from "./temporalHistoryResolve.js";
+import type { TemporalMoire } from "./temporalMoire.js";
 import {
   type ITemporalRejectionCounter,
   type ITemporalRejectionMeasurement,
@@ -36,10 +39,16 @@ export function createTemporalAAFrame(
   historyValid: { value: number },
   rejection: () => TemporalDepthRejection | undefined,
   publishCurrentDepth?: (renderer: Renderer) => void,
+  historyScale = 1,
+  { moire, release }: { moire?: TemporalMoire; release?: TemporalClampRelease } = {},
 ) {
-  const quadMesh = new QuadMesh();
+  // Three 0.187's QuadMesh takes a material in the constructor; the draw replaces it before rendering.
+  const quadMesh = new QuadMesh(internals._resolveMaterial);
   quadMesh.name = "Temporal AA";
   const display = new Vector2();
+  const history = new Vector2();
+  // Above a 1x history the chain reads a display-sized resolve of it, never the history raster.
+  const present = historyScale === 1 ? undefined : createHistoryPresent(internals, quadMesh);
   let previousDepth: DepthTexture | null = null;
   let depthReady = false;
   let disposed = false;
@@ -54,8 +63,8 @@ export function createTemporalAAFrame(
    * from sampling the seed at shifted history UVs. */
   function draw(renderer: Renderer, reset: boolean, currentFrame: number): void {
     frame = currentFrame;
-    if (measure(renderer) === undefined)
-      throw new Error("Temporal AA requires a materialized colour input.");
+    const source = measure(renderer);
+    if (source === undefined) throw new Error("Temporal AA requires a materialized colour input.");
     guardTemporalAASeams(internals);
     if (display.x < input.x || display.y < input.y)
       throw new Error("Temporal AA cannot resolve to a display raster below its input raster.");
@@ -83,10 +92,6 @@ export function createTemporalAAFrame(
     internals._cameraWorldMatrix.value.copy(camera.matrixWorld);
     internals._cameraWorldMatrixInverse.value.copy(camera.matrixWorldInverse);
     internals._cameraProjectionMatrixInverse.value.copy(camera.projectionMatrixInverse);
-    if (internals._needsPostProcessingSync === true) {
-      internals.setViewOffset(input.x, input.y);
-      internals._needsPostProcessingSync = false;
-    }
     historyValid.value = reset ? 0 : 1;
     // Depth history stays input sized, independently of display history. Seed on either-axis resize.
     if (previousDepth?.image.width !== input.x || previousDepth?.image.height !== input.y) {
@@ -105,21 +110,24 @@ export function createTemporalAAFrame(
         renderer.copyTextureToTexture(depth.value, depthHistory);
         depthReady = true;
       }
-      // Resolve and history hold the display raster whatever the input raster is.
+      // Resolve and history hold the display raster times historyScale, whatever the input raster is.
+      history.copy(display).multiplyScalar(historyScale);
       const restarted =
-        internals._historyRenderTarget.width !== display.x ||
-        internals._historyRenderTarget.height !== display.y;
-      internals.setSize(display.x, display.y);
+        internals._historyRenderTarget.width !== history.x ||
+        internals._historyRenderTarget.height !== history.y;
+      internals.setSize(history.x, history.y);
       if (restarted) {
         // A resize disposes the targets, so they need fresh GPU storage before the draw.
         renderer.initRenderTarget(internals._historyRenderTarget);
         renderer.initRenderTarget(internals._resolveRenderTarget);
       }
       if (
-        internals._historyRenderTarget.width !== display.x ||
-        internals._historyRenderTarget.height !== display.y
+        internals._historyRenderTarget.width !== history.x ||
+        internals._historyRenderTarget.height !== history.y
       )
-        throw new Error("Temporal AA history and resolve must share the display raster.");
+        throw new Error("Temporal AA history and resolve must share the history raster.");
+      const before = rejection();
+      if (before !== undefined) release?.update(renderer, quadMesh, before, input);
       renderer.setRenderTarget(internals._resolveRenderTarget);
       quadMesh.material = internals._resolveMaterial;
       quadMesh.render(renderer);
@@ -133,6 +141,7 @@ export function createTemporalAAFrame(
         }
         counter ??= createTemporalRejectionCounter(equations);
         counter.sample(renderer, frame, display.x, display.y);
+        moire?.update(renderer, quadMesh, equations, history);
       }
       publishCurrentDepth?.(renderer);
       // History is the resolve this frame produced, at the same size, so the copy never crosses rasters.
@@ -141,8 +150,14 @@ export function createTemporalAAFrame(
         internals._resolveRenderTarget.texture,
         internals._historyRenderTarget.texture,
       );
+      present?.draw(renderer, display);
     } finally {
       if (state !== undefined) RendererUtils.restoreRendererState(renderer, state);
+    }
+    // A reset seeds a 100% history from a display-sized input; a 2x history cannot take it.
+    if (reset && historyScale === 1 && input.equals(display)) {
+      renderer.copyTextureToTexture(source.texture, internals._resolveRenderTarget.texture);
+      renderer.copyTextureToTexture(source.texture, internals._historyRenderTarget.texture);
     }
   }
 
@@ -174,6 +189,9 @@ export function createTemporalAAFrame(
       previousDepth?.dispose();
       previousDepth = null;
       depthReady = false;
+      present?.dispose();
+      moire?.dispose();
+      release?.dispose();
     },
   };
 }

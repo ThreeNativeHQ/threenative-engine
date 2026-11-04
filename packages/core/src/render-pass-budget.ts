@@ -106,6 +106,23 @@ interface IRenderCounters {
  * cannot read a `userData` off is left unattributed rather than guessed at.
  */
 interface IInfoCounters {
+  /**
+   * The owned (Wasm) engine draws its shadow passes inside its one render call, so `info.render` adds them to the
+   * main camera's. It reports the two apart here, and the recorder files them as `main` and `shadow`, as three's nested
+   * shadow renders are.
+   */
+  readonly engine?:
+    | {
+        readonly frameSplit?:
+          | {
+              readonly mainDraws: number;
+              readonly mainTriangles: number;
+              readonly shadowDraws: number;
+              readonly shadowTriangles: number;
+            }
+          | undefined;
+      }
+    | undefined;
   readonly render?: IRenderCounters | undefined;
   update?(object: unknown, count: number, instanceCount: number): void;
 }
@@ -216,14 +233,30 @@ const installed = new WeakSet<object>();
 const GPU_UID_FRAME_LIMIT = 64;
 
 /**
- * Names a render call by what three already calls it: the outermost call is the main camera, and a
+ * Names a render call by what three already calls it: the first camera call is the main pass, and a
  * nested call carries the scene name three or the reflector gave it.
+ *
+ * The name is read before the depth because a post pipeline makes its shadow or reflection passes at
+ * world depth 0 — the composite quad is not a world call, so it does not hold one.
  */
 function passKind(name: string, depth: number): FramePassKind {
-  if (depth === 0) return "main";
   if (name.startsWith("Shadow Map")) return "shadow";
   if (/reflect/iu.test(name)) return "reflection";
-  return "nested";
+  return depth === 0 ? "main" : "nested";
+}
+
+/**
+ * Whether a render call is three's post-pipeline composite: `RenderPipeline.render()` submits one
+ * full-screen quad (`renderer.render(this, _camera)`) and makes the world a nested render from
+ * `PassNode`, so a call whose scene three flags `isQuadMesh` is the composite, never a world pass.
+ * Three's `QuadMesh` exists only for pipeline output; a scene graph has none.
+ */
+function isFullscreenQuad(scene: unknown): boolean {
+  return (
+    typeof scene === "object" &&
+    scene !== null &&
+    (scene as { isQuadMesh?: unknown }).isQuadMesh === true
+  );
 }
 
 /** The name three or the game gave the scene a render call draws, or `""`. */
@@ -319,6 +352,8 @@ export class RenderPassBudget {
   readonly #original: (scene: unknown, camera: unknown) => void;
   readonly #frame: IRenderPassSample[] = [];
   readonly #stack: IPassFrame[] = [];
+  /** How many non-quad render calls are open: the depth the camera pass is classified at. */
+  #worldDepth = 0;
   /** Timestamp uids each render call allocated, keyed by the Three.js frame they belong to. */
   readonly #gpuUids = new Map<number, IGpuUidEntry[]>();
   /** The last frame `nextGpuFrame` handed out; every earlier frame has been reported. */
@@ -335,20 +370,22 @@ export class RenderPassBudget {
       }
       const offsets = target.backend?.timestampQueryPool?.render?.queryOffsets;
       const allocatedBefore = offsets?.size ?? 0;
-      const depth = this.#stack.length;
       const name = sceneName(scene);
+      const quad = isFullscreenQuad(scene);
       const frame: IPassFrame = {
         childDraws: 0,
         childTriangles: 0,
         entryDraws: counters.draws,
         entryTriangles: counters.triangles,
-        kind: passKind(name, depth),
+        kind: quad ? "nested" : passKind(name, this.#worldDepth),
         name,
       };
       this.#stack.push(frame);
+      if (!quad) this.#worldDepth += 1;
       try {
         this.#original.call(target, scene, camera);
       } finally {
+        if (!quad) this.#worldDepth -= 1;
         this.#stack.pop();
         const after = readCounters(target);
         if (after !== undefined) {
@@ -360,12 +397,19 @@ export class RenderPassBudget {
             parent.childTriangles += totalTriangles;
           }
           const drawsBySource = frame.unclassifiable === true ? undefined : frame.drawsBySource;
+          const split = frame.kind === "main" ? target.info?.engine?.frameSplit : undefined;
           this.#frame.push({
-            draws: Math.max(0, totalDraws - frame.childDraws),
+            draws: split?.mainDraws ?? Math.max(0, totalDraws - frame.childDraws),
             ...(drawsBySource === undefined ? {} : { drawsBySource }),
             kind: frame.kind,
-            triangles: Math.max(0, totalTriangles - frame.childTriangles),
+            triangles: split?.mainTriangles ?? Math.max(0, totalTriangles - frame.childTriangles),
           });
+          if (split !== undefined && split.shadowDraws > 0)
+            this.#frame.push({
+              draws: split.shadowDraws,
+              kind: "shadow",
+              triangles: split.shadowTriangles,
+            });
         }
         this.#attributeGpu(frame, offsets, allocatedBefore);
       }

@@ -49,9 +49,11 @@ import {
   lightUnsupported,
   motionPose,
 } from "../render/calibrationUnits.js";
+import { LEVEL_EXPOSURE } from "../render/atmosphere.js";
 import { shadeLikeSubstrate } from "../render/lighting.js";
 import { watchShadowTier } from "../render/shadowTier.js";
 import { GLTF_IOR, refractBehind } from "../render/refraction.js";
+import { noSpecularTwin } from "../render/specular.js";
 import { pointLightMean, translucentTwin } from "../render/translucency.js";
 import { createVolumetricFog } from "../render/volumetricFog.js";
 import {
@@ -83,7 +85,8 @@ const SHADOW = shadowPreset(SHADOW_TIER);
 const DATA = SCENES[NAME];
 // Diagnosis only: scales every light, so a capture can bracket a unit error. Unset in every judged capture.
 const LIGHT_SCALE = Number(params.get("lightScale") ?? 1);
-const EXPOSURE = Number(params.get("exposure") ?? DATA?.exposure?.exposureScale ?? 1);
+// A level with no post-process override keeps Unreal's engine-default exposure, not 1 (PRD-646 round 6).
+const EXPOSURE = Number(params.get("exposure") ?? DATA?.exposure?.exposureScale ?? LEVEL_EXPOSURE);
 
 export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
   static override readonly initialState: GameState = Play.initialState;
@@ -111,6 +114,18 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
   override enter(ctx: GameCtx): SceneFrame<GameState, IPhysicsContext> {
     const model = this.#model;
     if (model === undefined || DATA === undefined) throw new Error("TN_CALIBRATION_SCENE_NOT_LOADED");
+    // Unreal's r.ScreenPercentage: draw the scene at a share of the display and let the chain's `traa`
+    // stage reconstruct it to the display, as Unreal pairs a low screen percentage with TSR. Unset keeps
+    // the engine's own scale. The renderer has no pinned-scale call here; `renderer.resolutionScale` is
+    // a boot config value, so this is the narrowest public call that reaches the drawing buffer.
+    const screenPercentage = params.get("screenPercentage");
+    if (screenPercentage !== null) {
+      const value = Number(screenPercentage);
+      if (!Number.isInteger(value) || value < 25 || value > 100)
+        throw new Error("screenPercentage must be an integer 25..100");
+      ctx.renderer.setResolutionScale(value / 100, "auto-pinned");
+      console.info(`TN_CALIBRATION_SCREEN_PERCENTAGE ${value}`);
+    }
     ctx.add(model);
     const scene = ctx.scene;
     const camera = ctx.camera as PerspectiveCamera;
@@ -160,6 +175,17 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
         material.twoSidedFoliage = true;
         material.subsurfaceColor = new Color(...colour);
       }
+    // `anisotropy=<n>`: the base colour maps' anisotropic filter, as Unreal's r.MaxAnisotropy (8 at Epic,
+    // BaseScalability.ini [TextureQuality@3]) filters a World-group texture. Unset keeps three's default of 1.
+    const anisotropy = params.get("anisotropy");
+    if (anisotropy !== null) {
+      const value = Number(anisotropy);
+      if (!Number.isInteger(value) || value < 1 || value > 16) throw new Error("anisotropy must be an integer 1..16");
+      for (const mesh of meshes)
+        for (const material of [mesh.material].flat() as MeshStandardMaterial[])
+          if (material.map) material.map.anisotropy = value;
+      console.info(`TN_CALIBRATION_ANISOTROPY ${value}`);
+    }
 
     scene.background = new Color(0x000000);
     scene.environment = null;
@@ -190,6 +216,16 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
       // Casters and receivers do nothing until the renderer runs a shadow pass (scaffold lighting.ts does
       // this for the reference scene, which this scene does not use).
       (ctx.renderer.raw as unknown as { shadowMap: { enabled: boolean } }).shadowMap.enabled = shadows;
+      // Diagnosis knob: ?specular=0 takes the specular off every surface, as Unreal's ShowFlag.Specular does
+      // (render/specular.ts carries both citations), so its share of a direct-light row can be read on both engines.
+      // ?specular=f0 is round 7's F0-only reading, kept so its recorded arms stay reproducible.
+      // It runs before the shadowSide loop and before `shadeLikeSubstrate`, so both mark the twin.
+      const specular = params.get("specular");
+      if (specular !== null)
+        for (const mesh of meshes)
+          mesh.material = Array.isArray(mesh.material)
+            ? mesh.material.map((m) => noSpecularTwin(m as MeshStandardMaterial, specular === "f0"))
+            : noSpecularTwin(mesh.material as MeshStandardMaterial, specular === "f0");
       // Casters keep three's derived shadowSide (back faces of a front-sided material). Those leak a
       // bright line at a box's far foot; the owned engine stores a lamp's back faces a few depth steps
       // nearer, which closes it (native_engine_contact_shadow_foot), and front faces instead add acne on
@@ -498,6 +534,8 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
     // The actors a motion run moves, with the position the scene put them at (PRD-650 swing).
     const actors = new Map<string, { object: Object3D; rest: Vector3 }>();
     const reference = {
+      // The query this page read, echoed so the capture can stop when it ran on another one (a worker page reads none).
+      config: Object.fromEntries(params),
       layer: LAYER,
       tier: TIER,
       finalGatherMethod: GI_METHOD,

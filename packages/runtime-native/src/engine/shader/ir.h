@@ -135,8 +135,8 @@ public:
     /** vec4<f32>; implicit derivatives in a fragment stage, level 0 elsewhere. */
     ExprId sample(uint32_t texture, ExprId uv, Where where = Where::current());
     /**
-     * vec4<f32> at an explicit mip `level` (textureSampleLevel). A cubeUV environment's levels are
-     * tiles in one mip, so a bilinearCubeUV tap is always level 0 — three's `.grad(vec2(), vec2())`.
+     * vec4<f32> at an explicit mip `level` (textureSampleLevel): a PMREM cube's levels are the
+     * roughness steps three's roughnessToMip picks between.
      */
     ExprId sampleLevel(uint32_t texture, ExprId uv, ExprId level, Where where = Where::current());
     /** A fragment texture sample with an authored bias relative to its implicit derivative LOD. */

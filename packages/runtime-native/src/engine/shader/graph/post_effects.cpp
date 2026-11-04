@@ -39,6 +39,19 @@ std::string textureName(Node n) {
     if (const Node source = textureSource(n)) return source->name;
     throw std::runtime_error("TN_TSL_POST_INPUT: expected a depth/normal texture");
 }
+/**
+ * True when a denoise filters a one-channel field: GTAO's occlusion, directly or through the copy target
+ * `convertToTexture` materialises for it (`toTexture`, tsl_call.cpp — three's DenoiseNode converts its own input).
+ * The filter then writes (occlusion, 0, 0, 1) and one lane holds the value, so its fp32 target keeps one lane too.
+ */
+bool denoiseOfOneField(const PostEffect& effect) {
+    if (effect.kind != "DenoiseNode" || effect.inputs.empty()) return false;
+    Node source = effect.inputs[0];
+    while (source && !source->args.empty() &&
+           (source->kind == Kind::RenderTexture || source->kind == Kind::Swizzle || source->kind == Kind::Convert))
+        source = source->args[0];
+    return source && source->kind == Kind::PostEffect && source->post && source->post->kind == "GTAONode";
+}
 
 // Resolve scalar swizzles before binding: the scene's material outputs splat packed r/g to RGBA.
 // Other scalar graphs keep their own UVs/uniforms through the existing RTT materializer.
@@ -210,23 +223,70 @@ fn sampleMip(coord: vec2<f32>, level: i32) -> vec4<f32> {
 }
 )WGSL";
 
-// three r185 GTAONode.setup: slice normal projection, two-sided horizon marching, Eq. 7
-// cosine-weighted integration, foreshortening, radius/thickness/falloff/exponent/scale. `reachPx` > 0 replaces the
-// world radius with a screen reach: the radius at a pixel is the pixel's view depth times 2 reachPx / (height * P11),
-// so a sample lands `reachPx` pixels of the occlusion target away at any depth, as Unreal's short-range AO does
-// (UE 5.8.3: Engine/Source/Runtime/Renderer/Private/Lumen/LumenScreenProbeGather.cpp:2665). The same switch takes
-// Unreal's step jitter (LumenScreenSpaceBentNormal.usf:355) and foreground reject, fraction .3 and power 1
-// (LumenScreenSpaceBentNormal.cpp:121-129, usf:271), in place of the metre `thickness` cutoff.
+// GTAO. `reachPx` > 0 replaces the world radius with a screen reach: the radius at a pixel is the pixel's view
+// depth times 2 reachPx / (height * P11), so a sample lands `reachPx` pixels of the occlusion target away at any
+// depth, as Unreal's short-range AO does (UE 5.8.3:
+// Engine/Source/Runtime/Renderer/Private/Lumen/LumenScreenProbeGather.cpp:2665). The same switch takes Unreal's
+// step jitter (LumenScreenSpaceBentNormal.usf:355) and foreground reject, fraction .3 and power 1
+// (LumenScreenSpaceBentNormal.cpp:121-129, usf:271), in place of the metre `thickness` cutoff. That path is
+// engine-owned: the r187 port sits below it and does not touch it.
 TN_WGSL_STRIPPED(kGtao, R"WGSL(
 fn screenPosition(view: vec3<f32>) -> vec2<f32> {
     let clip = u._cameraProjectionMatrix*vec4<f32>(view,1.0);
     let coord = clip.xy/clip.w*0.5+0.5;
     return vec2<f32>(coord.x,1.0-coord.y);
 }
-@fragment fn main(@location(0) coord: vec2<f32>) -> @location(0) vec4<f32> {
+// r187 PostProcessingUtils.js:80 getScreenPositionFromClip.
+fn clipScreenPosition(clip: vec4<f32>) -> vec2<f32> {
+    let screen = clip.xy/clip.w*0.5+0.5;
+    return vec2<f32>(screen.x,1.0-screen.y);
+}
+// r187 PostProcessingUtils.js:143 interleavedGradientNoise.
+fn interleavedGradientNoise(position: vec2<f32>) -> f32 {
+    return fract(52.9829189*fract(dot(position,vec2<f32>(0.06711056,0.00583715))));
+}
+// r187 MathNode.js:1137 rand: fract(sin(tsl_mod_float(dot(uv,vec2(12.9898,78.233)),PI))*43758.5453).
+fn randNoise(uv: vec2<f32>) -> f32 {
+    let dt = dot(uv,vec2<f32>(12.9898,78.233));
+    let sn = dt-3.141592653589793*floor(dt/3.141592653589793);
+    return fract(sin(sn)*43758.5453);
+}
+// r187 GTAONode.js:420-433 isValidSample: an off-image tap and the centre texel are both rejected.
+fn isValidSample(uv: vec2<f32>, centerTexel: vec2<f32>, size: vec2<f32>) -> bool {
+    let texel = floor(uv*size);
+    return uv.x>0.0 && uv.x<1.0 && uv.y>0.0 && uv.y<1.0 && (texel.x!=centerTexel.x || texel.y!=centerTexel.y);
+}
+// Unreal fades ambient occlusion out in the distance: "at what distance the AO effect disappears in
+// the distance (avoiding artifacts and AO effects on huge object)" (UE 5.8.3:
+// Engine/Source/Runtime/Engine/Classes/Engine/Scene.h:2239-2244). Its defaults are
+// AmbientOcclusionFadeDistance 8000 uu and AmbientOcclusionFadeRadius 5000 uu
+// (Engine/Source/Runtime/Engine/Private/Scene.cpp:572-573), 80 m and 50 m here, where one world unit
+// is one metre. Without it the reach path darkens geometry it cannot reconstruct: a sky dome 7 km out
+// arrives through the depth buffer in metre steps and its occlusion reads as a lattice along the
+// mesh's own triangle edges.
+const kAoFadeDistance = 80.0;
+const kAoFadeRadius = 50.0;
+const kAoInvFadeRadius = 0.02;
+// r187 GTAONode.js:412 sampleCenterDepth: the 2x2 depthGather's minimum, taken below full resolution.
+fn gatherMinDepth(coord: vec2<f32>) -> f32 {
+    let size = vec2<i32>(textureDimensions(t_depth));
+    let last = size-vec2<i32>(1);
+    let base = vec2<i32>(floor(coord*vec2<f32>(size)-vec2<f32>(0.5)));
+    return min(min(loadDepth(clamp(base,vec2<i32>(0),last)),loadDepth(clamp(base+vec2<i32>(1,0),vec2<i32>(0),last))),
+               min(loadDepth(clamp(base+vec2<i32>(0,1),vec2<i32>(0),last)),loadDepth(clamp(base+vec2<i32>(1,1),vec2<i32>(0),last))));
+}
+@fragment fn main(@location(0) coord: vec2<f32>, @builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
+    // The engine-owned extension: `reachPx` > 0 is Unreal's short-range search, not a three port. Every
+    // expression below is r185's march verbatim, with the extension's switch on `useReach`.
+    if (u.reachPx>0.0) {
     let depth = sampleDepth(coord);
     if (depth>=1.0) { discard; }
     let position = viewPosition(coord,depth);
+    // Unreal clears the occlusion past FadeDistance before it traces anything (UE 5.8.3:
+    // Renderer/Private/CompositionLighting/PostProcessAmbientOcclusion.cpp:1043-1048, the clear quad
+    // over the depth range from AmbientOcclusionFadeDistance to the far plane).
+    let viewDepth = -position.z;
+    if (viewDepth>=kAoFadeDistance) { return vec4<f32>(1.0,0,0,1); }
     let normal = sampleNormal(coord);
     let noiseUv = vec2<f32>(coord.x,1.0-coord.y)*u.resolution/vec2<f32>(textureDimensions(t_noise));
     let noise = textureSampleLevel(t_noise,smp_noise,noiseUv,0.0);
@@ -279,8 +339,90 @@ fn screenPosition(view: vec3<f32>) -> vec2<f32> {
         let termNeg = -cos(2.0*hNeg-angleN)+nCos+2.0*hNeg*nSin;
         ao += projNLen*((termPos+termNeg)*0.25);
     }
-    ao = pow(clamp(ao/f32(directions),0.0,1.0),u.scale);
+    // Unreal's soft fade, before AmbientOcclusionPower: PostProcessAmbientOcclusion.usf:431-441
+    // `lerp(OutColor.r, 1, saturate(SceneDepth * Mul + Add))` with Mul = 1/FadeRadius and
+    // Add = -(FadeDistance - FadeRadius)/FadeRadius (PostProcessAmbientOcclusion.cpp:393-412).
+    ao = mix(ao/f32(directions),1.0,saturate((viewDepth-kAoFadeDistance+kAoFadeRadius)*kAoInvFadeRadius));
+    ao = pow(clamp(ao,0.0,1.0),u.scale);
     // GTAO's RedFormat render target samples as (r,0,0,1).
+    return vec4<f32>(ao,0,0,1);
+    }
+    // r187 GTAONode.setup (examples/jsm/tsl/display/GTAONode.js:405-584), same order and constants.
+    let depthSize = vec2<f32>(textureDimensions(t_depth));
+    let centerTexel = floor(coord*depthSize);
+    // :438 `_resolutionScale.lessThan(1).select(sampleCenterDepth, sampleDepth)`: a scaled effect reads the
+    // depth target at a lower resolution than the one it renders into.
+    let depth = select(sampleDepth(coord),gatherMinDepth(coord),any(u.resolution!=depthSize));
+    // :445 isBackgroundDepth(depth).discard() — the near-1 test is the non-reversed-depth branch.
+    if (depth>=1.0) { discard; }
+    let position = viewPosition(coord,depth);
+    let normal = sampleNormal(coord);
+    let radius = u.radius;
+    let invRadius = 1.0/radius;
+    let viewDir = normalize(-position);
+    let clipPosition = u._cameraProjectionMatrix*vec4<f32>(position,1.0);
+    let noiseUv = vec2<f32>(coord.x,1.0-coord.y)*u.resolution/vec2<f32>(textureDimensions(t_noise));
+    let noise = textureSampleLevel(t_noise,smp_noise,noiseUv,0.0);
+    let randomVec = noise.xyz*2.0-1.0;
+    let tangent = normalize(vec3<f32>(randomVec.xy,0.0));
+    let bitangent = vec3<f32>(-tangent.y,tangent.x,0.0);
+    let kernel = mat3x3<f32>(tangent,bitangent,vec3<f32>(0,0,1));
+    // :462-467 the sample count is baked into the shader so the loops unroll: STEPS = ceil(SAMPLES/DIRECTIONS).
+    let directions = i32(select(3.0,5.0,u.samples>=30.0));
+    let steps = i32(ceil(u.samples/f32(directions)));
+    let invSteps = 1.0/f32(steps);
+    var ao = 0.0;
+    // :474-475 per-step phase jitter for spatio-temporal decorrelation: IGN at the fragment coordinate plus
+    // rand() of the uv. Temporal filtering is off, so _temporalOffset is 1 (:357-361) and the direction 0.
+    let noiseJitterIdx = u._temporalDirection*0.02;
+    // WGSLNodeBuilder.getFragCoord is the position builtin and isFlipY() is false, so screenCoordinate is
+    // the framebuffer coordinate itself.
+    let stepJitter = interleavedGradientNoise(fragCoord.xy+vec2<f32>(1.0))
+        +randNoise((coord+vec2<f32>(noiseJitterIdx))*2.0-vec2<f32>(1.0));
+    for (var i=0; i<directions; i++) {
+        let angle = f32(i)/f32(directions)*3.141592653589793+u._temporalDirection;
+        let sampleDir = kernel*vec3<f32>(cos(angle),sin(angle),0.0);
+        let clipDirRadius = u._cameraProjectionMatrix*vec4<f32>(sampleDir,0.0)*radius;
+        let sliceBitangent = normalize(cross(sampleDir,viewDir));
+        let sliceTangent = cross(sliceBitangent,viewDir);
+        let projNRaw = normal-sliceBitangent*dot(normal,sliceBitangent);
+        let projNLen = length(projNRaw);
+        let projN = projNRaw/max(projNLen,0.0001);
+        let nSin = dot(projN,sliceTangent);
+        let nCos = clamp(dot(projN,viewDir),0.0,1.0);
+        let angleN = select(-1.0,1.0,nSin>=0.0)*acos(nCos);
+        let cosHorizon = dot(viewDir,cross(projN,sliceBitangent));
+        var cosHorizons = vec2<f32>(cosHorizon,-cosHorizon);
+        // :505-511 the march is quadratic in clip space: t = (j + 1 + stepJitter)/STEPS, sampleDist = t*t.
+        for (var j=0; j<steps; j++) {
+            let t = (f32(j)+1.0+stepJitter)*invSteps;
+            let clipOffset = clipDirRadius*(t*t);
+            let sx = clipScreenPosition(clipPosition+clipOffset);
+            let dx = viewPosition(sx,sampleDepth(sx))-position;
+            let lenX = length(dx);
+            let sHX = dot(viewDir,dx)/max(lenX,0.0001);
+            let distFacX = min(lenX*invRadius,1.0);
+            // :533 is the tap on screen and not in the centre texel; :535 fades the horizon back as the
+            // sample nears the radius boundary (Section 4.3's squared near-field attenuation).
+            if (isValidSample(sx,centerTexel,depthSize) && abs(dx.z)<u.thickness) {
+                cosHorizons.x = mix(max(cosHorizons.x,sHX),cosHorizons.x,distFacX*distFacX);
+            }
+            let sy = clipScreenPosition(clipPosition-clipOffset);
+            let dy = viewPosition(sy,sampleDepth(sy))-position;
+            let lenY = length(dy);
+            let sHY = dot(viewDir,dy)/max(lenY,0.0001);
+            let distFacY = min(lenY*invRadius,1.0);
+            if (isValidSample(sy,centerTexel,depthSize) && abs(dy.z)<u.thickness) {
+                cosHorizons.y = mix(max(cosHorizons.y,sHY),cosHorizons.y,distFacY*distFacY);
+            }
+        }
+        // :560-574 cosine-weighted inner integral (Eq. 7); the gamma sign reads hPos from cosHorizons.y.
+        let hPos = acos(cosHorizons.y); let hNeg = -acos(cosHorizons.x);
+        let termPos = -cos(2.0*hPos-angleN)+nCos+2.0*hPos*nSin;
+        let termNeg = -cos(2.0*hNeg-angleN)+nCos+2.0*hNeg*nSin;
+        ao += projNLen*((termPos+termNeg)*0.25);
+    }
+    ao = pow(clamp(ao/f32(directions),0.0,1.0),u.scale);
     return vec4<f32>(ao,0,0,1);
 }
 )WGSL");
@@ -449,7 +591,8 @@ PostPass rawPass(const PostEffect& effect, std::string output, const char* body,
     pass.resolutionScale = effect.resolutionScale;
     pass.uniforms = effect.parameters;
     pass.temporal = effect.temporal;
-    pass.redFormat = effect.kind == "GTAONode";
+    pass.redFormat = effect.kind == "GTAONode" || denoiseOfOneField(effect);
+    pass.float32 = effect.kind == "DenoiseNode";
     pass.stage = effect.stage;
     StageModule fragment{Stage::Fragment};
     std::string code;
@@ -1003,16 +1146,26 @@ Node bloom(Node input, double strength, double radius, double threshold) {
         std::vector<double> coefficients(kernel);
         for (int i = 0; i < kernel; ++i)
             coefficients[i] = (0.39894 * std::exp((-0.5 * i * i) / (sigma * sigma))) / sigma;
+        // r187 BloomNode.js:519-531 merges adjacent taps into one bilinear fetch: the pair's weights sum to
+        // `weight` and land at `offset`, which a linear read of the target interpolates exactly.
+        std::vector<double> offsets, weights;
+        for (int i = 1; i < kernel; i += 2) {
+            const double wa = coefficients[i];
+            const double wb = (i + 1) < kernel ? coefficients[i + 1] : 0.0;
+            const double weight = wa + wb;
+            offsets.push_back((i * wa + (i + 1) * wb) / weight);
+            weights.push_back(weight);
+        }
         for (const auto& direction : {vec2({float_(1), float_(0)}), vec2({float_(0), float_(1)})}) {
             const Node source = current;
             const Node invSize = div(vec2({float_(1)}), uniform("postTargetSize", Type::vec(2), {1, 1}));
             Block block;
             const Var sum = block.var(mul(swizzle(sampleAt(source, uv()), "xyz"), float_(coefficients[0])));
-            for (int i = 1; i < kernel; ++i) {
-                const Node offset = mul(mul(direction, invSize), float_(i));
+            for (size_t i = 0; i < offsets.size(); ++i) {
+                const Node offset = mul(mul(direction, invSize), float_(offsets[i]));
                 const Node pair = add(swizzle(sampleAt(source, add(uv(), offset)), "xyz"),
                                       swizzle(sampleAt(source, sub(uv(), offset)), "xyz"));
-                block.assign(sum, add(sum.read(), mul(pair, float_(coefficients[i]))));
+                block.assign(sum, add(sum.read(), mul(pair, float_(weights[i]))));
             }
             current = renderTexture(functionCall(block, vec4({sum.read(), float_(1)})), resolutionScale / std::pow(2, mip));
         }

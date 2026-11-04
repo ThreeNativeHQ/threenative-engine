@@ -135,9 +135,10 @@ describe("WorldImpostorBaker clear-compatible depth", () => {
     ]);
     const normal = (pending.materials[0] as NodeMaterial | undefined)?.mrtNode?.outputNodes
       .normal as unknown as {
-      node: { nodes: unknown[] };
+      // r187 TSL returns the node itself; the r185 proxy wrapper (`.node`) is gone.
+      nodes: unknown[];
     };
-    const depth = normal.node.nodes.at(-1);
+    const depth = normal.nodes.at(-1);
     // Actual frame9 texels around the false interior hit: two covered side-face samples and two
     // clear texels. The secondary WebGPU MRT clears to alpha1 even when attachment0 clears to0.
     const taps = [

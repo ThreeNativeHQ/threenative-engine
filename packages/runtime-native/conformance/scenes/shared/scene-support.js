@@ -7,7 +7,7 @@ export function assertCondition(condition, message) {
 }
 
 export async function startVisualScene(canvas, dimensions, type, build, options = {}) {
-  const renderer = new THREE.WebGPURenderer({ canvas, antialias: false });
+  const renderer = new THREE.WebGPURenderer({ canvas, antialias: false, ...options.renderer });
   await renderer.init();
   renderer.setPixelRatio(1);
   renderer.setSize(dimensions.width, dimensions.height, false);

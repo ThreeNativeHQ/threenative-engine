@@ -255,6 +255,13 @@ exit 0
     ["gh", gh],
     ["sleep", sleep],
     ["docker", "#!/bin/sh\nexit 0\n"],
+    // The balancer pauses its slots under a free-space floor, so the host's disk is an input to
+    // every case here and must not be this machine's. A host with room: the pause has its own
+    // spec in `ci-runners-disk.spec.ts`.
+    [
+      "df",
+      `printf 'Filesystem 1024-blocks Used Available Capacity Mounted\\n/dev/fake 1000 0 ${350 * 1024 * 1024} 1%% /fake\\n'`,
+    ],
   ] as const) {
     const command = path.join(bin, name);
     writeFileSync(command, body);

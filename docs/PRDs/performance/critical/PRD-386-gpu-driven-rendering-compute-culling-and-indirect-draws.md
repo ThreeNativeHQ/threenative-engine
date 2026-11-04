@@ -126,6 +126,14 @@ completely without editing package code.
 | [PRD-283](../../done/nanite-like/PRD-283-the-cut-moves-to-the-gpu-and-native-runs-it.md) | Its negative result is the baseline this PRD must beat, and its native finding (submission shape and arrival cost, not the CPU walk) is why the CPU term is the target here. | No |
 | [PRD-329](../critical/PRD-329-the-native-gpu-frame-matches-chrome-at-matched-pixels.md) | Owns the native GPU-frame comparison; this PRD must not claim native timing it did not measure. | No — record its state |
 
+## three.js 0.187.0 levers (2026-11-02)
+
+- r186 adds per-mesh bounding-box frustum culling for `BatchedMesh` (three#34254) and the TSL node `batchIndirectIndex` (three#34111). r187 merges consecutive `BatchedMesh` draws that share a geometry range (three#35259).
+- r187 adds `StandardDrawingPipeline`, `MeshletDrawingPipeline` and `VisibilityBufferDrawingPipeline` (three#35191): GPU cluster culling, cluster LOD and indirect draws. Compare the remaining phases against these before new mechanism code is written.
+- r186 allows read-write storage buffers and atomics outside compute (three#33626) and atomic workgroup arrays (three#34428). Both remove workarounds a GPU culling pass needed on 0.185.1.
+
+Adoption rule: the owned engine is the default, and it runs a three symbol only when its API catalog covers it (`docs/architecture/NATIVE-ENGINE-DECISION.md`). So use the upstream piece first as a measured reference arm on `engine: "threejs"`. A template uses it only after a catalog row and a native parity case land.
+
 ## 5. Execution phases
 
 ### Phase 0 — trace and baseline

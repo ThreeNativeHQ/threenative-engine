@@ -125,6 +125,7 @@ describe("core constraints", () => {
           file !== "look/reflection-trace.ts" &&
           file !== "look/gi-registry.ts" &&
           file !== "look/ao-reach.ts" &&
+          file !== "look/ao-admission.ts" &&
           file !== "look/ao-multibounce.ts" &&
           file !== "look/local-exposure.ts" &&
           file !== "look/unreal-bloom.ts" &&

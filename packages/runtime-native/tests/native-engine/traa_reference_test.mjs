@@ -44,9 +44,10 @@ if (process.argv.includes("--projection")) {
 }
 const native = JSON.parse(input.split("\n")[0]);
 assert.deepEqual(native, offsets);
-assert.deepEqual(native[31], native[0]);
+assert.deepEqual(native[32], native[0]);
+assert.notDeepEqual(native[31], native[0]);
 effect.dispose();
-console.log("TRAA jitter equals pinned three across 96 frames (including three's 31-frame wrap)");
+console.log("TRAA jitter equals pinned three across 96 frames (three's 32-frame wrap)");
 
 // Check the actual production resolve expressions on a greyscale 3x3 neighbourhood.
 // Null validates WGSL, but cannot execute pixels; scalar greyscale makes vector math exact.
@@ -55,15 +56,15 @@ const source = readFileSync(new URL("../../src/engine/renderer/post/traa.cpp", i
 // separately checks the copied bytes on a rendering backend.
 const rendererSource = readFileSync(new URL("../../src/engine/renderer/renderer.cpp", import.meta.url), "utf8");
 const render = rendererSource.slice(rendererSource.indexOf("uint64_t Renderer::render("));
-assert.ok(render.indexOf("traa_->seedHistory(encoder, sceneColor_)") >= 0);
-assert.ok(render.indexOf("traa_->seedHistory(encoder, sceneColor_)") < render.indexOf("WGPURenderPassEncoder pass = beginTimedRenderPass(encoder, &passDesc"),
-  "reset must copy previous beauty before the scene overwrites it");
-const seed = source.slice(source.indexOf("void TraaPass::seedHistory("), source.indexOf("void TraaPass::resolve("));
-assert.match(seed, /if \(!needsSeed\(\)\) return;/);
-assert.match(seed, /src\.texture = beauty; dst\.texture = historyColor_\[historySlot_\];/);
-assert.match(seed, /wgpuCommandEncoderCopyTextureToTexture/);
-assert.doesNotMatch(source.slice(source.indexOf("void TraaPass::resolve(")), /copy\(beauty, historyColor_/);
-console.log("TRAA reset copies previous beauty before the scene render");
+// r187 TRAANode.updateBefore resets the history from the beauty buffer of the frame it resolves, so the seed belongs in
+// the resolve, after the scene pass drew, not ahead of it: a resolved reset frame must not carry an older frame.
+assert.doesNotMatch(render, /seedHistory/);
+const resolve = source.slice(source.indexOf("void TraaPass::resolve("));
+assert.match(resolve, /if \(needsSeed\(\) && width_ == outputWidth_ && height_ == outputHeight_\)\s*\n\s*copy\(beauty, historyColor_\[historySlot_\]/);
+assert.ok(resolve.indexOf("copy(beauty, historyColor_[historySlot_]") <
+  resolve.indexOf("beginTimedRenderPass(encoder, &desc, 2, {\"traaResolve\""),
+  "the reset seed must be recorded before the resolve reads its history");
+console.log("TRAA reset seeds the resolved frame's own beauty before the resolve reads it");
 assert.match(source, /textureSampleLevel\(beauty, linearSampler, input\.uv, 0\.0\)/);
 assert.match(source, /textureSampleLevel\(history, linearSampler, historyUV, 0\.0\)/);
 // The high-quality upsampling path has its own bounds; this oracle pins Three's full-resolution variance branch.

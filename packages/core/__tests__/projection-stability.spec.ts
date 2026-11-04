@@ -50,6 +50,41 @@ describe("ProjectionStability lane predicates", () => {
   });
 });
 
+describe("a scene recorded again and again", () => {
+  it("watches each distinct material and geometry once, however many scans run", () => {
+    const scene = new Scene();
+    const geometry = new BoxGeometry(1, 1, 1);
+    const first = new MeshStandardMaterial();
+    const second = new MeshStandardMaterial();
+    for (let index = 0; index < 40; index += 1)
+      scene.add(new Mesh(geometry, index % 2 === 0 ? first : second));
+
+    const stability = new ProjectionStability();
+    const workspace = createProjectionScanWorkspace();
+    for (let scan = 0; scan < 25; scan += 1)
+      stability.record(scene, scanProjection(scene, 4, workspace));
+
+    // RED before the fix: 25 scans appended all 40 meshes' materials and geometry 25 times over, so
+    // `holds` walked the log of every scan instead of the scene.
+    expect(stability.watchedMaterialCount).toBe(2);
+    expect(stability.watchedGeometryCount).toBe(1);
+    expect(stability.holds(scene)).toBe(true);
+
+    // The re-recorded proof is not stale: a lane value on a watched material still fails it.
+    first.transparent = true;
+    expect(stability.holds(scene)).toBe(false);
+    first.transparent = false;
+
+    // Nor on a watched geometry: a buffer someone streamed into still fails it.
+    stability.record(scene, scanProjection(scene, 4, workspace));
+    expect(stability.holds(scene)).toBe(true);
+    const position = geometry.attributes.position;
+    if (position === undefined) throw new Error("box geometry lost its position");
+    position.needsUpdate = true;
+    expect(stability.holds(scene)).toBe(false);
+  });
+});
+
 describe("a host whose `children` is built on every read", () => {
   // The native engine returns a fresh array of wrappers from each `children` read, so a walk that reads
   // it per index is quadratic in the scene's size: 4096 cubes cost three seconds a frame.

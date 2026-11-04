@@ -384,9 +384,8 @@ test('primary CI invokes the native lane on pull requests and pushes', () => {
   const native = readFileSync('../../.github/workflows/native-platforms.yml', 'utf8');
   const nativeTriggers = native.slice(native.indexOf('\non:'), native.indexOf('concurrency:'));
   assert.match(nativeTriggers, /workflow_call:/u);
-  assert.doesNotMatch(nativeTriggers, /(?:pull_request|schedule):/u);
-  // A push to main starts the run the release-candidate gate needs (PRD-629); no other branch does.
-  assert.match(nativeTriggers, /push:\s*\n\s*branches:\s*\[main\]/u);
+  // ci.yml owns when this lane runs. The release candidate reads its reports from that CI run.
+  assert.doesNotMatch(nativeTriggers, /(?:pull_request|push|schedule):/u);
 });
 
 test('native workflow verifies a freshly scaffolded starter on Linux', () => {
@@ -669,7 +668,7 @@ function ownedSmokeFixture({ count = 300, blank = false, status = 0, source = 'p
   const calls = [];
   const run = (command, args, options) => {
     calls.push({ command, args, options });
-    const scenario = JSON.parse(readFileSync(args[1], 'utf8'));
+    const scenario = JSON.parse(readFileSync(args.find((arg) => arg.endsWith('.playtest.json')), 'utf8'));
     assert.equal(scenario.steps.at(-1).label, 'native-smoke');
     assert.equal(options.env.TN_PLAYTEST_COMPLETION_WINDOW_MIN_FRAMES, '300');
     const output = args[args.indexOf('--artifacts') + 1];
@@ -692,7 +691,22 @@ test('ordinary owned-player verification uses a generic smoke and observes 300 p
   assert.equal(result.frames, 300);
   assert.equal(result.pass, true);
   assert.equal(result.gate, 'native-smoke');
-  assert.equal(existsSync(f.calls[0].args[1]), false, 'temporary scenario cleaned');
+  assert.equal(existsSync(f.calls[0].args.find((arg) => arg.endsWith('.playtest.json'))), false, 'temporary scenario cleaned');
+});
+
+test('owned-player verification supplies the settings its own completion window requires', () => {
+  // The post-publish clean room for 0.3.8 failed TN_PLAYTEST_COMPLETION_WINDOW_FAILED on every Linux
+  // machine: the verifier asked for the window and left its two admission settings to the caller.
+  const f = ownedSmokeFixture();
+  verifyStarterDesktop({ project: f.project, frames: 300, run: f.run, env: { PATH: process.env.PATH } });
+  const { args, command, options } = f.calls[0];
+  assert.equal(options.env.TN_PLAYER_VSYNC, '0');
+  if (process.platform === 'linux') {
+    assert.equal(command, 'sh');
+    assert.match(args[0], /xvfb\.sh$/u);
+    assert.deepEqual(args.slice(1, 3), ['env', 'TN_PLAYTEST_HOST_DISPLAY=1']);
+    assert.equal(options.env.TN_PLAYTEST_HOST_DISPLAY, undefined, 'the private display stays the default');
+  }
 });
 
 test('the owned-player CLI prints its completed smoke report and exits successfully', () => {

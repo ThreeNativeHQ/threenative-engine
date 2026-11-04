@@ -12,6 +12,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { measureBoards } from "./ci-board-kpis.mjs";
 import { measure } from "./ci-merge-latency.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -58,6 +59,95 @@ export const GOALS = [
     label: "Runner queue wait, p90",
     unit: "min",
     goal: 3,
+    better: "lower",
+  },
+  // PRD-782: the whole road to npm. Each goal is half the cost or better, the owner's "100% more efficient".
+  {
+    key: "fullBoardWallMedianMin",
+    short: "Full board wall",
+    label: "Full board wall time, median",
+    unit: "min",
+    goal: 30,
+    better: "lower",
+  },
+  {
+    key: "longestLegMedianMin",
+    short: "Longest leg",
+    label: "Longest job on a full board, median (the floor no runner count can beat)",
+    unit: "min",
+    goal: 20,
+    better: "lower",
+  },
+  {
+    key: "fullBoardMachineMedianMin",
+    short: "Board machine-min",
+    label: "Machine minutes per full board, median",
+    unit: "min",
+    goal: 240,
+    better: "lower",
+  },
+  {
+    key: "machineMinPerWeek",
+    short: "Minutes per week",
+    label: "Machine minutes per week, all ci.yml runs",
+    unit: "min",
+    goal: 40000,
+    better: "lower",
+  },
+  {
+    key: "boardQueueP90Min",
+    short: "Board queue p90",
+    label: "Job queue wait on full boards, p90",
+    unit: "min",
+    goal: 3,
+    better: "lower",
+  },
+  {
+    key: "boardGreenFirstPct",
+    short: "Green at once",
+    label: "Full boards green on attempt 1",
+    unit: "%",
+    goal: 80,
+    better: "higher",
+  },
+  {
+    key: "flakeRatePct",
+    short: "Flake rate",
+    label: "Red legs that went green on another board of the same commit",
+    unit: "%",
+    goal: 5,
+    better: "lower",
+  },
+  {
+    key: "greenMinutesPct",
+    short: "Useful minutes",
+    label: "Machine minutes on runs that end green",
+    unit: "%",
+    goal: 70,
+    better: "higher",
+  },
+  {
+    key: "minutesAfterFirstRedPct",
+    short: "After first red",
+    label: "Full-board machine minutes spent after the first red leg",
+    unit: "%",
+    goal: 10,
+    better: "lower",
+  },
+  {
+    key: "setupSharePct",
+    short: "Setup share",
+    label: "Full-board step minutes spent on setup, not on the job's work",
+    unit: "%",
+    goal: 6,
+    better: "lower",
+  },
+  {
+    key: "releaseLeadMin",
+    short: "Promotion→npm",
+    label: "First promotion PR to the npm publish, newest release in the window",
+    unit: "min",
+    goal: 120,
     better: "lower",
   },
 ];
@@ -111,6 +201,7 @@ export function appendIteration(
       mergeGroupRunSuccessPct: measurement.summary.mergeGroupRunSuccessPct,
       enqueueToMergeMedianMin: measurement.summary.enqueueToMergeMedianMin,
       queueWaitJobs: measurement.summary.queueWaitJobs,
+      fullBoardQueueSumMedianMin: measurement.summary.fullBoardQueueSumMedianMin ?? null,
     },
     prs: measurement.prs,
     firstFailingJobs: measurement.firstFailingJobs,
@@ -160,7 +251,8 @@ export function lineChart(goal, live) {
   const width = 380;
   const height = 190;
   const pad = { l: 44, r: 14, t: 14, b: 28 };
-  const values = live.map((item) => item.metrics[goal.key]);
+  // An iteration older than this goal has no value for it: a gap, not a NaN.
+  const values = live.map((item) => item.metrics[goal.key] ?? null);
   const known = values.filter((v) => v !== null);
   const lo = Math.min(goal.goal, ...known, goal.better === "higher" ? 0 : goal.goal);
   const hi = Math.max(goal.goal, ...known) * 1.1 || 1;
@@ -222,8 +314,9 @@ function barChart(rows, title) {
 export function renderHtml(ledger, now = new Date()) {
   const live = ledger.iterations.filter(isLive);
   const latest = live.at(-1);
-  const base = live[0];
   const strip = GOALS.map((goal) => {
+    // A KPI added later starts from the first iteration that measured it, not from an empty #1.
+    const base = live.find((item) => (item.metrics[goal.key] ?? null) !== null);
     const current = latest?.metrics[goal.key] ?? null;
     const progress = progressToward(goal, base?.metrics[goal.key], current);
     const percent = progress === null ? null : Math.round(progress * 100);
@@ -292,7 +385,7 @@ svg{width:100%;height:auto}
 tr.out td{opacity:.55;text-decoration:line-through}tr.out td small{text-decoration:none}
 </style></head><body><main>
 <h1>CI speed loop</h1>
-<p class="dim">${header} Snapshot ${esc(now.toISOString())}. The <code>pnpm dashboard</code> CI speed tab renders <code>docs/ci-speed/ledger.json</code> on each load. Goal: a change merges within 30 minutes of its last push (PRD-550).</p>
+<p class="dim">${header} Snapshot ${esc(now.toISOString())}. The <code>pnpm dashboard</code> CI speed tab renders <code>docs/ci-speed/ledger.json</code> on each load. Goals: a change merges within 30 minutes of its last push (PRD-550), and the whole road to npm costs half or less (PRD-782).</p>
 <h2>Progress toward the goal</h2>
 <div class="scroll"><table><thead><tr><th>Metric</th><th>Baseline</th><th>Now</th><th>Goal</th><th>Progress</th><th></th></tr></thead><tbody>${strip}</tbody></table></div>
 <h2>Trend per iteration</h2>
@@ -315,6 +408,16 @@ function show(ledger) {
   if (ledger.iterations.length === 0) console.log("baseline pending: no iterations recorded");
 }
 
+/** The lint gate checks this file, so the writer leaves it in the shape the gate accepts. */
+function writeLedger(ledger) {
+  writeAtomic(LEDGER, `${JSON.stringify(ledger, null, 2)}\n`);
+  // Relative: an absolute path under .claude/worktrees matches Biome's ignore list and exits 1.
+  execFileSync("pnpm", ["exec", "biome", "format", "--write", "docs/ci-speed/ledger.json"], {
+    cwd: ROOT,
+    stdio: "ignore",
+  });
+}
+
 function main(argv) {
   const [command] = argv;
   const get = (flag) => (argv.includes(flag) ? argv[argv.indexOf(flag) + 1] : undefined);
@@ -325,10 +428,16 @@ function main(argv) {
     if (since === undefined || label === undefined)
       throw new Error("record needs --since YYYY-MM-DD and --label");
     const from = get("--from");
-    const measurement =
-      from === undefined
-        ? measure({ since, base: get("--base") ?? "develop" })
-        : JSON.parse(readFileSync(from, "utf8"));
+    let measurement;
+    if (from === undefined) {
+      const merged = measure({ since, base: get("--base") ?? "develop" });
+      measurement = {
+        ...merged,
+        summary: { ...merged.summary, ...measureBoards({ since }) },
+      };
+    } else {
+      measurement = JSON.parse(readFileSync(from, "utf8"));
+    }
     const commit =
       get("--commit") ??
       execFileSync("git", ["rev-parse", "--short", "HEAD"], { cwd: ROOT, encoding: "utf8" }).trim();
@@ -339,10 +448,10 @@ function main(argv) {
       decision: get("--decision"),
       commit,
     });
-    writeAtomic(LEDGER, `${JSON.stringify(ledger, null, 2)}\n`);
+    writeLedger(ledger);
   } else if (command === "discard") {
     ledger = discardIteration(ledger, Number(get("--iteration")), get("--reason"));
-    writeAtomic(LEDGER, `${JSON.stringify(ledger, null, 2)}\n`);
+    writeLedger(ledger);
   } else if (command === "show") {
     return show(ledger);
   } else {

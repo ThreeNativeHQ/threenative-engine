@@ -17,6 +17,8 @@ async function loadQuality(): Promise<{
 }> {
   const dir = makeTempDirSync("tn-ao-quality-");
   copyFileSync(join(SCAFFOLD, "quality.ts"), join(dir, "quality.ts"));
+  // `quality.ts` reads the level's fixed exposure from `atmosphere.ts` (PRD-646 round 6).
+  copyFileSync(join(SCAFFOLD, "atmosphere.ts"), join(dir, "atmosphere.ts"));
   copyFileSync(
     join(
       __dirname,

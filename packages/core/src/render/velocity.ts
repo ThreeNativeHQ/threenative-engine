@@ -401,7 +401,7 @@ function batchedMatrixData(mesh: BatchedMesh): ArrayLike<number> | undefined {
 }
 
 function hasBatchedPreviousMatrices(mesh: BatchedMesh): boolean {
-  return (mesh as BatchedMesh & IBatchedMatrixSource)._previousMatricesTexture !== undefined;
+  return (mesh as BatchedMesh & IBatchedMatrixSource)._previousMatricesTexture != null;
 }
 
 function isNode(value: unknown): value is Node {

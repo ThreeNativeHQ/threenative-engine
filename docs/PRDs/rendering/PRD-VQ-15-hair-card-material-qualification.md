@@ -47,6 +47,12 @@ All proof paths below are **planned implementation targets**, not existing passi
 - [ ] The moving-camera/head/light trace passes coverage and shadow checks on browser WebGPU with matched sequence review. proof: `node packages/playtest/dist/runner/cli.js examples/abyss-framework/playtests/vq-hair-card-material-qualification.playtest.json --url ${VQ_URL:?} --browser-recipe webgpu`.
 - [ ] The same hair asset and tier trace run on Linux native, reporting the actual alpha and temporal route. proof: `node packages/playtest/dist/runner/cli.js examples/abyss-framework/playtests/vq-hair-card-material-qualification.playtest.json --target desktop --executable ${VQ_NATIVE_EXECUTABLE:?}`.
 
+## three.js 0.187.0 levers (2026-11-02)
+
+- r186 `OITPassNode` (three#34253) gives order-independent blending for overlapping translucent cards. Measure it against the alpha-test path of this PRD if sort artifacts show.
+
+Adoption rule: the owned engine is the default, and it runs a three symbol only when its API catalog covers it (`docs/architecture/NATIVE-ENGINE-DECISION.md`). So use the upstream piece first as a measured reference arm on `engine: "threejs"`. A template uses it only after a catalog row and a native parity case land.
+
 ## Acceptance criteria
 
 - [ ] The supported hair-card path preserves silhouette and shadow coverage through motion and tier changes; no strand-renderer support is implied. proof: the completed Phase 3 scenario outputs, with the named fixture, package/cohort and adapter recorded inline here.

@@ -355,10 +355,18 @@ def render():
         state["success"] = False
 
     profile_frame = int(os.environ.get("TN_UE_PROFILE_FRAME", "0"))
+    # TN_UE_CSV_GPU=1 records every rendered frame's GPU stats (each named pass, TSR included) with the CSV
+    # profiler, to Saved/Profiling/CSV/. ProfileGPU above samples single ticks, which land on editor frames.
+    csv_gpu = os.environ.get("TN_UE_CSV_GPU") == "1"
 
     def tick(delta):
         # Polling is the fail-safe: the queue is done when the subsystem stops rendering.
         state["frames"] += 1
+        if csv_gpu and "csv" not in state and subsystem.is_rendering():
+            unreal.SystemLibrary.execute_console_command(None, "r.GPUCsvStatsEnabled 1")
+            unreal.SystemLibrary.execute_console_command(None, "CsvProfile Start")
+            state["csv"] = state["frames"]
+            log(f"csv profile started at tick {state['frames']}")
         # TN_UE_PROFILE_FRAME=N dumps a frame's GPU passes to the log every N ticks while the queue renders. A tick can
         # fall between two jobs, where no scene draws, so the reader keeps only the profiles with the scene's passes.
         if profile_frame and state["frames"] % profile_frame == 0 and subsystem.is_rendering():
@@ -366,6 +374,13 @@ def render():
             unreal.SystemLibrary.execute_console_command(None, "ProfileGPU")
             log(f"profile requested at tick {state['frames']}")
         if state["frames"] > 30 and not subsystem.is_rendering():
+            if csv_gpu and "csv_stop" not in state:
+                # The CSV writes after the frame that stops it; quit a few ticks later so the file lands.
+                unreal.SystemLibrary.execute_console_command(None, "CsvProfile Stop")
+                state["csv_stop"] = state["frames"]
+                log(f"csv profile stopped at tick {state['frames']}")
+            if csv_gpu and state["frames"] - state["csv_stop"] < 30:
+                return
             unreal.unregister_slate_post_tick_callback(TICK)
             log(f"capture finished success={state['success']}")
             quit_editor(0 if state["success"] else 1)

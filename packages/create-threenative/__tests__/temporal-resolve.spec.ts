@@ -1,10 +1,12 @@
 import { Mesh, PerspectiveCamera, PlaneGeometry, Scene, Vector2 } from "three";
 import { traa } from "three/addons/tsl/display/TRAANode.js";
 import { Fn, float, int, pass, uniform, uv, vec4, velocity } from "three/tsl";
-import type { Node, NodeBuilder } from "three/webgpu";
+import type { Node } from "three/webgpu";
 import { MeshBasicNodeMaterial, WGSLNodeBuilder, WebGPURenderer } from "three/webgpu";
 import { describe, expect, it, vi } from "vitest";
 import { createTemporalAA } from "../templates/starter/src/render/temporalAA.js";
+import { createTemporalClampRelease } from "../templates/starter/src/render/temporalClampRelease.js";
+import { createTemporalMoire } from "../templates/starter/src/render/temporalMoire.js";
 import { createTemporalRejectionCounter } from "../templates/starter/src/render/temporalRejectionCounter.js";
 import {
   CATMULL_ROM_BASIS,
@@ -83,7 +85,12 @@ describe("authored temporal reconstruction kernel", () => {
       const donors = [...shader.matchAll(/(\w+) = clamp\( vec2<f32>\( vec2<i32>\(/gu)];
       expect(donors).toHaveLength(9);
       expect(shader.match(/textureLoad\(/gu)).toHaveLength(9);
-      expect(shader.match(/textureDimensions\([^\n]* - vec2<f32>\( 1\.0 \)/gu)).toHaveLength(9);
+      // Three 0.187 caches the repeated size node, so each bound names that one cached constant.
+      const bounds = [...shader.matchAll(/\( (\w+) - vec2<f32>\( 1\.0 \) \)/gu)];
+      expect(bounds).toHaveLength(9);
+      const [, sizeVar] = bounds[0] ?? [];
+      expect(shader).toContain(`let ${sizeVar} = vec2<f32>( textureDimensions(`);
+      for (const [, donorSizeVar] of bounds) expect(donorSizeVar).toBe(sizeVar);
       for (const [, donor] of donors) {
         expect(shader).toContain(`vec2<i32>( ${donor} ), u32( 0u )`);
         expect(shader).toMatch(new RegExp(`\\w+ = ${donor};`));
@@ -151,11 +158,14 @@ describe("authored temporal reconstruction kernel", () => {
       scenePass.getTextureNode("velocity"),
       camera,
     );
-    temporal.node.setup({
-      context: { velocity },
-      renderer,
-      getNodeProperties: () => ({}),
-    } as unknown as NodeBuilder);
+    // Three 0.187's TRAANode.setup builds its input nodes, so this setup runs on a real builder.
+    const builder = new WGSLNodeBuilder(null as never, renderer) as WGSLNodeBuilder & {
+      context: Record<string, unknown>;
+      setBuildStage(stage: string): void;
+    };
+    builder.setBuildStage("setup");
+    builder.context.velocity = velocity;
+    temporal.node.setup(builder);
     const installed = (temporal.node as unknown as { _resolveMaterial: { colorNode: unknown } })
       ._resolveMaterial.colorNode;
     const bare = traa(
@@ -180,7 +190,9 @@ describe("authored temporal reconstruction kernel", () => {
       expect(withFlag).not.toContain("( 1.0 > 0.5 )");
       // Production retains its named current weight: luminance reweighting biases alternating
       // linear coverage towards the darker sample even when history is correctly registered.
-      expect(withFlag).not.toContain("0.2126");
+      // The default's velocity clamp reads history and current luma once each (PRD-539); luminance
+      // reweighting would add two more reads.
+      expect(withFlag.match(/0\.2126/gu)).toHaveLength(2);
       // The chosen velocity texel and the reused centre colour have independent depth support.
       // An AND guard must read both previous depths; replacing the centre check admits stale red.
       expect(withFlag.match(/textureLoad\([^\n]*clamp\( floor\(/gu)).toHaveLength(2);
@@ -192,6 +204,119 @@ describe("authored temporal reconstruction kernel", () => {
       mesh.geometry.dispose();
       mesh.material.dispose();
     }
+  });
+  it("compiles lever 6's clamp release and its six input-raster passes to WGSL (PRD-539)", () => {
+    const renderer = offlineRenderer();
+    const camera = new PerspectiveCamera();
+    const scenePass = pass(new Scene(), camera);
+    scenePass.setSize(1280, 720);
+    const build = (clampRelease: boolean) => {
+      const temporal = createTemporalAA(
+        scenePass.getTextureNode(),
+        scenePass.getTextureNode("depth"),
+        scenePass.getTextureNode("velocity"),
+        camera,
+        undefined,
+        { historyScale: 2, velocityWeightClamp: true, clampRelease },
+      );
+      const builder = new WGSLNodeBuilder(null as never, renderer) as WGSLNodeBuilder & {
+        context: Record<string, unknown>;
+        setBuildStage(stage: string): void;
+      };
+      builder.setBuildStage("setup");
+      builder.context.velocity = velocity;
+      temporal.node.setup(builder);
+      return temporal.node as unknown as TemporalResolveNode & {
+        _resolveMaterial: { colorNode: unknown };
+      };
+    };
+    const mesh = new Mesh(new PlaneGeometry(2, 2), new MeshBasicNodeMaterial());
+    const samples = (code: string) => code.match(/texture[A-Za-z]*\(/gu)?.length ?? 0;
+    // The kernel reads the release factor only where the lever is on.
+    expect(
+      samples(fragment(renderer, mesh, build(true)._resolveMaterial.colorNode)),
+    ).toBeGreaterThan(samples(fragment(renderer, mesh, build(false)._resolveMaterial.colorNode)));
+    const node = build(true);
+    const draw = (release: ReturnType<typeof createTemporalClampRelease>) => {
+      const drawn: { fragmentNode: unknown }[] = [];
+      release.update(
+        { initRenderTarget: () => {}, setRenderTarget: () => {} } as never,
+        {
+          render: () => {},
+          set material(value: { fragmentNode: unknown }) {
+            drawn.push(value);
+          },
+        } as never,
+        createTemporalDepthRejection(node, renderer),
+        { x: 64, y: 36 },
+      );
+      release.dispose();
+      return drawn.map((material) => fragment(renderer, mesh, material.fragmentNode));
+    };
+    // Guide, input blur, history blur, rejection, median, min.
+    const passes = draw(createTemporalClampRelease(node));
+    expect(passes).toHaveLength(6);
+    for (const code of passes) expect(code).not.toMatch(/Infinity|NaN/u);
+    // The rejection pass carries Unreal's 10-bit quantization step, 0.5 / 1024.
+    expect(passes[3]).toContain("0.00048828125");
+    // With lever 4 the rejection also reads the moire state, as Unreal's combined analysis does.
+    const combined = draw(createTemporalClampRelease(node, createTemporalMoire(node)));
+    expect(combined[3]).not.toMatch(/Infinity|NaN/u);
+    expect(samples(combined[3] ?? "")).toBeGreaterThan(samples(passes[3] ?? ""));
+  });
+
+  it("compiles lever 4's widened clip and its moire update to WGSL (PRD-539)", () => {
+    const renderer = offlineRenderer();
+    const camera = new PerspectiveCamera();
+    const scenePass = pass(new Scene(), camera);
+    scenePass.setSize(1280, 720);
+    const build = (flickerRejection: boolean) => {
+      const temporal = createTemporalAA(
+        scenePass.getTextureNode(),
+        scenePass.getTextureNode("depth"),
+        scenePass.getTextureNode("velocity"),
+        camera,
+        undefined,
+        { historyScale: 2, velocityWeightClamp: true, flickerRejection },
+      );
+      const builder = new WGSLNodeBuilder(null as never, renderer) as WGSLNodeBuilder & {
+        context: Record<string, unknown>;
+        setBuildStage(stage: string): void;
+      };
+      builder.setBuildStage("setup");
+      builder.context.velocity = velocity;
+      temporal.node.setup(builder);
+      return temporal.node as unknown as TemporalResolveNode & {
+        _resolveMaterial: { colorNode: unknown };
+      };
+    };
+    const mesh = new Mesh(new PlaneGeometry(2, 2), new MeshBasicNodeMaterial());
+    // The moire ramp, saturate(count * (1 - 0.95^2) - 0.5), exists only where the lever is on.
+    expect(fragment(renderer, mesh, build(true)._resolveMaterial.colorNode)).toContain("0.0975");
+    expect(fragment(renderer, mesh, build(false)._resolveMaterial.colorNode)).not.toContain(
+      "0.0975",
+    );
+    // The update pass compiles too, with no literal WGSL cannot parse (gate run 5 lost an arm to one).
+    const node = build(true);
+    const moire = createTemporalMoire(node);
+    const drawn: { fragmentNode: unknown }[] = [];
+    moire.update(
+      { initRenderTarget: () => {}, setRenderTarget: () => {} } as never,
+      {
+        render: () => {},
+        set material(value: { fragmentNode: unknown }) {
+          drawn.push(value);
+        },
+      } as never,
+      createTemporalDepthRejection(node, renderer),
+      new Vector2(64, 36),
+    );
+    // Detection, then the 5x5 dilation and accumulation.
+    expect(drawn).toHaveLength(2);
+    const passes = drawn.map((material) => fragment(renderer, mesh, material.fragmentNode));
+    for (const code of passes) expect(code).not.toMatch(/Infinity|NaN/u);
+    expect(passes[1]).toContain("0.95");
+    moire.dispose();
   });
   it("compiles both depth supports in the actual rejection-count compute dispatch", async () => {
     const renderer = offlineRenderer();
@@ -212,10 +337,12 @@ describe("authored temporal reconstruction kernel", () => {
       expect(compute).toHaveBeenCalledTimes(2);
       const dispatch = compute.mock.calls[1]?.[0];
       // Pinned declarations omit the real compute constructor/build surface.
-      const builder = new WGSLNodeBuilder(dispatch as never, renderer) as unknown as {
+      // Three 0.187 builds a compute node through the builder's own compute slot, not the object.
+      const builder = new WGSLNodeBuilder(null as never, renderer) as WGSLNodeBuilder & {
         build(): void;
         computeShader: string;
       };
+      Reflect.set(builder, "compute", dispatch);
       builder.build();
       expect(builder.computeShader.match(/textureLoad\([^\n]*clamp\( floor\(/gu)).toHaveLength(2);
       expect(builder.computeShader).not.toContain("textureSample(");

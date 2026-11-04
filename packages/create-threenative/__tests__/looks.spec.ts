@@ -196,7 +196,13 @@ describe("starter visual floor", () => {
         // downsample chain) are multi-pass nodes of the same kind, and each file is the whole stage.
         // The filmic tone curve is one TSL graph (gamut, blue correction, glow, red modifier, the curve and an
         // output dither), with the same maths on plain numbers for a test or a capture script.
+        // The atmosphere sky is Unreal's sky model in three files: the scattering integrals
+        // (`atmosphere.ts`), the default cloud material (`clouds.ts`) and their LUT and cloud passes
+        // (`gpuSky.ts`), each one whole model the game can rewrite.
         if (
+          !name.endsWith("atmosphere.ts") &&
+          !name.endsWith("clouds.ts") &&
+          !name.endsWith("gpuSky.ts") &&
           !name.endsWith("loading.ts") &&
           !name.endsWith("worldEnvironment.ts") &&
           !name.endsWith("autoExposure.ts") &&
@@ -296,17 +302,25 @@ describe("starter visual floor", () => {
     });
     expect(scenario.assert?.camera).toMatchObject({ entity: "camera.main", follows: "player" });
     expect(scenario.assert?.movement).toMatchObject({ entity: "player", minDistance: 4 });
-    // AO, temporal AA, motion blur, bloom and vignette are the chain this kit ships, and each one is
-    // proved to have changed the graph output rather than being reported as applied. `grade` and
-    // `grain` run at intensity 0 (the Unreal defaults), so the scenario asserts the chain refuses both.
+    // AO, SSGI, reflections, bloom, vignette and the spatial antialias are the chain this kit ships at
+    // `high`, and each one is proved to have changed the graph output rather than being reported as
+    // applied. The owner's 2026-10-28 decision (`packages/core/src/look/quality.ts`) draws 4x MSAA with
+    // no temporal AA and no camera motion blur, and `grade`/`grain` run at intensity 0 (the Unreal
+    // defaults), so the scenario asserts the chain refuses all four.
     expect(scenario.assert?.renderChain?.stages?.includes).toEqual([
       "ambientOcclusion",
-      "traa",
-      "motionBlur",
+      "ssgi",
+      "ssr",
       "bloom",
       "vignette",
+      "antialias",
     ]);
-    expect(scenario.assert?.renderChain?.stages?.excludes).toEqual(["grade", "grain"]);
+    expect(scenario.assert?.renderChain?.stages?.excludes).toEqual([
+      "traa",
+      "motionBlur",
+      "grade",
+      "grain",
+    ]);
     expect(Object.keys(scenario.assert?.renderChain?.contributions ?? {})).toEqual([
       "graphOutputChanged",
     ]);

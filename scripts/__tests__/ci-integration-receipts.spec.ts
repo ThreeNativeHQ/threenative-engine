@@ -6,6 +6,7 @@ import { makeTempDirSync } from "../../test-support/temp-dir.js";
 
 const scope = await import(new URL("../ci-integration-scope.mjs", import.meta.url).href);
 const validate = scope.validateIntegrationReceipts;
+const changeReceipts = await import(new URL("../ci-attempt-receipts.mjs", import.meta.url).href);
 const changeScope = await import(new URL("../ci-change-scope.mjs", import.meta.url).href);
 const fixture = await import(
   new URL("../../test-support/ci-integration-fixture.ts", import.meta.url).href
@@ -144,6 +145,33 @@ describe("required current-attempt integration receipts", () => {
         ),
       ).toThrow("CI_INTEGRATION_JOB_IDENTITY");
     });
+    it("reads a carried leg's later-attempt copy as the same run, and a real rerun as a rerun", () => {
+      // PR #595 run 41262008820: job 124718810548 is listed in attempt 3 as 124750441136, with the
+      // same start, end and runner. Only the red leg really ran again.
+      const at = (row: object, started_at: string) => ({
+        ...row,
+        started_at,
+        completed_at: `${started_at}:done`,
+        runner_name: "hosted",
+      });
+      const first = [at(job(0, 1, 10), "t1"), at(job(1, 1, 6, "failure"), "t2")];
+      const second = [at(job(0, 2, 100), "t1"), at(job(1, 2, 11), "t3")];
+      const merged = changeReceipts.mergeAttemptListings([{ jobs: first }, { jobs: second }]);
+      const verdict = (listing: { jobs: unknown[] }) =>
+        validate(expected, [receipt(0, "1"), receipt(1, "2")], {
+          totalCount: listing.jobs.length,
+          jobs: listing.jobs,
+        });
+      expect(verdict(merged)).toBeUndefined();
+      expect(() => verdict({ jobs: [...first, ...second] })).toThrow(
+        "ran again in a later attempt",
+      );
+      const rerun = changeReceipts.mergeAttemptListings([
+        { jobs: first },
+        { jobs: [at(job(0, 2, 100), "t9"), second[1]] },
+      ]);
+      expect(() => verdict(rerun)).toThrow("ran again in a later attempt");
+    });
     it("rejects a receipt from an attempt later than this run's", () => {
       expect(() =>
         check([receipt(0, "3"), receipt(1, "2")], [job(0, 3, 10), job(1, 2, 11)]),
@@ -159,6 +187,22 @@ describe("required current-attempt integration receipts", () => {
     ).toBeUndefined();
     expect(() =>
       validate({ ...current, jobs: [], jobNames: {}, qualification: true }, [], {
+        totalCount: 0,
+        jobs: [],
+      }),
+    ).toThrow("CI_INTEGRATION_EMPTY_QUALIFICATION");
+  });
+
+  it("accepts an empty qualification only when per-job reuse carried the lanes", () => {
+    expect(
+      validate(
+        { ...current, jobs: [], jobNames: {}, qualification: true, carriedLanes: ["browser"] },
+        [],
+        { totalCount: 0, jobs: [] },
+      ),
+    ).toBeUndefined();
+    expect(() =>
+      validate({ ...current, jobs: [], jobNames: {}, qualification: true, carriedLanes: [] }, [], {
         totalCount: 0,
         jobs: [],
       }),
@@ -280,6 +324,41 @@ it("joins actual receipt writers, collector and protected verdict on the exact c
       });
     const green = verdict(summary);
     expect(green.status, green.stderr).toBe(0);
+    // PR #595 run 41262008820 attempt 3: `gh run rerun --failed` reran only the red legs, so both
+    // green joins kept their attempt-2 receipts while ci-required ran in attempt 3. GitHub copies a
+    // carried job into the later attempt under a new id, so the join is judged against the listing
+    // of the attempt that wrote its receipt, never against the copies.
+    writeFileSync(
+      `${evidence.apiFile}.3`,
+      JSON.stringify([
+        {
+          total_count: evidence.jobs.length,
+          jobs: evidence.jobs.map((job: { id: number }) => ({
+            ...job,
+            id: job.id + 10_000,
+            run_attempt: 3,
+          })),
+        },
+      ]),
+    );
+    const carried = run("ci-required.mjs", [], {
+      TN_CI_NEEDS: JSON.stringify(needs),
+      TN_CI_BASE_SHA: sha,
+      TN_CI_HEAD_SHA: sha,
+      TN_CI_INTEGRATION_RECEIPT: summary,
+      GITHUB_RUN_ATTEMPT: "3",
+    });
+    expect(carried.status, carried.stderr).toBe(0);
+    const future = run("ci-required.mjs", [], {
+      TN_CI_NEEDS: JSON.stringify(needs),
+      TN_CI_BASE_SHA: sha,
+      TN_CI_HEAD_SHA: sha,
+      TN_CI_INTEGRATION_RECEIPT: summary,
+      GITHUB_RUN_ATTEMPT: "1",
+    });
+    expect(future.status).toBe(1);
+    expect(future.stderr).toContain("CI_INTEGRATION_RECEIPT_IDENTITY");
+    expect(future.stderr).toContain("CI_NATIVE_RECEIPT_IDENTITY");
     const wrong = JSON.parse(summary);
     wrong.receipts[0].candidateSha = "b".repeat(40);
     const rejected = verdict(JSON.stringify(wrong));

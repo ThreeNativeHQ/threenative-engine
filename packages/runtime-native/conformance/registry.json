@@ -1,6 +1,6 @@
 {
   "schemaVersion": "0.1.0",
-  "threeVersion": "0.185.1",
+  "threeVersion": "0.187.0",
   "policy": {
     "renderer": "three/webgpu WebGPURenderer",
     "noCustomCppRenderer": true,
@@ -146,6 +146,22 @@
       "status": "implemented",
       "scene": "conformance/scenes/shared/temporal-aa-lifecycle.js",
       "captureFrames": 40,
+      "browserRecipe": "webgpu",
+      "requiresHardwareAdapter": true,
+      "tolerance": {
+        "pixelMismatchRatio": 0.06,
+        "perceptualDeltaE": 9.0
+      },
+      "desktopGate": false,
+      "required": false
+    },
+    {
+      "id": "temporal-aa-scaler-route",
+      "title": "temporal history and allocations across a scripted three-scale input route",
+      "category": "rendering",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/temporal-aa-scaler-route.js",
+      "captureFrames": 76,
       "browserRecipe": "webgpu",
       "requiresHardwareAdapter": true,
       "tolerance": {
@@ -561,6 +577,7 @@
         "perceptualDeltaE": 5.0
       },
       "desktopGate": true,
+      "requiresHardwareAdapter": true,
       "required": true
     },
     {
@@ -813,6 +830,7 @@
         "perceptualDeltaE": 3.0
       },
       "desktopGate": false,
+      "requiresHardwareAdapter": true,
       "required": true
     },
     {
@@ -826,6 +844,7 @@
         "perceptualDeltaE": 10.0
       },
       "desktopGate": false,
+      "requiresHardwareAdapter": true,
       "required": true
     },
     {
@@ -1846,7 +1865,7 @@
       "tolerance": { "pixelMismatchRatio": 0.06, "perceptualDeltaE": 9.0 },
       "desktopGate": true,
       "required": true,
-      "reason": "The left half displays actual gathered GI; the right displays the public scalar AO output. The owned implementation deliberately answers AO with constant one because GTAO is a separate stage. Owned Wasm/V8 parity proves those owned outputs, not equivalence to upstream Three SSGI, whose AO and GI algorithms and defaults differ. The required upstream comparison and its tolerances remain unchanged."
+      "reason": "The left half displays actual gathered GI; the right displays the public scalar AO output. The owned gather answers the share of its rays an occluder blocked, in three's form (pow(clamp(1 - occludedShare), aoIntensity)), so the caller that multiplies its lit frame by the AO term darkens where geometry blocks (SSGINode.js:637-638, 651). Owned Wasm/V8 parity proves those owned outputs, not equivalence to upstream Three SSGI, whose AO and GI algorithms and defaults differ. The required upstream comparison and its tolerances remain unchanged."
     },
     {
       "id": "realism-ssr",

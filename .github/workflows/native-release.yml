@@ -1,19 +1,6 @@
 name: Native runtime release
 
 on:
-  # Evidence for a main commit arrives via CI completion, not via the push itself: the
-  # `gates` job used to hold a runner for up to 150 minutes polling for the CI
-  # run, and at this repo's push cadence arrivals outran the org's runner concurrency.
-  # The `workflow_run` payload carries the CI conclusion, head SHA and jobs, so `gates`
-  # is a minutes-long verdict over the event instead of a wait. Tag publication and PR
-  # proof keep their own triggers below.
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
-    branches: [main]
-  push:
-    tags:
-      - "runtime-native-v*"
   pull_request:
     # The proof is the most expensive board in this repository (macOS, Windows, Linux and a
     # 210-minute Android producer) and an ordinary PR push never needed it: over 2026-09-18 to
@@ -23,7 +10,14 @@ on:
     # reach it. The `paths` filter is gone: it was the thing that re-ran the board on every push
     # to four files, one of them touched by ordinary runtime-native PRs.
     types: [opened, synchronize, reopened, labeled]
+  # `pnpm release:ship` dispatches the release on its tag ref (PRD-630). A tag pushed with the
+  # workflow token starts no run, and a dispatch does, so auto-publish and a person use one path.
   workflow_dispatch:
+    inputs:
+      override:
+        description: Admin only, on a tag. The reason to publish without CI evidence or consumer proofs.
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -44,7 +38,7 @@ concurrency:
   # workflow's history was a proof run killed by the next push to its own branch, and a
   # candidate-keyed result is still valid for the SHA it was produced from.
   #
-  # PRD-629: a release tag run has a group of its own. A main proof run (a duplicate `workflow_run`
+  # PRD-629: a release tag run has a group of its own. A main proof run (a duplicate dispatch
   # or a `release-proof` label) held `native-release-proof` once and delayed the tag run until it
   # was cancelled by hand; a tag run publishes, so nothing may queue ahead of it.
   #
@@ -57,9 +51,11 @@ concurrency:
 jobs:
   validate-tag:
     outputs:
-      candidate_sha: ${{ steps.release-candidate.outputs.candidate_sha }}
+      candidate_sha: ${{ steps.release-candidate.outputs.candidate_sha || steps.override.outputs.candidate_sha }}
+      override: ${{ steps.override.outputs.override }}
+      proof_run: ${{ steps.proof.outputs.proof_run }}
     # Proof runs must never require or manufacture a public release candidate.
-    if: github.event_name == 'push' && github.ref_type == 'tag'
+    if: github.ref_type == 'tag'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -70,8 +66,25 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Accept an override only from a repository admin
+        id: override
+        if: inputs.override != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REASON: ${{ inputs.override }}
+        run: |
+          set -euo pipefail
+          role="$(gh api "repos/$GITHUB_REPOSITORY/collaborators/$GITHUB_ACTOR/permission" --jq .permission)"
+          test "$role" = admin || {
+            echo "TN_RELEASE_OVERRIDE_REFUSED: $GITHUB_ACTOR is $role, not admin." >&2
+            exit 1
+          }
+          echo "## Release override by $GITHUB_ACTOR: $REASON" >> "$GITHUB_STEP_SUMMARY"
+          echo "override=true" >> "$GITHUB_OUTPUT"
+          echo "candidate_sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
       - name: Fetch the exact release-candidate artifact
         id: candidate-artifact
+        if: inputs.override == ''
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -114,17 +127,24 @@ jobs:
           NODE
       - name: Validate the exact release candidate before any release side effect
         id: release-candidate
+        if: inputs.override == ''
         env:
           GITHUB_REPOSITORY: ${{ github.repository }}
           PRODUCER_RUN_ID: ${{ steps.candidate-artifact.outputs.producer_run_id }}
         run: |
           pnpm tsx scripts/release-candidate-gate.ts validate --candidate release/release-candidate.json --repository "$GITHUB_REPOSITORY" --producer-run-id "$PRODUCER_RUN_ID" --verify-registry
           echo "candidate_sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+      # PRD-630: the promotion proof already built and installed these bytes. No proof, no reuse:
+      # the run below then builds and tests as a first run does.
+      - name: Find the promotion proof of this tree
+        id: proof
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/native-release-reuse.mjs "$GITHUB_SHA" | tee -a "$GITHUB_OUTPUT"
 
   gates:
     needs: validate-tag
-    # Scheduled/manual CI also completes on main, but only push CI qualifies a release.
-    # And the pull_request trigger fires on every push now (the label needs `labeled`), so this
+    # The pull_request trigger fires on every push now (the label needs `labeled`), so this
     # job is where an ordinary PR is refused: PRD-373 retired the `promotion/<sha>` ref, so a PR
     # targeting main is the promotion, and `release-proof` is the owner's manual route for any
     # other PR. Every proof job below needs `gates`, so refusing here spends nothing.
@@ -133,23 +153,11 @@ jobs:
       (github.event_name != 'pull_request' ||
       github.event.pull_request.base.ref == 'main' ||
       contains(github.event.pull_request.labels.*.name, 'release-proof')) &&
-      (github.event_name != 'workflow_run' || github.event.workflow_run.event == 'push') &&
-      (github.ref_type != 'tag' || needs.validate-tag.result == 'success') }}
+      github.ref_type != 'tag' }}
     runs-on: ubuntu-24.04
-    # A verdict over the triggering CI completion, not a wait for it: the event payload
-    # carries the conclusion and head SHA, and the required-job table is read once from
-    # the Jobs API. Nothing here sleeps or polls; a red or mismatched CI run refuses.
     timeout-minutes: 5
     steps:
-      # `GITHUB_SHA` on a `workflow_run` run is the last commit on the default branch, not
-      # the CI head, so the evidence candidate is checked out explicitly. Every other
-      # trigger keeps the default checkout it always had.
       - uses: actions/checkout@v7
-        if: github.event_name == 'workflow_run'
-        with:
-          ref: ${{ github.event.workflow_run.head_sha }}
-      - uses: actions/checkout@v7
-        if: github.event_name != 'workflow_run'
       - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@v7
         with:
@@ -162,230 +170,6 @@ jobs:
           mkdir -p "$RUNNER_TEMP/native-release-prerequisites"
           pnpm exec vitest run scripts/__tests__/native-release-proof.spec.ts scripts/__tests__/native-release-android-staging.spec.ts 2>&1 \
             | tee "$RUNNER_TEMP/native-release-prerequisites/refusal-controls.log"
-      - name: Record PR-only proof scope
-        if: github.event_name == 'pull_request'
-        env:
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: |
-          node --input-type=module <<'NODE'
-          import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
-          const workflow = readFileSync(".github/workflows/native-release.yml", "utf8");
-          const block = workflow.match(/const requiredNames = \[[\s\S]*?\];/)?.[0];
-          if (!block) throw new Error("Required CI job table is missing.");
-          const names = [...block.matchAll(/"([^"]+)"/g)].map((match) => match[1]);
-          const report = { candidateSha: process.env.GITHUB_SHA, headSha: process.env.PR_HEAD_SHA,
-            eligibility: "not-release-acceptance", event: "pull_request",
-            requiredJobs: names.map((name) => ({ name, status: "unavailable", conclusion: null })) };
-          writeFileSync(`${process.env.RUNNER_TEMP}/native-release-prerequisites/pr-scope.json`, `${JSON.stringify(report, null, 2)}\n`);
-          appendFileSync(process.env.GITHUB_STEP_SUMMARY,
-            `## PR integration proof, not main release acceptance\n\nCheckout: ${report.candidateSha}\nPR head: ${report.headSha}\n\n` +
-            "The existing native builds and packed controls run without publication. Main-CI prerequisites remain unavailable for this PR candidate.\n\n" +
-            "| Required main CI job | Status |\n| --- | --- |\n" + names.map((name) => `| ${name} | unavailable on PR |`).join("\n") + "\n");
-          NODE
-      # Aggregate CI success is not enough; every required row is validated below.
-      # The evidence path: CI on main just completed and triggered this run. The verdict
-      # reads the `workflow_run` payload (conclusion, head SHA, jobs) once and refuses
-      # anything but exact-candidate success - no `gh run list` search, no retry, no sleep.
-      - name: Require the triggering CI completion
-        if: github.event_name == 'workflow_run'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          WORKFLOW_RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
-          WORKFLOW_RUN_STATUS: ${{ github.event.workflow_run.status }}
-          WORKFLOW_RUN_EVENT: ${{ github.event.workflow_run.event }}
-          WORKFLOW_RUN_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
-          WORKFLOW_RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
-          WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}
-          WORKFLOW_RUN_NAME: ${{ github.event.workflow_run.name }}
-        run: |
-          set -euo pipefail
-          evidence="$RUNNER_TEMP/native-release-prerequisites"
-          mkdir -p "$evidence"
-          trap 'status=$?; printf "exit_code=%s\n" "$status" > "$evidence/status.txt"' EXIT
-          candidate_sha="$WORKFLOW_RUN_HEAD_SHA"
-          candidate_run="$WORKFLOW_RUN_ID"
-          if ! [[ "$candidate_sha" =~ ^[a-f0-9]{40}$ ]]; then
-            echo "Invalid triggering CI head SHA ${candidate_sha}." >&2
-            exit 1
-          fi
-          if ! [[ "$candidate_run" =~ ^[0-9]+$ ]] || [ "$candidate_run" -le 0 ]; then
-            echo "Invalid triggering CI run id ${candidate_run}." >&2
-            exit 1
-          fi
-          if [ "$WORKFLOW_RUN_NAME" != CI ] || [ "$WORKFLOW_RUN_STATUS" != completed ] || \
-             [ "$WORKFLOW_RUN_CONCLUSION" != success ] || [ "$WORKFLOW_RUN_EVENT" != push ] || \
-             [ "$WORKFLOW_RUN_HEAD_BRANCH" != main ]; then
-            echo "Refusing non-success main-push CI completion: workflow=$WORKFLOW_RUN_NAME status=$WORKFLOW_RUN_STATUS conclusion=$WORKFLOW_RUN_CONCLUSION event=$WORKFLOW_RUN_EVENT branch=$WORKFLOW_RUN_HEAD_BRANCH sha=$candidate_sha." >&2
-            exit 1
-          fi
-          printf '{"databaseId":%s,"attempt":1,"status":"%s","conclusion":"%s","event":"%s","headBranch":"%s","headSha":"%s"}\n' \
-            "$candidate_run" "$WORKFLOW_RUN_STATUS" "$WORKFLOW_RUN_CONCLUSION" "$WORKFLOW_RUN_EVENT" "$WORKFLOW_RUN_HEAD_BRANCH" "$candidate_sha" > "$evidence/ci-run.json"
-          gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/actions/runs/$candidate_run/jobs?filter=latest&per_page=100" > "$evidence/ci-jobs.json"
-          CANDIDATE_RUN_ID="$candidate_run" CANDIDATE_SHA="$candidate_sha" node --input-type=module <<'NODE'
-          import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
-          import { join } from "node:path";
-          const directory = join(process.env.RUNNER_TEMP, "native-release-prerequisites");
-          const candidateSha = process.env.CANDIDATE_SHA ?? "";
-          const runId = Number(process.env.CANDIDATE_RUN_ID);
-          if (!/^[a-f0-9]{40}$/.test(candidateSha) || !Number.isSafeInteger(runId) || runId < 1) {
-            throw new Error(`Invalid triggering CI completion for candidate ${candidateSha}.`);
-          }
-          const run = JSON.parse(readFileSync(join(directory, "ci-run.json"), "utf8"));
-          const pages = JSON.parse(readFileSync(join(directory, "ci-jobs.json"), "utf8"));
-          if (!Array.isArray(pages) || pages.length === 0 || pages.some((page) => !Array.isArray(page?.jobs))) {
-            throw new Error(`Missing or malformed CI job pages for candidate ${candidateSha}.`);
-          }
-          const jobs = pages.flatMap((page) => page.jobs);
-          const failures = [];
-          if (run?.databaseId !== runId || run?.headSha !== candidateSha ||
-              run?.status !== "completed" || run?.conclusion !== "success" ||
-              run?.event !== "push" || run?.headBranch !== "main" ||
-              !Number.isSafeInteger(run?.attempt) || run.attempt < 1) {
-            failures.push(`Triggering CI run no longer proves exact candidate ${candidateSha}.`);
-          }
-          if (pages.some((page) => !Number.isSafeInteger(page.total_count) || page.total_count !== jobs.length)) {
-            failures.push("Incomplete CI job pagination: the observed count does not match total_count.");
-          }
-          if (jobs.some((job) => !Number.isSafeInteger(job?.id) || job.id < 1 ||
-              typeof job?.name !== "string" || job.run_id !== runId || job.head_sha !== candidateSha) ||
-              new Set(jobs.map((job) => job?.id)).size !== jobs.length) {
-            failures.push("Malformed, duplicate or wrong-candidate CI job identity.");
-          }
-          // Existing main-CI job names, not evidence that this release workflow has executed.
-          // iOS release/simulator gates remain separate and unchanged below.
-          const requiredNames = [
-            "typecheck", "lint", "test", "budgets", "build", "test-native",
-            "native-platforms / Windows desktop core",
-            "native-platforms / macOS desktop core",
-            "native-platforms / Scaffolded starter desktop artifact (linux-x64)",
-            "native-platforms / Desktop web/native parity",
-            "native-platforms / Android emulator visual parity",
-          ];
-          const runUrl = `https://github.com/${process.env.GITHUB_REPOSITORY}/actions/runs/${runId}`;
-          const requiredJobs = requiredNames.map((name) => {
-            const matches = jobs.filter((job) => job?.name === name);
-            const job = matches[0];
-            const status = job?.status ?? "missing";
-            const conclusion = job?.conclusion ?? null;
-            if (matches.length !== 1 || status !== "completed" || conclusion !== "success") {
-              failures.push(`${name}: ${matches.length} result(s), ${status}/${conclusion ?? "absent"}.`);
-            }
-            return { name, id: job?.id ?? null, status, conclusion,
-              url: Number.isSafeInteger(job?.id) && job.id > 0 ? `${runUrl}/job/${job.id}` : null };
-          });
-          const report = { candidateSha, run: { ...run, url: runUrl }, requiredJobs, failures };
-          writeFileSync(join(directory, "validation.json"), `${JSON.stringify(report, null, 2)}\n`);
-          if (process.env.GITHUB_STEP_SUMMARY) {
-            appendFileSync(process.env.GITHUB_STEP_SUMMARY,
-              `## Exact-candidate CI prerequisites (not release proof)\n\nSHA: ${candidateSha}\n\n` +
-              `[CI run ${runId}, attempt ${run?.attempt ?? "unknown"}](${runUrl})\n\n` +
-              "| Required job | Status | Conclusion |\n| --- | --- | --- |\n" +
-              requiredJobs.map((job) => `| ${job.url ? `[${job.name}](${job.url})` : job.name} | ${job.status} | ${job.conclusion ?? "absent"} |`).join("\n") +
-              `\n\nValidation: ${failures.length === 0 ? "accepted" : "REFUSED"}.\n`);
-          }
-          if (failures.length > 0) throw new Error(failures.join("\n"));
-          console.log(`Validated ${requiredJobs.length} required jobs in CI run ${runId} for ${candidateSha}.`);
-          NODE
-      # Aggregate CI success is not enough; every required row is validated below.
-      - name: Require a green CI run for this commit
-        # Tag publication and manual proof keep the single-shot lookup they always had:
-        # one `gh` read of the exact-candidate main CI run, never a wait. The evidence
-        # path (`workflow_run`) is verified by the step above from the event payload.
-        if: github.event_name != 'pull_request' && github.event_name != 'workflow_run'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          evidence="$RUNNER_TEMP/native-release-prerequisites"
-          mkdir -p "$evidence"
-          trap 'status=$?; printf "exit_code=%s\n" "$status" > "$evidence/status.txt"' EXIT
-          candidate_runs="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$GITHUB_SHA" --limit 20 --json databaseId,status,conclusion,event,headBranch,headSha)"
-          printf '%s\n' "$candidate_runs" > "$evidence/ci-runs.json"
-          candidate_run="$(
-            CANDIDATE_SHA="$GITHUB_SHA" CANDIDATE_RUNS="$candidate_runs" FORCE_COLOR=0 node --input-type=module <<'NODE'
-          const runs = JSON.parse(process.env.CANDIDATE_RUNS ?? "[]");
-          const candidateSha = process.env.CANDIDATE_SHA ?? "";
-          if (!/^[a-f0-9]{40}$/.test(candidateSha) || !Array.isArray(runs)) {
-            throw new Error(`Invalid CI run list or candidate SHA ${candidateSha}.`);
-          }
-          const run = runs.find((entry) =>
-            entry?.status === "completed" &&
-            entry?.event === "push" &&
-            entry?.headBranch === "main" &&
-            entry?.headSha === candidateSha &&
-            Number.isSafeInteger(entry?.databaseId) &&
-            entry.databaseId > 0,
-          );
-          if (run === undefined) {
-            throw new Error(`No completed successful CI push run on main found for the exact candidate SHA ${candidateSha}.`);
-          }
-          console.log(run.databaseId);
-          NODE
-          )"
-          gh run view "$candidate_run" --repo "$GITHUB_REPOSITORY" --json databaseId,attempt,status,conclusion,event,headBranch,headSha > "$evidence/ci-run.json"
-          gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/actions/runs/$candidate_run/jobs?filter=latest&per_page=100" > "$evidence/ci-jobs.json"
-          CANDIDATE_RUN_ID="$candidate_run" node --input-type=module <<'NODE'
-          import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
-          import { join } from "node:path";
-          const directory = join(process.env.RUNNER_TEMP, "native-release-prerequisites");
-          const candidateSha = process.env.GITHUB_SHA;
-          const runId = Number(process.env.CANDIDATE_RUN_ID);
-          const run = JSON.parse(readFileSync(join(directory, "ci-run.json"), "utf8"));
-          const pages = JSON.parse(readFileSync(join(directory, "ci-jobs.json"), "utf8"));
-          if (!Array.isArray(pages) || pages.length === 0 || pages.some((page) => !Array.isArray(page?.jobs))) {
-            throw new Error(`Missing or malformed CI job pages for candidate ${candidateSha}.`);
-          }
-          const jobs = pages.flatMap((page) => page.jobs);
-          const failures = [];
-          if (run?.databaseId !== runId || run?.headSha !== candidateSha ||
-              run?.status !== "completed" || run?.conclusion !== "success" ||
-              run?.event !== "push" || run?.headBranch !== "main" ||
-              !Number.isSafeInteger(run?.attempt) || run.attempt < 1) {
-            failures.push(`Selected CI run no longer proves exact candidate ${candidateSha}.`);
-          }
-          if (pages.some((page) => !Number.isSafeInteger(page.total_count) || page.total_count !== jobs.length)) {
-            failures.push("Incomplete CI job pagination: the observed count does not match total_count.");
-          }
-          if (jobs.some((job) => !Number.isSafeInteger(job?.id) || job.id < 1 ||
-              typeof job?.name !== "string" || job.run_id !== runId || job.head_sha !== candidateSha) ||
-              new Set(jobs.map((job) => job?.id)).size !== jobs.length) {
-            failures.push("Malformed, duplicate or wrong-candidate CI job identity.");
-          }
-          // Existing main-CI job names, not evidence that this release workflow has executed.
-          // iOS release/simulator gates remain separate and unchanged below.
-          const requiredNames = [
-            "typecheck", "lint", "test", "budgets", "build", "test-native",
-            "native-platforms / Windows desktop core",
-            "native-platforms / macOS desktop core",
-            "native-platforms / Scaffolded starter desktop artifact (linux-x64)",
-            "native-platforms / Desktop web/native parity",
-            "native-platforms / Android emulator visual parity",
-          ];
-          const runUrl = `https://github.com/${process.env.GITHUB_REPOSITORY}/actions/runs/${runId}`;
-          const requiredJobs = requiredNames.map((name) => {
-            const matches = jobs.filter((job) => job?.name === name);
-            const job = matches[0];
-            const status = job?.status ?? "missing";
-            const conclusion = job?.conclusion ?? null;
-            if (matches.length !== 1 || status !== "completed" || conclusion !== "success") {
-              failures.push(`${name}: ${matches.length} result(s), ${status}/${conclusion ?? "absent"}.`);
-            }
-            return { name, id: job?.id ?? null, status, conclusion,
-              url: Number.isSafeInteger(job?.id) && job.id > 0 ? `${runUrl}/job/${job.id}` : null };
-          });
-          const report = { candidateSha, run: { ...run, url: runUrl }, requiredJobs, failures };
-          writeFileSync(join(directory, "validation.json"), `${JSON.stringify(report, null, 2)}\n`);
-          if (process.env.GITHUB_STEP_SUMMARY) {
-            appendFileSync(process.env.GITHUB_STEP_SUMMARY,
-              `## Exact-candidate CI prerequisites (not release proof)\n\nSHA: ${candidateSha}\n\n` +
-              `[CI run ${runId}, attempt ${run?.attempt ?? "unknown"}](${runUrl})\n\n` +
-              "| Required job | Status | Conclusion |\n| --- | --- | --- |\n" +
-              requiredJobs.map((job) => `| ${job.url ? `[${job.name}](${job.url})` : job.name} | ${job.status} | ${job.conclusion ?? "absent"} |`).join("\n") +
-              `\n\nValidation: ${failures.length === 0 ? "accepted" : "REFUSED"}.\n`);
-          }
-          if (failures.length > 0) throw new Error(failures.join("\n"));
-          console.log(`Validated ${requiredJobs.length} required jobs in CI run ${runId} for ${candidateSha}.`);
-          NODE
       - name: Retain generated maintenance diagnostics
         if: ${{ always() }}
         run: |
@@ -407,8 +191,9 @@ jobs:
   build:
     needs: [validate-tag, gates]
     if: >-
-      ${{ !cancelled() && needs.gates.result == 'success' &&
-      (github.ref_type != 'tag' || needs.validate-tag.outputs.candidate_sha == github.sha) }}
+      ${{ !cancelled() && needs.validate-tag.outputs.proof_run == '' &&
+      ((github.ref_type != 'tag' && needs.gates.result == 'success') ||
+      (github.ref_type == 'tag' && needs.validate-tag.outputs.candidate_sha == github.sha)) }}
     strategy:
       fail-fast: false
       matrix:
@@ -446,13 +231,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     steps:
-      # On `workflow_run` the evidence candidate is the triggering CI head, not `GITHUB_SHA`.
       - uses: actions/checkout@v7
-        if: github.event_name == 'workflow_run'
-        with:
-          ref: ${{ github.event.workflow_run.head_sha }}
-      - uses: actions/checkout@v7
-        if: github.event_name != 'workflow_run'
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
@@ -593,19 +372,14 @@ jobs:
   build-android:
     needs: [validate-tag, gates]
     if: >-
-      ${{ !cancelled() && needs.gates.result == 'success' &&
-      (github.ref_type != 'tag' || needs.validate-tag.outputs.candidate_sha == github.sha) }}
+      ${{ !cancelled() && needs.validate-tag.outputs.proof_run == '' &&
+      ((github.ref_type != 'tag' && needs.gates.result == 'success') ||
+      (github.ref_type == 'tag' && needs.validate-tag.outputs.candidate_sha == github.sha)) }}
     runs-on: ubuntu-24.04
     # Hosts the resumable Android V8 producer: 180-minute build ceiling plus cache-save time.
     timeout-minutes: 210
     steps:
-      # On `workflow_run` the evidence candidate is the triggering CI head, not `GITHUB_SHA`.
       - uses: actions/checkout@v7
-        if: github.event_name == 'workflow_run'
-        with:
-          ref: ${{ github.event.workflow_run.head_sha }}
-      - uses: actions/checkout@v7
-        if: github.event_name != 'workflow_run'
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
@@ -715,8 +489,9 @@ jobs:
     # Windows build, which is the longer job, so it adds no wall time.
     needs: [validate-tag, gates]
     if: >-
-      ${{ !cancelled() && needs.gates.result == 'success' &&
-      (github.ref_type != 'tag' || needs.validate-tag.outputs.candidate_sha == github.sha) }}
+      ${{ !cancelled() && needs.validate-tag.outputs.proof_run == '' &&
+      ((github.ref_type != 'tag' && needs.gates.result == 'success') ||
+      (github.ref_type == 'tag' && needs.validate-tag.outputs.candidate_sha == github.sha)) }}
     runs-on: macos-15
     timeout-minutes: 60
     steps:
@@ -755,38 +530,32 @@ jobs:
           if-no-files-found: error
 
   publish:
-    # PRD-629: a proof run (promotion PR, `release-proof` label, dispatch, main CI completion) runs
-    # this job in rehearsal mode. It builds the same lock, SBOM and provenance and creates the
-    # release with the same command, but the release is a DRAFT named `rehearsal-<run id>`, which
-    # `validate-tag` never accepts. `cleanup-rehearsal` deletes it. The tag run therefore has no
-    # code path that a proof run did not already execute.
     needs: [validate-tag, gates, build, build-android, build-ios-simulator]
     if: >-
-      ${{ !cancelled() && needs.build.result == 'success' && needs.build-android.result == 'success' &&
-      ((github.ref_type != 'tag' && needs.gates.result == 'success' &&
-      needs.build-ios-simulator.result == 'success') ||
-      (github.event_name == 'push' && github.ref_type == 'tag' && needs.validate-tag.result == 'success' &&
-      needs.build-ios-simulator.result == 'success' && needs.validate-tag.outputs.candidate_sha == github.sha)) }}
+      ${{ !cancelled() && (
+      (github.ref_type != 'tag' && needs.gates.result == 'success' && needs.build.result == 'success' &&
+      needs.build-android.result == 'success' && needs.build-ios-simulator.result == 'success') ||
+      (github.ref_type == 'tag' && needs.validate-tag.outputs.candidate_sha == github.sha &&
+      (needs.validate-tag.outputs.proof_run != '' || (needs.build.result == 'success' &&
+      needs.build-android.result == 'success' && needs.build-ios-simulator.result == 'success')))) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
+      actions: read
       contents: write
     outputs:
       release_tag: ${{ steps.release.outputs.release_tag }}
       rehearsal: ${{ steps.release.outputs.rehearsal }}
     steps:
-      # On `workflow_run` the evidence candidate is the triggering CI head, not `GITHUB_SHA`.
       - uses: actions/checkout@v7
-        if: github.event_name == 'workflow_run'
-        with:
-          ref: ${{ github.event.workflow_run.head_sha }}
-      - uses: actions/checkout@v7
-        if: github.event_name != 'workflow_run'
+      # One path: a proof run reads its own artifacts this way, so it proves what a tag run does.
       - uses: actions/download-artifact@v8
         with:
           pattern: runtime-*
           path: release
           merge-multiple: true
+          run-id: ${{ needs.validate-tag.outputs.proof_run || github.run_id }}
+          github-token: ${{ github.token }}
       - name: Name the release this run creates
         id: release
         env:
@@ -881,11 +650,14 @@ jobs:
           else
             mode=(--verify-tag --title "ThreeNative runtime ${RELEASE_TAG:-}" --prerelease --latest=false --generate-notes)
           fi
+          # A rerun after a failed verify finds its own prerelease. A public release stays refused.
+          if [ "$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isPrerelease --jq .isPrerelease 2>/dev/null)" = true ]; then
+            gh release delete "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --yes
+          fi
           gh release create "$RELEASE_TAG" "${assets[@]}" \
             --repo "$GITHUB_REPOSITORY" \
             "${mode[@]}"
       - name: Verify the uploaded assets against the lock
-        if: steps.release.outputs.rehearsal == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ steps.release.outputs.release_tag }}
@@ -918,7 +690,8 @@ jobs:
   clean-consumer:
     needs: [validate-tag, gates, build, build-android, publish]
     if: >-
-      ${{ !cancelled() && needs.gates.result == 'success' &&
+      ${{ !cancelled() && needs.validate-tag.outputs.proof_run == '' && needs.validate-tag.outputs.override != 'true' &&
+      (needs.gates.result == 'success' || github.ref_type == 'tag') &&
       needs.build.result == 'success' && needs.build-android.result == 'success' &&
       ((github.ref_type != 'tag' && needs.publish.result == 'success') ||
       (needs.validate-tag.outputs.candidate_sha == github.sha && needs.publish.result == 'success')) }}
@@ -931,13 +704,7 @@ jobs:
     # builds, an emulator boot and six playtests - and had never once run to completion under 35.
     timeout-minutes: 60
     steps:
-      # On `workflow_run` the evidence candidate is the triggering CI head, not `GITHUB_SHA`.
       - uses: actions/checkout@v7
-        if: github.event_name == 'workflow_run'
-        with:
-          ref: ${{ github.event.workflow_run.head_sha }}
-      - uses: actions/checkout@v7
-        if: github.event_name != 'workflow_run'
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
@@ -952,8 +719,6 @@ jobs:
           merge-multiple: true
       - name: Serve same-run proof assets without publishing
         if: github.ref_type != 'tag'
-        env:
-          WORKFLOW_RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           set -euo pipefail
           test "$GITHUB_REF_TYPE" != tag
@@ -961,8 +726,7 @@ jobs:
           import { createHash } from "node:crypto";
           import { readFileSync, readdirSync, writeFileSync } from "node:fs";
           import { PREBUILT_ASSET_NAMES, PUBLISHED_PREBUILT_KEYS } from "./packages/runtime-native/scripts/install-prebuilt.mjs";
-          // On `workflow_run` the evidence candidate is the triggering CI head, not `GITHUB_SHA`.
-          const candidateSha = process.env.WORKFLOW_RUN_HEAD_SHA || process.env.GITHUB_SHA;
+          const candidateSha = process.env.GITHUB_SHA;
           // The published cohort, not every non-iOS key: rows in UNPUBLISHED_PREBUILT_KEYS upload
           // under a name the `pattern: runtime-*` download above does not collect, so demanding them
           // here fails a run whose staging is exactly right.
@@ -1221,8 +985,6 @@ jobs:
             test ! -e "$TN_TOOLCHAIN_LOG"
       - name: Record packed consumer verification evidence
         if: ${{ always() }}
-        env:
-          WORKFLOW_RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           node --input-type=module <<'NODE'
           import { createHash } from "node:crypto";
@@ -1302,8 +1064,7 @@ jobs:
             }
           } catch (error) { failures.push(`packages: ${error.message}`); }
           const checkoutSha = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
-          // On `workflow_run` the evidence candidate is the triggering CI head, not `GITHUB_SHA`.
-          const candidateSha = process.env.WORKFLOW_RUN_HEAD_SHA || process.env.GITHUB_SHA;
+          const candidateSha = process.env.GITHUB_SHA;
           if (checkoutSha !== candidateSha) failures.push("Checkout SHA differs from the workflow candidate.");
           const report = { candidateSha, checkoutSha,
             runId: process.env.GITHUB_RUN_ID, attempt: process.env.GITHUB_RUN_ATTEMPT,
@@ -1347,7 +1108,10 @@ jobs:
 
   clean-consumer-ios:
     needs: [validate-tag, publish]
-    if: needs.validate-tag.outputs.candidate_sha == github.sha
+    # `!cancelled()`: the skipped `gates` of a tag run would otherwise skip this job too.
+    if: >-
+      ${{ !cancelled() && needs.publish.result == 'success' && needs.validate-tag.outputs.candidate_sha == github.sha &&
+      needs.validate-tag.outputs.proof_run == '' && needs.validate-tag.outputs.override != 'true' }}
     runs-on: macos-15
     timeout-minutes: 35
     steps:
@@ -1403,6 +1167,10 @@ jobs:
           pnpm --dir "$IOS_RELEASE_CONSUMER" build --target ios
           test -d "$IOS_RELEASE_CONSUMER/dist-native/threenative-ios-release-consumer.app"
           test ! -e "$TN_IOS_TOOLCHAIN_LOG"
+          # The packager stamps the consumer's own app id into the bundle, so the build report names it.
+          bundle_id=$(node -p 'JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")).appId' "$IOS_RELEASE_CONSUMER/dist-native/threenative-ios-release-consumer.app.json")
+          test -n "$bundle_id"
+          echo "IOS_BUNDLE_ID=$bundle_id" >> "$GITHUB_ENV"
       - name: Boot a clean-consumer iOS simulator
         run: |
           device=$(xcrun simctl list devices available | awk -F '[()]' '/iPhone/{print $2; exit}')
@@ -1416,13 +1184,13 @@ jobs:
           app="$IOS_RELEASE_CONSUMER/dist-native/threenative-ios-release-consumer.app"
           node packages/playtest/dist/runner/cli.js \
             examples/native-smoke/playtests/device-smoke.playtest.json \
-            --target ios --app "$app" --bundle-id dev.threenative.runtime \
+            --target ios --app "$app" --bundle-id "$IOS_BUNDLE_ID" \
             --timeout 30000 \
             --artifacts packages/runtime-native/artifacts/ios/release-consumer-pass
           set +e
           node packages/playtest/dist/runner/cli.js \
             examples/native-smoke/playtests/device-smoke-wrong-value.playtest.json \
-            --target ios --app "$app" --bundle-id dev.threenative.runtime \
+            --target ios --app "$app" --bundle-id "$IOS_BUNDLE_ID" \
             --timeout 30000 \
             --artifacts packages/runtime-native/artifacts/ios/release-consumer-wrong \
             > "$RUNNER_TEMP/ios-wrong-value.log" 2>&1
@@ -1439,7 +1207,7 @@ jobs:
             scenario=$1
             artifacts=$2
             node packages/playtest/dist/runner/cli.js "$scenario" \
-              --target ios --app "$app" --bundle-id dev.threenative.runtime \
+              --target ios --app "$app" --bundle-id "$IOS_BUNDLE_ID" \
               --timeout 30000 \
               --artifacts "$artifacts"
           }
@@ -1494,7 +1262,8 @@ jobs:
   clean-consumer-windows:
     needs: [validate-tag, gates, build, publish]
     if: >-
-      ${{ !cancelled() && needs.gates.result == 'success' &&
+      ${{ !cancelled() && needs.validate-tag.outputs.proof_run == '' && needs.validate-tag.outputs.override != 'true' &&
+      (needs.gates.result == 'success' || github.ref_type == 'tag') &&
       needs.build.result == 'success' &&
       ((github.ref_type != 'tag' && needs.publish.result == 'success') ||
       (needs.validate-tag.outputs.candidate_sha == github.sha && needs.publish.result == 'success')) }}
@@ -1765,16 +1534,16 @@ jobs:
 
   finalize:
     # iOS is not a supported target (owner, 2026-09-23): its consumer proof stays as evidence but
-    # does not gate promotion, and it has never completed green in a tag run.
+    # does not gate promotion.
     #
     # A proof run rehearses this job too (PRD-629): it checks the same release and skips only the
     # `gh release edit` that would make a release public.
     needs: [validate-tag, publish, clean-consumer, clean-consumer-windows]
     if: >-
       ${{ !cancelled() && needs.publish.result == 'success' &&
-      needs.clean-consumer.result == 'success' && needs.clean-consumer-windows.result == 'success' &&
-      (github.ref_type != 'tag' ||
-      (github.event_name == 'push' && needs.validate-tag.outputs.candidate_sha == github.sha)) }}
+      (needs.validate-tag.outputs.proof_run != '' || needs.validate-tag.outputs.override == 'true' ||
+      (needs.clean-consumer.result == 'success' && needs.clean-consumer-windows.result == 'success')) &&
+      (github.ref_type != 'tag' || needs.validate-tag.outputs.candidate_sha == github.sha) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -1813,16 +1582,7 @@ jobs:
       # rehearsal lock lives on a draft. The job runs the same label-gated code `publish` runs.
       contents: write
     steps:
-      # On `workflow_run` the evidence candidate is the triggering CI head, not `GITHUB_SHA`.
       - uses: actions/checkout@v7
-        if: github.event_name == 'workflow_run'
-        with:
-          # check-publish-state counts commits to a package's source since its published version
-          # went up, which a shallow clone cannot see.
-          fetch-depth: 0
-          ref: ${{ github.event.workflow_run.head_sha }}
-      - uses: actions/checkout@v7
-        if: github.event_name != 'workflow_run'
         with:
           fetch-depth: 0
       - uses: pnpm/action-setup@v6
@@ -1870,7 +1630,8 @@ jobs:
 
   cleanup-failed-release:
     if: >-
-      ${{ always() && github.event_name == 'push' && github.ref_type == 'tag' && needs.validate-tag.outputs.candidate_sha == github.sha &&
+      ${{ always() && github.ref_type == 'tag' && needs.validate-tag.outputs.candidate_sha == github.sha &&
+      needs.validate-tag.outputs.proof_run == '' && needs.validate-tag.outputs.override != 'true' &&
       needs.publish.result == 'success' &&
       (needs.clean-consumer.result != 'success' ||
       needs.clean-consumer-windows.result != 'success') }}

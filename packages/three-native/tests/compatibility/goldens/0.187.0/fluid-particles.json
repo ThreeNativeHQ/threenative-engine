@@ -1,0 +1,27 @@
+{
+  "name": "fluid-particles",
+  "threeVersion": "0.187.0",
+  "adaptedFrom": "original — PRD-527: real core FluidParticles3D packed emits, default PBF density iterations/viscosity/cohesion/vorticity, ten fixed steps; game sprite material over live positions",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "scene",
+      "kind": "pixels",
+      "value": "s:8c4a14f84ae9a9936f73be04d3341fc4095ded01e82d971adeb9a3fded2d93b3",
+      "decimal": "8c4a14f84ae9a9936f73be04d3341fc4095ded01e82d971adeb9a3fded2d93b3"
+    }
+  ],
+  "render": {
+    "png": "fluid-particles.png",
+    "pngSha256": "8c4a14f84ae9a9936f73be04d3341fc4095ded01e82d971adeb9a3fded2d93b3",
+    "width": 320,
+    "height": 240,
+    "adapter": {
+      "architecture": "turing",
+      "description": "",
+      "device": "",
+      "vendor": "nvidia"
+    }
+  }
+}

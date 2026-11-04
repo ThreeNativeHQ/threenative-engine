@@ -782,6 +782,11 @@ export function desktopOf(runs: readonly ILoadedRun[]) {
 }
 
 /** Every hub tab, in nav order. */
+const { readLedger: readStressLedger, verdictHtml } = await import(
+  new URL("./stress-loop.mjs", import.meta.url).href
+);
+const stressLedgerFile = fileURLToPath(new URL("../docs/stress-loop/ledger.json", import.meta.url));
+
 export const TABS = [
   ["/", "Epic scoreboard"],
   ["/midway", "Midway"],
@@ -789,18 +794,28 @@ export const TABS = [
   ["/ci-speed", "CI speed"],
   ["/asset-perf", "Asset perf"],
   ["/kit-loop", "Kit loop"],
+  ["/stress-lab", "Stress lab"],
 ] as const;
 
 const NAV_STYLE =
   "<style>nav.tabs{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 14px}nav.tabs a{padding:3px 12px;border-radius:999px;color:inherit;opacity:.75;text-decoration:none;border:1px solid #8886}nav.tabs a[aria-current]{background:#2f6fed;border-color:#2f6fed;color:#fff;opacity:1}</style>";
 
+/** The stress lab verdict every tab shows under the nav. An unreadable ledger reads as unavailable, never as a win. */
+export function verdictBanner(file = stressLedgerFile): string {
+  try {
+    return verdictHtml(readStressLedger(file));
+  } catch {
+    return '<p class="tn-verdict" data-verdict="unavailable" style="margin:0 0 12px;padding:9px 16px;background:#6b6b66;color:#fff;font:600 13px system-ui,sans-serif">ThreeNative verdict unavailable: the stress ledger cannot be read.</p>';
+  }
+}
+
 /** Swaps a page's own `nav.tabs` for the hub nav, or puts the nav at the top of `<main>`. */
-export function withNav(html: string, current: string): string {
+export function withNav(html: string, current: string, banner = verdictBanner()): string {
   const links = TABS.map(
     ([href, name]) =>
       `<a href="${href}"${href === current ? ' aria-current="page"' : ""}>${name}</a>`,
   ).join("");
-  const nav = `<nav class="tabs">${links}</nav>`;
+  const nav = `<nav class="tabs">${links}</nav>${banner}`;
   return /<nav class="tabs">.*?<\/nav>/su.test(html)
     ? html.replace(/<nav class="tabs">.*?<\/nav>/su, nav)
     : html.replace("<main>", `${NAV_STYLE}<main>${nav}`);
@@ -811,6 +826,7 @@ const LEDGER_TABS = {
   "ci-speed": { module: "./ci-speed-loop.mjs", ledger: "../docs/ci-speed/ledger.json" },
   "asset-perf": { module: "./asset-perf-loop.mjs", ledger: "../docs/asset-perf/ledger.json" },
   "kit-loop": { module: "./kit-loop.mjs", ledger: "../docs/kit-loop/ledger.json" },
+  "stress-lab": { module: "./stress-loop.mjs", ledger: "../docs/stress-loop/ledger.json" },
 } as const;
 
 const ledgerTabOf = (url = "") =>

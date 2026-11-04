@@ -23,6 +23,7 @@ import type { EntitySnapshot } from "./entities.js";
 import type { IGameObservationContribution, IGamePluginHooks, IGamePluginRuntime } from "./game.js";
 import { GEOMETRY_CAPTURE_CAPABILITY } from "./geometry-capture.js";
 import { PIPELINE_CENSUS_CAPABILITY } from "./pipeline-census.js";
+import { discardEngineCountsSinceLastFrame } from "./profiling/FrameCounters.js";
 import { readRenderChainObservation } from "./render/chain.js";
 import type { ICtx } from "./scene.js";
 import { CORE_VERSION } from "./version.js";
@@ -234,7 +235,19 @@ export function playtest<
         // measures a frame rate for a game, and the frozen loop's presented frames repeat a
         // standing state while the scenario's ticks arrive in bursts — a profile of a game that is
         // not playing. It asked by name, so it is not frozen.
-        if (!wallClock) runtime?.freezeClock?.();
+        //
+        // The settling pass the freeze owes the world is named zero here, and spent by `describe()`
+        // once the start scene has entered: a loop that spends it on its first live frame settles
+        // whatever scene that frame draws, and the 60 steps it ran then reach no world clock at
+        // all. That made the same anchor 1.0 s apart between two engines on the sailing pose, by
+        // their boot order alone. Only a hold can spend it on demand: a game that asked for no
+        // hold (`holdUntilAttached: false`) has no `describe()` to settle from, so a zero freeze
+        // there would leave the world as the game built it for the whole run. A runtime with no
+        // `settleClock` keeps the frame's own settle, for the same reason.
+        if (!wallClock)
+          runtime?.freezeClock?.(
+            shouldHoldUntilAttached(options) && runtime.settleClock !== undefined ? 0 : undefined,
+          );
       }
       dispose = installation.dispose;
       attached = holdUntilAttached(
@@ -242,6 +255,11 @@ export function playtest<
         options,
         () => startSceneEntered,
         runtime?.startSceneLoaded,
+        // The live mode, not the one this setup started with: a run that switched to the wall
+        // clock mid-run measures frames, and a settle would re-freeze the loop it just released.
+        () => {
+          if (clockMode !== "wall-clock") runtime?.settleClock?.();
+        },
       );
       const cleanup = () => {
         if (!clockDisposed && clockRuntime?._setClockMode !== undefined)
@@ -394,6 +412,7 @@ function holdUntilAttached(
   options: IPlaytestOptions,
   startSceneEntered: () => Promise<void> | undefined,
   startSceneLoaded?: () => Promise<void>,
+  settleClock?: () => void,
 ): Promise<void> | undefined {
   if (!shouldHoldUntilAttached(options)) return undefined;
   const timeoutMs = options.attachTimeoutMs ?? PLAYTEST_ATTACH_TIMEOUT_MS;
@@ -402,6 +421,13 @@ function holdUntilAttached(
   }
   const describe = bridge.describe;
   const applySetup = bridge.applySetup;
+  // Once per run: the settle is a settling pass, not a step every describe repeats.
+  let worldSettled = false;
+  const settle = () => {
+    if (worldSettled) return;
+    worldSettled = true;
+    settleClock?.();
+  };
   return new Promise<void>((resolve, reject) => {
     let settled = false;
     const timer = setTimeout(() => {
@@ -444,6 +470,7 @@ function holdUntilAttached(
     bridge.describe = async () => {
       release();
       await startSceneEntered();
+      settle();
       return describe();
     };
   });
@@ -470,9 +497,16 @@ function installRuntimeChannels(
     );
   const sample = bridge.sample;
   bridge.sample = (request) =>
-    Promise.resolve(sample(request)).then((snapshot) =>
-      addRuntimeObservations(snapshot, request, runtime?.observations.contributions() ?? []),
-    );
+    Promise.resolve(sample(request)).then(async (snapshot) => {
+      const observed = await addRuntimeObservations(
+        snapshot,
+        request,
+        runtime?.observations.contributions() ?? [],
+      );
+      // An observation walks the scene for entity `debug()`; the next frame is not billed for it.
+      discardEngineCountsSinceLastFrame();
+      return observed;
+    });
 }
 function addRuntimeCapabilities(
   description: IPlaytestBridgeDescription,

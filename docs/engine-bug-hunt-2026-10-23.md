@@ -210,7 +210,7 @@ Every finding has a test that failed on the reviewed revision and passes after t
 
 | Finding | Regression test |
 | --- | --- |
-| F01 | `packages/runtime-native/tests/local_storage_test.cpp`: entry identity, legacy migration, and the legacy name taken from the working directory (`prepareStorageFile`); a Linux `mystral run` migrated a `puzzle.json` save on first launch (2026-10-24) |
+| F01 | `packages/runtime-native/tests/local_storage_test.cpp`: entry identity and legacy migration |
 | F02 | `packages/core/__tests__/game.spec.ts`: newer goto and stop during load |
 | F03 | `packages/core/__tests__/net-session.spec.ts`: stalled stream timeout and caller abort |
 | F04 | `packages/core/__tests__/net-session.spec.ts`: reliable saturation keeps order |

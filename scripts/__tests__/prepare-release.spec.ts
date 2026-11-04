@@ -29,6 +29,15 @@ describe("release preparation", () => {
     ]);
   });
 
+  it("bumps an absent cohort when told to, because a runtime tag can hold a release npm cannot see", () => {
+    const selected = selectReleaseVersions(
+      [{ name: "@threenative/core", version: "0.3.7" }],
+      () => ({ state: "absent" }),
+      true,
+    );
+    expect([...selected.values()]).toEqual([{ current: "0.3.7", next: "0.3.8", published: false }]);
+  });
+
   it("bumps the entire cohort and skips occupied patch versions", () => {
     const packages = [
       { name: "@threenative/core", version: "0.3.0" },
@@ -67,7 +76,6 @@ describe("release preparation", () => {
       "packages/create-threenative/src/doctor.ts",
       "packages/engine-mcp/src/index.ts",
       "packages/engine-mcp/__tests__/server.spec.ts",
-      "packages/blender-mcp/src/index.ts",
       "packages/core/mcp/servers.mjs",
       "packages/create-threenative/engine-mcp-tools.json",
       replay,
@@ -80,7 +88,6 @@ describe("release preparation", () => {
     const versions = new Map([
       ["@threenative/core", "9.9.9"],
       ["threenative-engine-mcp", "9.9.9"],
-      ["threenative-blender-mcp", "9.9.9"],
     ]);
 
     syncSourceVersions(repo, versions);

@@ -11,7 +11,8 @@ describe("explicit owned storage release", () => {
     expect(r.deleteAttribute(attribute)).toBeNull();
     const destroy = vi.fn();
     const attributes = new Attributes({ destroyAttribute: destroy }, r.info);
-    attributes.get(attribute).version = 1;
+    // r187 tracks each created attribute by a WeakRef that delete() unregisters.
+    Object.assign(attributes.get(attribute), { version: 1, ref: new WeakRef(attribute) });
     r.info.createStorageAttribute(attribute);
     Reflect.set(r, "_attributes", attributes);
     expect(r.info.memory.storageAttributes).toBe(1);

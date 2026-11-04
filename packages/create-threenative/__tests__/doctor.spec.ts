@@ -17,7 +17,6 @@ import { MCP_HOSTS } from "../../core/mcp/install.mjs";
 import { assertNativeAssetsCompatible } from "../src/build.js";
 import {
   ANDROID_RELEASE_SIGNING_ENV,
-  BLENDER_SERVER,
   type IProjectSnapshot,
   MCP_SERVER_SPECS,
   detectX11Compositor,
@@ -1353,66 +1352,6 @@ describe("threenative doctor and model conversion", () => {
     // The point of the whole check: a project with no importable source stays green.
     expect(conversion.detail).toContain("nothing needs it yet");
     expect(report.pass).toBe(true);
-  });
-
-  it("should say the transport was not probed rather than claiming it is up", () => {
-    // Mutation-proofing: nothing pinned the unprobed branch, so reporting "transport is up" for a
-    // server that was never probed passed the whole suite. The separation this phase exists for is
-    // between a transport observed to work and one nobody looked at.
-    const unprobed = diagnoseProject(snapshot({ blender: ABSENT }));
-    expect(check(unprobed, "model conversion").detail).toContain("was not probed");
-    expect(check(unprobed, "model conversion").detail).not.toContain("transport is up");
-    const probed = diagnoseProject(
-      snapshot({
-        blender: ABSENT,
-        mcpServerHealth: new Map([
-          [
-            BLENDER_SERVER,
-            { detail: "transport initialized and advertised 3 tool(s)", status: "ok" as const },
-          ],
-        ]),
-      }),
-    );
-    expect(check(probed, "model conversion").detail).toContain("transport is up");
-    expect(check(probed, "model conversion").detail).not.toContain("was not probed");
-  });
-
-  it("should report conversion unavailable when the Blender MCP starts but Blender is missing", () => {
-    const report = diagnoseProject(
-      snapshot({
-        blender: ABSENT,
-        mcpServerHealth: new Map([
-          [
-            BLENDER_SERVER,
-            { detail: "transport initialized and advertised 3 tool(s)", status: "ok" as const },
-          ],
-        ]),
-      }),
-    );
-    const conversion = check(report, "model conversion");
-    // The four facts stay four: a transport that is up, and a conversion that cannot happen.
-    expect(conversion.detail).toContain("transport is up");
-    expect(conversion.detail).toContain("conversion is unavailable");
-    expect(conversion.status).toBe("warn");
-    // And the server check must not be the place a reader learns the toolchain is complete.
-    expect(check(report, "capability search").detail).toContain("transport only");
-  });
-
-  it("should fail when the Blender server's transport is down", () => {
-    const report = diagnoseProject(
-      snapshot({
-        blender: ABSENT,
-        mcpServerHealth: new Map([
-          [
-            BLENDER_SERVER,
-            { detail: "its MCP transport failed to start: exited 1", status: "fail" as const },
-          ],
-        ]),
-      }),
-    );
-    expect(check(report, "model conversion").status).toBe("fail");
-    expect(check(report, "model conversion").detail).toContain("no conversion tool is reachable");
-    expect(report.pass).toBe(false);
   });
 
   it("should report the version when Blender resolves", () => {

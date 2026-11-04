@@ -1,6 +1,6 @@
 {
   "name": "@threenative/ueformat",
-  "version": "0.1.7",
+  "version": "0.1.11",
   "license": "MIT",
   "description": "UEFormat v10 .uemodel parser and Three.js loader for meshes exported from Unreal packages by CUE4Parse/FModel.",
   "keywords": ["threenative", "unreal", "ueformat", "uemodel", "three", "threejs", "loader"],
@@ -10,7 +10,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ThreeNativeHQ/threenative.git",
+    "url": "git+https://github.com/ThreeNativeHQ/threenative-engine.git",
     "directory": "packages/ueformat"
   },
   "type": "module",
@@ -39,7 +39,7 @@
   },
   "devDependencies": {
     "@types/node": "20.19.43",
-    "@types/three": "0.185.3",
+    "@types/three": "0.187.0",
     "publint": "0.3.22",
     "tsup": "8.5.1",
     "typescript": "catalog:",

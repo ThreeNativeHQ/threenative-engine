@@ -75,6 +75,9 @@ import {
   publishDirectRenderChainReport,
 } from "../render/chain.js";
 import { GIVisualize, type GIVisualizeMode } from "../render/gi-visualize.js";
+import type { TracedReflections } from "../render/traced-reflections.js";
+import { STARTUP_EXPOSURE } from "../renderer.js";
+import { aoRefusal } from "./ao-admission.js";
 import { AO_MULTIBOUNCE_FIT, UNREAL_AO_MULTIBOUNCE_ALBEDO } from "./ao-multibounce.js";
 import { UNREAL_AO_REACH_PX } from "./ao-reach.js";
 import { AutoExposureNode, applyExposure } from "./auto-exposure.js";
@@ -92,13 +95,18 @@ import { LocalExposureNode } from "./local-exposure.js";
 import { lookDiagnostics } from "./look-diagnostics.js";
 import { motionBlur } from "./motion-blur.js";
 import { qualityPreset } from "./quality.js";
-import { reflectionTrace, tracedReflections } from "./reflection-trace.js";
+import { reflectionTrace, skyAmbientCube, tracedReflections } from "./reflection-trace.js";
 import { UnrealBloomNode } from "./unreal-bloom.js";
 import { vignetteMask } from "./vignette.js";
 
 /** Lumen reflections stop at this roughness, fading to nothing over the length below it. */
 const REFLECTION_CUTOFF = 0.4;
 const REFLECTION_FADE = 0.1;
+/**
+ * How far the metre's applied exposure may sit from its target on a startup's first visible frame, in
+ * stops: 3%, well inside the 0.25-stop `settleStops` that alone permits about 19% of error.
+ */
+const STARTUP_EXPOSURE_TOLERANCE = Math.log2(1.03);
 /** Godot's `Viewport.screen_space_aa`: which post-process antialiasing smooths the frame's edges. */
 export type ScreenSpaceAA = "smaa" | "fxaa" | "disabled";
 
@@ -131,6 +139,64 @@ const TONEMAP: Record<TonemapMode, number> = {
   filmic: CustomToneMapping,
   neutral: NeutralToneMapping,
 };
+
+/**
+ * Whether this launch draws the transparent draws' own target (see `seesThrough` below).
+ *
+ * On unless a launch asks for it off: `TN_TRANSLUCENT=0`, `?tnTranslucent=0`, or the global
+ * `__tnTranslucent = false` a test sets. Only `0` and `false` count, so an old URL that never
+ * named the switch keeps the target. A frame without it takes the occlusion on its sheets, which
+ * is wrong to look at, so this is a measurement switch and not a look: a lane prices the pass by
+ * running the same pose both ways.
+ */
+export function translucentTargetWanted(): boolean {
+  const host = globalThis as { process?: { env?: Record<string, unknown> } } & Record<
+    string,
+    unknown
+  >;
+  const fromEnv = host.process?.env?.TN_TRANSLUCENT;
+  if (fromEnv === "0" || fromEnv === "false") return false;
+  const query = globalThis.location?.search;
+  if (typeof query === "string" && /[?&]tnTranslucent=(?:0|false)(?:&|$)/u.test(query))
+    return false;
+  const set = host.__tnTranslucent;
+  return !(set === false || set === 0 || set === "0" || set === "false");
+}
+
+/**
+ * Publishes this install's exposure readiness for the startup's first visible frame
+ * (`rendererFirstWorldFrame`): measured, settled, and within 3% of the meter's own target.
+ *
+ * Scoped to the install that registered it. A replacement graph registers before the install it
+ * replaces is disposed, so the forget leaves a slot it no longer owns alone, and an old graph's
+ * asynchronous readback only ever moves its own observation, never the new graph's answer.
+ * Returns the forget call the install runs with its own disposal.
+ */
+function publishStartupExposure(raw: object, exposure: AutoExposureNode | undefined): () => void {
+  const probe = (): boolean => {
+    // No meter installed: there is nothing to wait for.
+    if (exposure === undefined) return true;
+    const observation = exposure.getObservation();
+    // Disabled after install: no metered target the player is waiting on either.
+    if (observation.applied === false) return true;
+    if (observation.measured !== true || observation.settled !== true) return false;
+    const stops = observation.exposureStops;
+    const target = observation.targetStops;
+    if (typeof stops !== "number" || typeof target !== "number") return false;
+    if (!Number.isFinite(stops) || !Number.isFinite(target)) return false;
+    return Math.abs(stops - target) <= STARTUP_EXPOSURE_TOLERANCE;
+  };
+  Object.defineProperty(raw, STARTUP_EXPOSURE, {
+    configurable: true,
+    enumerable: false,
+    value: probe,
+    writable: true,
+  });
+  return () => {
+    if ((raw as Record<symbol, unknown>)[STARTUP_EXPOSURE] !== probe) return;
+    Reflect.deleteProperty(raw, STARTUP_EXPOSURE);
+  };
+}
 
 export interface IWorldEnvironmentOptions {
   /** World-pass MSAA samples. Omit to inherit the renderer; 0 leaves post AA in charge. */
@@ -417,6 +483,13 @@ export interface IWorldEnvironmentTarget {
    * every stage.
    */
   readonly baseColour?: (scenePass: ReturnType<typeof pass>) => Node<"vec4">;
+  /**
+   * The scene's static triangles, for the `ssr` stage: a smooth surface (roughness under the trace's
+   * `maxRoughnessToTrace`) then reflects what its ray hits in the scene, as Unreal's Lumen reflections do,
+   * not only what the screen drew. Build it after the static scene exists; omit it and the stage marches the screen.
+   * @alias Lumen reflections, hit lighting, reflection rays
+   */
+  readonly reflectionTrace?: TracedReflections;
 }
 
 /**
@@ -551,13 +624,14 @@ function stage(definition: {
 }
 
 /**
- * `three/addons` declares each TSL stage as its raw node class, and `DenoiseNode` is the only
- * one in this chain whose declaration omits the element API (`.mul`, `.rgb`, `.r`) that the
- * proxied node object it actually hands back at runtime carries — every other stage here is a
- * `ChainNode` on its own, checked by the compiler. This is an assertion and nothing else: no
- * conversion runs, no node is added to the graph, so it cannot move a pixel.
+ * `three/addons` declares these as raw nodes: `DenoiseNode` for the filter, and the SSGI gather's
+ * own `TextureNode` outputs, typed at their channel count rather than as the vec4 the chain reads.
+ * Their declarations omit element API (`.mul`, `.rgb`, `.r`) that the proxied node object they
+ * hand back at runtime carries — every other stage here is a `ChainNode` on its own, checked by the
+ * compiler. This is an assertion and nothing else: no conversion runs, no node is added to the
+ * graph, so it cannot move a pixel.
  */
-function denoised(node: ReturnType<typeof denoise>): ChainNode {
+function denoised(node: Node): ChainNode {
   return node as typeof node & ChainNode;
 }
 type OutputInstallation = { isCurrent(): boolean; dispose(): void };
@@ -978,6 +1052,19 @@ export class WorldEnvironment {
     // Unreal's AO (indirect light only) leaves it. Without a cache (the three.js engine) the whole frame is dimmed.
     const indirectOcclusion =
       ownedEngine && giCache.irradiance !== undefined && options.gtaoIndirectOnly;
+    // Both screen-space stages below darken the frame with an occlusion gathered at the opaque surface's depth, so both
+    // must leave the draws composited over it alone (see the MRT's `translucent` output and `translucentFrame`).
+    // `TN_TRANSLUCENT=0` or `?tnTranslucent=0` keeps the target off the frame — the occlusion then darkens the sheets
+    // over the opaque surface, as it did before the target existed — so one launch can price the pass; a diagnostic,
+    // never a look.
+    const seesThrough = (options.ssgiEnabled || options.gtaoEnabled) && translucentTargetWanted();
+    // Upstream three has no scene-wide translucent target, so each material writes its own: its output, premultiplied
+    // by its alpha, and nothing at all from an opaque material (whose alpha is 1). The owned engine draws the
+    // transparent draws into the target itself (renderer.cpp, planAux), so it declares no output for it.
+    const translucentMaterial = (): Node<"vec4"> =>
+      vec4(output.rgb.mul(diffuseColor.a), diffuseColor.a).mul(
+        diffuseColor.a.lessThan(0.999).select(float(1), float(0)),
+      );
     const scenePass = pass(scene, camera, { samples: options.samples });
     const resolutionSubrect =
       requested.length === 0 || resolutionSubrectRefusal !== undefined
@@ -1006,8 +1093,16 @@ export class WorldEnvironment {
           : {}),
         // AO leaves emission alone: an emitter's underside stays its own radiance (Unreal's AO is indirect only).
         ...(options.gtaoEnabled || options.ssgiEnabled ? { emissive } : {}),
+        // The occlusion and the gather belong to the opaque surface. A translucent draw composites over it after the
+        // opaque pass, so a sheet over an occluded corner took the corner's occlusion with it (a waterfall showed the
+        // cliff's stripes). This target carries what those draws composited, and the two composites below add it back
+        // instead of darkening it, as they already do for `emissive`. Upstream three writes it from each material's
+        // own output; the owned engine draws those draws into it while the graph reads it (renderer.cpp, planAux).
+        ...(seesThrough && !ownedEngine ? { translucent: translucentMaterial() } : {}),
       });
       sceneMrt.setBlendMode("normal", new BlendMode(MaterialBlending));
+      if (seesThrough && !ownedEngine)
+        sceneMrt.setBlendMode("translucent", new BlendMode(MaterialBlending));
       scenePass.setMRT(sceneMrt);
     }
     // Requested lazily, and this is not a micro-optimisation. **Asking a pass for `normal`,
@@ -1041,6 +1136,8 @@ export class WorldEnvironment {
     const exposure = options.autoExposureEnabled
       ? new AutoExposureNode(colour, options.exposurePolicy, options.exposure)
       : undefined;
+    // The startup's first-frame seam reads this install's meter, and only while the install lives.
+    const forgetExposure = publishStartupExposure(raw as object, exposure);
     // Harness: Unreal's local exposure (ladder layer L9). It acts on the exposed frame, so with the meter
     // off it measures against the fixed exposure, as Unreal's does with r.DefaultFeature.AutoExposure 0.
     const localExposure = options.localExposureEnabled
@@ -1050,10 +1147,17 @@ export class WorldEnvironment {
     const gain = exposure === undefined ? float(options.exposure) : exposure.exposureNode;
     const frameGain = localExposure === undefined ? gain : gain.mul(localExposure.gainNode);
     const exposed = applyExposure(colour, frameGain);
+    // What the transparent draws composited over the frame, in the frame's own units: scene-referred, so it takes the
+    // exposure multiplier the emitted radiance takes. The occlusion darkens the opaque surface only, and this part is
+    // added back instead (the `emissive` restore's twin). A frame that runs neither stage never asks for it.
+    const translucentFrame: Node<"vec3"> = seesThrough
+      ? textureNode("translucent").rgb.mul(gain)
+      : vec3(0);
     let released = false;
     const releaseGraph = (): void => {
       if (released) return;
       released = true;
+      forgetExposure();
       exposure?.dispose();
       localExposure?.dispose();
       // Only a newly created RTT is ours. A PassNode converts to a borrowed PassTextureNode;
@@ -1074,9 +1178,9 @@ export class WorldEnvironment {
       sample(texture);
       return texture;
     };
-    const giDenoise = (node: ChainNode): ChainNode => {
-      if (!options.denoiseEnabled) return node;
-      let result = node;
+    const giDenoise = (node: ChainNode | Node<"float"> | Node<"vec3">): ChainNode => {
+      let result = denoised(node);
+      if (!options.denoiseEnabled) return result;
       for (let pass = 0; pass < options.giDenoisePasses; pass += 1) {
         const filter = denoise(result, depth(), normal(), view) as {
           gpuStage?: string;
@@ -1185,8 +1289,9 @@ export class WorldEnvironment {
           // The gathered light is incident radiance (E / pi). The surface returns it times its own
           // albedo, which the scene pass writes as the `diffuseColor` target, and a metal returns none
           // of it as diffuse. `ssgiIntensity` is the game's dial on that term.
-          // The owned engine's gather answers occlusion with a constant 1 (GTAO is its own stage): nothing to denoise.
-          const occlusion = wasmEngine ? gi.getAONode() : giDenoise(gi.getAONode());
+          // Both engines answer the occlusion from their own gather, and both are denoised: the gather traces a few
+          // rays a pixel, so an undenoised occlusion reads as a speckle rather than a shadowed corner.
+          const occlusion = giDenoise(gi.getAONode());
           const indirect = giDenoise(gi.getGINode());
           if (options.denoiseEnabled && options.ssgiDenoiseRadius !== undefined)
             (indirect as typeof indirect & { radius: { value: number } }).radius.value =
@@ -1195,8 +1300,9 @@ export class WorldEnvironment {
             .rgb.mul(float(1).sub(metal().r))
             .mul(indirect.rgb)
             .mul(options.ssgiIntensity);
-          // The gather's own AO leaves emission alone too (see the GTAO stage).
-          const emitted = textureNode("emissive").rgb.mul(gain);
+          // The gather's own AO leaves emission alone too (see the GTAO stage), and a translucent draw's own colour
+          // is in the same position: the gather answered for the surface behind it.
+          const emitted = textureNode("emissive").rgb.mul(gain).add(translucentFrame);
           // The contact term multiplied the frame before this stage ran, and the correction below is the one
           // part of the light that frame never carried: it takes the same factor, or a hit darker than the
           // cache subtracts more than the frame still holds and a lit floor under a sphere clips to black.
@@ -1230,6 +1336,16 @@ export class WorldEnvironment {
           releaseAo = () => {};
         },
         build: (input) => {
+          // The reach form occludes indirect light only, so a frame without a baked world cache cannot run it:
+          // the whole-frame multiply it would fall back to darkens the sun, and the threejs arm drops the stage.
+          const refusal = aoRefusal({
+            reach: options.gtaoRadius === undefined,
+            indirectOnly: options.gtaoIndirectOnly,
+            // The preset's own declaration covers the frame whose bake has not finished when the chain is built:
+            // the gather's fallback reads the cache at render time, and the registration is the other signal.
+            hasIndirect: options.finalGatherMethod !== "none" || giCache.irradiance !== undefined,
+          });
+          if (refusal !== undefined) throw new Error(refusal);
           // GTAO rebuilds the normal from the depth, so it agrees with the depth's facets. The pass's
           // smooth vertex normal against a faceted depth (a 32-sided capsule) read as one dark stripe per facet and a
           // stair-step band under the cap; the denoiser, GTAO scale and radius did not change them.
@@ -1388,9 +1504,10 @@ export class WorldEnvironment {
             indirectOcclusion && options.gtaoMultiBounceAlbedo > 0 ? bounce() : undefined;
           contactOcclusion = keeps ?? occlusion.r;
           // Emission is radiance a surface gives off, not light it receives: AO keeps it, as Unreal's AO darkens only
-          // indirect light. The emitted part passes at full weight; the rest takes the occlusion.
+          // indirect light. The emitted part passes at full weight; the rest takes the occlusion. A translucent draw's
+          // own colour is in the same position: the occlusion was gathered for the surface behind it.
           // The chain reads exposed light, so the emitted radiance takes the frame's gain too.
-          const emitted = textureNode("emissive").rgb.mul(gain);
+          const emitted = textureNode("emissive").rgb.mul(gain).add(translucentFrame);
           // Scale the colour only: `input.mul(occlusion.r)` scales alpha too, which darkens the frame a second time.
           const composited = input
             .mul(vec4(occlusion.r, occlusion.r, occlusion.r, 1))
@@ -1435,9 +1552,13 @@ export class WorldEnvironment {
                 .rgb.mul(float(1).sub(metal().r))
                 .mul(cache(position, sceneNormal.normalize()))
                 .mul(frameGain);
+              // Only the opaque part of the frame carries that indirect light: a draw composited over it did not receive it.
+              const opaque = input.rgb.sub(translucentFrame);
               result.assign(
                 max(
-                  input.rgb.sub(indirect.mul(float(1).sub(keeps ?? occlusion.r))),
+                  opaque
+                    .sub(indirect.mul(float(1).sub(keeps ?? occlusion.r)))
+                    .add(translucentFrame),
                   composited.rgb,
                 ),
               );
@@ -1508,13 +1629,15 @@ export class WorldEnvironment {
           const base = convertToTexture(input);
           // A registered trace (`reflectionTrace`) finds the hit among the scene's triangles, so a ray that leaves
           // the frame, or reaches the far side of an object, hits the right surface. It replaces the screen march.
-          const trace = reflectionTrace.current;
+          const trace = target.reflectionTrace ?? reflectionTrace.current;
           if (trace !== undefined) {
             const traced = tracedReflections({
               trace,
               camera: view,
               ...(target.godraysLight === undefined ? {} : { sun: target.godraysLight }),
               ...(reflectionTrace.lamps === undefined ? {} : { lamps: reflectionTrace.lamps }),
+              // ponytail: read once per chain build; a game that rebakes its sky at run time keeps the old light until the next build.
+              skyIrradiance: skyAmbientCube(scene.environment, scene.environmentIntensity),
               base,
               depth: depth(),
               normal: normal(),

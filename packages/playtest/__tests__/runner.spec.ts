@@ -1170,6 +1170,53 @@ test.each([undefined, 10])("browser runner samples after startup and optional st
   }
 }, 60_000);
 
+test("a wall-clock run refuses a scenario drawEvery instead of ignoring it", async () => {
+  const fixtureHtml = await readFile(new URL("./fixtures/app.html", import.meta.url), "utf8");
+  const server = createServer((_request, response) => {
+    response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    response.end(fixtureHtml);
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (address === null || typeof address === "string") throw new Error("drawEvery fixture has no port.");
+  const projectPath = await makeTempDir("playtest-runner-draw-every-");
+  await writeFile(
+    join(projectPath, "scenario.json"),
+    JSON.stringify({
+      artifacts: { screenshots: false },
+      drawEvery: 30,
+      name: "runner-draw-every",
+      schemaVersion: 1,
+      steps: [{ holdFrames: 10, press: "KeyW", release: true }],
+      subject: "player",
+      target: "web",
+      viewport: { height: 360, width: 640 },
+      warmupFrames: 0,
+    }),
+  );
+
+  try {
+    const report = await runStandalonePlaytest({
+      artifactDirectory: join(projectPath, "artifacts"),
+      headless: true,
+      liveClock: true,
+      projectPath,
+      scenarioPath: "scenario.json",
+      timeoutMs: 15_000,
+      trace: false,
+      url: `http://127.0.0.1:${address.port}/?clock=fixed-step`,
+    });
+
+    expect(report.pass).toBe(false);
+    expect(report.diagnostics.map(({ code }) => code)).toContain("TN_PLAYTEST_UNSUPPORTED_ON_TARGET");
+    expect(report.diagnostics.map(({ message }) => message).join(" ")).toMatch(/drawEvery/u);
+  } finally {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => error === undefined ? resolve() : reject(error)),
+    );
+  }
+}, 60_000);
+
 test("browser runner waits on an asynchronously changing resource", async () => {
   const fixtureHtml = await readFile(new URL("./fixtures/app.html", import.meta.url), "utf8");
   const server = createServer((_request, response) => {
@@ -1585,6 +1632,25 @@ test("an authored hold counts for a pointer step, not only a key press", () => {
 
 /** The engine meter's GPU reading: the frame bound judges CPU and GPU cost, so a fixture needs both. */
 const GPU_METER = `TN_FRAME_BUDGET:${JSON.stringify({ gpu: { p95: 4, samples: 8 } })}`;
+
+test("runner measures the frames after the baseline, not the launch before it", () => {
+  const currentScenario = scenario({ performance: { maxDrawCalls: 320 } });
+  const launch = { frameMs: 16, drawCalls: 731, phases: { render: 1, update: 0.1 }, sequence: 30, triangles: 12 };
+  const played = { frameMs: 16, drawCalls: 104, phases: { render: 1, update: 0.1 }, sequence: 31, triangles: 12 };
+  const before: IPlaytestObservationSnapshot = {
+    clock: { mode: "render-frame", timeMs: 16 },
+    runtimeDiagnosticsSeries: [launch],
+  };
+  const after: IPlaytestObservationSnapshot = {
+    clock: { mode: "render-frame", timeMs: 32 },
+    runtimeDiagnosticsSeries: [launch, played],
+  };
+
+  const result = buildReport(CONFIG, currentScenario, before, after, [{ text: GPU_METER, type: "log" }], []);
+
+  expect(result.observations?.performanceSeries).toEqual([played]);
+  expect(result.assertionResults?.find(({ id }) => id === "performance.maxDrawCalls")?.pass).toBe(true);
+});
 
 test("runner carries performance samples in their separate report channel", () => {
   const currentScenario = scenario({ performance: { maxFrameMsP95: 20 } });

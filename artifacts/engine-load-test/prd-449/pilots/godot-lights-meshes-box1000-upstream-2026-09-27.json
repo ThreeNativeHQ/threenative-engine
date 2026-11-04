@@ -1,1 +1,0 @@
-{"benchmarks":[{"category":"Rendering > Lights And Meshes","name":"Box 1000","results":{"render_cpu":0.6345,"render_gpu":0.4795,"time":4.028}}],"engine":{"version":"v4.7.1.stable.official","version_hash":"a13da4feb8d8aefc283c3763d33a2f170a18d541"},"system":{"cpu_architecture":"x86_64","cpu_count":24,"cpu_name":"AMD Ryzen 9 5900X 12-Core Processor","os":"Linux"}}

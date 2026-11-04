@@ -11,6 +11,7 @@
 #include "mystral/js/engine.h"
 #include "mystral/cold_start.h"
 #include "mystral/js/module_system.h"
+#include <atomic>
 #include <deque>
 #include <cstdio>
 #include <fstream>
@@ -1414,15 +1415,22 @@ public:
     bool supportsBlockingTaskWait() const override { return true; }
 
     void waitForTask() override {
+        // processMicrotasks() between the caller's state check and this wait can consume a wake
+        // task. The flag keeps that wake: without it a terminate() in that gap joins a worker
+        // that sleeps forever. The waker changes its state before it sets the flag, and the
+        // caller rechecks that state after this returns, so clearing the flag loses nothing.
+        if (wakeRequested_.exchange(false)) return;
         V8EntryScope entry_scope(isolate_);
         v8::Local<v8::Context> context = context_.Get(isolate_);
         entry_scope.enterContext(context);
         v8::platform::PumpMessageLoop(
             g_platform.get(), isolate_, v8::platform::MessageLoopBehavior::kWaitForWork);
+        wakeRequested_.store(false);
         isolate_->PerformMicrotaskCheckpoint();
     }
 
     void wakeTaskWait() override {
+        wakeRequested_.store(true);
         g_platform->GetForegroundTaskRunner(isolate_)->PostTask(
             std::make_unique<V8WakeTask>());
     }
@@ -2078,6 +2086,7 @@ private:
     std::deque<std::vector<JSValueHandle>> callbackArgsPool_;
     std::deque<std::vector<v8::Local<v8::Value>>> callbackLocalsPool_;
     bool inFrame_ = false;  // True during animation frame execution
+    std::atomic<bool> wakeRequested_{false};  // A wake waitForTask() has not yet honoured
     bool frameTrackingSuspended_ = false;  // When true, skip frame tracking for new allocations
     int nativeCallbackDepth_ = 0;
     bool exceptionFromNativeCallback_ = false;

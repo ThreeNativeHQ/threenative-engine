@@ -27,7 +27,7 @@ bridge; avoid DOM globals, dynamic `import()`, and raw physics handles. **Report
 - `.agents/skills/threenative-playtest/SKILL.md` / `.claude/skills/threenative-playtest/SKILL.md` — diagnosis and proof.
 - `.agents/skills/threenative-assets/SKILL.md` / `.claude/skills/threenative-assets/SKILL.md` — assets and sculpting.
 - `.agents/skills/threenative-visuals/SKILL.md` / `.claude/skills/threenative-visuals/SKILL.md` — captures and look.
-- `.agents/skills/threenative-performance/SKILL.md` / `.claude/skills/threenative-performance/SKILL.md` — measured budgets.
+- `.agents/skills/threenative-performance/SKILL.md` / `.claude/skills/threenative-performance/SKILL.md` — measured budgets; read it first when the game is slow or stutters: `playtest trace`, then the `threenative-devtools` MCP server.
 - `.agents/skills/threenative-ui/SKILL.md` / `.claude/skills/threenative-ui/SKILL.md` — native-safe UI.
 - `.agents/skills/threenative-context/SKILL.md` / `.claude/skills/threenative-context/SKILL.md` — portable ctx APIs.
 - Confirmed framework bugs: use `file-engine-bug` in `.agents/skills/` or `.claude/skills/` after a minimal repro. A game-side `patches/` fix is temporary: once it is settled, it moves into the engine in one PR. Lazy-first: `.agents/skills/ponytail/SKILL.md` / `.claude/skills/ponytail/SKILL.md` — smallest correct change, and its reuse rung is the capability search above. Engine: The owned C++ engine is the default for a new game: the Wasm engine on web and the engine player on desktop. This template runs on it: `threenative.config.ts` names no `engine`. `engine: "threejs"` switches to upstream Three.js only when the user asks for it; it is never a fix for a build error. A native build names each unbound import with `TN_NATIVE_ENGINE_UNBOUND`. Android and iOS use the legacy host.
@@ -52,8 +52,8 @@ The coast is one ray-marched screen quad, so it is marked with `alwaysRender`; s
 the bolt, whose quads are projected by their own vertex stage. Sound is three clips baked by
 `tools/make-storm-audio.mjs` and played through `AudioBus` in `src/audio/storm.ts`; audio starts on a
 gesture, and pause, mute and tab visibility each hold it. `safe` gates every strike at one door,
-and `prefers-reduced-motion` turns it on at boot. Keep `playtests/survives.playtest.json` as smoke
-proof, and `storm`, `lightning`, `reduced-motion` and `tiers` honest when you change what they assert.
+and `prefers-reduced-motion` turns it on at boot; `state.reducedMotion` publishes that answer for playtests.
+Keep `playtests/survives.playtest.json` as smoke proof, and `storm`, `lightning`, `reduced-motion` and `tiers` honest when you change what they assert.
 To build a game on the storm, keep its rules in a plain module and wire them in `src/scenes/Boot.ts`: `strike()` is the one door every strike passes (its distance and thunder delay are in scope), the frame function runs per-step rules after the camera moves, and the round's state is a `GameState` field the UI reads; `Billboard3D` turns world markers to the camera.
 
 ## Portable authoring contracts

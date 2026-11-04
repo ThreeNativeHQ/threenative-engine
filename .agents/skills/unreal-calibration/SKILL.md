@@ -131,6 +131,7 @@ One epic is one draft PR, and it is never merged during the run. A coordinator s
 - **Captures are untracked.** Specs read the committed `gi/<scene>/id` and `scene.json`, so `compare --check` needs the captures in the worktree that runs it.
 - **A lane that rebuilds a calibration scene** tells the judge or lock owner in the same hour, because every lock on that scene goes stale.
 - **Parallel captures in one worktree** race on the package builds. Run them one after another.
+- **Two lanes in one capture work dir fail with `TN_VISUAL_PACKAGES_MISSING`.** `~/.cache/threenative/unreal-look` is shared by every lane on the machine; give each lane its own `TN_UNREAL_LOOK_WORK`.
 - **Unreal triangle counts:** `get_num_triangles(0)` reads the Nanite fallback mesh. Read the source mesh description for the real count.
 - **"No fresh binary" is not a blocker.** Build the host in your own worktree.
 

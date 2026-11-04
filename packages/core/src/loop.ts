@@ -66,6 +66,13 @@ export interface IFixedStepLoopOptions {
   readonly interpolation?: PhysicsInterpolation;
   readonly step?: number;
   readonly maxSteps?: number;
+  /**
+   * The most wall time one frame adds to the simulation, in seconds. Default 1/20, after Unreal's
+   * `MaxPhysicsDeltaTime` (1/30 in UE 5.8.3: Engine/Source/Runtime/Engine/Private/PhysicsEngine/PhysicsSettings.cpp:22,
+   * applied per frame in PhysLevel.cpp:212). A slower frame slows the simulation instead of running
+   * extra whole updates to catch up. `Infinity` turns the clamp off; `maxSteps` still bounds a frame.
+   */
+  readonly maxPhysicsDeltaTime?: number;
   /** Collect per-frame render samples for diagnostics consumers. Default false. */
   readonly collectMetrics?: boolean;
   /** Runs once per presented frame, before any fixed-step simulation dispatches. */
@@ -152,9 +159,17 @@ function aggregatePassesByKind(passes: readonly IRenderPassSample[]): IRenderPas
  */
 const FROZEN_SETTLE_STEPS = 60;
 
+/**
+ * The most simulated time one frame may add. Unreal clamps at 1/30 s (`MaxPhysicsDeltaTime`); 1/20 s keeps
+ * real time for a 30 fps frame that lands at 34 ms (physics/__tests__/determinism.spec.ts holds 30 and
+ * 144 fps to one result) and still bounds an overloaded 60 Hz frame at 3 ticks instead of 5.
+ */
+const MAX_PHYSICS_DELTA_SECONDS = 1 / 20;
+
 export class FixedStepLoop {
   readonly step: number;
   readonly maxSteps: number;
+  readonly maxPhysicsDeltaTime: number;
   #onBeginFrame: (() => void) | undefined;
   #onUpdate: (dt: number) => void;
   #onAfterPhysics: (dt: number) => void;
@@ -204,6 +219,13 @@ export class FixedStepLoop {
       );
     }
     this.maxSteps = maxSteps;
+    const maxPhysicsDeltaTime = options.maxPhysicsDeltaTime ?? MAX_PHYSICS_DELTA_SECONDS;
+    if (Number.isNaN(maxPhysicsDeltaTime) || maxPhysicsDeltaTime <= 0) {
+      throw new Error(
+        `FixedStepLoop maxPhysicsDeltaTime must be seconds greater than zero, received ${String(options.maxPhysicsDeltaTime)}.`,
+      );
+    }
+    this.maxPhysicsDeltaTime = maxPhysicsDeltaTime;
     this.#collectMetrics = options.collectMetrics ?? false;
     this.#budget = options.budget;
     this.#spans = options.spans;
@@ -334,6 +356,35 @@ export class FixedStepLoop {
     this.#settleSteps = settleSteps;
     this.#lastTime = Number.POSITIVE_INFINITY;
   }
+
+  /**
+   * Spend the settling pass now, from a caller that knows the world's scene is live.
+   *
+   * A freeze names the steps the world needs; the loop waits for the first live frame to spend
+   * them. On a game that boots through a loading scene that frame is often still the loading
+   * scene: the steps ran, the world's own clock never saw them, and how many were lost depended on
+   * how fast the machine booted. Measured on the sailing template's pose at the same anchor, the
+   * native engine was 60 steps (1.0 s) ahead of the legacy one for exactly this reason. A runner
+   * freezes with zero steps and calls this once the start scene has entered, so the settle lands
+   * on the world on every engine.
+   */
+  settleNow(steps = FROZEN_SETTLE_STEPS): void {
+    if (!Number.isInteger(steps) || steps < 0)
+      throw new Error("settleNow steps must be a non-negative integer.");
+    this.#primePending = false;
+    if (steps === 0) return;
+    // `advance()` freezes the clock, because a counted step is a statement that the run counts
+    // ticks. A settle asked of a loop that was live makes no such statement — a wall-clock run
+    // measures frames — so it hands the loop back the way it found it instead of leaving a profile
+    // of a game that stopped playing.
+    const wasFrozen = this.#clockFrozen;
+    this.advance(steps);
+    if (wasFrozen) return;
+    // The transition back banks no elapsed time, exactly as `_setClockMode("wall-clock")` does:
+    // the 60 steps are already on the tick count, and the next live frame owns the time after it.
+    this.#clockFrozen = false;
+    this.#lastTime = undefined;
+  }
   /** True once the live clock no longer drives the simulation. */
   get clockFrozen(): boolean {
     return this.#clockFrozen;
@@ -372,7 +423,9 @@ export class FixedStepLoop {
     }
     const elapsed = Math.max(0, (now - (this.#lastTime ?? now)) / 1000);
     this.#lastTime = Math.max(this.#lastTime ?? now, now);
-    this.#accumulator += elapsed;
+    // An overloaded frame (the stress lab at load 4 drew at 12 fps) ran five whole game updates per
+    // frame to catch up, so the next frame was slower still; Unreal clamps instead.
+    this.#accumulator += Math.min(elapsed, this.maxPhysicsDeltaTime);
     let updates = 0;
     while (this.#accumulator + Number.EPSILON >= this.step && updates < this.maxSteps) {
       this.#interpolation?.beginTick();

@@ -167,3 +167,12 @@ are untracked build output while `proof.json`, `proof-artifacts/` and captures s
 For behavior changes, regression evidence must exercise the changed behavior. Planning and prose
 edits need no deliberate breakage and no separate record of document checks.
 
+**Performance PRDs propose a validation scene before implementation.** Name the real consumer,
+fixture/scenario location, reproducible load and input replay, baseline/candidate comparison,
+target hardware and measured pass/fail bar. Include a benefit workload and small/inactive or
+worst-case controls that charge the optimization's own bookkeeping, allocations and fallbacks.
+Acceptance must prove a net whole-frame CPU/GPU gain above run noise, with frame-tail, memory,
+gameplay and visual correctness preserved; fewer operations or a faster isolated function alone
+do not qualify. Use the existing playtest/profiling harnesses, put the result on an acceptance
+box, and leave it unticked until the scene runs. Proposed scenes are plans, not evidence.
+
