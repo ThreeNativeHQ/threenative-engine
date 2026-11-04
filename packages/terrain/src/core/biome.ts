@@ -194,7 +194,7 @@ function oneOf<const T extends readonly string[]>(
 }
 
 /** An interval of `size` numbers, ascending: a slope band, a spacing band, a footprint. */
-function interval(
+function intervalOf(
   value: unknown,
   biome: string,
   field: string,
@@ -212,15 +212,39 @@ function interval(
   return numbers;
 }
 
+/** An ascending pair. Returns a tuple, so a validated field needs no cast where it is read. */
+function pair(
+  value: unknown,
+  biome: string,
+  field: string,
+  min = 0,
+  max = Number.POSITIVE_INFINITY,
+): readonly [number, number] {
+  const [first = 0, second = 0] = intervalOf(value, biome, field, 2, min, max);
+  return [first, second];
+}
+
 /** A point in world metres: `size` finite numbers, in no order. */
-function point(value: unknown, biome: string, field: string, size: number): readonly number[] {
+function pointOf(value: unknown, biome: string, field: string, size: number): readonly number[] {
   if (!Array.isArray(value) || value.length !== size)
     fail(biome, field, `must be an array of ${size} numbers`);
   return value.map((entry, index) => {
     if (typeof entry !== "number" || !Number.isFinite(entry))
       fail(biome, `${field}[${index}]`, "must be a finite number");
-    return entry;
+    return entry ?? 0;
   });
+}
+
+/** A 2D world point. */
+function point2(value: unknown, biome: string, field: string): readonly [number, number] {
+  const [x = 0, z = 0] = pointOf(value, biome, field, 2);
+  return [x, z];
+}
+
+/** A 3D offset in metres. */
+function point3(value: unknown, biome: string, field: string): readonly [number, number, number] {
+  const [x = 0, y = 0, z = 0] = pointOf(value, biome, field, 3);
+  return [x, y, z];
 }
 
 function far(value: unknown, biome: string, field: string): IFarFieldRule | null {
@@ -228,14 +252,8 @@ function far(value: unknown, biome: string, field: string): IFarFieldRule | null
   const far = closed(value, biome, field, FAR_FIELDS);
   return {
     cell: positive(far.cell, biome, `${field}.cell`),
-    spacing: interval(far.spacing, biome, `${field}.spacing`, 2) as unknown as readonly [
-      number,
-      number,
-    ],
-    slope: interval(far.slope, biome, `${field}.slope`, 2, 0, 90) as unknown as readonly [
-      number,
-      number,
-    ],
+    spacing: pair(far.spacing, biome, `${field}.spacing`),
+    slope: pair(far.slope, biome, `${field}.slope`, 0, 90),
     reach: positive(far.reach, biome, `${field}.reach`),
     impostor: count(far.impostor, biome, `${field}.impostor`),
   };
@@ -246,19 +264,13 @@ function foliage(value: unknown, biome: string, field: string): IFoliageType {
   const height =
     row.height === null
       ? null
-      : (interval(row.height, biome, `${field}.height`, 2) as unknown as readonly [number, number]);
+      : (pair(row.height, biome, `${field}.height`));
   return {
     species: text(row.species, biome, `${field}.species`),
     density: count(row.density, biome, `${field}.density`),
-    slope: interval(row.slope, biome, `${field}.slope`, 2, 0, 90) as unknown as readonly [
-      number,
-      number,
-    ],
+    slope: pair(row.slope, biome, `${field}.slope`, 0, 90),
     height,
-    spacing: interval(row.spacing, biome, `${field}.spacing`, 2) as unknown as readonly [
-      number,
-      number,
-    ],
+    spacing: pair(row.spacing, biome, `${field}.spacing`),
     collision: oneOf(row.collision, biome, `${field}.collision`, COLLISION_CLASSES),
     far: far(row.far, biome, `${field}.far`),
   };
@@ -271,17 +283,11 @@ function grass(value: unknown, biome: string, field: string): IGrassType {
   return {
     species: text(row.species, biome, `${field}.species`),
     density,
-    slope: interval(row.slope, biome, `${field}.slope`, 2, 0, 90) as unknown as readonly [
-      number,
-      number,
-    ],
+    slope: pair(row.slope, biome, `${field}.slope`, 0, 90),
     height:
       row.height === null
         ? null
-        : (interval(row.height, biome, `${field}.height`, 2) as unknown as readonly [
-            number,
-            number,
-          ]),
+        : (pair(row.height, biome, `${field}.height`)),
     spacing: positive(row.spacing, biome, `${field}.spacing`),
   };
 }
@@ -329,13 +335,9 @@ function water(value: unknown, biome: string, field: string): IBiomeWaterBody {
 function spawn(value: unknown, biome: string): ISpawnSpec {
   const row = closed(value, biome, "spawn", SPAWN_FIELDS);
   return {
-    at: point(row.at, biome, "spawn.at", 2) as unknown as readonly [number, number],
-    cameraOffset: point(row.cameraOffset, biome, "spawn.cameraOffset", 3) as unknown as readonly [
-      number,
-      number,
-      number,
-    ],
-    focus: point(row.focus, biome, "spawn.focus", 2) as unknown as readonly [number, number],
+    at: point2(row.at, biome, "spawn.at"),
+    cameraOffset: point3(row.cameraOffset, biome, "spawn.cameraOffset"),
+    focus: point2(row.focus, biome, "spawn.focus"),
   };
 }
 
