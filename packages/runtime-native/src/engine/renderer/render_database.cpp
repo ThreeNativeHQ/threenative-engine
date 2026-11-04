@@ -814,8 +814,11 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
                     if (!measured) bounded = boundingSphereOf(object, type, sphere), measured = true;
                     return bounded;
                 };
-                if (mainPass && measure() && !frustum_.intersectsSphere(sphere)) mainPass = false;
-                if (shadowCaster && !inShadowFrustum(object, measure() ? &sphere : nullptr)) shadowCaster = false;
+                // A compile pass keeps what the eye cannot see yet: a turn must not meet its first pipeline mid-frame
+                // (UE 5.8.3: Engine/Source/Runtime/Engine/Private/PSOPrecache.cpp:230 precaches a primitive's PSOs when it
+                // enters the scene, not when it enters the view).
+                if (mainPass && !compiling_ && measure() && !frustum_.intersectsSphere(sphere)) mainPass = false;
+                if (shadowCaster && !compiling_ && !inShadowFrustum(object, measure() ? &sphere : nullptr)) shadowCaster = false;
             }
             if (!mainPass && !shadowCaster) {
                 if (mesh.frustumCulled && !cullExempt_) waste::debugAdd(waste::counters().culledObjects);
