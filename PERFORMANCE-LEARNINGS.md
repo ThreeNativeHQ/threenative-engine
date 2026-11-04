@@ -1043,3 +1043,19 @@ no COOP/COEP); that lane is open.
 - Test: `picking.spec.ts` "honours a mesh's own no-op raycast without building its tree"; `prop-surfaces.spec.ts` "keeps the
   decorative horizon collar out of ground rays".
 - Revisit when: the 165 ms terrain tree matters. The field is a heightfield, so a grid walk answers the same ray with no tree.
+
+### 2026-11-04 — Strata forest walk: materials that differ only in their maps share one program — KEEP
+
+- Where: `packages/runtime-native/src/engine/shader/graph/graph.cpp` `serialName` (now also `nodeMapT<ident>`) and
+  `Renderer::equalStages` in `renderer.cpp`, which renames the copied program's `graphTextureLabels` to the new material's maps.
+- Cause: each streamed spruce, grass and fern batch samples its own textures. The canonical key kept the texture names, so
+  `equalStages` missed and `Renderer::program` generated the whole shader again (5-8 ms a program), only to land on WGSL text that
+  already existed (`positionalGraphTextures`). Counters hid it: `compiles` stayed 0 and only `textLookups` moved. A temporary
+  timer around the program miss in the `CpuPlan` span found it.
+- Result (forest, headed WebGPU, NVIDIA Turing, walk 10 s): program builds after reveal 6 -> 0; walk worst frame 33-60 ms ->
+  16.76 ms, frames over 20 ms 2-5 -> 0. Visual judge NEUTRAL.
+- Test: `render_database_test.cpp` `maps_share_one_pipeline` asserts `equalProgramReuses() == 1`; its pixels prove each draw
+  samples its own map.
+- Revisit when: the 360-degree turn still shows 1-2 frames over 50 ms. Those are first-time programs for one species and LOD
+  level (the level is a baked constant in `worldLodMaterial`'s mask) plus a GPU-process stall from a synchronous shadow-depth
+  pipeline (`renderer.cpp` shadow paths call `pipelines_->get`).
