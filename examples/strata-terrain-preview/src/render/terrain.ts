@@ -163,6 +163,8 @@ const WET_SAND = {
  * its normal map and every other surface alone.
  */
 const MEADOW = vec3(0.47, 0.72, 0.4);
+/** A spruce forest's meadow: dark olive, not lawn green (Project Nature's spruce forest frames). */
+const FOREST_MEADOW = vec3(0.36, 0.46, 0.26);
 /** How much of the vegetation's sky light the ground receives; the vegetation's own is 1.13. */
 const GROUND_SKY_LIGHT = 0.6;
 /** Multiplier that turns meadow turf into shaded needle litter under a stand. */
@@ -227,10 +229,19 @@ export function groundTurf(
     const cover = vec3(0.075, 0.12, 0.028).mul(mix(0.91, 1.08, dry));
     return mix(sampled.mul(tint), cover, smoothstep(65, 180, distance).mul(0.85));
   }
-  const field = mix(vec3(0.042, 0.072, 0.018), vec3(0.062, 0.102, 0.029), dry)
+  const olive = biome?.world === "forest";
+  const field = (
+    olive
+      ? mix(vec3(0.045, 0.062, 0.022), vec3(0.06, 0.082, 0.03), dry)
+      : mix(vec3(0.042, 0.072, 0.018), vec3(0.062, 0.102, 0.029), dry)
+  )
     .mul(tufts)
     .mul(mix(0.92, 1.08, smoothstep(0.6, -0.6, hollow)));
-  return mix(sampled.mul(MEADOW), field, smoothstep(60, 220, distance).mul(0.55));
+  return mix(
+    sampled.mul(olive ? FOREST_MEADOW : MEADOW),
+    field,
+    smoothstep(60, 220, distance).mul(0.55),
+  );
 }
 
 function rockLayer(
@@ -626,6 +637,19 @@ export async function createGroundMaterial(
         .mul(0.85);
       weights.dirt = weights.dirt.max(litter.mul(0.25));
       forestFloor = litter;
+      if (biome?.world === "forest") {
+        // Bare earth breaks the meadow in broad patches, as on a real spruce slope: broad noise
+        // picks them, finer noise frays their edge, a hollow keeps its turf. They fade out by 350 m
+        // so a far slope does not print the noise as camouflage.
+        const bare = smoothstep(
+          -0.05,
+          0.3,
+          macro.add(mottling.mul(0.85)).sub(hollow.max(0).mul(0.2)),
+        ).mul(oneMinus(smoothstep(150, 350, positionView.length())));
+        weights.dirt = weights.dirt.max(bare.mul(0.8));
+        // The soil takes the litter's warm needle tint in full, not the dirt photograph's grey gravel.
+        forestFloor = forestFloor.max(bare);
+      }
     }
     // Coastal soil patches remain; the forest meadow keeps turf between distant blade clusters.
     if (biome?.world === "coastal") {
