@@ -1,4 +1,4 @@
-import { type IAssetPass, type IAssetPassOutput, classify } from "../compile.js";
+import { type IAssetPass, type IAssetPassOutput, classify } from "../compile-types.js";
 import type { IAudioRow } from "../report.js";
 import {
   DEFAULT_CROSS_FADE_MS,

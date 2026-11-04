@@ -27,7 +27,7 @@ import {
   type IAssetPass,
   type IAssetPassOutput,
   classify,
-} from "../compile.js";
+} from "../compile-types.js";
 import { type IMaterialMergeSummary, mergeIdenticalMaterials } from "../foliage.js";
 import { EXTTextureAstc, createGltfReader, readGltfDocument } from "../gltf-io.js";
 import {

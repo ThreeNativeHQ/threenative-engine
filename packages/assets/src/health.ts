@@ -1,5 +1,5 @@
 import { type Document, ImageUtils } from "@gltf-transform/core";
-import { type AssetKind, type IAssetTargets, classify } from "./compile.js";
+import { type AssetKind, type IAssetTargets, classify } from "./compile-types.js";
 import { createGltfReader, readGltfDocument } from "./gltf-io.js";
 import { parsePng } from "./png.js";
 
