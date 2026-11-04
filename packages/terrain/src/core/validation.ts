@@ -81,6 +81,10 @@ export const PARAMS: Readonly<Record<OperationType, readonly string[]>> = Object
     "method",
     "iterations",
     "talus",
+    "uplift",
+    "erodibility",
+    "timeStep",
+    "relief",
     "rate",
     "droplets",
     "maxSteps",
@@ -465,6 +469,13 @@ export function validateLayer(layer: Layer): void {
     if (params[key] !== undefined) num(params[key], key, key === "count" ? 0 : 1, max, true);
   if (params.persistence !== undefined) num(params.persistence, "persistence", 0.01, 1);
   if (params.lacunarity !== undefined) num(params.lacunarity, "lacunarity", 1, 4);
+  for (const [key, min, max] of [
+    ["uplift", 1e-9, 1],
+    ["erodibility", 1e-9, 1],
+    ["timeStep", 1, 1e7],
+    ["relief", 1, 1e5],
+  ] as const)
+    if (params[key] !== undefined) num(params[key], key, min, max);
   for (const key of ["minSlope", "maxSlope", "talus"])
     if (params[key] !== undefined) num(params[key], key, 0, key === "talus" ? 89.9 : 90);
   if (
@@ -490,7 +501,8 @@ export function validateLayer(layer: Layer): void {
       if (rule.strength !== undefined) num(rule.strength, "rule.strength", 0, 1);
     }
   }
-  if (params.method !== undefined) enumeration(params.method, "method", ["thermal", "hydraulic"]);
+  if (params.method !== undefined)
+    enumeration(params.method, "method", ["thermal", "hydraulic", "fluvial"]);
   if (params.mode !== undefined) enumeration(params.mode, "mode", ["fbm", "ridged", "billow"]);
   if (params.shape !== undefined)
     enumeration(

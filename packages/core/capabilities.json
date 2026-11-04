@@ -7961,7 +7961,8 @@
       "signature": "export class Terrain { … }",
       "situations": [
         "author seeded terrain with noise, sculpting, erosion, roads, rivers and scatter",
-        "generate a procedural heightmap landscape or island for a game"
+        "generate a procedural heightmap landscape or island for a game",
+        "make realistic mountains, hills, desert, coast, tundra or volcano terrain: start from `landform(kind)`, or add `erode({ method: \"fluvial\" })` for dendritic valleys"
       ],
       "summary": "Ordered, stable-ID terrain authoring with synchronous atomic transactions.",
       "supersedes": [],

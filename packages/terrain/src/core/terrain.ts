@@ -115,6 +115,7 @@ export class TerrainEvaluator {
  * @requires npm i @threenative/terrain
  * @situation author seeded terrain with noise, sculpting, erosion, roads, rivers and scatter
  * @situation generate a procedural heightmap landscape or island for a game
+ * @situation make realistic mountains, hills, desert, coast, tundra or volcano terrain: start from `landform(kind)`, or add `erode({ method: "fluvial" })` for dendritic valleys
  * @constraint authoring stays outside the game's steady-play graph; no renderer or physics is created
  * @constraint units are metres with Y up; `size` is the world edge in metres (1 to 100000), centred on the origin
  * @constraint `resolution` counts vertices per edge and must be one of 17, 33, 65, 129, 257, 513 or 1025

@@ -1,4 +1,5 @@
 import { hydraulic, thermal } from "./erosion.js";
+import { fluvial } from "./fluvial.js";
 import { MATERIAL_IDS, compileMask, paintWeights, rasterMask } from "./masks.js";
 import {
   clamp,
@@ -550,24 +551,26 @@ export function applyOperation(s: ITerrainState, layer: Layer): void {
       };
       s.erosion ??= structuredClone(observations);
       const eroded =
-        p.method === "hydraulic"
-          ? hydraulic(
-              s.height,
-              n,
-              s.size,
-              {
-                seed,
-                droplets: p.droplets,
-                maxSteps: p.maxSteps,
-                inertia: p.inertia,
-                capacity: p.capacity,
-                erosion: p.erosion,
-                deposition: p.deposition,
-                evaporation: p.evaporation,
-              },
-              observations,
-            )
-          : thermal(s.height, n, s.size, p, observations);
+        p.method === "fluvial"
+          ? fluvial(s.height, n, s.size, p)
+          : p.method === "hydraulic"
+            ? hydraulic(
+                s.height,
+                n,
+                s.size,
+                {
+                  seed,
+                  droplets: p.droplets,
+                  maxSteps: p.maxSteps,
+                  inertia: p.inertia,
+                  capacity: p.capacity,
+                  erosion: p.erosion,
+                  deposition: p.deposition,
+                  evaporation: p.evaporation,
+                },
+                observations,
+              )
+            : thermal(s.height, n, s.size, p, observations);
       let influence = mask;
       if (p.at || p.points) influence = brushWeights(s, p, mask, seed);
       for (let i = 0; i < s.height.length; i += 1) {

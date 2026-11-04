@@ -79,6 +79,18 @@ t.materials({ id: 'surfaces', base: 'grass', rules: [
 t.paint({ id: 'camp-dirt', at: [-70,50], radius: 27, material: 'dirt', strength: .9 });
 ```
 
+## Realistic mountains and environments
+
+Start from a kind, not from noise. `landform(kind, { size, resolution, seed, relief })` returns an ordinary `Terrain` with a calibrated recipe: `alpine`, `temperateMountains`, `rollingHills`, `desertMesa`, `coastalCliffs`, `tundra`, `volcanic`. `LANDFORMS[kind]` names the real reference landscape and the measured targets. It decides shape only, never material or colour. Calibrated at size 5000, resolution 513; other sizes keep slopes and scale relief with `size`. `relief` (metres, highest minus lowest) defaults to the kind's real ratio times `size`.
+
+```js
+import { landform, terrainStats } from '@threenative/terrain';
+const state = landform('alpine', { seed: 4 }).evaluate();   // build script, about 1.5 s at 513
+terrainStats(state.height, state.resolution, state.size);   // relief, slopes, hypsometry, curvature kurtosis
+```
+
+`erode({ method: 'fluvial' })` is the engine behind it: stream-power incision with uplift (Braun & Willett 2013, Cordonnier et al. 2016). The earlier layers are the uplift envelope; it cuts dendritic valleys and sharp divides that droplet erosion at game resolution does not. Params: `iterations` (default 40), `uplift` m/yr, `erodibility` K, `timeStep` yr, `talus` landslide threshold, `relief` metres. Follow it with a short `thermal` pass and `smooth` to remove the 8-neighbour grain. Bake a backdrop: `node packages/terrain/scripts/bake-horizon.mjs alpine --seed 4 --out alpine-horizon.json`.
+
 ## Roads, rivers and water
 
 A road, river or ramp **grades itself to the ground it crosses** when a control point leaves its elevation out (`null`, or `NaN` in code) or when it sets `followTerrain: true`. The elevation is sampled along the centreline, low-passed along arc length, then held inside `maxGrade` (default 0.12) and `maxCut`/`maxFill` (default 2.5 m / 1.5 m); the shoulder widens into a batter with the cut or fill, so a corridor never stands on a retaining step. Leaving the ground is the hard limit: where the ground itself is steeper than `maxGrade`, the road is steep too. Absolute elevations are still honoured exactly, so existing documents keep their meaning. Horizontal spline interpolation is Catmull–Rom; vertical interpolation is linear between controls to avoid vertical overshoot. Use `smooth:false` for a polyline.
