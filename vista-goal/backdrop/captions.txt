@@ -1,0 +1,6 @@
+Backdrop lane, forest vista pose (playtests/vista.playtest.json), 1280x720, headed WebGPU, adapter nvidia turing.
+One code state (pr483-sync at 865a02d8e plus all lanes' uncommitted work), one GPU-lock hold 11:51:36-11:55:34, dev server 127.0.0.1:5312 (no HMR).
+BEFORE = my four files reverted by patch (atmosphere.ts, biomes.ts, bake.mjs, my terrain.ts hunks) and rebaked. AFTER = my patches re-applied and rebaked.
+before-1.png, before-2.png: white veil, smooth 30 degree massif with radial streaks. Mountain band (300,200 800x170) dark ratio at luminance <= 0.6: 0.003. Scenario exit 1 (region assertion red).
+after-1.png, after-2.png: rocky crests with cliffs and snow on the high faces, blue aerial perspective, low mist on the valley floor, shaded cumulus. Mountain band dark ratio 0.609. Scenario exit 0.
+Intended effect for the judge: the mountains past the playable square read as rocky alpine peaks with cliffs, gullies and snow on high faces, ridges stay readable through blue air (not a white veil), no vertical light streaks. The foreground, forest and lake must not change (foreground mean abs diff 2.95/255 = grass sway).
