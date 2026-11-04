@@ -298,6 +298,16 @@ extern "C" int tnw_web_init(const char* selector, uint32_t w, uint32_t h, uint32
     if (selector == nullptr || !validSize(w, h)) return fail("TN_WASM_INIT: canvas selector or size invalid");
     width = w;
     height = h;
+    // The realm that renders starts the job pool's workers now, not on the first job: a web worker needs the
+    // main thread for each step of its start, so a pool first asked for by the asset load (the glTF
+    // loader decodes a model's images across it) came up only after the load's long tasks, 5 s late, and
+    // the forest's 52 atlases decoded on one thread. The page that only hosts the game's worker never
+    // initializes a renderer, so it still starts none. The single-thread build has no workers to start.
+    try {
+        tn::engine::JobPool::shared();
+    } catch (const std::exception& error) {
+        return fail(error.what());
+    }
     instance = wgpuCreateInstance(nullptr);
     if (instance == nullptr) return fail("TN_WASM_INIT: no WebGPU instance");
     WGPUEmscriptenSurfaceSourceCanvasHTMLSelector canvas = {};

@@ -1017,3 +1017,16 @@ no COOP/COEP); that lane is open.
   when `/sys/class/drm/card1-*/status` shows no `connected`.
 - Revisit when: a game changes the bone list of a live skeleton (the raw pointers then need a rebuild), or a light has mover pages with
   different caster sets.
+
+### 2026-11-04 — Strata forest load: a model's images decode across the job pool, and the web pool starts with the renderer — KEEP
+
+- Where: `packages/runtime-native/src/engine/assets/gltf/loader.cpp` `predecodeImages` (reads bytes on the loading thread, decodes on
+  `JobPool`), `uriImageKey` (8-byte words, once per image per load), and `src/engine/wasm/web_host.cpp` `tnw_web_init` (starts the pool).
+- Cause: the forest loads 52 licensed 2048 px PNG atlases (822 MB of RGBA) through `stb_image`, one after another on the web's main
+  thread. The pre-decode alone did nothing: the web pool started on its first job, and each pthread needs main-thread turns to start, so
+  the workers joined only after the load's long tasks (probe: `wallMs` equal to the item sum on 10 of 12 models).
+- Result, paired on one tree with only the threaded Wasm swapped (forest, headed WebGPU, 2 runs per arm): glTF `load()` total 5877, 5755
+  to 2988, 2848 ms; glTF long frames 7.4, 7.0 to 4.4, 4.1 s; time to ready 20.8, 21.3 to 18.0, 17.6 s. Pixels are the same decode.
+- Test: `gltf_hierarchy_test` "a model's two images decode on the job pool" (0 pool items before, 2 after).
+- Revisit when: a single model holds most of the images (the pool then has nothing to share), or the per-model decode wall (about 150 ms
+  for one 2048 px PNG in Wasm) matters. The next step there is GPU-compressed textures that the web engine reads without a decode.

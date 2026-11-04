@@ -12,6 +12,7 @@
 
 #include "engine/animation/skinning/skeleton.h"
 #include "engine/assets/gltf/loader.h"
+#include "engine/foundation/job_pool.h"
 #include "engine/foundation/json.h"
 #include "engine/scene/geometry.h"
 #include "engine/scene/material.h"
@@ -544,6 +545,29 @@ int main() {
         const Texture* none = bare && bare->material && bare->material->maps.count("map") ? bare->material->maps.at("map").get() : nullptr;
         if (!none || none->hasImage()) {
             std::printf("image textures: an image in an external file decoded with no host to read it\n"); ++differ;
+        }
+        // A model's images decode across the job pool before its materials ask for them, not one after
+        // another on the loading thread: the Strata forest's 52 atlases cost 8 s of its web load that way.
+        // The pixels are the ones the serial decode gives.
+        std::string pair = imageBytes;
+        const std::size_t jpeg = pair.find("data:image/jpeg;base64,");
+        pair.replace(jpeg, pair.find('"', jpeg) - jpeg, "parallel/b.png");
+        const std::size_t first = pair.find(marker);
+        pair.replace(first, pair.find('"', first) - first, "parallel/a.png");
+        gltf::LoadOptions pairOptions;
+        pairOptions.readUri = [&](const std::string&) -> std::span<const uint8_t> { return png; };
+        JobPool::resetShared(2);
+        const uint64_t itemsBefore = JobPool::items();
+        auto both = gltf::load(std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(pair.data()), pair.size()), pairOptions);
+        const uint64_t pooled = JobPool::items() - itemsBefore;
+        auto* pairMesh = both.scene && !both.scene->children.empty() ? dynamic_cast<Mesh*>(both.scene->children[0]) : nullptr;
+        const auto pairMap = [&](const char* slot) -> const Texture* {
+            return pairMesh && pairMesh->material && pairMesh->material->maps.count(slot) ? pairMesh->material->maps.at(slot).get() : nullptr;
+        };
+        if (!both.error.empty() || !pairMap("map") || !pairMap("emissiveMap") || pairMap("map")->data != pngPixels ||
+            pairMap("emissiveMap")->data != pngPixels || pooled != 2) {
+            std::printf("image textures: a model's two images did not decode on the job pool (%llu items, %s)\n",
+                        static_cast<unsigned long long>(pooled), both.error.c_str()); ++differ;
         }
     }
     // A damaged PNG is refused, not left as an image-less texture.
