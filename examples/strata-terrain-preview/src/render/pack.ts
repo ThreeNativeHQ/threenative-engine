@@ -271,6 +271,9 @@ const SIGHT_RADIUS = 1.2;
  * `radius` to {@link SIGHT_RADIUS} while the player view is live, 0 for the fixed views.
  */
 export const sightLine = { aim: uniform(new Vector3()), radius: uniform(0) };
+/** `?riverbed=off` is the river A/B's before arm: the waterline rocks stay dry. */
+export const RIVER_BED =
+  new URLSearchParams(globalThis.location?.search ?? "").get("riverbed") !== "off";
 export { SIGHT_RADIUS };
 
 /**
@@ -573,6 +576,12 @@ function surface(
       material.emissiveNode = null;
     }
   } else if (source.map) tintedFoliage(material, context, snowMap);
+  // River rock lies on the waterline, and wet stone is darker and glossier: water fills the pores
+  // (albedo about halves) and films the surface (roughness falls). `?riverbed=off`: dry, as before.
+  if (asset === "riverrock" && RIVER_BED && material.colorNode) {
+    material.colorNode = (material.colorNode as Node<"vec3">).mul(0.45);
+    material.roughness = 0.32;
+  }
   applyWind(material, context);
   if (canopy) nearCameraFade(material, cutout);
   // Image-based sky light, as Wildwood lights the same Fab packs (Kloofendal at 1.8 × 0.629).

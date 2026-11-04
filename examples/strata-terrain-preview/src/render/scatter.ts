@@ -13,6 +13,7 @@ import type { Heightfield } from "@threenative/core/world";
 import { type IPlacement, createSegmentIndex, slopeQuantile } from "@threenative/terrain";
 import { ImprovedNoise } from "three/addons/math/ImprovedNoise.js";
 import type { WorldName } from "./biomes.js";
+import { ROCK } from "./cover.js";
 import { type IBakedWorld, depositAtIndex } from "./terrain.js";
 
 const tundraNoise = new ImprovedNoise();
@@ -164,7 +165,7 @@ export function scatterProps(
   // River segments indexed by their reach (`@threenative/terrain`), so a candidate tests only the
   // segments that can reach it rather than every segment of every river.
   const riverIndex = createSegmentIndex(
-    tundra
+    tundra || data.world === "forest"
       ? (data.rivers ?? []).flatMap((river) =>
           river.points.flatMap((b, index) => {
             const a = river.points[index - 1];
@@ -214,7 +215,7 @@ export function scatterProps(
     return depositAtIndex(data, row * data.resolution + column);
   };
   const put = (asset: string, x: number, z: number, scale: number, suffix = "") => {
-    if (!inside(x, z) || (asset !== "riverrock" && wet(x, z))) return;
+    if (!inside(x, z) || (asset !== "riverrock" && asset !== "pebble" && wet(x, z))) return;
     if (data.erosion && asset === "scree" && depositsAt(x, z) < 0.08) {
       // The light DEM transport pass is bounded to <1 m. Existing surveyed talus remains scree
       // even when this tiny additional pass deposited almost nothing on it.
@@ -252,7 +253,7 @@ export function scatterProps(
     }
     const index = counts[asset] ?? 0;
     const crag = asset === "mountain" || asset === "volcanic" || asset === "reveal";
-    const bedded = temperate && ["boulder", "riverrock", "scree"].includes(asset);
+    const bedded = temperate && ["boulder", "riverrock", "scree", "pebble"].includes(asset);
     const normal = crag || bedded ? data.field.normalAt(x, z) : undefined;
     if (crag && normal) {
       normal.y += 0.65;
@@ -656,5 +657,78 @@ export function scatterProps(
           put("mountain", sx, sz, (10 + dressing() * 10) / 24, ":outcrop");
       }
   }
-  return { counts, placements };
+  // The forest river's bed and banks: cobbles across the wetted bed (seen through the water), a few
+  // stones tall enough to break the surface in the shallows, and larger river rocks on the waterline.
+  // Last, so every placement above keeps its place in the seed's sequence.
+  if (data.world === "forest")
+    for (const river of data.rivers ?? [])
+      for (let i = 1; i < river.points.length; i++) {
+        const [ax = 0, ay = 0, az = 0] = river.points[i - 1] ?? [];
+        const [bx = 0, by = 0, bz = 0] = river.points[i] ?? [];
+        const length = Math.hypot(bx - ax, bz - az) || 1;
+        const ux = (bx - ax) / length;
+        const uz = (bz - az) / length;
+        for (let at = 0; at < length; at += 0.6) {
+          const level = ay + ((by - ay) * at) / length;
+          const across = (o: number) => [ax + ux * at - uz * o, az + uz * at + ux * o] as const;
+          const depth = (o: number) => level - clampedHeight(data, ...across(o));
+          for (let n = 0; n < 6; n++) {
+            const o = (random() - 0.5) * 18;
+            const d = depth(o);
+            // A cobble 0.16-0.6 m across; the generator's boulder is 2 x ROCK.radius wide.
+            if (d > 0.05 && d < 1.6)
+              put("pebble", ...across(o), (0.08 + random() ** 2 * 0.22) / ROCK.radius);
+          }
+          for (const side of [-1, 1]) {
+            let edge = 0;
+            while (edge < 12 && depth(side * edge) > 0) edge += 0.5;
+            const o = side * (edge - 1 - random() * 1.5);
+            const d = depth(o);
+            // Buried by a third, a boulder stands 2 x radius x flatten x 0.68 = 1.6 m per unit scale.
+            if (random() < 0.08 && d > 0.12 && d < 0.5)
+              put("pebble", ...across(o), (d + 0.12 + random() * 0.2) / 1.6);
+            // Bank rocks gather where the current dropped them, in runs with gaps between, and lie
+            // half in the water: from a metre inside the waterline to its edge.
+            const [x, z] = across(side * edge);
+            const run = clamp01((sample01(x * 0.06, 11, z * 0.06) - 0.42) / 0.2);
+            if (random() < run * 0.45)
+              for (let k = random() < 0.4 ? 2 : 1; k > 0; k--)
+                put(
+                  "riverrock",
+                  ...across(side * (edge - 1.1 + random() * 1.2)),
+                  0.6 + random() ** 1.5 * 1.6,
+                );
+          }
+        }
+      }
+  // Nothing grows under the river or the lake the player swims in (`world/water.ts` reads the same
+  // splines, levels and reach), and a trunk stands a metre clear of the water. One pass over the
+  // finished list, not a candidate test, so the seed's sequence and every dry placement stay put.
+  const drowned = ({ asset, position: [x, , z] }: IPlacement) =>
+    GROWING.has(asset) &&
+    (TRUNKS.has(asset) ? BANK : BANK.slice(0, 1)).some(
+      ([dx, dz]) => wet(x + dx, z + dz) || nearRiver(x + dx, z + dz),
+    );
+  const growing: Record<string, number> = {};
+  const kept = placements
+    .filter((placement) => !drowned(placement))
+    .map((placement) => {
+      if (!GROWING.has(placement.asset)) return placement;
+      const index = growing[placement.asset] ?? 0;
+      growing[placement.asset] = index + 1;
+      return { ...placement, id: `temperate-${placement.asset}:${index}` };
+    });
+  for (const asset of GROWING) if (asset in counts) counts[asset] = growing[asset] ?? 0;
+  return { counts, placements: kept };
 }
+
+/** What a river or lake must not grow, and what keeps a bank margin: trunks. */
+const GROWING = new Set(["spruce", "sapling", "bush", "fern", "grass", "scrub", "poppy", "litter"]);
+const TRUNKS = new Set(["spruce", "sapling"]);
+const BANK = [
+  [0, 0],
+  [1, 0],
+  [-1, 0],
+  [0, 1],
+  [0, -1],
+] as const;

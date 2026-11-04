@@ -65,6 +65,8 @@ export const DRAW_REACH: Record<string, number> = {
   litter: 16,
   boulder: 170,
   riverrock: 100,
+  /** River-bed cobbles: a 0.2 m stone under water is sub-pixel well before 45 m. */
+  pebble: 45,
   scree: 190,
   cliff: 300,
   mountain: 650,
@@ -79,7 +81,15 @@ export const DRAW_REACH: Record<string, number> = {
  * less far.
  */
 export const VARIANT_REACH: Record<string, number> = {};
-export const NO_SHADOW_ASSETS = new Set(["sapling", "scrub", "grass", "fern", "poppy", "litter"]);
+export const NO_SHADOW_ASSETS = new Set([
+  "sapling",
+  "scrub",
+  "grass",
+  "fern",
+  "poppy",
+  "litter",
+  "pebble",
+]);
 /** The species whose cover thins out with distance instead of switching off at a fixed reach. */
 export const FADED_ASSETS = new Set(["grass", "scrub", "fern"]);
 
@@ -292,10 +302,10 @@ export function buildPropVariants(
     twig.scale(1.7, 0.22, 1.7);
     variants.set(`litter:${i}`, [{ geometry: twig, role: "grass", variant: i }]);
   }
-  for (const asset of ["riverrock", "scree", "cliff", "mountain", "volcanic", "reveal"])
+  for (const asset of ["riverrock", "scree", "cliff", "mountain", "volcanic", "reveal", "pebble"])
     for (
       let variant = 0;
-      variant < (asset === "mountain" || asset === "reveal" ? 2 : asset === "volcanic" ? 4 : 1);
+      variant < (PROP_COUNTS[asset as keyof typeof PROP_COUNTS] ?? 1);
       variant++
     ) {
       const ready = prepared?.get(`${asset}:${variant}`);
@@ -303,7 +313,11 @@ export function buildPropVariants(
         variants.set(`${asset}:${variant}`, ready);
         continue;
       }
-      const fallback = boulder(VARIANTS.seed ^ variant);
+      const fallback = boulder(
+        asset === "pebble"
+          ? (VARIANTS.seed ^ ((variant + 7) * 0x85ebca6b)) >>> 0
+          : VARIANTS.seed ^ variant,
+      );
       if (["mountain", "volcanic", "reveal"].includes(asset)) {
         if (asset === "mountain") fallback.scale(0.65, 1.45, 1.8);
         fallback.computeBoundingBox();
@@ -327,6 +341,8 @@ export function buildPropVariants(
 const PROP_COUNTS = {
   ...VARIANTS,
   riverrock: 1,
+  /** River-bed cobbles: the boulder generator, three seeds. */
+  pebble: 3,
   scree: 1,
   cliff: 1,
   mountain: 2,
@@ -454,7 +470,7 @@ export function preparePose(
   if (
     grounding &&
     !transform &&
-    ["boulder", "riverrock", "scree", "cliff", "mountain", "volcanic", "reveal"].includes(
+    ["boulder", "riverrock", "pebble", "scree", "cliff", "mountain", "volcanic", "reveal"].includes(
       placement.asset,
     ) &&
     ground.height !== null
