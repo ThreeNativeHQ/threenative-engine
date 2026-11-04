@@ -12,28 +12,34 @@
 
 ## Scope
 
-| PRD | State | Progress (`prd:progress`) | What is open |
-|---|---|---|---|
-| [PRD-583 — A Strata world bakes headlessly into an instanced GLB](PRD-583-a-strata-world-bakes-headlessly-into-an-instanced-glb.md) | Partial | `prd:75%` — boxes 6/8, AC 5/5 | Layered PBR surface in the cook; headed render plus visual judge |
-| [PRD-584 — An agent asks for a forest over MCP and gets a 60 fps GLB](PRD-584-an-agent-asks-for-a-forest-over-mcp-and-gets-a-60-fps-glb.md) | Partial | `prd:50%` — boxes 4/7, AC 3/5 | p95 ≤ 16.7 ms on web (AC-4) and native desktop (AC-5); contact ceiling BC-2 |
-| [PRD-585 — Strata's proof runs in CI, not only by hand](PRD-585-strata-proof-runs-in-ci.md) | Partial | `prd:50%` — boxes 3/6, AC 3/5 | `strata` CI job green on web, consumer and editor scripts; current-head required CI |
-| [PRD-587 — The terrain editor never drops an edit](../done/PRD-587-the-terrain-editor-never-drops-an-edit.md) | ✅ Done | `prd:100%` | — |
-| [PRD-588 — The terrain editor is typed modules, not one 1481-line closure](../done/PRD-588-the-terrain-editor-is-typed-modules.md) | ✅ Done | `prd:100%` | — |
-| [PRD-589 — `@threenative/terrain` ships code, not 33 MB of kit data](../done/PRD-589-the-terrain-package-ships-code-not-kit-data.md) | ✅ Done | `prd:100%` | — |
-| [PRD-590 — One starter-world source, not five copies](../done/PRD-590-one-starter-world-source-not-five.md) | ✅ Done | `prd:100%` | — |
-| [PRD-591 — The preview stops re-implementing engine mechanisms](PRD-591-the-preview-stops-reimplementing-engine-mechanisms.md) | Partial | `prd:50%` — boxes 3/5, AC 3/5 | `loadTerrainSplat` plumbing and measured height bands (AC-4); five-kit visual judge (AC-5) |
-| [PRD-592 — Terrain core fails closed and erodes without allocating](../done/PRD-592-terrain-core-fails-closed-and-erodes-without-allocating.md) | ✅ Done | `prd:100%` | — |
-| [PRD-593 — The three.js patch is generated, and the upload lane leaves it](../done/PRD-593-the-three-patch-is-generated-and-the-upload-lane-leaves-it.md) | ✅ Done | `prd:100%` | — |
-| [PRD-594 — The engine changes that rode in with #381 get native and visual proof](PRD-594-engine-changes-from-381-get-native-and-visual-proof.md) | Partial | `prd:75%` — boxes 5/6, AC 5/6 | Judge with visible cast-shadow coverage (AC-4) |
-| [PRD-595 — `world-cells.ts` splits by seam and survives a load/evict race fuzz](PRD-595-world-cells-splits-by-seam-and-survives-a-race-fuzz.md) | Partial | `prd:50%` — boxes 2/3, AC 2/3 | Strata and machinefall walk playtests after the split (AC-3) |
-| [PRD-762 — An MCP-generated terrain runs on the default engine](PRD-762-an-mcp-terrain-runs-on-the-default-engine.md) | In progress | `prd:25%` — boxes 6/14 | Sandbox start with no game edit; sky and kit gaps; playtest, perf and judge |
-| [Forest leaf appearance (PRD-584 child)](forest-leaf-alpha.md) | In progress | `prd:50%` — boxes 5/7 | Default forest look kept (AC-4); squared leaf tips (AC-5) |
-| [Forest loading handoff waits for the visible world](forest-startup-ux.md) | In progress | `prd:50%` — boxes 2/3 | Same-pose handoff comparison with a visual verdict |
-| [PRD-790 — A new biome is a data row, and the world streams past one square](PRD-790-a-new-biome-is-a-data-row-and-the-world-streams-past-one-square.md) | Not started | `prd:0%` — boxes 0/8, AC 0/3 | All (filed 2026-11-04 at the owner's request) |
+Ordered by priority (the `**Priority:**` header of each PRD), then by the execution order below. Done PRDs are last.
+
+| Priority | PRD | State | Progress (`prd:progress`) | What is open |
+|---|---|---|---|---|
+| P0 | [PRD-762 — An MCP-generated terrain runs on the default engine](PRD-762-an-mcp-terrain-runs-on-the-default-engine.md) | In progress | `prd:25%` — boxes 6/14 | Sandbox start with no game edit; sky and kit gaps; playtest, perf and judge |
+| P1 | [PRD-585 — Strata's proof runs in CI, not only by hand](PRD-585-strata-proof-runs-in-ci.md) | Partial | `prd:50%` — boxes 3/6, AC 3/5 | `strata` CI job green on web, consumer and editor scripts; current-head required CI |
+| P1 | [PRD-583 — A Strata world bakes headlessly into an instanced GLB](PRD-583-a-strata-world-bakes-headlessly-into-an-instanced-glb.md) | Partial | `prd:75%` — boxes 6/8, AC 5/5 | Layered PBR surface in the cook; headed render plus visual judge |
+| P1 | [PRD-594 — The engine changes that rode in with #381 get native and visual proof](PRD-594-engine-changes-from-381-get-native-and-visual-proof.md) | Partial | `prd:75%` — boxes 5/6, AC 5/6 | Judge with visible cast-shadow coverage (AC-4) |
+| P1 | [PRD-584 — An agent asks for a forest over MCP and gets a 60 fps GLB](PRD-584-an-agent-asks-for-a-forest-over-mcp-and-gets-a-60-fps-glb.md) | Partial | `prd:50%` — boxes 4/7, AC 3/5 | p95 ≤ 16.7 ms on web (AC-4) and native desktop (AC-5); contact ceiling BC-2 |
+| P1 | [Forest leaf appearance (PRD-584 child)](forest-leaf-alpha.md) | In progress | `prd:50%` — boxes 5/7 | Default forest look kept (AC-4); squared leaf tips (AC-5) |
+| P1 | [Forest loading handoff waits for the visible world](forest-startup-ux.md) | In progress | `prd:50%` — boxes 2/3 | Same-pose handoff comparison with a visual verdict |
+| P2 | [PRD-591 — The preview stops re-implementing engine mechanisms](PRD-591-the-preview-stops-reimplementing-engine-mechanisms.md) | Partial | `prd:50%` — boxes 3/5, AC 3/5 | `loadTerrainSplat` plumbing and measured height bands (AC-4); five-kit visual judge (AC-5) |
+| P2 | [PRD-595 — `world-cells.ts` splits by seam and survives a load/evict race fuzz](PRD-595-world-cells-splits-by-seam-and-survives-a-race-fuzz.md) | Partial | `prd:50%` — boxes 2/3, AC 2/3 | Strata and machinefall walk playtests after the split (AC-3) |
+| P2 | [PRD-790 — A new biome is a data row, and the world streams past one square](PRD-790-a-new-biome-is-a-data-row-and-the-world-streams-past-one-square.md) | Not started | `prd:0%` — boxes 0/8, AC 0/3 | All (filed 2026-11-04 at the owner's request) |
+| — | [PRD-592 — Terrain core fails closed and erodes without allocating](../done/PRD-592-terrain-core-fails-closed-and-erodes-without-allocating.md) | ✅ Done | `prd:100%` | — |
+| — | [PRD-587 — The terrain editor never drops an edit](../done/PRD-587-the-terrain-editor-never-drops-an-edit.md) | ✅ Done | `prd:100%` | — |
+| — | [PRD-593 — The three.js patch is generated, and the upload lane leaves it](../done/PRD-593-the-three-patch-is-generated-and-the-upload-lane-leaves-it.md) | ✅ Done | `prd:100%` | — |
+| — | [PRD-589 — `@threenative/terrain` ships code, not 33 MB of kit data](../done/PRD-589-the-terrain-package-ships-code-not-kit-data.md) | ✅ Done | `prd:100%` | — |
+| — | [PRD-590 — One starter-world source, not five copies](../done/PRD-590-one-starter-world-source-not-five.md) | ✅ Done | `prd:100%` | — |
+| — | [PRD-588 — The terrain editor is typed modules, not one 1481-line closure](../done/PRD-588-the-terrain-editor-is-typed-modules.md) | ✅ Done | `prd:100%` | — |
 
 ## Execution order
 
-Done: 592, 587, 593, 589, 590, 588. Remaining, in order: 585, 583, 591, 594, 595, 584 (with its two children: leaf alpha, startup handoff), 762, then 790. This order serializes shared-file edits; all phases and acceptance criteria in each PRD remain required. PRD-584 requires 583. PRD-790 needs PRD-591 AC-4 for its height-band fields. Coordinate world-cell edits with PRD-473 before changing its shared implementation.
+1. **P0:** PRD-762 (an agent that follows the shipped MCP path gets a game that does not start).
+2. **P1:** PRD-585 (CI guards every later PRD), PRD-583 (PRD-584 needs it), PRD-594, then PRD-584 with its two children (leaf alpha, startup handoff).
+3. **P2:** PRD-591, PRD-595, then PRD-790 (it needs PRD-591 AC-4 for its height-band fields).
+
+Done, in landing order: 592, 587, 593, 589, 590, 588. This order serializes shared-file edits; all phases and acceptance criteria in each PRD remain required. Coordinate world-cell edits with PRD-473 before changing its shared implementation.
 
 ## Current state (2026-11-04)
 
@@ -46,9 +52,16 @@ Landed on the branch on 2026-11-03 and 2026-11-04 (forest preview, NVIDIA Turing
 - ✅ The player stays on the world (`bd789c431`) and climbs the surveyed hills past the square (`167b5a796`; owner confirmed: "i was able to climb"). `edge.playtest.json` asserts `edgeOvershoot` ≥ 20.
 - ✅ No pipeline after the reveal: materials that differ only in maps or come from one TSL function share one program (`3a572685d`, `c26d7b791`); `loop.playtest.json` asserts `pipelinesSinceReveal` 0 (`9a4ec2663`). Load 57 s → 27 s → 19.5 s (`ae0185fc0`, `a96ecfb88`).
 
-In flight (owner reports, 2026-11-04): scattered rocks and trunks have no collider; no swimming animation or water physics in the river; the river shows radial streaks and reads as plastic.
+Open work outside the PRD boxes, in priority order:
 
-Open: `edge.playtest.json` fails on 2 `TN_SCENE_WARNING` lines (shadow draws 896 at 16.9 ms render); load tail, idle JS garbage (296 KB per frame) and a 256-frame present stall (also seen on a plain-canvas control, so the environment is suspected); 60 FPS on the real display is not measured (monitors asleep).
+1. In flight (owner reports, 2026-11-04): scattered rocks and trunks have no collider.
+2. In flight: no swimming animation or water physics in the river.
+3. In flight: the river shows radial streaks and reads as plastic.
+4. `edge.playtest.json` fails on 2 `TN_SCENE_WARNING` lines (shadow draws 896 at 16.9 ms render).
+5. The reveal-frame REGRESSION from `919c1a866`: the nearest spruce self-shadows with its mid-LOD shape.
+6. Performance: load tail, idle JS garbage (296 KB per frame), and a 256-frame present stall (also seen on a plain-canvas control, so the environment is suspected).
+7. Ground: soil value still above the reference, and no needle detail in the near foreground.
+8. 60 FPS on the real display is not measured (monitors asleep).
 
 ## Look gate (owner decision, 2026-10-11)
 
