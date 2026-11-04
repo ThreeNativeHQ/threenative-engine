@@ -1,6 +1,7 @@
+import { GroundSnap } from "@threenative/core";
 import type { IPlacement } from "@threenative/terrain";
-import { MeshStandardMaterial, Vector3 } from "three";
-import { describe, expect, it } from "vitest";
+import { Mesh, MeshStandardMaterial, Object3D, Quaternion, Vector3 } from "three";
+import { describe, expect, it, vi } from "vitest";
 import { boulder } from "../src/render/cover.js";
 import { buildPropVariants, preparePose, variantFor } from "../src/render/props.js";
 
@@ -49,6 +50,62 @@ describe("weathered rock geometry", () => {
     } finally {
       rock.dispose();
       material.dispose();
+    }
+  });
+
+  it("grounds a tilted spruce as GroundSnap does, without building a scene object", () => {
+    // On the owned engine every Object3D is an engine object: a throwaway Mesh per placement cost
+    // the forest 30 s of its load. The pose must stay the one GroundSnap gives that Mesh.
+    const variants = buildPropVariants();
+    const material = new MeshStandardMaterial();
+    const updates = vi.spyOn(Object3D.prototype, "updateMatrix");
+    try {
+      const trunk = variants.get("spruce:0")?.[0]?.geometry;
+      if (!trunk) throw new Error("No fallback spruce");
+      for (const [alignToNormal, offset] of [
+        [true, 0.25],
+        [false, 0],
+      ] as const) {
+        const placement = {
+          id: "spruce:0",
+          asset: "spruce",
+          position: [3, 1, -2],
+          normal: new Vector3(0.3, 0.9, 0.1).normalize().toArray(),
+          scale: 1.4,
+          rotation: 0.7,
+          alignToNormal,
+        } as IPlacement;
+        const ground = (_placement: IPlacement, at: [number, number, number]) => ({
+          height: 2 + at[0] * 0.1,
+          offset,
+        });
+        const before = updates.mock.calls.length;
+        const pose = preparePose(trunk, material, placement, undefined, ground);
+        expect(updates.mock.calls.length - before).toBe(0);
+
+        const model = new Mesh(trunk, material);
+        model.position.fromArray(placement.position);
+        const up = new Vector3(0, 1, 0);
+        if (alignToNormal)
+          model.quaternion.setFromUnitVectors(up, new Vector3().fromArray(placement.normal));
+        model.quaternion.multiply(new Quaternion().setFromAxisAngle(up, placement.rotation));
+        model.scale.setScalar(placement.scale);
+        const surface = ground(placement, model.position.toArray()).height;
+        const snap = new GroundSnap(model, { enabled: true });
+        snap.apply(model, surface, 0);
+        model.position.y += offset;
+        snap.enabled = false;
+        snap.apply(model, surface, 0);
+        model.updateMatrix();
+        pose.matrix.elements.forEach((value, index) =>
+          expect(value).toBeCloseTo(model.matrix.elements[index] ?? Number.NaN, 9),
+        );
+        expect(pose.clearance).toBeCloseTo(snap.clearance ?? Number.NaN, 9);
+      }
+    } finally {
+      vi.restoreAllMocks();
+      material.dispose();
+      for (const parts of variants.values()) for (const part of parts) part.geometry.dispose();
     }
   });
 

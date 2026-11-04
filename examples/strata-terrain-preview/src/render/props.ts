@@ -5,8 +5,8 @@
 //
 //   - The shapes, their variants, their materials and their placement rule are all this file's. They
 //     are the picture, and the picture is the game's (AGENTS rule 3).
-//   - GroundSnap measures ground contact; propStreaming.ts delegates instancing and LOD to WorldCells.
-import { GroundSnap, createRandom } from "@threenative/core";
+//   - preparePose grounds each pose on plain math; propStreaming.ts delegates instancing and LOD to WorldCells.
+import { createRandom } from "@threenative/core";
 import type { IPlacement, IPlacementOverride } from "@threenative/terrain";
 import {
   type BufferGeometry,
@@ -14,8 +14,7 @@ import {
   Euler,
   Group,
   type Material,
-  type Matrix4,
-  Mesh,
+  Matrix4,
   MeshStandardMaterial,
   Quaternion,
   Vector3,
@@ -354,15 +353,42 @@ export interface IPropInstance {
   cragBaseClearance?: number;
   cragRingSamples?: number;
 }
+/** Exact lowest world Y of a static geometry under `matrix` (GroundSnap's precise measurement). */
+function lowestY(geometry: BufferGeometry, matrix: Matrix4): number {
+  const e = matrix.elements;
+  if (e[1] === 0 && e[9] === 0) {
+    if (geometry.boundingBox === null) geometry.computeBoundingBox();
+    const box = geometry.boundingBox;
+    if (box) return (e[5] < 0 ? box.max.y : box.min.y) * e[5] + e[13];
+  }
+  const position = geometry.getAttribute("position");
+  let lowest = Number.POSITIVE_INFINITY;
+  for (let i = 0; i < position.count; i++)
+    lowest = Math.min(
+      lowest,
+      position.getX(i) * e[1] + position.getY(i) * e[5] + position.getZ(i) * e[9] + e[13],
+    );
+  return lowest;
+}
+
 export function preparePose(
   geometry: BufferGeometry,
-  material: Material,
+  _material: Material,
   placement: IPlacement,
   transform: IPlacementOverride | undefined,
   groundAt: PropGroundQuery,
 ) {
-  // This measurement mesh is never added to the scene; the actual draw stays instanced.
-  const model = new Mesh(geometry, material);
+  // Plain math, not a Mesh: on the owned engine every Object3D is an engine object, and a detached
+  // Mesh per placement cost 30 s of the forest's load (218,816 placements, 0.14 ms each).
+  const model = {
+    position: new Vector3(),
+    quaternion: new Quaternion(),
+    scale: new Vector3(1, 1, 1),
+    matrix: new Matrix4(),
+    updateMatrix() {
+      this.matrix.compose(this.position, this.quaternion, this.scale);
+    },
+  };
   model.position.fromArray(transform?.position ?? placement.position);
   if (transform) {
     model.quaternion.fromArray(transform.quaternion);
@@ -376,18 +402,19 @@ export function preparePose(
   }
   const grounding = transform?.grounding ?? true;
   const ground = groundAt(placement, model.position.toArray());
-  const snap = new GroundSnap(model, { enabled: grounding });
+  // GroundSnap's rule: the lowest posed point meets the surface, then the authored offset applies.
+  let clearance: number | null = null;
   if (ground.height === null) {
     if (grounding)
       throw new Error(
         `Missing terrain ground for '${placement.id}' at ${JSON.stringify(model.position.toArray())}`,
       );
   } else {
-    snap.apply(model, ground.height, 0);
-    if (grounding && ground.offset !== 0) {
-      model.position.y += ground.offset;
-      snap.enabled = false;
-      snap.apply(model, ground.height, 0);
+    model.updateMatrix();
+    clearance = lowestY(geometry, model.matrix) - ground.height;
+    if (grounding) {
+      model.position.y += ground.offset - clearance;
+      clearance = ground.offset;
     }
   }
   // A boulder is a rock that is part buried: GroundSnap puts its lowest point on the surface, and on a
@@ -487,7 +514,7 @@ export function preparePose(
   return {
     matrix: model.matrix.clone(),
     grounding,
-    clearance: snap.clearance,
+    clearance,
     cragBaseClearance,
     cragRingSamples,
   };
