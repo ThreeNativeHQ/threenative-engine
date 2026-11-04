@@ -880,7 +880,7 @@
       "id": "spell.fireball",
       "query": "Cast a fireball at a target that explodes and scorches the floor.",
       "scope": "mechanic",
-      "source": "template:action-rpg#Spells",
+      "source": "template:action-rpg#Start every change",
       "expect": ["createFireball"],
       "reject": []
     },
@@ -888,7 +888,7 @@
       "id": "spell.thunderstrike",
       "query": "Strike a point with a thunderbolt from the sky and leave a burnt mark.",
       "scope": "mechanic",
-      "source": "template:action-rpg#Spells",
+      "source": "template:action-rpg#Start every change",
       "expect": ["createThunderstrike"],
       "reject": []
     },
@@ -896,7 +896,7 @@
       "id": "spell.glacial-spike",
       "query": "Fire an ice spike at a target that shatters and freezes the ground.",
       "scope": "mechanic",
-      "source": "template:action-rpg#Spells",
+      "source": "template:action-rpg#Start every change",
       "expect": ["createGlacialSpike"],
       "reject": []
     },
@@ -904,7 +904,7 @@
       "id": "spell.arcane-barrage",
       "query": "Fire a volley of arcane missiles that pop on arrival.",
       "scope": "mechanic",
-      "source": "template:action-rpg#Spells",
+      "source": "template:action-rpg#Start every change",
       "expect": ["createArcaneBarrage"],
       "reject": []
     },
@@ -912,7 +912,7 @@
       "id": "spell.aegis",
       "query": "Raise a shield around the caster that forms, holds and breaks outward.",
       "scope": "mechanic",
-      "source": "template:action-rpg#Spells",
+      "source": "template:action-rpg#Start every change",
       "expect": ["createAegis"],
       "reject": []
     },
@@ -920,7 +920,7 @@
       "id": "spell.inferno",
       "query": "Erupt a pillar of fire at a point that keeps burning for seconds.",
       "scope": "mechanic",
-      "source": "template:action-rpg#Spells",
+      "source": "template:action-rpg#Start every change",
       "expect": ["createInferno"],
       "reject": []
     }
