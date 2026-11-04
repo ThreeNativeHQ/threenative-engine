@@ -46,6 +46,11 @@ Blender, beside their own license text.
 
 - [MIT License](https://github.com/ThreeNativeHQ/threenative/blob/main/LICENSE)
 
+`bakeShoreWaves` adapts the shore-wave algorithm of
+[Ultra-Water](https://github.com/Humpalumps/Ultra-Water) (MIT, read at `ce9248f`): a fast-sweeping
+eikonal solve of shallow-water travel time, the front direction, ray-tube convergence and the
+breaking limit, rewritten as TypeScript. No source code was copied.
+
 ## Links
 
 - [Repository](https://github.com/ThreeNativeHQ/threenative)

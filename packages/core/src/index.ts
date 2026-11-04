@@ -1358,6 +1358,22 @@ export type {
   ISpectralOceanOptions,
 } from "./ocean/spectral.js";
 /**
+ * Measure how a swell breaks along a coast: travel time from open water, front direction, shoaling
+ * and breaking crest height, from the bathymetry a terrain bake already has.
+ * @situation make waves break on a beach
+ * @situation draw surf and breakers that refract around a headland
+ * @situation slow, bunch and steepen wave fronts as the water shallows toward the shore
+ * @situation find where a swell reaches and where a sea bar cuts it off
+ * @situation shade a shore by wave travel time instead of distance to land
+ * @constraint pure CPU and synchronous; it decides no colour, foam, period or wave shape
+ * @constraint a front only arrives from the open-sea rim, so a closed lagoon has no breakers
+ * @constraint travel is Infinity where no front arrives; mask by it, never by depth
+ * @constraint the crest stops at 0.42 of the water depth under it, so a heightfield cannot fold
+ * @example const shore = bakeShoreWaves(heights, columns, 512, seaLevel, { incidentHeight: 1.2 });
+ */
+export { bakeShoreWaves } from "./ocean/shore.js";
+export type { IShoreWaveField, IShoreWaveOptions } from "./ocean/shore.js";
+/**
  * Copy a GPU buffer back to the CPU on a throttle, and report how old each sample is.
  * @situation read a GPU simulation on the CPU without stalling the frame
  * @situation float a body on a wave field whose height only exists on the GPU

@@ -12,9 +12,14 @@ water. It is game source: once copied, every file is yours to edit.
 | `bake.mjs` | Writes the world package and `world/water.json` from the three files above. |
 | `world.ts` | The runtime: streams the baked world, one heightfield for the ground, sphere colliders for the firs near the player, and the sky as the props' light. |
 | `sky.ts` | The daylight: the sun, sky, fill, haze, exposure and tone curve. |
-| `sea.ts` | The sea: the installed spectral simulation drives a lit water surface at the level the bake wrote. |
+| `sea.ts` | The sea: the installed spectral simulation drives a lit water surface at the level the bake wrote, and the installed shore-wave bake turns the world's bathymetry into where a swell arrives, how its fronts run and how tall it breaks. |
 
 Art is CC0 (Poly Haven); provenance is in `@threenative/terrain/starter-assets/credits.json`.
+
+The shore wave model — a fast-sweeping eikonal solve of the shallow-water travel time, the front
+direction, the ray-tube convergence and the breaking limit — is adapted from
+[Ultra-Water](https://github.com/Humpalumps/Ultra-Water) (MIT, read at `ce9248f`), rewritten as
+TypeScript over the heightfield this world already has. No source code was copied.
 
 ## Substitution
 
@@ -25,8 +30,8 @@ ocean is written to `water.json` as the one entry in `lakes`, with no `at`: the 
 ## Status
 
 The kit bakes, streams and draws its sea. The kit ships no scene: the game writes one. The sea is a
-lit surface at the baked level: the simulation's waves, the surf from the bake's shoreline, and the depth
-tint. Its colours and sea state are in `sea.ts`. The close-up view is named `boulders` in the shared captures, although
+lit surface at the baked level: the simulation's waves, the surf from the shore-wave bake, and the depth
+tint. Its colours, sea state and incident crest height are in `sea.ts`. The close-up view is named `boulders` in the shared captures, although
 it frames a fir.
 
 ## Steps

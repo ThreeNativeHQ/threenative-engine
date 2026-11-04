@@ -46,14 +46,17 @@ const manifest: IWorldPackage = {
 const records = new Float32Array([0, 0, 0, 0, 0, 0, 1, 1, 130, 0, 0, 0, 0, 0, 1, 1]);
 const heightmap = new Uint16Array([0, 2000, 4000, 6000, 8000, 10000, 12000, 14000, 16000]);
 let requests: string[];
+/** Terrain tiles the mocked world reports resident around the follow object. */
+let tilesBuilt = 0;
 let surface: MeshBasicMaterial;
 let sky: Texture;
 
-async function context() {
+async function context(phase = "ready") {
   const scene = new Group();
   const model = new Group();
   const ctx = {
     scene,
+    startup: { phase, hold: vi.fn() },
     assets: { resolve: async (path: string) => [path], model: async () => ({ scene: model }) },
     add: <T extends Object3D>(object: T): T => {
       scene.add(object);
@@ -91,6 +94,7 @@ beforeEach(() => {
       dispose: vi.fn(function (this: Group) {
         this.removeFromParent();
       }),
+      readinessAt: vi.fn(() => ({ loadedTerrainTiles: tilesBuilt, requiredTerrainTiles: 4 })),
     });
     worlds.push(world);
     return world;
@@ -145,6 +149,28 @@ describe("coastal runtime", () => {
     expect(coastal.colliders.active).toBe(1);
     expect(coastal.ground.shape.descriptor.kind).toBe("heightfield");
     expect(ctx.scene.children).toHaveLength(3);
+  });
+
+  it("keeps the loading cover up until the terrain around the camera is built", async () => {
+    const { ctx } = await context("loading");
+    const follow = new Object3D();
+    follow.position.set(60, 40, 40);
+    await addCoastal(ctx, follow);
+    const hold = vi.mocked(ctx.startup.hold);
+    expect(hold).toHaveBeenCalledTimes(1);
+    const [label, ready] = hold.mock.calls[0] as [string, () => boolean];
+    expect(label).toBe("coastal-terrain");
+    tilesBuilt = 3;
+    expect(ready()).toBe(false);
+    tilesBuilt = 4;
+    expect(ready()).toBe(true);
+    tilesBuilt = 0;
+  });
+
+  it("registers no hold once startup has already resolved", async () => {
+    const { ctx } = await context();
+    await addCoastal(ctx, new Object3D());
+    expect(ctx.startup.hold).not.toHaveBeenCalled();
   });
 
   it("loads each world file once and hands the buffers to the streamer and the ground", async () => {
