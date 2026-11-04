@@ -129,6 +129,22 @@ describe("roughDiffuse", () => {
     }
   });
 
+  it("undoes three's energy conservation on direct light, as a fresh Unreal project's Substrate slab compiles it off", () => {
+    installRoughDiffuse();
+    const sun = new DirectionalLight(0xffffff, 3);
+    const marked = new MeshStandardNodeMaterial();
+    marked.roughDiffuse = true;
+    const count = (code: string, token: string) => code.split(token).length - 1;
+    const plain = fragment(new MeshStandardNodeMaterial(), sun);
+    const rough = fragment(marked, sun);
+    // The diffuse gets back the 1 - F_Schlick(VoH) three took (one more Schlick term per light), and the specular is
+    // divided by the multi-scattering weight three multiplied it by.
+    expect(count(rough, "5.55473")).toBeGreaterThan(count(plain, "5.55473"));
+    expect(count(rough, "multiScatteringCompensation")).toBeGreaterThan(
+      count(plain, "multiScatteringCompensation"),
+    );
+  });
+
   it("keys a program on the flag, so a marked material never shares a pipeline with a plain one", () => {
     const plain = new MeshStandardNodeMaterial();
     const marked = new MeshStandardNodeMaterial();

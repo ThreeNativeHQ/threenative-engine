@@ -86,7 +86,6 @@ import {
   type ColorGradeOptions,
   FILMIC_CURVE,
   type IFilmicCurve,
-  LUT_CLIP,
   installFilmicToneMapping,
   resolveColorGrade,
 } from "./filmic-tone-mapping.js";
@@ -928,7 +927,7 @@ export class WorldEnvironment {
         {
           ...FILMIC_CURVE,
           ...options.filmicCurve,
-          ...(lookDiagnostics.lutClipOn ? { lutClip: LUT_CLIP } : {}),
+          ...(lookDiagnostics.lutClipOff ? { lutClip: 0 } : {}),
         },
         resolveColorGrade(options.colorGrade),
       );

@@ -1,11 +1,14 @@
 import type { Light, Material, Mesh, Object3D } from "three";
 import {
+  F_Schlick,
   clamp,
   diffuseColor,
   metalness,
   normalView,
   positionViewDirection,
   roughness,
+  specularColor,
+  specularF90,
   uniform,
   vec3,
 } from "three/tsl";
@@ -16,9 +19,10 @@ declare module "three" {
   // biome-ignore lint/style/useNamingConvention: a module augmentation keeps three's own class name.
   interface Material {
     /**
-     * Unreal's Substrate rough diffuse, the EON model (PRD-653): direct light shades the diffuse lobe of a
-     * standard or physical material with EON where three shades Lambert. The default is off. Indirect light
-     * stays Lambert, and a material changed after its first draw needs `needsUpdate`.
+     * Unreal's Substrate slab as a fresh project compiles it (PRD-653, PRD-632): direct light shades the diffuse lobe
+     * of a standard or physical material with EON where three shades Lambert, with no energy conservation (the diffuse
+     * keeps the light three's Fresnel takes, the specular has no multi-scattering weight). The default is off.
+     * Indirect light stays three's, and a material changed after its first draw needs `needsUpdate`.
      */
     roughDiffuse?: boolean;
   }
@@ -52,10 +56,15 @@ type Lamp = Light & { readonly isDirectionalLight?: boolean; readonly sourceRadi
 interface IDirectInput {
   readonly lightDirection: Node<"vec3">;
   readonly lightNode?: { readonly light?: Lamp };
-  readonly reflectedLight: { readonly directDiffuse: Node<"vec3"> };
+  readonly reflectedLight: {
+    readonly directDiffuse: Node<"vec3">;
+    readonly directSpecular: Node<"vec3">;
+  };
 }
 interface ILightingModel {
   direct(input: IDirectInput, builder: unknown): void;
+  /** three's multi-scattering weight on the direct specular lobe, set in `start`. */
+  readonly multiScatteringCompensation?: Node<"vec3">;
 }
 interface IPatchable {
   setupLightingModel?: (this: Material, builder: unknown) => ILightingModel;
@@ -97,9 +106,12 @@ function roughDiffuseFactor(
 }
 
 /**
- * Turns a stock lighting model's Lambert diffuse into EON. The model adds irradiance x Lambert to `directDiffuse`; that term
- * goes into a scratch variable here and returns scaled by EON's factor, so whatever else the model multiplies it by (sheen's
- * energy compensation) stays in, and the specular and clearcoat terms are untouched.
+ * Turns a stock lighting model's direct light into a fresh Unreal project's Substrate slab: EON in place of Lambert, and
+ * no energy conservation (GBuffer format 0 compiles it off), so the diffuse keeps the light three's `1 - F_Schlick(VoH)`
+ * takes away and the specular lobe loses three's multi-scattering weight. UE 5.8.3:
+ * Engine/Shaders/Private/ShadingEnergyConservation.ush:7-31, ShadingEnergyConservationTemplate.ush:73-78 and :134-135,
+ * used at Substrate/SubstrateEvaluation.ush:585-589 and :836. The model's two terms go into scratch variables and return
+ * rescaled, so whatever else it multiplies them by (sheen's energy compensation) stays in; clearcoat is untouched.
  */
 function roughen(model: ILightingModel): ILightingModel {
   const lambert = model.direct;
@@ -109,9 +121,17 @@ function roughen(model: ILightingModel): ILightingModel {
     builder: unknown,
   ): void {
     const scratch = vec3(0).toVar() as Node<"vec3">;
+    const specular = vec3(0).toVar() as Node<"vec3">;
     lambert.call(
       this,
-      { ...input, reflectedLight: { ...input.reflectedLight, directDiffuse: scratch } },
+      {
+        ...input,
+        reflectedLight: {
+          ...input.reflectedLight,
+          directDiffuse: scratch,
+          directSpecular: specular,
+        },
+      },
       builder,
     );
     const nov = clamp(normalView.dot(positionViewDirection)) as Node<"float">;
@@ -122,10 +142,24 @@ function roughen(model: ILightingModel): ILightingModel {
     if (weight !== undefined) r = r.mul(weight) as Node<"float">;
     // three's diffuseContribution, which three/tsl does not export: the colour less its metal share.
     const albedo = diffuseColor.rgb.mul(metalness.oneMinus()) as Node<"vec3">;
-    const factor = roughDiffuseFactor(albedo, r, nov, nol, vol);
-    (
-      input.reflectedLight.directDiffuse as Node<"vec3"> & { addAssign(value: Node): void }
-    ).addAssign(scratch.mul(factor));
+    // three's diffuse lost 1 - F at the half vector; that never reaches 0 where N.L and N.V are both positive.
+    const half = input.lightDirection.add(positionViewDirection).normalize();
+    const schlick = F_Schlick({
+      f0: specularColor,
+      f90: specularF90,
+      dotVH: clamp(positionViewDirection.dot(half)),
+    });
+    // quality-allow: three's types give F_Schlick an OperatorNode, which carries no vec3 component type; the node is a vec3 at run time
+    const fresnel = schlick as unknown as Node<"vec3">;
+    const factor = roughDiffuseFactor(albedo, r, nov, nol, vol).div(
+      fresnel.oneMinus().max(EPSILON),
+    );
+    type Sum = Node<"vec3"> & { addAssign(value: Node): void };
+    (input.reflectedLight.directDiffuse as Sum).addAssign(scratch.mul(factor));
+    const weight3 = this.multiScatteringCompensation;
+    (input.reflectedLight.directSpecular as Sum).addAssign(
+      weight3 === undefined ? specular : specular.div(weight3),
+    );
   };
   return model;
 }
