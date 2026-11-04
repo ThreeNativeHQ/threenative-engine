@@ -435,13 +435,19 @@ static ExprId perturbNormal2Arb(Program& f, ExprId eye, ExprId uv, ExprId surfac
 // The tint varying: the instance colour (vec3), or a vec4 once a vertex colour multiplies it.
 static Type tintType(const VertexVariant& variant) { return Type::vec(variant.vertexColors ? 4 : 3); }
 
+// A material texture read at the renderer's `viewMipBias` (0 unless a temporal pass upscales; see
+// Renderer::viewMipBias), as Unreal biases every material sampler of an upscaled view.
+static ExprId materialSample(Program& f, uint32_t texture, ExprId at) {
+    return f.sampleBias(texture, at, f.uniform("viewMipBias", Type::f32()));
+}
+
 static ExprId perturbedNormal(Program& f, const VertexVariant& variant, ExprId surfaceNormal) {
     const ExprId eye = f.varying("positionView", Type::vec(3));
     if (variant.tinted()) f.varying("instanceColor", tintType(variant));
     const ExprId uv = f.varying("uv", Type::vec(2));
     const ExprId transform = f.uniform("normalUvTransform", Type::mat(3, 3));
     const ExprId at = f.swizzle(f.mul(transform, f.construct(Type::vec(3), {uv, f.constant(1.0f)})), "xy");
-    const ExprId texel = f.swizzle(f.sample(f.texture2d("normalMap"), at), "xyz");
+    const ExprId texel = f.swizzle(materialSample(f, f.texture2d("normalMap"), at), "xyz");
     const ExprId decoded = f.sub(f.mul(texel, f.constant(2.0f)), f.constant(1.0f));
     const ExprId scaled = f.mul(f.swizzle(decoded, "xy"), f.uniform("normalScale", Type::vec(2)));
     const ExprId mapN = f.construct(Type::vec(3), {scaled, f.swizzle(decoded, "z")});
@@ -474,7 +480,7 @@ static ExprId pbrTexel(Program& f, const VertexVariant& variant, PbrMap map) {
     if (variant.tinted()) f.varying("instanceColor", tintType(variant));
     const ExprId uv = f.varying("uv", Type::vec(2));
     const ExprId transform = f.uniform(name + "UvTransform", Type::mat(3, 3));
-    return f.sample(f.texture2d(name), f.swizzle(f.mul(transform, f.construct(Type::vec(3), {uv, f.constant(1.0f)})), "xy"));
+    return materialSample(f, f.texture2d(name), f.swizzle(f.mul(transform, f.construct(Type::vec(3), {uv, f.constant(1.0f)})), "xy"));
 }
 
 // MaterialNode.NORMAL with a bumpMap and no normalMap: three's BumpMapNode (Mikkelsen's surface
@@ -488,7 +494,7 @@ static ExprId bumpedNormal(Program& f, const VertexVariant& variant, ExprId surf
     const uint32_t map = f.texture2d(kPbrMapNames[kBumpMap]);
     const auto height = [&](ExprId coordinate) {
         const ExprId at = f.swizzle(f.mul(transform, f.construct(Type::vec(3), {coordinate, f.constant(1.0f)})), "xy");
-        return f.swizzle(f.sample(map, at), "x");
+        return f.swizzle(materialSample(f, map, at), "x");
     };
     const ExprId scale = f.uniform("bumpScale", Type::f32());
     const ExprId Hll = height(uv);
@@ -527,7 +533,7 @@ static ExprId mapTexel(Program& f, const VertexVariant& variant) {
     const ExprId uv = f.varying("uv", Type::vec(2));
     const ExprId transform = f.uniform("uvTransform", Type::mat(3, 3));
     const ExprId at = f.swizzle(f.mul(transform, f.construct(Type::vec(3), {uv, f.constant(1.0f)})), "xy");
-    const ExprId texel = f.sample(f.texture2d("map"), at);
+    const ExprId texel = materialSample(f, f.texture2d("map"), at);
     if (!variant.mapSRGB) return texel;
     const ExprId rgb = f.construct(Type::vec(3), {srgbDecode(f, f.swizzle(texel, "x")),
                                                    srgbDecode(f, f.swizzle(texel, "y")),
@@ -560,7 +566,7 @@ static ExprId nodeValue(Program& f, const graph::Node& node, Type type, ExprId f
                         ExprId normalView, ExprId geometryNormal) {
     if (!node) return fallback;
     tsl::Build build(f);
-    std::unordered_map<std::string, ExprId> inputs;
+    std::unordered_map<std::string, ExprId> inputs{{"viewMipBias", kInvalid}};  // a material: its 2D texture() nodes take the view mip bias
     if (normalView != kInvalid) inputs.emplace("normalView", normalView);
     if (geometryNormal != kInvalid) inputs.emplace("normalViewGeometry", geometryNormal);
     return nodeType(f, graph::lower(node, f, inputs), type);
@@ -597,7 +603,7 @@ static void materialInputs(Program& f, const VertexVariant& variant,
 // A slot read through the program's one lowering: a node two slots share (a march feeding colour and
 // depth) lowers once, as three builds a material once. `normalView` is the slot input every slot sees.
 static graph::Lowering slotLowering(Program& f, const VertexVariant& variant, ExprId normalView) {
-    std::unordered_map<std::string, ExprId> inputs;
+    std::unordered_map<std::string, ExprId> inputs{{"viewMipBias", kInvalid}};  // a material: its 2D texture() nodes take the view mip bias
     if (normalView != kInvalid) inputs.emplace("normalView", normalView);
     materialInputs(f, variant, inputs);
     return graph::Lowering(f, std::move(inputs));

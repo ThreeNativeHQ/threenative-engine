@@ -6,6 +6,7 @@ const query = new URLSearchParams(location.search);
 const variantName = query.get("variant") ?? "temporal";
 const measurement = query.has("measure");
 const raw4 = query.has("raw4");
+const staticCamera = query.has("staticCamera");
 // The scaled arm is the browser control for the native conformance capture, which publishes the
 // 1280x720 display raster. Its measurement size would put the two hosts on different raster pairs.
 const scaled = variantName.startsWith("scaled");
@@ -31,7 +32,7 @@ const fixture = createTemporalAAFixture(
   supersampled ? `${family}reference` : variantName,
   measurement,
   scaled ? (variantName.includes("lifecycle") ? 36 : 20) : null,
-  { raw4 },
+  { raw4, staticCamera },
 );
 // Three advances NodeUpdateType.FRAME from its existing animation clock. Multiple synchronous
 // renders would reuse one temporal result, so each deterministic step waits for that boundary.

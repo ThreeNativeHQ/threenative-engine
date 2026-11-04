@@ -230,6 +230,8 @@ function fixture(
     pipelineCallbacks?: PipelineCallbacks;
     current?: boolean;
     inputDraw?: () => void;
+    /** `"default"` passes no weighting, so the provider picks its own. */
+    historyScale?: number | "default";
   } = {},
 ) {
   // GPU execution belongs to the runtime fixture. Unit tests isolate sizing, reset and lifetime.
@@ -259,6 +261,9 @@ function fixture(
     scenePass.getTextureNode("velocity"),
     camera,
     options.current ? scenePass : undefined,
+    options.historyScale === "default"
+      ? undefined
+      : { historyScale: options.historyScale ?? 1, velocityWeightClamp: false },
   );
   const stub = stubRenderer(display);
   const frame = { renderer: stub.renderer } as unknown as NodeFrame;
@@ -405,6 +410,11 @@ function chainFixture(lowResolutionPassthrough = false) {
 
 /** The raster a presented node publishes, whether it reconstructs one or samples the input. */
 function outputRaster(node: Node): { width: number; height: number } {
+  // A TRAANode presents whatever texture its output node reads, not its resolve target.
+  const presented = (node as { _textureNode?: TextureNode })._textureNode?.value.image as
+    | { width: number; height: number }
+    | undefined;
+  if (presented !== undefined) return { width: presented.width, height: presented.height };
   const reconstruction = node as { _resolveRenderTarget?: RenderTarget };
   const sampled = node as TextureNode & {
     isRTTNode?: boolean;
@@ -466,6 +476,35 @@ describe("opt-in temporal AA", () => {
     });
     expect(passthrough.provider().report().rejection).toMatchObject({ visited: pixels });
     passthrough.dispose();
+  });
+
+  it("stores history at twice the display raster for the PRD-539 history200 arm", () => {
+    const { temporal, frame, copies, node, scenePass } = fixture({ historyScale: 2 });
+    temporal.node.updateBefore(frame);
+    temporal.node.updateBefore(frame);
+    // Unreal TSR lever 1: resolve and history hold 2x the display raster on both axes.
+    expect(node._historyRenderTarget.width).toBe(DISPLAY.width * 2);
+    expect(node._historyRenderTarget.height).toBe(DISPLAY.height * 2);
+    expect(node._resolveRenderTarget.width).toBe(DISPLAY.width * 2);
+    // The report still names the display raster as the output, and the history copy never
+    // crosses from the input raster.
+    expect(temporal.report()).toMatchObject({ outputWidth: DISPLAY.width, frame: 2 });
+    // Unreal's history resolve: the chain reads a display-sized Mitchell downsample of the 2x history.
+    expect(outputRaster(temporal.node)).toEqual({ width: DISPLAY.width, height: DISPLAY.height });
+    expect(copies.some((copy) => copy.from === scenePass.renderTarget.texture)).toBe(false);
+    temporal.dispose();
+    scenePass.dispose();
+    expect(() => fixture({ historyScale: 3 })).toThrow("historyScale must be 1 or 2");
+    // PRD-539: with no weighting named, the provider takes Unreal's Epic-tier 200% history.
+    const unnamed = fixture({ historyScale: "default" });
+    unnamed.temporal.node.updateBefore(unnamed.frame);
+    expect(unnamed.node._historyRenderTarget.width).toBe(DISPLAY.width * 2);
+    expect(outputRaster(unnamed.temporal.node)).toEqual({
+      width: DISPLAY.width,
+      height: DISPLAY.height,
+    });
+    unnamed.temporal.dispose();
+    unnamed.scenePass.dispose();
   });
 
   it("registers input-pass dependencies before temporal update and sizing", () => {
