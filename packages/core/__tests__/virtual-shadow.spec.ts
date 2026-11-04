@@ -3978,6 +3978,27 @@ describe("VirtualShadowNode adaptive caster gate", () => {
     expect(pinned.notes).toEqual([]);
   });
 
+  it("should raise the gate in the steps an over-budget render buys, and hold at the cap", () => {
+    // A numeric trace rather than a shape: the scale the fine level holds after every frame of the
+    // walk, run length encoded. 15 ms is over the 6.7 ms an over-budget render has to beat, so each
+    // render the gate rose on multiplies it by 1.5 — 1, 1.5, 2.25, 3.375, 5.0625, 7.59375 — until
+    // the cap at 8 holds it. The first twelve frames are the two warm-up renders, so the gate is
+    // still 1 there. `adaptiveRefresh: false` keeps the window cadence the configured one, so this
+    // trace is about the gate and not about the trail the same measurement would also have widened.
+    const walk = gateWalk((_frame, level) => (level === 0 ? EXPENSIVE_MS : 0), {
+      adaptiveRefresh: false,
+    });
+    const runs: { scale: number; frames: number }[] = [];
+    for (const scale of walk.scales[0] as number[]) {
+      const held = runs.at(-1);
+      if (held?.scale === scale) held.frames += 1;
+      else runs.push({ frames: 1, scale });
+    }
+    expect(runs.map(({ frames, scale }) => `${String(scale)}x${String(frames)}`).join(" ")).toBe(
+      "1x12 1.5x6 2.25x5 3.375x7 5.0625x6 7.59375x7 8x72",
+    );
+  });
+
   it("should judge the budget against the 60 fps frame, not the frame the level inflated", () => {
     // The frame reads 50 ms because the level's own 9 ms render is in it. Read against that delta
     // the budget is 20 ms and 9 ms passes, so nothing widened — the bug. Capped at the 60 fps frame

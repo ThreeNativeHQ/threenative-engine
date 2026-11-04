@@ -38,6 +38,10 @@ import type { OcclusionMode } from "./render/depth-pyramid.js";
 
 import { parkMesh } from "./render/mesh-pool.js";
 import {
+  VIRTUAL_SHADOW_KEY_LAYER,
+  VIRTUAL_SHADOW_SMALL_CASTER_LAYER,
+} from "./render/virtual-shadow-layers.js";
+import {
   type ITemporalLod,
   advanceTemporalLod,
   worldLodMaterial,
@@ -166,24 +170,8 @@ export const MAIN_CULL_SQUARE_METRES = 32;
  */
 const MAIN_CULL_MARKER_MS = 5e3;
 
-/**
- * The wide casters only the finest level renders: a fern's or a grass tuft's, whose shadow is
- * sub-texel noise past a few metres and whose per-key draw a 192 m or 640 m window was paying
- * hundreds of times for nothing. Duplicated from `virtual-shadow.ts` like the two layers above, and
- * chosen from the asset's own authored bounds rather than from what a game says, so a package
- * nobody has annotated still gets the cull. `shadows.smallCasterMetres` is the override.
- */
-const VIRTUAL_SHADOW_SMALL_CASTER_LAYER = 26;
 /** Separate shadow regions one tell carries per kind before the last one absorbs the rest. */
 const SHADOW_REGION_CAP = 64;
-
-/**
- * The layer a GPU-driven shadow map draws: one mesh per `asset:level:part`, over the shadow twin of
- * the dispatch's own output, so a level submits a handful of indirect draws rather than one per
- * world-grid square. Every level camera carries this bit, so it replaces both halves above rather
- * than joining the choice between them. Duplicated from `virtual-shadow.ts` like the three above.
- */
-const VIRTUAL_SHADOW_KEY_LAYER = 25;
 
 /**
  * The name half a shadow key is minted under: `asset:level:part@gpu`, beside the main key it twins

@@ -8107,6 +8107,25 @@
     },
     {
       "aliases": [],
+      "constraints": [
+        "The file carries no appearance; colours, materials and shading stay game source"
+      ],
+      "example": "const spec = validateBiome(JSON.parse(text), \"forest\");",
+      "importPath": "@threenative/terrain",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i @threenative/terrain"],
+      "signature": "export function validateBiome(spec: unknown, name: string): IBiomeSpec { … }",
+      "situations": [
+        "read a biome's rules from `starter/<biome>/biome.data.json` before a game or a cook uses them"
+      ],
+      "summary": "One biome file, checked field by field. The file is `biome.data.json`: `biome.json` is Biome's own configuration name, and a data file called that is parsed as a project config and fails the lint.",
+      "supersedes": [],
+      "symbol": "validateBiome"
+    },
+    {
+      "aliases": [],
       "constraints": ["authoring data only; the game owns appearance, physics and rendering"],
       "example": "validateDocument(new Terrain({ resolution: 17 }).toJSON());",
       "importPath": "@threenative/terrain",

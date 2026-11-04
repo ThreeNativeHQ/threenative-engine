@@ -524,6 +524,7 @@
         "@threenative/terrain#Terrain": "export class Terrain { … }",
         "@threenative/terrain#TerrainEvaluator": "export class TerrainEvaluator { … }",
         "@threenative/terrain#terrainStats": "export function terrainStats(height: ArrayLike<number>, n: number, size: number): ITerrainStats { … }",
+        "@threenative/terrain#validateBiome": "export function validateBiome(spec: unknown, name: string): IBiomeSpec { … }",
         "@threenative/terrain#validateDocument": "export function validateDocument(doc: ITerrainDocument): void { … }",
         "@threenative/terrain#validatePlacementOverrides": "export function validatePlacementOverrides( value: unknown = { … }"
       }

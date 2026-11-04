@@ -6678,6 +6678,22 @@ export function terrainStats(height: ArrayLike<number>, n: number, size: number)
 const stats = terrainStats(state.height, state.resolution, state.size);
 ```
 
+### `validateBiome`
+
+`function` — One biome file, checked field by field. The file is `biome.data.json`: `biome.json` is Biome's own configuration name, and a data file called that is parsed as a project config and fails the lint.
+
+```ts
+export function validateBiome(spec: unknown, name: string): IBiomeSpec { … }
+```
+
+- **Use when:** read a biome's rules from `starter/<biome>/biome.data.json` before a game or a cook uses them
+- **Constraints:** The file carries no appearance; colours, materials and shading stay game source
+- **Requires:** npm i @threenative/terrain
+
+```ts
+const spec = validateBiome(JSON.parse(text), "forest");
+```
+
 ### `validateDocument`
 
 `function` — Validates the recovered recipe schema, operation allow-lists and numeric bounds.
