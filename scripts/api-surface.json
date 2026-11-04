@@ -296,6 +296,7 @@
         "@threenative/physics#PhysicsDirectSpaceState3D": "export class PhysicsDirectSpaceState3D { … }",
         "@threenative/physics#rapier": "export function rapier(options: IPhysicsOptions = { … }",
         "@threenative/physics#RigidBody3D": "export class RigidBody3D { … }",
+        "@threenative/physics#ScatterColliders": "export class ScatterColliders { … }",
         "@threenative/physics#softBodyCollision": "export function softBodyCollision(...bodies: readonly RigidBody3D[]): ISoftBodyCollision { … }",
         "@threenative/physics#VehicleBody3D": "export class VehicleBody3D extends RigidBody3D { … }"
       }

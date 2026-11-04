@@ -133,4 +133,7 @@ These water beds are example modifications, not measured lidar bathymetry. Coast
 water retains the example's 1.5 m sea level; the survey's marine flat is not bathymetry.
 
 The player figure is the starter kit's `mannequin.glb` (Quaternius, CC0), served from
-`packages/create-threenative/template-assets/assets/`.
+`packages/create-threenative/template-assets/assets/`. Its swim clips, `Swim_Fwd_Loop` and
+`Swim_Idle_Loop` in `src/world/mannequin-swim.glb`, come from the same rig's Quaternius
+Universal Animation Library 1 (CC0, https://quaternius.itch.io/universal-animation-library,
+`UAL1_Standard.glb`), merged into one animation-only file and resampled losslessly.

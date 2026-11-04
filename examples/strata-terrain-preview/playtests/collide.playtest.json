@@ -1,0 +1,81 @@
+{
+  "schemaVersion": 1,
+  "name": "strata-terrain-collide",
+  "subject": "Scattered trunks and rocks are solid: walking S+D from the forest spawn meets the trunk of temperate-spruce:845 (11.5 m along, 0.16 m off the line), and the player's capsule never crosses into a prop body",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 0,
+  "artifacts": {
+    "screenshots": true,
+    "console": true
+  },
+  "steps": [
+    {
+      "label": "world-ready",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "timeToReadyMs",
+        "gte": 1
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "revealed",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "revealComplete",
+        "equals": true
+      },
+      "timeoutMs": 30000,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "grounded",
+      "waitTicks": 30,
+      "release": true,
+      "screenshot": "spawn"
+    },
+    {
+      "kind": "input",
+      "label": "walk-through-trees",
+      "press": ["KeyS", "KeyD"],
+      "holdTicks": 540,
+      "release": true,
+      "screenshot": "walked"
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "movement": {
+      "entity": "player",
+      "minDistance": 25
+    },
+    "resources": [
+      {
+        "id": "GameState",
+        "path": "propColliders",
+        "gte": 1
+      },
+      {
+        "id": "GameState",
+        "path": "propOverlapFrames",
+        "lte": 0,
+        "allowTrivial": "The count starts at 0. The same walk with ?propCollision=off (bodies off the player's layer) counts the frames the capsule spends inside the spruce trunk: 7 on 2026-11-04."
+      },
+      {
+        "id": "GameState",
+        "path": "grounded",
+        "equals": true,
+        "allowTrivial": "The character settles before the walk; grounded must still hold after it meets the trunk."
+      }
+    ]
+  }
+}

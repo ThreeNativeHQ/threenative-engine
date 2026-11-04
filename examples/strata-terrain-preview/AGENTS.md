@@ -57,11 +57,13 @@ real controls, reloads it and reproduces `scripts/fixtures/editor-authored.json`
 All scripts, playtest definitions, manual preparation helpers and fixtures under `scripts/` and `playtests/`:
 
 - Playtest scenarios:
+  - `playtests/collide.playtest.json`: checks scattered rocks and trunks are solid (`ScatterColliders`): a walk through spruce trunks never puts the player's capsule inside a prop body; `?propCollision=off` is its before arm.
   - `playtests/edge.playtest.json`: checks the player walks past the playable square onto the surrounding hills (their 200 m collider band), stays grounded and logs no errors.
   - `playtests/editor-conflict.playtest.json`: checks concurrent editor saves preserve both clients’ edits.
   - `playtests/editor.playtest.json`: playtest scenario checking vertex count and appearance in the recovered editor view.
   - `playtests/export.playtest.json`: playtest scenario checking static GLB export loading and appearance.
   - `playtests/loop.playtest.json`: checks the owner's loop (reveal, 10 s walk, camera turn, idle) builds no pipeline after the reveal.
+  - `playtests/swim.playtest.json`: checks the player walks into the forest river, swims across it afloat (`CharacterBody3D.water`, immersion 0.62, off the bed) with the UAL1 swim clip, and climbs out on the far bank; `?swim=off` is its before arm.
   - `playtests/terrain.playtest.json`: primary playtest scenario for shared web/desktop showcase views.
   - `playtests/upload.playtest.json`: smoke scenario proving the forest world loads and renders on WebGPU with no console or runtime errors under the generated Three.js patch.
   - `playtests/walk.playtest.json`: playtest scenario checking baked terrain triangles and player walk stability.

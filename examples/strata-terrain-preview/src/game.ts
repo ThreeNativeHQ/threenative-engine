@@ -16,6 +16,7 @@ import {
   CollisionShape3D,
   type IPhysicsContext,
   RigidBody3D,
+  ScatterColliders,
   rapier,
 } from "@threenative/physics";
 import {
@@ -86,6 +87,7 @@ import {
   forestStageArm,
   forestStageTerrainTargets,
 } from "./world/forestStage.js";
+import { waterSurfaceAt } from "./world/water.js";
 
 /** The last closed frame-budget window, published into state by the scene. */
 const budget = {
@@ -200,6 +202,15 @@ const initialState = {
   travel: 0,
   edgeOvershoot: Number.NEGATIVE_INFINITY,
   grounded: false,
+  /** Rock and trunk bodies resident around the player (`ScatterColliders`). */
+  propColliders: 0,
+  /** Frames the player's capsule crossed into a rock or trunk; 0 while props are solid. */
+  propOverlapFrames: 0,
+  swimming: false,
+  immersionDepth: 0,
+  swimSamples: 0,
+  swimFloatSamples: 0,
+  swimExits: 0,
   contactSamples: 0,
   maxContactError: 0,
   bilinearDifference: 0,
@@ -254,7 +265,21 @@ interface IMannequin {
   readonly scene: Object3D;
   readonly animations: readonly AnimationClip[];
 }
-const CLIPS = { idle: "Idle_Loop", walk: "Walk_Loop", run: "Jog_Fwd_Loop", fall: "Jump_Loop" };
+const CLIPS = {
+  idle: "Idle_Loop",
+  walk: "Walk_Loop",
+  run: "Jog_Fwd_Loop",
+  fall: "Jump_Loop",
+  swim: "Swim_Fwd_Loop",
+  tread: "Swim_Idle_Loop",
+};
+/**
+ * The same rig's two swim clips (Universal Animation Library 1, CC0; see CREDITS.md). They are
+ * authored with the root on the waterline, so a swimming figure's root rides the water surface.
+ */
+const SWIM_CLIPS = new URL("./world/mannequin-swim.glb", import.meta.url).href;
+/** The mannequin's root sits at the capsule's bottom: 0.5 m half height + 0.35 m radius, sunk 1 cm. */
+const FEET = -0.86;
 /** Ground speeds in m/s: the jog the clip was authored for, and the Shift sprint. */
 const JOG = 6;
 const SPRINT = 9;
@@ -271,16 +296,20 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
     #stage: ForestStageWorld | undefined;
     #stageLoad = 0;
     #mannequin: IMannequin | undefined;
+    #swimClips: readonly AnimationClip[] = [];
     #figure: SkeletalMesh3D | undefined;
     #orbit: IOrbitCamera | undefined;
     #gaits = new BlendSpace1D([1.8, JOG]);
     #heading = new Quaternion();
     #airborne = 0;
     override async load(ctx: TerrainCtx): Promise<void> {
-      [this.#data, this.#mannequin] = await Promise.all([
+      let swim: IMannequin;
+      [this.#data, this.#mannequin, swim] = await Promise.all([
         loadBakedWorld(ctx.assets, world),
         ctx.assets.model<IMannequin>("mannequin.glb"),
+        ctx.assets.model<IMannequin>(SWIM_CLIPS),
       ]);
+      this.#swimClips = swim.animations;
       this.#biome = measureBiome(BIOMES[world], this.#data.heights);
       // `?stage=before|after` replaces this world's terrain, water, colliders and props with one
       // baked forest kit copy, streamed by the kit's own `addForest`; the sky, camera and views stay.
@@ -572,7 +601,8 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
           physics: ctx.physics,
           type: "fixed",
           entity: "terrain",
-          collisionLayer: 4,
+          // 4: what the player walks on, props included. 8: the ground alone, for ground queries.
+          collisionLayer: 4 | 8,
           shape: CollisionShape3D.heightfield(
             field.rows,
             field.columns,
@@ -594,7 +624,7 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
           physics: ctx.physics,
           type: "fixed",
           entity: "terrain",
-          collisionLayer: 4,
+          collisionLayer: 4 | 8,
           position: { x: mesh.position.x, y: mesh.position.y, z: mesh.position.z },
           shape: CollisionShape3D.fromMesh(new Mesh(band.geometry), "trimesh"),
         });
@@ -680,14 +710,14 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
       if (!mannequin) throw new Error(`World ${world} mannequin was not loaded`);
       const figure = new SkeletalMesh3D({
         source: mannequin.scene,
-        clips: mannequin.animations,
+        clips: [...mannequin.animations, ...this.#swimClips],
         requiredClips: Object.values(CLIPS),
         strideRoot: actor,
       });
       figure.root.traverse((object) => {
         object.castShadow = true;
       });
-      figure.root.position.y = -0.86;
+      figure.root.position.y = FEET;
       figure.root.rotation.y = Math.PI;
       actor.material.visible = false;
       actor.add(figure.root);
@@ -869,9 +899,19 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
         ctx.add(river.mesh);
         ctx.entities.add("river", { mesh: river.mesh, dispose: () => river.dispose() });
       }
+      // The player swims in the river and lake drawn above: the same splines, levels and reach.
+      // `?swim=off` is the before arm: the water is drawn and the player walks its bed.
+      if (!stage && new URLSearchParams(globalThis.location?.search ?? "").get("swim") !== "off")
+        player.water = waterSurfaceAt(
+          data.rivers ?? [],
+          data.lakes ?? [],
+          field,
+          world === "tundra" || world === "forest",
+        );
       const scatter = this.#scatter;
       const fallbackParts = this.#fallbackParts;
       let props: Awaited<ReturnType<typeof createStreamedProps>>;
+      let propColliders: ScatterColliders | undefined;
       let readyTimePending = false;
       let building = false;
       let preparedDispose: (() => void) | undefined;
@@ -925,6 +965,7 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
             flat.dispose();
             preparedDispose?.();
             props?.dispose();
+            propColliders?.dispose();
             for (const parts of propParts.values())
               for (const part of parts) part.geometry.dispose();
           },
@@ -948,7 +989,7 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
               })?.point.y ?? null;
           }
           const physical = ctx.physics.directSpaceState.intersectRay({
-            collisionMask: 4,
+            collisionMask: 8,
             from: { x, y: top + 2, z },
             to: { x, y: -100, z },
           });
@@ -1112,6 +1153,27 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
           }
           // ctx.add registers render-cadence processing. Never manually update these worlds.
           for (const stream of props.worlds) ctx.add(stream);
+          // Rocks and trunks are solid: the stone or bark part each placement is grounded by, with a
+          // body near the player. Leaves, needles, grass and flowers have no such part and stay open.
+          // Layer 16 holds prop bodies alone, for the overlap measure. `?propCollision=off` is the
+          // named override: the bodies leave the player's layer 4 (the before arm of collide.playtest.json).
+          const solidProps =
+            new URLSearchParams(globalThis.location?.search ?? "").get("propCollision") !== "off";
+          propColliders = new ScatterColliders({
+            physics: ctx.physics,
+            follow: {
+              get position() {
+                return followed();
+              },
+            },
+            collisionLayer: solidProps ? 4 | 16 : 16,
+            instances: [...props.byId.values()].flatMap(({ placement, pose }) => {
+              const solid = propParts
+                .get(`${placement.asset}:${variantFor(placement, placement.asset)}`)
+                ?.find((part) => part.role === "bark" || part.role === "stone");
+              return solid ? [{ geometry: solid.geometry, matrix: pose }] : [];
+            }),
+          });
           // Prewarm borrows actual world draws only after registration. Grounding and package
           // preparation have no attached stream to prewarm and keep the opaque curtain's draw gate.
           ctx.canvasLayer.keepWorldRendering = true;
@@ -1174,6 +1236,7 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
             debug: () => ({
               reveal,
               streaming: props?.stats(),
+              colliders: propColliders?.stats(),
               boulders: scatter.counts.boulder,
               bushes: scatter.counts.bush,
               ferns: scatter.counts.fern,
@@ -1235,8 +1298,18 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
       let frames = 0;
       let propCounts = { draws: 0, instances: 0, triangles: 0 };
       let travel = 0;
+      // The owner's report, measured the same with or without prop collision: frames in which the
+      // player's capsule, less a 5 cm skin, crosses into a rock or trunk body.
+      const propProbe = CollisionShape3D.capsule(0.5, 0.3);
+      let propOverlapFrames = 0;
       // Metres past the playable square's edge the player reached: onto the surroundings' hills.
       let edgeOvershoot = Number.NEGATIVE_INFINITY;
+      // Swimming as the playtest reads it: samples swimming with a swim clip on, those of them off
+      // the bed, and how many times the player climbed back out.
+      let swimSamples = 0;
+      let swimFloatSamples = 0;
+      let swimExits = 0;
+      let wasSwimming = false;
       currentView = `${world}:player`;
       viewVisit = beginViewVisit();
       firstViewGpuFrame = Number.POSITIVE_INFINITY;
@@ -1266,6 +1339,16 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
       ctx.afterPhysics(() => {
         travel += Math.hypot(actor.position.x - previous.x, actor.position.z - previous.z);
         previous.copy(actor.position);
+        if (
+          propColliders &&
+          ctx.physics.directSpaceState.intersectShape({
+            shape: propProbe,
+            position: actor.position,
+            collisionMask: 16,
+            maxResults: 1,
+          }).length > 0
+        )
+          propOverlapFrames++;
         // Query actual triangles, not bilinear interpolation, after the shared solver step.
         if (frames === 0) {
           probeMesh.updateMatrixWorld(true);
@@ -1318,6 +1401,11 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
           edgeOvershoot,
           Math.max(Math.abs(actor.position.x), Math.abs(actor.position.z)) - data.size / 2,
         );
+        const clip = this.#figure?.current;
+        if (player.swimming && (clip === CLIPS.swim || clip === CLIPS.tread)) swimSamples++;
+        if (player.swimming && !player.grounded) swimFloatSamples++;
+        if (wasSwimming && !player.swimming) swimExits++;
+        wasSwimming = player.swimming;
         if (!stage || (spawnReady && ctx.state.getState().view === "player")) {
           const terrainTargets = stage ? forestStageTerrainTargets(stage.world) : mesh;
           const visual =
@@ -1335,8 +1423,8 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
           const physical = ctx.physics.directSpaceState.intersectRay({
             from: { x: actor.position.x + lead, y: start, z: actor.position.z + lead },
             to: { x: actor.position.x + 1, y: -100, z: actor.position.z + 1 },
-            // The kit's ground keeps the default layer, like the player's mask above.
-            collisionMask: stage ? 1 : 4,
+            // The kit's ground keeps the default layer; here the ground alone, not a rock beside it.
+            collisionMask: stage ? 1 : 8,
           });
           if (
             (!visual && !onSurroundings) ||
@@ -1368,6 +1456,7 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
         // The props are placed here rather than in `enter`: their ground query asks the stepped
         // world where the surface is, and neither the ray tree nor the collider answers before the
         // solver has run once.
+        propColliders?.update();
         if (buildProps && props === undefined && !building) {
           building = true;
           const work = buildProps();
@@ -1503,6 +1592,13 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
           travel,
           edgeOvershoot,
           grounded: player.grounded,
+          propColliders: propColliders?.stats().resident ?? 0,
+          propOverlapFrames,
+          swimming: player.swimming,
+          immersionDepth: player.immersionDepth,
+          swimSamples,
+          swimFloatSamples,
+          swimExits,
           contactSamples,
           maxContactError,
           bilinearDifference,
@@ -1615,6 +1711,18 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
       ctx.state.set({ enterMs: performance.now() - enterStart });
     }
 
+    /**
+     * Swim, or ease back to land. The swim clips put the root on the waterline, so a swimmer's root
+     * rides the surface; out of the water it returns to the capsule's bottom. True while swimming.
+     */
+    #swim(dt: number, player: CharacterBody3D, figure: SkeletalMesh3D, speed: number): boolean {
+      const surface = player.swimming ? player.waterSurface : undefined;
+      const target = surface === undefined ? FEET : surface - player.object.position.y;
+      figure.root.position.y += (target - figure.root.position.y) * Math.min(1, dt * 8);
+      if (surface === undefined) return false;
+      figure.play(speed > 0.3 ? CLIPS.swim : CLIPS.tread, { fade: 0.3 });
+      return true;
+    }
     /** The starter's gait logic: face the travel direction, blend walk and jog by ground speed. */
     #animate(dt: number, player: CharacterBody3D): void {
       const figure = this.#figure;
@@ -1626,7 +1734,8 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
         figure.root.quaternion.slerp(this.#heading, Math.min(1, dt * 12));
       }
       this.#airborne = player.grounded ? 0 : this.#airborne + dt;
-      if (this.#airborne > 0.2) figure.play(CLIPS.fall, { fade: 0.15 });
+      if (this.#swim(dt, player, figure, speed)) this.#airborne = 0;
+      else if (this.#airborne > 0.2) figure.play(CLIPS.fall, { fade: 0.15 });
       else if (speed > 0.05) {
         const weights = this.#gaits.sample(speed);
         figure.playWeighted([

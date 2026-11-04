@@ -3959,9 +3959,10 @@ const footprint = capsuleFootprint(0.5, 0.2);
 export class CharacterBody3D { … }
 ```
 
-- **Use when:** move an enemy or player through a level · keep a character from walking through walls
-- **Constraints:** use moveAndSlide inside the physics update
+- **Use when:** move an enemy or player through a level · keep a character from walking through walls · swim in a river, lake or sea; float at the surface and wade slower in shallow water
+- **Constraints:** use moveAndSlide inside the physics update · pass `water: (x, z) => surfaceHeight | undefined`; the body reads `swimming`, `immersionDepth` and `waterSurface` each moveAndSlide
 - **Requires:** npm i @threenative/physics
+- **Overrides:** buoyancy (1.6, floats; Unreal 1.0 sinks), maxSwimSpeed (3 m/s) and fluidFriction (12) tune the Unreal MOVE_Swimming defaults
 - **Deprecated:** Constructor option `world` is deprecated; pass an IPhysicsContext as `physics` instead. CharacterBody3D itself is not deprecated.
 
 ```ts
@@ -4065,6 +4066,22 @@ export class RigidBody3D { … }
 
 ```ts
 const crate = new RigidBody3D({ object, physics: ctx.physics, shape: CollisionShape3D.box(1, 1, 1), mass: 8 });
+```
+
+### `ScatterColliders`
+
+`class` — Make scattered props solid: fixed bodies for rocks and trunks near a followed point, streamed with it.
+
+```ts
+export class ScatterColliders { … }
+```
+
+- **Use when:** stop the player walking through scattered rocks and trees · give instanced or streamed foliage props collision in an open world
+- **Constraints:** pass each instance's solid part (stone, bark), not its leaves; shapes are measured: a slender base is a trunk capsule, the rest an 18-DOP hull, and pieces under 0.25 m get none · call update() every frame; it rescans only after the follow point moves a quarter of `radius` (default 40 m) · `collision: "hull" | "trunk" | "none"` on an instance overrides the measured shape
+- **Requires:** npm i @threenative/physics
+
+```ts
+const solids = new ScatterColliders({ physics: ctx.physics, follow: player, collisionLayer: 4, instances: rocks.map((matrix) => ({ geometry: rockGeometry, matrix })) });
 ```
 
 ### `softBodyCollision`
