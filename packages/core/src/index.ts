@@ -549,6 +549,19 @@ export { baseGeometryOf } from "./model-lod.js";
  */
 export { lodChainOf } from "./model-lod.js";
 /**
+ * A far level for a card mesh (needle or leaf quads): keep a share of its cards and grow each kept
+ * card about its own centre, so the crown holds its total surface area, as Unreal's Nanite
+ * "Preserve Area" foliage does. A simplifier cannot reduce disconnected cards, so the cooked chain
+ * leaves them at full count.
+ *
+ * @situation far trees draw too many alpha-tested needle or leaf card triangles
+ * @constraint the geometry must be indexed and carry no material groups, else it throws
+ * @constraint keep is in (0, 1]; a share that drops nothing returns the same geometry
+ * @constraint the choice is deterministic, and the source geometry is left untouched
+ * @example const far = thinCards(needles.geometry, 0.4); // 40% of the cards, same area
+ */
+export { thinCards } from "./card-lod.js";
+/**
  * The screen pixels one world unit covers at `depth` for this camera and viewport.
  *
  * Perspective divides the projected scale by the depth; orthographic has no depth term and uses the

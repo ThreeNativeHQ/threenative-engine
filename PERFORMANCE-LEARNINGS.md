@@ -1059,3 +1059,22 @@ no COOP/COEP); that lane is open.
 - Revisit when: the 360-degree turn still shows 1-2 frames over 50 ms. Those are first-time programs for one species and LOD
   level (the level is a baked constant in `worldLodMaterial`'s mask) plus a GPU-process stall from a synchronous shadow-depth
   pipeline (`renderer.cpp` shadow paths call `pipelines_->get`).
+
+### 2026-11-04 — Strata forest turn: far needle cards thinned at equal area, LOD level as a uniform — KEEP
+
+- Where: `packages/core/src/card-lod.ts` `thinCards` (new export) used by the forest's far spruce level
+  (`examples/strata-terrain-preview/src/render/pack.ts`, `FAR_NEEDLE_TRIANGLES`), and
+  `worldLodMaterial` in `packages/core/src/render/world-impostor-surface.ts` (level and gate distances are uniforms).
+- Cause: in a 360-degree turn one view sector drew 21-23 M main-pass triangles (8 M at spawn) and GPU frames
+  reached 18.3 ms. Hiding the far needle cards measured the ceiling: 8.7 M triangles, 5 ms of GPU. No simplifier
+  reduces disconnected cards, so they stayed at full count to the horizon (no impostor bake on the Wasm engine).
+  Separately, `worldLodMaterial` baked the level as constants, so each level of a species was its own program and
+  pipeline, compiled the frame it first came into view.
+- Result (forest, headed WebGPU, NVIDIA Turing, two runs): turn GPU peak 18.28 -> 15.93 / 15.47 ms, turn frames
+  over 20 ms 6 -> 1 / 1, pipeline compiles in the turn 4 -> 0, compiles at reveal 59 -> 47. Visual judge NEUTRAL
+  (far crowns slightly lumpier at 3x zoom only).
+- Test: `card-lod.spec.ts` (count, equal area, centre-scaled cards, determinism, fail-closed inputs);
+  `world-impostor-surface.spec.ts` asserts both levels build one comparison structure with the level as a uniform.
+- Revisit when: the last turn hitch is a CPU plan spike (planDraws ~10 ms + planVirtualPages ~7 ms in one frame), and
+  far trees hidden behind near crowns still draw: the GPU scene's Hi-Z test only measures (`TN_OCCLUSION=measure`)
+  and the forest runs `gpuScene: false`. Real occlusion culling is the next GPU lever.

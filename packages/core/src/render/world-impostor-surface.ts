@@ -823,32 +823,30 @@ export function worldLodMaterial(
   const published = publishedRanges
     ? varying(attribute("tnPublishedLodRange", "vec4") as Node<"vec4">).setInterpolation("flat")
     : undefined;
-  let mask = float(1).greaterThan(0);
+  // The level and the gate distances are uniforms, not constants, so every level of an asset (and
+  // every asset with as many gates) is one shader program and one pipeline, as an Unreal material
+  // instance shares its parent's shader. Baked, each level was a first-time program that compiled in
+  // the frame it first came into view: 14 ms of CPU and a 50 ms frame in a 360-degree turn.
+  const lod = uniform(level);
+  const gates = distances.map((at) => uniform(at));
+  const always = float(1).greaterThan(0);
+  let mask = always;
   for (let gate = 1; gate < distances.length; gate++) {
-    const at = distances[gate] as number;
-    const span = Math.min(
-      at * width,
-      (at - (distances[gate - 1] as number)) * width,
-      ((distances[gate + 1] ?? Number.POSITIVE_INFINITY) - at) * width,
-    );
+    const at = gates[gate] as Node<"float">;
+    let span = at.mul(width).min(at.sub(gates[gate - 1] as Node<"float">).mul(width));
+    if (gate + 1 < distances.length)
+      span = span.min((gates[gate + 1] as Node<"float">).sub(at).mul(width));
     const mix = distance.sub(at).div(span).add(0.5).add(random.sub(0.5).mul(0.5)).clamp(0, 1);
-    if (published === undefined) {
-      if (gate === level) mask = mask.and(noise.lessThan(mix));
-      if (gate === level + 1) mask = mask.and(noise.greaterThanEqual(mix));
-    } else {
-      if (gate === level)
-        mask = mask.and(
-          select(published.x.lessThan(level), noise.lessThan(mix), float(1).greaterThan(0)),
-        );
-      if (gate === level + 1)
-        mask = mask.and(
-          select(
-            published.y.greaterThan(level),
-            noise.greaterThanEqual(mix),
-            float(1).greaterThan(0),
-          ),
-        );
-    }
+    // `gate === level` fades this level in past the gate; `gate === level + 1` fades it out.
+    const fadeIn =
+      published === undefined
+        ? noise.lessThan(mix)
+        : select(published.x.lessThan(lod), noise.lessThan(mix), always);
+    const fadeOut =
+      published === undefined
+        ? noise.greaterThanEqual(mix)
+        : select(published.y.greaterThan(lod), noise.greaterThanEqual(mix), always);
+    mask = mask.and(lod.notEqual(gate).or(fadeIn)).and(lod.notEqual(gate - 1).or(fadeOut));
   }
   // A refilter that lands late turns a whole tree into a dithered pair in one frame. The colour pass
   // keeps the old whole level on a shrinking share of pixels for `LOD_TEMPORAL_LAG`, as UE fades
@@ -861,7 +859,7 @@ export function worldLodMaterial(
       sin(dot(floor(screenCoordinate.xy), vec2(39.3468, 11.1353))).mul(24634.6345),
     );
     const holdOld = published.z.greaterThanEqual(0).and(blend.greaterThanEqual(progress));
-    colour = select(holdOld, published.z.sub(level).abs().lessThan(0.5), mask);
+    colour = select(holdOld, published.z.sub(lod).abs().lessThan(0.5), mask);
   }
   material.maskNode = material.maskNode ? (material.maskNode as Node<"bool">).and(colour) : colour;
   material.maskShadowNode = material.maskShadowNode

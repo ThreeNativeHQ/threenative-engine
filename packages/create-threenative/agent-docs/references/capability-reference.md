@@ -2881,6 +2881,21 @@ export class SurfaceLights { … }
 const lamps = new SurfaceLights(lights); lamps.shade(point, normal, albedo, out, (i) => !occluded(i));
 ```
 
+### `thinCards`
+
+`function` — A far level for a card mesh (needle or leaf quads): keep a share of its cards and grow each kept card about its own centre, so the crown holds its total surface area, as Unreal's Nanite "Preserve Area" foliage does. A simplifier cannot reduce disconnected cards, so the cooked chain leaves them at full count.
+
+```ts
+export function thinCards(geometry: BufferGeometry, keep: number): BufferGeometry { … }
+```
+
+- **Use when:** far trees draw too many alpha-tested needle or leaf card triangles
+- **Constraints:** the geometry must be indexed and carry no material groups, else it throws · keep is in (0, 1]; a share that drops nothing returns the same geometry · the choice is deterministic, and the source geometry is left untouched
+
+```ts
+const far = thinCards(needles.geometry, 0.4); // 40% of the cards, same area
+```
+
 ### `TracedReflections`
 
 `class` — Reflection rays against the scene's triangles, in TSL. For a smooth surface, a ray finds what the screen cannot show (a room behind the camera, the far side of an object) and returns the hit's position, normal and material. The game lights the hit in its own stage. The kernel is plain TSL: float textures and a loop, no storage buffer.

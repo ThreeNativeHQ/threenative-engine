@@ -3,6 +3,7 @@ import {
   baseGeometryOf,
   lodChainOf,
   normaliseToMetres,
+  thinCards,
 } from "@threenative/core";
 /** Game-owned Fab art. Optional, local-only; missing species keep their procedural fallback. */
 import { bakedNoise } from "@threenative/core/world";
@@ -134,6 +135,8 @@ for (const [asset, heights] of Object.entries({
 }
 const STONE = new Set(["boulder", "riverrock", "scree", "cliff"]);
 for (const one of WORLD_ROCKS) STONE.add(one.asset);
+/** Needle-card triangles one far spruce draws past LOD_BANDS.far (its middle level draws 0.8-4.7k). */
+const FAR_NEEDLE_TRIANGLES = 1500;
 
 /**
  * Which licensed model each variant of a temperate understory layer draws.
@@ -915,10 +918,20 @@ export async function loadPack(
     });
     // Past LOD_BANDS.far the far spruce draws its cook's terminal rung (TN_discrete_lod) of the opaque
     // trunk and branch meshes, which stayed full detail at every distance: 7-17k of each tree's
-    // 12-21k far triangles. Needle cards keep their authored thinning; meshopt cannot see their holes.
+    // 12-21k far triangles. Needle cards, which no simplifier can reduce, keep FAR_NEEDLE_TRIANGLES
+    // of their cards at the same total area: in a stand, 8.7 M far card triangles cost 5 ms of GPU.
     if (horizon.size > 0)
       for (const part of entry.filter((candidate) => candidate.level === 1)) {
-        entry.push({ ...part, geometry: horizon.get(part) ?? part.geometry, level: 2 });
+        let geometry = horizon.get(part) ?? part.geometry;
+        if (part.role === "pine" && geometry.index) {
+          geometry = thinCards(
+            geometry,
+            Math.min(1, FAR_NEEDLE_TRIANGLES / (geometry.index.count / 3)),
+          );
+          if (geometry !== part.geometry && part.material)
+            built.push({ geometry, material: part.material });
+        }
+        entry.push({ ...part, geometry, level: 2 });
       }
     if (entry.some((part) => (part.level ?? 0) === 0))
       parts.set(`${one.asset}:${one.variant}`, entry);

@@ -416,8 +416,23 @@ it.each([MeshStandardMaterial, MeshStandardNodeMaterial])(
       });
       return operators;
     };
-    expect(comparisons(near)).toEqual([">="]);
-    expect(comparisons(far)).toEqual(["<"]);
+    // One structure for every level: the level is a uniform, so both build one shader program.
+    expect([...comparisons(near)].sort()).toEqual(["<", ">="]);
+    expect(comparisons(far)).toEqual(comparisons(near));
+    const levels = (material: typeof near) => {
+      const values: unknown[] = [];
+      material.maskNode?.traverse((node) => {
+        if (
+          Reflect.get(node, "isUniformNode") === true &&
+          typeof Reflect.get(node, "value") === "number"
+        )
+          values.push(Reflect.get(node, "value"));
+      });
+      return values;
+    };
+    expect(levels(near)).toContain(0);
+    expect(levels(far)).toContain(1);
+    expect(levels(near)).toContain(60);
     expect(near.userData.tnPublishedLodRange).toBeUndefined();
     expect(far.userData.tnPublishedLodRange).toBeUndefined();
     expect(near.maskShadowNode).toBe(near.maskNode);
@@ -450,7 +465,8 @@ it("opts CPU LOD masks into published per-instance ranges", () => {
   );
   expect(material.userData.tnPublishedLodRange).toBe(true);
   expect(material.maskNode).toBeDefined();
-  const publishedRangeInterpolations: unknown[] = [];
+  // One varying node, which the mask reads more than once (`.x`, `.y`).
+  const publishedRangeInterpolations = new Map<unknown, unknown>();
   material.maskNode?.traverse((node) => {
     if (Reflect.get(node, "isVaryingNode") !== true) return;
     const varyingSource = Reflect.get(node, "node");
@@ -462,10 +478,10 @@ it("opts CPU LOD masks into published per-instance ranges", () => {
       typeof getAttributeName === "function" &&
       getAttributeName.call(attributeSource) === "tnPublishedLodRange"
     ) {
-      publishedRangeInterpolations.push(Reflect.get(node, "interpolationType"));
+      publishedRangeInterpolations.set(node, Reflect.get(node, "interpolationType"));
     }
   });
-  expect(publishedRangeInterpolations).toEqual(["flat"]);
+  expect([...publishedRangeInterpolations.values()]).toEqual(["flat"]);
   expect(material.maskShadowNode).toBe(material.maskNode);
   material.dispose();
   source.dispose();
