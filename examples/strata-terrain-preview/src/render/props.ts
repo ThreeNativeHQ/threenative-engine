@@ -353,21 +353,53 @@ export interface IPropInstance {
   cragBaseClearance?: number;
   cragRingSamples?: number;
 }
-/** Exact lowest world Y of a static geometry under `matrix` (GroundSnap's precise measurement). */
-function lowestY(geometry: BufferGeometry, matrix: Matrix4): number {
+/** A geometry's vertices, lowest local y first, and their widest horizontal reach. */
+const bottomFirst = new WeakMap<BufferGeometry, { xyz: Float32Array; reach: number }>();
+
+function verticesBottomFirst(geometry: BufferGeometry): { xyz: Float32Array; reach: number } {
+  const cached = bottomFirst.get(geometry);
+  if (cached) return cached;
+  const position = geometry.getAttribute("position");
+  const order = Array.from({ length: position.count }, (_, i) => i).sort(
+    (a, b) => position.getY(a) - position.getY(b),
+  );
+  const xyz = new Float32Array(position.count * 3);
+  let reach = 0;
+  order.forEach((i, k) => {
+    xyz[k * 3] = position.getX(i);
+    xyz[k * 3 + 1] = position.getY(i);
+    xyz[k * 3 + 2] = position.getZ(i);
+    reach = Math.max(reach, Math.hypot(position.getX(i), position.getZ(i)));
+  });
+  const entry = { xyz, reach };
+  bottomFirst.set(geometry, entry);
+  return entry;
+}
+
+/**
+ * Exact lowest world Y of a static geometry under `matrix` (GroundSnap's precise measurement). A tilted pose scans the vertices bottom first and stops once no later vertex
+ * can be lower: |x e1 + z e9| is at most reach * hypot(e1, e9). The full scan cost 3.4 s of the
+ * forest's load (218,816 placements, 976 vertices each).
+ */
+export function lowestY(geometry: BufferGeometry, matrix: Matrix4): number {
   const e = matrix.elements;
   if (e[1] === 0 && e[9] === 0) {
     if (geometry.boundingBox === null) geometry.computeBoundingBox();
     const box = geometry.boundingBox;
     if (box) return (e[5] < 0 ? box.max.y : box.min.y) * e[5] + e[13];
   }
-  const position = geometry.getAttribute("position");
+  const { xyz, reach } = verticesBottomFirst(geometry);
+  const tilt = reach * Math.hypot(e[1], e[9]);
+  const upright = e[5] > 0;
   let lowest = Number.POSITIVE_INFINITY;
-  for (let i = 0; i < position.count; i++)
+  for (let k = 0; k < xyz.length; k += 3) {
+    const y = xyz[k + 1] as number;
+    if (upright && y * e[5] + e[13] - tilt >= lowest) break;
     lowest = Math.min(
       lowest,
-      position.getX(i) * e[1] + position.getY(i) * e[5] + position.getZ(i) * e[9] + e[13],
+      (xyz[k] as number) * e[1] + y * e[5] + (xyz[k + 2] as number) * e[9] + e[13],
     );
+  }
   return lowest;
 }
 

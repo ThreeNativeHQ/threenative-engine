@@ -1,9 +1,17 @@
 import { GroundSnap } from "@threenative/core";
 import type { IPlacement } from "@threenative/terrain";
-import { Mesh, MeshStandardMaterial, Object3D, Quaternion, Vector3 } from "three";
+import {
+  ConeGeometry,
+  Matrix4,
+  Mesh,
+  MeshStandardMaterial,
+  Object3D,
+  Quaternion,
+  Vector3,
+} from "three";
 import { describe, expect, it, vi } from "vitest";
 import { boulder } from "../src/render/cover.js";
-import { buildPropVariants, preparePose, variantFor } from "../src/render/props.js";
+import { buildPropVariants, lowestY, preparePose, variantFor } from "../src/render/props.js";
 
 describe("weathered rock geometry", () => {
   it("retains the committed river-stone and boulder variant selection", () => {
@@ -195,4 +203,31 @@ describe("weathered rock geometry", () => {
       }
     },
   );
+
+  it("finds a tilted pose's lowest point exactly, without scanning every vertex", () => {
+    // An off-centre, lopsided cone: its lowest posed point moves around the rim as it tilts.
+    const geometry = new ConeGeometry(1.4, 6, 48, 12).translate(0.6, 3, -0.3).scale(1, 1, 0.7);
+    const position = geometry.getAttribute("position");
+    const matrix = new Matrix4();
+    for (let i = 0; i < 240; i++) {
+      const tilt = new Quaternion().setFromAxisAngle(
+        new Vector3(Math.cos(i * 1.7), 0, Math.sin(i * 1.7)),
+        (i % 40) * 0.02,
+      );
+      const yaw = new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), i * 0.37);
+      matrix.compose(
+        new Vector3(i * 0.1, i * 0.05, -i * 0.2),
+        tilt.multiply(yaw),
+        new Vector3().setScalar(0.5 + (i % 7) * 0.3),
+      );
+      const e = matrix.elements;
+      let full = Number.POSITIVE_INFINITY;
+      for (let v = 0; v < position.count; v++)
+        full = Math.min(
+          full,
+          position.getX(v) * e[1] + position.getY(v) * e[5] + position.getZ(v) * e[9] + e[13],
+        );
+      expect(lowestY(geometry, matrix)).toBeCloseTo(full, 5);
+    }
+  });
 });
