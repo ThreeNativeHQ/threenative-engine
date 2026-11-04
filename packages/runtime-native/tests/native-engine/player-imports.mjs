@@ -54,7 +54,7 @@ import { clone as cloneByExamplesPath } from "three/examples/jsm/utils/SkeletonU
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { DecalGeometry } from "three/addons/geometries/DecalGeometry.js";
 import { Material } from "three";
-import { vec3, float, clamp, texture, uv, Fn, color, nodeObject, ivec2, reflect, textureLoad, cameraViewMatrix, mx_noise_float, mx_worley_noise_float, mx_worley_noise_vec2, pmremTexture, reflector, screenUV, storage, instanceIndex, normalLocal } from "three/tsl";
+import { vec3, float, clamp, texture, uv, Fn, color, nodeObject, ivec2, reflect, textureLoad, cameraViewMatrix, mx_noise_float, mx_worley_noise_float, mx_worley_noise_vec2, pmremTexture, reflector, screenUV, storage, instanceIndex, normalLocal, Loop, int } from "three/tsl";
 function check(condition, name) { if (!condition) throw Error("IMPORT_CHECK: " + name); }
 check(globalThis.__THREENATIVE_NATIVE__.platform.runtime === "native", "native platform marker");
 const camera = new THREE.PerspectiveCamera();
@@ -332,6 +332,18 @@ const summed = Fn(() => {
   return height.add(uv().x.dFdx().abs()).add(uv().y.dFdy().sign()).add(float(-8).cbrt());
 })();
 check(summed && typeof summed.addAssign === "function" && typeof summed.cbrt === "function", "assign forms, dFdx, sign, cbrt");
+// Rain's bloom and ripple kernels: three's Loop nests one loop per parameter and "<=" runs up to and
+// including the end (PRD-617 AC-5; the facade refused this with "expected 2 arguments").
+const cell = Fn(() => {
+  const sum = float(0).toVar();
+  Loop({ start: int(-1), end: int(1), condition: "<=" }, { start: int(-1), end: int(1), condition: "<=" }, ({ i, j }) => {
+    sum.addAssign(float(i).add(j).add(1));
+  });
+  return sum;
+})();
+check(cell && typeof cell.mul === "function", "nested Loop with <=");
+// A toVar outside a function body is its own value, as the browser back end answers it (rain's fragment node).
+check(float(0.25).toVar() !== undefined, "toVar outside Fn");
 // The starter's temporal resolve: Fn with array parameters, built per call, and setLayout chaining; an object argument names its parameters.
 const blend = Fn(([colour, weight]) => { const w = weight.toVar(); w.mulAssign(0.5); return colour.mul(w); }).setLayout({ name: "blend", type: "vec3", inputs: [] });
 const blended = blend(vec3(1, 2, 3), 2);

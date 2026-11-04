@@ -1,7 +1,11 @@
 import { mkdir, readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { planKitContract } from "../../packages/playtest/src/kit-contract.js";
+import {
+  type IKitContractEntry,
+  KIT_CONTRACT_ROWS,
+  planKitContract,
+} from "../../packages/playtest/src/kit-contract.js";
 import { validatePlaytestScenario } from "../../packages/playtest/src/scenario.js";
 import { makeTempDir } from "../../test-support/temp-dir.js";
 import { allTemplates } from "../../test-support/templates.js";
@@ -103,19 +107,58 @@ describe("kit contract sweep", () => {
 });
 
 describe("one contract row for a CI job", () => {
-  it("writes the engine-cost scenario into a native kit's playtests and nothing for a kit pinned to three.js", async () => {
+  it("writes the row for every kit that declares it and nothing for every kit that opts out", async () => {
     const root = await makeTempDir("kit-contract-row-");
-    const written = await writeKitContractRow("engine-cost", "shooter", path.join(root, "shooter"));
-    const scenario = JSON.parse(await readFile(written as string, "utf8")) as {
-      assert: { engineCost?: object };
-    };
-    expect(scenario.assert.engineCost).toBeDefined();
-    expect(
-      await writeKitContractRow("engine-cost", "snow", path.join(root, "snow")),
-    ).toBeUndefined();
-    await expect(readdir(path.join(root, "snow"))).rejects.toThrow();
-    await expect(writeKitContractRow("no-such-row", "shooter", root)).rejects.toThrow(
+    // Which shipped kit is pinned to three.js changes lane by lane, so the test reads the shipped
+    // declarations rather than naming one: a kit either declares its `engine-cost` bounds or opts
+    // out of the row with a reason, and the writer follows that.
+    const entries = await loadKitContract();
+    const kits = Object.keys(entries);
+    expect(kits.length).toBeGreaterThan(0);
+    let declared = 0;
+    let optedOut = 0;
+    for (const kit of kits) {
+      const directory = path.join(root, kit);
+      const written = await writeKitContractRow("engine-cost", kit, directory);
+      if (entries[kit]?.optOut?.["engine-cost"] !== undefined) {
+        expect(written).toBeUndefined();
+        await expect(readdir(directory)).rejects.toThrow();
+        optedOut += 1;
+        continue;
+      }
+      const scenario = JSON.parse(await readFile(written as string, "utf8")) as {
+        assert: { engineCost?: object };
+      };
+      expect(scenario.assert.engineCost).toBeDefined();
+      declared += 1;
+    }
+    expect(declared).toBeGreaterThan(0);
+    expect(declared + optedOut).toBe(kits.length);
+    await expect(writeKitContractRow("no-such-row", kits[0] as string, root)).rejects.toThrow(
       /no such row/u,
     );
+  });
+
+  it("writes nothing for a fixture kit that opts out, so the no-row path survives every unpinning", async () => {
+    const root = await makeTempDir("kit-contract-row-fixture-");
+    const base = { move: ["KeyW"], subject: "player" } as const;
+    const fixture: Record<string, IKitContractEntry> = {
+      demo: {
+        ...base,
+        optOut: Object.fromEntries(
+          KIT_CONTRACT_ROWS.filter(({ needs }) => !needs(base)).map(({ id }) => [
+            id,
+            id === "engine-cost"
+              ? "a fixture kit pinned to three.js: no web engine counters to bound"
+              : "a fixture kit that declares nothing this row reads",
+          ]),
+        ),
+      },
+    };
+    expect(Object.keys(fixture.demo?.optOut ?? {})).toContain("engine-cost");
+    expect(
+      await writeKitContractRow("engine-cost", "demo", path.join(root, "demo"), fixture),
+    ).toBeUndefined();
+    await expect(readdir(path.join(root, "demo"))).rejects.toThrow();
   });
 });

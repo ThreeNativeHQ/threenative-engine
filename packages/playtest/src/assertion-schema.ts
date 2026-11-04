@@ -772,6 +772,9 @@ export function requiredPlaytestCapabilities(
 ): PlaytestCapability[] {
   const required = new Set<PlaytestCapability>();
   if (scenario.startTick !== undefined) required.add("runtime.fixedStep");
+  // A drawn-frame cadence counts ticks that draw, so a bridge that advances no ticks cannot honour
+  // it: the handshake fails by name instead of leaving the sample count to the adapter's frames.
+  if (scenario.drawEvery !== undefined) required.add("runtime.fixedStep");
   if (scenario.steps.some((step) => step.waitForResource !== undefined)) {
     required.add("runtime.resources");
   }

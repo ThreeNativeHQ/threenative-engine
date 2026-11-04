@@ -200,3 +200,36 @@ test("an empty signals array fails at load instead of asserting nothing", async 
 
   expect(error.diagnostic.message).toMatch(/assert\.signals.*at least one/u);
 });
+
+test.each([
+  ["60", "a string"],
+  [0, "zero"],
+  [-60, "a negative"],
+  [1.5, "a non-integer"],
+  [null, "null"],
+  [true, "a boolean"],
+])("a scenario drawEvery of %s (%s) is rejected, not dropped into a run of undrawn ticks", async (drawEvery: unknown, _kind: string) => {
+  // The dropped-value failure this file is about, at the scenario root: an ignored drawEvery runs
+  // every tick undrawn, and a readback assertion then samples whatever the adapter happened to draw.
+  const directory = await makeTempDir("playtest-vacuous-");
+  await writeFile(
+    join(directory, "scenario.json"),
+    JSON.stringify({
+      drawEvery,
+      name: "vacuous",
+      schemaVersion: 1,
+      steps: [{ holdTicks: 4, press: "KeyW", release: true }],
+    }),
+  );
+
+  let caught: unknown;
+  try {
+    await loadPlaytestScenario(directory, "scenario.json");
+  } catch (error) {
+    caught = error;
+  }
+
+  expect(caught).toBeInstanceOf(PlaytestScenarioError);
+  expect((caught as PlaytestScenarioError).diagnostic.code).toBe("TN_PLAYTEST_SCENARIO_INVALID");
+  expect((caught as PlaytestScenarioError).diagnostic.message).toMatch(/drawEvery must be a positive safe integer/u);
+});

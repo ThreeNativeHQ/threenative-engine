@@ -49,9 +49,11 @@ import {
   lightUnsupported,
   motionPose,
 } from "../render/calibrationUnits.js";
+import { LEVEL_EXPOSURE } from "../render/atmosphere.js";
 import { shadeLikeSubstrate } from "../render/lighting.js";
 import { watchShadowTier } from "../render/shadowTier.js";
 import { GLTF_IOR, refractBehind } from "../render/refraction.js";
+import { noSpecularTwin } from "../render/specular.js";
 import { pointLightMean, translucentTwin } from "../render/translucency.js";
 import { createVolumetricFog } from "../render/volumetricFog.js";
 import {
@@ -83,7 +85,8 @@ const SHADOW = shadowPreset(SHADOW_TIER);
 const DATA = SCENES[NAME];
 // Diagnosis only: scales every light, so a capture can bracket a unit error. Unset in every judged capture.
 const LIGHT_SCALE = Number(params.get("lightScale") ?? 1);
-const EXPOSURE = Number(params.get("exposure") ?? DATA?.exposure?.exposureScale ?? 1);
+// A level with no post-process override keeps Unreal's engine-default exposure, not 1 (PRD-646 round 6).
+const EXPOSURE = Number(params.get("exposure") ?? DATA?.exposure?.exposureScale ?? LEVEL_EXPOSURE);
 
 export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
   static override readonly initialState: GameState = Play.initialState;
@@ -213,6 +216,16 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
       // Casters and receivers do nothing until the renderer runs a shadow pass (scaffold lighting.ts does
       // this for the reference scene, which this scene does not use).
       (ctx.renderer.raw as unknown as { shadowMap: { enabled: boolean } }).shadowMap.enabled = shadows;
+      // Diagnosis knob: ?specular=0 takes the specular off every surface, as Unreal's ShowFlag.Specular does
+      // (render/specular.ts carries both citations), so its share of a direct-light row can be read on both engines.
+      // ?specular=f0 is round 7's F0-only reading, kept so its recorded arms stay reproducible.
+      // It runs before the shadowSide loop and before `shadeLikeSubstrate`, so both mark the twin.
+      const specular = params.get("specular");
+      if (specular !== null)
+        for (const mesh of meshes)
+          mesh.material = Array.isArray(mesh.material)
+            ? mesh.material.map((m) => noSpecularTwin(m as MeshStandardMaterial, specular === "f0"))
+            : noSpecularTwin(mesh.material as MeshStandardMaterial, specular === "f0");
       // Casters keep three's derived shadowSide (back faces of a front-sided material). Those leak a
       // bright line at a box's far foot; the owned engine stores a lamp's back faces a few depth steps
       // nearer, which closes it (native_engine_contact_shadow_foot), and front faces instead add acne on

@@ -2,6 +2,7 @@
 #include "engine/abi/abi_internal.h"
 #include "engine/abi/tsl_call.h"
 
+#include <algorithm>
 #include <cmath>
 #include <functional>
 #include <limits>
@@ -348,6 +349,10 @@ void Tsl::call(const Call& call, const v8::FunctionCallbackInfo<v8::Value>& info
     }
     if (name == "toVar") {
         arity(0);
+        // Outside a function body there is no stack to declare a variable in (rain's fragment node names its
+        // terms this way); the expression itself is the value, read where it is used, as the browser back end
+        // answers it (browser-tsl.ts).
+        if (scopes_.depth() == 0) return result(receiver.node);
         return result(scoped("toVar", &receiver, {}));
     }
     if (name == "assign" || name == "addAssign" || name == "subAssign" || name == "mulAssign" || name == "divAssign") {
@@ -425,41 +430,89 @@ void Tsl::call(const Call& call, const v8::FunctionCallbackInfo<v8::Value>& info
         return result(scoped("If", nullptr, {abi::TslArg::of(condition), abi::TslArg::of(capture(callback(info[1])))}));
     }
     if (name == "Loop") {
-        arity(2);
+        if (info.Length() < 2) throw std::runtime_error("expected a loop parameter and a callback");
         statement();
-        // Loop(count, ({ i }) => ...) or three's Loop({ type, start, end, name }, ({ i }) => ...).
-        std::string indexType = "int", indexName = "i";
-        abi::TslArg n, start = abi::TslArg::of(0.0), step = abi::TslArg::of(1.0);
-        if (info[0]->IsObject() && !wrapper(info[0])) {
-            const auto params = info[0].As<v8::Object>();
-            const auto field = [&](const char* key) {
-                v8::Local<v8::Value> value;
-                if (!params->Get(ctx, str(isolate_, key)).ToLocal(&value)) throw JsFailure{};
-                return value;
-            };
-            // The engine counts up while the index is below the end, by a whole step: condition "<" and a numeric update.
-            if (!field("condition")->IsUndefined() && text(isolate_, field("condition")) != "<")
-                throw std::runtime_error("Loop condition is not supported; the loop runs while the index is below the end (\"<\")");
-            if (!field("update")->IsUndefined()) {
-                if (!field("update")->IsNumber())
-                    throw std::runtime_error("Loop update is not supported; give a whole number step");
-                step = abi::TslArg::of(field("update").As<v8::Number>()->Value());
+        // three's Loop(...params, callback): one parameter object, or a count, per dimension, and the body
+        // last. Several parameters nest one loop in the next, named i, j, k... unless a parameter names its
+        // own. The browser back end nests the same way (browser-tsl.ts).
+        const int dimensions = info.Length() - 1;
+        const auto body = callback(info[dimensions]);
+        struct Level {
+            abi::TslArg end, start = abi::TslArg::of(0.0), step = abi::TslArg::of(1.0);
+            bool inclusive = false;
+            std::string type = "int", name;
+            g::Node index;
+        };
+        std::vector<Level> levels;
+        for (int at = 0; at < dimensions; ++at) {
+            Level level;
+            level.name = std::string(1, static_cast<char>('i' + std::min(at, 17)));  // three's getVarName
+            const auto parameter = info[at];
+            if (parameter->IsObject() && !wrapper(parameter)) {
+                const auto params = parameter.As<v8::Object>();
+                const auto field = [&](const char* key) {
+                    v8::Local<v8::Value> value;
+                    if (!params->Get(ctx, str(isolate_, key)).ToLocal(&value)) throw JsFailure{};
+                    return value;
+                };
+                // The engine counts up while the index is below the end, by a whole step: "<" or "<=".
+                if (!field("condition")->IsUndefined()) {
+                    const std::string condition = text(isolate_, field("condition"));
+                    if (condition != "<" && condition != "<=")
+                        throw std::runtime_error("Loop condition is not supported; the loop runs while the index is below the end (\"<\" or \"<=\")");
+                    level.inclusive = condition == "<=";
+                }
+                if (!field("update")->IsUndefined()) {
+                    if (!field("update")->IsNumber())
+                        throw std::runtime_error("Loop update is not supported; give a whole number step");
+                    level.step = abi::TslArg::of(field("update").As<v8::Number>()->Value());
+                }
+                if (!field("type")->IsUndefined()) level.type = text(isolate_, field("type"));
+                if (!field("name")->IsUndefined()) level.name = text(isolate_, field("name"));
+                if (!field("start")->IsUndefined()) level.start = argument(name, 0, 1, field("start"));
+                const auto end = field("end");
+                if (end->IsUndefined()) throw std::runtime_error("Loop needs an end");
+                level.end = end->IsNumber() ? abi::TslArg::of(static_cast<double>(count(end)))
+                                            : argument(name, 0, 1, end);
+                if (level.end.kind != abi::TslArg::Kind::Number && level.end.kind != abi::TslArg::Kind::Node)
+                    throw std::runtime_error("Loop needs an end");
+            } else {
+                level.end = abi::TslArg::of(static_cast<double>(count(parameter)));
             }
-            if (!field("type")->IsUndefined()) indexType = text(isolate_, field("type"));
-            if (!field("name")->IsUndefined()) indexName = text(isolate_, field("name"));
-            if (!field("start")->IsUndefined()) start = argument(name, 0, 1, field("start"));
-            n = field("end")->IsNumber() ? abi::TslArg::of(static_cast<double>(count(field("end"))))
-                                         : argument(name, 0, 1, field("end"));
-            if (n.kind != abi::TslArg::Kind::Number && n.kind != abi::TslArg::Kind::Node)
-                throw std::runtime_error("Loop needs an end");
-        } else {
-            n = abi::TslArg::of(static_cast<double>(count(info[0])));
+            level.index = scoped("Loop:index", nullptr, {abi::TslArg::of(level.type)});
+            levels.push_back(std::move(level));
         }
-        const auto body = callback(info[1]);
-        const auto index = scoped("Loop:index", nullptr, {abi::TslArg::of(indexType)});
-        const auto inputs = v8::Object::New(isolate_);
-        inputs->Set(ctx, str(isolate_, indexName), wrap(index)).Check();
-        return result(scoped("Loop", nullptr, {n, abi::TslArg::of(index), abi::TslArg::of(capture(body, inputs)), start, step}));
+        // Every dimension's body hangs inside the next: open them all, run the game's callback once with the
+        // whole index set, then close and append from the innermost loop out.
+        const size_t baseline = scopes_.depth();
+        g::Node loop;
+        try {
+            g::Node opened;
+            for (int at = 0; at < dimensions; ++at) scopes_.call("scope:open", nullptr, {}, opened);
+            const auto inputs = v8::Object::New(isolate_);
+            for (auto& level : levels) inputs->Set(ctx, str(isolate_, level.name), wrap(level.index)).Check();
+            v8::Local<v8::Value> returned;
+            v8::Local<v8::Value> argumentValue = inputs;
+            if (!body->Call(ctx, v8::Undefined(isolate_), 1, &argumentValue).ToLocal(&returned)) throw JsFailure{};
+            std::vector<abi::TslArg> value;
+            if (!returned->IsUndefined()) value.push_back(argument("scope:close", 0, 1, returned));
+            for (size_t at = levels.size(); at-- > 0;) {
+                g::Node closed;
+                const bool innermost = at + 1 == levels.size();
+                scopes_.call("scope:close", nullptr, innermost ? value : std::vector<abi::TslArg>{}, closed);
+                loop = scoped("Loop", nullptr, {levels[at].end, abi::TslArg::of(levels[at].index),
+                                                abi::TslArg::of(closed), levels[at].start, levels[at].step,
+                                                abi::TslArg::of(levels[at].inclusive ? 1.0 : 0.0)});
+            }
+        } catch (...) {
+            // A callback that threw finds no body of its own; the next statement starts where this one did.
+            while (scopes_.depth() > baseline) {
+                g::Node closed;
+                scopes_.call("scope:close", nullptr, {}, closed);
+            }
+            throw;
+        }
+        return result(loop);
     }
     // TSL storage(attribute, type, count): a storage buffer over the engine BufferAttribute's data.
     if (name == "storage") {

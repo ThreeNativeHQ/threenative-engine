@@ -12,6 +12,7 @@ const hooks = vi.hoisted(() => ({
     loading: { ready: false, progress: 0 },
   },
   send: vi.fn(),
+  media: false,
 }));
 vi.mock("@threenative/ui", () => ({
   UiLayer: "div",
@@ -59,11 +60,29 @@ describe("Rain initial quality ownership", () => {
       location: { search: "" },
       addEventListener: vi.fn(),
       removeEventListener: vi.fn(),
-      matchMedia: () => ({ matches: false }),
+      matchMedia: () => ({ matches: hooks.media }),
     });
     vi.stubGlobal("document", { addEventListener: vi.fn(), removeEventListener: vi.fn() });
+    hooks.media = false;
   });
   afterEach(() => vi.unstubAllGlobals());
+
+  it("publishes the reduced-motion answer a host gave, and takes no flashes with it", () => {
+    publishSnapshot();
+    expect(hooks.send).toHaveBeenCalledWith("setReducedMotion", false);
+    expect(hooks.send.mock.calls.filter(([name]) => name === "setSafe")).toEqual([]);
+
+    hooks.send.mockClear();
+    hooks.refs = [];
+    hooks.media = true;
+    publishSnapshot();
+    expect(hooks.send.mock.calls.slice(0, 4)).toEqual([
+      ["setReducedMotion", true],
+      ["setSafe", true],
+      ["setAutoLightning", false],
+      ["setCinematic", false],
+    ]);
+  });
 
   it("keeps the scene's software study tier instead of raising it for a wide UI", () => {
     publishSnapshot();

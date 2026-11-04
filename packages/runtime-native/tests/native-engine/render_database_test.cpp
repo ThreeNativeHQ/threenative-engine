@@ -1783,6 +1783,140 @@ void alphaScene() {
     CHECK(worst <= 1);
 }
 
+// The occlusion and the gather a screen-space effect computes belong to the opaque surface: both read that
+// surface's depth and its normal. A translucent draw composites over it after the opaque pass, so under a sheet the
+// frame's pixel is the draw's own light. Core restores that part after the occlusion instead of darkening it
+// (world-environment.ts, the translucent restore: Unreal applies AO to the opaque lighting, before translucency).
+// This is the engine's half of that contract. The target carries what the transparent draws composited, nothing an
+// opaque draw wrote, and the sheet's value scales with its opacity. A post graph that reads "translucent" is what
+// draws it: before this target existed the graph had no such input and the readback had nothing to show.
+void translucentTarget() {
+    namespace g = shader::graph;
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(128, 96);
+    renderer.setOutput(OutputState{std::nullopt, 1, false});  // linear out: the bytes are the sampled values
+    // An opaque wall on the left, a translucent sheet in front of the empty background on the right, and a second
+    // sheet behind the wall. Only the two in front of the depth buffer's surface may reach the target.
+    Scene scene;
+    OrthographicCamera camera(-2, 2, 1.5, -1.5, 0.1, 10);
+    camera.position.z = 5;
+    auto wallMaterial = std::make_shared<Material>(MaterialType::Basic);
+    wallMaterial->color.setRGB(0.5, 0.5, 0.5);
+    Mesh wall(makePlaneGeometry(1.2, 1.2), wallMaterial);
+    wall.position.set(-0.9, 0, 0);
+    scene.add(wall);
+    auto sheetMaterial = std::make_shared<Material>(MaterialType::Basic);
+    sheetMaterial->color.setRGB(0.4, 0.1, 0.1);
+    sheetMaterial->transparent = true;
+    Mesh sheet(makePlaneGeometry(1.2, 1.2), sheetMaterial);
+    sheet.position.set(-0.2, 0, 1);  // over the wall's right edge and the empty background beside it
+    scene.add(sheet);
+    Mesh behind(makePlaneGeometry(1.2, 1.2), sheetMaterial);
+    behind.position.set(-0.9, 0, -1);
+    scene.add(behind);
+    RenderDatabase database;
+    // A post pass has to exist for the graph to sample an input (the real chain has the occlusion's and the gather's),
+    // and the contact occlusion's supplies one. Its own value is nulled so the readback is the target itself.
+    const auto depth = g::texture("depth", g::uv()), normal = g::texture("normal", g::uv());
+    auto contact = g::gtaoEffect(depth, normal);
+    contact->parameters["radius"] = {0.0001f};
+    contact->parameters["reachPx"] = {32.0f};
+    contact->parameters["thickness"] = {1.0f};
+    contact->parameters["distanceFallOff"] = {0.0f};
+    const auto frame = [&](double opacity) {
+        sheetMaterial->opacity = opacity;
+        scene.updateMatrixWorld(true);
+        renderer.setPostGraph(g::add(g::texture("translucent", g::uv()),
+                                     g::mul(g::swizzle(g::effectNode(contact), "x"), g::float_(0))));
+        database.render(renderer, scene, camera, {0, 0, 0, 1});
+        const std::vector<uint8_t> px = read(renderer, events);
+        CHECK(px.size() == size_t{128} * 96 * 4);
+        // 32 px per world unit, mid-frame (y px 48): the wall alone, the wall under the sheet, the sheet alone.
+        const auto at = [&](int x) {
+            if (px.size() != size_t{128} * 96 * 4) return std::array<int, 3>{-1, -1, -1};
+            const size_t i = (size_t{48} * 128 + size_t(x)) * 4;
+            return std::array<int, 3>{int(px[i]), int(px[i + 1]), int(px[i + 2])};
+        };
+        return std::array{at(25), at(45), at(70)};
+    };
+    const auto half = frame(0.5), full = frame(1.0);
+    const auto& wallOnly = half[0];
+    const auto& overHalf = half[1];
+    const auto& aloneHalf = half[2];
+    const auto& overFull = full[1];
+    const auto& aloneFull = full[2];
+    std::fprintf(stderr, "translucent target: wall %d %d %d, over the wall a0.5 %d %d %d, alone a0.5 %d %d %d, "
+                 "over a1.0 %d %d %d, alone a1.0 %d %d %d\n",
+                 wallOnly[0], wallOnly[1], wallOnly[2], overHalf[0], overHalf[1], overHalf[2], aloneHalf[0],
+                 aloneHalf[1], aloneHalf[2], overFull[0], overFull[1], overFull[2], aloneFull[0], aloneFull[1],
+                 aloneFull[2]);
+    // An opaque draw writes nothing here, and neither does a sheet behind the wall, which the depth test rejects.
+    CHECK(wallOnly[0] <= 1 && wallOnly[1] <= 1 && wallOnly[2] <= 1);
+    // The sheet in front is carried at its own colour times its opacity: 0.4 * 0.5 is 51 of 255, 0.4 is 102. Over the
+    // wall the frame's own pixel is 114, so a target that fell back to the frame would be caught here.
+    CHECK(overHalf[0] > 40 && overHalf[0] < 62);
+    CHECK(aloneHalf[0] > 40 && aloneHalf[0] < 62);
+    CHECK(overFull[0] > 92 && overFull[0] < 112 && aloneFull[0] > 92 && aloneFull[0] < 112);
+    CHECK(std::abs(aloneHalf[0] * 2 - aloneFull[0]) <= 3);
+    CHECK(aloneHalf[1] > 8 && aloneHalf[1] < 18 && aloneFull[1] > 19 && aloneFull[1] < 32);
+}
+
+// A draw's render-list depth is its geometry's bounding-sphere centre in world space, not its object
+// origin. three r187 reads the centre when it culls and sorts (renderers/common/StandardDrawingPipeline.js
+// :236-241: `geometry.boundingSphere.center` through `object.matrixWorld`) and draws transparent items
+// back to front by it (RenderList.js:45-63, reversePainterSortStable). The platformer's waterfall is the
+// case that tells the two keys apart: the inner sheet sits 0.25 m nearer the camera than the outer one,
+// and its narrower arc carries its bounding-sphere centre farther, so origin order puts the pale inner
+// sheet on top and washes the sheet out.
+// Two overlapping half-opaque quads prove the key without the waterfall: the same red quad, twice, once
+// placed by its object and once with the same 2 m baked into its vertices. Both are one picture to the
+// eye, so both must give one pixel; only the geometry-centre key draws them in the same order.
+void transparentSortUsesTheGeometryCenter() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(64, 48);
+    renderer.setOutput(OutputState{std::nullopt, 1, false});  // linear out: the bytes are the sampled values
+    // z 2 over z 1, neither writing depth, so the pixel is whichever of them the render list draws last.
+    const auto pixel = [&](bool translateTheVertices) {
+        Scene scene;
+        OrthographicCamera camera(-1, 1, 1, -1, 0.1, 10);
+        camera.position.z = 5;
+        auto red = std::make_shared<Material>(MaterialType::Basic);
+        red->color.setRGB(1, 0, 0);
+        red->transparent = true;
+        red->opacity = 0.5;
+        red->depthWrite = false;
+        auto blue = std::make_shared<Material>(MaterialType::Basic);
+        blue->color.setRGB(0, 0, 1);
+        blue->transparent = true;
+        blue->opacity = 0.5;
+        blue->depthWrite = false;
+        const auto redGeometry = makePlaneGeometry(2, 2);
+        Mesh redQuad(redGeometry, red), blueQuad(makePlaneGeometry(2, 2), blue);
+        if (translateTheVertices) redGeometry->translate(0, 0, 2);  // the origin stays at z 0
+        else redQuad.position.z = 2;
+        blueQuad.position.z = 1;
+        scene.add(redQuad);
+        scene.add(blueQuad);
+        RenderDatabase database;
+        database.render(renderer, scene, camera, {0, 0, 0, 1});
+        const std::vector<uint8_t> px = read(renderer, events);
+        CHECK(px.size() == size_t{64} * 48 * 4);
+        if (px.size() != size_t{64} * 48 * 4) return std::array<int, 3>{-1, -1, -1};
+        const size_t at = (size_t{24} * 64 + 32) * 4;
+        return std::array<int, 3>{int(px[at]), int(px[at + 1]), int(px[at + 2])};
+    };
+    const std::array<int, 3> placed = pixel(false), baked = pixel(true);
+    std::fprintf(stderr, "transparent sort key: object at z 2 %d %d %d, vertices at z 2 %d %d %d\n", placed[0], placed[1],
+                 placed[2], baked[0], baked[1], baked[2]);
+    CHECK(placed == baked);
+}
+
 // An unported material property is refused by name and its mesh is not drawn, never silently drawn
 // with a simpler shader (PRD-514 decision 4); a supported material in the same scene still draws.
 void materialUnsupported() {
@@ -2569,6 +2703,73 @@ void gtaoScreenReach() {
     // floor, so that cutoff bites less than r185's march did, and the assertion now says so.
     CHECK(darkened(32, 3.2, 0.0001f, 0.0001f) == near32);
     CHECK(darkened(0, 3.2, 0.3f, 0.0001f) < nearWorld);
+}
+
+// Unreal fades ambient occlusion out in the distance (UE 5.8.3: Engine/Classes/Engine/Scene.h:2239-2244,
+// "at what distance the AO effect disappears in the distance (avoiding artifacts and AO effects on huge
+// object)"; defaults in Engine/Private/Scene.cpp:572-573, 8000 uu and 5000 uu, 80 m and 50 m). The reach path
+// darkened the sailing sky dome — 7 km out, so its depth arrives in metre steps — along the dome's own
+// triangle edges. Past the fade distance the occlusion must leave the frame alone, and inside the fade band
+// it must weaken rather than stay at full strength.
+void gtaoFadeDistance() {
+    namespace g = shader::graph;
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(320, 240);
+    LitScene s;
+    s.camera.far = 400;
+    auto floorMaterial = std::make_shared<Material>(MaterialType::Standard);
+    floorMaterial->color.setRGB(0.8, 0.8, 0.8);
+    // A floor-and-wall corner that scales with the camera distance, so the corner keeps the same screen
+    // footprint at every distance and only the fade can change how much of it darkens.
+    Object3D corner;
+    Mesh floor(makePlaneGeometry(40, 40), floorMaterial);
+    floor.rotation.x = -1.5707963267948966;
+    floor.position.y = -1;
+    Mesh wall(makeBoxGeometry(8, 4, 0.5), floorMaterial);
+    wall.position.set(0, 1, -2);
+    corner.add(floor);
+    corner.add(wall);
+    s.scene.add(corner);
+    s.camera.updateProjectionMatrix();
+    s.scene.updateMatrixWorld(true);
+    const auto colour = g::texture("scene", g::uv()), depth = g::texture("depth", g::uv()),
+               normal = g::texture("normal", g::uv());
+    RenderDatabase database;
+    const auto frame = [&](float reachPx, double distance) {
+        const double k = distance / 6.4;
+        corner.scale.setScalar(k);
+        s.camera.position.set(0, 1.4 * k, distance);
+        s.camera.lookAt(0, -0.5 * k, -1.5 * k);
+        s.camera.updateProjectionMatrix();
+        s.scene.updateMatrixWorld(true);
+        auto contact = g::gtaoEffect(depth, normal);
+        contact->parameters["radius"] = {0.0001f};
+        contact->parameters["reachPx"] = {reachPx};
+        contact->parameters["thickness"] = {1.0f};
+        contact->parameters["distanceFallOff"] = {0};
+        renderer.setPostGraph(g::mul(colour, g::swizzle(g::effectNode(contact), "x")));
+        database.render(renderer, s.scene, s.camera, {0.05, 0.06, 0.08, 1});
+        return read(renderer, events);
+    };
+    // Pixels a reach darkened against the same view with no reach (a world radius of a tenth of a millimetre).
+    const auto darkened = [&](float reachPx, double distance) {
+        const std::vector<uint8_t> open = frame(0, distance), px = frame(reachPx, distance);
+        CHECK(!px.empty() && px.size() == open.size());
+        size_t count = 0;
+        for (size_t i = 0; i < px.size(); i += 4) count += px[i] + 6 < open[i];
+        return count;
+    };
+    const size_t near6 = darkened(32, 6.4);
+    CHECK(near6 > 200);
+    // 200 m is past AmbientOcclusionFadeDistance: the reach changes nothing at all.
+    CHECK(darkened(32, 200) == 0);
+    // 60 m sits inside the fade band (30 m to 80 m), where Unreal's soft fade keeps part of the occlusion.
+    const size_t mid60 = darkened(32, 60);
+    CHECK(mid60 > 0);
+    CHECK(mid60 * 2 < near6);
 }
 
 // three's material.colorWrite = false masks every colour channel of that material's draw (the tower-defense
@@ -6375,6 +6576,65 @@ void shadowCasterFrustumCulling() {
     (void)inside; (void)farOutside; (void)unculledOutside;
 }
 
+// three's Frustum.intersectsObject reads `SkinnedMesh.boundingSphere`, computed from the posed
+// vertices, so a rig the shadow camera's box misses is not drawn into that map. Native answered "no
+// bounds" for a rig (`boundingSphereOf` refused one) and kept it a caster for every light: the runner
+// drew its mannequin into the sun's map 68 m from a 56 m box, 13,744 of a 47,924-triangle frame.
+void skinnedShadowCasterFrustumCulling() {
+    Scene scene; PerspectiveCamera camera; LightState lights; RenderDatabase database;
+    database.shadowMapEnabled = true;
+    database.batching = false;
+    camera.position.set(0, 0, 100);
+    camera.lookAt(0, 0, 200);
+    camera.near = 1; camera.far = 50;
+    camera.updateProjectionMatrix();
+
+    auto light = std::make_shared<DirectionalLight>(Color(1, 1, 1), 1.0);
+    light->setCastShadow(true);
+    light->position.set(0, 10, 0);
+    light->target->position.set(0, 0, 0);
+    auto& shadowCam = static_cast<OrthographicCamera&>(*light->shadow.camera);
+    shadowCam.left = -2; shadowCam.right = 2;
+    shadowCam.top = 2; shadowCam.bottom = -2;
+    shadowCam.near = 1; shadowCam.far = 20;
+    shadowCam.updateProjectionMatrix();
+    scene.add(*light);
+
+    const auto material = std::make_shared<Material>(MaterialType::Standard);
+    // One bone per rig, skinned to it at unit weight: the reach each vertex is measured over is the
+    // bind-pose distance from the bone, so the rig's own bounds are its own size.
+    const auto addRig = [&](const char* name, double x) {
+        auto geometry = makeBoxGeometry();
+        const uint64_t vertices = geometry->attributes.at("position")->count();
+        geometry->setAttribute("skinIndex",
+            BufferAttribute::fromDoubles(Scalar::U16, std::vector<double>(vertices * 4, 0), 4));
+        std::vector<double> weights(vertices * 4, 0);
+        for (std::size_t i = 0; i < vertices; ++i) weights[i * 4] = 1;
+        geometry->setAttribute("skinWeight", BufferAttribute::fromFloats(weights, 4));
+        auto rig = std::make_shared<SkinnedMesh>(geometry, material);
+        rig->name = name;
+        rig->position.set(x, 0, 0);
+        rig->setCastShadow(true);
+        auto bone = std::make_shared<Bone>();
+        bone->position.set(x, 0, 0);
+        scene.add(*rig);
+        scene.add(*bone);
+        scene.updateMatrixWorld(true);
+        rig->bind(std::make_shared<Skeleton>(std::vector<std::shared_ptr<Bone>>{bone}));
+        return rig;
+    };
+
+    const auto inside = addRig("inside", 0);
+    const auto outside = addRig("outside", 60);
+    const auto& items = database.prepare(scene, camera, lights);
+    std::size_t casters = 0;
+    for (const auto& item : items) casters += item.castShadow ? 1 : 0;
+    std::printf("skinned shadow caster culling: %zu casters of %zu items\n", casters, items.size());
+    // The rig inside the box still casts; the one 60 m out of a +/-2 m box does not.
+    CHECK(casters == 1);
+    (void)inside; (void)outside;
+}
+
 // The shadow-light list is cached across frames; it must still follow the hierarchy and visibility
 // the per-frame walk read: a hidden ancestor, a removed light and a re-added one.
 void shadowLightsFollowHierarchy() {
@@ -7009,8 +7269,13 @@ void gpuJointProduction() {
         if (reflection) for (const auto& draw : reflection->drawn()) if (draw.gpuJoints) {
             ++mirrorGpu; mirrorInstances += draw.instanceCount;
         }
-        CHECK(mirrorGpu == (frame == 1 ? 2 : 1));
-        CHECK(mirrorInstances == (frame == 2 ? 1 : 3));
+        // One GPU-joint draw reaches the reflection: the main-pass batch of the rigs its camera sees. The
+        // rig on layer 1 casts for a light whose mask holds that layer, and the reflection's sun mask is
+        // the virtual camera's (layer 0, effectiveShadowLayersMask), so its shadow-only item is culled: the
+        // second draw this check used to count at frame 1 was that caster, kept by the old "a rig has no
+        // bounds, so it always casts" answer. Instances are 3 / 2 / 1 / 3 as the parked rigs come and go.
+        CHECK(mirrorGpu == 1);
+        CHECK(mirrorInstances == (frame == 1 ? 2 : frame == 2 ? 1 : 3));
         std::printf("GPU batching frame %d: main %zu draws/%zu instances, reflection %zu draws/%zu instances, shadow %u batches\n",
                     frame, admitted, instances, mirrorGpu, mirrorInstances, gpu.lastFrame().shadowSkinned.batches);
         CHECK(accelerated.tips[0]->skipsGpuJointSubtree());
@@ -8716,7 +8981,7 @@ void staticInstancesAreNotRecopied() {
     CHECK(frame(-12).copies == 0);
 }
 
-TN_TEST_MAIN({"virtual_shadow_depth_holds", virtualShadowDepthHoldsWhileCastersFit}, {"virtual_shadow_pan_redraws_entering_rects", virtualShadowPanRedrawsTheRectsThatEnter}, {"virtual_shadow_page_jobs", virtualShadowPageJobs}, {"lamp_size_ignores_temporal_jitter", lampSizeIgnoresTemporalJitter}, {"caster_record_allocates_per_frame", casterRecordAllocatesPerFrame}, {"virtual_shadow_instance_pages", virtualShadowInstancePages}, {"virtual_shadow_page_draws_only_its_instances", virtualShadowPageDrawsOnlyItsInstances},{"virtual_shadow_bounds_cache", virtualShadowBoundsCache}, {"gpu_joint_production", gpuJointProduction}, {"virtual_shadow_casters_batch_in_main_pass", virtualShadowCastersBatchInMainPass}, {"virtual_shadow_rigs_batch_in_main_pass", virtualShadowRigsBatchInMainPass}, {"virtual_shadow_pages_instance_skinned_casters", shadowPagesInstanceSkinnedCasters}, {"skinned_palettes_share_by_bytes", skinnedPalettesShareByBytes}, {"clone_keeps_shared_skeletons", cloneKeepsSharedSkeletons}, {"compute_kernel_walks_once", computeKernelWalksOnce}, {"bone_reach_bounds_hold_posed_vertices", boneReachBoundsHoldPosedVertices}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"content_identical_geometry_batches", contentIdenticalGeometryBatches}, {"steady_state", steadyState}, {"steady_state_draw_refresh_work", steadyStateDrawRefreshWork}, {"draw_refresh_guard_holes", drawRefreshGuardHoles}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"depth_test_off_draws_over_nearer", depthTestOffDrawsOverNearer}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"scene_stage_is_metered", sceneStageIsMetered}, {"overlay_leaves_stage_totals", overlayLeavesStageTotals}, {"present_direct", presentDirect}, {"canvas_layer_overlay", canvasLayerOverlay}, {"post_survives_overlay", postSurvivesOverlay}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"target_samples_late_traa_output", targetSamplesLateTraaOutput}, {"unchanged_frame_storage", unchangedFrameStorage}, {"static_instances_are_not_recopied", staticInstancesAreNotRecopied}, {"instance_places_survive_a_draw_leaving_the_view", instancePlacesSurviveADrawLeavingTheView}, {"instance_upload_is_stable_across_a_camera_turn", instanceUploadIsStableAcrossACameraTurn}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene}, {"frame_slab_is_per_program", frameSlabIsPerProgram},
+TN_TEST_MAIN({"virtual_shadow_depth_holds", virtualShadowDepthHoldsWhileCastersFit}, {"virtual_shadow_pan_redraws_entering_rects", virtualShadowPanRedrawsTheRectsThatEnter}, {"virtual_shadow_page_jobs", virtualShadowPageJobs}, {"lamp_size_ignores_temporal_jitter", lampSizeIgnoresTemporalJitter}, {"caster_record_allocates_per_frame", casterRecordAllocatesPerFrame}, {"virtual_shadow_instance_pages", virtualShadowInstancePages}, {"virtual_shadow_page_draws_only_its_instances", virtualShadowPageDrawsOnlyItsInstances}, {"virtual_shadow_bounds_cache", virtualShadowBoundsCache}, {"gpu_joint_production", gpuJointProduction}, {"virtual_shadow_casters_batch_in_main_pass", virtualShadowCastersBatchInMainPass}, {"virtual_shadow_rigs_batch_in_main_pass", virtualShadowRigsBatchInMainPass}, {"virtual_shadow_pages_instance_skinned_casters", shadowPagesInstanceSkinnedCasters}, {"skinned_palettes_share_by_bytes", skinnedPalettesShareByBytes}, {"clone_keeps_shared_skeletons", cloneKeepsSharedSkeletons}, {"compute_kernel_walks_once", computeKernelWalksOnce}, {"bone_reach_bounds_hold_posed_vertices", boneReachBoundsHoldPosedVertices}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"content_identical_geometry_batches", contentIdenticalGeometryBatches}, {"steady_state", steadyState}, {"steady_state_draw_refresh_work", steadyStateDrawRefreshWork}, {"draw_refresh_guard_holes", drawRefreshGuardHoles}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"depth_test_off_draws_over_nearer", depthTestOffDrawsOverNearer}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"gtao_fade_distance", gtaoFadeDistance}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"scene_stage_is_metered", sceneStageIsMetered}, {"overlay_leaves_stage_totals", overlayLeavesStageTotals}, {"present_direct", presentDirect}, {"canvas_layer_overlay", canvasLayerOverlay}, {"post_survives_overlay", postSurvivesOverlay}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"target_samples_late_traa_output", targetSamplesLateTraaOutput}, {"unchanged_frame_storage", unchangedFrameStorage}, {"static_instances_are_not_recopied", staticInstancesAreNotRecopied}, {"instance_places_survive_a_draw_leaving_the_view", instancePlacesSurviveADrawLeavingTheView}, {"instance_upload_is_stable_across_a_camera_turn", instanceUploadIsStableAcrossACameraTurn}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene}, {"transparent_sort_uses_geometry_center", transparentSortUsesTheGeometryCenter}, {"translucent_target", translucentTarget}, {"frame_slab_is_per_program", frameSlabIsPerProgram},
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"virtual_sun_room_seam", virtualSunRoomSeam},
@@ -8725,7 +8990,7 @@ TN_TEST_MAIN({"virtual_shadow_depth_holds", virtualShadowDepthHoldsWhileCastersF
              {"virtual_sun_level_sizes", virtualSunLevelSizes},
              {"virtual_sun_auto_map_size", virtualSunAutoMapSize},
              {"batched_vs_unbatched", batchedVsUnbatched}, {"stable_passes_match_direct", stablePassesMatchDirect}, {"camera_cull_keeps_bundle", cameraCull}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_decline_cadence", skinnedDeclineCadence}, {"skinned_projecting_cadence", skinnedProjectingCadence}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"env_map_slot_is_read", envMapSlotIsRead}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_offscreen", gpuTimerCoversOffscreen}, {"gpu_timer_splits_the_gather", gpuTimerSplitsTheLabelledGather}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"flat_shading_needs_no_normals", flatShadingNeedsNoNormals}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"batch_keeps_member_id", batchKeepsMemberId}, {"frustum_culling", frustumCulling},
-             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"masked_shadow", maskedShadow}, {"leaf_receiver", leafReceiver}, {"shadow_noise_frame", shadowNoiseFrame},{"foliage_transmission", foliageTransmission}, {"rough_diffuse", roughDiffuse}, {"point_shadow_cube_faces", pointShadowCubeFaces}, {"lamp_source_radius", lampSourceRadius}, {"lamp_source_radius_wall", lampSourceRadiusWall}, {"lamp_source_radius_crate", lampSourceRadiusCrate}, {"contact_shadow_foot", contactShadowFoot}, {"virtual_sun_contact_foot", virtualSunContactFoot}, {"lamp_cache", lampCache}, {"cached_lamp_has_no_uniform_upload", cachedLampHasNoUniformUpload}, {"sun_cache", sunCache}, {"lamp_atlas", lampAtlas}, {"gpu_timer_splits_lamp_shadows", gpuTimerSplitsLampShadows}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse}, {"program_probes_are_resolved_once", programProbesAreResolvedOnce})
+             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"skinned_shadow_caster_frustum_culling", skinnedShadowCasterFrustumCulling}, {"masked_shadow", maskedShadow}, {"leaf_receiver", leafReceiver}, {"shadow_noise_frame", shadowNoiseFrame},{"foliage_transmission", foliageTransmission}, {"rough_diffuse", roughDiffuse}, {"point_shadow_cube_faces", pointShadowCubeFaces}, {"lamp_source_radius", lampSourceRadius}, {"lamp_source_radius_wall", lampSourceRadiusWall}, {"lamp_source_radius_crate", lampSourceRadiusCrate}, {"contact_shadow_foot", contactShadowFoot}, {"virtual_sun_contact_foot", virtualSunContactFoot}, {"lamp_cache", lampCache}, {"cached_lamp_has_no_uniform_upload", cachedLampHasNoUniformUpload}, {"sun_cache", sunCache}, {"lamp_atlas", lampAtlas}, {"gpu_timer_splits_lamp_shadows", gpuTimerSplitsLampShadows}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse}, {"program_probes_are_resolved_once", programProbesAreResolvedOnce})
 
 
 

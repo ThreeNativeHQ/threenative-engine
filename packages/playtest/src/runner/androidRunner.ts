@@ -183,6 +183,17 @@ async function runDevicePlaytestInternal(
     canDriveAndroidLifecycle(target.driver),
   );
   if (unsupported !== undefined) return failureReport(config, scenario, unsupported, target.name);
+  // `drawEvery` is the browser runner's per-step cadence. These lanes advance counted ticks
+  // without a per-step draw window, so honouring the field here would be a second mechanism with
+  // its own semantics. A scenario that asks for it fails by name instead of sampling whatever the
+  // host happens to draw, which is the failure the field exists to remove.
+  if (scenario.drawEvery !== undefined) {
+    return failureReport(config, scenario, unsupportedDiagnostic(
+      "a drawEvery tick cadence",
+      "Run this scenario on --target browser, which owns the fixed-step draw cadence, or remove drawEvery.",
+      target.name,
+    ), target.name);
+  }
   if (
     target.name === "android"
     && scenario.assert?.framebufferCoverage !== undefined

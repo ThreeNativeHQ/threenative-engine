@@ -1,3 +1,4 @@
+import * as upstreamTsl from "three/tsl";
 import { describe, expect, it } from "vitest";
 import {
   type IScreenSpaceTsl,
@@ -323,5 +324,63 @@ describe("defineScreenSpaceGi", () => {
     expect(() => defineScreenSpaceGi(tsl)(chain(), chain(), chain(), {} as never)).toThrow(
       /TN_NATIVE_SSGI_CAMERA/,
     );
+  });
+});
+
+/**
+ * Upstream three r187's own node system as the engine's TSL table, with each render-to-texture answered by a named
+ * stand-in. It runs the shipped graph against the node classes the caller's chain is authored in, and the stand-ins
+ * make the answer's dependency tree walkable back to the pass it reads.
+ */
+function upstreamTable() {
+  const gathers: unknown[] = [];
+  const tsl = {
+    ...upstreamTsl,
+    rtt: () => {
+      // Three's `_getChildren` reads an own node's accessors too, so the stand-in answers the pass's scale as well.
+      const gather = Object.assign(upstreamTsl.vec4(0.5), {
+        getResolutionScale: () => 0.5,
+        setResolutionScale: () => {},
+      }) as unknown;
+      gathers.push(gather);
+      return gather;
+    },
+  };
+  return { tsl: tsl as unknown as IScreenSpaceTsl, gathers };
+}
+
+/** Every node the answer is built from. */
+function dependenciesOf(node: unknown): Set<unknown> {
+  const seen = new Set<unknown>();
+  (node as { traverse(callback: (child: unknown) => void): void }).traverse((child) =>
+    seen.add(child),
+  );
+  return seen;
+}
+
+describe("the gather's occlusion", () => {
+  const camera = {
+    near: 0.25,
+    projectionMatrix: { elements: Array.from({ length: 16 }, (_, i) => i + 1) },
+  };
+
+  // three's SSGINode answers `pow(clamp(1 - occludedShare), aoIntensity)` out of the same pass target, and its
+  // caller multiplies the lit frame by it (three r187 SSGINode.js:637-638, 651). Answering a constant 1 dropped the
+  // term: the frame kept the light the occluder blocked and SSGI only added its gather (PRD-617 AC-7, 2026-11-02).
+  it("answers the share the gather blocked, so the frame it multiplies darkens", () => {
+    const { tsl, gathers } = upstreamTable();
+    const node = defineScreenSpaceGi(tsl)(chain(), chain(), chain(), camera);
+    expect(gathers).toHaveLength(1);
+    expect(dependenciesOf(node.getAONode()).has(gathers[0])).toBe(true);
+  });
+
+  it("answers the probe gather's share, not a constant", () => {
+    const { tsl, gathers } = upstreamTable();
+    const node = defineScreenSpaceGi(tsl)(chain(), chain(), chain(), {
+      camera,
+      probes: { downsampleFactor: 16, viewport: { width: 1280, height: 720 } },
+    });
+    expect(gathers).toHaveLength(3);
+    expect(dependenciesOf(node.getAONode()).has(gathers[2])).toBe(true);
   });
 });

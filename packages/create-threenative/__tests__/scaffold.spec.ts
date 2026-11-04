@@ -221,6 +221,10 @@ const BUG_REPORT_SKILL_PATHS = [
 // leaves every tree as it is; measured by this test.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // 2026-11-03 (PRD-777): action-rpg AGENTS/CLAUDE name the spell factories in one line. Measured by this test.
+  // 2026-11-03: rain publishes the reduced-motion answer its host gave (PRD-617), so its tree moves.
+  // 2026-11-03 (PRD-617, PRD-620): action-rpg and sailing drop their engine pin, runner re-pins with
+  // its reason, snow runs on the native engine, and the starter's render-chain row asserts the sharp-AA
+  // chain, so those five trees move. Measured by this test.
   // 2026-10-30: the Blender MCP server is gone, so every kit's seven host configs lose their
   // `threenative-blender` entry and all sixteen trees move. Measured by this test.
   // 2026-10-29: every kit's seven MCP host configs gain the `threenative-devtools` server, and its
@@ -322,8 +326,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // these kits' AGENTS.md say so, and rts drops its TRAA and blur overrides.
   // Re-pinned 2026-10-31: the starter crate gets a stacked-disc contact shadow (render/contactShadow.ts)
   // that keeps its contact coverage above the 0.02 floor at the core +1 EV key.
-  // Re-pinned 2026-11-03: PRD-777 adds the Spells section and the diablo/arpg aliases to action-rpg.
-  "action-rpg": "e4f512414dcfea6f3953b26558bbed164032e3f6b1cd98b17256f12a9c9adaf8",
+  "action-rpg": "7539054622563a4f4baaba447975437f412c1caa96205b25432a96f47828fab8",
   // PRD-732 (2026-10-23): the new Hop Garden kit, measured through createProject (method checked
   // against platformer's unchanged value). Recomputed 2026-10-24 for the PRD-732 polish round: the
   // new hero, the dust and sparkle effects and the effects scenario. Recomputed 2026-10-24 for
@@ -353,7 +356,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   platformer: "ddf011f80cd989685c4c78d080f4c54c3761c1339c6efcabeb12a41fdad4524a",
   puzzle: "8b3e69d0ba7e00082e9318c79194335bd208c502bcc63ea69f1faaa26a7c904c",
   racing: "1affb3d5e60b0cad1218aca2c66464d9f3bca0ec6d163de2e509cfa1f59bc6b9",
-  rain: "5510ce0ee4a4020162f75f8aef0df0b6fb97ec118c49af3cdf0a06600eb121ee",
+  rain: "8d5c5c4ed1f2fc24aa714b152a7c643dc6f89ddddbfe01c6767ed2eb6e76582e",
   // Re-pinned 2026-10-28: the rts high tier turns camera motion blur off (an RTS pan smeared every unit).
   // Re-pinned 2026-10-28 (PRD-765): rts becomes AstraCraft — painted ground, mesas, scrub, ACES 1.02 look and the command HUD;
   // then its legacy-linear colours, gamma fog of war, no bloom or environment, and a frame-sized shadow window.
@@ -366,12 +369,21 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // (it was a dark patch under a HUD card) and the top-location separator reaches 3:1 on the ink plate.
   // Then the UI final pass: a counted selection band, garrison and blocked-exit cards, overview, hotkeys, edge-scroll toggle, refusal toasts (imports sorted by biome).
   rts: "0da9e8433f88defea093798346a366e8f52edce6400c2d367ad8479cd41c27fd",
-  runner: "09e1eb31c78f5432d2f659c592bd0e5210a85e2df772e81f59d4cb0fba2c24ec",
+  // Re-pinned 2026-11-03 (PRD-617): the sun's shadow box travels with the runner (`lighting.follow`)
+  // and the engine pin goes, so the tree moves. Measured again the same day for the corrected
+  // `performance.maxTriangles` bound (45,000 to 54,000), which is a scenario file in the tree.
+  // Measured by this test.
+  runner: "1c560fad4720a21d68106ebb02d7da90655d0d1086adcb04d1e62282c9a9225f",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
-  sailing: "0a3337fb3db3e3afcbc5ea32a154fd228dcfb9a9863800ec19d6b9120ed0abef",
+  // Re-measured 2026-11-03 (PRD-617): its AGENTS/CLAUDE engine section no longer claims an engine
+  // pin the template does not carry. Measured by this test.
+  // Re-measured 2026-11-03 (PRD-617): `sails.playtest.json` sets `drawEvery: 60`, so the scenario
+  // asks the runner for 30 drawn frames per 1,800-tick hold instead of taking as many readback
+  // samples as the adapter happens to draw. Only this tree moves.
+  sailing: "3fa72548ff24c796a20ce641beb365498ffe0380d7e7a7a024a4cc50b48f6622",
   // Recomputed 2026-10-26 (PRD-746): the scene merges the town through mergeByMaterial (src/townBatch.ts).
   shooter: "dc10aea9449f2342f1e7ec46ab6aae86cdc7ad6e3bf0cc574d910bd312f86c4a",
-  snow: "11e4e23a6053a32d73310e3610205dfa9fc2b4436fdb0e31d4b749137f4ccb8d",
+  snow: "4b9e7f0db51b4e31cc84ac8cf462d3754c865a1ca380da06cf208270696de99a",
   // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.
   // Recomputed 2026-10-16: starter's adaptiveQuality split its policy resolution into qualityPolicy.ts
   // to stay under the 200-line render-file cap; only starter's tree moves.
@@ -380,7 +392,11 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-31: core key 0.36, traced reflections, the crate contact blob, the portable trace type (PRD-633); measured by this test.
   // Recomputed 2026-10-31 (PRD-775): temporalAAHooks.ts claims the 0.187 render pipeline's view
   // offset and drives its callback lists, so starter's render source moves again. Measured by this test.
-  starter: "9d09f538bc14e002b54d37433b569540c0335eccced0a7e4bceff36b88a5074b",
+  // Recomputed 2026-11-03 on the merge of the #606 queue commit into this branch: #605 split
+  // Play.ts's motion samples between presented frames and fixed steps, and moved two native
+  // playtests; #606 moved the render resolve. Starter is the one template both sides changed.
+  // Measured by this test.
+  starter: "7ec257b9098df6e67ab0cea3f503cda7b11d33bb59204ecf3b96a3be7423f19d",
   "tower-defense": "bce1b6cab442c4275afade3a0ef9034726b0c29295d5514e2175214f14b00f00",
 };
 
@@ -497,7 +513,6 @@ const STARTER_PATHS = [
   "src/render/temporalAA.ts",
   "src/render/temporalAAInput.ts",
   "src/render/temporalAAResolve.ts",
-  "src/render/temporalClampRelease.ts",
   "src/render/temporalCurrentArea.ts",
   "src/render/temporalCurrentFootprint.ts",
   "src/render/temporalCurrentFootprintMath.ts",
@@ -505,8 +520,6 @@ const STARTER_PATHS = [
   "src/render/temporalCurrentReplay.ts",
   "src/render/temporalCurrentSelection.ts",
   "src/render/temporalCurrentVisibility.ts",
-  "src/render/temporalHistoryResolve.ts",
-  "src/render/temporalMoire.ts",
   "src/render/temporalResolve.ts",
   "src/render/exposure.ts",
   "src/render/volumetricFog.ts",

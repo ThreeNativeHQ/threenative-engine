@@ -166,6 +166,20 @@ describe("material MRT outputs", () => {
   });
 });
 
+describe("native scene pass translucent target", () => {
+  it("names its texture whenever a graph reads it: the read is what draws it", () => {
+    const api = definePass(tsl);
+    const scenePass = api.pass({}, {});
+    // No MRT output names it: the engine draws the transparent draws into it while the post graph reads the name
+    // (Renderer::planAux), so asking for the texture node is the request.
+    expect(scenePass.getTextureNode("translucent")).toEqual({ source: { name: "translucent" } });
+    // It is not an MRT slot: the scene pass's outputs stay the ones three's own MRT names.
+    expect(() => api.mrt({ output: api.output, translucent: api.output })).toThrow(
+      /TN_NATIVE_MRT_UNSUPPORTED: translucent/u,
+    );
+  });
+});
+
 describe("native scene pass MRT", () => {
   it("accepts the normal target as normalView or as vec4(normalView, 0)", () => {
     expect(mrt({ output, normal: normalView }).outputs.normal).toBe(normalView);

@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { planKitContract } from "../packages/playtest/src/kit-contract.js";
+import { type IKitContractEntry, planKitContract } from "../packages/playtest/src/kit-contract.js";
 import { loadKitContract } from "./kit-contract.js";
 
 /**
@@ -9,13 +9,17 @@ import { loadKitContract } from "./kit-contract.js";
  * A kit that opts out prints its reason and gets no file; an undeclared row throws, as the sweep does.
  *
  *   tsx scripts/kit-contract-row.ts <row> <kit> <playtests directory>
+ *
+ * `entries` is for tests: a fixture kit can then exercise the opt-out path without depending on
+ * which shipped kit is pinned to three.js this week.
  */
 export async function writeKitContractRow(
   row: string,
   kit: string,
   directory: string,
+  entries?: Readonly<Record<string, IKitContractEntry>>,
 ): Promise<string | undefined> {
-  const verdict = planKitContract(await loadKitContract(), [kit]).find(
+  const verdict = planKitContract(entries ?? (await loadKitContract()), [kit]).find(
     (entry) => entry.row === row,
   );
   if (verdict === undefined) throw new Error(`TN_KIT_CONTRACT_ROWS names no such row: ${row}`);

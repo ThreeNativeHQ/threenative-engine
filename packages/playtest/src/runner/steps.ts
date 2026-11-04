@@ -281,7 +281,12 @@ export async function runStep(
   stepWindow?: (ticks: number) => Promise<void>,
   /** Sight-line samples collected at the same cadence as path positions, when the scenario asserts one. */
   sightLine?: { entity: string; samples: IPlaytestSightLineObservation[] },
+  /** Scenario-level drawn-frame cadence: one rendered frame every this many of the step's ticks. */
+  drawEvery?: number,
 ): Promise<IRunStepSamples> {
+  // A step's own cadence: the count starts at zero here, so every step draws its first tick and
+  // then every `drawEvery`th, whatever the step's length. Absent, ticks advance undrawn.
+  const draw = drawEvery === undefined ? undefined : { every: drawEvery, ticks: 0 };
   if (step.waitForResource !== undefined) {
     if (bridge === undefined || movementSampleRequest === undefined) {
       throw new PlaytestBridgeError(playtestDiagnostic(
@@ -302,7 +307,7 @@ export async function runStep(
     }
     const after = await waitForResource({
       advance: !liveClock && bridge.description.capabilities.includes("runtime.fixedStep")
-        ? () => advanceFixedStep(page, bridge, 1)
+        ? () => advanceFixedStep(page, bridge, 1, false, draw)
         : undefined,
       id: wait.id,
       path: wait.path,
@@ -317,7 +322,7 @@ export async function runStep(
     await executeClickStep(page, bridge, step, viewport);
     const frames = Math.max(step.waitFrames ?? 0, step.waitTicks ?? 0, 1);
     if (bridge?.description.capabilities.includes("runtime.fixedStep") === true && step.waitTicks !== undefined) {
-      await advanceFixedStep(page, bridge, step.waitTicks);
+      await advanceFixedStep(page, bridge, step.waitTicks, false, draw);
     } else {
       await waitFrames(page, frames);
     }
@@ -404,7 +409,7 @@ export async function runStep(
     const sampleTicks = 10;
     for (let index = 0; index < ticks; index += sampleTicks) {
       const batch = Math.min(sampleTicks, ticks - index);
-      await advanceFixedStep(page, bridge, batch);
+      await advanceFixedStep(page, bridge, batch, false, draw);
       await samplePathPosition(bridge, pathEntity, pathPositions);
       await sampleSightLine(bridge, sightLine);
     }
@@ -428,7 +433,7 @@ export async function runStep(
     // from one continuous hold to input latches.
     if (!finalStep) {
       if (bridge?.description.capabilities.includes("runtime.fixedStep") === true) {
-        await advanceFixedStep(page, bridge, 1);
+        await advanceFixedStep(page, bridge, 1, false, draw);
       } else {
         await waitFrames(page, 1);
       }
@@ -443,7 +448,7 @@ export async function runStep(
   if (step.pointers !== undefined && step.release) {
     await setBrowserPointers(page, inputState, [], viewport);
     if (bridge?.description.capabilities.includes("runtime.fixedStep") === true) {
-      await advanceFixedStep(page, bridge, 1);
+      await advanceFixedStep(page, bridge, 1, false, draw);
     } else {
       await waitFrames(page, 1);
     }
@@ -602,6 +607,15 @@ async function executeAimAtStep(
 }
 
 /**
+ * A step's draw cadence: one rendered frame every `every` ticks. `ticks` counts what the step has
+ * already advanced, so a later call (the 10-tick path cadence) continues the same phase.
+ */
+export interface IFixedStepDraw {
+  every: number;
+  ticks: number;
+}
+
+/**
  * The core bridge is installed before an async scene load completes, so its describe/ready
  * handshake can finish one browser frame before the fixed-step loop starts. Retry only that
  * exact startup race; a stopped loop that does not recover remains a runner failure.
@@ -611,21 +625,27 @@ export async function advanceFixedStep(
   bridge: { advance(ticks: number, options?: { render?: boolean }): Promise<number | undefined | void> },
   ticks: number,
   render = false,
+  draw?: IFixedStepDraw,
 ): Promise<void> {
   if (!Number.isInteger(ticks) || ticks <= 0)
     throw new Error("advance ticks must be a positive integer.");
   // Each tick is its own bridge request, because a loaded visual scene can compile or stream enough
   // work during one tick to exceed a request's bounded budget. A measurement that couples updates
   // to world draws also asks for a drawn frame per tick and lets the HUD paint between ticks.
-  // Every other step advances without drawing.
+  // Every other step advances without drawing, unless its scenario asked for a cadence: a component
+  // that samples a GPU readback lands one sample per drawn frame, so a step with no draw at all
+  // gets as many samples as the adapter happens to render while its ticks run.
   // A live clock answers a one-tick request with the ticks its own pump ran: two per frame at
   // 30 fps on a 60 Hz step. Count those, or a held key stays down for twice its ticks (PRD-752).
   // A stalled pump reports zero and still counts as one, so the loop always ends.
   for (let tick = 0; tick < ticks; ) {
+    // `render` is the same mechanism at every tick; a cadence draws the first tick of each group.
+    const drawn = render || (draw !== undefined && draw.ticks % draw.every === 0);
+    let ran = 1;
     for (let attempt = 0; ; attempt += 1) {
       try {
-        const advanced = render ? await bridge.advance(1, { render: true }) : await bridge.advance(1);
-        tick += typeof advanced === "number" && advanced > 1 ? advanced : 1;
+        const advanced = drawn ? await bridge.advance(1, { render: true }) : await bridge.advance(1);
+        ran = typeof advanced === "number" && advanced > 1 ? advanced : 1;
         break;
       } catch (error) {
         if (
@@ -637,7 +657,9 @@ export async function advanceFixedStep(
         await waitFrames(page, 1);
       }
     }
-    if (render && tick < ticks) await waitFrames(page, 1);
+    tick += ran;
+    if (draw !== undefined) draw.ticks += ran;
+    if (drawn && tick < ticks) await waitFrames(page, 1);
   }
 }
 

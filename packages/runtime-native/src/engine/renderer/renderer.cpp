@@ -658,7 +658,7 @@ struct Renderer::FrameJob {
     // velocity pass (zero copies nothing), and whether a seeded frame copies them before it too.
     std::array<uint64_t, 2> previousBytes{};
     bool previousSeed = false;
-    std::vector<Planned> plan, velocityPlan, auxPlan;
+    std::vector<Planned> plan, velocityPlan, auxPlan, translucentPlan;
     std::unordered_map<uint64_t, DeformationFrame> deformationFrames;
     std::vector<ShadowPass> shadowPasses;
     uint32_t keptShadowMaps = 0;  // FrameStats::keptShadowMaps, counted by the plan
@@ -682,6 +682,7 @@ struct Renderer::FrameJob {
     bool timed = false;
     bool debugTimestampRequested = true;
     uint8_t auxMask = 0;  // the AuxTarget bits the aux pass writes, in attachment order
+    bool translucentActive = false;  // the post graph reads "translucent": the transparent draws have their own pass
     uint64_t source = 0;  // the caller frame id this frame's timed sample is reported under
     // The main, aux and velocity bundles' inputs, built while the draws' stores were live; and each shadow pass's.
     std::vector<uint64_t> bundleKey, auxKey, velocityKey;
@@ -1180,6 +1181,9 @@ void Renderer::releaseTargets() {
     if (emissiveView_) wgpuTextureViewRelease(emissiveView_);
     if (emissiveTexture_) wgpuTextureRelease(emissiveTexture_);
     emissiveView_ = nullptr; emissiveTexture_ = nullptr;
+    if (translucentView_) wgpuTextureViewRelease(translucentView_);
+    if (translucentTexture_) wgpuTextureRelease(translucentTexture_);
+    translucentView_ = nullptr; translucentTexture_ = nullptr;
     if (materialView_) wgpuTextureViewRelease(materialView_);
     if (materialTexture_) wgpuTextureRelease(materialTexture_);
     if (viewportColorView_) wgpuTextureViewRelease(viewportColorView_);
@@ -1310,6 +1314,7 @@ void Renderer::collectPostSources() {
     postTextures_.clear();
     postTextureNodes_.clear();
     rttTargets_.clear();
+    translucentRequested_ = false;
     std::unordered_set<const shader::graph::NodeData*> seen;
     const std::function<void(shader::graph::Node)> collect = [&](shader::graph::Node node) {
         if (!node || !seen.insert(node.get()).second) return;
@@ -1318,6 +1323,9 @@ void Renderer::collectPostSources() {
                          [&](const auto& target) { return target.name == node->name; }))
             rttTargets_.push_back({node->name, node->rtt, node->rtt->material ? node->rtt->material->version() : 0,
                                    node->rtt->material.get()});
+        // The graph asks for the transparent draws' own target, in one of its passes or in the output program: the plan
+        // draws it and the post input is bound, or the graph would sample a slot nothing fills.
+        if (node->kind == shader::graph::Kind::Texture && node->name == "translucent") translucentRequested_ = true;
         if (node->kind == shader::graph::Kind::Texture && node->textureObject())
             { postTextures_.emplace_back(node->name, static_cast<const Texture*>(node->textureObject().get())); postTextureNodes_.push_back(node); }
         if (node->rtt && node->rtt->material)
@@ -2602,25 +2610,29 @@ Renderer::Program* Renderer::program(MaterialKind kind, const shader::VertexVari
     return &built;
 }
 
-// The normal target's value (three's MRT `normalView`): the interpolated view-space normal, or a flat face's from the
-// derivatives of positionView as the colour fragment takes it (flat vertices carry zero normals), flipped on a
-// DoubleSide back face. For post passes that read metalness and roughness, a Standard or Physical surface packs both
+// The normal target's value (three's MRT `normalView`): the fragment's own normal, which is the material's normalNode
+// result when it authors one (`authored`, the value the lit fragment shades with: three's NodeMaterial.setupNormal
+// returns vec3(normalNode), so no face flip and no map). Without one it is the interpolated view-space normal, or a flat
+// face's from the derivatives of positionView as the colour fragment takes it (flat vertices carry zero normals), flipped
+// on a DoubleSide back face. For post passes that read metalness and roughness, a Standard or Physical surface packs both
 // into the alpha:
 //   alpha = 2 * round(7 * metalness) + 0.25 + 0.5 * roughness
 // so the integer half is the metalness level, the fraction is roughness, and 0 (nothing written) is no surface at all.
 // Half-float spacing stays well under the 0.25 offset. The material's own `metalness` and `roughness` uniforms are
 // read, so a fragment that declares only these two finds them at the lit block's offsets 0 and 4.
-// `shading`, when given, is the program's own shading normal (a normalNode applied, already faced).
 static shader::ExprId normalTarget(shader::Program& f, bool flat, bool doubleSide, bool surface,
-                                   shader::ExprId shading = shader::kInvalid) {
-    auto normal = f.varying("normalView", shader::Type::vec(3));
-    if (flat) {
-        const auto position = f.varying("positionView", shader::Type::vec(3));
-        normal = f.call("cross", {f.call("dFdx", {position}), f.call("dFdy", {position})});
+                                   shader::ExprId authored = shader::kInvalid) {
+    shader::ExprId normal = authored;
+    if (normal == shader::kInvalid) {
+        normal = f.varying("normalView", shader::Type::vec(3));
+        if (flat) {
+            const auto position = f.varying("positionView", shader::Type::vec(3));
+            normal = f.call("cross", {f.call("dFdx", {position}), f.call("dFdy", {position})});
+        }
+        normal = f.call("normalize", {normal});
+        if (doubleSide && !flat)
+            normal = f.mul(normal, f.select(f.builtin("frontFacing"), f.constant(1.f), f.constant(-1.f)));
     }
-    normal = f.call("normalize", {shading != shader::kInvalid ? shading : normal});
-    if (doubleSide && !flat && shading == shader::kInvalid)
-        normal = f.mul(normal, f.select(f.builtin("frontFacing"), f.constant(1.f), f.constant(-1.f)));
     auto alpha = f.constant(0.f);
     if (surface) {
         const auto clamp01 = [&](shader::ExprId v) { return f.call("clamp", {v, f.constant(0.f), f.constant(1.f)}); };
@@ -2637,6 +2649,9 @@ static shader::ExprId normalTarget(shader::Program& f, bool flat, bool doubleSid
 const shader::StageModule* Renderer::auxFragment(Program& program, uint8_t mask) {
     if (program.auxBuilt >> mask & 1u) return program.aux[mask].get();
     program.auxBuilt |= uint16_t(1u << mask);
+    // A full lit MRT program per (program, mask), which `aux_routes_written_normals` bounds: only a material kind
+    // whose lit fragment exports `out.normal` may leave the shared geometry-normal pass.
+    waste::count(waste::counters().auxFragments);
     const shader::VertexVariant& variant = program.variant;
     const shader::LightLayout layout{program.lightKinds};
     try {
@@ -2654,7 +2669,8 @@ const shader::StageModule* Renderer::auxFragment(Program& program, uint8_t mask)
         const bool surface = (program.kind == MaterialKind::Standard || program.kind == MaterialKind::Physical) &&
                              !variant.nodes.metalnessNode && !variant.nodes.roughnessNode;
         std::vector<shader::ExprId> outputs;
-        // A normalNode shades with its own normal, and that is the one the normal target holds.
+        // A material that authors a normalNode writes that normal to the normal target (three's setupNormal), so the
+        // target needs this draw's own lit fragment, not the shared geometry-normal one.
         if (mask & kAuxNormal)
             outputs.push_back(normalTarget(f, variant.flatShading, variant.doubleSide, surface,
                                            variant.nodes.normalNode ? source.normal : shader::kInvalid));
@@ -2808,13 +2824,20 @@ Renderer::RecordCause Renderer::recordCause(const std::vector<uint64_t>& was, co
 
 std::vector<std::pair<double, const DrawItem*>> Renderer::sortDraws(std::span<const DrawItem> items,
                                                                  const CameraState& camera, bool stateFirst) {
-    // RenderList: z is the object origin's clip-space depth (setFromMatrixPosition, then the
-    // projection-view matrix); painterSortStable for opaques, reversePainterSortStable for the rest.
+    // RenderList: z is the geometry's bounding-sphere centre in world space (StandardDrawingPipeline.js:236-241:
+    // geometry.boundingSphere.center through object.matrixWorld; a merged draw keeps its own origin instead),
+    // then the projection-view matrix; painterSortStable for opaques, reversePainterSortStable for the rest.
     const Matrix projView = multiply(camera.projectionMatrix, camera.matrixWorldInverse);
     std::vector<std::pair<double, const DrawItem*>> opaque, transparent;
     for (const DrawItem& item : items) {
         const Matrix& m = item.matrixWorld;
-        const auto origin = item.sortOrigin.value_or(std::array<double, 3>{m[12], m[13], m[14]});
+        std::array<double, 3> key{m[12], m[13], m[14]};
+        if (!item.sortOrigin && item.sortCenter) {
+            const std::array<double, 3>& c = *item.sortCenter;
+            key = {m[0] * c[0] + m[4] * c[1] + m[8] * c[2] + m[12], m[1] * c[0] + m[5] * c[1] + m[9] * c[2] + m[13],
+                   m[2] * c[0] + m[6] * c[1] + m[10] * c[2] + m[14]};
+        }
+        const auto origin = item.sortOrigin.value_or(key);
         const double z = projView[2] * origin[0] + projView[6] * origin[1] + projView[10] * origin[2] + projView[14];
         const double w = projView[3] * origin[0] + projView[7] * origin[1] + projView[11] * origin[2] + projView[15];
         (item.transparent ? transparent : opaque).push_back({z / w, &item});
@@ -3589,7 +3612,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     FrameJob compileJob;  // a compile plans pipelines only: it never touches a pending frame's job
     if (!compilation && !job_) job_ = std::make_unique<FrameJob>();
     FrameJob& job = compilation ? compileJob : *job_;
-    job.plan.clear(); job.velocityPlan.clear(); job.auxPlan.clear(); job.shadowPasses.clear(); job.shadowLodItems.clear();
+    job.plan.clear(); job.velocityPlan.clear(); job.auxPlan.clear(); job.translucentPlan.clear();
+    job.shadowPasses.clear(); job.shadowLodItems.clear();
     job.shadowGroupItems.clear(); job.shadowGroups.clear();
     job.previousBytes = {}; job.previousSeed = false; job.keptShadowMaps = 0; job.shadowGroupRows = 0; job.paletteWrites = paletteWrites; job.instanceCopies = instanceCopies;
     job.deformationFrames.clear();
@@ -4620,6 +4644,10 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     const bool materialPass = postEffects_ && (postEffects_->reads("metalness") || postEffects_->reads("roughness"));
     const bool albedoPass = postEffects_ && postEffects_->reads("albedo");
     const bool emissivePass = postEffects_ && postEffects_->reads("emissive");
+    // The target feeds a post pass: with no post graph there is nothing to bind it to, and the frame keeps its own
+    // colour alone. The graph asks for it by name (collectPostSources), in a pass or in the output program.
+    const bool translucentPass =
+        postEffects_ && (translucentRequested_ || postEffects_->reads("translucent"));
     const uint8_t auxMask = uint8_t((normalPass ? kAuxNormal : 0) | (materialPass ? kAuxMaterial : 0) |
                                     (albedoPass ? kAuxAlbedo : 0) | (emissivePass ? kAuxEmissive : 0));
     // A normal-only frame keeps the small normal fragment: the merged one is the whole lit program.
@@ -4645,9 +4673,35 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         return &fragment;
     };
     const auto planAux = [&] {
-        if (!auxMask) return;
+        if (!auxMask && !translucentPass) return;
         for (const Planned& draw : plan) {
             const DrawItem& item = *draw.item;
+            // A translucent draw composites its own colour over the frame, lit or not: the waterfall's sheet, a
+            // glass dome, the sky dome's fade. The occlusion a screen-space effect gathers at that pixel belongs to the
+            // opaque surface behind it, so the draw goes to its own target and the post graph restores it after the
+            // occlusion (Unreal applies AO to the opaque lighting, before translucency). Its own program draws it,
+            // unchanged, so the target holds exactly what the colour target took from it.
+            if (item.transparent && translucentPass && item.colorWrite) {
+                PipelineTarget target = colourTarget(item, *draw.program);
+                target.color = WGPUTextureFormat_RGBA16Float;
+                target.sampleCount = 1;  // drawn single-sampled against the colour pass's resolved depth, as the aux pass
+                target.depthWrite = false;
+                // It blends over what is behind it, so the depth it must beat is the opaque surface's: equal passes, and
+                // at 4x the bias pulls it nearer by the half-pixel depth slope the aux pass already corrects for.
+                target.depthCompare = item.depthTest ? WGPUCompareFunction_LessEqual : WGPUCompareFunction_Always;
+                if (sampleCount_ == 4 && item.depthTest) {
+                    target.depthBias = -4; target.depthBiasSlopeScale = -1.5f;
+                }
+                if (compilation) {
+                    compilation->push_back(pipelines_->getAsync(draw.program->vertex, &draw.program->fragment, target));
+                } else {
+                    const auto pipeline = pipelines_->get(draw.program->vertex, &draw.program->fragment, target);
+                    if (!pipeline) throw std::runtime_error("TN_POST_TRANSLUCENT_PIPELINE_REFUSED");
+                    Planned sheet = draw;
+                    sheet.pipeline = pipeline;
+                    job.translucentPlan.push_back(sheet);
+                }
+            }
             // The sky and unlit materials write no view-space normal (their programs have no normalView).
             if (item.background || item.kind == MaterialKind::Basic) continue;
             // These draws write no normal, so the post pass reads its depth-derived one there. Named once a
@@ -4659,10 +4713,17 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 if (std::find(diagnostics_.begin(), diagnostics_.end(), note) == diagnostics_.end()) diagnostics_.push_back(note);
                 continue;
             }
-            // A cut or a normalNode needs the material's own fragment: the small one has neither.
+            // three's normal target holds the material's own normal: NodeMaterial.setupNormal returns
+            // vec3(normalNode) for a material that authors one, so that draw writes the target from its own lit
+            // fragment. The shared geometry-normal pass covers every other draw. Only Standard and Physical read
+            // the authored node and export `out.normal`; buildLit (Lambert, Phong) ignores it, so routing those
+            // through their own aux fragment would pay for a program that writes the geometry normal anyway.
             const bool cut = item.material->alphaTest > 0 || item.material->alphaHash;
-            const shader::StageModule* fragment = auxMask == kAuxNormal && !cut && !item.nodes->normalNode
-                                                      ? normalFragment(draw) : auxFragment(*draw.program, auxMask);
+            const bool authoredNormal = item.nodes->normalNode != nullptr &&
+                (item.kind == MaterialKind::Standard || item.kind == MaterialKind::Physical);
+            const shader::StageModule* fragment = auxMask == kAuxNormal && !cut && !authoredNormal
+                                                      ? normalFragment(draw)
+                                                      : auxFragment(*draw.program, auxMask);
             if (!fragment) {
                 const std::string note = "TN_POST_AUX_SKIPPED: a draw's program has no post-target fragment on its own layout";
                 if (std::find(diagnostics_.begin(), diagnostics_.end(), note) == diagnostics_.end()) diagnostics_.push_back(note);
@@ -4712,6 +4773,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         target(materialPass, materialTexture_, materialView_, {"metalness", "roughness"});
         target(albedoPass, albedoTexture_, albedoView_, {"albedo"});
         target(emissivePass, emissiveTexture_, emissiveView_, {"emissive"});
+        target(translucentPass, translucentTexture_, translucentView_, {"translucent"});
     };
     WGPURenderPipeline pageClear = nullptr;
     if (!virtualShadows_.empty()) {
@@ -5512,6 +5574,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     job.source = sourceFrame_;
     job.groupEpoch = groupsChosenAt;
     job.auxMask = auxMask;
+    job.translucentActive = translucentPass;
     // At 4x the velocity pass draws into a multisampled attachment and resolves it; allocated on first
     // use, so a frame without it pays nothing.
     if (sampleCount_ == 4 && traa_ && !msaaAuxColor_) {
@@ -6030,6 +6093,29 @@ void Renderer::encodeFrame(FrameJob& job) {
         wgpuRenderPassEncoderEnd(auxPass); wgpuRenderPassEncoderRelease(auxPass);
         lastFrame_.auxPasses = 1;
     }
+    if (job.translucentActive && translucentView_) {
+        // The transparent draws again, each with its own lit program, blending over a cleared target: what they
+        // composited over the frame. Drawn in one pass, in the main pass's order, so overlapping sheets accumulate
+        // exactly as they did there. Recorded directly (not a retained bundle): a translucent draw's depth order moves
+        // with every camera turn, and the main pass keeps those draws out of its rows for the same reason.
+        WGPURenderPassColorAttachment sheet = {};
+        sheet.view = translucentView_;
+        sheet.loadOp = WGPULoadOp_Clear;
+        sheet.storeOp = WGPUStoreOp_Store;
+        sheet.clearValue = {0, 0, 0, 0};
+#if defined(MYSTRAL_WEBGPU_DAWN)
+        sheet.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
+#endif
+        WGPURenderPassDepthStencilAttachment sheetDepth{};
+        sheetDepth.view = depthView_; sheetDepth.depthReadOnly = true;
+        WGPURenderPassDescriptor sheetDesc = {};
+        sheetDesc.colorAttachmentCount = 1; sheetDesc.colorAttachments = &sheet;
+        sheetDesc.depthStencilAttachment = &sheetDepth;
+        auto sheetPass = beginTimedRenderPass(encoder, &sheetDesc, 2,
+            {"translucent", inputWidth_, inputHeight_, uint32_t(job.translucentPlan.size())});
+        for (const Planned& p : job.translucentPlan) encode(sheetPass, p, Tally::Extra);
+        wgpuRenderPassEncoderEnd(sheetPass); wgpuRenderPassEncoderRelease(sheetPass);
+    }
     if (traa_) {
         traa_->fillVelocity(encoder, depthView_);
         WGPURenderPassColorAttachment motion{};
@@ -6142,6 +6228,7 @@ void Renderer::encodeFrame(FrameJob& job) {
                 if (trace) profile << (i ? "," : "") << "{\"index\":" << i
                     << ",\"name\":" << std::quoted(passInfo[i].name)
                     << ",\"segment\":" << unsigned(segments[i])
+                    << ",\"draws\":" << passInfo[i].draws
                     << ",\"width\":" << passInfo[i].width << ",\"height\":" << passInfo[i].height
                     << ",\"begin\":" << double(ns[0] - first) / 1e6 << ",\"ms\":" << ms << '}';
                 if (const auto query = shadowQueries.find(i); query != shadowQueries.end())
