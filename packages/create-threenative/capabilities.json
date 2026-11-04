@@ -4783,6 +4783,7 @@
         "`whenSpawnReady(position, radius, timeoutMs)` snapshots a fixed region and settles from existing updates or disposal; it does not drive streaming, and `prewarmed` remains the separate draw gate",
         "model loads are bounded by `concurrency` (default 12) across every resident cell, not per cell",
         "refilters are bounded by `rebuildsPerUpdate` (default 16) per update, nearest cell first",
+        "residency and `placementReach` follow `follow`; levels and `maxDistance` are graded from the render camera, as UE picks instance LODs per view; `lodFrom: \"follow\"`, `?tnLodFromCamera=0` or `TN_LOD_FROM_CAMERA=0` grade from `follow`, reported as `TN_WORLD_MAIN_CULL lodFrom=`",
         "admission is bounded by `admissionBudgetMs` (default 2) per update across every path, plus at most one unit each for terrain and props; while props are queued terrain takes at most half, so neither starves the other, and a deferred cell keeps drawing what it has",
         "SkinnedMesh parts are skipped; an instanced copy would draw one rest pose",
         "a baked chain's switch distances are measured against `autoLod` (default 4 px of error over 60° and 1080 raster rows), because an instanced draw cannot select a level per instance; an asset with nonempty authored `lods` never consults it; explicit empty lists enroll only unchanged static geometry/material parts",
@@ -5038,7 +5039,8 @@
       ],
       "constraints": [
         "use moveAndSlide inside the physics update",
-        "pass `water: (x, z) => surfaceHeight | undefined`; the body reads `swimming`, `immersionDepth` and `waterSurface` each moveAndSlide"
+        "pass `water: (x, z) => surfaceHeight | undefined`; the body reads `swimming`, `immersionDepth` and `waterSurface` each moveAndSlide",
+        "pass `waterCurrent: (x, z) => { x, z } | undefined` in m/s to have the water carry the body; it reads `currentVelocity` back"
       ],
       "deprecated": [
         "Constructor option `world` is deprecated; pass an IPhysicsContext as `physics` instead. CharacterBody3D itself is not deprecated."
@@ -5055,7 +5057,8 @@
       "situations": [
         "move an enemy or player through a level",
         "keep a character from walking through walls",
-        "swim in a river, lake or sea; float at the surface and wade slower in shallow water"
+        "swim in a river, lake or sea; float at the surface and wade slower in shallow water",
+        "river current carries a swimmer downstream while it floats"
       ],
       "summary": "Move a character body with collision-aware sliding.",
       "supersedes": [],

@@ -37,8 +37,13 @@
       "label": "in-river",
       "press": "KeyW",
       "holdTicks": 90,
-      "release": false,
+      "release": true,
       "screenshot": "forest-swim"
+    },
+    {
+      "kind": "wait",
+      "label": "float",
+      "waitTicks": 180
     },
     {
       "kind": "input",
@@ -109,6 +114,12 @@
         "path": "swimSamples",
         "gte": 60,
         "allowTrivial": "Samples swimming with Swim_Fwd_Loop or Swim_Idle_Loop playing; before the swim mechanism the player walked the bed and this stayed 0."
+      },
+      {
+        "id": "GameState",
+        "path": "swimDrift",
+        "gte": 1.5,
+        "allowTrivial": "Metres the river carried the player downstream while it floated with no key held for three seconds; 0 with ?current=off, where the same water stands still."
       },
       {
         "id": "GameState",

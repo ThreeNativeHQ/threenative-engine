@@ -65,7 +65,7 @@ All scripts, playtest definitions, manual preparation helpers and fixtures under
   - `playtests/editor.playtest.json`: playtest scenario checking vertex count and appearance in the recovered editor view.
   - `playtests/export.playtest.json`: playtest scenario checking static GLB export loading and appearance.
   - `playtests/loop.playtest.json`: checks the owner's loop (reveal, 10 s walk, camera turn, idle) builds no pipeline after the reveal.
-  - `playtests/swim.playtest.json`: checks the player walks into the forest river, swims across it afloat (`CharacterBody3D.water`, immersion 0.62, off the bed) with the UAL1 swim clip, and climbs out on the far bank; `?swim=off` is its before arm.
+  - `playtests/swim.playtest.json`: checks the player walks into the forest river, swims across it afloat (`CharacterBody3D.water`, immersion 0.62, off the bed) with the UAL1 swim clip, and climbs out on the far bank, and floats with no key held while the river carries it downstream (`CharacterBody3D.waterCurrent`, `swimDrift` at least 1.5 m); `?swim=off` and `?current=off` are its before arms.
   - `playtests/terrain.playtest.json`: primary playtest scenario for shared web/desktop showcase views.
   - `playtests/upload.playtest.json`: smoke scenario proving the forest world loads and renders on WebGPU with no console or runtime errors under the generated Three.js patch.
   - `playtests/walk.playtest.json`: playtest scenario checking baked terrain triangles and player walk stability.

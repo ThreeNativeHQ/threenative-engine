@@ -87,7 +87,7 @@ import {
   forestStageArm,
   forestStageTerrainTargets,
 } from "./world/forestStage.js";
-import { waterSurfaceAt } from "./world/water.js";
+import { waterCurrentAt, waterSurfaceAt } from "./world/water.js";
 
 /** The last closed frame-budget window, published into state by the scene. */
 const budget = {
@@ -211,6 +211,8 @@ const initialState = {
   swimSamples: 0,
   swimFloatSamples: 0,
   swimExits: 0,
+  /** Metres the river current carried the player along itself, while swimming. */
+  swimDrift: 0,
   contactSamples: 0,
   maxContactError: 0,
   bilinearDifference: 0,
@@ -901,13 +903,16 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
       }
       // The player swims in the river and lake drawn above: the same splines, levels and reach.
       // `?swim=off` is the before arm: the water is drawn and the player walks its bed.
-      if (!stage && new URLSearchParams(globalThis.location?.search ?? "").get("swim") !== "off")
-        player.water = waterSurfaceAt(
-          data.rivers ?? [],
-          data.lakes ?? [],
-          field,
-          world === "tundra" || world === "forest",
-        );
+      // `?current=off` is the drift before arm: the same water, standing still.
+      const params = new URLSearchParams(globalThis.location?.search ?? "");
+      if (!stage && params.get("swim") !== "off") {
+        const rivers = data.rivers ?? [];
+        const lakes = data.lakes ?? [];
+        const footprint = world === "tundra" || world === "forest";
+        player.water = waterSurfaceAt(rivers, lakes, field, footprint);
+        if (params.get("current") !== "off")
+          player.waterCurrent = waterCurrentAt(rivers, lakes, field, footprint);
+      }
       const scatter = this.#scatter;
       const fallbackParts = this.#fallbackParts;
       let props: Awaited<ReturnType<typeof createStreamedProps>>;
@@ -1309,6 +1314,7 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
       let swimSamples = 0;
       let swimFloatSamples = 0;
       let swimExits = 0;
+      let swimDrift = 0;
       let wasSwimming = false;
       currentView = `${world}:player`;
       viewVisit = beginViewVisit();
@@ -1337,8 +1343,18 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
       let minSlope = Number.POSITIVE_INFINITY;
       let maxSlope = Number.NEGATIVE_INFINITY;
       ctx.afterPhysics(() => {
-        travel += Math.hypot(actor.position.x - previous.x, actor.position.z - previous.z);
+        const dx = actor.position.x - previous.x;
+        const dz = actor.position.z - previous.z;
+        travel += Math.hypot(dx, dz);
         previous.copy(actor.position);
+        // What the water moved, not what the keys moved: the share of this step's travel along the
+        // current, counted only while swimming with no input of the player's own. 0 with
+        // `?current=off`, which is its before arm.
+        if (player.swimming && player.velocity.x === 0 && player.velocity.z === 0) {
+          const { x: cx, z: cz } = player.currentVelocity;
+          const speed = Math.hypot(cx, cz);
+          if (speed > 0) swimDrift += (dx * cx + dz * cz) / speed;
+        }
         if (
           propColliders &&
           ctx.physics.directSpaceState.intersectShape({
@@ -1599,6 +1615,7 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
           swimSamples,
           swimFloatSamples,
           swimExits,
+          swimDrift,
           contactSamples,
           maxContactError,
           bilinearDifference,

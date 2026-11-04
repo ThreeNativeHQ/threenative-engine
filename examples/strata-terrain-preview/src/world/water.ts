@@ -2,6 +2,7 @@ import type { Heightfield } from "@threenative/core/world";
 import {
   type IBakedLake,
   type IBakedRiver,
+  RIVER_FLOW_MPS,
   surfaceHeights,
   waterlineRadius,
 } from "../render/river.js";
@@ -18,22 +19,38 @@ interface IReach {
   readonly reach: number;
 }
 
+/** One lake as the surface sees it: where it stands, how far it reaches and how high it is. */
+interface IPool {
+  readonly x: number;
+  readonly z: number;
+  readonly radius2: number;
+  readonly level: number;
+}
+
+/** Both waters in the form the queries scan: river segments and level pools. */
+interface IWaterBodies {
+  readonly reaches: readonly IReach[];
+  readonly pools: readonly IPool[];
+}
+
+/** What stands at one (x, z): its surface height, and the river piece carrying it if one is. */
+interface ISample {
+  readonly surface: number;
+  readonly river: IReach | undefined;
+}
+
 /**
- * The height of the water the player sees at (x, z), or `undefined` where none is drawn: the query
- * `CharacterBody3D.water` swims in.
- *
- * It reads the same baked splines and levels `createRivers` and `createLakes` draw from, with the
- * same surface rules: a footprint-limited river (forest, tundra) stands at its spline's own heights
- * across 2.5 widths, any other at `surfaceHeights` across 13 m; a lake stands level over its measured
- * waterline, 1.12 times out. Ground above the surface is dry by itself, because the body measures
- * its immersion against this height. Where a river and a lake overlap, the higher surface wins.
+ * The baked splines and levels `createRivers` and `createLakes` draw from, as segments and pools: a
+ * footprint-limited river (forest, tundra) stands at its spline's own heights across 2.5 widths, any
+ * other at `surfaceHeights` across 13 m; a lake stands level over its measured waterline, 1.12 times
+ * out. One builder, so the height a player swims at and the flow that carries them cannot disagree.
  */
-export function waterSurfaceAt(
+function waterBodies(
   rivers: readonly IBakedRiver[],
   lakes: readonly IBakedLake[],
   field: Heightfield,
   limitToFootprint: boolean,
-): (x: number, z: number) => number | undefined {
+): IWaterBodies {
   const reaches: IReach[] = [];
   for (const river of rivers) {
     const { points } = river;
@@ -63,24 +80,79 @@ export function waterSurfaceAt(
     const radius = limitToFootprint ? Math.min(measured, lake.radius) : measured;
     return { x: lake.at[0] ?? 0, z: lake.at[1] ?? 0, radius2: radius * radius, level: lake.level };
   });
-  return (x, z) => {
-    // ponytail: a linear scan of ~120 segments a call; a grid index if a world bakes thousands.
-    let nearest = Number.POSITIVE_INFINITY;
-    let surface: number | undefined;
-    for (const piece of reaches) {
-      const t = Math.max(
-        0,
-        Math.min(1, ((x - piece.ax) * piece.dx + (z - piece.az) * piece.dz) / piece.length2),
-      );
-      const distance = Math.hypot(x - piece.ax - piece.dx * t, z - piece.az - piece.dz * t);
-      if (distance <= piece.reach && distance < nearest) {
-        nearest = distance;
-        surface = piece.ha + (piece.hb - piece.ha) * t;
-      }
+  return { reaches, pools };
+}
+
+/**
+ * The water at (x, z), or `undefined` where none is drawn: the nearest river segment within its
+ * reach, unless a lake's level stands over it — where a river and a lake overlap, the higher surface
+ * wins and the river stops carrying anything.
+ */
+function sampleWater(bodies: IWaterBodies, x: number, z: number): ISample | undefined {
+  // ponytail: a linear scan of ~120 segments a call; a grid index if a world bakes thousands.
+  let nearest = Number.POSITIVE_INFINITY;
+  let river: IReach | undefined;
+  let t = 0;
+  for (const piece of bodies.reaches) {
+    const along = Math.max(
+      0,
+      Math.min(1, ((x - piece.ax) * piece.dx + (z - piece.az) * piece.dz) / piece.length2),
+    );
+    const distance = Math.hypot(x - piece.ax - piece.dx * along, z - piece.az - piece.dz * along);
+    if (distance <= piece.reach && distance < nearest) {
+      nearest = distance;
+      river = piece;
+      t = along;
     }
-    for (const pool of pools)
-      if ((x - pool.x) ** 2 + (z - pool.z) ** 2 <= pool.radius2)
-        surface = Math.max(surface ?? pool.level, pool.level);
-    return surface;
+  }
+  let surface =
+    river === undefined ? Number.NEGATIVE_INFINITY : river.ha + (river.hb - river.ha) * t;
+  for (const pool of bodies.pools)
+    if ((x - pool.x) ** 2 + (z - pool.z) ** 2 <= pool.radius2 && pool.level > surface) {
+      surface = pool.level;
+      river = undefined;
+    }
+  return surface === Number.NEGATIVE_INFINITY ? undefined : { surface, river };
+}
+
+/**
+ * The height of the water the player sees at (x, z), or `undefined` where none is drawn: the query
+ * `CharacterBody3D.water` swims in.
+ *
+ * Ground above the surface is dry by itself, because the body measures its immersion against this
+ * height.
+ */
+export function waterSurfaceAt(
+  rivers: readonly IBakedRiver[],
+  lakes: readonly IBakedLake[],
+  field: Heightfield,
+  limitToFootprint: boolean,
+): (x: number, z: number) => number | undefined {
+  const bodies = waterBodies(rivers, lakes, field, limitToFootprint);
+  return (x, z) => sampleWater(bodies, x, z)?.surface;
+}
+
+/**
+ * The flow the river carries a body with at (x, z), in m/s, or `undefined` where there is no water:
+ * the query `CharacterBody3D.waterCurrent` drifts a swimmer with. A lake stands still and reports
+ * zero.
+ *
+ * The direction is the downstream tangent at the nearest spline station — the direction the surface
+ * is drawn flowing in — at `RIVER_FLOW_MPS`, so the ripples and the swimmer travel at one speed.
+ */
+export function waterCurrentAt(
+  rivers: readonly IBakedRiver[],
+  lakes: readonly IBakedLake[],
+  field: Heightfield,
+  limitToFootprint: boolean,
+): (x: number, z: number) => { x: number; z: number } | undefined {
+  const bodies = waterBodies(rivers, lakes, field, limitToFootprint);
+  return (x, z) => {
+    const water = sampleWater(bodies, x, z);
+    if (water === undefined) return undefined;
+    const piece = water.river;
+    if (piece === undefined) return { x: 0, z: 0 };
+    const length = Math.sqrt(piece.length2);
+    return { x: (piece.dx / length) * RIVER_FLOW_MPS, z: (piece.dz / length) * RIVER_FLOW_MPS };
   };
 }

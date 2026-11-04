@@ -87,6 +87,16 @@ export const WATER_LAYER = 1;
 /** What the water mirror redraws: the ground and its distant ring, not every tree and blade again. */
 export const REFLECTED_LAYER = 3;
 
+/**
+ * Metres a second the forest stream flows. Unreal leaves it to the level's `WaterVelocityScalar`
+ * spline curve, defaulting to 128 cm/s (UE 5.8.3:
+ * Engine/Plugins/Experimental/Water/Source/Runtime/Public/WaterSplineMetadata.h:40), which is a
+ * river at its steepest; a lowland forest stream this size runs slower, so 0.9 m/s. The surface
+ * ripples advect at it and `waterCurrentAt` carries a swimmer with it, so what is drawn and what
+ * pushes the player are the same flow.
+ */
+export const RIVER_FLOW_MPS = 0.9;
+
 /** The stream's shape. Its reach is also the lake's exclusion corridor; see `createLakes`. */
 const RIVER = {
   /** Metres of water over the deepest point of the bed. The bank rises out of it on its own. */
@@ -108,15 +118,16 @@ const RIVER = {
   patch: { metres: 9, drift: 1.4, wind: [0.86, 0.51] as const },
   /**
    * The ripple scales: feature size across the current in metres, how much longer each is along it,
-   * how fast it drifts downstream in metres a second, and the slope it adds. A forest stream runs at
-   * about a metre a second and its surface tilts a few degrees: the old gains summed to slopes of
-   * one to four, a 45-75 degree chop that read as crumpled plastic. Each scale fades out once one
-   * pixel covers a fifth of it; see `footprint` in `createRivers`.
+   * the share of `RIVER_FLOW_MPS` it drifts downstream at, and the slope it adds. The shares average
+   * one, so the surface moves at the flow the player is carried at, and their spread keeps the
+   * scales sliding over each other instead of scrolling as one sheet. The old gains summed to slopes of one to
+   * four, a 45-75 degree chop that read as crumpled plastic. Each scale fades out once one pixel
+   * covers a fifth of it; see `footprint` in `createRivers`.
    */
   ripples: [
-    { metres: 2.4, stretch: 1.7, drift: 0.8, slope: 0.09 },
-    { metres: 0.85, stretch: 1.5, drift: 1, slope: 0.08 },
-    { metres: 0.3, stretch: 1.3, drift: 1.2, slope: 0.06 },
+    { metres: 2.4, stretch: 1.7, flow: 0.8, slope: 0.09 },
+    { metres: 0.85, stretch: 1.5, flow: 1, slope: 0.08 },
+    { metres: 0.3, stretch: 1.3, flow: 1.2, slope: 0.06 },
   ],
 } as const;
 
@@ -782,15 +793,20 @@ export function createRivers(
     ),
   }));
 
-  // Ripples are noise drawn longer along the current and slid downstream at the stream's pace. The
-  // height sums them in metres, and the normal is its gradient by finite difference in the current's
-  // own frame, rotated back into the world's by the baked heading.
+  // Ripples are noise drawn longer along the current and slid downstream at the river's own flow
+  // speed, the same `RIVER_FLOW_MPS` the player is carried at, so the water they see moves with the
+  // water that moves them. The height sums them in metres, and the normal is its gradient by finite
+  // difference in the current's own frame, rotated back into the world's by the baked heading.
   const height = (a: Node<"float">, b: Node<"float">): Node<"float"> => {
     let sum: Node<"float"> = float(0);
     for (const wave of octaves) {
       const length = wave.metres * wave.stretch;
       const octave = mx_noise_float(
-        vec3(a.sub(time.mul(wave.drift)).div(length), b.div(wave.metres), time.mul(0.11)),
+        vec3(
+          a.sub(time.mul(RIVER_FLOW_MPS * wave.flow)).div(length),
+          b.div(wave.metres),
+          time.mul(0.11),
+        ),
       );
       sum = sum.add(octave.mul(wave.weight.mul(wave.slope * wave.metres)));
     }

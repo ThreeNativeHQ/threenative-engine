@@ -21,9 +21,11 @@ export { Area3D } from "./Area3D.js";
  * @alias first person
  * @alias run jump coins goal
  * @situation swim in a river, lake or sea; float at the surface and wade slower in shallow water
+ * @situation river current carries a swimmer downstream while it floats
  * @alias swimming buoyancy water volume wade
  * @constraint use moveAndSlide inside the physics update
  * @constraint pass `water: (x, z) => surfaceHeight | undefined`; the body reads `swimming`, `immersionDepth` and `waterSurface` each moveAndSlide
+ * @constraint pass `waterCurrent: (x, z) => { x, z } | undefined` in m/s to have the water carry the body; it reads `currentVelocity` back
  * @override buoyancy (1.6, floats; Unreal 1.0 sinks), maxSwimSpeed (3 m/s) and fluidFriction (12) tune the Unreal MOVE_Swimming defaults
  * @deprecatedOption Constructor option `world` is deprecated; pass an IPhysicsContext as `physics` instead. CharacterBody3D itself is not deprecated.
  * @example const body = new CharacterBody3D({ object: hero, physics: ctx.physics, shape: CollisionShape3D.capsule(0.5, 0.35) });
