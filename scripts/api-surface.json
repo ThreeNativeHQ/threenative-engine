@@ -172,6 +172,7 @@
         "@threenative/core#lampPenumbraTangent": "export function lampPenumbraTangent( sourceRadius: number, blockerDistance: number, receiverDistance: number, ): number { … }",
         "@threenative/core#lampShadowMarker": "export function lampShadowMarker( renderer: { … }",
         "@threenative/core#loadAll": "export async function loadAll<TIn, TOut>( items: readonly TIn[], load: (item: TIn, index: number) => Promise<TOut>, options: ILoadAllOptions = { … }",
+        "@threenative/core#lodChainOf": "export function lodChainOf(geometry: BufferGeometry): ILodChain | undefined { … }",
         "@threenative/core#lodPixelScale": "export function lodPixelScale(camera: Camera, viewportHeight: number, depth: number): number { … }",
         "@threenative/core#markStatic": "export function markStatic(root: Object3D): number { … }",
         "@threenative/core#MatrixWorldPass": "export class MatrixWorldPass { … }",

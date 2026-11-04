@@ -17,6 +17,11 @@ import type { MeshPhysicalNodeMaterial } from "three/webgpu";
 import ts from "typescript";
 import { describe, expect, it, vi } from "vitest";
 import { defineGame } from "../../../packages/core/src/game.js";
+import {
+  DISCRETE_LOD_SCHEMA_VERSION,
+  DiscreteLodPlugin,
+  TN_DISCRETE_LOD,
+} from "../../../packages/core/src/model-lod.js";
 import { Scene, type SceneConstructor } from "../../../packages/core/src/scene.js";
 import type { WorldName } from "../src/render/biomes.js";
 import { type ICanopyComparison, loadPack } from "../src/render/pack.js";
@@ -373,6 +378,58 @@ describe("licensed pack characterization", () => {
         );
       }
       expect(Array.from(near.geometry.getAttribute("normal").array)).toEqual(sourceNormals);
+    } finally {
+      pack.dispose();
+    }
+  });
+  it("draws the cooked terminal rung of opaque far spruce parts past the far band", async () => {
+    const near = fixture();
+    near.root.add(fixture({ opaque: true }).mesh);
+    const far = fixture({ mapped: false });
+    const farBark = fixture({ mapped: false, opaque: true });
+    far.root.add(farBark.mesh);
+    // A cooked TN_discrete_lod chain on the far bark only: 12 triangles reduced to 2.
+    const reduced = new Uint32Array([0, 1, 2, 3, 4, 5]);
+    const plugin = new DiscreteLodPlugin();
+    plugin.setParser({
+      associations: new Map([[farBark.mesh, { meshes: 0, primitives: 0 }]]),
+      getDependency: async () => ({ array: reduced }),
+      json: {
+        meshes: [
+          {
+            primitives: [
+              {
+                extensions: {
+                  [TN_DISCRETE_LOD]: {
+                    absoluteErrors: [0.1],
+                    counts: [2],
+                    errors: [0.1],
+                    indices: [0],
+                    lod0Triangles: 12,
+                    schemaVersion: DISCRETE_LOD_SCHEMA_VERSION,
+                  },
+                },
+              },
+            ],
+          },
+        ],
+      },
+    });
+    await plugin.afterRoot({});
+    plugin.attach(far.root, { hysteresis: 0.15, maxPixelError: 1 });
+    const pack = await loaded(near.root, far.root);
+    try {
+      const parts = present(pack.parts.get("spruce:0"));
+      const at = (level: number, role: string) =>
+        present(parts.find((part) => part.level === level && part.role === role));
+      const bark = at(2, "bark").geometry;
+      expect(Array.from(present(bark.index).array)).toEqual(Array.from(reduced));
+      expect(Array.from(bark.getAttribute("position").array)).toEqual(
+        Array.from(at(1, "bark").geometry.getAttribute("position").array),
+      );
+      expect(at(2, "bark").material).toBe(at(1, "bark").material);
+      // Needle cards keep the far thinning: one geometry serves both levels.
+      expect(at(2, "pine").geometry).toBe(at(1, "pine").geometry);
     } finally {
       pack.dispose();
     }

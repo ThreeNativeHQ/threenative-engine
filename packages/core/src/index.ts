@@ -537,6 +537,18 @@ export {
  */
 export { baseGeometryOf } from "./model-lod.js";
 /**
+ * The cooked automatic LOD chain (`TN_discrete_lod`) a loaded geometry carries, or `undefined`.
+ *
+ * Its levels share the base's vertex attributes and differ only in index, and `errors` are each
+ * level's world-unit error in the base's own space. A caller that draws one geometry many times
+ * (an instanced batch, a streamed world level) reads the reduced shapes here instead of re-cooking.
+ *
+ * @situation draw a cooked reduced level of a model in an instanced batch or streamed world level
+ * @constraint a geometry the loader built no chain for returns undefined
+ * @example const chain = lodChainOf(baseGeometryOf(mesh)); const far = chain?.levels.at(-1);
+ */
+export { lodChainOf } from "./model-lod.js";
+/**
  * The screen pixels one world unit covers at `depth` for this camera and viewport.
  *
  * Perspective divides the projected scale by the depth; orthographic has no depth term and uses the

@@ -1,4 +1,9 @@
-import { type IAssetLoader, baseGeometryOf, normaliseToMetres } from "@threenative/core";
+import {
+  type IAssetLoader,
+  baseGeometryOf,
+  lodChainOf,
+  normaliseToMetres,
+} from "@threenative/core";
 /** Game-owned Fab art. Optional, local-only; missing species keep their procedural fallback. */
 import { bakedNoise } from "@threenative/core/world";
 import {
@@ -864,6 +869,7 @@ export async function loadPack(
     const size = box.getSize(new Vector3());
     const stone = STONE.has(one.asset);
     const entry = parts.get(`${one.asset}:${one.variant}`) ?? [];
+    const horizon = new Map<IPropPart, BufferGeometry>();
     root.traverse((object) => {
       const mesh = object as Mesh;
       if (!mesh.isMesh) return;
@@ -894,9 +900,26 @@ export async function loadPack(
         else declareWindReach(material, one.asset, geometry);
         if (source !== section.material) source.dispose();
         built.push({ geometry, material });
-        entry.push({ geometry, material, role, level: one.level ?? 0, variant: one.variant });
+        const part = { geometry, material, role, level: one.level ?? 0, variant: one.variant };
+        entry.push(part);
+        const rung =
+          one.asset === "spruce" && one.level === 1 && source.alphaTest === 0 && !section.group
+            ? lodChainOf(baseGeometryOf(mesh))?.levels.at(-1)?.index
+            : undefined;
+        if (rung) {
+          const reduced = geometry.clone().setIndex(rung.clone());
+          built.push({ geometry: reduced, material });
+          horizon.set(part, reduced);
+        }
       }
     });
+    // Past LOD_BANDS.far the far spruce draws its cook's terminal rung (TN_discrete_lod) of the opaque
+    // trunk and branch meshes, which stayed full detail at every distance: 7-17k of each tree's
+    // 12-21k far triangles. Needle cards keep their authored thinning; meshopt cannot see their holes.
+    if (horizon.size > 0)
+      for (const part of entry.filter((candidate) => candidate.level === 1)) {
+        entry.push({ ...part, geometry: horizon.get(part) ?? part.geometry, level: 2 });
+      }
     if (entry.some((part) => (part.level ?? 0) === 0))
       parts.set(`${one.asset}:${one.variant}`, entry);
   });

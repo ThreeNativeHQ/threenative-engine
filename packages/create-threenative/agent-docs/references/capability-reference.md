@@ -1792,6 +1792,21 @@ export async function loadAll<TIn, TOut>( items: readonly TIn[], load: (item: TI
 const species = await loadAll(names, (name) => ctx.assets.model(`flora/${name}.glb`));
 ```
 
+### `lodChainOf`
+
+`function` — The cooked automatic LOD chain (`TN_discrete_lod`) a loaded geometry carries, or `undefined`. Its levels share the base's vertex attributes and differ only in index, and `errors` are each level's world-unit error in the base's own space. A caller that draws one geometry many times (an instanced batch, a streamed world level) reads the reduced shapes here instead of re-cooking.
+
+```ts
+export function lodChainOf(geometry: BufferGeometry): ILodChain | undefined { … }
+```
+
+- **Use when:** draw a cooked reduced level of a model in an instanced batch or streamed world level
+- **Constraints:** a geometry the loader built no chain for returns undefined
+
+```ts
+const chain = lodChainOf(baseGeometryOf(mesh)); const far = chain?.levels.at(-1);
+```
+
 ### `lodPixelScale`
 
 `function` — The screen pixels one world unit covers at `depth` for this camera and viewport. Perspective divides the projected scale by the depth; orthographic has no depth term and uses the frustum height instead. This is the number a level of detail is chosen against: multiply a level's world-space error by it and you have the on-screen error a player can see, which is the comparison `updateModelLods` makes from the baked chain.

@@ -2378,6 +2378,22 @@
     },
     {
       "aliases": [],
+      "constraints": ["a geometry the loader built no chain for returns undefined"],
+      "example": "const chain = lodChainOf(baseGeometryOf(mesh)); const far = chain?.levels.at(-1);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function lodChainOf(geometry: BufferGeometry): ILodChain | undefined { … }",
+      "situations": [
+        "draw a cooked reduced level of a model in an instanced batch or streamed world level"
+      ],
+      "summary": "The cooked automatic LOD chain (`TN_discrete_lod`) a loaded geometry carries, or `undefined`. Its levels share the base's vertex attributes and differ only in index, and `errors` are each level's world-unit error in the base's own space. A caller that draws one geometry many times (an instanced batch, a streamed world level) reads the reduced shapes here instead of re-cooking.",
+      "supersedes": [],
+      "symbol": "lodChainOf"
+    },
+    {
+      "aliases": [],
       "constraints": [
         "a non-positive viewport height, a non-positive frustum height or an unprojectable camera throws",
         "a non-positive depth has no projected scale and returns Infinity"
