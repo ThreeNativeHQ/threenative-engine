@@ -1,5 +1,5 @@
 import { Heightfield } from "@threenative/core/world";
-import { BufferGeometry, Float32BufferAttribute } from "three";
+import { BufferAttribute, BufferGeometry } from "three";
 import type { IBakedWorld } from "./terrain.js";
 
 /** `world/horizon.json`: each world's same-site USGS surroundings, as `scripts/bake.mjs` writes them. */
@@ -111,50 +111,71 @@ export function createHorizonGeometry(
     [-1, 0],
     [0, -1],
   ] as const;
-  const positions: number[] = [];
-  const colors: number[] = [];
-  const indices: number[] = [];
+  // Per edge vertex, once: its bake cell and the seam step between the bake and the survey there.
+  // The collar has 385 rings of these, and the edge terms took most of its 0.5 s build.
+  const edges = new Int32Array(perimeter);
+  const unitX = new Float64Array(perimeter);
+  const unitZ = new Float64Array(perimeter);
+  const seams = new Float64Array(perimeter);
+  for (let vertex = 0; vertex < perimeter; vertex++) {
+    const side = Math.floor(vertex / segments);
+    const along = vertex % segments;
+    const [startX, startZ] = starts[side] as readonly [number, number];
+    const [stepX, stepZ] = directions[side] as readonly [number, number];
+    const column = startX + along * stepX;
+    const row = startZ + along * stepZ;
+    const edge = row * data.resolution + column;
+    edges[vertex] = edge;
+    const u = column / segments - 0.5;
+    const w = row / segments - 0.5;
+    unitX[vertex] = u;
+    unitZ[vertex] = w;
+    // Match the exact detail boundary; fade only the resolution/erosion difference over 40 m.
+    // Unlike the procedural collar, all surveyed relief immediately beyond that seam is real.
+    seams[vertex] =
+      (data.heights[edge] as number) - surveyed.heightAt(u * data.size, w * data.size);
+  }
+  const positions = new Float32Array((rings + 1) * perimeter * 3);
+  const colors = new Float32Array((rings + 1) * perimeter * 3);
+  const indices = new Uint32Array(rings * perimeter * 6);
+  let p = 0;
+  let q = 0;
   for (let ring = 0; ring <= rings; ring++) {
     const distance = (ring / rings) ** 1.65 * 2100;
+    const scale = 1 + distance / (data.size / 2);
+    const far = Math.min(1, Math.max(0, (distance - 300) / 600));
+    const fade = Math.exp(-distance / 40);
     for (let vertex = 0; vertex < perimeter; vertex++) {
-      const side = Math.floor(vertex / segments);
-      const along = vertex % segments;
-      const [startX, startZ] = starts[side] as readonly [number, number];
-      const [stepX, stepZ] = directions[side] as readonly [number, number];
-      const column = startX + along * stepX;
-      const row = startZ + along * stepZ;
-      const edge = row * data.resolution + column;
-      const scale = 1 + distance / (data.size / 2);
-      const x = (column / segments - 0.5) * data.size * scale;
-      const z = (row / segments - 0.5) * data.size * scale;
-      // Match the exact detail boundary; fade only the resolution/erosion difference over 40 m.
-      // Unlike the procedural collar, all surveyed relief immediately beyond that seam is real.
-      const edgeX = (column / segments - 0.5) * data.size;
-      const edgeZ = (row / segments - 0.5) * data.size;
-      const far = Math.min(1, Math.max(0, (distance - 300) / 600));
-      const surveyedHeight =
-        surveyed.heightAt(x, z) +
-        (smooth.heightAt(x, z) - surveyed.heightAt(x, z)) * far * far * (3 - 2 * far) +
-        ((data.heights[edge] as number) - surveyed.heightAt(edgeX, edgeZ)) *
-          Math.exp(-distance / 40);
-      positions.push(x, surveyedHeight, z);
-      colors.push(
-        data.colors[edge * 3] as number,
-        data.colors[edge * 3 + 1] as number,
-        data.colors[edge * 3 + 2] as number,
-      );
+      const edge = edges[vertex] as number;
+      const x = (unitX[vertex] as number) * data.size * scale;
+      const z = (unitZ[vertex] as number) * data.size * scale;
+      const near = surveyed.heightAt(x, z);
+      // The prefiltered copy is read only where it blends in; the sum is the same where it does not.
+      const smoothed = far > 0 ? (smooth.heightAt(x, z) - near) * far * far * (3 - 2 * far) : 0;
+      positions[p] = x;
+      positions[p + 1] = near + smoothed + (seams[vertex] as number) * fade;
+      positions[p + 2] = z;
+      colors[p] = data.colors[edge * 3] as number;
+      colors[p + 1] = data.colors[edge * 3 + 1] as number;
+      colors[p + 2] = data.colors[edge * 3 + 2] as number;
+      p += 3;
       if (ring === rings) continue;
       const a = ring * perimeter + vertex;
       const b = ring * perimeter + ((vertex + 1) % perimeter);
       const c = a + perimeter;
       const d = b + perimeter;
-      indices.push(a, b, c, b, d, c);
+      indices[q++] = a;
+      indices[q++] = b;
+      indices[q++] = c;
+      indices[q++] = b;
+      indices[q++] = d;
+      indices[q++] = c;
     }
   }
   const geometry = new BufferGeometry();
-  geometry.setAttribute("position", new Float32BufferAttribute(positions, 3));
-  geometry.setAttribute("color", new Float32BufferAttribute(colors, 3));
-  geometry.setIndex(indices);
+  geometry.setAttribute("position", new BufferAttribute(positions, 3));
+  geometry.setAttribute("color", new BufferAttribute(colors, 3));
+  geometry.setIndex(new BufferAttribute(indices, 1));
   geometry.computeVertexNormals();
   return geometry;
 }
