@@ -319,7 +319,8 @@ void registerMeshMaterial(ClassBinding& b, MaterialType type, bool node = false,
              {"aoNode", &Nodes::aoNode},
              {"irradianceNode", &Nodes::irradianceNode},
              {"depthNode", &Nodes::depthNode},
-             {"castShadowPositionNode", &Nodes::castShadowPositionNode}}) {
+             {"castShadowPositionNode", &Nodes::castShadowPositionNode},
+             {"maskNode", &Nodes::maskNode}}) {
         if (raw && (std::string_view(name) == "emissiveNode" || std::string_view(name) == "roughnessNode" ||
                     std::string_view(name) == "metalnessNode"))
             continue;

@@ -253,6 +253,34 @@ void aoNode() {
     CHECK(with.code.find("f_nodeAo") != std::string::npos);
 }
 
+// NodeMaterial.maskNode (three r187 setupDiffuseColor): a false mask discards the colour-pass fragment. The binding
+// had no maskNode setter, so a game's mask stayed a JS expando and every pixel drew: a near-camera tree fade did
+// nothing on the default engine. The slot is part of the program key, and each colour builder adds one discard.
+void maskNode() {
+    namespace g = tn::engine::shader::graph;
+    VertexVariant plain;
+    VertexVariant masked;
+    masked.nodes.maskNode = g::lessThan(g::uniform("nodeFade", Type::f32(), {0.5f}), g::float_(0.25));
+    CHECK(plain.key() != masked.key());
+    const auto discards = [](const std::string& code) {
+        std::size_t count = 0;
+        for (std::size_t at = code.find("discard"); at != std::string::npos; at = code.find("discard", at + 1)) ++count;
+        return count;
+    };
+    const std::pair<Program, Program> pairs[] = {
+        {buildStandard(StandardMaterial{}, plain).fragment, buildStandard(StandardMaterial{}, masked).fragment},
+        {buildLambert(plain).fragment, buildLambert(masked).fragment},
+        {buildBasic(plain).fragment, buildBasic(masked).fragment},
+    };
+    for (const auto& [without, with] : pairs) {
+        const auto a = WgslEmitter::emit(without, 1), b = WgslEmitter::emit(with, 1);
+        CHECK(a.ok() && b.ok());
+        CHECK(a.code.find("f_nodeFade") == std::string::npos);
+        CHECK(b.code.find("f_nodeFade") != std::string::npos);
+        CHECK(discards(b.code) == discards(a.code) + 1);
+    }
+}
+
 // PRD-653: material.roughDiffuse shades direct light with the EON model. The variant key changes, a lamp's Source
 // Radius enters the fragment only for the marked material (a sun has none), and the EON constants appear only there.
 void roughDiffuse() {
@@ -502,6 +530,7 @@ void builds() {
     nodes();
     surfacePrefix();
     aoNode();
+    maskNode();
     irradianceNode();
     albedoOutput();
     VertexVariant storage; storage.instanced = storage.instanceStorage = storage.instanceColor = true;

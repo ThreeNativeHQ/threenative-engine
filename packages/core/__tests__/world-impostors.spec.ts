@@ -714,6 +714,48 @@ describe("WorldCells automatic impostors", () => {
     }
   });
 
+  it("gives a drawn CPU batch the LOD range column when the bake turns its surface range-aware", async () => {
+    // The terminal level's gates arrive after the near batches hold records; the Wasm engine refuses
+    // a draw whose material reads `tnPublishedLodRange` from a geometry without it.
+    const pkg = pineOnly();
+    const definition = pkg.assets.pine as IWorldAsset;
+    // One authored level: until the bake adds the terminal one, the asset has no LOD gate at all.
+    const single = { ...definition, lods: [], impostorDistance: 150 };
+    const one = {
+      ...pkg,
+      assets: { pine: single },
+      cells: [{ x: 1, z: 1, runs: [{ asset: "pine", offset: 0, count: 1 }] }],
+    };
+    stubPlacementFetch(one, new Float32Array([-32, 0, -32, 0, 0, 0, 1, 1]));
+    const world = await loadPine(treeLoader(), {
+      terrain: false,
+      ring: 10,
+      gpuScene: false,
+      preserveAuthoredParts: true,
+      impostors: true,
+      lodHysteresis: 0.2,
+      adaptiveLod: false,
+    });
+    try {
+      await flushed(world);
+      runBake(world, rendererStub());
+      await flushed(world);
+      const aware: string[] = [];
+      const missing: string[] = [];
+      world.traverse((object: Object3D) => {
+        if (!(object instanceof InstancedMesh) || object.count === 0) return;
+        if ((object.material as Material).userData.tnPublishedLodRange !== true) return;
+        aware.push(object.name);
+        if (object.geometry.getAttribute("tnPublishedLodRange") === undefined)
+          missing.push(object.name);
+      });
+      expect(aware.length).toBeGreaterThan(0);
+      expect(missing).toEqual([]);
+    } finally {
+      world.dispose();
+    }
+  });
+
   it("keeps CPU LOD batches visible until a refilter publishes their replacement ranges", async () => {
     stubManifestFetch(pineOnly());
     const follow = { position: { x: -84, z: -64 } };

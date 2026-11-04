@@ -1526,6 +1526,7 @@ irradianceNode: Node | null;
 alphaHash: boolean;
 castShadowPositionNode: Node | null;
 maxPositionOffset: number;
+maskNode: Node | null;
 
   clone(): this;
 
@@ -1685,6 +1686,7 @@ subsurfaceColor: Color | undefined;
 alphaHash: boolean;
 castShadowPositionNode: Node | null;
 maxPositionOffset: number;
+maskNode: Node | null;
 
   clone(): this;
 
@@ -1801,6 +1803,7 @@ irradianceNode: Node | null;
 alphaHash: boolean;
 castShadowPositionNode: Node | null;
 maxPositionOffset: number;
+maskNode: Node | null;
 
   clone(): this;
 

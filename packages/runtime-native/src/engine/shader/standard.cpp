@@ -624,7 +624,7 @@ static void materialInputs(Program& f, const VertexVariant& variant,
     const auto pinned = [&](Type type, ExprId value) { return f.load(f.var(type, value)); };
     const auto& nodes = variant.nodes;  // the slots this fragment lowers; position, vertex and scale nodes run in the vertex stage
     for (const auto& node : {nodes.colorNode, nodes.emissiveNode, nodes.roughnessNode, nodes.metalnessNode, nodes.opacityNode,
-                             nodes.aoNode, nodes.irradianceNode, nodes.fragmentNode, nodes.depthNode})
+                             nodes.aoNode, nodes.irradianceNode, nodes.fragmentNode, nodes.depthNode, nodes.maskNode})
         for (const std::string& name : graph::materialInputs(node)) {
             const std::string key = "material:" + name;
             if (inputs.count(key)) continue;
@@ -654,6 +654,13 @@ static ExprId slotValue(Program& f, graph::Lowering& slots, const graph::Node& n
     if (!node) return fallback;
     tsl::Build build(f);
     return nodeType(f, slots.lower(node), type);
+}
+
+// three r187 NodeMaterial.setupDiffuseColor: `bool(maskNode).not().discard()`, before the colour is read.
+static void discardMasked(Program& f, graph::Lowering& slots, const VertexVariant& variant) {
+    if (!variant.nodes.maskNode) return;
+    const ExprId keep = slotValue(f, slots, variant.nodes.maskNode, Type::boolean(), kInvalid);
+    f.If(f.select(keep, f.constant(false), f.constant(true)), [&] { f.discard(); });
 }
 
 static ExprId diffuseAlpha(Program& f, graph::Lowering& slots, const VertexVariant& variant, ExprId diffuse, ExprId texel) {
@@ -1371,6 +1378,7 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     const ExprId normalWorld = f.call("normalize", {f.swizzle(f.mul(f.construct(Type::vec(4), {n, f.constant(0.0f)}),
                                                                      f.uniform("viewMatrix", Type::mat(4, 4))), "xyz")});
     graph::Lowering slots = slotLowering(f, variant, n);
+    discardMasked(f, slots, variant);
     const ExprId diffuse = slotValue(f, slots, variant.nodes.colorNode, Type::vec(4), f.uniform("diffuse", Type::vec(4)));
     const ExprId texel = variant.nodes.colorNode ? kInvalid : mapTexel(f, variant);
     ExprId diffuseColor = materialColor(f, variant, diffuse);
@@ -1702,6 +1710,7 @@ StandardPrograms buildLit(bool phong, const VertexVariant& variant, const LightL
     const ExprId normalWorld = f.call("normalize", {f.swizzle(f.mul(f.construct(Type::vec(4), {n, f.constant(0.0f)}),
                                                                      f.uniform("viewMatrix", Type::mat(4, 4))), "xyz")});
     graph::Lowering slots = slotLowering(f, variant, n);
+    discardMasked(f, slots, variant);
     const ExprId diffuse = slotValue(f, slots, variant.nodes.colorNode, Type::vec(4), f.uniform("diffuse", Type::vec(4)));
     const ExprId texel = variant.nodes.colorNode ? kInvalid : mapTexel(f, variant);
     ExprId diffuseColor = materialColor(f, variant, diffuse);
@@ -1809,6 +1818,7 @@ StandardPrograms buildBasic(const VertexVariant& variant) {
     // MeshBasicNodeMaterial.setupNormal: negateOnBackSide(normalViewGeometry); a normalNode is not read.
     const ExprId normalView = needsNormal ? facedNormal(f, variant, f.call("normalize", {f.varying("normalView", Type::vec(3))})) : kInvalid;
     graph::Lowering slots = slotLowering(f, variant, normalView);
+    discardMasked(f, slots, variant);
     const ExprId diffuse = slotValue(f, slots, variant.nodes.colorNode, Type::vec(4), f.uniform("diffuse", Type::vec(4)));
     ExprId texel = kInvalid;
     if (variant.background && !variant.nodes.colorNode) {

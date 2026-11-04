@@ -1676,6 +1676,14 @@ export function defineBrowserClasses(
             if (loans.length > mark) result = repay(mark, result);
             if (drives) animated = new WeakMap();
           }
+          // The engine's clone and copy carry the material's graphs; the TSL nodes a slot reads back
+          // follow them, or `clone().maskNode` answers null and a composed mask drops the source's.
+          if (materialClass && (method === "clone" || method === "copy")) {
+            const [from, to] = method === "clone" ? [this, result] : [args[0], this];
+            const slots = shaderNodes.get(refOf(from as object).key);
+            if (slots === undefined) shaderNodes.delete(refOf(to as object).key);
+            else shaderNodes.set(refOf(to as object).key, new Map(slots));
+          }
           if (method === "copy") {
             shapes.delete(this);
             itemSizes.delete(this);

@@ -1557,7 +1557,7 @@ export class CellRender {
           shared.mesh.count === 0
         )
           shared.rebind(part.geometry, material);
-        else shared.mesh.material = material;
+        else shared.surface(material);
         this.bundleOut(shared);
         this.bundleIn(shared);
       }
@@ -1639,7 +1639,7 @@ export class CellRender {
         return existing;
       }
       if (rebind) existing.rebind(shape.geometry, shape.material);
-      else existing.mesh.material = shape.material;
+      else existing.surface(shape.material);
       this.bundleOut(existing);
       this.bundleIn(existing);
       return existing;

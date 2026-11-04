@@ -632,7 +632,7 @@ DrawItem& RenderDatabase::refresh(const Mesh& mesh, Record& r) {
 
 const RenderDatabase::GraphSources& RenderDatabase::graphSources(const Material& material) {
     static const GraphSources none;
-    std::array<const void*, 15> roots{};
+    std::array<const void*, 16> roots{};
     const auto graphs = material.nodes.pointers();
     static_assert(decltype(graphs){}.size() == decltype(roots){}.size(), "a node slot was added to MaterialNodes");
     std::copy(graphs.begin(), graphs.end(), roots.begin());

@@ -26,6 +26,9 @@ struct MaterialNodes {
      *  positionNode. A bare positionLocal casts the rest pose, so a cached shadow page holds what any later
      *  refresh draws again: a swaying tree's shadow cannot snap when its page re-renders. */
     graph::Node castShadowPositionNode;
+    /** NodeMaterial.maskNode: a bool; a colour-pass fragment where it is false is discarded before its colour is read
+     *  (three's setupDiffuseColor). The shadow depth pass draws without it, as it draws without the colour slots. */
+    graph::Node maskNode;
     /** SpriteNodeMaterial.scaleNode (a vec2 beside the model scale) and rotationNode (radians, over the material's). */
     graph::Node scaleNode, rotationNode;
     /** The scene's `fogNode`, a vec4(color, factor) mixed into the finished colour; set on draw items, never on a material. */
@@ -37,13 +40,15 @@ struct MaterialNodes {
                           emissiveNode.get(), roughnessNode.get(), metalnessNode.get(),
                           opacityNode.get(),  vertexNode.get(),    fragmentNode.get(),
                           scaleNode.get(),    rotationNode.get(),  depthNode.get(),
-                          aoNode.get(),       irradianceNode.get(), castShadowPositionNode.get()};
+                          aoNode.get(),       irradianceNode.get(), castShadowPositionNode.get(),
+                          maskNode.get()};
     }
     auto graphs() const {
         return std::array{colorNode,     positionNode, normalNode, emissiveNode, roughnessNode,
                           metalnessNode, opacityNode,  vertexNode, fragmentNode,
                           scaleNode,     rotationNode, depthNode,
-                          aoNode,        irradianceNode, fogNode, castShadowPositionNode};
+                          aoNode,        irradianceNode, fogNode, castShadowPositionNode,
+                          maskNode};
     }
     /** The position graph a shadow depth pass casts from: castShadowPositionNode when set (none for a bare
      *  positionLocal, the rest pose), else positionNode, as three's shadow pass assigns it. */

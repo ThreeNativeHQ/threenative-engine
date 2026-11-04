@@ -379,6 +379,29 @@ export class SharedBatch {
     return this;
   }
 
+  /**
+   * Swap the surface of a batch that may hold records. A range-aware surface reads the
+   * `tnPublishedLodRange` column, so a buffer without one gets it here, each record whole at this
+   * batch's level until the next write publishes its range: the terminal level's late gates turn a
+   * drawn batch range-aware, and the Wasm engine refuses a draw whose attribute is missing.
+   */
+  surface(material: Material): void {
+    this.mesh.material = material;
+    const aware = material.userData.tnPublishedLodRange === true;
+    if (aware === this.#rangeAware) return;
+    this.#rangeAware = aware;
+    this.#setGeometry(this.#geometryFor(this.mesh.instanceMatrix.count));
+    const ranges = this.#lodRangeAttribute();
+    if (ranges === undefined) return;
+    const values = ranges.array as Float32Array;
+    for (let at = 0; at < values.length; at += LOD_RANGE_STRIDE) {
+      values[at] = this.#rangeLevel;
+      values[at + 1] = this.#rangeLevel;
+      values[at + 2] = -1;
+    }
+    ranges.needsUpdate = true;
+  }
+
   /** The capacity this batch had when it was parked; see {@link park}. */
   #parked = 0;
 

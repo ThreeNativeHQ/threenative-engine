@@ -213,3 +213,54 @@ it("bridges Scene.backgroundNode and live uniforms through the shared TSL runtim
     graph[TSL_NODE],
   );
 });
+
+it("carries a material's TSL slots through clone and copy, as the engine carries its graphs", () => {
+  const tslRuntime: ITslRuntime = {
+    call: vi.fn(() => 1),
+    release: vi.fn(),
+    set: vi.fn(),
+    setUniform: vi.fn(),
+    effectParameter: vi.fn(() => 0),
+    setPost: vi.fn(),
+    compute: vi.fn(),
+    readStorage: vi.fn(),
+    deleteStorage: vi.fn(),
+  };
+  const base = sceneRuntime(new Map(), new Set());
+  let clones = 0;
+  const runtime: IBrowserRuntime = {
+    ...base,
+    invoke(self, method, args) {
+      if (method === "clone")
+        return { key: `MeshPhysicalNodeMaterial:0:${100 + ++clones}:1`, type: self.type };
+      return base.invoke(self, method, args);
+    },
+  };
+  const { classes } = defineBrowserClasses(registry, { ...runtime, tsl: tslRuntime }, catalog);
+  const tsl = defineTsl(tslRuntime).exports as unknown as {
+    uniform(value: number): { [TSL_NODE]: number };
+  };
+  interface ISlots {
+    maskNode: unknown;
+    colorNode: unknown;
+    clone(): ISlots;
+    copy(source: ISlots): ISlots;
+  }
+  const Material = classes.MeshPhysicalNodeMaterial as new () => ISlots;
+  const source = new Material();
+  const mask = tsl.uniform(1);
+  const color = tsl.uniform(0.5);
+  source.maskNode = mask;
+  source.colorNode = color;
+  // A composed mask (core's LOD crossfade) reads the clone's slot: null there drops the source's.
+  const twin = source.clone();
+  expect(twin.maskNode).toBe(mask);
+  expect(twin.colorNode).toBe(color);
+  const target = new Material();
+  target.colorNode = tsl.uniform(2);
+  target.copy(source);
+  expect(target.maskNode).toBe(mask);
+  expect(target.colorNode).toBe(color);
+  target.copy(new Material());
+  expect(target.maskNode).toBe(null);
+});

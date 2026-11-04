@@ -12177,6 +12177,15 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "maskNode",
+          "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": [
@@ -13629,6 +13638,15 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "maskNode",
+          "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": [
@@ -14245,6 +14263,15 @@
         {
           "name": "maxPositionOffset",
           "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "maskNode",
+          "type": "Node | null",
           "mutable": true,
           "lifetime": "owned",
           "status": {

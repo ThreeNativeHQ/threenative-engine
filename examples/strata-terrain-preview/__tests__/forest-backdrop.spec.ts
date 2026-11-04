@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 describe("forest backdrop", () => {
   const { forest } = JSON.parse(
     readFileSync(new URL("../src/world/horizon.json", import.meta.url), "utf8"),
-  ) as Record<string, { size: number; resolution: number; heights: number[] }>;
+  ) as { forest: { size: number; resolution: number; heights: number[] } };
   const stats = terrainStats(forest.heights, forest.resolution, forest.size);
 
   it("keeps the real place's relief and a sharp, branching surface", () => {
