@@ -207,7 +207,9 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
       if (level < 2) key.color.setRGB(...temperatureColour(SUN_KELVIN));
       // Diagnosis knob ?specular=0, the same pair as the calibration scene's (render/specular.ts carries the
       // citations): it runs before `shadeLikeSubstrate`, so the twin takes the substrate diffuse too.
-      // ?specular=f0 is round 7's F0-only reading, kept so its recorded arms stay reproducible.
+      // ?specular=f0 is round 7's F0-only reading, kept so its recorded arms stay reproducible. It also runs before
+      // `applyDiffuseEnergy` below, whose twin keeps this one's class, so the ablation survives the term
+      // (render/diffuseEnergy.ts; round 12 measured the two knobs reading as one frame).
       const specular = params.get("specular");
       if (specular !== null)
         model.traverse((object) => {
