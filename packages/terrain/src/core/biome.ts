@@ -3,9 +3,10 @@ import { LANDFORMS, type LandformKind } from "./presets.js";
 /**
  * A biome as a data file: the rules one world grows by, and no appearance at all.
  *
- * A biome says which landform and seed it was generated from, which trees, grass and ground bands
- * it holds, which water it floods, where it puts the player and the detail, the words a request may
- * use for it, and the *name* of the look it is graded under. It carries no colour, no material and
+ * A biome says which landform and seed it was generated from, which baked bundle its world is read
+ * from, which trees, grass and ground bands it holds, which water it floods, where it puts the
+ * player and the detail, the words a request may use for it, and the *name* of the look it is graded
+ * under. It carries no colour, no material and
  * no shading: those stay game source, and the game resolves `look` to its own preset. A sixth biome
  * is therefore a new file beside the five, not a new branch in the code that reads them.
  *
@@ -40,6 +41,12 @@ export interface IFoliageType {
   readonly spacing: readonly [number, number];
   /** What a placement stops the player with. */
   readonly collision: "none" | "trunk" | "hull";
+  /** The spacing follows the stand field, a closed core packing tighter than an open edge. */
+  readonly stands: boolean;
+  /** The least meadow weight, 0..1, a spot must carry for this species to stand on it. */
+  readonly grassThreshold: number;
+  /** The least stand-field weight, 0..1, a spot must carry for this species to stand on it. */
+  readonly standThreshold: number;
   readonly far: IFarFieldRule | null;
 }
 
@@ -51,6 +58,21 @@ export interface IGrassType {
   readonly slope: readonly [number, number];
   readonly height: readonly [number, number] | null;
   readonly spacing: number;
+  /** Degrees past `slope[1]` the meadow runs out over. */
+  readonly slopeFalloff: number;
+  /** Metres over which the cover fades out at the `height` ceiling. */
+  readonly heightFalloff: number;
+  /**
+   * The mat field's band, `[threshold, span]`: the weight the cover is gone at and the weight over
+   * which it reaches full, on the field a mat plain is measured by. Null on ground without mats.
+   */
+  readonly mats: readonly [number, number] | null;
+  /** Metres above the waterline a plant stands at. */
+  readonly waterMargin: number;
+  /** A beach that thins over the waterline, over `width` metres; null on a shore with none. */
+  readonly beach: readonly [number, number] | null;
+  /** Metres between plants in the dense detail disc around a place the player stands. */
+  readonly detailSpacing: number;
 }
 
 /** A ground layer's band, as fractions of the measured height range. */
@@ -77,6 +99,19 @@ export interface IBiomeWaterBody {
   readonly level?: number;
 }
 
+/**
+ * The baked bundle a biome's world is read from: the file under the game's `world/` folder.
+ *
+ * A bundle holds one world or several: two biomes generated from the same DEM share one file, so a
+ * world is named by the file and the key it sits under, not by a branch in the loader.
+ */
+export interface IBakeBundle {
+  /** File stem under `world/`, without its extension. */
+  readonly file: string;
+  /** The key this biome's world sits under when the file holds several, else null. */
+  readonly key: string | null;
+}
+
 /** Where the world puts the player, the launch camera and its dense detail. */
 export interface ISpawnSpec {
   /** World x and z the player starts at. */
@@ -90,6 +125,7 @@ export interface ISpawnSpec {
 export interface IBiomeSpec {
   /** The name of the look the game grades this biome under; the package reads no colour. */
   readonly look: string;
+  readonly bake: IBakeBundle;
   readonly landform: LandformKind;
   readonly sizeMeters: number;
   readonly seed: number;
@@ -98,12 +134,15 @@ export interface IBiomeSpec {
   readonly layers: readonly ILayerInfo[];
   readonly water: readonly IBiomeWaterBody[];
   readonly spawn: ISpawnSpec;
+  /** The species that live here, by asset id: the pack resolves each to its own art. */
+  readonly species: readonly string[];
   /** The words a request may use for this biome; its own name comes first. */
   readonly aliases: readonly string[];
 }
 
 const SPEC_FIELDS = [
   "look",
+  "bake",
   "landform",
   "sizeMeters",
   "seed",
@@ -112,6 +151,7 @@ const SPEC_FIELDS = [
   "layers",
   "water",
   "spawn",
+  "species",
   "aliases",
 ] as const;
 const FOLIAGE_FIELDS = [
@@ -121,10 +161,26 @@ const FOLIAGE_FIELDS = [
   "height",
   "spacing",
   "collision",
+  "stands",
+  "grassThreshold",
+  "standThreshold",
   "far",
 ] as const;
 const FAR_FIELDS = ["cell", "spacing", "slope", "reach", "impostor"] as const;
-const GRASS_FIELDS = ["species", "density", "slope", "height", "spacing"] as const;
+const GRASS_FIELDS = [
+  "species",
+  "density",
+  "slope",
+  "height",
+  "spacing",
+  "slopeFalloff",
+  "heightFalloff",
+  "mats",
+  "waterMargin",
+  "beach",
+  "detailSpacing",
+] as const;
+const BAKE_FIELDS = ["file", "key"] as const;
 const LAYER_FIELDS = ["layer", "from", "to", "shedFrom", "shedTo"] as const;
 const LAYER_REQUIRED = ["layer", "from", "to"] as const;
 const WATER_FIELDS = ["kind", "width", "radius", "depth", "level"] as const;
@@ -176,6 +232,18 @@ function whole(value: unknown, biome: string, field: string, min = 0): number {
   return value;
 }
 
+/** A 0..1 weight. */
+function share(value: unknown, biome: string, field: string): number {
+  const number = count(value, biome, field);
+  if (number > 1) fail(biome, field, "must be at most 1");
+  return number;
+}
+
+function flag(value: unknown, biome: string, field: string): boolean {
+  if (typeof value !== "boolean") fail(biome, field, "must be true or false");
+  return value;
+}
+
 function text(value: unknown, biome: string, field: string): string {
   if (typeof value !== "string" || value.trim() === "")
     fail(biome, field, "must be a non-empty string");
@@ -210,6 +278,17 @@ function intervalOf(
   for (const [index, entry] of numbers.entries())
     if (entry > max) fail(biome, `${field}[${index}]`, `must be at most ${max}`);
   return numbers;
+}
+
+/** A field weight band, `[threshold, span]`: neither ascends, and a zero span covers nothing. */
+function band(value: unknown, biome: string, field: string): readonly [number, number] {
+  if (!Array.isArray(value) || value.length !== 2)
+    fail(biome, field, "must be an array of 2 numbers");
+  const [threshold = 0, span = 0] = value.map((entry, index) =>
+    share(entry, biome, `${field}[${index}]`),
+  );
+  if (span === 0) fail(biome, `${field}[1]`, "must be greater than 0");
+  return [threshold, span];
 }
 
 /** An ascending pair. Returns a tuple, so a validated field needs no cast where it is read. */
@@ -261,10 +340,7 @@ function far(value: unknown, biome: string, field: string): IFarFieldRule | null
 
 function foliage(value: unknown, biome: string, field: string): IFoliageType {
   const row = closed(value, biome, field, FOLIAGE_FIELDS);
-  const height =
-    row.height === null
-      ? null
-      : (pair(row.height, biome, `${field}.height`));
+  const height = row.height === null ? null : pair(row.height, biome, `${field}.height`);
   return {
     species: text(row.species, biome, `${field}.species`),
     density: count(row.density, biome, `${field}.density`),
@@ -272,6 +348,9 @@ function foliage(value: unknown, biome: string, field: string): IFoliageType {
     height,
     spacing: pair(row.spacing, biome, `${field}.spacing`),
     collision: oneOf(row.collision, biome, `${field}.collision`, COLLISION_CLASSES),
+    stands: flag(row.stands, biome, `${field}.stands`),
+    grassThreshold: share(row.grassThreshold, biome, `${field}.grassThreshold`),
+    standThreshold: share(row.standThreshold, biome, `${field}.standThreshold`),
     far: far(row.far, biome, `${field}.far`),
   };
 }
@@ -284,11 +363,14 @@ function grass(value: unknown, biome: string, field: string): IGrassType {
     species: text(row.species, biome, `${field}.species`),
     density,
     slope: pair(row.slope, biome, `${field}.slope`, 0, 90),
-    height:
-      row.height === null
-        ? null
-        : (pair(row.height, biome, `${field}.height`)),
+    height: row.height === null ? null : pair(row.height, biome, `${field}.height`),
     spacing: positive(row.spacing, biome, `${field}.spacing`),
+    slopeFalloff: count(row.slopeFalloff, biome, `${field}.slopeFalloff`),
+    heightFalloff: count(row.heightFalloff, biome, `${field}.heightFalloff`),
+    mats: row.mats === null ? null : band(row.mats, biome, `${field}.mats`),
+    waterMargin: count(row.waterMargin, biome, `${field}.waterMargin`),
+    beach: row.beach === null ? null : pair(row.beach, biome, `${field}.beach`),
+    detailSpacing: positive(row.detailSpacing, biome, `${field}.detailSpacing`),
   };
 }
 
@@ -332,6 +414,14 @@ function water(value: unknown, biome: string, field: string): IBiomeWaterBody {
   return { kind, width, radius, depth, level };
 }
 
+function bake(value: unknown, biome: string): IBakeBundle {
+  const row = closed(value, biome, "bake", BAKE_FIELDS);
+  return {
+    file: text(row.file, biome, "bake.file"),
+    key: row.key === null ? null : text(row.key, biome, "bake.key"),
+  };
+}
+
 function spawn(value: unknown, biome: string): ISpawnSpec {
   const row = closed(value, biome, "spawn", SPAWN_FIELDS);
   return {
@@ -339,6 +429,16 @@ function spawn(value: unknown, biome: string): ISpawnSpec {
     cameraOffset: point3(row.cameraOffset, biome, "spawn.cameraOffset"),
     focus: point2(row.focus, biome, "spawn.focus"),
   };
+}
+
+/** The species ids a biome holds: a non-empty list of names, each once. */
+function species(value: unknown, biome: string): string[] {
+  if (!Array.isArray(value) || value.length === 0)
+    fail(biome, "species", "must be a non-empty array of asset ids");
+  const names = value.map((name, index) => text(name, biome, `species[${index}]`));
+  for (const [index, name] of names.entries())
+    if (names.indexOf(name) !== index) fail(biome, `species[${index}]`, `repeats '${name}'`);
+  return names;
 }
 
 /**
@@ -363,6 +463,7 @@ export function validateBiome(spec: unknown, name: string): IBiomeSpec {
   };
   return {
     look: text(root.look, biome, "look"),
+    bake: bake(root.bake, biome),
     landform: oneOf(root.landform, biome, "landform", LANDFORM_KINDS),
     sizeMeters: positive(root.sizeMeters, biome, "sizeMeters"),
     seed: whole(root.seed, biome, "seed"),
@@ -371,6 +472,7 @@ export function validateBiome(spec: unknown, name: string): IBiomeSpec {
     layers: rows(root.layers, "layers", (entry, at) => layer(entry, biome, at)),
     water: rows(root.water, "water", (entry, at) => water(entry, biome, at)),
     spawn: spawn(root.spawn, biome),
+    species: species(root.species, biome),
     aliases: (aliases as unknown[]).map((word, index) =>
       text(word, biome, `aliases[${index}]`).toLowerCase(),
     ),

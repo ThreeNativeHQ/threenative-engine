@@ -12,17 +12,13 @@ import { createRandom } from "@threenative/core";
 import type { Heightfield } from "@threenative/core/world";
 import { type IPlacement, createSegmentIndex, slopeQuantile } from "@threenative/terrain";
 import { ImprovedNoise } from "three/addons/math/ImprovedNoise.js";
-import type { WorldName } from "./biomes.js";
+import { biomeSpec } from "./biomeData.js";
+import { BIOMES, type ICoverDrift, type WorldName } from "./biomes.js";
 import { ROCK } from "./cover.js";
+import { MATS_FIELD, STAND_FIELD, fieldWeight } from "./coverField.js";
 import { type IBakedWorld, depositAtIndex } from "./terrain.js";
 
-const tundraNoise = new ImprovedNoise();
-const tundraCover = (x: number, z: number): number =>
-  clamp01(
-    0.52 +
-      tundraNoise.noise(x * 0.043, 11, z * 0.043) * 0.85 +
-      tundraNoise.noise(x * 0.11, 19, z * 0.11) * 0.15,
-  );
+const tundraCover = (x: number, z: number): number => fieldWeight(MATS_FIELD, x, z);
 
 /** A field the placement rule reads: the world's baked transport and sampled geometry. */
 export interface IPlacementField {
@@ -65,15 +61,18 @@ export function grassWeight(data: IPlacementField, x: number, z: number): number
   const slope = slopeDegrees(data, x, z);
   if (rules.grassDensity === 0) return 0; // This 3690 m glacial shoulder is above the treeline.
   const meadow = clamp01((rules.grassSlopeLimit - slope) / rules.grassSlopeFalloff);
-  if (data.world === "desert") return meadow * rules.grassDensity;
-  if (data.world === "tundra")
-    return meadow * clamp01((forestWeight(x * 9.8, z * 8.7) - 0.47) / 0.3);
-  return (
-    meadow *
-    (rules.grassHeight === null
+  // One rule, three numbers: the density the biome covers, the height band a meadow fades out at,
+  // and the mat field it thins on. A dune field's density runs 0.32, a mat plain's field runs the
+  // cover out below 0.47, a wood's meadow fades out 66 m up. A sixth biome sets the numbers.
+  const fade =
+    rules.grassHeight === null
       ? 1
-      : clamp01((rules.grassHeight[0] - height) / rules.grassHeight[1]))
-  );
+      : clamp01((rules.grassHeight[0] - height) / rules.grassHeight[1]);
+  const mats =
+    rules.grassMats === null
+      ? 1
+      : clamp01((forestWeight(x * 9.8, z * 8.7) - rules.grassMats[0]) / rules.grassMats[1]);
+  return meadow * rules.grassDensity * fade * mats;
 }
 
 /** A value clamped to 0..1, because a density is a probability and a probability above one is a bug. */
@@ -113,18 +112,28 @@ export interface IPropScatter {
  * that regularity — not the tree model — is what read as "Tree Tree Tree" from the air. Two octaves
  * of value noise give stands with lobed, irregular edges instead.
  */
-const standNoise = new ImprovedNoise();
 export function forestWeight(x: number, z: number): number {
-  return clamp01(
-    0.5 +
-      0.3 * standNoise.noise(x * 0.0075, 3.1, z * 0.0075) +
-      0.2 * standNoise.noise(x * 0.026, 8.7, z * 0.026),
-  );
+  return fieldWeight(STAND_FIELD, x, z);
 }
 /** An independent field for anything that must not track the stand mask: age, moisture, gaps. */
 const fieldNoise = new ImprovedNoise();
 const sample01 = (x: number, y: number, z: number): number =>
   clamp01(fieldNoise.noise(x, y, z) * 0.5 + 0.5);
+
+/**
+ * How thickly the ground cover stands at (x, z), on the drift the biome's look names: one curve, a
+ * floor plus an amplitude over that field's own weight band.
+ *
+ * The looks differ in the numbers and nothing else: a wood keeps 65% of its cover everywhere and
+ * drifts the rest with its stands, a dune field falls to 8% between the washes, a crest reads a
+ * coarser stand field, and a mat plain reads the mats. A sixth look tunes them without a branch.
+ */
+export function coverDriftWeight(drift: ICoverDrift, x: number, z: number): number {
+  const [frequencyX, frequencyZ] = drift.frequency;
+  const [threshold, span] = drift.band;
+  const weight = fieldWeight(drift.field, x * frequencyX, z * frequencyZ);
+  return drift.offset + drift.amplitude * clamp01((weight - threshold) / span);
+}
 
 export const SCATTER = {
   spruceSpacing: 4.6,
@@ -168,89 +177,57 @@ export interface IScatterRules {
   readonly grassBeach: readonly [number, number] | null;
   /** Ground height, and the metres it takes to fade, that keep a meadow off the peaks. */
   readonly grassHeight: readonly [number, number] | null;
+  /** The mat field's band the cover thins on, `[threshold, span]`; null on ground without mats. */
+  readonly grassMats: readonly [number, number] | null;
+  /** Metres between plants in the dense detail disc around a place the player stands. */
+  readonly grassDetailSpacing: number;
+  /** The least meadow weight, 0..1, a tree accepts. */
+  readonly treeGrassThreshold: number;
+  /** The least stand-field weight, 0..1, a tree accepts. */
+  readonly treeStandThreshold: number;
 }
 
-const SCATTER_RULES: Readonly<Record<WorldName, IScatterRules>> = {
-  forest: {
-    treeAsset: "spruce",
-    treeCount: SCATTER.spruceCount,
-    treeSpacing: [3.2, 6.4],
-    treeStands: true,
-    treeSlopeLimit: 32,
-    treeHeightCeiling: null,
-    grassCell: SCATTER.grassCell,
-    grassDensity: 1,
-    grassSlopeLimit: 42,
-    grassSlopeFalloff: 20,
-    grassWaterMargin: 7.5,
-    grassBeach: null,
-    grassHeight: [66, 28],
-  },
-  coastal: {
-    treeAsset: "spruce",
-    treeCount: SCATTER.spruceCount,
-    treeSpacing: [3.2, 6.4],
-    treeStands: true,
-    treeSlopeLimit: 32,
-    treeHeightCeiling: null,
-    grassCell: SCATTER.grassCell,
-    grassDensity: 1,
-    grassSlopeLimit: 42,
-    grassSlopeFalloff: 20,
-    grassWaterMargin: 7.5,
-    grassBeach: [1.8, 5.7],
-    grassHeight: null,
-  },
-  alpine: {
-    treeAsset: "spruce",
-    treeCount: 0,
-    treeSpacing: [3.4, 3.4],
-    treeStands: false,
-    treeSlopeLimit: 32,
-    treeHeightCeiling: 52,
-    grassCell: 3.5,
-    grassDensity: 0,
-    grassSlopeLimit: 0,
-    grassSlopeFalloff: 0,
-    grassWaterMargin: 7.5,
-    grassBeach: null,
-    grassHeight: null,
-  },
-  desert: {
-    treeAsset: "sapling",
-    treeCount: 0,
-    treeSpacing: [3.4, 3.4],
-    treeStands: false,
-    treeSlopeLimit: 32,
-    treeHeightCeiling: null,
-    grassCell: 7,
-    grassDensity: 0.32,
-    grassSlopeLimit: 24,
-    grassSlopeFalloff: 20,
-    grassWaterMargin: 7.5,
-    grassBeach: null,
-    grassHeight: null,
-  },
-  tundra: {
-    treeAsset: "sapling",
-    treeCount: 55,
-    treeSpacing: [3.4, 3.4],
-    treeStands: false,
-    treeSlopeLimit: 32,
-    treeHeightCeiling: null,
-    grassCell: 1.8,
-    grassDensity: 1,
-    grassSlopeLimit: 30,
-    grassSlopeFalloff: 22,
-    grassWaterMargin: 7.5,
-    grassBeach: null,
-    grassHeight: null,
-  },
-};
-
-/** The placement rules for one world; the shared baked pair read as the forest's. */
+/**
+ * The placement rules for one world, read from its biome file (`starter/<biome>/biome.data.json`).
+ *
+ * The rule is short and shared; only these numbers differ between a wood, a barren shoulder, a dune
+ * field and a tundra, so the file names them rather than the branches that use them. A biome whose
+ * tree is not one this game has art for fails here, naming the species, rather than planting nothing.
+ */
 export function scatterRules(world: WorldName | undefined): IScatterRules {
-  return SCATTER_RULES[world ?? "forest"];
+  const spec = biomeSpec(world);
+  const tree = spec.foliage[0];
+  const grass = spec.grass[0];
+  if (tree === undefined || grass === undefined)
+    throw new RangeError(`${spec.look}: a biome needs one tree and one ground cover`);
+  if (tree.species !== "spruce" && tree.species !== "sapling")
+    throw new RangeError(`${spec.look}: no placement rule for the tree '${tree.species}'`);
+  return {
+    treeAsset: tree.species,
+    treeCount: tree.density,
+    treeSpacing: tree.spacing,
+    treeStands: tree.stands,
+    treeSlopeLimit: tree.slope[1],
+    treeHeightCeiling: tree.height === null ? null : tree.height[1],
+    treeGrassThreshold: tree.grassThreshold,
+    treeStandThreshold: tree.standThreshold,
+    grassCell: grass.spacing,
+    grassDensity: grass.density,
+    grassSlopeLimit: grass.slope[1],
+    grassSlopeFalloff: grass.slopeFalloff,
+    grassWaterMargin: grass.waterMargin,
+    grassBeach: grass.beach,
+    grassHeight: grass.height === null ? null : [grass.height[1], grass.heightFalloff],
+    grassMats: grass.mats,
+    grassDetailSpacing: grass.detailSpacing,
+  };
+}
+
+/** Every placement, for one world, from one seed. */
+export interface IPropScatter {
+  readonly placements: IPlacement[];
+  /** How many of each prop was accepted, for the report and the playtest's own state. */
+  readonly counts: Record<string, number>;
 }
 
 export function scatterProps(
@@ -258,10 +235,12 @@ export function scatterProps(
   focus: { x: number; z: number },
   clearings: readonly (readonly [number, number, number])[] = [],
 ): IPropScatter {
-  const temperate = data.world === undefined || data.world === "forest" || data.world === "coastal";
-  const desert = data.world === "desert";
-  const tundra = data.world === "tundra";
-  const alpine = data.world === "alpine";
+  const look = BIOMES[data.world ?? "forest"];
+  const spec = biomeSpec(data.world);
+  const temperate = look.lawnGround;
+  const desert = look.mesaGround;
+  const tundra = look.mats;
+  const alpine = look.pinnedCrags;
   const rules = scatterRules(data.world);
   const treeLimit = rules.treeCount;
   const placements: IPlacement[] = [];
@@ -290,7 +269,7 @@ export function scatterProps(
   // River segments indexed by their reach (`@threenative/terrain`), so a candidate tests only the
   // segments that can reach it rather than every segment of every river.
   const riverIndex = createSegmentIndex(
-    tundra || data.world === "forest"
+    spec.water.some((body) => body.kind === "river")
       ? (data.rivers ?? []).flatMap((river) =>
           river.points.flatMap((b, index) => {
             const a = river.points[index - 1];
@@ -441,12 +420,11 @@ export function scatterProps(
       wet(x, z) ||
       nearEye(x, z) ||
       slopeDegrees(data, x, z) > rules.treeSlopeLimit ||
-      (temperate &&
-        data.waterLevel !== null &&
-        clampedHeight(data, x, z) < data.waterLevel + 7.5) ||
+      (data.waterLevel !== null &&
+        clampedHeight(data, x, z) < data.waterLevel + rules.grassWaterMargin) ||
       (rules.treeHeightCeiling !== null && clampedHeight(data, x, z) > rules.treeHeightCeiling) ||
-      grassWeight(data, x, z) < (temperate ? 0.3 : 0.18) ||
-      forestWeight(x, z) < (temperate ? 0.3 : 0.42)
+      grassWeight(data, x, z) < rules.treeGrassThreshold ||
+      forestWeight(x, z) < rules.treeStandThreshold
     )
       continue;
     const stand = forestWeight(x, z);
@@ -641,29 +619,13 @@ export function scatterProps(
       (tundra ? clamp01((tundraCover(x, z) - 0.47) / 0.3) : grassWeight(data, x, z)) < 0.22
     )
       return;
-    const drift = temperate
-      ? 0.65 + 0.35 * forestWeight(x * 3.1, z * 2.7)
-      : tundra
-        ? clamp01((tundraCover(x, z) - 0.45) / 0.3)
-        : desert
-          ? 0.08 + 0.6 * clamp01((forestWeight(x * 6.3, z * 5.7) - 0.5) / 0.3)
-          : clamp01((forestWeight(x * 2.1, z * 2.4) - 0.3) / 0.45);
+    const drift = coverDriftWeight(look.coverDrift, x, z);
     if (random() > density * drift) return;
-    put(
-      "grass",
-      x,
-      z,
-      (data.world === "coastal" && clampedHeight(data, x, z) < (data.waterLevel ?? 0) + 7.5
-        ? 2.2
-        : temperate
-          ? 0.8
-          : tundra
-            ? 0.45
-            : desert
-              ? 0.95
-              : 0.55) +
-        random() * (temperate ? 0.65 : tundra ? 0.3 : 0.5),
-    );
+    // A shore's blades grow tall where the sand is wet; elsewhere they keep the look's own scale.
+    const shore =
+      look.shoreGround &&
+      clampedHeight(data, x, z) < (data.waterLevel ?? 0) + rules.grassWaterMargin;
+    put("grass", x, z, (shore ? 2.2 : look.bladeScale) + random() * look.bladeJitter);
     if (desert) {
       for (let tuft = 0; tuft < 3; tuft++)
         put(
@@ -673,14 +635,14 @@ export function scatterProps(
           0.65 + random() * 0.55,
         );
     }
-    if (random() < (desert ? 0.65 : tundra ? 0.22 : 0.3))
+    if (random() < look.scrubChance)
       put(
         "scrub",
         x + (random() - 0.5),
         z + (random() - 0.5),
-        (desert ? 0.8 : tundra ? 0.55 : 0.9) + random() * (tundra ? 0.5 : 0.6),
+        look.scrubScale + random() * look.scrubJitter,
       );
-    if (tundra && random() < 0.02)
+    if (look.scrubBush && random() < 0.02)
       put("bush", x + (random() - 0.5) * 2, z + (random() - 0.5) * 2, 0.6 + random() * 0.45);
   }
   // A cheap carpet on every grass cell; dense detail at all walking/benchmark eyes, not one disc.
@@ -694,15 +656,7 @@ export function scatterProps(
   const eyes = [focus, ...clearings.map(([x, z]) => ({ x, z }))];
   for (const eye of eyes) {
     // The forest's thinned walking-eye carpet stays as tuned; other biomes take their own spacing.
-    const eyeStep = temperate
-      ? data.world === "coastal"
-        ? 0.34
-        : 0.5
-      : desert
-        ? 1.8
-        : tundra
-          ? 0.5
-          : 0.6;
+    const eyeStep = rules.grassDetailSpacing;
     const eyeReach = temperate ? SCATTER.grassThin : SCATTER.grassFull + 22;
     // Uniform rejection sampling in the eye disc avoids a carpet of parallel jittered rows.
     if (tundra) {
@@ -776,10 +730,11 @@ export function scatterProps(
           put("mountain", sx, sz, (10 + dressing() * 10) / 24, ":outcrop");
       }
   }
-  // The forest river's bed and banks: cobbles across the wetted bed (seen through the water), a few
+  // A cobbled river's bed and banks: cobbles across the wetted bed (seen through the water), a few
   // stones tall enough to break the surface in the shallows, and larger river rocks on the waterline.
-  // Last, so every placement above keeps its place in the seed's sequence.
-  if (data.world === "forest")
+  // Last, so every placement above keeps its place in the seed's sequence. The file says whose bed
+  // is cobbled.
+  if (look.cobbledRiverBed)
     for (const river of data.rivers ?? [])
       for (let i = 1; i < river.points.length; i++) {
         const [ax = 0, ay = 0, az = 0] = river.points[i - 1] ?? [];

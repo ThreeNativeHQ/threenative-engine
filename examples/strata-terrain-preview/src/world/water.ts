@@ -3,7 +3,6 @@ import {
   type IBakedLake,
   type IBakedRiver,
   RIVER_FLOW_MPS,
-  surfaceHeights,
   waterlineRadius,
 } from "../render/river.js";
 
@@ -41,23 +40,20 @@ interface ISample {
 
 /**
  * The baked splines and levels `createRivers` and `createLakes` draw from, as segments and pools: a
- * footprint-limited river (forest, tundra) stands at its spline's own heights across 2.5 widths, any
- * other at `surfaceHeights` across 13 m; a lake stands level over its measured waterline, 1.12 times
- * out. One builder, so the height a player swims at and the flow that carries them cannot disagree.
+ * river stands at its spline's own heights across 2.5 widths, the footprint the bake measured; a lake
+ * stands level over its measured waterline, 1.12 times out, capped at the radius the biome file names.
+ * One builder, the height a player swims at and the flow that carries them cannot disagree.
  */
 function waterBodies(
   rivers: readonly IBakedRiver[],
   lakes: readonly IBakedLake[],
   field: Heightfield,
-  limitToFootprint: boolean,
 ): IWaterBodies {
   const reaches: IReach[] = [];
   for (const river of rivers) {
     const { points } = river;
-    const heights = limitToFootprint
-      ? points.map((point) => point[1] ?? 0)
-      : surfaceHeights(field, points);
-    const reach = limitToFootprint ? river.width * 2.5 : 13;
+    const heights = points.map((point) => point[1] ?? 0);
+    const reach = river.width * 2.5;
     for (let k = 1; k < points.length; k += 1) {
       const [ax = 0, , az = 0] = points[k - 1] as readonly number[];
       const [bx = 0, , bz = 0] = points[k] as readonly number[];
@@ -77,7 +73,7 @@ function waterBodies(
   }
   const pools = lakes.map((lake) => {
     const measured = waterlineRadius(field, lake.at, lake.level) * 1.12;
-    const radius = limitToFootprint ? Math.min(measured, lake.radius) : measured;
+    const radius = Math.min(measured, lake.radius);
     return { x: lake.at[0] ?? 0, z: lake.at[1] ?? 0, radius2: radius * radius, level: lake.level };
   });
   return { reaches, pools };
@@ -126,9 +122,8 @@ export function waterSurfaceAt(
   rivers: readonly IBakedRiver[],
   lakes: readonly IBakedLake[],
   field: Heightfield,
-  limitToFootprint: boolean,
 ): (x: number, z: number) => number | undefined {
-  const bodies = waterBodies(rivers, lakes, field, limitToFootprint);
+  const bodies = waterBodies(rivers, lakes, field);
   return (x, z) => sampleWater(bodies, x, z)?.surface;
 }
 
@@ -144,9 +139,8 @@ export function waterCurrentAt(
   rivers: readonly IBakedRiver[],
   lakes: readonly IBakedLake[],
   field: Heightfield,
-  limitToFootprint: boolean,
 ): (x: number, z: number) => { x: number; z: number } | undefined {
-  const bodies = waterBodies(rivers, lakes, field, limitToFootprint);
+  const bodies = waterBodies(rivers, lakes, field);
   return (x, z) => {
     const water = sampleWater(bodies, x, z);
     if (water === undefined) return undefined;

@@ -31,8 +31,8 @@ const rivers = [
     width: 4,
   },
 ];
-const one = createRivers(rivers.slice(0, 1), field, true);
-const both = createRivers(rivers, field, true);
+const one = createRivers(rivers.slice(0, 1), field);
+const both = createRivers(rivers, field);
 try {
   assert.ok(one.mesh.geometry.index.count > 0, "First channel must be wet");
   assert.equal(

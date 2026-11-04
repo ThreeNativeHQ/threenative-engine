@@ -21,7 +21,7 @@ const field = new Heightfield({
   heights: Float32Array.from(forest.heights),
 });
 // The water the player sees and swims in: the same splines, levels and reach `createRivers` draws.
-const surface = waterSurfaceAt(forest.rivers, forest.lakes, field, true);
+const surface = waterSurfaceAt(forest.rivers, forest.lakes, field);
 const flooded = (x: number, z: number) => {
   const level = surface(x, z);
   return level !== undefined && field.heightAt(x, z) < level;

@@ -667,13 +667,10 @@ function ribbon(
   uvs: number[],
   depths: number[],
   indices: number[],
-  limitToWidth: boolean,
 ): void {
   const { points } = river;
-  const reach = limitToWidth ? river.width * 2.5 : RIVER.reach;
-  const heights = limitToWidth
-    ? points.map((point) => point[1] ?? 0)
-    : surfaceHeights(field, points);
+  const reach = river.width * 2.5;
+  const heights = points.map((point) => point[1] ?? 0);
   const base = positions.length / 3;
   const columns = RIVER.across;
   const wet: number[] = [];
@@ -703,10 +700,11 @@ function ribbon(
       positions.push(vx, y, vz);
       flows.push(dx, dz);
       uvs.push(downstream, across);
+      // The ribbon's own bed: shallow at its edges, and never deeper than the baked limit.
       const depth = Math.min(
         MAX_BAKED_DEPTH,
         Math.max(0, y - field.heightAt(vx, vz)),
-        limitToWidth ? Math.max(0, (reach - Math.abs(across)) * 0.2) : MAX_BAKED_DEPTH,
+        Math.max(0, (reach - Math.abs(across)) * 0.2),
       );
       depths.push(depth);
       wet.push(depth > 0 ? 1 : 0);
@@ -740,11 +738,15 @@ function ribbon(
   }
 }
 
-/** Draw every baked river as one surface, or nothing when the world has none. */
+/**
+ * Draw every baked river as one surface, or nothing when the world has none.
+ *
+ * A river stands on its bed's measured footprint: the baked spline's own heights across 2.5 widths,
+ * which is where the player swims and where the bake's own shore is.
+ */
 export function createRivers(
   rivers: readonly IBakedRiver[],
   field: Heightfield,
-  limitToFootprint = false,
   lakeReflection?: (offset: Node<"vec2">) => Node<"vec3">,
 ): IRiverWater | undefined {
   if (rivers.length === 0) return undefined;
@@ -756,7 +758,7 @@ export function createRivers(
   const groups: { start: number; count: number }[] = [];
   for (const river of rivers) {
     const start = indices.length;
-    ribbon(field, river, positions, flows, uvs, depths, indices, limitToFootprint);
+    ribbon(field, river, positions, flows, uvs, depths, indices);
     groups.push({ start, count: indices.length - start });
   }
   const geometry = new BufferGeometry();
@@ -971,18 +973,18 @@ export function waterlineRadius(
  * hold the arm would spend four hundred thousand vertices on dry hillside. Only cells with water in
  * at least one corner get triangles — that is what keeps the surface from showing as a sheet hovering
  * over the meadow, and what leaves the shoreline on the ground's own contour.
+ *
+ * A lake stands inside its own footprint too: the waterline the bake measured, capped at the radius
+ * the biome file names.
  */
 export function createLakes(
   lakes: readonly IBakedLake[],
   field: Heightfield,
-  limitToFootprint = false,
 ): IRiverWater | undefined {
   const lake = lakes[0];
   if (lake === undefined) return undefined;
   if (lakes.length > 1) {
-    const ponds = lakes
-      .map((one) => createLakes([one], field, true))
-      .filter((one) => one !== undefined);
+    const ponds = lakes.map((one) => createLakes([one], field)).filter((one) => one !== undefined);
     if (ponds.length === 0) return undefined;
     const geometry = mergeGeometries(
       ponds.map((one) => one.mesh.geometry),
@@ -1033,7 +1035,7 @@ export function createLakes(
   }
   const [cx = 0, cz = 0] = lake.at;
   const measuredReach = waterlineRadius(field, lake.at, lake.level) * LAKE.reach;
-  const reach = limitToFootprint ? Math.min(measuredReach, lake.radius) : measuredReach;
+  const reach = Math.min(measuredReach, lake.radius);
   if (reach <= 0) return undefined;
 
   const { rings, spokes } = LAKE;
@@ -1282,11 +1284,9 @@ export function createLakes(
   material.colorNode = mix(below, shaded, eyeIsAbove);
   // From underneath there is no shore to dissolve into and the ceiling is opaque.
   const opacity = mix(float(1), shoreFade(depthM), eyeIsAbove);
-  material.opacityNode = opacity;
-  if (limitToFootprint) {
-    const edge = positionWorld.xz.sub(vec2(cx, cz)).length();
-    material.opacityNode = opacity.mul(float(1).sub(smoothstep(reach * 0.82, reach, edge)));
-  }
+  // The surface fades out at the footprint it was drawn to, so its rim is not a cut edge.
+  const edge = positionWorld.xz.sub(vec2(cx, cz)).length();
+  material.opacityNode = opacity.mul(float(1).sub(smoothstep(reach * 0.82, reach, edge)));
 
   const mesh = new Mesh(geometry, material);
   mesh.layers.set(WATER_LAYER);

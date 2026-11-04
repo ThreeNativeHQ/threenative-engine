@@ -19,6 +19,7 @@ import {
   ScatterColliders,
   rapier,
 } from "@threenative/physics";
+import type { IBiomeSpec } from "@threenative/terrain";
 import {
   type AnimationClip,
   CapsuleGeometry,
@@ -35,6 +36,7 @@ import {
   Vector3,
 } from "three";
 import { BENCHMARK, type ViewName } from "./render/benchmark.js";
+import { biomeSpec } from "./render/biomeData.js";
 import { BIOMES, type IWorldBiome, type WorldName, measureBiome } from "./render/biomes.js";
 import {
   FAR_FOREST,
@@ -148,18 +150,24 @@ const renderedFrames: Record<WorldName, number> = {
 };
 /**
  * The baked terrain arrays, fetched rather than imported: as JSON modules the 7–12 MB files cost
- * about 3 s each to compile before the first frame. Forest and coastal share `baked.json`.
+ * about 3 s each to compile before the first frame. Which file, and the key inside it, is the biome
+ * file's own `bake`: two biomes baked from one DEM share a bundle, and no loader branch names a
+ * world. The bundle's other keys are returned with the data, because a world drawn beside another
+ * one is the world this one is compared with.
  */
 async function loadBakedWorld(
   assets: Pick<IAssetLoader, "resolve">,
-  world: WorldName,
-): Promise<IBakedWorld> {
-  const shared = world === "forest" || world === "coastal";
-  const response = await fetchBakedFile(assets, `world/${shared ? "baked" : world}.json`);
+  spec: IBiomeSpec,
+): Promise<{ data: IBakedWorld; siblings: readonly string[] }> {
+  const { file, key } = spec.bake;
+  const response = await fetchBakedFile(assets, `world/${file}.json`);
   const json = await response.json();
-  return shared
-    ? (json as Record<"forest" | "coastal", IBakedWorld>)[world]
-    : (json as IBakedWorld);
+  if (key === null) return { data: json as IBakedWorld, siblings: [] };
+  const bundle = json as Record<string, IBakedWorld>;
+  const data = bundle[key];
+  if (data === undefined)
+    throw new TypeError(`${spec.look}: the baked bundle '${file}' holds no '${key}'.`);
+  return { data, siblings: Object.keys(bundle).filter((name) => name !== key) };
 }
 let horizonLoad: Promise<void> | undefined;
 
@@ -303,10 +311,15 @@ const JOG = 6;
 const SPRINT = 9;
 
 export function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsContext> {
+  // What the game resolves this world from: its validated rules, and the look it is graded under.
+  const spec = biomeSpec(world);
+  const look = BIOMES[world];
   return class TerrainScene extends Scene<TerrainState, IPhysicsContext> {
     static override readonly initialState = initialState;
     #data: IBakedWorld | undefined;
     #biome: IWorldBiome | undefined;
+    /** The other world drawn from this biome's baked bundle, if the bundle holds one. */
+    #bundleTwin: WorldName | undefined;
     #erosionSamples = { flow: 0, deposition: 0 };
     #scatter: Awaited<ReturnType<typeof loadPlacements>> | undefined;
     #terrain: ReturnType<typeof createTerrain> | undefined;
@@ -321,18 +334,21 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
     #heading = new Quaternion();
     #airborne = 0;
     override async load(ctx: TerrainCtx): Promise<void> {
-      let swim: IMannequin;
-      [this.#data, this.#mannequin, swim] = await Promise.all([
-        loadBakedWorld(ctx.assets, world),
+      const [baked, mannequin, swim] = await Promise.all([
+        loadBakedWorld(ctx.assets, spec),
         ctx.assets.model<IMannequin>("mannequin.glb"),
         ctx.assets.model<IMannequin>(SWIM_CLIPS),
       ]);
+      this.#data = baked.data;
+      this.#mannequin = mannequin;
       this.#swimClips = swim.animations;
-      this.#biome = measureBiome(BIOMES[world], this.#data.heights);
+      this.#bundleTwin = (Object.keys(BIOMES) as WorldName[]).find(
+        (name) => name !== world && baked.siblings.includes(name),
+      );
+      this.#biome = measureBiome(look, this.#data.heights);
       // `?stage=before|after` replaces this world's terrain, water, colliders and props with one
       // baked forest kit copy, streamed by the kit's own `addForest`; the sky, camera and views stay.
-      const arm =
-        world === "forest" ? forestStageArm(globalThis.location?.search ?? "") : undefined;
+      const arm = look.stageArm ? forestStageArm(globalThis.location?.search ?? "") : undefined;
       if (arm) {
         this.#sky = createOutdoorSky(ctx.camera, this.#biome, ctx.renderer);
         const load = ++this.#stageLoad;
@@ -349,19 +365,16 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
       // Prepare scenery while the scene loads; enter only attaches it.
       this.#terrain = createTerrain(this.#data, ctx.assets, this.#biome);
       this.#sky = createOutdoorSky(ctx.camera, this.#biome, ctx.renderer);
-      if (world === "coastal") {
+      if (spec.water.some((body) => body.kind === "ocean")) {
         this.#ocean = createOcean();
         this.#water = createWaterMesh(this.#ocean, this.#data);
       }
-      this.#lake = createLakes(this.#data.lakes ?? [], this.#terrain.field, world === "forest");
+      this.#lake = createLakes(this.#data.lakes ?? [], this.#terrain.field);
       this.#erosionSamples = {
         flow: this.#data.erosion?.flow.filter((value) => value > 0).length ?? 0,
         deposition: this.#data.erosion?.deposition.filter((value) => value > 0).length ?? 0,
       };
-      this.#fallbackParts = buildPropVariants(
-        undefined,
-        world === "alpine" ? 2 : world === "tundra" ? 1.4 : undefined,
-      );
+      this.#fallbackParts = buildPropVariants(undefined, look.saplingHeight ?? undefined);
     }
     #player: CharacterBody3D | undefined;
     #surfaces: { advance: (elapsed: number) => void } | undefined;
@@ -742,7 +755,7 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
       const orbit = createOrbitCamera(ctx.camera);
       orbit.snap(actor.position, 0, probe);
       this.#orbit = orbit;
-      const vista = world === "coastal" || world === "alpine" || world === "desert";
+      const vista = look.vistaAim !== null;
       ctx.afterPhysics((dt) => {
         if (vista || ctx.state.getState().view !== "player") {
           this.#sky?.focusShadows(undefined);
@@ -849,21 +862,21 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
         const centre = lake.mesh.geometry.getAttribute("position");
         const at = data.lakes?.[0]?.at;
         let lakeFootprintError = 0;
-        if (world === "tundra") {
-          const geometry = lake.mesh.geometry;
-          for (const [index, group] of geometry.groups.entries()) {
-            const pond = data.lakes?.[index];
-            if (!pond) throw new Error("A drawn pond has no baked footprint");
-            for (let i = group.start; i < group.start + group.count; i++) {
-              const vertex = geometry.index?.getX(i) ?? i;
-              lakeFootprintError = Math.max(
-                lakeFootprintError,
-                Math.hypot(
-                  centre.getX(vertex) - (pond.at[0] ?? 0),
-                  centre.getZ(vertex) - (pond.at[1] ?? 0),
-                ) - pond.radius,
-              );
-            }
+        // Every pond a bundled water body draws has a baked footprint of its own; a lake drawn alone
+        // draws one group, and the loop leaves the error at nought.
+        const geometry = lake.mesh.geometry;
+        for (const [index, group] of geometry.groups.entries()) {
+          const pond = data.lakes?.[index];
+          if (!pond) throw new Error("A drawn pond has no baked footprint");
+          for (let i = group.start; i < group.start + group.count; i++) {
+            const vertex = geometry.index?.getX(i) ?? i;
+            lakeFootprintError = Math.max(
+              lakeFootprintError,
+              Math.hypot(
+                centre.getX(vertex) - (pond.at[0] ?? 0),
+                centre.getZ(vertex) - (pond.at[1] ?? 0),
+              ) - pond.radius,
+            );
           }
         }
         ctx.state.set({
@@ -893,8 +906,7 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
         : createRivers(
             data.rivers ?? [],
             field,
-            world === "tundra" || world === "forest",
-            world === "tundra" ? lake?.reflectionAt : undefined,
+            look.riverMirrorsPonds ? lake?.reflectionAt : undefined,
           );
       this.#river = river;
       if (river) {
@@ -911,10 +923,9 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
       if (!stage && params.get("swim") !== "off") {
         const rivers = data.rivers ?? [];
         const lakes = data.lakes ?? [];
-        const footprint = world === "tundra" || world === "forest";
-        player.water = waterSurfaceAt(rivers, lakes, field, footprint);
+        player.water = waterSurfaceAt(rivers, lakes, field);
         if (params.get("current") !== "off")
-          player.waterCurrent = waterCurrentAt(rivers, lakes, field, footprint);
+          player.waterCurrent = waterCurrentAt(rivers, lakes, field);
       }
       const scatter = this.#scatter;
       const fallbackParts = this.#fallbackParts;
@@ -960,7 +971,7 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
           throw new Error(`World ${world} placements do not match the terrain`);
         if (!fallbackParts) throw new Error(`World ${world} prop variants were not loaded`);
         mesh.geometry.setAttribute("canopy", new Float32BufferAttribute(scatter.canopy, 1));
-        const fallbackSaplingHeight = world === "alpine" ? 2 : world === "tundra" ? 1.4 : undefined;
+        const fallbackSaplingHeight = look.saplingHeight ?? undefined;
         let propParts = fallbackParts;
         const flat = flatPropMaterials();
         ctx.entities.add("props-lifetime", {
@@ -1017,7 +1028,7 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
           let height = visual ?? physical?.position.y ?? collar?.at(x, z) ?? null;
           if (
             height !== null &&
-            (world === "forest" || world === "coastal") &&
+            look.stoneSinkShare !== null &&
             ["boulder", "riverrock", "scree", "mountain", "volcanic", "reveal"].includes(
               placement.asset,
             )
@@ -1049,7 +1060,7 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
                   null;
                 if (foot !== null) height = Math.min(height, foot);
               }
-              height -= (box.max.y - box.min.y) * placement.scale * 0.12;
+              height -= (box.max.y - box.min.y) * placement.scale * look.stoneSinkShare;
             }
           }
           const [originX, originY, originZ] = placement.position;
@@ -1091,9 +1102,9 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
           preparedLodBaseSpread = prepared.lodBaseSpread;
           preparedLevelsWithoutSolid = prepared.levelsWithoutSolid;
           const parts = new Map([...prepared.parts, ...pack.parts]);
-          // The shipped dry-world stones use both CC0 scans, including the otherwise primitive slot.
+          // A look whose stones use both scans fills the otherwise primitive slot with the second.
           const dryStone = prepared.parts.get("boulder:1");
-          if (world === "desert" && dryStone && !pack.parts.has("boulder:0"))
+          if (look.stoneScans > 1 && dryStone && !pack.parts.has("boulder:0"))
             parts.set("boulder:0", dryStone);
           propParts = buildPropVariants(parts, fallbackSaplingHeight);
           propsStage = "surfaces";
@@ -1281,12 +1292,10 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
             );
           }
 
-          const alpineCrags =
-            world === "alpine"
-              ? [...props.byId.values()].filter(
-                  (instance) => instance.placement.asset === "mountain",
-                )
-              : [];
+          // A pinned-crag look's mountains are the crags: their base ring is what it measures.
+          const alpineCrags = look.pinnedCrags
+            ? [...props.byId.values()].filter((instance) => instance.placement.asset === "mountain")
+            : [];
           ctx.entities.add("props", {
             object: props.worlds[0],
             debug: () => ({
@@ -1309,7 +1318,7 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
                 .filter(([key]) => /^(mountain|volcanic|reveal):/.test(key))
                 .reduce((sum, [, parts]) => sum + parts.length, 0),
               crags: {
-                ...(world === "alpine"
+                ...(look.pinnedCrags
                   ? {
                       maxBaseClearance: alpineCrags.length
                         ? Math.max(
@@ -1808,22 +1817,13 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
         figure.root.visible = view === "player" && !ctx.state.getState().showcase;
         if (view === "player") {
           // Forest and tundra: the orbit camera framed the player after physics.
-          if (!vista) return;
+          const aim = look.vistaAim;
+          if (!aim) return;
           ctx.camera.position.copy(actor.position).add(new Vector3(...SPAWN_CAMERA_OFFSET[world]));
-          if (world === "coastal")
-            ctx.camera.lookAt(actor.position.x + 80, 1.5, actor.position.z + 190);
-          else if (world === "alpine")
-            ctx.camera.lookAt(
-              actor.position.x - 200,
-              actor.position.y + 170,
-              actor.position.z + 170,
-            );
-          else
-            ctx.camera.lookAt(
-              actor.position.x - 180,
-              actor.position.y + 30,
-              actor.position.z - 160,
-            );
+          const [aimX, aimZ] = aim.at;
+          // A look's aim stands on the player's own ground, or level with the water it looks over.
+          const aimY = aim.rise === null ? (data.waterLevel ?? 0) : actor.position.y + aim.rise;
+          ctx.camera.lookAt(actor.position.x + aimX, aimY, actor.position.z + aimZ);
           return;
         }
         // A view this world has no framing for falls back to its overview rather than throwing:
@@ -1942,7 +1942,9 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
           void ctx.goto(name);
           return;
         }
-      if (ctx.input.justPressed("coast")) void ctx.goto(world === "forest" ? "coastal" : "forest");
+      // The coast key compares the two worlds drawn from one bake; a world baked alone has none.
+      if (this.#bundleTwin !== undefined && ctx.input.justPressed("coast"))
+        void ctx.goto(this.#bundleTwin);
     }
   };
 }

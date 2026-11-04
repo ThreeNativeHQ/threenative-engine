@@ -1,5 +1,9 @@
 {
   "look": "tundra",
+  "bake": {
+    "file": "tundra",
+    "key": null
+  },
   "landform": "tundra",
   "sizeMeters": 512,
   "seed": 131,
@@ -11,6 +15,9 @@
       "height": null,
       "spacing": [3.4, 3.4],
       "collision": "trunk",
+      "stands": false,
+      "grassThreshold": 0.18,
+      "standThreshold": 0.42,
       "far": null
     }
   ],
@@ -20,7 +27,13 @@
       "density": 1,
       "slope": [0, 30],
       "height": null,
-      "spacing": 1.8
+      "spacing": 1.8,
+      "slopeFalloff": 22,
+      "heightFalloff": 28,
+      "mats": [0.47, 0.3],
+      "waterMargin": 7.5,
+      "beach": null,
+      "detailSpacing": 0.5
     }
   ],
   "layers": [
@@ -90,5 +103,6 @@
     "cameraOffset": [28, 24, 42],
     "focus": [150, 160]
   },
+  "species": ["boulder", "bush", "riverrock", "sapling", "scree", "scrub"],
   "aliases": ["tundra", "arctic", "ice"]
 }

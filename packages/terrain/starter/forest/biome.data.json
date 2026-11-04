@@ -1,5 +1,9 @@
 {
   "look": "forest",
+  "bake": {
+    "file": "baked",
+    "key": "forest"
+  },
   "landform": "temperateMountains",
   "sizeMeters": 512,
   "seed": 73,
@@ -11,6 +15,9 @@
       "height": null,
       "spacing": [3.2, 6.4],
       "collision": "trunk",
+      "stands": true,
+      "grassThreshold": 0.3,
+      "standThreshold": 0.3,
       "far": {
         "cell": 6,
         "spacing": [6.5, 13],
@@ -26,7 +33,13 @@
       "density": 1,
       "slope": [0, 42],
       "height": [0, 66],
-      "spacing": 1.2
+      "spacing": 1.2,
+      "slopeFalloff": 20,
+      "heightFalloff": 28,
+      "mats": null,
+      "waterMargin": 7.5,
+      "beach": null,
+      "detailSpacing": 0.5
     }
   ],
   "layers": [
@@ -88,5 +101,22 @@
     "cameraOffset": [28, 24, 42],
     "focus": [150, -100]
   },
+  "species": [
+    "bloom",
+    "boulder",
+    "bush",
+    "cliff",
+    "fern",
+    "grass",
+    "litter",
+    "meadow",
+    "mountain",
+    "poppy",
+    "riverrock",
+    "sapling",
+    "scree",
+    "scrub",
+    "spruce"
+  ],
   "aliases": ["forest", "pine", "pines", "woods", "woodland"]
 }

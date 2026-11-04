@@ -236,14 +236,14 @@ export function groundTurf(
     .mul(0.22)
     .mul(oneMinus(smoothstep(45, 140, distance)))
     .add(1);
-  const temperate = !biome || biome.world === "forest" || biome.world === "coastal";
+  const temperate = !biome || biome.lawnGround;
   if (!temperate) {
     const tint = vec3(...biome.grassTint);
-    if (biome.world !== "alpine") return sampled.mul(tint);
+    if (!biome.crestTurf) return sampled.mul(tint);
     const cover = vec3(0.075, 0.12, 0.028).mul(mix(0.91, 1.08, dry));
     return mix(sampled.mul(tint), cover, smoothstep(65, 180, distance).mul(0.85));
   }
-  const olive = biome?.world === "forest";
+  const olive = biome?.oliveMeadow ?? false;
   const lawn = mix(vec3(0.042, 0.072, 0.018), vec3(0.062, 0.102, 0.029), dry);
   const field = (
     olive ? mix(mix(vec3(0.045, 0.062, 0.022), vec3(0.06, 0.082, 0.03), dry), lawn, open) : lawn
@@ -284,9 +284,9 @@ function rockLayer(
     const tangent = rotateUV(sampled.xy.mul(2).sub(1), float(-angle), vec2(0));
     return vec4(tangent, sampled.z.mul(2).sub(1), 1);
   };
-  return biome?.world === "alpine"
+  return biome?.crestRock
     ? alpineRockTap(source, plane, relief)
-    : biome?.world === "desert"
+    : biome?.mesaRock
       ? mix(
           tap(11, 0.035, vec2(mx_noise_float(positionWorld.xz.mul(0.009)).mul(0.9), 0)),
           tap(27, -0.045, vec2(0.37, 0.61)),
@@ -303,7 +303,7 @@ export function stoneAlbedo(
 ): Node<"vec3"> {
   const axis = abs(normal).pow(4);
   const share = axis.div(axis.x.add(axis.y).add(axis.z));
-  const other = biome && biome.world !== "forest" && biome.world !== "coastal";
+  const other = biome !== undefined && !biome.lawnGround;
   const tap = (plane: Node<"vec2">) =>
     other ? rockLayer(source, plane, biome).rgb : texture(source, tiledUV("rock", 1, plane)).rgb;
   return share.x
@@ -313,13 +313,11 @@ export function stoneAlbedo(
 }
 
 export function stoneColor(sampled: Node<"vec3">, biome?: IBiome): Node<"vec3"> {
-  if (biome?.world === "alpine") return alpineRockColor(sampled);
-  if (biome?.world === "desert") return desertRockColor(sampled);
-  const other = biome && biome.world !== "forest" && biome.world !== "coastal";
+  const look = biome ?? BIOMES.forest;
+  if (look.crestRock) return alpineRockColor(sampled);
+  if (look.mesaRock) return desertRockColor(sampled);
   const grey = dot(sampled, vec3(0.2126, 0.7152, 0.0722));
-  return mix(sampled, vec3(grey), other ? 0.25 : 0.35).mul(
-    vec3(...(other ? biome.stoneTint : [0.44, 0.46, 0.42])),
-  );
+  return mix(sampled, vec3(grey), look.stoneGrey).mul(vec3(...look.stoneTint));
 }
 
 export function stoneRelief(
@@ -327,8 +325,7 @@ export function stoneRelief(
   biome?: IBiome,
   normal = normalWorldGeometry,
 ): Node<"vec3"> {
-  if (!biome || biome.world === "forest" || biome.world === "coastal")
-    return triplanarRelief(source, "rock", 1, normal).tilt;
+  if (!biome || biome.lawnGround) return triplanarRelief(source, "rock", 1, normal).tilt;
   const axis = abs(normal).pow(4);
   const share = axis.div(axis.x.add(axis.y).add(axis.z));
   const x = rockLayer(source, positionWorld.zy, biome, true);
@@ -548,14 +545,15 @@ export async function createGroundMaterial(
     biome && "heightBands" in biome
       ? (biome as IWorldBiome)
       : measureBiome(biome ?? BIOMES.forest, data.heights);
+  const look = biome ?? BIOMES.forest;
   const maps: Partial<Record<LayerKey, ILayerMaps>> = {};
   const material = new MeshStandardNodeMaterial({ metalness: 0, roughness: 0.94 });
-  material.userData.biome = biome?.world ?? "forest";
+  material.userData.biome = look.world;
   material.userData.erosion = data.erosion !== undefined;
   const held = new Set<Texture>([curvature.texture]);
   // The forest's alpine backdrop shades from the unfiltered survey (owner, 2026-11-04: "mountain
   // tops textures and heightmaps suck"); the sixteenth binding, so only this world takes it.
-  const collar = (biome?.world ?? "forest") === "forest" ? buildCollarRelief("forest") : undefined;
+  const collar = look.surveyCollar ? buildCollarRelief(look.world) : undefined;
   if (collar) held.add(collar.texture);
   const layer = (key: LayerKey): ILayerMaps => {
     const found = maps[key];
@@ -563,7 +561,7 @@ export async function createGroundMaterial(
     return found;
   };
 
-  const otherBiome = biome !== undefined && biome.world !== "forest" && biome.world !== "coastal";
+  const otherBiome = biome !== undefined && !biome.lawnGround;
   const macro = bakedFractalNoise(vec3(positionWorld.x, 0, positionWorld.z).mul(0.014), 3);
   const mottling = bakedNoise(vec3(positionWorld.x, 0, positionWorld.z).mul(0.045));
 
@@ -579,7 +577,7 @@ export async function createGroundMaterial(
   );
   // Forest only: the open meadow past the square's edge (`OPEN_MEADOW`), eased in over 40 m.
   const open =
-    OPEN_MEADOW && biome?.world === "forest"
+    OPEN_MEADOW && look.openMeadow
       ? smoothstep(data.size / 2, data.size / 2 + 40, outside)
       : float(0);
   // Material placement follows the actual landform, never the bake's brown blob palette.
@@ -647,11 +645,11 @@ export async function createGroundMaterial(
   let forestFloor: Node<"float"> = float(0);
   // Transport, slope and shelter choose the splat; noise only frays the material's edge.
   weights.rock = max(weights.rock, scour.mul(0.9)).mul(oneMinus(deposits.mul(0.22)));
-  if (biome?.world === "alpine") weights.rock = max(weights.rock, smoothstep(0.08, 0.22, slope));
+  if (look.crestRock) weights.rock = max(weights.rock, smoothstep(0.08, 0.22, slope));
   weights.dirt = max(weights.dirt.mul(0.45), deposits.mul(0.85))
     .mul(oneMinus(smoothstep(0.22, 0.4, slope)))
     .mul(sand.oneMinus());
-  if (biome?.world === "tundra") {
+  if (look.mossGround) {
     weights.moss = hollow
       .max(0)
       .mul(oneMinus(drainage))
@@ -661,9 +659,9 @@ export async function createGroundMaterial(
   }
   if (!otherBiome) {
     // Ordinary forest hills carry turf; reserve exposed soil for drainage banks.
-    if (biome?.world === "forest" || biome === undefined)
+    if (look.woodedGround)
       weights.dirt = drainage.mul(0.18).max(sediment.mul(0.5)).mul(sand.oneMinus());
-    if (biome?.world === "forest" || biome === undefined) {
+    if (look.woodedGround) {
       // Needle litter lies under the trees that were actually placed (`paintCanopy`), frayed by noise
       // at its edge. The old sine-sum stand mask no longer matched the value-noise scatter, and its
       // 38 m fade left every stand standing on meadow turf from any height.
@@ -673,7 +671,8 @@ export async function createGroundMaterial(
         .mul(0.85);
       weights.dirt = weights.dirt.max(litter.mul(0.25));
       forestFloor = litter;
-      if (biome?.world === "forest") {
+      // The bare patches are the wood's own: a ground drawn with no look keeps its litter only.
+      if (biome?.woodedGround) {
         // Bare earth breaks the meadow in broad patches, as on a real spruce slope: broad noise
         // picks them, finer noise frays their edge, a hollow keeps its turf. They fade out by 350 m
         // so a far slope does not print the noise as camouflage.
@@ -690,7 +689,7 @@ export async function createGroundMaterial(
       }
     }
     // Coastal soil patches remain; the forest meadow keeps turf between distant blade clusters.
-    if (biome?.world === "coastal") {
+    if (look.shoreGround) {
       const dry = smoothstep(0.14, 0.42, macro.add(mottling.mul(0.85)).sub(hollow.mul(0.12)));
       weights.dirt = max(weights.dirt, dry.mul(0.7)).mul(sand.oneMinus());
     }
@@ -729,7 +728,7 @@ export async function createGroundMaterial(
   const albedoOf = (key: LayerKey): Node<"vec4"> => {
     const { diffuse } = layer(key);
     const flat = groundLayer(diffuse, key);
-    if (biome?.world === "tundra" && (key === "grass" || key === "dirt" || key === "moss")) {
+    if (look.mossGround && (key === "grass" || key === "dirt" || key === "moss")) {
       // The same rotated two-scale floor and walls continue across the resident edge.
       const axis = abs(normalWorldGeometry).pow(4);
       const share = axis.div(axis.x.add(axis.y).add(axis.z));
@@ -757,25 +756,18 @@ export async function createGroundMaterial(
         .mul(0.18)
         .add(1);
       const large = triplanarAlbedo(diffuse, key, 16).rgb;
-      const massif =
-        biome?.world === "alpine"
-          ? alpineRockColor(large)
-          : biome?.world === "desert"
-            ? desertRockColor(large)
-            : large.mul(vec3(...(otherBiome ? biome.stoneTint : [0.44, 0.46, 0.42])));
+      const massif = look.crestRock
+        ? alpineRockColor(large)
+        : look.mesaRock
+          ? desertRockColor(large)
+          : large.mul(vec3(...look.stoneTint));
       const distant = mix(
-        vec3(...(otherBiome ? biome.distantStone : [0.16, 0.17, 0.155])),
+        vec3(...(look.groundDistantStone ?? look.distantStone)),
         massif,
         0.65,
       ).mul(weathering);
       return vec4(
-        mix(
-          stone,
-          distant,
-          smoothstep(35, 220, positionView.length()).mul(
-            biome?.world === "alpine" ? 0.28 : otherBiome ? 0.32 : 0.65,
-          ),
-        ),
+        mix(stone, distant, smoothstep(35, 220, positionView.length()).mul(look.distantStoneShare)),
         blended.a,
       );
     }
@@ -890,14 +882,9 @@ export async function createGroundMaterial(
         if (key !== "grass") return { color: surface.rgb, normal: relief.tilt };
         let normal = relief.tilt
           .mul(weights.grass)
-          .mul(
-            biome?.world === "alpine"
-              ? mix(1, 0.05, smoothstep(45, 130, positionView.length()))
-              : 1,
-          )
+          .mul(look.crestTurf ? mix(1, 0.05, smoothstep(45, 130, positionView.length())) : 1)
           .add(microGrain().mul(oneMinus(smoothstep(12, 60, positionView.length()))));
-        if (biome?.world === "desert")
-          normal = normal.add(sandRipples(vec2(0.53, 0.85)).mul(weights.grass));
+        if (look.sandRipples) normal = normal.add(sandRipples(vec2(0.53, 0.85)).mul(weights.grass));
         return { color: groundTurf(surface.rgb, biome, hollow, open), normal };
       },
       // Geometry, transport and curvature choose placement; the packaged masks remain authored data.
@@ -946,7 +933,7 @@ export async function createGroundMaterial(
         const continuation = smoothstep(data.size / 2 + 60, data.size / 2 + 280, outside);
         const strata = bakedFractalNoise(positionWorld.mul(vec3(0.018, 0.035, 0.018)), 3);
         // The forest's backdrop is alpine (owner goal 2026-11-04); the coast keeps its survey's look.
-        const alpineBackdrop = biome?.world !== "coastal";
+        const crestBackdrop = !look.surveyedBackdrop;
         // Where the collar mesh blends to its prefiltered field (300 m past the edge and on), its
         // shading reads the unfiltered survey instead; the vista's near meadow keeps the mesh.
         const reliefWeight = collar
@@ -999,10 +986,9 @@ export async function createGroundMaterial(
         const turf = triplanarAlbedo(layer("grass").diffuse, "grass", 12).rgb;
         // The forest's slopes carry spruce stands with meadow clearings (owner goal 2026-11-04),
         // not one lawn: kilometre-scale noise picks the stands, crown-scale noise mottles them.
-        const stands =
-          biome?.world === "coastal"
-            ? float(0)
-            : smoothstep(-0.2, 0.2, bakedFractalNoise(positionWorld.mul(0.0035), 3));
+        const stands = look.surveyedBackdrop
+          ? float(0)
+          : smoothstep(-0.2, 0.2, bakedFractalNoise(positionWorld.mul(0.0035), 3));
         const forest = turf
           .mul(
             mix(
@@ -1013,7 +999,7 @@ export async function createGroundMaterial(
           )
           .mul(mix(0.5, 0.85, breakUp.add(0.5)));
         const crag = (
-          biome?.world === "coastal"
+          look.surveyedBackdrop
             ? triplanarAlbedo(layer("rock").diffuse, "rock", 6)
             : mix(
                 triplanarAlbedo(layer("rock").diffuse, "rock", 2.6),
@@ -1022,17 +1008,17 @@ export async function createGroundMaterial(
               )
         ).rgb
           .mul(
-            alpineBackdrop
+            crestBackdrop
               ? peaks
                 ? vec3(0.6, 0.59, 0.56)
                 : vec3(0.52, 0.55, 0.58)
               : vec3(0.62, 0.66, 0.67),
           )
           .mul(strata.mul(0.35).add(1))
-          .mul(alpineBackdrop ? mix(0.6, 1.15, smoothstep(-0.4, 0.4, facet)) : float(1))
+          .mul(crestBackdrop ? mix(0.6, 1.15, smoothstep(-0.4, 0.4, facet)) : float(1))
           // Kilometre-scale warm and cool rock, so whole faces do not read one flat grey.
           .mul(
-            alpineBackdrop
+            crestBackdrop
               ? mix(
                   vec3(0.94, 0.97, 1.03),
                   vec3(1.1, 1.02, 0.9),
@@ -1060,7 +1046,7 @@ export async function createGroundMaterial(
             // Snow holds on ledges and slides off faces steeper than about 45 degrees, broken by
             // the facets into fields between bare ribs; the coast keeps it on gentle ground.
             oneMinus(
-              alpineBackdrop
+              crestBackdrop
                 ? smoothstep(
                     collar ? (peaks ? 0.27 : 0.2) : 0.28,
                     collar ? (peaks ? 0.44 : 0.36) : 0.5,
@@ -1131,14 +1117,13 @@ export async function createGroundMaterial(
             ? vec3(0)
             : triplanarRelief(rockNormal, "rock", 8).tilt.mul(face).mul(oneMinus(cap)).mul(0.32)
         ).add(
-          alpineBackdrop
+          crestBackdrop
             ? facetTilt.mul(mix(0.35, 1, max(treeline, face))).mul(oneMinus(cap.mul(0.6)))
             : vec3(0),
         );
         // Distant alpine rock previously discarded all normal relief; snow weights stay unchanged.
-        const distantTilt =
-          biome?.world === "alpine" ? mountainTilt.mul(weights.rock) : mountainTilt;
-        const tilt = biome?.world === "tundra" ? normal : mix(normal, distantTilt, continuation);
+        const distantTilt = look.crestRock ? mountainTilt.mul(weights.rock) : mountainTilt;
+        const tilt = look.continuationTilt ? mix(normal, distantTilt, continuation) : normal;
         // Detail is tangential; it must not rotate the whole hillside towards a fixed diagonal.
         const outward = normalize(
           vec3(surveyedNormal.x, 0, surveyedNormal.z).add(vec3(0.0001, 0, 0)),
@@ -1201,8 +1186,7 @@ export function createTerrain(
   mesh.name = "authored-terrain";
   mesh.layers.enable(REFLECTED_LAYER);
   mesh.receiveShadow = true;
-  mesh.castShadow =
-    biome?.world === "alpine" || biome?.world === "desert" || biome?.world === "tundra";
+  mesh.castShadow = biome?.terrainCastsShadow ?? false;
   const horizonGeometry = createHorizonGeometry(data, biome?.horizon, field);
   const edgePositions = horizonGeometry.getAttribute("position");
   const edgeNormals = horizonGeometry.getAttribute("normal");
@@ -1225,8 +1209,10 @@ export function createTerrain(
       groundNormals.getZ(edge),
     );
   }
-  if (biome?.world === "tundra") {
-    // The snow mask reads normals: blend the collar too, rather than only its boundary vertices.
+  // The snow and mat masks read normals: blend the collar too, rather than only its boundary
+  // vertices, and reach as far past the square as those masks do.
+  const collarBand = biome?.groundCollarMeters ?? 0;
+  if (collarBand > 0) {
     const perimeter = (data.resolution - 1) * 4;
     const normal = new Vector3();
     const boundary = new Vector3();
@@ -1234,12 +1220,12 @@ export function createTerrain(
       const distance =
         Math.max(Math.abs(edgePositions.getX(vertex)), Math.abs(edgePositions.getZ(vertex))) -
         data.size / 2;
-      if (distance >= 40) break;
+      if (distance >= collarBand) break;
       normal
         .fromBufferAttribute(edgeNormals, vertex)
         .lerp(
           boundary.fromBufferAttribute(edgeNormals, vertex % perimeter),
-          1 - MathUtils.smoothstep(distance, 0, 40),
+          1 - MathUtils.smoothstep(distance, 0, collarBand),
         )
         .normalize();
       edgeNormals.setXYZ(vertex, normal.x, normal.y, normal.z);
@@ -1277,7 +1263,7 @@ export function createTerrain(
         material.dispose();
         // The ground took no image-based light, so terrain in shadow fell to near-black while every
         // plant on it read the sky. It reads the same clamped sky the vegetation does.
-        if (biome === undefined || biome.world === "forest" || biome.world === "coastal")
+        if (biome === undefined || biome.lawnGround)
           void loadSkyLight(assets).then((sky) => {
             if (!sky || mesh.material !== ground || !ground.colorNode) return;
             // An envMap would be the ground's 17th sampler; the diffuse sky it carries is two colours.
@@ -1413,7 +1399,7 @@ function buildCurvature(data: IBakedWorld, field: Heightfield, biome?: IBiome): 
   const sampled = texture(cooked, uv);
   // A clamped wet boundary texel must not become a stripe across the continuation mesh.
   const outside = max(abs(positionWorld.x), abs(positionWorld.z));
-  const collar = biome?.world === "tundra" ? 40 : 0;
+  const collar = biome?.groundCollarMeters ?? 0;
   const resident = oneMinus(
     smoothstep(data.size / 2 - Math.max(collar, spacing * 2), data.size / 2 + collar, outside),
   );

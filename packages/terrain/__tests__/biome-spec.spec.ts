@@ -28,6 +28,9 @@ describe("a biome file", () => {
       expect(spec.grass.length).toBeGreaterThan(0);
       expect(spec.layers.length).toBeGreaterThan(0);
       expect(spec.sizeMeters).toBe(512);
+      expect(spec.bake.file.length).toBeGreaterThan(0);
+      // Two biomes generated from one DEM share a bundle and name their key inside it.
+      expect(spec.bake.key === null || spec.bake.key.length > 0).toBe(true);
     }
   });
 
@@ -73,6 +76,11 @@ describe("a biome file", () => {
     const drifter = read("coastal") as { water: { kind: string; level?: number }[] };
     drifter.water[0] = { kind: "ocean" };
     expect(rejection(drifter, "coastal")).toContain("'water[0].level' is missing");
+
+    const namelessBake = { ...read("forest"), bake: { file: "", key: "forest" } };
+    expect(rejection(namelessBake, "forest")).toContain("'bake.file' must be a non-empty string");
+    const keylessBake = { ...read("forest"), bake: { file: "baked", key: "forest", at: 1 } };
+    expect(rejection(keylessBake, "forest")).toContain("'bake.at' is not a field a biome has");
   });
 
   it("range-checks every interval and every nullable field, not just their presence", () => {
@@ -121,6 +129,25 @@ describe("a biome file", () => {
     const dryRiver = { ...read("forest") } as { water: Record<string, unknown>[] };
     (dryRiver.water[0] as Record<string, unknown>).width = 0;
     expect(rejection(dryRiver, "forest")).toContain("'water[0].width' must be greater than 0");
+
+    // A mat field band is a threshold and a span, both weights, and a span of zero covers nothing.
+    for (const mats of ["0.47", [0.47], { threshold: 0.47, span: 0.3 }, [0.47, 2]]) {
+      const wrong = { ...read("tundra") } as { grass: Record<string, unknown>[] };
+      (wrong.grass[0] as Record<string, unknown>).mats = mats;
+      expect(rejection(wrong, "tundra")).toContain("'grass[0].mats");
+    }
+    const flatField = { ...read("tundra") } as { grass: Record<string, unknown>[] };
+    (flatField.grass[0] as Record<string, unknown>).mats = [0.47, 0];
+    expect(rejection(flatField, "tundra")).toContain("'grass[0].mats[1]' must be greater than 0");
+    // Null is a value too: ground with no mats thins on something else.
+    const noMats = { ...read("desert") } as { grass: Record<string, unknown>[] };
+    expect(validateBiome(noMats, "desert").grass[0]?.mats).toBeNull();
+
+    // The species a biome holds is a list of names, each once.
+    const nameless = { ...read("alpine"), species: [] };
+    expect(rejection(nameless, "alpine")).toContain("'species' must be a non-empty array");
+    const twice = { ...read("alpine"), species: ["spruce", "spruce"] };
+    expect(rejection(twice, "alpine")).toContain("'species[1]' repeats 'spruce'");
   });
 
   it("names the biome it is asked about, not the file it was read from", () => {

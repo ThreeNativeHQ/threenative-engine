@@ -1,5 +1,9 @@
 {
   "look": "coastal",
+  "bake": {
+    "file": "baked",
+    "key": "coastal"
+  },
   "landform": "coastalCliffs",
   "sizeMeters": 512,
   "seed": 73,
@@ -11,6 +15,9 @@
       "height": null,
       "spacing": [3.2, 6.4],
       "collision": "trunk",
+      "stands": true,
+      "grassThreshold": 0.3,
+      "standThreshold": 0.3,
       "far": null
     }
   ],
@@ -20,7 +27,13 @@
       "density": 1,
       "slope": [0, 42],
       "height": null,
-      "spacing": 1.2
+      "spacing": 1.2,
+      "slopeFalloff": 20,
+      "heightFalloff": 28,
+      "mats": null,
+      "waterMargin": 7.5,
+      "beach": [1.8, 5.7],
+      "detailSpacing": 0.34
     }
   ],
   "layers": [
@@ -78,5 +91,22 @@
     "cameraOffset": [28, 18, 34],
     "focus": [80, 5]
   },
+  "species": [
+    "bloom",
+    "boulder",
+    "bush",
+    "cliff",
+    "fern",
+    "grass",
+    "litter",
+    "meadow",
+    "mountain",
+    "poppy",
+    "riverrock",
+    "sapling",
+    "scree",
+    "scrub",
+    "spruce"
+  ],
   "aliases": ["coastal", "beach", "coast", "sea", "ocean"]
 }

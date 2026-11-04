@@ -1,5 +1,9 @@
 {
   "look": "alpine",
+  "bake": {
+    "file": "alpine",
+    "key": null
+  },
   "landform": "alpine",
   "sizeMeters": 512,
   "seed": 41,
@@ -11,6 +15,9 @@
       "height": [0, 52],
       "spacing": [3.4, 3.4],
       "collision": "trunk",
+      "stands": false,
+      "grassThreshold": 0.18,
+      "standThreshold": 0.42,
       "far": null
     }
   ],
@@ -20,7 +27,13 @@
       "density": 0,
       "slope": [0, 0],
       "height": null,
-      "spacing": 3.5
+      "spacing": 3.5,
+      "slopeFalloff": 0,
+      "heightFalloff": 28,
+      "mats": null,
+      "waterMargin": 7.5,
+      "beach": null,
+      "detailSpacing": 0.6
     }
   ],
   "layers": [
@@ -73,5 +86,6 @@
     "cameraOffset": [28, 24, 42],
     "focus": [180, -190]
   },
+  "species": ["boulder", "grass", "mountain", "riverrock", "sapling", "scree", "scrub", "spruce"],
   "aliases": ["alpine", "mountain", "mountains", "snowy", "peaks"]
 }

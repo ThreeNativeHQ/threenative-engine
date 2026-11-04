@@ -1,5 +1,9 @@
 {
   "look": "desert",
+  "bake": {
+    "file": "desert",
+    "key": null
+  },
   "landform": "desertMesa",
   "sizeMeters": 512,
   "seed": 97,
@@ -11,6 +15,9 @@
       "height": null,
       "spacing": [3.4, 3.4],
       "collision": "trunk",
+      "stands": false,
+      "grassThreshold": 0.18,
+      "standThreshold": 0.42,
       "far": null
     }
   ],
@@ -20,7 +27,13 @@
       "density": 0.32,
       "slope": [0, 24],
       "height": null,
-      "spacing": 7
+      "spacing": 7,
+      "slopeFalloff": 20,
+      "heightFalloff": 28,
+      "mats": null,
+      "waterMargin": 7.5,
+      "beach": null,
+      "detailSpacing": 1.8
     }
   ],
   "layers": [
@@ -73,5 +86,6 @@
     "cameraOffset": [28, 24, 42],
     "focus": [170, 180]
   },
+  "species": ["boulder", "grass", "reveal", "riverrock", "scree", "scrub", "volcanic"],
   "aliases": ["desert", "dune", "dunes", "sand"]
 }

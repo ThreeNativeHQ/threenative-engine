@@ -2,7 +2,8 @@ import { readFileSync } from "node:fs";
 import { LANDFORMS, type LandformKind, validateBiome } from "@threenative/terrain";
 import { describe, expect, it } from "vitest";
 import { BENCHMARK } from "../src/render/benchmark.js";
-import { BIOMES, type WorldName } from "../src/render/biomes.js";
+import { BIOMES, type ICoverDrift, type IVistaAim, type WorldName } from "../src/render/biomes.js";
+import { MATS_FIELD, STAND_FIELD } from "../src/render/coverField.js";
 import {
   FAR_FOREST_IMPOSTOR,
   FAR_FOREST_RULES,
@@ -47,6 +48,9 @@ interface IFoliageRow {
   readonly height: readonly [number, number] | null;
   readonly spacing: readonly [number, number];
   readonly collision: CollisionClass;
+  readonly stands: boolean;
+  readonly grassThreshold: number;
+  readonly standThreshold: number;
   readonly far: IFarRule | null;
 }
 
@@ -56,6 +60,13 @@ interface IGrassRow {
   readonly slope: readonly [number, number];
   readonly height: readonly [number, number] | null;
   readonly spacing: number;
+  readonly slopeFalloff: number;
+  readonly heightFalloff: number;
+  /** The mat field's band the cover thins on, or null on ground without mats. */
+  readonly mats: readonly [number, number] | null;
+  readonly waterMargin: number;
+  readonly beach: readonly [number, number] | null;
+  readonly detailSpacing: number;
 }
 
 interface ILayerRow {
@@ -73,8 +84,15 @@ interface IWaterRow {
   readonly level?: number;
 }
 
+/** The baked bundle a world is read from: its file under `world/`, and its key inside it. */
+interface IBakeRow {
+  readonly file: string;
+  readonly key: string | null;
+}
+
 interface IWorldRows {
   readonly look: string;
+  readonly bake: IBakeRow;
   readonly landform: LandformKind;
   readonly sizeMeters: number;
   readonly seed: number;
@@ -94,6 +112,7 @@ interface IWorldRows {
 const TABLE: Readonly<Record<WorldName, IWorldRows>> = {
   forest: {
     look: "forest",
+    bake: { file: "baked", key: "forest" },
     landform: "temperateMountains",
     sizeMeters: 512,
     seed: 73,
@@ -115,10 +134,27 @@ const TABLE: Readonly<Record<WorldName, IWorldRows>> = {
         height: null,
         spacing: [3.2, 6.4],
         collision: "trunk",
+        stands: true,
+        grassThreshold: 0.3,
+        standThreshold: 0.3,
         far: { cell: 6, spacing: [6.5, 13], slope: [36, 46], reach: 2300, impostor: 110 },
       },
     ],
-    grass: [{ species: "grass", density: 1, slope: [0, 42], height: [0, 66], spacing: 1.2 }],
+    grass: [
+      {
+        species: "grass",
+        density: 1,
+        slope: [0, 42],
+        height: [0, 66],
+        spacing: 1.2,
+        mats: null,
+        slopeFalloff: 20,
+        heightFalloff: 28,
+        waterMargin: 7.5,
+        beach: null,
+        detailSpacing: 0.5,
+      },
+    ],
     water: [
       { kind: "river", width: 5.32 },
       { kind: "lake", radius: 105 },
@@ -145,6 +181,7 @@ const TABLE: Readonly<Record<WorldName, IWorldRows>> = {
   },
   coastal: {
     look: "coastal",
+    bake: { file: "baked", key: "coastal" },
     landform: "coastalCliffs",
     sizeMeters: 512,
     seed: 73,
@@ -166,10 +203,27 @@ const TABLE: Readonly<Record<WorldName, IWorldRows>> = {
         height: null,
         spacing: [3.2, 6.4],
         collision: "trunk",
+        stands: true,
+        grassThreshold: 0.3,
+        standThreshold: 0.3,
         far: null,
       },
     ],
-    grass: [{ species: "grass", density: 1, slope: [0, 42], height: null, spacing: 1.2 }],
+    grass: [
+      {
+        species: "grass",
+        density: 1,
+        slope: [0, 42],
+        height: null,
+        spacing: 1.2,
+        mats: null,
+        slopeFalloff: 20,
+        heightFalloff: 28,
+        waterMargin: 7.5,
+        beach: [1.8, 5.7],
+        detailSpacing: 0.34,
+      },
+    ],
     water: [{ kind: "ocean", level: 1.5 }],
     spawn: { at: [180, 65], cameraOffset: [28, 18, 34], focus: [80, 5] },
     aliases: ["coastal", "beach", "coast", "sea", "ocean"],
@@ -193,6 +247,7 @@ const TABLE: Readonly<Record<WorldName, IWorldRows>> = {
   },
   alpine: {
     look: "alpine",
+    bake: { file: "alpine", key: null },
     landform: "alpine",
     sizeMeters: 512,
     seed: 41,
@@ -214,10 +269,27 @@ const TABLE: Readonly<Record<WorldName, IWorldRows>> = {
         height: [0, 52],
         spacing: [3.4, 3.4],
         collision: "trunk",
+        stands: false,
+        grassThreshold: 0.18,
+        standThreshold: 0.42,
         far: null,
       },
     ],
-    grass: [{ species: "grass", density: 0, slope: [0, 0], height: null, spacing: 3.5 }],
+    grass: [
+      {
+        species: "grass",
+        density: 0,
+        slope: [0, 0],
+        height: null,
+        spacing: 3.5,
+        mats: null,
+        slopeFalloff: 0,
+        heightFalloff: 28,
+        waterMargin: 7.5,
+        beach: null,
+        detailSpacing: 0.6,
+      },
+    ],
     water: [],
     spawn: { at: [180, -190], cameraOffset: [28, 24, 42], focus: [180, -190] },
     aliases: ["alpine", "mountain", "mountains", "snowy", "peaks"],
@@ -234,6 +306,7 @@ const TABLE: Readonly<Record<WorldName, IWorldRows>> = {
   },
   desert: {
     look: "desert",
+    bake: { file: "desert", key: null },
     landform: "desertMesa",
     sizeMeters: 512,
     seed: 97,
@@ -255,10 +328,27 @@ const TABLE: Readonly<Record<WorldName, IWorldRows>> = {
         height: null,
         spacing: [3.4, 3.4],
         collision: "trunk",
+        stands: false,
+        grassThreshold: 0.18,
+        standThreshold: 0.42,
         far: null,
       },
     ],
-    grass: [{ species: "grass", density: 0.32, slope: [0, 24], height: null, spacing: 7 }],
+    grass: [
+      {
+        species: "grass",
+        density: 0.32,
+        slope: [0, 24],
+        height: null,
+        spacing: 7,
+        mats: null,
+        slopeFalloff: 20,
+        heightFalloff: 28,
+        waterMargin: 7.5,
+        beach: null,
+        detailSpacing: 1.8,
+      },
+    ],
     water: [],
     spawn: { at: [180, 160], cameraOffset: [28, 24, 42], focus: [170, 180] },
     aliases: ["desert", "dune", "dunes", "sand"],
@@ -274,6 +364,7 @@ const TABLE: Readonly<Record<WorldName, IWorldRows>> = {
   },
   tundra: {
     look: "tundra",
+    bake: { file: "tundra", key: null },
     landform: "tundra",
     sizeMeters: 512,
     seed: 131,
@@ -295,10 +386,27 @@ const TABLE: Readonly<Record<WorldName, IWorldRows>> = {
         height: null,
         spacing: [3.4, 3.4],
         collision: "trunk",
+        stands: false,
+        grassThreshold: 0.18,
+        standThreshold: 0.42,
         far: null,
       },
     ],
-    grass: [{ species: "grass", density: 1, slope: [0, 30], height: null, spacing: 1.8 }],
+    grass: [
+      {
+        species: "grass",
+        density: 1,
+        slope: [0, 30],
+        height: null,
+        spacing: 1.8,
+        mats: [0.47, 0.3],
+        slopeFalloff: 22,
+        heightFalloff: 28,
+        waterMargin: 7.5,
+        beach: null,
+        detailSpacing: 0.5,
+      },
+    ],
     water: [
       { kind: "river", width: 5.32 },
       { kind: "river", width: 3.04 },
@@ -317,6 +425,17 @@ const TABLE: Readonly<Record<WorldName, IWorldRows>> = {
     },
   },
 };
+
+/**
+ * The bundle a world is drawn from, read from the bake's own files: `baked.json` holds the pair of
+ * worlds that share one DEM, and every other world is written to a file of its own name.
+ */
+function bakeOf(world: WorldName): IBakeRow {
+  const shared = JSON.parse(
+    readFileSync(new URL("../src/world/baked.json", import.meta.url), "utf8"),
+  ) as Record<string, unknown>;
+  return world in shared ? { file: "baked", key: world } : { file: world, key: null };
+}
 
 const ELEVATION_LAYERS = [
   "alpine",
@@ -436,6 +555,9 @@ function foliageOf(
       height: rules.treeHeightCeiling === null ? null : [0, rules.treeHeightCeiling],
       spacing: rules.treeSpacing,
       collision,
+      stands: rules.treeStands,
+      grassThreshold: rules.treeGrassThreshold,
+      standThreshold: rules.treeStandThreshold,
       far,
     },
   ];
@@ -449,6 +571,12 @@ function grassOf(rules: IScatterRules): readonly IGrassRow[] {
       slope: [0, rules.grassSlopeLimit],
       height: rules.grassHeight === null ? null : [0, rules.grassHeight[0]],
       spacing: rules.grassCell,
+      slopeFalloff: rules.grassSlopeFalloff,
+      heightFalloff: rules.grassHeight?.[1] ?? 28,
+      mats: rules.grassMats,
+      waterMargin: rules.grassWaterMargin,
+      beach: rules.grassBeach,
+      detailSpacing: rules.grassDetailSpacing,
     },
   ];
 }
@@ -476,6 +604,7 @@ describe("a biome's values", () => {
       const biome = BIOMES[world];
       const rules = scatterRules(world);
       expect({ world, look: biome.world }).toEqual({ world, look: expected.look });
+      expect({ world, bake: bakeOf(world) }).toEqual({ world, bake: expected.bake });
       expect({ world, landform: landformOf(world) }).toEqual({
         world,
         landform: expected.landform,
@@ -536,6 +665,7 @@ describe("a biome's file", () => {
     for (const world of WORLDS) {
       const spec = biomeFile(world);
       const expected = TABLE[world];
+      expect({ world, bake: spec.bake }).toEqual({ world, bake: expected.bake });
       expect({
         world,
         look: spec.look,
@@ -554,7 +684,123 @@ describe("a biome's file", () => {
       expect({ world, grass: spec.grass }).toEqual({ world, grass: expected.grass });
       expect({ world, water: spec.water }).toEqual({ world, water: expected.water });
       expect({ world, spawn: spec.spawn }).toEqual({ world, spawn: expected.spawn });
+      expect({ world, species: [...spec.species].sort() }).toEqual({
+        world,
+        species: Object.keys(expected.species).sort(),
+      });
       expect({ world, aliases: spec.aliases }).toEqual({ world, aliases: expected.aliases });
+    }
+  });
+});
+
+/**
+ * What the game's own look table holds, for the values that used to be a branch in the code.
+ *
+ * These are not the biome file's: the camera a vista is framed from, the art a fallback pack stands
+ * in, the stone grading's shape, and the one curve the ground cover drifts on are all the game's
+ * look, so this is where they are pinned. Every one of them came out of a `world ===` comparison in
+ * `game.ts` or a four-way ternary in `scatter.ts`, and the numbers are the ones it carried.
+ */
+interface ILookRow {
+  readonly vistaAim: IVistaAim | null;
+  readonly saplingHeight: number | null;
+  readonly stoneSinkShare: number | null;
+  readonly stoneScans: number;
+  readonly riverMirrorsPonds: boolean;
+  readonly stageArm: boolean;
+  readonly coverDrift: ICoverDrift;
+}
+
+/** The wood's drift: three quarters of the cover stands, the rest rides the stand field. */
+const WOOD_DRIFT: ICoverDrift = {
+  field: STAND_FIELD,
+  frequency: [3.1, 2.7],
+  offset: 0.65,
+  amplitude: 0.35,
+  band: [0, 1],
+};
+
+const LOOKS: Readonly<Record<WorldName, ILookRow>> = {
+  forest: {
+    vistaAim: null,
+    saplingHeight: null,
+    stoneSinkShare: 0.12,
+    stoneScans: 1,
+    riverMirrorsPonds: false,
+    stageArm: true,
+    coverDrift: WOOD_DRIFT,
+  },
+  coastal: {
+    vistaAim: { at: [80, 190], rise: null },
+    saplingHeight: null,
+    stoneSinkShare: 0.12,
+    stoneScans: 1,
+    riverMirrorsPonds: false,
+    stageArm: false,
+    coverDrift: WOOD_DRIFT,
+  },
+  alpine: {
+    vistaAim: { at: [-200, 170], rise: 170 },
+    saplingHeight: 2,
+    stoneSinkShare: null,
+    stoneScans: 1,
+    riverMirrorsPonds: false,
+    stageArm: false,
+    coverDrift: {
+      field: STAND_FIELD,
+      frequency: [2.1, 2.4],
+      offset: 0,
+      amplitude: 1,
+      band: [0.3, 0.45],
+    },
+  },
+  desert: {
+    vistaAim: { at: [-180, -160], rise: 30 },
+    saplingHeight: null,
+    stoneSinkShare: null,
+    stoneScans: 2,
+    riverMirrorsPonds: false,
+    stageArm: false,
+    coverDrift: {
+      field: STAND_FIELD,
+      frequency: [6.3, 5.7],
+      offset: 0.08,
+      amplitude: 0.6,
+      band: [0.5, 0.3],
+    },
+  },
+  tundra: {
+    vistaAim: null,
+    saplingHeight: 1.4,
+    stoneSinkShare: null,
+    stoneScans: 1,
+    riverMirrorsPonds: true,
+    stageArm: false,
+    coverDrift: {
+      field: MATS_FIELD,
+      frequency: [1, 1],
+      offset: 0,
+      amplitude: 1,
+      band: [0.45, 0.3],
+    },
+  },
+};
+
+describe("a biome's look", () => {
+  it("carries the values its branches used to compute", () => {
+    for (const world of WORLDS) {
+      const look = BIOMES[world];
+      const expected = LOOKS[world];
+      expect({
+        world,
+        vistaAim: look.vistaAim,
+        saplingHeight: look.saplingHeight,
+        stoneSinkShare: look.stoneSinkShare,
+        stoneScans: look.stoneScans,
+        riverMirrorsPonds: look.riverMirrorsPonds,
+        stageArm: look.stageArm,
+        coverDrift: look.coverDrift,
+      }).toEqual({ world, ...expected });
     }
   });
 });

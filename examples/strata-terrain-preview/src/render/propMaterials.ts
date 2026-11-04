@@ -81,6 +81,7 @@ import {
   SOIL_MAP,
 } from "../world/terrainAssets.js";
 import {
+  BIOMES,
   type IWorldBiome,
   alpineRockAlbedo,
   alpineRockColor,
@@ -438,12 +439,12 @@ export async function createRockGround(
   ground?: IPropGround,
   biome?: IWorldBiome,
 ) {
+  const look = biome ?? BIOMES.forest;
   // Beach stones keep their dry surface: the temperate contact band paints grass onto sand.
-  if (!ground || biome?.world === "coastal" || biome?.world === "tundra") return undefined;
+  if (!ground || !look.stoneGroundBand) return undefined;
   const under = groundHeight(ground);
   const paths = biome?.maps ?? GROUND_MAPS;
-  const temperate = !biome || biome.world === "forest";
-  const rockPaths = temperate ? ROCKFACE_MAPS : paths.rock;
+  const rockPaths = look.contactRockface ? ROCKFACE_MAPS : paths.rock;
   const [grass, relief, rock, rockNormal, snow] = await Promise.all([
     map(assets, paths.grass.diffuse, false),
     paths.grass.normal ? map(assets, paths.grass.normal, true) : undefined,
@@ -456,7 +457,7 @@ export async function createRockGround(
             found ?? (paths.rock.normal ? map(assets, paths.rock.normal, true) : undefined),
         )
       : undefined,
-    biome?.world === "alpine" ? map(assets, paths.snow.diffuse, false) : undefined,
+    look.crestRock ? map(assets, paths.snow.diffuse, false) : undefined,
   ]);
   return {
     apply(material: MeshStandardNodeMaterial): void {
@@ -918,23 +919,20 @@ export async function createPropSurfaces(
   ]);
   const soil = await map(
     assets,
-    biome && biome.world !== "forest" && biome.world !== "coastal"
-      ? biome.maps.grass.diffuse
-      : SOIL_MAP,
+    biome !== undefined && !biome.lawnGround ? biome.maps.grass.diffuse : SOIL_MAP,
     false,
   );
   const [bark, stone, atlas, relief] = await Promise.all([
     surfaceMaps(assets, PROP_MAPS.bark),
     (async () => {
-      const dry = biome?.world === "coastal" || biome?.world === "desert";
-      const set = dry
+      const set = biome?.dryStones
         ? DRY_STONE_MAPS
-        : biome?.world === "alpine"
+        : biome?.crestRock
           ? {
               diffuse: biome.maps.rock.diffuse,
               normal: biome.maps.rock.normal ?? PROP_MAPS.stone.normal,
             }
-          : biome?.world === "tundra"
+          : biome?.mossGround
             ? {
                 diffuse: "lichen_rock/lichen_rock_diff_512.jpg",
                 normal: "lichen_rock/lichen_rock_nor_gl_512.jpg",
@@ -943,7 +941,7 @@ export async function createPropSurfaces(
       const [diffuse, normal, arm] = await Promise.all([
         map(assets, set.diffuse, false, true),
         map(assets, set.normal, true, true),
-        dry ? map(assets, DRY_STONE_MAPS.arm, true, true) : undefined,
+        biome?.dryStones ? map(assets, DRY_STONE_MAPS.arm, true, true) : undefined,
       ]);
       return { diffuse, normal, arm };
     })(),
@@ -951,9 +949,7 @@ export async function createPropSurfaces(
     map(assets, NEEDLE_SURFACE, true),
   ]);
   const rockSnow =
-    biome?.world === "alpine" || biome?.world === "tundra"
-      ? await map(assets, biome.maps.snow.diffuse, false)
-      : undefined;
+    biome?.stoneSnow === true ? await map(assets, biome.maps.snow.diffuse, false) : undefined;
   const textures: Texture[] = [
     ...(rockSnow ? [rockSnow] : []),
     ...(under ? [under.texture] : []),
@@ -1105,7 +1101,7 @@ export async function createPropSurfaces(
 
   const stoneMaterial = stoneSurface(stone);
   // Cast the sun-facing surface: back-face depth leaves a lit strip at the sand intersection.
-  if (biome?.world === "coastal") stoneMaterial.shadowSide = FrontSide;
+  if (biome?.stoneFrontFace) stoneMaterial.shadowSide = FrontSide;
   if (biome?.propStoneTint && stoneMaterial.colorNode)
     stoneMaterial.colorNode = (
       stone.diffuse ? (stoneMaterial.colorNode as Node<"vec3">) : vec3(0.4, 0.35, 0.3)
@@ -1132,25 +1128,17 @@ export async function createPropSurfaces(
     stem: stemMaterial,
     stone: stoneMaterial,
   };
-  if (biome && biome.world !== "forest" && biome.world !== "coastal") {
+  if (biome !== undefined && !biome.lawnGround) {
     // colorNode already consumes blade colour; Three must not multiply it a second time.
     grassMaterial.vertexColors = false;
-    grassMaterial.colorNode = blade.mul(
-      vec3(
-        ...(biome.world === "desert"
-          ? ([1.65, 0.92, 0.42] as const)
-          : biome.world === "tundra"
-            ? ([1.1, 0.86, 0.55] as const)
-            : ([0.86, 0.92, 0.6] as const)),
-      ),
-    );
+    grassMaterial.colorNode = blade.mul(vec3(...biome.propGrassTint));
     grassMaterial.emissiveNode = vec3(0);
     if (!biome.propStoneTint && stoneMaterial.colorNode)
       stoneMaterial.colorNode = (stoneMaterial.colorNode as Node<"vec3">).mul(
         vec3(...biome.stoneTint),
       );
   }
-  if (biome?.world === "alpine") {
+  if (biome?.crestRock) {
     const rock = stone.diffuse ? alpineRockAlbedo(stone.diffuse) : vec3(0.42, 0.43, 0.38);
     const snow = rockSnow ? texture(rockSnow, positionWorld.xz.div(12)).rgb : vec3(0.82, 0.86, 0.9);
     stoneMaterial.colorNode = mix(
@@ -1159,7 +1147,7 @@ export async function createPropSurfaces(
       smoothstep(0.12, 0.82, alpineSnowCover(biome)),
     );
   }
-  if (biome?.world === "tundra") {
+  if (biome?.mossGround) {
     stoneMaterial.colorNode = (stoneMaterial.colorNode as Node<"vec3">).mul(1.35);
     const cover =
       biomeWeights(
