@@ -97,8 +97,11 @@ const temperate: IBiome = {
   heightFractions: {
     alpine: [0.95, 1.65],
     rock: [0.35, 1.8],
-    treeline: [2.75, 6],
-    cap: [5.6, 7.75],
+    // The generated backdrop rises to 848 m over a 41 m walkable range. Spruce climbs to about
+    // 260-400 m (its 70th-80th height percentile) and snow holds only on the peaks' gentle ground
+    // above 570-690 m (93rd-97th). At 227-315 m the snow lay across every saddle as a white band.
+    treeline: [6.5, 10],
+    cap: [14, 17],
     desertRock: [0.18, 0.48],
     alpineRock: [0.06, 0.14],
     alpineHollow: [0.05, 0.12],

@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { terrainStats } from "@threenative/terrain";
 import { describe, expect, it } from "vitest";
-import { BIOMES } from "../src/render/biomes.js";
+import { BIOMES, measureBiome } from "../src/render/biomes.js";
 import { prefiltered } from "../src/render/horizon.js";
 
 // `pnpm test` bakes first, so the forest backdrop in horizon.json is the one the game loads.
@@ -17,6 +17,27 @@ describe("forest backdrop", () => {
     expect(stats.relief).toBeGreaterThan(800);
     expect(stats.relief).toBeLessThan(950);
     expect(stats.curvatureKurtosis).toBeGreaterThan(40);
+  });
+
+  it("keeps snow to the peaks instead of every saddle", () => {
+    // The cap band is a fraction of the 41 m walkable range; at 227 m it lay under a third of the
+    // generated ridges and read as a white band across the valley from the spawn.
+    const baked = JSON.parse(
+      readFileSync(new URL("../src/world/baked.json", import.meta.url), "utf8"),
+    ) as { forest: { heights: number[] } };
+    const [snowline] = measureBiome(BIOMES.forest, baked.forest.heights).heightBands.cap;
+    const n = forest.resolution;
+    let collar = 0;
+    let snowy = 0;
+    for (let row = 0; row < n; row++)
+      for (let column = 0; column < n; column++) {
+        const reach = Math.max(Math.abs(column / (n - 1) - 0.5), Math.abs(row / (n - 1) - 0.5));
+        const metres = reach * forest.size;
+        if (metres <= 256 || metres > 2356) continue;
+        collar++;
+        if ((forest.heights[row * n + column] as number) > snowline) snowy++;
+      }
+    expect(snowy / collar).toBeLessThan(0.15);
   });
 
   it("meets the surveyed ground at the centre", () => {
