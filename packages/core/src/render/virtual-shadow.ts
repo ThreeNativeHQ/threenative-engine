@@ -103,6 +103,17 @@ export interface IVirtualShadowOptions {
    */
   readonly clipExtents?: readonly number[];
   /**
+   * The widest step between two levels, default 2: where `clipExtents` jump further, levels are
+   * inserted at even ratios, as UE 5.8.3 doubles every clipmap level (`GetLevelRadius`,
+   * Engine/Source/Runtime/Renderer/Private/VirtualShadowMaps/VirtualShadowMapClipmap.cpp:175-179). A
+   * receiver crossing a level edge then changes texel size by at most this ratio: across `[24, 320]`
+   * the texel grew 13 times at once and every tree on the edge flipped from self-shadowed to flat
+   * lit. Per-level lists (`mapSize`, `refreshStep`, `selectionGuard`, `invalidationDelay`) give an
+   * inserted level the value of the authored level it leads into. `Infinity` keeps the authored
+   * levels as they are, and `TN_VIRTUAL_SHADOW_OVERRIDE` reports it.
+   */
+  readonly maxLevelRatio?: number;
+  /**
    * Resolution bias in stops, default 0. Mirrors Unreal's
    * `r.Shadow.Virtual.ResolutionLodBiasDirectional`; a quality tier sets it. With the default map
    * sizes each stop doubles every level's texel: `-1` halves it (twice the resolution), `-1.5` is
@@ -501,6 +512,33 @@ export const VIRTUAL_SHADOW_SMALL_CASTER_LAYER = 26;
  */
 export const VIRTUAL_SHADOW_KEY_LAYER = 25;
 const DEFAULT_CLIP_EXTENTS: readonly number[] = [16, 48, 144];
+const DEFAULT_MAX_LEVEL_RATIO = 2;
+
+/**
+ * Levels with no step wider than `maxRatio`, and for each the authored level it came from (an
+ * inserted level names the authored level it leads into).
+ */
+export function clipLadder(
+  authored: readonly number[],
+  maxRatio: number,
+): { readonly extents: number[]; readonly source: number[] } {
+  const extents: number[] = [];
+  const source: number[] = [];
+  authored.forEach((extent, index) => {
+    const previous = authored[index - 1];
+    if (previous !== undefined && previous > 0 && extent / previous > maxRatio) {
+      const steps = Math.ceil(Math.log(extent / previous) / Math.log(maxRatio));
+      const ratio = (extent / previous) ** (1 / steps);
+      for (let step = 1; step < steps; step += 1) {
+        extents.push(previous * ratio ** step);
+        source.push(index);
+      }
+    }
+    extents.push(extent);
+    source.push(index);
+  });
+  return { extents, source };
+}
 /** Square levels. A fit to the ground (`0.25`, a 14.5 degree sun is where it ends) is the named override. */
 const DEFAULT_MIN_WINDOW_ASPECT = 1;
 const DEFAULT_MARKER_EVERY = 300;
@@ -1181,10 +1219,29 @@ export class VirtualShadowNode extends ShadowBaseNode {
     }
     const authoredExtents = options.clipExtents ?? DEFAULT_CLIP_EXTENTS;
     const autoMapSize = options.mapSize === undefined;
+    const maxLevelRatio = options.maxLevelRatio ?? DEFAULT_MAX_LEVEL_RATIO;
+    if (!(maxLevelRatio > 1)) {
+      throw new RangeError(
+        `TN_VIRTUAL_SHADOW_INVALID: maxLevelRatio must be greater than 1, got ${String(maxLevelRatio)}.`,
+      );
+    }
     // The rule takes the bias for every level; authored sizes take it on the finest window.
-    const clipExtents = authoredExtents.map((extent, level) =>
+    const biased = authoredExtents.map((extent, level) =>
       level === 0 && !autoMapSize ? extent * 2 ** bias : extent,
     );
+    const ladder = clipLadder(biased, maxLevelRatio);
+    const widest = Math.max(
+      1,
+      ...biased.slice(1).map((extent, i) => extent / (biased[i] as number)),
+    );
+    if (maxLevelRatio > DEFAULT_MAX_LEVEL_RATIO && widest > DEFAULT_MAX_LEVEL_RATIO) {
+      console.info(
+        `TN_VIRTUAL_SHADOW_OVERRIDE maxLevelRatio=${String(maxLevelRatio)} keeps a ${widest.toFixed(1)}x level step (default ${String(DEFAULT_MAX_LEVEL_RATIO)}x).`,
+      );
+    }
+    const clipExtents = ladder.extents;
+    // A per-level list names authored levels; an inserted level takes the one it leads into.
+    const authoredLevel = (level: number): number => ladder.source[level] as number;
     if (
       bias !== 0 &&
       clipExtents.length > 1 &&
@@ -1197,7 +1254,9 @@ export class VirtualShadowNode extends ShadowBaseNode {
     const sizes = options.mapSize ?? light.shadow.mapSize.width;
     const mapSize = clipExtents.map(
       (_, level) =>
-        (typeof sizes === "number" ? sizes : sizes[Math.min(level, sizes.length - 1)]) as number,
+        (typeof sizes === "number"
+          ? sizes
+          : sizes[Math.min(authoredLevel(level), sizes.length - 1)]) as number,
     );
     for (const size of mapSize) {
       if (!Number.isInteger(size) || size <= 0) {
@@ -1287,7 +1346,9 @@ export class VirtualShadowNode extends ShadowBaseNode {
       // the game handed it, so a caller reading `options` back sees the level it asked for.
       return values.length === 1
         ? Array.from({ length: clipExtents.length }, () => values[0] as number)
-        : values;
+        : clipExtents.map(
+            (_, level) => values[Math.min(authoredLevel(level), values.length - 1)] as number,
+          );
     };
     const steps = perLevel(
       options.refreshStep ?? 0.125,
@@ -1344,6 +1405,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
       adaptiveCasterGate: options.adaptiveCasterGate ?? true,
       adaptiveRefresh: options.adaptiveRefresh ?? true,
       clipExtents: [...clipExtents],
+      maxLevelRatio,
       resolutionLodBiasDirectional: bias,
       depthRange: options.depthRange ?? 400,
       expensiveRefreshShare,

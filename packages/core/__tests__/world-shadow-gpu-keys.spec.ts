@@ -237,6 +237,7 @@ describe("a shadow level's GPU-key selection against the cluster path", () => {
     light.castShadow = true;
     scene.add(light, light.target);
     const node = new VirtualShadowNode(light, {
+      maxLevelRatio: Number.POSITIVE_INFINITY,
       clipExtents: [...CLIP_EXTENTS],
       mapSize: MAP_SIZE,
       marker: false,
@@ -593,6 +594,7 @@ async function measureSubmissions(
   light.castShadow = true;
   scene.add(light, light.target);
   const node = new VirtualShadowNode(light, {
+    maxLevelRatio: Number.POSITIVE_INFINITY,
     clipExtents: [...extents],
     mapSize,
     marker: false,
@@ -903,6 +905,7 @@ describe("a keyed level render under three's own compute", () => {
     light.castShadow = true;
     scene.add(light, light.target);
     const node = new VirtualShadowNode(light, {
+      maxLevelRatio: Number.POSITIVE_INFINITY,
       clipExtents: [...CLIP_EXTENTS],
       mapSize: MAP_SIZE,
       marker: false,

@@ -73,6 +73,7 @@ import {
   lampShadowMarker,
   readLampShadowMarker,
   readVirtualShadowMarker,
+  clipLadder,
 } from "../src/render/virtual-shadow.js";
 import { WorldImpostorSurface } from "../src/render/world-impostor-surface.js";
 import { WorldImpostorAtlas } from "../src/render/world-impostor.js";
@@ -135,7 +136,11 @@ function frameFor(camera: PerspectiveCamera, time?: number): NodeFrame {
 }
 
 function setupNode(light: DirectionalLight, options = {}): VirtualShadowNode {
-  const node = new VirtualShadowNode(light, { marker: false, ...options });
+  const node = new VirtualShadowNode(light, {
+    maxLevelRatio: Number.POSITIVE_INFINITY,
+    marker: false,
+    ...options,
+  });
   node.setup(builder);
   // The real render belongs to three's renderer: a level render is what a frame with a renderer
   // asks for, and this is the draw that is not the node's business under test. The tests that
@@ -243,6 +248,7 @@ function levelDebugGraph(
   vi.stubGlobal("location", { search });
   const { light } = world();
   const node = new VirtualShadowNode(light, {
+    maxLevelRatio: Number.POSITIVE_INFINITY,
     clipExtents: [8, 32, 128, 512],
     marker: false,
     ...options,
@@ -333,7 +339,11 @@ it.each([false, true])(
 function shadowCoordCode(material: Material): string {
   vi.stubGlobal("location", { search: "" });
   const { light } = world();
-  const node = new VirtualShadowNode(light, { clipExtents: [8, 32], marker: false });
+  const node = new VirtualShadowNode(light, {
+    maxLevelRatio: Number.POSITIVE_INFINITY,
+    clipExtents: [8, 32],
+    marker: false,
+  });
   const graphBuilder = shadowGraphBuilder(false, material);
   const outgoingLight = property("vec3", "testOutgoingLight");
   // The light-space image of the normal reads the camera; a receiver's own normal comes from its
@@ -416,7 +426,11 @@ describe("virtual shadow level diagnostic", () => {
     (parameters) => {
       vi.stubGlobal("location", { search: "?tnShadowLevels=1" });
       const { light, camera, scene } = world();
-      const node = new VirtualShadowNode(light, { clipExtents: [8, 32], marker: false });
+      const node = new VirtualShadowNode(light, {
+        maxLevelRatio: Number.POSITIVE_INFINITY,
+        clipExtents: [8, 32],
+        marker: false,
+      });
       node.setup(builder);
       light.shadow.shadowNode = node;
       const renderer = new WebGPURenderer({ canvas: new EventTarget() as HTMLCanvasElement });
@@ -524,7 +538,10 @@ describe("virtual shadow level diagnostic", () => {
       },
     });
     const { light } = world();
-    const node = new VirtualShadowNode(light, { marker: false });
+    const node = new VirtualShadowNode(light, {
+      maxLevelRatio: Number.POSITIVE_INFINITY,
+      marker: false,
+    });
     try {
       node.setup(builder);
       node.setup(builder);
@@ -540,7 +557,11 @@ describe("virtual shadow level diagnostic", () => {
     (mode) => {
       vi.stubGlobal("location", { search: "?tnShadowLevels=1" });
       const { light, camera } = world();
-      const node = new VirtualShadowNode(light, { clipExtents: [8], marker: false });
+      const node = new VirtualShadowNode(light, {
+        maxLevelRatio: Number.POSITIVE_INFINITY,
+        clipExtents: [8],
+        marker: false,
+      });
       const graphBuilder = shadowGraphBuilder();
       (graphBuilder as unknown as { camera: PerspectiveCamera }).camera = camera;
       graphBuilder.context = {
@@ -592,12 +613,27 @@ describe("VirtualShadowNode", () => {
 
   it("should reject a non-positive map size and a non-increasing clip list by name", () => {
     const { light } = world();
-    expect(() => new VirtualShadowNode(light, { mapSize: 0 })).toThrow(
-      /TN_VIRTUAL_SHADOW_INVALID/u,
-    );
-    expect(() => new VirtualShadowNode(light, { moverMapSize: 0 })).toThrow(/moverMapSize/u);
-    expect(() => new VirtualShadowNode(light, { clipExtents: [40, 10] })).toThrow(/increase/u);
-    expect(() => new VirtualShadowNode(light, { lightDistance: -1 })).toThrow(/lightDistance/u);
+    expect(
+      () => new VirtualShadowNode(light, { maxLevelRatio: Number.POSITIVE_INFINITY, mapSize: 0 }),
+    ).toThrow(/TN_VIRTUAL_SHADOW_INVALID/u);
+    expect(
+      () =>
+        new VirtualShadowNode(light, { maxLevelRatio: Number.POSITIVE_INFINITY, moverMapSize: 0 }),
+    ).toThrow(/moverMapSize/u);
+    expect(
+      () =>
+        new VirtualShadowNode(light, {
+          maxLevelRatio: Number.POSITIVE_INFINITY,
+          clipExtents: [40, 10],
+        }),
+    ).toThrow(/increase/u);
+    expect(
+      () =>
+        new VirtualShadowNode(light, {
+          maxLevelRatio: Number.POSITIVE_INFINITY,
+          lightDistance: -1,
+        }),
+    ).toThrow(/lightDistance/u);
   });
 
   it("should halve the finest level's texel for a resolution bias of -1 and keep the outer reach", () => {
@@ -623,14 +659,61 @@ describe("VirtualShadowNode", () => {
     expect(setupNode(light, { clipExtents: [8, 32] }).options.clipExtents).toEqual([8, 32]);
   });
 
+  it("steps clip levels at most 2x by default, as UE doubles every clipmap level", () => {
+    const { light } = world();
+    // [24, 320] jumped 13x at the first edge: every tree on it flipped from self-shadowed to flat lit.
+    const ladder = clipLadder([24, 320], 2);
+    expect(ladder.extents).toHaveLength(5);
+    expect(ladder.extents[0]).toBe(24);
+    expect(ladder.extents[4]).toBe(320);
+    for (let level = 1; level < 5; level += 1)
+      expect(
+        (ladder.extents[level] as number) / (ladder.extents[level - 1] as number),
+      ).toBeLessThanOrEqual(2);
+    expect(ladder.source).toEqual([0, 1, 1, 1, 1]);
+    const node = new VirtualShadowNode(light, {
+      clipExtents: [24, 320],
+      marker: false,
+      mapSize: [64, 32],
+      refreshStep: [0.2, 0.125],
+    });
+    expect(node.options.clipExtents).toHaveLength(5);
+    // An inserted level takes the per-level values of the authored level it leads into.
+    expect(node.options.refreshStep).toEqual([0.2, 0.125, 0.125, 0.125, 0.125]);
+    expect(node.options.mapSize).toEqual([64, 32, 32, 32, 32]);
+    // A ladder already 2x apart stays as authored.
+    expect(clipLadder([8, 16, 32], 2).extents).toEqual([8, 16, 32]);
+  });
+
+  it("keeps authored levels under the maxLevelRatio override and reports it", () => {
+    const { light } = world();
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const node = new VirtualShadowNode(light, {
+      clipExtents: [24, 320],
+      marker: false,
+      maxLevelRatio: Number.POSITIVE_INFINITY,
+    });
+    expect(node.options.clipExtents).toEqual([24, 320]);
+    expect(
+      info.mock.calls.some(([line]) => String(line).startsWith("TN_VIRTUAL_SHADOW_OVERRIDE")),
+    ).toBe(true);
+    info.mockRestore();
+    expect(() => new VirtualShadowNode(light, { maxLevelRatio: 1 })).toThrow(/maxLevelRatio/u);
+  });
+
   it("should reject a resolution bias that is not finite or that pushes the finest level past the next", () => {
     const { light } = world();
     expect(
-      () => new VirtualShadowNode(light, { resolutionLodBiasDirectional: Number.NaN }),
+      () =>
+        new VirtualShadowNode(light, {
+          maxLevelRatio: Number.POSITIVE_INFINITY,
+          resolutionLodBiasDirectional: Number.NaN,
+        }),
     ).toThrow(/resolutionLodBiasDirectional/u);
     expect(
       () =>
         new VirtualShadowNode(light, {
+          maxLevelRatio: Number.POSITIVE_INFINITY,
           clipExtents: [8, 12],
           mapSize: 64,
           resolutionLodBiasDirectional: 1,
@@ -651,7 +734,11 @@ describe("VirtualShadowNode", () => {
       },
     } as unknown as NodeBuilder;
     const rule = { clipExtents: [7, 14, 28, 56], resolutionLodBiasDirectional: -1 };
-    const node = new VirtualShadowNode(light, { marker: false, ...rule });
+    const node = new VirtualShadowNode(light, {
+      maxLevelRatio: Number.POSITIVE_INFINITY,
+      marker: false,
+      ...rule,
+    });
     expect(node.options.autoMapSize).toBe(true);
     // Before a camera reads it, every level holds the light's own map size.
     expect(node.options.mapSize).toEqual([64, 64, 64, 64]);
@@ -672,15 +759,30 @@ describe("VirtualShadowNode", () => {
     const sizes = node.levelLights.map((level) => (level as DirectionalLight).shadow.mapSize.x);
     expect(sizes).toEqual([4096, 4096, 4096, 4096]);
     // A named size holds: one number for every level, or one per level.
-    const held = new VirtualShadowNode(light, { marker: false, ...rule, mapSize: [512, 1024] });
+    const held = new VirtualShadowNode(light, {
+      maxLevelRatio: Number.POSITIVE_INFINITY,
+      marker: false,
+      ...rule,
+      mapSize: [512, 1024],
+    });
     held.setup(measuring);
     expect(held.options.autoMapSize).toBe(false);
     expect(held.options.mapSize).toEqual([512, 1024, 1024, 1024]);
     expect(held.clipmap.pagesAt(1)).toBe(1024);
-    expect(() => new VirtualShadowNode(light, { mapSize: [512, 0] })).toThrow(/mapSize/u);
-    expect(() => new VirtualShadowNode(light, { maxPhysicalPages: 0 })).toThrow(
-      /maxPhysicalPages/u,
-    );
+    expect(
+      () =>
+        new VirtualShadowNode(light, {
+          maxLevelRatio: Number.POSITIVE_INFINITY,
+          mapSize: [512, 0],
+        }),
+    ).toThrow(/mapSize/u);
+    expect(
+      () =>
+        new VirtualShadowNode(light, {
+          maxLevelRatio: Number.POSITIVE_INFINITY,
+          maxPhysicalPages: 0,
+        }),
+    ).toThrow(/maxPhysicalPages/u);
   });
 
   it("should build one cached level per clip extent and add its lights beside the source light", () => {
@@ -849,7 +951,11 @@ describe("VirtualShadowNode", () => {
   it("should combine stock intensity-adjusted shadow factors by the darker result", () => {
     const { light } = world();
     light.shadow.intensity = 0.35;
-    const node = new VirtualShadowNode(light, { clipExtents: [8, 32], marker: false });
+    const node = new VirtualShadowNode(light, {
+      maxLevelRatio: Number.POSITIVE_INFINITY,
+      clipExtents: [8, 32],
+      marker: false,
+    });
     const graphBuilder = shadowGraphBuilder();
     const root = node.setup(graphBuilder);
     expect(root).not.toBeNull();
@@ -899,7 +1005,12 @@ describe("VirtualShadowNode", () => {
     };
     const textures = new Textures({}, backend, info) as IThreeTextures;
     const { light } = world();
-    const node = new VirtualShadowNode(light, { clipExtents: [8, 32], mapSize: 64, marker: false });
+    const node = new VirtualShadowNode(light, {
+      maxLevelRatio: Number.POSITIVE_INFINITY,
+      clipExtents: [8, 32],
+      mapSize: 64,
+      marker: false,
+    });
     node.setup(builder);
     const targetBuilder = {
       createRenderTarget: (width: number, height: number) => new RenderTarget(width, height),
@@ -1402,7 +1513,11 @@ describe("VirtualShadowNode", () => {
     const { camera, light } = world();
     const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
     try {
-      const node = new VirtualShadowNode(light, { clipExtents: [8], marker: 2 });
+      const node = new VirtualShadowNode(light, {
+        maxLevelRatio: Number.POSITIVE_INFINITY,
+        clipExtents: [8],
+        marker: 2,
+      });
       node.setup(builder);
       stubLevelRenders(node);
       node.updateBefore(frameFor(camera));
@@ -1493,7 +1608,11 @@ describe("VirtualShadowNode", () => {
     try {
       // The URL switch has to work on a launch that silenced the marker, or walking a world with
       // `marker: false` — which is what the harness passes — could not be measured at all.
-      const node = new VirtualShadowNode(light, { clipExtents: [8], marker: false });
+      const node = new VirtualShadowNode(light, {
+        maxLevelRatio: Number.POSITIVE_INFINITY,
+        clipExtents: [8],
+        marker: false,
+      });
       node.setup(builder);
       stubLevelRenders(node);
       for (let frame = 0; frame < 180; frame += 1) node.updateBefore(frameFor(camera));
@@ -3331,9 +3450,13 @@ describe("VirtualShadowNode shadow LOD bias and alpha-caster range", () => {
     ]);
     node.dispose();
     for (const bad of [0, -1, Number.NaN])
-      expect(() => new VirtualShadowNode(light, { shadowLodTexels: bad })).toThrow(
-        "TN_VIRTUAL_SHADOW_INVALID: shadowLodTexels",
-      );
+      expect(
+        () =>
+          new VirtualShadowNode(light, {
+            maxLevelRatio: Number.POSITIVE_INFINITY,
+            shadowLodTexels: bad,
+          }),
+      ).toThrow("TN_VIRTUAL_SHADOW_INVALID: shadowLodTexels");
   });
 
   it("should never draw a rung finer than the one the main pass shows", async () => {
@@ -4110,9 +4233,13 @@ describe("VirtualShadowNode automatic movers", () => {
   it("should reject a staticAfterFrames that is not a positive integer", () => {
     const { light } = world();
     for (const bad of [0, -1, 1.5, Number.NaN]) {
-      expect(() => new VirtualShadowNode(light, { staticAfterFrames: bad })).toThrow(
-        /TN_VIRTUAL_SHADOW_INVALID: staticAfterFrames/,
-      );
+      expect(
+        () =>
+          new VirtualShadowNode(light, {
+            maxLevelRatio: Number.POSITIVE_INFINITY,
+            staticAfterFrames: bad,
+          }),
+      ).toThrow(/TN_VIRTUAL_SHADOW_INVALID: staticAfterFrames/);
     }
   });
 
