@@ -1,6 +1,6 @@
 # PRD-801 — Core `game.ts` boot splits by phase, and `stop()` order is pinned
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS — phases 1 to 3 landed; AC-4 unrun in this lane
 **Priority:** P2 — `#boot` is one 1 658-line method with about 100 closure locals, and no spec pins the order in which `stop()` releases resources (all phases open).
 **Complexity:** 5 (MEDIUM); risk override: `stop()` must fully reverse `start()` (packages/core AGENTS "Shape of the runtime")
 **Owner:** ThreeNative maintainers
@@ -25,10 +25,10 @@ a disposer that `#teardown` calls, so the release order stays in one place. `def
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local]: `stop()` releases loop, scene exit, plugin dispose, cleanups, input, store and renderer in that order, and a throwing scene exit still reaches the renderer release. proof: `packages/core/__tests__/game-stop-order.spec.ts` — Evidence: pending.
-- [ ] AC-2 [local]: `game.ts` is under 1 200 lines, no new file exceeds 1 000, and no existing spec changes. proof: `wc -l` and `git diff --stat packages/core/__tests__/` — Evidence: pending.
-- [ ] AC-3 [local]: Core units, the API surface and the build guards stay green. proof: `pnpm --filter @threenative/core test`, `pnpm exec tsx scripts/check-api-surface.ts`, `constraints.spec.ts`, `build.spec.ts` — Evidence: pending.
-- [ ] AC-4 [local]: A template boots and plays. proof: `pnpm test:templates` for the starter kit — Evidence: pending.
+- [x] AC-1 [local]: `stop()` releases loop, scene exit, plugin dispose, cleanups, input, store and renderer in that order, and a throwing scene exit still reaches the renderer release. proof: `packages/core/__tests__/game-stop-order.spec.ts` — Evidence: `pnpm exec vitest run packages/core/__tests__/game-stop-order.spec.ts` → exit 0, 3 tests passed; the recorded release list is exactly `loop, scene-exit, plugin-dispose, cleanup, input, store, renderer`, and the same list (renderer included) is recorded when the scene exit throws. Both cases were green on the pre-split code and again after each phase.
+- [x] AC-2 [local]: `game.ts` is under 1 200 lines, no new file exceeds 1 000, and no existing spec changes. proof: `wc -l` and `git diff --stat packages/core/__tests__/` — Evidence: `wc -l` → `game.ts` 1 130 (was 2 929), `game-startup.ts` 999, `game-frame-loop.ts` 998, `game-dev-tools.ts` 91, `game-validate.ts` 70, `game-renderer-metrics.ts` 77. `git diff --stat packages/core/__tests__/` → `game.spec.ts | 126 ++++++`, 126 insertions, 0 deletions, plus the new `game-stop-order.spec.ts`: new cases only, no existing assertion touched.
+- [x] AC-3 [local]: Core units, the API surface and the build guards stay green. proof: `pnpm --filter @threenative/core test`, `pnpm exec tsx scripts/check-api-surface.ts`, `constraints.spec.ts`, `build.spec.ts` — Evidence: `pnpm --filter @threenative/core typecheck` exit 0; `pnpm exec tsx scripts/check-api-surface.ts` exit 0 (`api surface ok: 16 published packages, 474 symbols`, no `--update` needed — `IGameConfig` and its `src/game.ts#renderer.*` members never left `game.ts`); `pnpm --filter @threenative/core test` (publint --strict) exit 0; `build.spec.ts` exit 0 (3 tests, against the dist already in the tree); `pnpm quality` exit 0. 1 252 game-adjacent core tests pass: `game`, `game-stop-order`, `game-auto-scale`, `game-render-skips`, `game-frame-budget-surface`, `frame-budget*` (7 files), `frame-counters`, `spans`, `spans-coverage`, `render-pass-budget`, `geometry-capture`, `startup-timeline`, `startup-readiness`, `startup-progress-honesty`, `startup-presentation-hold`, `startup-offscreen-bytes`, `startup-ready-bound`, `warmup-default`, `playtest`, `playtest-stride`, `playtest-resource-clock`, `worker`, `hot`, `replay`, `debug`, `debug-telemetry`, `documented-contract`, `ctx-add-type`, `entities`, `schedule`, `random`, `renderer`, `picking-offset`, `prewarm`, `asset-lifetime`, `assets`, `compute-driven`, `scene-warning*`, `unlit-foliage-warning`, `quiet-markers`, `render-trap-audit`, `resolution-scaler*`, `target-fps`, `input`, `state`, `loop*`, `default-tone-mapping`, `world-environment-defaults`. KNOWN RED, not from this PRD: `constraints.spec.ts` "should keep visual concerns out of core source" fails on `packages/core/src/card-lod.ts` (its error string says "material groups") — verified red at `HEAD` too by re-running the check over `git archive HEAD packages/core/src`; this change adds no matching line to any new file.
+- [ ] AC-4 [local]: A template boots and plays. proof: `pnpm test:templates` for the starter kit — Evidence: NOT RUN. The template lane is out of bounds in this worktree (several agents share it and write `dist/` and generated files, so `pnpm test:templates` is forbidden here); the parent runs it.
 
 ## Integration Ledger
 
@@ -37,18 +37,18 @@ Integration: unchanged — `defineGame` is the only entry, and every template ca
 ## Execution Phases
 
 #### Phase 1: pin
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** `packages/core/__tests__/game-stop-order.spec.ts` (new), `packages/core/__tests__/game.spec.ts` (new cases only)
-- [ ] The release-order spec is green on today's code. proof: AC-1
-- [ ] Camera and carry error messages, and dev-tools restore on dispose, are pinned and green on today's code. proof: `pnpm exec vitest run packages/core/__tests__/game.spec.ts`
+- [x] The release-order spec is green on today's code. proof: AC-1 — written and run before a line moved: `pnpm exec vitest run packages/core/__tests__/game-stop-order.spec.ts` → exit 0, 2 tests passed; the recorded order is `loop, scene-exit, plugin-dispose, cleanup, input, store, renderer`, and the throwing-exit case reaches the renderer.
+- [x] Camera and carry error messages, and dev-tools restore on dispose, are pinned and green on today's code. proof: `pnpm exec vitest run packages/core/__tests__/game.spec.ts` → exit 0, 87 tests passed on the pre-split code; the four new cases pin `camera.far must be greater than camera.near.`, `camera.fov must be finite and between 0 and 180 degrees.` (fov 0 and 180), `goto carry must be a JSON object.`, the dev-tools global restored to exactly what another tool left (and removed when nothing was left), and `resumeScene` booting into the named scene while rejecting an unknown one.
 
 #### Phase 2: extract the leaves
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** `packages/core/src/game-{validate,dev-tools,renderer-metrics}.ts` (new), `game.ts`
-- [ ] Three leaves extracted. proof: AC-3
+- [x] Three leaves extracted. proof: AC-3 — `game-validate.ts` (`validateCameraConfig`, `createCamera`, `assertCarry` and the JSON-safety walk), `game-dev-tools.ts` (`isDevLaunch`, `installDevTools` and the host type), `game-renderer-metrics.ts` (the four renderer `info` readers) moved verbatim; `game.ts` imports them. Typecheck exit 0, and `game.spec.ts` plus `debug.spec.ts` green after the move.
 
 #### Phase 3: split `#boot`
-**Status:** NOT STARTED
+**Status:** DONE (except the template proof, AC-4)
 **Files:** `packages/core/src/game-{startup,frame-loop}.ts` (new), `game.ts`
-- [ ] Startup and frame loop extracted, each returning its disposer. proof: AC-1, AC-2, AC-3
-- [ ] A template plays. proof: AC-4
+- [x] Startup and frame loop extracted, each returning its disposer. proof: AC-1, AC-2, AC-3 — `startGameWorld` (renderer, canvas, input, scene graph, startup gate, `ctx`, scaler-free world) and `startScenes` (load, gates, warm-up, release) in `game-startup.ts`; `startFrameLoop` (scaler, frame budget, its diagnostics, the loop) in `game-frame-loop.ts`. Each returns a `dispose()`; `#teardown` calls the frame loop's where `#loop.stop()`/`#frameBudget.dispose()` were and the startup's at the head of its cleanups step, so no release changed position. The startup's disposer is also registered in `#cleanup` as it is built, so a boot that throws mid-phase is still released by a later `stop()` — pinned in `game-stop-order.spec.ts` and proven by deleting that registration (the test fails).
+- [ ] A template plays. proof: AC-4 — NOT RUN (see AC-4).

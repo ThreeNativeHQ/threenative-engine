@@ -3882,4 +3882,130 @@ describe("IGame", () => {
       }
     },
   );
+
+  it("names camera.far and camera.fov in the messages it rejects them with", () => {
+    const scenes = { test: EmptyScene };
+    expect(() =>
+      defineGame({
+        camera: { far: 2, near: 5, projection: "perspective" },
+        renderer: renderer(testCanvas()),
+        scenes,
+        start: "test",
+      }),
+    ).toThrow("camera.far must be greater than camera.near.");
+    for (const fov of [0, 180]) {
+      expect(() =>
+        defineGame({
+          camera: { fov, projection: "perspective" },
+          renderer: renderer(testCanvas()),
+          scenes,
+          start: "test",
+        }),
+      ).toThrow("camera.fov must be finite and between 0 and 180 degrees.");
+    }
+  });
+
+  it("rejects a goto carry that is not a JSON object", async () => {
+    const game = defineGame({
+      renderer: renderer(testCanvas()),
+      scenes: { test: EmptyScene },
+      start: "test",
+    });
+    await game.start();
+    try {
+      for (const carry of [[], null, "carry", 4]) {
+        expect(() => game.goto("test", { carry: carry as never })).toThrow(
+          "goto carry must be a JSON object.",
+        );
+      }
+    } finally {
+      game.stop();
+    }
+  });
+
+  it("restores what another dev tool left on the shared global when the game stops", async () => {
+    const canvas = new EventTarget() as HTMLCanvasElement;
+    const platform = (devToolsHost: Record<string, unknown>): IGamePlatformSource => ({
+      devToolsHost,
+      input: () => [],
+      mountCanvas: () => undefined,
+      renderer: {
+        createCanvas: () => canvas,
+        hasWebGPU: () => false,
+        observeResize: () => () => undefined,
+        readSize: () => [320, 180],
+      },
+      unmountCanvas: () => undefined,
+      viewport: {
+        observeResize: () => () => undefined,
+        readSize: () => ({ aspect: 16 / 9, height: 180, width: 320 }),
+      },
+    });
+    const start = async (devToolsHost: Record<string, unknown>) => {
+      const game = defineGame({
+        platform: platform(devToolsHost),
+        renderer: {
+          preferWebGPU: false,
+          webgl2Factory: () => ({
+            dispose: () => undefined,
+            domElement: canvas,
+            render: () => undefined,
+            setSize: () => undefined,
+          }),
+        },
+        scenes: { test: EmptyScene },
+        start: "test",
+      });
+      await game.start();
+      return game;
+    };
+
+    const other = () => undefined;
+    const shared: { __THREENATIVE__?: Record<string, unknown> } = { __THREENATIVE__: { other } };
+    const game = await start(shared);
+    try {
+      // Each dev tool takes only its own member, so the snapshot beside another tool's key works.
+      expect(typeof shared.__THREENATIVE__?.snapshot).toBe("function");
+      expect(typeof shared.__THREENATIVE__?.geometry).toBe("function");
+      expect(shared.__THREENATIVE__?.other).toBe(other);
+      game.stop();
+      expect(shared.__THREENATIVE__).toEqual({ other });
+    } finally {
+      game.stop();
+    }
+
+    const empty: { __THREENATIVE__?: Record<string, unknown> } = {};
+    const alone = await start(empty);
+    try {
+      expect(typeof empty.__THREENATIVE__?.snapshot).toBe("function");
+      alone.stop();
+      // Nothing of another tool's was left, so the game removes the global instead of owning it.
+      expect(empty.__THREENATIVE__).toBeUndefined();
+    } finally {
+      alone.stop();
+    }
+  });
+
+  it("boots into the scene a hot reload resumed, and rejects one it does not know", async () => {
+    class Menu extends Scene {
+      static override readonly initialState = { scene: "menu" };
+    }
+    class Play extends Scene {
+      static override readonly initialState = { scene: "play" };
+    }
+    const game = defineGame({
+      renderer: renderer(testCanvas()),
+      scenes: { menu: Menu, play: Play },
+      start: "menu",
+    });
+    expect(() => game.resumeScene("nowhere")).toThrow("Unknown scene 'nowhere'.");
+    game.resumeScene("play");
+    try {
+      await game.start();
+      expect(game.sceneName).toBe("play");
+      expect(game.scene).toBeInstanceOf(Play);
+    } finally {
+      game.stop();
+    }
+  });
 });
