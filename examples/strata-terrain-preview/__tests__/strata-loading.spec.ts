@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
+import { ScatterColliders } from "@threenative/physics";
 import {
   type CanvasTexture,
   InstancedMesh,
@@ -16,7 +17,12 @@ import {
 } from "three";
 import ts from "typescript";
 import { expect, it, vi } from "vitest";
+import { BENCHMARK } from "../src/render/benchmark.js";
+import { FAR_FOREST, farForestPlacements } from "../src/render/farForest.js";
+import { HORIZON_WALK_BAND } from "../src/render/horizon.js";
 import { createLoadingScreen } from "../src/render/loading.js";
+import { meadowCover } from "../src/render/scatter.js";
+import { OPEN_MEADOW } from "../src/render/terrain.js";
 
 const GAME_URL = new URL("../src/game.ts", import.meta.url);
 const GATE_NAMES = [
@@ -225,6 +231,16 @@ it.each(["attached", "cancelled", "released", "data-rejected", "prewarm-rejected
       console: { error: failure },
       reason: "observed preparation failure",
       world: "forest",
+      // buildProps reads these module values; the sandbox must carry the production ones, not stubs.
+      OPEN_MEADOW,
+      BENCHMARK,
+      FAR_FOREST,
+      farForestPlacements,
+      meadowCover,
+      HORIZON_WALK_BAND,
+      // A browser global the extracted buildProps reads for its named overrides.
+      URLSearchParams,
+      ScatterColliders,
       settleSpawn: vi.fn(),
       spawnJoins: new Map(),
       spawnSettled: false,
@@ -234,6 +250,8 @@ it.each(["attached", "cancelled", "released", "data-rejected", "prewarm-rejected
       ctx: {
         ...controllerHost,
         assets: undefined,
+        // ScatterColliders only stores it here; no frame runs, so no body is ever created.
+        physics: {},
         state: { getState: () => ({}), set: vi.fn() },
         entities: { add: () => undefined },
         add: () => {
@@ -246,6 +264,8 @@ it.each(["attached", "cancelled", "released", "data-rejected", "prewarm-rejected
       preparedLevelsWithoutSolid: 0,
       surfacesDispose: undefined,
       propsStage: "",
+      farForestCount: 0,
+      propColliders: undefined as unknown,
       completedPropsWork: 0,
       preparation: undefined,
       props: undefined,
