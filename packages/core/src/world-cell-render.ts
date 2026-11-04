@@ -857,7 +857,8 @@ export class CellRender {
     const after = job.placed ?? [];
     job.cell.placed ??= new Map();
     job.cell.placed.set(job.run, after);
-    if (job.replacement && before !== undefined) this.#tellPlacementChanges(before, after);
+    // A first build has no list before it, so every placement it kept is an admission.
+    if (!job.replacement || before !== undefined) this.tellPlacementChanges(before ?? [], after);
     else {
       if (job.fresh.some((entry) => entry.batch.count > 0))
         this.shadowRecordsMoved(this.changedBounds(job.fresh), true);
@@ -872,7 +873,7 @@ export class CellRender {
   }
 
   /** Tell each placement in only one of two `PLACED_STRIDE` lists, as an admission when it entered. */
-  #tellPlacementChanges(before: readonly number[], after: readonly number[]): void {
+  tellPlacementChanges(before: readonly number[], after: readonly number[]): void {
     const gone = new Map<number, number>();
     for (let at = 0; at < before.length; at += PLACED_STRIDE) gone.set(before[at] as number, at);
     const box = this.#placedBox;

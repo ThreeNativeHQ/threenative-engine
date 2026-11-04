@@ -834,6 +834,15 @@ describe("WorldCells with a baked AutoLOD chain and no authored lods", () => {
     world.update();
     await flushed(world);
     world.update();
+    // The cell's arrival is told the same way: its placements' own boxes, never the cell around them.
+    const spread = (axis: "x" | "z"): number =>
+      Math.max(...regions.map((region) => region.max[axis])) -
+      Math.min(...regions.map((region) => region.min[axis]));
+    expect(regions.length).toBeGreaterThan(1);
+    for (const region of regions)
+      expect((region.max.x - region.min.x) * (region.max.z - region.min.z)).toBeLessThan(
+        (spread("x") * spread("z")) / 4,
+      );
     regions.length = 0;
 
     follow.position.x = -32;

@@ -2831,7 +2831,11 @@ export class WorldCells extends Group implements IComputeDriven {
     for (const entry of cell.batches) this.#render.clearSegment(entry);
     // The same invalidation `#swap` makes, for the eviction path: the records that just left the
     // ring are ground the levels were drawing, and they are named one batch at a time.
-    this.#render.shadowRecordsMoved(this.#render.changedBounds(cell.batches));
+    // Each placement's own box when the cell kept the list, so an evicted neighbour does not redraw
+    // the finest level under the player; the batch union otherwise.
+    if (cell.placed !== undefined && cell.placed.size > 0)
+      for (const placed of cell.placed.values()) this.#render.tellPlacementChanges(placed, []);
+    else this.#render.shadowRecordsMoved(this.#render.changedBounds(cell.batches));
     cell.batches.length = 0;
     cell.placed?.clear();
     // The cell's record of those chunks goes with them, so a replay can never draw a cell the world
