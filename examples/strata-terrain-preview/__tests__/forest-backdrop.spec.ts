@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
 import { terrainStats } from "@threenative/terrain";
 import { describe, expect, it } from "vitest";
+import { BIOMES } from "../src/render/biomes.js";
+import { prefiltered } from "../src/render/horizon.js";
 
 // `pnpm test` bakes first, so the forest backdrop in horizon.json is the one the game loads.
 // The smooth USGS surroundings that read as rounded blobs measure curvature kurtosis 13.7; the
@@ -20,5 +22,44 @@ describe("forest backdrop", () => {
   it("meets the surveyed ground at the centre", () => {
     const half = (forest.resolution - 1) / 2;
     expect(forest.heights[half * forest.resolution + half]).toBeCloseTo(13.1, 0);
+  });
+
+  it("hazes the ridges instead of swapping them for cloudless sky", () => {
+    // The haze composite replaces a surface with sky by `horizonFade`; at [400, 1500] the median
+    // 700 m+ ridge kept 0% and showed only as a hole when a cloud passed behind it.
+    const [start, end] = BIOMES.forest.atmosphere.horizonFade;
+    const n = forest.resolution;
+    const ridges: number[] = [];
+    for (let row = 0; row < n; row++)
+      for (let column = 0; column < n; column++) {
+        const x = (column / (n - 1) - 0.5) * forest.size;
+        const z = (row / (n - 1) - 0.5) * forest.size;
+        const inCollar = Math.max(Math.abs(x), Math.abs(z)) <= 2356;
+        if (inCollar && (forest.heights[row * n + column] as number) > 700)
+          ridges.push(Math.hypot(x, z));
+      }
+    ridges.sort((a, b) => a - b);
+    const median = ridges[ridges.length >> 1] as number;
+    const t = Math.min(1, Math.max(0, (median - start) / (end - start)));
+    expect(1 - t * t * (3 - 2 * t)).toBeGreaterThan(0.5);
+  });
+
+  it("prefilters the far collar so a wall cannot alias into skyline stairs", () => {
+    const n = forest.resolution;
+    const source = Float32Array.from(forest.heights);
+    const smooth = prefiltered(source, n);
+    const maxStep = (v: Float32Array) => {
+      let max = 0;
+      for (let row = 0; row < n; row++)
+        for (let column = 0; column < n - 1; column++)
+          max = Math.max(
+            max,
+            Math.abs((v[row * n + column + 1] as number) - (v[row * n + column] as number)),
+          );
+      return max;
+    };
+    const mean = (v: Float32Array) => v.reduce((sum, h) => sum + h, 0) / v.length;
+    expect(maxStep(smooth)).toBeLessThan(maxStep(source) * 0.6);
+    expect(Math.abs(mean(smooth) - mean(source))).toBeLessThan(0.5);
   });
 });

@@ -100,10 +100,10 @@ export function aerialPerspective(
   const span = ray.y.abs().div(height);
   // Analytic mean density along the ray; the limit at equal heights is one.
   const column = span.negate().exp().oneMinus().div(span.max(0.001));
-  const density = low
-    .div(-height)
-    .exp()
-    .mul(mix(1, column, smoothstep(0.001, 0.01, span)));
+  // Mean density along the ray relative to its low end, as UE's exponential height fog integrates
+  // it: a ridge 800 m above the valley sits above most of the haze and stays readable.
+  const climb = mix(1, column, smoothstep(0.001, 0.01, span));
+  const density = low.div(-height).exp().mul(climb);
   // Clear foreground; aerosol weather builds on landscape distances, not prop distances.
   const distanceKm = ray.length().sub(150).max(0).div(1000);
   const opticalDistance = distanceKm.mul(
@@ -125,6 +125,7 @@ export function aerialPerspective(
     ? ray
         .length()
         .mul(look.haze.density)
+        .mul(climb)
         .pow(2)
         .negate()
         .exp()

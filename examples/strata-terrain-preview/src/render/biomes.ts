@@ -120,7 +120,9 @@ const temperate: IBiome = {
     mie: 0.004,
     radiance: 1.4,
     distanceScale: 1.5,
-    horizonFade: [400, 1500],
+    // The generated backdrop's rim stands at 2.36 km (`horizon.json`), so the fade only rounds off
+    // its corners; at 1.5 km the 865 m ridges were swapped for cloudless sky.
+    horizonFade: [1800, 3300],
   },
   skyRadiance: 0.27,
   saturation: 1,
