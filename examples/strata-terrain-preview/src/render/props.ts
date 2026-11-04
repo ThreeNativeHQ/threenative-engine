@@ -109,7 +109,7 @@ export type PropRole =
  * metres, so the same slack works for a two-metre rock, a fourteen-metre spruce and a
  * twenty-two-metre pine.
  */
-export const LOD_BANDS = { far: 150, hysteresis: 0.2, mid: 60, near: 22 } as const;
+export const LOD_BANDS = { far: 150, hysteresis: 0.2, mid: 80, near: 22 } as const;
 
 export interface IPropPart {
   readonly geometry: BufferGeometry;

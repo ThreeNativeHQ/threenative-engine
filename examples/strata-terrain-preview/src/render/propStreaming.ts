@@ -360,6 +360,9 @@ export async function createStreamedProps(options: IStreamOptions) {
         adaptiveLod: false,
         preserveAuthoredParts: true,
         lodHysteresis: LOD_BANDS.hysteresis,
+        // A tree standing in a dithered distance band crawled under 4x MSAA as the player walked;
+        // UE's temporal swap finishes each tree's change in half a second instead.
+        lodTransition: "temporal",
         transparentScatter: "blend",
         admissionBudgetMs: 2 / Math.max(1, buckets.size),
         budgets: {
@@ -373,6 +376,9 @@ export async function createStreamedProps(options: IStreamOptions) {
         shadows: {
           cast: bucket.endsWith(":true") && options.castShadows !== false,
           castLevels: 3,
+          // Shadows keep the mid spruce at every distance under the far band: a cached shadow page
+          // redraws once a second and showed every near/mid swap since in one batch.
+          minLevel: 1,
           receive: true,
           smallCasterMetres: 0.0001,
           invalidate: options.invalidateShadows,

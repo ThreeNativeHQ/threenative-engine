@@ -37,7 +37,11 @@ import { lodChainOf, setLodBias } from "./model-lod.js";
 import type { OcclusionMode } from "./render/depth-pyramid.js";
 
 import { parkMesh } from "./render/mesh-pool.js";
-import { worldLodMaterial } from "./render/world-impostor-surface.js";
+import {
+  type ITemporalLod,
+  advanceTemporalLod,
+  worldLodMaterial,
+} from "./render/world-impostor-surface.js";
 import type { IRendererLike } from "./renderer.js";
 import { isStatic, markStatic } from "./static-transform.js";
 
@@ -93,6 +97,49 @@ const RETIRED_SHARED_BYTES = 8_000_000;
  * and nothing more, because every metre of it is a metre of geometry the vertex stage still shades.
  */
 const MAIN_CULL_PAD_METRES = 8;
+/**
+ * Fade band, as a share of each gate, for an undithered LOD switch: 1 mm at a 10 m gate and 15 mm at
+ * 150 m, so every pixel of a placement takes the same level. Nonzero, so the mask never divides zero
+ * by zero exactly at the gate.
+ */
+export const UNDITHERED_LOD_WIDTH = 1e-4;
+
+const slotFree = new WeakSet<Material>();
+/**
+ * Refuse a part material whose node graph reads `instanceIndex`. WorldCells repacks instance slots on
+ * every refilter, main-pass cull and LOD switch, so a value hashed from the slot moves to another
+ * placement as the viewer walks: Strata's wind phase snapped each crown's top about every 0.7 s.
+ * ponytail: walks the material's `*Node` slots as built; an index read hidden inside an unbuilt `Fn`
+ * body is not seen until a builder runs it.
+ */
+function assertSlotFree(material: Material, assetId: string): void {
+  if (slotFree.has(material)) return;
+  const seen = new Set<object>();
+  const reads = (value: unknown): boolean => {
+    if (typeof value !== "object" || value === null || seen.has(value)) return false;
+    seen.add(value);
+    const node = value as { isNode?: boolean; isIndexNode?: boolean; scope?: string };
+    if (node.isIndexNode === true && node.scope === "instance") return true;
+    for (const child of Object.values(value))
+      if (
+        Array.isArray(child)
+          ? child.some(reads)
+          : (child as { isNode?: boolean } | null)?.isNode === true && reads(child)
+      )
+        return true;
+    return false;
+  };
+  for (const [key, value] of Object.entries(material))
+    if (
+      key.endsWith("Node") &&
+      (value as { isNode?: boolean } | null)?.isNode === true &&
+      reads(value)
+    )
+      throw new Error(
+        `WorldCells asset "${assetId}" material "${material.name}" reads instanceIndex in ${key}. WorldCells repacks instance slots as the viewer moves, so a per-instance value from the slot jumps between placements; use instanceRandom() from @threenative/core/world.`,
+      );
+  slotFree.add(material);
+}
 
 /**
  * Side of the main cull's own visibility cell, in metres, when it divides the package's `cellSize`.
@@ -291,9 +338,11 @@ interface ICellRenderSettings {
   readonly freshMeshesPerUpdate: number;
   readonly receiveShadow: boolean;
   readonly castShadowLevels: number;
+  readonly shadowMinLevel: number;
   readonly extentBounds: Box3;
   readonly preserveAuthoredParts: boolean;
   readonly lodHysteresis: number;
+  readonly lodTransition: "band" | "none" | "temporal";
   readonly lodSpatial: boolean;
   readonly cellsPerCluster: number;
   readonly cellsPerCullCell: number;
@@ -351,6 +400,9 @@ export class CellRender {
 
   /** How many of an asset's finest levels cast shadows; 0 when the game asked for none. */
   readonly #castShadowLevels: number;
+
+  /** `shadows.minLevel`: the finest level a placement's shadow draws; see `shadowFloorOf`. */
+  readonly #shadowMinLevel: number;
 
   readonly #receiveShadow: boolean;
 
@@ -508,9 +560,25 @@ export class CellRender {
   readonly #preserveAuthoredParts: boolean;
 
   readonly #lodHysteresis: number;
+  readonly #lodTransition: "band" | "none" | "temporal";
   readonly #lodSpatial: boolean;
 
   readonly #lodEye = uniform(new Vector3()).setGroup(renderGroup);
+
+  /** UE's two lagged view origins and their blend, for `lodTransition: "temporal"`. */
+  readonly #temporalLod: ITemporalLod = {
+    from: new Vector3(),
+    to: new Vector3(),
+    fromTime: Number.NaN,
+    toTime: Number.NaN,
+    alpha: 1,
+  };
+
+  readonly #lodFrom = uniform(this.#temporalLod.from).setGroup(renderGroup);
+
+  readonly #lodTo = uniform(this.#temporalLod.to).setGroup(renderGroup);
+
+  readonly #lodAlpha = uniform(1).setGroup(renderGroup);
 
   readonly #lodDistanceBias = uniform(1).setGroup(renderGroup);
 
@@ -1302,12 +1370,38 @@ export class CellRender {
    * caster rather than leaving a hole in the map (PRD-541). `undefined`: it casts nothing.
    */
   castLevelOf(entry: ICellBatch): number | undefined {
+    const floor = this.shadowFloorOf(entry.asset);
+    if (entry.level < floor) return floor;
     if (this.casts(entry.level)) return entry.level;
     if (this.#castShadowLevels === 0) return undefined;
     const asset = this.#host.asset(entry.asset);
     if (asset === undefined || asset.definition.lods !== undefined) return undefined;
     const level = Math.min(entry.level, this.#castShadowLevels) - 1;
     return asset.levels[level]?.[entry.part] === undefined ? undefined : level;
+  }
+
+  /**
+   * The level this asset's finer placements cast in (`shadows.minLevel`), clamped to a casting
+   * level. 0 when a finer level's parts do not line up with it, since a caster draws its own entry's
+   * part index and matrices in that level's shape, and when the shadow levels draw the GPU keys.
+   */
+  shadowFloorOf(assetId: string): number {
+    const asset = this.#host.asset(assetId);
+    if (asset === undefined || this.keysForShadow()) return 0;
+    const floor = Math.min(
+      this.#shadowMinLevel,
+      this.#castShadowLevels - 1,
+      asset.levels.length - 1,
+    );
+    const coarse = asset.levels[floor];
+    if (floor <= 0 || coarse === undefined) return 0;
+    for (let level = 0; level < floor; level++) {
+      const parts = asset.levels[level];
+      if (parts?.length !== coarse.length) return 0;
+      for (const [index, part] of parts.entries())
+        if (!part.local.equals((coarse[index] as IAssetPart).local)) return 0;
+    }
+    return floor;
   }
 
   /**
@@ -1507,11 +1601,13 @@ export class CellRender {
   }
 
   #lodSurface(assetId: string, level: number, partIndex: number, source: Material): Material {
+    assertSlotFree(source, assetId);
     const asset = this.#host.asset(assetId);
     const part = asset?.levels[level]?.[partIndex];
     if (this.#lodHysteresis <= 0 || !asset || !part || asset.distances.length < 2) return source;
     const publishedRanges = !this.#gpuScene.on;
-    const key = `${assetId}:${level}:${partIndex}:${asset.distances.length}:${publishedRanges ? 1 : 0}`;
+    const floor = this.shadowFloorOf(assetId);
+    const key = `${assetId}:${level}:${partIndex}:${asset.distances.length}:${publishedRanges ? 1 : 0}:${floor}`;
     let cached = this.#lodMaterials.get(key);
     if (cached !== undefined && cached.source !== source) {
       cached.material.dispose();
@@ -1524,12 +1620,18 @@ export class CellRender {
         part.local,
         asset.distances,
         level,
-        this.#lodHysteresis,
+        // Outside "band" the gate is too thin to cover a pixel step: each placement takes one level.
+        this.#lodTransition === "band" ? this.#lodHysteresis : UNDITHERED_LOD_WIDTH,
         this.#lodEye,
         this.#lodDistanceBias,
         this.#lodSpatial,
         publishedRanges,
-        this.#lodClock,
+        // "none" pops: no clock, so a late refilter does not dissolve either.
+        this.#lodTransition === "none" ? undefined : this.#lodClock,
+        this.#lodTransition === "temporal"
+          ? { from: this.#lodFrom, to: this.#lodTo, alpha: this.#lodAlpha }
+          : undefined,
+        floor,
       );
       cached = { source, material };
       this.#lodMaterials.set(key, cached);
@@ -1540,6 +1642,9 @@ export class CellRender {
   updateLodEye(x: number, y: number, z: number): void {
     this.#lodEye.value.set(x, y, z);
     this.#lodClock.value = (performance.now() - this.#lodClockOrigin) / 1000;
+    if (this.#lodTransition !== "temporal") return;
+    advanceTemporalLod(this.#temporalLod, this.#lodEye.value, this.#lodClock.value);
+    this.#lodAlpha.value = this.#temporalLod.alpha;
   }
 
   refreshLodMaterials(asset: IAssetState): void {
@@ -2585,9 +2690,11 @@ export class CellRender {
     this.#freshMeshesPerUpdate = settings.freshMeshesPerUpdate;
     this.#receiveShadow = settings.receiveShadow;
     this.#castShadowLevels = settings.castShadowLevels;
+    this.#shadowMinLevel = settings.shadowMinLevel;
     this.#extentBounds = settings.extentBounds;
     this.#preserveAuthoredParts = settings.preserveAuthoredParts;
     this.#lodHysteresis = settings.lodHysteresis;
+    this.#lodTransition = settings.lodTransition;
     this.#lodSpatial = settings.lodSpatial;
     this.#cellsPerCluster = settings.cellsPerCluster;
     this.#cellsPerCullCell = settings.cellsPerCullCell;

@@ -6,7 +6,7 @@ import {
   thinCards,
 } from "@threenative/core";
 /** Game-owned Fab art. Optional, local-only; missing species keep their procedural fallback. */
-import { bakedNoise } from "@threenative/core/world";
+import { bakedNoise, instanceRandom } from "@threenative/core/world";
 import {
   Box3,
   BufferAttribute,
@@ -32,7 +32,6 @@ import {
   dFdy,
   dot,
   float,
-  instanceIndex,
   length,
   log2,
   max,
@@ -156,7 +155,8 @@ const TEMPERATE_PATHS: Record<string, readonly string[]> = {
   sapling: ["needle-spruce/0", "sapling/0", "sapling/1", "sprout/0"],
   litter: ["litter/0", "litter/1"],
 };
-const phase = float(instanceIndex).mul(12.9898).sin().mul(43758.545).fract().mul(6.2831);
+// Per tree, not per draw slot: WorldCells repacks instances as the player walks.
+const phase = instanceRandom().mul(6.2831);
 const gust = sin(time.mul(0.1).add(phase));
 
 /** What one imported section is, before any appearance decision: its art and its niche. */
@@ -275,20 +275,30 @@ export { SIGHT_RADIUS };
 
 /**
  * The orbit camera swings through crowns: a branch a metre from the lens fills the screen, and a
- * stand between the lens and the hero hides the hero. Tree pixels nearer than `CANOPY_NEAR`, or
- * inside a capsule on the line from the lens to the hero, are cut, as a third-person camera fades
- * the occluders of its character. The cut is hard: without TAA a dithered band reads as a grid.
- * Only needles take the sight cut and the full near cut: sliced bark ends in mid-air or hollow.
+ * stand between the lens and the hero hides the hero. Needles near the lens, and on the line from
+ * the lens to the hero, are eroded, as a third-person camera fades the occluders of its character
+ * (UE's CameraDepthFade into the opacity mask). The fade scales the needle alpha before the 4x MSAA
+ * alpha-to-coverage test, so cards thin from their tips inward over a metre: a hard cut drew a
+ * sharp circle, and slicing branches with it drew their hollow ends as rings round the hero.
+ * Bark takes only a short cut at the lens (a sliced limb reads hollow); branches stay whole.
  * An orthographic view (P[3][3] = 1) is a shadow page or the impostor baker, so it keeps the tree.
  */
-function nearCameraFade(material: MeshPhysicalNodeMaterial, needles: boolean): void {
+export function nearCameraFade(material: MeshPhysicalNodeMaterial, needles: boolean): void {
   const ortho = cameraProjectionMatrix.mul(vec4(0, 0, 0, 1)).w.greaterThan(0.5);
+  if (!needles) {
+    material.maskNode = ortho.or(length(positionView).greaterThanEqual(BARK_NEAR));
+    return;
+  }
   const aim = cameraViewMatrix.mul(vec4(sightLine.aim, 1)).xyz;
   const along = dot(positionView, aim).div(dot(aim, aim).max(1e-4));
   const off = length(positionView.sub(aim.mul(along.clamp(0, 1))));
-  const sight = along.greaterThan(0).and(along.lessThan(1)).and(off.lessThan(sightLine.radius));
-  const near = length(positionView).lessThan(needles ? CANOPY_NEAR : BARK_NEAR);
-  material.maskNode = ortho.or((needles ? near.or(sight) : near).not());
+  // 1 keeps the needle; radius 0 (a fixed view) keeps every needle off the line.
+  const sight = smoothstep(0.8, 1.7, off.div(sightLine.radius.max(1e-3))).max(
+    smoothstep(0.9, 1.05, along),
+  );
+  const lens = smoothstep(CANOPY_NEAR * 0.5, CANOPY_NEAR * 1.5, length(positionView));
+  const keep = sight.min(lens).max(ortho.select(float(1), float(0)));
+  material.opacityNode = ((material.opacityNode as Node<"float"> | null) ?? float(1)).mul(keep);
 }
 
 /** The coverage, interior depth and normal a cut-out section is drawn with. */

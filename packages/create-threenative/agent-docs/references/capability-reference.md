@@ -3602,6 +3602,16 @@ export function heightSamplerFromHeightmap( terrain: IWorldTerrain, extent: IWor
 const sampleHeight = heightSamplerFromHeightmap(terrain, extent, await loadWorldHeightmap(url));
 ```
 
+### `instanceRandom`
+
+`function` — A random in [0, 1) that stays with its instance, as UE 5.8.3's PerInstanceRandom: hashed from the instance's world origin, never from its draw slot. WorldCells repacks instances on every refilter, main-pass cull and LOD switch, so `instanceIndex` names another tree from one frame to the next; a wind phase hashed from it re-rolled each crown about every 0.7 s of a walk and snapped its top by a median 0.37 m. Parts of one placement share its translation, so its bark and needles read one value.
+
+```ts
+export function instanceRandom(): Node<"float"> { … }
+```
+
+- **Use when:** a per-instance random number that stays with each streamed placement as WorldCells repacks · replace instanceIndex in a WorldCells part material, which WorldCells refuses
+
 ### `loadTerrainSplat`
 
 `function` — The splat terrain surface a world package describes, for `WorldCells.load({ surface })`. Layers blend over a base by mask channels read as linear data (the masks ship raw, beside the heightmap, so no cook moves a blend threshold), with noise-broken edges and macro brightness variation. Texture sets tile in world metres on the package's ground plane (x, -z: a Z-up authoring tool's x and y), cliffs can be triplanar, and the base plus any layer that asks carries a normal map. Each layer answers light from its own ORM map where the table ships one and from the table's own roughness and metalness where it does not; a layer that states neither is matte and dielectric, and named in a warning. Nothing here is a look choice: textures, tiles, tints, thresholds, surface response and noise scales all come from the package's table, which the game authors once and its DCC shares.

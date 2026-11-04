@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
 import type { IAssetLoader } from "@threenative/core";
 import { DataTexture, LinearMipmapLinearFilter, RepeatWrapping, type Texture } from "three";
-import type { MeshStandardNodeMaterial } from "three/webgpu";
+import { float } from "three/tsl";
+import { MeshPhysicalNodeMaterial, type MeshStandardNodeMaterial } from "three/webgpu";
 import { describe, expect, it } from "vitest";
 import {
   BIOMES as AUTHORED_BIOMES,
@@ -12,7 +13,7 @@ import {
   measureBiome,
 } from "../src/render/biomes.js";
 import { setHorizonSurroundings } from "../src/render/horizon.js";
-import { loadPack } from "../src/render/pack.js";
+import { loadPack, nearCameraFade, sightLine } from "../src/render/pack.js";
 import { createPropSurfaces, createRockGround } from "../src/render/propMaterials.js";
 import { createTerrain } from "../src/render/terrain.js";
 
@@ -314,4 +315,28 @@ it("keeps the decorative horizon collar out of ground rays", async () => {
     mesh.geometry.dispose();
     (mesh.material as import("three").Material).dispose();
   }
+});
+
+it("thins the needles on the hero's sight line instead of cutting a hard ring, and keeps branches whole", () => {
+  // A hard sight cut drew a sharp circle round the hero, and slicing bark with it drew the branches'
+  // hollow ends as rings. The needles fade through their alpha-to-coverage opacity; bark is cut only
+  // at the lens.
+  const reads = (node: unknown, find: (child: unknown) => boolean): boolean => {
+    let found = false;
+    (node as { traverse: (visit: (child: unknown) => void) => void }).traverse((child) => {
+      found ||= find(child);
+    });
+    return found;
+  };
+  const needles = new MeshPhysicalNodeMaterial();
+  needles.opacityNode = float(1);
+  nearCameraFade(needles, true);
+  expect(needles.maskNode).toBeNull();
+  expect(reads(needles.opacityNode, (child) => child === sightLine.aim)).toBe(true);
+  expect(
+    reads(needles.opacityNode, (child) => (child as { method?: string }).method === "smoothstep"),
+  ).toBe(true);
+  const bark = new MeshPhysicalNodeMaterial();
+  nearCameraFade(bark, false);
+  expect(reads(bark.maskNode, (child) => child === sightLine.aim)).toBe(false);
 });

@@ -27,11 +27,20 @@ import ThreeNodeFrame from "three/src/nodes/core/NodeFrame.js";
 import ChainMap from "three/src/renderers/common/ChainMap.js";
 // @ts-expect-error Three's node manager has no public declarations.
 import NodeManager from "three/src/renderers/common/nodes/NodeManager.js";
-import { getCurrentStack, setCurrentStack, stack } from "three/tsl";
+import {
+  float,
+  getCurrentStack,
+  instanceIndex,
+  positionLocal,
+  setCurrentStack,
+  stack,
+  vec3,
+} from "three/tsl";
 import { renderGroup } from "three/tsl";
 import {
   BufferAttributeNode,
   EventNode,
+  MeshBasicNodeMaterial,
   type Node,
   NodeBuilder,
   type NodeMaterial,
@@ -63,12 +72,18 @@ import {
   WorldImpostorSurface,
 } from "../src/render/world-impostor-surface.js";
 import {
+  type ITemporalLod,
+  advanceTemporalLod,
+  instanceRandom,
+} from "../src/render/world-impostor-surface.js";
+import {
   type IImpostorRawRenderer,
   IMPOSTOR_FRAME_PIXELS,
   IMPOSTOR_VIEWS,
   WorldImpostorAtlas,
 } from "../src/render/world-impostor.js";
 import type { IRendererLike } from "../src/renderer.js";
+import { UNDITHERED_LOD_WIDTH } from "../src/world-cell-render.js";
 import { type IKernelInput, WorldGpuScene, cullAndSelect } from "../src/world-gpu-scene.js";
 import { type IWorldAsset, type IWorldRun, cellPlacements } from "../src/world-package.js";
 import { type IWorldPackage, WorldCells } from "../src/world.js";
@@ -823,6 +838,172 @@ describe("WorldCells automatic impostors", () => {
     } finally {
       world.dispose();
     }
+  });
+
+  it("gives each lodTransition its gate and its colour and shadow masks", async () => {
+    // A tree standing in a dithered band crawled under MSAA as the viewer walked. "temporal" (UE's
+    // instanced foliage) and "none" keep the gate below a pixel step; only "temporal" and "band"
+    // cross-fade the colour pass, and the shadow mask never fades.
+    const lodMask = async (lodTransition: "band" | "none" | "temporal" | undefined) => {
+      stubManifestFetch(pineOnly());
+      const world = await loadPine(treeLoader(), {
+        gpuScene: false,
+        lodHysteresis: 0.2,
+        ...(lodTransition === undefined ? {} : { lodTransition }),
+        follow: { position: { x: -84, z: -64 } },
+      });
+      try {
+        await flushed(world);
+        for (let pass = 0; pass < 100; pass++) {
+          world.update();
+          await flush();
+        }
+        const mesh = partsOf(world, "pine", 0, 0).find((candidate) => candidate.count > 0);
+        const material = mesh?.material as Material & {
+          maskNode?: unknown;
+          maskShadowNode?: unknown;
+        };
+        expect(material.userData.tnPublishedLodRange).toBe(true);
+        const constants = new Set<unknown>();
+        const seen = new Set<unknown>();
+        const walk = (node: unknown): void => {
+          if (typeof node !== "object" || node === null || seen.has(node)) return;
+          seen.add(node);
+          const record = node as Record<string, unknown>;
+          if (record.isConstNode === true) constants.add(record.value);
+          for (const value of Object.values(record))
+            if (Array.isArray(value)) value.forEach(walk);
+            else if ((value as { isNode?: boolean } | null)?.isNode === true) walk(value);
+        };
+        walk(material.maskShadowNode);
+        return {
+          sharedWithShadow: material.maskNode === material.maskShadowNode,
+          undithered: constants.has(UNDITHERED_LOD_WIDTH),
+        };
+      } finally {
+        world.dispose();
+      }
+    };
+    expect(await lodMask("none")).toEqual({ sharedWithShadow: true, undithered: true });
+    expect(await lodMask("temporal")).toEqual({ sharedWithShadow: false, undithered: true });
+    expect(await lodMask(undefined)).toEqual({ sharedWithShadow: false, undithered: false });
+  });
+
+  it("casts every placement finer than shadows.minLevel in that level's shape, so a view swap never moves a shadow", async () => {
+    // A cached shadow page redraws at most once a second, so a tree that crossed a view gate since
+    // swapped its shadow in a batch the player saw. UE 5.8.3 shadows draw a level coarser by default
+    // (r.Shadow.NaniteLODBias 1, Shadows/ShadowSceneRenderer.cpp:48-52): with `minLevel` 1 no caster
+    // holds the finest shape, and the level-1 shadow mask carries no gate at the first distance.
+    const pine = manifest.assets.pine;
+    const firstGate = (pine?.lods ?? [])[0]?.distance;
+    expect(firstGate).toBeTypeOf("number");
+    const casters = async (minLevel?: number) => {
+      stubManifestFetch(pineOnly());
+      const world = await loadPine(treeLoader(), {
+        gpuScene: false,
+        lodHysteresis: 0.2,
+        lodTransition: "temporal",
+        shadows: { cast: true, castLevels: 3, ...(minLevel === undefined ? {} : { minLevel }) },
+      });
+      try {
+        await flushed(world);
+        for (let pass = 0; pass < 100; pass++) {
+          world.update();
+          await flush();
+        }
+        const levels = new Set<number>();
+        let gated = false;
+        world.traverse((object: Object3D) => {
+          if (!(object instanceof InstancedMesh) || object.layers.mask !== 1 << 28) return;
+          const array = object.instanceMatrix.array as Float32Array;
+          let live = false;
+          for (let index = 0; index < object.count && !live; index += 1)
+            live = array[index * 16 + 15] !== 0;
+          if (!live) return;
+          const level = Number(object.name.split(":")[1]);
+          levels.add(level);
+          if (level !== 1) return;
+          const seen = new Set<unknown>();
+          const walk = (node: unknown): void => {
+            if (typeof node !== "object" || node === null || seen.has(node)) return;
+            seen.add(node);
+            const record = node as Record<string, unknown>;
+            if (record.isUniformNode === true && record.value === firstGate) gated = true;
+            for (const value of Object.values(record))
+              if (Array.isArray(value)) value.forEach(walk);
+              else if ((value as { isNode?: boolean } | null)?.isNode === true) walk(value);
+          };
+          walk((object.material as Material & { maskShadowNode?: unknown }).maskShadowNode);
+        });
+        return { finest: levels.has(0), mid: levels.has(1), gated };
+      } finally {
+        world.dispose();
+      }
+    };
+    expect(await casters()).toEqual({ finest: true, mid: true, gated: true });
+    expect(await casters(1)).toEqual({ finest: false, mid: true, gated: false });
+  });
+
+  it("advances UE's temporal LOD origins without a jump while the viewer walks and settles", () => {
+    // UE 5.8.3 SceneManagement.cpp:113-140. The level a placement shows is chosen at the blend of the
+    // two origins; walking at 6 m/s that blend must move continuously, lag at most two windows, and
+    // reach the viewer within one window of stopping.
+    const state: ITemporalLod = {
+      from: new Vector3(),
+      to: new Vector3(),
+      fromTime: Number.NaN,
+      toTime: Number.NaN,
+      alpha: 1,
+    };
+    const eye = new Vector3();
+    const seen = (): number => state.from.x + (state.to.x - state.from.x) * state.alpha;
+    let previous = Number.NaN;
+    let largestStep = 0;
+    for (let frame = 0; frame <= 600; frame++) {
+      const now = frame / 60;
+      eye.x = Math.min(now, 5) * 6;
+      advanceTemporalLod(state, eye, now, 0.5);
+      if (Number.isFinite(previous))
+        largestStep = Math.max(largestStep, Math.abs(seen() - previous));
+      previous = seen();
+      if (frame > 0 && now <= 5) expect(eye.x - seen()).toBeLessThanOrEqual(6 * 1.0 + 1e-6);
+    }
+    expect(largestStep).toBeLessThan(0.21);
+    expect(seen()).toBeCloseTo(30, 6);
+    // UE keeps sampling every window at rest; both origins are the viewer, so the blend is moot.
+    expect([state.from.x, state.to.x]).toEqual([30, 30]);
+  });
+
+  it("refuses a part material that reads instanceIndex, which WorldCells repacks", async () => {
+    // Strata hashed its wind phase from the slot: every refilter and cull re-rolled each crown's
+    // phase and snapped its top. The same graph through instanceRandom() loads.
+    const loader = (phase: Node<"float">): ITreeLoader => {
+      const tree = treeLoader();
+      return {
+        geometryFor: tree.geometryFor,
+        load: async (url) => {
+          const group = await tree.load(url);
+          const bark = group.children[0] as Mesh;
+          const material = new MeshBasicNodeMaterial();
+          material.positionNode = positionLocal.add(vec3(phase, 0, 0));
+          bark.material = material;
+          return group;
+        },
+      };
+    };
+    const admit = async (phase: Node<"float">) => {
+      stubManifestFetch(pineOnly());
+      const world = await loadPine(loader(phase));
+      try {
+        await flushed(world);
+      } finally {
+        world.dispose();
+      }
+    };
+    await expect(admit(float(instanceIndex))).rejects.toThrow(
+      /reads instanceIndex in positionNode/,
+    );
+    await expect(admit(instanceRandom())).resolves.toBeUndefined();
   });
 
   it("stamps a fade when a late refilter turns a whole far tree into a dithered pair", async () => {

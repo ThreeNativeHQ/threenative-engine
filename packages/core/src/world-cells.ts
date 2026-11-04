@@ -812,9 +812,14 @@ export class WorldCells extends Group implements IComputeDriven {
         freshMeshesPerUpdate: this.#freshMeshesPerUpdate,
         receiveShadow: this.#receiveShadow,
         castShadowLevels: this.#castShadowLevels,
+        shadowMinLevel:
+          init.shadows?.minLevel === undefined
+            ? 0
+            : nonNegativeInteger(init.shadows.minLevel, "shadows.minLevel"),
         extentBounds: this.#extentBounds,
         preserveAuthoredParts: this.#preserveAuthoredParts,
         lodHysteresis: this.#lodHysteresis,
+        lodTransition: init.lodTransition ?? "band",
         lodSpatial: this.#placementReach !== undefined,
         cellsPerCluster: this.#cellsPerCluster,
         cellsPerCullCell: this.#cellsPerCullCell,

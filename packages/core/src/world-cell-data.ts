@@ -110,6 +110,13 @@ export interface IWorldCellsLoadOptions {
    * combined with automatic impostors, also requires preserveAuthoredParts and authored distances.
    * Omitted, selection uses the existing direct gates. State survives cell eviction/revisit. */
   readonly lodHysteresis?: number;
+  /** How a `lodHysteresis` level change reaches the screen. `"band"` (default) cross-fades over a
+   * distance band `lodHysteresis` wide with a per-pixel dither; a placement standing in the band
+   * stays dithered, which crawls without temporal AA. `"temporal"` is UE 5.8.3's instanced foliage
+   * (`foliage.DitheredLOD` 1, `lod.TemporalLag` 0.5 s): the gate is hard in space and the change
+   * fades over half a second, so no placement stays mid-fade while the viewer stands still.
+   * `"none"` pops whole at the gate. */
+  readonly lodTransition?: "band" | "none" | "temporal";
   /** Preserve supplied part/material identity and exact authored LOD membership, including shadow batches. Automatic impostors require each asset to author `impostorDistance`.
    * Default content sharing and missing-alpha-part coverage remain enabled when omitted. */
   readonly preserveAuthoredParts?: boolean;
@@ -139,6 +146,15 @@ export interface IWorldCellsLoadOptions {
   readonly shadows?: {
     readonly cast?: boolean;
     readonly castLevels?: number;
+    /**
+     * The finest level a shadow draws, default 0. A placement drawn at a finer level casts in this
+     * level's shape when every finer level has as many parts at the same local transforms, so the
+     * shadow keeps one shape while the view swaps levels: a cached shadow page redraws at most once a
+     * second and showed every swap since in one batch. UE 5.8.3 draws shadows a level coarser by
+     * default (`r.Shadow.NaniteLODBias` 1, Renderer/Private/Shadows/ShadowSceneRenderer.cpp:48-52).
+     * It applies to the caster clusters; a world whose shadow levels draw its GPU keys casts as before.
+     */
+    readonly minLevel?: number;
     readonly receive?: boolean;
     /**
      * @deprecated Accepted and ignored. Clusters replace it: what a shadow level submits is bounded

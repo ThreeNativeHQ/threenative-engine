@@ -803,6 +803,7 @@ export type {
 } from "./world-terrain-splat.js";
 
 export { WorldCells } from "./world-cells.js";
+export { instanceRandom } from "./render/world-impostor-surface.js";
 export type {
   IShadowRegion,
   IWorldCellsBudget,

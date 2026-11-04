@@ -4603,6 +4603,23 @@
     },
     {
       "aliases": [],
+      "constraints": [],
+      "example": "",
+      "importPath": "@threenative/core/world",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function instanceRandom(): Node<\"float\"> { … }",
+      "situations": [
+        "a per-instance random number that stays with each streamed placement as WorldCells repacks",
+        "replace instanceIndex in a WorldCells part material, which WorldCells refuses"
+      ],
+      "summary": "A random in [0, 1) that stays with its instance, as UE 5.8.3's PerInstanceRandom: hashed from the instance's world origin, never from its draw slot. WorldCells repacks instances on every refilter, main-pass cull and LOD switch, so `instanceIndex` names another tree from one frame to the next; a wind phase hashed from it re-rolled each crown about every 0.7 s of a walk and snapped its top by a median 0.37 m. Parts of one placement share its translation, so its bark and needles read one value.",
+      "supersedes": [],
+      "symbol": "instanceRandom"
+    },
+    {
+      "aliases": [],
       "constraints": [
         "the package's world.json must carry `terrain.layers.table` and `terrain.layers.splat`, written by `export_terrain_layers` in the `export_world.py` recipe",
         "WebGPU allows 16 sampled textures per stage: same-size layers stack into one array texture per set, and `TN_TERRAIN_SPLAT samplers=<n>` reports what is left"

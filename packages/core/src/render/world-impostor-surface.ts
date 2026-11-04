@@ -532,6 +532,25 @@ function userInstanceMatrix(builder: NodeBuilder): Node<"mat4"> {
   return attribute === undefined ? identityMat4() : instanceMatrixNode(attribute, builder);
 }
 
+/**
+ * A random in [0, 1) that stays with its instance, as UE 5.8.3's PerInstanceRandom: hashed from the
+ * instance's world origin, never from its draw slot. WorldCells repacks instances on every refilter,
+ * main-pass cull and LOD switch, so `instanceIndex` names another tree from one frame to the next; a
+ * wind phase hashed from it re-rolled each crown about every 0.7 s of a walk and snapped its top by a
+ * median 0.37 m. Parts of one placement share its translation, so its bark and needles read one value.
+ *
+ * @situation a per-instance random number that stays with each streamed placement as WorldCells repacks
+ * @situation replace instanceIndex in a WorldCells part material, which WorldCells refuses
+ */
+export function instanceRandom(): Node<"float"> {
+  return Fn((_inputs: unknown, builder: NodeBuilder) => {
+    const origin = userInstanceMatrix(builder).mul(vec4(0, 0, 0, 1)).xyz;
+    // Quantised like `worldLodMaterial`'s origin, so float rounding in a rewritten matrix keeps the hash.
+    const snapped = floor(origin.mul(16).add(0.5)).div(16);
+    return fract(sin(dot(snapped.xz, vec2(12.9898, 78.233))).mul(43758.5453));
+  })() as Node<"float">;
+}
+
 /** Coarse ray-march steps across an impostor's depth; see `buildFragmentNodes`. */
 export const IMPOSTOR_MARCH_STEPS = 32;
 /** Bisection steps per crossing: 32 x 1024 places a hit as finely as 128 texel steps x 256 did. */
@@ -788,6 +807,44 @@ export function impostorFrameUv(
  */
 export const LOD_TEMPORAL_LAG = 0.5;
 
+/**
+ * UE 5.8.3's temporal LOD state (Engine/Source/Runtime/Engine/Private/SceneManagement.cpp:113-140):
+ * two lagged view origins and the blend between them. LOD is chosen at both and cross-faded by
+ * `alpha`, so a placement crossing a gate fades over one `lag` window and none stays mid-fade while
+ * the viewer stands still.
+ */
+export interface ITemporalLod {
+  readonly from: Vector3;
+  readonly to: Vector3;
+  fromTime: number;
+  toTime: number;
+  alpha: number;
+}
+
+/** Advance {@link ITemporalLod} to `now` seconds with the view at `eye`, as UE's UpdateTemporalLODTransition. */
+export function advanceTemporalLod(
+  state: ITemporalLod,
+  eye: Vector3,
+  now: number,
+  lag = LOD_TEMPORAL_LAG,
+): void {
+  if (!Number.isFinite(state.toTime) || now < state.toTime) {
+    state.from.copy(eye);
+    state.to.copy(eye);
+    state.fromTime = now;
+    state.toTime = now;
+  } else if (state.toTime < now - lag) {
+    if (state.fromTime < state.toTime) {
+      state.from.copy(state.to);
+      state.fromTime = state.toTime;
+    }
+    state.to.copy(eye);
+    state.toTime = now;
+  }
+  const window = state.toTime - state.fromTime;
+  state.alpha = window > 0 ? Math.min(1, Math.max(0, (now - lag - state.fromTime) / window)) : 1;
+}
+
 /** Complementary LOD masks over the caller's distance bands, shared by colour and shadow passes. */
 export function worldLodMaterial(
   source: Material,
@@ -800,6 +857,12 @@ export function worldLodMaterial(
   spatial: boolean,
   publishedRanges = false,
   clock?: Node<"float">,
+  temporal?: {
+    readonly from: Node<"vec3">;
+    readonly to: Node<"vec3">;
+    readonly alpha: Node<"float">;
+  },
+  shadowFloor = 0,
 ): NodeMaterial {
   const material = cloneLitMaterial(source);
   const inverse = uniform(local.clone().invert());
@@ -811,9 +874,9 @@ export function worldLodMaterial(
   )();
   // Quantise recovered roots so part-local float rounding cannot change the instance hash.
   const origin = varying(floor(root.mul(16).add(0.5)).div(16));
-  const distance = (spatial ? length(origin.sub(eye)) : length(origin.xz.sub(eye.xz))).mul(
-    distanceBias,
-  );
+  const distanceTo = (at: Node<"vec3">) =>
+    (spatial ? length(origin.sub(at)) : length(origin.xz.sub(at.xz))).mul(distanceBias);
+  const distance = distanceTo(eye);
   const random = fract(sin(dot(origin.xz, vec2(12.9898, 78.233))).mul(43758.5453));
   const noise = fract(sin(dot(floor(screenCoordinate.xy), vec2(12.9898, 78.233))).mul(43758.5453));
   // CPU-admitted batches publish the levels their instance currently has beside its matrix. During
@@ -830,41 +893,70 @@ export function worldLodMaterial(
   const lod = uniform(level);
   const gates = distances.map((at) => uniform(at));
   const always = float(1).greaterThan(0);
-  let mask = always;
-  for (let gate = 1; gate < distances.length; gate++) {
-    const at = gates[gate] as Node<"float">;
-    let span = at.mul(width).min(at.sub(gates[gate - 1] as Node<"float">).mul(width));
-    if (gate + 1 < distances.length)
-      span = span.min((gates[gate + 1] as Node<"float">).sub(at).mul(width));
-    const mix = distance.sub(at).div(span).add(0.5).add(random.sub(0.5).mul(0.5)).clamp(0, 1);
-    // `gate === level` fades this level in past the gate; `gate === level + 1` fades it out.
-    const fadeIn =
-      published === undefined
-        ? noise.lessThan(mix)
-        : select(published.x.lessThan(lod), noise.lessThan(mix), always);
-    const fadeOut =
-      published === undefined
-        ? noise.greaterThanEqual(mix)
-        : select(published.y.greaterThan(lod), noise.greaterThanEqual(mix), always);
-    mask = mask.and(lod.notEqual(gate).or(fadeIn)).and(lod.notEqual(gate - 1).or(fadeOut));
-  }
+  // `mixAt(gate)` is how far past the gate this placement is, 0..1; pixels with noise below it draw
+  // the coarser level.
+  const levelMask = (
+    mixAt: (at: Node<"float">, span: Node<"float">) => Node<"float">,
+    first = 1,
+  ) => {
+    let mask = always;
+    for (let gate = first; gate < distances.length; gate++) {
+      const at = gates[gate] as Node<"float">;
+      let span = at.mul(width).min(at.sub(gates[gate - 1] as Node<"float">).mul(width));
+      if (gate + 1 < distances.length)
+        span = span.min((gates[gate + 1] as Node<"float">).sub(at).mul(width));
+      const mix = mixAt(at, span);
+      // `gate === level` fades this level in past the gate; `gate === level + 1` fades it out.
+      const fadeIn =
+        published === undefined
+          ? noise.lessThan(mix)
+          : select(published.x.lessThan(lod), noise.lessThan(mix), always);
+      const fadeOut =
+        published === undefined
+          ? noise.greaterThanEqual(mix)
+          : select(published.y.greaterThan(lod), noise.greaterThanEqual(mix), always);
+      mask = mask.and(lod.notEqual(gate).or(fadeIn)).and(lod.notEqual(gate - 1).or(fadeOut));
+    }
+    return mask;
+  };
+  const rampAt = (at: Node<"float">, span: Node<"float">) =>
+    distance.sub(at).div(span).add(0.5).add(random.sub(0.5).mul(0.5)).clamp(0, 1);
+  const mask = levelMask(rampAt);
+  // `shadowFloor`: finer placements cast in the floor level's shape (`castLevelOf`), so the floor's
+  // shadow covers every distance under its outer gate and a finer level casts nothing.
+  const shadow =
+    shadowFloor > 0
+      ? lod.greaterThanEqual(shadowFloor).and(levelMask(rampAt, shadowFloor + 1))
+      : mask;
+  // Temporal: the gate is hard in space and the colour pass blends the level seen from the older
+  // eye into the level seen from the newer one, as UE's instanced foliage does.
+  const past = (eyeAt: Node<"vec3">, at: Node<"float">) =>
+    select(distanceTo(eyeAt).greaterThan(at), float(1), float(0));
+  const crossFaded =
+    temporal === undefined
+      ? mask
+      : levelMask((at) =>
+          past(temporal.from, at)
+            .mul(float(1).sub(temporal.alpha))
+            .add(past(temporal.to, at).mul(temporal.alpha)),
+        );
   // A refilter that lands late turns a whole tree into a dithered pair in one frame. The colour pass
   // keeps the old whole level on a shrinking share of pixels for `LOD_TEMPORAL_LAG`, as UE fades
   // every LOD change in time; the shares stay complementary, so no pixel holds both or neither.
   // Shadows take the new answer at once: a cached shadow page must not keep a frame of the fade.
-  let colour = mask;
+  let colour = crossFaded;
   if (published !== undefined && clock !== undefined) {
     const progress = clock.sub(published.w).div(LOD_TEMPORAL_LAG);
     const blend = fract(
       sin(dot(floor(screenCoordinate.xy), vec2(39.3468, 11.1353))).mul(24634.6345),
     );
     const holdOld = published.z.greaterThanEqual(0).and(blend.greaterThanEqual(progress));
-    colour = select(holdOld, published.z.sub(lod).abs().lessThan(0.5), mask);
+    colour = select(holdOld, published.z.sub(lod).abs().lessThan(0.5), crossFaded);
   }
   material.maskNode = material.maskNode ? (material.maskNode as Node<"bool">).and(colour) : colour;
   material.maskShadowNode = material.maskShadowNode
-    ? (material.maskShadowNode as Node<"bool">).and(mask)
-    : mask;
+    ? (material.maskShadowNode as Node<"bool">).and(shadow)
+    : shadow;
   if (publishedRanges) material.userData.tnPublishedLodRange = true;
   return material;
 }
