@@ -685,6 +685,26 @@ describe("VirtualShadowNode", () => {
     expect(clipLadder([8, 16, 32], 2).extents).toEqual([8, 16, 32]);
   });
 
+  it("inserts only the levels the page budget holds, and reports the wider step", () => {
+    const { light } = world();
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    // Alpine and desert: 4096-texel levels are 1024 pages each, so five levels (5120 pages) failed
+    // the engine's 4096-page atlas and the world did not start.
+    const node = new VirtualShadowNode(light, {
+      clipExtents: [24, 320],
+      marker: false,
+      mapSize: 4096,
+    });
+    const pages = node.options.mapSize.reduce((sum, size) => sum + (size / 128) ** 2, 0);
+    expect(pages).toBeLessThanOrEqual(4096);
+    expect(node.options.clipExtents).toHaveLength(4);
+    expect(node.options.clipExtents[3]).toBe(320);
+    expect(
+      info.mock.calls.some(([line]) => String(line).startsWith("TN_VIRTUAL_SHADOW_LADDER")),
+    ).toBe(true);
+    info.mockRestore();
+  });
+
   it("keeps authored levels under the maxLevelRatio override and reports it", () => {
     const { light } = world();
     const info = vi.spyOn(console, "info").mockImplementation(() => undefined);

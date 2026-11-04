@@ -1229,7 +1229,25 @@ export class VirtualShadowNode extends ShadowBaseNode {
     const biased = authoredExtents.map((extent, level) =>
       level === 0 && !autoMapSize ? extent * 2 ** bias : extent,
     );
-    const ladder = clipLadder(biased, maxLevelRatio);
+    const sizes = options.mapSize ?? light.shadow.mapSize.width;
+    const sizeOf = (authored: number): number =>
+      (typeof sizes === "number" ? sizes : sizes[Math.min(authored, sizes.length - 1)]) as number;
+    // Unreal's levels are virtual and page in on demand; ours are resident, so an inserted level
+    // must fit the page budget. A ladder that does not keeps the smallest step that does.
+    const pageBudget = options.maxPhysicalPages ?? 4096;
+    const pagesOf = (source: readonly number[]): number =>
+      source.reduce((sum, authored) => sum + Math.ceil(sizeOf(authored) / 128) ** 2, 0);
+    let levelRatio = maxLevelRatio;
+    let ladder = clipLadder(biased, levelRatio);
+    while (ladder.extents.length > biased.length && pagesOf(ladder.source) > pageBudget) {
+      levelRatio *= 1.05;
+      ladder = clipLadder(biased, levelRatio);
+    }
+    if (levelRatio > maxLevelRatio) {
+      console.info(
+        `TN_VIRTUAL_SHADOW_LADDER the ${String(pageBudget)}-page budget keeps a ${levelRatio.toFixed(2)}x level step (asked ${String(maxLevelRatio)}x); raise maxPhysicalPages or lower mapSize for the full ladder.`,
+      );
+    }
     const widest = Math.max(
       1,
       ...biased.slice(1).map((extent, i) => extent / (biased[i] as number)),
@@ -1251,13 +1269,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
         `TN_VIRTUAL_SHADOW_INVALID: resolutionLodBiasDirectional ${String(bias)} widens the finest level to ${String(clipExtents[0])}, past the next level at ${String(clipExtents[1])}.`,
       );
     }
-    const sizes = options.mapSize ?? light.shadow.mapSize.width;
-    const mapSize = clipExtents.map(
-      (_, level) =>
-        (typeof sizes === "number"
-          ? sizes
-          : sizes[Math.min(authoredLevel(level), sizes.length - 1)]) as number,
-    );
+    const mapSize = clipExtents.map((_, level) => sizeOf(authoredLevel(level)));
     for (const size of mapSize) {
       if (!Number.isInteger(size) || size <= 0) {
         throw new RangeError(
