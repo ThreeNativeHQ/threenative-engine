@@ -1,7 +1,7 @@
 # PRD-804 — `compile.ts` splits, and every asset config error is pinned
 
 **Status:** IN PROGRESS — six modules extracted, `compile.ts` 3 520 → 952 lines, AC-1 and AC-2 green; AC-3's template cook was not run by this lane, see below.
-**Priority:** P2 — 59 `TN_ASSETS_CONFIG_INVALID` throws have about 17 spec references, and `compile.ts` holds value cycles with `health` and three passes (all phases open).
+**Priority:** P2 — 59 `TN_ASSETS_CONFIG_INVALID` throws have about 17 spec references, and `compile.ts` holds value cycles with `health` and three passes (closed 2026-11-04; AC-3's starter-kit cook is the one open item).
 **Complexity:** 4 (MEDIUM)
 **Owner:** ThreeNative maintainers
 **Depends on:** None
@@ -25,7 +25,7 @@ Pin, then extract in order: `compile-types.ts` (types, `classify`, `AssetKind`; 
 ## Acceptance Criteria
 
 - [x] AC-1 [local]: Each of the 59 invalid-config cases throws its exact message. proof: `pnpm exec vitest run packages/assets/__tests__/compile-config.spec.ts` — Evidence: exit 0, 92/92 tests. 91 rows pin one exact message each through `compileAssets` (asserted with `toBe` on the thrown `message`, not a substring), plus one guard that the table never shrinks below the 59 the audit counted; the parser's own throw sites are 59 message shapes and the rows cover every one of them, labels included (`assets.lod.overrides['chair'].generation must be an object.`). Green on the unsplit `compile.ts` before any line moved, and unchanged after the split.
-- [x] AC-2 [local]: `compile.ts` is under 1 000 lines, no new file exceeds 1 000, and no existing spec changes. proof: `wc -l` and `git diff --stat packages/assets/__tests__/` — Evidence: `compile.ts` 3 520 → 952; `compile-types.ts` 416, `compile-rows.ts` 480, `compile-config.ts` 737, `compile-layout.ts` 345, `compile-receipt.ts` 699, `compile-basis.ts` 40 — every file under 1 000. `git diff --stat packages/assets/__tests__/` prints nothing (exit 0): no existing spec was edited, the two new specs are untracked additions.
+- [x] AC-2 [local]: `compile.ts` is under 1 000 lines, no new file exceeds 1 000, and no existing spec changes. proof: `wc -l` and `git diff --stat 1f1726253^ 1f1726253 -- packages/assets/__tests__/` — Evidence: `compile.ts` 3 520 → 952; `compile-types.ts` 416, `compile-rows.ts` 480, `compile-config.ts` 737, `compile-layout.ts` 345, `compile-receipt.ts` 699, `compile-basis.ts` 40 — every file under 1 000. `git diff --stat packages/assets/__tests__/` prints nothing (exit 0): no existing spec was edited, the two new specs are committed additions.
 - [ ] AC-3 [local]: Asset units, including determinism and receipts, stay green, and a template build cooks the same outputs. proof: `pnpm --filter @threenative/assets test` and `pnpm test:templates` for the starter kit — Evidence: units green: `pnpm exec vitest run packages/assets/__tests__` exit 0, `Test Files 50 passed | 1 skipped (51)`, `Tests 831 passed | 2 skipped (833)` — that set includes `determinism`, `bake-receipt`, `native-package` and every pass spec. Still open: this lane may not run `pnpm build` or `pnpm test:templates` (both write `dist/` and generated files in a tree other agents share), and `@threenative/assets test` *is* `pnpm run build && publint --strict`, so the build/publint half and the starter-kit cook are unverified here.
 
 ## Decisions
