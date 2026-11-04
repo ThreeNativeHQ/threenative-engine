@@ -30,7 +30,13 @@ async function world(floorTop: number) {
   const swimmer = (
     y: number,
     water: (x: number, z: number) => number | undefined,
-    { current, buoyancy }: Pick<ICharacterBody3DOptions, "waterCurrent" | "buoyancy"> = {},
+    {
+      current,
+      buoyancy,
+    }: {
+      current?: ICharacterBody3DOptions["waterCurrent"];
+      buoyancy?: ICharacterBody3DOptions["buoyancy"];
+    } = {},
   ) => {
     object.position.set(0, y, 0);
     return new CharacterBody3D({
