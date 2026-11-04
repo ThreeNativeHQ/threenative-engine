@@ -3527,6 +3527,10 @@ export function bakeNoise( { … }
 - **Use when:** the noise and blackbody textures an Ultra Elements spell needs before it first draws
 - **Constraints:** costs about 0.6 s at 64^3 and about 5 s at 128^3 on the main thread; bake once at load
 
+```ts
+bakeNoise({ noiseSize: 64 }); // once at load, before createFx draws
+```
+
 ### `createFx`
 
 `function` — The shared Ultra Elements spell world: casts, volumes, spell lights and the per-frame CPU tick. Add `fx.scenes.fx` to the scene, `addSpell` each ported spell, call `renderFrame(dt)` each frame.
@@ -3538,6 +3542,10 @@ export function createFx(o: IFxOptions) { … }
 - **Use when:** an Ultra Elements spell such as the raymarched teardrop Fireball cast at a target · a volumetric fire spell drawn through the Three.js TSL node API on WebGPU
 - **Constraints:** call bakeNoise first: the volume shaders sample its noise, curl and blackbody textures
 
+```ts
+const ultra = createFx({ camera, size: () => ({ width: innerWidth, height: innerHeight }), seed: 777 }); const fireball = ultra.addSpell(fire); scene.add(ultra.fx.scenes.fx);
+```
+
 ### `groundShade`
 
 `function` — The Ultra Elements arena floor's response to the ground field and spell impacts (scorch, char, wet, glowing hot ground) as nodes for a game's own floor material: `color`, `roughness`, `metalness`, `emissive` from the floor's own surface at a world position.
@@ -3548,6 +3556,10 @@ export function groundShade(wp: V3, surface: IGroundSurface) { … }
 
 - **Use when:** a floor that shows the Fireball's scorch and hot ground cooling over seconds
 
+```ts
+const shade = groundShade(positionWorld, { albedo, rough: float(0.85), metal: float(0) }); floor.colorNode = vec4(shade.color, 1);
+```
+
 ### `Particles`
 
 `class` — The Ultra Elements GPU particle system behind `fx.particles`: a spell's kinds, emitters and field emitters.
@@ -3557,6 +3569,10 @@ export class Particles { … }
 ```
 
 - **Use when:** the flames, embers, sparks, smoke and debris an Ultra Elements spell emits as it charges, flies and hits
+
+```ts
+const flames = ultra.fx.particles.emitter("fire.flame"); // ultra from createFx
+```
 
 ## `@threenative/core/ui-layer`
 

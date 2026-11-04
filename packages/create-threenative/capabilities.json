@@ -4513,7 +4513,7 @@
       "constraints": [
         "costs about 0.6 s at 64^3 and about 5 s at 128^3 on the main thread; bake once at load"
       ],
-      "example": "",
+      "example": "bakeNoise({ noiseSize: 64 }); // once at load, before createFx draws",
       "importPath": "@threenative/core/spells/ultra",
       "kind": "function",
       "overrides": [],
@@ -4531,7 +4531,7 @@
       "constraints": [
         "call bakeNoise first: the volume shaders sample its noise, curl and blackbody textures"
       ],
-      "example": "",
+      "example": "const ultra = createFx({ camera, size: () => ({ width: innerWidth, height: innerHeight }), seed: 777 }); const fireball = ultra.addSpell(fire); scene.add(ultra.fx.scenes.fx);",
       "importPath": "@threenative/core/spells/ultra",
       "kind": "function",
       "overrides": [],
@@ -4548,7 +4548,7 @@
     {
       "aliases": [],
       "constraints": [],
-      "example": "",
+      "example": "const shade = groundShade(positionWorld, { albedo, rough: float(0.85), metal: float(0) }); floor.colorNode = vec4(shade.color, 1);",
       "importPath": "@threenative/core/spells/ultra",
       "kind": "function",
       "overrides": [],
@@ -4564,7 +4564,7 @@
     {
       "aliases": [],
       "constraints": [],
-      "example": "",
+      "example": "const flames = ultra.fx.particles.emitter(\"fire.flame\"); // ultra from createFx",
       "importPath": "@threenative/core/spells/ultra",
       "kind": "class",
       "overrides": [],
