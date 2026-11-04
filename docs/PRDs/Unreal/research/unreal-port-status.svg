@@ -2,8 +2,8 @@
 <defs><pattern id="gap" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="8" height="8" fill="#8a3b37"/><rect width="4" height="8" fill="#e0625a"/></pattern>
 <style>.a{fill:#9aa49f;font-size:10px;font-weight:600;letter-spacing:.06em}.s{fill:#e7ebe8;font-size:10.5px;font-weight:600}.l{fill:#fff;font-size:9.5px}.g{fill:#e7ebe8;font-size:12px}.h{fill:#e7ebe8;font-size:17px;font-weight:700}</style></defs>
 <rect width="1200" height="720" rx="10" fill="#121513"/>
-<text x="8" y="26" class="h">Unreal 5.8.3 → ThreeNative: 20% done, 24% in progress (share of 676K Unreal lines)</text>
-<rect x="8" y="40" width="11" height="11" rx="2" fill="#3aa56c"/><text x="24" y="50" class="g">Done 20%</text><rect x="93.4" y="40" width="11" height="11" rx="2" fill="#d9961f"/><text x="109.4" y="50" class="g">In progress 24%</text><rect x="225" y="40" width="11" height="11" rx="2" fill="#4a86d6"/><text x="241" y="50" class="g">Not started 34%</text><rect x="356.6" y="40" width="11" height="11" rx="2" fill="#6c7176"/><text x="372.6" y="50" class="g">Deferred 18%</text><rect x="468.40000000000003" y="40" width="11" height="11" rx="2" fill="url(#gap)"/><text x="484.40000000000003" y="50" class="g">No PRD 1%</text><rect x="567" y="40" width="11" height="11" rx="2" fill="#3b403d"/><text x="583" y="50" class="g">Out of scope by rule 1%</text><rect x="758" y="40" width="11" height="11" rx="2" fill="#2c322f"/><text x="774" y="50" class="g">Not split 1%</text>
+<text x="8" y="26" class="h">Unreal 5.8.3 → ThreeNative: 21% done, 24% in progress (share of 676K Unreal lines)</text>
+<rect x="8" y="40" width="11" height="11" rx="2" fill="#3aa56c"/><text x="24" y="50" class="g">Done 21%</text><rect x="93.4" y="40" width="11" height="11" rx="2" fill="#d9961f"/><text x="109.4" y="50" class="g">In progress 24%</text><rect x="225" y="40" width="11" height="11" rx="2" fill="#4a86d6"/><text x="241" y="50" class="g">Not started 34%</text><rect x="356.6" y="40" width="11" height="11" rx="2" fill="#6c7176"/><text x="372.6" y="50" class="g">Deferred 18%</text><rect x="468.40000000000003" y="40" width="11" height="11" rx="2" fill="url(#gap)"/><text x="484.40000000000003" y="50" class="g">No PRD 1%</text><rect x="567" y="40" width="11" height="11" rx="2" fill="#3b403d"/><text x="583" y="50" class="g">Out of scope by rule 1%</text><rect x="758" y="40" width="11" height="11" rx="2" fill="#2c322f"/><text x="774" y="50" class="g">Not split 1%</text>
 <rect x="10" y="66" width="343.60301046210975" height="644" rx="6" fill="#1a1e1c" stroke="#2c322f"/>
 <text x="17" y="79" class="a">LIGHTING &amp; GI · 199K</text>
 <rect x="14" y="85" width="335.60301046210975" height="246.81476595230424" rx="4" fill="#232826"/>
@@ -404,53 +404,45 @@
 <rect x="947.471182437349" y="278.78650851832265" width="28.20887787734773" height="28.54821579036559" rx="2" fill="#3b403d"><title>TSR · Shader parameter structs and permutations · Out of scope by rule</title></rect>
 <text x="950.471182437349" y="289.78650851832265" class="l">Sha…</text>
 <rect x="976.6800603146968" y="278.78650851832265" width="26.836060617112366" height="28.54821579036559" rx="2" fill="#d9961f"><title>TSR · Rejection pass: moire, measure, guide update, resurrection choice · In progress</title></rect>
-<rect x="976.6800603146968" y="304.33472430868824" width="2" height="3" fill="#fff" opacity=".85"/>
+<rect x="976.6800603146968" y="304.33472430868824" width="11.18169192379682" height="3" fill="#fff" opacity=".85"/>
 <text x="979.6800603146968" y="289.78650851832265" class="l">Re…</text>
-<rect x="913.6473018553803" y="308.33472430868824" width="22.96113714675539" height="23.457298508579697" rx="2" fill="#d9961f"><title>TSR · Spatial anti-aliaser kernels · In progress</title></rect>
-<rect x="913.6473018553803" y="328.79202281726793" width="2" height="3" fill="#fff" opacity=".85"/>
+<rect x="913.6473018553803" y="308.33472430868824" width="22.96113714675539" height="23.457298508579697" rx="2" fill="#3aa56c"><title>TSR · Spatial anti-aliaser kernels · Done</title></rect>
 <text x="916.6473018553803" y="319.33472430868824" class="l">Sp…</text>
 <rect x="937.6084390021357" y="308.33472430868824" width="21.761315846328785" height="23.457298508579697" rx="2" fill="url(#gap)"><title>TSR · Thin geometry detection pass · No PRD</title></rect>
 <rect x="960.3697548484645" y="308.33472430868824" width="21.72602698455148" height="23.457298508579697" rx="2" fill="#4a86d6"><title>TSR · Shading analysis library · Not started</title></rect>
 <rect x="983.095781833016" y="308.33472430868824" width="20.42033909879308" height="23.457298508579697" rx="2" fill="#d9961f"><title>TSR · Depth and velocity analysis (depth error, bilaterals, Jacobian, edge) · In progress</title></rect>
-<rect x="983.095781833016" y="328.79202281726793" width="2" height="3" fill="#fff" opacity=".85"/>
+<rect x="983.095781833016" y="328.79202281726793" width="12.011964175760635" height="3" fill="#fff" opacity=".85"/>
 <rect x="913.6473018553803" y="332.79202281726793" width="21.67403065160306" height="21.6482354490293" rx="2" fill="url(#gap)"><title>TSR · Visualization shader (16 views) · No PRD</title></rect>
 <rect x="913.6473018553803" y="355.44025826629723" width="21.67403065160306" height="20.69662891755746" rx="2" fill="#4a86d6"><title>TSR · Update: setup, quality levels and kernel tables · Not started</title></rect>
 <rect x="913.6473018553803" y="377.1368871838547" width="21.67403065160306" height="19.668893863567916" rx="2" fill="#4a86d6"><title>TSR · Decimate history for rejection · Not started</title></rect>
-<rect x="913.6473018553803" y="397.80578104742256" width="21.67403065160306" height="18.94567289964931" rx="2" fill="#d9961f"><title>TSR · History setup: sizes, jitter, validity and reset · In progress</title></rect>
-<rect x="913.6473018553803" y="413.75145394707187" width="11.670631889324724" height="3" fill="#fff" opacity=".85"/>
+<rect x="913.6473018553803" y="397.80578104742256" width="21.67403065160306" height="18.94567289964931" rx="2" fill="#3aa56c"><title>TSR · History setup: sizes, jitter, validity and reset · Done</title></rect>
 <rect x="936.3213325069834" y="332.79202281726793" width="23.740207007569666" height="16.61709044133579" rx="2" fill="#3b403d"><title>TSR · Common types, packing and wave helpers · Out of scope by rule</title></rect>
 <rect x="961.061539514553" y="332.79202281726793" width="21.29068156127562" height="16.61709044133579" rx="2" fill="#4a86d6"><title>TSR · Reconstruction kernels and neighbourhood offsets · Not started</title></rect>
 <rect x="983.3522210758288" y="332.79202281726793" width="20.16389985598039" height="16.61709044133579" rx="2" fill="#3aa56c"><title>TSR · Velocity dilation · Done</title></rect>
-<rect x="936.3213325069834" y="350.4091132586037" width="19.68528256298987" height="16.94126796532919" rx="2" fill="#d9961f"><title>TSR · Resolve history to output · In progress</title></rect>
-<rect x="936.3213325069834" y="364.3503812239329" width="2" height="3" fill="#fff" opacity=".85"/>
+<rect x="936.3213325069834" y="350.4091132586037" width="19.68528256298987" height="16.94126796532919" rx="2" fill="#3aa56c"><title>TSR · Resolve history to output · Done</title></rect>
 <rect x="936.3213325069834" y="368.3503812239329" width="19.68528256298987" height="16.857820207350926" rx="2" fill="#d9961f"><title>TSR · CVars, tiers and defaults · In progress</title></rect>
 <rect x="936.3213325069834" y="382.20820143128384" width="9.842641281494934" height="3" fill="#fff" opacity=".85"/>
 <rect x="936.3213325069834" y="386.2082014312838" width="19.68528256298987" height="14.771626257894013" rx="2" fill="#4a86d6"><title>TSR · Velocity, occluder and decimate dispatch · Not started</title></rect>
 <rect x="936.3213325069834" y="401.97982768917785" width="19.68528256298987" height="14.771626257894013" rx="2" fill="#d9961f"><title>TSR · Rejection and spatial anti-aliasing dispatch · In progress</title></rect>
-<rect x="936.3213325069834" y="413.75145394707187" width="2" height="3" fill="#fff" opacity=".85"/>
+<rect x="936.3213325069834" y="413.75145394707187" width="11.579577978229334" height="3" fill="#fff" opacity=".85"/>
 <rect x="957.0066150699732" y="350.4091132586037" width="15.431859170259031" height="18.328904907615367" rx="2" fill="#3aa56c"><title>TSR · Pass gating and measure passes · Done</title></rect>
-<rect x="973.4384742402323" y="350.4091132586037" width="15.297903796588457" height="18.328904907615367" rx="2" fill="#d9961f"><title>TSR · Update: reprojection fetch, field and lens distortion · In progress</title></rect>
-<rect x="973.4384742402323" y="365.7380181662191" width="2" height="3" fill="#fff" opacity=".85"/>
+<rect x="973.4384742402323" y="350.4091132586037" width="15.297903796588457" height="18.328904907615367" rx="2" fill="#3aa56c"><title>TSR · Update: reprojection fetch, field and lens distortion · Done</title></rect>
 <rect x="989.7363780368207" y="350.4091132586037" width="13.77974289498843" height="18.328904907615367" rx="2" fill="#4a86d6"><title>TSR · Closest-occluder scatter and parallax disocclusion test · Not started</title></rect>
 <rect x="957.0066150699732" y="369.7380181662191" width="15.03114052544629" height="15.258806289770405" rx="2" fill="#d9961f"><title>TSR · Update and resolve dispatch · In progress</title></rect>
 <rect x="957.0066150699732" y="381.9968244559895" width="7.515570262723145" height="3" fill="#fff" opacity=".85"/>
 <rect x="973.0377555954195" y="369.7380181662191" width="14.92497403190032" height="15.258806289770405" rx="2" fill="url(#gap)"><title>TSR · Output, history extraction and visualize dispatch · No PRD</title></rect>
 <rect x="988.9627296273198" y="369.7380181662191" width="14.55339130448931" height="15.258806289770405" rx="2" fill="#4a86d6"><title>TSR · Color spaces and back-buffer quantization error · Not started</title></rect>
 <rect x="957.0066150699732" y="385.9968244559895" width="12.535316887410886" height="15.770015173001354" rx="2" fill="url(#gap)"><title>TSR · Weight relaxation · No PRD</title></rect>
-<rect x="957.0066150699732" y="402.76683962899085" width="12.535316887410886" height="13.984614318081015" rx="2" fill="#d9961f"><title>TSR · Spatial anti-aliaser pass · In progress</title></rect>
-<rect x="957.0066150699732" y="413.75145394707187" width="2" height="3" fill="#fff" opacity=".85"/>
+<rect x="957.0066150699732" y="402.76683962899085" width="12.535316887410886" height="13.984614318081015" rx="2" fill="#3aa56c"><title>TSR · Spatial anti-aliaser pass · Done</title></rect>
 <rect x="970.5419319573841" y="385.9968244559895" width="13.187621315719866" height="9.889039614758133" rx="2" fill="#4a86d6"><title>TSR · Update: input filter at predictor frequency · Not started</title></rect>
-<rect x="970.5419319573841" y="396.88586407074763" width="13.187621315719866" height="9.767374367665866" rx="2" fill="#d9961f"><title>TSR · Update: validity clamp, quantize and history write · In progress</title></rect>
-<rect x="970.5419319573841" y="403.6532384384135" width="2" height="3" fill="#fff" opacity=".85"/>
-<rect x="970.5419319573841" y="407.6532384384135" width="13.187621315719866" height="9.09821550865837" rx="2" fill="#d9961f"><title>TSR · Reprojection field encoding · In progress</title></rect>
-<rect x="970.5419319573841" y="413.75145394707187" width="2" height="3" fill="#fff" opacity=".85"/>
+<rect x="970.5419319573841" y="396.88586407074763" width="13.187621315719866" height="9.767374367665866" rx="2" fill="#3aa56c"><title>TSR · Update: validity clamp, quantize and history write · Done</title></rect>
+<rect x="970.5419319573841" y="407.6532384384135" width="13.187621315719866" height="9.09821550865837" rx="2" fill="#3aa56c"><title>TSR · Reprojection field encoding · Done</title></rect>
 <rect x="984.729553273104" y="385.9968244559895" width="9.232094919398946" height="11.736746993675922" rx="2" fill="url(#gap)"><title>TSR · Tiled network pass · No PRD</title></rect>
 <rect x="994.9616481925029" y="385.9968244559895" width="8.55447273930622" height="11.736746993675922" rx="2" fill="url(#gap)"><title>TSR · Thin geometry shared helpers · No PRD</title></rect>
 <rect x="984.729553273104" y="398.7335714496654" width="9.755542511727299" height="9.832971042826443" rx="2" fill="#3aa56c"><title>TSR · Update: history reprojection with Catmull-Rom fetch · Done</title></rect>
 <rect x="984.729553273104" y="409.56654249249186" width="9.755542511727299" height="7.1849114545800035" rx="2" fill="url(#gap)"><title>TSR · Wave size, 16-bit math and async compute · No PRD</title></rect>
 <rect x="995.4850957848313" y="398.7335714496654" width="8.031025146977868" height="7.027648893377602" rx="2" fill="url(#gap)"><title>TSR · Thin geometry coverage measure · No PRD</title></rect>
-<rect x="995.4850957848313" y="406.761220343043" width="8.031025146977868" height="5.594140162417318" rx="2" fill="#d9961f"><title>TSR · Flickering luma measure · In progress</title></rect>
-<rect x="995.4850957848313" y="409.35536050546034" width="2" height="3" fill="#fff" opacity=".85"/>
+<rect x="995.4850957848313" y="406.761220343043" width="8.031025146977868" height="5.594140162417318" rx="2" fill="#3aa56c"><title>TSR · Flickering luma measure · Done</title></rect>
 <rect x="995.4850957848313" y="413.35536050546034" width="8.031025146977868" height="3.3960934416115265" rx="2" fill="#3b403d"><title>TSR · Clear previous-frame scratch textures · Out of scope by rule</title></rect>
 <rect x="1013.5161209318092" y="66" width="176.48387906819084" height="356.75145394707187" rx="6" fill="#1a1e1c" stroke="#2c322f"/>
 <text x="1020.5161209318092" y="79" class="a">WORLD, ANIM, VFX · 57K</text>

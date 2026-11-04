@@ -1,5 +1,5 @@
 import * as THREE from "three/webgpu";
-import { mrt, pass, texture, uniform, vec2 } from "three/tsl";
+import { Fn, Loop, color, float, mrt, pass, screenUV, sin, texture, uniform, vec2 } from "three/tsl";
 import { RenderChain } from "../../../../core/src/render/chain.ts";
 import {
   VelocityTracker,
@@ -18,6 +18,11 @@ import { createTemporalVelocityProbe } from "./temporal-velocity-probe.ts";
 // at the display raster. Two thirds is a deliberate fraction — it is neither an integer divisor of
 // any conformance viewport nor a round pixel count, so an off-by-one raster cannot pass for it.
 const SCALED_RESOLUTION_SCALE = 2 / 3;
+
+// One scripted input-raster route: three scales, stepped twice, with the display raster pinned at
+// full size throughout. Each entry names the frame whose render moves the pass's input raster, so
+// both hosts meet every step at the same point.
+export const SCALER_ROUTE = [[8, 0.75], [16, 0.5], [24, 0.75], [32, 1], [40, 0.75], [48, 0.5], [56, 0.75], [64, 1]];
 
 // One bounded lifecycle route on the shared fixture, on top of the height-only transition every
 // scaled arm already makes. Each step is keyed to the real frame, so the browser and native hosts
@@ -100,10 +105,46 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
   // deterministic alpha-tested foliage, which is why it scores against its own supersampled
   // reference. `qualityRole` stays null for every pre-existing arm, so their behaviour is untouched.
   const qualityRole = variant.startsWith("quality-") ? variant.slice(8).replace(/-open$/u, "") : null;
+  // PRD-539 Phase 1: Unreal TSR levers 1 and 2, each exactly the temporal arm with one weighting
+  // change. `policy` already strips the quality prefix and the -open control suffix, so an
+  // open-history control keeps the same weighting as its paired arm.
+  // The provider default is both levers (Unreal's Epic tier). Its own controls follow it; the
+  // fragment-replacing diagnostics keep the 100% history they were measured and written against.
+  const history100 = { historyScale: 1, velocityWeightClamp: false };
+  const followsDefault = ["temporal", "zero-velocity", "unchecked-history", "dynamic-instances", "recompile", "scaler-route"];
+  const weighting = {
+    // The pre-PRD-539 provider default, now a named override: the control the default is scored against.
+    history100,
+    history200: { historyScale: 2, velocityWeightClamp: false },
+    "velocity-clamp": { historyScale: 1, velocityWeightClamp: true },
+    // Lever 4: the default plus Unreal's flicker-aware rejection.
+    flicker: { historyScale: 2, velocityWeightClamp: true, flickerRejection: true },
+    // Lever 6: the default plus Unreal's low-frequency clamp release.
+    release: { historyScale: 2, velocityWeightClamp: true, clampRelease: true },
+    // Levers 4 and 6 together, as Unreal runs them: the moire error widens the release's comparison.
+    "flicker-release": {
+      historyScale: 2,
+      velocityWeightClamp: true,
+      flickerRejection: true,
+      clampRelease: true,
+    },
+  }[policy] ?? (followsDefault.includes(policy) ? undefined : history100);
   // The roles that must genuinely request nothing: no reconstruction stage, no velocity MRT. The
   // spatial role still renders its low input and presents it through the ordinary texture upsample.
   const off = variant === "reference" || qualityRole === "reference" || qualityRole === "spatial";
   scene.background = new THREE.Color(0x0d1630);
+  if (variant === "scaler-route") {
+    // A raster-bound load, so a scale step saves measurable time: an opaque backdrop in the
+    // background colour whose per-pixel loop adds under one 8-bit step to it.
+    const load = Fn(() => {
+      const acc = float(0).toVar();
+      Loop(1500, () => acc.assign(sin(acc.mul(1.1).add(screenUV.x))));
+      return color(0x0d1630).add(acc.mul(1e-6));
+    });
+    const backdrop = new THREE.Mesh(new THREE.PlaneGeometry(40, 24), new THREE.MeshBasicNodeMaterial({ colorNode: load() }));
+    backdrop.position.z = -4;
+    scene.add(backdrop);
+  }
   camera.position.set(0, 0.3, 6);
   const sun = new THREE.DirectionalLight(0xffffff, 2.0);
   sun.position.set(2, 5, 3);
@@ -180,8 +221,8 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
       name: "traa",
       build: (input, context) => {
         temporal = options.raw4
-          ? createTemporalAA(input, scenePass.getTextureNode("depth"), context.velocityNode, camera, scenePass)
-          : createTemporalAA(input, scenePass.getTextureNode("depth"), context.velocityNode, camera);
+          ? createTemporalAA(input, scenePass.getTextureNode("depth"), context.velocityNode, camera, scenePass, weighting)
+          : createTemporalAA(input, scenePass.getTextureNode("depth"), context.velocityNode, camera, undefined, weighting);
         if (
           options.raw4 &&
           !ownsCurrentInput(input, scenePass.getTextureNode("depth"), context.velocityNode, camera, scenePass)
@@ -350,6 +391,10 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
     instanceDraw, instanceUploads,
     measurement, variant, setupCount, setupDuringJitter, occluderVisible: measurement && occluder.visible,
     raster: raster(),
+    memory: {
+      textures: renderer.info.memory.textures,
+      geometries: renderer.info.memory.geometries,
+    },
     quality: foliage === null ? null : {
       role: qualityRole, foliageCards: foliage.cards, alphaTest: foliage.alphaTest, leafTextureSize: foliage.textureSize,
     },
@@ -384,12 +429,15 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
       resolve !== undefined && resolve.texture !== undefined,
       "Freezing a capture needs a reconstruction frame, and none rendered one.",
     );
+    // A history above the display raster presents a display-sized resolve of it: hold that one.
+    const held = temporal.node._textureNode.value;
+    const { width, height } = held.image;
     renderer.getDrawingBufferSize(drawingBuffer);
     assertCondition(
-      resolve.width === drawingBuffer.x && resolve.height === drawingBuffer.y,
-      `A held capture must hold the display raster; the resolve is ${resolve.width}x${resolve.height} against ${drawingBuffer.x}x${drawingBuffer.y}.`,
+      width === drawingBuffer.x && height === drawingBuffer.y,
+      `A held capture must hold the display raster; the presented resolve is ${width}x${height} against ${drawingBuffer.x}x${drawingBuffer.y}.`,
     );
-    frozen = { frame, node: texture(resolve.texture), resolve: `${resolve.width}x${resolve.height}` };
+    frozen = { frame, node: texture(held), resolve: `${width}x${height}` };
     pipeline.outputNode = frozen.node;
     // The pipeline's own "the output node changed" flag, so the held texture replaces the whole
     // reconstruction graph rather than only taking over the frames that need no rebuild.
@@ -424,7 +472,9 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
       (variant === "cut" && frame >= 20) || (lifecycle && frame >= LIFECYCLE_CUT_FRAME)
         ? 1.2
         : 0;
-    camera.position.x = Math.sin(pose / 50) * 0.15 + cut;
+    // PRD-539 static-camera control (`options.staticCamera`): the camera holds still and every object
+    // keeps its motion, so edge error isolates the camera-drift share of the loss.
+    camera.position.x = (options.staticCamera ? 0 : Math.sin(pose / 50) * 0.15) + cut;
     if (frame === 20 && variant === "cut") temporal?.resetHistory("camera-cut");
     if (frame === 20 && variant === "projection") { camera.fov = 65; camera.updateProjectionMatrix(); }
     if (frame === 20 && variant === "resize") { renderer.setSize(960, 540, false); camera.aspect = 960 / 540; camera.updateProjectionMatrix(); }
@@ -450,6 +500,12 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
       // An input-raster change only. The physical display raster is left exactly where it is, so the
       // display-sized resolve, its history and the whole-display oracle all stay comparable.
       if (frame === LIFECYCLE_SCALE_FRAME) scenePass.setResolutionScale(1 / 2);
+    }
+    // The scaler route moves only the input raster. The camera keeps its ordinary motion and the
+    // display raster is never touched, so each step's history decision is the raster's own.
+    if (variant === "scaler-route") {
+      const step = SCALER_ROUTE.find(([stepFrame]) => stepFrame === frame);
+      if (step !== undefined) scenePass.setResolutionScale(step[1]);
     }
     tracker.update(scene);
     velocityProbe?.before();

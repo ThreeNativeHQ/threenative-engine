@@ -114,6 +114,18 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
   override enter(ctx: GameCtx): SceneFrame<GameState, IPhysicsContext> {
     const model = this.#model;
     if (model === undefined || DATA === undefined) throw new Error("TN_CALIBRATION_SCENE_NOT_LOADED");
+    // Unreal's r.ScreenPercentage: draw the scene at a share of the display and let the chain's `traa`
+    // stage reconstruct it to the display, as Unreal pairs a low screen percentage with TSR. Unset keeps
+    // the engine's own scale. The renderer has no pinned-scale call here; `renderer.resolutionScale` is
+    // a boot config value, so this is the narrowest public call that reaches the drawing buffer.
+    const screenPercentage = params.get("screenPercentage");
+    if (screenPercentage !== null) {
+      const value = Number(screenPercentage);
+      if (!Number.isInteger(value) || value < 25 || value > 100)
+        throw new Error("screenPercentage must be an integer 25..100");
+      ctx.renderer.setResolutionScale(value / 100, "auto-pinned");
+      console.info(`TN_CALIBRATION_SCREEN_PERCENTAGE ${value}`);
+    }
     ctx.add(model);
     const scene = ctx.scene;
     const camera = ctx.camera as PerspectiveCamera;
@@ -163,6 +175,17 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
         material.twoSidedFoliage = true;
         material.subsurfaceColor = new Color(...colour);
       }
+    // `anisotropy=<n>`: the base colour maps' anisotropic filter, as Unreal's r.MaxAnisotropy (8 at Epic,
+    // BaseScalability.ini [TextureQuality@3]) filters a World-group texture. Unset keeps three's default of 1.
+    const anisotropy = params.get("anisotropy");
+    if (anisotropy !== null) {
+      const value = Number(anisotropy);
+      if (!Number.isInteger(value) || value < 1 || value > 16) throw new Error("anisotropy must be an integer 1..16");
+      for (const mesh of meshes)
+        for (const material of [mesh.material].flat() as MeshStandardMaterial[])
+          if (material.map) material.map.anisotropy = value;
+      console.info(`TN_CALIBRATION_ANISOTROPY ${value}`);
+    }
 
     scene.background = new Color(0x000000);
     scene.environment = null;
