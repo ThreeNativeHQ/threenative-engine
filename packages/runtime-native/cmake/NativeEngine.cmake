@@ -117,7 +117,8 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         ${tn_shader_validator}=validates
         native_engine_shader_emit_stable=stable
         native_engine_shader_emit_position_invariant=position_invariant
-        native_engine_shader_emit_shared_once=shared_once)
+        native_engine_shader_emit_shared_once=shared_once
+        native_engine_shader_emit_discard_ends=discard_ends)
     target_link_libraries(tn-native-engine-shader-emit-test PRIVATE tn_engine_shader tn_host_services)
     tn_native_engine_test(tn-native-engine-frame-gpu-timer-test tests/native-engine/frame_gpu_timer_test.cpp
         native_engine_frame_gpu_timer_trace_extents=trace_extents

@@ -134,7 +134,28 @@ void positionInvariant() {
     CHECK(off.key() != on.key());  // the program cache keeps the two apart
 }
 
+// TSL `Discard()` with no condition, then the material's output: naga (wgpu-native on Android and iOS)
+// refuses any statement after a bare discard ("instructions after return"), and Tint refuses a function
+// that ends on one with no return. The native player aborted on the Android emulator while desktop passed.
+void discardEnds() {
+    Program p(Stage::Fragment);
+    p.If(p.less(p.swizzle(p.varying("uv", Type::vec(2)), "x"), p.constant(0.5f)), [&] { p.discard(); });
+    p.discard();
+    p.output("color", p.construct(Type::vec(4), {p.constant(1.0f)}));
+    const WgslModule module = WgslEmitter::emit(p);
+    CHECK(module.ok());
+    // Every discard ends its own block, so naga sees nothing after it and Tint still sees `return out;`.
+    CHECK(module.code.find("discard;\n") == std::string::npos);
+    CHECK(module.code.find("if (true) { discard; }") != std::string::npos);
+    CHECK(module.code.find("return out;") != std::string::npos);
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    const std::string error = validate(context, module.code);  // Tint on Dawn, naga on wgpu-native
+    if (!error.empty()) std::fprintf(stderr, "%s\n%s", error.c_str(), module.code.c_str());
+    CHECK(error.empty());
+}
+
 }  // namespace
 
 TN_TEST_MAIN({"validates", validates}, {"stable", stable}, {"position_invariant", positionInvariant},
-            {"shared_once", sharedOnce})
+            {"shared_once", sharedOnce}, {"discard_ends", discardEnds})
