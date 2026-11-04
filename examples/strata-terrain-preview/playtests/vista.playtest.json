@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "name": "strata-terrain-vista",
+  "subject": "The forest vista the look goal is judged at: forest, lake and the mountain backdrop from one fixed pose, with no console or runtime error",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 90,
+  "artifacts": {
+    "screenshots": true,
+    "console": true
+  },
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "GameState",
+        "path": "currentViewWindows",
+        "gte": 3,
+        "allowTrivial": "The vista frame is taken after three measured windows in the view, not mid-transition."
+      }
+    ]
+  },
+  "steps": [
+    {
+      "label": "forest-assets-ready",
+      "waitForResource": { "id": "GameState", "path": "worldReady", "equals": true },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "revealed",
+      "waitForResource": { "id": "GameState", "path": "revealComplete", "equals": true },
+      "timeoutMs": 60000,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "meadow-close-view",
+      "press": "KeyV",
+      "holdTicks": 2,
+      "release": true
+    },
+    { "kind": "wait", "label": "settle-1", "waitTicks": 10, "release": true },
+    { "kind": "input", "label": "overview-view", "press": "KeyV", "holdTicks": 2, "release": true },
+    { "kind": "wait", "label": "settle-2", "waitTicks": 10, "release": true },
+    { "kind": "input", "label": "river-view", "press": "KeyV", "holdTicks": 2, "release": true },
+    { "kind": "wait", "label": "settle-3", "waitTicks": 10, "release": true },
+    { "kind": "input", "label": "vista-view", "press": "KeyV", "holdTicks": 2, "release": true },
+    {
+      "label": "vista",
+      "release": true,
+      "screenshot": "vista",
+      "waitForResource": { "id": "GameState", "path": "currentViewWindows", "gte": 3 },
+      "timeoutMs": 120000
+    }
+  ]
+}

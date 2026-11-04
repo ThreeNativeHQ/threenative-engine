@@ -89,6 +89,24 @@
     },
     {
       "kind": "input",
+      "label": "vista-view",
+      "press": "KeyV",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "label": "vista",
+      "release": true,
+      "screenshot": "vista",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "currentViewWindows",
+        "gte": 3
+      },
+      "timeoutMs": 120000
+    },
+    {
+      "kind": "input",
       "label": "player-view",
       "press": "KeyV",
       "holdTicks": 2,
