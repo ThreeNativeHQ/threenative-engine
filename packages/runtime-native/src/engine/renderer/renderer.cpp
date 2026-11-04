@@ -845,6 +845,13 @@ Renderer& Renderer::probeCaptureRenderer() {
     return *probeCapture_;
 }
 
+Renderer& Renderer::reflectionRenderer(const std::shared_ptr<const void>& owner) {
+    std::erase_if(mirrors_, [](const auto& entry) { return entry.second.first.expired(); });
+    auto& mirror = mirrors_[owner.get()];
+    if (!mirror.second) mirror = {owner, sibling()};
+    return *mirror.second;
+}
+
 Renderer& Renderer::overlayRenderer() {
     if (!canvasLayer_) {
         canvasLayer_ = sibling();

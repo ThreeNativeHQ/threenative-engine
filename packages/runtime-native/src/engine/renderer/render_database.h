@@ -22,6 +22,8 @@
 
 namespace tn::engine {
 
+struct Reflector;
+
 /**
  * The render database (PRD-514 phase 1): `renderer.render(scene, camera)` on the native path. It
  * reads the native scene graph — never a JS scene — and keeps one draw record per mesh, rebuilt
@@ -142,9 +144,13 @@ class RenderDatabase {
     // resizes the frame or churns the frame's draw records. A pass draws no further reflections.
     struct ReflectionPass {
         std::weak_ptr<const void> owner;
-        std::unique_ptr<Renderer> renderer;
+        Renderer* renderer = nullptr;  // the main renderer's reflectionRenderer(owner)
         std::unique_ptr<RenderDatabase> database;
     };
+    ReflectionPass& reflectionPass(Renderer& renderer, const std::shared_ptr<const Reflector>& reflector);
+    /** compileAsync's mirror half: each reflector's pass compiles the scene as its mirror would draw it. */
+    void precacheReflections(Renderer& renderer, Object3D& root, Camera& camera, Object3D* targetScene,
+                             std::vector<std::shared_ptr<PipelineCompilation>>& compilations);
     std::unordered_map<const void*, ReflectionPass> reflections_;
     bool reflecting_ = false;
     // Set by the frame's database on a reflection pass: the scene's world matrices are already current.

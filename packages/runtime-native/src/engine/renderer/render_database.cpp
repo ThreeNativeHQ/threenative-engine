@@ -1790,7 +1790,9 @@ std::vector<std::shared_ptr<PipelineCompilation>> RenderDatabase::compileAsync(R
     state.matrixWorld = toArray(camera.matrixWorld);
     state.matrixWorldInverse = toArray(camera.matrixWorldInverse);
     state.projectionMatrix = toArray(camera.projectionMatrix);
-    return renderer.compileAsync(items, state, lights, outputFormat);
+    auto compilations = renderer.compileAsync(items, state, lights, outputFormat);
+    if (!reflecting_) precacheReflections(renderer, root, camera, targetScene, compilations);
+    return compilations;
 }
 
 bool RenderDatabase::prepareEnvironments(Renderer& renderer, Object3D& scene, Camera& camera) {
@@ -1873,6 +1875,59 @@ uint64_t RenderDatabase::render(Renderer& renderer, Object3D& scene, Camera& cam
     return result;
 }
 
+RenderDatabase::ReflectionPass& RenderDatabase::reflectionPass(Renderer& renderer,
+                                                               const std::shared_ptr<const Reflector>& reflector) {
+    ReflectionPass& pass = reflections_[reflector.get()];
+    if (!pass.database) {
+        pass.owner = reflector;
+        pass.renderer = &renderer.reflectionRenderer(reflector);
+        pass.database = std::make_unique<RenderDatabase>();
+        pass.database->reflecting_ = true;
+    }
+    pass.database->batching = batching;
+    pass.database->reuseMainFrame = reuseMainFrame;
+    pass.database->shadowMapEnabled = shadowMapEnabled;
+    pass.renderer->setOutput(renderer.output());
+    pass.renderer->setSize(uint32_t(std::lround(renderer.width() * reflector->resolutionScale)),
+                           uint32_t(std::lround(renderer.height() * reflector->resolutionScale)));
+    return pass;
+}
+
+void RenderDatabase::precacheReflections(Renderer& renderer, Object3D& root, Camera& camera, Object3D* targetScene,
+                                         std::vector<std::shared_ptr<PipelineCompilation>>& compilations) {
+    // Every reflector in the compiled set, seen or not: the mirror's first frame is the turn that shows the water.
+    std::vector<std::shared_ptr<const Reflector>> reflectors;
+    std::vector<Material*> hidden;
+    for (const DrawItem& item : items_) {
+        if (!item.reflector) continue;
+        auto* material = const_cast<Material*>(static_cast<const Material*>(item.materialKey));
+        if (std::find(hidden.begin(), hidden.end(), material) == hidden.end()) hidden.push_back(material);
+        if (std::none_of(reflectors.begin(), reflectors.end(), [&](const auto& r) { return r.get() == item.reflector; }))
+            reflectors.push_back(std::static_pointer_cast<const Reflector>(graphSources(*material).reflector));
+    }
+    if (reflectors.empty()) return;
+    // The mirror hides the reflecting materials while it draws (renderReflections), so it compiles without them.
+    std::vector<bool> wasVisible;
+    for (Material* material : hidden) {
+        wasVisible.push_back(material->visible);
+        material->visible = false;
+    }
+    struct Restore {
+        std::vector<Material*>& materials;
+        std::vector<bool>& visible;
+        ~Restore() {
+            for (std::size_t i = 0; i < materials.size(); ++i) materials[i]->visible = visible[i];
+        }
+    } restore{hidden, wasVisible};
+    for (const auto& reflector : reflectors) {
+        ReflectionPass& pass = reflectionPass(renderer, reflector);
+        // A camera under the plane leaves the mirror's last pose: a program does not depend on where it looks.
+        poseReflection(*reflector, camera, *reflector->camera);
+        auto more = pass.database->compileAsync(*pass.renderer, root, *reflector->camera, targetScene);
+        compilations.insert(compilations.end(), more.begin(), more.end());
+    }
+}
+
 void RenderDatabase::renderReflections(Renderer& renderer, Object3D& scene, Camera& camera, std::vector<DrawItem>& items,
                                        std::array<double, 4> clear) {
     for (auto it = reflections_.begin(); it != reflections_.end();)
@@ -1903,19 +1958,7 @@ void RenderDatabase::renderReflections(Renderer& renderer, Object3D& scene, Came
         }
     } restore{hidden, wasVisible};
     for (const auto& reflector : drawn) {
-        ReflectionPass& pass = reflections_[reflector.get()];
-        if (!pass.renderer) {
-            pass.owner = reflector;
-            pass.renderer = renderer.sibling();
-            pass.database = std::make_unique<RenderDatabase>();
-            pass.database->reflecting_ = true;
-        }
-        pass.database->batching = batching;
-        pass.database->reuseMainFrame = reuseMainFrame;
-        pass.database->shadowMapEnabled = shadowMapEnabled;
-        pass.renderer->setOutput(renderer.output());
-        pass.renderer->setSize(uint32_t(std::lround(renderer.width() * reflector->resolutionScale)),
-                               uint32_t(std::lround(renderer.height() * reflector->resolutionScale)));
+        ReflectionPass& pass = reflectionPass(renderer, reflector);
         PerspectiveCamera& virtualCamera = *reflector->camera;
         if (poseReflection(*reflector, camera, virtualCamera)) {
             pass.database->matricesFresh_ = reuseMainFrame && !ranCallbacks_;
@@ -1935,7 +1978,7 @@ void RenderDatabase::renderReflections(Renderer& renderer, Object3D& scene, Came
         }
         else if (encodeJobs) {
             pass.renderer->renderDeferred({}, CameraState{}, LightState{}, {0, 0, 0, 0});
-            encodeJobs->push_back([renderer = pass.renderer.get()] { renderer->encodePending(); });
+            encodeJobs->push_back([renderer = pass.renderer] { renderer->encodePending(); });
         } else
             pass.renderer->render({}, CameraState{}, LightState{}, {0, 0, 0, 0});
         for (const auto& message : pass.database->diagnostics()) diagnostics_.push_back(message);

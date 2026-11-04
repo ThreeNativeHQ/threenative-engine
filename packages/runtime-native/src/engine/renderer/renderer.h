@@ -412,7 +412,14 @@ public:
     /** The face camera of a probe capture, shared so a render callback that keeps its handle is safe. The
      *  capture creates it on the first face and poses it again for each one. */
     std::shared_ptr<PerspectiveCamera>& probeCaptureCamera() { return probeCamera_; }
-    /** Another renderer on this device, with its own targets: a reflection pass draws into one. */
+    /**
+     * The renderer `owner`'s mirror pass draws with, one per reflector for this renderer's life. The frame's
+     * database and a compile-only database (core's warm-up) share it, so the program a warm-up builds for the
+     * mirror is the one the mirror draws with: Unreal precaches a primitive's PSOs for every mesh pass when it
+     * enters the scene, not when a view first reaches it (UE 5.8.3: Engine/Source/Runtime/Engine/Private/
+     * PSOPrecache.cpp:230). An expired owner's renderer is released on the next call.
+     */
+    Renderer& reflectionRenderer(const std::shared_ptr<const void>& owner);
     /** A renderer on the same device for a render target or a reflection: it shares this one's map
      *  textures, geometry copies, and layout and pipeline caches, as three's one renderer does. */
     std::unique_ptr<Renderer> sibling(bool sceneOnly = false) {
@@ -1108,6 +1115,7 @@ private:
 
     WGPUInstance instance_;
     std::unique_ptr<Renderer> probeCapture_;
+    std::unordered_map<const void*, std::pair<std::weak_ptr<const void>, std::unique_ptr<Renderer>>> mirrors_;  // reflectionRenderer()
     std::shared_ptr<PerspectiveCamera> probeCamera_;
     WGPUDevice device_;
     WGPUQueue queue_;
