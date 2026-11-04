@@ -24,6 +24,19 @@
         "gte": 3,
         "allowTrivial": "The vista frame is taken after three measured windows in the view, not mid-transition."
       }
+    ],
+    "visual": [
+      {
+        "region": {
+          "x": 300,
+          "y": 200,
+          "width": 800,
+          "height": 170,
+          "minNonblankPixelRatio": 0.99,
+          "maxLuminance": 0.6,
+          "minDarkPixelRatio": 0.4
+        }
+      }
     ]
   },
   "steps": [

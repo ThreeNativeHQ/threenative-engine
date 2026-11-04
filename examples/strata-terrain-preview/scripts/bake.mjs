@@ -381,15 +381,53 @@ const realContinuation = Object.fromEntries(
             },
           }
         : dem[`${name}-horizon`];
-    return [
-      name,
-      new Terrain({ size: source.size, resolution: source.resolution, seed: 1 }).heightmap({
-        id: "usgs-surroundings",
-        data: source.data,
-      }),
-    ];
+    const surroundings = new Terrain({
+      size: source.size,
+      resolution: source.resolution,
+      seed: 1,
+    }).heightmap({ id: "usgs-surroundings", data: source.data });
+    return [name, name === "forest" ? alpineCrests(surroundings) : surroundings];
   }),
 );
+
+/**
+ * The fluvial pass alone leaves one smooth 30 degree wall cut by straight, evenly spaced radial
+ * channels: under a 36 degree sun every other channel wall is at grazing light, which read as
+ * vertical light streaks. Ridged crests above 320 m break it into separate peaks with cliffs
+ * (owner goal 2026-11-04: rocky alpine peaks); fbm spurs above 200 m bend the channels. Both masks
+ * are zero below 120 m, so the valley floor, the seam with the playable square and the vista's near
+ * meadow keep their surveyed height.
+ */
+function alpineCrests(terrain) {
+  return terrain
+    .noise({
+      id: "crests",
+      mode: "ridged",
+      amplitude: 170,
+      scale: 1100,
+      octaves: 3,
+      warp: 300,
+      mask: Mask.height(320, 1e9, 200),
+    })
+    .noise({
+      id: "spurs",
+      mode: "fbm",
+      amplitude: 45,
+      scale: 320,
+      octaves: 3,
+      warp: 150,
+      mask: Mask.height(200, 1e9, 80),
+    })
+    .erode({
+      // Droplet erosion above the treeline cuts the gullies and sharp aretes the owner asked for
+      // ("mountain tops textures and heightmaps suck", 2026-11-04); a thermal pass smoothed them and
+      // terraces read as stair steps. 40000 droplets keep curvature kurtosis above 40.
+      id: "gullies",
+      method: "hydraulic",
+      droplets: 40000,
+      mask: Mask.height(380, 1e9, 160),
+    });
+}
 const fingerprint = createHash("sha256")
   .update(
     JSON.stringify(Object.fromEntries(Object.entries(recipes).map(([n, t]) => [n, t.toJSON()]))),

@@ -56,6 +56,11 @@ export function setHorizonSurroundings(distant: HorizonSurroundings): void {
   );
 }
 
+/** One world's installed surroundings, unfiltered, as the bake wrote them. */
+export function horizonSurroundings(name: string): HorizonSurroundings[string] | undefined {
+  return sources[name];
+}
+
 function field(source: HorizonSurroundings[string], heights: Float32Array): Heightfield {
   return new Heightfield({
     rows: source.resolution,

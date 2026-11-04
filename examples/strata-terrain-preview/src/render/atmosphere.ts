@@ -14,6 +14,7 @@ import {
   positionLocal,
   positionWorld,
   pow,
+  select,
   smoothstep,
   vec2,
   vec3,
@@ -106,8 +107,18 @@ export function aerialPerspective(
   const density = low.div(-height).exp().mul(climb);
   // Clear foreground; aerosol weather builds on landscape distances, not prop distances.
   const distanceKm = ray.length().sub(150).max(0).div(1000);
+  // The playable valley keeps its clear air; the alpine fog and the deeper blue build past `reach`.
+  const fog = look.atmosphere.heightFog;
+  const reach = fog ? smoothstep(fog.reach[0], fog.reach[1], ray.length()) : float(0);
   const opticalDistance = distanceKm.mul(
-    density.mul(0.65).add(0.35).mul(look.atmosphere.distanceScale),
+    density
+      .mul(0.65)
+      .add(0.35)
+      .mul(
+        fog
+          ? mix(look.atmosphere.distanceScale, fog.distanceScale, reach)
+          : look.atmosphere.distanceScale,
+      ),
   );
   const zenith = air.sunTransmittance(vec3(0, 1, 0)) as Node<"vec3">;
   // ponytail: the decorative continuation ends at 2.3 km; extend it before increasing this weather cutoff.
@@ -121,17 +132,20 @@ export function aerialPerspective(
     : vec3(1);
   const scattering = skyRadiance(air, direction, sun, look);
   // Local aerosol tint preserves soil-coloured shadows; the remote column is the LUT sky.
-  const localAmount = enabled
-    ? ray
-        .length()
-        .mul(look.haze.density)
-        .mul(climb)
-        .pow(2)
-        .negate()
-        .exp()
-        .oneMinus()
-        .mul(smoothstep(150, 250, ray.length()))
-    : float(0);
+  const valleyHaze = ray
+    .length()
+    .mul(look.haze.density)
+    .mul(climb)
+    .pow(2)
+    .negate()
+    .exp()
+    .oneMinus()
+    .mul(smoothstep(150, 250, ray.length()));
+  const localAmount = !enabled
+    ? float(0)
+    : fog
+      ? mix(valleyHaze, heightFogAmount(fog, eye, direction, ray.length(), surface.y), reach)
+      : valleyHaze;
   const localTint = mix(
     color(look.haze.color),
     color(look.sun.color).mul(1.4),
@@ -139,6 +153,37 @@ export function aerialPerspective(
   );
   const localColour = mix(input.rgb, localTint, localAmount);
   return vec4(localColour.mul(transmission).add(scattering.mul(transmission.oneMinus())), input.a);
+}
+
+/**
+ * Opacity of the height fog between the eye and a surface, with UE's analytic line integral of an
+ * exponential density along the ray (UE 5.8.3: Engine/Shaders/Private/HeightFogCommon.ush:207-214,
+ * start distance :288-305). Linear in distance, unlike the distance-squared haze: a 10% farther
+ * gully is about 10% more hazed, not twice, so spur and gully keep their own shading.
+ */
+function heightFogAmount(
+  fog: NonNullable<IBiome["atmosphere"]["heightFog"]>,
+  eye: Node<"vec3">,
+  direction: Node<"vec3">,
+  length: Node<"float">,
+  surfaceY: Node<"float">,
+): Node<"float"> {
+  const travelled = length.sub(fog.start).max(0);
+  const startY = eye.y.add(direction.y.mul(length.min(fog.start)));
+  const rise = surfaceY.sub(startY);
+  let depth: Node<"float"> = float(0);
+  for (const term of fog.terms) {
+    const x = rise.div(term.scale).clamp(-60, 60);
+    // (1 - e^-x) / x, with its Taylor limit where the ray runs level.
+    const shape = select(
+      x.abs().lessThan(0.001),
+      float(1).sub(x.mul(0.5)),
+      x.negate().exp().oneMinus().div(x),
+    );
+    const atStart = startY.sub(term.height).div(-term.scale).min(60).exp().mul(term.density);
+    depth = depth.add(atStart.mul(shape).mul(travelled));
+  }
+  return depth.negate().exp().oneMinus();
 }
 
 /** The cumulus deck. Every number is this game's weather. */
@@ -164,7 +209,9 @@ const CLOUDS = {
   /** Sunlit crown, shaded underside, and the silver a thin fringe takes when it faces the sun. */
   tint: { lit: 0xf7f8f9, shade: 0xc8d3de, silver: 0xfff2d4 },
   /** How much a dense core is darkened relative to a thin fringe. */
-  core: 0.68,
+  core: 0.55,
+  /** Up share of a puff's side normal: lower is a lumpier, more sculpted body. */
+  relief: 1.2,
   /**
    * The deck's brightness against the physical sky behind it. The sky is in radiance units several
    * times above one, so a cloud written as plain white came out darker than the blue around it —
@@ -211,10 +258,22 @@ export function cloudDome(air: Atmosphere, sun: Node<"vec3">, look: IBiome): Mes
   const shade = skyRadiance(air, normalize(vec3(direction.x, 0.7, direction.z)), sun, look)
     .mul(0.4)
     .add(color(CLOUDS.tint.shade).mul(0.35));
+  // Each puff as a lit body: the field's gradient is the outward normal of its side (the field's
+  // x and z are the world's), so the side that faces the sun is bright and the far side and the
+  // thick base fall into shade, the read a volume integral gives a cumulus at this size.
+  const step = 0.03;
+  const outward = normalize(
+    vec3(
+      puff.sub(mx_fractal_noise_float(field.add(vec3(step, 0, 0)), 4, 2, 0.5)).div(step),
+      float(CLOUDS.relief),
+      puff.sub(mx_fractal_noise_float(field.add(vec3(0, 0, step)), 4, 2, 0.5)).div(step),
+    ),
+  );
+  const sunSide = smoothstep(-0.25, 0.55, dot(outward, sun));
   const lit = mix(
     shade,
     sunlight.mul(color(CLOUDS.tint.lit)),
-    smoothstep(float(0), float(0.55), toSun).max(crown.mul(0.85)),
+    sunSide.mul(crown.mul(0.5).add(0.5)).max(smoothstep(float(0.2), float(0.7), toSun)),
   );
   // The lining: thin coverage facing the sun, and only there.
   const fringe = color(CLOUDS.tint.silver)

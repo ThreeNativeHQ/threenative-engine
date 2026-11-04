@@ -15,8 +15,30 @@ describe("forest backdrop", () => {
 
   it("keeps the real place's relief and a sharp, branching surface", () => {
     expect(stats.relief).toBeGreaterThan(800);
-    expect(stats.relief).toBeLessThan(950);
+    // Owner goal 2026-11-04 (rocky alpine peaks): ridged crests add ~100 m, so 950 became 1050.
+    expect(stats.relief).toBeLessThan(1050);
     expect(stats.curvatureKurtosis).toBeGreaterThan(40);
+  });
+
+  it("breaks the massif into peaks with cliff faces, not one 30 degree wall", () => {
+    // The fluvial pass alone left one smooth wall: 6% of the collar steeper than 40 degrees and a
+    // 34 degree 90th percentile, cut by straight radial channels that read as vertical streaks.
+    const n = forest.resolution;
+    const cell = forest.size / (n - 1);
+    let collar = 0;
+    let cliffs = 0;
+    for (let row = 1; row < n - 1; row++)
+      for (let column = 1; column < n - 1; column++) {
+        const reach = Math.max(Math.abs(column / (n - 1) - 0.5), Math.abs(row / (n - 1) - 0.5));
+        if (reach * forest.size <= 256 || reach * forest.size > 2356) continue;
+        const at = (r: number, c: number) => forest.heights[r * n + c] as number;
+        const dx = (at(row, column + 1) - at(row, column - 1)) / (2 * cell);
+        const dz = (at(row + 1, column) - at(row - 1, column)) / (2 * cell);
+        collar++;
+        if (Math.atan(Math.hypot(dx, dz)) > (40 * Math.PI) / 180) cliffs++;
+      }
+    expect(cliffs / collar).toBeGreaterThan(0.15);
+    expect(stats.slopeP90).toBeGreaterThan(42);
   });
 
   it("keeps snow to the peaks instead of every saddle", () => {
