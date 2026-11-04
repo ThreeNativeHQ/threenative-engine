@@ -443,8 +443,16 @@ void PageAtlas::writeTable() {
         const auto& level = levels_[l];
         float* out = table_.data() + l * 36;
         for (int i = 0; i < 16; ++i) out[i] = float(level.matrix.elements[i]);
-        out[16] = float((level.window.minX + mapSize(l) / 2.0) * level.window.pageWorldSize);
-        out[17] = float((level.window.minY + mapSize(l) / 2.0) * level.window.pageWorldSize);
+        // The shader selects this level around the followed centre, as UE 5.8.3 picks a clipmap level from the
+        // receiver's distance to the unsnapped view origin (Engine/Shaders/Private/VirtualShadowMaps/
+        // VirtualShadowMapProjectionCommon.ush:41-77). Selecting around the snapped window moved the level edge by a
+        // whole refresh step at once, and a tree on it turned from lit to self-shadowed in one frame. The guard keeps
+        // that step free, so the centre is clamped to it and every selected receiver stays on this level's pages.
+        const double reach = refreshStep(l) * options_.clipExtents[l];
+        const double windowU = (level.window.minX + mapSize(l) / 2.0) * level.window.pageWorldSize;
+        const double windowV = (level.window.minY + mapSize(l) / 2.0) * level.window.pageWorldSize;
+        out[16] = float(std::clamp(clipmap_->center().u, windowU - reach, windowU + reach));
+        out[17] = float(std::clamp(clipmap_->center().v, windowV - reach, windowV + reach));
         out[18] = float(options_.clipExtents[l]); out[19] = float(at(options_.selectionGuard, l) - at(options_.refreshStep, l));
         // The V row is the axis whose dot product is `v`: the unit V over the window's height ratio, so the
         // shader's window distance reads pages along the height. Its length is 1 / vScale.

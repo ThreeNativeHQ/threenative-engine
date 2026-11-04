@@ -554,6 +554,7 @@ target_include_directories(tn-native-engine-vsm-test PRIVATE ${CMAKE_CURRENT_SOU
 tn_native_engine_test(tn-native-engine-vsm-atlas-test tests/native-engine/vsm/vsm_atlas_test.cpp
     native_engine_vsm_atlas=atlas
     native_engine_vsm_initialized=initialized
+    native_engine_vsm_selection_follows_centre=selection_follows_centre
     native_engine_vsm_pan_keeps_pages=pan_keeps_pages
     native_engine_vsm_continuous_invalidation=continuous_invalidation
     native_engine_vsm_sampling=sampling

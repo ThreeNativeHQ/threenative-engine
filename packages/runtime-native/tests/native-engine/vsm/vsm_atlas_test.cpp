@@ -689,6 +689,26 @@ void tiltedPanKeepsPages() {
     waste::setDebugEnabled(false);
 }
 
+// A level is selected around the followed centre, not its snapped window: a window steps by `refreshStep`, and
+// selecting around it moved the level edge across a whole tree in one frame (lit, then self-shadowed).
+void selectionFollowsCentre() {
+    std::string error;
+    AtlasOptions options;
+    options.clipExtents = {8, 24}; options.mapSize = 256; options.pageTexels = 64;
+    auto atlas = PageAtlas::create(options, error);
+    CHECK(atlas.has_value()); if (!atlas) return;
+    const Vector3 sun(0, 1, 0);
+    for (int frame = 0; frame < 3; ++frame) atlas->update(Vector3(0, 0, 0), sun);
+    // Half a metre is under level 0's one-metre step: no level re-renders, and the selection centre follows.
+    const Vector3 eye(0.5, 0, 0.25);
+    CHECK(atlas->update(eye, sun).empty());
+    const auto centre = atlas->clipmap().project(eye);
+    for (int level = 0; level < 2; ++level) {
+        CHECK(std::abs(atlas->table()[level * 36 + 16] - centre.u) < 1e-4);
+        CHECK(std::abs(atlas->table()[level * 36 + 17] - centre.v) < 1e-4);
+    }
+}
+
 void panKeepsPages() {
     std::string error;
     AtlasOptions options;
@@ -895,4 +915,4 @@ void focusPoint() {
     CHECK(refused);
 }
 
-TN_TEST_MAIN({"focus_point", focusPoint}, {"atlas", atlas}, {"initialized", initialized}, {"pan_keeps_pages", panKeepsPages}, {"tilted_pan_keeps_pages", tiltedPanKeepsPages}, {"refresh_reasons", refreshReasons}, {"packing", packing}, {"map_sizes", mapSizes}, {"continuous_invalidation", continuousInvalidation}, {"sampling", sampling}, {"ground_window", groundWindow}, {"lod_rung", lodRung})
+TN_TEST_MAIN({"focus_point", focusPoint}, {"atlas", atlas}, {"initialized", initialized}, {"selection_follows_centre", selectionFollowsCentre}, {"pan_keeps_pages", panKeepsPages}, {"tilted_pan_keeps_pages", tiltedPanKeepsPages}, {"refresh_reasons", refreshReasons}, {"packing", packing}, {"map_sizes", mapSizes}, {"continuous_invalidation", continuousInvalidation}, {"sampling", sampling}, {"ground_window", groundWindow}, {"lod_rung", lodRung})

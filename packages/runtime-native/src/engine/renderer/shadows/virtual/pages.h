@@ -223,6 +223,8 @@ class DirectionalClipmap {
     [[nodiscard]] double vScale() const { return vScale_; }
 
     [[nodiscard]] LightSpacePoint project(const Vector3& worldPoint) const;
+    /** The followed centre the windows were last snapped around, unsnapped (`updateCenter`'s point, projected). */
+    [[nodiscard]] const LightSpacePoint& center() const { return centerLight_; }
 
     /** Re-snaps every level's window around `worldPoint`; returns the current windows. */
     const std::vector<ClipWindow>& updateCenter(const Vector3& worldPoint, bool pan = false);
