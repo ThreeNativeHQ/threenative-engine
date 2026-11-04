@@ -176,6 +176,12 @@ describe("core constraints", () => {
           // ShadowNode; it creates no material, light, colour or filter of its own.
           file !== "render/virtual-shadow.ts" &&
           file !== "render/virtual-shadow-pages.ts" &&
+          // PRD-802 moved the node's option vocabulary and its marker parser out of the file above
+          // without adding any appearance decision. The only matches here are prose and an option
+          // NAME — "the light's own", `lightDistance`, "spot and point light maps" — not a material,
+          // a light or a tone curve. The assertions below keep it that way.
+          file !== "render/virtual-shadow-options.ts" &&
+          file !== "render/virtual-shadow-markers.ts" &&
           // The partial redraw resets a shadow rectangle with one internal quad that writes the stock
           // clear's far depth and transparent black into the shadow map. That material never reaches
           // the screen, copies nothing from the game and chooses no look.
