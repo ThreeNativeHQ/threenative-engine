@@ -3,6 +3,7 @@
 #include "pages.h"
 #include <cmath>
 #include <memory>
+#include <optional>
 #include "engine/foundation/math/Matrix.h"
 
 namespace tn::engine { class BufferGeometry; }
@@ -36,6 +37,8 @@ struct AtlasControl {
     /** Casters whose LOD chain arrived or left since the last frame: only their own pages redraw. */
     std::set<uint64_t> lodChanged;
     bool invalidateAll = false;
+    /** The point the clip windows centre on in place of the eye (UE 5.8.3 view target); unset follows the eye. */
+    std::optional<Vector3> focus;
 };
 struct AtlasOptions {
     std::shared_ptr<AtlasControl> control = std::make_shared<AtlasControl>();

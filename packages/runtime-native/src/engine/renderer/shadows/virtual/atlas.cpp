@@ -130,7 +130,10 @@ void PageAtlas::pageRange(int level, const Box3& bounds, int& x0, int& x1, int& 
     if (x1 < x0 || y1 < y0) { x0 = y0 = 1; x1 = y1 = 0; }
 }
 
-std::vector<AtlasPage> PageAtlas::update(const Vector3& eye, const Vector3& towards, bool cameraCut, const std::vector<Box3>& casters, double deltaSeconds) {
+std::vector<AtlasPage> PageAtlas::update(const Vector3& viewEye, const Vector3& towards, bool cameraCut, const std::vector<Box3>& casters, double deltaSeconds) {
+    // A declared focus (a third-person hero) centres every window; the eye then orbits it without a pan, a level
+    // pick or a redraw changing. UE 5.8.3: VirtualShadowMapClipmap.cpp:256-295 moves the WorldOrigin to the view target.
+    const Vector3 eye = options_.control->focus.value_or(viewEye);
     Vector3 direction = towards;
     direction.normalize();
     // A cut requests fresh windows, but deferred levels retain their rendered matrices/pages,

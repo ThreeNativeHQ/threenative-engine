@@ -832,4 +832,67 @@ void initialized() {
     CHECK(atlas->initialized());
 }
 
-TN_TEST_MAIN({"atlas", atlas}, {"initialized", initialized}, {"pan_keeps_pages", panKeepsPages}, {"tilted_pan_keeps_pages", tiltedPanKeepsPages}, {"refresh_reasons", refreshReasons}, {"packing", packing}, {"map_sizes", mapSizes}, {"continuous_invalidation", continuousInvalidation}, {"sampling", sampling}, {"ground_window", groundWindow}, {"lod_rung", lodRung})
+
+// A declared focus (UE 5.8.3: VirtualShadowMapClipmap.cpp:256-295 moves the clipmap WorldOrigin to the view target)
+// owns the clip windows, so an eye that orbits it, as a third-person camera does, pans and redraws nothing.
+void focusPoint() {
+    std::string error;
+    AtlasOptions options;
+    options.clipExtents = {8, 24, 48}; options.mapSize = 256; options.pageTexels = 64;
+    options.adaptiveRefresh = false; options.adaptiveCasterGate = false;
+    const Vector3 sun(0, 1, 0);
+    auto warm = [&](PageAtlas& atlas) { for (int grant = 0; grant < 3; ++grant) atlas.update(Vector3(0, 0, 0), sun); };
+    // Without a focus the window follows the eye: a 12 m step redraws.
+    auto eyeFollowing = PageAtlas::create(options, error);
+    CHECK(eyeFollowing.has_value()); if (!eyeFollowing) return;
+    warm(*eyeFollowing);
+    CHECK(eyeFollowing->update(Vector3(0, 0, 0), sun).empty());
+    CHECK(!eyeFollowing->update(Vector3(12, 0, 0), sun).empty());
+    // With one, the eye can walk a full orbit (radius 12 m) and every update is served from the cache.
+    options.control->focus = Vector3(0, 0, 0);
+    auto focused = PageAtlas::create(options, error);
+    CHECK(focused.has_value()); if (!focused) return;
+    warm(*focused);
+    const auto held = focused->table();
+    for (int step = 0; step < 36; ++step) {
+        const double angle = step * 3.14159265358979 / 18;
+        CHECK(focused->update(Vector3(12 * std::cos(angle), 0, 12 * std::sin(angle)), sun).empty());
+    }
+    CHECK(focused->table() == held);
+    // The focus moving is what moves the windows.
+    options.control->focus = Vector3(12, 0, 0);
+    CHECK(!focused->update(Vector3(0, 0, 0), sun).empty());
+    // Clearing it hands the windows back to the eye.
+    options.control->focus.reset();
+    for (int grant = 0; grant < 3; ++grant) focused->update(Vector3(0, 0, 0), sun);
+    CHECK(focused->update(Vector3(0, 0, 0), sun).empty());
+    // The command that carries it: three numbers sets it, an empty list clears it, a short list throws.
+    struct EmptyStore : tn::binding::Store {
+        tn::binding::Object* find(const tn::binding::Value&) override { return nullptr; }
+        tn::binding::Value adopt(std::string, std::shared_ptr<void>) override { return {}; }
+        tn::binding::Value adoptAlias(std::string, void*, void*) override { return {}; }
+        tn::binding::Value share(std::string, std::shared_ptr<void>) override { return {}; }
+        std::vector<double> numbers(const tn::binding::Value&) override { return {}; }
+    } store;
+    using tn::binding::Value;
+    tn::binding::Registry registry;
+    registerMaterialBindings(registry);
+    const auto& set = registry.at("DirectionalLightShadow").setters.at("shadowNode");
+    DirectionalLight light;
+    set(&light.shadow, Value::record({{"clipExtents", Value::list({8, 24})}, {"mapSize", Value::of(256.0)},
+        {"lightDistance", Value::of(20.0)}, {"depthRange", Value::of(40.0)}}), store);
+    CHECK(light.shadow.virtualShadow != nullptr); if (!light.shadow.virtualShadow) return;
+    const auto control = light.shadow.virtualShadow->control;
+    auto command = [&](std::vector<double> at) {
+        set(&light.shadow, Value::record({{"command", Value{Value::Kind::String, 0, "focus"}}, {"at", Value::list(std::move(at))}}), store);
+    };
+    command({1, 2, 3});
+    CHECK(control->focus && control->focus->x == 1 && control->focus->y == 2 && control->focus->z == 3);
+    command({});
+    CHECK(!control->focus);
+    bool refused = false;
+    try { command({1, 2}); } catch (const tn::binding::Unsupported&) { refused = true; }
+    CHECK(refused);
+}
+
+TN_TEST_MAIN({"focus_point", focusPoint}, {"atlas", atlas}, {"initialized", initialized}, {"pan_keeps_pages", panKeepsPages}, {"tilted_pan_keeps_pages", tiltedPanKeepsPages}, {"refresh_reasons", refreshReasons}, {"packing", packing}, {"map_sizes", mapSizes}, {"continuous_invalidation", continuousInvalidation}, {"sampling", sampling}, {"ground_window", groundWindow}, {"lod_rung", lodRung})

@@ -958,11 +958,13 @@ interface ICommandSlot {
  * @situation shadow map too coarse over a big terrain
  * @situation one directional light shadow for a whole open world
  * @situation shadows shimmer when the camera moves
+ * @situation shadow edges, tree lighting or level sharpness change while a third-person camera turns around its hero
  * @constraint the light must be a DirectionalLight with `castShadow` and a target in the scene
  * @constraint clipExtents are half-widths in world units, finest first, strictly increasing
  * @constraint movers sort themselves: a layer-0 caster whose world matrix, instance matrix or deformation changed draws through the mover maps and leaves the cached levels, and returns to them after `staticAfterFrames` quiet frames; the cache redraws only the region it left
  * @constraint `trackCaster(object)` is the override that pins an object as a mover for good (it enables layer `VIRTUAL_SHADOW_MOVER_LAYER` on the object and its descendants), and `pinStatic(object)` opts an object out of detection; tracking or untracking refreshes only that object's region
  * @override bias, biasNode, normalBias, intensity, radius, blurSamples, mapType and filterNode stay on `light.shadow`; mapSize and the other options here have defaults
+ * @override setFocus(point) centres every window on a subject (a third-person hero) instead of the eye, so an orbiting eye moves no shadow; setFocus(undefined) hands them back
  * @override followViewFocus: false keeps eye follow; receiverPlaneBias: false uses only authored bias
  * @override minWindowAspect: below 1, a level is as high as `sin(sun elevation)` times its width, never under this, so a low sun's floor shadows keep the texel density of a high sun's; the default 1 keeps square levels
  * @example
@@ -1048,6 +1050,8 @@ export class VirtualShadowNode extends ShadowBaseNode {
   #autoTransitions = 0;
   #autoScanTotalMs = 0;
   #moverLayerStates = new Map<Object3D, { originallyEnabled: boolean; references: number }>();
+  /** The declared subject every window centres on, if any; see {@link setFocus}. */
+  #focus: Vector3 | undefined;
   #centerU: UniformNode<"float", number> = uniform(0).setGroup(renderGroup);
   #centerV: UniformNode<"float", number> = uniform(0).setGroup(renderGroup);
   #moversActive: UniformNode<"float", number> = uniform(0).setGroup(renderGroup);
@@ -1548,6 +1552,29 @@ export class VirtualShadowNode extends ShadowBaseNode {
       max: { x: bounds.max.x, y: bounds.max.y, z: bounds.max.z },
       min: { x: bounds.min.x, y: bounds.min.y, z: bounds.min.z },
     });
+  }
+
+  /**
+   * Centre every clip window on `point` instead of the camera's eye, or on the eye again with
+   * `undefined`. The point is the view's subject: a third-person hero, an orbit pivot. Level
+   * selection, blend bands and window pans then depend on the subject alone, so a camera that turns
+   * around it (its eye travels the arm's whole circle) moves no shadow edge and re-renders no page.
+   * Unreal does the same for a view target (UE 5.8.3: VirtualShadowMapClipmap.cpp:256-295 moves the
+   * clipmap WorldOrigin onto it). Call it whenever the subject moves; an unchanged point costs one
+   * comparison. The point is copied, so a live `position` can be passed every frame.
+   */
+  setFocus(point: IVector3Like | undefined): void {
+    const same =
+      point === undefined
+        ? this.#focus === undefined
+        : this.#focus?.x === point.x && this.#focus.y === point.y && this.#focus.z === point.z;
+    if (same) return;
+    // A walking hero moves the focus every frame: reuse the vector, no garbage per frame.
+    this.#focus =
+      point === undefined
+        ? undefined
+        : (this.#focus ?? new Vector3()).set(point.x, point.y, point.z);
+    this.#nativeCommand("focus", { at: point === undefined ? [] : [point.x, point.y, point.z] });
   }
 
   /**
@@ -2970,6 +2997,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
 
   /** Aerial windows follow the forward ray's received surface, without changing walking follow. */
   #viewFocus(camera: Camera, eye: Vector3): Vector3 {
+    if (this.#focus !== undefined) return _focus.copy(this.#focus);
     _focus.copy(eye);
     if (!this.options.followViewFocus) return _focus;
     camera.getWorldDirection(_forward);

@@ -104,6 +104,12 @@ export interface IOutdoorSky {
   /** The sun's x in the sun's own metres: what the `L` key swings and the playtest reads. */
   readonly sunX: number;
   setSunX(x: number): void;
+  /**
+   * Centre the sun's shadow levels, and the fade of the outer one, on the player instead of the camera
+   * (`undefined` hands them back). The orbit camera's eye travels a 9 m arm when it turns; windows, level
+   * picks and the fade centred on the eye moved shadow edges with it. Call it each frame with the player.
+   */
+  focusShadows(point: Vector3 | undefined): void;
 }
 
 /** Shared daylight plumbing with game-owned LUT sky, clouds and surface air. */
@@ -165,6 +171,9 @@ export function createOutdoorSky(
       ? {}
       : { lightDistance: 2 * outerExtent, depthRange: 4 * outerExtent }),
   });
+  // The fade is centred where the windows are: the eye, or the player once `focusShadows` names it.
+  const focusAt = uniform(new Vector3());
+  const focusOn = uniform(0);
   // Fade the outer cascade before its cached window ends, including its refresh trail.
   const shadowSetup = shadows.setup.bind(shadows);
   shadows.setup = (builder) => {
@@ -172,7 +181,7 @@ export function createOutdoorSky(
     if (!value) return value;
     const right = normalize(SUN_VECTOR.cross(vec3(0, 1, 0)));
     const up = normalize(right.cross(SUN_VECTOR));
-    const offset = positionWorld.sub(cameraPosition);
+    const offset = positionWorld.sub(mix(cameraPosition, focusAt, focusOn));
     const distance = max(abs(dot(offset, right)), abs(dot(offset, up)));
     const extent = rig.shadowExtents[rig.shadowExtents.length - 1] ?? 320;
     return mix(
@@ -236,6 +245,11 @@ export function createOutdoorSky(
     },
     setSunX,
     sun,
+    focusShadows(point: Vector3 | undefined) {
+      shadows.setFocus(point);
+      if (point !== undefined) focusAt.value.copy(point);
+      focusOn.value = point === undefined ? 0 : 1;
+    },
   };
 }
 

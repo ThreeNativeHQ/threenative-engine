@@ -406,6 +406,16 @@ void registerLightShadow(ClassBinding& b, bool spot) {
             if (command->second.kind != Value::Kind::String) throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: command"};
             const std::string& name = command->second.text;
             if (name == "invalidateAll") { control.invalidateAll = true; return; }
+            if (name == "focus") {
+                // Three numbers set the point every clip window centres on, an empty list hands it back to the eye.
+                const auto at = std::find_if(value.fields.begin(), value.fields.end(), [](const auto& f) { return f.first == "at"; });
+                const auto point = at == value.fields.end() ? std::vector<double>{0} : numbersOf(at->second);
+                if ((point.size() != 0 && point.size() != 3) ||
+                    std::any_of(point.begin(), point.end(), [](double n) { return !std::isfinite(n); }))
+                    throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: focus"};
+                if (point.empty()) control.focus.reset(); else control.focus = Vector3(point[0], point[1], point[2]);
+                return;
+            }
             if (name == "lod") {
                 const Value* idValue = nullptr; const Value* geometriesValue = nullptr; const Value* errorsValue = nullptr;
                 for (const auto& [key, v] : value.fields) {

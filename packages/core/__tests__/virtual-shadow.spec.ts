@@ -1066,6 +1066,38 @@ describe("VirtualShadowNode", () => {
     expect(node.stats).toMatchObject({ moved: 1, rendered: 1 });
   });
 
+  it("should centre every window on a declared focus, so an eye orbiting it re-renders nothing", () => {
+    const { camera, light } = world();
+    const node = setupNode(light, { clipExtents: [8, 32], mapSize: 64 });
+    const command = vi.fn();
+    (node as unknown as Record<symbol, unknown>)[Symbol.for("threenative.virtualShadowCommand")] =
+      command;
+    // The hero at the origin; the camera orbits it at 12 m, as a third-person arm does.
+    node.setFocus(new Vector3(0, 0, 0));
+    expect(command).toHaveBeenLastCalledWith({ command: "focus", at: [0, 0, 0] });
+    camera.position.set(12, 5, 0);
+    settle(node, camera);
+    expect(node.clipmap.centerWorld).toEqual({ x: 0, y: 0, z: 0 });
+    for (let step = 0; step < 36; step += 1) {
+      const angle = (step * Math.PI) / 18;
+      camera.position.set(12 * Math.cos(angle), 5, 12 * Math.sin(angle));
+      node.updateBefore(frameFor(camera));
+      expect(node.stats).toMatchObject({ moved: 0, rendered: 0 });
+    }
+    // The focus moving is what moves the windows; clearing it hands them back to the eye.
+    node.setFocus(new Vector3(20, 0, 0));
+    node.updateBefore(frameFor(camera));
+    expect(node.stats.moved).toBeGreaterThan(0);
+    node.setFocus(undefined);
+    expect(command).toHaveBeenLastCalledWith({ command: "focus", at: [] });
+    node.updateBefore(frameFor(camera));
+    expect(node.clipmap.centerWorld).toEqual({
+      x: camera.position.x,
+      y: camera.position.y,
+      z: camera.position.z,
+    });
+  });
+
   it("should keep stationary windows cached when their refresh steps change", () => {
     const { camera, light } = world();
     const node = setupNode(light, {
