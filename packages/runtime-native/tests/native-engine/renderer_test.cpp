@@ -331,6 +331,7 @@ void traaValidation() {
         renderer.setOutput(OutputState{});
         renderer.setRenderScale(0.5f);
         CHECK(!renderer.temporalUpscale());
+        CHECK(renderer.viewMipBias() == 0);  // no temporal pass: Unreal biases only an upscaled view
         CHECK(renderer.inputWidth() == 32 && renderer.inputHeight() == 24);
         for (const float scale : {0.24f, 1.01f, std::nanf("")}) {
             bool invalidScale = false;
@@ -356,6 +357,16 @@ void traaValidation() {
         item.matrixWorld[12] += 0.01;
         renderer.render(items, camera, LightState{}, {0.1, 0.2, 0.3, 0.5});
         renderer.cutHistory();
+        renderer.render(items, camera, LightState{}, {0.1, 0.2, 0.3, 0.5});
+        // PRD-539 lever 7, Unreal's view mip bias: -log2(1 / fraction) - 0.3, at least -2, ceiled to 1/128.
+        CHECK(renderer.viewMipBias() == std::ceil((-1.0 - 0.3) * 128) / 128);  // 0.5
+        renderer.setRenderScale(1.0f);
+        renderer.render(items, camera, LightState{}, {0.1, 0.2, 0.3, 0.5});
+        CHECK(renderer.viewMipBias() == std::ceil(-0.3 * 128) / 128);  // TSR at 100% still biases
+        renderer.setRenderScale(0.25f);
+        renderer.render(items, camera, LightState{}, {0.1, 0.2, 0.3, 0.5});
+        CHECK(renderer.viewMipBias() == -2.0);  // -2.3 held at r.ViewTextureMipBias.Min
+        renderer.setRenderScale(0.5f);
         renderer.render(items, camera, LightState{}, {0.1, 0.2, 0.3, 0.5});
         renderer.setSize(16, 12);
         CHECK(renderer.inputWidth() == 8 && renderer.inputHeight() == 6);

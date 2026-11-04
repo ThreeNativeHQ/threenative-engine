@@ -868,6 +868,10 @@ async function runBrowser(test, bundlePath, result, port, broker, captureRoot) {
       page.on("console", (message) => {
         if (message.text().startsWith("TN_WORLD_GPU_")) worldProofOutput.push(message.text());
       });
+    let routeDetail;
+    page.on("console", (message) => {
+      if (message.text().startsWith("TN_ROUTE_DETAIL ")) routeDetail = JSON.parse(message.text().slice(16));
+    });
     const completion = broker.wait(test.id, Number(process.env.TN_BROWSER_TIMEOUT_MS || 90_000));
     broker.capture(test.id, async (frameLabel) => {
       const screenshot = join(captureRoot, `${test.id}${frameLabel ? `-${frameLabel}` : ""}.png`);
@@ -978,6 +982,7 @@ async function runBrowser(test, bundlePath, result, port, broker, captureRoot) {
       result.browser.error = error instanceof Error ? error.message : String(error);
     }
     if (pageErrors.length > 0) result.status = "fail";
+    if (routeDetail !== undefined) result.browser.routeDetail = routeDetail;
     if (test.id === "world-gpu-scene-readback") {
       result.browser.worldProof = validateWorldGpuReadbackOutput(worldProofOutput.join("\n"));
       if (result.browser.worldProof.errors.length > 0) result.status = "fail";

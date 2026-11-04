@@ -31,6 +31,11 @@
       "name": "fog",
       "owner": "PRD-643",
       "poses": ["fog", "fog-corner"]
+    },
+    {
+      "name": "fence",
+      "owner": "PRD-539",
+      "poses": ["fence"]
     }
   ],
   "variants": [
