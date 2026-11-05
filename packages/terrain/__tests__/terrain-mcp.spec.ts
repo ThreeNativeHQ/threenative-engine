@@ -78,10 +78,28 @@ describe("terrain_generate input", () => {
     expect(parseGenerateInput({ request: "beach forest" })).toEqual({ kit: "forest" });
   });
 
-  it("rejects unmatched requests with the available recipes", () => {
-    expect(() => parseGenerateInput({ request: "castle" })).toThrow(
-      /forest, coastal, alpine, desert, tundra/,
-    );
+  it("rejects unmatched requests with every biome and the words it answers to", () => {
+    let message = "";
+    try {
+      parseGenerateInput({ request: "castle" });
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    expect(message).toContain("request 'castle' matches no biome");
+    // The aliases, not just the five kit names: a caller retries with a word, not with a folder.
+    for (const word of [
+      "forest",
+      "pine",
+      "coastal",
+      "sea",
+      "alpine",
+      "snowy",
+      "desert",
+      "sand",
+      "tundra",
+      "ice",
+    ])
+      expect(message).toContain(word);
     for (const request of [null, 1, "", "   "]) {
       expect(() => parseGenerateInput({ request, kit: "forest" })).toThrow(/request/);
     }
@@ -942,4 +960,59 @@ describe("terrain_generate overrides", () => {
       await remove();
     }
   }, 120_000);
+});
+
+// PRD-793 AC-1: every landform cooks under every shipped biome. The kit supplies the surface, the
+// assets and the biome file; the preset supplies the ground, so the pair needs no new starter.
+const LANDFORMS_IN_MATRIX = [
+  "alpine",
+  "temperateMountains",
+  "rollingHills",
+  "desertMesa",
+  "coastalCliffs",
+  "tundra",
+  "volcanic",
+] as const;
+const BIOME_MATRIX = TERRAIN_KITS.flatMap((kit) =>
+  LANDFORMS_IN_MATRIX.map((landform) => ({ kit, landform })),
+);
+
+describe("every landform under every biome", () => {
+  it.each(BIOME_MATRIX)(
+    "cooks $landform under $kit",
+    async ({ kit, landform }) => {
+      const project = await realpath(await makeTempDir("tn-terrain-matrix-"));
+      try {
+        await mkdir(join(project, "node_modules", "@threenative"), { recursive: true });
+        await symlink(
+          new URL("../../assets/", import.meta.url).pathname,
+          join(project, "node_modules", "@threenative", "assets"),
+        );
+        await writeFile(
+          join(project, "threenative.config.ts"),
+          'export default { assets: { source: "assets" } };',
+        );
+        const out = join(project, "assets", "worlds", `${kit}-${landform}`);
+        const result = JSON.parse(await cookKit({ kit, landform, out, projectRoot: project }));
+        const manifest = JSON.parse(await readFile(join(project, result.worldPackage), "utf8"));
+        expect(result.biome).toBe(kit);
+        expect(result.triangles).toBeGreaterThan(0);
+        expect(result.draws).toBeGreaterThan(0);
+        expect(manifest.extent.sizeX).toBe(manifest.extent.sizeZ);
+        // A landform preset authors the ground and no scatter rules, so this cook carries terrain and
+        // no props: the biome's foliage reaching a preset is PRD-792's spec-driven scatter, still open.
+        // The assertion flips the day that lands.
+        expect(result.instances).toBe(0);
+        expect(manifest.cells).toEqual([]);
+        // The preset's own chain: a starter heightmap crop is what `landform` replaces.
+        const recipe = JSON.parse(await readFile(join(project, result.recipeJson), "utf8"));
+        expect(recipe.layers.some((entry: { type: string }) => entry.type === "heightmap")).toBe(
+          false,
+        );
+      } finally {
+        await rm(project, { recursive: true, force: true });
+      }
+    },
+    180_000,
+  );
 });

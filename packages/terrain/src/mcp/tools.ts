@@ -1,15 +1,14 @@
 import { lstat, readdir, realpath } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { BIOME_WORD_ROWS, biomeWordList } from "../core/biome-words.js";
+import { TERRAIN_KITS, type TerrainKit } from "../core/kits.js";
 import { OPERATION_TYPES } from "../core/operations.js";
 import { LANDFORMS, type LandformKind } from "../core/presets.js";
 import { Terrain } from "../core/terrain.js";
 import type { LayerPatch, PatchCommand } from "../core/terrain.js";
 import type { ITerrainDocument, Layer } from "../core/types.js";
 
-/** The starter kits, one folder each under the package's `starter/`. */
-export const TERRAIN_KITS = ["forest", "coastal", "alpine", "desert", "tundra"] as const;
-
-export type TerrainKit = (typeof TERRAIN_KITS)[number];
+export { TERRAIN_KITS, type TerrainKit } from "../core/kits.js";
 
 export interface IGenerateInput {
   kit: TerrainKit;
@@ -100,19 +99,20 @@ export function parseGenerateInput(input: unknown): IGenerateInput {
     throw new TypeError("terrain_generate: request must be a non-empty string.");
   }
   const words = typeof request === "string" ? request.toLowerCase().split(/[^a-z]+/u) : [];
-  const synonyms = [
-    ["forest", "pine", "pines", "woods", "woodland"],
-    ["coastal", "beach", "coast", "sea", "ocean"],
-    ["alpine", "mountain", "mountains", "snowy", "peaks"],
-    ["desert", "dune", "dunes", "sand"],
-    ["tundra", "arctic", "ice"],
-  ];
   const kit =
     args.kit !== undefined
       ? args.kit
-      : TERRAIN_KITS[synonyms.findIndex((names) => names.some((name) => words.includes(name)))];
+      : TERRAIN_KITS[
+          BIOME_WORD_ROWS.findIndex(([, names]) => names.some((name) => words.includes(name)))
+        ];
   if (typeof kit !== "string" || !(TERRAIN_KITS as readonly string[]).includes(kit)) {
-    throw new TypeError(`terrain_generate: kit must be one of ${TERRAIN_KITS.join(", ")}.`);
+    // A request that matched nothing names what it could have matched, so the caller can retry
+    // without guessing: every biome and the words it answers to, never a silent default.
+    throw new TypeError(
+      request === undefined
+        ? `terrain_generate: kit must be one of ${TERRAIN_KITS.join(", ")}.`
+        : `terrain_generate: request '${request}' matches no biome. Try one of: ${biomeWordList()}.`,
+    );
   }
   const parsed: IGenerateInput = { kit: kit as TerrainKit };
   if (args.landform !== undefined) {
