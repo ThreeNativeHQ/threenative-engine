@@ -877,6 +877,10 @@ describe("template contracts", () => {
       "engine_capability_detail",
     ])
       expect(discovery, tool).toContain(tool);
+    // A card states the numbers, never the arc: the route has to say how to watch the mechanic.
+    expect(discovery).toContain("watch.mjs");
+    expect(discovery).toContain("--frames");
+    expect(discovery).toContain("gameplay frames unavailable");
     expect(fresh).toContain("threenative-reverse-engineer");
     expect(fresh).toContain("engine_capabilities");
   });

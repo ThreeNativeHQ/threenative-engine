@@ -31,6 +31,15 @@ including explicit `none` with a reason; a blank discovery result blocks plan ap
    matches, and record pinned sources and feel rules. For Tier-2 matches, read the pinned repo
    and use `engine_save_reference` for the nodes/cards actually walked; unavailable references
    remain `none: references unavailable`, not fabricated matches.
+   A card states the numbers, never the arc. When the plan turns on how a mechanic looks moving
+   (jump arc, parry window, camera lag, hit reaction), watch a reference instead of inventing
+   the motion: `curl -fsSL https://raw.githubusercontent.com/ThreeNativeHQ/threenative-reverse-engineer-mcp/main/scripts/watch.mjs -o /tmp/tn-watch.mjs`
+   then `node /tmp/tn-watch.mjs "<game> <mechanic>" --duration 20 --frames 6`. It prints a
+   `sheet.jpg` holding every frame in order; read it, then aim with `--pick`, `--from NN%` and
+   `--at` when the first sheet is a menu instead of gameplay. Needs `yt-dlp` and `ffmpeg`.
+   Record the sheet path and the frame times with the references. Frames are study material, not
+   game assets: commit none of them, and cite a mechanic from pinned `file:line`, never from a
+   video. No network or no tools: record `none: gameplay frames unavailable`.
    PLUS engine_capabilities built-in discovery, served by that same MCP: call
    `engine_search_capabilities` with `scope: "request"` for the complete mechanically explicit
    request, then `scope: "mechanic"` per mechanic; inspect hits with `engine_capability_detail`.
