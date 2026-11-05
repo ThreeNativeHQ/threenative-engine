@@ -1150,3 +1150,66 @@ it("switches real fallback spruce and sapling batches into authored far levels a
     material.dispose();
   }
 });
+
+it("draws a culled prop again once its record moves it inside its draw reach, with no camera move", async () => {
+  const material = new MeshBasicMaterial();
+  const geometry = new BoxGeometry(1, 1, 1);
+  const parts = new Map([
+    ["riverrock:0", [{ geometry, material, role: "stone" as const, variant: 0 }]],
+  ]);
+  const base = [0, 20, 200].map((x, index) => ({
+    asset: "riverrock",
+    id: `rock:${index}`,
+    layer: "test",
+    position: [x, 0, 0],
+    normal: [0, 1, 0],
+    alignToNormal: false,
+    rotation: 0,
+    scale: 1,
+  })) as IPlacement[];
+  const draw = async (placements: IPlacement[]) => {
+    const streamed = await streamProps({
+      placements,
+      groundAt: () => ({ height: 0, offset: 0 }),
+      parts,
+      materials: { stone: material } as never,
+      follow: { position: new Vector3() },
+      size: 512,
+      whileCurrent: () => true,
+    });
+    assert(streamed);
+    for (let frame = 0; frame < 200; frame++) {
+      for (const world of streamed.worlds) world.update();
+      await Promise.resolve();
+    }
+    return streamed;
+  };
+  const count = (streamed: Awaited<ReturnType<typeof draw>>) =>
+    streamed.meshes.reduce((n, mesh) => n + mesh.count, 0);
+  const still = await draw(base);
+  const moved = await draw(
+    base.map((placement) =>
+      placement.id === "rock:2"
+        ? {
+            ...placement,
+            transform: {
+              position: [15, 0, 0],
+              quaternion: [0, 0, 0, 1],
+              scale: [1, 1, 1],
+              grounding: true,
+            },
+          }
+        : placement,
+    ) as IPlacement[],
+  );
+  try {
+    expect(count(still), "only rocks within their draw reach are drawn").toBe(2);
+    expect(moved.byId.get("rock:2")?.pose.elements[12]).toBe(15);
+    expect(count(moved)).toBe(3);
+  } finally {
+    still.dispose();
+    moved.dispose();
+    geometry.dispose();
+    material.dispose();
+  }
+});

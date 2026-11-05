@@ -1183,9 +1183,13 @@ export function createTerrain(
   mesh.layers.enable(REFLECTED_LAYER);
   mesh.receiveShadow = true;
   mesh.castShadow = biome?.terrainCastsShadow ?? false;
-  // The world is the biome row's, never a guess from the water level: a sixth biome brings its own
-  // surveys and its own collar without touching this file.
-  const collar = createHorizonCollar(data, biome?.world ?? "forest");
+  // The world is the biome row's: a sixth biome brings its own surveys and its own collar without
+  // touching this file. Only a view with no biome (the editor) reads the water level: an authored
+  // ocean takes the coastal survey, as it did before the biome rows.
+  const collar = createHorizonCollar(
+    data,
+    biome?.world ?? (data.waterLevel !== null ? "coastal" : "forest"),
+  );
   const horizonGeometry = collar.geometry;
   horizonGeometry.setAttribute("color", new Float32BufferAttribute(collarColors(collar, data), 3));
   horizonGeometry.computeVertexNormals();
@@ -1317,7 +1321,8 @@ function buildCurvature(data: IBakedWorld, field: Heightfield, biome?: IBiome): 
       level: levels[index] as number,
     }));
   });
-  // River stations indexed at their 13 m wet reach (`@threenative/terrain`), so a vertex tests only
+  // River stations indexed at their 13 m wet margin. It is this ground shader's own number: the drawn
+  // ribbon sizes itself from `WATER_RIBBON_REACH` in river.ts. A vertex tests only
   // the stations that can reach it rather than every station of every river.
   const RIVER_REACH = 13;
   const stations = createSegmentIndex(

@@ -89,7 +89,6 @@ All scripts, playtest definitions, manual preparation helpers and fixtures under
   - `scripts/verify-transforms.mjs`: validates coordinate transforms, rotations, and placement matrices.
   - `scripts/verify-world-export.mjs`: verifies headless static world GLB export and vanilla Three.js loading.
   - `scripts/check-water.mjs`: regression tests for shared water rendering and shoreline depths.
-  - `scripts/check-temperate.mts`: checks foliage cover distribution and LOD distance compaction.
 
 - Authoring, staging and data preparation:
   - `scripts/fixtures/editor-conflict.ts`: mounts two editor clients against the same document for the conflict scenario.

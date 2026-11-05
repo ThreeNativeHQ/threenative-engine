@@ -97,12 +97,10 @@ export const REFLECTED_LAYER = 3;
  */
 export const RIVER_FLOW_MPS = 0.9;
 
-/** The stream's shape. Its reach is also the lake's exclusion corridor; see `createLakes`. */
+/** The stream's shape. The surface reach comes from `WATER_RIBBON_REACH` and the river's width; see `ribbon`. */
 const RIVER = {
   /** Metres of water over the deepest point of the bed. The bank rises out of it on its own. */
   fill: 1.1,
-  /** How far either side of the centreline the surface reaches; the terrain hides what is dry. */
-  reach: 13,
   /**
    * Stations over which the fill tapers to nothing at each end of the path, so the surface meets the
    * ground it is over instead of stopping in a wall of water. See `surfaceHeights`.
@@ -138,13 +136,13 @@ const RIVER = {
  */
 const TRACE = { steps: 14, first: 0.45, growth: 1.3 } as const;
 
-/** The lake's shape, and how its mirror is taken. Every number here is this game's. */
 /**
  * How far past a basin's measured waterline a lake's water reaches, so the real shore stands inside
  * it. The drawn surface and the swim footprint both size themselves at it.
  */
 export const LAKE_REACH = 1.12;
 
+/** The lake's shape, and how its mirror is taken. Every number here is this game's. */
 const LAKE = {
   /**
    * Mirror pixels as a share of the frame's, how often it redraws, and the layer mask it draws. Half

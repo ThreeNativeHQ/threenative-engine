@@ -36,13 +36,6 @@ export interface IVistaAim {
   readonly rise: number | null;
 }
 
-/**
- * How thickly the ground cover stands, as one curve over one field.
- *
- * A look names the field, the frequency it is read at, and the floor, amplitude and weight band the
- * curve runs over — numbers, not a choice between curves. A sixth look tunes these; the sampler in
- * `scatter.ts` is one formula for every biome.
- */
 type HeightBand =
   | "alpine"
   | "rock"
@@ -154,8 +147,6 @@ export interface IBiome {
   readonly groundCollarMeters: number;
   /** The collar carries the distant rock tilt; a mat plain keeps its resident normals. */
   readonly continuationTilt: boolean;
-  /** The ground takes the clamped sky image as image-based light. */
-  readonly groundSkyLight: boolean;
   /** How far a stone's albedo is pulled to grey. */
   readonly stoneGrey: number;
   /** How far distant stone fades to the massif's own tone. */
@@ -327,7 +318,6 @@ const temperate: IBiome = {
   terrainCastsShadow: false,
   groundCollarMeters: 0,
   continuationTilt: true,
-  groundSkyLight: true,
   stoneGrey: 0.35,
   distantStoneShare: 0.65,
   stoneSinkShare: 0.12,
