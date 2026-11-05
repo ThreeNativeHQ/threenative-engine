@@ -294,8 +294,12 @@ function instanceMatrixNode(
   builder: NodeBuilder,
 ): Node<"mat4"> {
   // Reuse Three's actual column nodes: a second interleaved buffer consumes four more locations.
+  // Three 0.187 (048e6bea2) builds each column as a `BufferAttributeNode` over an
+  // `InterleavedBufferAttribute` view of the matrix; older Three nodes held an
+  // `InstancedInterleavedBuffer` over the same array. Both carry that matrix, so both are reused.
   const columns = [...(Reflect.get(builder, "nodes") as Iterable<Node>)].filter((node) => {
     const value = Reflect.get(node, "value");
+    if (value?.isInterleavedBufferAttribute === true) return value.data === attribute;
     return (
       value?.isInstancedInterleavedBuffer === true &&
       value.array === attribute.array &&
@@ -303,7 +307,15 @@ function instanceMatrixNode(
     );
   });
   if (columns.length === 4) {
-    columns.sort((a, b) => Reflect.get(a, "bufferOffset") - Reflect.get(b, "bufferOffset"));
+    const offsetOf = (node: Node): number => {
+      const value = Reflect.get(node, "value");
+      return (
+        (value?.isInterleavedBufferAttribute === true
+          ? value.offset
+          : Reflect.get(node, "bufferOffset")) ?? 0
+      );
+    };
+    columns.sort((a, b) => offsetOf(a) - offsetOf(b));
     return mat4(...(columns as [Node<"vec4">, Node<"vec4">, Node<"vec4">, Node<"vec4">]));
   }
   const count = Math.max(attribute.count, 1);

@@ -41,6 +41,8 @@ it.each([
     if (!origin) throw new Error("LOD origin varying missing");
     const builder = new WGSLNodeBuilder(mesh, {
       backend: { capabilities: { getUniformBufferLimit: () => 65536 } },
+      // r187 `registerDeclaration` reads this, as WebGPURenderer sets it (048e6bea2).
+      debug: { diagnostics: { keywords: false } },
       getMRT: () => null,
       hasFeature: () => false,
     } as never) as WGSLNodeBuilder & {
