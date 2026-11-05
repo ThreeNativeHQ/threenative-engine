@@ -28,11 +28,12 @@ namespace tn::engine {
 namespace {
 
 // What a material's node graphs read from outside the material: the texture pmremTexture
-// prefilters and the reflector a reflector() node samples, or null. One of each per material: a
-// second, different source is refused rather than silently sharing the first one's.
+// prefilters and the reflectors a reflector() node samples. One pmrem source per material: a second,
+// different one is refused rather than silently sharing the first one's. Reflectors are a list, as
+// three gives each ReflectorNode its own render target, so a material may sample two mirrors.
 struct GraphFind {
     const Texture* texture = nullptr;
-    std::shared_ptr<const void> reflector;
+    std::vector<std::pair<std::string, std::shared_ptr<const void>>> reflectors;  // by binding name
     std::vector<shader::graph::Node> textureNodes;
     std::vector<std::pair<std::string, const Texture*>> textures;  // texture(object) samples, by binding
     std::vector<std::pair<std::string, const BufferAttribute*>> storages;  // storage(attribute) reads, by binding
@@ -64,9 +65,10 @@ GraphFind findGraphSources(const Material& material) {
                              [&](const auto& entry) { return entry.first == node->name; }))
                 found.storages.emplace_back(node->name, static_cast<const BufferAttribute*>(node->object.get()));
         } else if (node->kind == shader::graph::Kind::Reflector) {
-            if (found.reflector && found.reflector != node->object)
-                throw std::runtime_error("TN_NATIVE_REFLECTOR_UNSUPPORTED: one material samples two reflectors");
-            found.reflector = node->object;
+            // Each mirror has its own binding name and its own pass; two nodes over one mirror share both.
+            if (std::none_of(found.reflectors.begin(), found.reflectors.end(),
+                             [&](const auto& entry) { return entry.first == node->name; }))
+                found.reflectors.emplace_back(node->name, node->object);
         }
         for (const auto* list : {&node->args, &node->body, &node->otherwise})
             for (const auto& child : *list) visit(child);
@@ -643,8 +645,11 @@ const RenderDatabase::GraphSources& RenderDatabase::graphSources(const Material&
         Material::DiagnosticTimer rebuildTimer(diagnostic.enabled, diagnostic.graphCpuNs);
         if (diagnostic.enabled) ++diagnostic.graphRebuilds;
         GraphFind found = findGraphSources(material);
-        cached = GraphSources{material.version(), roots, found.texture, std::move(found.reflector),
+        cached = GraphSources{material.version(), roots, found.texture, std::move(found.reflectors), {},
                               std::move(found.textures), std::move(found.textureNodes), std::move(found.storages)};
+        cached.reflectorViews.reserve(cached.reflectors.size());
+        for (const auto& [name, mirror] : cached.reflectors)
+            cached.reflectorViews.push_back(GraphReflector{name, mirror.get()});
     }
     for (size_t i = 0; i < cached.textureNodes.size(); ++i)
         cached.textures[i].second = static_cast<const Texture*>(cached.textureNodes[i]->textureObject().get());
@@ -1691,7 +1696,9 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
         // environment and the material no envMap, else the material's envMapRotation (identity here).
         const GraphSources& sources = graphSources(source);
         item.pmremMap = sources.texture;
-        item.reflector = sources.reflector.get();
+        // The render publishes each mirror pass's view on the material's sources (the cached entry, which
+        // outlives the frame), so the draw binds the view that pass drew this frame.
+        item.reflectors = sources.reflectors.empty() ? nullptr : &const_cast<GraphSources&>(sources).reflectorViews;
         item.nodeTextures = sources.textures.empty() ? nullptr : &sources.textures;
         item.nodeStorages = sources.storages.empty() ? nullptr : &sources.storages;
         if (item.pmremMap) {
@@ -1899,11 +1906,14 @@ void RenderDatabase::precacheReflections(Renderer& renderer, Object3D& root, Cam
     std::vector<std::shared_ptr<const Reflector>> reflectors;
     std::vector<Material*> hidden;
     for (const DrawItem& item : items_) {
-        if (!item.reflector) continue;
+        if (!item.reflectors) continue;
         auto* material = const_cast<Material*>(static_cast<const Material*>(item.materialKey));
         if (std::find(hidden.begin(), hidden.end(), material) == hidden.end()) hidden.push_back(material);
-        if (std::none_of(reflectors.begin(), reflectors.end(), [&](const auto& r) { return r.get() == item.reflector; }))
-            reflectors.push_back(std::static_pointer_cast<const Reflector>(graphSources(*material).reflector));
+        for (const auto& [name, mirror] : graphSources(*material).reflectors) {
+            const auto reflector = std::static_pointer_cast<const Reflector>(mirror);
+            if (std::none_of(reflectors.begin(), reflectors.end(), [&](const auto& r) { return r.get() == reflector.get(); }))
+                reflectors.push_back(reflector);
+        }
     }
     if (reflectors.empty()) return;
     // The mirror hides the reflecting materials while it draws (renderReflections), so it compiles without them.
@@ -1937,11 +1947,15 @@ void RenderDatabase::renderReflections(Renderer& renderer, Object3D& scene, Came
     std::vector<std::shared_ptr<const Reflector>> drawn;
     std::vector<Material*> hidden;
     for (const DrawItem& item : items) {
-        if (!item.mainPass || !item.reflector) continue;
+        if (!item.mainPass || !item.reflectors) continue;
         auto* material = const_cast<Material*>(static_cast<const Material*>(item.materialKey));
         if (std::find(hidden.begin(), hidden.end(), material) == hidden.end()) hidden.push_back(material);
-        if (std::none_of(drawn.begin(), drawn.end(), [&](const auto& r) { return r.get() == item.reflector; }))
-            drawn.push_back(std::static_pointer_cast<const Reflector>(graphSources(*material).reflector));
+        // One pass per distinct mirror, however many draws sample it.
+        for (const auto& [name, mirror] : graphSources(*material).reflectors) {
+            const auto reflector = std::static_pointer_cast<const Reflector>(mirror);
+            if (std::none_of(drawn.begin(), drawn.end(), [&](const auto& r) { return r.get() == reflector.get(); }))
+                drawn.push_back(reflector);
+        }
     }
     if (drawn.empty()) return;
     // three hides the reflecting material while its pass draws (material.visible = false).
@@ -1983,10 +1997,15 @@ void RenderDatabase::renderReflections(Renderer& renderer, Object3D& scene, Came
             pass.renderer->render({}, CameraState{}, LightState{}, {0, 0, 0, 0});
         for (const auto& message : pass.database->diagnostics()) diagnostics_.push_back(message);
     }
-    for (DrawItem& item : items) {
-        if (!item.reflector) continue;
-        item.reflectorView = reflections_.at(item.reflector).renderer->sceneColorView();
-        item.reflectorSampler = renderer.linearClampSampler();
+    // Each sampled mirror reads its own pass's view, published on the material's graph sources.
+    for (const DrawItem& item : items) {
+        if (!item.reflectors) continue;
+        for (GraphReflector& mirror : *item.reflectors) {
+            const auto pass = reflections_.find(mirror.reflector);
+            if (pass == reflections_.end()) continue;  // no pass yet: this draw is not in the main view
+            mirror.view = pass->second.renderer->sceneColorView();
+            mirror.sampler = renderer.linearClampSampler();
+        }
     }
 }
 

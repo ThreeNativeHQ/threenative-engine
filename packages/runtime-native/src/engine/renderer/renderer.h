@@ -77,6 +77,19 @@ enum class MaterialKind : uint8_t { Standard, Basic, Lambert, Phong, Physical };
 using GraphTextures = std::vector<std::pair<std::string, const Texture*>>;
 
 /**
+ * A material graph's reflector() reads: the mirror's binding name ("reflector<serial>"), the mirror
+ * (an engine::Reflector) whose pass drew the view, and that view and its sampler. A draw binds each
+ * one by name, as it binds its graph textures, so one material may sample two mirrors.
+ */
+struct GraphReflector {
+    std::string name;
+    const void* reflector = nullptr;
+    WGPUTextureView view = nullptr;
+    WGPUSampler sampler = nullptr;
+};
+using GraphReflectors = std::vector<GraphReflector>;
+
+/**
  * Diagnostic switch (TN_PROGRAM_PROBES=per-draw, or set by a test before a frame): a program's per-draw
  * probes are resolved on every draw again, as before FM3, so the two arms' pixels can be compared. False
  * by default: they are resolved once, when the program's layouts are built.
@@ -184,10 +197,8 @@ struct DrawItem {
     /** A node graph's storage(attribute) reads, by storage buffer name; null when it has none. */
     const std::vector<std::pair<std::string, const BufferAttribute*>>* nodeStorages = nullptr;
     Matrix pmremRotation{1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};  // three's materialEnvRotation
-    /** A node graph's reflector (an engine::Reflector) and the view of its mirrored pass, sampled as "reflector". */
-    const void* reflector = nullptr;
-    WGPUTextureView reflectorView = nullptr;
-    WGPUSampler reflectorSampler = nullptr;
+    /** A node graph's reflectors (engine::Reflector), each with its mirrored pass's view; null when it has none. */
+    GraphReflectors* reflectors = nullptr;
     MaterialKind kind = MaterialKind::Standard;
     /** three's Line (LineStrip) and LineSegments (LineList) draw lines; everything else triangles. */
     WGPUPrimitiveTopology topology = WGPUPrimitiveTopology_TriangleList;
@@ -1001,7 +1012,7 @@ private:
                             WGPUTextureView normalView = nullptr, WGPUSampler normalSampler = nullptr,
                             const std::array<const MaterialTexture*, shader::kPbrMapCount>* pbrMaps = nullptr,
                             WGPUTextureView pmremView = nullptr, WGPUSampler pmremSampler = nullptr,
-                            WGPUTextureView reflectorView = nullptr, WGPUSampler reflectorSampler = nullptr,
+                            const GraphReflectors* reflectors = nullptr,
                             const GraphTextures* graphTextures = nullptr, RecentBindGroups* cache = nullptr);
     /** The GPU texture and sampler for a material map: rebuilt when its shape or sampler moves, written in place
      *  when only its pixels do. */

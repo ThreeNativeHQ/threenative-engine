@@ -1,4 +1,5 @@
 #include "engine/shader/graph/graph.h"
+#include "engine/renderer/reflector.h"
 #include "engine/scene/texture.h"
 
 #include "engine/shader/tsl/tsl.h"
@@ -423,7 +424,7 @@ ExprId Lowerer::emit(Node node) {
         case Kind::Select:
             return program_.select(expression(d.args[0]), expression(d.args[1]), expression(d.args[2]));
         case Kind::Reflector:
-            return program_.sample(program_.texture2d("reflector"), expression(d.args[0]));
+            return program_.sample(program_.texture2d(d.name), expression(d.args[0]));
         case Kind::ScreenUv: {
             // ScreenNode.UV: screenCoordinate / screenSize, the render target's size when drawing into one.
             const auto input = inputs_.find("screenUV");
@@ -750,6 +751,9 @@ Node pmremTexture(std::shared_ptr<const void> texture, Node direction, Node leve
 
 Node reflectorTexture(std::shared_ptr<const void> reflector, Node uvs) {
     auto data = makeNode(Kind::Reflector, Type::vec(4));
+    // The mirror's own binding ("reflector<serial>"): one material may sample two of them, and each
+    // pass's view is bound under its own name.
+    data->name = std::static_pointer_cast<const Reflector>(reflector)->name;
     data->object = std::move(reflector);
     data->args = {std::move(uvs)};
     return data;

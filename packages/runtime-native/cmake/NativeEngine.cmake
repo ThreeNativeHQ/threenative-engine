@@ -127,6 +127,10 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     tn_native_engine_test(tn-native-engine-reflection-capture-test tests/native-engine/reflection_capture_test.cpp
         native_engine_reflection_capture=validation)
     target_link_libraries(tn-native-engine-reflection-capture-test PRIVATE tn_engine_renderer)
+    # One material sampling two reflectors (two ponds, one stream): each gets its own binding and pass.
+    tn_native_engine_test(tn-native-engine-reflector-multi-test tests/native-engine/reflector_multi_test.cpp
+        native_engine_reflector_multi=two_reflectors)
+    target_link_libraries(tn-native-engine-reflector-multi-test PRIVATE tn_engine_renderer tn_host_services)
     tn_native_engine_test(tn-native-engine-renderer-test tests/native-engine/renderer_test.cpp
         native_engine_history_depth_rows=history_depth_rows
         native_engine_raw_target_scene_only=raw_target_scene_only
