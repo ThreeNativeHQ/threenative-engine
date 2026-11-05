@@ -7733,6 +7733,23 @@
     {
       "aliases": [],
       "constraints": [
+        "every instance's asset must be in `assets`; every instance must land in exactly one cell run"
+      ],
+      "example": "const baked = bakeBiome({ state: terrain.evaluate(), spec: validateBiome(json, \"savanna\"), assets });",
+      "importPath": "@threenative/terrain",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function bakeBiome(options: IBakeBiomeOptions): IBakedBiome { … }",
+      "situations": ["bake one biome's world package from an evaluated recipe and a biome file"],
+      "summary": "Bake one biome: the recipe's evaluated state and the world package it streams. This is the composition `terrain_generate` and a game's build script both call, so the file layout a player streams is decided in one place. The biome is validated first — an inline spec from a request is checked here, not trusted — and the package's own placement runs are checked against the state they came from, so a bake can never ship a cell list that lost instances.",
+      "supersedes": [],
+      "symbol": "bakeBiome"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "no material is chosen; vertex colours exist only with a caller-supplied palette"
       ],
       "example": "const mesh = bakeMesh(new Terrain({ resolution: 17 }).evaluate());",
@@ -7982,6 +7999,25 @@
       "summary": "Recovered numerical/project exports; GLB/runtime outputs contain terrain only.",
       "supersedes": [],
       "symbol": "makeExport"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "samples are finite and at least one; a flat field resolves every band onto its one height"
+      ],
+      "example": "const bands = measureBands(spec.layers, state.height);",
+      "importPath": "@threenative/terrain",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function measureBands( layers: readonly ILayerInfo[], heights: ArrayLike<number>, ): IMeasuredBands { … }",
+      "situations": [
+        "turn a biome file's height fractions into the metres a world actually measured"
+      ],
+      "summary": "Resolve a biome's fraction bands against this world's own height samples.",
+      "supersedes": [],
+      "symbol": "measureBands"
     },
     {
       "aliases": [],

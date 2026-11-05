@@ -6319,6 +6319,22 @@ export function applyPlacementOverrides(state: ITerrainState, value: unknown): I
 const state = applyPlacementOverrides(terrain.evaluate(), document.placementOverrides ?? {});
 ```
 
+### `bakeBiome`
+
+`function` — Bake one biome: the recipe's evaluated state and the world package it streams. This is the composition `terrain_generate` and a game's build script both call, so the file layout a player streams is decided in one place. The biome is validated first — an inline spec from a request is checked here, not trusted — and the package's own placement runs are checked against the state they came from, so a bake can never ship a cell list that lost instances.
+
+```ts
+export function bakeBiome(options: IBakeBiomeOptions): IBakedBiome { … }
+```
+
+- **Use when:** bake one biome's world package from an evaluated recipe and a biome file
+- **Constraints:** every instance's asset must be in `assets`; every instance must land in exactly one cell run
+- **Requires:** npm i -D @threenative/terrain
+
+```ts
+const baked = bakeBiome({ state: terrain.evaluate(), spec: validateBiome(json, "savanna"), assets });
+```
+
 ### `bakeMesh`
 
 `function` — Bakes the recovered indexed top surface and optional vertical skirts into caller-owned arrays.
@@ -6562,6 +6578,22 @@ export function makeExport( state: ITerrainState | null, recipe: ITerrainDocumen
 
 ```ts
 const terrain = new Terrain({ resolution: 17 }); const file = await makeExport(terrain.evaluate(), terrain.toJSON(), "project");
+```
+
+### `measureBands`
+
+`function` — Resolve a biome's fraction bands against this world's own height samples.
+
+```ts
+export function measureBands( layers: readonly ILayerInfo[], heights: ArrayLike<number>, ): IMeasuredBands { … }
+```
+
+- **Use when:** turn a biome file's height fractions into the metres a world actually measured
+- **Constraints:** samples are finite and at least one; a flat field resolves every band onto its one height
+- **Requires:** npm i -D @threenative/terrain
+
+```ts
+const bands = measureBands(spec.layers, state.height);
 ```
 
 ### `sampleHeight`

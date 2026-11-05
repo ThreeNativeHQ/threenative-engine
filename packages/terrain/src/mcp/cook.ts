@@ -2,10 +2,11 @@ import { existsSync, readFileSync } from "node:fs";
 import { copyFile, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { type IBakeBiomeOptions, bakeBiome } from "../core/bake-biome.js";
+import { validateBiome } from "../core/biome.js";
 import { decodeRAW16 } from "../core/io.js";
 import { applyPlacementOverrides } from "../core/placements.js";
 import { Terrain } from "../core/terrain.js";
-import { bakeWorldPackage } from "../core/world-package.js";
 import { starterAssetsDir } from "../kit-assets.js";
 import { measureGlb } from "./glb-stats.js";
 import { TERRAIN_KITS, resolveAssetSource } from "./tools.js";
@@ -242,8 +243,16 @@ async function cookInto(
     )}\n`,
   );
 
-  const { splat, manifest, files } = bakeWorldPackage(state, {
-    assets: cooked.manifest.assets as Parameters<typeof bakeWorldPackage>[1]["assets"],
+  // The starter's biome file is the world's own record of the biome; the bake validates it here, so
+  // a starter that drifts from the schema fails at its cook instead of at a game's load.
+  const biome = validateBiome(
+    JSON.parse(await readFile(join(kitDir, "biome.data.json"), "utf8")),
+    request.kit,
+  );
+  const { bands, splat, manifest, files } = bakeBiome({
+    state,
+    spec: biome,
+    assets: cooked.manifest.assets as IBakeBiomeOptions["assets"],
   });
   await writeFile(
     join(request.out, "terrain-table.json"),
@@ -293,6 +302,8 @@ async function cookInto(
     worldPackage: `${shown}/world.json`,
     ...measureGlb(cooked.worldGlb),
     placementCounts: cooked.placementCounts,
+    biome: biome.look,
+    bands,
     worldGlbBytes: cooked.worldGlb.length,
     ms: Math.round(performance.now() - started),
     load: [

@@ -73,6 +73,15 @@ missing field or an out-of-range value fails and names the biome and the field.
   already had the world in hand, so a module-level validated table is the smallest read that keeps the
   file the only owner of the values. `biome-values.spec.ts` reads through the same table, so a mistyped field
   fails at load, named.
+- 2026-11-05 (found while starting PRD-792 phase 2): the five files' band rows were checked against
+  the game's look table by importing both, and they agree for every world — except one value the move
+  could not read off the code: `coastal`'s snow `shedFrom`. The look carries `0.16`, the file carries
+  `0.04` (`shedTo` 0.22 in both; the other four worlds agree). Since the coast renders from the look
+  table, the file's number is the one that never reached a pixel. It is left as it is rather than
+  "fixed" to the file: changing which value the coast shades with is a look change that needs the
+  visual judge, and the file is validated data, so the wrong side of the pair has to be decided on
+  evidence. PRD-792 carries the same note where the migration is blocked.
+
 - 2026-11-04: the file is `biome.data.json`, not `biome.json`. Biome 1.9.4 parses every file of that
   name as its own project config and fails `pnpm lint`; `packages/create-threenative/template-assets/quality/biome.json`
   is a real nested config, and every scaffolded project gets one at its root. The schema and the API

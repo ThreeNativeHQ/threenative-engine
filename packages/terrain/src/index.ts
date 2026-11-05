@@ -1,4 +1,8 @@
 export { validateBiome } from "./core/biome.js";
+export { BAKE_BIOME_STAGES, bakeBiome } from "./core/bake-biome.js";
+export type { IBakeBiomeOptions, IBakeBiomeStage, IBakedBiome } from "./core/bake-biome.js";
+export { measureBands } from "./core/bands.js";
+export type { IMeasuredBands } from "./core/bands.js";
 export type {
   IBiomeSpec,
   IBiomeWaterBody,
