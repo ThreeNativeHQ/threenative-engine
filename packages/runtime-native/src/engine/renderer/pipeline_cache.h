@@ -20,6 +20,7 @@
 #include <webgpu/webgpu.h>
 
 #include "engine/shader/package.h"
+#include "engine/renderer/aux_targets.h"
 
 namespace tn::engine {
 
@@ -78,6 +79,11 @@ struct PipelineTarget {
     bool materialColorWrite = true;
     uint32_t blendState = 0;  // blend 5: a material's resolved blend state (materialBlend)
 };
+
+// The device's eight colour attachments are `color` and the seven that follow it, and the aux pass's budget is that
+// same eight (aux_targets.h): one array's size is the other's limit.
+static_assert(std::tuple_size_v<decltype(PipelineTarget::moreColors)> + 1 == kMaxColourTargets,
+              "PipelineTarget must declare WebGPU's guaranteed eight colour targets");
 
 /**
  * three r187's WebGPUPipelineUtils._getBlending for a material: the PipelineTarget `blend` code for its

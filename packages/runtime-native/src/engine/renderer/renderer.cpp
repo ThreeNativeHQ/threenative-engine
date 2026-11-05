@@ -4,6 +4,7 @@
 #include "renderer.h"
 #include "engine/renderer/pipeline_cache.h"
 #include "engine/renderer/aux_fragment.h"
+#include "engine/renderer/aux_targets.h"
 #include "engine/renderer/aux_bundle_key.h"
 #include "engine/renderer/readback_crop.h"
 #include "engine/renderer/render_target_pass.h"
@@ -4996,12 +4997,12 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     };
     const auto planAux = [&] {
         if (!auxMask && mrtSlots.empty() && !translucentPass) return;
-        // The pass holds one attachment per named target the post graph reads, then one per custom MRT slot. A
-        // pipeline may hold no more colour targets than the device's limit (8, WebGPU's guaranteed count).
+        // The pass holds one attachment per named target the post graph reads, then one per custom MRT slot, and
+        // writes no `color` of its own: they are the pass's whole colour-attachment list (aux_targets.h).
         const std::size_t namedTargets = std::size_t(std::popcount(auxMask));
-        if (1 + namedTargets + mrtSlots.size() > 8)
+        if (!auxTargetsFit(namedTargets, mrtSlots.size()))
             throw std::runtime_error("TN_NATIVE_MRT_UNSUPPORTED: " + std::to_string(namedTargets + mrtSlots.size()) +
-                                     " extra colour attachments exceed the device limit 7");
+                                     " colour attachments exceed the device limit " + std::to_string(kMaxColourTargets));
         for (const Planned& draw : plan) {
             const DrawItem& item = *draw.item;
             // A translucent draw composites its own colour over the frame, lit or not: the waterfall's sheet, a

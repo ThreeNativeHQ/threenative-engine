@@ -354,6 +354,11 @@ tn_native_engine_test(tn-native-engine-aux-bundle-key-test tests/native-engine/a
     native_engine_aux_bundle_key=wider_pass
     native_engine_aux_bundle_key_same_layout=same_layout)
 
+# How many colour targets the aux pass may hold: WebGPU's guaranteed eight, `color` included.
+tn_native_engine_test(tn-native-engine-aux-targets-test tests/native-engine/aux_targets_test.cpp
+    native_engine_aux_targets_eight=eight_fit
+    native_engine_aux_targets_nine=nine_are_refused)
+
 tn_native_engine_test(tn-native-engine-shader-ir-test tests/native-engine/shader_ir_test.cpp
     native_engine_tsl_ir_storage_textures=storage_textures
     native_engine_tsl_ir_order=order
