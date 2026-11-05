@@ -343,6 +343,10 @@ export class WorldCells extends Group implements IComputeDriven {
       parent: () => this.parent,
       invalidateShadows: () => this.#invalidateShadows?.(),
       backlog: () => this.#residency.backlog() + this.#impostorState.impostorStats().pending,
+      workPending: () =>
+        this.#residency.resident.size > 0 ||
+        this.#models.loadsInFlight > 0 ||
+        this.#models.loadsQueued > 0,
       keysForShadow: () => this.#render.keysForShadow(),
       hasShared: (key) => this.#render.hasShared(key),
       hasRetired: (key) => this.#render.hasRetired(key),
@@ -1075,8 +1079,10 @@ export class WorldCells extends Group implements IComputeDriven {
    * The loading gate a game with a loading screen waits on, so the shader builds the prewarm exists
    * to move happen behind it instead of in the first seconds of play. It counts updates the world
    * was in a scene for, because a batch added while the world is not in a scene is projected by
-   * nothing and builds nothing. `dispose` settles it too: a world torn down mid-load must not leave
-   * a game awaiting it forever.
+   * nothing and builds nothing. A world with nothing to prewarm — no resident cell and no model
+   * load, so no update of its own can queue one — settles on those updates like a drained world,
+   * which is what lets a game await it for every world it streams. `dispose` settles it too: a
+   * world torn down mid-load must not leave a game awaiting it forever.
    */
   get prewarmed(): Promise<void> {
     return this.#prewarm.prewarmed;

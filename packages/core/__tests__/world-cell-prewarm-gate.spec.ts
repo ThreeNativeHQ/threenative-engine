@@ -13,12 +13,16 @@ import type { SharedBatch } from "../src/world-cell-batches.js";
 import type { IAssetState } from "../src/world-cell-models.js";
 import { CellPrewarm, type ICellPrewarmHost } from "../src/world-cell-prewarm.js";
 
-function host(built: (key: string) => boolean): ICellPrewarmHost {
+function host(
+  built: (key: string) => boolean,
+  workPending = (): boolean => false,
+): ICellPrewarmHost {
   const parent = new Object3D();
   return {
     released: () => false,
     preserveAuthoredParts: () => false,
     parent: () => parent,
+    workPending,
     invalidateShadows: () => undefined,
     backlog: () => 0,
     keysForShadow: () => false,
@@ -55,10 +59,22 @@ describe("CellPrewarm gate", () => {
     await expect(prewarm.prewarmed).resolves.toBeUndefined();
   });
 
-  it("stays open until an asset asks, so an early idle update cannot settle it", () => {
-    const prewarm = new CellPrewarm(host(() => true));
+  it("stays open while the world can still ask, so an early idle update cannot settle it", () => {
+    const prewarm = new CellPrewarm(
+      host(
+        () => true,
+        () => true,
+      ),
+    );
     for (let update = 0; update < 4; update += 1) prewarm.drainPrewarm();
     expect(prewarm.settled).toBe(false);
+  });
+
+  it("settles an unasked gate for a world with nothing left to prewarm", async () => {
+    const prewarm = new CellPrewarm(host(() => false));
+    for (let update = 0; update < 4; update += 1) prewarm.drainPrewarm();
+    expect(prewarm.settled).toBe(true);
+    await expect(prewarm.prewarmed).resolves.toBeUndefined();
   });
 });
 

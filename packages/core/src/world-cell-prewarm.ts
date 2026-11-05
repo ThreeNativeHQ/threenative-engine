@@ -10,6 +10,12 @@ export interface ICellPrewarmHost {
   parent(): Object3D | null;
   invalidateShadows(): void;
   backlog(): number;
+  /**
+   * Whether this world can still queue a prewarm: a cell resident (its builds acquire the asset),
+   * or a model load in flight or queued (its completion queues the keys). False is a world with
+   * nothing left to ask with; see `drainPrewarm`.
+   */
+  workPending(): boolean;
   keysForShadow(): boolean;
   hasShared(key: string): boolean;
   hasRetired(key: string): boolean;
@@ -169,8 +175,7 @@ export class CellPrewarm {
   #prewarmOwed = 0;
   #prewarmDrawn = 0;
   #prewarmEpoch = 0;
-  #prewarmWait = 0;
-  /**
+  #prewarmWait = 0; /**
    * Awaited meshes that only a shadow level can draw, and the share of them that have had one.
    *
    * A caster's node is built in the shadow context, so a walk-time first shadow draw of a streamed
@@ -242,9 +247,18 @@ export class CellPrewarm {
     if (minted > 0 || waitingOnCasters) this.#host.invalidateShadows();
     else if (this.#host.parent() !== null) this.#prewarmWait += 1;
     this.#releaseImpossibleBorrows();
+    if (this.#prewarmQueue.length > 0) return;
     // Nothing to settle until an asset has asked; once one has, an ask whose keys were all already
-    // built minted nothing and is owed nothing, so it settles like a drained one.
-    if (this.#prewarmQueue.length > 0 || (this.#prewarmPending <= 0 && !this.#prewarmAsked)) return;
+    // built minted nothing and is owed nothing, so it settles like a drained one. A world that has
+    // asked nothing yet settles too, as long as nothing of it can ask later: no resident cell and
+    // no model load in flight means no later update of this load queues a prewarm — a world whose
+    // cells all lie outside the follow point's ring, which is what a game awaiting the draw gate of
+    // every world it streams holds (the Strata spawn gate waited its whole 120 s deadline on one).
+    // The trade is the one `PREWARM_RELEASE_UPDATES` makes: a gate that settles early costs the
+    // walk a first-draw build, and a gate that never settles costs the game its load. A resident
+    // cell keeps the asked-nothing gate shut exactly as before, so a world that is about to ask
+    // still waits for it.
+    if (this.#prewarmPending <= 0 && !this.#prewarmAsked && this.#host.workPending()) return;
     if (this.#prewarmWait < PREWARM_WARM_UPDATES) return;
     // A caster still owed a draw is a build the walk would otherwise pay inside a shadow pass, so the
     // gate holds for it until its borrow is handed back, which is the bound.
