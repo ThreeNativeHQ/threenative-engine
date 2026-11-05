@@ -35,6 +35,16 @@ class EventDispatcher {
 public:
     using Listener = void (*)(const Event& event, void* context);
 
+    EventDispatcher() = default;
+    /**
+     * A copy is a fresh dispatcher, as three's is: a listener (and the language bridge's entry) belongs
+     * to the object it was added to, so a copy such as a texture's `clone` starts with none and its events
+     * never reach the original's listener with the original's context. Assignment takes nothing either,
+     * leaving the target's own listeners alone, as `Material::copy` expects.
+     */
+    EventDispatcher(const EventDispatcher&) {}
+    EventDispatcher& operator=(const EventDispatcher&) { return *this; }
+
     /** Adds the listener for `type`, unless that exact listener is already registered for it. */
     void addEventListener(std::string_view type, Listener listener, void* context);
     [[nodiscard]] bool hasEventListener(std::string_view type, Listener listener, void* context) const;

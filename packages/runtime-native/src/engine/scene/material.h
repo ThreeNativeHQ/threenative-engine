@@ -34,8 +34,6 @@ enum class Blending : uint8_t { None = 0, Normal = 1, Additive = 2 };
 /** three's EventDispatcher on a material: a copy or a clone starts with no listeners, as three's does. */
 struct MaterialEvents : EventDispatcher {
     MaterialEvents() = default;
-    MaterialEvents(const MaterialEvents&) {}
-    MaterialEvents& operator=(const MaterialEvents&) { return *this; }
 };
 
 class Material {
