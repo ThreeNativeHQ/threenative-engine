@@ -1392,18 +1392,20 @@ describe("terrain_biome_new", () => {
       expect(before.filter((file) => !after.includes(file))).toEqual([]);
       // AC-3: the cook stays no slower than the slowest shipped kit. The forest baseline is
       // re-cooked here, back to back with the savanna, so the comparison measures the machine this
-      // run is on instead of a number from another session (phase 1: forest 3 839 ms).
+      // run is on instead of a number from another session (phase 1: forest 3 839 ms). Both arms are
+      // a tool call, so both numbers are a first cook inside a fresh process; an in-process
+      // `cookKit` would run already-warmed code from the cooks earlier in this file, not comparable.
       const forestStarted = performance.now();
-      const forestCook = JSON.parse(
-        await cookKit({
-          kit: "forest",
-          out: join(project, "assets", "worlds", "forest-baseline"),
-          projectRoot: project,
-        }),
-      );
+      const baseline = await askServer(project, "terrain_generate", {
+        kit: "forest",
+        out: "assets/worlds/forest-baseline",
+      });
       const forestWall = Math.round(performance.now() - forestStarted);
+      const baselineText = baseline.result?.content?.[0]?.text;
+      expect(baseline.result?.isError, baselineText).toBe(false);
+      const forestCook = JSON.parse(baselineText as string);
       console.log(
-        `TN_TERRAIN_BIOME_NEW savanna: cook ${result.ms} ms, tool call ${wall} ms; forest baseline cook ${forestCook.ms} ms (wall ${forestWall} ms)`,
+        `TN_TERRAIN_BIOME_NEW savanna: cook ${result.ms} ms, tool call ${wall} ms; forest baseline cook ${forestCook.ms} ms (tool call ${forestWall} ms)`,
       );
       expect(result.ms).toBeLessThanOrEqual(forestCook.ms);
       // A second call with the same name refuses instead of overwriting the biome.
