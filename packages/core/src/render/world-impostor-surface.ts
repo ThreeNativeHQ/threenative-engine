@@ -559,6 +559,7 @@ function userInstanceMatrix(builder: NodeBuilder): Node<"mat4"> {
  *
  * @situation a per-instance random number that stays with each streamed placement as WorldCells repacks
  * @situation replace instanceIndex in a WorldCells part material, which WorldCells refuses
+ * @example const phase = instanceRandom().mul(6.2831);
  */
 export function instanceRandom(): Node<"float"> {
   return Fn((_inputs: unknown, builder: NodeBuilder) => {

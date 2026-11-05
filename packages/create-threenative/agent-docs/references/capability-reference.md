@@ -3627,6 +3627,10 @@ export function instanceRandom(): Node<"float"> { … }
 
 - **Use when:** a per-instance random number that stays with each streamed placement as WorldCells repacks · replace instanceIndex in a WorldCells part material, which WorldCells refuses
 
+```ts
+const phase = instanceRandom().mul(6.2831);
+```
+
 ### `lakeReach`
 
 `function` — How far a lake's water reaches: the waterline its basin measures, `margin` times out, capped. The drawn surface and the swim footprint both size themselves here, so the shore a player sees is the shore they stop at.
