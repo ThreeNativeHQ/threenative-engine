@@ -104,13 +104,11 @@ export function renderOptions(c: EditorSession): void {
     case "scatter": {
       const o = c.options.scatter;
       const assets = c.view.propAssets?.() ?? ["pine", "boulder", "grass"];
+      // The picker only selects an option; strokes read these options, so the value it shows is
+      // the one written back. A project without the default asset scatters its own first asset.
+      if (!assets.includes(o.asset)) o.asset = assets[0] ?? "";
       nodes.push(
-        c.optionSelect(
-          "Asset ID",
-          "asset",
-          assets,
-          assets.includes(o.asset) ? o.asset : (assets[0] ?? ""),
-        ),
+        c.optionSelect("Asset ID", "asset", assets, o.asset),
         c.optionNumber("Requested instances", "count", o.count),
       );
       const erase = element("input", { type: "checkbox", "data-option": "erase" });
