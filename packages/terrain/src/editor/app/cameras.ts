@@ -182,7 +182,11 @@ export function installCameras(c: EditorSession): void {
           : {
               extent: Math.max(
                 1,
-                Math.hypot(...pose.position.map((value) => value - pose.target[0])),
+                Math.hypot(
+                  pose.position[0] - pose.target[0],
+                  pose.position[1] - pose.target[1],
+                  pose.position[2] - pose.target[2],
+                ),
               ),
               zoom: 1,
             }),
