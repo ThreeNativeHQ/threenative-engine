@@ -1,6 +1,6 @@
 # PRD-796 — Strata `game.ts` is wiring, not a world switch
 
-**Status:** PARTIAL — Phase 1 landed: the selector, the five spawn points and the five launch cameras are pinned, and the nine playtests have a recorded result.
+**Status:** PARTIAL — Phase 1 landed and Phase 2's split is in: `game.ts` is 732 lines with no world name, and the meadow, the spawn gate and the player rig live in their own example modules. AC-2 waits for the nine playtests on the owned engine the split must match.
 **Priority:** P2 — `game.ts` is 2 070 lines with 24 world-name comparisons and about 1 200 lines of telemetry mixed into the world wiring (Phases 2 and 3 open).
 **Complexity:** 4 (MEDIUM)
 **Owner:** ThreeNative maintainers
@@ -21,7 +21,7 @@ does not enter a package. `game.ts` keeps scene lifecycle and wiring only.
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local]: `game.ts` is under 800 lines and holds no world name. proof: `wc -l` and `rg -n '"(forest|coastal|alpine|desert|tundra)"' examples/strata-terrain-preview/src/game.ts` prints nothing — Evidence: pending.
+- [x] AC-1 [local]: `game.ts` is under 800 lines and holds no world name. proof: `wc -l` and `rg -n '"(forest|coastal|alpine|desert|tundra)"' examples/strata-terrain-preview/src/game.ts` prints nothing — Evidence: `wc -l examples/strata-terrain-preview/src/game.ts` prints 732, and the grep exits 1 with no output. The removed 682 lines now live in `src/sceneProps.ts` (603: the props and staged-world build), `src/playerRig.ts` (222: the capsule, the mannequin and the follow camera), `src/spawnGate.ts` (183: the admission gate and its failure receipt) and `src/sceneState.ts` (21: the state shape the three share). `src/game.ts` keeps scene lifecycle and wiring.
 - [ ] AC-2 [local]: Every Strata playtest gives the same result as before the split. proof: the nine scenarios — Evidence: pending.
 
 ## Integration Ledger
@@ -62,7 +62,9 @@ Integration: unchanged — the scene, its entry point and its playtests stay the
   - World values come from the biome row: the launch point and the camera offsets read `spec.spawn.at` and `spec.spawn.cameraOffset`, the scenes are built from `WORLD_ORDER`, the start world is `START_WORLD`, and `render/worldData.ts` is gone because the row owns those two pairs. `src/worlds.ts` (new, 49 lines) owns the selector list and the baked-bundle loader, which reads `spec.bake`.
   - The two specs keep their pins: `world-keys.spec.ts` reads `WORLD_SELECT` from `src/worlds.ts` and the spawn from `biomeSpec(world).spawn`, `biome-values.spec.ts` compares the same row values against its own literals, and `forest-startup.spec.ts` calls `witnessAsymmetricContact()` instead of pulling the witness out of `game.ts` by text, because the witness moved with the code it witnesses.
   - `water-proof.spec.ts` green. `strata-view-statistics.spec.ts` is red on a pin this PRD does not touch: it expects 21 measured holds in `playtests/terrain.playtest.json` and the scenario holds 22.
-  - Open: AC-1's line cap. `game.ts` is 1 417 lines (from 2 072) and the world-name grep prints nothing, but 800 needs three more moves inside the scene's lifecycle: the spawn gate and its failure reporter (about 130 lines), the props and staged-world build (about 300) and the player rig with its follow camera (about 150).
+  - AC-1's line cap is met: `game.ts` is 732 lines, and the three moves it named — the spawn gate and its failure report, the props and staged-world build, the player rig with its follow camera — are `src/spawnGate.ts`, `src/sceneProps.ts` and `src/playerRig.ts`. `src/sceneState.ts` holds the state the three share, so none of them imports the scene.
+  - The pins followed the code. `__tests__/strata-loading.spec.ts` extracts production declarations by name and now reads the three sources in turn; its gate, spawn-readiness, progress and failure-receipt cases are green (51/51), including five `defers hidden world draws until prepared streams attach` cases that were red before this split for a missing `look` in their sandbox. `water-proof.spec.ts`, `world-keys.spec.ts` and `biome-values.spec.ts` are green; the example's whole suite goes from 22 failed of 242 to 17 failed of 242, and every remaining red is the one already listed above or in a package this PRD does not touch (`prop-lod`, `prop-streaming`, `forest-stage`, `temporalAA`, `terrain-splat-package`).
+  - Open: `strata-view-statistics.spec.ts` is still red on its own pin (it expects 21 measured holds in `playtests/terrain.playtest.json` and the scenario holds 22), which this PRD does not touch; `pnpm --filter strata-terrain-preview exec vitest run __tests__/strata-view-statistics.spec.ts` reports 1 failed of 30 across the four specs run with it.
 
 #### Phase 3: prove the game
 **Status:** NOT STARTED
