@@ -299,7 +299,7 @@ void policies() {
     CHECK(!pages.empty() && pages.size() < 32); // urgent regional eviction on both levels
     CHECK(std::any_of(pages.begin(), pages.end(), [](const auto& p) { return p.level == 0; }));
     CHECK(std::any_of(pages.begin(), pages.end(), [](const auto& p) { return p.level == 1; }));
-    CHECK(atlas->table()[35] == 1 && atlas->table()[71] == 1);
+    CHECK(atlas->table()[35] > 0 && atlas->table()[71] > 0);
     atlas->appendMoverPages(pages);
     CHECK(std::count_if(pages.begin(), pages.end(), [](const auto& p) { return p.mover; }) == 2);
     CHECK(atlas->table().back() == 1);
@@ -393,7 +393,7 @@ void atlas() {
     auto pages = atlas->update(eye, sun);
     CHECK(pages.size() == 16);
     CHECK(atlas->table().size() == (18 + 32 + 2) * 4);
-    CHECK(atlas->table()[35] == 1 && atlas->table()[71] == 0);
+    CHECK(atlas->table()[35] > 0 && atlas->table()[71] == 0);
     for (const auto& page : pages) {
         const auto [px, py] = atlas->origin(page.slot);
         CHECK(px + atlas->stride() <= atlas->edge() && py + atlas->stride() <= atlas->edge());
@@ -413,7 +413,7 @@ void atlas() {
     const auto held = atlas->table();
     pages = atlas->update(Vector3(100, 0, 0), sun);
     CHECK(pages.size() == 16 && pages.front().level == 0);
-    CHECK(atlas->table()[35] == 1 && atlas->table()[71] == 1);
+    CHECK(atlas->table()[35] > 0 && atlas->table()[71] > 0);
     // The deferred coarse map keeps its own matrix/window and protected physical pages.
     CHECK(std::equal(held.begin() + 36, held.begin() + 72, atlas->table().begin() + 36));
     CHECK(std::equal(held.begin() + 136, held.begin() + 200, atlas->table().begin() + 136));
@@ -425,7 +425,7 @@ void atlas() {
     CHECK(atlas->table()[16] == -100);
     CHECK(atlas->update(Vector3(100, 0, 0), sun).size() == 16);
     CHECK(atlas->update(Vector3(100, 0, 0), sun, true).size() == 16); // explicit rotation cut
-    CHECK(atlas->table()[71] == 1);
+    CHECK(atlas->table()[71] > 0);
     CHECK(atlas->update(Vector3(100, 0, 0), sun).size() == 16);
     CHECK(atlas->update(Vector3(100, 0, 0), sun).empty());
 
@@ -509,7 +509,7 @@ void continuousInvalidation() {
         for (const auto& page : pages) CHECK(page.level == pages.front().level);
         // One level per frame, as in the browser: all levels must be resident after count frames.
         for (int level = 0; level < count; ++level) {
-            CHECK(atlas->table()[level * 36 + 35] == (frame >= level ? 1 : 0));
+            CHECK((atlas->table()[level * 36 + 35] > 0) == (frame >= level));
             if (!held.empty() && level != pages.front().level)
                 CHECK(std::equal(held.begin() + level * 36, held.begin() + (level + 1) * 36,
                                  atlas->table().begin() + level * 36));

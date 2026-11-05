@@ -216,6 +216,7 @@ std::vector<AtlasPage> PageAtlas::update(const Vector3& viewEye, const Vector3& 
             level.eye = options_.lightDistance;
             level.near = 1;
             level.far = options_.lightDistance + options_.depthRange;
+            level.biasSpan = level.far - level.near;
         }
         // A fixed depth range is Unreal's cached Z radius: the level keeps its depth centre while the camera's drift
         // along the light plus the level radius stays inside 0.9 of it (UE 5.8.3: Engine/Source/Runtime/Renderer/
@@ -262,6 +263,7 @@ std::vector<AtlasPage> PageAtlas::update(const Vector3& viewEye, const Vector3& 
                 level.near = std::max(1.0, (high - low) * 0.02);
                 level.eye = high + pad + level.near;
                 level.far = level.near + high - low + 2 * pad;
+                level.biasSpan = high - low;
             }
         }
         Vector3 from = target; from.addScaledVector(clipmap_->basisW(), level.eye);
@@ -462,7 +464,9 @@ void PageAtlas::writeTable() {
         out[23] = float(mapSize(l)); out[27] = float(tiles(l));
         out[31] = float(level.far - level.near);
         out[32] = float(options_.pageTexels); out[33] = float(options_.border);
-        out[34] = float(edge()); out[35] = level.mapped ? 1 : 0;
+        out[34] = float(edge());
+        // Positive while mapped: the shader scales the light's bias by biasSpan / span, so the pad keeps its metres.
+        out[35] = level.mapped ? float(level.biasSpan) : 0;
         if (!level.mapped) continue;
         const int n = tiles(l);
         for (int y = 0; y < n; ++y) for (int x = 0; x < n; ++x) {

@@ -55,6 +55,9 @@ const RENDER_PORTABLE_CORE_SYMBOLS: ReadonlySet<string> = new Set([
   "AutoExposureNode",
   "ChainStage",
   "IWorldEnvironmentStageContext",
+  // PRD-632: Unreal's Substrate slab diffuse is the default look of a rough surface; the game turns it
+  // off per material (`material.roughDiffuse = false`) or per tree (`useRoughDiffuse(root, false)`).
+  "useRoughDiffuse",
 ]);
 
 const FRAMEWORK_IMPORT =

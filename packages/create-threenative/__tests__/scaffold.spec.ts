@@ -391,9 +391,18 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Re-pinned 2026-10-29: the fog-of-war sheet comes from palette.ts, rts-build probes the fog ground is lit
   // (it was a dark patch under a HUD card) and the top-location separator reaches 3:1 on the ink plate.
   // Then the UI final pass: a counted selection band, garrison and blocked-exit cards, overview, hotkeys, edge-scroll toggle, refusal toasts (imports sorted by biome).
+  // Re-pinned 2026-11-03 (PRD-617): the sun's shadow box travels with the runner (`lighting.follow`)
+  // and the engine pin goes, so the tree moves. Measured again the same day for the corrected
+  // `performance.maxTriangles` bound (45,000 to 54,000), which is a scenario file in the tree.
+  // Measured by this test.
   rts: "598341ca8bc8e1fd1cabc9a8bcc840332ee7b41038e188aebb32298837dc48d0",
   runner: "2ba3c9a7dc5b869b1842cebb32331fea38015851c675d51869264e35e7e20f36",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
+  // Re-measured 2026-11-03 (PRD-617): its AGENTS/CLAUDE engine section no longer claims an engine
+  // pin the template does not carry. Measured by this test.
+  // Re-measured 2026-11-03 (PRD-617): `sails.playtest.json` sets `drawEvery: 60`, so the scenario
+  // asks the runner for 30 drawn frames per 1,800-tick hold instead of taking as many readback
+  // samples as the adapter happens to draw. Only this tree moves.
   sailing: "6b192c04ac99504ac2356e4dc4dc9973a952c91e0c7878651c07c4edf2be656e",
   // Recomputed 2026-10-26 (PRD-746): the scene merges the town through mergeByMaterial (src/townBatch.ts).
   shooter: "4667672ab58caccc46348222084d4fc08d7f33addc76c25df5cdaddc88fe8bab",
@@ -406,6 +415,10 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-31: core key 0.36, traced reflections, the crate contact blob, the portable trace type (PRD-633); measured by this test.
   // Recomputed 2026-10-31 (PRD-775): temporalAAHooks.ts claims the 0.187 render pipeline's view
   // offset and drives its callback lists, so starter's render source moves again. Measured by this test.
+  // Recomputed 2026-11-03 on the merge of the #606 queue commit into this branch: #605 split
+  // Play.ts's motion samples between presented frames and fixed steps, and moved two native
+  // playtests; #606 moved the render resolve. Starter is the one template both sides changed.
+  // Measured by this test.
   starter: "05b6ce9c19aae0b1217399321a79b3298e870f004116709aff5c16f1d567b81a",
   "tower-defense": "5ab47d9c2f34c33d610572c39e219e28bea69b59eeb9d398837446e6fbb58784",
 };
