@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import { capabilityDetail } from "../../engine-mcp/src/index.js";
 import {
@@ -808,4 +809,16 @@ it("retains measured hitch phases in loop diagnostics without counting a hitch i
   expect(budget.window().hitches).toBe(1);
   expect(budget.window().phases.render.samples).toBe(1);
   expect(budget.lastRenderMs).toBeUndefined();
+});
+
+it("documents endFrame's hitch return as the measured split the diagnostics consume", () => {
+  // E25: the doc read "`undefined` when the frame was a hitch and therefore excluded", while the hitch
+  // branch returns the sample for `loop.ts` to feed the per-frame diagnostics; the window meters are
+  // what exclude the hitch. The code is right, so the doc has to say what the code does and why.
+  const source = readFileSync(new URL("../src/frame-budget.ts", import.meta.url), "utf8");
+  const head = source.slice(0, source.indexOf("endFrame(nowMs"));
+  const doc = head.slice(head.lastIndexOf("/**"), head.lastIndexOf("*/") + 2);
+  expect(doc).not.toBe("");
+  expect(doc).toMatch(/hitch[^.]*still returns/i);
+  expect(doc).not.toMatch(/undefined` when the frame was a hitch/);
 });

@@ -1113,8 +1113,9 @@ export class FrameBudget {
   }
 
   /**
-   * Closes the frame and returns its phase split, or `undefined` when the frame was a hitch and
-   * therefore excluded — a 27-second startup stall is not a frame time and must not enter a
+   * Closes the frame and returns its phase split, or `undefined` when `wantSample` is false. A hitch
+   * still returns its split — `loop.ts` feeds it to the per-frame diagnostics — and the window meters
+   * below are what exclude it: a 27-second startup stall is not a frame time and must not enter a
    * percentile anybody is asked to act on.
    *
    * `wantSample` is false when the caller is going to discard the split, which is the default
