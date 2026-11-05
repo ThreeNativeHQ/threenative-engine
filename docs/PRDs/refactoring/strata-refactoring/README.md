@@ -1,10 +1,12 @@
 # Strata refactoring
 
-**Status:** PARTIAL — 0 of 9 PRDs closed (filed 2026-11-04). None of the nine is blocked on this
-batch's own order: PRD-791's code is complete with only its owner lanes (the playtest red it inherited
-and the visual judge) open, PRD-793's Phase 1 pins every shipped kit's cook with its baseline, and
-PRD-797 has Phases 1 and 2 done (the four seams pinned, the `world.ts` ↔ `world-tiles.ts` cycle gone).
-PRD-792 is the gate the rest of the strata chain waits on.
+**Status:** PARTIAL — 0 of 9 PRDs closed (filed 2026-11-04). PRD-791's code is complete with only its
+owner lanes (the playtest red it inherited and the visual judge) open; PRD-792, PRD-793 and PRD-797
+have their Phase 1 pins in place (today's bake's digests, every shipped kit's cook, `world-tiles`' four
+seams), and PRD-797 also has Phase 2 (the `world.ts` ↔ `world-tiles.ts` cycle is gone). PRD-792
+Phase 2, the one `bakeBiome`, is the gate the rest of the strata chain waits on: it moves the
+example's 590-line scatter rule and its art bindings into the package, which is why it is not a
+mechanical diff.
 
 **Goal (owner, 2026-11-04):** "have all abstractions and architecture needed to make strata terrain
 MCP respond to any terrain generation command and be able to bake a new biome quickly".

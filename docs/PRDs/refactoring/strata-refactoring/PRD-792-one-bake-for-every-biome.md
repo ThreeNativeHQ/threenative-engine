@@ -1,6 +1,8 @@
 # PRD-792 — One bake for every biome
 
-**Status:** NOT STARTED
+**Status:** PARTIAL — Phase 1 is done on this branch: today's bake is pinned by a committed digest
+table that two forced bakes reproduce. Phase 2 (the `bakeBiome` + four scatter stages) and Phase 3
+are open.
 **Priority:** P1 — The MCP cannot bake a new biome while the scatter rules and the world-package compiler live only in the example (all phases open); it gates PRD-793.
 **Complexity:** 6 (MEDIUM); risk override: placements change what reaches the screen, so the owner's visual-judge rule applies
 **Owner:** ThreeNative maintainers
@@ -43,10 +45,10 @@ the baked package.
 ## Execution Phases
 
 #### Phase 1: pin the bake
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** `examples/strata-terrain-preview/__tests__/bake-golden.spec.ts` (new)
-- [ ] Two seeded bakes of each world give the same digest (placement count per species, placement hash, height hash, manifest hash). proof: `pnpm --filter strata-terrain-preview exec vitest run __tests__/bake-golden.spec.ts`
-- [ ] The digests of today's bake are committed, and the spec matches them. proof: same spec
+- [x] Two seeded bakes of each world give the same digest (placement count per species, placement hash, height hash, manifest hash). proof: `pnpm --filter strata-terrain-preview exec vitest run __tests__/bake-golden.spec.ts` — Evidence: 1/1 pass in 25 s: `bake-golden.spec.ts` runs `node scripts/bake.mjs --force` twice and asserts the second snapshot equals the first. A snapshot is, per world, the sha256 of `<world>.placements.bin`, the non-zero placement count per species decoded from that table's header, the sha256 of the baked `heights`, and the sha256 of `<world>.world.json`, plus the sha256 of `horizon.json`. `--force` because a warm stamp would skip the work under `pnpm test`; the outputs are byte-identical, so `git status` is clean after the run.
+- [x] The digests of today's bake are committed, and the spec matches them. proof: same spec — Evidence: the `GOLDEN` table in `bake-golden.spec.ts`, measured at `8edfd6d81` before any bake code moved, asserts `expect(first).toEqual(GOLDEN)` after asserting `second === first`. Placement totals per world: forest 213 140 (3 131 spruce, 144 698 grass, 43 242 scrub, 7 211 fern, 5 379 sapling, 3 316 poppy, 2 694 litter, 1 616 pebble, 1 384 bush, 357 riverrock, 105 boulder, 7 mountain), coastal 144 192, alpine 3 598, desert 3 554, tundra 40 459 — the same totals PRD-791's AC-3 recorded from `HEAD`, so the pin and the biome refactor agree about the ground. The pin bites: `SCATTER.seed` changed from `466_468` to `466_469` fails the run (`expected { forest: { …(4) }, …(5) } to deeply equal …`), and reverting it restores all five worlds to the table byte for byte (`git diff --stat` prints nothing after the re-bake).
 
 #### Phase 2: fold into the package
 **Status:** NOT STARTED
