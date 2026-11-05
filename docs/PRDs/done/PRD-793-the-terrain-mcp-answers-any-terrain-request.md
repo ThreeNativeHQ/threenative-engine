@@ -8,7 +8,7 @@ engine. AC-4's fresh judge passed (verdict text in the AC-4 box; no judge report
 **Priority:** P1 — The owner's goal: an agent asking for a terrain outside five fixed names gets no world today. All phases are done.
 **Complexity:** 5 (MEDIUM)
 **Owner:** ThreeNative maintainers
-**Depends on:** [PRD-791](../refactoring/strata-refactoring/PRD-791-a-biome-is-a-validated-data-file.md), [PRD-792](../refactoring/strata-refactoring/PRD-792-one-bake-for-every-biome.md)
+**Depends on:** [PRD-791](PRD-791-a-biome-is-a-validated-data-file.md), [PRD-792](PRD-792-one-bake-for-every-biome.md)
 **Batch:** [Strata refactoring](../refactoring/strata-refactoring/README.md)
 
 ## Context

@@ -75,15 +75,15 @@ Not moved, with the reason:
 
 | Order | Priority | PRD | Outcome |
 |---|---|---|---|
-| 1 | P1 | [PRD-791](PRD-791-a-biome-is-a-validated-data-file.md) | A biome is one validated `biome.json`, read by the MCP and the game |
-| 2 | P1 | [PRD-792](PRD-792-one-bake-for-every-biome.md) | One `bakeBiome` in `@threenative/terrain`; the example stops re-implementing it |
+| 1 | P1 | [PRD-791](../../done/PRD-791-a-biome-is-a-validated-data-file.md) | A biome is one validated `biome.json`, read by the MCP and the game |
+| 2 | P1 | [PRD-792](../../done/PRD-792-one-bake-for-every-biome.md) | One `bakeBiome` in `@threenative/terrain`; the example stops re-implementing it |
 | 3 | P1 | [PRD-793](../../done/PRD-793-the-terrain-mcp-answers-any-terrain-request.md) | The MCP takes any landform and biome, and makes a new biome in one call |
 | 4 | P2 | [PRD-794](../../done/PRD-794-river-lake-and-ocean-are-one-water-body-mechanism.md) | River, lake and ocean are one water-body mechanism |
 | 5 | P2 | [PRD-795](../../done/PRD-795-the-far-ring-and-ground-queries-read-the-heightfield.md) | The far ring and ground queries read the heightfield, not world names |
 | 6 | P2 | [PRD-796](../../done/PRD-796-strata-game-ts-is-wiring-not-a-world-switch.md) | Strata `game.ts` is wiring, not a world switch |
 | 7 | P2 | [PRD-797](../../done/PRD-797-world-tiles-splits-by-seam.md) | `world-tiles.ts` splits by seam |
 | 8 | P2 | [PRD-798](PRD-798-world-gpu-scene-and-cell-render-split-with-pins.md) | `world-gpu-scene.ts` and `world-cell-render.ts` split, with `CellRender` pins |
-| 9 | P2 | [PRD-799](PRD-799-world-cells-second-split.md) | `world-cells.ts` second split |
+| 9 | P2 | [PRD-799](../../done/PRD-799-world-cells-second-split.md) | `world-cells.ts` second split |
 
 PRDs 797 to 799 touch no Strata file and may run in parallel with 791 to 796. PRD-798 and PRD-799
 wait for the forest lane to commit its edits to `world-cell-render.ts`, `world-gpu-scene.ts`,

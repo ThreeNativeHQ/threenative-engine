@@ -4,7 +4,7 @@
 **Priority:** P2 — `game.ts` is 2 070 lines with 24 world-name comparisons and about 1 200 lines of telemetry mixed into the world wiring; all phases are done.
 **Complexity:** 4 (MEDIUM)
 **Owner:** ThreeNative maintainers
-**Depends on:** [PRD-791](../refactoring/strata-refactoring/PRD-791-a-biome-is-a-validated-data-file.md)
+**Depends on:** [PRD-791](PRD-791-a-biome-is-a-validated-data-file.md)
 **Batch:** [Strata refactoring](../refactoring/strata-refactoring/README.md)
 
 ## Context

@@ -9,7 +9,7 @@ example's `vista` cover measurement read 0 on `35ece77df`; `1ffce6548` repaired 
 **Priority:** P2 — A new biome needs a hand-tuned horizon and a ground sampler copy, because the far ring derived its world from the water level and the landform; all phases are done.
 **Complexity:** 5 (MEDIUM); risk override: the horizon reaches the screen, so the owner's visual-judge rule applies
 **Owner:** ThreeNative maintainers
-**Depends on:** [PRD-791](../refactoring/strata-refactoring/PRD-791-a-biome-is-a-validated-data-file.md) (ring and band values in the biome row); coordinates with PRD-790 Phase 2 (tiles meet the ring)
+**Depends on:** [PRD-791](PRD-791-a-biome-is-a-validated-data-file.md) (ring and band values in the biome row); coordinates with PRD-790 Phase 2 (tiles meet the ring)
 **Batch:** [Strata refactoring](../refactoring/strata-refactoring/README.md)
 
 ## Context

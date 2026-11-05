@@ -4,7 +4,7 @@
 **Priority:** P2 — A new biome with water copied one of three hand-written water paths; all phases are done.
 **Complexity:** 6 (MEDIUM); risk override: water look and swim physics must not change, so the owner's visual-judge rule applies
 **Owner:** ThreeNative maintainers
-**Depends on:** [PRD-791](../refactoring/strata-refactoring/PRD-791-a-biome-is-a-validated-data-file.md) (the `IWaterBody` rows)
+**Depends on:** [PRD-791](PRD-791-a-biome-is-a-validated-data-file.md) (the `IWaterBody` rows)
 **Batch:** [Strata refactoring](../refactoring/strata-refactoring/README.md)
 
 ## Context
