@@ -1,5 +1,6 @@
 #include "check.h"
 #include "engine/renderer/attachment_mask.h"
+#include "engine/renderer/aux_depth.h"
 
 // Which colour attachments a draw writes (attachment_mask.h). A frame whose post graph reads the normal
 // target and whose sea names a custom MRT slot holds two: the sea masks the named target and must still
@@ -8,6 +9,7 @@
 
 namespace {
 
+using tn::engine::auxDepthLessEqual;
 using tn::engine::colourTargetWritten;
 
 void materialMaskAppliesToEveryTarget() {
@@ -32,6 +34,18 @@ void customOnlyDrawWritesItsOwnSlot() {
     CHECK(colourTargetWritten(3, false, 0xfcu, true));
 }
 
+// The aux pass's depth test (aux_depth.h). The water proof's sea is transparent and names a custom MRT slot: it
+// wrote no depth in the colour pass, so the pass reads against the opaque surface behind it. Equal there dropped
+// the slot at 1x — the sea's own fragment is nearer, never equal — while the 4x pass, which tests LessEqual
+// already, wrote it. Only a draw that wrote that depth is tested for equality; every draw at 4x tests LessEqual.
+void aDrawThatWroteNoDepthIsNotTestedForEquality() {
+    CHECK(!auxDepthLessEqual(true, 1));   // an opaque draw wrote the depth it reads
+    CHECK(auxDepthLessEqual(false, 1));   // the sea's slot: nearer than the surface behind it
+    CHECK(auxDepthLessEqual(true, 4));    // 4x reads a sample position, biased, whatever the draw wrote
+    CHECK(auxDepthLessEqual(false, 4));
+}
+
 }  // namespace
 
-TN_TEST_MAIN({"material_mask", materialMaskAppliesToEveryTarget}, {"custom_slot", customOnlyDrawWritesItsOwnSlot})
+TN_TEST_MAIN({"material_mask", materialMaskAppliesToEveryTarget}, {"custom_slot", customOnlyDrawWritesItsOwnSlot},
+             {"depth_test", aDrawThatWroteNoDepthIsNotTestedForEquality})
