@@ -55,7 +55,12 @@ function pixelsOf(image: unknown): IPixels {
     drawable.height &&
     !isCanvas(image)
   ) {
-    const context = new OffscreenCanvas(drawable.width, drawable.height).getContext("2d");
+    // `willReadFrequently` keeps this canvas CPU-backed, and a GPU-backed one does not hand its pixels
+    // back: measured on Chromium over Vulkan, `getImageData` of a red `fillRect` reads 0/0/0 there and
+    // 255/0/0 here, which uploaded every `assets.texture()` as black (the Strata tundra ground).
+    const context = new OffscreenCanvas(drawable.width, drawable.height).getContext("2d", {
+      willReadFrequently: true,
+    });
     context?.drawImage(image as CanvasImageSource, 0, 0);
     const pixels = context?.getImageData(0, 0, drawable.width, drawable.height);
     if (pixels !== undefined) return pixels;
