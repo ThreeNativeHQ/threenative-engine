@@ -1,10 +1,10 @@
-import type { IAssetSlot, IGpuPlacement, IRegion, IValidationSnapshot } from "./world-gpu-scene.js";
+import type { IAssetSlot, IGpuPlacement, IRegion, IValidationSnapshot } from "./world-gpu-types.js";
+import { DRAW_ARGS_WORDS, LOCAL_WORDS } from "./world-gpu-types.js";
 
-/** `DrawIndexedIndirect`: indexCount, instanceCount, firstIndex, baseVertex, firstInstance. */
-export const DRAW_ARGS_WORDS = 5;
-
-/** `mat4` per key: the part's own offset inside the model, the same matrix the CPU composes. */
-export const LOCAL_WORDS = 16;
+// Defined with the layout constants they belong to, and re-exported here because they are the width
+// of every record this module reads. Keeping them in one place is what leaves the two modules a
+// chain of one direction: the validation reads the types, and the types read nothing here.
+export { DRAW_ARGS_WORDS, LOCAL_WORDS };
 
 /** Keys a mismatch line names before the rest are counted and not printed. */
 export const VALIDATE_REPORTED_KEYS = 10;
