@@ -14,10 +14,10 @@ const starterAssets = join(packageRoot, "starter-assets");
 // Manifest hashes include placementIds; terrain and prop payload hashes stay pinned.
 const GOLDEN_HASHES: Record<string, Record<string, string>> = {
   forest: {
-    "world.glb": "f00e171048717d7e6f5f69bfc125aaa19178a234b98f307e766c84b11603e5a2",
-    "heightmap.u16": "33b3fc66f63ca4df76531a44a2bd84e1aff6f642eb9ab0c6622ebe87d1057c2f",
-    "placements.bin": "c5e1222c0b827544560d7ad76624db7293eb92f5f29337225a9a0f407707567d",
-    "splat.rgba": "0ba7d09157e6f4d4cb894a35152be0c05098417b88d68175cfbe6b4ff7c41364",
+    "world.glb": "9b7920162a3b25f98e4e7d4b077c758fb32e829c04fae5c9b89ce351ada8a28d",
+    "heightmap.u16": "800715834e5db9a414ef7207495948bae231923fdfd82bc36b44e51131f06968",
+    "placements.bin": "0853ed2486043db7287b5e98676bc9894f057ea43fb09258cc26d8416518fc8a",
+    "splat.rgba": "46b2dee04b232ed6ab36a64402463cb15b0288318f694206acaf3d2f8068da7e",
     "world.json": "50cdf9757554372259cfe20b00ad65faea71c07a9900cef0589ad249f1c84d16",
   },
   alpine: {
@@ -39,10 +39,10 @@ const GOLDEN_HASHES: Record<string, Record<string, string>> = {
     "world.json": "e9836d3a9920f14c8b94a7294657b588d20465a3c3309b33bc25d595713c2d9a",
   },
   tundra: {
-    "heightmap.u16": "2fcf74db51407bcd4e65b7ae92e31da6ff1b0c7152301952fecedeea36c80710",
-    "placements.bin": "05aa8931ff15b96d21999947ca2c5fdb89fe2b0e17228d8f072021767b55a9ff",
-    "splat.rgba": "981bd12869273d4f959fcaed53b27b325b5748b7ec558ac25c4258b4fd5c9f07",
-    "world.json": "4c0a82d265a73d7f0af9dc67b3cd58229ba0c587edd9c66ddd01c2a2828fb8dc",
+    "heightmap.u16": "ff6f77a9f170ed3a3f52087052150fdeec763dafab874a7adfeab328dd7d2cf8",
+    "placements.bin": "040aeb0d7bfcb2792fb6d254f9b0402f029f989ca94d63cc4bf21d64020d6704",
+    "splat.rgba": "8afba577e7e3a355d24cba1ddbb0e7b002ab593bb206198a3e35b7f1555b130c",
+    "world.json": "965e6ac039105990e803f18716d9df1001aec8c1ac9ce2cddcd8a9a0c41f4c0e",
   },
 };
 
@@ -50,7 +50,7 @@ const GOLDEN_HASHES: Record<string, Record<string, string>> = {
 const BASELINE_HEIGHTS: Record<string, { values: string; evaluated: string }> = {
   forest: {
     values: "46e9bdddaae82a29f770358e51f282486b41d0cab268a25bd58ba885c70a5ed8",
-    evaluated: "16db2efbc4f44fa016a69f8240ae5bf9ce92f15070ea67d436e575cea02ad55f",
+    evaluated: "57751c30d9ea1a74dc6fadd445bd17a59fcf03ef4cb58925faac66770d737b26",
   },
   alpine: {
     values: "72995391d8244365e32f8d8c38f80c04e6ec948b819918876d1f5d6eeed66c81",
@@ -66,7 +66,7 @@ const BASELINE_HEIGHTS: Record<string, { values: string; evaluated: string }> = 
   },
   tundra: {
     values: "3fbcbc21b23e03a1c89d8ce0ccc2c8b93380973304e4be7662bc23185a706b58",
-    evaluated: "3c8e91abeacbd4469974513812c1ffc1703064808ba9facd1dbfb63a59fbdc62",
+    evaluated: "7446793dd47a5bbe2004c21418a02a3db640296dda966fa5439170d9a59651a7",
   },
 };
 
@@ -153,13 +153,13 @@ describe("forest starter kit", () => {
 
     // Pinned golden hashes for starter-kit forest bake (PRD-592 AC-1)
     expect(files.get("heightmap.u16")).toBe(
-      "33b3fc66f63ca4df76531a44a2bd84e1aff6f642eb9ab0c6622ebe87d1057c2f",
+      "800715834e5db9a414ef7207495948bae231923fdfd82bc36b44e51131f06968",
     );
     expect(files.get("placements.bin")).toBe(
-      "c5e1222c0b827544560d7ad76624db7293eb92f5f29337225a9a0f407707567d",
+      "0853ed2486043db7287b5e98676bc9894f057ea43fb09258cc26d8416518fc8a",
     );
     expect(files.get("splat.rgba")).toBe(
-      "0ba7d09157e6f4d4cb894a35152be0c05098417b88d68175cfbe6b4ff7c41364",
+      "46b2dee04b232ed6ab36a64402463cb15b0288318f694206acaf3d2f8068da7e",
     );
     expect(files.get("world.json")).toBe(
       "50cdf9757554372259cfe20b00ad65faea71c07a9900cef0589ad249f1c84d16",

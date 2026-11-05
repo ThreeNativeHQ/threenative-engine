@@ -106,6 +106,33 @@
       {
         "enabled": true,
         "opacity": 1,
+        "id": "access-road",
+        "type": "road",
+        "params": {
+          "followTerrain": true,
+          "points": [
+            [-240, null, -185],
+            [-150, null, -185],
+            [-125, null, -185]
+          ],
+          "width": 6,
+          "shoulder": 4
+        }
+      },
+      {
+        "enabled": true,
+        "opacity": 1,
+        "id": "building-pad",
+        "type": "flatten",
+        "params": {
+          "at": [-160, -180],
+          "radius": 12,
+          "falloff": 0.75
+        }
+      },
+      {
+        "enabled": true,
+        "opacity": 1,
         "id": "lake-bed",
         "type": "flatten",
         "params": {
