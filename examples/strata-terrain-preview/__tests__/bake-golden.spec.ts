@@ -119,7 +119,7 @@ function snapshot() {
   };
 }
 
-function bake(): typeof GOLDEN {
+function bake(): Record<string, unknown> {
   execFileSync(
     process.execPath,
     [fileURLToPath(new URL("../scripts/bake.mjs", import.meta.url)), "--force"],
