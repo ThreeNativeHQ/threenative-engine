@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { expect, it } from "vitest";
 
 const {
@@ -74,6 +75,28 @@ it("keeps GPU-designated instances out of CPU slots only when a GPU runner is co
     "ci:typecheck",
   ]);
   expect(admissionPlan(selected, 3)).toEqual(selected.slice(0, 3));
+});
+
+// The workflow is the authority on which legs take the GPU label; a leg it sends there must not
+// also spend a shared CPU slot, or rain's leg idles one slot and pushes another job to a hosted
+// runner.
+it("keeps every template-nonvisual leg the workflow routes to the GPU runner out of CPU slots", async () => {
+  const workflow = await readFile(
+    new URL("../../.github/workflows/ci.yml", import.meta.url),
+    "utf8",
+  );
+  const job = workflow.slice(workflow.indexOf("\n  template-nonvisual:"));
+  const runsOn = job.slice(job.indexOf("\n    runs-on:")).split("\n")[1];
+  if (runsOn === undefined) throw new Error("template-nonvisual has no runs-on line in ci.yml");
+  const gpuTemplates = [...runsOn.matchAll(/matrix\.template == '([^']+)'/gu)].map((m) => m[1]);
+  expect(gpuTemplates).toContain("racing");
+  expect(gpuTemplates).toContain("rain");
+  for (const template of gpuTemplates)
+    expect(
+      admissionPlan([`ci:template-nonvisual:${template}`, "ci:typecheck"], 5, {
+        gpuRunner: "tn-gpu",
+      }),
+    ).toEqual(["ci:typecheck"]);
 });
 
 it("keeps GPU-designated instances hosted for forks even when both runner labels exist", () => {

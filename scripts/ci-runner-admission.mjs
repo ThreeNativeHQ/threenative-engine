@@ -78,8 +78,15 @@ const INVENTORY_SET = new Set(
 );
 
 // These instances move to the separately provisioned GPU runner when its label is configured;
-// they must not consume slots from the shared CPU-heavy pool in the same run.
-const GPU_RUNNER_INSTANCES = new Set(["ci:benchmark", "ci:strata", "ci:template-nonvisual:racing"]);
+// they must not consume slots from the shared CPU-heavy pool in the same run. Keep in step with
+// the `TN_RUNNER_GPU` branch of each job's `runs-on`: `template-nonvisual` sends racing and rain
+// there, plus the two jobs routed whole.
+const GPU_RUNNER_INSTANCES = new Set([
+  "ci:benchmark",
+  "ci:strata",
+  "ci:template-nonvisual:racing",
+  "ci:template-nonvisual:rain",
+]);
 
 // Two integration jobs gate on a lane output whose name differs from the job id.
 const INTEGRATION_LANE = Object.freeze({
