@@ -41,6 +41,8 @@ const probe = {
   steadyBindGroups: -1,
   steadyGraphKeys: -1,
   steadyPrograms: -1,
+  /** Where the floor's post normal came from: its `normalNode`, the engine's geometric fallback, or no node at all. */
+  normalSource: "none" as "none" | "node" | "geometric",
 };
 const started = performance.now();
 
@@ -102,8 +104,18 @@ try {
   const floorMaterial = new MeshStandardNodeMaterial({ color: 0x000000 });
   // `?nodenormal=1` gives the floor a normalNode (PRD-762): GTAO's normal target holds its shading normal, and the
   // frame is not lost to `TN_POST_NORMAL_UNSUPPORTED`. The node is the geometry normal, so the picture is unchanged.
-  if (new URLSearchParams(location.search).get("nodenormal") === "1")
+  if (new URLSearchParams(location.search).get("nodenormal") === "1") {
     floorMaterial.normalNode = normalView;
+    probe.normalSource = "node";
+    // The picture is the same either way (the node is the geometry normal), so the fallback is read where the
+    // engine names it: `TN_POST_NORMAL_GEOMETRIC` goes to stderr, which the module prints through `console.error`.
+    const logError = console.error;
+    console.error = (...args: unknown[]) => {
+      if (typeof args[0] === "string" && args[0].includes("TN_POST_NORMAL_GEOMETRIC"))
+        probe.normalSource = "geometric";
+      logError(...args);
+    };
+  }
   const floor = new Mesh(new PlaneGeometry(40, 40), floorMaterial);
   floor.position.z = -3;
   scene.add(box, floor);

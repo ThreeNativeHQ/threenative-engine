@@ -30,6 +30,13 @@
       {
         "entity": "wasm-post",
         "component": "probe",
+        "path": "normalSource",
+        "equals": "node",
+        "allowTrivial": "The page names the source from the material it gave the floor before the first draw, so a run that used the node holds it from the start; the value that fails is the engine's geometric fallback."
+      },
+      {
+        "entity": "wasm-post",
+        "component": "probe",
         "path": "frames",
         "gte": 40
       },
