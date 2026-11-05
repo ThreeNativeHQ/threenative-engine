@@ -144,7 +144,6 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_aux_targets_normal_node=aux_targets_normal_node
         native_engine_renderer_aux_routes_written_normals=aux_routes_written_normals
         native_engine_renderer_aux_targets_alpha_tested=aux_targets_alpha_tested
-        native_engine_renderer_aux_targets_normal_node=aux_targets_normal_node
         native_engine_renderer_denoise_face_normal=denoise_face_normal
         native_engine_renderer_emissive_validation=emissive_validation
         native_engine_renderer_output_ramp=output_ramp

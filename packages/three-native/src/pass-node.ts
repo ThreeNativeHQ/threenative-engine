@@ -236,6 +236,8 @@ function maxColorAttachments(): number {
 
 interface IMRTNode {
   readonly isMRTNode: true;
+  /** Set on the material form, whose output nodes are a RenderTarget's attachments; the scene pass keeps its slots. */
+  readonly isMaterialMrt?: true;
   /** three's MRTNode.outputNodes: the node each named output writes. */
   readonly outputNodes: Readonly<Record<string, unknown>>;
   /** The same record under the facade's earlier name, which the Wasm backend's setter reads. */
@@ -320,6 +322,8 @@ export function definePass(
     // Defined, not assigned: a node may be a proxy whose set trap means `uniform.value = x`.
     return Object.defineProperties(node, {
       isMRTNode: { value: true },
+      // A material's mrt(): its output nodes go to a RenderTarget's textures, never to the scene pass's targets.
+      isMaterialMrt: { value: true },
       outputs: { value: Object.freeze({ ...outputs }) },
       // The material's blending writes every attachment, as three's does when the renderer has no MRT.
       blendModes: { value: blendModes },
@@ -551,12 +555,11 @@ export function definePass(
     setMRT(value: IMRTNode | null): this {
       if (value !== null && value?.isMRTNode !== true)
         throw new Error("TN_NATIVE_MRT_UNSUPPORTED: setMRT takes mrt()");
-      if (
-        value !== null &&
-        Object.entries(value.outputs).some(([name, item]) => !passOutput(name, item))
-      )
+      // The material form's output nodes are written into a RenderTarget by the material itself, so a scene pass
+      // cannot lay them out: three's setMRT takes the pass's own slots plus the custom colour attachments.
+      if (value !== null && value.isMaterialMrt === true)
         throw new Error(
-          "TN_NATIVE_MRT_UNSUPPORTED: a pass MRT takes the scene pass slots; set node outputs on material.mrtNode",
+          "TN_NATIVE_MRT_UNSUPPORTED: a material's mrt() writes node outputs; set it on material.mrtNode",
         );
       if (value !== null && this.#offscreen)
         throw new Error("TN_NATIVE_MRT_UNSUPPORTED: an offscreen PassNode draws colour only");

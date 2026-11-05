@@ -56,6 +56,8 @@ export function matrixElements(value: unknown): ArrayLike<number> | undefined {
   )
     return elements as ArrayLike<number>;
   return undefined;
+}
+
 /** "mat3" or "mat4" for a three Matrix3 or Matrix4, the type its uniform is made at; otherwise undefined. */
 function matrixType(value: unknown): "mat3" | "mat4" | undefined {
   if (typeof value !== "object" || value === null) return undefined;

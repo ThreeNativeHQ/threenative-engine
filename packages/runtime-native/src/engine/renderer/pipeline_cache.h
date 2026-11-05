@@ -76,9 +76,6 @@ struct PipelineTarget {
     /** material.colorWrite, masked on every attachment: `colorWrite` above also carries a custom-only draw's
      *  named-target mask, which must not silence that draw's own MRT slot. */
     bool materialColorWrite = true;
-    // share colorWrite and take no blend.
-    std::array<WGPUTextureFormat, 4> moreColors{WGPUTextureFormat_Undefined, WGPUTextureFormat_Undefined,
-                                                WGPUTextureFormat_Undefined, WGPUTextureFormat_Undefined};
     uint32_t blendState = 0;  // blend 5: a material's resolved blend state (materialBlend)
 };
 

@@ -29,6 +29,7 @@ describe("three's readRenderTargetPixelsAsync over a pass's attachments", () => 
   function renderer(calls: unknown[][]) {
     const prototype = { render(): void {} };
     defineRenderTargets(prototype, (self) => ({
+      clear: () => {},
       draw: () => {},
       read: async (...args: unknown[]) => {
         calls.push([self, ...args]);
@@ -57,6 +58,7 @@ describe("three's readRenderTargetPixelsAsync over a pass's attachments", () => 
   it("returns tightly packed rows, so row 1 of a 4x2 byte target starts at texel 4", async () => {
     const prototype = { render(): void {} };
     defineRenderTargets(prototype, () => ({
+      clear: () => {},
       draw: () => {},
       read: async () => {
         // RGBA16Float halves for a 4x2 region: row 0 is 0.0, row 1 is 1.0 (0x3c00).

@@ -922,7 +922,7 @@ importers:
         version: link:../../packages/core
       three:
         specifier: 0.187.0
-        version: 0.187.0(patch_hash=829c15af51482b5ff95988a03da1e8ffc9b4e0b12d8f3071f5bc7dcb4dfb268b)
+        version: 0.187.0(patch_hash=710526ebf1f037057079e79b7a3e956df66eedabb630e2439b78747f4d5873f2)
     devDependencies:
       '@threenative/playtest':
         specifier: workspace:*

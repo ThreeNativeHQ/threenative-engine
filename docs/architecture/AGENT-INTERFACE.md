@@ -27,8 +27,8 @@ plain TypeScript — a GUI that writes a scene is still closed.
 The engine server also ships `engine_search_references` and `engine_reference_detail` for
 game behavior references with pinned source citations. `engine_save_reference` saves a local
 reference and returns a contribution command; it does not submit the contribution.
-A reference card carries numbers, not motion: when feel decides the plan, the route in
-`threenative-capabilities` has the agent fetch `watch.mjs` from the reference repository and slice
+A reference card carries numbers, not motion: when feel decides the plan, the authoring route's
+mechanics-discovery step has the agent fetch `watch.mjs` from the reference repository and slice
 gameplay frames of the named game into a tmp contact sheet it can look at. Those frames are study
 material under someone else's copyright — never game assets, never a citation.
 
