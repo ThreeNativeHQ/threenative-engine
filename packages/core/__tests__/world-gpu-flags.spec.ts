@@ -119,7 +119,7 @@ describe("bundlesAsked", () => {
     expect(bundlesAsked()).toBe("off");
   });
 
-  it("lets the environment's off beat a query string's on, because askedOn runs first over every source", () => {
+  it("lets a query string's on beat the environment's off, because askedOn runs first over every source", () => {
     env(BUNDLE_FLAG, "0");
     // askedOn reads the query string as well, so an explicit on anywhere wins over an off.
     query("?tnBundles=1");

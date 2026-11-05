@@ -3,13 +3,14 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { type IBasisTranscoder, messageOf } from "./compile-types.js";
 
+/** Folder name, inside the compiled assets, that holds the copied Basis transcoder files. */
+export const BASIS_DIRECTORY = "basis";
+
 /**
  * Resolves three's Basis transcoder through the project's own `three` install so a path that
  * moved between three versions fails the build here, as a named error, instead of 404ing at
  * runtime inside the KTX2 loader.
  */
-export const BASIS_DIRECTORY = "basis";
-
 export function resolveBasisTranscoder(cwd: string): IBasisTranscoder {
   try {
     const javascriptPath = createRequire(path.join(cwd, "package.json")).resolve(

@@ -18,13 +18,6 @@ export type DevToolsHost = Record<string, unknown> &
   Partial<Record<"__THREENATIVE__", Partial<IDevTools>>>;
 
 /**
- * Whether this launch is a development one.
- *
- * A web build answers through Vite's own flag. A native build has no bundler flag at launch, so the
- * host publishes `DEV_MODE` on `process.env` — the one place a game can read how it was started —
- * and this reads it. Both routes answer the same question: should the dev surfaces exist.
- */
-/**
  * The bundler's dev flag.
  *
  * The `import.meta.env` access must stay written out exactly here. Vite replaces that member
@@ -37,6 +30,13 @@ function bundlerDevFlag(): boolean {
   return (import.meta as IImportMeta).env?.DEV === true;
 }
 
+/**
+ * Whether this launch is a development one.
+ *
+ * A web build answers through Vite's own flag. A native build has no bundler flag at launch, so the
+ * host publishes `DEV_MODE` on `process.env` — the one place a game can read how it was started —
+ * and this reads it. Both routes answer the same question: should the dev surfaces exist.
+ */
 export function isDevLaunch(): boolean {
   // `process.env` exists only where a host installed one: the native runtime does, a browser
   // bundle does not. Narrowed rather than asserted, so a host that installs something else

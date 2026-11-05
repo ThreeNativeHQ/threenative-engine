@@ -314,12 +314,16 @@ describe("WorldCells option resolution", () => {
       targetFps: () => 60,
     } as unknown as IRendererLike;
     // A launch that asks for the off switch holds the multiplier at 1 on an over-budget frame.
-    const off = await load({ admissionNow: () => SPACING, terrain: false });
+    // The clock advances past one bias step each frame, so a loop that ran would raise the bias.
+    let offClock = 0;
+    const off = await load({ admissionNow: () => offClock, terrain: false });
     try {
       new Group().add(off);
       await flush();
-      off.update(over);
-      off.update(over);
+      for (let frame = 0; frame < 3; frame += 1) {
+        offClock += 500;
+        off.update(over);
+      }
       expect(lodBias()).toBe(1);
     } finally {
       off.dispose();
