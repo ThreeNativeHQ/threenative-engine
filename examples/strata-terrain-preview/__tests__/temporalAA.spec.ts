@@ -21,8 +21,13 @@ describe("Strata temporal AA input", () => {
     assert(unprimedBeauty.renderTarget);
     expect(unprimedBeauty.width).toBeNull();
     expect(unprimedBeauty.height).toBeNull();
-    expect(unprimedBeauty.renderTarget?.width).toBeNull();
-    expect(unprimedBeauty.renderTarget?.height).toBeNull();
+    // r187 RTTNode builds its target at `width ?? 1` / `height ?? 1` (RTTNode.js:51) while the
+    // node's own width/height stay null, so `autoResize` is what "unprimed" means; the 0.185 target
+    // kept the nulls, which is what this spec pinned until the three 0.187 upgrade (048e6bea2).
+    expect(unprimedBeauty.autoResize).toBe(true);
+    expect([unprimedBeauty.renderTarget?.width, unprimedBeauty.renderTarget?.height]).toEqual([
+      1, 1,
+    ]);
 
     const renderer = {
       surface: () => ({
