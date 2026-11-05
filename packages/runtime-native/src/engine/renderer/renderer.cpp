@@ -4,6 +4,7 @@
 #include "renderer.h"
 #include "engine/renderer/pipeline_cache.h"
 #include "engine/renderer/aux_fragment.h"
+#include "engine/renderer/aux_bundle_key.h"
 #include "engine/renderer/readback_crop.h"
 #include "engine/renderer/render_target_pass.h"
 #include "engine/renderer/material_uniforms.h"
@@ -5513,10 +5514,12 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     std::vector<uint32_t> auxKeyRows, velocityKeyRows;
     bundleKeyOf(job.auxPlan, job.auxKey, &auxKeyRows);
     bundleKeyOf(velocityPlan, job.velocityKey, &velocityKeyRows);
-    job.velocityKey.push_back(0);  // a trailing word, as the main (split) and aux (mask) keys have
+    job.velocityKey.push_back(0);  // a trailing word, as the main (split) and aux (mask and slots) keys have
     job.shadowKeys.resize(stablePasses_ ? shadowPasses.size() : 0);
     for (std::size_t k = 0; k < job.shadowKeys.size(); ++k) bundleKeyOf(shadowPasses[k].draws, job.shadowKeys[k]);
-    job.auxKey.push_back(auxMask);
+    // The pass's own layout: its named targets and its custom MRT slots, so a frame that adds a slot records
+    // a bundle for the wider pass even when no row changed (aux_bundle_key.h).
+    appendAuxBundleKey(job.auxKey, auxMask, mrtSlots.size());
     job.bundleKey.push_back(static_cast<std::size_t>(
         std::find_if(plan.begin(), plan.end(), [&](const Planned& p) { return probesOf(*p.program).viewport; }) -
         plan.begin()));

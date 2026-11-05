@@ -343,6 +343,11 @@ tn_native_engine_test(tn-native-engine-attachment-mask-test tests/native-engine/
     native_engine_attachment_mask=custom_slot
     native_engine_attachment_mask_material=material_mask)
 
+# The aux pass's bundle key: a bundle follows the pass's colour-target count, a custom MRT slot included.
+tn_native_engine_test(tn-native-engine-aux-bundle-key-test tests/native-engine/aux_bundle_key_test.cpp
+    native_engine_aux_bundle_key=wider_pass
+    native_engine_aux_bundle_key_same_layout=same_layout)
+
 tn_native_engine_test(tn-native-engine-shader-ir-test tests/native-engine/shader_ir_test.cpp
     native_engine_tsl_ir_storage_textures=storage_textures
     native_engine_tsl_ir_order=order
