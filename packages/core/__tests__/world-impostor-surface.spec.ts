@@ -409,16 +409,25 @@ it.each([MeshStandardMaterial, MeshStandardNodeMaterial])(
     expect(near.alphaTest).toBe(source.alphaTest);
     expect(far.alphaTest).toBe(source.alphaTest);
     const comparisons = (material: typeof near) => {
-      const operators: string[] = [];
+      const fades: Array<{ op: string; noise: unknown; mix: unknown }> = [];
       material.maskNode?.traverse((node) => {
         const op = Reflect.get(node, "op");
-        if (op === "<" || op === ">=") operators.push(op);
+        if (op === "<" || op === ">=")
+          fades.push({
+            op,
+            noise: Reflect.get(node, "aNode"),
+            mix: Reflect.get(node, "bNode"),
+          });
       });
-      return operators;
+      return fades;
     };
+    const operators = (material: typeof near) =>
+      comparisons(material)
+        .map((fade) => fade.op)
+        .sort();
     // One structure for every level: the level is a uniform, so both build one shader program.
-    expect([...comparisons(near)].sort()).toEqual(["<", ">="]);
-    expect(comparisons(far)).toEqual(comparisons(near));
+    expect(operators(near)).toEqual(["<", ">="]);
+    expect(operators(far)).toEqual(operators(near));
     const levels = (material: typeof near) => {
       const values: unknown[] = [];
       material.maskNode?.traverse((node) => {
@@ -437,12 +446,17 @@ it.each([MeshStandardMaterial, MeshStandardNodeMaterial])(
     expect(far.userData.tnPublishedLodRange).toBeUndefined();
     expect(near.maskShadowNode).toBe(near.maskNode);
     expect(far.maskShadowNode).toBe(far.maskNode);
-    // Includes the exact equality boundary: using <= on either side would double one pixel.
-    for (const mix of [0, 0.001, 0.25, 0.5, 0.75, 0.999, 1]) {
-      for (let pixel = 0; pixel < 1024; pixel++) {
-        const noise = pixel / 1024;
-        expect(Number(noise >= mix) + Number(noise < mix)).toBe(1);
-      }
+    // A dither pixel holds exactly one side of a fade because both sides read this one noise and
+    // one mix, exact equality included: a second mix would draw a band in both levels, a second
+    // noise would drop one, and either keeps the operator check above green.
+    for (const material of [near, far]) {
+      const fades = comparisons(material);
+      const fadeIn = fades.find((fade) => fade.op === "<");
+      const fadeOut = fades.find((fade) => fade.op === ">=");
+      expect(fadeIn).toBeDefined();
+      expect(fadeOut).toBeDefined();
+      expect(fadeIn?.noise).toBe(fadeOut?.noise);
+      expect(fadeIn?.mix).toBe(fadeOut?.mix);
     }
     near.dispose();
     far.dispose();
