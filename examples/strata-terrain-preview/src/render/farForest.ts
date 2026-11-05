@@ -7,7 +7,7 @@
 // layer its streaming buckets a far tree under, the impostor gate, and the biome row the numbers
 // come from.
 //
-// Every tree is an ordinary spruce placement on the `far-forest` layer, so `propStreaming.ts` draws
+// Every tree is an ordinary spruce placement on the `far-forest` layer, so `propWorld.ts` draws
 // it through WorldCells with the cooked LOD chain and the engine's whole-asset impostor; the far
 // bucket switches to the impostor sooner and casts no shadow, which is what keeps it cheap.
 // `?farForest=off` is the named override: no trees past the square, the frame before this file.
@@ -27,7 +27,7 @@ export const FAR_FOREST =
 /** The worlds that plant the collar past the square: the forest's surveyed valley. */
 export const FAR_FOREST_WORLDS: readonly WorldName[] = ["forest"];
 
-/** The layer `propStreaming.ts` reads to put a placement in the far, shadowless bucket. */
+/** The layer `streamedBucket` reads to put a placement in the far, shadowless bucket. */
 export const FAR_FOREST_LAYER = "far-forest";
 
 /**
@@ -36,7 +36,7 @@ export const FAR_FOREST_LAYER = "far-forest";
  * scale (`impostorDistanceForScale`), about 360 m, and a cooked far spruce is 4-20 k triangles, so
  * the same gate on the collar's ninety thousand trees would draw millions of them from the vista.
  * The world package rejects a gate inside the last authored step, so with the licensed spruce's
- * 80/150 m chain `propStreaming.ts` lifts it to just past 150 m. The world's biome row carries it
+ * 80/150 m chain `propWorld.ts` lifts it to just past 150 m. The world's biome row carries it
  * (`foliage[].far.impostor`), and this is the constant the streaming reads.
  */
 export const FAR_FOREST_IMPOSTOR = 110;

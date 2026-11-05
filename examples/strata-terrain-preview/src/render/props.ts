@@ -1,11 +1,11 @@
 // The starter props of the Temperate world: three seeded spruce variants, three boulders, grass
-// clumps and poppy patches. `propStreaming.ts` hands their draws to `WorldCells`.
+// clumps and poppy patches. `propWorld.ts` hands their draws to `WorldCells`.
 //
 // What lives here and what does not:
 //
 //   - The shapes, their variants, their materials and their placement rule are all this file's. They
 //     are the picture, and the picture is the game's (AGENTS rule 3).
-//   - preparePose grounds each pose on plain math; propStreaming.ts delegates instancing and LOD to WorldCells.
+//   - preparePose grounds each pose on plain math; propWorld.ts delegates instancing and LOD to WorldCells.
 import { createRandom } from "@threenative/core";
 import type { IPlacement, IPlacementOverride } from "@threenative/terrain";
 import {
@@ -20,6 +20,7 @@ import {
   Vector3,
 } from "three";
 import { boulder, fernClump, grassClump, poppyCluster } from "./cover.js";
+import { FAR_FOREST_LAYER } from "./farForest.js";
 import { ATLAS_CELLS, spruceFarCrown, spruceVariants } from "./spruce.js";
 
 /** Which cell of the needle atlas the poppy petals sample. */
@@ -129,6 +130,45 @@ export type PropRole =
  * twenty-two-metre pine.
  */
 export const LOD_BANDS = { far: 150, hysteresis: 0.2, mid: 80, near: 22 } as const;
+
+/**
+ * The draw reach a placement's variant gives it, shortened by its seeded fade for `FADED_ASSETS`.
+ *
+ * `variantIndex` counts the placements the bake drew before this one on the same variant, so the
+ * fade is a stable number per blade: the bake writes the reach it computes into the package, and the
+ * load path counts live placements on from there.
+ */
+export function streamedReach(placement: IPlacement, variantIndex: number): number {
+  const variant = `${placement.asset}:${variantFor(placement, placement.asset)}`;
+  const reach = VARIANT_REACH[variant] ?? DRAW_REACH[placement.asset] ?? Number.POSITIVE_INFINITY;
+  if (!FADED_ASSETS.has(placement.asset)) return reach;
+  const seed = (Math.imul(variantIndex + 1, 2654435761) >>> 0) / 4294967296;
+  return 28 + (reach - 28) * (1 - Math.sqrt(seed));
+}
+
+/**
+ * The streamed world a placement draws in: the far forest alone, or its reach and shadow policy.
+ *
+ * The bake writes one container per name, and the load path keeps or drops a container by kind, so
+ * `?farForest=` and `?meadow=` answer the same question at load that they answered at compile.
+ */
+export function streamedBucket(placement: IPlacement, reach: number): string {
+  if (placement.layer === FAR_FOREST_LAYER) return "far:false";
+  return `${reach === Number.POSITIVE_INFINITY ? "horizon" : "local"}:${!NO_SHADOW_ASSETS.has(placement.asset)}`;
+}
+
+/**
+ * The terminal gate a spruce variant switches to the engine's whole-asset impostor at.
+ *
+ * A scaled tree's gate divides by its scale, so the minimum scale of its variant is what keeps the
+ * gate beyond the last authored level. A gate inside that step pops the whole tree at a distance the
+ * player can see it.
+ */
+export function impostorDistanceForScale(minScale: number, lastLodDistance: number): number {
+  if (!Number.isFinite(minScale) || minScale === 0)
+    throw new Error("Spruce terminal distance requires a positive finite placement scale.");
+  return Math.max(LOD_BANDS.far / Math.abs(minScale), lastLodDistance * (1 + Number.EPSILON));
+}
 
 export interface IPropPart {
   readonly geometry: BufferGeometry;
@@ -434,12 +474,100 @@ export function lowestY(geometry: BufferGeometry, matrix: Matrix4): number {
   return lowest;
 }
 
+/**
+ * The quaternion a placement's own scatter numbers describe: the normal tilt, then the yaw.
+ *
+ * The bake writes it into the record, and the load path hands it back to `preparePose` as the pose
+ * override, so one rule composes the rotation and the record carries the result.
+ */
+export function authoredQuaternion(
+  placement: IPlacement,
+): readonly [number, number, number, number] {
+  const up = new Vector3(0, 1, 0);
+  const quaternion = new Quaternion();
+  if (placement.alignToNormal)
+    quaternion.setFromUnitVectors(up, new Vector3().fromArray(placement.normal));
+  quaternion.multiply(new Quaternion().setFromAxisAngle(up, placement.rotation));
+  return quaternion.toArray();
+}
+
+/**
+ * A placement as a package record stores it: the authored pose becomes its transform, at one scale.
+ *
+ * A record holds position, quaternion and one uniform scale, so an edited placement's own transform
+ * is folded down to the scale its record carries. The shape that scale removed is `propKey`'s ratio,
+ * and the drawable model that ratio names carries it instead.
+ */
+export function withAuthoredPose(placement: IPlacement): IPlacement {
+  const scale = placement.transform?.scale ?? [placement.scale, placement.scale, placement.scale];
+  const scalar = scale[0] === 0 ? 1 : scale[0];
+  return {
+    ...placement,
+    transform: {
+      grounding: placement.transform?.grounding ?? true,
+      position: placement.transform?.position ?? placement.position,
+      quaternion: (placement.transform?.quaternion ?? authoredQuaternion(placement)) as [
+        number,
+        number,
+        number,
+        number,
+      ],
+      scale: [scalar, scalar, scalar],
+    },
+  };
+}
+
+/**
+ * The model a record draws: its asset, its variant, and the shape a non-uniform edit gave it.
+ *
+ * `WorldCells` names the model through the run the record sits in, so this key is what the container
+ * stores. A placement with one uniform scale draws its variant as authored (`spruce:2`); a placement
+ * the editor scaled unevenly draws a model of that shape (`spruce:2@1,0.5,0.5`), so the record stays
+ * one uniform scale and the picture keeps the edit.
+ */
+export function propKey(placement: IPlacement): string {
+  const variant = `${placement.asset}:${variantFor(placement, placement.asset)}`;
+  const scale = placement.transform?.scale ?? [placement.scale, placement.scale, placement.scale];
+  const scalar = scale[0] === 0 ? 1 : scale[0];
+  const ratio = scale.map((value) => value / scalar);
+  const off = ratio.reduce((sum, value) => sum + (value - 1) ** 2, 0);
+  return off < 1e-16 ? variant : `${variant}@${ratio.join(",")}`;
+}
+
+/** The shape `propKey` wrote, so the loader scales the model the record's one scale cannot carry. */
+export function propRatio(key: string): [number, number, number] {
+  const at = key.indexOf("@");
+  if (at < 0) return [1, 1, 1];
+  const ratio = key
+    .slice(at + 1)
+    .split(",")
+    .map(Number);
+  // A negative component is a mirror, which the renderer composes like any other shape.
+  if (ratio.length !== 3 || ratio.some((value) => !Number.isFinite(value) || value === 0))
+    throw new Error(`Prop key '${key}' does not name a usable shape.`);
+  return [ratio[0] as number, ratio[1] as number, ratio[2] as number];
+}
+
+/**
+ * The pose a baked package record carries: the quaternion the bake authored for the placement.
+ *
+ * A world-v1 record holds position, quaternion and scale, and nothing about `alignToNormal` or the
+ * scatter yaw, so the load path hands the record's quaternion here. It replaces the rotation the
+ * placement would compose, and every step below it — the ground snap, the boulder burial, the
+ * four-footprint sink and the mountain base ring — still runs, because the record is a pose and not
+ * an override of the pose.
+ */
+export interface IPropPoseOverride {
+  readonly quaternion: readonly [number, number, number, number];
+}
+
 export function preparePose(
   geometry: BufferGeometry,
   _material: Material,
   placement: IPlacement,
   transform: IPlacementOverride | undefined,
   groundAt: PropGroundQuery,
+  pose?: IPropPoseOverride,
 ) {
   // Plain math, not a Mesh: on the owned engine every Object3D is an engine object, and a detached
   // Mesh per placement cost 30 s of the forest's load (218,816 placements, 0.14 ms each).
@@ -457,10 +585,7 @@ export function preparePose(
     model.quaternion.fromArray(transform.quaternion);
     model.scale.fromArray(transform.scale);
   } else {
-    const up = new Vector3(0, 1, 0);
-    if (placement.alignToNormal)
-      model.quaternion.setFromUnitVectors(up, new Vector3().fromArray(placement.normal));
-    model.quaternion.multiply(new Quaternion().setFromAxisAngle(up, placement.rotation));
+    model.quaternion.fromArray(pose?.quaternion ?? authoredQuaternion(placement));
     model.scale.setScalar(placement.scale);
   }
   const grounding = transform?.grounding ?? true;

@@ -10,7 +10,7 @@ import {
   createHorizonCollar,
   setHorizonSurroundings,
 } from "../src/render/horizon.js";
-import { createStreamedProps } from "../src/render/propStreaming.js";
+import { streamProps } from "../src/render/propWorld.js";
 import { variantFor } from "../src/render/props.js";
 import type { IBakedWorld } from "../src/render/terrain.js";
 
@@ -90,7 +90,7 @@ describe("far forest", () => {
         })),
       ]),
     );
-    const streamed = await createStreamedProps({
+    const streamed = await streamProps({
       placements,
       groundAt: () => ({ height: 0, offset: 0 }),
       parts,

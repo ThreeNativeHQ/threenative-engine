@@ -25,14 +25,11 @@ import {
 import { createGroundSampler } from "./render/groundSampler.js";
 import { HORIZON_WALK_BAND } from "./render/horizon.js";
 import { loadPack, loadSkyLight } from "./render/pack.js";
-import type { loadPlacements } from "./render/placements.js";
 import { loadPreparedProps } from "./render/prepared.js";
 import { createPropSurfaces } from "./render/propMaterials.js";
-import {
-  type IPropPreparationProgress,
-  createStreamedProps,
-  invalidatePropShadows,
-} from "./render/propStreaming.js";
+import type { IPropPreparationProgress } from "./render/propProgress.js";
+import type { IScatter } from "./render/propWorld.js";
+import { invalidatePropShadows, streamProps } from "./render/propWorld.js";
 import {
   type PropGroundQuery,
   buildPropVariants,
@@ -47,11 +44,11 @@ import type { ISpawnGate, ISpawnWitness } from "./spawnGate.js";
 import type { ForestStageWorld } from "./world/forestStage.js";
 
 /** The whole set of placements one world scatters, with the canopy weight painted from them. */
-export type Scatter = Awaited<ReturnType<typeof loadPlacements>>;
+export type Scatter = IScatter;
 /** The built prop variants, keyed by `asset:variant`. */
 export type Variants = ReturnType<typeof buildPropVariants>;
-/** The streamed world the meadow builds, once it has landed. */
-type StreamedProps = Awaited<ReturnType<typeof createStreamedProps>>;
+/** The streamed worlds the meadow builds, once they have landed. */
+type StreamedProps = Awaited<ReturnType<typeof streamProps>>;
 /** One streamed world's spawn join: data and draws, reported separately. */
 export type IPropJoins = Map<WorldCells, { data: string; prewarm: string }>;
 
@@ -354,9 +351,11 @@ export function createMeadow(options: IMeadowOptions): IMeadow {
             })
           : [];
       farForestCount = far.length;
-      props = await createStreamedProps({
+      props = await streamProps({
+        // The bake's containers, and only the view cover the game plants at load: the meadow the
+        // camera stands in and the collar past the square, both compiled through the package.
+        package: scatter.package,
         placements: [
-          ...scatter.placements,
           ...(vista
             ? meadowCover(
                 { x: vista.at[0], z: vista.at[1] },

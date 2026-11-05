@@ -3,6 +3,8 @@
 /src/world/.bake-stamp
 /assets/
 /basis/
-/src/world/*.placements.bin
+/src/world/*.props.bin
+/src/world/*.reach.bin
+/src/world/*.canopy.bin
 /src/world/*.splat.rgba8
 /assets.manifest.json

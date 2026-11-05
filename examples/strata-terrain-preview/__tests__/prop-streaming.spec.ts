@@ -16,12 +16,14 @@ import {
 import { expect, it, vi } from "vitest";
 import {
   type IPropPreparationProgress,
-  createStreamedProps,
   invalidatePropShadows,
-} from "../src/render/propStreaming.js";
+  streamProps,
+} from "../src/render/propWorld.js";
 import {
   DRAW_REACH,
+  type IPropPoseOverride,
   LOD_BANDS,
+  authoredQuaternion,
   buildPropVariants,
   preparePose,
   variantFor,
@@ -65,7 +67,7 @@ it("reports an outstanding world load before the factory returns or attaches it"
     return [];
   });
   let progress: IPropPreparationProgress | undefined;
-  const work = createStreamedProps({
+  const work = streamProps({
     placements: [placement],
     parts: new Map([
       [
@@ -131,7 +133,7 @@ it("streams Strata's exact grounded transforms, seeded cover density and origina
   const ground = () => ({ height: 4, offset: 0 });
   const materials = { grass: material } as never;
   const follow = { position: new Vector3(-480, 5, 0) };
-  const streamed = await createStreamedProps({
+  const streamed = await streamProps({
     placements,
     groundAt: ground,
     parts,
@@ -150,8 +152,17 @@ it("streams Strata's exact grounded transforms, seeded cover density and origina
     for (const placement of placements) {
       const foot = parts.get(`grass:${variantFor(placement, "grass")}`)?.[0];
       assert(foot);
+      // The container stores the authored quaternion as float32, so that is the pose it describes.
+      const record: IPropPoseOverride = {
+        quaternion: [...Float32Array.from(authoredQuaternion(placement))] as [
+          number,
+          number,
+          number,
+          number,
+        ],
+      };
       expect(streamed.byId.get(placement.id)?.pose.elements).toEqual(
-        preparePose(foot.geometry, material, placement, placement.transform, ground).matrix
+        preparePose(foot.geometry, material, placement, placement.transform, ground, record).matrix
           .elements,
       );
     }
@@ -186,7 +197,7 @@ it("streams Strata's exact grounded transforms, seeded cover density and origina
 });
 it("cancels a stale scene before querying ground or attaching a stream", async () => {
   let calls = 0;
-  const result = await createStreamedProps({
+  const result = await streamProps({
     placements: [] as IPlacement[],
     groundAt: () => {
       calls++;
@@ -220,7 +231,7 @@ it("stops stale-scene work during post-grounding package compilation", async () 
   );
   let groundCalls = 0;
   let postChecks = 0;
-  const result = await createStreamedProps({
+  const result = await streamProps({
     placements,
     parts,
     materials: { grass: material } as never,
@@ -257,7 +268,7 @@ it("retains every unlimited canopy placement and keeps prewarm pending until sce
   );
   const follow = { position: new Vector3(0, 10, 0) };
   let preparation: IPropPreparationProgress | undefined;
-  const streamed = await createStreamedProps({
+  const streamed = await streamProps({
     placements,
     parts,
     materials: { bark: material } as never,
@@ -355,7 +366,7 @@ it("submits authored neighbor LODs with complementary masks through a boundary w
   const parts = new Map([[`cliff:${variantFor(placement, "cliff")}`, levels]]);
   const materials = { bark: material } as never;
   const follow = { position: new Vector3() };
-  const streamed = await createStreamedProps({
+  const streamed = await streamProps({
     placements: [placement],
     parts,
     materials,
@@ -475,7 +486,7 @@ it("writes the original rendered matrices and materials for multi-part nonunifor
     ]),
   );
   const materials = { bark, crown } as never;
-  const streamed = await createStreamedProps({
+  const streamed = await streamProps({
     placements,
     parts,
     materials,
@@ -559,7 +570,7 @@ it("drains representative multi-part canopy cell admission without thousands of 
       ),
     ]),
   );
-  const streamed = await createStreamedProps({
+  const streamed = await streamProps({
     placements,
     parts,
     materials: { bark: material, crown: material } as never,
@@ -662,7 +673,7 @@ it("preserves authored cutout LOD parts and distinct custom shader surfaces", as
     ],
   ]);
   const follow = { position: new Vector3(0, 1, 0) };
-  const streamed = await createStreamedProps({
+  const streamed = await streamProps({
     placements,
     parts,
     materials: {} as never,
@@ -814,7 +825,7 @@ it("keeps streamed caster changes regional and reserves global invalidation for 
     ],
   ]);
   const follow = { position: new Vector3(0, 1, 0) };
-  const streamed = await createStreamedProps({
+  const streamed = await streamProps({
     placements: [placement],
     parts,
     materials: { bark: material } as never,
@@ -880,7 +891,7 @@ it("settles an editor stream without caster layers when no shadow renderer exist
   } as IPlacement;
   const geometry = new BoxGeometry();
   const material = new MeshBasicMaterial();
-  const streamed = await createStreamedProps({
+  const streamed = await streamProps({
     placements: [placement],
     parts: new Map([
       [
@@ -1074,7 +1085,7 @@ it("switches real fallback spruce and sapling batches into authored far levels a
     alignToNormal: false,
   })) as IPlacement[];
   const follow = { position: new Vector3() };
-  const streamed = await createStreamedProps({
+  const streamed = await streamProps({
     placements,
     parts,
     materials: { bark: material, crown: material } as never,

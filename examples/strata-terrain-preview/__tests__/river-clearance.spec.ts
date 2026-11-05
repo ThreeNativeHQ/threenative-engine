@@ -1,8 +1,10 @@
 import { readFileSync } from "node:fs";
 import { Heightfield } from "@threenative/core/world";
+import { propAssetOf } from "@threenative/terrain";
 import { describe, expect, it } from "vitest";
-import { decodePlacements } from "../src/render/placements.js";
+import { propCounts } from "../src/render/propWorld.js";
 import { waterSurfaceAt } from "../src/world/water.js";
+import { readBakedPropPackage } from "./bakedPropPackage.js";
 
 // `STRATA_WORLD_DIR` points the check at another baked set (the red arm of a red-green run).
 const file = (name: string) =>
@@ -36,12 +38,41 @@ const AROUND = [
   [0, -1],
 ] as const;
 
-describe("forest river clearance", () => {
-  it("grows nothing in the river or the lake, and keeps every trunk a metre off the water", () => {
-    const bytes = file("forest.placements.bin");
-    const { placements } = decodePlacements(
-      bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer,
+/** Every placement the forest's prop package holds, with the record order the bake wrote. */
+async function placementsOfForest() {
+  const pkg = await readBakedPropPackage(
+    process.env.STRATA_WORLD_DIR
+      ? `${process.env.STRATA_WORLD_DIR}/`
+      : new URL("../src/world/", import.meta.url),
+    "forest",
+  );
+  const placements = pkg.buckets.flatMap((bucket) => {
+    const floats = new Float32Array(
+      bucket.placements.buffer,
+      bucket.placements.byteOffset,
+      bucket.placements.byteLength / 4,
     );
+    const assets: string[] = [];
+    for (const cell of bucket.cells)
+      for (const run of cell.runs)
+        for (let index = 0; index < run.count; index++)
+          assets[run.offset + index] = propAssetOf(run.asset);
+    return bucket.ids.map((id, index) => ({
+      id,
+      asset: assets[index] as string,
+      position: [
+        floats[index * 8] as number,
+        floats[index * 8 + 1] as number,
+        floats[index * 8 + 2] as number,
+      ],
+    }));
+  });
+  return { counts: propCounts(pkg), placements };
+}
+
+describe("forest river clearance", () => {
+  it("grows nothing in the river or the lake, and keeps every trunk a metre off the water", async () => {
+    const { placements } = await placementsOfForest();
     const drowned = placements.filter(
       ({ asset, position: [x, , z] }) =>
         GROWING.has(asset) &&
@@ -50,11 +81,8 @@ describe("forest river clearance", () => {
     expect(placements.length).toBeGreaterThan(10_000);
     expect(drowned.map(({ id }) => id)).toEqual([]);
   });
-  it("lays cobbles on the river bed, under the water, and river rocks along its banks", () => {
-    const bytes = file("forest.placements.bin");
-    const { counts, placements } = decodePlacements(
-      bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer,
-    );
+  it("lays cobbles on the river bed, under the water, and river rocks along its banks", async () => {
+    const { counts, placements } = await placementsOfForest();
     const cobbles = placements.filter(({ asset }) => asset === "pebble");
     expect(cobbles.length).toBeGreaterThan(800);
     expect(cobbles.filter(({ position: [x, , z] }) => !flooded(x, z)).map(({ id }) => id)).toEqual(

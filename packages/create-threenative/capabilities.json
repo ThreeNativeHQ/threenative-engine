@@ -7892,6 +7892,25 @@
     {
       "aliases": [],
       "constraints": [
+        "headless; the caller decides every placement, its streamed world, its reach and its pose"
+      ],
+      "example": "const pkg = compilePropBuckets(entries, { bounds });",
+      "importPath": "@threenative/terrain",
+      "kind": "function",
+      "overrides": ["cellSize and the base extent; the bucket, reach and kind of every entry"],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function compilePropBuckets( entries: readonly IPropBucketEntry[], options: ICompilePropBucketsOptions = { … }",
+      "situations": [
+        "bake the prop worlds a game streams, once, instead of compiling them at load"
+      ],
+      "summary": "Group placements into their streamed worlds and write each world's cells and records. The order is the streamed one: cells sorted by `x` then `z`, assets sorted by name inside a cell, and records in the order the entries arrived inside a run. Same-cell, same-asset placements keep their input order, so a re-run of a seeded bake reproduces the buffer byte for byte.",
+      "supersedes": [],
+      "symbol": "compilePropBuckets"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "returns candidates only; the caller applies its own exact distance and level test"
       ],
       "example": "const rivers = createSegmentIndex(segments, 32); const wet = rivers.nearby(x, z).some(isWet);",
@@ -8159,6 +8178,55 @@
       "summary": "A biome's rows as the ordered generators read them. The rule is short and shared; only these numbers differ between a wood, a barren shoulder, a dune field and a tundra, so the biome file names them rather than the code. A biome whose tree is not one this generator has art for fails here, naming the species, rather than planting nothing.",
       "supersedes": [],
       "symbol": "orderedScatterRules"
+    },
+    {
+      "aliases": [],
+      "constraints": [],
+      "example": "const asset = propAssetOf(\"spruce:2\"); // \"spruce\"",
+      "importPath": "@threenative/terrain",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function propAssetOf(modelKey: string): string { … }",
+      "situations": [
+        "count one species across a world's prop buckets, or name the asset a run draws"
+      ],
+      "summary": "The asset a package run names. A prop run names the model it draws, `asset:variant[@shape]`; a container written by `bakeWorldPackage` names the asset alone. Both reduce to the asset here, which is what a count, a material or a placement's own `asset` field holds.",
+      "supersedes": [],
+      "symbol": "propAssetOf"
+    },
+    {
+      "aliases": [],
+      "constraints": [],
+      "example": "const file = propPackageFile(\"forest\", \"local:true\", \"props.bin\"); // \"forest.local-true.props.bin\"",
+      "importPath": "@threenative/terrain",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function propPackageFile(world: string, bucket: string, suffix: string): string { … }",
+      "situations": ["name one of a bucket's three files without a bucket key that breaks a path"],
+      "summary": "A path under `world/` that no bucket name can break: `local:true` becomes `local-true`. The bucket's own name is kept in the manifest, so this rename is only a file-system concern.",
+      "supersedes": [],
+      "symbol": "propPackageFile"
+    },
+    {
+      "aliases": [],
+      "constraints": ["the manifest names the files; nothing here touches a file system"],
+      "example": "const { manifest, files } = propPackageFiles(pkg, \"forest\");",
+      "importPath": "@threenative/terrain",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function propPackageFiles(pkg: IPropPackage, world: string): IPropPackageFiles { … }",
+      "situations": [
+        "write a compiled package to disk: one manifest and three files per streamed world"
+      ],
+      "summary": "Write a compiled package as the manifest the game fetches and one set of files per bucket. The manifest names the files rather than embedding them, so a loader fetches only the buckets its query flags keep (`?farForest=on` keeps the far field, `?meadow=off` drops the vista cover).",
+      "supersedes": [],
+      "symbol": "propPackageFiles"
     },
     {
       "aliases": [],

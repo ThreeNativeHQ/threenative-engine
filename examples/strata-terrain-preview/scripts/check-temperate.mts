@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { Heightfield } from "@threenative/core/world";
 import { Vector3 } from "three";
 import { createHorizonGeometry, setHorizonSurroundings } from "../src/render/horizon.js";
-import { createStreamedProps } from "../src/render/propStreaming.js";
+import { streamProps } from "../src/render/propWorld.js";
 import { buildPropVariants, flatPropMaterials, variantFor } from "../src/render/props.js";
 import { grassWeight, scatterProps, slopeDegrees } from "../src/render/scatter.js";
 
@@ -150,7 +150,7 @@ const placements = [0, 20, 200].map((x, index) => ({
   scale: 1,
 }));
 // Footprint support may be four metres downhill; the dressed crag must still emerge.
-const beddedCrag = await createStreamedProps({
+const beddedCrag = await streamProps({
   placements: [
     {
       asset: "mountain",
@@ -182,7 +182,7 @@ assert.ok(
 beddedCrag.dispose();
 const follow = { position: new Vector3() };
 async function draw(placements: readonly import("@threenative/terrain").IPlacement[]) {
-  const props = await createStreamedProps({
+  const props = await streamProps({
     placements,
     groundAt: ground,
     parts,

@@ -129,12 +129,14 @@ function poseOf(item: IPlacement): {
 
 function uniformScale(asset: string, id: string, scale: readonly [number, number, number]): number {
   const mean = (scale[0] + scale[1] + scale[2]) / 3;
+  const magnitude = Math.abs(mean);
   const deviation = Math.max(
     Math.abs(scale[0] - mean),
     Math.abs(scale[1] - mean),
     Math.abs(scale[2] - mean),
   );
-  if (!(mean > 0) || deviation > mean * SCALE_TOLERANCE)
+  // A negative uniform scale is a mirror, which the renderer composes like any other pose.
+  if (!(magnitude > 0) || deviation > magnitude * SCALE_TOLERANCE)
     throw Error(
       `World package: placement '${id}' of asset '${asset}' is scaled ${JSON.stringify(scale)}; a placement record carries one uniform scale.`,
     );
@@ -189,7 +191,7 @@ export function writePlacementRecord(
  */
 export function placementCells(
   state: Pick<ITerrainState, "instances">,
-  assets: Readonly<Record<string, IWorldPackageAsset>>,
+  assets: Readonly<Record<string, unknown>>,
   cellSize: number,
   extent: IWorldPackageManifest["extent"],
 ): { bytes: Uint8Array; cells: ICell[]; ids: string[] } {
