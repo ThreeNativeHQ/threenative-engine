@@ -12186,6 +12186,15 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "outputNode",
+          "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": [
@@ -13647,6 +13656,15 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "outputNode",
+          "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": [
@@ -14271,6 +14289,15 @@
         },
         {
           "name": "maskNode",
+          "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "outputNode",
           "type": "Node | null",
           "mutable": true,
           "lifetime": "owned",
@@ -19233,6 +19260,24 @@
         {
           "name": "texture",
           "type": "Texture",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "depth",
+          "type": "number",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "textures",
+          "type": "Texture[]",
           "mutable": false,
           "lifetime": "owned",
           "status": {

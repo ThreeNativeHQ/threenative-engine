@@ -48,6 +48,8 @@ interface IPassTsl {
   texture(source: unknown, uv: unknown): unknown;
   uv(): unknown;
   readonly normalView: unknown;
+  /** three's diffuseColor node, when the table has it: a graph reads it and `mrt({ diffuseColor })` names it. */
+  readonly diffuseColor?: unknown;
   /** The TSL constructors the surface decode composes; a table that lacks them refuses by name. */
   readonly floor?: (value: unknown) => unknown;
   readonly vec4?: (...values: unknown[]) => unknown;
@@ -71,6 +73,12 @@ interface IMRTSlot {
 interface IMRTNode {
   readonly isMRTNode: true;
   readonly outputs: Readonly<Record<string, unknown>>;
+  /**
+   * Why the engine's scene pass cannot take these outputs, or undefined when it can. A material's
+   * `mrtNode` takes any output (render-target.ts draws each into the target texture of its name); only
+   * `pass().setMRT` refuses, because the scene pass writes the engine's own named targets.
+   */
+  readonly passRefusal: string | undefined;
   /**
    * three's per-output blend state. The engine's scene pass keeps the material's own blending on
    * every target, so a mode is recorded for `getBlendMode` and not applied to the target.
@@ -117,28 +125,29 @@ export function definePass(
   const normalView = tsl.normalView;
   const metalness = slot("metalness");
   const roughness = slot("roughness");
-  const diffuseColor = slot("diffuseColor");
+  const diffuseColor = tsl.diffuseColor ?? slot("diffuseColor");
   const emissive = slot("emissive");
 
   function mrt(outputs: Record<string, unknown>): IMRTNode {
     const named: Record<string, unknown> = {};
+    let passRefusal: string | undefined;
     for (const [name, value] of Object.entries(outputs)) {
       const normal =
         name === "normal" &&
         (value === normalView ||
           (value as { __tnNormalView?: unknown } | null)?.__tnNormalView === normalView);
-      if (
-        !normal &&
-        ((value as IMRTSlot | null)?.isMRTSlot !== true || name !== (value as IMRTSlot).name)
-      )
-        throw new Error(
-          `TN_NATIVE_MRT_UNSUPPORTED: ${name} must be one of output, normal: normalView or vec4(normalView, 0), metalness, roughness, diffuseColor, emissive`,
-        );
+      const engineSlot =
+        normal ||
+        (name === "diffuseColor" && value === diffuseColor) ||
+        ((value as IMRTSlot | null)?.isMRTSlot === true && name === (value as IMRTSlot).name);
+      if (!engineSlot)
+        passRefusal ??= `TN_NATIVE_MRT_UNSUPPORTED: ${name} must be one of output, normal: normalView or vec4(normalView, 0), metalness, roughness, diffuseColor, emissive`;
       named[name] = normal ? normalView : value;
     }
     const node: IMRTNode = Object.freeze({
       isMRTNode: true as const,
       outputs: Object.freeze(named),
+      passRefusal,
       blendModes: {} as Record<string, unknown>,
       setBlendMode(name: string, blend: unknown): IMRTNode {
         node.blendModes[name] = blend;
@@ -150,7 +159,7 @@ export function definePass(
     return node;
   }
 
-  const slots: Record<string, IMRTSlot> = { metalness, roughness, diffuseColor };
+  const slots: Record<string, unknown> = { metalness, roughness, diffuseColor };
 
   /**
    * The engine's normal target carries the surface in its alpha (Renderer::planNormals):
@@ -270,6 +279,7 @@ export function definePass(
         throw new Error("TN_NATIVE_MRT_UNSUPPORTED: setMRT takes mrt()");
       if (value !== null && this.#offscreen)
         throw new Error("TN_NATIVE_MRT_UNSUPPORTED: an offscreen PassNode draws colour only");
+      if (value?.passRefusal !== undefined) throw new Error(value.passRefusal);
       this.#mrt = value;
       return this;
     }

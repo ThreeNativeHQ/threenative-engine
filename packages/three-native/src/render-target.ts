@@ -52,22 +52,77 @@ export function pixelsOfType(
 
 /** The engine's two calls for a back end's render targets. */
 export interface IRenderTargetEngine {
-  /** Draws `root` through `camera` into `target`; throws the engine's refusal. */
-  draw(target: unknown, root: unknown, camera: unknown): void;
+  /**
+   * Draws `root` through `camera` into `target`; throws the engine's refusal. `layer` is the array layer
+   * of a target made with `depth`, `attachment` the index into its `textures` (three's `count`).
+   */
+  draw(target: unknown, root: unknown, camera: unknown, layer?: number, attachment?: number): void;
   /** The region's rows in the target's format (see targetTexelBytes), top row first. */
   read(target: unknown, x: number, y: number, width: number, height: number): Promise<Uint8Array>;
 }
 
+interface ILayeredTarget {
+  readonly depth?: number;
+  readonly textures?: ReadonlyArray<{ readonly name?: string }>;
+}
+
+interface IMrtMaterial {
+  mrtNode?: { readonly isMRTNode?: boolean; readonly outputs?: Readonly<Record<string, unknown>> };
+  outputNode?: unknown;
+}
+
 /**
- * Adds three's setRenderTarget, getRenderTarget, getActiveCubeFace, getActiveMipmapLevel and
- * readRenderTargetPixelsAsync to a renderer facade's prototype, and routes its render() into the
- * current target. `engineOf(renderer)` reaches the engine for that renderer.
+ * three's MRT into a target made with `count`: each attachment receives the material's `mrtNode` output
+ * named like that texture (three's MRTNode matches outputs to `target.textures[i].name`). The engine
+ * draws one attachment at a time, so each draw sets the material's `outputNode` to that output and puts
+ * the material's own back afterwards. Attachment 0 with no output of its name draws the material's
+ * colour, as three's `output` does; any other attachment with no output is refused by name.
+ * ponytail: one draw per attachment; one pass with several colour targets when a hot path needs MRT.
+ */
+function drawAttachments(
+  root: unknown,
+  textures: ReadonlyArray<{ readonly name?: string }>,
+  draw: (attachment: number) => void,
+): void {
+  const materials: IMrtMaterial[] = [];
+  (root as { traverse?(visit: (object: unknown) => void): void }).traverse?.((object) => {
+    const material = (object as { material?: IMrtMaterial | IMrtMaterial[] }).material;
+    for (const entry of Array.isArray(material) ? material : material ? [material] : [])
+      if (entry.mrtNode?.isMRTNode === true && !materials.includes(entry)) materials.push(entry);
+  });
+  const previous = materials.map((material) => material.outputNode ?? null);
+  try {
+    textures.forEach((texture, attachment) => {
+      const name = texture.name ?? "";
+      for (const material of materials) {
+        const outputs = material.mrtNode?.outputs ?? {};
+        if (Object.hasOwn(outputs, name)) material.outputNode = outputs[name];
+        else if (attachment === 0) material.outputNode = previous[materials.indexOf(material)];
+        else
+          throw new Error(
+            `TN_NATIVE_MRT_UNSUPPORTED: the material's mrtNode has no '${name}' output for attachment ${attachment}`,
+          );
+      }
+      draw(attachment);
+    });
+  } finally {
+    materials.forEach((material, index) => {
+      if (material.outputNode !== previous[index]) material.outputNode = previous[index];
+    });
+  }
+}
+
+/**
+ * Adds three's setRenderTarget, getRenderTarget, getActiveCubeFace, getActiveMipmapLevel, getMRT, setMRT,
+ * initRenderTarget and readRenderTargetPixelsAsync to a renderer facade's prototype, and routes its
+ * render() into the current target. `engineOf(renderer)` reaches the engine for that renderer.
  */
 export function defineRenderTargets(
   prototype: { render(scene: unknown, camera: unknown): void },
   engineOf: (renderer: object) => IRenderTargetEngine,
 ): void {
-  const targets = new WeakMap<object, unknown>();
+  const targets = new WeakMap<object, { target: unknown; layer: number }>();
+  const mrts = new WeakMap<object, unknown>();
   const render = prototype.render;
   Object.assign(prototype, {
     setRenderTarget(
@@ -76,25 +131,44 @@ export function defineRenderTargets(
       activeCubeFace = 0,
       activeMipmapLevel = 0,
     ): void {
-      if (activeCubeFace !== 0 || activeMipmapLevel !== 0)
+      // A target made with `depth` takes the layer where three's cube face goes (three's layered draw).
+      const depth = (target as ILayeredTarget | null)?.depth ?? 1;
+      if (activeMipmapLevel !== 0 || !(activeCubeFace >= 0 && activeCubeFace < depth))
         throw new Error(
-          "TN_NATIVE_RENDER_TARGET_UNSUPPORTED: a cube face or mip level other than 0 is not drawn natively",
+          `TN_NATIVE_RENDER_TARGET_UNSUPPORTED: layer ${activeCubeFace} of a ${depth}-layer target or mip level ${activeMipmapLevel} is not drawn natively`,
         );
-      targets.set(this, target);
+      targets.set(this, { target, layer: activeCubeFace });
     },
     getRenderTarget(this: object): unknown {
-      return targets.get(this) ?? null;
+      return targets.get(this)?.target ?? null;
     },
-    getActiveCubeFace(): number {
-      return 0;
+    getActiveCubeFace(this: object): number {
+      return targets.get(this)?.layer ?? 0;
     },
     getActiveMipmapLevel(): number {
       return 0;
     },
+    /** three's renderer MRT. The engine's frame pass takes its MRT from pass().setMRT; this only holds it. */
+    getMRT(this: object): unknown {
+      return mrts.get(this) ?? null;
+    },
+    setMRT(this: object, mrt: unknown): object {
+      mrts.set(this, mrt ?? null);
+      return this;
+    },
+    /** three's initRenderTarget: the engine allocates a target's textures at its first draw or sample. */
+    initRenderTarget(): void {},
     render(this: object, scene: unknown, camera: unknown): void {
-      const target = targets.get(this);
-      if (target === null || target === undefined) render.call(this, scene, camera);
-      else engineOf(this).draw(target, scene, camera);
+      const current = targets.get(this);
+      const target = current?.target;
+      if (target === null || target === undefined) return render.call(this, scene, camera);
+      const engine = engineOf(this);
+      const textures = (target as ILayeredTarget).textures;
+      if (textures === undefined || (textures.length <= 1 && current?.layer === 0))
+        return engine.draw(target, scene, camera);
+      drawAttachments(scene, textures, (attachment) =>
+        engine.draw(target, scene, camera, current?.layer ?? 0, attachment),
+      );
     },
     async readRenderTargetPixelsAsync(
       this: object,

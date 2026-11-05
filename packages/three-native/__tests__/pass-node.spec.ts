@@ -28,7 +28,7 @@ const tsl = {
   cameraNear: expr("near"),
   cameraFar: expr("far"),
 };
-const { mrt, output, metalness, roughness } = definePass(tsl);
+const { mrt, output, metalness, roughness, pass } = definePass(tsl);
 const vec4 = markNormalTarget((...parts: unknown[]) => ({ parts }), normalView);
 
 describe("native scene pass surface targets", () => {
@@ -105,7 +105,7 @@ describe("native scene pass albedo target", () => {
     );
     scenePass.setMRT(api.mrt({ output: api.output, diffuseColor: api.diffuseColor }));
     expect(scenePass.getTextureNode("diffuseColor")).toEqual({ source: { name: "albedo" } });
-    expect(() => api.mrt({ diffuse: api.diffuseColor })).toThrow(
+    expect(() => scenePass.setMRT(api.mrt({ diffuse: api.diffuseColor }))).toThrow(
       /TN_NATIVE_MRT_UNSUPPORTED: diffuse/u,
     );
   });
@@ -131,7 +131,9 @@ describe("native scene pass emissive target", () => {
     );
     scenePass.setMRT(api.mrt({ output: api.output, emissive: api.emissive }));
     expect(scenePass.getTextureNode("emissive")).toEqual({ source: { name: "emissive" } });
-    expect(() => api.mrt({ unknown: api.emissive })).toThrow(/TN_NATIVE_MRT_UNSUPPORTED: unknown/u);
+    expect(() => scenePass.setMRT(api.mrt({ unknown: api.emissive }))).toThrow(
+      /TN_NATIVE_MRT_UNSUPPORTED: unknown/u,
+    );
   });
 });
 
@@ -144,12 +146,26 @@ describe("native scene pass MRT", () => {
     );
   });
 
-  it("refuses every other normal spelling by name", () => {
-    expect(() => mrt({ normal: vec4(normalView, 1) })).toThrow(
+  it("refuses every other normal spelling by name on the scene pass", () => {
+    const scenePass = pass({}, {});
+    expect(() => scenePass.setMRT(mrt({ normal: vec4(normalView, 1) }))).toThrow(
       /TN_NATIVE_MRT_UNSUPPORTED: normal/u,
     );
-    expect(() => mrt({ normal: vec4({}, 0) })).toThrow(/TN_NATIVE_MRT_UNSUPPORTED: normal/u);
-    expect(() => mrt({ velocity: {} })).toThrow(/TN_NATIVE_MRT_UNSUPPORTED: velocity/u);
+    expect(() => scenePass.setMRT(mrt({ normal: vec4({}, 0) }))).toThrow(
+      /TN_NATIVE_MRT_UNSUPPORTED: normal/u,
+    );
+    expect(() => scenePass.setMRT(mrt({ velocity: {} }))).toThrow(
+      /TN_NATIVE_MRT_UNSUPPORTED: velocity/u,
+    );
+  });
+
+  it("keeps any output for a material's mrtNode, which a layered target draws by name", () => {
+    // The impostor bake's capture material: its own albedo and normal, drawn into the atlas's two textures.
+    const albedo = vec4({}, 1);
+    const encoded = vec4({}, 2);
+    const node = mrt({ output: albedo, normal: encoded });
+    expect(node.outputs).toEqual({ output: albedo, normal: encoded });
+    expect(() => pass({}, {}).setMRT(node)).toThrow(/TN_NATIVE_MRT_UNSUPPORTED: output/u);
   });
 
   it("answers has() for its outputs, as the render chain asks before it provisions velocity", () => {

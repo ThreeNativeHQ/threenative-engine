@@ -716,7 +716,8 @@ describe("the Wasm engine's offscreen PassNode draw", () => {
       },
       (...args) => {
         order.push("target");
-        deferredFlags.push(args[args.length - 1] ?? -1);
+        // (target, scene, camera, r, g, b, a, deferred, layer, attachment)
+        deferredFlags.push(args[7] ?? -1);
         return 0;
       },
     );

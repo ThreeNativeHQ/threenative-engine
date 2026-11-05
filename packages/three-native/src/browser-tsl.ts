@@ -249,6 +249,7 @@ const CONSTANTS = [
   "deltaTime",
   "normalView",
   "positionViewDirection",
+  "diffuseColor",
   "screenCoordinate",
   "normalGeometry",
   "tangentGeometry",
@@ -586,6 +587,20 @@ export function defineTsl(
     exports[name] = (...args: unknown[]) => wrap(call(name, null, args));
   exports.nodeObject = (value: unknown) =>
     isTslNode(value) ? value : wrap(call("nodeObject", null, [value]));
+  // three's free `element(node, index)` is the node's own element method (ArrayElementNode).
+  exports.element = (value: unknown, index: unknown) =>
+    (prototype.element as (this: unknown, i: unknown) => unknown).call(
+      (exports.nodeObject as (v: unknown) => unknown)(value),
+      index,
+    );
+  // three r187 accessors/Normal.js transformNormal: mat3(matrix).inverse().transpose() * normal.
+  type Chain = { [method: string]: (...args: unknown[]) => Chain };
+  exports.transformNormal = (normal: unknown, matrix?: unknown) =>
+    (exports.mat3 as (value: unknown) => Chain)(matrix ?? exports.modelWorldMatrix)
+      .inverse()
+      .transpose()
+      .mul(normal)
+      .normalize();
   exports.texture = (initial: unknown, ...args: unknown[]) => {
     let value = initial;
     const node = wrap(call("texture", null, [value, ...args]));

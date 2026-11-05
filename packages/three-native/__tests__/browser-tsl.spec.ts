@@ -171,6 +171,35 @@ describe("Wasm modelWorldMatrix", () => {
   });
 });
 
+describe("Wasm free element()", () => {
+  it("reads a matrix column as three's element(node, index) does", () => {
+    const { tsl, runtime } = setup();
+    const exports = tsl as unknown as {
+      modelWorldMatrix: INode;
+      element(node: INode, index: number): INode;
+    };
+    const matrix = exports.modelWorldMatrix;
+    exports.element(matrix, 3);
+    expect(runtime.call).toHaveBeenLastCalledWith("element", matrix[TSL_NODE], [
+      { kind: "number", number: 3 },
+    ]);
+  });
+});
+
+describe("Wasm transformNormal()", () => {
+  it("is three's inverse-transpose of the matrix's mat3, normalized", () => {
+    const { tsl, runtime } = setup();
+    const exports = tsl as unknown as {
+      modelWorldMatrix: INode;
+      vec3(...args: number[]): INode;
+      transformNormal(normal: INode, matrix?: INode): INode;
+    };
+    exports.transformNormal(exports.vec3(0, 1, 0), exports.modelWorldMatrix);
+    const names = vi.mocked(runtime.call).mock.calls.map(([name]) => name);
+    expect(names.slice(-5)).toEqual(["mat3", "inverse", "transpose", "mul", "normalize"]);
+  });
+});
+
 describe("Wasm TSL Fn parameters", () => {
   it("defers the blue-noise style destructuring callback until called", () => {
     const { tsl, runtime } = setup();

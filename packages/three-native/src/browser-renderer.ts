@@ -62,7 +62,7 @@ export function isWebHostModule(module: TnAbiModule): module is WebEngineModule 
  * The tnw_* contract this facade speaks (web_host.cpp `kWebHostAbi`). Bump both on every tnw_*
  * signature change: web-host-abi.spec.ts pins the signatures per number, and a mismatch fails init.
  */
-export const WEB_HOST_ABI = 9;
+export const WEB_HOST_ABI = 10;
 
 /** The canvas key the host's surface looks up; Emscripten resolves it before any DOM query. */
 const CANVAS_TARGET = "!threenative-canvas";
@@ -778,7 +778,14 @@ export function defineWebRenderer(
      * render() while a render target is set (render-target.ts): draws into the target. `deferred` (an offscreen PassNode)
      * plans the draw and has the engine record it in the frame that samples the target.
      */
-    [DRAW_TARGET](target: unknown, root: unknown, camera: unknown, deferred = false): void {
+    [DRAW_TARGET](
+      target: unknown,
+      root: unknown,
+      camera: unknown,
+      deferred = false,
+      layer = 0,
+      attachment = 0,
+    ): void {
       if (this.#adapter === undefined)
         throw new Error("TN_WASM_RENDERER: render() before init() finished.");
       if (this.#lost) return;
@@ -795,6 +802,8 @@ export function defineWebRenderer(
           handles + 12,
           ...this.#clear,
           deferred ? 1 : 0,
+          layer,
+          attachment,
         ),
       );
     }
@@ -1144,12 +1153,19 @@ export function defineWebRenderer(
       ),
     });
   defineRenderTargets(Renderer.prototype, (renderer) => ({
-    draw: (target, root, camera) =>
-      (renderer as { [DRAW_TARGET](t: unknown, r: unknown, c: unknown): void })[DRAW_TARGET](
-        target,
-        root,
-        camera,
-      ),
+    draw: (target, root, camera, layer, attachment) =>
+      (
+        renderer as {
+          [DRAW_TARGET](
+            t: unknown,
+            r: unknown,
+            c: unknown,
+            d: boolean,
+            l?: number,
+            a?: number,
+          ): void;
+        }
+      )[DRAW_TARGET](target, root, camera, false, layer, attachment),
     read,
   }));
   return Renderer;
