@@ -25,7 +25,8 @@ const LIGHTING_ANCHOR = `    const { key, dispose: disposeLighting } = setupLigh
     );
 `;
 const MATERIAL_ANCHOR = "    const materialEnvironment = {\n";
-const READY_ANCHOR = "      this.#sky === undefined\n";
+const READY_CONDITION = "this.#assetProof === undefined || this.#playerModel === undefined";
+const READY_ANCHOR = `    if (${READY_CONDITION})\n`;
 const SCENARIO_ROOT = path.resolve(templateRoot(), "..", "template-playtests", "starter-forest");
 
 /** The tool's reply is JSON in the first text block; `load` is the snippet an agent pastes. */
@@ -95,7 +96,7 @@ ${MATERIAL_ANCHOR}`,
     )
     .replace(
       READY_ANCHOR,
-      "      this.#sky === undefined ||\n      this.#terrainField === undefined ||\n      this.#loadCells === undefined\n",
+      `    if (${READY_CONDITION} ||\n      this.#terrainField === undefined ||\n      this.#loadCells === undefined)\n`,
     )
     .replace(
       SPAWN_ANCHOR,

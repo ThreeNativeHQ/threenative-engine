@@ -54,7 +54,7 @@ describe("forest playtest setup", () => {
     const retainedAt = patched.indexOf("    this.#terrainField = terrainField;\n");
     expect(patched).toContain("  #terrainField: TerrainHeightfield | undefined;\n");
     expect(patched).toContain(
-      "      this.#sky === undefined ||\n      this.#terrainField === undefined ||\n      this.#loadCells === undefined\n",
+      "    if (this.#assetProof === undefined || this.#playerModel === undefined ||\n      this.#terrainField === undefined ||\n      this.#loadCells === undefined)\n",
     );
     expect(declaredAt).toBeGreaterThan(patched.indexOf("override async load("));
     expect(retainedAt).toBeGreaterThan(declaredAt);
