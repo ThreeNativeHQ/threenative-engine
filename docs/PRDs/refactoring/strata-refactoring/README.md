@@ -22,12 +22,16 @@
   the game's ring/band wiring, the collider arm and the playtests.
 - **PRD-796** — untouched. Its world-key pin cannot read the game's config (`IGame` exposes no
   scenes/input), so the pin needs either a small named export from `game.ts` or a source read.
-- **PRD-797** — Phases 1-3 done: four seams pinned, the `world.ts` ↔ `world-tiles.ts` cycle gone, four
-  leaf modules extracted (3 416 → 2 254, AC-1 narrowed to 2 300 by decision). The terrain-splat
-  playtest box needs a browser lane.
-- **PRD-798** — Phase 1's flag half done (`world-gpu-flags.spec.ts`, 14 cases); the `CellRender` pins
-  and both splits open, with the cost of the pins written down.
-- **PRD-799** — untouched, with both Phase 1 pins' observability written down.
+- **PRD-797** — DONE by its own boxes: four seams pinned, the `world.ts` ↔ `world-tiles.ts` cycle
+  gone, four leaf modules extracted (3 416 → 2 254, AC-1 narrowed to 2 300 by decision), and the
+  terrain-splat playtest green on the web lane (2026-11-05: exit 0, 180 frames, 8/8 assertions, real
+  Nvidia adapter). The 1 500-line target is the follow-up that splits `TerrainTiles` itself.
+- **PRD-798** — Phases 1 to 3 done: the flag readers and `CellRender` are pinned and both files
+  split under the cap. AC-3's abyss half is measured (browser 22 of 23 assertions, native host 21 of
+  22). Open: the Strata half and the AC-4 visual judge.
+- **PRD-799** — Phases 1 and 2 done: two pin specs landed and the five modules are extracted
+  (`world-cells.ts` 2 977 → 1 454). AC-3's abyss half is measured on the native host (21 of 22
+  assertions; the one red is the network policy, not the world). Open: the Strata half.
 
 ## Where the hardcode is (audit of `aa3883d7d` plus the forest lane's uncommitted edits, 2026-11-04)
 
