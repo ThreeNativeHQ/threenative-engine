@@ -32,7 +32,7 @@ import type {
   IWorldCellsBudget,
   IWorldCellsStats,
 } from "./world-cell-data.js";
-import type { IAssetState } from "./world-cells.js";
+import type { IAssetState } from "./world-cell-models.js";
 import { VIRTUAL_SHADOW_WIDE_CASTER_LAYER } from "./world-chunk-shadow.js";
 import {
   type IWorldAsset,

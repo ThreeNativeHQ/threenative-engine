@@ -33,7 +33,7 @@ import {
   measureCellProxy,
   prepareCellProxy,
 } from "./world-cell-proxy.js";
-import type { IAssetState } from "./world-cells.js";
+import type { IAssetState } from "./world-cell-models.js";
 import {
   CHUNK_NAME,
   VIRTUAL_SHADOW_CASTER_LAYER,
