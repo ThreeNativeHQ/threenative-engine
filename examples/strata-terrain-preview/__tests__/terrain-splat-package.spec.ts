@@ -19,9 +19,10 @@ import { createGroundMaterial, createTerrain } from "../src/render/terrain.js";
 import { GROUND_MAPS, GROUND_TILE } from "../src/world/terrainAssets.js";
 
 const base = new URL("../", import.meta.url);
-const bake = readFileSync(new URL("scripts/bake.mjs", base), "utf8");
+// The packaging function lives in `scripts/recipe.mjs` since the bake became a `bakeBiome` call (PRD-792).
+const bake = readFileSync(new URL("scripts/recipe.mjs", base), "utf8");
 const declaration = ts
-  .createSourceFile("bake.mjs", bake, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS)
+  .createSourceFile("recipe.mjs", bake, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS)
   .statements.find(
     (node) => ts.isFunctionDeclaration(node) && node.name?.text === "terrainSurfacePackage",
   );
