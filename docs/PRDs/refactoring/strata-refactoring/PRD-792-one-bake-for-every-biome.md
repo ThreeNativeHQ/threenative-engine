@@ -94,5 +94,6 @@ the baked package.
 #### Phase 3: prove the game
 **Status:** NOT STARTED
 **Files:** none
-- [ ] The web playtest and the loop playtest stay green. proof: `pnpm --filter strata-terrain-preview test:terrain:web` and `playtests/loop.playtest.json`
+- [ ] The web playtest and the loop playtest stay green. proof: `pnpm --filter strata-terrain-preview test:terrain:web` and `playtests/loop.playtest.json` Measured 2026-11-05 at head `862920360` with the commands, artifacts and red classification of PRD-791's Phase 3 box: loop 2/2 green (exit 0, 5/5 assertions, `pipelinesSinceReveal` 0, `travel` 59.834553512907036 m and 59.834296182470155 m, 844 frames, 0 console and 0 network errors, adapter `nvidia turing`); terrain `test:terrain:web` exits 2 at the coastal step on the pre-existing `?waterproof=1` `mrtNode` red (`TN_BROWSER_SHADER_NODE ... mrtNode 'output' is not a TSL node`), with the six forest views green. The build red these runs surfaced is fixed in `7bdc63db4`: `pnpm build` read the deleted `<world>.placements.bin`.
+  - Open (coordinator, 2026-11-05): `test:terrain:web` exits 2 at its coastal `?waterproof=1` step (`mrtNode 'output' is not a TSL node`, then verify-ocean's water proof); the loop and abyss numbers above are green or pre-existing. Tick when the owned-engine water proof lands.
 - [ ] Fresh visual judge passes. proof: AC-3
