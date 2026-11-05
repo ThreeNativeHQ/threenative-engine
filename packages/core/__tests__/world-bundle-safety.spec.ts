@@ -69,10 +69,12 @@ describe("BundleSurfaceSafety on a settled frame", () => {
   });
 
   it("caches a graph past the old 1,024-row witness cap", () => {
-    // ~1,290 rows: a shipped foliage surface measured 1,371 rows and 21,234 links.
-    const painted = material(chain(500));
+    // 1,289 rows and 22,542 links: a shipped foliage surface measured 1,371 rows and 21,234 links.
+    const painted = material(chain(640));
     const safety = new BundleSurfaceSafety();
-    settle(safety, painted, 3);
+    safety.beginFrame();
+    expect(safety.test(painted).rows.length).toBeGreaterThan(1_024);
+    settle(safety, painted, 2);
     expect(safety.stats.uncached).toBe(0);
     expect(safety.stats.refreshes).toBe(1);
   });
