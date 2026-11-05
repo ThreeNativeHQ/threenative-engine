@@ -433,6 +433,15 @@ async function compileOnce(options: IAssetCompileOptions): Promise<IAssetCompile
           }),
         ];
   const terrainPassNames = terrainPasses.map((pass) => pass.name);
+  // A cooked world takes its own path, so the ordinary chain's digest never sees it: the pipeline
+  // version and the passes it does run are the only things that can change its bytes. Hashing a
+  // bare constant served the stale world after every pipeline fix that bumped PIPELINE_VERSION.
+  const terrainConfiguration = JSON.stringify({
+    layout: terrainPasses.length === 0 ? "terrain-world-v1" : "terrain-world-native-separate-v2",
+    pipelineVersion: PIPELINE_VERSION,
+    passCacheKeys: terrainPasses.map((pass) => pass.cacheKey ?? null),
+    options: terrainPasses.map((pass) => pass.configuration ?? null),
+  });
 
   const costInputs = new Map<string, IPassCostRecord>();
   for (const name of new Set([...passNames, ...terrainPassNames]))
@@ -585,14 +594,7 @@ async function compileOnce(options: IAssetCompileOptions): Promise<IAssetCompile
     const terrainWorld = cookedWorlds.has(logical);
     const digest = createHash("sha256")
       .update(input)
-      .update(
-        terrainWorld
-          ? terrainPasses.length === 0
-            ? "terrain-world-v1"
-            : "terrain-world-native-separate-v2"
-          : passConfigurations[classify(logical)],
-        "utf8",
-      )
+      .update(terrainWorld ? terrainConfiguration : passConfigurations[classify(logical)], "utf8")
       .digest("hex");
     // The output name carries the digest of the input bytes and the whole pass configuration,
     // so a previous entry under that exact name, with every file it declares still on disk, is
