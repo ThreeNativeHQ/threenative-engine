@@ -67,6 +67,7 @@ import {
   writePropTransform,
 } from "./props.js";
 import { createPropSelection } from "./selection.js";
+import { createStreamLanes } from "./streamLanes.js";
 import { createSurfaceBindings } from "./surfaces.js";
 import { createTerrain } from "./terrain.js";
 import { type IWaterSurface, bakeWater } from "./water.js";
@@ -191,8 +192,11 @@ export async function createEditorView(
   let authoring: IAuthoringDocument | undefined;
   let renderedRecipe: string | undefined;
   let groundAt: PropGroundQuery | undefined;
-  let streamGeneration = 0;
-  let streamPending = false;
+  // Two owners restream props: the terrain update about to commit a new mesh, and a prop drag
+  // restreaming against the mesh already on screen. Each supersedes only its own lane, so a drag
+  // can no longer cancel the update in flight and drop the mesh it had just built (PRD-806 E17).
+  const streamLanes = createStreamLanes<"terrain" | "props">();
+  let streamsInFlight = 0;
   let propsDirty = false;
   let disposed = false;
   let elapsed = 0;
@@ -246,10 +250,11 @@ export async function createEditorView(
     placements: readonly IPlacement[],
     query: PropGroundQuery,
     size: number,
+    lane: "terrain" | "props",
   ) {
     if (!propSurfaces) throw new Error("Prop surfaces are not loaded yet");
-    const generation = ++streamGeneration;
-    streamPending = true;
+    const current = streamLanes.open(lane);
+    streamsInFlight++;
     try {
       const next = await streamPropWorlds({
         placements,
@@ -263,10 +268,10 @@ export async function createEditorView(
         castShadows: false,
         // Live model and texture edits must rebind resources on the next draw.
         bundles: false,
-        whileCurrent: () => !disposed && generation === streamGeneration,
+        whileCurrent: () => !disposed && current(),
       });
       if (!next) return undefined;
-      if (disposed || generation !== streamGeneration) {
+      if (disposed || !current()) {
         next.dispose();
         return undefined;
       }
@@ -279,7 +284,7 @@ export async function createEditorView(
             propsDirty = false;
             if (disposed || !props || !groundAt || !terrain) return;
             const placements = [...props.byId.values()].map((instance) => instance.placement);
-            void streamProps(placements, groundAt, terrain.size)
+            void streamProps(placements, groundAt, terrain.size, "props")
               .then((next) => {
                 if (next) replaceProps(next);
               })
@@ -288,7 +293,7 @@ export async function createEditorView(
         };
       return next;
     } finally {
-      if (generation === streamGeneration) streamPending = false;
+      streamsInFlight--;
     }
   }
   function replaceProps(next: NonNullable<typeof props>): void {
@@ -745,7 +750,7 @@ export async function createEditorView(
         if (
           !requestedRevision ||
           seen === requestedRevision ||
-          streamPending ||
+          streamsInFlight > 0 ||
           propsDirty ||
           !streaming ||
           prewarmedProps !== props ||
@@ -952,13 +957,16 @@ export async function createEditorView(
         throw error;
       }
       propsDirty = false;
-      void streamProps(resolved.instances, nextGround, state.size)
+      void streamProps(resolved.instances, nextGround, state.size, "terrain")
         .then((nextProps) => {
           if (!nextProps) {
             next.geometry.dispose();
             next.material.dispose();
             return;
           }
+          // This update owns the props from here: a drag restream that grounded against the mesh
+          // this one replaces must not land on top of it.
+          streamLanes.supersede("props");
           if (data.waterLevel !== null && !sea) sea = ctx.add(createOcean());
           const nextWater =
             data.waterLevel === null || !sea ? undefined : createWaterMesh(sea, data);
@@ -1201,7 +1209,6 @@ export async function createEditorView(
     },
     dispose(): void {
       disposed = true;
-      streamGeneration++;
       selection.dispose();
       envImages?.dispose();
       surfaces.dispose();
