@@ -13,6 +13,7 @@ import {
   Vector2,
   Vector3,
 } from "three";
+import { positionLocal } from "three/tsl";
 import type { MeshPhysicalNodeMaterial } from "three/webgpu";
 import ts from "typescript";
 import { describe, expect, it, vi } from "vitest";
@@ -264,7 +265,9 @@ describe("licensed pack characterization", () => {
           expect(material.aoNode).not.toBeNull();
           expect(material.alphaTest).toBe(near.material.alphaTest);
           expect(material.alphaToCoverage).toBe(true);
-          expect(material.castShadowPositionNode).toBe(material.positionNode);
+          // 646ba9d1e: the colour pass sways and the shadow casts the rest pose, so a cached virtual
+          // shadow page keeps one shadow. The two nodes differ by the wind offset by design.
+          expect(material.castShadowPositionNode).toBe(positionLocal);
         }
       } finally {
         pack.dispose();
@@ -308,7 +311,8 @@ describe("licensed pack characterization", () => {
           expect(material.normalNode).toBeNull();
           for (const key of ["map", "alphaTest", "alphaToCoverage", "side", "shadowSide"] as const)
             expect(material[key]).toBe(current[key]);
-          expect(material.castShadowPositionNode).toBe(material.positionNode);
+          // 646ba9d1e: the shadow casts the rest pose while the colour pass sways, on every arm.
+          expect(material.castShadowPositionNode).toBe(positionLocal);
           const footprint = new Set<string>();
           present(material.alphaTestNode).traverse((node) => {
             if ("method" in node && typeof node.method === "string") footprint.add(node.method);
