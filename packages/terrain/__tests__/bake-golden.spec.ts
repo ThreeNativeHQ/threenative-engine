@@ -144,6 +144,74 @@ const PACKAGE: Record<
   },
 };
 
+/**
+ * The per-species counts, Phase 1 against this bake, for every species the two sides disagree on.
+ *
+ * A row is `[phaseOne, package]`. `COUNT_AGREES` names the rows that are equal, so every Phase 1
+ * species is in exactly one of the two tables and a moved count fails here by name.
+ *
+ * Two of the 37 Phase 1 species counts agree: coastal's 3 200 spruce and tundra's 55 sapling. Both
+ * are rows whose Phase 1 count is the rule's own `count` and whose ground accepted every candidate.
+ * The other 35 cannot agree while the rule set lives in the game: `render/scatter.ts` walks a tree
+ * loop, an understorey loop, a clump loop, three grid passes, a tide line, a river walk, an eye disc
+ * and a cobbled-bed pass, draws every candidate from one `createRandom(466468)` stream, reads three's
+ * `ImprovedNoise` and 20-odd `look` numbers, and filters on the stand field and the meadow weight.
+ * The four stages here run one uniform rejection sampler per row from a seed per rule, so their
+ * counts are their own stream, not the game's.
+ */
+const COUNT_DIFFERENCES: Record<World, Record<string, readonly [number, number]>> = {
+  alpine: { boulder: [1082, 0], mountain: [231, 0], scree: [2285, 0] },
+  coastal: {
+    boulder: [235, 0],
+    bush: [1225, 0],
+    fern: [7466, 0],
+    grass: [95231, 0],
+    litter: [2097, 0],
+    mountain: [75, 0],
+    poppy: [440, 0],
+    riverrock: [170, 0],
+    sapling: [5536, 0],
+    scrub: [28517, 0],
+  },
+  desert: {
+    boulder: [248, 0],
+    grass: [2506, 0],
+    reveal: [170, 0],
+    scrub: [393, 0],
+    volcanic: [237, 0],
+  },
+  forest: {
+    boulder: [105, 0],
+    bush: [1384, 0],
+    fern: [7211, 0],
+    grass: [144698, 0],
+    litter: [2694, 0],
+    mountain: [7, 0],
+    pebble: [1616, 0],
+    poppy: [3316, 0],
+    riverrock: [357, 0],
+    sapling: [5379, 0],
+    scrub: [43242, 0],
+    spruce: [3131, 3200],
+  },
+  tundra: {
+    boulder: [2028, 0],
+    bush: [594, 0],
+    grass: [30490, 0],
+    riverrock: [612, 0],
+    scrub: [6680, 0],
+  },
+};
+
+/** The Phase 1 species counts this bake reproduces, by world. */
+const COUNT_AGREES: Record<World, readonly string[]> = {
+  alpine: [],
+  coastal: ["spruce"],
+  desert: [],
+  forest: [],
+  tundra: ["sapling"],
+};
+
 /** One world as this spec measures it: the kit's ground, the file's rows and what the bake wrote. */
 interface IRun {
   readonly baked: IBakedBiome;
@@ -300,6 +368,40 @@ describe("the biome files' bake against the Phase 1 table", () => {
       [24, -120],
       [-96, 24],
     ]);
+  });
+
+  it("compares every Phase 1 species count with this bake's count", () => {
+    const measured = Object.fromEntries(
+      WORLDS.map((world) => {
+        const placed = run(world).counts;
+        const phase1 = PHASE_1[world].counts;
+        const species = [...new Set([...Object.keys(phase1), ...Object.keys(placed)])].sort();
+        const agrees: string[] = [];
+        const differ: Record<string, readonly [number, number]> = {};
+        for (const name of species) {
+          const before = phase1[name] ?? 0;
+          const after = placed[name] ?? 0;
+          if (before === after) agrees.push(name);
+          else differ[name] = [before, after];
+        }
+        return [world, { agrees, differ }];
+      }),
+    ) as Record<World, { agrees: string[]; differ: Record<string, readonly [number, number]> }>;
+    expect(Object.fromEntries(WORLDS.map((world) => [world, measured[world].agrees]))).toEqual(
+      COUNT_AGREES,
+    );
+    expect(Object.fromEntries(WORLDS.map((world) => [world, measured[world].differ]))).toEqual(
+      COUNT_DIFFERENCES,
+    );
+    // One foliage row per file against the 3 to 12 species Phase 1 planted: a count a row cannot
+    // carry is a count this bake cannot produce.
+    expect(
+      Object.fromEntries(WORLDS.map((world) => [world, run(world).spec.foliage.length])),
+    ).toEqual({ alpine: 1, coastal: 1, desert: 1, forest: 1, tundra: 1 });
+    // The ground cover the files carry is a share over a spacing, not a count: forest's phase 1
+    // 144 698 grass placements have no row that asks for one.
+    expect(run("forest").spec.grass[0]?.density).toBe(1);
+    expect(run("forest").spec.grass[0]?.spacing).toBe(1.2);
   });
 
   it("names why the counts differ: the rows are the file's, and Phase 1's scatter is the game's", () => {
