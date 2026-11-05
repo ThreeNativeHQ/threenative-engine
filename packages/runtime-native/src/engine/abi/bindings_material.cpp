@@ -318,6 +318,7 @@ void registerMeshMaterial(ClassBinding& b, MaterialType type, bool node = false,
              {"vertexNode", &Nodes::vertexNode},
              {"aoNode", &Nodes::aoNode},
              {"irradianceNode", &Nodes::irradianceNode},
+             {"envNode", &Nodes::envNode},
              {"depthNode", &Nodes::depthNode},
              {"castShadowPositionNode", &Nodes::castShadowPositionNode},
              {"maskNode", &Nodes::maskNode}}) {

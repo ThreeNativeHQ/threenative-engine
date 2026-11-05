@@ -624,7 +624,7 @@ static void materialInputs(Program& f, const VertexVariant& variant,
     const auto pinned = [&](Type type, ExprId value) { return f.load(f.var(type, value)); };
     const auto& nodes = variant.nodes;  // the slots this fragment lowers; position, vertex and scale nodes run in the vertex stage
     std::vector<graph::Node> slots{nodes.colorNode, nodes.emissiveNode, nodes.roughnessNode, nodes.metalnessNode, nodes.opacityNode,
-                                   nodes.aoNode, nodes.irradianceNode, nodes.fragmentNode, nodes.depthNode, nodes.maskNode};
+                                   nodes.aoNode, nodes.irradianceNode, nodes.envNode, nodes.fragmentNode, nodes.depthNode, nodes.maskNode};
     for (const auto& slot : nodes.mrt) slots.push_back(slot.node);
     for (const auto& node : slots)
         for (const std::string& name : graph::materialInputs(node)) {
@@ -1574,6 +1574,18 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
             const ExprId clearcoatEnv = f.add(f.mul(coat.f0, f.swizzle(fab, "x")), f.mul(coat.f90, f.swizzle(fab, "y")));
             clearcoatSpecularIndirect = f.mul(clearcoatRadiance, clearcoatEnv);
         }
+    }
+    // MaterialNode.envNode with no environment map: the author's node is the radiance itself, and its irradiance is
+    // that radiance times pi (EnvironmentNode.js:90-107 with a plain env node, whose roughness context it ignores),
+    // so the cosine-weighted irradiance is the radiance. The Strata ocean's sky reflection comes from here; without
+    // it the water has no indirect light at all and renders black.
+    else if (variant.nodes.envNode) {
+        const ExprId radiance = f.mul(slotValue(f, slots, variant.nodes.envNode, Type::vec(3), kInvalid),
+                                      f.uniform("envMapIntensity", Type::f32()));
+        const ExprId single = f.call("mix", {dielectric.single, metallic.single, metalness});
+        const ExprId multi = f.call("mix", {dielectric.multi, metallic.multi, metalness});
+        environmentSpecular = f.add(f.mul(radiance, single), f.mul(multi, radiance));
+        environmentDiffuse = f.mul(f.mul(diffuseContribution, energyLoss), radiance);
     }
 
     // No environment: irradianceNode is still the material's indirect diffuse, as an IrradianceNode adds to the

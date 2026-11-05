@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <string>
@@ -27,6 +28,9 @@ inline bool engineTargetName(std::string_view name) {
            name == "metalness" || name == "roughness" || name == "diffuseColor" || name == "emissive";
 }
 
+/** One graph root per MaterialNodes::pointers(), for the arrays that hold them (the draw's source cache). */
+inline constexpr std::size_t kMaterialGraphRoots = 17;
+
 /** NodeMaterial slots; null nodes use the non-node material path. */
 struct MaterialNodes {
     graph::Node colorNode, positionNode, normalNode, emissiveNode, roughnessNode, metalnessNode, opacityNode;
@@ -34,6 +38,10 @@ struct MaterialNodes {
     graph::Node aoNode;
     /** The scene environment's diffuse term, replaced: cosine-weighted irradiance (E / pi, in the units of the PMREM level-1 sample) for the surface's own normalWorld. */
     graph::Node irradianceNode;
+    /** NodeMaterial.envNode: the environment's radiance itself (vec3), replacing the environment map's sample. Its
+     *  irradiance is this radiance times pi, as EnvironmentNode.setup reads a plain env node; with no env map the
+     *  node is the material's whole indirect light (the Strata ocean's sky reflection). */
+    graph::Node envNode;
     /** NodeMaterial.vertexNode: the clip-space position itself, replacing model-view-projection. */
     graph::Node vertexNode, fragmentNode;
     /** NodeMaterial.depthNode: the fragment's depth (frag_depth), replacing the rasterised one. */
@@ -60,14 +68,14 @@ struct MaterialNodes {
                           opacityNode.get(),  vertexNode.get(),    fragmentNode.get(),
                           scaleNode.get(),    rotationNode.get(),  depthNode.get(),
                           aoNode.get(),       irradianceNode.get(), castShadowPositionNode.get(),
-                          maskNode.get()};
+                          maskNode.get(),     envNode.get()};
     }
     auto graphs() const {
         return std::array{colorNode,     positionNode, normalNode, emissiveNode, roughnessNode,
                           metalnessNode, opacityNode,  vertexNode, fragmentNode,
                           scaleNode,     rotationNode, depthNode,
                           aoNode,        irradianceNode, fogNode, castShadowPositionNode,
-                          maskNode};
+                          maskNode,      envNode};
     }
     /** Every graph a material owns: the fixed slots, then the custom MRT slots, in one walk. */
     template <typename Fn>

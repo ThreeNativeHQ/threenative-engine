@@ -1,0 +1,127 @@
+{
+  "schemaVersion": 1,
+  "name": "strata-water-proof",
+  "subject": "The coastal water-contribution proof on the owned engine: the sheltered pool's diagnostic attachment reads back above the gate, with no console or runtime error",
+  "viewport": {
+    "width": 1920,
+    "height": 1080
+  },
+  "warmupFrames": 90,
+  "artifacts": {
+    "screenshots": true,
+    "console": true
+  },
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "GameState",
+        "path": "world",
+        "equals": "coastal",
+        "allowTrivial": "The run starts in the coastal world through ?world=coastal; another world's pass has no sheltered pool."
+      },
+      {
+        "id": "GameState",
+        "path": "currentViewWindows",
+        "gte": 3,
+        "allowTrivial": "The proof frame is taken after three measured windows in the view, not mid-transition."
+      }
+    ],
+    "visual": [
+      {
+        "region": {
+          "x": 1200,
+          "y": 850,
+          "width": 500,
+          "height": 180,
+          "minNonblankPixelRatio": 0.99,
+          "maxLuminance": 0.95
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "label": "coastal-loaded",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "world",
+        "equals": "coastal"
+      },
+      "timeoutMs": 30000,
+      "release": true
+    },
+    {
+      "label": "coastal-assets-ready",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "worldReady",
+        "equals": true
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "ocean-early",
+      "release": true,
+      "screenshot": "coastal-ocean-early",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "currentViewWindows",
+        "gte": 3
+      },
+      "timeoutMs": 120000
+    },
+    {
+      "kind": "wait",
+      "label": "ocean",
+      "waitTicks": 180,
+      "release": true,
+      "screenshot": "coastal-ocean"
+    },
+    {
+      "kind": "input",
+      "label": "horizon-sea-view-1",
+      "press": "KeyV",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "horizon-sea-view-2",
+      "press": "KeyV",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "horizon-sea-view-3",
+      "press": "KeyV",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "label": "horizon-sea",
+      "release": true,
+      "screenshot": "coastal-horizon-sea",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "currentViewWindows",
+        "gte": 3
+      },
+      "timeoutMs": 120000
+    },
+    {
+      "kind": "input",
+      "label": "sun-change",
+      "press": "KeyL",
+      "holdTicks": 2,
+      "release": true,
+      "screenshot": "coastal-sun-alt"
+    }
+  ]
+}

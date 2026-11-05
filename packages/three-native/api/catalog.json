@@ -12152,6 +12152,15 @@
           }
         },
         {
+          "name": "envNode",
+          "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
           "name": "alphaHash",
           "type": "boolean",
           "mutable": true,
@@ -13595,6 +13604,15 @@
           }
         },
         {
+          "name": "envNode",
+          "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
           "name": "twoSidedFoliage",
           "type": "boolean",
           "mutable": true,
@@ -14253,6 +14271,15 @@
         },
         {
           "name": "irradianceNode",
+          "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "envNode",
           "type": "Node | null",
           "mutable": true,
           "lifetime": "owned",

@@ -851,6 +851,37 @@ void mrtSlot() {
     CHECK(found);
 }
 
+// MaterialNode.envNode (three's NodeMaterial.envNode, the Strata ocean's sky radiance): with no environment map, the
+// node is the environment's radiance, and its irradiance is that radiance times pi (EnvironmentNode.setup), so the
+// standard material's indirect light comes from the author's own sky. Without the slot the ocean renders unlit.
+void envNode() {
+    namespace g = tn::engine::shader::graph;
+    const auto radiance = g::mul(g::uniform("authoredRadiance", Type::vec(3), {0.8, 0.9, 1.0}),
+                                 g::vec3({g::float_(1), g::float_(1), g::float_(1)}));
+    VertexVariant lit;
+    lit.nodes.envNode = radiance;
+    const auto withNode = buildStandard({}, lit);
+    CHECK(withNode.diagnostics.empty());
+    const auto fs = buildStage(buildStandard({}, lit).fragment, 1);
+    for (const auto& e : fs.wgsl.errors) std::fprintf(stderr, "%s\n", e.c_str());
+    CHECK(fs.wgsl.ok());
+    // The author's graph reaches the fragment, so its uniform is collected for the draw.
+    CHECK(fs.wgsl.code.find("authoredRadiance") != std::string::npos);
+    // No environment map is sampled: the node replaces it, so the fragment binds no extra texture.
+    VertexVariant plain;
+    const auto without = buildStage(buildStandard({}, plain).fragment, 1);
+    CHECK(without.wgsl.ok());
+    CHECK(fs.bindings.size() == without.bindings.size());
+    CHECK(without.wgsl.code.find("authoredRadiance") == std::string::npos);
+    CHECK(lit.nodes.key() != plain.nodes.key());
+    bool collected = false;
+    lit.nodes.forEachGraph([&](const g::Node& graph) {
+        for (const auto& [name, values] : g::uniforms(graph))
+            if (name == "authoredRadiance") collected = true;
+    });
+    CHECK(collected);
+}
+
 void depthTextureLowering() {
     namespace g = graph;
     for (bool namedDepth : {false, true}) for (bool load : {false, true}) {
@@ -886,4 +917,4 @@ void depthTextureLowering() {
 
 }  // namespace
 
-TN_TEST_MAIN({"alpha_hash", alphaHash}, {"ssr_passes", ssrPasses}, {"denoise_reads_raw_normals", denoiseReadsRawNormals}, {"ssr_rejects_inputs", ssrRejectsInputs}, {"depth_texture_lowering", depthTextureLowering}, {"depth_node_writes_frag_depth", depthNodeWritesFragDepth}, {"unsupported", unsupported}, {"emissive_output", emissiveOutput}, {"builds", builds}, {"fog", fog}, {"rough_diffuse", roughDiffuse}, {"fog_node_mixes_color", fogNodeMixesColor}, {"node_key", nodeKey}, {"bloom_passes", bloomPasses}, {"slots_share_one_lowering", slotsShareOneLowering}, {"mrt_slot", mrtSlot})
+TN_TEST_MAIN({"alpha_hash", alphaHash}, {"ssr_passes", ssrPasses}, {"denoise_reads_raw_normals", denoiseReadsRawNormals}, {"ssr_rejects_inputs", ssrRejectsInputs}, {"depth_texture_lowering", depthTextureLowering}, {"depth_node_writes_frag_depth", depthNodeWritesFragDepth}, {"unsupported", unsupported}, {"emissive_output", emissiveOutput}, {"builds", builds}, {"fog", fog}, {"rough_diffuse", roughDiffuse}, {"fog_node_mixes_color", fogNodeMixesColor}, {"node_key", nodeKey}, {"bloom_passes", bloomPasses}, {"slots_share_one_lowering", slotsShareOneLowering}, {"mrt_slot", mrtSlot}, {"env_node", envNode})
