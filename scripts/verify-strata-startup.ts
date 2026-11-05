@@ -166,6 +166,20 @@ export function parseStartupReport(log: string): StartupReport {
   throw new Error("missing or malformed startup report");
 }
 
+/**
+ * The reviewed devDependency delta between the pinned baseline and the candidate: build-time tools
+ * the game gained afterwards that never enter the emitted web output. Every baseline entry stays
+ * pinned to its baseline version; a name added here is a reviewed line, an unlisted one fails.
+ */
+const REVIEWED_CANDIDATE_DEV_DEPENDENCIES: readonly string[] = [
+  "@threenative/runtime-native",
+  "create-threenative",
+  "tsx",
+];
+
+const devDependencies = (manifest: Record<string, unknown>) =>
+  (manifest.devDependencies ?? {}) as Record<string, unknown>;
+
 export function verifyStartupPackageIdentity(
   baseline: Record<string, unknown>,
   candidate: Record<string, unknown>,
@@ -178,11 +192,23 @@ export function verifyStartupPackageIdentity(
     "engines",
     "packageManager",
     "dependencies",
-    "devDependencies",
     "peerDependencies",
     "optionalDependencies",
   ])
     assert.deepEqual(candidate[field], baseline[field], `incompatible package identity: ${field}`);
+  const before = devDependencies(baseline);
+  const after = devDependencies(candidate);
+  for (const [name, version] of Object.entries(before))
+    assert.deepEqual(
+      after[name],
+      version,
+      `incompatible package identity: devDependencies.${name}`,
+    );
+  for (const name of Object.keys(after))
+    assert(
+      Object.hasOwn(before, name) || REVIEWED_CANDIDATE_DEV_DEPENDENCIES.includes(name),
+      `incompatible package identity: devDependencies.${name}`,
+    );
 }
 
 function normalizeBundledPackages(packages: readonly IRuntimePackageIdentity[]) {

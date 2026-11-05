@@ -187,6 +187,45 @@ it("accepts native command edits but rejects dependency or compiler identity cha
   ).toThrow(/engines/);
 });
 
+const BASELINE_DEV_DEPENDENCIES = {
+  "@threenative/terrain": "workspace:*",
+  "@types/three": "catalog:",
+  geotiff: "^3.0.5",
+  proj4: "^2.22.0",
+  typescript: "catalog:",
+  "@typescript/native": "catalog:",
+  vite: "catalog:",
+};
+
+it("states the reviewed devDependency delta instead of failing the startup gate", () => {
+  // The reviewed baseline manifest and the game as it stands at HEAD; only devDependencies differ.
+  const candidate = JSON.parse(
+    readFileSync("examples/strata-terrain-preview/package.json", "utf8"),
+  ) as Record<string, unknown> & { devDependencies: Record<string, string> };
+  const baseline = { ...candidate, devDependencies: BASELINE_DEV_DEPENDENCIES };
+  expect(() => verifyStartupPackageIdentity(baseline, candidate)).not.toThrow();
+  expect(() =>
+    verifyStartupPackageIdentity(baseline, {
+      ...candidate,
+      devDependencies: { ...candidate.devDependencies, vite: "^9.0.0" },
+    }),
+  ).toThrow(/devDependencies\.vite/);
+  expect(() =>
+    verifyStartupPackageIdentity(baseline, {
+      ...candidate,
+      devDependencies: { ...candidate.devDependencies, eslint: "^9.0.0" },
+    }),
+  ).toThrow(/devDependencies\.eslint/);
+  expect(() =>
+    verifyStartupPackageIdentity(baseline, {
+      ...candidate,
+      devDependencies: Object.fromEntries(
+        Object.entries(candidate.devDependencies).filter(([name]) => name !== "geotiff"),
+      ),
+    }),
+  ).toThrow(/devDependencies\.geotiff/);
+});
+
 it("accepts unrelated workspace lock drift while retaining game and emitted package identity", () => {
   const gamePackage = { name: "strata-terrain-preview", dependencies: { three: "catalog:" } };
   const packages = [{ name: "three", version: "0.187.0" }];
