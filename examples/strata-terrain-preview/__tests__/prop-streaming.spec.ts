@@ -864,6 +864,12 @@ it("keeps streamed caster changes regional and reserves global invalidation for 
       for (const axis of ["x", "y", "z"] as const) {
         expect(reported.min[axis]).toBeLessThanOrEqual(actual.min[axis] + 1e-5);
         expect(reported.max[axis]).toBeGreaterThanOrEqual(actual.max[axis] - 1e-5);
+        // Containment alone also holds for a box the size of the cell or the world; with the instance
+        // boxed in on both sides, the span is what proves the region is regional. Every part and level
+        // in this world shares one geometry, so the placement's own box is all a region may name.
+        expect(reported.max[axis] - reported.min[axis]).toBeLessThanOrEqual(
+          actual.max[axis] - actual.min[axis] + 0.01,
+        );
       }
       expect(bounds.max.y - bounds.min.y).toBeGreaterThan(0);
     }
