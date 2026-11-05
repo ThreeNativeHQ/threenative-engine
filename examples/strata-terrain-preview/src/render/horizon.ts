@@ -1,5 +1,9 @@
-import { Heightfield } from "@threenative/core/world";
-import { BufferAttribute, BufferGeometry } from "three";
+import {
+  Heightfield,
+  HeightfieldCollar,
+  type IHeightfieldCollarSite,
+} from "@threenative/core/world";
+import type { WorldName } from "./biomes.js";
 import type { IBakedWorld } from "./terrain.js";
 
 /** `world/horizon.json`: each world's same-site USGS surroundings, as `scripts/bake.mjs` writes them. */
@@ -44,7 +48,7 @@ function boxPass(source: Float32Array, size: number, line: number, step: number)
   return out;
 }
 
-/** Installs the surroundings `createHorizonGeometry` reads; call once before building terrain. */
+/** Installs the surroundings `createHorizonCollar` reads; call once before building terrain. */
 export function setHorizonSurroundings(baked: HorizonSurroundings): void {
   // TEMP-MASSIF knob: remove before report.
   const { "forest-before": before, ...current } = baked;
@@ -88,153 +92,75 @@ function prefilteredField(name: string): Heightfield | undefined {
   );
   return prefilteredFields[name];
 }
+
 /**
  * How far past the playable square the surveyed surroundings are ground: a hill at the edge is
  * climbable up to here, and the level's walls stand at this band's outer edge.
  */
 export const HORIZON_WALK_BAND = 200;
 
-interface IHorizonWalk {
-  readonly rings: number;
-  readonly perimeter: number;
-  /** Metres past the square's edge where the band ends. */
-  readonly extent: number;
+/** Rings of the far collar, and the radius they reach: the survey's own rim, at 2.1 km. */
+const HORIZON_RINGS = 384;
+const HORIZON_REACH = 2100;
+
+/**
+ * The far collar for one world: the square's edge continued onto that site's surveyed surroundings,
+ * 384 rings out to 2.1 km. Every height it answers is this game's look — the survey itself, its
+ * prefiltered copy blended in past 300 m, and the seam step that closes the detail boundary.
+ */
+export function createHorizonCollar(data: IBakedWorld, world: WorldName): HeightfieldCollar {
+  const surveyed = continuationFields[world];
+  const smooth = prefilteredField(world);
+  if (!surveyed || !smooth) throw new RangeError(`Missing surveyed surroundings for '${world}'`);
+  const segments = data.resolution - 1;
+  const half = data.size / 2;
+  const height = ({ distance, x, z }: IHeightfieldCollarSite): number => {
+    // The square's edge point this vertex grew from: the seam is stated there, not out at the ring.
+    const scale = (half + distance) / half;
+    const edgeX = x / scale;
+    const edgeZ = z / scale;
+    const column = Math.round((edgeX / data.size + 0.5) * segments);
+    const row = Math.round((edgeZ / data.size + 0.5) * segments);
+    const near = surveyed.heightAt(x, z);
+    // Past 300 m the collar draws the prefiltered copy, blended in over 600 m, as a mip level does
+    // for a far texture: bilinear heights turn a diagonal wall into grid-aligned skyline stairs.
+    const fold = Math.min(1, Math.max(0, (distance - 300) / 600));
+    const smoothed = fold > 0 ? (smooth.heightAt(x, z) - near) * fold * fold * (3 - 2 * fold) : 0;
+    // Match the exact detail boundary; fade only the resolution/erosion difference over 40 m.
+    // Unlike the procedural collar, all surveyed relief immediately beyond that seam is real.
+    const seam =
+      (data.heights[row * data.resolution + column] as number) - surveyed.heightAt(edgeX, edgeZ);
+    return near + smoothed + seam * Math.exp(-distance / 40);
+  };
+  return new HeightfieldCollar({
+    height,
+    resolution: data.resolution,
+    ringDistance: (ring) => (ring / HORIZON_RINGS) ** 1.65 * HORIZON_REACH,
+    rings: HORIZON_RINGS,
+    size: data.size,
+    walkBand: HORIZON_WALK_BAND,
+  });
 }
 
 /**
- * The walkable near band of the surroundings, as the drawn triangles themselves (a view of the same
- * vertex buffer, not a resample), so a collider built from it is the ground the eye sees.
+ * The collar's colours: every ring carries the square's own boundary colour at that perimeter
+ * vertex, so the ring grid grows out of the detail mesh without a visible seam.
  */
-export function horizonWalkGeometry(horizon: BufferGeometry): {
-  geometry: BufferGeometry;
-  extent: number;
-} {
-  const walk = horizon.userData.walk as IHorizonWalk | undefined;
-  const index = horizon.getIndex();
-  if (walk === undefined || index === null)
-    throw new RangeError("horizonWalkGeometry needs a createHorizonGeometry result");
-  const position = horizon.getAttribute("position").array as Float32Array;
-  const geometry = new BufferGeometry();
-  geometry.setAttribute(
-    "position",
-    new BufferAttribute(position.subarray(0, (walk.rings + 1) * walk.perimeter * 3), 3),
-  );
-  geometry.setIndex(
-    new BufferAttribute(
-      (index.array as Uint32Array).subarray(0, walk.rings * walk.perimeter * 6),
-      1,
-    ),
-  );
-  return { geometry, extent: walk.extent };
-}
-
-/** Land beyond the playable square; the inner ring uses the bake's exact edge vertices. */
-export function createHorizonGeometry(
-  data: IBakedWorld,
-  landform: "mountain" | "alpine" | "mesa" | "plain" = "mountain",
-  _field?: Heightfield,
-): BufferGeometry {
-  const name =
-    data.waterLevel !== null
-      ? "coastal"
-      : landform === "alpine"
-        ? "alpine"
-        : landform === "mesa"
-          ? "desert"
-          : landform === "plain"
-            ? "tundra"
-            : "forest";
-  const surveyed = continuationFields[name];
-  const smooth = prefilteredField(name);
-  if (!surveyed || !smooth) throw new RangeError(`Missing surveyed surroundings for '${name}'`);
-  const segments = data.resolution - 1;
-  const perimeter = segments * 4;
-  const rings = 384;
-  const starts = [
-    [0, 0],
-    [segments, 0],
-    [segments, segments],
-    [0, segments],
-  ] as const;
-  const directions = [
-    [1, 0],
-    [0, 1],
-    [-1, 0],
-    [0, -1],
-  ] as const;
-  // Per edge vertex, once: its bake cell and the seam step between the bake and the survey there.
-  // The collar has 385 rings of these, and the edge terms took most of its 0.5 s build.
-  const edges = new Int32Array(perimeter);
-  const unitX = new Float64Array(perimeter);
-  const unitZ = new Float64Array(perimeter);
-  const seams = new Float64Array(perimeter);
-  for (let vertex = 0; vertex < perimeter; vertex++) {
-    const side = Math.floor(vertex / segments);
-    const along = vertex % segments;
-    const [startX, startZ] = starts[side] as readonly [number, number];
-    const [stepX, stepZ] = directions[side] as readonly [number, number];
-    const column = startX + along * stepX;
-    const row = startZ + along * stepZ;
-    const edge = row * data.resolution + column;
-    edges[vertex] = edge;
-    const u = column / segments - 0.5;
-    const w = row / segments - 0.5;
-    unitX[vertex] = u;
-    unitZ[vertex] = w;
-    // Match the exact detail boundary; fade only the resolution/erosion difference over 40 m.
-    // Unlike the procedural collar, all surveyed relief immediately beyond that seam is real.
-    seams[vertex] =
-      (data.heights[edge] as number) - surveyed.heightAt(u * data.size, w * data.size);
+export function collarColors(collar: HeightfieldCollar, data: IBakedWorld): Float32Array {
+  const boundary = new Float32Array(collar.perimeter * 3);
+  for (let vertex = 0; vertex < collar.perimeter; vertex++) {
+    const { column, row } = collar.boundary(vertex);
+    const edge = (row * data.resolution + column) * 3;
+    for (let lane = 0; lane < 3; lane++)
+      boundary[vertex * 3 + lane] = data.colors[edge + lane] as number;
   }
-  const positions = new Float32Array((rings + 1) * perimeter * 3);
-  const colors = new Float32Array((rings + 1) * perimeter * 3);
-  const indices = new Uint32Array(rings * perimeter * 6);
-  let p = 0;
-  let q = 0;
-  const ringDistance = (ring: number): number => (ring / rings) ** 1.65 * 2100;
-  let walkRings = 0;
-  while (walkRings < rings && ringDistance(walkRings + 1) <= HORIZON_WALK_BAND) walkRings++;
-  for (let ring = 0; ring <= rings; ring++) {
-    const distance = ringDistance(ring);
-    const scale = 1 + distance / (data.size / 2);
-    const far = Math.min(1, Math.max(0, (distance - 300) / 600));
-    const fade = Math.exp(-distance / 40);
-    for (let vertex = 0; vertex < perimeter; vertex++) {
-      const edge = edges[vertex] as number;
-      const x = (unitX[vertex] as number) * data.size * scale;
-      const z = (unitZ[vertex] as number) * data.size * scale;
-      const near = surveyed.heightAt(x, z);
-      // The prefiltered copy is read only where it blends in; the sum is the same where it does not.
-      const smoothed = far > 0 ? (smooth.heightAt(x, z) - near) * far * far * (3 - 2 * far) : 0;
-      positions[p] = x;
-      positions[p + 1] = near + smoothed + (seams[vertex] as number) * fade;
-      positions[p + 2] = z;
-      colors[p] = data.colors[edge * 3] as number;
-      colors[p + 1] = data.colors[edge * 3 + 1] as number;
-      colors[p + 2] = data.colors[edge * 3 + 2] as number;
-      p += 3;
-      if (ring === rings) continue;
-      const a = ring * perimeter + vertex;
-      const b = ring * perimeter + ((vertex + 1) % perimeter);
-      const c = a + perimeter;
-      const d = b + perimeter;
-      indices[q++] = a;
-      indices[q++] = b;
-      indices[q++] = c;
-      indices[q++] = b;
-      indices[q++] = d;
-      indices[q++] = c;
-    }
+  const count = collar.geometry.getAttribute("position").count;
+  const colors = new Float32Array(count * 3);
+  for (let vertex = 0; vertex < count; vertex++) {
+    const source = (vertex % collar.perimeter) * 3;
+    colors[vertex * 3] = boundary[source] as number;
+    colors[vertex * 3 + 1] = boundary[source + 1] as number;
+    colors[vertex * 3 + 2] = boundary[source + 2] as number;
   }
-  const geometry = new BufferGeometry();
-  geometry.setAttribute("position", new BufferAttribute(positions, 3));
-  geometry.setAttribute("color", new BufferAttribute(colors, 3));
-  geometry.setIndex(new BufferAttribute(indices, 1));
-  geometry.computeVertexNormals();
-  geometry.userData.walk = {
-    rings: walkRings,
-    perimeter,
-    extent: ringDistance(walkRings),
-  } satisfies IHorizonWalk;
-  return geometry;
+  return colors;
 }

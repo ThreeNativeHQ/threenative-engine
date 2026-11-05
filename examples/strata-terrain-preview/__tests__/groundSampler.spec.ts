@@ -1,11 +1,13 @@
+import { createRequire } from "node:module";
 import { Heightfield } from "@threenative/core/world";
 import { Mesh, Raycaster, Vector3 } from "three";
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { createGroundSampler } from "../src/render/groundSampler.js";
 
 /**
  * The drawn mesh is the reference: every case compares the sampler with a stock Three `Raycaster`
- * on the same geometry, never with a mirrored copy of the sampler's own formula.
+ * on the same geometry, never with a mirrored copy of the sampler's own formula. The last case
+ * takes the collider itself as the reference, because that is the ground the player walks on.
  */
 function sampleCase(heights: number[], size: number, rows: number, columns: number) {
   const field = new Heightfield({
@@ -30,6 +32,85 @@ function sampleCase(heights: number[], size: number, rows: number, columns: numb
 }
 
 const sobel = (col: number, row: number): number => ((col * 7 + row * 13) % 9) - 4;
+
+interface IRapierWorld {
+  castRay(ray: unknown, maxToi: number, solid: boolean): { readonly timeOfImpact: number } | null;
+  createCollider(descriptor: unknown, body: unknown): unknown;
+  createRigidBody(descriptor: unknown): unknown;
+  free(): void;
+  step(): void;
+}
+
+interface IRapierModule {
+  ColliderDesc: {
+    heightfield(
+      rows: number,
+      columns: number,
+      heights: Float32Array,
+      scale: { readonly x: number; readonly y: number; readonly z: number },
+      flags?: number,
+    ): unknown;
+  };
+  HeightFieldFlags: { readonly FIX_INTERNAL_EDGES: number };
+  Ray: new (
+    origin: { readonly x: number; readonly y: number; readonly z: number },
+    direction: { readonly x: number; readonly y: number; readonly z: number },
+  ) => unknown;
+  RigidBodyDesc: { fixed(): unknown };
+  World: new (gravity: {
+    readonly x: number;
+    readonly y: number;
+    readonly z: number;
+  }) => IRapierWorld;
+  init(): Promise<void>;
+}
+
+/**
+ * The solver's own shape, from the Rapier copy `@threenative/physics` installed: this example has
+ * no Rapier dependency of its own, and a spelled-out triangulation would be a second copy of the
+ * one under test. `game.ts` builds the same descriptor, `CollisionShape3D.heightfield` over
+ * `toColliderHeights()`, on a fixed body at the mesh's own transform (here the origin).
+ */
+const RAPIER = createRequire(new URL("../../../packages/physics/package.json", import.meta.url))(
+  "@dimforge/rapier3d-compat",
+) as IRapierModule;
+
+beforeAll(async () => {
+  await RAPIER.init();
+});
+
+/**
+ * The collider surface height under a world point, or `null` where the collider has no ground.
+ *
+ * `fromY` is the ray's start: a short ray keeps the solver's float32 time of impact precise (a
+ * 10 km fall rounds to a millimetre), so a caller starts it just above the ground it asks about.
+ */
+function colliderRay(
+  field: Heightfield,
+  size: number,
+): (x: number, z: number, fromY: number) => number | null {
+  const world = new RAPIER.World({ x: 0, y: 0, z: 0 });
+  world.createCollider(
+    RAPIER.ColliderDesc.heightfield(
+      field.rows - 1,
+      field.columns - 1,
+      field.toColliderHeights(),
+      { x: size, y: 1, z: size },
+      RAPIER.HeightFieldFlags.FIX_INTERNAL_EDGES,
+    ),
+    world.createRigidBody(RAPIER.RigidBodyDesc.fixed()),
+  );
+  // The broad phase answers only once the world has stepped.
+  world.step();
+  return (x, z, fromY) => {
+    const hit = world.castRay(
+      new RAPIER.Ray({ x, y: fromY, z }, { x: 0, y: -1, z: 0 }),
+      fromY * 2,
+      true,
+    );
+    return hit === null ? null : fromY - hit.timeOfImpact;
+  };
+}
 
 describe("exact ground sampler", () => {
   it("uses the drawn triangle planes, not the bilinear height, on a saddle", () => {
@@ -141,6 +222,47 @@ describe("exact ground sampler", () => {
         6,
       );
     }
+  });
+
+  it("matches the collider's own triangles at 10 000 seeded points, inside and outside", async () => {
+    const rows = 33;
+    const columns = 33;
+    const size = 256;
+    const heights: number[] = [];
+    for (let index = 0; index < rows * columns; index += 1)
+      heights.push(Math.sin(index * 0.7) * 6 + Math.cos(index * 0.31) * 3);
+    const { field, sampler } = sampleCase(heights, size, rows, columns);
+    const collider = colliderRay(field, size);
+    const half = size / 2 - 0.05;
+    let seed = 7;
+    const next = (): number => {
+      seed = (seed * 1_103_515_245 + 12_345) >>> 0;
+      return seed / 0xffffffff;
+    };
+    let compared = 0;
+    let disagreed = 0;
+    for (let sample = 0; sample < 10_000; sample += 1) {
+      if (sample < 8_000) {
+        const x = (next() * 2 - 1) * half;
+        const z = (next() * 2 - 1) * half;
+        const expected = collider(x, z, field.heightAt(x, z) + 100);
+        expect(expected, `collider hit at (${x}, ${z})`).not.toBeNull();
+        // 1 mm: the sampler answers the canonical float64 triangle, the collider its float32 copy.
+        expect(sampler(x, z), `sampler(${x}, ${z})`).toBeCloseTo(expected as number, 3);
+        compared += 1;
+        if (Math.abs((expected as number) - field.heightAt(x, z)) > 1e-3) disagreed += 1;
+        continue;
+      }
+      // Past the resident region the player keeps the ray fallback: no ground from either answer.
+      const reach = 1 + next() * 64;
+      const x = (next() < 0.5 ? -1 : 1) * (size / 2 + reach);
+      const z = (next() * 2 - 1) * (size / 2 + 64);
+      expect(sampler(x, z), `sampler(${x}, ${z})`).toBeNull();
+      expect(collider(x, z, 5_000), `collider(${x}, ${z})`).toBeNull();
+    }
+    expect(compared).toBe(8_000);
+    // The pin bites only if the bilinear height is a different answer at many of these points.
+    expect(disagreed).toBeGreaterThan(1_000);
   });
 
   it("returns null outside the grid and for a rotated topology, so the ray fallback runs", () => {

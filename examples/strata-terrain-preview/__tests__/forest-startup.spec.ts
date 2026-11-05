@@ -1,9 +1,11 @@
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
+import type { IPhysicsContext } from "@threenative/physics";
 import * as three from "three";
 import ts from "typescript";
 import { afterEach, expect, it, vi } from "vitest";
 import { initialState } from "../scripts/fixtures/kit-game/state.js";
+import { type IContactWitness, witnessAsymmetricContact } from "../src/diagnostics.js";
 import * as loading from "../src/render/loading.js";
 
 // Execute the shipped fixture itself; only renderer/physics/assets are replaced at their seams.
@@ -304,43 +306,23 @@ it("does not mistake zero shadow counters before the first draw for completed st
 });
 
 it("runs the asymmetric contact witness without a legacy terrain mesh", () => {
-  const source = readFileSync(new URL("../src/game.ts", import.meta.url), "utf8");
-  const ast = ts.createSourceFile("game.ts", source, ts.ScriptTarget.Latest, true);
-  let witness: ts.IfStatement | undefined;
-  const visit = (node: ts.Node): void => {
-    if (
-      !witness &&
-      ts.isIfStatement(node) &&
-      node.thenStatement.getText(ast).includes("Missing asymmetric terrain contact")
-    )
-      witness = node;
-    ts.forEachChild(node, visit);
-  };
-  visit(ast);
-  if (!witness) throw new Error("Missing asymmetric witness block");
   const probeMesh = new three.Mesh(new three.PlaneGeometry(16, 16), new three.MeshBasicMaterial());
-  const context = {
-    mesh: undefined,
-    frames: 0,
-    probeMesh,
-    Vector3: three.Vector3,
-    fixture: { heightAt: () => 0 },
-    ctx: {
-      raycast: vi.fn(() => ({ point: { y: 1 } })),
-      physics: { directSpaceState: { intersectRay: vi.fn(() => ({ position: { y: 1 } })) } },
-    },
-    maxContactError: 0,
-    bilinearDifference: 0,
-    contactSamples: 0,
-  };
-  const code = ts.transpileModule(witness.getText(ast), {
-    compilerOptions: { target: ts.ScriptTarget.ES2022 },
-  }).outputText;
-  runInNewContext(code, context);
-  expect(context.contactSamples).toBe(8);
-  expect(context.bilinearDifference).toBe(1);
-  context.ctx.raycast.mockReturnValue(undefined as never);
-  expect(() => runInNewContext(code, context)).toThrow("Missing asymmetric terrain contact");
+  const raycast = vi.fn(() => ({ point: { y: 1 } }));
+  const physics = {
+    directSpaceState: { intersectRay: vi.fn(() => ({ position: { y: 1 } })) },
+  } as unknown as IPhysicsContext;
+  const witness = (): IContactWitness =>
+    witnessAsymmetricContact({
+      mesh: undefined,
+      probeMesh,
+      fixture: { heightAt: () => 0 },
+      raycast,
+      physics,
+    });
+  expect(witness().contactSamples).toBe(8);
+  expect(witness().bilinearDifference).toBe(1);
+  raycast.mockReturnValue(undefined as never);
+  expect(witness).toThrow("Missing asymmetric terrain contact");
   probeMesh.geometry.dispose();
   probeMesh.material.dispose();
 });

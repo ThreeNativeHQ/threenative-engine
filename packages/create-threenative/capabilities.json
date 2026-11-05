@@ -4585,6 +4585,26 @@
     {
       "aliases": [],
       "constraints": [
+        "every ring vertex asks the game's `height` callback; core owns no terrain look",
+        "the collar is a ring of triangles, not a field: `heightAt` answers on it and null off it"
+      ],
+      "example": "const collar = new HeightfieldCollar({ resolution: 129, size: 512, rings: 384, ringDistance: (ring) => (ring / 384) ** 1.65 * 2100, walkBand: 200, height: ({ x, z }) => surveyed.heightAt(x, z) });",
+      "importPath": "@threenative/core/world",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export class HeightfieldCollar { … }",
+      "situations": [
+        "draw the terrain past the playable square without hand-building a ring grid",
+        "ground a character past the square, out to the walk band, on drawn triangles"
+      ],
+      "summary": "A heightfield's far ring: `rings` square rings past its playable square, one vertex per boundary sample, and the index grid that draws them.",
+      "supersedes": [],
+      "symbol": "HeightfieldCollar"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "the sampler reads the game's data; the framework never selects a terrain shape"
       ],
       "example": "const sampleHeight = heightSamplerFromHeightmap(terrain, extent, await loadWorldHeightmap(url));",

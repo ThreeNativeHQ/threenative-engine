@@ -18,14 +18,23 @@ import {
 import ts from "typescript";
 import { expect, it, vi } from "vitest";
 import { BENCHMARK } from "../src/render/benchmark.js";
-import { FAR_FOREST, farForestPlacements } from "../src/render/farForest.js";
+import { FAR_FOREST, FAR_FOREST_WORLDS, farForestPlacements } from "../src/render/farForest.js";
 import { HORIZON_WALK_BAND } from "../src/render/horizon.js";
 import { createLoadingScreen } from "../src/render/loading.js";
 import { meadowCover } from "../src/render/scatter.js";
 import { OPEN_MEADOW } from "../src/render/terrain.js";
 
 const GAME_URL = new URL("../src/game.ts", import.meta.url);
+/**
+ * The scene's own sources, in the order the split left them: the wiring, the spawn gate and the
+ * meadow build. A declaration is looked up in whichever of the three now owns it.
+ */
+const GAME_SOURCES = ["game.ts", "spawnGate.ts", "sceneProps.ts"].map(
+  (name) => new URL(`../src/${name}`, import.meta.url),
+);
 const GATE_NAMES = [
+  "SPAWN_BUDGET_MS",
+  "EXPIRED",
   "deadlineAt",
   "spawnReady",
   "spawnError",
@@ -41,33 +50,36 @@ const GATE_NAMES = [
 
 /** Pull named declarations straight out of the production `enter()` so the tests drive real code. */
 function gameDeclarations(names: readonly string[], assignments = false): string {
-  const source = ts.createSourceFile(
-    "game.ts",
-    readFileSync(GAME_URL, "utf8"),
-    ts.ScriptTarget.Latest,
-    true,
-  );
-  const wanted = new Set(names);
   const found = new Map<string, string>();
-  function visit(node: ts.Node): void {
-    if (ts.isVariableDeclaration(node)) {
-      const name = node.name.getText(source);
-      if (wanted.has(name)) found.set(name, node.parent.parent.getText(source));
-    } else if (
-      assignments &&
-      ts.isBinaryExpression(node) &&
-      node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
-      ts.isIdentifier(node.left) &&
-      wanted.has(node.left.text)
-    ) {
-      found.set(node.left.text, `let ${node.getText(source)};`);
-    } else if (ts.isFunctionDeclaration(node) && node.name !== undefined) {
-      const name = node.name.getText(source);
-      if (wanted.has(name)) found.set(name, node.getText(source));
+  for (const url of GAME_SOURCES) {
+    const source = ts.createSourceFile(
+      url.pathname.split("/").pop() ?? "game.ts",
+      readFileSync(url, "utf8"),
+      ts.ScriptTarget.Latest,
+      true,
+    );
+    const wanted = new Set(names.filter((name) => !found.has(name)));
+    if (wanted.size === 0) break;
+    function visit(node: ts.Node): void {
+      if (ts.isVariableDeclaration(node)) {
+        const name = node.name.getText(source);
+        if (wanted.has(name)) found.set(name, node.parent.parent.getText(source));
+      } else if (
+        assignments &&
+        ts.isBinaryExpression(node) &&
+        node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+        ts.isIdentifier(node.left) &&
+        wanted.has(node.left.text)
+      ) {
+        found.set(node.left.text, `let ${node.getText(source)};`);
+      } else if (ts.isFunctionDeclaration(node) && node.name !== undefined) {
+        const name = node.name.getText(source);
+        if (wanted.has(name)) found.set(name, node.getText(source));
+      }
+      ts.forEachChild(node, visit);
     }
-    ts.forEachChild(node, visit);
+    visit(source);
   }
-  visit(source);
   return names
     .map((name) => {
       const text = found.get(name);
@@ -77,22 +89,25 @@ function gameDeclarations(names: readonly string[], assignments = false): string
     .join("\n");
 }
 
+/**
+ * The completed-work callback the loading screen counts with, read off the meadow that owns it: the
+ * scene hands it to `createSpawnGate` as `progress`.
+ */
 function startupProgressExpression(): string {
   const source = ts.createSourceFile(
-    "game.ts",
-    readFileSync(GAME_URL, "utf8"),
+    "sceneProps.ts",
+    readFileSync(new URL("../src/sceneProps.ts", import.meta.url), "utf8"),
     ts.ScriptTarget.Latest,
     true,
   );
   let expression: string | undefined;
   function visit(node: ts.Node): void {
     if (
-      ts.isCallExpression(node) &&
-      ts.isPropertyAccessExpression(node.expression) &&
-      node.expression.getText(source) === "ctx.startup.hold" &&
-      node.arguments.length >= 4
+      ts.isPropertyAssignment(node) &&
+      node.name.getText(source) === "progress" &&
+      ts.isArrowFunction(node.initializer)
     )
-      expression = node.arguments[3]?.getText(source);
+      expression = node.initializer.body.getText(source);
     ts.forEachChild(node, visit);
   }
   visit(source);
@@ -214,6 +229,7 @@ it.each(["attached", "cancelled", "released", "data-rejected", "prewarm-rejected
       finish = resolve;
     });
     let disposed = false;
+    let released = false;
     let clock = 0;
     const progressSnapshots: Array<{
       phaseStartedAt: number | undefined;
@@ -235,6 +251,7 @@ it.each(["attached", "cancelled", "released", "data-rejected", "prewarm-rejected
       OPEN_MEADOW,
       BENCHMARK,
       FAR_FOREST,
+      FAR_FOREST_WORLDS,
       farForestPlacements,
       meadowCover,
       HORIZON_WALK_BAND,
@@ -258,7 +275,7 @@ it.each(["attached", "cancelled", "released", "data-rejected", "prewarm-rejected
           attachments.push(controllerHost.canvasLayer.keepWorldRendering);
         },
       },
-      released: false,
+      released: () => released,
       preparedDispose: undefined,
       preparedLodBaseSpread: 0,
       preparedLevelsWithoutSolid: 0,
@@ -272,10 +289,39 @@ it.each(["attached", "cancelled", "released", "data-rejected", "prewarm-rejected
       propParts: parts,
       data: { size: 512 },
       spawn: { x: 0, y: 0, z: 0 },
-      biome: {},
       fallbackSaplingHeight: undefined,
       scatter: { placements: [], counts: {} },
       groundAt: () => ({ height: 0, offset: 0 }),
+      // The gate's two settlements, and the look and scenery the build reads.
+      land: vi.fn(),
+      settle: vi.fn(),
+      reveal: { publishedBatch: () => undefined, readout: () => ({}) },
+      invalidateShadows: vi.fn(),
+      look: {
+        pinnedCrags: false,
+        riverMirrorsPonds: false,
+        saplingHeight: undefined,
+        stoneScans: 1,
+        stoneSinkShare: null,
+      },
+      ridges: undefined,
+      Mesh: class {},
+      collar: {},
+      field: {},
+      biome: { heightBands: { treeline: 0 } },
+      // The gate's constants, and the receipt's own view of the build's progress.
+      SPAWN_BUDGET_MS: 120_000,
+      surfaces: undefined,
+      witness: () => ({
+        added: scope.preparation?.added ?? null,
+        bucket: scope.preparation?.bucket ?? null,
+        buildStartedAt: scope.buildStartedAt,
+        lastProgressAt: scope.lastProgressAt,
+        phase: scope.preparation?.phase,
+        phaseStartedAt: scope.phaseStartedAt,
+        stage: scope.propsStage,
+        total: scope.preparation?.total ?? null,
+      }),
       textureUploads: { signal: new AbortController().signal },
       PerspectiveCamera,
       OrthographicCamera,
@@ -344,7 +390,7 @@ it.each(["attached", "cancelled", "released", "data-rejected", "prewarm-rejected
       expect(controllerHost.canvasLayer.keepWorldRendering).toBe(false);
       expect(attachments).toEqual([]);
     } finally {
-      scope.released = outcome === "released";
+      released = outcome === "released";
       finish();
       await work;
     }
@@ -371,8 +417,7 @@ it.each(["attached", "cancelled", "released", "data-rejected", "prewarm-rejected
     expect(attachments).toEqual(attached ? [false, false] : []);
     expect(controllerHost.canvasLayer.keepWorldRendering).toBe(attached);
     expect(disposed).toBe(outcome === "released");
-    expect(scope.settleSpawn).not.toHaveBeenCalled();
-    expect(scope.spawnCells).toEqual({ required: 0, loaded: 0 });
+    expect(scope.land).not.toHaveBeenCalled();
     if (!attached) return;
     expect([...scope.spawnJoins.values()]).toEqual([
       { data: "pending", prewarm: "pending" },
@@ -399,7 +444,7 @@ it.each(["attached", "cancelled", "released", "data-rejected", "prewarm-rejected
       { data: "resolved", prewarm: "pending" },
       { data: "pending", prewarm: "resolved" },
     ]);
-    expect(scope.settleSpawn).not.toHaveBeenCalled();
+    expect(scope.land).not.toHaveBeenCalled();
     const error = new Error("original world gate rejection");
     if (outcome === "data-rejected") gates[1]?.rejectData(error);
     else gates[1]?.admit();
@@ -407,15 +452,14 @@ it.each(["attached", "cancelled", "released", "data-rejected", "prewarm-rejected
     else gates[0]?.draw();
     for (let turn = 0; turn < 5; turn++) await Promise.resolve();
     if (outcome === "attached") {
-      expect(scope.settleSpawn).toHaveBeenCalledOnce();
-      expect(scope.spawnCells).toEqual({ required: 3, loaded: 3 });
+      expect(scope.land).toHaveBeenCalledExactlyOnceWith({ requiredCells: 3, loadedCells: 3 });
       expect([...scope.spawnJoins.values()]).toEqual([
         { data: "resolved", prewarm: "resolved" },
         { data: "resolved", prewarm: "resolved" },
       ]);
       expect(scope.failSpawn).not.toHaveBeenCalled();
     } else {
-      expect(scope.settleSpawn).not.toHaveBeenCalled();
+      expect(scope.land).not.toHaveBeenCalled();
       expect(scope.failSpawn).toHaveBeenCalledExactlyOnceWith(error);
       expect([...scope.spawnJoins.values()]).toContainEqual(
         outcome === "data-rejected"
@@ -452,11 +496,13 @@ it("reports each spawn region and promise status without querying readiness afte
     })),
     stats: vi.fn(() => ({ admission: { backlog: 7 }, impostor: { pending: 4 } })),
   };
+  const joins = new Map([[stream, status]]);
+  const gate = { ready: false };
   const scope = {
     exports: { snapshot: [] as Array<Record<string, string | number | boolean>> },
-    spawnJoins: new Map([[stream, status]]),
-    spawn: { x: 11, z: 23 },
-    spawnReady: false,
+    meadow: { joins },
+    rig: { spawn: { x: 11, z: 23 } },
+    gate,
     frames: 12,
     ctx: { state: { getState: () => ({ spawnReadiness: scope.exports.snapshot }) } },
   };
@@ -484,10 +530,10 @@ it("reports each spawn region and promise status without querying readiness afte
       impostorPending: 4,
     },
   ]);
-  expect(stream.readinessAt).toHaveBeenCalledExactlyOnceWith(scope.spawn, 60);
+  expect(stream.readinessAt).toHaveBeenCalledExactlyOnceWith(scope.rig.spawn, 60);
   status.data = "resolved";
   status.prewarm = "resolved";
-  scope.spawnReady = true;
+  gate.ready = true;
   scope.frames = 13;
   runInNewContext(code, scope);
   expect(scope.exports.snapshot[0]).toMatchObject({
@@ -508,7 +554,7 @@ it("reports each spawn region and promise status without querying readiness afte
 
 it("reports completed streamed admission work before spawn cells become ready", () => {
   const progress = startupProgressExpression();
-  const result = runInNewContext(`(${progress})()`, {
+  const result = runInNewContext(`(${progress})`, {
     completedPropsWork: 0,
     preparation: { prewarmedWorlds: 0 },
     props: {
@@ -534,13 +580,20 @@ it("reports that preparation has not started when the spawn fails before physics
       console: { error },
       performance: { now: () => 121_000 },
       deadlineAt: 121_000,
-      buildStartedAt: undefined,
-      phaseStartedAt: undefined,
-      lastProgressAt: undefined,
+      SPAWN_BUDGET_MS: 120_000,
       reason,
       world: "forest",
-      propsStage: "waiting-for-physics",
-      preparation: undefined,
+      // The build had not started: no phase, and the stage name it entered with.
+      witness: () => ({
+        added: null,
+        bucket: null,
+        buildStartedAt: undefined,
+        lastProgressAt: undefined,
+        phase: undefined,
+        phaseStartedAt: undefined,
+        stage: "waiting-for-physics",
+        total: null,
+      }),
     },
   );
   expect(error).toHaveBeenCalledOnce();
@@ -573,18 +626,19 @@ it.each(["世界", "\u0000", "\uD800"])(
         console: { error },
         performance: { now: () => 121_000 },
         deadlineAt: 121_000,
-        buildStartedAt: undefined,
-        phaseStartedAt: undefined,
-        lastProgressAt: undefined,
+        SPAWN_BUDGET_MS: 120_000,
         reason: text.repeat(10_000),
         world: "forest",
-        propsStage: "streaming",
-        preparation: {
-          phase: "world-load",
-          bucket: "x".repeat(10_000),
+        witness: () => ({
           added: 0,
+          bucket: "x".repeat(10_000),
+          buildStartedAt: undefined,
+          lastProgressAt: undefined,
+          phase: "world-load",
+          phaseStartedAt: undefined,
+          stage: "streaming",
           total: 0,
-        },
+        }),
       },
     );
     expect(error).toHaveBeenCalledTimes(1);

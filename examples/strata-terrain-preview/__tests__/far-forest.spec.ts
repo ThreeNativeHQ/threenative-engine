@@ -7,7 +7,7 @@ import { BIOMES, measureBiome } from "../src/render/biomes.js";
 import { FAR_FOREST_LAYER, collarSampler, farForestPlacements } from "../src/render/farForest.js";
 import {
   type HorizonSurroundings,
-  createHorizonGeometry,
+  createHorizonCollar,
   setHorizonSurroundings,
 } from "../src/render/horizon.js";
 import { createStreamedProps } from "../src/render/propStreaming.js";
@@ -20,16 +20,17 @@ const read = (name: string) =>
 describe("far forest", () => {
   setHorizonSurroundings(read("horizon.json") as HorizonSurroundings);
   const data = (read("baked.json") as { forest: IBakedWorld }).forest;
-  const horizon = createHorizonGeometry(data, "mountain");
+  const collar = createHorizonCollar(data, "forest");
+  const horizon = collar.geometry;
   const position = horizon.getAttribute("position");
-  const collar = collarSampler(horizon, data.size, data.resolution);
+  const sampler = collarSampler(collar);
 
   it("reads the drawn collar's own heights and nothing inside the square", () => {
     for (const vertex of [5000, 123_457, 300_001, 393_000]) {
-      const height = collar.at(position.getX(vertex), position.getZ(vertex));
+      const height = sampler.at(position.getX(vertex), position.getZ(vertex));
       expect(height).toBeCloseTo(position.getY(vertex), 3);
     }
-    expect(collar.at(0, 0)).toBeNull();
+    expect(sampler.at(0, 0)).toBeNull();
   });
 
   it("plants the valley and lower slopes, never cliffs, peaks, the square or the vista meadow", () => {
@@ -40,7 +41,7 @@ describe("far forest", () => {
     const trees = farForestPlacements({
       size: data.size,
       resolution: data.resolution,
-      horizon,
+      collar,
       treeline,
       rivers: data.rivers,
       lakes: data.lakes,
@@ -54,7 +55,7 @@ describe("far forest", () => {
       expect(tree.layer).toBe(FAR_FOREST_LAYER);
       expect(Math.max(Math.abs(x), Math.abs(z))).toBeGreaterThan(data.size / 2);
       expect(Math.hypot(x - vista.at[0], z - vista.at[1])).toBeGreaterThanOrEqual(55);
-      highest = Math.max(highest, collar.at(x, z) ?? 0);
+      highest = Math.max(highest, sampler.at(x, z) ?? 0);
     }
     expect(highest).toBeLessThan(treeline[1] + 30);
     const canopy = horizon.getAttribute("canopy").array as Float32Array;

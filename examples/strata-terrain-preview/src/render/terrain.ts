@@ -1,6 +1,7 @@
 import type { IAssetLoader } from "@threenative/core";
 import {
   Heightfield,
+  type HeightfieldCollar,
   bakedFractalNoise,
   bakedNoise,
   loadTerrainSplat,
@@ -73,7 +74,7 @@ import {
   elevationBand,
   measureBiome,
 } from "./biomes.js";
-import { createHorizonGeometry, horizonSurroundings } from "./horizon.js";
+import { collarColors, createHorizonCollar, horizonSurroundings } from "./horizon.js";
 import { loadSkyLight, skyIrradiance } from "./pack.js";
 import {
   type IBakedLake,
@@ -1163,7 +1164,7 @@ export function createTerrain(
   data: IBakedWorld,
   assets?: IAssetLoader,
   biome?: IBiome,
-): { field: Heightfield; mesh: Mesh } {
+): { collar: HeightfieldCollar; field: Heightfield; mesh: Mesh } {
   const field = new Heightfield({
     rows: data.resolution,
     columns: data.resolution,
@@ -1187,7 +1188,12 @@ export function createTerrain(
   mesh.layers.enable(REFLECTED_LAYER);
   mesh.receiveShadow = true;
   mesh.castShadow = biome?.terrainCastsShadow ?? false;
-  const horizonGeometry = createHorizonGeometry(data, biome?.horizon, field);
+  // The world is the biome row's, never a guess from the water level: a sixth biome brings its own
+  // surveys and its own collar without touching this file.
+  const collar = createHorizonCollar(data, biome?.world ?? "forest");
+  const horizonGeometry = collar.geometry;
+  horizonGeometry.setAttribute("color", new Float32BufferAttribute(collarColors(collar, data), 3));
+  horizonGeometry.computeVertexNormals();
   const edgePositions = horizonGeometry.getAttribute("position");
   const edgeNormals = horizonGeometry.getAttribute("normal");
   const groundNormals = geometry.getAttribute("normal");
@@ -1279,7 +1285,7 @@ export function createTerrain(
       .catch((error) =>
         console.warn(`TN_GROUND_MAP_MISSING ${error instanceof Error ? error.message : error}`),
       );
-  return { field, mesh };
+  return { collar, field, mesh };
 }
 
 /**
