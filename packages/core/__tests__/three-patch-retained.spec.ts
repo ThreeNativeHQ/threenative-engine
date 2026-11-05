@@ -118,11 +118,16 @@ it("retains distinct depth buffers across sample-count switches and destroys the
   expect(utils.getDepthBuffer(true, false)).toBe(four);
   expect(one).not.toBe(four);
   expect(create).toHaveBeenCalledTimes(2);
-  canvas.dispatchEvent({ type: "resize" });
+  // A width change alone drops the retained buffers; no resize event arrives here.
+  width = 32;
+  const widened = utils.getDepthBuffer(true, false);
+  expect(create).toHaveBeenCalledTimes(3);
+  expect(widened).not.toBe(four);
+  expect(widened).not.toBe(one);
   expect(four.destroy).toHaveBeenCalledTimes(1);
   expect(one.destroy).toHaveBeenCalledTimes(1);
-  width = 32;
-  expect(utils.getDepthBuffer(true, false)).not.toBe(four);
+  canvas.dispatchEvent({ type: "resize" });
+  expect(widened.destroy).toHaveBeenCalledTimes(1);
   utils.dispose();
 });
 
