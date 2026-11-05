@@ -638,7 +638,7 @@ const RenderDatabase::GraphSources& RenderDatabase::graphSources(const Material&
     const auto graphs = material.nodes.pointers();
     static_assert(decltype(graphs){}.size() == decltype(roots){}.size(), "a node slot was added to MaterialNodes");
     std::copy(graphs.begin(), graphs.end(), roots.begin());
-    if (std::all_of(roots.begin(), roots.end(), [](const void* root) { return root == nullptr; })) return none;
+    if (std::all_of(roots.begin(), roots.end(), [](const void* root) { return root == nullptr; }) && material.nodes.mrt.empty()) return none;
     GraphSources& cached = graphSources_[&material];
     if (cached.roots != roots || cached.version != material.version()) {
         auto& diagnostic = Material::diagnostics();
@@ -1716,7 +1716,10 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
         Matrix4 rotation;
         if (!env && world) rotation.makeRotationFromEuler(world->environmentRotation).transpose();
         item.envRotation = toArray(rotation);
-        if (item.envMap && !item.envMap->hasImage()) item.envMap = nullptr;
+        // three's NodeMaterial.setupEnvironment takes material.envNode before material.envMap and before
+        // scene.environment (NodeMaterial.js:968-970, MeshStandardNodeMaterial.js:110-116). The program then
+        // lowers the author's node alone, so the draw binds no environment map.
+        if ((item.envMap && !item.envMap->hasImage()) || item.nodes->envNode) item.envMap = nullptr;
     }
     // three's Renderer.renderObject: a transparent DoubleSide material (forceSinglePass false) draws
     // twice, its BackSide pass and then its FrontSide pass, so the far half composites under the near.

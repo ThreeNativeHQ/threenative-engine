@@ -264,6 +264,7 @@ it("carries a material's TSL slots through clone and copy, as the engine carries
   };
   interface ISlots {
     maskNode: unknown;
+    alphaTestNode: unknown;
     colorNode: unknown;
     clone(): ISlots;
     copy(source: ISlots): ISlots;
@@ -272,19 +273,24 @@ it("carries a material's TSL slots through clone and copy, as the engine carries
   const source = new Material();
   const mask = tsl.uniform(1);
   const color = tsl.uniform(0.5);
+  const cutoff = tsl.uniform(0.2);
   source.maskNode = mask;
+  source.alphaTestNode = cutoff; // the engine's alphaTestNode slot: a registry member, so the clone carries it
   source.colorNode = color;
   // A composed mask (core's LOD crossfade) reads the clone's slot: null there drops the source's.
   const twin = source.clone();
   expect(twin.maskNode).toBe(mask);
+  expect(twin.alphaTestNode).toBe(cutoff);
   expect(twin.colorNode).toBe(color);
   const target = new Material();
   target.colorNode = tsl.uniform(2);
   target.copy(source);
   expect(target.maskNode).toBe(mask);
+  expect(target.alphaTestNode).toBe(cutoff);
   expect(target.colorNode).toBe(color);
   target.copy(new Material());
   expect(target.maskNode).toBe(null);
+  expect(target.alphaTestNode).toBe(null);
 });
 
 it("writes only a material's custom MRT slots, since the scene pass draws the reserved targets", () => {

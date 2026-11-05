@@ -29,7 +29,7 @@ inline bool engineTargetName(std::string_view name) {
 }
 
 /** One graph root per MaterialNodes::pointers(), for the arrays that hold them (the draw's source cache). */
-inline constexpr std::size_t kMaterialGraphRoots = 17;
+inline constexpr std::size_t kMaterialGraphRoots = 18;
 
 /** NodeMaterial slots; null nodes use the non-node material path. */
 struct MaterialNodes {
@@ -53,6 +53,9 @@ struct MaterialNodes {
     /** NodeMaterial.maskNode: a bool; a colour-pass fragment where it is false is discarded before its colour is read
      *  (three's setupDiffuseColor). The shadow depth pass draws without it, as it draws without the colour slots. */
     graph::Node maskNode;
+    /** NodeMaterial.alphaTestNode: a float that replaces material.alphaTest as the cutoff, in the colour pass and the
+     *  shadow depth pass (three's setupDiffuseColor and shadow override). A set node tests even when alphaTest is 0. */
+    graph::Node alphaTestNode;
     /** SpriteNodeMaterial.scaleNode (a vec2 beside the model scale) and rotationNode (radians, over the material's). */
     graph::Node scaleNode, rotationNode;
     /** NodeMaterial.mrtNode's custom slots, in author order (three's mrt() takes any name and node). The named
@@ -68,14 +71,16 @@ struct MaterialNodes {
                           opacityNode.get(),  vertexNode.get(),    fragmentNode.get(),
                           scaleNode.get(),    rotationNode.get(),  depthNode.get(),
                           aoNode.get(),       irradianceNode.get(), castShadowPositionNode.get(),
-                          maskNode.get(),     envNode.get()};
+                          maskNode.get(),     envNode.get(),
+                          alphaTestNode.get()};
     }
     auto graphs() const {
         return std::array{colorNode,     positionNode, normalNode, emissiveNode, roughnessNode,
                           metalnessNode, opacityNode,  vertexNode, fragmentNode,
                           scaleNode,     rotationNode, depthNode,
                           aoNode,        irradianceNode, fogNode, castShadowPositionNode,
-                          maskNode,      envNode};
+                          maskNode,      envNode,
+                          alphaTestNode};
     }
     /** Every graph a material owns: the fixed slots, then the custom MRT slots, in one walk. */
     template <typename Fn>

@@ -1699,6 +1699,63 @@ void envNodeWithoutEnvMapLightsTheMaterial() {
     CHECK(px[rim] > px[centre]);
 }
 
+// three's NodeMaterial.setupEnvironment takes material.envNode first (NodeMaterial.js:968-970), and
+// MeshStandardNodeMaterial.js:110-116 falls back to the scene environment only when the material has no envNode.
+// So a scene environment must not change a material that carries its own envNode: the Strata ocean builds its sky
+// there. The program tested the scene environment first, so the author's sky was never read.
+void envNodeBeatsSceneEnvironment() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(64, 64);
+    renderer.setOutput(OutputState{shader::ToneMapping::ACESFilmic, 1, true});
+    const auto draw = [&](bool sceneEnvironment) {
+        Scene scene; PerspectiveCamera camera(55, 1.0, 0.1, 100);
+        camera.position.set(0, 0, 3);
+        camera.lookAt(0, 0, 0);
+        camera.updateProjectionMatrix();
+        scene.updateMatrixWorld(true);
+        if (sceneEnvironment) {
+            auto sky = std::make_shared<DataTexture>(); sky->mapping = 303; sky->width = 128; sky->height = 64;
+            sky->data.resize(128 * 64 * 4, 255); sky->needsUpdate();
+            scene.environment = sky;
+        }
+        auto material = std::make_shared<Material>(MaterialType::Standard);
+        material->nodes.colorNode = shader::graph::vec3({shader::graph::float_(0)});
+        material->nodes.envNode = shader::graph::vec3(
+            {shader::graph::float_(1), shader::graph::float_(0), shader::graph::float_(0)});
+        material->roughness = 0.2;
+        scene.add(*std::make_shared<Mesh>(makeSphereGeometry(), material));
+        RenderDatabase database;
+        // The scene environment bakes lazily and a frame that waits for it draws nothing, so render until one draws.
+        uint64_t drawn = 0;
+        for (int frame = 0; frame < 5000 && drawn == 0; ++frame) {
+            drawn = database.render(renderer, scene, camera, {0, 0, 0, 1});
+            renderer.poll();
+            events.drain();
+            if (drawn == 0) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        CHECK(drawn > 0);
+        CHECK(database.diagnostics().empty());
+        return read(renderer, events);
+    };
+    const std::vector<uint8_t> alone = draw(false);
+    const std::vector<uint8_t> withScene = draw(true);
+    CHECK(alone.size() == 64 * 64 * 4 && withScene.size() == alone.size());
+    if (alone.size() != 64 * 64 * 4 || withScene.size() != alone.size()) return;
+    const size_t centre = size_t{32} * 64 * 4 + size_t{32} * 4;
+    const size_t rim = size_t{32} * 64 * 4 + size_t{13} * 4;
+    std::printf("envNode alone centre %d,%d,%d rim %d,%d,%d; with scene environment centre %d,%d,%d rim %d,%d,%d\n",
+                alone[centre], alone[centre + 1], alone[centre + 2], alone[rim], alone[rim + 1], alone[rim + 2],
+                withScene[centre], withScene[centre + 1], withScene[centre + 2], withScene[rim], withScene[rim + 1],
+                withScene[rim + 2]);
+    for (size_t k = 0; k < 3; ++k) {
+        CHECK(withScene[centre + k] == alone[centre + k]);
+        CHECK(withScene[rim + k] == alone[rim + k]);
+    }
+}
+
 // three draws a lit mesh whose geometry has no `normal` attribute: Normal.js supplies (0, 1, 0), and
 // getGeometryRoughness returns zero. The draw item carries that fallback per vertex, including for the sailing sea.
 void litMeshWithoutNormals() {
@@ -4832,6 +4889,101 @@ void maskedShadow() {
     CHECK(solid > 0.95);                   // the card without a cut shades its whole footprint
     CHECK(std::abs(cut - 0.5) < 0.05);     // the cut card shades its opaque half
     CHECK(frontFacingLight < 0.05);        // three's shadowSide: a FrontSide caster draws its back faces
+}
+
+// three r187 NodeMaterial.setupDiffuseColor: `alphaTestNode ?? alphaTest` is the cutoff, and a set node tests even
+// when alphaTest is 0. The shadow pass copies alphaTestNode too. The owned engine had no slot, so a mip-compensated
+// cutoff (Strata's spruce crowns) stayed the flat alphaTest in both passes. The card's texel alpha is 0.302.
+void alphaTestNode() {
+    namespace g = shader::graph;
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(64, 64);
+    Scene scene;
+    OrthographicCamera camera(-2, 2, 2, -2, 0.1, 20);
+    camera.position.set(0, 10, 0.001);
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
+    DirectionalLight light{Color(1, 1, 1), 3};
+    light.position.set(0.001, 10, 0);
+    light.setCastShadow(true);
+    light.shadow.camera->setLayerMask(double((1 << 0) | (1 << 2)));
+    scene.add(light);
+    auto floorMaterial = std::make_shared<Material>(MaterialType::Standard);
+    Mesh floor{makePlaneGeometry(4, 4), floorMaterial};
+    floor.rotation.set(-M_PI / 2, 0, 0);
+    floor.setReceiveShadow(true);
+    scene.add(floor);
+    auto map = std::make_shared<Texture>();
+    map->width = 1; map->height = 1;
+    map->data = {255, 255, 255, 77};
+    map->needsUpdate();
+    auto leaf = std::make_shared<Material>(MaterialType::Standard);
+    leaf->maps["map"] = map;
+    leaf->side = Side::Double;
+    Mesh card{makePlaneGeometry(2, 2), leaf};
+    card.rotation.set(-M_PI / 2, 0, 0);
+    card.position.y = 1;
+    scene.add(card);
+    scene.updateMatrixWorld(true);
+    RenderDatabase database;
+    database.shadowMapEnabled = true;
+    // The fraction of the card's footprint (the centre 32 x 32 pixels) darker than half the lit floor.
+    const auto dark = [&] {
+        database.render(renderer, scene, camera);
+        std::vector<uint8_t> pixels;
+        bool read = false;
+        renderer.readPixels([&](GpuStatus status, std::vector<uint8_t> px) {
+            if (status == GpuStatus::Ok) pixels = std::move(px);
+            read = true;
+        });
+        for (int i = 0; i < 5000 && !read; ++i) {
+            renderer.poll();
+            events.drain();
+            if (!read) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        CHECK(pixels.size() == size_t{64} * 64 * 4);
+        const uint8_t lit = pixels[(size_t{2} * 64 + 2) * 4];
+        CHECK(lit > 64);
+        int count = 0;
+        for (int y = 18; y < 46; ++y)
+            for (int x = 18; x < 46; ++x) count += pixels[(size_t(y) * 64 + x) * 4] < lit / 2;
+        return count / double(28 * 28);
+    };
+    // Colour pass: a black card on the camera's layer hides the floor where it draws.
+    leaf->color = {0, 0, 0};
+    card.setCastShadow(false);
+    card.setLayer(0);
+    leaf->alphaTest = 0.5; leaf->nodes = {};
+    const double flatDiscard = dark();  // 0.302 <= 0.5
+    leaf->nodes.alphaTestNode = g::float_(0.2); leaf->needsUpdate();
+    const double nodeLowers = dark();   // 0.302 > 0.2
+    leaf->alphaTest = 0;
+    const double nodeAlone = dark();    // a set node tests with alphaTest 0
+    leaf->nodes.alphaTestNode = g::float_(0.9); leaf->needsUpdate();
+    const double nodeRaises = dark();   // 0.302 <= 0.9
+    // Shadow pass: a white card on the light's layer casts the footprint its cutoff keeps.
+    leaf->color = {1, 1, 1};
+    card.setCastShadow(true);
+    card.setLayer(2);
+    leaf->alphaTest = 0.5; leaf->nodes = {};
+    const double shadowFlat = dark();
+    leaf->nodes.alphaTestNode = g::float_(0.2); leaf->needsUpdate();
+    const double shadowLowers = dark();
+    leaf->alphaTest = 0.1;
+    leaf->nodes.alphaTestNode = g::float_(0.9); leaf->needsUpdate();
+    const double shadowRaises = dark();
+    std::printf("alphaTestNode: colour flat %.3f, node 0.2 %.3f, node alone %.3f, node 0.9 %.3f; shadow flat %.3f, node 0.2 %.3f, node 0.9 %.3f\n",
+                flatDiscard, nodeLowers, nodeAlone, nodeRaises, shadowFlat, shadowLowers, shadowRaises);
+    CHECK(flatDiscard < 0.05);
+    CHECK(nodeLowers > 0.95);
+    CHECK(nodeAlone > 0.95);
+    CHECK(nodeRaises < 0.05);
+    CHECK(shadowFlat < 0.05);
+    CHECK(shadowLowers > 0.95);
+    CHECK(shadowRaises < 0.05);
 }
 
 // PRD-643: a Two Sided Foliage leaf lets the sun through from behind, as Unreal's SSS_TYPE_TWO_SIDED_WRAP does:
@@ -8893,7 +9045,7 @@ void staticInstancesAreNotRecopied() {
     CHECK(frame(-12).copies == 0);
 }
 
-TN_TEST_MAIN({"virtual_shadow_depth_holds", virtualShadowDepthHoldsWhileCastersFit}, {"virtual_shadow_pan_redraws_entering_rects", virtualShadowPanRedrawsTheRectsThatEnter}, {"virtual_shadow_page_jobs", virtualShadowPageJobs}, {"caster_record_allocates_per_frame", casterRecordAllocatesPerFrame}, {"virtual_shadow_instance_pages", virtualShadowInstancePages}, {"virtual_shadow_page_draws_only_its_instances", virtualShadowPageDrawsOnlyItsInstances},{"virtual_shadow_bounds_cache", virtualShadowBoundsCache}, {"gpu_joint_production", gpuJointProduction}, {"virtual_shadow_casters_batch_in_main_pass", virtualShadowCastersBatchInMainPass}, {"virtual_shadow_rigs_batch_in_main_pass", virtualShadowRigsBatchInMainPass}, {"virtual_shadow_pages_instance_skinned_casters", shadowPagesInstanceSkinnedCasters}, {"skinned_palettes_share_by_bytes", skinnedPalettesShareByBytes}, {"clone_keeps_shared_skeletons", cloneKeepsSharedSkeletons}, {"compute_kernel_walks_once", computeKernelWalksOnce}, {"bone_reach_bounds_hold_posed_vertices", boneReachBoundsHoldPosedVertices}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"content_identical_geometry_batches", contentIdenticalGeometryBatches}, {"steady_state", steadyState}, {"steady_state_draw_refresh_work", steadyStateDrawRefreshWork}, {"draw_refresh_guard_holes", drawRefreshGuardHoles}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"depth_test_off_draws_over_nearer", depthTestOffDrawsOverNearer}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"scene_stage_is_metered", sceneStageIsMetered}, {"overlay_leaves_stage_totals", overlayLeavesStageTotals}, {"present_direct", presentDirect}, {"canvas_layer_overlay", canvasLayerOverlay}, {"post_survives_overlay", postSurvivesOverlay}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"target_samples_late_traa_output", targetSamplesLateTraaOutput}, {"unchanged_frame_storage", unchangedFrameStorage}, {"static_instances_are_not_recopied", staticInstancesAreNotRecopied}, {"instance_places_survive_a_draw_leaving_the_view", instancePlacesSurviveADrawLeavingTheView}, {"instance_upload_is_stable_across_a_camera_turn", instanceUploadIsStableAcrossACameraTurn}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"env_node_without_env_map", envNodeWithoutEnvMapLightsTheMaterial}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene}, {"frame_slab_is_per_program", frameSlabIsPerProgram},
+TN_TEST_MAIN({"virtual_shadow_depth_holds", virtualShadowDepthHoldsWhileCastersFit}, {"virtual_shadow_pan_redraws_entering_rects", virtualShadowPanRedrawsTheRectsThatEnter}, {"virtual_shadow_page_jobs", virtualShadowPageJobs}, {"caster_record_allocates_per_frame", casterRecordAllocatesPerFrame}, {"virtual_shadow_instance_pages", virtualShadowInstancePages}, {"virtual_shadow_page_draws_only_its_instances", virtualShadowPageDrawsOnlyItsInstances},{"virtual_shadow_bounds_cache", virtualShadowBoundsCache}, {"gpu_joint_production", gpuJointProduction}, {"virtual_shadow_casters_batch_in_main_pass", virtualShadowCastersBatchInMainPass}, {"virtual_shadow_rigs_batch_in_main_pass", virtualShadowRigsBatchInMainPass}, {"virtual_shadow_pages_instance_skinned_casters", shadowPagesInstanceSkinnedCasters}, {"skinned_palettes_share_by_bytes", skinnedPalettesShareByBytes}, {"clone_keeps_shared_skeletons", cloneKeepsSharedSkeletons}, {"compute_kernel_walks_once", computeKernelWalksOnce}, {"bone_reach_bounds_hold_posed_vertices", boneReachBoundsHoldPosedVertices}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"content_identical_geometry_batches", contentIdenticalGeometryBatches}, {"steady_state", steadyState}, {"steady_state_draw_refresh_work", steadyStateDrawRefreshWork}, {"draw_refresh_guard_holes", drawRefreshGuardHoles}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"depth_test_off_draws_over_nearer", depthTestOffDrawsOverNearer}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"scene_stage_is_metered", sceneStageIsMetered}, {"overlay_leaves_stage_totals", overlayLeavesStageTotals}, {"present_direct", presentDirect}, {"canvas_layer_overlay", canvasLayerOverlay}, {"post_survives_overlay", postSurvivesOverlay}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"target_samples_late_traa_output", targetSamplesLateTraaOutput}, {"unchanged_frame_storage", unchangedFrameStorage}, {"static_instances_are_not_recopied", staticInstancesAreNotRecopied}, {"instance_places_survive_a_draw_leaving_the_view", instancePlacesSurviveADrawLeavingTheView}, {"instance_upload_is_stable_across_a_camera_turn", instanceUploadIsStableAcrossACameraTurn}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"env_node_without_env_map", envNodeWithoutEnvMapLightsTheMaterial}, {"env_node_beats_scene_environment", envNodeBeatsSceneEnvironment}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene}, {"frame_slab_is_per_program", frameSlabIsPerProgram},
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"virtual_sun_room_seam", virtualSunRoomSeam},
@@ -8902,7 +9054,7 @@ TN_TEST_MAIN({"virtual_shadow_depth_holds", virtualShadowDepthHoldsWhileCastersF
              {"virtual_sun_level_sizes", virtualSunLevelSizes},
              {"virtual_sun_auto_map_size", virtualSunAutoMapSize},
              {"batched_vs_unbatched", batchedVsUnbatched}, {"stable_passes_match_direct", stablePassesMatchDirect}, {"camera_cull_keeps_bundle", cameraCull}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_decline_cadence", skinnedDeclineCadence}, {"skinned_projecting_cadence", skinnedProjectingCadence}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"env_map_slot_is_read", envMapSlotIsRead}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_offscreen", gpuTimerCoversOffscreen}, {"gpu_timer_splits_the_gather", gpuTimerSplitsTheLabelledGather}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"flat_shading_needs_no_normals", flatShadingNeedsNoNormals}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"batch_keeps_member_id", batchKeepsMemberId}, {"frustum_culling", frustumCulling},
-             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"masked_shadow", maskedShadow}, {"leaf_receiver", leafReceiver}, {"shadow_noise_frame", shadowNoiseFrame},{"foliage_transmission", foliageTransmission}, {"rough_diffuse", roughDiffuse}, {"point_shadow_cube_faces", pointShadowCubeFaces}, {"lamp_source_radius", lampSourceRadius}, {"lamp_source_radius_wall", lampSourceRadiusWall}, {"lamp_source_radius_crate", lampSourceRadiusCrate}, {"contact_shadow_foot", contactShadowFoot}, {"virtual_sun_contact_foot", virtualSunContactFoot}, {"lamp_cache", lampCache}, {"cached_lamp_has_no_uniform_upload", cachedLampHasNoUniformUpload}, {"sun_cache", sunCache}, {"lamp_atlas", lampAtlas}, {"gpu_timer_splits_lamp_shadows", gpuTimerSplitsLampShadows}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse}, {"program_probes_are_resolved_once", programProbesAreResolvedOnce}, {"maps_share_one_pipeline", mapsShareOnePipeline}, {"serial_uniforms_share_one_pipeline", serialUniformsShareOnePipeline}, {"mirror_programs_precompiled", mirrorProgramsPrecompiled})
+             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"masked_shadow", maskedShadow}, {"alpha_test_node", alphaTestNode}, {"leaf_receiver", leafReceiver}, {"shadow_noise_frame", shadowNoiseFrame},{"foliage_transmission", foliageTransmission}, {"rough_diffuse", roughDiffuse}, {"point_shadow_cube_faces", pointShadowCubeFaces}, {"lamp_source_radius", lampSourceRadius}, {"lamp_source_radius_wall", lampSourceRadiusWall}, {"lamp_source_radius_crate", lampSourceRadiusCrate}, {"contact_shadow_foot", contactShadowFoot}, {"virtual_sun_contact_foot", virtualSunContactFoot}, {"lamp_cache", lampCache}, {"cached_lamp_has_no_uniform_upload", cachedLampHasNoUniformUpload}, {"sun_cache", sunCache}, {"lamp_atlas", lampAtlas}, {"gpu_timer_splits_lamp_shadows", gpuTimerSplitsLampShadows}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse}, {"program_probes_are_resolved_once", programProbesAreResolvedOnce}, {"maps_share_one_pipeline", mapsShareOnePipeline}, {"serial_uniforms_share_one_pipeline", serialUniformsShareOnePipeline}, {"mirror_programs_precompiled", mirrorProgramsPrecompiled})
 
 
 

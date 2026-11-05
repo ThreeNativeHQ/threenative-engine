@@ -25,7 +25,7 @@ void customOnlyDrawWritesItsOwnSlot() {
     CHECK(!colourTargetWritten(1, false, 0xfe, true));   // bit 0 clear
     CHECK(colourTargetWritten(2, false, 0xfe, true));    // bit 1 set
     CHECK(colourTargetWritten(3, false, 0xfe, true));    // bit 2 set
-    CHECK(!colourTargetWritten(9, false, 0xfe, true));   // past the eight bits: written
+    CHECK(!colourTargetWritten(9, false, 0xfe, true));   // past the eight bits: not written
     // Two named targets then a slot: bits 0 and 1 cleared, the slot at index 3 written.
     CHECK(!colourTargetWritten(1, false, 0xfcu, true));
     CHECK(!colourTargetWritten(2, false, 0xfcu, true));

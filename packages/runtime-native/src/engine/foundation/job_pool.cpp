@@ -115,7 +115,16 @@ void JobPool::run(uint32_t count, Call call, void* context) {
     if (count == 0) return;
     // One job at a time: a second caller (another thread, or an item) runs its items inline.
     if (threads_.empty() || count == 1 || inJob_ || running_.exchange(true, std::memory_order_acquire)) {
-        for (uint32_t i = 0; i < count; ++i) call(context, i);
+        // The same contract as the shared path: every item runs, and the first failure is rethrown after the last.
+        std::exception_ptr first;
+        for (uint32_t i = 0; i < count; ++i) {
+            try {
+                call(context, i);
+            } catch (...) {
+                if (!first) first = std::current_exception();
+            }
+        }
+        if (first) std::rethrow_exception(first);
         return;
     }
     runs_.fetch_add(1, std::memory_order_relaxed);

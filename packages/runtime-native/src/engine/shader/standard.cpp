@@ -624,7 +624,7 @@ static void materialInputs(Program& f, const VertexVariant& variant,
     const auto pinned = [&](Type type, ExprId value) { return f.load(f.var(type, value)); };
     const auto& nodes = variant.nodes;  // the slots this fragment lowers; position, vertex and scale nodes run in the vertex stage
     std::vector<graph::Node> slots{nodes.colorNode, nodes.emissiveNode, nodes.roughnessNode, nodes.metalnessNode, nodes.opacityNode,
-                                   nodes.aoNode, nodes.irradianceNode, nodes.envNode, nodes.fragmentNode, nodes.depthNode, nodes.maskNode};
+                                   nodes.aoNode, nodes.irradianceNode, nodes.envNode, nodes.fragmentNode, nodes.depthNode, nodes.maskNode, nodes.alphaTestNode};
     for (const auto& slot : nodes.mrt) slots.push_back(slot.node);
     for (const auto& node : slots)
         for (const std::string& name : graph::materialInputs(node)) {
@@ -670,6 +670,11 @@ static void discardMasked(Program& f, graph::Lowering& slots, const VertexVarian
     if (!variant.nodes.maskNode) return;
     const ExprId keep = slotValue(f, slots, variant.nodes.maskNode, Type::boolean(), kInvalid);
     f.If(f.select(keep, f.constant(false), f.constant(true)), [&] { f.discard(); });
+}
+
+// three r187 NodeMaterial.setupDiffuseColor: the cutoff is `alphaTestNode ?? alphaTest`; kInvalid keeps the flat uniform.
+static ExprId alphaCutoff(Program& f, graph::Lowering& slots, const VertexVariant& variant) {
+    return slotValue(f, slots, variant.nodes.alphaTestNode, Type::f32(), kInvalid);
 }
 
 static ExprId diffuseAlpha(Program& f, graph::Lowering& slots, const VertexVariant& variant, ExprId diffuse, ExprId texel) {
@@ -1636,7 +1641,7 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     out.albedo = diffuseColor;
     out.emissive = emissive;
     out.normal = n;
-    f.output("color", materialOutput(f, variant, outgoing, materialAlpha(f, alpha, variant.alphaHash)));
+    f.output("color", materialOutput(f, variant, outgoing, materialAlpha(f, alpha, variant.alphaHash, alphaCutoff(f, slots, variant))));
     outputDepthNode(f, slots, variant);
     lowerMrtOutputs(out, slots, variant);
     linkNodeVaryings(out, variant, local.position, local.normal);
@@ -1772,7 +1777,7 @@ StandardPrograms buildLit(bool phong, const VertexVariant& variant, const LightL
     // Linear HDR out: tone mapping and the output colour space belong to the output pass (output.h).
     out.albedo = diffuseColor;
     out.emissive = emissive;
-    f.output("color", materialOutput(f, variant, outgoing, materialAlpha(f, alpha, variant.alphaHash)));
+    f.output("color", materialOutput(f, variant, outgoing, materialAlpha(f, alpha, variant.alphaHash, alphaCutoff(f, slots, variant))));
     outputDepthNode(f, slots, variant);
     lowerMrtOutputs(out, slots, variant);
     linkNodeVaryings(out, variant, local.position, local.normal);
@@ -1804,8 +1809,9 @@ StandardPrograms buildBasic(const VertexVariant& variant) {
                 for (const auto& child : *list) if (visit(child)) return true;
             return false;
         };
-        variant.nodes.forEachGraph(visit);
-        return false;
+        bool found = false;
+        variant.nodes.forEachGraph([&](const graph::Node& n) { found = found || visit(n); });
+        return found;
     };
     const bool needsNormal = reads("normalView");
     const LocalVertex local = localVertex(v, variant, needsNormal || reads("normalWorldGeometry"));
@@ -1866,7 +1872,7 @@ StandardPrograms buildBasic(const VertexVariant& variant) {
     const ExprId alpha = diffuseAlpha(f, slots, variant, diffuse, texel);
     const ExprId outgoing = variant.nodes.emissiveNode ? f.add(diffuseColor, slotValue(f, slots, variant.nodes.emissiveNode, Type::vec(3), kInvalid)) : diffuseColor;
     // Background.js writes opaque output regardless of the source texture's alpha.
-    f.output("color", materialOutput(f, variant, outgoing, variant.background ? f.constant(1.0f) : materialAlpha(f, alpha, variant.alphaHash)));
+    f.output("color", materialOutput(f, variant, outgoing, variant.background ? f.constant(1.0f) : materialAlpha(f, alpha, variant.alphaHash, alphaCutoff(f, slots, variant))));
     outputDepthNode(f, slots, variant);
     lowerMrtOutputs(out, slots, variant);
     linkNodeVaryings(out, variant, local.position, local.normal);
@@ -1895,11 +1901,12 @@ StandardPrograms buildMaskedDepth(const VertexVariant& variant) {
     StandardPrograms out = buildBasic(variant);
     out.fragment = Program{Stage::Fragment};
     Program& f = out.fragment;
+    graph::Lowering slots = slotLowering(f, variant, kInvalid);
     const ExprId texel = mapTexel(f, variant);
     ExprId alpha = f.swizzle(f.uniform("diffuse", Type::vec(4)), "w");
     if (texel != kInvalid) alpha = f.mul(alpha, f.swizzle(texel, "w"));
     // The stage needs an output; a depth-only pipeline has no colour target, so it is never written.
-    f.output("color", f.construct(Type::vec(4), {f.constant(0.0f), f.constant(0.0f), f.constant(0.0f), materialAlpha(f, alpha, variant.alphaHash)}));
+    f.output("color", f.construct(Type::vec(4), {f.constant(0.0f), f.constant(0.0f), f.constant(0.0f), materialAlpha(f, alpha, variant.alphaHash, alphaCutoff(f, slots, variant))}));
     out.vertex.linkVaryings(out.fragment);
     return out;
 }
@@ -1967,12 +1974,12 @@ static ExprId alphaHashThreshold(Program& f) {
     return f.call("clamp", {f.select(f.less(x, t.oneMinus(a)), f.select(f.less(x, a), c0, c1), c2), t.f(kEpsilon), t.f(1)});
 }
 
-ExprId materialAlpha(Program& f, ExprId alpha, bool alphaHash) {
-    const ExprId alphaTest = f.uniform("alphaTest", Type::f32());
+ExprId materialAlpha(Program& f, ExprId alpha, bool alphaHash, ExprId cutoff) {
+    const ExprId alphaTest = f.uniform("alphaTest", Type::f32());  // always declared: the uniform layout follows creation order
     const ExprId no = f.constant(false);
-    // alpha <= alphaTest is !(alphaTest < alpha); the test applies only when alphaTest > 0.
-    const ExprId atOrBelow = f.select(f.less(alphaTest, alpha), no, f.constant(true));
-    f.If(f.select(f.less(f.constant(0.0f), alphaTest), atOrBelow, no), [&] { f.discard(); });
+    // alpha <= cutoff is !(cutoff < alpha). three's alphaTestNode tests always; the flat alphaTest only when > 0.
+    const ExprId atOrBelow = f.select(f.less(cutoff == kInvalid ? alphaTest : cutoff, alpha), no, f.constant(true));
+    f.If(cutoff == kInvalid ? f.select(f.less(f.constant(0.0f), alphaTest), atOrBelow, no) : atOrBelow, [&] { f.discard(); });
     if (alphaHash) {
         const ExprId threshold = alphaHashThreshold(f);
         f.If(f.less(alpha, threshold), [&] { f.discard(); });

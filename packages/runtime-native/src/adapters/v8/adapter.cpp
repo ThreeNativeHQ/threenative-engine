@@ -1131,12 +1131,18 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
                                 v8::Local<v8::Value> key, value;
                                 engine::shader::graph::Node node;
                                 if (!keys->Get(ctx, i).ToLocal(&key) || !outputsValue.As<v8::Object>()->Get(ctx, key).ToLocal(&value)) return;
+                                v8::String::Utf8Value name(isolate, key);
+                                // mrt() always carries the pass's own slots. The scene pass draws them, so only custom
+                                // slots reach the engine, as pass-node.ts isCustomMrtOutput does on the browser side.
+                                if (engine::shader::engineTargetName(*name ? *name : "")) continue;
+                                v8::Local<v8::Value> marker;
+                                if (value->IsObject() && value.As<v8::Object>()->Get(ctx, str(isolate, "isMRTSlot")).ToLocal(&marker) &&
+                                    marker->IsTrue()) continue;
                                 if (!d->adapter->tsl().unwrap(value, node)) {
                                     isolate->ThrowException(v8::Exception::TypeError(str(isolate, "TN_TSL_PROPERTY: mrtNode output expected a node")));
                                     return;
                                 }
-                                v8::String::Utf8Value utf8(isolate, key);
-                                slots.emplace_back(*utf8 ? *utf8 : "", node);
+                                slots.emplace_back(*name ? *name : "", node);
                             }
                             try { tn::abi::setMrtOutputs(h, std::move(slots)); } catch (const std::exception& e) {
                                 isolate->ThrowException(v8::Exception::TypeError(str(isolate, e.what())));

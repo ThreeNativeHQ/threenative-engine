@@ -72,6 +72,11 @@ if(NOT EMSCRIPTEN)
     # The job pool's workers (foundation/job_pool.h); the threaded web build passes -pthread instead.
     find_package(Threads REQUIRED)
     target_link_libraries(tn_engine_foundation PUBLIC Threads::Threads)
+else()
+    # JobPool::runItems catches an item's exception; without this emcc compiles the unit with -fignore-exceptions
+    # and drops the catch, so a throwing item ends its worker and the caller spins on the join.
+    target_compile_options(tn_engine_foundation PUBLIC -fwasm-exceptions)
+    target_link_options(tn_engine_foundation PUBLIC -fwasm-exceptions)
 endif()
 target_include_directories(tn_engine_foundation PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
@@ -382,6 +387,7 @@ tn_native_engine_test(tn-native-engine-material-test tests/native-engine/materia
     native_engine_material_slots_share_one_lowering=slots_share_one_lowering
     native_engine_material_mrt_slot=mrt_slot
     native_engine_material_env_node=env_node
+    native_engine_material_basic_normal_view=basic_normal_view
     native_engine_material_rough_diffuse=rough_diffuse)
 target_link_libraries(tn-native-engine-material-test PRIVATE tn_engine_shader)
 if(EMSCRIPTEN)

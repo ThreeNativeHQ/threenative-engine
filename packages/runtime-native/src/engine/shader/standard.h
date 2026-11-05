@@ -279,7 +279,7 @@ StandardPrograms buildDepth(const VertexVariant& variant);
 /**
  * The shadow depth program of an alpha-tested caster (PRD-651): buildBasic's vertex, uv included, and a
  * fragment that writes nothing and discards where materialAlpha would (map alpha x diffuse opacity at or
- * below alphaTest), as three's shadow pass copies alphaTest and map. Fragment uniforms "diffuse",
+ * below alphaTest or the variant's alphaTestNode), as three's shadow pass copies alphaTest, alphaTestNode and map. Fragment uniforms "diffuse",
  * "alphaTest", "opaque", "uvTransform"; binding "map" when variant.map.
  */
 StandardPrograms buildMaskedDepth(const VertexVariant& variant);
@@ -295,11 +295,12 @@ void linkNodeVaryings(StandardPrograms& out, const VertexVariant& variant, ExprI
 
 /**
  * NodeMaterial.setupDiffuseColor's alpha tail, shared by every material program: discard when
+ * alpha <= cutoff (the `alphaTestNode` value when the caller passes one, tested always) or, with no cutoff,
  * alphaTest > 0 and alpha <= alphaTest, then alpha 1 for an opaque material (builder.isOpaque()).
  * Uniform-driven (uniforms "alphaTest", "opaque" 0/1) rather than per-variant programs; the output is
  * the same. Returns the alpha to write.
  */
-ExprId materialAlpha(Program& f, ExprId alpha, bool alphaHash = false);
+ExprId materialAlpha(Program& f, ExprId alpha, bool alphaHash = false, ExprId cutoff = kInvalid);
 /** Pinned nodes/fog/Fog.js rangeFogFactor / densityFogFactor, shared by all material tails. */
 /** CubeRenderTarget.fromEquirectangularTexture: camera rotation, level-0 equirectUV sample. */
 StandardPrograms buildEquirectangularCube();

@@ -12197,6 +12197,15 @@
           }
         },
         {
+          "name": "alphaTestNode",
+          "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
           "name": "mrtNode",
           "type": "MRTNode | null",
           "mutable": true,
@@ -13676,6 +13685,15 @@
           }
         },
         {
+          "name": "alphaTestNode",
+          "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
           "name": "mrtNode",
           "type": "MRTNode | null",
           "mutable": true,
@@ -14316,6 +14334,15 @@
         },
         {
           "name": "maskNode",
+          "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "alphaTestNode",
           "type": "Node | null",
           "mutable": true,
           "lifetime": "owned",

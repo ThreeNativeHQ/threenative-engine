@@ -742,6 +742,15 @@ void mrtNode() {
     CHECK(replaced.size() == 1 && replaced[0].first == "diagnostic");
     CHECK(evaluate("(() => { try { mrtMaterial.mrtNode = { isMRTNode: true, outputs: { a: 1 } }; return false; } catch (e) { return e instanceof TypeError && e.message.startsWith('TN_TSL_PROPERTY'); } })()")->IsTrue());
     CHECK(tn::abi::mrtOutputs(handle).size() == 1);
+    // mrt() always carries the pass's own slots (output, a marker object for any name); the scene pass draws them,
+    // so the setter skips them as the browser facade does and keeps only the custom slot.
+    evaluate(R"JS(
+        const slot = Object.freeze({ isMRTSlot: true, name: 'output' });
+        mrtMaterial.mrtNode = { isMRTNode: true, outputs: { output: slot, normal: tsl.vec4(0, 0, 1, 0), extra: Object.freeze({ isMRTSlot: true, name: 'extra' }), diagnostic: tsl.vec4(0, 0, 1, 1) } };
+        0
+    )JS");
+    const auto withSlots = tn::abi::mrtOutputs(handle);
+    CHECK(withSlots.size() == 1 && withSlots[0].first == "diagnostic");
     evaluate("mrtMaterial.mrtNode = null; 0");
     CHECK(tn::abi::mrtOutputs(handle).empty());
 }

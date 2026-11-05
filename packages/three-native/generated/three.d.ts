@@ -1528,6 +1528,7 @@ alphaHash: boolean;
 castShadowPositionNode: Node | null;
 maxPositionOffset: number;
 maskNode: Node | null;
+alphaTestNode: Node | null;
 mrtNode: MRTNode | null;
 
   clone(): this;
@@ -1690,6 +1691,7 @@ alphaHash: boolean;
 castShadowPositionNode: Node | null;
 maxPositionOffset: number;
 maskNode: Node | null;
+alphaTestNode: Node | null;
 mrtNode: MRTNode | null;
 
   clone(): this;
@@ -1809,6 +1811,7 @@ alphaHash: boolean;
 castShadowPositionNode: Node | null;
 maxPositionOffset: number;
 maskNode: Node | null;
+alphaTestNode: Node | null;
 mrtNode: MRTNode | null;
 
   clone(): this;

@@ -4804,6 +4804,7 @@
       "getters": [
         "alphaHash",
         "alphaTest",
+        "alphaTestNode",
         "aoNode",
         "blending",
         "castShadowPositionNode",
@@ -4848,6 +4849,7 @@
       "setters": [
         "alphaHash",
         "alphaTest",
+        "alphaTestNode",
         "aoNode",
         "blending",
         "castShadowPositionNode",
@@ -5262,6 +5264,7 @@
       "getters": [
         "alphaHash",
         "alphaTest",
+        "alphaTestNode",
         "anisotropy",
         "aoMapIntensity",
         "aoNode",
@@ -5330,6 +5333,7 @@
       "setters": [
         "alphaHash",
         "alphaTest",
+        "alphaTestNode",
         "anisotropy",
         "aoMap",
         "aoMapIntensity",
@@ -5572,6 +5576,7 @@
       "getters": [
         "alphaHash",
         "alphaTest",
+        "alphaTestNode",
         "aoMapIntensity",
         "aoNode",
         "blending",
@@ -5628,6 +5633,7 @@
       "setters": [
         "alphaHash",
         "alphaTest",
+        "alphaTestNode",
         "aoMap",
         "aoMapIntensity",
         "aoNode",
@@ -5724,6 +5730,7 @@
       "getters": [
         "alphaHash",
         "alphaTest",
+        "alphaTestNode",
         "aoNode",
         "blending",
         "castShadowPositionNode",
@@ -5762,6 +5769,7 @@
       "setters": [
         "alphaHash",
         "alphaTest",
+        "alphaTestNode",
         "aoNode",
         "blending",
         "castShadowPositionNode",
@@ -8508,6 +8516,7 @@
       "getters": [
         "alphaHash",
         "alphaTest",
+        "alphaTestNode",
         "aoNode",
         "blending",
         "castShadowPositionNode",
@@ -8556,6 +8565,7 @@
       "setters": [
         "alphaHash",
         "alphaTest",
+        "alphaTestNode",
         "aoNode",
         "blending",
         "castShadowPositionNode",

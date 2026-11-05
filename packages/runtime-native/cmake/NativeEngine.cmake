@@ -361,6 +361,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_frustum_culling=frustum_culling
         native_engine_renderer_shadow_caster_frustum_culling=shadow_caster_frustum_culling
         native_engine_masked_shadow=masked_shadow
+        native_engine_alpha_test_node=alpha_test_node
         native_engine_leaf_receiver=leaf_receiver
         native_engine_shadow_noise_frame=shadow_noise_frame
         native_engine_foliage_transmission=foliage_transmission

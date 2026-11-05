@@ -162,6 +162,11 @@ void put(std::vector<uint8_t>& block, size_t base, const shader::UniformField* f
     }
 }
 
+// A caster or draw whose alpha test runs: the flat alphaTest above 0, or an alphaTestNode (three tests a set node always).
+static bool alphaTested(const shader::StandardMaterial& material, const shader::MaterialNodes& nodes) {
+    return material.alphaTest > 0 || bool(nodes.alphaTestNode);
+}
+
 // Authored uniform data accompanies the graph, not the cached program. Both colour and shadow
 // draws bind it, so a graph positionNode has exactly the same deformation in the two passes.
 // A draw's material uniforms for one stage, read in place from its graphs' uniform nodes every frame
@@ -2891,6 +2896,7 @@ Renderer::Program& Renderer::depthProgram(const shader::VertexVariant& variant, 
     kind.nodes = {};
     kind.nodes.positionNode = positionGraph; // a depth pass reads no colour
     kind.nodes.vertexNode = variant.nodes.vertexNode;  // ...but casts where the vertexNode puts it
+    if (masked) kind.nodes.alphaTestNode = variant.nodes.alphaTestNode;  // ...and cuts where its alphaTestNode says
     // ...nor a diffuse map, unless the caster is alpha-tested (three's shadow pass copies alphaTest and
     // the map, so a leaf card casts its cut, PRD-651) or hashed (alphaHash reads the map's alpha too).
     // An opaque caster keeps no fragment stage.
@@ -2914,6 +2920,11 @@ Renderer::Program& Renderer::depthProgram(const shader::VertexVariant& variant, 
             const auto& errors = vertex.wgsl.ok() ? fragment.wgsl.errors : vertex.wgsl.errors;
             throw std::runtime_error("TN_NATIVE_SHADER_INVALID: masked shadow depth program: " + (errors.empty() ? std::string("no reason") : errors.front()));
         }
+        // The depth fragment binds the diffuse map and the node's uniforms only: a texture, storage or sampler an
+        // alphaTestNode reads would stay unbound and cut against zero, so the caster fails closed.
+        for (const auto& binding : fragment.bindings)
+            if (binding.kind != shader::BindingKind::Uniform && binding.name != "t_map" && binding.name != "smp_map")
+                throw std::runtime_error("TN_NATIVE_SHADOW_ALPHA_UNSUPPORTED: alphaTestNode reads " + binding.name + "; a shadow caster's cutoff supports uniforms, uv and the diffuse map only");
         return built(std::move(vertex), std::move(fragment));
     }
     // three's shadow pass draws with the default positionNode, the same transform as a basic material.
@@ -4438,7 +4449,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             // shortcut: shadow coverage reads opacity/map; lower node and vertex alpha before admitting those casters.
             if (variant.alphaHash && (item.nodes->colorNode || item.nodes->opacityNode || variant.vertexColors == 4))
                 throw std::runtime_error("TN_NATIVE_SHADOW_ALPHA_UNSUPPORTED: alphaHash shadow supports material opacity and diffuse-map alpha only");
-            const bool masked = item.material->alphaTest > 0;
+            const bool masked = alphaTested(*item.material, *item.nodes);
             DrawCache* cache = item.cache;
             Program* cachedDepth = nullptr;
             if (cache && cache->depthProgram && cache->variant == variant && cache->depthMasked == masked)
@@ -4636,7 +4647,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 for (double e : member->matrixWorld) instances.push_back(float(e));
                 instances.insert(instances.end(), {1.0f, 1.0f, 1.0f, 0.0f});  // no instance colour: a depth pass reads none
             }
-            const bool masked = row.material->alphaTest > 0;
+            const bool masked = alphaTested(*row.material, *row.nodes);
             const shader::VertexVariant variant = variantOf(row);
             Program& program = depthProgram(variant, masked);
             const shader::StageModule* depthFragment = (masked || variant.alphaHash) ? &program.fragment : nullptr;
@@ -4708,7 +4719,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             for (Planned& planned : kept.draws) {
                 const DrawItem& item = *planned.item;
                 Program& program = *planned.program;
-                const bool masked = item.material->alphaTest > 0;
+                const bool masked = alphaTested(*item.material, *item.nodes);
                 const bool fragmentBlock = masked || variantOf(item).alphaHash;
                 const uint64_t v = frameUniforms_.size();
                 const uint64_t f = v + aligned(program.vertex.uniformBlockSize);
@@ -4720,6 +4731,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                     put(frameUniforms_, f, fs[kAlphaTest], std::array<double, 1>{m.alphaTest});
                     put(frameUniforms_, f, fs[kOpaque], std::array<double, 1>{0.0});
                     if (item.map) put(frameUniforms_, f, fs[kUvTransform], uvTransformOf(*item.map));
+                    putNodes(frameUniforms_, f, program.fragment, *item.nodes, frameTime_, frameDelta_, lights);  // alphaTestNode's uniforms
                 }
                 put(frameUniforms_, v, program.vertexSlots[kModelMatrix], item.matrixWorld);
                 if (item.instanceMatrices) put(frameUniforms_, v, program.vertexSlots[kInstanceBase], std::array<double, 1>{planned.instanceBase});
@@ -4964,7 +4976,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             }
             // A normalNode draw takes the merged fragment, which evaluates the node with the program's own layout.
             const bool nodeNormal = normalPass && item.nodes->normalNode;
-            const bool cut = item.material->alphaTest > 0 || item.material->alphaHash;
+            const bool cut = alphaTested(*item.material, *item.nodes) || item.material->alphaHash;
             // The small normal-only fragment writes one colour output, so it fits a pass holding one target only
             // (aux_fragment.h): a frame with a custom MRT slot takes the merged fragment, which writes every target.
             const bool smallFits = smallNormalFragmentFits(auxMask == kAuxNormal, !mrtSlots.empty());

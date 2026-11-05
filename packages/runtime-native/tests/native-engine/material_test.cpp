@@ -281,6 +281,30 @@ void maskNode() {
     }
 }
 
+// NodeMaterial.alphaTestNode (three r187 setupDiffuseColor): the node replaces alphaTest as the cutoff in every colour
+// builder and in the masked shadow depth fragment, and a set node tests without the alphaTest > 0 gate.
+void alphaTestNodeProgram() {
+    namespace g = tn::engine::shader::graph;
+    VertexVariant plain;
+    VertexVariant cut;
+    cut.nodes.alphaTestNode = g::uniform("nodeCut", Type::f32(), {0.2f});
+    CHECK(plain.key() != cut.key());
+    const auto gated = [](const std::string& code) { return code.find("(0f < u.f_alphaTest)") != std::string::npos; };
+    const Program programs[][2] = {
+        {buildStandard(StandardMaterial{}, plain).fragment, buildStandard(StandardMaterial{}, cut).fragment},
+        {buildLambert(plain).fragment, buildLambert(cut).fragment},
+        {buildBasic(plain).fragment, buildBasic(cut).fragment},
+        {buildMaskedDepth(plain).fragment, buildMaskedDepth(cut).fragment},
+    };
+    for (const auto& pair : programs) {
+        const auto without = WgslEmitter::emit(pair[0], 1), with = WgslEmitter::emit(pair[1], 1);
+        CHECK(without.ok() && with.ok());
+        CHECK(without.code.find("f_nodeCut") == std::string::npos);
+        CHECK(with.code.find("f_nodeCut") != std::string::npos);
+        CHECK(gated(without.code) && !gated(with.code));
+    }
+}
+
 // PRD-653: material.roughDiffuse shades direct light with the EON model. The variant key changes, a lamp's Source
 // Radius enters the fragment only for the marked material (a sun has none), and the EON constants appear only there.
 void roughDiffuse() {
@@ -531,6 +555,7 @@ void builds() {
     surfacePrefix();
     aoNode();
     maskNode();
+    alphaTestNodeProgram();
     irradianceNode();
     albedoOutput();
     VertexVariant storage; storage.instanced = storage.instanceStorage = storage.instanceColor = true;
@@ -915,6 +940,16 @@ void depthTextureLowering() {
     }
 }
 
+// An unlit (Basic) graph that reads the normalView varying gets the vertex stage's normal output.
+void basicNormalView() {
+    namespace g = tn::engine::shader::graph;
+    VertexVariant variant;
+    variant.nodes.colorNode = g::vec4({g::swizzle(g::varying("normalView", Type::vec(3)), "x"), g::float_(0), g::float_(0), g::float_(1)});
+    const auto p = buildBasic(variant);
+    CHECK(p.diagnostics.empty());
+    CHECK(p.vertex.dump().find("output normalView = ") != std::string::npos);
+}
+
 }  // namespace
 
-TN_TEST_MAIN({"alpha_hash", alphaHash}, {"ssr_passes", ssrPasses}, {"denoise_reads_raw_normals", denoiseReadsRawNormals}, {"ssr_rejects_inputs", ssrRejectsInputs}, {"depth_texture_lowering", depthTextureLowering}, {"depth_node_writes_frag_depth", depthNodeWritesFragDepth}, {"unsupported", unsupported}, {"emissive_output", emissiveOutput}, {"builds", builds}, {"fog", fog}, {"rough_diffuse", roughDiffuse}, {"fog_node_mixes_color", fogNodeMixesColor}, {"node_key", nodeKey}, {"bloom_passes", bloomPasses}, {"slots_share_one_lowering", slotsShareOneLowering}, {"mrt_slot", mrtSlot}, {"env_node", envNode})
+TN_TEST_MAIN({"alpha_hash", alphaHash}, {"ssr_passes", ssrPasses}, {"denoise_reads_raw_normals", denoiseReadsRawNormals}, {"ssr_rejects_inputs", ssrRejectsInputs}, {"depth_texture_lowering", depthTextureLowering}, {"depth_node_writes_frag_depth", depthNodeWritesFragDepth}, {"unsupported", unsupported}, {"emissive_output", emissiveOutput}, {"builds", builds}, {"fog", fog}, {"rough_diffuse", roughDiffuse}, {"fog_node_mixes_color", fogNodeMixesColor}, {"node_key", nodeKey}, {"bloom_passes", bloomPasses}, {"slots_share_one_lowering", slotsShareOneLowering}, {"mrt_slot", mrtSlot}, {"env_node", envNode}, {"basic_normal_view", basicNormalView})
