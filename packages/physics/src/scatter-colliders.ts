@@ -298,7 +298,9 @@ export class ScatterColliders {
       // ponytail: the capsule stands upright; a tilted trunk keeps its base and leans out of it.
       const { up, across } = scales(instance.matrix);
       const height = profile.height * up;
-      const radius = profile.radius * across;
+      // A forced trunk skips the thin-stem guard, and a base measured as a single point (a
+      // point-down cone, a zero scale) has no radius at all; a capsule needs a positive one.
+      const radius = Math.max(MIN_TRUNK_RADIUS, profile.radius * across);
       const base = profile.base.clone().applyMatrix3(linear).add(origin);
       return new RigidBody3D({
         ...common,

@@ -1,6 +1,13 @@
 import * as RAPIER from "@dimforge/rapier3d-compat";
 import type { ICtx } from "@threenative/core";
-import { CylinderGeometry, IcosahedronGeometry, Matrix4, Quaternion, Vector3 } from "three";
+import {
+  type BufferGeometry,
+  CylinderGeometry,
+  IcosahedronGeometry,
+  Matrix4,
+  Quaternion,
+  Vector3,
+} from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { beforeAll, describe, expect, it } from "vitest";
 import "../src/index.js";
@@ -32,6 +39,11 @@ function bark(): ReturnType<typeof mergeGeometries> {
   const trunk = new CylinderGeometry(0.3, 0.3, 10, 8).translate(0, 5, 0);
   const branches = new CylinderGeometry(3, 3, 0.2, 8).translate(0, 4, 0);
   return mergeGeometries([trunk, branches]);
+}
+
+/** A cone standing point-down: its bottom tenth holds only the tip, so the measured base radius is 0. */
+function spike(): BufferGeometry {
+  return new CylinderGeometry(0, 1, 10, 8).rotateX(Math.PI).translate(0, 5, 0);
 }
 
 function at(x: number, z: number, scale = 1): Matrix4 {
@@ -116,6 +128,29 @@ describe("ScatterColliders", () => {
 
     expect(colliders.stats()).toMatchObject({ hulls: 1, trunks: 0, skipped: 2, resident: 1 });
     expect(hits(ctx, 5, 1, 0)).toBe(false);
+    colliders.dispose();
+    plugin.dispose?.(ctx);
+  });
+
+  it("should give a forced trunk a body even when its measured base has no radius", async () => {
+    const { ctx, plugin } = await setup();
+    const colliders = new ScatterColliders({
+      physics: ctx.physics,
+      follow: { position: { x: 0, z: 0 } },
+      instances: [{ geometry: spike(), matrix: at(0, 0), collision: "trunk" }],
+    });
+    colliders.update();
+    plugin.update?.(ctx, 1 / 60);
+
+    expect(colliders.stats()).toMatchObject({ trunks: 1, resident: 1 });
+    expect(hits(ctx, 0, 1, 0)).toBe(true);
+    // The minimum stem, not the zero the profile measured: half a metre off the axis is open.
+    expect(
+      ctx.physics.directSpaceState.intersectRay({
+        from: { x: -6, y: 1, z: 0.5 },
+        to: { x: 6, y: 1, z: 0.5 },
+      }),
+    ).toBeUndefined();
     colliders.dispose();
     plugin.dispose?.(ctx);
   });
