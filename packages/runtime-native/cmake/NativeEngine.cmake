@@ -332,6 +332,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_layered_mrt_render_target=layered_mrt_render_target
         native_engine_layered_mrt_lit_normal_output=layered_mrt_lit_normal_output
         native_engine_layered_mrt_lit_normal_is_world_space=layered_mrt_lit_normal_is_world_space
+        native_engine_layered_mrt_lit_normal_follows_a_moved_camera=layered_mrt_lit_normal_follows_a_moved_camera
         native_engine_layered_target_atlas_defaults=layered_target_atlas_defaults
         native_engine_target_samples_late_traa_output=target_samples_late_traa_output
         native_engine_float_render_target=float_render_target_keeps_float32
