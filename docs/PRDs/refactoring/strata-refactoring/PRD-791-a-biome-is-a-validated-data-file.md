@@ -82,6 +82,17 @@ missing field or an out-of-range value fails and names the biome and the field.
   visual judge, and the file is validated data, so the wrong side of the pair has to be decided on
   evidence. PRD-792 carries the same note where the migration is blocked.
 
+- 2026-11-06 (audit at `58fba154e`): a report claimed the coast's ground rock reads the desert's
+  prop tints (`[1.16, 0.82, 0.55]`, grey `0.25`, distant `[0.31, 0.205, 0.12]`, share `0.32`). It does
+  not reproduce. A field-by-field comparison of `BIOMES[world]` at `0d4d08596` against this head, for
+  all five worlds, differs in one field: `temperate.stoneTint`, `[0.48, 0.44, 0.39]` to
+  `[0.44, 0.46, 0.42]`. That is the value the coast's and the forest's ground already used (the
+  decision above), so no ground or prop pixel moves. `stoneColor` (`terrain.ts:311`) resolves
+  forest/coast `[0.44, 0.46, 0.42]` / `0.35`, alpine `[0.86, 0.88, 0.9]` / `0.25`, desert
+  `[1.16, 0.82, 0.55]` / `0.25`, tundra `[0.7, 0.74, 0.77]` / `0.25`; the distant group and the share
+  follow the same per-world rows. New pin: `biome-values.spec.ts`, "a biome's ground rock", holds all
+  five ground rows and each world's `propStoneTint` (coastal `[1, 1, 1]`, desert `[1.08, 0.85, 0.64]`,
+  the other three none), so a ground value that starts reading a prop value fails named.
 - 2026-11-04: the file is `biome.data.json`, not `biome.json`. Biome 1.9.4 parses every file of that
   name as its own project config and fails `pnpm lint`; `packages/create-threenative/template-assets/quality/biome.json`
   is a real nested config, and every scaffolded project gets one at its root. The schema and the API

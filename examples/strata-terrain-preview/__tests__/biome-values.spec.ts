@@ -866,3 +866,88 @@ describe("a biome's look", () => {
     }
   });
 });
+
+/**
+ * The rock grading a world's ground resolves, and the grading its props resolve beside it.
+ *
+ * `terrain.ts` grades ground stone with `stoneColor` (a grey mix and a tint) and fades it to a distant
+ * tone at `distantStoneShare` of the view distance. A lawn world (forest and the coast) resolved the
+ * neutral group and the other three read their own; the crag and the mesa replace the plain formula
+ * outright. The numbers are the pre-batch tree's (`git show 0d4d08596:.../render/terrain.ts` and its
+ * `biomes.ts`), so a ground value that starts reading a prop value fails here, world by world.
+ *
+ * `propStoneTint` is the props' own key, and it is separate for a reason: a boulder on the coast keeps
+ * its photographed grey while the ground beneath it is graded, so a merge of the two keys is a
+ * regression this row catches.
+ */
+interface IGroundRockRow {
+  /** The formula the world's rock runs; the crag and the mesa ignore the plain group. */
+  readonly formula: "ground" | "crag" | "mesa";
+  /** The plain group's grey mix and tint, or null where the world's formula is not the plain one. */
+  readonly plain: { readonly grey: number; readonly tint: readonly number[] } | null;
+  readonly distant: readonly number[];
+  readonly distantShare: number;
+  readonly propStoneTint: readonly number[] | null;
+}
+
+const GROUND_ROCK: Readonly<Record<WorldName, IGroundRockRow>> = {
+  forest: {
+    formula: "ground",
+    plain: { grey: 0.35, tint: [0.44, 0.46, 0.42] },
+    distant: [0.16, 0.17, 0.155],
+    distantShare: 0.65,
+    propStoneTint: null,
+  },
+  coastal: {
+    formula: "ground",
+    plain: { grey: 0.35, tint: [0.44, 0.46, 0.42] },
+    distant: [0.16, 0.17, 0.155],
+    distantShare: 0.65,
+    propStoneTint: [1, 1, 1],
+  },
+  alpine: {
+    formula: "crag",
+    plain: null,
+    distant: [0.23, 0.225, 0.215],
+    distantShare: 0.28,
+    propStoneTint: null,
+  },
+  desert: {
+    formula: "mesa",
+    plain: null,
+    distant: [0.31, 0.205, 0.12],
+    distantShare: 0.32,
+    propStoneTint: [1.08, 0.85, 0.64],
+  },
+  tundra: {
+    formula: "ground",
+    plain: { grey: 0.25, tint: [0.7, 0.74, 0.77] },
+    distant: [0.18, 0.2, 0.21],
+    distantShare: 0.32,
+    propStoneTint: null,
+  },
+};
+
+describe("a biome's ground rock", () => {
+  it("grades its own stone, and the props keep theirs", () => {
+    for (const world of WORLDS) {
+      const look = BIOMES[world];
+      const expected = GROUND_ROCK[world];
+      const formula = look.crestRock ? "crag" : look.mesaRock ? "mesa" : "ground";
+      expect({ world, formula }).toEqual({ world, formula: expected.formula });
+      expect({
+        world,
+        plain: formula === "ground" ? { grey: look.stoneGrey, tint: look.stoneTint } : null,
+        distant: look.groundDistantStone ?? look.distantStone,
+        distantShare: look.distantStoneShare,
+        propStoneTint: look.propStoneTint ?? null,
+      }).toEqual({
+        world,
+        plain: expected.plain,
+        distant: expected.distant,
+        distantShare: expected.distantShare,
+        propStoneTint: expected.propStoneTint,
+      });
+    }
+  });
+});
