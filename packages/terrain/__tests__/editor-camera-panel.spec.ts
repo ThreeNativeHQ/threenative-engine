@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { installCameras } from "../src/editor/app/cameras.js";
+import { installCameras, renderCameras } from "../src/editor/app/cameras.js";
 import type { EditorSession } from "../src/editor/app/session.js";
-import type { IViewerPose } from "../src/editor/index.js";
+import type { ISavedCamera, IViewerPose } from "../src/editor/index.js";
 
 /** The two controls the save button reads back, plus the panel's own container lookups. */
 class StubElement {
@@ -90,11 +90,52 @@ function saveCurrent(live: IViewerPose): Record<string, number | string> {
   return camera;
 }
 
+function savedCamera(id: string, name: string): ISavedCamera {
+  return {
+    id,
+    name,
+    position: [40, 60, 40],
+    target: [0, 12, 0],
+    up: [0, 1, 0],
+    near: 0.5,
+    far: 900,
+    projection: "perspective",
+    fov: 60,
+  };
+}
+
 describe("editor observation camera panel", () => {
   it("measures an orthographic extent against the target on every axis", () => {
     vi.stubGlobal("document", stubDocument());
     const camera = saveCurrent(pose({ position: [0, 100, 0], target: [50, 0, 50] }));
     expect(camera.projection).toBe("orthographic");
     expect(camera.extent).toBeCloseTo(Math.hypot(0 - 50, 100 - 0, 0 - 50), 6);
+  });
+
+  /** A row's id carries the camera id, so only a class rule can reach it. */
+  it("styles the rendered rows through the class the renderer sets", () => {
+    vi.stubGlobal("document", stubDocument());
+    const session = {
+      view: { cameras: () => ({ read: () => pose({}) }) },
+    } as unknown as EditorSession;
+    installCameras(session);
+    renderCameras(session, {
+      version: 1,
+      recipe: { version: 1, config: { size: 100, resolution: 3, seed: 1 }, layers: [] },
+      cameras: [savedCamera("survey", "Survey"), savedCamera("aerial", "Aerial")],
+      activeCamera: "aerial",
+    });
+    const rows = byId
+      .get("camera-list")
+      ?.children.filter((child): child is StubElement => child instanceof StubElement);
+    const active = rows?.find((row) => row.className.includes("active"));
+    if (!active) throw new Error("The live camera drew no active row");
+    const [hook, state] = active.className.split(/\s+/u);
+    const styles = session.style.textContent ?? "";
+    if (!hook || !state) throw new Error(`The active row carries only "${active.className}"`);
+    expect(styles).toContain(`.${hook}{`);
+    expect(styles).toContain(`.${hook}.${state}{`);
+    expect(styles).toContain(`.${hook} small{`);
+    expect(styles).not.toContain(`#${hook}`);
   });
 });
