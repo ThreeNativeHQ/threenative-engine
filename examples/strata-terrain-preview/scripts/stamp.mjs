@@ -25,6 +25,7 @@ const SOURCES = [
   "../src/render/placements.ts",
   "./bake.mjs",
   "./recipe.mjs",
+  "./stamp.mjs",
   "../../../packages/terrain/dist/index.js",
 ];
 
