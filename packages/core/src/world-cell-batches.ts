@@ -9,7 +9,7 @@ import {
   Vector3,
 } from "three";
 import type { InstancedBatch } from "./instanced-batch.js";
-import { currentWriteEpoch, pooledMesh } from "./render/mesh-pool.js";
+import { currentWriteEpoch, pooledCapacity, pooledMesh } from "./render/mesh-pool.js";
 
 /**
  * Records a retired batch's instance buffer is shrunk to; see `SharedBatch.park`.
@@ -257,13 +257,7 @@ export class SharedBatch {
     this.#clustered = role === "main";
     this.#segmentSize = Math.max(1, segmentSize);
     this.#bounds = bounds;
-    this.mesh = SharedBatch.#meshFor(
-      this.#geometryFor(this.#segmentSize * segments),
-      material,
-      this.#segmentSize * segments,
-      name,
-      bounds,
-    );
+    this.mesh = this.#meshFor(material, this.#segmentSize * segments, name, bounds);
     this.#setGeometry(this.mesh.geometry);
     this.#free = [[0, this.mesh.instanceMatrix.count]];
     this.#ceiling = this.mesh.instanceMatrix.count;
@@ -332,15 +326,16 @@ export class SharedBatch {
    * the uuid — and the node three built for it — instead of getting a new one. Every field a pooled
    * mesh carries stale is written here, and the two shadow flags are set false because `grow` copies
    * them off the mesh it replaces and the world sets them per level.
+   *
+   * The buffer the pool hands back is rounded up to a power of two, and this batch's ceiling is that
+   * buffer's count, so the LOD-range column is built from the same rounded count. Built from the
+   * request instead it is shorter than the records a full batch holds, and `#touched` then records a
+   * range past the end of the column's array: three's WebGPU backend turns that range into one
+   * `writeBuffer` larger than the buffer it made, which throws and stops the renderer drawing.
    */
-  static #meshFor(
-    geometry: BufferGeometry,
-    material: Material,
-    capacity: number,
-    name: string,
-    bounds: Box3,
-  ): ICasterScaleMesh {
-    const mesh = pooledMesh(geometry, material, capacity) as ICasterScaleMesh;
+  #meshFor(material: Material, capacity: number, name: string, bounds: Box3): ICasterScaleMesh {
+    const records = pooledCapacity(capacity);
+    const mesh = pooledMesh(this.#geometryFor(records), material, records) as ICasterScaleMesh;
     mesh.name = name;
     mesh.boundingBox = bounds.clone();
     mesh.boundingSphere = bounds.getBoundingSphere(mesh.boundingSphere ?? new Sphere());
@@ -574,8 +569,7 @@ export class SharedBatch {
       this.#hole(was, this.#ceiling);
       return undefined;
     }
-    const mesh = SharedBatch.#meshFor(
-      this.#geometryFor(old.instanceMatrix.count * 2),
+    const mesh = this.#meshFor(
       old.material as Material,
       old.instanceMatrix.count * 2,
       old.name,

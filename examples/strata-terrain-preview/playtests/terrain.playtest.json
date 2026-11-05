@@ -126,7 +126,7 @@
       "kind": "input",
       "label": "walk",
       "press": "KeyD",
-      "holdTicks": 420,
+      "holdTicks": 560,
       "release": true,
       "screenshot": "forest-walk"
     },
