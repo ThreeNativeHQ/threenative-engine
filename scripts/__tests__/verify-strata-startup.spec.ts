@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, it } from "vitest";
@@ -6,6 +7,7 @@ import { makeTempDirSync } from "../../test-support/temp-dir.js";
 import {
   BASELINE_SHA,
   collectBundledThirdPartyPackages,
+  collectThreePatchDigests,
   parseStartupReport,
   verifyStartupBuildIdentity,
   verifyStartupPackageIdentity,
@@ -61,6 +63,7 @@ function assertion(r: ReturnType<typeof run>, index: number) {
   assert(value, `fixture assertion ${index} missing`);
   return value;
 }
+const threePatchDigests = { "packages/core/patches/three@0.187.0.patch": "9".repeat(64) };
 
 it("accepts three alternating pairs within the owner bound", () => {
   expect(verifyStartupRuns(pairs()).ratio).toBe(1.2);
@@ -238,6 +241,7 @@ it("accepts unrelated workspace lock drift while retaining game and emitted pack
         bundledPackages: packages,
         compilerPackages,
         vitePatchSha256,
+        threePatchDigests,
         workspaceLockSha256: "before-lock",
       },
       {
@@ -245,6 +249,7 @@ it("accepts unrelated workspace lock drift while retaining game and emitted pack
         bundledPackages: packages,
         compilerPackages,
         vitePatchSha256,
+        threePatchDigests,
         workspaceLockSha256: "candidate-lock",
       },
     ),
@@ -262,12 +267,14 @@ it("rejects an emitted third-party package version change", () => {
         bundledPackages: [{ name: "three", version: "0.187.0" }],
         compilerPackages,
         vitePatchSha256,
+        threePatchDigests,
       },
       {
         gamePackage,
         bundledPackages: [{ name: "three", version: "0.186.0" }],
         compilerPackages,
         vitePatchSha256,
+        threePatchDigests,
       },
     ),
   ).toThrow(/bundled third-party package identity/);
@@ -280,6 +287,7 @@ it("rejects Vite transitive compiler changes and missing compiler metadata", () 
     bundledPackages: [{ name: "three", version: "0.187.0" }],
     compilerPackages: ["vite@8.2.0/node_modules/vite", "rolldown@1.2.1"],
     vitePatchSha256: "c".repeat(64),
+    threePatchDigests,
   };
   expect(() =>
     verifyStartupBuildIdentity(baseline, {
@@ -293,6 +301,48 @@ it("rejects Vite transitive compiler changes and missing compiler metadata", () 
   expect(() => verifyStartupBuildIdentity(baseline, { ...baseline, compilerPackages: [] })).toThrow(
     /missing Vite compiler package metadata/,
   );
+});
+
+it("rejects a Three source patch change or a missing digest between the arms", () => {
+  const baseline = {
+    gamePackage: { name: "strata-terrain-preview" },
+    bundledPackages: [{ name: "three", version: "0.187.0" }],
+    compilerPackages: ["vite@8.2.0/node_modules/vite"],
+    vitePatchSha256: "f".repeat(64),
+    threePatchDigests: { "packages/core/patches/three@0.187.0.patch": "1".repeat(64) },
+  };
+  expect(() => verifyStartupBuildIdentity(baseline, baseline)).not.toThrow();
+  expect(() =>
+    verifyStartupBuildIdentity(baseline, {
+      ...baseline,
+      threePatchDigests: { "packages/core/patches/three@0.187.0.patch": "2".repeat(64) },
+    }),
+  ).toThrow(/Three patch digest differs/);
+  expect(() =>
+    verifyStartupBuildIdentity(baseline, { ...baseline, threePatchDigests: {} }),
+  ).toThrow(/missing Three patch digest metadata/);
+});
+
+it("digests the patched Three source each arm actually ships", () => {
+  const root = makeTempDirSync("strata-three-patch-");
+  try {
+    // The reviewed baseline pins three@0.185.1 and names its patch for that version, not HEAD's.
+    const patches = path.join(root, "packages/core/patches");
+    mkdirSync(patches, { recursive: true });
+    const file = "packages/core/patches/three@0.185.1.patch";
+    writeFileSync(
+      path.join(root, file),
+      "diff --git a/build/three.webgpu.js b/build/three.webgpu.js\n",
+    );
+    expect(collectThreePatchDigests(root, "0.185.1")).toEqual({
+      [file]: createHash("sha256")
+        .update("diff --git a/build/three.webgpu.js b/build/three.webgpu.js\n")
+        .digest("hex"),
+    });
+    expect(() => collectThreePatchDigests(root, "0.187.0")).toThrow(/Three patch missing/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 it("collects emitted package versions and fails closed on missing package metadata", () => {
@@ -343,12 +393,14 @@ it("collects emitted package versions and fails closed on missing package metada
           bundledPackages: [],
           compilerPackages: ["vite@8.2.0"],
           vitePatchSha256: "e".repeat(64),
+          threePatchDigests,
         },
         {
           gamePackage: {},
           bundledPackages: [],
           compilerPackages: ["vite@8.2.0"],
           vitePatchSha256: "e".repeat(64),
+          threePatchDigests,
         },
       ),
     ).toThrow(/missing emitted third-party package metadata/);

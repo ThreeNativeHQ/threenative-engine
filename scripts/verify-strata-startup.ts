@@ -40,6 +40,8 @@ interface IStartupBuildIdentity {
   bundledPackages: readonly IRuntimePackageIdentity[];
   compilerPackages: readonly string[];
   vitePatchSha256: string;
+  /** The patched Three source the arm ships, keyed by repo-relative path. */
+  threePatchDigests: Readonly<Record<string, string>>;
   workspaceLockSha256?: string;
 }
 interface IPnpmPackageNode {
@@ -264,6 +266,26 @@ export function verifyStartupBuildIdentity(
   );
   assert.match(baseline.vitePatchSha256, /^[a-f0-9]{64}$/);
   assert.equal(candidate.vitePatchSha256, baseline.vitePatchSha256, "Vite patch digest differs");
+  assert.deepEqual(
+    normalizeThreePatchDigests(candidate.threePatchDigests),
+    normalizeThreePatchDigests(baseline.threePatchDigests),
+    "Three patch digest differs",
+  );
+}
+
+/** Both arms bundle one emitted Three version, so its owned patch must match byte for byte. */
+function normalizeThreePatchDigests(digests: unknown) {
+  assert(digests && typeof digests === "object", "missing Three patch digest metadata");
+  const entries = Object.entries(digests).map(([file, digest]) => {
+    assert(file.startsWith("packages/core/patches/"), `Three patch path missing: ${file}`);
+    assert(
+      typeof digest === "string" && /^[a-f0-9]{64}$/.test(digest),
+      `Three patch digest missing: ${file}`,
+    );
+    return [file, digest] as const;
+  });
+  assert(entries.length > 0, "missing Three patch digest metadata");
+  return entries.sort(([left], [right]) => left.localeCompare(right));
 }
 
 function emittedPackageForModule(moduleId: string): IRuntimePackageIdentity | undefined {
@@ -318,18 +340,14 @@ export function collectBundledThirdPartyPackages(outputs: readonly unknown[]) {
   return normalizeBundledPackages([...packages.values()]);
 }
 
-function collectThreePatchDigests(worktreeRoot: string) {
-  const files = ["packages/core/patches/three@0.187.0.patch"];
-  return Object.fromEntries(
-    files
-      .filter((file) => existsSync(path.join(worktreeRoot, file)))
-      .map((file) => [
-        file,
-        createHash("sha256")
-          .update(readFileSync(path.join(worktreeRoot, file)))
-          .digest("hex"),
-      ]),
-  );
+export function collectThreePatchDigests(worktreeRoot: string, threeVersion: string) {
+  const file = `packages/core/patches/three@${threeVersion}.patch`;
+  assert(existsSync(path.join(worktreeRoot, file)), `Three patch missing: ${file}`);
+  return {
+    [file]: createHash("sha256")
+      .update(readFileSync(path.join(worktreeRoot, file)))
+      .digest("hex"),
+  };
 }
 
 export async function collectViteBuildIdentity(worktreeRoot: string) {
@@ -406,10 +424,14 @@ export async function collectViteBuildIdentity(worktreeRoot: string) {
       ? result.flatMap((item) => (item as { output?: unknown[] }).output ?? [])
       : ((result as { output?: unknown[] }).output ?? []);
     const chunks = outputs.filter((item) => (item as { type?: unknown }).type === "chunk");
+    const bundledPackages = collectBundledThirdPartyPackages(chunks);
+    const three = bundledPackages.find(({ name }) => name === "three");
+    assert(three, "emitted three package metadata missing");
     return {
-      bundledPackages: collectBundledThirdPartyPackages(chunks),
+      bundledPackages,
       compilerPackages: [...compilerPackages].sort(),
       vitePatchSha256: createHash("sha256").update(readFileSync(vitePatch)).digest("hex"),
+      threePatchDigests: collectThreePatchDigests(worktreeRoot, three.version),
       chunkCount: chunks.length,
       moduleCount: chunks.reduce<number>(
         (count, item) => count + Object.keys((item as { modules: object }).modules).length,
@@ -475,16 +497,14 @@ async function main() {
     bundledPackages: baselineViteBuild.bundledPackages,
     compilerPackages: baselineViteBuild.compilerPackages,
     vitePatchSha256: baselineViteBuild.vitePatchSha256,
+    threePatchDigests: baselineViteBuild.threePatchDigests,
   };
   const candidateIdentity = {
     gamePackage: packageIdentity(root),
     bundledPackages: candidateViteBuild.bundledPackages,
     compilerPackages: candidateViteBuild.compilerPackages,
     vitePatchSha256: candidateViteBuild.vitePatchSha256,
-  };
-  const threePatchDigests = {
-    baseline: collectThreePatchDigests(baseline),
-    candidate: collectThreePatchDigests(root),
+    threePatchDigests: candidateViteBuild.threePatchDigests,
   };
   writeFileSync(
     path.join(output, "identity.json"),
@@ -502,12 +522,10 @@ async function main() {
         baseline: {
           ...baselineViteBuild,
           gamePackage: baselineIdentity.gamePackage,
-          threePatchDigests: threePatchDigests.baseline,
         },
         candidate: {
           ...candidateViteBuild,
           gamePackage: candidateIdentity.gamePackage,
-          threePatchDigests: threePatchDigests.candidate,
         },
       },
     }),
