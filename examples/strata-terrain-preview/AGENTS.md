@@ -68,7 +68,9 @@ All scripts, playtest definitions, manual preparation helpers and fixtures under
   - `playtests/switch.playtest.json`: checks the world keys re-enter scenes: forest ready, `Digit2` to a ready coast, `Digit1` back to a ready forest, on one page with no console error. Before the fix it aborted the Wasm engine in the switch frame (`TN_VIRTUAL_SHADOW_UNINITIALISED`'s cause, a `t_vsm0` binding with no atlas view).
   - `playtests/terrain.playtest.json`: primary playtest scenario for shared web/desktop showcase views.
   - `playtests/upload.playtest.json`: smoke scenario proving the forest world loads and renders on WebGPU with no console or runtime errors under the generated Three.js patch.
+  - `playtests/vista.playtest.json`: the fixed forest pose the look goal is judged at (forest, lake and mountain backdrop) with no console or runtime error.
   - `playtests/walk.playtest.json`: playtest scenario checking baked terrain triangles and player walk stability.
+  - `playtests/water-proof.playtest.json`: the coastal water-contribution proof on the owned engine: it enters the coast from the forest walk as the terrain scenario does, and the sheltered pool's diagnostic attachment reads back above the gate.
 
 - Verification and test suites:
   - `scripts/verify-assets.mjs`: verifies asset manifests, replacement tables, and model loading.
@@ -93,6 +95,10 @@ All scripts, playtest definitions, manual preparation helpers and fixtures under
 - Authoring, staging and data preparation:
   - `scripts/fixtures/editor-conflict.ts`: mounts two editor clients against the same document for the conflict scenario.
   - `scripts/bake.mjs`: bakes source elevation data and generates canonical world JSON packages.
+  - `scripts/recipe.mjs`: the five worlds' landform recipes and surface manifests as a module; `bake.mjs` evaluates them, nothing else imports it.
+  - `scripts/props.mjs`: the prop half of the bake: one container per streamed world through `compilePropBuckets`, with the game's own bucket and reach policy.
+  - `scripts/stamp.mjs`: hashes every input a bake depends on and reports whether the written worlds are stale; `pnpm dev` checks it on every start.
+  - `scripts/world-files.mjs`: lists the baked files the game fetches, read from the bake's own `<world>.props.json` manifests, and stops the build by name (`TN_STRATA_BUILD_MISSING`) on a file the bake did not write.
   - `scripts/consumer-world.mjs`: exports `openConsumerPage` to serve an installed consumer directory to headless Chromium and run vanilla full-world export against packed tarballs.
   - `scripts/stage-native-assets.mjs`: stages textures and models for native desktop/mobile bundles.
   - `scripts/verify-native-staging.mjs`: verifies staged native assets resolve with their manifest hashes and sizes.
