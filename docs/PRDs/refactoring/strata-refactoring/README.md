@@ -1,29 +1,33 @@
 # Strata refactoring
 
-**Status:** PARTIAL — 0 of 9 PRDs closed (filed 2026-11-04), and every PRD that has code left is
-partly landed on this branch:
+**Status:** PARTIAL — 0 of 9 PRDs closed (filed 2026-11-04). The P1 chain moved furthest:
 
-- **PRD-791** — code complete; only its owner lanes (the playtest red it inherited, the visual judge) open.
-- **PRD-792** — Phase 1 done (today's bake pinned as digests two forced bakes reproduce). Phase 2 is
-  the gate the rest of the strata chain waits on, and it is not a mechanical diff: the example's
-  `placements.bin` is its *own* container (header + 8-float records + a canopy array) and
-  `propStreaming.ts` partitions it into 128 m buckets at load, so "delete the runtime compiler" first
-  needs the bake to write package-shaped cells per bucket and the game to load them — a look-critical
-  path whose proof is a playtest and a judge, neither of which this lane can run.
-- **PRD-793** — Phase 1 done (every shipped kit's cook pinned, with its counts and cook baseline);
-  Phases 2-3 need PRD-792's `bakeBiome`.
+- **PRD-791** — code complete; only its owner lanes (the playtest red it inherited, the visual judge)
+  open. One data divergence found later: `coastal`'s snow `shedFrom` is `0.16` in the look and `0.04`
+  in its biome file; the file's value never reached a pixel and the pair needs a judged decision.
+- **PRD-792** — Phase 1 done (today's bake pinned as digests two forced bakes reproduce) and Phase 2's
+  package half done: `bakeBiome`, `measureBands` and the four named scatter stages ship in
+  `@threenative/terrain`, and `terrain_generate` bakes through them. The example's half (its rules as
+  data, per-bucket packages, deleting `propStreaming.ts`/`placements.ts`) is the look-critical path
+  whose proof is a playtest and a judge.
+- **PRD-793** — **AC-1 done**: all 35 landform×biome pairs cook (7 presets × 5 kits, matrix green).
+  Phase 1 done (every kit's cook pinned with counts and baseline). Phase 2 half done: `landform` is a
+  first-class input, `sizeMeters`/`seed` now actually reach the recipe (they were accepted and
+  written to a field `fromJSON` never reads), and an unmatched request names every biome and its
+  aliases, whose mirror of the files is itself checked. Open: a `biome` inline spec, a `water`
+  override, and `terrain_biome_new`.
 - **PRD-794** — untouched, blocked on its own CHARTER line.
-- **PRD-795** — Phase 1's drawn-triangle arm exists; the collider arm is not written. Phases 2-3 open.
+- **PRD-795** — Phase 1's drawn-triangle arm exists, and `Heightfield.surfaceAt` landed with a
+  10 000-point raycaster pin; the example's sampler now delegates to it. Open: `HeightfieldCollar`,
+  the game's ring/band wiring, the collider arm and the playtests.
 - **PRD-796** — untouched. Its world-key pin cannot read the game's config (`IGame` exposes no
   scenes/input), so the pin needs either a small named export from `game.ts` or a source read.
-- **PRD-797** — Phases 1-3 done: the four seams pinned, the `world.ts` ↔ `world-tiles.ts` cycle gone,
-  and four leaf modules extracted (3 416 → 2 254 lines, AC-1 narrowed to 2 300 by decision). Its
-  terrain-splat playtest box needs a browser lane.
+- **PRD-797** — Phases 1-3 done: four seams pinned, the `world.ts` ↔ `world-tiles.ts` cycle gone, four
+  leaf modules extracted (3 416 → 2 254, AC-1 narrowed to 2 300 by decision). The terrain-splat
+  playtest box needs a browser lane.
 - **PRD-798** — Phase 1's flag half done (`world-gpu-flags.spec.ts`, 14 cases); the `CellRender` pins
-  and both splits are open, with the measurement that makes the pins cost a `WorldCells.load` fixture
-  written down in the phase.
-- **PRD-799** — untouched, with both Phase 1 pins' exact observability written down (the loop is
-  `lodBias()`/`setLodBias()` plus an injected clock; the gate is the prewarm pair).
+  and both splits open, with the cost of the pins written down.
+- **PRD-799** — untouched, with both Phase 1 pins' observability written down.
 
 ## Where the hardcode is (audit of `aa3883d7d` plus the forest lane's uncommitted edits, 2026-11-04)
 
