@@ -170,6 +170,25 @@ export function impostorDistanceForScale(minScale: number, lastLodDistance: numb
   return Math.max(LOD_BANDS.far / Math.abs(minScale), lastLodDistance * (1 + Number.EPSILON));
 }
 
+/**
+ * The scale each streamed spruce variant's terminal gate divides by: the smallest one it draws.
+ *
+ * The gate divides by a variant's minimum scale, so the minimum is taken over the placements that
+ * actually draw it — every spruce the far forest does not own, keyed by the variant that draws it.
+ * One bucket's minimum, or a far tree's, puts a gate inside a step the player sees pop.
+ */
+export function spruceGateScales(
+  drawn: Iterable<{ readonly placement: IPlacement; readonly scale: number }>,
+): Map<string, number> {
+  const gates = new Map<string, number>();
+  for (const { placement, scale } of drawn) {
+    if (placement.asset !== "spruce" || placement.layer === FAR_FOREST_LAYER) continue;
+    const variant = `${placement.asset}:${variantFor(placement, placement.asset)}`;
+    gates.set(variant, Math.min(gates.get(variant) ?? Number.POSITIVE_INFINITY, Math.abs(scale)));
+  }
+  return gates;
+}
+
 export interface IPropPart {
   readonly geometry: BufferGeometry;
   /**

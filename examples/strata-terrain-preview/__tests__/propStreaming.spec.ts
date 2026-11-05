@@ -1,34 +1,63 @@
+import type { IPlacement } from "@threenative/terrain";
 import { describe, expect, it } from "vitest";
-import { LOD_BANDS, impostorDistanceForScale } from "../src/render/props.js";
+import { FAR_FOREST_LAYER } from "../src/render/farForest.js";
+import {
+  LOD_BANDS,
+  impostorDistanceForScale,
+  spruceGateScales,
+  variantFor,
+} from "../src/render/props.js";
+
+function placementFor(asset: string, id: string, scale: number, layer = "forest"): IPlacement {
+  return {
+    id,
+    layer,
+    asset,
+    position: [0, 0, 0],
+    rotation: 0,
+    scale,
+    normal: [0, 1, 0],
+    alignToNormal: false,
+  };
+}
+
+/** The `offset`th id the variant resolver puts on `variant`, so one variant is writable here. */
+function idOnVariant(variant: number, offset: number): string {
+  let found = 0;
+  for (let index = 0; ; index += 1) {
+    const id = `spruce:gate:${index}`;
+    if (variantFor(placementFor("spruce", id, 1), "spruce") !== variant) continue;
+    if (found === offset) return id;
+    found += 1;
+  }
+}
 
 describe("streamed spruce terminal gates", () => {
   it("keeps the first terminal gate at least 150 scaled metres out for each variant", () => {
+    const smallest = placementFor("spruce", idOnVariant(0, 0), 0.5);
+    const larger = placementFor("spruce", idOnVariant(0, 1), 1.5);
+    const collar = placementFor("spruce", idOnVariant(0, 2), 0.25, FAR_FOREST_LAYER);
+    const other = placementFor("spruce", idOnVariant(1, 0), 2);
     const placements = [
-      { asset: "spruce", variant: 0, scale: 0.5 },
-      { asset: "spruce", variant: 1, scale: 1.5 },
-    ] as const;
-    const scales = placements.map(({ scale }) => scale);
-    const minimumByVariant = new Map([
-      [0, placements[0].scale],
-      [1, placements[1].scale],
+      { placement: smallest, scale: 0.5 },
+      { placement: larger, scale: 1.5 },
+      { placement: placementFor("grass", "grass:gate:0", 0.1), scale: 0.1 },
+      { placement: other, scale: 2 },
+      // A far-forest tree keeps its own gate; its scale must not shrink the square's.
+      { placement: collar, scale: 0.25 },
+    ];
+
+    expect([...spruceGateScales(placements)]).toEqual([
+      [`spruce:${variantFor(smallest, "spruce")}`, 0.5],
+      [`spruce:${variantFor(other, "spruce")}`, 2],
     ]);
-    expect(minimumByVariant.size).toBe(placements.length);
-    const smallGate = impostorDistanceForScale(placements[0].scale, LOD_BANDS.mid);
-    const largeGate = impostorDistanceForScale(placements[1].scale, LOD_BANDS.mid);
 
-    expect(smallGate * placements[0].scale).toBeGreaterThanOrEqual(LOD_BANDS.far);
-    expect(largeGate * placements[1].scale).toBeGreaterThanOrEqual(LOD_BANDS.far);
-    expect(smallGate).toBeGreaterThan(LOD_BANDS.mid);
-    expect(largeGate).toBeGreaterThan(LOD_BANDS.mid);
-    expect(placements).toHaveLength(2);
-    expect(placements.map(({ scale }) => scale)).toEqual(scales);
-
-    const halfScaleGate = impostorDistanceForScale(0.5, LOD_BANDS.far);
-    const doubleScaleGate = impostorDistanceForScale(2, LOD_BANDS.far);
-    expect(halfScaleGate).toBe(300);
-    expect(halfScaleGate * 0.5).toBe(LOD_BANDS.far);
-    expect(doubleScaleGate).toBeGreaterThan(LOD_BANDS.far);
-    expect(doubleScaleGate * 2).toBeGreaterThan(LOD_BANDS.far);
+    const [entry] = spruceGateScales(placements);
+    const minimum = entry?.[1] ?? Number.NaN;
+    const gate = impostorDistanceForScale(minimum, LOD_BANDS.mid);
+    expect(minimum * gate).toBeGreaterThanOrEqual(LOD_BANDS.far);
+    expect(gate).toBeGreaterThan(LOD_BANDS.mid);
+    expect(impostorDistanceForScale(2, LOD_BANDS.far)).toBeGreaterThan(LOD_BANDS.far);
   });
 
   it("uses mirrored placement magnitude for the terminal distance and rejects zero or invalid scales", () => {

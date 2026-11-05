@@ -44,6 +44,7 @@ import {
   preparePose,
   propKey,
   propRatio,
+  spruceGateScales,
   streamedBucket,
   streamedReach,
   variantFor,
@@ -403,7 +404,6 @@ export async function streamProps(options: IPropWorldOptions) {
     buckets.map((bucket) => [bucket.plan, []]),
   );
   const byId = new Map<string, IPropInstance>();
-  const minSpruceScaleByVariant = new Map<string, number>();
   const shapes = new Map<string, { parts: IPropPart[]; ratio: Vector3 }>();
   startPhase("grounding", "", total);
   const report = await addInSlices(
@@ -445,14 +445,6 @@ export async function streamProps(options: IPropWorldOptions) {
         quaternion,
         scale: scalar,
       });
-      if (record.placement.asset === "spruce" && record.placement.layer !== FAR_FOREST_LAYER)
-        minSpruceScaleByVariant.set(
-          variant,
-          Math.min(
-            minSpruceScaleByVariant.get(variant) ?? Number.POSITIVE_INFINITY,
-            Math.abs(scalar),
-          ),
-        );
       byId.set(record.placement.id, {
         ...pose,
         pose: pose.matrix,
@@ -467,6 +459,7 @@ export async function streamProps(options: IPropWorldOptions) {
     },
   );
   if (report.stopped || !options.whileCurrent()) return undefined;
+  const minSpruceScaleByVariant = spruceGateScales([...grouped.values()].flat());
 
   const cellSize = options.package?.cellSize ?? PROP_CELL_SIZE;
   const assets = options.assets ?? createAssetLoader();
