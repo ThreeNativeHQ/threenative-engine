@@ -34,7 +34,7 @@ import { biomeSpec } from "./render/biomeData.js";
 import { BIOMES, type IWorldBiome, type WorldName, measureBiome } from "./render/biomes.js";
 import { HORIZON_WALK_BAND, loadHorizonSurroundings } from "./render/horizon.js";
 import { createLoadingScreen } from "./render/loading.js";
-import { createOcean, createWaterMesh } from "./render/ocean.js";
+import { SEA_EXTENT, createOcean, createWaterMesh } from "./render/ocean.js";
 import { loadCanopy, loadPropPackage, propCounts } from "./render/propWorld.js";
 import { invalidatePropShadows } from "./render/propWorld.js";
 import { buildPropVariants } from "./render/props.js";
@@ -434,16 +434,18 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
         ctx.add(river.mesh);
         ctx.entities.add("river", { mesh: river.mesh, dispose: () => river.dispose() });
       }
-      // The player swims in the river and lake drawn above: the same splines, levels and reach.
+      // The player swims in the river, lake and sea drawn above: the same splines, levels and reach.
       // `?swim=off` is the before arm: the water is drawn and the player walks its bed.
       // `?current=off` is the drift before arm: the same water, standing still.
       const params = new URLSearchParams(globalThis.location?.search ?? "");
       if (!stage && params.get("swim") !== "off") {
         const rivers = data.rivers ?? [];
         const lakes = data.lakes ?? [];
-        player.water = waterSurfaceAt(rivers, lakes, field);
+        // The sea stands at the level its plane is drawn at, out to the reach that plane stretches to.
+        const sea = water ? { extent: SEA_EXTENT, level: water.position.y } : undefined;
+        player.water = waterSurfaceAt(rivers, lakes, field, sea);
         if (params.get("current") !== "off")
-          player.waterCurrent = waterCurrentAt(rivers, lakes, field);
+          player.waterCurrent = waterCurrentAt(rivers, lakes, field, sea);
       }
       this.#meadow = meadow = createMeadow({
         biome,

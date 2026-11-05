@@ -35,7 +35,7 @@ export function waterBodies(
 
 /**
  * The height of the water the player sees at (x, z), or `undefined` where none is drawn: the query
- * `CharacterBody3D.water` swims in.
+ * `CharacterBody3D.water` swims in. `sea` is the sea the world draws, where it draws one.
  *
  * Ground above the surface is dry by itself, because the body measures its immersion against this
  * height.
@@ -44,15 +44,16 @@ export function waterSurfaceAt(
   rivers: readonly IBakedRiver[],
   lakes: readonly IBakedLake[],
   field: Heightfield,
+  sea?: IWaterOcean,
 ): (x: number, z: number) => number | undefined {
-  const bodies = waterBodies(rivers, lakes, field);
+  const bodies = waterBodies(rivers, lakes, field, sea);
   return (x, z) => bodies.surfaceAt(x, z);
 }
 
 /**
  * The flow the river carries a body with at (x, z), in m/s, or `undefined` where there is no water:
  * the query `CharacterBody3D.waterCurrent` drifts a swimmer with. A lake and the sea stand still and
- * report zero.
+ * report zero. `sea` is the sea the world draws, where it draws one.
  *
  * The direction is the downstream tangent at the nearest spline station — the direction the surface
  * is drawn flowing in — at `RIVER_FLOW_MPS`, so the ripples and the swimmer travel at one speed.
@@ -61,7 +62,8 @@ export function waterCurrentAt(
   rivers: readonly IBakedRiver[],
   lakes: readonly IBakedLake[],
   field: Heightfield,
+  sea?: IWaterOcean,
 ): (x: number, z: number) => { x: number; z: number } | undefined {
-  const bodies = waterBodies(rivers, lakes, field);
+  const bodies = waterBodies(rivers, lakes, field, sea);
   return (x, z) => bodies.currentAt(x, z);
 }

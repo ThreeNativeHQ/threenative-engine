@@ -17,7 +17,7 @@ import { Heightfield, type IWaterOcean } from "@threenative/core/world";
 import { describe, expect, it } from "vitest";
 import { SEA_EXTENT, createOcean, createWaterMesh } from "../src/render/ocean.js";
 import type { IBakedWorld } from "../src/render/terrain.js";
-import { waterBodies } from "../src/world/water.js";
+import { waterBodies, waterCurrentAt, waterSurfaceAt } from "../src/world/water.js";
 
 /** One fixed probe: where it stands, the surface a swimmer rests on and the flow that carries them. */
 interface IWaterProbe {
@@ -170,6 +170,24 @@ describe("the coastal ocean", () => {
     expect(coastal.waterLevel).toBe(1.5);
     expect(coastal.rivers ?? []).toEqual([]);
     expect(coastal.lakes ?? []).toEqual([]);
+  });
+});
+
+describe("the swim queries", () => {
+  it("answer the sea the coastal world draws, and dry water past its edge", () => {
+    if (coastal.waterLevel === null) throw new Error("the coastal bake has no sea level");
+    const sea: IWaterOcean = { extent: SEA_EXTENT, level: coastal.waterLevel };
+    const rivers = coastal.rivers ?? [];
+    const lakes = coastal.lakes ?? [];
+    const surface = waterSurfaceAt(rivers, lakes, field(coastal), sea);
+    const current = waterCurrentAt(rivers, lakes, field(coastal), sea);
+    // The swimmer rests on the level the drawn plane stands at, over the ground it covers.
+    for (const probe of SEA) expect(surface(...probe.at)).toBe(sea.level);
+    // The sea carries no flow.
+    expect(current(2000, -2000)).toEqual({ x: 0, z: 0 });
+    // And stops at the drawn surface's edge, as the plane does.
+    expect(surface(4200, 0)).toBeUndefined();
+    expect(current(4200, 0)).toBeUndefined();
   });
 });
 
