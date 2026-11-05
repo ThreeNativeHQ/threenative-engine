@@ -10,12 +10,12 @@
   `@threenative/terrain`, and `terrain_generate` bakes through them. The example's half (its rules as
   data, per-bucket packages, deleting `propStreaming.ts`/`placements.ts`) is the look-critical path
   whose proof is a playtest and a judge.
-- **PRD-793** — **AC-1 done**: all 35 landform×biome pairs cook (7 presets × 5 kits, matrix green).
-  Phase 1 done (every kit's cook pinned with counts and baseline). Phase 2 half done: `landform` is a
-  first-class input, `sizeMeters`/`seed` now actually reach the recipe (they were accepted and
-  written to a field `fromJSON` never reads), and an unmatched request names every biome and its
-  aliases, whose mirror of the files is itself checked. Open: a `biome` inline spec, a `water`
-  override, and `terrain_biome_new`.
+- **PRD-793** — **AC-1, AC-2 and AC-3 done**: all 35 landform×biome pairs cook; `terrain_generate`
+  takes `biome` (a starter's name, one of its alias words or an inline spec) with `landform`,
+  `sizeMeters`, `seed` and `water`; and `terrain_biome_new` makes and cooks a `savanna` in one call
+  that writes only under `<assets.source>/biomes/savanna/` (cook 2 982 ms, under the 3 839 ms forest
+  baseline). Phases 1-3 are done except the sandbox arm: AC-4 and the savanna-in-a-sandbox box are
+  open on the sandbox and judge lane.
 - **PRD-794** — untouched, blocked on its own CHARTER line.
 - **PRD-795** — Phase 1's drawn-triangle arm exists, and `Heightfield.surfaceAt` landed with a
   10 000-point raycaster pin; the example's sampler now delegates to it. Open: `HeightfieldCollar`,

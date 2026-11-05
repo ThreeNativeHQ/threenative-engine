@@ -1,9 +1,10 @@
 # PRD-793 — The terrain MCP answers any terrain request, and makes a new biome in one call
 
-**Status:** PARTIAL — Phases 1 and 2 are done: every shipped kit's cook is pinned with its AC-3
-baseline, and `terrain_generate` takes `biome` (a starter's name, one of its alias words or an inline
-spec), `landform`, `sizeMeters`, `seed` and `water`. Phase 3 is next; AC-4 waits on the sandbox and
-judge lane.
+**Status:** PARTIAL — Phases 1-3 are done: the tool takes `biome` (a starter's name, one of its
+alias words or an inline spec) with `landform`, `sizeMeters`, `seed` and `water`, and
+`terrain_biome_new` makes and cooks a `savanna` from the forest's data in one call that writes only
+under `<assets.source>/biomes/savanna/`. Open: AC-4 and the Phase 3 sandbox box, which need the
+sandbox and judge lane.
 **Priority:** P1 — The owner's goal: an agent asking for a terrain outside five fixed names gets no world today (all phases open).
 **Complexity:** 5 (MEDIUM)
 **Owner:** ThreeNative maintainers
@@ -30,9 +31,9 @@ back to a default kit. A new tool, `terrain_biome_new { from, name, overrides }`
 ## Acceptance Criteria
 
 - [x] AC-1 [local]: Each of the seven landforms cooks under any shipped biome. proof: `terrain-mcp.spec.ts` matrix — Evidence: the `every landform under every biome` matrix is 35/35 green (7 presets × 5 kits, one `it.each` row each, 81 s): every pair cooks through `landform(kind, { size, seed, resolution: 257 })` with the kit's own `surface.json`, `assets.json` and `biome.data.json`, writes a manifest whose extent is square with at least one cell, reports `biome` equal to the kit, triangles and draws above zero, and writes a recipe with no `heightmap` layer — the preset's chain, not the starter's crop. A landform preset authors the ground and no scatter rules, so a pair currently cooks terrain with no props (`instances` 0, `cells` `[]`), which the matrix asserts on purpose: the day the biome's foliage reaches a preset (PRD-792's spec-driven scatter) that assertion is the one that flips. `pnpm --filter @threenative/terrain build` runs before the spec in CI because the cold-handoff case spawns `dist/mcp/server.js`; run against the rebuilt dist.
-- [ ] AC-2 [local]: One `terrain_biome_new` call makes and cooks a sixth biome with no code edit. proof: `terrain-mcp.spec.ts` plus `git diff --stat` of the call touching only `<assets.source>/biomes/<name>/` — Evidence: pending.
-- [ ] AC-3 [local]: The new biome cooks no slower than the slowest of the five kits. proof: cook wall time in `terrain-mcp.spec.ts` output against the Phase 1 baseline — Evidence: pending.
-- [ ] AC-4 [local]: The new biome's GLB loads in a sandbox game on the default engine and draws a non-blank frame that a fresh judge reads as the requested biome. proof: `pnpm sandbox` game plus a headed `--browser-recipe webgpu` capture — Evidence: pending.
+- [x] AC-2 [local]: One `terrain_biome_new` call makes and cooks a sixth biome with no code edit. proof: `terrain-mcp.spec.ts` plus `git diff --stat` of the call touching only `<assets.source>/biomes/<name>/` — Evidence: the `terrain_biome_new` case `makes and cooks a savanna in a game project, touching only its own folders` drives the built `dist/mcp/server.js` with one `tools/call` against a temp game project. The reply is `biome: "savanna"`, `biomeJson: "assets/biomes/savanna/biome.data.json"`, `out: "assets/biomes/savanna/world"`, with triangles above zero and `bands` resolved. The file on disk is the validated spec: `look: "savanna"`, `landform: "rollingHills"`, `seed: 11`, one `spruce` foliage row at density 160 with `far: null`, one `grass` row at density 1, `water: []`, `aliases: ["savanna"]`, and the starter's `species` list (`spruce`, `grass`). The case lists the project tree before and after the call: every added path starts with `assets/biomes/savanna/` (`biome.data.json`, `world/world.glb`, `world.json`, `recipe.json`, `terrain-table.json`, `water.json`, `sky.hdr`, the heightmap) and no file was removed, so the call wrote only under `<assets.source>/biomes/savanna/` and changed no source file. A second call with the same name fails with `already exists` instead of overwriting the biome. Full spec: 97/97 green.
+- [x] AC-3 [local]: The new biome cooks no slower than the slowest of the five kits. proof: cook wall time in `terrain-mcp.spec.ts` output against the Phase 1 baseline — Evidence: `TN_TERRAIN_BIOME_NEW savanna: cook 2 982 ms, tool call 3 253 ms` against the Phase 1 baseline's slowest kit, forest at 3 839 ms (the same run re-cooked forest at 3 467 ms, so the box was not faster than in Phase 1). The case asserts the cook stays under 3 839 ms and prints both numbers.
+- [ ] AC-4 [local]: The new biome's GLB loads in a sandbox game on the default engine and draws a non-blank frame that a fresh judge reads as the requested biome. proof: `pnpm sandbox` game plus a headed `--browser-recipe webgpu` capture — Evidence: pending. Open: needs sandbox + judge lane.
 
 ## Integration Ledger
 
@@ -71,7 +72,7 @@ back to a default kit. A new tool, `terrain_biome_new { from, name, overrides }`
   - Landed: an unmatched `request` now names every biome *and* the words it answers to (`request 'castle' matches no biome. Try one of: forest (pine, pines, woods, woodland); coastal (beach, coast, sea, ocean); …`), and the parser's synonym table is no longer a second copy of the aliases: `core/biome-words.ts` holds a mirror of the five `aliases` rows, and `biome-words.spec.ts` (6/6) fails the moment a mirror row stops matching its `biome.data.json`. `TERRAIN_KITS`/`TerrainKit` moved to `core/kits.ts` so the words module does not import the tool module; `tools.ts` re-exports both, so its public surface is unchanged. The old spec's expectation of a bare `forest, coastal, …` list was updated to the new message, with each alias word asserted.
 
 #### Phase 3: a new biome in one call
-**Status:** NOT STARTED
+**Status:** PARTIAL — the biome and its cook are done; the sandbox arm is open.
 **Files:** `packages/terrain/src/mcp/tools.ts`, `packages/engine-mcp` tool registration if the server lists tools there
-- [ ] `terrain_biome_new` makes a `savanna` biome (`rollingHills`, grass cover, sparse trees from starter assets). proof: AC-2 and AC-3
-- [ ] The savanna GLB runs in a sandbox game. proof: AC-4
+- [x] `terrain_biome_new` makes a `savanna` biome (`rollingHills`, grass cover, sparse trees from starter assets). proof: AC-2 and AC-3 — Evidence: one `terrain_biome_new { from: "forest", name: "savanna", overrides }` call writes `assets/biomes/savanna/biome.data.json` and cooks `assets/biomes/savanna/world/`: `rollingHills` ground, the forest's grass row as cover, and the forest's `spruce` row thinned to density 160 with spacing `[12, 26]` and no far field, all species from the starter pack. Cook 2 982 ms, under the forest baseline of 3 839 ms (AC-3). The call edits no code: `tools.ts` gained the tool once, and the test drives it through the built server. The preset ground carries no scatter rules yet, so this world's `instances` stay 0; the biome's foliage reaches the bake with PRD-792 Phase 2's spec-driven scatter, which is why AC-4 is still open.
+- [ ] The savanna GLB runs in a sandbox game. proof: AC-4. Open: needs sandbox + judge lane.

@@ -1228,11 +1228,30 @@ describe("terrain_biome_new", () => {
         'export default { assets: { source: "assets" } };',
       );
       const before = await filesUnder(project);
+      const forest = await starterBiome("forest");
+      // A savanna is data: rolling hills, the forest's grass as the cover, and the same tree made
+      // sparse. Nothing here names a biome in code; the file the call writes is the whole biome.
+      const overrides = {
+        landform: "rollingHills",
+        seed: 11,
+        foliage: [
+          {
+            ...(forest.foliage as Record<string, unknown>[])[0],
+            density: 160,
+            spacing: [12, 26],
+            far: null,
+          },
+        ],
+        grass: [(forest.grass as Record<string, unknown>[])[0]],
+        water: [],
+      };
+      const started = performance.now();
       const response = await askServer(project, "terrain_biome_new", {
         from: "forest",
         name: "savanna",
-        overrides: { landform: "rollingHills", seed: 11 },
+        overrides,
       });
+      const wall = Math.round(performance.now() - started);
       const text = response.result?.content?.[0]?.text;
       expect(response.result?.isError, text).toBe(false);
       const result = JSON.parse(text as string);
@@ -1242,16 +1261,30 @@ describe("terrain_biome_new", () => {
       expect(result.triangles).toBeGreaterThan(0);
       expect(result.bands.elevationRange[1]).toBeGreaterThan(result.bands.elevationRange[0]);
       const written = JSON.parse(await readFile(join(project, result.biomeJson), "utf8"));
-      expect(written).toMatchObject({ look: "savanna", landform: "rollingHills", seed: 11 });
+      expect(written).toMatchObject({
+        look: "savanna",
+        landform: "rollingHills",
+        seed: 11,
+        aliases: ["savanna"],
+        water: [],
+      });
+      // The sparse stand and the cover are the base's own rows, thinned and kept; the species are
+      // the starter pack's (`spruce`, `grass`), so no new art is needed.
+      expect(written.foliage[0]).toMatchObject({ species: "spruce", density: 160, far: null });
+      expect(written.grass[0]).toMatchObject({ species: "grass", density: 1 });
+      expect(written.species).toEqual(expect.arrayContaining(["spruce", "grass"]));
       // AC-2: every file the call wrote sits under the biome's own folder; no source file changed.
       const after = await filesUnder(project);
       const added = after.filter((file) => !before.includes(file));
       expect(added.length).toBeGreaterThan(0);
       expect(added.filter((file) => !file.startsWith("assets/biomes/savanna/"))).toEqual([]);
       expect(before.filter((file) => !after.includes(file))).toEqual([]);
-      // AC-3: no slower than the slowest shipped kit on this box (forest 3 839 ms in phase 1).
-      console.log(`TN_TERRAIN_BIOME_NEW savanna: ${result.ms} ms (forest baseline 3 839 ms)`);
-      expect(result.ms).toBeLessThan(2 * 3839);
+      // AC-3: the cook stays under the slowest shipped kit's baseline on this box (forest
+      // 3 839 ms, phase 1). The tool call's own wall time is logged beside it for context.
+      console.log(
+        `TN_TERRAIN_BIOME_NEW savanna: cook ${result.ms} ms, tool call ${wall} ms (forest baseline 3 839 ms)`,
+      );
+      expect(result.ms).toBeLessThan(3839);
       // A second call with the same name refuses instead of overwriting the biome.
       const again = await askServer(project, "terrain_biome_new", {
         from: "forest",
