@@ -4088,9 +4088,14 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         if (item.envMap) {
             const EnvironmentGpu& env = environment(*item.envMap);
             put(frameUniforms_, f, fs[kEnvRotation], item.envRotation);
-            put(frameUniforms_, f, fs[kEnvMapIntensity], std::array<double, 1>{item.envMapIntensity});
             put(frameUniforms_, f, fs[kEnvMapMaxMip], std::array<double, 1>{double(env.maxLod)});
         }
+        // three's materialEnvIntensity (MaterialProperties.js:23) is material.envMapIntensity when the material
+        // carries an envMap, else scene.environmentIntensity, and a plain MaterialNode.envNode's radiance scales
+        // by that same number. The program reads the factor only where it lowers an environment, and the render
+        // database resolves the factor for every draw, so it is written whenever a program reads it: keyed on the
+        // envMap alone, a material lit by envNode alone (the Strata ocean) read 0 and drew black.
+        put(frameUniforms_, f, fs[kEnvMapIntensity], std::array<double, 1>{item.envMapIntensity});
         if (item.pmremMap) {
             const EnvironmentGpu& pmrem = environment(*item.pmremMap);
             put(frameUniforms_, f, fs[kPmremRotation], item.pmremRotation);
