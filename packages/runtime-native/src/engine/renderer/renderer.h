@@ -489,6 +489,14 @@ public:
         return it == virtualShadows_.end() ? nullptr : &it->second.atlas;
     }
     /**
+     * Light `light`'s virtual-shadow depth map, or null. `setVirtualShadow` creates it with the entry, because a
+     * cached program's bind groups are rebuilt before the frame's first shadow pass draws the atlas.
+     */
+    WGPUTextureView virtualShadowMapView(std::size_t light) const {
+        const auto it = virtualShadows_.find(light);
+        return it == virtualShadows_.end() ? nullptr : it->second.map.view;
+    }
+    /**
      * FS11: one record per light, one entry per position in the frame's frozen draw list. The frame's caster
      * bookkeeping (bounds, diameter, whether the draw casts into this light) is a flat index, not two maps keyed by
      * `DrawItem::key`, so a frame neither allocates a node per caster nor descends a tree per probe. The vector is
@@ -1133,6 +1141,8 @@ private:
     void buildEnvironmentPipelines();
     void releaseEnvironments();
     void rebuildGroups();
+    /** Creates light `light`'s virtual-shadow depth map and view once; true when it did. */
+    bool ensureVirtualShadowMap(std::size_t light);
     void releaseTargets();
     void resolveDepth(WGPUCommandEncoder encoder);  // 4x: depth_ takes sample 0 of msaaDepth_
     GpuStatus readRgba16(WGPUTexture texture, ReadbackCallback done, uint32_t texelBytes = 8);

@@ -603,6 +603,10 @@ void compileBeforeRender() {
     atlas.clipExtents = {8}; atlas.mapSize = 256; atlas.pageTexels = 64;
     atlas.lightDistance = 20; atlas.depthRange = 40;
     renderer.setVirtualShadow(0, atlas);
+    // The depth map exists with the entry. A group rebuild before the frame's first shadow pass draws the atlas
+    // names t_vsm0 with no view otherwise, which is an invalid descriptor: the browser port aborts the module on
+    // one, and the scene switch that rebuilds every cached program's groups is where that reached a player.
+    CHECK(renderer.virtualShadowMapView(0) != nullptr);
     compileScene(database, renderer, scene, camera);
     const auto groupsBeforeAtlas = bindGroupsCreated();
     database.render(renderer, scene, camera);
