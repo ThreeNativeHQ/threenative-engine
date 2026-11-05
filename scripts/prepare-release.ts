@@ -221,8 +221,8 @@ export function syncPeerRanges(repo: string, versions: ReadonlyMap<string, strin
   for (const [file, dependency, version] of Object.values(ranges)) {
     if (syncDependencyRange(file, dependency, version)) changed += 1;
   }
-  // Terrain peers are external packages, such as three and vite.
-  // Sync a terrain peer only when the release cohort names it.
+  // A terrain peer is shipped (@threenative/core, @threenative/physics) or external, such as
+  // three and vite; sync either kind only when the release cohort names it.
   const terrain = path.join(repo, "packages/terrain/package.json");
   const { peerDependencies = {} } = JSON.parse(readFileSync(terrain, "utf8")) as {
     peerDependencies?: Record<string, string>;
