@@ -402,7 +402,11 @@ it("submits authored neighbor LODs with complementary masks through a boundary w
       for (const mesh of submitted) {
         expect(mesh.count).toBe(1);
         const surface = mesh.material as import("three/webgpu").NodeMaterial;
-        expect(surface.maskShadowNode).toBe(surface.maskNode);
+        // 9520daa11: a published level change fades in the colour pass only, "so cached pages hold
+        // no frame of the fade", and the two masks are separate nodes. The rule's core pin is
+        // world-impostor-surface.spec.ts 'fades a published level change in the colour pass only'.
+        expect(surface.maskShadowNode).toBeDefined();
+        expect(surface.maskShadowNode).not.toBe(surface.maskNode);
         const comparisons: string[] = [];
         const values: unknown[] = [];
         surface.maskNode?.traverse((node) => {
@@ -414,9 +418,15 @@ it("submits authored neighbor LODs with complementary masks through a boundary w
         if (!part) throw new Error("Unauthored submitted LOD geometry");
         const level = levels.indexOf(part);
         const authoredComparisons = level === 0 ? [">="] : level === 1 ? ["<", ">="] : ["<"];
-        expect(comparisons).toHaveLength(authoredComparisons.length + (level === 0 ? 0 : 1));
-        expect(comparisons.slice(-authoredComparisons.length)).toEqual(authoredComparisons);
-        expect(values.some((value) => value instanceof Vector3 && value.x === distance)).toBe(true);
+        // Each level's mask still makes its own authored comparisons. Neither their count nor their
+        // position is pinned any more: 919c1a866's temporal transition builds the level mask once
+        // per lagged eye, and 9520daa11 appends the published-range gates to the same mask.
+        expect(comparisons).toEqual(expect.arrayContaining(authoredComparisons));
+        // The gates are the authored bands as uniforms, which is what the level switches at. The
+        // eye is the temporal pair of lagged origins rather than the follow point, so it is not
+        // pinned here.
+        expect(values).toContain(LOD_BANDS.mid);
+        expect(values).toContain(LOD_BANDS.far);
         expect(values).toContain(1); // Unadapted distance bias.
       }
     }
