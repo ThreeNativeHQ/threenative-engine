@@ -88,7 +88,7 @@ Not moved, with the reason:
 | 4 | P2 | [PRD-794](PRD-794-river-lake-and-ocean-are-one-water-body-mechanism.md) | River, lake and ocean are one water-body mechanism |
 | 5 | P2 | [PRD-795](PRD-795-the-far-ring-and-ground-queries-read-the-heightfield.md) | The far ring and ground queries read the heightfield, not world names |
 | 6 | P2 | [PRD-796](PRD-796-strata-game-ts-is-wiring-not-a-world-switch.md) | Strata `game.ts` is wiring, not a world switch |
-| 7 | P2 | [PRD-797](PRD-797-world-tiles-splits-by-seam.md) | `world-tiles.ts` splits by seam |
+| 7 | P2 | [PRD-797](../../done/PRD-797-world-tiles-splits-by-seam.md) | `world-tiles.ts` splits by seam |
 | 8 | P2 | [PRD-798](PRD-798-world-gpu-scene-and-cell-render-split-with-pins.md) | `world-gpu-scene.ts` and `world-cell-render.ts` split, with `CellRender` pins |
 | 9 | P2 | [PRD-799](PRD-799-world-cells-second-split.md) | `world-cells.ts` second split |
 
