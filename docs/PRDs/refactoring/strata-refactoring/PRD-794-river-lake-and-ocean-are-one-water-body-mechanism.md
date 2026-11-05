@@ -31,7 +31,8 @@ and `ocean.ts` and the starter `sea.ts` become one copy-out source.
 
 ## Blocked on
 
-- `CHARTER.md` admits water-body queries as core mechanism ("queryable storage shared by rendering and physics", beside `Heightfield`) — unblocked by the owner's approval of the CHARTER line.
+- Unblocked: owner approved the CHARTER line on 2026-11-04. `CHARTER.md` now admits water-body
+  queries (surface height, current, footprint) as core mechanism, beside `Heightfield`.
 
 ## Integration Ledger
 
