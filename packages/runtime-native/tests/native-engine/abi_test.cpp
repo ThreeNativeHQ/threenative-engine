@@ -3061,6 +3061,9 @@ void starter_post_bindings() {
             const auto swizzled = tn::abi::tslCall("sample", &layeredReceiver,
                 {TslArg::of(g::swizzle(g::vec3({g::float_(0.5), g::float_(0.25), g::float_(1)}), "xy"))}, serial);
             CHECK(swizzled && swizzled->args[0] && swizzled->args[0]->type == tn::engine::shader::Type::vec(3));
+            // The carried layer is the depth() input alone: the texture's default uv() is not read, so a mesh
+            // with no uv attribute (the impostor card, a grass blade) still compiles.
+            if (swizzled) CHECK(compile(g::vec4({g::swizzle(swizzled, "xyz"), g::float_(1)})).wgsl.code.find("(i_uv)") == std::string::npos);
         }
         const auto plain = std::make_shared<tn::engine::DataTexture>();
         plain->setImage(std::vector<double>(4, 128), "Uint8Array", 1, 1, 1023, 1009);

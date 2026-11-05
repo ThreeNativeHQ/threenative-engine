@@ -947,9 +947,15 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         // whatever the uv node is. A swizzle such as `hit.xy` carries no type, so the uv's type is not asked.
         const auto object = source->kind == g::Kind::Texture && source->textureBinding ? source->textureObject() : nullptr;
         const auto uv = sampled->args[0];
-        if (object && static_cast<const engine::Texture*>(object.get())->array && source->args[0] &&
-            source->args[0]->type == Type::vec(3) && uv)
-            sampled->args[0] = g::vec3({g::swizzle(uv, "x"), g::swizzle(uv, "y"), g::swizzle(source->args[0], "z")});
+        // The layer is depth()'s own input, not a lane of the old coordinate: that one reads the default uv(),
+        // which a mesh with no uv attribute (an impostor card) does not have.
+        const auto& previous = source->args[0];
+        if (object && static_cast<const engine::Texture*>(object.get())->array && previous &&
+            previous->type == Type::vec(3) && uv) {
+            const g::Node layer = previous->kind == g::Kind::Join && previous->args.size() == 3 ? previous->args[2]
+                                                                                              : g::swizzle(previous, "z");
+            sampled->args[0] = g::vec3({g::swizzle(uv, "x"), g::swizzle(uv, "y"), layer});
+        }
         return sampled;
     }
     if (name == "float" || name == "int" || name == "uint") {
