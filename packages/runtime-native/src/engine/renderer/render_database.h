@@ -123,14 +123,17 @@ class RenderDatabase {
     [[nodiscard]] uint64_t batchDecisions() const { return batchDecisions_; }
 
   private:
-    // A material's pmremTexture source and reflector, walked once per material version: the graph
+    // A material's pmremTexture source and reflectors, walked once per material version: the graph
     // roots are kept so a new material at a freed one's address never reads the old answer.
     // ponytail: entries for released materials stay until the database goes; prune if materials churn.
     struct GraphSources {
         uint32_t version = 0;
         std::array<const void*, 16> roots{};  // one per MaterialNodes::pointers()
         const Texture* texture = nullptr;
-        std::shared_ptr<const void> reflector;  // an engine::Reflector
+        // The reflector() reads, by binding name; each owns its mirror pass, as three's ReflectorNode owns
+        // its render target. `reflectorViews` carries this frame's view of each pass, refreshed per render.
+        std::vector<std::pair<std::string, std::shared_ptr<const void>>> reflectors;
+        GraphReflectors reflectorViews;
         std::vector<std::pair<std::string, const Texture*>> textures;  // texture(object) samples
         std::vector<shader::graph::Node> textureNodes;
         std::vector<std::pair<std::string, const BufferAttribute*>> storages;  // storage(attribute) reads

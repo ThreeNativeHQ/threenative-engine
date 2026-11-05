@@ -258,6 +258,11 @@ std::array<double, 9> uvTransformOf(const Texture& t) {
 // A TSL texture(object, uv) binding (tsl_call's "nodeMap<id>"): the draw's own texture, in either stage.
 bool graphTextureBinding(std::string_view name) { return name.rfind("t_nodeMap", 0) == 0; }
 
+// A TSL reflector() binding ("t_reflector<serial>", "smp_reflector<serial>"): the draw's own mirror pass.
+bool reflectorBinding(std::string_view name) {
+    return name.rfind("t_reflector", 0) == 0 || name.rfind("smp_reflector", 0) == 0;
+}
+
 // A material node reading a post render-to-texture pass (convertToTexture's "native_rtt_<n>", or a late resolve's own
 // "native_traa_<n>"): the pass's output view belongs to the main renderer's post effects and moves when they resize, so
 // each draw binds it itself.
@@ -337,7 +342,7 @@ bool perDrawFragment(const shader::StageModule& stage) {
     waste::debugAdd(waste::counters().programProbeScans);
     for (const shader::Binding& binding : stage.bindings)
         if (binding.name == "t_map" || binding.name == "t_normalMap" || binding.name == "t_env" ||
-            binding.name == "t_reflector" || graphTextureBinding(binding.name) ||
+            reflectorBinding(binding.name) || graphTextureBinding(binding.name) ||
             postTextureBinding(binding.name) || viewportBinding(binding.name))
             return true;
     return false;
@@ -1595,7 +1600,7 @@ WGPUBindGroup Renderer::bindGroup(WGPUBindGroupLayout layout, const shader::Stag
                                   WGPUTextureView normalView, WGPUSampler normalSampler,
                                   const std::array<const MaterialTexture*, shader::kPbrMapCount>* pbrMaps,
                                   WGPUTextureView pmremView, WGPUSampler pmremSampler,
-                                  WGPUTextureView reflectorView, WGPUSampler reflectorSampler,
+                                  const GraphReflectors* reflectors,
                                   const GraphTextures* graphTextures, RecentBindGroups* cache) {
     // A graph texture's GPU texture, by its `t_<name>` / `smp_<name>` binding; null for any other.
     const auto graph = [&](std::string_view name, bool sampler) -> const MaterialTexture* {
@@ -1667,6 +1672,20 @@ WGPUBindGroup Renderer::bindGroup(WGPUBindGroupLayout layout, const shader::Stag
             if (!texture) throw std::runtime_error("TN_NATIVE_BINDING_UNSUPPORTED: " + b.name + " has no texture this draw");
             if (b.kind == shader::BindingKind::Texture) e.textureView = texture->view;
             else e.sampler = texture->sampler;
+        } else if (reflectorBinding(b.name)) {
+            // A graph's own mirror pass (reflector): looked up by the mirror's name, so a material may
+            // sample two of them, each with the view of its own pass.
+            const bool sampler = b.kind == shader::BindingKind::Sampler;
+            const std::string_view label = std::string_view(b.name).substr(sampler ? 4 : 2);
+            const GraphReflector* mirror = nullptr;
+            if (reflectors)
+                for (const GraphReflector& entry : *reflectors)
+                    if (entry.name == label) { mirror = &entry; break; }
+            if (!mirror || !mirror->view)
+                throw std::runtime_error("TN_NATIVE_BINDING_UNSUPPORTED: " + std::string(b.name) +
+                                         " has no mirror pass this draw");
+            if (sampler) e.sampler = mirror->sampler;
+            else e.textureView = mirror->view;
         } else if (b.volume) {
             const auto& atlas = probeTextures_.at(b.name.substr(b.kind == shader::BindingKind::Texture ? 2 : 4));
             if (b.kind == shader::BindingKind::Texture) e.textureView = atlas.view;
@@ -1687,12 +1706,12 @@ WGPUBindGroup Renderer::bindGroup(WGPUBindGroupLayout layout, const shader::Stag
             const auto postView = postTextureView(b.name.substr(2));
             const MaterialTexture* pbrTexture = pbr(b.name, false);
             e.textureView = postView ? postView : pbrTexture ? pbrTexture->view : b.name == "t_map" ? mapView : b.name == "t_normalMap" ? normalView : b.name == "t_env" ? envView
-                            : b.name == "t_pmrem" ? pmremView : b.name == "t_reflector" ? reflectorView : view;
+                            : b.name == "t_pmrem" ? pmremView : view;
         } else if (b.kind == shader::BindingKind::Sampler) {
             const PostEffects* const postOwner = postTextureOwner(b.name.substr(4));
             const MaterialTexture* pbrTexture = pbr(b.name, true);
             e.sampler = postOwner ? postOwner->sampler(b.name.substr(4)) : pbrTexture ? pbrTexture->sampler : b.name == "smp_map" ? mapSampler : b.name == "smp_normalMap" ? normalSampler : b.name == "smp_env" ? envSampler
-                        : b.name == "smp_pmrem" ? pmremSampler : b.name == "smp_reflector" ? reflectorSampler : sampler;
+                        : b.name == "smp_pmrem" ? pmremSampler : sampler;
         } else {
             throw std::runtime_error("TN_NATIVE_BINDING_UNSUPPORTED: " + b.name);
         }
@@ -4441,7 +4460,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 if (item.morphGeometry || item.morphInfluences || item.positionNode) return false;
                 if (item.nodes->shadowPositionNode() || item.nodes->vertexNode) return false;
                 if (item.instanceMatrices || item.gpuJoints || item.sprite || item.background) return false;
-                if (item.nodeTextures || item.nodeStorages || item.reflectorView) return false;
+                if (item.nodeTextures || item.nodeStorages || item.reflectors) return false;
                 if (item.boneStride || item.positions == nullptr) return false;
                 if (item.boneMatrices && (item.skinnedRig == nullptr || item.skinnedRig->skeleton == nullptr ||
                                           item.skinnedRig->skeleton->bones.empty())) return false;
@@ -5110,7 +5129,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         if (found != mapGroups_.end()) return found->second;
         return mapGroups_.emplace(vertexKey, bindGroup(p.program->layouts[0], p.program->vertex, uniformBuffer_,
                                   lutView_, lutSampler_, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-                                  nullptr, nullptr, nullptr, nullptr, p.item->nodeTextures)).first->second;
+                                  nullptr, nullptr, nullptr, p.item->nodeTextures)).first->second;
     };
     const auto graphKeyOf = [&](const DrawItem& item) {
         std::string key;
@@ -5140,8 +5159,12 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         mix(textureToken(item.map)); mix(textureToken(item.normalMap));
         for (const Texture* t : item.pbrMaps) mix(textureToken(t));
         mix(textureToken(item.envMap)); mix(textureToken(item.pmremMap));
-        mix(reinterpret_cast<uintptr_t>(item.reflectorView));
-        mix(reinterpret_cast<uintptr_t>(item.reflectorSampler));
+        if (item.reflectors)
+            for (const GraphReflector& mirror : *item.reflectors) {
+                mix(hashBytes(mirror.name.data(), mirror.name.size()));
+                mix(reinterpret_cast<uintptr_t>(mirror.view));
+                mix(reinterpret_cast<uintptr_t>(mirror.sampler));
+            }
         mix(postStamp);  // a node may sample a post texture
         if (item.nodeTextures)
             for (const auto& [label, texture] : *item.nodeTextures) {
@@ -5204,7 +5227,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         const bool viewport = probes.viewport;
         const bool postTexture = probes.postTexture;
         if (!p.item->map && !p.item->envMap && !p.item->normalMap && !readsPbr && !p.item->pmremMap &&
-            !p.item->reflectorView && !graphTextures && !viewport && !postTexture) continue;
+            !p.item->reflectors && !graphTextures && !viewport && !postTexture) continue;
         DrawCache* cache = p.item->cache;
         const uint64_t groupKey = drawGroupKey(p);
         if (cache && cache->mapGroup && cache->mapGroupKey == groupKey) {
@@ -5232,13 +5255,17 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                                 std::to_string(reinterpret_cast<uintptr_t>(envView)) + "|" +
                                 std::to_string(reinterpret_cast<uintptr_t>(normal ? normal->view : nullptr)) + "|" +
                                 std::to_string(reinterpret_cast<uintptr_t>(normal ? normal->sampler : nullptr)) + "|" +
-                                std::to_string(reinterpret_cast<uintptr_t>(pmrem ? pmrem->view : nullptr)) + "|" +
-                                std::to_string(reinterpret_cast<uintptr_t>(p.item->reflectorView));
+                                std::to_string(reinterpret_cast<uintptr_t>(pmrem ? pmrem->view : nullptr)) + "|";
         std::string pbrKey;
         for (const MaterialTexture* texture : pbrTextures)
             pbrKey += "|" + std::to_string(reinterpret_cast<uintptr_t>(texture ? texture->view : nullptr)) + "," +
                       std::to_string(reinterpret_cast<uintptr_t>(texture ? texture->sampler : nullptr));
         pbrKey += graphKey;
+        // Each mirror pass the draw samples is its own binding: its view and sampler pick the group.
+        if (p.item->reflectors)
+            for (const GraphReflector& mirror : *p.item->reflectors)
+                pbrKey += "|" + mirror.name + "," + std::to_string(reinterpret_cast<uintptr_t>(mirror.view)) + "," +
+                          std::to_string(reinterpret_cast<uintptr_t>(mirror.sampler));
         const auto found = mapGroups_.find(key + pbrKey);
         p.mapGroup = found != mapGroups_.end()
                          ? found->second
@@ -5246,7 +5273,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                                                              lutView_, lutSampler_, mapView, mapSampler, envView, envSampler,
                                                          normal ? normal->view : nullptr, normal ? normal->sampler : nullptr, &pbrTextures,
                                                          pmrem ? pmrem->view : nullptr, pmrem ? pmrem->sampler : nullptr,
-                                                         p.item->reflectorView, p.item->reflectorSampler, graphTextures))
+                                                         p.item->reflectors, graphTextures))
                                .first->second;
         if (cache) { cache->mapGroupKey = groupKey; cache->mapGroup = p.mapGroup; }
     }
@@ -5668,7 +5695,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     }
     if (!postTextures_.empty() && !outputGroup_)
         outputGroup_ = bindGroup(outputLayout_, outputFragment_, outputUniforms_, postScene(), outputSampler_,
-            nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, &postTextures_, &outputGroups_);
+            nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, &postTextures_, &outputGroups_);
     if (post_)
         for (const auto& node : post_->live) postUniforms_[node->name] = node->values;
     for (const auto& node : shader::graph::uniformNodes(output_.customToneMapping)) postUniforms_[node->name] = node->values;
@@ -6397,7 +6424,7 @@ void Renderer::outputPass(WGPUCommandEncoder encoder, WGPUTextureView present, W
     // group serves both and needs no rebuild when the present format changes.
     WGPUBindGroup& group = outputGroup_;
     if (!group) {
-        group = bindGroup(outputLayout_, outputFragment_, outputUniforms_, postScene(), outputSampler_, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, &postTextures_, &outputGroups_);
+        group = bindGroup(outputLayout_, outputFragment_, outputUniforms_, postScene(), outputSampler_, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, &postTextures_, &outputGroups_);
     }
     WGPURenderPassColorAttachment color = {};
     color.view = present ? present : colorView_;

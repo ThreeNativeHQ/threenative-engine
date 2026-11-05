@@ -179,7 +179,8 @@ Node objectTexture(std::shared_ptr<const void> texture, std::string name, Node u
 Node pmremTexture(std::shared_ptr<const void> texture, Node direction, Node level);
 /**
  * TSL's `reflector()` texture node: the mirrored pass the renderer draws for `reflector` (an
- * engine::Reflector), sampled at `uvs` (three's default is screenUV.flipX()) as "reflector".
+ * engine::Reflector), sampled at `uvs` (three's default is screenUV.flipX()) under that mirror's own
+ * binding name ("reflector<serial>"), so one material may sample two mirrors.
  */
 Node reflectorTexture(std::shared_ptr<const void> reflector, Node uvs);
 
