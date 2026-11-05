@@ -3,7 +3,7 @@
 import { randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { existsSync, realpathSync, readFileSync } from "node:fs";
-import { readFile, mkdir, writeFile, rename, unlink } from "node:fs/promises";
+import { readFile, mkdir, rm, writeFile, rename, unlink } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -290,6 +290,12 @@ export async function cookNativeEngineAssets({ project, outfile, source }) {
     runtimeDecoders: { ktx2: false, meshopt: false } });
   const output = resolve(project, assets.output ?? "public", "native/assets.tnpk");
   const target = resolve(dirname(resolve(outfile)), "native/assets.tnpk");
+  // A game with no asset files gets no pack (TN_ASSETS_NATIVE_PACKAGE_EMPTY), and the player opens
+  // `native/assets.tnpk` only when the game asks for an asset, so shipping none is correct.
+  if (!existsSync(output)) {
+    await rm(target, { force: true });
+    return undefined;
+  }
   await mkdir(dirname(target), { recursive: true });
   await writeFile(target, await readFile(output));
   return target;
