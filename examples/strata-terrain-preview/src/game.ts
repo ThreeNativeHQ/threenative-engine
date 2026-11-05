@@ -29,6 +29,7 @@ import {
   publish,
 } from "./diagnostics.js";
 import { type IMannequin, type IPlayerRig, createPlayerRig } from "./playerRig.js";
+import { fetchBakedFile } from "./render/bakedFile.js";
 import { BENCHMARK, type ViewName } from "./render/benchmark.js";
 import { biomeSpec } from "./render/biomeData.js";
 import { BIOMES, type IWorldBiome, type WorldName, measureBiome } from "./render/biomes.js";
@@ -39,8 +40,8 @@ import {
 } from "./render/horizon.js";
 import { createLoadingScreen } from "./render/loading.js";
 import { createOcean, createWaterMesh } from "./render/ocean.js";
-import { fetchBakedFile, loadPlacements } from "./render/placements.js";
-import { invalidatePropShadows } from "./render/propStreaming.js";
+import { loadCanopy, loadPropPackage, propCounts } from "./render/propWorld.js";
+import { invalidatePropShadows } from "./render/propWorld.js";
 import { buildPropVariants } from "./render/props.js";
 import { type IRiverWater, WATER_LAYER, createLakes, createRivers } from "./render/river.js";
 import { type IOutdoorSky, createOutdoorSky, installOutdoorOcclusion } from "./render/sky.js";
@@ -114,7 +115,12 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
       horizonLoad ??= fetchBakedFile(ctx.assets, "world/horizon.json")
         .then((response) => response.json())
         .then((distant) => setHorizonSurroundings(distant as HorizonSurroundings));
-      [this.#scatter] = await Promise.all([loadPlacements(ctx.assets, world), horizonLoad]);
+      const [packageData, canopy] = await Promise.all([
+        loadPropPackage(ctx.assets, world),
+        loadCanopy(ctx.assets, world),
+      ]);
+      this.#scatter = { package: packageData, canopy, counts: propCounts(packageData) };
+      await horizonLoad;
       // Prepare scenery while the scene loads; enter only attaches it.
       this.#terrain = createTerrain(this.#data, ctx.assets, this.#biome);
       this.#sky = createOutdoorSky(ctx.camera, this.#biome, ctx.renderer);

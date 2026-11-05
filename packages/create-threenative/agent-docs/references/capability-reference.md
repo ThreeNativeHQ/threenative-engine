@@ -6462,6 +6462,23 @@ export function collarSampler(collar: HeightfieldCollar) { … }
 const sampler = collarSampler(collar); const height = sampler.at(x, z);
 ```
 
+### `compilePropBuckets`
+
+`function` — Group placements into their streamed worlds and write each world's cells and records. The order is the streamed one: cells sorted by `x` then `z`, assets sorted by name inside a cell, and records in the order the entries arrived inside a run. Same-cell, same-asset placements keep their input order, so a re-run of a seeded bake reproduces the buffer byte for byte.
+
+```ts
+export function compilePropBuckets( entries: readonly IPropBucketEntry[], options: ICompilePropBucketsOptions = { … }
+```
+
+- **Use when:** bake the prop worlds a game streams, once, instead of compiling them at load
+- **Constraints:** headless; the caller decides every placement, its streamed world, its reach and its pose
+- **Requires:** npm i -D @threenative/terrain
+- **Overrides:** cellSize and the base extent; the bucket, reach and kind of every entry
+
+```ts
+const pkg = compilePropBuckets(entries, { bounds });
+```
+
 ### `createSegmentIndex`
 
 `function` — Build the index once per world; ask `nearby` per scatter candidate or heightfield vertex.
@@ -6718,6 +6735,52 @@ export function orderedScatterRules(spec: IBiomeSpec): IOrderedScatterRules { �
 
 ```ts
 const rules = orderedScatterRules(spec);
+```
+
+### `propAssetOf`
+
+`function` — The asset a package run names. A prop run names the model it draws, `asset:variant[@shape]`; a container written by `bakeWorldPackage` names the asset alone. Both reduce to the asset here, which is what a count, a material or a placement's own `asset` field holds.
+
+```ts
+export function propAssetOf(modelKey: string): string { … }
+```
+
+- **Use when:** count one species across a world's prop buckets, or name the asset a run draws
+- **Requires:** npm i -D @threenative/terrain
+
+```ts
+const asset = propAssetOf("spruce:2"); // "spruce"
+```
+
+### `propPackageFile`
+
+`function` — A path under `world/` that no bucket name can break: `local:true` becomes `local-true`. The bucket's own name is kept in the manifest, so this rename is only a file-system concern.
+
+```ts
+export function propPackageFile(world: string, bucket: string, suffix: string): string { … }
+```
+
+- **Use when:** name one of a bucket's three files without a bucket key that breaks a path
+- **Requires:** npm i -D @threenative/terrain
+
+```ts
+const file = propPackageFile("forest", "local:true", "props.bin"); // "forest.local-true.props.bin"
+```
+
+### `propPackageFiles`
+
+`function` — Write a compiled package as the manifest the game fetches and one set of files per bucket. The manifest names the files rather than embedding them, so a loader fetches only the buckets its query flags keep (`?farForest=on` keeps the far field, `?meadow=off` drops the vista cover).
+
+```ts
+export function propPackageFiles(pkg: IPropPackage, world: string): IPropPackageFiles { … }
+```
+
+- **Use when:** write a compiled package to disk: one manifest and three files per streamed world
+- **Constraints:** the manifest names the files; nothing here touches a file system
+- **Requires:** npm i -D @threenative/terrain
+
+```ts
+const { manifest, files } = propPackageFiles(pkg, "forest");
 ```
 
 ### `sampleHeight`

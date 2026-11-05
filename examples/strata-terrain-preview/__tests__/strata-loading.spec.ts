@@ -290,7 +290,7 @@ it.each(["attached", "cancelled", "released", "data-rejected", "prewarm-rejected
       data: { size: 512 },
       spawn: { x: 0, y: 0, z: 0 },
       fallbackSaplingHeight: undefined,
-      scatter: { placements: [], counts: {} },
+      scatter: { canopy: new Float32Array(0), counts: {}, package: { buckets: [], cellSize: 128 } },
       groundAt: () => ({ height: 0, offset: 0 }),
       // The gate's two settlements, and the look and scenery the build reads.
       land: vi.fn(),
@@ -338,7 +338,7 @@ it.each(["attached", "cancelled", "released", "data-rejected", "prewarm-rejected
         progress(1);
         progress(2);
       },
-      createStreamedProps: async (options: { onProgress: (progress: object) => void }) => {
+      streamProps: async (options: { onProgress: (progress: object) => void }) => {
         for (const [phase, bucket, added] of [
           ["grounding", "trees", 0],
           ["grounding", "trees", 50],

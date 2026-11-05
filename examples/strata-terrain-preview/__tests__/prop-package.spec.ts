@@ -1,34 +1,28 @@
 /**
  * PRD-792 Phase 2, box "Example compiler and rules deleted": the numbers the game's own compile
- * puts on screen today, so the baked package that replaces it is held to the same ones.
+ * put on screen, held to the baked package that replaced it.
  *
- * The harness is the game's own path as a fresh clone runs it: the baked placement table decoded by
- * `render/placements.ts`, the procedural prop variants `buildPropVariants()` builds when no licensed
- * pack is installed, and the ground the drawn terrain answers (`Heightfield.surfaceAt` inside the
- * square, with `heightAt` supplying the authored offset). It loads every world through
- * `createStreamedProps` — which is the code the box deletes — and records, per world:
+ * The harness is the game's own path as a fresh clone runs it: the prop package the bake wrote,
+ * read through `loadPropPackage`, posed by `streamProps` on the ground the drawn terrain answers
+ * (`Heightfield.surfaceAt` inside the square, with `heightAt` supplying the authored offset), with
+ * the procedural prop variants `buildPropVariants()` builds when no licensed pack is installed.
+ * It records, per world:
  *
  *   - the placement count per species,
  *   - the sum of the drawn positions (x, y, z, each rounded to a millimetre),
  *   - the placement count per streamed bucket.
  *
- * Box 2 repoints this spec at the baked package and keeps the table byte for byte: equal numbers
- * mean every prop keeps its species, its spot to a millimetre and its bucket.
+ * The table is byte for byte the one the deleted compile was held to: equal numbers mean every prop
+ * keeps its species, its spot to a millimetre and its bucket.
  */
 import { readFileSync } from "node:fs";
 import { Heightfield } from "@threenative/core/world";
-import type { IPlacement } from "@threenative/terrain";
 import { Vector3 } from "three";
 import { describe, expect, it } from "vitest";
-import { decodePlacements } from "../src/render/placements.js";
-import { createStreamedProps, streamedBucket, streamedReach } from "../src/render/propStreaming.js";
-import {
-  type PropGroundQuery,
-  buildPropVariants,
-  flatPropMaterials,
-  variantFor,
-} from "../src/render/props.js";
+import { streamProps } from "../src/render/propWorld.js";
+import { type PropGroundQuery, buildPropVariants, flatPropMaterials } from "../src/render/props.js";
 import type { IBakedWorld } from "../src/render/terrain.js";
+import { readBakedPropPackage } from "./bakedPropPackage.js";
 
 const WORLDS = ["forest", "coastal", "alpine", "desert", "tundra"] as const;
 type WorldName = (typeof WORLDS)[number];
@@ -61,13 +55,6 @@ function worldOf(world: WorldName): IBakedWorld {
   return data;
 }
 
-function placementsOf(world: WorldName): IPlacement[] {
-  const bytes = readFileSync(new URL(`../src/world/${world}.placements.bin`, import.meta.url));
-  return decodePlacements(
-    bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer,
-  ).placements as IPlacement[];
-}
-
 /** The drawn ground the game answers, on the heightfield a fresh clone draws. */
 function groundOn(field: Heightfield, size: number): PropGroundQuery {
   const half = size / 2;
@@ -77,10 +64,10 @@ function groundOn(field: Heightfield, size: number): PropGroundQuery {
   });
 }
 
-/** Measure one world through today's compile: the numbers the baked package must reproduce. */
+/** Measure one world through the baked package: the numbers the deleted compile pinned. */
 async function measure(world: WorldName): Promise<IWorldPin> {
   const data = worldOf(world);
-  const placements = placementsOf(world);
+  const pkg = await readBakedPropPackage(new URL("../src/world/", import.meta.url), world);
   const field = new Heightfield({
     columns: data.resolution,
     depth: data.size,
@@ -90,17 +77,17 @@ async function measure(world: WorldName): Promise<IWorldPin> {
     width: data.size,
   });
   const materials = flatPropMaterials();
-  const streamed = await createStreamedProps({
+  const streamed = await streamProps({
+    package: pkg,
     follow: { position: new Vector3() },
     groundAt: groundOn(field, data.size),
     horizonDistance: 5000,
     materials,
     parts: buildPropVariants(),
-    placements,
     size: data.size,
     whileCurrent: () => true,
   });
-  if (!streamed) throw new Error(`${world}: the compile was cancelled`);
+  if (!streamed) throw new Error(`${world}: the load was cancelled`);
   try {
     const sums = new Map<string, ISpeciesPin>();
     const position = new Vector3();
@@ -115,23 +102,17 @@ async function measure(world: WorldName): Promise<IWorldPin> {
         z: row.z + position.z,
       });
     }
-    // Today's compile keeps one `platform:target` counter per variant key, in draw order; the
-    // bucket carries the reach that counter makes, so the spec replays the same counter.
-    const seen = new Map<string, number>();
-    const buckets = new Map<string, number>();
-    for (const placement of placements) {
-      const variant = `${placement.asset}:${variantFor(placement, placement.asset)}`;
-      const index = seen.get(variant) ?? 0;
-      seen.set(variant, index + 1);
-      const bucket = streamedBucket(placement, streamedReach(placement, index));
-      buckets.set(bucket, (buckets.get(bucket) ?? 0) + 1);
-    }
+    const buckets = Object.fromEntries(
+      pkg.buckets.map((bucket) => [bucket.bucket, bucket.ids.length]),
+    );
     expect(streamed.worlds.map((entry) => entry.name).sort()).toEqual(
-      [...buckets.keys()].map((bucket) => `strata-props:${bucket}`).sort(),
+      Object.keys(buckets)
+        .map((bucket) => `strata-props:${bucket}`)
+        .sort(),
     );
     return {
-      buckets: Object.fromEntries([...buckets].sort(([a], [b]) => a.localeCompare(b))),
-      placements: placements.length,
+      buckets: Object.fromEntries(Object.entries(buckets).sort(([a], [b]) => a.localeCompare(b))),
+      placements: Object.values(buckets).reduce((sum, count) => sum + count, 0),
       species: Object.fromEntries(
         [...sums]
           .sort(([a], [b]) => a.localeCompare(b))
@@ -152,7 +133,7 @@ async function measure(world: WorldName): Promise<IWorldPin> {
   }
 }
 
-/** The compiled picture of every world, measured on the code this box deletes. */
+/** The picture of every world, measured on the compile this box deleted (`8d118a9bb`). */
 const GOLDEN: Readonly<Record<WorldName, IWorldPin>> = {
   forest: {
     placements: 213140,

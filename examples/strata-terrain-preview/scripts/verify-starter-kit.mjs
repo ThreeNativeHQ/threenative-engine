@@ -657,7 +657,7 @@ export const addKit: (...args: Parameters<typeof add${title}>) => Promise<IKitWo
     join(import.meta.dirname, "../src/render/loading.ts"),
     join(game, "src/render/loading.ts"),
   );
-  // loading.ts takes its progress type from this leaf module. Copying propStreaming.ts instead would
+  // loading.ts takes its progress type from this leaf module. Copying propWorld.ts instead would
   // drag in props.ts and the rest of the preview's render closure, which the game does not ship.
   cpSync(
     join(import.meta.dirname, "../src/render/propProgress.ts"),

@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { impostorDistanceForScale } from "../src/render/propStreaming.js";
-import { LOD_BANDS } from "../src/render/props.js";
+import { LOD_BANDS, impostorDistanceForScale } from "../src/render/props.js";
 
 describe("streamed spruce terminal gates", () => {
   it("keeps the first terminal gate at least 150 scaled metres out for each variant", () => {

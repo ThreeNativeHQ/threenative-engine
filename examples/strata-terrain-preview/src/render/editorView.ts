@@ -55,7 +55,7 @@ import { OCEAN_LOOK, createOcean, createWaterMesh } from "./ocean.js";
 import { terrainPalette } from "./palette.js";
 import { createPortableGround, createPortableProps } from "./portable.js";
 import { createPropSurfaces } from "./propMaterials.js";
-import { createStreamedProps } from "./propStreaming.js";
+import { streamProps as streamPropWorlds } from "./propWorld.js";
 import {
   PROP_ASSETS,
   type PropGroundQuery,
@@ -176,7 +176,7 @@ export async function createEditorView(
   // The exported world's water, and the meshes drawn live: one bake, used by both, so what the
   // editor shows is what the GLB carries rather than two shapes that only agree sometimes.
   let waterSurfaces: IWaterSurface[] = [];
-  let props: Awaited<ReturnType<typeof createStreamedProps>> | undefined;
+  let props: Awaited<ReturnType<typeof streamPropWorlds>> | undefined;
   let prewarmedProps: typeof props;
   // The loop's settling frame can tick before the surfaces exist; the view answers when it can.
   // biome-ignore lint/style/useConst: the settling frame reads this before the line that assigns it.
@@ -251,7 +251,7 @@ export async function createEditorView(
     const generation = ++streamGeneration;
     streamPending = true;
     try {
-      const next = await createStreamedProps({
+      const next = await streamPropWorlds({
         placements,
         groundAt: query,
         parts: propParts,
