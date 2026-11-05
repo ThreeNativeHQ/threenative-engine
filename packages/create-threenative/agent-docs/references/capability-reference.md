@@ -6529,6 +6529,22 @@ export function encodeZIP(files: readonly IExportFile[]) { … }
 const archive = encodeZIP([{ name: "height.raw", bytes: new Uint8Array(8) }]);
 ```
 
+### `fieldWeight`
+
+`function` — A field's weight at (x, z), clamped to 0..1.
+
+```ts
+export function fieldWeight(field: ICoverField, x: number, z: number): number { … }
+```
+
+- **Use when:** sample the stand field a biome's trees and cover thin on · measure the drift a biome's blades grow by, or the mat field its cover follows
+- **Constraints:** the field is a value, so two worlds sample the same formula with their own numbers
+- **Requires:** npm i -D @threenative/terrain
+
+```ts
+const stand = fieldWeight(STAND_FIELD, x, z);
+```
+
 ### `gradientAt`
 
 `function` — World-space height gradient from the canonical samples.
@@ -6611,6 +6627,22 @@ export function measureBands( layers: readonly ILayerInfo[], heights: ArrayLike<
 const bands = measureBands(spec.layers, state.height);
 ```
 
+### `orderedScatterRules`
+
+`function` — A biome's rows as the ordered generators read them. The rule is short and shared; only these numbers differ between a wood, a barren shoulder, a dune field and a tundra, so the biome file names them rather than the code. A biome whose tree is not one this generator has art for fails here, naming the species, rather than planting nothing.
+
+```ts
+export function orderedScatterRules(spec: IBiomeSpec): IOrderedScatterRules { … }
+```
+
+- **Use when:** run a biome file's rows through the ordered scatter
+- **Constraints:** the file carries one foliage row, one grass row and a cover block
+- **Requires:** npm i -D @threenative/terrain
+
+```ts
+const rules = orderedScatterRules(spec);
+```
+
 ### `sampleHeight`
 
 `function` — Bilinear query of canonical height samples; triangle sampling is a separate contract.
@@ -6625,6 +6657,22 @@ sampleHeight = (grid: ISampledGrid, x: number, z: number): number => sampleGrid(
 
 ```ts
 const height = sampleHeight(new Terrain({ resolution: 17 }).evaluate(), 0, 0);
+```
+
+### `scatterProps`
+
+`function` — Every placement, for one world, from one seed: the game's own rule set, in its own draw order.
+
+```ts
+export function scatterProps( data: IOrderedScatterField, focus: { … }
+```
+
+- **Use when:** bake a biome that says `"stream": "ordered"`
+- **Constraints:** `data.rules` is the biome's rows, and `data.field` the ground they were graded on
+- **Requires:** npm i -D @threenative/terrain
+
+```ts
+const { placements, counts } = scatterProps(data, focus, clearings);
 ```
 
 ### `slopeAtIndex`

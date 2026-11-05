@@ -150,6 +150,119 @@ describe("a biome file", () => {
     expect(rejection(twice, "alpine")).toContain("'species[1]' repeats 'spruce'");
   });
 
+  it("carries every field the ordered stream reads, and refuses a malformed one", () => {
+    // Accepted: forest's own values, field by field, from the file through the validator.
+    const forest = validateBiome(read("forest"), "forest");
+    expect(forest.stream).toBe("ordered");
+    expect(forest.cover).toEqual({
+      ground: "wood",
+      seed: 466_468,
+      attempts: 80_000,
+      stoneRadius: 1.9,
+      clearings: [
+        [165, -95, 10],
+        [-145, -120, 10],
+        [360, 200, 10],
+      ],
+    });
+    expect(forest.grass[0]).toMatchObject({
+      drift: { field: "stand", frequency: [3.1, 2.7], offset: 0.65, amplitude: 0.35, band: [0, 1] },
+      bladeScale: 0.8,
+      bladeJitter: 0.65,
+      scrubChance: 0.3,
+      scrubScale: 0.9,
+      scrubJitter: 0.6,
+      scrubBush: false,
+      shoreGround: false,
+      cobbledBed: true,
+    });
+    // A second biome may name another field and another ground: the row is data, not a branch.
+    expect(validateBiome(read("tundra"), "tundra").grass[0]?.drift.field).toBe("mats");
+    expect(validateBiome(read("alpine"), "alpine").cover.ground).toBe("crag");
+
+    // Malformed: each field is named, with the value it cannot hold.
+    const grass = (file: Record<string, unknown>) =>
+      (file.grass as Record<string, unknown>[])[0] as Record<string, unknown>;
+    const drift = (file: Record<string, unknown>) => grass(file).drift as Record<string, unknown>;
+    const rejects = (message: string, edit: (file: Record<string, unknown>) => void): void => {
+      const file = structuredClone(read("forest")) as Record<string, unknown>;
+      edit(file);
+      expect(rejection(file, "forest")).toContain(message);
+    };
+    rejects("'stream' must be one of ordered, seeded", (file) => {
+      file.stream = "unordered";
+    });
+    rejects("'cover' is missing", (file) => {
+      Reflect.deleteProperty(file, "cover");
+    });
+    rejects("'cover.extra' is not a field a biome has", (file) => {
+      (file.cover as Record<string, unknown>).extra = 1;
+    });
+    rejects("'cover.ground' must be one of wood, crag, mesa, mats", (file) => {
+      (file.cover as Record<string, unknown>).ground = "moon";
+    });
+    rejects("'cover.seed' must be a whole number", (file) => {
+      (file.cover as Record<string, unknown>).seed = 1.5;
+    });
+    rejects("'cover.attempts' must be at least 1", (file) => {
+      (file.cover as Record<string, unknown>).attempts = 0;
+    });
+    rejects("'cover.stoneRadius' must be greater than 0", (file) => {
+      (file.cover as Record<string, unknown>).stoneRadius = 0;
+    });
+    rejects("'cover.clearings' must be an array", (file) => {
+      (file.cover as Record<string, unknown>).clearings = 3;
+    });
+    rejects("'cover.clearings[0]' must be an array of 3 numbers", (file) => {
+      (file.cover as { clearings: number[][] }).clearings = [[165, -95]] as unknown as number[][];
+    });
+    rejects("'cover.clearings[0][2]' must be greater than 0", (file) => {
+      (file.cover as { clearings: number[][] }).clearings = [[165, -95, 0]];
+    });
+    rejects("'grass[0].drift' is missing", (file) => {
+      Reflect.deleteProperty(grass(file), "drift");
+    });
+    rejects("'grass[0].drift.field' must be one of stand, mats", (file) => {
+      drift(file).field = "meadow";
+    });
+    rejects("'grass[0].drift.frequency' must be two positive frequencies", (file) => {
+      drift(file).frequency = [0, 1];
+    });
+    rejects("'grass[0].drift.offset' must be at most 1", (file) => {
+      drift(file).offset = 2;
+    });
+    rejects("'grass[0].drift.amplitude' must be at least 0", (file) => {
+      drift(file).amplitude = -1;
+    });
+    rejects("'grass[0].drift.band[1]' must be greater than 0", (file) => {
+      drift(file).band = [0.5, 0];
+    });
+    rejects("'grass[0].bladeScale' must be a finite number", (file) => {
+      grass(file).bladeScale = "1";
+    });
+    rejects("'grass[0].bladeJitter' must be at least 0", (file) => {
+      grass(file).bladeJitter = -1;
+    });
+    rejects("'grass[0].scrubChance' must be at most 1", (file) => {
+      grass(file).scrubChance = 1.5;
+    });
+    rejects("'grass[0].scrubScale' must be at least 0", (file) => {
+      grass(file).scrubScale = -1;
+    });
+    rejects("'grass[0].scrubJitter' must be at least 0", (file) => {
+      grass(file).scrubJitter = -0.5;
+    });
+    rejects("'grass[0].scrubBush' must be true or false", (file) => {
+      grass(file).scrubBush = "yes";
+    });
+    rejects("'grass[0].shoreGround' must be true or false", (file) => {
+      grass(file).shoreGround = 1;
+    });
+    rejects("'grass[0].cobbledBed' must be true or false", (file) => {
+      grass(file).cobbledBed = null;
+    });
+  });
+
   it("names the biome it is asked about, not the file it was read from", () => {
     const { look: _look, ...broken } = read("forest");
     const message = rejection(broken, "a sixth biome");

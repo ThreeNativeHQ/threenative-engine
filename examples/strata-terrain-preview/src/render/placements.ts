@@ -1,6 +1,11 @@
 import type { IAssetLoader } from "@threenative/core";
 import type { IPlacement } from "@threenative/terrain";
-import type { IPropScatter } from "./scatter.js";
+
+/** A placement table as the game loads it: the instances in draw order and their counts. */
+export interface IPlacementTable {
+  readonly placements: IPlacement[];
+  readonly counts: Record<string, number>;
+}
 
 interface IHeader {
   version: 1;
@@ -11,7 +16,7 @@ interface IHeader {
 }
 
 /** Eight LE floats: position, yaw, scale, normal; an order index preserves identity across asset runs. */
-export function encodePlacements(scatter: IPropScatter, canopy: Float32Array): ArrayBuffer {
+export function encodePlacements(scatter: IPlacementTable, canopy: Float32Array): ArrayBuffer {
   const offsets: Record<string, number> = {};
   let planned = 0;
   for (const [asset, count] of Object.entries(scatter.counts)) {
@@ -97,7 +102,7 @@ function readHeader(view: DataView) {
   return { header, length, total, canopyOffset };
 }
 
-export function decodePlacements(buffer: ArrayBuffer): IPropScatter & { canopy: Float32Array } {
+export function decodePlacements(buffer: ArrayBuffer): IPlacementTable & { canopy: Float32Array } {
   const view = new DataView(buffer);
   const { header, length, total, canopyOffset } = readHeader(view);
   const assets = Object.keys(header.counts);

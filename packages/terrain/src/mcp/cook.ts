@@ -308,12 +308,17 @@ async function cookInto(
   );
 
   // The starter's biome file is the world's own record of the biome; the bake validates it at the
-  // top of this cook, so what it returns is the spec this world was baked from.
-  const { bands, splat, manifest, files } = bakeBiome({
+  // top of this cook, so what it returns is the spec this world was baked from. The cook asks for the
+  // rows' own seeds: it bakes a preset's ground with the kit's asset table, not the game's ordered
+  // stream, which a game with its own container reads through `scatter` instead.
+  const { bands, package: pkg } = bakeBiome({
     state,
     spec: biome,
-    assets: cooked.manifest.assets as IBakeBiomeOptions["assets"],
+    assets: cooked.manifest.assets as Required<IBakeBiomeOptions>["assets"],
+    stream: "seeded",
   });
+  if (pkg === null) throw new Error("cook: the bake wrote no world package.");
+  const { splat, manifest, files } = pkg;
   await writeFile(
     join(request.out, "terrain-table.json"),
     `${JSON.stringify({ ...surface, splat, textures: "textures" }, null, 2)}\n`,

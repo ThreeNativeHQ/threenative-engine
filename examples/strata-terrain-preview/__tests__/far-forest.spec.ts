@@ -61,7 +61,9 @@ describe("far forest", () => {
     const canopy = horizon.getAttribute("canopy").array as Float32Array;
     expect(canopy.some((value) => value > 0)).toBe(true);
     console.log(`far forest: ${trees.length} trees, highest at ${highest.toFixed(0)} m`);
-  });
+    // The loop above asserts over 106 000 trees one at a time, so the 5 s default is a machine-speed
+    // limit rather than a claim about the rule; the count and the highest tree are the claim.
+  }, 25_000);
 
   it("streams the far bucket with the licensed spruce's three-level chain", async () => {
     // The pack spruce steps at 80 and 150 m; a terminal gate inside 150 m fails package validation.

@@ -25,12 +25,16 @@
 // `?farForest=off` is the named override: no trees past the square, the frame before this file.
 import { createRandom } from "@threenative/core";
 import type { HeightfieldCollar } from "@threenative/core/world";
-import { type IPlacement, createSegmentIndex } from "@threenative/terrain";
+import {
+  type IPlacement,
+  STAND_FIELD,
+  createSegmentIndex,
+  fieldWeight,
+} from "@threenative/terrain";
 import { type BufferAttribute, MathUtils } from "three";
 import { ImprovedNoise } from "three/addons/math/ImprovedNoise.js";
 import type { WorldName } from "./biomes.js";
 import type { IBakedLake, IBakedRiver } from "./river.js";
-import { forestWeight } from "./scatter.js";
 
 export const FAR_FOREST =
   new URLSearchParams(globalThis.location?.search ?? "").get("farForest") === "on";
@@ -192,7 +196,7 @@ export function farForestPlacements(options: IFarForestOptions): IPlacement[] {
         4;
       const damp = MathUtils.clamp((around - height) / 8 + 0.3, 0, 1);
       const stand = MathUtils.smoothstep(
-        forestWeight(x, z) + (damp - 0.3) * 0.2,
+        fieldWeight(STAND_FIELD, x, z) + (damp - 0.3) * 0.2,
         standFrom,
         standTo,
       );

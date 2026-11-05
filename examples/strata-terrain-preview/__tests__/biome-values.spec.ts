@@ -3,8 +3,7 @@ import { LANDFORMS, type LandformKind, validateBiome } from "@threenative/terrai
 import { describe, expect, it } from "vitest";
 import { BENCHMARK } from "../src/render/benchmark.js";
 import { biomeSpec } from "../src/render/biomeData.js";
-import { BIOMES, type ICoverDrift, type IVistaAim, type WorldName } from "../src/render/biomes.js";
-import { MATS_FIELD, STAND_FIELD } from "../src/render/coverField.js";
+import { BIOMES, type IVistaAim, type WorldName } from "../src/render/biomes.js";
 import {
   FAR_FOREST_IMPOSTOR,
   FAR_FOREST_RULES,
@@ -12,18 +11,16 @@ import {
 } from "../src/render/farForest.js";
 import { speciesFor } from "../src/render/pack.js";
 import { buildPropVariants } from "../src/render/props.js";
-import { type IScatterRules, SCATTER, scatterRules } from "../src/render/scatter.js";
 import type { IBakedWorld } from "../src/render/terrain.js";
 
 /**
  * Everything a biome decides, pinned for all five worlds.
  *
- * One row per world, written by hand from the numbers the code holds: the look it grades under, the
- * landform and seed it was baked from, the bands its ground shader reads, the trees and the grass it
- * grows, the water it floods, where it puts the player and the detail, and the words a request may
- * use for it. Every value here comes out of the game's own code (`BIOMES`, `scatterRules`,
- * `FAR_FOREST_RULES`, `BENCHMARK`, `speciesFor`, `SPAWN_POINTS`) or out of the committed bake, so a
- * change to any of them fails here first. `aliases` is the one row no code exports: the biome file is
+ * One row per world, written by hand: the look it grades under, the landform and seed it was baked
+ * from, the bands its ground shader reads, the trees and the grass it grows, the water it floods,
+ * where it puts the player and the detail, and the words a request may use for it. The scatter rules
+ * came out of the code and into the file (`scatter-ordered.ts` runs them), so a row here pins what
+ * the file says; the game's own look still owns its collisions, its far-field rule and its art. `aliases` is the one row no code exports: the biome file is
  * its only owner, and the MCP's inline synonym table (`mcp/tools.ts`) hands it over in PRD-793.
  */
 
@@ -67,6 +64,21 @@ interface IGrassRow {
   readonly waterMargin: number;
   readonly beach: readonly [number, number] | null;
   readonly detailSpacing: number;
+  readonly drift: {
+    readonly field: "stand" | "mats";
+    readonly frequency: readonly [number, number];
+    readonly offset: number;
+    readonly amplitude: number;
+    readonly band: readonly [number, number];
+  };
+  readonly bladeScale: number;
+  readonly bladeJitter: number;
+  readonly scrubChance: number;
+  readonly scrubScale: number;
+  readonly scrubJitter: number;
+  readonly scrubBush: boolean;
+  readonly shoreGround: boolean;
+  readonly cobbledBed: boolean;
 }
 
 interface ILayerRow {
@@ -152,6 +164,21 @@ const TABLE: Readonly<Record<WorldName, IWorldRows>> = {
         heightFalloff: 28,
         waterMargin: 7.5,
         beach: null,
+        drift: {
+          field: "stand",
+          frequency: [3.1, 2.7],
+          offset: 0.65,
+          amplitude: 0.35,
+          band: [0, 1],
+        },
+        bladeScale: 0.8,
+        bladeJitter: 0.65,
+        scrubChance: 0.3,
+        scrubScale: 0.9,
+        scrubJitter: 0.6,
+        scrubBush: false,
+        shoreGround: false,
+        cobbledBed: true,
         detailSpacing: 0.5,
       },
     ],
@@ -221,6 +248,21 @@ const TABLE: Readonly<Record<WorldName, IWorldRows>> = {
         heightFalloff: 28,
         waterMargin: 7.5,
         beach: [1.8, 5.7],
+        drift: {
+          field: "stand",
+          frequency: [3.1, 2.7],
+          offset: 0.65,
+          amplitude: 0.35,
+          band: [0, 1],
+        },
+        bladeScale: 0.8,
+        bladeJitter: 0.65,
+        scrubChance: 0.3,
+        scrubScale: 0.9,
+        scrubJitter: 0.6,
+        scrubBush: false,
+        shoreGround: true,
+        cobbledBed: false,
         detailSpacing: 0.34,
       },
     ],
@@ -287,6 +329,21 @@ const TABLE: Readonly<Record<WorldName, IWorldRows>> = {
         heightFalloff: 28,
         waterMargin: 7.5,
         beach: null,
+        drift: {
+          field: "stand",
+          frequency: [2.1, 2.4],
+          offset: 0,
+          amplitude: 1,
+          band: [0.3, 0.45],
+        },
+        bladeScale: 0.55,
+        bladeJitter: 0.5,
+        scrubChance: 0.3,
+        scrubScale: 0.9,
+        scrubJitter: 0.6,
+        scrubBush: false,
+        shoreGround: false,
+        cobbledBed: false,
         detailSpacing: 0.6,
       },
     ],
@@ -346,6 +403,21 @@ const TABLE: Readonly<Record<WorldName, IWorldRows>> = {
         heightFalloff: 28,
         waterMargin: 7.5,
         beach: null,
+        drift: {
+          field: "stand",
+          frequency: [6.3, 5.7],
+          offset: 0.08,
+          amplitude: 0.6,
+          band: [0.5, 0.3],
+        },
+        bladeScale: 0.95,
+        bladeJitter: 0.5,
+        scrubChance: 0.65,
+        scrubScale: 0.8,
+        scrubJitter: 0.6,
+        scrubBush: false,
+        shoreGround: false,
+        cobbledBed: false,
         detailSpacing: 1.8,
       },
     ],
@@ -404,6 +476,15 @@ const TABLE: Readonly<Record<WorldName, IWorldRows>> = {
         heightFalloff: 28,
         waterMargin: 7.5,
         beach: null,
+        drift: { field: "mats", frequency: [1, 1], offset: 0, amplitude: 1, band: [0.45, 0.3] },
+        bladeScale: 0.45,
+        bladeJitter: 0.3,
+        scrubChance: 0.22,
+        scrubScale: 0.55,
+        scrubJitter: 0.5,
+        scrubBush: true,
+        shoreGround: false,
+        cobbledBed: false,
         detailSpacing: 0.5,
       },
     ],
@@ -533,11 +614,13 @@ function layersOf(world: WorldName): readonly ILayerRow[] {
 
 function foliageOf(
   world: WorldName,
-  rules: IScatterRules,
+  spec: IBiomeSpec,
   collisions: Readonly<Record<string, CollisionClass>>,
 ): readonly IFoliageRow[] {
-  const collision = collisions[rules.treeAsset];
-  if (collision === undefined) throw new Error(`Species ${rules.treeAsset} has no prop parts`);
+  const row = spec.foliage[0];
+  if (row === undefined) throw new Error(`${spec.look}: the file carries no tree row`);
+  const collision = collisions[row.species];
+  if (collision === undefined) throw new Error(`Species ${row.species} has no prop parts`);
   const far = FAR_FOREST_WORLDS.includes(world)
     ? {
         cell: FAR_FOREST_RULES.cell,
@@ -549,36 +632,22 @@ function foliageOf(
     : null;
   return [
     {
-      species: rules.treeAsset,
-      density: rules.treeCount,
-      slope: [0, rules.treeSlopeLimit],
-      height: rules.treeHeightCeiling === null ? null : [0, rules.treeHeightCeiling],
-      spacing: rules.treeSpacing,
+      species: row.species,
+      density: row.density,
+      slope: row.slope,
+      height: row.height,
+      spacing: row.spacing,
       collision,
-      stands: rules.treeStands,
-      grassThreshold: rules.treeGrassThreshold,
-      standThreshold: rules.treeStandThreshold,
+      stands: row.stands,
+      grassThreshold: row.grassThreshold,
+      standThreshold: row.standThreshold,
       far,
     },
   ];
 }
 
-function grassOf(rules: IScatterRules): readonly IGrassRow[] {
-  return [
-    {
-      species: "grass",
-      density: rules.grassDensity,
-      slope: [0, rules.grassSlopeLimit],
-      height: rules.grassHeight === null ? null : [0, rules.grassHeight[0]],
-      spacing: rules.grassCell,
-      slopeFalloff: rules.grassSlopeFalloff,
-      heightFalloff: rules.grassHeight?.[1] ?? 28,
-      mats: rules.grassMats,
-      waterMargin: rules.grassWaterMargin,
-      beach: rules.grassBeach,
-      detailSpacing: rules.grassDetailSpacing,
-    },
-  ];
+function grassOf(spec: IBiomeSpec): readonly IGrassRow[] {
+  return [spec.grass[0] as IGrassRow];
 }
 
 function waterOf(world: WorldName, data: IBakedWorld): readonly IWaterRow[] {
@@ -602,7 +671,7 @@ describe("a biome's values", () => {
       const data = baked(world);
       const generated = recipe(world);
       const biome = BIOMES[world];
-      const rules = scatterRules(world);
+      const spec = biomeSpec(world);
       expect({ world, look: biome.world }).toEqual({ world, look: expected.look });
       expect({ world, bake: bakeOf(world) }).toEqual({ world, bake: expected.bake });
       expect({ world, landform: landformOf(world) }).toEqual({
@@ -616,11 +685,11 @@ describe("a biome's values", () => {
       });
       expect({ world, size: generated.size }).toEqual({ world, size: expected.sizeMeters });
       expect({ world, layers: layersOf(world) }).toEqual({ world, layers: expected.layers });
-      expect({ world, foliage: foliageOf(world, rules, collisions) }).toEqual({
+      expect({ world, foliage: foliageOf(world, spec, collisions) }).toEqual({
         world,
         foliage: expected.foliage,
       });
-      expect({ world, grass: grassOf(rules) }).toEqual({ world, grass: expected.grass });
+      expect({ world, grass: grassOf(spec) }).toEqual({ world, grass: expected.grass });
       expect({ world, water: waterOf(world, data) }).toEqual({ world, water: expected.water });
       expect({
         world,
@@ -639,11 +708,31 @@ describe("a biome's values", () => {
     }
   });
 
-  it("are the scatter tuning every world shares, in one place", () => {
-    expect(SCATTER.spruceAttempts).toBe(80_000);
-    expect(SCATTER.grassFull).toBe(22);
-    expect(SCATTER.grassThin).toBe(62);
-    expect(SCATTER.seed).toBe(466_468);
+  it("share one ordered stream: one seed and one candidate budget, on every biome", () => {
+    // One stream per biome means one seed and one attempt budget, and the five files carry the
+    // game's. A sixth biome may name its own; these five must not drift apart.
+    for (const world of WORLDS)
+      expect({ world, ...biomeSpec(world).cover }).toMatchObject({
+        world,
+        seed: 466_468,
+        attempts: 80_000,
+        stoneRadius: 1.9,
+        ground: expect.any(String),
+        clearings: expect.any(Array),
+      });
+    // Two cover switches the ground material also draws by: the file's row and the look must agree,
+    // or the blades and the shader would disagree about the same shore and the same bush.
+    for (const world of WORLDS) {
+      const row = biomeSpec(world).grass[0];
+      expect({ world, shoreGround: row?.shoreGround }).toEqual({
+        world,
+        shoreGround: BIOMES[world].shoreGround,
+      });
+      expect({ world, scrubBush: row?.scrubBush }).toEqual({
+        world,
+        scrubBush: BIOMES[world].scrubBush,
+      });
+    }
   });
 });
 
@@ -708,17 +797,7 @@ interface ILookRow {
   readonly stoneScans: number;
   readonly riverMirrorsPonds: boolean;
   readonly stageArm: boolean;
-  readonly coverDrift: ICoverDrift;
 }
-
-/** The wood's drift: three quarters of the cover stands, the rest rides the stand field. */
-const WOOD_DRIFT: ICoverDrift = {
-  field: STAND_FIELD,
-  frequency: [3.1, 2.7],
-  offset: 0.65,
-  amplitude: 0.35,
-  band: [0, 1],
-};
 
 const LOOKS: Readonly<Record<WorldName, ILookRow>> = {
   forest: {
@@ -728,7 +807,6 @@ const LOOKS: Readonly<Record<WorldName, ILookRow>> = {
     stoneScans: 1,
     riverMirrorsPonds: false,
     stageArm: true,
-    coverDrift: WOOD_DRIFT,
   },
   coastal: {
     vistaAim: { at: [80, 190], rise: null },
@@ -737,7 +815,6 @@ const LOOKS: Readonly<Record<WorldName, ILookRow>> = {
     stoneScans: 1,
     riverMirrorsPonds: false,
     stageArm: false,
-    coverDrift: WOOD_DRIFT,
   },
   alpine: {
     vistaAim: { at: [-200, 170], rise: 170 },
@@ -746,13 +823,6 @@ const LOOKS: Readonly<Record<WorldName, ILookRow>> = {
     stoneScans: 1,
     riverMirrorsPonds: false,
     stageArm: false,
-    coverDrift: {
-      field: STAND_FIELD,
-      frequency: [2.1, 2.4],
-      offset: 0,
-      amplitude: 1,
-      band: [0.3, 0.45],
-    },
   },
   desert: {
     vistaAim: { at: [-180, -160], rise: 30 },
@@ -761,13 +831,6 @@ const LOOKS: Readonly<Record<WorldName, ILookRow>> = {
     stoneScans: 2,
     riverMirrorsPonds: false,
     stageArm: false,
-    coverDrift: {
-      field: STAND_FIELD,
-      frequency: [6.3, 5.7],
-      offset: 0.08,
-      amplitude: 0.6,
-      band: [0.5, 0.3],
-    },
   },
   tundra: {
     vistaAim: null,
@@ -776,13 +839,6 @@ const LOOKS: Readonly<Record<WorldName, ILookRow>> = {
     stoneScans: 1,
     riverMirrorsPonds: true,
     stageArm: false,
-    coverDrift: {
-      field: MATS_FIELD,
-      frequency: [1, 1],
-      offset: 0,
-      amplitude: 1,
-      band: [0.45, 0.3],
-    },
   },
 };
 
@@ -799,7 +855,6 @@ describe("a biome's look", () => {
         stoneScans: look.stoneScans,
         riverMirrorsPonds: look.riverMirrorsPonds,
         stageArm: look.stageArm,
-        coverDrift: look.coverDrift,
       }).toEqual({ world, ...expected });
     }
   });

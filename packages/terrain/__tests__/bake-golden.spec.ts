@@ -6,13 +6,20 @@
  * digest, plus the continuation ring. This spec runs each of the five biome files
  * (`starter/<biome>/biome.data.json`) through the package and compares the result, digest for digest.
  *
- * The stages are the shipped ones: `foliageScatterRules` turns a foliage row into one
- * `IScatterRule`, `Terrain.evaluate()`'s scatter runs that rule through `surfaceSample`,
- * `densityFilter`, `selfPrune` and `meshSpawn`, and `bakeBiome` validates the file and writes the
- * cell runs. The ground is the kit's own recipe, decoded onto the 0.1 m lattice `cook.ts` reads.
+ * A file that says `"stream": "ordered"` runs the package's ordered scatter — the game's fifteen
+ * generators, one draw stream, one fixed order, copied into `scatter-ordered.ts` line for line. That
+ * stream emits the game's own instances, so the counts and the placement sequence are the Phase 1
+ * ones; the package writes no cell container for it because the game still writes its own table
+ * (`bake.mjs`, box 3), and a different container cannot share a sha256.
  *
- * The package tests may not import example source (`example-imports.spec.ts`), so `PHASE_1` below is
- * a verbatim copy of the Phase 1 table. Change it only from a fresh Phase 1 measurement.
+ * A file that says `"stream": "seeded"` runs the four named stages instead: `foliageScatterRules`
+ * turns a foliage row into one `IScatterRule`, `Terrain.evaluate()`'s scatter runs that rule through
+ * `surfaceSample`, `densityFilter`, `selfPrune` and `meshSpawn`, and `bakeBiome` writes the cell runs.
+ * That path is the package's own sampler, and the last test here pins what its four fields do.
+ *
+ * The package tests may not import example source (`example-imports.spec.ts`), so `PHASE_1` and
+ * `PHASE_1_CANONICAL` below are verbatim copies of the Phase 1 measurements. Change them only from a
+ * fresh Phase 1 measurement.
  *
  * The table has no `horizon` line: the continuation ring is five further terrains, not a biome, and
  * `bakeBiome` writes no continuation.
@@ -25,7 +32,7 @@ import { type IBiomeSpec, type IFoliageType, validateBiome } from "../src/core/b
 import { decodeRAW16 } from "../src/core/io.js";
 import { finalizeState } from "../src/core/operations.js";
 import { Terrain } from "../src/core/terrain.js";
-import type { ITerrainState } from "../src/core/types.js";
+import type { IPlacement, ITerrainState } from "../src/core/types.js";
 import type { IWorldPackageAsset } from "../src/core/world-package.js";
 
 const WORLDS = ["forest", "coastal", "alpine", "desert", "tundra"] as const;
@@ -94,133 +101,40 @@ const PHASE_1: Record<
 };
 
 /**
- * Which Phase 1 digests this bake reproduces today.
+ * The Phase 1 placement sequence, as one digest both sides can compute.
  *
- * All five height digests match: each kit recipe is the recipe Phase 1 baked, so the same evaluator
- * gives the same field byte for byte. Every counts, manifest and placement line differs, and each
- * cause is stated in the test that names it.
+ * The example's `placements.bin` is its own container — a JSON header, per-asset runs, an order-index
+ * table and the canopy floats — so its sha256 above can never match a package's cell file. The
+ * sequence inside it can: every instance's asset, id, layer, alignment and pose, with each number
+ * rounded to the float32 the container stores, serialized in draw order. This table was measured on
+ * `5afb42b1c` from the game's own `scatterProps` output, which is the list the committed
+ * `placements.bin` was encoded from.
  */
-const MATCHES: Record<World, Record<"counts" | "heights" | "manifest" | "placements", boolean>> = {
-  alpine: { counts: false, heights: true, manifest: false, placements: false },
-  coastal: { counts: false, heights: true, manifest: false, placements: false },
-  desert: { counts: false, heights: true, manifest: false, placements: false },
-  forest: { counts: false, heights: true, manifest: false, placements: false },
-  tundra: { counts: false, heights: true, manifest: false, placements: false },
+const PHASE_1_CANONICAL: Record<World, string> = {
+  forest: "b6d332a8bad442ef172a2d0da4db88b3d478860a303b6a94b450a83951a1c567",
+  coastal: "5ca73a9acf36f84c536e70b5fe86fd51f88554d871a453eb024d5dc34d304d4e",
+  alpine: "10c755d4856a51fabe05f38fe59d9550bc5236edd4a1cb11e1f7f6ced1c9e7f8",
+  desert: "fa52459ddcda51b336764219ce033add8ccd90f3fd299cd95d43878cf38813b3",
+  tundra: "319982c67ee71acfa2ebe966db540b8db2ed84fb565e658da804fe2a00555d77",
 };
 
-/** What this bake writes today, so the example half of Phase 2 has a red/green pin to move. */
-const PACKAGE: Record<
-  World,
-  { bytes: number; counts: Record<string, number>; manifest: string; placements: string }
-> = {
-  alpine: {
-    bytes: 0,
-    counts: {},
-    manifest: "9f28336b10d6b4e2daee9bb07009846b4ef9d638373a24029f53aa8fefe18da9",
-    placements: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-  },
-  coastal: {
-    bytes: 102400,
-    counts: { spruce: 3200 },
-    manifest: "23fbd737ea20eeee64d74fc3fba1d138837954603ce5834a780782d84133e1ff",
-    placements: "309bbb4e56285cffbba107d549be8a6402db597c7eb74db0845b30fc718d996e",
-  },
-  desert: {
-    bytes: 0,
-    counts: {},
-    manifest: "def551ecdd6d1f31c78df4a1361c1c1d8e76aaf49a2d93a56ea09e261bacf3ea",
-    placements: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-  },
-  forest: {
-    bytes: 102400,
-    counts: { spruce: 3200 },
-    manifest: "25b297797cdd3f049f9dc14a39c34d3e5017a98567089b9244009340f2e3d38a",
-    placements: "022755415af70c64ddfee3a3a89edb56735d00d818599391234fa43d0c496ba9",
-  },
-  tundra: {
-    bytes: 1760,
-    counts: { sapling: 55 },
-    manifest: "7ffd2e95bb22f12ca37560c38a2805a0ae8a98ae8fe987804ddb3225cb701feb",
-    placements: "950ef487bb91476d73fe51a3e31e263d3d4a89b4caf4a2f653bd435f436c5ab7",
-  },
+/** Which Phase 1 line the ordered bake reproduces today, and which it cannot. */
+const MATCHES: Record<World, Record<"counts" | "heights", boolean>> = {
+  alpine: { counts: true, heights: true },
+  coastal: { counts: true, heights: true },
+  desert: { counts: true, heights: true },
+  forest: { counts: true, heights: true },
+  tundra: { counts: true, heights: true },
 };
 
-/**
- * The per-species counts, Phase 1 against this bake, for every species the two sides disagree on.
- *
- * A row is `[phaseOne, package]`. `COUNT_AGREES` names the rows that are equal, so every Phase 1
- * species is in exactly one of the two tables and a moved count fails here by name.
- *
- * Two of the 37 Phase 1 species counts agree: coastal's 3 200 spruce and tundra's 55 sapling. Both
- * are rows whose Phase 1 count is the rule's own `count` and whose ground accepted every candidate.
- * The other 35 cannot agree while the rule set lives in the game: `render/scatter.ts` walks a tree
- * loop, an understorey loop, a clump loop, three grid passes, a tide line, a river walk, an eye disc
- * and a cobbled-bed pass, draws every candidate from one `createRandom(466468)` stream, reads three's
- * `ImprovedNoise` and 20-odd `look` numbers, and filters on the stand field and the meadow weight.
- * The four stages here run one uniform rejection sampler per row from a seed per rule, so their
- * counts are their own stream, not the game's.
- */
-const COUNT_DIFFERENCES: Record<World, Record<string, readonly [number, number]>> = {
-  alpine: { boulder: [1082, 0], mountain: [231, 0], scree: [2285, 0] },
-  coastal: {
-    boulder: [235, 0],
-    bush: [1225, 0],
-    fern: [7466, 0],
-    grass: [95231, 0],
-    litter: [2097, 0],
-    mountain: [75, 0],
-    poppy: [440, 0],
-    riverrock: [170, 0],
-    sapling: [5536, 0],
-    scrub: [28517, 0],
-  },
-  desert: {
-    boulder: [248, 0],
-    grass: [2506, 0],
-    reveal: [170, 0],
-    scrub: [393, 0],
-    volcanic: [237, 0],
-  },
-  forest: {
-    boulder: [105, 0],
-    bush: [1384, 0],
-    fern: [7211, 0],
-    grass: [144698, 0],
-    litter: [2694, 0],
-    mountain: [7, 0],
-    pebble: [1616, 0],
-    poppy: [3316, 0],
-    riverrock: [357, 0],
-    sapling: [5379, 0],
-    scrub: [43242, 0],
-    spruce: [3131, 3200],
-  },
-  tundra: {
-    boulder: [2028, 0],
-    bush: [594, 0],
-    grass: [30490, 0],
-    riverrock: [612, 0],
-    scrub: [6680, 0],
-  },
-};
-
-/** The Phase 1 species counts this bake reproduces, by world. */
-const COUNT_AGREES: Record<World, readonly string[]> = {
-  alpine: [],
-  coastal: ["spruce"],
-  desert: [],
-  forest: [],
-  tundra: ["sapling"],
-};
-
-/** One world as this spec measures it: the kit's ground, the file's rows and what the bake wrote. */
+/** One world as this spec measures it: the kit's ground, the file's rows and what the bake made. */
 interface IRun {
   readonly baked: IBakedBiome;
+  readonly canonical: string | null;
   readonly counts: Record<string, number>;
   readonly ground: ITerrainState;
   /** The recipe's layer ids, in order, and the `at` of each water layer: the ground's own record. */
   readonly layers: readonly string[];
-  readonly placements: string;
   readonly spec: IBiomeSpec;
   readonly water: readonly (readonly number[])[];
 }
@@ -236,9 +150,29 @@ interface IRaw16 {
 
 const hash = (value: unknown): string =>
   createHash("sha256").update(JSON.stringify(value)).digest("hex");
-const sha = (bytes: Uint8Array): string => createHash("sha256").update(bytes).digest("hex");
 const same = (left: unknown, right: unknown): boolean =>
   JSON.stringify(left) === JSON.stringify(right);
+
+/** The float32 the game's container stores, so both sides compare the same numbers. */
+const f32 = (value: number): number => Math.fround(value);
+
+/**
+ * The placement sequence as one digest: every instance in draw order, each number as its float32.
+ * The same rows, in the same order, give the same digest on both sides of the container.
+ */
+function canonical(placements: readonly IPlacement[]): string {
+  const rows = placements.map((placement) => [
+    placement.asset,
+    placement.id,
+    placement.layer,
+    placement.alignToNormal,
+    ...placement.position.map(f32),
+    f32(placement.rotation),
+    f32(placement.scale),
+    ...placement.normal.map(f32),
+  ]);
+  return createHash("sha256").update(JSON.stringify(rows)).digest("hex");
+}
 
 /** Counts in the Phase 1 shape: one row per asset with an accepted placement, sorted by name. */
 function countsOf(baked: IBakedBiome): Record<string, number> {
@@ -251,15 +185,27 @@ function countsOf(baked: IBakedBiome): Record<string, number> {
 }
 
 /**
- * The kit's ground plus the file's rows through the stages, baked. `edit` rewrites the foliage rows
- * first, so one stage can be tightened while the others keep the file's numbers.
+ * The kit's ground plus the file's rows, baked. `edit` rewrites the foliage rows first, so one stage
+ * can be tightened while the others keep the file's numbers, and `stream` overrides the file's own.
+ *
+ * The ordered stream places the game's species, which this spec holds no asset table for, so it hands
+ * the instances back and writes no container. The seeded stages place the row's species, so they are
+ * baked with an asset per row and write the package the container digest is taken from.
  */
 function place(
   ground: ITerrainState,
   spec: IBiomeSpec,
   edit?: (rows: readonly IFoliageType[]) => IFoliageType[],
+  stream?: "ordered" | "seeded",
 ): IBakedBiome {
   const rows = (edit ? edit(spec.foliage) : spec.foliage).filter((row) => row.density > 0);
+  // `finalizeState` re-runs the water flood and the scatter, so the rules reach the same stages
+  // `terrain_generate` runs.
+  const state = finalizeState({
+    ...ground,
+    scatterRules: foliageScatterRules(rows, ground.height),
+  });
+  if ((stream ?? spec.stream) === "ordered") return bakeBiome({ spec, state });
   const assets: Record<string, IWorldPackageAsset> = Object.fromEntries(
     rows.map((row) => [
       row.species,
@@ -269,13 +215,7 @@ function place(
       } satisfies IWorldPackageAsset,
     ]),
   );
-  // `finalizeState` re-runs the water flood and the scatter, so the rules reach the same stages
-  // `terrain_generate` runs.
-  const state = finalizeState({
-    ...ground,
-    scatterRules: foliageScatterRules(rows, ground.height),
-  });
-  return bakeBiome({ assets, spec, state });
+  return bakeBiome({ assets, spec, state, stream: "seeded" });
 }
 
 function load(world: World): IRun {
@@ -303,10 +243,10 @@ function load(world: World): IRun {
   const baked = place(ground, spec);
   return {
     baked,
+    canonical: baked.scatter === null ? null : canonical(baked.scatter.placements),
     counts: countsOf(baked),
     ground,
     layers: recipe.layers.map((layer) => layer.id),
-    placements: sha(baked.files[baked.manifest.placements] ?? new Uint8Array()),
     spec,
     water: recipe.layers
       .filter((layer) => layer.type === "water")
@@ -327,35 +267,40 @@ const run = (world: World): IRun => {
 };
 
 describe("the biome files' bake against the Phase 1 table", () => {
-  it("reproduces every Phase 1 height digest, and every other line differs", () => {
+  it("reproduces every Phase 1 species count, exactly", () => {
+    // The strict equality: not "how many agree" but "every species, every world, the same number".
+    // A row that cannot carry a count is a row whose generator this package does not run.
+    for (const world of WORLDS) expect(run(world).counts, world).toEqual(PHASE_1[world].counts);
+  });
+
+  it("reproduces the Phase 1 placement sequence, instance for instance", () => {
+    // The counts can agree while the placements do not: one extra rejected candidate moves every
+    // later draw. The digest covers every instance's asset, identity and pose in draw order.
+    for (const world of WORLDS) expect(run(world).canonical, world).toBe(PHASE_1_CANONICAL[world]);
+  });
+
+  it("reproduces every Phase 1 height digest, and the counts with it", () => {
     const matches = Object.fromEntries(
       WORLDS.map((world) => [
         world,
         {
           counts: same(run(world).counts, PHASE_1[world].counts),
           heights: hash(Array.from(run(world).ground.height)) === PHASE_1[world].heights,
-          manifest: hash(run(world).baked.manifest) === PHASE_1[world].manifest,
-          placements: run(world).placements === PHASE_1[world].placements,
         },
       ]),
     );
     expect(matches).toEqual(MATCHES);
   });
 
-  it("pins what this bake writes, so a change to it fails here first", () => {
-    const written = Object.fromEntries(
-      WORLDS.map((world) => [
-        world,
-        {
-          bytes: (run(world).baked.files[run(world).baked.manifest.placements] ?? new Uint8Array())
-            .byteLength,
-          counts: run(world).counts,
-          manifest: hash(run(world).baked.manifest),
-          placements: run(world).placements,
-        },
-      ]),
-    );
-    expect(written).toEqual(PACKAGE);
+  it("names why the container digests cannot match: the game's table is not the package's", () => {
+    // `placements.bin` is a JSON header, per-asset runs, an order-index table and canopy floats;
+    // `world.json` is the game's surface manifest. A package cell file and its manifest are a
+    // different schema, so those two Phase 1 digests stay the example's own (box 3 pins them there).
+    for (const world of WORLDS) expect(run(world).baked.package, world).toBeNull();
+    // The seeded stages do write a package, and the four fields of a row drive them.
+    const seeded = place(run("forest").ground, run("forest").spec, undefined, "seeded");
+    expect(seeded.package).not.toBeNull();
+    expect(seeded.scatter).toBeNull();
   });
 
   it("closes the last two height digests with the layers and the kettles Phase 1 graded", () => {
@@ -369,60 +314,13 @@ describe("the biome files' bake against the Phase 1 table", () => {
     ]);
   });
 
-  it("compares every Phase 1 species count with this bake's count", () => {
-    const measured = Object.fromEntries(
-      WORLDS.map((world) => {
-        const placed = run(world).counts;
-        const phase1 = PHASE_1[world].counts;
-        const species = [...new Set([...Object.keys(phase1), ...Object.keys(placed)])].sort();
-        const agrees: string[] = [];
-        const differ: Record<string, readonly [number, number]> = {};
-        for (const name of species) {
-          const before = phase1[name] ?? 0;
-          const after = placed[name] ?? 0;
-          if (before === after) agrees.push(name);
-          else differ[name] = [before, after];
-        }
-        return [world, { agrees, differ }];
-      }),
-    ) as Record<World, { agrees: string[]; differ: Record<string, readonly [number, number]> }>;
-    expect(Object.fromEntries(WORLDS.map((world) => [world, measured[world].agrees]))).toEqual(
-      COUNT_AGREES,
-    );
-    expect(Object.fromEntries(WORLDS.map((world) => [world, measured[world].differ]))).toEqual(
-      COUNT_DIFFERENCES,
-    );
-    // One foliage row per file against the 3 to 12 species Phase 1 planted: a count a row cannot
-    // carry is a count this bake cannot produce.
-    expect(
-      Object.fromEntries(WORLDS.map((world) => [world, run(world).spec.foliage.length])),
-    ).toEqual({ alpine: 1, coastal: 1, desert: 1, forest: 1, tundra: 1 });
-    // The ground cover the files carry is a share over a spacing, not a count: forest's phase 1
-    // 144 698 grass placements have no row that asks for one.
-    expect(run("forest").spec.grass[0]?.density).toBe(1);
-    expect(run("forest").spec.grass[0]?.spacing).toBe(1.2);
-  });
-
-  it("names why the counts differ: the rows are the file's, and Phase 1's scatter is the game's", () => {
-    // Phase 1 counted 12 species in the forest; the file carries one tree row. The grass rows are an
-    // `IGrassType` (a 0..1 share over a spacing grid), so these stages place no ground cover.
-    expect(Object.keys(PHASE_1.forest.counts)).toHaveLength(12);
-    expect(run("forest").counts).toEqual({ spruce: 3200 });
-    // Forest's shared number disagrees: 3 200 is `surfaceSample`'s count, and the game's rule
-    // accepted 3 131 of its 3 200 cap after the stand field, masks and clearings.
-    expect(PHASE_1.forest.counts.spruce).toBe(3131);
-    // The file's spacing is a range; these stages read its tight end as `selfPrune`'s distance, while
-    // the game's rule follows the stand field across the whole range.
-    expect(run("forest").spec.foliage[0]?.spacing).toEqual([3.2, 6.4]);
-  });
-
   it("runs the four stages, one field of a row at a time", () => {
     const { ground, spec } = run("forest");
     const row = spec.foliage[0];
     if (row === undefined) throw new Error("forest has no foliage row");
     const counted = (edit: Partial<IFoliageType>): number =>
       Object.values(
-        countsOf(place(ground, spec, (rows) => rows.map((one) => ({ ...one, ...edit })))),
+        countsOf(place(ground, spec, (rows) => rows.map((one) => ({ ...one, ...edit })), "seeded")),
       ).reduce((sum, count) => sum + count, 0);
     // surfaceSample: the row's count is how many candidates the rule asks for.
     expect(counted({ density: 5 })).toBe(5);
@@ -431,9 +329,10 @@ describe("the biome files' bake against the Phase 1 table", () => {
     // selfPrune: a spacing wider than the world keeps one.
     expect(counted({ spacing: [1000, 1000] })).toBe(1);
     // meshSpawn: the accepted candidates carry the row's own asset, eight float32 values each.
-    expect(run("forest").baked.placements).toEqual([{ asset: "spruce", count: 3200 }]);
-    expect(run("forest").baked.files[run("forest").baked.manifest.placements]?.byteLength).toBe(
-      3200 * 8 * 4,
-    );
+    const forest = place(ground, spec, undefined, "seeded");
+    const pkg = forest.package;
+    if (pkg === null) throw new Error("the seeded bake wrote no package");
+    expect(forest.placements).toEqual([{ asset: "spruce", count: 3200 }]);
+    expect(pkg.files[pkg.manifest.placements]?.byteLength).toBe(3200 * 8 * 4);
   });
 });

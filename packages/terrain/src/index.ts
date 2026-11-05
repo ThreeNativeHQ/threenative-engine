@@ -4,14 +4,27 @@ export type { IBakeBiomeOptions, IBakeBiomeStage, IBakedBiome } from "./core/bak
 export { measureBands } from "./core/bands.js";
 export type { IMeasuredBands } from "./core/bands.js";
 export type {
+  CoverGround,
   IBiomeSpec,
   IBiomeWaterBody,
+  ICoverDriftRow,
+  ICoverSpec,
   IFarFieldRule,
   IFoliageType,
   IGrassType,
   ILayerInfo,
   ISpawnSpec,
 } from "./core/biome.js";
+export { MATS_FIELD, STAND_FIELD, fieldWeight } from "./core/cover-field.js";
+export type { ICoverField } from "./core/cover-field.js";
+export { orderedScatterRules, scatterProps } from "./core/scatter-ordered.js";
+export type {
+  CoverFieldName,
+  ICoverFieldDrift,
+  IOrderedScatter,
+  IOrderedScatterField,
+  IOrderedScatterRules,
+} from "./core/scatter-ordered.js";
 export { Terrain, TerrainEvaluator } from "./core/terrain.js";
 export type { OperationOptions, LayerPatch, PatchCommand } from "./core/terrain.js";
 export { Mask, MATERIAL_IDS } from "./core/masks.js";
