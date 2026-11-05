@@ -53,4 +53,11 @@ Integration: unchanged — `@threenative/core/world` exports the same symbols fr
 **Status:** NOT STARTED
 **Files:** `packages/core/src/world-tile-{geometry,lod,stitch,merge}.ts` (new), `packages/core/src/world-tiles.ts`
 - [ ] Four modules extracted. proof: AC-1 and AC-2
+  - Not started. Measured on the current file before starting, so the next lane does not discover it
+    late: the Solution's four ranges are 265–905 (641 lines), 906–1 340 (435) and 1 343–1 500 (158),
+    plus 2 742–3 112 for the seam/reconcile helpers (371) and 3 128–3 352 for the merge family (225) —
+    about 1 830 lines. `world-tiles.ts` would keep about 1 586, so AC-1's 1 500 needs either one module
+    the Solution does not name (the byte and budget estimates at 376–465 are the obvious fifth, 90
+    lines) or a narrower AC. The class itself is 1 913 lines (1 504–3 416) and its constructor alone is
+    270 (1 616–1 885), so no set of leaf modules reaches a 1 000-line file.
 - [ ] The terrain-splat playtest stays green. proof: AC-3
