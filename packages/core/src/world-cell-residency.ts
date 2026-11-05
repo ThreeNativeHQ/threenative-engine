@@ -110,6 +110,8 @@ export class CellResidency {
   /** The follow point `updateEye` pulls the camera toward. */
   readonly #eyeFollow = new Vector3();
   #generation = 0;
+  /** The world grid, read once: a package's origin and cell side do not change for a world's life. */
+  #grid: { readonly cellSize: number; readonly minX: number; readonly minZ: number } | undefined;
 
   constructor(host: ICellResidencyHost) {
     this.#host = host;
@@ -176,7 +178,8 @@ export class CellResidency {
     camera: Camera | undefined,
     terrainView: IWorldTilesLodView | undefined,
   ): void {
-    const { cellSize, minX, minZ } = this.#host.extent();
+    this.#grid ??= this.#host.extent();
+    const { cellSize, minX, minZ } = this.#grid;
     this.#residencyPoint.set(x, this.#host.parts().placements.followY(), z);
     try {
       this.#host.parts().terrain?.follow({ x, z }, budget, terrainView);
@@ -265,7 +268,8 @@ export class CellResidency {
    * and resets the velocity rather than reading as speed.
    */
   ahead(x: number, z: number): { x: number; z: number } {
-    const { cellSize } = this.#host.extent();
+    this.#grid ??= this.#host.extent();
+    const { cellSize } = this.#grid;
     if (this.#host.prefetchSeconds() === 0) return { x, z };
     const now = this.#host.now();
     const last = this.#lastSample;
@@ -548,7 +552,8 @@ export class CellResidency {
    * spawn cell of the last model to load waited behind the whole ring.
    */
   #frontNearest(): void {
-    const { cellSize, minX, minZ } = this.#host.extent();
+    this.#grid ??= this.#host.extent();
+    const { cellSize, minX, minZ } = this.#grid;
     const front = this.#jobs[0];
     if (front === undefined || front.next > 0 || front.batches !== undefined) return;
     const { x, z } = this.#host.follow().position;

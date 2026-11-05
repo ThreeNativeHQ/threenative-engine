@@ -141,6 +141,8 @@ export class CellPlacements {
   readonly #instance = new Matrix4();
   /** The authored bounds' centre, placed: the source sphere's centre. See `addPlacements`. */
   readonly #sourceCentre = new Vector3();
+  /** The world grid, read once: a package's origin and cell side do not change for a world's life. */
+  #grid: { readonly cellSize: number; readonly minX: number; readonly minZ: number } | undefined;
 
   constructor(
     options: {
@@ -524,7 +526,8 @@ export class CellPlacements {
    * validator check on the placement buffer is the fix if that ever has to be caught.
    */
   #span(cell: IResidentCell, x: number, z: number): readonly [number, number] {
-    const { cellSize, minX, minZ } = this.#host.extent();
+    this.#grid ??= this.#host.extent();
+    const { cellSize, minX, minZ } = this.#grid;
     const left = minX + cell.x * cellSize;
     const near = minZ + cell.z * cellSize;
     const right = left + cellSize;
