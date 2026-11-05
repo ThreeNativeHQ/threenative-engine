@@ -14,11 +14,8 @@ import {
   Vector3,
 } from "three";
 import { expect, it, vi } from "vitest";
-import {
-  type IPropPreparationProgress,
-  invalidatePropShadows,
-  streamProps,
-} from "../src/render/propWorld.js";
+import type { IPropPreparationProgress } from "../src/render/propProgress.js";
+import { invalidatePropShadows, streamProps } from "../src/render/propWorld.js";
 import {
   DRAW_REACH,
   type IPropPoseOverride,

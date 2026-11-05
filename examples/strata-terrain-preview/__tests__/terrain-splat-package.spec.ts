@@ -174,7 +174,7 @@ it("delivers flat descriptors, tables, raw masks and prop packages through Vite 
         for (const file of [bucket.placements, bucket.reach, bucket.ids]) contents.set(file, file);
     }
     const files = [...contents.keys()];
-    for (const [name, content] of [...contents, [".bake-stamp", ".bake-stamp"]])
+    for (const [name, content] of [...contents, [".bake-stamp", ".bake-stamp"] as const])
       writeFileSync(path.join(project, "src/world", name), content);
     const dependencies: Record<string, unknown> = {
       "node:fs": fs,

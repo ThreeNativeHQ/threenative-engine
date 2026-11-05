@@ -16,24 +16,8 @@ import { readFileSync } from "node:fs";
 import { Heightfield, type IWaterOcean } from "@threenative/core/world";
 import { describe, expect, it } from "vitest";
 import { SEA_EXTENT, createOcean, createWaterMesh } from "../src/render/ocean.js";
+import type { IBakedWorld } from "../src/render/terrain.js";
 import { waterBodies } from "../src/world/water.js";
-
-/** The baked world as the water reads it. */
-interface IBakedWorld {
-  readonly heights: number[];
-  readonly resolution: number;
-  readonly size: number;
-  readonly waterLevel: number | null;
-  readonly lakes?: readonly {
-    readonly at: readonly number[];
-    readonly level: number;
-    readonly radius: number;
-  }[];
-  readonly rivers?: readonly {
-    readonly points: readonly (readonly number[])[];
-    readonly width: number;
-  }[];
-}
 
 /** One fixed probe: where it stands, the surface a swimmer rests on and the flow that carries them. */
 interface IWaterProbe {

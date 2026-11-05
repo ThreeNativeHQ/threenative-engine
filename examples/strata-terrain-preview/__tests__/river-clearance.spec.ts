@@ -64,7 +64,7 @@ async function placementsOfForest() {
         floats[index * 8] as number,
         floats[index * 8 + 1] as number,
         floats[index * 8 + 2] as number,
-      ],
+      ] as const,
     }));
   });
   return { counts: propCounts(pkg), placements };

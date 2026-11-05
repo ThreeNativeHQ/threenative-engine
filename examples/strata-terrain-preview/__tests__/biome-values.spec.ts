@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { LANDFORMS, type LandformKind, validateBiome } from "@threenative/terrain";
+import { type IBiomeSpec, LANDFORMS, type LandformKind, validateBiome } from "@threenative/terrain";
 import { describe, expect, it } from "vitest";
 import { BENCHMARK } from "../src/render/benchmark.js";
 import { biomeSpec } from "../src/render/biomeData.js";

@@ -43,6 +43,7 @@ describe("far forest", () => {
       resolution: data.resolution,
       collar,
       treeline,
+      world: "forest",
       rivers: data.rivers,
       lakes: data.lakes,
       clear: [[vista.at[0], vista.at[1], 55]],

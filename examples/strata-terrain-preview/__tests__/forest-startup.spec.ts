@@ -5,7 +5,11 @@ import * as three from "three";
 import ts from "typescript";
 import { afterEach, expect, it, vi } from "vitest";
 import { initialState } from "../scripts/fixtures/kit-game/state.js";
-import { type IContactWitness, witnessAsymmetricContact } from "../src/diagnostics.js";
+import {
+  type IContactProbeOptions,
+  type IContactWitness,
+  witnessAsymmetricContact,
+} from "../src/diagnostics.js";
 import * as loading from "../src/render/loading.js";
 
 // Execute the shipped fixture itself; only renderer/physics/assets are replaced at their seams.
@@ -307,7 +311,11 @@ it("does not mistake zero shadow counters before the first draw for completed st
 
 it("runs the asymmetric contact witness without a legacy terrain mesh", () => {
   const probeMesh = new three.Mesh(new three.PlaneGeometry(16, 16), new three.MeshBasicMaterial());
-  const raycast = vi.fn(() => ({ point: { y: 1 } }));
+  const raycast = vi.fn<IContactProbeOptions["raycast"]>(() => ({
+    distance: 0,
+    object: probeMesh,
+    point: new three.Vector3(0, 1),
+  }));
   const physics = {
     directSpaceState: { intersectRay: vi.fn(() => ({ position: { y: 1 } })) },
   } as unknown as IPhysicsContext;
@@ -321,7 +329,7 @@ it("runs the asymmetric contact witness without a legacy terrain mesh", () => {
     });
   expect(witness().contactSamples).toBe(8);
   expect(witness().bilinearDifference).toBe(1);
-  raycast.mockReturnValue(undefined as never);
+  raycast.mockReturnValue(undefined);
   expect(witness).toThrow("Missing asymmetric terrain contact");
   probeMesh.geometry.dispose();
   probeMesh.material.dispose();

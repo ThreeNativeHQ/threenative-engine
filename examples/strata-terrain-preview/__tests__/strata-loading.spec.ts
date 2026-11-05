@@ -21,6 +21,7 @@ import { BENCHMARK } from "../src/render/benchmark.js";
 import { FAR_FOREST, FAR_FOREST_WORLDS, farForestPlacements } from "../src/render/farForest.js";
 import { HORIZON_WALK_BAND } from "../src/render/horizon.js";
 import { createLoadingScreen } from "../src/render/loading.js";
+import type { IPropPreparationProgress } from "../src/render/propProgress.js";
 import { meadowCover } from "../src/render/scatter.js";
 import { OPEN_MEADOW } from "../src/render/terrain.js";
 
@@ -284,7 +285,7 @@ it.each(["attached", "cancelled", "released", "data-rejected", "prewarm-rejected
       farForestCount: 0,
       propColliders: undefined as unknown,
       completedPropsWork: 0,
-      preparation: undefined,
+      preparation: undefined as IPropPreparationProgress | undefined,
       props: undefined,
       propParts: parts,
       data: { size: 512 },

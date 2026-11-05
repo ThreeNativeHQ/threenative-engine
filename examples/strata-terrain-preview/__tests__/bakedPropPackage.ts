@@ -16,7 +16,8 @@ export async function readBakedPropPackage(
 ): Promise<IPropPackage> {
   const base = typeof dir === "string" ? dir : fileURLToPath(dir);
   const original = globalThis.fetch;
-  globalThis.fetch = async (url: string) => new Response(readFileSync(fileURLToPath(url)));
+  globalThis.fetch = async (input: RequestInfo | URL) =>
+    new Response(readFileSync(fileURLToPath(input instanceof Request ? input.url : input)));
   try {
     return await loadPropPackage(
       { resolve: async (path: string) => [`file://${base}${path.replace("world/", "")}`] },

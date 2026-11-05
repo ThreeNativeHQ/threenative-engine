@@ -63,14 +63,14 @@ interface IBake {
   readonly size: number;
 }
 
-const read = (name: string): IBake =>
-  JSON.parse(readFileSync(new URL(`../src/world/${name}`, import.meta.url), "utf8")) as IBake;
+const read = <T>(name: string): T =>
+  JSON.parse(readFileSync(new URL(`../src/world/${name}`, import.meta.url), "utf8")) as T;
 
 /** The two worlds baked into one file read their own slice of it, as the game does. */
 function bake(world: WorldName): IBake {
   if (world === "forest" || world === "coastal")
-    return read("baked.json")[world] as unknown as IBake;
-  return read(`${world}.json`);
+    return read<Readonly<Record<"forest" | "coastal", IBake>>>("baked.json")[world];
+  return read<IBake>(`${world}.json`);
 }
 
 const groundAt = (world: WorldName, x: number, z: number): number => {

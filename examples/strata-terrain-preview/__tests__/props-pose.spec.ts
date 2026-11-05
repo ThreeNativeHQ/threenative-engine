@@ -75,7 +75,13 @@ describe("the baked record's pose override", () => {
       geometry,
       material,
       authored,
-      { ...record, grounding: true, position: authored.position, scale: [1.7, 1.7, 1.7] },
+      {
+        ...record,
+        quaternion: [...record.quaternion],
+        grounding: true,
+        position: authored.position,
+        scale: [1.7, 1.7, 1.7],
+      },
       groundAt,
     );
     const sunk = fromRecord.matrix.elements[13] as number;
