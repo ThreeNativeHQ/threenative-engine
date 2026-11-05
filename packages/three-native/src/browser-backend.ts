@@ -1129,8 +1129,7 @@ export function defineBrowserClasses(
               (slots.get(property) as { outputs?: Record<string, unknown> } | undefined)?.outputs ??
               {};
             if (value === null) {
-              for (const slot of Object.keys(previous))
-                runtime.tsl?.set(ref, `mrtNode.${slot}`, 0);
+              for (const slot of Object.keys(previous)) runtime.tsl?.set(ref, `mrtNode.${slot}`, 0);
               slots.delete(property);
               shaderNodes.set(ref.key, slots);
               return;
