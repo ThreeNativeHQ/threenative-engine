@@ -220,6 +220,35 @@ describe("browser texture sources", () => {
     expect(() => new Texture(42)).toThrow("TN_BROWSER_TEXTURE_SOURCE");
   });
 
+  it("reads an adopted image through a CPU-backed canvas, the only kind whose getImageData returns its pixels", () => {
+    const { bound, constructed } = recording();
+    // A GPU-backed canvas answers getImageData with zeros on this Chromium over Vulkan: a red
+    // fillRect reads back 0/0/0 there and 255/0/0 on a willReadFrequently canvas. The hint is the
+    // only way to ask for the CPU-backed one, so the readback must pass it.
+    const pixels = new Uint8ClampedArray([5, 6, 7, 8]);
+    const asked: unknown[] = [];
+    vi.stubGlobal(
+      "OffscreenCanvas",
+      class {
+        getContext(_kind: string, options?: { willReadFrequently?: boolean }) {
+          asked.push(options);
+          return {
+            drawImage: () => undefined,
+            getImageData: () => ({
+              data: options?.willReadFrequently === true ? pixels : new Uint8ClampedArray(4),
+              width: 1,
+              height: 1,
+            }),
+          };
+        }
+      },
+    );
+    new (bound.Texture as Ctor)({ width: 1, height: 1, close: () => undefined });
+    expect(constructed.at(-1)).toEqual(["DataTexture", [[5, 6, 7, 8], 1, 1]]);
+    expect(asked).toEqual([{ willReadFrequently: true }]);
+    vi.unstubAllGlobals();
+  });
+
   it("gives an adopted image three's mipmap chain, so a minified dial or label does not shimmer (Midway's cockpit)", () => {
     const { bound, writes } = recording();
     const Texture = bound.Texture as Ctor;
