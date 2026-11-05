@@ -56,6 +56,21 @@ describe("uniform update hooks", () => {
     expect(pushed.at(-1)).toEqual([0, 71, 0]);
   });
 
+  // The wrapper is kept for the dropped node, but only through the value the game owns: `uniform(new
+  // Color())` per material or per world used to pin its node for the page's life, so both the memory and
+  // every frame's sync grew without bound.
+  it("releases a node whose value the game dropped", async () => {
+    const { live } = setup();
+    let node: IFakeNode | undefined = live.uniform({ x: 0, y: 0, z: 0 });
+    const wrapper = new WeakRef(node);
+    node = undefined;
+    for (let i = 0; i < 3; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      collectGarbage();
+    }
+    expect(wrapper.deref()).toBeUndefined();
+  });
+
   // The racing template's fog reads the camera's height in `onRenderUpdate(({ camera }) => ...)`, as three
   // passes it. Without a camera the callback fell back to height 0 and the distant ground fogged wrongly.
   it("hands the rendering camera to an update hook, as three's frame does", () => {

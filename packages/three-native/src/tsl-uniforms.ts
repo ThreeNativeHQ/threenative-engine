@@ -181,21 +181,34 @@ export function liveUniforms<TNode extends object>(
   const states = new WeakMap<object, IUniformState>();
   // Object values sync() must scan every call: a matrix (its elements edit in place) or an object whose lanes it
   // cannot watch (accessors, a frozen or native object).
-  // Strong, both: a hook's node or an object-valued node (`uniform(camera.matrixWorld)`) is chained into a material
-  // and dropped, so the wrapper is all JS holds, and a collected wrapper silently ended its updates (a stale eye in
-  // a post pass). ponytail: kept for the page's life; the engine release of such a node waits too. Release with the
-  // owning material if a game builds such uniforms in a loop.
-  const objects = new Set<TNode>();
+  // A hook's node or an object-valued node (`uniform(camera.matrixWorld)`) is chained into a material and dropped,
+  // so the wrapper is all JS holds, and a collected wrapper silently ended its updates (a stale eye in a post
+  // pass). An object-valued node is therefore pinned through the value the game owns, not forever: it lives as long
+  // as the object it reads, so a per-material matrix is released with that matrix instead of growing a page-wide set
+  // every sync walks. ponytail: the value is the closest owner this module sees; the engine release of such a node
+  // waits too.
+  const objects = new Set<WeakRef<TNode>>();
+  const pinned = new WeakMap<object, TNode[]>();
+  // The node lives exactly as long as `value` does, so a wrapper the game dropped is released with the object it
+  // reads.
+  const own = (node: TNode, value: object) => {
+    const owners = pinned.get(value);
+    if (owners === undefined) pinned.set(value, [node]);
+    else owners.push(node);
+  };
   // A plain Color or VectorN value is watched instead: its lanes become accessors that mark the uniforms reading it
   // dirty, so a sync reads only what was edited since the last one, however many uniforms the app holds. An edit
   // between two renders of one frame still reaches the second (FluidVolume edits uniforms between its passes).
   const watchers = new WeakMap<object, WeakRef<TNode>[]>();
-  const dirty = new Set<TNode>();
+  // Weak, as `objects` is: the value owns the node (own), and an entry whose node went with its value is dropped by
+  // the sync that finds it gone.
+  const dirty = new Set<WeakRef<TNode>>();
   const watch = (node: TNode, value: object): boolean => {
     if (matrixType(value) !== undefined) return false;
     const known = watchers.get(value);
     if (known !== undefined) {
       known.push(new WeakRef(node));
+      own(node, value);
       return true;
     }
     const keys = WATCHED_LANES.filter((key) => Object.hasOwn(value, key));
@@ -211,6 +224,7 @@ export function liveUniforms<TNode extends object>(
     if (keys.length === 0 || !keys.every(plain)) return false;
     const readers = [new WeakRef(node)];
     watchers.set(value, readers);
+    own(node, value);
     // The Wasm back end gives a value it adopts (promote) engine-backed lanes: it calls this first, and the
     // uniforms reading it go back to being scanned.
     Object.defineProperty(value, UNWATCH, {
@@ -222,7 +236,8 @@ export function liveUniforms<TNode extends object>(
           const state = target === undefined ? undefined : states.get(target);
           if (target === undefined || state === undefined || state.scanned === true) continue;
           state.scanned = true;
-          objects.add(target);
+          objects.add(new WeakRef(target));
+          own(target, value);
         }
       },
     });
@@ -237,7 +252,7 @@ export function liveUniforms<TNode extends object>(
           lane = next;
           for (const reader of readers) {
             const target = reader.deref();
-            if (target !== undefined) dirty.add(target);
+            if (target !== undefined) dirty.add(new WeakRef(target));
           }
         },
       });
@@ -246,10 +261,11 @@ export function liveUniforms<TNode extends object>(
   };
   const track = (node: TNode, state: IUniformState, value: unknown) => {
     if (typeof value !== "object" || value === null) return;
-    dirty.add(node); // its first sync writes it, as a scan did
+    dirty.add(new WeakRef(node)); // its first sync writes it, as a scan did
     if (state.scanned !== true && !watch(node, value)) {
       state.scanned = true;
-      objects.add(node);
+      objects.add(new WeakRef(node));
+      own(node, value);
     }
   };
   const updating = new Set<TNode>();
@@ -422,12 +438,20 @@ export function liveUniforms<TNode extends object>(
           if (next !== undefined) (node as { value: unknown }).value = next;
         }
         // Deleted only once written: a sink that throws leaves the rest to retry at the next sync.
-        for (const node of dirty) {
-          const state = states.get(node);
-          if (state !== undefined) write(node, state, uniformLanes(state.value, state.scratch));
-          dirty.delete(node);
+        for (const ref of dirty) {
+          const node = ref.deref();
+          if (node !== undefined) {
+            const state = states.get(node);
+            if (state !== undefined) write(node, state, uniformLanes(state.value, state.scratch));
+          }
+          dirty.delete(ref);
         }
-        for (const node of objects) {
+        for (const ref of objects) {
+          const node = ref.deref();
+          if (node === undefined) {
+            objects.delete(ref);
+            continue;
+          }
           const state = states.get(node);
           if (state !== undefined) write(node, state, uniformLanes(state.value, state.scratch));
         }
