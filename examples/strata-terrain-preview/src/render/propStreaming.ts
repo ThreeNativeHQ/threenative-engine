@@ -67,6 +67,21 @@ interface IRecord {
 // Geometry, per-placement reach and LOD selection are independent of this export grouping.
 const CELL_SIZE = 128;
 
+/** The draw reach a placement's variant gives it, shortened by its seeded fade for `FADED_ASSETS`. */
+export function streamedReach(placement: IPlacement, variantIndex: number): number {
+  const variant = `${placement.asset}:${variantFor(placement, placement.asset)}`;
+  const reach = VARIANT_REACH[variant] ?? DRAW_REACH[placement.asset] ?? Number.POSITIVE_INFINITY;
+  if (!FADED_ASSETS.has(placement.asset)) return reach;
+  const seed = (Math.imul(variantIndex + 1, 2654435761) >>> 0) / 4294967296;
+  return 28 + (reach - 28) * (1 - Math.sqrt(seed));
+}
+
+/** The streamed world a placement draws in: the far forest alone, or its reach and shadow policy. */
+export function streamedBucket(placement: IPlacement, reach: number): string {
+  if (placement.layer === FAR_FOREST_LAYER) return "far:false";
+  return `${reach === Number.POSITIVE_INFINITY ? "horizon" : "local"}:${!NO_SHADOW_ASSETS.has(placement.asset)}`;
+}
+
 /** Keep the terminal gate beyond the last authored step and the scaled 150 m canopy band. */
 export function impostorDistanceForScale(minScale: number, lastLodDistance: number): number {
   if (!Number.isFinite(minScale) || minScale === 0)
@@ -144,11 +159,7 @@ export async function createStreamedProps(options: IStreamOptions) {
       // Preserve the original variant-group index BEFORE partitioning records into cells.
       const index = variantIndices.get(variant) ?? 0;
       variantIndices.set(variant, index + 1);
-      let reach = VARIANT_REACH[variant] ?? DRAW_REACH[placement.asset] ?? Number.POSITIVE_INFINITY;
-      if (FADED_ASSETS.has(placement.asset)) {
-        const seed = (Math.imul(index + 1, 2654435761) >>> 0) / 4294967296;
-        reach = 28 + (reach - 28) * (1 - Math.sqrt(seed));
-      }
+      const reach = streamedReach(placement, index);
       records.push({ key, placement, pose, reach, ratio, position, quaternion, scale: scalar });
       if (placement.asset === "spruce" && placement.layer !== FAR_FOREST_LAYER)
         minSpruceScaleByVariant.set(
@@ -180,10 +191,7 @@ export async function createStreamedProps(options: IStreamOptions) {
   if (
     !(await compile(records, (record) => {
       // The far forest is its own world: shadowless, and on the impostor sooner (`farForest.ts`).
-      const bucket =
-        record.placement.layer === FAR_FOREST_LAYER
-          ? "far:false"
-          : `${record.reach === Number.POSITIVE_INFINITY ? "horizon" : "local"}:${!NO_SHADOW_ASSETS.has(record.placement.asset)}`;
+      const bucket = streamedBucket(record.placement, record.reach);
       const list = buckets.get(bucket) ?? [];
       list.push(record);
       buckets.set(bucket, list);
