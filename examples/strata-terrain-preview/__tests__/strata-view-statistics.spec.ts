@@ -51,7 +51,9 @@ it("waits for three kept windows at every measured view instead of fixed ticks",
       (step.kind === "wait" || step.waitForResource?.path === "currentViewWindows") &&
       step.label !== "ocean",
   );
-  expect(measuredHolds.length).toBe(21);
+  // 4bbdfac16 ("a fixed forest vista pose and scenario for the look goal") added the `vista` hold
+  // this scenario waits on, taking the count from 21 to 22; the spec kept the old count.
+  expect(measuredHolds.length).toBe(22);
   for (const step of measuredHolds) {
     expect(step.waitForResource).toEqual({ id: "GameState", path: "currentViewWindows", gte: 3 });
     expect(step.timeoutMs).toBe(120000);

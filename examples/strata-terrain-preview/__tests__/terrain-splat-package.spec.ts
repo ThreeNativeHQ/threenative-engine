@@ -112,23 +112,37 @@ it("references available starter maps and the runtime's CC0 fallback for optiona
 
 it("delivers flat descriptors, tables, raw masks and placements through Vite and native staging", async () => {
   const root = mkdtempSync(path.join(tmpdir(), "strata-splat-"));
+  // The config emits the scaffolder's mannequin from `../../packages/create-threenative/…`, resolved
+  // against its own file URL, so the project sits two directories under the sandbox root and that
+  // path lands inside it.
+  const project = path.join(root, "w/p");
   try {
-    mkdirSync(path.join(root, "src/world"), { recursive: true });
-    mkdirSync(path.join(root, "scripts"));
-    mkdirSync(path.join(root, "starter"));
-    mkdirSync(path.join(root, "local-assets/temperate/basis"), { recursive: true });
-    mkdirSync(path.join(root, "local-assets/landscape-pro/basis"), { recursive: true });
-    writeFileSync(path.join(root, "local-assets/temperate/basis/basis_transcoder.js"), "first-js");
+    mkdirSync(path.join(project, "src/world"), { recursive: true });
+    mkdirSync(path.join(project, "scripts"));
+    mkdirSync(path.join(project, "starter"));
+    mkdirSync(path.join(project, "local-assets/temperate/basis"), { recursive: true });
+    mkdirSync(path.join(project, "local-assets/landscape-pro/basis"), { recursive: true });
+    mkdirSync(path.join(root, "packages/create-threenative/template-assets/assets"), {
+      recursive: true,
+    });
     writeFileSync(
-      path.join(root, "local-assets/temperate/basis/basis_transcoder.wasm"),
+      path.join(root, "packages/create-threenative/template-assets/assets/mannequin.glb"),
+      "mannequin",
+    );
+    writeFileSync(
+      path.join(project, "local-assets/temperate/basis/basis_transcoder.js"),
+      "first-js",
+    );
+    writeFileSync(
+      path.join(project, "local-assets/temperate/basis/basis_transcoder.wasm"),
       "first-wasm",
     );
     writeFileSync(
-      path.join(root, "local-assets/landscape-pro/basis/basis_transcoder.js"),
+      path.join(project, "local-assets/landscape-pro/basis/basis_transcoder.js"),
       "later-js",
     );
     writeFileSync(
-      path.join(root, "local-assets/landscape-pro/basis/basis_transcoder.wasm"),
+      path.join(project, "local-assets/landscape-pro/basis/basis_transcoder.wasm"),
       "later-wasm",
     );
     const files = [
@@ -144,11 +158,11 @@ it("delivers flat descriptors, tables, raw masks and placements through Vite and
       ),
     ];
     for (const name of [...files, ".bake-stamp"])
-      writeFileSync(path.join(root, "src/world", name), name);
+      writeFileSync(path.join(project, "src/world", name), name);
     const execute = async (relative: string) => {
       const source = readFileSync(new URL(relative, base), "utf8").replaceAll(
         "import.meta.url",
-        JSON.stringify(pathToFileURL(path.join(root, relative)).href),
+        JSON.stringify(pathToFileURL(path.join(project, relative)).href),
       );
       const code = ts.transpileModule(source, {
         compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
@@ -158,8 +172,13 @@ it("delivers flat descriptors, tables, raw masks and placements through Vite and
         "node:fs": fs,
         "node:path": path,
         "node:url": url,
-        "@threenative/terrain/kit": { starterAssetsDir: async () => path.join(root, "starter") },
+        "@threenative/terrain/kit": {
+          starterAssetsDir: async () => path.join(project, "starter"),
+        },
         "@threenative/terrain/editor/server": { terrainEditor: () => ({}) },
+        // 792b9fa7a ("boot the Strata forest on the Wasm engine") has the config import this; it
+        // only joins the plugin list under TN_ENGINE=threenative, which this case does not set.
+        "create-threenative": { createWebBrandPlugin: () => ({ name: "threenative-web-brand" }) },
         vite: { defineConfig: (config: unknown) => config },
       };
       await runInNewContext(`(async () => { ${code}\n })()`, {
@@ -167,6 +186,9 @@ it("delivers flat descriptors, tables, raw masks and placements through Vite and
         console,
         Buffer,
         URL,
+        // The config picks its engine from `process.env.TN_ENGINE` (792b9fa7a); this case runs it
+        // the way CI does, with no native engine set.
+        process: { env: {} },
         require: (name: string) => {
           assert(name in dependencies, name);
           return dependencies[name];
@@ -180,22 +202,25 @@ it("delivers flat descriptors, tables, raw masks and placements through Vite and
       .find((plugin) => plugin.generateBundle)
       ?.generateBundle?.call({ emitFile: (file: (typeof emitted)[number]) => emitted.push(file) });
     expect(emitted.map((file) => file.fileName).sort()).toEqual(
-      files.map((name) => `world/${name}`).sort(),
+      ["mannequin.glb", ...files.map((name) => `world/${name}`)].sort(),
     );
-    for (const file of emitted) expect(file.source.toString()).toBe(path.basename(file.fileName));
+    for (const file of emitted)
+      expect(file.source.toString()).toBe(
+        file.fileName === "mannequin.glb" ? "mannequin" : path.basename(file.fileName),
+      );
     await execute("scripts/stage-native-assets.mjs");
     for (const [name, content] of [
       ["basis_transcoder.js", "first-js"],
       ["basis_transcoder.wasm", "first-wasm"],
     ] as const) {
-      const staged = readFileSync(path.join(root, "assets/basis", name), "utf8");
+      const staged = readFileSync(path.join(project, "assets/basis", name), "utf8");
       expect(staged).toBe(content);
-      expect(readFileSync(path.join(root, "basis", name), "utf8")).toBe(staged);
+      expect(readFileSync(path.join(project, "basis", name), "utf8")).toBe(staged);
     }
-    expect(fs.readdirSync(path.join(root, "assets/world")).sort()).toEqual(files.sort());
+    expect(fs.readdirSync(path.join(project, "assets/world")).sort()).toEqual(files.sort());
     for (const name of files)
-      expect(readFileSync(path.join(root, "assets/world", name), "utf8")).toBe(name);
-    rmSync(path.join(root, "src/world/forest.splat.rgba8"));
+      expect(readFileSync(path.join(project, "assets/world", name), "utf8")).toBe(name);
+    rmSync(path.join(project, "src/world/forest.splat.rgba8"));
     expect(() =>
       config.plugins
         .find((plugin) => plugin.generateBundle)

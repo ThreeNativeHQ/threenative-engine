@@ -402,7 +402,11 @@ it("submits authored neighbor LODs with complementary masks through a boundary w
       for (const mesh of submitted) {
         expect(mesh.count).toBe(1);
         const surface = mesh.material as import("three/webgpu").NodeMaterial;
-        expect(surface.maskShadowNode).toBe(surface.maskNode);
+        // 9520daa11: a published level change fades in the colour pass only, "so cached pages hold
+        // no frame of the fade", and the two masks are separate nodes. The rule's core pin is
+        // world-impostor-surface.spec.ts 'fades a published level change in the colour pass only'.
+        expect(surface.maskShadowNode).toBeDefined();
+        expect(surface.maskShadowNode).not.toBe(surface.maskNode);
         const comparisons: string[] = [];
         const values: unknown[] = [];
         surface.maskNode?.traverse((node) => {
@@ -414,9 +418,15 @@ it("submits authored neighbor LODs with complementary masks through a boundary w
         if (!part) throw new Error("Unauthored submitted LOD geometry");
         const level = levels.indexOf(part);
         const authoredComparisons = level === 0 ? [">="] : level === 1 ? ["<", ">="] : ["<"];
-        expect(comparisons).toHaveLength(authoredComparisons.length + (level === 0 ? 0 : 1));
-        expect(comparisons.slice(-authoredComparisons.length)).toEqual(authoredComparisons);
-        expect(values.some((value) => value instanceof Vector3 && value.x === distance)).toBe(true);
+        // Each level's mask still makes its own authored comparisons. Neither their count nor their
+        // position is pinned any more: 919c1a866's temporal transition builds the level mask once
+        // per lagged eye, and 9520daa11 appends the published-range gates to the same mask.
+        expect(comparisons).toEqual(expect.arrayContaining(authoredComparisons));
+        // The gates are the authored bands as uniforms, which is what the level switches at. The
+        // eye is the temporal pair of lagged origins rather than the follow point, so it is not
+        // pinned here.
+        expect(values).toContain(LOD_BANDS.mid);
+        expect(values).toContain(LOD_BANDS.far);
         expect(values).toContain(1); // Unadapted distance bias.
       }
     }
@@ -685,10 +695,18 @@ it("preserves authored cutout LOD parts and distinct custom shader surfaces", as
       }
       const authored = parts.values().next().value;
       if (!authored) throw new Error("Missing authored parts");
-      const expected = z === 0 ? authored.slice(0, 2) : z === 60 ? authored : authored.slice(2);
+      // 919c1a866's temporal transition: past the gate a record holds the near level beside the far
+      // one for LOD_TEMPORAL_LAG and the CPU grades it to the far level, so the walk sees both
+      // levels resident there and only the near level inside. Measured on this fixture: z=0 gives
+      // two level-0 meshes publishing [0, 0, -1]; 60 and 80 give three meshes publishing [0, 1, 0].
+      const expected = z === 0 ? authored.slice(0, 2) : authored;
       const active = (meshes: InstancedMesh[]) => meshes.filter((mesh) => mesh.count > 0);
       const view = active(streamed.meshes);
       expect(view).toHaveLength(expected.length);
+      for (const mesh of view)
+        expect(publishedLevels(mesh).map((record) => record.slice(0, 3))).toEqual(
+          publishedLevels(mesh).map(() => (z === 0 ? [0, 0, -1] : [0, 1, 0])),
+        );
       const semanticLods = (parts: typeof authored) =>
         parts.map((part) => `${part.level ?? 0}:${part.role}`).sort();
       const activeParts = view.map((mesh) => {
@@ -721,13 +739,22 @@ it("preserves authored cutout LOD parts and distinct custom shader surfaces", as
         expect(surface.color.equals(part.material.color)).toBe(true);
         expect(surface.opacityNode).toBe(part.material.opacityNode);
         expect(mesh.count).toBe(placements.length);
-        const viewMask = Reflect.get(surface.maskNode as object, "node");
-        const shadowMask = Reflect.get(surface.maskShadowNode as object, "node");
+        // r187 TSL returns the node itself; the r185 proxy wrapper (`.node`) is gone.
+        const viewMask = surface.maskNode as object;
+        const shadowMask = surface.maskShadowNode as object;
         expect(Reflect.get(viewMask, "op")).toBe("&&");
         expect(Reflect.get(viewMask, "aNode")).toBe(part.material.maskNode);
         expect(Reflect.get(shadowMask, "op")).toBe("&&");
         expect(Reflect.get(shadowMask, "aNode")).toBe(part.material.maskShadowNode);
-        expect(Reflect.get(viewMask, "bNode")).toBe(Reflect.get(shadowMask, "bNode"));
+        // 9520daa11: "Shadows take the new answer at once so cached pages hold no frame of the
+        // fade", so the colour gate wraps the published level change in a select and the shadow
+        // gate stays a plain level gate. The rule's core pin is world-impostor-surface.spec.ts
+        // 'fades a published level change in the colour pass only'.
+        const viewGate = Reflect.get(viewMask, "bNode") as object;
+        const shadowGate = Reflect.get(shadowMask, "bNode") as object;
+        expect(Reflect.get(viewGate, "condNode")).toBeDefined();
+        expect(Reflect.get(shadowGate, "op")).toBe("&&");
+        expect(Reflect.get(shadowGate, "condNode")).toBeUndefined();
       }
       expect(new Set(view.map((mesh) => mesh.material)).size).toBe(expected.length);
       for (const layer of [28, 27]) {
@@ -1023,6 +1050,17 @@ it("scales every fallback sapling level from the same authored height", () => {
   }
 });
 
+/** One `tnPublishedLodRange` record per instance: four floats each, see `LOD_RANGE_STRIDE`. */
+function publishedLevels(mesh: InstancedMesh): number[][] {
+  const attribute = mesh.geometry.getAttribute("tnPublishedLodRange") as {
+    readonly array: ArrayLike<number>;
+  };
+  const values = Array.from(attribute.array).slice(0, mesh.count * 4);
+  const records: number[][] = [];
+  for (let at = 0; at < values.length; at += 4) records.push(values.slice(at, at + 4));
+  return records;
+}
+
 it("switches real fallback spruce and sapling batches into authored far levels at the existing gate", async () => {
   const parts = buildPropVariants();
   const material = new MeshBasicMaterial();
@@ -1058,11 +1096,34 @@ it("switches real fallback spruce and sapling batches into authored far levels a
         await Promise.resolve();
       }
       const meshes = streamed.meshes.filter((mesh) => mesh.count > 0);
-      expect(meshes.length).toBe(4);
-      expect(
-        meshes.every((mesh) => new RegExp(`:${level}:[0-9]+$`).test(mesh.name)),
-        `distance ${distance}: ${meshes.map((mesh) => mesh.name).join(", ")}`,
-      ).toBe(true);
+      // 919c1a866 ("LOD swaps fade…, shadows keep one shape"): a record that changes level fades
+      // between the two levels for LOD_TEMPORAL_LAG, so it holds the near level beside the far one
+      // and residency is no longer the level this distance grades to. The CPU's own answer is the
+      // per-instance `tnPublishedLodRange` record the level gates read: min and max level, the
+      // level the record was whole at (-1: none), and when that swap reached the GPU. Measured on
+      // this fixture: below the gate one level is resident and whole; past it both are, graded to
+      // the far level and whole at the near one.
+      if (level === 0) {
+        expect(meshes.length).toBe(4);
+        expect(
+          meshes.every((mesh) => /:0:[0-9]+$/.test(mesh.name)),
+          `distance ${distance}: ${meshes.map((mesh) => mesh.name).join(", ")}`,
+        ).toBe(true);
+        for (const mesh of meshes)
+          expect(publishedLevels(mesh).map((record) => record.slice(0, 3))).toEqual(
+            publishedLevels(mesh).map(() => [0, 0, -1]),
+          );
+      } else {
+        expect(meshes.length).toBe(8);
+        for (const mesh of meshes)
+          expect(publishedLevels(mesh).map((record) => record.slice(0, 3))).toEqual(
+            publishedLevels(mesh).map(() => [0, 1, 0]),
+          );
+        expect(
+          meshes.filter((mesh) => new RegExp(`:${level}:[0-9]+$`).test(mesh.name)),
+          `distance ${distance}: ${meshes.map((mesh) => mesh.name).join(", ")}`,
+        ).toHaveLength(4);
+      }
       expect(
         meshes.every(
           (mesh) =>

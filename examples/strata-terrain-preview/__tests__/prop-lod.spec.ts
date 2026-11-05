@@ -13,6 +13,7 @@ import {
   Vector2,
   Vector3,
 } from "three";
+import { positionLocal } from "three/tsl";
 import type { MeshPhysicalNodeMaterial } from "three/webgpu";
 import ts from "typescript";
 import { describe, expect, it, vi } from "vitest";
@@ -25,6 +26,7 @@ import {
 import { Scene, type SceneConstructor } from "../../../packages/core/src/scene.js";
 import type { WorldName } from "../src/render/biomes.js";
 import { type ICanopyComparison, loadPack } from "../src/render/pack.js";
+import { WORLD_SELECT } from "../src/worlds.js";
 
 describe("canopy comparison scene lifetime", () => {
   const source = ts.createSourceFile(
@@ -34,7 +36,16 @@ describe("canopy comparison scene lifetime", () => {
     true,
   );
   let update = "";
+  // Every private field the production class declares, so the Probe declares the same set. A
+  // hand-kept list drifts: it still named #player and #orbit after the class moved them to #rig.
+  const declared = new Set<string>();
   function visit(node: ts.Node): void {
+    if (ts.isClassExpression(node) && node.name?.getText(source) === "TerrainScene")
+      for (const member of node.members)
+        if (ts.isPropertyDeclaration(member)) {
+          const name = member.name?.getText(source);
+          if (name?.startsWith("#")) declared.add(name);
+        }
     if (ts.isMethodDeclaration(node) && node.name.getText(source) === "update")
       update = node.getText(source);
     ts.forEachChild(node, visit);
@@ -51,18 +62,39 @@ describe("canopy comparison scene lifetime", () => {
         view: "player",
       };
       const exports: { Probe?: SceneConstructor<typeof initialState> } = {};
+      const rig = {
+        animate: () => undefined,
+        body: { velocity: { x: 0, y: 0, z: 0 }, moveAndSlide: () => undefined, grounded: false },
+        pace: () => 0,
+        yaw: () => 0,
+      };
+      // The two members the case drives are set from the sandbox; every other one stays undefined.
+      const fields = [...declared]
+        .filter((name) => name !== "#rig" && name !== "#bundleTwin")
+        .map((name) => (name === "#elapsed" ? "#elapsed = 0;" : `${name};`))
+        .join(" ");
       // Execute the production controller; only player/water/rendering are replaced at their seams.
       runInNewContext(
         ts.transpileModule(
           `export class Probe extends Scene {
           static initialState = initialState;
-          #elapsed = 0; #surfaces; #ocean; #river; #lake; #sky; #stage;
-          #player = { velocity: { x: 0, y: 0, z: 0 }, moveAndSlide() {}, grounded: false };
+          ${fields}
+          #rig = rig;
+          #bundleTwin = bundleTwin;
           ${update}
         }`,
           { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } },
         ).outputText,
-        { exports, Scene, initialState, world: "forest", BIOMES: { forest: {}, coastal: {} } },
+        {
+          exports,
+          Scene,
+          initialState,
+          world: "forest",
+          BIOMES: { forest: {}, coastal: {} },
+          WORLD_SELECT,
+          rig,
+          bundleTwin: action === "coast" ? "coastal" : undefined,
+        },
       );
       if (!exports.Probe) throw new Error("Production controller did not load");
       const canvas = new EventTarget() as HTMLCanvasElement;
@@ -182,6 +214,10 @@ describe("licensed pack characterization", () => {
   ) {
     const root = new Group();
     const geometry = new BoxGeometry(1, 2, 1).translate(0, 1, 0);
+    // A loader-made single-material mesh carries no material groups: three's GLTFLoader builds one
+    // Mesh per primitive. `BoxGeometry` ships six, one per face, and a grouped geometry means a
+    // section cut from a shared index, so clear them unless this fixture is the material-array case.
+    geometry.clearGroups();
     if (options.zeroNormal) geometry.getAttribute("normal").setXYZ(1, 0, 0, 0);
     const material = new MeshStandardMaterial({
       map: options.mapped === false ? null : image(),
@@ -190,7 +226,6 @@ describe("licensed pack characterization", () => {
       color: 0x286a42,
     });
     if (options.array) {
-      geometry.clearGroups();
       geometry.addGroup(0, 18, 0);
       geometry.addGroup(18, 18, 1);
     }
@@ -233,7 +268,9 @@ describe("licensed pack characterization", () => {
           expect(material.aoNode).not.toBeNull();
           expect(material.alphaTest).toBe(near.material.alphaTest);
           expect(material.alphaToCoverage).toBe(true);
-          expect(material.castShadowPositionNode).toBe(material.positionNode);
+          // 646ba9d1e: the colour pass sways and the shadow casts the rest pose, so a cached virtual
+          // shadow page keeps one shadow. The two nodes differ by the wind offset by design.
+          expect(material.castShadowPositionNode).toBe(positionLocal);
         }
       } finally {
         pack.dispose();
@@ -277,7 +314,8 @@ describe("licensed pack characterization", () => {
           expect(material.normalNode).toBeNull();
           for (const key of ["map", "alphaTest", "alphaToCoverage", "side", "shadowSide"] as const)
             expect(material[key]).toBe(current[key]);
-          expect(material.castShadowPositionNode).toBe(material.positionNode);
+          // 646ba9d1e: the shadow casts the rest pose while the colour pass sways, on every arm.
+          expect(material.castShadowPositionNode).toBe(positionLocal);
           const footprint = new Set<string>();
           present(material.alphaTestNode).traverse((node) => {
             if ("method" in node && typeof node.method === "string") footprint.add(node.method);
