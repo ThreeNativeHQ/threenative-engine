@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { LANDFORMS, type LandformKind, validateBiome } from "@threenative/terrain";
 import { describe, expect, it } from "vitest";
 import { BENCHMARK } from "../src/render/benchmark.js";
+import { biomeSpec } from "../src/render/biomeData.js";
 import { BIOMES, type ICoverDrift, type IVistaAim, type WorldName } from "../src/render/biomes.js";
 import { MATS_FIELD, STAND_FIELD } from "../src/render/coverField.js";
 import {
@@ -13,7 +14,6 @@ import { speciesFor } from "../src/render/pack.js";
 import { buildPropVariants } from "../src/render/props.js";
 import { type IScatterRules, SCATTER, scatterRules } from "../src/render/scatter.js";
 import type { IBakedWorld } from "../src/render/terrain.js";
-import { SPAWN_CAMERA_OFFSET, SPAWN_POINTS } from "../src/render/worldData.js";
 
 /**
  * Everything a biome decides, pinned for all five worlds.
@@ -625,8 +625,8 @@ describe("a biome's values", () => {
       expect({
         world,
         spawn: {
-          at: SPAWN_POINTS[world],
-          cameraOffset: SPAWN_CAMERA_OFFSET[world],
+          at: biomeSpec(world).spawn.at,
+          cameraOffset: biomeSpec(world).spawn.cameraOffset,
           focus: [BENCHMARK[world].focus.x, BENCHMARK[world].focus.z],
         },
       }).toEqual({ world, spawn: expected.spawn });

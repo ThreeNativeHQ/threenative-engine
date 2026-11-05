@@ -1,10 +1,9 @@
 import { readFileSync } from "node:fs";
 import { Heightfield } from "@threenative/core/world";
 import { describe, expect, it } from "vitest";
-import { WORLD_SELECT } from "../src/game.js";
-import { BIOME_SPECS } from "../src/render/biomeData.js";
+import { BIOME_SPECS, biomeSpec } from "../src/render/biomeData.js";
 import type { WorldName } from "../src/render/biomes.js";
-import { SPAWN_CAMERA_OFFSET, SPAWN_POINTS } from "../src/render/worldData.js";
+import { WORLD_SELECT } from "../src/worlds.js";
 
 /**
  * What a world key does, pinned on today's code: which number picks which world, where the player
@@ -109,9 +108,9 @@ describe("world keys", () => {
     for (const world of Object.keys(PINS) as WorldName[]) {
       const pin = PINS[world];
       const [x, z] = pin.spawn;
-      expect(SPAWN_POINTS[world], `${world} spawn`).toEqual(pin.spawn);
+      expect(biomeSpec(world).spawn.at, `${world} spawn`).toEqual(pin.spawn);
       expect(groundAt(world, x, z), `${world} ground under the spawn`).toBeCloseTo(pin.ground, 4);
-      const [offsetX, offsetY, offsetZ] = SPAWN_CAMERA_OFFSET[world];
+      const [offsetX, offsetY, offsetZ] = biomeSpec(world).spawn.cameraOffset;
       const plane = pin.ground + 2;
       const camera = [x + offsetX, plane + offsetY, z + offsetZ];
       for (const [axis, expected] of pin.camera.entries()) {

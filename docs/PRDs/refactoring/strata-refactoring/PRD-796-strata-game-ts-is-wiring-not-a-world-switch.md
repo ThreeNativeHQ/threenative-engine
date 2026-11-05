@@ -1,7 +1,7 @@
 # PRD-796 — Strata `game.ts` is wiring, not a world switch
 
-**Status:** NOT STARTED
-**Priority:** P2 — `game.ts` is 2 070 lines with 24 world-name comparisons and about 1 200 lines of telemetry mixed into the world wiring (all phases open).
+**Status:** PARTIAL — Phase 1 landed: the selector, the five spawn points and the five launch cameras are pinned, and the nine playtests have a recorded result.
+**Priority:** P2 — `game.ts` is 2 070 lines with 24 world-name comparisons and about 1 200 lines of telemetry mixed into the world wiring (Phases 2 and 3 open).
 **Complexity:** 4 (MEDIUM)
 **Owner:** ThreeNative maintainers
 **Depends on:** [PRD-791](PRD-791-a-biome-is-a-validated-data-file.md)
@@ -55,9 +55,14 @@ Integration: unchanged — the scene, its entry point and its playtests stay the
   - Two causes, both older than this PRD, keep the board red on this machine. The ground material's pipeline binds 24 fragment-stage samplers and this device allows 16 (`The number of samplers (24) in the Fragment stage exceeds the maximum per-stage limit (16)`), so the terrain surface draws white under the vegetation; `edge` measures bottom-third RGB 235.3/239.8/244.0. The pipeline census reports itself unavailable, which fails `reveal` and `loop` on their own assertion. `walk` and `terrain` time out at 41.2 m because the scenario holds `KeyD` for 420 ticks at `JOG` 6 m/s, which covers 42 m, against a 50 m pin; `loop`'s longer hold reaches 59.83 m at the same pace, which confirms the rate rather than the terrain.
 
 #### Phase 2: split
-**Status:** NOT STARTED
-**Files:** `src/game.ts`, `src/diagnostics.ts` (new), `src/viewStatistics.ts`, `render/waterProof.ts`
+**Status:** PARTIAL
+**Files:** `src/game.ts`, `src/diagnostics.ts` (new), `src/worlds.ts` (new), `src/viewStatistics.ts`, `render/waterProof.ts`
 - [ ] Telemetry in `diagnostics.ts`; world values from the biome row. proof: AC-1 plus `strata-view-statistics.spec.ts` and `water-proof.spec.ts`
+  - Moved to `src/diagnostics.ts` (new, 1 006 lines): the closed frame-budget window and the per-view window groups, their `frameBudget.onWindow` handler, the per-frame counters (`observeFrame`), the reveal and pipeline probe (`createRevealProbe`), the step measurements (`createMeasure`: travel, edge overshoot, prop overlap, the asymmetric contact witness, the swim samples, the water samples, the prop and cover counts) and the state report (`publish`), plus the measurement half of the initial state (`initialDiagnosticsState`).
+  - World values come from the biome row: the launch point and the camera offsets read `spec.spawn.at` and `spec.spawn.cameraOffset`, the scenes are built from `WORLD_ORDER`, the start world is `START_WORLD`, and `render/worldData.ts` is gone because the row owns those two pairs. `src/worlds.ts` (new, 49 lines) owns the selector list and the baked-bundle loader, which reads `spec.bake`.
+  - The two specs keep their pins: `world-keys.spec.ts` reads `WORLD_SELECT` from `src/worlds.ts` and the spawn from `biomeSpec(world).spawn`, `biome-values.spec.ts` compares the same row values against its own literals, and `forest-startup.spec.ts` calls `witnessAsymmetricContact()` instead of pulling the witness out of `game.ts` by text, because the witness moved with the code it witnesses.
+  - `water-proof.spec.ts` green. `strata-view-statistics.spec.ts` is red on a pin this PRD does not touch: it expects 21 measured holds in `playtests/terrain.playtest.json` and the scenario holds 22.
+  - Open: AC-1's line cap. `game.ts` is 1 417 lines (from 2 072) and the world-name grep prints nothing, but 800 needs three more moves inside the scene's lifecycle: the spawn gate and its failure reporter (about 130 lines), the props and staged-world build (about 300) and the player rig with its follow camera (about 150).
 
 #### Phase 3: prove the game
 **Status:** NOT STARTED

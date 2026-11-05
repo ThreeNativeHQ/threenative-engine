@@ -35,6 +35,18 @@ import {
   Quaternion,
   Vector3,
 } from "three";
+import {
+  beginScene,
+  createMeasure,
+  createRevealProbe,
+  enterView,
+  initialDiagnosticsState,
+  launchedAt,
+  leaveScene,
+  observeFrame,
+  observeWindow,
+  publish,
+} from "./diagnostics.js";
 import { BENCHMARK, type ViewName } from "./render/benchmark.js";
 import { biomeSpec } from "./render/biomeData.js";
 import { BIOMES, type IWorldBiome, type WorldName, measureBiome } from "./render/biomes.js";
@@ -85,12 +97,6 @@ import { type IOutdoorSky, createOutdoorSky, installOutdoorOcclusion } from "./r
 import { type IBakedWorld, OPEN_MEADOW, createTerrain } from "./render/terrain.js";
 import { preparePropTextures } from "./render/texturePreparation.js";
 import { sampleActiveWaterProof, waterProofEnabled } from "./render/waterProof.js";
-import { SPAWN_CAMERA_OFFSET, SPAWN_POINTS } from "./render/worldData.js";
-import {
-  beginViewVisit,
-  medianOfGrowingSamples as median,
-  retainViewWindow,
-} from "./viewStatistics.js";
 import {
   type ForestStageWorld,
   addForestStage,
@@ -98,189 +104,18 @@ import {
   forestStageTerrainTargets,
 } from "./world/forestStage.js";
 import { waterCurrentAt, waterSurfaceAt } from "./world/water.js";
+import { START_WORLD, WORLD_ORDER, WORLD_SELECT, loadBakedWorld } from "./worlds.js";
 
-/** The last closed frame-budget window, published into state by the scene. */
-const budget = {
-  drawCalls: 0,
-  frameMs: 0,
-  tasksAvailable: false,
-  longestTaskMs: -1,
-  afterFirstFrameTaskMs: -1,
-};
-const launchedAt =
-  typeof performance !== "undefined" && Number.isFinite(performance.timeOrigin)
-    ? performance.timeOrigin
-    : Date.now();
-
-/**
- * Per-view frame cost, latched across the windows that closed while that camera was up.
- *
- * `budget` alone cannot answer "did the trees cost more at the meadow or at the overview": a playtest
- * cycles the cameras faster than a window closes, so the one number it holds belongs to whichever
- * view happened to be current. This keeps every window grouped by the view that was on screen, and
- * reports the median of each group's p50s and the worst p99 — the worst, because a LOD band that pops
- * once is a one-frame cost the median hides.
- */
-interface IViewWindow {
-  readonly view: string;
-  readonly p50s: number[];
-  readonly p99s: number[];
-  /** Presented-frame interval p95 per window: the whole frame the player sees, GPU included. */
-  readonly presentedP95s: number[];
-  readonly triangles: number[];
-  readonly gpuMs: number[];
-  readonly gpuMain: number[];
-  readonly gpuShadow: number[];
-  readonly gpuOther: number[];
-  readonly passes: Record<string, { triangles: number; draws: number }>[];
-  readonly surfaces: { scale: number; samples: number }[];
-}
-const viewBudgets = new Map<string, IViewWindow>();
-let currentView = "";
-let viewVisit = beginViewVisit();
-let measuredView = "";
-let firstViewGpuFrame = Number.POSITIVE_INFINITY;
-const renderedFrames: Record<WorldName, number> = {
-  forest: 0,
-  coastal: 0,
-  alpine: 0,
-  desert: 0,
-  tundra: 0,
-};
-/**
- * The baked terrain arrays, fetched rather than imported: as JSON modules the 7–12 MB files cost
- * about 3 s each to compile before the first frame. Which file, and the key inside it, is the biome
- * file's own `bake`: two biomes baked from one DEM share a bundle, and no loader branch names a
- * world. The bundle's other keys are returned with the data, because a world drawn beside another
- * one is the world this one is compared with.
- */
-async function loadBakedWorld(
-  assets: Pick<IAssetLoader, "resolve">,
-  spec: IBiomeSpec,
-): Promise<{ data: IBakedWorld; siblings: readonly string[] }> {
-  const { file, key } = spec.bake;
-  const response = await fetchBakedFile(assets, `world/${file}.json`);
-  const json = await response.json();
-  if (key === null) return { data: json as IBakedWorld, siblings: [] };
-  const bundle = json as Record<string, IBakedWorld>;
-  const data = bundle[key];
-  if (data === undefined)
-    throw new TypeError(`${spec.look}: the baked bundle '${file}' holds no '${key}'.`);
-  return { data, siblings: Object.keys(bundle).filter((name) => name !== key) };
-}
 let horizonLoad: Promise<void> | undefined;
 
+/**
+ * What the scene keeps in state that is not a measurement: the look readout a run compares, and
+ * whether the showcase hides the figure. Every counter beside it comes from `./diagnostics.js`.
+ */
 const initialState = {
-  elevationMin: 0,
-  elevationMax: 0,
-  snowFrom: 0,
-  snowTo: 0,
+  ...initialDiagnosticsState,
   canopyComparison: { normals: "authored", specular: "disabled" } as ICanopyComparison,
   showcase: false,
-  worldReady: false,
-  spawnReadiness: [] as Array<Record<string, string | number | boolean>>,
-  loadingError: "",
-  spawnCellsRequired: 0,
-  spawnCellsLoaded: 0,
-  streamingResidentCells: 0,
-  streamingLoadedCells: 0,
-  streamingEvictions: 0,
-  streamingInstances: 0,
-  streamingFailures: 0,
-  streamingPendingPrewarm: 0,
-  streamingLoadsInFlight: 0,
-  streamingAdmissionMs: 0,
-  streamingAdmissionBacklog: 0,
-  timeToReadyMs: -1,
-  enterMs: -1,
-  tasksAvailable: false,
-  longestLoadTaskMs: -1,
-  afterFirstFrameTaskMs: -1,
-  maxViewGpuMs: -1,
-  measuredGpuViewCount: 0,
-  viewGpu: [] as {
-    view: string;
-    gpuMs: number;
-    gpuMain: number;
-    gpuShadow: number;
-    gpuOther: number;
-    windows: number;
-    passes: Record<string, { triangles: number; draws: number }>;
-    scale: number;
-    samples: number;
-  }[],
-  world: "forest",
-  groundBiome: "baked",
-  terrainTransportBound: false,
-  erosionFlowSamples: 0,
-  erosionDepositSamples: 0,
-  frames: 0,
-  travel: 0,
-  edgeOvershoot: Number.NEGATIVE_INFINITY,
-  grounded: false,
-  /** Rock and trunk bodies resident around the player (`ScatterColliders`). */
-  propColliders: 0,
-  /** Frames the player's capsule crossed into a rock or trunk; 0 while props are solid. */
-  propOverlapFrames: 0,
-  swimming: false,
-  immersionDepth: 0,
-  swimSamples: 0,
-  swimFloatSamples: 0,
-  swimExits: 0,
-  /** Metres the river current carried the player along itself, while swimming. */
-  swimDrift: 0,
-  contactSamples: 0,
-  maxContactError: 0,
-  bilinearDifference: 0,
-  oceanSteps: 0,
-  waveSamples: 0,
-  waveRange: 0,
-  sampleSlopeRange: 0,
-  lakePlacementError: 1,
-  lakeSurfaceCount: 0,
-  riverSurfaceCount: 0,
-  lakeTriangles: 0,
-  lakeFootprintError: 1,
-  sunX: -180,
-  propDraws: 0,
-  propInstances: 0,
-  propTriangles: 0,
-  /** Drawn prop instances within 40 m of the eye in a fixed view (0 in the player view). */
-  coverNearEye: 0,
-  /** Drawn grass instances 100-200 m from the eye in a fixed view: the far slopes' cover. */
-  coverFar: 0,
-  /** Spruce planted past the square (`farForest.ts`), and those drawn inside the view's frustum. */
-  farForest: 0,
-  farForestInView: 0,
-  preparedLodBaseSpread: 0,
-  compressedTexturesPrepared: 0,
-  preparedLevelsWithoutSolid: 0,
-  view: "player",
-  revealComplete: false,
-  windowDrawCalls: 0,
-  windowFrameMs: 0,
-  currentViewWindows: 0,
-  viewFrameP50s: [] as { view: string; p50: number; presentedP95: number; windows: number }[],
-  maxViewFrameP50: 0,
-  maxViewPresentedP95: 0,
-  measuredViewCount: 0,
-  riverFrameP50: 0,
-  playerFrameP50: 0,
-  meadowFrameP50: 0,
-  meadowFrameP99: 0,
-  meadowTriangles: 0,
-  overviewFrameP50: 0,
-  overviewFrameP99: 0,
-  overviewTriangles: 0,
-  alpineRenderedFrames: 0,
-  desertRenderedFrames: 0,
-  tundraRenderedFrames: 0,
-  alpineFrameP50: 0,
-  desertFrameP50: 0,
-  tundraFrameP50: 0,
-  alpineOverviewFrameP50: 0,
-  desertOverviewFrameP50: 0,
-  tundraOverviewFrameP50: 0,
 };
 type TerrainState = typeof initialState;
 type TerrainCtx = ICtx<TerrainState, IPhysicsContext>;
@@ -308,21 +143,6 @@ const FEET = -0.86;
 /** Ground speeds in m/s: the jog the clip was authored for, and the Shift sprint. */
 const JOG = 6;
 const SPRINT = 9;
-
-/**
- * Which key selects which world, in the order the number keys count them.
- *
- * One list owns the selector: the input map binds these keys, the frame loop reads them, and
- * `__tests__/world-keys.spec.ts` pins them. A world's spawn and camera framing come from its biome
- * row; its key is the game's own choice, because a biome row describes a place, not a key binding.
- */
-export const WORLD_SELECT = {
-  forest: { keys: ["Digit1"] },
-  coastal: { keys: ["Digit2"] },
-  alpine: { keys: ["Digit3"] },
-  desert: { keys: ["Digit4"] },
-  tundra: { keys: ["Digit5"] },
-} as const satisfies Readonly<Record<WorldName, { readonly keys: readonly string[] }>>;
 
 export function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsContext> {
   // What the game resolves this world from: its validated rules, and the look it is graded under.
@@ -400,10 +220,7 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
     #lake: IRiverWater | undefined;
 
     override exit(ctx: TerrainCtx): void {
-      currentView = "";
-      viewVisit = beginViewVisit();
-      firstViewGpuFrame = Number.POSITIVE_INFINITY;
-      measuredView = "";
+      leaveScene();
       ctx.state.set({ currentViewWindows: 0 });
       this.#stageLoad++;
       const stage = this.#stage;
@@ -435,90 +252,22 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
         revealComplete: false,
       });
       let released = false;
-      const reveal = {
-        startedMs: -1,
-        elapsedMs: 0,
-        complete: false,
-        samples: 0,
-        publishedBatchesInView: -1,
-        shadowInvalidated: -1,
-        impostorPendingPeak: -1,
-        pipelinesCreated: -1,
-        // A pipeline counter measured the reveal: the census, or the owned engine's compile count.
-        pipelineCensusAvailable: false,
-        pipelineSource: "none",
-        // Device pipeline creations from the reveal to now, for the whole session: a walk and a
-        // camera turn must build none either (`playtests/loop.playtest.json`). -1: not measured.
-        pipelinesSinceReveal: -1,
-      };
-      let shadowAtReveal = -1;
-      let pipelinesAtReveal: number | undefined;
-      // Pipelines built so far, from one source picked at the reveal: the census's device creations
-      // on three's backend, else the owned engine's compile count. The owned engine builds its
-      // pipelines inside Wasm, where the census sees none and stays incomplete.
-      let pipelineSource: "census" | "engine" | undefined;
-      const pipelineCount = (source: typeof pipelineSource): number | undefined => {
-        if (source === "census") {
-          const census = ctx.renderer.pipelineCensus?.();
-          return census?.complete === true ? census.counts.deviceCreations : undefined;
-        }
-        const engine = (ctx.renderer.raw as { info?: { engine?: { compiles?: unknown } } }).info
-          ?.engine;
-        return source === "engine" && typeof engine?.compiles === "number"
-          ? engine.compiles
-          : undefined;
-      };
-      const revealFrustum = new Frustum();
-      const revealMatrix = new Matrix4();
-      const initializeRevealProbe = (): void => {
-        if (released || reveal.complete || reveal.startedMs >= 0) return;
-        if (ctx.canvasLayer.opaque || ctx.startup.phase !== "ready")
-          throw new Error("Reveal probe requires ready props and an uncovered world");
-        const shadows = this.#sky?.sun.shadow.shadowNode;
-        if (!(shadows instanceof VirtualShadowNode))
-          throw new Error("Reveal probe requires virtual shadows");
-        pipelineSource = pipelineCount("census") !== undefined ? "census" : "engine";
-        reveal.startedMs = performance.now();
-        reveal.publishedBatchesInView = 0;
-        shadowAtReveal = shadows.stats.byInvalidation;
-        pipelinesAtReveal = pipelineCount(pipelineSource);
-        if (pipelinesAtReveal !== undefined) reveal.pipelineSource = pipelineSource;
-        ctx.camera.updateMatrixWorld(true);
-        revealFrustum.setFromProjectionMatrix(
-          revealMatrix.multiplyMatrices(ctx.camera.projectionMatrix, ctx.camera.matrixWorldInverse),
-          ctx.camera.coordinateSystem,
-        );
-      };
-      ctx.afterPhysics(() => {
-        if (
-          released ||
-          reveal.complete ||
-          reveal.startedMs < 0 ||
-          ctx.canvasLayer.opaque ||
-          ctx.startup.phase !== "ready"
-        )
-          return;
-        const shadows = this.#sky?.sun.shadow.shadowNode;
-        if (!(shadows instanceof VirtualShadowNode))
-          throw new Error("Reveal probe requires virtual shadows");
-        const creations = pipelineCount(pipelineSource);
-        reveal.samples++;
-        reveal.elapsedMs = performance.now() - reveal.startedMs;
-        reveal.shadowInvalidated = shadows.stats.byInvalidation - shadowAtReveal;
-        reveal.impostorPendingPeak = Math.max(
-          reveal.impostorPendingPeak,
+      const reveal = createRevealProbe({
+        camera: () => ctx.camera as PerspectiveCamera,
+        pipelineCensus: () => ctx.renderer.pipelineCensus?.(),
+        engineCompiles: () => {
+          const engine = (ctx.renderer.raw as { info?: { engine?: { compiles?: unknown } } }).info
+            ?.engine;
+          return typeof engine?.compiles === "number" ? engine.compiles : undefined;
+        },
+        covered: () => ctx.canvasLayer.opaque,
+        phase: () => ctx.startup.phase,
+        shadowNode: () => this.#sky?.sun.shadow.shadowNode,
+        pendingImpostors: () =>
           props?.worlds.reduce((sum, stream) => sum + stream.stats().impostor.pending, 0) ?? 0,
-        );
-        reveal.pipelineCensusAvailable = creations !== undefined && pipelinesAtReveal !== undefined;
-        if (creations !== undefined && pipelinesAtReveal !== undefined)
-          reveal.pipelinesCreated = creations - pipelinesAtReveal;
-        reveal.complete = reveal.elapsedMs >= 3000;
-        if (reveal.complete) ctx.state.set({ revealComplete: true });
-      });
-      ctx.afterPhysics(() => {
-        if (released || pipelinesAtReveal === undefined) return;
-        const creations = pipelineCount(pipelineSource);
-        reveal.pipelinesSinceReveal = creations === undefined ? -1 : creations - pipelinesAtReveal;
+        released: () => released,
+        afterPhysics: (callback) => ctx.afterPhysics(callback),
+        revealed: () => ctx.state.set({ revealComplete: true }),
       });
       const textureUploads = new AbortController();
       let propsStage = "waiting-for-physics";
@@ -616,7 +365,7 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
         );
       const loading = createLoadingScreen({
         ...ctx,
-        onReveal: initializeRevealProbe,
+        onReveal: reveal.initialize,
         keepWorldRendering: false,
         startup: {
           get progress() {
@@ -719,11 +468,11 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
         new CapsuleGeometry(0.35, 1.0, 6, 12),
         new MeshStandardMaterial({ color: 0xffc76d }),
       );
-      const start = SPAWN_POINTS[world];
-      actor.position.set(start[0], field.heightAt(start[0], start[1]) + 2, start[1]);
+      const [startX, startZ] = spec.spawn.at;
+      actor.position.set(startX, field.heightAt(startX, startZ) + 2, startZ);
       actor.name = "player";
       // Freeze the launch region before gameplay or a review view can move its follow camera.
-      const spawn = actor.position.clone().add(new Vector3(...SPAWN_CAMERA_OFFSET[world]));
+      const spawn = actor.position.clone().add(new Vector3(...spec.spawn.cameraOffset));
       ctx.camera.position.copy(spawn);
       ctx.add(actor);
       const player = new CharacterBody3D({
@@ -1216,10 +965,7 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
               completedPropsWork += Math.max(0, progress.added - previous);
               preparation = progress;
             },
-            onPublication: (bounds) => {
-              if (reveal.startedMs < 0 || reveal.complete) return;
-              if (revealFrustum.intersectsBox(bounds)) reveal.publishedBatchesInView++;
-            },
+            onPublication: (bounds) => reveal.publishedBatch(bounds),
             invalidateShadows: (region) => {
               const shadows = sky.sun.shadow.shadowNode;
               if (shadows instanceof VirtualShadowNode) invalidatePropShadows(shadows, region);
@@ -1373,180 +1119,33 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
       }
 
       let frames = 0;
-      let propCounts = { draws: 0, instances: 0, triangles: 0 };
-      let coverNearEye = 0;
-      let coverFar = 0;
       let farForestCount = 0;
-      let farForestInView = 0;
-      const farFrustum = new Frustum();
-      const farPoint = new Vector3();
-      let travel = 0;
-      // The owner's report, measured the same with or without prop collision: frames in which the
-      // player's capsule, less a 5 cm skin, crosses into a rock or trunk body.
-      const propProbe = CollisionShape3D.capsule(0.5, 0.3);
-      let propOverlapFrames = 0;
-      // Metres past the playable square's edge the player reached: onto the surroundings' hills.
-      let edgeOvershoot = Number.NEGATIVE_INFINITY;
-      // Swimming as the playtest reads it: samples swimming with a swim clip on, those of them off
-      // the bed, and how many times the player climbed back out.
-      let swimSamples = 0;
-      let swimFloatSamples = 0;
-      let swimExits = 0;
-      let swimDrift = 0;
-      let wasSwimming = false;
-      currentView = `${world}:player`;
-      viewVisit = beginViewVisit();
-      firstViewGpuFrame = Number.POSITIVE_INFINITY;
-      measuredView = "";
-      viewBudgets.set(currentView, {
-        view: currentView,
-        p50s: [],
-        p99s: [],
-        presentedP95s: [],
-        triangles: [],
-        gpuMs: [],
-        gpuMain: [],
-        gpuShadow: [],
-        gpuOther: [],
-        passes: [],
-        surfaces: [],
+      beginScene(world);
+      const measure = createMeasure({
+        world,
+        physics: ctx.physics,
+        raycast: (options) => ctx.raycast(options),
+        actor,
+        player,
+        size: data.size,
+        mesh,
+        stage,
+        fixture,
+        probeMesh,
+        swimmingClip: () => {
+          const clip = this.#figure?.current;
+          return clip === CLIPS.swim || clip === CLIPS.tread;
+        },
+        hasPropColliders: () => propColliders !== undefined,
+        eye: () => ctx.camera.position,
+        camera: () => ctx.camera as PerspectiveCamera,
+        ocean,
+        spawnReady: () => spawnReady,
+        terrainTargets: () => (stage ? forestStageTerrainTargets(stage.world) : mesh),
+        view: () => ctx.state.getState().view,
       });
-      const previous = actor.position.clone();
-      let contactSamples = 0;
-      let maxContactError = 0;
-      let bilinearDifference = 0;
-      let waveSamples = 0;
-      let minWave = Number.POSITIVE_INFINITY;
-      let maxWave = Number.NEGATIVE_INFINITY;
-      let minSlope = Number.POSITIVE_INFINITY;
-      let maxSlope = Number.NEGATIVE_INFINITY;
       ctx.afterPhysics(() => {
-        const dx = actor.position.x - previous.x;
-        const dz = actor.position.z - previous.z;
-        travel += Math.hypot(dx, dz);
-        previous.copy(actor.position);
-        // What the water moved, not what the keys moved: the share of this step's travel along the
-        // current, counted only while swimming with no input of the player's own. 0 with
-        // `?current=off`, which is its before arm.
-        if (player.swimming && player.velocity.x === 0 && player.velocity.z === 0) {
-          const { x: cx, z: cz } = player.currentVelocity;
-          const speed = Math.hypot(cx, cz);
-          if (speed > 0) swimDrift += (dx * cx + dz * cz) / speed;
-        }
-        if (
-          propColliders &&
-          ctx.physics.directSpaceState.intersectShape({
-            shape: propProbe,
-            position: actor.position,
-            collisionMask: 16,
-            maxResults: 1,
-          }).length > 0
-        )
-          propOverlapFrames++;
-        // Query actual triangles, not bilinear interpolation, after the shared solver step.
-        if (frames === 0) {
-          probeMesh.updateMatrixWorld(true);
-          mesh?.updateMatrixWorld(true);
-          const points = [
-            [-7.75, -7.75],
-            [-7.25, -7.25],
-            [-7.75, -7.25],
-            [-7.25, -7.75],
-            [-8, -8],
-            [-7, -8],
-            [0, 0],
-            [7.5, 7.5],
-          ];
-          for (const [x, z] of points) {
-            const wx = 600 + (x as number);
-            const visual = ctx.raycast({
-              origin: new Vector3(wx, 200, z),
-              direction: new Vector3(0, -1, 0),
-              targets: probeMesh,
-            });
-            const physical = ctx.physics.directSpaceState.intersectRay({
-              from: { x: wx, y: 200, z: z as number },
-              to: { x: wx, y: -100, z: z as number },
-              collisionMask: 2,
-            });
-            if (!visual || !physical) throw new Error("Missing asymmetric terrain contact");
-            maxContactError = Math.max(
-              maxContactError,
-              Math.abs(visual.point.y - physical.position.y),
-            );
-            bilinearDifference = Math.max(
-              bilinearDifference,
-              Math.abs(visual.point.y - fixture.heightAt(x as number, z as number)),
-            );
-            contactSamples++;
-          }
-        }
-        // An oblique traversal crosses cells; exact vertical edge/corner probes remain above. A
-        // staged world admits no terrain tile before its first update, which the loop's settle
-        // steps precede, so its contact is observed once its spawn region is ready.
-        // A staged world streams around the camera, so a benchmark view far from the player has no
-        // ground under it; the player is held there (see `update`) and its contact is not asked for.
-        // Past the square the player stands on the surroundings, whose collider is their drawn
-        // triangles (see the walls above): physics alone answers there, and no picking tree is built.
-        const onSurroundings =
-          !stage &&
-          Math.max(Math.abs(actor.position.x), Math.abs(actor.position.z)) > data.size / 2 - 1;
-        edgeOvershoot = Math.max(
-          edgeOvershoot,
-          Math.max(Math.abs(actor.position.x), Math.abs(actor.position.z)) - data.size / 2,
-        );
-        const clip = this.#figure?.current;
-        if (player.swimming && (clip === CLIPS.swim || clip === CLIPS.tread)) swimSamples++;
-        if (player.swimming && !player.grounded) swimFloatSamples++;
-        if (wasSwimming && !player.swimming) swimExits++;
-        wasSwimming = player.swimming;
-        if (!stage || (spawnReady && ctx.state.getState().view === "player")) {
-          const terrainTargets = stage ? forestStageTerrainTargets(stage.world) : mesh;
-          const visual =
-            !onSurroundings &&
-            terrainTargets &&
-            ctx.raycast({
-              origin: new Vector3(actor.position.x, 300, actor.position.z),
-              direction: new Vector3(1, -400, 1).normalize(),
-              targets: terrainTargets,
-            });
-          // The same line as the visual ray, started a metre above the feet: from 300 m, a stage
-          // tree the player stands against is the first body under it, not the ground.
-          const start = stage || onSurroundings ? actor.position.y + 1 : 300;
-          const lead = (300 - start) / 400;
-          const physical = ctx.physics.directSpaceState.intersectRay({
-            from: { x: actor.position.x + lead, y: start, z: actor.position.z + lead },
-            to: { x: actor.position.x + 1, y: -100, z: actor.position.z + 1 },
-            // The kit's ground keeps the default layer; here the ground alone, not a rock beside it.
-            collisionMask: stage ? 1 : 8,
-          });
-          if (
-            (!visual && !onSurroundings) ||
-            !physical ||
-            (stage && physical.body.id !== stage.ground.body.id)
-          )
-            throw new Error(
-              `Missing playable terrain contact: world=${world}, frame=${frames}, player=${actor.position.toArray()}, visual=${!!visual}, physical=${!!physical}, body=${physical?.body.id}:${physical?.body.entity}, expectedGround=${stage?.ground.body.id}, terrain=${mesh?.position.toArray() ?? "stage"}`,
-            );
-          if (visual) {
-            maxContactError = Math.max(
-              maxContactError,
-              Math.abs(visual.point.y - physical.position.y),
-            );
-            contactSamples++;
-          }
-        }
-        const wave = ocean?.sampleHeight(130, 140);
-        const east = ocean?.sampleHeight(131, 140);
-        if (wave && east) {
-          waveSamples++;
-          minWave = Math.min(minWave, wave.height);
-          maxWave = Math.max(maxWave, wave.height);
-          // Stale CPU sample slopes are a proxy; they do not qualify rendered normals.
-          const slope = east.height - wave.height;
-          minSlope = Math.min(minSlope, slope);
-          maxSlope = Math.max(maxSlope, slope);
-        }
+        measure.step();
         // The props are placed here rather than in `enter`: their ground query asks the stepped
         // world where the surface is, and neither the ray tree nor the collider answers before the
         // solver has run once.
@@ -1572,73 +1171,10 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
               if (object instanceof InstancedMesh && ctx.camera.layers.test(object.layers))
                 meshes.push(object);
             });
-          propCounts = {
-            draws: meshes.length,
-            instances: meshes.reduce((sum, draw) => sum + draw.count, 0),
-            triangles: meshes.reduce(
-              (sum, draw) => sum + (draw.count * (draw.geometry.index?.count ?? 0)) / 3,
-              0,
-            ),
-          };
-          // What the vista's meadow puts in front of the eye; skipped in the player view.
-          coverNearEye = 0;
-          coverFar = 0;
-          if (ctx.state.getState().view !== "player") {
-            const eye = ctx.camera.position;
-            for (const draw of meshes) {
-              const grass = /^(grass|meadow):/.test(draw.name);
-              const local = draw.instanceMatrix.array;
-              const world = draw.matrixWorld.elements;
-              for (let i = 0; i < draw.count; i++) {
-                const x = local[i * 16 + 12] as number;
-                const y = local[i * 16 + 13] as number;
-                const z = local[i * 16 + 14] as number;
-                const dx =
-                  (world[0] as number) * x +
-                  (world[4] as number) * y +
-                  (world[8] as number) * z +
-                  (world[12] as number) -
-                  eye.x;
-                const dz =
-                  (world[2] as number) * x +
-                  (world[6] as number) * y +
-                  (world[10] as number) * z +
-                  (world[14] as number) -
-                  eye.z;
-                const square = dx * dx + dz * dz;
-                if (square < 1600) coverNearEye++;
-                if (grass && square >= 10000 && square < 40000) coverFar++;
-              }
-            }
-          }
-          // The far forest's drawn instances whose root is inside the camera's frustum.
-          farForestInView = 0;
-          const farWorld = props?.worlds.find((stream) => stream.name === "strata-props:far:false");
-          if (farWorld && ctx.state.getState().view !== "player") {
-            ctx.camera.updateMatrixWorld(true);
-            farFrustum.setFromProjectionMatrix(
-              revealMatrix.multiplyMatrices(
-                ctx.camera.projectionMatrix,
-                ctx.camera.matrixWorldInverse,
-              ),
-              ctx.camera.coordinateSystem,
-            );
-            farWorld.traverse((node) => {
-              if (!(node instanceof InstancedMesh) || !node.visible || !node.layers.isEnabled(0))
-                return;
-              const local = node.instanceMatrix.array;
-              for (let i = 0; i < node.count; i++) {
-                farPoint
-                  .set(
-                    local[i * 16 + 12] as number,
-                    local[i * 16 + 13] as number,
-                    local[i * 16 + 14] as number,
-                  )
-                  .applyMatrix4(node.matrixWorld);
-                if (farFrustum.containsPoint(farPoint)) farForestInView++;
-              }
-            });
-          }
+          measure.countProps(
+            meshes,
+            props?.worlds.find((stream) => stream.name === "strata-props:far:false"),
+          );
         }
         const stagedStreaming = stage?.world.stats();
         const streaming = stagedStreaming
@@ -1674,123 +1210,30 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
             if (!released) ctx.state.set({ timeToReadyMs: Date.now() - launchedAt });
           });
         }
-        const viewFrameP50s = [...viewBudgets.values()].map((group) => ({
-          view: group.view,
-          p50: median(group.p50s),
-          presentedP95: median(group.presentedP95s),
-          windows: group.p50s.length,
-        }));
-        const viewGpu = [...viewBudgets.values()]
-          .filter((group) => group.gpuMs.length > 0)
-          .map((group) => ({
-            view: group.view,
-            gpuMs: median(group.gpuMs),
-            gpuMain: group.gpuMain.length ? median(group.gpuMain) : -1,
-            gpuShadow: group.gpuShadow.length ? median(group.gpuShadow) : -1,
-            gpuOther: group.gpuOther.length ? median(group.gpuOther) : -1,
-            windows: group.gpuMs.length,
-            passes: Object.fromEntries(
-              Object.keys(group.passes[0] ?? {}).map((pass) => [
-                pass,
-                {
-                  triangles: median(group.passes.map((window) => window[pass]?.triangles ?? 0)),
-                  draws: median(group.passes.map((window) => window[pass]?.draws ?? 0)),
-                },
-              ]),
-            ),
-            scale: median(group.surfaces.map((surface) => surface.scale)),
-            samples: median(group.surfaces.map((surface) => surface.samples)),
-          }));
-        ctx.state.set({
-          viewGpu,
-          elevationMin: biome.elevationRange[0],
-          elevationMax: biome.elevationRange[1],
-          snowFrom: biome.snowBand[0],
-          snowTo: biome.snowBand[1],
-          maxViewGpuMs: viewGpu.length ? Math.max(...viewGpu.map((group) => group.gpuMs)) : -1,
-          measuredGpuViewCount: viewGpu.length,
-          tasksAvailable: budget.tasksAvailable,
-          longestLoadTaskMs: budget.longestTaskMs,
-          afterFirstFrameTaskMs: budget.afterFirstFrameTaskMs,
-          currentViewWindows: viewVisit.windows,
-          viewFrameP50s,
-          maxViewFrameP50: Math.max(0, ...viewFrameP50s.map((group) => group.p50)),
-          maxViewPresentedP95: Math.max(0, ...viewFrameP50s.map((group) => group.presentedP95)),
-          measuredViewCount: viewFrameP50s.filter((group) => group.windows > 0).length,
+        publish(ctx, {
           world,
           groundBiome: mesh
             ? ((mesh.material as MeshStandardMaterial).userData.biome ?? "baked")
             : `stage:${forestStageArm(globalThis.location?.search ?? "")}`,
+          elevation: biome.elevationRange,
+          snowBand: biome.snowBand,
           worldReady,
           spawnReadiness,
-          spawnCellsRequired: spawnCells.required,
-          spawnCellsLoaded: spawnCells.loaded,
-          streamingResidentCells: streaming?.residentCells ?? 0,
-          streamingLoadedCells: streaming?.loadedCells ?? 0,
-          streamingEvictions: streaming?.evictions ?? 0,
-          streamingInstances: streaming?.instances ?? 0,
-          streamingFailures: streaming?.failures ?? 0,
-          streamingPendingPrewarm: streaming?.pendingPrewarm ?? 0,
-          streamingLoadsInFlight: streaming?.loadsInFlight ?? 0,
-          streamingAdmissionMs: streaming?.admissionMs ?? 0,
-          streamingAdmissionBacklog: streaming?.admissionBacklog ?? 0,
+          spawnCells,
+          streaming,
           terrainTransportBound:
             (mesh?.material as MeshStandardMaterial | undefined)?.userData.erosion === true &&
             erosionFlowSamples > 1000 &&
             erosionDepositSamples > 100,
-          erosionFlowSamples,
-          erosionDepositSamples,
+          erosion: { flow: erosionFlowSamples, deposition: erosionDepositSamples },
           sunX: sky.sunX,
           frames,
-          travel,
-          edgeOvershoot,
-          grounded: player.grounded,
           propColliders: propColliders?.stats().resident ?? 0,
-          propOverlapFrames,
-          swimming: player.swimming,
-          immersionDepth: player.immersionDepth,
-          swimSamples,
-          swimFloatSamples,
-          swimExits,
-          swimDrift,
-          contactSamples,
-          maxContactError,
-          bilinearDifference,
-          oceanSteps: ocean?.steps ?? 0,
-          waveSamples,
-          waveRange: waveSamples ? maxWave - minWave : 0,
-          sampleSlopeRange: waveSamples ? maxSlope - minSlope : 0,
-          propDraws: propCounts.draws,
-          propInstances: propCounts.instances,
-          propTriangles: propCounts.triangles,
-          coverNearEye,
-          coverFar,
+          ...measure.facts(),
           farForest: farForestCount,
-          farForestInView,
           preparedLodBaseSpread,
           compressedTexturesPrepared,
           preparedLevelsWithoutSolid,
-          windowDrawCalls: budget.drawCalls,
-          windowFrameMs: budget.frameMs,
-          // Forest camera costs, published as plain state so the run report
-          // carries the numbers rather than a console ring buffer that outlives neither run.
-          riverFrameP50: median(viewBudgets.get("forest:river")?.p50s ?? []),
-          playerFrameP50: median(viewBudgets.get("forest:player")?.p50s ?? []),
-          meadowFrameP50: median(viewBudgets.get("forest:meadow-close")?.p50s ?? []),
-          meadowFrameP99: Math.max(0, ...(viewBudgets.get("forest:meadow-close")?.p99s ?? [])),
-          meadowTriangles: median(viewBudgets.get("forest:meadow-close")?.triangles ?? []),
-          overviewFrameP50: median(viewBudgets.get("forest:overview")?.p50s ?? []),
-          overviewFrameP99: Math.max(0, ...(viewBudgets.get("forest:overview")?.p99s ?? [])),
-          overviewTriangles: median(viewBudgets.get("forest:overview")?.triangles ?? []),
-          alpineRenderedFrames: renderedFrames.alpine,
-          desertRenderedFrames: renderedFrames.desert,
-          tundraRenderedFrames: renderedFrames.tundra,
-          alpineFrameP50: median(viewBudgets.get("alpine:ridge")?.p50s ?? []),
-          desertFrameP50: median(viewBudgets.get("desert:mesa")?.p50s ?? []),
-          tundraFrameP50: median(viewBudgets.get("tundra:plain")?.p50s ?? []),
-          alpineOverviewFrameP50: median(viewBudgets.get("alpine:overview")?.p50s ?? []),
-          desertOverviewFrameP50: median(viewBudgets.get("desert:overview")?.p50s ?? []),
-          tundraOverviewFrameP50: median(viewBudgets.get("tundra:overview")?.p50s ?? []),
         });
       });
       // --- the fixed benchmark cameras ---------------------------------------------------------
@@ -1805,33 +1248,14 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
       const at = (x: number, z: number, up: number): Vector3 =>
         new Vector3(x, field.heightAt(x, z) + up, z);
       ctx.beforeRender(() => {
-        renderedFrames[world]++;
-        viewVisit.ready = ctx.state.getState().worldReady && ctx.startup.phase === "ready";
-        if (!viewVisit.ready) viewVisit.discard = true;
-        if (
-          measuredView !== currentView ||
-          !ctx.state.getState().worldReady ||
-          ctx.startup.phase !== "ready"
-        ) {
-          measuredView = currentView;
-          firstViewGpuFrame = Number.POSITIVE_INFINITY;
-        }
-        if (
-          firstViewGpuFrame === Number.POSITIVE_INFINITY &&
-          ctx.state.getState().worldReady &&
-          ctx.startup.phase === "ready"
-        ) {
-          const sample = ctx.renderer.gpuFrameSample?.();
-          const age = ctx.renderer.gpuFrameAge?.();
-          if (sample && age !== undefined) firstViewGpuFrame = sample.frame + age + 1;
-        }
+        observeFrame(world, ctx);
         const view = ctx.state.getState().view;
         figure.root.visible = view === "player" && !ctx.state.getState().showcase;
         if (view === "player") {
           // Forest and tundra: the orbit camera framed the player after physics.
           const aim = look.vistaAim;
           if (!aim) return;
-          ctx.camera.position.copy(actor.position).add(new Vector3(...SPAWN_CAMERA_OFFSET[world]));
+          ctx.camera.position.copy(actor.position).add(new Vector3(...spec.spawn.cameraOffset));
           const [aimX, aimZ] = aim.at;
           // A look's aim stands on the player's own ground, or level with the water it looks over.
           const aimY = aim.rise === null ? (data.waterLevel ?? 0) : actor.position.y + aim.rise;
@@ -1903,31 +1327,8 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
         const next = cycle[(current + 1) % cycle.length] ?? "player";
         // Keyed by world as well as view: `meadow-close` frames a different hillside in each world,
         // so folding them together would report one number for two different pictures.
-        currentView = `${world}:${next}`;
-        viewVisit = beginViewVisit();
-        firstViewGpuFrame = Number.POSITIVE_INFINITY;
-        measuredView = "";
-        // Cumulative, not reset: a view is entered once per cycle but latched across every pass the
-        // run makes through it, so a second visit measures the same framing with more samples behind
-        // it rather than starting the count from nothing.
-        if (!viewBudgets.has(currentView))
-          viewBudgets.set(currentView, {
-            view: currentView,
-            p50s: [],
-            p99s: [],
-            presentedP95s: [],
-            triangles: [],
-            gpuMs: [],
-            gpuMain: [],
-            gpuShadow: [],
-            gpuOther: [],
-            passes: [],
-            surfaces: [],
-          });
-        ctx.state.set({
-          view: next,
-          currentViewWindows: viewVisit.windows,
-        });
+        const entered = enterView(world, next);
+        ctx.state.set({ view: next, currentViewWindows: entered.windows });
       }
       this.#ocean?.advance(this.#elapsed);
       this.#river?.advance(this.#elapsed);
@@ -1995,57 +1396,7 @@ const game = defineGame<TerrainState, IPhysicsContext>({
     // A short window so a playtest run actually closes one; the default 300 frames is longer than
     // this scenario runs. The scene reads the result into state, which is what puts the measured
     // draw count and frame cost into the run report rather than only on a console line.
-    onWindow: (window) => {
-      budget.drawCalls = Object.values(window.passes ?? {}).reduce(
-        (sum, pass) => sum + (pass.draws.mean * pass.frames) / window.frames,
-        0,
-      );
-      budget.frameMs = window.frame.p50;
-      budget.tasksAvailable = window.longTasks.available;
-      if (window.longTasks.available) {
-        budget.longestTaskMs = window.longTasks.longestMs;
-        budget.afterFirstFrameTaskMs = window.longTasks.afterFirstFrameMs;
-      }
-      const group = viewBudgets.get(currentView);
-      if (group && retainViewWindow(viewVisit, window, firstViewGpuFrame)) {
-        if (
-          window.gpuMs !== undefined &&
-          window.gpuFrames &&
-          window.gpuFrames.first >= firstViewGpuFrame &&
-          window.surface?.compiling !== true
-        ) {
-          group.gpuMs.push(window.gpuMs);
-          if (window.gpuMain !== undefined) group.gpuMain.push(window.gpuMain);
-          if (window.gpuShadow !== undefined) group.gpuShadow.push(window.gpuShadow);
-          if (window.gpuOther !== undefined) group.gpuOther.push(window.gpuOther);
-          group.passes.push(
-            Object.fromEntries(
-              Object.entries(window.passes ?? {}).map(([pass, counts]) => [
-                pass,
-                // A kind can run several times per frame (world + fullscreen AO are nested).
-                // Summarising individual calls' p50 hides the world behind the one-triangle quads.
-                {
-                  triangles: Math.round((counts.triangles.mean * counts.frames) / window.frames),
-                  draws: (counts.draws.mean * counts.frames) / window.frames,
-                },
-              ]),
-            ),
-          );
-          if (window.surface)
-            group.surfaces.push({
-              scale: window.surface.resolutionScale,
-              samples: window.surface.sampleCount,
-            });
-        }
-        group.p50s.push(window.frame.p50);
-        group.p99s.push(window.frame.p99);
-        group.presentedP95s.push(window.presented.p95);
-        group.triangles.push(
-          // The world pass is nested beneath AO; its full-screen passes submit one triangle.
-          Object.values(window.passes ?? {}).reduce((sum, pass) => sum + pass.triangles.max, 0),
-        );
-      }
-    },
+    onWindow: (window) => observeWindow(window),
     // Windows close every ten presents, not simulation ticks or seconds. The first window after
     // a view change is discarded; the scenario waits for three kept windows before leaving a view.
     reportEvery: 10,
@@ -2059,14 +1410,8 @@ const game = defineGame<TerrainState, IPhysicsContext>({
         ? "auto"
         : 1,
   },
-  scenes: {
-    forest: terrainScene("forest"),
-    coastal: terrainScene("coastal"),
-    alpine: terrainScene("alpine"),
-    desert: terrainScene("desert"),
-    tundra: terrainScene("tundra"),
-  },
-  start: "forest",
+  scenes: Object.fromEntries(WORLD_ORDER.map((name) => [name, terrainScene(name)])),
+  start: START_WORLD,
 });
 
 export default game;
