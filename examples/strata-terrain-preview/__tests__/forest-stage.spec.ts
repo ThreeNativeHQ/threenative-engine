@@ -46,9 +46,10 @@ vi.mock("../src/world/forestStage.js", async (importOriginal) => ({
     };
   },
 }));
-const { addForestStage, forestStageArm, forestStageTerrainTargets } = await vi.importActual<
-  typeof import("../src/world/forestStage.js")
->("../src/world/forestStage.js");
+const { addForestStage, FOREST_STAGE_ARMS, forestStageArm, forestStageTerrainTargets } =
+  await vi.importActual<typeof import("../src/world/forestStage.js")>(
+    "../src/world/forestStage.js",
+  );
 const { terrainScene } = await import("../src/game.js");
 
 const ctx = {} as ICtx<Record<string, unknown>, IPhysicsContext>;
@@ -208,6 +209,29 @@ describe("forest stage arm", () => {
     expect(forestStageArm("?stage=after")).toBe("after");
     expect(() => forestStageArm("?stage=")).toThrow(/not one of before, after/);
     expect(() => forestStageArm("?stage=candidates")).toThrow(/not one of before, after/);
+  });
+
+  it("names every ?stage= arm in the comments that list them", () => {
+    // A comment restating the arms is a second source of truth, so an arm added without it drifts.
+    const comments = (file: string, before?: string) => {
+      const source = readFileSync(new URL(`../${file}`, import.meta.url), "utf8");
+      return (before === undefined ? source : source.slice(0, source.indexOf(before)))
+        .split("\n")
+        .filter((line) => /^\s*(\/\/|\/\*\*|\*)/.test(line))
+        .join("\n");
+    };
+    const files = [
+      comments("src/world/forestStage.ts", "export const FOREST_STAGE_ARMS"),
+      comments("vite.config.ts")
+        .split("\n")
+        .filter((line) => line.includes("?stage="))
+        .join("\n"),
+    ];
+    for (const prose of files)
+      for (const arm of FOREST_STAGE_ARMS)
+        expect(prose, `a comment listing the arms must name ${arm}`).toMatch(
+          new RegExp(`\\b${arm}\\b`),
+        );
   });
 
   it("fails closed when the requested arm is not staged", async () => {

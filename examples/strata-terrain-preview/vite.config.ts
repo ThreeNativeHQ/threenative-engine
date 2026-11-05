@@ -45,7 +45,7 @@ function preparedAssets(): Plugin {
     // The Basis transcoder a cooked KTX2 model decodes through, which the engine's asset pipeline
     // copies into `public/basis/` and this example has no pipeline. Same source, same path.
     { dir: "./local-assets/landscape-pro/basis", flat: true, mount: "/basis" },
-    // Explicit `?stage=before|after` forest arms: each folder is a baked copy of the forest kit.
+    // Explicit `?stage=before|after|wildwood` forest arms: each folder is a baked copy of the forest kit.
     { dir: "./local-assets/forest-stage", flat: false, mount: "/forest-stage" },
   ].map((entry) => ({
     ...entry,

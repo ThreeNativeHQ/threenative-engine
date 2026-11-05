@@ -15,7 +15,10 @@ export function forestStageTerrainTargets(world: Object3D): Mesh[] {
   return meshes;
 }
 
-/** The two explicit `?stage=` arms; each is a baked copy of the forest kit under `local-assets/forest-stage/`. */
+/**
+ * The three explicit `?stage=` arms, `before`, `after` and `wildwood`; each is a baked copy of the
+ * forest kit under `local-assets/forest-stage/`.
+ */
 export const FOREST_STAGE_ARMS = ["before", "after", "wildwood"] as const;
 export type ForestStageArm = (typeof FOREST_STAGE_ARMS)[number];
 
