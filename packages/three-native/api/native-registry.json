@@ -3969,6 +3969,7 @@
       "getters": [
         "alphaHash",
         "alphaTest",
+        "alphaToCoverage",
         "blending",
         "color.b",
         "color.g",
@@ -3997,6 +3998,7 @@
       "setters": [
         "alphaHash",
         "alphaTest",
+        "alphaToCoverage",
         "blending",
         "color",
         "color.b",
@@ -4743,6 +4745,7 @@
       "getters": [
         "alphaHash",
         "alphaTest",
+        "alphaToCoverage",
         "blending",
         "color.b",
         "color.g",
@@ -4771,6 +4774,7 @@
       "setters": [
         "alphaHash",
         "alphaTest",
+        "alphaToCoverage",
         "blending",
         "color",
         "color.b",
@@ -4816,6 +4820,8 @@
       "getters": [
         "alphaHash",
         "alphaTest",
+        "alphaTestNode",
+        "alphaToCoverage",
         "aoNode",
         "blending",
         "castShadowPositionNode",
@@ -4859,6 +4865,8 @@
       "setters": [
         "alphaHash",
         "alphaTest",
+        "alphaTestNode",
+        "alphaToCoverage",
         "aoNode",
         "blending",
         "castShadowPositionNode",
@@ -4919,6 +4927,7 @@
       "getters": [
         "alphaHash",
         "alphaTest",
+        "alphaToCoverage",
         "blending",
         "color.b",
         "color.g",
@@ -4953,6 +4962,7 @@
       "setters": [
         "alphaHash",
         "alphaTest",
+        "alphaToCoverage",
         "blending",
         "color",
         "color.b",
@@ -5008,6 +5018,7 @@
       "getters": [
         "alphaHash",
         "alphaTest",
+        "alphaToCoverage",
         "blending",
         "color.b",
         "color.g",
@@ -5046,6 +5057,7 @@
       "setters": [
         "alphaHash",
         "alphaTest",
+        "alphaToCoverage",
         "blending",
         "color",
         "color.b",
@@ -5114,6 +5126,7 @@
       "getters": [
         "alphaHash",
         "alphaTest",
+        "alphaToCoverage",
         "anisotropy",
         "aoMapIntensity",
         "blending",
@@ -5166,6 +5179,7 @@
       "setters": [
         "alphaHash",
         "alphaTest",
+        "alphaToCoverage",
         "anisotropy",
         "aoMap",
         "aoMapIntensity",
@@ -5272,6 +5286,8 @@
       "getters": [
         "alphaHash",
         "alphaTest",
+        "alphaTestNode",
+        "alphaToCoverage",
         "anisotropy",
         "aoMapIntensity",
         "aoNode",
@@ -5339,6 +5355,8 @@
       "setters": [
         "alphaHash",
         "alphaTest",
+        "alphaTestNode",
+        "alphaToCoverage",
         "anisotropy",
         "aoMap",
         "aoMapIntensity",
@@ -5460,6 +5478,7 @@
       "getters": [
         "alphaHash",
         "alphaTest",
+        "alphaToCoverage",
         "aoMapIntensity",
         "blending",
         "bumpScale",
@@ -5500,6 +5519,7 @@
       "setters": [
         "alphaHash",
         "alphaTest",
+        "alphaToCoverage",
         "aoMap",
         "aoMapIntensity",
         "blending",
@@ -5580,6 +5600,8 @@
       "getters": [
         "alphaHash",
         "alphaTest",
+        "alphaTestNode",
+        "alphaToCoverage",
         "aoMapIntensity",
         "aoNode",
         "blending",
@@ -5635,6 +5657,8 @@
       "setters": [
         "alphaHash",
         "alphaTest",
+        "alphaTestNode",
+        "alphaToCoverage",
         "aoMap",
         "aoMapIntensity",
         "aoNode",
@@ -5730,6 +5754,8 @@
       "getters": [
         "alphaHash",
         "alphaTest",
+        "alphaTestNode",
+        "alphaToCoverage",
         "aoNode",
         "blending",
         "castShadowPositionNode",
@@ -5767,6 +5793,8 @@
       "setters": [
         "alphaHash",
         "alphaTest",
+        "alphaTestNode",
+        "alphaToCoverage",
         "aoNode",
         "blending",
         "castShadowPositionNode",
@@ -8443,6 +8471,7 @@
       "getters": [
         "alphaHash",
         "alphaTest",
+        "alphaToCoverage",
         "blending",
         "color.b",
         "color.g",
@@ -8473,6 +8502,7 @@
       "setters": [
         "alphaHash",
         "alphaTest",
+        "alphaToCoverage",
         "blending",
         "color",
         "color.b",
@@ -8520,6 +8550,8 @@
       "getters": [
         "alphaHash",
         "alphaTest",
+        "alphaTestNode",
+        "alphaToCoverage",
         "aoNode",
         "blending",
         "castShadowPositionNode",
@@ -8567,6 +8599,8 @@
       "setters": [
         "alphaHash",
         "alphaTest",
+        "alphaTestNode",
+        "alphaToCoverage",
         "aoNode",
         "blending",
         "castShadowPositionNode",

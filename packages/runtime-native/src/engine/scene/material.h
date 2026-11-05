@@ -94,6 +94,9 @@ public:
      *  caster draws on every page. */
     double maxPositionOffset = 0;
     bool alphaHash = false;
+    /** three's alphaToCoverage: an alpha-tested fragment's alpha ramps over one pixel of its own derivative
+     *  (NodeMaterial.setupDiffuseColor). The MSAA coverage mask itself is not wired. */
+    bool alphaToCoverage = false;
     bool depthTest = true;
     bool depthWrite = true;
     bool colorWrite = true;  // three's: false draws depth only, with every colour channel masked

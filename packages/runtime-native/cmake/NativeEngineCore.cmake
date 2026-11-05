@@ -348,6 +348,7 @@ endif()
 tn_native_engine_test(tn-native-engine-material-test tests/native-engine/material_test.cpp
     native_engine_material_mat3_of_mat4=mat3_of_mat4
     native_engine_material_alpha_hash=alpha_hash
+    native_engine_material_alpha_test_node=alpha_test_node
     native_engine_material_depth_node_writes_frag_depth=depth_node_writes_frag_depth
     native_engine_material_unsupported=unsupported
     native_engine_material_standard_builds=builds

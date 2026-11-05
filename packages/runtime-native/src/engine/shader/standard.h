@@ -29,6 +29,7 @@ struct StandardMaterial {
     float alphaTest = 0;  // > 0: fragments with opacity <= alphaTest are discarded
     double maxPositionOffset = 0;  // Material::maxPositionOffset: how far a positionNode moves a vertex, 0 unknown
     bool alphaHash = false;
+    bool alphaToCoverage = false;
     float roughness = 1;
     float metalness = 0;
     std::array<float, 3> emissive{0, 0, 0};
@@ -79,6 +80,7 @@ inline constexpr int kStandardPbrMapCount = kSpecularColorMap;
 
 struct VertexVariant {
     bool alphaHash = false;
+    bool alphaToCoverage = false;
     bool background = false;
     uint8_t fog = 0; // 0 none, 1 Fog (range), 2 FogExp2 (density)
     bool sprite = false;
@@ -178,7 +180,7 @@ struct VertexVariant {
     bool operator==(const VertexVariant&) const = default;
     /** A stable key: two variants with the same key build the same program. */
     [[nodiscard]] std::string key() const {
-        return std::to_string(fog) + (alphaHash ? "alphaHash|" : "") + (background ? "background|" : "") + std::string(sprite ? "sprite|" : "") + (backSide ? "back|" : "") + (doubleSide ? "double|" : "") + (leafReceiver ? "leaf|" : "") + (twoSidedFoliage ? "foliage|" : "") + (roughDiffuse ? "eon|" : "") + (flatShading ? "flat|" : "") + std::to_string(instanced) + std::to_string(instanceColor) + "vc" + std::to_string(vertexColors) + std::to_string(skinned) +
+        return std::to_string(fog) + (alphaHash ? "alphaHash|" : "") + (alphaToCoverage ? "a2c|" : "") + (background ? "background|" : "") + std::string(sprite ? "sprite|" : "") + (backSide ? "back|" : "") + (doubleSide ? "double|" : "") + (leafReceiver ? "leaf|" : "") + (twoSidedFoliage ? "foliage|" : "") + (roughDiffuse ? "eon|" : "") + (flatShading ? "flat|" : "") + std::to_string(instanced) + std::to_string(instanceColor) + "vc" + std::to_string(vertexColors) + std::to_string(skinned) +
                std::to_string(skinnedPalette) + (skinInstanceValues ? "S" : "") + (instanceStorage ? "storage" : "") + "m" + std::to_string(morphTargets) + (morphNormals ? "n" : "") +
                (map ? "t" : "") + (normalMap ? "N" : "") + (pbrMaps ? "P" + std::to_string(pbrMaps) : "") + (mapSRGB ? "s" : "") + (environment ? "e" : "") + (clearcoat ? "c" : "") + (invariantPosition ? "i" : "") +
                (positionNode ? "p:" + positionNode->key : "") + "|nodes:" + nodes.key();
@@ -296,7 +298,8 @@ void linkNodeVaryings(StandardPrograms& out, const VertexVariant& variant, ExprI
  * Uniform-driven (uniforms "alphaTest", "opaque" 0/1) rather than per-variant programs; the output is
  * the same. Returns the alpha to write.
  */
-ExprId materialAlpha(Program& f, ExprId alpha, bool alphaHash = false);
+ExprId materialAlpha(Program& f, ExprId alpha, bool alphaHash = false, ExprId threshold = kInvalid,
+                     bool alphaToCoverage = false);
 /** Pinned nodes/fog/Fog.js rangeFogFactor / densityFogFactor, shared by all material tails. */
 /** CubeRenderTarget.fromEquirectangularTexture: camera rotation, level-0 equirectUV sample. */
 StandardPrograms buildEquirectangularCube();

@@ -29,6 +29,9 @@ struct MaterialNodes {
     /** NodeMaterial.maskNode: a bool; a colour-pass fragment where it is false is discarded before its colour is read
      *  (three's setupDiffuseColor). The shadow depth pass draws without it, as it draws without the colour slots. */
     graph::Node maskNode;
+    /** NodeMaterial.alphaTestNode: the colour pass's cutoff (a float) in place of the alphaTest number. The shadow depth
+     *  pass keeps the number, as three's shadow pass copies only alphaTest. */
+    graph::Node alphaTestNode;
     /** SpriteNodeMaterial.scaleNode (a vec2 beside the model scale) and rotationNode (radians, over the material's). */
     graph::Node scaleNode, rotationNode;
     /** NodeMaterial.outputNode: the fragment's final colour in place of the lit one, after the alpha test (three's
@@ -44,14 +47,14 @@ struct MaterialNodes {
                           opacityNode.get(),  vertexNode.get(),    fragmentNode.get(),
                           scaleNode.get(),    rotationNode.get(),  depthNode.get(),
                           aoNode.get(),       irradianceNode.get(), castShadowPositionNode.get(),
-                          maskNode.get(),     outputNode.get()};
+                          maskNode.get(),     outputNode.get(),    alphaTestNode.get()};
     }
     auto graphs() const {
         return std::array{colorNode,     positionNode, normalNode, emissiveNode, roughnessNode,
                           metalnessNode, opacityNode,  vertexNode, fragmentNode,
                           scaleNode,     rotationNode, depthNode,
                           aoNode,        irradianceNode, fogNode, castShadowPositionNode,
-                          maskNode,      outputNode};
+                          maskNode,      outputNode,   alphaTestNode};
     }
     /** The position graph a shadow depth pass casts from: castShadowPositionNode when set (none for a bare
      *  positionLocal, the rest pose), else positionNode, as three's shadow pass assigns it. */

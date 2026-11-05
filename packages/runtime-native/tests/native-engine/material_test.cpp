@@ -281,6 +281,41 @@ void maskNode() {
     }
 }
 
+// NodeMaterial.alphaTestNode and alphaToCoverage (three r187 setupDiffuseColor). Neither reached the engine, so the
+// far impostor's mip-aware cutoff stayed a JS expando: every fragment above its shadow floor drew and the cards filled
+// the ground between the trees, and the bake lost the coverage ramp that keeps its alpha near one.
+void alphaTestNode() {
+    namespace g = tn::engine::shader::graph;
+    VertexVariant plain;
+    VertexVariant cut;
+    cut.nodes.alphaTestNode = g::uniform("nodeCut", Type::f32(), {0.3f});
+    VertexVariant ramped;
+    ramped.alphaToCoverage = true;
+    CHECK(plain.key() != cut.key());
+    CHECK(plain.key() != ramped.key());
+    const std::pair<Program, Program> pairs[] = {
+        {buildStandard(StandardMaterial{}, plain).fragment, buildStandard(StandardMaterial{}, cut).fragment},
+        {buildPhysical(StandardMaterial{}, plain).fragment, buildPhysical(StandardMaterial{}, cut).fragment},
+        {buildBasic(plain).fragment, buildBasic(cut).fragment},
+    };
+    for (const auto& [without, with] : pairs) {
+        const auto a = WgslEmitter::emit(without, 1), b = WgslEmitter::emit(with, 1);
+        CHECK(a.ok() && b.ok());
+        CHECK(a.code.find("f_alphaTest") != std::string::npos);
+        // The node replaces the number in the colour pass: the cutoff reads the node and never the number.
+        CHECK(b.code.find("f_nodeCut") != std::string::npos);
+        CHECK(b.code.find("f_alphaTest") == std::string::npos);
+    }
+    for (const auto& built : {buildStandard(StandardMaterial{}, ramped), buildBasic(ramped)}) {
+        const auto code = WgslEmitter::emit(built.fragment, 1);
+        CHECK(code.ok());
+        CHECK(code.code.find("fwidth") != std::string::npos);
+        CHECK(code.code.find("smoothstep") != std::string::npos);
+    }
+    const auto unramped = WgslEmitter::emit(buildStandard(StandardMaterial{}, plain).fragment, 1);
+    CHECK(unramped.code.find("fwidth") == std::string::npos);
+}
+
 // PRD-653: material.roughDiffuse shades direct light with the EON model. The variant key changes, a lamp's Source
 // Radius enters the fragment only for the marked material (a sun has none), and the EON constants appear only there.
 void roughDiffuse() {
@@ -848,4 +883,4 @@ void mat3OfMat4() {
 
 }  // namespace
 
-TN_TEST_MAIN({"mat3_of_mat4", mat3OfMat4}, {"alpha_hash", alphaHash}, {"ssr_passes", ssrPasses}, {"denoise_reads_raw_normals", denoiseReadsRawNormals}, {"ssr_rejects_inputs", ssrRejectsInputs}, {"depth_texture_lowering", depthTextureLowering}, {"depth_node_writes_frag_depth", depthNodeWritesFragDepth}, {"unsupported", unsupported}, {"emissive_output", emissiveOutput}, {"builds", builds}, {"fog", fog}, {"rough_diffuse", roughDiffuse}, {"fog_node_mixes_color", fogNodeMixesColor}, {"node_key", nodeKey}, {"bloom_passes", bloomPasses}, {"slots_share_one_lowering", slotsShareOneLowering})
+TN_TEST_MAIN({"mat3_of_mat4", mat3OfMat4}, {"alpha_hash", alphaHash}, {"alpha_test_node", alphaTestNode}, {"ssr_passes", ssrPasses}, {"denoise_reads_raw_normals", denoiseReadsRawNormals}, {"ssr_rejects_inputs", ssrRejectsInputs}, {"depth_texture_lowering", depthTextureLowering}, {"depth_node_writes_frag_depth", depthNodeWritesFragDepth}, {"unsupported", unsupported}, {"emissive_output", emissiveOutput}, {"builds", builds}, {"fog", fog}, {"rough_diffuse", roughDiffuse}, {"fog_node_mixes_color", fogNodeMixesColor}, {"node_key", nodeKey}, {"bloom_passes", bloomPasses}, {"slots_share_one_lowering", slotsShareOneLowering})

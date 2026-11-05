@@ -8380,6 +8380,15 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "alphaToCoverage",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": [
@@ -11491,8 +11500,7 @@
           "mutable": true,
           "lifetime": "owned",
           "status": {
-            "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "kind": "supported"
           }
         },
         {
@@ -12195,6 +12203,24 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "alphaTestNode",
+          "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "alphaToCoverage",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": [
@@ -12649,8 +12675,7 @@
           "mutable": true,
           "lifetime": "owned",
           "status": {
-            "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "kind": "supported"
           }
         },
         {
@@ -13665,6 +13690,24 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "alphaTestNode",
+          "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "alphaToCoverage",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": [
@@ -14299,6 +14342,24 @@
         {
           "name": "outputNode",
           "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "alphaTestNode",
+          "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "alphaToCoverage",
+          "type": "boolean",
           "mutable": true,
           "lifetime": "owned",
           "status": {
@@ -20968,6 +21029,15 @@
         {
           "name": "maxPositionOffset",
           "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "alphaToCoverage",
+          "type": "boolean",
           "mutable": true,
           "lifetime": "owned",
           "status": {
@@ -27896,6 +27966,15 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "alphaToCoverage",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": [
@@ -28238,6 +28317,15 @@
         {
           "name": "maxPositionOffset",
           "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "alphaToCoverage",
+          "type": "boolean",
           "mutable": true,
           "lifetime": "owned",
           "status": {

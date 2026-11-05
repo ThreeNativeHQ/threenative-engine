@@ -3710,6 +3710,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         shader::VertexVariant v;
         v.invariantPosition = invariantPosition;
         v.alphaHash = item.material && item.material->alphaHash;
+        v.alphaToCoverage = item.material && item.material->alphaToCoverage;
         v.background = item.background;
         v.fog = item.fog ? item.fog->exponential() ? 2 : 1 : 0;
         v.sprite = item.sprite;

@@ -271,6 +271,7 @@ shader::StandardMaterial paramsOf(const Material& m) {
     p.alphaTest = float(m.alphaTest);
     p.maxPositionOffset = m.maxPositionOffset;
     p.alphaHash = m.alphaHash;
+    p.alphaToCoverage = m.alphaToCoverage;
     p.roughness = float(m.roughness);
     p.metalness = float(m.metalness);
     p.envMapIntensity = float(m.envMapIntensity);
@@ -634,7 +635,7 @@ DrawItem& RenderDatabase::refresh(const Mesh& mesh, Record& r) {
 
 const RenderDatabase::GraphSources& RenderDatabase::graphSources(const Material& material) {
     static const GraphSources none;
-    std::array<const void*, 17> roots{};
+    std::array<const void*, 18> roots{};
     const auto graphs = material.nodes.pointers();
     static_assert(decltype(graphs){}.size() == decltype(roots){}.size(), "a node slot was added to MaterialNodes");
     std::copy(graphs.begin(), graphs.end(), roots.begin());
