@@ -918,10 +918,34 @@ void Renderer::setVirtualShadow(std::size_t light, const shadows::AtlasOptions& 
     if (!atlas) throw std::runtime_error(error);
     virtualShadows_.emplace(light, VirtualShadow{std::move(*atlas), {}, {}});
     if (options.adaptiveRefresh || options.adaptiveCasterGate) passTimer_->enabled = true;
-    // The table must exist before a cached material's bind groups can name it.
+    // The table and the depth map must exist before a cached material's bind groups can name them: a new scene
+    // rebuilds every cached program's groups before its first shadow pass draws the atlas, and a texture binding
+    // with no view is an invalid descriptor (the browser port aborts the module on one).
     auto& table = storages_["vsmTable" + std::to_string(light)];
     table.capacity = uint64_t(options.clipExtents.size() * 10 + 1 + virtualShadows_.at(light).atlas.pageCount()) * 16;
     table.buffer = gpu_.createBuffer(table.capacity, WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst);
+    ensureVirtualShadowMap(light);
+}
+
+bool Renderer::ensureVirtualShadowMap(std::size_t light) {
+    auto found = virtualShadows_.find(light);
+    if (found == virtualShadows_.end()) return false;
+    auto& shadow = found->second;
+    if (shadow.map.texture) return false;
+    WGPUTextureDescriptor desc = {};
+    desc.dimension = WGPUTextureDimension_2D;
+    desc.size = {uint32_t(shadow.atlas.edge()), uint32_t(shadow.atlas.edge()), 1};
+    const WGPULimits& limits = deviceLimits();
+    if (desc.size.width > limits.maxTextureDimension2D)
+        throw std::runtime_error("TN_VIRTUAL_SHADOW_UNSUPPORTED: atlas exceeds device texture limit");
+    desc.format = WGPUTextureFormat_Depth24Plus;
+    desc.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding;
+    desc.mipLevelCount = desc.sampleCount = 1;
+    shadow.map.texture = wgpuDeviceCreateTexture(device_, &desc);
+    shadow.map.view = view2d(shadow.map.texture, desc.format);
+    shadow.map.width = shadow.map.height = desc.size.width;
+    shadowMapsChanged_ = true;
+    return true;
 }
 
 void Renderer::syncVirtualShadows(const LightState& lights, double tanHalfFov) {
@@ -1679,7 +1703,17 @@ WGPUBindGroup Renderer::bindGroup(WGPUBindGroupLayout layout, const shader::Stag
             const bool virtualMap = b.name.find("vsm") != std::string::npos;
             const std::string prefix = virtualMap ? "vsm" : b.cube ? "shadowCube" : "shadow";
             const std::size_t index = std::stoul(b.name.substr(b.name.find(prefix) + prefix.size()));
-            if (virtualMap && !virtualShadows_.count(index)) return nullptr;
+            // A virtual shadow this scene does not have leaves the group to the draw's own group (a cached program
+            // from a torn-down scene keeps a null one). One this scene has but that holds no atlas view is a fault:
+            // name it here, because a null texture binding reaches the port as an invalid descriptor and aborts the
+            // module with no line of ours in the trace.
+            if (virtualMap) {
+                const auto shadow = virtualShadows_.find(index);
+                if (shadow == virtualShadows_.end()) return nullptr;
+                if (!shadow->second.map.view)
+                    throw std::runtime_error("TN_VIRTUAL_SHADOW_UNINITIALISED: t_vsm" + std::to_string(index) +
+                                             " has no atlas view");
+            }
             if (b.kind == shader::BindingKind::Texture)
                 e.textureView = virtualMap ? virtualShadows_.at(index).map.view : (b.cube ? cubeShadowMaps_ : shadowMaps_).at(index).view;
             else e.sampler = b.values ? depthValueSampler_ : compareSampler_;
@@ -3420,21 +3454,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         lightKinds += virtualShadows_.count(i) ? char((l.shadow->sourceAngleFilter ? '8' : '0') + virtualShadows_.at(i).atlas.options().clipExtents.size())
                                                : l.shadow ? shadowed : kind;
         if (virtualShadows_.count(i)) {
-            auto& shadow = virtualShadows_.at(i);
-            if (shadow.map.texture) continue;
-            WGPUTextureDescriptor desc = {};
-            desc.dimension = WGPUTextureDimension_2D;
-            desc.size = {uint32_t(shadow.atlas.edge()), uint32_t(shadow.atlas.edge()), 1};
-            const WGPULimits& limits = deviceLimits();
-            if (desc.size.width > limits.maxTextureDimension2D)
-                throw std::runtime_error("TN_VIRTUAL_SHADOW_UNSUPPORTED: atlas exceeds device texture limit");
-            desc.format = WGPUTextureFormat_Depth24Plus;
-            desc.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding;
-            desc.mipLevelCount = desc.sampleCount = 1;
-            shadow.map.texture = wgpuDeviceCreateTexture(device_, &desc);
-            shadow.map.view = view2d(shadow.map.texture, desc.format);
-            shadow.map.width = shadow.map.height = desc.size.width;
-            shadowMapsChanged_ = true;
+            ensureVirtualShadowMap(i);
             continue;
         }
         if (!l.shadow) continue;
