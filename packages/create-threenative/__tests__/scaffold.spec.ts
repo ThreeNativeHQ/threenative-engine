@@ -236,6 +236,8 @@ const BUG_REPORT_SKILL_PATHS = [
 // every no-install scaffold (three 0.187.0, the rts kit and the dropped Blender server), so no value
 // from either parent applies to the merged bytes.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
+  // 2026-11-04: every tree ships the regenerated three patch (identical comparison samplers share one
+  // binding); no template file changed. Measured by this test.
   // 2026-11-03: re-measured on the merge of develop 33c69249f (0.3.11) into PR #483. The PR side
   // already moved every tree (the `threenative-terrain` server in all seven host configs, the pnpm
   // `packageManager` pin, the regenerated three patch and the PR's kit sources); the release bump
@@ -347,7 +349,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // these kits' AGENTS.md say so, and rts drops its TRAA and blur overrides.
   // Re-pinned 2026-10-31: the starter crate gets a stacked-disc contact shadow (render/contactShadow.ts)
   // that keeps its contact coverage above the 0.02 floor at the core +1 EV key.
-  "action-rpg": "6f6a903753e15b59ecdfc894d9341cccfea5e52b46e19631077f6787f52ea432",
+  "action-rpg": "21b5a2bfa50d29d4a27143463ff5f5ca7ca30b8c95cf26e6cce9d6d847a83b77",
   // PRD-732 (2026-10-23): the new Hop Garden kit, measured through createProject (method checked
   // against platformer's unchanged value). Recomputed 2026-10-24 for the PRD-732 polish round: the
   // new hero, the dust and sparkle effects and the effects scenario. Recomputed 2026-10-24 for
@@ -361,7 +363,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-24 for the shadow window: the 52 m map now travels 14 m ahead of the hero,
   // so the castle and trees the camera sees keep their shadows; the 2048 map and shadow pass cost
   // stay the same.
-  collectathon: "48e29bab5e11facff9aecc0e92706d9449581bb1ac265a26acae2e5aa6b77077",
+  collectathon: "fcb74a1963536f2d3b08b0d77550dfca6c391986578eadb1502be5d66ad8a0c1",
   // PRD-733 (2026-10-23): the new Lantern Vale kit, measured through createProject.
   // Recomputed 2026-10-24 for the owner perf round: the fixed-step catch-up cap and the gentler
   // wind on the crowns, clusters and grass tufts. Only this tree moves.
@@ -370,14 +372,14 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Re-pinned 2026-10-26 (PRD-748 loading cover): adventure loses its `loaded` gate, rain
   // reads state through `useUiStateDuringStartup`.
   // Re-pinned 2026-10-27 (PRD-749 hud-clean): adventure, collectathon and rain HUD text reaches 3:1.
-  adventure: "63b0c103881a172ff4d9796785d5a720e28aa704a28da2bb2509519059bde09c",
+  adventure: "00ee4dd13fed3af0039371f18e678eddc863d3c4e6fc9b68fad5ea5c5dceaa49",
   // PRD-734 (2026-10-24): the new Clover Cup kart kit, measured through createProject.
-  kart: "89306a11f801b68a67570dc9cd9b043b9cffa89d1b80d373843561c4710cbb48",
-  minimal: "1192a98aa1f54d03b1927f69e603b9c1b2e94efcd2f72a707fd3dc827e427e62",
-  platformer: "9637d2799e8a1a297ccd3d13d5ba2ce7f4bdf90e39226d204f4a39a36c5e3c29",
-  puzzle: "9253c7f311810685c659b487fa7d6b4c5cab6706f4548083d9b38bf06ed3a5ad",
-  racing: "bfe01eb5ef20d140e57ab4d588dd63e6716a7b036cd1cffabb513b7e8e891ca8",
-  rain: "97a3af85f224f721e8f1c4801842a39c98c262e0579f5f69d313f44d549ba20e",
+  kart: "ec53229c3b2ec4ced1b1b9d3a41996c548514738d62ddb65523327666b5aea47",
+  minimal: "cf815dcc7f48ee1938495b8f79c780667c47d2022677ea735ea66a779168b79d",
+  platformer: "b319197508392726ec3eec6fc0f6b4fa0b25e1b8874e4da5ab3beb2ee1b0e2c4",
+  puzzle: "a5b8bfc1bfd0bea04a1f4caf40f61e541946e8f004a814a23902f5550201d272",
+  racing: "c2ca6b36c53daf455c746bda0d18f275307bab9ff7147ad7a5044ae6373eac54",
+  rain: "6720a0a43fb076ab3f48aabf93f0a0a0f827d469d7da58b11cb4ad8a049c83f7",
   // Re-pinned 2026-10-28: the rts high tier turns camera motion blur off (an RTS pan smeared every unit).
   // Re-pinned 2026-10-28 (PRD-765): rts becomes AstraCraft — painted ground, mesas, scrub, ACES 1.02 look and the command HUD;
   // then its legacy-linear colours, gamma fog of war, no bloom or environment, and a frame-sized shadow window.
@@ -389,13 +391,13 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Re-pinned 2026-10-29: the fog-of-war sheet comes from palette.ts, rts-build probes the fog ground is lit
   // (it was a dark patch under a HUD card) and the top-location separator reaches 3:1 on the ink plate.
   // Then the UI final pass: a counted selection band, garrison and blocked-exit cards, overview, hotkeys, edge-scroll toggle, refusal toasts (imports sorted by biome).
-  rts: "989ff448707a163b3df8964aceffb108373e7b7245c3da8b141e30894afcc109",
-  runner: "729df6c07e9afd50d2669425704bc97c42e691aa1e5bffa1e6105b588a25796e",
+  rts: "750a4bc5fa5b3a84d8b47d278ce8e1fb48e7ed3165e9efd710521aecc67fee25",
+  runner: "a0abe6ff205e3d5d481196f7a3f6beb12a3014712c6d6b9b51d83de595259e3d",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
-  sailing: "071800e3aa4d2ab164cf07c9cd457679861716c70959e634b7f91c47887f74ba",
+  sailing: "7524d2652a568e1688738b90cd2571bdc72d61945975c250dd5ec1464b5f4b02",
   // Recomputed 2026-10-26 (PRD-746): the scene merges the town through mergeByMaterial (src/townBatch.ts).
-  shooter: "5eda7436e3aeb26ae67dd279fb8181e25d50d5ef8e73a2ec77f2a7a668fc117f",
-  snow: "3d6ea9e67da8e6de92f1622ae8a9ebee650ad151a2941316e4357192414cb8ac",
+  shooter: "3e36aa56afc2de097cfb6d733f97313acd100217179cf780730e81ad8e1bf6e0",
+  snow: "4856acc6f2e3edbb35f0cfecd8406f59cb5746249857807c6b5dfe6a3075f097",
   // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.
   // Recomputed 2026-10-16: starter's adaptiveQuality split its policy resolution into qualityPolicy.ts
   // to stay under the 200-line render-file cap; only starter's tree moves.
@@ -404,8 +406,8 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-31: core key 0.36, traced reflections, the crate contact blob, the portable trace type (PRD-633); measured by this test.
   // Recomputed 2026-10-31 (PRD-775): temporalAAHooks.ts claims the 0.187 render pipeline's view
   // offset and drives its callback lists, so starter's render source moves again. Measured by this test.
-  starter: "d4c819d8dca3859a5827d9b73dcf95fbc53b73e811e5221f7c1bb0fe0e151009",
-  "tower-defense": "a141625011943aa83c0e54418b6e6c72ec609402618009f315d6101aeeae366f",
+  starter: "11b7f71a6d275cb01562a9fd43daf8a01d005814ceb7e4cee4cd72352ed11e6f",
+  "tower-defense": "efc515e2bfcd92729440a26b386d7f25006b5c474a8dd467f469a4cf647b3e3c",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
