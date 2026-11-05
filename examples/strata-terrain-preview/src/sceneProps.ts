@@ -335,7 +335,7 @@ export function createMeadow(options: IMeadowOptions): IMeadow {
       propsStage = "streaming";
       // A fixed view standing on the surroundings gets the meadow the bake cannot place there.
       const vista = OPEN_MEADOW ? BENCHMARK[world].poses.vista : undefined;
-      // Spruce across the valley past the square; `?farForest=off` plants none.
+      // Spruce across the valley past the square; `?farForest=on` plants them.
       const vistaEye = BENCHMARK[world].poses.vista?.at;
       const far =
         FAR_FOREST_WORLDS.includes(world) && FAR_FOREST && ridges instanceof Mesh

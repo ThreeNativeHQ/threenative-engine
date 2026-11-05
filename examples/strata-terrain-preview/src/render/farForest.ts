@@ -10,7 +10,8 @@
 // Every tree is an ordinary spruce placement on the `far-forest` layer, so `propWorld.ts` draws
 // it through WorldCells with the cooked LOD chain and the engine's whole-asset impostor; the far
 // bucket switches to the impostor sooner and casts no shadow, which is what keeps it cheap.
-// `?farForest=off` is the named override: no trees past the square, the frame before this file.
+// `?farForest=on` is the named override: trees past the square. Without it the frame is the one
+// before this file.
 import type { HeightfieldCollar } from "@threenative/core/world";
 import {
   type IPlacement,
