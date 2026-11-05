@@ -921,6 +921,8 @@ export interface IRevealProbe {
   readonly initialize: () => void;
   /** A props batch was published; count it when the reveal frustum holds it. */
   readonly publishedBatch: (bounds: Box3) => void;
+  /** The measured numbers as plain data: the run report's `props.reveal` readout. */
+  readonly readout: () => Readonly<Record<string, number | string | boolean>>;
 }
 
 export function createRevealProbe(options: IRevealProbeOptions): IRevealProbe {
@@ -998,6 +1000,7 @@ export function createRevealProbe(options: IRevealProbeOptions): IRevealProbe {
   });
   return {
     initialize,
+    readout: () => ({ ...reveal }),
     publishedBatch: (bounds) => {
       if (reveal.startedMs < 0 || reveal.complete) return;
       if (frustum.intersectsBox(bounds)) reveal.publishedBatchesInView++;

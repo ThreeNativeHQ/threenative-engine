@@ -1054,7 +1054,7 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
           ctx.entities.add("props", {
             object: props.worlds[0],
             debug: () => ({
-              reveal,
+              reveal: reveal.readout(),
               streaming: props?.stats(),
               colliders: propColliders?.stats(),
               boulders: scatter.counts.boulder,
