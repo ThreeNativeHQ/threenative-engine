@@ -1275,8 +1275,10 @@ export function createTerrain(
           });
       })
       // A map that never arrives, or a set this material cannot bind, leaves the ground on its
-      // baked vertex colours. It must still collide and still draw.
-      .catch(() => undefined);
+      // baked vertex colours. It must still collide and still draw, and the console says why.
+      .catch((error) =>
+        console.warn(`TN_GROUND_MAP_MISSING ${error instanceof Error ? error.message : error}`),
+      );
   return { field, mesh };
 }
 
@@ -1521,5 +1523,12 @@ async function get(
   path: string,
   data: boolean,
 ): Promise<Texture | undefined> {
-  return assets.texture(path, { anisotropy: 8, data, wrap: RepeatWrapping }).catch(() => undefined);
+  // A clone without the licensed `local-assets/` draws the baked vertex colours; the warning names
+  // the file, so a white ground on a machine that should have the art is one console line away.
+  return assets.texture(path, { anisotropy: 8, data, wrap: RepeatWrapping }).catch((error) => {
+    console.warn(
+      `TN_GROUND_MAP_MISSING ${path}: ${error instanceof Error ? error.message : error}`,
+    );
+    return undefined;
+  });
 }
