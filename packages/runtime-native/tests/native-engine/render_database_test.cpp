@@ -1953,6 +1953,153 @@ void drawFloatTarget(bool forceHalf) {
     }
 }
 
+// three's layered MRT render target, the shape of WorldCells' impostor atlas (world-impostor.ts): two textures of
+// four layers with mip chains. Each draw writes one layer of one texture (the facade draws an MRT one output at a
+// time, through the material's outputNode, which reads the material's own diffuseColor), and a material sampling
+// texture(textures[i]).depth(layer) reads what that draw left there and nothing in the other layers.
+void layeredMrtRenderTarget() {
+    namespace g = shader::graph;
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(16, 16);
+    renderer.setOutput(OutputState{std::nullopt, 1, false});  // linear out: the bytes are the sampled values
+    const auto target = RenderTarget::make(8, 8, kTextureUnsignedByteType, 2, 4);
+    CHECK(target->textures.size() == 2 && target->layered() && target->textures[1]->array && target->textures[1]->depth == 4);
+    for (const auto& texture : target->textures) {
+        texture->generateMipmaps = true;
+        texture->minFilter = static_cast<uint16_t>(TextureFilter::LinearMipmapLinear);
+    }
+    // The capture: one red unlit square over the view's middle half, cleared transparent.
+    Scene inner;
+    OrthographicCamera innerCamera(-1, 1, 1, -1, 0.1, 10);
+    innerCamera.position.z = 5;
+    innerCamera.updateMatrixWorld();
+    auto red = std::make_shared<Material>(MaterialType::Basic, true);
+    red->color.setRGB(1, 0, 0);
+    Mesh square(makePlaneGeometry(1, 1), red);
+    inner.add(square);
+    inner.updateMatrixWorld(true);
+    const std::array<double, 4> clear{0, 0, 0, 0};
+    CHECK(renderToTarget(renderer, *target, inner, innerCamera, clear, false, false, 2, 0).empty());
+    // Attachment 1 takes the material's other output: its diffuse colour swizzled, so red reads back blue.
+    red->nodes.outputNode = g::swizzle(g::varying("diffuseColor", shader::Type::vec(4)), "zyxw");
+    red->needsUpdate();
+    CHECK(renderToTarget(renderer, *target, inner, innerCamera, clear, false, false, 2, 1).empty());
+    red->nodes.outputNode = {};
+    red->needsUpdate();
+    // Past the layers or the textures is refused by name, not drawn into another layer.
+    const auto outside = renderToTarget(renderer, *target, inner, innerCamera, clear, false, false, 4, 0);
+    CHECK(!outside.empty() && outside.front().find("TN_NATIVE_RENDER_TARGET_LAYER") != std::string::npos);
+    CHECK(!renderToTarget(renderer, *target, inner, innerCamera, clear, false, false, 0, 2).empty());
+    // The frame samples (texture, layer) on a full-view plane: texture.depth(layer) as tsl_call builds it.
+    const auto sampleOf = [&](int attachment, int layer) {
+        const auto& texture = target->textures[std::size_t(attachment)];
+        auto node = std::make_shared<g::NodeData>(*g::objectTexture(
+            texture, "nodeMapT" + std::to_string(texture->ident.value()), g::uv()));
+        const auto uv = node->args[0];
+        node->args[0] = g::vec3({g::swizzle(uv, "x"), g::swizzle(uv, "y"), g::float_(float(layer))});
+        return g::Node(node);
+    };
+    Scene scene;
+    OrthographicCamera camera(-1, 1, 1, -1, 0.1, 10);
+    camera.position.z = 5;
+    camera.updateMatrixWorld();
+    auto sampling = std::make_shared<Material>(MaterialType::Basic, true);
+    Mesh plane(makePlaneGeometry(2, 2), sampling);
+    scene.add(plane);
+    scene.updateMatrixWorld(true);
+    RenderDatabase database;
+    const auto centre = [&](int attachment, int layer, size_t at = 8) {
+        sampling->nodes.colorNode = sampleOf(attachment, layer);
+        sampling->needsUpdate();
+        database.render(renderer, scene, camera, {0, 0, 0, 1});
+        const std::vector<uint8_t> px = read(renderer, events);
+        std::array<int, 3> rgb{-1, -1, -1};
+        if (px.size() == size_t{16} * 16 * 4)
+            for (int c = 0; c < 3; ++c) rgb[std::size_t(c)] = px[(at * 16 + at) * 4 + std::size_t(c)];
+        std::fprintf(stderr, "layered target: texture %d layer %d centre %d %d %d\n", attachment, layer, rgb[0], rgb[1], rgb[2]);
+        return rgb;
+    };
+    CHECK((centre(0, 2) == std::array<int, 3>{255, 0, 0}));  // the colour draw's layer
+    CHECK((centre(0, 2, 1) == std::array<int, 3>{0, 0, 0}));  // outside the square: the clear, not the colour
+    CHECK((centre(1, 2) == std::array<int, 3>{0, 0, 255}));  // the outputNode draw's layer
+    CHECK((centre(0, 1) == std::array<int, 3>{0, 0, 0}));    // an undrawn layer stays cleared
+    CHECK((centre(1, 3) == std::array<int, 3>{0, 0, 0}));
+}
+
+// The impostor bake's second attachment on a lit material: core's captureMaterial writes
+// vec4(normalWorld * 0.5 + 0.5, 1 - positionView.z * scale) through the outputNode, per view, then
+// draws the next material. Each draw must land; one that cannot compile must say so by name.
+void layeredMrtLitNormalOutput() {
+    namespace g = shader::graph;
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(16, 16);
+    renderer.setOutput(OutputState{std::nullopt, 1, false});
+    const auto target = RenderTarget::make(8, 8, kTextureUnsignedByteType, 2, 2);
+    Scene inner;
+    OrthographicCamera innerCamera(-1, 1, 1, -1, 0, 10);
+    innerCamera.position.z = 5;
+    innerCamera.updateMatrixWorld();
+    auto lit = std::make_shared<Material>(MaterialType::Physical, true);
+    lit->color.setRGB(0, 1, 0);
+    Mesh square(makePlaneGeometry(2, 2), lit);
+    inner.add(square);
+    inner.updateMatrixWorld(true);
+    const auto diffuse = g::varying("diffuseColor", shader::Type::vec(4));
+    const auto coverage = g::swizzle(diffuse, "w");
+    const auto normalView = g::normalize(g::varying("normalView", shader::Type::vec(3)));
+    const auto normalWorld = g::normalize(g::swizzle(
+        g::mul(g::vec4({normalView, g::float_(0)}), g::uniform("viewMatrix", shader::Type::mat(4, 4))), "xyz"));
+    const auto encoded = g::mul(g::add(g::mul(normalWorld, g::float_(0.5)), g::float_(0.5)), coverage);
+    const auto positionView = g::varying("positionView", shader::Type::vec(3));
+    const auto depth = g::sub(g::float_(1), g::mul(g::mul(g::swizzle(positionView, "z"), g::float_(-0.1)), coverage));
+    const std::array<double, 4> clear{0, 0, 0, 0};
+    lit->nodes.outputNode = g::vec4({g::swizzle(diffuse, "xyz"), coverage});
+    lit->needsUpdate();
+    const auto first = renderToTarget(renderer, *target, inner, innerCamera, clear, false, false, 0, 0);
+    lit->nodes.outputNode = g::vec4({encoded, depth});
+    lit->needsUpdate();
+    const auto second = renderToTarget(renderer, *target, inner, innerCamera, clear, false, false, 0, 1);
+    for (const auto& message : first) std::fprintf(stderr, "attachment 0: %s\n", message.c_str());
+    for (const auto& message : second) std::fprintf(stderr, "attachment 1: %s\n", message.c_str());
+    CHECK(first.empty() && second.empty());
+    // Sample each attachment's layer 0 at the centre, as the frame samples the atlas.
+    Scene scene;
+    OrthographicCamera camera(-1, 1, 1, -1, 0.1, 10);
+    camera.position.z = 5;
+    camera.updateMatrixWorld();
+    auto sampling = std::make_shared<Material>(MaterialType::Basic, true);
+    Mesh plane(makePlaneGeometry(2, 2), sampling);
+    scene.add(plane);
+    scene.updateMatrixWorld(true);
+    RenderDatabase database;
+    const auto centre = [&](int attachment) {
+        const auto& texture = target->textures[std::size_t(attachment)];
+        auto node = std::make_shared<g::NodeData>(*g::objectTexture(
+            texture, "nodeMapT" + std::to_string(texture->ident.value()), g::uv()));
+        const auto uv = node->args[0];
+        node->args[0] = g::vec3({g::swizzle(uv, "x"), g::swizzle(uv, "y"), g::float_(0)});
+        sampling->nodes.colorNode = g::Node(node);
+        sampling->needsUpdate();
+        database.render(renderer, scene, camera, {0, 0, 0, 1});
+        const std::vector<uint8_t> px = read(renderer, events);
+        std::array<int, 4> rgba{-1, -1, -1, -1};
+        if (px.size() == size_t{16} * 16 * 4)
+            for (int c = 0; c < 4; ++c) rgba[std::size_t(c)] = px[(8 * 16 + 8) * 4 + std::size_t(c)];
+        std::fprintf(stderr, "lit layered target: texture %d centre %d %d %d %d\n", attachment, rgba[0], rgba[1], rgba[2], rgba[3]);
+        return rgba;
+    };
+    const auto colour = centre(0);
+    CHECK(colour[1] > 0);  // the lit green square reached layer 0
+    const auto normal = centre(1);
+    CHECK(normal[2] > 200);  // +z facing normal encodes to blue near 255
+}
+
 void floatRenderTargetKeepsFloat32() { drawFloatTarget(false); }
 void floatRenderTargetFallsBackToHalf() { drawFloatTarget(true); }
 
@@ -8905,7 +9052,7 @@ void staticInstancesAreNotRecopied() {
     CHECK(frame(-12).copies == 0);
 }
 
-TN_TEST_MAIN({"virtual_shadow_depth_holds", virtualShadowDepthHoldsWhileCastersFit}, {"virtual_shadow_pan_redraws_entering_rects", virtualShadowPanRedrawsTheRectsThatEnter}, {"virtual_shadow_page_jobs", virtualShadowPageJobs}, {"caster_record_allocates_per_frame", casterRecordAllocatesPerFrame}, {"virtual_shadow_instance_pages", virtualShadowInstancePages}, {"virtual_shadow_page_draws_only_its_instances", virtualShadowPageDrawsOnlyItsInstances},{"virtual_shadow_bounds_cache", virtualShadowBoundsCache}, {"gpu_joint_production", gpuJointProduction}, {"virtual_shadow_casters_batch_in_main_pass", virtualShadowCastersBatchInMainPass}, {"virtual_shadow_rigs_batch_in_main_pass", virtualShadowRigsBatchInMainPass}, {"virtual_shadow_pages_instance_skinned_casters", shadowPagesInstanceSkinnedCasters}, {"skinned_palettes_share_by_bytes", skinnedPalettesShareByBytes}, {"clone_keeps_shared_skeletons", cloneKeepsSharedSkeletons}, {"compute_kernel_walks_once", computeKernelWalksOnce}, {"bone_reach_bounds_hold_posed_vertices", boneReachBoundsHoldPosedVertices}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"content_identical_geometry_batches", contentIdenticalGeometryBatches}, {"steady_state", steadyState}, {"steady_state_draw_refresh_work", steadyStateDrawRefreshWork}, {"draw_refresh_guard_holes", drawRefreshGuardHoles}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"depth_test_off_draws_over_nearer", depthTestOffDrawsOverNearer}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"scene_stage_is_metered", sceneStageIsMetered}, {"overlay_leaves_stage_totals", overlayLeavesStageTotals}, {"present_direct", presentDirect}, {"canvas_layer_overlay", canvasLayerOverlay}, {"post_survives_overlay", postSurvivesOverlay}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"target_samples_late_traa_output", targetSamplesLateTraaOutput}, {"unchanged_frame_storage", unchangedFrameStorage}, {"static_instances_are_not_recopied", staticInstancesAreNotRecopied}, {"instance_places_survive_a_draw_leaving_the_view", instancePlacesSurviveADrawLeavingTheView}, {"instance_upload_is_stable_across_a_camera_turn", instanceUploadIsStableAcrossACameraTurn}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene}, {"frame_slab_is_per_program", frameSlabIsPerProgram},
+TN_TEST_MAIN({"virtual_shadow_depth_holds", virtualShadowDepthHoldsWhileCastersFit}, {"virtual_shadow_pan_redraws_entering_rects", virtualShadowPanRedrawsTheRectsThatEnter}, {"virtual_shadow_page_jobs", virtualShadowPageJobs}, {"caster_record_allocates_per_frame", casterRecordAllocatesPerFrame}, {"virtual_shadow_instance_pages", virtualShadowInstancePages}, {"virtual_shadow_page_draws_only_its_instances", virtualShadowPageDrawsOnlyItsInstances},{"virtual_shadow_bounds_cache", virtualShadowBoundsCache}, {"gpu_joint_production", gpuJointProduction}, {"virtual_shadow_casters_batch_in_main_pass", virtualShadowCastersBatchInMainPass}, {"virtual_shadow_rigs_batch_in_main_pass", virtualShadowRigsBatchInMainPass}, {"virtual_shadow_pages_instance_skinned_casters", shadowPagesInstanceSkinnedCasters}, {"skinned_palettes_share_by_bytes", skinnedPalettesShareByBytes}, {"clone_keeps_shared_skeletons", cloneKeepsSharedSkeletons}, {"compute_kernel_walks_once", computeKernelWalksOnce}, {"bone_reach_bounds_hold_posed_vertices", boneReachBoundsHoldPosedVertices}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"content_identical_geometry_batches", contentIdenticalGeometryBatches}, {"steady_state", steadyState}, {"steady_state_draw_refresh_work", steadyStateDrawRefreshWork}, {"draw_refresh_guard_holes", drawRefreshGuardHoles}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"depth_test_off_draws_over_nearer", depthTestOffDrawsOverNearer}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"layered_mrt_render_target", layeredMrtRenderTarget}, {"layered_mrt_lit_normal_output", layeredMrtLitNormalOutput}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"scene_stage_is_metered", sceneStageIsMetered}, {"overlay_leaves_stage_totals", overlayLeavesStageTotals}, {"present_direct", presentDirect}, {"canvas_layer_overlay", canvasLayerOverlay}, {"post_survives_overlay", postSurvivesOverlay}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"target_samples_late_traa_output", targetSamplesLateTraaOutput}, {"unchanged_frame_storage", unchangedFrameStorage}, {"static_instances_are_not_recopied", staticInstancesAreNotRecopied}, {"instance_places_survive_a_draw_leaving_the_view", instancePlacesSurviveADrawLeavingTheView}, {"instance_upload_is_stable_across_a_camera_turn", instanceUploadIsStableAcrossACameraTurn}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene}, {"frame_slab_is_per_program", frameSlabIsPerProgram},
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"virtual_sun_room_seam", virtualSunRoomSeam},

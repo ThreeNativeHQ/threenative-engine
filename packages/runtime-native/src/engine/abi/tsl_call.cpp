@@ -943,6 +943,12 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         auto sampled = std::make_shared<g::NodeData>(*source);
         if (source->kind == g::Kind::RenderTexture) sampled->args[1] = arg(0);
         else sampled->args[0] = arg(0);
+        // three's depth(layer) is its own input (TextureNode.depthNode): a later sample(uv) keeps the layer.
+        const auto object = source->kind == g::Kind::Texture && source->textureBinding ? source->textureObject() : nullptr;
+        const auto uv = sampled->args[0];
+        if (object && static_cast<const engine::Texture*>(object.get())->array && source->args[0] &&
+            source->args[0]->type == Type::vec(3) && uv && uv->type == Type::vec(2))
+            sampled->args[0] = g::vec3({g::swizzle(uv, "x"), g::swizzle(uv, "y"), g::swizzle(source->args[0], "z")});
         return sampled;
     }
     if (name == "float" || name == "int" || name == "uint") {
@@ -1340,6 +1346,9 @@ std::vector<std::pair<std::string, g::Node>> tslConstants() {
             // positionView: the view-space position, carried from the vertex stage (standard.cpp linkNodeVaryings).
             {"positionView", g::varying("positionView", Type::vec(3))},
             {"normalViewGeometry", g::varying("normalViewGeometry", Type::vec(3))},
+            // three's diffuseColor (PropertyNode 'DiffuseColor'): the material's diffuse colour and alpha, as an outputNode
+            // reads it (standard.cpp colorOutput supplies it); mrt({ diffuseColor }) names the albedo target by it too.
+            {"diffuseColor", g::varying("diffuseColor", Type::vec(4))},
             {"cameraViewMatrix", g::uniform("viewMatrix", Type::mat(4, 4))},
             {"modelWorldMatrix", g::uniform("modelMatrix", Type::mat(4, 4))},
             {"instanceIndex", g::instanceIndex()},

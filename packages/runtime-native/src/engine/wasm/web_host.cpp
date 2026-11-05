@@ -46,7 +46,8 @@ namespace {
 // 7 = tnw_web_prepare_environment: the startup bake presents no surface frame.
 // 8 = tnw_web_set_presentation_hold, and the startup's world submission and shadow inputs as frame fields 71, 72.
 // 9 = tnw_web_init_texture and tnw_web_copy_texture (PRD-762); the 6 the terrain work first took is 8's.
-constexpr uint32_t kWebHostAbi = 9;
+// 10 = tnw_web_render_target's layer and attachment: three's layered and MRT render targets.
+constexpr uint32_t kWebHostAbi = 10;
 
 enum WebState : int { Pending = 0, Ready = 1, Failed = 2 };
 
@@ -592,11 +593,12 @@ extern "C" int tnw_web_compile_status(uint32_t id) {
  * three's render() while a render target is set (PRD-551): draws `root` through `camera` into the
  * target, the linear scene colour, as r185 writes a target. Fails, naming the first refusal, when the
  * target's render refused or skipped anything. A nonzero `deferred` plans the draw now and records it in the frame that
- * samples the target (Renderer::deferTarget).
+ * samples the target (Renderer::deferTarget). `layer` and `attachment` pick the array layer and the texture of a
+ * layered or MRT target (three's `setRenderTarget(target, layer)`; the facade draws one MRT output at a time).
  */
 extern "C" int tnw_web_render_target(const tn_handle_t* targetHandle, const tn_handle_t* rootHandle,
                                      const tn_handle_t* cameraHandle, double r, double g, double b, double a,
-                                     int deferred) {
+                                     int deferred, uint32_t layer, uint32_t attachment) {
     // A render target's draw is renderer work inside the page's render() call too (a post graph's offscreen passes), so it
     // counts toward the same host total; the totals publish when it ends so a draw after the main view is not left behind.
     const StagePublisher publisher{true};
@@ -613,7 +615,8 @@ extern "C" int tnw_web_render_target(const tn_handle_t* targetHandle, const tn_h
         std::vector<std::string> refused;
         {
             const HostMeter targetMeter(hostTargetMs, true);
-            refused = renderToTarget(*renderer, *target, *root, *camera, {r, g, b, a}, shadowMap, deferred != 0);
+            refused = renderToTarget(*renderer, *target, *root, *camera, {r, g, b, a}, shadowMap, deferred != 0, layer,
+                                     attachment);
         }
         if (!refused.empty()) return refuse(refused.front());
         return 0;

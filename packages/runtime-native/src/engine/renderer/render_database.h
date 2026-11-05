@@ -128,7 +128,7 @@ class RenderDatabase {
     // ponytail: entries for released materials stay until the database goes; prune if materials churn.
     struct GraphSources {
         uint32_t version = 0;
-        std::array<const void*, 16> roots{};  // one per MaterialNodes::pointers()
+        std::array<const void*, 17> roots{};  // one per MaterialNodes::pointers()
         const Texture* texture = nullptr;
         // The reflector() reads, by binding name; each owns its mirror pass, as three's ReflectorNode owns
         // its render target. `reflectorViews` carries this frame's view of each pass, refreshed per render.

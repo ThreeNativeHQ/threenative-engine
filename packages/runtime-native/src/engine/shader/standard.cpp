@@ -656,6 +656,20 @@ static ExprId slotValue(Program& f, graph::Lowering& slots, const graph::Node& n
     return nodeType(f, slots.lower(node), type);
 }
 
+// NodeMaterial.outputNode (three's setupOutput): the fragment's colour in place of the lit one, after the alpha test ran.
+// Inside it `diffuseColor` is the material's diffuse colour and alpha and `normalView` its shading normal, as three's
+// builder holds them when the output is set up. Without one the lit colour stays.
+static ExprId colorOutput(Program& f, const VertexVariant& variant, ExprId lit, ExprId normalView, ExprId diffuseColor,
+                          ExprId alpha) {
+    if (!variant.nodes.outputNode) return lit;
+    tsl::Build build(f);
+    std::unordered_map<std::string, ExprId> inputs;
+    if (normalView != kInvalid) inputs.emplace("normalView", normalView);
+    inputs.emplace("diffuseColor", f.construct(Type::vec(4), {diffuseColor, alpha}));
+    graph::Lowering output(f, std::move(inputs));
+    return nodeType(f, output.lower(variant.nodes.outputNode), Type::vec(4));
+}
+
 // three r187 NodeMaterial.setupDiffuseColor: `bool(maskNode).not().discard()`, before the colour is read.
 static void discardMasked(Program& f, graph::Lowering& slots, const VertexVariant& variant) {
     if (!variant.nodes.maskNode) return;
@@ -1615,7 +1629,8 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     out.albedo = diffuseColor;
     out.emissive = emissive;
     out.normal = n;
-    f.output("color", materialOutput(f, variant, outgoing, materialAlpha(f, alpha, variant.alphaHash)));
+    f.output("color", colorOutput(f, variant, materialOutput(f, variant, outgoing, materialAlpha(f, alpha, variant.alphaHash)),
+                                  n, diffuseColor, alpha));
     outputDepthNode(f, slots, variant);
     linkNodeVaryings(out, variant, local.position, local.normal);
     for (const Program* stage : {&out.vertex, &out.fragment}) {
@@ -1750,7 +1765,8 @@ StandardPrograms buildLit(bool phong, const VertexVariant& variant, const LightL
     // Linear HDR out: tone mapping and the output colour space belong to the output pass (output.h).
     out.albedo = diffuseColor;
     out.emissive = emissive;
-    f.output("color", materialOutput(f, variant, outgoing, materialAlpha(f, alpha, variant.alphaHash)));
+    f.output("color", colorOutput(f, variant, materialOutput(f, variant, outgoing, materialAlpha(f, alpha, variant.alphaHash)),
+                                  n, diffuseColor, alpha));
     outputDepthNode(f, slots, variant);
     linkNodeVaryings(out, variant, local.position, local.normal);
     for (const Program* stage : {&out.vertex, &out.fragment}) {
@@ -1842,7 +1858,10 @@ StandardPrograms buildBasic(const VertexVariant& variant) {
     const ExprId alpha = diffuseAlpha(f, slots, variant, diffuse, texel);
     const ExprId outgoing = variant.nodes.emissiveNode ? f.add(diffuseColor, slotValue(f, slots, variant.nodes.emissiveNode, Type::vec(3), kInvalid)) : diffuseColor;
     // Background.js writes opaque output regardless of the source texture's alpha.
-    f.output("color", materialOutput(f, variant, outgoing, variant.background ? f.constant(1.0f) : materialAlpha(f, alpha, variant.alphaHash)));
+    f.output("color", colorOutput(f, variant,
+                                  materialOutput(f, variant, outgoing,
+                                                 variant.background ? f.constant(1.0f) : materialAlpha(f, alpha, variant.alphaHash)),
+                                  normalView, diffuseColor, alpha));
     outputDepthNode(f, slots, variant);
     linkNodeVaryings(out, variant, local.position, local.normal);
     return out;

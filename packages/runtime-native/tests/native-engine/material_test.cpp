@@ -826,6 +826,26 @@ void depthTextureLowering() {
     }
 }
 
+// three's mat3(mat4) is the upper-left 3x3 (the impostor surface's normal matrix); WGSL has no
+// mat3x3(mat4x4) constructor, so the lowering takes each column's xyz.
+void mat3OfMat4() {
+    namespace g = graph;
+    auto matrix = std::make_shared<g::NodeData>();
+    matrix->kind = g::Kind::Join; matrix->type = Type::mat(4, 4);
+    for (int c = 0; c < 4; ++c)
+        matrix->args.push_back(g::vec4({g::float_(c == 0), g::float_(c == 1), g::float_(c == 2), g::float_(c == 3 ? 1 : 5)}));
+    auto linear = std::make_shared<g::NodeData>();
+    linear->kind = g::Kind::Convert; linear->type = Type::mat(3, 3); linear->args = {matrix};
+    Program p(Stage::Fragment);
+    const auto value = g::lower(linear, p);
+    CHECK(p.ok());
+    CHECK(p.expr(value).type == Type::mat(3, 3));
+    p.output("color", p.construct(Type::vec(4), {p.mul(value, p.construct(Type::vec(3), {p.constant(1.0f)})), p.constant(1.0f)}));
+    const auto stage = buildStage(p);
+    CHECK(stage.wgsl.ok());
+    CHECK(stage.wgsl.code.find("mat3x3<f32>(") != std::string::npos);
+}
+
 }  // namespace
 
-TN_TEST_MAIN({"alpha_hash", alphaHash}, {"ssr_passes", ssrPasses}, {"denoise_reads_raw_normals", denoiseReadsRawNormals}, {"ssr_rejects_inputs", ssrRejectsInputs}, {"depth_texture_lowering", depthTextureLowering}, {"depth_node_writes_frag_depth", depthNodeWritesFragDepth}, {"unsupported", unsupported}, {"emissive_output", emissiveOutput}, {"builds", builds}, {"fog", fog}, {"rough_diffuse", roughDiffuse}, {"fog_node_mixes_color", fogNodeMixesColor}, {"node_key", nodeKey}, {"bloom_passes", bloomPasses}, {"slots_share_one_lowering", slotsShareOneLowering})
+TN_TEST_MAIN({"mat3_of_mat4", mat3OfMat4}, {"alpha_hash", alphaHash}, {"ssr_passes", ssrPasses}, {"denoise_reads_raw_normals", denoiseReadsRawNormals}, {"ssr_rejects_inputs", ssrRejectsInputs}, {"depth_texture_lowering", depthTextureLowering}, {"depth_node_writes_frag_depth", depthNodeWritesFragDepth}, {"unsupported", unsupported}, {"emissive_output", emissiveOutput}, {"builds", builds}, {"fog", fog}, {"rough_diffuse", roughDiffuse}, {"fog_node_mixes_color", fogNodeMixesColor}, {"node_key", nodeKey}, {"bloom_passes", bloomPasses}, {"slots_share_one_lowering", slotsShareOneLowering})

@@ -320,7 +320,8 @@ void registerMeshMaterial(ClassBinding& b, MaterialType type, bool node = false,
              {"irradianceNode", &Nodes::irradianceNode},
              {"depthNode", &Nodes::depthNode},
              {"castShadowPositionNode", &Nodes::castShadowPositionNode},
-             {"maskNode", &Nodes::maskNode}}) {
+             {"maskNode", &Nodes::maskNode},
+             {"outputNode", &Nodes::outputNode}}) {
         if (raw && (std::string_view(name) == "emissiveNode" || std::string_view(name) == "roughnessNode" ||
                     std::string_view(name) == "metalnessNode"))
             continue;
@@ -994,8 +995,10 @@ void registerTextureBindings(Registry& classes) {
         return texture;
     };
     // three's RenderTarget (PRD-551): its size, type and colour texture. The renderer facades draw into it
-    // (setRenderTarget) and read it back; a material samples `target.texture`.
-    // ponytail: the colour is RGBA16Float whatever the type, so a FloatType target reads back at half
+    // (setRenderTarget) and read it back; a material samples `target.texture`. `count` and `depth` make three's MRT
+    // and layered target (render_target_pass.cpp): `textures`, each an array of `depth` layers, drawn one layer and
+    // one attachment at a time, with a mip chain when `generateMipmaps` is set.
+    // ponytail: a plain target's colour is RGBA16Float whatever the type, so a FloatType target reads back at half
     // precision; depth testing is always on (depthBuffer: false is accepted and not modelled).
     ClassBinding& target = classes["RenderTarget"];
     target.ctor = [](const Args& a, Store&) -> std::shared_ptr<void> {
@@ -1004,29 +1007,55 @@ void registerTextureBindings(Registry& classes) {
             throw Unsupported{"RenderTarget size must be 1 to 16384"};
         uint16_t type = kTextureUnsignedByteType;
         std::optional<uint16_t> minFilter, magFilter;
+        uint32_t count = 1, depth = 1;
+        bool mipmaps = false;
+        const auto integer = [](const std::string& key, const Value& value, double low, double high) {
+            const double n = number(value);
+            if (!(n >= low && n <= high) || n != std::floor(n))
+                throw Unsupported{"RenderTarget " + key + " must be an integer from " + std::to_string(int(low)) + " to " +
+                                  std::to_string(int(high))};
+            return uint32_t(n);
+        };
         if (a.size() > 2 && a[2].kind == Value::Kind::Record)
             for (const auto& [key, value] : a[2].fields) {
                 if (key == "minFilter" || key == "magFilter") {
-                    // A target has no mip chain: only the two single-level filters apply.
-                    const auto filter = static_cast<uint16_t>(number(value));
-                    if (filter != uint16_t(TextureFilter::Nearest) && filter != uint16_t(TextureFilter::Linear))
-                        throw Unsupported{"RenderTarget " + key + " must be NearestFilter or LinearFilter"};
-                    (key == "minFilter" ? minFilter : magFilter) = filter;
+                    (key == "minFilter" ? minFilter : magFilter) = static_cast<uint16_t>(number(value));
                 } else if (key == "type") {
                     type = static_cast<uint16_t>(number(value));
                     if (type != kTextureUnsignedByteType && type != kTextureHalfFloatType && type != kTextureFloatType)
                         throw Unsupported{"RenderTarget type must be UnsignedByteType, HalfFloatType or FloatType"};
                 } else if (key == "format") {
                     if (number(value) != kTextureRGBAFormat) throw Unsupported{"RenderTarget format must be RGBAFormat"};
+                } else if (key == "count") {
+                    count = integer(key, value, 1, 8);  // WebGPU's guaranteed colour attachments
+                } else if (key == "depth") {
+                    depth = integer(key, value, 1, 2048);  // WebGPU's guaranteed array layers
+                } else if (key == "generateMipmaps") {
+                    mipmaps = flag(value);
                 } else if (key != "depthBuffer" && key != "stencilBuffer") {
                     throw Unsupported{"RenderTarget option " + key + " is not supported natively"};
                 }
             }
-        auto target = RenderTarget::make(static_cast<uint32_t>(width), static_cast<uint32_t>(height), type);
-        if (minFilter) target->texture->minFilter = *minFilter;
-        if (magFilter) target->texture->magFilter = *magFilter;
+        // A plain target has no mip chain: only the two single-level filters apply. A mipmapped one takes any.
+        for (const auto& filter : {minFilter, magFilter})
+            if (filter && !mipmaps && *filter != uint16_t(TextureFilter::Nearest) && *filter != uint16_t(TextureFilter::Linear))
+                throw Unsupported{"RenderTarget minFilter and magFilter must be NearestFilter or LinearFilter without generateMipmaps"};
+        if (mipmaps && depth == 1 && count == 1)
+            throw Unsupported{"RenderTarget generateMipmaps needs count or depth: a plain target has no mip chain natively"};
+        auto target = RenderTarget::make(static_cast<uint32_t>(width), static_cast<uint32_t>(height), type, count, depth);
+        for (const auto& texture : target->textures) {
+            if (minFilter) texture->minFilter = *minFilter;
+            if (magFilter) texture->magFilter = *magFilter;
+            texture->generateMipmaps = mipmaps;
+        }
         return target;
     };
+    target.members["textures"] = [](void* self, const Args&, Store& store) -> Value {
+        std::vector<Value> textures;
+        for (const auto& texture : as<RenderTarget>(self)->textures) textures.push_back(store.share("Texture", texture));
+        return Value::array(std::move(textures));
+    };
+    target.getters["depth"] = [](void* self) { return Value::of(double(as<RenderTarget>(self)->depth)); };
     fixedMember(target, "texture", [](void* self, const Args&, Store& store) {
         return store.share("Texture", as<RenderTarget>(self)->texture);
     });

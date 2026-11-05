@@ -474,6 +474,19 @@ public:
     WGPUTextureFormat sceneFormat() const { return sceneFormat_; }
     /** Linear filtering, clamped to the edge: three's RenderTarget texture defaults. */
     WGPUSampler linearClampSampler();
+    /** One texture of a layered or MRT render target (render_target_pass.cpp): a 2D array a draw fills one layer at a
+     *  time from a target renderer's scene colour, and the 2D-array view a material samples. */
+    struct TargetLayers {
+        WGPUTexture texture = nullptr;
+        WGPUTextureView view = nullptr;
+        WGPUTextureFormat format = WGPUTextureFormat_Undefined;
+        uint32_t levels = 1, layers = 1;
+    };
+    TargetLayers createTargetLayers(uint32_t width, uint32_t height, uint32_t layers, uint32_t levels,
+                                    WGPUTextureFormat format);
+    /** Copies the last render's scene colour into mip 0 of `layer`, then rebuilds every layer's chain when `mipmaps`;
+     *  submitted after this renderer's draws. */
+    void copySceneToLayer(const TargetLayers& into, uint32_t layer, bool mipmaps);
     void setVirtualShadow(std::size_t light, const shadows::AtlasOptions& options);
     /** `tanHalfFov` is the main view's (0 for a pass that is not it): auto-sized atlases measure on it. */
     void syncVirtualShadows(const LightState& lights, double tanHalfFov = 0);

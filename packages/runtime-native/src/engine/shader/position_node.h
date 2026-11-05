@@ -31,6 +31,9 @@ struct MaterialNodes {
     graph::Node maskNode;
     /** SpriteNodeMaterial.scaleNode (a vec2 beside the model scale) and rotationNode (radians, over the material's). */
     graph::Node scaleNode, rotationNode;
+    /** NodeMaterial.outputNode: the fragment's final colour in place of the lit one, after the alpha test (three's
+     *  setupOutput). `diffuseColor` inside it reads the material's own diffuse colour and alpha. */
+    graph::Node outputNode;
     /** The scene's `fogNode`, a vec4(color, factor) mixed into the finished colour; set on draw items, never on a material. */
     graph::Node fogNode;
     bool operator==(const MaterialNodes&) const = default;
@@ -41,14 +44,14 @@ struct MaterialNodes {
                           opacityNode.get(),  vertexNode.get(),    fragmentNode.get(),
                           scaleNode.get(),    rotationNode.get(),  depthNode.get(),
                           aoNode.get(),       irradianceNode.get(), castShadowPositionNode.get(),
-                          maskNode.get()};
+                          maskNode.get(),     outputNode.get()};
     }
     auto graphs() const {
         return std::array{colorNode,     positionNode, normalNode, emissiveNode, roughnessNode,
                           metalnessNode, opacityNode,  vertexNode, fragmentNode,
                           scaleNode,     rotationNode, depthNode,
                           aoNode,        irradianceNode, fogNode, castShadowPositionNode,
-                          maskNode};
+                          maskNode,      outputNode};
     }
     /** The position graph a shadow depth pass casts from: castShadowPositionNode when set (none for a bare
      *  positionLocal, the rest pose), else positionNode, as three's shadow pass assigns it. */

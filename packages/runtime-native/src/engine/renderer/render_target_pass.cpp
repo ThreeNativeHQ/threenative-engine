@@ -1,8 +1,12 @@
 #include "engine/renderer/render_target_pass.h"
 
+#include "engine/renderer/frame_gpu_timer.h"
 #include "engine/renderer/render_database.h"
 
+#include <algorithm>
 #include <cmath>
+#include <stdexcept>
+#include <string>
 #include <cstdio>
 #include <cstring>
 #include <functional>
@@ -17,7 +21,33 @@ struct TargetGpu {
     std::unique_ptr<Renderer> renderer;
     std::unique_ptr<RenderDatabase> database;
     bool rendered = false;  // the target's colour holds a render (else it is drawn empty before a read)
+    // A layered or MRT target's textures, one 2D array each, built at the first draw or sample.
+    std::vector<Renderer::TargetLayers> attachments;
+    ~TargetGpu() {
+        for (const auto& each : attachments) {
+            if (each.view) wgpuTextureViewRelease(each.view);
+            if (each.texture) wgpuTextureRelease(each.texture);
+        }
+    }
 };
+
+/** The GPU format a layered target's texture stores, as three's WebGPUTextureUtils picks it for the texture's type. */
+WGPUTextureFormat layerFormat(const Texture& texture) {
+    if (texture.isFloat()) return WGPUTextureFormat_RGBA32Float;
+    if (texture.isHalfFloat()) return WGPUTextureFormat_RGBA16Float;
+    return texture.isSRGB() ? WGPUTextureFormat_RGBA8UnormSrgb : WGPUTextureFormat_RGBA8Unorm;
+}
+
+/** A layered target's arrays: one per texture, `depth` layers, a full mip chain when the texture asks for mipmaps. */
+void ensureAttachments(TargetGpu& gpu, RenderTarget& target) {
+    if (!target.layered() || gpu.attachments.size() == target.textures.size()) return;
+    for (const auto& texture : target.textures) {
+        const uint32_t levels =
+            texture->generateMipmaps ? uint32_t(std::floor(std::log2(double(std::max(target.width, target.height))))) + 1 : 1;
+        gpu.attachments.push_back(
+            gpu.renderer->createTargetLayers(target.width, target.height, target.depth, levels, layerFormat(*texture)));
+    }
+}
 
 float halfToFloat(uint16_t bits) {
     const int exponent = (bits >> 10) & 31;
@@ -48,15 +78,22 @@ TargetGpu& gpuOf(Renderer& main, RenderTarget& target) {
     }
     auto& gpu = *static_cast<TargetGpu*>(target.gpu.get());
     gpu.renderer->setSize(target.width, target.height);  // a no-op at the same extent
+    ensureAttachments(gpu, target);
     return gpu;
 }
 
 }  // namespace
 
 std::vector<std::string> renderToTarget(Renderer& main, RenderTarget& target, Object3D& root, Camera& camera,
-                                        std::array<double, 4> clear, bool shadowMap, bool deferred) {
+                                        std::array<double, 4> clear, bool shadowMap, bool deferred, uint32_t layer,
+                                        uint32_t attachment) {
     if (deferred && target.depthTexture)
         return {"TN_NATIVE_DEFERRED_TARGET_DEPTH: a deferred render target cannot carry a depth texture"};
+    if (layer >= target.depth || attachment >= target.textures.size())
+        return {"TN_NATIVE_RENDER_TARGET_LAYER: layer " + std::to_string(layer) + " or attachment " +
+                std::to_string(attachment) + " is outside the target"};
+    if (target.layered() && (deferred || target.depthTexture))
+        return {"TN_NATIVE_RENDER_TARGET_LAYER: a layered or MRT target is drawn at the call, without a depth texture"};
     main.flushDeferred(&target);  // an earlier plan for this target is recorded first, never dropped or drawn twice
     TargetGpu& gpu = gpuOf(main, target);
     gpu.database->shadowMapEnabled = shadowMap;
@@ -76,18 +113,89 @@ std::vector<std::string> renderToTarget(Renderer& main, RenderTarget& target, Ob
     }
     gpu.rendered = true;
     if (target.depthTexture) gpu.renderer->copyDepthToTexture(*target.depthTexture);
+    // A layered or MRT target keeps the scene colour in the drawn texture's layer; three's finishRender regenerates
+    // that texture's mips when it asks for them.
+    if (target.layered())
+        gpu.renderer->copySceneToLayer(gpu.attachments[attachment], layer, target.textures[attachment]->generateMipmaps);
     std::vector<std::string> diagnostics = gpu.database->diagnostics();
     for (const std::string& message : gpu.renderer->diagnostics()) diagnostics.push_back(message);
     return diagnostics;
 }
 
-WGPUTextureView renderTargetView(Renderer& main, RenderTarget& target) {
+WGPUTextureView renderTargetView(Renderer& main, RenderTarget& target, int attachment) {
     TargetGpu& gpu = gpuOf(main, target);
+    // A layered target's texture is its own array; one never drawn holds the cleared layers it was made with.
+    if (target.layered()) return gpu.attachments.at(std::size_t(std::max(attachment, 0))).view;
     if (!gpu.rendered) {
         gpu.renderer->render({}, CameraState{}, LightState{}, {0, 0, 0, 0});
         gpu.rendered = true;
     }
     return gpu.renderer->sceneColorView();
+}
+
+Renderer::TargetLayers Renderer::createTargetLayers(uint32_t width, uint32_t height, uint32_t layers, uint32_t levels,
+                                                   WGPUTextureFormat format) {
+    TargetLayers out;
+    out.format = format;
+    out.levels = levels;
+    out.layers = layers;
+    WGPUTextureDescriptor desc = {};
+    desc.dimension = WGPUTextureDimension_2D;
+    desc.size = {width, height, layers};
+    desc.format = format;
+    desc.mipLevelCount = levels;
+    desc.sampleCount = 1;
+    desc.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopySrc;
+    out.texture = wgpuDeviceCreateTexture(device_, &desc);
+    WGPUTextureViewDescriptor view = {};
+    view.dimension = WGPUTextureViewDimension_2DArray;
+    view.format = format;
+    view.mipLevelCount = levels;
+    view.arrayLayerCount = layers;
+    out.view = wgpuTextureCreateView(out.texture, &view);
+    texturesChanged();  // a new view's address may be one a released view had
+    return out;
+}
+
+void Renderer::copySceneToLayer(const TargetLayers& into, uint32_t layer, bool mipmaps) {
+    WGPURenderPipeline pipeline = copyPipeline(into.format, 0);
+    if (!pipeline || !sceneView_) throw std::runtime_error("TN_NATIVE_RENDER_TARGET_LAYER: no copy pipeline");
+    WGPUBindGroupLayout layout = wgpuRenderPipelineGetBindGroupLayout(pipeline, 0);
+    WGPUBindGroup group = bindGroup(layout, blitFragment_, outputUniforms_, sceneView_, linearClampSampler());
+    wgpuBindGroupLayoutRelease(layout);
+    if (!group) throw std::runtime_error("TN_NATIVE_RENDER_TARGET_LAYER: no bind group");
+    WGPUTextureViewDescriptor desc = {};
+    desc.dimension = WGPUTextureViewDimension_2D;
+    desc.format = into.format;
+    desc.mipLevelCount = 1;
+    desc.baseArrayLayer = layer;
+    desc.arrayLayerCount = 1;
+    WGPUTextureView view = wgpuTextureCreateView(into.texture, &desc);
+    if (!mipEncoder_) {
+        WGPUCommandEncoderDescriptor encoderDesc = {};
+        mipEncoder_ = wgpuDeviceCreateCommandEncoder(device_, &encoderDesc);
+    }
+    WGPURenderPassColorAttachment color = {};
+    color.view = view;
+    color.loadOp = WGPULoadOp_Clear;
+    color.storeOp = WGPUStoreOp_Store;
+#if defined(MYSTRAL_WEBGPU_DAWN)
+    color.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
+#endif
+    WGPURenderPassDescriptor passDesc = {};
+    passDesc.colorAttachmentCount = 1;
+    passDesc.colorAttachments = &color;
+    WGPURenderPassEncoder pass = beginTimedRenderPass(mipEncoder_, &passDesc);
+    wgpuRenderPassEncoderSetPipeline(pass, pipeline);
+    wgpuRenderPassEncoderSetBindGroup(pass, 0, group, 0, nullptr);
+    wgpuRenderPassEncoderSetVertexBuffer(pass, blitVertex_.attributes.at(0).location, gpu_.buffer(outputTriangle_), 0, 24);
+    wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0);
+    wgpuRenderPassEncoderEnd(pass);
+    wgpuRenderPassEncoderRelease(pass);
+    mipGroups_.push_back(group);
+    mipViews_.push_back(view);
+    if (mipmaps && into.levels > 1) generateMipmaps(into.texture, into.format, into.levels, into.layers);
+    flushMipmaps();  // after this renderer's draws of the layer, before its next draw replaces the scene colour
 }
 
 GpuStatus readRenderTarget(RenderTarget& target, uint32_t x, uint32_t y, uint32_t width, uint32_t height,

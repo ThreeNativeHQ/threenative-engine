@@ -27,12 +27,18 @@ class Object3D;
  * `deferred` plans the draw now and hands its recording to `main` (Renderer::deferTarget): it happens in the next frame,
  * after the post render-to-texture passes when the post graph samples the target, else ahead of the scene pass. A deferred
  * target has no depth texture to copy (refused by name): the copy would read the depth of the previous draw.
+ *
+ * A layered or MRT target (RenderTarget::layered) draws layer `layer` of texture `attachment` (three's
+ * `setRenderTarget(target, layer)` and one MRT output, which the facade selects per draw): the scene colour is copied
+ * into that layer, and the texture's mip chain is rebuilt when it asks for mipmaps.
  */
 std::vector<std::string> renderToTarget(Renderer& main, RenderTarget& target, Object3D& root, Camera& camera,
-                                        std::array<double, 4> clear, bool shadowMap, bool deferred = false);
+                                        std::array<double, 4> clear, bool shadowMap, bool deferred = false,
+                                        uint32_t layer = 0, uint32_t attachment = 0);
 
-/** The colour view a material samples for `target`, drawing an empty frame first if it never rendered. */
-WGPUTextureView renderTargetView(Renderer& main, RenderTarget& target);
+/** The colour view a material samples for `target`, drawing an empty frame first if it never rendered. For a layered
+ *  or MRT target (three's `depth` and `count`) it is texture `attachment`'s 2D array, each layer as its draw left it. */
+WGPUTextureView renderTargetView(Renderer& main, RenderTarget& target, int attachment = 0);
 
 /**
  * The region [x, y, width, height] of the target's last render, as tightly packed rows (top row first)

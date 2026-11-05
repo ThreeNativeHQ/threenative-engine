@@ -3053,6 +3053,10 @@ void starter_post_bindings() {
             CHECK(leveledLayer != nullptr);
             if (leveledLayer)
                 CHECK(compile(g::vec4({g::swizzle(leveledLayer, "xyz"), g::float_(1)})).wgsl.code.find("textureSampleLevel(t_") != std::string::npos);
+            // three keeps depth(layer) apart from the uv: texture(array).depth(2).sample(uv) still reads layer 2.
+            const auto layeredReceiver = TslArg::of(layered);
+            const auto resampled = tn::abi::tslCall("sample", &layeredReceiver, {TslArg::of(g::vec2({g::float_(0.5), g::float_(0.25)}))}, serial);
+            CHECK(resampled && resampled->args[0] && resampled->args[0]->type == tn::engine::shader::Type::vec(3));
         }
         const auto plain = std::make_shared<tn::engine::DataTexture>();
         plain->setImage(std::vector<double>(4, 128), "Uint8Array", 1, 1, 1023, 1009);

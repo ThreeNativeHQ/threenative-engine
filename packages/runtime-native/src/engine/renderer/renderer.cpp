@@ -1905,11 +1905,24 @@ const Renderer::MaterialTexture* Renderer::materialTexture(const Texture& textur
         const auto target = std::static_pointer_cast<RenderTarget>(texture.renderTarget.lock());
         if (target) {
             MaterialTexture& sampled = renderTargetTextures_[texture.ident.value()];
-            const WGPUTextureView view = renderTargetView(*this, *target);
+            const WGPUTextureView view = renderTargetView(*this, *target, target->attachmentOf(texture));
             if (sampled.view != view) {
                 if (sampled.view) dropMapGroups();  // a resized target's old view address may come back
                 sampled.view = view;
                 sampled.sampler = linearClampSampler();
+                if (target->layered()) {
+                    // A layered target's texture keeps its own filters and, with mipmaps, reads its chain.
+                    WGPUSamplerDescriptor filtered = {};
+                    filtered.addressModeU = filtered.addressModeV = filtered.addressModeW = WGPUAddressMode_ClampToEdge;
+                    filtered.magFilter = filterMode(texture.magFilter);
+                    filtered.minFilter = filterMode(texture.minFilter);
+                    filtered.mipmapFilter = texture.minFilter == static_cast<uint16_t>(TextureFilter::NearestMipmapLinear) ||
+                                                    texture.minFilter == static_cast<uint16_t>(TextureFilter::LinearMipmapLinear)
+                                                ? WGPUMipmapFilterMode_Linear : WGPUMipmapFilterMode_Nearest;
+                    filtered.lodMaxClamp = texture.generateMipmaps ? 32 : 0;
+                    filtered.maxAnisotropy = 1;
+                    sampled.sampler = samplerFor(filtered);
+                }
             }
             return &sampled;
         }

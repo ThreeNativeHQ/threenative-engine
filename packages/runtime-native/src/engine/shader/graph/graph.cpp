@@ -125,6 +125,18 @@ ExprId Lowerer::convert(ExprId value, Type target) {
         if (target.rows == 4) part = program_.construct(Type::vec(4), {part, program_.constant(1.0f)});
         return convert(part, target);
     }
+    // three's mat3(mat4): the upper-left block. WGSL has no mat3x3(mat4x4), so each column is
+    // matrix * unit axis (the element() column read), truncated to the target's rows.
+    if (source.isMatrix() && target.isMatrix() && source.cols >= target.cols && source.rows >= target.rows) {
+        std::vector<ExprId> columns;
+        for (uint8_t c = 0; c < target.cols; ++c) {
+            std::vector<ExprId> axis;
+            for (uint8_t r = 0; r < source.cols; ++r) axis.push_back(program_.constant(r == c ? 1.0f : 0.0f));
+            const ExprId column = program_.mul(value, program_.construct(Type::vec(source.cols), axis));
+            columns.push_back(convert(column, Type::vec(target.rows)));
+        }
+        return program_.construct(target, columns);
+    }
     return program_.construct(target, {value});
 }
 
