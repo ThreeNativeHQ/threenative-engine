@@ -434,12 +434,26 @@ export function lowestY(geometry: BufferGeometry, matrix: Matrix4): number {
   return lowest;
 }
 
+/**
+ * The pose a baked package record carries: the quaternion the bake authored for the placement.
+ *
+ * A world-v1 record holds position, quaternion and scale, and nothing about `alignToNormal` or the
+ * scatter yaw, so the load path hands the record's quaternion here. It replaces the rotation the
+ * placement would compose, and every step below it — the ground snap, the boulder burial, the
+ * four-footprint sink and the mountain base ring — still runs, because the record is a pose and not
+ * an override of the pose.
+ */
+export interface IPropPoseOverride {
+  readonly quaternion: readonly [number, number, number, number];
+}
+
 export function preparePose(
   geometry: BufferGeometry,
   _material: Material,
   placement: IPlacement,
   transform: IPlacementOverride | undefined,
   groundAt: PropGroundQuery,
+  pose?: IPropPoseOverride,
 ) {
   // Plain math, not a Mesh: on the owned engine every Object3D is an engine object, and a detached
   // Mesh per placement cost 30 s of the forest's load (218,816 placements, 0.14 ms each).
@@ -458,9 +472,12 @@ export function preparePose(
     model.scale.fromArray(transform.scale);
   } else {
     const up = new Vector3(0, 1, 0);
-    if (placement.alignToNormal)
-      model.quaternion.setFromUnitVectors(up, new Vector3().fromArray(placement.normal));
-    model.quaternion.multiply(new Quaternion().setFromAxisAngle(up, placement.rotation));
+    if (pose) model.quaternion.fromArray(pose.quaternion);
+    else {
+      if (placement.alignToNormal)
+        model.quaternion.setFromUnitVectors(up, new Vector3().fromArray(placement.normal));
+      model.quaternion.multiply(new Quaternion().setFromAxisAngle(up, placement.rotation));
+    }
     model.scale.setScalar(placement.scale);
   }
   const grounding = transform?.grounding ?? true;
