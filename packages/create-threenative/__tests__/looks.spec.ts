@@ -72,8 +72,22 @@ describe("starter visual floor", () => {
     const shadows = forest.shadows;
     if (shadows === undefined) throw new Error("expected the cached shadow override");
     expect(forest.key.shadow.shadowNode).toBe(shadows);
-    expect(shadows.options.clipExtents).toEqual([arenaExtent, 48, 160]);
-    expect(shadows.options.mapSize).toEqual([2048, 2048, 2048]);
+    // The node renders a ladder, not the authored pair: it inserts a level wherever a step is wider
+    // than 2x, as UE doubles every clipmap level (`maxLevelRatio`). What this kit owns is the
+    // windows it named — the arena diagonal finest, the world's wider ones as the authored levels
+    // above it — and the phone map size every inserted level inherits.
+    const clipExtents = shadows.options.clipExtents;
+    expect(clipExtents.filter((extent) => [arenaExtent, 48, 160].includes(extent))).toEqual([
+      arenaExtent,
+      48,
+      160,
+    ]);
+    for (let level = 1; level < clipExtents.length; level += 1)
+      expect(
+        (clipExtents[level] as number) / (clipExtents[level - 1] as number),
+        `level ${level} step`,
+      ).toBeLessThanOrEqual(2);
+    expect(shadows.options.mapSize).toEqual(clipExtents.map(() => 2048));
     const disposeShadows = vi.spyOn(shadows, "dispose");
     forest.dispose();
     expect(disposeShadows).toHaveBeenCalledOnce();
