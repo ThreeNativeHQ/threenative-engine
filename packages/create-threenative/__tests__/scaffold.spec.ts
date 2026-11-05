@@ -236,8 +236,8 @@ const BUG_REPORT_SKILL_PATHS = [
 // every no-install scaffold (three 0.187.0, the rts kit and the dropped Blender server), so no value
 // from either parent applies to the merged bytes.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
-  // 2026-11-04: every tree ships the regenerated three patch (identical comparison samplers share one
-  // binding); no template file changed. Measured by this test.
+  // 2026-11-04: framework patches hash by name only (their bytes are held by the starter test), so a
+  // three, vite or Tailwind patch edit no longer moves any tree. Measured by this test.
   // 2026-11-03: re-measured on the merge of develop 33c69249f (0.3.11) into PR #483. The PR side
   // already moved every tree (the `threenative-terrain` server in all seven host configs, the pnpm
   // `packageManager` pin, the regenerated three patch and the PR's kit sources); the release bump
@@ -349,7 +349,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // these kits' AGENTS.md say so, and rts drops its TRAA and blur overrides.
   // Re-pinned 2026-10-31: the starter crate gets a stacked-disc contact shadow (render/contactShadow.ts)
   // that keeps its contact coverage above the 0.02 floor at the core +1 EV key.
-  "action-rpg": "21b5a2bfa50d29d4a27143463ff5f5ca7ca30b8c95cf26e6cce9d6d847a83b77",
+  "action-rpg": "b5f4f9d4a00d7ad3ea93dfd1fc53c731dff1a56089a004bf4b6daec90a525a2d",
   // PRD-732 (2026-10-23): the new Hop Garden kit, measured through createProject (method checked
   // against platformer's unchanged value). Recomputed 2026-10-24 for the PRD-732 polish round: the
   // new hero, the dust and sparkle effects and the effects scenario. Recomputed 2026-10-24 for
@@ -363,7 +363,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-24 for the shadow window: the 52 m map now travels 14 m ahead of the hero,
   // so the castle and trees the camera sees keep their shadows; the 2048 map and shadow pass cost
   // stay the same.
-  collectathon: "fcb74a1963536f2d3b08b0d77550dfca6c391986578eadb1502be5d66ad8a0c1",
+  collectathon: "3c8e51b16b3a429e7ddc1efdbe34e58fb6f25293efa3928a6db2a7a9ad86dae5",
   // PRD-733 (2026-10-23): the new Lantern Vale kit, measured through createProject.
   // Recomputed 2026-10-24 for the owner perf round: the fixed-step catch-up cap and the gentler
   // wind on the crowns, clusters and grass tufts. Only this tree moves.
@@ -372,14 +372,14 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Re-pinned 2026-10-26 (PRD-748 loading cover): adventure loses its `loaded` gate, rain
   // reads state through `useUiStateDuringStartup`.
   // Re-pinned 2026-10-27 (PRD-749 hud-clean): adventure, collectathon and rain HUD text reaches 3:1.
-  adventure: "00ee4dd13fed3af0039371f18e678eddc863d3c4e6fc9b68fad5ea5c5dceaa49",
+  adventure: "a83ff9f815ffdbaee96588c4edeaa62adf3a8afa0a9d9d7d0b8498caa038f9e0",
   // PRD-734 (2026-10-24): the new Clover Cup kart kit, measured through createProject.
-  kart: "ec53229c3b2ec4ced1b1b9d3a41996c548514738d62ddb65523327666b5aea47",
-  minimal: "cf815dcc7f48ee1938495b8f79c780667c47d2022677ea735ea66a779168b79d",
-  platformer: "b319197508392726ec3eec6fc0f6b4fa0b25e1b8874e4da5ab3beb2ee1b0e2c4",
-  puzzle: "a5b8bfc1bfd0bea04a1f4caf40f61e541946e8f004a814a23902f5550201d272",
-  racing: "c2ca6b36c53daf455c746bda0d18f275307bab9ff7147ad7a5044ae6373eac54",
-  rain: "6720a0a43fb076ab3f48aabf93f0a0a0f827d469d7da58b11cb4ad8a049c83f7",
+  kart: "8a37711c7ab81b713cd59dac57e2136c18e7f109c0646b955c39e3f0b2374fa2",
+  minimal: "c872fc3267148f0c62ab4a642dc5c9d9ab4e652276e5a39a4fe212240aa1244d",
+  platformer: "8202a241c160a2a21636239a69cb57689a049f6cbe9f9c06319858994ff85d13",
+  puzzle: "f6ad78093e0c8df9e6040f7e9b56b1dc5192c3fe501024c5a9a6f7c102d16320",
+  racing: "c1ab6883881d9c3e3732e2fc4a421a4b4d7b66c57f3c701af1ead20ba613c3be",
+  rain: "0135eed80fc5fb7661f2873bf41497aceac2ac48bb6a29b39e3ef039605093fb",
   // Re-pinned 2026-10-28: the rts high tier turns camera motion blur off (an RTS pan smeared every unit).
   // Re-pinned 2026-10-28 (PRD-765): rts becomes AstraCraft — painted ground, mesas, scrub, ACES 1.02 look and the command HUD;
   // then its legacy-linear colours, gamma fog of war, no bloom or environment, and a frame-sized shadow window.
@@ -391,13 +391,13 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Re-pinned 2026-10-29: the fog-of-war sheet comes from palette.ts, rts-build probes the fog ground is lit
   // (it was a dark patch under a HUD card) and the top-location separator reaches 3:1 on the ink plate.
   // Then the UI final pass: a counted selection band, garrison and blocked-exit cards, overview, hotkeys, edge-scroll toggle, refusal toasts (imports sorted by biome).
-  rts: "750a4bc5fa5b3a84d8b47d278ce8e1fb48e7ed3165e9efd710521aecc67fee25",
-  runner: "a0abe6ff205e3d5d481196f7a3f6beb12a3014712c6d6b9b51d83de595259e3d",
+  rts: "598341ca8bc8e1fd1cabc9a8bcc840332ee7b41038e188aebb32298837dc48d0",
+  runner: "2ba3c9a7dc5b869b1842cebb32331fea38015851c675d51869264e35e7e20f36",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
-  sailing: "7524d2652a568e1688738b90cd2571bdc72d61945975c250dd5ec1464b5f4b02",
+  sailing: "6b192c04ac99504ac2356e4dc4dc9973a952c91e0c7878651c07c4edf2be656e",
   // Recomputed 2026-10-26 (PRD-746): the scene merges the town through mergeByMaterial (src/townBatch.ts).
-  shooter: "3e36aa56afc2de097cfb6d733f97313acd100217179cf780730e81ad8e1bf6e0",
-  snow: "4856acc6f2e3edbb35f0cfecd8406f59cb5746249857807c6b5dfe6a3075f097",
+  shooter: "4667672ab58caccc46348222084d4fc08d7f33addc76c25df5cdaddc88fe8bab",
+  snow: "61c32730c01ce067922bbb8c0683da75e6d26f01f7053b38292587251bfc1a22",
   // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.
   // Recomputed 2026-10-16: starter's adaptiveQuality split its policy resolution into qualityPolicy.ts
   // to stay under the 200-line render-file cap; only starter's tree moves.
@@ -406,8 +406,8 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-31: core key 0.36, traced reflections, the crate contact blob, the portable trace type (PRD-633); measured by this test.
   // Recomputed 2026-10-31 (PRD-775): temporalAAHooks.ts claims the 0.187 render pipeline's view
   // offset and drives its callback lists, so starter's render source moves again. Measured by this test.
-  starter: "11b7f71a6d275cb01562a9fd43daf8a01d005814ceb7e4cee4cd72352ed11e6f",
-  "tower-defense": "efc515e2bfcd92729440a26b386d7f25006b5c474a8dd467f469a4cf647b3e3c",
+  starter: "05b6ce9c19aae0b1217399321a79b3298e870f004116709aff5c16f1d567b81a",
+  "tower-defense": "5ab47d9c2f34c33d610572c39e219e28bea69b59eeb9d398837446e6fbb58784",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
@@ -451,6 +451,8 @@ async function withBrokenTemplateFile<T>(
 const COHORT_PIN =
   /("(?:@threenative\/[\w-]+|create-threenative|threenative-[\w-]+)":\s*)"\d+\.\d+\.\d+(?:-[\w.]+)?"/gu;
 
+const FRAMEWORK_PATCH = /^patches\/[^/]+\.patch$/u;
+
 async function scaffoldTreeHash(directory: string): Promise<string> {
   const files: Array<[string, Buffer]> = [];
   async function walk(current: string): Promise<void> {
@@ -468,11 +470,15 @@ async function scaffoldTreeHash(directory: string): Promise<string> {
           const bytes = await readFile(file);
           // `pnpm release:prepare` moves the cohort's own pins on every release, so they hash as
           // one placeholder: a version bump alone must not move a tree this test guards.
+          // A framework patch is a copy of the package's own patch, so a three or vite patch edit
+          // must not move every tree: the file hashes by name, and its copy is guarded on its own.
           files.push([
             relative,
-            entry.name === "package.json"
-              ? Buffer.from(bytes.toString("utf8").replace(COHORT_PIN, '$1"<cohort>"'))
-              : bytes,
+            FRAMEWORK_PATCH.test(relative)
+              ? Buffer.from("<framework patch>")
+              : entry.name === "package.json"
+                ? Buffer.from(bytes.toString("utf8").replace(COHORT_PIN, '$1"<cohort>"'))
+                : bytes,
           ]);
         }
       }
@@ -1269,6 +1275,18 @@ describe("create-threenative", () => {
         "vite@8.2.0": "patches/vite@8.2.0.patch",
         "@tailwindcss/node@4.3.3": "patches/@tailwindcss__node@4.3.3.patch",
       });
+      // The tree hash reads a framework patch by name only, so the bytes are held here: each copy
+      // is exactly the patch its package installs.
+      const repoRoot = path.resolve(import.meta.dirname, "../../..");
+      for (const [copy, source] of [
+        ["three@0.187.0.patch", "packages/core/patches/three@0.187.0.patch"],
+        ["vite@8.2.0.patch", "patches/vite@8.2.0.patch"],
+        ["@tailwindcss__node@4.3.3.patch", "patches/@tailwindcss__node@4.3.3.patch"],
+      ] as const) {
+        expect(await readFile(path.join(result.target, "patches", copy))).toEqual(
+          await readFile(path.join(repoRoot, source)),
+        );
+      }
       expect(STARTER_PATHS).toContain("playtests/survives.playtest.json");
       for (const relativePath of STARTER_PATHS) {
         await expect(
