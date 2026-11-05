@@ -1,6 +1,7 @@
 import { lstat, readdir, realpath } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { BIOME_WORD_ROWS, biomeWordList } from "../core/biome-words.js";
+import { type IBiomeSpec, type IBiomeWaterBody, validateBiome } from "../core/biome.js";
 import { TERRAIN_KITS, type TerrainKit } from "../core/kits.js";
 import { OPERATION_TYPES } from "../core/operations.js";
 import { LANDFORMS, type LandformKind } from "../core/presets.js";
@@ -12,10 +13,14 @@ export { TERRAIN_KITS, type TerrainKit } from "../core/kits.js";
 
 export interface IGenerateInput {
   kit: TerrainKit;
+  /** The biome's own rules, when the request carries a spec instead of a starter's file. */
+  spec?: IBiomeSpec;
   /** One of `LANDFORMS`: a shape the five starters do not ship cooks from its preset. */
   landform?: LandformKind;
   sizeMeters?: number;
   seed?: number;
+  /** Replaces the water bodies the biome declares: what the world floods. */
+  water?: readonly IBiomeWaterBody[];
   out?: string;
 }
 
@@ -25,22 +30,61 @@ export const TERRAIN_TOOLS = [
   {
     name: "terrain_generate",
     description:
-      "Choose from a request or explicit kit and cook one editable starter terrain kit (forest, coastal, alpine, desert or tundra) into a world.glb; `landform` swaps the ground for one of the seven shape presets (alpine, temperateMountains, rollingHills, desertMesa, coastalCliffs, tundra, volcanic) and keeps the kit's surface, assets and biome. Returns the kit as recipe, the biome it bakes and that biome's band rows resolved against the cooked heights (`bands`), the world.glb, recipe.json and world.json paths, triangles, instances and draws measured from the produced GLB's default scene, and a ctx.assets.model load snippet. triangles counts every instance of the LOD0 default scene in full, before distance LOD and culling, instances sums the EXT_mesh_gpu_instancing instances, and draws counts primitives across instanced and non-instanced meshes, an instanced primitive counting once.",
+      "Choose from a request, an explicit kit or a biome and cook one editable starter terrain kit (forest, coastal, alpine, desert or tundra) into a world.glb; `biome` names a starter or one of its alias words, or carries an inline IBiomeSpec whose own landform, size and seed build the ground; `landform` swaps the ground for one of the seven shape presets (alpine, temperateMountains, rollingHills, desertMesa, coastalCliffs, tundra, volcanic) and keeps the kit's surface and assets; `water` replaces the water bodies the biome declares. Returns the kit as recipe, the biome it bakes, that biome's declared water and its band rows resolved against the cooked heights (`bands`), the world.glb, recipe.json and world.json paths, triangles, instances and draws measured from the produced GLB's default scene, and a ctx.assets.model load snippet. triangles counts every instance of the LOD0 default scene in full, before distance LOD and culling, instances sums the EXT_mesh_gpu_instancing instances, and draws counts primitives across instanced and non-instanced meshes, an instanced primitive counting once.",
     inputSchema: {
       type: "object",
       properties: {
         kit: { type: "string", enum: [...TERRAIN_KITS] },
+        biome: {
+          description:
+            "A starter biome's name or alias word (forest, woods, beach, ...), or an inline IBiomeSpec object; a spec cooks with `kit`'s surface and assets, forest's when kit is absent.",
+          anyOf: [{ type: "string", minLength: 1 }, { type: "object" }],
+        },
         landform: { type: "string", enum: Object.keys(LANDFORMS) },
         request: { type: "string", minLength: 1 },
         sizeMeters: { type: "number", exclusiveMinimum: 0 },
         seed: { type: "integer" },
+        water: {
+          type: "array",
+          items: { type: "object" },
+          description:
+            "IBiomeWaterBody rows that replace the biome's declared water: river (width), lake (radius), ocean (level).",
+        },
         out: {
           type: "string",
           description:
             "Relative directory under the project's assets.source that must not exist yet; the default is assets.source/worlds/<kit>.",
         },
       },
-      anyOf: [{ required: ["request"] }, { required: ["kit"] }],
+      anyOf: [{ required: ["request"] }, { required: ["kit"] }, { required: ["biome"] }],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "terrain_biome_new",
+    description:
+      "Make a new biome from a shipped one and cook it: copies the base biome's biome.data.json into <assets.source>/biomes/<name>/, applies the overrides, validates the file with validateBiome, then cooks it with the base kit's surface and assets and the biome's own landform preset. One call writes only under <assets.source>/biomes/<name>/, its cooked world included. Returns the same cook result as terrain_generate plus the biome file path and the biome's resolved `bands`. No code changes anywhere: the biome is data.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        from: { type: "string", enum: [...TERRAIN_KITS] },
+        name: {
+          type: "string",
+          pattern: "^[a-z][a-z0-9-]{0,31}$",
+          description: "The new biome's folder and look name; lowercase, no spaces.",
+        },
+        overrides: {
+          type: "object",
+          description:
+            "IBiomeSpec fields to change on the base file (landform, foliage, grass, layers, water, spawn, species, aliases, bake). An unknown field fails.",
+        },
+        out: {
+          type: "string",
+          description:
+            "Relative directory under the project's assets.source that must not exist yet; the default is assets.source/biomes/<name>/world.",
+        },
+      },
+      required: ["from", "name"],
       additionalProperties: false,
     },
   },
@@ -89,8 +133,61 @@ function relativeDirectory(out: unknown): string {
   return out;
 }
 
-const GENERATE_FIELDS = ["request", "kit", "landform", "sizeMeters", "seed", "out"];
+const GENERATE_FIELDS = [
+  "request",
+  "kit",
+  "biome",
+  "landform",
+  "sizeMeters",
+  "seed",
+  "water",
+  "out",
+];
+const BIOME_NEW_FIELDS = ["from", "name", "overrides", "out"];
+
+/** A new biome's folder name, and the look it will resolve under the game it is baked for. */
+export interface IBiomeNewInput {
+  from: TerrainKit;
+  name: string;
+  overrides?: Record<string, unknown>;
+  out?: string;
+}
+
 const LANDFORM_KINDS = Object.keys(LANDFORMS) as readonly LandformKind[];
+
+/**
+ * The `biome` argument: a starter's name or one of its alias words resolves the kit, and an inline
+ * `IBiomeSpec` carries the biome's own rules. Anything else fails naming what this field accepts.
+ */
+function parseBiomeArgument(biome: unknown): { kit?: TerrainKit; spec?: IBiomeSpec } {
+  if (biome === undefined) return {};
+  if (typeof biome === "string") {
+    const word = biome.trim().toLowerCase();
+    const kit = BIOME_WORD_ROWS.find(([, names]) => names.includes(word))?.[0];
+    if (kit === undefined) {
+      throw new TypeError(
+        `terrain_generate: biome '${biome}' matches no biome. Try one of: ${biomeWordList()}.`,
+      );
+    }
+    return { kit };
+  }
+  if (isRecord(biome)) {
+    const look = biome.look;
+    return { spec: validateBiome(biome, typeof look === "string" ? look : "biome") };
+  }
+  throw new TypeError(
+    "terrain_generate: biome must be a starter name, an alias word or a biome spec object.",
+  );
+}
+
+/** `water` replaces the biome's declared bodies; the rows themselves are checked at the bake. */
+function parseWater(water: unknown): readonly IBiomeWaterBody[] | undefined {
+  if (water === undefined) return undefined;
+  if (!Array.isArray(water) || water.some((body) => !isRecord(body))) {
+    throw new TypeError("terrain_generate: water must be an array of water body objects.");
+  }
+  return water as readonly IBiomeWaterBody[];
+}
 
 export function parseGenerateInput(input: unknown): IGenerateInput {
   const args = closedRecord(input, "terrain_generate", GENERATE_FIELDS);
@@ -99,12 +196,16 @@ export function parseGenerateInput(input: unknown): IGenerateInput {
     throw new TypeError("terrain_generate: request must be a non-empty string.");
   }
   const words = typeof request === "string" ? request.toLowerCase().split(/[^a-z]+/u) : [];
+  const { kit: biomeKit, spec } = parseBiomeArgument(args.biome);
   const kit =
-    args.kit !== undefined
-      ? args.kit
-      : TERRAIN_KITS[
+    args.kit ??
+    biomeKit ??
+    // A spec carries no appearance, so it cooks with the forest starter's surface and assets.
+    (spec === undefined
+      ? TERRAIN_KITS[
           BIOME_WORD_ROWS.findIndex(([, names]) => names.some((name) => words.includes(name)))
-        ];
+        ]
+      : "forest");
   if (typeof kit !== "string" || !(TERRAIN_KITS as readonly string[]).includes(kit)) {
     // A request that matched nothing names what it could have matched, so the caller can retry
     // without guessing: every biome and the words it answers to, never a silent default.
@@ -115,6 +216,7 @@ export function parseGenerateInput(input: unknown): IGenerateInput {
     );
   }
   const parsed: IGenerateInput = { kit: kit as TerrainKit };
+  if (spec !== undefined) parsed.spec = spec;
   if (args.landform !== undefined) {
     if (!LANDFORM_KINDS.includes(args.landform as LandformKind))
       throw new TypeError(
@@ -134,8 +236,57 @@ export function parseGenerateInput(input: unknown): IGenerateInput {
     }
     parsed.seed = seed;
   }
+  const water = parseWater(args.water);
+  if (water !== undefined) parsed.water = water;
   if (out !== undefined) parsed.out = relativeDirectory(out);
   return parsed;
+}
+
+/**
+ * A `terrain_biome_new` request: a shipped base, a folder-safe new name, an optional set of spec
+ * overrides and an optional output directory.
+ */
+export function parseBiomeNewInput(input: unknown): IBiomeNewInput {
+  const args = closedRecord(input, "terrain_biome_new", BIOME_NEW_FIELDS);
+  const from = args.from;
+  if (typeof from !== "string" || !(TERRAIN_KITS as readonly string[]).includes(from))
+    throw new TypeError(`terrain_biome_new: from must be one of ${TERRAIN_KITS.join(", ")}.`);
+  const name = args.name;
+  if (typeof name !== "string" || !/^[a-z][a-z0-9-]{0,31}$/u.test(name))
+    throw new TypeError(
+      "terrain_biome_new: name must be lowercase letters, digits and dashes, starting with a letter.",
+    );
+  // A shipped kit's folder belongs to the package; a new biome must not shadow or overwrite one.
+  if ((TERRAIN_KITS as readonly string[]).includes(name))
+    throw new TypeError(`terrain_biome_new: '${name}' is a shipped biome; choose a new name.`);
+  const overrides = args.overrides;
+  if (overrides !== undefined && !isRecord(overrides))
+    throw new TypeError("terrain_biome_new: overrides must be an object.");
+  const parsed: IBiomeNewInput = { from: from as TerrainKit, name };
+  if (overrides !== undefined) parsed.overrides = { ...overrides };
+  if (args.out !== undefined) parsed.out = relativeDirectory(args.out);
+  return parsed;
+}
+
+/**
+ * A new biome's file: the base spec with the request's overrides applied, its `look` and first
+ * `aliases` word defaulting to the new name. Validated, so an override the schema does not have
+ * fails here and names the field rather than reaching a bake.
+ */
+export function newBiomeSpec(
+  base: unknown,
+  name: string,
+  overrides: Record<string, unknown> = {},
+): IBiomeSpec {
+  return validateBiome(
+    {
+      ...(base as Record<string, unknown>),
+      ...overrides,
+      aliases: (overrides.aliases as string[] | undefined) ?? [name],
+      look: (overrides.look as string | undefined) ?? name,
+    },
+    name,
+  );
 }
 
 /**

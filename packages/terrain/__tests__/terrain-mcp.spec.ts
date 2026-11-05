@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdir, readFile, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { cpus } from "node:os";
 import { join } from "node:path";
 import {
@@ -23,6 +23,8 @@ import {
   TERRAIN_TOOLS,
   type TerrainKit,
   assertOutputFree,
+  newBiomeSpec,
+  parseBiomeNewInput,
   parseGenerateInput,
   parsePatchInput,
   patchRecipe,
@@ -47,9 +49,68 @@ async function forestRecipe(): Promise<ITerrainDocument> {
   return recipe;
 }
 
+/** One starter's biome file, as data: the base an inline spec or a new biome is built from. */
+async function starterBiome(kit: TerrainKit): Promise<Record<string, unknown>> {
+  return JSON.parse(
+    await readFile(new URL(`../starter/${kit}/biome.data.json`, import.meta.url), "utf8"),
+  );
+}
+
+/** Every file under `root`, skipping installed packages: a tool call's writes are what it proves. */
+async function filesUnder(root: string, prefix = ""): Promise<string[]> {
+  const entries = await readdir(join(root, prefix), { withFileTypes: true });
+  const files: string[] = [];
+  for (const entry of entries) {
+    if (entry.name === "node_modules") continue;
+    const at = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
+    if (entry.isDirectory()) files.push(...(await filesUnder(root, at)));
+    else files.push(at);
+  }
+  return files;
+}
+
+interface IToolReply {
+  result?: { isError?: boolean; content?: { text?: string }[] };
+}
+
+/** One request to the built server, in a fresh process started from `cwd`; its reply, parsed. */
+async function askServer(
+  cwd: string,
+  name: string,
+  args: Record<string, unknown>,
+): Promise<IToolReply> {
+  const child = spawn(
+    process.execPath,
+    [new URL("../dist/mcp/server.js", import.meta.url).pathname],
+    { cwd, stdio: ["pipe", "pipe", "inherit"] },
+  );
+  try {
+    const replied = new Promise<string>((resolve, reject) => {
+      let buffer = "";
+      child.stdout.on("data", (chunk: Buffer) => {
+        buffer += chunk.toString();
+        if (!buffer.includes("\n")) return;
+        resolve(buffer.split("\n")[0] ?? "");
+      });
+      child.on("error", reject);
+      child.on("exit", (code) => reject(new Error(`terrain server exited ${code}`)));
+    });
+    child.stdin.write(
+      `${JSON.stringify({ id: 1, jsonrpc: "2.0", method: "tools/call", params: { name, arguments: args } })}\n`,
+    );
+    return JSON.parse(await replied) as IToolReply;
+  } finally {
+    child.kill();
+  }
+}
+
 describe("terrain MCP tool contract", () => {
-  it("lists exactly terrain_generate and terrain_patch with closed input schemas", () => {
-    expect(TERRAIN_TOOLS.map((tool) => tool.name)).toEqual(["terrain_generate", "terrain_patch"]);
+  it("lists the generate, biome and patch tools with closed input schemas", () => {
+    expect(TERRAIN_TOOLS.map((tool) => tool.name)).toEqual([
+      "terrain_generate",
+      "terrain_biome_new",
+      "terrain_patch",
+    ]);
     for (const tool of TERRAIN_TOOLS) {
       expect(tool.inputSchema.additionalProperties).toBe(false);
     }
@@ -962,6 +1023,111 @@ describe("terrain_generate overrides", () => {
   }, 120_000);
 });
 
+// PRD-793 phase 2: `biome` is the wide input — a starter's name, one of its alias words, or an
+// inline spec — and `water` replaces the water bodies the biome declares.
+describe("terrain_generate biome", () => {
+  it("selects a kit from a biome's name and from its alias words", () => {
+    for (const kit of TERRAIN_KITS) expect(parseGenerateInput({ biome: kit })).toEqual({ kit });
+    expect(parseGenerateInput({ biome: "woods" })).toEqual({ kit: "forest" });
+    expect(parseGenerateInput({ biome: " Sea " })).toEqual({ kit: "coastal" });
+    expect(parseGenerateInput({ biome: "dunes" })).toEqual({ kit: "desert" });
+  });
+
+  it("keeps kit as the explicit override over a biome name", () => {
+    expect(parseGenerateInput({ biome: "woods", kit: "desert" })).toEqual({ kit: "desert" });
+  });
+
+  it("fails an unmatched biome and lists every biome word", () => {
+    expect(() => parseGenerateInput({ biome: "castle" })).toThrow(
+      /biome 'castle' matches no biome\. Try one of: .*forest \(pine, pines, woods, woodland\)/,
+    );
+    for (const biome of [2, [], null]) {
+      expect(() => parseGenerateInput({ biome })).toThrow(/biome must be a starter name/);
+    }
+  });
+
+  it("takes an inline biome spec, cooked with forest's art unless kit names another", async () => {
+    const spec = newBiomeSpec(await starterBiome("forest"), "savanna", {
+      landform: "rollingHills",
+      water: [{ kind: "ocean", level: 2 }],
+    });
+    expect(parseGenerateInput({ biome: spec })).toEqual({ kit: "forest", spec });
+    expect(parseGenerateInput({ biome: spec, kit: "tundra" })).toEqual({ kit: "tundra", spec });
+    // The spec is checked at the tool boundary, so a misspelt or missing field names itself.
+    expect(() => parseGenerateInput({ biome: { ...spec, moons: 2 } })).toThrow(
+      /biome field 'moons' is not a field a biome has/,
+    );
+    expect(() => parseGenerateInput({ biome: { look: "savanna" } })).toThrow(
+      /biome field 'bake' is missing/,
+    );
+  });
+
+  it("takes water overrides and rejects a malformed list", () => {
+    expect(parseGenerateInput({ kit: "forest", water: [{ kind: "lake", radius: 40 }] })).toEqual({
+      kit: "forest",
+      water: [{ kind: "lake", radius: 40 }],
+    });
+    for (const water of [2, {}, [{ kind: "lake" }, 2]]) {
+      expect(() => parseGenerateInput({ kit: "forest", water })).toThrow(/water must be an array/);
+    }
+  });
+});
+
+// PRD-793 phase 2: the inline spec and the water override reach a real cook, not only the parser.
+describe("terrain_generate biome cooks", () => {
+  async function cook(request: Omit<Parameters<typeof cookKit>[0], "out" | "projectRoot">) {
+    const project = await realpath(await makeTempDir("tn-terrain-biome-cook-"));
+    await mkdir(join(project, "node_modules", "@threenative"), { recursive: true });
+    await symlink(
+      new URL("../../assets/", import.meta.url).pathname,
+      join(project, "node_modules", "@threenative", "assets"),
+    );
+    await writeFile(
+      join(project, "threenative.config.ts"),
+      'export default { assets: { source: "assets" } };',
+    );
+    const out = join(project, "assets", "worlds", "world");
+    const result = JSON.parse(await cookKit({ ...request, out, projectRoot: project }));
+    const recipe = JSON.parse(await readFile(join(project, result.recipeJson), "utf8"));
+    return { recipe, result, remove: () => rm(project, { recursive: true, force: true }) };
+  }
+
+  it("cooks an inline biome spec from its own landform, size and seed", async () => {
+    const spec = newBiomeSpec(await starterBiome("forest"), "savanna", {
+      landform: "rollingHills",
+      seed: 11,
+      sizeMeters: 256,
+      water: [{ kind: "ocean", level: 3 }],
+    });
+    const { recipe, result, remove } = await cook({ kit: "forest", spec });
+    try {
+      expect(result.biome).toBe("savanna");
+      expect(result.water).toEqual([{ kind: "ocean", level: 3 }]);
+      // The preset's chain, not the starter's authored crop, and the spec's own numbers.
+      expect(recipe.layers.some((layer: { type: string }) => layer.type === "heightmap")).toBe(
+        false,
+      );
+      expect(recipe.config).toMatchObject({ seed: 11, size: 256 });
+      expect(result.triangles).toBeGreaterThan(0);
+      expect(result.draws).toBeGreaterThan(0);
+      expect(result.bands.elevationRange[1]).toBeGreaterThan(result.bands.elevationRange[0]);
+    } finally {
+      await remove();
+    }
+  }, 120_000);
+
+  it("replaces the water bodies the starter biome declares", async () => {
+    const { result, remove } = await cook({ kit: "forest", water: [{ kind: "ocean", level: 4 }] });
+    try {
+      // The forest declares a river and a lake; the request's ocean is what this world floods.
+      expect(result.water).toEqual([{ kind: "ocean", level: 4 }]);
+      expect(result.biome).toBe("forest");
+    } finally {
+      await remove();
+    }
+  }, 120_000);
+});
+
 // PRD-793 AC-1: every landform cooks under every shipped biome. The kit supplies the surface, the
 // assets and the biome file; the preset supplies the ground, so the pair needs no new starter.
 const LANDFORMS_IN_MATRIX = [
@@ -1015,4 +1181,86 @@ describe("every landform under every biome", () => {
     },
     180_000,
   );
+});
+
+// PRD-793 phase 3: a sixth biome is one call — a data folder and a cook, no code edit.
+describe("terrain_biome_new", () => {
+  it("builds the new spec from the base file and its overrides, validated under the new name", async () => {
+    const spec = newBiomeSpec(await starterBiome("forest"), "savanna", {
+      landform: "rollingHills",
+      seed: 11,
+    });
+    expect(spec.look).toBe("savanna");
+    expect(spec.aliases).toEqual(["savanna"]);
+    expect(spec.landform).toBe("rollingHills");
+    expect(spec.seed).toBe(11);
+    // Everything the overrides did not name is the base's own row, not a default.
+    expect(spec.foliage).toEqual((await starterBiome("forest")).foliage);
+  });
+
+  it("fails closed on an override the schema does not have, and on a shipped biome's name", async () => {
+    const forest = await starterBiome("forest");
+    expect(() => newBiomeSpec(forest, "savanna", { moons: 2 })).toThrow(
+      /biome field 'moons' is not a field a biome has/,
+    );
+    expect(() => parseBiomeNewInput({ from: "forest", name: "forest" })).toThrow(
+      /'forest' is a shipped biome/,
+    );
+    for (const name of ["../escape", "Savanna", "sav anna", "1savanna", ""]) {
+      expect(() => parseBiomeNewInput({ from: "forest", name })).toThrow(/name must be/);
+    }
+    expect(() => parseBiomeNewInput({ from: "moon", name: "savanna" })).toThrow(/from must be/);
+    expect(() => parseBiomeNewInput({ from: "forest", name: "savanna", overrides: 2 })).toThrow(
+      /overrides must be an object/,
+    );
+  });
+
+  it("makes and cooks a savanna in a game project, touching only its own folders", async () => {
+    const project = await realpath(await makeTempDir("tn-terrain-biome-"));
+    try {
+      await mkdir(join(project, "node_modules", "@threenative"), { recursive: true });
+      await symlink(
+        new URL("../../assets/", import.meta.url).pathname,
+        join(project, "node_modules", "@threenative", "assets"),
+      );
+      await writeFile(
+        join(project, "threenative.config.ts"),
+        'export default { assets: { source: "assets" } };',
+      );
+      const before = await filesUnder(project);
+      const response = await askServer(project, "terrain_biome_new", {
+        from: "forest",
+        name: "savanna",
+        overrides: { landform: "rollingHills", seed: 11 },
+      });
+      const text = response.result?.content?.[0]?.text;
+      expect(response.result?.isError, text).toBe(false);
+      const result = JSON.parse(text as string);
+      expect(result.biome).toBe("savanna");
+      expect(result.biomeJson).toBe("assets/biomes/savanna/biome.data.json");
+      expect(result.out).toBe("assets/biomes/savanna/world");
+      expect(result.triangles).toBeGreaterThan(0);
+      expect(result.bands.elevationRange[1]).toBeGreaterThan(result.bands.elevationRange[0]);
+      const written = JSON.parse(await readFile(join(project, result.biomeJson), "utf8"));
+      expect(written).toMatchObject({ look: "savanna", landform: "rollingHills", seed: 11 });
+      // AC-2: every file the call wrote sits under the biome's own folder; no source file changed.
+      const after = await filesUnder(project);
+      const added = after.filter((file) => !before.includes(file));
+      expect(added.length).toBeGreaterThan(0);
+      expect(added.filter((file) => !file.startsWith("assets/biomes/savanna/"))).toEqual([]);
+      expect(before.filter((file) => !after.includes(file))).toEqual([]);
+      // AC-3: no slower than the slowest shipped kit on this box (forest 3 839 ms in phase 1).
+      console.log(`TN_TERRAIN_BIOME_NEW savanna: ${result.ms} ms (forest baseline 3 839 ms)`);
+      expect(result.ms).toBeLessThan(2 * 3839);
+      // A second call with the same name refuses instead of overwriting the biome.
+      const again = await askServer(project, "terrain_biome_new", {
+        from: "forest",
+        name: "savanna",
+      });
+      expect(again.result?.isError).toBe(true);
+      expect(again.result?.content?.[0]?.text).toMatch(/already exists/);
+    } finally {
+      await rm(project, { recursive: true, force: true });
+    }
+  }, 180_000);
 });

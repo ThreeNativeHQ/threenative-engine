@@ -3,7 +3,7 @@ import { copyFile, mkdir, readFile, realpath, rm, writeFile } from "node:fs/prom
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { type IBakeBiomeOptions, bakeBiome } from "../core/bake-biome.js";
-import { validateBiome } from "../core/biome.js";
+import { type IBiomeWaterBody, validateBiome } from "../core/biome.js";
 import { decodeRAW16 } from "../core/io.js";
 import { applyPlacementOverrides } from "../core/placements.js";
 import { landform } from "../core/presets.js";
@@ -24,6 +24,12 @@ export interface ICookRequest {
   seed?: number;
   /** Cook one of the seven landform presets instead of the starter's authored heightmap crop. */
   landform?: LandformKind;
+  /** A biome spec from a project folder, instead of the starter's own `biome.data.json`. */
+  spec?: unknown;
+  /** The biome's name, for the result; the starter's kit name when omitted. */
+  biome?: string;
+  /** Water bodies that replace the biome's declared ones, `IBiomeWaterBody` rows. */
+  water?: readonly IBiomeWaterBody[];
 }
 
 export interface IBounds {
@@ -173,17 +179,28 @@ async function cookInto(
   assetsDir: string,
 ): Promise<string> {
   const started = performance.now();
-  // A landform is a recipe the package can build from a name, so a request for a shape the five
-  // starters do not ship needs no new folder: the kit still supplies the surface, the assets and the
-  // biome file, and the preset supplies the ground.
+  // The starter's biome file is the world's own record of the biome; the bake validates it here, so
+  // a starter that drifts from the schema fails at its cook instead of at a game's load. A request's
+  // own spec replaces the file, and its `water` rows replace only what the biome declares it floods.
+  const file = request.spec ?? JSON.parse(await readFile(join(kitDir, "biome.data.json"), "utf8"));
+  const declared = (
+    request.water === undefined
+      ? file
+      : { ...(file as Record<string, unknown>), water: request.water }
+  ) as unknown;
+  const biome = validateBiome(declared, request.biome ?? request.kit);
+  // A spec names its own shape, size and seed, so its ground comes from the preset it carries. A
+  // starter keeps its authored crop unless the request overrides the shape; the kit still supplies
+  // the surface, the assets and the art.
+  const kind = request.landform ?? (request.spec === undefined ? undefined : biome.landform);
   const recipe =
-    request.landform === undefined
+    kind === undefined
       ? JSON.parse(await readFile(join(kitDir, "recipe.json"), "utf8"))
       : {
-          recipe: landform(request.landform, {
+          recipe: landform(kind, {
             resolution: 257,
-            seed: request.seed ?? 73,
-            size: request.sizeMeters ?? 512,
+            seed: request.seed ?? biome.seed,
+            size: request.sizeMeters ?? biome.sizeMeters,
           }).toJSON(),
         };
   // `fromJSON` reads `config`, so an override written beside it would be accepted and then ignored.
@@ -260,12 +277,8 @@ async function cookInto(
     )}\n`,
   );
 
-  // The starter's biome file is the world's own record of the biome; the bake validates it here, so
-  // a starter that drifts from the schema fails at its cook instead of at a game's load.
-  const biome = validateBiome(
-    JSON.parse(await readFile(join(kitDir, "biome.data.json"), "utf8")),
-    request.kit,
-  );
+  // The starter's biome file is the world's own record of the biome; the bake validates it at the
+  // top of this cook, so what it returns is the spec this world was baked from.
   const { bands, splat, manifest, files } = bakeBiome({
     state,
     spec: biome,
@@ -320,6 +333,7 @@ async function cookInto(
     ...measureGlb(cooked.worldGlb),
     placementCounts: cooked.placementCounts,
     biome: biome.look,
+    water: biome.water,
     bands,
     worldGlbBytes: cooked.worldGlb.length,
     ms: Math.round(performance.now() - started),

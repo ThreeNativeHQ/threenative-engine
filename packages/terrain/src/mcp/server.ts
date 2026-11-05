@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 import { realpathSync } from "node:fs";
-import { rm } from "node:fs/promises";
-import { join, relative, resolve } from "node:path";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { join, relative, resolve, sep } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { IsolatedKillError, childExecArgv, runIsolated } from "./child.js";
 import {
   TERRAIN_TOOLS,
+  newBiomeSpec,
+  parseBiomeNewInput,
   parseGenerateInput,
   parsePatchInput,
   patchRecipe,
@@ -38,6 +40,22 @@ function toolResult(text: string, isError = false) {
   return { content: [{ type: "text", text }], isError };
 }
 
+/** Cooks one request in its own process group and returns the child's summary line. */
+async function cookInChild(request: Record<string, unknown>, out: string): Promise<string> {
+  const child = await runIsolated({
+    command: process.execPath,
+    // Inherits the parent's loader flags, so the same TypeScript runtime starts the child.
+    args: [...childExecArgv(process.execArgv), COOK_CHILD, JSON.stringify(request)],
+    timeoutMs: COOK_TIMEOUT_MS,
+  }).catch(async (error: unknown) => {
+    // A killed cook cannot clean up after itself; `resolveOutput` proved `out` was new, so it is ours.
+    if (error instanceof IsolatedKillError) await rm(out, { recursive: true, force: true });
+    throw error;
+  });
+  // The cook library also prints progress lines; the child's summary is always its last line.
+  return child.stdout.trim().split("\n").at(-1) ?? "";
+}
+
 /** Runs one tool. A rejected argument or a failed cook becomes a tool error result, not a crash. */
 async function callTool(name: string, args: unknown): Promise<ReturnType<typeof toolResult>> {
   try {
@@ -50,22 +68,44 @@ async function callTool(name: string, args: unknown): Promise<ReturnType<typeof 
         input.out ?? relative(projectRoot, join(assetSource, "worlds", input.kit)),
         assetSource,
       );
-      const child = await runIsolated({
-        command: process.execPath,
-        // Inherits the parent's loader flags, so the same TypeScript runtime starts the child.
-        args: [
-          ...childExecArgv(process.execArgv),
-          COOK_CHILD,
-          JSON.stringify({ ...input, out, projectRoot, assetSource }),
-        ],
-        timeoutMs: COOK_TIMEOUT_MS,
-      }).catch(async (error: unknown) => {
-        // A killed cook cannot clean up after itself; `resolveOutput` proved `out` was new, so it is ours.
-        if (error instanceof IsolatedKillError) await rm(out, { recursive: true, force: true });
-        throw error;
-      });
-      // The cook library also prints progress lines; the child's summary is always its last line.
-      return toolResult(child.stdout.trim().split("\n").at(-1) ?? "");
+      return toolResult(await cookInChild({ ...input, out, projectRoot, assetSource }, out));
+    }
+    if (name === "terrain_biome_new") {
+      const input = parseBiomeNewInput(args);
+      const projectRoot = process.cwd();
+      const assetSource = await resolveAssetSource(projectRoot);
+      // The base is the package's own file: a new biome starts from a validated spec, not a guess.
+      const base = JSON.parse(
+        await readFile(
+          new URL(`../../starter/${input.from}/biome.data.json`, import.meta.url),
+          "utf8",
+        ),
+      ) as Record<string, unknown>;
+      const spec = newBiomeSpec(base, input.name, input.overrides);
+      // Both directories are claimed before anything is written, so a refused `out` leaves no
+      // half-made biome behind. The default world sits inside the biome's own folder: one call then
+      // writes only under `<assets.source>/biomes/<name>/`.
+      const biomeDir = await resolveOutput(
+        projectRoot,
+        relative(projectRoot, join(assetSource, "biomes", input.name)),
+        assetSource,
+      );
+      const out = await resolveOutput(
+        projectRoot,
+        input.out ?? relative(projectRoot, join(assetSource, "biomes", input.name, "world")),
+        assetSource,
+      );
+      // The biome file is the artifact: written first, kept even when the cook behind it fails, so a
+      // caller can read the validated spec and try again with a different shape or budget.
+      await mkdir(biomeDir, { recursive: true });
+      const biomeJson = join(biomeDir, "biome.data.json");
+      await writeFile(biomeJson, `${JSON.stringify(spec, null, 2)}\n`);
+      const text = await cookInChild(
+        { assetSource, biome: input.name, kit: input.from, out, projectRoot, spec },
+        out,
+      );
+      const shown = relative(projectRoot, biomeJson).split(sep).join("/");
+      return toolResult(JSON.stringify({ ...(JSON.parse(text) as object), biomeJson: shown }));
     }
     if (name === "terrain_patch") {
       const { recipe, commands } = parsePatchInput(args);

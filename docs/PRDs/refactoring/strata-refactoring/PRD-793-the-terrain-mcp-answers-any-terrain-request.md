@@ -1,9 +1,9 @@
 # PRD-793 — The terrain MCP answers any terrain request, and makes a new biome in one call
 
-**Status:** PARTIAL — Phase 1 is done (every shipped kit's cook pinned, with its counts and its cook
-time as the AC-3 baseline) and Phase 2's shape half is done: `landform` reaches any of the seven
-presets, and `sizeMeters`/`seed` now actually reach the recipe (they were accepted and ignored). Open
-in Phase 2: a `biome` inline spec or folder, a `water` override, and the nearest-biome message.
+**Status:** PARTIAL — Phases 1 and 2 are done: every shipped kit's cook is pinned with its AC-3
+baseline, and `terrain_generate` takes `biome` (a starter's name, one of its alias words or an inline
+spec), `landform`, `sizeMeters`, `seed` and `water`. Phase 3 is next; AC-4 waits on the sandbox and
+judge lane.
 **Priority:** P1 — The owner's goal: an agent asking for a terrain outside five fixed names gets no world today (all phases open).
 **Complexity:** 5 (MEDIUM)
 **Owner:** ThreeNative maintainers
@@ -59,13 +59,16 @@ back to a default kit. A new tool, `terrain_biome_new { from, name, overrides }`
   The slowest kit is forest at 3 839 ms on this box (AMD Ryzen 9 5900X), which is the AC-3 budget a sixth biome has to stay under. `pnpm --filter @threenative/terrain typecheck` exits 0.
 
 #### Phase 2: open the command
-**Status:** PARTIAL
+**Status:** DONE
 **Files:** `packages/terrain/src/mcp/{tools,cook,cook-child}.ts`
-- [ ] `biome`, inline spec, `landform` and `water` overrides cook; an unmatched request fails and lists candidates. proof: AC-1 matrix plus the fail-closed cases in `terrain-mcp.spec.ts`
+- [x] `biome`, inline spec, `landform` and `water` overrides cook; an unmatched request fails and lists candidates. proof: AC-1 matrix plus the fail-closed cases in `terrain-mcp.spec.ts` — Evidence: `pnpm exec vitest run packages/terrain/__tests__/terrain-mcp.spec.ts` is 97/97 green in 118.69 s after `pnpm --filter @threenative/terrain build` (the spec spawns `dist/mcp/server.js`), and the AC-1 matrix is 35/35 inside it. `pnpm exec tsc --noEmit -p packages/terrain/tsconfig.json` exits 0. The new green cases:
+  - `terrain_generate biome` (5): a bare `biome` selects its kit by name and by every alias word (`woods` → forest, ` Sea ` → coastal, `dunes` → desert); an explicit `kit` stays the override; an unmatched biome fails with every word (`biome 'castle' matches no biome. Try one of: forest (pine, pines, woods, woodland); …`); an inline `IBiomeSpec` is validated at the tool boundary (`biome field 'moons' is not a field a biome has`, `biome field 'bake' is missing`) and cooks with forest's art unless `kit` names another; a malformed `water` list fails before any evaluation.
+  - `terrain_generate biome cooks` (2): an inline `savanna` spec cooks from its own `rollingHills` shape at 256 m and seed 11 — the written recipe has no `heightmap` layer, its `config` is `{ seed: 11, size: 256 }`, triangles and draws are above zero and its bands resolve — and the forest cook's declared river and lake are replaced by the request's ocean (`result.water` is the override).
+  - Landed: `biome` is the wide input. A string resolves through the same alias rows as `request`; an object is checked by `validateBiome` before a cook starts and cooks the starter's surface and assets (forest unless `kit` names another, because a spec carries no appearance). `water` replaces the `IBiomeSpec.water` rows the bake validates, and the cook reports them as `result.water`, so a caller reads the flooded bodies this world was baked for. A spec's own `landform`/`sizeMeters`/`seed` build the ground, and the request's explicit overrides still win; a landform cook under a starter now takes that biome's `seed` and `sizeMeters` when the request names neither, which is the world's own number rather than a constant, and the AC-1 matrix still passes 35/35. `water` rows deeper than the array shape are checked by `validateBiome`, which already owns them.
+  - Limited: `biome` does not read a project biome folder back into `terrain_generate`; the tool validates a spec object, and `terrain_biome_new` (Phase 3) cooks the spec it writes, so no caller needs the folder read today.
   - Landed: `landform` is a first-class input — `terrain_generate` declares the seven `LANDFORMS` in its schema, `parseGenerateInput` validates the name and lists all seven on a miss, and `cookKit` builds the recipe with `landform(kind, { size, seed, resolution: 257 })` instead of reading the starter's authored heightmap crop. The kit still supplies the surface, assets and biome file, so "any landform under any shipped biome" is the same code path for all 35 pairs. Proof: `terrain-mcp.spec.ts`'s `terrain_generate landform` (3 cases) plus `cooks a landform preset the five starters do not ship` — `rollingHills` under the forest kit cooks with no `heightmap` layer in the written recipe and reports triangles and draws above zero; the whole terrain suite is 34 files / 457 tests green after the build.
   - Landed, and it was a bug: `sizeMeters` and `seed` were accepted by the tool and written to `recipe.recipe.size`/`.seed`, a field beside the document's `config` that `Terrain.fromJSON` never reads, so both overrides were silently ignored (the document validator only checks known fields, so nothing failed). The cook now writes `config.size`/`config.seed`, and `applies sizeMeters and seed to the recipe's own config` pins the written recipe's `config` and the manifest extent at 256 m. Red before the fix, green after.
   - Landed: an unmatched `request` now names every biome *and* the words it answers to (`request 'castle' matches no biome. Try one of: forest (pine, pines, woods, woodland); coastal (beach, coast, sea, ocean); …`), and the parser's synonym table is no longer a second copy of the aliases: `core/biome-words.ts` holds a mirror of the five `aliases` rows, and `biome-words.spec.ts` (6/6) fails the moment a mirror row stops matching its `biome.data.json`. `TERRAIN_KITS`/`TerrainKit` moved to `core/kits.ts` so the words module does not import the tool module; `tools.ts` re-exports both, so its public surface is unchanged. The old spec's expectation of a bare `forest, coastal, …` list was updated to the new message, with each alias word asserted.
-  - Open: a `biome` argument (a starter name is the kit today; an inline `IBiomeSpec` or a project biome folder needs a recipe built from the spec, which is PRD-792 Phase 2's example half) and a `water` override. Both need a spec→recipe builder; neither is a mechanical change to this tool.
 
 #### Phase 3: a new biome in one call
 **Status:** NOT STARTED
