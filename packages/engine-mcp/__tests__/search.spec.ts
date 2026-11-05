@@ -32,6 +32,11 @@ describe("threenative-engine-mcp", () => {
     expect(symbols[0]).toBe("defineGame");
     expect(symbols).not.toContain("Billboard3D");
   });
+  it("drops an inflection whose stem is no longer the stop word itself", () => {
+    // `make`, `give`, `take` and `have` are stop words; their inflections stem to `mak`, `giv`,
+    // `tak` and `hav`, which the raw set never matched, so they survived the post-stem filter.
+    expect(capabilitySituationTokens("makes gives takes having")).toEqual([]);
+  });
   it("finds the global illumination and shadow quality tier watchers by Unreal's names", () => {
     const symbols = (situation: string) => searchResults(situation).map((r) => r.symbol);
     expect(symbols("global illumination quality")).toContain("GIBudget");

@@ -429,13 +429,20 @@ function suffixStripped(token: string): string {
   return token;
 }
 
+/**
+ * `STOP_WORDS` after the stemmer, so the post-stem filter still catches the inflection of a
+ * stop word whose own stem is a different string: `makes` → `mak`, `gives` → `giv`, `having` →
+ * `hav`. Testing the raw set after stemming let every one of those through.
+ */
+const STOP_WORD_STEMS = new Set([...STOP_WORDS].map(stem));
+
 export function capabilitySituationTokens(value: string): string[] {
   return value
     .toLocaleLowerCase()
     .split(/[^a-z0-9]+/u)
     .filter((token) => token.length > 1 && !STOP_WORDS.has(token))
     .map(stem)
-    .filter((token) => !STOP_WORDS.has(token));
+    .filter((token) => !STOP_WORD_STEMS.has(token));
 }
 
 const tokens = capabilitySituationTokens;
