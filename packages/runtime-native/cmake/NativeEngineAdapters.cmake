@@ -239,6 +239,8 @@ target_include_directories(tn-native-engine-v8-textures-test PRIVATE ${CMAKE_CUR
 tn_adapter_v8_executable(tn-native-engine-v8-textures-test)
 add_test(NAME native_engine_v8_textures_half_float COMMAND tn-native-engine-v8-textures-test half_float)
 set_tests_properties(native_engine_v8_textures_half_float PROPERTIES LABELS "native-engine")
+add_test(NAME native_engine_v8_textures_clone_listeners COMMAND tn-native-engine-v8-textures-test clone_listeners)
+set_tests_properties(native_engine_v8_textures_clone_listeners PROPERTIES LABELS "native-engine")
 if(TN_NODE_EXECUTABLE)
     # The same slice through the bundler, the V8 facade and the player (CPU only).
     add_test(NAME native_engine_player_textures
