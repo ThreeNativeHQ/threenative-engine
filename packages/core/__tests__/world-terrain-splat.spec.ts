@@ -517,6 +517,22 @@ describe("loadTerrainSplat", () => {
     expect(requested).toEqual(["//cdn.example/leafy_grass/leafy_grass_diff_1k.jpg"]);
   });
 
+  it("keeps a file URL's triple slash when resolving layer maps", async () => {
+    const url = "file:///game/world/world.json";
+    const { assets, requested } = served({
+      [url]: world({ splat: "terrain/splat.rgba8", table: "terrain/layers.json" }),
+      "file:///game/world/terrain/layers.json": { ...table, layers: [] },
+      "file:///game/world/terrain/splat.rgba8": new Uint8Array(2 * 4 * 4 * 4),
+    });
+
+    await loadTerrainSplat({ assets, url });
+
+    expect(requested.sort()).toEqual([
+      "file:///game/world/terrain/tex/moss_diff.jpg",
+      "file:///game/world/terrain/tex/moss_nrm.jpg",
+    ]);
+  });
+
   it("rejects a layer map that traverses above the package asset root", async () => {
     const { assets } = served({
       "world/world.json": world({ splat: "terrain/splat.rgba8", table: "terrain/layers.json" }),

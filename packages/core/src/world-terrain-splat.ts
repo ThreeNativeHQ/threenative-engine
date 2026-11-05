@@ -212,7 +212,8 @@ function packageDir(url: string): string {
 
 function packageAssetPath(directory: string, path: string): string {
   const joined = `${directory}${path}`;
-  const prefix = /^(?:(?:[a-z][a-z\d+.-]*:)?\/\/[^/]+\/|\/)?/iu.exec(joined)?.[0] ?? "";
+  // The host may be empty: a `file:///` package keeps its triple slash.
+  const prefix = /^(?:(?:[a-z][a-z\d+.-]*:)?\/\/[^/]*\/|\/)?/iu.exec(joined)?.[0] ?? "";
   const segments: string[] = [];
   for (const segment of joined.slice(prefix.length).split("/")) {
     if (segment === "" || segment === ".") continue;
