@@ -97,6 +97,8 @@ export class CellResidency {
   #admissionCompletedUnits = 0;
   /** The follow point the last full residency pass ran for; see `stale`. */
   readonly #residencyPoint = new Vector3(Number.NaN, 0, Number.NaN);
+  /** No pass has run yet: a fresh world owes its first ring whatever the follow point reads. */
+  #passed = false;
   /** Actual cell at the last residency pass; only a jump reclaims retained hysteresis. */
   #residencyCell: { readonly x: number; readonly z: number } | undefined;
   /** Bumped by every admission and eviction, so a residency change owes a refilter that update. */
@@ -180,6 +182,7 @@ export class CellResidency {
   ): void {
     this.#grid ??= this.#host.extent();
     const { cellSize, minX, minZ } = this.#grid;
+    this.#passed = true;
     this.#residencyPoint.set(x, this.#host.parts().placements.followY(), z);
     try {
       this.#host.parts().terrain?.follow({ x, z }, budget, terrainView);
@@ -215,6 +218,7 @@ export class CellResidency {
    * of those, so the pass is skipped; the first update after anything changes is a full pass again.
    */
   stale(x: number, z: number): boolean {
+    if (!this.#passed) return true;
     if (
       Math.hypot(
         x - this.#residencyPoint.x,
