@@ -429,6 +429,28 @@ export function appendCompositionFarScenario(scenario) {
   }
 }
 
+/**
+ * Guard, then empty, the directory the kit playtest writes into. The guards come first: a
+ * `KIT_ARTIFACTS` aimed at a checkout would `rmSync` this repository. The wipe comes at all because a
+ * reused directory otherwise feeds the summary a previous run's `capture.json` and PNGs.
+ */
+export function prepareArtifacts(artifacts, game) {
+  const output = existsSync(artifacts) ? realpathSync(artifacts) : resolve(artifacts);
+  for (const protectedPath of [REPO, game])
+    assert(
+      output !== protectedPath && !protectedPath.startsWith(`${output}/`),
+      "artifact output would remove a source checkout",
+    );
+  assert(!output.startsWith(`${game}/`), "artifact output must stay outside the kept game");
+  assert(
+    !output.startsWith(`${REPO}/`) ||
+      output.startsWith(`${join(REPO, "examples/strata-terrain-preview/artifacts")}/`),
+    "repository artifacts must stay in the preview's artifacts directory",
+  );
+  rmSync(artifacts, { force: true, recursive: true });
+  mkdirSync(artifacts, { recursive: true });
+}
+
 async function main() {
   const keptGame = process.env.KIT_GAME ? realpathSync(process.env.KIT_GAME) : undefined;
   if (keptGame) {
@@ -688,19 +710,7 @@ export const addKit: (...args: Parameters<typeof add${title}>) => Promise<IKitWo
 
   // --- the game's own playtest, against the built bundle, in a real WebGPU browser -------------------
   await assertPortFree(PORT);
-  const output = existsSync(ARTIFACTS) ? realpathSync(ARTIFACTS) : resolve(ARTIFACTS);
-  for (const protectedPath of [REPO, game])
-    assert(
-      output !== protectedPath && !protectedPath.startsWith(`${output}/`),
-      "artifact output would remove a source checkout",
-    );
-  assert(!output.startsWith(`${game}/`), "artifact output must stay outside the kept game");
-  assert(
-    !output.startsWith(`${REPO}/`) ||
-      output.startsWith(`${join(REPO, "examples/strata-terrain-preview/artifacts")}/`),
-    "repository artifacts must stay in the preview's artifacts directory",
-  );
-  mkdirSync(ARTIFACTS, { recursive: true });
+  prepareArtifacts(ARTIFACTS, game);
   const playtest = run(
     "pnpm",
     [
