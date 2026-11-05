@@ -12,9 +12,11 @@ import {
 import { dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { starterAssetsDir } from "@threenative/terrain/kit";
+import { worldFiles } from "./world-files.mjs";
 
 const here = dirname(dirname(fileURLToPath(import.meta.url)));
 const out = join(here, "assets");
+const world = new Set(worldFiles(join(here, "src/world")));
 // Match Vite publicDir and preparedAssets mounts, including first-root-wins /basis.
 const roots = [
   { dir: await starterAssetsDir(), mount: "", required: true },
@@ -32,13 +34,7 @@ let linked = 0;
 const entries = {};
 function mirror(source, target) {
   for (const entry of readdirSync(source, { withFileTypes: true })) {
-    if (
-      source === join(here, "src/world") &&
-      !/\.(?:placements\.bin|world\.json|layers\.json|splat\.rgba8)$|^(?:baked|horizon|alpine|desert|tundra)\.json$/u.test(
-        entry.name,
-      )
-    )
-      continue;
+    if (source === join(here, "src/world") && !world.has(entry.name)) continue;
     const from = join(source, entry.name);
     const to = join(target, entry.name);
     if (entry.isDirectory()) {

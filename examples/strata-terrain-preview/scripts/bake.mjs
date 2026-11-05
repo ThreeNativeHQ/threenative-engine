@@ -3,7 +3,7 @@
 // `@threenative/terrain` owns the placement rules: a biome file says `"stream": "ordered"`, so
 // `bakeBiome` runs the game's generators on one ordered stream and hands the instances back in the
 // order this game's table stores them. This script keeps what the GAME owns: the recipes
-// (`recipe.mjs`), the surface manifest, the canopy the ground shader reads, and `placements.bin`.
+// (`recipe.mjs`), the surface manifest, the canopy the ground shader reads, and the prop packages.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";

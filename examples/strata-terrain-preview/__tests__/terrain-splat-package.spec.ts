@@ -111,7 +111,7 @@ it("references available starter maps and the runtime's CC0 fallback for optiona
   }
 });
 
-it("delivers flat descriptors, tables, raw masks and placements through Vite and native staging", async () => {
+it("delivers flat descriptors, tables, raw masks and prop packages through Vite and native staging", async () => {
   const root = mkdtempSync(path.join(tmpdir(), "strata-splat-"));
   // The config emits the scaffolder's mannequin from `../../packages/create-threenative/…`, resolved
   // against its own file URL, so the project sits two directories under the sandbox root and that
@@ -146,43 +146,84 @@ it("delivers flat descriptors, tables, raw masks and placements through Vite and
       path.join(project, "local-assets/landscape-pro/basis/basis_transcoder.wasm"),
       "later-wasm",
     );
-    const files = [
-      "baked.json",
-      "horizon.json",
-      "alpine.json",
-      "desert.json",
-      "tundra.json",
-      ...["forest", "coastal", "alpine", "desert", "tundra"].flatMap((world) =>
-        ["world.json", "layers.json", "splat.rgba8", "placements.bin"].map(
-          (suffix) => `${world}.${suffix}`,
-        ),
-      ),
-    ];
-    for (const name of [...files, ".bake-stamp"])
-      writeFileSync(path.join(project, "src/world", name), name);
-    const execute = async (relative: string) => {
-      const source = readFileSync(new URL(relative, base), "utf8").replaceAll(
-        "import.meta.url",
-        JSON.stringify(pathToFileURL(path.join(project, relative)).href),
+    // What the bake writes for this project, as it writes it: one `<world>.props.json` naming that
+    // world's streamed containers, one canopy map, one surface triplet, and the surveys.
+    const worlds = ["forest", "coastal", "alpine", "desert", "tundra"];
+    const buckets = (world: string) =>
+      ["local-true", "horizon-true"].map((bucket) => ({
+        bucket,
+        kind: bucket.startsWith("local") ? "local" : "horizon",
+        placements: `${world}.${bucket}.props.bin`,
+        reach: `${world}.${bucket}.reach.bin`,
+        ids: `${world}.${bucket}.ids.json`,
+      }));
+    const contents = new Map<string, string>();
+    contents.set("baked.json", "baked.json");
+    contents.set("horizon.json", "horizon.json");
+    for (const world of worlds) {
+      // The bake writes `<world>.json` only for a world it keeps out of `baked.json`.
+      if (!["forest", "coastal"].includes(world)) contents.set(`${world}.json`, `${world}.json`);
+      contents.set(
+        `${world}.props.json`,
+        JSON.stringify({ version: 1, cellSize: 64, buckets: buckets(world) }),
       );
-      const code = ts.transpileModule(source, {
-        compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
-      }).outputText;
+      contents.set(`${world}.canopy.bin`, `${world}.canopy.bin`);
+      for (const suffix of ["world.json", "layers.json", "splat.rgba8"])
+        contents.set(`${world}.${suffix}`, `${world}.${suffix}`);
+      for (const bucket of buckets(world))
+        for (const file of [bucket.placements, bucket.reach, bucket.ids]) contents.set(file, file);
+    }
+    const files = [...contents.keys()];
+    for (const [name, content] of [...contents, [".bake-stamp", ".bake-stamp"]])
+      writeFileSync(path.join(project, "src/world", name), content);
+    const dependencies: Record<string, unknown> = {
+      "node:fs": fs,
+      "node:path": path,
+      "node:url": url,
+      "@threenative/terrain/kit": {
+        starterAssetsDir: async () => path.join(project, "starter"),
+      },
+      "@threenative/terrain/editor/server": { terrainEditor: () => ({}) },
+      // 792b9fa7a ("boot the Strata forest on the Wasm engine") has the config import this; it
+      // only joins the plugin list under TN_ENGINE=threenative, which this case does not set.
+      "create-threenative": { createWebBrandPlugin: () => ({ name: "threenative-web-brand" }) },
+      vite: { defineConfig: (config: unknown) => config },
+    };
+    const transpile = (relative: string) =>
+      ts.transpileModule(
+        readFileSync(new URL(relative, base), "utf8").replaceAll(
+          "import.meta.url",
+          JSON.stringify(pathToFileURL(path.join(project, relative)).href),
+        ),
+        { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } },
+      ).outputText;
+    // A config or script that imports a sibling module (`./scripts/world-files.mjs`) is answered
+    // synchronously, the way CommonJS `require` is: the module is transpiled against the same
+    // sandbox and its `exports` object is filled before the first await either way.
+    function requireFrom(name: string, from: string): unknown {
+      if (!name.startsWith(".")) {
+        assert(name in dependencies, name);
+        return dependencies[name];
+      }
+      const relative = path.posix.normalize(path.posix.join(path.posix.dirname(from), name));
+      const cached = modules.get(relative);
+      if (cached) return cached;
       const exports: Record<string, unknown> = {};
-      const dependencies: Record<string, unknown> = {
-        "node:fs": fs,
-        "node:path": path,
-        "node:url": url,
-        "@threenative/terrain/kit": {
-          starterAssetsDir: async () => path.join(project, "starter"),
-        },
-        "@threenative/terrain/editor/server": { terrainEditor: () => ({}) },
-        // 792b9fa7a ("boot the Strata forest on the Wasm engine") has the config import this; it
-        // only joins the plugin list under TN_ENGINE=threenative, which this case does not set.
-        "create-threenative": { createWebBrandPlugin: () => ({ name: "threenative-web-brand" }) },
-        vite: { defineConfig: (config: unknown) => config },
-      };
-      await runInNewContext(`(async () => { ${code}\n })()`, {
+      modules.set(relative, exports);
+      void runInNewContext(`(async () => { ${transpile(relative)}\n })()`, {
+        exports,
+        console,
+        Buffer,
+        URL,
+        process: { env: {} },
+        require: (required: string) => requireFrom(required, relative),
+      });
+      return exports;
+    }
+    const modules = new Map<string, Record<string, unknown>>();
+    const execute = async (relative: string) => {
+      const exports: Record<string, unknown> = {};
+      await runInNewContext(`(async () => { ${transpile(relative)}\n })()`, {
         exports,
         console,
         Buffer,
@@ -190,24 +231,35 @@ it("delivers flat descriptors, tables, raw masks and placements through Vite and
         // The config picks its engine from `process.env.TN_ENGINE` (792b9fa7a); this case runs it
         // the way CI does, with no native engine set.
         process: { env: {} },
-        require: (name: string) => {
-          assert(name in dependencies, name);
-          return dependencies[name];
-        },
+        require: (name: string) => requireFrom(name, relative),
       });
+      modules.set(relative, exports);
       return exports.default as { plugins: Array<{ generateBundle?: (this: unknown) => void }> };
     };
     const config = await execute("vite.config.ts");
-    const emitted: Array<{ fileName: string; source: Buffer }> = [];
-    config.plugins
-      .find((plugin) => plugin.generateBundle)
-      ?.generateBundle?.call({ emitFile: (file: (typeof emitted)[number]) => emitted.push(file) });
-    expect(emitted.map((file) => file.fileName).sort()).toEqual(
+    const emit = () => {
+      const emitted: Array<{ fileName: string; source: Buffer }> = [];
+      config.plugins
+        .find((plugin) => plugin.generateBundle)
+        ?.generateBundle?.call({
+          emitFile: (file: (typeof emitted)[number]) => emitted.push(file),
+        });
+      return emitted;
+    };
+    const emitted = emit();
+    const emittedNames = emitted.map((file) => file.fileName);
+    // The build carries what the game fetches: every container the bake's own manifest names.
+    expect(emittedNames).toContain("world/forest.local-true.props.bin");
+    expect(emittedNames).toContain("world/forest.canopy.bin");
+    expect(emittedNames.filter((name) => name.endsWith(".placements.bin"))).toEqual([]);
+    expect(emittedNames.sort()).toEqual(
       ["mannequin.glb", ...files.map((name) => `world/${name}`)].sort(),
     );
     for (const file of emitted)
       expect(file.source.toString()).toBe(
-        file.fileName === "mannequin.glb" ? "mannequin" : path.basename(file.fileName),
+        file.fileName === "mannequin.glb"
+          ? "mannequin"
+          : contents.get(path.basename(file.fileName)),
       );
     await execute("scripts/stage-native-assets.mjs");
     for (const [name, content] of [
@@ -218,15 +270,17 @@ it("delivers flat descriptors, tables, raw masks and placements through Vite and
       expect(staged).toBe(content);
       expect(readFileSync(path.join(project, "basis", name), "utf8")).toBe(staged);
     }
-    expect(fs.readdirSync(path.join(project, "assets/world")).sort()).toEqual(files.sort());
+    expect(fs.readdirSync(path.join(project, "assets/world")).sort()).toEqual([...files].sort());
     for (const name of files)
-      expect(readFileSync(path.join(project, "assets/world", name), "utf8")).toBe(name);
-    rmSync(path.join(project, "src/world/forest.splat.rgba8"));
-    expect(() =>
-      config.plugins
-        .find((plugin) => plugin.generateBundle)
-        ?.generateBundle?.call({ emitFile() {} }),
-    ).toThrow(/ENOENT/u);
+      expect(readFileSync(path.join(project, "assets/world", name), "utf8")).toBe(
+        contents.get(name),
+      );
+    // A file the manifest names but the bake did not write stops the build by name.
+    rmSync(path.join(project, "src/world/forest.local-true.reach.bin"));
+    expect(emit).toThrow("TN_STRATA_BUILD_MISSING forest.local-true.reach.bin");
+    await expect(execute("scripts/stage-native-assets.mjs")).rejects.toThrow(
+      "TN_STRATA_BUILD_MISSING forest.local-true.reach.bin",
+    );
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

@@ -5,6 +5,7 @@ import { terrainEditor } from "@threenative/terrain/editor/server";
 import { starterAssetsDir } from "@threenative/terrain/kit";
 import { createWebBrandPlugin } from "create-threenative";
 import { type Plugin, defineConfig } from "vite";
+import { worldFiles } from "./scripts/world-files.mjs";
 
 /**
  * The game's own licensed art, served beside the starter's.
@@ -28,6 +29,8 @@ import { type Plugin, defineConfig } from "vite";
  * per-segment test rather than "no separator anywhere".
  */
 const MANNEQUIN = "../../packages/create-threenative/template-assets/assets/mannequin.glb";
+
+const WORLD_DIR = fileURLToPath(new URL("./src/world", import.meta.url));
 
 function preparedAssets(): Plugin {
   const roots: { mount: string; dir: string; flat: boolean; file?: string }[] = [
@@ -97,17 +100,15 @@ function preparedAssets(): Plugin {
     configurePreviewServer: serve,
     generateBundle() {
       // The baked terrain JSON is fetched, never imported: a 7–12 MB JSON module cost about 3 s to
-      // compile in dev, where fetch and JSON.parse take a sixth of that.
-      const files = ["baked.json", "horizon.json", "alpine.json", "desert.json", "tundra.json"];
-      for (const world of ["forest", "coastal", "alpine", "desert", "tundra"])
-        for (const suffix of ["placements.bin", "world.json", "layers.json", "splat.rgba8"])
-          files.push(`${world}.${suffix}`);
+      // compile in dev, where fetch and JSON.parse take a sixth of that. Which world files a build
+      // carries is the bake's own manifest (`scripts/world-files.mjs`), so a bake change cannot
+      // leave the build short of a prop package the game fetches.
       this.emitFile({
         type: "asset",
         fileName: "mannequin.glb",
         source: readFileSync(fileURLToPath(new URL(MANNEQUIN, import.meta.url))),
       });
-      for (const file of files)
+      for (const file of worldFiles(WORLD_DIR))
         this.emitFile({
           type: "asset",
           fileName: `world/${file}`,
