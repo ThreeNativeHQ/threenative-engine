@@ -247,6 +247,9 @@ export async function bindWebEngine(
       module,
       classes.Color as never,
       (frame) => {
+        // Each renderer render runs the live frame passes' updateBefore, as three's node update does;
+        // a render that advances no frame (a standing frame the runner asks for) still hears them.
+        updatePasses(frame);
         // A compute dispatch passes no frame: it belongs to the frame already collected.
         const frameId = frame?.frameId ?? collectedFrame;
         if (updating || (frameId !== undefined && frameId === collectedFrame)) {
@@ -258,7 +261,6 @@ export async function bindWebEngine(
         try {
           collect();
           tsl?.sync(frame);
-          updatePasses(frame);
           audio.updateAudio();
         } finally {
           updating = false;

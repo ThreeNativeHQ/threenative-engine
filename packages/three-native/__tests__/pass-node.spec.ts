@@ -483,7 +483,7 @@ describe("the frame pass's own attachments", () => {
     expect(node.has("diagnostic")).toBe(true);
   });
 
-  it("runs the pass's updateBefore once per frame, so a game's hook hears each pass", () => {
+  it("runs the pass's updateBefore at each render, as three's node update does", () => {
     const api = definePass(tsl, undefined, host());
     const scenePass = api.pass({}, {});
     const frames: unknown[] = [];
@@ -497,8 +497,8 @@ describe("the frame pass's own attachments", () => {
     scenePass.updateBefore = wrapped;
     const first = { frameId: 1 };
     api.updateFramePasses(first);
-    api.updateFramePasses(first);
-    expect(frames).toEqual([first]);
+    api.updateFramePasses({ frameId: 2 });
+    expect(frames).toEqual([first, { frameId: 2 }]);
   });
 
   it("refuses a texture index the pass does not hold, by name", () => {

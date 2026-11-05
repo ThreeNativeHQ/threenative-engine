@@ -19,6 +19,8 @@ export function readWaterProofMode(search: string | undefined): WaterProofMode {
 
 const WATER_PROOF = { mode: readWaterProofMode(globalThis.location?.search) };
 const WATER_PROOF_MARKER = "TN_WATER_PROOF:";
+/** A run whose observation could not be produced says why, in the console the verifier reads. */
+const WATER_PROOF_MISSING = "TN_WATER_PROOF_MISSING:";
 const WATER_PROOF_TIMEOUT_MS = 5_000;
 
 export const waterProofEnabled = (): boolean => WATER_PROOF.mode !== "off";
@@ -560,15 +562,17 @@ let physicalCopy: Promise<void> | undefined;
 export function sampleActiveWaterProof(request?: {
   readonly label?: string;
 }): Record<string, unknown> | Promise<Record<string, unknown>> {
+  const unavailable = (reason: string): Record<string, unknown> => {
+    // Named, not silent: a run whose readback never settles leaves the verifier with no observation,
+    // and this line is what says why in the same console log the verifier reads.
+    console.warn(`${WATER_PROOF_MISSING}${request?.label ?? "(unlabelled)"}: ${reason}`);
+    return { waterProof: { available: false, reason } };
+  };
   if (request?.label !== "horizon-sea") {
     return { waterProof: { available: false, reason: "requested only at horizon-sea" } };
   }
-  if (activeProbe === undefined) {
-    return { waterProof: { available: false, reason: "no proof-mode world pass is active" } };
-  }
-  return activeProbe
-    .sample(request?.label)
-    .catch((error: unknown) => ({ waterProof: { available: false, reason: String(error) } }));
+  if (activeProbe === undefined) return unavailable("no proof-mode world pass is active");
+  return activeProbe.sample(request?.label).catch((error: unknown) => unavailable(String(error)));
 }
 
 /**

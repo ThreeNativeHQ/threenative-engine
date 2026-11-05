@@ -21,6 +21,7 @@ import {
 import { TSL_NODE, engineRef } from "../src/browser-backend.js";
 import { type ITslRuntime, defineTsl } from "../src/browser-tsl.js";
 import { loadCatalog } from "../src/catalog.js";
+import { definePass } from "../src/pass-node.js";
 
 const REPO = process.cwd();
 const catalog = loadCatalog(REPO);
@@ -284,4 +285,44 @@ it("carries a material's TSL slots through clone and copy, as the engine carries
   expect(target.colorNode).toBe(color);
   target.copy(new Material());
   expect(target.maskNode).toBe(null);
+});
+
+it("writes only a material's custom MRT slots, since the scene pass draws the reserved targets", () => {
+  let serial = 0;
+  const tslRuntime: ITslRuntime = {
+    call: vi.fn(() => ++serial),
+    release: vi.fn(),
+    set: vi.fn(),
+    setUniform: vi.fn(),
+    effectParameter: vi.fn(() => 0),
+    setPost: vi.fn(),
+    compute: vi.fn(),
+    readStorage: vi.fn(),
+    deleteStorage: vi.fn(),
+  };
+  const runtime = sceneRuntime(new Map(), new Set());
+  const { classes } = defineBrowserClasses(registry, { ...runtime, tsl: tslRuntime }, catalog);
+  const authoring = defineTsl(tslRuntime);
+  const tsl = authoring.exports as unknown as {
+    uniform(value: number): { readonly [TSL_NODE]: number };
+  };
+  const { mrt, output, normalView } = definePass(authoring.exports as never);
+  const value = tsl.uniform(0.5);
+  const material = new (classes.MeshStandardNodeMaterial as new () => { mrtNode: unknown })();
+  material.mrtNode = mrt({ output, normal: normalView, diagnostic: value });
+  expect(tslRuntime.set).toHaveBeenCalledWith(
+    engineRef(material),
+    "mrtNode.diagnostic",
+    value[TSL_NODE],
+  );
+  for (const reserved of ["mrtNode.output", "mrtNode.normal"])
+    expect(tslRuntime.set).not.toHaveBeenCalledWith(
+      engineRef(material),
+      reserved,
+      expect.anything(),
+    );
+  material.mrtNode = null;
+  expect(tslRuntime.set).toHaveBeenCalledWith(engineRef(material), "mrtNode.diagnostic", 0);
+  expect(tslRuntime.set).not.toHaveBeenCalledWith(engineRef(material), "mrtNode.output", 0);
+  expect(tslRuntime.set).not.toHaveBeenCalledWith(engineRef(material), "mrtNode.normal", 0);
 });
