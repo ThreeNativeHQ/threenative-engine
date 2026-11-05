@@ -1023,6 +1023,17 @@ it("scales every fallback sapling level from the same authored height", () => {
   }
 });
 
+/** One `tnPublishedLodRange` record per instance: four floats each, see `LOD_RANGE_STRIDE`. */
+function publishedLevels(mesh: InstancedMesh): number[][] {
+  const attribute = mesh.geometry.getAttribute("tnPublishedLodRange") as {
+    readonly array: ArrayLike<number>;
+  };
+  const values = Array.from(attribute.array).slice(0, mesh.count * 4);
+  const records: number[][] = [];
+  for (let at = 0; at < values.length; at += 4) records.push(values.slice(at, at + 4));
+  return records;
+}
+
 it("switches real fallback spruce and sapling batches into authored far levels at the existing gate", async () => {
   const parts = buildPropVariants();
   const material = new MeshBasicMaterial();
@@ -1058,11 +1069,34 @@ it("switches real fallback spruce and sapling batches into authored far levels a
         await Promise.resolve();
       }
       const meshes = streamed.meshes.filter((mesh) => mesh.count > 0);
-      expect(meshes.length).toBe(4);
-      expect(
-        meshes.every((mesh) => new RegExp(`:${level}:[0-9]+$`).test(mesh.name)),
-        `distance ${distance}: ${meshes.map((mesh) => mesh.name).join(", ")}`,
-      ).toBe(true);
+      // 919c1a866 ("LOD swaps fade…, shadows keep one shape"): a record that changes level fades
+      // between the two levels for LOD_TEMPORAL_LAG, so it holds the near level beside the far one
+      // and residency is no longer the level this distance grades to. The CPU's own answer is the
+      // per-instance `tnPublishedLodRange` record the level gates read: min and max level, the
+      // level the record was whole at (-1: none), and when that swap reached the GPU. Measured on
+      // this fixture: below the gate one level is resident and whole; past it both are, graded to
+      // the far level and whole at the near one.
+      if (level === 0) {
+        expect(meshes.length).toBe(4);
+        expect(
+          meshes.every((mesh) => /:0:[0-9]+$/.test(mesh.name)),
+          `distance ${distance}: ${meshes.map((mesh) => mesh.name).join(", ")}`,
+        ).toBe(true);
+        for (const mesh of meshes)
+          expect(publishedLevels(mesh).map((record) => record.slice(0, 3))).toEqual(
+            publishedLevels(mesh).map(() => [0, 0, -1]),
+          );
+      } else {
+        expect(meshes.length).toBe(8);
+        for (const mesh of meshes)
+          expect(publishedLevels(mesh).map((record) => record.slice(0, 3))).toEqual(
+            publishedLevels(mesh).map(() => [0, 1, 0]),
+          );
+        expect(
+          meshes.filter((mesh) => new RegExp(`:${level}:[0-9]+$`).test(mesh.name)),
+          `distance ${distance}: ${meshes.map((mesh) => mesh.name).join(", ")}`,
+        ).toHaveLength(4);
+      }
       expect(
         meshes.every(
           (mesh) =>
