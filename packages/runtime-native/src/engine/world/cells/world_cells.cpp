@@ -342,13 +342,15 @@ bool WorldCells::step(Job& job) {
     else *old = {job.run, job.x, job.z, job.levels};
     return true;
 }
-void WorldCells::update(double x, double z, const std::function<double()>& now, bool companionPending) {
+void WorldCells::update(double x, double z, const std::function<double()>& now, bool companionPending,
+                        std::optional<std::array<double, 2>> eye) {
     if (released_) return;
-    x_ = x; z_ = z;
+    x_ = eye ? (*eye)[0] : x; z_ = eye ? (*eye)[1] : z;
     const double terrainLimit = jobs_.empty() ? options_.admissionBudgetMs : options_.admissionBudgetMs / 2;
     Budget ground{terrainLimit, 0, now};
     const bool pending = companionPending || owed_ || !jobs_.empty() || (terrain_ && terrain_->deferredAdmissions() > 0) ||
         std::any_of(assets_.begin(), assets_.end(), [](const Asset& a) { return a.levels.empty(); });
+    const bool eyeMoved = distance(x_ - refilterX_, z_ - refilterZ_) >= kRefilterStepMetres;
     if (pending || distance(x - residencyX_, z - residencyZ_) >= 0.5) {
         residencyX_ = x; residencyZ_ = z;
         if (terrain_) {
@@ -360,11 +362,15 @@ void WorldCells::update(double x, double z, const std::function<double()>& now, 
         }
         const auto point = ahead(x, z, now);
         residency(x, z, point[0], point[1]);
-        if (owed_ || epoch_ != filterEpoch_ || distance(x - refilterX_, z - refilterZ_) >= kRefilterStepMetres) {
-            filterEpoch_ = epoch_; refilterX_ = x; refilterZ_ = z;
-            refilter(x, z);
+        if (owed_ || epoch_ != filterEpoch_ || eyeMoved) {
+            filterEpoch_ = epoch_; refilterX_ = x_; refilterZ_ = z_;
+            refilter(x_, z_);
         }
-    } else if (terrain_ && terrain_->blendingTiles() > 0) terrain_->process();
+    } else {
+        if (terrain_ && terrain_->blendingTiles() > 0) terrain_->process();
+        // A camera turning or orbiting over a still follow point re-grades its levels all the same.
+        if (eye && eyeMoved) { filterEpoch_ = epoch_; refilterX_ = x_; refilterZ_ = z_; refilter(x_, z_); }
+    }
     Budget props{options_.admissionBudgetMs - std::min(ground.spent, terrainLimit), 0, now};
     while (!jobs_.empty()) {
         bool done = false;

@@ -54,7 +54,10 @@ class WorldCells {
     static std::optional<WorldCells> create(const json::Value& manifest,
         std::span<const std::byte> placements, const IWorldCellsOptions& options,
         TerrainTiles* terrain, std::string& error);
-    void update(double x, double z, const std::function<double()>& now, bool companionPending = false);
+    /** Residency follows (x, z); levels and `maxDistance` are graded from `eye`, the render camera, as core's
+     *  WorldCells `lodFrom: "camera"` does (UE picks instance LODs per view). No `eye` grades from (x, z). */
+    void update(double x, double z, const std::function<double()>& now, bool companionPending = false,
+                std::optional<std::array<double, 2>> eye = std::nullopt);
     /** False for a completion whose asset has left residency; callers discard its model. */
     bool completeAsset(const std::string& id, const std::vector<WorldCellModel>& models);
     void dispose();
@@ -118,7 +121,7 @@ class WorldCells {
     IWorldCellsOptions options_;
     TerrainTiles* terrain_ = nullptr;
     double cellSize_ = 0, minX_ = 0, minZ_ = 0;
-    double x_ = 0, z_ = 0;
+    double x_ = 0, z_ = 0;  // the LOD eye: levels and maxDistance are measured from here
     double residencyX_ = std::numeric_limits<double>::infinity(), residencyZ_ = std::numeric_limits<double>::infinity();
     double refilterX_ = std::numeric_limits<double>::infinity(), refilterZ_ = std::numeric_limits<double>::infinity();
     std::optional<std::array<double, 3>> lastSample_;

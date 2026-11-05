@@ -10,6 +10,8 @@
 #include <fstream>
 #include <iterator>
 #include <limits>
+#include <optional>
+#include <array>
 #include <string>
 #include <utility>
 
@@ -234,7 +236,10 @@ std::vector<WorldCellModel> modelsOf(const Value& input) {
     }
     return models;
 }
-std::vector<Value> replay(const Value& scene, std::span<const std::byte> placements, const std::vector<uint16_t>& heights, bool admission = false) {
+// `eye` offsets the LOD eye from the follow point (a camera away from the player); its frames are kept and
+// the reference digests, recorded with the eye on the follow point, are not compared.
+std::vector<Value> replay(const Value& scene, std::span<const std::byte> placements, const std::vector<uint16_t>& heights, bool admission = false,
+                          std::optional<std::array<double, 2>> eye = std::nullopt) {
     std::vector<Value> frames;
     const std::string name = member(scene, "name").string();
     const auto& manifest = member(scene, "manifest");
@@ -279,16 +284,17 @@ std::vector<Value> replay(const Value& scene, std::span<const std::byte> placeme
         if (const auto* at = action.find("at")) { x = at->items()[0].number(); z = at->items()[1].number(); }
         if (const auto* dt = action.find("dt")) clock += dt->number();
         if (boolean(action, "dispose")) owner->dispose();
+        else if (eye) owner->update(x, z, now, boolean(step, "companionPending"), std::array{x + (*eye)[0], z + (*eye)[1]});
         else owner->update(x, z, now, boolean(step, "companionPending"));
         const auto current = snapshot(*owner, *terrain, name == "admissionOrder");
-        if (admission) frames.push_back(current);
+        if (admission || eye) frames.push_back(current);
         const std::string digest = digestOf(json::stringify(canonical(current)));
         stepDigests += digest;
         stepDigests += '\n';
         const std::size_t before = count;
         observe(current, count, prefix);
         compared += count - before;
-        if (!highResolutionAdmission) {
+        if (!highResolutionAdmission && !eye) {
             if (digest != member(step, "digest").string())
                 differ(name + ".step" + std::to_string(index) + " digest");
             else if (count - before != static_cast<std::size_t>(member(step, "observations").number()))
@@ -300,6 +306,7 @@ std::vector<Value> replay(const Value& scene, std::span<const std::byte> placeme
             CHECK(accepted);
         }
     }
+    if (eye) return frames;  // the reference recorded the eye on the follow point
     const auto& stored = member(scene, "prefix").items();
     for (std::size_t i = 0, n = highResolutionAdmission ? 0 : std::min(prefix.size(), stored.size()); i < n; ++i) {
         const auto& at = stored[i].items();
@@ -550,6 +557,39 @@ void worldCells(bool admission = false) {
     CHECK(compared > 0 && mismatched == 0);
 }
 void allWorldCells() { worldCells(); }
+// Levels follow the render camera, not the follow point: the same walk with the camera 4 km away draws
+// coarser levels (fewer triangles) while residency stays on the player, as core's lodFrom "camera" does.
+void lodFromCamera() {
+    std::ifstream file(TN_WORLD_CELLS_REFERENCE);
+    CHECK(file.good());
+    const std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    Value table;
+    json::Error parseError;
+    CHECK(json::parse(text, table, parseError));
+    if (!table.isObject()) return;
+    const auto floats = words(member(table, "placements"));
+    const auto placements = std::as_bytes(std::span(floats));
+    std::vector<uint16_t> heights;
+    for (const auto& height : member(table, "heightmap").items()) heights.push_back(static_cast<uint16_t>(height.number()));
+    const auto triangles = [](const std::vector<Value>& frames) {
+        double total = 0;
+        if (!frames.empty())
+            for (const auto& draw : member(frames.back(), "draws").items()) total += member(draw, "triangles").number();
+        return total;
+    };
+    std::size_t coarser = 0;
+    for (const auto& scene : member(table, "scenes").items()) {
+        const auto near = replay(scene, placements, heights, false, std::array{0.0, 0.0});
+        const auto far = replay(scene, placements, heights, false, std::array{4000.0, 4000.0});
+        CHECK(near.size() == far.size());
+        if (near.empty()) continue;
+        CHECK(json::stringify(member(near.back(), "residentKeys")) == json::stringify(member(far.back(), "residentKeys")));
+        CHECK(triangles(far) <= triangles(near));
+        if (triangles(far) < triangles(near)) ++coarser;
+    }
+    std::fprintf(stderr, "lod from camera: %zu scenes draw coarser levels for a far camera\n", coarser);
+    CHECK(coarser > 0);
+}
 void admissionBudget() { worldCells(true); }
 }
-TN_TEST_MAIN({"world_cells", allWorldCells}, {"admission_budget", admissionBudget})
+TN_TEST_MAIN({"world_cells", allWorldCells}, {"admission_budget", admissionBudget}, {"lod_from_camera", lodFromCamera})

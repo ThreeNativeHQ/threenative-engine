@@ -511,7 +511,8 @@ target_include_directories(tn-native-engine-world-tiles-test PRIVATE ${CMAKE_CUR
 find_program(TN_WORLD_NODE_EXECUTABLE node)
 if(NOT EMSCRIPTEN)
     tn_native_engine_test(tn-native-engine-world-cells-test tests/native-engine/world/world_cells_test.cpp
-        native_engine_world_cells=world_cells native_engine_admission_budget=admission_budget)
+        native_engine_world_cells=world_cells native_engine_admission_budget=admission_budget
+        native_engine_lod_from_camera=lod_from_camera)
     target_link_libraries(tn-native-engine-world-cells-test PRIVATE tn_engine_world tn_engine_assets)
     target_compile_definitions(tn-native-engine-world-cells-test PRIVATE
         TN_WORLD_CELLS_REFERENCE="${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/world/world_cells_reference.json")

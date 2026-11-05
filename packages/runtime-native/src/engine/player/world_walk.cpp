@@ -247,7 +247,9 @@ void WorldWalk::update() {
     maxCameraX_ = std::max(maxCameraX_, x);
     camera_.position.set(x, 5, 10);
     camera_.lookAt(x, 0, 2);
-    world_->update(x, 2, now);
+    // Residency follows the walker; levels are graded from the camera that renders them.
+    const std::array<double, 2> eye{camera_.position.x, camera_.position.z};
+    world_->update(x, 2, now, false, eye);
     const auto resident = world_->residentKeys();
     peakResident_ = std::max(peakResident_, uint32_t(resident.size()));
     for (std::size_t index = 0; index < cells_.size(); ++index) {
@@ -291,7 +293,7 @@ void WorldWalk::update() {
         });
     }
     frameBytes_ = loads_->admit(kByteAllowance);
-    world_->update(x, 2, now);
+    world_->update(x, 2, now, false, eye);
     for (const auto& draw : world_->draws()) {
         for (auto& cell : cells_) {
             if (draw.key != cell.asset + ":0:0" || !cell.ready || cell.mesh) continue;
