@@ -236,7 +236,14 @@ describe("forest stage arm", () => {
     const Forest = terrainScene("forest");
     const camera = new PerspectiveCamera();
     const setState = vi.fn();
-    const sceneCtx = { camera, state: { set: setState } } as never;
+    // `load` reads its baked world and two models through the asset loader, so the fake ctx needs
+    // one: the data URL is the smallest bundle `measureBiome` accepts, and the models carry no clips.
+    const baked = `data:application/json,${encodeURIComponent(JSON.stringify({ forest: { heights: [0, 1, 2] } }))}`;
+    const sceneCtx = {
+      camera,
+      state: { set: setState },
+      assets: { resolve: async () => [baked], model: async () => ({ animations: [] }) },
+    } as never;
     vi.stubGlobal("location", { search: "?world=forest&stage=nope" });
     await expect(new Forest().load(sceneCtx)).rejects.toThrow(/not one of before, after/);
     expect(kit.calls).toHaveLength(0);
