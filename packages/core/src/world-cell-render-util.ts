@@ -1,5 +1,7 @@
 import { BufferGeometry, InstancedMesh, type Material, type Mesh, type Object3D } from "three";
 import { isStatic, markStatic } from "./static-transform.js";
+import type { SharedBatch } from "./world-cell-batches.js";
+import { clusterOf } from "./world-cell-data.js";
 
 /**
  * The pieces of world-cell rendering that hold no world: the constants the cull, the shadow claims
@@ -206,6 +208,29 @@ export function freshMeshFor(
  * one's, and dispose those materials with the mesh. The clones share every texture; only the
  * material objects are new. See `#dressGpu`.
  */
+/**
+ * The world-grid square the follow point is in, as the `@x,z` half of a cluster key: the square a
+ * cell's caster cluster is named for, and the one a prewarm mints first.
+ */
+export function followCluster(
+  follow: { readonly position: { x: number; z: number } },
+  minX: number,
+  minZ: number,
+  cellSize: number,
+  cellsPerCluster: number,
+): string {
+  return clusterOf(
+    Math.floor((follow.position.x - minX) / cellSize),
+    Math.floor((follow.position.z - minZ) / cellSize),
+    cellsPerCluster,
+  );
+}
+
+/** What a released batch costs to keep: its instance buffer, which is all of it. */
+export function heldBytes(shared: SharedBatch): number {
+  return (shared.mesh.instanceMatrix.array as Float32Array).byteLength;
+}
+
 export function redressMaterial(mesh: InstancedMesh): void {
   for (const material of redressed.get(mesh) ?? []) material.dispose();
   const clones: Material[] = [];
