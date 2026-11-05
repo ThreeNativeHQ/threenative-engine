@@ -822,10 +822,12 @@ it("settles a waiting whenSpawnReady when the world is disposed and clears its d
 
 it("settles every concurrent whenSpawnReady waiter and clears each deadline", async () => {
   const world = await spawnWorld(new Vector3(32, 0, 32));
+  vi.useFakeTimers();
   try {
     const first = world.whenSpawnReady({ x: 32, z: 32 });
     const second = world.whenSpawnReady({ x: 32, z: 32 });
     const third = world.whenSpawnReady({ x: 32, z: 32 });
+    expect(vi.getTimerCount()).toBe(3);
     for (let frame = 0; frame < 100; frame++) {
       expect(() => world.update()).not.toThrow();
       await Promise.resolve();
@@ -833,7 +835,9 @@ it("settles every concurrent whenSpawnReady waiter and clears each deadline", as
     }
     const settlements = await Promise.all([first, second, third]);
     for (const readiness of settlements) expect(readiness.ready).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
   } finally {
+    vi.useRealTimers();
     expect(() => world.dispose()).not.toThrow();
   }
 });
