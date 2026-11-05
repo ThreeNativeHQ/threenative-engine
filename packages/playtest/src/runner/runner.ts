@@ -498,7 +498,12 @@ async function runStandalonePlaytestOnce(
     const bridge = await openRunnerPage(page, browserConfig, scenario, options.remoteBrowser);
     // Browser flags are per process, so the thread the game draws on can only pick them on a relaunch.
     if (options.gameThread === undefined && measurementArgs.includes("--disable-frame-rate-limit")
-      && await runsGameInWorker(page)) throw new WorkerGameRelaunch();
+      && await runsGameInWorker(page)) {
+      // The profile starts above this check so it covers navigation; this attempt's is not the
+      // run's, and the retry starts its own. Drop it, so the `finally` reports the retry's.
+      cpuProfile = undefined;
+      throw new WorkerGameRelaunch();
+    }
     // From here on the page is expected to stay put; anything that moves it is evidence.
     pageLifecycle.settled = true;
     const setupApplication = bridge?.setupApplication;
