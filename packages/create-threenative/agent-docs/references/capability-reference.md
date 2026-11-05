@@ -3587,6 +3587,21 @@ export class Heightfield extends Group implements IComputeDriven { … }
 const field = Heightfield.fromSampler({ rows: 65, columns: 65, width: 64, depth: 64, origin: { x: 0, z: 0 }, sampleHeight: terrainHeight });
 ```
 
+### `HeightfieldCollar`
+
+`class` — A heightfield's far ring: `rings` square rings past its playable square, one vertex per boundary sample, and the index grid that draws them.
+
+```ts
+export class HeightfieldCollar { … }
+```
+
+- **Use when:** draw the terrain past the playable square without hand-building a ring grid · ground a character past the square, out to the walk band, on drawn triangles
+- **Constraints:** every ring vertex asks the game's `height` callback; core owns no terrain look · the collar is a ring of triangles, not a field: `heightAt` answers on it and null off it
+
+```ts
+const collar = new HeightfieldCollar({ resolution: 129, size: 512, rings: 384, ringDistance: (ring) => (ring / 384) ** 1.65 * 2100, walkBand: 200, height: ({ x, z }) => surveyed.heightAt(x, z) });
+```
+
 ### `heightSamplerFromHeightmap`
 
 `function` — Build a game-usable `sampleHeight` from a raw v1 heightmap. The returned function interpolates bilinearly in world units and clamps to the map edges, so it plugs straight into `Heightfield.fromSampler` and `TerrainTiles`. Height is `heightMin + v / 65535 * (heightMax - heightMin)` at vertex `(column, row)`.

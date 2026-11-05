@@ -77,6 +77,7 @@
         "@threenative/core/world#cellPlacements": "export function cellPlacements(placements: ArrayBuffer, run: IWorldRun): Float32Array { … }",
         "@threenative/core/world#getWorldCapabilities": "export function getWorldCapabilities(options: IWorldCapabilitiesOptions = { … }",
         "@threenative/core/world#Heightfield": "export class Heightfield extends Group implements IComputeDriven { … }",
+        "@threenative/core/world#HeightfieldCollar": "export class HeightfieldCollar { … }",
         "@threenative/core/world#heightSamplerFromHeightmap": "export function heightSamplerFromHeightmap( terrain: IWorldTerrain, extent: IWorldExtent, data: Uint16Array, ): (x: number, z: number) => number { … }",
         "@threenative/core/world#instanceRandom": "export function instanceRandom(): Node<\"float\"> { … }",
         "@threenative/core/world#loadTerrainSplat": "export async function loadTerrainSplat(options: ILoadTerrainSplatOptions): Promise<Material> { … }",

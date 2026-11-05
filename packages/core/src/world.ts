@@ -1,5 +1,13 @@
 export * from "./world-heightfield.js";
 
+export { HeightfieldCollar } from "./world-collar.js";
+export type {
+  IHeightfieldCollarOptions,
+  IHeightfieldCollarQuad,
+  IHeightfieldCollarSite,
+  IHeightfieldCollarWalk,
+} from "./world-collar.js";
+
 export { TerrainTiles } from "./world-tiles.js";
 export type {
   IAdmissionBudget,

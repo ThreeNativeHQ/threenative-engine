@@ -48,7 +48,6 @@ import { createGroundSampler } from "./render/groundSampler.js";
 import {
   HORIZON_WALK_BAND,
   type HorizonSurroundings,
-  horizonWalkGeometry,
   setHorizonSurroundings,
 } from "./render/horizon.js";
 import { createLoadingScreen } from "./render/loading.js";
@@ -623,7 +622,10 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
       const field = stage?.field ?? terrain?.field;
       if (!field) throw new Error(`World ${world} terrain was not loaded`);
       const mesh = stage ? undefined : terrain?.mesh;
+      const collar = terrain?.collar;
       if (mesh) {
+        // Every scene that draws a terrain mesh has a collar: `createTerrain` builds both.
+        if (!collar) throw new Error(`World ${world} has no horizon collar`);
         ctx.add(mesh);
         // Scenery: nothing moves the ground, so its transform is composed once instead of every frame.
         markStatic(mesh);
@@ -648,9 +650,7 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
         // The surveyed hills past the square are ground too, out to the walk band: their collider is
         // the drawn triangles, so feet meet what the eye sees. Four fixed walls 2 m inside the band's
         // outer edge are the level's blocking volumes; past them is only scenery.
-        const horizon = mesh.getObjectByName("temperate-distant-ridges");
-        if (!(horizon instanceof Mesh)) throw new Error(`World ${world} has no horizon ring`);
-        const band = horizonWalkGeometry(horizon.geometry);
+        const band = collar.walk;
         const surroundings = new RigidBody3D({
           physics: ctx.physics,
           type: "fixed",
@@ -967,7 +967,7 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
             (reason) => failSpawn(reason),
           );
       } else {
-        if (!mesh || !scatter || scatter.canopy.length !== data.resolution ** 2)
+        if (!mesh || !collar || !scatter || scatter.canopy.length !== data.resolution ** 2)
           throw new Error(`World ${world} placements do not match the terrain`);
         if (!fallbackParts) throw new Error(`World ${world} prop variants were not loaded`);
         mesh.geometry.setAttribute("canopy", new Float32BufferAttribute(scatter.canopy, 1));
@@ -1005,10 +1005,7 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
           ) + 2;
         const groundSample = createGroundSampler(field, mesh.geometry, mesh.matrixWorld);
         // Past the walk band's collider the drawn collar is the ground (`farForest.ts`).
-        const collar =
-          ridges instanceof Mesh
-            ? collarSampler(ridges.geometry, data.size, data.resolution)
-            : undefined;
+        const collarGround = collarSampler(collar);
         const groundAt: PropGroundQuery = (placement, at) => {
           const [x, , z] = at;
           let visual = groundSample(x, z);
@@ -1025,7 +1022,7 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
             from: { x, y: rayTop, z },
             to: { x, y: -100, z },
           });
-          let height = visual ?? physical?.position.y ?? collar?.at(x, z) ?? null;
+          let height = visual ?? physical?.position.y ?? collarGround.at(x, z) ?? null;
           if (
             height !== null &&
             look.stoneSinkShare !== null &&
@@ -1145,7 +1142,7 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
               ? farForestPlacements({
                   size: data.size,
                   resolution: data.resolution,
-                  horizon: ridges.geometry,
+                  collar,
                   treeline: biome.heightBands.treeline,
                   rivers: data.rivers,
                   lakes: data.lakes,

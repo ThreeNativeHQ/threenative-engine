@@ -24,8 +24,9 @@
 // bucket switches to the impostor sooner and casts no shadow, which is what keeps it cheap.
 // `?farForest=off` is the named override: no trees past the square, the frame before this file.
 import { createRandom } from "@threenative/core";
+import type { HeightfieldCollar } from "@threenative/core/world";
 import { type IPlacement, createSegmentIndex } from "@threenative/terrain";
-import { type BufferAttribute, type BufferGeometry, MathUtils } from "three";
+import { type BufferAttribute, MathUtils } from "three";
 import { ImprovedNoise } from "three/addons/math/ImprovedNoise.js";
 import type { WorldName } from "./biomes.js";
 import type { IBakedLake, IBakedRiver } from "./river.js";
@@ -72,65 +73,21 @@ export const FAR_FOREST_RULES = {
 } as const;
 
 /**
- * The drawn collar's height at any (x, z): bilinear inside the collar's own (perimeter, ring) quad,
- * read from the vertex buffer itself, so a lane that reshapes the collar moves the trees with it.
- * Returns null inside the square and past the outermost ring.
+ * The drawn collar's height at any (x, z), and a way to raise one of its per-vertex attributes at a
+ * placement: both read the collar's own quad grid, so a lane that reshapes the collar moves the
+ * trees with it.
  */
-export function collarSampler(horizon: BufferGeometry, size: number, resolution: number) {
-  const position = horizon.getAttribute("position") as BufferAttribute;
-  const segments = resolution - 1;
-  const perimeter = segments * 4;
-  const rings = position.count / perimeter - 1;
-  if (!Number.isInteger(rings) || rings < 1)
-    throw new RangeError("collarSampler needs a createHorizonGeometry result");
-  const half = size / 2;
-  const cell = size / segments;
-  // Ring r is the edge square scaled by scales[r]; vertex 0 of each ring is its (-x, -z) corner.
-  const scales = new Float64Array(rings + 1);
-  for (let ring = 0; ring <= rings; ring++) scales[ring] = -position.getX(ring * perimeter) / half;
-  const locate = (x: number, z: number) => {
-    const s = Math.max(Math.abs(x), Math.abs(z)) / half;
-    if (s < (scales[0] as number) || s >= (scales[rings] as number)) return undefined;
-    let lo = 0;
-    let hi = rings;
-    while (hi - lo > 1) {
-      const mid = (lo + hi) >> 1;
-      if ((scales[mid] as number) <= s) lo = mid;
-      else hi = mid;
-    }
-    const f = (s - (scales[lo] as number)) / ((scales[hi] as number) - (scales[lo] as number));
-    // The point pulled back onto the square's edge, then its index along the perimeter walk.
-    const ex = x / s;
-    const ez = z / s;
-    const t =
-      Math.abs(z) >= Math.abs(x)
-        ? z < 0
-          ? (ex + half) / cell
-          : 2 * segments + (half - ex) / cell
-        : x > 0
-          ? segments + (ez + half) / cell
-          : 3 * segments + (half - ez) / cell;
-    const i = Math.min(perimeter - 1, Math.max(0, Math.floor(t)));
-    return { lo, hi, f, i, j: (i + 1) % perimeter, g: t - i };
-  };
-  const at = (x: number, z: number): number | null => {
-    const q = locate(x, z);
-    if (!q) return null;
-    const y = (ring: number, vertex: number) => position.getY(ring * perimeter + vertex);
-    return (
-      (y(q.lo, q.i) * (1 - q.g) + y(q.lo, q.j) * q.g) * (1 - q.f) +
-      (y(q.hi, q.i) * (1 - q.g) + y(q.hi, q.j) * q.g) * q.f
-    );
-  };
+export function collarSampler(collar: HeightfieldCollar) {
+  const at = (x: number, z: number): number | null => collar.heightAt(x, z);
   /** Raise the collar's per-vertex attribute to `value` at the four corners of (x, z)'s quad. */
   const paint = (attribute: BufferAttribute, x: number, z: number, value: number): void => {
-    const q = locate(x, z);
-    if (!q) return;
+    const quad = collar.locate(x, z);
+    if (quad === undefined) return;
     for (const index of [
-      q.lo * perimeter + q.i,
-      q.lo * perimeter + q.j,
-      q.hi * perimeter + q.i,
-      q.hi * perimeter + q.j,
+      collar.index(quad.lower, quad.from),
+      collar.index(quad.lower, quad.to),
+      collar.index(quad.upper, quad.from),
+      collar.index(quad.upper, quad.to),
     ])
       attribute.setX(index, Math.max(attribute.getX(index), value));
   };
@@ -142,8 +99,8 @@ const macroNoise = new ImprovedNoise();
 interface IFarForestOptions {
   readonly size: number;
   readonly resolution: number;
-  /** `createHorizonGeometry`'s collar, as drawn. */
-  readonly horizon: BufferGeometry;
+  /** The world's far collar, as drawn. */
+  readonly collar: HeightfieldCollar;
   /** The measured treeline band, metres (`IWorldBiome.heightBands.treeline`). */
   readonly treeline: readonly [number, number];
   readonly rivers?: readonly IBakedRiver[];
@@ -156,7 +113,7 @@ interface IFarForestOptions {
 export function farForestPlacements(options: IFarForestOptions): IPlacement[] {
   const rules = FAR_FOREST_RULES;
   const half = options.size / 2;
-  const collar = collarSampler(options.horizon, options.size, options.resolution);
+  const collar = collarSampler(options.collar);
   const random = createRandom(rules.seed);
   // River corridors, as the square's scatter keeps them: the index finds candidates, the exact
   // distance to each segment decides.
@@ -191,7 +148,7 @@ export function farForestPlacements(options: IFarForestOptions): IPlacement[] {
         Math.hypot(x - (lake.at[0] ?? 0), z - (lake.at[1] ?? 0)) < lake.radius &&
         height < lake.level + 0.35,
     );
-  const canopy = options.horizon.getAttribute("canopy") as BufferAttribute | undefined;
+  const canopy = options.collar.geometry.getAttribute("canopy") as BufferAttribute | undefined;
   const placements: IPlacement[] = [];
   const [slopeFrom, slopeTo] = rules.slope;
   const [standFrom, standTo] = rules.stand;
