@@ -3366,6 +3366,39 @@ void cullKeepsMainBundle() {
 void emissiveTarget() { emissivePass(true); }
 void emissiveValidation() { emissivePass(false); }
 
+// three's alphaToCoverage at 4x MSAA: the pipeline turns the fragment's alpha into its sample mask
+// (`alphaToCoverageEnabled: material.alphaToCoverage && samples > 1`), and setupDiffuseColor keeps that alpha instead of
+// forcing one. A white half-alpha plane over black resolves to about half its samples; without A2C it is white.
+void alphaToCoverageMultisampled() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    if (!rendersPixels(context)) return;
+    const auto centre = [&](bool alphaToCoverage) {
+        EventQueue events;
+        Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+        renderer.setSize(16, 16);
+        renderer.setOutput(OutputState{shader::ToneMapping::Linear, 1, false});
+        renderer.setSampleCount(4);
+        const auto geometry = plane(4, 4);
+        shader::StandardMaterial material;
+        material.color = {1, 1, 1};
+        material.opacity = 0.5f;
+        material.alphaToCoverage = alphaToCoverage;
+        DrawItem item;
+        item.key = item.id = 1; item.kind = MaterialKind::Basic;
+        item.positions = &geometry->positions; item.indices = &geometry->indices; item.material = &material;
+        item.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+        for (int frame = 0; frame < 2; ++frame)
+            renderer.render({&item, 1}, camera(1), LightState{}, {0, 0, 0, 1});
+        const auto pixels = read(renderer, events);
+        return pixels.size() == size_t{16} * 16 * 4 ? int(pixels[(8 * 16 + 8) * 4]) : -1;
+    };
+    const int covered = centre(true), solid = centre(false);
+    std::printf("alpha to coverage: centre red %d with A2C, %d without\n", covered, solid);
+    CHECK(solid > 240);
+    CHECK(covered > 40 && covered < 230);
+}
+
 // PRD-740: a post graph that reads every post target (normal, metalness and roughness, albedo, emissive) costs one
 // scene pass, which writes all four as MRT, and a steady frame replays that pass from its cached bundle, recording
 // no draw. Each target still holds its own value at the lit plane's centre. An alpha-tested plane writes its targets
@@ -3533,6 +3566,7 @@ TN_TEST_MAIN({"history_depth_rows", historyDepthRows}, {"raw_target_scene_only",
              {"traa_feeds_the_chain", traaFeedsTheChain},
              {"velocity_needs_traa", velocityNeedsTraa},
              {"traa_replaces_multisampling", traaReplacesMultisampling},
+             {"alpha_to_coverage_multisampled", alphaToCoverageMultisampled},
              {"traa_converges_edges", traaConvergesEdges},
              {"traa_late_resolve", traaLateResolve},
              {"traa_history_swap", traaHistorySwap},
