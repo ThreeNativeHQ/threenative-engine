@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -54,6 +54,22 @@ it("runs the canonical terrain proof against the production Vite build", () => {
     "&& node scripts/verify-ocean.mjs artifacts/playtest/water-control --proof=foam",
   );
   expect(controlCommand).not.toContain("pnpm dev");
+});
+
+// PRD-806 E13: `check-water.mjs` shipped the epic's shared water regressions and no command ran it,
+// so the assertions were prose. `test` is the lane the workspace test walk executes, so the check
+// rides it and this pin keeps it there. Plain `node` cannot resolve the `../src/render/*.js`
+// specifiers those TypeScript sources are imported by, hence `tsx`.
+it("runs the shared water regressions from the package's own test lane", () => {
+  const manifest = JSON.parse(readFileSync(strataPackage, "utf8")) as {
+    scripts: Record<string, string>;
+  };
+
+  expect(manifest.scripts["test:water"]).toBe("pnpm exec tsx scripts/check-water.mjs");
+  expect(manifest.scripts.test).toContain("pnpm test:water");
+  expect(
+    existsSync(resolve(repoRoot, "examples/strata-terrain-preview/scripts/check-water.mjs")),
+  ).toBe(true);
 });
 
 // The three 0.187.0 copyTextureToBuffer layout: tight rows, `width * 4` Uint16 elements each.
