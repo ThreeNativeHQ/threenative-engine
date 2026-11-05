@@ -489,28 +489,24 @@ export function createMeadow(options: IMeadowOptions): IMeadow {
       const alpineCrags = look.pinnedCrags
         ? [...streamed.byId.values()].filter((instance) => instance.placement.asset === "mountain")
         : [];
-      // A world holds none of some assets, and the baked package then has no row for them: the
-      // readout reports 0 rather than `undefined`, which is not a value the playtest bridge can
-      // carry across (`assertJsonSafe`) and fails the whole sample.
-      const count = (asset: string): number => scatter.counts[asset] ?? 0;
       ctx.entities.add("props", {
         object: streamed.worlds[0],
         debug: () => ({
           reveal: reveal.readout(),
           streaming: props?.stats(),
           colliders: propColliders?.stats(),
-          boulders: count("boulder"),
-          bushes: count("bush"),
-          ferns: count("fern"),
+          boulders: scatter.counts.boulder,
+          bushes: scatter.counts.bush,
+          ferns: scatter.counts.fern,
           draws: props?.meshes.length ?? 0,
-          grass: count("grass"),
-          poppies: count("poppy"),
-          saplings: count("sapling"),
-          scrub: count("scrub"),
-          spruces: count("spruce"),
-          mountains: count("mountain"),
-          volcanic: count("volcanic"),
-          reveals: count("reveal"),
+          grass: scatter.counts.grass,
+          poppies: scatter.counts.poppy,
+          saplings: scatter.counts.sapling,
+          scrub: scatter.counts.scrub,
+          spruces: scatter.counts.spruce,
+          mountains: scatter.counts.mountain,
+          volcanic: scatter.counts.volcanic,
+          reveals: scatter.counts.reveal,
           licensedCragParts: [...pack.parts]
             .filter(([key]) => /^(mountain|volcanic|reveal):/.test(key))
             .reduce((sum, [, parts]) => sum + parts.length, 0),
