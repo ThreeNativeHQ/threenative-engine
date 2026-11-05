@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { createServer as createHttpServer, request } from "node:http";
 import { join } from "node:path";
 import { Terrain } from "@threenative/terrain";
@@ -537,13 +537,16 @@ describe("project terrain editor document", () => {
       join(pkg, "package.json"),
       JSON.stringify({ name: "@threenative/assets", type: "module", main: "index.js" }),
     );
-    // The fake cook stays open until the test removes the gate file.
+    // The fake cook stays open until the test removes the gate file, and touches `started` first,
+    // which only happens once the request has taken the export lock.
     const gate = join(root, "gate");
+    const started = join(root, "started");
     writeFileSync(gate, "");
     writeFileSync(
       join(pkg, "index.js"),
-      `import { existsSync } from "node:fs";
+      `import { existsSync, writeFileSync } from "node:fs";
 export async function cookTerrainWorld() {
+  writeFileSync(${JSON.stringify(started)}, "");
   while (existsSync(${JSON.stringify(gate)})) await new Promise((r) => setTimeout(r, 10));
   return { worldGlb: new Uint8Array([1]) };
 }`,
@@ -556,13 +559,23 @@ export async function cookTerrainWorld() {
         body: JSON.stringify({ baseRevision: revision, preparedWorld: {} }),
       });
     const first = send();
-    await new Promise((resolve) => setTimeout(resolve, 200));
-    const second = await send();
-    expect(second.status).toBe(409);
-    expect((await second.json()).error).toBe("An export is already running");
-    // The editor keeps answering while the cook runs.
-    expect((await fetch(`${base}document`)).status).toBe(200);
-    rmSync(gate);
+    try {
+      // Wait for the cook to start rather than for a fixed delay: a first request slower than the
+      // sleep used to leave the lock to the second request, which then spun on the gate until the
+      // test timed out. Nothing below may block before the gate is released.
+      const deadline = Date.now() + 10_000;
+      while (!existsSync(started)) {
+        if (Date.now() > deadline) throw new Error("The first export never reached the cook");
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      const second = await send();
+      expect(second.status).toBe(409);
+      expect((await second.json()).error).toBe("An export is already running");
+      // The editor keeps answering while the cook runs.
+      expect((await fetch(`${base}document`)).status).toBe(200);
+    } finally {
+      rmSync(gate, { force: true });
+    }
     expect((await first).status).toBe(200);
   });
 });
