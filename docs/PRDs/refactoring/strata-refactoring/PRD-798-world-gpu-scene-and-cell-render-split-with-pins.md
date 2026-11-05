@@ -1,7 +1,9 @@
 # PRD-798 — `world-gpu-scene.ts` and `world-cell-render.ts` split, and `CellRender` gets unit pins
 
-**Status:** IN PROGRESS — Phase 1 is done on this branch (`world-gpu-flags.spec.ts`, 14 cases;
-`world-cell-render.spec.ts`, 4 pins); both splits and the playtest/judge boxes are open.
+**Status:** PARTIAL — Phase 1 and 2 are done on this branch (`world-gpu-flags.spec.ts`, 14 cases;
+`world-cell-render.spec.ts`, 4 pins; `world-gpu-scene.ts` split into five modules, cycle gone).
+Phase 3 has four of its five modules; the facade is still 1 996 lines, so AC-1 is open for it, and
+the playtest/judge boxes are open.
 **Priority:** P2 — `CellRender` (2 875 lines, about 97 members) has no direct unit test, and `world-gpu-scene.ts` (2 895 lines) holds a cycle with its validation module (all phases open).
 **Complexity:** 5 (MEDIUM); risk override: both files decide what the world draws and casts, so the owner's visual-judge rule applies
 **Owner:** ThreeNative maintainers
@@ -51,7 +53,11 @@ Integration: unchanged — `WorldCells` stays the only consumer of `CellRender`,
 - [x] Five modules extracted, cycle gone. proof: AC-1 and AC-2 for this file — Evidence: `wc -l` after the split: `world-gpu-scene.ts` 1 305, `world-gpu-readback.ts` 881, `world-gpu-reference.ts` 510, `world-gpu-types.ts` 381, `world-gpu-shadow.ts` 190, `world-gpu-flags.ts` 163, `world-gpu-validation.ts` 518 — every file under 1 500, down from 2 895. `git diff --stat packages/core/__tests__/` is empty: no existing spec changed. Cycle gone: `world-gpu-validation.ts` now imports `./world-gpu-types.js` only, and the module graph is a chain — `scene` -> {flags, readback, reference, shadow, types, validation} -> {reference, types, validation} -> {types, validation} -> `types` -> nothing local; no file imports `world-gpu-scene.ts` back. The scene re-exports every moved name (`cullAndSelect`, `levelAtGates`, the flag readers, the layout constants) from its own path, so no importer changed. `pnpm exec tsc --noEmit -p packages/core/tsconfig.json` exits 0. AC-2: `pnpm exec vitest run packages/core/__tests__/world-*.spec.ts` — 54 files, 869 passed, 4 skipped, and the same 12 pre-existing reds the baseline recorded on `474bcab64` (`world-bundle-safety`, `world-cells-chunk-merge` ×4, `world-impostor-surface`, `world-lod-input-budget` ×4, `world-streaming-perf` ×2). The GPU pass itself is green: `world-gpu-scene.spec.ts`, `world-shadow-gpu-keys.spec.ts`, `depth-pyramid.spec.ts`, `world-gpu-flags.spec.ts`, `world-gpu-scene-engine-uniforms.spec.ts` and `world-impostors.spec.ts` run 190/190, and 124/124 with the new `world-cell-render.spec.ts` beside them.
 
 #### Phase 3: split `world-cell-render.ts`
-**Status:** NOT STARTED
+**Status:** IN PROGRESS — four of five modules are extracted, green, committed (`b1d1c`-lane commits
+"part 1" and "part 2"); `world-cell-render-gpu-dress.ts` is the remainder. AC-1 does not hold for the
+facade yet (1 996 lines), so the box below stays open.
 **Files:** `packages/core/src/world-cell-{render-util,main-cull,shadow-claims,bundles,gpu-dress}.ts` (new), `world-cell-render.ts`
 - [ ] Five modules extracted. proof: AC-1 and AC-2 for this file
+  - Open: `world-cell-render.ts` is 1 996 lines, over the 1 500 cap. Done and green: `world-cell-render-util.ts` (221 — the constants, `mainShard`, the mesh and hash helpers), `world-cell-render-bundles.ts` (459 — `CellBundles`, every `BundleGroup`, the chunk records and the compile flush), `world-cell-render-main-cull.ts` (487 — `CellMainCull`: one volume per visibility cell, the frustum a frame, `cullMainPass`/`cullResident`/`cullEvicted`/`reportMainCull`/`mainCullStats`), `world-cell-render-shadow-claims.ts` (198 — `casts`, `smallCaster`, `wideOwed`, `castLevelOf`, `shadowFloorOf`, `keysForShadow`, `claimCaster`, `claimWide`, `clearSegment`). Each runs behind a host interface (`ICellBundlesHost`, `ICellMainCullHost`, `IShadowClaimHost`) over the facade, which keeps one delegating method per moved name so no caller or spec changed. Remaining: the 571-line `gpu-dress` block (`wideShape`, `shapeFor`, `#lodSurface`, `updateLodEye`, `refreshLodMaterials`, `impostorDrawn`, `dressMesh`, `adoptGpu`, `applyGpuMain`, `dressGpu`, `seat`, `publishGpuGates`, `gatesOf`, `seedGpuKeys`, `seedGpuKey`, `gpuCensus`, `gpuDraws`, `liveGates`) and the 24 fields it reads — the widest host of the five, which is why it is the one left. AC-2 holds for the four: the world suite keeps its 12 pre-existing reds and no new one. One trap the split exposed and fixed: `intersectsObject` answered from a module frustum that only `cullMainPass` writes, so it now asks `CellMainCull`, which owns that frustum.
 - [ ] Strata, abyss and the judge pass. proof: AC-3 and AC-4
+  - Open: browser lane
