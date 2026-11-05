@@ -1,4 +1,4 @@
-import { DoubleSide, Mesh, Raycaster, Vector3 } from "three";
+import { DoubleSide, Mesh, MeshBasicMaterial, Raycaster, Vector3 } from "three";
 import { describe, expect, it } from "vitest";
 import {
   HeightfieldCollar,
@@ -152,8 +152,7 @@ describe("HeightfieldCollar", () => {
 
   it("draws the same surface a ray meets, so a collider on the ring is the ground the eye sees", () => {
     const built = collar({ resolution: 9, rings: 6, walkBand: 1e9 });
-    const mesh = new Mesh(built.geometry);
-    mesh.material.side = DoubleSide;
+    const mesh = new Mesh(built.geometry, new MeshBasicMaterial({ side: DoubleSide }));
     mesh.updateMatrixWorld(true);
     const ray = new Raycaster();
     const position = built.geometry.getAttribute("position");
