@@ -1,22 +1,22 @@
 /**
- * PRD-794 phase 1: today's water, probe by probe.
+ * PRD-794 AC-1: one water store, probe by probe.
  *
- * The swimmer reads `waterSurfaceAt` and `waterCurrentAt` for the river and the lake; the ocean is
- * its own path (`render/ocean.ts`), where the sea plane stands at the bake's `waterLevel` and no
- * flow exists. One `WaterBodies` mechanism replaces all three later, so this spec pins what each
- * answers today at fixed probes: the surface height, the current vector and the footprint.
+ * The river, the lake and the sea all answer through `WaterBodies` (`src/world/water.ts` builds it
+ * from the bake), so this spec pins what the one mechanism answers at fixed probes: the surface
+ * height, the current vector and the footprint. Every pin below was recorded against the three
+ * hand-written paths this store replaced, so a moved number is a regression.
  *
  * Every number comes from the committed bake under `src/world/`:
  *
  * - A river stands at its spline's own height, and reaches `width * 2.5` m either side.
  * - A lake stands level out to `waterlineRadius(...) * 1.12`, capped at the radius its file names.
- * - The sea plane sits at `waterLevel`, and its stretched geometry reaches the horizon.
+ * - The sea plane sits at `waterLevel`, and its stretched geometry reaches `SEA_EXTENT` either side.
  */
 import { readFileSync } from "node:fs";
-import { Heightfield } from "@threenative/core/world";
+import { Heightfield, type IWaterOcean } from "@threenative/core/world";
 import { describe, expect, it } from "vitest";
-import { createOcean, createWaterMesh } from "../src/render/ocean.js";
-import { waterCurrentAt, waterSurfaceAt } from "../src/world/water.js";
+import { SEA_EXTENT, createOcean, createWaterMesh } from "../src/render/ocean.js";
+import { waterBodies } from "../src/world/water.js";
 
 /** The baked world as the water reads it. */
 interface IBakedWorld {
@@ -65,15 +65,17 @@ function field(world: IBakedWorld): Heightfield {
   });
 }
 
-/** What today's river and lake queries answer at each probe, in the probe's own shape. */
-function answers(world: IBakedWorld, probes: readonly IWaterProbe[]): IWaterProbe[] {
-  const heightfield = field(world);
-  const surface = waterSurfaceAt(world.rivers ?? [], world.lakes ?? [], heightfield);
-  const current = waterCurrentAt(world.rivers ?? [], world.lakes ?? [], heightfield);
+/** What the one water store answers at each probe, in the probe's own shape. */
+function answers(
+  world: IBakedWorld,
+  probes: readonly IWaterProbe[],
+  sea?: IWaterOcean,
+): IWaterProbe[] {
+  const bodies = waterBodies(world.rivers ?? [], world.lakes ?? [], field(world), sea);
   return probes.map((probe) => ({
     at: probe.at,
-    current: current(...probe.at),
-    surface: surface(...probe.at),
+    current: bodies.currentAt(...probe.at),
+    surface: bodies.surfaceAt(...probe.at),
   }));
 }
 
@@ -159,22 +161,47 @@ describe("the tundra lakes", () => {
 
 describe("the coastal ocean", () => {
   it("draws the sea at the bake's level, still, out to the stretched sea plane", () => {
-    const sea = createWaterMesh(createOcean(), coastal);
-    sea.geometry.computeBoundingBox();
-    const box = sea.geometry.boundingBox;
+    if (coastal.waterLevel === null) throw new Error("the coastal bake has no sea level");
+    const sea: IWaterOcean = { extent: SEA_EXTENT, level: coastal.waterLevel };
+    const bodies = waterBodies(coastal.rivers ?? [], coastal.lakes ?? [], field(coastal), sea);
+    const mesh = createWaterMesh(createOcean(), coastal);
+    mesh.geometry.computeBoundingBox();
+    const box = mesh.geometry.boundingBox;
     if (box === null) throw new Error("the sea surface has no bounds");
     const covers = ([x, z]: readonly [number, number]): boolean =>
       x >= box.min.x && x <= box.max.x && z >= box.min.z && z <= box.max.z;
     for (const probe of SEA) {
       expect(covers(probe.at)).toBe(true);
-      expect(probe.surface).toBe(sea.position.y);
+      expect(probe.surface).toBe(mesh.position.y);
+      expect(bodies.surfaceAt(...probe.at)).toBe(probe.surface);
       // The sea carries no flow, and the coastal bake has no river or lake to give it one.
-      expect(probe.current).toEqual({ x: 0, z: 0 });
+      expect(bodies.currentAt(...probe.at)).toEqual(probe.current);
+      expect(bodies.footprintAt(...probe.at)).toEqual({ kind: "ocean", level: sea.level });
     }
     expect([box.min.x, box.max.x, box.min.z, box.max.z]).toEqual([-4120, 4120, -4120, 4120]);
     expect(covers([4200, 0])).toBe(false);
+    expect(SEA_EXTENT).toBe(4120);
+    expect(bodies.footprintAt(SEA_EXTENT, -SEA_EXTENT)).toBeDefined();
+    expect(bodies.footprintAt(4200, 0)).toBeUndefined();
     expect(coastal.waterLevel).toBe(1.5);
     expect(coastal.rivers ?? []).toEqual([]);
     expect(coastal.lakes ?? []).toEqual([]);
+  });
+});
+
+describe("the footprint the store reports", () => {
+  it("names the body that covers the point, and stops where the water stops", () => {
+    const forestBodies = waterBodies(forest.rivers ?? [], forest.lakes ?? [], field(forest));
+    expect(forestBodies.footprintAt(-120, -220)).toEqual({
+      kind: "river",
+      level: 13.730976740569075,
+    });
+    expect(forestBodies.footprintAt(-70, 25)).toEqual({ kind: "lake", level: 13.3 });
+    // The river's last station: the higher lake surface wins, so the footprint is the lake's.
+    expect(forestBodies.footprintAt(-70, -60)).toEqual({ kind: "lake", level: 13.3 });
+    expect(forestBodies.footprintAt(-96.6, -175)).toBeUndefined();
+    const tundraBodies = waterBodies(tundra.rivers ?? [], tundra.lakes ?? [], field(tundra));
+    expect(tundraBodies.footprintAt(65, 110)).toEqual({ kind: "lake", level: 28.8 });
+    expect(tundraBodies.footprintAt(65, 115)).toBeUndefined();
   });
 });

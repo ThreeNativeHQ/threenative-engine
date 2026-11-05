@@ -6,6 +6,7 @@ import {
   bakedNoise,
   loadTerrainSplat,
 } from "@threenative/core/world";
+import { waterlineRadius } from "@threenative/core/world";
 import { createSegmentIndex } from "@threenative/terrain";
 import {
   type BufferGeometry,
@@ -76,13 +77,7 @@ import {
 } from "./biomes.js";
 import { collarColors, createHorizonCollar, horizonSurroundings } from "./horizon.js";
 import { loadSkyLight, skyIrradiance } from "./pack.js";
-import {
-  type IBakedLake,
-  type IBakedRiver,
-  REFLECTED_LAYER,
-  surfaceHeights,
-  waterlineRadius,
-} from "./river.js";
+import { type IBakedLake, type IBakedRiver, REFLECTED_LAYER, surfaceHeights } from "./river.js";
 
 export interface IBakedWorld {
   size: number;

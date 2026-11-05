@@ -1,6 +1,6 @@
 # PRD-794 — River, lake and ocean are one water-body mechanism
 
-**Status:** PARTIAL — Phase 1's values are pinned; the swim playtest waits for the browser lane, and Phase 2 waits on the CHARTER decision.
+**Status:** PARTIAL — Phase 2 is done: one `WaterBodies` store answers AC-1 in core. The swim playtest and the visual judge wait for the browser lane.
 **Priority:** P2 — A new biome with water copies one of three hand-written water paths (all phases open).
 **Complexity:** 6 (MEDIUM); risk override: water look and swim physics must not change, so the owner's visual-judge rule applies
 **Owner:** ThreeNative maintainers
@@ -25,20 +25,23 @@ and `ocean.ts` and the starter `sea.ts` become one copy-out source.
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local]: `surfaceAt` and `currentAt` return the same values as today at fixed probes in the forest river, the tundra lake and the coastal ocean. proof: `water-bodies-values.spec.ts` — Evidence: pending.
+- [x] AC-1 [local]: `surfaceAt` and `currentAt` return the same values as today at fixed probes in the forest river, the tundra lake and the coastal ocean. proof: `water-bodies-values.spec.ts` — Evidence: the spec now queries `WaterBodies` (built by `world/water.ts` from the bake) and every pinned number from Phase 1 is unchanged: `pnpm --filter strata-terrain-preview exec vitest run __tests__/water-bodies-values.spec.ts` 5/5 pass, and the core store's own edges are pinned by `pnpm exec vitest run packages/core/__tests__/world-water-bodies.spec.ts` 7/7 pass.
 - [ ] AC-2 [local]: The swimmer still floats and drifts with the current. proof: `playtests/swim.playtest.json` — Evidence: pending.
+  - Open: browser + judge lane (coordinator).
 - [ ] AC-3 [local]: The water keeps its look in forest, coastal and tundra. proof: `capture-strata-worlds` before and after, two runs per arm, fresh judge NEUTRAL or IMPROVEMENT — Evidence: pending.
+  - Open: browser + judge lane (coordinator).
 
 ## Blocked on
 
-- `CHARTER.md` admits water-body queries as core mechanism ("queryable storage shared by rendering and physics", beside `Heightfield`) — unblocked by the owner's approval of the CHARTER line.
+- Unblocked: owner approved the CHARTER line on 2026-11-04. `CHARTER.md` now admits water-body
+  queries (surface height, current, footprint) as core mechanism, beside `Heightfield`.
 
 ## Integration Ledger
 
 | Capability | Reachable consumer/trigger | Replaces / disposition | Evidence |
 |---|---|---|---|
 | Water bodies | Game load → `WaterBodies` → river mesh, swim buoyancy and current | `world/water.ts` and the geometry half of `render/river.ts`: deleted | AC-1, AC-2 |
-| Sea surface | Coastal world → one copy-out sea source | `render/ocean.ts` or `starter/coastal/sea.ts`: one deleted | AC-3 |
+| Sea surface | Coastal world → its own copy-out sea source | `render/ocean.ts` and `starter/coastal/sea.ts`: both kept, each game's generated source (appearance cannot live in a package); why on the Phase 2 box | AC-3 |
 
 ## Execution Phases
 
@@ -54,13 +57,15 @@ and `ocean.ts` and the starter `sea.ts` become one copy-out source.
   - Open: browser lane.
 
 #### Phase 2: one mechanism
-**Status:** NOT STARTED
+**Status:** DONE — core `WaterBodies` answers river, lake and sea; the example queries it; both coastal sea sources stay, with the reason on the box.
 **Files:** `packages/core/src/world-water-bodies.ts` (new), `packages/core/src/world.ts`, `packages/terrain/src/core/bake-biome.ts`, `docs/architecture/CHARTER.md`, example `world/water.ts`, `render/{river,water,ocean}.ts`, `game.ts`
-- [ ] `WaterBodies` serves the probes with a segment index and no world-name check. proof: AC-1 spec plus a core unit spec `packages/core/__tests__/world-water-bodies.spec.ts`
-- [ ] Duplicate water paths deleted and `limitToFootprint` read from the row. proof: `rg -n 'limitToFootprint' examples/strata-terrain-preview/src/game.ts` shows no world name
+- [x] `WaterBodies` serves the probes with a segment index and no world-name check. proof: AC-1 spec plus a core unit spec `packages/core/__tests__/world-water-bodies.spec.ts` — Evidence: `pnpm exec vitest run packages/core/__tests__/world-water-bodies.spec.ts` 7/7 pass. The store is `packages/core/src/world-water-bodies.ts`, exported from `@threenative/core/world` with `waterlineRadius` and `lakeReach` (moved out of the example's `render/river.ts`), `WATER_RIBBON_REACH` (the 2.5-width reach the ribbon and the query share) and the three row types. River segments sit in a uniform grid keyed by their own reach, so a query tests only the pieces that can reach its cell; the core file names no world and takes no label. Malformed rows throw `TN_WATER_BODIES_INVALID` (one station, zero width, non-finite flow, station or level, zero radius or margin, a lake with no `field`, zero ocean extent). `pnpm --filter @threenative/core typecheck` exits 0, and the AC-1 pin is still green on the old path: `pnpm --filter strata-terrain-preview exec vitest run __tests__/water-bodies-values.spec.ts __tests__/river-clearance.spec.ts` 6/6 pass; the pin switches to this store in the next box.
+- [x] Duplicate water paths deleted and `limitToFootprint` read from the row. proof: `rg -n 'limitToFootprint' examples/strata-terrain-preview/src/game.ts` shows no world name — Evidence: the command prints nothing (exit 1); PRD-791 had already deleted that flag and its `world === "tundra" || world === "forest"` argument, so no water path carries a world name at all. `world/water.ts` 152 → 67 lines: the segment scan and the lake measurement are gone, and the file now maps the bake into `WaterBodies` (`waterBodies(rivers, lakes, field, sea?)`), keeping `waterSurfaceAt`/`waterCurrentAt` as thin wrappers so `game.ts` stays untouched. `render/river.ts` 1 308 → 1 273: `waterlineRadius` moved to `@threenative/core/world`, `createLakes` draws `lakeReach(field, { ...lake, margin: LAKE.reach })` — the same number the query answers — and `ribbon` reads `WATER_RIBBON_REACH`. The lake margin (1.12) is now the game's named `LAKE_REACH`, the cap comes from the baked lake row and the flow from the ribbon row. `render/terrain.ts` imports the waterline from core. Runs: `pnpm --filter strata-terrain-preview exec vitest run __tests__/water-bodies-values.spec.ts __tests__/river-clearance.spec.ts` 7/7 pass with the SAME pinned numbers through `WaterBodies` (the four original `it`s untouched, plus one footprint `it` naming river, lake and ocean and their edges), `pnpm exec tsc --noEmit -p tsconfig.json` exits 0 in the example, and `pnpm exec biome check` is clean on the five files.\n  - Open: the `game.ts` call sites move to the store's own instance after the PRD-796 split merges; the wrappers rebuild it per call until then.
 
+- [x] The coastal sea is one source, or both are kept for a stated reason. proof: `diff -u packages/terrain/starter/coastal/sea.ts examples/strata-terrain-preview/src/render/ocean.ts` — Evidence: both kept, deliberately. They are two games' generated source, not one component in two places — 131 differing lines of about 350. The shader body and `SEA`, `SURFACE`, `OCEAN_LOOK` are the same; the entries are not. The kit exposes `addCoastalSea(ctx, data, physics)` returning an `ICoastalSea` wired into the kit's own scene and physics, and the preview exposes `createOcean()`/`createWaterMesh(ocean, data)` returning a bare `Mesh`, with editor-tunable uniforms and the `waterProof` debug arm. One shared source would have to live in a package, which the Charter's appearance rule forbids, and `starter/coastal/sea.ts` is copy-out source a generated project owns and edits ("Change `SEA`, `SURFACE` or `OCEAN_LOOK` to change the sea; nothing in a package decides it"), so a package copy could not be the only one. What the preview did have to share is now shared: `SEA_EXTENT` comes from its own stretch function and feeds the ocean row `WaterBodies` answers from.
 #### Phase 3: prove the game
 **Status:** NOT STARTED
 **Files:** none
 - [ ] Swim playtest and river clearance stay green. proof: AC-2 and `river-clearance.spec.ts`
+  - Open: `river-clearance.spec.ts` is green (2/2, above); AC-2 needs the browser + judge lane (coordinator).
 - [ ] Fresh visual judge passes. proof: AC-3

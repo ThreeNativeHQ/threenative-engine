@@ -8,6 +8,22 @@ export type {
   IHeightfieldCollarWalk,
 } from "./world-collar.js";
 
+export {
+  WATER_RIBBON_REACH,
+  WaterBodies,
+  lakeReach,
+  waterlineRadius,
+} from "./world-water-bodies.js";
+export type {
+  IWaterBodiesOptions,
+  IWaterCurrent,
+  IWaterFootprint,
+  IWaterLake,
+  IWaterOcean,
+  IWaterRibbon,
+  WaterBodyKind,
+} from "./world-water-bodies.js";
+
 export { TerrainTiles } from "./world-tiles.js";
 export type {
   IAdmissionBudget,

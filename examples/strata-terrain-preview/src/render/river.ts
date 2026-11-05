@@ -30,7 +30,7 @@
 // every palette colour by a factor between three and thirteen, and the shader then reads as "wants
 // turning up" rather than as broken.
 import { WaterSurface3D, WaveField } from "@threenative/core";
-import type { Heightfield } from "@threenative/core/world";
+import { type Heightfield, WATER_RIBBON_REACH, lakeReach } from "@threenative/core/world";
 import { BufferAttribute, BufferGeometry, Color, DoubleSide, Mesh } from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import {
@@ -139,6 +139,12 @@ const RIVER = {
 const TRACE = { steps: 14, first: 0.45, growth: 1.3 } as const;
 
 /** The lake's shape, and how its mirror is taken. Every number here is this game's. */
+/**
+ * How far past a basin's measured waterline a lake's water reaches, so the real shore stands inside
+ * it. The drawn surface and the swim footprint both size themselves at it.
+ */
+export const LAKE_REACH = 1.12;
+
 const LAKE = {
   /**
    * Mirror pixels as a share of the frame's, how often it redraws, and the layer mask it draws. Half
@@ -152,7 +158,7 @@ const LAKE = {
   rings: 44,
   spokes: 88,
   /** How far past the measured waterline the mesh reaches, so the real shore is inside it. */
-  reach: 1.12,
+  reach: LAKE_REACH,
   /** How the ring spacing grows outwards. Above 1 packs vertices into the near water. */
   packing: 1.7,
 } as const;
@@ -669,7 +675,7 @@ function ribbon(
   indices: number[],
 ): void {
   const { points } = river;
-  const reach = river.width * 2.5;
+  const reach = river.width * WATER_RIBBON_REACH;
   const heights = points.map((point) => point[1] ?? 0);
   const base = positions.length / 3;
   const columns = RIVER.across;
@@ -925,46 +931,6 @@ export interface IBakedLake {
   readonly level: number;
 }
 
-/** The furthest the basin reaches on a bearing: where the drawn ground crosses the level. */
-export function waterlineRadius(
-  field: Heightfield,
-  centre: readonly number[],
-  level: number,
-): number {
-  const [cx = 0, cz = 0] = centre;
-  if (field.heightAt(cx, cz) >= level) return 0;
-  const bearings = 24;
-  let furthest = 0;
-  for (let index = 0; index < bearings; index += 1) {
-    const angle = (index / bearings) * Math.PI * 2;
-    const dx = Math.cos(angle);
-    const dz = Math.sin(angle);
-    let wet = 0;
-    let dry = Math.min(
-      (field.width / 2 - Math.sign(dx) * (cx - field.origin.x)) / Math.max(Math.abs(dx), 1e-6),
-      (field.depth / 2 - Math.sign(dz) * (cz - field.origin.z)) / Math.max(Math.abs(dz), 1e-6),
-    );
-    const cell = Math.max(field.width / (field.columns - 1), field.depth / (field.rows - 1));
-    // Stop at the first bank: binary-searching the whole ray can jump a dry ridge into another pond.
-    for (let distance = cell; distance < dry; distance += cell) {
-      if (field.heightAt(cx + dx * distance, cz + dz * distance) >= level) {
-        dry = distance;
-        break;
-      }
-      wet = distance;
-    }
-    // Eighteen halvings is under two centimetres at this scale, well inside the ground's own two-metre
-    // sample spacing, so more of them would be measuring nothing.
-    for (let halving = 0; halving < 18; halving += 1) {
-      const mid = (wet + dry) / 2;
-      if (field.heightAt(cx + dx * mid, cz + dz * mid) < level) wet = mid;
-      else dry = mid;
-    }
-    furthest = Math.max(furthest, (wet + dry) / 2);
-  }
-  return furthest;
-}
-
 /**
  * Draw the baked lake as one surface: Wildwood's water, over this basin's own depth.
  *
@@ -1034,8 +1000,7 @@ export function createLakes(
     };
   }
   const [cx = 0, cz = 0] = lake.at;
-  const measuredReach = waterlineRadius(field, lake.at, lake.level) * LAKE.reach;
-  const reach = Math.min(measuredReach, lake.radius);
+  const reach = lakeReach(field, { ...lake, margin: LAKE.reach });
   if (reach <= 0) return undefined;
 
   const { rings, spokes } = LAKE;

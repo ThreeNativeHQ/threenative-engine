@@ -58,6 +58,20 @@ export const SEA = {
 export const SURFACE = { segments: 512, size: 1024 } as const;
 
 /**
+ * How far one axis of the sea plane spreads: dense to 320 m either side, then squared outwards so the
+ * surface reaches the fogged horizon instead of ending at the survey's edge.
+ */
+function stretchMetres(value: number): number {
+  const distance = Math.abs(value);
+  return (
+    Math.sign(value) * (distance <= 320 ? distance : 320 + ((distance - 320) / 192) ** 2 * 3800)
+  );
+}
+
+/** Metres from the origin the drawn sea surface reaches, either side of it. */
+export const SEA_EXTENT = stretchMetres(SURFACE.size / 2);
+
+/**
  * The sea's two body colours as live uniforms, so an editor can retint the water without rebuilding
  * its material. The defaults are this game's look: nothing here changes it until a caller writes.
  */
@@ -191,11 +205,8 @@ export function createWaterMesh(ocean: SpectralOcean, data: IBakedWorld): Mesh {
   geometry.rotateX(-Math.PI / 2);
   // Dense near shore, sparse beyond it; the sea reaches the fogged horizon instead of ending at 512 m.
   const vertices = geometry.getAttribute("position");
-  const stretch = (value: number): number =>
-    Math.sign(value) *
-    (Math.abs(value) <= 320 ? Math.abs(value) : 320 + ((Math.abs(value) - 320) / 192) ** 2 * 3800);
   for (let i = 0; i < vertices.count; i++)
-    vertices.setXYZ(i, stretch(vertices.getX(i)), 0, stretch(vertices.getZ(i)));
+    vertices.setXYZ(i, stretchMetres(vertices.getX(i)), 0, stretchMetres(vertices.getZ(i)));
   geometry.computeBoundingSphere();
 
   const material = new MeshStandardNodeMaterial({
