@@ -881,6 +881,7 @@ target_include_directories(tn-native-engine-static-transform-test PRIVATE ${CMAK
 # PRD-752 phase 4: the job pool runs each item once, and the matrix walk on it is the one-thread walk, bit for bit.
 tn_native_engine_test(tn-native-engine-job-pool-test tests/native-engine/scene/job_pool_test.cpp
     native_engine_job_pool=for_each_once
+    native_engine_job_pool_item_failure=item_failure_reaches_the_caller
     native_engine_job_pool_dispatch_floor=dispatch_floor
     native_engine_job_pool_workers_cover_the_machine=workers_cover_the_machine
     native_engine_job_pool_fails_closed=pool_fails_closed_when_no_worker_starts
@@ -1061,9 +1062,11 @@ if(EMSCRIPTEN)
         # The node ABI check below cannot start this glue (no `node` environment); the stamp ties it to the
         # same sources as the single-thread module, which that check runs on.
         set_target_properties(tn-native-engine-web PROPERTIES OUTPUT_NAME tn-native-engine-web-threads)
-        # mimalloc: dlmalloc's one global lock serialized the workers' allocations with the main thread's
-        # (stress lab FB1: CPU frame p50 -6.5% in a fair uncapped window).
-        target_link_options(tn-native-engine-web PRIVATE -sPTHREAD_POOL_SIZE=0 -sPTHREAD_POOL_SIZE_STRICT=0 -sMALLOC=mimalloc)
+        # dlmalloc, not mimalloc: mimalloc over emmalloc did not hand freed multi-MB blocks (decoded images, PNG
+        # scratch, model files) back for reuse, so one Strata world peaked at 2.6-2.9 GB of the 4 GB heap and the
+        # next world's load hit the cap: a pool worker died, the page froze or crashed (2026-11-05). dlmalloc holds
+        # the same switch sequence at 1.3 GB. It gives back FB1's lock win (CPU frame p50 -4% to -7%, 2026-10-30).
+        target_link_options(tn-native-engine-web PRIVATE -sPTHREAD_POOL_SIZE=0 -sPTHREAD_POOL_SIZE_STRICT=0 -sMALLOC=dlmalloc)
         add_custom_command(TARGET tn-native-engine-web POST_BUILD
             COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/web-engine-stamp.mjs --write tn-native-engine-web-threads
             VERBATIM)

@@ -955,7 +955,13 @@ extern "C" int tnw_web_load_gltf(tn_context_t* context, const uint8_t* bytes, ui
         const auto found = modelFiles.find(uri);
         return found == modelFiles.end() ? std::span<const uint8_t>{} : std::span<const uint8_t>(found->second);
     };
-    auto loaded = gltf::load(std::span<const uint8_t>(bytes, size), options);
+    gltf::LoadResult loaded;
+    try {
+        loaded = gltf::load(std::span<const uint8_t>(bytes, size), options);
+    } catch (const std::exception& error) {
+        // A decode that ran the heap out (std::bad_alloc on a job pool worker) is named, not an opaque Wasm throw.
+        return loadFailure = std::string("TN_WASM_GLTF_LOAD_FAILED: ") + error.what(), 1;
+    }
     if (!loaded.error.empty()) return loadFailure = loaded.error, 1;
     if (!loaded.scene) return loadFailure = "TN_WASM_GLTF: the file has no scene", 1;
     bool undecoded = false;

@@ -741,6 +741,20 @@ no COOP/COEP); that lane is open.
   workers' changes after the arm wrapper restarted a stopped worker: stop a lane by its wrapper, not its child.
 - Revisit when: FP2 is split into its two changes and each is measured on top of FS11+FS12.
 
+### 2026-11-05 — Strata: dlmalloc returns to the threaded web engine (FB1 reverted) — REVERT
+- Where: `packages/runtime-native/cmake/NativeEngineCore.cmake`, the `TN_WEB_THREADS` link options (`-sMALLOC=dlmalloc`);
+  lock: `packages/runtime-native/__tests__/web-threads-allocator.spec.ts`.
+- Result: the Strata preview, owned engine, one page, forest -> coastal -> alpine -> desert. mimalloc: the Wasm heap held
+  2.54-2.84 GB after each world and reached the 4 GB cap (65535 pages) on the desert load in 4 of 4 runs. At the cap a
+  job pool worker died, the main thread spun on the join, and the page froze or crashed. The desert alone peaked at
+  2.6 GB. A forced `gc()` before each switch and a serial image decode changed nothing. dlmalloc: the forest held
+  918-925 MB, the whole sequence ended at 1310-1328 MB, 2 of 2 runs with no stall.
+- Insight: mimalloc over Emscripten's emmalloc kept the freed multi-MB blocks (decoded images, PNG scratch, model file
+  copies) out of reuse, so each large load grew the heap again. A heap that grows only must not carry a big-asset
+  world. The FB1 CPU win (frame p50 -4% to -7% on `?stress`) is given back and was not re-measured on this lane.
+- Revisit when: an allocator returns freed large blocks on Emscripten, or the engine moves big decode buffers out of
+  the Wasm heap. Re-measure `?stress` CPU frame p50 and the Strata switch heap peak together.
+
 ### 2026-10-30 — Stress lab: mimalloc on the threaded web engine (FB1) — KEEP
 - Where: `packages/runtime-native/cmake/NativeEngineCore.cmake`, the `TN_WEB_THREADS` link options (`-sMALLOC=mimalloc`);
   lock: `packages/runtime-native/__tests__/web-threads-allocator.spec.ts`.
