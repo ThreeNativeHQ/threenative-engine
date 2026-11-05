@@ -93,6 +93,7 @@ private:
     struct Body {
         uint64_t id;
         std::vector<engine::shader::graph::Node> statements;
+        bool fn = false;  // a Fn call's body: inside another body it runs at the call, as GLSL calls run
     };
     std::vector<Body>& open();
     std::vector<Body> open_;

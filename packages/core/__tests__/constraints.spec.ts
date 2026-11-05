@@ -285,6 +285,11 @@ describe("core constraints", () => {
           // The opacity convention makes the game's own opacity take effect: it turns `transparent`
           // on where opacity < 1 would otherwise be ignored, and sets no value of its own; checked below.
           file !== "profiling/opacity-convention.ts" &&
+          // AGENTS.md rule 3, second exception (owner, 2026-10-31): every `@threenative/core/spells`
+          // factory ships a stock look, and each colour, size and timing is a named override.
+          !file.startsWith("spells/") &&
+          // The spells' particle kind table; PRD-789 deletes it with the from-scratch spells.
+          file !== "particle-kinds.ts" &&
           file !== "index.ts",
       )
       .map((file) =>

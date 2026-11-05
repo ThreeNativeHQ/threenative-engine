@@ -1,7 +1,7 @@
 import { setFlagsFromString } from "node:v8";
 import { runInNewContext } from "node:vm";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { booleanUniforms, liveUniforms } from "../src/tsl-uniforms.js";
+import { UNWATCH, booleanUniforms, liveUniforms } from "../src/tsl-uniforms.js";
 
 setFlagsFromString("--expose-gc");
 const collectGarbage = runInNewContext("gc") as () => void;
@@ -365,10 +365,11 @@ describe("debug uniform repeated post work", () => {
     };
     expect(host.__tnEngineCost).toMatchObject({
       uniformSyncCalls: 10,
-      uniformWriteAttempts: 20,
-      uniformLaneWriteAttempts: 40,
-      uniformUnchangedWriteAttempts: 18,
-      uniformUnchangedLaneWriteAttempts: 36,
+      // the hooked scalar each sync; the unedited vector only at its first (it is watched, not scanned)
+      uniformWriteAttempts: 11,
+      uniformLaneWriteAttempts: 13,
+      uniformUnchangedWriteAttempts: 9,
+      uniformUnchangedLaneWriteAttempts: 9,
       uniformWrites: 2,
       uniformLaneWrites: 4,
       uniformRenderCallbacks: 10,
@@ -411,5 +412,96 @@ describe("debug uniform repeated post work", () => {
     expect(on.snapshots).toBe(off.snapshots);
     expect(on.writes).toEqual(off.writes);
     expect(on.clocks).toBeGreaterThan(0);
+  });
+});
+
+describe("uniform sync cost", () => {
+  // FluidVolume draws 28 targets a step, each a render that synced every object uniform of the whole app: 0.15 to
+  // 0.25 ms of CPU per draw. A sync now reads only the uniforms whose value objects were edited since the last one.
+  const host = globalThis as {
+    __THREENATIVE_DEBUG__?: boolean;
+    __tnEngineCost?: Record<string, number>;
+  };
+  afterEach(() => {
+    host.__THREENATIVE_DEBUG__ = undefined;
+    host.__tnEngineCost = undefined;
+  });
+  const attempts = () => host.__tnEngineCost?.uniformWriteAttempts ?? 0;
+
+  it("reads only the edited uniforms when many unrelated uniforms exist", () => {
+    host.__THREENATIVE_DEBUG__ = true;
+    const { live, pushed } = setup();
+    const values = Array.from({ length: 1000 }, (_, i) => ({ x: i, y: 0, z: 0 }));
+    for (const value of values) live.uniform(value);
+    live.sync({ frameId: 1 });
+    const before = attempts();
+    (values[7] as { x: number }).x = -1;
+    live.sync({ frameId: 1 });
+    expect(attempts() - before).toBe(1);
+    expect(pushed.at(-1)).toEqual([-1, 0, 0]);
+  });
+
+  it("delivers in-place edits between two renders of one frame, to every uniform sharing the object", () => {
+    const { live, pushed } = setup();
+    const shared = { x: 1, y: 2 };
+    live.uniform(shared);
+    live.uniform(shared);
+    live.sync({ frameId: 3 });
+    pushed.length = 0;
+    shared.y = 5;
+    live.sync({ frameId: 3 });
+    expect(pushed).toEqual([
+      [1, 5],
+      [1, 5],
+    ]);
+    shared.x = 4;
+    live.sync({ frameId: 3 });
+    expect(pushed.slice(2)).toEqual([
+      [4, 5],
+      [4, 5],
+    ]);
+  });
+
+  it("follows a replaced value object and still scans objects it cannot watch", () => {
+    const { live, pushed } = setup();
+    const node = live.uniform({ x: 0, y: 0 });
+    const next = { x: 1, y: 1 };
+    node.value = next;
+    next.x = 9;
+    live.sync();
+    expect(pushed.at(-1)).toEqual([9, 1]);
+    let lane = 0;
+    const accessor = {
+      get x() {
+        return lane;
+      },
+      y: 0,
+    };
+    live.uniform(accessor);
+    live.sync();
+    lane = 3;
+    live.sync();
+    expect(pushed.at(-1)).toEqual([3, 0]);
+  });
+
+  it("scans a watched value again once a back end adopts its lanes", () => {
+    const { live, pushed } = setup();
+    const value: Record<string | symbol, unknown> = { x: 1, y: 1 };
+    live.uniform(value);
+    live.sync();
+    // The Wasm back end's promote: unwatch, then the lanes move behind the engine class's accessors.
+    (value[UNWATCH] as () => void)();
+    let x = value.x;
+    Reflect.deleteProperty(value, "x");
+    Object.defineProperty(value, "x", {
+      get: () => x,
+      set: (next) => {
+        x = next;
+      },
+      configurable: true,
+    });
+    value.x = 6;
+    live.sync();
+    expect(pushed.at(-1)).toEqual([6, 1]);
   });
 });

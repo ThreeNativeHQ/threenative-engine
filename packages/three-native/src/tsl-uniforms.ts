@@ -28,9 +28,17 @@ interface IUniformState {
   ranFrame?: number;
   /** The lanes last written to the engine: an unchanged value is not written again. */
   lanes?: readonly number[];
+  /** True when sync() scans this uniform's value object every call (it could not be watched). */
+  scanned?: boolean;
   /** Reused extraction storage, never aliased with `lanes`: the sink reads it before it is refilled. */
   scratch?: number[];
 }
+
+/** A watched value's hook back to scanning, called by a back end before it replaces the value's lanes. */
+export const UNWATCH = Symbol.for("threenative.uniformUnwatch");
+
+/** The lanes a watched value object (Color, VectorN) carries as plain fields. */
+const WATCHED_LANES = ["x", "y", "z", "w", "r", "g", "b"] as const;
 
 function sameLanes(a: readonly number[] | undefined, b: readonly number[]): boolean {
   if (a === undefined || a.length !== b.length) return false;
@@ -48,11 +56,17 @@ export function matrixElements(value: unknown): ArrayLike<number> | undefined {
   )
     return elements as ArrayLike<number>;
   return undefined;
+/** "mat3" or "mat4" for a three Matrix3 or Matrix4, the type its uniform is made at; otherwise undefined. */
+function matrixType(value: unknown): "mat3" | "mat4" | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const v = value as { isMatrix3?: unknown; isMatrix4?: unknown };
+  return v.isMatrix3 === true ? "mat3" : v.isMatrix4 === true ? "mat4" : undefined;
 }
 
 /**
- * One float per lane: a number, a Color's r, g, b, or a VectorN's x, y, z, w. `out`, when given,
- * receives the lanes and is returned, so a uniform can refill one bounded scratch array per sync.
+ * One float per lane: a number, a Color's r, g, b, a VectorN's x, y, z, w, or a Matrix3/Matrix4's
+ * elements (column-major, as three stores them). `out`, when given, receives the lanes and is
+ * returned, so a uniform can refill one bounded scratch array per sync.
  */
 export function uniformLanes(value: unknown, out?: number[]): number[] {
   // A Matrix3 or Matrix4: its column-major elements, the order the engine writes a matN uniform in.
@@ -88,7 +102,9 @@ function valueLanes(value: unknown, lanes: number[]): number[] {
       return lanes;
     }
   }
-  throw new TypeError(`TN_TSL_UNIFORM_VALUE: ${String(value)} is not a number, Color or vector`);
+  throw new TypeError(
+    `TN_TSL_UNIFORM_VALUE: ${String(value)} is not a number, Color, vector or Matrix3/Matrix4`,
+  );
 }
 
 function referenceValue(property: string, type: string, object: unknown): unknown {
@@ -161,11 +177,79 @@ export function liveUniforms<TNode extends object>(
     };
   };
   const states = new WeakMap<object, IUniformState>();
-  // Strong, both: a hook's node or an object-valued node (`uniform(camera.matrixWorld)`) is chained into
-  // a material and dropped, so the wrapper is all JS holds, and a collected wrapper silently ended its
-  // updates (a stale eye in a post pass). ponytail: kept for the page's life; the engine release of such
-  // a node waits too. Release with the owning material if a game builds such uniforms in a loop.
+  // Object values sync() must scan every call: a matrix (its elements edit in place) or an object whose lanes it
+  // cannot watch (accessors, a frozen or native object).
+  // Strong, both: a hook's node or an object-valued node (`uniform(camera.matrixWorld)`) is chained into a material
+  // and dropped, so the wrapper is all JS holds, and a collected wrapper silently ended its updates (a stale eye in
+  // a post pass). ponytail: kept for the page's life; the engine release of such a node waits too. Release with the
+  // owning material if a game builds such uniforms in a loop.
   const objects = new Set<TNode>();
+  // A plain Color or VectorN value is watched instead: its lanes become accessors that mark the uniforms reading it
+  // dirty, so a sync reads only what was edited since the last one, however many uniforms the app holds. An edit
+  // between two renders of one frame still reaches the second (FluidVolume edits uniforms between its passes).
+  const watchers = new WeakMap<object, WeakRef<TNode>[]>();
+  const dirty = new Set<TNode>();
+  const watch = (node: TNode, value: object): boolean => {
+    if (matrixType(value) !== undefined) return false;
+    const known = watchers.get(value);
+    if (known !== undefined) {
+      known.push(new WeakRef(node));
+      return true;
+    }
+    const keys = WATCHED_LANES.filter((key) => Object.hasOwn(value, key));
+    const plain = (key: string) => {
+      const field = Object.getOwnPropertyDescriptor(value, key);
+      return (
+        field !== undefined &&
+        "value" in field &&
+        field.writable === true &&
+        field.configurable === true
+      );
+    };
+    if (keys.length === 0 || !keys.every(plain)) return false;
+    const readers = [new WeakRef(node)];
+    watchers.set(value, readers);
+    // The Wasm back end gives a value it adopts (promote) engine-backed lanes: it calls this first, and the
+    // uniforms reading it go back to being scanned.
+    Object.defineProperty(value, UNWATCH, {
+      configurable: true,
+      value: () => {
+        watchers.delete(value);
+        for (const reader of readers) {
+          const target = reader.deref();
+          const state = target === undefined ? undefined : states.get(target);
+          if (target === undefined || state === undefined || state.scanned === true) continue;
+          state.scanned = true;
+          objects.add(target);
+        }
+      },
+    });
+    for (const key of keys) {
+      let lane = (value as Record<string, unknown>)[key];
+      Object.defineProperty(value, key, {
+        configurable: true,
+        enumerable: true,
+        get: () => lane,
+        set: (next: unknown) => {
+          if (Object.is(next, lane)) return;
+          lane = next;
+          for (const reader of readers) {
+            const target = reader.deref();
+            if (target !== undefined) dirty.add(target);
+          }
+        },
+      });
+    }
+    return true;
+  };
+  const track = (node: TNode, state: IUniformState, value: unknown) => {
+    if (typeof value !== "object" || value === null) return;
+    dirty.add(node); // its first sync writes it, as a scan did
+    if (state.scanned !== true && !watch(node, value)) {
+      state.scanned = true;
+      objects.add(node);
+    }
+  };
   const updating = new Set<TNode>();
   let frameId = 0;
   // An unchanged value is not written again: an edited Color or vector is found by its lanes, and a
@@ -194,18 +278,27 @@ export function liveUniforms<TNode extends object>(
   };
   const live = {
     uniform(value: unknown, type?: unknown): TNode {
-      const node = type === undefined ? uniform(value) : uniform(value, type);
+      // A matrix uniform is made by its type name at identity, then given the matrix's elements.
+      const matrix = matrixType(value);
+      const node =
+        matrix !== undefined
+          ? uniform(matrix)
+          : type === undefined
+            ? uniform(value)
+            : uniform(value, type);
       const state: IUniformState = { value, scratch: [] };
       states.set(node, state);
+      if (matrix !== undefined) write(node, state, uniformLanes(value, state.scratch));
       Object.defineProperty(node, "value", {
         configurable: true,
         get: () => state.value,
         set: (next: unknown) => {
           write(node, state, uniformLanes(next, state.scratch));
+          if (next !== state.value) track(node, state, next);
           state.value = next;
         },
       });
-      if (typeof value === "object" && value !== null) objects.add(node);
+      track(node, state, value);
       // three's UniformNode.onUpdate: the callback runs with the node as `this` and its result,
       // unless undefined, becomes the value. RENDER runs once per sync (one per render call); FRAME
       // runs once per renderer frame. A post chain renders about ten passes a frame (Lantern Vale), and
@@ -325,6 +418,12 @@ export function liveUniforms<TNode extends object>(
             }
           } else next = state.update(frame);
           if (next !== undefined) (node as { value: unknown }).value = next;
+        }
+        // Deleted only once written: a sink that throws leaves the rest to retry at the next sync.
+        for (const node of dirty) {
+          const state = states.get(node);
+          if (state !== undefined) write(node, state, uniformLanes(state.value, state.scratch));
+          dirty.delete(node);
         }
         for (const node of objects) {
           const state = states.get(node);

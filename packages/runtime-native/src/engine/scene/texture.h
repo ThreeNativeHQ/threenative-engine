@@ -36,6 +36,7 @@ inline constexpr uint16_t kTextureFloatType = 1015;         // three's FloatType
 inline constexpr uint16_t kTextureHalfFloatType = 1016;     // three's HalfFloatType: IEEE binary16 bits
 inline constexpr uint16_t kTextureRGBAFormat = 1023;        // three's RGBAFormat
 inline constexpr uint16_t kTextureRedFormat = 1028;         // three's RedFormat (widened to RGBA)
+inline constexpr uint16_t kTextureRGFormat = 1030;          // three's RGFormat (render targets only)
 
 /**
  * A texture's identity for GPU caches: unique for the process lifetime, never reused (an address is),

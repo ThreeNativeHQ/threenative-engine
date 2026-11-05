@@ -444,13 +444,16 @@ static ExprId nodeValue(Program& f, const graph::Node& node, Type type, ExprId f
                         ExprId normalView = kInvalid, ExprId geometryNormal = kInvalid);
 
 // NodeMaterial.setup: `vec4(outgoingLight, diffuseColor.a).max(0)`, which forces unsigned output,
-// then setupOutput mixes the fog into the clamped colour.
+// then setupOutput mixes the fog into the clamped colour and, with premultipliedAlpha, multiplies it by alpha.
 ExprId materialOutput(Program& f, const VertexVariant& variant, ExprId outgoing, ExprId alpha) {
     const ExprId clamped = f.call("max", {f.construct(Type::vec(4), {outgoing, alpha}),
                                           f.construct(Type::vec(4), {f.constant(0.0f)})});
-    return !variant.fog && !variant.nodes.fogNode
-        ? clamped  // no fog to mix: one clamp expression, not one per lane
-        : f.construct(Type::vec(4), {fogColor(f, variant, f.swizzle(clamped, "xyz")), f.swizzle(clamped, "w")});
+    if (!variant.fog && !variant.nodes.fogNode && !variant.premultipliedAlpha)
+        return clamped;  // nothing to mix: one clamp expression, not one per lane
+    const ExprId a = f.swizzle(clamped, "w");
+    ExprId rgb = fogColor(f, variant, f.swizzle(clamped, "xyz"));
+    if (variant.premultipliedAlpha) rgb = f.mul(rgb, a);
+    return f.construct(Type::vec(4), {rgb, a});
 }
 
 ExprId fogColor(Program& f, const VertexVariant& variant, ExprId outgoing) {

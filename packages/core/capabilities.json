@@ -4325,6 +4325,329 @@
     },
     {
       "aliases": [],
+      "constraints": [
+        "the pool is fixed and recycles the cast alive longest; it never grows",
+        "a ball that has passed its target lands on the target, however late the frame notices"
+      ],
+      "example": "const casts = new CastPool(world);\ncasts.cast(fireball, target, { from: hand });\ncasts.update(dt);",
+      "importPath": "@threenative/core/spells",
+      "kind": "class",
+      "overrides": [
+        "timing, shape, speed and radius come from the spell; a cast may override shape and seed"
+      ],
+      "package": "@threenative/core",
+      "signature": "export class CastPool { … }",
+      "situations": [
+        "a fireball or a lightning bolt that charges, flies, lands and lingers",
+        "several spells mid-flight, with no allocation per cast"
+      ],
+      "summary": "Step a spell's timeline: charge, release, travel, impact, linger, done.",
+      "supersedes": [],
+      "symbol": "CastPool"
+    },
+    {
+      "aliases": [],
+      "constraints": ["every colour, size, count and timing is a named override on the call"],
+      "example": "const aegis = createAegis(world);\ncasts.cast(aegis, world.focus);",
+      "importPath": "@threenative/core/spells",
+      "kind": "function",
+      "overrides": [
+        "core, highlight, charge, impact, linger, radius, light",
+        "core, highlight, charge, impact, linger, radius, light, shake"
+      ],
+      "package": "@threenative/core",
+      "signature": "export function createAegis(world: SpellWorld, overrides: IFireSpellOverrides = { … }",
+      "situations": [
+        "a shield spell a player casts on themselves",
+        "a magic barrier that forms around the caster",
+        "make a protective bubble spell",
+        "a defensive bubble that flashes when it breaks"
+      ],
+      "summary": "A ward around the caster: it forms, holds, and breaks outward when it expires.",
+      "supersedes": [],
+      "symbol": "createAegis"
+    },
+    {
+      "aliases": [],
+      "constraints": ["every colour, size, count and timing is a named override on the call"],
+      "example": "const barrage = createArcaneBarrage(world);\ncasts.cast(barrage, target);",
+      "importPath": "@threenative/core/spells",
+      "kind": "function",
+      "overrides": ["core, highlight, speed, charge, impact, linger, radius, burst, light"],
+      "package": "@threenative/core",
+      "signature": "export function createArcaneBarrage(world: SpellWorld, overrides: IFireSpellOverrides = { … }",
+      "situations": [
+        "an arcane missile spell that fires projectiles at a target",
+        "a magic barrage a mage class spams",
+        "a magic missile spell",
+        "make an arcane bolt spell",
+        "an arcane missile spell that fires several projectiles at a target",
+        "a pink energy bolt with a short charge"
+      ],
+      "summary": "A volley of arcane missiles: fast, precise, and each one pops on arrival.",
+      "supersedes": [],
+      "symbol": "createArcaneBarrage"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "the first cast costs what the hundredth does: nothing is built at cast time",
+        "the stock look ships as the default, and no override rebuilds a pipeline"
+      ],
+      "example": "const fireball = createFireball(world);\ncasts.cast(fireball, target);",
+      "importPath": "@threenative/core/spells",
+      "kind": "function",
+      "overrides": [
+        "core, highlight, speed, charge, impact, linger, radius, burst, trail, lingerBurst, light, shake, scorch"
+      ],
+      "package": "@threenative/core",
+      "signature": "export function createFireball(world: SpellWorld, overrides: IFireSpellOverrides = { … }",
+      "situations": [
+        "a fireball spell the player casts at an enemy",
+        "a burning projectile that explodes and scorches the ground",
+        "a wizard's fire attack with a wind-up, a flight and an aftermath",
+        "make a fireball",
+        "a fireball spell a player casts at an enemy"
+      ],
+      "summary": "A ball of fire that charges, crosses the room and leaves the floor burning.",
+      "supersedes": [],
+      "symbol": "createFireball"
+    },
+    {
+      "aliases": [],
+      "constraints": ["every colour, size, count and timing is a named override on the call"],
+      "example": "const spike = createGlacialSpike(world);\ncasts.cast(spike, target);",
+      "importPath": "@threenative/core/spells",
+      "kind": "function",
+      "overrides": ["core, highlight, speed, charge, impact, linger, radius, burst, trail, light"],
+      "package": "@threenative/core",
+      "signature": "export function createGlacialSpike(world: SpellWorld, overrides: IFireSpellOverrides = { … }",
+      "situations": [
+        "an ice spike spell that flies at a target and shatters",
+        "a freezing projectile that leaves frost on the floor",
+        "make an ice spell",
+        "a cold spell with a charge, a flight and a lingering chill"
+      ],
+      "summary": "A shard of ice that flies flat and fast, and freezes the ground it breaks on.",
+      "supersedes": [],
+      "symbol": "createGlacialSpike"
+    },
+    {
+      "aliases": [],
+      "constraints": ["every colour, size, count and timing is a named override on the call"],
+      "example": "const inferno = createInferno(world);\ncasts.cast(inferno, target);",
+      "importPath": "@threenative/core/spells",
+      "kind": "function",
+      "overrides": [
+        "core, highlight, charge, impact, linger, radius, burst, trail, light, shake, scorch"
+      ],
+      "package": "@threenative/core",
+      "signature": "export function createInferno(world: SpellWorld, overrides: IFireSpellOverrides = { … }",
+      "situations": [
+        "a fire area spell that erupts at a point and burns there",
+        "an inferno column a boss drops on the arena",
+        "make a sustained fire area spell",
+        "a sustained flame that scorches the ground for seconds"
+      ],
+      "summary": "A pillar of fire that erupts where it lands and keeps burning.",
+      "supersedes": [],
+      "symbol": "createInferno"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "read the world through SpellWorld only, so a game can swap the scene and the floor"
+      ],
+      "example": "const spell = createSpell(world, recipe);",
+      "importPath": "@threenative/core/spells",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function createSpell(world: SpellWorld, recipe: ISpellRecipe): ISpell { … }",
+      "situations": ["author a spell the catalog does not cover, out of the same beats"],
+      "summary": "Build a spell from a recipe: four beats, a tint, and the numbers between them.",
+      "supersedes": [],
+      "symbol": "createSpell"
+    },
+    {
+      "aliases": [],
+      "constraints": ["every colour, size, count and timing is a named override on the call"],
+      "example": "const bolt = createThunderstrike(world);\ncasts.cast(bolt, target);",
+      "importPath": "@threenative/core/spells",
+      "kind": "function",
+      "overrides": ["core, highlight, charge, impact, linger, radius, light, shake, scorch"],
+      "package": "@threenative/core",
+      "signature": "export function createThunderstrike(world: SpellWorld, overrides: IFireSpellOverrides = { … }",
+      "situations": [
+        "a lightning strike spell that hits a point immediately",
+        "a thunderbolt with a wind-up and a burnt mark where it lands",
+        "make a lightning spell",
+        "an electrical spell with a column of light from above"
+      ],
+      "summary": "A bolt out of the sky: it charges, strikes the point instantly, and the ground remembers it.",
+      "supersedes": [],
+      "symbol": "createThunderstrike"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "set writes uniforms; no kernel, material or pipeline is rebuilt",
+        "a table knows only the kinds it was asked for, so an unused kind costs nothing"
+      ],
+      "example": "const kinds = new ParticleKindTable([\"flame\", \"smoke\"]);\nkinds.set(\"flame\", { lifetime: [0.3, 0.6], colour: [0.4, 0.8, 1] });",
+      "importPath": "@threenative/core/spells",
+      "kind": "class",
+      "overrides": [
+        "lifetime, size, speed, cone, gravity, drag, buoyancy, alpha, colour and highlight"
+      ],
+      "package": "@threenative/core",
+      "signature": "export class ParticleKindTable { … }",
+      "situations": [
+        "retune a spell's particles at run time from a settings screen",
+        "change how long, how fast or how heavy a kind of particle is without a new pipeline"
+      ],
+      "summary": "Tune what a particle kind does, as data rather than a shader.",
+      "supersedes": [],
+      "symbol": "ParticleKindTable"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "it draws nothing; the game decides what a mark looks like",
+        "the patch is finite and every channel decays on its own half-life"
+      ],
+      "example": "field.splat({ heat: 1, char: 0.6, radius: 2.5, x: hit.x, z: hit.z });\nfield.update(dt);",
+      "importPath": "@threenative/core/spells",
+      "kind": "class",
+      "overrides": [
+        "halfLife, resolution and size tune the patch; pattern, radius, seed and angle set each mark"
+      ],
+      "package": "@threenative/core",
+      "signature": "export class ReactionField { … }",
+      "situations": [
+        "a fireball impact that leaves a scorch and fades over time",
+        "ice that melts where lightning spread, or a lava geyser's crack"
+      ],
+      "summary": "The marks a spell leaves on the floor: heat, char, wet, frost, crack and glow.",
+      "supersedes": [],
+      "symbol": "ReactionField"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "the whole pool exists before the first cast; a cast changes intensity, never the list",
+        "flash returns undefined when the pool is busy; a spell carries on without one"
+      ],
+      "example": "lights.flash({ x, y, z, color, intensity: 40, range: 12, seconds: 0.35 });",
+      "importPath": "@threenative/core/spells",
+      "kind": "class",
+      "overrides": [
+        "count is the pool size; each flash supplies position, colour, intensity, range and seconds"
+      ],
+      "package": "@threenative/core",
+      "signature": "export class SpellLights { … }",
+      "situations": [
+        "a spell impact that glows without changing the light count",
+        "a charge glow or a falling meteor lighting what it passes"
+      ],
+      "summary": "A fixed pool of spell lights, created once at zero intensity.",
+      "supersedes": [],
+      "symbol": "SpellLights"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "damage, mana, cooldowns and who the target is stay in the game",
+        "with reducedFlashes on, a fourth flash inside one second is refused, never dimmed"
+      ],
+      "example": "const world = new SpellWorld({ scene, groundAt });\nconst casts = new CastPool(world);",
+      "importPath": "@threenative/core/spells",
+      "kind": "class",
+      "overrides": [
+        "groundAt, castSlots, lightCount, reaction, shake and reducedFlashes are named options"
+      ],
+      "package": "@threenative/core",
+      "signature": "export class SpellWorld implements ICastEnvironment { … }",
+      "situations": [
+        "cast an engine spell without passing a scene into every call",
+        "honour an accessibility setting that limits flashing"
+      ],
+      "summary": "Everything a spell may touch: the scene, the floor, the light pool, the surface field, one shake and one flash limiter.",
+      "supersedes": [],
+      "symbol": "SpellWorld"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "costs about 0.6 s at 64^3 and about 5 s at 128^3 on the main thread; bake once at load"
+      ],
+      "example": "bakeNoise({ noiseSize: 64 }); // once at load, before createFx draws",
+      "importPath": "@threenative/core/spells/ultra",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function bakeNoise( { … }",
+      "situations": [
+        "the noise and blackbody textures an Ultra Elements spell needs before it first draws"
+      ],
+      "summary": "CPU bake of the Ultra Elements 3D noise, curl and blackbody textures that every spell volume samples.",
+      "supersedes": [],
+      "symbol": "bakeNoise"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "call bakeNoise first: the volume shaders sample its noise, curl and blackbody textures"
+      ],
+      "example": "const ultra = createFx({ camera, size: () => ({ width: innerWidth, height: innerHeight }), seed: 777 }); const fireball = ultra.addSpell(fire); scene.add(ultra.fx.scenes.fx);",
+      "importPath": "@threenative/core/spells/ultra",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function createFx(o: IFxOptions) { … }",
+      "situations": [
+        "an Ultra Elements spell such as the raymarched teardrop Fireball cast at a target",
+        "a volumetric fire spell drawn through the Three.js TSL node API on WebGPU"
+      ],
+      "summary": "The shared Ultra Elements spell world: casts, volumes, spell lights and the per-frame CPU tick. Add `fx.scenes.fx` to the scene, `addSpell` each ported spell, call `renderFrame(dt)` each frame.",
+      "supersedes": [],
+      "symbol": "createFx"
+    },
+    {
+      "aliases": [],
+      "constraints": [],
+      "example": "const shade = groundShade(positionWorld, { albedo, rough: float(0.85), metal: float(0) }); floor.colorNode = vec4(shade.color, 1);",
+      "importPath": "@threenative/core/spells/ultra",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function groundShade(wp: V3, surface: IGroundSurface) { … }",
+      "situations": [
+        "a floor that shows the Fireball's scorch and hot ground cooling over seconds"
+      ],
+      "summary": "The Ultra Elements arena floor's response to the ground field and spell impacts (scorch, char, wet, glowing hot ground) as nodes for a game's own floor material: `color`, `roughness`, `metalness`, `emissive` from the floor's own surface at a world position.",
+      "supersedes": [],
+      "symbol": "groundShade"
+    },
+    {
+      "aliases": [],
+      "constraints": [],
+      "example": "const flames = ultra.fx.particles.emitter(\"fire.flame\"); // ultra from createFx",
+      "importPath": "@threenative/core/spells/ultra",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export class Particles { … }",
+      "situations": [
+        "the flames, embers, sparks, smoke and debris an Ultra Elements spell emits as it charges, flies and hits"
+      ],
+      "summary": "The Ultra Elements GPU particle system behind `fx.particles`: a spell's kinds, emitters and field emitters.",
+      "supersedes": [],
+      "symbol": "Particles"
+    },
+    {
+      "aliases": [],
       "constraints": ["the transport is discovered, never configured; no game names the web view"],
       "example": "const bridge = connectUiBridge({ end: \"ui\" });",
       "importPath": "@threenative/core/ui-layer",
@@ -9858,7 +10181,7 @@
       "blurb": "A three-room grid dungeon of mannequin fighters: melee, the Arcane Surge, loot, equipment, persistence, and a real character sheet.",
       "name": "action-rpg",
       "title": "Action RPG",
-      "words": ["action-rpg"]
+      "words": ["action-rpg", "diablo", "arpg", "hack-and-slash", "dungeon-crawler"]
     },
     {
       "blurb": "Wren crosses a sunlit clearing and a three-room moss dungeon with lock-on sword combat, a shield, a block-and-switch puzzle, a small key and the Stone Warden mini-boss.",

@@ -8,7 +8,7 @@ prd_contract: v1
 **Priority:** P2 — Every box is open: the last 8 of the 39 spells the owner asked to absorb need fluid, metaballs, lensing and a portal view, and the 39-of-39 capability gate waits on them.
 **Complexity:** 7 (HIGH) — 11+ implementation files (+3), new mechanisms (+2), GPU state across frames (+2). Risk override: none.
 **Owner:** unassigned
-**Depends on:** [PRD-777](PRD-777-a-spell-is-a-timeline-that-changes-the-world-it-lands-in.md); [PRD-778](PRD-778-spells-that-arc-trail-and-draw-sigils.md), [PRD-779](PRD-779-spells-that-erupt-solid-from-the-ground.md) and [PRD-780](PRD-780-spells-made-of-volumes-and-swarms.md) for the 39-of-39 gate only.
+**Depends on:** [PRD-777](../done/PRD-777-a-spell-is-a-timeline-that-changes-the-world-it-lands-in.md); [PRD-778](PRD-778-spells-that-arc-trail-and-draw-sigils.md), [PRD-779](PRD-779-spells-that-erupt-solid-from-the-ground.md) and [PRD-780](PRD-780-spells-made-of-volumes-and-swarms.md) for the 39-of-39 gate only.
 
 ## Context
 

@@ -76,6 +76,44 @@ check(v.x === 7, "a setter reaches the engine");
 const material = new MeshStandardMaterial();
 const mesh = new Mesh(new BoxGeometry(1, 1, 1), material);
 // A dotted getter with no setter is still a holder (rain's lightning reads geometry.drawRange.count).
+// three's CustomBlending state and premultipliedAlpha reach the engine (PRD-777: the spell port's OIT accumulation).
+{
+  const blended = new MeshBasicNodeMaterial() as unknown as Record<string, unknown>;
+  check(
+    blended.premultipliedAlpha === false &&
+      blended.blendSrc === 204 &&
+      blended.blendDstAlpha === null,
+    `three's blend defaults (premultipliedAlpha ${String(blended.premultipliedAlpha)}, blendSrc ${String(blended.blendSrc)}, blendDstAlpha ${String(blended.blendDstAlpha)})`,
+  );
+  Object.assign(blended, {
+    blending: 5, // CustomBlending
+    blendSrc: 201, // OneFactor
+    blendDst: 201,
+    blendEquation: 100, // AddEquation
+    blendSrcAlpha: 200, // ZeroFactor
+    blendDstAlpha: 205, // OneMinusSrcAlphaFactor
+    blendEquationAlpha: 102, // ReverseSubtractEquation
+    premultipliedAlpha: true,
+  });
+  check(
+    blended.blending === 5 &&
+      blended.blendSrc === 201 &&
+      blended.blendSrcAlpha === 200 &&
+      blended.blendDstAlpha === 205 &&
+      blended.blendEquationAlpha === 102 &&
+      blended.premultipliedAlpha === true,
+    "CustomBlending, its factors and premultipliedAlpha read back from the engine",
+  );
+  blended.blendDstAlpha = null;
+  check(blended.blendDstAlpha === null, "blendDstAlpha = null reads back null");
+  let refused = "";
+  try {
+    blended.blendSrc = 999;
+  } catch (error) {
+    refused = String(error);
+  }
+  check(refused.includes("blendSrc"), `an unknown blend factor is refused by name: ${refused}`);
+}
 const ranged = new BoxGeometry(1, 1, 1);
 ranged.setDrawRange(0, 0);
 check(
@@ -1201,9 +1239,12 @@ if (runtime.tsl !== undefined) {
     typeof tsl.notEqual(1, 2)[TSL_NODE] === "number",
     "notEqual(a, b) creates a valid TSL node",
   );
-  // rain's fragment node names its terms with toVar outside any Fn: the expression is the value.
+  // rain's fragment node names its terms with toVar outside any Fn: a variable the program declares first.
   const outside = tsl.float(2).mul(3);
-  check(outside.toVar() === outside, "toVar outside a function body answers the expression itself");
+  check(
+    typeof outside.toVar()[TSL_NODE] === "number",
+    "toVar outside a function body makes a variable node",
+  );
   // sailing's swell slope and rain's declared variables (PRD-617): both exist in the shared table.
   const viewNormal = tsl.transformNormalToView(tsl.vec3(0, 1, 0));
   check(
@@ -1302,6 +1343,116 @@ if (runtime.tsl !== undefined) {
     arrayThrew2 = /TN_TSL_UNIFORM_ARRAY/.test(String(error));
   }
   check(arrayThrew2, "uniformArray.element refuses out-of-bounds index");
+
+  // The TSL the spell port needs (PRD-777): a struct of nodes as a Fn argument, a matrix uniform,
+  // textureLoad on an engine texture and Discard.
+  {
+    const light = { colour: tsl.vec3(1, 0.5, 0.25), range: tsl.float(2) };
+    const lit = tsl.Fn(([l, scale]: [typeof light, unknown]) => l.colour.mul(l.range).mul(scale))(
+      light,
+      2,
+    );
+    check(
+      typeof lit[TSL_NODE] === "number",
+      "a plain object of nodes passes through a Fn argument",
+    );
+    const { Matrix3: EngineMatrix3, Matrix4: EngineMatrix4 } =
+      engine.classes as unknown as typeof THREE;
+    for (const matrix of [new EngineMatrix3(), new EngineMatrix4()]) {
+      const rotation = tsl.uniform(matrix);
+      check(
+        typeof rotation[TSL_NODE] === "number",
+        `uniform(new ${matrix.constructor.name}()) builds a node`,
+      );
+      matrix.elements[0] = 2;
+      rotation.value = matrix;
+      tslInstance.sync();
+    }
+    const PixelTexture = DataTexture as unknown as new (
+      data: Uint8Array,
+      width: number,
+      height: number,
+    ) => object;
+    const texels = new PixelTexture(new Uint8Array(16), 2, 2);
+    const texel = tsl.textureLoad(texels, tsl.ivec2(1, 0), tsl.int(0));
+    check(typeof texel[TSL_NODE] === "number", "textureLoad loads from an engine texture itself");
+    const cut = tsl.Fn(() => {
+      tsl.Discard(tsl.float(1).lessThan(0.5));
+      tsl.Discard();
+      return tsl.vec4(1, 1, 1, 1);
+    })();
+    check(
+      typeof cut[TSL_NODE] === "number",
+      "Discard() and Discard(condition) build a fragment graph",
+    );
+    // An `out` parameter (GLSL's volumeSample, impactWeights): a Fn assigns the variable it is handed, as three's
+    // inlined Fn does, whether the caller made it inside a Fn or at the top level.
+    for (const inside of [true, false]) {
+      let outThrew = "";
+      try {
+        const twice = tsl.Fn(
+          ([x, o]: [{ mul(by: number): unknown }, { assign(v: unknown): void }]) => {
+            o.assign(x.mul(2));
+            return x;
+          },
+        );
+        if (inside)
+          tsl.Fn(() => {
+            const o = tsl.float(0).toVar();
+            twice(tsl.float(1), o);
+            return o;
+          })();
+        else twice(tsl.float(1), tsl.float(0).toVar());
+      } catch (error) {
+        outThrew = String(error);
+      }
+      check(
+        outThrew === "",
+        `a Fn assigns its out parameter (${inside ? "inside a Fn" : "top level"}) ${outThrew}`,
+      );
+    }
+    // three's MRT on a render target (PRD-777): `count` colour textures, and a material mrtNode of named outputs.
+    const { RenderTarget: EngineRenderTarget } = engine.classes as unknown as {
+      RenderTarget: new (
+        width: number,
+        height: number,
+        options: object,
+      ) => { readonly texture: object; readonly textures: { name: string }[] };
+    };
+    const target = new EngineRenderTarget(4, 4, { count: 3, type: 1016 });
+    const textures = target.textures;
+    check(
+      textures.length === 3 && textures[0] === target.texture && textures[1] instanceof Texture,
+      `RenderTarget({ count: 3 }).textures holds 3 textures, texture first (${textures.length})`,
+    );
+    (textures[1] as { name: string }).name = "accum";
+    check(target.textures[1]?.name === "accum", "an MRT texture keeps its name");
+    let countThrew = false;
+    try {
+      new EngineRenderTarget(4, 4, { count: 9 });
+    } catch {
+      countThrew = true;
+    }
+    check(countThrew, "RenderTarget count over 8 is refused");
+    const outputs = tsl.mrt("accum,reveal", tsl.vec4(1, 0, 0, 1), tsl.float(0.5));
+    const mrtMaterial = new MeshBasicNodeMaterial() as unknown as Record<string, unknown>;
+    mrtMaterial.mrtNode = outputs;
+    check(mrtMaterial.mrtNode === outputs, "material.mrtNode takes an mrt() of named outputs");
+    let mrtThrew = false;
+    try {
+      mrtMaterial.mrtNode = tsl.vec4(1, 0, 0, 1);
+    } catch {
+      mrtThrew = true;
+    }
+    check(mrtThrew, "material.mrtNode refuses a node that is not an mrt()");
+  }
+  // r185's local accessors the engine answers: a debris material rotates normalLocal in its vertex stage (PRD-777).
+  for (const name of ["normalLocal", "tangentLocal", "positionPrevious"])
+    check(tsl[name]?.isNode === true, `${name} is a TSL node`);
+  // ivec3 / ivec4 / bool, which the engine builds as ConvertType does (the fluid port's voxel index).
+  check(tsl.ivec3?.(1, 2, 3)?.isNode === true, "ivec3(1, 2, 3) is a TSL node");
+  check(tsl.ivec4?.(1)?.isNode === true, "ivec4(1) is a TSL node");
+  check(tsl.bool?.(tsl.float(1))?.isNode === true, "bool(float(1)) is a TSL node");
 
   // rain writes lanes of a variable (`rd.y.assign(abs(rd.y))`); the other lanes keep their value (PRD-617).
   const lanes = tsl.Fn(() => {

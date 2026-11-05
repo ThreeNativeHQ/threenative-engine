@@ -12,7 +12,7 @@ export declare function struct(membersLayout: Record<string, string>, name?: str
 /** Catalog supported: three/ACESFilmicToneMapping. */
 export declare const ACESFilmicToneMapping: 4;
 
-/** Catalog partial (native-not-implemented): three/AddEquation. */
+/** Catalog supported: three/AddEquation. */
 export declare const AddEquation: 100;
 
 /** Catalog partial (native-not-implemented): three/AddOperation. */
@@ -185,6 +185,26 @@ export declare const BlendingDstFactor = {
   OneMinusConstantAlphaFactor: 214,
 } as const;
 export type BlendingDstFactor = (typeof BlendingDstFactor)[keyof typeof BlendingDstFactor];
+
+/** Catalog partial (native-not-implemented): three/BlendingSrcFactor. */
+export declare const BlendingSrcFactor = {
+  ZeroFactor: 200,
+  OneFactor: 201,
+  SrcColorFactor: 202,
+  OneMinusSrcColorFactor: 203,
+  SrcAlphaFactor: 204,
+  OneMinusSrcAlphaFactor: 205,
+  DstAlphaFactor: 206,
+  OneMinusDstAlphaFactor: 207,
+  DstColorFactor: 208,
+  OneMinusDstColorFactor: 209,
+  SrcAlphaSaturateFactor: 210,
+  ConstantColorFactor: 211,
+  OneMinusConstantColorFactor: 212,
+  ConstantAlphaFactor: 213,
+  OneMinusConstantAlphaFactor: 214,
+} as const;
+export type BlendingSrcFactor = (typeof BlendingSrcFactor)[keyof typeof BlendingSrcFactor];
 
 /** Catalog partial (native-not-implemented): three/BlendingEquation. */
 export declare const BlendingEquation = {
@@ -432,14 +452,6 @@ readonly revision: number;
   copy(source: BufferGeometry): this;
 
   dispose(): void;
-  /** callback listener: EventListener */
-  addEventListener(type: string, listener: EventListener): void;
-  /** callback listener: EventListener */
-  removeEventListener(type: string, listener: EventListener): void;
-  /** callback listener: EventListener */
-  hasEventListener(type: string, listener: EventListener): boolean;
-
-  dispatchEvent(event: BaseEvent): void;
 }
 
 /** Catalog partial (native-not-implemented): three/ByteType. */
@@ -601,10 +613,10 @@ export declare class ConeGeometry extends CylinderGeometry {
 constructor();
 }
 
-/** Catalog partial (native-not-implemented): three/ConstantAlphaFactor. */
+/** Catalog supported: three/ConstantAlphaFactor. */
 export declare const ConstantAlphaFactor: 213;
 
-/** Catalog partial (native-not-implemented): three/ConstantColorFactor. */
+/** Catalog supported: three/ConstantColorFactor. */
 export declare const ConstantColorFactor: 211;
 
 /** Catalog partial (native-not-implemented): three/CoordinateSystem. */
@@ -635,7 +647,7 @@ export declare const CullFaceFrontBack: 3;
 /** Catalog partial (native-not-implemented): three/CullFaceNone. */
 export declare const CullFaceNone: 0;
 
-/** Catalog partial (native-not-implemented): three/CustomBlending. */
+/** Catalog supported: three/CustomBlending. */
 export declare const CustomBlending: 5;
 
 /** Catalog partial (native-not-implemented): three/CustomToneMapping. */
@@ -727,10 +739,10 @@ constructor();
 /** Catalog supported: three/DoubleSide. */
 export declare const DoubleSide: 2;
 
-/** Catalog partial (native-not-implemented): three/DstAlphaFactor. */
+/** Catalog supported: three/DstAlphaFactor. */
 export declare const DstAlphaFactor: 206;
 
-/** Catalog partial (native-not-implemented): three/DstColorFactor. */
+/** Catalog supported: three/DstColorFactor. */
 export declare const DstColorFactor: 208;
 
 /** Catalog partial (native-not-implemented): three/DynamicCopyUsage. */
@@ -1104,7 +1116,13 @@ polygonOffsetFactor: number;
 polygonOffsetUnits: number;
 colorWrite: boolean;
 alphaHash: boolean;
-maxPositionOffset: number;
+blendDst: BlendingDstFactor;
+blendDstAlpha: BlendingDstFactor | null;
+blendEquation: BlendingEquation;
+blendEquationAlpha: BlendingEquation | null;
+blendSrc: BlendingSrcFactor;
+blendSrcAlpha: BlendingSrcFactor | null;
+premultipliedAlpha: boolean;
 
   clone(): this;
 
@@ -1217,14 +1235,6 @@ userData: Record<string, any>;
   copy(source: Material): this;
 
   dispose(): void;
-  /** callback listener: EventListener */
-  addEventListener(type: string, listener: EventListener): void;
-
-  dispatchEvent(event: BaseEvent): void;
-  /** callback listener: EventListener */
-  hasEventListener(type: string, listener: EventListener): boolean;
-  /** callback listener: EventListener */
-  removeEventListener(type: string, listener: EventListener): void;
 }
 
 /** Catalog partial (native-not-implemented): three/MaterialBlending. */
@@ -1393,7 +1403,7 @@ elements: Matrix4Tuple;
 /** Catalog partial (native-not-implemented): three/Matrix4Tuple. */
 export type Matrix4Tuple = [ n11: number, n12: number, n13: number, n14: number, n21: number, n22: number, n23: number, n24: number, n31: number, n32: number, n33: number, n34: number, n41: number, n42: number, n43: number, n44: number ];
 
-/** Catalog partial (native-not-implemented): three/MaxEquation. */
+/** Catalog supported: three/MaxEquation. */
 export declare const MaxEquation: 104;
 
 /** Catalog supported: three/Mesh. */
@@ -1423,8 +1433,10 @@ vertexColors: boolean;
 opacity: number;
 transparent: boolean;
 alphaHash: boolean;
+blendSrc: BlendingSrcFactor;
 blendDst: BlendingDstFactor;
 blendEquation: BlendingEquation;
+blendSrcAlpha: BlendingSrcFactor | null;
 blendDstAlpha: BlendingDstFactor | null;
 blendEquationAlpha: BlendingEquation | null;
 blendColor: Color;
@@ -1473,7 +1485,6 @@ fog: boolean;
 alphaTest: number;
 readonly id: number;
 readonly type: string;
-maxPositionOffset: number;
 
   setValues(values?: MeshBasicMaterialParameters): void;
 
@@ -1523,13 +1534,15 @@ fragmentNode: Node | null;
 colorWrite: boolean;
 aoNode: Node | null;
 irradianceNode: Node | null;
-envNode: Node | null;
 alphaHash: boolean;
-castShadowPositionNode: Node | null;
-maxPositionOffset: number;
-maskNode: Node | null;
-alphaTestNode: Node | null;
-mrtNode: MRTNode | null;
+blendDst: BlendingDstFactor;
+blendDstAlpha: BlendingDstFactor | null;
+blendEquation: BlendingEquation;
+blendEquationAlpha: BlendingEquation | null;
+blendSrc: BlendingSrcFactor;
+blendSrcAlpha: BlendingSrcFactor | null;
+premultipliedAlpha: boolean;
+mrtNode: Node | null;
 
   clone(): this;
 
@@ -1549,8 +1562,10 @@ vertexColors: boolean;
 opacity: number;
 transparent: boolean;
 alphaHash: boolean;
+blendSrc: BlendingSrcFactor;
 blendDst: BlendingDstFactor;
 blendEquation: BlendingEquation;
+blendSrcAlpha: BlendingSrcFactor | null;
 blendDstAlpha: BlendingDstFactor | null;
 blendEquationAlpha: BlendingEquation | null;
 blendColor: Color;
@@ -1617,7 +1632,6 @@ readonly type: string;
 twoSidedFoliage: boolean;
 roughDiffuse: boolean;
 subsurfaceColor: Color | undefined;
-maxPositionOffset: number;
 
   setValues(values?: MeshStandardMaterialParameters): void;
 
@@ -1683,16 +1697,18 @@ flatShading: boolean;
 colorWrite: boolean;
 aoNode: Node | null;
 irradianceNode: Node | null;
-envNode: Node | null;
 twoSidedFoliage: boolean;
 roughDiffuse: boolean;
 subsurfaceColor: Color | undefined;
 alphaHash: boolean;
-castShadowPositionNode: Node | null;
-maxPositionOffset: number;
-maskNode: Node | null;
-alphaTestNode: Node | null;
-mrtNode: MRTNode | null;
+blendDst: BlendingDstFactor;
+blendDstAlpha: BlendingDstFactor | null;
+blendEquation: BlendingEquation;
+blendEquationAlpha: BlendingEquation | null;
+blendSrc: BlendingSrcFactor;
+blendSrcAlpha: BlendingSrcFactor | null;
+premultipliedAlpha: boolean;
+mrtNode: Node | null;
 
   clone(): this;
 
@@ -1701,7 +1717,7 @@ mrtNode: MRTNode | null;
   dispose(): void;
 }
 
-/** Catalog partial (native-not-implemented): three/MinEquation. */
+/** Catalog supported: three/MinEquation. */
 export declare const MinEquation: 103;
 
 /** Catalog partial (native-not-implemented): three/MinificationTextureFilter. */
@@ -1725,7 +1741,7 @@ export declare const MirroredRepeatWrapping: 1002;
 /** Catalog partial (native-not-implemented): three/MixOperation. */
 export declare const MixOperation: 1;
 
-/** Catalog partial (native-not-implemented): three/MultiplyBlending. */
+/** Catalog supported: three/MultiplyBlending. */
 export declare const MultiplyBlending: 4;
 
 /** Catalog partial (native-not-implemented): three/MultiplyOperation. */
@@ -1806,13 +1822,15 @@ visible: boolean;
 colorWrite: boolean;
 aoNode: Node | null;
 irradianceNode: Node | null;
-envNode: Node | null;
 alphaHash: boolean;
-castShadowPositionNode: Node | null;
-maxPositionOffset: number;
-maskNode: Node | null;
-alphaTestNode: Node | null;
-mrtNode: MRTNode | null;
+blendDst: BlendingDstFactor;
+blendDstAlpha: BlendingDstFactor | null;
+blendEquation: BlendingEquation;
+blendEquationAlpha: BlendingEquation | null;
+blendSrc: BlendingSrcFactor;
+blendSrcAlpha: BlendingSrcFactor | null;
+premultipliedAlpha: boolean;
+mrtNode: Node | null;
 
   clone(): this;
 
@@ -1993,25 +2011,25 @@ export declare class OctahedronGeometry extends BufferGeometry {
 constructor();
 }
 
-/** Catalog partial (native-not-implemented): three/OneFactor. */
+/** Catalog supported: three/OneFactor. */
 export declare const OneFactor: 201;
 
-/** Catalog partial (native-not-implemented): three/OneMinusConstantAlphaFactor. */
+/** Catalog supported: three/OneMinusConstantAlphaFactor. */
 export declare const OneMinusConstantAlphaFactor: 214;
 
-/** Catalog partial (native-not-implemented): three/OneMinusConstantColorFactor. */
+/** Catalog supported: three/OneMinusConstantColorFactor. */
 export declare const OneMinusConstantColorFactor: 212;
 
-/** Catalog partial (native-not-implemented): three/OneMinusDstAlphaFactor. */
+/** Catalog supported: three/OneMinusDstAlphaFactor. */
 export declare const OneMinusDstAlphaFactor: 207;
 
-/** Catalog partial (native-not-implemented): three/OneMinusDstColorFactor. */
+/** Catalog supported: three/OneMinusDstColorFactor. */
 export declare const OneMinusDstColorFactor: 209;
 
-/** Catalog partial (native-not-implemented): three/OneMinusSrcAlphaFactor. */
+/** Catalog supported: three/OneMinusSrcAlphaFactor. */
 export declare const OneMinusSrcAlphaFactor: 205;
 
-/** Catalog partial (native-not-implemented): three/OneMinusSrcColorFactor. */
+/** Catalog supported: three/OneMinusSrcColorFactor. */
 export declare const OneMinusSrcColorFactor: 203;
 
 /** Catalog supported: three/webgpu/OrthographicCamera. */
@@ -2413,18 +2431,11 @@ depthTexture: DepthTexture | null;
 readonly height: number;
 readonly width: number;
 readonly texture: Texture;
+readonly textures: Texture[];
 
   dispose(): void;
 
   setSize(width: number, height: number, depth?: number): void;
-  /** callback listener: EventListener */
-  addEventListener(type: string, listener: EventListener): void;
-  /** callback listener: EventListener */
-  removeEventListener(type: string, listener: EventListener): void;
-  /** callback listener: EventListener */
-  hasEventListener(type: string, listener: EventListener): boolean;
-
-  dispatchEvent(event: BaseEvent): void;
 }
 
 /** Catalog supported: three/RepeatWrapping. */
@@ -2433,7 +2444,7 @@ export declare const RepeatWrapping: 1000;
 /** Catalog partial (native-not-implemented): three/ReplaceStencilOp. */
 export declare const ReplaceStencilOp: 7681;
 
-/** Catalog partial (native-not-implemented): three/ReverseSubtractEquation. */
+/** Catalog supported: three/ReverseSubtractEquation. */
 export declare const ReverseSubtractEquation: 102;
 
 /** Catalog supported: three/RingGeometry. */
@@ -2644,7 +2655,13 @@ polygonOffsetFactor: number;
 polygonOffsetUnits: number;
 colorWrite: boolean;
 alphaHash: boolean;
-maxPositionOffset: number;
+blendDst: BlendingDstFactor;
+blendDstAlpha: BlendingDstFactor | null;
+blendEquation: BlendingEquation;
+blendEquationAlpha: BlendingEquation | null;
+blendSrc: BlendingSrcFactor;
+blendSrcAlpha: BlendingSrcFactor | null;
+premultipliedAlpha: boolean;
 
   clone(): this;
 
@@ -2699,13 +2716,13 @@ scaleNode: Node | null;
   dispose(): void;
 }
 
-/** Catalog partial (native-not-implemented): three/SrcAlphaFactor. */
+/** Catalog supported: three/SrcAlphaFactor. */
 export declare const SrcAlphaFactor: 204;
 
-/** Catalog partial (native-not-implemented): three/SrcAlphaSaturateFactor. */
+/** Catalog supported: three/SrcAlphaSaturateFactor. */
 export declare const SrcAlphaSaturateFactor: 210;
 
-/** Catalog partial (native-not-implemented): three/SrcColorFactor. */
+/** Catalog supported: three/SrcColorFactor. */
 export declare const SrcColorFactor: 202;
 
 /** Catalog partial (native-not-implemented): three/StaticCopyUsage. */
@@ -2752,10 +2769,10 @@ export declare const StreamDrawUsage: 35040;
 /** Catalog partial (native-not-implemented): three/StreamReadUsage. */
 export declare const StreamReadUsage: 35041;
 
-/** Catalog partial (native-not-implemented): three/SubtractEquation. */
+/** Catalog supported: three/SubtractEquation. */
 export declare const SubtractEquation: 101;
 
-/** Catalog partial (native-not-implemented): three/SubtractiveBlending. */
+/** Catalog supported: three/SubtractiveBlending. */
 export declare const SubtractiveBlending: 3;
 
 /** Catalog partial (native-not-implemented): three/TangentSpaceNormalMap. */
@@ -2786,14 +2803,6 @@ readonly center: Vector2;
   dispose(): void;
 
   clone(): this;
-  /** callback listener: EventListener */
-  addEventListener(type: string, listener: EventListener): void;
-  /** callback listener: EventListener */
-  removeEventListener(type: string, listener: EventListener): void;
-  /** callback listener: EventListener */
-  hasEventListener(type: string, listener: EventListener): boolean;
-
-  dispatchEvent(event: BaseEvent): void;
 }
 
 /** Catalog supported: three/webgpu/TorusGeometry. */
@@ -3330,7 +3339,7 @@ export type Wrapping = (typeof Wrapping)[keyof typeof Wrapping];
 /** Catalog partial (native-not-implemented): three/ZeroCurvatureEnding. */
 export declare const ZeroCurvatureEnding: 2400;
 
-/** Catalog partial (native-not-implemented): three/ZeroFactor. */
+/** Catalog supported: three/ZeroFactor. */
 export declare const ZeroFactor: 200;
 
 /** Catalog partial (native-not-implemented): three/ZeroSlopeEnding. */
@@ -3383,7 +3392,13 @@ colorWrite: boolean;
 twoSidedFoliage: boolean;
 subsurfaceColor: Color | undefined;
 alphaHash: boolean;
-maxPositionOffset: number;
+blendDst: BlendingDstFactor;
+blendDstAlpha: BlendingDstFactor | null;
+blendEquation: BlendingEquation;
+blendEquationAlpha: BlendingEquation | null;
+blendSrc: BlendingSrcFactor;
+blendSrcAlpha: BlendingSrcFactor | null;
+premultipliedAlpha: boolean;
 
   clone(): this;
 
@@ -3426,7 +3441,13 @@ colorWrite: boolean;
 twoSidedFoliage: boolean;
 subsurfaceColor: Color | undefined;
 alphaHash: boolean;
-maxPositionOffset: number;
+blendDst: BlendingDstFactor;
+blendDstAlpha: BlendingDstFactor | null;
+blendEquation: BlendingEquation;
+blendEquationAlpha: BlendingEquation | null;
+blendSrc: BlendingSrcFactor;
+blendSrcAlpha: BlendingSrcFactor | null;
+premultipliedAlpha: boolean;
 
   clone(): this;
 
@@ -3679,34 +3700,3 @@ export declare function textureStore(...args: unknown[]): unknown;
 
 /** Catalog supported: three/tsl/modelWorldMatrix. */
 export declare function modelWorldMatrix(): void;
-
-/** Catalog supported: three/DataArrayTexture. */
-export declare class DataArrayTexture extends Texture {
-constructor();
-}
-
-/** Catalog supported: three/MeshPhysicalNodeMaterial. */
-export declare class MeshPhysicalNodeMaterial extends MeshStandardNodeMaterial {
-constructor();
-anisotropy: number;
-clearcoat: number;
-clearcoatRoughness: number;
-dispersion: number;
-ior: number;
-iridescence: number;
-sheen: number;
-specularIntensity: number;
-transmission: number;
-clearcoatMap: Texture | null;
-clearcoatNormalMap: Texture | null;
-clearcoatNormalScale: Vector2;
-clearcoatRoughnessMap: Texture | null;
-specularColor: Color;
-specularColorMap: Texture | null;
-specularIntensityMap: Texture | null;
-}
-
-/** Catalog partial (graph-authoring-only, constructor-not-bound): three/webgpu/MRTNode. */
-export declare class MRTNode extends Node {
-constructor();
-}

@@ -181,6 +181,8 @@ interface IPassTsl {
   readonly vec4?: (...values: unknown[]) => unknown;
   readonly cameraNear?: IPassMath;
   readonly cameraFar?: IPassMath;
+  /** The engine's mrt(names, ...nodes): a material mrtNode of named outputs. */
+  readonly mrt?: (names: string, ...nodes: unknown[]) => object;
 }
 
 /** The node arithmetic getViewZNode composes. */
@@ -287,6 +289,51 @@ export function definePass(
   const diffuseColor = slot("diffuseColor");
   const emissive = slot("emissive");
 
+  /** A scene pass output: one of the slots, or `normal` as normalView (or vec4(normalView, 0)). */
+  const passOutput = (name: string, value: unknown): boolean =>
+    (value as IMRTSlot | null)?.isMRTSlot === true ||
+    (name === "normal" &&
+      (value === normalView ||
+        (value as { __tnNormalView?: unknown } | null)?.__tnNormalView === normalView));
+
+  /**
+   * Outputs that are TSL nodes (not the scene pass's slots): a material's mrtNode, written into a RenderTarget made
+   * with `count`, each output to the texture of its name. `output` keeps the material's own colour there.
+   */
+  function materialMrt(
+    outputs: Record<string, unknown>,
+    nodes: [string, unknown][],
+    engineMrt: NonNullable<IPassTsl["mrt"]>,
+  ): IMRTNode {
+    for (const [name, value] of Object.entries(outputs))
+      if (passOutput(name, value) && value !== output)
+        throw new Error(
+          `TN_NATIVE_MRT_UNSUPPORTED: ${name} mixes a scene pass slot with material outputs`,
+        );
+    if (nodes.some(([name]) => name.includes(",")))
+      throw new Error("TN_NATIVE_MRT_UNSUPPORTED: an mrt() output name holds a comma");
+    const node = engineMrt(
+      nodes.map(([name]) => name).join(","),
+      ...nodes.map(([, value]) => value),
+    );
+    const blendModes: Record<string, unknown> = {};
+    // Defined, not assigned: a node may be a proxy whose set trap means `uniform.value = x`.
+    return Object.defineProperties(node, {
+      isMRTNode: { value: true },
+      outputs: { value: Object.freeze({ ...outputs }) },
+      // The material's blending writes every attachment, as three's does when the renderer has no MRT.
+      blendModes: { value: blendModes },
+      setBlendMode: {
+        value: (name: string, blend: unknown): IMRTNode => {
+          blendModes[name] = blend;
+          return node as IMRTNode;
+        },
+      },
+      getBlendMode: { value: (name: string): unknown => blendModes[name] },
+      has: { value: (name: string): boolean => name in outputs },
+    }) as IMRTNode;
+  }
+
   function mrt(outputs: Record<string, unknown>): IMRTNode {
     const entries = Object.entries(outputs);
     const limit = maxColorAttachments();
@@ -295,6 +342,8 @@ export function definePass(
         `TN_NATIVE_MRT_UNSUPPORTED: ${entries.length} colour attachments exceed the device limit ${limit}`,
       );
     const named: Record<string, unknown> = {};
+    const nodes = Object.entries(outputs).filter(([name, value]) => !passOutput(name, value));
+    if (nodes.length > 0 && tsl.mrt !== undefined) return materialMrt(outputs, nodes, tsl.mrt);
     for (const [name, value] of entries) {
       const normal =
         name === "normal" &&
@@ -502,6 +551,13 @@ export function definePass(
     setMRT(value: IMRTNode | null): this {
       if (value !== null && value?.isMRTNode !== true)
         throw new Error("TN_NATIVE_MRT_UNSUPPORTED: setMRT takes mrt()");
+      if (
+        value !== null &&
+        Object.entries(value.outputs).some(([name, item]) => !passOutput(name, item))
+      )
+        throw new Error(
+          "TN_NATIVE_MRT_UNSUPPORTED: a pass MRT takes the scene pass slots; set node outputs on material.mrtNode",
+        );
       if (value !== null && this.#offscreen)
         throw new Error("TN_NATIVE_MRT_UNSUPPORTED: an offscreen PassNode draws colour only");
       this.#mrt = value;

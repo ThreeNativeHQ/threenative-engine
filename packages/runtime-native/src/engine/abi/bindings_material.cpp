@@ -188,14 +188,41 @@ void registerMaterialBase(ClassBinding& b) {
     };
     b.getters["blending"] = [](void* self) { return Value::of(double(as<Material>(self)->blending)); };
     b.setters["blending"] = [](void* self, const Value& v) {
-        // NoBlending 0, NormalBlending 1, AdditiveBlending 2; Subtractive and Multiply need
-        // premultipliedAlpha, which is not bound, and CustomBlending's factors are not either.
+        // NoBlending 0 ... CustomBlending 5; MaterialBlending (6) names a material's own, so a material cannot take it.
         const double blending = number(v);
-        if (blending != 0 && blending != 1 && blending != 2)
-            throw Unsupported{"blending must be NoBlending, NormalBlending or AdditiveBlending"};
+        if (blending != std::floor(blending) || blending < 0 || blending > 5)
+            throw Unsupported{"blending must be NoBlending, NormalBlending, AdditiveBlending, SubtractiveBlending, "
+                              "MultiplyBlending or CustomBlending"};
         as<Material>(self)->blending = static_cast<Blending>(static_cast<int>(blending));
         as<Material>(self)->needsUpdate();
     };
+    materialBool(b, "premultipliedAlpha", &Material::premultipliedAlpha);
+    // three's CustomBlending factors (ZeroFactor 200 ... OneMinusConstantAlphaFactor 214) and equations (AddEquation 100
+    // ... MaxEquation 104); the alpha ones also take null, which uses the colour one.
+    const auto blendConstant = [&b](const char* name, int16_t Material::*field, int16_t low, int16_t high, bool nullable) {
+        b.getters[name] = [field](void* self) {
+            const int16_t value = as<Material>(self)->*field;
+            return value < 0 ? Value{} : Value::of(double(value));
+        };
+        b.setters[name] = [name, field, low, high, nullable](void* self, const Value& v) {
+            auto& material = *as<Material>(self);
+            if (nullable && v.kind == Value::Kind::Null) material.*field = -1;
+            else {
+                const double value = number(v);
+                if (value != std::floor(value) || value < low || value > high)
+                    throw Unsupported{std::string(name) + " must be one of three's " +
+                                      (low == 100 ? "blend equations" : "blend factors") + (nullable ? " or null" : "")};
+                material.*field = static_cast<int16_t>(value);
+            }
+            material.needsUpdate();
+        };
+    };
+    blendConstant("blendSrc", &Material::blendSrc, 200, 214, false);
+    blendConstant("blendDst", &Material::blendDst, 200, 214, false);
+    blendConstant("blendEquation", &Material::blendEquation, 100, 104, false);
+    blendConstant("blendSrcAlpha", &Material::blendSrcAlpha, 200, 214, true);
+    blendConstant("blendDstAlpha", &Material::blendDstAlpha, 200, 214, true);
+    blendConstant("blendEquationAlpha", &Material::blendEquationAlpha, 100, 104, true);
 }
 
 /** A Color field read by component, as the member alias, and written whole. */
@@ -795,7 +822,7 @@ void registerTextureFields(ClassBinding& b, const char* cls) {
         as<Texture>(self)->flipY = flag(v);
         as<Texture>(self)->needsUpdate();
     };
-    // three's `texture.type` and `format` (UnsignedByteType, HalfFloatType, FloatType; RGBAFormat): fixed
+    // three's `texture.type` and `format` (UnsignedByteType, HalfFloatType, FloatType; RGBAFormat, or RGFormat on a render target): fixed
     // by the constructor or the render target that owns the texture. Writing the value a texture already
     // has is accepted (the rain template restates them); another value is refused by name.
     b.getters["type"] = [](void* self) { return Value::of(double(as<Texture>(self)->type)); };
@@ -1036,7 +1063,9 @@ void registerTextureBindings(Registry& classes) {
         if (!(width >= 1) || !(height >= 1) || width > 16384 || height > 16384)
             throw Unsupported{"RenderTarget size must be 1 to 16384"};
         uint16_t type = kTextureUnsignedByteType;
-        std::optional<uint16_t> minFilter, magFilter;
+        std::optional<uint16_t> minFilter, magFilter, wrapS, wrapT;
+        uint16_t format = kTextureRGBAFormat;
+        uint32_t count = 1;
         if (a.size() > 2 && a[2].kind == Value::Kind::Record)
             for (const auto& [key, value] : a[2].fields) {
                 if (key == "minFilter" || key == "magFilter") {
@@ -1050,15 +1079,43 @@ void registerTextureBindings(Registry& classes) {
                     if (type != kTextureUnsignedByteType && type != kTextureHalfFloatType && type != kTextureFloatType)
                         throw Unsupported{"RenderTarget type must be UnsignedByteType, HalfFloatType or FloatType"};
                 } else if (key == "format") {
-                    if (number(value) != kTextureRGBAFormat) throw Unsupported{"RenderTarget format must be RGBAFormat"};
+                    format = static_cast<uint16_t>(number(value));
+                    if (format != kTextureRGBAFormat && format != kTextureRGFormat)
+                        throw Unsupported{"RenderTarget format must be RGBAFormat or RGFormat"};
+                } else if (key == "wrapS" || key == "wrapT") {
+                    const auto wrap = static_cast<uint16_t>(number(value));
+                    if (wrap != uint16_t(TextureWrap::Repeat) && wrap != uint16_t(TextureWrap::ClampToEdge) &&
+                        wrap != uint16_t(TextureWrap::MirroredRepeat))
+                        throw Unsupported{"RenderTarget " + key + " must be a wrapping constant"};
+                    (key == "wrapS" ? wrapS : wrapT) = wrap;
+                } else if (key == "generateMipmaps") {
+                    // A target holds one level; a mip chain after each draw is not built natively.
+                    if (value.kind != Value::Kind::Bool || value.flag)
+                        throw Unsupported{"RenderTarget generateMipmaps must be false natively"};
+                } else if (key == "count") {
+                    // three's MRT: one colour texture per output, 8 at most (WebGPU's maxColorAttachments).
+                    const double n = number(value);
+                    if (!(n >= 1 && n <= 8) || n != std::floor(n)) throw Unsupported{"RenderTarget count must be 1 to 8"};
+                    count = static_cast<uint32_t>(n);
                 } else if (key != "depthBuffer" && key != "stencilBuffer") {
                     throw Unsupported{"RenderTarget option " + key + " is not supported natively"};
                 }
             }
-        auto target = RenderTarget::make(static_cast<uint32_t>(width), static_cast<uint32_t>(height), type);
-        if (minFilter) target->texture->minFilter = *minFilter;
-        if (magFilter) target->texture->magFilter = *magFilter;
+        auto target = RenderTarget::make(static_cast<uint32_t>(width), static_cast<uint32_t>(height), type, count);
+        for (const auto& texture : RenderTarget::texturesOf(*target)) {
+            if (minFilter) texture->minFilter = *minFilter;
+            if (magFilter) texture->magFilter = *magFilter;
+            if (wrapS) texture->wrapS = *wrapS;
+            if (wrapT) texture->wrapT = *wrapT;
+            texture->format = format;
+        }
         return target;
+    };
+    // three's `textures`: every colour texture of the target, `texture` first; an MRT target has `count` of them.
+    target.members["textures"] = [](void* self, const Args&, Store& store) {
+        Args textures;
+        for (const auto& texture : RenderTarget::texturesOf(*as<RenderTarget>(self))) textures.push_back(store.share("Texture", texture));
+        return Value::array(std::move(textures));
     };
     fixedMember(target, "texture", [](void* self, const Args&, Store& store) {
         return store.share("Texture", as<RenderTarget>(self)->texture);

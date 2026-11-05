@@ -42,6 +42,7 @@ type HostCall =
   | "_tnw_web_renderer_state"
   | "_tnw_web_frame"
   | "_tnw_web_render_target"
+  | "_tnw_web_clear_target"
   | "_tnw_web_read_target"
   | "_tnw_web_read_target_take"
   | "_tnw_web_capture_face"
@@ -65,7 +66,7 @@ export function isWebHostModule(module: TnAbiModule): module is WebEngineModule 
  * The tnw_* contract this facade speaks (web_host.cpp `kWebHostAbi`). Bump both on every tnw_*
  * signature change: web-host-abi.spec.ts pins the signatures per number, and a mismatch fails init.
  */
-export const WEB_HOST_ABI = 10;
+export const WEB_HOST_ABI = 11;
 
 /** The canvas key the host's surface looks up; Emscripten resolves it before any DOM query. */
 const CANVAS_TARGET = "!threenative-canvas";
@@ -75,6 +76,7 @@ export const RENDER_AGAIN = Symbol("tn.renderAgain");
 /** The last RenderPipeline's post graph install, which the warm-up entry points run first (browser-entry.ts). */
 export const PIPELINE_POST = Symbol("tn.pipelinePost");
 const DRAW_TARGET = Symbol("tn.drawTarget");
+const CLEAR_TARGET = Symbol("tn.clearTarget");
 const FAILED = 2;
 /**
  * `tnw_web_frame` field of the first named stage's segment (web_host.cpp): 19 + 4 shadow, scene, other and output
@@ -812,7 +814,22 @@ export function defineWebRenderer(
           handles,
           handles + 12,
           ...this.#clear,
-          deferred ? 1 : 0,
+          (deferred ? 1 : 0) | (this.autoClear ? 0 : 2),
+        ),
+      );
+    }
+
+    /** three's clear(color, depth) while a render target is set (render-target.ts): clears it to the clear colour. */
+    [CLEAR_TARGET](target: unknown, color: boolean, depth: boolean): void {
+      if (this.#adapter === undefined)
+        throw new Error("TN_WASM_RENDERER: clear() before init() finished.");
+      if (this.#lost) return;
+      writeHandle(24, target, "render target");
+      this.#drawStatus(
+        module._tnw_web_clear_target(
+          handles + 24,
+          ...this.#clear,
+          (color ? 1 : 0) | (depth ? 2 : 0),
         ),
       );
     }
@@ -1131,8 +1148,9 @@ export function defineWebRenderer(
     height: number,
     textureIndex = 0,
   ) => {
-    const size =
-      width * height * targetTexelBytes((target as { texture: { type: number } }).texture.type);
+    // An RG attachment's texel is two channels, so the region's bytes follow its format as well as its type.
+    const { type, format } = (target as { texture: { type: number; format?: number } }).texture;
+    const size = width * height * targetTexelBytes(type, format);
     // three's textureIndex selects an attachment of the target. The frame pass's attachments are the
     // engine's own colour targets, so the index names one and the host reads that slot.
     const attachment = frameAttachmentName(target, textureIndex);
@@ -1195,6 +1213,12 @@ export function defineWebRenderer(
         target,
         root,
         camera,
+      ),
+    clear: (target, color, depth) =>
+      (renderer as { [CLEAR_TARGET](t: unknown, c: boolean, d: boolean): void })[CLEAR_TARGET](
+        target,
+        color,
+        depth,
       ),
     read,
   }));

@@ -1,5 +1,5 @@
 {
-  "recallAtK": 0.9230769230769231,
+  "recallAtK": 0.9363636363636364,
   "recalledRows": [
     "brief.endless-runner.1",
     "brief.endless-runner.2",
@@ -15,6 +15,7 @@
     "brief.fps.2",
     "brief.fps.4",
     "brief.fps.5",
+    "brief.fps.6",
     "brief.fps.7",
     "brief.fps.9",
     "brief.fps.10",
@@ -96,10 +97,16 @@
     "request.gi-quality-scalability",
     "request.shadow-quality-scalability",
     "request.two-sided-foliage",
-    "request.terrain-forest-world"
+    "request.terrain-forest-world",
+    "spell.fireball",
+    "spell.thunderstrike",
+    "spell.glacial-spike",
+    "spell.arcane-barrage",
+    "spell.aegis",
+    "spell.inferno"
   ],
   "rejectHits": 15,
-  "rowCount": 104,
+  "rowCount": 110,
   "rowIds": [
     "brief.endless-runner.1",
     "brief.endless-runner.2",
@@ -204,10 +211,16 @@
     "request.gi-quality-scalability",
     "request.shadow-quality-scalability",
     "request.two-sided-foliage",
-    "request.terrain-forest-world"
+    "request.terrain-forest-world",
+    "spell.fireball",
+    "spell.thunderstrike",
+    "spell.glacial-spike",
+    "spell.arcane-barrage",
+    "spell.aegis",
+    "spell.inferno"
   ],
   "version": 1,
-  "zeroResultRate": 0.04807692307692308,
+  "zeroResultRate": 0.045454545454545456,
   "unresolvedResultRate": 0,
   "notOwnedRows": {
     "request.inventory-system": "inventory",

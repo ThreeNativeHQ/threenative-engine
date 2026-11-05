@@ -45,9 +45,10 @@ namespace {
 // 5 = tnw_web_threads (PRD-752). 6 = timestamp sampling in renderer state.
 // 7 = tnw_web_prepare_environment: the startup bake presents no surface frame.
 // 8 = tnw_web_set_presentation_hold, and the startup's world submission and shadow inputs as frame fields 71, 72.
-// 9 = tnw_web_init_texture and tnw_web_copy_texture (PRD-762); the 6 the terrain work first took is 8's.
-// 10 = tnw_web_read_mrt (a PassNode's custom MRT attachment) and tnw_web_device_limit.
-constexpr uint32_t kWebHostAbi = 10;
+// 9 = tnw_web_clear_target, and tnw_web_render_target flags (bit 2: autoClear false).
+// 10 = tnw_web_init_texture and tnw_web_copy_texture (PRD-762); the 6 the terrain work first took is 8's.
+// 11 = tnw_web_read_mrt (a PassNode's custom MRT attachment) and tnw_web_device_limit.
+constexpr uint32_t kWebHostAbi = 11;
 
 enum WebState : int { Pending = 0, Ready = 1, Failed = 2 };
 
@@ -592,12 +593,12 @@ extern "C" int tnw_web_compile_status(uint32_t id) {
 /**
  * three's render() while a render target is set (PRD-551): draws `root` through `camera` into the
  * target, the linear scene colour, as r185 writes a target. Fails, naming the first refusal, when the
- * target's render refused or skipped anything. A nonzero `deferred` plans the draw now and records it in the frame that
- * samples the target (Renderer::deferTarget).
+ * target's render refused or skipped anything. `flags` bit 1 plans the draw now and records it in the frame that
+ * samples the target (Renderer::deferTarget); bit 2 is three's autoClear false (draw over the target's contents).
  */
 extern "C" int tnw_web_render_target(const tn_handle_t* targetHandle, const tn_handle_t* rootHandle,
                                      const tn_handle_t* cameraHandle, double r, double g, double b, double a,
-                                     int deferred) {
+                                     int flags) {
     // A render target's draw is renderer work inside the page's render() call too (a post graph's offscreen passes), so it
     // counts toward the same host total; the totals publish when it ends so a draw after the main view is not left behind.
     const StagePublisher publisher{true};
@@ -614,12 +615,27 @@ extern "C" int tnw_web_render_target(const tn_handle_t* targetHandle, const tn_h
         std::vector<std::string> refused;
         {
             const HostMeter targetMeter(hostTargetMs, true);
-            refused = renderToTarget(*renderer, *target, *root, *camera, {r, g, b, a}, shadowMap, deferred != 0);
+            refused = renderToTarget(*renderer, *target, *root, *camera, {r, g, b, a}, shadowMap, (flags & 1) != 0, true,
+                                     (flags & 2) == 0);
         }
         if (!refused.empty()) return refuse(refused.front());
         return 0;
     } catch (const std::exception& error) {
         return refuse(error.what());  // preserve backgroundNode's named compile refusal across the Wasm boundary
+    }
+}
+
+/** three's renderer.clear(color, depth) while a target is set: `flags` bit 1 clears the colour to (r, g, b, a), bit 2 the depth. */
+extern "C" int tnw_web_clear_target(const tn_handle_t* targetHandle, double r, double g, double b, double a, int flags) {
+    tnw_web_poll();
+    if (state != Ready) return fail(state == Pending ? "TN_WASM_RENDER: device not ready" : failure);
+    auto* target = objectAs<RenderTarget>(targetHandle, "RenderTarget");
+    if (target == nullptr) return fail("TN_WASM_CLEAR_TARGET: not a RenderTarget");
+    try {
+        clearRenderTarget(*renderer, *target, {r, g, b, a}, (flags & 1) != 0, (flags & 2) != 0);
+        return 0;
+    } catch (const std::exception& error) {
+        return refuse(error.what());
     }
 }
 

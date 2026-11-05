@@ -245,7 +245,8 @@ struct DrawItem {
     bool flatShading = false;   // material.flatShading: the face normal replaces the vertex normal
     bool twoSidedFoliage = false;  // material.twoSidedFoliage: Unreal's Two Sided Foliage receiver (PRD-651)
     bool roughDiffuse = false;     // material.roughDiffuse: Unreal's Substrate rough diffuse, EON (PRD-653)
-    uint8_t blending = 1;       // material.blending: 0 NoBlending, 1 NormalBlending, 2 AdditiveBlending
+    uint8_t blending = 1;       // material.blending: three's NoBlending 0 ... CustomBlending 5
+    uint64_t blendFactors = 0;  // Material::blendFactors(): premultipliedAlpha and the custom factors
     // InstancedMesh: one mat4 (16 floats) per instance, an optional rgb per instance, and how many draw.
     BufferStore* instanceMatrices = nullptr;
     BufferStore* instanceColors = nullptr;
@@ -469,13 +470,15 @@ public:
     }
     /** A render target's renderer is read through `sceneColorView()` and `readProbePixels()`, never as a finished frame: its output pass would draw an image nothing reads. */
     void skipOutputPass() { writesOutput_ = false; }
+    /** three's autoClear false / clear(color, depth): the next renders load the scene colour or depth instead of clearing it. */
+    void keepContents(bool color, bool depth) { keepColor_ = color; keepDepth_ = depth; }
     /** The renderer whose post render-to-texture passes this target's materials sample (a material node may read one). */
     void setPostSource(const Renderer* main) { postSource_ = main; }
     WGPUTextureView sceneDepthView() const { return depthView_; }
     WGPUTextureView sceneColorView() const { return sceneView_; }
     /** The RGBA8 output frame a render() with no present target draws, and blitTo copies to the window. */
     WGPUTextureView outputColorView() const { return colorView_; }
-    /** The format the scene colour is drawn and read in: RGBA16Float, or RGBA32Float for a FloatType render target (a 32-bit target is never multisampled). */
+    /** The format the scene colour is drawn and read in: RGBA16Float, RGBA32Float for a FloatType render target, RG16Float/RG32Float for an RGFormat one (a 32-bit target is never multisampled). */
     void setSceneFormat(WGPUTextureFormat format);
     /** True when a blended draw into RGBA32Float is valid on this device (float32-blendable); `forceHalfFloatTargets` says no, for tests. */
     bool float32Blendable() const { return !forceHalfFloatTargets_ && wgpuDeviceHasFeature(device_, WGPUFeatureName_Float32Blendable); }
@@ -1287,6 +1290,7 @@ private:
     WGPUTexture depth_ = nullptr;
     WGPUTextureView colorView_ = nullptr;
     bool sceneOnly_ = false;  // raw render targets expose sceneColorView(), not the RGBA8 output frame
+    bool keepColor_ = false, keepDepth_ = false;  // keepContents()
     WGPUTextureView depthView_ = nullptr;
     WGPUTexture sceneColor_ = nullptr;  // linear HDR, what materials draw into
     WGPUTextureFormat sceneFormat_ = WGPUTextureFormat_RGBA16Float;

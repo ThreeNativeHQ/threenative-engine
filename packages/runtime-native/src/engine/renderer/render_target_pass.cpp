@@ -42,7 +42,10 @@ TargetGpu& gpuOf(Renderer& main, RenderTarget& target) {
             std::fprintf(stderr, "TN_NATIVE_FLOAT_TARGET_HALF: a FloatType render target is stored as half float "
                                  "because the device lacks float32-blendable\n");
         }
-        gpu->renderer->setSceneFormat(float32 ? WGPUTextureFormat_RGBA32Float : WGPUTextureFormat_RGBA16Float);
+        // three's RGFormat stores two channels; a material reads it as (r, g, 0, 1).
+        const bool rg = target.texture->format == kTextureRGFormat;
+        gpu->renderer->setSceneFormat(rg ? (float32 ? WGPUTextureFormat_RG32Float : WGPUTextureFormat_RG16Float)
+                                         : (float32 ? WGPUTextureFormat_RGBA32Float : WGPUTextureFormat_RGBA16Float));
         gpu->database = std::make_unique<RenderDatabase>();
         target.gpu = std::move(gpu);
     }
@@ -54,12 +57,20 @@ TargetGpu& gpuOf(Renderer& main, RenderTarget& target) {
 }  // namespace
 
 std::vector<std::string> renderToTarget(Renderer& main, RenderTarget& target, Object3D& root, Camera& camera,
-                                        std::array<double, 4> clear, bool shadowMap, bool deferred) {
+                                        std::array<double, 4> clear, bool shadowMap, bool deferred, bool primary,
+                                        bool autoClear) {
     if (deferred && target.depthTexture)
         return {"TN_NATIVE_DEFERRED_TARGET_DEPTH: a deferred render target cannot carry a depth texture"};
     main.flushDeferred(&target);  // an earlier plan for this target is recorded first, never dropped or drawn twice
     TargetGpu& gpu = gpuOf(main, target);
+    // three's MRT: each attachment draws the scene with the material outputs named after its texture (resolveMrt).
+    if (gpu.database->mrtName != target.texture->name || gpu.database->mrtPrimary != primary) {
+        gpu.database = std::make_unique<RenderDatabase>();
+        gpu.database->mrtName = target.texture->name;
+        gpu.database->mrtPrimary = primary;
+    }
     gpu.database->shadowMapEnabled = shadowMap;
+    gpu.database->autoClear = autoClear;
     gpu.renderer->setSourceAttachments(main.sceneColorView(), main.sceneDepthView());
     gpu.renderer->setPostSource(&main);
     if (deferred) {
@@ -78,7 +89,20 @@ std::vector<std::string> renderToTarget(Renderer& main, RenderTarget& target, Ob
     if (target.depthTexture) gpu.renderer->copyDepthToTexture(*target.depthTexture);
     std::vector<std::string> diagnostics = gpu.database->diagnostics();
     for (const std::string& message : gpu.renderer->diagnostics()) diagnostics.push_back(message);
+    for (const auto& attachment : target.more)
+        for (std::string& message : renderToTarget(main, *attachment, root, camera, clear, shadowMap, deferred, false, autoClear))
+            diagnostics.push_back(std::move(message));
     return diagnostics;
+}
+
+void clearRenderTarget(Renderer& main, RenderTarget& target, std::array<double, 4> clear, bool color, bool depth) {
+    if (!color && !depth) return;
+    main.flushDeferred(&target);  // a planned draw lands before the clear, as it was issued
+    TargetGpu& gpu = gpuOf(main, target);
+    gpu.renderer->keepContents(!color, !depth);
+    gpu.renderer->render({}, CameraState{}, LightState{}, clear);  // an empty pass: only its load ops act
+    gpu.rendered = true;
+    for (const auto& attachment : target.more) clearRenderTarget(main, *attachment, clear, color, depth);
 }
 
 WGPUTextureView renderTargetView(Renderer& main, RenderTarget& target) {
@@ -100,14 +124,16 @@ GpuStatus readRenderTarget(RenderTarget& target, uint32_t x, uint32_t y, uint32_
     const uint32_t full = target.width;
     const bool floatType = target.texture->isFloat();
     const bool stored32 = floatType && !target.halfPrecision;  // what the GPU texture holds
+    const uint32_t channels = target.texture->format == kTextureRGFormat ? 2 : 4;
     return gpu.renderer->readProbePixels(
-        [x, y, width, height, full, floatType, stored32, done = std::move(done)](GpuStatus status,
+        [x, y, width, height, full, floatType, stored32, channels, done = std::move(done)](GpuStatus status,
                                                                                 std::vector<uint8_t> bytes) {
             if (status != GpuStatus::Ok) {
                 done(status, {});
                 return;
             }
-            const uint32_t stored = stored32 ? 16 : 8, out = floatType ? 16 : 8;  // a FloatType read is always float32 rows
+            // A FloatType read is always float32 rows.
+            const uint32_t stored = (stored32 ? 4 : 2) * channels, out = (floatType ? 4 : 2) * channels;
             std::vector<uint8_t> region(std::size_t(width) * height * out);
             for (uint32_t row = 0; row < height; ++row) {
                 const uint8_t* source = bytes.data() + (std::size_t(y + row) * full + x) * stored;
@@ -116,7 +142,7 @@ GpuStatus readRenderTarget(RenderTarget& target, uint32_t x, uint32_t y, uint32_
                     std::memcpy(destination, source, std::size_t(width) * out);
                     continue;
                 }
-                for (std::size_t i = 0; i < std::size_t(width) * 4; ++i) {  // half float rows widened for a FloatType read
+                for (std::size_t i = 0; i < std::size_t(width) * channels; ++i) {  // half float rows widened for a FloatType read
                     uint16_t bits;
                     std::memcpy(&bits, source + i * 2, 2);
                     const float value = halfToFloat(bits);

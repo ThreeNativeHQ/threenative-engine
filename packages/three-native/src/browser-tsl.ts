@@ -118,10 +118,14 @@ const FUNCTIONS = [
   "nodeObject",
   "color",
   "ivec2",
+  "ivec3",
+  "ivec4",
   "uvec2",
+  "bool",
   "storageTexture",
   "textureLoad",
   "textureSize",
+  "mrt",
   "reflect",
   "dFdx",
   "dFdy",
@@ -252,6 +256,9 @@ const CONSTANTS = [
   "screenCoordinate",
   "normalGeometry",
   "tangentGeometry",
+  "normalLocal",
+  "tangentLocal",
+  "positionPrevious",
   "normalWorldGeometry",
   "EPSILON",
   "INFINITY",
@@ -453,7 +460,10 @@ export function defineTsl(
     // and textureLoad also takes a texture node.
     if (
       index === 0 &&
-      (name === "texture" || name === "textureValue") &&
+      (name === "texture" ||
+        name === "textureValue" ||
+        name === "textureLoad" ||
+        name === "textureSize") &&
       typeof value === "object" &&
       engineRef(value) !== undefined
     )
@@ -507,7 +517,9 @@ export function defineTsl(
   const node = (id: number): TslArgValue => ({ kind: "node", node: id });
   const capture = (form: string, callback: unknown, input?: unknown): number => {
     if (typeof callback !== "function") throw new TypeError(`TN_TSL ${form}: expected a callback`);
-    runtime.release(runtime.call("scope:open", null, []));
+    runtime.release(
+      runtime.call("scope:open", null, form === "Fn" ? [{ kind: "string", text: "Fn" }] : []),
+    );
     depth++;
     let returned: TslArgValue[] = [];
     try {
@@ -530,9 +542,8 @@ export function defineTsl(
     if (depth === 0) throw new TypeError(`TN_TSL ${form}: statement outside Fn`);
   };
   prototype.toVar = function (this: ITslNode) {
-    // Outside a function body there is no stack to declare a variable in (rain's fragment node names its
-    // terms this way); the expression itself is the value, read where it is used.
-    if (depth === 0) return this;
+    // Outside a function body the engine declares the variable at the top of the program (rain's fragment node
+    // names its terms this way; a Fn assigns one handed to it as an `out` argument).
     return wrap(runtime.call("toVar", this[TSL_NODE], []));
   };
   prototype.assign = function (this: ITslNode, value: unknown) {
@@ -626,8 +637,13 @@ export function defineTsl(
         (Array.isArray(first) || first.constructor === Object)
           ? first
           : args;
+      // As three's nodeObject: a plain object or array (a struct of nodes, a list) passes through unchanged.
       const asNode = (value: unknown) =>
-        isTslNode(value) ? value : wrap(call("nodeObject", null, [value]));
+        isTslNode(value) ||
+        Array.isArray(value) ||
+        (typeof value === "object" && value !== null && value.constructor === Object)
+          ? value
+          : wrap(call("nodeObject", null, [value]));
       const parameters = Array.isArray(inputs)
         ? inputs.map(asNode)
         : Object.fromEntries(Object.entries(inputs).map(([key, value]) => [key, asNode(value)]));
@@ -646,8 +662,9 @@ export function defineTsl(
     // quality-allow: the export table is untyped; defineStorageTextures narrows it to the builders it reads.
     defineStorageTextures(exports as unknown as Parameters<typeof defineStorageTextures>[0]),
   );
-  // r185's Break(), Continue() and Return(): a loop or kernel ends early (statements, like atomicAdd).
-  for (const name of ["Break", "Continue", "Return"])
+  // r185's Break(), Continue() and Return(): a loop or kernel ends early (statements, like atomicAdd);
+  // Discard(conditional) ends the fragment, under If(conditional) when one is given.
+  for (const name of ["Break", "Continue", "Return", "Discard"])
     exports[name] = (...args: unknown[]) => {
       statement(name);
       return wrap(call(name, null, args));

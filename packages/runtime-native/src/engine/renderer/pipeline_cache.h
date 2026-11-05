@@ -46,7 +46,7 @@ struct PipelineTarget {
     WGPUTextureFormat color = WGPUTextureFormat_RGBA8Unorm;  // Undefined: depth-only (shadow) pass
     WGPUTextureFormat depth = WGPUTextureFormat_Depth32Float;
     WGPUCullMode cull = WGPUCullMode_Back;
-    uint8_t blend = 0;       // 0 none, three's NormalBlending (1) or AdditiveBlending (2), premultipliedAlpha false; 3 premultiplied "over" (a UI overlay); 4 the TRAA responsive mark
+    uint8_t blend = 0;       // 0 none, three's NormalBlending (1) or AdditiveBlending (2), premultipliedAlpha false; 3 premultiplied "over" (a UI overlay); 4 the TRAA responsive mark; 5 `blendState`
     bool depthWrite = true;  // material.depthWrite
     bool colorWrite = true;  // material.colorWrite: false masks every colour channel
     uint32_t sampleCount = 1;
@@ -76,7 +76,19 @@ struct PipelineTarget {
     /** material.colorWrite, masked on every attachment: `colorWrite` above also carries a custom-only draw's
      *  named-target mask, which must not silence that draw's own MRT slot. */
     bool materialColorWrite = true;
+    // share colorWrite and take no blend.
+    std::array<WGPUTextureFormat, 4> moreColors{WGPUTextureFormat_Undefined, WGPUTextureFormat_Undefined,
+                                                WGPUTextureFormat_Undefined, WGPUTextureFormat_Undefined};
+    uint32_t blendState = 0;  // blend 5: a material's resolved blend state (materialBlend)
 };
+
+/**
+ * three r187's WebGPUPipelineUtils._getBlending for a material: the PipelineTarget `blend` code for its
+ * `blending` (three's constant), `transparent` and Material::blendFactors(). 0 when it does not blend (NoBlending, an
+ * opaque NormalBlending, or a Subtractive/Multiply without premultipliedAlpha, which three refuses with an error),
+ * 1 and 2 for the plain Normal and Additive states, else 5 with `state` packing the factors and operations.
+ */
+uint8_t materialBlend(uint8_t blending, bool transparent, uint64_t factors, uint32_t& state);
 
 /**
  * Every bind group the renderer creates goes through here, so a steady frame can be held to creating

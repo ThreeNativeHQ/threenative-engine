@@ -719,7 +719,11 @@ uint32_t Program::samplerOwner(uint32_t texture) const {
 }
 
 bool Program::textureNeedsSampler(uint32_t texture) const {
-    if (textureKinds_[texture] != TextureKind::Depth2d && textureKinds_[texture] != TextureKind::DepthCube) return true;
+    // A material's colour texture keeps its sampler: its programs share one bind group layout. A compute kernel's
+    // layout is inferred from its WGSL, which drops a sampler nothing samples with, so it declares only used ones.
+    if (textureKinds_[texture] != TextureKind::Depth2d && textureKinds_[texture] != TextureKind::DepthCube &&
+        stage_ != Stage::Compute)
+        return true;
     for (const auto& e : exprs_) {
         if (e.op != Op::Sample && e.op != Op::SampleLevel && e.op != Op::SampleBias) continue;
         const auto sampled = e.op == Op::Sample && e.argc == 2 && e.type == Type::vec(4)

@@ -50,8 +50,7 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "type": "number",
       "value": "100"
@@ -1046,6 +1045,29 @@
           "name": "OneMinusConstantAlphaFactor",
           "value": "214"
         }
+      ]
+    },
+    {
+      "name": "BlendingSrcFactor",
+      "kind": "enum",
+      "source": "three",
+      "status": { "kind": "partial", "gaps": ["native-not-implemented"] },
+      "values": [
+        { "name": "ZeroFactor", "value": "200" },
+        { "name": "OneFactor", "value": "201" },
+        { "name": "SrcColorFactor", "value": "202" },
+        { "name": "OneMinusSrcColorFactor", "value": "203" },
+        { "name": "SrcAlphaFactor", "value": "204" },
+        { "name": "OneMinusSrcAlphaFactor", "value": "205" },
+        { "name": "DstAlphaFactor", "value": "206" },
+        { "name": "OneMinusDstAlphaFactor", "value": "207" },
+        { "name": "DstColorFactor", "value": "208" },
+        { "name": "OneMinusDstColorFactor", "value": "209" },
+        { "name": "SrcAlphaSaturateFactor", "value": "210" },
+        { "name": "ConstantColorFactor", "value": "211" },
+        { "name": "OneMinusConstantColorFactor", "value": "212" },
+        { "name": "ConstantAlphaFactor", "value": "213" },
+        { "name": "OneMinusConstantAlphaFactor", "value": "214" }
       ]
     },
     {
@@ -3476,100 +3498,6 @@
           "status": {
             "kind": "supported"
           }
-        },
-        {
-          "name": "addEventListener",
-          "async": false,
-          "overloads": [
-            {
-              "parameters": [
-                {
-                  "name": "type",
-                  "type": "string",
-                  "optional": false
-                },
-                {
-                  "name": "listener",
-                  "type": "EventListener",
-                  "optional": false,
-                  "callback": "EventListener"
-                }
-              ],
-              "returns": "void"
-            }
-          ],
-          "status": {
-            "kind": "supported"
-          }
-        },
-        {
-          "name": "removeEventListener",
-          "async": false,
-          "overloads": [
-            {
-              "parameters": [
-                {
-                  "name": "type",
-                  "type": "string",
-                  "optional": false
-                },
-                {
-                  "name": "listener",
-                  "type": "EventListener",
-                  "optional": false,
-                  "callback": "EventListener"
-                }
-              ],
-              "returns": "void"
-            }
-          ],
-          "status": {
-            "kind": "supported"
-          }
-        },
-        {
-          "name": "hasEventListener",
-          "async": false,
-          "overloads": [
-            {
-              "parameters": [
-                {
-                  "name": "type",
-                  "type": "string",
-                  "optional": false
-                },
-                {
-                  "name": "listener",
-                  "type": "EventListener",
-                  "optional": false,
-                  "callback": "EventListener"
-                }
-              ],
-              "returns": "boolean"
-            }
-          ],
-          "status": {
-            "kind": "supported"
-          }
-        },
-        {
-          "name": "dispatchEvent",
-          "async": false,
-          "overloads": [
-            {
-              "parameters": [
-                {
-                  "name": "event",
-                  "type": "BaseEvent",
-                  "optional": false
-                }
-              ],
-              "returns": "void"
-            }
-          ],
-          "status": {
-            "kind": "supported"
-          }
         }
       ]
     },
@@ -5131,8 +5059,7 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "type": "number",
       "value": "213"
@@ -5142,8 +5069,7 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "type": "number",
       "value": "211"
@@ -5312,8 +5238,7 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "type": "number",
       "value": "5"
@@ -5793,8 +5718,7 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "type": "number",
       "value": "206"
@@ -5804,8 +5728,7 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "type": "number",
       "value": "208"
@@ -8373,8 +8296,62 @@
           }
         },
         {
-          "name": "maxPositionOffset",
-          "type": "number",
+          "name": "blendDst",
+          "type": "BlendingDstFactor",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "blendDstAlpha",
+          "type": "BlendingDstFactor | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "blendEquation",
+          "type": "BlendingEquation",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "blendEquationAlpha",
+          "type": "BlendingEquation | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "blendSrc",
+          "type": "BlendingSrcFactor",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "blendSrcAlpha",
+          "type": "BlendingSrcFactor | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "premultipliedAlpha",
+          "type": "boolean",
           "mutable": true,
           "lifetime": "owned",
           "status": {
@@ -9114,100 +9091,6 @@
               "returns": "void"
             }
           ]
-        },
-        {
-          "name": "addEventListener",
-          "async": false,
-          "overloads": [
-            {
-              "parameters": [
-                {
-                  "name": "type",
-                  "type": "string",
-                  "optional": false
-                },
-                {
-                  "name": "listener",
-                  "type": "EventListener",
-                  "optional": false,
-                  "callback": "EventListener"
-                }
-              ],
-              "returns": "void"
-            }
-          ],
-          "status": {
-            "kind": "supported"
-          }
-        },
-        {
-          "name": "dispatchEvent",
-          "async": false,
-          "overloads": [
-            {
-              "parameters": [
-                {
-                  "name": "event",
-                  "type": "BaseEvent",
-                  "optional": false
-                }
-              ],
-              "returns": "void"
-            }
-          ],
-          "status": {
-            "kind": "supported"
-          }
-        },
-        {
-          "name": "hasEventListener",
-          "async": false,
-          "overloads": [
-            {
-              "parameters": [
-                {
-                  "name": "type",
-                  "type": "string",
-                  "optional": false
-                },
-                {
-                  "name": "listener",
-                  "type": "EventListener",
-                  "optional": false,
-                  "callback": "EventListener"
-                }
-              ],
-              "returns": "boolean"
-            }
-          ],
-          "status": {
-            "kind": "supported"
-          }
-        },
-        {
-          "name": "removeEventListener",
-          "async": false,
-          "overloads": [
-            {
-              "parameters": [
-                {
-                  "name": "type",
-                  "type": "string",
-                  "optional": false
-                },
-                {
-                  "name": "listener",
-                  "type": "EventListener",
-                  "optional": false,
-                  "callback": "EventListener"
-                }
-              ],
-              "returns": "void"
-            }
-          ],
-          "status": {
-            "kind": "supported"
-          }
         }
       ]
     },
@@ -10953,8 +10836,7 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "type": "number",
       "value": "104"
@@ -11208,8 +11090,7 @@
           "mutable": true,
           "lifetime": "owned",
           "status": {
-            "kind": "unsupported",
-            "diagnostic": "TN_NATIVE_UNSUPPORTED_UNRESOLVED_TYPE"
+            "kind": "supported"
           }
         },
         {
@@ -11218,8 +11099,7 @@
           "mutable": true,
           "lifetime": "owned",
           "status": {
-            "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "kind": "supported"
           }
         },
         {
@@ -11228,8 +11108,7 @@
           "mutable": true,
           "lifetime": "owned",
           "status": {
-            "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "kind": "supported"
           }
         },
         {
@@ -11238,8 +11117,7 @@
           "mutable": true,
           "lifetime": "owned",
           "status": {
-            "kind": "unsupported",
-            "diagnostic": "TN_NATIVE_UNSUPPORTED_UNRESOLVED_TYPE"
+            "kind": "supported"
           }
         },
         {
@@ -11248,8 +11126,7 @@
           "mutable": true,
           "lifetime": "owned",
           "status": {
-            "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "kind": "supported"
           }
         },
         {
@@ -11258,8 +11135,7 @@
           "mutable": true,
           "lifetime": "owned",
           "status": {
-            "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "kind": "supported"
           }
         },
         {
@@ -11501,8 +11377,7 @@
           "mutable": true,
           "lifetime": "owned",
           "status": {
-            "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "kind": "supported"
           }
         },
         {
@@ -11751,15 +11626,6 @@
           "name": "type",
           "type": "string",
           "mutable": false,
-          "lifetime": "owned",
-          "status": {
-            "kind": "supported"
-          }
-        },
-        {
-          "name": "maxPositionOffset",
-          "type": "number",
-          "mutable": true,
           "lifetime": "owned",
           "status": {
             "kind": "supported"
@@ -12152,15 +12018,6 @@
           }
         },
         {
-          "name": "envNode",
-          "type": "Node | null",
-          "mutable": true,
-          "lifetime": "owned",
-          "status": {
-            "kind": "supported"
-          }
-        },
-        {
           "name": "alphaHash",
           "type": "boolean",
           "mutable": true,
@@ -12170,8 +12027,8 @@
           }
         },
         {
-          "name": "castShadowPositionNode",
-          "type": "Node | null",
+          "name": "blendDst",
+          "type": "BlendingDstFactor",
           "mutable": true,
           "lifetime": "owned",
           "status": {
@@ -12179,8 +12036,8 @@
           }
         },
         {
-          "name": "maxPositionOffset",
-          "type": "number",
+          "name": "blendDstAlpha",
+          "type": "BlendingDstFactor | null",
           "mutable": true,
           "lifetime": "owned",
           "status": {
@@ -12188,8 +12045,8 @@
           }
         },
         {
-          "name": "maskNode",
-          "type": "Node | null",
+          "name": "blendEquation",
+          "type": "BlendingEquation",
           "mutable": true,
           "lifetime": "owned",
           "status": {
@@ -12197,8 +12054,35 @@
           }
         },
         {
-          "name": "alphaTestNode",
-          "type": "Node | null",
+          "name": "blendEquationAlpha",
+          "type": "BlendingEquation | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "blendSrc",
+          "type": "BlendingSrcFactor",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "blendSrcAlpha",
+          "type": "BlendingSrcFactor | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "premultipliedAlpha",
+          "type": "boolean",
           "mutable": true,
           "lifetime": "owned",
           "status": {
@@ -12207,7 +12091,7 @@
         },
         {
           "name": "mrtNode",
-          "type": "MRTNode | null",
+          "type": "Node | null",
           "mutable": true,
           "lifetime": "owned",
           "status": {
@@ -12384,8 +12268,7 @@
           "mutable": true,
           "lifetime": "owned",
           "status": {
-            "kind": "unsupported",
-            "diagnostic": "TN_NATIVE_UNSUPPORTED_UNRESOLVED_TYPE"
+            "kind": "supported"
           }
         },
         {
@@ -12394,8 +12277,7 @@
           "mutable": true,
           "lifetime": "owned",
           "status": {
-            "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "kind": "supported"
           }
         },
         {
@@ -12404,8 +12286,7 @@
           "mutable": true,
           "lifetime": "owned",
           "status": {
-            "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "kind": "supported"
           }
         },
         {
@@ -12414,8 +12295,7 @@
           "mutable": true,
           "lifetime": "owned",
           "status": {
-            "kind": "unsupported",
-            "diagnostic": "TN_NATIVE_UNSUPPORTED_UNRESOLVED_TYPE"
+            "kind": "supported"
           }
         },
         {
@@ -12424,8 +12304,7 @@
           "mutable": true,
           "lifetime": "owned",
           "status": {
-            "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "kind": "supported"
           }
         },
         {
@@ -12434,8 +12313,7 @@
           "mutable": true,
           "lifetime": "owned",
           "status": {
-            "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "kind": "supported"
           }
         },
         {
@@ -12677,8 +12555,7 @@
           "mutable": true,
           "lifetime": "owned",
           "status": {
-            "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "kind": "supported"
           }
         },
         {
@@ -13067,15 +12944,6 @@
         {
           "name": "subsurfaceColor",
           "type": "Color | undefined",
-          "mutable": true,
-          "lifetime": "owned",
-          "status": {
-            "kind": "supported"
-          }
-        },
-        {
-          "name": "maxPositionOffset",
-          "type": "number",
           "mutable": true,
           "lifetime": "owned",
           "status": {
@@ -13613,15 +13481,6 @@
           }
         },
         {
-          "name": "envNode",
-          "type": "Node | null",
-          "mutable": true,
-          "lifetime": "owned",
-          "status": {
-            "kind": "supported"
-          }
-        },
-        {
           "name": "twoSidedFoliage",
           "type": "boolean",
           "mutable": true,
@@ -13658,8 +13517,8 @@
           }
         },
         {
-          "name": "castShadowPositionNode",
-          "type": "Node | null",
+          "name": "blendDst",
+          "type": "BlendingDstFactor",
           "mutable": true,
           "lifetime": "owned",
           "status": {
@@ -13667,8 +13526,8 @@
           }
         },
         {
-          "name": "maxPositionOffset",
-          "type": "number",
+          "name": "blendDstAlpha",
+          "type": "BlendingDstFactor | null",
           "mutable": true,
           "lifetime": "owned",
           "status": {
@@ -13676,8 +13535,8 @@
           }
         },
         {
-          "name": "maskNode",
-          "type": "Node | null",
+          "name": "blendEquation",
+          "type": "BlendingEquation",
           "mutable": true,
           "lifetime": "owned",
           "status": {
@@ -13685,8 +13544,35 @@
           }
         },
         {
-          "name": "alphaTestNode",
-          "type": "Node | null",
+          "name": "blendEquationAlpha",
+          "type": "BlendingEquation | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "blendSrc",
+          "type": "BlendingSrcFactor",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "blendSrcAlpha",
+          "type": "BlendingSrcFactor | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "premultipliedAlpha",
+          "type": "boolean",
           "mutable": true,
           "lifetime": "owned",
           "status": {
@@ -13695,7 +13581,7 @@
         },
         {
           "name": "mrtNode",
-          "type": "MRTNode | null",
+          "type": "Node | null",
           "mutable": true,
           "lifetime": "owned",
           "status": {
@@ -13756,8 +13642,7 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "type": "number",
       "value": "103"
@@ -13840,8 +13725,7 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "type": "number",
       "value": "4"
@@ -14297,15 +14181,6 @@
           }
         },
         {
-          "name": "envNode",
-          "type": "Node | null",
-          "mutable": true,
-          "lifetime": "owned",
-          "status": {
-            "kind": "supported"
-          }
-        },
-        {
           "name": "alphaHash",
           "type": "boolean",
           "mutable": true,
@@ -14315,8 +14190,8 @@
           }
         },
         {
-          "name": "castShadowPositionNode",
-          "type": "Node | null",
+          "name": "blendDst",
+          "type": "BlendingDstFactor",
           "mutable": true,
           "lifetime": "owned",
           "status": {
@@ -14324,8 +14199,8 @@
           }
         },
         {
-          "name": "maxPositionOffset",
-          "type": "number",
+          "name": "blendDstAlpha",
+          "type": "BlendingDstFactor | null",
           "mutable": true,
           "lifetime": "owned",
           "status": {
@@ -14333,8 +14208,8 @@
           }
         },
         {
-          "name": "maskNode",
-          "type": "Node | null",
+          "name": "blendEquation",
+          "type": "BlendingEquation",
           "mutable": true,
           "lifetime": "owned",
           "status": {
@@ -14342,8 +14217,35 @@
           }
         },
         {
-          "name": "alphaTestNode",
-          "type": "Node | null",
+          "name": "blendEquationAlpha",
+          "type": "BlendingEquation | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "blendSrc",
+          "type": "BlendingSrcFactor",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "blendSrcAlpha",
+          "type": "BlendingSrcFactor | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "premultipliedAlpha",
+          "type": "boolean",
           "mutable": true,
           "lifetime": "owned",
           "status": {
@@ -14352,7 +14254,7 @@
         },
         {
           "name": "mrtNode",
-          "type": "MRTNode | null",
+          "type": "Node | null",
           "mutable": true,
           "lifetime": "owned",
           "status": {
@@ -16097,8 +15999,7 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "type": "number",
       "value": "201"
@@ -16108,8 +16009,7 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "type": "number",
       "value": "214"
@@ -16119,8 +16019,7 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "type": "number",
       "value": "212"
@@ -16130,8 +16029,7 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "type": "number",
       "value": "207"
@@ -16141,8 +16039,7 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "type": "number",
       "value": "209"
@@ -16152,8 +16049,7 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "type": "number",
       "value": "205"
@@ -16163,8 +16059,7 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "type": "number",
       "value": "203"
@@ -19306,6 +19201,15 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "textures",
+          "type": "Texture[]",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": [
@@ -19342,100 +19246,6 @@
                   "name": "depth",
                   "type": "number",
                   "optional": true
-                }
-              ],
-              "returns": "void"
-            }
-          ],
-          "status": {
-            "kind": "supported"
-          }
-        },
-        {
-          "name": "addEventListener",
-          "async": false,
-          "overloads": [
-            {
-              "parameters": [
-                {
-                  "name": "type",
-                  "type": "string",
-                  "optional": false
-                },
-                {
-                  "name": "listener",
-                  "type": "EventListener",
-                  "optional": false,
-                  "callback": "EventListener"
-                }
-              ],
-              "returns": "void"
-            }
-          ],
-          "status": {
-            "kind": "supported"
-          }
-        },
-        {
-          "name": "removeEventListener",
-          "async": false,
-          "overloads": [
-            {
-              "parameters": [
-                {
-                  "name": "type",
-                  "type": "string",
-                  "optional": false
-                },
-                {
-                  "name": "listener",
-                  "type": "EventListener",
-                  "optional": false,
-                  "callback": "EventListener"
-                }
-              ],
-              "returns": "void"
-            }
-          ],
-          "status": {
-            "kind": "supported"
-          }
-        },
-        {
-          "name": "hasEventListener",
-          "async": false,
-          "overloads": [
-            {
-              "parameters": [
-                {
-                  "name": "type",
-                  "type": "string",
-                  "optional": false
-                },
-                {
-                  "name": "listener",
-                  "type": "EventListener",
-                  "optional": false,
-                  "callback": "EventListener"
-                }
-              ],
-              "returns": "boolean"
-            }
-          ],
-          "status": {
-            "kind": "supported"
-          }
-        },
-        {
-          "name": "dispatchEvent",
-          "async": false,
-          "overloads": [
-            {
-              "parameters": [
-                {
-                  "name": "event",
-                  "type": "BaseEvent",
-                  "optional": false
                 }
               ],
               "returns": "void"
@@ -19499,8 +19309,7 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "type": "number",
       "value": "102"
@@ -20989,8 +20798,62 @@
           }
         },
         {
-          "name": "maxPositionOffset",
-          "type": "number",
+          "name": "blendDst",
+          "type": "BlendingDstFactor",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "blendDstAlpha",
+          "type": "BlendingDstFactor | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "blendEquation",
+          "type": "BlendingEquation",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "blendEquationAlpha",
+          "type": "BlendingEquation | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "blendSrc",
+          "type": "BlendingSrcFactor",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "blendSrcAlpha",
+          "type": "BlendingSrcFactor | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "premultipliedAlpha",
+          "type": "boolean",
           "mutable": true,
           "lifetime": "owned",
           "status": {
@@ -21425,8 +21288,7 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "type": "number",
       "value": "204"
@@ -21436,8 +21298,7 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "type": "number",
       "value": "210"
@@ -21447,8 +21308,7 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "type": "number",
       "value": "202"
@@ -21635,8 +21495,7 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "type": "number",
       "value": "101"
@@ -21646,8 +21505,7 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "type": "number",
       "value": "3"
@@ -21870,100 +21728,6 @@
             {
               "parameters": [],
               "returns": "this"
-            }
-          ],
-          "status": {
-            "kind": "supported"
-          }
-        },
-        {
-          "name": "addEventListener",
-          "async": false,
-          "overloads": [
-            {
-              "parameters": [
-                {
-                  "name": "type",
-                  "type": "string",
-                  "optional": false
-                },
-                {
-                  "name": "listener",
-                  "type": "EventListener",
-                  "optional": false,
-                  "callback": "EventListener"
-                }
-              ],
-              "returns": "void"
-            }
-          ],
-          "status": {
-            "kind": "supported"
-          }
-        },
-        {
-          "name": "removeEventListener",
-          "async": false,
-          "overloads": [
-            {
-              "parameters": [
-                {
-                  "name": "type",
-                  "type": "string",
-                  "optional": false
-                },
-                {
-                  "name": "listener",
-                  "type": "EventListener",
-                  "optional": false,
-                  "callback": "EventListener"
-                }
-              ],
-              "returns": "void"
-            }
-          ],
-          "status": {
-            "kind": "supported"
-          }
-        },
-        {
-          "name": "hasEventListener",
-          "async": false,
-          "overloads": [
-            {
-              "parameters": [
-                {
-                  "name": "type",
-                  "type": "string",
-                  "optional": false
-                },
-                {
-                  "name": "listener",
-                  "type": "EventListener",
-                  "optional": false,
-                  "callback": "EventListener"
-                }
-              ],
-              "returns": "boolean"
-            }
-          ],
-          "status": {
-            "kind": "supported"
-          }
-        },
-        {
-          "name": "dispatchEvent",
-          "async": false,
-          "overloads": [
-            {
-              "parameters": [
-                {
-                  "name": "event",
-                  "type": "BaseEvent",
-                  "optional": false
-                }
-              ],
-              "returns": "void"
             }
           ],
           "status": {
@@ -26697,8 +26461,7 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "type": "number",
       "value": "200"
@@ -27912,8 +27675,62 @@
           }
         },
         {
-          "name": "maxPositionOffset",
-          "type": "number",
+          "name": "blendDst",
+          "type": "BlendingDstFactor",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "blendDstAlpha",
+          "type": "BlendingDstFactor | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "blendEquation",
+          "type": "BlendingEquation",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "blendEquationAlpha",
+          "type": "BlendingEquation | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "blendSrc",
+          "type": "BlendingSrcFactor",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "blendSrcAlpha",
+          "type": "BlendingSrcFactor | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "premultipliedAlpha",
+          "type": "boolean",
           "mutable": true,
           "lifetime": "owned",
           "status": {
@@ -28259,8 +28076,62 @@
           }
         },
         {
-          "name": "maxPositionOffset",
-          "type": "number",
+          "name": "blendDst",
+          "type": "BlendingDstFactor",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "blendDstAlpha",
+          "type": "BlendingDstFactor | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "blendEquation",
+          "type": "BlendingEquation",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "blendEquationAlpha",
+          "type": "BlendingEquation | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "blendSrc",
+          "type": "BlendingSrcFactor",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "blendSrcAlpha",
+          "type": "BlendingSrcFactor | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "premultipliedAlpha",
+          "type": "boolean",
           "mutable": true,
           "lifetime": "owned",
           "status": {
@@ -30189,188 +30060,6 @@
       "status": {
         "kind": "supported"
       }
-    },
-    {
-      "name": "DataArrayTexture",
-      "kind": "class",
-      "source": "three",
-      "status": {
-        "kind": "supported"
-      },
-      "extends": "Texture",
-      "constructor": [],
-      "fields": [],
-      "methods": []
-    },
-    {
-      "name": "MeshPhysicalNodeMaterial",
-      "kind": "class",
-      "source": "three",
-      "status": {
-        "kind": "supported"
-      },
-      "extends": "MeshStandardNodeMaterial",
-      "constructor": [],
-      "fields": [
-        {
-          "name": "anisotropy",
-          "type": "number",
-          "mutable": true,
-          "lifetime": "owned",
-          "status": {
-            "kind": "supported"
-          }
-        },
-        {
-          "name": "clearcoat",
-          "type": "number",
-          "mutable": true,
-          "lifetime": "owned",
-          "status": {
-            "kind": "supported"
-          }
-        },
-        {
-          "name": "clearcoatRoughness",
-          "type": "number",
-          "mutable": true,
-          "lifetime": "owned",
-          "status": {
-            "kind": "supported"
-          }
-        },
-        {
-          "name": "dispersion",
-          "type": "number",
-          "mutable": true,
-          "lifetime": "owned",
-          "status": {
-            "kind": "supported"
-          }
-        },
-        {
-          "name": "ior",
-          "type": "number",
-          "mutable": true,
-          "lifetime": "owned",
-          "status": {
-            "kind": "supported"
-          }
-        },
-        {
-          "name": "iridescence",
-          "type": "number",
-          "mutable": true,
-          "lifetime": "owned",
-          "status": {
-            "kind": "supported"
-          }
-        },
-        {
-          "name": "sheen",
-          "type": "number",
-          "mutable": true,
-          "lifetime": "owned",
-          "status": {
-            "kind": "supported"
-          }
-        },
-        {
-          "name": "specularIntensity",
-          "type": "number",
-          "mutable": true,
-          "lifetime": "owned",
-          "status": {
-            "kind": "supported"
-          }
-        },
-        {
-          "name": "transmission",
-          "type": "number",
-          "mutable": true,
-          "lifetime": "owned",
-          "status": {
-            "kind": "supported"
-          }
-        },
-        {
-          "name": "clearcoatMap",
-          "type": "Texture | null",
-          "mutable": true,
-          "lifetime": "owned",
-          "status": {
-            "kind": "supported"
-          }
-        },
-        {
-          "name": "clearcoatNormalMap",
-          "type": "Texture | null",
-          "mutable": true,
-          "lifetime": "owned",
-          "status": {
-            "kind": "supported"
-          }
-        },
-        {
-          "name": "clearcoatNormalScale",
-          "type": "Vector2",
-          "mutable": true,
-          "lifetime": "owned",
-          "status": {
-            "kind": "supported"
-          }
-        },
-        {
-          "name": "clearcoatRoughnessMap",
-          "type": "Texture | null",
-          "mutable": true,
-          "lifetime": "owned",
-          "status": {
-            "kind": "supported"
-          }
-        },
-        {
-          "name": "specularColor",
-          "type": "Color",
-          "mutable": true,
-          "lifetime": "owned",
-          "status": {
-            "kind": "supported"
-          }
-        },
-        {
-          "name": "specularColorMap",
-          "type": "Texture | null",
-          "mutable": true,
-          "lifetime": "owned",
-          "status": {
-            "kind": "supported"
-          }
-        },
-        {
-          "name": "specularIntensityMap",
-          "type": "Texture | null",
-          "mutable": true,
-          "lifetime": "owned",
-          "status": {
-            "kind": "supported"
-          }
-        }
-      ],
-      "methods": []
-    },
-    {
-      "name": "MRTNode",
-      "kind": "class",
-      "source": "three/webgpu",
-      "status": {
-        "kind": "partial",
-        "gaps": ["graph-authoring-only", "constructor-not-bound"]
-      },
-      "extends": "Node",
-      "constructor": [],
-      "fields": [],
-      "methods": []
     }
   ]
 }

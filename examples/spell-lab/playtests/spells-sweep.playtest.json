@@ -1,0 +1,133 @@
+{
+  "name": "spell-lab-six-in-sequence",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 12,
+  "subject": "spell-lab",
+  "artifacts": {
+    "screenshots": "before-after"
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "cold-start",
+      "waitTicks": 30,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "fireball",
+      "press": "Digit1",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "fireball-linger",
+      "waitTicks": 45,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "thunderstrike",
+      "press": "Digit2",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "thunderstrike-linger",
+      "waitTicks": 45,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "glacial-spike",
+      "press": "Digit3",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "glacial-spike-linger",
+      "waitTicks": 45,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "arcane-barrage",
+      "press": "Digit4",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "arcane-barrage-linger",
+      "waitTicks": 45,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "aegis",
+      "press": "Digit5",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "aegis-linger",
+      "waitTicks": 45,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "inferno",
+      "press": "Digit6",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "inferno-linger",
+      "waitTicks": 60,
+      "release": true
+    }
+  ],
+  "assert": {
+    "components": [
+      {
+        "entity": "spell-lab",
+        "component": "casts",
+        "gte": 6
+      },
+      {
+        "entity": "spell-lab",
+        "component": "floorMarks",
+        "gte": 1
+      },
+      {
+        "entity": "spell-lab",
+        "component": "spawned",
+        "gte": 1
+      }
+    ],
+    "diagnostics": {
+      "noConsoleErrors": true
+    },
+    "visual": [
+      {
+        "frameDiff": {
+          "minChangedPixelRatio": 0.002
+        }
+      }
+    ],
+    "performance": {
+      "maxDrawCalls": 140,
+      "maxTriangles": 185000
+    }
+  }
+}

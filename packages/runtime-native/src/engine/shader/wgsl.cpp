@@ -325,7 +325,10 @@ void WgslEmitter::block(uint32_t index, int depth, std::string& out) const {
             case Kind::TextureStore:
                 out += indent + "textureStore(st_" + p_.storageTextures_[s.a].name + ", " + expr(s.b) + ", " + expr(s.c) + ");\n";
                 break;
-            case Kind::Discard: out += indent + "discard;\n"; break;
+            // naga (wgpu-native: Android, iOS) refuses any statement after a bare `discard` ("instructions after
+            // return"), and Tint refuses a function that then falls off its end without a return. Both accept a
+            // discard that ends its own block, so TSL's unconditional `Discard()` is emitted inside one.
+            case Kind::Discard: out += indent + "if (true) { discard; }\n"; break;
             case Kind::Return: out += indent + "return;\n"; break;
             case Kind::Break: out += indent + "break;\n"; break;
             case Kind::Continue: out += indent + "continue;\n"; break;

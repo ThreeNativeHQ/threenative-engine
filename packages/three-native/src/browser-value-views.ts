@@ -7,6 +7,7 @@
 import type { EngineValue, IBrowserRuntime, IEngineRef } from "./browser-abi-types.js";
 import type { IRegistryClass, IRegistryDump, IWrapped } from "./browser-backend.js";
 import { REF, SCALARS, TYPED, type TypedArray, isPlainObject } from "./browser-marshal.js";
+import { UNWATCH } from "./tsl-uniforms.js";
 
 // three's math values are JS (browser-math.ts): `new Vector3()` holds its own lanes. The engine's
 // vectors (`mesh.position`) share that prototype through `engine`, whose lanes are its memory.
@@ -284,6 +285,7 @@ export function defineValueViews(host: IValueViewHost): IValueViews {
   };
   const promote = (value: IValueLanes, info: IValueClass): void => {
     const values = info.plan.read(value);
+    (value as { [UNWATCH]?: () => void })[UNWATCH]?.(); // a uniform's watched lanes go: scan it instead
     for (const key of info.plan.drop) delete value[key];
     Object.setPrototypeOf(value, info.engine);
     const built = engineArgs(info, values);

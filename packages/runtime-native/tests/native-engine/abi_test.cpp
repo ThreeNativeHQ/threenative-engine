@@ -1425,8 +1425,8 @@ void tsl_statements() {
     uint64_t zero = 0, acc = 0, index = 0, cond = 0, then = 0, branch = 0, otherwise = 0, body = 0, fn = 0, done = 0;
     const tn_tsl_arg_t z = number(0), one = number(1), two = number(2);
     CHECK(tn_tsl_call(ctx, "float", nullptr, &z, 1, &zero, &d.value) == TN_OK);
-    CHECK(tn_tsl_call(ctx, "toVar", &zero, nullptr, 0, &acc, &d.value) != TN_OK);  // outside any Fn
-    tn_diagnostic_release(&d.value);
+    // Outside any Fn: a variable declared at the top of the program (a Fn's `out` argument, PRD-777).
+    CHECK(tn_tsl_call(ctx, "toVar", &zero, nullptr, 0, &acc, &d.value) == TN_OK);
 
     CHECK(open() == TN_OK);
     CHECK(tn_tsl_call(ctx, "toVar", &zero, nullptr, 0, &acc, &d.value) == TN_OK);

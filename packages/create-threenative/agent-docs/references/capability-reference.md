@@ -3369,6 +3369,270 @@ const root = createCssUiRoot();
 root.render(createElement("section", { className: "fixed inset-0 bg-zinc-900/90" }, "READY"));
 ```
 
+## `@threenative/core/spells`
+
+### `CastPool`
+
+`class` — Step a spell's timeline: charge, release, travel, impact, linger, done.
+
+```ts
+export class CastPool { … }
+```
+
+- **Use when:** a fireball or a lightning bolt that charges, flies, lands and lingers · several spells mid-flight, with no allocation per cast
+- **Constraints:** the pool is fixed and recycles the cast alive longest; it never grows · a ball that has passed its target lands on the target, however late the frame notices
+- **Overrides:** timing, shape, speed and radius come from the spell; a cast may override shape and seed
+
+```ts
+const casts = new CastPool(world);
+casts.cast(fireball, target, { from: hand });
+casts.update(dt);
+```
+
+### `createAegis`
+
+`function` — A ward around the caster: it forms, holds, and breaks outward when it expires.
+
+```ts
+export function createAegis(world: SpellWorld, overrides: IFireSpellOverrides = { … }
+```
+
+- **Use when:** a shield spell a player casts on themselves · a magic barrier that forms around the caster · make a protective bubble spell · a defensive bubble that flashes when it breaks
+- **Constraints:** every colour, size, count and timing is a named override on the call
+- **Overrides:** core, highlight, charge, impact, linger, radius, light · core, highlight, charge, impact, linger, radius, light, shake
+
+```ts
+const aegis = createAegis(world);
+casts.cast(aegis, world.focus);
+```
+
+### `createArcaneBarrage`
+
+`function` — A volley of arcane missiles: fast, precise, and each one pops on arrival.
+
+```ts
+export function createArcaneBarrage(world: SpellWorld, overrides: IFireSpellOverrides = { … }
+```
+
+- **Use when:** an arcane missile spell that fires projectiles at a target · a magic barrage a mage class spams · a magic missile spell · make an arcane bolt spell · an arcane missile spell that fires several projectiles at a target · a pink energy bolt with a short charge
+- **Constraints:** every colour, size, count and timing is a named override on the call
+- **Overrides:** core, highlight, speed, charge, impact, linger, radius, burst, light
+
+```ts
+const barrage = createArcaneBarrage(world);
+casts.cast(barrage, target);
+```
+
+### `createFireball`
+
+`function` — A ball of fire that charges, crosses the room and leaves the floor burning.
+
+```ts
+export function createFireball(world: SpellWorld, overrides: IFireSpellOverrides = { … }
+```
+
+- **Use when:** a fireball spell the player casts at an enemy · a burning projectile that explodes and scorches the ground · a wizard's fire attack with a wind-up, a flight and an aftermath · make a fireball · a fireball spell a player casts at an enemy
+- **Constraints:** every colour, size, count and timing is a named override on the call · the first cast costs what the hundredth does: nothing is built at cast time · the stock look ships as the default, and no override rebuilds a pipeline
+- **Overrides:** core, highlight, speed, charge, impact, linger, radius, burst, trail, lingerBurst, light, shake, scorch
+
+```ts
+const fireball = createFireball(world);
+casts.cast(fireball, target);
+```
+
+### `createGlacialSpike`
+
+`function` — A shard of ice that flies flat and fast, and freezes the ground it breaks on.
+
+```ts
+export function createGlacialSpike(world: SpellWorld, overrides: IFireSpellOverrides = { … }
+```
+
+- **Use when:** an ice spike spell that flies at a target and shatters · a freezing projectile that leaves frost on the floor · make an ice spell · a cold spell with a charge, a flight and a lingering chill
+- **Constraints:** every colour, size, count and timing is a named override on the call
+- **Overrides:** core, highlight, speed, charge, impact, linger, radius, burst, trail, light
+
+```ts
+const spike = createGlacialSpike(world);
+casts.cast(spike, target);
+```
+
+### `createInferno`
+
+`function` — A pillar of fire that erupts where it lands and keeps burning.
+
+```ts
+export function createInferno(world: SpellWorld, overrides: IFireSpellOverrides = { … }
+```
+
+- **Use when:** a fire area spell that erupts at a point and burns there · an inferno column a boss drops on the arena · make a sustained fire area spell · a sustained flame that scorches the ground for seconds
+- **Constraints:** every colour, size, count and timing is a named override on the call
+- **Overrides:** core, highlight, charge, impact, linger, radius, burst, trail, light, shake, scorch
+
+```ts
+const inferno = createInferno(world);
+casts.cast(inferno, target);
+```
+
+### `createSpell`
+
+`function` — Build a spell from a recipe: four beats, a tint, and the numbers between them.
+
+```ts
+export function createSpell(world: SpellWorld, recipe: ISpellRecipe): ISpell { … }
+```
+
+- **Use when:** author a spell the catalog does not cover, out of the same beats
+- **Constraints:** read the world through SpellWorld only, so a game can swap the scene and the floor
+
+```ts
+const spell = createSpell(world, recipe);
+```
+
+### `createThunderstrike`
+
+`function` — A bolt out of the sky: it charges, strikes the point instantly, and the ground remembers it.
+
+```ts
+export function createThunderstrike(world: SpellWorld, overrides: IFireSpellOverrides = { … }
+```
+
+- **Use when:** a lightning strike spell that hits a point immediately · a thunderbolt with a wind-up and a burnt mark where it lands · make a lightning spell · an electrical spell with a column of light from above
+- **Constraints:** every colour, size, count and timing is a named override on the call
+- **Overrides:** core, highlight, charge, impact, linger, radius, light, shake, scorch
+
+```ts
+const bolt = createThunderstrike(world);
+casts.cast(bolt, target);
+```
+
+### `ParticleKindTable`
+
+`class` — Tune what a particle kind does, as data rather than a shader.
+
+```ts
+export class ParticleKindTable { … }
+```
+
+- **Use when:** retune a spell's particles at run time from a settings screen · change how long, how fast or how heavy a kind of particle is without a new pipeline
+- **Constraints:** set writes uniforms; no kernel, material or pipeline is rebuilt · a table knows only the kinds it was asked for, so an unused kind costs nothing
+- **Overrides:** lifetime, size, speed, cone, gravity, drag, buoyancy, alpha, colour and highlight
+
+```ts
+const kinds = new ParticleKindTable(["flame", "smoke"]);
+kinds.set("flame", { lifetime: [0.3, 0.6], colour: [0.4, 0.8, 1] });
+```
+
+### `ReactionField`
+
+`class` — The marks a spell leaves on the floor: heat, char, wet, frost, crack and glow.
+
+```ts
+export class ReactionField { … }
+```
+
+- **Use when:** a fireball impact that leaves a scorch and fades over time · ice that melts where lightning spread, or a lava geyser's crack
+- **Constraints:** it draws nothing; the game decides what a mark looks like · the patch is finite and every channel decays on its own half-life
+- **Overrides:** halfLife, resolution and size tune the patch; pattern, radius, seed and angle set each mark
+
+```ts
+field.splat({ heat: 1, char: 0.6, radius: 2.5, x: hit.x, z: hit.z });
+field.update(dt);
+```
+
+### `SpellLights`
+
+`class` — A fixed pool of spell lights, created once at zero intensity.
+
+```ts
+export class SpellLights { … }
+```
+
+- **Use when:** a spell impact that glows without changing the light count · a charge glow or a falling meteor lighting what it passes
+- **Constraints:** the whole pool exists before the first cast; a cast changes intensity, never the list · flash returns undefined when the pool is busy; a spell carries on without one
+- **Overrides:** count is the pool size; each flash supplies position, colour, intensity, range and seconds
+
+```ts
+lights.flash({ x, y, z, color, intensity: 40, range: 12, seconds: 0.35 });
+```
+
+### `SpellWorld`
+
+`class` — Everything a spell may touch: the scene, the floor, the light pool, the surface field, one shake and one flash limiter.
+
+```ts
+export class SpellWorld implements ICastEnvironment { … }
+```
+
+- **Use when:** cast an engine spell without passing a scene into every call · honour an accessibility setting that limits flashing
+- **Constraints:** damage, mana, cooldowns and who the target is stay in the game · with reducedFlashes on, a fourth flash inside one second is refused, never dimmed
+- **Overrides:** groundAt, castSlots, lightCount, reaction, shake and reducedFlashes are named options
+
+```ts
+const world = new SpellWorld({ scene, groundAt });
+const casts = new CastPool(world);
+```
+
+## `@threenative/core/spells/ultra`
+
+### `bakeNoise`
+
+`function` — CPU bake of the Ultra Elements 3D noise, curl and blackbody textures that every spell volume samples.
+
+```ts
+export function bakeNoise( { … }
+```
+
+- **Use when:** the noise and blackbody textures an Ultra Elements spell needs before it first draws
+- **Constraints:** costs about 0.6 s at 64^3 and about 5 s at 128^3 on the main thread; bake once at load
+
+```ts
+bakeNoise({ noiseSize: 64 }); // once at load, before createFx draws
+```
+
+### `createFx`
+
+`function` — The shared Ultra Elements spell world: casts, volumes, spell lights and the per-frame CPU tick. Add `fx.scenes.fx` to the scene, `addSpell` each ported spell, call `renderFrame(dt)` each frame.
+
+```ts
+export function createFx(o: IFxOptions) { … }
+```
+
+- **Use when:** an Ultra Elements spell such as the raymarched teardrop Fireball cast at a target · a volumetric fire spell drawn through the Three.js TSL node API on WebGPU
+- **Constraints:** call bakeNoise first: the volume shaders sample its noise, curl and blackbody textures
+
+```ts
+const ultra = createFx({ camera, size: () => ({ width: innerWidth, height: innerHeight }), seed: 777 }); const fireball = ultra.addSpell(fire); scene.add(ultra.fx.scenes.fx);
+```
+
+### `groundShade`
+
+`function` — The Ultra Elements arena floor's response to the ground field and spell impacts (scorch, char, wet, glowing hot ground) as nodes for a game's own floor material: `color`, `roughness`, `metalness`, `emissive` from the floor's own surface at a world position.
+
+```ts
+export function groundShade(wp: V3, surface: IGroundSurface) { … }
+```
+
+- **Use when:** a floor that shows the Fireball's scorch and hot ground cooling over seconds
+
+```ts
+const shade = groundShade(positionWorld, { albedo, rough: float(0.85), metal: float(0) }); floor.colorNode = vec4(shade.color, 1);
+```
+
+### `Particles`
+
+`class` — The Ultra Elements GPU particle system behind `fx.particles`: a spell's kinds, emitters and field emitters.
+
+```ts
+export class Particles { … }
+```
+
+- **Use when:** the flames, embers, sparks, smoke and debris an Ultra Elements spell emits as it charges, flies and hits
+
+```ts
+const flames = ultra.fx.particles.emitter("fire.flame"); // ultra from createFx
+```
+
 ## `@threenative/core/ui-layer`
 
 ### `connectUiBridge`
