@@ -24,6 +24,7 @@ import {
   MeshBasicNodeMaterial,
   MeshPhysicalNodeMaterial,
   MeshStandardNodeMaterial,
+  type Node,
   type NodeMaterial,
   RGBAFormat,
   RenderTarget,
@@ -198,6 +199,7 @@ export class WorldImpostorAtlas {
   readonly bytes: number;
   readonly #color: Texture;
   readonly #normal: Texture;
+  readonly #occlusion: Texture;
 
   constructor(pixels: number) {
     if (!Number.isInteger(pixels) || pixels <= 0) {
@@ -205,7 +207,7 @@ export class WorldImpostorAtlas {
     }
     this.pixels = pixels;
     this.target = new RenderTarget(pixels, pixels, {
-      count: 2,
+      count: 3,
       depth: IMPOSTOR_VIEWS,
       format: RGBAFormat,
       type: UnsignedByteType,
@@ -217,14 +219,17 @@ export class WorldImpostorAtlas {
     });
     this.#color = this.target.textures[0] as Texture;
     this.#normal = this.target.textures[1] as Texture;
+    this.#occlusion = this.target.textures[2] as Texture;
     // MRT keys are looked up by name on the target's textures, so the names have to be the ones the
     // bake's `mrt()` node uses; see `getTextureIndex` in three's MRTNode.
     this.#color.name = "output";
     this.#normal.name = "normal";
+    this.#occlusion.name = "occlusion";
     this.#color.colorSpace = SRGBColorSpace;
     this.#normal.colorSpace = NoColorSpace;
+    this.#occlusion.colorSpace = NoColorSpace;
     const levels = Math.floor(Math.log2(Math.max(1, pixels))) + 1;
-    this.bytes = 2 * mipChainBytes(pixels, IMPOSTOR_VIEWS, levels);
+    this.bytes = 3 * mipChainBytes(pixels, IMPOSTOR_VIEWS, levels);
   }
 
   get color(): Texture {
@@ -233,6 +238,11 @@ export class WorldImpostorAtlas {
 
   get normal(): Texture {
     return this.#normal;
+  }
+
+  /** The source's ambient occlusion in red, coverage-premultiplied like the normal. */
+  get occlusion(): Texture {
+    return this.#occlusion;
   }
 
   dispose(): void {
@@ -322,9 +332,13 @@ function captureMaterial(source: Material, alphaTest: number, depthScale: number
   const encodedNormal = normalWorld.mul(0.5).add(0.5).mul(coverage);
   // Secondary MRT attachments clear to alpha one; clear contributes zero depth numerator.
   const depth = float(1).sub(positionView.z.mul(-depthScale).mul(coverage));
+  // The source's own occlusion (a crown's dark interior), which reads geometry the card lacks: baked
+  // here so the far level keeps it, as the level it replaces shades its indirect light with it.
+  const occlusion = (material.aoNode as Node<"float"> | null) ?? float(1);
   material.mrtNode = mrt({
     output: vec4(diffuseColor.rgb.mul(coverage), coverage),
     normal: vec4(encodedNormal, depth),
+    occlusion: vec4(occlusion.mul(coverage), 0, 0, 1),
   }) as MRTNode;
   material.transparent = false;
   material.blending = NoBlending;

@@ -532,6 +532,7 @@ export class WorldImpostorSurface {
       dirVarying,
     );
     material.colorNode = vec4(fragment.albedo, fragment.coverage);
+    material.aoNode = fragment.occlusion;
     material.alphaTestNode = fragment.threshold;
     material.maskShadowNode = fragment.coverage.greaterThan(fragment.threshold);
     material.normalNode = Fn((_inputs: unknown, builder: NodeBuilder) =>
@@ -607,6 +608,7 @@ interface IFragmentNodes {
   readonly albedo: Node<"vec3">;
   readonly coverage: Node<"float">;
   readonly normalAsset: Node<"vec3">;
+  readonly occlusion: Node<"float">;
   readonly threshold: Node<"float">;
 }
 
@@ -656,10 +658,12 @@ function buildFragmentNodes(
 
   const colorMap = texture(atlas.color);
   const normalMap = texture(atlas.normal);
+  const occlusionMap = texture(atlas.occlusion);
   const steps = Math.min(atlas.pixels, IMPOSTOR_MARCH_STEPS);
   const uvs: Node<"vec2">[] = [];
   const colors: Node<"vec4">[] = [];
   const normals: Node<"vec4">[] = [];
+  const occlusions: Node<"float">[] = [];
   for (let index = 0; index < 3; index += 1) {
     const direction = octahedralViewNode(
       cellX[index] as Node<"float">,
@@ -797,6 +801,7 @@ function buildFragmentNodes(
     uvs.push(hit.xy);
     colors.push(colorMap.depth(layer).sample(hit.xy).mul(hit.z).toVar() as Node<"vec4">);
     normals.push(normalMap.depth(layer).sample(hit.xy).mul(hit.z).toVar() as Node<"vec4">);
+    occlusions.push(occlusionMap.depth(layer).sample(hit.xy).r.mul(hit.z).toVar() as Node<"float">);
   }
 
   const [w0, w1, w2] = weights as [Node<"float">, Node<"float">, Node<"float">];
@@ -807,10 +812,14 @@ function buildFragmentNodes(
   const albedo = c0.rgb.mul(w0).add(c1.rgb.mul(w1)).add(c2.rgb.mul(w2)).div(safe);
   const encodedNormal = n0.rgb.mul(w0).add(n1.rgb.mul(w1)).add(n2v.rgb.mul(w2)).div(safe);
   const normalAsset = normalize(encodedNormal.mul(2).sub(1));
+  const [o0, o1, o2] = occlusions as [Node<"float">, Node<"float">, Node<"float">];
+  // Coverage-premultiplied as baked; a view that missed (`hit.z` 0) adds nothing to either sum.
+  const occlusion = o0.mul(w0).add(o1.mul(w1)).add(o2.mul(w2)).div(safe).clamp(0, 1);
   return {
     albedo,
     coverage,
     normalAsset,
+    occlusion,
     threshold: mipThresholdNode(uvs, atlas.pixels, cutoff, mipScale),
   };
 }

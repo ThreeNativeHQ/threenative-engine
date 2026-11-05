@@ -88,9 +88,9 @@ import { type IKernelInput, WorldGpuScene, cullAndSelect } from "../src/world-gp
 import { type IWorldAsset, type IWorldRun, cellPlacements } from "../src/world-package.js";
 import { type IWorldPackage, WorldCells } from "../src/world.js";
 
-// Two full-mip RGBA8 attachments per atlas, one layer per view.
+// Three full-mip RGBA8 attachments per atlas (colour, normal, occlusion), one layer per view.
 const atlasBytes =
-  2 *
+  3 *
   Array.from(
     { length: Math.floor(Math.log2(IMPOSTOR_FRAME_PIXELS)) + 1 },
     (_, level) => Math.max(1, IMPOSTOR_FRAME_PIXELS >> level) ** 2 * IMPOSTOR_VIEWS * 4,

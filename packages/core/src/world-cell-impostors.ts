@@ -43,8 +43,8 @@ import {
 } from "./world-package.js";
 
 /**
- * GPU bytes of completed impostor atlases one world admits, 128 MiB. A 128 px two-attachment RGBA8
- * atlas with mips is 2,796,160 B, so 48 fit and the 49th is refused before its atlas is allocated,
+ * GPU bytes of completed impostor atlases one world admits, 128 MiB. A 128 px three-attachment RGBA8
+ * atlas with mips is 4,194,240 B, so 32 fit and the 33rd is refused before its atlas is allocated,
  * keeping its source LODs. An atlas a live asset still draws from is never evicted, so the active
  * record count is a hard admission cap rather than a target the cache trims toward — eviction only
  * ever drops an inactive record to make room for a new one.
@@ -53,7 +53,7 @@ const DEFAULT_IMPOSTOR_ATLAS_BUDGET_BYTES = 128 * 1024 * 1024;
 
 /**
  * The declared byte cost of one atlas at the bake's fixed frame, the same numbers
- * `WorldImpostorAtlas.bytes` reports: both RGBA8 attachments' mip chains, the logical colour atlas
+ * `WorldImpostorAtlas.bytes` reports: the three RGBA8 attachments' mip chains, the logical colour atlas
  * cost rather than every physical GPU buffer a render target holds. Computed here so the cache
  * budget is enforced BEFORE `baker.begin` allocates the atlas, never after.
  */
@@ -64,7 +64,7 @@ const IMPOSTOR_ATLAS_BYTES = ((): number => {
     const edge = Math.max(1, IMPOSTOR_FRAME_PIXELS >> level);
     bytes += edge * edge * IMPOSTOR_VIEWS * 4;
   }
-  return 2 * bytes;
+  return 3 * bytes;
 })();
 
 /**

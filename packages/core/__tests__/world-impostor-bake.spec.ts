@@ -11,7 +11,8 @@ import {
   Texture,
   Vector3,
 } from "three";
-import type { NodeMaterial } from "three/webgpu";
+import { uniform } from "three/tsl";
+import { MeshStandardNodeMaterial, type NodeMaterial } from "three/webgpu";
 import { describe, expect, it, vi } from "vitest";
 import {
   type IImpostorPart,
@@ -127,6 +128,27 @@ function depthScalar(node: unknown, coverage: number, viewZ: number): number {
   }
   return depthScalar(Reflect.get(node, "node"), coverage, viewZ);
 }
+
+describe("WorldImpostorBaker occlusion", () => {
+  it("writes the source's own aoNode, coverage-premultiplied, to the occlusion attachment", () => {
+    const source = new MeshStandardNodeMaterial();
+    const ao = uniform(0.35);
+    source.aoNode = ao;
+    const pending = new WorldImpostorBaker().begin("crown", [
+      part(
+        boxedGeometry(new Vector3(-1, -1, -1), new Vector3(1, 1, 1)),
+        new Matrix4(),
+        source as unknown as MeshStandardMaterial,
+      ),
+    ]);
+    const occlusion = (pending.materials[0] as NodeMaterial | undefined)?.mrtNode?.outputNodes
+      .occlusion as unknown as {
+      nodes: unknown[];
+    };
+    const red = occlusion.nodes[0] as { aNode: unknown; bNode: unknown };
+    expect(red.aNode).toBe(ao);
+  });
+});
 
 describe("WorldImpostorBaker clear-compatible depth", () => {
   it("preserves covered depth when actual four-tap MRT data filters against alpha-one clear", () => {
@@ -299,17 +321,19 @@ describe("impostorBounds", () => {
 });
 
 describe("WorldImpostorAtlas", () => {
-  it("allocates two full-mip RGBA attachments with an exact byte estimate", () => {
+  it("allocates three full-mip RGBA attachments with an exact byte estimate", () => {
     const atlas = new WorldImpostorAtlas(128);
     expect(atlas.pixels).toBe(128);
     expect(atlas.target.textures[0]?.name).toBe("output");
     expect(atlas.target.textures[1]?.name).toBe("normal");
+    expect(atlas.target.textures[2]?.name).toBe("occlusion");
+    expect(atlas.occlusion).toBe(atlas.target.textures[2]);
     expect(atlas.color.generateMipmaps).toBe(true);
-    // Two RGBA8 attachments, every view, and the full mip chain down to 1x1.
+    // Three RGBA8 attachments, every view, and the full mip chain down to 1x1.
     let bytes = 0;
     for (let level = 0; level <= Math.floor(Math.log2(atlas.pixels)); level += 1) {
       const edge = Math.max(1, atlas.pixels >> level);
-      bytes += 2 * edge * edge * IMPOSTOR_VIEWS * 4;
+      bytes += 3 * edge * edge * IMPOSTOR_VIEWS * 4;
     }
     expect(atlas.bytes).toBe(bytes);
     atlas.dispose();
