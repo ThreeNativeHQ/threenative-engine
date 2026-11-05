@@ -29,7 +29,9 @@
 - **PRD-798** — Phases 1 to 3 done: the flag readers and `CellRender` are pinned and both files
   split under the cap. AC-3's abyss half is measured (browser 22 of 23 assertions, native host 21 of
   22). Open: the Strata half and the AC-4 visual judge.
-- **PRD-799** — untouched, with both Phase 1 pins' observability written down.
+- **PRD-799** — Phases 1 and 2 done: two pin specs landed and the five modules are extracted
+  (`world-cells.ts` 2 977 → 1 454). AC-3's abyss half is measured on the native host (21 of 22
+  assertions; the one red is the network policy, not the world). Open: the Strata half.
 
 ## Where the hardcode is (audit of `aa3883d7d` plus the forest lane's uncommitted edits, 2026-11-04)
 
