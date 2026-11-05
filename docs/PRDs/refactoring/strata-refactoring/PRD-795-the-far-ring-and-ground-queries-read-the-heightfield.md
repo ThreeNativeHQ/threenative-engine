@@ -1,6 +1,8 @@
 # PRD-795 — The far ring and ground queries read the heightfield, not world names
 
-**Status:** NOT STARTED
+**Status:** PARTIAL — the exact ground half of Phase 2 landed: `Heightfield.surfaceAt` ships in
+`@threenative/core/world` and the example's sampler delegates to it. The far ring (`HeightfieldCollar`)
+and the game's ring/band wiring are open, as are the playtest and judge boxes.
 **Priority:** P2 — A new biome needs a hand-tuned horizon and a ground sampler copy, because the far ring derives its world from the water level and the landform (all phases open).
 **Complexity:** 5 (MEDIUM); risk override: the horizon reaches the screen, so the owner's visual-judge rule applies
 **Owner:** ThreeNative maintainers
@@ -46,9 +48,12 @@ material and colour stay in game `src/render/`.
 - [ ] Edge, vista and walk playtests are green on today's code and their numbers are recorded. proof: the three scenarios
 
 #### Phase 2: move into core/world
-**Status:** NOT STARTED
-**Files:** `packages/core/src/world.ts` (or `world-heightfield.ts` after PRD-797), `packages/core/src/world-collar.ts` (new), example `render/{horizon,groundSampler,terrain}.ts`
+**Status:** PARTIAL
+**Files:** `packages/core/src/world.ts` (or `world-heightfield.ts` after PRD-797), `packages/core/src/world-collar.ts` (new), example `render/{horizon,groundSampler,terrain}.ts` — after PRD-797 the field lives in `packages/core/src/world-heightfield.ts`, which is where `surfaceAt` was added; `world.ts` re-exports it, so `@threenative/core/world` exposes it as before.
 - [ ] `surfaceAt` and `HeightfieldCollar` ship; the example calls them. proof: AC-1 plus `rg -n 'waterLevel !== null' examples/strata-terrain-preview/src/render/horizon.ts` prints nothing
+  - `Heightfield.surfaceAt` landed: the triangle plane `toGeometry` emits, answered from the canonical samples, so a caller needs neither the geometry nor a matrix. It fails closed outside the field with `heightAt`'s own message. Proof: `packages/core/__tests__/world-heightfield-surface.spec.ts` 3/3 — 10 000 seeded points against a stock `Raycaster` on `toGeometry` (all 10 000 compared, and the bilinear `heightAt` differs at more than 1 000 of them, so the pin bites), every cell corner and the shared diagonal, the field's own boundary, and the two fail-closed cases (outside, non-finite).
+  - The example's `render/groundSampler.ts` now delegates to it: the duplicated triangulation is gone, and the file keeps only the mesh-transform wrapper the game draws under (world → field space, `null` outside, `null` for a rotated or non-uniformly scaled mesh). Its own spec is the referee and stays green (5/5), with one tolerance change: the reference is the drawn mesh's float32 positions while `surfaceAt` answers the canonical float64 triangle, so the two agree to float32 precision (~5e-7 m) rather than to 1e-6.
+  - Open in this box: `HeightfieldCollar` and the game's ring/band wiring. `horizon.ts` still derives a world from the water level, so its `rg` proof still prints a match.
 
 #### Phase 3: prove the game
 **Status:** NOT STARTED

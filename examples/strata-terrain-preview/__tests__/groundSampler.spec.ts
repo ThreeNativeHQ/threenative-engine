@@ -115,7 +115,9 @@ describe("exact ground sampler", () => {
       const expected = ray(x, z);
       expect(expected).not.toBeNull();
       expect(sampler(x, z)).not.toBeNull();
-      expect(sampler(x, z) as number).toBeCloseTo(expected as number, 6);
+      // The reference is the drawn mesh, whose positions are float32; the sampler answers the
+      // field's canonical (float64) triangle, so the two agree to float32 precision, not to 1e-6 m.
+      expect(sampler(x, z) as number).toBeCloseTo(expected as number, 5);
     }
   });
 

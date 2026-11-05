@@ -419,6 +419,60 @@ export class Heightfield extends Group implements IComputeDriven {
     );
   }
 
+  /**
+   * The drawn surface's height under `(x, z)`: the triangle plane `toGeometry` emits, not the
+   * bilinear `heightAt`.
+   *
+   * A heightfield renders as two triangles per cell and collides as the same two, so a prop or a
+   * player grounded on the bilinear height stands up to half a cell's relief off the surface the
+   * eye sees — worst on a saddle, where the two disagree by the cell's whole diagonal. This answers
+   * the plane the drawn triangle actually is, from the canonical samples, so a caller needs neither
+   * the geometry nor a matrix to ask.
+   * @situation ground a prop or a player on the same triangle the eye sees and the collider uses
+   * @constraint the point must be inside the field; a query outside it throws like `heightAt`
+   * @example const resting = field.surfaceAt(player.position.x, player.position.z);
+   */
+  surfaceAt(x: number, z: number): number {
+    finite(x, "query x");
+    finite(z, "query z");
+    const column = (x - this.#minimumX) / this.#cellWidth;
+    const row = (z - this.#minimumZ) / this.#cellDepth;
+    const epsilon = 1e-9;
+    if (
+      column < -epsilon ||
+      row < -epsilon ||
+      column > this.columns - 1 + epsilon ||
+      row > this.rows - 1 + epsilon
+    )
+      throw new Error(`Heightfield query (${x}, ${z}) is outside its resident region.`);
+    const column0 = Math.min(this.columns - 2, Math.max(0, Math.floor(column)));
+    const row0 = Math.min(this.rows - 2, Math.max(0, Math.floor(row)));
+    const fractionX = column - column0;
+    const fractionZ = row - row0;
+    const upperLeft = row0 * this.columns + column0;
+    const upperRight = upperLeft + 1;
+    const lowerLeft = upperLeft + this.columns;
+    const lowerRight = lowerLeft + 1;
+    // `toGeometry` splits each cell on the lower-left-to-upper-right diagonal: the half a point
+    // falls in decides which of the two planes is the surface there.
+    if (fractionX + fractionZ <= 1) {
+      const a = this.#height(upperLeft);
+      return (
+        a + (this.#height(upperRight) - a) * fractionX + (this.#height(lowerLeft) - a) * fractionZ
+      );
+    }
+    const upperRightHeight = this.#height(upperRight);
+    const lowerLeftHeight = this.#height(lowerLeft);
+    const lowerRightHeight = this.#height(lowerRight);
+    return (
+      upperRightHeight +
+      lowerLeftHeight -
+      lowerRightHeight +
+      (lowerRightHeight - lowerLeftHeight) * fractionX +
+      (lowerRightHeight - upperRightHeight) * fractionZ
+    );
+  }
+
   normalAt(x: number, z: number, target = new Vector3()): Vector3 {
     this.heightAt(x, z);
     const leftX = Math.max(this.#minimumX, x - this.#cellWidth);
