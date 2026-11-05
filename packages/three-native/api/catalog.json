@@ -12186,6 +12186,15 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "mrtNode",
+          "type": "MRTNode | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": [
@@ -13647,6 +13656,15 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "mrtNode",
+          "type": "MRTNode | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": [
@@ -14272,6 +14290,15 @@
         {
           "name": "maskNode",
           "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "mrtNode",
+          "type": "MRTNode | null",
           "mutable": true,
           "lifetime": "owned",
           "status": {
@@ -30276,6 +30303,19 @@
           }
         }
       ],
+      "methods": []
+    },
+    {
+      "name": "MRTNode",
+      "kind": "class",
+      "source": "three/webgpu",
+      "status": {
+        "kind": "partial",
+        "gaps": ["graph-authoring-only", "constructor-not-bound"]
+      },
+      "extends": "Node",
+      "constructor": [],
+      "fields": [],
       "methods": []
     }
   ]

@@ -1527,6 +1527,7 @@ alphaHash: boolean;
 castShadowPositionNode: Node | null;
 maxPositionOffset: number;
 maskNode: Node | null;
+mrtNode: MRTNode | null;
 
   clone(): this;
 
@@ -1687,6 +1688,7 @@ alphaHash: boolean;
 castShadowPositionNode: Node | null;
 maxPositionOffset: number;
 maskNode: Node | null;
+mrtNode: MRTNode | null;
 
   clone(): this;
 
@@ -1804,6 +1806,7 @@ alphaHash: boolean;
 castShadowPositionNode: Node | null;
 maxPositionOffset: number;
 maskNode: Node | null;
+mrtNode: MRTNode | null;
 
   clone(): this;
 
@@ -3695,4 +3698,9 @@ clearcoatRoughnessMap: Texture | null;
 specularColor: Color;
 specularColorMap: Texture | null;
 specularIntensityMap: Texture | null;
+}
+
+/** Catalog partial (graph-authoring-only, constructor-not-bound): three/webgpu/MRTNode. */
+export declare class MRTNode extends Node {
+constructor();
 }
