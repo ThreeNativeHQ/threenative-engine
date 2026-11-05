@@ -3612,6 +3612,21 @@ export function instanceRandom(): Node<"float"> { … }
 
 - **Use when:** a per-instance random number that stays with each streamed placement as WorldCells repacks · replace instanceIndex in a WorldCells part material, which WorldCells refuses
 
+### `lakeReach`
+
+`function` — How far a lake's water reaches: the waterline its basin measures, `margin` times out, capped. The drawn surface and the swim footprint both size themselves here, so the shore a player sees is the shore they stop at.
+
+```ts
+export function lakeReach(field: Heightfield, lake: IWaterLake): number { … }
+```
+
+- **Use when:** size a lake's footprint from its basin and the cap its biome row names
+- **Constraints:** reads the heightfield at every bearing, once per lake, never per frame
+
+```ts
+const reach = lakeReach(field, { ...lake, margin: 1.12 });
+```
+
 ### `loadTerrainSplat`
 
 `function` — The splat terrain surface a world package describes, for `WorldCells.load({ surface })`. Layers blend over a base by mask channels read as linear data (the masks ship raw, beside the heightmap, so no cook moves a blend threshold), with noise-broken edges and macro brightness variation. Texture sets tile in world metres on the package's ground plane (x, -z: a Z-up authoring tool's x and y), cliffs can be triplanar, and the base plus any layer that asks carries a normal map. Each layer answers light from its own ORM map where the table ships one and from the table's own roughness and metalness where it does not; a layer that states neither is matte and dielectric, and named in a warning. Nothing here is a look choice: textures, tiles, tints, thresholds, surface response and noise scales all come from the package's table, which the game authors once and its DCC shares.
@@ -3743,6 +3758,36 @@ export function validateWorldPackage( manifest: unknown, options: IWorldPackageV
 
 ```ts
 const { ok, errors } = validateWorldPackage(json, { placementsByteLength: buffer.byteLength });
+```
+
+### `WaterBodies`
+
+`class` — One world's water, queried: surface height, current and footprint from the baked arrays. Rendering and physics read the same store, as they do for `Heightfield`, so the surface a player sees and the surface a swimmer rests on cannot disagree. Every station, level, extent and speed comes from the game, and the shading stays in the game's own `src/render/`. A river's segments sit in a uniform grid, so a query tests the few that can reach its cell instead of every station of every river.
+
+```ts
+export class WaterBodies { … }
+```
+
+- **Use when:** ask how high the water is where a player swims · ask which way a current carries a body · ask which water body covers a point, and how high its surface is · share one water store between rendering and physics
+- **Constraints:** every station, level, extent and speed comes from the game's own bake; a lake is measured on the field passed in
+
+```ts
+const water = new WaterBodies({ ribbons, lakes, field }); const height = water.surfaceAt(x, z);
+```
+
+### `waterlineRadius`
+
+`function` — The furthest a lake's basin reaches on a bearing: where the drawn ground crosses its level. Twenty-four bearings step outwards and stop at the first bank, because binary-searching the whole ray can jump a dry ridge into another pond. Eighteen halvings land inside two centimetres at this scale, well under the ground's own sample spacing.
+
+```ts
+export function waterlineRadius( field: Heightfield, centre: readonly number[], level: number, ): number { … }
+```
+
+- **Use when:** measure where a lake's water meets the ground it floods · size a lake's drawn surface or the footprint a swimmer may enter
+- **Constraints:** returns metres on the furthest bearing; the caller applies its own cap
+
+```ts
+const reach = waterlineRadius(field, lake.at, lake.level) * 1.12;
 ```
 
 ### `WorldCells`

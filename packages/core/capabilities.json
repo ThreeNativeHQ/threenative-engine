@@ -4620,6 +4620,20 @@
     },
     {
       "aliases": [],
+      "constraints": ["reads the heightfield at every bearing, once per lake, never per frame"],
+      "example": "const reach = lakeReach(field, { ...lake, margin: 1.12 });",
+      "importPath": "@threenative/core/world",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function lakeReach(field: Heightfield, lake: IWaterLake): number { … }",
+      "situations": ["size a lake's footprint from its basin and the cap its biome row names"],
+      "summary": "How far a lake's water reaches: the waterline its basin measures, `margin` times out, capped. The drawn surface and the swim footprint both size themselves here, so the shore a player sees is the shore they stop at.",
+      "supersedes": [],
+      "symbol": "lakeReach"
+    },
+    {
+      "aliases": [],
       "constraints": [
         "the package's world.json must carry `terrain.layers.table` and `terrain.layers.splat`, written by `export_terrain_layers` in the `export_world.py` recipe",
         "WebGPU allows 16 sampled textures per stage: same-size layers stack into one array texture per set, and `TN_TERRAIN_SPLAT samplers=<n>` reports what is left"
@@ -4773,6 +4787,44 @@
       "summary": "Validate a `world.json` manifest against the v1 contract. Never throws on garbage input: a non-object manifest is `WORLD_MALFORMED`. Every problem is collected, so an exporter sees the complete list at once.",
       "supersedes": [],
       "symbol": "validateWorldPackage"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every station, level, extent and speed comes from the game's own bake; a lake is measured on the field passed in"
+      ],
+      "example": "const water = new WaterBodies({ ribbons, lakes, field }); const height = water.surfaceAt(x, z);",
+      "importPath": "@threenative/core/world",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export class WaterBodies { … }",
+      "situations": [
+        "ask how high the water is where a player swims",
+        "ask which way a current carries a body",
+        "ask which water body covers a point, and how high its surface is",
+        "share one water store between rendering and physics"
+      ],
+      "summary": "One world's water, queried: surface height, current and footprint from the baked arrays. Rendering and physics read the same store, as they do for `Heightfield`, so the surface a player sees and the surface a swimmer rests on cannot disagree. Every station, level, extent and speed comes from the game, and the shading stays in the game's own `src/render/`. A river's segments sit in a uniform grid, so a query tests the few that can reach its cell instead of every station of every river.",
+      "supersedes": [],
+      "symbol": "WaterBodies"
+    },
+    {
+      "aliases": [],
+      "constraints": ["returns metres on the furthest bearing; the caller applies its own cap"],
+      "example": "const reach = waterlineRadius(field, lake.at, lake.level) * 1.12;",
+      "importPath": "@threenative/core/world",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function waterlineRadius( field: Heightfield, centre: readonly number[], level: number, ): number { … }",
+      "situations": [
+        "measure where a lake's water meets the ground it floods",
+        "size a lake's drawn surface or the footprint a swimmer may enter"
+      ],
+      "summary": "The furthest a lake's basin reaches on a bearing: where the drawn ground crosses its level. Twenty-four bearings step outwards and stop at the first bank, because binary-searching the whole ray can jump a dry ridge into another pond. Eighteen halvings land inside two centimetres at this scale, well under the ground's own sample spacing.",
+      "supersedes": [],
+      "symbol": "waterlineRadius"
     },
     {
       "aliases": [],
