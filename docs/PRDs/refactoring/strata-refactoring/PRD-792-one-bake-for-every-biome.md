@@ -6,7 +6,8 @@ named scatter stages and the prop-package compile ship in `@threenative/terrain`
 writes one container per streamed world, and `propStreaming.ts`/`placements.ts` are deleted with the
 game loading those containers (AC-2). What stays open is AC-2's bake half of the coordinator's
 decision 2 (the far field and the vista meadow as baked buckets) and AC-3, the look: both need the
-browser and the visual judge, which this lane does not run.
+browser and the visual judge. Phase 3's playtest box carries this head's runs: the loop half is green,
+and the terrain half stops on an engine bundle bug fixed in `4103d2508` that waits for a Wasm build.
 **Priority:** P1 — The MCP cannot bake a new biome while the scatter rules and the world-package compiler live only in the example (all phases open); it gates PRD-793.
 **Complexity:** 6 (MEDIUM); risk override: placements change what reaches the screen, so the owner's visual-judge rule applies
 **Owner:** ThreeNative maintainers
@@ -92,8 +93,8 @@ the baked package.
   - `render/propWorld.ts:553` keeps `placements: "placements.bin"`: that string is an `IWorldPackage` field the game builds in memory and hands to `WorldCells.load` through `data`, and the loader reads `data.placements` instead, so nothing fetches it.
 
 #### Phase 3: prove the game
-**Status:** NOT STARTED
+**Status:** MEASURED — the playtest box carries this head's runs; its terrain half waits on a Wasm build with the engine fix `4103d2508`, and the visual-judge box below stays open.
 **Files:** none
 - [ ] The web playtest and the loop playtest stay green. proof: `pnpm --filter strata-terrain-preview test:terrain:web` and `playtests/loop.playtest.json` Measured 2026-11-05 at head `862920360` with the commands, artifacts and red classification of PRD-791's Phase 3 box: loop 2/2 green (exit 0, 5/5 assertions, `pipelinesSinceReveal` 0, `travel` 59.834553512907036 m and 59.834296182470155 m, 844 frames, 0 console and 0 network errors, adapter `nvidia turing`); terrain `test:terrain:web` exits 2 at the coastal step on the pre-existing `?waterproof=1` `mrtNode` red (`TN_BROWSER_SHADER_NODE ... mrtNode 'output' is not a TSL node`), with the six forest views green. The build red these runs surfaced is fixed in `7bdc63db4`: `pnpm build` read the deleted `<world>.placements.bin`.
-  - Open (coordinator, 2026-11-05): `test:terrain:web` exits 2 at its coastal `?waterproof=1` step (`mrtNode 'output' is not a TSL node`, then verify-ocean's water proof); the loop and abyss numbers above are green or pre-existing. Tick when the owned-engine water proof lands.
+  - Re-measured 2026-11-05 at head `bd18d32fa` (same lane, commands, flags and logs as PRD-791's Phase 3 box): `test:terrain:web` exits 2 in both runs, adapter `nvidia turing`, `"threads":"on (8)"`, build green, the six forest views rendered; the coastal `?waterproof=1` step loses the renderer on `TN_WASM_DEVICE_ERROR` because an aux bundle recorded for one colour target replays into the pass that now holds two (the sea's `diagnostic` slot). Fixed in `4103d2508` (red-green spec `aux_bundle_key_test.cpp`), waiting for a Wasm build, so the water proof and the rest of the scenario stay unmeasured here. Open: the coastal step and the water proof, pending a Wasm build of `packages/runtime-native`. The loop numbers above are unchanged.
 - [ ] Fresh visual judge passes. proof: AC-3
