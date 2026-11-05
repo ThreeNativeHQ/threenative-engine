@@ -1,17 +1,17 @@
 # Strata refactoring
 
-**Status:** PARTIAL — 0 of 9 PRDs closed (filed 2026-11-04). The P1 chain moved furthest:
+**Status:** PARTIAL — 5 of 9 PRDs closed (filed 2026-11-04; PRD-793 to 797 are in `done/`). Open: PRD-791 and PRD-792 (the web and loop playtest box each) and PRD-798 and PRD-799 (the Strata and abyss playtests, and AC-1 of PRD-798 reopened). Per PRD:
 
-- **PRD-791** — code complete; only its owner lanes (the playtest red it inherited, the visual judge)
-  open. One data divergence found later: `coastal`'s snow `shedFrom` is `0.16` in the look and `0.04`
+- **PRD-791** — code complete and the five-world visual judge passed (AC-4, 2026-11-05); one box stays
+  open: the web and loop playtest (loop half green, terrain half red at the engine bundle bug fixed in
+  `4103d2508`, waiting for a Wasm build). One data divergence found later: `coastal`'s snow `shedFrom` is `0.16` in the look and `0.04`
   in its biome file; the file's value never reached a pixel and the pair needs a judged decision.
-- **PRD-792** — Phase 1 done; Phase 2 done (2026-11-05): the bake writes per-bucket prop packages, the game loads them through `WorldCells`, `propStreaming.ts`/`placements.ts` are deleted. Open: AC-3, the five-world judge.
-- **PRD-793** — **AC-1, AC-2 and AC-3 done**: all 35 landform×biome pairs cook; `terrain_generate`
+- **PRD-792** — Phase 1 done; Phase 2 done (2026-11-05): the bake writes per-bucket prop packages, the game loads them through `WorldCells`, `propStreaming.ts`/`placements.ts` are deleted. AC-3, the five-world judge, passed (2026-11-05). Open: the web and loop playtest box, same blocker as PRD-791, and AC-2's named residual (the far field and the vista meadow still compile at load).
+- **PRD-793** — DONE (2026-11-05), moved to `done/`: all 35 landform×biome pairs cook; `terrain_generate`
   takes `biome` (a starter's name, one of its alias words or an inline spec) with `landform`,
   `sizeMeters`, `seed` and `water`; and `terrain_biome_new` makes and cooks a `savanna` in one call
   that writes only under `<assets.source>/biomes/savanna/` (cook 2 982 ms, under the 3 839 ms forest
-  baseline). Phases 1-3 are done except the sandbox arm: AC-4 and the savanna-in-a-sandbox box are
-  open on the sandbox and judge lane.
+  baseline). The sandbox arm and AC-4's judge are done too (the verdict text is in the AC-4 box; no judge report file is stored).
 - **PRD-794** — CHARTER line approved (owner, 2026-11-04); `WaterBodies` ships in core and the example uses it. Done 2026-11-05: the water judge passed (AC-3), moved to done/.
 - **PRD-795** — DONE (2026-11-05): `HeightfieldCollar` and `surfaceAt` in core, edge/vista/walk green on the owned engine, horizon judge PASS; moved to `done/`.
 - **PRD-796** — DONE (2026-11-05): `game.ts` is wiring, every box ticked; moved to `done/`.
@@ -19,9 +19,9 @@
   gone, four leaf modules extracted (3 416 → 2 254, AC-1 narrowed to 2 300 by decision), and the
   terrain-splat playtest green on the web lane (2026-11-05: exit 0, 180 frames, 8/8 assertions, real
   Nvidia adapter). The 1 500-line target is the follow-up that splits `TerrainTiles` itself.
-- **PRD-798** — Phases 1 to 3 done: the flag readers and `CellRender` are pinned and both files
+- **PRD-798** — Phases 1 and 2 done and the Phase 3 split done: the flag readers and `CellRender` are pinned and both files
   split under the cap. AC-3's abyss half is measured (browser 22 of 23 assertions, native host 21 of
-  22). Open: the Strata half and the AC-4 visual judge.
+  22). AC-4's forest judge passed. Open: AC-1 (reopened 2026-11-05: existing world specs changed, two of them in assertions), AC-3's Strata half and the Phase 3 playtest box.
 - **PRD-799** — Phases 1 and 2 done: two pin specs landed and the five modules are extracted
   (`world-cells.ts` 2 977 → 1 454). AC-3's abyss half is measured on the native host (21 of 22
   assertions; the one red is the network policy, not the world). Open: the Strata half.
