@@ -1,6 +1,6 @@
 # PRD-806 — Fix the medium and low findings of the PR #483 epic review
 
-**Status:** PROPOSED — the 14 medium findings (13 after one duplicate) and 45 low findings verified on HEAD `21c713b7d` on 2026-11-05. The high findings are in [PRD-805](PRD-805-epic-review-findings.md). No fix has started.
+**Status:** PROPOSED — the 14 medium findings (13 after one duplicate) and 45 low findings verified on HEAD `21c713b7d` on 2026-11-05. The high findings are in [PRD-805](../../done/PRD-805-epic-review-findings.md). No fix has started.
 **Priority:** P2 — each open finding below is a real defect, and none makes the board red at HEAD
 **Complexity:** 5 (MEDIUM); many small fixes in independent files
 **Owner:** ThreeNative maintainers
