@@ -127,11 +127,14 @@ test("the GPU scene BVH row requires a hardware adapter", () => {
   assert.equal(row?.requiresHardwareAdapter, true);
 });
 
-test("virtual shadow first-frame parity tolerates one-level rasterizer rounding and no more", () => {
+test("virtual shadow first-frame pins the parity bound hosted llvmpipe needs", () => {
   const registry = JSON.parse(readFileSync(join(root, "conformance/registry.json"), "utf8"));
   const diagnostic = registry.tests.find(({ id }) => id === "virtual-shadow-first-frame");
   assert.ok(diagnostic, "the first-frame virtual-shadow row must be registered");
-  // CI llvmpipe measured 0.0125 (11,488 pixels off by exactly one level, deltaE 0.0057).
+  // The pixel bound covers one-level rasterizer rounding with headroom: hosted llvmpipe measures
+  // 0.0125 (11,488 pixels off by exactly one level) and an NVIDIA adapter measures 0. The 3.0
+  // deltaE is the bound `32-animated-shadows` and `33-virtual-shadow` share, not a one-level claim:
+  // the pixel ratio rejects a shadow regression, and deltaE only caps the frame's mean shift.
   assert.deepEqual(diagnostic.tolerance, { pixelMismatchRatio: 0.02, perceptualDeltaE: 3.0 });
 });
 
