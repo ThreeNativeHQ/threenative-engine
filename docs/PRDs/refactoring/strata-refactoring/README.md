@@ -84,7 +84,7 @@ Not moved, with the reason:
 |---|---|---|---|
 | 1 | P1 | [PRD-791](PRD-791-a-biome-is-a-validated-data-file.md) | A biome is one validated `biome.json`, read by the MCP and the game |
 | 2 | P1 | [PRD-792](PRD-792-one-bake-for-every-biome.md) | One `bakeBiome` in `@threenative/terrain`; the example stops re-implementing it |
-| 3 | P1 | [PRD-793](PRD-793-the-terrain-mcp-answers-any-terrain-request.md) | The MCP takes any landform and biome, and makes a new biome in one call |
+| 3 | P1 | [PRD-793](../../done/PRD-793-the-terrain-mcp-answers-any-terrain-request.md) | The MCP takes any landform and biome, and makes a new biome in one call |
 | 4 | P2 | [PRD-794](PRD-794-river-lake-and-ocean-are-one-water-body-mechanism.md) | River, lake and ocean are one water-body mechanism |
 | 5 | P2 | [PRD-795](PRD-795-the-far-ring-and-ground-queries-read-the-heightfield.md) | The far ring and ground queries read the heightfield, not world names |
 | 6 | P2 | [PRD-796](PRD-796-strata-game-ts-is-wiring-not-a-world-switch.md) | Strata `game.ts` is wiring, not a world switch |
