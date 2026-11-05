@@ -444,6 +444,7 @@ public:
         child->geometry_ = geometry_;
         child->layouts_ = layouts_;
         child->pipelines_ = pipelines_;
+        child->environmentOwner_ = environmentOwner_ ? environmentOwner_ : this;
         return child;
     }
     /** The last render's linear HDR scene target (RGBA16Float), before post and the output transform. */
@@ -1127,6 +1128,8 @@ private:
     bool pumpEnvironment();
     void abandonEnvironment();
     EnvironmentGpu& environment(const Texture& equirect);
+    /** This renderer's baked PMREM of `texture`, else its owner's: a sibling never re-bakes what the owner has. */
+    EnvironmentGpu* readyEnvironment(const Texture& texture);
     void buildEnvironmentPipelines();
     void releaseEnvironments();
     void rebuildGroups();
@@ -1508,6 +1511,10 @@ private:
     // PMREM (three's PMREMGenerator.fromEquirectangular): the cube it bakes, its source cube and the
     // pipelines that fill them, keyed by the equirect source texture.
     std::map<uint64_t, EnvironmentGpu> environments_;  // by Texture::ident
+    // The renderer whose baked environments a sibling samples, as three's one renderer keeps one PMREM per texture.
+    // Without it, every render target's renderer re-baked the sky over its first draws and skipped them meanwhile:
+    // the impostor bake's 16 views drew nothing. ponytail: read-only, a sibling still bakes what the owner has not.
+    Renderer* environmentOwner_ = nullptr;
     WGPUBindGroupLayout envLayout_ = nullptr;      // a 2D source: the equirect conversion and the mip chain
     WGPUBindGroupLayout envCubeLayout_ = nullptr;  // a cube source: the GGX and integration passes
     WGPUPipelineLayout envPipelineLayout_ = nullptr;

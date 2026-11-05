@@ -2536,19 +2536,14 @@ bool Renderer::advanceEnvironments(std::span<const DrawItem> items) {
     // or a disposal abandons it (pumpEnvironment, sweepTextures).
     if (envPrep_ && !pumpEnvironment()) {
         for (const DrawItem& item : items)
-            for (const Texture* texture : {item.envMap, item.pmremMap}) {
-                if (texture == nullptr) continue;
-                const auto found = environments_.find(texture->ident.value());
-                if (found == environments_.end() || !found->second.ready || found->second.version != texture->version())
+            for (const Texture* texture : {item.envMap, item.pmremMap})
+                if (texture != nullptr && readyEnvironment(*texture) == nullptr)
                     return false;  // this pass samples an environment that is not baked yet
-            }
         return true;
     }
     for (const DrawItem& item : items) {
         for (const Texture* texture : {item.envMap, item.pmremMap}) {
-            if (texture == nullptr) continue;
-            EnvironmentGpu& env = environments_[texture->ident.value()];
-            if (env.ready && env.version == texture->version()) continue;
+            if (texture == nullptr || readyEnvironment(*texture) != nullptr) continue;
             beginEnvironment(*texture);
             return pumpEnvironment();
         }
@@ -2558,10 +2553,18 @@ bool Renderer::advanceEnvironments(std::span<const DrawItem> items) {
 
 Renderer::EnvironmentGpu& Renderer::environment(const Texture& equirect) {
     // Ready-only accessor: prepareEnvironments must have baked and published this environment.
-    if (const auto found = environments_.find(equirect.ident.value());
-        found != environments_.end() && found->second.ready && found->second.version == equirect.version())
-        return found->second;
+    if (EnvironmentGpu* env = readyEnvironment(equirect)) return *env;
     throw std::runtime_error("TN_NATIVE_ENVIRONMENT_NOT_READY");
+}
+
+Renderer::EnvironmentGpu* Renderer::readyEnvironment(const Texture& texture) {
+    for (Renderer* owner : {this, environmentOwner_}) {
+        if (owner == nullptr) continue;
+        const auto found = owner->environments_.find(texture.ident.value());
+        if (found != owner->environments_.end() && found->second.ready && found->second.version == texture.version())
+            return &found->second;
+    }
+    return nullptr;
 }
 
 // Each stage's layout from the bindings its package declares, the uniform block with a dynamic

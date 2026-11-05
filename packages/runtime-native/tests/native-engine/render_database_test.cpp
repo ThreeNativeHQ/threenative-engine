@@ -3967,6 +3967,58 @@ void envMapSlotIsRead() {
     CHECK(database.diagnostics().empty());
 }
 
+// A render target's renderer samples the environment the main renderer already baked, as three's one renderer keeps
+// one PMREM per texture: its first draw lands. It used to re-bake the sky over its first draws and skip them, so the
+// impostor bake's 16 views into a fresh atlas drew nothing.
+void targetSamplesOwnerEnvironment() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(64, 48);
+    LitScene s;
+    auto env = std::make_shared<DataTexture>();
+    env->width = 128;
+    env->height = 64;
+    env->mapping = 303;
+    env->colorSpace = TextureColorSpace::SRGB;
+    env->minFilter = static_cast<uint16_t>(TextureFilter::LinearMipmapLinear);
+    env->magFilter = static_cast<uint16_t>(TextureFilter::Linear);
+    env->data.resize(128 * 64 * 4, 255);
+    env->needsUpdate();
+    s.material->maps["envMap"] = env;
+    RenderDatabase database;
+    for (int frame = 0; frame < 2000; ++frame) {
+        database.render(renderer, s.scene, s.camera);
+        renderer.poll();
+        events.drain();
+        if (frame > 0 && !renderer.environmentPending()) break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    CHECK(!renderer.environmentPending());
+    const auto target = RenderTarget::make(8, 8, kTextureUnsignedByteType);
+    CHECK(renderToTarget(renderer, *target, s.scene, s.camera, {0, 0, 0, 0}, false).empty());
+    std::vector<uint8_t> region;
+    bool done = false;
+    CHECK(readRenderTarget(*target, 0, 0, 8, 8, [&](GpuStatus status, std::vector<uint8_t> bytes) {
+        CHECK(status == GpuStatus::Ok);
+        region = std::move(bytes);
+        done = true;
+    }) == GpuStatus::Ok);
+    for (int i = 0; i < 5000 && !done; ++i) {
+        renderer.poll();
+        events.drain();
+        if (!done) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    std::size_t covered = 0;
+    const std::size_t stride = region.size() / 64;  // one texel's bytes, whatever the target's format
+    for (std::size_t at = 0; stride > 0 && at + stride <= region.size(); at += stride)
+        covered += std::any_of(region.begin() + std::ptrdiff_t(at), region.begin() + std::ptrdiff_t(at + stride),
+                               [](uint8_t b) { return b != 0; });
+    std::fprintf(stderr, "target with the owner's environment: %zu of 64 texels drawn\n", covered);
+    CHECK(covered > 0);
+}
+
 // PRD-526 review: the float32 copies of quantized attributes follow their sources. A scene that loads and
 // unloads quantized geometry must not keep one copy per geometry it ever saw.
 void convertedCopiesAreSwept() {
@@ -8861,7 +8913,7 @@ TN_TEST_MAIN({"virtual_shadow_depth_holds", virtualShadowDepthHoldsWhileCastersF
              {"virtual_sun_lod_rung", virtualSunLodRung},
              {"virtual_sun_level_sizes", virtualSunLevelSizes},
              {"virtual_sun_auto_map_size", virtualSunAutoMapSize},
-             {"batched_vs_unbatched", batchedVsUnbatched}, {"stable_passes_match_direct", stablePassesMatchDirect}, {"camera_cull_keeps_bundle", cameraCull}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_decline_cadence", skinnedDeclineCadence}, {"skinned_projecting_cadence", skinnedProjectingCadence}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"env_map_slot_is_read", envMapSlotIsRead}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_offscreen", gpuTimerCoversOffscreen}, {"gpu_timer_splits_the_gather", gpuTimerSplitsTheLabelledGather}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"flat_shading_needs_no_normals", flatShadingNeedsNoNormals}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"batch_keeps_member_id", batchKeepsMemberId}, {"frustum_culling", frustumCulling},
+             {"batched_vs_unbatched", batchedVsUnbatched}, {"stable_passes_match_direct", stablePassesMatchDirect}, {"camera_cull_keeps_bundle", cameraCull}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_decline_cadence", skinnedDeclineCadence}, {"skinned_projecting_cadence", skinnedProjectingCadence}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"env_map_slot_is_read", envMapSlotIsRead}, {"target_samples_owner_environment", targetSamplesOwnerEnvironment}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_offscreen", gpuTimerCoversOffscreen}, {"gpu_timer_splits_the_gather", gpuTimerSplitsTheLabelledGather}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"flat_shading_needs_no_normals", flatShadingNeedsNoNormals}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"batch_keeps_member_id", batchKeepsMemberId}, {"frustum_culling", frustumCulling},
              {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"masked_shadow", maskedShadow}, {"leaf_receiver", leafReceiver}, {"shadow_noise_frame", shadowNoiseFrame},{"foliage_transmission", foliageTransmission}, {"rough_diffuse", roughDiffuse}, {"point_shadow_cube_faces", pointShadowCubeFaces}, {"lamp_source_radius", lampSourceRadius}, {"lamp_source_radius_wall", lampSourceRadiusWall}, {"lamp_source_radius_crate", lampSourceRadiusCrate}, {"contact_shadow_foot", contactShadowFoot}, {"virtual_sun_contact_foot", virtualSunContactFoot}, {"lamp_cache", lampCache}, {"cached_lamp_has_no_uniform_upload", cachedLampHasNoUniformUpload}, {"sun_cache", sunCache}, {"lamp_atlas", lampAtlas}, {"gpu_timer_splits_lamp_shadows", gpuTimerSplitsLampShadows}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse}, {"program_probes_are_resolved_once", programProbesAreResolvedOnce}, {"maps_share_one_pipeline", mapsShareOnePipeline}, {"serial_uniforms_share_one_pipeline", serialUniformsShareOnePipeline}, {"mirror_programs_precompiled", mirrorProgramsPrecompiled})
 
 
