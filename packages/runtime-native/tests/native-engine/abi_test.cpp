@@ -3057,6 +3057,10 @@ void starter_post_bindings() {
             const auto layeredReceiver = TslArg::of(layered);
             const auto resampled = tn::abi::tslCall("sample", &layeredReceiver, {TslArg::of(g::vec2({g::float_(0.5), g::float_(0.25)}))}, serial);
             CHECK(resampled && resampled->args[0] && resampled->args[0]->type == tn::engine::shader::Type::vec(3));
+            // The impostor surface samples at `hit.xy`, a swizzle, whose node carries no type: the layer still holds.
+            const auto swizzled = tn::abi::tslCall("sample", &layeredReceiver,
+                {TslArg::of(g::swizzle(g::vec3({g::float_(0.5), g::float_(0.25), g::float_(1)}), "xy"))}, serial);
+            CHECK(swizzled && swizzled->args[0] && swizzled->args[0]->type == tn::engine::shader::Type::vec(3));
         }
         const auto plain = std::make_shared<tn::engine::DataTexture>();
         plain->setImage(std::vector<double>(4, 128), "Uint8Array", 1, 1, 1023, 1009);

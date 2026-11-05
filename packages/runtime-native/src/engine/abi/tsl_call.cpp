@@ -943,11 +943,12 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         auto sampled = std::make_shared<g::NodeData>(*source);
         if (source->kind == g::Kind::RenderTexture) sampled->args[1] = arg(0);
         else sampled->args[0] = arg(0);
-        // three's depth(layer) is its own input (TextureNode.depthNode): a later sample(uv) keeps the layer.
+        // three's depth(layer) is its own input (TextureNode.depthNode): a later sample(uv) keeps the layer,
+        // whatever the uv node is. A swizzle such as `hit.xy` carries no type, so the uv's type is not asked.
         const auto object = source->kind == g::Kind::Texture && source->textureBinding ? source->textureObject() : nullptr;
         const auto uv = sampled->args[0];
         if (object && static_cast<const engine::Texture*>(object.get())->array && source->args[0] &&
-            source->args[0]->type == Type::vec(3) && uv && uv->type == Type::vec(2))
+            source->args[0]->type == Type::vec(3) && uv)
             sampled->args[0] = g::vec3({g::swizzle(uv, "x"), g::swizzle(uv, "y"), g::swizzle(source->args[0], "z")});
         return sampled;
     }
