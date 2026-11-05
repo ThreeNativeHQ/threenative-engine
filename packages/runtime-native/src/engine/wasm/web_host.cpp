@@ -747,9 +747,11 @@ extern "C" uint32_t tnw_web_read_mrt(const char* name, uint32_t x, uint32_t y, u
         });
     if (started != GpuStatus::Ok) {
         targetReads.erase(id);
-        return fail(started == GpuStatus::InvalidHandle
-                        ? std::string("TN_WASM_READ_TARGET: the frame pass writes no '") + (name ? name : "") + "' colour attachment"
-                        : "TN_WASM_READ_TARGET: region outside the attachment"), 0;
+        // A slot name the frame pass does not write is a page's own mistake: it fails this read and the
+        // host keeps drawing, as a refused program does. fail() here would stop every later tnw_web_poll.
+        return refuse(started == GpuStatus::InvalidHandle
+                          ? std::string("TN_WASM_READ_TARGET: the frame pass writes no '") + (name ? name : "") + "' colour attachment"
+                          : "TN_WASM_READ_TARGET: region outside the attachment"), 0;
     }
     return id;
 }
