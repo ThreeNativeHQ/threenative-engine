@@ -1,7 +1,9 @@
 import { readFileSync } from "node:fs";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { insertWorldLoad, worldLoadLines } from "../verify-forest-playtest.js";
+import { makeTempDir } from "../../test-support/temp-dir.js";
+import { callTerrainGenerate, insertWorldLoad, worldLoadLines } from "../verify-forest-playtest.js";
 
 const STARTER_PLAY = path.resolve(
   "packages/create-threenative/templates/starter/src/scenes/Play.ts",
@@ -127,6 +129,29 @@ describe("forest playtest setup", () => {
     expect(shadows.invalidateRegion).toHaveBeenCalledExactlyOnceWith(region);
     expect(shadows.invalidateAll).toHaveBeenCalledOnce();
     expect(patched).toContain("ctx.scene.add(key.target);");
+  });
+
+  it("waits for the newline that ends the reply instead of resolving on a partial chunk", async () => {
+    const project = await makeTempDir("tn-forest-reply-");
+    const server = path.join(project, "node_modules/@threenative/core/mcp/terrain.mjs");
+    const load = 'const world = await ctx.assets.model("worlds/forest/world.glb");';
+    const text = JSON.stringify({ load: `${load}\n// recipe: x` });
+    const full = JSON.stringify({
+      id: 2,
+      jsonrpc: "2.0",
+      result: { content: [{ text, type: "text" }], isError: false },
+    });
+    // A pipe chunk ends where the reply's id marker ends: the rest arrives 100 ms later.
+    const cut = full.indexOf('"id":2') + '"id":2'.length;
+    await mkdir(path.dirname(server), { recursive: true });
+    await writeFile(
+      server,
+      [
+        `process.stdout.write(${JSON.stringify(full.slice(0, cut))});`,
+        `setTimeout(() => process.stdout.write(${JSON.stringify(`${full.slice(cut)}\n`)}), 100);`,
+      ].join("\n"),
+    );
+    expect(worldLoadLines(await callTerrainGenerate(project))).toEqual([load]);
   });
 
   it("spawns the player on the measured terrain height at the same finite x", () => {

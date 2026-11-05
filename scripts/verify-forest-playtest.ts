@@ -120,7 +120,7 @@ function run(command: string, args: readonly string[], cwd: string, env?: NodeJS
 }
 
 /** One `tools/call` over the same stdio shim an agent's `.mcp.json` launches. */
-function callTerrainGenerate(project: string): Promise<string> {
+export function callTerrainGenerate(project: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn("node", ["node_modules/@threenative/core/mcp/terrain.mjs"], {
       cwd: project,
@@ -129,7 +129,9 @@ function callTerrainGenerate(project: string): Promise<string> {
     let buffer = "";
     child.stdout.on("data", (chunk: Buffer) => {
       buffer += String(chunk);
-      for (const line of buffer.split("\n")) {
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+      for (const line of lines) {
         if (line.includes('"id":2')) {
           child.kill();
           resolve(line);
