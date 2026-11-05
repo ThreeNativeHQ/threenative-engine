@@ -154,6 +154,28 @@ void loopInvariantVarsHoist() {
     const auto derivative = fs.wgsl.code.find("dpdx("), loop = fs.wgsl.code.find("for (");
     if (!(derivative < loop)) std::fprintf(stderr, "%s\n", fs.wgsl.code.c_str());
     CHECK(derivative != std::string::npos && loop != std::string::npos && derivative < loop);
+
+    // A Fn body the loop reads as a value may assign an outer var: a value of that var stays in the loop.
+    graph::Block counted;
+    const auto x = counted.var(graph::float_(1));
+    const auto total = counted.var(graph::float_(0));
+    graph::Block bump;
+    bump.assign(x, graph::add(x.read(), graph::float_(1)));
+    auto step = std::make_shared<graph::NodeData>(*bump.node());
+    step->args = {x.read()};
+    counted.Loop(4, [&](graph::Node) {
+        const auto twice = graph::mul(x.read(), graph::float_(3));
+        counted.assign(total, graph::add(total.read(), graph::add(graph::Node(step), graph::add(twice, twice))));
+    });
+    auto result = std::make_shared<graph::NodeData>(*counted.node());
+    result->args = {total.read()};
+    VertexVariant bumped;
+    bumped.nodes.colorNode = graph::vec4({graph::Node(result), graph::float_(0), graph::float_(0), graph::float_(1)});
+    const auto gs = buildStage(buildBasic(bumped).fragment, 1);
+    CHECK(gs.wgsl.ok());
+    const auto product = gs.wgsl.code.find("* 3f"), counter = gs.wgsl.code.find("for (");
+    if (!(counter < product)) std::fprintf(stderr, "%s\n", gs.wgsl.code.c_str());
+    CHECK(product != std::string::npos && counter != std::string::npos && counter < product);
 }
 
 // NodeMaterial.depthNode becomes @builtin(frag_depth) in every mesh material's fragment stage.

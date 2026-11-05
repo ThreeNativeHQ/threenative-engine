@@ -533,7 +533,16 @@ ExprId Lowerer::emit(Node node) {
 // (a sample stays where the author put it, which may be a rarely taken branch).
 void Lowerer::hoistInvariants(const NodeData& loop) {
     std::unordered_set<const NodeData*> variant{loop.args.size() > 1 ? loop.args[1].get() : nullptr};
-    const std::function<void(const Node&)> mark = [&](const Node& n) {
+    // Every statement the body runs, a Fn body it calls in an expression included: that call may assign an outer var.
+    std::unordered_set<const NodeData*> marked;
+    std::function<void(const Node&)> mark;
+    const std::function<void(const Node&)> reach = [&](const Node& n) {
+        if (!n || !marked.insert(n.get()).second) return;
+        for (const auto& child : n->body) mark(child);
+        for (const auto& child : n->otherwise) mark(child);
+        for (const auto& child : n->args) reach(child);
+    };
+    mark = [&](const Node& n) {
         if (!n) return;
         if (n->kind == Kind::Var) variant.insert(n.get());
         if (n->kind == Kind::Loop && n->args.size() > 1) variant.insert(n->args[1].get());
@@ -544,6 +553,7 @@ void Lowerer::hoistInvariants(const NodeData& loop) {
         }
         for (const auto& child : n->body) mark(child);
         for (const auto& child : n->otherwise) mark(child);
+        for (const auto& child : n->args) reach(child);
     };
     for (const auto& child : loop.body) mark(child);
     std::unordered_map<const NodeData*, bool> fixed;
