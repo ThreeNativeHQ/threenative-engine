@@ -92,7 +92,8 @@ describe.each(kits)("$kit runtime", ({ kit, addWorld, Collider, asset, water }) 
       heightMax: 10,
     },
   };
-  // Two boulders, eight floats each: x, y, z, three unused, a scale in the last slot. One sits at the
+  // Two boulders, eight floats each: x, y, z, the normalized quaternion (x, y, z, w), then the uniform
+  // scale in the last slot. Both records turn nothing (identity rotation, scale 1). One sits at the
   // origin and one 130 m east.
   const records = new Float32Array([0, 0, 0, 0, 0, 0, 1, 1, 130, 0, 0, 0, 0, 0, 1, 1]);
   const heightmap = new Uint16Array([0, 2000, 4000, 6000, 8000, 10000, 12000, 14000, 16000]);
