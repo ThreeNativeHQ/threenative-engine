@@ -362,6 +362,7 @@ tn_native_engine_test(tn-native-engine-material-test tests/native-engine/materia
     native_engine_material_depth_texture_lowering=depth_texture_lowering
     native_engine_material_bloom_passes=bloom_passes
     native_engine_material_slots_share_one_lowering=slots_share_one_lowering
+    native_engine_material_loop_invariant_vars_hoist=loop_invariant_vars_hoist
     native_engine_material_rough_diffuse=rough_diffuse)
 target_link_libraries(tn-native-engine-material-test PRIVATE tn_engine_shader)
 if(EMSCRIPTEN)

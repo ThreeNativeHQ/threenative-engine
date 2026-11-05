@@ -135,6 +135,27 @@ void fogNodeMixesColor() {
     }
 }
 
+// three declares a toVar() made before a Loop before it: the impostor surface's mip level (a derivative of its footprint)
+// ran inside its 33-step march, once per step and in divergent control flow, where three runs it once.
+void loopInvariantVarsHoist() {
+    graph::Block outer;
+    const auto level = outer.var(graph::dFdx(graph::varying("positionView", Type::vec(3))));
+    graph::Block block;
+    const auto sum = block.var(graph::float_(0));
+    block.Loop(4, [&](graph::Node index) {
+        block.assign(sum, graph::add(sum.read(), graph::add(graph::float_(index), graph::swizzle(level.read(), "x"))));
+    });
+    auto march = std::make_shared<graph::NodeData>(*block.node());
+    march->args = {sum.read()};
+    VertexVariant variant;
+    variant.nodes.colorNode = graph::vec4({graph::Node(march), graph::float_(0), graph::float_(0), graph::float_(1)});
+    const auto fs = buildStage(buildBasic(variant).fragment, 1);
+    CHECK(fs.wgsl.ok());
+    const auto derivative = fs.wgsl.code.find("dpdx("), loop = fs.wgsl.code.find("for (");
+    if (!(derivative < loop)) std::fprintf(stderr, "%s\n", fs.wgsl.code.c_str());
+    CHECK(derivative != std::string::npos && loop != std::string::npos && derivative < loop);
+}
+
 // NodeMaterial.depthNode becomes @builtin(frag_depth) in every mesh material's fragment stage.
 void depthNodeWritesFragDepth() {
     for (int material = 0; material < 5; ++material) {
@@ -895,4 +916,4 @@ void mat3OfMat4() {
 
 }  // namespace
 
-TN_TEST_MAIN({"mat3_of_mat4", mat3OfMat4}, {"alpha_hash", alphaHash}, {"alpha_test_node", alphaTestNode}, {"ssr_passes", ssrPasses}, {"denoise_reads_raw_normals", denoiseReadsRawNormals}, {"ssr_rejects_inputs", ssrRejectsInputs}, {"depth_texture_lowering", depthTextureLowering}, {"depth_node_writes_frag_depth", depthNodeWritesFragDepth}, {"unsupported", unsupported}, {"emissive_output", emissiveOutput}, {"builds", builds}, {"fog", fog}, {"rough_diffuse", roughDiffuse}, {"fog_node_mixes_color", fogNodeMixesColor}, {"node_key", nodeKey}, {"bloom_passes", bloomPasses}, {"slots_share_one_lowering", slotsShareOneLowering})
+TN_TEST_MAIN({"mat3_of_mat4", mat3OfMat4}, {"alpha_hash", alphaHash}, {"alpha_test_node", alphaTestNode}, {"ssr_passes", ssrPasses}, {"denoise_reads_raw_normals", denoiseReadsRawNormals}, {"ssr_rejects_inputs", ssrRejectsInputs}, {"depth_texture_lowering", depthTextureLowering}, {"depth_node_writes_frag_depth", depthNodeWritesFragDepth}, {"unsupported", unsupported}, {"emissive_output", emissiveOutput}, {"builds", builds}, {"fog", fog}, {"rough_diffuse", roughDiffuse}, {"fog_node_mixes_color", fogNodeMixesColor}, {"node_key", nodeKey}, {"bloom_passes", bloomPasses}, {"slots_share_one_lowering", slotsShareOneLowering}, {"loop_invariant_vars_hoist", loopInvariantVarsHoist})

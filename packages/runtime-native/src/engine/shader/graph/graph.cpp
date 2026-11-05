@@ -74,6 +74,7 @@ public:
 
 private:
     void statement(Node node);
+    void hoistInvariants(const NodeData& loop);
     VarId ensureVar(Node var);
     uint32_t ensureStorage(const NodeData& element);
     ExprId emit(Node node);
@@ -525,6 +526,60 @@ ExprId Lowerer::emit(Node node) {
     }
 }
 
+// three builds a node where it was made, so a toVar() or a shared value made before a Loop is declared before it: its
+// work runs once, and a derivative in it (an impostor's mip level) runs in uniform control flow. The engine's graph keeps
+// no creation site, so before a loop it lowers each var and shared value the body reads that the body cannot change:
+// no index of this loop or a nested one, no var the body declares or assigns, no Fn body, no storage, no texture read
+// (a sample stays where the author put it, which may be a rarely taken branch).
+void Lowerer::hoistInvariants(const NodeData& loop) {
+    std::unordered_set<const NodeData*> variant{loop.args.size() > 1 ? loop.args[1].get() : nullptr};
+    const std::function<void(const Node&)> mark = [&](const Node& n) {
+        if (!n) return;
+        if (n->kind == Kind::Var) variant.insert(n.get());
+        if (n->kind == Kind::Loop && n->args.size() > 1) variant.insert(n->args[1].get());
+        if (n->kind == Kind::Assign && !n->args.empty()) {
+            const Node& target = n->args[0];
+            variant.insert(target.get());
+            if (target->kind == Kind::Swizzle && !target->args.empty()) variant.insert(target->args[0].get());
+        }
+        for (const auto& child : n->body) mark(child);
+        for (const auto& child : n->otherwise) mark(child);
+    };
+    for (const auto& child : loop.body) mark(child);
+    std::unordered_map<const NodeData*, bool> fixed;
+    const std::function<bool(const Node&)> invariant = [&](const Node& n) -> bool {
+        if (!n) return true;
+        if (const auto found = fixed.find(n.get()); found != fixed.end()) return found->second;
+        const auto kind = n->kind;
+        bool ok = !variant.count(n.get()) && n->body.empty() && n->otherwise.empty() && kind != Kind::Body &&
+                  kind != Kind::Call && kind != Kind::LoopIndex && kind != Kind::StorageElement &&
+                  kind != Kind::StorageTexture && kind != Kind::AtomicAdd && kind != Kind::Texture &&
+                  kind != Kind::TextureLoad && kind != Kind::RenderTexture && kind != Kind::Reflector &&
+                  kind != Kind::ViewportDepth && kind != Kind::Pmrem && kind != Kind::PostEffect;
+        fixed[n.get()] = ok;  // a cycle through a var reads as invariant only if every other input is
+        for (const auto& arg : n->args)
+            if (ok && !invariant(arg)) ok = false;
+        fixed[n.get()] = ok;
+        return ok;
+    };
+    std::unordered_set<const NodeData*> visited;
+    const std::function<void(const Node&)> hoist = [&](const Node& n) {
+        if (!n || !visited.insert(n.get()).second || n->kind == Kind::Body || n->kind == Kind::Call) return;
+        const auto kind = n->kind;
+        const bool shared = uses_[n.get()] > 1 && (kind == Kind::Unary || kind == Kind::Binary || kind == Kind::Math ||
+                                                   kind == Kind::Join);
+        if ((kind == Kind::Var || shared) && !(kind == Kind::Var && vars_.count(n.get())) && invariant(n)) {
+            if (kind == Kind::Var) (void)ensureVar(n);
+            else (void)expression(n);
+            return;
+        }
+        for (const auto& arg : n->args) hoist(arg);
+        for (const auto& child : n->body) hoist(child);
+        for (const auto& child : n->otherwise) hoist(child);
+    };
+    for (const auto& child : loop.body) hoist(child);
+}
+
 VarId Lowerer::ensureVar(Node var) {
     const auto found = vars_.find(var.get());
     if (found != vars_.end()) return found->second;
@@ -635,6 +690,7 @@ void Lowerer::statement(Node node) {
         }
         case Kind::Loop: {
             const ExprId count = expression(s.args[0]);
+            hoistInvariants(s);
             const auto previousAggregates = aggregates_;
             const Node indexNode = s.args[1];
             program_.Loop(count, [this, &s, &indexNode](ExprId index) {
