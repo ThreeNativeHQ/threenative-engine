@@ -146,6 +146,34 @@ const GEOMETRY_MAPS = [
   "transmissionMap",
 ] as const;
 
+/**
+ * A node source's shading slots, cleared for the same reason as {@link GEOMETRY_MAPS}: they are
+ * authored against the source geometry (a canopy's emissive is its UV-sampled albedo times a
+ * constant, its shadow position is its own wind offset), the bake already holds the albedo, and the
+ * quad has no `uv` — three reads a missing attribute as zero, the owned engine refuses the draw.
+ * The scalar each one replaces (`roughness`, `emissive`, …) survives.
+ */
+const GEOMETRY_NODES = [
+  "aoNode",
+  "emissiveNode",
+  "roughnessNode",
+  "metalnessNode",
+  "specularColorNode",
+  "specularIntensityNode",
+  "clearcoatNode",
+  "clearcoatRoughnessNode",
+  "clearcoatNormalNode",
+  "sheenNode",
+  "sheenRoughnessNode",
+  "iridescenceNode",
+  "iridescenceThicknessNode",
+  "anisotropyNode",
+  "transmissionNode",
+  "thicknessNode",
+  "castShadowPositionNode",
+  "receivedShadowPositionNode",
+] as const;
+
 /** One `mat4` node per CPU instance-matrix attribute, derived once and kept live with its source. */
 const INSTANCE_COLUMNS = new WeakMap<InstancedBufferAttribute, InstancedInterleavedBuffer>();
 
@@ -420,6 +448,7 @@ export class WorldImpostorSurface {
       throw new Error("WorldImpostorSurface requires a baked atlas.");
     const material = cloneLitMaterial(options.source);
     for (const key of GEOMETRY_MAPS) Reflect.set(material, key, null);
+    for (const key of GEOMETRY_NODES) if (key in material) Reflect.set(material, key, null);
     // Albedo and coverage are baked into the atlas; a vertex-colour attribute the quad does not
     // have, an opacity multiplier or an opacity node would apply the source's own colour and
     // coverage a second time on top of the baked one.

@@ -156,6 +156,21 @@ describe("WorldImpostorSurface material", () => {
     atlas.dispose();
   });
 
+  it("clears a node source's shading nodes, because they read the source geometry the quad lacks", () => {
+    // A canopy's emissive lift is its albedo map times a constant, sampled through `attribute("uv")`;
+    // the owned engine refuses the missing attribute and loses the renderer (TN_NATIVE_ATTRIBUTE_MISSING).
+    const source = new MeshStandardNodeMaterial();
+    const slots = ["aoNode", "emissiveNode", "roughnessNode", "metalnessNode", "castShadowPositionNode"];
+    for (const name of slots) Reflect.set(source, name, uniform(1));
+    const { surface, atlas } = makeSurface(source as unknown as MeshStandardMaterial);
+    for (const name of slots) {
+      expect(Reflect.get(surface.material, name), name).toBeNull();
+      expect(Reflect.get(source, name), name).not.toBeNull();
+    }
+    surface.dispose();
+    atlas.dispose();
+  });
+
   it("disposes only its own geometry and twin, never the borrowed atlas or the source", () => {
     const source = new MeshStandardMaterial();
     const sourceDispose = vi.spyOn(source, "dispose");
