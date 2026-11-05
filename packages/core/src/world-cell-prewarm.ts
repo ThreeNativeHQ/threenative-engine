@@ -3,7 +3,7 @@ import { markEngineRenderHook } from "./engine-render-hook.js";
 import type { IRendererLike } from "./renderer.js";
 import { SharedBatch } from "./world-cell-batches.js";
 import type { IBatchShape, IPrewarmEntry } from "./world-cell-data.js";
-import type { IAssetState } from "./world-cells.js";
+import type { IAssetState } from "./world-cell-models.js";
 
 export interface ICellPrewarmHost {
   released(): boolean;

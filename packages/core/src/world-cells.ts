@@ -57,7 +57,6 @@ import {
 
 import { type IAssetLoader, createAssetLoader } from "./assets.js";
 import type { IComputeDriven } from "./compute-driven.js";
-import { INSTANCED_LOD_MAX_PIXEL_ERROR } from "./instanced-batch-lod.js";
 import { InstancedBatch } from "./instanced-batch.js";
 import { biasedLodDistance, setLodBias, worldSphere } from "./model-lod.js";
 import { type OcclusionMode, occlusionMode } from "./render/depth-pyramid.js";
@@ -79,6 +78,10 @@ import {
 } from "./world-cell-chunks.js";
 import { CellPrewarm } from "./world-cell-prewarm.js";
 
+import { CellLodBias } from "./world-cell-lod-bias.js";
+import { CellPlacements, newBatches, newBoxes, publishCount } from "./world-cell-placements.js";
+import { CellReadiness } from "./world-cell-readiness.js";
+import { CellResidency } from "./world-cell-residency.js";
 import {
   type IShadowLevel,
   type IWorldGpuFrameValidation,
@@ -100,99 +103,31 @@ import {
 } from "./world-package.js";
 import { type IAdmissionBudget, TerrainTileBudgetError, TerrainTiles } from "./world-tiles.js";
 
-const _readinessPosition = new Vector3();
+import {
+  ADMISSION_SLICE_PLACEMENTS,
+  COVERED_BUDGET_SCALE,
+  DEFAULT_ADMISSION_BUDGET_MS,
+  DEFAULT_AUTO_LOD_MAX_PIXEL_ERROR,
+  DEFAULT_TILE_RESOLUTION,
+  type IWorldCellsInit,
+  LEVEL_REFILTER_STEP_METRES,
+  SETTLED_FOLLOW_METRES,
+  SMALL_CASTER_METRES,
+  adaptiveLodRequested,
+  autoLodPixelError,
+  autoLodScale,
+  impostorFarOption,
+  impostorsRequested,
+  mainGpuShare,
+  tileResolutionFor,
+} from "./world-cell-options.js";
+
 // Four floats per record (`LOD_RANGE_STRIDE`): the published levels and the fade a swap stamps.
-const LOD_RANGE_RECORD_BYTES = 16;
 
 export { bundleSafeMaterial } from "./world-bundle-safety.js";
+export { LOD_BIAS_MARKER } from "./world-cell-lod-bias.js";
 
-const DEFAULT_TILE_RESOLUTION = 129;
-
-/**
- * One tile vertex per heightmap sample, rounded up so every default lod factor (1, 2, 4) divides it
- * and capped at the old fixed 129. A finer tile only interpolates the same samples: 129 over a 2 m
- * heightmap drew 3.01M terrain triangles, 25 ms on an Iris Xe (PRD-762).
- */
-function tileResolutionFor(tileSize: number, spacing: number): number {
-  const cells = Math.ceil(tileSize / spacing / 4) * 4;
-  return Math.min(DEFAULT_TILE_RESOLUTION, Math.max(9, cells + 1));
-}
 /** Milliseconds one `update` may spend admitting streamed content, unless the game says otherwise. */
-const DEFAULT_ADMISSION_BUDGET_MS = 2;
-/**
- * How much more one `update` may admit while the startup cover hides the world: 8x takes the 2 ms
- * default to one 60 Hz frame. Nobody sees frame pacing behind an opaque loading screen, and at 2 ms
- * a 10-17 fps test lane spent 16 s (web) and about 47 s (native) admitting a spawn backlog of about
- * 1,200 builds. The loader still presents every frame. Scaling keeps a game's own split between
- * several worlds; `coveredAdmissionBudgetMs` and `coveredFreshMeshesPerUpdate` name the covered
- * values outright.
- */
-const COVERED_BUDGET_SCALE = 8;
-/**
- * How far the follow point has to move before a residency pass is worth repeating. Below it the
- * ring, the refilter brackets and every tile's LOD level are the same numbers, so the pass would
- * re-derive the set it already holds. Half a metre is under one 2 m heightmap cell and far under a
- * 128 m cell, so nothing that could change an answer is skipped.
- */
-const SETTLED_FOLLOW_METRES = 0.5;
-/**
- * How far the follow point has to move before the `maxDistance`/`lods` refilter pass runs again.
- * That pass walks every resident cell's batches, derives both distance brackets and sorts what it
- * found, and on a 2 km walk at 0.3 m a frame it ran every second frame for the same brackets — a
- * third of the world's `update`. Two metres is the same order as the per-asset hysteresis the pass
- * already applies (`threshold / 8`, 3.75 m for a 30 m gate), so a level switch or a cull lands
- * within about two metres of the distance that asked for it, on a level the player is still walking
- * toward. Raise it when a game's gates are far apart, lower it when placements sit inside one.
- */
-const LEVEL_REFILTER_STEP_METRES = 2;
-/**
- * The projection a baked chain's levels are switched at when the world names none: 60° of vertical
- * field of view over 1080 raster rows, which is the desktop view a switch distance is a function of.
- * See `autoLod`.
- */
-const DEFAULT_AUTO_LOD_FOV_Y = 60;
-const DEFAULT_AUTO_LOD_VIEWPORT_HEIGHT = 1080;
-/**
- * The screen-space error budget a baked chain's levels are switched at, in pixels, when the world
- * names none. See `IWorldCellsLoadOptions.autoLod`.
- */
-const DEFAULT_AUTO_LOD_MAX_PIXEL_ERROR = INSTANCED_LOD_MAX_PIXEL_ERROR;
-/** An asset shorter than this casts into the finest level only; see the layer above. */
-const SMALL_CASTER_METRES = 1.5;
-/**
- * Placements filtered per unit of admission work.
- *
- * One unit is what a frame can overshoot its budget by, so it is sized to stay small rather than to
- * divide the work evenly: a slice is a few hundred placements' worth of matrix maths, tens of
- * microseconds, whatever the cell holds. ponytail: a count, not a time — the budget is the clock,
- * and this only decides how often it is read.
- */
-const ADMISSION_SLICE_PLACEMENTS = 256;
-
-interface IWorldCellsInit extends IWorldCellsLoadOptions {
-  readonly reachRanges: Map<
-    IWorldCell,
-    Map<string, { min: number; max: number; minY: number; maxY: number }>
-  >;
-  readonly manifest: IWorldPackage;
-  readonly placements: ArrayBuffer;
-  readonly heightmap: Uint16Array;
-  readonly baseUrl: string;
-  /** `baseUrl` as the loader keys it: no leading slash, which is what a manifest lists. */
-  readonly logicalBase: string;
-  /**
-   * Asset ids the package named twice for one model, each pointing at the id that is kept. Built
-   * once in `load`, where the loader can be asked what each path really fetches; empty when nothing
-   * is a duplicate. See {@link assetAliases}.
-   */
-  readonly aliases: ReadonlyMap<string, string>;
-  /**
-   * Whether `load` fabricated the loader it hands in as `assets` instead of the game supplying one.
-   * `load` always passes a loader to the constructor, so `assets === undefined` cannot tell an owned
-   * loader from a caller's; this is the bit that can. Left out, ownership is `assets === undefined`.
-   */
-  readonly ownsAssets?: boolean;
-}
 
 /**
  * Load a package file from the first candidate the loader says might serve it, the way the
@@ -225,146 +160,6 @@ async function fetchOk(url: string): Promise<Response> {
   const response = await fetch(url);
   if (!response.ok) throw new Error(`status ${String(response.status)}`);
   return response;
-}
-
-/**
- * One empty batch per (level, part), so a placement is filtered and drawn together and an emptied
- * level or a part nobody placed costs one missing mesh rather than the whole cell's run.
- */
-function newBatches(asset: IAssetState): InstancedBatch[][] {
-  const batches: InstancedBatch[][] = [];
-  for (const parts of asset.levels) {
-    const levelBatches: InstancedBatch[] = [];
-    for (const part of parts)
-      levelBatches.push(new InstancedBatch({ geometry: part.geometry, material: part.material }));
-    batches.push(levelBatches);
-  }
-  return batches;
-}
-
-/** How many meshes a build will publish: one per (level, part). */
-function publishCount(batches: readonly InstancedBatch[][]): number {
-  let total = 0;
-  for (const levelBatches of batches) total += levelBatches.length;
-  return total;
-}
-
-/**
- * One empty bounds box per `(level, part)`, beside the batches `#addPlacements` measures. Written
- * as a loop because this file is held to a rule that the array method's name is a material's
- * texture property.
- */
-function newBoxes(batches: readonly InstancedBatch[][]): Box3[][] {
-  const boxes: Box3[][] = [];
-  for (const levelBatches of batches) {
-    const level: Box3[] = [];
-    for (const _batch of levelBatches) level.push(new Box3());
-    boxes.push(level);
-  }
-  return boxes;
-}
-
-/**
- * Pixels one world unit covers at unit depth, from the vertical field of view and the raster height.
- * The scale `ModelLod` divides an error by; see `IWorldCellsLoadOptions.autoLod`.
- */
-function autoLodScale(autoLod: IWorldCellsLoadOptions["autoLod"]): number {
-  const fovY = autoLod?.fovY ?? DEFAULT_AUTO_LOD_FOV_Y;
-  const viewportHeight = autoLod?.viewportHeight ?? DEFAULT_AUTO_LOD_VIEWPORT_HEIGHT;
-  if (!Number.isFinite(fovY) || fovY <= 0 || fovY >= 180)
-    throw new Error("WorldCells autoLod.fovY must be a finite angle in (0, 180) degrees.");
-  if (!Number.isFinite(viewportHeight) || !(viewportHeight > 0))
-    throw new Error(
-      "WorldCells autoLod.viewportHeight must be a positive number of raster pixels.",
-    );
-  return viewportHeight / (2 * Math.tan((fovY * Math.PI) / 360));
-}
-
-/** The screen-space error budget a synthesized level is switched at, in pixels. */
-function autoLodPixelError(autoLod: IWorldCellsLoadOptions["autoLod"]): number {
-  const maxPixelError = autoLod?.maxPixelError ?? DEFAULT_AUTO_LOD_MAX_PIXEL_ERROR;
-  if (!Number.isFinite(maxPixelError) || maxPixelError <= 0)
-    throw new Error("WorldCells autoLod.maxPixelError must be a positive number of pixels.");
-  return maxPixelError;
-}
-
-/** The adaptive LOD bias floor. A bias is only ever allowed to coarsen selection, never refine it. */
-const LOD_BIAS_MIN = 1;
-/** The adaptive LOD bias ceiling, so a runaway maps to a coarser but still bounded world. */
-const LOD_BIAS_MAX = 2.5;
-/** How much the bias rises per over-budget step. */
-const LOD_BIAS_RISE = 1.08;
-/** How much the bias decays per comfortably-under-budget step. */
-const LOD_BIAS_DECAY = 0.95;
-/** Seconds between rise or decay steps; a change is never larger than one step. */
-const LOD_BIAS_STEP_SECONDS = 0.5;
-/** Below this share of the affordable budget the bias decays; between it and the budget it holds. */
-const LOD_BIAS_DECAY_SHARE = 0.6;
-/** Default fraction of a 60 fps frame the main pass may take before the bias rises. */
-const DEFAULT_MAIN_GPU_SHARE = 0.5;
-/** Seconds between two `TN_LOD_BIAS` lines. */
-const LOD_BIAS_MARKER_SECONDS = 1;
-/** The line the adaptive loop prints when it moves the bias. */
-export const LOD_BIAS_MARKER = "TN_LOD_BIAS";
-
-/**
- * One launch override, read once: the environment, then the query string, then the global a test
- * sets. The same three ways a debug flag is asked, but the answer is kept as text so a number can
- * be parsed by the caller rather than rounded here.
- */
-function launchValue(parameter: string, flag: string, globalName: string): string | undefined {
-  const host = globalThis as { process?: { env?: Record<string, unknown> } } & Record<
-    string,
-    unknown
-  >;
-  const env = host.process?.env?.[flag];
-  if (typeof env === "string" && env !== "") return env;
-  const query = globalThis.location?.search;
-  if (typeof query === "string") {
-    const value = new URLSearchParams(query).get(parameter);
-    if (value !== null) return value;
-  }
-  const global = host[globalName];
-  if (typeof global === "number") return String(global);
-  return typeof global === "string" ? global : undefined;
-}
-
-/**
- * Whether a launch opts into the whole-asset impostors: off unless `?tnImpostors=1`, `TN_IMPOSTORS=1`
- * or `__tnImpostors = 1` says so. Opt-in because the judged Machinefall capture of the default
- * (PRD-473 AC-3, 2026-10-14) read REGRESSION — ground shadows and canopy density differ — and its
- * pinned frame windows showed no frame-time gain, so a game gets the source levels it had until the
- * proof passes. `impostors: true` still asks explicitly.
- */
-function impostorsRequested(): boolean {
-  const raw = launchValue("tnImpostors", "TN_IMPOSTORS", "__tnImpostors");
-  return raw === "1" || raw === "true";
-}
-
-/** Whether the adaptive LOD bias runs: on unless a launch pins it off. */
-function adaptiveLodRequested(): boolean {
-  const raw = launchValue("tnAdaptiveLod", "TN_ADAPTIVE_LOD", "__tnAdaptiveLod");
-  return raw === undefined ? true : raw !== "0" && raw !== "false";
-}
-
-/** The main-pass GPU share: the option, then the launch override, then 0.5. */
-function mainGpuShare(option: number | undefined): number {
-  const raw = launchValue("tnMainGpuShare", "TN_MAIN_GPU_SHARE", "__tnMainGpuShare");
-  const launched = raw === undefined ? undefined : Number(raw);
-  const share = option ?? launched ?? DEFAULT_MAIN_GPU_SHARE;
-  if (!Number.isFinite(share) || share <= 0 || share > 1)
-    throw new Error("WorldCells mainGpuShare must be a number in (0, 1].");
-  return share;
-}
-
-/**
- * Whether an asset whose cull ends inside the near ring keeps a far aggregate: `"ring"` unless the
- * caller names the `"always"` override. A misspelled value throws rather than silently picking one.
- */
-function impostorFarOption(value: "ring" | "always" | undefined): "ring" | "always" {
-  if (value === undefined) return "ring";
-  if (value === "ring" || value === "always") return value;
-  throw new Error('WorldCells impostorFar must be "ring" or "always".');
 }
 
 /**
@@ -421,7 +216,6 @@ export class WorldCells extends Group implements IComputeDriven {
   readonly #minX: number;
   readonly #minZ: number;
   readonly #placements: ArrayBuffer;
-  readonly #rebuildsPerUpdate: number;
   readonly #prefetchSeconds: number;
   readonly #freshMeshesPerUpdate: number;
   readonly #coveredFreshMeshesPerUpdate: number;
@@ -432,22 +226,12 @@ export class WorldCells extends Group implements IComputeDriven {
   readonly #autoLodPixelsPerUnit: number;
   /** The screen-space error budget a synthesized level is switched at; see `autoLod`. */
   readonly #autoLodMaxPixelError: number;
-  /** Smoothed follow velocity (m/s) and the sample it was last updated from. */
-  #velocityX = 0;
-  #velocityZ = 0;
-  #lastSample: { readonly x: number; readonly z: number; readonly t: number } | undefined;
   readonly #ring: number;
   #terrain: TerrainTiles | undefined;
   readonly #hasColliders: boolean;
   readonly #lodHysteresis: number;
-  readonly #placementLevels: Uint32Array | undefined;
-  /** Each record's last published levels, `(min + 1) | (max + 1) << 4` (0: none yet); see `#addPlacements`. */
-  readonly #placementRanges: Uint8Array | undefined;
-  readonly #placementReach: Float32Array | undefined;
-  readonly #reachRanges: Map<
-    IWorldCell,
-    Map<string, { min: number; max: number; minY: number; maxY: number }>
-  >;
+  /** The placement build: records to batches, and when a walk makes that answer stale. */
+  readonly #placementBuild: CellPlacements;
   readonly #transparentScatter: "cutout" | "blend";
   readonly #baseUrl: string;
   readonly #logicalBase: string;
@@ -458,13 +242,8 @@ export class WorldCells extends Group implements IComputeDriven {
    * package has no duplicates, and then the lookup is the identity.
    */
   readonly #aliases: ReadonlyMap<string, string>;
-  readonly #resident = new Map<string, IResidentCell>();
-  /**
-   * Games waiting on `whenSpawnReady`, settled by the update that follows admissions or by dispose.
-   * One set, no listener registry and no polling: the update that already walks residency observes
-   * these, so a world nobody is waiting on scans nothing. See {@link whenSpawnReady}.
-   */
-  readonly #spawnWaiters = new Set<ISpawnWaiter>();
+  /** The resident ring, the build queue that fills it, and both sets of counters. */
+  readonly #residency: CellResidency;
   readonly #extentBounds: Box3;
   /** The largest run of each asset in any cell: the segment size every cell of it fits. */
   readonly #runMax = new Map<string, number>();
@@ -487,66 +266,17 @@ export class WorldCells extends Group implements IComputeDriven {
   readonly #cellsPerCluster: number;
   /** World cells per main-cull visibility cell; see `MAIN_CULL_SQUARE_METRES`. */
   readonly #cellsPerCullCell: number;
-  /** The follow point the last full residency pass ran for; see `#residencyStale`. */
-  readonly #residencyPoint = new Vector3(Number.NaN, 0, Number.NaN);
-  /** Actual cell at the last residency pass; only a jump reclaims retained hysteresis. */
-  #residencyCell: { readonly x: number; readonly z: number } | undefined;
-  /** The follow point the last refilter pass ran for; see `#refilterStale`. */
-  readonly #refilterPoint = new Vector3(Number.NaN, 0, Number.NaN);
-  /** The LOD eye the last refilter pass ran for; see `#refilterStale`. */
-  readonly #refilterEye = new Vector3(Number.NaN, 0, Number.NaN);
-  /** Bumped by every admission and eviction, so a residency change owes a refilter that update. */
-  #residencyEpoch = 0;
-  /** The residency epoch the last refilter pass saw; see `#refilterStale`. */
-  #refilterEpoch = -1;
-  /** The last pass found more stale cell-assets than `rebuildsPerUpdate` could queue. */
-  #refilterOwed = false;
   /** The game's hook to refresh the shadow levels after streamed records changed. */
   readonly #invalidateShadows: ((region?: IShadowRegion) => void) | undefined;
-  /** Cell-asset builds waiting for budget, in admission order: nearest cell first. */
-  #jobs: IBuildJob[] = [];
-  /** The (cell, run) pairs already queued, so a refilter cannot queue itself twice. */
-  readonly #queued = new Set<IWorldRun>();
-  readonly #position = new Vector3();
-  readonly #rotation = new Quaternion();
-  readonly #scale = new Vector3();
-  readonly #matrix = new Matrix4();
-  readonly #recordBounds = new Box3();
-  readonly #instance = new Matrix4();
-  /** The authored bounds' centre, placed: the source sphere's centre. See `#addPlacements`. */
-  readonly #sourceCentre = new Vector3();
-  readonly #pressure = { cells: 0, instances: 0, bytes: 0 };
   readonly #budgetMs: number;
   readonly #coveredBudgetMs: number;
   /** Set for the length of one `process` call that runs behind the startup cover. */
   #covered = false;
   readonly #now: () => number;
   #admission = { spentMs: 0, deferred: 0, backlog: 0 };
-  #instances = 0;
-  #bytes = 0;
-  #evictions = 0;
   #failures = 0;
-  /** Completed admission steps; queued, refused and discarded work does not count. */
-  #admissionCompletedUnits = 0;
-  #rebuilds = 0;
-  /** Refilter passes run, whether or not they queued anything; see `IWorldCellsStats.refilters`. */
-  #refilters = 0;
-  /** Replacement builds that entered #addPlacements; initial admission is not CPU refilter work. */
-  #levelRefilters = 0;
   /** Refilters whose rebuild came back identical and were settled without a write. */
   #unchanged = 0;
-  /** Every distinct gate distance the world's assets have, ascending; see `#noteGate`. */
-  readonly #gates: number[] = [];
-  /** The reused hit list and the reused per-cell seen set; see `#staleIn`. */
-  readonly #stale: Array<{
-    cell: IResidentCell;
-    distance: number;
-    id: string;
-  }> = [];
-  readonly #staleSeen = new Set<string>();
-  /** Stale cell-assets the passes found, cumulative; see `IWorldCellsStats.refilterEntries`. */
-  #staleEntries = 0;
-  #generation = 0;
   #released = false;
   /**
    * How the shadow cascade reaches this world's GPU keys: a level render hands its own four numbers
@@ -568,10 +298,6 @@ export class WorldCells extends Group implements IComputeDriven {
   readonly #gpuWanted: boolean;
   /** See `IWorldCellsLoadOptions.lodFrom`. */
   readonly #lodFrom: "camera" | "follow";
-  /** The point levels and `maxDistance` are measured from this update; see `#updateEye`. */
-  readonly #eye = new Vector3();
-  /** The follow point `#updateEye` pulls the camera toward. */
-  readonly #eyeFollow = new Vector3();
   /** `gpuSceneValidate` as the load asked for it, before the query string and the environment. */
   readonly #gpuValidate: boolean | undefined;
   /**
@@ -589,27 +315,14 @@ export class WorldCells extends Group implements IComputeDriven {
    * one a flag turned off. See {@link bundlesAsked}.
    */
   readonly #bundleReason: string;
-  /** `adaptiveLod` resolved against the launch override; see the option. */
-  readonly #adaptiveLod: boolean;
   readonly #preserveAuthoredParts: boolean;
-  /** The main pass's allowed GPU share of a frame; see the option. */
-  readonly #mainGpuShare: number;
-  /** The distance multiplier both selection paths are using right now. */
-  #lodBias = LOD_BIAS_MIN;
-  /** The clock the step cadence and the first marker line are measured from. */
-  readonly #lodBiasStartedAt: number;
-  /** The last time a rise or decay step ran. */
-  #lodBiasStepAt: number;
-  /** The last time the `TN_LOD_BIAS` line printed. */
-  #lodBiasToldAt: number;
+  /** The adaptive LOD bias loop: `adaptiveLod` and `mainGpuShare` resolved, and the bias it moves. */
+  readonly #adaptiveBias: CellLodBias;
 
   readonly #render: CellRender;
   readonly #onPublication: IWorldCellsInit["onPublication"];
-  readonly #readinessVisible = new Map<IWorldCell, boolean>();
-  #readinessView: number[] = [];
-  #readinessReach: Float32Array | undefined;
-  readonly #readinessFrustum = new Frustum();
-  readonly #readinessProjection = new Matrix4();
+  /** The spawn and view gates, and the waiters they settle. */
+  readonly #readiness: CellReadiness;
   readonly #prewarm: CellPrewarm;
   readonly #chunks: CellChunks;
   readonly #impostorState: CellImpostors;
@@ -629,7 +342,7 @@ export class WorldCells extends Group implements IComputeDriven {
       released: () => this.#released,
       parent: () => this.parent,
       invalidateShadows: () => this.#invalidateShadows?.(),
-      backlog: () => this.#backlog() + this.#impostorState.impostorStats().pending,
+      backlog: () => this.#residency.backlog() + this.#impostorState.impostorStats().pending,
       keysForShadow: () => this.#render.keysForShadow(),
       hasShared: (key) => this.#render.hasShared(key),
       hasRetired: (key) => this.#render.hasRetired(key),
@@ -691,17 +404,28 @@ export class WorldCells extends Group implements IComputeDriven {
     this.#minZ = init.manifest.extent.minZ;
     this.#placements = init.placements;
     this.#lodHysteresis = init.lodHysteresis ?? 0;
-    this.#placementLevels =
-      this.#lodHysteresis > 0
-        ? new Uint32Array(init.placements.byteLength / PLACEMENT_RECORD_BYTES)
-        : undefined;
-    this.#placementRanges =
-      this.#placementLevels === undefined
-        ? undefined
-        : new Uint8Array(this.#placementLevels.length);
-    this.#placementReach = init.placementReach;
-    this.#reachRanges = init.reachRanges;
-    this.#rebuildsPerUpdate = positiveInteger(init.rebuildsPerUpdate ?? 16, "rebuildsPerUpdate");
+    this.#placementBuild = new CellPlacements(
+      {
+        lodHysteresis: this.#lodHysteresis,
+        placementReach: init.placementReach,
+        placements: init.placements,
+        reachRanges: init.reachRanges,
+        rebuildsPerUpdate: positiveInteger(init.rebuildsPerUpdate ?? 16, "rebuildsPerUpdate"),
+      },
+      {
+        asset: (id) => this.#models.asset(id),
+        canonical: (id) => this.#canonical(id),
+        eye: () => this.#residency.eye,
+        extent: () => ({ cellSize: this.#cellSize, minX: this.#minX, minZ: this.#minZ }),
+        follow: () => this.#follow,
+        gpuOn: () => this.#render.gpuOn,
+        queueBuild: (asset, cell, run, replace) =>
+          this.#residency.queueBuild(asset, cell, run, replace === true),
+        residencyEpoch: () => this.#residency.residencyEpoch,
+        resident: () => this.#residency.resident.values(),
+        rootsNeeded: (asset) => this.#impostorState.rootsNeeded(asset),
+      },
+    );
     this.#autoLodPixelsPerUnit = autoLodScale(init.autoLod);
     this.#autoLodMaxPixelError = autoLodPixelError(init.autoLod);
     // The marker is periodic, and a world's first five seconds are its own: the clock starts at the
@@ -735,8 +459,9 @@ export class WorldCells extends Group implements IComputeDriven {
       },
       {
         canonical: (id) => this.#canonical(id),
-        noteGate: (gate) => this.#noteGate(gate),
-        queueBuild: (asset, cell, run, force) => this.#queueBuild(asset, cell, run, force),
+        noteGate: (gate) => this.#placementBuild.noteGate(gate),
+        queueBuild: (asset, cell, run, force) =>
+          this.#residency.queueBuild(asset, cell, run, force),
         released: () => this.#released,
         failures: () => this.#failures,
         setFailures: (count) => {
@@ -745,7 +470,7 @@ export class WorldCells extends Group implements IComputeDriven {
         reportCellFailure: (stage, key, paths, error) =>
           this.#reportCellFailure(stage, key, paths, error),
         drainShared: (assetId) => this.#render.drainShared(assetId),
-        residentCells: () => this.#resident.values(),
+        residentCells: () => this.#residency.resident.values(),
         queuePrewarm: (asset) => this.#prewarm.queuePrewarm(asset),
         hasFarTemp: (id) => this.#impostorState.hasFarTemp(id),
         releaseFarTemp: (id) => this.#impostorState.releaseFarTemp(id),
@@ -763,14 +488,29 @@ export class WorldCells extends Group implements IComputeDriven {
     this.#bundleReason =
       init.bundles === undefined ? (asked === "default" ? "default" : "launch") : "option";
 
-    this.#adaptiveLod = init.adaptiveLod ?? adaptiveLodRequested();
     this.#preserveAuthoredParts = init.preserveAuthoredParts ?? false;
-    this.#mainGpuShare = mainGpuShare(init.mainGpuShare);
     // The warm-up and the step cadence are the world's own clock, so loading does not count as a
     // second of adaptation and a test can drive the loop with an injected `admissionNow`.
-    this.#lodBiasStartedAt = this.#now();
-    this.#lodBiasStepAt = this.#lodBiasStartedAt;
-    this.#lodBiasToldAt = this.#lodBiasStartedAt - LOD_BIAS_MARKER_SECONDS * 1000;
+    this.#adaptiveBias = new CellLodBias(
+      init.adaptiveLod ?? adaptiveLodRequested(),
+      // Ahead of `impostorFar` and `clusterSize`, as it always was: with more than one invalid
+      // option the share's error is the one a game sees. See `world-cells-options.spec.ts`.
+      mainGpuShare(init.mainGpuShare),
+      {
+        now: () => this.#now(),
+        apply: (bias) => {
+          setLodBias(bias);
+          this.#render.setLodBias(bias);
+        },
+        gpuTriangles: () => this.gpuSceneTally()?.triangles,
+        prewarm: () => ({
+          queued: this.#prewarm.queued,
+          owed: this.#prewarm.owed,
+          drawn: this.#prewarm.drawn,
+        }),
+        renderer: () => this.#chunks.renderer,
+      },
+    );
     this.#gpuValidate = init.gpuSceneValidate;
     this.#occlusion = init.occlusion ?? occlusionMode();
     this.#gpuTally = init.gpuSceneTally === true;
@@ -831,7 +571,7 @@ export class WorldCells extends Group implements IComputeDriven {
         preserveAuthoredParts: this.#preserveAuthoredParts,
         lodHysteresis: this.#lodHysteresis,
         lodTransition: init.lodTransition ?? "band",
-        lodSpatial: this.#placementReach !== undefined,
+        lodSpatial: this.#placementBuild.placementReach !== undefined,
         cellsPerCluster: this.#cellsPerCluster,
         cellsPerCullCell: this.#cellsPerCullCell,
         smallCasterMetres: this.#smallCasterMetres,
@@ -847,15 +587,15 @@ export class WorldCells extends Group implements IComputeDriven {
         camera: () => this.#chunks.camera,
         now: () => this.#now(),
         stats: () => this.stats(),
-        residentCells: () => this.#resident.values(),
+        residentCells: () => this.#residency.resident.values(),
         runMax: (asset) => this.#runMax.get(asset),
-        widenFilterRange: (cell, x, z) => this.#widenFilterRange(cell, x, z),
+        widenFilterRange: (cell, x, z) => this.#placementBuild.widenFilterRange(cell, x, z),
         addUnchanged: () => {
           this.#unchanged += 1;
         },
         disableFar: (run) => this.#impostorState.disableFar(run),
         deferWide: (id) => this.#impostorState.deferWide(id),
-        queuedBuilds: () => this.#jobs.length,
+        queuedBuilds: () => this.#residency.queuedBuilds,
         covered: () => this.#covered,
         prewarmSettled: () => this.#prewarm.settled,
         awaitDraw: (shared) => this.#prewarm.awaitDraw(shared),
@@ -875,7 +615,7 @@ export class WorldCells extends Group implements IComputeDriven {
         byteBudget: this.#budgets.bytes,
         logicalBase: this.#logicalBase,
         receiveShadow: this.#receiveShadow,
-        placementReach: this.#placementReach,
+        placementReach: this.#placementBuild.placementReach,
         autoLodMaxPixelError: this.#autoLodMaxPixelError,
         chunkMergeMaxTriangles: this.#chunkMergeMaxTriangles,
         castShadowLevels: this.#castShadowLevels,
@@ -895,9 +635,9 @@ export class WorldCells extends Group implements IComputeDriven {
         addFailures: (count) => {
           this.#failures += count;
         },
-        sourceBytes: () => this.#bytes + this.#impostorState.farBytes,
+        sourceBytes: () => this.#residency.bytes + this.#impostorState.farBytes,
         load: (path, wanted) => this.#models.load(path, wanted),
-        cellLive: (cell, generation) => this.#cellLive(cell, generation),
+        cellLive: (cell, generation) => this.#residency.cellLive(cell, generation),
         add: (object) => this.#stream(object),
         intersectsObject: (mesh) => this.#render.intersectsObject(mesh),
         gpuSceneOn: () => this.#render.gpuOn,
@@ -946,14 +686,14 @@ export class WorldCells extends Group implements IComputeDriven {
         hasAsset: (id) => this.#models.hasAsset(id),
         assets: () => this.#models.assets(),
         nearWorkPending: () =>
-          this.#jobs.length > 0 ||
+          this.#residency.queuedBuilds > 0 ||
           this.#models.loadsInFlight > 0 ||
           this.#models.loadsQueued > 0 ||
           this.#prewarm.queued > 0,
         newAsset: (id, definition) => this.#models.newAsset(id, definition),
         startAssetLoad: (asset) => this.#models.startAssetLoad(asset),
         release: (id) => this.#models.release(id),
-        noteGate: (gate) => this.#noteGate(gate),
+        noteGate: (gate) => this.#placementBuild.noteGate(gate),
         retargetWideCasters: (asset) => this.#render.retargetWideCasters(asset),
         terminalPrewarm: (asset) => {
           this.#models.ditherGates(asset);
@@ -974,7 +714,7 @@ export class WorldCells extends Group implements IComputeDriven {
                 part.geometry,
                 part.material,
                 this.#runMax.get(asset.id) ?? 1,
-                this.#resident.size + 1,
+                this.#residency.counters().residentCells + 1,
                 key,
                 this.#extentBounds,
                 "main",
@@ -991,18 +731,19 @@ export class WorldCells extends Group implements IComputeDriven {
             this.#prewarm.queuePrewarm(asset);
             return;
           }
-          for (const cell of [...this.#resident.values()]) {
+          for (const cell of [...this.#residency.resident.values()]) {
             for (const run of cell.cell.runs) {
-              if (this.#canonical(run.asset) === asset.id) this.#queueBuild(asset, cell, run, true);
+              if (this.#canonical(run.asset) === asset.id)
+                this.#residency.queueBuild(asset, cell, run, true);
             }
           }
         },
-        residentCell: (key) => this.#resident.get(key),
+        residentCell: (key) => this.#residency.resident.get(key),
         canonical: (id) => this.#canonical(id),
         shadowRecordsMoved: () => this.#render.shadowRecordsMoved(),
         residency: () => ({
-          instances: this.#instances,
-          bytes: this.#bytes,
+          instances: this.#residency.instances,
+          bytes: this.#residency.bytes,
           hlodBytes: this.#chunks.bytes,
         }),
         add: (object) => {
@@ -1020,6 +761,65 @@ export class WorldCells extends Group implements IComputeDriven {
         drawnImpostorInstances: () => this.#render.impostorDrawn(),
       },
     );
+    // One read of the residency collaborators, built once: the pass asks for it many times a frame,
+    // so a fresh object per ask would allocate on the hot path. `terrain` is the one part the
+    // constructor builds after this host, so it is a getter; a copied value would read as no terrain
+    // for the world's whole life.
+    const world = this;
+    const parts = {
+      chunks: this.#chunks,
+      impostor: this.#impostorState,
+      models: this.#models,
+      placements: this.#placementBuild,
+      prewarm: this.#prewarm,
+      render: this.#render,
+      get terrain(): TerrainTiles | undefined {
+        return world.#terrain;
+      },
+    };
+    this.#residency = new CellResidency({
+      addFailures: (count) => {
+        this.#failures += count;
+      },
+      asset: (id) => this.#models.asset(id),
+      budgets: () => this.#budgets,
+      canonical: (id) => this.#canonical(id),
+      cells: () => this.#cells,
+      extent: () => ({ cellSize: this.#cellSize, minX: this.#minX, minZ: this.#minZ }),
+      follow: () => this.#follow,
+      lodFrom: () => this.#lodFrom,
+      lodHysteresis: () => this.#lodHysteresis,
+      now: () => this.#now(),
+      parts: () => parts,
+      prefetchSeconds: () => this.#prefetchSeconds,
+      published: (bounds) => {
+        this.#onPublication?.(bounds);
+      },
+      released: () => this.#released,
+      ring: () => this.#ring,
+    });
+    this.#readiness = new CellReadiness({
+      asset: (id) => this.#models.asset(id),
+      buildQueued: (cell) => this.#residency.hasBuild(cell),
+      canonical: (id) => this.#canonical(id),
+      cells: () => this.#cells,
+      extent: () => ({ cellSize: this.#cellSize, minX: this.#minX, minZ: this.#minZ }),
+      extentBounds: () => this.#extentBounds,
+      gpuOn: () => this.#render.gpuOn,
+      loaded: (cell) => cellLoaded(cell),
+      manifestAsset: (id) => this.#manifest.assets[id],
+      placementReach: () => this.#placementBuild.placementReach,
+      placements: () => this.#placements,
+      prewarm: () => this.#prewarm,
+      refilterOwed: () => this.#placementBuild.owed,
+      released: () => this.#released,
+      renderer: () => this.#chunks.renderer,
+      resident: (key) => this.#residency.resident.get(key),
+      root: () => this,
+      shadowMoved: () => this.#render.shadowMoved,
+      terrain: () => this.#terrain,
+      terrainHeights: () => [init.manifest.terrain.heightMin, init.manifest.terrain.heightMax],
+    });
     if (init.terrain === false) return;
     // Terrain can reach further than the props do, so its radius is its own option; the collider
     // radius stays on the ring, which is how far a player can actually walk into this world.
@@ -1323,11 +1123,11 @@ export class WorldCells extends Group implements IComputeDriven {
     // arrives, which can be a frame or a loading screen after the frame that gave us these.
     if (renderer !== undefined) this.#chunks.renderer = renderer;
     if (camera !== undefined) this.#chunks.camera = camera;
-    this.#updateEye();
-    this.#render.updateLodEye(this.#eye.x, this.#eye.y, this.#eye.z);
+    this.#residency.updateEye();
+    this.#render.updateLodEye(this.#residency.eye.x, this.#residency.eye.y, this.#residency.eye.z);
     this.#render.flushCompiles(renderer);
     // The adaptive LOD bias, before the dispatch below reads the gates it scales.
-    this.#adaptLodBias(renderer);
+    this.#adaptiveBias.step(renderer);
     this.#render.enableGpu(
       renderer,
       this.#gpuWanted,
@@ -1340,7 +1140,7 @@ export class WorldCells extends Group implements IComputeDriven {
     // resident ring puts them in, through the same build every first-seen asset takes.
     if (this.#render.gpuOn && this.#render.gpuSeeded === false) {
       this.#render.gpuSeeded = true;
-      this.#seedGpuSources();
+      this.#residency.seedGpuSources();
       this.#render.seedGpuKeys();
       // After the keys, because that is the only point at which the marker can say how many of the
       // world's main meshes are dressed: printed at enable it would read the ring as it was a frame
@@ -1357,7 +1157,7 @@ export class WorldCells extends Group implements IComputeDriven {
     // seconds and the prop queue got nothing: the forest never built where the camera landed. While
     // props are queued the terrain is held to half, and the props get whatever it left.
     const budgetMs = this.#covered ? this.#coveredBudgetMs : this.#budgetMs;
-    const terrainMs = this.#jobs.length > 0 ? budgetMs / 2 : budgetMs;
+    const terrainMs = this.#residency.queuedBuilds > 0 ? budgetMs / 2 : budgetMs;
     const budget = new AdmissionBudget(terrainMs, this.#now);
     this.#render.resetFresh();
     // The residency pass is a function of the follow point, so a follow point that has not moved
@@ -1376,25 +1176,9 @@ export class WorldCells extends Group implements IComputeDriven {
             hysteresis: this.#lodHysteresis,
           }
         : undefined;
-    if (this.#residencyStale(x, z)) {
-      this.#residencyPoint.set(x, this.#followY(), z);
-      try {
-        this.#terrain?.follow({ x, z }, budget, terrainView);
-        this.#terrain?.process(renderer, camera, undefined, terrainView);
-      } catch (error) {
-        if (!(error instanceof TerrainTileBudgetError)) throw error;
-        this.#pressure.bytes += 1;
-      }
-      const ahead = this.#ahead(x, z);
-      this.#updateResidency(
-        {
-          x: Math.floor((ahead.x - this.#minX) / this.#cellSize),
-          z: Math.floor((ahead.z - this.#minZ) / this.#cellSize),
-        },
-        ahead.x,
-        ahead.z,
-      );
-    } else if (
+    if (this.#residency.stale(x, z))
+      this.#residency.pass(x, z, budget, renderer, camera, terrainView);
+    else if (
       // A blend in flight is not a settled ring, and the blend is advanced by `process` alone —
       // `follow` only re-levels tiles. A follow point standing still used to skip both, so a
       // three-frame tile morph froze on its first frame until the player moved again.
@@ -1410,14 +1194,9 @@ export class WorldCells extends Group implements IComputeDriven {
     // GPU source admission keeps every resident maxDistance candidate, so the dispatch's slot
     // cull and level gates handle a moving camera without a CPU replacement. `#staleIn` still
     // watches placementReach, whose per-record admission boundary has no GPU slot equivalent.
-    if (this.#refilterStale(x, z)) {
-      this.#refilterPoint.set(x, this.#followY(), z);
-      this.#refilterEye.copy(this.#eye);
-      this.#refilterEpoch = this.#residencyEpoch;
-      this.#updateMaxDistance(x, z);
-    }
+    if (this.#placementBuild.stale(x, z)) this.#placementBuild.refilter(x, z);
     const props = new AdmissionBudget(budgetMs - Math.min(budget.spentMs, terrainMs), this.#now);
-    this.#drain(props);
+    this.#residency.drain(props);
     // The prewarm runs outside the admission budget on purpose — it is not residency, it is the
     // shader builds the residency is about to need, and the allowance that spreads those is
     // `PREWARM_PER_UPDATE`.
@@ -1445,7 +1224,7 @@ export class WorldCells extends Group implements IComputeDriven {
     // near detail never waits for admission or an instance allocation. Proxy loads/staging alone
     // consume admission units; the synchronous visibility commit always protects the current view.
     this.#chunks.stepCellProxies(
-      this.#resident.values(),
+      this.#residency.resident.values(),
       this.matrixWorld,
       props,
       renderer,
@@ -1453,111 +1232,12 @@ export class WorldCells extends Group implements IComputeDriven {
     );
     this.#render.reportMainCull();
     this.#admission = {
-      backlog: this.#backlog(),
-      deferred: this.#jobs.length,
+      backlog: this.#residency.backlog(),
+      deferred: this.#residency.queuedBuilds,
       spentMs: budget.spentMs + props.spentMs,
     };
     // After this frame's admissions, so a region admitted by this update answers its waiters in it.
-    this.#settleSpawnWaiters();
-  }
-
-  /** Borrowed scratch box: consume its transformed volume before the next bounds query. */
-  #boundsAt(bounds: IWorldAsset["bounds"], matrix: Matrix4): Box3 {
-    this.#recordBounds.min.fromArray(bounds.min);
-    this.#recordBounds.max.fromArray(bounds.max);
-    return this.#recordBounds.applyMatrix4(matrix);
-  }
-
-  /**
-   * Does this update have to run the residency pass, or is the follow point still inside the half
-   * metre it last moved less than and the world holding still?
-   *
-   * "Still" is every kind of work the pass exists to hand on: a model load in flight or queued, a
-   * cell build in `#jobs` (which is also what queues refilters), a prewarm mint owed or in flight, a
-   * terrain admission or collider the admission budget refused, and a companion that has not been
-   * rebuilt since the follow point last moved. A world standing still on a loaded ring answers none
-   * of those, so the pass is skipped; the first update after anything changes is a full pass again.
-   */
-  #residencyStale(x: number, z: number): boolean {
-    if (
-      Math.hypot(
-        x - this.#residencyPoint.x,
-        this.#followY() - this.#residencyPoint.y,
-        z - this.#residencyPoint.z,
-      ) >= SETTLED_FOLLOW_METRES
-    )
-      return true;
-    return (
-      this.#models.loadsInFlight > 0 ||
-      this.#models.loadsQueued > 0 ||
-      this.#jobs.length > 0 ||
-      this.#refilterOwed ||
-      this.#prewarm.queued > 0 ||
-      this.#prewarm.pending > 0 ||
-      this.#render.shadowMoved === true ||
-      (this.#terrain?.deferredAdmissions ?? 0) > 0
-    );
-  }
-
-  /**
-   * Does this update have to run the `maxDistance`/`lods` refilter pass?
-   *
-   * Three things, and the pass runs when any of them holds: the follow point has moved
-   * `LEVEL_REFILTER_STEP_METRES` since the last one, so a walk re-derives its brackets every two
-   * metres instead of every half; residency changed, because a cell that arrived or left is the
-   * bracket the pass is about; and the last pass found more stale cell-assets than
-   * `rebuildsPerUpdate` could queue, so the ones it could not queue are still owed and a still
-   * follow point has to keep coming back for them. Anything else is the same brackets, so the pass
-   * is skipped and the world does nothing for that update.
-   */
-  #followY(): number {
-    return this.#placementReach === undefined ? 0 : (this.#follow.position.y ?? 0);
-  }
-
-  #refilterStepMetres(): number {
-    return this.#placementReach === undefined ? LEVEL_REFILTER_STEP_METRES : 0.75;
-  }
-
-  #refilterStale(x: number, z: number): boolean {
-    if (this.#refilterOwed) return true;
-    if (this.#refilterEpoch !== this.#residencyEpoch) return true;
-    return (
-      Math.hypot(
-        x - this.#refilterPoint.x,
-        this.#followY() - this.#refilterPoint.y,
-        z - this.#refilterPoint.z,
-      ) >= this.#refilterStepMetres() ||
-      // The GPU dispatch grades levels from the camera every frame; only the CPU path rebuilds.
-      (this.#render.gpuOn === false &&
-        this.#eye.distanceTo(this.#refilterEye) >= this.#refilterStepMetres())
-    );
-  }
-
-  /**
-   * The LOD eye: the render camera's world position, or `follow` before a camera has reached
-   * `update` or under `lodFrom: "follow"`. Height counts only where `placementReach` makes the
-   * distances 3D, exactly as `#followY` does for the follow point. The camera's offset from
-   * `follow` counts only past the world's first gate: an orbit or chase camera inside it grades
-   * exactly as `follow` does, so turning in place swaps no level and pays no CPU rebuild, and a
-   * camera far off grades from a point at most that gate short of it. Continuous, so a camera
-   * resting near the gate does not flip the eye between the two.
-   */
-  #updateEye(): void {
-    const follow = this.#eyeFollow.set(
-      this.#follow.position.x,
-      this.#followY(),
-      this.#follow.position.z,
-    );
-    const camera = this.#lodFrom === "camera" ? this.#chunks.camera : undefined;
-    if (camera === undefined) {
-      this.#eye.copy(follow);
-      return;
-    }
-    this.#eye.setFromMatrixPosition(camera.matrixWorld);
-    if (this.#placementReach === undefined) this.#eye.y = 0;
-    const inside = this.#gates[0] ?? Number.POSITIVE_INFINITY;
-    const offset = this.#eye.distanceTo(follow);
-    this.#eye.lerp(follow, offset > inside ? inside / offset : 1);
+    this.#readiness.settleWaiters();
   }
 
   process(renderer?: IRendererLike, camera?: Camera, covered = false): void {
@@ -1567,124 +1247,6 @@ export class WorldCells extends Group implements IComputeDriven {
     } finally {
       this.#covered = false;
     }
-  }
-
-  /**
-   * The adaptive LOD bias control loop. Reads the main pass's smoothed GPU time from the renderer
-   * and, once per `LOD_BIAS_STEP_SECONDS`, raises the shared bias while that pass is over its share
-   * of the frame and decays it back toward 1 while it is comfortably under; between the two it
-   * holds, which is the band that keeps a level sitting on the budget from oscillating. A window with
-   * no fresh sample is a hold, never a rise on a stale number, and a rise needs the world itself to be
-   * the thing being drawn — see {@link #biasOverBudget}, which is also what replaced the warmup
-   * seconds. The decay is never gated: a world that can afford its main pass gives the bias back.
-   */
-  #adaptLodBias(renderer: IRendererLike | undefined): void {
-    if (this.#adaptiveLod === false) {
-      // Byte-identical to the pre-bias selection: the multiplier is pinned at 1 every frame.
-      this.#applyLodBias(LOD_BIAS_MIN);
-      return;
-    }
-    const now = this.#now();
-    if (now - this.#lodBiasStepAt < LOD_BIAS_STEP_SECONDS * 1000) return;
-    const source = renderer ?? this.#chunks.renderer;
-    // The frame the budget is a share of: the game's resolved target, 60 fps until one is known.
-    // Never the frame just measured — an expensive pass makes its own frame long and would pass its
-    // own test, and a fast one shrank the share until a 3 ms pass coarsened a world running at
-    // 400 fps against a 120 fps target (PRD-478).
-    const target = source?.targetFps?.();
-    const frameMs = 1000 / (target !== undefined && target > 0 ? target : DEFAULT_TARGET_FPS);
-    const gpuMs = source?.gpuMainMs?.();
-    if (gpuMs === undefined) return;
-    this.#lodBiasStepAt = now;
-    const affordableMs = this.#mainGpuShare * frameMs;
-    if (!(affordableMs > 0)) return;
-    const bias =
-      gpuMs > affordableMs
-        ? this.#biasOverBudget()
-        : gpuMs < LOD_BIAS_DECAY_SHARE * affordableMs
-          ? Math.max(LOD_BIAS_MIN, this.#lodBias * LOD_BIAS_DECAY)
-          : this.#lodBias;
-    if (bias === this.#lodBias) return;
-    this.#applyLodBias(bias);
-    if (now - this.#lodBiasToldAt >= LOD_BIAS_MARKER_SECONDS * 1000) {
-      this.#lodBiasToldAt = now;
-      const triangles = this.gpuSceneTally()?.triangles;
-      console.info(
-        `${LOD_BIAS_MARKER} bias=${bias.toFixed(3)} gpuMs=${gpuMs.toFixed(2)} ` +
-          `budgetMs=${affordableMs.toFixed(2)} ` +
-          `tris=${triangles === undefined ? "n/a" : String(triangles)}`,
-      );
-    }
-  }
-
-  /**
-   * The next bias while the main pass is over its share of the frame, or the bias unchanged when the
-   * world is not what that pass is drawing.
-   *
-   * A load's GPU time is shader compiles, buffer uploads and the prewarm — none of it main-pass world
-   * geometry, so a coarser selection cannot take any of it back. What it costs is the first playable
-   * frame: every tree selects the level authored for its distance times the bias, the coarsest levels
-   * hold almost nothing, and the shadow casters, which take no bias, leave a band of tree shadows with
-   * no trees 80-300 m out. Measured on Machinefall (RTX 2080, WebGPU), the bias climbed 1.08 → 2.33
-   * over six `TN_LOD_BIAS` steps, all of them before the loading overlay dropped.
-   *
-   * So the rise waits for the two measurements that say the world is being drawn: the prewarm gate —
-   * what a game's loading screen waits on, and `stats().pendingPrewarm` as the same thing as a number
-   * — and the main pass's own GPU-selected triangle tally, where a tally that landed and says zero is
-   * a world drawn as nothing. A world with no tally at all (no GPU scene, or nothing landed yet) has no
-   * opinion about its own triangles, so the prewarm speaks for it alone. Both are measurements of the
-   * thing being judged, which is what the warmup seconds were standing in for.
-   */
-  #biasOverBudget(): number {
-    if (this.#prewarm.queued > 0 || this.#prewarm.owed > this.#prewarm.drawn) return this.#lodBias;
-    if (this.gpuSceneTally()?.triangles === 0) return this.#lodBias;
-    return Math.min(LOD_BIAS_MAX, this.#lodBias * LOD_BIAS_RISE);
-  }
-
-  /** Writes the bias to both selection paths: the shared CPU multiplier and the GPU uniform. */
-  #applyLodBias(bias: number): void {
-    this.#lodBias = bias;
-    setLodBias(bias);
-    this.#render.setLodBias(bias);
-  }
-
-  /**
-   * Where the ring centres: the follow point led by its smoothed velocity. Samples closer than a
-   * few milliseconds are the same frame and move nothing; a jump longer than the ring is a teleport
-   * and resets the velocity rather than reading as speed.
-   */
-  #ahead(x: number, z: number): { x: number; z: number } {
-    if (this.#prefetchSeconds === 0) return { x, z };
-    const now = this.#now();
-    const last = this.#lastSample;
-    if (last === undefined) {
-      this.#lastSample = { t: now, x, z };
-    } else {
-      const seconds = (now - last.t) / 1000;
-      if (seconds >= 0.004) {
-        const dx = x - last.x;
-        const dz = z - last.z;
-        if (Math.hypot(dx, dz) > this.#cellSize * this.#ring) {
-          this.#velocityX = 0;
-          this.#velocityZ = 0;
-        } else {
-          // ~0.25 s smoothing, so one jittery frame does not swing the ring.
-          const blend = Math.min(1, seconds / 0.25);
-          this.#velocityX += (dx / seconds - this.#velocityX) * blend;
-          this.#velocityZ += (dz / seconds - this.#velocityZ) * blend;
-        }
-        this.#lastSample = { t: now, x, z };
-      }
-    }
-    let leadX = this.#velocityX * this.#prefetchSeconds;
-    let leadZ = this.#velocityZ * this.#prefetchSeconds;
-    const limit = this.#cellSize * this.#ring * 0.75;
-    const length = Math.hypot(leadX, leadZ);
-    if (length > limit) {
-      leadX *= limit / length;
-      leadZ *= limit / length;
-    }
-    return { x: x + leadX, z: z + leadZ };
   }
 
   attachRenderer(renderer: IRendererLike): void {
@@ -1726,12 +1288,13 @@ export class WorldCells extends Group implements IComputeDriven {
   }
 
   stats(): IWorldCellsStats {
+    const counters = this.#residency.counters();
     const gpu = this.#render.report();
     const census = this.#render.gpuCensus();
     return {
       admission: { ...this.#admission },
       bundle: this.#render.bundleStats(),
-      evictions: this.#evictions,
+      evictions: counters.evictions,
       failures: this.#failures,
       gpuScene: {
         dispatches: gpu.dispatches,
@@ -1752,11 +1315,11 @@ export class WorldCells extends Group implements IComputeDriven {
       },
       hlod: this.#chunks.stats(),
       impostor: this.#impostorState.impostorStats(),
-      instances: this.#instances,
+      instances: counters.instances,
       loadsInFlight: this.#models.loadsInFlight,
       loadsQueued: this.#models.loadsQueued,
-      admissionBacklog: this.#backlog(),
-      admissionCompletedUnits: this.#admissionCompletedUnits,
+      admissionBacklog: this.#residency.backlog(),
+      admissionCompletedUnits: counters.admissionCompletedUnits,
       mainCull: this.#render.mainCullStats(),
       // Minted meshes still owed a first draw, not minted meshes. The two used to be the same
       // number, so a loading bar read minting as the whole of the prewarm and then stood still for
@@ -1764,22 +1327,23 @@ export class WorldCells extends Group implements IComputeDriven {
       // the settle zeroes this pair: `0` once `prewarmed` has resolved.
       pendingPrewarm: this.#prewarm.queued + this.#prewarm.owed - this.#prewarm.drawn,
       prewarmMinted: this.#prewarm.minted,
-      pressure: { ...this.#pressure },
+      pressure: { ...counters.pressure },
       // The pass itself, counted whether or not it found anything: `rebuilds` cannot tell a skipped
       // pass from one that scanned every resident cell and found the same brackets, and that gap is
       // the whole cost of the 2 m step. See `#refilterStale`.
-      refilters: this.#refilters,
-      refilterEntries: this.#staleEntries,
-      rebuilds: this.#rebuilds,
-      levelRefilters: this.#levelRefilters,
+      refilters: this.#placementBuild.refilters,
+      refilterEntries: this.#placementBuild.refilterEntries,
+      rebuilds: this.#placementBuild.rebuilds,
+      levelRefilters: this.#placementBuild.levelRefilters,
       lodFrom: this.#lodFrom,
       // The share of `rebuilds` the swap found unchanged, which is the honest report of how much of
       // the refilter pass is a bracket that was wider than any placement.
       unchanged: this.#unchanged,
-      residentCells: this.#resident.size,
-      residentBytes: this.#bytes,
-      loadedCells: [...this.#resident.values()].filter((cell) => this.#cellLoaded(cell)).length,
-      residentKeys: [...this.#resident.keys()].sort(),
+      residentCells: this.#residency.counters().residentCells,
+      residentBytes: counters.bytes,
+      loadedCells: [...this.#residency.resident.values()].filter((cell) => this.#cellLoaded(cell))
+        .length,
+      residentKeys: [...this.#residency.resident.keys()].sort(),
       residentTiles: this.#terrain?.residentTileCount ?? 0,
       residentColliders: this.#hasColliders ? (this.#terrain?.residentColliderKeys.length ?? 0) : 0,
     };
@@ -1798,248 +1362,26 @@ export class WorldCells extends Group implements IComputeDriven {
     position: Camera | { readonly x: number; readonly z: number },
     radius = 0,
   ): IWorldRegionReadiness {
-    const camera = "isCamera" in position && position.isCamera ? position : undefined;
-    if (camera !== undefined) {
-      camera.updateMatrixWorld(true);
-      if (
-        ![...camera.projectionMatrix.elements, ...camera.matrixWorldInverse.elements].every(
-          Number.isFinite,
-        )
-      )
-        throw new Error("WorldCells readiness requires a finite camera projection and transform.");
-      this.#readinessFrustum.setFromProjectionMatrix(
-        this.#readinessProjection.multiplyMatrices(
-          camera.projectionMatrix,
-          camera.matrixWorldInverse,
-        ),
-        camera.coordinateSystem,
-      );
-    }
-    const point = camera
-      ? camera.getWorldPosition(_readinessPosition)
-      : (position as { readonly x: number; readonly z: number });
-    if (
-      !Number.isFinite(point.x) ||
-      !Number.isFinite(point.z) ||
-      !Number.isFinite(radius) ||
-      radius < 0
-    )
-      throw new Error("WorldCells readiness requires finite coordinates and a nonnegative radius.");
-    if (camera !== undefined) {
-      const view = [
-        ...camera.projectionMatrix.elements,
-        ...camera.matrixWorldInverse.elements,
-        point.x,
-        (point as Vector3).y,
-        point.z,
-        camera.coordinateSystem,
-        Number(this.#render.gpuOn),
-      ];
-      // Package placements/bounds are immutable; reach is compared too so edits cannot go stale.
-      if (
-        !view.every((value, index) => value === this.#readinessView[index]) ||
-        this.#placementReach?.some((value, index) => value !== this.#readinessReach?.[index])
-      ) {
-        this.#readinessVisible.clear();
-        this.#readinessView = view;
-        if (this.#placementReach !== undefined) {
-          this.#readinessReach ??= new Float32Array(this.#placementReach.length);
-          this.#readinessReach.set(this.#placementReach);
-        }
-      }
-    }
-    const lowX = Math.floor((point.x - radius - this.#minX) / this.#cellSize);
-    const highX = Math.floor((point.x + radius - this.#minX) / this.#cellSize);
-    const lowZ = Math.floor((point.z - radius - this.#minZ) / this.#cellSize);
-    const highZ = Math.floor((point.z + radius - this.#minZ) / this.#cellSize);
-    let requiredCells = 0;
-    let loadedCells = 0;
-    let failures = 0;
-    let requiredTerrainTiles = 0;
-    let loadedTerrainTiles = 0;
-    for (const cell of this.#cells) {
-      if (camera === undefined) {
-        if (cell.x < lowX || cell.x > highX || cell.z < lowZ || cell.z > highZ) continue;
-      } else if (!this.#cellInView(cell, point as Vector3)) continue;
-      requiredCells++;
-      const resident = this.#resident.get(cellKey(cell.x, cell.z));
-      if (
-        resident &&
-        this.#cellLoaded(resident) &&
-        (camera === undefined || !this.#jobs.some((job) => job.cell === resident))
-      )
-        loadedCells++;
-      if (resident?.chunkFailed) failures++;
-      for (const run of cell.runs)
-        if (this.#models.asset(this.#canonical(run.asset))?.failed) failures++;
-    }
-    if (camera !== undefined) {
-      const terrain = this.#terrain?.readinessInView(camera, [
-        this.#manifest.terrain.heightMin,
-        this.#manifest.terrain.heightMax,
-      ]) ?? { required: 0, loaded: 0 };
-      requiredTerrainTiles = terrain.required;
-      loadedTerrainTiles = terrain.loaded;
-    } else {
-      const terrain = this.#terrain?.readinessAt(point, radius) ?? { required: 0, loaded: 0 };
-      requiredTerrainTiles = terrain.required;
-      loadedTerrainTiles = terrain.loaded;
-    }
-    return {
-      requiredCells,
-      loadedCells,
-      requiredTerrainTiles,
-      loadedTerrainTiles,
-      failures,
-      cancelled: this.#released,
-      ready:
-        !this.#released &&
-        failures === 0 &&
-        loadedCells === requiredCells &&
-        loadedTerrainTiles === requiredTerrainTiles &&
-        (camera === undefined || (!this.#render.shadowMoved && !this.#refilterOwed)),
-    };
-  }
-  /** Use the same authored placement bounds and distance test as admission, even before residency. */
-  #cellInView(cell: IWorldCell, eye: Vector3): boolean {
-    const cached = this.#readinessVisible.get(cell);
-    if (cached !== undefined) return cached;
-    this.#readinessVisible.set(cell, false);
-    if (this.#terrain !== undefined || (cell.chunks?.length ?? 0) > 0) {
-      const box = this.#recordBounds;
-      box.min.set(
-        this.#minX + cell.x * this.#cellSize,
-        this.#extentBounds.min.y,
-        this.#minZ + cell.z * this.#cellSize,
-      );
-      box.max.set(
-        this.#minX + (cell.x + 1) * this.#cellSize,
-        this.#extentBounds.max.y,
-        this.#minZ + (cell.z + 1) * this.#cellSize,
-      );
-      if (this.#readinessFrustum.intersectsBox(box)) {
-        this.#readinessVisible.set(cell, true);
-        return true;
-      }
-    }
-    for (const run of cell.runs) {
-      const asset = this.#manifest.assets[this.#canonical(run.asset)];
-      if (asset === undefined) continue;
-      const records = cellPlacements(this.#placements, run);
-      for (let index = 0; index < run.count; index++) {
-        const at = index * PLACEMENT_RECORD_FLOATS;
-        this.#position.fromArray(records, at);
-        const distance =
-          this.#placementReach === undefined
-            ? Math.hypot(this.#position.x - eye.x, this.#position.z - eye.z)
-            : this.#position.distanceTo(eye);
-        const reach = this.#placementReach?.[run.offset + index];
-        if (reach !== undefined && distance > reach) continue;
-        this.#rotation.fromArray(records, at + 3);
-        this.#scale.setScalar(records[at + 7] as number);
-        this.#matrix.compose(this.#position, this.#rotation, this.#scale);
-        const box = this.#boundsAt(asset.bounds, this.#matrix);
-        const inner = cullDistance(asset.maxDistance);
-        const centre = box.getCenter(this.#sourceCentre);
-        const drawDistance = this.#render.gpuOn
-          ? Math.hypot(centre.x - eye.x, centre.z - eye.z)
-          : distance;
-        if (inner !== undefined && drawDistance > inner) continue;
-        if (this.#readinessFrustum.intersectsBox(box)) {
-          this.#readinessVisible.set(cell, true);
-          return true;
-        }
-      }
-    }
-    return false;
+    return this.#readiness.at(position, radius);
   }
 
   /** Terrain data needed by the current camera, including visible tiles not yet admitted. */
   terrainReadinessInView(camera: Camera): { required: number; loaded: number } {
-    return (
-      this.#terrain?.readinessInView(camera, [
-        this.#manifest.terrain.heightMin,
-        this.#manifest.terrain.heightMax,
-      ]) ?? { required: 0, loaded: 0 }
-    );
+    return this.#readiness.terrainReadinessInView(camera);
   }
 
   /** Visible CPU scatter batches still awaiting a nonempty main-camera backend submission. */
   pendingCpuDrawsInView(camera: Camera): number {
-    return this.#prewarm.pendingCpuDrawsInView(this, camera, this.#chunks.renderer);
+    return this.#readiness.pendingCpuDrawsInView(camera);
   }
 
-  /**
-   * Resolves when the content a fixed spawn needs has finished loading.
-   *
-   * The one-shot gate a streamed game waits on before it releases its loading screen. Readiness is
-   * `readinessAt` and nothing else, so there is one authority for "the spawn's data is loaded": every
-   * required cell and terrain tile in `radius` loaded with no failure. The position is snapshotted
-   * here, so a caller may keep mutating the object it passed; `update` observes the held waiters
-   * right after the frame's admissions, so a region an update admits settles its waiter in it.
-   *
-   * Fail closed: malformed coordinates, a negative radius or an unsupported timer deadline reject
-   * before a waiter is armed. A failed asset and a torn-down world reject with their own named
-   * error, and the deadline rejects with the budget it named. Every settlement removes the waiter
-   * and clears its timer, so a settled waiter holds neither the deadline nor the world, and a
-   * region evicted after its waiter resolved changes nothing.
-   */
+  /** Resolves when the content a fixed spawn needs has finished loading; see `CellReadiness`. */
   whenSpawnReady(
     position: { readonly x: number; readonly z: number },
     radius = 0,
     timeoutMs = 120_000,
   ): Promise<IWorldRegionReadiness> {
-    if (
-      !Number.isFinite(position.x) ||
-      !Number.isFinite(position.z) ||
-      !Number.isFinite(radius) ||
-      radius < 0
-    )
-      return Promise.reject(
-        new Error(
-          "WorldCells spawn readiness requires finite coordinates and a nonnegative radius.",
-        ),
-      );
-    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || timeoutMs > 2 ** 31 - 1)
-      return Promise.reject(
-        new Error("WorldCells spawn readiness requires a timeout in (0, 2147483647] ms."),
-      );
-    if (this.#released) return Promise.reject(new Error("WorldCells disposed"));
-    const snapshot = { x: position.x, z: position.z };
-    const immediate = this.readinessAt(snapshot, radius);
-    if (immediate.failures > 0)
-      return Promise.reject(new Error("WorldCells spawn assets failed to load"));
-    if (immediate.ready) return Promise.resolve(immediate);
-    return new Promise<IWorldRegionReadiness>((resolve, reject) => {
-      const waiter: ISpawnWaiter = {
-        position: snapshot,
-        radius,
-        resolve,
-        reject,
-        timer: setTimeout(() => {
-          this.#spawnWaiters.delete(waiter);
-          reject(new Error(`WorldCells spawn exceeded ${String(timeoutMs)} ms`));
-        }, timeoutMs),
-      };
-      this.#spawnWaiters.add(waiter);
-    });
-  }
-
-  /** Settle the waiters this frame's admissions can answer; a non-Disposed, non-Failed region waits. */
-  #settleSpawnWaiters(): void {
-    if (this.#spawnWaiters.size === 0) return;
-    for (const waiter of this.#spawnWaiters) {
-      const readiness = this.readinessAt(waiter.position, waiter.radius);
-      if (readiness.failures > 0) {
-        this.#spawnWaiters.delete(waiter);
-        clearTimeout(waiter.timer);
-        waiter.reject(new Error("WorldCells spawn assets failed to load"));
-      } else if (readiness.ready) {
-        this.#spawnWaiters.delete(waiter);
-        clearTimeout(waiter.timer);
-        waiter.resolve(readiness);
-      }
-    }
+    return this.#readiness.whenSpawnReady(position, radius, timeoutMs);
   }
 
   override dispose(): void {
@@ -2047,13 +1389,9 @@ export class WorldCells extends Group implements IComputeDriven {
     this.#released = true;
     // A world torn down mid-wait must not leave a game awaiting its spawn gate, nor a deadline
     // outliving the world that armed it.
-    for (const waiter of this.#spawnWaiters) {
-      clearTimeout(waiter.timer);
-      waiter.reject(new Error("WorldCells spawn cancelled"));
-    }
-    this.#spawnWaiters.clear();
+    this.#readiness.cancelWaiters();
     this.#prewarm.releaseHooks();
-    for (const cell of [...this.#resident.values()]) this.#evict(cell);
+    this.#residency.evictAll();
     this.#render.resetShadows();
     // Every chunk is gone by now, so the surfaces the world owns on their behalf are the last thing
     // holding them, and they are released here rather than by whichever chunk contributed them.
@@ -2080,130 +1418,6 @@ export class WorldCells extends Group implements IComputeDriven {
     super.dispose();
   }
 
-  #updateResidency(followCell: { x: number; z: number }, x: number, z: number): void {
-    const wanted: Array<{ cell: IWorldCell; distance: number }> = [];
-    for (const cell of this.#cells) {
-      if (Math.max(Math.abs(cell.x - followCell.x), Math.abs(cell.z - followCell.z)) > this.#ring)
-        continue;
-      const centerX = this.#minX + (cell.x + 0.5) * this.#cellSize;
-      const centerZ = this.#minZ + (cell.z + 0.5) * this.#cellSize;
-      wanted.push({ cell, distance: Math.hypot(x - centerX, z - centerZ) });
-    }
-    wanted.sort((a, b) => a.distance - b.distance || a.cell.z - b.cell.z || a.cell.x - b.cell.x);
-
-    for (const resident of [...this.#resident.values()]) {
-      if (
-        Math.max(Math.abs(resident.x - followCell.x), Math.abs(resident.z - followCell.z)) >
-        this.#ring + 1
-      )
-        this.#evict(resident);
-    }
-    // A follow point that crossed more than one cell in one pass jumped (a teleport, a review
-    // camera). Only then does the hysteresis ring yield. Read off the follow point itself, not the
-    // lookahead `followCell`: that leads by up to 1.5 cells, so a walk that stopped and started moved
-    // it by two, and yielding there evicted and re-admitted a whole row each time.
-    const here = {
-      x: Math.floor((this.#follow.position.x - this.#minX) / this.#cellSize),
-      z: Math.floor((this.#follow.position.z - this.#minZ) / this.#cellSize),
-    };
-    const last = this.#residencyCell;
-    const jumped =
-      last !== undefined && Math.max(Math.abs(last.x - here.x), Math.abs(last.z - here.z)) > 1;
-    this.#residencyCell = here;
-
-    for (const candidate of wanted) {
-      const key = cellKey(candidate.cell.x, candidate.cell.z);
-      if (this.#resident.has(key)) continue;
-      const instances = candidate.cell.runs.reduce((total, run) => total + run.count, 0);
-      const rangeRoots = this.#lodHysteresis > 0 && !this.#render.gpuOn ? instances : 0;
-      const bytes = instances * PLACEMENT_RECORD_BYTES + rangeRoots * LOD_RANGE_RECORD_BYTES * 2;
-      // After a jump, a cell the one-ring hysteresis above kept is not wanted, so it yields its share
-      // of the budgets to one that is. Without this the budgets stayed full of the ring the camera
-      // jumped from and the cells around it were refused until it moved again.
-      while (
-        jumped &&
-        (this.#resident.size >= this.#budgets.residentCells ||
-          this.#instances + this.#impostorState.farInstances + instances >
-            this.#budgets.instances ||
-          this.#bytes + this.#impostorState.farBytes + this.#chunks.bytes + bytes >
-            this.#budgets.bytes)
-      ) {
-        const spare = this.#farthestUnwanted(followCell);
-        if (spare === undefined) break;
-        this.#evict(spare);
-      }
-      if (this.#resident.size >= this.#budgets.residentCells) {
-        this.#pressure.cells += 1;
-        continue;
-      }
-      // The retained far aggregates are physical allocations the renderer holds too, so they are
-      // charged against the same declared limits as the near ring: admitting a cell over the top of
-      // them would put the world past `budgets.instances`/`budgets.bytes` with the far half invisible
-      // to this check. See `#farBudgetRefuses`, the far half of the same total.
-      if (
-        this.#instances + this.#impostorState.farInstances + instances >
-        this.#budgets.instances
-      ) {
-        this.#pressure.instances += 1;
-        continue;
-      }
-      if (
-        this.#bytes + this.#impostorState.farBytes + this.#chunks.bytes + bytes >
-        this.#budgets.bytes
-      ) {
-        this.#pressure.bytes += 1;
-        continue;
-      }
-      this.#admit(candidate.cell, instances, bytes);
-    }
-  }
-
-  /** The resident cell farthest outside the wanted ring, or none when every resident is wanted. */
-  #farthestUnwanted(followCell: { x: number; z: number }): IResidentCell | undefined {
-    let farthest: IResidentCell | undefined;
-    let reach = this.#ring;
-    for (const resident of this.#resident.values()) {
-      const away = Math.max(
-        Math.abs(resident.x - followCell.x),
-        Math.abs(resident.z - followCell.z),
-      );
-      if (away > reach) {
-        reach = away;
-        farthest = resident;
-      }
-    }
-    return farthest;
-  }
-
-  #admit(cell: IWorldCell, instances: number, bytes: number): void {
-    const state: IResidentCell = {
-      mainChunkMeshes: [],
-      chunkInstances: new Map(),
-      completedRuns: new Set(),
-      chunksLoaded: (cell.chunks?.length ?? 0) === 0,
-      chunkFailed: false,
-      batches: [],
-      bytes,
-      cell,
-      chunks: [],
-      filterFar: Number.NEGATIVE_INFINITY,
-      filterNear: Number.POSITIVE_INFINITY,
-      generation: this.#generation++,
-      instances,
-      key: cellKey(cell.x, cell.z),
-      retainedModelPaths: [],
-      x: cell.x,
-      z: cell.z,
-    };
-    this.#resident.set(state.key, state);
-    this.#render.cullResident(cell);
-    this.#residencyEpoch += 1;
-    this.#instances += instances;
-    this.#bytes += bytes;
-    for (const run of cell.runs) this.#models.acquire(run, state);
-    if (cell.chunks !== undefined && cell.chunks.length > 0) this.#chunks.startChunkLoad(state);
-  }
-
   /**
    * The asset id a run's `asset` really is: itself, or the one canonical id its model is loaded
    * under. Every path from a run to the state that holds it goes through here, so a duplicate costs
@@ -2213,470 +1427,6 @@ export class WorldCells extends Group implements IComputeDriven {
    */
   #canonical(id: string): string {
     return this.#aliases.get(id) ?? id;
-  }
-
-  /**
-   * Ask for one cell-asset run to be built, and do not build it yet.
-   *
-   * Admission is the only thing in this class that has no frame-time ceiling, so it is the only
-   * thing that became a queue: the cell keeps its residency slot from `#admit`, the work waits for
-   * a frame with budget in it, and a game that outruns the backlog sees it as `admission.backlog`
-   * rather than as a frozen frame. A run already queued is not queued twice, which is what stops a
-   * refilter — stale for as many frames as it waits — from stacking a second copy of itself.
-   *
-   * `replaced` is a refilter's outgoing batches, captured now and kept drawn until the replacement
-   * is attached, so a rebuild that waits three frames shows the old level for those three frames
-   * instead of a hole.
-   */
-  #queueBuild(
-    asset: IAssetState,
-    cell: IResidentCell,
-    run: IWorldRun,
-    replace = false,
-    force = false,
-  ): void {
-    // Keyed on the run, not the asset: one cell can hold two runs of the same canonical asset —
-    // two names for one model — and each has its own records to build. A token per asset made the
-    // second run a no-op and dropped its placements on the floor.
-    if (this.#queued.has(run)) return;
-    // A cell that already draws this run is not built again, which is where an adopted asset's
-    // second acquire over a still-resident cell lands.
-    if (!replace && cell.batches.some((entry) => entry.asset === asset.id && entry.run === run))
-      return;
-    this.#queued.add(run);
-    this.#jobs.push({
-      asset,
-      batches: undefined,
-      boxes: undefined,
-      placed: undefined,
-      lodRanges: undefined,
-      cell,
-      force,
-      gpuByLevel: undefined,
-      filterY: this.#followY(),
-      filterX: this.#follow.position.x,
-      filterZ: this.#follow.position.z,
-      lodX: this.#eye.x,
-      lodY: this.#eye.y,
-      lodZ: this.#eye.z,
-      fresh: [],
-      replacement: replace,
-      next: 0,
-      published: 0,
-      records: undefined,
-      replaced: replace
-        ? cell.batches.filter((entry) => entry.asset === asset.id && entry.run === run)
-        : [],
-      roots: undefined,
-      run,
-      sources: undefined,
-    });
-  }
-
-  /**
-   * Spend the frame's budget on queued builds, one unit each, and stop when it is gone.
-   *
-   * The queue is served in admission order, which is nearest cell first, and a build is taken to
-   * completion before the next one starts: the units of one run are cheaper together than the
-   * per-frame bookkeeping of interleaving them, and the cell behind it is the same distance away.
-   * A build whose cell or asset has gone is dropped rather than resumed — there is nothing left to
-   * draw it into — and a frame that runs out of budget leaves the rest of the queue for the next.
-   */
-  #drain(budget: IAdmissionBudget): void {
-    const index = 0;
-    while (index < this.#jobs.length) {
-      this.#frontNearest();
-      const job = this.#jobs[index] as IBuildJob;
-      if (this.#resident.get(job.cell.key) !== job.cell || job.asset.levels.length === 0) {
-        this.#forget(index, job);
-        continue;
-      }
-      let finished = false;
-      if (
-        !budget.admit(() => {
-          finished = this.#step(job);
-        })
-      )
-        break;
-      // Out of fresh meshes this frame: later jobs would only stall the same way.
-      if (this.#render.meshStalled) break;
-      // A finished build leaves the queue at this index, so the next one is served without a skip.
-      if (finished) {
-        for (const entry of job.fresh)
-          if (entry.batch.count > 0 && entry.shadowBounds !== undefined)
-            this.#onPublication?.(entry.shadowBounds);
-        job.cell.completedRuns.add(job.run);
-        this.#forget(index, job);
-        // A camera that moved during this bounded build may already have consumed the global
-        // refilter step before these batches existed. Owe one pass after publication, even if
-        // it now stands still, so the coherent old snapshot can converge to the latest pose.
-        if (
-          Math.hypot(
-            this.#follow.position.x - job.filterX,
-            this.#followY() - job.filterY,
-            this.#follow.position.z - job.filterZ,
-          ) >= this.#refilterStepMetres()
-        )
-          this.#refilterOwed = true;
-      }
-    }
-  }
-
-  /**
-   * Put the unstarted build nearest the follow point at the front, unless a build is mid-way.
-   * Each model's load queues every resident cell at once, so append order is load order: the
-   * spawn cell of the last model to load waited behind the whole ring.
-   */
-  #frontNearest(): void {
-    const front = this.#jobs[0];
-    if (front === undefined || front.next > 0 || front.batches !== undefined) return;
-    const { x, z } = this.#follow.position;
-    let nearest = 0;
-    let best = Number.POSITIVE_INFINITY;
-    for (let i = 0; i < this.#jobs.length; i++) {
-      const job = this.#jobs[i] as IBuildJob;
-      if (job.next > 0 || job.batches !== undefined) continue;
-      const d = Math.hypot(
-        this.#minX + (job.cell.x + 0.5) * this.#cellSize - x,
-        this.#minZ + (job.cell.z + 0.5) * this.#cellSize - z,
-      );
-      if (d < best) {
-        best = d;
-        nearest = i;
-      }
-    }
-    if (nearest > 0) this.#jobs.unshift(...this.#jobs.splice(nearest, 1));
-  }
-
-  #forget(index: number, job: IBuildJob): void {
-    this.#jobs.splice(index, 1);
-    this.#queued.delete(job.run);
-  }
-
-  /** Placement slices and meshes left to publish, plus the terrain's outstanding admission. */
-  #backlog(): number {
-    let units = this.#terrain?.deferredAdmissions ?? 0;
-    for (const job of this.#jobs) {
-      const meshes = job.batches === undefined ? 0 : publishCount(job.batches);
-      units +=
-        Math.ceil(Math.max(0, job.run.count - job.next) / ADMISSION_SLICE_PLACEMENTS) +
-        Math.max(0, meshes - job.published);
-    }
-    return units;
-  }
-
-  /**
-   * One unit of one build: a slice of placements, or one mesh built, or the swap that attaches the
-   * finished batch and retires what a refilter replaced. `true` means the job is done.
-   */
-  #step(job: IBuildJob): boolean {
-    // A queued run may wait behind admission or fresh-mesh work while the camera moves.
-    // Take its filter snapshot when the first placement slice actually starts, then keep
-    // that snapshot for every slice so one publication never mixes different camera poses.
-    if (job.next === 0 && job.batches === undefined) {
-      job.filterX = this.#follow.position.x;
-      job.filterY = this.#followY();
-      job.filterZ = this.#follow.position.z;
-      job.lodX = this.#eye.x;
-      job.lodY = this.#eye.y;
-      job.lodZ = this.#eye.z;
-    }
-    if (job.next < job.run.count) {
-      job.batches ??= newBatches(job.asset);
-      if (this.#lodHysteresis > 0 && job.asset.distances.length > 1)
-        job.lodRanges ??= job.batches.map((levels) => levels.map(() => []));
-      // One box per `(level, part)` beside the batches it measures, so the swap that hands the
-      // records to the renderer can name where they are; see `#addPlacements`.
-      job.boxes ??= newBoxes(job.batches);
-      const end = Math.min(job.next + ADMISSION_SLICE_PLACEMENTS, job.run.count);
-      this.#addPlacements(job, job.next, end);
-      job.next = end;
-      this.#admissionCompletedUnits += 1;
-      return false;
-    }
-    const batches = job.batches;
-    // A run with nothing placed in it publishes nothing, exactly as an unbounded build would.
-    if (batches === undefined) return true;
-    if (job.published < publishCount(batches)) {
-      const published = job.published;
-      this.#buildOne(job, batches);
-      if (job.published > published) this.#admissionCompletedUnits += 1;
-      return false;
-    }
-    const swapped = this.#render.swap(job);
-    if (swapped) this.#admissionCompletedUnits += 1;
-    return swapped;
-  }
-
-  /**
-   * Filter one slice of a run's placements into the batches they draw from, applying the CPU
-   * maxDistance/reach filters at the build position and switching level where an asset's `lods` say
-   * to. GPU admission retains maxDistance candidates for the dispatch; placementReach stays here
-   * because it is an explicit per-record source boundary.
-   */
-  #addPlacements(job: IBuildJob, from: number, to: number): void {
-    const { asset, filterX, filterZ, lodX, lodY, lodZ } = job;
-    if (job.replacement && job.next === 0) this.#levelRefilters += 1;
-    if (job.records === undefined) job.records = cellPlacements(this.#placements, job.run);
-    const records = job.records;
-    const inner = cullDistance(asset.definition.maxDistance);
-    // Half the diagonal of the asset's authored bounds: the sphere the dispatch culls this placement
-    // with, and the one number about its extent that comes from the package rather than from here.
-    const authored = asset.definition.bounds;
-    const boundsRadius =
-      0.5 *
-      Math.hypot(
-        (authored.max[0] as number) - (authored.min[0] as number),
-        (authored.max[1] as number) - (authored.min[1] as number),
-        (authored.max[2] as number) - (authored.min[2] as number),
-      );
-    // Decided once per slice, not per placement: the wide half needs the placement root only for an
-    // asset that can append a whole-asset impostor. See `ICellBatch.wideRoot`.
-    const wantRoots = this.#impostorState.rootsNeeded(asset);
-    for (let index = from; index < to; index += 1) {
-      const base = index * PLACEMENT_RECORD_FLOATS;
-      const x = records[base] as number;
-      const y = records[base + 1] as number;
-      const z = records[base + 2] as number;
-      // Streaming reach from the follow point; level and `maxDistance` from the LOD eye, which is
-      // the camera the GPU dispatch measures from too. See `IWorldCellsLoadOptions.lodFrom`.
-      const reachDistance =
-        this.#placementReach === undefined
-          ? Math.hypot(x - filterX, z - filterZ)
-          : Math.hypot(x - filterX, y - job.filterY, z - filterZ);
-      const distance =
-        this.#placementReach === undefined
-          ? Math.hypot(x - lodX, z - lodZ)
-          : Math.hypot(x - lodX, y - lodY, z - lodZ);
-      if (this.#render.gpuOn === false && inner !== undefined && distance > inner) continue;
-      const reach = this.#placementReach?.[job.run.offset + index];
-      if (reach !== undefined && reachDistance > reach) continue;
-      this.#position.set(x, y, z);
-      this.#rotation.set(
-        records[base + 3] as number,
-        records[base + 4] as number,
-        records[base + 5] as number,
-        records[base + 6] as number,
-      );
-      this.#scale.setScalar(records[base + 7] as number);
-      this.#matrix.compose(this.#position, this.#rotation, this.#scale);
-      const scale = this.#scale.x;
-      // The placement transform, then the part's own offset inside the model: a bark primitive at
-      // the trunk and a needles primitive higher up both land in the one instance matrix.
-      // The level is picked by the shared gate rule: authored world-metre gates directly, and a
-      // whole-asset impostor's terminal gate scaled by this placement's own scale. The bias is the
-      // same adaptive multiplier the dispatch carries, so a biased walk crosses a switch here too.
-      let level = levelAtGates(
-        {
-          distances: asset.distances,
-          impostor: asset.impostor !== undefined && asset.definition.impostorDistance === undefined,
-        },
-        biasedLodDistance(distance),
-        scale,
-      );
-      if (this.#placementLevels !== undefined && asset.definition.lods !== undefined) {
-        const record = job.run.offset + index;
-        let previous = this.#placementLevels[record] as number;
-        // Outward gates remain authored; returning inward retains the previous level until the margin.
-        if (level > previous) previous = level;
-        while (
-          previous > level &&
-          biasedLodDistance(distance) <
-            (asset.distances[previous] as number) * (1 - this.#lodHysteresis)
-        )
-          previous--;
-        level = previous;
-        this.#placementLevels[record] = level;
-      }
-      const selected = [level];
-      if (this.#lodHysteresis > 0) {
-        const d = biasedLodDistance(distance);
-        for (let adjacent = 0; adjacent < asset.levels.length; adjacent++) {
-          if (adjacent === level) continue;
-          const near = asset.distances[adjacent] ?? 0;
-          const far = asset.distances[adjacent + 1] ?? Number.POSITIVE_INFINITY;
-          const slack =
-            Math.max(near, Number.isFinite(far) ? far : near) * this.#lodHysteresis +
-            (asset.distances[1] ?? 6) / 8;
-          if (d >= near - slack && d <= far + slack) selected.push(adjacent);
-        }
-      }
-      const minPublished = Math.min(...selected);
-      const maxPublished = Math.max(...selected);
-      // A refilter that lands after the walk entered a dither band would swap a tree's look in one
-      // frame. UE 5.8.3 fades every LOD change over `lod.TemporalLag` (0.5 s,
-      // Engine/Source/Runtime/Engine/Private/SceneManagement.cpp:28): a record that was one whole
-      // level and now publishes two names that level, and the swap stamps when the fade starts.
-      let fadeFrom = -1;
-      if (this.#placementRanges !== undefined) {
-        const record = job.run.offset + index;
-        const before = this.#placementRanges[record] as number;
-        const beforeMin = (before & 15) - 1;
-        const beforeMax = (before >> 4) - 1;
-        if (
-          before !== 0 &&
-          beforeMin === beforeMax &&
-          minPublished !== maxPublished &&
-          beforeMin >= minPublished &&
-          beforeMin <= maxPublished
-        )
-          fadeFrom = beforeMin;
-        this.#placementRanges[record] = (minPublished + 1) | ((maxPublished + 1) << 4);
-      }
-      // The record's own world bounds: the placement widened by the asset's authored bounds at the
-      // scale it is drawn at. Read here because this loop already holds the placement and the scale,
-      // and it is the one number the shadow levels' invalidation is tested against — the cell box is
-      // 64 m of it, so a level whose window is 48 m wide was redrawing over ground nothing in it.
-      const bounds = asset.definition.bounds;
-      const placedBox = this.#boundsAt(bounds, this.#matrix);
-      job.placed ??= [];
-      job.placed.push(
-        index,
-        placedBox.min.x,
-        placedBox.min.y,
-        placedBox.min.z,
-        placedBox.max.x,
-        placedBox.max.y,
-        placedBox.max.z,
-      );
-      // The far shadow of an asset that can bake a whole-asset impostor draws one quad per placement
-      // at the placement root: the parts' own offsets are baked into the atlas, so composing a source
-      // part's offset again would apply it twice. One root record per placement, beside the per-part
-      // batches and read only by the wide half; see `ICellBatch.wideRoot`.
-      for (level of selected) {
-        if (wantRoots) {
-          job.roots ??= [];
-          const roots = job.roots;
-          let root = roots[level];
-          if (root === undefined) {
-            const anchor = asset.levels[level]?.[0];
-            if (anchor !== undefined) {
-              root = new InstancedBatch({ geometry: anchor.geometry, material: anchor.material });
-              roots[level] = root;
-            }
-          }
-          root?.add(this.#matrix);
-        }
-        // The GPU scene's source record for this placement: the placement's own transform, the level it
-        // reached, and a sphere the dispatch tests against the camera's planes. The part offset is the
-        // key's own, so one record serves every part of the level — see `#placeSources`.
-        if (this.#render.gpuOn) {
-          const list = job.sources ?? [];
-          job.sources = list;
-          // The sphere is the asset's authored bounds *as placed*, centred where the bounds' centre
-          // lands under the placement's own transform: a sphere at the placement instead is not a
-          // bound of the placement, and every prop whose model does not straddle the origin lost the
-          // half of itself that reaches away from it — a post, a stump, a fern, all of them culled at
-          // the edge of the view with their bases outside it. The CPU path's own gate is the cell's box
-          // over the same widened bounds, and it is conservative in exactly the way this is now. The
-          // centre is the matrix applied to the authored centre, so the placement's quaternion rotates
-          // it: composing the offsets by hand dropped the rotation and put a turned off-centre prop's
-          // sphere where the unturned one would be. The radius is rotation-invariant and takes the
-          // scale alone, which is uniform.
-          const centre = this.#sourceCentre
-            .set(
-              ((bounds.min[0] as number) + (bounds.max[0] as number)) * 0.5,
-              ((bounds.min[1] as number) + (bounds.max[1] as number)) * 0.5,
-              ((bounds.min[2] as number) + (bounds.max[2] as number)) * 0.5,
-            )
-            .applyMatrix4(this.#matrix);
-          list.push({
-            level,
-            matrix: this.#matrix.clone(),
-            // `boundsRadius` is already the asset's authored bounds radius (half the diagonal), so the
-            // placement's sphere radius is that times its own uniform scale — halving it again put the
-            // sphere inside the prop and culled the half of it that reaches away from the placement.
-            radius: boundsRadius * Math.abs(scale),
-            // The magnitude, finite-sanitised: the dispatch's impostor gate takes `|scale|` exactly as
-            // `levelAtGates` does, so a mirrored placement reaches the atlas the same way.
-            scale: Number.isFinite(scale) ? Math.abs(scale) : 1,
-            x: centre.x,
-            y: centre.y,
-            z: centre.z,
-          });
-        }
-        // Authored bounds include model-part offsets; apply the whole placement transform so
-        // rotated, mirrored and off-centre casters cannot fall outside visibility/shadow regions.
-        this.#boundsAt(bounds, this.#matrix);
-        const parts = asset.levels[level] as readonly IAssetPart[];
-        const levelBatches = job.batches?.[level] as InstancedBatch[];
-        const levelBoxes = job.boxes?.[level] as Box3[] | undefined;
-        for (const [part, entry] of parts.entries()) {
-          this.#instance.multiplyMatrices(this.#matrix, entry.local);
-          (levelBatches[part] as InstancedBatch).add(this.#instance);
-          const range = job.lodRanges?.[level]?.[part];
-          if (range !== undefined) range.push(minPublished, maxPublished, fadeFrom, 0);
-          const box = levelBoxes?.[part];
-          if (box === undefined) continue;
-          box.union(this.#recordBounds);
-        }
-      }
-    }
-  }
-
-  /**
-   * Build one (level, part) batch into a mesh. One mesh is one unit, because this is where every
-   * instance matrix is written and the batch's bounds are first computed — the part of admission the
-   * renderer pays for again on the frame it first draws the result. The mesh joins the cell in
-   * {@link #swap}, with the rest of the job, so it is never half a replacement.
-   *
-   * ponytail: a hard switch, no crossfade — a placement crosses a level boundary by being rebuilt
-   * into the other level's batch, so the swap pops. A blend needs a per-instance mix the
-   * InstancedBatch has no slot for; add one when a game's swap is visible enough to pay for it.
-   */
-  /**
-   * Fold one batch's own filter point into the cell's bracket, which only ever widens. See
-   * `IResidentCell.filterNear` and `#staleIn`.
-   */
-  #widenFilterRange(cell: IResidentCell, filterX: number, filterZ: number): void {
-    const [near, far] = this.#span(cell, filterX, filterZ);
-    if (near < cell.filterNear) cell.filterNear = near;
-    if (far > cell.filterFar) cell.filterFar = far;
-  }
-
-  #buildOne(job: IBuildJob, batches: readonly InstancedBatch[][]): void {
-    const { asset } = job;
-    const { cell } = job;
-    this.#widenFilterRange(cell, job.lodX, job.lodZ);
-    let part = job.published;
-    for (const [level, levelBatches] of batches.entries()) {
-      if (part >= levelBatches.length) {
-        part -= levelBatches.length;
-        continue;
-      }
-      const box = job.boxes?.[level]?.[part];
-      job.fresh.push({
-        asset: asset.id,
-        batch: levelBatches[part] as InstancedBatch,
-        caster: undefined,
-        casterSegment: -1,
-        gpu: undefined,
-        wide: undefined,
-        wideSegment: -1,
-        wideRoot: job.roots?.[level],
-        lastFilterY: job.filterY,
-        lastFilterX: job.filterX,
-        lastFilterZ: job.filterZ,
-        lastLodX: job.lodX,
-        lastLodY: job.lodY,
-        lastLodZ: job.lodZ,
-        level,
-        lodRanges: job.lodRanges?.[level]?.[part]?.length
-          ? Float32Array.from(job.lodRanges[level]?.[part] ?? [])
-          : undefined,
-        part,
-        run: job.run,
-        segment: -1,
-        shared: undefined,
-        // Where these records are, for the shadow invalidation this entry's swap hands over.
-        shadowBounds: box === undefined || box.isEmpty() ? undefined : box,
-        threshold: this.#reachRanges.get(cell.cell)?.has(asset.id)
-          ? Math.min(asset.threshold ?? Number.POSITIVE_INFINITY, 6)
-          : asset.threshold,
-      });
-      job.published += 1;
-      return;
-    }
   }
 
   /**
@@ -2690,37 +1440,6 @@ export class WorldCells extends Group implements IComputeDriven {
   #bundleHome(shared: SharedBatch): Object3D | null {
     if (this.#bundlesWanted === false || shared.bundlable === false) return this;
     return this.#render.bundleGroup(mainShard(shared.mesh.name)) ?? null;
-  }
-
-  /**
-   * Rebuild every resident run once, so a scene that came up after the ring was built is given the
-   * source records it was built without.
-   *
-   * `WorldCells.update` can be called before it has a renderer, and a renderer that is not WebGPU
-   * never turns the scene on at all; either way the cells that were swapped in while it was off hold
-   * placements the dispatches have never heard of, and nothing else in the class would ever hand them
-   * over. One rebuild of the ring is the whole fix, and it is the same build every first-seen asset
-   * takes: `replace` keeps the old batches drawn until each new one is attached, so the rebuild is
-   * not a frame of holes.
-   */
-  #seedGpuSources(): void {
-    // A pending build may already have consumed CPU-only slices. Restart it before any swap can
-    // publish a partial source list; its outgoing batches keep drawing until the new build lands.
-    const pending = this.#jobs;
-    this.#jobs = [];
-    for (const job of pending) {
-      this.#queued.delete(job.run);
-      for (const entry of job.fresh) this.#render.clearSegment(entry);
-      this.#queueBuild(job.asset, job.cell, job.run, true, job.force);
-    }
-    for (const cell of this.#resident.values())
-      for (const batch of cell.batches) {
-        const asset = this.#models.asset(batch.asset);
-        if (asset === undefined || asset.levels.length === 0) continue;
-        // One rebuild per run, not per batch: a run's placements are one build, and queueing it per
-        // batch would rebuild the same placements once per level and part.
-        this.#queueBuild(asset, cell, batch.run, true);
-      }
   }
 
   /**
@@ -2741,237 +1460,5 @@ export class WorldCells extends Group implements IComputeDriven {
     console.warn(
       `TN_WORLD_CELL_FAILURE kind=${kind} id=${id} paths=${paths.join(",")} message=${message}`,
     );
-  }
-
-  /**
-   * The `[nearest, farthest]` distance from `(x, z)` to the rectangle a cell's placements lie in.
-   *
-   * ponytail: the rectangle is the compiler's contract — a run's records belong to the cell they
-   * are filed under — so one interval covers every placement in a cell. A hand-edited package that
-   * files a placement under a neighbouring cell keeps it at the level its own distance selects; a
-   * validator check on the placement buffer is the fix if that ever has to be caught.
-   */
-  #span(cell: IResidentCell, x: number, z: number): readonly [number, number] {
-    const left = this.#minX + cell.x * this.#cellSize;
-    const near = this.#minZ + cell.z * this.#cellSize;
-    const right = left + this.#cellSize;
-    const far = near + this.#cellSize;
-    return [
-      Math.hypot(Math.max(left - x, x - right, 0), Math.max(near - z, z - far, 0)),
-      Math.hypot(
-        Math.max(Math.abs(x - left), Math.abs(x - right)),
-        Math.max(Math.abs(z - near), Math.abs(z - far)),
-      ),
-    ];
-  }
-
-  /**
-   * One entry per asset of `cell` the follow point has moved a gate of, nearest placement first.
-   *
-   * The cell's own bracket is the caller's: it was derived once for the cell, and every batch of a
-   * cell is measured against the same rectangle, so deriving it per batch was the same four
-   * `Math.max` and two `Math.hypot` calls as many times as the cell had batches. What is left here is
-   * per batch: one moved-point test and, for a batch that moved, its own bracket.
-   *
-   * Nothing is allocated to find them: the entries go into one reused array, the per-cell "already
-   * seen" set into another, and a pass that crossed no gate anywhere pushes nothing at all.
-   */
-  #staleIn(cell: IResidentCell, x: number, z: number, near: number, far: number): void {
-    const seen = this.#staleSeen;
-    seen.clear();
-    const eye = this.#eye;
-    const [eyeNear, eyeFar] = this.#span(cell, eye.x, eye.z);
-    for (const entry of cell.batches) {
-      const reach = this.#reachRanges.get(cell.cell)?.get(entry.asset);
-      if ((entry.threshold === undefined && reach === undefined) || seen.has(entry.asset)) continue;
-      // Deferred runs of one asset can start at different camera snapshots. Only deduplicate
-      // after one entry proves the asset stale: an earlier matching run cannot settle the others.
-      const step = (entry.threshold ?? 6) / 8;
-      if (
-        Math.hypot(
-          x - entry.lastFilterX,
-          this.#followY() - entry.lastFilterY,
-          z - entry.lastFilterZ,
-        ) <= step &&
-        Math.hypot(eye.x - entry.lastLodX, eye.y - entry.lastLodY, eye.z - entry.lastLodZ) <= step
-      )
-        continue;
-      const asset = this.#models.asset(entry.asset);
-      if (asset === undefined) continue;
-      // GPU dispatch handles maxDistance and LOD gates; placementReach remains a CPU boundary.
-      const gates = this.#render.gpuOn ? [] : asset.gates;
-      // Gates bracket the LOD eye's distances, reach the follow point's: see `#addPlacements`.
-      const [builtNear, builtFar] = this.#span(cell, entry.lastLodX, entry.lastLodZ);
-      let low = Math.min(eyeNear, builtNear);
-      // Ends included, so a placement exactly on a gate is one of the reasons to rebuild.
-      let high = Math.max(eyeFar, builtFar);
-      let reachCrossed = false;
-      if (reach !== undefined) {
-        const vertical = (y: number): [number, number] => [
-          Math.max(reach.minY - y, y - reach.maxY, 0),
-          Math.max(Math.abs(y - reach.minY), Math.abs(y - reach.maxY)),
-        ];
-        const eyeNow = vertical(eye.y);
-        const eyeBefore = vertical(entry.lastLodY);
-        low = Math.min(Math.hypot(eyeNear, eyeNow[0]), Math.hypot(builtNear, eyeBefore[0]));
-        high = Math.max(Math.hypot(eyeFar, eyeNow[1]), Math.hypot(builtFar, eyeBefore[1]));
-        const [reachBuiltNear, reachBuiltFar] = this.#span(
-          cell,
-          entry.lastFilterX,
-          entry.lastFilterZ,
-        );
-        const current = vertical(this.#followY());
-        const previous = vertical(entry.lastFilterY);
-        const reachLow = Math.min(
-          Math.hypot(near, current[0]),
-          Math.hypot(reachBuiltNear, previous[0]),
-        );
-        const reachHigh = Math.max(
-          Math.hypot(far, current[1]),
-          Math.hypot(reachBuiltFar, previous[1]),
-        );
-        reachCrossed = reach.min <= reachHigh && reach.max >= reachLow;
-      }
-      if (!reachCrossed && !gates.some((gate) => gate >= low && gate <= high)) continue;
-      seen.add(entry.asset);
-      this.#stale.push({ cell, distance: eyeNear, id: entry.asset });
-      this.#staleEntries += 1;
-    }
-  }
-
-  /**
-   * Record that one more gate distance exists, keeping the world's list ascending so
-   * {@link crossesGate} can binary search it. A gate is never withdrawn: an asset whose ring left
-   * still leaves its distances behind, which costs a cell the gate test does not reject and never a
-   * rebuild the pass owes.
-   */
-  #noteGate(gate: number): void {
-    const gates = this.#gates;
-    if (gates.includes(gate)) return;
-    let at = gates.length;
-    while (at > 0 && (gates[at - 1] as number) > gate) at -= 1;
-    gates.splice(at, 0, gate);
-  }
-
-  /**
-   * Queue a refilter for every batch whose follow point has moved far enough to have crossed a CPU
-   * source-admission boundary: maxDistance/lod gates on the CPU path, or placementReach in either
-   * path. GPU maxDistance/lod gates stay in the dispatch, so they do not enter this replacement
-   * queue.
-   *
-   * Two things keep that pass from costing a frame. A cell's placements all sit inside one
-   * rectangle, so the two points that matter — where the batch was built and where the follow point
-   * is now — bracket every distance a placement of that cell can have had; with no gate of the
-   * asset in that span the level and cull answer is the same and the rebuild could change nothing,
-   * and the position the batch was built from is kept so the next move is still measured from it.
-   * What is genuinely stale is queued nearest cell first, `rebuildsPerUpdate` of them per call, and
-   * the queue spends the frame's admission budget on them like any other build — so a refilter that
-   * cannot be afforded this frame leaves the cell drawing the level it has, not a hole.
-   */
-  #updateMaxDistance(x: number, z: number): void {
-    this.#refilters += 1;
-    const stale = this.#stale;
-    stale.length = 0;
-    this.#collectStale(x, z);
-    // Only what was found, and usually a handful of entries.
-    if (stale.length > 1) stale.sort((a, b) => a.distance - b.distance || a.id.localeCompare(b.id));
-    // What the cap could not queue is still owed, and `#refilterStale` reads that: a standing follow
-    // point has to keep coming back for it, or a walk that stopped mid-drain never finished.
-    this.#refilterOwed = stale.length > this.#rebuildsPerUpdate;
-    for (const job of stale.slice(0, this.#rebuildsPerUpdate)) {
-      const asset = this.#models.asset(job.id);
-      if (asset === undefined || asset.levels.length === 0) continue;
-      // Every run of the group, not just the one that happens to carry the canonical's name: a cell
-      // holding two names for one model has two stale answers, and rebuilding only the named one
-      // left the other drawing the level its own distance has moved out of.
-      for (const run of job.cell.cell.runs) {
-        if (this.#canonical(run.asset) !== job.id) continue;
-        this.#queueBuild(asset, job.cell, run, true);
-        this.#rebuilds += 1;
-      }
-    }
-  }
-
-  /**
-   * Every resident cell's stale assets, into the reused list, nearest placement first.
-   *
-   * A cell is gated as a whole before one of its batches is looked at: its own bracket is derived
-   * once, unioned with every distance any of its batches was filtered from, and one binary search
-   * over the world's gates decides it. No gate in that range means no asset of the cell can have
-   * changed side of one, so its batches are not walked at all — which is the whole cost of a pass in
-   * which the follow point has not yet reached anything that switches.
-   */
-  #collectStale(x: number, z: number): void {
-    for (const cell of this.#resident.values()) {
-      // Gates are measured from the LOD eye, and `filterNear`/`filterFar` hold the eyes built from.
-      const [eyeNear, eyeFar] = this.#span(cell, this.#eye.x, this.#eye.z);
-      const low = eyeNear < cell.filterNear ? eyeNear : cell.filterNear;
-      const high = eyeFar > cell.filterFar ? eyeFar : cell.filterFar;
-      if (!this.#reachRanges.has(cell.cell) && !crossesGate(this.#gates, low, high)) continue;
-      const [near, far] = this.#span(cell, x, z);
-      this.#staleIn(cell, x, z, near, far);
-    }
-  }
-
-  #cellLive(cell: IResidentCell, generation: number): boolean {
-    return (
-      !this.#released && this.#resident.get(cell.key) === cell && cell.generation === generation
-    );
-  }
-
-  #evict(cell: IResidentCell): void {
-    this.#chunks.evictProxy(cell);
-    this.#residencyEpoch += 1;
-    // Every run this cell held goes back to the far mesh BEFORE the near batches below are cleared:
-    // the far mesh owns the ORIGINAL roots and this is the same synchronous block, so no frame draws
-    // the cell twice or not at all. Skipped at teardown, where the far aggregates are drained whole.
-    if (!this.#released) for (const run of cell.cell.runs) this.#impostorState.restoreFar(run);
-    // Work queued for a cell that has left is dropped, not resumed: a later frame would build
-    // batches into a graph that no longer holds the cell, and the residency slot is already gone.
-    this.#jobs = this.#jobs.filter((job) => {
-      if (job.cell !== cell) return true;
-      this.#queued.delete(job.run);
-      // A swap that ran out of fresh meshes leaves its claims in `fresh`, which is not in
-      // `cell.batches` until the swap completes. Dropping the job without handing those blocks back
-      // keeps them reserved and unwritten, so `mesh.count` never falls to zero, the asset's release
-      // retires a batch that still counts records and drops the key outright, and the walk back
-      // mints a second mesh for it.
-      for (const entry of job.fresh) this.#render.clearSegment(entry);
-      return false;
-    });
-    for (const entry of cell.batches) this.#render.clearSegment(entry);
-    // The same invalidation `#swap` makes, for the eviction path: the records that just left the
-    // ring are ground the levels were drawing, and they are named one batch at a time.
-    // Each placement's own box when the cell kept the list, so an evicted neighbour does not redraw
-    // the finest level under the player; the batch union otherwise.
-    if (cell.placed !== undefined && cell.placed.size > 0)
-      for (const placed of cell.placed.values()) this.#render.tellPlacementChanges(placed, []);
-    else this.#render.shadowRecordsMoved(this.#render.changedBounds(cell.batches));
-    cell.batches.length = 0;
-    cell.placed?.clear();
-    // The cell's record of those chunks goes with them, so a replay can never draw a cell the world
-    // has released — before they leave the group, which is where it counts what it holds. See
-    // `#addChunk`.
-    this.#render.dropChunkBundles(cell);
-    for (const chunk of cell.chunks) {
-      chunk.removeFromParent();
-      this.#failures += this.#models.disposeLoaded(chunk);
-    }
-    cell.chunks.length = 0;
-    // The cell's chunk sources go back to the loader here, on the last cell that named them, exactly
-    // as an asset's levels do in `#release`. Run even at teardown: the loader is never cleared, so a
-    // path this world asked for must be handed back however the world leaves.
-    this.#models.releaseModelPaths(cell.retainedModelPaths);
-    this.#resident.delete(cell.key);
-    this.#render.cullEvicted(cell);
-    this.#instances -= cell.instances;
-    this.#bytes -= cell.bytes;
-    this.#evictions += 1;
-    // Room just freed: retry the far aggregates a full budget refused, so a species held back while
-    // the ring was tight appears without another scan. Skipped at teardown, where the far half drains.
-    if (!this.#released) this.#impostorState.retryFar();
-    // One per run, so the canonical's refcount reaches zero exactly when the last run naming any
-    // member of its group has left the ring.
-    for (const run of cell.cell.runs) this.#models.release(this.#canonical(run.asset));
   }
 }

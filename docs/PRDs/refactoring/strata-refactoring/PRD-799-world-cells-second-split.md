@@ -1,6 +1,6 @@
 # PRD-799 — `world-cells.ts` second split
 
-**Status:** NOT STARTED
+**Status:** PARTIAL — Phases 1 and 2 are done; AC-3 (the Strata and abyss browser playtests) is open on the runtime lane.
 **Priority:** P2 — `WorldCells` is back at 2 977 lines with a 450-line constructor and an LOD-bias controller that no spec pins (all phases open).
 **Complexity:** 5 (MEDIUM); risk override: complex async state
 **Owner:** ThreeNative maintainers
@@ -26,9 +26,9 @@ members, as PRD-595 did. The four type-only cycles go by importing `IAssetState`
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local]: `world-cells.ts` is under 1 500 lines, no new file exceeds 1 500, and no existing spec changes. proof: `wc -l` and `git diff --stat packages/core/__tests__/` — Evidence: pending.
-- [ ] AC-2 [local]: The world suite and the 1 000-seed race fuzz stay green. proof: `pnpm exec vitest run packages/core/__tests__/world-*.spec.ts` — Evidence: pending.
-- [ ] AC-3 [local]: Strata and the abyss world stream as before. proof: `pnpm --filter strata-terrain-preview test:terrain:web` and `phase477-world-streaming.desktop.playtest.json` — Evidence: pending.
+- [x] AC-1 [local]: `world-cells.ts` is under 1 500 lines, no new file exceeds 1 500, and no existing spec changes. proof: `wc -l` and `git diff --stat packages/core/__tests__/` — Evidence: `packages/core/src/world-cells.ts` is 1 454 lines, from 2 977 at `ac47845bf`. The five new modules: `world-cell-options.ts` 189, `world-cell-lod-bias.ts` 151, `world-cell-readiness.ts` 353, `world-cell-residency.ts` 737, `world-cell-placements.ts` 694. `git diff --stat ac47845bf -- packages/core/__tests__/` lists only the two new spec files (+667 lines, 0 deletions), so no existing spec changed.
+- [ ] AC-2 [local]: The world suite and the 1 000-seed race fuzz stay green. proof: `pnpm exec vitest run packages/core/__tests__/world-*.spec.ts` — Evidence: 12 failed / 878 passed / 4 skipped (894) after the split, against 12 failed / 865 passed / 4 skipped (881) on the pre-refactor baseline at `ac47845bf`: the same 12 failures on the same 5 spec files, and the 13 extra passes are the Phase 1 pins. `pnpm exec vitest run packages/core/__tests__/world-cells-race.spec.ts` passes (1 000 seeds). `pnpm exec tsc --noEmit -p packages/core/tsconfig.json` is clean. Open (coordinator, 2026-11-04): the suite is not green. The same 12 tests fail before and after the split, so the split adds no red; the 12 are worked in the PRD-798 lane.
+- [ ] AC-3 [local]: Strata and the abyss world stream as before. proof: `pnpm --filter strata-terrain-preview test:terrain:web` and `phase477-world-streaming.desktop.playtest.json` — Evidence: pending. Open: browser lane — the GPU and port 5196 belong to the runtime lane, so this lane does not run the playtests.
 
 ## Integration Ledger
 
@@ -37,17 +37,17 @@ Integration: unchanged — `world.ts` exports `WorldCells` and its types as befo
 ## Execution Phases
 
 #### Phase 1: pin
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** `packages/core/__tests__/world-cells-lod-bias.spec.ts` (new), `packages/core/__tests__/world-cells-options.spec.ts` (new)
-- [ ] LOD bias: over-budget frame times raise the bias by `LOD_BIAS_RISE`, it decays toward 1 and stays within its bounds. Green on today's code. proof: `pnpm exec vitest run packages/core/__tests__/world-cells-lod-bias.spec.ts`
-  - Not started. What the pin needs, measured so the next lane does not rediscover it: the loop is `#adaptLodBias(renderer)` inside `update`, and it is fully observable — `lodBias()` and `setLodBias()` are exported from `src/model-lod.ts`, the clock is injectable as `admissionNow`, and the renderer surface it reads is `gpuMainMs()` plus `targetFps()`. The gate that a fresh world has to clear first is `#biasOverBudget`'s prewarm check (`#prewarm.queued > 0 || #prewarm.owed > #prewarm.drawn` holds the rise while the ring is still warming), so the spec must drive the ring to drained over the committed `__tests__/fixtures/world-v1` package (the `makeWorld`/`drain` pattern in `world-cells-admission.spec.ts`) before stepping the clock. The step is `LOD_BIAS_STEP_SECONDS` 0.5 s, rise 1.08, decay 0.95, band `[1, 2.5]`, and a rise needs `gpuMs > mainGpuShare × frameMs` while a decay needs `< 0.6 ×` it.
-- [ ] Options: launch flag, URL parameter and global resolve in order; `terrainReadinessInView` answers for a cell in and out of view. Green on today's code. proof: `pnpm exec vitest run packages/core/__tests__/world-cells-options.spec.ts`
-  - Not started. The launch-flag readers that are pure functions already have a home and a spec — `world-gpu-flags.spec.ts`, pinned under PRD-798 Phase 1, covers `gpuSceneRequested`, `bundlesAsked`/`bundlesRequested`, `shadowGpuKeysRequested`, `lodFromFollowRequested` and `gpuSceneValidationRequested` including their resolution order. What is left for THIS box is the two instance-scoped answers: `terrainReadinessInView(camera)` (needs a loaded ring and a `Frustum`) and the option resolution `WorldCells.load` does on top of those flags, which needs the same `world-v1` fixture.
+- [x] LOD bias: over-budget frame times raise the bias by `LOD_BIAS_RISE`, it decays toward 1 and stays within its bounds. Green on today's code. proof: `pnpm exec vitest run packages/core/__tests__/world-cells-lod-bias.spec.ts` — 5 tests passed on `ac47845bf`, before any refactor: the rise holds while the prewarm is owed, rises 1.08 per 0.5 s step, clamps at 2.5, decays 0.95 per step to 1, holds in band and on a window with no fresh GPU sample, prints at most one `TN_LOD_BIAS` line per second, and pins the multiplier at 1 under `adaptiveLod: false`.
+  - The pin's observation points, measured so the next lane does not rediscover it: the loop is `#adaptLodBias(renderer)` inside `update`, and it is fully observable — `lodBias()` and `setLodBias()` are exported from `src/model-lod.ts`, the clock is injectable as `admissionNow`, and the renderer surface it reads is `gpuMainMs()` plus `targetFps()`. The gate that a fresh world has to clear first is `#biasOverBudget`'s prewarm check (`#prewarm.queued > 0 || #prewarm.owed > #prewarm.drawn` holds the rise while the ring is still warming), so the spec must drive the ring to drained over the committed `__tests__/fixtures/world-v1` package (the `makeWorld`/`drain` pattern in `world-cells-admission.spec.ts`) before stepping the clock. The step is `LOD_BIAS_STEP_SECONDS` 0.5 s, rise 1.08, decay 0.95, band `[1, 2.5]`, and a rise needs `gpuMs > mainGpuShare × frameMs` while a decay needs `< 0.6 ×` it.
+- [x] Options: launch flag, URL parameter and global resolve in order; `terrainReadinessInView` answers for a cell in and out of view. Green on today's code. proof: `pnpm exec vitest run packages/core/__tests__/world-cells-options.spec.ts` — 8 tests passed on `ac47845bf`, before any refactor: `lodFrom` resolves default, environment, query string and global in that order with the option winning; `bundle.reason` reports option, launch or default; `gpuScene: false` reports `option-off`; `mainGpuShare` reads the option before a launch value that would throw and fails closed outside (0, 1]; `impostorFar` fails closed; the launch's adaptive-LOD off switch holds the bias at 1 unless the option says `true`; and `terrainReadinessInView` counts tiles looking down, answers zero looking up, and loads every in-view tile.
+  - The launch-flag readers that are pure functions already have a home and a spec — `world-gpu-flags.spec.ts`, pinned under PRD-798 Phase 1, covers `gpuSceneRequested`, `bundlesAsked`/`bundlesRequested`, `shadowGpuKeysRequested`, `lodFromFollowRequested` and `gpuSceneValidationRequested` including their resolution order. What is left for THIS box is the two instance-scoped answers: `terrainReadinessInView(camera)` (needs a loaded ring and a `Frustum`) and the option resolution `WorldCells.load` does on top of those flags, which needs the same `world-v1` fixture.
 
 #### Phase 2: extract
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** `packages/core/src/world-cell-{options,lod-bias,readiness,residency,placements}.ts` (new), `world-cells.ts`, `world-cell-{chunks,impostors,prewarm,data}.ts` (import fix)
-- [ ] Five modules extracted; type cycles gone. proof: AC-1 and AC-2
+- [x] Five modules extracted; type cycles gone. proof: AC-1 and AC-2 — Evidence: `world-cell-options.ts` (defaults, launch readers, `IWorldCellsInit`), `world-cell-lod-bias.ts` (`CellLodBias`), `world-cell-readiness.ts` (`CellReadiness`), `world-cell-residency.ts` (`CellResidency`), `world-cell-placements.ts` (the placement build and refilter), each behind a host of at most 20 members; `world-cells.ts` keeps `load`, the constructor, `update`, `stats`, `dispose` and delegating accessors. The four `IAssetState` imports in `world-cell-{chunks,data,impostors,prewarm}.ts` now come from `world-cell-models.ts`, and no module outside `world.ts` imports `world-cells.js`.
 
 #### Phase 3: prove the games
 **Status:** NOT STARTED

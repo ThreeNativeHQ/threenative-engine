@@ -15,7 +15,7 @@ import type { OcclusionMode } from "./render/depth-pyramid.js";
 import type { SharedBatch } from "./world-cell-batches.js";
 import type { CellProxySelection, IPreparedCellProxy } from "./world-cell-proxy.js";
 
-import type { IAssetState } from "./world-cells.js";
+import type { IAssetState } from "./world-cell-models.js";
 import type { IWorldCell, IWorldPackage, IWorldRun } from "./world-package.js";
 
 import type { IWorldTilesOptions } from "./world-tiles.js";
