@@ -1728,8 +1728,14 @@ json::Value V8Game::resource(const std::string& id, uint64_t tick) const {
 
 int main(int argc, char** argv) {
     // The game's log is a stream tools read live; a pipe would otherwise hold it until exit, and a
-    // killed player would lose it.
+    // killed player would lose it. MSVC has no line buffering (`_IOLBF` is full buffering) and
+    // rejects a size below 2 with a fail-fast 0xC0000409 before any output (#614), so Windows
+    // writes unbuffered.
+#if defined(_WIN32)
+    std::setvbuf(stdout, nullptr, _IONBF, 0);
+#else
     std::setvbuf(stdout, nullptr, _IOLBF, 0);
+#endif
     std::string gamePath;
     std::string checkRequest;
     std::string cpuProfilePath;
