@@ -451,12 +451,6 @@ export function createMeadow(options: IMeadowOptions): IMeadow {
           const status = { data: "pending", prewarm: "pending" };
           spawnJoins.set(stream, status);
           const ready = stream.whenSpawnReady(spawn, 60, remaining);
-          // The spawn's gate is what it shows: the data under its sight line, then the draw of the
-          // worlds that hold a cell there. A world with no cell in the spawn's region owes it no
-          // draw — the meadow a fixed view plants streams in when the view reaches it — and its
-          // prewarm never settles for a region it does not serve, so waiting there held the
-          // loading screen open for the full admission deadline and landed nothing.
-          const owesSpawn = stream.readinessAt(spawn, 60).requiredCells > 0;
           // Observe settlement without replacing the promises the spawn join awaits.
           void ready.then(
             () => {
@@ -474,11 +468,14 @@ export function createMeadow(options: IMeadowOptions): IMeadow {
               status.prewarm = "rejected";
             },
           );
-          return { owesSpawn, ready, stream };
+          return { ready, stream };
         });
+        // Every streamed world joins its draw gate: the engine settles it for a world that holds no
+        // cell here and so has nothing to prewarm, which is the meadow a fixed view plants streams
+        // in when the view reaches it.
         void Promise.all([
           Promise.all(joins.map((join) => join.ready)),
-          ...joins.filter((join) => join.owesSpawn).map((join) => join.stream.prewarmed),
+          ...joins.map((join) => join.stream.prewarmed),
         ]).then(
           ([regions]) => {
             land({
