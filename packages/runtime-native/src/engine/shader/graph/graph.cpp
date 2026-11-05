@@ -498,6 +498,13 @@ ExprId Lowerer::emit(Node node) {
                 return d.sampleBias ? program_.sampleBias(texture, coordinate, level)
                                     : program_.sampleLevel(texture, coordinate, level);
             }
+            // A material's 2D texture() reads at the view mip bias (PRD-539 lever 7): surface detail the
+            // reduced raster loses. The material lowering marks itself with a `viewMipBias` input and the
+            // uniform is declared here, at first use, so a node material without a texture keeps its
+            // layout. Volumes (probe GI, LUTs), arrays and post or compute graphs keep the implicit LOD.
+            const bool volume = program_.expr(coordinate).type == Type::vec(3);
+            if (!volume && !array && inputs_.count("viewMipBias") && program_.stage() == Stage::Fragment)
+                return program_.sampleBias(textureOf(), coordinate, program_.uniform("viewMipBias", Type::f32()));
             return program_.sample(textureOf(), coordinate);
         }
         case Kind::StorageElement:

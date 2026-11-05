@@ -2,12 +2,17 @@
 import { Fn, int, texture } from "three/tsl";
 import type { Node, Renderer } from "three/webgpu";
 import type { ITemporalAANode } from "./temporalAAFrame.js";
+import { createTemporalClampRelease } from "./temporalClampRelease.js";
 import {
   type TemporalCurrentFootprint,
   createTemporalCurrentFootprint,
 } from "./temporalCurrentFootprint.js";
 import type { TemporalCurrentProducer } from "./temporalCurrentProducer.js";
-import { createExperimentalTemporalResolve } from "./temporalResolve.js";
+import { createTemporalMoire } from "./temporalMoire.js";
+import {
+  type ITemporalHistoryWeighting,
+  createExperimentalTemporalResolve,
+} from "./temporalResolve.js";
 import {
   type TemporalDepthRejection,
   type TemporalResolveNode,
@@ -18,8 +23,14 @@ export function createTemporalAAResolve(
   node: TemporalResolveNode,
   jitterOffset: Node<"vec2">,
   currentProducer?: TemporalCurrentProducer,
+  weighting?: ITemporalHistoryWeighting,
 ) {
   const internals = node as unknown as ITemporalAANode;
+  const moire = weighting?.flickerRejection === true ? createTemporalMoire(node) : undefined;
+  const levers = {
+    moire,
+    release: weighting?.clampRelease === true ? createTemporalClampRelease(node, moire) : undefined,
+  };
   let rejection: TemporalDepthRejection | undefined;
   let currentFootprint: TemporalCurrentFootprint | undefined;
   function configure(renderer: Renderer): void {
@@ -51,11 +62,14 @@ export function createTemporalAAResolve(
       "ordinary",
       rejection,
       currentFootprint,
+      weighting,
+      levers,
     );
     internals._resolveMaterial.needsUpdate = true;
   }
   return {
     equations: () => rejection,
+    levers,
     configure,
     invalidate: (renderer: Renderer) => {
       rejection = undefined;
