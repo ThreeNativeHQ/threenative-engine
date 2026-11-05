@@ -840,6 +840,11 @@ describe("capability manifest generator", () => {
         ids: ["request.gi-visualize"],
         owners: ["GIVisualize"],
       },
+      "swimming buoyancy water volume wade": {
+        baselineAlreadyRecalled: true,
+        ids: ["request.swim-water-volume"],
+        owners: ["CharacterBody3D"],
+      },
     } as const;
 
     expect([...new Set(aliases)].sort()).toEqual(Object.keys(predecessorRows).sort());

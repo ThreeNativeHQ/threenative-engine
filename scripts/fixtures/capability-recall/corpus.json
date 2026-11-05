@@ -885,6 +885,14 @@
       "reject": []
     },
     {
+      "id": "request.swim-water-volume",
+      "query": "Swim across a river or lake in a water volume, floating with buoyancy and wading slower in shallow water.",
+      "scope": "request",
+      "source": "template:sailing#Ownership",
+      "expect": ["CharacterBody3D"],
+      "reject": []
+    },
+    {
       "id": "spell.fireball",
       "query": "Cast a fireball at a target that explodes and scorches the floor.",
       "scope": "mechanic",
