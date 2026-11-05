@@ -491,23 +491,18 @@ try {
   // The forest starter's cooked world, copied into this isolated install as the fixture its
   // vanilla-loader proof reads. A missing fixture fails instead of silently skipping the proof.
   const forestWorld = join(repo, "packages/terrain/starter/forest/world");
-  const hasForest =
-    existsSync(join(forestWorld, "world.glb")) && existsSync(join(forestWorld, "world.json"));
-  if (!hasForest)
+  if (!existsSync(join(forestWorld, "world.glb")) || !existsSync(join(forestWorld, "world.json")))
     throw new Error(
       "Missing cooked forest fixture: run node packages/terrain/starter/forest/bake.mjs first",
     );
-  if (hasForest) {
-    copyFileSync(join(forestWorld, "world.glb"), join(consumer, "forest-world.glb"));
-    copyFileSync(join(forestWorld, "world.json"), join(consumer, "forest-world.json"));
-  }
+  copyFileSync(join(forestWorld, "world.glb"), join(consumer, "forest-world.glb"));
+  copyFileSync(join(forestWorld, "world.json"), join(consumer, "forest-world.json"));
 
   // PRD-583 AC-3: the cooked forest `world.glb` read by the stock three loader in this install,
   // inside the same generated script. The loader makes one `InstancedMesh` per source primitive,
   // so every child mesh's count is compared to the manifest's logical placement count for its
   // species — never a sum of primitive copies — and no species may draw per-tree mesh copies.
-  const forestBlock = hasForest
-    ? `
+  const forestBlock = `
     const manifest = JSON.parse(readFileSync("forest-world.json", "utf8"));
     const logical = {};
     for (const cell of manifest.cells)
@@ -540,8 +535,7 @@ try {
       placements: Object.values(logical).reduce((sum, count) => sum + count, 0),
       perTreeCopies,
       glbBytes: forestBytes.length,
-    };`
-    : "\n    const forest = null;";
+    };`;
 
   const author = `
     import { createHash } from "node:crypto";
@@ -595,11 +589,9 @@ ${forestBlock}
   const authoredResult = JSON.parse(run("node", ["author.mjs"], { cwd: consumer }));
   const authored = authoredResult.report;
   assert.equal(authored.length, worldNames.length);
-  if (hasForest) {
-    assert(authoredResult.forest, "the forest GLB fixture was not checked");
-    assert.equal(authoredResult.forest.perTreeCopies, 0);
-    assert(authoredResult.forest.placements > 0);
-  }
+  assert(authoredResult.forest, "the forest GLB fixture was not checked");
+  assert.equal(authoredResult.forest.perTreeCopies, 0);
+  assert(authoredResult.forest.placements > 0);
   for (const entry of authored) {
     const sha = (heights) => createHash("sha256").update(JSON.stringify(heights)).digest("hex");
     assert.equal(
