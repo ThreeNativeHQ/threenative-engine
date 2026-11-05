@@ -7,11 +7,11 @@ export interface ISpawnRegion {
 }
 
 /**
- * The one deadline a scene allows its spawn to land, taken at entry and never extended.
+ * The one deadline a scene allows its spawn to land, taken at entry and not extended.
  *
  * A scene destroys and rebuilds its world on every `ctx.goto`, so the gate is scene-local: the
  * promise it settles is that scene's loading screen, and a scene that was left behind settles it
- * rather than leaving the next world's loader waiting on a world it will never get.
+ * rather than leaving the next world's loader waiting on a world that will not arrive.
  */
 const SPAWN_BUDGET_MS = 120_000;
 const EXPIRED = `Strata spawn admission exceeded ${SPAWN_BUDGET_MS} ms`;
