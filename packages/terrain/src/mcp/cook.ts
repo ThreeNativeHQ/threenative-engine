@@ -24,7 +24,7 @@ export interface ICookRequest {
   seed?: number;
   /** Cook one of the seven landform presets instead of the starter's authored heightmap crop. */
   landform?: LandformKind;
-  /** A biome spec from a project folder, instead of the starter's own `biome.data.json`. */
+  /** A biome spec passed with the request, instead of the starter's own `biome.data.json`. */
   spec?: unknown;
   /** The biome's name, for the result; the starter's kit name when omitted. */
   biome?: string;
