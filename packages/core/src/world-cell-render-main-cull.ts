@@ -126,8 +126,6 @@ export class CellMainCull {
   /** Bumped only when `#visibleSquares` changed, so a settled camera repacks no batch at all. */
   #visibleEpoch = 0;
 
-  /** The game's hook to refresh the shadow levels after streamed records changed. */
-  readonly #invalidateShadows: ((region?: IShadowRegion) => void) | undefined;
 
   readonly #position = new Vector3();
 

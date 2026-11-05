@@ -275,7 +275,6 @@ function cameraPlanes(camera: Camera, out: Float32Array): void {
 const _proj = new Matrix4();
 const _cullFrustum = new Frustum();
 const _eye = new Vector3();
-const _view = new Matrix4();
 
 /** Camera travel in one dispatch that the occlusion test reads as a cut rather than a turn. */
 const OCCLUSION_CUT_METRES = 2;

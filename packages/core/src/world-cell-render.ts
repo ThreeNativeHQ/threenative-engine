@@ -114,13 +114,6 @@ import {
   type IWorldRun,
   cellPlacements,
 } from "./world-package.js";
-/** The two scratch objects a cull builds its frustum in, and whether two square sets are the same. */
-const _cullFrustum = new Frustum();
-
-const _cullProjScreen = new Matrix4();
-
-/** The eye the live-state reference measures every placement's XZ distance from. */
-const _gpuEye = new Vector3();
 
 export interface ICellRenderHost {
   asset(id: string): IAssetState | undefined;
