@@ -189,6 +189,8 @@ function shadowDraws(
     depth: { near: number; far: number },
     camera: Camera,
   ) => void,
+  /** The level step the ladder is built with: `Infinity` reads the authored extents as they stand. */
+  levelRatio = Number.POSITIVE_INFINITY,
 ): Mesh[][] {
   const scene = new Scene();
   const camera = new PerspectiveCamera(60, 1, 0.1, 900);
@@ -211,7 +213,7 @@ function shadowDraws(
   scene.updateMatrixWorld(true);
   const node = new VirtualShadowNode(light, {
     // These cases read the authored levels; the 2x clip ladder (32adb239d) leaves them alone.
-    maxLevelRatio: Number.POSITIVE_INFINITY,
+    maxLevelRatio: levelRatio,
     clipExtents: [24, 96, 320],
     invalidationDelay: 0,
     marker: false,
@@ -279,9 +281,9 @@ function shadowDraws(
   });
   for (const mover of node.moverNodes)
     (mover as unknown as { updateShadow(frame: NodeFrame): void }).updateShadow = () => undefined;
-  for (let time = 1; time <= 3; time += 1)
+  for (let time = 1; time <= node.levelNodes.length; time += 1)
     node.updateBefore({ camera, renderer: {}, time } as unknown as NodeFrame);
-  expect(draws).toHaveLength(3);
+  expect(draws).toHaveLength(node.levelNodes.length);
   node.dispose();
   world.removeFromParent();
   return draws;
@@ -883,6 +885,76 @@ describe("a hand-placed chunk merged by material", () => {
       }
       expect(world.stats().residentKeys).toEqual([]);
       for (const spy of disposed) expect(spy).toHaveBeenCalledOnce();
+      world.dispose();
+    },
+  );
+
+  it.each(["cluster", "wide"] as const)(
+    "keeps one proxy index per ladder level, with no rewrite once the %s half's five are warm",
+    async (half) => {
+      vi.spyOn(console, "info").mockImplementation(() => undefined);
+      const { group } = preservedChunk();
+      const follow = { position: { ...FOLLOW } };
+      const { chunk, world } = await attached(group, {
+        follow,
+        chunkMergeMaxTriangles: 1,
+        shadows: { cast: true, receive: true },
+      });
+      const proxies = meshesIn(chunk).filter((mesh) => !mesh.layers.isEnabled(0));
+      // The default step over the authored extents: 24 -> 96 -> 320 is four and three times a step,
+      // so the <=2x ladder splits both gaps and renders five levels, one camera each.
+      const levels: {
+        camera: Camera;
+        gates: number[];
+        indices: (BufferAttribute | null)[];
+      }[] = [];
+      shadowDraws(
+        world,
+        half,
+        (_drawn, level, _depth, camera) => {
+          levels[level] = {
+            camera,
+            gates: proxies.map((proxy) => Reflect.get(proxy, "casterMinDiameter") as number),
+            indices: [],
+          };
+        },
+        2,
+      );
+      expect(levels).toHaveLength(5);
+      const positions = proxies.map((proxy) => proxy.geometry.getAttribute("position"));
+      const scene = new Scene();
+      // What the level probe writes before it draws, for the level it is about to render.
+      const render = (level: (typeof levels)[number]) =>
+        proxies.forEach((proxy, part) => {
+          Reflect.set(proxy, "casterMinDiameter", level.gates[part]);
+          Reflect.set(proxy, "casterLevelSlots", levels.length);
+          proxy.onBeforeRender(
+            {} as never,
+            scene,
+            level.camera,
+            proxy.geometry,
+            proxy.material as Material,
+            null as never,
+          );
+          expect(proxy.geometry.getAttribute("position")).toBe(positions[part]);
+        });
+      for (const level of levels) {
+        render(level);
+        level.indices = proxies.map((proxy) => proxy.geometry.getIndex());
+      }
+      const held = levels.map((level) => level.indices);
+      // Five levels, five index buffers: a fourth and fifth camera sharing one rewrites the whole
+      // index every render instead.
+      expect(new Set(held.flat()).size).toBe(held.flat().length);
+      const versions = held.map((level) => level.map((index) => index?.version));
+      const writes = held.flat().map((index) => vi.spyOn(index?.array as Uint32Array, "set"));
+      for (let frame = 0; frame < 3; frame += 1)
+        for (const level of levels) {
+          render(level);
+          expect(proxies.map((proxy) => proxy.geometry.getIndex())).toEqual(level.indices);
+        }
+      expect(held.map((level) => level.map((index) => index?.version))).toEqual(versions);
+      expect(writes.map((spy) => spy.mock.calls.length)).toEqual(writes.map(() => 0));
       world.dispose();
     },
   );

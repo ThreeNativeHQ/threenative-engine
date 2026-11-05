@@ -1289,8 +1289,13 @@ export class VirtualShadowNode extends ShadowBaseNode {
         this.#hidden.push(mesh);
         continue;
       }
-      // A retained-part proxy applies this gate to each original source at the draw boundary.
-      if (mesh.chunkShadowProxy === true) mesh.casterMinDiameter = gate;
+      // A retained-part proxy applies this gate to each original source at the draw boundary, and
+      // keeps one index buffer per level of the ladder it is drawn into: a proxy that held fewer
+      // rewrote a whole index every render (see `selectChunkShadowParts`).
+      if (mesh.chunkShadowProxy === true) {
+        mesh.casterMinDiameter = gate;
+        mesh.casterLevelSlots = this.#levels.length;
+      }
       // Read before the gates below: the level is going to render both caster layers either way, and
       // a caster too small for this level's texels is still one the prewarm owes a draw.
       if (mesh.casterPrewarmOwed === true) prewarming = true;

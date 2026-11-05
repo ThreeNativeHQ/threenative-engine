@@ -11,6 +11,7 @@ import {
   Sphere,
   Vector3,
 } from "three";
+import type { ICasterMesh } from "./render/virtual-shadow-casters.js";
 import { markStatic } from "./static-transform.js";
 
 export const CHUNK_NAME = "world-chunk";
@@ -214,9 +215,12 @@ function shadowProxyGeometry(
   return geometry;
 }
 
+/** Per-level buffers a proxy keeps when the shadow probe publishes no `casterLevelSlots`. */
+const LEVEL_SLOTS_FALLBACK = 3;
+
 /** Keep retained sources' visibility, frustum and texel decisions on each level's single draw. */
 function selectChunkShadowParts(proxy: Mesh, sources: readonly Mesh[]): void {
-  const caster = proxy as Mesh & { chunkShadowProxy?: boolean; casterMinDiameter?: number };
+  const caster = proxy as ICasterMesh;
   caster.chunkShadowProxy = true;
   // The source frustums below decide the exact inputs; the union must not veto that decision.
   proxy.frustumCulled = false;
@@ -237,8 +241,11 @@ function selectChunkShadowParts(proxy: Mesh, sources: readonly Mesh[]): void {
   proxy.onBeforeRender = function (_renderer, _scene, camera) {
     let level = levels.get(camera);
     if (level === undefined) {
-      if (levels.size === 3) {
-        // ponytail: three resident camera buffers; extra cameras reuse the oldest slot.
+      // One index buffer per level the ladder renders, which the level probe publishes beside the
+      // gate it sets on the same pass: the ≤2x level expansion puts five levels behind the default
+      // three extents, so a fixed three had the fourth and fifth rewrite a whole index every render.
+      if (levels.size === (caster.casterLevelSlots ?? LEVEL_SLOTS_FALLBACK)) {
+        // ponytail: one resident buffer per level; a camera past that reuses the oldest slot.
         const oldest = levels.keys().next().value as Camera;
         level = levels.get(oldest) as { geometry: BufferGeometry; selected: Uint8Array };
         levels.delete(oldest);

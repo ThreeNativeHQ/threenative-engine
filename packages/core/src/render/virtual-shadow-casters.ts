@@ -34,6 +34,11 @@ export interface ICasterMesh extends Mesh {
   mainAdmitted?: boolean;
   chunkShadowProxy?: boolean;
   casterMinDiameter?: number;
+  /**
+   * How many per-level buffers a chunk shadow proxy may keep, set by the level probe from the
+   * ladder's own length; see `selectChunkShadowParts`.
+   */
+  casterLevelSlots?: number;
   computeBoundingBox(): void;
   computeBoundingSphere(): void;
 }
