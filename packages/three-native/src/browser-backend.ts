@@ -1121,6 +1121,44 @@ export function defineBrowserClasses(
             shaderNodes.set(ref.key, slots.set(property, value));
             return;
           }
+          // three's MRTNode: one engine graph node per output name, each at its own slot path, so a
+          // material writes every colour target its mrt() names (pass-node.ts accepts any name).
+          if (property === "mrtNode") {
+            const slots = shaderNodes.get(ref.key) ?? new Map<string, unknown>();
+            const previous =
+              (slots.get(property) as { outputs?: Record<string, unknown> } | undefined)?.outputs ??
+              {};
+            if (value === null) {
+              for (const slot of Object.keys(previous)) runtime.tsl?.set(ref, `mrtNode.${slot}`, 0);
+              slots.delete(property);
+              shaderNodes.set(ref.key, slots);
+              return;
+            }
+            const outputs = (value as { isMRTNode?: boolean; outputs?: unknown }).outputs;
+            if (
+              (value as { isMRTNode?: boolean }).isMRTNode !== true ||
+              outputs === null ||
+              typeof outputs !== "object"
+            )
+              throw new TypeError(`TN_BROWSER_SHADER_NODE: ${name}.mrtNode takes mrt()`);
+            for (const [slot, node] of Object.entries(outputs as Record<string, unknown>)) {
+              if (node === null || typeof node !== "object" || !(TSL_NODE in node))
+                throw new TypeError(
+                  `TN_BROWSER_SHADER_NODE: ${name}.mrtNode '${slot}' is not a TSL node`,
+                );
+              runtime.tsl?.set(
+                ref,
+                `mrtNode.${slot}`,
+                (node as Record<symbol, number>)[TSL_NODE] as number,
+              );
+            }
+            for (const slot of Object.keys(previous))
+              if (!Object.hasOwn(outputs as object, slot))
+                runtime.tsl?.set(ref, `mrtNode.${slot}`, 0);
+            slots.set(property, value);
+            shaderNodes.set(ref.key, slots);
+            return;
+          }
           if (value === null) {
             runtime.set(ref, property, null);
             shaderNodes.get(ref.key)?.delete(property);

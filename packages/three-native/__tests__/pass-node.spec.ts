@@ -135,6 +135,49 @@ describe("native scene pass emissive target", () => {
   });
 });
 
+describe("native scene pass custom MRT slot", () => {
+  // three's mrt() takes any node in any named slot; the engine draws that slot as a further colour target.
+  const diagnosticValue = { name: "diagnosticValue" };
+  const diagnostic = vec4(diagnosticValue, 0, 0, 1);
+
+  it("accepts a custom named node slot and names its texture", () => {
+    const api = definePass(tsl);
+    const node = api.mrt({ output: api.output, diagnostic });
+    expect(node.outputs.diagnostic).toBe(diagnostic);
+    expect(node.has("diagnostic")).toBe(true);
+    const scenePass = api.pass({}, {});
+    expect(() => scenePass.getTextureNode("diagnostic")).toThrow(
+      /TN_NATIVE_PASS_TEXTURE_UNSUPPORTED/u,
+    );
+    scenePass.setMRT(node);
+    expect(scenePass.getTextureNode("diagnostic")).toEqual({ source: { name: "diagnostic" } });
+  });
+
+  it("refuses a slot that is not a shader node, by name", () => {
+    const api = definePass(tsl);
+    for (const value of [undefined, null, 3, "diagnostic", [diagnostic]]) {
+      expect(() => api.mrt({ output: api.output, diagnostic: value })).toThrow(
+        /TN_NATIVE_MRT_UNSUPPORTED: the 'diagnostic' slot must be a shader node/u,
+      );
+    }
+  });
+
+  it("refuses more colour attachments than the device holds", () => {
+    const api = definePass(tsl);
+    const nine = Object.fromEntries(
+      Array.from({ length: 9 }, (_, index) => [`slot${index}`, vec4(diagnosticValue)]),
+    );
+    expect(() => api.mrt(nine)).toThrow(
+      /TN_NATIVE_MRT_UNSUPPORTED: 9 colour attachments exceed the device limit/u,
+    );
+    // The built-in strictness stays: a misspelled normal target is still refused.
+    expect(() => api.mrt({ normal: vec4(normalView, 1) })).toThrow(
+      /TN_NATIVE_MRT_UNSUPPORTED: normal/u,
+    );
+    expect(() => api.mrt({ velocity: {} })).toThrow(/TN_NATIVE_MRT_UNSUPPORTED: velocity/u);
+  });
+});
+
 describe("native scene pass MRT", () => {
   it("accepts the normal target as normalView or as vec4(normalView, 0)", () => {
     expect(mrt({ output, normal: normalView }).outputs.normal).toBe(normalView);

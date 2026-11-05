@@ -297,6 +297,7 @@ inline std::size_t uniformHash(const Material& m) {
     mix(reinterpret_cast<std::uintptr_t>(m.positionNode.get()));
     for (const auto* node : m.nodes.pointers())
         mix(reinterpret_cast<std::uintptr_t>(node));
+    for (const auto& slot : m.nodes.mrt) mix(reinterpret_cast<std::uintptr_t>(slot.node.get()));
     for (const auto& [name, texture] : m.maps) {
         mix(std::hash<std::string>{}(name));
         mix(reinterpret_cast<std::uintptr_t>(texture.get()));

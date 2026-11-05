@@ -332,6 +332,37 @@ void registerMeshMaterial(ClassBinding& b, MaterialType type, bool node = false,
             as<Material>(self)->needsUpdate();
         };
     }
+    // three's mrtNode: the material's custom colour attachments by slot name, as a record of shader nodes. The V8 and
+    // browser facades set one slot at a time through the "mrtNode.<name>" setter path (abi.cpp); this record form
+    // serves the C ABI and replaces the whole set.
+    b.getters["mrtNode"] = [](void* self) {
+        std::vector<std::pair<std::string, Value>> fields;
+        for (const auto& slot : as<Material>(self)->nodes.mrt)
+            fields.emplace_back(slot.name, Value::shaderNode(slot.node));
+        return Value::record(std::move(fields));
+    };
+    b.setters["mrtNode"] = [](void* self, const Value& v, Store&) {
+        Material& material = *as<Material>(self);
+        if (v.kind == Value::Kind::Null || v.kind == Value::Kind::Undefined) {
+            if (material.nodes.mrt.empty()) return;
+            material.nodes.mrt.clear();
+            material.needsUpdate();
+            return;
+        }
+        if (v.kind != Value::Kind::Record) throw Unsupported{"mrtNode must be mrt()"};
+        std::vector<shader::MrtOutput> slots;
+        slots.reserve(v.fields.size());
+        for (const auto& [slot, field] : v.fields) {
+            if (shader::engineTargetName(slot))
+                throw Unsupported{"TN_NATIVE_MRT_UNSUPPORTED: '" + slot + "' is an engine pass target, not a custom slot"};
+            if (field.kind != Value::Kind::ShaderNode || !field.node)
+                throw Unsupported{"mrtNode." + slot + " must be a shader node"};
+            slots.push_back({slot, field.node});
+        }
+        if (material.nodes.mrt == slots) return;
+        material.nodes.mrt = std::move(slots);
+        material.needsUpdate();
+    };
 }
 
 // ------------------------------------------------------------------------------- lights

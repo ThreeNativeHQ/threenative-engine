@@ -687,6 +687,7 @@ struct Renderer::FrameJob {
     bool timed = false;
     bool debugTimestampRequested = true;
     uint8_t auxMask = 0;  // the AuxTarget bits the aux pass writes, in attachment order
+    std::vector<std::string> auxMrt;  // the custom MRT slots the aux pass writes after them, in name order
     uint64_t source = 0;  // the caller frame id this frame's timed sample is reported under
     // The main, aux and velocity bundles' inputs, built while the draws' stores were live; and each shadow pass's.
     std::vector<uint64_t> bundleKey, auxKey, velocityKey;
@@ -1212,6 +1213,10 @@ void Renderer::releaseTargets() {
     if (emissiveView_) wgpuTextureViewRelease(emissiveView_);
     if (emissiveTexture_) wgpuTextureRelease(emissiveTexture_);
     emissiveView_ = nullptr; emissiveTexture_ = nullptr;
+    for (const auto& [name, view] : mrtViews_) wgpuTextureViewRelease(view);
+    for (const auto& [name, texture] : mrtTextures_) wgpuTextureRelease(texture);
+    mrtViews_.clear();
+    mrtTextures_.clear();
     if (materialView_) wgpuTextureViewRelease(materialView_);
     if (materialTexture_) wgpuTextureRelease(materialTexture_);
     if (viewportColorView_) wgpuTextureViewRelease(viewportColorView_);
@@ -2726,13 +2731,40 @@ static shader::ExprId normalTarget(shader::Program& f, bool flat, bool doubleSid
     return f.construct(shader::Type::vec(4), {normal, alpha});
 }
 
+// A custom MRT slot's node as the vec4 its RGBA16F attachment holds: vec3 gains an opaque alpha, a float splats to
+// every lane as three's vec4(float) does. The slot's type was checked when the frame planned it.
+static shader::ExprId mrtColour(shader::Program& f, shader::ExprId value) {
+    const shader::Type type = f.expr(value).type;
+    if (type.rows == 4) return value;
+    if (type.rows == 3) return f.construct(shader::Type::vec(4), {value, f.constant(1.f)});
+    if (type.rows == 2) return f.construct(shader::Type::vec(4), {f.swizzle(value, "xy"), f.constant(0.f), f.constant(1.f)});
+    return f.construct(shader::Type::vec(4), {value, value, value, value});
+}
+
 // The same builder run again with one output per target. Every uniform, texture and varying is created in the same
 // order, so the layout equals the program's own and the draw's bind groups are valid for it; checked, not assumed.
-const shader::StageModule* Renderer::auxFragment(Program& program, uint8_t mask) {
-    if (program.auxBuilt >> mask & 1u) return program.aux[mask].get();
-    program.auxBuilt |= uint16_t(1u << mask);
+// `slots` are the frame's custom MRT slots: every aux draw writes each of them in that order, its own node where it
+// names the slot and zero elsewhere, so all pipelines of the pass carry the same colour targets.
+const shader::StageModule* Renderer::auxFragment(Program& program, uint8_t mask, const std::vector<std::string>& slots,
+                                                 bool zeroNamed) {
+    std::string slotKey;
+    if (slots.empty()) {
+        if (program.auxBuilt >> mask & 1u) return program.aux[mask].get();
+        program.auxBuilt |= uint16_t(1u << mask);
+    } else {
+        slotKey = (zeroNamed ? "z" : "n") + std::to_string(mask) + "|";
+        for (const auto& name : slots) slotKey += std::to_string(name.size()) + ":" + name + ";";
+        const auto cached = program.auxMrt.find(slotKey);
+        if (cached != program.auxMrt.end()) return cached->second.get();
+    }
     const shader::VertexVariant& variant = program.variant;
     const shader::LightLayout layout{program.lightKinds};
+    const auto store = [&](std::unique_ptr<shader::StageModule> module) -> const shader::StageModule* {
+        const auto* result = module.get();
+        if (slots.empty()) program.aux[mask] = std::move(module);
+        else program.auxMrt.emplace(slotKey, std::move(module));
+        return result;
+    };
     try {
         shader::StandardPrograms source;
         switch (program.kind) {
@@ -2740,31 +2772,51 @@ const shader::StageModule* Renderer::auxFragment(Program& program, uint8_t mask)
         case MaterialKind::Lambert: source = shader::buildLambert(variant, layout); break;
         case MaterialKind::Phong: source = shader::buildPhong(variant, layout); break;
         case MaterialKind::Physical: source = shader::buildPhysical(shader::StandardMaterial{}, variant, layout); break;
-        case MaterialKind::Basic: return nullptr;  // unlit: no surface, nothing lit by a bounce, nothing emitted
+        case MaterialKind::Basic: source = shader::buildBasic(variant); break;  // unlit: only a custom MRT slot is written
         }
         auto& f = source.fragment;
-        if (!f.diagnostics().empty()) return nullptr;
+        if (!f.diagnostics().empty()) return store(nullptr);
         const std::size_t varyings = f.varyings().size();
         const bool surface = (program.kind == MaterialKind::Standard || program.kind == MaterialKind::Physical) &&
                              !variant.nodes.metalnessNode && !variant.nodes.roughnessNode;
         std::vector<shader::ExprId> outputs;
+        const auto zero = [&] { return f.construct(shader::Type::vec(4), {f.constant(0.f), f.constant(0.f), f.constant(0.f), f.constant(0.f)}); };
         // A normalNode draw writes the normal it shades with, as three's MRT normalView does; a program that does not
-        // read the node (Lambert, Phong) has none, and writes the geometric one it shades with.
+        // read the node (Lambert, Phong) has none, and writes the geometric one it shades with. A transparent draw
+        // writes no named target at all: its pipeline masks them, so a zero keeps every pipeline's targets equal.
         if (mask & kAuxNormal)
-            outputs.push_back(normalTarget(f, variant.flatShading, variant.doubleSide, surface,
-                                           variant.nodes.normalNode ? source.normal : shader::kInvalid));
+            outputs.push_back(zeroNamed ? zero()
+                : normalTarget(f, variant.flatShading, variant.doubleSide, surface,
+                               variant.nodes.normalNode ? source.normal : shader::kInvalid));
         if (mask & kAuxMaterial)
-            outputs.push_back(source.materialProperties != shader::kInvalid ? source.materialProperties :
+            outputs.push_back(zeroNamed ? zero() : source.materialProperties != shader::kInvalid ? source.materialProperties :
                 f.construct(shader::Type::vec(4), {f.constant(0.f), f.constant(1.f), f.constant(0.f), f.constant(1.f)}));
-        if (mask & kAuxAlbedo) outputs.push_back(f.construct(shader::Type::vec(4), {source.albedo, f.constant(1.f)}));
-        if (mask & kAuxEmissive) outputs.push_back(f.construct(shader::Type::vec(4), {source.emissive, f.constant(1.f)}));
-        // The first target takes the colour output's location 0 (its last write wins), the rest 1, 2 and 3 in order.
+        if (mask & kAuxAlbedo) outputs.push_back(zeroNamed ? zero() : f.construct(shader::Type::vec(4), {source.albedo, f.constant(1.f)}));
+        if (mask & kAuxEmissive) outputs.push_back(zeroNamed ? zero() : f.construct(shader::Type::vec(4), {source.emissive, f.constant(1.f)}));
+        for (const auto& name : slots) {
+            const auto found = std::find_if(variant.nodes.mrt.begin(), variant.nodes.mrt.end(),
+                                            [&](const shader::MrtOutput& slot) { return slot.name == name; });
+            shader::ExprId value = shader::kInvalid;
+            if (found != variant.nodes.mrt.end()) {
+                const auto index = std::size_t(found - variant.nodes.mrt.begin());
+                if (index < source.mrt.size()) value = source.mrt[index];
+            }
+            outputs.push_back(value == shader::kInvalid
+                ? f.construct(shader::Type::vec(4), {f.constant(0.f), f.constant(0.f), f.constant(0.f), f.constant(0.f)})
+                : mrtColour(f, value));
+        }
+        // The first target takes the colour output's location 0 (its last write wins), the rest 1, 2 and 3 in order;
+        // a custom MRT slot takes the locations after the named targets, in the frame's list order.
         static constexpr const char* kOutputs[] = {"color", "aux1", "aux2", "aux3"};
-        for (std::size_t i = 0; i < outputs.size(); ++i) f.output(kOutputs[i], outputs[i]);
+        for (std::size_t i = 0; i < outputs.size(); ++i) {
+            const std::string name = i < std::size(kOutputs) ? std::string(kOutputs[i])
+                                                             : "mrt" + std::to_string(i - std::size(kOutputs) + 1);
+            f.output(name, outputs[i]);
+        }
         // The lit colour these outputs replace is dead: without the prune the aux draw shades the whole program again,
         // shadow reads included, to write one normal (a splatted ground paid that twice a frame).
         f.pruneDeadStatements();
-        if (!f.diagnostics().empty() || f.varyings().size() != varyings) return nullptr;
+        if (!f.diagnostics().empty() || f.varyings().size() != varyings) return store(nullptr);
         auto module = std::make_unique<shader::StageModule>(shader::buildStage(f, 1));
         shader::positionalGraphTextures(*module);
         shader::positionalSerialNames(*module);
@@ -2773,12 +2825,11 @@ const shader::StageModule* Renderer::auxFragment(Program& program, uint8_t mask)
                     module->bindings.size() == own.bindings.size() && module->uniformBlockSize == own.uniformBlockSize;
         for (std::size_t i = 0; same && i < own.uniforms.size(); ++i)
             same = module->uniforms[i].name == own.uniforms[i].name && module->uniforms[i].offset == own.uniforms[i].offset;
-        if (!same) return nullptr;
-        program.aux[mask] = std::move(module);
+        if (!same) return store(nullptr);
+        return store(std::move(module));
     } catch (const std::exception&) {
-        return nullptr;
+        return store(nullptr);
     }
-    return program.aux[mask].get();
 }
 
 Renderer::Program& Renderer::depthProgram(const shader::VertexVariant& variant, bool masked) {
@@ -4808,6 +4859,23 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     const bool emissivePass = postEffects_ && postEffects_->reads("emissive");
     const uint8_t auxMask = uint8_t((normalPass ? kAuxNormal : 0) | (materialPass ? kAuxMaterial : 0) |
                                     (albedoPass ? kAuxAlbedo : 0) | (emissivePass ? kAuxEmissive : 0));
+    // A material's own mrt() slots (three's custom MRT outputs): the frame's union, in name order so the pass's
+    // attachments and every fragment's outputs agree from one frame to the next. A slot the material names is a
+    // further colour target; one it does not name is zero there, which keeps every pipeline of the pass equal.
+    std::vector<std::string> mrtSlots;
+    for (const Planned& draw : plan) {
+        const DrawItem& item = *draw.item;
+        if (!item.nodes) continue;
+        for (const auto& slot : item.nodes->mrt) {
+            const shader::Type type = slot.node ? slot.node->type : shader::Type{};
+            if (!slot.node || type.scalar != shader::Type::Scalar::F32 || type.isMatrix() || type.rows > 4)
+                throw std::runtime_error("TN_NATIVE_MRT_UNSUPPORTED: slot '" + slot.name + "' writes " +
+                                         type.name() + ", not a float or float vector");
+            if (std::find(mrtSlots.begin(), mrtSlots.end(), slot.name) == mrtSlots.end()) mrtSlots.push_back(slot.name);
+        }
+    }
+    std::sort(mrtSlots.begin(), mrtSlots.end());
+    job.auxMrt = mrtSlots;
     // A normal-only frame keeps the small normal fragment: the merged one is the whole lit program.
     const auto normalFragment = [&](const Planned& draw) -> const shader::StageModule* {
         const DrawItem& item = *draw.item;
@@ -4831,14 +4899,27 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         return &fragment;
     };
     const auto planAux = [&] {
-        if (!auxMask) return;
+        if (!auxMask && mrtSlots.empty()) return;
+        // The pass holds one attachment per named target the post graph reads, then one per custom MRT slot. A
+        // pipeline may hold no more colour targets than the device's limit (8, WebGPU's guaranteed count).
+        const std::size_t namedTargets = std::size_t(std::popcount(auxMask));
+        if (1 + namedTargets + mrtSlots.size() > 8)
+            throw std::runtime_error("TN_NATIVE_MRT_UNSUPPORTED: " + std::to_string(namedTargets + mrtSlots.size()) +
+                                     " extra colour attachments exceed the device limit 7");
         for (const Planned& draw : plan) {
             const DrawItem& item = *draw.item;
+            // A draw writes a custom MRT slot when it names one: three draws a transparent sea's or an unlit
+            // quad's own output with the same fragment, and leaves the named targets as the opaque draws left them.
+            const bool custom = !mrtSlots.empty() && item.nodes &&
+                std::any_of(item.nodes->mrt.begin(), item.nodes->mrt.end(), [&](const shader::MrtOutput& slot) {
+                    return std::binary_search(mrtSlots.begin(), mrtSlots.end(), slot.name);
+                });
             // The sky and unlit materials write no view-space normal (their programs have no normalView).
-            if (item.background || item.kind == MaterialKind::Basic) continue;
-            // These draws write no normal, so the post pass reads its depth-derived one there. Named once a
-            // frame, not thrown: a transparent particle must not cost the frame.
-            if (item.transparent || item.sprite) {
+            if (item.background || (item.kind == MaterialKind::Basic && !custom)) continue;
+            // A draw that writes only custom slots leaves the named targets alone: a transparent sea or an unlit
+            // quad has no surface for them. Named once a frame, not thrown: a transparent particle costs no frame.
+            const bool customOnly = item.transparent || item.sprite || item.kind == MaterialKind::Basic;
+            if (customOnly && !custom) {
                 if (!normalPass) continue;
                 const std::string reason = item.transparent ? "transparent" : "sprite";
                 const std::string note = "TN_POST_NORMAL_SKIPPED: " + reason + " draws write no normal (depth-derived there)";
@@ -4848,8 +4929,9 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             // A normalNode draw takes the merged fragment, which evaluates the node with the program's own layout.
             const bool nodeNormal = normalPass && item.nodes->normalNode;
             const bool cut = item.material->alphaTest > 0 || item.material->alphaHash;
-            const shader::StageModule* fragment =
-                auxMask == kAuxNormal && !cut && !nodeNormal ? normalFragment(draw) : auxFragment(*draw.program, auxMask);
+            const shader::StageModule* fragment = !customOnly && auxMask == kAuxNormal && !cut && !nodeNormal
+                ? normalFragment(draw)
+                : auxFragment(*draw.program, auxMask, mrtSlots, customOnly);
             if (!fragment && nodeNormal && auxMask == kAuxNormal && !cut) {
                 // The builder could not re-run on this layout: the draw writes its geometric normal, named once a frame.
                 const std::string note = "TN_POST_NORMAL_GEOMETRIC: a material normalNode reaches the post normal target as its geometric normal";
@@ -4863,7 +4945,14 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             }
             PipelineTarget target{WGPUTextureFormat_RGBA16Float, WGPUTextureFormat_Depth32Float,
                 item.side == 2 ? WGPUCullMode_None : item.side == 1 ? WGPUCullMode_Front : WGPUCullMode_Back};
-            for (std::size_t i = 1; i < std::size_t(std::popcount(auxMask)); ++i) target.moreColors[i - 1] = WGPUTextureFormat_RGBA16Float;
+            // The first output takes location 0 (the first attachment); the rest are this pipeline's further targets.
+            for (std::size_t i = 0; i + 1 < namedTargets + mrtSlots.size(); ++i) target.moreColors[i] = WGPUTextureFormat_RGBA16Float;
+            // A transparent draw leaves the named targets untouched: it writes only the custom slots (three's
+            // transparent fragment writes its own MRT outputs, not another material's surface targets).
+            if (customOnly) {
+                if (namedTargets > 0) target.colorWrite = false;
+                if (namedTargets > 1) target.moreWrites = uint8_t(0xffu << (namedTargets - 1));
+            }
             target.layout = draw.program->pipelineLayout; target.depthWrite = false;
             target.colorWrite = item.colorWrite;
             target.depthCompare = WGPUCompareFunction_Equal; target.frontFace = item.frontFace();
@@ -4875,6 +4964,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 target.depthCompare = WGPUCompareFunction_LessEqual;
                 target.depthBias = -4; target.depthBiasSlopeScale = -1.5f;
             }
+            // ponytail: one depth bias for every aux draw, a transparent MRT draw included; a custom slot behind an
+            // opaque silhouette can win by that slope. Split the bias by transparency if a proof ever shows it.
             target.skinIndex = skinIndexFormat(item);
             target.instanceStepMask = instanceStepMask(draw.program->vertex, item);
             lineTopology(target, item);
@@ -4908,6 +4999,22 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         target(materialPass, materialTexture_, materialView_, {"metalness", "roughness"});
         target(albedoPass, albedoTexture_, albedoView_, {"albedo"});
         target(emissivePass, emissiveTexture_, emissiveView_, {"emissive"});
+        // A custom MRT slot's target, allocated on first use at the scene's size and readable by the post graph under
+        // the slot's own name (three's PassNode.getTextureNode(slot)).
+        for (const auto& name : mrtSlots) {
+            WGPUTextureView view = mrtViews_.count(name) ? mrtViews_.at(name) : nullptr;
+            if (!view) {
+                WGPUTextureDescriptor desc = {};
+                desc.dimension = WGPUTextureDimension_2D; desc.size = {inputWidth_, inputHeight_, 1};
+                desc.format = WGPUTextureFormat_RGBA16Float; desc.mipLevelCount = 1; desc.sampleCount = 1;
+                desc.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopySrc;
+                WGPUTexture texture = wgpuDeviceCreateTexture(device_, &desc);
+                view = view2d(texture, WGPUTextureFormat_RGBA16Float);
+                mrtTextures_[name] = texture;
+                mrtViews_[name] = view;
+            }
+            if (postEffects_) postEffects_->input(name, view);
+        }
     };
     WGPURenderPipeline pageClear = nullptr;
     if (!virtualShadows_.empty()) {
@@ -6203,14 +6310,14 @@ void Renderer::encodeFrame(FrameJob& job) {
             if (more) bundles[executed++] = more;
         wgpuRenderPassEncoderExecuteBundles(pass, executed, bundles);
     };
-    if (job.auxMask) {
-        // One pass writes every post target the graph reads, one colour attachment each in AuxTarget order
-        // (planAux): single-sampled, against the colour pass's resolved depth, which it only reads.
-        std::array<WGPURenderPassColorAttachment, 4> targets{};
-        std::array<WGPUTextureFormat, 4> formats{};
+    if (job.auxMask || !job.auxMrt.empty()) {
+        // One pass writes every post target the graph reads, one colour attachment each in AuxTarget order, then one
+        // per custom MRT slot (planAux): single-sampled, against the colour pass's resolved depth, which it only reads.
+        std::array<WGPURenderPassColorAttachment, 8> targets{};
+        std::array<WGPUTextureFormat, 8> formats{};
         size_t count = 0;
-        const auto attach = [&](uint8_t bit, WGPUTextureView view, WGPUColor clear) {
-            if (!(job.auxMask & bit)) return;
+        const auto attachView = [&](WGPUTextureView view, WGPUColor clear) {
+            if (count >= targets.size() || view == nullptr) return;
             WGPURenderPassColorAttachment& target = targets[count];
             target.view = view; target.loadOp = WGPULoadOp_Clear; target.storeOp = WGPUStoreOp_Store;
             target.clearValue = clear;
@@ -6219,10 +6326,18 @@ void Renderer::encodeFrame(FrameJob& job) {
 #endif
             formats[count++] = WGPUTextureFormat_RGBA16Float;
         };
+        const auto attach = [&](uint8_t bit, WGPUTextureView view, WGPUColor clear) {
+            if (!(job.auxMask & bit)) return;
+            attachView(view, clear);
+        };
         attach(kAuxNormal, normalView_, {0, 0, 0, 0});
         attach(kAuxMaterial, materialView_, {0, 1, 0, 1});  // no surface: metalness 0, roughness 1
         attach(kAuxAlbedo, albedoView_, {0, 0, 0, 0});
         attach(kAuxEmissive, emissiveView_, {0, 0, 0, 0});
+        for (const auto& name : job.auxMrt) {
+            const auto found = mrtViews_.find(name);
+            attachView(found == mrtViews_.end() ? nullptr : found->second, {0, 0, 0, 0});
+        }
         WGPURenderPassDepthStencilAttachment auxDepth{};
         auxDepth.view = depthView_; auxDepth.depthReadOnly = true;
         WGPURenderPassDescriptor auxDesc{};

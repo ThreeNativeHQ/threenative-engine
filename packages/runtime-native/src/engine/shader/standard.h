@@ -222,6 +222,9 @@ struct StandardPrograms {
     /** A Standard or Physical fragment's view-space shading normal (a normalNode, normal map or bump included), vec3:
      *  what the post normal target holds for a draw whose normalNode the small normal fragment cannot evaluate. */
     ExprId normal = kInvalid;
+    /** The material's custom MRT slots, lowered in this program's order: one expression per MaterialNodes::mrt entry.
+     *  The colour program declares what they read and writes none of them; Renderer::auxFragment writes them. */
+    std::vector<ExprId> mrt;
     std::vector<std::string> diagnostics;  // TN_MATERIAL_UNSUPPORTED ...; empty when drawable
 };
 

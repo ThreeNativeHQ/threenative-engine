@@ -793,6 +793,64 @@ void ssrRejectsInputs() {
     }
 }
 
+// A material's custom MRT slot (three's mrtNode output, e.g. the Strata water proof's "diagnostic"): the colour
+// program lowers the node without writing it, so the aux pass's fragment declares the same uniforms, textures and
+// varyings, writes the slot at the next colour location after `color`, and keeps the lit fragment's layout exactly.
+void mrtSlot() {
+    namespace g = tn::engine::shader::graph;
+    const auto value = g::mul(g::uniform("diagnosticScale", Type::f32(), {1.0}),
+                              g::vec4({g::float_(0.25), g::float_(0), g::float_(0), g::float_(1)}));
+    for (int kind = 1; kind < 5; ++kind) {
+        VertexVariant variant;
+        variant.nodes.mrt = {{"diagnostic", value}};
+        const auto build = [&] {
+            return kind == 1 ? buildLambert(variant) : kind == 2 ? buildPhong(variant)
+                 : kind == 3 ? buildStandard({}, variant) : buildPhysical({}, variant);
+        };
+        auto lit = build();
+        CHECK(lit.diagnostics.empty());
+        CHECK(lit.mrt.size() == 1 && lit.mrt[0] != kInvalid);
+        // The colour program declares the slot's graph and writes only `color`.
+        const auto litFragment = buildStage(build().fragment, 1);
+        CHECK(litFragment.wgsl.ok());
+        CHECK(litFragment.wgsl.code.find("diagnosticScale") != std::string::npos);
+        CHECK(litFragment.wgsl.code.find("o_mrt") == std::string::npos);
+        // The aux pass's fragment writes it at @location(1), after `color`, and keeps the lit layout.
+        auto aux = build();
+        auto& f = aux.fragment;
+        f.output("color", f.construct(Type::vec(4), {f.constant(0.f), f.constant(0.f), f.constant(0.f), f.constant(0.f)}));
+        f.output("mrt1", aux.mrt[0]);
+        f.pruneDeadStatements();
+        const auto auxFragment = buildStage(f, 1);
+        CHECK(auxFragment.wgsl.ok());
+        CHECK(auxFragment.wgsl.code.find("@location(1) o_mrt1: vec4<f32>") != std::string::npos);
+        CHECK(auxFragment.uniforms.size() == litFragment.uniforms.size());
+        CHECK(auxFragment.uniformBlockSize == litFragment.uniformBlockSize);
+        CHECK(auxFragment.bindings.size() == litFragment.bindings.size());
+        for (std::size_t i = 0; i < litFragment.uniforms.size(); ++i) {
+            CHECK(auxFragment.uniforms[i].name == litFragment.uniforms[i].name);
+            CHECK(auxFragment.uniforms[i].offset == litFragment.uniforms[i].offset);
+        }
+    }
+    // The slot's name and node are part of the program key: two materials never share a program across slots, and a
+    // material with a slot never shares an empty one's.
+    VertexVariant a, b, c;
+    a.nodes.mrt = {{"diagnostic", value}};
+    b.nodes.mrt = {{"coverage", value}};
+    c.nodes.mrt = {{"diagnostic", g::vec4({g::float_(1), g::float_(0), g::float_(0), g::float_(1)})}};
+    const MaterialNodes none;
+    CHECK(a.nodes.key() != b.nodes.key());
+    CHECK(a.nodes.key() != c.nodes.key());
+    CHECK(a.nodes.key() != none.key());
+    // The slot's graph is walked with the material's own, so its uniform is collected for the draw.
+    bool found = false;
+    a.nodes.forEachGraph([&](const g::Node& graph) {
+        for (const auto& [name, values] : g::uniforms(graph))
+            if (name == "diagnosticScale") found = true;
+    });
+    CHECK(found);
+}
+
 void depthTextureLowering() {
     namespace g = graph;
     for (bool namedDepth : {false, true}) for (bool load : {false, true}) {
@@ -828,4 +886,4 @@ void depthTextureLowering() {
 
 }  // namespace
 
-TN_TEST_MAIN({"alpha_hash", alphaHash}, {"ssr_passes", ssrPasses}, {"denoise_reads_raw_normals", denoiseReadsRawNormals}, {"ssr_rejects_inputs", ssrRejectsInputs}, {"depth_texture_lowering", depthTextureLowering}, {"depth_node_writes_frag_depth", depthNodeWritesFragDepth}, {"unsupported", unsupported}, {"emissive_output", emissiveOutput}, {"builds", builds}, {"fog", fog}, {"rough_diffuse", roughDiffuse}, {"fog_node_mixes_color", fogNodeMixesColor}, {"node_key", nodeKey}, {"bloom_passes", bloomPasses}, {"slots_share_one_lowering", slotsShareOneLowering})
+TN_TEST_MAIN({"alpha_hash", alphaHash}, {"ssr_passes", ssrPasses}, {"denoise_reads_raw_normals", denoiseReadsRawNormals}, {"ssr_rejects_inputs", ssrRejectsInputs}, {"depth_texture_lowering", depthTextureLowering}, {"depth_node_writes_frag_depth", depthNodeWritesFragDepth}, {"unsupported", unsupported}, {"emissive_output", emissiveOutput}, {"builds", builds}, {"fog", fog}, {"rough_diffuse", roughDiffuse}, {"fog_node_mixes_color", fogNodeMixesColor}, {"node_key", nodeKey}, {"bloom_passes", bloomPasses}, {"slots_share_one_lowering", slotsShareOneLowering}, {"mrt_slot", mrtSlot})
