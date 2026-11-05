@@ -3,6 +3,7 @@
 #include "engine/scene/raycaster.h"
 #include "engine/foundation/prefetch.h"
 #include "render_database.h"
+#include "engine/renderer/reflection_pass.h"
 #include "engine/renderer/reflector.h"
 
 #include "engine/animation/skinning/skeleton.h"
@@ -1974,8 +1975,9 @@ uint64_t RenderDatabase::render(Renderer& renderer, Object3D& scene, Camera& cam
 
 RenderDatabase::ReflectionPass& RenderDatabase::reflectionPass(Renderer& renderer,
                                                                const std::shared_ptr<const Reflector>& reflector) {
+    // Keyed by the reflector's address: a pass whose reflector is gone built nothing for whoever lives there now.
     ReflectionPass& pass = reflections_[reflector.get()];
-    if (!pass.database) {
+    if (!pass.database || reflectionPassIsStale(pass.owner)) {
         pass.owner = reflector;
         pass.renderer = &renderer.reflectionRenderer(reflector);
         pass.database = std::make_unique<RenderDatabase>();
@@ -2031,7 +2033,7 @@ void RenderDatabase::precacheReflections(Renderer& renderer, Object3D& root, Cam
 void RenderDatabase::renderReflections(Renderer& renderer, Object3D& scene, Camera& camera, std::vector<DrawItem>& items,
                                        std::array<double, 4> clear) {
     for (auto it = reflections_.begin(); it != reflections_.end();)
-        it = it->second.owner.expired() ? reflections_.erase(it) : std::next(it);
+        it = reflectionPassIsStale(it->second.owner) ? reflections_.erase(it) : std::next(it);
     reflectionMs_ = {0, 0};
     reflectionItems_ = 0;
     std::vector<std::shared_ptr<const Reflector>> drawn;

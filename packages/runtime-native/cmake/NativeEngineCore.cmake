@@ -359,6 +359,12 @@ tn_native_engine_test(tn-native-engine-aux-targets-test tests/native-engine/aux_
     native_engine_aux_targets_eight=eight_fit
     native_engine_aux_targets_nine=nine_are_refused)
 
+# A mirror's pass is reused only while the reflector it was built for lives: a world switch frees the old one,
+# and the next one can take its address.
+tn_native_engine_test(tn-native-engine-reflection-pass-test tests/native-engine/reflection_pass_test.cpp
+    native_engine_reflection_pass_lives=reused_while_alive
+    native_engine_reflection_pass_reused_address=rebuilt_when_the_address_is_reused)
+
 # A Data3DTexture in a texture copy: the usage its 3D texture is created with, and the mip tail it must not get
 # (texture_copy.h). It links the renderer for the WebGPU usage flags the header names.
 if(NOT EMSCRIPTEN)
