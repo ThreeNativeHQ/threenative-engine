@@ -2467,8 +2467,11 @@ bool Renderer::pumpEnvironment() {
         abandonEnvironment();
         return false;
     }
-    // Advance one packet only once the previous submission's completion is observed.
-    if (prep.next > 0 && gpu_.completedSerial() < prep.awaitSerial) return false;
+    // Advance one packet only once the previous submission's completion is observed. A render target's renderer
+    // bakes the whole environment in its draw instead, as three's PMREMGenerator does: its draws persist in the
+    // target, so a skipped one is lost, not late. The queue runs the packets before the draw that samples them.
+    const bool whole = sceneOnly_;
+    if (prep.next > 0 && !whole && gpu_.completedSerial() < prep.awaitSerial) return false;
     if (prep.next >= prep.packets.size()) {
         if (const auto found = environments_.find(prep.ident);
             found != environments_.end() && found->second.version == prep.version)
@@ -2526,8 +2529,8 @@ bool Renderer::pumpEnvironment() {
     prep.awaitSerial = submit(wgpuCommandEncoderFinish(encoder, &commandDesc));
     wgpuCommandEncoderRelease(encoder);
     ++prep.next;
-    } while (prep.next < prep.packets.size() && spent + pmremPacketCost(prep.packets[prep.next]) <= prep.budget);
-    if (prep.next >= prep.packets.size() && gpu_.completedSerial() >= prep.awaitSerial) {
+    } while (prep.next < prep.packets.size() && (whole || spent + pmremPacketCost(prep.packets[prep.next]) <= prep.budget));
+    if (prep.next >= prep.packets.size() && (whole || gpu_.completedSerial() >= prep.awaitSerial)) {
         if (const auto found = environments_.find(prep.ident);
             found != environments_.end() && found->second.version == prep.version)
             found->second.ready = true;
