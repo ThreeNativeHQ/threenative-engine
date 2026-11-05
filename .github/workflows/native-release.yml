@@ -289,6 +289,18 @@ jobs:
         run: |
           cmake --preset ${{ matrix.preset }} -B build/tn-engine-ui -DTN_ENGINE_ONLY=ON -DTN_ENGINE_PLAYER=ON -DTN_ENGINE_PLAYER_UI_OVERLAY=${{ matrix.player_ui }}
           cmake --build build/tn-engine-ui --config Release --target tn-native-engine-player-v8
+      # The published player must at least start: the win32 player shipped in 0.3.11 failed fast with
+      # 0xC0000409 before reading its arguments (#614), and nothing here ran it. An unknown flag is
+      # the cheapest start: no game, no GPU, a fixed message and exit 2.
+      - name: The engine player starts
+        shell: bash
+        working-directory: packages/runtime-native
+        run: |
+          set +e
+          out=$("build/tn-engine-ui/${{ matrix.player }}" --tn-smoke 2>&1); code=$?
+          set -e
+          printf '%s\nexit=%s\n' "$out" "$code"
+          [ "$code" = 2 ] && grep -q 'TN_PLAYER_V8_ARGS: unknown argument --tn-smoke' <<<"$out"
       # `VsDevCmd.bat` configures the process it runs in, and a `cmd` step's environment dies with
       # the step. So this ran without INCLUDE, LIB or a usable `cl`, and the first thing inside it
       # that *configures* a build directory — the physics contract lane — got "the C compiler is
