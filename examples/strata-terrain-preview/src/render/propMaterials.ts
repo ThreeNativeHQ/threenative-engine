@@ -317,12 +317,14 @@ function windOffset(clock: Node<"float">, amplitude: number) {
   return vec3(WIND.direction[0], 0, WIND.direction[1]).mul(wave.add(gust));
 }
 
-/** Attach the wind to a material's vertex stage, and to its shadow pass so the shadow sways too. */
+/**
+ * Attach the wind to a material's vertex stage; the shadow pass reads the rest pose instead. Virtual
+ * shadow pages are cached, so a cast that moved with the wind froze the frame its page last drew and
+ * then snapped every nearby tree's shadow when walking re-rendered that page.
+ */
 function sway(base: MeshStandardNodeMaterial, clock: Node<"float">, amplitude: number) {
   const offset = windOffset(clock, amplitude);
   base.positionNode = positionLocal.add(offset);
-  // The shadow casts the rest pose. Virtual shadow pages are cached: a swaying cast froze the wind of the
-  // frame its page last drew, then snapped every nearby tree's shadow when walking re-rendered that page.
   base.castShadowPositionNode = positionLocal;
   // engine-override: the farthest windOffset moves a vertex (both sines at a full weight along a unit
   // direction). The owned engine grows each tree's shadow box by it and culls the trees per shadow page.

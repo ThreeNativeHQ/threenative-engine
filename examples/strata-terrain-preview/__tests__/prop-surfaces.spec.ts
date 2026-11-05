@@ -340,3 +340,17 @@ it("thins the needles on the hero's sight line instead of cutting a hard ring, a
   nearCameraFade(bark, false);
   expect(reads(bark.maskNode, (child) => child === sightLine.aim)).toBe(false);
 });
+
+it("documents sway()'s shadow pass as the rest pose, not a second sway", () => {
+  // E28: the doc above sway() read "…and to its shadow pass so the shadow sways too", directly over
+  // the `castShadowPositionNode = positionLocal` that casts the rest pose; pack.ts cites this doc for
+  // the reason. The code is right, so the doc has to say what the code does and why.
+  const source = readFileSync(new URL("../src/render/propMaterials.ts", import.meta.url), "utf8");
+  const head = source.slice(0, source.indexOf("function sway("));
+  const doc = head.slice(head.lastIndexOf("/**"), head.lastIndexOf("*/") + 2);
+  expect(head.length).toBeGreaterThan(0);
+  expect(doc).not.toBe("");
+  expect(doc).toMatch(/rest pose/);
+  expect(doc).toMatch(/cached/);
+  expect(doc).not.toMatch(/shadow[^.]*\bsways\b/i);
+});
