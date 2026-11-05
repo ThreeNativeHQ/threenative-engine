@@ -47,7 +47,7 @@ import {
   simplifyRow,
   skippedCompressionRows,
 } from "./compile-rows.js";
-import { classify, messageOf } from "./compile-types.js";
+import { classify } from "./compile-types.js";
 import type {
   AssetKind,
   IAssetCompileOptions,
@@ -335,13 +335,16 @@ async function compileOnce(options: IAssetCompileOptions): Promise<IAssetCompile
   const cookedWorlds = new Set<string>();
   for (const logical of modelSources) {
     if (path.extname(logical).toLowerCase() !== ".glb") continue;
+    // The marker scan is not the readability authority. `models: "none"` leaves no model pass in
+    // the chain, so nothing would parse the file at all and it must copy through as it did before
+    // this scan existed; the model pass (when one runs) and the unconditional health report both
+    // own the actionable malformed-model error. A GLB this unpacker refuses is simply not a
+    // cooked terrain world.
     try {
       if (unpackGlb(await readSource(logical)).json.asset.extras?.tnTerrainWorld === 1) {
         cookedWorlds.add(logical);
       }
-    } catch (error) {
-      throw new Error(`TN_ASSETS_MODEL_UNREADABLE: '${logical}': ${messageOf(error)}`);
-    }
+    } catch {}
   }
   const perAssetLod =
     typeof layout.lod === "object" && layout.lod !== null && layout.lod.overrides !== undefined
