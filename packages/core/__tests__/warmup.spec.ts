@@ -187,6 +187,39 @@ describe("scene warm-up", () => {
     expect(readiness.ready).toBe(false);
     expect(compileCalls).toBe(1);
   }, 10_000);
+  test("does not fail a held launch over a compile that already rejected", async () => {
+    // A rejected compile is "a pipeline this warm-up could not build, not a reason to fail the
+    // launch". The held completion is what `afterHolds` awaits, so a rejection pushed into it
+    // turned one unsupported material into a launch that never revealed.
+    const failure = new Error("material is not supported by this backend");
+    const result = await warmUpSceneWithCompletion(
+      { compileAsync: () => Promise.reject(failure) },
+      sceneOf(1) as never,
+      {} as never,
+      {
+        budgetMs: 1_000,
+        granularity: "scene",
+        yieldFrame: () => new Promise<void>((resolve) => setTimeout(resolve, 0)),
+      },
+    );
+
+    await expect(result.completion).resolves.toBeUndefined();
+
+    const readiness = new StartupReadiness({
+      afterHolds: () => result.completion,
+      stableFrames: 1,
+    });
+    const ready = readiness.whenReady();
+    readiness.hold("streamed-world", Promise.resolve());
+    readiness.start();
+    for (let index = 0; index < 8; index += 1) await Promise.resolve();
+    readiness.observe(1);
+    for (let index = 0; index < 8; index += 1) await Promise.resolve();
+    readiness.observe(1);
+    await ready;
+    expect(readiness.ready).toBe(true);
+  }, 10_000);
+
   test("should prepare the scene PMREM on the raw renderer before the covered world pass", async () => {
     const previous = Object.getOwnPropertyDescriptor(PMREMNode, "prepareTextureAsync");
     const environment = { isTexture: true } as never;

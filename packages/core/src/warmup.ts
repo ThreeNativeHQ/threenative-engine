@@ -1241,8 +1241,16 @@ export async function warmUpScene(
     yieldFrame: () => Promise<void>,
     now: () => number,
   ): Promise<boolean> => {
+    // `withinDeadline` answers one `false` both for work the deadline outran and for work that
+    // rejected, and only the first is something a held launch may still wait on: a compile that
+    // already failed belongs to the frame that needs its pipeline, where the error belongs.
+    let settled = false;
+    const track = (): void => {
+      settled = true;
+    };
+    void work.then(track, track);
     const finished = await withinDeadline(deadline, work, yieldFrame, now);
-    if (!finished) pendingCompiles.push(work);
+    if (!finished && !settled) pendingCompiles.push(work);
     return finished;
   };
   const finish = (report: IWarmUpReport): IWarmUpReport => {
