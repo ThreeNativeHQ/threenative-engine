@@ -126,7 +126,6 @@ export class CellMainCull {
   /** Bumped only when `#visibleSquares` changed, so a settled camera repacks no batch at all. */
   #visibleEpoch = 0;
 
-
   readonly #position = new Vector3();
 
   readonly #rotation = new Quaternion();

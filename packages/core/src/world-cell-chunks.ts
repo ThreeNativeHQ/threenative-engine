@@ -23,6 +23,7 @@ import { addInSlices, loadAll } from "./streaming.js";
 import { warmUpScene, warmUpSceneWithCompletion, yieldToHost } from "./warmup.js";
 import type { SharedBatch } from "./world-cell-batches.js";
 import type { ICellProxyState, IResidentCell } from "./world-cell-data.js";
+import type { IAssetState } from "./world-cell-models.js";
 import {
   CellProxySelection,
   cellProxyGeometrySafe,
@@ -33,7 +34,6 @@ import {
   measureCellProxy,
   prepareCellProxy,
 } from "./world-cell-proxy.js";
-import type { IAssetState } from "./world-cell-models.js";
 import {
   CHUNK_NAME,
   VIRTUAL_SHADOW_CASTER_LAYER,
