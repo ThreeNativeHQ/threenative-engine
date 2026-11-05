@@ -1165,9 +1165,11 @@ describe("every landform under every biome", () => {
         expect(result.triangles).toBeGreaterThan(0);
         expect(result.draws).toBeGreaterThan(0);
         expect(manifest.extent.sizeX).toBe(manifest.extent.sizeZ);
-        // A landform preset authors the ground and no scatter rules, so this cook carries terrain and
-        // no props: the biome's foliage reaching a preset is PRD-792's spec-driven scatter, still open.
-        // The assertion flips the day that lands.
+        // A landform preset authors the ground and no scatter rules, so the cook scatters the biome
+        // file's own foliage on it. It draws only the rows whose species the kit ships art for, and
+        // none of the five files names a kit asset: their trees are the preview's licensed `spruce`
+        // and `sapling`, which the CC0 packs replace with `fir`. The savanna, whose row names the
+        // kit's `fir`, is the case that proves the path places trees.
         expect(result.instances).toBe(0);
         expect(manifest.cells).toEqual([]);
         // The preset's own chain: a starter heightmap crop is what `landform` replaces.
@@ -1231,18 +1233,22 @@ describe("terrain_biome_new", () => {
       const forest = await starterBiome("forest");
       // A savanna is data: rolling hills, the forest's grass as the cover, and the same tree made
       // sparse. Nothing here names a biome in code; the file the call writes is the whole biome.
+      // The tree is the pack's `fir`: the biome files name the preview's licensed `spruce`, and the
+      // kits ship the CC0 fir in its place (starter/coastal/README.md).
       const overrides = {
         landform: "rollingHills",
         seed: 11,
         foliage: [
           {
             ...(forest.foliage as Record<string, unknown>[])[0],
+            species: "fir",
             density: 160,
             spacing: [12, 26],
             far: null,
           },
         ],
         grass: [(forest.grass as Record<string, unknown>[])[0]],
+        species: [...(forest.species as string[]), "fir"],
         water: [],
       };
       const started = performance.now();
@@ -1260,6 +1266,22 @@ describe("terrain_biome_new", () => {
       expect(result.out).toBe("assets/biomes/savanna/world");
       expect(result.triangles).toBeGreaterThan(0);
       expect(result.bands.elevationRange[1]).toBeGreaterThan(result.bands.elevationRange[0]);
+      // PRD-793 phase 3: the biome's own foliage reaches the preset's ground, so this world holds
+      // trees and every one of them is a species the starter pack ships art for.
+      expect(result.instances).toBeGreaterThan(0);
+      const baked = JSON.parse(await readFile(join(project, result.worldPackage), "utf8"));
+      const runs = (baked.cells as { runs: { asset: string; count: number }[] }[]).flatMap(
+        (cell) => cell.runs,
+      );
+      const placed = runs.flatMap((run) => Array<string>(run.count).fill(run.asset));
+      const pack = Object.keys(
+        JSON.parse(
+          await readFile(new URL("../starter/forest/assets.json", import.meta.url), "utf8"),
+        ) as Record<string, unknown>,
+      );
+      expect(placed.length).toBe(result.instances);
+      expect(new Set(placed)).toEqual(new Set(["fir"]));
+      for (const asset of placed) expect(pack).toContain(asset);
       const written = JSON.parse(await readFile(join(project, result.biomeJson), "utf8"));
       expect(written).toMatchObject({
         look: "savanna",
@@ -1269,22 +1291,32 @@ describe("terrain_biome_new", () => {
         water: [],
       });
       // The sparse stand and the cover are the base's own rows, thinned and kept; the species are
-      // the starter pack's (`spruce`, `grass`), so no new art is needed.
-      expect(written.foliage[0]).toMatchObject({ species: "spruce", density: 160, far: null });
+      // the starter pack's (`fir`, `grass`), so no new art is needed.
+      expect(written.foliage[0]).toMatchObject({ species: "fir", density: 160, far: null });
       expect(written.grass[0]).toMatchObject({ species: "grass", density: 1 });
-      expect(written.species).toEqual(expect.arrayContaining(["spruce", "grass"]));
+      expect(written.species).toEqual(expect.arrayContaining(["fir", "grass"]));
       // AC-2: every file the call wrote sits under the biome's own folder; no source file changed.
       const after = await filesUnder(project);
       const added = after.filter((file) => !before.includes(file));
       expect(added.length).toBeGreaterThan(0);
       expect(added.filter((file) => !file.startsWith("assets/biomes/savanna/"))).toEqual([]);
       expect(before.filter((file) => !after.includes(file))).toEqual([]);
-      // AC-3: the cook stays under the slowest shipped kit's baseline on this box (forest
-      // 3 839 ms, phase 1). The tool call's own wall time is logged beside it for context.
-      console.log(
-        `TN_TERRAIN_BIOME_NEW savanna: cook ${result.ms} ms, tool call ${wall} ms (forest baseline 3 839 ms)`,
+      // AC-3: the cook stays no slower than the slowest shipped kit. The forest baseline is
+      // re-cooked here, back to back with the savanna, so the comparison measures the machine this
+      // run is on instead of a number from another session (phase 1: forest 3 839 ms).
+      const forestStarted = performance.now();
+      const forestCook = JSON.parse(
+        await cookKit({
+          kit: "forest",
+          out: join(project, "assets", "worlds", "forest-baseline"),
+          projectRoot: project,
+        }),
       );
-      expect(result.ms).toBeLessThan(3839);
+      const forestWall = Math.round(performance.now() - forestStarted);
+      console.log(
+        `TN_TERRAIN_BIOME_NEW savanna: cook ${result.ms} ms, tool call ${wall} ms; forest baseline cook ${forestCook.ms} ms (wall ${forestWall} ms)`,
+      );
+      expect(result.ms).toBeLessThanOrEqual(forestCook.ms);
       // A second call with the same name refuses instead of overwriting the biome.
       const again = await askServer(project, "terrain_biome_new", {
         from: "forest",

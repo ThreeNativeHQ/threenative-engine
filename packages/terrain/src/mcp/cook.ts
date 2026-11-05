@@ -2,13 +2,15 @@ import { existsSync, readFileSync } from "node:fs";
 import { copyFile, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { type IBakeBiomeOptions, bakeBiome } from "../core/bake-biome.js";
-import { type IBiomeWaterBody, validateBiome } from "../core/biome.js";
+import { type IBakeBiomeOptions, bakeBiome, foliageScatterRules } from "../core/bake-biome.js";
+import { type IBiomeSpec, type IBiomeWaterBody, validateBiome } from "../core/biome.js";
 import { decodeRAW16 } from "../core/io.js";
+import { finalizeState } from "../core/operations.js";
 import { applyPlacementOverrides } from "../core/placements.js";
 import { landform } from "../core/presets.js";
 import type { LandformKind } from "../core/presets.js";
 import { Terrain } from "../core/terrain.js";
+import type { ITerrainState } from "../core/types.js";
 import { starterAssetsDir } from "../kit-assets.js";
 import { measureGlb } from "./glb-stats.js";
 import { TERRAIN_KITS, resolveAssetSource } from "./tools.js";
@@ -172,6 +174,31 @@ export async function cookKit(request: ICookRequest): Promise<string> {
   }
 }
 
+/**
+ * The evaluated state with the biome's own foliage placed on it.
+ *
+ * A landform preset authors the ground and no scatter rules, so the rows of the biome file drive the
+ * stages every starter scatter runs. A row naming a species the kit ships no art for draws nothing:
+ * the pack is the one art set a cook has, and a biome's tree names the game's. A starter keeps its
+ * authored rules, so its cook stays the world its own bake writes.
+ */
+function scatterFoliage(
+  state: ITerrainState,
+  biome: IBiomeSpec,
+  kind: LandformKind | undefined,
+  assetTable: Record<string, unknown>,
+): ITerrainState {
+  const foliage =
+    kind === undefined
+      ? []
+      : biome.foliage.filter((row) => row.density > 0 && row.species in assetTable);
+  if (foliage.length === 0) return state;
+  return finalizeState({
+    ...state,
+    scatterRules: [...state.scatterRules, ...foliageScatterRules(foliage, state.height)],
+  });
+}
+
 async function cookInto(
   request: ICookRequest,
   cooker: ICooker,
@@ -222,8 +249,11 @@ async function cookInto(
   >;
   const surface = JSON.parse(await readFile(join(kitDir, "surface.json"), "utf8")) as ISurface;
 
+  // A landform preset authors the ground and no scatter rules, so the biome file's foliage is placed
+  // on it through the stages every starter scatter runs.
+  const evaluated = Terrain.fromJSON(recipe.recipe).evaluate();
   const state = applyPlacementOverrides(
-    Terrain.fromJSON(recipe.recipe).evaluate(),
+    scatterFoliage(evaluated, biome, kind, assetTable),
     recipe.placementOverrides ?? {},
   );
 

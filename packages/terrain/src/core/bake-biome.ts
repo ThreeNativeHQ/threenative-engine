@@ -1,6 +1,6 @@
 import { type IMeasuredBands, measureBands } from "./bands.js";
-import { type IBiomeSpec, validateBiome } from "./biome.js";
-import type { ITerrainState } from "./types.js";
+import { type IBiomeSpec, type IFoliageType, validateBiome } from "./biome.js";
+import type { IScatterRule, ITerrainState } from "./types.js";
 import {
   type IBakeWorldPackageOptions,
   type IBakedWorldPackage,
@@ -39,6 +39,40 @@ export interface IBakeBiomeOptions extends Omit<IBakeWorldPackageOptions, "asset
   readonly spec: IBiomeSpec;
   /** Every asset an instance may reference, `glb`, bounds and its levels. An unknown one fails. */
   readonly assets: Readonly<Record<string, IWorldPackageAsset>>;
+}
+
+/**
+ * A biome's foliage rows as the scatter rules `Terrain.evaluate()` runs, so a preset's ground — which
+ * authors no rule of its own — grows the stand its biome file describes.
+ *
+ * Each field lands on the stage that reads it: `density` is `surfaceSample`'s count, `slope` and the
+ * `height` band are `densityFilter`, `spacing[0]` is `selfPrune`'s distance, and `species` is
+ * `meshSpawn`'s asset. The row's height band is measured above the world's floor, so `heights` is
+ * that world's own field: the rules this returns read metres, and `finalizeState` places them.
+ * @situation place a biome file's trees on a landform preset, which carries no scatter rule
+ * @constraint `species` must name an asset the cook has art for; the caller filters the rest
+ * @example const rules = foliageScatterRules(spec.foliage, state.height);
+ */
+export function foliageScatterRules(
+  foliage: readonly IFoliageType[],
+  heights: ArrayLike<number>,
+): IScatterRule[] {
+  // The floor the rows measure above, taken the way `measureBands` takes the height range.
+  const [floor] = measureBands([], heights).elevationRange;
+  return foliage.map((row) => ({
+    id: `foliage:${row.species}`,
+    asset: row.species,
+    count: row.density,
+    minSlope: row.slope[0],
+    maxSlope: row.slope[1],
+    minDistance: row.spacing[0],
+    ...(row.height === null
+      ? {}
+      : { minHeight: floor + row.height[0], maxHeight: floor + row.height[1] }),
+    avoidWater: true,
+    opacity: 1,
+    clear: [],
+  }));
 }
 
 export interface IBakedBiome extends IBakedWorldPackage {
