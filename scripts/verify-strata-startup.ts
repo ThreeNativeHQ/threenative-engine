@@ -15,6 +15,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type { IStandalonePlaytestReport } from "../packages/playtest/src/runner/shared.js";
+import { workspacePackages } from "./workspace-packages.js";
 
 export const BASELINE_SHA = "88b988cd70d5db7266eb0281e5f74bd0e030b3e7";
 const ORDER = ["before", "after", "after", "before", "before", "after"] as const;
@@ -169,13 +170,11 @@ export function parseStartupReport(log: string): StartupReport {
 /**
  * The reviewed devDependency delta between the pinned baseline and the candidate: build-time tools
  * the game gained afterwards that never enter the emitted web output. Every baseline entry stays
- * pinned to its baseline version; a name added here is a reviewed line, an unlisted one fails.
+ * pinned to its baseline version; a workspace package needs no line here because
+ * `workspace-packages.ts` derives its name from the manifest, and a third-party tool is a reviewed
+ * line below, so an unlisted one fails.
  */
-const REVIEWED_CANDIDATE_DEV_DEPENDENCIES: readonly string[] = [
-  "@threenative/runtime-native",
-  "create-threenative",
-  "tsx",
-];
+const REVIEWED_CANDIDATE_THIRD_PARTY_TOOLS: readonly string[] = ["tsx"];
 
 const devDependencies = (manifest: Record<string, unknown>) =>
   (manifest.devDependencies ?? {}) as Record<string, unknown>;
@@ -204,9 +203,13 @@ export function verifyStartupPackageIdentity(
       version,
       `incompatible package identity: devDependencies.${name}`,
     );
+  const reviewed = new Set([
+    ...REVIEWED_CANDIDATE_THIRD_PARTY_TOOLS,
+    ...workspacePackages().map(({ name }) => name),
+  ]);
   for (const name of Object.keys(after))
     assert(
-      Object.hasOwn(before, name) || REVIEWED_CANDIDATE_DEV_DEPENDENCIES.includes(name),
+      Object.hasOwn(before, name) || reviewed.has(name),
       `incompatible package identity: devDependencies.${name}`,
     );
 }
