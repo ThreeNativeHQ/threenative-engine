@@ -18,12 +18,21 @@ import { LANDFORMS, type LandformKind } from "./presets.js";
 export interface IFarFieldRule {
   /** Candidate grid, metres: at most one tree per cell. */
   readonly cell: number;
-  /** Mean spacing just past the edge, and where the far spacing is reached. */
+  /** Mean spacing just past the edge, and at the far reach. */
   readonly spacing: readonly [number, number];
-  /** Slope fade, degrees. */
+  /** Metres past the square's edge where the near spacing starts, and where the far one is reached. */
+  readonly spacingAt: readonly [number, number];
+  /** Slope fade, degrees, and the gentler slopes a meadow clearing fades out over. */
   readonly slope: readonly [number, number];
+  readonly meadowSlope: readonly [number, number];
   /** Chevron distance from the origin beyond which nothing is planted. */
   readonly reach: number;
+  /** How far the treeline wanders with noise, metres. */
+  readonly treelineJitter: number;
+  /** Stand-noise threshold band: the square plants above its own `standThreshold`. */
+  readonly stand: readonly [number, number];
+  /** The far field's own seed: it draws from one stream of its own, never the bake's. */
+  readonly seed: number;
   /** Metres at which a far tree becomes the engine's whole-asset impostor. */
   readonly impostor: number;
 }
@@ -73,6 +82,56 @@ export interface IGrassType {
   readonly beach: readonly [number, number] | null;
   /** Metres between plants in the dense detail disc around a place the player stands. */
   readonly detailSpacing: number;
+  /** The drift this cover grows on: the field it reads and the band it fades over. */
+  readonly drift: ICoverDriftRow;
+  /** A blade's scale where the ground is dry, and the share of it the draw adds. */
+  readonly bladeScale: number;
+  readonly bladeJitter: number;
+  /** The chance a grass cell also grows a scrub, and the scrub's own scale band. */
+  readonly scrubChance: number;
+  readonly scrubScale: number;
+  readonly scrubJitter: number;
+  /** Whether a grass cell also grows the odd bush. */
+  readonly scrubBush: boolean;
+  /** Whether blades grow tall on the wet sand of a shore. */
+  readonly shoreGround: boolean;
+  /** Whether the rivers' beds and banks are dressed with cobbles. */
+  readonly cobbledBed: boolean;
+}
+
+/** The ground model an ordered biome's generators run: a wood, a crag, a dune field or a mat plain. */
+export type CoverGround = "wood" | "crag" | "mesa" | "mats";
+
+/** The drift a biome's ground cover grows on: one value-noise field, sampled at these numbers. */
+export interface ICoverDriftRow {
+  /** The field the drift is measured on: a wood's stands, or a mat plain's mats. */
+  readonly field: "stand" | "mats";
+  /** Metres⁻¹ the field is sampled at, in x and z: a small frequency drifts in broad patches. */
+  readonly frequency: readonly [number, number];
+  /** The share of the cover that stands everywhere. */
+  readonly offset: number;
+  /** How much of the cover rides the field above that floor. */
+  readonly amplitude: number;
+  /** The field weight the drift is gone at, and the weight over which it reaches full. */
+  readonly band: readonly [number, number];
+}
+
+/**
+ * What a biome's one ordered stream runs on: its cover model, its seed, and the places it keeps open.
+ *
+ * The numbers here are the game's, not the row's: a stream is one sequence of draws for the whole
+ * biome, so the seed and the clearing discs belong to the biome and not to a species.
+ */
+export interface ICoverSpec {
+  readonly ground: CoverGround;
+  /** The seed one ordered stream starts from. */
+  readonly seed: number;
+  /** The most candidates a stand's loop draws before it settles for what it has. */
+  readonly attempts: number;
+  /** Radius at the widest point of the game's biggest stone, which normalizes a cobble's scale. */
+  readonly stoneRadius: number;
+  /** Circles kept clear, `[x, z, radius]`: the places a player walks. */
+  readonly clearings: readonly (readonly [number, number, number])[];
 }
 
 /** A ground layer's band, as fractions of the measured height range. */
@@ -129,6 +188,14 @@ export interface IBiomeSpec {
   readonly landform: LandformKind;
   readonly sizeMeters: number;
   readonly seed: number;
+  /**
+   * How the rows place: `ordered` runs every generator from one stream in one fixed order, `seeded`
+   * runs each rule from its own seed. `ordered` carries the game's own counts; `seeded` is the
+   * package's own sampler.
+   */
+  readonly stream: "ordered" | "seeded";
+  /** The cover a stream runs on: its model, its seed and the discs it keeps clear. */
+  readonly cover: ICoverSpec;
   readonly foliage: readonly IFoliageType[];
   readonly grass: readonly IGrassType[];
   readonly layers: readonly ILayerInfo[];
@@ -146,6 +213,8 @@ const SPEC_FIELDS = [
   "landform",
   "sizeMeters",
   "seed",
+  "stream",
+  "cover",
   "foliage",
   "grass",
   "layers",
@@ -154,6 +223,11 @@ const SPEC_FIELDS = [
   "species",
   "aliases",
 ] as const;
+const COVER_FIELDS = ["ground", "seed", "attempts", "stoneRadius", "clearings"] as const;
+const COVER_GROUNDS = ["wood", "crag", "mesa", "mats"] as const;
+const STREAMS = ["ordered", "seeded"] as const;
+const DRIFT_FIELDS = ["field", "frequency", "offset", "amplitude", "band"] as const;
+const DRIFT_FIELDS_NAMES = ["stand", "mats"] as const;
 const FOLIAGE_FIELDS = [
   "species",
   "density",
@@ -166,7 +240,18 @@ const FOLIAGE_FIELDS = [
   "standThreshold",
   "far",
 ] as const;
-const FAR_FIELDS = ["cell", "spacing", "slope", "reach", "impostor"] as const;
+const FAR_FIELDS = [
+  "cell",
+  "spacing",
+  "spacingAt",
+  "slope",
+  "meadowSlope",
+  "reach",
+  "treelineJitter",
+  "stand",
+  "seed",
+  "impostor",
+] as const;
 const GRASS_FIELDS = [
   "species",
   "density",
@@ -179,6 +264,15 @@ const GRASS_FIELDS = [
   "waterMargin",
   "beach",
   "detailSpacing",
+  "drift",
+  "bladeScale",
+  "bladeJitter",
+  "scrubChance",
+  "scrubScale",
+  "scrubJitter",
+  "scrubBush",
+  "shoreGround",
+  "cobbledBed",
 ] as const;
 const BAKE_FIELDS = ["file", "key"] as const;
 const LAYER_FIELDS = ["layer", "from", "to", "shedFrom", "shedTo"] as const;
@@ -332,9 +426,54 @@ function far(value: unknown, biome: string, field: string): IFarFieldRule | null
   return {
     cell: positive(far.cell, biome, `${field}.cell`),
     spacing: pair(far.spacing, biome, `${field}.spacing`),
+    spacingAt: pair(far.spacingAt, biome, `${field}.spacingAt`),
     slope: pair(far.slope, biome, `${field}.slope`, 0, 90),
+    meadowSlope: pair(far.meadowSlope, biome, `${field}.meadowSlope`, 0, 90),
     reach: positive(far.reach, biome, `${field}.reach`),
+    treelineJitter: count(far.treelineJitter, biome, `${field}.treelineJitter`),
+    stand: pair(far.stand, biome, `${field}.stand`, 0, 1),
+    seed: whole(far.seed, biome, `${field}.seed`),
     impostor: count(far.impostor, biome, `${field}.impostor`),
+  };
+}
+
+/** Two sampling frequencies, neither of which orders the other: a field's x and z rates. */
+function frequencies(value: unknown, biome: string, field: string): readonly [number, number] {
+  const [x = 0, z = 0] = pointOf(value, biome, field, 2);
+  if (x <= 0 || z <= 0) fail(biome, field, "must be two positive frequencies");
+  return [x, z];
+}
+
+function driftRow(value: unknown, biome: string, field: string): ICoverDriftRow {
+  const row = closed(value, biome, field, DRIFT_FIELDS);
+  return {
+    field: oneOf(row.field, biome, `${field}.field`, DRIFT_FIELDS_NAMES),
+    frequency: frequencies(row.frequency, biome, `${field}.frequency`),
+    offset: share(row.offset, biome, `${field}.offset`),
+    amplitude: share(row.amplitude, biome, `${field}.amplitude`),
+    band: band(row.band, biome, `${field}.band`),
+  };
+}
+
+/** A clearing circle: `[x, z, radius]`, radius in metres. */
+function clearing(value: unknown, biome: string, field: string): readonly [number, number, number] {
+  if (!Array.isArray(value) || value.length !== 3)
+    fail(biome, field, "must be an array of 3 numbers");
+  const [x = 0, z = 0, radius = 0] = pointOf(value, biome, field, 3);
+  if (radius <= 0) fail(biome, `${field}[2]`, "must be greater than 0");
+  return [x, z, radius];
+}
+
+function cover(value: unknown, biome: string): ICoverSpec {
+  const row = closed(value, biome, "cover", COVER_FIELDS);
+  const clearings = row.clearings;
+  if (!Array.isArray(clearings)) fail(biome, "cover.clearings", "must be an array");
+  return {
+    ground: oneOf(row.ground, biome, "cover.ground", COVER_GROUNDS),
+    seed: whole(row.seed, biome, "cover.seed"),
+    attempts: whole(row.attempts, biome, "cover.attempts", 1),
+    stoneRadius: positive(row.stoneRadius, biome, "cover.stoneRadius"),
+    clearings: clearings.map((entry, index) => clearing(entry, biome, `cover.clearings[${index}]`)),
   };
 }
 
@@ -371,6 +510,15 @@ function grass(value: unknown, biome: string, field: string): IGrassType {
     waterMargin: count(row.waterMargin, biome, `${field}.waterMargin`),
     beach: row.beach === null ? null : pair(row.beach, biome, `${field}.beach`),
     detailSpacing: positive(row.detailSpacing, biome, `${field}.detailSpacing`),
+    drift: driftRow(row.drift, biome, `${field}.drift`),
+    bladeScale: count(row.bladeScale, biome, `${field}.bladeScale`),
+    bladeJitter: count(row.bladeJitter, biome, `${field}.bladeJitter`),
+    scrubChance: share(row.scrubChance, biome, `${field}.scrubChance`),
+    scrubScale: count(row.scrubScale, biome, `${field}.scrubScale`),
+    scrubJitter: count(row.scrubJitter, biome, `${field}.scrubJitter`),
+    scrubBush: flag(row.scrubBush, biome, `${field}.scrubBush`),
+    shoreGround: flag(row.shoreGround, biome, `${field}.shoreGround`),
+    cobbledBed: flag(row.cobbledBed, biome, `${field}.cobbledBed`),
   };
 }
 
@@ -467,6 +615,8 @@ export function validateBiome(spec: unknown, name: string): IBiomeSpec {
     landform: oneOf(root.landform, biome, "landform", LANDFORM_KINDS),
     sizeMeters: positive(root.sizeMeters, biome, "sizeMeters"),
     seed: whole(root.seed, biome, "seed"),
+    stream: oneOf(root.stream, biome, "stream", STREAMS),
+    cover: cover(root.cover, biome),
     foliage: rows(root.foliage, "foliage", (entry, at) => foliage(entry, biome, at)),
     grass: rows(root.grass, "grass", (entry, at) => grass(entry, biome, at)),
     layers: rows(root.layers, "layers", (entry, at) => layer(entry, biome, at)),

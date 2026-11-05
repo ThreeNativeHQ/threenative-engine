@@ -1,5 +1,12 @@
+import { Heightfield } from "@threenative/core/world";
 import { type IMeasuredBands, measureBands } from "./bands.js";
 import { type IBiomeSpec, type IFoliageType, validateBiome } from "./biome.js";
+import {
+  type IOrderedScatter,
+  type IOrderedScatterField,
+  orderedScatterRules,
+  scatterProps,
+} from "./scatter-ordered.js";
 import type { IScatterRule, ITerrainState } from "./types.js";
 import {
   type IBakeWorldPackageOptions,
@@ -37,8 +44,14 @@ export interface IBakeBiomeOptions extends Omit<IBakeWorldPackageOptions, "asset
   readonly state: ITerrainState;
   /** The biome the bake is for. Validated here, so an inline spec fails closed at the bake. */
   readonly spec: IBiomeSpec;
-  /** Every asset an instance may reference, `glb`, bounds and its levels. An unknown one fails. */
-  readonly assets: Readonly<Record<string, IWorldPackageAsset>>;
+  /**
+   * Every asset an instance may reference, `glb`, bounds and its levels. An unknown one fails.
+   * Absent, the bake writes no package and hands the instances back: a game that keeps its own
+   * container for now reads `scatter` instead of a streamed package.
+   */
+  readonly assets?: Readonly<Record<string, IWorldPackageAsset>>;
+  /** How the rows place. Defaults to the biome file's own `stream`. */
+  readonly stream?: "ordered" | "seeded";
 }
 
 /**
@@ -75,11 +88,15 @@ export function foliageScatterRules(
   }));
 }
 
-export interface IBakedBiome extends IBakedWorldPackage {
+export interface IBakedBiome {
+  /** The streamed package, or null when the call named no assets to write one. */
+  readonly package: IBakedWorldPackage | null;
   /** The biome's band rows resolved against this state's own height range. */
   readonly bands: IMeasuredBands;
-  /** Placements the package carries, one row per asset, in the package's own run order. */
+  /** Placements the bake made, one row per asset. */
   readonly placements: readonly { readonly asset: string; readonly count: number }[];
+  /** The ordered stream's instances, in draw order; null when the rows ran on their own seeds. */
+  readonly scatter: IOrderedScatter | null;
 }
 
 /**
@@ -96,26 +113,78 @@ export interface IBakedBiome extends IBakedWorldPackage {
  */
 export function bakeBiome(options: IBakeBiomeOptions): IBakedBiome {
   const spec = validateBiome(options.spec, options.spec.look);
-  const baked = bakeWorldPackage(options.state, {
-    assets: options.assets,
-    ...(options.cellSize === undefined ? {} : { cellSize: options.cellSize }),
-    ...(options.layers === undefined ? {} : { layers: options.layers }),
-    ...(options.names === undefined ? {} : { names: options.names }),
-  });
-  let placed = 0;
+  // An ordered biome runs its fifteen generators on one stream, so this bake owns the instances
+  // instead of reading the ones the recipe's own rules accepted.
+  const scatter =
+    (options.stream ?? spec.stream) === "ordered"
+      ? scatterProps(
+          orderedField(options.state, spec),
+          { x: spec.spawn.focus[0], z: spec.spawn.focus[1] },
+          spec.cover.clearings,
+        )
+      : null;
+  const state: ITerrainState =
+    scatter === null ? options.state : { ...options.state, instances: scatter.placements };
+  const baked =
+    options.assets === undefined
+      ? null
+      : bakeWorldPackage(state, {
+          assets: options.assets,
+          ...(options.cellSize === undefined ? {} : { cellSize: options.cellSize }),
+          ...(options.layers === undefined ? {} : { layers: options.layers }),
+          ...(options.names === undefined ? {} : { names: options.names }),
+        });
   const counts = new Map<string, number>();
-  for (const cell of baked.manifest.cells)
-    for (const run of cell.runs) {
-      placed += run.count;
-      counts.set(run.asset, (counts.get(run.asset) ?? 0) + run.count);
-    }
-  if (placed !== options.state.instances.length)
-    throw new Error(
-      `${spec.look}: the package carries ${String(placed)} placements for ${String(options.state.instances.length)} instances.`,
-    );
+  if (baked !== null) {
+    let placed = 0;
+    for (const cell of baked.manifest.cells)
+      for (const run of cell.runs) {
+        placed += run.count;
+        counts.set(run.asset, (counts.get(run.asset) ?? 0) + run.count);
+      }
+    if (placed !== state.instances.length)
+      throw new Error(
+        `${spec.look}: the package carries ${String(placed)} placements for ${String(state.instances.length)} instances.`,
+      );
+  } else if (scatter !== null) {
+    for (const [asset, count] of Object.entries(scatter.counts)) counts.set(asset, count);
+  }
   return {
-    ...baked,
+    package: baked,
     bands: measureBands(spec.layers, options.state.height),
     placements: [...counts.entries()].map(([asset, count]) => ({ asset, count })),
+    scatter,
+  };
+}
+
+/**
+ * The ground an ordered biome's generators read: the state's own field and water, and the rows.
+ *
+ * The heightfield is the state's samples on their own lattice, built here so a bake needs no game
+ * object: `heightAt` and `normalAt` are core's, the same ones the game samples its ground with, so a
+ * rule that probes a slope a metre out reads the same value on both sides.
+ */
+function orderedField(state: ITerrainState, spec: IBiomeSpec): IOrderedScatterField {
+  return {
+    erosion: state.erosion,
+    field: new Heightfield({
+      rows: state.resolution,
+      columns: state.resolution,
+      width: state.size,
+      depth: state.size,
+      origin: { x: 0, z: 0 },
+      heights: Float32Array.from(state.height),
+    }),
+    resolution: state.resolution,
+    size: state.size,
+    waterLevel: state.waters.find((water) => water.kind === "ocean")?.level ?? null,
+    rules: orderedScatterRules(spec),
+    spec,
+    rivers: state.rivers,
+    lakes: state.waters.flatMap((water) =>
+      water.kind === "lake" && water.at !== undefined && water.radius !== undefined
+        ? [{ at: water.at, radius: water.radius, level: water.level ?? 0 }]
+        : [],
+    ),
   };
 }

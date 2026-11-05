@@ -7875,6 +7875,23 @@
     {
       "aliases": [],
       "constraints": [
+        "the collar decides where a tree stands; this sampler never resamples the square"
+      ],
+      "example": "const sampler = collarSampler(collar); const height = sampler.at(x, z);",
+      "importPath": "@threenative/terrain",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function collarSampler(collar: HeightfieldCollar) { … }",
+      "situations": ["plant a far field on a drawn collar and paint the canopy its crowns cover"],
+      "summary": "The collar's height at any (x, z), and a way to raise one of its per-vertex attributes at a placement: both read the collar's own quad grid, so a lane that reshapes the collar moves the trees with it.",
+      "supersedes": [],
+      "symbol": "collarSampler"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "returns candidates only; the caller applies its own exact distance and level test"
       ],
       "example": "const rivers = createSegmentIndex(segments, 32); const wet = rivers.nearby(x, z).some(isWet);",
@@ -7999,6 +8016,43 @@
     },
     {
       "aliases": [],
+      "constraints": [
+        "the row's `far` block decides every density; the caller supplies the collar and layer"
+      ],
+      "example": "const trees = farForestPlacements({ size, resolution, collar, treeline, rules, asset, layer });",
+      "importPath": "@threenative/terrain",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function farForestPlacements(options: IFarFieldOptions): IPlacement[] { … }",
+      "situations": ["plant the stand past a game's playable square, out to the drawn collar"],
+      "summary": "Far-field placements on the collar; also paints the collar's `canopy` attribute under each crown.",
+      "supersedes": [],
+      "symbol": "farForestPlacements"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "the field is a value, so two worlds sample the same formula with their own numbers"
+      ],
+      "example": "const stand = fieldWeight(STAND_FIELD, x, z);",
+      "importPath": "@threenative/terrain",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function fieldWeight(field: ICoverField, x: number, z: number): number { … }",
+      "situations": [
+        "sample the stand field a biome's trees and cover thin on",
+        "measure the drift a biome's blades grow by, or the mat field its cover follows"
+      ],
+      "summary": "A field's weight at (x, z), clamped to 0..1.",
+      "supersedes": [],
+      "symbol": "fieldWeight"
+    },
+    {
+      "aliases": [],
       "constraints": ["authoring data only; the game owns appearance, physics and rendering"],
       "example": "const gradient = gradientAt(new Terrain({ resolution: 17 }).evaluate(), 0, 0);",
       "importPath": "@threenative/terrain",
@@ -8093,6 +8147,21 @@
     },
     {
       "aliases": [],
+      "constraints": ["the file carries one foliage row, one grass row and a cover block"],
+      "example": "const rules = orderedScatterRules(spec);",
+      "importPath": "@threenative/terrain",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function orderedScatterRules(spec: IBiomeSpec): IOrderedScatterRules { … }",
+      "situations": ["run a biome file's rows through the ordered scatter"],
+      "summary": "A biome's rows as the ordered generators read them. The rule is short and shared; only these numbers differ between a wood, a barren shoulder, a dune field and a tundra, so the biome file names them rather than the code. A biome whose tree is not one this generator has art for fails here, naming the species, rather than planting nothing.",
+      "supersedes": [],
+      "symbol": "orderedScatterRules"
+    },
+    {
+      "aliases": [],
       "constraints": ["authoring data only; the game owns appearance, physics and rendering"],
       "example": "const height = sampleHeight(new Terrain({ resolution: 17 }).evaluate(), 0, 0);",
       "importPath": "@threenative/terrain",
@@ -8105,6 +8174,23 @@
       "summary": "Bilinear query of canonical height samples; triangle sampling is a separate contract.",
       "supersedes": [],
       "symbol": "sampleHeight"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "`data.rules` is the biome's rows, and `data.field` the ground they were graded on"
+      ],
+      "example": "const { placements, counts } = scatterProps(data, focus, clearings);",
+      "importPath": "@threenative/terrain",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function scatterProps( data: IOrderedScatterField, focus: { … }",
+      "situations": ["bake a biome that says `\"stream\": \"ordered\"`"],
+      "summary": "Every placement, for one world, from one seed: the game's own rule set, in its own draw order.",
+      "supersedes": [],
+      "symbol": "scatterProps"
     },
     {
       "aliases": [],

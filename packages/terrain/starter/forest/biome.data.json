@@ -7,6 +7,14 @@
   "landform": "temperateMountains",
   "sizeMeters": 512,
   "seed": 73,
+  "stream": "ordered",
+  "cover": {
+    "ground": "wood",
+    "seed": 466468,
+    "attempts": 80000,
+    "stoneRadius": 1.9,
+    "clearings": [[165, -95, 10], [-145, -120, 10], [360, 200, 10]]
+  },
   "foliage": [
     {
       "species": "spruce",
@@ -21,8 +29,13 @@
       "far": {
         "cell": 6,
         "spacing": [6.5, 13],
+        "spacingAt": [150, 1500],
         "slope": [36, 46],
+        "meadowSlope": [12, 24],
         "reach": 2300,
+        "treelineJitter": 30,
+        "stand": [0.26, 0.4],
+        "seed": 466559,
         "impostor": 110
       }
     }
@@ -39,7 +52,22 @@
       "mats": null,
       "waterMargin": 7.5,
       "beach": null,
-      "detailSpacing": 0.5
+      "detailSpacing": 0.5,
+      "drift": {
+        "field": "stand",
+        "frequency": [3.1, 2.7],
+        "offset": 0.65,
+        "amplitude": 0.35,
+        "band": [0, 1]
+      },
+      "bladeScale": 0.8,
+      "bladeJitter": 0.65,
+      "scrubChance": 0.3,
+      "scrubScale": 0.9,
+      "scrubJitter": 0.6,
+      "scrubBush": false,
+      "shoreGround": false,
+      "cobbledBed": true
     }
   ],
   "layers": [

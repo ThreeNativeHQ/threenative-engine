@@ -30,7 +30,15 @@ function clamp01(value: number): number {
   return Math.min(1, Math.max(0, value));
 }
 
-/** A field's weight at (x, z), clamped to 0..1. */
+/**
+ * A field's weight at (x, z), clamped to 0..1.
+ *
+ * @requires npm i -D @threenative/terrain
+ * @situation sample the stand field a biome's trees and cover thin on
+ * @situation measure the drift a biome's blades grow by, or the mat field its cover follows
+ * @constraint the field is a value, so two worlds sample the same formula with their own numbers
+ * @example const stand = fieldWeight(STAND_FIELD, x, z);
+ */
 export function fieldWeight(field: ICoverField, x: number, z: number): number {
   let sum = field.base;
   for (const octave of field.octaves)

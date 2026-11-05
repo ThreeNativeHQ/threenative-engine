@@ -24,7 +24,6 @@ import {
   type LayerKey,
   ROCKFACE_MAPS,
 } from "../world/terrainAssets.js";
-import { type ICoverField, MATS_FIELD, STAND_FIELD } from "./coverField.js";
 
 export type WorldName = "forest" | "coastal" | "alpine" | "desert" | "tundra";
 type RGB = readonly [number, number, number];
@@ -44,19 +43,6 @@ export interface IVistaAim {
  * curve runs over — numbers, not a choice between curves. A sixth look tunes these; the sampler in
  * `scatter.ts` is one formula for every biome.
  */
-export interface ICoverDrift {
-  /** The value-noise field the drift is measured on. */
-  readonly field: ICoverField;
-  /** Metres⁻¹ the field is sampled at, in x and z: a small frequency drifts in broad patches. */
-  readonly frequency: readonly [number, number];
-  /** The share of the cover that stands everywhere. */
-  readonly offset: number;
-  /** How much of the cover rides the field above that floor. */
-  readonly amplitude: number;
-  /** The field weight the drift is gone at, and the weight over which it reaches full. */
-  readonly band: readonly [number, number];
-}
-
 type HeightBand =
   | "alpine"
   | "rock"
@@ -232,15 +218,6 @@ export interface IBiome {
   readonly scrubBush: boolean;
   /** The look's blades go straw, and its dunes go straw with height. */
   readonly strawBlades: boolean;
-  /** The scale a blade of ground cover draws at, in its own metres. */
-  readonly bladeScale: number;
-  /** How much of that scale is jittered per instance. */
-  readonly bladeJitter: number;
-  /** How often a cover placement also drops a tuft of scrub. */
-  readonly scrubChance: number;
-  /** The scale a scrub tuft draws at, and how much of it is jittered. */
-  readonly scrubScale: number;
-  readonly scrubJitter: number;
   /** Metres the game's own sapling art stands at in this biome; null for the art's own height. */
   readonly saplingHeight: number | null;
   /** The look's river mirrors the ponds beside it, not only the sky. */
@@ -249,10 +226,6 @@ export interface IBiome {
   readonly vistaAim: IVistaAim | null;
   /** `?stage=` swaps this world for the staged forest kit: the forest is the world it is staged for. */
   readonly stageArm: boolean;
-  /** Which stand field the ground cover drifts on: the wood's, the mat plain's, the sand's, the crest's. */
-  readonly coverDrift: ICoverDrift;
-  /** The look's river bed is dressed with cobbles and its banks with river rock. */
-  readonly cobbledRiverBed: boolean;
   readonly clouds: number;
   /** The shadow filter this look was judged with: the forest's own screen-space filter, else none. */
   readonly softShadowFilter: boolean;
@@ -383,24 +356,10 @@ const temperate: IBiome = {
   pinnedCrags: false,
   scrubBush: false,
   strawBlades: false,
-  bladeScale: 0.8,
-  bladeJitter: 0.65,
-  scrubChance: 0.3,
-  scrubScale: 0.9,
-  scrubJitter: 0.6,
-  // A wood keeps 65% of its cover everywhere and drifts the rest with its stands.
-  coverDrift: {
-    field: STAND_FIELD,
-    frequency: [3.1, 2.7],
-    offset: 0.65,
-    amplitude: 0.35,
-    band: [0, 1],
-  },
   saplingHeight: null,
   riverMirrorsPonds: false,
   vistaAim: null,
   stageArm: false,
-  cobbledRiverBed: false,
   clouds: 0.76,
   // The deterministic filter avoids the forest's fine screen-space rotation hatching.
   softShadowFilter: true,
@@ -419,7 +378,6 @@ const forest: IBiome = {
   woodedGround: true,
   surveyCollar: true,
   contactRockface: true,
-  cobbledRiverBed: true,
   woodCanopy: true,
   crownGeometryNormals: true,
   authoredAlphaTest: true,
@@ -484,16 +442,6 @@ export const BIOMES: Record<WorldName, IBiome> = {
     stoneSnow: true,
     stoneMoss: 0,
     stoneMossTint: [0.12, 0.13, 0.12],
-    bladeScale: 0.55,
-    bladeJitter: 0.5,
-    // A coarse stand field: the crest's cover drifts in long ribs, not in a wood's lobed stands.
-    coverDrift: {
-      field: STAND_FIELD,
-      frequency: [2.1, 2.4],
-      offset: 0,
-      amplitude: 1,
-      band: [0.3, 0.45],
-    },
     stoneSectionTint: [0.94, 0.98, 1.02],
     canopyInnerShade: 0.42,
     canopyLinearInner: true,
@@ -573,18 +521,6 @@ export const BIOMES: Record<WorldName, IBiome> = {
     dryStones: true,
     stoneMoss: 0,
     stoneMossTint: [0.23, 0.16, 0.095],
-    bladeScale: 0.95,
-    bladeJitter: 0.5,
-    scrubChance: 0.65,
-    scrubScale: 0.8,
-    // A dune field: near nothing between the washes, 60% of full at the deepest of them.
-    coverDrift: {
-      field: STAND_FIELD,
-      frequency: [6.3, 5.7],
-      offset: 0.08,
-      amplitude: 0.6,
-      band: [0.5, 0.3],
-    },
     stoneSectionTint: [1.12, 0.8, 0.54],
     cutoutTint: [0.85, 0.64, 0.32],
     canopyInnerShade: 0.42,
@@ -672,19 +608,6 @@ export const BIOMES: Record<WorldName, IBiome> = {
     stoneSnow: true,
     mats: true,
     scrubBush: true,
-    bladeScale: 0.45,
-    bladeJitter: 0.3,
-    scrubChance: 0.22,
-    scrubScale: 0.55,
-    scrubJitter: 0.5,
-    // A mat plain drifts on its mats: gone below 0.45, full across the next 0.3.
-    coverDrift: {
-      field: MATS_FIELD,
-      frequency: [1, 1],
-      offset: 0,
-      amplitude: 1,
-      band: [0.45, 0.3],
-    },
     // A dwarf birch: 1.4 m of art where the fallback pack stands in.
     saplingHeight: 1.4,
     stoneSinkShare: null,

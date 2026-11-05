@@ -1,4 +1,10 @@
-import { Terrain, bakeBiome, measureBands, validateBiome } from "@threenative/terrain";
+import {
+  type IBakedBiome,
+  Terrain,
+  bakeBiome,
+  measureBands,
+  validateBiome,
+} from "@threenative/terrain";
 import { describe, expect, it } from "vitest";
 
 const SPEC = validateBiome(
@@ -16,12 +22,26 @@ const SPEC = validateBiome(
     look: "fir",
     seed: 73,
     sizeMeters: 256,
+    stream: "seeded",
+    cover: {
+      ground: "wood",
+      seed: 466_468,
+      attempts: 80_000,
+      stoneRadius: 1.9,
+      clearings: [],
+    },
     spawn: { at: [0, 0], cameraOffset: [10, 10, 10], focus: [0, 0] },
     species: ["fir"],
     water: [],
   },
   "fir",
 );
+
+/** The package a bake wrote, for the cases that ask for one. */
+function pkg(baked: IBakedBiome) {
+  if (baked.package === null) throw new Error("the bake wrote no package");
+  return baked.package;
+}
 
 /** One asset's bound; only the id and the bound reach the manifest. */
 const ASSETS = {
@@ -89,17 +109,17 @@ describe("bakeBiome", () => {
     const [min, max] = baked.bands.elevationRange;
     expect(max).toBeGreaterThan(min);
     expect(baked.bands.snowShed).toEqual([0.1, 0.4]);
-    expect(baked.manifest.extent).toEqual({ minX: -128, minZ: -128, sizeX: 256, sizeZ: 256 });
+    expect(pkg(baked).manifest.extent).toEqual({ minX: -128, minZ: -128, sizeX: 256, sizeZ: 256 });
   });
 
   it("bakes the same package the writer does, cell runs included", () => {
     const terrain = state();
     const baked = bakeBiome({ spec: SPEC, state: terrain, assets: ASSETS, cellSize: 64 });
-    const runs = baked.manifest.cells.flatMap((cell) => cell.runs);
+    const runs = pkg(baked).manifest.cells.flatMap((cell) => cell.runs);
     expect(runs.length).toBeGreaterThan(0);
     expect(runs.every((run) => run.asset === "fir")).toBe(true);
     // Cells tile the extent at the requested size and every run points inside the record buffer.
-    for (const cell of baked.manifest.cells) {
+    for (const cell of pkg(baked).manifest.cells) {
       expect(cell.x).toBeGreaterThanOrEqual(0);
       expect(cell.z).toBeGreaterThanOrEqual(0);
     }
@@ -108,8 +128,8 @@ describe("bakeBiome", () => {
   it("is seeded: the same recipe bakes the same placements bytes", () => {
     const first = bakeBiome({ spec: SPEC, state: state(), assets: ASSETS });
     const second = bakeBiome({ spec: SPEC, state: state(), assets: ASSETS });
-    expect(second.files[second.manifest.placements]).toEqual(
-      first.files[first.manifest.placements],
+    expect(pkg(second).files[pkg(second).manifest.placements]).toEqual(
+      pkg(first).files[pkg(first).manifest.placements],
     );
   });
 

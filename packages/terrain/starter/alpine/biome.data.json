@@ -7,6 +7,14 @@
   "landform": "alpine",
   "sizeMeters": 512,
   "seed": 41,
+  "stream": "ordered",
+  "cover": {
+    "ground": "crag",
+    "seed": 466468,
+    "attempts": 80000,
+    "stoneRadius": 1.9,
+    "clearings": [[850, -1000, 10]]
+  },
   "foliage": [
     {
       "species": "spruce",
@@ -33,7 +41,22 @@
       "mats": null,
       "waterMargin": 7.5,
       "beach": null,
-      "detailSpacing": 0.6
+      "detailSpacing": 0.6,
+      "drift": {
+        "field": "stand",
+        "frequency": [2.1, 2.4],
+        "offset": 0,
+        "amplitude": 1,
+        "band": [0.3, 0.45]
+      },
+      "bladeScale": 0.55,
+      "bladeJitter": 0.5,
+      "scrubChance": 0.3,
+      "scrubScale": 0.9,
+      "scrubJitter": 0.6,
+      "scrubBush": false,
+      "shoreGround": false,
+      "cobbledBed": false
     }
   ],
   "layers": [
