@@ -34,7 +34,7 @@
     "@threenative/playtest": "0.3.11",
     "@types/react": "19.2.0",
     "@types/react-dom": "19.2.0",
-    "create-threenative": "0.2.15",
+    "create-threenative": "0.2.16",
     "esbuild": "0.27.0",
     "playwright": "1.62.1",
     "tailwindcss": "4.3.3",

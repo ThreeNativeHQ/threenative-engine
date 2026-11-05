@@ -11,6 +11,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `threenative-capabilities` step 3 now says how to *see* a mechanic, not only read it: the
+  agent fetches `watch.mjs` from `threenative-reverse-engineer-mcp` and slices YouTube gameplay
+  frames of a reference game into a tmp contact sheet, so a jump arc or a parry window is looked
+  at instead of invented. Frames stay study material and never become game assets or citations.
+- `create-threenative` bumped to 0.2.16 for the above; templates pin 0.2.16.
+
 - The optional `@threenative/terrain` authoring addon validates and retains
   stable-key placement overrides through `validatePlacementOverrides` and
   `applyPlacementOverrides`. The example editor offers individual prop selection,

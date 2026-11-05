@@ -243,6 +243,10 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // `packageManager` pin, the regenerated three patch and the PR's kit sources); the release bump
   // alone moves none.
   // Measured by this test.
+  // 2026-11-03: rain publishes the reduced-motion answer its host gave (PRD-617), so its tree moves.
+  // 2026-11-03 (PRD-617, PRD-620): action-rpg and sailing drop their engine pin, runner re-pins with
+  // its reason, snow runs on the native engine, and the starter's render-chain row asserts the sharp-AA
+  // chain, so those five trees move. Measured by this test.
   // 2026-10-30: the Blender MCP server is gone, so every kit's seven host configs lose their
   // `threenative-blender` entry and all sixteen trees move. Measured by this test.
   // 2026-10-29: every kit's seven MCP host configs gain the `threenative-devtools` server, and its
@@ -349,6 +353,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // these kits' AGENTS.md say so, and rts drops its TRAA and blur overrides.
   // Re-pinned 2026-10-31: the starter crate gets a stacked-disc contact shadow (render/contactShadow.ts)
   // that keeps its contact coverage above the 0.02 floor at the core +1 EV key.
+  // 2026-11-04 (PRD-777 on PRD-632): action-rpg AGENTS/CLAUDE name the spell factories in one line. Measured by this test.
   "action-rpg": "b5f4f9d4a00d7ad3ea93dfd1fc53c731dff1a56089a004bf4b6daec90a525a2d",
   // PRD-732 (2026-10-23): the new Hop Garden kit, measured through createProject (method checked
   // against platformer's unchanged value). Recomputed 2026-10-24 for the PRD-732 polish round: the
@@ -391,6 +396,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Re-pinned 2026-10-29: the fog-of-war sheet comes from palette.ts, rts-build probes the fog ground is lit
   // (it was a dark patch under a HUD card) and the top-location separator reaches 3:1 on the ink plate.
   // Then the UI final pass: a counted selection band, garrison and blocked-exit cards, overview, hotkeys, edge-scroll toggle, refusal toasts (imports sorted by biome).
+
   // Re-pinned 2026-11-03 (PRD-617): the sun's shadow box travels with the runner (`lighting.follow`)
   // and the engine pin goes, so the tree moves. Measured again the same day for the corrected
   // `performance.maxTriangles` bound (45,000 to 54,000), which is a scenario file in the tree.
