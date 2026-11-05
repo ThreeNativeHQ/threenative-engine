@@ -45,6 +45,8 @@ interface IAssetSpec {
   midDistance?: number;
   maxDistance?: number;
   bounds: unknown;
+  /** The kit's own tree: the art that stands in for the species a biome's tree row names. */
+  tree?: boolean;
 }
 
 interface ISurface {
@@ -248,20 +250,27 @@ function floodedBodies(state: ITerrainState): IBiomeWaterBody[] {
  * The evaluated state with the biome's own foliage placed on it.
  *
  * A landform preset authors the ground and no scatter rules, so the rows of the biome file drive the
- * stages every starter scatter runs. A row naming a species the kit ships no art for draws nothing:
- * the pack is the one art set a cook has, and a biome's tree names the game's. A starter keeps its
- * authored rules, so its cook stays the world its own bake writes.
+ * stages every starter scatter runs. A row names the species the game draws, and the kit names the
+ * art that stands in for its tree (`tree: true`, the CC0 `fir` for the preview's licensed `spruce`),
+ * so a preset's ground grows the stand the file declares instead of a treeless world. Any other row
+ * the pack ships no art for draws nothing: the pack is the one art set a cook has. A starter keeps
+ * its authored rules, so its cook stays the world its own bake writes.
  */
 function scatterFoliage(
   state: ITerrainState,
   biome: IBiomeSpec,
   kind: LandformKind | undefined,
-  assetTable: Record<string, unknown>,
+  assetTable: Record<string, IAssetSpec>,
 ): ITerrainState {
-  const foliage =
-    kind === undefined
-      ? []
-      : biome.foliage.filter((row) => row.density > 0 && row.species in assetTable);
+  if (kind === undefined) return state;
+  const tree = Object.keys(assetTable).find((id) => assetTable[id]?.tree === true);
+  // The file carries one tree row, as the ordered scatter reads it, and it is the row a kit's own
+  // tree stands in for; a shrub row keeps its own species or draws nothing.
+  const foliage = biome.foliage.flatMap((row, at) => {
+    if (row.density === 0) return [];
+    if (row.species in assetTable) return [row];
+    return at === 0 && tree !== undefined ? [{ ...row, species: tree }] : [];
+  });
   if (foliage.length === 0) return state;
   return finalizeState({
     ...state,

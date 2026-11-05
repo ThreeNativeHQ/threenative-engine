@@ -1199,6 +1199,21 @@ const BIOME_MATRIX = TERRAIN_KITS.flatMap((kit) =>
   LANDFORMS_IN_MATRIX.map((landform) => ({ kit, landform })),
 );
 
+/**
+ * The stand a landform cook under this kit must place: the biome's own tree row, drawn with the art
+ * the kit ships for that tree (`tree: true` in its `assets.json`). Undefined when the row plants
+ * nothing or the kit ships no tree, so the pair is the preset's ground alone.
+ */
+async function declaredStand(kit: TerrainKit): Promise<string | undefined> {
+  const row = ((await starterBiome(kit)).foliage as { species: string; density: number }[])[0];
+  if (row === undefined || row.density === 0) return undefined;
+  const table = JSON.parse(
+    await readFile(new URL(`../starter/${kit}/assets.json`, import.meta.url), "utf8"),
+  ) as Record<string, { tree?: boolean }>;
+  if (row.species in table) return row.species;
+  return Object.keys(table).find((id) => table[id]?.tree === true);
+}
+
 describe("every landform under every biome", () => {
   it.each(BIOME_MATRIX)(
     "cooks $landform under $kit",
@@ -1222,12 +1237,20 @@ describe("every landform under every biome", () => {
         expect(result.draws).toBeGreaterThan(0);
         expect(manifest.extent.sizeX).toBe(manifest.extent.sizeZ);
         // A landform preset authors the ground and no scatter rules, so the cook scatters the biome
-        // file's own foliage on it. It draws only the rows whose species the kit ships art for, and
-        // none of the five files names a kit asset: their trees are the preview's licensed `spruce`
-        // and `sapling`, which the CC0 packs replace with `fir`. The savanna, whose row names the
-        // kit's `fir`, is the case that proves the path places trees.
-        expect(result.instances).toBe(0);
-        expect(manifest.cells).toEqual([]);
+        // file's own tree on it, in the art the kit ships for that tree (`tree: true`: the CC0 `fir`
+        // stands in for the preview's licensed `spruce`). A pair that declares a stand and draws
+        // none is a lost stand, not this AC; a kit that ships no tree draws the preset's ground.
+        const stand = await declaredStand(kit);
+        if (stand === undefined) {
+          expect(result.instances).toBe(0);
+          expect(manifest.cells).toEqual([]);
+        } else {
+          expect(result.instances).toBeGreaterThan(0);
+          const placed = (manifest.cells as { runs: { asset: string }[] }[]).flatMap((cell) =>
+            cell.runs.map((run) => run.asset),
+          );
+          expect(new Set(placed)).toEqual(new Set([stand]));
+        }
         // The preset's own chain: a starter heightmap crop is what `landform` replaces.
         const recipe = JSON.parse(await readFile(join(project, result.recipeJson), "utf8"));
         expect(recipe.layers.some((entry: { type: string }) => entry.type === "heightmap")).toBe(
