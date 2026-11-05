@@ -300,15 +300,19 @@ export function definePass(
 
   /**
    * Outputs that are TSL nodes (not the scene pass's slots): a material's mrtNode, written into a RenderTarget made
-   * with `count`, each output to the texture of its name. `output` keeps the material's own colour there.
+   * with `count`, each output to the texture of its name. `output` keeps the material's own colour there. The scene
+   * pass draws its own targets every frame, so a record carries them beside the material's nodes (three's templates
+   * spell `normal` as normalView there) and the material writes only the nodes: `mrtNode` skips the reserved names.
    */
   function materialMrt(
     outputs: Record<string, unknown>,
     nodes: [string, unknown][],
     engineMrt: NonNullable<IPassTsl["mrt"]>,
   ): IMRTNode {
+    // A pass slot object beside material nodes is a wiring error: only the pass draws that target. The normal target
+    // as normalView is not a slot object, so it stays the spelling a material's mrt() carries.
     for (const [name, value] of Object.entries(outputs))
-      if (passOutput(name, value) && value !== output)
+      if (value !== output && (value as IMRTSlot | null)?.isMRTSlot === true)
         throw new Error(
           `TN_NATIVE_MRT_UNSUPPORTED: ${name} mixes a scene pass slot with material outputs`,
         );
