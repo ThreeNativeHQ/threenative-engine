@@ -1,9 +1,16 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { readScene, validateSceneExport } from "../unreal-look/gi.js";
-import { SUN_ILLUMINANCE } from "../unreal-look/scaffold/render/atmosphere.js";
+import {
+  EMISSIVE_UNITS,
+  LEVEL_EXPOSURE,
+  SUN_ILLUMINANCE,
+  SUN_LUX,
+  levelExposure,
+} from "../unreal-look/scaffold/render/atmosphere.js";
 import {
   type MotionRun,
+  SPOT_HALF_ANGLE_LIMIT_DEG,
   candela,
   checkMapped,
   lightCandela,
@@ -29,8 +36,37 @@ describe("calibration scene units (PRD-646)", () => {
 
   it("fails a unit it does not know, lux included: a sun is not a punctual light", () => {
     expect(() => candela(6, "lux")).toThrow("TN_CALIBRATION_SCENE_UNIT: lux");
-    // The template scenes take their sun through one constant: Unreal's 6 lux is pi times that in three's Lambert.
-    expect(SUN_ILLUMINANCE).toBeCloseTo(6 * Math.PI, 12);
+    // A directional light's lux is the shading input on both sides: the diffuse lobe divides by pi in Unreal
+    // (BRDF.ush Diffuse_Lambert) and in three (BRDF_Lambert), so the sun carries no extra pi (PRD-646 round 6).
+    expect(SUN_ILLUMINANCE).toBe(SUN_LUX);
+    expect(EMISSIVE_UNITS).toBe(1);
+  });
+
+  it("spreads a spot light's lumens over its cone, not over the sphere", () => {
+    // Unreal: 100^2 / (2 pi (1 - cos halfConeAngle)) cm^2 to m^2 (LocalLightComponent.cpp:180-214),
+    // with the outer cone read from the axis and clamped at 88.9 degrees (SpotLightComponent.cpp:33-38, :54).
+    const solidAngle = (coneDeg: number) => 2 * Math.PI * (1 - Math.cos((coneDeg * Math.PI) / 180));
+    expect(candela(600, "lumens", 10)).toBeCloseTo(600 / solidAngle(10), 9);
+    expect(candela(600, "lumens", 35)).toBeCloseTo(600 / solidAngle(35), 9);
+    // The same lumens are 47.7 cd over the sphere and 6286 cd down a 10 degree cone: the value the
+    // comment above `candela` names, to the candela.
+    expect(candela(600, "lumens", 10)).toBeCloseTo(6286, 0);
+    expect(600 / (2 * Math.PI * (1 - Math.cos((10 * Math.PI) / 180)))).toBeCloseTo(6285.6381, 4);
+    expect(candela(600, "lumens") / candela(600, "lumens", 35)).toBeCloseTo(
+      solidAngle(35) / (4 * Math.PI),
+      9,
+    );
+    expect(candela(600, "lumens", 120)).toBeCloseTo(candela(600, "lumens", 88.9), 9);
+    expect(candela(600, "candelas", 35)).toBe(600);
+  });
+
+  it("fails a spot light in lumens that carries no cone, and converts one that does", () => {
+    const spot = { name: "Spot", class: "SpotLight", intensity: 600, units: "lumens" };
+    expect(() => lightCandela(spot)).toThrow(
+      "TN_CALIBRATION_SCENE_LIGHT: Spot SpotLight has no outerConeDeg",
+    );
+    expect(lightCandela({ ...spot, outerConeDeg: 35 })).toBeCloseTo(528.03, 1);
+    expect(lightCandela({ ...spot, intensity: 600, units: "candelas" })).toBe(600);
   });
 
   it("fails a light class the loader does not build", () => {
@@ -83,6 +119,24 @@ describe("calibration scene units (PRD-646)", () => {
     expect(lampPlace).toEqual([0, 4.9, -2.75]);
     const source = readFileSync("scripts/unreal-look/scaffold/CalibrationScene.ts.in", "utf8");
     expect(source).toContain("point.position.fromArray(light.position)");
+  });
+});
+
+describe("the level's fixed exposure (PRD-646 round 6)", () => {
+  it("is 2^-5 on cornell's volume and 2.4 on a level with no override", () => {
+    const { scene } = readScene("gi:cornell");
+    // The scene's own post-process volume: Unreal's manual exposure, the exporter's 2^bias x lens / 0.78 rule.
+    expect(scene.exposure?.method).toBe("aem_manual");
+    expect(levelExposure({ bias: -5, method: "aem_manual" })).toBe(2 ** -5);
+    // `scene.json` carries the exporter's value, read back through Unreal's float32 lens attenuation.
+    expect(levelExposure({ bias: -5, method: "aem_manual" })).toBeCloseTo(
+      scene.exposure?.exposureScale ?? 0,
+      8,
+    );
+    // A level with no override: r.DefaultFeature.AutoExposure=0 clamps the meter to 1/1.2 and the engine's
+    // +1 EV bias multiplies it to 2.4 (SceneView.cpp:196-201, :2060-2071, PostProcessEyeAdaptation.cpp:446-460).
+    expect(levelExposure()).toBeCloseTo(2.4, 9);
+    expect(LEVEL_EXPOSURE).toBeCloseTo(2.4, 9);
   });
 });
 

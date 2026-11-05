@@ -130,12 +130,18 @@ function RainInterface() {
    * Reduced motion, read in the UI realm and applied once. A reader who then flips a switch has
    * said something newer than their operating system, so the preference is never re-applied over a
    * snapshot — which is also why it needs a ref rather than an effect dependency.
+   *
+   * The answer is published to the game as well as acted on: it is the one record of which branch
+   * this host took, so a frame and a playtest read it instead of assuming a preference. A host with
+   * no such setting answers no-preference, and then the storm boots flashing.
    */
   const reducedApplied = useRef(false);
   useEffect(() => {
     if (state === undefined || reducedApplied.current) return;
     reducedApplied.current = true;
-    if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    send("setReducedMotion", reduced);
+    if (!reduced) return;
     send("setSafe", true);
     send("setAutoLightning", false);
     send("setCinematic", false);

@@ -20,8 +20,13 @@ import {
   WebGPURenderer,
 } from "three/webgpu";
 import { afterEach, expect, it, vi } from "vitest";
+import { aoRefusal } from "../src/look/ao-admission.js";
 import { qualityPreset } from "../src/look/quality.js";
-import { type OutputRenderer, WorldEnvironment } from "../src/look/world-environment.js";
+import {
+  type OutputRenderer,
+  WorldEnvironment,
+  translucentTargetWanted,
+} from "../src/look/world-environment.js";
 import { readRenderChainObservation } from "../src/render/chain.js";
 import { ResolutionSubrect } from "../src/render/resolution-subrect.js";
 
@@ -342,4 +347,74 @@ it("still reports its render-chain tier when every post stage is off", () => {
   expect(readRenderChainObservation(raw)).toMatchObject({ stages: [], tier: "low" });
   applied.dispose?.();
   expect(readRenderChainObservation(raw)).toBeUndefined();
+});
+
+// PRD-617: the contact occlusion applies on the owned engine and is dropped on the threejs arm, so a frame
+// without a baked world cache would show a contact shadow on one arm only. The stage refuses instead.
+it("refuses the screen-reach occlusion on a frame with no world cache, as the threejs arm does", () => {
+  vi.spyOn(console, "info").mockImplementation(() => {});
+  const target = renderer("webgpu", { info: { engine: "native" } }).target;
+  let refusal: unknown;
+  target.createRenderChain = ({ stages }) => {
+    const stage = stages?.find((entry) => entry.name === "ambientOcclusion");
+    if (!stage) throw new Error("missing AO stage");
+    try {
+      stage.build(vec4(1), { tier: "high" });
+    } catch (error) {
+      refusal = error;
+    }
+    return { applied: { stages: [], dropped: [] }, dispose() {} };
+  };
+  apply(
+    {
+      autoExposureEnabled: false,
+      bloomEnabled: false,
+      finalGatherMethod: "none",
+      gtaoEnabled: true,
+      tonemapMode: "aces",
+    },
+    target,
+  );
+  expect(String(refusal)).toMatch(/^Error: TN_AO_INDIRECT_UNSUPPORTED: /);
+});
+
+it.each([
+  { hasIndirect: false, indirectOnly: true, reach: true, refused: true },
+  { hasIndirect: true, indirectOnly: true, reach: true, refused: false },
+  { hasIndirect: true, indirectOnly: true, reach: false, refused: false },
+  { hasIndirect: false, indirectOnly: false, reach: true, refused: false },
+  { hasIndirect: false, indirectOnly: true, reach: false, refused: false },
+] as const)("admits the occlusion on %o", ({ refused, ...request }) => {
+  const message = aoRefusal(request);
+  expect(message === undefined).toBe(!refused);
+  if (refused) expect(message).toMatch(/^TN_AO_INDIRECT_UNSUPPORTED: /);
+});
+
+it("draws the transparent draws' own target unless a launch asks a measurement for it off", () => {
+  const host = globalThis as { __tnTranslucent?: unknown; process?: unknown };
+  const save = { host, env: host.process, location: globalThis.location };
+  try {
+    expect(translucentTargetWanted()).toBe(true);
+    // One launch names the switch once, on the three surfaces a launch has.
+    host.process = { env: { TN_TRANSLUCENT: "0" } };
+    expect(translucentTargetWanted()).toBe(false);
+    host.process = { env: {} };
+    Object.defineProperty(globalThis, "location", {
+      configurable: true,
+      value: new URL("http://127.0.0.1:5173/?tnTranslucent=0"),
+    });
+    expect(translucentTargetWanted()).toBe(false);
+    // Another query keeps the target: the switch is a name, not a substring.
+    Object.defineProperty(globalThis, "location", {
+      configurable: true,
+      value: new URL("http://127.0.0.1:5173/?tnTranslucentOn=0"),
+    });
+    expect(translucentTargetWanted()).toBe(true);
+    host.__tnTranslucent = false;
+    expect(translucentTargetWanted()).toBe(false);
+  } finally {
+    host.process = save.env;
+    Reflect.deleteProperty(host, "__tnTranslucent");
+    Object.defineProperty(globalThis, "location", { configurable: true, value: save.location });
+  }
 });

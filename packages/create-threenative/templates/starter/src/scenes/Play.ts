@@ -149,15 +149,30 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     // Observation is armed by playtest's first sample; ordinary games retain no frame series.
     let observeMotion = false;
     let wasMovingRight = false;
+    let simulatedMs = 0;
+    // Presented frames: one per drawn frame. That is the display's cadence on the web engine and
+    // the tick's own cadence on the native one, whose frame clock is the host's frame duration.
     const presented: Array<[number, number, number]> = [];
-    this.#observeMotion = () => {
-      if (!observeMotion) return;
+    // World updates: one per fixed step, timed by the steps themselves. A distance over those is
+    // the player's speed; the same distance over the frame clock would be the host's.
+    const ticks: Array<[number, number, number]> = [];
+    const sampleMotion = (series: Array<[number, number, number]>, time: number): void => {
       const movingRight = ctx.input.vector("move").x > 0;
-      if (movingRight && !wasMovingRight) presented.length = 0;
+      if (movingRight && !wasMovingRight) {
+        presented.length = 0;
+        ticks.length = 0;
+      }
       wasMovingRight = movingRight;
       if (!movingRight) return;
-      presented.push([ctx.frameTime, player.body.object.position.x, ctx.camera.position.x]);
-      if (presented.length > 31) presented.shift();
+      series.push([time, player.body.object.position.x, ctx.camera.position.x]);
+      if (series.length > 31) series.shift();
+    };
+    this.#observeMotion = () => {
+      if (observeMotion) sampleMotion(presented, ctx.frameTime);
+    };
+    const recordMotionTick = (dt: number): void => {
+      simulatedMs += dt * 1000;
+      if (observeMotion) sampleMotion(ticks, simulatedMs);
     };
     ctx.entities.add("smooth-motion", {
       debug: () => {
@@ -166,6 +181,12 @@ export class Play extends Scene<GameState, IPhysicsContext> {
           presented.slice(1).map((frame, index) => {
             const previous = presented[index];
             if (previous === undefined) throw new Error("Missing presented motion sample.");
+            return (frame[axis] - previous[axis]) / ((frame[0] - previous[0]) / 1000);
+          });
+        const tickSpeeds = (axis: 1 | 2): number[] =>
+          ticks.slice(1).map((frame, index) => {
+            const previous = ticks[index];
+            if (previous === undefined) throw new Error("Missing tick motion sample.");
             return (frame[axis] - previous[axis]) / ((frame[0] - previous[0]) / 1000);
           });
         const cv = (values: number[]): number | null => {
@@ -181,7 +202,11 @@ export class Play extends Scene<GameState, IPhysicsContext> {
           samples: presented.length,
           playerCv: cv(speeds(1)),
           cameraCv: cv(speeds(2)),
+          tickSamples: ticks.length,
+          tickPlayerCv: cv(tickSpeeds(1)),
+          tickCameraCv: cv(tickSpeeds(2)),
           presented,
+          ticks,
         };
       },
     });
@@ -358,6 +383,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     const frameState: Partial<GameState> = {};
     // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: starter frame coordinates existing gameplay state transitions.
     return (frameCtx, dt) => {
+      recordMotionTick(dt);
       loading.update();
       // Restart resets the store before clearing entities and scheduled callbacks.
       if (frameCtx.input.justPressed("restart")) {

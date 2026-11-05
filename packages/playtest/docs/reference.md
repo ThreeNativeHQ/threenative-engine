@@ -51,6 +51,18 @@ when the operator is deliberately reading phase timings alone. A
 `--min-fps` bound that can be satisfied by a number nobody can vouch for is a green with nothing
 behind it — the desktop build above reported 20,000 fps that way.
 
+## A drawn frame every N ticks
+
+A step's ticks advance without drawing, and a component that samples a GPU readback lands at most
+one sample per **drawn** frame, so a scenario's sample count is a property of the adapter and not of
+its ticks. `drawEvery` (a positive safe integer, ticks) makes the fixed-step runner draw one frame —
+the `render: true` advance plus one presented frame — every `drawEvery` ticks of each tick-advancing
+step (`holdTicks`, `waitTicks`, the settling tick after a release). Absent, ticks advance undrawn as
+before, and a drawn frame costs real time, so ask for the sample rate the assertions need: `60` on a
+1,800-tick hold draws 30 frames. It fails closed rather than being ignored: a bridge that advertises
+no `runtime.fixedStep` fails the handshake, `--live-clock` (or `clock: "wall-clock"`) is
+`TN_PLAYTEST_UNSUPPORTED_ON_TARGET`, and the device and desktop lanes name it unsupported too.
+
 ## Captured tone
 
 `assert.tone[]` bounds `mean`, `p1`, `p50`, `p99` in display luminance bytes and

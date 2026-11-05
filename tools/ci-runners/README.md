@@ -103,7 +103,8 @@ reviewed script is on `develop`; a restart cancels active jobs.
 
 | Want | Run |
 |---|---|
-| What is running, what is routed | `pnpm ci:runners status` (balancer log: `~/.local/state/threenative/ci-runners/balance.log`) |
+| What is running, what is routed, how much disk is left | `pnpm ci:runners status` (balancer log: `~/.local/state/threenative/ci-runners/balance.log`) |
+| Free host disk now (dangling images, build cache older than 72 h, stopped CI containers) | `pnpm ci:runners prune` |
 | Pick up a runner image or script change from `develop` | `systemctl --user restart threenative-ci-runners` (when no job is running; a restart kills in-flight jobs) |
 | Send CPU and join jobs to hosted runners now | `gh variable delete TN_RUNNER && gh variable delete TN_RUNNER_SLOTS && gh variable delete TN_RUNNER_LIGHT` |
 | Retire the separate GPU route | `gh variable delete TN_RUNNER_GPU` then `gh variable delete TN_RUNNER_GPU_HEAD` before stopping its owned runner |
@@ -128,6 +129,24 @@ restart or reboot.
 - The admin token mints one registration token per container and is unset before the job starts, so no
   job can read it.
 
+## The host disk budget
+
+A runner host that fills its disk fails jobs with `ENOSPC`, which arrives as a mystery compile error:
+on 2026-10-18 the host sat at 98-100% and `test-native` died with it in runs 39168826685 and
+39175816222. The pool therefore owns its own disk:
+
+- `prune` drops dangling images, build cache older than 72 h and stopped containers carrying the
+  `tn-ci-runner=1` label. It never removes a tagged image in use or a running container, because the
+  same docker daemon is the owner's.
+- Every start runs `prune` first (`ExecStartPre`), then measures the filesystem the docker daemon
+  actually fills (`docker info --format '{{.DockerRootDir}}'`). Under the floor — 20 GB,
+  `TN_RUNNER_MIN_FREE_GB` — `up` refuses to start and names the numbers.
+- The balancer re-checks the same free space on every poll. Under the floor it prunes once per ten
+  minutes, and if the space does not come back it withdraws `TN_RUNNER`, `TN_RUNNER_SLOTS` and
+  `TN_RUNNER_LIGHT`, so jobs queue on hosted runners instead of dying mid-compile. It re-advertises
+  the labels once the host is back over the floor.
+- `status` prints the same verdict the balancer acts on, plus how long ago the last prune ran.
+
 ## Troubleshooting
 
 - **The pool did not come up after a reboot.** `gh` may keep its token in a desktop keyring that stays
@@ -139,5 +158,8 @@ restart or reboot.
   flaky on both pools (see `docs/PRDs/CI/EXECUTION-ORDER.md`). Rerun the failed jobs once.
 - **The runner list shows offline `tn-*` runners.** Runners stopped while idle stay registered. `up` and
   `down` delete them.
+- **Slots stopped being advertised and the log says `disk … under the … GB floor`.** The host is out of
+  space and the pool paused itself before a job could hit `ENOSPC`. Run `pnpm ci:runners prune`, free
+  space, and the balancer advertises the labels again on its next poll.
 - **Timing.** The pool adds 3 heavy slots plus 3 light slots to hosted's ~20; with several boards in flight both pools
   saturate, and wall time follows total demand.

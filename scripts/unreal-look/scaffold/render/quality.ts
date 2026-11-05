@@ -19,6 +19,7 @@
 // probe on `scene.environment`, measured at **~6.3 ms of an 18-19 ms Pixel 8 frame**. It is set
 // in `sky.ts`, not in this file.
 //
+import { LEVEL_EXPOSURE } from "./atmosphere.js";
 import type { IGradeSettings } from "./grade.js";
 import type { IWorldEnvironmentOptions } from "./worldEnvironment.js";
 
@@ -110,11 +111,11 @@ const shared: IWorldEnvironmentOptions = {
   bloomRadius: 0.6,
   bloomStrength: 0.22,
   bloomThreshold: 1,
-  // Unreal's fixed exposure scale is 1.0: its scene-linear EXR passed through the filmic curve alone
-  // reproduces its PNG (mean error 0.4/255 over 72000 pixels, L1 and L2). Light units, not this
-  // number, set the level: the sun is 6 lux (`atmosphere.ts`). With auto exposure on this is only
-  // the value used while the meter is off.
-  exposure: 1,
+  // Unreal draws a level with no post-process override at 2.4, not 1 (PRD-646 round 6): the meter's
+  // white point is 1/1.2 and the engine's +1 EV bias multiplies it. `atmosphere.ts` derives it and
+  // carries the citations; the sun's lux there is the other half of the same port, so change both
+  // together. With auto exposure on this is only the value used while the meter is off.
+  exposure: LEVEL_EXPOSURE,
   tonemapMode: "filmic",
   // Unreal's VignetteIntensity, cosine-fourth law (Scene.cpp, FPostProcessSettings constructor).
   vignetteAmount: 0.4,

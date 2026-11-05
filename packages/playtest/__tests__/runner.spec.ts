@@ -1174,6 +1174,53 @@ test.each([undefined, 10])("browser runner samples after startup and optional st
   }
 }, 60_000);
 
+test("a wall-clock run refuses a scenario drawEvery instead of ignoring it", async () => {
+  const fixtureHtml = await readFile(new URL("./fixtures/app.html", import.meta.url), "utf8");
+  const server = createServer((_request, response) => {
+    response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    response.end(fixtureHtml);
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (address === null || typeof address === "string") throw new Error("drawEvery fixture has no port.");
+  const projectPath = await makeTempDir("playtest-runner-draw-every-");
+  await writeFile(
+    join(projectPath, "scenario.json"),
+    JSON.stringify({
+      artifacts: { screenshots: false },
+      drawEvery: 30,
+      name: "runner-draw-every",
+      schemaVersion: 1,
+      steps: [{ holdFrames: 10, press: "KeyW", release: true }],
+      subject: "player",
+      target: "web",
+      viewport: { height: 360, width: 640 },
+      warmupFrames: 0,
+    }),
+  );
+
+  try {
+    const report = await runStandalonePlaytest({
+      artifactDirectory: join(projectPath, "artifacts"),
+      headless: true,
+      liveClock: true,
+      projectPath,
+      scenarioPath: "scenario.json",
+      timeoutMs: 15_000,
+      trace: false,
+      url: `http://127.0.0.1:${address.port}/?clock=fixed-step`,
+    });
+
+    expect(report.pass).toBe(false);
+    expect(report.diagnostics.map(({ code }) => code)).toContain("TN_PLAYTEST_UNSUPPORTED_ON_TARGET");
+    expect(report.diagnostics.map(({ message }) => message).join(" ")).toMatch(/drawEvery/u);
+  } finally {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => error === undefined ? resolve() : reject(error)),
+    );
+  }
+}, 60_000);
+
 test("browser runner waits on an asynchronously changing resource", async () => {
   const fixtureHtml = await readFile(new URL("./fixtures/app.html", import.meta.url), "utf8");
   const server = createServer((_request, response) => {

@@ -2125,6 +2125,66 @@ describe("SceneRenderProjection copies the authored background and environment r
 });
 
 /**
+ * The reported bug: the platformer came out hazy on the native host and clear in the browser with
+ * every post stage off, because the browser arm renders the mirror `Scene` and the mirror copied
+ * `scene.fog` without `scene.fogNode`. three r187 applies the fog NODE in place of the `scene.fog`
+ * factor (`NodeManager.getFogNode`, `renderers/common/nodes/NodeManager.js:636-641`, then
+ * `NodeMaterial.setupFog`, `materials/nodes/NodeMaterial.js:1150-1160`), so a game that authored
+ * `heightFogNode` got it on one renderer and not the other. `scene.backgroundNode` is the same
+ * input one field over (`NodeManager.getBackgroundNode`, same file).
+ */
+describe("SceneRenderProjection copies the authored scene node inputs", () => {
+  type NodeScene = Scene & { backgroundNode?: unknown; fogNode?: unknown };
+
+  function projecting(source: Scene): Scene {
+    const projection = projected(source, 2);
+    expect(projection.deoptimized).toBe(false);
+    const mirror = projection.root as Scene;
+    expect(mirror).not.toBe(source);
+    return mirror;
+  }
+
+  // (a) The authored fog node must survive the handover; it is null on the unpatched mirror.
+  it("carries the authored fog node onto the mirror", () => {
+    const scene = new Scene();
+    const fogNode = vec3(1, 0, 0);
+    (scene as NodeScene).fogNode = fogNode;
+    fill(scene, new MeshStandardMaterial(), 300);
+
+    expect((projecting(scene) as NodeScene).fogNode).toBe(fogNode);
+  });
+
+  // (b) Same for the background node, which replaces the background shader.
+  it("carries the authored background node onto the mirror", () => {
+    const scene = new Scene();
+    const backgroundNode = vec3(0, 1, 0);
+    (scene as NodeScene).backgroundNode = backgroundNode;
+    fill(scene, new MeshStandardMaterial(), 300);
+
+    expect((projecting(scene) as NodeScene).backgroundNode).toBe(backgroundNode);
+  });
+
+  // (c) Re-read every reconcile, like the rest of the scene look: a game that turns its fog node
+  // off mid-level must not keep drawing it, and one that swaps it must draw the new node.
+  it("re-reads the fog node each reconcile and clears it when the game does", () => {
+    const scene = new Scene();
+    (scene as NodeScene).fogNode = vec3(1, 0, 0);
+    fill(scene, new MeshStandardMaterial(), 300);
+
+    const projection = projected(scene, 2);
+    const mirror = projection.root as NodeScene;
+    const swapped = vec3(0, 0, 1);
+    (scene as NodeScene).fogNode = swapped;
+    projection.reconcile();
+    expect(mirror.fogNode).toBe(swapped);
+
+    (scene as NodeScene).fogNode = null;
+    projection.reconcile();
+    expect(mirror.fogNode).toBeNull();
+  });
+});
+
+/**
  * The named opt-out. Projection is an optimizer, and an optimizer a game cannot decline is a tax:
  * a scene whose draw count falls without its frame time following should be able to say so. The
  * option is `projection: false` on the constructor — `renderer.projection: false` in config — and the

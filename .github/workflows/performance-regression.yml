@@ -403,7 +403,15 @@ jobs:
     name: Weekly full template workload rotation
     if: github.event_name == 'schedule' && github.event.schedule == '17 4 * * 0'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Eight templates scaffold, install, build, playtest and boot on one runner. It was 30 minutes
+    # for work that had never once reached its first step: the same length was a guess, not a
+    # measurement, and 30 would have killed a run halfway through a template.
+    timeout-minutes: 120
+    env:
+      # A hosted runner has no GPU, and a scaffolded project's own `test` script refuses a software
+      # adapter. That is the acceptance `golden-path` already states for the same reason: what this
+      # job proves is that every template still runs, not how fast its frame is on this runner.
+      TN_PLAYTEST_ALLOW_SOFTWARE: "1"
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/pnpm
@@ -412,6 +420,21 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # The first step this job ever ran imported `create-threenative/src/config.ts`, which imports
+      # `@threenative/assets`: pnpm resolves that through the workspace symlink into
+      # `packages/assets/dist`, and only a build writes it. So the job died in 20 s with
+      # ERR_MODULE_NOT_FOUND — the identical failure `golden-path`'s platformer leg had on run
+      # 33697267947 — on every weekly run since it landed (run 41301318744 on 2026-11-01 and every
+      # Sunday before it), which is why no scheduled run has re-measured a template since
+      # 2026-09-06. The workspace's own action builds the bundles, and the develop push lane stays
+      # their only saver.
+      - uses: ./.github/actions/workspace-dist
+        with:
+          pack-archives: "false"
+          save-bundles: "false"
+      # `packageLocalFramework` asserts the web engine is in packages/runtime-native/build/web before
+      # it packs the local tarballs, so the engine is built before the rotation packs anything.
+      - uses: ./.github/actions/native-engine-wasm
       - name: Run the existing full template workload rotation
         run: pnpm test:templates
 

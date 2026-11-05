@@ -256,6 +256,17 @@ fn isValidSample(uv: vec2<f32>, centerTexel: vec2<f32>, size: vec2<f32>) -> bool
     let texel = floor(uv*size);
     return uv.x>0.0 && uv.x<1.0 && uv.y>0.0 && uv.y<1.0 && (texel.x!=centerTexel.x || texel.y!=centerTexel.y);
 }
+// Unreal fades ambient occlusion out in the distance: "at what distance the AO effect disappears in
+// the distance (avoiding artifacts and AO effects on huge object)" (UE 5.8.3:
+// Engine/Source/Runtime/Engine/Classes/Engine/Scene.h:2239-2244). Its defaults are
+// AmbientOcclusionFadeDistance 8000 uu and AmbientOcclusionFadeRadius 5000 uu
+// (Engine/Source/Runtime/Engine/Private/Scene.cpp:572-573), 80 m and 50 m here, where one world unit
+// is one metre. Without it the reach path darkens geometry it cannot reconstruct: a sky dome 7 km out
+// arrives through the depth buffer in metre steps and its occlusion reads as a lattice along the
+// mesh's own triangle edges.
+const kAoFadeDistance = 80.0;
+const kAoFadeRadius = 50.0;
+const kAoInvFadeRadius = 0.02;
 // r187 GTAONode.js:412 sampleCenterDepth: the 2x2 depthGather's minimum, taken below full resolution.
 fn gatherMinDepth(coord: vec2<f32>) -> f32 {
     let size = vec2<i32>(textureDimensions(t_depth));
@@ -271,6 +282,11 @@ fn gatherMinDepth(coord: vec2<f32>) -> f32 {
     let depth = sampleDepth(coord);
     if (depth>=1.0) { discard; }
     let position = viewPosition(coord,depth);
+    // Unreal clears the occlusion past FadeDistance before it traces anything (UE 5.8.3:
+    // Renderer/Private/CompositionLighting/PostProcessAmbientOcclusion.cpp:1043-1048, the clear quad
+    // over the depth range from AmbientOcclusionFadeDistance to the far plane).
+    let viewDepth = -position.z;
+    if (viewDepth>=kAoFadeDistance) { return vec4<f32>(1.0,0,0,1); }
     let normal = sampleNormal(coord);
     let noiseUv = vec2<f32>(coord.x,1.0-coord.y)*u.resolution/vec2<f32>(textureDimensions(t_noise));
     let noise = textureSampleLevel(t_noise,smp_noise,noiseUv,0.0);
@@ -323,7 +339,11 @@ fn gatherMinDepth(coord: vec2<f32>) -> f32 {
         let termNeg = -cos(2.0*hNeg-angleN)+nCos+2.0*hNeg*nSin;
         ao += projNLen*((termPos+termNeg)*0.25);
     }
-    ao = pow(clamp(ao/f32(directions),0.0,1.0),u.scale);
+    // Unreal's soft fade, before AmbientOcclusionPower: PostProcessAmbientOcclusion.usf:431-441
+    // `lerp(OutColor.r, 1, saturate(SceneDepth * Mul + Add))` with Mul = 1/FadeRadius and
+    // Add = -(FadeDistance - FadeRadius)/FadeRadius (PostProcessAmbientOcclusion.cpp:393-412).
+    ao = mix(ao/f32(directions),1.0,saturate((viewDepth-kAoFadeDistance+kAoFadeRadius)*kAoInvFadeRadius));
+    ao = pow(clamp(ao,0.0,1.0),u.scale);
     // GTAO's RedFormat render target samples as (r,0,0,1).
     return vec4<f32>(ao,0,0,1);
     }

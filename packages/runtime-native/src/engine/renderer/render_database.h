@@ -143,6 +143,7 @@ class RenderDatabase {
     void vertexColorsOf(const BufferGeometry& geometry, const Material& material, DrawItem& d);
     static void depthBiasOf(const Material& material, DrawItem& d);
     void geometryInputsOf(const BufferGeometry& geometry, DrawItem& d);
+    static void sortCenterOf(const BufferGeometry& geometry, DrawItem& d);
     // One mirrored pass per live reflector: its own targets and its own records, so the pass never
     // resizes the frame or churns the frame's draw records. A pass draws no further reflections.
     struct ReflectionPass {
@@ -243,6 +244,7 @@ class RenderDatabase {
     void collectShadowFrustums(Object3D& root, const Camera& mainCamera);
     bool boundingSphereOf(Object3D& object, std::string_view type, Sphere& sphere);
     bool inShadowFrustum(const Object3D& object, const Sphere* sphere);
+    bool rigCastsShadow(Object3D& object);
     std::vector<std::unique_ptr<SkinnedPalette>> skinnedPalettes_; // borrowed by this frame's draws
     // core's DECLINE_RESCAN_FRAMES: a settled projection decline re-judges on this cadence, not per
     // frame. Starts at the interval so the first batch always scans.

@@ -112,8 +112,20 @@ export interface IGamePluginRuntime {
    * A run that counts fixed-step ticks must not also accumulate real seconds into the same
    * simulation, and the frames before its first `advance()` are exactly where a boot's seconds
    * used to land. Optional: a runtime without a clock just never freezes one.
+   *
+   * `settleSteps` is the settling pass the world is owed: a zero freeze lets `settleClock` spend it
+   * instead, once the world's scene is live.
    */
-  readonly freezeClock?: () => void;
+  readonly freezeClock?: (settleSteps?: number) => void;
+  /**
+   * Spend the settling pass now, from a caller that knows the world's scene is live.
+   *
+   * Present only when the runtime can spend it later than the freeze: a game that boots through a
+   * loading scene otherwise settles the loading scene, and the world's own clock misses those fixed
+   * steps — a playtest pose then depends on how fast the machine booted. Optional, and paired with
+   * `freezeClock(0)`: a runtime without it settles on its first live frame, as before.
+   */
+  readonly settleClock?: (steps?: number) => void;
   /**
    * Draw the current world once without advancing it, for a screenshot taken while the loop is
    * driven by `fixedStep` and presents nothing between ticks. Optional: a runtime without a frozen

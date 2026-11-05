@@ -96,6 +96,7 @@
     "unreal-look:curve": "tsx scripts/unreal-look/curve.ts",
     "unreal-look:gi-cost": "tsx scripts/unreal-look/gi-tier-cost.ts",
     "unreal-look:judge": "tsx scripts/unreal-look/judge.ts",
+    "unreal-look:ratio": "tsx scripts/unreal-look/ratio.ts",
     "unreal-look:ratchet": "tsx scripts/unreal-look/ratchet.ts",
     "unreal-look:stage-effect": "tsx scripts/unreal-look/stage-effect.ts",
     "verify:forest-playtest": "sh scripts/xvfb.sh tsx scripts/verify-forest-playtest.ts",

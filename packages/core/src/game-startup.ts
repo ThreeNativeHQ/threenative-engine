@@ -798,7 +798,10 @@ export async function startScenes<TState extends Record<string, unknown>, TPhysi
       ),
     frameCounts: () => ({ updates: startup.updates, renders: startup.renders }),
     frameBudgetWindow: () => game.frameBudget?.window(),
-    freezeClock: () => gameLoop.freezeClock(),
+    freezeClock: (settleSteps) => gameLoop.freezeClock(settleSteps),
+    // Spend the settling pass once the world's scene is live: this boot runs through a loading scene, so
+    // a runtime that settled on its first live frame would settle the loading scene (playtest settle).
+    settleClock: (steps) => gameLoop.settleNow(steps),
     renderCurrent: () => gameLoop.renderCurrentFrame(),
     enableRuntimeDiagnostics: () => {
       game.renderMetricsEnabled = true;

@@ -6,7 +6,7 @@
 <root> is a capture root the gate has run on (`pnpm unreal-look:compare --sameness --captures <root>`).
 It holds overlap/<scene>/ID/<pose>.png (the overlap) and <pose>.unreal.png / <pose>.threenative.png (each
 engine's frame redrawn in the exact colour of each object, so equal objects have equal colours).
---scene is the capture folder of the scene: cornell, sunlit-room, shadow/foliage, or reference.
+--scene is the capture folder of the scene: cornell, sunlit-room, shadow/wildwood, or reference.
 
 One row per pose. Columns: UNREAL 5.8.3 · ID | WASM ENGINE · ID | OVERLAP · ID (white: the engines draw
 a failing object differently). With --before <root>, a second gate run on the same Unreal frames:

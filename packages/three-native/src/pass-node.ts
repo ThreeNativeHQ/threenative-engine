@@ -539,6 +539,10 @@ export function definePass(
         return tsl.texture({ name: "albedo" }, tsl.uv());
       if (name === "emissive" && this.#mrt?.outputs.emissive === emissive)
         return tsl.texture({ name: "emissive" }, tsl.uv());
+      // The draws that composited over the frame, lit as they were drawn. The engine draws them while the post graph
+      // reads this name (Renderer::planAux), so the read is the request and no MRT output names it: the occlusion and
+      // the gather belong to the opaque surface, and the composite restores what a translucent sheet drew over it.
+      if (name === "translucent") return tsl.texture({ name: "translucent" }, tsl.uv());
       if (
         (name === "metalness" || name === "roughness") &&
         this.#mrt?.outputs.normal === normalView &&

@@ -534,6 +534,16 @@ async function runStandalonePlaytestOnce(
     const readyMs = startupOutcome?.startup.timeline?.readyMs;
     const startupCover = coverRecorder === undefined || readyMs === undefined ? undefined : await coverRecorder.finish(readyMs);
     await alignScenarioStartTick(bridge, scenario.startTick, activeConfig.liveClock === true);
+    // `drawEvery` counts fixed-step ticks that draw. A wall-clock run advances none, so the field
+    // would be silently ignored and a readback scenario's sample count would be back in the
+    // adapter's hands — the exact failure the field exists to remove.
+    if (scenario.drawEvery !== undefined && activeConfig.liveClock === true) {
+      throw new PlaytestBridgeError(playtestDiagnostic(
+        "TN_PLAYTEST_UNSUPPORTED_ON_TARGET",
+        "Scenario drawEvery draws a frame every N counted ticks, and this run advances no counted ticks.",
+        "Drop --live-clock (and any scenario clock: \"wall-clock\"), or drop drawEvery and measure the standing scene another way.",
+      ));
+    }
     const runtimeReady = await page.evaluate(() =>
       document.readyState !== "loading" && document.querySelector("canvas") !== null,
     ).catch(() => false);
@@ -792,6 +802,8 @@ async function runStandalonePlaytestOnce(
       : { entity: sightLineEntity, samples: [] as IPlaytestSightLineObservation[] };
     // The engine's cost windows count per drawn frame, so every tick draws one: with ticks advanced
     // undrawn, a slower machine folds more ticks into each frame and the same game reads costlier.
+    // A scenario's `drawEvery` asks the same mechanism for a frame every N ticks instead of one;
+    // there is one drawn-tick path, and this is its every-tick setting.
     const drawnTicks = scenario.assert?.engineCost === undefined || bridge === undefined
       || activeConfig.liveClock === true || !bridge.description.capabilities.includes("runtime.fixedStep")
       ? undefined
@@ -863,6 +875,7 @@ async function runStandalonePlaytestOnce(
           await sampleSightLine(bridge, sightLine);
         },
         sightLine,
+        scenario.drawEvery,
       );
       if (movementBaselineSnapshot === undefined && movementNeedsBaseline && movementEntity !== undefined) {
         const candidate = stepSamples.afterStep ?? stepSamples.afterInput;

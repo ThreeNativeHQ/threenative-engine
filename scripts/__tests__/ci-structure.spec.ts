@@ -5,7 +5,7 @@ import { runInNewContext } from "node:vm";
 import { describe, expect, it } from "vitest";
 import { makeTempDir } from "../../test-support/temp-dir.js";
 import { allTemplates } from "../../test-support/templates.js";
-import { declaredNeeds } from "../ci-workflow.js";
+import { declaredNeeds, jobSections } from "../ci-workflow.js";
 import { parsePerformanceLaneManifest } from "../engine-load-test/report.js";
 import {
   collectorCoverage,
@@ -540,18 +540,6 @@ function triggerPaths(source: string): readonly string[] {
     );
   }
   return entries;
-}
-
-function jobSections(source: string): readonly [string, string][] {
-  const jobsIndex = source.indexOf("\njobs:\n");
-  if (jobsIndex < 0) throw new Error("CI workflow did not include a jobs mapping.");
-  const jobs = source.slice(jobsIndex);
-  const matches = [...jobs.matchAll(/^ {2}([A-Za-z0-9_-]+):\n/gm)];
-  return matches.map((match, index) => {
-    const name = match[1];
-    if (name === undefined) throw new Error("CI job heading did not include a name.");
-    return [name, jobs.slice(match.index, matches[index + 1]?.index ?? jobs.length)];
-  });
 }
 
 function requiredJob(source: string, name: string): string {
@@ -1655,6 +1643,9 @@ describe("CI pipeline structure", () => {
         expect(section).toContain("uses: ./.github/actions/android-v8-source");
         expect(section).toContain("recipe-hash: ${{ steps.v8.outputs.recipe-hash }}");
         expect(section).toContain("published: ${{ steps.v8.outputs.published }}");
+        // The release write consumes `trusted`, not `built`: a develop or main push that hits its
+        // own cache must still be able to republish a missing asset (PRD-628 review round 2).
+        expect(section).toContain("trusted: ${{ steps.v8.outputs.trusted }}");
       }
     },
   );
@@ -3911,6 +3902,48 @@ ${script}
     expect(performance).toContain("release-soak");
     expect(performance).toContain("pnpm native:qualify:physical");
     expect(performance).toContain("7200000");
+  });
+
+  // Two crons fire on a Sunday, so every sampled run after the first showed this job as `skipped`
+  // and it looked like a schedule that never matched. The run that did reach the condition then died
+  // in 20 s on ERR_MODULE_NOT_FOUND before it measured a template, which is why nothing re-measured
+  // the templates for two months. Both halves are guarded here: the condition names the cron that
+  // fires it and no other, and the job builds the workspace and the web engine before the rotation.
+  it("aims the weekly template rotation at the cron that fires it, and builds before it measures", async () => {
+    const performance = await readFile(
+      path.join(repo, ".github/workflows/performance-regression.yml"),
+      "utf8",
+    );
+    const crons = [
+      ...performance
+        .slice(0, performance.indexOf("\njobs:\n"))
+        .matchAll(/^\s+- cron: "([^"]+)"$/gmu),
+    ].map((match) => match[1] ?? "");
+    expect(crons.length).toBeGreaterThan(1);
+    // A `*` day-of-week fires daily; the weekly rotation is the one cron whose day-of-week is fixed.
+    const weekly = crons.filter((cron) => cron.split(/\s+/u)[4] !== "*");
+    expect(weekly).toHaveLength(1);
+    const weeklyCron = weekly[0] ?? "";
+    expect(weeklyCron).not.toBe("");
+    const section =
+      jobSections(performance).find(([name]) => name === "weekly-workload-rotation")?.[1] ?? "";
+    expect(section).not.toBe("");
+    const condition = /^ {4}if: (.+)$/mu.exec(section)?.[1] ?? "";
+    expect(condition).toContain("github.event_name == 'schedule'");
+    expect(condition).toContain(`github.event.schedule == '${weeklyCron}'`);
+    for (const cron of crons.filter((candidate) => candidate !== weeklyCron))
+      expect(condition).not.toContain(cron);
+    // The rotation imports `@threenative/assets` through the CLI's config and packs the local
+    // framework, so the workspace bundles and the web engine are its prerequisites, not its output.
+    const build = section.indexOf("uses: ./.github/actions/workspace-dist");
+    const engine = section.indexOf("uses: ./.github/actions/native-engine-wasm");
+    const rotation = section.indexOf("run: pnpm test:templates");
+    expect(build).toBeGreaterThan(-1);
+    expect(engine).toBeGreaterThan(-1);
+    expect(rotation).toBeGreaterThan(build);
+    expect(rotation).toBeGreaterThan(engine);
+    // A hosted runner has no GPU: the scaffold's own test refuses a software adapter without this.
+    expect(section).toContain('TN_PLAYTEST_ALLOW_SOFTWARE: "1"');
   });
 
   it("reports a scheduled missing baseline before fetching or checking out source", async () => {

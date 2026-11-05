@@ -219,8 +219,10 @@ struct StandardPrograms {
     /** A lit fragment's diffuse colour (map, tint and colorNode included, unfogged) and emitted radiance, both vec3:
      *  what the albedo and emissive post targets hold (Renderer::auxFragment). kInvalid for an unlit program. */
     ExprId albedo = kInvalid, emissive = kInvalid;
-    /** A Standard or Physical fragment's view-space shading normal (a normalNode, normal map or bump included), vec3:
-     *  what the post normal target holds for a draw whose normalNode the small normal fragment cannot evaluate. */
+    /** The lit fragment's own normal: three's `normalView` accessor (`NodeMaterial.setupNormal`), namely the material
+     *  normalNode's result when it authors one, else the normal-map or bump-map perturbation, else the view-space
+     *  geometry normal. The normal post target holds it for a draw whose material authors a normalNode
+     *  (Renderer::auxFragment). kInvalid for an unlit program. */
     ExprId normal = kInvalid;
     /** The material's custom MRT slots, lowered in this program's order: one expression per MaterialNodes::mrt entry.
      *  The colour program declares what they read and writes none of them; Renderer::auxFragment writes them. */

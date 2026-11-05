@@ -20,6 +20,7 @@ describe("rain weather intents", () => {
       ["setDroplets", "droplets"],
       ["setFrozen", "frozen"],
       ["setMuted", "muted"],
+      ["setReducedMotion", "reducedMotion"],
     ] as const;
     for (const [intent, field] of fields) {
       expect(intentPatch(intent, true, storm())).toEqual({ [field]: true });

@@ -201,6 +201,7 @@ export function appendIteration(
       mergeGroupRunSuccessPct: measurement.summary.mergeGroupRunSuccessPct,
       enqueueToMergeMedianMin: measurement.summary.enqueueToMergeMedianMin,
       queueWaitJobs: measurement.summary.queueWaitJobs,
+      fullBoardQueueSumMedianMin: measurement.summary.fullBoardQueueSumMedianMin ?? null,
     },
     prs: measurement.prs,
     firstFailingJobs: measurement.firstFailingJobs,

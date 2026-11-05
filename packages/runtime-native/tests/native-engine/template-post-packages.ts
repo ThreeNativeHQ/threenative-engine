@@ -102,7 +102,7 @@ const registry = JSON.parse(
 function standIn(exported: ReturnType<typeof exportTslGraph>): string[] {
   const rows = new Set<string>();
   const count = exported.nodes.length;
-  // Owned Wasm/V8 parity proves real GI and neutral AO=1 separately; upstream SSGI parity remains distinct.
+  // Owned Wasm/V8 parity proves real GI and the gather's own occlusion separately; upstream SSGI parity remains distinct.
   const giOwners = new Set(
     exported.nodes.flatMap((node, id) => (node.kind === "SSGINode" ? [id] : [])),
   );
@@ -401,12 +401,20 @@ for (const name of names) {
         const chain = new RenderChain(renderer, options);
         // A template's `.cube` table is a file that lands after the chain that reads it, so its
         // `lut:pending` is the transient first build. A tier that sets a stage's intensity to zero
-        // turned it off by design. Any other drop, or a pending table that never lands, is a stage
-        // the native lowering refused.
-        const dropped = chain.applied.dropped.filter(
-          (stage) => stage.reason !== "lut:pending" && !/Intensity:0$/u.test(stage.reason),
-        );
+        // turned it off by design. The contact occlusion's admission refusal is a designed drop too:
+        // the screen-reach form occludes indirect light only, so a frame with no baked world cache
+        // drops it on both engines and prints the reason (PRD-635/617; the judged racing receipt).
+        // Any other drop is a stage the native lowering refused.
+        const byDesign = (reason: string): boolean =>
+          reason === "lut:pending" ||
+          /Intensity:0$/u.test(reason) ||
+          reason.startsWith("build:TN_AO_INDIRECT_UNSUPPORTED");
+        const dropped = chain.applied.dropped.filter((stage) => !byDesign(stage.reason));
         pendingTable = chain.applied.dropped.some((stage) => stage.reason === "lut:pending");
+        // Named, never silent: a dropped stage is a look the kit does not get on either engine.
+        for (const stage of chain.applied.dropped)
+          if (stage.reason.startsWith("build:"))
+            console.info(`${label}: stage dropped: ${stage.name}: ${stage.reason}`);
         if (dropped.length > 0) {
           chain.dispose();
           throw new Error(dropped.map((stage) => `${stage.name}: ${stage.reason}`).join("; "));

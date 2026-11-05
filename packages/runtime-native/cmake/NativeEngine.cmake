@@ -140,6 +140,8 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_cull_keeps_main_bundle=cull_keeps_main_bundle
         native_engine_renderer_emissive_target=emissive_target
         native_engine_renderer_aux_targets_one_pass=aux_targets_one_pass
+        native_engine_renderer_aux_targets_normal_node=aux_targets_normal_node
+        native_engine_renderer_aux_routes_written_normals=aux_routes_written_normals
         native_engine_renderer_aux_targets_alpha_tested=aux_targets_alpha_tested
         native_engine_renderer_aux_targets_normal_node=aux_targets_normal_node
         native_engine_renderer_denoise_face_normal=denoise_face_normal
@@ -316,6 +318,8 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_lit_mesh_without_normals=lit_mesh_without_normals
         native_engine_renderer_invalidation=invalidation
         native_engine_renderer_scene_alpha=alpha_scene
+        native_engine_transparent_sort_uses_geometry_center=transparent_sort_uses_geometry_center
+        native_engine_renderer_translucent_target=translucent_target
         native_engine_standard_materials_unsupported=material_unsupported
         native_engine_renderer_shader_invalid=shader_invalid
         native_engine_renderer_time_uniform=time_uniform
@@ -324,6 +328,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_draw_refresh_guard_holes=draw_refresh_guard_holes
         native_engine_renderer_normal_pass_is_not_tallied=normal_pass_is_not_tallied
         native_engine_renderer_gtao_screen_reach=gtao_screen_reach
+        native_engine_renderer_gtao_fade_distance=gtao_fade_distance
         native_engine_renderer_color_write_masks_the_draw=color_write_masks_the_draw
         native_engine_renderer_depth_test_off_draws_over_nearer=depth_test_off_draws_over_nearer
         native_engine_renderer_steady_cache_invalidation=steady_cache_invalidation

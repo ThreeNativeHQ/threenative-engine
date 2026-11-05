@@ -369,6 +369,27 @@ void RenderDatabase::geometryInputsOf(const BufferGeometry& geometry, DrawItem& 
     if (geometry.instanced) d.instanceCount = instanceCountOf(geometry);
 }
 
+// three's render list keys a draw by the world position of its geometry's bounding-sphere centre
+// (renderers/common/StandardDrawingPipeline.js:236-241), computing the sphere on the first frame that needs
+// it, exactly as projectObject does. That is not the object's origin: a geometry whose vertices sit
+// off-centre, such as a waterfall's arc, ranks the other way round, and the wrong transparent order draws
+// the pale inner sheet over the outer one.
+void RenderDatabase::sortCenterOf(const BufferGeometry& geometry, DrawItem& d) {
+    const auto position = geometry.getAttribute("position");
+    if (!position) return;  // no vertices to centre on: the object origin stays the key
+    if (const Sphere* sphere = geometry.boundingSphere.get()) {  // already computed: one copy, no pass
+        d.sortCenter = std::array<double, 3>{sphere->center.x, sphere->center.y, sphere->center.z};
+        return;
+    }
+    // BufferGeometry.js:1074-1080: the sphere is centred on the box, so the box centre is the key.
+    Box3 box;
+    Vector3 point, center;
+    box.makeEmpty();
+    for (uint64_t i = 0, count = position->count(); i < count; ++i) box.expandByPoint(position->getXYZ(i, point));
+    box.getCenter(center);
+    d.sortCenter = std::array<double, 3>{center.x, center.y, center.z};
+}
+
 // three's polygonOffset as WebGPUPipelineUtils sets it: depthBias = units, slope scale = factor.
 void RenderDatabase::depthBiasOf(const Material& material, DrawItem& d) {
     d.depthBias = material.polygonOffset ? static_cast<int32_t>(material.polygonOffsetUnits) : 0;
@@ -538,6 +559,7 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
     vertexColorsOf(*r.canonical, *material, d);
     depthBiasOf(*material, d);
     geometryInputsOf(*r.canonical, d);
+    sortCenterOf(*r.canonical, d);
     d.matrixWorld = toArray(mesh.matrixWorld);
     d.kind = material->nodes.fragmentNode ? MaterialKind::Basic : kindOf(material->type);
     d.renderOrder = mesh.renderOrder();
@@ -609,6 +631,7 @@ DrawItem& RenderDatabase::refresh(const Mesh& mesh, Record& r) {
         if (r.canonical) vertexColorsOf(*r.canonical, *r.material, d);
         depthBiasOf(*r.material, d);
         if (r.canonical) geometryInputsOf(*r.canonical, d);
+        if (r.canonical) sortCenterOf(*r.canonical, d);
         // A non-float colour or custom attribute reaches the draw as a converted copy that `needsUpdate` replaces
         // without moving the geometry revision: such a record re-reads those inputs every frame, as before FM1.
         r.convertedInputs = false;
@@ -668,11 +691,16 @@ bool RenderDatabase::boundingSphereOf(Object3D& object, std::string_view type, S
         if (instanced.boundingSphere == nullptr) instanced.computeBoundingSphere();
         if (instanced.boundingSphere == nullptr) return false;
         sphere.copy(*instanced.boundingSphere);
+    } else if (type == "SkinnedMesh") {
+        // three reads `SkinnedMesh.boundingSphere`, computed from the posed vertices. A pose can reach
+        // far past the bind pose, so only the posed bound may cull: `rigCastsShadow` asks it, and this
+        // answer keeps the main camera's culling where it was, none.
+        return false;
     } else {
         auto& mesh = static_cast<Mesh&>(object);
-        // ponytail: skinned and morphed meshes always draw; native bounds ignore bones and morph
-        // targets, which three's include. Add bone- and morph-aware spheres when they draw off screen.
-        if (type == "SkinnedMesh" || mesh.geometry == nullptr ||
+        // ponytail: a morphed mesh relies on morph targets, whose posed bounds native does not measure
+        // (three's geometry sphere ignores them too; this is stricter). Add one when it draws off screen.
+        if (mesh.geometry == nullptr ||
             (!mesh.geometry->morphPositions.empty() && !mesh.morphTargetInfluences.empty()))
             return false;
         if (mesh.geometry->boundingSphere == nullptr) mesh.geometry->computeBoundingSphere();
@@ -695,6 +723,42 @@ bool RenderDatabase::inShadowFrustum(const Object3D& object, const Sphere* spher
         if ((mask & sf.layersMask) != 0 && sf.frustum.intersectsSphere(*sphere)) return true;
     }
     return false;
+}
+
+// A rig's shadow bound, cheapest first. A rig no shadow frustum's layers see never casts, and that
+// answer needs no bound. Its bind-pose sphere proves it inside one without reading a bone. Only when
+// that misses does the posed reach decide: O(bones) per frame, and it publishes a deferred pose and
+// joins its palette, which `gpu_joint_production` counts. A reach nothing can place always casts,
+// because the bind pose alone would wrongly cull a rig whose pose reaches into the box.
+bool RenderDatabase::rigCastsShadow(Object3D& object) {
+    if (shadowPointLightActive_ || virtualShadows_) return true;
+    if (shadowFrustums_.empty()) return false;
+    const uint32_t mask = Layers::bits(object.layers().mask);
+    if (std::none_of(shadowFrustums_.begin(), shadowFrustums_.end(),
+                     [&](const ShadowFrustum& sf) { return (mask & sf.layersMask) != 0; }))
+        return false;
+    auto& rig = static_cast<SkinnedMesh&>(object);
+    Sphere sphere;
+    const auto inside = [&] {
+        sphere.applyMatrix4(object.matrixWorld);
+        return inShadowFrustum(object, &sphere);
+    };
+    if (rig.geometry) {
+        if (rig.geometry->boundingSphere == nullptr) rig.geometry->computeBoundingSphere();
+        if (rig.geometry->boundingSphere != nullptr) {
+            sphere.copy(*rig.geometry->boundingSphere);
+            if (inside()) return true;
+        }
+    }
+    // A detached bind keeps `bindMatrixInverse` off the mesh's own world matrix, so the reach is not in
+    // this object's space; a bound nothing can place keeps the rig a caster.
+    Box3 reach;
+    if (!rig.attached || !rig.boneReachBounds(reach) || reach.isEmpty()) return true;
+    Vector3 centre, size;
+    reach.getCenter(centre);
+    reach.getSize(size);
+    sphere.set(centre, size.length() * 0.5);
+    return inside();
 }
 
 void RenderDatabase::collectShadowFrustums(Object3D& root, const Camera& mainCamera) {
@@ -823,7 +887,9 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
                 // (UE 5.8.3: Engine/Source/Runtime/Engine/Private/PSOPrecache.cpp:230 precaches a primitive's PSOs when it
                 // enters the scene, not when it enters the view).
                 if (mainPass && !compiling_ && measure() && !frustum_.intersectsSphere(sphere)) mainPass = false;
-                if (shadowCaster && !compiling_ && !inShadowFrustum(object, measure() ? &sphere : nullptr)) shadowCaster = false;
+                if (shadowCaster && !compiling_)
+                    shadowCaster = type == "SkinnedMesh" ? rigCastsShadow(object)
+                                                         : inShadowFrustum(object, measure() ? &sphere : nullptr);
             }
             if (!mainPass && !shadowCaster) {
                 if (mesh.frustumCulled && !cullExempt_) waste::debugAdd(waste::counters().culledObjects);

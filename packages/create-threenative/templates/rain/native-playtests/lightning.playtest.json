@@ -12,9 +12,29 @@
   },
   "steps": [
     {
+      "kind": "wait",
+      "label": "boot",
+      "waitTicks": 30,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": "KeyM",
+      "label": "sound",
+      "waitTicks": 10,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": "KeyX",
+      "label": "safe",
+      "waitTicks": 4,
+      "release": true
+    },
+    {
       "kind": "input",
       "press": "KeyL",
-      "label": "suppressed",
+      "label": "safe-strike",
       "waitTicks": 6,
       "release": true
     },
@@ -23,13 +43,6 @@
       "press": "KeyX",
       "label": "flashes-on",
       "waitTicks": 4,
-      "release": true
-    },
-    {
-      "kind": "input",
-      "press": "KeyM",
-      "label": "sound",
-      "waitTicks": 10,
       "release": true
     },
     {
@@ -57,18 +70,52 @@
     "resources": [
       {
         "id": "state",
-        "path": "safe",
-        "allowTrivial": "this desktop web view reports prefers-reduced-motion: reduce, so the storm boots with flashes suppressed; the scenario proves a strike is suppressed until the player turns flashes back on",
+        "path": "reducedMotion",
+        "allowTrivial": "the branch this run takes: the UI page answers its own prefers-reduced-motion query and this private display has no reduced-motion setting, so WebKit answers no-preference and the storm boots flashing. The suppressed branch is the web reduced-motion scenario's (it emulates reduce). If a host ever answers reduce, this assertion names it instead of the run failing later on `safe`.",
         "atSteps": [
           {
+            "equals": false,
+            "label": "boot"
+          }
+        ],
+        "equals": false
+      },
+      {
+        "id": "state",
+        "path": "safe",
+        "atSteps": [
+          {
+            "equals": false,
+            "label": "boot"
+          },
+          {
             "equals": true,
-            "label": "suppressed"
+            "label": "safe"
+          },
+          {
+            "equals": true,
+            "label": "safe-strike"
           },
           {
             "equals": false,
             "label": "flashes-on"
+          },
+          {
+            "equals": false,
+            "label": "strike"
           }
         ]
+      },
+      {
+        "id": "state",
+        "path": "autoLightning",
+        "atSteps": [
+          {
+            "equals": false,
+            "label": "safe"
+          }
+        ],
+        "equals": false
       },
       {
         "id": "state",
@@ -83,11 +130,21 @@
       },
       {
         "id": "state",
+        "path": "flash",
+        "atSteps": [
+          {
+            "equals": 0,
+            "label": "safe-strike"
+          }
+        ]
+      },
+      {
+        "id": "state",
         "path": "strikes",
         "atSteps": [
           {
             "equals": 0,
-            "label": "suppressed"
+            "label": "safe-strike"
           },
           {
             "equals": 1,
@@ -105,6 +162,10 @@
         "path": "status",
         "atSteps": [
           {
+            "equals": "steady",
+            "label": "safe-strike"
+          },
+          {
             "equals": "flashing",
             "label": "strike"
           }
@@ -118,8 +179,18 @@
       },
       {
         "id": "state",
+        "path": "lastStrike.metres",
+        "gte": 250,
+        "lte": 520
+      },
+      {
+        "id": "state",
         "path": "pendingThunderAt",
         "atSteps": [
+          {
+            "equals": -1,
+            "label": "safe-strike"
+          },
           {
             "equals": -1,
             "label": "heard"
@@ -132,6 +203,10 @@
         "entity": "storm-audio",
         "component": "pendingThunder",
         "atSteps": [
+          {
+            "equals": 0,
+            "label": "safe-strike"
+          },
           {
             "equals": 1,
             "label": "strike"
