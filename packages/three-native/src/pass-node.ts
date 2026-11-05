@@ -68,6 +68,32 @@ interface IMRTSlot {
   readonly name: string;
 }
 
+/**
+ * The slot names the engine's scene pass already owns: its colour, depth, velocity and surface targets.
+ * A custom slot keeps its own name and cannot take one of these, because the pass answers that name
+ * with its own target (getTextureNode).
+ */
+const RESERVED_SLOTS: ReadonlySet<string> = new Set([
+  "output",
+  "depth",
+  "velocity",
+  "normal",
+  "metalness",
+  "roughness",
+  "diffuseColor",
+  "emissive",
+]);
+
+/** WebGPU's guaranteed colour-attachment count, and what a device's limit reports here when it answers. */
+function maxColorAttachments(): number {
+  const limit = (
+    globalThis as {
+      navigator?: { gpu?: { limits?: { maxColorAttachments?: unknown } } };
+    }
+  ).navigator?.gpu?.limits?.maxColorAttachments;
+  return typeof limit === "number" && Number.isSafeInteger(limit) && limit > 0 ? limit : 8;
+}
+
 interface IMRTNode {
   readonly isMRTNode: true;
   readonly outputs: Readonly<Record<string, unknown>>;
@@ -121,20 +147,47 @@ export function definePass(
   const emissive = slot("emissive");
 
   function mrt(outputs: Record<string, unknown>): IMRTNode {
+    const entries = Object.entries(outputs);
+    const limit = maxColorAttachments();
+    if (entries.length > limit)
+      throw new Error(
+        `TN_NATIVE_MRT_UNSUPPORTED: ${entries.length} colour attachments exceed the device limit ${limit}`,
+      );
     const named: Record<string, unknown> = {};
-    for (const [name, value] of Object.entries(outputs)) {
+    for (const [name, value] of entries) {
       const normal =
         name === "normal" &&
         (value === normalView ||
           (value as { __tnNormalView?: unknown } | null)?.__tnNormalView === normalView);
+      if (normal) {
+        named[name] = normalView;
+        continue;
+      }
+      const engineSlot = value as IMRTSlot | null;
+      // A name the engine's pass owns keeps its exact spelling: its own slot, or the refusal it always gave.
+      if (RESERVED_SLOTS.has(name)) {
+        if (engineSlot?.isMRTSlot === true && engineSlot.name === name) {
+          named[name] = value;
+          continue;
+        }
+        throw new Error(
+          `TN_NATIVE_MRT_UNSUPPORTED: ${name} must be one of output, normal: normalView or vec4(normalView, 0), metalness, roughness, diffuseColor, emissive`,
+        );
+      }
+      // An engine target under a custom name is a wiring error, not a node.
       if (
-        !normal &&
-        ((value as IMRTSlot | null)?.isMRTSlot !== true || name !== (value as IMRTSlot).name)
+        engineSlot?.isMRTSlot === true ||
+        (value !== null && typeof value === "object" && "isMRTSlot" in value)
       )
         throw new Error(
           `TN_NATIVE_MRT_UNSUPPORTED: ${name} must be one of output, normal: normalView or vec4(normalView, 0), metalness, roughness, diffuseColor, emissive`,
         );
-      named[name] = normal ? normalView : value;
+      // Any other name is a custom colour attachment: three's mrt() takes any node there.
+      if (value === null || typeof value !== "object" || Array.isArray(value))
+        throw new Error(
+          `TN_NATIVE_MRT_UNSUPPORTED: the '${name}' slot must be a shader node, got ${value === null ? "null" : Array.isArray(value) ? "an array" : typeof value}`,
+        );
+      named[name] = value;
     }
     const node: IMRTNode = Object.freeze({
       isMRTNode: true as const,
@@ -310,6 +363,9 @@ export function definePass(
         (name === "metalness" && this.#mrt?.outputs.metalness === metalness) ||
         (name === "roughness" && this.#mrt?.outputs.roughness === roughness)
       )
+        return tsl.texture({ name }, tsl.uv());
+      // A custom slot the MRT names is a further colour target the engine draws (pass-node.ts).
+      if (this.#mrt !== null && Object.hasOwn(this.#mrt.outputs, name))
         return tsl.texture({ name }, tsl.uv());
       throw new Error(
         `TN_NATIVE_PASS_TEXTURE_UNSUPPORTED: the native scene pass has no '${name}' target`,
