@@ -78,8 +78,9 @@ describe("BundleSurfaceSafety on a settled frame", () => {
   });
 
   it("spreads deep proofs over a load-sized period, capped at 600 frames, and proves every material", () => {
-    // 70 graphs of ~2,600 rows over a 256-row budget would be a ~710-frame period; the cap holds 600.
-    const forest = Array.from({ length: 70 }, () => material(chain(1000)));
+    // A foliage graph measures 2,009 rows today (three 0.187.0, 048e6bea2). 90 of them over the
+    // 256-row budget ask a ~707-frame period, so the cap holds 600.
+    const forest = Array.from({ length: 90 }, () => material(chain(1000)));
     const safety = new BundleSurfaceSafety();
     safety.beginFrame();
     for (const painted of forest) safety.test(painted);

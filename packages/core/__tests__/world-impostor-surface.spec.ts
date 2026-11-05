@@ -531,12 +531,20 @@ it("Strata shadow cutout uses the view sampled alpha and mip-adjusted threshold"
     const material = pack.parts.get("spruce:0")?.[0]?.material as MeshStandardNodeMaterial;
     expect(material).toBeTruthy();
     const wrapped = material.maskShadowNode as unknown as {
-      node: { op: string; aNode: unknown; bNode: unknown };
+      op: string;
+      aNode: { components: string; node: unknown };
+      bNode: unknown;
     };
-    const mask = wrapped.node;
-    expect(mask.op).toBe(">");
-    expect(mask.aNode).toBe(material.opacityNode);
-    expect(mask.bNode).toBe(material.alphaTestNode);
+    // The cutout compares the alpha this pass sampled (the atlas alpha, not its colour) with the
+    // mip-adjusted threshold, so a far card's shadow rejects the blurred background its own alpha
+    // mip carries. Since 99757e4ec the mask IS that comparison, so it is read directly; the colour
+    // pass multiplies the same sample into `opacityNode` (wrapped in the sight halo since 919c1a866).
+    expect(wrapped.op).toBe(">");
+    expect(wrapped.aNode.components).toBe("w");
+    expect(wrapped.aNode.node).toBe(
+      (material.opacityNode as unknown as { aNode: { node: unknown } }).aNode.node,
+    );
+    expect(wrapped.bNode).toBe(material.alphaTestNode);
     expect(material.alphaTest).toBe(0.42);
     expect(material.userData.tnImpostorAlphaTest).toBe(0.42);
   } finally {

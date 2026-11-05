@@ -210,6 +210,8 @@ function shadowDraws(
   }
   scene.updateMatrixWorld(true);
   const node = new VirtualShadowNode(light, {
+    // These cases read the authored levels; the 2x clip ladder (32adb239d) leaves them alone.
+    maxLevelRatio: Number.POSITIVE_INFINITY,
     clipExtents: [24, 96, 320],
     invalidationDelay: 0,
     marker: false,
