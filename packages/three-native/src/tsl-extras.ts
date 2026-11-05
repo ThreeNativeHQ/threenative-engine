@@ -7,6 +7,7 @@ interface IExtrasTsl {
   readonly clamp: (value: unknown, low: number, high: number) => unknown;
   readonly float: (value: number) => IFogNode;
   readonly linearDepth: () => IFogNode;
+  // quality-allow: three's TSL export name.
   // biome-ignore lint/style/useNamingConvention: three's TSL export name.
   readonly mx_noise_float: (position: unknown) => IFogNode;
   readonly vec3: (value: unknown) => IFogNode;
@@ -56,6 +57,7 @@ export function defineTslExtras(tsl: IExtrasTsl) {
     // (materialx/MaterialXNoise.js): the octave sum of amplitude * perlin(p), amplitude *= diminish and
     // p *= lacunarity per octave, over p as a vec3. The octave count is a number here, so the loop is
     // unrolled; a node count refuses by name.
+    // quality-allow: three's TSL export name.
     // biome-ignore lint/style/useNamingConvention: three's TSL export name.
     mx_fractal_noise_float: (
       position: unknown,
