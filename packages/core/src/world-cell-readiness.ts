@@ -73,6 +73,8 @@ export class CellReadiness {
   readonly #scale = new Vector3();
   readonly #matrix = new Matrix4();
   readonly #recordBounds = new Box3();
+  /** The world grid, read once: a package's origin and cell side do not change for a world's life. */
+  #grid: { readonly cellSize: number; readonly minX: number; readonly minZ: number } | undefined;
   /** The authored bounds' centre, placed: the source sphere's centre. See `#cellInView`. */
   readonly #sourceCentre = new Vector3();
 
@@ -92,7 +94,8 @@ export class CellReadiness {
     position: Camera | { readonly x: number; readonly z: number },
     radius = 0,
   ): IWorldRegionReadiness {
-    const { cellSize, minX, minZ } = this.#host.extent();
+    this.#grid ??= this.#host.extent();
+    const { cellSize, minX, minZ } = this.#grid;
     const camera = "isCamera" in position && position.isCamera ? position : undefined;
     if (camera !== undefined) {
       camera.updateMatrixWorld(true);
@@ -200,11 +203,12 @@ export class CellReadiness {
   }
   /** Use the same authored placement bounds and distance test as admission, even before residency. */
   #cellInView(cell: IWorldCell, eye: Vector3): boolean {
-    const { cellSize, minX, minZ } = this.#host.extent();
     const cached = this.#visible.get(cell);
     if (cached !== undefined) return cached;
     this.#visible.set(cell, false);
     if (this.#host.terrain() !== undefined || (cell.chunks?.length ?? 0) > 0) {
+      this.#grid ??= this.#host.extent();
+      const { cellSize, minX, minZ } = this.#grid;
       const box = this.#recordBounds;
       box.min.set(
         minX + cell.x * cellSize,

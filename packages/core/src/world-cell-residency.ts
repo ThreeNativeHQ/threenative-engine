@@ -304,7 +304,8 @@ export class CellResidency {
   }
 
   #pass(followCell: { x: number; z: number }, x: number, z: number): void {
-    const { cellSize, minX, minZ } = this.#host.extent();
+    this.#grid ??= this.#host.extent();
+    const { cellSize, minX, minZ } = this.#grid;
     const wanted: Array<{ cell: IWorldCell; distance: number }> = [];
     for (const cell of this.#host.cells()) {
       if (

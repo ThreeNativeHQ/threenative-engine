@@ -493,6 +493,8 @@ export class WorldCells extends Group implements IComputeDriven {
     // second of adaptation and a test can drive the loop with an injected `admissionNow`.
     this.#adaptiveBias = new CellLodBias(
       init.adaptiveLod ?? adaptiveLodRequested(),
+      // Ahead of `impostorFar` and `clusterSize`, as it always was: with more than one invalid
+      // option the share's error is the one a game sees. See `world-cells-options.spec.ts`.
       mainGpuShare(init.mainGpuShare),
       {
         now: () => this.#now(),
@@ -759,6 +761,22 @@ export class WorldCells extends Group implements IComputeDriven {
         drawnImpostorInstances: () => this.#render.impostorDrawn(),
       },
     );
+    // One read of the residency collaborators, built once: the pass asks for it many times a frame,
+    // so a fresh object per ask would allocate on the hot path. `terrain` is the one part the
+    // constructor builds after this host, so it is a getter; a copied value would read as no terrain
+    // for the world's whole life.
+    const world = this;
+    const parts = {
+      chunks: this.#chunks,
+      impostor: this.#impostorState,
+      models: this.#models,
+      placements: this.#placementBuild,
+      prewarm: this.#prewarm,
+      render: this.#render,
+      get terrain(): TerrainTiles | undefined {
+        return world.#terrain;
+      },
+    };
     this.#residency = new CellResidency({
       addFailures: (count) => {
         this.#failures += count;
@@ -772,15 +790,7 @@ export class WorldCells extends Group implements IComputeDriven {
       lodFrom: () => this.#lodFrom,
       lodHysteresis: () => this.#lodHysteresis,
       now: () => this.#now(),
-      parts: () => ({
-        chunks: this.#chunks,
-        impostor: this.#impostorState,
-        models: this.#models,
-        placements: this.#placementBuild,
-        prewarm: this.#prewarm,
-        render: this.#render,
-        terrain: this.#terrain,
-      }),
+      parts: () => parts,
       prefetchSeconds: () => this.#prefetchSeconds,
       published: (bounds) => {
         this.#onPublication?.(bounds);

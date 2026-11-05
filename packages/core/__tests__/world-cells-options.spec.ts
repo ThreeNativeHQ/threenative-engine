@@ -294,6 +294,18 @@ describe("WorldCells option resolution", () => {
     ).rejects.toThrow('impostorFar must be "ring" or "always"');
   });
 
+  it("resolves the share before the impostor option, so an invalid share is the error reported", async () => {
+    clearLaunch();
+    // Both are invalid. The constructor resolved `mainGpuShare` ahead of `impostorFar` before the
+    // split, so the share's error is the one a game sees; a reorder would silently change that.
+    await expect(
+      load({
+        impostorFar: "sometimes" as unknown as IWorldCellsLoadOptions["impostorFar"],
+        mainGpuShare: 5,
+      }),
+    ).rejects.toThrow("mainGpuShare must be a number in (0, 1]");
+  });
+
   it("turns the adaptive LOD bias off from the launch, unless the option turns it back on", async () => {
     clearLaunch();
     setGlobal("__tnAdaptiveLod", 0);
