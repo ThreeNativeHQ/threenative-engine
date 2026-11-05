@@ -22,9 +22,10 @@
   the game's ring/band wiring, the collider arm and the playtests.
 - **PRD-796** — untouched. Its world-key pin cannot read the game's config (`IGame` exposes no
   scenes/input), so the pin needs either a small named export from `game.ts` or a source read.
-- **PRD-797** — Phases 1-3 done: four seams pinned, the `world.ts` ↔ `world-tiles.ts` cycle gone, four
-  leaf modules extracted (3 416 → 2 254, AC-1 narrowed to 2 300 by decision). The terrain-splat
-  playtest box needs a browser lane.
+- **PRD-797** — DONE by its own boxes: four seams pinned, the `world.ts` ↔ `world-tiles.ts` cycle
+  gone, four leaf modules extracted (3 416 → 2 254, AC-1 narrowed to 2 300 by decision), and the
+  terrain-splat playtest green on the web lane (2026-11-05: exit 0, 180 frames, 8/8 assertions, real
+  Nvidia adapter). The 1 500-line target is the follow-up that splits `TerrainTiles` itself.
 - **PRD-798** — Phase 1's flag half done (`world-gpu-flags.spec.ts`, 14 cases); the `CellRender` pins
   and both splits open, with the cost of the pins written down.
 - **PRD-799** — untouched, with both Phase 1 pins' observability written down.

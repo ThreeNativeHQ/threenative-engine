@@ -1,8 +1,9 @@
 # PRD-797 — `world-tiles.ts` splits by seam
 
-**Status:** PARTIAL — Phases 1 and 2 are done, and Phase 3's four leaf modules are extracted
-(`world-tiles.ts` 3 416 → 2 254). Its second box, the terrain-splat playtest, needs a browser lane
-and is open; so is the deeper split that would take the class under 1 500 (AC-1 is amended below).
+**Status:** PARTIAL — Phases 1 and 2 are done, Phase 3's four leaf modules are extracted
+(`world-tiles.ts` 3 416 → 2 254), and the terrain-splat playtest is green on the web lane
+(2026-11-05, AC-3). What stays open is the deeper split that would take the class under 1 500
+(AC-1 is amended below).
 **Priority:** P2 — `world-tiles.ts` grew from 2 880 to 3 416 lines after PRD-595, and PRD-790 Phase 2 (streaming) will add more to it (all phases open).
 **Complexity:** 4 (MEDIUM)
 **Owner:** ThreeNative maintainers
@@ -31,7 +32,7 @@ Then extract leaf modules in order: `world-tile-geometry.ts` (265–905), `world
 
 - [x] AC-1 [local, target amended 2026-11-05 by decision, see Decisions]: No `world-tile*.ts` module exceeds 2 300 lines, `world-heightfield.ts` stays under 1 500, and no existing world spec changes. proof: `wc -l packages/core/src/world-tile*.ts packages/core/src/world-heightfield.ts` and `git diff --stat packages/core/__tests__/world-terrain*` — Evidence: `world-tile-budget.ts` 256, `world-tile-geometry.ts` 469, `world-tile-lod.ts` 408, `world-tile-stitch.ts` 166, `world-tiles.ts` 2 254, `world-heightfield.ts` 748. `git diff --stat packages/core/__tests__/world-terrain*` prints nothing (exit 0) — no existing world spec was edited; `world-tile-seams.spec.ts` is unchanged too, because the four pinned functions are re-exported from `world-tiles.ts`. 1 500 was measured to be unreachable before the split started (see the decision), and the 2 300 target is met.
 - [x] AC-2 [local]: The world suite and the coverage of the moved code do not drop. proof: `pnpm exec vitest run packages/core/__tests__/world-*.spec.ts` and `pnpm coverage` lines for the new files ≥ the old file's — Evidence: the world suite's failures are the same 12 in the same five files before and after (`world-streaming-perf` 2, `world-cells-chunk-merge` 4, `world-lod-input-budget` 4, `world-impostor-surface` 1, `world-bundle-safety` 1 — all pre-existing, see Phase 2), and the pass count is unchanged at 848. Focused coverage over the seven tile specs, `--coverage.include='packages/core/src/world-tile*.ts'`: `world-tile-budget.ts` 100% lines / 100% statements, `world-tile-geometry.ts` 98.23 / 97.99, `world-tile-lod.ts` 97.82 / 97.02, `world-tile-stitch.ts` 98.03 / 98.27 — every moved module is above the old single file's 95.71% lines / 94.7% statements. `world-tiles.ts` itself reports 93.99 / 92.62 for the class that stayed, which the split does not change.
-- [ ] AC-3 [local]: The terrain-splat example still streams and stitches. proof: `examples/prd493-terrain-splat/playtests/terrain-splat.playtest.json` — Evidence: pending.
+- [x] AC-3 [local]: The terrain-splat example still streams and stitches. proof: `examples/prd493-terrain-splat/playtests/terrain-splat.playtest.json` — Evidence (2026-11-05, worktree `strata-ref-core` at `1ff28c32b`, `@threenative/core` dist rebuilt from this tree): `sh scripts/xvfb.sh node packages/playtest/dist/runner/cli.js <abs>/terrain-splat.playtest.json --project examples/prd493-terrain-splat --url http://127.0.0.1:5231 --server-command "pnpm dev --host 127.0.0.1 --port 5231 --strictPort" --browser-recipe webgpu --headed` — exit 0, scenario `terrain-splat-sixteen-layers`, `pass: true`, 180 frames, 8/8 assertions. The adapter is the machine's own GPU (`adapter.info` `vendor: nvidia`, `architecture: turing`), not SwiftShader. Assertions: `layers` 16, `samplers` 5 (ceiling 5), `stacked` 4, `heightBlend` 1, `orbitSeconds` 1 → 4, region nonblank pixel ratio 1.0 (floor 0.05), `frameDiff` changed pixel ratio 0.4323 (floor 0.0005), diagnostics 0 console / 0 network / 0 runtime. The tile path the split moved ran: `TN_TERRAIN_TILES` prints `tiles=0 blocks=0 …` at boot and `tiles=9 blocks=3 draws=4 blending=0 rebuilds=3 blockBytes=1696704` once the ring settles, and `TN_TERRAIN_SPLAT layers=16 samplers=5 stacked=4` prints the material's own cost; the run fetched `world/world.<hash>.json`, the placements, the heightmap, all 48 layer JPEGs and the terrain-jobs worker with no failed request.
 
 ## Integration Ledger
 
@@ -80,4 +81,4 @@ Integration: unchanged — `@threenative/core/world` exports the same symbols fr
     every one of those methods has to be rewritten to read `host.x`. With both moved the class is about
     1 652 lines, which is the floor for this PRD's shape — the remaining 1 500 needs a `TerrainTiles`
     split, a separate PRD.
-- [ ] The terrain-splat playtest stays green. proof: AC-3
+- [x] The terrain-splat playtest stays green. proof: AC-3 — Evidence: green on this tree; the numbers are in AC-3 (exit 0, 180 frames, 8/8 assertions, adapter nvidia turing, `TN_TERRAIN_TILES tiles=9 blocks=3 rebuilds=3`).
