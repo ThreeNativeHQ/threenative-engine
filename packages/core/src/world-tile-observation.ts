@@ -18,7 +18,7 @@ import type {
   NeighborPair,
 } from "./world-tiles.js";
 
-import type { Heightfield } from "./world.js";
+import type { Heightfield } from "./world-heightfield.js";
 
 export const BRIDGE_COORDINATE_EPSILON = 1e-4;
 

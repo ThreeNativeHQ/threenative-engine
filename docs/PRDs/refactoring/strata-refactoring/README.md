@@ -1,6 +1,10 @@
 # Strata refactoring
 
-**Status:** NOT STARTED — 0 of 9 PRDs done (filed 2026-11-04).
+**Status:** PARTIAL — 0 of 9 PRDs closed (filed 2026-11-04). None of the nine is blocked on this
+batch's own order: PRD-791's code is complete with only its owner lanes (the playtest red it inherited
+and the visual judge) open, PRD-793's Phase 1 pins every shipped kit's cook with its baseline, and
+PRD-797 has Phases 1 and 2 done (the four seams pinned, the `world.ts` ↔ `world-tiles.ts` cycle gone).
+PRD-792 is the gate the rest of the strata chain waits on.
 
 **Goal (owner, 2026-11-04):** "have all abstractions and architecture needed to make strata terrain
 MCP respond to any terrain generation command and be able to bake a new biome quickly".

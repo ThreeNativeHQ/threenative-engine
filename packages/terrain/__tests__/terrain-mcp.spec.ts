@@ -810,3 +810,47 @@ describe("cook child flags (audit TERRAIN-16)", () => {
     ).toEqual(["--import", "tsx", "--conditions=dev"]);
   });
 });
+
+// PRD-793 phase 1: every shipped kit is a server-side cook, not only the forest one. Each row is
+// also the cook-time baseline a sixth biome is measured against (AC-3).
+describe("every shipped kit cooks", () => {
+  it.each(TERRAIN_KITS)(
+    "cooks %s and reports the counts of the GLB it wrote",
+    async (kit) => {
+      const project = await realpath(await makeTempDir("tn-terrain-kits-"));
+      try {
+        await mkdir(join(project, "node_modules", "@threenative"), { recursive: true });
+        await symlink(
+          new URL("../../assets/", import.meta.url).pathname,
+          join(project, "node_modules", "@threenative", "assets"),
+        );
+        await writeFile(
+          join(project, "threenative.config.ts"),
+          'export default { assets: { source: "assets" } };',
+        );
+        const out = join(project, "assets", "worlds", kit);
+        const started = performance.now();
+        const result = JSON.parse(await cookKit({ kit, out, projectRoot: project }));
+        const wall = Math.round(performance.now() - started);
+        expect(result.recipe).toBe(kit);
+        // The counts reported are the file's own, measured again from the bytes on disk.
+        const written = new Uint8Array(await readFile(join(project, result.worldGlb)));
+        expect(measureGlb(written)).toEqual({
+          draws: result.draws,
+          instances: result.instances,
+          triangles: result.triangles,
+        });
+        expect(result.triangles).toBeGreaterThan(0);
+        expect(result.instances).toBeGreaterThan(0);
+        expect(result.draws).toBeGreaterThan(0);
+        expect(result.load).toContain("WorldCells.load({");
+        console.log(
+          `TN_TERRAIN_KIT ${kit}: ${result.triangles} triangles, ${result.instances} instances, ${result.draws} draws, cook ${result.ms} ms (wall ${wall} ms)`,
+        );
+      } finally {
+        await rm(project, { recursive: true, force: true });
+      }
+    },
+    120_000,
+  );
+});

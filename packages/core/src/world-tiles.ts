@@ -50,14 +50,14 @@ import {
   createTerrainJobRunner,
   edgeWorldPoint,
 } from "./terrain-jobs.js";
-import { summarizeWorldTopology } from "./world-topology.js";
-import { terrainValidationRequested } from "./world-validate.js";
 import {
   Heightfield,
   type IHeightfieldOrigin,
   type IHeightfieldSamplerOptions,
   type IHeightfieldWorldPassOptions,
-} from "./world.js";
+} from "./world-heightfield.js";
+import { summarizeWorldTopology } from "./world-topology.js";
+import { terrainValidationRequested } from "./world-validate.js";
 
 type MeshSurface = NonNullable<ConstructorParameters<typeof Mesh>[1]>;
 
@@ -914,7 +914,7 @@ function levelHeight(
   return value;
 }
 
-function interpolatedLevelHeight(
+export function interpolatedLevelHeight(
   level: ILevelGeometry,
   position: BufferAttribute,
   x: number,
@@ -1295,7 +1295,7 @@ function* surfaceDeltaChunks(
   return maximum;
 }
 
-function surfaceDeltaFromSamples(
+export function surfaceDeltaFromSamples(
   samples: Float32Array,
   resolution: number,
   level: ILevelGeometry,
@@ -1346,7 +1346,7 @@ export type NeighborPair = readonly [IResidentTile, IResidentTile];
  * One pair's bridge, as the seam job carries it: the two edges it is made of, and what the bridge it
  * produces is called and keyed by.
  */
-interface IStitchRequest {
+export interface IStitchRequest {
   readonly coarse: ITerrainEdgeJob;
   readonly fine: ITerrainFineEdgeJob;
   readonly keys: [string, string];
@@ -1367,7 +1367,7 @@ function neighborPairKey(pair: NeighborPair): string {
  * which is the whole per-frame regression. A tile's east and south neighbors are its only
  * unfaced-inward partners, so two map lookups per tile enumerate each pair exactly once.
  */
-function neighborPairs(tiles: ReadonlyMap<string, IResidentTile>): NeighborPair[] {
+export function neighborPairs(tiles: ReadonlyMap<string, IResidentTile>): NeighborPair[] {
   const pairs: NeighborPair[] = [];
   collectNeighborPairs(tiles, pairs);
   return pairs;
@@ -1435,7 +1435,7 @@ function neighborLodCorrection(
  * worker — and everything the bridge strip is made of is copied out as numbers. The strip itself is
  * built wherever the jobs run, so the main thread only swaps the attributes it gets back.
  */
-function neighborBridgeRequest(pair: NeighborPair): IStitchRequest | undefined {
+export function neighborBridgeRequest(pair: NeighborPair): IStitchRequest | undefined {
   const [a, b] = pair;
   const [aSide, bSide] = opposingEdge(a, b);
   const aLevel = renderedLevel(a);

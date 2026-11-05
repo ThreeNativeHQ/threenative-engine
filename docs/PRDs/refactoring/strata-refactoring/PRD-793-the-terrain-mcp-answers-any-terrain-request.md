@@ -1,6 +1,8 @@
 # PRD-793 — The terrain MCP answers any terrain request, and makes a new biome in one call
 
-**Status:** NOT STARTED
+**Status:** PARTIAL — Phase 1 is done on this branch (every shipped kit's cook is pinned, with its
+counts and its cook time as the AC-3 baseline); Phase 2 and Phase 3 wait on PRD-792's `bakeBiome`,
+which is what lets the tool build a recipe from an `IBiomeSpec`.
 **Priority:** P1 — The owner's goal: an agent asking for a terrain outside five fixed names gets no world today (all phases open).
 **Complexity:** 5 (MEDIUM)
 **Owner:** ThreeNative maintainers
@@ -41,9 +43,19 @@ back to a default kit. A new tool, `terrain_biome_new { from, name, overrides }`
 ## Execution Phases
 
 #### Phase 1: pin today's contract
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** `packages/terrain/__tests__/terrain-mcp.spec.ts`
-- [ ] Every case the spec does not cover today is added: each kit cooks and reports triangles, instances and draws; an unknown field fails; an `out` that exists fails. Green on today's code, and each kit's cook time is recorded as the baseline. proof: `pnpm exec vitest run packages/terrain/__tests__/terrain-mcp.spec.ts`
+- [x] Every case the spec does not cover today is added: each kit cooks and reports triangles, instances and draws; an unknown field fails; an `out` that exists fails. Green on today's code, and each kit's cook time is recorded as the baseline. proof: `pnpm exec vitest run packages/terrain/__tests__/terrain-mcp.spec.ts` — Evidence: the new `every shipped kit cooks` matrix is 5/5 green (`-t "every shipped kit cooks"`: 5 passed, 42 skipped), cooking each starter kit into a temp project with `@threenative/assets` linked, then re-measuring the written `world.glb` and asserting `measureGlb(bytes)` equals the reported `{draws, instances, triangles}`; every count is above zero and the load snippet carries `WorldCells.load({`. Two of the three cases were already pinned and are not repeated: an unknown field fails (`rejects malformed fields before any evaluation starts`, `unknownField: true`) and an `out` that exists fails (`refuses an existing output directory and leaves its files untouched`). The Phase 1 baselines, printed by the run as `TN_TERRAIN_KIT`:
+
+  | kit | triangles | instances | draws | cook |
+  |---|---|---|---|---|
+  | forest | 507 894 664 | 34 720 | 29 | 3 839 ms |
+  | coastal | 4 533 424 | 80 | 20 | 2 528 ms |
+  | alpine | 3 114 664 | 90 | 17 | 2 049 ms |
+  | desert | 4 767 664 | 140 | 17 | 2 000 ms |
+  | tundra | 2 453 464 | 70 | 17 | 2 197 ms |
+
+  The slowest kit is forest at 3 839 ms on this box (AMD Ryzen 9 5900X), which is the AC-3 budget a sixth biome has to stay under. `pnpm --filter @threenative/terrain typecheck` exits 0.
 
 #### Phase 2: open the command
 **Status:** NOT STARTED

@@ -1,6 +1,6 @@
 import type { Vector3 } from "three";
 import { unionBounds } from "./world-region.js";
-import type { Heightfield, IHeightfieldRegionBounds } from "./world.js";
+import type { Heightfield, IHeightfieldRegionBounds } from "./world-heightfield.js";
 
 /**
  * What one contact footprint wants at a local offset, sampled in the contact's own frame.
