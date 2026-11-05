@@ -155,8 +155,8 @@ export function installCameras(c: EditorSession): void {
   c.style = document.createElement("style");
   c.style.textContent =
     "#camera-inspector{overflow-y:auto;min-height:0}#camera-list{margin-bottom:9px;max-height:120px;overflow-y:auto}" +
-    "#camera-row{display:flex;gap:6px;align-items:center;width:100%;justify-content:flex-start;margin-bottom:5px;font-size:10px}" +
-    "#camera-row.active{border-color:var(--accent);color:var(--accent)}#camera-row small{margin-left:auto;opacity:.7}";
+    ".camera-row{display:flex;gap:6px;align-items:center;width:100%;justify-content:flex-start;margin-bottom:5px;font-size:10px}" +
+    ".camera-row.active{border-color:var(--accent);color:var(--accent)}.camera-row small{margin-left:auto;opacity:.7}";
   document.head.append(c.style);
   const sidebar = document.querySelector<HTMLElement>(".right-sidebar");
   if (!sidebar) throw new Error("Camera inspector has no sidebar");
