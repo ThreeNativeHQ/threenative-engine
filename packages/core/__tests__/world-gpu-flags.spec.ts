@@ -28,7 +28,7 @@ function env(name: string, value: string | undefined): void {
   else ENV[name] = value;
 }
 function query(search: string | undefined): void {
-  if (search === undefined) delete host.location;
+  if (search === undefined) Reflect.deleteProperty(host, "location");
   else host.location = { search };
 }
 function setGlobal(name: string, value: unknown): void {
