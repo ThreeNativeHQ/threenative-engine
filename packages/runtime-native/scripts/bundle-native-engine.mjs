@@ -5,8 +5,8 @@ import { execFileSync } from "node:child_process";
 import { existsSync, realpathSync, readFileSync } from "node:fs";
 import { readFile, mkdir, writeFile, rename, unlink } from "node:fs/promises";
 import { createRequire } from "node:module";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { dirname, resolve, sep } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const native = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repo = resolve(native, "../..");
@@ -21,7 +21,7 @@ const assetsEntry = resolve(dirname(require.resolve("@threenative/assets/package
 // Player facades share source with sibling packages; installed packages need their resolved roots.
 const packageImports = { name: "native-player-packages", setup(builder) {
   builder.onResolve({ filter: /^\.\.\/\.\.\/\.\.\/\.\.\/(?:three-native|core)\/src\// }, (args) => {
-    if (!args.importer.startsWith(`${player}/`)) return;
+    if (!args.importer.startsWith(`${player}${sep}`)) return;
     const [, name, source] = /^\.\.\/\.\.\/\.\.\/\.\.\/(three-native|core)\/(.+)$/.exec(args.path);
     return { path: resolve(name === "core" ? core : threeNative, source) };
   });
@@ -208,7 +208,7 @@ export async function bundleNativeEngine({ entry, outfile, boot = true, define =
     logLevel: "silent", outfile, sourcemap: "external", sourcesContent: true,
     plugins: [packageImports, { name: "native-engine", setup(builder) {
       builder.onResolve({ filter: /(?:^|\/)assets\.js$/ }, (args) => {
-        if (args.importer.startsWith(`${resolve(core, "src")}/`))
+        if (args.importer.startsWith(`${resolve(core, "src")}${sep}`))
           return { path: resolve(player, "core-assets.mjs") };
       });
       builder.onResolve({ filter: /^tn:game$/ }, () => ({ path: "game", namespace: "native-game" }));
@@ -280,7 +280,8 @@ export async function cookNativeEngineAssets({ project, outfile, source }) {
     const module = await import(`data:text/javascript;base64,${Buffer.from(built.outputFiles[0].text).toString("base64")}`);
     assets = module.default?.assets ?? {};
   }
-  const { compileAssets } = await import(assetsEntry);
+  // A file URL: on Windows, `import("D:\\...")` reads `d:` as a URL scheme and throws (engine#612).
+  const { compileAssets } = await import(pathToFileURL(assetsEntry).href);
   await compileAssets({ cwd: project, config: { ...assets, ...(source && { source: resolve(source) }), nativePackage: true }, platform: "desktop",
     runtimeDecoders: { ktx2: false, meshopt: false } });
   const output = resolve(project, assets.output ?? "public", "native/assets.tnpk");
