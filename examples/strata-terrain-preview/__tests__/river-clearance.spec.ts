@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { Heightfield } from "@threenative/core/world";
+import { Heightfield, WATER_RIBBON_REACH } from "@threenative/core/world";
 import { propAssetOf } from "@threenative/terrain";
 import { describe, expect, it } from "vitest";
 import { propCounts } from "../src/render/propWorld.js";
@@ -28,6 +28,30 @@ const flooded = (x: number, z: number) => {
   const level = surface(x, z);
   return level !== undefined && field.heightAt(x, z) < level;
 };
+/** The rivers the game draws, with the water's reach either side of their centreline. */
+const REACHES: { points: readonly (readonly number[])[]; reach: number }[] = forest.rivers.map(
+  (river: { points: readonly (readonly number[])[]; width: number }) => ({
+    points: river.points,
+    reach: river.width * WATER_RIBBON_REACH,
+  }),
+);
+/** Whether a river's drawn water reaches (x, z): a rock past every ribbon is not on a bank. */
+const onRiverBank = (x: number, z: number): boolean =>
+  REACHES.some(({ points, reach }) =>
+    points.some((b, index) => {
+      const a = points[index - 1];
+      if (!a) return false;
+      const [ax = 0, , az = 0] = a;
+      const [bx = 0, , bz = 0] = b;
+      const dx = bx - ax;
+      const dz = bz - az;
+      const t = Math.max(
+        0,
+        Math.min(1, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz || 1)),
+      );
+      return Math.hypot(x - ax - t * dx, z - az - t * dz) <= reach;
+    }),
+  );
 const GROWING = new Set(["spruce", "sapling", "bush", "fern", "grass", "scrub", "poppy", "litter"]);
 const TRUNKS = new Set(["spruce", "sapling"]);
 const AROUND = [
@@ -89,5 +113,10 @@ describe("forest river clearance", () => {
       [],
     );
     expect(counts.riverrock).toBeGreaterThan(250);
+    expect(
+      placements
+        .filter(({ asset, position: [x, , z] }) => asset === "riverrock" && !onRiverBank(x, z))
+        .map(({ id }) => id),
+    ).toEqual([]);
   });
 });
