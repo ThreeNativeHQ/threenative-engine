@@ -79,6 +79,7 @@ import {
 import { CellPrewarm } from "./world-cell-prewarm.js";
 
 import { CellLodBias } from "./world-cell-lod-bias.js";
+import { CellReadiness } from "./world-cell-readiness.js";
 import {
   type IShadowLevel,
   type IWorldGpuFrameValidation,
@@ -119,7 +120,6 @@ import {
   tileResolutionFor,
 } from "./world-cell-options.js";
 
-const _readinessPosition = new Vector3();
 // Four floats per record (`LOD_RANGE_STRIDE`): the published levels and the fade a swap stamps.
 const LOD_RANGE_RECORD_BYTES = 16;
 
@@ -290,12 +290,6 @@ export class WorldCells extends Group implements IComputeDriven {
    */
   readonly #aliases: ReadonlyMap<string, string>;
   readonly #resident = new Map<string, IResidentCell>();
-  /**
-   * Games waiting on `whenSpawnReady`, settled by the update that follows admissions or by dispose.
-   * One set, no listener registry and no polling: the update that already walks residency observes
-   * these, so a world nobody is waiting on scans nothing. See {@link whenSpawnReady}.
-   */
-  readonly #spawnWaiters = new Set<ISpawnWaiter>();
   readonly #extentBounds: Box3;
   /** The largest run of each asset in any cell: the segment size every cell of it fits. */
   readonly #runMax = new Map<string, number>();
@@ -426,11 +420,8 @@ export class WorldCells extends Group implements IComputeDriven {
 
   readonly #render: CellRender;
   readonly #onPublication: IWorldCellsInit["onPublication"];
-  readonly #readinessVisible = new Map<IWorldCell, boolean>();
-  #readinessView: number[] = [];
-  #readinessReach: Float32Array | undefined;
-  readonly #readinessFrustum = new Frustum();
-  readonly #readinessProjection = new Matrix4();
+  /** The spawn and view gates, and the waiters they settle. */
+  readonly #readiness: CellReadiness;
   readonly #prewarm: CellPrewarm;
   readonly #chunks: CellChunks;
   readonly #impostorState: CellImpostors;
@@ -854,6 +845,28 @@ export class WorldCells extends Group implements IComputeDriven {
         drawnImpostorInstances: () => this.#render.impostorDrawn(),
       },
     );
+    this.#readiness = new CellReadiness({
+      asset: (id) => this.#models.asset(id),
+      buildQueued: (cell) => this.#jobs.some((job) => job.cell === cell),
+      canonical: (id) => this.#canonical(id),
+      cells: () => this.#cells,
+      extent: () => ({ cellSize: this.#cellSize, minX: this.#minX, minZ: this.#minZ }),
+      extentBounds: () => this.#extentBounds,
+      gpuOn: () => this.#render.gpuOn,
+      loaded: (cell) => cellLoaded(cell),
+      manifestAsset: (id) => this.#manifest.assets[id],
+      placementReach: () => this.#placementReach,
+      placements: () => this.#placements,
+      prewarm: () => this.#prewarm,
+      refilterOwed: () => this.#refilterOwed,
+      released: () => this.#released,
+      renderer: () => this.#chunks.renderer,
+      resident: (key) => this.#resident.get(key),
+      root: () => this,
+      shadowMoved: () => this.#render.shadowMoved,
+      terrain: () => this.#terrain,
+      terrainHeights: () => [init.manifest.terrain.heightMin, init.manifest.terrain.heightMax],
+    });
     if (init.terrain === false) return;
     // Terrain can reach further than the props do, so its radius is its own option; the collider
     // radius stays on the ring, which is how far a player can actually walk into this world.
@@ -1292,7 +1305,7 @@ export class WorldCells extends Group implements IComputeDriven {
       spentMs: budget.spentMs + props.spentMs,
     };
     // After this frame's admissions, so a region admitted by this update answers its waiters in it.
-    this.#settleSpawnWaiters();
+    this.#readiness.settleWaiters();
   }
 
   /** Borrowed scratch box: consume its transformed volume before the next bounds query. */
@@ -1553,248 +1566,26 @@ export class WorldCells extends Group implements IComputeDriven {
     position: Camera | { readonly x: number; readonly z: number },
     radius = 0,
   ): IWorldRegionReadiness {
-    const camera = "isCamera" in position && position.isCamera ? position : undefined;
-    if (camera !== undefined) {
-      camera.updateMatrixWorld(true);
-      if (
-        ![...camera.projectionMatrix.elements, ...camera.matrixWorldInverse.elements].every(
-          Number.isFinite,
-        )
-      )
-        throw new Error("WorldCells readiness requires a finite camera projection and transform.");
-      this.#readinessFrustum.setFromProjectionMatrix(
-        this.#readinessProjection.multiplyMatrices(
-          camera.projectionMatrix,
-          camera.matrixWorldInverse,
-        ),
-        camera.coordinateSystem,
-      );
-    }
-    const point = camera
-      ? camera.getWorldPosition(_readinessPosition)
-      : (position as { readonly x: number; readonly z: number });
-    if (
-      !Number.isFinite(point.x) ||
-      !Number.isFinite(point.z) ||
-      !Number.isFinite(radius) ||
-      radius < 0
-    )
-      throw new Error("WorldCells readiness requires finite coordinates and a nonnegative radius.");
-    if (camera !== undefined) {
-      const view = [
-        ...camera.projectionMatrix.elements,
-        ...camera.matrixWorldInverse.elements,
-        point.x,
-        (point as Vector3).y,
-        point.z,
-        camera.coordinateSystem,
-        Number(this.#render.gpuOn),
-      ];
-      // Package placements/bounds are immutable; reach is compared too so edits cannot go stale.
-      if (
-        !view.every((value, index) => value === this.#readinessView[index]) ||
-        this.#placementReach?.some((value, index) => value !== this.#readinessReach?.[index])
-      ) {
-        this.#readinessVisible.clear();
-        this.#readinessView = view;
-        if (this.#placementReach !== undefined) {
-          this.#readinessReach ??= new Float32Array(this.#placementReach.length);
-          this.#readinessReach.set(this.#placementReach);
-        }
-      }
-    }
-    const lowX = Math.floor((point.x - radius - this.#minX) / this.#cellSize);
-    const highX = Math.floor((point.x + radius - this.#minX) / this.#cellSize);
-    const lowZ = Math.floor((point.z - radius - this.#minZ) / this.#cellSize);
-    const highZ = Math.floor((point.z + radius - this.#minZ) / this.#cellSize);
-    let requiredCells = 0;
-    let loadedCells = 0;
-    let failures = 0;
-    let requiredTerrainTiles = 0;
-    let loadedTerrainTiles = 0;
-    for (const cell of this.#cells) {
-      if (camera === undefined) {
-        if (cell.x < lowX || cell.x > highX || cell.z < lowZ || cell.z > highZ) continue;
-      } else if (!this.#cellInView(cell, point as Vector3)) continue;
-      requiredCells++;
-      const resident = this.#resident.get(cellKey(cell.x, cell.z));
-      if (
-        resident &&
-        this.#cellLoaded(resident) &&
-        (camera === undefined || !this.#jobs.some((job) => job.cell === resident))
-      )
-        loadedCells++;
-      if (resident?.chunkFailed) failures++;
-      for (const run of cell.runs)
-        if (this.#models.asset(this.#canonical(run.asset))?.failed) failures++;
-    }
-    if (camera !== undefined) {
-      const terrain = this.#terrain?.readinessInView(camera, [
-        this.#manifest.terrain.heightMin,
-        this.#manifest.terrain.heightMax,
-      ]) ?? { required: 0, loaded: 0 };
-      requiredTerrainTiles = terrain.required;
-      loadedTerrainTiles = terrain.loaded;
-    } else {
-      const terrain = this.#terrain?.readinessAt(point, radius) ?? { required: 0, loaded: 0 };
-      requiredTerrainTiles = terrain.required;
-      loadedTerrainTiles = terrain.loaded;
-    }
-    return {
-      requiredCells,
-      loadedCells,
-      requiredTerrainTiles,
-      loadedTerrainTiles,
-      failures,
-      cancelled: this.#released,
-      ready:
-        !this.#released &&
-        failures === 0 &&
-        loadedCells === requiredCells &&
-        loadedTerrainTiles === requiredTerrainTiles &&
-        (camera === undefined || (!this.#render.shadowMoved && !this.#refilterOwed)),
-    };
-  }
-  /** Use the same authored placement bounds and distance test as admission, even before residency. */
-  #cellInView(cell: IWorldCell, eye: Vector3): boolean {
-    const cached = this.#readinessVisible.get(cell);
-    if (cached !== undefined) return cached;
-    this.#readinessVisible.set(cell, false);
-    if (this.#terrain !== undefined || (cell.chunks?.length ?? 0) > 0) {
-      const box = this.#recordBounds;
-      box.min.set(
-        this.#minX + cell.x * this.#cellSize,
-        this.#extentBounds.min.y,
-        this.#minZ + cell.z * this.#cellSize,
-      );
-      box.max.set(
-        this.#minX + (cell.x + 1) * this.#cellSize,
-        this.#extentBounds.max.y,
-        this.#minZ + (cell.z + 1) * this.#cellSize,
-      );
-      if (this.#readinessFrustum.intersectsBox(box)) {
-        this.#readinessVisible.set(cell, true);
-        return true;
-      }
-    }
-    for (const run of cell.runs) {
-      const asset = this.#manifest.assets[this.#canonical(run.asset)];
-      if (asset === undefined) continue;
-      const records = cellPlacements(this.#placements, run);
-      for (let index = 0; index < run.count; index++) {
-        const at = index * PLACEMENT_RECORD_FLOATS;
-        this.#position.fromArray(records, at);
-        const distance =
-          this.#placementReach === undefined
-            ? Math.hypot(this.#position.x - eye.x, this.#position.z - eye.z)
-            : this.#position.distanceTo(eye);
-        const reach = this.#placementReach?.[run.offset + index];
-        if (reach !== undefined && distance > reach) continue;
-        this.#rotation.fromArray(records, at + 3);
-        this.#scale.setScalar(records[at + 7] as number);
-        this.#matrix.compose(this.#position, this.#rotation, this.#scale);
-        const box = this.#boundsAt(asset.bounds, this.#matrix);
-        const inner = cullDistance(asset.maxDistance);
-        const centre = box.getCenter(this.#sourceCentre);
-        const drawDistance = this.#render.gpuOn
-          ? Math.hypot(centre.x - eye.x, centre.z - eye.z)
-          : distance;
-        if (inner !== undefined && drawDistance > inner) continue;
-        if (this.#readinessFrustum.intersectsBox(box)) {
-          this.#readinessVisible.set(cell, true);
-          return true;
-        }
-      }
-    }
-    return false;
+    return this.#readiness.at(position, radius);
   }
 
   /** Terrain data needed by the current camera, including visible tiles not yet admitted. */
   terrainReadinessInView(camera: Camera): { required: number; loaded: number } {
-    return (
-      this.#terrain?.readinessInView(camera, [
-        this.#manifest.terrain.heightMin,
-        this.#manifest.terrain.heightMax,
-      ]) ?? { required: 0, loaded: 0 }
-    );
+    return this.#readiness.terrainReadinessInView(camera);
   }
 
   /** Visible CPU scatter batches still awaiting a nonempty main-camera backend submission. */
   pendingCpuDrawsInView(camera: Camera): number {
-    return this.#prewarm.pendingCpuDrawsInView(this, camera, this.#chunks.renderer);
+    return this.#readiness.pendingCpuDrawsInView(camera);
   }
 
-  /**
-   * Resolves when the content a fixed spawn needs has finished loading.
-   *
-   * The one-shot gate a streamed game waits on before it releases its loading screen. Readiness is
-   * `readinessAt` and nothing else, so there is one authority for "the spawn's data is loaded": every
-   * required cell and terrain tile in `radius` loaded with no failure. The position is snapshotted
-   * here, so a caller may keep mutating the object it passed; `update` observes the held waiters
-   * right after the frame's admissions, so a region an update admits settles its waiter in it.
-   *
-   * Fail closed: malformed coordinates, a negative radius or an unsupported timer deadline reject
-   * before a waiter is armed. A failed asset and a torn-down world reject with their own named
-   * error, and the deadline rejects with the budget it named. Every settlement removes the waiter
-   * and clears its timer, so a settled waiter holds neither the deadline nor the world, and a
-   * region evicted after its waiter resolved changes nothing.
-   */
+  /** Resolves when the content a fixed spawn needs has finished loading; see `CellReadiness`. */
   whenSpawnReady(
     position: { readonly x: number; readonly z: number },
     radius = 0,
     timeoutMs = 120_000,
   ): Promise<IWorldRegionReadiness> {
-    if (
-      !Number.isFinite(position.x) ||
-      !Number.isFinite(position.z) ||
-      !Number.isFinite(radius) ||
-      radius < 0
-    )
-      return Promise.reject(
-        new Error(
-          "WorldCells spawn readiness requires finite coordinates and a nonnegative radius.",
-        ),
-      );
-    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || timeoutMs > 2 ** 31 - 1)
-      return Promise.reject(
-        new Error("WorldCells spawn readiness requires a timeout in (0, 2147483647] ms."),
-      );
-    if (this.#released) return Promise.reject(new Error("WorldCells disposed"));
-    const snapshot = { x: position.x, z: position.z };
-    const immediate = this.readinessAt(snapshot, radius);
-    if (immediate.failures > 0)
-      return Promise.reject(new Error("WorldCells spawn assets failed to load"));
-    if (immediate.ready) return Promise.resolve(immediate);
-    return new Promise<IWorldRegionReadiness>((resolve, reject) => {
-      const waiter: ISpawnWaiter = {
-        position: snapshot,
-        radius,
-        resolve,
-        reject,
-        timer: setTimeout(() => {
-          this.#spawnWaiters.delete(waiter);
-          reject(new Error(`WorldCells spawn exceeded ${String(timeoutMs)} ms`));
-        }, timeoutMs),
-      };
-      this.#spawnWaiters.add(waiter);
-    });
-  }
-
-  /** Settle the waiters this frame's admissions can answer; a non-Disposed, non-Failed region waits. */
-  #settleSpawnWaiters(): void {
-    if (this.#spawnWaiters.size === 0) return;
-    for (const waiter of this.#spawnWaiters) {
-      const readiness = this.readinessAt(waiter.position, waiter.radius);
-      if (readiness.failures > 0) {
-        this.#spawnWaiters.delete(waiter);
-        clearTimeout(waiter.timer);
-        waiter.reject(new Error("WorldCells spawn assets failed to load"));
-      } else if (readiness.ready) {
-        this.#spawnWaiters.delete(waiter);
-        clearTimeout(waiter.timer);
-        waiter.resolve(readiness);
-      }
-    }
+    return this.#readiness.whenSpawnReady(position, radius, timeoutMs);
   }
 
   override dispose(): void {
@@ -1802,11 +1593,7 @@ export class WorldCells extends Group implements IComputeDriven {
     this.#released = true;
     // A world torn down mid-wait must not leave a game awaiting its spawn gate, nor a deadline
     // outliving the world that armed it.
-    for (const waiter of this.#spawnWaiters) {
-      clearTimeout(waiter.timer);
-      waiter.reject(new Error("WorldCells spawn cancelled"));
-    }
-    this.#spawnWaiters.clear();
+    this.#readiness.cancelWaiters();
     this.#prewarm.releaseHooks();
     for (const cell of [...this.#resident.values()]) this.#evict(cell);
     this.#render.resetShadows();
