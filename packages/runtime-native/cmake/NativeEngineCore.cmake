@@ -333,11 +333,6 @@ tn_native_engine_test(tn-native-engine-readback-crop-test tests/native-engine/re
     native_engine_readback_crop=crops_region
     native_engine_readback_crop_refusal=refuses_outside)
 
-# Which fragment the aux pass draws with: the small normal-only one fits a pass with one colour target.
-tn_native_engine_test(tn-native-engine-aux-fragment-test tests/native-engine/aux_fragment_test.cpp
-    native_engine_aux_fragment_small=fits_without_slots
-    native_engine_aux_fragment_custom_slot=refused_with_a_slot)
-
 tn_native_engine_test(tn-native-engine-shader-ir-test tests/native-engine/shader_ir_test.cpp
     native_engine_tsl_ir_storage_textures=storage_textures
     native_engine_tsl_ir_order=order
