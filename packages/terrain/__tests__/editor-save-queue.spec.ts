@@ -88,6 +88,9 @@ function makeServer(initial: ISaveDocument) {
         throw new Error("409: Stale base revision");
       }
       if (transaction.baseRevision !== revision) throw new Error("409: Stale base revision");
+      // The document route refuses an empty batch as a plain error, not a 409.
+      if (transaction.commands && !transaction.commands.length)
+        throw new Error("Expected 1–512 patch commands");
       if (transaction.document) current = structuredClone(transaction.document);
       else {
         const terrain = Terrain.fromJSON(current.recipe as never);
@@ -229,6 +232,25 @@ describe("terrain editor save queue", () => {
     await queue.flush();
     expect(ids(server.document).sort()).toEqual(["a", "b", "hills"]);
     expect(server.commits.length).toBe(2);
+  });
+
+  it("settles a 409 rebase the external writer already landed", async () => {
+    const server = makeServer(doc(recipe()));
+    const queue = makeQueue(server);
+    server.hold(1);
+    queue.record(doc(grow(server.document.recipe, "a", 3)));
+    expect(server.commits.length).toBe(1);
+    // An external lane writes exactly the layer the held intent carries, before its answer.
+    server.externalAdd("a");
+    server.release();
+    await queue.flush();
+    expect(queue.unsent.length).toBe(0);
+    expect(ids(server.document).sort()).toEqual(["a", "hills"]);
+    expect(ids(queue.localDocument).sort()).toEqual(["a", "hills"]);
+    expect(queue.revision).toBe(server.revision);
+    // Nothing left to send: the intent settles without posting an empty command batch.
+    expect(server.commits.length).toBe(1);
+    expect(server.commits[0]?.commands?.length).toBe(1);
   });
 
   it("keeps local config, layer and asset changes over unrelated external edits", async () => {

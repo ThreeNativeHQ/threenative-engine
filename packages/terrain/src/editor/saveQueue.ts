@@ -344,6 +344,14 @@ export class SaveQueue {
     return { ...document, recipe };
   }
 
+  /** Adopt a snapshot as confirmed and drop one acknowledged intent from the journal. */
+  #acknowledge(intent: ISaveIntent, next: ISaveSnapshot): void {
+    this.#confirmed = next;
+    this.#journal = this.#journal.filter((entry) => entry.id !== intent.id);
+    this.#onSaved?.(next, this.localDocument);
+    this.#onChange?.();
+  }
+
   #reject(intent: ISaveIntent, error: unknown): void {
     intent.state = "rejected";
     intent.error = error instanceof Error ? error.message : String(error);
@@ -391,10 +399,7 @@ export class SaveQueue {
         for (let attempt = 1; attempt <= 2; attempt++) {
           try {
             const next = await this.#commit(transaction);
-            this.#confirmed = next;
-            this.#journal = this.#journal.filter((entry) => entry.id !== intent.id);
-            this.#onSaved?.(next, this.localDocument);
-            this.#onChange?.();
+            this.#acknowledge(intent, next);
             break;
           } catch (error) {
             if (isConflict(error) && attempt === 1) {
@@ -402,6 +407,13 @@ export class SaveQueue {
                 const fresh = await this.#getSnapshot();
                 this.#confirmed = fresh;
                 transaction = this.#rebase(intent, fresh);
+                // A rebased command batch with nothing left to say means the external writer
+                // already made this change, and the document route refuses an empty batch as a
+                // plain (non-409) error: the disk holds the intent, so acknowledge it instead.
+                if (transaction.commands?.length === 0) {
+                  this.#acknowledge(intent, fresh);
+                  break;
+                }
                 continue;
               } catch {}
             }
