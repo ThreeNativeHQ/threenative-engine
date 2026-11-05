@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "name": "strata-water-proof",
-  "subject": "The coastal water-contribution proof on the owned engine: the sheltered pool's diagnostic attachment reads back above the gate, with no console or runtime error",
+  "subject": "The coastal water-contribution proof on the owned engine: entering the coast from the forest walk as the terrain scenario does, the sheltered pool's diagnostic attachment reads back above the gate, with no console or runtime error",
   "viewport": {
     "width": 1920,
     "height": 1080
@@ -45,6 +45,50 @@
     ]
   },
   "steps": [
+    {
+      "label": "forest-assets-ready",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "worldReady",
+        "equals": true
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "grounded",
+      "release": true,
+      "waitForResource": {
+        "id": "GameState",
+        "path": "currentViewWindows",
+        "gte": 3
+      },
+      "timeoutMs": 120000
+    },
+    {
+      "kind": "input",
+      "label": "walk",
+      "press": "KeyD",
+      "holdTicks": 560,
+      "release": true
+    },
+    {
+      "label": "walk-distance",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "travel",
+        "gte": 50
+      },
+      "timeoutMs": 20000,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "coastal",
+      "press": "Digit2",
+      "holdTicks": 2,
+      "release": true
+    },
     {
       "label": "coastal-loaded",
       "waitForResource": {

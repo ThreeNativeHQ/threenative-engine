@@ -212,6 +212,16 @@ const RESERVED_SLOTS: ReadonlySet<string> = new Set([
   "emissive",
 ]);
 
+/**
+ * Whether a material's `mrtNode` carries this output. The engine's scene pass draws its own colour,
+ * depth, velocity, normal and surface targets every frame, so a material writes only the names the pass
+ * does not own; a marker value (the pass's own slot) says the same for any other name it reached.
+ */
+export function isCustomMrtOutput(name: string, value: unknown): boolean {
+  if (RESERVED_SLOTS.has(name)) return false;
+  return (value as { isMRTSlot?: boolean } | null)?.isMRTSlot !== true;
+}
+
 /** WebGPU's guaranteed colour-attachment count, and what a device's limit reports here when it answers. */
 function maxColorAttachments(): number {
   const limit = (
@@ -373,7 +383,6 @@ export function definePass(
   const offscreen = new Set<IOffscreen>();
   const frameNodes = new Set<IPassFrame>();
   let lastSurface: ISurface | undefined;
-  let updatedFrame: number | undefined;
 
   class PassNode implements IOffscreen, IPassFrame {
     static readonly COLOR = "color";
@@ -582,17 +591,13 @@ export function definePass(
     new PassNode(framePass, scene, camera);
 
   /**
-   * Runs every live frame pass's `updateBefore` once per frame, as three's node update system does.
-   * The engine draws the frame pass itself, so a game's wrapper runs at the pass's frame point, one
-   * call a frame however many post passes the backend renders.
+   * Runs every live frame pass's `updateBefore` at each render, as three's node update system does.
+   * The engine draws the frame pass itself, so a game's wrapper runs at the pass's frame point; a
+   * wrapper that must run once a frame (the water proof's copy) guards that itself, as three's
+   * PassNode does not count frames for it either.
    */
   function updateFramePasses(frame?: { frameId?: number }): void {
     if (frameNodes.size === 0) return;
-    const id = frame?.frameId;
-    if (id !== undefined) {
-      if (id === updatedFrame) return;
-      updatedFrame = id;
-    }
     for (const node of [...frameNodes]) node.updateBefore(frame);
   }
 

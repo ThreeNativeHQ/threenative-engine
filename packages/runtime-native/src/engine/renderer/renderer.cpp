@@ -3,6 +3,7 @@
 #include "engine/shader/wgsl_strip.h"
 #include "renderer.h"
 #include "engine/renderer/pipeline_cache.h"
+#include "engine/renderer/aux_fragment.h"
 #include "engine/renderer/readback_crop.h"
 #include "engine/renderer/render_target_pass.h"
 #include "engine/renderer/material_uniforms.h"
@@ -2835,6 +2836,11 @@ const shader::StageModule* Renderer::auxFragment(Program& program, uint8_t mask,
             if (found != variant.nodes.mrt.end()) {
                 const auto index = std::size_t(found - variant.nodes.mrt.begin());
                 if (index < source.mrt.size()) value = source.mrt[index];
+                // A draw that names the slot must write its value: a pipeline that quietly wrote zero here is
+                // how a proof's attachment read back empty while every draw looked healthy.
+                if (value == shader::kInvalid)
+                    throw std::runtime_error("TN_NATIVE_MRT_UNSUPPORTED: slot '" + name +
+                                             "' names a node this program lowered no value for");
             }
             outputs.push_back(value == shader::kInvalid
                 ? f.construct(shader::Type::vec(4), {f.constant(0.f), f.constant(0.f), f.constant(0.f), f.constant(0.f)})
@@ -2862,7 +2868,10 @@ const shader::StageModule* Renderer::auxFragment(Program& program, uint8_t mask,
             same = module->uniforms[i].name == own.uniforms[i].name && module->uniforms[i].offset == own.uniforms[i].offset;
         if (!same) return store(nullptr);
         return store(std::move(module));
-    } catch (const std::exception&) {
+    } catch (const std::exception& error) {
+        // Named once a frame: a draw the post pass skipped says why, instead of leaving a target that reads empty.
+        const std::string note = std::string("TN_POST_AUX_REFUSED: ") + error.what();
+        if (std::find(diagnostics_.begin(), diagnostics_.end(), note) == diagnostics_.end()) diagnostics_.push_back(note);
         return store(nullptr);
     }
 }
@@ -4950,10 +4959,13 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             // A normalNode draw takes the merged fragment, which evaluates the node with the program's own layout.
             const bool nodeNormal = normalPass && item.nodes->normalNode;
             const bool cut = item.material->alphaTest > 0 || item.material->alphaHash;
-            const shader::StageModule* fragment = !customOnly && auxMask == kAuxNormal && !cut && !nodeNormal
+            // The small normal-only fragment writes one colour output, so it fits a pass holding one target only
+            // (aux_fragment.h): a frame with a custom MRT slot takes the merged fragment, which writes every target.
+            const bool smallFits = smallNormalFragmentFits(auxMask == kAuxNormal, !mrtSlots.empty());
+            const shader::StageModule* fragment = !customOnly && smallFits && !cut && !nodeNormal
                 ? normalFragment(draw)
                 : auxFragment(*draw.program, auxMask, mrtSlots, customOnly);
-            if (!fragment && nodeNormal && auxMask == kAuxNormal && !cut) {
+            if (!fragment && nodeNormal && smallFits && !cut) {
                 // The builder could not re-run on this layout: the draw writes its geometric normal, named once a frame.
                 const std::string note = "TN_POST_NORMAL_GEOMETRIC: a material normalNode reaches the post normal target as its geometric normal";
                 if (std::find(diagnostics_.begin(), diagnostics_.end(), note) == diagnostics_.end()) diagnostics_.push_back(note);
@@ -4968,14 +4980,16 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 item.side == 2 ? WGPUCullMode_None : item.side == 1 ? WGPUCullMode_Front : WGPUCullMode_Back};
             // The first output takes location 0 (the first attachment); the rest are this pipeline's further targets.
             for (std::size_t i = 0; i + 1 < namedTargets + mrtSlots.size(); ++i) target.moreColors[i] = WGPUTextureFormat_RGBA16Float;
+            target.layout = draw.program->pipelineLayout; target.depthWrite = false;
+            target.colorWrite = item.colorWrite;
+            target.materialColorWrite = item.colorWrite;
             // A transparent draw leaves the named targets untouched: it writes only the custom slots (three's
-            // transparent fragment writes its own MRT outputs, not another material's surface targets).
+            // transparent fragment writes its own MRT outputs, not another material's surface targets). After the
+            // material's own mask, so a game that masks its sea keeps the named targets' values.
             if (customOnly) {
                 if (namedTargets > 0) target.colorWrite = false;
                 if (namedTargets > 1) target.moreWrites = uint8_t(0xffu << (namedTargets - 1));
             }
-            target.layout = draw.program->pipelineLayout; target.depthWrite = false;
-            target.colorWrite = item.colorWrite;
             target.depthCompare = WGPUCompareFunction_Equal; target.frontFace = item.frontFace();
             // At 4x the pass draws single-sampled against the colour pass's resolved depth, one sample taken at a
             // sample position, while this pass interpolates at the pixel centre: they differ by up to half a pixel of

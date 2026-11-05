@@ -73,6 +73,9 @@ struct PipelineTarget {
     /** Bit i: target i+1 (moreColors[i]) is written. A transparent MRT draw masks the named targets and writes its own
      *  slots only, so the opaque pass's surface targets keep their values under it. */
     uint8_t moreWrites = 0xff;
+    /** material.colorWrite, masked on every attachment: `colorWrite` above also carries a custom-only draw's
+     *  named-target mask, which must not silence that draw's own MRT slot. */
+    bool materialColorWrite = true;
 };
 
 /**

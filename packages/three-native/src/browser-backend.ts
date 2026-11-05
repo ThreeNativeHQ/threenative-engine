@@ -29,6 +29,7 @@ import {
   valuePlans,
 } from "./browser-value-views.js";
 import { debugTelemetry } from "./debug-telemetry.js";
+import { isCustomMrtOutput } from "./pass-node.js";
 import { detachVirtualShadow, shadowFilterOptions, virtualShadowOptions } from "./shadow-node.js";
 import { uploadRanges, withUpdateRanges } from "./update-ranges.js";
 
@@ -1129,7 +1130,8 @@ export function defineBrowserClasses(
               (slots.get(property) as { outputs?: Record<string, unknown> } | undefined)?.outputs ??
               {};
             if (value === null) {
-              for (const slot of Object.keys(previous)) runtime.tsl?.set(ref, `mrtNode.${slot}`, 0);
+              for (const [slot, node] of Object.entries(previous))
+                if (isCustomMrtOutput(slot, node)) runtime.tsl?.set(ref, `mrtNode.${slot}`, 0);
               slots.delete(property);
               shaderNodes.set(ref.key, slots);
               return;
@@ -1142,6 +1144,8 @@ export function defineBrowserClasses(
             )
               throw new TypeError(`TN_BROWSER_SHADER_NODE: ${name}.mrtNode takes mrt()`);
             for (const [slot, node] of Object.entries(outputs as Record<string, unknown>)) {
+              // The scene pass draws the reserved targets itself; a material writes the custom ones.
+              if (!isCustomMrtOutput(slot, node)) continue;
               if (node === null || typeof node !== "object" || !(TSL_NODE in node))
                 throw new TypeError(
                   `TN_BROWSER_SHADER_NODE: ${name}.mrtNode '${slot}' is not a TSL node`,
@@ -1152,8 +1156,8 @@ export function defineBrowserClasses(
                 (node as Record<symbol, number>)[TSL_NODE] as number,
               );
             }
-            for (const slot of Object.keys(previous))
-              if (!Object.hasOwn(outputs as object, slot))
+            for (const [slot, node] of Object.entries(previous))
+              if (isCustomMrtOutput(slot, node) && !Object.hasOwn(outputs as object, slot))
                 runtime.tsl?.set(ref, `mrtNode.${slot}`, 0);
             slots.set(property, value);
             shaderNodes.set(ref.key, slots);
