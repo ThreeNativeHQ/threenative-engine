@@ -174,6 +174,60 @@ export async function cookKit(request: ICookRequest): Promise<string> {
   }
 }
 
+interface IWaterLayer {
+  type: string;
+  id: string;
+  params: Record<string, unknown>;
+}
+
+/**
+ * Makes the recipe flood what the water rows say, so the ground and `water.json` follow the request.
+ *
+ * A row has no position and no path, so a river or lake row re-shapes the recipe's own layer of that
+ * kind, in order: a river sets the ribbon width (and depth), a lake its radius. A layer with no row
+ * is removed, and an ocean row adds a layer, since the ocean needs no seed. A river or lake row with
+ * no layer to take it has nowhere to flow or sit, so it fails instead of echoing.
+ */
+function applyWaterRows(layers: IWaterLayer[], rows: readonly IBiomeWaterBody[]): void {
+  const queue = (kind: string): IWaterLayer[] =>
+    layers.filter((layer) =>
+      kind === "river"
+        ? layer.type === "river"
+        : layer.type === "water" && layer.params.kind !== "ocean",
+    );
+  const rivers = queue("river");
+  const lakes = queue("lake");
+  const keep = new Set<IWaterLayer>();
+  for (const row of rows) {
+    if (row.kind === "ocean") {
+      layers.push({
+        id: `ocean-${keep.size}`,
+        type: "water",
+        params: { kind: "ocean", level: row.level },
+      });
+      keep.add(layers[layers.length - 1] as IWaterLayer);
+      continue;
+    }
+    const layer = (row.kind === "river" ? rivers : lakes).shift();
+    if (layer === undefined) {
+      throw new Error(
+        `cook: water row '${row.kind}' has no ${row.kind} layer in the recipe to take it.`,
+      );
+    }
+    if (row.kind === "river") {
+      // The row's width is the ribbon the world floods; the layer's own width stays the carved bed.
+      layer.params.waterWidth =
+        (row.width as number) / ((layer.params.width as number | undefined) ?? 12);
+      if (row.depth !== undefined) layer.params.depth = row.depth;
+    } else layer.params.radius = row.radius;
+    keep.add(layer);
+  }
+  const dropped = layers.filter(
+    (layer) => (layer.type === "river" || layer.type === "water") && !keep.has(layer),
+  );
+  for (const layer of dropped) layers.splice(layers.indexOf(layer), 1);
+}
+
 /**
  * The evaluated state with the biome's own foliage placed on it.
  *
@@ -230,6 +284,7 @@ async function cookInto(
             size: request.sizeMeters ?? biome.sizeMeters,
           }).toJSON(),
         };
+  if (request.water !== undefined) applyWaterRows(recipe.recipe.layers, request.water);
   // `fromJSON` reads `config`, so an override written beside it would be accepted and then ignored.
   if (request.sizeMeters !== undefined) recipe.recipe.config.size = request.sizeMeters;
   if (request.seed !== undefined) recipe.recipe.config.seed = request.seed;

@@ -134,13 +134,9 @@ describe("bakeBiome", () => {
   });
 
   it("fails closed on an asset the table does not carry", () => {
-    const terrain = state();
-    expect(() =>
-      bakeBiome({
-        spec: { ...SPEC, species: [] } as typeof SPEC,
-        state: terrain,
-        assets: {},
-      }),
-    ).toThrow();
+    // A valid spec reaches the bake; the empty table is the only fault, so the world package throws.
+    expect(() => bakeBiome({ spec: SPEC, state: state(), assets: {} })).toThrow(
+      /names asset 'fir', which options\.assets does not/,
+    );
   });
 });

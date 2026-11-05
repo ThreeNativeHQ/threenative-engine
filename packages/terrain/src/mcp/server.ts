@@ -95,15 +95,21 @@ async function callTool(name: string, args: unknown): Promise<ReturnType<typeof 
         input.out ?? relative(projectRoot, join(assetSource, "biomes", input.name, "world")),
         assetSource,
       );
-      // The biome file is the artifact: written first, kept even when the cook behind it fails, so a
-      // caller can read the validated spec and try again with a different shape or budget.
+      // The biome file is written first and read back in the result. A failed cook removes the folder
+      // this call claimed, so the same name can be retried; an `out` outside it is already removed.
       await mkdir(biomeDir, { recursive: true });
       const biomeJson = join(biomeDir, "biome.data.json");
       await writeFile(biomeJson, `${JSON.stringify(spec, null, 2)}\n`);
-      const text = await cookInChild(
-        { assetSource, biome: input.name, kit: input.from, out, projectRoot, spec },
-        out,
-      );
+      let text: string;
+      try {
+        text = await cookInChild(
+          { assetSource, biome: input.name, kit: input.from, out, projectRoot, spec },
+          out,
+        );
+      } catch (error) {
+        await rm(biomeDir, { recursive: true, force: true });
+        throw error;
+      }
       const shown = relative(projectRoot, biomeJson).split(sep).join("/");
       return toolResult(JSON.stringify({ ...(JSON.parse(text) as object), biomeJson: shown }));
     }

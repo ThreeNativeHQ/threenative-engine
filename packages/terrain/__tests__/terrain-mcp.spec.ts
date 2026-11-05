@@ -1089,7 +1089,10 @@ describe("terrain_generate biome cooks", () => {
     const out = join(project, "assets", "worlds", "world");
     const result = JSON.parse(await cookKit({ ...request, out, projectRoot: project }));
     const recipe = JSON.parse(await readFile(join(project, result.recipeJson), "utf8"));
-    return { recipe, result, remove: () => rm(project, { recursive: true, force: true }) };
+    const water = JSON.parse(
+      await readFile(join(project, "assets", "worlds", "world", "water.json"), "utf8"),
+    );
+    return { recipe, result, water, remove: () => rm(project, { recursive: true, force: true }) };
   }
 
   it("cooks an inline biome spec from its own landform, size and seed", async () => {
@@ -1117,14 +1120,42 @@ describe("terrain_generate biome cooks", () => {
   }, 120_000);
 
   it("replaces the water bodies the starter biome declares", async () => {
-    const { result, remove } = await cook({ kit: "forest", water: [{ kind: "ocean", level: 4 }] });
+    const { result, water, remove } = await cook({
+      kit: "forest",
+      water: [{ kind: "ocean", level: 4 }],
+    });
     try {
       // The forest declares a river and a lake; the request's ocean is what this world floods.
       expect(result.water).toEqual([{ kind: "ocean", level: 4 }]);
       expect(result.biome).toBe("forest");
+      // The cooked world floods as requested: the forest's own lake (level 13.3) and river are gone.
+      expect(water.lakes.map((lake: { level: number }) => lake.level)).toEqual([4]);
+      expect(water.rivers).toEqual([]);
     } finally {
       await remove();
     }
+  }, 120_000);
+
+  it("re-shapes the water layers the recipe has, in order, from the biome rows", async () => {
+    const { water, remove } = await cook({
+      kit: "forest",
+      water: [
+        { kind: "river", width: 3 },
+        { kind: "lake", radius: 40 },
+      ],
+    });
+    try {
+      expect(water.rivers.map((river: { width: number }) => river.width)).toEqual([3]);
+      expect(water.lakes.map((lake: { radius: number }) => lake.radius)).toEqual([40]);
+    } finally {
+      await remove();
+    }
+  }, 120_000);
+
+  it("fails closed on a river or lake row the recipe has no layer for", async () => {
+    await expect(cook({ kit: "coastal", water: [{ kind: "river", width: 3 }] })).rejects.toThrow(
+      /no river layer/,
+    );
   }, 120_000);
 });
 
@@ -1216,6 +1247,39 @@ describe("terrain_biome_new", () => {
       /overrides must be an object/,
     );
   });
+
+  it("removes the biome folder when the cook fails, so the same name can be retried", async () => {
+    const project = await realpath(await makeTempDir("tn-terrain-biome-retry-"));
+    try {
+      await writeFile(
+        join(project, "threenative.config.ts"),
+        'export default { assets: { source: "assets" } };',
+      );
+      // No `@threenative/assets` in the project: the cook behind the biome file cannot start.
+      const failed = await askServer(project, "terrain_biome_new", {
+        from: "forest",
+        name: "savanna",
+        overrides: { landform: "rollingHills", seed: 11 },
+      });
+      expect(failed.result?.isError).toBe(true);
+      expect(failed.result?.content?.[0]?.text).not.toMatch(/already exists/);
+      expect(await stat(join(project, "assets", "biomes", "savanna")).catch(() => null)).toBeNull();
+      // The caller fixes the project and calls again with the same name.
+      await mkdir(join(project, "node_modules", "@threenative"), { recursive: true });
+      await symlink(
+        new URL("../../assets/", import.meta.url).pathname,
+        join(project, "node_modules", "@threenative", "assets"),
+      );
+      const retry = await askServer(project, "terrain_biome_new", {
+        from: "forest",
+        name: "savanna",
+        overrides: { landform: "rollingHills", seed: 11 },
+      });
+      expect(retry.result?.isError, retry.result?.content?.[0]?.text).toBe(false);
+    } finally {
+      await rm(project, { recursive: true, force: true });
+    }
+  }, 180_000);
 
   it("makes and cooks a savanna in a game project, touching only its own folders", async () => {
     const project = await realpath(await makeTempDir("tn-terrain-biome-"));
