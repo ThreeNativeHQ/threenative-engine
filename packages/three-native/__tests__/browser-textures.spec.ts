@@ -190,6 +190,46 @@ describe("browser texture sources", () => {
     expect(reads).toBe(2);
   });
 
+  it("copies a canvas into a CPU-backed canvas, so a GPU-backed one still gives up its pixels", () => {
+    const { bound, constructed, writes } = recording();
+    // A canvas drawn with a default 2D context is GPU-backed on Chromium over Vulkan: its own
+    // getImageData answers zeros for the red fillRect the caller drew. Drawing it into the facade's
+    // own willReadFrequently canvas is a copy the browser performs correctly, whatever context drew
+    // the caller's canvas, so the readback copies instead of asking the caller's context.
+    const drawn = new Uint8ClampedArray([255, 0, 0, 255]);
+    let copied: Uint8ClampedArray | null = null;
+    const contexts = vi.fn(() => ({
+      getImageData: () => ({ data: new Uint8ClampedArray(4), width: 1, height: 1 }),
+    }));
+    const canvas = { width: 1, height: 1, drawn, getContext: contexts };
+    vi.stubGlobal(
+      "OffscreenCanvas",
+      class {
+        getContext(_kind: string, options?: { willReadFrequently?: boolean }) {
+          return {
+            drawImage: (source: { drawn?: Uint8ClampedArray }) => {
+              copied = source.drawn ?? null;
+            },
+            getImageData: () => ({
+              data:
+                options?.willReadFrequently === true && copied ? copied : new Uint8ClampedArray(4),
+              width: 1,
+              height: 1,
+            }),
+          };
+        }
+      },
+    );
+    const texture = new (bound.CanvasTexture as Ctor)(canvas);
+    expect(constructed.at(-1)).toEqual(["CanvasTexture", [[255, 0, 0, 255], 1, 1]]);
+    texture.needsUpdate = true;
+    expect(writes.map(([, field, value]) => [field, value])).toEqual([
+      ["image.data", [255, 0, 0, 255]],
+      ["needsUpdate", true],
+    ]);
+    expect(contexts).not.toHaveBeenCalled();
+  });
+
   it("uploads an image's pixels for new Texture(image), and refuses what it cannot read", () => {
     const { bound, constructed } = recording();
     const Texture = bound.Texture as Ctor;
