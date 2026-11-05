@@ -304,6 +304,13 @@ function statsOf(worlds: readonly WorldCells[]) {
   );
 }
 
+/** The placement IDs the bake wrote: the load plants only the ground the bake left out. */
+function bakedIds(plans: readonly IPropBucketPackage[]): Set<string> {
+  const ids = new Set<string>();
+  for (const plan of plans) for (const id of plan.ids) ids.add(id);
+  return ids;
+}
+
 /**
  * Load the prop worlds, pose every record on the ground, and hand each bucket to `WorldCells`.
  *
@@ -346,8 +353,10 @@ export async function streamProps(options: IPropWorldOptions) {
     return !report.stopped && options.whileCurrent();
   }
   // The containers the run streams: the baked buckets it keeps, then the caller's live placements
-  // compiled through the package. A live bucket the bake already wrote is dropped, so a bake that
-  // gains the far field needs no change here.
+  // compiled through the package. A live placement the bake already wrote is dropped, so a bake
+  // that gains the far field needs no change here. The bake wins on a placement, not on a
+  // container: the meadow a view plants off the square streams beside the bake's own `local:false`
+  // container, which holds the square's scatter and nothing of that meadow.
   const plans = [...(options.package?.buckets ?? [])].filter(
     (bucket: IPropBucketPackage) => options.buckets?.(bucket) ?? true,
   );
@@ -355,8 +364,12 @@ export async function streamProps(options: IPropWorldOptions) {
   let live: Array<{ plan: IPropBucketPackage; records: IRecord[] }> = [];
   const placements = options.placements ?? [];
   if (placements.length > 0) {
+    const baked = bakedIds(plans);
     const seeds = variantSeeds(decoded.flat());
-    const entries = liveEntries(placements, seeds);
+    const entries = liveEntries(
+      placements.filter((placement) => !baked.has(placement.id)),
+      seeds,
+    );
     const compiled = compilePropBuckets(
       entries.map((entry) => ({ ...entry, placement: withAuthoredPose(entry.placement) })),
       {
@@ -372,15 +385,13 @@ export async function streamProps(options: IPropWorldOptions) {
     // The container's records carry one uniform scale, so the source placement is what the pose
     // reads: an edited placement draws the shape its own transform names.
     const source = new Map(entries.map((entry) => [entry.placement.id, entry.placement]));
-    live = compiled.buckets
-      .filter((plan) => !plans.some((seen) => seen.bucket === plan.bucket))
-      .map((plan) => ({
-        plan,
-        records: recordsOf(plan).map((record) => ({
-          ...record,
-          placement: source.get(record.placement.id) ?? record.placement,
-        })),
-      }));
+    live = compiled.buckets.map((plan) => ({
+      plan,
+      records: recordsOf(plan).map((record) => ({
+        ...record,
+        placement: source.get(record.placement.id) ?? record.placement,
+      })),
+    }));
   }
   const buckets = [
     ...plans.map((plan, index) => ({ plan, records: decoded[index] as IRecord[] })),

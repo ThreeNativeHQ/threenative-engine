@@ -447,33 +447,38 @@ export function createMeadow(options: IMeadowOptions): IMeadow {
       if (remaining <= 0) {
         failSpawn("Strata spawn admission exceeded 120000 ms");
       } else {
+        const joins = streamed.worlds.map((stream) => {
+          const status = { data: "pending", prewarm: "pending" };
+          spawnJoins.set(stream, status);
+          const ready = stream.whenSpawnReady(spawn, 60, remaining);
+          // The spawn's gate is what it shows: the data under its sight line, then the draw of the
+          // worlds that hold a cell there. A world with no cell in the spawn's region owes it no
+          // draw — the meadow a fixed view plants streams in when the view reaches it — and its
+          // prewarm never settles for a region it does not serve, so waiting there held the
+          // loading screen open for the full admission deadline and landed nothing.
+          const owesSpawn = stream.readinessAt(spawn, 60).requiredCells > 0;
+          // Observe settlement without replacing the promises the spawn join awaits.
+          void ready.then(
+            () => {
+              status.data = "resolved";
+            },
+            () => {
+              status.data = "rejected";
+            },
+          );
+          void stream.prewarmed.then(
+            () => {
+              status.prewarm = "resolved";
+            },
+            () => {
+              status.prewarm = "rejected";
+            },
+          );
+          return { owesSpawn, ready, stream };
+        });
         void Promise.all([
-          Promise.all(
-            streamed.worlds.map((stream) => {
-              const status = { data: "pending", prewarm: "pending" };
-              spawnJoins.set(stream, status);
-              const ready = stream.whenSpawnReady(spawn, 60, remaining);
-              // Observe settlement without replacing the promises the spawn join awaits.
-              void ready.then(
-                () => {
-                  status.data = "resolved";
-                },
-                () => {
-                  status.data = "rejected";
-                },
-              );
-              void stream.prewarmed.then(
-                () => {
-                  status.prewarm = "resolved";
-                },
-                () => {
-                  status.prewarm = "rejected";
-                },
-              );
-              return ready;
-            }),
-          ),
-          ...streamed.worlds.map((stream) => stream.prewarmed),
+          Promise.all(joins.map((join) => join.ready)),
+          ...joins.filter((join) => join.owesSpawn).map((join) => join.stream.prewarmed),
         ]).then(
           ([regions]) => {
             land({
