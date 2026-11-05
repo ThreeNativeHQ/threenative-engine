@@ -57,7 +57,6 @@ import {
 
 import { type IAssetLoader, createAssetLoader } from "./assets.js";
 import type { IComputeDriven } from "./compute-driven.js";
-import { INSTANCED_LOD_MAX_PIXEL_ERROR } from "./instanced-batch-lod.js";
 import { InstancedBatch } from "./instanced-batch.js";
 import { biasedLodDistance, setLodBias, worldSphere } from "./model-lod.js";
 import { type OcclusionMode, occlusionMode } from "./render/depth-pyramid.js";
@@ -79,6 +78,7 @@ import {
 } from "./world-cell-chunks.js";
 import { CellPrewarm } from "./world-cell-prewarm.js";
 
+import { CellLodBias } from "./world-cell-lod-bias.js";
 import {
   type IShadowLevel,
   type IWorldGpuFrameValidation,
@@ -100,99 +100,33 @@ import {
 } from "./world-package.js";
 import { type IAdmissionBudget, TerrainTileBudgetError, TerrainTiles } from "./world-tiles.js";
 
+import {
+  ADMISSION_SLICE_PLACEMENTS,
+  COVERED_BUDGET_SCALE,
+  DEFAULT_ADMISSION_BUDGET_MS,
+  DEFAULT_AUTO_LOD_MAX_PIXEL_ERROR,
+  DEFAULT_TILE_RESOLUTION,
+  type IWorldCellsInit,
+  LEVEL_REFILTER_STEP_METRES,
+  SETTLED_FOLLOW_METRES,
+  SMALL_CASTER_METRES,
+  adaptiveLodRequested,
+  autoLodPixelError,
+  autoLodScale,
+  impostorFarOption,
+  impostorsRequested,
+  mainGpuShare,
+  tileResolutionFor,
+} from "./world-cell-options.js";
+
 const _readinessPosition = new Vector3();
 // Four floats per record (`LOD_RANGE_STRIDE`): the published levels and the fade a swap stamps.
 const LOD_RANGE_RECORD_BYTES = 16;
 
 export { bundleSafeMaterial } from "./world-bundle-safety.js";
+export { LOD_BIAS_MARKER } from "./world-cell-lod-bias.js";
 
-const DEFAULT_TILE_RESOLUTION = 129;
-
-/**
- * One tile vertex per heightmap sample, rounded up so every default lod factor (1, 2, 4) divides it
- * and capped at the old fixed 129. A finer tile only interpolates the same samples: 129 over a 2 m
- * heightmap drew 3.01M terrain triangles, 25 ms on an Iris Xe (PRD-762).
- */
-function tileResolutionFor(tileSize: number, spacing: number): number {
-  const cells = Math.ceil(tileSize / spacing / 4) * 4;
-  return Math.min(DEFAULT_TILE_RESOLUTION, Math.max(9, cells + 1));
-}
 /** Milliseconds one `update` may spend admitting streamed content, unless the game says otherwise. */
-const DEFAULT_ADMISSION_BUDGET_MS = 2;
-/**
- * How much more one `update` may admit while the startup cover hides the world: 8x takes the 2 ms
- * default to one 60 Hz frame. Nobody sees frame pacing behind an opaque loading screen, and at 2 ms
- * a 10-17 fps test lane spent 16 s (web) and about 47 s (native) admitting a spawn backlog of about
- * 1,200 builds. The loader still presents every frame. Scaling keeps a game's own split between
- * several worlds; `coveredAdmissionBudgetMs` and `coveredFreshMeshesPerUpdate` name the covered
- * values outright.
- */
-const COVERED_BUDGET_SCALE = 8;
-/**
- * How far the follow point has to move before a residency pass is worth repeating. Below it the
- * ring, the refilter brackets and every tile's LOD level are the same numbers, so the pass would
- * re-derive the set it already holds. Half a metre is under one 2 m heightmap cell and far under a
- * 128 m cell, so nothing that could change an answer is skipped.
- */
-const SETTLED_FOLLOW_METRES = 0.5;
-/**
- * How far the follow point has to move before the `maxDistance`/`lods` refilter pass runs again.
- * That pass walks every resident cell's batches, derives both distance brackets and sorts what it
- * found, and on a 2 km walk at 0.3 m a frame it ran every second frame for the same brackets — a
- * third of the world's `update`. Two metres is the same order as the per-asset hysteresis the pass
- * already applies (`threshold / 8`, 3.75 m for a 30 m gate), so a level switch or a cull lands
- * within about two metres of the distance that asked for it, on a level the player is still walking
- * toward. Raise it when a game's gates are far apart, lower it when placements sit inside one.
- */
-const LEVEL_REFILTER_STEP_METRES = 2;
-/**
- * The projection a baked chain's levels are switched at when the world names none: 60° of vertical
- * field of view over 1080 raster rows, which is the desktop view a switch distance is a function of.
- * See `autoLod`.
- */
-const DEFAULT_AUTO_LOD_FOV_Y = 60;
-const DEFAULT_AUTO_LOD_VIEWPORT_HEIGHT = 1080;
-/**
- * The screen-space error budget a baked chain's levels are switched at, in pixels, when the world
- * names none. See `IWorldCellsLoadOptions.autoLod`.
- */
-const DEFAULT_AUTO_LOD_MAX_PIXEL_ERROR = INSTANCED_LOD_MAX_PIXEL_ERROR;
-/** An asset shorter than this casts into the finest level only; see the layer above. */
-const SMALL_CASTER_METRES = 1.5;
-/**
- * Placements filtered per unit of admission work.
- *
- * One unit is what a frame can overshoot its budget by, so it is sized to stay small rather than to
- * divide the work evenly: a slice is a few hundred placements' worth of matrix maths, tens of
- * microseconds, whatever the cell holds. ponytail: a count, not a time — the budget is the clock,
- * and this only decides how often it is read.
- */
-const ADMISSION_SLICE_PLACEMENTS = 256;
-
-interface IWorldCellsInit extends IWorldCellsLoadOptions {
-  readonly reachRanges: Map<
-    IWorldCell,
-    Map<string, { min: number; max: number; minY: number; maxY: number }>
-  >;
-  readonly manifest: IWorldPackage;
-  readonly placements: ArrayBuffer;
-  readonly heightmap: Uint16Array;
-  readonly baseUrl: string;
-  /** `baseUrl` as the loader keys it: no leading slash, which is what a manifest lists. */
-  readonly logicalBase: string;
-  /**
-   * Asset ids the package named twice for one model, each pointing at the id that is kept. Built
-   * once in `load`, where the loader can be asked what each path really fetches; empty when nothing
-   * is a duplicate. See {@link assetAliases}.
-   */
-  readonly aliases: ReadonlyMap<string, string>;
-  /**
-   * Whether `load` fabricated the loader it hands in as `assets` instead of the game supplying one.
-   * `load` always passes a loader to the constructor, so `assets === undefined` cannot tell an owned
-   * loader from a caller's; this is the bit that can. Left out, ownership is `assets === undefined`.
-   */
-  readonly ownsAssets?: boolean;
-}
 
 /**
  * Load a package file from the first candidate the loader says might serve it, the way the
@@ -262,109 +196,6 @@ function newBoxes(batches: readonly InstancedBatch[][]): Box3[][] {
     boxes.push(level);
   }
   return boxes;
-}
-
-/**
- * Pixels one world unit covers at unit depth, from the vertical field of view and the raster height.
- * The scale `ModelLod` divides an error by; see `IWorldCellsLoadOptions.autoLod`.
- */
-function autoLodScale(autoLod: IWorldCellsLoadOptions["autoLod"]): number {
-  const fovY = autoLod?.fovY ?? DEFAULT_AUTO_LOD_FOV_Y;
-  const viewportHeight = autoLod?.viewportHeight ?? DEFAULT_AUTO_LOD_VIEWPORT_HEIGHT;
-  if (!Number.isFinite(fovY) || fovY <= 0 || fovY >= 180)
-    throw new Error("WorldCells autoLod.fovY must be a finite angle in (0, 180) degrees.");
-  if (!Number.isFinite(viewportHeight) || !(viewportHeight > 0))
-    throw new Error(
-      "WorldCells autoLod.viewportHeight must be a positive number of raster pixels.",
-    );
-  return viewportHeight / (2 * Math.tan((fovY * Math.PI) / 360));
-}
-
-/** The screen-space error budget a synthesized level is switched at, in pixels. */
-function autoLodPixelError(autoLod: IWorldCellsLoadOptions["autoLod"]): number {
-  const maxPixelError = autoLod?.maxPixelError ?? DEFAULT_AUTO_LOD_MAX_PIXEL_ERROR;
-  if (!Number.isFinite(maxPixelError) || maxPixelError <= 0)
-    throw new Error("WorldCells autoLod.maxPixelError must be a positive number of pixels.");
-  return maxPixelError;
-}
-
-/** The adaptive LOD bias floor. A bias is only ever allowed to coarsen selection, never refine it. */
-const LOD_BIAS_MIN = 1;
-/** The adaptive LOD bias ceiling, so a runaway maps to a coarser but still bounded world. */
-const LOD_BIAS_MAX = 2.5;
-/** How much the bias rises per over-budget step. */
-const LOD_BIAS_RISE = 1.08;
-/** How much the bias decays per comfortably-under-budget step. */
-const LOD_BIAS_DECAY = 0.95;
-/** Seconds between rise or decay steps; a change is never larger than one step. */
-const LOD_BIAS_STEP_SECONDS = 0.5;
-/** Below this share of the affordable budget the bias decays; between it and the budget it holds. */
-const LOD_BIAS_DECAY_SHARE = 0.6;
-/** Default fraction of a 60 fps frame the main pass may take before the bias rises. */
-const DEFAULT_MAIN_GPU_SHARE = 0.5;
-/** Seconds between two `TN_LOD_BIAS` lines. */
-const LOD_BIAS_MARKER_SECONDS = 1;
-/** The line the adaptive loop prints when it moves the bias. */
-export const LOD_BIAS_MARKER = "TN_LOD_BIAS";
-
-/**
- * One launch override, read once: the environment, then the query string, then the global a test
- * sets. The same three ways a debug flag is asked, but the answer is kept as text so a number can
- * be parsed by the caller rather than rounded here.
- */
-function launchValue(parameter: string, flag: string, globalName: string): string | undefined {
-  const host = globalThis as { process?: { env?: Record<string, unknown> } } & Record<
-    string,
-    unknown
-  >;
-  const env = host.process?.env?.[flag];
-  if (typeof env === "string" && env !== "") return env;
-  const query = globalThis.location?.search;
-  if (typeof query === "string") {
-    const value = new URLSearchParams(query).get(parameter);
-    if (value !== null) return value;
-  }
-  const global = host[globalName];
-  if (typeof global === "number") return String(global);
-  return typeof global === "string" ? global : undefined;
-}
-
-/**
- * Whether a launch opts into the whole-asset impostors: off unless `?tnImpostors=1`, `TN_IMPOSTORS=1`
- * or `__tnImpostors = 1` says so. Opt-in because the judged Machinefall capture of the default
- * (PRD-473 AC-3, 2026-10-14) read REGRESSION — ground shadows and canopy density differ — and its
- * pinned frame windows showed no frame-time gain, so a game gets the source levels it had until the
- * proof passes. `impostors: true` still asks explicitly.
- */
-function impostorsRequested(): boolean {
-  const raw = launchValue("tnImpostors", "TN_IMPOSTORS", "__tnImpostors");
-  return raw === "1" || raw === "true";
-}
-
-/** Whether the adaptive LOD bias runs: on unless a launch pins it off. */
-function adaptiveLodRequested(): boolean {
-  const raw = launchValue("tnAdaptiveLod", "TN_ADAPTIVE_LOD", "__tnAdaptiveLod");
-  return raw === undefined ? true : raw !== "0" && raw !== "false";
-}
-
-/** The main-pass GPU share: the option, then the launch override, then 0.5. */
-function mainGpuShare(option: number | undefined): number {
-  const raw = launchValue("tnMainGpuShare", "TN_MAIN_GPU_SHARE", "__tnMainGpuShare");
-  const launched = raw === undefined ? undefined : Number(raw);
-  const share = option ?? launched ?? DEFAULT_MAIN_GPU_SHARE;
-  if (!Number.isFinite(share) || share <= 0 || share > 1)
-    throw new Error("WorldCells mainGpuShare must be a number in (0, 1].");
-  return share;
-}
-
-/**
- * Whether an asset whose cull ends inside the near ring keeps a far aggregate: `"ring"` unless the
- * caller names the `"always"` override. A misspelled value throws rather than silently picking one.
- */
-function impostorFarOption(value: "ring" | "always" | undefined): "ring" | "always" {
-  if (value === undefined) return "ring";
-  if (value === "ring" || value === "always") return value;
-  throw new Error('WorldCells impostorFar must be "ring" or "always".');
 }
 
 /**
@@ -589,19 +420,9 @@ export class WorldCells extends Group implements IComputeDriven {
    * one a flag turned off. See {@link bundlesAsked}.
    */
   readonly #bundleReason: string;
-  /** `adaptiveLod` resolved against the launch override; see the option. */
-  readonly #adaptiveLod: boolean;
   readonly #preserveAuthoredParts: boolean;
-  /** The main pass's allowed GPU share of a frame; see the option. */
-  readonly #mainGpuShare: number;
-  /** The distance multiplier both selection paths are using right now. */
-  #lodBias = LOD_BIAS_MIN;
-  /** The clock the step cadence and the first marker line are measured from. */
-  readonly #lodBiasStartedAt: number;
-  /** The last time a rise or decay step ran. */
-  #lodBiasStepAt: number;
-  /** The last time the `TN_LOD_BIAS` line printed. */
-  #lodBiasToldAt: number;
+  /** The adaptive LOD bias loop: `adaptiveLod` and `mainGpuShare` resolved, and the bias it moves. */
+  readonly #adaptiveBias: CellLodBias;
 
   readonly #render: CellRender;
   readonly #onPublication: IWorldCellsInit["onPublication"];
@@ -763,14 +584,27 @@ export class WorldCells extends Group implements IComputeDriven {
     this.#bundleReason =
       init.bundles === undefined ? (asked === "default" ? "default" : "launch") : "option";
 
-    this.#adaptiveLod = init.adaptiveLod ?? adaptiveLodRequested();
     this.#preserveAuthoredParts = init.preserveAuthoredParts ?? false;
-    this.#mainGpuShare = mainGpuShare(init.mainGpuShare);
     // The warm-up and the step cadence are the world's own clock, so loading does not count as a
     // second of adaptation and a test can drive the loop with an injected `admissionNow`.
-    this.#lodBiasStartedAt = this.#now();
-    this.#lodBiasStepAt = this.#lodBiasStartedAt;
-    this.#lodBiasToldAt = this.#lodBiasStartedAt - LOD_BIAS_MARKER_SECONDS * 1000;
+    this.#adaptiveBias = new CellLodBias(
+      init.adaptiveLod ?? adaptiveLodRequested(),
+      mainGpuShare(init.mainGpuShare),
+      {
+        now: () => this.#now(),
+        apply: (bias) => {
+          setLodBias(bias);
+          this.#render.setLodBias(bias);
+        },
+        gpuTriangles: () => this.gpuSceneTally()?.triangles,
+        prewarm: () => ({
+          queued: this.#prewarm.queued,
+          owed: this.#prewarm.owed,
+          drawn: this.#prewarm.drawn,
+        }),
+        renderer: () => this.#chunks.renderer,
+      },
+    );
     this.#gpuValidate = init.gpuSceneValidate;
     this.#occlusion = init.occlusion ?? occlusionMode();
     this.#gpuTally = init.gpuSceneTally === true;
@@ -1327,7 +1161,7 @@ export class WorldCells extends Group implements IComputeDriven {
     this.#render.updateLodEye(this.#eye.x, this.#eye.y, this.#eye.z);
     this.#render.flushCompiles(renderer);
     // The adaptive LOD bias, before the dispatch below reads the gates it scales.
-    this.#adaptLodBias(renderer);
+    this.#adaptiveBias.step(renderer);
     this.#render.enableGpu(
       renderer,
       this.#gpuWanted,
@@ -1567,85 +1401,6 @@ export class WorldCells extends Group implements IComputeDriven {
     } finally {
       this.#covered = false;
     }
-  }
-
-  /**
-   * The adaptive LOD bias control loop. Reads the main pass's smoothed GPU time from the renderer
-   * and, once per `LOD_BIAS_STEP_SECONDS`, raises the shared bias while that pass is over its share
-   * of the frame and decays it back toward 1 while it is comfortably under; between the two it
-   * holds, which is the band that keeps a level sitting on the budget from oscillating. A window with
-   * no fresh sample is a hold, never a rise on a stale number, and a rise needs the world itself to be
-   * the thing being drawn — see {@link #biasOverBudget}, which is also what replaced the warmup
-   * seconds. The decay is never gated: a world that can afford its main pass gives the bias back.
-   */
-  #adaptLodBias(renderer: IRendererLike | undefined): void {
-    if (this.#adaptiveLod === false) {
-      // Byte-identical to the pre-bias selection: the multiplier is pinned at 1 every frame.
-      this.#applyLodBias(LOD_BIAS_MIN);
-      return;
-    }
-    const now = this.#now();
-    if (now - this.#lodBiasStepAt < LOD_BIAS_STEP_SECONDS * 1000) return;
-    const source = renderer ?? this.#chunks.renderer;
-    // The frame the budget is a share of: the game's resolved target, 60 fps until one is known.
-    // Never the frame just measured — an expensive pass makes its own frame long and would pass its
-    // own test, and a fast one shrank the share until a 3 ms pass coarsened a world running at
-    // 400 fps against a 120 fps target (PRD-478).
-    const target = source?.targetFps?.();
-    const frameMs = 1000 / (target !== undefined && target > 0 ? target : DEFAULT_TARGET_FPS);
-    const gpuMs = source?.gpuMainMs?.();
-    if (gpuMs === undefined) return;
-    this.#lodBiasStepAt = now;
-    const affordableMs = this.#mainGpuShare * frameMs;
-    if (!(affordableMs > 0)) return;
-    const bias =
-      gpuMs > affordableMs
-        ? this.#biasOverBudget()
-        : gpuMs < LOD_BIAS_DECAY_SHARE * affordableMs
-          ? Math.max(LOD_BIAS_MIN, this.#lodBias * LOD_BIAS_DECAY)
-          : this.#lodBias;
-    if (bias === this.#lodBias) return;
-    this.#applyLodBias(bias);
-    if (now - this.#lodBiasToldAt >= LOD_BIAS_MARKER_SECONDS * 1000) {
-      this.#lodBiasToldAt = now;
-      const triangles = this.gpuSceneTally()?.triangles;
-      console.info(
-        `${LOD_BIAS_MARKER} bias=${bias.toFixed(3)} gpuMs=${gpuMs.toFixed(2)} ` +
-          `budgetMs=${affordableMs.toFixed(2)} ` +
-          `tris=${triangles === undefined ? "n/a" : String(triangles)}`,
-      );
-    }
-  }
-
-  /**
-   * The next bias while the main pass is over its share of the frame, or the bias unchanged when the
-   * world is not what that pass is drawing.
-   *
-   * A load's GPU time is shader compiles, buffer uploads and the prewarm — none of it main-pass world
-   * geometry, so a coarser selection cannot take any of it back. What it costs is the first playable
-   * frame: every tree selects the level authored for its distance times the bias, the coarsest levels
-   * hold almost nothing, and the shadow casters, which take no bias, leave a band of tree shadows with
-   * no trees 80-300 m out. Measured on Machinefall (RTX 2080, WebGPU), the bias climbed 1.08 → 2.33
-   * over six `TN_LOD_BIAS` steps, all of them before the loading overlay dropped.
-   *
-   * So the rise waits for the two measurements that say the world is being drawn: the prewarm gate —
-   * what a game's loading screen waits on, and `stats().pendingPrewarm` as the same thing as a number
-   * — and the main pass's own GPU-selected triangle tally, where a tally that landed and says zero is
-   * a world drawn as nothing. A world with no tally at all (no GPU scene, or nothing landed yet) has no
-   * opinion about its own triangles, so the prewarm speaks for it alone. Both are measurements of the
-   * thing being judged, which is what the warmup seconds were standing in for.
-   */
-  #biasOverBudget(): number {
-    if (this.#prewarm.queued > 0 || this.#prewarm.owed > this.#prewarm.drawn) return this.#lodBias;
-    if (this.gpuSceneTally()?.triangles === 0) return this.#lodBias;
-    return Math.min(LOD_BIAS_MAX, this.#lodBias * LOD_BIAS_RISE);
-  }
-
-  /** Writes the bias to both selection paths: the shared CPU multiplier and the GPU uniform. */
-  #applyLodBias(bias: number): void {
-    this.#lodBias = bias;
-    setLodBias(bias);
-    this.#render.setLodBias(bias);
   }
 
   /**
