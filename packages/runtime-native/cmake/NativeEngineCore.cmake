@@ -359,6 +359,15 @@ tn_native_engine_test(tn-native-engine-aux-targets-test tests/native-engine/aux_
     native_engine_aux_targets_eight=eight_fit
     native_engine_aux_targets_nine=nine_are_refused)
 
+# A Data3DTexture in a texture copy: the usage its 3D texture is created with, and the mip tail it must not get
+# (texture_copy.h). It links the renderer for the WebGPU usage flags the header names.
+if(NOT EMSCRIPTEN)
+    tn_native_engine_test(tn-native-engine-texture-copy-test tests/native-engine/texture_copy_test.cpp
+        native_engine_texture_copy_volume=volume_usage
+        native_engine_texture_copy_mips=mip_tail)
+    target_link_libraries(tn-native-engine-texture-copy-test PRIVATE tn_engine_renderer)
+endif()
+
 tn_native_engine_test(tn-native-engine-shader-ir-test tests/native-engine/shader_ir_test.cpp
     native_engine_tsl_ir_storage_textures=storage_textures
     native_engine_tsl_ir_order=order

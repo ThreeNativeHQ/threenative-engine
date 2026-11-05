@@ -6,6 +6,7 @@
 #include "engine/renderer/aux_fragment.h"
 #include "engine/renderer/aux_targets.h"
 #include "engine/renderer/aux_bundle_key.h"
+#include "engine/renderer/texture_copy.h"
 #include "engine/renderer/readback_crop.h"
 #include "engine/renderer/render_target_pass.h"
 #include "engine/renderer/material_uniforms.h"
@@ -1830,11 +1831,9 @@ void Renderer::copyTextureToTexture(const Texture& source, const Texture& destin
     wgpuCommandEncoderCopyTextureToTexture(encoder, &src, &dst, &extent);
     submit(wgpuCommandEncoderFinish(encoder, nullptr));
     wgpuCommandEncoderRelease(encoder);
-    if (copy.dstLevel != 0 || !destination.generateMipmaps || destination.bytesPerTexel() != 4) return;
-    uint32_t levels = 1;
-    for (uint32_t size = std::max(destination.width, destination.height); size > 1; size >>= 1) ++levels;
-    if (levels == 1) return;
-    generateMipmaps(to->texture, textureFormat(destination), levels, to->key.array ? to->key.depth : 1);
+    if (copy.dstLevel != 0) return;
+    if (!copyRebuildsMipmaps(destination.volume, to->key.levels)) return;
+    generateMipmaps(to->texture, textureFormat(destination), to->key.levels, to->key.array ? to->key.depth : 1);
     flushMipmaps();
 }
 
@@ -1866,14 +1865,14 @@ Renderer::MaterialTexture::Key Renderer::materialTextureKey(const Texture& textu
         throw std::runtime_error("TN_NATIVE_TEXTURE_UNSUPPORTED: a host image in a DataArrayTexture");
     } else if (texture.hasImage() && texture.volume) {
         // A Data3DTexture: one 3D texture of `depth` slices, one level (ponytail: a volume's
-        // generateMipmaps is ignored; no corpus game turns it on).
+        // generateMipmaps is ignored; no corpus game turns it on). A copy into it rebuilds no chain.
         key.kind = MaterialTexture::kVolume;
         key.format = textureFormat(texture);
-        key.usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst;
+        key.usage = kVolumeTextureUsage;
     } else if (texture.hasImage()) {
         // three generates mipmaps for every Texture that is not a DataTexture; float images stay at one level.
         const bool mipmaps = texture.generateMipmaps && texture.bytesPerTexel() == 4;
-        for (uint32_t extent = std::max(texture.width, texture.height); mipmaps && extent > 1; extent >>= 1) ++key.levels;
+        key.levels = mipmaps ? mipLevelCount(texture.width, texture.height) : 1;
         key.kind = texture.external ? MaterialTexture::kExternal : MaterialTexture::kImage;
         key.format = textureFormat(texture);
         // copyExternalImageToTexture writes through a render pass, as the mip chain does. `CopySrc` because
