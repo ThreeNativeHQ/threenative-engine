@@ -1,6 +1,7 @@
 import { lstat, readdir, realpath } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { OPERATION_TYPES } from "../core/operations.js";
+import { LANDFORMS, type LandformKind } from "../core/presets.js";
 import { Terrain } from "../core/terrain.js";
 import type { LayerPatch, PatchCommand } from "../core/terrain.js";
 import type { ITerrainDocument, Layer } from "../core/types.js";
@@ -12,6 +13,8 @@ export type TerrainKit = (typeof TERRAIN_KITS)[number];
 
 export interface IGenerateInput {
   kit: TerrainKit;
+  /** One of `LANDFORMS`: a shape the five starters do not ship cooks from its preset. */
+  landform?: LandformKind;
   sizeMeters?: number;
   seed?: number;
   out?: string;
@@ -23,11 +26,12 @@ export const TERRAIN_TOOLS = [
   {
     name: "terrain_generate",
     description:
-      "Choose from a request or explicit kit and cook one editable starter terrain kit (forest, coastal, alpine, desert or tundra) into a world.glb. Returns the kit as recipe, the biome it bakes and that biome's band rows resolved against the cooked heights (`bands`), the world.glb, recipe.json and world.json paths, triangles, instances and draws measured from the produced GLB's default scene, and a ctx.assets.model load snippet. triangles counts every instance of the LOD0 default scene in full, before distance LOD and culling, instances sums the EXT_mesh_gpu_instancing instances, and draws counts primitives across instanced and non-instanced meshes, an instanced primitive counting once.",
+      "Choose from a request or explicit kit and cook one editable starter terrain kit (forest, coastal, alpine, desert or tundra) into a world.glb; `landform` swaps the ground for one of the seven shape presets (alpine, temperateMountains, rollingHills, desertMesa, coastalCliffs, tundra, volcanic) and keeps the kit's surface, assets and biome. Returns the kit as recipe, the biome it bakes and that biome's band rows resolved against the cooked heights (`bands`), the world.glb, recipe.json and world.json paths, triangles, instances and draws measured from the produced GLB's default scene, and a ctx.assets.model load snippet. triangles counts every instance of the LOD0 default scene in full, before distance LOD and culling, instances sums the EXT_mesh_gpu_instancing instances, and draws counts primitives across instanced and non-instanced meshes, an instanced primitive counting once.",
     inputSchema: {
       type: "object",
       properties: {
         kit: { type: "string", enum: [...TERRAIN_KITS] },
+        landform: { type: "string", enum: Object.keys(LANDFORMS) },
         request: { type: "string", minLength: 1 },
         sizeMeters: { type: "number", exclusiveMinimum: 0 },
         seed: { type: "integer" },
@@ -86,7 +90,8 @@ function relativeDirectory(out: unknown): string {
   return out;
 }
 
-const GENERATE_FIELDS = ["request", "kit", "sizeMeters", "seed", "out"];
+const GENERATE_FIELDS = ["request", "kit", "landform", "sizeMeters", "seed", "out"];
+const LANDFORM_KINDS = Object.keys(LANDFORMS) as readonly LandformKind[];
 
 export function parseGenerateInput(input: unknown): IGenerateInput {
   const args = closedRecord(input, "terrain_generate", GENERATE_FIELDS);
@@ -110,6 +115,13 @@ export function parseGenerateInput(input: unknown): IGenerateInput {
     throw new TypeError(`terrain_generate: kit must be one of ${TERRAIN_KITS.join(", ")}.`);
   }
   const parsed: IGenerateInput = { kit: kit as TerrainKit };
+  if (args.landform !== undefined) {
+    if (!LANDFORM_KINDS.includes(args.landform as LandformKind))
+      throw new TypeError(
+        `terrain_generate: landform must be one of ${LANDFORM_KINDS.join(", ")}.`,
+      );
+    parsed.landform = args.landform as LandformKind;
+  }
   if (sizeMeters !== undefined) {
     if (typeof sizeMeters !== "number" || !Number.isFinite(sizeMeters) || sizeMeters <= 0) {
       throw new TypeError("terrain_generate: sizeMeters must be a positive finite number.");

@@ -1,8 +1,9 @@
 # PRD-793 — The terrain MCP answers any terrain request, and makes a new biome in one call
 
-**Status:** PARTIAL — Phase 1 is done on this branch (every shipped kit's cook is pinned, with its
-counts and its cook time as the AC-3 baseline); Phase 2 and Phase 3 wait on PRD-792's `bakeBiome`,
-which is what lets the tool build a recipe from an `IBiomeSpec`.
+**Status:** PARTIAL — Phase 1 is done (every shipped kit's cook pinned, with its counts and its cook
+time as the AC-3 baseline) and Phase 2's shape half is done: `landform` reaches any of the seven
+presets, and `sizeMeters`/`seed` now actually reach the recipe (they were accepted and ignored). Open
+in Phase 2: a `biome` inline spec or folder, a `water` override, and the nearest-biome message.
 **Priority:** P1 — The owner's goal: an agent asking for a terrain outside five fixed names gets no world today (all phases open).
 **Complexity:** 5 (MEDIUM)
 **Owner:** ThreeNative maintainers
@@ -58,9 +59,12 @@ back to a default kit. A new tool, `terrain_biome_new { from, name, overrides }`
   The slowest kit is forest at 3 839 ms on this box (AMD Ryzen 9 5900X), which is the AC-3 budget a sixth biome has to stay under. `pnpm --filter @threenative/terrain typecheck` exits 0.
 
 #### Phase 2: open the command
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **Files:** `packages/terrain/src/mcp/{tools,cook,cook-child}.ts`
 - [ ] `biome`, inline spec, `landform` and `water` overrides cook; an unmatched request fails and lists candidates. proof: AC-1 matrix plus the fail-closed cases in `terrain-mcp.spec.ts`
+  - Landed: `landform` is a first-class input — `terrain_generate` declares the seven `LANDFORMS` in its schema, `parseGenerateInput` validates the name and lists all seven on a miss, and `cookKit` builds the recipe with `landform(kind, { size, seed, resolution: 257 })` instead of reading the starter's authored heightmap crop. The kit still supplies the surface, assets and biome file, so "any landform under any shipped biome" is the same code path for all 35 pairs. Proof: `terrain-mcp.spec.ts`'s `terrain_generate landform` (3 cases) plus `cooks a landform preset the five starters do not ship` — `rollingHills` under the forest kit cooks with no `heightmap` layer in the written recipe and reports triangles and draws above zero; the whole terrain suite is 34 files / 457 tests green after the build.
+  - Landed, and it was a bug: `sizeMeters` and `seed` were accepted by the tool and written to `recipe.recipe.size`/`.seed`, a field beside the document's `config` that `Terrain.fromJSON` never reads, so both overrides were silently ignored (the document validator only checks known fields, so nothing failed). The cook now writes `config.size`/`config.seed`, and `applies sizeMeters and seed to the recipe's own config` pins the written recipe's `config` and the manifest extent at 256 m. Red before the fix, green after.
+  - Open: a `biome` argument (a starter name is the kit today; an inline `IBiomeSpec` or a project biome folder needs a recipe built from the spec, which is PRD-792 Phase 2's example half), a `water` override, and the nearest-biome listing an unmatched `request` should print — the aliases are in each starter's `biome.data.json` and `parseGenerateInput` is synchronous, so listing them means either reading the files there or inlining them at build time. The current message names the five kits, which is not the same list.
 
 #### Phase 3: a new biome in one call
 **Status:** NOT STARTED

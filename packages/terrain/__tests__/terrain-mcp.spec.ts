@@ -13,6 +13,7 @@ import * as ts from "typescript";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { decodeRAW16 } from "../src/core/io.js";
+import type { LandformKind } from "../src/core/presets.js";
 import type { ITerrainDocument } from "../src/core/types.js";
 import { IsolatedKillError, childExecArgv, runIsolated } from "../src/mcp/child.js";
 import { cookKit, loadCooker, parseBounds } from "../src/mcp/cook.js";
@@ -20,6 +21,7 @@ import { measureGlb } from "../src/mcp/glb-stats.js";
 import {
   TERRAIN_KITS,
   TERRAIN_TOOLS,
+  type TerrainKit,
   assertOutputFree,
   parseGenerateInput,
   parsePatchInput,
@@ -853,4 +855,91 @@ describe("every shipped kit cooks", () => {
     },
     120_000,
   );
+});
+
+// PRD-793 phase 2: a request may name one of the seven landform presets beside its kit.
+describe("terrain_generate landform", () => {
+  it("accepts any of the seven presets and passes it to the cook", () => {
+    for (const landform of [
+      "alpine",
+      "temperateMountains",
+      "rollingHills",
+      "desertMesa",
+      "coastalCliffs",
+      "tundra",
+      "volcanic",
+    ] as const) {
+      expect(parseGenerateInput({ kit: "forest", landform })).toEqual({ kit: "forest", landform });
+    }
+  });
+
+  it("rejects a shape it does not have, naming the seven", () => {
+    expect(() => parseGenerateInput({ kit: "forest", landform: "moon" })).toThrow(
+      /landform must be one of .*rollingHills/,
+    );
+  });
+
+  it("declares the preset list in its schema", () => {
+    const schema = TERRAIN_TOOLS[0].inputSchema as {
+      properties: Record<string, { enum?: readonly string[] }>;
+    };
+    expect(schema.properties.landform?.enum).toHaveLength(7);
+  });
+});
+
+// PRD-793 phase 2: a request may override the shape, the size and the seed. Each has to reach the
+// recipe the cook actually evaluates, not a field beside it.
+describe("terrain_generate overrides", () => {
+  async function cook(overrides: {
+    kit: TerrainKit;
+    landform?: LandformKind;
+    seed?: number;
+    sizeMeters?: number;
+  }) {
+    const project = await realpath(await makeTempDir("tn-terrain-overrides-"));
+    await mkdir(join(project, "node_modules", "@threenative"), { recursive: true });
+    await symlink(
+      new URL("../../assets/", import.meta.url).pathname,
+      join(project, "node_modules", "@threenative", "assets"),
+    );
+    await writeFile(
+      join(project, "threenative.config.ts"),
+      'export default { assets: { source: "assets" } };',
+    );
+    const out = join(project, "assets", "worlds", "world");
+    const result = JSON.parse(await cookKit({ ...overrides, out, projectRoot: project }));
+    const recipe = JSON.parse(await readFile(join(project, result.recipeJson), "utf8"));
+    const manifest = JSON.parse(await readFile(join(project, result.worldPackage), "utf8"));
+    return {
+      manifest,
+      recipe,
+      result,
+      remove: () => rm(project, { recursive: true, force: true }),
+    };
+  }
+
+  it("applies sizeMeters and seed to the recipe's own config", async () => {
+    const { recipe, manifest, remove } = await cook({ kit: "forest", seed: 7, sizeMeters: 256 });
+    try {
+      expect(recipe.config).toMatchObject({ seed: 7, size: 256 });
+      expect(manifest.extent.sizeX).toBe(256);
+      expect(manifest.extent.sizeZ).toBe(256);
+    } finally {
+      await remove();
+    }
+  }, 120_000);
+
+  it("cooks a landform preset the five starters do not ship", async () => {
+    const { recipe, result, remove } = await cook({ kit: "forest", landform: "rollingHills" });
+    try {
+      // The preset's own chain, not the starter's heightmap crop.
+      expect(recipe.layers.some((layer: { type: string }) => layer.type === "heightmap")).toBe(
+        false,
+      );
+      expect(result.triangles).toBeGreaterThan(0);
+      expect(result.draws).toBeGreaterThan(0);
+    } finally {
+      await remove();
+    }
+  }, 120_000);
 });

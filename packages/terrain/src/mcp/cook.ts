@@ -6,6 +6,8 @@ import { type IBakeBiomeOptions, bakeBiome } from "../core/bake-biome.js";
 import { validateBiome } from "../core/biome.js";
 import { decodeRAW16 } from "../core/io.js";
 import { applyPlacementOverrides } from "../core/placements.js";
+import { landform } from "../core/presets.js";
+import type { LandformKind } from "../core/presets.js";
 import { Terrain } from "../core/terrain.js";
 import { starterAssetsDir } from "../kit-assets.js";
 import { measureGlb } from "./glb-stats.js";
@@ -20,6 +22,8 @@ export interface ICookRequest {
   projectRoot: string;
   sizeMeters?: number;
   seed?: number;
+  /** Cook one of the seven landform presets instead of the starter's authored heightmap crop. */
+  landform?: LandformKind;
 }
 
 export interface IBounds {
@@ -169,9 +173,22 @@ async function cookInto(
   assetsDir: string,
 ): Promise<string> {
   const started = performance.now();
-  const recipe = JSON.parse(await readFile(join(kitDir, "recipe.json"), "utf8"));
-  if (request.sizeMeters !== undefined) recipe.recipe.size = request.sizeMeters;
-  if (request.seed !== undefined) recipe.recipe.seed = request.seed;
+  // A landform is a recipe the package can build from a name, so a request for a shape the five
+  // starters do not ship needs no new folder: the kit still supplies the surface, the assets and the
+  // biome file, and the preset supplies the ground.
+  const recipe =
+    request.landform === undefined
+      ? JSON.parse(await readFile(join(kitDir, "recipe.json"), "utf8"))
+      : {
+          recipe: landform(request.landform, {
+            resolution: 257,
+            seed: request.seed ?? 73,
+            size: request.sizeMeters ?? 512,
+          }).toJSON(),
+        };
+  // `fromJSON` reads `config`, so an override written beside it would be accepted and then ignored.
+  if (request.sizeMeters !== undefined) recipe.recipe.config.size = request.sizeMeters;
+  if (request.seed !== undefined) recipe.recipe.config.seed = request.seed;
   // shortcut: starter heights use a 0.1 m lattice; revise decoding if their precision changes.
   for (const layer of recipe.recipe.layers) {
     const data = layer.params?.data;
