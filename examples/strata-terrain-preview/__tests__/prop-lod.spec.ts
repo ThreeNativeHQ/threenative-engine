@@ -214,6 +214,10 @@ describe("licensed pack characterization", () => {
   ) {
     const root = new Group();
     const geometry = new BoxGeometry(1, 2, 1).translate(0, 1, 0);
+    // A loader-made single-material mesh carries no material groups: three's GLTFLoader builds one
+    // Mesh per primitive. `BoxGeometry` ships six, one per face, and a grouped geometry means a
+    // section cut from a shared index, so clear them unless this fixture is the material-array case.
+    geometry.clearGroups();
     if (options.zeroNormal) geometry.getAttribute("normal").setXYZ(1, 0, 0, 0);
     const material = new MeshStandardMaterial({
       map: options.mapped === false ? null : image(),
@@ -222,7 +226,6 @@ describe("licensed pack characterization", () => {
       color: 0x286a42,
     });
     if (options.array) {
-      geometry.clearGroups();
       geometry.addGroup(0, 18, 0);
       geometry.addGroup(18, 18, 1);
     }
