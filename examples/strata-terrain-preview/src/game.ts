@@ -309,6 +309,21 @@ const FEET = -0.86;
 const JOG = 6;
 const SPRINT = 9;
 
+/**
+ * Which key selects which world, in the order the number keys count them.
+ *
+ * One list owns the selector: the input map binds these keys, the frame loop reads them, and
+ * `__tests__/world-keys.spec.ts` pins them. A world's spawn and camera framing come from its biome
+ * row; its key is the game's own choice, because a biome row describes a place, not a key binding.
+ */
+export const WORLD_SELECT = {
+  forest: { keys: ["Digit1"] },
+  coastal: { keys: ["Digit2"] },
+  alpine: { keys: ["Digit3"] },
+  desert: { keys: ["Digit4"] },
+  tundra: { keys: ["Digit5"] },
+} as const satisfies Readonly<Record<WorldName, { readonly keys: readonly string[] }>>;
+
 export function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsContext> {
   // What the game resolves this world from: its validated rules, and the look it is graded under.
   const spec = biomeSpec(world);
@@ -1934,7 +1949,7 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
       if (!this.#stage || ctx.state.getState().view === "player") player.moveAndSlide(dt);
       this.#animate(dt, player);
       if (!playable) return;
-      for (const name of Object.keys(BIOMES) as WorldName[])
+      for (const name of Object.keys(WORLD_SELECT) as WorldName[])
         if (name !== world && ctx.input.justPressed(name)) {
           void ctx.goto(name);
           return;
@@ -1974,11 +1989,7 @@ const game = defineGame<TerrainState, IPhysicsContext>({
     view: { keys: ["KeyV"] },
     coast: { keys: ["KeyC"] },
     light: { keys: ["KeyL"] },
-    forest: { keys: ["Digit1"] },
-    coastal: { keys: ["Digit2"] },
-    alpine: { keys: ["Digit3"] },
-    desert: { keys: ["Digit4"] },
-    tundra: { keys: ["Digit5"] },
+    ...WORLD_SELECT,
   },
   frameBudget: {
     // A short window so a playtest run actually closes one; the default 300 frames is longer than
