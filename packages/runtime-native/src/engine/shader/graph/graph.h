@@ -118,6 +118,8 @@ Node uniform(std::string_view name, Type type, std::vector<double> values = {});
 Node materialInput(std::string_view name, Type type);
 /** Every distinct material accessor `name` reachable from the graph, as `materialInput` made them. */
 std::vector<std::string> materialInputs(const Node& graph);
+/** True when the graph reads a varying or attribute named in `names`: an input a Lowering may replace. */
+bool readsVarying(const Node& graph, std::initializer_list<std::string_view> names);
 /** three's `uniform.value = x`: one number per lane of the uniform's type; the program is unchanged. */
 void setUniformValues(const Node& uniform, std::vector<double> values);
 Node attribute(std::string_view name, Type type);
@@ -285,6 +287,9 @@ public:
     Lowering(const Lowering&) = delete;
     Lowering& operator=(const Lowering&) = delete;
     ExprId lower(const Graph& graph);
+    /** Adds or replaces an input for the graphs lowered after this call. A node already lowered keeps the value it
+     *  read, so set an input before any graph that reads it is lowered (see readsVarying). */
+    void setInput(const std::string& name, ExprId value);
 
 private:
     struct Impl;

@@ -182,6 +182,18 @@ void slotsShareOneLowering() {
         if (n != 1) std::fprintf(stderr, "material %d (%s): shared march lowered %zu times\n", kind, material < 0 ? "fragmentNode" : "colorNode", n);
         CHECK(n == 1);
     }
+    // The impostor surface's atlas march feeds its colour and its normalNode: one march per fragment, as three's.
+    for (int kind = 3; kind < 5; ++kind) {
+        VertexVariant variant;
+        variant.nodes.colorNode = graph::vec4({shared, shared, shared, graph::float_(1)});
+        variant.nodes.normalNode = graph::normalize(graph::vec3({shared, graph::float_(1), graph::float_(0)}));
+        const auto p = kind == 3 ? buildStandard({}, variant) : buildPhysical({}, variant);
+        const auto fs = buildStage(p.fragment, 1);
+        CHECK(fs.wgsl.ok());
+        const std::size_t n = loops(fs.wgsl.code);
+        if (n != 1) std::fprintf(stderr, "material %d (normalNode): shared march lowered %zu times\n", kind, n);
+        CHECK(n == 1);
+    }
 }
 
 void unsupported() {

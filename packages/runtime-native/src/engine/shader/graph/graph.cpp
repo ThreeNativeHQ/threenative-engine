@@ -793,6 +793,20 @@ std::vector<std::string> materialInputs(const Node& graph) {
         if (n->bits == 1 && std::find(names.begin(), names.end(), n->name) == names.end()) names.push_back(n->name);
     return names;
 }
+bool readsVarying(const Node& graph, std::initializer_list<std::string_view> names) {
+    std::unordered_set<const NodeData*> seen;
+    const std::function<bool(const Node&)> visit = [&](const Node& n) {
+        if (!n || !seen.insert(n.get()).second) return false;
+        if ((n->kind == Kind::Varying || n->kind == Kind::Attribute) &&
+            std::find(names.begin(), names.end(), std::string_view(n->name)) != names.end())
+            return true;
+        for (const auto* children : {&n->args, &n->body, &n->otherwise})
+            for (const auto& child : *children)
+                if (visit(child)) return true;
+        return false;
+    };
+    return visit(graph);
+}
 void setUniformValues(const Node& uniform, std::vector<double> values) {
     if (!uniform || uniform->kind != Kind::Uniform) throw std::runtime_error("TN_TSL_UNIFORM_VALUE: not a uniform node");
     // A uniform built without a value (cameraViewMatrix, materialColor) is the engine's to fill.
@@ -1018,6 +1032,7 @@ Lowering::Lowering(Program& program, std::unordered_map<std::string, ExprId> inp
                    std::optional<ToneMapping> toneMapping, bool srgb, Node custom)
     : impl_(std::make_unique<Impl>(program, std::move(inputs), toneMapping, srgb, custom)) {}
 Lowering::~Lowering() = default;
+void Lowering::setInput(const std::string& name, ExprId value) { impl_->inputs[name] = value; }
 ExprId Lowering::lower(const Graph& graph) {
     impl_->lowerer.analyze(graph);
     return graph ? impl_->lowerer.expression(graph) : kInvalid;
