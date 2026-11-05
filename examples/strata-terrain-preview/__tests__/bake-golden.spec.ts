@@ -7,7 +7,8 @@
  * stopped writing one (PRD-792 AC-2); the counts and the heights are the Phase 1 numbers, byte for
  * byte, so only the container's own bytes moved here. Two forced bakes must produce the same numbers, so the table is a statement
  * about the recipe and not about one run's luck; a changed scatter rule, erosion pass, palette or
- * height crop fails here, named.
+ * height crop fails here, named. The continuation digest moved once, for PRD-806 E19's removal of
+ * the debug `forest-before` survey the `?massif=before` knob swapped in.
  *
  * `--force` because the bake's stamp would otherwise skip the work under a warm `pnpm test`; the
  * recipe is seeded and the outputs are byte-identical, so the run rewrites the tracked files with
@@ -84,7 +85,7 @@ const GOLDEN = {
     heights: "dc182307fa2789f7297d53e96c77720b7fac97119489f725d8ebbb44e1d60533",
     manifest: "72c72e6f86b2a800aeae246b4800390b6c57fe6b95dc87510193549f9106c943",
   },
-  horizon: "8b1a00d743b472e10ef523c5783ad8f60d3f5c0e08fbb489c233b62491dac8e7",
+  horizon: "e41157c5dcf0477495291792f48a2469bad8bd4df3272deeffcd9de5c2773825",
 } as const;
 
 const read = (name: string): Uint8Array => readFileSync(new URL(name, worldDir));

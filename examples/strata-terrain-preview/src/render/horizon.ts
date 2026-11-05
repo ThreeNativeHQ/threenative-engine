@@ -70,16 +70,10 @@ export function loadHorizonSurroundings(assets: Pick<IAssetLoader, "resolve">): 
 
 /** Installs the surroundings `createHorizonCollar` reads; call once before building terrain. */
 export function setHorizonSurroundings(baked: HorizonSurroundings): void {
-  // TEMP-MASSIF knob: remove before report.
-  const { "forest-before": before, ...current } = baked;
-  const distant =
-    before && new URLSearchParams(globalThis.location?.search ?? "").get("massif") === "before"
-      ? { ...current, forest: before }
-      : current;
-  sources = distant;
+  sources = baked;
   prefilteredFields = {};
   continuationFields = Object.fromEntries(
-    Object.entries(distant).map(([name, source]) => [
+    Object.entries(baked).map(([name, source]) => [
       name,
       field(source, new Float32Array(source.heights)),
     ]),

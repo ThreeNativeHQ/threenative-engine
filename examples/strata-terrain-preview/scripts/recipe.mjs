@@ -409,12 +409,8 @@ export const realContinuation = Object.fromEntries(
         resolution: source.resolution,
         seed: 1,
       }).heightmap({ id: "usgs-surroundings", data: source.data });
-    // TEMP-MASSIF knob (`?massif=before` reads "forest-before"): remove before report.
     return name === "forest"
-      ? [
-          [name, alpineCrests(nearMassif(surroundings()))],
-          ["forest-before", alpineCrests(surroundings())],
-        ]
+      ? [[name, alpineCrests(nearMassif(surroundings()))]]
       : [[name, surroundings()]];
   }),
 );
