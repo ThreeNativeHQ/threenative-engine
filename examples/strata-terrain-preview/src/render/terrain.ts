@@ -943,10 +943,6 @@ export async function createGroundMaterial(
           : steep;
         // Talus at the feet of cliff bands: the same rock, finer and paler.
         const scree = collar ? collar.scree.mul(reliefWeight) : float(0);
-        // TEMP-PEAKS knob: remove before report.
-        const peaks =
-          collar !== undefined &&
-          new URLSearchParams(globalThis.location?.search ?? "").get("peaks") !== "before";
         // Bedding: warped strata about 30 m thick on the steep rock, each a cliff under a ledge,
         // as the goal frame's faces break into bands (owner, 2026-11-04). The phase is antialiased by
         // its own screen derivative, so a band thinner than a pixel greys out instead of crawling.
@@ -962,7 +958,7 @@ export async function createGroundMaterial(
           oneMinus(smoothstep(float(0.66).sub(blur), float(0.8).add(blur), phase)),
         );
         // Not every face is bedded: kilometre patches carry bands, the rest stays massive rock.
-        const bedded = peaks
+        const bedded = collar
           ? smoothstep(-0.15, 0.25, bakedFractalNoise(positionWorld.mul(0.0018), 2)).mul(
               reliefWeight,
             )
@@ -1003,13 +999,7 @@ export async function createGroundMaterial(
                 patch.mul(0.25).add(0.15),
               )
         ).rgb
-          .mul(
-            crestBackdrop
-              ? peaks
-                ? vec3(0.6, 0.59, 0.56)
-                : vec3(0.52, 0.55, 0.58)
-              : vec3(0.62, 0.66, 0.67),
-          )
+          .mul(crestBackdrop ? vec3(0.6, 0.59, 0.56) : vec3(0.62, 0.66, 0.67))
           .mul(strata.mul(0.35).add(1))
           .mul(crestBackdrop ? mix(0.6, 1.15, smoothstep(-0.4, 0.4, facet)) : float(1))
           // Kilometre-scale warm and cool rock, so whole faces do not read one flat grey.
@@ -1044,14 +1034,12 @@ export async function createGroundMaterial(
             oneMinus(
               crestBackdrop
                 ? smoothstep(
-                    collar ? (peaks ? 0.27 : 0.2) : 0.28,
-                    collar ? (peaks ? 0.44 : 0.36) : 0.5,
+                    collar ? 0.27 : 0.28,
+                    collar ? 0.44 : 0.5,
                     crestSteep.sub(facet.mul(0.2)),
                   ).max(
                     // Bare patches break the fields; the goal frame's upper third is mostly white.
-                    peaks
-                      ? smoothstep(-0.2, -0.45, bakedFractalNoise(positionWorld.mul(0.006), 2))
-                      : smoothstep(0.15, -0.15, bakedFractalNoise(positionWorld.mul(0.006), 2)),
+                    smoothstep(-0.2, -0.45, bakedFractalNoise(positionWorld.mul(0.006), 2)),
                   )
                 : smoothstep(0.18, 0.42, steep),
             ),
