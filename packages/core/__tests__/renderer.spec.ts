@@ -580,6 +580,63 @@ describe("createRenderer", () => {
     }
   });
 
+  it("puts the frame-buffer texture name back once, after overlapping compiles settle", async () => {
+    const canvas = testCanvas();
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: { gpu: {} } });
+    try {
+      // The frame-buffer target's one texture is named for a compile so an MRT material can resolve
+      // its outputs. A frame that runs inside one compile's window sees the screen, and a compile it
+      // starts sees the target: two claims on one texture with nothing recording who named it first.
+      // The later claim captures the earlier one's temporary name as "what was here before", and
+      // when it finishes last it writes that capture back, leaving a pass output's name on the
+      // target for every later compile that names none.
+      const frameBufferTexture = { name: "" };
+      const frameBufferTarget = { samples: 4, textures: [frameBufferTexture] };
+      const seenByCompile: string[] = [];
+      let second: Promise<void> | undefined;
+      const renderer = await createRenderer({
+        canvas,
+        webgpuFactory: () => ({
+          needsFrameBufferTarget: true,
+          getRenderTarget: () => null,
+          _getFrameBufferTarget: () => frameBufferTarget,
+          // The yield between objects three's own compile makes; the test resumes at its first await.
+          compileAsync: () => {
+            seenByCompile.push(frameBufferTexture.name);
+            return Promise.resolve();
+          },
+          domElement: canvas,
+          // A frame inside the first compile's window warms a view of its own.
+          render: () => {
+            if (second === undefined) second = renderer.compileAsync({} as never, {} as never);
+          },
+          setSize: () => undefined,
+        }),
+      });
+      const scene = new Scene();
+      const camera = new PerspectiveCamera();
+      const worldPass = pass(scene, camera);
+      worldPass.renderTarget.textures[0].name = "beauty";
+      const installed = renderer.setOutputNode(worldPass.getTextureNode(), worldPass);
+      const first = renderer.compileAsync(scene, camera);
+      renderer.renderOverlay({} as never, {} as never);
+      expect(second).toBeDefined();
+      await first;
+      await second;
+      // Each compile still got its answer ...
+      expect(seenByCompile).toEqual(["beauty", "beauty"]);
+      // ... and the target carries the name it had before either of them.
+      expect(frameBufferTexture.name).toBe("");
+      installed.dispose();
+      worldPass.dispose();
+      renderer.dispose();
+    } finally {
+      if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+      else Object.defineProperty(globalThis, "navigator", descriptor);
+    }
+  });
+
   it("hides the compile-time render target from frames that run while the compile yields", async () => {
     const canvas = testCanvas();
     const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");

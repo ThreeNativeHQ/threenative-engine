@@ -689,6 +689,10 @@ function wrapRenderer(
   let renderChainUsesPerObjectVelocity = false;
   let activeCompiles = 0;
   let compileCount = 0;
+  // Compiles that overlap while drawing to the screen share three's one frame-buffer target. Only
+  // the first claim captures the name it found, and only the last one out puts it back; without
+  // that, a second claim captures the first one's temporary name and leaves it on the target.
+  const frameBufferNames = new WeakMap<object, { depth: number; saved: string }>();
   let disposed = false;
   const texturePreparations = new CompressedTextureUploads(
     () => (raw.backend as { device?: ICompressedUploadDevice } | undefined)?.device,
@@ -1196,10 +1200,17 @@ function wrapRenderer(
       // warms up empty.
       const frameBufferTexture = (overrideTarget as { textures?: { name: string }[] } | undefined)
         ?.textures?.[0];
-      const frameBufferName = frameBufferTexture?.name;
       const firstOutputName = outputPass?.renderTarget?.textures[0]?.name;
-      if (frameBufferTexture !== undefined && firstOutputName)
-        frameBufferTexture.name = firstOutputName;
+      let frameBufferClaim: { depth: number; saved: string } | undefined;
+      if (frameBufferTexture !== undefined) {
+        frameBufferClaim = frameBufferNames.get(frameBufferTexture);
+        if (frameBufferClaim === undefined) {
+          frameBufferClaim = { depth: 0, saved: frameBufferTexture.name };
+          frameBufferNames.set(frameBufferTexture, frameBufferClaim);
+        }
+        frameBufferClaim.depth += 1;
+        if (firstOutputName) frameBufferTexture.name = firstOutputName;
+      }
       activeCompiles += 1;
       compileCount += 1;
       try {
@@ -1213,7 +1224,13 @@ function wrapRenderer(
           else await raw.compileAsync(scene, camera, targetScene);
         }
       } finally {
-        if (frameBufferTexture !== undefined) frameBufferTexture.name = frameBufferName ?? "";
+        if (frameBufferTexture !== undefined && frameBufferClaim !== undefined) {
+          frameBufferClaim.depth -= 1;
+          if (frameBufferClaim.depth === 0) {
+            frameBufferTexture.name = frameBufferClaim.saved;
+            frameBufferNames.delete(frameBufferTexture);
+          }
+        }
         if (overrideTarget !== undefined) {
           if (hadOwnGetRenderTarget) raw.getRenderTarget = previousGetRenderTarget;
           else Reflect.deleteProperty(raw as object, "getRenderTarget");
