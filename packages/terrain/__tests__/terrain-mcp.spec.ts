@@ -1105,7 +1105,9 @@ describe("terrain_generate biome cooks", () => {
     const { recipe, result, remove } = await cook({ kit: "forest", spec });
     try {
       expect(result.biome).toBe("savanna");
-      expect(result.water).toEqual([{ kind: "ocean", level: 3 }]);
+      // A preset carries no river or lake layer and a spec's rows are its declaration, so this
+      // ground floods nothing and the reply reports no water the world does not have.
+      expect(result.water).toEqual([]);
       // The preset's chain, not the starter's authored crop, and the spec's own numbers.
       expect(recipe.layers.some((layer: { type: string }) => layer.type === "heightmap")).toBe(
         false,
@@ -1149,6 +1151,29 @@ describe("terrain_generate biome cooks", () => {
       expect(water.lakes.map((lake: { radius: number }) => lake.radius)).toEqual([40]);
     } finally {
       await remove();
+    }
+  }, 120_000);
+
+  it("reports the water the cooked world floods, kind and all, as water.json records it", async () => {
+    const forest = await cook({ kit: "forest" });
+    try {
+      // The forest's rows name a river and a lake; the world floods the lake to the recipe's own
+      // 13.3 m level, which `water.json` records. The reply reads the same evaluated state.
+      expect(forest.result.water).toEqual([
+        { kind: "lake", radius: 105, level: 13.3 },
+        { kind: "river", width: 5.32 },
+      ]);
+      expect(forest.water.lakes.map((lake: { level: number }) => lake.level)).toEqual([13.3]);
+    } finally {
+      await forest.remove();
+    }
+    const sea = await cook({ kit: "forest", water: [{ kind: "ocean", level: 4 }] });
+    try {
+      // The reply names an ocean, so the file the game reads names that same body an ocean.
+      expect(sea.result.water).toEqual([{ kind: "ocean", level: 4 }]);
+      expect(sea.water.lakes).toEqual([expect.objectContaining({ kind: "ocean", level: 4 })]);
+    } finally {
+      await sea.remove();
     }
   }, 120_000);
 

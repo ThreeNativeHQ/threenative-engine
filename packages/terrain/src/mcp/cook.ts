@@ -229,6 +229,22 @@ function applyWaterRows(layers: IWaterLayer[], rows: readonly IBiomeWaterBody[])
 }
 
 /**
+ * The water bodies the cooked world floods, read from the evaluated state `water.json` also comes
+ * from: a lake at its own level and radius, the ocean at its level, a river at its ribbon width.
+ */
+function floodedBodies(state: ITerrainState): IBiomeWaterBody[] {
+  return [
+    ...state.waters.map(
+      (water): IBiomeWaterBody =>
+        water.kind === "ocean"
+          ? { kind: "ocean", level: water.level }
+          : { kind: "lake", radius: water.radius ?? state.size, level: water.level },
+    ),
+    ...state.rivers.map((river): IBiomeWaterBody => ({ kind: "river", width: round(river.width) })),
+  ];
+}
+
+/**
  * The evaluated state with the biome's own foliage placed on it.
  *
  * A landform preset authors the ground and no scatter rules, so the rows of the biome file drive the
@@ -347,6 +363,8 @@ async function cookInto(
       {
         lakes: state.waters.map((lake) => ({
           id: lake.id,
+          // The reply names each body's kind, so the file records it: an ocean is not a lake.
+          kind: lake.kind ?? "lake",
           at: lake.at,
           radius: lake.radius,
           level: lake.level,
@@ -423,7 +441,7 @@ async function cookInto(
     ...measureGlb(cooked.worldGlb),
     placementCounts: cooked.placementCounts,
     biome: biome.look,
-    water: biome.water,
+    water: floodedBodies(state),
     bands,
     worldGlbBytes: cooked.worldGlb.length,
     ms: Math.round(performance.now() - started),
