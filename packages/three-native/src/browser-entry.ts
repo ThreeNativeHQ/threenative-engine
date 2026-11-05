@@ -233,6 +233,8 @@ export async function bindWebEngine(
   bound.MathUtils = withMathUtilsExtras(bound.MathUtils as new () => object);
   // Offscreen PassNodes (pass-node.ts) draw into their targets at the top of each frame; the TSL block below binds it.
   let drawSecondaryPasses: PassUpdate = () => {};
+  // A frame PassNode's updateBefore runs once a frame, as three's node update system runs it.
+  let updatePasses: (frame?: { frameId?: number }) => void = () => {};
   // The product host draws; a module without it (the ABI-only test module) keeps the refusal.
   // Before each frame: edited Color/VectorN uniform values reach the engine, world poses WebAudio,
   // and the wrapper safe point runs (collect: held while the engine references them).
@@ -256,6 +258,7 @@ export async function bindWebEngine(
         try {
           collect();
           tsl?.sync(frame);
+          updatePasses(frame);
           audio.updateAudio();
         } finally {
           updating = false;
@@ -282,6 +285,8 @@ export async function bindWebEngine(
     // draws the scene and camera the pass points at.
     const target: { scene?: unknown; camera?: unknown } = {};
     bound.RenderPipeline = defineRenderPipeline(runtime.tsl, target);
+    // The frame counters a host module answers (0 from a module without one, before it draws).
+    const hostFrame = (module as Partial<WebHostModule>)._tnw_web_frame;
     const passes = definePass(
       tsl.exports as never,
       (scene, camera) => {
@@ -291,10 +296,20 @@ export async function bindWebEngine(
       classes.RenderTarget === undefined
         ? undefined
         : // quality-allow: three's class name, so a back end passes its class map.
-          // biome-ignore lint/style/useNamingConvention: three's class name, so a back end passes its class map.
-          { RenderTarget: classes.RenderTarget as never },
+          {
+            // biome-ignore lint/style/useNamingConvention: three's class name, so a back end passes its class map.
+            RenderTarget: classes.RenderTarget as never,
+            // The frame pass draws at the engine's input size, at the frame's sample count (tnw_web_frame's
+            // 35, 36 and 18), so a game reads the size and MSAA the engine actually drew.
+            surface: () => ({
+              width: hostFrame?.call(module, 35) ?? 0,
+              height: hostFrame?.call(module, 36) ?? 0,
+            }),
+            samples: () => hostFrame?.call(module, 18) ?? 0,
+          },
     );
     drawSecondaryPasses = passes.updateSecondaryPasses;
+    updatePasses = passes.updateFramePasses;
     Object.assign(bound, passes);
   }
   return bindUpstreamExports(names, engineCatalog, bound);

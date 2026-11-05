@@ -3,6 +3,7 @@
 #include "engine/shader/wgsl_strip.h"
 #include "renderer.h"
 #include "engine/renderer/pipeline_cache.h"
+#include "engine/renderer/readback_crop.h"
 #include "engine/renderer/render_target_pass.h"
 #include "engine/renderer/material_uniforms.h"
 #include "engine/renderer/shadows/lamp_resolution.h"
@@ -6570,6 +6571,28 @@ GpuStatus Renderer::readProbePixels(ReadbackCallback done) {
 GpuStatus Renderer::readNormalPixels(ReadbackCallback done) { return readRgba16(normalTexture_, std::move(done)); }
 GpuStatus Renderer::readAlbedoPixels(ReadbackCallback done) { return readRgba16(albedoTexture_, std::move(done)); }
 GpuStatus Renderer::readEmissivePixels(ReadbackCallback done) { return readRgba16(emissiveTexture_, std::move(done)); }
+
+GpuStatus Renderer::readMrtPixels(std::string_view slot, uint32_t x, uint32_t y, uint32_t width, uint32_t height,
+                                  ReadbackCallback done) {
+    if (!done) return GpuStatus::OutOfRange;
+    const auto found = mrtTextures_.find(std::string(slot));
+    if (found == mrtTextures_.end() || !found->second) return GpuStatus::InvalidHandle;
+    const WGPUTexture texture = found->second;
+    const uint32_t full = wgpuTextureGetWidth(texture);
+    return readRgba16(texture,
+        [full, x, y, width, height, done = std::move(done)](GpuStatus status, std::vector<uint8_t> rows) {
+            if (status != GpuStatus::Ok) {
+                done(status, {});
+                return;
+            }
+            auto region = cropRgba16Rows(rows, full, x, y, width, height);
+            if (region.empty()) {
+                done(GpuStatus::OutOfRange, {});
+                return;
+            }
+            done(GpuStatus::Ok, std::move(region));
+        });
+}
 
 GpuStatus Renderer::readRgba16(WGPUTexture texture, ReadbackCallback done, uint32_t texelBytes) {
     if (!done) return GpuStatus::OutOfRange;

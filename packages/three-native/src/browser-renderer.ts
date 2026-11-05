@@ -17,6 +17,7 @@ import {
   type WorkCountName,
 } from "./gpu-stages.js";
 import type { PassDraw } from "./pass-node.js";
+import { frameAttachmentName } from "./pass-node.js";
 import { defineRenderTargets, targetTexelBytes } from "./render-target.js";
 import { ShadowMap } from "./shadow-map.js";
 import { syncVirtualShadowLods } from "./shadow-node.js";
@@ -46,6 +47,8 @@ type HostCall =
   | "_tnw_web_capture_face"
   | "_tnw_web_init_texture"
   | "_tnw_web_copy_texture"
+  | "_tnw_web_read_mrt"
+  | "_tnw_web_device_limit"
   | "_tnw_web_threads";
 
 export type WebHostModule = Record<HostCall, (...args: number[]) => number> & {
@@ -62,7 +65,7 @@ export function isWebHostModule(module: TnAbiModule): module is WebEngineModule 
  * The tnw_* contract this facade speaks (web_host.cpp `kWebHostAbi`). Bump both on every tnw_*
  * signature change: web-host-abi.spec.ts pins the signatures per number, and a mismatch fails init.
  */
-export const WEB_HOST_ABI = 9;
+export const WEB_HOST_ABI = 10;
 
 /** The canvas key the host's surface looks up; Emscripten resolves it before any DOM query. */
 const CANVAS_TARGET = "!threenative-canvas";
@@ -348,7 +351,14 @@ export function defineWebRenderer(
       getTimestampFrames(type: string): number[];
       pipelineCompiles(): number;
       /** Resolves as three's GPUDevice.lost does once the host loses its device; core reports it (TN_DEVICE_LOST). */
-      readonly device: { readonly lost: Promise<{ reason: string; message: string }> };
+      readonly device: {
+        readonly lost: Promise<{ reason: string; message: string }>;
+        /** three's GPUDevice.limits: the pair the colour-attachment proofs check, read from the device once. */
+        readonly limits: {
+          readonly maxColorAttachments: number;
+          readonly maxColorAttachmentBytesPerSample: number;
+        };
+      };
     };
     #deviceLost: (info: { reason: string; message: string }) => void = () => undefined;
     /** The environment a preparation gave up on at its deadline, until a drawn frame finds it baked. */
@@ -411,6 +421,14 @@ export function defineWebRenderer(
           lost: new Promise((resolve) => {
             this.#deviceLost = resolve;
           }),
+          limits: {
+            get maxColorAttachments() {
+              return module._tnw_web_device_limit(0);
+            },
+            get maxColorAttachmentBytesPerSample() {
+              return module._tnw_web_device_limit(1);
+            },
+          },
         },
       };
     }
@@ -1084,12 +1102,8 @@ export function defineWebRenderer(
       this.setPresentationHeld(false);
     }
   };
-  const read = async (target: unknown, x: number, y: number, width: number, height: number) => {
-    writeHandle(24, target, "render target");
-    const id = module._tnw_web_read_target(handles + 24, x, y, width, height);
-    if (id === 0) check(1);
-    const size =
-      width * height * targetTexelBytes((target as { texture: { type: number } }).texture.type);
+  /** Polls a read id until it delivers, then returns the region's bytes. */
+  const take = async (id: number, size: number) => {
     const out = module._malloc(size) >>> 0;
     try {
       for (;;) {
@@ -1108,6 +1122,38 @@ export function defineWebRenderer(
     } finally {
       module._free(out);
     }
+  };
+  const read = async (
+    target: unknown,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    textureIndex = 0,
+  ) => {
+    const size =
+      width * height * targetTexelBytes((target as { texture: { type: number } }).texture.type);
+    // three's textureIndex selects an attachment of the target. The frame pass's attachments are the
+    // engine's own colour targets, so the index names one and the host reads that slot.
+    const attachment = frameAttachmentName(target, textureIndex);
+    if (attachment !== undefined) {
+      const name = string(attachment);
+      try {
+        const id = module._tnw_web_read_mrt(name, x, y, width, height);
+        if (id === 0) check(1);
+        return await take(id, size);
+      } finally {
+        module._free(name);
+      }
+    }
+    if (textureIndex !== 0)
+      throw new Error(
+        `TN_WASM_READ_TARGET: the target has no colour attachment ${String(textureIndex)}`,
+      );
+    writeHandle(24, target, "render target");
+    const id = module._tnw_web_read_target(handles + 24, x, y, width, height);
+    if (id === 0) check(1);
+    return take(id, size);
   };
   if (DataTexture !== undefined)
     Object.assign(Renderer.prototype, {

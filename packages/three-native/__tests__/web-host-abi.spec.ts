@@ -23,6 +23,8 @@ const PINNED: Record<number, string> = {
   7: "8947e7786e5634b2",
   8: "3c6476b841380e81",
   9: "86360b43b05b148a",
+  // 10 = tnw_web_read_mrt (a PassNode's custom MRT attachment) and tnw_web_device_limit.
+  10: "c641a6bba0370d6f",
 };
 
 function signatures(): string[] {

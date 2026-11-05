@@ -25,8 +25,42 @@ interface IPassTarget {
   readonly texture: unknown;
   readonly width: number;
   readonly height: number;
+  /** The pass's colour attachments, in layout order; an offscreen engine target keeps its own list. */
+  readonly textures?: readonly IPassAttachment[];
+  /** The frame's MSAA sample count, as the engine draws it. */
+  readonly samples?: number;
   setSize(width: number, height: number): void;
   dispose(): void;
+}
+
+/**
+ * One colour attachment of the frame pass, as a game reads it (three's Texture): its name, format, type
+ * and colour space. The engine owns the GPU texture, so this descriptor names the target the engine
+ * draws and the renderer reads back; it is not a sampled texture handle.
+ */
+export interface IPassAttachment {
+  name: string;
+  format: number;
+  type: number;
+  colorSpace: string;
+}
+
+/**
+ * The frame pass's render target: three's RenderTarget surface over the colour attachments the engine
+ * draws. `textures` is the MRT layout (its own colour first), `width`/`height` the size the engine draws
+ * at, and `samples` the frame's MSAA count; `dispose` dispatches three's event.
+ */
+export interface IFrameTarget {
+  readonly texture: IPassAttachment;
+  readonly textures: readonly IPassAttachment[];
+  readonly width: number;
+  readonly height: number;
+  readonly samples: number;
+  setSize(width: number, height: number): void;
+  dispose(): void;
+  addEventListener(type: string, listener: unknown): void;
+  removeEventListener(type: string, listener: unknown): void;
+  dispatchEvent(event: { type: string }): void;
 }
 
 /** What an offscreen pass needs of a back end: its RenderTarget, and the surface before a first frame. */
@@ -39,6 +73,100 @@ export interface IPassHost {
     options: { type: number },
   ) => IPassTarget;
   surface?(): ISurface;
+  /** The frame's MSAA sample count: the renderer's, which the game may not have made yet. */
+  samples?(): number;
+}
+
+const RGBA_FORMAT = 1023; // three's RGBAFormat
+const NO_COLOR_SPACE = ""; // three's NoColorSpace
+
+/** The colour attachment names of a frame pass, for the renderer's readback by attachment index. */
+const ATTACHMENT_NAMES = Symbol.for("threenative.passAttachmentNames");
+
+/** The name of a frame pass's colour attachment `index`, or undefined for any other target. */
+export function frameAttachmentName(target: unknown, index: number): string | undefined {
+  if (typeof target !== "object" || target === null) return undefined;
+  return (target as { [ATTACHMENT_NAMES]?: readonly string[] })[ATTACHMENT_NAMES]?.[index];
+}
+
+/**
+ * The frame pass's colour attachments: three's RenderTarget surface over the targets the engine draws.
+ * The engine owns their GPU memory, so a resize and a dispose belong to it; this object answers what a
+ * game reads (the layout, the size, the sample count) and dispatches three's `dispose` event.
+ */
+class FrameTarget implements IFrameTarget {
+  readonly texture: IPassAttachment = {
+    name: "output",
+    format: RGBA_FORMAT,
+    type: HALF_FLOAT_TYPE,
+    colorSpace: NO_COLOR_SPACE,
+  };
+  #attachments: IPassAttachment[] = [this.texture];
+  readonly #events = new Map<string, Set<unknown>>();
+  readonly #host: IPassHost | undefined;
+
+  constructor(host: IPassHost | undefined) {
+    this.#host = host;
+  }
+
+  get textures(): readonly IPassAttachment[] {
+    return this.#attachments;
+  }
+  get width(): number {
+    return this.#host?.surface?.()?.width ?? 1;
+  }
+  get height(): number {
+    return this.#host?.surface?.()?.height ?? 1;
+  }
+  get samples(): number {
+    return this.#host?.samples?.() ?? 1;
+  }
+  // The readback names an attachment by its index in `textures`; a facade has no `indexOf` identity to publish.
+  get [ATTACHMENT_NAMES](): readonly string[] {
+    return this.#attachments.map((attachment) => attachment.name);
+  }
+
+  /** three's RenderTarget.setSize: the engine resizes its own pass, so the layout size follows it. */
+  setSize(_width: number, _height: number): void {}
+
+  /** three's MRT layout: the pass's output first, then each further named target, in author order. */
+  setLayout(names: readonly string[]): void {
+    const kept = new Map(this.#attachments.map((attachment) => [attachment.name, attachment]));
+    this.#attachments = names.map((name) => kept.get(name) ?? attachment(name));
+  }
+
+  /** three's PassNode.getTexture: a name the pass did not hold becomes a further colour attachment. */
+  named(name: string): IPassAttachment {
+    let found = this.#attachments.find((attachment) => attachment.name === name);
+    if (found === undefined) {
+      found = attachment(name);
+      this.#attachments.push(found);
+    }
+    return found;
+  }
+
+  addEventListener(type: string, listener: unknown): void {
+    const listeners = this.#events.get(type) ?? new Set<unknown>();
+    listeners.add(listener);
+    this.#events.set(type, listeners);
+  }
+  removeEventListener(type: string, listener: unknown): void {
+    this.#events.get(type)?.delete(listener);
+  }
+  dispatchEvent(event: { type: string }): void {
+    for (const listener of this.#events.get(event.type) ?? []) {
+      if (typeof listener === "function") (listener as (event: unknown) => void)(event);
+      else (listener as { handleEvent(event: unknown): void }).handleEvent(event);
+    }
+  }
+
+  dispose(): void {
+    this.dispatchEvent({ type: "dispose" });
+  }
+}
+
+function attachment(name: string): IPassAttachment {
+  return { name, format: RGBA_FORMAT, type: HALF_FLOAT_TYPE, colorSpace: NO_COLOR_SPACE };
 }
 
 /** Draws `scene` through `camera` into `target`, at the call. */
@@ -96,6 +224,9 @@ function maxColorAttachments(): number {
 
 interface IMRTNode {
   readonly isMRTNode: true;
+  /** three's MRTNode.outputNodes: the node each named output writes. */
+  readonly outputNodes: Readonly<Record<string, unknown>>;
+  /** The same record under the facade's earlier name, which the Wasm backend's setter reads. */
   readonly outputs: Readonly<Record<string, unknown>>;
   /**
    * three's per-output blend state. The engine's scene pass keeps the material's own blending on
@@ -189,9 +320,11 @@ export function definePass(
         );
       named[name] = value;
     }
+    const frozen = Object.freeze(named);
     const node: IMRTNode = Object.freeze({
       isMRTNode: true as const,
-      outputs: Object.freeze(named),
+      outputNodes: frozen,
+      outputs: frozen,
       blendModes: {} as Record<string, unknown>,
       setBlendMode(name: string, blend: unknown): IMRTNode {
         node.blendModes[name] = blend;
@@ -233,10 +366,16 @@ export function definePass(
   interface IOffscreen {
     [drawPass](surface: ISurface, draw: PassDraw): void;
   }
+  /** A pass the engine's frame draws: its updateBefore is the frame's hook. */
+  interface IPassFrame {
+    updateBefore(frame: unknown): unknown;
+  }
   const offscreen = new Set<IOffscreen>();
+  const frameNodes = new Set<IPassFrame>();
   let lastSurface: ISurface | undefined;
+  let updatedFrame: number | undefined;
 
-  class PassNode implements IOffscreen {
+  class PassNode implements IOffscreen, IPassFrame {
     static readonly COLOR = "color";
     static readonly DEPTH = "depth";
     readonly isPassNode = true;
@@ -245,6 +384,7 @@ export function definePass(
     #camera: unknown;
     #scale = 1;
     #target: IPassTarget | null = null;
+    #frameTarget: FrameTarget | null = null;
     #offscreen: boolean;
     #disposed = false;
     #viewZ = new Map<string, unknown>();
@@ -255,6 +395,7 @@ export function definePass(
       this.#offscreen = scope !== framePass;
       if (!this.#offscreen) {
         onTarget?.(scene, camera);
+        frameNodes.add(this);
         return;
       }
       if (scope !== PassNode.COLOR)
@@ -283,9 +424,40 @@ export function definePass(
       if (!this.#offscreen) onTarget?.(this.#scene, value);
     }
 
-    /** The offscreen pass's real target, so its width and height are the allocated size. */
-    get renderTarget(): IPassTarget | undefined {
-      return this.#target ?? undefined;
+    /**
+     * The pass's target: an offscreen pass's own RenderTarget, or the frame pass's colour attachments.
+     * The frame pass draws into the engine's frame, so this answers its layout, size and sample count.
+     */
+    get renderTarget(): IPassTarget | IFrameTarget | undefined {
+      if (this.#offscreen) return this.#target ?? undefined;
+      this.#frameTarget ??= new FrameTarget(host);
+      return this.#frameTarget;
+    }
+
+    /**
+     * The texture of one of the pass's colour attachments, as three's PassNode.getTexture(name) answers it.
+     * A name the MRT does not write becomes a further attachment descriptor, as three pushes one.
+     */
+    getTexture(name = "output"): IPassAttachment {
+      if (this.#offscreen)
+        throw new Error(
+          "TN_NATIVE_PASS_TEXTURE_UNSUPPORTED: an offscreen PassNode's colour is a node (getTextureNode()) with no JS texture",
+        );
+      if (name === "depth")
+        throw new Error(
+          "TN_NATIVE_PASS_TEXTURE_UNSUPPORTED: the frame pass's depth is a node (getTextureNode('depth')), not a JS texture",
+        );
+      const target = this.renderTarget as FrameTarget;
+      return name === "output" ? target.texture : target.named(name);
+    }
+
+    /**
+     * three's PassNode.updateBefore: the pass's frame. The engine draws the frame pass itself, so this
+     * body is the safe point a game wraps to run code at the pass's frame (the water proof reads back
+     * the attachment the pass last drew). An offscreen pass draws in updateSecondaryPasses.
+     */
+    updateBefore(_frame: unknown): unknown {
+      return undefined;
     }
 
     setResolutionScale(scale: number): this {
@@ -324,6 +496,11 @@ export function definePass(
       if (value !== null && this.#offscreen)
         throw new Error("TN_NATIVE_MRT_UNSUPPORTED: an offscreen PassNode draws colour only");
       this.#mrt = value;
+      // The pass holds one colour attachment per output the MRT names, its own colour first (three's
+      // PassNode pushes a texture per MRT output; the engine draws that same layout).
+      const names = value === null ? [] : Object.keys(value.outputNodes);
+      this.#frameTarget ??= new FrameTarget(host);
+      this.#frameTarget.setLayout(["output", ...names.filter((name) => name !== "output")]);
       return this;
     }
 
@@ -395,11 +572,29 @@ export function definePass(
       offscreen.delete(this);
       this.#target?.dispose();
       this.#target = null;
+      frameNodes.delete(this);
+      this.#frameTarget?.dispose();
+      this.#frameTarget = null;
     }
   }
 
   const pass = (scene: unknown, camera: unknown): PassNode =>
     new PassNode(framePass, scene, camera);
+
+  /**
+   * Runs every live frame pass's `updateBefore` once per frame, as three's node update system does.
+   * The engine draws the frame pass itself, so a game's wrapper runs at the pass's frame point, one
+   * call a frame however many post passes the backend renders.
+   */
+  function updateFramePasses(frame?: { frameId?: number }): void {
+    if (frameNodes.size === 0) return;
+    const id = frame?.frameId;
+    if (id !== undefined) {
+      if (id === updatedFrame) return;
+      updatedFrame = id;
+    }
+    for (const node of [...frameNodes]) node.updateBefore(frame);
+  }
 
   /**
    * Draws every live offscreen pass into its target, at the surface size, before the frame that
@@ -421,6 +616,7 @@ export function definePass(
     pass,
     PassNode,
     updateSecondaryPasses,
+    updateFramePasses,
     mrt,
     output,
     normalView,

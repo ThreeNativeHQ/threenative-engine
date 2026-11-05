@@ -328,6 +328,11 @@ tn_native_engine_test(tn-native-engine-tsl-math-test tests/native-engine/tsl_mat
     native_engine_tsl_math=math)
 target_link_libraries(tn-native-engine-tsl-math-test PRIVATE tn_engine_abi)
 
+# The ROI crop every attachment read hands back (a PassNode MRT slot, a render target): no device needed.
+tn_native_engine_test(tn-native-engine-readback-crop-test tests/native-engine/readback_crop_test.cpp
+    native_engine_readback_crop=crops_region
+    native_engine_readback_crop_refusal=refuses_outside)
+
 tn_native_engine_test(tn-native-engine-shader-ir-test tests/native-engine/shader_ir_test.cpp
     native_engine_tsl_ir_storage_textures=storage_textures
     native_engine_tsl_ir_order=order
@@ -1062,7 +1067,7 @@ if(EMSCRIPTEN)
         # `worker`: a game can run in a worker on an OffscreenCanvas (PRD-752); without it the glue
         # reads `document` while the module loads.
         -sASSERTIONS=0 -sEXPORT_NAME=createTnWeb -sENVIRONMENT=web,worker -sMAXIMUM_MEMORY=4GB -sALLOW_TABLE_GROWTH=1
-        "-sEXPORTED_FUNCTIONS=_tn_engine_version,_tn_context_create,_tn_context_destroy,_tn_type_id,_tn_object_release,_tn_object_engine_references,_tn_construct,_tn_invoke,_tn_get,_tn_set,_tn_set_callback,_tn_diagnostic_release,_tnw_attribute_view,_tnw_attribute_view_release,_tnw_web_init,_tnw_web_host_abi,_tnw_web_threads,_tnw_web_poll,_tnw_web_error,_tnw_web_adapter,_tnw_web_resize,_tnw_web_render,_tnw_web_prepare_environment,_tnw_web_set_presentation_hold,_tnw_web_compile_async,_tnw_web_compile_status,_tnw_web_frame,_tn_tsl_call,_tn_tsl_release,_tn_tsl_set,_tn_tsl_set_uniform,_tn_tsl_effect_parameter,_tnw_web_set_post,_malloc,_free,_tnw_web_renderer_state,_tnw_web_load_gltf,_tnw_web_load_error,_tnw_web_gltf_file,_tnw_web_gltf_files_clear,_tnw_web_render_target,_tnw_web_read_target,_tnw_web_read_target_take,_tnw_web_capture_face,_tnw_web_compute,_tnw_web_compute_flush,_tnw_web_read_storage,_tnw_web_read_storage_size,_tnw_web_read_storage_take,_tnw_web_delete_storage,_tnw_web_init_texture,_tnw_web_copy_texture"
+        "-sEXPORTED_FUNCTIONS=_tn_engine_version,_tn_context_create,_tn_context_destroy,_tn_type_id,_tn_object_release,_tn_object_engine_references,_tn_construct,_tn_invoke,_tn_get,_tn_set,_tn_set_callback,_tn_diagnostic_release,_tnw_attribute_view,_tnw_attribute_view_release,_tnw_web_init,_tnw_web_host_abi,_tnw_web_threads,_tnw_web_poll,_tnw_web_error,_tnw_web_adapter,_tnw_web_resize,_tnw_web_render,_tnw_web_prepare_environment,_tnw_web_set_presentation_hold,_tnw_web_compile_async,_tnw_web_compile_status,_tnw_web_frame,_tn_tsl_call,_tn_tsl_release,_tn_tsl_set,_tn_tsl_set_uniform,_tn_tsl_effect_parameter,_tnw_web_set_post,_malloc,_free,_tnw_web_renderer_state,_tnw_web_load_gltf,_tnw_web_load_error,_tnw_web_gltf_file,_tnw_web_gltf_files_clear,_tnw_web_render_target,_tnw_web_read_target,_tnw_web_read_target_take,_tnw_web_capture_face,_tnw_web_compute,_tnw_web_compute_flush,_tnw_web_read_storage,_tnw_web_read_storage_size,_tnw_web_read_storage_take,_tnw_web_delete_storage,_tnw_web_init_texture,_tnw_web_copy_texture,_tnw_web_read_mrt,_tnw_web_device_limit"
         "-sEXPORTED_RUNTIME_METHODS=wasmMemory,HEAPU8,HEAPU32,HEAPF64,UTF8ToString,stringToUTF8,lengthBytesUTF8,addFunction,specialHTMLTargets")
 endif()
 

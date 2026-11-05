@@ -397,6 +397,12 @@ public:
     GpuStatus readAlbedoPixels(ReadbackCallback done);
     /** The emitted radiance (RGBA16Float); InvalidHandle until a post pass reads "emissive". */
     GpuStatus readEmissivePixels(ReadbackCallback done);
+    /**
+     * The region [x, y, width, height] of one custom MRT slot's attachment (three's PassNode.getTexture(slot)
+     * read back), packed RGBA16Float rows, top row first. InvalidHandle until a frame draws that slot.
+     */
+    GpuStatus readMrtPixels(std::string_view slot, uint32_t x, uint32_t y, uint32_t width, uint32_t height,
+                            ReadbackCallback done);
     /** Textures the renderer holds GPU copies of (a destroyed Texture's are released at the next frame). */
     std::size_t materialTextureCount() const { return textures_->records.size(); }
     /** What the last frame refused or skipped by name; cleared at the start of each frame. */

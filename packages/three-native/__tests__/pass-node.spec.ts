@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { definePass, markNormalTarget } from "../src/pass-node.js";
+import {
+  type IFrameTarget,
+  type IPassHost,
+  definePass,
+  frameAttachmentName,
+  markNormalTarget,
+} from "../src/pass-node.js";
 
 const normalView = Object.freeze({ name: "normalView" });
 // A node that records its arithmetic, so getViewZNode's formula reads back as text.
@@ -393,5 +399,121 @@ describe("offscreen PassNode on a non-main scene", () => {
     expect(() => new (definePass(tsl).PassNode)("color", quadScene, quadCamera)).toThrow(
       /TN_NATIVE_PASS_HOST/u,
     );
+  });
+});
+
+describe("the frame pass's own attachments", () => {
+  // The sheltered water proof reads the pass it draws through: one descriptor per MRT output, the
+  // surface the engine draws at, its sample count, and three's per-frame updates hook.
+  // The frame pass's own target, which only a frame pass answers; the offscreen path has its own.
+  const targetOf = (pass: { renderTarget: unknown }) => pass.renderTarget as IFrameTarget;
+  const host = (): IPassHost => ({
+    RenderTarget: FakeTarget,
+    surface: () => ({ width: 1280, height: 720 }),
+    samples: () => 4,
+  });
+  const value = { name: "diagnosticValue" };
+  const layout = (api: ReturnType<typeof definePass>) =>
+    api.mrt({
+      output: api.output,
+      normal: normalView,
+      diagnostic: vec4(value, 0, 0, 0),
+    });
+
+  it("names the pass's colour texture and pushes one attachment per MRT output", () => {
+    const api = definePass(tsl, undefined, host());
+    const scenePass = api.pass({}, {});
+    expect(targetOf(scenePass).texture).toBe(scenePass.getTexture("output"));
+    expect(targetOf(scenePass).textures).toEqual([targetOf(scenePass).texture]);
+    expect(scenePass.getTexture()).toBe(targetOf(scenePass).texture);
+    scenePass.setMRT(layout(api));
+    expect(targetOf(scenePass).textures.map((texture) => texture.name)).toEqual([
+      "output",
+      "normal",
+      "diagnostic",
+    ]);
+    expect(targetOf(scenePass).textures[0]).toBe(targetOf(scenePass).texture);
+  });
+
+  it("publishes each attachment's format, type and colour space, as three's targets do", () => {
+    const api = definePass(tsl, undefined, host());
+    const scenePass = api.pass({}, {});
+    scenePass.setMRT(layout(api));
+    const diagnostic = scenePass.getTexture("diagnostic");
+    expect(diagnostic).toBe(scenePass.getTexture("diagnostic"));
+    expect(diagnostic).toMatchObject({
+      name: "diagnostic",
+      format: 1023,
+      type: 1016,
+      colorSpace: "",
+    });
+    expect(targetOf(scenePass).textures[2]).toBe(diagnostic);
+    // sky.ts writes these three before it hands the texture to the proof.
+    diagnostic.format = 1023;
+    diagnostic.type = 1016;
+    diagnostic.colorSpace = "";
+    expect(diagnostic.format).toBe(1023);
+  });
+
+  it("reports the surface the engine draws at and the frame's sample count", () => {
+    const api = definePass(tsl, undefined, host());
+    const scenePass = api.pass({}, {});
+    expect([targetOf(scenePass).width, targetOf(scenePass).height]).toEqual([1280, 720]);
+    expect(targetOf(scenePass).samples).toBe(4);
+  });
+
+  it("dispatches dispose to a listener, as three's RenderTarget does", () => {
+    const api = definePass(tsl, undefined, host());
+    const scenePass = api.pass({}, {});
+    const heard: string[] = [];
+    const listener = () => heard.push("dispose");
+    targetOf(scenePass).addEventListener("dispose", listener);
+    scenePass.dispose();
+    expect(heard).toEqual(["dispose"]);
+    targetOf(scenePass).removeEventListener("dispose", listener);
+    targetOf(scenePass).dispatchEvent({ type: "dispose" });
+    expect(heard).toEqual(["dispose"]);
+  });
+
+  it("answers the MRT's named outputs as three's MRTNode does", () => {
+    const api = definePass(tsl);
+    const node = layout(api);
+    expect(Object.keys(node.outputNodes)).toEqual(["output", "normal", "diagnostic"]);
+    expect(node.outputNodes.diagnostic).toBe(node.outputs.diagnostic);
+    expect(node.has("diagnostic")).toBe(true);
+  });
+
+  it("runs the pass's updateBefore once per frame, so a game's hook hears each pass", () => {
+    const api = definePass(tsl, undefined, host());
+    const scenePass = api.pass({}, {});
+    const frames: unknown[] = [];
+    // installWaterProof's shape: it wraps the pass's own updateBefore and runs after it.
+    const original = scenePass.updateBefore;
+    const wrapped = function (this: unknown, frame: unknown): unknown {
+      const result = original.call(this, frame);
+      frames.push(frame);
+      return result;
+    };
+    scenePass.updateBefore = wrapped;
+    const first = { frameId: 1 };
+    api.updateFramePasses(first);
+    api.updateFramePasses(first);
+    expect(frames).toEqual([first]);
+  });
+
+  it("refuses a texture index the pass does not hold, by name", () => {
+    const api = definePass(tsl, undefined, host());
+    const scenePass = api.pass({}, {});
+    expect(frameAttachmentName(targetOf(scenePass), 1)).toBeUndefined();
+    scenePass.setMRT(layout(api));
+    expect(frameAttachmentName(targetOf(scenePass), 2)).toBe("diagnostic");
+    expect(frameAttachmentName({}, 2)).toBeUndefined();
+  });
+
+  it("keeps the depth attachment out of the colour list", () => {
+    const api = definePass(tsl, undefined, host());
+    const scenePass = api.pass({}, {});
+    expect(() => scenePass.getTexture("depth")).toThrow(/TN_NATIVE_PASS_TEXTURE_UNSUPPORTED/u);
+    expect(targetOf(scenePass).textures).toHaveLength(1);
   });
 });

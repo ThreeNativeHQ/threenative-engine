@@ -46,7 +46,8 @@ namespace {
 // 7 = tnw_web_prepare_environment: the startup bake presents no surface frame.
 // 8 = tnw_web_set_presentation_hold, and the startup's world submission and shadow inputs as frame fields 71, 72.
 // 9 = tnw_web_init_texture and tnw_web_copy_texture (PRD-762); the 6 the terrain work first took is 8's.
-constexpr uint32_t kWebHostAbi = 9;
+// 10 = tnw_web_read_mrt (a PassNode's custom MRT attachment) and tnw_web_device_limit.
+constexpr uint32_t kWebHostAbi = 10;
 
 enum WebState : int { Pending = 0, Ready = 1, Failed = 2 };
 
@@ -709,6 +710,42 @@ extern "C" int tnw_web_copy_texture(const tn_handle_t* sourceHandle, const tn_ha
         return 0;
     } catch (const std::exception& error) {
         return refuse(error.what());
+    }
+}
+
+/**
+ * Starts reading [x, y, w, h] of the frame pass's custom MRT slot `name` (three's PassNode.getTexture(slot)):
+ * the attachment the aux pass wrote there last frame. Returns the read id, or 0 (tnw_web_error says why).
+ */
+extern "C" uint32_t tnw_web_read_mrt(const char* name, uint32_t x, uint32_t y, uint32_t w, uint32_t h) {
+    if (state != Ready || !renderer) return fail("TN_WASM_READ_TARGET: device not ready"), 0;
+    flushCompute();
+    const uint32_t id = ++nextTargetRead;
+    targetReads[id] = {};
+    const GpuStatus started = renderer->readMrtPixels(name ? name : "", x, y, w, h,
+        [id](GpuStatus status, std::vector<uint8_t> bytes) {
+            auto found = targetReads.find(id);
+            if (found == targetReads.end()) return;
+            found->second.status = status == GpuStatus::Ok ? 1 : -1;
+            found->second.bytes = std::move(bytes);
+        });
+    if (started != GpuStatus::Ok) {
+        targetReads.erase(id);
+        return fail(started == GpuStatus::InvalidHandle
+                        ? std::string("TN_WASM_READ_TARGET: the frame pass writes no '") + (name ? name : "") + "' colour attachment"
+                        : "TN_WASM_READ_TARGET: region outside the attachment"), 0;
+    }
+    return id;
+}
+
+/** The device's limits a facade publishes (three's GPUDevice.limits): the requested pair, 0 when no device. */
+extern "C" double tnw_web_device_limit(int field) {
+    if (!renderer) return 0;
+    const WGPULimits& limits = renderer->deviceLimits();
+    switch (field) {
+        case 0: return double(limits.maxColorAttachments);
+        case 1: return double(limits.maxColorAttachmentBytesPerSample);
+        default: return 0;
     }
 }
 
