@@ -78,24 +78,15 @@ export function clipWaterProofRoi(width: number, height: number, scale: number):
 }
 
 /**
- * RGBA16F is the one diagnostic format this proof writes, so its bytes per texel never vary.
- * `WebGPUTextureUtils.copyTextureToBuffer` pads each copied row to a 256-byte boundary but leaves
- * the last row unpadded (three r185, `copyTextureToBuffer`), so the returned typed array is
- * `(height - 1)` padded Uint16 rows plus one `width * 4`-element row. A readback of any other
+ * RGBA16F is the one diagnostic format this proof writes. `WebGPUTextureUtils.copyTextureToBuffer`
+ * removes the 256-byte row padding (three 0.187.0), and the owned engine matches it, so the returned
+ * Uint16Array is `width * height * 4` elements with `width * 4` per row. A readback of any other
  * length is a wiring error, never something to re-derive: it fails instead of classifying.
  */
 const DIAGNOSTIC_BYTES_PER_TEXEL = 8;
-const DIAGNOSTIC_ROW_ALIGNMENT = 256;
-
-function diagnosticRowElements(width: number): number {
-  const bytesPerRow =
-    Math.ceil((width * DIAGNOSTIC_BYTES_PER_TEXEL) / DIAGNOSTIC_ROW_ALIGNMENT) *
-    DIAGNOSTIC_ROW_ALIGNMENT;
-  return bytesPerRow / 2;
-}
 
 function expectedDiagnosticLength(width: number, height: number): number {
-  return (height - 1) * diagnosticRowElements(width) + width * 4;
+  return width * height * 4;
 }
 
 /**
@@ -118,7 +109,7 @@ export function classifyWaterProof(
       `TN_WATER_PROOF_LENGTH: the readback is not the copyTextureToBuffer layout (${samples.length} != ${expected})`,
     );
   }
-  const rowElements = diagnosticRowElements(roi.width);
+  const rowElements = roi.width * 4;
   let area = 0;
   let considered = 0;
   let qualifying = 0;

@@ -212,11 +212,15 @@ export function gltfOf(
               "TN_WASM_GLTF_FILES_UNAVAILABLE: this web engine cannot read a model's image files",
             );
           for (const [uri, content] of files) {
-            const name = h.alloc(abi.lengthBytesUTF8(uri) + 1);
-            abi.stringToUTF8(uri, name, abi.lengthBytesUTF8(uri) + 1);
-            const copy = h.alloc(Math.max(1, content.byteLength));
-            abi.HEAPU8.set(content, copy);
-            file(name, copy, content.byteLength);
+            // tnw_web_gltf_file keeps its own copy, so this scratch is dead once it returns. One scope
+            // per file frees it at once: the peak is one file, not the sum of all of them.
+            h.scoped(() => {
+              const name = h.alloc(abi.lengthBytesUTF8(uri) + 1);
+              abi.stringToUTF8(uri, name, abi.lengthBytesUTF8(uri) + 1);
+              const copy = h.alloc(Math.max(1, content.byteLength));
+              abi.HEAPU8.set(content, copy);
+              file(name, copy, content.byteLength);
+            });
           }
         }
         try {

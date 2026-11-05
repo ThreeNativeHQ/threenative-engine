@@ -50,36 +50,6 @@ export function pixelsOfType(
   );
 }
 
-/** Three's WebGPU readback aligns every row to this many bytes (copyTextureToBuffer). */
-const READBACK_ROW_ALIGNMENT = 256;
-
-/**
- * The region's bytes in three's copyTextureToBuffer layout: each row padded to 256 bytes, the last
- * row trimmed to its data. A caller that indexes rows by that stride (a classifier reading an MRT
- * attachment) sees the same array three's own renderer hands back.
- */
-export function padReadbackRows(
-  bytes: Uint8Array,
-  width: number,
-  height: number,
-  texelBytes: number,
-): Uint8Array {
-  const rowData = width * texelBytes;
-  if (width < 1 || height < 1 || bytes.length !== rowData * height)
-    throw new Error(
-      `TN_NATIVE_READBACK: a ${width}x${height} region of ${String(texelBytes)}-byte texels is ${String(rowData * height)} bytes, got ${String(bytes.length)}`,
-    );
-  const rowPadded = Math.ceil(rowData / READBACK_ROW_ALIGNMENT) * READBACK_ROW_ALIGNMENT;
-  if (rowPadded === rowData) return bytes;
-  const padded = new Uint8Array(rowPadded * (height - 1) + rowData);
-  for (let row = 0; row < height; row++)
-    padded.set(
-      bytes.subarray(row * rowData, (row + 1) * rowData),
-      row < height - 1 ? row * rowPadded : (height - 1) * rowPadded,
-    );
-  return padded;
-}
-
 /** The engine's two calls for a back end's render targets. */
 export interface IRenderTargetEngine {
   /** Draws `root` through `camera` into `target`; throws the engine's refusal. */
@@ -151,12 +121,9 @@ export function defineRenderTargets(
           "TN_NATIVE_RENDER_TARGET_UNSUPPORTED: a cube face other than 0 is not read natively",
         );
       const bytes = await engineOf(this).read(target, x, y, width, height, textureIndex);
-      // The engine crops tightly; three's own readback carries its copy layout, so the array a game
-      // reads has the same stride on both back ends.
-      return pixelsOfType(
-        padReadbackRows(bytes, width, height, targetTexelBytes(target.texture.type)),
-        target.texture.type,
-      );
+      // The engine crops tightly, and so does three 0.187.0 (copyTextureToBuffer removes the row
+      // padding), so the array a game reads has the same tight stride on both back ends.
+      return pixelsOfType(bytes, target.texture.type);
     },
   });
 }

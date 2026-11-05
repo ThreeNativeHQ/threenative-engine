@@ -56,10 +56,10 @@ it("runs the canonical terrain proof against the production Vite build", () => {
   expect(controlCommand).not.toContain("pnpm dev");
 });
 
-// The exact three r185 copyTextureToBuffer layout: every row but the last padded to 256 bytes.
+// The three 0.187.0 copyTextureToBuffer layout: tight rows, `width * 4` Uint16 elements each.
 function padded(make: (x: number, y: number) => [number, number]): Uint16Array {
-  const stride = (Math.ceil((ROI.width * 8) / 256) * 256) / 2;
-  const data = new Uint16Array((ROI.height - 1) * stride + ROI.width * 4);
+  const stride = ROI.width * 4;
+  const data = new Uint16Array(ROI.height * stride);
   for (let y = 0; y < ROI.height; y++)
     for (let x = 0; x < ROI.width; x++) {
       const base = y * stride + x * 4;

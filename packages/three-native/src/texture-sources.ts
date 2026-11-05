@@ -23,9 +23,10 @@ interface IPixels {
 interface ICanvasLike {
   readonly width: number;
   readonly height: number;
-  getContext(
-    kind: "2d",
-  ): { getImageData(x: number, y: number, w: number, h: number): IPixels } | null;
+  getContext(kind: "2d"): {
+    getImageData(x: number, y: number, w: number, h: number): IPixels;
+    getContextAttributes?(): { willReadFrequently?: boolean };
+  } | null;
 }
 
 /** three's Texture defaults: an image is flipped, linear-filtered and mipmapped, unlike DataTexture's. */
@@ -40,17 +41,22 @@ function isPixels(image: unknown): image is IPixels {
   return ArrayBuffer.isView(candidate?.data) && typeof candidate?.width === "number";
 }
 
-/** An image's RGBA pixels: its own `data`, or a drawable copied into a CPU-backed canvas. */
+/** An image's RGBA pixels: its own `data`, a CPU-backed canvas read directly, or a drawable copied. */
 function pixelsOf(image: unknown): IPixels {
   if (isPixels(image)) return image;
+  const own = isCanvas(image) ? image.getContext("2d") : null;
+  // A canvas made `willReadFrequently` is CPU-backed, so its own readback is exact and needs no copy,
+  // which keeps a canvas redrawn and re-sent each frame at one getImageData.
+  if (own?.getContextAttributes?.().willReadFrequently === true)
+    return own.getImageData(0, 0, (image as ICanvasLike).width, (image as ICanvasLike).height);
   const drawable = image as { width?: number; height?: number } | null;
   if (typeof OffscreenCanvas !== "undefined" && drawable?.width && drawable.height) {
-    // `willReadFrequently` keeps this canvas CPU-backed, and a GPU-backed one does not hand its pixels
-    // back: measured on Chromium over Vulkan, `getImageData` of a red `fillRect` reads 0/0/0 there and
-    // 255/0/0 here, which uploaded every `assets.texture()` as black (the Strata tundra ground). The
-    // caller's own context is not asked, since a canvas made with `document.createElement` and drawn
-    // through a default 2D context is GPU-backed too; drawing that canvas here is a plain copy the
-    // browser performs correctly, whatever context the caller created.
+    // A GPU-backed canvas does not hand its pixels back: measured on Chromium over Vulkan,
+    // `getImageData` of a red `fillRect` reads 0/0/0 there and 255/0/0 in a `willReadFrequently`
+    // canvas, which uploaded every `assets.texture()` as black (the Strata tundra ground). A canvas
+    // made with `document.createElement` and a default 2D context is GPU-backed, and a webgl canvas
+    // has no 2D context at all. Drawing either into a CPU-backed canvas is a plain copy the browser
+    // performs correctly, whatever context the caller created.
     const context = new OffscreenCanvas(drawable.width, drawable.height).getContext("2d", {
       willReadFrequently: true,
     });
@@ -58,10 +64,10 @@ function pixelsOf(image: unknown): IPixels {
     const pixels = context?.getImageData(0, 0, drawable.width, drawable.height);
     if (pixels !== undefined) return pixels;
   }
-  if (isCanvas(image)) {
+  if (own !== null) {
     // No OffscreenCanvas to copy into: the caller's canvas is the only readback left.
-    const pixels = image.getContext("2d")?.getImageData(0, 0, image.width, image.height);
-    if (pixels !== undefined) return pixels;
+    const { width, height } = image as ICanvasLike;
+    return own.getImageData(0, 0, width, height);
   }
   throw new TypeError(
     "TN_BROWSER_TEXTURE_SOURCE: expected ImageData, a canvas with a 2D context, or an image OffscreenCanvas can draw",

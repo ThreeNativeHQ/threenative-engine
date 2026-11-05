@@ -195,7 +195,7 @@ describe("browser texture sources", () => {
     // A canvas drawn with a default 2D context is GPU-backed on Chromium over Vulkan: its own
     // getImageData answers zeros for the red fillRect the caller drew. Drawing it into the facade's
     // own willReadFrequently canvas is a copy the browser performs correctly, whatever context drew
-    // the caller's canvas, so the readback copies instead of asking the caller's context.
+    // the caller's canvas, so the readback copies unless the caller's context is willReadFrequently.
     const drawn = new Uint8ClampedArray([255, 0, 0, 255]);
     let copied: Uint8ClampedArray | null = null;
     const contexts = vi.fn(() => ({
@@ -227,7 +227,62 @@ describe("browser texture sources", () => {
       ["image.data", [255, 0, 0, 255]],
       ["needsUpdate", true],
     ]);
-    expect(contexts).not.toHaveBeenCalled();
+    // The caller's context is asked only for its attributes: it is not willReadFrequently, so the
+    // zeros its own getImageData would give never reach the upload (the red copy above did).
+    expect(contexts).toHaveBeenCalled();
+  });
+
+  it("reads a willReadFrequently canvas directly, with no copy, on every needsUpdate", () => {
+    const { bound, writes } = recording();
+    let offscreen = 0;
+    vi.stubGlobal(
+      "OffscreenCanvas",
+      class {
+        constructor() {
+          offscreen++;
+        }
+        getContext() {
+          return null;
+        }
+      },
+    );
+    const canvas = {
+      width: 1,
+      height: 1,
+      getContext: () => ({
+        getContextAttributes: () => ({ willReadFrequently: true }),
+        getImageData: () => ({ data: new Uint8ClampedArray([1, 2, 3, 255]), width: 1, height: 1 }),
+      }),
+    };
+    const texture = new (bound.CanvasTexture as Ctor)(canvas);
+    texture.needsUpdate = true;
+    texture.needsUpdate = true;
+    expect(writes.filter(([, field]) => field === "image.data")).toHaveLength(2);
+    expect(offscreen).toBe(0);
+  });
+
+  it("copies a canvas whose getContext('2d') is null (a webgl canvas) by drawing it", () => {
+    const { bound, constructed } = recording();
+    const canvas = { width: 1, height: 1, getContext: vi.fn(() => null) };
+    const drawn: unknown[] = [];
+    vi.stubGlobal(
+      "OffscreenCanvas",
+      class {
+        getContext() {
+          return {
+            drawImage: (source: unknown) => drawn.push(source),
+            getImageData: () => ({
+              data: new Uint8ClampedArray([4, 5, 6, 255]),
+              width: 1,
+              height: 1,
+            }),
+          };
+        }
+      },
+    );
+    new (bound.CanvasTexture as Ctor)(canvas);
+    expect(constructed.at(-1)).toEqual(["CanvasTexture", [[4, 5, 6, 255], 1, 1]]);
+    expect(drawn).toEqual([canvas]);
   });
 
   it("uploads an image's pixels for new Texture(image), and refuses what it cannot read", () => {
