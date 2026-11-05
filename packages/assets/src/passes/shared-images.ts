@@ -400,12 +400,13 @@ export function unpackGlb(buffer: Buffer): {
   while (offset + 8 <= buffer.length) {
     const length = buffer.readUInt32LE(offset);
     const type = buffer.readUInt32LE(offset + 4);
-    if (
-      length % 4 !== 0 ||
-      offset + 8 + length > buffer.length ||
-      (offset === 12 && type !== CHUNK_JSON)
-    ) {
+    if (length % 4 !== 0 || offset + 8 + length > buffer.length) {
       throw new Error("TN_ASSETS_MODEL_UNREADABLE: invalid GLB chunk.");
+    }
+    // The GLB spec puts the JSON chunk first, so a chunk of another type there means the
+    // container holds no document: a chunk fault is not what went wrong.
+    if (offset === 12 && type !== CHUNK_JSON) {
+      throw new Error("TN_ASSETS_MODEL_UNREADABLE: GLB has no JSON chunk.");
     }
     const chunk = buffer.subarray(offset + 8, offset + 8 + length);
     if (type === CHUNK_JSON) json = JSON.parse(chunk.toString("utf8")) as GLTF.IGLTF;
@@ -420,7 +421,6 @@ export function unpackGlb(buffer: Buffer): {
   ) {
     throw new Error("TN_ASSETS_MODEL_UNREADABLE: invalid GLB JSON or chunk length.");
   }
-  if (json === undefined) throw new Error("TN_ASSETS_MODEL_UNREADABLE: GLB has no JSON chunk.");
   return { bin, json };
 }
 
