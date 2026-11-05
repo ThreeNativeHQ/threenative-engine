@@ -297,7 +297,13 @@ function instanceMatrixNode(
   // Three 0.187 (048e6bea2) builds each column as a `BufferAttributeNode` over an
   // `InterleavedBufferAttribute` view of the matrix; older Three nodes held an
   // `InstancedInterleavedBuffer` over the same array. Both carry that matrix, so both are reused.
+  // On a real renderer r187 binds the matrix per object instead (`referenceAttribute`), and only
+  // those columns follow the drawn object: a build is shared by every mesh of the program, and
+  // `SharedBatch#resize` swaps a mesh's buffer, so a column over the build-time array draws another
+  // mesh's or a 64-record buffer past its end, which invalidates the whole recorded bundle.
   const columns = [...(Reflect.get(builder, "nodes") as Iterable<Node>)].filter((node) => {
+    if (Reflect.get(node, "isReferenceBufferAttributeNode") === true)
+      return Reflect.get(node, "referenceNode")?.property === "instanceMatrix";
     const value = Reflect.get(node, "value");
     if (value?.isInterleavedBufferAttribute === true) return value.data === attribute;
     return (
