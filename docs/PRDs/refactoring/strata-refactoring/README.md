@@ -13,9 +13,7 @@
   baseline). Phases 1-3 are done except the sandbox arm: AC-4 and the savanna-in-a-sandbox box are
   open on the sandbox and judge lane.
 - **PRD-794** — CHARTER line approved (owner, 2026-11-04); `WaterBodies` ships in core and the example uses it. Open: AC-3, the water judge.
-- **PRD-795** — Phase 1's drawn-triangle arm exists, and `Heightfield.surfaceAt` landed with a
-  10 000-point raycaster pin; the example's sampler now delegates to it. Open: `HeightfieldCollar`,
-  the game's ring/band wiring, the collider arm and the playtests.
+- **PRD-795** — DONE (2026-11-05): `HeightfieldCollar` and `surfaceAt` in core, edge/vista/walk green on the owned engine, horizon judge PASS; moved to `done/`.
 - **PRD-796** — DONE (2026-11-05): `game.ts` is wiring, every box ticked; moved to `done/`.
 - **PRD-797** — DONE by its own boxes: four seams pinned, the `world.ts` ↔ `world-tiles.ts` cycle
   gone, four leaf modules extracted (3 416 → 2 254, AC-1 narrowed to 2 300 by decision), and the
@@ -81,7 +79,7 @@ Not moved, with the reason:
 | 2 | P1 | [PRD-792](PRD-792-one-bake-for-every-biome.md) | One `bakeBiome` in `@threenative/terrain`; the example stops re-implementing it |
 | 3 | P1 | [PRD-793](../../done/PRD-793-the-terrain-mcp-answers-any-terrain-request.md) | The MCP takes any landform and biome, and makes a new biome in one call |
 | 4 | P2 | [PRD-794](PRD-794-river-lake-and-ocean-are-one-water-body-mechanism.md) | River, lake and ocean are one water-body mechanism |
-| 5 | P2 | [PRD-795](PRD-795-the-far-ring-and-ground-queries-read-the-heightfield.md) | The far ring and ground queries read the heightfield, not world names |
+| 5 | P2 | [PRD-795](../../done/PRD-795-the-far-ring-and-ground-queries-read-the-heightfield.md) | The far ring and ground queries read the heightfield, not world names |
 | 6 | P2 | [PRD-796](../../done/PRD-796-strata-game-ts-is-wiring-not-a-world-switch.md) | Strata `game.ts` is wiring, not a world switch |
 | 7 | P2 | [PRD-797](../../done/PRD-797-world-tiles-splits-by-seam.md) | `world-tiles.ts` splits by seam |
 | 8 | P2 | [PRD-798](PRD-798-world-gpu-scene-and-cell-render-split-with-pins.md) | `world-gpu-scene.ts` and `world-cell-render.ts` split, with `CellRender` pins |
