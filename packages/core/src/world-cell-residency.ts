@@ -349,7 +349,10 @@ export class CellResidency {
       const instances = candidate.cell.runs.reduce((total, run) => total + run.count, 0);
       const rangeRoots =
         this.#host.lodHysteresis() > 0 && !this.#host.parts().render.gpuOn ? instances : 0;
-      const bytes = instances * PLACEMENT_RECORD_BYTES + rangeRoots * LOD_RANGE_RECORD_BYTES * 2;
+      // One 16 B range record per root, which is what the batch allocates for them
+      // (`capacity * LOD_RANGE_STRIDE` in world-cell-batches.ts); the repack scratch that copies
+      // them is one shared pool, not a second record per cell.
+      const bytes = instances * PLACEMENT_RECORD_BYTES + rangeRoots * LOD_RANGE_RECORD_BYTES;
       // After a jump, a cell the one-ring hysteresis above kept is not wanted, so it yields its share
       // of the budgets to one that is. Without this the budgets stayed full of the ring the camera
       // jumped from and the cells around it were refused until it moved again.
