@@ -175,7 +175,6 @@ describe("terrain release metadata", () => {
     "packages/create-threenative/src/doctor.ts",
     "packages/engine-mcp/src/index.ts",
     "packages/engine-mcp/__tests__/server.spec.ts",
-    "packages/blender-mcp/src/index.ts",
     "packages/core/mcp/servers.mjs",
     "packages/create-threenative/engine-mcp-tools.json",
     terrainIo,
