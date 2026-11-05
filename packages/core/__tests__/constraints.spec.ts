@@ -80,6 +80,12 @@ describe("core constraints", () => {
           // the parent, so recolouring the parent recolours every partition. It constructs no
           // material, configures none and reads no property that describes how anything looks.
           file !== "instanced-batch-lod.ts" &&
+          // A far card level keeps a share of the geometry's cards and grows each about its own
+          // centre, so the crown holds its area; the caller names the share. The one match is the
+          // error that refuses a geometry cut into material groups, which this thinning cannot
+          // keep. It reads geometry structure alone and picks no colour, material or light. The
+          // assertions below cover it too.
+          file !== "card-lod.ts" &&
           // WorldCells streams a package: it reads the geometry and surface out of the package's
           // own GLBs and hands them to `InstancedBatch` by reference. It constructs no material,
           // light, colour or shader, and reads no appearance property — a cutout is
@@ -94,6 +100,21 @@ describe("core constraints", () => {
           file !== "world-cell-impostors.ts" &&
           file !== "world-cell-models.ts" &&
           file !== "world-cell-render.ts" &&
+          // PRD-798 and PRD-799 split these five out of `world-cells.ts` and `world-cell-render.ts`
+          // with their content unchanged, so each keeps its parent's reason.
+          // `world-cell-placements.ts` builds a batch on the package's own part surface.
+          // `world-cell-residency.ts` counts model loads in flight, where "light" sits inside
+          // "flight". `world-cell-render-bundles.ts` reads a mesh's surface identity and revision to
+          // decide whether a bundle may record. `world-cell-render-util.ts` clones the mesh's surface
+          // so each mesh owns its node, and scans that surface for an `instanceIndex` read.
+          // `world-cell-render-gpu-dress.ts` derives a level's surface from the package's own
+          // material, and the distances, width and floor all come from the host. All five construct
+          // nothing that describes a look. The same appearance checks below cover each.
+          file !== "world-cell-placements.ts" &&
+          file !== "world-cell-residency.ts" &&
+          file !== "world-cell-render-bundles.ts" &&
+          file !== "world-cell-render-util.ts" &&
+          file !== "world-cell-render-gpu-dress.ts" &&
           // The bundle-safety seam moved out of `world-cells.ts` unchanged. It reads a material's
           // version, transparency, visibility, transmission and node graph to decide whether a draw
           // can be recorded. It constructs, sets and colours none of them. The generic filter
@@ -580,10 +601,11 @@ describe("core constraints", () => {
     );
     expect(clusteredBatch.match(/#[0-9a-f]{6}\b|0x[0-9a-f]{6}\b/giu)).toBeNull();
 
-    // `world-cells.ts`, `world-bundle-safety.ts`, `world-load-limiter.ts`, `world-cell-batches.ts`
-    // and `world-chunk-shadow.ts` are exempted on the same terms as `instanced-batch.ts`: none
-    // constructs a material, light or colour, and none reads a property that describes how
-    // anything looks. The assertions below are what keep that true.
+    // `world-cells.ts`, its PRD-798 and PRD-799 split modules, `world-bundle-safety.ts`,
+    // `world-load-limiter.ts`, `world-cell-batches.ts`, `world-chunk-shadow.ts` and `card-lod.ts`
+    // are exempted on the same terms as `instanced-batch.ts`: none constructs a material, light or
+    // colour, and none reads a property that describes how anything looks. The assertions below are
+    // what keep that true.
     for (const file of [
       "world-cells.ts",
       "world-cell-data.ts",
@@ -592,6 +614,12 @@ describe("core constraints", () => {
       "world-cell-impostors.ts",
       "world-cell-models.ts",
       "world-cell-render.ts",
+      "world-cell-placements.ts",
+      "world-cell-residency.ts",
+      "world-cell-render-bundles.ts",
+      "world-cell-render-util.ts",
+      "world-cell-render-gpu-dress.ts",
+      "card-lod.ts",
       "world-bundle-safety.ts",
       "world-load-limiter.ts",
       "world-cell-batches.ts",

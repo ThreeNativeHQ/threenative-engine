@@ -1,0 +1,88 @@
+{
+  "schemaVersion": 1,
+  "name": "strata-terrain-switch",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 60,
+  "artifacts": {
+    "screenshots": true,
+    "console": true
+  },
+  "steps": [
+    {
+      "label": "forest-ready",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "worldReady",
+        "equals": true
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "coastal",
+      "press": "Digit2",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "label": "coastal-world",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "world",
+        "equals": "coastal"
+      },
+      "timeoutMs": 60000,
+      "release": true
+    },
+    {
+      "label": "coastal-ready",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "worldReady",
+        "equals": true
+      },
+      "timeoutMs": 120000,
+      "release": true,
+      "screenshot": "coastal"
+    },
+    {
+      "kind": "input",
+      "label": "forest",
+      "press": "Digit1",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "label": "forest-world",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "world",
+        "equals": "forest"
+      },
+      "timeoutMs": 60000,
+      "release": true
+    },
+    {
+      "label": "forest-ready-again",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "worldReady",
+        "equals": true
+      },
+      "timeoutMs": 120000,
+      "release": true,
+      "screenshot": "forest-again"
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    }
+  }
+}

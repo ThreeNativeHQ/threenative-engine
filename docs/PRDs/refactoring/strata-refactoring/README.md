@@ -5,23 +5,18 @@
 - **PRD-791** — code complete; only its owner lanes (the playtest red it inherited, the visual judge)
   open. One data divergence found later: `coastal`'s snow `shedFrom` is `0.16` in the look and `0.04`
   in its biome file; the file's value never reached a pixel and the pair needs a judged decision.
-- **PRD-792** — Phase 1 done (today's bake pinned as digests two forced bakes reproduce) and Phase 2's
-  package half done: `bakeBiome`, `measureBands` and the four named scatter stages ship in
-  `@threenative/terrain`, and `terrain_generate` bakes through them. The example's half (its rules as
-  data, per-bucket packages, deleting `propStreaming.ts`/`placements.ts`) is the look-critical path
-  whose proof is a playtest and a judge.
+- **PRD-792** — Phase 1 done; Phase 2 done (2026-11-05): the bake writes per-bucket prop packages, the game loads them through `WorldCells`, `propStreaming.ts`/`placements.ts` are deleted. Open: AC-3, the five-world judge.
 - **PRD-793** — **AC-1, AC-2 and AC-3 done**: all 35 landform×biome pairs cook; `terrain_generate`
   takes `biome` (a starter's name, one of its alias words or an inline spec) with `landform`,
   `sizeMeters`, `seed` and `water`; and `terrain_biome_new` makes and cooks a `savanna` in one call
   that writes only under `<assets.source>/biomes/savanna/` (cook 2 982 ms, under the 3 839 ms forest
   baseline). Phases 1-3 are done except the sandbox arm: AC-4 and the savanna-in-a-sandbox box are
   open on the sandbox and judge lane.
-- **PRD-794** — untouched, blocked on its own CHARTER line.
+- **PRD-794** — CHARTER line approved (owner, 2026-11-04); `WaterBodies` ships in core and the example uses it. Open: AC-3, the water judge.
 - **PRD-795** — Phase 1's drawn-triangle arm exists, and `Heightfield.surfaceAt` landed with a
   10 000-point raycaster pin; the example's sampler now delegates to it. Open: `HeightfieldCollar`,
   the game's ring/band wiring, the collider arm and the playtests.
-- **PRD-796** — untouched. Its world-key pin cannot read the game's config (`IGame` exposes no
-  scenes/input), so the pin needs either a small named export from `game.ts` or a source read.
+- **PRD-796** — DONE (2026-11-05): `game.ts` is wiring, every box ticked; moved to `done/`.
 - **PRD-797** — DONE by its own boxes: four seams pinned, the `world.ts` ↔ `world-tiles.ts` cycle
   gone, four leaf modules extracted (3 416 → 2 254, AC-1 narrowed to 2 300 by decision), and the
   terrain-splat playtest green on the web lane (2026-11-05: exit 0, 180 frames, 8/8 assertions, real
@@ -87,7 +82,7 @@ Not moved, with the reason:
 | 3 | P1 | [PRD-793](../../done/PRD-793-the-terrain-mcp-answers-any-terrain-request.md) | The MCP takes any landform and biome, and makes a new biome in one call |
 | 4 | P2 | [PRD-794](PRD-794-river-lake-and-ocean-are-one-water-body-mechanism.md) | River, lake and ocean are one water-body mechanism |
 | 5 | P2 | [PRD-795](PRD-795-the-far-ring-and-ground-queries-read-the-heightfield.md) | The far ring and ground queries read the heightfield, not world names |
-| 6 | P2 | [PRD-796](PRD-796-strata-game-ts-is-wiring-not-a-world-switch.md) | Strata `game.ts` is wiring, not a world switch |
+| 6 | P2 | [PRD-796](../../done/PRD-796-strata-game-ts-is-wiring-not-a-world-switch.md) | Strata `game.ts` is wiring, not a world switch |
 | 7 | P2 | [PRD-797](../../done/PRD-797-world-tiles-splits-by-seam.md) | `world-tiles.ts` splits by seam |
 | 8 | P2 | [PRD-798](PRD-798-world-gpu-scene-and-cell-render-split-with-pins.md) | `world-gpu-scene.ts` and `world-cell-render.ts` split, with `CellRender` pins |
 | 9 | P2 | [PRD-799](PRD-799-world-cells-second-split.md) | `world-cells.ts` second split |
