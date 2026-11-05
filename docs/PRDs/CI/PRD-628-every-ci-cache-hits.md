@@ -84,6 +84,19 @@ runs show.
   failed jobs (`gh run rerun --failed`), so `test-native` did not run again. **The run that closes this
   box:** a rerun of `test-native` on a ref that already holds its `native-ccache-ci-test-native-…`
   entry; the job log must carry a `Cache hit for restore-key:` line and `Hits: ≥ 80%`.
+  **Round 5 fix, commit `5b8113f05`.** Two causes, both in this tree. (a) The `test-native`
+  `restore-keys` repeated the key's own `hashFiles()` over `CMakeLists.txt` and every `*.cmake`, so a
+  native change produced a prefix no saved entry could match: this tree hashed to `…-gcc-ccb139…`
+  while the entry the develop run had saved was `…-gcc-3ea15707…`. The prefix now stops at the lane
+  (`native-ccache-ci-test-native-${os}-${arch}-gcc-`) and the exact key still carries the hash and
+  the run id last. ccache keys every object by compiler, flags and source, so a restored object
+  from another tree is identical or a miss. (b) `prune-cache` protected the newest copy of the whole
+  `native-ccache-` prefix per ref, so a ref that runs all seven ccache lanes kept one of them. On
+  the live list of 2026-11-03 it planned to delete `native-ccache-ci-test-native-…-ccb139…`
+  (19.6 MiB, `goal/prd-p0-p1-1102`) and `native-ccache-ci-native-engine-…` on `develop`
+  (148.3 MiB). Protection is per lane per ref now, and an older copy of one lane stays evictable.
+  Specs: `scripts/__tests__/ci-cache-keys.spec.ts` (red first: 3 failed) and three cases in
+  `ci-cache-prune.spec.ts` (red first: 2 failed); both green. The hit rate still needs the run.
 - [ ] Every remaining cacheable input has a working cache, measured by hit rate: pnpm store, Playwright browsers, Gradle, Cargo, emsdk, third_party native deps. proof: a table of cache key and hit/miss per job from one full warm run, every row a hit — **PARTIAL 2026-11-03.** Table below is from full develop board run 41441113316 (2026-11-02, per-job logs, cache lines). One row missed and it is a key-input change, not a broken cache: `workspace-dist-v2-…-0fbb7f5f…` missed and saved because PR #597 had changed `pnpm-lock.yaml`. `test-native`'s `native-build-…` also missed on run 41575174097 because the runner image version had changed, and the key covers it on purpose.
 
 | Cache key | Jobs | Result in run 41441113316 |
@@ -132,10 +145,22 @@ another ref re-downloads all three; the emulator job's copies under the PR branc
 rows plus `native-engine-web-wasm-v2` and `workspace-dist-v2` (new manifest hash, then saved by
 `build-artifacts` and hit by that run's later jobs), and it hits `android-v8-payload-…` in 1.4 s.
 Box stays open: Gradle does not hit.
+**Round 5, commit `5b8113f05`.** The save side already runs on develop. Develop push run 41703997856
+(job 126163329535) restored none of the three at 19:55:20Z to 19:55:21Z and saved all three at
+20:34:55Z, 20:35:01Z and 20:35:05Z under `refs/heads/develop`, so a pull request into develop can
+restore them from its base branch and nothing has to move. The miss on that same run is eviction:
+`prune-cache` protected no `gradle-`, `cargo-android-` or `native-android-third-party-` entry, so
+the largest entries a board writes went first. All three are hot keys now (499.6 MiB + 153.6 MiB +
+139.5 MiB per ref). The key shape also lost a defect: a folded `>-` block put a space between the
+platform and the hash (`native-android-third-party-Linux-X64- 4c553d1e…`, the save line of that same
+job), and the key is one line now, which invalidates the one live 139.5 MiB entry once. A
+`workflow_dispatch` on a non-default branch and a `merge_group` run read only their own ref and
+`main`, so they still miss develop's copies; that is GitHub's scope rule, not a workflow rule, and
+the runs that prove this box are a PR board and a develop board after merge.
 
 ### Phase 3 — the cache stays healthy
 
-- [ ] The cache budget fits: large entries (V8 source state, native build trees) stay inside a stated share of the 10 GiB, and no lane evicts another lane's hot key during a full run. proof: `gh cache list` before and after one full run; no hot key evicted — **MECHANISM DONE, PROOF PENDING.** Stated budget: `CACHE_BUDGET_BYTES` = 9 GiB, under the 10 GiB GitHub evicts at; `android-v8-source-*` may hold 3.5 GiB (one state per recipe); a hot key `node-cache-`, `native-ccache-`, `playwright-`, `workspace-dist-`, `android-v8-payload-`, `cargo-v1-`, `wgpu-cache-`, `pipeline-cache-host-deps-` — keeps its newest copy per ref and no more, so a stale copy another key replaced is evictable while the copy a run would restore never is, and a bounded family is bounded per ref as well as per recipe, because caches are ref-scoped. `prune-cache` in `ci-janitor.yml` (after every CI run, `actions: write`) applies it. Plan on the live list, 2026-11-03: 56 entries, 10.00 GiB -> 8.51 GiB, 2 deletions — the merge-queue-scoped `native-build-…-6cb61af1…` (1518 MB) and `native-engine-web-wasm-v2-…` (2 MB); every develop-scoped hot key kept. Pending: the same `gh api …/actions/caches` before and after a full board.
+- [ ] The cache budget fits: large entries (V8 source state, native build trees) stay inside a stated share of the 10 GiB, and no lane evicts another lane's hot key during a full run. proof: `gh cache list` before and after one full run; no hot key evicted — **MECHANISM DONE, PROOF PENDING.** Stated budget: `CACHE_BUDGET_BYTES` = 9 GiB, under the 10 GiB GitHub evicts at; `android-v8-source-*` may hold 3.5 GiB (one state per recipe); a hot key `node-cache-`, `native-ccache-`, `playwright-`, `workspace-dist-`, `android-v8-payload-`, `cargo-v1-`, `wgpu-cache-`, `pipeline-cache-host-deps-` — keeps its newest copy per lane per ref and no more (round 5: per lane, because seven ccache lanes shared one slot), so a stale copy another key replaced is evictable while the copy a run would restore never is, and a bounded family is bounded per ref as well as per recipe, because caches are ref-scoped. `prune-cache` in `ci-janitor.yml` (after every CI run, `actions: write`) applies it. Plan on the live list, 2026-11-03: 56 entries, 10.00 GiB -> 8.51 GiB, 2 deletions — the merge-queue-scoped `native-build-…-6cb61af1…` (1518 MB) and `native-engine-web-wasm-v2-…` (2 MB); every develop-scoped hot key kept. Pending: the same `gh api …/actions/caches` before and after a full board.
   **Round 4 measurement, 2026-11-03.** Two `gh cache list --limit 200` snapshots while two full boards
   ran — 41718807432 at 21:06:55Z and merge-group run 41718838521 at 21:07:07Z, both cancelled
   mid-flight at 55 and 42 of their 78 jobs. Before, 21:19:40Z: 70 entries, **8.63 GiB**. After, 22:07:51Z: 86
@@ -153,6 +178,19 @@ Box stays open: Gradle does not hit.
   completed in the window — something outside this lane cancelled both — and 9.28 GiB is above the
   9 GiB the janitor holds. Proof still owed: the same pair of lists around one full board that runs
   to completion.
+  **Round 5, commit `5b8113f05`.** The janitor's protection was per prefix per ref, so the seven
+  `native-ccache` lanes shared one slot. It is per lane per ref now. Added hot: `gradle-`
+  (499.6 MiB), `cargo-android-` (153.6 MiB), `native-android-third-party-` (139.5 MiB) and
+  `native-engine-web-wasm-v2-` (2.5 MiB). Size on the live list of 2026-11-03 (87 entries,
+  9.43 GiB): protected bytes 1325.4 MiB in 19 entries before, 5498.0 MiB in 61 entries after,
+  +4172.6 MiB — the price of one restorable copy of each lane on each ref. That leaves 3.6 GiB
+  evictable. The plan then deletes 11 entries (0.51 GiB) to 8.93 GiB, and every one of them is an
+  older copy of a lane another key replaced: two on `prd/632-filmic-exposure` for
+  `native-ccache-ci-native-engine-…`, macOS/Windows/desktop-parity/starter-linux older copies, and
+  old `workspace-dist-v2` hashes. No key is deleted while it is a lane's only copy on its ref. If a
+  future board leaves only protected entries over the budget, the step prints `STILL OVER BUDGET` and
+  deletes nothing, and GitHub's own least-recently-used eviction takes over — visible, not silent.
+  The run that closes this box is the same one.
 - [x] Self-hosted runner hosts stay inside their disk budget without manual cleanup: the runner service prunes dangling images, build cache and stale offload checkouts, and pauses its slots before a job could hit ENOSPC. proof: runner-host spec plus `laptop-runners.sh status` showing the prune and the free-space gate — **DONE 2026-11-03** (the script is `scripts/ci-runners.sh`; there is no `laptop-runners.sh`). `prune` drops dangling images, build cache older than `TN_RUNNER_PRUNE_UNTIL` (72 h) and stopped `tn-ci-runner=1` containers, and records the time; `up` prunes, then measures the filesystem the docker daemon fills (`docker info --format '{{.DockerRootDir}}'`) and refuses to start under `TN_RUNNER_MIN_FREE_GB` (20 GB); the balancer re-checks that floor on every poll, prunes at most once per ten minutes, withdraws `TN_RUNNER`, `TN_RUNNER_SLOTS` and `TN_RUNNER_LIGHT` while it is breached, and re-advertises when the space returns; the generated systemd unit runs `prune` as `ExecStartPre`. Spec: `scripts/__tests__/ci-runners-disk.spec.ts`, 7 cases against stubbed `docker`/`gh`/`df`/`lscpu`/`nproc` — status verdict, refusal under the floor naming the numbers and reaching no job, the exact three prune commands plus the recorded time, and the balancer pausing the slots without re-advertising (green); the balancer's routing fixture in `scripts/__tests__/ci-runners.spec.ts` stubs `df` too, so its 17 cases no longer read the host's own free space (2026-11-03: before that stub they failed on any host under the floor, which is what a 12 GB-free `/tmp` produced). Real host, 2026-11-03: `bash scripts/ci-runners.sh prune` prints `prune: 349 GB -> 349 GB free on /var/lib/docker (floor 20 GB)`, and `bash scripts/ci-runners.sh status` then prints `disk: 349 GB free on /var/lib/docker (floor 20 GB): ok` and `prune: 04:46:04Z (0 min ago)`. Operator docs: `tools/ci-runners/README.md` "The host disk budget".
 
 ## Blocked on

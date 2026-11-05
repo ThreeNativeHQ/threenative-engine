@@ -86,11 +86,13 @@ describe("the cache janitor plan", () => {
   });
 
   it("protects only the newest copy of a hot prefix in one ref, so a stale copy stays evictable", () => {
-    // A hot prefix saves a new key per source change (`cargo-v1-<os>-<arch>-<image>-<source>`), so
-    // an older copy in the same ref is stale by construction. Treating every copy as hot made the
-    // family immortal: the budget then fitted cold keys only, and the stale GBs never left.
-    const newer = entry("cargo-v1-Linux-X64-image-rust1.90-bbb-222", 0.15, 1);
-    const older = entry("cargo-v1-Linux-X64-image-rust1.90-aaa-111", 0.5, 9);
+    // A hot prefix saves a new key per source change (`cargo-v1-<os>-<arch>-<image>-<rust>-<libs>-<hash>`,
+    // the tail is a `hashFiles()` digest), so an older copy in the same ref is stale by construction.
+    // Treating every copy as hot made the family immortal: the budget then fitted cold keys only, and
+    // the stale GBs never left. The lane identity is the key without that digest.
+    const lane = "cargo-v1-Linux-X64-20261103.354.1-rust1.90-9f2c4d-";
+    const newer = entry(`${lane}${"b".repeat(64)}`, 0.15, 1);
+    const older = entry(`${lane}${"a".repeat(64)}`, 0.5, 9);
     const plan = planCachePrune({
       caches: [older, newer],
       budgetBytes: 0.3 * GiB,
@@ -118,6 +120,61 @@ describe("the cache janitor plan", () => {
     });
     expect(plan.deleteIds).toEqual([]);
     expect(plan.overBudget).toBe(true);
+  });
+
+  it("protects the newest copy of every lane in a hot family, not one copy of the family", () => {
+    // `native-ccache-` is one prefix over seven lanes that each compile a different target set.
+    // Protecting the newest entry of the prefix alone leaves the other lanes to the budget, which
+    // is how a 20 MB compiler cache kept disappearing: the live list on 2026-11-03 planned to
+    // delete `native-ccache-ci-test-native-…-ccb139…` (19.6 MiB) and `native-ccache-ci-native-engine-…`
+    // (148.3 MiB) while keeping a third lane's copy of the same family.
+    const nativeEngine = entry(
+      "native-ccache-ci-native-engine-Linux-X64-gcc-d2c019c3-100",
+      0.15,
+      8,
+    );
+    const testNative = entry("native-ccache-ci-test-native-Linux-X64-gcc-ccb13964-101", 0.02, 9);
+    const starter = entry("native-ccache-starter-linux-Linux-X64-gcc-3ea15707-102", 0.02, 7);
+    const cold = entry("native-build-Linux-X64-oldimage-abc", 1.5, 6);
+    const plan = planCachePrune({
+      caches: [testNative, nativeEngine, starter, cold],
+      budgetBytes: 0.5 * GiB,
+      familyShares: {},
+    });
+    expect(plan.deleteIds).toEqual([cold.id]);
+    expect(plan.totalAfter).toBeLessThanOrEqual(0.5 * GiB);
+  });
+
+  it("still drops an older copy of one lane, which its own newer key replaced", () => {
+    // The protection is per lane, not per copy: a lane that moved to a new source hash keeps only
+    // the copy its newest key describes, or the family becomes immortal again.
+    const oldHash = entry("native-ccache-ci-test-native-Linux-X64-gcc-3ea15707-200", 0.02, 9);
+    const newHash = entry("native-ccache-ci-test-native-Linux-X64-gcc-ccb13964-201", 0.02, 1);
+    const cold = entry("native-build-Linux-X64-oldimage-def", 0.5, 8);
+    const plan = planCachePrune({
+      caches: [oldHash, newHash, cold],
+      budgetBytes: 0.3 * GiB,
+      familyShares: {},
+    });
+    expect(plan.deleteIds).not.toContain(newHash.id);
+    expect(plan.totalAfter).toBeLessThanOrEqual(0.3 * GiB);
+    expect(plan.deleteIds.length).toBe(2);
+  });
+
+  it("keeps the Android dependency caches, which a miss re-downloads in minutes", () => {
+    // ~793 MiB of SDK-independent downloads: measured 499.6 MiB (Gradle), 153.6 MiB (cargo) and
+    // 139.5 MiB (third_party) on the live list. They are the largest entries a board writes, so a
+    // size-first plan deletes them first and every android run pays for the download again.
+    const gradle = entry("gradle-Linux-167ca67887bc33a0", 0.49, 9);
+    const cargo = entry("cargo-android-Linux-fa1cf88765967fb9", 0.15, 8);
+    const thirdParty = entry("native-android-third-party-Linux-X64-4c553d1e", 0.14, 7);
+    const stale = entry("native-build-Linux-X64-oldimage-ghi", 1.5, 6);
+    const plan = planCachePrune({
+      caches: [gradle, cargo, thirdParty, stale],
+      budgetBytes: GiB,
+      familyShares: {},
+    });
+    expect(plan.deleteIds).toEqual([stale.id]);
   });
 
   it("deletes the oldest cold entry first and never the newest copy of a hot key", () => {
@@ -198,7 +255,17 @@ describe("the hot keys the janitor must keep", () => {
     const declared = declaredCachePrefixes();
     // The three the review added: a cargo registry, a wgpu pipeline cache and the host deps of the
     // pipeline-cache workflow. A prefix with no declaration in this tree would protect nothing.
-    for (const prefix of ["cargo-v1-", "wgpu-cache-", "pipeline-cache-host-deps-"]) {
+    // Round 5 added the Android lane's three downloads and the web-wasm payload: each is the only
+    // copy of something a miss re-downloads, and the plan used to delete them first.
+    for (const prefix of [
+      "cargo-v1-",
+      "wgpu-cache-",
+      "pipeline-cache-host-deps-",
+      "gradle-",
+      "cargo-android-",
+      "native-android-third-party-",
+      "native-engine-web-wasm-v2-",
+    ]) {
       expect(HOT_PREFIXES).toContain(prefix);
       expect(
         declared.some((candidate) => candidate.startsWith(prefix)),

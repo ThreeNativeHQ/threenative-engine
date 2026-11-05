@@ -1218,7 +1218,10 @@ describe("perfCommand --soak", () => {
     // Two windows of 300 frames, then the host exits 0 on its own. One steady window is enough
     // (`--require-windows 1`) so the only finding left is the crash the soak exists to catch.
     const output = [budgetLine(1, 60, 20, 10), budgetLine(2, 60, 20, 10)].join("\n");
-    const script = `process.stdout.write(${JSON.stringify(`${output}\n`)});`;
+    // The host stays alive for a moment after its last window. A soak samples memory from the live
+    // process, and a host that exited before the runner read its output has no /proc entry left:
+    // merge-group run 41771992038 read 0 samples on a loaded runner that way.
+    const script = `process.stdout.write(${JSON.stringify(`${output}\n`)}); setTimeout(() => {}, 3000);`;
     const written: string[] = [];
     const spy = vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
       written.push(String(chunk));

@@ -53,6 +53,7 @@ import { LEVEL_EXPOSURE } from "../render/atmosphere.js";
 import { shadeLikeSubstrate } from "../render/lighting.js";
 import { watchShadowTier } from "../render/shadowTier.js";
 import { GLTF_IOR, refractBehind } from "../render/refraction.js";
+import { applyDiffuseEnergy, diffuseEnergyMode } from "../render/diffuseEnergy.js";
 import { noSpecularTwin } from "../render/specular.js";
 import { pointLightMean, translucentTwin } from "../render/translucency.js";
 import { createVolumetricFog } from "../render/volumetricFog.js";
@@ -284,6 +285,16 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
         scene.add(point);
         lights.push(point);
         unsupported.push(...lightUnsupported(light, params.get("sourceRadius") === "0"));
+      }
+      // PRD-646 round 9: the diffuse loses Unreal's integrated specular albedo, not three's pointwise Fresnel
+      // (render/diffuseEnergy.ts carries both citations). L1 is this scene's one lamp and nothing else, which is
+      // where a scale on the albedo reproduces the engine's own direct term exactly. Diagnosis knob
+      // diffuseEnergy=three is the BEFORE arm: three's term, every material untouched.
+      if (level === 1 && diffuseEnergyMode(params) === "unreal") {
+        const only = lights.length === 1 ? lights[0] : undefined;
+        if (only === undefined)
+          throw new Error(`TN_DIFFUSE_ENERGY_LIGHTS: ${lights.length} direct lights in ${NAME}`);
+        applyDiffuseEnergy(model, { position: only.position });
       }
       setLight = (name, scale) => {
         const index = DATA.lights.findIndex((l: { name: string }) => l.name === name);

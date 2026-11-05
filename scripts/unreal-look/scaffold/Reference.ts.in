@@ -35,6 +35,7 @@ import { SUN_KELVIN, temperatureColour } from "../render/atmosphere.js";
 import { setupLighting, shadeLikeSubstrate } from "../render/lighting.js";
 import { setupPost } from "../render/postprocessing.js";
 import { qualityPreset, resolveQualityTier } from "../render/quality.js";
+import { applyDiffuseEnergy, diffuseEnergyMode } from "../render/diffuseEnergy.js";
 import { noSpecularTwin } from "../render/specular.js";
 import * as skyModule from "../render/sky.js";
 import { SUN_DIRECTION, setupSky } from "../render/sky.js";
@@ -218,6 +219,17 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
       // PRD-653, PRD-632: the sun meets a rough surface as Unreal's Substrate does, in both arms (the template ships it).
       // Diagnosis knob off=roughDiffuse is three's Lambert with its energy conservation.
       if (!OFF.has("roughDiffuse")) shadeLikeSubstrate(model);
+      // PRD-646 round 9: the diffuse loses Unreal's integrated specular albedo, not three's pointwise Fresnel
+      // (render/diffuseEnergy.ts carries both citations). A template-lit calibration scene is the sun alone at L1,
+      // which is where a scale on the albedo reproduces the engine's own direct term exactly; the reference scene
+      // keeps three's term, because its look is the template's and PRD-631 owns it. Diagnosis knob
+      // diffuseEnergy=three is the BEFORE arm: three's term, every material untouched.
+      if (
+        level === 1 &&
+        params.get("model") !== null &&
+        diffuseEnergyMode(params) === "unreal"
+      )
+        applyDiffuseEnergy(model, { direction: SUN_DIRECTION });
       // Diagnosis knob sunShadow=0: the sun casts no shadow (is a seam line a shadow leak at all?).
       key.castShadow = level >= 5 && params.get("sunShadow") !== "0" && SHADOW.castShadows;
       // Diagnosis knob shadowSide=front|back|double: the caster faces. Unset keeps the engine's rule:

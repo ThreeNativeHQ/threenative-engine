@@ -49,11 +49,21 @@ export const HOT_PREFIXES = Object.freeze([
   "playwright-",
   "workspace-dist-",
   "android-v8-payload-",
+  // 2.5 MiB and every `build-artifacts` run reads it: cheap to keep, and the leftover-SwiftShader
+  // path measured 1 h 45 min when it is missing.
+  "native-engine-web-wasm-v2-",
   // The prefixes are read from the workflows, not guessed: `native-rust-cache/action.yml`
   // `prefix=cargo-v1-…`, `pipeline-cache.yml` `wgpu-cache-…` and `pipeline-cache-host-deps-…`.
   "cargo-v1-",
   "wgpu-cache-",
   "pipeline-cache-host-deps-",
+  // The Android lane's three downloads: 499.6 MiB of Gradle, 153.6 MiB of Cargo and 139.5 MiB of
+  // third-party deps on the live list of 2026-11-03. They are the largest entries a board writes and
+  // a miss re-downloads all three, yet nothing protected them, so a size-first plan deleted them
+  // first: the develop push 41703997856 restored none of the three and saved all three again.
+  "gradle-",
+  "cargo-android-",
+  "native-android-third-party-",
 ]);
 
 function prefixOf(key, prefixes) {
@@ -111,16 +121,37 @@ function boundFamilies(entries, familyShares, doomed) {
 }
 
 /**
- * The hot entries a run can actually restore: the newest one per (prefix, ref). A newer key of the
- * same prefix and ref is saved after every source change, so an older copy is stale — it is the
- * entry a run would never read — and is evictable like any cold entry.
+ * One hot key's lane: the key with its per-run and per-source-change tails removed.
+ *
+ * `native-ccache-` is a prefix over seven lanes that compile different target sets (`ci-test-native`,
+ * `ci-native-engine`, two `starter-linux` platforms, `desktop-parity`, macOS and Windows). Protecting
+ * the newest entry of the prefix alone kept one lane per ref and left the rest to the budget, which
+ * is how a 20 MB compiler cache kept disappearing between two develop runs.
+ *
+ * A run-suffixed key ends in `-<run id>[-<attempt>]`, and a source-hashed key ends in the hash
+ * `hashFiles()` produces, so both tails are recognizable and neither names the lane.
+ */
+export function hotLaneOf(key, prefixes) {
+  const prefix = prefixOf(key, prefixes);
+  if (prefix === "") return "";
+  const lane = key
+    .slice(prefix.length)
+    .replace(/-\d+(-\d+)?$/u, "")
+    .replace(/-[0-9a-f]{8,}$/u, "");
+  return `${prefix}${lane}`;
+}
+
+/**
+ * The hot entries a run can actually restore: the newest one per (lane, ref). An older copy of the
+ * same lane is stale — a newer key of that lane replaced it, because a source change or a new run
+ * writes a new key — and is evictable like any cold entry.
  */
 function protectedEntries(entries, hotPrefixes) {
   const newest = new Map();
   // `entries` is oldest first, so the last copy of a scope seen here is that scope's newest.
   for (const entry of entries) {
-    const prefix = prefixOf(entry.key, hotPrefixes);
-    if (prefix !== "") newest.set(`${prefix}${entry.ref ?? ""}`, entry.id);
+    const lane = hotLaneOf(entry.key, hotPrefixes);
+    if (lane !== "") newest.set(`${lane}|${entry.ref ?? ""}`, entry.id);
   }
   return new Set(newest.values());
 }
