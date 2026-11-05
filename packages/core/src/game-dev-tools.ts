@@ -1,3 +1,5 @@
+/// <reference path="./import-meta.d.ts" />
+
 import type { EntitySnapshot, Registry } from "./entities.js";
 import type {
   GeometryCapture,
