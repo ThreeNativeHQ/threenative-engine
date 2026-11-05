@@ -71,7 +71,7 @@ GraphFind findGraphSources(const Material& material) {
         for (const auto* list : {&node->args, &node->body, &node->otherwise})
             for (const auto& child : *list) visit(child);
     };
-    for (const auto& graph : material.nodes.graphs()) visit(graph);
+    material.nodes.forEachGraph(visit);
     return found;
 }
 

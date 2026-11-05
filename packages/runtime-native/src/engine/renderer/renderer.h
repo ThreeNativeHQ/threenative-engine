@@ -949,6 +949,8 @@ private:
         std::string lightKinds;
         std::array<std::unique_ptr<shader::StageModule>, 16> aux;  // by AuxTarget mask, built on first request
         uint16_t auxBuilt = 0;  // bit `mask`: aux[mask] was asked for (it stays null when refused)
+        /** The aux fragment that also writes custom MRT slots, keyed by the frame's slot list (mask included). */
+        std::map<std::string, std::unique_ptr<shader::StageModule>> auxMrt;
         /** What its stage modules alone decide about a draw of it (FM3): resolved once, never re-scanned. */
         DrawProbes probes;
     };
@@ -962,7 +964,8 @@ private:
      * call, so its layout equals the program's and the draw's bind groups serve it; null for an unlit kind, or when
      * the builder refuses the variant or the layout differs.
      */
-    const shader::StageModule* auxFragment(Program& program, uint8_t mask);
+    const shader::StageModule* auxFragment(Program& program, uint8_t mask, const std::vector<std::string>& slots,
+                                           bool zeroNamed = false);
     void buildLayouts(Program& program);
     /** The program for a material kind, vertex variant and light layout, built on first use; null
      *  when its WGSL is invalid, which is reported once in diagnostics() and its draws are skipped,
@@ -1269,6 +1272,11 @@ private:
     WGPUTextureView albedoView_ = nullptr;
     WGPUTexture emissiveTexture_ = nullptr;
     WGPUTextureView emissiveView_ = nullptr;
+    /** A material's custom MRT targets (three's mrt() slots other than the named ones), one RGBA16F texture per slot
+     *  name, drawn by the aux pass and read by the post graph by that name; created with the first frame that writes
+     *  one, released with the targets. */
+    std::map<std::string, WGPUTexture> mrtTextures_;
+    std::map<std::string, WGPUTextureView> mrtViews_;
     /** The normal-target programs, one per face-normal variant: smooth, DoubleSide smooth, flat (see planAux). */
     std::array<shader::StageModule, 3> normalFragments_;
     /** normalFragments_ for Standard and Physical draws: the alpha also packs metalness and roughness. */

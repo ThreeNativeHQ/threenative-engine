@@ -30,6 +30,11 @@ tn_handle_t shareObject(tn_context_t* context, std::string cls, std::shared_ptr<
 /** In-process graph bridge; uses the same registered material getters/setters as other callers. */
 engine::shader::graph::Node shaderNode(tn_handle_t handle, const std::string& path);
 void setShaderNode(tn_handle_t handle, const std::string& path, engine::shader::graph::Node node);
+/** A node material's custom MRT slots (three's mrtNode) by name, in author order. Empty for any other class. */
+std::vector<std::pair<std::string, engine::shader::graph::Node>> mrtOutputs(tn_handle_t handle);
+/** Replaces a node material's custom MRT slots; a null node removes the named slot. */
+void setMrtOutputs(tn_handle_t handle, std::vector<std::pair<std::string, engine::shader::graph::Node>> slots);
+void setMrtOutput(tn_handle_t handle, const std::string& name, engine::shader::graph::Node node);
 /** The graph a tn_tsl_call node id names in `context`, or null. */
 engine::shader::graph::Node tslNode(tn_context_t* context, uint64_t id);
 

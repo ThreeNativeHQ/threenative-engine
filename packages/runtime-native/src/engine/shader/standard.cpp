@@ -623,8 +623,10 @@ static void materialInputs(Program& f, const VertexVariant& variant,
                            std::unordered_map<std::string, ExprId>& inputs) {
     const auto pinned = [&](Type type, ExprId value) { return f.load(f.var(type, value)); };
     const auto& nodes = variant.nodes;  // the slots this fragment lowers; position, vertex and scale nodes run in the vertex stage
-    for (const auto& node : {nodes.colorNode, nodes.emissiveNode, nodes.roughnessNode, nodes.metalnessNode, nodes.opacityNode,
-                             nodes.aoNode, nodes.irradianceNode, nodes.fragmentNode, nodes.depthNode, nodes.maskNode})
+    std::vector<graph::Node> slots{nodes.colorNode, nodes.emissiveNode, nodes.roughnessNode, nodes.metalnessNode, nodes.opacityNode,
+                                   nodes.aoNode, nodes.irradianceNode, nodes.fragmentNode, nodes.depthNode, nodes.maskNode};
+    for (const auto& slot : nodes.mrt) slots.push_back(slot.node);
+    for (const auto& node : slots)
         for (const std::string& name : graph::materialInputs(node)) {
             const std::string key = "material:" + name;
             if (inputs.count(key)) continue;
@@ -656,6 +658,13 @@ static ExprId slotValue(Program& f, graph::Lowering& slots, const graph::Node& n
     return nodeType(f, slots.lower(node), type);
 }
 
+// three's mrtNode: the material's custom colour attachments. The colour program lowers them without an output, so its
+// uniforms, textures and varyings are declared in the order the aux pass's MRT fragment declares them (one draw's bind
+// groups serve both); Renderer::auxFragment writes the values at their own locations.
+static void lowerMrtOutputs(StandardPrograms& out, graph::Lowering& slots, const VertexVariant& variant) {
+    for (const auto& slot : variant.nodes.mrt) out.mrt.push_back(slot.node ? slots.lower(slot.node) : kInvalid);
+}
+
 // three r187 NodeMaterial.setupDiffuseColor: `bool(maskNode).not().discard()`, before the colour is read.
 static void discardMasked(Program& f, graph::Lowering& slots, const VertexVariant& variant) {
     if (!variant.nodes.maskNode) return;
@@ -683,7 +692,7 @@ static ExprId diffuseAlpha(Program& f, graph::Lowering& slots, const VertexVaria
 // Graph attributes can be first used in any slot. Link the two stages by name, in fragment order.
 void linkNodeVaryings(StandardPrograms& out, const VertexVariant& variant, ExprId position, ExprId normal) {
     bool hasNodes = false;
-    for (const auto& node : variant.nodes.graphs()) hasNodes |= bool(node);
+    variant.nodes.forEachGraph([&](const graph::Node& node) { hasNodes |= bool(node); });
     // Every builder ends here: the fragment's read order, not declaration order, fixes the locations.
     if (!hasNodes && !variant.alphaHash) return out.vertex.linkVaryings(out.fragment);
     Program& v = out.vertex;
@@ -700,7 +709,7 @@ void linkNodeVaryings(StandardPrograms& out, const VertexVariant& variant, ExprI
         for (const auto* list : {&n->args, &n->body, &n->otherwise})
             for (const auto& child : *list) collect(child);
     };
-    for (const auto& node : variant.nodes.graphs()) collect(node);
+    variant.nodes.forEachGraph(collect);
     for (const auto& [name, type] : out.fragment.varyings()) {
         if ((name == "backgroundDirection" && variant.background) || name == "normalView" || (name == "positionView" && v.hasOutput(name)) ||
             (name == "instanceColor" && variant.tinted()) || (name == "uv" && (variant.map || variant.normalMap || variant.pbrMaps))) continue;
@@ -1617,6 +1626,7 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     out.normal = n;
     f.output("color", materialOutput(f, variant, outgoing, materialAlpha(f, alpha, variant.alphaHash)));
     outputDepthNode(f, slots, variant);
+    lowerMrtOutputs(out, slots, variant);
     linkNodeVaryings(out, variant, local.position, local.normal);
     for (const Program* stage : {&out.vertex, &out.fragment}) {
         for (const Diagnostic& d : stage->diagnostics()) {
@@ -1752,6 +1762,7 @@ StandardPrograms buildLit(bool phong, const VertexVariant& variant, const LightL
     out.emissive = emissive;
     f.output("color", materialOutput(f, variant, outgoing, materialAlpha(f, alpha, variant.alphaHash)));
     outputDepthNode(f, slots, variant);
+    lowerMrtOutputs(out, slots, variant);
     linkNodeVaryings(out, variant, local.position, local.normal);
     for (const Program* stage : {&out.vertex, &out.fragment}) {
         for (const Diagnostic& d : stage->diagnostics()) {
@@ -1781,7 +1792,7 @@ StandardPrograms buildBasic(const VertexVariant& variant) {
                 for (const auto& child : *list) if (visit(child)) return true;
             return false;
         };
-        for (const auto& node : variant.nodes.graphs()) if (visit(node)) return true;
+        variant.nodes.forEachGraph(visit);
         return false;
     };
     const bool needsNormal = reads("normalView");
@@ -1816,6 +1827,7 @@ StandardPrograms buildBasic(const VertexVariant& variant) {
             color = f.construct(Type::vec(4), {color, f.constant(1.0f)});
         f.output("color", color);
         outputDepthNode(f, slots, variant);  // rain's coast quad writes the coast's depth, so drops hide behind it
+        lowerMrtOutputs(out, slots, variant);
         linkNodeVaryings(out, variant, local.position, local.normal);
         return out;
     }
@@ -1844,6 +1856,7 @@ StandardPrograms buildBasic(const VertexVariant& variant) {
     // Background.js writes opaque output regardless of the source texture's alpha.
     f.output("color", materialOutput(f, variant, outgoing, variant.background ? f.constant(1.0f) : materialAlpha(f, alpha, variant.alphaHash)));
     outputDepthNode(f, slots, variant);
+    lowerMrtOutputs(out, slots, variant);
     linkNodeVaryings(out, variant, local.position, local.normal);
     return out;
 }

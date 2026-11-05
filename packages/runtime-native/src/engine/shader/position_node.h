@@ -3,13 +3,29 @@
 #include <cstdint>
 #include <functional>
 #include <string>
+#include <string_view>
 #include <array>
+#include <vector>
 #include "engine/shader/graph/graph.h"
 #include "engine/shader/graph/post_effects.h"
 
 namespace tn::engine::shader {
 
 class Program;
+
+/** A material's custom MRT output: the colour node written to the scene pass's target named `name` (three's mrt()). */
+struct MrtOutput {
+    std::string name;
+    graph::Node node;
+    bool operator==(const MrtOutput&) const = default;
+};
+
+/** The slot names the engine's own scene pass owns: its colour, depth, velocity and named surface targets. A custom
+ *  MRT slot keeps its own name, as pass-node.ts refuses the same reserved names on the game side. */
+inline bool engineTargetName(std::string_view name) {
+    return name == "output" || name == "depth" || name == "velocity" || name == "normal" ||
+           name == "metalness" || name == "roughness" || name == "diffuseColor" || name == "emissive";
+}
 
 /** NodeMaterial slots; null nodes use the non-node material path. */
 struct MaterialNodes {
@@ -31,6 +47,9 @@ struct MaterialNodes {
     graph::Node maskNode;
     /** SpriteNodeMaterial.scaleNode (a vec2 beside the model scale) and rotationNode (radians, over the material's). */
     graph::Node scaleNode, rotationNode;
+    /** NodeMaterial.mrtNode's custom slots, in author order (three's mrt() takes any name and node). The named
+     *  engine targets (normal, metalness, roughness, diffuseColor, emissive) keep their own fast paths, not here. */
+    std::vector<MrtOutput> mrt;
     /** The scene's `fogNode`, a vec4(color, factor) mixed into the finished colour; set on draw items, never on a material. */
     graph::Node fogNode;
     bool operator==(const MaterialNodes&) const = default;
@@ -50,6 +69,12 @@ struct MaterialNodes {
                           aoNode,        irradianceNode, fogNode, castShadowPositionNode,
                           maskNode};
     }
+    /** Every graph a material owns: the fixed slots, then the custom MRT slots, in one walk. */
+    template <typename Fn>
+    void forEachGraph(Fn&& visit) const {
+        for (const auto& node : graphs()) visit(node);
+        for (const auto& slot : mrt) visit(slot.node);
+    }
     /** The position graph a shadow depth pass casts from: castShadowPositionNode when set (none for a bare
      *  positionLocal, the rest pose), else positionNode, as three's shadow pass assigns it. */
     graph::Node shadowPositionNode() const {
@@ -64,6 +89,11 @@ struct MaterialNodes {
             if (!node) { out += "5:null;"; continue; }
             out += "#" + std::to_string(graph::keyId(node)) + ";";  // the structure, interned
         }
+        // A custom MRT slot's name is part of the key: a program built for one slot name writes that name's target.
+        for (const auto& slot : mrt) {
+            out += "m" + std::to_string(slot.name.size()) + ":" + slot.name + ":";
+            out += slot.node ? "#" + std::to_string(graph::keyId(slot.node)) + ";" : "5:null;";
+        }
         return out;
     }
     /** key() with tsl_call's serial names numbered by first use across the slots (graph::canonicalKey): equal for two
@@ -71,6 +101,9 @@ struct MaterialNodes {
     std::string canonicalKey(std::vector<std::string>& serials) const {
         std::string out;
         for (const auto& node : graphs()) out += node ? "{" + graph::canonicalKey(node, serials) + "};" : "5:null;";
+        for (const auto& slot : mrt)
+            out += "{" + std::to_string(slot.name.size()) + ":" + slot.name + ":" +
+                   (slot.node ? graph::canonicalKey(slot.node, serials) : "null") + "};";
         return out;
     }
 };

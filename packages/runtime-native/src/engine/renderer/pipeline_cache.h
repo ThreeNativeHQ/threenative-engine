@@ -65,9 +65,14 @@ struct PipelineTarget {
     WGPUPrimitiveTopology topology = WGPUPrimitiveTopology_TriangleList;
     WGPUIndexFormat stripIndexFormat = WGPUIndexFormat_Undefined;  // an indexed line strip's index format
     // The colour targets after `color` (MRT, the fragment's @location(1...)): the first Undefined ends the list. They
-    // share colorWrite and take no blend.
-    std::array<WGPUTextureFormat, 4> moreColors{WGPUTextureFormat_Undefined, WGPUTextureFormat_Undefined,
-                                                WGPUTextureFormat_Undefined, WGPUTextureFormat_Undefined};
+    // share colorWrite and take no blend. Seven slots fill WebGPU's guaranteed eight colour attachments with `color`.
+    std::array<WGPUTextureFormat, 7> moreColors{WGPUTextureFormat_Undefined, WGPUTextureFormat_Undefined,
+                                                WGPUTextureFormat_Undefined, WGPUTextureFormat_Undefined,
+                                                WGPUTextureFormat_Undefined, WGPUTextureFormat_Undefined,
+                                                WGPUTextureFormat_Undefined};
+    /** Bit i: target i+1 (moreColors[i]) is written. A transparent MRT draw masks the named targets and writes its own
+     *  slots only, so the opaque pass's surface targets keep their values under it. */
+    uint8_t moreWrites = 0xff;
 };
 
 /**
