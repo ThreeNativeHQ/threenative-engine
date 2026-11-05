@@ -1,6 +1,6 @@
 # PRD-794 — River, lake and ocean are one water-body mechanism
 
-**Status:** NOT STARTED
+**Status:** PARTIAL — Phase 1's values are pinned; the swim playtest waits for the browser lane, and Phase 2 waits on the CHARTER decision.
 **Priority:** P2 — A new biome with water copies one of three hand-written water paths (all phases open).
 **Complexity:** 6 (MEDIUM); risk override: water look and swim physics must not change, so the owner's visual-judge rule applies
 **Owner:** ThreeNative maintainers
@@ -43,10 +43,15 @@ and `ocean.ts` and the starter `sea.ts` become one copy-out source.
 ## Execution Phases
 
 #### Phase 1: pin water
-**Status:** NOT STARTED
+**Status:** PARTIAL — the three kinds' values are pinned; the swim playtest is open.
 **Files:** `examples/strata-terrain-preview/__tests__/water-bodies-values.spec.ts` (new)
-- [ ] Surface height, current vector and footprint at fixed probes for the three water kinds, green on today's code. proof: `pnpm --filter strata-terrain-preview exec vitest run __tests__/water-bodies-values.spec.ts`
+- [x] Surface height, current vector and footprint at fixed probes for the three water kinds, green on today's code. proof: `pnpm --filter strata-terrain-preview exec vitest run __tests__/water-bodies-values.spec.ts` — Evidence: 4/4 pass in 2.3 s on today's code, and `pnpm exec tsc --noEmit -p tsconfig.json` exits 0 in the example. The spec reads the committed bake (`src/world/baked.json` for forest and coastal, `src/world/tundra.json` for the tundra) and calls today's queries (`waterSurfaceAt`/`waterCurrentAt` in `world/water.ts`, and `createWaterMesh` for the sea):
+  - forest river (`river`, 5.32 m wide, so 13.3 m of reach): surface 13.730976740569075 at [-120, -220], 11.626775327408664 at [-110, -175] and 12.8125147026022 at [-100, -95], with current {0.2064408711935989, 0.8760035197993371}, {0.016071794375532095, 0.899856487127559} and {0.5272509284188672, 0.7293877284966087}. The last wet metre either side of the (-110, -175) station is 13.2 m: [-96.8, -175] and [-123.2, -175] answer, [-96.6, -175] and [-123.4, -175] do not.
+  - forest lake (-70, 25; level 13.3 m; cap 105 m): 13.3 m and a zero current at the centre, at [30, 25] (100 m out) and at the river's last station [-70, -60], where the higher lake surface wins and the river stops carrying; [36, 25] (106 m) has no water.
+  - tundra kettles (near (65, 80), level 28.8 m, cap 34 m; far (-65, -50), level 30 m, cap 46 m): 28.8 m and 30 m with a zero current out to the cap — [65, 114] and [-65, -4] answer, [65, 115] and [-65, -3] do not.
+  - coastal ocean: the sea plane stands at the bake's `waterLevel` of 1.5 m (the mesh's y) and its stretched geometry spans ±4120 m, so [250, 250] and [2000, -2000] stand on it at 1.5 m and [4200, 0] does not. The coastal bake has no river and no lake, so the sea carries no current (zero vector).
 - [ ] The swim playtest is green on today's code and its numbers are recorded. proof: `playtests/swim.playtest.json`
+  - Open: browser lane.
 
 #### Phase 2: one mechanism
 **Status:** NOT STARTED
