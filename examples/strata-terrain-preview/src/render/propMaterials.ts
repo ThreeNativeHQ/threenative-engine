@@ -197,15 +197,19 @@ export function lightNeedles(
     .pow(3);
   const albedo = (material.colorNode as Node<"vec4">).rgb;
   // Green light scattered by neighbouring needles; the crown's occlusion retains dark interiors.
-  material.emissiveNode = albedo.mul(vec3(0.12, 0.8, 0.06)).mul(occlusion);
-  // engine-override: the owned engine has no setupLightingModel hook. Its Two Sided Foliage (PRD-643,
-  // core `twoSidedFoliage`) adds the same shadowed sun transmission through the card.
+  const glow = albedo.mul(vec3(0.12, 0.8, 0.06)).mul(occlusion);
+  material.emissiveNode = glow;
+  const through = albedo.mul(backlit.mul(translucency)).mul(smoothstep(0.16, 0.5, occlusion));
+  // engine-override: the owned engine has no setupLightingModel hook, so the same transmission node
+  // goes into the emissive instead of the sun's direct term: same albedo scale, same occlusion gate,
+  // and it misses the sun's shadow. Two Sided Foliage (PRD-643) is not a stand-in: its transmittance
+  // is one uniform colour, neither albedo-scaled nor gated by the card's facing, so it lifted this
+  // forest's canopy by 2x over three at the overview pose (canopy 90/108/66 with it, 51/70/55 with the
+  // term cleared, three 45/62/52).
   if (typeof material.setupLightingModel !== "function") {
-    material.twoSidedFoliage = true;
-    material.subsurfaceColor = new Color(0.3, 0.5, 0.1).multiplyScalar(translucency);
+    material.emissiveNode = glow.add(through);
     return;
   }
-  const through = albedo.mul(backlit.mul(translucency)).mul(smoothstep(0.16, 0.5, occlusion));
   // Add transmission where Three has already applied the sun's shadow to its light colour.
   // Reading the raw virtual-shadow node again in emissive broke forest→coast material bindings.
   const setup = material.setupLightingModel.bind(material);
