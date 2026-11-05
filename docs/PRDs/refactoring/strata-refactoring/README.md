@@ -1,15 +1,29 @@
 # Strata refactoring
 
-**Status:** PARTIAL — 0 of 9 PRDs closed (filed 2026-11-04). PRD-791's code is complete with only its
-owner lanes (the playtest red it inherited and the visual judge) open; PRD-792, PRD-793 and PRD-797
-have their Phase 1 pins in place (today's bake's digests, every shipped kit's cook, `world-tiles`' four
-seams), and PRD-797 also has Phase 2 (the `world.ts` ↔ `world-tiles.ts` cycle is gone). PRD-792
-Phase 2, the one `bakeBiome`, is the gate the rest of the strata chain waits on: it moves the
-example's 590-line scatter rule and its art bindings into the package, which is why it is not a
-mechanical diff.
+**Status:** PARTIAL — 0 of 9 PRDs closed (filed 2026-11-04), and every PRD that has code left is
+partly landed on this branch:
 
-**Goal (owner, 2026-11-04):** "have all abstractions and architecture needed to make strata terrain
-MCP respond to any terrain generation command and be able to bake a new biome quickly".
+- **PRD-791** — code complete; only its owner lanes (the playtest red it inherited, the visual judge) open.
+- **PRD-792** — Phase 1 done (today's bake pinned as digests two forced bakes reproduce). Phase 2 is
+  the gate the rest of the strata chain waits on, and it is not a mechanical diff: the example's
+  `placements.bin` is its *own* container (header + 8-float records + a canopy array) and
+  `propStreaming.ts` partitions it into 128 m buckets at load, so "delete the runtime compiler" first
+  needs the bake to write package-shaped cells per bucket and the game to load them — a look-critical
+  path whose proof is a playtest and a judge, neither of which this lane can run.
+- **PRD-793** — Phase 1 done (every shipped kit's cook pinned, with its counts and cook baseline);
+  Phases 2-3 need PRD-792's `bakeBiome`.
+- **PRD-794** — untouched, blocked on its own CHARTER line.
+- **PRD-795** — Phase 1's drawn-triangle arm exists; the collider arm is not written. Phases 2-3 open.
+- **PRD-796** — untouched. Its world-key pin cannot read the game's config (`IGame` exposes no
+  scenes/input), so the pin needs either a small named export from `game.ts` or a source read.
+- **PRD-797** — Phases 1-3 done: the four seams pinned, the `world.ts` ↔ `world-tiles.ts` cycle gone,
+  and four leaf modules extracted (3 416 → 2 254 lines, AC-1 narrowed to 2 300 by decision). Its
+  terrain-splat playtest box needs a browser lane.
+- **PRD-798** — Phase 1's flag half done (`world-gpu-flags.spec.ts`, 14 cases); the `CellRender` pins
+  and both splits are open, with the measurement that makes the pins cost a `WorldCells.load` fixture
+  written down in the phase.
+- **PRD-799** — untouched, with both Phase 1 pins' exact observability written down (the loop is
+  `lodBias()`/`setLodBias()` plus an injected clock; the gate is the prewarm pair).
 
 ## Where the hardcode is (audit of `aa3883d7d` plus the forest lane's uncommitted edits, 2026-11-04)
 

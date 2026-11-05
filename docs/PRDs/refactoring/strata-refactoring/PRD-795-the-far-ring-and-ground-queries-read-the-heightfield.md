@@ -42,6 +42,7 @@ material and colour stay in game `src/render/`.
 **Status:** NOT STARTED
 **Files:** `examples/strata-terrain-preview/__tests__/groundSampler.spec.ts`
 - [ ] Today's `groundSampler` matches the collider at 10 000 seeded points, inside and outside the region. Green on today's code. proof: `pnpm --filter strata-terrain-preview exec vitest run __tests__/groundSampler.spec.ts`
+  - Partial. The existing spec already proves the sampler against a stock `Raycaster` on the drawn triangles — a saddle where the bilinear height differs by more than 0.2 m, both diagonals, the shared edge and points off the centre — so the "drawn triangle, not bilinear" half is pinned. What this box adds and does not have is the *collider* as the reference (Rapier's heightfield through `@threenative/physics`, 10 000 seeded points including outside the resident region), which is why it stays open rather than ticked on the Raycaster arm.
 - [ ] Edge, vista and walk playtests are green on today's code and their numbers are recorded. proof: the three scenarios
 
 #### Phase 2: move into core/world

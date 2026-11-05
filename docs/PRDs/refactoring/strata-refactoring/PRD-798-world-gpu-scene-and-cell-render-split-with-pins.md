@@ -1,6 +1,7 @@
 # PRD-798 — `world-gpu-scene.ts` and `world-cell-render.ts` split, and `CellRender` gets unit pins
 
-**Status:** NOT STARTED
+**Status:** PARTIAL — Phase 1's flag half is done on this branch (`world-gpu-flags.spec.ts`, 14
+cases); the `CellRender` pins, both splits, and the playtest/judge boxes are open.
 **Priority:** P2 — `CellRender` (2 875 lines, about 97 members) has no direct unit test, and `world-gpu-scene.ts` (2 895 lines) holds a cycle with its validation module (all phases open).
 **Complexity:** 5 (MEDIUM); risk override: both files decide what the world draws and casts, so the owner's visual-judge rule applies
 **Owner:** ThreeNative maintainers
@@ -41,7 +42,8 @@ Integration: unchanged — `WorldCells` stays the only consumer of `CellRender`,
 **Status:** NOT STARTED
 **Files:** `packages/core/__tests__/world-cell-render.spec.ts` (new), `packages/core/__tests__/world-gpu-flags.spec.ts` (new)
 - [ ] `CellRender` unit pins against a stub host: `mainShard` is stable and in [0, 32); main cull keeps and drops the expected keys; a shadow claim and its retire leave no claim; a bundle out and back restores the draw list. Green on today's code. proof: `pnpm exec vitest run packages/core/__tests__/world-cell-render.spec.ts`
-- [ ] Flag readers: URL parameter, global and default resolve in the documented order for each flag. Green on today's code. proof: `pnpm exec vitest run packages/core/__tests__/world-gpu-flags.spec.ts`
+  - Not started. Measured before writing it: `CellRender` is constructed by `world-cells.ts` alone and takes an `ICellRenderHost` whose surface is wider than a stub can fake cheaply — the four behaviours have to be driven through `WorldCells.load` over the committed `__tests__/fixtures/world-v1` package (the fixture `world-cells-admission.spec.ts` and `world-cells-main-cull.spec.ts` already use), then observed through `world.stats()`/the drawn-mesh walk, because `CellRender` keeps its state in `#` fields and exposes no accessor for claims, bundles or keys. The `mainShard` half is pure and can be pinned directly. This box is the honest remaining half of Phase 1.
+- [x] Flag readers: URL parameter, global and default resolve in the documented order for each flag. Green on today's code. proof: `pnpm exec vitest run packages/core/__tests__/world-gpu-flags.spec.ts` — Evidence: 14/14 pass in 0.3 s. Six readers pinned, each with its default, every source alone and the order they are read in (`askedOn` reads every source before `askedOff`, so an explicit on anywhere wins over an off): `gpuSceneRequested` (on by default, `0`/`false` off), `bundlesAsked` (`default`/`off`/`on`, plus `bundlesRequested`), `shadowGpuKeysRequested` (off unless `1`/`true`), `lodFromFollowRequested` (the same switch read inverted), `gpuSceneValidationRequested` (its own reader: any env value but `""`/`0`/`false`, a present query parameter but not `0`/`false`, only `true`/`"1"` from the global). Two behaviours the code has and the doc text does not spell out are now pinned: `?tnBundles=true` is an explicit `on`, and an env `TN_BUNDLES=0` does not beat `?tnBundles=1` because `askedOn` runs first over all three sources.
 
 #### Phase 2: split `world-gpu-scene.ts`
 **Status:** NOT STARTED
