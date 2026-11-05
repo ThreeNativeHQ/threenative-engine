@@ -22,7 +22,7 @@ import {
   BufferGeometry,
   type Camera,
   Frustum,
-  InstancedMesh,
+  type InstancedMesh,
   type Material,
   Matrix4,
   type Mesh,
@@ -31,7 +31,7 @@ import {
   Vector3,
 } from "three";
 import { renderGroup, uniform } from "three/tsl";
-import { BundleGroup } from "three/webgpu";
+import type { BundleGroup } from "three/webgpu";
 
 import { lodChainOf, setLodBias } from "./model-lod.js";
 import type { OcclusionMode } from "./render/depth-pyramid.js";
@@ -49,7 +49,45 @@ import {
 import type { IRendererLike } from "./renderer.js";
 import { isStatic, markStatic } from "./static-transform.js";
 
-import { BundleSurfaceSafety, bundleSafe, ownHook } from "./world-bundle-safety.js";
+import { CellBundles } from "./world-cell-render-bundles.js";
+import { CellGpuDress } from "./world-cell-render-gpu-dress.js";
+import { CellMainCull } from "./world-cell-render-main-cull.js";
+import {
+  type IShadowClaimHost,
+  castLevelOf,
+  casts,
+  claimCaster,
+  claimWide,
+  clearSegment,
+  keysForShadow,
+  shadowFloorOf,
+  smallCaster,
+  wideOwed,
+} from "./world-cell-render-shadow-claims.js";
+import {
+  GPU_KEY_SUFFIX,
+  MAIN_CULL_MARKER_MS,
+  MAIN_CULL_PAD_METRES,
+  MAIN_CULL_SQUARE_METRES,
+  RETIRED_SHARED_BYTES,
+  SHADOW_REGION_CAP,
+  UNDITHERED_LOD_WIDTH,
+  assertSlotFree,
+  chunkDraws,
+  freshMeshFor,
+  heldBytes,
+  indirectView,
+  mainShard,
+  redressMaterial,
+  followCluster as squareOf,
+} from "./world-cell-render-util.js";
+
+// The split's constants stay named from this module, which is where every caller imports them.
+export {
+  MAIN_CULL_SQUARE_METRES,
+  UNDITHERED_LOD_WIDTH,
+  mainShard,
+} from "./world-cell-render-util.js";
 import { type ICasterScaleMesh, SharedBatch, sameSquares } from "./world-cell-batches.js";
 import { levelTriangles, release } from "./world-cell-chunks.js";
 import { WIDE_CLUSTER } from "./world-cell-prewarm.js";
@@ -77,219 +115,6 @@ import {
   cellPlacements,
 } from "./world-package.js";
 
-/**
- * Instance-matrix bytes a world keeps in released shared batches, oldest dropped first. A batch is
- * sized to its asset's largest cell times the resident cells, so on a 2 km package one runs 80 kB
- * median and 0.9 MB worst, and every key in the world at once is 26 MB. The budget holds the walk's
- * own back-traffic — a batch leaves when the last cell holding its asset leaves, and is wanted
- * again a few hundred metres back — and lets the rest go, so a session that crosses the whole map
- * does not carry the whole map.
- */
-const RETIRED_SHARED_BYTES = 8_000_000;
-
-/**
- * How far past the frustum a world-grid square is kept inside the main pass's draw window, in metres.
- *
- * The window is decided once per draw, from the camera that draw uses, and a square that has just
- * left the frustum is dropped from it — so a square at the frustum's edge would be drawn in one
- * frame and not the next, and a tree on that edge pops in at the edge of the screen. Growing each
- * square's box by this margin keeps a band of it in the window while it is still off screen, so a
- * tree crosses into view already there.
- *
- * An eighth of the default 64 m square is deliberately small. It has to exceed what a camera
- * travels between two draws — 8 m a frame is 480 m/s at 60 fps, so no playable camera reaches it —
- * and nothing more, because every metre of it is a metre of geometry the vertex stage still shades.
- */
-const MAIN_CULL_PAD_METRES = 8;
-/**
- * Fade band, as a share of each gate, for an undithered LOD switch: 1 mm at a 10 m gate and 15 mm at
- * 150 m, so every pixel of a placement takes the same level. Nonzero, so the mask never divides zero
- * by zero exactly at the gate.
- */
-export const UNDITHERED_LOD_WIDTH = 1e-4;
-
-const slotFree = new WeakSet<Material>();
-/**
- * Refuse a part material whose node graph reads `instanceIndex`. WorldCells repacks instance slots on
- * every refilter, main-pass cull and LOD switch, so a value hashed from the slot moves to another
- * placement as the viewer walks: Strata's wind phase snapped each crown's top about every 0.7 s.
- * ponytail: walks the material's `*Node` slots as built; an index read hidden inside an unbuilt `Fn`
- * body is not seen until a builder runs it.
- */
-function assertSlotFree(material: Material, assetId: string): void {
-  if (slotFree.has(material)) return;
-  const seen = new Set<object>();
-  const reads = (value: unknown): boolean => {
-    if (typeof value !== "object" || value === null || seen.has(value)) return false;
-    seen.add(value);
-    const node = value as { isNode?: boolean; isIndexNode?: boolean; scope?: string };
-    if (node.isIndexNode === true && node.scope === "instance") return true;
-    for (const child of Object.values(value))
-      if (
-        Array.isArray(child)
-          ? child.some(reads)
-          : (child as { isNode?: boolean } | null)?.isNode === true && reads(child)
-      )
-        return true;
-    return false;
-  };
-  for (const [key, value] of Object.entries(material))
-    if (
-      key.endsWith("Node") &&
-      (value as { isNode?: boolean } | null)?.isNode === true &&
-      reads(value)
-    )
-      throw new Error(
-        `WorldCells asset "${assetId}" material "${material.name}" reads instanceIndex in ${key}. WorldCells repacks instance slots as the viewer moves, so a per-instance value from the slot jumps between placements; use instanceRandom() from @threenative/core/world.`,
-      );
-  slotFree.add(material);
-}
-
-/**
- * Side of the main cull's own visibility cell, in metres, when it divides the package's `cellSize`.
- *
- * This is the finest grid the main pass can cull on, and it is not a free parameter: a shared
- * batch's block is one *world* cell's records and placements never move, so a world cell cannot be
- * spread across two cells of a finer grid without giving every world cell its own block — one more
- * main mesh per key, which is the cost this whole cull exists to avoid. So a package whose
- * `cellSize` is not a whole multiple of 32 m falls back to its own `cellSize`, which is the square
- * its placements are already cut on, and the rule below is the whole of it.
- *
- * A visibility cell is a sub-square of the shadow caster's world-grid square, and it is deliberately
- * finer than that square: `clusterSize` is sized for how many meshes a shadow level submits, while
- * this is sized for how little geometry the vertex stage is handed. It is also the one volume the
- * cull tests, so everything in it — a 64 m cell's XZ and the Y its own placements and asset bounds
- * reach — is what a draw of that cell costs. See {@link WorldCells.#cullMainPass}.
- */
-export const MAIN_CULL_SQUARE_METRES = 32;
-
-/**
- * How often `TN_WORLD_MAIN_CULL` is printed. Five seconds is a line a playtest capture can hold and
- * a walk long enough to see the window move; every frame is a wall of text over the marker it would
- * report on.
- */
-const MAIN_CULL_MARKER_MS = 5e3;
-
-/** Separate shadow regions one tell carries per kind before the last one absorbs the rest. */
-const SHADOW_REGION_CAP = 64;
-
-/**
- * The name half a shadow key is minted under: `asset:level:part@gpu`, beside the main key it twins
- * rather than in place of it, so both meshes exist — one for the main pass's compaction buffer and
- * one for the shadow twin's, which is the whole difference between them.
- */
-const GPU_KEY_SUFFIX = "@gpu";
-
-/** The two scratch objects a cull builds its frustum in, and whether two square sets are the same. */
-const _cullFrustum = new Frustum();
-
-const _cullProjScreen = new Matrix4();
-
-/** The eye the live-state reference measures every placement's XZ distance from. */
-const _gpuEye = new Vector3();
-
-/**
- * How many groups the main record is split into. A record walks every draw in its group, so a mint
- * on a streaming walk costs the draws of every shard it touches: Machinefall's ~200 recorded main
- * draws re-recorded as one group put ~290 traversed draws in a frame. Eight shards still read 145,
- * because one asset mints several keys (levels, parts) at once and they land in two or three shards;
- * thirty-two keep a frame that touches several to a few dozen draws. A replay is one
- * `executeBundles` per group, so a shard costs far less than the draws it stops re-walking.
- */
-const MAIN_BUNDLE_SHARDS = 32;
-
-/** The shard a key lands in, from its name (FNV-1a), so a key keeps its group for its whole life. */
-export function mainShard(key: string): number {
-  let hash = 0x811c9dc5;
-  for (let index = 0; index < key.length; index += 1) {
-    hash ^= key.charCodeAt(index);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return (hash >>> 0) % MAIN_BUNDLE_SHARDS;
-}
-
-/** Every mesh a prepared chunk draws through the main pass, in traversal order. */
-function chunkDraws(chunk: Object3D): Mesh[] {
-  const draws: Mesh[] = [];
-  chunk.traverse((node) => {
-    const mesh = node as Mesh;
-    if (mesh.isMesh === true && node.layers.isEnabled(0)) draws.push(mesh);
-  });
-  return draws;
-}
-
-/**
- * A geometry that draws `source`'s shape through an indirect record: its own object, so the record is
- * this mesh's, over the same attributes and index, so no vertex buffer is copied.
- */
-function indirectView(
-  source: BufferGeometry,
-  args: Parameters<BufferGeometry["setIndirect"]>[0],
-  offset: number,
-): BufferGeometry {
-  const view = new BufferGeometry();
-  for (const [name, attribute] of Object.entries(source.attributes))
-    view.setAttribute(name, attribute);
-  view.setIndex(source.index);
-  view.morphAttributes = source.morphAttributes;
-  view.morphTargetsRelative = source.morphTargetsRelative;
-  for (const group of source.groups) view.addGroup(group.start, group.count, group.materialIndex);
-  view.boundingBox = source.boundingBox;
-  view.boundingSphere = source.boundingSphere;
-  view.setIndirect(args, offset);
-  return view;
-}
-
-/** The materials `redressMaterial` gave a mesh, disposed when the mesh is or when it is re-dressed. */
-const redressed = new WeakMap<InstancedMesh, readonly Material[]>();
-
-/**
- * A new object drawing `geometry`, carrying everything `old` carried.
- *
- * Three builds an `InstancedMesh`'s instancing node when the object is first compiled, from the
- * `instanceMatrix` it holds then, and keeps that node for the object's whole life — so a mesh the
- * prewarm already compiled is not pointed at the GPU scene's storage buffer by writing a field onto
- * it. Measured on machinefall: 3,724 indirect draws submitted in 2 s, over indirect records and
- * drawn matrices that were correct at draw time, and a dressed forest that drew nothing at all,
- * until every dressed mesh was a fresh object. A fresh object costs a uuid and a node build, which
- * is what the prewarm paid for a mesh that was about to be replaced anyway; see `#dressGpu`.
- */
-function freshMeshFor(old: InstancedMesh, geometry: BufferGeometry, count: number): InstancedMesh {
-  const next = new InstancedMesh(geometry, old.material, count);
-  next.name = old.name;
-  next.layers.mask = old.layers.mask;
-  next.castShadow = old.castShadow;
-  next.receiveShadow = old.receiveShadow;
-  next.renderOrder = old.renderOrder;
-  next.userData = old.userData;
-  next.matrix.copy(old.matrix);
-  next.matrixAutoUpdate = old.matrixAutoUpdate;
-  next.matrixWorld.copy(old.matrixWorld);
-  next.matrixWorldAutoUpdate = old.matrixWorldAutoUpdate;
-  // A dressed batch is frozen, and the freeze is keyed by the object: a replacement that did not
-  // re-arm it would compose its own world matrix every walk forever.
-  if (isStatic(old)) markStatic(next);
-  return next;
-}
-
-/**
- * Give a mesh a material of its own, so the node three builds for it is its own rather than a shared
- * one's, and dispose those materials with the mesh. The clones share every texture; only the
- * material objects are new. See `#dressGpu`.
- */
-function redressMaterial(mesh: InstancedMesh): void {
-  for (const material of redressed.get(mesh) ?? []) material.dispose();
-  const clones: Material[] = [];
-  for (const material of Array.isArray(mesh.material) ? mesh.material : [mesh.material])
-    clones.push(material.clone());
-  mesh.material = Array.isArray(mesh.material) ? clones : (clones[0] as Material);
-  if (!redressed.has(mesh))
-    mesh.addEventListener("dispose", () => {
-      for (const material of redressed.get(mesh) ?? []) material.dispose();
-      redressed.delete(mesh);
-    });
-  redressed.set(mesh, clones);
-}
 export interface ICellRenderHost {
   asset(id: string): IAssetState | undefined;
   assets(): Iterable<IAssetState>;
@@ -340,10 +165,6 @@ interface ICellRenderSettings {
   readonly invalidateShadows: ((region?: IShadowRegion) => void) | undefined;
 }
 
-interface IPublishedGpuGates extends IAssetSlot {
-  readonly locals: readonly (readonly Float32Array[])[];
-}
-
 export class CellRender {
   readonly #budgets: IWorldCellsBudget;
 
@@ -369,8 +190,14 @@ export class CellRender {
   /** One shared mesh per `asset:level:part`, holding every resident cell's segment; see SharedBatch. */
   readonly #shared = new Map<string, SharedBatch>();
 
-  readonly #bundleSafety = new BundleSurfaceSafety();
-  #ownsBundles: boolean | undefined;
+  /** Every record the main pass draws through, and the chunk records under each resident cell. */
+  readonly #bundles: CellBundles;
+
+  /** The volumes and windows the main pass culls with; see {@link CellMainCull}. */
+  readonly #cull: CellMainCull;
+
+  /** The mesh a key draws: its shape, its LOD material and its dress against the GPU scene. */
+  readonly #dress: CellGpuDress;
 
   /**
    * `asset:level:part` -> a released batch kept for the walk back over the same ground, oldest
@@ -397,9 +224,6 @@ export class CellRender {
   /** Asset bounds height under which a wide caster goes on the finest level's layer only. */
   readonly #smallCasterMetres: number;
 
-  /** The six planes of `#camera`'s frustum, as the live-state reference reads them; reused per check. */
-  readonly #gpuPlanes = new Float32Array(24);
-
   readonly #cellsPerCluster: number;
 
   /**
@@ -422,52 +246,11 @@ export class CellRender {
   readonly #shadowAdmissions: IShadowRegion[] = [];
   #shadowFull = false;
 
-  /** When `TN_WORLD_MAIN_CULL` was last printed; see {@link #reportMainCull}. */
-  #mainCullToldAt = 0;
-
-  /** Window repacks since the last marker; see {@link #reportMainCull}. */
-  #mainCullRepacks = 0;
-
-  /** Frusta the main cull has built, one a frame; see `IWorldCellsStats.mainCull`. */
-  #mainCullFrustums = 0;
-
-  /** Windows main batches have had to re-derive, cumulative; see `IWorldCellsStats.mainCull`. */
-  #mainCullWindows = 0;
-
-  /** Window repacks, cumulative; see `IWorldCellsStats.mainCull`. */
-  #mainCullPacks = 0;
-
-  /**
-   * One AABB per resident visibility cell, and how many resident world cells hold it. Shared by
-   * every key, so the main cull is O(visibility cells) a frame rather than O(keys × cells); see
-   * {@link #cullMainPass}.
-   */
-  readonly #cullCells = new Map<string, { cells: number; box: Box3 }>();
-
   /** World cells per main-cull visibility cell; see `MAIN_CULL_SQUARE_METRES`. */
   readonly #cellsPerCullCell: number;
 
-  /** The visibility cells the last cull kept and the frame's set, trading places; see `#cullMainPass`. */
-  #visibleSquares: Set<string> = new Set();
-
-  #cullScratch: Set<string> = new Set();
-
-  /** Bumped only when `#visibleSquares` changed, so a settled camera repacks no batch at all. */
-  #visibleEpoch = 0;
-
   /** The game's hook to refresh the shadow levels after streamed records changed. */
   readonly #invalidateShadows: ((region?: IShadowRegion) => void) | undefined;
-
-  readonly #position = new Vector3();
-
-  readonly #rotation = new Quaternion();
-
-  readonly #scale = new Vector3();
-
-  readonly #matrix = new Matrix4();
-
-  /** Reused transformed authored bounds for admission and conservative visibility volumes. */
-  readonly #recordBounds = new Box3();
 
   /**
    * The GPU-driven main pass, and whether the world asked for it. Off is byte-for-byte this class's
@@ -475,8 +258,6 @@ export class CellRender {
    * does. See the `gpuScene` load option and `#cullMainPass`.
    */
   readonly #gpuScene = new WorldGpuScene();
-  readonly #publishedGpuGates = new Map<string, IPublishedGpuGates>();
-  readonly #gpuLevelKeys = new Map<string, Array<{ firstKey: number; parts: number }>>();
 
   /** Every main key this world has minted a shadow twin for, which is what a level's dispatch asks for. */
   readonly #shadowKeyNames = new Set<string>();
@@ -484,96 +265,13 @@ export class CellRender {
   /** Resident placements per canonical asset, which is the capacity a key of that asset needs. */
   readonly #gpuResident = new Map<string, number>();
 
-  /**
-   * The `BundleGroup`s every recorded main batch mesh is parented under, one per shard of
-   * {@link MAIN_BUNDLE_SHARDS}, and the number of times one has been re-recorded. A shard is minted by
-   * the first mesh that lands in it, so a world that never dresses a mesh has no group to pay for.
-   *
-   * A re-record is a structural change and nothing else: see `IWorldCellsStats.bundle` and
-   * {@link #bumpBundle}. Streaming, culling and LOD are GPU-side answers and never move it. A record
-   * walks every draw its group holds, so a mint pays for its own shard and not the whole main pass.
-   */
-  readonly #bundles = new Map<number, BundleGroup>();
-
-  #bundleRecords = 0;
-
-  /**
-   * Shards re-recorded while a compile was in flight, so they are re-recorded again once it settles.
-   * Three encodes a draw only when its pipeline is ready, so a record cut during a `compileAsync`
-   * silently leaves a not-yet-ready draw out, and the replay never re-checks it. Bumped from
-   * {@link #bumpBundle} while {@link #compileBusy}, flushed at the top of the update that sees the
-   * compile settle.
-   */
-  #compileSeen = 0;
-
-  #compileBusy = false;
-
-  /**
-   * The patched renderer's count of PMREM swaps, as of the last flush. A record holds the bind
-   * groups it was made with and a replay never refreshes them, so a sky that finishes after the
-   * first record would leave every recorded draw sampling the placeholder until a walk re-records.
-   */
-  #pmremSwaps = 0;
-
-  readonly #recordedWhileBusy = new Set<BundleGroup>();
-
-  /**
-   * One `BundleGroup` per resident cell that has chunks attached, keyed by cell key, each with the
-   * main-cull cluster whose answer decides whether it is in the frame. Minted by the first chunk a
-   * cell attaches, so a world with no chunks pays nothing; see the `bundles` option.
-   *
-   * Per cell and not one group for the whole world: a record is fixed when it is made, so a group's
-   * own answer to "is this in view" cannot change without a re-record — which is the whole cost this
-   * is removing. A cell is the granularity the coarse cull already answers at, so `visible` on the
-   * group is a write rather than a record. See `#cullMainPass`.
-   */
-  readonly #chunkBundles = new Map<
-    string,
-    { readonly cluster: string; readonly group: BundleGroup }
-  >();
-
-  /** How many chunk roots those groups hold, so `stats().bundle.children` costs nothing to read. */
-  #chunkBundleChildren = 0;
-
-  /** `bundles` as the load asked for it, before the query string and the environment. */
-  readonly #bundlesWanted: boolean;
-
-  /**
-   * Who decided that: the load that named `bundles`, the launch that asked for `off` or `on`, or
-   * nothing at all — which is what the marker reports so a run on the default is never mistaken for
-   * one a flag turned off. See {@link bundlesAsked}.
-   */
-  readonly #bundleReason: string;
-
   readonly #preserveAuthoredParts: boolean;
 
   readonly #lodHysteresis: number;
   readonly #lodTransition: "band" | "none" | "temporal";
   readonly #lodSpatial: boolean;
 
-  readonly #lodEye = uniform(new Vector3()).setGroup(renderGroup);
-
-  /** UE's two lagged view origins and their blend, for `lodTransition: "temporal"`. */
-  readonly #temporalLod: ITemporalLod = {
-    from: new Vector3(),
-    to: new Vector3(),
-    fromTime: Number.NaN,
-    toTime: Number.NaN,
-    alpha: 1,
-  };
-
-  readonly #lodFrom = uniform(this.#temporalLod.from).setGroup(renderGroup);
-
-  readonly #lodTo = uniform(this.#temporalLod.to).setGroup(renderGroup);
-
-  readonly #lodAlpha = uniform(1).setGroup(renderGroup);
-
   readonly #lodDistanceBias = uniform(1).setGroup(renderGroup);
-
-  /** Seconds since this renderer started; a swap stamps it so `worldLodMaterial` can fade the change. */
-  readonly #lodClock = uniform(0).setGroup(renderGroup);
-
-  readonly #lodClockOrigin = performance.now();
 
   readonly #lodMaterials = new Map<
     string,
@@ -582,232 +280,6 @@ export class CellRender {
 
   /** The resident ring has been handed to the scene once; see `#seedGpuSources`. */
   #gpuSeeded = false;
-
-  /**
-   * Narrow every main batch's draw window to the world-grid squares `camera`'s frustum covers, once
-   * per frame, for the whole set at once.
-   *
-   * This used to be each main mesh's own `onBeforeRender`, which three never calls for an invisible
-   * mesh — so the moment a batch that draws nothing was hidden, the one thing that could show it
-   * again when the camera turned back was gone with it, and the world lost its trees for good. The
-   * decision therefore moved to the frame's own driver: the render-cadence compute dispatch, which
-   * the engine already runs once per rendered frame — on the same readiness gate residency itself
-   * sits behind, so a frame that skips this skipped the world's records too — and which now hands the
-   * render camera to the world, so it reaches every main mesh whether it is drawn or not.
-   *
-   * The camera rules are the ones the hook had, and they are the whole of what decides a window:
-   *
-   * - **An orthographic camera never repacks.** A virtual-shadow level's camera is a
-   *   `DirectionalLightShadow`'s own, which three makes orthographic, so a level's window — one shadow
-   *   slice of the ring, deliberately not the main view's — can never overwrite the main pass's. A
-   *   game whose own camera is orthographic keeps the old behaviour: everything resident is drawn, and
-   *   nothing pops. That is a lost saving, never a wrong picture.
-   * - **The render camera is the one that decides.** The engine dispatches this with the camera it
-   *   is about to draw the main pass with, so the second-perspective-camera race the hook had to
-   *   arbitrate per mesh cannot arise: a mirror or a minimap is drawn with its own camera and is
-   *   served the main view's window, which is the honest trade for a world with one main view.
-   * - **A set that did not change touches nothing.** The frustum, the visible cells and the epoch
-   *   are the frame's, derived once for the whole pass; a batch whose records have not moved since it
-   *   packed at that epoch compares two integers and returns. A camera at rest costs one frustum and
-   *   one test per resident visibility cell a frame, and nothing at all per mesh.
-   */
-  cullMainPass(camera: Camera | undefined): void {
-    if (camera === undefined || (camera as ICamera).isOrthographicCamera === true) return;
-    this.#bundleSafety.beginFrame();
-    this.#mainCullFrustums += 1;
-    const frustum = _cullFrustum.setFromProjectionMatrix(
-      _cullProjScreen.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse),
-    );
-    // The visible visibility cells, for the whole pass, into a set that is reused and compared
-    // rather than allocated: two sets trading places, so a settled camera allocates nothing at all.
-    const next = this.#cullScratch;
-    next.clear();
-    for (const [cell, entry] of this.#cullCells) {
-      // An occupied cell whose placements have not been decoded yet holds nothing to draw, and its
-      // Y range is still empty — a volume that cannot be tested against ±Infinity is not one this
-      // frame's answer may rest on.
-      if (entry.box.isEmpty() === false && frustum.intersectsBox(entry.box)) next.add(cell);
-    }
-    if (!sameSquares(next, this.#visibleSquares)) {
-      this.#visibleEpoch += 1;
-      const was = this.#visibleSquares;
-      this.#visibleSquares = next;
-      this.#cullScratch = was;
-      this.#cullScratch.clear();
-    }
-    // A chunk's record is frozen, so its cell's answer is the only thing that can take it out of the
-    // frame without re-recording it: a write per resident cell that has chunks, at the same
-    // granularity every other coarse gate in this pass uses. See the `bundles` option.
-    for (const entry of this.#chunkBundles.values()) {
-      const visible = this.#visibleSquares.has(entry.cluster);
-      if (entry.group.visible !== visible) entry.group.visible = visible;
-    }
-    const gpu = this.#gpuScene;
-    const dressed: Array<{ asset: string; shared: SharedBatch }> = [];
-    const version = gpu.version;
-    for (const shared of [...this.#shared.values()]) {
-      if (shared.role !== "main") continue;
-      // A dressed batch draws from the GPU scene's own buffers, so the frame's per-instance answer is
-      // the dispatch's and this mesh's own window would be a second, stale copy of it.
-      if (gpu.on && shared.gpu !== undefined) {
-        this.dressGpu(shared, shared.gpu);
-        // A bundled mesh is in a render list three fixed when it recorded the bundle, and the
-        // dispatch has already culled per instance: there is nothing coarse left to hide, and a
-        // `visible` written here is one the replay never reads. See `#bundleIn`.
-        if (shared.bundled === false) dressed.push({ asset: shared.gpu.asset, shared });
-        continue;
-      }
-      // A batch the GPU scene does not own, and every one of a world without it: its own window is
-      // the CPU path's answer, and it is a per-frame answer a frozen render list never re-reads. So
-      // the record answers the gate instead of the gate writing `visible` into it — a batch the gate
-      // shows joins, one it hides leaves, and a window that moved is one more record, because the
-      // record holds the layout the move made. The same trade a cell's chunk record makes, at the
-      // granularity this gate already uses. See `#bundleIn`.
-      const outcome = shared.cullFrom(this.#visibleSquares, this.#visibleEpoch);
-      this.recordCpuMain(shared, outcome);
-      if (outcome === "settled") continue;
-      this.#mainCullWindows += 1;
-      if (outcome === "repacked") {
-        this.#mainCullRepacks += 1;
-        this.#mainCullPacks += 1;
-      }
-    }
-    // A regrow late in the loop replaces the scene's `drawn` — and, a non-grouped key, its `args` —
-    // after an earlier mesh in the same loop was dressed against the generation before it, so that
-    // mesh would read a buffer the dispatch no longer writes for one frame. One more pass over the
-    // same settled set, only when the scene changed under the first, rebinds every mesh to the final
-    // buffers. Registration is idempotent and every key is already minted and sized, so this pass
-    // mints nothing and cannot grow the scene again.
-    if (gpu.on && gpu.version !== version) {
-      for (const shared of [...this.#shared.values()])
-        if (shared.role === "main" && shared.gpu !== undefined) this.dressGpu(shared, shared.gpu);
-      // And every shadow key, for the same reason: minting one grew the twin buffers every other
-      // key was dressed against, so a sibling dressed earlier in the loop above is holding the
-      // generation the dispatch replaced. The main key's own dress brings its twin with it; this is
-      // what closes the seam for the keys whose main key was dressed before the grow.
-      for (const shared of [...this.#shared.values()])
-        if (shared.role === "key")
-          this.dressShadowKey(shared, shared.mesh.name.slice(0, -GPU_KEY_SUFFIX.length));
-    }
-    // After every key has been dressed, so the asset's answer is the union across its levels and
-    // parts.
-    this.applyGpuMain(dressed);
-    // After the coarse gate, and only for the main camera: an orthographic one — every shadow
-    // level's own — returned at the top, so a level's render never dispatches over the main pass's
-    // compaction.
-    if (gpu.on) gpu.dispatch(this.#host.renderer() as IRendererLike, camera);
-  }
-
-  /**
-   * The coarse gate for the GPU-dressed main pass, computed per asset and reused across every level
-   * and part of it.
-   *
-   * A key's own CPU squares are the level the follow point picked when it built them, and the
-   * dispatch re-picks the level from the camera every frame — so a key the CPU never gave a cell to
-   * can be exactly the one the dispatch draws, and a per-key answer hid it: a tree walked into at a
-   * level it was not built at disappeared. One conservative answer per asset — any key holds a
-   * visible cell, or still owes its prewarm draw — is what shows all of them, and the indirect
-   * record decides what each one actually draws.
-   */
-  applyGpuMain(dressed: readonly { asset: string; shared: SharedBatch }[]): void {
-    const shown = new Map<string, boolean>();
-    for (const { asset, shared } of dressed) {
-      if (shown.get(asset) === true || shared.seenIn(this.#visibleSquares)) shown.set(asset, true);
-      else if (shown.has(asset) === false) shown.set(asset, false);
-    }
-    for (const { asset, shared } of dressed) shared.applyGpuVisible(shown.get(asset) === true);
-  }
-
-  /** Borrowed scratch box: consume its transformed volume before the next bounds query. */
-  #boundsAt(bounds: IWorldAsset["bounds"], matrix: Matrix4): Box3 {
-    this.#recordBounds.min.fromArray(bounds.min);
-    this.#recordBounds.max.fromArray(bounds.max);
-    return this.#recordBounds.applyMatrix4(matrix);
-  }
-
-  /**
-   * The one volume per resident visibility cell, shared by every key: its own XZ footprint, and in Y
-   * the range its resident placements actually reach once their assets' own bounds are added to them,
-   * padded by `MAIN_CULL_PAD_METRES`.
-   *
-   * It is derived here, on admission, and never a frame — a volume walked every frame to answer a
-   * question about placements that never move is a frame's work for an admission's answer.
-   *
-   * It is deliberately not per key. Every key drew the same cell set, so deriving it per key meant
-   * ~230 frusta and ~230 sets a frame to learn the same answer; one volume per cell is what makes the
-   * pass O(cells) instead of O(keys × cells).
-   *
-   * The Y is what makes it a volume rather than a slab. It used to be the whole terrain height range
-   * widened by the tallest asset bound in the world — ~100 m of Y on a map with a 10 m relief, which
-   * made every cell's bounding sphere a ~90 m radius that a view beside the world still cleared, and
-   * handed the vertex stage the whole ring. This is per placement instead: a sub-square of flat
-   * ground with ferns on it is the height of its ferns.
-   */
-
-  cullResident(cell: IWorldCell): void {
-    const per = this.#cellsPerCullCell;
-    const side = per * this.#cellSize;
-    const first = Math.floor(cell.x / per);
-    const firstZ = Math.floor(cell.z / per);
-    const name = clusterOf(cell.x, cell.z, per);
-    let entry = this.#cullCells.get(name);
-    if (entry === undefined) {
-      // XZ from the grid, padded, and an empty Y: this cell's own placements are unioned in below,
-      // and a cell holding none of them yet is never visible rather than visible by its footprint.
-      const box = new Box3(
-        new Vector3(
-          this.#minX + first * side - MAIN_CULL_PAD_METRES,
-          Number.POSITIVE_INFINITY,
-          this.#minZ + firstZ * side - MAIN_CULL_PAD_METRES,
-        ),
-        new Vector3(
-          this.#minX + (first + 1) * side + MAIN_CULL_PAD_METRES,
-          Number.NEGATIVE_INFINITY,
-          this.#minZ + (firstZ + 1) * side + MAIN_CULL_PAD_METRES,
-        ),
-      );
-      entry = { box, cells: 0 };
-      this.#cullCells.set(name, entry);
-    }
-    entry.cells += 1;
-    const box = entry.box;
-    for (const run of cell.runs) {
-      const bounds = this.#manifest.assets[this.#host.canonical(run.asset)]?.bounds;
-      if (bounds === undefined || run.count === 0) continue;
-      const records = cellPlacements(this.#placements, run);
-      for (let index = 0; index < run.count; index += 1) {
-        const at = index * PLACEMENT_RECORD_FLOATS;
-        // The placement, widened by its own asset's bounds at the scale it is drawn at, and by the
-        // pad — a union, so the pad is counted once however many placements there are.
-        const scale = records[at + 7] as number;
-        this.#position.fromArray(records, at);
-        this.#rotation.fromArray(records, at + 3);
-        this.#scale.setScalar(scale);
-        this.#matrix.compose(this.#position, this.#rotation, this.#scale);
-        box.union(
-          this.#boundsAt(bounds, this.#matrix).expandByScalar(
-            MAIN_CULL_PAD_METRES * Math.max(1, Math.abs(scale)),
-          ),
-        );
-      }
-    }
-  }
-
-  /**
-   * Drop the visibility cell an evicted cell sat in once nothing resident is left in it. Records are
-   * cleared before this runs, so a batch can never be holding a cell the cull no longer knows: an
-   * unknown cell is not in the visible set, and that would be a tree nobody draws.
-   *
-   * The box goes with it, so a cell that comes back derives its volume again — which is what keeps a
-   * released asset's height out of a cell that no longer holds it.
-   */
-  cullEvicted(cell: IResidentCell): void {
-    const name = clusterOf(cell.x, cell.z, this.#cellsPerCullCell);
-    const entry = this.#cullCells.get(name);
-    if (entry === undefined) return;
-    entry.cells -= 1;
-    if (entry.cells <= 0) this.#cullCells.delete(name);
-  }
 
   /**
    * The render-cadence dispatch. The engine hands the frame's render camera over, and this world's
@@ -903,7 +375,7 @@ export class CellRender {
       // When this answer reached the screen, so a record whose level set grew fades into it.
       const ranges = entry.lodRanges;
       if (ranges !== undefined)
-        for (let at = 3; at < ranges.length; at += 4) ranges[at] = this.#lodClock.value;
+        for (let at = 3; at < ranges.length; at += 4) ranges[at] = this.#dress.clockSeconds;
       if (entry.shared !== undefined)
         entry.shared.write(entry.segment, entry.batch, entry.lodRanges);
       if (this.#gpuScene.on) entry.gpu = this.placeSources(job, entry);
@@ -975,77 +447,6 @@ export class CellRender {
       else union.union(box);
     }
     return union;
-  }
-
-  /**
-   * Claim this cell's block in its caster cluster, when the level casts and it does not have one.
-   * `false` means the frame's fresh allowance is spent and the swap waits, so the main mesh and its
-   * cluster are never half attached.
-   */
-  claimCaster(assetId: string, entry: ICellBatch, cell: IResidentCell): boolean {
-    const level = this.castLevelOf(entry);
-    if (entry.casterSegment >= 0 || level === undefined) return true;
-    // Nothing to claim, and nothing to wait for: a world whose levels draw its keys mints no caster
-    // half at all (`#casterFor`), so reading that as a spent allowance refused every swap in the
-    // world — the main mesh was never attached, no cell published its placements, and the main pass
-    // drew nothing while its meshes sat there prewarmed and empty.
-    if (this.keysForShadow()) return true;
-    const caster = this.casterFor(assetId, entry, cell, level);
-    const at = caster === undefined ? undefined : this.segmentIn(caster, entry.batch.count);
-    if (caster === undefined || at === undefined) return false;
-    entry.caster = caster;
-    entry.casterSegment = at;
-    return true;
-  }
-
-  /**
-   * Claim this cell's block in its key's wide caster mesh, when the level casts and it does not
-   * have one. `false` means the frame's fresh allowance is spent and the swap waits, so the
-   * clusters and the wide half are never half attached.
-   */
-  claimWide(assetId: string, entry: ICellBatch): boolean {
-    const level = this.castLevelOf(entry);
-    if (entry.wideSegment >= 0 || level === undefined) return true;
-    // A part the asset's one whole-asset representation already covers: the entry keeps its near
-    // main and cluster, and the far shadow reads part 0's one quad; see `#wideOwed`.
-    if (!this.wideOwed(assetId, entry.part)) return true;
-    // As `#claimCaster`: the key twin is this level's wide half, and there is no mesh to wait on.
-    if (this.keysForShadow()) return true;
-    const wide = this.wideFor(assetId, entry, level);
-    // The impostor's far half draws the placement root, not `placement * part local`, so its block
-    // is sized to the root records the build kept beside the part's own; see `ICellBatch.wideRoot`.
-    const count = entry.wideRoot?.count ?? entry.batch.count;
-    const at = wide === undefined ? undefined : this.segmentIn(wide, count);
-    if (wide === undefined || at === undefined) return false;
-    entry.wide = wide;
-    entry.wideSegment = at;
-    return true;
-  }
-
-  clearSegment(entry: ICellBatch): void {
-    if (entry.shared !== undefined && entry.segment >= 0) entry.shared.clear(entry.segment);
-    // The source records go back with the block that held them, on every path a cell's records leave:
-    // a refilter's replacement, an eviction, and a queued build dropped with its cell. Releasing one
-    // twice is a no-op, which is what lets a level's parts share a single list.
-    if (entry.gpu !== undefined) {
-      const placed = entry.gpu.length;
-      for (const at of entry.gpu) this.#gpuScene.release(at);
-      const left = (this.#gpuResident.get(entry.asset) ?? 0) - placed;
-      if (left > 0) this.#gpuResident.set(entry.asset, left);
-      else this.#gpuResident.delete(entry.asset);
-      // Before the halves go below, which is what clears the handles this reads.
-      this.countPlaced(entry, -placed);
-    }
-    entry.gpu = undefined;
-    if (entry.caster !== undefined && entry.casterSegment >= 0)
-      entry.caster.clear(entry.casterSegment);
-    if (entry.wide !== undefined && entry.wideSegment >= 0) entry.wide.clear(entry.wideSegment);
-    entry.shared = undefined;
-    entry.segment = -1;
-    entry.caster = undefined;
-    entry.casterSegment = -1;
-    entry.wide = undefined;
-    entry.wideSegment = -1;
   }
 
   /**
@@ -1186,118 +587,6 @@ export class CellRender {
     }
   }
 
-  /**
-   * `TN_WORLD_MAIN_CULL`, every `MAIN_CULL_MARKER_MS`: what the main pass holds, what it is drawing,
-   * how many of its meshes are submitted at all, and how many times the window moved to get there.
-   *
-   * `instances` is every live record the main batches hold — the whole resident ring, which is what
-   * three's whole-mesh test used to hand the vertex stage — and `drawn` is what the cull left in the
-   * windows. The gap between them is the saving, `repacks` says what it cost to get: a settled camera
-   * repacks nothing, so a walk that repacks dozens of times a second is a window that is chasing the
-   * camera, not one that is thrashing. `hidden` and `castersHidden` are the batches with nothing to
-   * draw that are now not submitted at all: in three r185's WebGPU path a zero-count `InstancedMesh`
-   * still runs the whole per-draw JS chain, so an empty batch was CPU a frame for no draw — the number
-   * is the part of the census that no longer costs anything.
-   *
-   * `dressed=N/M` is the GPU scene's own claim, repeated every five seconds: a scene that is on over
-   * meshes nothing is dressed into compacts a set the CPU path is still drawing, and `keys` alone
-   * cannot say so — a ring built before the scene came up has no keys at all and looks healthy.
-   */
-  reportMainCull(): void {
-    const now = this.#host.now();
-    if (now - this.#mainCullToldAt < MAIN_CULL_MARKER_MS) return;
-    this.#mainCullToldAt = now;
-    const repacks = this.#mainCullRepacks;
-    this.#mainCullRepacks = 0;
-    let instances = 0;
-    let drawn = 0;
-    let hidden = 0;
-    let castersHidden = 0;
-    let clusterWithheld = 0;
-    let clusterRecords = 0;
-    let clusterMissing = 0;
-    let wideWithheld = 0;
-    let wideRecords = 0;
-    let wideMissing = 0;
-    // What the two caster layers hold between them, per layer: the resident triangle bill a shadow
-    // level that picked that layer submits. Two numbers that must not be equal is the whole claim —
-    // the wide half draws the asset's coarsest level, so it is the one that falls.
-    let clusterTriangles = 0;
-    let wideTriangles = 0;
-    let dressed = 0;
-    let mainMeshes = 0;
-    for (const shared of this.#shared.values()) {
-      if (shared.role !== "main") {
-        if (shared.mesh.visible === false) castersHidden += 1;
-        if (shared.mesh.mainAdmitted === false && shared.live > 0) {
-          if (shared.role === "cluster") {
-            clusterWithheld += 1;
-            clusterRecords += shared.live;
-            clusterMissing += Math.max(0, shared.live - shared.gpuPlaced);
-          } else if (shared.role === "wide") {
-            wideWithheld += 1;
-            wideRecords += shared.live;
-            wideMissing += Math.max(0, shared.live - shared.gpuPlaced);
-          }
-        }
-        // Zero records add zero, so an empty batch needs no test of its own here.
-        const triangles = levelTriangles(shared.mesh.geometry) * shared.live;
-        if (shared.role === "cluster") clusterTriangles += triangles;
-        else wideTriangles += triangles;
-        continue;
-      }
-      mainMeshes += 1;
-      if (shared.gpu !== undefined) dressed += 1;
-      instances += shared.live;
-      drawn += shared.drawn;
-      if (shared.mesh.visible === false) hidden += 1;
-    }
-    const stats = this.#host.stats();
-    console.info(
-      `TN_WORLD_MAIN_CULL instances=${String(instances)} drawn=${String(drawn)} ` +
-        `hidden=${String(hidden)} castersHidden=${String(castersHidden)} repacks=${String(repacks)} ` +
-        `refilters=${String(stats.refilters)} levelRefilters=${String(stats.levelRefilters)} ` +
-        `lodFrom=${stats.lodFrom} ` +
-        `clusterTris=${String(clusterTriangles)} wideTris=${String(wideTriangles)} ` +
-        `dressed=${String(dressed)}/${String(mainMeshes)}`,
-    );
-    console.info(
-      `TN_WORLD_SHADOW_ADMISSION clusterWithheld=${String(clusterWithheld)} ` +
-        `clusterRecords=${String(clusterRecords)} clusterMissing=${String(clusterMissing)} ` +
-        `wideWithheld=${String(wideWithheld)} wideRecords=${String(wideRecords)} ` +
-        `wideMissing=${String(wideMissing)} seeded=${String(this.#gpuSeeded)} ` +
-        `queued=${String(this.#host.queuedBuilds())}`,
-    );
-    const hlod = stats.hlod;
-    let proxyDraws = 0;
-    let replacedSources = 0;
-    for (const cell of this.#host.residentCells()) {
-      const state = cell.proxy;
-      if (state === undefined || !state.active) continue;
-      proxyDraws += state.prepared?.meshes.length ?? 0;
-      replacedSources += state.hidden.size + state.mainMasks.size;
-    }
-    const why = hlod.reason === "" ? "" : ` reason=${JSON.stringify(hlod.reason)}`;
-    console.info(
-      `TN_WORLD_HLOD on=${String(hlod.on)} loaded=${String(hlod.loaded)} ` +
-        `compiled=${String(hlod.compiled)} observed=${String(hlod.observed)} ` +
-        `active=${String(hlod.active)} pending=${String(hlod.pending)} ` +
-        `draws=${String(proxyDraws)} replaced=${String(replacedSources)} ` +
-        `bytes=${String(hlod.bytes)} refused=${String(hlod.refused)} failures=${String(hlod.failures)}${why}`,
-    );
-    // The bundles on their own line, because the pair reads against a different question: how many
-    // objects are recorded, and how many times the recording was thrown away and redone. A walk
-    // streaming and culling holds `records` at the keys and chunks that came and went; a walk that
-    // repacks it every frame is drawing a moving set, which is the bug a bundle cannot have. `reason`
-    // is on it because the default is now on: a reader has to be able to tell a run that turned it
-    // off from a run where recording never happened.
-    const bundles = stats.bundle;
-    console.info(
-      `TN_WORLD_BUNDLE ${bundles.on ? "on" : "off"} reason=${bundles.reason} ` +
-        `children=${String(bundles.children)} cpuMeshes=${String(bundles.cpuMeshes)} gpuMeshes=${String(bundles.gpuMeshes)} records=${String(bundles.records)}`,
-    );
-  }
-
   /** The main pass's one mesh for an asset part at a level, covering every resident cell. */
   sharedFor(assetId: string, entry: ICellBatch): SharedBatch | undefined {
     return this.batchFor(assetId, entry, this.keyOf(entry), "main", this.#receiveShadow);
@@ -1356,57 +645,6 @@ export class CellRender {
   }
 
   /**
-   * The level a cell batch casts with: its own when that level casts, otherwise the coarsest
-   * casting level, when that level holds the same parts — a chain's derived levels do, authored
-   * `lods` need not — so a tree past `castLevels` keeps its shadow in the last shape that has a
-   * caster rather than leaving a hole in the map (PRD-541). `undefined`: it casts nothing.
-   */
-  castLevelOf(entry: ICellBatch): number | undefined {
-    const floor = this.shadowFloorOf(entry.asset);
-    if (entry.level < floor) return floor;
-    if (this.casts(entry.level)) return entry.level;
-    if (this.#castShadowLevels === 0) return undefined;
-    const asset = this.#host.asset(entry.asset);
-    if (asset === undefined || asset.definition.lods !== undefined) return undefined;
-    const level = Math.min(entry.level, this.#castShadowLevels) - 1;
-    return asset.levels[level]?.[entry.part] === undefined ? undefined : level;
-  }
-
-  /**
-   * The level this asset's finer placements cast in (`shadows.minLevel`), clamped to a casting
-   * level. 0 when a finer level's parts do not line up with it, since a caster draws its own entry's
-   * part index and matrices in that level's shape, and when the shadow levels draw the GPU keys.
-   */
-  shadowFloorOf(assetId: string): number {
-    const asset = this.#host.asset(assetId);
-    if (asset === undefined || this.keysForShadow()) return 0;
-    const floor = Math.min(
-      this.#shadowMinLevel,
-      this.#castShadowLevels - 1,
-      asset.levels.length - 1,
-    );
-    const coarse = asset.levels[floor];
-    if (floor <= 0 || coarse === undefined) return 0;
-    for (let level = 0; level < floor; level++) {
-      const parts = asset.levels[level];
-      if (parts?.length !== coarse.length) return 0;
-      for (const [index, part] of parts.entries())
-        if (!part.local.equals((coarse[index] as IAssetPart).local)) return 0;
-    }
-    return floor;
-  }
-
-  /**
-   * Whether a shadow level draws this world's keys instead of its two caster halves: the GPU scene
-   * is up *and* a provider registered on it, which `?tnShadowGpuKeys=1` is what asks for. Both, or
-   * neither — a provider with the scene off is a world whose shadow maps have nothing to draw, so
-   * the world keeps the caster path until both are true.
-   */
-  keysForShadow(): boolean {
-    return this.#gpuScene.on && this.#gpuScene.shadowKeys;
-  }
-
-  /**
    * The shadow twin of one main key: a second mesh on the key layer, over the shadow twin of the
    * dispatch's output, so a level's map submits one indirect draw for this key instead of one per
    * world-grid square the two caster halves split it into.
@@ -1434,7 +672,7 @@ export class CellRender {
       const released = this.#retired.get(name);
       if (released !== undefined) {
         this.#retired.delete(name);
-        this.#retiredBytes -= this.heldBytes(released);
+        this.#retiredBytes -= heldBytes(released);
         shared = released;
       } else {
         // A fresh mesh is charged against the frame's allowance like any other; the walk that runs
@@ -1523,166 +761,6 @@ export class CellRender {
     mesh.visible = true;
   }
 
-  /**
-   * The geometry and material one caster half draws, and the one place the coarse shape is chosen.
-   *
-   * Only the wide half is coarse. A shadow level picks its granularity by bill — one mesh per square
-   * on `VIRTUAL_SHADOW_CASTER_LAYER`, one mesh per key on the wide layer — so the wide half is what
-   * the levels whose window holds the resident ring submit, and their texels are metres across: the
-   * shape such a map resolves cannot tell level 0 from the asset's coarsest level, so it draws the
-   * coarsest one per part and the triangles it saves are triangles no fragment ever sampled. A
-   * cluster is the fine half, culled down to the squares one level's own window covers, so it keeps
-   * the level the placement selected. An asset with one level is its own coarsest, and every half
-   * draws what it draws today.
-   */
-  /**
-   * The shape the coarse wide half draws for one `(level, part)`, or `fallback` when the level has no
-   * honest coarse counterpart. Shared by {@link #shapeFor} and the prewarm, so the mesh minted behind
-   * the gate carries the same geometry the swap would later ask for — a prewarm built from the
-   * coarsest level's part 0 and then handed back unchanged is the wrong shape for good.
-   */
-  wideShape(
-    asset: IAssetState | undefined,
-    level: number,
-    part: number,
-    fallback: IBatchShape,
-  ): IBatchShape {
-    if (this.#preserveAuthoredParts) return fallback;
-    const terminal = asset?.levels.at(-1);
-    // The whole-asset impostor is the one case where a part index has no meaning: it is a single
-    // representation of every LOD0 part, so every part routes through it. `terminal?.[0]` is only
-    // that shape. On the source-only path the terminal must have a part at this index with the same
-    // role — an alpha slot drawn with an opaque part's shape (or vice versa) is a different object,
-    // and a terminal with fewer parts must not fall back to part 0's, which duplicates it.
-    if (asset?.impostor !== undefined) {
-      const coarse = terminal?.[0];
-      if (coarse !== undefined) return coarse;
-    }
-    const coarse = terminal?.[part];
-    const source = asset?.levels[level]?.[part];
-    if (
-      coarse !== undefined &&
-      source !== undefined &&
-      isAlphaFoliage(source.material) === isAlphaFoliage(coarse.material)
-    )
-      return coarse;
-    return fallback;
-  }
-
-  shapeFor(
-    entry: ICellBatch,
-    role: "cluster" | "key" | "main" | "wide",
-    level = entry.level,
-  ): IBatchShape {
-    // A batch cast at a finer level than its own (`#castLevelOf`) draws that level's part.
-    const own =
-      level === entry.level
-        ? { geometry: entry.batch.geometry, material: entry.batch.material }
-        : (this.#host.asset(entry.asset)?.levels[level]?.[entry.part] as IAssetPart);
-    const shape =
-      role === "wide"
-        ? this.wideShape(this.#host.asset(entry.asset), level, entry.part, {
-            geometry: own.geometry,
-            material: own.material,
-          })
-        : { geometry: own.geometry, material: own.material };
-    return {
-      ...shape,
-      material: this.#lodSurface(entry.asset, level, entry.part, shape.material),
-    };
-  }
-
-  #lodSurface(assetId: string, level: number, partIndex: number, source: Material): Material {
-    assertSlotFree(source, assetId);
-    const asset = this.#host.asset(assetId);
-    const part = asset?.levels[level]?.[partIndex];
-    if (this.#lodHysteresis <= 0 || !asset || !part || asset.distances.length < 2) return source;
-    const publishedRanges = !this.#gpuScene.on;
-    const floor = this.shadowFloorOf(assetId);
-    const key = `${assetId}:${level}:${partIndex}:${asset.distances.length}:${publishedRanges ? 1 : 0}:${floor}`;
-    let cached = this.#lodMaterials.get(key);
-    if (cached !== undefined && cached.source !== source) {
-      cached.material.dispose();
-      this.#lodMaterials.delete(key);
-      cached = undefined;
-    }
-    if (cached === undefined) {
-      const material = worldLodMaterial(
-        source,
-        part.local,
-        asset.distances,
-        level,
-        // Outside "band" the gate is too thin to cover a pixel step: each placement takes one level.
-        this.#lodTransition === "band" ? this.#lodHysteresis : UNDITHERED_LOD_WIDTH,
-        this.#lodEye,
-        this.#lodDistanceBias,
-        this.#lodSpatial,
-        publishedRanges,
-        // "none" pops: no clock, so a late refilter does not dissolve either.
-        this.#lodTransition === "none" ? undefined : this.#lodClock,
-        this.#lodTransition === "temporal"
-          ? { from: this.#lodFrom, to: this.#lodTo, alpha: this.#lodAlpha }
-          : undefined,
-        floor,
-      );
-      cached = { source, material };
-      this.#lodMaterials.set(key, cached);
-    }
-    return cached.material;
-  }
-
-  updateLodEye(x: number, y: number, z: number): void {
-    this.#lodEye.value.set(x, y, z);
-    this.#lodClock.value = (performance.now() - this.#lodClockOrigin) / 1000;
-    if (this.#lodTransition !== "temporal") return;
-    advanceTemporalLod(this.#temporalLod, this.#lodEye.value, this.#lodClock.value);
-    this.#lodAlpha.value = this.#temporalLod.alpha;
-  }
-
-  refreshLodMaterials(asset: IAssetState): void {
-    for (const shared of this.#shared.values()) {
-      if (!shared.mesh.name.startsWith(`${asset.id}:`)) continue;
-      const [levelText, partText] = shared.mesh.name.slice(asset.id.length + 1).split(":");
-      const level = Number(levelText);
-      const partIndex = Number(partText?.split("@")[0]);
-      const part = asset.levels[level]?.[partIndex];
-      if (part !== undefined) {
-        const material = this.#lodSurface(asset.id, level, partIndex, part.material);
-        if (
-          material.userData.tnPublishedLodRange === true &&
-          shared.mesh.geometry.getAttribute("tnPublishedLodRange") === undefined &&
-          shared.mesh.count === 0
-        )
-          shared.rebind(part.geometry, material);
-        else shared.surface(material);
-        this.bundleOut(shared);
-        this.bundleIn(shared);
-      }
-    }
-  }
-
-  impostorDrawn(): number {
-    let drawn = 0;
-    for (const shared of this.#shared.values()) {
-      if (
-        shared.role === "main" &&
-        shared.mesh.visible &&
-        Reflect.get(shared.mesh.material, "userData")?.tnWholeAssetImpostor === true
-      )
-        drawn += shared.live;
-    }
-    return drawn;
-  }
-
-  /**
-   * Whether this entry owes a wide caster. Generated whole-asset impostors use only part 0; preserved
-   * authored parts retain each part's own caster and transform.
-   */
-  wideOwed(assetId: string, part: number): boolean {
-    if (part === 0) return true;
-    return this.#preserveAuthoredParts || this.#host.asset(assetId)?.impostor === undefined;
-  }
-
   /** The `@x,z` half of a caster cluster key, for a resident cell. */
   clusterOf(cell: IResidentCell): string {
     return clusterOf(cell.x, cell.z, this.#cellsPerCluster);
@@ -1748,7 +826,7 @@ export class CellRender {
     const released = this.#retired.get(key);
     if (released !== undefined) {
       this.#retired.delete(key);
-      this.#retiredBytes -= this.heldBytes(released);
+      this.#retiredBytes -= heldBytes(released);
       released.rebind(shape.geometry, shape.material);
       released.mesh.name = key;
       released.smallCaster = smallCaster;
@@ -1783,665 +861,6 @@ export class CellRender {
     this.#shared.set(key, shared);
     this.attach(shared);
     return shared;
-  }
-
-  /**
-   * The shadow half of the split, and the two granularities of it. A caster mesh lives alone on
-   * `VIRTUAL_SHADOW_CASTER_LAYER` — one per world-grid square, which a level whose window is a
-   * fraction of the ring culls down to the squares it covers — and a wide mesh alone on
-   * `VIRTUAL_SHADOW_WIDE_CASTER_LAYER`, one per key, which a level whose window covers the ring
-   * submits once. The level cameras draw one of the two layers and never both, so a key costs the
-   * main pass one draw, a fine level a few and a wide level one. Neither receives: nothing but a
-   * shadow level ever sees either. A main mesh keeps layer 0 and casts nothing, because its records
-   * reach the shadow maps only through a caster half.
-   */
-  dressMesh(shared: SharedBatch, receiveShadow: boolean): void {
-    const mesh = shared.mesh;
-    const role = shared.role;
-    // Every role's records are written into the instance buffer, never moved in the world, and the
-    // mesh is created and released per role — so this is the one place that covers a fresh mesh, a
-    // rebound one and the three roles. Static here is only safe because every write announces
-    // itself: `instanceMatrix.needsUpdate` bumps the attribute's version, which is what a settled
-    // draw watches to know it still has to scan.
-    markStatic(mesh);
-    if (role !== "main") {
-      mesh.layers.set(
-        role === "cluster"
-          ? VIRTUAL_SHADOW_CASTER_LAYER
-          : role === "key"
-            ? VIRTUAL_SHADOW_KEY_LAYER
-            : shared.smallCaster
-              ? VIRTUAL_SHADOW_SMALL_CASTER_LAYER
-              : VIRTUAL_SHADOW_WIDE_CASTER_LAYER,
-      );
-      mesh.castShadow = true;
-      mesh.receiveShadow = false;
-      return;
-    }
-    mesh.layers.set(0);
-    mesh.castShadow = false;
-    mesh.receiveShadow = receiveShadow;
-    // The origin a draw of this mesh is counted under until the GPU scene dresses it
-    // (`RenderPassBudget`). `#dressGpu` runs straight after this and overwrites it with `gpuScene`
-    // when the key really is dressed, so what survives here is a main batch the CPU path draws per
-    // object — a backend with no compute, `gpuScene: false`, or a dress that gave up. A caster half
-    // returns above and keeps no origin: it lives off layer 0, so the main pass never counts it.
-    mesh.userData.tnDrawSource = "instanced";
-    // Nothing to hang off a main mesh: the window is narrowed by `#cullMainPass` for the whole set,
-    // because a batch that drew nothing is hidden and three never reaches an invisible mesh's own
-    // hooks — a mesh that could only re-narrow itself in its `onBeforeRender` would stay hidden for
-    // as long as the camera looked away. That leaves `onBeforeRender` to the prewarm borrow alone.
-  }
-
-  /**
-   * Parent one dressed main mesh under the world's single `BundleGroup`, so a settled frame replays
-   * its draw instead of re-walking three's per-object path for it.
-   *
-   * A mesh is shown once, here, and never hidden again: the bundle's render list is fixed when it is
-   * recorded, the dispatch already decided which instances each key draws, and an indirect draw of
-   * zero instances is close to free on the GPU — where a `visible` write would force the whole group
-   * to be recorded again. The prewarm draw this batch may still owe comes out of that same record.
-   *
-   * CPU joins and changed material revisions invalidate the record here, including a repaired mesh
-   * joining on a settled frame. GPU dressing invalidates its completed record at the caller.
-   *
-   * A mesh whose draw needs a live pass is refused rather than recorded — a transmissive impostor or
-   * a GPU batch reaching the framebuffer, the same answer a chunk's draws get. It keeps the per-object
-   * path and the coarse gate that hides it, which is the path it was already on. See `bundleSafe`.
-   */
-  bundleIn(shared: SharedBatch, reuseSafety = false): void {
-    if (this.#bundlesWanted === false) return;
-    // Shared batches normally carry one material. A mutable array keeps the existing per-object path
-    // rather than compressing several material identities/revisions into an incomplete signature.
-    const arrayMaterial = Array.isArray(shared.mesh.material);
-    const checked =
-      reuseSafety && !arrayMaterial
-        ? this.#bundleSafety.test(shared.mesh.material as Material, !this.ownsBundles())
-        : undefined;
-    shared.bundlable =
-      lodChainOf(shared.mesh.geometry) === undefined &&
-      (reuseSafety
-        ? checked !== undefined &&
-          !ownHook(shared.mesh, "onBeforeRender") &&
-          !ownHook(shared.mesh, "onAfterRender") &&
-          Reflect.get(shared.mesh, "isSkinnedMesh") !== true &&
-          shared.mesh.morphTargetInfluences === undefined &&
-          checked.safe
-        : bundleSafe(shared.mesh));
-    if (shared.bundlable === false) {
-      if (shared.bundled) this.bundleOut(shared);
-      // A previously culled key may already be detached. Refusal still owes its live source draw.
-      if (!this.#host.isParent(shared.mesh)) this.#host.add(shared.mesh);
-      return;
-    }
-    const group = this.shardOf(shared);
-    if (checked !== undefined) {
-      if (shared.bundled && shared.bundleMaterialRevision !== checked.revision)
-        this.bumpBundle(group);
-      shared.bundleMaterialRevision = checked.revision;
-    }
-    if (shared.mesh.parent !== group) {
-      group.add(shared.mesh);
-      if (reuseSafety) this.bumpBundle(group);
-    }
-    shared.bundled = true;
-    shared.bundledCount = shared.mesh.count;
-    // A recorded draw was cut from this camera's frustum, so the mesh's own whole-mesh test would drop
-    // it the moment the camera turned away from a window the record still holds. Off, like a chunk's.
-    shared.mesh.frustumCulled = false;
-    shared.mesh.visible = true;
-    // Read by `VirtualShadowNode#probe`, which must not hide a bundled mesh: the render list a bundle
-    // recorded is fixed, and `visible = false` would take the mesh out of every record after the next
-    // re-record. See `bundled`.
-    shared.mesh.userData.tnBundled = true;
-  }
-
-  /**
-   * Take a mesh back out of the group, because the key it was minted under is leaving the world.
-   *
-   * A retire is a structural change — the recorded bundle still holds this render object, and
-   * replaying it would draw a key nothing owns — so it is one of the two events that re-records.
-   */
-  bundleOut(shared: SharedBatch): void {
-    if (shared.bundled === false) return;
-    shared.bundled = false;
-    shared.bundledCount = -1;
-    shared.mesh.userData.tnBundled = false;
-    // Back on the per-object path, so the mesh's own whole-mesh test is its gate again.
-    shared.mesh.frustumCulled = true;
-    const group = this.#bundles.get(mainShard(shared.mesh.name));
-    if (group === undefined) return;
-    if (shared.mesh.parent === group) group.remove(shared.mesh);
-    this.bumpBundle(group);
-  }
-
-  /**
-   * Whether the renderer records its own bundles from each frame's draws, as the owned engine does
-   * (`info.engine`, the same check `game.ts` makes). Decided once a renderer is attached.
-   */
-  ownsBundles(): boolean {
-    if (this.#ownsBundles !== undefined) return this.#ownsBundles;
-    const renderer = this.#host.renderer();
-    if (renderer === undefined) return false;
-    const info = (renderer.raw as { info?: object } | undefined)?.info;
-    this.#ownsBundles = info !== undefined && "engine" in info;
-    return this.#ownsBundles;
-  }
-
-  /** One re-record, counted: `BundleGroup.needsUpdate` is a version bump, and nothing else. */
-  bumpBundle(group: BundleGroup): void {
-    this.#bundleRecords += 1;
-    group.needsUpdate = true;
-    if (this.#compileBusy) this.#recordedWhileBusy.add(group);
-  }
-
-  /**
-   * Put one CPU-path main batch into the world's record, or take it out, by the coarse gate's answer.
-   *
-   * A main batch the GPU scene dresses is recorded from `#dressGpu`, because its submission bound is
-   * its key's region capacity — a number only the dress writes, so the entry cannot go stale. A batch
-   * the scene does not own submits its own CPU window instead, and that window is per frame: the gate
-   * narrows it, a residency change repacks it, and a batch it narrows to nothing must draw nothing.
-   * A record fixes its render list, so all three are the record's business rather than a `visible`
-   * write the replay ignores. Hence this: the gate's answer is a join or a leave, a window that moved
-   * or a count that changed is one more record, and `frustumCulled` is off because the record's own
-   * list was cut by the same frustum when it was made.
-   *
-   * The trade is the one a cell's chunk record already makes and the visual A/B already judged: a
-   * batch whose window is half the view draws the half that faced the camera when the record was cut.
-   */
-  recordCpuMain(shared: SharedBatch, outcome: "settled" | "narrowed" | "repacked"): void {
-    if (this.#bundlesWanted === false) return;
-    // `#publish` has just written this frame's answer onto the mesh, which is the only place it is.
-    if (shared.mesh.visible === false) {
-      this.bundleOut(shared);
-      return;
-    }
-    this.bundleIn(shared, true);
-    if (shared.bundled === false) return;
-    // The count a record freezes, and the layout behind it: a repack moves records inside the window
-    // without moving its length, so the epoch answer and the count are both read here.
-    if (outcome === "settled" && shared.mesh.count === shared.bundledCount) return;
-    shared.bundledCount = shared.mesh.count;
-    this.bumpBundle(this.shardOf(shared));
-  }
-
-  /**
-   * Attach one prepared chunk: to its cell's own record, or to the world when `bundles` is off.
-   *
-   * The group is minted with the first chunk the cell attaches, and a chunk added to it is a
-   * structural change — the recorded list does not hold this render object and the replay would draw
-   * the cell's chunks without it — so this is also the one re-record. See the `bundles` option for
-   * why the group is per cell.
-   *
-   * Only the draws a bundle can replay are recorded, and they carry the `tnBundled` marker and the
-   * frozen cull with them; the rest keep the per-object path. See `bundleSafe`.
-   */
-  addChunk(cell: IResidentCell, chunk: Object3D): void {
-    if (this.#bundlesWanted === false) {
-      this.#host.add(chunk);
-      return;
-    }
-    // What the record can hold, and whether anything had to be left behind. A chunk whose every draw
-    // is recorded goes in whole, which is one entry per chunk; a chunk holding a draw a bundle cannot
-    // replay stays in the world and hands its safe draws to the record on their own, so one glass
-    // window does not put the whole building back on the per-object path. See `bundleSafe`.
-    const draws = chunkDraws(chunk);
-    const recorded = draws.filter(
-      (mesh) => lodChainOf(mesh.geometry) === undefined && bundleSafe(mesh),
-    );
-    if (recorded.length === 0) {
-      this.#host.add(chunk);
-      return;
-    }
-    let entry = this.#chunkBundles.get(cell.key);
-    if (entry === undefined) {
-      const group = new BundleGroup();
-      group.name = `${CHUNK_NAME}-bundles:${cell.key}`;
-      this.#host.add(group);
-      entry = { cluster: clusterOf(cell.x, cell.z, this.#cellsPerCullCell), group };
-      this.#chunkBundles.set(cell.key, entry);
-    }
-    const whole = recorded.length === draws.length;
-    if (whole) entry.group.add(chunk);
-    else {
-      // The chunk keeps its own hierarchy around whatever it could not record, and each recorded
-      // draw is attached rather than added so it keeps the world transform it was merged at. The root
-      // it came out of travels with it, because that is what releases the draw again.
-      this.#host.add(chunk);
-      for (const mesh of recorded) {
-        mesh.userData.tnChunkRoot = chunk;
-        entry.group.attach(mesh);
-      }
-    }
-    // A recorded draw is frozen where it stands: the group is a child of the world at identity, so
-    // its matrix will never move, and the freeze is what lets three's settled-object path skip the
-    // per-object work for the draw a frame is not re-recording anyway. See `markStatic`.
-    for (const mesh of recorded) {
-      mesh.userData.tnBundled = true;
-      mesh.frustumCulled = false;
-      if (whole === false) markStatic(mesh);
-    }
-    this.#chunkBundleChildren += whole ? 1 : recorded.length;
-    this.bumpBundle(entry.group);
-  }
-
-  /**
-   * Take a cell's chunk record out of the world, because the cell that owned every chunk in it has
-   * left: a record nothing owns must not be replayed, and the cell coming back mints its own.
-   *
-   * A chunk the bake split left its recorded draws in the group rather than under their own root, so
-   * each goes back to the root it came out of first: the caller's own disposal walk finds them there,
-   * and a draw released by neither is a buffer nothing ever asks for again.
-   */
-  dropChunkBundles(cell: IResidentCell): void {
-    const entry = this.#chunkBundles.get(cell.key);
-    if (entry === undefined) return;
-    this.#chunkBundles.delete(cell.key);
-    const roots = new Set(cell.chunks);
-    // Counted before anything leaves the group, because that is what it is holding.
-    this.#chunkBundleChildren -= entry.group.children.length;
-    for (const child of entry.group.children) {
-      const root = child.userData.tnChunkRoot as Object3D | undefined;
-      if (roots.has(child) === false && root !== undefined) {
-        child.userData.tnChunkRoot = undefined;
-        root.attach(child);
-      }
-    }
-    entry.group.removeFromParent();
-    this.bumpBundle(entry.group);
-  }
-
-  /** The main-record shard a batch's key lands in, minted as a child of the world on first use. */
-  shardOf(shared: SharedBatch): BundleGroup {
-    const shard = mainShard(shared.mesh.name);
-    let group = this.#bundles.get(shard);
-    if (group === undefined) {
-      group = new BundleGroup();
-      group.name = "world-main-bundles";
-      this.#host.add(group);
-      this.#bundles.set(shard, group);
-    }
-    return group;
-  }
-
-  /** The recorded main batches, over every shard. */
-  mainBundleChildren(): number {
-    let children = 0;
-    for (const group of this.#bundles.values()) children += group.children.length;
-    return children;
-  }
-
-  /**
-   * Where a freshly bound or grown main batch's mesh goes: the bundle group when it has been dressed
-   * into one, the world otherwise. Three re-parents on `add`, so a bundled mesh has to be asked for
-   * or it silently leaves the group it was recorded in.
-   */
-  attach(shared: SharedBatch): void {
-    // A grow replaces the mesh object, so the marker `#bundleIn` set has to follow the batch's own
-    // flag onto it. See `bundled`.
-    shared.mesh.userData.tnBundled = shared.bundled;
-    if (shared.bundled === true) this.shardOf(shared).add(shared.mesh);
-    else this.#host.add(shared.mesh);
-    // A record holds the object it was cut from, so a mesh that arrived by a rebind or a grow is not
-    // the one the last record named: one re-record, and the record counts this mesh from here.
-    if (shared.bundled === true) {
-      shared.mesh.frustumCulled = false;
-      shared.bundledCount = shared.mesh.count;
-      this.bumpBundle(this.shardOf(shared));
-    }
-  }
-
-  /**
-   * Name one main key to the GPU scene, and dress its mesh against the scene's live buffers.
-   *
-   * A caster or wide key is named `@x,z` or `@*` and belongs to the shadow passes, which the GPU scene
-   * does not touch, so those are left exactly as they were.
-   *
-   * The key is recorded whether or not the scene is on, because a prewarm mints a whole ring before
-   * the first frame that can answer whether this backend can run the scene, and a key recorded only
-   * when the dress happened is a key the scene is never told about. `#seedGpuKeys` comes back for
-   * those; see there.
-   */
-  adoptGpu(shared: SharedBatch, assetId: string, key: string, level: number, part: number): void {
-    if (shared.role !== "main") return;
-    const named = { asset: this.#host.canonical(assetId), key, level, part };
-    shared.main = named;
-    if (this.#gpuScene.on === false) return;
-    shared.gpu = named;
-    this.dressGpu(shared, named);
-  }
-
-  /**
-   * Point one main key's mesh at the GPU scene's buffers, and hand the asset's gate table over.
-   *
-   * The mesh's `instanceMatrix` becomes the shared compacted matrix buffer, its geometry a clone that
-   * shares the part's own attributes and carries this key's indirect record, and its whole-mesh
-   * frustum test is off — the dispatch already tested every instance against the camera's six
-   * planes, and the mesh's own bounds are the whole resident ring. Idempotent: a settled frame's
-   * buffers are the ones it was dressed against, and a regrow, a rebind or a `grow` replaces them,
-   * which is the only thing that brings a dressed mesh back through here.
-   *
-   * A key whose placements outgrew its region is regrown here rather than silently dropping instances
-   * against the capacity guard, which is what a fixed ceiling did to any key a walk filled past.
-   *
-   * The buffers are read after `scene.key` rather than before it, because minting the first key is
-   * what allocates them: a dress that gave up on their absence was a dress that never happened, and
-   * the only frame that would have retried it was one whose fast path had already found the mesh
-   * dressed. A regrow replaces them, so the attribute handed to the mesh is the one a draw will read.
-   */
-  dressGpu(shared: SharedBatch, key: IKeyDescriptor): void {
-    const scene = this.#gpuScene;
-    const asset = this.#host.asset(key.asset);
-    const part = asset?.levels[key.level]?.[key.part];
-    if (asset === undefined || part === undefined) return;
-    // The asset's own resident placements, not one level's share of them: a placement's level is
-    // decided per frame from where the camera is, so every level's region has to hold all of them.
-    const capacity = Math.max(shared.liveCeiling, this.#gpuResident.get(key.asset) ?? 0);
-    const settled = scene.drawn;
-    const held = scene.regionOf(key.key);
-    // The args buffer and the drawn buffer are allocated and grown independently: minting a key
-    // grows `args` and leaves `drawn` the object it was, so the mesh's `instanceMatrix` and its
-    // indirect record can point at two different generations. The fast path used to watch only
-    // `drawn`, and a mesh left holding an old args record was one the dispatch no longer wrote —
-    // a forest that drew nothing while the readback said the counts were correct.
-    const geometry = shared.mesh.geometry;
-    const liveArgs = scene.args;
-    const bound =
-      liveArgs !== undefined &&
-      geometry.indirect === liveArgs &&
-      geometry.indirectOffset === (held?.argsIndex ?? -1) * DRAW_ARGS_BYTES;
-    if (
-      settled !== undefined &&
-      shared.mesh.instanceMatrix === settled &&
-      shared.mesh.frustumCulled === false &&
-      (held?.capacity ?? 0) >= capacity &&
-      bound &&
-      // Where the mesh hangs is part of what this pass owns: a batch that was retired and handed back
-      // by a rebind is a child of the world again, and the bundle that last recorded it no longer
-      // draws it. Without this the walk would re-mint a key into a bundle that is missing it.
-      this.#host.isBundleHome(shared)
-    ) {
-      // A sibling may have grown the level's capacity without moving this mesh, so the submission
-      // bound follows the live region rather than the dress that wrote it. See `gpuCount`.
-      shared.gpuCount = held?.capacity ?? shared.gpuCount;
-      this.shadowKeyFor(key, part);
-      return;
-    }
-    const region = scene.key(key.key, new Float32Array(part.local.elements), capacity, {
-      group: `${key.asset}:${String(key.level)}`,
-      part: key.part,
-      // The whole run at once, so a part minted later lands in the slot `firstKey + part` names
-      // rather than at the end of the key space, where another level's key is in between.
-      parts: (asset.levels[key.level] as readonly IAssetPart[]).length,
-    });
-    if (region === undefined) return;
-    const levels = this.#gpuLevelKeys.get(key.asset) ?? [];
-    levels[key.level] = {
-      firstKey: region - key.part,
-      parts: asset.levels[key.level]?.length ?? 0,
-    };
-    this.#gpuLevelKeys.set(key.asset, levels);
-    const drawn = scene.drawn;
-    const args = scene.args;
-    const args2 = scene.regionOf(key.key);
-    if (drawn === undefined || args === undefined || args2 === undefined) return;
-    // Before the mesh is dressed, so the republish a replacement does takes the dressed branch and
-    // submits at this bound rather than at a zero the CPU never drew. See `gpuCount`.
-    shared.gpuCount = args2.capacity;
-    // Before the mesh is dressed, so the republish a replacement does takes the dressed branch: a
-    // batch that draws from the scene's buffers is shown by the per-asset gate in `#cullMainPass`,
-    // not by its own count.
-    shared.gpu = key;
-    const mesh = shared.mesh;
-    // Its own geometry object, so the indirect record is this mesh's, over the SAME attributes: the
-    // original is the shape the caster halves and a rebind still draw with. `clone()` would copy
-    // every vertex buffer of every key a second time.
-    const view = indirectView(mesh.geometry, args, args2.argsIndex * DRAW_ARGS_BYTES);
-    // A mesh three has already compiled cannot be re-dressed by writing fields onto it: its node
-    // binds the `instanceMatrix` the object held at that compile, and three keeps that binding for
-    // the object's whole life. A regrow is the same case — a new `drawn` attribute is a new binding
-    // for the same reason — so both take the same road: a fresh object carrying everything the old
-    // one had, and the old one let go. Measured on machinefall, where the prewarm had compiled every
-    // main batch on the CPU path: 3,724 indirect draws submitted in 2 s over records that were
-    // correct at draw time, and a dressed forest that drew nothing, until the meshes were fresh
-    // objects; a material of its own (below) never changed that on its own.
-    if (mesh.instanceMatrix !== drawn) {
-      const next = freshMeshFor(mesh, view, mesh.count) as ICasterScaleMesh;
-      redressMaterial(next);
-      this.#host.carryPrewarm(mesh, next);
-      this.seat(shared.replaceMesh(next), next);
-      next.instanceMatrix = drawn;
-      next.frustumCulled = false;
-    } else {
-      mesh.geometry = view;
-      mesh.instanceMatrix = drawn;
-      mesh.frustumCulled = false;
-    }
-    // What the record has to say for the draw to name a triangle: the view's own index count, which
-    // is the shape this key draws. The scene is told rather than left to guess, so its validation can
-    // hold the record against it.
-    scene.indexCount(key.key, view.index?.count ?? 0);
-    // The asset's gate table is built from the keys minted so far, so a level whose key is not minted
-    // yet carries no parts and the dispatch draws that level nowhere. Re-registering is a no-op while
-    // the table holds, and a rewrite when a key joined it.
-    scene.slot(key.asset, this.gatesOf(key.asset, asset));
-    // The origin this key's main-pass draws are counted under, read off the object at the draw
-    // (`RenderPassBudget`). Written after the mesh swap above, so a re-dressed fresh object carries
-    // it, and before `#bundleIn`, which supersedes it with `tnBundled` for a world with bundles on.
-    shared.mesh.userData.tnDrawSource = "gpuScene";
-    // The bundle the last settled frame replayed is now wrong: this pass minted or regrown a key,
-    // swapped the geometry, or took a fresh mesh object onto the scene's new buffers. Reaching here
-    // is one of the three, which is why this is the only place a re-record happens — the fast path
-    // above is every other frame of the walk.
-    this.bundleIn(shared);
-    if (shared.bundled === true) this.bumpBundle(this.shardOf(shared));
-    // The shadow twin of this key, minted and dressed on the same pass that named the main one: a
-    // level that draws keys finds its mesh in the same frame the main pass found its buffer, and a
-    // regrown twin is re-dressed here rather than left on the buffer the dispatch replaced.
-    this.shadowKeyFor(key, part);
-  }
-
-  /**
-   * The replacement takes the old object's place, and the old one is let go: `InstancedMesh.dispose`
-   * frees nothing the replacement shares — the vertex buffers and the part's own material belong to
-   * the refcount path that made them.
-   *
-   * Through `add` and `removeFromParent` rather than by writing `parent` and `children`, because
-   * three fires `childadded`/`childremoved` on the way and the clustered-mesh tracker answers the
-   * world's arrivals and departures by those alone. The old slot is restored afterwards, so the
-   * parent's traversal order — and so every draw's order within a frame — is what it was.
-   */
-  seat(old: InstancedMesh, next: InstancedMesh): void {
-    const parent = old.parent;
-    if (parent === null) this.#host.add(next);
-    else {
-      const at = parent.children.indexOf(old);
-      old.removeFromParent();
-      parent.add(next);
-      const here = parent.children.indexOf(next);
-      if (at >= 0 && here >= 0) {
-        parent.children.splice(here, 1);
-        parent.children.splice(at, 0, next);
-      }
-    }
-    old.dispose();
-  }
-
-  /**
-   * The asset's own gates, as the kernel reads them: the CPU path's switch distances and cull
-   * distance, and the scene key each level's parts draw into. A level with no minted key has no parts,
-   * so the dispatch draws nothing at that level rather than reading a key that is not there.
-   */
-  publishGpuGates(asset: IAssetState): void {
-    const gates = this.gatesOf(asset.id, asset);
-    this.#publishedGpuGates.set(asset.id, {
-      cull: gates.cull,
-      distances: [...gates.distances],
-      impostor: gates.impostor,
-      shadowFallback: gates.shadowFallback,
-      levels: gates.levels.map((level) => ({ ...level })),
-      locals: asset.levels.map((parts) =>
-        parts.map((part) => Float32Array.from(part.local.elements)),
-      ),
-    });
-  }
-
-  gatesOf(id: string, asset: IAssetState): IAssetSlot {
-    const gates: { firstKey: number; parts: number }[] = [];
-    // The level's own contiguous run, which is what the kernel's `firstKey + part` addresses. The
-    // owner records it when dressing the key; reading it back from the scene would make the mesh
-    // check agree with a corrupted GPU gate table instead of checking that table independently.
-    const keyed = this.#gpuLevelKeys.get(id);
-    for (const [level] of asset.levels.entries())
-      gates.push(keyed?.[level] ?? { firstKey: 0, parts: 0 });
-    return {
-      cull: cullDistance(asset.definition.maxDistance),
-      distances: asset.distances,
-      // A generated terminal gate is based on the unit asset sphere and scales per placement. An
-      // authored impostorDistance is already a world-metre cutoff and stays fixed across scales.
-      impostor: asset.impostor !== undefined && asset.definition.impostorDistance === undefined,
-      shadowFallback: asset.definition.lods === undefined,
-      levels: gates,
-    };
-  }
-
-  /**
-   * Dress every main batch the world already holds, the mirror of {@link #seedGpuSources} for the
-   * keys rather than the sources: the keys a prewarm minted on the loading screen were minted with
-   * the scene off, and a key is only named at mint time, so a ring built that way came up with an
-   * empty region table and every batch still drawing from its own buffer. The dispatch was drawing
-   * 21,094 placements into no region at all, and the validation marker said so — `compared=0` — for
-   * a scene that reported itself on.
-   *
-   * The pool is seeded with the rest: a retained key's mesh is handed back by a rebind rather than
-   * re-minted, and rebinding replaces the instance buffer, so a parked batch is undressed by the
-   * park and dressing it here is what leaves the walk with a key that is already in the table. From
-   * here every main batch carries `gpu`, which is what puts it on the dispatch's per-instance answer
-   * and off the CPU repack and the refilter.
-   */
-  seedGpuKeys(): void {
-    for (const shared of [...this.#shared.values()]) this.seedGpuKey(shared);
-    for (const shared of this.#retired.values()) this.seedGpuKey(shared);
-  }
-
-  /** Dress one undressed main batch, or leave a batch the scene does not touch. */
-  seedGpuKey(shared: SharedBatch): void {
-    // `main` is the key; `gpu` is the mesh pointing at the scene's buffers. A dressed mesh is left
-    // alone, and `#dressGpu` says so itself — it is idempotent against the buffers it was given.
-    if (shared.main === undefined || shared.gpu !== undefined) return;
-    this.dressGpu(shared, shared.main);
-  }
-
-  /**
-   * The main meshes the scene owns and the main meshes the world holds, live and pooled, which is
-   * the `dressed=N/M` the marker carries. A scene reporting itself on over a ring it never dressed
-   * read `dressed=0/21094` on nothing, so the number is the owner's: the scene cannot see the meshes.
-   */
-  gpuCensus(): { readonly dressed: number; readonly meshes: number } {
-    let dressed = 0;
-    let meshes = 0;
-    for (const batch of [...this.#shared.values(), ...this.#retired.values()]) {
-      if (batch.role !== "main") continue;
-      meshes += 1;
-      if (batch.gpu !== undefined) dressed += 1;
-    }
-    return { dressed, meshes };
-  }
-
-  /**
-   * Every dressed main mesh's own draw, and what this class's **live** state says it must be holding.
-   *
-   * The scene's own validation mirrors its own kernel, so a key, a record, a gate table and a mesh
-   * that do not correspond are one both sides reproduce and a check that reports `ok` over a forest
-   * drawn with another tree's geometry. These are the three numbers that are not the scene's: the
-   * mesh's own name, the record its own geometry points at (`indirectOffset`, which a dress wrote),
-   * and the instances the owner's own state selects for that name — `asset.distances` as
-   * {@link levelAt} reads it right now, `cullDistance(definition.maxDistance)`, the camera's own six
-   * planes over the scene's own placements, and each part's own offset composed in exactly as the
-   * dispatch composes it.
-   *
-   * Not the per-cell records this path's own refilter left behind: the GPU scene bypasses that
-   * refilter, so the moment it does, the records a mesh is checked against are a snapshot of a
-   * level selection that no longer applies. A far placement is then compared against a set that
-   * counted it at its near level, and the check reads `ok` over the picture it cannot see.
-   */
-  gpuDraws(): readonly IMeshDraw[] {
-    const camera = this.#host.camera();
-    if (camera === undefined) return [];
-    const lives = this.liveGates();
-    if (lives.size === 0) return [];
-    // The dispatch's own camera, its own planes: this is asked for inside the dispatch that is
-    // running, so the eye and the six planes are the ones the kernel is reading now.
-    const planes = this.#gpuPlanes;
-    _cullFrustum.setFromProjectionMatrix(
-      _cullProjScreen.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse),
-    );
-    for (const [index, plane] of _cullFrustum.planes.entries()) {
-      const at = index * 4;
-      planes[at] = plane.normal.x;
-      planes[at + 1] = plane.normal.y;
-      planes[at + 2] = plane.normal.z;
-      planes[at + 3] = plane.constant;
-    }
-    _gpuEye.setFromMatrixPosition(camera.matrixWorld);
-    const expected = liveKeyInstances(
-      this.#gpuScene.placements,
-      (slot) => {
-        const id = this.#gpuScene.slotAsset(slot);
-        return id === undefined ? undefined : lives.get(id);
-      },
-      { planes, x: _gpuEye.x, y: _gpuEye.y, z: _gpuEye.z },
-    );
-    const draws: IMeshDraw[] = [];
-    const args = this.#gpuScene.args;
-    for (const shared of this.#shared.values()) {
-      if (shared.role !== "main" || shared.gpu === undefined) continue;
-      const geometry = shared.mesh.geometry;
-      // `indirectOffset` is typed as an offset or a list of them; a scene's own record is one
-      // number, and a list is not a record this check can name, so it is not compared.
-      const offset = geometry.indirectOffset;
-      if (geometry.indirect === undefined || typeof offset !== "number") continue;
-      const region = this.#gpuScene.regionOf(shared.mesh.name);
-      draws.push({
-        // The actual binding, asked of the mesh and the scene at this turn, not the record number:
-        // an offset can name the right record while the mesh reads an older args buffer with the
-        // same layout, and the field is what lets the check see a stale binding at all.
-        bound:
-          args !== undefined &&
-          geometry.indirect === args &&
-          offset === (region?.argsIndex ?? -1) * DRAW_ARGS_BYTES,
-        instances: expected.get(shared.mesh.name) ?? new Float32Array(0),
-        name: shared.mesh.name,
-        record: offset / DRAW_ARGS_BYTES,
-      });
-    }
-    return draws;
-  }
-
-  /**
-   * Every adopted asset's own gates as they stand right now, keyed by id.
-   *
-   * The part offsets are copied out of each part's `Matrix4` once per check, because the composition
-   * reads them as `Float32Array`s and a part's matrix is what the dispatch already composed with.
-   */
-  liveGates(): Map<string, ILiveAsset> {
-    const out = new Map<string, ILiveAsset>();
-    const slots = this.#gpuScene.gates();
-    for (const [slot] of slots.entries()) {
-      const id = this.#gpuScene.slotAsset(slot);
-      const asset = id === undefined ? undefined : this.#host.asset(id);
-      const published = id === undefined ? undefined : this.#publishedGpuGates.get(id);
-      if (asset === undefined || published === undefined) continue;
-      out.set(asset.id, {
-        cull: published.cull,
-        distances: published.distances,
-        id: asset.id,
-        impostor: published.impostor,
-        locals: published.locals,
-      });
-    }
-    return out;
   }
 
   /**
@@ -2502,16 +921,7 @@ export class CellRender {
 
   /** The world-grid square the follow point is in, as the `@x,z` half of a cluster key. */
   followCluster(): string {
-    return clusterOf(
-      Math.floor((this.#follow.position.x - this.#minX) / this.#cellSize),
-      Math.floor((this.#follow.position.z - this.#minZ) / this.#cellSize),
-      this.#cellsPerCluster,
-    );
-  }
-
-  /** What a released batch costs to keep: its instance buffer, which is all of it. */
-  heldBytes(shared: SharedBatch): number {
-    return (shared.mesh.instanceMatrix.array as Float32Array).byteLength;
+    return squareOf(this.#follow, this.#minX, this.#minZ, this.#cellSize, this.#cellsPerCluster);
   }
 
   /**
@@ -2532,35 +942,16 @@ export class CellRender {
     // and the byte budget evicts entries as they arrive — the walk then finds nothing to hand back
     // and mints a second mesh for every key it returns to.
     shared.park();
-    const bytes = this.heldBytes(shared);
+    const bytes = heldBytes(shared);
     this.#retired.delete(key);
     this.#retired.set(key, shared);
     this.#retiredBytes += bytes;
     for (const [oldest, held] of this.#retired) {
       if (this.#retiredBytes <= RETIRED_SHARED_BYTES) break;
       this.#retired.delete(oldest);
-      this.#retiredBytes -= this.heldBytes(held);
+      this.#retiredBytes -= heldBytes(held);
       held.mesh.dispose();
     }
-  }
-
-  /**
-   * Whether this level's own batches cast. Only the caster clusters ask; a main mesh never casts, so
-   * the shadow map holds exactly the cluster meshes a level's window covers.
-   */
-  casts(level: number): boolean {
-    return this.#castShadowLevels > level;
-  }
-
-  /**
-   * An asset too small to resolve in any window but the finest one's, so its wide caster goes on
-   * that level's layer alone. Measured on the authored bounds the package carries, which is the one
-   * number a world has for every asset it never loaded a tree for.
-   */
-  smallCaster(assetId: string): boolean {
-    const bounds = this.#manifest.assets[assetId]?.bounds;
-    if (bounds === undefined) return false;
-    return bounds.max[1] - bounds.min[1] < this.#smallCasterMetres;
   }
 
   /**
@@ -2691,10 +1082,301 @@ export class CellRender {
     this.#cellsPerCluster = settings.cellsPerCluster;
     this.#cellsPerCullCell = settings.cellsPerCullCell;
     this.#smallCasterMetres = settings.smallCasterMetres;
-    this.#bundlesWanted = settings.bundlesWanted;
-    this.#bundleReason = settings.bundleReason;
     this.#invalidateShadows = settings.invalidateShadows;
-    this.#mainCullToldAt = settings.mainCullToldAt;
+    this.#dress = new CellGpuDress({
+      add: (object) => this.#host.add(object),
+      asset: (id) => this.#host.asset(id),
+      attach: (shared) => this.attach(shared),
+      bumpBundle: (group) => this.bumpBundle(group),
+      bundleIn: (shared, reuseSafety) => this.bundleIn(shared, reuseSafety),
+      bundleOut: (shared) => this.bundleOut(shared),
+      camera: () => this.#host.camera(),
+      canonical: (id) => this.#host.canonical(id),
+      carryPrewarm: (old, next) => this.#host.carryPrewarm(old, next),
+      extentBounds: () => this.#extentBounds,
+      freshAllowance: () => this.freshAllowance(),
+      freshCount: () => this.#freshThisUpdate,
+      gpuScene: () => this.#gpuScene,
+      isBundleHome: (shared) => this.#host.isBundleHome(shared),
+      lodDistanceBias: () => this.#lodDistanceBias,
+      lodHysteresis: () => this.#lodHysteresis,
+      lodMaterials: () => this.#lodMaterials,
+      lodSpatial: () => this.#lodSpatial,
+      lodTransition: () => this.#lodTransition,
+      preserveAuthoredParts: () => this.#preserveAuthoredParts,
+      receiveShadow: () => this.#receiveShadow,
+      renderer: () => this.#host.renderer(),
+      resident: () => this.#gpuResident,
+      retired: () => this.#retired,
+      shadowFloorOf: (assetId) => this.shadowFloorOf(assetId),
+      shadowKeyFor: (key, part) => this.shadowKeyFor(key, part),
+      shared: () => this.#shared,
+      shardOf: (shared) => this.shardOf(shared),
+      visibleSquares: () => this.visibleSquares(),
+    });
+    this.#cull = new CellMainCull(
+      {
+        cellSize: this.#cellSize,
+        cellsPerCullCell: this.#cellsPerCullCell,
+        mainCullToldAt: settings.mainCullToldAt,
+        manifest: this.#manifest,
+        minX: this.#minX,
+        minZ: this.#minZ,
+        placements: this.#placements,
+      },
+      {
+        applyGpuMain: (dressed) => this.applyGpuMain(dressed),
+        beginBundleFrame: () => this.beginBundleFrame(),
+        chunkGroups: () => this.#bundles.chunkGroups(),
+        dressGpu: (shared, key) => this.dressGpu(shared, key),
+        dressShadowKey: (shared, key) => this.dressShadowKey(shared, key),
+        gpuScene: () => this.#gpuScene,
+        gpuSeeded: () => this.#gpuSeeded,
+        recordCpuMain: (shared, outcome) => this.recordCpuMain(shared, outcome),
+        render: () => this.#host,
+        shared: () => this.#shared,
+      },
+    );
+    this.#bundles = new CellBundles(
+      {
+        bundleReason: settings.bundleReason,
+        bundlesWanted: settings.bundlesWanted,
+        cellsPerCullCell: settings.cellsPerCullCell,
+      },
+      {
+        add: (object) => this.#host.add(object),
+        isParent: (object) => this.#host.isParent(object),
+        renderer: () => this.#host.renderer(),
+        shared: () => this.#shared,
+      },
+    );
+  }
+
+  // The record's own answers, named here because this class is the world's one surface: every caller
+  // below asks the facade and never the bundle module.
+
+  bundleIn(shared: SharedBatch, reuseSafety = false): void {
+    this.#bundles.bundleIn(shared, reuseSafety);
+  }
+
+  bundleOut(shared: SharedBatch): void {
+    this.#bundles.bundleOut(shared);
+  }
+
+  ownsBundles(): boolean {
+    return this.#bundles.ownsBundles();
+  }
+
+  bumpBundle(group: BundleGroup): void {
+    this.#bundles.bumpBundle(group);
+  }
+
+  recordCpuMain(shared: SharedBatch, outcome: "settled" | "narrowed" | "repacked"): void {
+    this.#bundles.recordCpuMain(shared, outcome);
+  }
+
+  addChunk(cell: IResidentCell, chunk: Object3D): void {
+    this.#bundles.addChunk(cell, chunk);
+  }
+
+  dropChunkBundles(cell: IResidentCell): void {
+    this.#bundles.dropChunkBundles(cell);
+  }
+
+  shardOf(shared: SharedBatch): BundleGroup {
+    return this.#bundles.shardOf(shared);
+  }
+
+  mainBundleChildren(): number {
+    return this.#bundles.mainBundleChildren();
+  }
+
+  attach(shared: SharedBatch): void {
+    this.#bundles.attach(shared);
+  }
+
+  beginBundleFrame(): void {
+    this.#bundles.beginFrame();
+  }
+
+  invalidateBundles(key: string): void {
+    this.#bundles.invalidateBundles(key);
+  }
+
+  bundleStats(): IWorldCellsStats["bundle"] {
+    return this.#bundles.bundleStats();
+  }
+
+  flushCompiles(renderer: IRendererLike | undefined): void {
+    this.#bundles.flushCompiles(renderer);
+  }
+
+  clearCompileRecords(): void {
+    this.#bundles.clearCompileRecords();
+  }
+
+  /**
+   * What the shadow claims need to see of this renderer: the batches they claim blocks in, the gate
+   * table the caster shape comes from, and the scene that decides whether a level draws keys.
+   */
+  readonly #claimHost: IShadowClaimHost = {
+    castShadowLevels: () => this.#castShadowLevels,
+    casterFor: (assetId, entry, cell, level) => this.casterFor(assetId, entry, cell, level),
+    countPlaced: (entry, placed) => this.countPlaced(entry, placed),
+    freshCount: () => this.#freshThisUpdate,
+    gpuScene: () => this.#gpuScene,
+    manifest: () => this.#manifest,
+    preserveAuthoredParts: () => this.#preserveAuthoredParts,
+    render: () => this.#host,
+    resident: () => this.#gpuResident,
+    segmentIn: (shared, count, cluster) => this.segmentIn(shared, count, cluster),
+    shadowMinLevel: () => this.#shadowMinLevel,
+    smallCasterMetres: () => this.#smallCasterMetres,
+    wideFor: (assetId, entry, level) => this.wideFor(assetId, entry, level),
+  };
+
+  // The claim decisions, named here because this class is the world's one surface.
+
+  casts(level: number): boolean {
+    return casts(this.#claimHost, level);
+  }
+
+  smallCaster(assetId: string): boolean {
+    return smallCaster(this.#claimHost, assetId);
+  }
+
+  wideOwed(assetId: string, part: number): boolean {
+    return wideOwed(this.#claimHost, assetId, part);
+  }
+
+  castLevelOf(entry: ICellBatch): number | undefined {
+    return castLevelOf(this.#claimHost, entry);
+  }
+
+  shadowFloorOf(assetId: string): number {
+    return shadowFloorOf(this.#claimHost, assetId);
+  }
+
+  keysForShadow(): boolean {
+    return keysForShadow(this.#claimHost);
+  }
+
+  claimCaster(assetId: string, entry: ICellBatch, cell: IResidentCell): boolean {
+    return claimCaster(this.#claimHost, assetId, entry, cell);
+  }
+
+  claimWide(assetId: string, entry: ICellBatch): boolean {
+    return claimWide(this.#claimHost, assetId, entry);
+  }
+
+  clearSegment(entry: ICellBatch): void {
+    clearSegment(this.#claimHost, entry);
+  }
+
+  // The dress's own answers, named here because this class is the world's one surface.
+
+  adoptGpu(shared: SharedBatch, assetId: string, key: string, level: number, part: number): void {
+    this.#dress.adoptGpu(shared, assetId, key, level, part);
+  }
+
+  applyGpuMain(dressed: readonly { asset: string; shared: SharedBatch }[]): void {
+    this.#dress.applyGpuMain(dressed);
+  }
+
+  dressGpu(shared: SharedBatch, key: IKeyDescriptor): void {
+    this.#dress.dressGpu(shared, key);
+  }
+
+  dressMesh(shared: SharedBatch, receiveShadow: boolean): void {
+    this.#dress.dressMesh(shared, receiveShadow);
+  }
+
+  seat(old: InstancedMesh, next: InstancedMesh): void {
+    this.#dress.seat(old, next);
+  }
+
+  shapeFor(
+    entry: ICellBatch,
+    role: "cluster" | "key" | "main" | "wide",
+    level?: number,
+  ): IBatchShape {
+    return this.#dress.shapeFor(entry, role, level);
+  }
+
+  wideShape(
+    asset: IAssetState | undefined,
+    level: number,
+    part: number,
+    fallback: IBatchShape,
+  ): IBatchShape {
+    return this.#dress.wideShape(asset, level, part, fallback);
+  }
+
+  updateLodEye(x: number, y: number, z: number): void {
+    this.#dress.updateLodEye(x, y, z);
+  }
+
+  refreshLodMaterials(asset: IAssetState): void {
+    this.#dress.refreshLodMaterials(asset);
+  }
+
+  impostorDrawn(): number {
+    return this.#dress.impostorDrawn();
+  }
+
+  publishGpuGates(asset: IAssetState): void {
+    this.#dress.publishGpuGates(asset);
+  }
+
+  gatesOf(id: string, asset: IAssetState): IAssetSlot {
+    return this.#dress.gatesOf(id, asset);
+  }
+
+  seedGpuKeys(): void {
+    this.#dress.seedGpuKeys();
+  }
+
+  seedGpuKey(shared: SharedBatch): void {
+    this.#dress.seedGpuKey(shared);
+  }
+
+  gpuCensus(): { readonly dressed: number; readonly meshes: number } {
+    return this.#dress.gpuCensus();
+  }
+
+  gpuDraws(): readonly IMeshDraw[] {
+    return this.#dress.gpuDraws();
+  }
+
+  liveGates(): Map<string, ILiveAsset> {
+    return this.#dress.liveGates();
+  }
+
+  // The main cull's own answers, named here because this class is the world's one surface.
+
+  cullMainPass(camera: Camera | undefined): void {
+    this.#cull.cullMainPass(camera);
+  }
+
+  cullResident(cell: IWorldCell): void {
+    this.#cull.cullResident(cell);
+  }
+
+  cullEvicted(cell: IResidentCell): void {
+    this.#cull.cullEvicted(cell);
+  }
+
+  reportMainCull(): void {
+    this.#cull.reportMainCull();
+  }
+
+  mainCullStats(): IWorldCellsStats["mainCull"] {
+    return this.#cull.mainCullStats();
+  }
+
+  /** The squares the last cull kept, at the epoch it kept them for. */
+  visibleSquares(): Set<string> {
+    return this.#cull.visible;
   }
 
   get gpuOn(): boolean {
@@ -2713,10 +1395,10 @@ export class CellRender {
     this.#gpuSeeded = value;
   }
   get bundlesWanted(): boolean {
-    return this.#bundlesWanted;
+    return this.#bundles.wanted;
   }
   bundleGroup(shard: number): BundleGroup | undefined {
-    return this.#bundles.get(shard);
+    return this.#bundles.bundleGroup(shard);
   }
   hasShared(key: string): boolean {
     return this.#shared.has(key);
@@ -2728,7 +1410,7 @@ export class CellRender {
     this.#shared.set(key, shared);
   }
   intersectsObject(mesh: Object3D): boolean {
-    return _cullFrustum.intersectsObject(mesh);
+    return this.#cull.intersectsObject(mesh);
   }
   dispatchShadow(renderer: IRendererLike, level: IShadowLevel): void {
     this.#gpuScene.dispatchShadow(renderer, level);
@@ -2744,18 +1426,14 @@ export class CellRender {
     this.#freshThisUpdate = 0;
     this.#meshStalled = false;
   }
-  clearCompileRecords(): void {
-    this.#recordedWhileBusy.clear();
-  }
   validateGpuFrame(renderer: IRendererLike, frame: number) {
     return this.#gpuScene.validateCurrentDispatch(renderer, frame);
   }
 
   releaseGpu(): void {
     this.#gpuScene.dispose();
-    this.#publishedGpuGates.clear();
-    this.#gpuLevelKeys.clear();
-    this.#bundleSafety.clear();
+    this.#dress.release();
+    this.#bundles.release();
     this.#gpuResident.clear();
   }
   releaseLodMaterials(): void {
@@ -2767,11 +1445,6 @@ export class CellRender {
     this.#retired.clear();
     this.#retiredBytes = 0;
   }
-  invalidateBundles(key: string): void {
-    for (const group of this.#bundles.values()) this.bumpBundle(group);
-    const chunks = this.#chunkBundles.get(key)?.group;
-    if (chunks !== undefined) this.bumpBundle(chunks);
-  }
   publishChunkBounds(cell: IResidentCell, box: Box3 | undefined, proxies: number): void {
     if (box !== undefined) {
       if (proxies > 0) this.shadowRecordsMoved(box, true);
@@ -2781,57 +1454,14 @@ export class CellRender {
       // be drawn at all. Widened here rather than shrunk on eviction: the volume outlives one cell
       // whenever a neighbour still holds the cluster, and a stale box only ever shows a cell that
       // is there.
-      if (this.#bundlesWanted)
-        this.#cullCells.get(clusterOf(cell.x, cell.z, this.#cellsPerCullCell))?.box.union(box);
+      if (this.#bundles.wanted)
+        this.#cull
+          .cells()
+          .get(clusterOf(cell.x, cell.z, this.#cellsPerCullCell))
+          ?.box.union(box);
     }
   }
-  bundleStats(): IWorldCellsStats["bundle"] {
-    return {
-      children: this.mainBundleChildren() + this.#chunkBundleChildren,
-      on: this.#bundlesWanted && (this.mainBundleChildren() > 0 || this.#chunkBundleChildren > 0),
-      cpuMeshes: [...this.#shared.values()].filter(
-        (shared) => shared.bundled && shared.gpu === undefined,
-      ).length,
-      gpuMeshes: [...this.#shared.values()].filter(
-        (shared) => shared.bundled && shared.gpu !== undefined,
-      ).length,
-      eligibility: { ...this.#bundleSafety.stats },
-      reason: this.#bundleReason,
-      records: this.#bundleRecords,
-    };
-  }
-  mainCullStats(): IWorldCellsStats["mainCull"] {
-    return {
-      frustums: this.#mainCullFrustums,
-      repacks: this.#mainCullPacks,
-      visibleEpoch: this.#visibleEpoch,
-      windows: this.#mainCullWindows,
-    };
-  }
 
-  #rerecordOnPmremSwap(raw: unknown): void {
-    const swaps = typeof raw === "object" && raw !== null ? Reflect.get(raw, "_tnPmremSwaps") : 0;
-    if (typeof swaps !== "number" || swaps === this.#pmremSwaps) return;
-    this.#pmremSwaps = swaps;
-    for (const group of this.#bundles.values()) this.bumpBundle(group);
-    for (const { group } of this.#chunkBundles.values()) this.bumpBundle(group);
-  }
-
-  flushCompiles(renderer: IRendererLike | undefined): void {
-    // A bundle recorded while a compile was in flight left out every draw whose pipeline was not
-    // ready, and the replay never re-checks; re-record those shards now that it has settled. Set
-    // `#compileBusy` first, so this flush's own bumps are not added back to the set.
-    const compiles = renderer?.compileCount ?? 0;
-    const busy = renderer?.compiling === true || compiles !== this.#compileSeen;
-    this.#compileSeen = compiles;
-    this.#compileBusy = busy;
-    this.#rerecordOnPmremSwap(renderer?.raw);
-    if (!busy && this.#recordedWhileBusy.size > 0) {
-      const recorded = [...this.#recordedWhileBusy];
-      this.#recordedWhileBusy.clear();
-      for (const group of recorded) if (group.parent !== null) this.bumpBundle(group);
-    }
-  }
   enableGpu(
     renderer: IRendererLike | undefined,
     wanted: boolean,
