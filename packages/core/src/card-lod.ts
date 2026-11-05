@@ -35,7 +35,12 @@ export function thinCards(geometry: BufferGeometry, keep: number): BufferGeometr
   const indices: number[] = [];
   const vertex = new Vector3();
   for (const island of kept) {
-    const centre = island.area > 0 ? island.centre.divideScalar(island.area) : island.centre;
+    // An island of zero area accumulated nothing in the weighted centre, so it takes the plain mean of
+    // its triangle centroids; the origin would scale the card about the world origin instead.
+    const centre =
+      island.area > 0
+        ? island.centre.divideScalar(island.area)
+        : island.plain.divideScalar(island.firsts.length);
     const own = new Set<number>();
     for (const t of island.firsts)
       for (let k = 0; k < 3; k++) {
@@ -59,7 +64,10 @@ export function thinCards(geometry: BufferGeometry, keep: number): BufferGeometr
 interface ICardIsland {
   readonly firsts: number[];
   area: number;
+  /** Area-weighted sum of the triangle centroids; the centre once divided by `area`. */
   readonly centre: Vector3;
+  /** Unweighted sum of the triangle centroids, the centre of an island whose area is zero. */
+  readonly plain: Vector3;
 }
 
 /** The index entries the geometry draws, [first, end), whole triangles. */
@@ -70,7 +78,7 @@ function drawnRange(geometry: BufferGeometry): [number, number] {
   return [first - (first % 3), end - ((end - first) % 3)];
 }
 
-/** Islands of the drawn triangles joined by shared vertex indices, with their area and area-weighted centre. */
+/** Islands of the drawn triangles joined by shared vertex indices, with their area and centres. */
 function cardIslands(
   geometry: BufferGeometry,
   first: number,
@@ -104,10 +112,16 @@ function cardIslands(
     const centre = a.clone().add(b).add(c).divideScalar(3);
     const area = b.sub(a).cross(c.sub(a)).length() / 2;
     const root = find(index.getX(t));
-    const island = islands.get(root) ?? { firsts: [], area: 0, centre: new Vector3() };
+    const island = islands.get(root) ?? {
+      firsts: [],
+      area: 0,
+      centre: new Vector3(),
+      plain: new Vector3(),
+    };
     island.firsts.push(t);
     island.area += area;
     island.centre.addScaledVector(centre, area);
+    island.plain.add(centre);
     islands.set(root, island);
   }
 

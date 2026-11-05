@@ -21,6 +21,22 @@ function cards(count: number): BufferGeometry {
   return geometry;
 }
 
+/** `count` unit quads about the origin, then `degenerate` zero-area cards piled on (9, 5, 0). */
+function splitCards(count: number, degenerate: number): BufferGeometry {
+  const source = cards(count);
+  const positions = Array.from(source.getAttribute("position").array as Float32Array);
+  const index = Array.from((source.index as BufferAttribute).array as Uint16Array);
+  for (let i = 0; i < degenerate; i++) {
+    const v = positions.length / 3;
+    for (let k = 0; k < 4; k++) positions.push(9, 5, 0);
+    index.push(v, v + 1, v + 2, v, v + 2, v + 3);
+  }
+  const geometry = new BufferGeometry();
+  geometry.setAttribute("position", new BufferAttribute(new Float32Array(positions), 3));
+  geometry.setIndex(index);
+  return geometry;
+}
+
 function area(geometry: BufferGeometry): number {
   const index = geometry.index as BufferAttribute;
   const position = geometry.getAttribute("position");
@@ -78,6 +94,23 @@ describe("thinCards", () => {
     expect(far.drawRange.start).toBe(0);
     expect(far.drawRange.count).toBe(Number.POSITIVE_INFINITY);
     expect(area(far)).toBeCloseTo(50, 3);
+  });
+
+  it("leaves a zero-area kept card where it sits, not scaled about the origin", () => {
+    const far = thinCards(splitCards(6, 6), 0.5);
+    const index = far.index as BufferAttribute;
+    const position = far.getAttribute("position");
+    const home = new Vector3(9, 5, 0);
+    const firstDegenerate = 6 * 4; // four vertices per unit quad
+    const away: number[] = [];
+    for (let i = 0; i < index.count; i++) {
+      const v = index.getX(i);
+      if (v >= firstDegenerate)
+        away.push(new Vector3().fromBufferAttribute(position, v).distanceTo(home));
+    }
+    // A zero-area card was kept, so the check has something to stand on.
+    expect(away.length).toBeGreaterThan(0);
+    for (const distance of away) expect(distance).toBeCloseTo(0, 5);
   });
 
   it("fails closed on what it cannot thin", () => {
