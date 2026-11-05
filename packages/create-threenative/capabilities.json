@@ -4947,7 +4947,7 @@
     {
       "aliases": [],
       "constraints": [],
-      "example": "",
+      "example": "const phase = instanceRandom().mul(6.2831);",
       "importPath": "@threenative/core/world",
       "kind": "function",
       "overrides": [],
