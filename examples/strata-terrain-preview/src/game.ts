@@ -29,15 +29,10 @@ import {
   publish,
 } from "./diagnostics.js";
 import { type IMannequin, type IPlayerRig, createPlayerRig } from "./playerRig.js";
-import { fetchBakedFile } from "./render/bakedFile.js";
 import { BENCHMARK, type ViewName } from "./render/benchmark.js";
 import { biomeSpec } from "./render/biomeData.js";
 import { BIOMES, type IWorldBiome, type WorldName, measureBiome } from "./render/biomes.js";
-import {
-  HORIZON_WALK_BAND,
-  type HorizonSurroundings,
-  setHorizonSurroundings,
-} from "./render/horizon.js";
+import { HORIZON_WALK_BAND, loadHorizonSurroundings } from "./render/horizon.js";
 import { createLoadingScreen } from "./render/loading.js";
 import { createOcean, createWaterMesh } from "./render/ocean.js";
 import { loadCanopy, loadPropPackage, propCounts } from "./render/propWorld.js";
@@ -58,8 +53,6 @@ import {
 } from "./world/forestStage.js";
 import { waterCurrentAt, waterSurfaceAt } from "./world/water.js";
 import { START_WORLD, WORLD_ORDER, WORLD_SELECT, loadBakedWorld } from "./worlds.js";
-
-let horizonLoad: Promise<void> | undefined;
 
 /**
  * The same rig's two swim clips (Universal Animation Library 1, CC0; see CREDITS.md). They are
@@ -112,15 +105,13 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
         }
         return;
       }
-      horizonLoad ??= fetchBakedFile(ctx.assets, "world/horizon.json")
-        .then((response) => response.json())
-        .then((distant) => setHorizonSurroundings(distant as HorizonSurroundings));
+      const horizon = loadHorizonSurroundings(ctx.assets);
       const [packageData, canopy] = await Promise.all([
         loadPropPackage(ctx.assets, world),
         loadCanopy(ctx.assets, world),
       ]);
       this.#scatter = { package: packageData, canopy, counts: propCounts(packageData) };
-      await horizonLoad;
+      await horizon;
       // Prepare scenery while the scene loads; enter only attaches it.
       this.#terrain = createTerrain(this.#data, ctx.assets, this.#biome);
       this.#sky = createOutdoorSky(ctx.camera, this.#biome, ctx.renderer);

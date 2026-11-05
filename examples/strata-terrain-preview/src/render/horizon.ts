@@ -1,8 +1,10 @@
+import type { IAssetLoader } from "@threenative/core";
 import {
   Heightfield,
   HeightfieldCollar,
   type IHeightfieldCollarSite,
 } from "@threenative/core/world";
+import { fetchBakedFile } from "./bakedFile.js";
 import type { WorldName } from "./biomes.js";
 import type { IBakedWorld } from "./terrain.js";
 
@@ -46,6 +48,24 @@ function boxPass(source: Float32Array, size: number, line: number, step: number)
       out[a * line + b * step] = sum / 5;
     }
   return out;
+}
+
+/**
+ * `world/horizon.json`, fetched once per page and installed here. A failed fetch clears the memo
+ * before it rethrows, so the next world load retries instead of rethrowing the first failure for
+ * the page's whole life.
+ */
+let horizonLoad: Promise<void> | undefined;
+
+export function loadHorizonSurroundings(assets: Pick<IAssetLoader, "resolve">): Promise<void> {
+  horizonLoad ??= fetchBakedFile(assets, "world/horizon.json")
+    .then((response) => response.json())
+    .then((distant) => setHorizonSurroundings(distant as HorizonSurroundings))
+    .catch((error: unknown) => {
+      horizonLoad = undefined;
+      throw error;
+    });
+  return horizonLoad;
 }
 
 /** Installs the surroundings `createHorizonCollar` reads; call once before building terrain. */
