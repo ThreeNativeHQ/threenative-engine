@@ -4,9 +4,8 @@
 half is measured on the browser and the native host (22 of 23 and 21 of 22 assertions, one shared
 red on `admissionBacklog` on the browser and the network policy on the native host, both traced
 away from this split), and both halves are re-measured at `862920360` with the reds proven pre-existing
-at `0d4d08596` (AC-3). AC-4's forest judge is ticked. Open: AC-1 (reopened) and AC-3's Strata half — `test:terrain:web`
-exits 2 at the coastal `?waterproof=1` step on an engine bundle bug fixed in `4103d2508`, which waits
-for a Wasm build.
+at `0d4d08596` (AC-3). AC-4's forest judge is ticked. AC-3's Strata half closed 2026-11-05 at `21c713b7d`: all five worlds load, 59 of 63 (the 4 reds are PRD-585
+budgets), and the ocean proof exits 0. Open: AC-1 (reopened) and the Phase 3 box "Strata, abyss and the judge pass".
 **Priority:** P2 — `CellRender` (2 875 lines, about 97 members) has no direct unit test, and `world-gpu-scene.ts` (2 895 lines) held a cycle with its validation module; the split and the pins are done.
 **Complexity:** 5 (MEDIUM); risk override: both files decide what the world draws and casts, so the owner's visual-judge rule applies
 **Owner:** ThreeNative maintainers
