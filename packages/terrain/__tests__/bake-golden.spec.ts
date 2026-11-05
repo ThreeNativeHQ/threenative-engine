@@ -307,8 +307,8 @@ describe("the biome files' bake against the Phase 1 table", () => {
     // `IGrassType` (a 0..1 share over a spacing grid), so these stages place no ground cover.
     expect(Object.keys(PHASE_1.forest.counts)).toHaveLength(12);
     expect(run("forest").counts).toEqual({ spruce: 3200 });
-    // The one shared number disagrees: 3 200 is `surfaceSample`'s count, and the game's rule accepted
-    // 3 131 of its 3 200 cap after the stand field, masks and clearings.
+    // Forest's shared number disagrees: 3 200 is `surfaceSample`'s count, and the game's rule
+    // accepted 3 131 of its 3 200 cap after the stand field, masks and clearings.
     expect(PHASE_1.forest.counts.spruce).toBe(3131);
     // The file's spacing is a range; these stages read its tight end as `selfPrune`'s distance, while
     // the game's rule follows the stand field across the whole range.
