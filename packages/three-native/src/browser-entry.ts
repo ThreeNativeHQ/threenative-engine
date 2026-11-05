@@ -297,8 +297,8 @@ export async function bindWebEngine(
       },
       classes.RenderTarget === undefined
         ? undefined
-        : // quality-allow: three's class name, so a back end passes its class map.
-          {
+        : {
+            // quality-allow: three's class name, so a back end passes its class map.
             // biome-ignore lint/style/useNamingConvention: three's class name, so a back end passes its class map.
             RenderTarget: classes.RenderTarget as never,
             // The frame pass draws at the engine's input size, at the frame's sample count (tnw_web_frame's
