@@ -685,10 +685,18 @@ it("preserves authored cutout LOD parts and distinct custom shader surfaces", as
       }
       const authored = parts.values().next().value;
       if (!authored) throw new Error("Missing authored parts");
-      const expected = z === 0 ? authored.slice(0, 2) : z === 60 ? authored : authored.slice(2);
+      // 919c1a866's temporal transition: past the gate a record holds the near level beside the far
+      // one for LOD_TEMPORAL_LAG and the CPU grades it to the far level, so the walk sees both
+      // levels resident there and only the near level inside. Measured on this fixture: z=0 gives
+      // two level-0 meshes publishing [0, 0, -1]; 60 and 80 give three meshes publishing [0, 1, 0].
+      const expected = z === 0 ? authored.slice(0, 2) : authored;
       const active = (meshes: InstancedMesh[]) => meshes.filter((mesh) => mesh.count > 0);
       const view = active(streamed.meshes);
       expect(view).toHaveLength(expected.length);
+      for (const mesh of view)
+        expect(publishedLevels(mesh).map((record) => record.slice(0, 3))).toEqual(
+          publishedLevels(mesh).map(() => (z === 0 ? [0, 0, -1] : [0, 1, 0])),
+        );
       const semanticLods = (parts: typeof authored) =>
         parts.map((part) => `${part.level ?? 0}:${part.role}`).sort();
       const activeParts = view.map((mesh) => {
@@ -721,13 +729,22 @@ it("preserves authored cutout LOD parts and distinct custom shader surfaces", as
         expect(surface.color.equals(part.material.color)).toBe(true);
         expect(surface.opacityNode).toBe(part.material.opacityNode);
         expect(mesh.count).toBe(placements.length);
-        const viewMask = Reflect.get(surface.maskNode as object, "node");
-        const shadowMask = Reflect.get(surface.maskShadowNode as object, "node");
+        // r187 TSL returns the node itself; the r185 proxy wrapper (`.node`) is gone.
+        const viewMask = surface.maskNode as object;
+        const shadowMask = surface.maskShadowNode as object;
         expect(Reflect.get(viewMask, "op")).toBe("&&");
         expect(Reflect.get(viewMask, "aNode")).toBe(part.material.maskNode);
         expect(Reflect.get(shadowMask, "op")).toBe("&&");
         expect(Reflect.get(shadowMask, "aNode")).toBe(part.material.maskShadowNode);
-        expect(Reflect.get(viewMask, "bNode")).toBe(Reflect.get(shadowMask, "bNode"));
+        // 9520daa11: "Shadows take the new answer at once so cached pages hold no frame of the
+        // fade", so the colour gate wraps the published level change in a select and the shadow
+        // gate stays a plain level gate. The rule's core pin is world-impostor-surface.spec.ts
+        // 'fades a published level change in the colour pass only'.
+        const viewGate = Reflect.get(viewMask, "bNode") as object;
+        const shadowGate = Reflect.get(shadowMask, "bNode") as object;
+        expect(Reflect.get(viewGate, "condNode")).toBeDefined();
+        expect(Reflect.get(shadowGate, "op")).toBe("&&");
+        expect(Reflect.get(shadowGate, "condNode")).toBeUndefined();
       }
       expect(new Set(view.map((mesh) => mesh.material)).size).toBe(expected.length);
       for (const layer of [28, 27]) {
