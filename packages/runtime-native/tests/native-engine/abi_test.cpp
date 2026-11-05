@@ -1697,6 +1697,18 @@ void typed_bytes() {
     CHECK(tn_invoke(attribute, "dispose", nullptr, 0, &disposal, &d.value) == TN_OK);
     CHECK(disposed.invoked == 2);
 
+    // three's Object3D.dispose() fires `dispose` on any scene object, a Mesh as a Group.
+    for (const char* cls : {"Group", "Mesh"}) {
+        tn_handle_t object{};
+        CHECK(tn_construct(ctx, cls, nullptr, 0, &object, &d.value) == TN_OK);
+        Calls fired;
+        CHECK(tn_set_callback(object, "dispose", recordCall, &fired, releaseCall, &d.value) == TN_OK);
+        CHECK(tn_invoke(object, "dispose", nullptr, 0, &disposal, &d.value) == TN_OK);
+        CHECK(disposal.kind == TN_VALUE_UNDEFINED);
+        CHECK(fired.invoked == 1);
+        CHECK(tn_set_callback(object, "dispose", nullptr, nullptr, nullptr, &d.value) == TN_OK);
+    }
+
     const uint16_t index[3] = {0, 65535, 7};
     const tn_value_t u16[2] = {bytes("Uint16Array", index, 3), num(1)};
     CHECK(tn_construct(ctx, "BufferAttribute", u16, 2, &attribute, &d.value) == TN_OK);

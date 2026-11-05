@@ -22,6 +22,7 @@
         "clone",
         "copy",
         "dispatchEvent",
+        "dispose",
         "getObjectById",
         "getObjectByName",
         "getWorldDirection",
@@ -159,7 +160,7 @@
         "up"
       ],
       "callbacks": ["onBeforeRender"],
-      "events": ["added", "childadded", "childremoved", "removed"],
+      "events": ["added", "childadded", "childremoved", "dispose", "removed"],
       "fixedMembers": [
         "color",
         "layers",
@@ -303,6 +304,7 @@
         "copy",
         "deleteInstance",
         "dispatchEvent",
+        "dispose",
         "getColorAt",
         "getMatrixAt",
         "getObjectById",
@@ -577,7 +579,7 @@
         "up"
       ],
       "callbacks": ["onBeforeRender"],
-      "events": ["added", "childadded", "childremoved", "removed"],
+      "events": ["added", "childadded", "childremoved", "dispose", "removed"],
       "fixedMembers": [
         "layers",
         "matrix",
@@ -617,6 +619,7 @@
         "clone",
         "copy",
         "dispatchEvent",
+        "dispose",
         "getObjectById",
         "getObjectByName",
         "getWorldDirection",
@@ -744,7 +747,7 @@
         "up"
       ],
       "callbacks": ["onBeforeRender"],
-      "events": ["added", "childadded", "childremoved", "removed"],
+      "events": ["added", "childadded", "childremoved", "dispose", "removed"],
       "fixedMembers": [
         "layers",
         "matrix",
@@ -1047,6 +1050,7 @@
         "clone",
         "copy",
         "dispatchEvent",
+        "dispose",
         "getObjectById",
         "getObjectByName",
         "getWorldDirection",
@@ -1183,7 +1187,7 @@
         "up"
       ],
       "callbacks": ["onBeforeRender"],
-      "events": ["added", "childadded", "childremoved", "removed"],
+      "events": ["added", "childadded", "childremoved", "dispose", "removed"],
       "fixedMembers": [
         "layers",
         "matrix",
@@ -1949,6 +1953,7 @@
         "clone",
         "copy",
         "dispatchEvent",
+        "dispose",
         "getObjectById",
         "getObjectByName",
         "getWorldDirection",
@@ -2119,7 +2124,7 @@
         "up"
       ],
       "callbacks": ["onBeforeRender"],
-      "events": ["added", "childadded", "childremoved", "removed"],
+      "events": ["added", "childadded", "childremoved", "dispose", "removed"],
       "fixedMembers": [
         "color",
         "layers",
@@ -2489,6 +2494,7 @@
         "clone",
         "copy",
         "dispatchEvent",
+        "dispose",
         "getObjectById",
         "getObjectByName",
         "getWorldDirection",
@@ -2616,7 +2622,7 @@
         "up"
       ],
       "callbacks": ["onBeforeRender"],
-      "events": ["added", "childadded", "childremoved", "removed"],
+      "events": ["added", "childadded", "childremoved", "dispose", "removed"],
       "fixedMembers": [
         "layers",
         "matrix",
@@ -2656,6 +2662,7 @@
         "clone",
         "copy",
         "dispatchEvent",
+        "dispose",
         "getObjectById",
         "getObjectByName",
         "getWorldDirection",
@@ -2801,7 +2808,7 @@
         "up"
       ],
       "callbacks": ["onBeforeRender"],
-      "events": ["added", "childadded", "childremoved", "removed"],
+      "events": ["added", "childadded", "childremoved", "dispose", "removed"],
       "fixedMembers": [
         "color",
         "groundColor",
@@ -3070,6 +3077,7 @@
         "computeBoundingSphere",
         "copy",
         "dispatchEvent",
+        "dispose",
         "getColorAt",
         "getMatrixAt",
         "getObjectById",
@@ -3346,7 +3354,7 @@
         "up"
       ],
       "callbacks": ["onBeforeRender"],
-      "events": ["added", "childadded", "childremoved", "removed"],
+      "events": ["added", "childadded", "childremoved", "dispose", "removed"],
       "fixedMembers": [
         "layers",
         "matrix",
@@ -3387,6 +3395,7 @@
         "clone",
         "copy",
         "dispatchEvent",
+        "dispose",
         "getCurrentLevel",
         "getObjectById",
         "getObjectByName",
@@ -3521,7 +3530,7 @@
         "up"
       ],
       "callbacks": ["onBeforeRender"],
-      "events": ["added", "childadded", "childremoved", "removed"],
+      "events": ["added", "childadded", "childremoved", "dispose", "removed"],
       "fixedMembers": [
         "layers",
         "matrix",
@@ -3666,6 +3675,7 @@
         "clone",
         "copy",
         "dispatchEvent",
+        "dispose",
         "getObjectById",
         "getObjectByName",
         "getWorldDirection",
@@ -3927,7 +3937,7 @@
         "up"
       ],
       "callbacks": ["onBeforeRender"],
-      "events": ["added", "childadded", "childremoved", "removed"],
+      "events": ["added", "childadded", "childremoved", "dispose", "removed"],
       "fixedMembers": [
         "layers",
         "matrix",
@@ -4040,6 +4050,7 @@
         "clone",
         "copy",
         "dispatchEvent",
+        "dispose",
         "getObjectById",
         "getObjectByName",
         "getWorldDirection",
@@ -4301,7 +4312,7 @@
         "up"
       ],
       "callbacks": ["onBeforeRender"],
-      "events": ["added", "childadded", "childremoved", "removed"],
+      "events": ["added", "childadded", "childremoved", "dispose", "removed"],
       "fixedMembers": [
         "layers",
         "matrix",
@@ -4437,6 +4448,7 @@
         "clone",
         "copy",
         "dispatchEvent",
+        "dispose",
         "getObjectById",
         "getObjectByName",
         "getVertexPosition",
@@ -4699,7 +4711,7 @@
         "up"
       ],
       "callbacks": ["onBeforeRender"],
-      "events": ["added", "childadded", "childremoved", "removed"],
+      "events": ["added", "childadded", "childremoved", "dispose", "removed"],
       "fixedMembers": [
         "layers",
         "matrix",
@@ -5818,6 +5830,7 @@
         "clone",
         "copy",
         "dispatchEvent",
+        "dispose",
         "getObjectById",
         "getObjectByName",
         "getWorldDirection",
@@ -5945,7 +5958,7 @@
         "up"
       ],
       "callbacks": ["onBeforeRender"],
-      "events": ["added", "childadded", "childremoved", "removed"],
+      "events": ["added", "childadded", "childremoved", "dispose", "removed"],
       "fixedMembers": [
         "layers",
         "matrix",
@@ -6071,6 +6084,7 @@
         "clone",
         "copy",
         "dispatchEvent",
+        "dispose",
         "getObjectById",
         "getObjectByName",
         "getWorldDirection",
@@ -6223,7 +6237,7 @@
         "up"
       ],
       "callbacks": ["onBeforeRender"],
-      "events": ["added", "childadded", "childremoved", "removed"],
+      "events": ["added", "childadded", "childremoved", "dispose", "removed"],
       "fixedMembers": [
         "layers",
         "matrix",
@@ -6292,6 +6306,7 @@
         "clone",
         "copy",
         "dispatchEvent",
+        "dispose",
         "getEffectiveFOV",
         "getFilmHeight",
         "getFilmWidth",
@@ -6452,7 +6467,7 @@
         "up"
       ],
       "callbacks": ["onBeforeRender"],
-      "events": ["added", "childadded", "childremoved", "removed"],
+      "events": ["added", "childadded", "childremoved", "dispose", "removed"],
       "fixedMembers": [
         "layers",
         "matrix",
@@ -6608,6 +6623,7 @@
         "clone",
         "copy",
         "dispatchEvent",
+        "dispose",
         "getObjectById",
         "getObjectByName",
         "getWorldDirection",
@@ -6774,7 +6790,7 @@
         "up"
       ],
       "callbacks": ["onBeforeRender"],
-      "events": ["added", "childadded", "childremoved", "removed"],
+      "events": ["added", "childadded", "childremoved", "dispose", "removed"],
       "fixedMembers": [
         "color",
         "layers",
@@ -7116,6 +7132,7 @@
         "clone",
         "copy",
         "dispatchEvent",
+        "dispose",
         "getObjectById",
         "getObjectByName",
         "getWorldDirection",
@@ -7275,7 +7292,7 @@
         "up"
       ],
       "callbacks": ["onBeforeRender"],
-      "events": ["added", "childadded", "childremoved", "removed"],
+      "events": ["added", "childadded", "childremoved", "dispose", "removed"],
       "fixedMembers": [
         "layers",
         "matrix",
@@ -7449,6 +7466,7 @@
         "computeBoundingBox",
         "copy",
         "dispatchEvent",
+        "dispose",
         "getObjectById",
         "getObjectByName",
         "getVertexPosition",
@@ -7724,7 +7742,7 @@
         "up"
       ],
       "callbacks": ["onBeforeRender"],
-      "events": ["added", "childadded", "childremoved", "removed"],
+      "events": ["added", "childadded", "childremoved", "dispose", "removed"],
       "fixedMembers": [
         "bindMatrix",
         "bindMatrixInverse",
@@ -7891,6 +7909,7 @@
         "clone",
         "copy",
         "dispatchEvent",
+        "dispose",
         "getObjectById",
         "getObjectByName",
         "getWorldDirection",
@@ -8063,7 +8082,7 @@
         "up"
       ],
       "callbacks": ["onBeforeRender"],
-      "events": ["added", "childadded", "childremoved", "removed"],
+      "events": ["added", "childadded", "childremoved", "dispose", "removed"],
       "fixedMembers": [
         "color",
         "layers",
@@ -8116,6 +8135,7 @@
         "clone",
         "copy",
         "dispatchEvent",
+        "dispose",
         "getObjectById",
         "getObjectByName",
         "getWorldDirection",
@@ -8383,7 +8403,7 @@
         "up"
       ],
       "callbacks": ["onBeforeRender"],
-      "events": ["added", "childadded", "childremoved", "removed"],
+      "events": ["added", "childadded", "childremoved", "dispose", "removed"],
       "fixedMembers": [
         "layers",
         "matrix",

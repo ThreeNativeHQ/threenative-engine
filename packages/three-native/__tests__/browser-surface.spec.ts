@@ -31,6 +31,7 @@ const registry = JSON.parse(
 /** A scene graph held by the fake engine: `children` answers each object's child refs. */
 function sceneRuntime(children: Map<string, IEngineRef[]>, visible: Set<string>): IBrowserRuntime {
   const types = new Map<string, number>();
+  const callbacks = new Map<string, (args: readonly EngineValue[]) => void>();
   let next = 0;
   return {
     typeId(name) {
@@ -42,6 +43,8 @@ function sceneRuntime(children: Map<string, IEngineRef[]>, visible: Set<string>)
     },
     // `__walk`: the engine's preorder walk of this graph, only visible subtrees when asked.
     invoke(self, method, args): EngineValue {
+      // The engine's Object3D.dispose() dispatches `dispose` to the listener the facade registered.
+      if (method === "dispose") callbacks.get(`${self.key}/dispose`)?.([{ type: "dispose" }]);
       if (method !== "__walk") return null;
       const walked: IEngineRef[] = [];
       const visit = (ref: IEngineRef) => {
@@ -60,7 +63,10 @@ function sceneRuntime(children: Map<string, IEngineRef[]>, visible: Set<string>)
     },
     set() {},
     release() {},
-    setCallback() {},
+    setCallback(self, name, callback) {
+      if (callback) callbacks.set(`${self.key}/${name}`, callback);
+      else callbacks.delete(`${self.key}/${name}`);
+    },
   };
 }
 

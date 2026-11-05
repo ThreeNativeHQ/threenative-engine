@@ -138,17 +138,7 @@ export const LANGUAGE_MEMBERS = [
   "getObjectByName",
   "getObjectById",
   "raycast",
-  "dispose",
 ] as const;
-
-/**
- * three r187's `Object3D.dispose()`: it fires `dispose`, the event a renderer frees the object's
- * render objects on, so a game's `Group` subclass can end its own `dispose()` with
- * `super.dispose()`. An engine binding with a `dispose` of its own keeps that one.
- */
-function disposeObject(this: { dispatchEvent?(event: { type: string }): void }): void {
-  this.dispatchEvent?.({ type: "dispose" });
-}
 
 type TraverseCallback = (object: object) => void;
 
@@ -1560,12 +1550,6 @@ export function defineBrowserClasses(
         walked,
         raycasts(name),
       );
-      if (!binding.methods.includes("dispose"))
-        Object.defineProperty(prototype, "dispose", {
-          configurable: true,
-          writable: true,
-          value: disposeObject,
-        });
     }
     classes[name] = cls;
     byType.set(runtime.typeId(name), { prototype: accessors, ...(materialClass ? { own } : {}) });

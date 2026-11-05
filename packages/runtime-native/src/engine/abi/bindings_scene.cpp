@@ -829,8 +829,15 @@ void registerObject3D(ClassBinding& b) {
         as<Object3D>(self)->copy(objectArg(store, a.at(0)));
         return chain();
     };
+    // three's Object3D.dispose(): fires `dispose` so a game frees what it derived from the object;
+    // geometry and materials are disposed separately, as three documents.
+    b.methods["dispose"] = [](void* self, const Args&, Store&) {
+        Event event{"dispose"};
+        as<Object3D>(self)->dispatchEvent(event);
+        return Value{Value::Kind::Undefined};
+    };
     registerEvents(b, [](void* self) -> EventDispatcher* { return as<Object3D>(self); },
-                   {"added", "removed", "childadded", "childremoved"});
+                   {"added", "removed", "childadded", "childremoved", "dispose"});
 }
 
 // ----------------------------------------------------------------------------- Camera
