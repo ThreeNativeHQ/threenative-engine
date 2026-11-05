@@ -6401,6 +6401,22 @@ export function bakeWorldPackage( state: ITerrainState, options: IBakeWorldPacka
 const { manifest, files } = bakeWorldPackage(state, { assets });
 ```
 
+### `collarSampler`
+
+`function` — The collar's height at any (x, z), and a way to raise one of its per-vertex attributes at a placement: both read the collar's own quad grid, so a lane that reshapes the collar moves the trees with it.
+
+```ts
+export function collarSampler(collar: HeightfieldCollar) { … }
+```
+
+- **Use when:** plant a far field on a drawn collar and paint the canopy its crowns cover
+- **Constraints:** the collar decides where a tree stands; this sampler never resamples the square
+- **Requires:** npm i -D @threenative/terrain
+
+```ts
+const sampler = collarSampler(collar); const height = sampler.at(x, z);
+```
+
 ### `createSegmentIndex`
 
 `function` — Build the index once per world; ask `nearby` per scatter candidate or heightfield vertex.
@@ -6527,6 +6543,22 @@ export function encodeZIP(files: readonly IExportFile[]) { … }
 
 ```ts
 const archive = encodeZIP([{ name: "height.raw", bytes: new Uint8Array(8) }]);
+```
+
+### `farForestPlacements`
+
+`function` — Far-field placements on the collar; also paints the collar's `canopy` attribute under each crown.
+
+```ts
+export function farForestPlacements(options: IFarFieldOptions): IPlacement[] { … }
+```
+
+- **Use when:** plant the stand past a game's playable square, out to the drawn collar
+- **Constraints:** the row's `far` block decides every density; the caller supplies the collar and layer
+- **Requires:** npm i -D @threenative/terrain
+
+```ts
+const trees = farForestPlacements({ size, resolution, collar, treeline, rules, asset, layer });
 ```
 
 ### `fieldWeight`

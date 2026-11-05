@@ -18,12 +18,21 @@ import { LANDFORMS, type LandformKind } from "./presets.js";
 export interface IFarFieldRule {
   /** Candidate grid, metres: at most one tree per cell. */
   readonly cell: number;
-  /** Mean spacing just past the edge, and where the far spacing is reached. */
+  /** Mean spacing just past the edge, and at the far reach. */
   readonly spacing: readonly [number, number];
-  /** Slope fade, degrees. */
+  /** Metres past the square's edge where the near spacing starts, and where the far one is reached. */
+  readonly spacingAt: readonly [number, number];
+  /** Slope fade, degrees, and the gentler slopes a meadow clearing fades out over. */
   readonly slope: readonly [number, number];
+  readonly meadowSlope: readonly [number, number];
   /** Chevron distance from the origin beyond which nothing is planted. */
   readonly reach: number;
+  /** How far the treeline wanders with noise, metres. */
+  readonly treelineJitter: number;
+  /** Stand-noise threshold band: the square plants above its own `standThreshold`. */
+  readonly stand: readonly [number, number];
+  /** The far field's own seed: it draws from one stream of its own, never the bake's. */
+  readonly seed: number;
   /** Metres at which a far tree becomes the engine's whole-asset impostor. */
   readonly impostor: number;
 }
@@ -231,7 +240,18 @@ const FOLIAGE_FIELDS = [
   "standThreshold",
   "far",
 ] as const;
-const FAR_FIELDS = ["cell", "spacing", "slope", "reach", "impostor"] as const;
+const FAR_FIELDS = [
+  "cell",
+  "spacing",
+  "spacingAt",
+  "slope",
+  "meadowSlope",
+  "reach",
+  "treelineJitter",
+  "stand",
+  "seed",
+  "impostor",
+] as const;
 const GRASS_FIELDS = [
   "species",
   "density",
@@ -406,8 +426,13 @@ function far(value: unknown, biome: string, field: string): IFarFieldRule | null
   return {
     cell: positive(far.cell, biome, `${field}.cell`),
     spacing: pair(far.spacing, biome, `${field}.spacing`),
+    spacingAt: pair(far.spacingAt, biome, `${field}.spacingAt`),
     slope: pair(far.slope, biome, `${field}.slope`, 0, 90),
+    meadowSlope: pair(far.meadowSlope, biome, `${field}.meadowSlope`, 0, 90),
     reach: positive(far.reach, biome, `${field}.reach`),
+    treelineJitter: count(far.treelineJitter, biome, `${field}.treelineJitter`),
+    stand: pair(far.stand, biome, `${field}.stand`, 0, 1),
+    seed: whole(far.seed, biome, `${field}.seed`),
     impostor: count(far.impostor, biome, `${field}.impostor`),
   };
 }

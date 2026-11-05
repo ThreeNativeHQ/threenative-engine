@@ -7823,6 +7823,23 @@
     {
       "aliases": [],
       "constraints": [
+        "the collar decides where a tree stands; this sampler never resamples the square"
+      ],
+      "example": "const sampler = collarSampler(collar); const height = sampler.at(x, z);",
+      "importPath": "@threenative/terrain",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function collarSampler(collar: HeightfieldCollar) { … }",
+      "situations": ["plant a far field on a drawn collar and paint the canopy its crowns cover"],
+      "summary": "The collar's height at any (x, z), and a way to raise one of its per-vertex attributes at a placement: both read the collar's own quad grid, so a lane that reshapes the collar moves the trees with it.",
+      "supersedes": [],
+      "symbol": "collarSampler"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "returns candidates only; the caller applies its own exact distance and level test"
       ],
       "example": "const rivers = createSegmentIndex(segments, 32); const wet = rivers.nearby(x, z).some(isWet);",
@@ -7944,6 +7961,23 @@
       "summary": "Deterministic store-method ZIP with safe unique relative filenames.",
       "supersedes": [],
       "symbol": "encodeZIP"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "the row's `far` block decides every density; the caller supplies the collar and layer"
+      ],
+      "example": "const trees = farForestPlacements({ size, resolution, collar, treeline, rules, asset, layer });",
+      "importPath": "@threenative/terrain",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function farForestPlacements(options: IFarFieldOptions): IPlacement[] { … }",
+      "situations": ["plant the stand past a game's playable square, out to the drawn collar"],
+      "summary": "Far-field placements on the collar; also paints the collar's `canopy` attribute under each crown.",
+      "supersedes": [],
+      "symbol": "farForestPlacements"
     },
     {
       "aliases": [],

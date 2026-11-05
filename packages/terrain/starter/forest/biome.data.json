@@ -29,8 +29,13 @@
       "far": {
         "cell": 6,
         "spacing": [6.5, 13],
+        "spacingAt": [150, 1500],
         "slope": [36, 46],
+        "meadowSlope": [12, 24],
         "reach": 2300,
+        "treelineJitter": 30,
+        "stand": [0.26, 0.4],
+        "seed": 466559,
         "impostor": 110
       }
     }

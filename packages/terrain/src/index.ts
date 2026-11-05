@@ -17,6 +17,8 @@ export type {
 } from "./core/biome.js";
 export { MATS_FIELD, STAND_FIELD, fieldWeight } from "./core/cover-field.js";
 export type { ICoverField } from "./core/cover-field.js";
+export { collarSampler, farForestPlacements } from "./core/far-field.js";
+export type { IFarFieldOptions } from "./core/far-field.js";
 export { orderedScatterRules, scatterProps } from "./core/scatter-ordered.js";
 export type {
   CoverFieldName,

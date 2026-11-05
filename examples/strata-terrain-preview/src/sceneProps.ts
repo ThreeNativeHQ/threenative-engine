@@ -346,6 +346,7 @@ export function createMeadow(options: IMeadowOptions): IMeadow {
               size: data.size,
               resolution: data.resolution,
               collar,
+              world,
               treeline: biome.heightBands.treeline,
               rivers: data.rivers,
               lakes: data.lakes,

@@ -4,11 +4,7 @@ import { describe, expect, it } from "vitest";
 import { BENCHMARK } from "../src/render/benchmark.js";
 import { biomeSpec } from "../src/render/biomeData.js";
 import { BIOMES, type IVistaAim, type WorldName } from "../src/render/biomes.js";
-import {
-  FAR_FOREST_IMPOSTOR,
-  FAR_FOREST_RULES,
-  FAR_FOREST_WORLDS,
-} from "../src/render/farForest.js";
+import { FAR_FOREST_IMPOSTOR, FAR_FOREST_WORLDS } from "../src/render/farForest.js";
 import { speciesFor } from "../src/render/pack.js";
 import { buildPropVariants } from "../src/render/props.js";
 import type { IBakedWorld } from "../src/render/terrain.js";
@@ -32,8 +28,13 @@ type CollisionClass = "none" | "trunk" | "hull";
 interface IFarRule {
   readonly cell: number;
   readonly spacing: readonly [number, number];
+  readonly spacingAt: readonly [number, number];
   readonly slope: readonly [number, number];
+  readonly meadowSlope: readonly [number, number];
   readonly reach: number;
+  readonly treelineJitter: number;
+  readonly stand: readonly [number, number];
+  readonly seed: number;
   readonly impostor: number;
 }
 
@@ -149,7 +150,18 @@ const TABLE: Readonly<Record<WorldName, IWorldRows>> = {
         stands: true,
         grassThreshold: 0.3,
         standThreshold: 0.3,
-        far: { cell: 6, spacing: [6.5, 13], slope: [36, 46], reach: 2300, impostor: 110 },
+        far: {
+          cell: 6,
+          spacing: [6.5, 13],
+          spacingAt: [150, 1500],
+          slope: [36, 46],
+          meadowSlope: [12, 24],
+          reach: 2300,
+          treelineJitter: 30,
+          stand: [0.26, 0.4],
+          seed: 466_559,
+          impostor: 110,
+        },
       },
     ],
     grass: [
@@ -621,15 +633,10 @@ function foliageOf(
   if (row === undefined) throw new Error(`${spec.look}: the file carries no tree row`);
   const collision = collisions[row.species];
   if (collision === undefined) throw new Error(`Species ${row.species} has no prop parts`);
-  const far = FAR_FOREST_WORLDS.includes(world)
-    ? {
-        cell: FAR_FOREST_RULES.cell,
-        spacing: [FAR_FOREST_RULES.spacingNear, FAR_FOREST_RULES.spacingFar] as const,
-        slope: FAR_FOREST_RULES.slope,
-        reach: FAR_FOREST_RULES.reach,
-        impostor: FAR_FOREST_IMPOSTOR,
-      }
-    : null;
+  // A world that plants a collar carries the rule's row; the streaming gate is the game's constant.
+  const far = FAR_FOREST_WORLDS.includes(world) ? row.far : null;
+  if (far !== null)
+    expect({ world, impostor: far.impostor }).toEqual({ world, impostor: FAR_FOREST_IMPOSTOR });
   return [
     {
       species: row.species,
