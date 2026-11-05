@@ -38,6 +38,7 @@ import {
   type IPropMaterials,
   type IPropPart,
   LOD_BANDS,
+  PROP_ASSETS,
   type PropGroundQuery,
   impostorDistanceForScale,
   preparePose,
@@ -117,7 +118,11 @@ export interface IScatter {
 
 /** Records per asset across the package's buckets: what the run report calls the scatter's counts. */
 export function propCounts(pkg: IPropPackage): Record<string, number> {
+  // Every asset the starter knows starts at 0. A world that places none of one still reports its
+  // count, because the run report reads a fixed key per asset and an absent key is `undefined`,
+  // which the playtest bridge refuses as an observation that is not JSON-safe.
   const counts: Record<string, number> = {};
+  for (const asset of Object.keys(PROP_ASSETS)) counts[asset] = 0;
   for (const bucket of pkg.buckets)
     for (const cell of bucket.cells)
       for (const run of cell.runs) {
