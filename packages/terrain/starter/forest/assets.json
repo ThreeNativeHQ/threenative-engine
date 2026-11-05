@@ -7,7 +7,8 @@
       "max": [2.763, 14.078, 2.465]
     },
     "mid": "fir_tree_01/fir-b-lod2.glb",
-    "midDistance": 45
+    "midDistance": 45,
+    "tree": true
   },
   "boulder": {
     "near": "boulder_01/boulder-near.glb",
