@@ -135,7 +135,51 @@ describe("compileAssets", () => {
     const malformed = Buffer.from(cooked);
     malformed.writeUInt32LE(cooked.length + 4, 8);
     await writeFile(path.join(root, "assets/worlds/forest/world.glb"), malformed);
-    await expect(compileAssets({ cwd: root, passes: [] })).rejects.toThrow(/GLB/);
+    // The marker scan is not a readability gate: no pass in this chain parses a model, so the
+    // file copies through byte-identically rather than failing the build from inside the scan.
+    await compileAssets({ cwd: root, passes: [] });
+    const passedThrough = JSON.parse(
+      await readFile(path.join(root, "public/assets.manifest.json"), "utf8"),
+    ).entries["worlds/forest/world.glb"];
+    expect(passedThrough).toMatchObject({ bytes: malformed.length, passes: [] });
+    expect(await readFile(path.join(root, "public", passedThrough.output))).toEqual(malformed);
+  });
+
+  it("copies a GLB an unpacker would refuse when no model pass is in the chain", async () => {
+    const root = await makeTempDir("threenative-glb-passthrough-");
+    await mkdir(path.join(root, "assets"));
+    // A hand-built GLB whose JSON chunk is 85 bytes — not the 4-byte multiple the container asks
+    // for, which only `unpackGlb` refuses. With `models: "none"` and `textures: "none"` nothing
+    // in the chain parses a model, so the bytes must copy through untouched; the build that
+    // shipped every mobile template carried exactly this shape.
+    const json = Buffer.from(
+      JSON.stringify({
+        asset: { version: "2.0" },
+        nodes: [{ name: "n" }],
+        scene: 0,
+        scenes: [{ nodes: [0] }],
+      }),
+    );
+    expect(json.length % 4).toBe(1);
+    const glb = Buffer.alloc(12 + 8 + json.length);
+    glb.write("glTF", 0, "ascii");
+    glb.writeUInt32LE(2, 4);
+    glb.writeUInt32LE(glb.length, 8);
+    glb.writeUInt32LE(json.length, 12);
+    glb.write("JSON", 16, "ascii");
+    json.copy(glb, 20);
+    await writeFile(path.join(root, "assets", "prop.glb"), glb);
+
+    await compileAssets({
+      config: { audio: "none", models: "none", textures: "none" },
+      cwd: root,
+    });
+    const manifest = JSON.parse(
+      await readFile(path.join(root, "public/assets.manifest.json"), "utf8"),
+    );
+    const entry = manifest.entries["prop.glb"];
+    expect(entry).toMatchObject({ bytes: glb.length, kind: "model", passes: [] });
+    expect(await readFile(path.join(root, "public", entry.output))).toEqual(glb);
   });
 
   it.each([
