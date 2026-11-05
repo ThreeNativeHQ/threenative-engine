@@ -8,7 +8,7 @@
 **Complexity:** 2 (LOW)
 **Owner:** ThreeNative maintainers
 **Depends on:** None
-**Batch:** [God files](../../refactoring/god-files/README.md)
+**Batch:** [God files](README.md)
 
 ## Context
 

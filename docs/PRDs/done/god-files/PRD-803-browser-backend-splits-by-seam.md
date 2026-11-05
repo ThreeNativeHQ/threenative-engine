@@ -7,7 +7,7 @@ AC-2 green; AC-3 and AC-4 were not run by this lane (no built ABI module in the 
 **Complexity:** 5 (MEDIUM); risk override: the web engine's bridge counters filter stack frames by file name
 **Owner:** ThreeNative maintainers
 **Depends on:** None
-**Batch:** [God files](../../refactoring/god-files/README.md)
+**Batch:** [God files](README.md)
 
 ## Context
 

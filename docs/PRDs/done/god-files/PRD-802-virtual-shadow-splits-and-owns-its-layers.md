@@ -5,7 +5,7 @@
 **Complexity:** 5 (MEDIUM); risk override: shadows reach the screen, so the owner's visual-judge rule applies
 **Owner:** ThreeNative maintainers
 **Depends on:** None (PRD-798 imports the layer exports this PRD creates)
-**Batch:** [God files](../../refactoring/god-files/README.md)
+**Batch:** [God files](README.md)
 
 ## Context
 
