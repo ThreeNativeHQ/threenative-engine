@@ -1045,6 +1045,7 @@ void registerTextureBindings(Registry& classes) {
         if (mipmaps && depth == 1 && count == 1)
             throw Unsupported{"RenderTarget generateMipmaps needs count or depth: a plain target has no mip chain natively"};
         auto target = RenderTarget::make(static_cast<uint32_t>(width), static_cast<uint32_t>(height), type, count, depth);
+        target->mipmapChain = mipmaps;
         for (const auto& texture : target->textures) {
             if (minFilter) texture->minFilter = *minFilter;
             if (magFilter) texture->magFilter = *magFilter;

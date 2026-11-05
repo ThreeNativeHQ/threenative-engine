@@ -38,12 +38,14 @@ WGPUTextureFormat layerFormat(const Texture& texture) {
     return texture.isSRGB() ? WGPUTextureFormat_RGBA8UnormSrgb : WGPUTextureFormat_RGBA8Unorm;
 }
 
-/** A layered target's arrays: one per texture, `depth` layers, a full mip chain when the texture asks for mipmaps. */
+/** A layered target's arrays: one per texture, `depth` layers, a full mip chain when the target was made with
+ *  mipmaps or the texture asks for them at its first draw (the facade's initRenderTarget allocates nothing). */
 void ensureAttachments(TargetGpu& gpu, RenderTarget& target) {
     if (!target.layered() || gpu.attachments.size() == target.textures.size()) return;
     for (const auto& texture : target.textures) {
-        const uint32_t levels =
-            texture->generateMipmaps ? uint32_t(std::floor(std::log2(double(std::max(target.width, target.height))))) + 1 : 1;
+        const uint32_t levels = target.mipmapChain || texture->generateMipmaps
+                                    ? uint32_t(std::floor(std::log2(double(std::max(target.width, target.height))))) + 1
+                                    : 1;
         gpu.attachments.push_back(
             gpu.renderer->createTargetLayers(target.width, target.height, target.depth, levels, layerFormat(*texture)));
     }
@@ -95,6 +97,8 @@ std::vector<std::string> renderToTarget(Renderer& main, RenderTarget& target, Ob
     if (target.layered() && (deferred || target.depthTexture))
         return {"TN_NATIVE_RENDER_TARGET_LAYER: a layered or MRT target is drawn at the call, without a depth texture"};
     main.flushDeferred(&target);  // an earlier plan for this target is recorded first, never dropped or drawn twice
+    // three's WebGPUBackend clears an MRT attachment past the first to opaque black, whatever the clear colour.
+    if (attachment > 0) clear = {0, 0, 0, 1};
     TargetGpu& gpu = gpuOf(main, target);
     gpu.database->shadowMapEnabled = shadowMap;
     gpu.renderer->setSourceAttachments(main.sceneColorView(), main.sceneDepthView());

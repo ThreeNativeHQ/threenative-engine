@@ -75,6 +75,9 @@ public:
     std::shared_ptr<Texture> depthTexture;
     /** Array layers of each texture (three's `depth`); 1 is a plain 2D target. */
     uint32_t depth = 1;
+    /** A layered target's textures carry a full mip chain: three allocates one at initRenderTarget for a texture made
+     *  with `generateMipmaps`, and keeps it while a caller turns generation off for the draws before the last. */
+    bool mipmapChain = false;
     std::shared_ptr<Texture> texture = std::make_shared<Texture>();
     /** three's `textures`: `texture` first, then one per further MRT attachment. */
     std::vector<std::shared_ptr<Texture>> textures{texture};
