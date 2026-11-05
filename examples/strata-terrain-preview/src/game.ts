@@ -1,6 +1,5 @@
 import {
   BlendSpace1D,
-  type IAssetLoader,
   type ICtx,
   type IGamePluginRuntime,
   Scene,
@@ -24,9 +23,7 @@ import {
   type AnimationClip,
   CapsuleGeometry,
   Float32BufferAttribute,
-  Frustum,
   InstancedMesh,
-  Matrix4,
   Mesh,
   MeshStandardMaterial,
   type Object3D,
