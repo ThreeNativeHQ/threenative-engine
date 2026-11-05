@@ -280,6 +280,20 @@ describe("terrain kit copying", () => {
     expect(await readdir(real)).toEqual([]);
   });
 
+  // A stand-in for macOS /tmp -> /private/tmp: existing real folders reached through an OS-owned link.
+  it("copies under a symlink that sits above every existing parent", async () => {
+    const root = await scratch();
+    const templatesRoot = await packagedKits(root, ["alpine"]);
+    await mkdir(path.join(root, "private", "tmp", "work"), { recursive: true });
+    await symlink(path.join(root, "private", "tmp"), path.join(root, "tmp"), "dir");
+    const target = path.join(root, "tmp", "work", "kit");
+    await copyTerrainKit("alpine", target, templatesRoot);
+    expect((await readdir(path.join(root, "private", "tmp", "work", "kit"))).sort()).toEqual(
+      COPIED,
+    );
+    await expectStarterBytes(target, "alpine");
+  });
+
   it("rejects a symlink above missing parents and creates no folders through it", async () => {
     const root = await scratch();
     const templatesRoot = await packagedKits(root, ["alpine"]);

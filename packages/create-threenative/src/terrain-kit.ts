@@ -18,8 +18,9 @@ const DEFAULT_TEMPLATES_ROOT = path.resolve(
   "../templates",
 );
 
-// Checks each existing parent of the target, nearest first, up to the filesystem root.
-// The check skips a missing parent. It still finds a symlink above missing folders.
+// Checks each missing parent of the target, nearest first, and the first existing folder.
+// The walk stops at that folder: links above it belong to the OS path itself (/tmp on macOS,
+// /var), and the OS resolves them for every write anyway.
 async function assertNoSymlinkAncestor(target: string): Promise<void> {
   let dir = path.dirname(path.resolve(target));
   for (;;) {
@@ -32,6 +33,7 @@ async function assertNoSymlinkAncestor(target: string): Promise<void> {
         `TN_TERRAIN_KIT_SYMLINK: A parent folder is a symlink: ${dir}. Choose a target path with real parent folders.`,
       );
     }
+    if (info !== null) return;
     const parent = path.dirname(dir);
     if (parent === dir) return;
     dir = parent;
