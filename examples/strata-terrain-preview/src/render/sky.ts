@@ -333,12 +333,7 @@ export function installOutdoorOcclusion(
     world.getTextureNode("output"),
     airDepth.greaterThanEqual(1).toFloat(),
   );
-  // `?aoNormals=depth`: GTAO and its denoise derive normals from depth, as UE 5.8.3 does by default
-  // (r.GTAO.UseNormals 0, PostProcessAmbientOcclusion.cpp:104). Nothing then reads the MRT normal,
-  // so the engine skips its second full-scene normal pass. three's typings omit the null its nodes accept.
-  const normals = (
-    query.get("aoNormals") === "depth" ? null : world.getTextureNode("normal")
-  ) as Node;
+  const normals = world.getTextureNode("normal") as Node;
   const contact = ao(depth, normals, camera);
   contact.radius.value = 0.85;
   contact.scale.value = 0.8;

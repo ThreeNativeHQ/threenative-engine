@@ -51,18 +51,11 @@ export function meadowCover(
     });
   };
   const heading = Math.atan2(look.z - eye.z, look.x - eye.x);
-  // TEMP (lane meadow A/B): `?meadowBase=off` plants the previous grass-only carpet to 100 m.
-  const before = new URLSearchParams(globalThis.location?.search ?? "").get("meadowBase") === "off";
-  for (const [from, to, step] of before
-    ? ([
-        [0, 25, 0.5],
-        [25, 100, 1.4],
-      ] as const)
-    : ([
-        [0, 25, 0.5],
-        [25, 80, 1.2],
-        [80, reach, 2.4],
-      ] as const))
+  for (const [from, to, step] of [
+    [0, 25, 0.5],
+    [25, 80, 1.2],
+    [80, reach, 2.4],
+  ] as const)
     for (let dz = -to; dz <= to; dz += step)
       for (let dx = -to; dx <= to; dx += step) {
         const distance = Math.hypot(dx, dz);
@@ -75,13 +68,12 @@ export function meadowCover(
         if (off > 0.96 && random() > 0.25) continue;
         const x = eye.x + dx + (random() - 0.5) * step;
         const z = eye.z + dz + (random() - 0.5) * step;
-        if (before) put("grass", x, z, 0.95 + random() * 0.6);
         // A short mat everywhere; a far one grows with distance (twice its size at 220 m) so the
         // thinner far grid still covers a slope instead of dotting it.
-        else put("meadow", x, z, (0.9 + random() * 0.5) * (1 + Math.max(0, distance - 80) / 140));
-        if (!before && distance >= 80) continue;
+        put("meadow", x, z, (0.9 + random() * 0.5) * (1 + Math.max(0, distance - 80) / 140));
+        if (distance >= 80) continue;
         // An unmown meadow: taller clumps than the forest's 0.8-1.45 over the mats.
-        if (!before && random() < 0.35) put("grass", x, z, 0.95 + random() * 0.6);
+        if (random() < 0.35) put("grass", x, z, 0.95 + random() * 0.6);
         if (random() < 0.08)
           put("scrub", x + random() - 0.5, z + random() - 0.5, 0.9 + random() * 0.6);
         if (random() < 0.08)

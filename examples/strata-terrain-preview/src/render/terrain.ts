@@ -943,10 +943,7 @@ export async function createGroundMaterial(
           : steep;
         // Talus at the feet of cliff bands: the same rock, finer and paler.
         const scree = collar ? collar.scree.mul(reliefWeight) : float(0);
-        // TEMP-PEAKS knob: remove before report.
-        const peaks =
-          collar !== undefined &&
-          new URLSearchParams(globalThis.location?.search ?? "").get("peaks") !== "before";
+        const peaks = collar !== undefined;
         // Bedding: warped strata about 30 m thick on the steep rock, each a cliff under a ledge,
         // as the goal frame's faces break into bands (owner, 2026-11-04). The phase is antialiased by
         // its own screen derivative, so a band thinner than a pixel greys out instead of crawling.
