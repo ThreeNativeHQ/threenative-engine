@@ -139,6 +139,16 @@ git apply "$SCRIPTS/patches/0006-opengnm-psbc-shader-code-256-aligned.patch"
 # inputs live, emits the SUBPTR_FETCHSHADER / PTR_VERTEXBUFFERTABLE usage slots
 # and prepends the s_swappc the driver's fetch shader hangs off.
 git apply "$SCRIPTS/patches/0015-opengnm-psbc-vs-fetch-shader-prolog.patch"
+# A descriptor set base (and the indirect-descriptor table base) is a 64-bit GPU
+# address in a user SGPR *pair*: sceGnmDrawCmdSetPointerUserData writes lo then
+# hi, the way Sony's 64-bit SRT pointers are laid out, and shadPS4 maps guest
+# memory above 4 GiB (0x200000000+). radv declared one 32-bit SGPR and widened it
+# with a constant address32_hi, so the base was truncated and its high half was
+# a plain constant -- which shadPS4's FlattenExtendedUserdataPass rejects
+# ("ReadConst base high not from constant memory"), aborting every
+# descriptor-using shader. Reserve the second SGPR and take the high half from
+# it.
+git apply "$SCRIPTS/patches/0017-opengnm-psbc-64bit-descriptor-set-pointers.patch"
 
 # === 3. opengnm (orbis) ======================================================
 cd "$SRC/opengnm"

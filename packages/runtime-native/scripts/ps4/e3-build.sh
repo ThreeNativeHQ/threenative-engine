@@ -191,6 +191,8 @@ stage_shim() {
   local f
   mkdir -p "$SHIM"
   for f in "$HERE"/shim/*; do
+    # shim/ carries one subdirectory (sys/), for headers Dawn and the V8 player include.
+    [ -d "$f" ] && { cp -rp "$f" "$SHIM"/; continue; }
     cmp -s "$f" "$SHIM/$(basename "$f")" || cp -p "$f" "$SHIM/"
   done
 }
