@@ -247,6 +247,13 @@ Default: owned C++ engine. Override: `engine: "threejs"` only when the user asks
 
 Engine: The owned C++ engine is the default for a new game: the Wasm engine on web and the engine player on desktop. `engine: "threejs"` switches to upstream Three.js only when the user asks for it; it is never a fix for a build error.
 
+<a id="engine-catalog"></a>
+## Refused imports
+
+Default: a refused `three` import fails at its line in dev and build. Override: `createEngineCatalogPlugin({ mode: "warn" })`. Reports: TN_ENGINE_CATALOG.
+
+Refused imports: `createEngineCatalogPlugin()` in `vite.config.ts` reads every `import { … } from "three"`, `"three/webgpu"` and `"three/tsl"` in game source. When the installed Wasm engine refuses a name, the dev overlay and `threenative build` fail at that import line with the code the page would throw at first use (`TN_NATIVE_UNCATALOGUED_<NAME>`, or the catalog entry's own diagnostic). Pick a bound class instead: `engine_search_capabilities` names it. `mode: "warn"` reports instead of failing and prints `TN_ENGINE_CATALOG: warn`. Under `engine: "threejs"` the check is off and prints `TN_ENGINE_CATALOG: off (engine threejs)`. Member and argument gaps of a `partial` entry stay runtime diagnostics.
+
 <a id="general"></a>
 ## Other portable contracts
 
