@@ -138,15 +138,22 @@ An earlier window on the same build (tag `prd828-baseline`, rows #291-#298) read
 
 So AC-1 asks that 6.58 ms becomes at most 4.58 ms, with crossings 725 -> at most 362. The animation crossings in the census below are 1,398 of 1,911 in a census frame (73%), which puts the 50% crossing bar within reach of Phase 2 alone and the 2 ms stage bar roughly at the sum of P1+P2 — both bars stay as filed.
 
-**Census at the start commit (`__THREENATIVE_ENGINE_COST__`, 120 rigs, artifact `~/.cache/tmp-tn/prd828/out/census-1106.json`, 21 windows):** 1,911 crossings in the first census frame and 1,313 in the last, 0.545 us each, 0.51-1.04 ms of the frame (1.5-2.3%), 22 redundant reads. The rows below are what the built arm printed; the meter now names **ten** classes per window (`CENSUS_TOP` in `packages/three-native/src/bridge-meter.ts`, with its own spec), and this arm's five animation classes are so far ahead of everything else that the sixth-ranked class is below one crossing a frame:
+**Census at the start commit** (`__THREENATIVE_ENGINE_COST__`, 120 rigs, `~/.cache/tmp-tn/prd828/out/census-1106-top10.json`, 14 windows, arm packed from this branch): 1,912 crossings in the last census frame, 1.39 ms of it (3.3% of the frame), 22 redundant reads. Ten classes, with the caller the meter named:
 
 | # | Crossing | Per frame | Caller |
 | --- | --- | --- | --- |
 | 1 | `call AnimationAction.setEffectiveTimeScale` | 525 | `#syncStride` < `SkeletalMesh3D.update` < `Stress.ts:398` |
 | 2 | `call Group.getWorldPosition` | 360 | `#syncStride` < `SkeletalMesh3D.update` < `Stress.ts:398` |
-| 3 | `call AnimationAction.isScheduled` | 341 | `SkeletalMesh3D.update` < `Stress.ts:398` |
+| 3 | `call AnimationAction.isScheduled` | 339 | `SkeletalMesh3D.update` < `Stress.ts:398` |
 | 4 | `set AnimationMixer.timeScale` | 172 | `#evaluate` < `SkeletalMesh3D.update` < `Stress.ts:398` |
-| 5 | `call AnimationMixer.update` | 104 | `LoopAwareAnimationMixer.update` < `#evaluate` |
+| 5 | `call AnimationMixer.update` | 107 | `LoopAwareAnimationMixer.update` < `#evaluate` |
+| 6 | `call AnimationAction.getClip` | 86 | `#evaluate` < `SkeletalMesh3D.update` |
+| 7 | `get AnimationAction.loop` | 86 | `#evaluate` < `SkeletalMesh3D.update` |
+| 8 | `call AnimationAction.getEffectiveTimeScale` | 86 | `#evaluate` < `SkeletalMesh3D.update` |
+| 9 | `set Mesh.material` | 29 | `AutoExposureNode.updateBefore` |
+| 10 | `call PerspectiveCamera.updateMatrixWorld` | 27 | `Object.significance` < `ParticleSignificance` |
+
+Eight of the ten are animation, and the eighth is still a `#evaluate` read; the first non-animation class is 29 a frame. That is P1 and P2 in one measurement, and it is why Phase 2 is worth more than Phase 3's render-side crossings.
 
 **Fresh profile** (`~/.cache/tmp-tn/prd828/out/js1106.json`, 15 s, 386 frames, 25.7 fps on a host at load 26 — the shares are the evidence, not the absolute ms): inclusive per frame — `#evaluate` 2.455 ms, `#syncStride` 1.950 ms (P1's tick, 4.4 ms together), `prepareAnimation` 0.548 ms (P2's rate bands), `updateBefore` 2.721 ms (P5's nested pass renders), `processRender` 1.157 ms (P6). Self — `value web-engine-runtime.js` 1.399 ms (P3's facade reads), `invoke` 0.538, `writeBuffer` 0.515 and `beginRenderPass` 0.324 (P4's wasm-to-JS WebGPU calls), `sync web-engine-runtime.js` 0.410 (P5's uniform sync). `(idle)` read 11.4 ms, so the loaded host left the frame GPU-bound; a second profile on a quiet host is worth taking with the Phase 2 window rather than re-running the baseline.
 
