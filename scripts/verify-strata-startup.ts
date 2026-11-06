@@ -373,6 +373,8 @@ export async function collectViteBuildIdentity(worktreeRoot: string) {
       {
         cwd: exampleRoot,
         encoding: "utf8",
+        // The full dependency tree is about 1.8 MB of JSON, past execFileSync's 1 MB default (ENOBUFS).
+        maxBuffer: 64 * 1024 * 1024,
       },
     ),
   ) as Array<{ devDependencies?: Record<string, IPnpmPackageNode> }>;
