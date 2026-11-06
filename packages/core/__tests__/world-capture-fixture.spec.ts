@@ -202,8 +202,8 @@ describe("PRD-477 world capture fixture", () => {
     run.fly(true);
     for (let tick = 0; tick < 400; tick++) {
       run.scene.update(run.ctx, 1 / 60);
-      const [px, py, pz] = run.debug()?.cameraPosition as number[];
-      const [tx, ty, tz] = run.debug()?.cameraTarget as number[];
+      const [px, py, pz] = run.debug()?.cameraPosition as [number, number, number];
+      const [tx, ty, tz] = run.debug()?.cameraTarget as [number, number, number];
       const reach = py / (py - ty);
       const gaze = [px + (tx - px) * reach, pz + (tz - pz) * reach];
       for (const axis of gaze) expect(Math.abs(axis)).toBeLessThanOrEqual(128 + 1e-9);
