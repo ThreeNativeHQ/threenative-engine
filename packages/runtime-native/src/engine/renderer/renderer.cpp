@@ -5619,8 +5619,11 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     // cached draw commands across frames; only the visible set and instance counts change). A draw out of view keeps its
     // row with no instances, drawn through an indirect record, so the bundle holds while the visible set changes. Used
     // while every opaque draw is order-free; `split` ends the rows (the main pass's viewport copy).
+    // `keyTail` is how many words of `key` the pass itself appends after the last draw's (the main key's split
+    // index, the aux key's mask and custom-slot count, the velocity key's zero): a row's words are its draw's,
+    // never the pass layout's, or a layout word shifts every row's span and the rows churn on a static scene.
     const auto retainRows = [&](MainRows& retained, const std::vector<Planned>& draws, std::vector<uint64_t>& key,
-                                std::vector<uint32_t>& keyRows, std::size_t split, PassRows& out) {
+                                std::vector<uint32_t>& keyRows, std::size_t split, std::size_t keyTail, PassRows& out) {
         out = PassRows{};
         out.on = true;
         const double rowsStarted = meterMs();  // the rows are recording work: the meter counts them
@@ -5640,7 +5643,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         // A draw resolves its row only when its key row changed (instances aside); the bundle's rows are rebuilt,
         // and the bundle re-recorded, only when a row changed, came or went.
         const auto words = [&](std::size_t k) {
-            const auto end = k + 1 < draws.size() ? keyRows[k + 1] : key.size() - 1;
+            const auto end = k + 1 < draws.size() ? keyRows[k + 1] : key.size() - keyTail;
             return std::span<const uint64_t>(key.data() + keyRows[k], end - keyRows[k]);
         };
         const auto same = [](const std::vector<uint64_t>& was, std::span<const uint64_t> now) {
@@ -5691,7 +5694,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             const auto& was = retained.planKey;
             if (!retained.ordered || was.size() != key.size() || retained.planRows != keyRows) return false;
             for (std::size_t k = 0; k < keyRows.size(); ++k) {
-                const std::size_t from = keyRows[k], to = k + 1 < keyRows.size() ? keyRows[k + 1] : key.size();
+                const std::size_t from = keyRows[k], to = k + 1 < keyRows.size() ? keyRows[k + 1] : key.size() - keyTail;
                 if (!std::equal(key.begin() + from, key.begin() + from + 5, was.begin() + from) ||
                     !std::equal(key.begin() + from + 6, key.begin() + to, was.begin() + from + 6)) return false;
             }
@@ -5896,20 +5899,22 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         const auto rowOf = [&](std::size_t k) { return k < plan.size() ? job.bundleRows[k] : job.bundleKey.size() - 1; };
         job.viewportKey.assign(job.bundleKey.begin() + rowOf(split), job.bundleKey.end() - 1);
         job.tailKey.assign(job.bundleKey.begin() + rowOf(job.tail), job.bundleKey.begin() + rowOf(split));
-        retainRows(*mainRows_, plan, job.bundleKey, job.bundleRows, job.tail, job.mainRows);
+        retainRows(*mainRows_, plan, job.bundleKey, job.bundleRows, job.tail, 1, job.mainRows);
+        const std::size_t auxKeyTail = kAuxBundleKeyWords;  // the aux key's mask and custom-slot count
         // The aux and velocity passes' transparent draws record their own bundle too, as the main pass's do.
         const auto retainTail = [&](MainRows& retained, const std::vector<Planned>& draws, std::vector<uint64_t>& key,
-                                    std::vector<uint32_t>& keyRows, PassRows& out) {
+                                    std::vector<uint32_t>& keyRows, std::size_t keyTail, PassRows& out) {
             const std::size_t tail = std::find_if(draws.begin(), draws.end(), [](const Planned& p) {
                 return p.item->transparent;
             }) - draws.begin();
-            std::vector<uint64_t> tailKey(key.begin() + (tail < draws.size() ? keyRows[tail] : key.size() - 1), key.end() - 1);
-            retainRows(retained, draws, key, keyRows, tail, out);
+            std::vector<uint64_t> tailKey(key.begin() + (tail < draws.size() ? keyRows[tail] : key.size() - keyTail),
+                                          key.end() - keyTail);
+            retainRows(retained, draws, key, keyRows, tail, keyTail, out);
             out.tail = tail;
             out.tailKey = std::move(tailKey);
         };
-        retainTail(*auxRows_, job.auxPlan, job.auxKey, auxKeyRows, job.auxRows);
-        retainTail(*velocityRows_, velocityPlan, job.velocityKey, velocityKeyRows, job.velocityRows);
+        retainTail(*auxRows_, job.auxPlan, job.auxKey, auxKeyRows, auxKeyTail, job.auxRows);
+        retainTail(*velocityRows_, velocityPlan, job.velocityKey, velocityKeyRows, 1, job.velocityRows);
     } else if (stableRows_) {
         for (auto* rows : {&mainRows_, &auxRows_, &velocityRows_})
             if (*rows) (*rows)->clear();  // the next record may release what they hold

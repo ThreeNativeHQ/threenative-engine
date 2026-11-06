@@ -12,6 +12,11 @@
 
 namespace tn::engine {
 
+/** how many words `appendAuxBundleKey` appends: the named-target mask and the custom-slot count. The
+ *  retained-rows boundary (`Renderer::renderPrepared`'s `keyTail`) reads this count, so a word added
+ *  here cannot silently shift the last draw's row span. */
+inline constexpr std::size_t kAuxBundleKeyWords = 2;
+
 /** Appends the aux pass key's own words: the named targets it holds, and the custom MRT slots it adds. */
 inline void appendAuxBundleKey(std::vector<uint64_t>& key, uint8_t auxMask, std::size_t customSlots) {
     key.push_back(auxMask);
