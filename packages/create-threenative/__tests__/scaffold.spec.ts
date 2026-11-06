@@ -367,7 +367,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Re-pinned 2026-10-31: the starter crate gets a stacked-disc contact shadow (render/contactShadow.ts)
   // that keeps its contact coverage above the 0.02 floor at the core +1 EV key.
   // 2026-11-04 (PRD-777 on PRD-632): action-rpg AGENTS/CLAUDE name the spell factories in one line. Measured by this test.
-  "action-rpg": "f59d93aba8307b1a9ffca3601e189a1d2bbcddbfb0bb90caca98d7635d9a96d6",
+  "action-rpg": "ce653a36fa0c22b8ad38c4480c0a98e51f1fcb64246fadc15a2bb1efb966f33f",
   // PRD-732 (2026-10-23): the new Hop Garden kit, measured through createProject (method checked
   // against platformer's unchanged value). Recomputed 2026-10-24 for the PRD-732 polish round: the
   // new hero, the dust and sparkle effects and the effects scenario. Recomputed 2026-10-24 for
@@ -381,7 +381,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-24 for the shadow window: the 52 m map now travels 14 m ahead of the hero,
   // so the castle and trees the camera sees keep their shadows; the 2048 map and shadow pass cost
   // stay the same.
-  collectathon: "606a317cf4e8d5a5a29103c4fbc5fbb06a3061f4b233e8310e6ed3602ce006d7",
+  collectathon: "b25750df5a0660509341e64d15f2a57624172119c83faa5fdce07cb55b1e64ba",
   // PRD-733 (2026-10-23): the new Lantern Vale kit, measured through createProject.
   // Recomputed 2026-10-24 for the owner perf round: the fixed-step catch-up cap and the gentler
   // wind on the crowns, clusters and grass tufts. Only this tree moves.
@@ -390,14 +390,14 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Re-pinned 2026-10-26 (PRD-748 loading cover): adventure loses its `loaded` gate, rain
   // reads state through `useUiStateDuringStartup`.
   // Re-pinned 2026-10-27 (PRD-749 hud-clean): adventure, collectathon and rain HUD text reaches 3:1.
-  adventure: "8b21f03a43925d919961e079c90d44e02d582dc8c59dd3738c09795f35ec3b1c",
+  adventure: "2049ea7f64e7d04a531ca49525e8d4f3a3287fa1a94702790d024771cc5e59fe",
   // PRD-734 (2026-10-24): the new Clover Cup kart kit, measured through createProject.
-  kart: "0b9b315fbb0841411e338b3a275daa06ebe7cdffa81743f35f228aa0ddabce9d",
-  minimal: "4f6a82f45399c8e17f10f05ad99d1410853eb8a1674621805c70f0d9e0334797",
-  platformer: "d7eabd7796b37bd010201693a95536de04a13c566d4f83b1a6d2d47b6288902d",
-  puzzle: "80a8011d5d43bcd7c588bab7626e40c0f2a48c3e27681c355ccff2ebee7dc84d",
-  racing: "330b81f25222f97f1c90e86285abad7df8bf2cf6c5ad9facca640678327e16cd",
-  rain: "0a42d83e6936f305dedff908839857d769aec74554137de15a96a24fe17a9df2",
+  kart: "bef87d5f9ede3bd570a54f5a9b8551fa2354c90d33b66e43bae0a3d8007a70ca",
+  minimal: "5f2584330ee12ffc64efbe305e91a8196e7f2c863e77a30b79bd6fd46c54a9da",
+  platformer: "fe50d73797c4edf3be76c4d672537c3c202ec39cc53807e61e45116773e6b9cb",
+  puzzle: "82da48e02a6818da456fd629751b6cab01688feb8c8ffd9d9947fa2dc8dcca87",
+  racing: "714d9758f0441450f7c182847c0089847207d12efe6fdfa5c9fe26e27e6b4b66",
+  rain: "82dedd923010ac894e967cd1f4c212c086da57d77e6c7e5ac34c205fa79e38de",
   // Re-pinned 2026-10-28: the rts high tier turns camera motion blur off (an RTS pan smeared every unit).
   // Re-pinned 2026-10-28 (PRD-765): rts becomes AstraCraft — painted ground, mesas, scrub, ACES 1.02 look and the command HUD;
   // then its legacy-linear colours, gamma fog of war, no bloom or environment, and a frame-sized shadow window.
@@ -414,18 +414,18 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // and the engine pin goes, so the tree moves. Measured again the same day for the corrected
   // `performance.maxTriangles` bound (45,000 to 54,000), which is a scenario file in the tree.
   // Measured by this test.
-  rts: "78ac1ebff238e00c0d93aedaa58e5fc18888f158ead995accb7a178a40697392",
-  runner: "4a1b81e2b6ca7e616eff17ac6eefc5cb61a1292b69a0d6a5deeee0cbffedfd54",
+  rts: "9e7cffa3e15e2c71997a827cea9ca945fe3f671c7543c67f38c2066a9e91e346",
+  runner: "a3b4c14419800c86a79ee31940fee3da6eda1d720773816bda56982c9d91019d",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
   // Re-measured 2026-11-03 (PRD-617): its AGENTS/CLAUDE engine section no longer claims an engine
   // pin the template does not carry. Measured by this test.
   // Re-measured 2026-11-03 (PRD-617): `sails.playtest.json` sets `drawEvery: 60`, so the scenario
   // asks the runner for 30 drawn frames per 1,800-tick hold instead of taking as many readback
   // samples as the adapter happens to draw. Only this tree moves.
-  sailing: "dd56ce23accf7be32040836da4e261349df7af26937b7737cc47e71cdb2b6557",
+  sailing: "c969919e0399f39b4b6c69fc38622733144b8079480ecb31e65442d4a5d875da",
   // Recomputed 2026-10-26 (PRD-746): the scene merges the town through mergeByMaterial (src/townBatch.ts).
-  shooter: "7ec05118ccbfd1ebc0d8e60ff6671fb0756024fe60e15a3427cbb91ec9511830",
-  snow: "939f0feee3f099662740ae7fde673980adbc21fac23af29c10dce1a677ff8315",
+  shooter: "4531d59babdb3093ca6d89dc85dceac5aff3c949d95c5a91d9f6ec8aabd0cefa",
+  snow: "939acd60753abf85a63bc905335fbbdcf2116af763770888c12baecacb86752d",
   // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.
   // Recomputed 2026-10-16: starter's adaptiveQuality split its policy resolution into qualityPolicy.ts
   // to stay under the 200-line render-file cap; only starter's tree moves.
@@ -438,8 +438,8 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Play.ts's motion samples between presented frames and fixed steps, and moved two native
   // playtests; #606 moved the render resolve. Starter is the one template both sides changed.
   // Measured by this test.
-  starter: "0dd4e5a99ede6752745fa328dc3920324574e7087907b93e64bae893bf429d8e",
-  "tower-defense": "fa9b82d3ef725af21a9e56e4d6abcc0dc7c6581f5682da8ff33dbd5c386ac5ed",
+  starter: "2a5e82425d3aa085b446f20e9b2031213a23a9244d44f7e9845dc74c6a568fa9",
+  "tower-defense": "d0728d89e970dd0d6edf6564795f13566b9a587ea966f831995d06cb7becc837",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
@@ -987,8 +987,8 @@ describe("create-threenative", () => {
             `${file} links a page the package does not ship: ${page}`,
           ).toBe(true);
         }
-        // Not a vacuous pass: the template's own instructions are the link index.
-        if (file === "AGENTS.md") expect(pages.length).toBeGreaterThan(10);
+        // Not a vacuous pass: the kit router names the conventions page, its kit notes and the recipes.
+        if (file === "AGENTS.md") expect(pages.length).toBeGreaterThanOrEqual(4);
       }
       // Nothing substitutes into the pages any more, so a token would ship literally.
       for (const page of await readdir(bundleDirectory)) {

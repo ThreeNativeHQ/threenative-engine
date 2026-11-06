@@ -52,10 +52,10 @@ subagent; `PONYTAIL=off` opts out, and Codex needs `/hooks` trust. Both also run
 no new `src/` file until the engine was searched since the prompt (PRD-827, `TN_DISCOVERY_GATE=off`).
 Long recipes live in `agent-docs/references/*.md`, not the templates. The scaffolder copies nothing;
 instructions link the installed `node_modules/create-threenative/agent-docs/references/<page>.md`,
-and it fails closed when a template names a missing page. Keep each template `AGENTS.md` under 100
-lines; `scripts/instruction-budget.ts` still bounds rendered words, references, and the `CLAUDE.md`
-mirror. Keep mandatory rules (first-use capability search, platform constraints, fail-closed
-playtest rules) in the root; move detailed workflows into a skill or reference and link its path.
+and it fails closed when a template names a missing page. A kit `AGENTS.md` is a generated router
+(PRD-825): at most 120 lines and 1,200 words (`scripts/instruction-budget.ts`). Edit only its "This
+kit" lines; `pnpm sync:agents` writes the rest from `agent-docs/kit-*.md`, `kit.json`, the kit tree
+and `conventions.json` (`scripts/kit-agent-docs.ts`). A new convention is a registry row plus anchor.
 
 **A template's platform claims must match what was executed.** The status paragraph under each
 template's Commands block is a fail-closed statement, not marketing; narrow it when a dependency

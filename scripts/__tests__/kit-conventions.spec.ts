@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { type IConventionRow, conventionProblems, rowAppliesTo } from "../kit-agent-docs.js";
@@ -34,6 +34,13 @@ function callsSymbol(kit: string, symbol: string): boolean {
     call.test(readFileSync(file, "utf8")),
   );
 }
+function section(text: string, heading: string): string {
+  const start = text.indexOf(`## ${heading}`);
+  if (start < 0) return "";
+  const end = text.indexOf("\n## ", start + 1);
+  return text.slice(start, end < 0 ? undefined : end);
+}
+
 describe("convention registry", () => {
   it("is sound: every row has an override, an anchor and real kits", () => {
     expect(conventionProblems(rows, page, kits, callsSymbol)).toEqual([]);
@@ -53,5 +60,35 @@ describe("convention registry", () => {
     expect(conventionProblems(extra, page, kits, callsSymbol)).toContain(
       "row 'unlisted-extra': no anchor in conventions.md",
     );
+  });
+});
+
+describe("kit convention index", () => {
+  it.each(kits)("%s indexes exactly the rows it applies, in AGENTS.md and CLAUDE.md", (kit) => {
+    for (const file of ["AGENTS.md", "CLAUDE.md"]) {
+      const index = section(readFileSync(path.join(TEMPLATES, kit, file), "utf8"), "Conventions");
+      expect(index, `${kit}/${file} has no ## Conventions`).not.toBe("");
+      for (const row of rows) {
+        const line = new RegExp(`^- \\*\\*.+\\*\\* \`#${row.id}\`: `, "mu");
+        if (rowAppliesTo(row, kit)) {
+          expect(index, `${kit}/${file} is missing convention '${row.id}'`).toMatch(line);
+          expect(index, `${kit}/${file} drops the override of '${row.id}'`).toContain(row.override);
+        } else {
+          expect(index, `${kit}/${file} indexes '${row.id}', which it does not apply`).not.toMatch(
+            line,
+          );
+        }
+      }
+    }
+  });
+
+  it.each(kits)("%s keeps its kit notes page and at most six hand lines", (kit) => {
+    const source = readFileSync(path.join(TEMPLATES, kit, "AGENTS.md"), "utf8");
+    expect(existsSync(path.join(CREATE, "agent-docs/references", `kit-${kit}.md`))).toBe(true);
+    const hand = section(source, "This kit")
+      .replace(/<!-- shared: [^>]+ -->[\s\S]*?<!-- \/shared -->/gu, "")
+      .split("\n")
+      .filter((line) => line.trim() !== "" && !line.startsWith("## "));
+    expect(hand.length, `${kit} hand block`).toBeLessThanOrEqual(6);
   });
 });

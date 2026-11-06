@@ -83,7 +83,7 @@ else
   add lint 'pnpm lint'
   add docs 'pnpm check:docs && pnpm exec vitest run scripts/__tests__/check-doc-links.spec.ts scripts/__tests__/evidence-budget.spec.ts scripts/__tests__/evidence-citations.spec.ts scripts/__tests__/sync-agent-docs.spec.ts scripts/__tests__/ci-structure.spec.ts scripts/__tests__/ci-needs.spec.ts'
   if [ "$selection" = instructions ]; then
-    add agents 'pnpm build && pnpm sync:agents --check && pnpm exec vitest run scripts/__tests__/instruction-budget.spec.ts scripts/__tests__/primary-docs.spec.ts scripts/__tests__/check-template-conventions.spec.ts scripts/__tests__/check-template-quality.spec.ts packages/playtest/__tests__/doc-drift.spec.ts packages/core/__tests__/constraints.spec.ts'
+    add agents 'pnpm build && pnpm sync:agents --check && pnpm exec vitest run scripts/__tests__/instruction-budget.spec.ts scripts/__tests__/primary-docs.spec.ts scripts/__tests__/kit-conventions.spec.ts scripts/__tests__/check-template-quality.spec.ts packages/playtest/__tests__/doc-drift.spec.ts packages/core/__tests__/constraints.spec.ts'
   fi
 fi
 
