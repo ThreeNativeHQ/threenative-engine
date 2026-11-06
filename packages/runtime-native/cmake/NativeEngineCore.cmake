@@ -366,8 +366,9 @@ tn_native_engine_test(tn-native-engine-reflection-pass-test tests/native-engine/
     native_engine_reflection_pass_reused_address=rebuilt_when_the_address_is_reused)
 
 # A Data3DTexture in a texture copy: the usage its 3D texture is created with, and the mip tail it must not get
-# (texture_copy.h). It links the renderer for the WebGPU usage flags the header names.
-if(NOT EMSCRIPTEN)
+# (texture_copy.h). It links the renderer for the WebGPU usage flags the header names, so it builds only where the
+# host renderer exists: not in Emscripten, and not in a `TN_ENGINE_CORE_ONLY` tree (NativeEngine.cmake defines it).
+if(NOT EMSCRIPTEN AND NOT TN_ENGINE_CORE_ONLY)
     tn_native_engine_test(tn-native-engine-texture-copy-test tests/native-engine/texture_copy_test.cpp
         native_engine_texture_copy_volume=volume_usage
         native_engine_texture_copy_mips=mip_tail)
