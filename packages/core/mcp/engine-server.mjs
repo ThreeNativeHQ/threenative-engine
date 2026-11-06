@@ -469,6 +469,7 @@ async function watchReference(options) {
       { maxBuffer: 16 * 1024 * 1024, timeout: WATCH_TIMEOUT_MS }
     );
   } catch (error) {
+    rmSync(out, { recursive: true, force: true });
     const stderr = String(error.stderr ?? "").trim();
     throw new Error(`TN_WATCH_FAILED: ${stderr || String(error)}`);
   }

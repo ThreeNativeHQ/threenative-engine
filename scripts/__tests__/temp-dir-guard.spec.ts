@@ -16,6 +16,10 @@ const allowedProductionCreators = new Map<string, string>([
   ],
   ["packages/playtest/src/runner/android.ts", "Android mailbox staging is removed in finally."],
   [
+    "packages/engine-mcp/src/references.ts",
+    "A watch returns its frame folder to the agent that asked for it and removes it when the watch fails.",
+  ],
+  [
     "packages/runtime-native/scripts/verify-ui-cadence.ts",
     "The visible UI gate removes its owned probe after success and retains failed builds for diagnosis.",
   ],

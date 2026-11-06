@@ -646,6 +646,8 @@ export async function watchReference(options: IWatchOptions) {
       { maxBuffer: 16 * 1024 * 1024, timeout: WATCH_TIMEOUT_MS },
     );
   } catch (error) {
+    // The folder is the caller's only on success: a failed watch leaves nothing behind.
+    rmSync(out, { recursive: true, force: true });
     const stderr = String((error as { stderr?: unknown }).stderr ?? "").trim();
     throw new Error(`TN_WATCH_FAILED: ${stderr || String(error)}`);
   }
