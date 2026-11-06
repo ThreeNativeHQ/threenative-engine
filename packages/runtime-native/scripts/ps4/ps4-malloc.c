@@ -27,6 +27,13 @@
 // and before libv8_monolith.a). E5 links the same object.
 #include <errno.h>
 
+// TLS alignment pin, riding in the one object every guest links. OpenOrbis create-fself raises
+// PT_TLS p_align to 0x20, and the loader (shadPS4 tcb.cpp, as Sony's rtld) copies the init image
+// to tp - alignTo(memsz, 0x20). ld.lld baked tp - alignTo(memsz, p_align) into every TLS access,
+// so with an 8-aligned segment each initialised thread_local read 0 (E4: V8's assert scopes ->
+// "AllowHeapAllocationInRelease::IsAllowed()"). A 32-aligned member makes both offsets agree.
+__attribute__((used, aligned(32))) _Thread_local char tn_ps4_tls_align32;
+
 #ifndef MMAP_CLEARS
 #define MMAP_CLEARS 0
 #endif

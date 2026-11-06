@@ -295,6 +295,9 @@ bool CheckAllocator(size_t bytes, size_t align) {
   return ok;
 }
 
+thread_local unsigned tls_probe = 0x5a17c0de;
+__attribute__((noinline)) unsigned TlsProbe() { return tls_probe; }
+
 int main(int argc, char* argv[]) {
   setvbuf(stdout, nullptr, _IONBF, 0);
   // Guest fd 2 reaches the emulator's log as [stderr] (src/core/file_sys/fs.cpp:706-707), so V8's
@@ -320,6 +323,9 @@ int main(int argc, char* argv[]) {
     probe[1] = 1;
     printf("TN_PS4_E4 pages map_probe=%lu\n", static_cast<unsigned long>(probe.size()));
   }
+  // V8 keeps its per-thread assert scopes in an initialised thread_local (all allowed); a TLS
+  // initial image the loader never copied reads 0 and fails AllowHeapAllocation at first alloc.
+  printf("TN_PS4_E4 tls probe=0x%x (want 0x5a17c0de)\n", TlsProbe());
   Stage("flags");
   // jitless: no executable memory is ever written on the PS4 (and the run must not depend on it).
   // single-threaded: the platform below has one thread, so V8 must not ask for workers.

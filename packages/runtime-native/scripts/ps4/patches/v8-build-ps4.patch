@@ -106,15 +106,26 @@ index 0000000..4a87eb0
 +}
 diff --git a/toolchain/ps4/ps4-compat.h b/toolchain/ps4/ps4-compat.h
 new file mode 100644
-index 0000000..a9a50fc
+index 0000000..0000000
 --- /dev/null
 +++ b/toolchain/ps4/ps4-compat.h
-@@ -0,0 +1,14 @@
+@@ -0,0 +1,25 @@
 +// PS4 (OpenOrbis) compat shim, force-included into every target translation
 +// unit. Fixes the OpenOrbis sysroot headers where they disagree with what
 +// POSIX/glibc-based C++ code expects. Keep each entry one line + a reason.
 +#ifndef V8_BUILD_TOOLCHAIN_PS4_COMPAT_H_
 +#define V8_BUILD_TOOLCHAIN_PS4_COMPAT_H_
++
++// libkernel (FreeBSD ABI) keeps a pointer in each pthread attr object, but the
++// OpenOrbis musl alltypes.h declares 4 bytes, so libkernel's 8-byte store ran
++// past the caller's object (E4: pthread_mutexattr_destroy zeroed V8's saved
++// `this`). Declared first, the musl typedefs are skipped by their guards.
++typedef struct { void* __p; } pthread_mutexattr_t;
++#define __DEFINED_pthread_mutexattr_t
++typedef struct { void* __p; } pthread_condattr_t;
++#define __DEFINED_pthread_condattr_t
++typedef struct { void* __p; } pthread_barrierattr_t;
++#define __DEFINED_pthread_barrierattr_t
 +
 +#include <signal.h>
 +

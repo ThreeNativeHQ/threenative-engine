@@ -143,8 +143,9 @@ const EXPERIMENTS = {
     // The verdict is the value V8 COMPUTED: the guest source holds only '6*7', so an engine that
     // cannot run the script never prints 42, and a mode it did not take never matches either.
     markerPattern: /TN_PS4_E4 42 mode=(jitless|jit)/,
-    // A V8 exception is the engine's own account of the red; it ends the wait early.
-    failurePattern: /V8 error:/,
+    // A V8 exception is the engine's own account of the red; it ends the wait early. So does a
+    // thread_local that lost its init image (PT_TLS alignment, see ps4-malloc.c).
+    failurePattern: /V8 error:|TN_PS4_E4 tls probe=(?!0x5a17c0de)/,
     verdict: match => ({ ok: true, detail: ` mode=${match[1]}` }),
   },
 };

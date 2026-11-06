@@ -1,6 +1,6 @@
 # PRD-784 — PS4 feasibility: emulator experiments, then one engine cube on the console
 
-**Status:** PARTIAL — E1, E2 and E3 green on `PS4_EMULATED`
+**Status:** PARTIAL — E1 to E4 green on `PS4_EMULATED`
 **Priority:** P2 — Owner-requested feasibility: boxes E1 to E6 and the Blocked on console run are all open, and no release waits on them.
 **Complexity:** 7 (HIGH)
 **Owner:** Joao Paulo Furtado (console steps only); agent (everything else)
@@ -118,6 +118,7 @@ performance work. A go result opens a second PRD for those.
 - 2026-11-06 (agent): The pinned vulkan-ps4 and OpenGNM stack could not draw on any target. Seven of its 12 patches fix six gaps that real hardware also hits: no static viewport, no `CB_COLOR_CONTROL`, no `SPI_SHADER_COL_FORMAT`, a shared epilogue buffer rewritten in flight, shader code below 256-byte alignment, and a swapchain clear that does nothing. The other five fix the build, compiler diagnostics, the emulator encoding (`int_sel` 3 to 2, as Sony's libgnm uses) and the readback test. Treat the driver as immature, not as console-proven.
 - 2026-11-06 (agent): E2 judges shadPS4's presented frame, not the guest readback. shadPS4 keeps render targets in host VRAM, and a guest GPU copy from them reads stale guest memory. The runner turns on GPU readbacks (`readbacks_mode` 2), but that path does not flush a render target that a GPU copy reads.
 - 2026-11-06 (agent): E3 takes route A, Dawn's `webgpu.h` on its Vulkan backend over vulkan-ps4. The driver lacked the `VK_KHR_surface` queries and ignored `pName`, so patches 0013–0014 add them in the driver, not as fakes in Dawn, because real hardware needs the same entry points. The device runs in Compatibility mode, because the GNM limit of 4096 for 2D textures is below Core's 8192. Engine features that need Core limits must gate on the adapter. The VideoOut scanout is RGBA8 in memory order, so the swapchain offers only `R8G8B8A8_UNORM`.
+- 2026-11-06 (agent): The OpenOrbis toolchain has two ABI traps that real hardware shares, and every PS4 guest (E5 included) must carry both fixes. (1) Its musl `alltypes.h` declares `pthread_mutexattr_t`, `pthread_condattr_t` and `pthread_barrierattr_t` as 4 bytes, but libkernel stores an 8-byte pointer in each. In V8's `RecursiveMutex` constructor that store erased the saved `this` (found with a gdb register bisect in shadPS4). V8's force-included `ps4-compat.h` declares the three types at pointer size first. (2) `create-fself` raises PT_TLS `p_align` to 0x20, while ld.lld had computed thread-pointer offsets for the original 8. The loader copies the init image 0x18 bytes away from where the code reads it, so each initialised `thread_local` read 0. `ps4-malloc.c` adds a 32-byte-aligned TLS member, and the e4 guest probes one `thread_local` and fails at once when it reads wrong. OpenOrbis's prebuilt libc++ (`std::recursive_mutex`) is compiled with the 4-byte type, so E5 must not use it.
 - 2026-11-06 (agent): Each shadPS4 run gets a private HOME, XDG folders and Xvfb, with no Wayland, D-Bus or `QT_QPA_PLATFORM` from the session. The run also creates `home/1000` first. Without both, shadPS4 opens its "Save Migration" box on the owner's desktop (`src/core/user_manager.cpp:293-300` at v.0.21.0).
 
 ## Execution Phases
@@ -135,13 +136,13 @@ performance work. A go result opens a second PRD for those.
 
 #### Phase 2: The two seams, GPU and JavaScript
 
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** `packages/runtime-native/cmake/ps4.toolchain.cmake` (clone the `ios.toolchain.cmake` pattern), `packages/runtime-native/CMakePresets.json` (`tn-ps4`), `packages/runtime-native/scripts/ps4/` (one test source per box, and any driver patch).
 **Implementation:** Run E3 through the routes in order and record the chosen route under `## Decisions`. Run E4 at the same time, because it has no dependency on E3. Build V8 from the version pinned in `js-engine-versions.json`, try JIT first, then `--jitless`.
 **Verification:** each box below. Log the adapter limits at E3, because they decide which engine features need a gate.
 
 - [x] E3: A triangle draws through `webgpu.h` in shadPS4. proof: `node packages/runtime-native/scripts/ps4/run-experiment.mjs e3` → `PS4_EMULATED E3 PASS drawn=12.55%`, three runs on 2026-11-06 (two by the arm, one by the coordinator). The WGSL shader compiles at run time (Tint → SPIR-V → psbc → GCN), and the presented frame shows the shader's orange `vec4f(1,0.55,0)` on the clear `0.25` blue, checked by eye. Route A (Dawn `d14ae3d9`, Vulkan backend on vulkan-ps4, Compatibility mode). Adapter `PS4 GPU (GNM)`, vendor 0x1002, device 0x9920. Limits: maxTextureDimension2D 4096, maxBindGroups 4, maxStorageBuffersPerShaderStage 8, maxComputeWorkgroupSizeX 1024, maxBufferSize 4 GiB. E2 still passes after a from-scratch rebuild with driver patches 0013–0014.
-- [ ] E4: V8 runs a script in shadPS4 and logs its mode. proof: `node packages/runtime-native/scripts/ps4/run-experiment.mjs e4`
+- [x] E4: V8 runs a script in shadPS4 and logs its mode. proof: `node packages/runtime-native/scripts/ps4/run-experiment.mjs e4` → `PS4_EMULATED E4 PASS mode=jitless`, twice on 2026-11-06 (coordinator runs). The guest source holds only `6*7`, so the 42 is computed by V8 13.1.201.22 (the desktop pin), built jitless and single-threaded with `--no-freeze-flags-after-init` (16 KiB pages). JIT was not tried: native PS4 homebrew gets `EPERM` for executable memory (OrbisFox, on hardware), so jitless is the shipping mode. Three guest-side fixes, each true on hardware too: pinned dlmalloc (`ps4-malloc.c`), pointer-size pthread attr types (`v8-build-ps4.patch`), and a 32-byte PT_TLS alignment pin (`ps4-malloc.c`). See `## Decisions`.
 
 #### Phase 3: The engine cube and the console bundle
 
