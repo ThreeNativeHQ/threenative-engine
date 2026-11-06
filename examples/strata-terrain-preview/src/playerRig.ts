@@ -120,6 +120,7 @@ export function createPlayerRig(ctx: TerrainCtx, options: IPlayerRigOptions): IP
   });
   figure.root.position.y = FEET;
   figure.root.rotation.y = Math.PI;
+  // engine-override: the capsule is the physics body only; the rigged figure added below is what draws.
   actor.material.visible = false;
   actor.add(figure.root);
   figure.play(CLIPS.idle);
