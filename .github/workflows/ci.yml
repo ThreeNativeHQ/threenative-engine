@@ -1195,10 +1195,10 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - uses: ./.github/actions/workspace-dist
-        if: github.event_name == 'schedule'
         with:
           # Compiled once by build-artifacts and downloaded rather than rebuilt: this job is
           # ordered behind it above, so the upload always exists and the cache key never misses.
+          # Every event needs it: the Strata bake below imports the built @threenative/terrain.
           shared-artifact: workspace-packages
           save-bundles: "false"
           pack-archives: "false"
