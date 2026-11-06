@@ -3,7 +3,7 @@
   "version": "0.1.8",
   "serverInfo": {
     "name": "threenative-animation",
-    "version": "0.1.3"
+    "version": "0.1.8"
   },
   "recommended": ["animation_inspect", "animation_attach", "animation_open_view"],
   "tools": [

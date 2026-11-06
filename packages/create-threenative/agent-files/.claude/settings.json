@@ -1,4 +1,12 @@
 {
+  "enabledMcpjsonServers": [
+    "threenative-assets",
+    "threenative-sculpt",
+    "threenative-engine",
+    "threenative-terrain",
+    "threenative-animation",
+    "threenative-devtools"
+  ],
   "hooks": {
     "SessionStart": [
       {

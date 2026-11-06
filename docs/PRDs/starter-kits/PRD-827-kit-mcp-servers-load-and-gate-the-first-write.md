@@ -1,6 +1,6 @@
 # PRD-827 — A kit session loads its MCP servers, can watch gameplay, and searches the engine before its first new file
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Priority:** P1 — the owner sees agents reach the ThreeNative MCP servers only through `node_modules` and only when asked, which breaks the primary "make me a game like X" workflow
 **Complexity:** 3 (LOW) — 1 hook, 1 MCP tool, 1 search change, scaffold settings, 3 specs; risk override: none
 **Owner:** João Paulo Furtado
@@ -87,11 +87,13 @@ See the phase boxes. Each box names its proof.
 
 #### Phase 1: The five servers load in a fresh kit session
 
-**Status:** OPEN
+**Status:** DONE (2026-11-05)
 **Files:** the scaffold `.claude/settings.json` source in `packages/create-threenative/agent-files/` or `templates/`, `scripts/sync-mcp-configs.ts` if it owns the list, `packages/create-threenative/__tests__/scaffold.spec.ts`.
 
-- [ ] AC-1 [local]: a `claude -p` session started in a scratch scaffold lists the five `threenative-*` servers as connected in its init event, with no approval step. proof: the init event's `mcp_servers` before (expected: pending approval or absent) and after; `scaffold.spec.ts` asserts the five names in `enabledMcpjsonServers`
-- [ ] AC-2 [local]: the animation server version is one number: `servers.mjs:51` says `0.1.3` and `animation-mcp-tools.json` records `0.1.8`. The shipped one wins, and its npx fallback resolves. proof: `npm view threenative-animation-mcp versions` (or the bundled server's `--version`) recorded here; the MCP config spec green (`pnpm sync:mcp --check` today, `scaffold-mcp.spec.ts` after PRD-826 removes the tracked copies)
+- [x] AC-1 [local]: a `claude -p` session started in a scratch scaffold lists the five `threenative-*` servers as connected in its init event, with no approval step. proof: the init event's `mcp_servers` before (expected: pending approval or absent) and after; `scaffold.spec.ts` asserts the five names in `enabledMcpjsonServers`
+  - Done (2026-11-05): the scaffold has six servers, not five (`threenative-terrain` joined after the PRD was written), so `enabledMcpjsonServers` lists all six in `MCP_SERVERS` order. `claude -p` (2.1.318) loads project servers with no approval step on both arms (init event: all six with `source: "project"`; `failed` only because the probe ran `--no-install`), so the approval step shows in a trusted interactive folder: `claude mcp get threenative-engine` with an isolated `CLAUDE_CONFIG_DIR` that trusts the probe folder reads `⏸ Pending approval` before and `✘ Failed to connect` (approved, launch attempted, no install) after. `scaffold-mcp.spec.ts` "approves every core server in the Claude Code project settings": red without the settings key (`expected undefined to deeply equal [ 'threenative-assets', …(5) ]`), green after. The spec lives in `scaffold-mcp.spec.ts`, beside the host-config proofs, not in `scaffold.spec.ts`.
+- [x] AC-2 [local]: the animation server version is one number: `servers.mjs:51` says `0.1.3` and `animation-mcp-tools.json` records `0.1.8`. The shipped one wins, and its npx fallback resolves. proof: `npm view threenative-animation-mcp versions` (or the bundled server's `--version`) recorded here; the MCP config spec green (`pnpm sync:mcp --check` today, `scaffold-mcp.spec.ts` after PRD-826 removes the tracked copies)
+  - Done (2026-11-05): `npm view threenative-animation-mcp versions` ends at `0.1.8`, and `packages/animation-mcp/package.json` is `0.1.8`. Three numbers became one: `servers.mjs` `0.1.3` → `0.1.8`, the server's own `serverInfo` `0.1.3` → `0.1.8`, and `animation-mcp-tools.json` `serverInfo` follows. Root cause: `prepare-release.ts` bumped the package and never these pins, so `syncSourceVersions` now moves both when the cohort names `threenative-animation-mcp`. The rebuilt bundled server answers `initialize` with `0.1.8`; the npx fallback `npx -y threenative-animation-mcp@0.1.8` resolves and answers `initialize` (published bytes still self-report `0.1.3`, which the next publish fixes). `prepare-release.spec.ts` "keeps one animation server version and moves it with a bump": red (`[ '0.1.3', '0.1.3' ]` vs `[ '0.1.8', '0.1.8' ]`), green after; `scaffold-mcp.spec.ts` + `mcp-tool-schemas.spec.ts` 37/37 green. The stale comment in `animation.mjs` ("not published yet") is corrected.
 
 #### Phase 2: References on every search, and the gameplay watcher
 

@@ -849,6 +849,18 @@ describe("scaffolded host MCP configs", () => {
     },
     SCAFFOLD_ONLY_TEST_TIMEOUT_MS,
   );
+
+  // PRD-827 AC-1: Claude Code holds a project server at "Pending approval" until the user approves
+  // it; naming each server in the project settings loads all of them in the first session.
+  it("approves every core server in the Claude Code project settings", async () => {
+    const root = await makeTempDir("threenative-scaffold-approve-");
+    temporaryRoots.push(root);
+    const { target } = await createProject({ install: false, target: "game" }, root);
+    const settings = JSON.parse(
+      await readFile(path.join(target, ".claude/settings.json"), "utf8"),
+    ) as { enabledMcpjsonServers?: string[] };
+    expect(settings.enabledMcpjsonServers).toEqual(Object.keys(MCP_SERVERS));
+  });
 });
 
 // The scaffolder writes every host config from core's one server table (PRD-826), so a template
