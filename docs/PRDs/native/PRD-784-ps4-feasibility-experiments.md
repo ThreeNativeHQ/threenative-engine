@@ -1,6 +1,6 @@
 # PRD-784 — PS4 feasibility: emulator experiments, then one engine cube on the console
 
-**Status:** NOT STARTED
+**Status:** PARTIAL — E1 green on `PS4_EMULATED`
 **Priority:** P2 — Owner-requested feasibility: boxes E1 to E6 and the Blocked on console run are all open, and no release waits on them.
 **Complexity:** 7 (HIGH)
 **Owner:** Joao Paulo Furtado (console steps only); agent (everything else)
@@ -114,17 +114,18 @@ performance work. A go result opens a second PRD for those.
 - 2026-11-02 (João): V8 only, QuickJS is out, because V8 is the default runtime.
 - 2026-11-02 (João): No legal gate for now. Practical limit kept by the agent: dumped Sony modules, keys and jailbreak binaries stay out of this public repository, because a public commit is hard to undo.
 - 2026-11-02 (João): Experiments stop at the engine cube and a go/no-go. A starter kit is a later PRD.
+- 2026-11-06 (agent): Each shadPS4 run gets a private HOME, XDG folders and Xvfb, with no Wayland, D-Bus or `QT_QPA_PLATFORM` from the session. The run also creates `home/1000` first. Without both, shadPS4 opens its "Save Migration" box on the owner's desktop (`src/core/user_manager.cpp:293-300` at v.0.21.0).
 
 ## Execution Phases
 
 #### Phase 1: The emulator lane and a native triangle
 
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **Files:** `packages/runtime-native/scripts/ps4/run-experiment.mjs` (pins, boot, log marker, non-blank check, fails closed), `packages/runtime-native/scripts/ps4/e1-hello.c`.
 **Implementation:** Pin shadPS4 v.0.21.0, OpenOrbis and the OpenGNM commits in the script. Clone them outside tracked paths. Pass the output folder with `--mount`.
 **Verification:** each box below. A boot with no marker or a blank capture fails.
 
-- [ ] E1: OpenOrbis ELF prints its marker in shadPS4. proof: `node packages/runtime-native/scripts/ps4/run-experiment.mjs e1`
+- [x] E1: OpenOrbis ELF prints its marker in shadPS4. proof: `node packages/runtime-native/scripts/ps4/run-experiment.mjs e1` — 2026-11-06 `PS4_EMULATED E1 PASS`, exit 0, guest `[stdout] TN_PS4_E1_MARKER hello`, empty `sys_modules`. shadPS4 rejects the plain ELF (`e_type 0x3`), so the run boots the `create-fself` SELF
 - [ ] E2: `vulkan-ps4` draws a non-blank triangle in shadPS4. proof: `node packages/runtime-native/scripts/ps4/run-experiment.mjs e2`
 
 #### Phase 2: The two seams, GPU and JavaScript
