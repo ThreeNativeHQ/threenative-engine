@@ -257,6 +257,10 @@ const SurfaceConfig& surfaceConfig() {
 void startupStage(const char* stage) {
 #if defined(__ANDROID__)
     __android_log_print(ANDROID_LOG_INFO, "TN_Player", "TN_PLAYER_STAGE: %s", stage);
+#elif defined(TN_PS4)
+    // PS4 has no logcat and no shell to ask: stdout is the only account of how far boot got, and
+    // shadPS4 shows it as [stdout] (E1/E4 rely on the same).
+    std::printf("TN_PLAYER_STAGE: %s\n", stage);
 #else
     (void)stage;
 #endif
@@ -342,7 +346,13 @@ bool openWindow(Window& window) {
 
 /** SDL exposes the native handles needed by the host's existing Dawn surface API. */
 bool surfaceForWindow(mystral::webgpu::Context& context, Window& window) {
-#if defined(__ANDROID__)
+#if defined(TN_PS4)
+    // The dummy video driver owns no native handle, and the PS4 has no window to name: the surface
+    // is the VideoOut scanout (context.cpp's PLATFORM_PS4 branch). The window is still the event
+    // source and the size the drawing buffer follows.
+    (void)window;
+    return context.createSurfaceWithDisplay(nullptr, nullptr, mystral::webgpu::Context::PLATFORM_PS4);
+#elif defined(__ANDROID__)
     void* native = SDL_GetPointerProperty(SDL_GetWindowProperties(window.handle),
                                          SDL_PROP_WINDOW_ANDROID_WINDOW_POINTER, nullptr);
     return native && context.createSurface(native, mystral::webgpu::Context::PLATFORM_ANDROID);

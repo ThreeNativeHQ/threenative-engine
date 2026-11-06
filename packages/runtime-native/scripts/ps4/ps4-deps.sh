@@ -86,6 +86,16 @@ for sdldir in "$HOST_TP"/sdl3/SDL3-*; do
   ln -sfn "$sdldir/include" "$D/sdl3/$(basename "$sdldir")/include"
 done
 [ -d "$D/sdl3"/SDL3-*/include ] || die "no SDL3 headers under $HOST_TP/sdl3"
+# SDL3's static library: the headers above let the engine compile the player's 62 SDL calls, and
+# this archive lets the guest link them. scripts/ps4/ps4-sdl3.sh owns the build (its own CMake tree
+# and stamp, its own answers to SDL's FreeBSD/console checks); this stages only its product, as a
+# symlink, so a changed SDL3 knob is a relink here and never a copy.
+"$HERE/ps4-sdl3.sh" --out "$OUT/sdl3-build"
+for sdldir in "$D/sdl3"/SDL3-*; do
+  mkdir -p "$sdldir/lib"
+  ln -sfn "$OUT/sdl3-build/libSDL3.a" "$sdldir/lib/libSDL3.a"
+done
+[ -e "$D/sdl3"/SDL3-*/lib/libSDL3.a ] || die "no SDL3 static library under $D/sdl3"
 
 TP="$REPO/third_party"
 if [ -e "$TP" ] && [ ! -L "$TP" ]; then

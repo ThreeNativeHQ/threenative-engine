@@ -1095,7 +1095,24 @@ bool Context::createSurfaceWithDisplay(void* display, void* window, int platform
 
     WGPUSurfaceDescriptor surfaceDesc = {};
 
-#if defined(__linux__) && !defined(__ANDROID__)
+#if defined(TN_PS4)
+    // vulkan-ps4 exposes no VK_KHR_surface and its swapchain is the VideoOut scanout, fixed at the
+    // screen's own size: nothing a window would name ever reaches it. Dawn patch 0003
+    // (scripts/ps4/patches/dawn-0003) makes this chain source an opaque carrier, so both fields
+    // stay null (the same call scripts/ps4/e3-triangle.cc proves).
+    WGPUSurfaceDescriptorFromXlibWindow_Compat ps4Desc = {};
+    (void)display;
+    (void)window;
+    if (platformType != PLATFORM_PS4) {
+        std::cerr << "[WebGPU] createSurfaceWithDisplay only supports PLATFORM_PS4 on PS4" << std::endl;
+        return false;
+    }
+    ps4Desc.chain.sType = WGPUSType_SurfaceDescriptorFromXlibWindow_Compat;
+    ps4Desc.display = nullptr;
+    ps4Desc.window = 0;
+    surfaceDesc.nextInChain = (WGPUChainedStruct*)&ps4Desc;
+    std::cout << "[WebGPU] Creating the PS4 VideoOut surface" << std::endl;
+#elif defined(__linux__) && !defined(__ANDROID__)
     WGPUSurfaceDescriptorFromXlibWindow_Compat xlibDesc = {};
     WGPUSurfaceDescriptorFromWaylandSurface_Compat waylandDesc = {};
 
