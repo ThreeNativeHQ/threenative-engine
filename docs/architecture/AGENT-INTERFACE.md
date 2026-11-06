@@ -9,7 +9,9 @@ document argues for has shipped: [`threenative-engine-mcp`](../../packages/engin
 `engine_search_capabilities` and `engine_capability_detail` over the committed capability
 manifest, and installing `@threenative/core` writes every project a `.mcp.json` wiring five
 servers — `threenative-assets` (the externally pinned `threenative-asset-mcp`, launched through
-a shim inside core), `threenative-sculpt`, `threenative-engine`, `threenative-animation`
+a shim inside core), `threenative-sculpt`, `threenative-engine`, `threenative-terrain`
+(a shim inside core that starts the project's installed `@threenative/terrain` bin and cooks a
+starter terrain kit into a `world.glb`), and `threenative-animation`
 ([`threenative-animation-mcp`](../../packages/animation-mcp/), which inspects a rig, attaches props
 for good, edits and verifies clips, and opens a calibrator page — every operation is a build-time
 edit of one GLB, so no game depends on it at runtime), and `threenative-devtools` (the externally
@@ -25,6 +27,10 @@ plain TypeScript — a GUI that writes a scene is still closed.
 The engine server also ships `engine_search_references` and `engine_reference_detail` for
 game behavior references with pinned source citations. `engine_save_reference` saves a local
 reference and returns a contribution command; it does not submit the contribution.
+A reference card carries numbers, not motion: when feel decides the plan, the authoring route's
+mechanics-discovery step has the agent call `engine_watch_reference`, which fetches `watch.mjs` from
+the reference repository and slices gameplay frames of the named game into a tmp contact sheet. Those frames are study
+material under someone else's copyright — never game assets, never a citation.
 
 ## The workflow this replaces
 

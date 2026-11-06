@@ -68,3 +68,30 @@ it("accepts the correct result before the boundary and waits two frames before p
     }),
   );
 });
+
+it("executes the shipped worker's full computation with the expected checksum", async () => {
+  const createUrl = vi.spyOn(URL, "createObjectURL");
+  const { worker } = setup();
+  const blob = createUrl.mock.calls[0]?.[0];
+  if (!(blob instanceof Blob)) throw new Error("worker source was not a Blob");
+  const scope = {
+    self: { onmessage: (_event: unknown) => undefined },
+    postMessage: vi.fn(),
+    console,
+  };
+  new Function("self", "postMessage", "console", await blob.text())(
+    scope.self,
+    scope.postMessage,
+    console,
+  );
+  const compute = worker.postMessage.mock.calls[1]?.[0];
+  scope.self.onmessage({ data: compute });
+  expect(scope.postMessage).toHaveBeenCalledWith(
+    expect.objectContaining({
+      kind: "result",
+      inputChecksum: WORKER_INPUT_CHECKSUM,
+      outputChecksum: WORKER_OUTPUT_CHECKSUM,
+      workerIdentity: "dedicated-worker",
+    }),
+  );
+});

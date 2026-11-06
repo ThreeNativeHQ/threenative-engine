@@ -75,6 +75,7 @@ export class Coast extends Scene<GameState> {
     position: { x: 0, y: 0, z: 0 },
     preset: "storm",
     quality: "balanced",
+    reducedMotion: false,
     safe: false,
     status: "steady",
     stepRequest: 0,

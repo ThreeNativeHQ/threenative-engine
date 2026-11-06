@@ -20,7 +20,13 @@ export { Area3D } from "./Area3D.js";
  * @alias platformer double jump
  * @alias first person
  * @alias run jump coins goal
+ * @situation swim in a river, lake or sea; float at the surface and wade slower in shallow water
+ * @situation river current carries a swimmer downstream while it floats
+ * @alias swimming buoyancy water volume wade
  * @constraint use moveAndSlide inside the physics update
+ * @constraint pass `water: (x, z) => surfaceHeight | undefined`; the body reads `swimming`, `immersionDepth` and `waterSurface` each moveAndSlide
+ * @constraint pass `waterCurrent: (x, z) => { x, z } | undefined` in m/s to have the water carry the body; it reads `currentVelocity` back
+ * @override buoyancy (1.6, floats; Unreal 1.0 sinks), maxSwimSpeed (3 m/s) and fluidFriction (12) tune the Unreal MOVE_Swimming defaults
  * @deprecatedOption Constructor option `world` is deprecated; pass an IPhysicsContext as `physics` instead. CharacterBody3D itself is not deprecated.
  * @example const body = new CharacterBody3D({ object: hero, physics: ctx.physics, shape: CollisionShape3D.capsule(0.5, 0.35) });
  * @requires npm i @threenative/physics
@@ -101,6 +107,23 @@ export type {
   StaticColliderPredicate,
 } from "./static-colliders.js";
 /**
+ * Make scattered props solid: fixed bodies for rocks and trunks near a followed point, streamed with it.
+ * @situation stop the player walking through scattered rocks and trees
+ * @situation give instanced or streamed foliage props collision in an open world
+ * @constraint pass each instance's solid part (stone, bark), not its leaves; shapes are measured: a slender base is a trunk capsule, the rest an 18-DOP hull, and pieces under 0.25 m get none
+ * @constraint call update() every frame; it rescans only after the follow point moves a quarter of `radius` (default 40 m)
+ * @constraint `collision: "hull" | "trunk" | "none"` on an instance overrides the measured shape
+ * @example const solids = new ScatterColliders({ physics: ctx.physics, follow: player, collisionLayer: 4, instances: rocks.map((matrix) => ({ geometry: rockGeometry, matrix })) });
+ * @requires npm i @threenative/physics
+ */
+export { ScatterColliders } from "./scatter-colliders.js";
+export type {
+  IScatterColliderInstance,
+  IScatterCollidersOptions,
+  IScatterCollidersStats,
+  ScatterCollision,
+} from "./scatter-colliders.js";
+/**
  * Feed existing rigid-body boxes into `SoftBody3D` without inventing a second collider API.
  * @situation stop a cloth flag, cape, or curtain at an existing physics wall
  * @situation collide SoftBody3D with fixed box bodies
@@ -143,6 +166,7 @@ export { interactionGroups } from "./collision.js";
 /**
  * Simulate a dynamic or static rigid body.
  * @situation give a crate or prop physical motion
+ * @situation a ball rolls across the floor
  * @situation create a body that collides with a character
  * @situation fire physical cannonballs that collide with ships or scenery
  * @situation fire a cannonball projectile with cannon smoke particles

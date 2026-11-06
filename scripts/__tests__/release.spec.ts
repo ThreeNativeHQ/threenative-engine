@@ -8,6 +8,7 @@ import { type IPublishPackage, type RegistryLookup, publishSet } from "../check-
 import {
   UPGRADE_PROOF_TEMPLATES,
   assertCleanPackageTree,
+  installableOnRegistry,
   packedTarballName,
   prepareReleaseCohort,
   proveUpgradeFromLatest,
@@ -103,6 +104,22 @@ describe("pnpm release ordering", () => {
     expect(order.indexOf("@threenative/core")).toBeLessThan(order.indexOf("@threenative/physics"));
     expect(new Set(order).size).toBe(order.length);
     expect(order).toHaveLength(publishSet(repo).length);
+  });
+
+  it("names the repository that publishes it, so npm accepts its CI provenance", async () => {
+    // npm rejects a `--provenance` publish whose `repository.url` is not the repository the
+    // workflow ran in; the repository was renamed from `threenative` to `threenative-engine`.
+    const { publishSet } = await import("../check-publish-state.js");
+    const repo = path.resolve(import.meta.dirname, "../..");
+    const urls = publishSet(repo).map((item) => {
+      const manifest = JSON.parse(fs.readFileSync(item.manifest, "utf8")) as {
+        repository?: { url?: string };
+      };
+      return [item.name, manifest.repository?.url];
+    });
+    expect(urls).toEqual(
+      urls.map(([name]) => [name, "git+https://github.com/ThreeNativeHQ/threenative-engine.git"]),
+    );
   });
 
   it("groups packages into levels that depend only on earlier levels", async () => {
@@ -277,6 +294,28 @@ describe("pnpm release publishing", () => {
 
     expect(published).toEqual(["a"]);
   });
+
+  it("waits for the install packument, not the per-version endpoint", async () => {
+    // 0.3.10 and 0.3.11: the version endpoint answered first, and `npm create` in the clean room
+    // read a packument that did not list the new version yet (ETARGET).
+    const requests: { url: string; accept: string }[] = [];
+    const registry = (versions: Record<string, unknown>, latest: string) =>
+      (async (url: string | URL | Request, init?: RequestInit) => {
+        requests.push({ url: String(url), accept: new Headers(init?.headers).get("accept") ?? "" });
+        return new Response(JSON.stringify({ "dist-tags": { latest }, versions }), { status: 200 });
+      }) as typeof fetch;
+    const missing = registry({ "0.2.14": {} }, "0.2.14");
+    const untagged = registry({ "0.2.14": {}, "0.2.15": {} }, "0.2.14");
+    const ready = registry({ "0.3.11": {} }, "0.3.11");
+
+    expect(await installableOnRegistry("create-threenative", "0.2.15", missing)).toBe(false);
+    expect(await installableOnRegistry("create-threenative", "0.2.15", untagged)).toBe(false);
+    expect(await installableOnRegistry("@threenative/core", "0.3.11", ready)).toBe(true);
+    expect(requests.at(-1)).toEqual({
+      url: "https://registry.npmjs.org/@threenative%2fcore",
+      accept: "application/vnd.npm.install-v1+json",
+    });
+  });
 });
 
 describe("pnpm release cohort guards", () => {
@@ -296,6 +335,7 @@ describe("pnpm release cohort guards", () => {
       "threenative-assets",
       "threenative-sculpt",
       "threenative-engine",
+      "threenative-terrain",
       "threenative-animation",
       "threenative-devtools",
     ]);

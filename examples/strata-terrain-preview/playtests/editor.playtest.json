@@ -29,6 +29,514 @@
       "waitTicks": 120,
       "release": true,
       "screenshot": "editor-rendering"
+    },
+    {
+      "kind": "click",
+      "at": {
+        "element": {
+          "selector": "[data-tool=\"sculpt\"]"
+        }
+      },
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "tab-smooth",
+      "press": "Tab",
+      "holdTicks": 1,
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "activate-smooth",
+      "press": "Enter",
+      "holdTicks": 1,
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "tab-flatten",
+      "press": "Tab",
+      "holdTicks": 1,
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "activate-flatten",
+      "press": "Space",
+      "holdTicks": 1,
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "tab-ramp",
+      "press": "Tab",
+      "holdTicks": 1,
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "activate-ramp",
+      "press": "Enter",
+      "holdTicks": 1,
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "tab-stamp",
+      "press": "Tab",
+      "holdTicks": 1,
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "activate-stamp",
+      "press": "Space",
+      "holdTicks": 1,
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "tab-erode",
+      "press": "Tab",
+      "holdTicks": 1,
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "activate-erode",
+      "press": "Enter",
+      "holdTicks": 1,
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "tab-paint",
+      "press": "Tab",
+      "holdTicks": 1,
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "activate-paint",
+      "press": "Space",
+      "holdTicks": 1,
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "tab-scatter",
+      "press": "Tab",
+      "holdTicks": 1,
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "activate-scatter",
+      "press": "Enter",
+      "holdTicks": 1,
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "tab-spline",
+      "press": "Tab",
+      "holdTicks": 1,
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "activate-spline",
+      "press": "Space",
+      "holdTicks": 1,
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "tab-water",
+      "press": "Tab",
+      "holdTicks": 1,
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "activate-water",
+      "press": "Enter",
+      "holdTicks": 1,
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "tab-select",
+      "press": "Tab",
+      "holdTicks": 1,
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "activate-select",
+      "press": "Space",
+      "holdTicks": 1,
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "click",
+      "at": {
+        "element": {
+          "selector": "[data-tool=\"smooth\"]"
+        }
+      },
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "shift-tab-sculpt",
+      "press": ["Shift", "Tab"],
+      "holdTicks": 1,
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "activate-sculpt",
+      "press": "Space",
+      "holdTicks": 1,
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "click",
+      "at": {
+        "element": {
+          "id": "brush-radius"
+        }
+      },
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "radius-minimum",
+      "press": "Home",
+      "holdTicks": 1,
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "radius-arrow",
+      "press": "ArrowRight",
+      "holdTicks": 1,
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "click",
+      "at": {
+        "element": {
+          "id": "viewport"
+        }
+      },
+      "waitTicks": 3,
+      "release": true,
+      "label": "viewport-sculpt-stroke"
+    },
+    {
+      "kind": "input",
+      "label": "keyboard-sculpt",
+      "press": "Digit1",
+      "holdTicks": 1,
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "brush-move",
+      "press": "ArrowRight",
+      "holdTicks": 1,
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "brush-apply",
+      "press": "Enter",
+      "holdTicks": 1,
+      "waitTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "second-stroke-50ms",
+      "press": "Enter",
+      "holdTicks": 1,
+      "waitTicks": 1,
+      "release": true
+    },
+    {
+      "label": "keyboard-edit-saved",
+      "waitTicks": 120,
+      "release": true,
+      "screenshot": "editor-keyboard-edit"
+    },
+    {
+      "kind": "click",
+      "at": {
+        "element": {
+          "id": "preview-resolution"
+        }
+      },
+      "waitTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "choose-high-resolution",
+      "press": "End",
+      "holdTicks": 1,
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "start-high-resolution-build",
+      "press": "Enter",
+      "holdTicks": 1,
+      "waitTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "click",
+      "label": "terminate-mid-build",
+      "at": {
+        "element": {
+          "id": "cancel-build"
+        }
+      },
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "click",
+      "at": {
+        "element": {
+          "selector": "[data-tool=\"select\"]"
+        }
+      },
+      "waitTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "click",
+      "at": {
+        "element": {
+          "id": "preview-resolution"
+        }
+      },
+      "waitTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "choose-fast-resolution",
+      "press": "Home",
+      "holdTicks": 1,
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "choose-129-resolution",
+      "press": "ArrowDown",
+      "holdTicks": 1,
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "restore-fast-resolution",
+      "press": "Enter",
+      "holdTicks": 1,
+      "waitTicks": 240,
+      "release": true
+    },
+    {
+      "kind": "click",
+      "at": {
+        "element": {
+          "id": "viewport"
+        }
+      },
+      "waitTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": "Digit1",
+      "holdTicks": 1,
+      "waitTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "edit-after-worker-termination",
+      "press": "Enter",
+      "holdTicks": 1,
+      "waitTicks": 360,
+      "release": true,
+      "screenshot": "worker-restarted"
+    },
+    {
+      "kind": "input",
+      "label": "brush-drag",
+      "pointerPosition": {
+        "x": 0.5,
+        "y": 0.5,
+        "buttons": 1
+      },
+      "holdTicks": 1,
+      "waitTicks": 3,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "brush-cancel",
+      "press": "Escape",
+      "holdTicks": 1,
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "cancelled-brush-release",
+      "pointerPosition": {
+        "x": 0.5,
+        "y": 0.5,
+        "buttons": 0
+      },
+      "holdTicks": 1,
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "keyboard-spline",
+      "press": "Digit9",
+      "holdTicks": 1,
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "spline-point",
+      "press": "Space",
+      "holdTicks": 1,
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "spline-cancel",
+      "press": "Escape",
+      "holdTicks": 1,
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "click",
+      "at": {
+        "element": {
+          "id": "recipe-btn"
+        }
+      },
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "click",
+      "at": {
+        "element": {
+          "id": "recipe-editor"
+        }
+      },
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "replace-recipe",
+      "press": ["Control", "KeyA"],
+      "holdTicks": 1,
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "invalid-recipe",
+      "press": "KeyX",
+      "holdTicks": 1,
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "tab-copy-recipe",
+      "press": "Tab",
+      "holdTicks": 1,
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "tab-apply-recipe",
+      "press": "Tab",
+      "holdTicks": 1,
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "validate-invalid-recipe",
+      "press": "Enter",
+      "holdTicks": 1,
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "label": "error-announced",
+      "waitTicks": 90,
+      "release": true,
+      "screenshot": "editor-keyboard-error"
+    },
+    {
+      "kind": "input",
+      "label": "close-error-dialog",
+      "press": "Escape",
+      "holdTicks": 1,
+      "waitTicks": 3,
+      "release": true
     }
   ],
   "assert": {
@@ -54,7 +562,272 @@
         "id": "GameState",
         "path": "renderedFrames",
         "changed": true
+      },
+      {
+        "id": "GameState",
+        "path": "editorTool",
+        "atSteps": [
+          {
+            "label": "activate-smooth",
+            "equals": "smooth"
+          },
+          {
+            "label": "activate-flatten",
+            "equals": "flatten"
+          },
+          {
+            "label": "activate-ramp",
+            "equals": "ramp"
+          },
+          {
+            "label": "activate-stamp",
+            "equals": "stamp"
+          },
+          {
+            "label": "activate-erode",
+            "equals": "erode"
+          },
+          {
+            "label": "activate-paint",
+            "equals": "paint"
+          },
+          {
+            "label": "activate-scatter",
+            "equals": "scatter"
+          },
+          {
+            "label": "activate-spline",
+            "equals": "spline"
+          },
+          {
+            "label": "activate-water",
+            "equals": "water"
+          },
+          {
+            "label": "activate-select",
+            "equals": "select"
+          },
+          {
+            "label": "activate-sculpt",
+            "equals": "sculpt"
+          }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "editorFocus",
+        "atSteps": [
+          {
+            "label": "tab-smooth",
+            "equals": "smooth"
+          },
+          {
+            "label": "tab-flatten",
+            "equals": "flatten"
+          },
+          {
+            "label": "tab-ramp",
+            "equals": "ramp"
+          },
+          {
+            "label": "tab-stamp",
+            "equals": "stamp"
+          },
+          {
+            "label": "tab-erode",
+            "equals": "erode"
+          },
+          {
+            "label": "tab-paint",
+            "equals": "paint"
+          },
+          {
+            "label": "tab-scatter",
+            "equals": "scatter"
+          },
+          {
+            "label": "tab-spline",
+            "equals": "spline"
+          },
+          {
+            "label": "tab-water",
+            "equals": "water"
+          },
+          {
+            "label": "tab-select",
+            "equals": "select"
+          },
+          {
+            "label": "shift-tab-sculpt",
+            "equals": "sculpt"
+          }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "editorRadius",
+        "atSteps": [
+          {
+            "label": "radius-minimum",
+            "equals": 4
+          },
+          {
+            "label": "radius-arrow",
+            "equals": 5
+          }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "editorPointCount",
+        "atSteps": [
+          {
+            "label": "spline-point",
+            "equals": 1
+          },
+          {
+            "label": "spline-cancel",
+            "equals": 0
+          }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "editorLayerCount",
+        "changed": true
+      },
+      {
+        "id": "GameState",
+        "path": "editorLiveRegionCount",
+        "equals": 1,
+        "allowTrivial": "This observes the mounted DOM and requires exactly one announcement region."
+      },
+      {
+        "id": "GameState",
+        "path": "editorLiveMode",
+        "equals": "polite",
+        "allowTrivial": "This reads the live region attribute; normal announcements must remain polite."
+      },
+      {
+        "id": "GameState",
+        "path": "editorFocusVisible",
+        "atSteps": [
+          {
+            "label": "tab-smooth",
+            "equals": true
+          },
+          {
+            "label": "tab-select",
+            "equals": true
+          }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "editorAnnouncement",
+        "changed": true,
+        "atSteps": [
+          {
+            "label": "error-announced",
+            "textIncludes": "Unexpected token 'x', \"x\" is not valid JSON"
+          }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "editorFocus",
+        "atSteps": [
+          {
+            "label": "tab-apply-recipe",
+            "equals": "apply-recipe"
+          }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "editorBrushCaptured",
+        "atSteps": [
+          {
+            "label": "brush-drag",
+            "equals": true
+          },
+          {
+            "label": "brush-cancel",
+            "equals": false
+          }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "editorPersistedStrokes",
+        "atSteps": [
+          {
+            "label": "viewport-sculpt-stroke",
+            "equals": 1
+          },
+          {
+            "label": "brush-apply",
+            "equals": 2
+          },
+          {
+            "label": "second-stroke-50ms",
+            "equals": 3
+          },
+          {
+            "label": "keyboard-edit-saved",
+            "equals": 3
+          },
+          {
+            "label": "edit-after-worker-termination",
+            "equals": 4
+          }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "editorPersistenceError",
+        "equals": "",
+        "allowTrivial": "An authoritative document GET must succeed; fetch errors are observed here."
+      },
+      {
+        "id": "GameState",
+        "path": "editorWorkerBusy",
+        "atSteps": [
+          {
+            "label": "start-high-resolution-build",
+            "equals": true
+          },
+          {
+            "label": "terminate-mid-build",
+            "equals": false
+          },
+          {
+            "label": "edit-after-worker-termination",
+            "equals": false
+          }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "editorBuildCancelled",
+        "atSteps": [
+          {
+            "label": "terminate-mid-build",
+            "equals": true
+          }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "editorRebuiltAfterCancel",
+        "atSteps": [
+          {
+            "label": "edit-after-worker-termination",
+            "equals": true
+          }
+        ]
       }
     ]
-  }
+  },
+  "inputDelivery": "focused-dom"
 }

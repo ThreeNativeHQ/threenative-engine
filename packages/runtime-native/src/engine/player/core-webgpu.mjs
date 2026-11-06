@@ -29,12 +29,13 @@ import { defineTempNode } from "../../../../three-native/src/temp-node.ts";
 import { defineRendererUtils } from "../../../../three-native/src/renderer-utils.ts";
 import { GPU_STAGES, SHADOW_STAGE } from "../../../../three-native/src/gpu-stages.ts";
 
-export const { StorageTexture, MeshBasicNodeMaterial, MeshStandardNodeMaterial, SpriteNodeMaterial } = globalThis;
+export const { StorageTexture, MeshBasicNodeMaterial, MeshStandardNodeMaterial, MeshPhysicalNodeMaterial, SpriteNodeMaterial } = globalThis;
 Object.setPrototypeOf(StorageTexture.prototype, globalThis.Texture.prototype);
 Object.setPrototypeOf(MeshBasicNodeMaterial.prototype, globalThis.MeshBasicMaterial.prototype);
 Object.setPrototypeOf(MeshStandardNodeMaterial.prototype, globalThis.MeshStandardMaterial.prototype);
+Object.setPrototypeOf(MeshPhysicalNodeMaterial.prototype, globalThis.MeshPhysicalMaterial.prototype);
 Object.setPrototypeOf(SpriteNodeMaterial.prototype, globalThis.SpriteMaterial.prototype);
-for (const material of [MeshBasicNodeMaterial, MeshStandardNodeMaterial, SpriteNodeMaterial]) {
+for (const material of [MeshBasicNodeMaterial, MeshStandardNodeMaterial, MeshPhysicalNodeMaterial, SpriteNodeMaterial]) {
   material.prototype.isNodeMaterial = true;
   material.prototype[`is${material.name}`] = true;
 }
@@ -65,8 +66,7 @@ function drawTarget(renderer, target, root, camera, deferred) {
   syncUniforms();
   renderer.library.apply(renderer.toneMapping);
   globalThis.tn.setRendererState(renderer);  // the target clears to the renderer's current clear colour
-  if (deferred) globalThis.tn.renderTarget(target, root, camera, true);
-  else globalThis.tn.renderTarget(target, root, camera);
+  globalThis.tn.renderTarget(target, root, camera, deferred === true, renderer.autoClear !== false);
 }
 
 // Every offscreen PassNode plans its draw into its own target; the player records it in this frame, after the post
@@ -80,6 +80,8 @@ export class WebGPURenderer {
   // The native scene pass draws to the player-owned surface, not a retained frame target.
   supportsRetainedTargetSubrect = false;
   renderScale = 1;
+  // three's autoClear: false draws into a render target over its contents (the player's own frame always clears).
+  autoClear = true;
   get temporalUpscale() { return globalThis.tn.renderInfo().temporalUpscale === true; }
   setRenderScale(scale) {
     if (!Number.isFinite(scale) || scale < 0.25 || scale > 1)
@@ -219,6 +221,10 @@ export class WebGPURenderer {
 // it at the call, and readRenderTargetPixelsAsync reads it back once the GPU copy lands.
 defineRenderTargets(WebGPURenderer.prototype, (renderer) => ({
   draw: (target, root, camera) => drawTarget(renderer, target, root, camera),
+  clear: (target, color, depth) => {
+    globalThis.tn.setRendererState(renderer);  // the clear colour
+    globalThis.tn.clearTarget(target, color, depth);
+  },
   read: (target, x, y, width, height) => globalThis.tn.readTarget(target, x, y, width, height),
 }));
 // three's QuadMesh over the engine Mesh (shared with the Wasm back end).
@@ -280,7 +286,6 @@ export const MeshLambertNodeMaterial = unsupportedExport("MeshLambertNodeMateria
 export const MeshMatcapNodeMaterial = unsupportedExport("MeshMatcapNodeMaterial");
 export const MeshNormalNodeMaterial = unsupportedExport("MeshNormalNodeMaterial");
 export const MeshPhongNodeMaterial = unsupportedExport("MeshPhongNodeMaterial");
-export const MeshPhysicalNodeMaterial = unsupportedExport("MeshPhysicalNodeMaterial");
 export const MeshToonNodeMaterial = unsupportedExport("MeshToonNodeMaterial");
 
 // three's BlendMode (renderers/common/BlendMode.js): the blend state an MRT output names through

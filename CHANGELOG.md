@@ -9,7 +9,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+Nothing yet. Add the next change here. A removed or changed public symbol needs a `### Breaking`
+entry that names it (`pnpm api:surface:check`).
+
+## [0.3.11] - 2026-11-03
+
+The entries below were recorded while `develop` moved from 0.3.3 to 0.3.11. Per-version notes for
+0.3.4 to 0.3.10 were not reconstructed from git.
+
 ### Added
+
+- `threenative-capabilities` step 3 now says how to *see* a mechanic, not only read it: the
+  agent fetches `watch.mjs` from `threenative-reverse-engineer-mcp` and slices YouTube gameplay
+  frames of a reference game into a tmp contact sheet, so a jump arc or a parry window is looked
+  at instead of invented. Frames stay study material and never become game assets or citations.
+- `create-threenative` bumped to 0.2.16 for the above; templates pin 0.2.16.
 
 - The optional `@threenative/terrain` authoring addon validates and retains
   stable-key placement overrides through `validatePlacementOverrides` and
@@ -30,6 +44,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Breaking
 
+- `@threenative/terrain/export` removes `exportWorldGLB`. Prepare the browser scene with
+  `prepareWorldGLTF`, then encode it in Node with `cookTerrainWorld({ preparedWorld: prepared.json })`
+  from `@threenative/assets`; the editor already uses this shared cook.
+
+- `@threenative/assets`'s `cookTerrainWorld` declaration adds a prepared-world JSON overload
+  for the terrain editor's portable GLB export. Existing state/species/out calls remain valid;
+  the new overload embeds the game's frozen scene without instancing or filesystem output.
+
+- `@threenative/terrain`'s `makeExport` declaration adds a `"project"` overload accepting
+  a null terrain state, so recipes can be exported before the first evaluation. Existing
+  calls remain valid; non-project exports still require an evaluated state.
 - `@threenative/core`'s `AutoExposureNode` extends Three's `Node` instead of the `TempNode` that
   Three 0.187 deprecated (PRD-775), so its recorded signature changes. No game code names that
   base class: `exposure` still returns the same node with the same constructor arguments, and the
@@ -68,11 +93,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the sweep existed, at about 1.1 µs a material per frame. Any other value throws at startup rather
   than falling back to a default nobody asked for.
 
-## [0.3.3] - unreleased (release candidate)
+## [0.3.3]
 
-The current cohort, prepared from `develop` at 0.3.3 (`create-threenative` 0.2.6). It is not yet
-published, and no `runtime-native-v0.3.3` prebuilt release exists; publishing the cohort is
-PRD-196.
+Superseded by 0.3.4 (tag `v0.3.4`, 2026-10-01). The release date of 0.3.3 was not recorded.
 
 ### Added
 

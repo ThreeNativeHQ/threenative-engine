@@ -130,7 +130,10 @@ void PageAtlas::pageRange(int level, const Box3& bounds, int& x0, int& x1, int& 
     if (x1 < x0 || y1 < y0) { x0 = y0 = 1; x1 = y1 = 0; }
 }
 
-std::vector<AtlasPage> PageAtlas::update(const Vector3& eye, const Vector3& towards, bool cameraCut, const std::vector<Box3>& casters, double deltaSeconds) {
+std::vector<AtlasPage> PageAtlas::update(const Vector3& viewEye, const Vector3& towards, bool cameraCut, const std::vector<Box3>& casters, double deltaSeconds) {
+    // A declared focus (a third-person hero) centres every window; the eye then orbits it without a pan, a level
+    // pick or a redraw changing. UE 5.8.3: VirtualShadowMapClipmap.cpp:256-295 moves the WorldOrigin to the view target.
+    const Vector3 eye = options_.control->focus.value_or(viewEye);
     Vector3 direction = towards;
     direction.normalize();
     // A cut requests fresh windows, but deferred levels retain their rendered matrices/pages,
@@ -213,6 +216,16 @@ std::vector<AtlasPage> PageAtlas::update(const Vector3& eye, const Vector3& towa
             level.eye = options_.lightDistance;
             level.near = 1;
             level.far = options_.lightDistance + options_.depthRange;
+            level.biasSpan = level.far - level.near;
+        }
+        // A fixed depth range is Unreal's cached Z radius: the level keeps its depth centre while the camera's drift
+        // along the light plus the level radius stays inside 0.9 of it (UE 5.8.3: Engine/Source/Runtime/Renderer/
+        // Private/VirtualShadowMaps/VirtualShadowMapCacheManager.cpp:276). Re-centring instead turned every pan under
+        // a tilted sun into a whole-level redraw.
+        if (!options_.autoDepth && level.mapped &&
+            std::abs(center.w - oldCenterW) + window.extent <= 0.9 * std::min(level.eye - level.near, level.far - level.eye)) {
+            level.centerW = oldCenterW;
+            target = targetAt(oldCenterW);
         }
         // virtual-shadow.ts #deriveDepth: sideways overlap, sphere depth for props, box height
         // for masses wider than the window; a low sun or empty set keeps the last fitted span.
@@ -250,6 +263,7 @@ std::vector<AtlasPage> PageAtlas::update(const Vector3& eye, const Vector3& towa
                 level.near = std::max(1.0, (high - low) * 0.02);
                 level.eye = high + pad + level.near;
                 level.far = level.near + high - low + 2 * pad;
+                level.biasSpan = high - low;
             }
         }
         Vector3 from = target; from.addScaledVector(clipmap_->basisW(), level.eye);
@@ -327,8 +341,12 @@ bool PageAtlas::drawsStatic(uint64_t key) const {
     return it == motion_.end() || !it->second.moving;
 }
 
-void PageAtlas::updateCasters(const std::vector<CasterState>& casters) {
+void PageAtlas::updateCasters(const std::vector<CasterState>& casters, const std::vector<uint64_t>& emptied) {
     std::set<uint64_t> present;
+    for (const uint64_t key : emptied) {
+        const auto it = motion_.find(key);
+        if (it != motion_.end() && !it->second.moving && !it->second.caster.automatic) present.insert(key);
+    }
     for (const auto& caster : casters) {
         present.insert(caster.key);
         auto [it, inserted] = motion_.try_emplace(caster.key);
@@ -347,12 +365,18 @@ void PageAtlas::updateCasters(const std::vector<CasterState>& casters) {
                 if (levels_[l].mapped && std::any_of(levels_[l].pages.begin(), levels_[l].pages.end(),
                     [&](const auto& page) { return overlaps(page, caster.bounds); })) m.settling |= 1u << l;
             invalidate(caster.bounds);
-        } else if (inserted) invalidate(caster.bounds);
+        } else if (inserted) {
+            waste::debugAdd(waste::counters().shadowCasterChurn);
+            invalidate(caster.bounds);
+        }
         m.caster = caster;
     }
     for (auto it = motion_.begin(); it != motion_.end();) {
         if (present.count(it->first)) { ++it; continue; }
-        if (!it->second.moving) invalidate(it->second.caster.bounds);
+        if (!it->second.moving) {
+            waste::debugAdd(waste::counters().shadowCasterChurn);
+            invalidate(it->second.caster.bounds);
+        }
         it = motion_.erase(it);
     }
 }
@@ -421,8 +445,16 @@ void PageAtlas::writeTable() {
         const auto& level = levels_[l];
         float* out = table_.data() + l * 36;
         for (int i = 0; i < 16; ++i) out[i] = float(level.matrix.elements[i]);
-        out[16] = float((level.window.minX + mapSize(l) / 2.0) * level.window.pageWorldSize);
-        out[17] = float((level.window.minY + mapSize(l) / 2.0) * level.window.pageWorldSize);
+        // The shader selects this level around the followed centre, as UE 5.8.3 picks a clipmap level from the
+        // receiver's distance to the unsnapped view origin (Engine/Shaders/Private/VirtualShadowMaps/
+        // VirtualShadowMapProjectionCommon.ush:41-77). Selecting around the snapped window moved the level edge by a
+        // whole refresh step at once, and a tree on it turned from lit to self-shadowed in one frame. The guard keeps
+        // that step free, so the centre is clamped to it and every selected receiver stays on this level's pages.
+        const double reach = refreshStep(l) * options_.clipExtents[l];
+        const double windowU = (level.window.minX + mapSize(l) / 2.0) * level.window.pageWorldSize;
+        const double windowV = (level.window.minY + mapSize(l) / 2.0) * level.window.pageWorldSize;
+        out[16] = float(std::clamp(clipmap_->center().u, windowU - reach, windowU + reach));
+        out[17] = float(std::clamp(clipmap_->center().v, windowV - reach, windowV + reach));
         out[18] = float(options_.clipExtents[l]); out[19] = float(at(options_.selectionGuard, l) - at(options_.refreshStep, l));
         // The V row is the axis whose dot product is `v`: the unit V over the window's height ratio, so the
         // shader's window distance reads pages along the height. Its length is 1 / vScale.
@@ -432,7 +464,9 @@ void PageAtlas::writeTable() {
         out[23] = float(mapSize(l)); out[27] = float(tiles(l));
         out[31] = float(level.far - level.near);
         out[32] = float(options_.pageTexels); out[33] = float(options_.border);
-        out[34] = float(edge()); out[35] = level.mapped ? 1 : 0;
+        out[34] = float(edge());
+        // Positive while mapped: the shader scales the light's bias by biasSpan / span, so the pad keeps its metres.
+        out[35] = level.mapped ? float(level.biasSpan) : 0;
         if (!level.mapped) continue;
         const int n = tiles(l);
         for (int y = 0; y < n; ++y) for (int x = 0; x < n; ++x) {

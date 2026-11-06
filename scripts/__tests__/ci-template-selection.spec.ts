@@ -95,6 +95,7 @@ describe("impact-driven template coverage", () => {
     "packages/create-threenative/src/scaffold.ts",
     "scripts/stamp-template-render.ts",
     "packages/core/src/index.ts",
+    "packages/core/patches/three@0.187.0.patch",
     "packages/create-threenative/templates/shooter-lookalike/src/main.ts",
     "unknown/meaningful.ts",
   ])("retains full fanout for shared or unknown %s", (file) => {
@@ -118,7 +119,9 @@ describe("impact-driven template coverage", () => {
           ? TEMPLATE_NAMES
           : ["starter"],
       );
-      if (file.startsWith("packages/core/")) expect(plan.jobs["test-native"].required).toBe(true);
+      expect(plan.jobs["build-artifacts"].required).toBe(true);
+      if (file.startsWith("packages/core/src/"))
+        expect(plan.jobs["test-native"].required).toBe(true);
     } finally {
       rmSync(f.root, { recursive: true, force: true });
     }

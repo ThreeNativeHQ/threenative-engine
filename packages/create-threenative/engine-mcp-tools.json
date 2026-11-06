@@ -1,12 +1,13 @@
 {
   "comment": "The engine capability MCP surface shipped through @threenative/core. The golden path also calls a mechanically explicit cross-system request so a packaged consumer proves full-request discovery without repository source.",
-  "version": "0.2.11",
+  "version": "0.2.12",
   "tools": [
     "engine_capability_detail",
     "engine_reference_detail",
     "engine_save_reference",
     "engine_search_capabilities",
-    "engine_search_references"
+    "engine_search_references",
+    "engine_watch_reference"
   ],
   "inputSchemas": {
     "engine_search_capabilities": {
@@ -75,6 +76,37 @@
         }
       },
       "required": ["game"]
+    },
+    "engine_watch_reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "Game and mechanic, e.g. 'super mario 64 triple jump'."
+        },
+        "duration": {
+          "type": "number",
+          "description": "Seconds of gameplay to sample (default 90)."
+        },
+        "frames": {
+          "type": "number",
+          "description": "Frames to slice from the segment (default 12)."
+        },
+        "at": {
+          "type": "string",
+          "description": "Exact timestamps, comma separated, e.g. '12,35,61'."
+        },
+        "pick": {
+          "type": "number",
+          "description": "Search result index (default 0, the top one)."
+        },
+        "from": {
+          "type": "string",
+          "description": "Segment start: seconds, mm:ss or NN% (default 10%)."
+        }
+      },
+      "required": ["query"]
     }
   },
   "descriptions": {
@@ -82,6 +114,7 @@
     "engine_capability_detail": "Inspect one engine capability's import, signature, example, constraints, and overrides. When several packages export the symbol, every match is returned under `matches`.",
     "engine_search_references": "Reverse engineer classic games: search mechanic cards and repository map nodes from their decomps. Tier-2 titles link to repos to explore and save. References describe feel only; borrow algorithms, cite pinned sources, copy no code or art.",
     "engine_reference_detail": "Reverse engineer a game: read its pinned map or mechanic card. A node includes files, key functions, dependencies and child nodes; a card includes constants and sources.",
-    "engine_save_reference": "Save what you reverse engineer: validate and save a pinned game's repository map and mechanic cards to .threenative/refs, merged by id at the same SHA; conflicting revisions are refused. Pass a game object with version:1, id, title, repo, sha, nodes and cards. Returns a POSIX-shell contribution command for review; does not send it. Unknown fields and fenced code are refused."
+    "engine_save_reference": "Save what you reverse engineer: validate and save a pinned game's repository map and mechanic cards to .threenative/refs, merged by id at the same SHA; conflicting revisions are refused. Pass a game object with version:1, id, title, repo, sha, nodes and cards. Returns a POSIX-shell contribution command for review; does not send it. Unknown fields and fenced code are refused.",
+    "engine_watch_reference": "Watch what you reverse engineer: see a game mechanic before you build it. Searches YouTube for gameplay of a reference game, download one short segment and slice frames plus one contact sheet into a tmp folder. Returns sheet (read it first), frames and watch.json (video, segment, frame times). Needs yt-dlp and ffmpeg. Frames are reference only: never commit them."
   }
 }

@@ -156,6 +156,22 @@
       "required": false
     },
     {
+      "id": "temporal-aa-scaler-route",
+      "title": "temporal history and allocations across a scripted three-scale input route",
+      "category": "rendering",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/temporal-aa-scaler-route.js",
+      "captureFrames": 76,
+      "browserRecipe": "webgpu",
+      "requiresHardwareAdapter": true,
+      "tolerance": {
+        "pixelMismatchRatio": 0.06,
+        "perceptualDeltaE": 9.0
+      },
+      "desktopGate": false,
+      "required": false
+    },
+    {
       "id": "temporal-aa-quality",
       "title": "display-sized temporal reconstruction of the authored alpha-tested quality corpus",
       "category": "rendering",
@@ -1849,7 +1865,7 @@
       "tolerance": { "pixelMismatchRatio": 0.06, "perceptualDeltaE": 9.0 },
       "desktopGate": true,
       "required": true,
-      "reason": "The left half displays actual gathered GI; the right displays the public scalar AO output. The owned implementation deliberately answers AO with constant one because GTAO is a separate stage. Owned Wasm/V8 parity proves those owned outputs, not equivalence to upstream Three SSGI, whose AO and GI algorithms and defaults differ. The required upstream comparison and its tolerances remain unchanged."
+      "reason": "The left half displays actual gathered GI; the right displays the public scalar AO output. The owned gather answers the share of its rays an occluder blocked, in three's form (pow(clamp(1 - occludedShare), aoIntensity)), so the caller that multiplies its lit frame by the AO term darkens where geometry blocks (SSGINode.js:637-638, 651). Owned Wasm/V8 parity proves those owned outputs, not equivalence to upstream Three SSGI, whose AO and GI algorithms and defaults differ. The required upstream comparison and its tolerances remain unchanged."
     },
     {
       "id": "realism-ssr",
@@ -2112,6 +2128,67 @@
       "required": true
     },
     {
+      "id": "world-cells-proxy-stream",
+      "title": "WorldCells two-cell streaming and observed proxy replacement",
+      "category": "rendering",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/world-cells-proxy-stream.js",
+      "tolerance": { "pixelMismatchRatio": 0.03, "perceptualDeltaE": 3.0 },
+      "reason": "Tolerance 0.03, measured on the CI replica (SwiftShader Chrome vs lavapipe desktop) after the integer dither hash: 1.6% of pixels differ, almost all one level darker on desktop across the dithered background, plus 4 edge pixels where a near-vertical silhouette steps one row apart (vertex-rounding tie).",
+      "browserRecipe": "webgpu",
+      "captureFrames": 2,
+      "nativeFrames": 300,
+      "desktopGate": true,
+      "required": true,
+      "meaningfulReason": "Two admitted cells, backend-observed HLOD swaps, near detail restoration and zero scoped validation errors"
+    },
+    {
+      "id": "world-cells-edited-proxy-stream",
+      "title": "WorldCells startup edit drops stale cell proxy and preserves untouched HLOD",
+      "category": "rendering",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/world-cells-edited-proxy-stream.js",
+      "tolerance": { "pixelMismatchRatio": 0.03, "perceptualDeltaE": 3.0 },
+      "reason": "Tolerance 0.03, measured on the CI replica (SwiftShader Chrome vs lavapipe desktop) after the integer dither hash: 1.65% of pixels differ, almost all one level darker on desktop across the dithered background, plus 4 edge pixels where a near-vertical silhouette steps one row apart (vertex-rounding tie).",
+      "browserRecipe": "webgpu",
+      "captureFrames": 2,
+      "nativeFrames": 300,
+      "desktopGate": true,
+      "required": true,
+      "meaningfulReason": "Stable-ID startup move observed in cell A detail without its stale cell proxy, untouched cell B HLOD swap and zero scoped validation errors"
+    },
+    {
+      "id": "virtual-shadow-first-frame",
+      "title": "virtual shadow first frame GPU submission and texture lifetime",
+      "category": "rendering",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/virtual-shadow-first-frame.js",
+      "tolerance": { "pixelMismatchRatio": 0.03, "perceptualDeltaE": 3.0 },
+      "reason": "Tolerance 0.03, measured on the CI replica (SwiftShader Chrome vs lavapipe desktop): 2.17% of pixels differ, a 101/100 one-level band on the floor (desktop darker) and 11 sphere-silhouette pixels in mirrored pairs (rasterization tie).",
+      "browserRecipe": "webgpu",
+      "captureFrames": 2,
+      "nativeFrames": 300,
+      "desktopGate": true,
+      "required": true,
+      "meaningfulReason": "First-frame virtual shadow level submission, completed GPU work and zero validation errors including Destroyed texture"
+    },
+    {
+      "id": "compressed-texture-preparation",
+      "title": "compressed texture preparation",
+      "category": "materials",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/compressed-texture-preparation.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.03,
+        "perceptualDeltaE": 3.0
+      },
+      "reason": "Tolerance 0.03, measured on the CI replica (SwiftShader Chrome vs lavapipe desktop) after the integer dither hash: 1.25% of pixels differ, almost all one level darker on desktop; max difference 2 levels.",
+      "browserRecipe": "webgpu",
+      "desktopGate": true,
+      "required": true,
+      "meaningfulReason": "Public bounded compressed upload and ExternalTexture material replacement on browser and native"
+    },
+    {
       "id": "spectral-ocean",
       "title": "SpectralOcean FFT displacement and bounded height readback",
       "category": "webgpu-tsl",
@@ -2147,6 +2224,132 @@
       },
       "desktopGate": true,
       "required": true
+    },
+    {
+      "id": "material-custom-blending",
+      "title": "CustomBlending, separate alpha state and premultipliedAlpha blend modes",
+      "category": "webgpu-tsl",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/material-custom-blending.js",
+      "browserRecipe": "webgpu",
+      "tolerance": {
+        "pixelMismatchRatio": 0.04,
+        "perceptualDeltaE": 3
+      },
+      "desktopGate": false,
+      "required": false
+    },
+    {
+      "id": "tsl-spell-port-nodes",
+      "title": "TSL Discard, Matrix3/Matrix4 uniforms, textureLoad on a DataTexture and a struct Fn argument",
+      "category": "webgpu-tsl",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/tsl-spell-port-nodes.js",
+      "browserRecipe": "webgpu",
+      "tolerance": {
+        "pixelMismatchRatio": 0.04,
+        "perceptualDeltaE": 3
+      },
+      "desktopGate": false,
+      "required": false
+    },
+    {
+      "id": "render-target-mrt",
+      "title": "MRT render target: count 3, material mrtNode outputs by texture name, additive custom blending",
+      "category": "rendering",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/render-target-mrt.js",
+      "browserRecipe": "webgpu",
+      "tolerance": {
+        "pixelMismatchRatio": 0.04,
+        "perceptualDeltaE": 3
+      },
+      "desktopGate": false,
+      "required": false
+    },
+    {
+      "id": "render-target-options",
+      "title": "RenderTarget options: RGFormat HalfFloatType, RepeatWrapping, NearestFilter, generateMipmaps false",
+      "category": "rendering",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/render-target-options.js",
+      "browserRecipe": "webgpu",
+      "tolerance": {
+        "pixelMismatchRatio": 0.04,
+        "perceptualDeltaE": 3
+      },
+      "desktopGate": false,
+      "required": false
+    },
+    {
+      "id": "render-target-autoclear",
+      "title": "renderer.clear() then two autoClear false renders into one RenderTarget, colour and depth kept",
+      "category": "rendering",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/render-target-autoclear.js",
+      "browserRecipe": "webgpu",
+      "tolerance": {
+        "pixelMismatchRatio": 0.04,
+        "perceptualDeltaE": 3
+      },
+      "desktopGate": false,
+      "required": false
+    },
+    {
+      "id": "post-normal-node",
+      "title": "a material normalNode written to the scene pass normal target a post chain reads",
+      "category": "rendering",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/post-normal-node.js",
+      "browserRecipe": "webgpu",
+      "tolerance": {
+        "pixelMismatchRatio": 0.04,
+        "perceptualDeltaE": 3
+      },
+      "desktopGate": false,
+      "required": false
+    },
+    {
+      "id": "material-lights",
+      "title": "a material lightsNode sums only the lights it lists (a camera-parented cockpit lit by its cabin lamp)",
+      "category": "lights",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/material-lights.js",
+      "browserRecipe": "webgpu",
+      "tolerance": {
+        "pixelMismatchRatio": 0.03,
+        "perceptualDeltaE": 6.0
+      },
+      "desktopGate": false,
+      "required": false
+    },
+    {
+      "id": "compute-texture-load",
+      "title": "compute kernel reading a float DataTexture only with textureLoad (no sampler bound)",
+      "category": "webgpu-tsl",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/compute-texture-load.js",
+      "browserRecipe": "webgpu",
+      "tolerance": {
+        "pixelMismatchRatio": 0.04,
+        "perceptualDeltaE": 3
+      },
+      "desktopGate": false,
+      "required": false
+    },
+    {
+      "id": "tsl-fn-out-param",
+      "title": "TSL Fn assigning an out argument, made inside a Fn and at the top level",
+      "category": "webgpu-tsl",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/tsl-fn-out-param.js",
+      "browserRecipe": "webgpu",
+      "tolerance": {
+        "pixelMismatchRatio": 0.04,
+        "perceptualDeltaE": 3
+      },
+      "desktopGate": false,
+      "required": false
     }
   ],
   "generatedPlaytestProofs": [

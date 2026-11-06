@@ -8,7 +8,7 @@ prd_contract: v1
 **Priority:** P2 — Every box is open: 7 of the 39 spells the owner asked to absorb need raymarched volumes and GPU swarms, and Fireball and Inferno still wait for their volume upgrade.
 **Complexity:** 7 (HIGH) — 11+ implementation files (+3), new mechanisms (+2), GPU state across frames (+2). Risk override: none.
 **Owner:** unassigned
-**Depends on:** [PRD-777](PRD-777-a-spell-is-a-timeline-that-changes-the-world-it-lands-in.md); [PRD-778](PRD-778-spells-that-arc-trail-and-draw-sigils.md) for the sigils in Black Flame.
+**Depends on:** [PRD-777](../done/PRD-777-a-spell-is-a-timeline-that-changes-the-world-it-lands-in.md); [PRD-778](PRD-778-spells-that-arc-trail-and-draw-sigils.md) for the sigils in Black Flame.
 
 ## Context
 

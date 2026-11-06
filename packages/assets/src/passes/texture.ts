@@ -1,6 +1,11 @@
 import { read as readKTX2 } from "ktx-parse";
 import { PNG } from "pngjs";
-import { type AssetKind, type IAssetPass, type IAssetPassOutput, classify } from "../compile.js";
+import {
+  type AssetKind,
+  type IAssetPass,
+  type IAssetPassOutput,
+  classify,
+} from "../compile-types.js";
 import { textureStats } from "../health.js";
 import {
   type IImageQualityFloor,

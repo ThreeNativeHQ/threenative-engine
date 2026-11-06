@@ -205,6 +205,8 @@ jobs:
     outputs:
       recipe-hash: ${{ steps.v8.outputs.recipe-hash }}
       published: ${{ steps.v8.outputs.published }}
+      built: ${{ steps.v8.outputs.built }}
+      trusted: ${{ steps.v8.outputs.trusted }}
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
     steps:
@@ -239,14 +241,18 @@ jobs:
 
   # Publishes a freshly built payload as the release asset every later run downloads instead of
   # building V8 for two hours. Trusted refs only: a pull request's code never runs in a job holding a
-  # token that can write releases, and this job checks nothing out. A PR that changes the V8 recipe
+  # token that can write releases, and this job checks nothing out. `trusted` says this run compiled
+  # the payload, or restored it from a trusted ref's Actions cache — a store only a main or develop
+  # run can have written, since a cache is ref-scoped — so a payload restored from somebody else's
+  # artifact is never republished under the trusted name. A develop or main push that finds the
+  # asset missing therefore republishes what its own cache holds. A PR that changes the V8 recipe
   # builds its own payload; dispatch this workflow on develop after it merges to publish the new one
   # before the nightly does.
   publish-android-v8:
     name: Publish the Android V8 payload
     needs: [scope, android-v8-source]
     if: >-
-      needs.android-v8-source.outputs.published == 'false' &&
+      needs.android-v8-source.outputs.trusted == 'true' &&
       github.event_name != 'pull_request' &&
       (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
     # PRD-480 leaves this one on GitHub's machines: it is the release write itself — `contents:
@@ -611,12 +617,12 @@ jobs:
         uses: actions/cache@v4
         with:
           path: packages/runtime-native/third_party
-          key: >-
-            native-android-third-party-${{ runner.os }}-${{ runner.arch }}-
-            ${{ hashFiles(
-              'packages/runtime-native/scripts/download-deps.mjs',
-              'packages/runtime-native/scripts/build-android-v8.mjs',
-              'packages/runtime-native/scripts/package-android.mjs') }}
+          # One line, not a `>-` block. A folded block joins its lines with a space, and the fold
+          # landed between the platform and the hash, so the saved key was
+          # `native-android-third-party-Linux-X64- 4c553d1e…` (run 41718838521's job log). A key is
+          # text: a space in it is a key nothing else in this workflow describes, and every
+          # `restore-keys` written the obvious way would miss it.
+          key: native-android-third-party-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/runtime-native/scripts/download-deps.mjs', 'packages/runtime-native/scripts/build-android-v8.mjs', 'packages/runtime-native/scripts/package-android.mjs') }}
       # No Actions cache for the SDK packages: sdkmanager installs platform, build-tools, NDK,
       # emulator and system image in about 30 seconds here, while saving them took four minutes per
       # run and multiple GB of the shared 10 GiB budget, evicting the Gradle and Cargo caches below.
@@ -1123,6 +1129,11 @@ jobs:
       CCACHE_DIR: ${{ github.workspace }}/.cache/ccache
       CCACHE_MAXSIZE: 900M
       CCACHE_COMPRESS: "1"
+      # An object's hash covers the absolute path of every file the compile names, so the same
+      # source compiles to a different hash in `/home/runner/_work/…` than in a self-hosted
+      # checkout, and either build misses the other's objects. BASEDIR rewrites the paths under the
+      # checkout to relative ones, so the compiler cache is shared by every runner that builds it.
+      CCACHE_BASEDIR: ${{ github.workspace }}
       # CMake reads the launcher from these two environment variables (cmake-env-variables(7));
       # it does not read CMAKE_PROJECT_INCLUDE_BEFORE from the environment at all. Setting a file
       # there configured nothing: probed against cmake 4.4.2, the include-before env var leaves
@@ -1389,6 +1400,11 @@ jobs:
       CCACHE_DIR: ${{ github.workspace }}/.cache/ccache
       CCACHE_MAXSIZE: 900M
       CCACHE_COMPRESS: "1"
+      # An object's hash covers the absolute path of every file the compile names, so the same
+      # source compiles to a different hash in `/home/runner/_work/…` than in a self-hosted
+      # checkout, and either build misses the other's objects. BASEDIR rewrites the paths under the
+      # checkout to relative ones, so the compiler cache is shared by every runner that builds it.
+      CCACHE_BASEDIR: ${{ github.workspace }}
       # CMake reads the launcher from these two environment variables (cmake-env-variables(7));
       # it does not read CMAKE_PROJECT_INCLUDE_BEFORE from the environment at all. Setting a file
       # there configured nothing: probed against cmake 4.4.2, the include-before env var leaves
@@ -2213,6 +2229,11 @@ jobs:
       CCACHE_DIR: ${{ github.workspace }}/.cache/ccache
       CCACHE_MAXSIZE: 900M
       CCACHE_COMPRESS: "1"
+      # An object's hash covers the absolute path of every file the compile names, so the same
+      # source compiles to a different hash in `/home/runner/_work/…` than in a self-hosted
+      # checkout, and either build misses the other's objects. BASEDIR rewrites the paths under the
+      # checkout to relative ones, so the compiler cache is shared by every runner that builds it.
+      CCACHE_BASEDIR: ${{ github.workspace }}
       # CMake reads the launcher from these two environment variables (cmake-env-variables(7));
       # it does not read CMAKE_PROJECT_INCLUDE_BEFORE from the environment at all. Setting a file
       # there configured nothing: probed against cmake 4.4.2, the include-before env var leaves

@@ -1,5 +1,6 @@
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
+import { VirtualShadowNode } from "@threenative/core";
 import { qualityPreset as coreQualityPreset } from "@threenative/core";
 import {
   Color,
@@ -12,11 +13,12 @@ import {
   Scene,
   UnsignedByteType,
 } from "three";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { flat } from "../templates/platformer/src/render/materials.js";
 import { palette } from "../templates/platformer/src/render/palette.js";
 import { setupSky, skyTexture } from "../templates/platformer/src/render/sky.js";
 import { skyEnvironment } from "../templates/platformer/src/render/skyEnvironment.js";
+import { setupLighting } from "../templates/starter/src/render/lighting.js";
 import { qualityPreset } from "../templates/starter/src/render/quality.js";
 
 const starter = path.resolve("packages/create-threenative/templates/starter");
@@ -50,6 +52,52 @@ describe("starter visual floor", () => {
       expect(qualityPreset(tier).tonemapMode, tier).toBe("filmic");
     }
     expect(source).toContain("@threenative/core");
+  });
+
+  it("should keep one arena shadow map unless a world names cached shadow extents", () => {
+    const scene = new Scene();
+    const renderer = { shadowMap: { enabled: false, type: 0 } };
+    const arena = setupLighting(scene, renderer);
+    expect(arena.key.shadow.mapSize.width).toBe(4096);
+    // The arena window covers the arena diagonal (starter-shadow-coverage.spec.ts owns its size).
+    const arenaExtent = arena.key.shadow.camera.right;
+    expect(arenaExtent).toBeGreaterThan(14);
+    expect(arena.key.shadow.shadowNode).toBeUndefined();
+    expect(arena.shadows).toBeUndefined();
+    arena.dispose();
+    expect(arena.key.parent).toBeNull();
+
+    // The phone map size and the arena near window carry over; the world names only the wider ones.
+    const forest = setupLighting(scene, renderer, true, [48, 160], VirtualShadowNode);
+    const shadows = forest.shadows;
+    if (shadows === undefined) throw new Error("expected the cached shadow override");
+    expect(forest.key.shadow.shadowNode).toBe(shadows);
+    // The node renders a ladder, not the authored pair: it inserts a level wherever a step is wider
+    // than 2x, as UE doubles every clipmap level (`maxLevelRatio`). What this kit owns is the
+    // windows it named — the arena diagonal finest, the world's wider ones as the authored levels
+    // above it — and the phone map size every inserted level inherits.
+    const clipExtents = shadows.options.clipExtents;
+    expect(clipExtents.filter((extent) => [arenaExtent, 48, 160].includes(extent))).toEqual([
+      arenaExtent,
+      48,
+      160,
+    ]);
+    for (let level = 1; level < clipExtents.length; level += 1)
+      expect(
+        (clipExtents[level] as number) / (clipExtents[level - 1] as number),
+        `level ${level} step`,
+      ).toBeLessThanOrEqual(2);
+    expect(shadows.options.mapSize).toEqual(clipExtents.map(() => 2048));
+    const disposeShadows = vi.spyOn(shadows, "dispose");
+    forest.dispose();
+    expect(disposeShadows).toHaveBeenCalledOnce();
+    expect(forest.key.parent).toBeNull();
+
+    expect(() => setupLighting(scene, renderer, false, [14], VirtualShadowNode)).toThrow(
+      RangeError,
+    );
+    expect(() => setupLighting(scene, renderer, false, [48])).toThrow(/VirtualShadowNode/u);
+    expect(scene.children).toHaveLength(0);
   });
 
   it("should route setupPost through the framework output node", async () => {
@@ -302,17 +350,25 @@ describe("starter visual floor", () => {
     });
     expect(scenario.assert?.camera).toMatchObject({ entity: "camera.main", follows: "player" });
     expect(scenario.assert?.movement).toMatchObject({ entity: "player", minDistance: 4 });
-    // AO, temporal AA, motion blur, bloom and vignette are the chain this kit ships, and each one is
-    // proved to have changed the graph output rather than being reported as applied. `grade` and
-    // `grain` run at intensity 0 (the Unreal defaults), so the scenario asserts the chain refuses both.
+    // AO, SSGI, reflections, bloom, vignette and the spatial antialias are the chain this kit ships at
+    // `high`, and each one is proved to have changed the graph output rather than being reported as
+    // applied. The owner's 2026-10-28 decision (`packages/core/src/look/quality.ts`) draws 4x MSAA with
+    // no temporal AA and no camera motion blur, and `grade`/`grain` run at intensity 0 (the Unreal
+    // defaults), so the scenario asserts the chain refuses all four.
     expect(scenario.assert?.renderChain?.stages?.includes).toEqual([
       "ambientOcclusion",
-      "traa",
-      "motionBlur",
+      "ssgi",
+      "ssr",
       "bloom",
       "vignette",
+      "antialias",
     ]);
-    expect(scenario.assert?.renderChain?.stages?.excludes).toEqual(["grade", "grain"]);
+    expect(scenario.assert?.renderChain?.stages?.excludes).toEqual([
+      "traa",
+      "motionBlur",
+      "grade",
+      "grain",
+    ]);
     expect(Object.keys(scenario.assert?.renderChain?.contributions ?? {})).toEqual([
       "graphOutputChanged",
     ]);
@@ -426,7 +482,7 @@ describe("starter visual floor", () => {
     for (const root of [starter, minimal, platformer]) {
       const agents = await readFile(path.join(root, "AGENTS.md"), "utf8");
       expect(agents).toContain("Budget real time for the look");
-      expect(agents).toContain(".agents/skills/threenative-visuals/SKILL.md");
+      expect(agents).toContain("`threenative-visuals`");
       // AGENTS.md is the source; CLAUDE.md is generated from it by pnpm
       // sync:agents, so it has to carry the same instruction.
       const mirror = await readFile(path.join(root, "CLAUDE.md"), "utf8");

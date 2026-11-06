@@ -300,6 +300,19 @@ describe("shared model images", () => {
     expect(decoded.getRoot().listNodes()[0]?.getName()).toBe("marker");
   });
 
+  it("should name a container whose first chunk is not the JSON chunk", () => {
+    // Correctly framed chunks that lead with the BIN chunk: the spec puts the JSON there, so
+    // this container carries no document at all.
+    const header = Buffer.alloc(12);
+    header.writeUInt32LE(0x46546c67, 0);
+    header.writeUInt32LE(2, 4);
+    header.writeUInt32LE(24, 8);
+    const chunk = Buffer.alloc(12);
+    chunk.writeUInt32LE(4, 0);
+    chunk.writeUInt32LE(0x004e4942, 4);
+    expect(() => unpackGlb(Buffer.concat([header, chunk]))).toThrow(/GLB has no JSON chunk/u);
+  });
+
   it.each([undefined, 1, 2])(
     "should write one image when two models embed the same bytes and no config is given (concurrency %s)",
     async (concurrency) => {

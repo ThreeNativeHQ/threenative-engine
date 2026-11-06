@@ -55,6 +55,8 @@ function engine() {
     get(self: IEngineRef, property: string): EngineValue {
       const array = arrays.get(self.key);
       if (property === "itemSize") return sizes.get(self.key) ?? 0;
+      // The engine answers its declared ranges as canonical JSON; this stub declares none.
+      if (property === "updateRanges") return "[]";
       if (property === "count")
         return array === undefined ? 0 : array.length / (sizes.get(self.key) || 1);
       return 0;

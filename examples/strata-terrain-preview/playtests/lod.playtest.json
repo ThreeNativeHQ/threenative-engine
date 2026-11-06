@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "name": "strata-terrain-lod-from-camera",
+  "subject": "Run with ?world=forest&meadow=off, so the player stays the streaming source while the vista camera stands 685 m away: the trees around the player draw at the level the camera sees, not at full detail. ?tnLodFromCamera=0 is the before arm.",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 90,
+  "artifacts": {
+    "screenshots": true,
+    "console": true
+  },
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "GameState",
+        "path": "currentViewWindows",
+        "gte": 6,
+        "allowTrivial": "The vista is read after six measured windows in the view, once the camera-graded refilter has settled."
+      },
+      {
+        "id": "GameState",
+        "path": "propTriangles",
+        "gte": 5000000,
+        "allowTrivial": "The streamed props drew: the initial 0 is before they stream in."
+      },
+      {
+        "id": "GameState",
+        "path": "propTriangles",
+        "lte": 18000000,
+        "allowTrivial": "The initial 0 is before the props stream; the row above proves they drew. Measured 2026-11-04 on an RTX 2080: 21.3 to 22.6 M graded from the player, 13.8 to 14.1 M from the camera."
+      }
+    ]
+  },
+  "steps": [
+    {
+      "label": "forest-assets-ready",
+      "waitForResource": { "id": "GameState", "path": "worldReady", "equals": true },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "revealed",
+      "waitForResource": { "id": "GameState", "path": "revealComplete", "equals": true },
+      "timeoutMs": 60000,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "meadow-close-view",
+      "press": "KeyV",
+      "holdTicks": 2,
+      "release": true
+    },
+    { "kind": "wait", "label": "settle-1", "waitTicks": 10, "release": true },
+    { "kind": "input", "label": "overview-view", "press": "KeyV", "holdTicks": 2, "release": true },
+    { "kind": "wait", "label": "settle-2", "waitTicks": 10, "release": true },
+    { "kind": "input", "label": "river-view", "press": "KeyV", "holdTicks": 2, "release": true },
+    { "kind": "wait", "label": "settle-3", "waitTicks": 10, "release": true },
+    { "kind": "input", "label": "vista-view", "press": "KeyV", "holdTicks": 2, "release": true },
+    {
+      "label": "vista",
+      "release": true,
+      "screenshot": "vista",
+      "waitForResource": { "id": "GameState", "path": "currentViewWindows", "gte": 6 },
+      "timeoutMs": 120000
+    }
+  ]
+}

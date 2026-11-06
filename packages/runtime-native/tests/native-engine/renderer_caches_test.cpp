@@ -318,6 +318,37 @@ void compileScene(Database& database, Renderer& renderer, Object3D& root, Camera
     }
 }
 
+// A compile pass reaches what the camera cannot see yet: turning round to a material behind the eye after the
+// warm-up compiles nothing mid-frame (the forest's 360-degree turn met five pipelines it never compiled).
+void compileReachesOffScreenDraws() {
+    CompileDevice d;
+    CHECK(d.device != nullptr);
+    if (!d.device) return;
+    Renderer renderer(d.instance, d.device, d.queue, d.events);
+    renderer.setSize(32, 32);
+    RenderDatabase database;
+    Scene scene;
+    PerspectiveCamera camera;
+    camera.lookAt(0, 0, -1);
+    camera.updateMatrixWorld(true);
+    Mesh ahead(makeBoxGeometry(), std::make_shared<Material>(MaterialType::Standard));
+    ahead.position.z = -6;
+    Mesh behind(makeBoxGeometry(), std::make_shared<Material>(MaterialType::Phong));
+    behind.position.z = 6;
+    scene.add(ahead);
+    scene.add(behind);
+    scene.updateMatrixWorld(true);
+    compileScene(database, renderer, scene, camera, &scene);
+    database.render(renderer, scene, camera);
+    const uint64_t warmed = renderer.pipelines().compiles();
+    camera.lookAt(0, 0, 1);  // turn round
+    camera.updateMatrixWorld(true);
+    database.render(renderer, scene, camera);
+    std::printf("compile off screen: %llu pipelines compiled by the turn\n",
+                static_cast<unsigned long long>(renderer.pipelines().compiles() - warmed));
+    CHECK(renderer.pipelines().compiles() == warmed);
+}
+
 // A render target draws on a sibling renderer. It shares the device's pipeline and layout caches, so
 // the same program there is a lookup, never a second compile (a second WGPUPipelineLayout would key
 // every material pipeline differently and recompile it once per target).
@@ -572,6 +603,10 @@ void compileBeforeRender() {
     atlas.clipExtents = {8}; atlas.mapSize = 256; atlas.pageTexels = 64;
     atlas.lightDistance = 20; atlas.depthRange = 40;
     renderer.setVirtualShadow(0, atlas);
+    // The depth map exists with the entry. A group rebuild before the frame's first shadow pass draws the atlas
+    // names t_vsm0 with no view otherwise, which is an invalid descriptor: the browser port aborts the module on
+    // one, and the scene switch that rebuilds every cached program's groups is where that reached a player.
+    CHECK(renderer.virtualShadowMapView(0) != nullptr);
     compileScene(database, renderer, scene, camera);
     const auto groupsBeforeAtlas = bindGroupsCreated();
     database.render(renderer, scene, camera);
@@ -703,6 +738,48 @@ void shutdownQueue() {
     CHECK(cancelled);
 }
 
+// Unreal's DelayUntilPSOPrecached: a draw-path miss starts one async compile and draws nothing until it lands, and a
+// refused compile still reaches the draw's synchronous path, so the caller names the refusal instead of waiting forever.
+void deferredDraw() {
+    CompileDevice d;
+    CHECK(d.device);
+    if (!d.device) return;
+    frameThread = std::this_thread::get_id();
+    workerCreates = 0; refusal = 0; holdWorkers = true;
+    const auto standard = shader::buildStandard(shader::StandardMaterial{});
+    const auto vs = shader::buildStage(standard.vertex, 0), fs = shader::buildStage(standard.fragment, 1);
+    PipelineCache cache(d.device);
+    bool deferred = false;
+    CHECK(cache.pending() == 0);
+    CHECK(cache.getOrDefer(vs, &fs, PipelineTarget{}, deferred) == nullptr && deferred);
+    waitFor([] { return workerCreates == 1; });
+    CHECK(cache.getOrDefer(vs, &fs, PipelineTarget{}, deferred) == nullptr && deferred);  // still compiling: no second one
+    CHECK(cache.pending() == 1);  // the startup cover holds while this is nonzero (web_host.cpp field 72)
+    holdWorkers = false;
+    WGPURenderPipeline drawn = nullptr;
+    for (int i = 0; i < 2000 && !drawn; ++i) {
+        drawn = cache.getOrDefer(vs, &fs, PipelineTarget{}, deferred);
+        if (!drawn) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    CHECK(drawn && !deferred);
+    CHECK(cache.pending() == 0);
+    CHECK(workerCreates == 1);
+    CHECK(cache.compiles() == 1);
+    CHECK(cache.get(vs, &fs, PipelineTarget{}) == drawn);
+    refusal = 1;
+    PipelineTarget refusedTarget; refusedTarget.depthBias = 3;
+    CHECK(cache.getOrDefer(vs, &fs, refusedTarget, deferred) == nullptr && deferred);
+    waitFor([] { return workerCreates == 2; });
+    bool answered = false;
+    for (int i = 0; i < 2000 && !answered; ++i) {
+        cache.getOrDefer(vs, &fs, refusedTarget, deferred);
+        answered = !deferred;
+        if (!answered) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    CHECK(answered);  // the refusal now compiles on the frame thread, which the hook lets through
+    refusal = 0;
+}
+
 void nonStandardException() {
     CompileDevice d;
     CHECK(d.device);
@@ -786,9 +863,10 @@ void recentBindGroups() {
     groups.clear();
 }
 
-TN_TEST_MAIN({"attribute_disposal_lifetime", attributeDisposalLifetime}, {"geometry", geometry}, {"pipelines", pipelines}, {"sibling_pipelines", siblingSharesPipelines}, {"sibling_texture_change", siblingTextureChangeSettles}, {"texture_update_in_place", textureUpdateInPlace}, {"texture_update_reallocates", textureUpdateReallocates}, {"compile_before_render", compileBeforeRender}, {"init_texture", initializeTexture}, {"recent_bind_groups", recentBindGroups}, {"line_depth_bias", lineDepthBias}
+TN_TEST_MAIN({"attribute_disposal_lifetime", attributeDisposalLifetime}, {"compile_reaches_off_screen", compileReachesOffScreenDraws}, {"geometry", geometry}, {"pipelines", pipelines}, {"sibling_pipelines", siblingSharesPipelines}, {"sibling_texture_change", siblingTextureChangeSettles}, {"texture_update_in_place", textureUpdateInPlace}, {"texture_update_reallocates", textureUpdateReallocates}, {"compile_before_render", compileBeforeRender}, {"init_texture", initializeTexture}, {"recent_bind_groups", recentBindGroups}, {"line_depth_bias", lineDepthBias}
 #ifdef TN_TEST_PIPELINE_WORKERS
     , {"failed_ticket", failedTicket}, {"synchronous_adoption", synchronousAdoption},
-    {"shutdown_queue", shutdownQueue}, {"nonstandard_exception", nonStandardException}
+    {"shutdown_queue", shutdownQueue}, {"nonstandard_exception", nonStandardException},
+    {"deferred_draw", deferredDraw}
 #endif
 )

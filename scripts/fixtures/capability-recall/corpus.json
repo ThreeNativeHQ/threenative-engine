@@ -352,7 +352,7 @@
       "scope": "mechanic",
       "source": "brief:topdown-action#1",
       "expect": ["defineGame"],
-      "reject": ["Billboard3D", "AudioBus"]
+      "reject": ["AudioBus"]
     },
     {
       "id": "brief.topdown-action.2",
@@ -395,7 +395,7 @@
       "id": "guard.animation-feet",
       "query": "walking feet sliding spinning",
       "scope": "mechanic",
-      "source": "template:action-rpg#Start every change",
+      "source": "template:action-rpg#Authoring flow",
       "expect": ["AnimationPlayer"],
       "reject": []
     },
@@ -403,7 +403,7 @@
       "id": "request.build-racing-game",
       "query": "build a racing game",
       "scope": "request",
-      "source": "template:racing#AGENTS.md \u2014 __PROJECT_NAME__ racing",
+      "source": "template:racing#AGENTS.md \u2014 __PROJECT_NAME__ (Circuit racing, the racing kit)",
       "expect": ["PathFollow3D"],
       "reject": []
     },
@@ -411,7 +411,7 @@
       "id": "request.tower-defense-game",
       "query": "tower defense game",
       "scope": "request",
-      "source": "template:tower-defense#AGENTS.md — __PROJECT_NAME__ tower defense",
+      "source": "template:tower-defense#AGENTS.md \u2014 __PROJECT_NAME__ (Tower defense, the tower-defense kit)",
       "expect": ["Scheduler"],
       "reject": []
     },
@@ -419,7 +419,7 @@
       "id": "request.inventory-system",
       "query": "make an inventory system",
       "scope": "request",
-      "source": "template:action-rpg#AGENTS.md \u2014 __PROJECT_NAME__ action RPG",
+      "source": "template:action-rpg#AGENTS.md \u2014 __PROJECT_NAME__ (Action RPG, the action-rpg kit)",
       "expect": ["assertPortableState"],
       "reject": [],
       "notOwned": "inventory"
@@ -428,7 +428,7 @@
       "id": "request.enemy-ai",
       "query": "enemy AI that chases the player",
       "scope": "request",
-      "source": "template:shooter#AGENTS.md — __PROJECT_NAME__ first-person town firefight",
+      "source": "template:shooter#AGENTS.md \u2014 __PROJECT_NAME__ (First-person shooter, the shooter kit)",
       "expect": ["NavigationAgent3D", "CharacterBody3D"],
       "reject": []
     },
@@ -436,7 +436,7 @@
       "id": "request.third-person-camera",
       "query": "third person camera follow",
       "scope": "request",
-      "source": "template:platformer#AGENTS.md \u2014 __PROJECT_NAME__ platformer",
+      "source": "template:platformer#AGENTS.md \u2014 __PROJECT_NAME__ (Fox Dash, the platformer kit)",
       "expect": ["defineGame"],
       "reject": []
     },
@@ -444,7 +444,7 @@
       "id": "request.save-progress",
       "query": "save the player progress",
       "scope": "request",
-      "source": "template:starter#AGENTS.md \u2014 __PROJECT_NAME__ starter",
+      "source": "template:starter#AGENTS.md \u2014 __PROJECT_NAME__ (Starter, the starter template)",
       "expect": ["assertPortableState"],
       "reject": [
         "Area3D",
@@ -462,7 +462,7 @@
       "id": "request.spawn-waves",
       "query": "spawn waves of enemies",
       "scope": "request",
-      "source": "template:tower-defense#AGENTS.md — __PROJECT_NAME__ tower defense",
+      "source": "template:tower-defense#AGENTS.md \u2014 __PROJECT_NAME__ (Tower defense, the tower-defense kit)",
       "expect": ["Scheduler"],
       "reject": [
         "WaveField",
@@ -485,7 +485,7 @@
       "id": "request.dialogue-npc",
       "query": "dialogue with an NPC",
       "scope": "request",
-      "source": "template:sailing#AGENTS.md \u2014 __PROJECT_NAME__ sailing",
+      "source": "template:sailing#AGENTS.md \u2014 __PROJECT_NAME__ (Sailing, the sailing kit)",
       "expect": ["Text"],
       "reject": ["NavigationAgent3D", "recast"],
       "notOwned": "dialogue"
@@ -494,7 +494,7 @@
       "id": "request.pick-up-item",
       "query": "pick up an item",
       "scope": "request",
-      "source": "template:minimal#AGENTS.md \u2014 __PROJECT_NAME__ minimal",
+      "source": "template:minimal#AGENTS.md \u2014 __PROJECT_NAME__ (Minimal, the minimal template)",
       "expect": ["Area3D"],
       "reject": ["ClusteredMesh"]
     },
@@ -502,7 +502,7 @@
       "id": "request.multiplayer",
       "query": "exchange authenticated multiplayer messages over WebTransport",
       "scope": "request",
-      "source": "template:starter#Ownership",
+      "source": "template:starter#This kit",
       "expect": ["connect"],
       "reject": []
     },
@@ -510,7 +510,7 @@
       "id": "request.multiplayer-replication",
       "query": "authoritative replication",
       "scope": "request",
-      "source": "template:starter#Ownership",
+      "source": "template:starter#This kit",
       "expect": ["defineGame"],
       "reject": [],
       "notOwned": "networked-multiplayer"
@@ -519,7 +519,7 @@
       "id": "request.multiplayer-prediction",
       "query": "client prediction",
       "scope": "request",
-      "source": "template:starter#Ownership",
+      "source": "template:starter#This kit",
       "expect": ["defineGame"],
       "reject": [],
       "notOwned": "networked-multiplayer"
@@ -528,7 +528,7 @@
       "id": "request.platformer-double-jump",
       "query": "make a platformer with double jump",
       "scope": "request",
-      "source": "template:platformer#AGENTS.md \u2014 __PROJECT_NAME__ platformer",
+      "source": "template:platformer#AGENTS.md \u2014 __PROJECT_NAME__ (Fox Dash, the platformer kit)",
       "expect": ["CharacterBody3D"],
       "reject": []
     },
@@ -536,7 +536,7 @@
       "id": "request.collectathon-triple-jump",
       "query": "make a 3D platformer with a triple jump, long jump and wall kick",
       "scope": "request",
-      "source": "template:collectathon#AGENTS.md \u2014 __PROJECT_NAME__ collectathon (Hop Garden)",
+      "source": "template:collectathon#AGENTS.md \u2014 __PROJECT_NAME__ (Hop Garden, the collectathon kit)",
       "expect": ["CharacterBody3D"],
       "reject": []
     },
@@ -544,7 +544,7 @@
       "id": "request.adventure-lock-on",
       "query": "make a 3D action adventure: the hero character runs, rolls and blocks with a shield, and enemies chase her around walls",
       "scope": "request",
-      "source": "template:adventure#AGENTS.md \u2014 __PROJECT_NAME__ adventure",
+      "source": "template:adventure#AGENTS.md \u2014 __PROJECT_NAME__ (Lantern Vale, the adventure kit)",
       "expect": ["CharacterBody3D"],
       "reject": []
     },
@@ -552,7 +552,7 @@
       "id": "request.kart-drift-sparks",
       "query": "a kart racer with a particle burst of sparks when drifting",
       "scope": "request",
-      "source": "template:kart#AGENTS.md \u2014 __PROJECT_NAME__ kart racer (Clover Cup)",
+      "source": "template:kart#AGENTS.md \u2014 __PROJECT_NAME__ (Clover Cup, the kart kit)",
       "expect": ["GPUParticles3D"],
       "reject": []
     },
@@ -624,7 +624,7 @@
       "id": "snow.footprints",
       "query": "leave footprints in deep snow that stay where the player walked",
       "scope": "mechanic",
-      "source": "template:snow#Commands and map",
+      "source": "template:snow#Commands",
       "expect": ["SnowField"],
       "reject": []
     },
@@ -632,7 +632,7 @@
       "id": "snow.refill",
       "query": "fresh snowfall slowly fills old tracks back in",
       "scope": "mechanic",
-      "source": "template:snow#Commands and map",
+      "source": "template:snow#Commands",
       "expect": ["SnowField"],
       "reject": []
     },
@@ -640,7 +640,7 @@
       "id": "snow.compaction",
       "query": "show how packed the snow is where people have walked",
       "scope": "mechanic",
-      "source": "template:snow#Commands and map",
+      "source": "template:snow#Commands",
       "expect": ["SnowField"],
       "reject": []
     },
@@ -648,7 +648,7 @@
       "id": "snow.ball-drop",
       "query": "drop a heavy ball into powder snow so it sinks and settles in the crater it makes",
       "scope": "mechanic",
-      "source": "template:snow#Commands and map",
+      "source": "template:snow#Commands",
       "expect": ["attachSnowPhysics"],
       "reject": []
     },
@@ -656,7 +656,7 @@
       "id": "snow.ball-roll",
       "query": "push a ball through snow so it rolls and carves a continuous track",
       "scope": "mechanic",
-      "source": "template:snow#Commands and map",
+      "source": "template:snow#Commands",
       "expect": ["attachSnowPhysics"],
       "reject": []
     },
@@ -664,7 +664,7 @@
       "id": "snow.bodies",
       "query": "a crate and a fallen log press their own shapes into the snow they rest on",
       "scope": "mechanic",
-      "source": "template:snow#Commands and map",
+      "source": "template:snow#Commands",
       "expect": ["attachSnowPhysics"],
       "reject": []
     },
@@ -672,7 +672,7 @@
       "id": "snow.snowfall",
       "query": "falling snowflakes that thicken into a windy blizzard",
       "scope": "mechanic",
-      "source": "template:snow#Commands and map",
+      "source": "template:snow#Commands",
       "expect": ["GPUParticles3D"],
       "reject": []
     },
@@ -680,7 +680,7 @@
       "id": "snow.powder",
       "query": "a puff of powder snow sprays up where a boot lands",
       "scope": "mechanic",
-      "source": "template:snow#Commands and map",
+      "source": "template:snow#Commands",
       "expect": ["GPUParticles3D"],
       "reject": []
     },
@@ -688,7 +688,7 @@
       "id": "request.snow-glade",
       "query": "a snowy glade where an explorer leaves boot prints, a ball rolls through the powder carving a track, and snowfall turns into a blizzard",
       "scope": "request",
-      "source": "template:snow#Commands and map",
+      "source": "template:snow#Commands",
       "expect": ["SnowField", "attachSnowPhysics"],
       "reject": []
     },
@@ -696,7 +696,7 @@
       "id": "rain.weather-world",
       "query": "procedural coastal storm with a road, forest, sea and wet reflections drawn from maths rather than geometry",
       "scope": "mechanic",
-      "source": "template:rain#Ownership",
+      "source": "template:rain#This kit",
       "expect": ["createWeatherWorld"],
       "reject": ["Area3D", "NavigationAgent3D"]
     },
@@ -704,7 +704,7 @@
       "id": "rain.noise-volume",
       "query": "generate a 3D noise volume for the clouds instead of shipping one as an asset",
       "scope": "mechanic",
-      "source": "template:rain#Ownership",
+      "source": "template:rain#This kit",
       "expect": ["createNoiseVolume"],
       "reject": ["Area3D"]
     },
@@ -712,7 +712,7 @@
       "id": "rain.storm-audio",
       "query": "rain hiss, wind bed and thunder delayed by how far away the strike was",
       "scope": "mechanic",
-      "source": "template:rain#Ownership",
+      "source": "template:rain#This kit",
       "expect": ["createStormAudio"],
       "reject": ["Area3D"]
     },
@@ -720,7 +720,7 @@
       "id": "rain.lightning",
       "query": "generate branching lightning ribbon geometry that flashes the scene",
       "scope": "mechanic",
-      "source": "template:rain#Ownership",
+      "source": "template:rain#This kit",
       "expect": ["createStormLightning"],
       "reject": ["Area3D"]
     },
@@ -728,7 +728,7 @@
       "id": "rain.streaks",
       "query": "thousands of falling rain streaks around the camera in one draw",
       "scope": "mechanic",
-      "source": "template:rain#Ownership",
+      "source": "template:rain#This kit",
       "expect": ["createStormRain", "GPUParticles3D"],
       "reject": ["Area3D"]
     },
@@ -736,7 +736,7 @@
       "id": "rain.round-time-limit",
       "query": "countdown timer that ends the round",
       "scope": "mechanic",
-      "source": "template:rain#Ownership",
+      "source": "template:rain#This kit",
       "expect": ["Scheduler"],
       "reject": ["Area3D"]
     },
@@ -744,7 +744,7 @@
       "id": "request.drive-a-racing-kart",
       "query": "racing car racing kart drift vehicle go-kart",
       "scope": "request",
-      "source": "template:racing#AGENTS.md — __PROJECT_NAME__ racing",
+      "source": "template:racing#AGENTS.md \u2014 __PROJECT_NAME__ (Circuit racing, the racing kit)",
       "expect": ["VehicleBody3D"],
       "reject": []
     },
@@ -752,7 +752,7 @@
       "id": "request.lumen-reflections",
       "query": "lumen reflections",
       "scope": "request",
-      "source": "template:starter#Ownership",
+      "source": "template:starter#This kit",
       "expect": ["TracedReflections"],
       "reject": []
     },
@@ -760,7 +760,7 @@
       "id": "request.dedicated-reflection-rays",
       "query": "dedicated reflection rays",
       "scope": "request",
-      "source": "template:starter#Ownership",
+      "source": "template:starter#This kit",
       "expect": ["TracedReflections"],
       "reject": []
     },
@@ -768,7 +768,7 @@
       "id": "request.vehicle-suspension-grip",
       "query": "suspension wheel traction tyre grip",
       "scope": "request",
-      "source": "template:racing#AGENTS.md — __PROJECT_NAME__ racing",
+      "source": "template:racing#AGENTS.md \u2014 __PROJECT_NAME__ (Circuit racing, the racing kit)",
       "expect": ["VehicleBody3D"],
       "reject": []
     },
@@ -776,7 +776,7 @@
       "id": "request.vehicle-pedals-steering",
       "query": "accelerator pedal handbrake steering wheel",
       "scope": "request",
-      "source": "template:racing#AGENTS.md — __PROJECT_NAME__ racing",
+      "source": "template:racing#AGENTS.md \u2014 __PROJECT_NAME__ (Circuit racing, the racing kit)",
       "expect": ["VehicleBody3D"],
       "reject": []
     },
@@ -784,7 +784,7 @@
       "id": "request.vehicle-rescue-respawn",
       "query": "rescue respawn flip back on track",
       "scope": "request",
-      "source": "template:racing#AGENTS.md — __PROJECT_NAME__ racing",
+      "source": "template:racing#AGENTS.md \u2014 __PROJECT_NAME__ (Circuit racing, the racing kit)",
       "expect": ["VehicleBody3D"],
       "reject": []
     },
@@ -808,7 +808,7 @@
       "id": "request.lumen-surface-cache",
       "query": "lumen surface cache",
       "scope": "request",
-      "source": "template:starter#Quality and proof",
+      "source": "template:starter#Conventions",
       "expect": ["SurfaceCache"],
       "reject": []
     },
@@ -816,7 +816,7 @@
       "id": "request.gi-visualize",
       "query": "lumen visualize indirect diffuse only r.Lumen.Visualize.IndirectDiffuse",
       "scope": "request",
-      "source": "template:starter#Quality and proof",
+      "source": "template:starter#Conventions",
       "expect": ["GIVisualize"],
       "reject": []
     },
@@ -824,7 +824,7 @@
       "id": "request.lumen-scene",
       "query": "lumen scene",
       "scope": "request",
-      "source": "template:starter#Quality and proof",
+      "source": "template:starter#Conventions",
       "expect": ["SurfaceCache"],
       "reject": []
     },
@@ -832,7 +832,7 @@
       "id": "request.mesh-cards",
       "query": "mesh cards",
       "scope": "request",
-      "source": "template:starter#Quality and proof",
+      "source": "template:starter#Conventions",
       "expect": ["SurfaceCache"],
       "reject": []
     },
@@ -840,7 +840,7 @@
       "id": "request.lumen-translucency-volume",
       "query": "lumen translucency volume",
       "scope": "request",
-      "source": "template:starter#Quality and proof",
+      "source": "template:starter#Conventions",
       "expect": ["ProbeVolume"],
       "reject": []
     },
@@ -848,7 +848,7 @@
       "id": "request.translucency-gi",
       "query": "translucency gi",
       "scope": "request",
-      "source": "template:starter#Quality and proof",
+      "source": "template:starter#Conventions",
       "expect": ["ProbeVolume"],
       "reject": []
     },
@@ -856,7 +856,7 @@
       "id": "request.gi-quality-scalability",
       "query": "lumen scalability sg.GlobalIlluminationQuality final gather method",
       "scope": "request",
-      "source": "template:starter#AGENTS.md — __PROJECT_NAME__ starter",
+      "source": "template:starter#AGENTS.md \u2014 __PROJECT_NAME__ (Starter, the starter template)",
       "expect": ["GIBudget"],
       "reject": []
     },
@@ -864,7 +864,7 @@
       "id": "request.shadow-quality-scalability",
       "query": "virtual shadow map scalability sg.ShadowQuality",
       "scope": "request",
-      "source": "template:starter#AGENTS.md — __PROJECT_NAME__ starter",
+      "source": "template:starter#AGENTS.md \u2014 __PROJECT_NAME__ (Starter, the starter template)",
       "expect": ["ShadowFilterBudget"],
       "reject": []
     },
@@ -874,6 +874,70 @@
       "scope": "request",
       "source": "sandbox:wildwood-backlit#scenes/CalibrationScene.ts",
       "expect": ["addFoliageBackLight"],
+      "reject": []
+    },
+    {
+      "id": "request.terrain-forest-world",
+      "query": "generate a forest for my game",
+      "scope": "request",
+      "source": "template:starter#Conventions",
+      "expect": ["cookTerrainWorld"],
+      "reject": []
+    },
+    {
+      "id": "request.swim-water-volume",
+      "query": "Swim across a river or lake in a water volume, floating with buoyancy and wading slower in shallow water.",
+      "scope": "request",
+      "source": "template:sailing#This kit",
+      "expect": ["CharacterBody3D"],
+      "reject": []
+    },
+    {
+      "id": "spell.fireball",
+      "query": "Cast a fireball at a target that explodes and scorches the floor.",
+      "scope": "mechanic",
+      "source": "template:action-rpg#Authoring flow",
+      "expect": ["createFireball"],
+      "reject": []
+    },
+    {
+      "id": "spell.thunderstrike",
+      "query": "Strike a point with a thunderbolt from the sky and leave a burnt mark.",
+      "scope": "mechanic",
+      "source": "template:action-rpg#Authoring flow",
+      "expect": ["createThunderstrike"],
+      "reject": []
+    },
+    {
+      "id": "spell.glacial-spike",
+      "query": "Fire an ice spike at a target that shatters and freezes the ground.",
+      "scope": "mechanic",
+      "source": "template:action-rpg#Authoring flow",
+      "expect": ["createGlacialSpike"],
+      "reject": []
+    },
+    {
+      "id": "spell.arcane-barrage",
+      "query": "Fire a volley of arcane missiles that pop on arrival.",
+      "scope": "mechanic",
+      "source": "template:action-rpg#Authoring flow",
+      "expect": ["createArcaneBarrage"],
+      "reject": []
+    },
+    {
+      "id": "spell.aegis",
+      "query": "Raise a shield around the caster that forms, holds and breaks outward.",
+      "scope": "mechanic",
+      "source": "template:action-rpg#Authoring flow",
+      "expect": ["createAegis"],
+      "reject": []
+    },
+    {
+      "id": "spell.inferno",
+      "query": "Erupt a pillar of fire at a point that keeps burning for seconds.",
+      "scope": "mechanic",
+      "source": "template:action-rpg#Authoring flow",
+      "expect": ["createInferno"],
       "reject": []
     }
   ]

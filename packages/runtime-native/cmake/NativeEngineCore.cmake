@@ -72,6 +72,11 @@ if(NOT EMSCRIPTEN)
     # The job pool's workers (foundation/job_pool.h); the threaded web build passes -pthread instead.
     find_package(Threads REQUIRED)
     target_link_libraries(tn_engine_foundation PUBLIC Threads::Threads)
+else()
+    # JobPool::runItems catches an item's exception; without this emcc compiles the unit with -fignore-exceptions
+    # and drops the catch, so a throwing item ends its worker and the caller spins on the join.
+    target_compile_options(tn_engine_foundation PUBLIC -fwasm-exceptions)
+    target_link_options(tn_engine_foundation PUBLIC -fwasm-exceptions)
 endif()
 target_include_directories(tn_engine_foundation PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
@@ -325,8 +330,50 @@ tn_native_engine_test(tn-native-engine-frame-gate-test tests/native-engine/frame
     native_engine_frame_gate_gpu_behind=gpu_behind_is_declined
     native_engine_frame_gate_unthrottled=unthrottled_loop_stays_bounded)
 tn_native_engine_test(tn-native-engine-tsl-math-test tests/native-engine/tsl_math_test.cpp
-    native_engine_tsl_math=math)
+    native_engine_tsl_math=math native_engine_tsl_spell_port=spell_port native_engine_tsl_compute_texture_load=compute_texture_load
+    native_engine_tsl_compute_int_literals=compute_int_literals native_engine_tsl_ivec_bool=tsl_ivec_bool)
 target_link_libraries(tn-native-engine-tsl-math-test PRIVATE tn_engine_abi)
+
+# The ROI crop every attachment read hands back (a PassNode MRT slot, a render target): no device needed.
+tn_native_engine_test(tn-native-engine-readback-crop-test tests/native-engine/readback_crop_test.cpp
+    native_engine_readback_crop=crops_region
+    native_engine_readback_crop_refusal=refuses_outside)
+
+# Which fragment the aux pass draws with: the small normal-only one fits a pass with one colour target.
+tn_native_engine_test(tn-native-engine-aux-fragment-test tests/native-engine/aux_fragment_test.cpp
+    native_engine_aux_fragment_small=fits_without_slots
+    native_engine_aux_fragment_custom_slot=refused_with_a_slot)
+
+# Which colour attachments a draw writes: a draw that masks its named targets still writes its own MRT slot.
+tn_native_engine_test(tn-native-engine-attachment-mask-test tests/native-engine/attachment_mask_test.cpp
+    native_engine_attachment_mask=custom_slot
+    native_engine_attachment_mask_material=material_mask)
+
+# The aux pass's bundle key: a bundle follows the pass's colour-target count, a custom MRT slot included.
+tn_native_engine_test(tn-native-engine-aux-bundle-key-test tests/native-engine/aux_bundle_key_test.cpp
+    native_engine_aux_bundle_key=wider_pass
+    native_engine_aux_bundle_key_same_layout=same_layout)
+
+# How many colour targets the aux pass may hold: WebGPU's guaranteed eight, `color` included.
+tn_native_engine_test(tn-native-engine-aux-targets-test tests/native-engine/aux_targets_test.cpp
+    native_engine_aux_targets_eight=eight_fit
+    native_engine_aux_targets_nine=nine_are_refused)
+
+# A mirror's pass is reused only while the reflector it was built for lives: a world switch frees the old one,
+# and the next one can take its address.
+tn_native_engine_test(tn-native-engine-reflection-pass-test tests/native-engine/reflection_pass_test.cpp
+    native_engine_reflection_pass_lives=reused_while_alive
+    native_engine_reflection_pass_reused_address=rebuilt_when_the_address_is_reused)
+
+# A Data3DTexture in a texture copy: the usage its 3D texture is created with, and the mip tail it must not get
+# (texture_copy.h). It links the renderer for the WebGPU usage flags the header names, so it builds only where the
+# host renderer exists: not in Emscripten, and not in a `TN_ENGINE_CORE_ONLY` tree (NativeEngine.cmake defines it).
+if(NOT EMSCRIPTEN AND NOT TN_ENGINE_CORE_ONLY)
+    tn_native_engine_test(tn-native-engine-texture-copy-test tests/native-engine/texture_copy_test.cpp
+        native_engine_texture_copy_volume=volume_usage
+        native_engine_texture_copy_mips=mip_tail)
+    target_link_libraries(tn-native-engine-texture-copy-test PRIVATE tn_engine_renderer)
+endif()
 
 tn_native_engine_test(tn-native-engine-shader-ir-test tests/native-engine/shader_ir_test.cpp
     native_engine_tsl_ir_storage_textures=storage_textures
@@ -360,6 +407,9 @@ tn_native_engine_test(tn-native-engine-material-test tests/native-engine/materia
     native_engine_material_depth_texture_lowering=depth_texture_lowering
     native_engine_material_bloom_passes=bloom_passes
     native_engine_material_slots_share_one_lowering=slots_share_one_lowering
+    native_engine_material_mrt_slot=mrt_slot
+    native_engine_material_env_node=env_node
+    native_engine_material_basic_normal_view=basic_normal_view
     native_engine_material_rough_diffuse=rough_diffuse)
 target_link_libraries(tn-native-engine-material-test PRIVATE tn_engine_shader)
 if(EMSCRIPTEN)
@@ -410,6 +460,10 @@ tn_native_engine_test(tn-native-engine-abi-test tests/native-engine/abi_test.cpp
     native_engine_abi_binding_fn=binding_fn
     native_engine_abi_tsl_call=tsl_call
     native_engine_abi_tsl_mat2_scalar_order=tsl_mat2_scalar_order
+    native_engine_abi_tsl_bump_map=tsl_bump_map
+    native_engine_abi_tsl_normal_map=tsl_normal_map
+    native_engine_abi_tsl_flat_varying=tsl_flat_varying
+    native_engine_abi_vertex_position_world=vertex_position_world
     native_engine_abi_tsl_uniform_value=tsl_uniform_value
     native_engine_abi_tsl_statements=tsl_statements
     native_engine_abi_tsl_effect_parameter=tsl_effect_parameter
@@ -425,6 +479,7 @@ tn_native_engine_test(tn-native-engine-abi-test tests/native-engine/abi_test.cpp
     native_engine_abi_array_offset=array_offset
     native_engine_abi_tsl_matrix_columns=tsl_matrix_columns
     native_engine_abi_data_texture_bytes=data_texture_bytes
+    native_engine_abi_material_events=material_events
     native_engine_abi_attribute_view_writes=attribute_view_writes
     native_engine_abi_attribute_defer=attribute_defer
     native_engine_abi_material_alpha_hash=material_alpha_hash
@@ -549,6 +604,7 @@ target_include_directories(tn-native-engine-vsm-test PRIVATE ${CMAKE_CURRENT_SOU
 tn_native_engine_test(tn-native-engine-vsm-atlas-test tests/native-engine/vsm/vsm_atlas_test.cpp
     native_engine_vsm_atlas=atlas
     native_engine_vsm_initialized=initialized
+    native_engine_vsm_selection_follows_centre=selection_follows_centre
     native_engine_vsm_pan_keeps_pages=pan_keeps_pages
     native_engine_vsm_continuous_invalidation=continuous_invalidation
     native_engine_vsm_sampling=sampling
@@ -853,6 +909,7 @@ target_include_directories(tn-native-engine-static-transform-test PRIVATE ${CMAK
 # PRD-752 phase 4: the job pool runs each item once, and the matrix walk on it is the one-thread walk, bit for bit.
 tn_native_engine_test(tn-native-engine-job-pool-test tests/native-engine/scene/job_pool_test.cpp
     native_engine_job_pool=for_each_once
+    native_engine_job_pool_item_failure=item_failure_reaches_the_caller
     native_engine_job_pool_dispatch_floor=dispatch_floor
     native_engine_job_pool_workers_cover_the_machine=workers_cover_the_machine
     native_engine_job_pool_fails_closed=pool_fails_closed_when_no_worker_starts
@@ -1033,9 +1090,11 @@ if(EMSCRIPTEN)
         # The node ABI check below cannot start this glue (no `node` environment); the stamp ties it to the
         # same sources as the single-thread module, which that check runs on.
         set_target_properties(tn-native-engine-web PROPERTIES OUTPUT_NAME tn-native-engine-web-threads)
-        # mimalloc: dlmalloc's one global lock serialized the workers' allocations with the main thread's
-        # (stress lab FB1: CPU frame p50 -6.5% in a fair uncapped window).
-        target_link_options(tn-native-engine-web PRIVATE -sPTHREAD_POOL_SIZE=0 -sPTHREAD_POOL_SIZE_STRICT=0 -sMALLOC=mimalloc)
+        # dlmalloc, not mimalloc: mimalloc over emmalloc did not hand freed multi-MB blocks (decoded images, PNG
+        # scratch, model files) back for reuse, so one Strata world peaked at 2.6-2.9 GB of the 4 GB heap and the
+        # next world's load hit the cap: a pool worker died, the page froze or crashed (2026-11-05). dlmalloc holds
+        # the same switch sequence at 1.3 GB. It gives back FB1's lock win (CPU frame p50 -4% to -7%, 2026-10-30).
+        target_link_options(tn-native-engine-web PRIVATE -sPTHREAD_POOL_SIZE=0 -sPTHREAD_POOL_SIZE_STRICT=0 -sMALLOC=dlmalloc)
         add_custom_command(TARGET tn-native-engine-web POST_BUILD
             COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/web-engine-stamp.mjs --write tn-native-engine-web-threads
             VERBATIM)
@@ -1055,7 +1114,7 @@ if(EMSCRIPTEN)
         # `worker`: a game can run in a worker on an OffscreenCanvas (PRD-752); without it the glue
         # reads `document` while the module loads.
         -sASSERTIONS=0 -sEXPORT_NAME=createTnWeb -sENVIRONMENT=web,worker -sMAXIMUM_MEMORY=4GB -sALLOW_TABLE_GROWTH=1
-        "-sEXPORTED_FUNCTIONS=_tn_engine_version,_tn_context_create,_tn_context_destroy,_tn_type_id,_tn_object_release,_tn_object_engine_references,_tn_construct,_tn_invoke,_tn_get,_tn_set,_tn_set_callback,_tn_diagnostic_release,_tnw_attribute_view,_tnw_attribute_view_release,_tnw_web_init,_tnw_web_host_abi,_tnw_web_threads,_tnw_web_poll,_tnw_web_error,_tnw_web_adapter,_tnw_web_resize,_tnw_web_render,_tnw_web_prepare_environment,_tnw_web_set_presentation_hold,_tnw_web_compile_async,_tnw_web_compile_status,_tnw_web_frame,_tn_tsl_call,_tn_tsl_release,_tn_tsl_set,_tn_tsl_set_uniform,_tn_tsl_effect_parameter,_tnw_web_set_post,_malloc,_free,_tnw_web_renderer_state,_tnw_web_load_gltf,_tnw_web_load_error,_tnw_web_gltf_file,_tnw_web_gltf_files_clear,_tnw_web_render_target,_tnw_web_read_target,_tnw_web_read_target_take,_tnw_web_capture_face,_tnw_web_compute,_tnw_web_compute_flush,_tnw_web_read_storage,_tnw_web_read_storage_size,_tnw_web_read_storage_take,_tnw_web_delete_storage"
+        "-sEXPORTED_FUNCTIONS=_tn_engine_version,_tn_context_create,_tn_context_destroy,_tn_type_id,_tn_object_release,_tn_object_engine_references,_tn_construct,_tn_invoke,_tn_get,_tn_set,_tn_set_callback,_tn_diagnostic_release,_tnw_attribute_view,_tnw_attribute_view_release,_tnw_web_init,_tnw_web_host_abi,_tnw_web_threads,_tnw_web_poll,_tnw_web_error,_tnw_web_adapter,_tnw_web_resize,_tnw_web_render,_tnw_web_prepare_environment,_tnw_web_set_presentation_hold,_tnw_web_compile_async,_tnw_web_compile_status,_tnw_web_frame,_tn_tsl_call,_tn_tsl_release,_tn_tsl_set,_tn_tsl_set_uniform,_tn_tsl_effect_parameter,_tnw_web_set_post,_malloc,_free,_tnw_web_renderer_state,_tnw_web_load_gltf,_tnw_web_load_error,_tnw_web_gltf_file,_tnw_web_gltf_files_clear,_tnw_web_render_target,_tnw_web_read_target,_tnw_web_read_target_take,_tnw_web_capture_face,_tnw_web_compute,_tnw_web_compute_flush,_tnw_web_read_storage,_tnw_web_read_storage_size,_tnw_web_read_storage_take,_tnw_web_delete_storage,_tnw_web_init_texture,_tnw_web_copy_texture,_tnw_web_read_mrt,_tnw_web_device_limit,_tnw_web_clear_target"
         "-sEXPORTED_RUNTIME_METHODS=wasmMemory,HEAPU8,HEAPU32,HEAPF64,UTF8ToString,stringToUTF8,lengthBytesUTF8,addFunction,specialHTMLTargets")
 endif()
 

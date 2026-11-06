@@ -45,6 +45,20 @@ describe("starter post import bindings", () => {
     expect(await readFile(outfile, "utf8")).not.toContain("TN_NATIVE_ENGINE_UNBOUND:");
   });
 
+  it("bundles defineGame without a web-only renderer import", async () => {
+    // Every game reaches game.ts and renderer.ts; neither may drag an unbound import onto native.
+    const directory = await mkdtemp(path.resolve("packages/runtime-native/.starter-post-"));
+    directories.push(directory);
+    const entry = path.join(directory, "entry.ts");
+    const outfile = path.join(directory, "game.js");
+    await writeFile(
+      entry,
+      `import { defineGame } from "@threenative/core"; globalThis.bound = defineGame;`,
+    );
+    await bundleNativeEngine({ entry, outfile, boot: false, host: false });
+    expect(await readFile(outfile, "utf8")).not.toContain("TN_NATIVE_ENGINE_UNBOUND:");
+  });
+
   it("bundles textureSize as a refusal for an unexecuted upstream-only branch", async () => {
     const directory = await mkdtemp(path.resolve("packages/runtime-native/.starter-post-"));
     directories.push(directory);

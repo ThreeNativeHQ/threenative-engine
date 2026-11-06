@@ -1438,19 +1438,9 @@ export function scanProjection(
   workspace.scanNumber += 1;
   const state = walkProjection(source, workspace);
 
-  if (state.blocked !== undefined) {
-    return {
-      exactLane: workspace.exactLane,
-      exactLaneCount: workspace.exactLaneCount,
-      plan: {
-        action: "decline",
-        reasonCode: state.blocked.code,
-        reason: state.blocked.reason,
-      },
-      renderables: state.renderables,
-      seen: workspace.seen,
-    };
-  }
+  // The floor first: a scene too small to batch declines whatever it carries, and naming a hook or
+  // an authored BatchedMesh there reports a decline that removing it would not lift. The walk
+  // counts every eligible mesh past a block, so the floor reads the whole scene either way.
   if (workspace.eligibleCount + workspace.skinnedCount * SKINNED_FLOOR_WEIGHT < minMeshes) {
     return {
       exactLane: workspace.exactLane,
@@ -1459,6 +1449,19 @@ export function scanProjection(
         action: "decline",
         reasonCode: "belowMeshFloor",
         reason: `fewer than ${minMeshes} batchable meshes; the mirror would cost more than it saves`,
+      },
+      renderables: state.renderables,
+      seen: workspace.seen,
+    };
+  }
+  if (state.blocked !== undefined) {
+    return {
+      exactLane: workspace.exactLane,
+      exactLaneCount: workspace.exactLaneCount,
+      plan: {
+        action: "decline",
+        reasonCode: state.blocked.code,
+        reason: state.blocked.reason,
       },
       renderables: state.renderables,
       seen: workspace.seen,

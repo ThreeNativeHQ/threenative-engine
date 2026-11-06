@@ -1,10 +1,12 @@
 #!/usr/bin/env node
-import { realpathSync, readFileSync, existsSync, mkdirSync, rmSync, writeFileSync, appendFileSync, renameSync, readdirSync } from 'fs';
-import path2 from 'path';
+import { realpathSync, readFileSync, existsSync, mkdirSync, rmSync, writeFileSync, appendFileSync, mkdtempSync, renameSync, readdirSync } from 'fs';
+import path from 'path';
 import { createInterface } from 'readline';
 import { fileURLToPath } from 'url';
+import { execFile } from 'child_process';
 import { createHash } from 'crypto';
 import os from 'os';
+import { promisify } from 'util';
 import { gunzipSync } from 'zlib';
 
 var DEFAULT_REFERENCES_URL = "https://github.com/ThreeNativeHQ/threenative-reverse-engineer-mcp/releases/latest/download/";
@@ -18,12 +20,12 @@ function referencesBaseUrl() {
 function referencesCacheDir() {
   const override = process.env.THREENATIVE_REFERENCES_CACHE?.trim();
   const source = createHash("sha256").update(referencesBaseUrl()).digest("hex").slice(0, 16);
-  if (override) return path2.join(path2.resolve(override), source);
-  const cacheHome = process.env.XDG_CACHE_HOME?.trim() || path2.join(os.homedir(), ".cache");
-  return path2.join(cacheHome, "threenative", "refs", source);
+  if (override) return path.join(path.resolve(override), source);
+  const cacheHome = process.env.XDG_CACHE_HOME?.trim() || path.join(os.homedir(), ".cache");
+  return path.join(cacheHome, "threenative", "refs", source);
 }
 function localReferencesDir(cwd = process.cwd()) {
-  return path2.join(cwd, ".threenative", "refs");
+  return path.join(cwd, ".threenative", "refs");
 }
 function fail(where, reason) {
   throw new Error(`TN_REFERENCES_MALFORMED: ${where}: ${reason}`);
@@ -61,7 +63,7 @@ function line(value, where) {
 }
 function sourcePath(value, where) {
   const result = text(value, where);
-  if (path2.isAbsolute(result) || result.split("/").includes("..") || !/^[a-zA-Z0-9_./-]+$/u.test(result))
+  if (path.isAbsolute(result) || result.split("/").includes("..") || !/^[a-zA-Z0-9_./-]+$/u.test(result))
     fail(where, "expected a safe relative source path");
   return result;
 }
@@ -275,7 +277,7 @@ function referenceStubs(game) {
   ];
 }
 async function cachedAsset(name, parse, timeout = FETCH_TIMEOUT_MS) {
-  const file = path2.join(referencesCacheDir(), name);
+  const file = path.join(referencesCacheDir(), name);
   const etagFile = `${file}.etag`;
   let response;
   try {
@@ -301,7 +303,7 @@ async function cachedAsset(name, parse, timeout = FETCH_TIMEOUT_MS) {
     throw new Error(`TN_REFERENCES_UNAVAILABLE: ${name}: ${String(error)}`);
   }
   const parsed = parse(body);
-  mkdirSync(path2.dirname(file), { recursive: true });
+  mkdirSync(path.dirname(file), { recursive: true });
   atomicWrite(file, body);
   const etag = response.headers.get("etag");
   if (etag === null) rmSync(etagFile, { force: true });
@@ -332,17 +334,17 @@ function loadLocalReferenceGames(cwd = process.cwd()) {
   if (!existsSync(directory)) return [];
   return readdirSync(directory).filter((file) => file.endsWith(".json")).sort().map((file) => {
     const game = validateReferenceGame(
-      parseJson(readFileSync(path2.join(directory, file)), file),
-      path2.join(".threenative", "refs", file)
+      parseJson(readFileSync(path.join(directory, file)), file),
+      path.join(".threenative", "refs", file)
     );
-    if (game.id !== path2.basename(file, ".json"))
+    if (game.id !== path.basename(file, ".json"))
       fail(file, `id '${game.id}' differs from filename`);
     return game;
   });
 }
 function loadReferenceGame(gameId, cwd = process.cwd()) {
   id(gameId, "game id");
-  const file = path2.join(localReferencesDir(cwd), `${gameId}.json`);
+  const file = path.join(localReferencesDir(cwd), `${gameId}.json`);
   if (existsSync(file)) {
     const local = validateReferenceGame(parseJson(readFileSync(file), file), file);
     if (local.id !== gameId) fail(file, `id '${local.id}' differs from requested '${gameId}'`);
@@ -394,7 +396,7 @@ function saveReferenceGame(value, cwd = process.cwd()) {
     "cards"
   ]);
   const gameId = id(incoming.id, "reference.id");
-  const file = path2.join(localReferencesDir(cwd), `${gameId}.json`);
+  const file = path.join(localReferencesDir(cwd), `${gameId}.json`);
   const previous = existsSync(file) ? validateReferenceGame(parseJson(readFileSync(file), file), file) : void 0;
   if (previous !== void 0 && previous.sha !== incoming.sha)
     fail(
@@ -418,10 +420,10 @@ function saveReferenceGame(value, cwd = process.cwd()) {
     },
     "reference"
   );
-  mkdirSync(path2.dirname(file), { recursive: true });
+  mkdirSync(path.dirname(file), { recursive: true });
   atomicWrite(file, `${JSON.stringify(merged, null, 2)}
 `);
-  const relative = path2.relative(cwd, file);
+  const relative = path.relative(cwd, file);
   const title = `Reference cards: ${merged.title} (${merged.nodes.length} nodes, ${merged.cards.length} cards)`;
   return {
     contribution: {
@@ -431,6 +433,54 @@ function saveReferenceGame(value, cwd = process.cwd()) {
     saved: relative
   };
 }
+var WATCH_TOOLS = [
+  ["yt-dlp", "install it with `pipx install yt-dlp`"],
+  ["ffmpeg", "install it with `sudo apt install ffmpeg` or `brew install ffmpeg`"]
+];
+var WATCH_TIMEOUT_MS = 3e5;
+function onPath(name) {
+  return [
+    ...(process.env.PATH ?? "").split(path.delimiter),
+    path.join(os.homedir(), ".local", "bin")
+  ].filter((directory) => directory.length > 0).some((directory) => existsSync(path.join(directory, name)));
+}
+async function watchReference(options) {
+  for (const [name, install] of WATCH_TOOLS)
+    if (!onPath(name))
+      throw new Error(`TN_WATCH_TOOL_MISSING: ${name} is not on PATH: ${install}.`);
+  const url = new URL("watch.mjs", referencesBaseUrl()).href;
+  try {
+    await cachedAsset("watch.mjs", (body) => body, GAME_FETCH_TIMEOUT_MS);
+  } catch (error) {
+    throw new Error(`TN_WATCH_UNAVAILABLE: cannot fetch ${url}: ${String(error)}`);
+  }
+  const out = mkdtempSync(path.join(os.tmpdir(), "threenative-watch-"));
+  const flags = Object.entries({
+    "--duration": options.duration,
+    "--frames": options.frames,
+    "--at": options.at,
+    "--pick": options.pick,
+    "--from": options.from
+  }).flatMap(([flag, value]) => value === void 0 ? [] : [flag, String(value)]);
+  try {
+    await promisify(execFile)(
+      process.execPath,
+      [path.join(referencesCacheDir(), "watch.mjs"), options.query, ...flags, "--out", out],
+      { maxBuffer: 16 * 1024 * 1024, timeout: WATCH_TIMEOUT_MS }
+    );
+  } catch (error) {
+    rmSync(out, { recursive: true, force: true });
+    const stderr = String(error.stderr ?? "").trim();
+    throw new Error(`TN_WATCH_FAILED: ${stderr || String(error)}`);
+  }
+  const watch = JSON.parse(readFileSync(path.join(out, "watch.json"), "utf8"));
+  return {
+    sheet: watch.sheet === null ? null : path.join(out, watch.sheet),
+    frames: watch.frames.map((frame) => path.join(out, frame.path)),
+    watch,
+    guidance: "Read the sheet first: every frame in order. Then aim with pick, from or at. Reference only: borrow the mechanic, never commit the frames."
+  };
+}
 
 // src/index.ts
 var ENGINE_MCP_TOOL_NAMES = [
@@ -438,7 +488,8 @@ var ENGINE_MCP_TOOL_NAMES = [
   "engine_capability_detail",
   "engine_search_references",
   "engine_reference_detail",
-  "engine_save_reference"
+  "engine_save_reference",
+  "engine_watch_reference"
 ];
 var DEFAULT_MANIFEST_FILE = "capabilities.json";
 var STOP_WORDS = /* @__PURE__ */ new Set([
@@ -486,6 +537,7 @@ var STOP_WORDS = /* @__PURE__ */ new Set([
   "is",
   "it",
   "its",
+  "keep",
   "let",
   "made",
   "make",
@@ -557,29 +609,29 @@ var STOP_WORDS = /* @__PURE__ */ new Set([
 var MAX_COMPLETE_REQUEST_RESULTS = 15;
 var MAX_SITUATION_RESULTS = 5;
 var RELEVANCE_FLOOR = 0.27;
-var AUTHORING_INSTRUCTIONS = "Invoke threenative-capabilities to route authoring. New games: steps 1-8 \u2014 prompt, matching starter kit (minimal fallback), mechanics references PLUS built-in capabilities, core-mechanics plan via prd-creator, required textures, execute, mechanics playtest, reference-image visual judge. Existing games: steps 5-7 only \u2014 required textures, execute and mechanics playtest using existing context; no kit selection, rediscovery, whole-game replanning or added step 8. In both routes, execute plan with subagents focused on specific areas: bounded tasks, file ownership, then coordinator integration before step 7 mechanics playtests. Follow binding capability constraints. References borrow mechanics only: no code, level layouts, character names or art; cite pinned file:line sources.";
+var AUTHORING_INSTRUCTIONS = "Follow the Authoring flow in the game's AGENTS.md (the threenative-capabilities skill holds the detail): search capabilities and references before the first new src/ file, for a new game and for every change to an existing game. Follow binding capability constraints. Execute with subagents focused on specific areas: bounded tasks, file ownership, then coordinator integration before mechanics playtests. References borrow mechanics only: no code, level layouts, character names or art; cite pinned file:line sources.";
 var GENERIC_GUIDANCE = "No installed engine capability matches this situation. Decompose it into concrete mechanics and write the game-owned behavior in your project's src/; inspect the relevant template AGENTS.md before adding a package.";
 function defaultManifestPath(cwd = process.cwd()) {
   const override = process.env.THREENATIVE_CAPABILITIES_MANIFEST;
-  if (override !== void 0 && override.trim().length > 0) return path2.resolve(cwd, override);
-  for (let directory = path2.resolve(cwd); ; directory = path2.dirname(directory)) {
-    const nodeModules = path2.join(directory, "node_modules");
-    const installed = path2.join(nodeModules, "@threenative", "core", "capabilities.json");
+  if (override !== void 0 && override.trim().length > 0) return path.resolve(cwd, override);
+  for (let directory = path.resolve(cwd); ; directory = path.dirname(directory)) {
+    const nodeModules = path.join(directory, "node_modules");
+    const installed = path.join(nodeModules, "@threenative", "core", "capabilities.json");
     if (existsSync(installed)) {
-      const relative = path2.relative(realpathSync(directory), realpathSync(nodeModules));
-      if (relative !== ".." && !relative.startsWith(`..${path2.sep}`) && !path2.isAbsolute(relative))
+      const relative = path.relative(realpathSync(directory), realpathSync(nodeModules));
+      if (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative))
         return installed;
     }
-    const parent = path2.dirname(directory);
+    const parent = path.dirname(directory);
     if (parent === directory) break;
   }
-  for (let directory = path2.dirname(fileURLToPath(import.meta.url)); ; directory = path2.dirname(directory)) {
-    const repository = path2.join(directory, "packages", "core", "capabilities.json");
+  for (let directory = path.dirname(fileURLToPath(import.meta.url)); ; directory = path.dirname(directory)) {
+    const repository = path.join(directory, "packages", "core", "capabilities.json");
     if (existsSync(repository)) return repository;
-    const parent = path2.dirname(directory);
+    const parent = path.dirname(directory);
     if (parent === directory) break;
   }
-  return path2.resolve(cwd, DEFAULT_MANIFEST_FILE);
+  return path.resolve(cwd, DEFAULT_MANIFEST_FILE);
 }
 function manifestError(file, reason) {
   return new Error(`TN_ENGINE_CAPABILITIES_MANIFEST: ${file}: ${reason}`);
@@ -651,8 +703,9 @@ function suffixStripped(token) {
   if (token.length > 3 && token.endsWith("s") && !token.endsWith("ss")) return token.slice(0, -1);
   return token;
 }
+var STOP_WORD_STEMS = new Set([...STOP_WORDS].map(stem));
 function capabilitySituationTokens(value) {
-  return value.toLocaleLowerCase().split(/[^a-z0-9]+/u).filter((token) => token.length > 1 && !STOP_WORDS.has(token)).map(stem);
+  return value.toLocaleLowerCase().split(/[^a-z0-9]+/u).filter((token) => token.length > 1 && !STOP_WORDS.has(token)).map(stem).filter((token) => !STOP_WORD_STEMS.has(token));
 }
 var tokens = capabilitySituationTokens;
 function tokenWeights(entries) {
@@ -817,10 +870,11 @@ var REVERSE_ENGINEER = /\breverse[\s-]?engineer|\bdecomp|\bdisassembl/iu;
 var REFERENCE_TOOLS = [
   "engine_search_references",
   "engine_reference_detail",
-  "engine_save_reference"
+  "engine_save_reference",
+  "engine_watch_reference"
 ];
 function withReferenceTools(situation, response) {
-  if (!REVERSE_ENGINEER.test(situation)) return response;
+  if (!REVERSE_ENGINEER.test(situation)) return { referenceTools: REFERENCE_TOOLS, ...response };
   return {
     referenceTools: REFERENCE_TOOLS,
     ...response,
@@ -963,19 +1017,43 @@ var TOOL_DEFINITIONS = [
       },
       required: ["game"]
     }
+  },
+  {
+    name: "engine_watch_reference",
+    description: "Watch what you reverse engineer: see a game mechanic before you build it. Searches YouTube for gameplay of a reference game, download one short segment and slice frames plus one contact sheet into a tmp folder. Returns sheet (read it first), frames and watch.json (video, segment, frame times). Needs yt-dlp and ffmpeg. Frames are reference only: never commit them.",
+    annotations: { destructiveHint: false, openWorldHint: true, readOnlyHint: true },
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        query: {
+          type: "string",
+          description: "Game and mechanic, e.g. 'super mario 64 triple jump'."
+        },
+        duration: { type: "number", description: "Seconds of gameplay to sample (default 90)." },
+        frames: { type: "number", description: "Frames to slice from the segment (default 12)." },
+        at: { type: "string", description: "Exact timestamps, comma separated, e.g. '12,35,61'." },
+        pick: { type: "number", description: "Search result index (default 0, the top one)." },
+        from: {
+          type: "string",
+          description: "Segment start: seconds, mm:ss or NN% (default 10%)."
+        }
+      },
+      required: ["query"]
+    }
   }
 ];
 function toolDefinitions() {
   return TOOL_DEFINITIONS;
 }
-var DEFAULT_LOG_FILE = path2.join(".threenative", "engine-mcp.log");
+var DEFAULT_LOG_FILE = path.join(".threenative", "engine-mcp.log");
 var logBroken = false;
 function logToolCall(entry) {
   if (logBroken) return;
   const target = process.env.THREENATIVE_ENGINE_MCP_LOG ?? DEFAULT_LOG_FILE;
   if (target === "off") return;
   try {
-    mkdirSync(path2.dirname(path2.resolve(target)), { recursive: true });
+    mkdirSync(path.dirname(path.resolve(target)), { recursive: true });
     appendFileSync(target, `${JSON.stringify({ time: (/* @__PURE__ */ new Date()).toISOString(), ...entry })}
 `);
   } catch (error) {
@@ -1084,17 +1162,13 @@ async function handleToolCall(params, manifestFile) {
       tool: name,
       verdict: response.verdict
     });
-    return toolText(
-      response.verdict === "none" ? {
-        ...response,
-        references: await searchReferences(argumentsValue.situation, 3).catch(
-          (error) => ({
-            results: [],
-            guidance: `references unavailable: ${String(error)}`
-          })
-        )
-      } : response
-    );
+    return toolText({
+      ...response,
+      references: await searchReferences(argumentsValue.situation, 3).catch((error) => ({
+        results: [],
+        guidance: `references unavailable: ${String(error)}`
+      }))
+    });
   }
   if (name === "engine_capability_detail") {
     if (typeof argumentsValue.symbol !== "string")
@@ -1153,6 +1227,27 @@ async function handleToolCall(params, manifestFile) {
     logToolCall({ tool: name, saved: saved.saved });
     return toolText(saved);
   }
+  if (name === "engine_watch_reference") {
+    const { query, duration, frames, at, pick, from } = argumentsValue;
+    if (typeof query !== "string" || !query.trim())
+      throw new Error("engine_watch_reference requires a non-empty string 'query'.");
+    for (const [key, value] of Object.entries({ duration, frames, pick }))
+      if (value !== void 0 && typeof value !== "number")
+        throw new Error(`engine_watch_reference '${key}' must be a number when given.`);
+    for (const [key, value] of Object.entries({ at, from }))
+      if (value !== void 0 && typeof value !== "string")
+        throw new Error(`engine_watch_reference '${key}' must be a string when given.`);
+    const result = await watchReference({
+      query,
+      ...typeof duration === "number" ? { duration } : {},
+      ...typeof frames === "number" ? { frames } : {},
+      ...typeof at === "string" ? { at } : {},
+      ...typeof pick === "number" ? { pick } : {},
+      ...typeof from === "string" ? { from } : {}
+    });
+    logToolCall({ tool: name, query, sheet: result.sheet });
+    return toolText(result);
+  }
   throw new Error(`Unknown engine MCP tool '${String(name)}'.`);
 }
 async function handleLine(line2, manifestFile) {
@@ -1171,7 +1266,7 @@ async function handleLine(line2, manifestFile) {
         capabilities: { tools: { listChanged: false } },
         instructions: AUTHORING_INSTRUCTIONS,
         protocolVersion: "2025-06-18",
-        serverInfo: { name: "threenative-engine-mcp", version: "0.2.11" }
+        serverInfo: { name: "threenative-engine-mcp", version: "0.2.12" }
       });
     }
     if (request.method === "tools/list") {
@@ -1226,7 +1321,7 @@ function runServer(manifestFile = defaultManifestPath()) {
   });
 }
 var entryPath = process.argv[1];
-if (entryPath !== void 0 && realpathSync(path2.resolve(entryPath)) === realpathSync(fileURLToPath(import.meta.url))) {
+if (entryPath !== void 0 && realpathSync(path.resolve(entryPath)) === realpathSync(fileURLToPath(import.meta.url))) {
   try {
     runServer();
   } catch (error) {

@@ -1,6 +1,7 @@
 // The quality tiers of the Unreal 5.8.3 look (owner exception to "never own the look", 2026-10-22): what each tier
 // turns on, and the GI and shadow settings per tier named after Unreal's scalability levels. A `WorldEnvironment`
 // built with no options starts from the `high` tier; an explicit option always wins.
+import { exposureSettings } from "./exposure-settings.js";
 import type { IWorldEnvironmentOptions } from "./world-environment.js";
 
 /**
@@ -94,11 +95,12 @@ const shared: IWorldEnvironmentOptions = {
   bloomRadius: 0.6,
   bloomStrength: 0.22,
   bloomThreshold: 1,
-  // Unreal's fixed exposure scale is 1.0: its scene-linear EXR passed through the filmic curve alone
-  // reproduces its PNG (mean error 0.4/255 over 72000 pixels, L1 and L2). Light units, not this
-  // number, set the level: the sun is 6 lux (`atmosphere.ts`). With auto exposure on this is only
-  // the value used while the meter is off.
-  exposure: 1,
+  // Unreal's exposure with its meter off: the project setting pins the average luminance to mid grey
+  // under a 1 cd/m2 white point at a 1.2 saturation constant (SceneView.cpp:2060-2069), and the meter's
+  // rule key / average then gives 0.36 / (0.18 / 1.2) = 2.4 (PostProcessEyeAdaptation.cpp:810-821).
+  // The L1 cells, lit by the 6 lux sun (`atmosphere.ts`), match Unreal's at this value. With auto
+  // exposure on this is only the value used while the meter is off.
+  exposure: exposureSettings.key / (0.18 / 1.2),
   tonemapMode: "filmic",
   // Unreal's VignetteIntensity, cosine-fourth law (Scene.cpp, FPostProcessSettings constructor).
   vignetteAmount: 0.4,
@@ -165,6 +167,9 @@ const low: IWorldEnvironmentOptions = {
   finalGatherMethod: "none",
   localExposureEnabled: false,
   renderChainTier: "low",
+  // Single-sample, as medium: an unset count inherits the renderer's 4x MSAA, and the cheapest tier
+  // cost more than medium on a forest (Iris Xe 125 -> 158 ms at the switch, PRD-762).
+  samples: 0,
 };
 
 const QUALITY_PRESETS: Record<QualityTier, IWorldEnvironmentOptions> = { high, low, medium };

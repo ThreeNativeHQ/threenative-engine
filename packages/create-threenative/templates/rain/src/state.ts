@@ -92,6 +92,7 @@ export const TOGGLE_FIELDS = {
   setDroplets: "droplets",
   setFrozen: "frozen",
   setMuted: "muted",
+  setReducedMotion: "reducedMotion",
   setSafe: "safe",
 } as const satisfies Record<string, keyof GameState>;
 
@@ -219,6 +220,12 @@ export type GameState = {
   elapsed: number;
   frame: number;
   flash: number;
+  /**
+   * What the page's `prefers-reduced-motion` query answered at boot, reported by the UI realm
+   * because the query is a browser API. Published so a frame, a panel or a playtest can read which
+   * branch the host took instead of assuming one; false before the page reports.
+   */
+  reducedMotion: boolean;
   safe: boolean;
   droplets: boolean;
   autoLightning: boolean;

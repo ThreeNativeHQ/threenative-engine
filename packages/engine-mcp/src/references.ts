@@ -1,7 +1,9 @@
+import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
+  mkdtempSync,
   readFileSync,
   readdirSync,
   renameSync,
@@ -10,6 +12,7 @@ import {
 } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import { gunzipSync } from "node:zlib";
 
 /**
@@ -583,5 +586,80 @@ export function saveReferenceGame(
       title,
     },
     saved: relative,
+  };
+}
+
+export interface IWatchOptions {
+  readonly query: string;
+  readonly duration?: number;
+  readonly frames?: number;
+  readonly at?: string;
+  readonly pick?: number;
+  readonly from?: string;
+}
+
+/** The two programs the released watcher shells out to, with the install line a user can run. */
+const WATCH_TOOLS = [
+  ["yt-dlp", "install it with `pipx install yt-dlp`"],
+  ["ffmpeg", "install it with `sudo apt install ffmpeg` or `brew install ffmpeg`"],
+] as const;
+const WATCH_TIMEOUT_MS = 300_000;
+
+/** The watcher's own lookup: PATH, then `~/.local/bin`, where pipx installs yt-dlp. */
+function onPath(name: string): boolean {
+  return [
+    ...(process.env.PATH ?? "").split(path.delimiter),
+    path.join(os.homedir(), ".local", "bin"),
+  ]
+    .filter((directory) => directory.length > 0)
+    .some((directory) => existsSync(path.join(directory, name)));
+}
+
+/**
+ * PRD-827: runs the released gameplay watcher (`watch.mjs` beside the reference index) on a
+ * YouTube search and returns its contact sheet, frames and `watch.json`. The frames are someone
+ * else's footage, so they stay in a fresh tmp folder, never in the game project. A missing
+ * program or an unreachable watcher fails closed with the fix.
+ */
+export async function watchReference(options: IWatchOptions) {
+  for (const [name, install] of WATCH_TOOLS)
+    if (!onPath(name))
+      throw new Error(`TN_WATCH_TOOL_MISSING: ${name} is not on PATH: ${install}.`);
+  const url = new URL("watch.mjs", referencesBaseUrl()).href;
+  try {
+    await cachedAsset("watch.mjs", (body) => body, GAME_FETCH_TIMEOUT_MS);
+  } catch (error) {
+    throw new Error(`TN_WATCH_UNAVAILABLE: cannot fetch ${url}: ${String(error)}`);
+  }
+  const out = mkdtempSync(path.join(os.tmpdir(), "threenative-watch-"));
+  const flags = Object.entries({
+    "--duration": options.duration,
+    "--frames": options.frames,
+    "--at": options.at,
+    "--pick": options.pick,
+    "--from": options.from,
+  }).flatMap(([flag, value]) => (value === undefined ? [] : [flag, String(value)]));
+  try {
+    await promisify(execFile)(
+      process.execPath,
+      [path.join(referencesCacheDir(), "watch.mjs"), options.query, ...flags, "--out", out],
+      { maxBuffer: 16 * 1024 * 1024, timeout: WATCH_TIMEOUT_MS },
+    );
+  } catch (error) {
+    // The folder is the caller's only on success: a failed watch leaves nothing behind.
+    rmSync(out, { recursive: true, force: true });
+    const stderr = String((error as { stderr?: unknown }).stderr ?? "").trim();
+    throw new Error(`TN_WATCH_FAILED: ${stderr || String(error)}`);
+  }
+  const watch = JSON.parse(readFileSync(path.join(out, "watch.json"), "utf8")) as {
+    readonly sheet: string | null;
+    readonly frames: readonly { readonly path: string }[];
+  };
+  return {
+    sheet: watch.sheet === null ? null : path.join(out, watch.sheet),
+    frames: watch.frames.map((frame) => path.join(out, frame.path)),
+    watch,
+    guidance:
+      "Read the sheet first: every frame in order. Then aim with pick, from or at. Reference only: borrow the mechanic, never commit the frames.",
   };
 }

@@ -7,10 +7,18 @@ const tempCreatorPattern = /\bmkdtemp(?:Sync)?\s*\(/u;
 
 const allowedProductionCreators = new Map<string, string>([
   [
+    "packages/terrain/src/kit-assets.ts",
+    "The starter-asset archive extracts into a sibling scratch directory renamed into the cache and removed in finally.",
+  ],
+  [
     "packages/assets/src/watch.ts",
     "The dev watcher stages each changed input through a scratch project removed in finally.",
   ],
   ["packages/playtest/src/runner/android.ts", "Android mailbox staging is removed in finally."],
+  [
+    "packages/engine-mcp/src/references.ts",
+    "A watch returns its frame folder to the agent that asked for it and removes it when the watch fails.",
+  ],
   [
     "packages/runtime-native/scripts/verify-ui-cadence.ts",
     "The visible UI gate removes its owned probe after success and retains failed builds for diagnosis.",
@@ -42,11 +50,8 @@ const allowedProductionCreators = new Map<string, string>([
     "scripts/performance-regression/cpu.ts",
     "CPU capture and comparison artifacts are deliberately retained outputs; the isolated comparison scratch is removed in finally.",
   ],
-  [
-    "scripts/sync-mcp-configs.ts",
-    "The host-config sync round-trips each template through a scratch copy removed in finally.",
-  ],
   ["scripts/template-baseline.ts", "The production baseline gate removes its root in finally."],
+  ["scripts/verify-forest-playtest.ts", "The forest proof gate removes its root in finally."],
   ["scripts/verify-golden-path.ts", "The production golden-path gate removes roots in finally."],
   ["scripts/verify-one-template.ts", "The production template gate owns its cleanup."],
   [

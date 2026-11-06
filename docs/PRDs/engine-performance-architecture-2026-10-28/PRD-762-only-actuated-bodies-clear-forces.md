@@ -9,7 +9,7 @@
 
 ## Context
 
-Source: proposal 1 in [the investigation](../../../plans/engine-performance-architecture-2026-10-28.md).
+Source: proposal 1 in [the investigation](investigation.md).
 Engine layer: `packages/physics/src/simulation.ts:1332` owns portable force writers; `:1457`
 resets forces and torques on every dynamic body after a solve. Native
 `packages/runtime-native/native/physics/src/lib.rs:1204` visits every entry. The investigation

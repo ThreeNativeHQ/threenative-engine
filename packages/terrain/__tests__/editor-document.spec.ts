@@ -1,7 +1,8 @@
-import { readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { createServer as createHttpServer, request } from "node:http";
 import { join } from "node:path";
 import { Terrain } from "@threenative/terrain";
+import { TerrainEditorController } from "@threenative/terrain/editor";
 import { TerrainEditorDocument, terrainEditor } from "@threenative/terrain/editor/server";
 import { type ViteDevServer, createServer } from "vite";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -68,7 +69,15 @@ function status(
   return new Promise((resolve, reject) => {
     const req = request(url, { method, headers }, (response) => {
       response.resume();
-      response.on("end", () => resolve(response.statusCode ?? 0));
+      response.on("error", reject);
+      response.on("end", () => {
+        const code = response.statusCode ?? 0;
+        if (req.closed) resolve(code);
+        else {
+          req.once("close", () => resolve(code));
+          req.destroy();
+        }
+      });
     });
     req.on("error", reject);
     req.end(data);
@@ -188,6 +197,54 @@ describe("project terrain editor document", () => {
     ).toBe(413);
     expect(readFileSync(path, "utf8")).toBe(disk);
     expect(() => new TerrainEditorDocument("relative.json")).toThrow("absolute");
+  });
+  it.each(["cameras", "environment", "inspect", "reload", "restore"])(
+    "rejects a 10 MiB %s body before parsing or changing the document",
+    async (route) => {
+      const { base, path } = await api();
+      const disk = readFileSync(path, "utf8");
+      const response = await fetch(`${base}${route}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{".repeat(10 * 1024 * 1024),
+      });
+      expect(response.status).toBe(413);
+      expect(await response.json()).toEqual({ code: 413, error: "Request exceeds 1 MiB" });
+      expect(readFileSync(path, "utf8")).toBe(disk);
+    },
+  );
+  it("bounds chunked small-route bodies without relying on content-length", async () => {
+    const { base } = await api();
+    expect(
+      await status(
+        `${base}inspect`,
+        { "content-type": "application/json", "transfer-encoding": "chunked" },
+        "POST",
+        "{".repeat(10 * 1024 * 1024),
+      ),
+    ).toBe(413);
+  });
+  it("returns only a status code and compatible error message for rejected edits", async () => {
+    const { post, get } = await api();
+    const before = await get();
+    const response = await post({ baseRevision: "stale", document: before.document });
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ code: 409, error: "Stale base revision" });
+    expect(await get()).toEqual(before);
+  });
+  it("keeps the larger request allowance for documents and asset uploads", async () => {
+    const { base } = await api();
+    for (const route of ["document", "assets"]) {
+      const response = await fetch(`${base}${route}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: `${" ".repeat(10 * 1024 * 1024)}{broken`,
+      });
+      expect(response.status).toBe(400);
+      const result = await response.json();
+      expect(Object.keys(result).sort()).toEqual(["code", "error"]);
+      expect(result.error).not.toContain("Request exceeds");
+    }
   });
   it("streams accepted revisions and observes complete external file saves", async () => {
     const originalInterval = globalThis.setInterval;
@@ -318,6 +375,65 @@ describe("project terrain editor document", () => {
       refresh.mockRestore();
     }
   });
+
+  it("starts the dev server on a malformed world.json, reports diagnostic and recovers via reload after file is fixed", async () => {
+    const { root, path } = fixture();
+    writeFileSync(path, "{broken json");
+    const editor = terrainEditor({ documentPath: path });
+    const server = await createServer({
+      root,
+      configFile: false,
+      logLevel: "silent",
+      server: { host: "127.0.0.1", port: 0 },
+      plugins: [editor],
+    });
+    servers.push(server);
+    await server.listen();
+    const address = server.httpServer?.address();
+    const controller = new TerrainEditorController(
+      `http://127.0.0.1:${(address as { port: number }).port}/terrain-editor/`,
+    );
+
+    // Dev server started on malformed file in read-only diagnostic state
+    const initialSnapshot = await controller.snapshot();
+    expect(initialSnapshot.diagnostic).toBeTruthy();
+
+    // Commit is rejected with 409 while document on disk is invalid
+    await expect(
+      controller.commit({
+        baseRevision: initialSnapshot.revision,
+        commands: [{ op: "remove", id: "hills" }],
+      }),
+    ).rejects.toThrow("Disk document is invalid");
+
+    // Fix file on disk
+    const valid = {
+      version: 1,
+      recipe: new Terrain({ size: 512, resolution: 257, seed: 42 }).toJSON(),
+    };
+    writeFileSync(path, JSON.stringify(valid, null, 2));
+
+    // Reload from disk recovers
+    const reloaded = await controller.reload();
+    expect(reloaded.diagnostic).toBeNull();
+    expect(reloaded.document.recipe.config.seed).toBe(42);
+
+    // Overwrite with last valid state restores disk if corrupted again
+    writeFileSync(path, "corrupted again");
+    const restored = await controller.restoreLastValid();
+    expect(restored.diagnostic).toBeNull();
+    expect(JSON.parse(readFileSync(path, "utf8")).recipe.config.seed).toBe(42);
+  });
+
+  it("rejects restore when the document never held a valid state and keeps the original", () => {
+    const { path } = fixture();
+    writeFileSync(path, "{broken since the very first read");
+    const store = new TerrainEditorDocument(path);
+    expect(store.snapshot().diagnostic).toBeTruthy();
+    expect(() => store.restoreLastValid()).toThrow("No valid save to restore");
+    expect(readFileSync(path, "utf8")).toBe("{broken since the very first read");
+  });
+
   it("uses an explicitly configured private forward and rejects a failed forward", async () => {
     let target: string | undefined;
     const proxy = createHttpServer((incoming, response) => {
@@ -389,5 +505,77 @@ describe("project terrain editor document", () => {
     servers.push(server);
     await server.listen();
     await expect(editor.activate()).rejects.toThrow("not ready");
+  });
+  it("rejects stale and malformed export requests before resolving the project cook", async () => {
+    const { base, get } = await api();
+    const snapshot = await get();
+    const send = (value: unknown) =>
+      fetch(`${base}export`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(value),
+      });
+    const stale = await send({ baseRevision: "stale", preparedWorld: {} });
+    expect(stale.status).toBe(409);
+    expect(await stale.json()).toEqual({ code: 409, error: "Stale export revision" });
+    const malformed = await send({ baseRevision: snapshot.revision, preparedWorld: [] });
+    expect(malformed.status).toBe(400);
+    expect(await malformed.json()).toEqual({
+      code: 400,
+      error: "Expected preparedWorld glTF JSON",
+    });
+    const missing = await send({ baseRevision: snapshot.revision, preparedWorld: {} });
+    expect(missing.status).toBe(400);
+    expect((await missing.json()).error).toContain("@threenative/assets");
+  });
+
+  it("refuses a second export while one cook is running (audit TERRAIN-07)", async () => {
+    const { root, base, get } = await api();
+    const pkg = join(root, "node_modules", "@threenative", "assets");
+    mkdirSync(pkg, { recursive: true });
+    writeFileSync(
+      join(pkg, "package.json"),
+      JSON.stringify({ name: "@threenative/assets", type: "module", main: "index.js" }),
+    );
+    // The fake cook stays open until the test removes the gate file, and touches `started` first,
+    // which only happens once the request has taken the export lock.
+    const gate = join(root, "gate");
+    const started = join(root, "started");
+    writeFileSync(gate, "");
+    writeFileSync(
+      join(pkg, "index.js"),
+      `import { existsSync, writeFileSync } from "node:fs";
+export async function cookTerrainWorld() {
+  writeFileSync(${JSON.stringify(started)}, "");
+  while (existsSync(${JSON.stringify(gate)})) await new Promise((r) => setTimeout(r, 10));
+  return { worldGlb: new Uint8Array([1]) };
+}`,
+    );
+    const { revision } = await get();
+    const send = () =>
+      fetch(`${base}export`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ baseRevision: revision, preparedWorld: {} }),
+      });
+    const first = send();
+    try {
+      // Wait for the cook to start rather than for a fixed delay: a first request slower than the
+      // sleep used to leave the lock to the second request, which then spun on the gate until the
+      // test timed out. Nothing below may block before the gate is released.
+      const deadline = Date.now() + 10_000;
+      while (!existsSync(started)) {
+        if (Date.now() > deadline) throw new Error("The first export never reached the cook");
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      const second = await send();
+      expect(second.status).toBe(409);
+      expect((await second.json()).error).toBe("An export is already running");
+      // The editor keeps answering while the cook runs.
+      expect((await fetch(`${base}document`)).status).toBe(200);
+    } finally {
+      rmSync(gate, { force: true });
+    }
+    expect((await first).status).toBe(200);
   });
 });

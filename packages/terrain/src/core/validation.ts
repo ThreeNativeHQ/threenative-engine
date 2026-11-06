@@ -81,6 +81,10 @@ export const PARAMS: Readonly<Record<OperationType, readonly string[]>> = Object
     "method",
     "iterations",
     "talus",
+    "uplift",
+    "erodibility",
+    "timeStep",
+    "relief",
     "rate",
     "droplets",
     "maxSteps",
@@ -133,7 +137,10 @@ function fail(message: string): never {
 /** Rejects anything a recipe cannot round-trip: non-finite numbers, views, cycles, unsafe keys. */
 export function finiteTree(value: unknown, path = "value", depth = 0): void {
   if (depth > 32) fail(`${path}: nesting is too deep`);
-  if (typeof value === "number" && !Number.isFinite(value)) fail(`${path} must be finite`);
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) fail(`${path} must be finite`);
+    return;
+  }
   if (
     value === undefined ||
     typeof value === "function" ||
@@ -143,9 +150,15 @@ export function finiteTree(value: unknown, path = "value", depth = 0): void {
     fail(`${path} is not JSON-serializable`);
   if (value && typeof value === "object") {
     if (ArrayBuffer.isView(value)) fail(`${path}: use a plain array in recipes`);
-    for (const [key, entry] of Object.entries(value)) {
-      if (["__proto__", "prototype", "constructor"].includes(key))
+    for (const key of Object.keys(value)) {
+      if (key === "__proto__" || key === "prototype" || key === "constructor")
         fail(`${path}: unsafe object key`);
+      const entry = (value as Record<string, unknown>)[key];
+      if (typeof entry === "number") {
+        if (depth + 1 > 32) fail(`${path}.${key}: nesting is too deep`);
+        if (!Number.isFinite(entry)) fail(`${path}.${key} must be finite`);
+        continue;
+      }
       finiteTree(entry, `${path}.${key}`, depth + 1);
     }
   }
@@ -456,6 +469,13 @@ export function validateLayer(layer: Layer): void {
     if (params[key] !== undefined) num(params[key], key, key === "count" ? 0 : 1, max, true);
   if (params.persistence !== undefined) num(params.persistence, "persistence", 0.01, 1);
   if (params.lacunarity !== undefined) num(params.lacunarity, "lacunarity", 1, 4);
+  for (const [key, min, max] of [
+    ["uplift", 1e-9, 1],
+    ["erodibility", 1e-9, 1],
+    ["timeStep", 1, 1e7],
+    ["relief", 1, 1e5],
+  ] as const)
+    if (params[key] !== undefined) num(params[key], key, min, max);
   for (const key of ["minSlope", "maxSlope", "talus"])
     if (params[key] !== undefined) num(params[key], key, 0, key === "talus" ? 89.9 : 90);
   if (
@@ -481,7 +501,8 @@ export function validateLayer(layer: Layer): void {
       if (rule.strength !== undefined) num(rule.strength, "rule.strength", 0, 1);
     }
   }
-  if (params.method !== undefined) enumeration(params.method, "method", ["thermal", "hydraulic"]);
+  if (params.method !== undefined)
+    enumeration(params.method, "method", ["thermal", "hydraulic", "fluvial"]);
   if (params.mode !== undefined) enumeration(params.mode, "mode", ["fbm", "ridged", "billow"]);
   if (params.shape !== undefined)
     enumeration(
@@ -513,6 +534,10 @@ export function validateLayer(layer: Layer): void {
   }
   if (params.name !== undefined) identifier(params.name, "name");
   if (params.asset !== undefined) identifier(params.asset, "asset");
+  if (layer.type === "scatter" && typeof params.asset !== "string")
+    fail(
+      'scatter requires an asset identifier; a document saved before `asset` was mandatory defaulted it to "pine", so add "asset": "pine" (or the asset it should place) to this layer',
+    );
   if (["heightmap", "paste"].includes(layer.type) && !params.data)
     fail(`${layer.type} requires heightmap data`);
   const data = params.data as

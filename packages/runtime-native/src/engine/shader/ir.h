@@ -130,7 +130,21 @@ public:
     uint32_t storageTexture2d(std::string_view name, std::string_view format);
     void textureStore(uint32_t texture, ExprId coordinate, ExprId value, Where where = Where::current());
     uint32_t texture2d(std::string_view name);
+    /** WebGPU allows 16 samplers in a shader stage. */
+    static constexpr uint32_t kMaxSamplers = 16;
+    /**
+     * A texture's sampler state as the renderer builds its sampler (wraps, filters, anisotropy), set by the graph
+     * lowering for a texture whose own sampler it binds. Empty: the sampler is not shared.
+     */
+    void setSamplerState(uint32_t texture, std::string state);
+    /**
+     * The texture whose sampler `texture` reads. Its own, unless the stage needs more than kMaxSamplers: then the first
+     * texture with the same non-empty state, so equal samplers are one binding (three shares them the same way).
+     */
+    uint32_t samplerOwner(uint32_t texture) const;
     uint32_t texture3d(std::string_view name);
+    /** A `texture_2d_array<f32>`, read at a vec3: xy is the uv, z the layer (rounded down to an i32 in WGSL). */
+    uint32_t texture2dArray(std::string_view name);
     uint32_t textureCube(std::string_view name);
     /** vec4<f32>; implicit derivatives in a fragment stage, level 0 elsewhere. */
     ExprId sample(uint32_t texture, ExprId uv, Where where = Where::current());
@@ -200,6 +214,13 @@ public:
     [[nodiscard]] bool hasOutput(std::string_view name) const;
     /** Match vertex output locations to the fragment's first-use varying order. */
     void linkVaryings(const Program& fragment);
+    /**
+     * Drops every statement that no live output, store, discard or return depends on, and every output that a later
+     * unconditional write of the same output replaces. Renderer::auxFragment rebuilds a lit program to write one
+     * normal; without this its WGSL still evaluates the whole lit colour, shadow reads included. Uniforms, bindings,
+     * varyings and outputs are declared from their tables, so the stage's layout does not change.
+     */
+    void pruneDeadStatements();
 
 private:
     uint32_t loopDepth_ = 0;
@@ -248,9 +269,15 @@ private:
     std::vector<Storage> storage_;
     std::vector<std::string> textures_;
     // DepthCubeValues: a depth cube read for its stored values through a plain nearest sampler.
-    enum class TextureKind : uint8_t { Float2d, Depth2d, DepthCube, Float3d, FloatCube, DepthCubeValues };
+    enum class TextureKind : uint8_t { Float2d, Depth2d, DepthCube, Float3d, FloatCube, DepthCubeValues, Float2dArray };
     std::vector<TextureKind> textureKinds_; // per texture
+    std::vector<std::string> samplerStates_;  // per texture, see setSamplerState
+    mutable std::vector<uint32_t> samplerOwners_;  // samplerOwner's answers, valid while the key below holds
+    mutable std::size_t samplerOwnersKey_ = ~std::size_t(0);
     bool textureNeedsSampler(uint32_t texture) const;
+    /** A filtered float read takes this texture, at a vec3 for a volume, a cube and an array (z is its layer), else a vec2. */
+    bool filteredTexture(uint32_t texture) const;
+    Type coordinateType(uint32_t texture) const;
     struct OutputSlot {
         uint64_t name;
         Type type;

@@ -39,7 +39,7 @@ const meshPool = new Map<BufferGeometry, Map<Material, InstancedMesh[]>>();
 let meshPoolHeld = 0;
 
 /** Capacity a new buffer is minted with: a power of two, so a parked one fits the next cell that asks. */
-function pooledCapacity(capacity: number): number {
+export function pooledCapacity(capacity: number): number {
   return Math.max(MESH_POOL_MIN_CAPACITY, 2 ** Math.ceil(Math.log2(Math.max(1, capacity))));
 }
 

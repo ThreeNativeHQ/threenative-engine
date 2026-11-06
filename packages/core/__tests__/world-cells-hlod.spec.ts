@@ -828,6 +828,62 @@ describe("WorldCells HLOD uses the existing cell admission lifecycle", () => {
     expect(disposed).toHaveBeenCalledTimes(1);
     expect(world.stats().hlod.bytes).toBe(0);
   });
+  it("keeps proxy geometry alive after warm-up times out until its compile settles", async () => {
+    let resolveCompile!: () => void;
+    const compilePending = new Promise<void>((resolve) => {
+      resolveCompile = resolve;
+    });
+    const world = await load();
+    const render = renderer(() => compilePending);
+    await pump(world, render);
+    const mesh = proxy(world)?.children[0] as Mesh;
+    const disposed = vi.spyOn(mesh.geometry, "dispose");
+
+    try {
+      await vi.waitFor(() => expect(world.stats().hlod.failures).toBe(1), {
+        timeout: 2500,
+        interval: 10,
+      });
+      expect(disposed).not.toHaveBeenCalled();
+      expect(world.stats().hlod.pending).toBe(1);
+      expect(world.stats().hlod.bytes).toBeGreaterThan(0);
+
+      resolveCompile();
+      await vi.waitFor(() => expect(disposed).toHaveBeenCalledTimes(1));
+      expect(world.stats().hlod.bytes).toBe(0);
+    } finally {
+      resolveCompile();
+      world.dispose();
+    }
+  }, 5000);
+  it("releases timed-out proxy geometry after its compile rejects", async () => {
+    let rejectCompile!: (error: Error) => void;
+    const compilePending = new Promise<void>((_resolve, reject) => {
+      rejectCompile = reject;
+    });
+    const world = await load();
+    const render = renderer(() => compilePending);
+    await pump(world, render);
+    const mesh = proxy(world)?.children[0] as Mesh;
+    const disposed = vi.spyOn(mesh.geometry, "dispose");
+
+    try {
+      await vi.waitFor(() => expect(world.stats().hlod.failures).toBe(1), {
+        timeout: 2500,
+        interval: 10,
+      });
+      expect(disposed).not.toHaveBeenCalled();
+      expect(world.stats().hlod.bytes).toBeGreaterThan(0);
+
+      rejectCompile(new Error("late pipeline rejection"));
+      await vi.waitFor(() => expect(disposed).toHaveBeenCalledTimes(1));
+      expect(world.stats().hlod.failures).toBe(1);
+      expect(world.stats().hlod.bytes).toBe(0);
+    } finally {
+      rejectCompile(new Error("test cleanup"));
+      world.dispose();
+    }
+  }, 5000);
   it.each(["vertexNode", "transparent", "drawRange", "metadata"])(
     "retains detail for unsupported %s",
     async (reason) => {

@@ -2,6 +2,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { toolDefinitions as engineTools } from "../../packages/engine-mcp/src/index.js";
+import { TERRAIN_TOOLS } from "../../packages/terrain/src/mcp/tools.js";
 
 /**
  * The recorded MCP surfaces are what the docs site publishes, so their arguments must be the ones the
@@ -13,6 +14,7 @@ import { toolDefinitions as engineTools } from "../../packages/engine-mcp/src/in
  */
 const SURFACES = [
   { file: "packages/create-threenative/engine-mcp-tools.json", tools: engineTools() },
+  { file: "packages/create-threenative/terrain-mcp-tools.json", tools: TERRAIN_TOOLS },
 ] as const;
 
 const SNAPSHOT_DIR = "packages/create-threenative";

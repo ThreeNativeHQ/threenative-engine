@@ -2,6 +2,7 @@
 #include "engine/abi/abi_internal.h"
 #include "engine/abi/tsl_call.h"
 
+#include <algorithm>
 #include <cmath>
 #include <functional>
 #include <limits>
@@ -131,7 +132,7 @@ g::Node Tsl::input(v8::Local<v8::Value> value) const {
 abi::TslArg Tsl::argument(const std::string& name, int index, int count, v8::Local<v8::Value> value) const {
     const auto ctx = isolate_->GetCurrentContext();
     Wrapper* w = wrapper(value);
-    // A texture names its map by the object's `name`; textureLoad also takes a texture node.
+    // A texture names its map by the object's `name`; textureLoad also takes a texture node or an engine texture.
     const bool texture = index == 0 && (name == "texture" || name == "textureValue");
     const bool textureLoad = index == 0 && (name == "textureLoad" || name == "textureSize");
     if (w && !texture && (w->node || !textureLoad)) return abi::TslArg::of(w->node);
@@ -139,7 +140,7 @@ abi::TslArg Tsl::argument(const std::string& name, int index, int count, v8::Loc
     // names; reflector takes its target and virtual camera.
     if ((index == 0 &&
          (name == "pmremTexture" || name == "texture3D" || name == "storageTexture" || name == "textureStore" || name == "storage" || name == "lightShadowMatrix")) ||
-        (index < 2 && (name == "reflector" || name == "__rtt"))) {
+        name == "lights" || (index < 2 && (name == "reflector" || name == "__rtt"))) {
         tn_handle_t handle{};
         const binding::Object* object = engineObject && engineObject(value, handle) ? abi::objectOf(handle) : nullptr;
         if (object == nullptr) throw std::runtime_error(name + " needs an engine object as argument " + std::to_string(index));
@@ -156,8 +157,8 @@ abi::TslArg Tsl::argument(const std::string& name, int index, int count, v8::Loc
     if (value->IsString()) return abi::TslArg::of(text(isolate_, value));
     if (!value->IsObject()) return abi::TslArg::other();
     const auto object = value.As<v8::Object>();
-    // texture(engineTexture, uv) samples that texture itself; a plain object names a material map.
-    if (texture) {
+    // texture(engineTexture, uv) samples that texture itself (textureLoad loads from it); a plain object names a material map.
+    if (texture || textureLoad) {
         tn_handle_t handle{};
         const binding::Object* object = engineObject && engineObject(value, handle) ? abi::objectOf(handle) : nullptr;
         if (object != nullptr) return abi::TslArg::objectOf(object->cls, object->ptr);
@@ -218,9 +219,9 @@ v8::Local<v8::Object> Tsl::wrap(g::Node node) {
     return object;
 }
 
-g::Node Tsl::capture(v8::Local<v8::Function> callback, v8::Local<v8::Value> argument) {
+g::Node Tsl::capture(v8::Local<v8::Function> callback, v8::Local<v8::Value> argument, bool fn) {
     g::Node node;
-    scopes_.call("scope:open", nullptr, {}, node);
+    scopes_.call("scope:open", nullptr, fn ? std::vector<abi::TslArg>{abi::TslArg::of(std::string("Fn"))} : std::vector<abi::TslArg>{}, node);
     v8::Local<v8::Value> result;
     const auto ctx = isolate_->GetCurrentContext();
     const bool ok =
@@ -336,6 +337,11 @@ void Tsl::call(const Call& call, const v8::FunctionCallbackInfo<v8::Value>& info
         arity(0); statement();
         return result(scoped(name.c_str(), nullptr, {}));
     }
+    if (name == "Discard") {  // three's Discard(conditional): the fragment ends, under If(conditional) when given
+        if (info.Length() > 1) throw std::runtime_error("expected an optional condition");
+        statement();
+        return result(scoped("Discard", nullptr, info.Length() ? std::vector<abi::TslArg>{abi::TslArg::of(arg(0))} : std::vector<abi::TslArg>{}));
+    }
     if (name == "increment" || name == "decrement" || name == "incrementBefore" || name == "decrementBefore") {
         arity(call.method ? 0 : 1); statement();
         return result(scoped(name.c_str(), call.method ? &receiver : nullptr,
@@ -343,6 +349,10 @@ void Tsl::call(const Call& call, const v8::FunctionCallbackInfo<v8::Value>& info
     }
     if (name == "toVar") {
         arity(0);
+        // Outside a function body there is no stack to declare a variable in (rain's fragment node names its
+        // terms this way); the expression itself is the value, read where it is used, as the browser back end
+        // answers it (browser-tsl.ts).
+        if (scopes_.depth() == 0) return result(receiver.node);
         return result(scoped("toVar", &receiver, {}));
     }
     if (name == "assign" || name == "addAssign" || name == "subAssign" || name == "mulAssign" || name == "divAssign") {
@@ -400,7 +410,7 @@ void Tsl::call(const Call& call, const v8::FunctionCallbackInfo<v8::Value>& info
                             argument = list;
                         }
                         call.GetReturnValue().Set(
-                            tsl->wrap(tsl->capture(data->Get(context, 1).ToLocalChecked().As<v8::Function>(), argument)));
+                            tsl->wrap(tsl->capture(data->Get(context, 1).ToLocalChecked().As<v8::Function>(), argument, true)));
                     } catch (const JsFailure&) {
                         // The original JS exception is still pending.
                     } catch (const std::exception& error) {
@@ -420,41 +430,89 @@ void Tsl::call(const Call& call, const v8::FunctionCallbackInfo<v8::Value>& info
         return result(scoped("If", nullptr, {abi::TslArg::of(condition), abi::TslArg::of(capture(callback(info[1])))}));
     }
     if (name == "Loop") {
-        arity(2);
+        if (info.Length() < 2) throw std::runtime_error("expected a loop parameter and a callback");
         statement();
-        // Loop(count, ({ i }) => ...) or three's Loop({ type, start, end, name }, ({ i }) => ...).
-        std::string indexType = "int", indexName = "i";
-        abi::TslArg n, start = abi::TslArg::of(0.0), step = abi::TslArg::of(1.0);
-        if (info[0]->IsObject() && !wrapper(info[0])) {
-            const auto params = info[0].As<v8::Object>();
-            const auto field = [&](const char* key) {
-                v8::Local<v8::Value> value;
-                if (!params->Get(ctx, str(isolate_, key)).ToLocal(&value)) throw JsFailure{};
-                return value;
-            };
-            // The engine counts up while the index is below the end, by a whole step: condition "<" and a numeric update.
-            if (!field("condition")->IsUndefined() && text(isolate_, field("condition")) != "<")
-                throw std::runtime_error("Loop condition is not supported; the loop runs while the index is below the end (\"<\")");
-            if (!field("update")->IsUndefined()) {
-                if (!field("update")->IsNumber())
-                    throw std::runtime_error("Loop update is not supported; give a whole number step");
-                step = abi::TslArg::of(field("update").As<v8::Number>()->Value());
+        // three's Loop(...params, callback): one parameter object, or a count, per dimension, and the body
+        // last. Several parameters nest one loop in the next, named i, j, k... unless a parameter names its
+        // own. The browser back end nests the same way (browser-tsl.ts).
+        const int dimensions = info.Length() - 1;
+        const auto body = callback(info[dimensions]);
+        struct Level {
+            abi::TslArg end, start = abi::TslArg::of(0.0), step = abi::TslArg::of(1.0);
+            bool inclusive = false;
+            std::string type = "int", name;
+            g::Node index;
+        };
+        std::vector<Level> levels;
+        for (int at = 0; at < dimensions; ++at) {
+            Level level;
+            level.name = std::string(1, static_cast<char>('i' + std::min(at, 17)));  // three's getVarName
+            const auto parameter = info[at];
+            if (parameter->IsObject() && !wrapper(parameter)) {
+                const auto params = parameter.As<v8::Object>();
+                const auto field = [&](const char* key) {
+                    v8::Local<v8::Value> value;
+                    if (!params->Get(ctx, str(isolate_, key)).ToLocal(&value)) throw JsFailure{};
+                    return value;
+                };
+                // The engine counts up while the index is below the end, by a whole step: "<" or "<=".
+                if (!field("condition")->IsUndefined()) {
+                    const std::string condition = text(isolate_, field("condition"));
+                    if (condition != "<" && condition != "<=")
+                        throw std::runtime_error("Loop condition is not supported; the loop runs while the index is below the end (\"<\" or \"<=\")");
+                    level.inclusive = condition == "<=";
+                }
+                if (!field("update")->IsUndefined()) {
+                    if (!field("update")->IsNumber())
+                        throw std::runtime_error("Loop update is not supported; give a whole number step");
+                    level.step = abi::TslArg::of(field("update").As<v8::Number>()->Value());
+                }
+                if (!field("type")->IsUndefined()) level.type = text(isolate_, field("type"));
+                if (!field("name")->IsUndefined()) level.name = text(isolate_, field("name"));
+                if (!field("start")->IsUndefined()) level.start = argument(name, 0, 1, field("start"));
+                const auto end = field("end");
+                if (end->IsUndefined()) throw std::runtime_error("Loop needs an end");
+                level.end = end->IsNumber() ? abi::TslArg::of(static_cast<double>(count(end)))
+                                            : argument(name, 0, 1, end);
+                if (level.end.kind != abi::TslArg::Kind::Number && level.end.kind != abi::TslArg::Kind::Node)
+                    throw std::runtime_error("Loop needs an end");
+            } else {
+                level.end = abi::TslArg::of(static_cast<double>(count(parameter)));
             }
-            if (!field("type")->IsUndefined()) indexType = text(isolate_, field("type"));
-            if (!field("name")->IsUndefined()) indexName = text(isolate_, field("name"));
-            if (!field("start")->IsUndefined()) start = argument(name, 0, 1, field("start"));
-            n = field("end")->IsNumber() ? abi::TslArg::of(static_cast<double>(count(field("end"))))
-                                         : argument(name, 0, 1, field("end"));
-            if (n.kind != abi::TslArg::Kind::Number && n.kind != abi::TslArg::Kind::Node)
-                throw std::runtime_error("Loop needs an end");
-        } else {
-            n = abi::TslArg::of(static_cast<double>(count(info[0])));
+            level.index = scoped("Loop:index", nullptr, {abi::TslArg::of(level.type)});
+            levels.push_back(std::move(level));
         }
-        const auto body = callback(info[1]);
-        const auto index = scoped("Loop:index", nullptr, {abi::TslArg::of(indexType)});
-        const auto inputs = v8::Object::New(isolate_);
-        inputs->Set(ctx, str(isolate_, indexName), wrap(index)).Check();
-        return result(scoped("Loop", nullptr, {n, abi::TslArg::of(index), abi::TslArg::of(capture(body, inputs)), start, step}));
+        // Every dimension's body hangs inside the next: open them all, run the game's callback once with the
+        // whole index set, then close and append from the innermost loop out.
+        const size_t baseline = scopes_.depth();
+        g::Node loop;
+        try {
+            g::Node opened;
+            for (int at = 0; at < dimensions; ++at) scopes_.call("scope:open", nullptr, {}, opened);
+            const auto inputs = v8::Object::New(isolate_);
+            for (auto& level : levels) inputs->Set(ctx, str(isolate_, level.name), wrap(level.index)).Check();
+            v8::Local<v8::Value> returned;
+            v8::Local<v8::Value> argumentValue = inputs;
+            if (!body->Call(ctx, v8::Undefined(isolate_), 1, &argumentValue).ToLocal(&returned)) throw JsFailure{};
+            std::vector<abi::TslArg> value;
+            if (!returned->IsUndefined()) value.push_back(argument("scope:close", 0, 1, returned));
+            for (size_t at = levels.size(); at-- > 0;) {
+                g::Node closed;
+                const bool innermost = at + 1 == levels.size();
+                scopes_.call("scope:close", nullptr, innermost ? value : std::vector<abi::TslArg>{}, closed);
+                loop = scoped("Loop", nullptr, {levels[at].end, abi::TslArg::of(levels[at].index),
+                                                abi::TslArg::of(closed), levels[at].start, levels[at].step,
+                                                abi::TslArg::of(levels[at].inclusive ? 1.0 : 0.0)});
+            }
+        } catch (...) {
+            // A callback that threw finds no body of its own; the next statement starts where this one did.
+            while (scopes_.depth() > baseline) {
+                g::Node closed;
+                scopes_.call("scope:close", nullptr, {}, closed);
+            }
+            throw;
+        }
+        return result(loop);
     }
     // TSL storage(attribute, type, count): a storage buffer over the engine BufferAttribute's data.
     if (name == "storage") {
@@ -578,6 +636,7 @@ void Tsl::install(v8::Local<v8::Context> context, v8::Local<v8::Object> target) 
                              "smoothstep",
                              "select",
                              "sample",
+                             "setInterpolation",
                              "__rtt",
                              "setResolutionScale",
                              "__effect",
@@ -624,17 +683,17 @@ void Tsl::install(v8::Local<v8::Context> context, v8::Local<v8::Object> target) 
     nodeTemplate_.Reset(isolate_, node);
     const auto module = v8::Object::New(isolate_);
     for (const char* name : {"float",      "int",   "uint",    "vec2",      "vec3",   "vec4",     "uniform",
-                             "attribute",  "uv",    "texture", "Fn",        "If",     "Loop",   "Break", "Continue", "Return", "log",     "instancedArray", "storage",
+                             "attribute",  "uv",    "texture", "Fn",        "If",     "Loop",   "Break", "Continue", "Return", "Discard", "log",     "instancedArray", "storage",
                              "add",        "sub",   "mul",     "div",       "negate", "lessThan", "greaterThan",
                              "equal",      "lessThanEqual", "greaterThanEqual", "and", "or", "not", "all", "any", "abs",   "sin",     "cos",       "floor",  "fract",    "sqrt",
                              "exp",        "exp2",  "log2",    "normalize", "length", "atan",     "min",      "max",
                              "mod", "fwidth", "saturation", "mat2", "hash",
                              "pow",        "step",  "dot",     "distance",  "cross",  "mix",      "clamp",
-                             "smoothstep", "select", "nodeObject", "color", "ivec2", "uvec2", "storageTexture", "textureStore", "textureLoad", "textureSize", "reflect", "convertToTexture", "rtt",
+                             "smoothstep", "select", "nodeObject", "color", "ivec2", "ivec3", "ivec4", "uvec2", "bool", "storageTexture", "textureStore", "textureLoad", "textureSize", "reflect", "convertToTexture", "rtt", "mrt",
                              "dFdx", "dFdy", "lengthSq", "viewportSharedTexture", "viewportDepthTexture", "linearDepth",
                              "toneMappingColor", "ao", "ssr", "denoise", "smaa", "bloom", "traa", "film", "lut3D", "renderOutput", "pipelineOutput", "struct", "luminance", "viewZToOrthographicDepth", "viewZToPerspectiveDepth", "logarithmicDepthToViewZ", "oneMinus", "varying", "setUniform",
                              "mx_noise_float", "mx_worley_noise_float", "mx_worley_noise_vec2", "pmremTexture", "reflector", "transformDirection",
-                             "atomicAdd", "atomicStore", "atomicLoad", "lightShadowMatrix", "wgslFunction", "texture3D", "getViewPosition", "transformNormalToView", "property", "radians", "degrees", "inverseSqrt", "ceil", "sinh", "cosh", "tan", "tanh", "asin", "asinh", "acos", "acosh", "atanh", "sign", "round", "reciprocal", "trunc", "transpose", "determinant", "inverse", "difference", "pow2", "pow3", "pow4", "transformNormalByViewMatrix", "transformNormalByInverseViewMatrix", "cbrt", "saturate", "refract", "faceForward", "rand", "mixElement", "smoothstepElement", "stepElement", "faceforward", "inversesqrt", "notEqual", "xor", "bitAnd", "bitNot", "bitOr", "bitXor", "shiftLeft", "shiftRight", "incrementBefore", "decrementBefore", "increment", "decrement", "mat3", "mat4"})
+                             "atomicAdd", "atomicStore", "atomicLoad", "lightShadowMatrix", "lights", "wgslFunction", "texture3D", "getViewPosition", "bumpMap", "normalMap", "transformNormalToView", "property", "varyingProperty", "instanceMatrix", "radians", "degrees", "inverseSqrt", "ceil", "sinh", "cosh", "tan", "tanh", "asin", "asinh", "acos", "acosh", "atanh", "sign", "round", "reciprocal", "trunc", "transpose", "determinant", "inverse", "difference", "pow2", "pow3", "pow4", "transformNormalByViewMatrix", "transformNormalByInverseViewMatrix", "cbrt", "saturate", "refract", "faceForward", "rand", "mixElement", "smoothstepElement", "stepElement", "faceforward", "inversesqrt", "notEqual", "xor", "bitAnd", "bitNot", "bitOr", "bitXor", "shiftLeft", "shiftRight", "incrementBefore", "decrementBefore", "increment", "decrement", "mat3", "mat4"})
         module->Set(context, str(isolate_, name), function(context, name, false)->GetFunction(context).ToLocalChecked())
             .Check();
     for (auto& [name, node] : abi::tslConstants())

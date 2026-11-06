@@ -490,12 +490,20 @@ async function runStandalonePlaytestOnce(
       pageLifecycle.closed = true;
     });
     const activePage = page;
+    if (activeConfig.cpuProfilePath !== undefined) {
+      cpuProfile = await startBrowserCpuProfile(activePage, activeConfig.cpuProfilePath);
+    }
     // Started before navigation: the frames a player sees first are the ones a cover must own.
     const coverRecorder = scenario.assert?.startup?.steadyCover === true ? await recordStartupCover(page) : undefined;
     const bridge = await openRunnerPage(page, browserConfig, scenario, options.remoteBrowser);
     // Browser flags are per process, so the thread the game draws on can only pick them on a relaunch.
     if (options.gameThread === undefined && measurementArgs.includes("--disable-frame-rate-limit")
-      && await runsGameInWorker(page)) throw new WorkerGameRelaunch();
+      && await runsGameInWorker(page)) {
+      // The profile starts above this check so it covers navigation; this attempt's is not the
+      // run's, and the retry starts its own. Drop it, so the `finally` reports the retry's.
+      cpuProfile = undefined;
+      throw new WorkerGameRelaunch();
+    }
     // From here on the page is expected to stay put; anything that moves it is evidence.
     pageLifecycle.settled = true;
     const setupApplication = bridge?.setupApplication;
@@ -531,6 +539,16 @@ async function runStandalonePlaytestOnce(
     const readyMs = startupOutcome?.startup.timeline?.readyMs;
     const startupCover = coverRecorder === undefined || readyMs === undefined ? undefined : await coverRecorder.finish(readyMs);
     await alignScenarioStartTick(bridge, scenario.startTick, activeConfig.liveClock === true);
+    // `drawEvery` counts fixed-step ticks that draw. A wall-clock run advances none, so the field
+    // would be silently ignored and a readback scenario's sample count would be back in the
+    // adapter's hands — the exact failure the field exists to remove.
+    if (scenario.drawEvery !== undefined && activeConfig.liveClock === true) {
+      throw new PlaytestBridgeError(playtestDiagnostic(
+        "TN_PLAYTEST_UNSUPPORTED_ON_TARGET",
+        "Scenario drawEvery draws a frame every N counted ticks, and this run advances no counted ticks.",
+        "Drop --live-clock (and any scenario clock: \"wall-clock\"), or drop drawEvery and measure the standing scene another way.",
+      ));
+    }
     const runtimeReady = await page.evaluate(() =>
       document.readyState !== "loading" && document.querySelector("canvas") !== null,
     ).catch(() => false);
@@ -779,9 +797,6 @@ async function runStandalonePlaytestOnce(
           : {})
       : undefined;
     let framebufferCoverage: IPlaytestFramebufferCoverageObservation | undefined;
-    if (activeConfig.cpuProfilePath !== undefined) {
-      cpuProfile = await startBrowserCpuProfile(activePage, activeConfig.cpuProfilePath);
-    }
     const footSlip: IPlaytestFootSlipObservation[] = [];
     const footSlipAt = (label: string | undefined) =>
       label === undefined ? undefined : scenario.assert?.footSlip?.find(({ atStep }) => atStep === label);
@@ -792,6 +807,8 @@ async function runStandalonePlaytestOnce(
       : { entity: sightLineEntity, samples: [] as IPlaytestSightLineObservation[] };
     // The engine's cost windows count per drawn frame, so every tick draws one: with ticks advanced
     // undrawn, a slower machine folds more ticks into each frame and the same game reads costlier.
+    // A scenario's `drawEvery` asks the same mechanism for a frame every N ticks instead of one;
+    // there is one drawn-tick path, and this is its every-tick setting.
     const drawnTicks = scenario.assert?.engineCost === undefined || bridge === undefined
       || activeConfig.liveClock === true || !bridge.description.capabilities.includes("runtime.fixedStep")
       ? undefined
@@ -863,6 +880,7 @@ async function runStandalonePlaytestOnce(
           await sampleSightLine(bridge, sightLine);
         },
         sightLine,
+        scenario.drawEvery,
       );
       if (movementBaselineSnapshot === undefined && movementNeedsBaseline && movementEntity !== undefined) {
         const candidate = stepSamples.afterStep ?? stepSamples.afterInput;

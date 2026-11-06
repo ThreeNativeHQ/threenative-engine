@@ -25,7 +25,7 @@ export function AbilityBar() {
         />
       </div>
       <div className="mt-2 text-dim">
-        Shift roll · E cast · Q equip · U unequip · C save · uses {uses}
+        Shift roll · E surge · G fireball · Q equip · U unequip · C save · uses {uses}
       </div>
     </footer>
   );

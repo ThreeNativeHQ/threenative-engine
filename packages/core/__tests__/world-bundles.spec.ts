@@ -428,6 +428,7 @@ async function world(
     readonly bundles?: boolean;
     readonly chunkModel?: (url: string) => Group;
     readonly gpuScene?: boolean;
+    readonly lodHysteresis?: number;
     readonly rockInWest?: boolean;
   } = {},
 ): Promise<{
@@ -477,6 +478,32 @@ afterEach(() => {
 });
 
 describe("the main pass's draw bundles", () => {
+  it("does not re-record a hysteresis key that a refilter asks for again with the same surface", async () => {
+    const {
+      follow,
+      renderer,
+      world: cells,
+    } = await world({
+      bundles: true,
+      gpuScene: false,
+      lodHysteresis: 0.2,
+    });
+    try {
+      cells.update(renderer, playerCamera());
+      await flushed(cells, renderer, playerCamera());
+      const settled = cells.stats().bundle.records;
+      const base = { ...follow.position };
+      for (let step = 1; step <= 6; step++) {
+        follow.position.x = base.x + (step % 2 === 0 ? CELL * 0.45 : -CELL * 0.45);
+        cells.update(renderer, playerCamera());
+      }
+      // The walk re-records the windows it moved (18 measured). Re-recording every key a refilter asked
+      // for again, with the surface it already had, was 172.
+      expect(cells.stats().bundle.records - settled).toBeLessThan(40);
+    } finally {
+      cells.dispose();
+    }
+  });
   it("parents every GPU-dressed main mesh under a main record shard and never re-records a settled frame", async () => {
     const { renderer, world: cells } = await world({ bundles: true });
     cells.update(renderer, playerCamera());
@@ -612,7 +639,14 @@ describe("the main pass's draw bundles", () => {
       children: 0,
       cpuMeshes: 0,
       gpuMeshes: 0,
-      eligibility: { checks: 0, refreshes: 0, validations: 0, uncached: 0 },
+      eligibility: {
+        checks: 0,
+        refreshes: 0,
+        validations: 0,
+        uncached: 0,
+        deferred: 0,
+        staleFrames: 1,
+      },
       on: false,
       reason: "option",
       records: 0,
@@ -1388,6 +1422,33 @@ describe("the main pass's draw bundles", () => {
     for (const group of mainBundleGroups(cells)) expect(group.version).toBe(settled.get(group));
 
     expect(cells.stats().failures).toBe(0);
+    cells.dispose();
+  });
+
+  it("re-records every shard once when a sampled environment map is swapped under it", async () => {
+    // A record holds the bind groups it was made with, and a replay never refreshes them: a sky
+    // PMREM that finishes after the first record left the forest's crowns sampling the black
+    // placeholder until the first walk re-recorded them. The patched renderer counts each swap.
+    const { renderer, world: cells } = await world({ bundles: true, gpuScene: false });
+    cells.update(renderer, playerCamera([0, 1]));
+    await flushed(cells, renderer, playerCamera([0, 1]));
+    const raw = { _tnPmremSwaps: 0 };
+    const swapping: IRendererLike = Object.assign(Object.create(renderer) as IRendererLike, {
+      raw,
+    });
+    cells.update(swapping, playerCamera([0, 1]));
+    const groups = mainBundleGroups(cells);
+    expect(groups.length).toBeGreaterThan(0);
+    const before = new Map(groups.map((group) => [group, group.version]));
+
+    raw._tnPmremSwaps = 1;
+    cells.update(swapping, playerCamera([0, 1]));
+    for (const group of groups) expect(group.version).toBeGreaterThan(before.get(group) as number);
+
+    // Once per swap, not every frame.
+    const after = new Map(groups.map((group) => [group, group.version]));
+    for (let index = 0; index < 5; index += 1) cells.update(swapping, playerCamera([0, 1]));
+    for (const group of groups) expect(group.version).toBe(after.get(group));
     cells.dispose();
   });
 

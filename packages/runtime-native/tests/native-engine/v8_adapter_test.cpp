@@ -567,7 +567,7 @@ void catalogCoverage() {
     for (const auto& [name, want] : numbers) CHECK(tableConstants.count(name) == 1);
     for (const auto& [name, want] : strings) CHECK(tableConstants.count(name) == 1);
     // Supported TSL functions live on the TSL module, rather than the class/constant globals.
-    const std::set<std::string> tslFunctions = {"atomicAdd", "atomicStore", "lightShadowMatrix", "rtt", "storageTexture",
+    const std::set<std::string> tslFunctions = {"atomicAdd", "atomicStore", "lightShadowMatrix", "lights", "rtt", "storageTexture",
                                                 "textureStore", "uvec2"};
     // TSL nodes the catalog publishes as functions that the engine installs as node objects.
     const std::set<std::string> tslNodes = {"modelWorldMatrix"};
@@ -696,6 +696,63 @@ void uniformValue() {
         (() => { try { tsl.setUniform(clock, 1, 2); return false; } catch (e) { return e.message.includes('TN_TSL_UNIFORM_VALUE'); } })()
     )JS");
     CHECK(refused->IsTrue());
+}
+
+// three's MRTNode on a node material: every named output is a custom colour slot, set through its own slot path,
+// read back as the same object, replaced as a whole, and cleared by null; a non-node output is refused by name.
+void mrtNode() {
+    Runtime& rt = runtime();
+    v8::Isolate::Scope isolateScope(rt.isolate);
+    Adapter adapter(rt.isolate, rt.context);
+    namespace g = tn::engine::shader::graph;
+    v8::HandleScope scope(rt.isolate);
+    const auto ctx = v8::Context::New(rt.isolate);
+    v8::Context::Scope contextScope(ctx);
+    adapter.install(ctx, ctx->Global());
+    const auto evaluate = [&](const char* source) {
+        v8::TryCatch caught(rt.isolate);
+        v8::Local<v8::Script> script;
+        v8::Local<v8::Value> result;
+        const bool ran = v8::Script::Compile(ctx, v8::String::NewFromUtf8(rt.isolate, source).ToLocalChecked()).ToLocal(&script) &&
+                         script->Run(ctx).ToLocal(&result);
+        if (!ran) {
+            v8::String::Utf8Value message(rt.isolate, caught.Exception());
+            std::fprintf(stderr, "mrt_node: %s\n", *message ? *message : "?");
+        }
+        CHECK(ran);
+        return result;
+    };
+    const auto material = evaluate(R"JS(
+        const m = new MeshStandardNodeMaterial();
+        m.mrtNode = { isMRTNode: true, outputs: { diagnostic: tsl.vec4(1, 0, 0, 1), coverage: tsl.float(0.5) } };
+        globalThis.mrtMaterial = m;
+        m
+    )JS");
+    tn_handle_t handle{};
+    CHECK(adapter.unwrap(material, handle));
+    const auto slots = tn::abi::mrtOutputs(handle);
+    CHECK(slots.size() == 2);
+    CHECK(slots[0].first == "diagnostic" && slots[1].first == "coverage");
+    CHECK(g::key(slots[0].second) == g::key(g::vec4({g::float_(1), g::float_(0), g::float_(0), g::float_(1)})));
+    CHECK(g::key(slots[1].second) == g::key(g::float_(0.5)));
+    CHECK(evaluate("mrtMaterial.mrtNode.isMRTNode === true && mrtMaterial.mrtNode.outputs.coverage !== undefined")->IsTrue());
+    // A whole replacement drops the slot the new MRT does not name; null clears them all.
+    evaluate("mrtMaterial.mrtNode = { isMRTNode: true, outputs: { diagnostic: tsl.vec4(0, 1, 0, 1) } }; 0");
+    const auto replaced = tn::abi::mrtOutputs(handle);
+    CHECK(replaced.size() == 1 && replaced[0].first == "diagnostic");
+    CHECK(evaluate("(() => { try { mrtMaterial.mrtNode = { isMRTNode: true, outputs: { a: 1 } }; return false; } catch (e) { return e instanceof TypeError && e.message.startsWith('TN_TSL_PROPERTY'); } })()")->IsTrue());
+    CHECK(tn::abi::mrtOutputs(handle).size() == 1);
+    // mrt() always carries the pass's own slots (output, a marker object for any name); the scene pass draws them,
+    // so the setter skips them as the browser facade does and keeps only the custom slot.
+    evaluate(R"JS(
+        const slot = Object.freeze({ isMRTSlot: true, name: 'output' });
+        mrtMaterial.mrtNode = { isMRTNode: true, outputs: { output: slot, normal: tsl.vec4(0, 0, 1, 0), extra: Object.freeze({ isMRTSlot: true, name: 'extra' }), diagnostic: tsl.vec4(0, 0, 1, 1) } };
+        0
+    )JS");
+    const auto withSlots = tn::abi::mrtOutputs(handle);
+    CHECK(withSlots.size() == 1 && withSlots[0].first == "diagnostic");
+    evaluate("mrtMaterial.mrtNode = null; 0");
+    CHECK(tn::abi::mrtOutputs(handle).empty());
 }
 
 void tslApi() {
@@ -2217,6 +2274,6 @@ TN_TEST_MAIN({"gc_telemetry", gcTelemetry}, {"template_material", templateMateri
              {"crossing_bench", crossingBench},
              {"scene", scene}, {"raycaster_lod", raycasterLOD}, {"object_raycast", objectRaycast},
              {"catalog_coverage", catalogCoverage},
-             {"callback_cycle", callbackCycle}, {"wrapper_lifetime", wrapperLifetime}, {"tsl_api", tslApi}, {"uniform_value", uniformValue}, {"node_materials", nodeMaterials}, {"skeletal", skeletal},
+             {"callback_cycle", callbackCycle}, {"wrapper_lifetime", wrapperLifetime}, {"tsl_api", tslApi}, {"uniform_value", uniformValue}, {"mrt_node", mrtNode}, {"node_materials", nodeMaterials}, {"skeletal", skeletal},
              {"attribute_arrays", attributeArrays}, {"geometry_lifecycle", geometryLifecycle},
              {"material_slots", materialSlots}, {"js_math", jsMath}, {"js_math_views", jsMathViews}, {"js_math_members", jsMathMembers})

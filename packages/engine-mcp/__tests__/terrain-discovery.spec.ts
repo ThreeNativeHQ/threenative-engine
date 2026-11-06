@@ -34,8 +34,11 @@ describe("terrain authoring discovery", () => {
       top("procedural heightmap landscape for the game", "mechanic", "Terrain")?.importPath,
     ).toBe("@threenative/terrain");
     expect(
-      top("export the terrain as a glb for another three.js project", "mechanic", "exportWorldGLB")
-        ?.importPath,
+      top(
+        "export the terrain as a glb for another three.js project",
+        "mechanic",
+        "prepareWorldGLTF",
+      )?.importPath,
     ).toBe("@threenative/terrain/export");
     expect(
       top(
@@ -64,7 +67,7 @@ describe("terrain authoring discovery", () => {
     for (const { name } of names) {
       for (const file of ["AGENTS.md", "CLAUDE.md"]) {
         expect(readFileSync(path.join(templates, name, file), "utf8"), `${name}/${file}`).toContain(
-          "agent-docs/references/terrain-authoring.md",
+          "references/terrain-authoring.md",
         );
       }
       const pkg = JSON.parse(readFileSync(path.join(templates, name, "package.json"), "utf8"));
@@ -79,7 +82,7 @@ describe("terrain authoring discovery", () => {
     for (const required of [
       "npm install --save-dev @threenative/terrain",
       "@threenative/terrain/editor/server",
-      "exportWorldGLB",
+      "prepareWorldGLTF",
       "node_modules/@threenative/terrain/AGENT_GUIDE.md",
     ])
       expect(guide).toContain(required);

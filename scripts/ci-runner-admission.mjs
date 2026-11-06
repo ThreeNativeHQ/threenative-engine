@@ -19,10 +19,10 @@ import { integrationGitSelection } from "./ci-integration-scope.mjs";
 export const ADMISSION_NAMESPACES = Object.freeze(["ci", "integration", "native"]);
 
 // The eligible HEAVY set: every Linux job on the TN_RUNNER heavy switch, per its matrix —
-// 49 ci + 13 integration + 4 native = 66 instances (one template-nonvisual and one
-// template-engine-cost leg per shipped kit).
-// The order is the default admission preference (CPU-heavy lanes first); the caller passes its
-// own actual selected order instead.
+// 50 ci + 13 integration + 4 native = 67 instances (one template-nonvisual and one
+// template-engine-cost leg per shipped kit, plus strata).
+// The order is the default admission preference (CPU-heavy lanes first); the caller
+// passes its own actual selected order instead.
 const INVENTORY = Object.freeze({
   ci: Object.freeze({
     "test-unit": Object.freeze(["1/4", "2/4", "3/4", "4/4"]),
@@ -36,6 +36,7 @@ const INVENTORY = Object.freeze({
     budgets: Object.freeze([null]),
     "test-browser": Object.freeze([null]),
     "test-playtest": Object.freeze([null]),
+    strata: Object.freeze([null]),
     "golden-path-template": Object.freeze(["starter", "platformer"]),
     "template-nonvisual": Object.freeze(TEMPLATE_NAMES),
     "template-engine-cost": Object.freeze(TEMPLATE_NAMES),
@@ -75,6 +76,17 @@ const INVENTORY_SET = new Set(
     ),
   ),
 );
+
+// These instances move to the separately provisioned GPU runner when its label is configured;
+// they must not consume slots from the shared CPU-heavy pool in the same run. Keep in step with
+// the `TN_RUNNER_GPU` branch of each job's `runs-on`: `template-nonvisual` sends racing and rain
+// there, plus the two jobs routed whole.
+const GPU_RUNNER_INSTANCES = new Set([
+  "ci:benchmark",
+  "ci:strata",
+  "ci:template-nonvisual:racing",
+  "ci:template-nonvisual:rain",
+]);
 
 // Two integration jobs gate on a lane output whose name differs from the job id.
 const INTEGRATION_LANE = Object.freeze({
@@ -155,10 +167,16 @@ export function parseAdmissionPlan(value, prefix = "CI_ADMISSION") {
 
 // The parent's one decision: admit the first `slots` of the caller's ordered selected instances.
 // At most that many instances total, across every workflow — never one budget per namespace.
-export function admissionPlan(selected, slots, { fork = false, prefix = "CI_ADMISSION" } = {}) {
+export function admissionPlan(
+  selected,
+  slots,
+  { fork = false, gpuRunner = "", prefix = "CI_ADMISSION" } = {},
+) {
   const count = slotCount(slots, prefix);
   if (fork || count === null) return Object.freeze([]);
-  const selectedInstances = validateAdmissionPlan(selected, prefix);
+  const selectedInstances = validateAdmissionPlan(selected, prefix).filter(
+    (id) => !gpuRunner || !GPU_RUNNER_INSTANCES.has(id),
+  );
   return Object.freeze(selectedInstances.slice(0, count));
 }
 
@@ -180,6 +198,7 @@ export function selectInstances(plan, integrationLanes = {}) {
   if (job.budgets?.required) ids.push("ci:budgets");
   if (job["test-browser"]?.required) ids.push("ci:test-browser");
   if (job["test-playtest"]?.required) ids.push("ci:test-playtest");
+  if (job.strata?.required) ids.push("ci:strata");
   if (job["golden-path-template"]?.required)
     for (const template of plan?.goldenMatrix?.template ?? [])
       if (INVENTORY.ci["golden-path-template"].includes(template))
@@ -233,6 +252,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     emit(
       admissionPlan(selectInstances(plan, lanes), process.env.TN_RUNNER_SLOTS, {
         fork: fork || !process.env.TN_RUNNER,
+        gpuRunner: process.env.TN_RUNNER_GPU,
       }),
     );
   } else {

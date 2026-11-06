@@ -24,6 +24,12 @@ export const MCP_SERVERS = Object.freeze({
     command: "node",
     args: Object.freeze(["./node_modules/@threenative/core/mcp/engine.mjs"]),
   }),
+  // Cooks a starter terrain kit into a world.glb. The server lives in the optional
+  // `@threenative/terrain` package, which the shim resolves from the project at launch.
+  "threenative-terrain": Object.freeze({
+    command: "node",
+    args: Object.freeze(["./node_modules/@threenative/core/mcp/terrain.mjs"]),
+  }),
   // Inspects, attaches, edits and verifies character animation. Every operation is a build-time
   // edit of one GLB, so a game that animates nothing pays for nothing.
   "threenative-animation": Object.freeze({
@@ -46,9 +52,10 @@ export const MCP_SERVERS = Object.freeze({
  * checkout whose bundle has not been built. */
 export const MCP_PACKAGES = Object.freeze({
   assets: Object.freeze({ name: "threenative-asset-mcp", version: "0.15.0" }),
+  terrain: Object.freeze({ name: "@threenative/terrain", version: "0.1.8" }),
   sculpt: Object.freeze({ name: "threenative-sculpt-mcp", version: "0.2.2" }),
-  engine: Object.freeze({ name: "threenative-engine-mcp", version: "0.2.11" }),
-  animation: Object.freeze({ name: "threenative-animation-mcp", version: "0.1.3" }),
+  engine: Object.freeze({ name: "threenative-engine-mcp", version: "0.2.12" }),
+  animation: Object.freeze({ name: "threenative-animation-mcp", version: "0.1.9" }),
   // `args` fixes the launch for every host. The Chrome flags are `WEBGPU_BROWSER_ARGS` from
   // `@threenative/playtest`, so a DevTools trace profiles the same adapter a playtest does and not
   // SwiftShader. An isolated profile keeps the user's own Chrome profile out, and the two opt-outs

@@ -31,7 +31,7 @@ class Tsl {
     Wrapper* wrapper(v8::Local<v8::Value> value) const;
     engine::shader::graph::Node input(v8::Local<v8::Value> value) const;
     abi::TslArg argument(const std::string& name, int index, int count, v8::Local<v8::Value> value) const;
-    engine::shader::graph::Node capture(v8::Local<v8::Function> callback, v8::Local<v8::Value> argument = {});
+    engine::shader::graph::Node capture(v8::Local<v8::Function> callback, v8::Local<v8::Value> argument = {}, bool fn = false);
     v8::Local<v8::FunctionTemplate> function(v8::Local<v8::Context> context, const char* name, bool method);
     static void dispatch(const v8::FunctionCallbackInfo<v8::Value>& info);
     void call(const Call& call, const v8::FunctionCallbackInfo<v8::Value>& info);

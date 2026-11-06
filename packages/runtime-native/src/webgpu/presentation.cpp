@@ -1,5 +1,6 @@
 #include "mystral/webgpu/presentation.h"
 
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <cstdlib>
@@ -83,6 +84,11 @@ PresentationPacing g_presentationPacing;
 // reset clears it, so the production formula below is what ships.
 std::chrono::nanoseconds g_presentationPacingTimeoutOverride{0};
 
+// Test-only, PRD-399. Counts the blocks the owner performs, one per display wait or software sleep,
+// so a test can assert "returned without waiting" by observation instead of a wall clock a loaded
+// runner overruns (presentation_pacing_test.cpp). Production never reads it.
+std::atomic<uint32_t> g_presentationPacingWaits{0};
+
 // Reports the effective pacing path once per transition, never per frame. A run can then tell
 // "display-aligned" from "deadline-fallback" without reading the source, and a packaged `.so` can
 // be grepped for the marker to prove the APK actually carries this change.
@@ -118,6 +124,7 @@ PresentationPacingPath paceToDisplayFrame(std::chrono::nanoseconds interval) {
     const auto deadline = std::chrono::steady_clock::now() + boundedWait;
     while (g_presentationPacing.running &&
            g_presentationPacing.frameTimeNs < g_presentationPacing.nextPresentTargetNs) {
+        ++g_presentationPacingWaits;  // the display wait below blocks here
         if (g_presentationPacing.ready.wait_until(lock, deadline) == std::cv_status::timeout) {
             // A notified frame can be ready even when the waiting thread runs after the deadline.
             if (!g_presentationPacing.running) return PresentationPacingPath::SoftwareDeadline;
@@ -178,6 +185,10 @@ void setPresentationPacingTimeoutForTest(std::chrono::milliseconds timeout) {
     g_presentationPacingTimeoutOverride = std::chrono::duration_cast<std::chrono::nanoseconds>(timeout);
 }
 
+uint32_t presentationPacingWaitCountForTest() {
+    return g_presentationPacingWaits.load(std::memory_order_relaxed);
+}
+
 bool setPresentationCapHz(uint32_t hz) {
     if (hz > 1000) return false;
     g_presentationCapHz = hz;
@@ -223,7 +234,10 @@ PresentationPacingPath paceToPresentationCap() {
         g_nextPresentDeadline = now + interval;
         return path;
     }
-    if (now < g_nextPresentDeadline) std::this_thread::sleep_until(g_nextPresentDeadline);
+    if (now < g_nextPresentDeadline) {
+        ++g_presentationPacingWaits;  // the software deadline sleep below blocks here
+        std::this_thread::sleep_until(g_nextPresentDeadline);
+    }
     g_nextPresentDeadline += interval;
     return path;
 }

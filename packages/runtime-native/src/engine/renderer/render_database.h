@@ -22,6 +22,8 @@
 
 namespace tn::engine {
 
+struct Reflector;
+
 /**
  * The render database (PRD-514 phase 1): `renderer.render(scene, camera)` on the native path. It
  * reads the native scene graph — never a JS scene — and keeps one draw record per mesh, rebuilt
@@ -112,6 +114,13 @@ class RenderDatabase {
     [[nodiscard]] std::size_t lastReflectionItems() const { return reflectionItems_; }
     /** three's `renderer.shadowMap.enabled`: off, no light draws or reads a shadow map. */
     bool shadowMapEnabled = false;
+    /** three's MRT: the name of the render-target texture this database draws (a material's mrtNode output of that
+     *  name is written there), and whether it is the target's first texture (which keeps the material's own output
+     *  when the mrt() does not name it). Set once, before the first render: the records resolve it as they are built. */
+    std::string mrtName;
+    bool mrtPrimary = true;
+    /** three's `renderer.autoClear`: false loads the target's colour and depth, except a Color background clears (Background.js forceClear). */
+    bool autoClear = true;
     /** three's `renderer.shadowMap.type`: PCFShadowMap (1) or PCFSoftShadowMap (2). */
     int shadowMapType = 1;
     static constexpr std::size_t kMinBatchMembers = 4;
@@ -121,14 +130,17 @@ class RenderDatabase {
     [[nodiscard]] uint64_t batchDecisions() const { return batchDecisions_; }
 
   private:
-    // A material's pmremTexture source and reflector, walked once per material version: the graph
+    // A material's pmremTexture source and reflectors, walked once per material version: the graph
     // roots are kept so a new material at a freed one's address never reads the old answer.
     // ponytail: entries for released materials stay until the database goes; prune if materials churn.
     struct GraphSources {
         uint32_t version = 0;
-        std::array<const void*, 14> roots{};  // one per MaterialNodes::pointers()
+        std::array<const void*, shader::kMaterialGraphRoots> roots{};  // one per MaterialNodes::pointers()
         const Texture* texture = nullptr;
-        std::shared_ptr<const void> reflector;  // an engine::Reflector
+        // The reflector() reads, by binding name; each owns its mirror pass, as three's ReflectorNode owns
+        // its render target. `reflectorViews` carries this frame's view of each pass, refreshed per render.
+        std::vector<std::pair<std::string, std::shared_ptr<const void>>> reflectors;
+        GraphReflectors reflectorViews;
         std::vector<std::pair<std::string, const Texture*>> textures;  // texture(object) samples
         std::vector<shader::graph::Node> textureNodes;
         std::vector<std::pair<std::string, const BufferAttribute*>> storages;  // storage(attribute) reads
@@ -138,13 +150,18 @@ class RenderDatabase {
     void vertexColorsOf(const BufferGeometry& geometry, const Material& material, DrawItem& d);
     static void depthBiasOf(const Material& material, DrawItem& d);
     void geometryInputsOf(const BufferGeometry& geometry, DrawItem& d);
+    static void sortCenterOf(const BufferGeometry& geometry, DrawItem& d);
     // One mirrored pass per live reflector: its own targets and its own records, so the pass never
     // resizes the frame or churns the frame's draw records. A pass draws no further reflections.
     struct ReflectionPass {
         std::weak_ptr<const void> owner;
-        std::unique_ptr<Renderer> renderer;
+        Renderer* renderer = nullptr;  // the main renderer's reflectionRenderer(owner)
         std::unique_ptr<RenderDatabase> database;
     };
+    ReflectionPass& reflectionPass(Renderer& renderer, const std::shared_ptr<const Reflector>& reflector);
+    /** compileAsync's mirror half: each reflector's pass compiles the scene as its mirror would draw it. */
+    void precacheReflections(Renderer& renderer, Object3D& root, Camera& camera, Object3D* targetScene,
+                             std::vector<std::shared_ptr<PipelineCompilation>>& compilations);
     std::unordered_map<const void*, ReflectionPass> reflections_;
     bool reflecting_ = false;
     // Set by the frame's database on a reflection pass: the scene's world matrices are already current.
@@ -234,6 +251,7 @@ class RenderDatabase {
     void collectShadowFrustums(Object3D& root, const Camera& mainCamera);
     bool boundingSphereOf(Object3D& object, std::string_view type, Sphere& sphere);
     bool inShadowFrustum(const Object3D& object, const Sphere* sphere);
+    bool rigCastsShadow(Object3D& object);
     std::vector<std::unique_ptr<SkinnedPalette>> skinnedPalettes_; // borrowed by this frame's draws
     // core's DECLINE_RESCAN_FRAMES: a settled projection decline re-judges on this cadence, not per
     // frame. Starts at the interval so the first batch always scans.

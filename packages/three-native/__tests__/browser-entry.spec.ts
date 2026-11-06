@@ -21,6 +21,7 @@ import {
 } from "../src/browser-entry.js";
 import * as rendererBinding from "../src/browser-renderer.js";
 import * as tslBinding from "../src/browser-tsl.js";
+import * as wasmRuntime from "../src/browser-wasm-runtime.js";
 import { type ICatalog, loadCatalog } from "../src/catalog.js";
 
 const REPO = process.cwd();
@@ -70,6 +71,8 @@ describe("bindUpstreamExports", () => {
     const Pipeline = bound.RenderPipeline as new () => object;
     class Sub extends Pipeline {}
     expect(() => new Sub()).toThrow("TN_NATIVE_UNSUPPORTED_RENDERPIPELINE");
+    // Core asks `shadowNode instanceof VirtualShadowNode` every startup frame; asking is not a use.
+    expect({} instanceof Sub).toBe(false);
     expect(() => (bound.RenderPipeline as { render: unknown }).render).toThrow(
       "TN_NATIVE_UNSUPPORTED_RENDERPIPELINE",
     );
@@ -170,7 +173,7 @@ describe("web engine nested render safe points", () => {
       originalSync(frame);
     });
     try {
-      vi.spyOn(backend, "createWasmRuntime").mockReturnValue(runtime);
+      vi.spyOn(wasmRuntime, "createWasmRuntime").mockReturnValue(runtime);
       vi.spyOn(backend, "defineBrowserClasses").mockReturnValue({ ...bindings, collect });
       vi.spyOn(audioBinding, "defineAudioClasses").mockReturnValue({ ...audio, updateAudio });
       vi.spyOn(tslBinding, "defineTsl").mockReturnValue(tsl);

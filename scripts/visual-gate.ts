@@ -13,6 +13,13 @@ import {
 } from "../packages/create-threenative/src/index.js";
 import { WEBGPU_BROWSER_ARGS } from "../packages/playtest/src/runner/browser.js";
 import {
+  acquireCaptureLock,
+  decideLockPolicy,
+  defaultCaptureLockRoot,
+  detectCaptureConcurrency,
+  isProcessAlive,
+} from "../packages/playtest/src/runner/captureLock.js";
+import {
   type CaptureFrameStats,
   CaptureGuardError,
   assertFrameShowsSomething,
@@ -44,6 +51,30 @@ export const RENDER_LAYER_FILES = [
 ] as const;
 export const VISUAL_SCORE_FLOOR = 4;
 export const LOCAL_FRAMEWORK_PACKAGES = localPackageEntries(REPO_ROOT);
+
+export async function withVisualCaptureLease<T>(
+  capture: () => Promise<T>,
+  options: { readonly lockRoot?: string } = {},
+): Promise<T> {
+  const lockRoot = options.lockRoot ?? defaultCaptureLockRoot();
+  const policy = decideLockPolicy({
+    captureLock: "1",
+    lockTimeoutMs: process.env.CAPTURE_LOCK_TIMEOUT_MS,
+    othersAlive: detectCaptureConcurrency({ isProcessAlive, lockRoot }),
+  });
+  if (policy.mode !== "flock")
+    throw new Error("TN_VISUAL_CAPTURE_LOCK_POLICY: forced capture lease was not selected.");
+  const lease = await acquireCaptureLock({
+    command: process.argv.slice(1).join(" ").slice(0, 200),
+    lockRoot,
+    timeoutMs: policy.timeoutMs,
+  });
+  try {
+    return await capture();
+  } finally {
+    await lease.release();
+  }
+}
 
 export function visualServerProcessGroup(
   pid: number,
@@ -439,31 +470,33 @@ const captureTemplate: CaptureTemplate = async (
   server.stderr?.on("data", (chunk) => output.push(String(chunk)));
   try {
     await waitForServer(`http://127.0.0.1:${port}/`, server);
-    const browser = await chromium.launch({
-      args: [...WEBGPU_BROWSER_ARGS],
-      headless: false,
-      timeout: 30_000,
+    return await withVisualCaptureLease(async () => {
+      const browser = await chromium.launch({
+        args: [...WEBGPU_BROWSER_ARGS],
+        headless: false,
+        timeout: 30_000,
+      });
+      try {
+        const page = await browser.newPage({ viewport: { height: 720, width: 1280 } });
+        const pageErrors: string[] = [];
+        page.on("pageerror", (error) => pageErrors.push(error.message));
+        await page.goto(`http://127.0.0.1:${port}/`, { waitUntil: "domcontentloaded" });
+        await page.waitForSelector("canvas", { timeout: 30_000 });
+        if ((await page.locator('[data-threenative-canvas="true"]').count()) > 0)
+          await page.waitForSelector('[data-threenative-startup="ready"]', { timeout: 30_000 });
+        else await page.waitForTimeout(2_000);
+        const takeFrame = (): Promise<Buffer> => {
+          if (pageErrors.length > 0)
+            throw new Error(`TN_VISUAL_PAGE_ERROR: ${pageErrors.join(" | ")}`);
+          return page.screenshot({ type: "png" });
+        };
+        await waitForPaintedFrame(takeFrame, template);
+        await page.waitForTimeout(250);
+        return await waitForPaintedFrame(takeFrame, template);
+      } finally {
+        await browser.close();
+      }
     });
-    try {
-      const page = await browser.newPage({ viewport: { height: 720, width: 1280 } });
-      const pageErrors: string[] = [];
-      page.on("pageerror", (error) => pageErrors.push(error.message));
-      await page.goto(`http://127.0.0.1:${port}/`, { waitUntil: "domcontentloaded" });
-      await page.waitForSelector("canvas", { timeout: 30_000 });
-      if ((await page.locator('[data-threenative-canvas="true"]').count()) > 0)
-        await page.waitForSelector('[data-threenative-startup="ready"]', { timeout: 30_000 });
-      else await page.waitForTimeout(2_000);
-      const takeFrame = (): Promise<Buffer> => {
-        if (pageErrors.length > 0)
-          throw new Error(`TN_VISUAL_PAGE_ERROR: ${pageErrors.join(" | ")}`);
-        return page.screenshot({ type: "png" });
-      };
-      await waitForPaintedFrame(takeFrame, template);
-      await page.waitForTimeout(250);
-      return await waitForPaintedFrame(takeFrame, template);
-    } finally {
-      await browser.close();
-    }
   } catch (error) {
     throw new Error(
       `${error instanceof Error ? error.message : String(error)}\n${output.join("").slice(-4_000)}`,

@@ -1,9 +1,10 @@
 /** Run: pnpm exec tsx scripts/check-water.mjs. Shared example water regressions. */
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { Heightfield } from "@threenative/core/world";
+import { orderedScatterRules, scatterProps, validateBiome } from "@threenative/terrain";
 import { buildPropVariants } from "../src/render/props.js";
 import { createRivers } from "../src/render/river.js";
-import { scatterProps } from "../src/render/scatter.js";
 
 const field = new Heightfield({
   rows: 17,
@@ -31,8 +32,8 @@ const rivers = [
     width: 4,
   },
 ];
-const one = createRivers(rivers.slice(0, 1), field, true);
-const both = createRivers(rivers, field, true);
+const one = createRivers(rivers.slice(0, 1), field);
+const both = createRivers(rivers, field);
 try {
   assert.ok(one.mesh.geometry.index.count > 0, "First channel must be wet");
   assert.equal(
@@ -45,14 +46,23 @@ try {
   one.dispose();
   both.dispose();
 }
+const tundra = validateBiome(
+  JSON.parse(
+    readFileSync(
+      new URL("../../../packages/terrain/starter/tundra/biome.data.json", import.meta.url),
+      "utf8",
+    ),
+  ),
+  "tundra",
+);
 const flooded = scatterProps(
   {
     field,
-    colors: [],
     resolution: 17,
     size: 64,
     waterLevel: null,
-    world: "tundra",
+    rules: orderedScatterRules(tundra),
+    spec: tundra,
     rivers: [
       {
         points: [

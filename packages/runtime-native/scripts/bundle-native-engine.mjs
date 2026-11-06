@@ -3,10 +3,10 @@
 import { randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { existsSync, realpathSync, readFileSync } from "node:fs";
-import { readFile, mkdir, writeFile, rename, unlink } from "node:fs/promises";
+import { readFile, mkdir, rm, writeFile, rename, unlink } from "node:fs/promises";
 import { createRequire } from "node:module";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { dirname, resolve, sep } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const native = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repo = resolve(native, "../..");
@@ -21,7 +21,7 @@ const assetsEntry = resolve(dirname(require.resolve("@threenative/assets/package
 // Player facades share source with sibling packages; installed packages need their resolved roots.
 const packageImports = { name: "native-player-packages", setup(builder) {
   builder.onResolve({ filter: /^\.\.\/\.\.\/\.\.\/\.\.\/(?:three-native|core)\/src\// }, (args) => {
-    if (!args.importer.startsWith(`${player}/`)) return;
+    if (!args.importer.startsWith(`${player}${sep}`)) return;
     const [, name, source] = /^\.\.\/\.\.\/\.\.\/\.\.\/(three-native|core)\/(.+)$/.exec(args.path);
     return { path: resolve(name === "core" ? core : threeNative, source) };
   });
@@ -208,8 +208,13 @@ export async function bundleNativeEngine({ entry, outfile, boot = true, define =
     logLevel: "silent", outfile, sourcemap: "external", sourcesContent: true,
     plugins: [packageImports, { name: "native-engine", setup(builder) {
       builder.onResolve({ filter: /(?:^|\/)assets\.js$/ }, (args) => {
-        if (args.importer.startsWith(`${resolve(core, "src")}/`))
+        if (args.importer.startsWith(`${resolve(core, "src")}${sep}`))
           return { path: resolve(player, "core-assets.mjs") };
+      });
+      // The browser WebGPU upload lane; the engine uploads compressed textures itself.
+      builder.onResolve({ filter: /(?:^|\/)compressed-texture-preparation\.js$/ }, (args) => {
+        if (args.importer.startsWith(`${resolve(core, "src")}/`))
+          return { path: resolve(player, "core-compressed-texture-preparation.mjs") };
       });
       builder.onResolve({ filter: /^tn:game$/ }, () => ({ path: "game", namespace: "native-game" }));
       builder.onLoad({ filter: /.*/, namespace: "native-game" }, () => ({ contents: code, resolveDir: repo }));
@@ -280,11 +285,18 @@ export async function cookNativeEngineAssets({ project, outfile, source }) {
     const module = await import(`data:text/javascript;base64,${Buffer.from(built.outputFiles[0].text).toString("base64")}`);
     assets = module.default?.assets ?? {};
   }
-  const { compileAssets } = await import(assetsEntry);
+  // A file URL: on Windows, `import("D:\\...")` reads `d:` as a URL scheme and throws (engine#612).
+  const { compileAssets } = await import(pathToFileURL(assetsEntry).href);
   await compileAssets({ cwd: project, config: { ...assets, ...(source && { source: resolve(source) }), nativePackage: true }, platform: "desktop",
     runtimeDecoders: { ktx2: false, meshopt: false } });
   const output = resolve(project, assets.output ?? "public", "native/assets.tnpk");
   const target = resolve(dirname(resolve(outfile)), "native/assets.tnpk");
+  // A game with no asset files gets no pack (TN_ASSETS_NATIVE_PACKAGE_EMPTY), and the player opens
+  // `native/assets.tnpk` only when the game asks for an asset, so shipping none is correct.
+  if (!existsSync(output)) {
+    await rm(target, { force: true });
+    return undefined;
+  }
   await mkdir(dirname(target), { recursive: true });
   await writeFile(target, await readFile(output));
   return target;

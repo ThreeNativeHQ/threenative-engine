@@ -1154,7 +1154,8 @@ describe("embedded model textures", () => {
     );
     await compileAssets({
       cwd: root,
-      platform: "android",
+      platform: "web",
+      runtimeDecoders: { ktx2: false, meshopt: false },
       config: {
         models: {
           sharedImages: false,

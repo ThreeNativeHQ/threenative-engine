@@ -29,6 +29,13 @@ export type {
   IStaticColliderContext,
   StaticColliderPredicate,
 } from "../static-colliders.js";
+export { ScatterColliders } from "../scatter-colliders.js";
+export type {
+  IScatterColliderInstance,
+  IScatterCollidersOptions,
+  IScatterCollidersStats,
+  ScatterCollision,
+} from "../scatter-colliders.js";
 export { softBodyCollision } from "../softbody-collision.js";
 export { attachSnowPhysics, boxFootprint, capsuleFootprint } from "../snow.js";
 export type {

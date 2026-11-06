@@ -2,6 +2,8 @@
 // Edit any number here to change the look; nothing in a package decides it.
 import { Daylight } from "@threenative/core";
 import { ACESFilmicToneMapping, Color, type Object3D, Vector3 } from "three";
+import { color, mix, normalize, positionLocal, smoothstep, vec3 } from "three/tsl";
+import type { Node } from "three/webgpu";
 import { SKY_REFLECTION_LAYER } from "./water.js";
 
 export function forestDaylight(follow: Object3D): Daylight {
@@ -21,6 +23,15 @@ export function forestDaylight(follow: Object3D): Daylight {
     // The box's corners must stay inside the camera's far plane (5000 m in the kit's example scene).
     skySize: 5000,
   });
+  // Compress the bright lower dome without dimming the blue sky the lake reflects.
+  const elevation = normalize(positionLocal).y;
+  daylight.sky.material.colorNode = mix(
+    color(daylight.haze.color).mul(mix(2.4, 3.2, smoothstep(-0.6, 0, elevation))),
+    vec3(daylight.sky.material.colorNode as Node<"vec4">).mul(
+      mix(0.3, 1, smoothstep(-0.05, 0.45, elevation)),
+    ),
+    smoothstep(-0.08, 0.08, elevation),
+  );
   // The lake mirrors the sky: its mirror draws only the layer the sky sits on (see water.ts).
   daylight.sky.layers.enable(SKY_REFLECTION_LAYER);
   return daylight;

@@ -11,6 +11,7 @@ import {
   type ShadowFilterTier,
   TracedReflections,
   VirtualShadowNode,
+  qualityPreset as coreQualityPreset,
   sourceAngleShadowFilter,
 } from "@threenative/core";
 import type { IPhysicsContext } from "@threenative/physics";
@@ -30,9 +31,12 @@ import {
   type Texture,
   Vector3,
 } from "three";
-import { setupLighting } from "../render/lighting.js";
+import { SUN_KELVIN, temperatureColour } from "../render/atmosphere.js";
+import { setupLighting, shadeLikeSubstrate } from "../render/lighting.js";
 import { setupPost } from "../render/postprocessing.js";
 import { qualityPreset, resolveQualityTier } from "../render/quality.js";
+import { applyDiffuseEnergy, diffuseEnergyMode } from "../render/diffuseEnergy.js";
+import { noSpecularTwin } from "../render/specular.js";
 import * as skyModule from "../render/sky.js";
 import { SUN_DIRECTION, setupSky } from "../render/sky.js";
 import { WorldEnvironment } from "../render/worldEnvironment.js";
@@ -41,7 +45,6 @@ import { Play } from "./Play.js";
 import { FOLIAGE } from "./referenceFoliage.js";
 import { POSES } from "./referencePoses.js";
 import {
-  EMISSIVE_UNITS,
   EPIC_SSGI,
   type FinalGatherMethod,
   type IGlbMaterialImages,
@@ -51,7 +54,6 @@ import {
   installGi,
   markTwoSidedFoliage,
   reflectionTrace,
-  shadeLikeSubstrate,
   shadowPreset,
   unrealSunDiscScale,
   watchGi,
@@ -200,8 +202,36 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
       raw.toneMapping = NoToneMapping;
     } else {
       const { key } = setupLighting(scene, ctx.renderer.raw as Parameters<typeof setupLighting>[1]);
-      // PRD-653: the sun meets a rough surface as Unreal's Substrate does. Diagnosis knob off=roughDiffuse is plain Lambert.
-      if (TUNED && !OFF.has("roughDiffuse")) shadeLikeSubstrate(model);
+      // Below L2 Unreal draws no atmosphere (r.SkyAtmosphere 0), so no air dims or tints the sun.
+      // The template's sun carries the air's transmittance from creation, so both arms reset it here.
+      if (level < 2) key.color.setRGB(...temperatureColour(SUN_KELVIN));
+      // Diagnosis knob ?specular=0, the same pair as the calibration scene's (render/specular.ts carries the
+      // citations): it runs before `shadeLikeSubstrate`, so the twin takes the substrate diffuse too.
+      // ?specular=f0 is round 7's F0-only reading, kept so its recorded arms stay reproducible. It also runs before
+      // `applyDiffuseEnergy` below, whose twin keeps this one's class, so the ablation survives the term
+      // (render/diffuseEnergy.ts; round 12 measured the two knobs reading as one frame).
+      const specular = params.get("specular");
+      if (specular !== null)
+        model.traverse((object) => {
+          if (!(object instanceof Mesh)) return;
+          object.material = Array.isArray(object.material)
+            ? object.material.map((m) => noSpecularTwin(m as MeshStandardMaterial, specular === "f0"))
+            : noSpecularTwin(object.material as MeshStandardMaterial, specular === "f0");
+        });
+      // PRD-653, PRD-632: the sun meets a rough surface as Unreal's Substrate does, in both arms (the template ships it).
+      // Diagnosis knob off=roughDiffuse is three's Lambert with its energy conservation.
+      if (!OFF.has("roughDiffuse")) shadeLikeSubstrate(model);
+      // PRD-646 round 9: the diffuse loses Unreal's integrated specular albedo, not three's pointwise Fresnel
+      // (render/diffuseEnergy.ts carries both citations). A template-lit calibration scene is the sun alone at L1,
+      // which is where a scale on the albedo reproduces the engine's own direct term exactly; the reference scene
+      // keeps three's term, because its look is the template's and PRD-631 owns it. Diagnosis knob
+      // diffuseEnergy=three is the BEFORE arm: three's term, every material untouched.
+      if (
+        level === 1 &&
+        params.get("model") !== null &&
+        diffuseEnergyMode(params) === "unreal"
+      )
+        applyDiffuseEnergy(model, { direction: SUN_DIRECTION });
       // Diagnosis knob sunShadow=0: the sun casts no shadow (is a seam line a shadow leak at all?).
       key.castShadow = level >= 5 && params.get("sunShadow") !== "0" && SHADOW.castShadows;
       // Diagnosis knob shadowSide=front|back|double: the caster faces. Unset keeps the engine's rule:
@@ -212,7 +242,6 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
       ];
       // Unreal's static meshes cast and receive shadows by default; three's meshes do neither
       // until asked. Both arms (baseline and tuned) need this, so it is not tuning.
-      const emissiveSeen = new Set<unknown>();
       model.traverse((object) => {
         if (object instanceof Mesh) {
           object.castShadow = true;
@@ -221,12 +250,6 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
             for (const m of [object.material].flat())
               m.shadowSide = m.side === DoubleSide && !params.has("shadowSide") ? DoubleSide : casterSide;
           object.receiveShadow = true;
-          // Unreal's emissive is radiance as it stands, the sun is lux / pi (EMISSIVE_UNITS).
-          const material = object.material as MeshStandardMaterial;
-          if (!emissiveSeen.has(material)) {
-            emissiveSeen.add(material);
-            material.emissiveIntensity *= EMISSIVE_UNITS;
-          }
         }
       });
       // three's WebGPU ShadowNode reads `shadow.filterNode`; its types do not declare it yet.
@@ -384,15 +407,22 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
           model,
         );
       if (level >= 9) {
-        // setupPost reads the `high` preset by reference, so the ablation switches go there.
-        for (const name of OFF) Object.assign(qualityPreset("high"), STAGE_OFF[name]);
-        Object.assign(qualityPreset("high"), gtaoKnobs());
+        // setupPost reads the tier's preset when it builds the chain: the tuned overlay hands back its own object,
+        // the template spreads core's at that call, so the switches go on both.
+        // Diagnosis knob legacyLook=1: the starter before PRD-632 (37fccbcfa^), ACES at a fixed exposure of 0.62
+        // under a sun of 6 x pi, so 0.62 x pi under Unreal's 6 lux sun. The AC-3 BEFORE arm from this code state.
+        const legacy = params.get("legacyLook") === "1";
+        for (const preset of new Set([qualityPreset(TIER), coreQualityPreset(TIER)])) {
+          for (const name of OFF) Object.assign(preset, STAGE_OFF[name]);
+          Object.assign(preset, gtaoKnobs());
+          if (legacy) Object.assign(preset, { tonemapMode: "aces", autoExposureEnabled: false, exposure: 0.62 * Math.PI });
+        }
         // The template arm hands its post chain the scene's triangles, as a game with a chrome surface does: Unreal's
         // reflections trace the scene from L8 (the tuned arm registers its own trace above). Diagnosis knob off=traced.
         const templateTrace = !TUNED && !OFF.has("traced") ? new TracedReflections(model) : undefined;
         const post = setupPost(ctx.renderer, scene, camera, {
           godraysLight: key,
-          tier: "high",
+          tier: TIER,
           ...(templateTrace === undefined ? {} : { reflectionTrace: templateTrace }),
         });
         postDebug = () => post.debug();

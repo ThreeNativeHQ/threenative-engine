@@ -125,7 +125,8 @@ void registerMaterialBase(ClassBinding& b) {
     // three's Material.dispose(): it tells the renderer to free the material's GPU programs. The
     // engine frees a material's GPU state when the material itself is released, so there is nothing to
     // free early; the material stays usable, as three's does after dispose().
-    b.methods["dispose"] = [](void*, const Args&, Store&) { return Value{}; };
+    registerEventBindings(b, [](void* self) -> EventDispatcher* { return &as<Material>(self)->events; }, {"dispose"});
+    b.methods["dispose"] = [](void* self, const Args&, Store&) { as<Material>(self)->dispose(); return Value{}; };
     b.methods["copy"] = [](void* self, const Args& a, Store& store) {
         as<Material>(self)->copy(*store.shared<Material>(a.at(0), "Material"));
         return chain();
@@ -156,6 +157,13 @@ void registerMaterialBase(ClassBinding& b) {
     materialBool(b, "fog", &Material::fog);
     materialNumber(b, "opacity", &Material::opacity);
     materialNumber(b, "alphaTest", &Material::alphaTest);
+    b.getters["maxPositionOffset"] = [](void* self) { return Value::of(as<Material>(self)->maxPositionOffset); };
+    b.setters["maxPositionOffset"] = [](void* self, const Value& v) {
+        const double metres = number(v);
+        if (!std::isfinite(metres) || metres < 0) throw Unsupported{"maxPositionOffset must be a finite distance of 0 or more"};
+        as<Material>(self)->maxPositionOffset = metres;
+        as<Material>(self)->needsUpdate();
+    };
     materialBool(b, "alphaHash", &Material::alphaHash);
     b.getters["side"] = [](void* self) { return Value::of(double(as<Material>(self)->side)); };
     b.setters["side"] = [](void* self, const Value& v) {
@@ -180,14 +188,41 @@ void registerMaterialBase(ClassBinding& b) {
     };
     b.getters["blending"] = [](void* self) { return Value::of(double(as<Material>(self)->blending)); };
     b.setters["blending"] = [](void* self, const Value& v) {
-        // NoBlending 0, NormalBlending 1, AdditiveBlending 2; Subtractive and Multiply need
-        // premultipliedAlpha, which is not bound, and CustomBlending's factors are not either.
+        // NoBlending 0 ... CustomBlending 5; MaterialBlending (6) names a material's own, so a material cannot take it.
         const double blending = number(v);
-        if (blending != 0 && blending != 1 && blending != 2)
-            throw Unsupported{"blending must be NoBlending, NormalBlending or AdditiveBlending"};
+        if (blending != std::floor(blending) || blending < 0 || blending > 5)
+            throw Unsupported{"blending must be NoBlending, NormalBlending, AdditiveBlending, SubtractiveBlending, "
+                              "MultiplyBlending or CustomBlending"};
         as<Material>(self)->blending = static_cast<Blending>(static_cast<int>(blending));
         as<Material>(self)->needsUpdate();
     };
+    materialBool(b, "premultipliedAlpha", &Material::premultipliedAlpha);
+    // three's CustomBlending factors (ZeroFactor 200 ... OneMinusConstantAlphaFactor 214) and equations (AddEquation 100
+    // ... MaxEquation 104); the alpha ones also take null, which uses the colour one.
+    const auto blendConstant = [&b](const char* name, int16_t Material::*field, int16_t low, int16_t high, bool nullable) {
+        b.getters[name] = [field](void* self) {
+            const int16_t value = as<Material>(self)->*field;
+            return value < 0 ? Value{} : Value::of(double(value));
+        };
+        b.setters[name] = [name, field, low, high, nullable](void* self, const Value& v) {
+            auto& material = *as<Material>(self);
+            if (nullable && v.kind == Value::Kind::Null) material.*field = -1;
+            else {
+                const double value = number(v);
+                if (value != std::floor(value) || value < low || value > high)
+                    throw Unsupported{std::string(name) + " must be one of three's " +
+                                      (low == 100 ? "blend equations" : "blend factors") + (nullable ? " or null" : "")};
+                material.*field = static_cast<int16_t>(value);
+            }
+            material.needsUpdate();
+        };
+    };
+    blendConstant("blendSrc", &Material::blendSrc, 200, 214, false);
+    blendConstant("blendDst", &Material::blendDst, 200, 214, false);
+    blendConstant("blendEquation", &Material::blendEquation, 100, 104, false);
+    blendConstant("blendSrcAlpha", &Material::blendSrcAlpha, 200, 214, true);
+    blendConstant("blendDstAlpha", &Material::blendDstAlpha, 200, 214, true);
+    blendConstant("blendEquationAlpha", &Material::blendEquationAlpha, 100, 104, true);
 }
 
 /** A Color field read by component, as the member alias, and written whole. */
@@ -310,7 +345,11 @@ void registerMeshMaterial(ClassBinding& b, MaterialType type, bool node = false,
              {"vertexNode", &Nodes::vertexNode},
              {"aoNode", &Nodes::aoNode},
              {"irradianceNode", &Nodes::irradianceNode},
-             {"depthNode", &Nodes::depthNode}}) {
+             {"envNode", &Nodes::envNode},
+             {"depthNode", &Nodes::depthNode},
+             {"castShadowPositionNode", &Nodes::castShadowPositionNode},
+             {"maskNode", &Nodes::maskNode},
+             {"alphaTestNode", &Nodes::alphaTestNode}}) {
         if (raw && (std::string_view(name) == "emissiveNode" || std::string_view(name) == "roughnessNode" ||
                     std::string_view(name) == "metalnessNode"))
             continue;
@@ -322,6 +361,45 @@ void registerMeshMaterial(ClassBinding& b, MaterialType type, bool node = false,
             as<Material>(self)->needsUpdate();
         };
     }
+    // three's mrtNode: the material's custom colour attachments by slot name, as a record of shader nodes. The V8 and
+    // browser facades set one slot at a time through the "mrtNode.<name>" setter path (abi.cpp); this record form
+    // serves the C ABI and replaces the whole set.
+    b.getters["mrtNode"] = [](void* self) {
+        std::vector<std::pair<std::string, Value>> fields;
+        for (const auto& slot : as<Material>(self)->nodes.mrt)
+            fields.emplace_back(slot.name, Value::shaderNode(slot.node));
+        return Value::record(std::move(fields));
+    };
+    b.setters["mrtNode"] = [](void* self, const Value& v, Store&) {
+        Material& material = *as<Material>(self);
+        if (v.kind == Value::Kind::Null || v.kind == Value::Kind::Undefined) {
+            if (material.nodes.mrt.empty()) return;
+            material.nodes.mrt.clear();
+            material.needsUpdate();
+            return;
+        }
+        if (v.kind != Value::Kind::Record) throw Unsupported{"mrtNode must be mrt()"};
+        std::vector<shader::MrtOutput> slots;
+        slots.reserve(v.fields.size());
+        for (const auto& [slot, field] : v.fields) {
+            if (shader::engineTargetName(slot))
+                throw Unsupported{"TN_NATIVE_MRT_UNSUPPORTED: '" + slot + "' is an engine pass target, not a custom slot"};
+            if (field.kind != Value::Kind::ShaderNode || !field.node)
+                throw Unsupported{"mrtNode." + slot + " must be a shader node"};
+            slots.push_back({slot, field.node});
+        }
+        if (material.nodes.mrt == slots) return;
+        material.nodes.mrt = std::move(slots);
+        material.needsUpdate();
+    };
+    b.getters["lightsNode"] = [](void* self) { return Value::shaderNode(as<Material>(self)->nodes.lightsNode); };
+    b.setters["lightsNode"] = [](void* self, const Value& v) {
+        if (v.kind != Value::Kind::Null && (v.kind != Value::Kind::ShaderNode || !v.node ||
+                                            v.node->kind != shader::graph::Kind::Struct || v.node->name != "lights"))
+            throw Unsupported{"lightsNode must be a lights([...]) node or null"};
+        as<Material>(self)->nodes.lightsNode = v.node;
+        as<Material>(self)->needsUpdate();
+    };
 }
 
 // ------------------------------------------------------------------------------- lights
@@ -398,6 +476,16 @@ void registerLightShadow(ClassBinding& b, bool spot) {
             if (command->second.kind != Value::Kind::String) throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: command"};
             const std::string& name = command->second.text;
             if (name == "invalidateAll") { control.invalidateAll = true; return; }
+            if (name == "focus") {
+                // Three numbers set the point every clip window centres on, an empty list hands it back to the eye.
+                const auto at = std::find_if(value.fields.begin(), value.fields.end(), [](const auto& f) { return f.first == "at"; });
+                const auto point = at == value.fields.end() ? std::vector<double>{0} : numbersOf(at->second);
+                if ((point.size() != 0 && point.size() != 3) ||
+                    std::any_of(point.begin(), point.end(), [](double n) { return !std::isfinite(n); }))
+                    throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: focus"};
+                if (point.empty()) control.focus.reset(); else control.focus = Vector3(point[0], point[1], point[2]);
+                return;
+            }
             if (name == "lod") {
                 const Value* idValue = nullptr; const Value* geometriesValue = nullptr; const Value* errorsValue = nullptr;
                 for (const auto& [key, v] : value.fields) {
@@ -420,7 +508,10 @@ void registerLightShadow(ClassBinding& b, bool spot) {
                     std::any_of(chain.errors.begin(), chain.errors.end(), [](double e) { return !std::isfinite(e) || e < 0; }))
                     throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: lod rungs and errors"};
                 control.lods[uint64_t(id)] = std::move(chain);
-                control.invalidateAll = true; return;
+                // A chain changes the rung this one caster draws with, so only its pages redraw (Unreal invalidates
+                // the primitive, UE 5.8.3: VirtualShadowMapCacheManager.cpp:489). A streamed forest registers a chain
+                // per arriving batch: invalidating every level for each one redrew the whole cache as the player walked.
+                control.lodChanged.insert(uint64_t(id)); return;
             }
             const auto arg = std::find_if(value.fields.begin(), value.fields.end(), [&](const auto& f) { return f.first == (name == "invalidateRegion" ? "bounds" : "id"); });
             if (arg == value.fields.end()) throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: command argument"};
@@ -437,7 +528,7 @@ void registerLightShadow(ClassBinding& b, bool spot) {
             if (name == "pin") control.pinned.insert(uint64_t(id));
             else if (name == "track") control.tracked.insert(uint64_t(id));
             else if (name == "untrack") control.tracked.erase(uint64_t(id));
-            else if (name == "unlod") { control.lods.erase(uint64_t(id)); control.invalidateAll = true; }
+            else if (name == "unlod") { control.lods.erase(uint64_t(id)); control.lodChanged.insert(uint64_t(id)); }
             else throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: command"};
             return;
         }
@@ -718,7 +809,10 @@ void registerTextureFields(ClassBinding& b, const char* cls) {
     };
     b.getters["version"] = [](void* self) { return Value::of(double(as<Texture>(self)->version())); };
     // three's Texture.dispose(): the renderer frees the GPU copy; the texture stays usable and uploads again.
-    b.methods["dispose"] = [](void* self, const Args&, Store&) { as<Texture>(self)->needsUpdate(); return Value{}; };
+    b.methods["dispose"] = [](void* self, const Args&, Store&) { as<Texture>(self)->dispose(); return Value{}; };
+    // three's Texture extends EventDispatcher and dispatches `dispose`.
+    registerEventBindings(b, [](void* self) -> EventDispatcher* { return static_cast<EventDispatcher*>(as<Texture>(self)); },
+                          {"dispose"});
     b.setters["needsUpdate"] = [](void* self, const Value& v) {
         if (flag(v)) as<Texture>(self)->needsUpdate();
     };
@@ -736,7 +830,7 @@ void registerTextureFields(ClassBinding& b, const char* cls) {
         as<Texture>(self)->flipY = flag(v);
         as<Texture>(self)->needsUpdate();
     };
-    // three's `texture.type` and `format` (UnsignedByteType, HalfFloatType, FloatType; RGBAFormat): fixed
+    // three's `texture.type` and `format` (UnsignedByteType, HalfFloatType, FloatType; RGBAFormat, or RGFormat on a render target): fixed
     // by the constructor or the render target that owns the texture. Writing the value a texture already
     // has is accepted (the rain template restates them); another value is refused by name.
     b.getters["type"] = [](void* self) { return Value::of(double(as<Texture>(self)->type)); };
@@ -777,6 +871,20 @@ void checkHalfFloatBits(const std::vector<double>& values) {
             throw Unsupported{"HalfFloatType DataTexture data must be a Uint16Array of binary16 bits"};
 }
 
+/**
+ * A RedFormat texel as the RGBA texel three samples it as, (r, 0, 0, 1): the store and upload are RGBA only.
+ * ponytail: 4x the bytes of an R texture; add an R8/R16F/R32F upload path if a large red texture shows up.
+ */
+std::vector<double> widenRed(const std::vector<double>& red, uint16_t type) {
+    const double one = type == kTextureHalfFloatType ? 15360.0 : type == kTextureFloatType ? 1.0 : 255.0;
+    std::vector<double> rgba(red.size() * 4, 0.0);
+    for (std::size_t i = 0; i < red.size(); ++i) {
+        rgba[i * 4] = red[i];
+        rgba[i * 4 + 3] = one;
+    }
+    return rgba;
+}
+
 void registerTextureClass(ClassBinding& b, bool data, const char* cls) {
     b.ctor = [data](const Args& a, Store&) -> std::shared_ptr<void> {
         if (!data) return std::static_pointer_cast<void>(std::make_shared<Texture>());
@@ -786,18 +894,21 @@ void registerTextureClass(ClassBinding& b, bool data, const char* cls) {
             const uint32_t height = a.size() > 2 ? static_cast<uint32_t>(number(a[2])) : 1;
             const uint16_t format = a.size() > 3 ? static_cast<uint16_t>(number(a[3])) : kTextureRGBAFormat;
             const uint16_t type = a.size() > 4 ? static_cast<uint16_t>(number(a[4])) : kTextureUnsignedByteType;
-            if (format != kTextureRGBAFormat) throw Unsupported{"DataTexture format must be RGBAFormat"};
+            if (format != kTextureRGBAFormat && format != kTextureRedFormat)
+                throw Unsupported{"DataTexture format must be RGBAFormat or RedFormat"};
             if (type != kTextureUnsignedByteType && type != kTextureFloatType && type != kTextureHalfFloatType)
                 throw Unsupported{"DataTexture type must be UnsignedByteType, FloatType or HalfFloatType"};
             // The C ABI hands DataTexture its typed array's bytes (ctorTakesBytes); V8 hands numbers.
             if (a[0].bytes.empty() && a[0].number != 0)
                 throw Unsupported{"DataTexture data must arrive with its contents, not deferred"};
-            if (!a[0].bytes.empty() && texture->setImageBytes(a[0].bytes, a[0].text, width, height, format, type))
+            if (format == kTextureRGBAFormat && !a[0].bytes.empty() &&
+                texture->setImageBytes(a[0].bytes, a[0].text, width, height, format, type))
                 return std::static_pointer_cast<void>(texture);
-            const std::vector<double> values =
-                a[0].bytes.empty() ? a[0].numbers : typedArrayNumbers(a[0].text, a[0].bytes);
+            std::vector<double> values = a[0].bytes.empty() ? a[0].numbers : typedArrayNumbers(a[0].text, a[0].bytes);
             if (type == kTextureHalfFloatType) checkHalfFloatBits(values);
-            texture->setImage(values, a[0].text, width, height, format, type);
+            texture->redSource = format == kTextureRedFormat;
+            if (texture->redSource) values = widenRed(values, type);
+            texture->setImage(values, a[0].text, width, height, kTextureRGBAFormat, type);
         }
         return std::static_pointer_cast<void>(texture);
     };
@@ -811,15 +922,17 @@ void registerTextureClass(ClassBinding& b, bool data, const char* cls) {
         const std::size_t texels = std::size_t(texture->width) * texture->height;
         // The C ABI hands DataTexture its typed array's bytes (settersTakeBytes); V8 hands numbers.
         const std::size_t count = v.bytes.empty() ? v.numbers.size() : v.bytes.size() / typedArrayElementBytes(v.text);
-        if (v.kind != Value::Kind::Numbers || texels == 0 || count != texels * 4)
-            throw Unsupported{"image.data must be a typed array of width * height * 4 values"};
+        const std::size_t lanes = texture->redSource ? 1 : 4;
+        if (v.kind != Value::Kind::Numbers || texels == 0 || count != texels * lanes)
+            throw Unsupported{"image.data must be a typed array of width * height * " + std::to_string(lanes) + " values"};
         // three moves `version` on needsUpdate only, so the new texels wait for it.
-        if (!v.bytes.empty() && texture->setImageBytes(v.bytes, v.text, texture->width, texture->height,
+        if (!texture->redSource && !v.bytes.empty() && texture->setImageBytes(v.bytes, v.text, texture->width, texture->height,
                                                        texture->format, texture->type, false))
             return;
         const std::vector<double> values = v.bytes.empty() ? v.numbers : typedArrayNumbers(v.text, v.bytes);
         if (texture->isHalfFloat()) checkHalfFloatBits(values);
-        texture->setImage(values, v.text, texture->width, texture->height, texture->format, texture->type, false);
+        texture->setImage(texture->redSource ? widenRed(values, texture->type) : values, v.text, texture->width,
+                          texture->height, texture->format, texture->type, false);
     };
 }
 
@@ -872,6 +985,7 @@ void registerMaterialBindings(Registry& classes) {
     registerMeshMaterial(classes["NodeMaterial"], MaterialType::Basic, true, true);
     registerMeshMaterial(classes["MeshBasicNodeMaterial"], MaterialType::Basic, true);
     registerMeshMaterial(classes["MeshStandardNodeMaterial"], MaterialType::Standard, true);
+    registerMeshMaterial(classes["MeshPhysicalNodeMaterial"], MaterialType::Physical, true);
     registerMeshMaterial(classes["MeshLambertMaterial"], MaterialType::Lambert);
     registerMeshMaterial(classes["MeshPhongMaterial"], MaterialType::Phong);
     registerMeshMaterial(classes["MeshStandardMaterial"], MaterialType::Standard);
@@ -957,7 +1071,9 @@ void registerTextureBindings(Registry& classes) {
         if (!(width >= 1) || !(height >= 1) || width > 16384 || height > 16384)
             throw Unsupported{"RenderTarget size must be 1 to 16384"};
         uint16_t type = kTextureUnsignedByteType;
-        std::optional<uint16_t> minFilter, magFilter;
+        std::optional<uint16_t> minFilter, magFilter, wrapS, wrapT;
+        uint16_t format = kTextureRGBAFormat;
+        uint32_t count = 1;
         if (a.size() > 2 && a[2].kind == Value::Kind::Record)
             for (const auto& [key, value] : a[2].fields) {
                 if (key == "minFilter" || key == "magFilter") {
@@ -971,15 +1087,43 @@ void registerTextureBindings(Registry& classes) {
                     if (type != kTextureUnsignedByteType && type != kTextureHalfFloatType && type != kTextureFloatType)
                         throw Unsupported{"RenderTarget type must be UnsignedByteType, HalfFloatType or FloatType"};
                 } else if (key == "format") {
-                    if (number(value) != kTextureRGBAFormat) throw Unsupported{"RenderTarget format must be RGBAFormat"};
+                    format = static_cast<uint16_t>(number(value));
+                    if (format != kTextureRGBAFormat && format != kTextureRGFormat)
+                        throw Unsupported{"RenderTarget format must be RGBAFormat or RGFormat"};
+                } else if (key == "wrapS" || key == "wrapT") {
+                    const auto wrap = static_cast<uint16_t>(number(value));
+                    if (wrap != uint16_t(TextureWrap::Repeat) && wrap != uint16_t(TextureWrap::ClampToEdge) &&
+                        wrap != uint16_t(TextureWrap::MirroredRepeat))
+                        throw Unsupported{"RenderTarget " + key + " must be a wrapping constant"};
+                    (key == "wrapS" ? wrapS : wrapT) = wrap;
+                } else if (key == "generateMipmaps") {
+                    // A target holds one level; a mip chain after each draw is not built natively.
+                    if (value.kind != Value::Kind::Bool || value.flag)
+                        throw Unsupported{"RenderTarget generateMipmaps must be false natively"};
+                } else if (key == "count") {
+                    // three's MRT: one colour texture per output, 8 at most (WebGPU's maxColorAttachments).
+                    const double n = number(value);
+                    if (!(n >= 1 && n <= 8) || n != std::floor(n)) throw Unsupported{"RenderTarget count must be 1 to 8"};
+                    count = static_cast<uint32_t>(n);
                 } else if (key != "depthBuffer" && key != "stencilBuffer") {
                     throw Unsupported{"RenderTarget option " + key + " is not supported natively"};
                 }
             }
-        auto target = RenderTarget::make(static_cast<uint32_t>(width), static_cast<uint32_t>(height), type);
-        if (minFilter) target->texture->minFilter = *minFilter;
-        if (magFilter) target->texture->magFilter = *magFilter;
+        auto target = RenderTarget::make(static_cast<uint32_t>(width), static_cast<uint32_t>(height), type, count);
+        for (const auto& texture : RenderTarget::texturesOf(*target)) {
+            if (minFilter) texture->minFilter = *minFilter;
+            if (magFilter) texture->magFilter = *magFilter;
+            if (wrapS) texture->wrapS = *wrapS;
+            if (wrapT) texture->wrapT = *wrapT;
+            texture->format = format;
+        }
         return target;
+    };
+    // three's `textures`: every colour texture of the target, `texture` first; an MRT target has `count` of them.
+    target.members["textures"] = [](void* self, const Args&, Store& store) {
+        Args textures;
+        for (const auto& texture : RenderTarget::texturesOf(*as<RenderTarget>(self))) textures.push_back(store.share("Texture", texture));
+        return Value::array(std::move(textures));
     };
     fixedMember(target, "texture", [](void* self, const Args&, Store& store) {
         return store.share("Texture", as<RenderTarget>(self)->texture);
@@ -1008,6 +1152,10 @@ void registerTextureBindings(Registry& classes) {
         as<RenderTarget>(self)->dispose();
         return Value{};
     };
+    // three's RenderTarget extends EventDispatcher and dispatches `dispose`.
+    registerEventBindings(
+        target, [](void* self) -> EventDispatcher* { return static_cast<EventDispatcher*>(as<RenderTarget>(self)); },
+        {"dispose"});
     // three's CanvasTexture: the canvas's RGBA pixels as a DataTexture with Texture's own defaults
     // (flipped rows, linear filters, a generated mip chain). Each back end reads the canvas
     // (getImageData) and passes (pixels, width, height, mapping, wrapS, wrapT, magFilter, minFilter).
@@ -1073,6 +1221,46 @@ void registerTextureBindings(Registry& classes) {
         if (texture->isHalfFloat()) checkHalfFloatBits(v.numbers);
         const uint32_t depth = texture->depth;
         texture->setImage(v.numbers, v.text, texture->width, texture->height, texture->format, texture->type, false);
+        texture->depth = depth;
+    };
+    // three's DataArrayTexture(data, width, height, depth): `depth` layers of width * height RGBA texels, with
+    // DataTexture's defaults (nearest filters, no flip, no mipmaps). The typed array crosses as bytes, as a
+    // DataTexture's does: a splat array is megabytes, and a double per byte would be eight times that.
+    ClassBinding& layers = classes["DataArrayTexture"];
+    registerTextureClass(layers, true, "DataArrayTexture");
+    layers.ctorTakesBytes = true;
+    layers.settersTakeBytes = {"image.data"};
+    layers.ctor = [](const Args& a, Store&) -> std::shared_ptr<void> {
+        auto texture = std::make_shared<DataTexture>();
+        texture->array = true;
+        if (a.empty() || a[0].kind != Value::Kind::Numbers) return std::static_pointer_cast<void>(texture);
+        const auto size = [&](std::size_t i) { return a.size() > i ? static_cast<uint32_t>(number(a[i])) : 1u; };
+        const uint32_t width = size(1), height = size(2), depth = size(3);
+        const std::size_t count = a[0].bytes.empty() ? a[0].numbers.size() : a[0].bytes.size() / typedArrayElementBytes(a[0].text);
+        if (width == 0 || height == 0 || depth == 0 || count != std::size_t(width) * height * depth * 4)
+            throw Unsupported{"DataArrayTexture data must be width * height * depth * 4 RGBA values"};
+        if (a[0].text == "Uint16Array") throw Unsupported{"DataArrayTexture data must be bytes or floats"};
+        const uint16_t type = a[0].text == "Float32Array" ? kTextureFloatType : kTextureUnsignedByteType;
+        if (a[0].bytes.empty() || !texture->setImageBytes(a[0].bytes, a[0].text, width, height, kTextureRGBAFormat, type))
+            texture->setImage(a[0].bytes.empty() ? a[0].numbers : typedArrayNumbers(a[0].text, a[0].bytes), a[0].text,
+                              width, height, kTextureRGBAFormat, type);
+        texture->depth = depth;
+        return std::static_pointer_cast<void>(texture);
+    };
+    // three's `texture.image.data = array` for an array texture: width * height * depth texels, uploaded on needsUpdate.
+    layers.setters["image.data"] = [](void* self, const Value& v) {
+        auto* texture = as<DataTexture>(self);
+        const std::size_t texels = std::size_t(texture->width) * texture->height * texture->depth;
+        const std::size_t count = v.bytes.empty() ? v.numbers.size() : v.bytes.size() / typedArrayElementBytes(v.text);
+        if (v.kind != Value::Kind::Numbers || texels == 0 || count != texels * 4)
+            throw Unsupported{"image.data must be a typed array of width * height * depth * 4 values"};
+        const uint32_t depth = texture->depth;
+        if (v.bytes.empty() || !texture->setImageBytes(v.bytes, v.text, texture->width, texture->height, texture->format,
+                                                       texture->type, false)) {
+            const std::vector<double> values = v.bytes.empty() ? v.numbers : typedArrayNumbers(v.text, v.bytes);
+            if (texture->isHalfFloat()) checkHalfFloatBits(values);
+            texture->setImage(values, v.text, texture->width, texture->height, texture->format, texture->type, false);
+        }
         texture->depth = depth;
     };
 }

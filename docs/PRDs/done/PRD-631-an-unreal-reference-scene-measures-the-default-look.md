@@ -340,7 +340,7 @@ GPU capture/visual judging and desktop V8 execution remain unverified. No enviro
   the soft-shadow `filterNode`, `SkyCapture`, auto exposure) becomes engine work in this epic and PR.
   three.js frames captured so far stay as history; new BEFORE/AFTER pairs are engine frames.
   The four templates that still pin three.js (runner, snow, sailing, action-rpg) belong to
-  [PRD-617](../performance/PRD-617-every-template-runs-on-the-native-engine.md), in progress on
+  [PRD-617](PRD-617-every-template-runs-on-the-native-engine.md), in progress on
   its own lane; the starter is unpinned and already defaults to the engine.
 - 2026-10-20 (thresholds, `tools/unreal-reference/thresholds.json`): a threshold is the larger of twice the worst Unreal-vs-Unreal difference of its layer and one absolute floor: deltaE 1 (one CIEDE2000 just-noticeable difference), relative dP50 0.01 (this PRD's 1% target), dEv 0.02 (2% luminance). Silhouette IoU is geometry, not render noise, and stays at 0.98. The file holds flat keys for every layer and a `layers` map that overrides them. The noise is near zero (Unreal is deterministic here), so the floors decide every layer except L9:
 

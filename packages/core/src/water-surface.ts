@@ -181,7 +181,9 @@ export class WaterSurface3D {
     // a replay refreshes only listed draws, so those keep the camera they were recorded with. The
     // mirror renders outside the record, and the record gets its bundle back. A pass three never
     // updates (the native engine draws it and records no JS bundle) has no render to guard.
-    if (pass.updateBeforeType !== "none") {
+    // The native engine draws the mirror pass itself and exposes no JS update to wrap.
+    const jsPass = pass.updateBeforeType !== "none";
+    if (jsPass) {
       const mirror = pass.updateBefore.bind(pass);
       pass.updateBefore = (frame: IReflectionFrame): void => {
         const host = frame.renderer as { _currentRenderBundle?: unknown };
@@ -209,7 +211,11 @@ export class WaterSurface3D {
         return virtual;
       };
     }
-    if (reflection.layers === undefined) {
+    if (!jsPass && (reflection.layers === undefined || refreshInterval > 1))
+      console.info(
+        `TN_WATER_REFLECTION_NATIVE: ${JSON.stringify({ minSizeFilter: false, refreshInterval: 1, reason: "the engine draws the mirror pass natively" })}`,
+      );
+    if (jsPass && reflection.layers === undefined) {
       const minSize = finite("reflection.minSize", reflection.minSize ?? 10);
       if (minSize <= 0) throw new Error("WaterSurface3D.reflection.minSize must be positive.");
       const render = pass.updateBefore.bind(pass);
@@ -253,7 +259,7 @@ export class WaterSurface3D {
         }
       };
     }
-    if (refreshInterval > 1) {
+    if (jsPass && refreshInterval > 1) {
       // Every frame the pass redraws the world into its target and binds the result. The render is
       // the expensive part; the binding is not. Skipping the whole `updateBefore` on the frames
       // between leaves the previous frame's texture bound and the render target intact, so the

@@ -2,7 +2,8 @@ use threenative_native_physics::{
     Simulation, TnPhysicsBodyOptions, TnPhysicsWorldOptions, tn_physics_add_body,
     tn_physics_add_heightfield_body, tn_physics_create, tn_physics_destroy,
     tn_physics_read_body_sleep_states, tn_physics_read_contacts,
-    tn_physics_read_visible_transforms, tn_physics_set_heightfield_shape, tn_physics_step,
+    tn_physics_read_visible_transforms, tn_physics_set_body_transform,
+    tn_physics_set_heightfield_shape, tn_physics_step,
 };
 
 const CONTACT_WIDTH: usize = 8;
@@ -186,5 +187,61 @@ fn reads_solved_support_and_refreshes_the_surface_in_place() {
     broken[5] = f32::NAN;
     assert!(!set_surface(simulation, SURFACE, &broken, SAMPLES));
     assert!((ball_height(simulation) - 0.35).abs() < 0.01);
+    tn_physics_destroy(simulation);
+}
+
+#[test]
+fn moving_replacement_window_preserves_surface_and_solved_support() {
+    let simulation = tn_physics_create(&TnPhysicsWorldOptions {
+        gravity_x: 0.0,
+        gravity_y: -9.81,
+        gravity_z: 0.0,
+    });
+    let heights = surface(0.28);
+    assert!(tn_physics_add_heightfield_body(
+        simulation,
+        &options(SURFACE, 1, 0, 0.0, 0.0),
+        heights.as_ptr(),
+        heights.len() as u32,
+        SAMPLES,
+        SAMPLES,
+        SIZE,
+        1.0,
+        SIZE,
+    ));
+    assert!(tn_physics_add_body(
+        simulation,
+        &options(BALL, 0, 1, 1.0, 0.25)
+    ));
+    step(simulation, 70);
+    let mut output = [0.0f32; CONTACT_WIDTH * 16];
+    assert!(read(simulation, &mut output) > 0);
+
+    // Both translated coordinates lie outside the original window's footprint.
+    let (x, z) = (12.0, -9.0);
+    assert!(set_surface(simulation, SURFACE, &surface(0.1), SAMPLES));
+    assert!(tn_physics_set_body_transform(
+        simulation, SURFACE, x, 0.0, z
+    ));
+    assert!(tn_physics_set_body_transform(simulation, BALL, x, 1.0, z));
+    step(simulation, 70);
+
+    let found = read(simulation, &mut output);
+    assert!(found > 0, "the same SURFACE supports the translated ball");
+    assert!(found as usize <= output.len() / CONTACT_WIDTH);
+    for record in output.chunks_exact(CONTACT_WIDTH).take(found as usize) {
+        assert_eq!(record[0] as u32, BALL);
+        assert!(
+            record[5] > 0.9 && record[7] > 0.0,
+            "solved support: {record:?}"
+        );
+        let error =
+            ((record[1] - x).powi(2) + (record[2] - 0.1).powi(2) + (record[3] - z).powi(2)).sqrt();
+        assert!(
+            error <= 0.02,
+            "translated contact error {error}: {record:?}"
+        );
+    }
+    assert!((ball_height(simulation) - 0.35).abs() <= 0.02);
     tn_physics_destroy(simulation);
 }

@@ -1,0 +1,131 @@
+{
+  "look": "tundra",
+  "bake": {
+    "file": "tundra",
+    "key": null
+  },
+  "landform": "tundra",
+  "sizeMeters": 512,
+  "seed": 131,
+  "stream": "ordered",
+  "cover": {
+    "ground": "mats",
+    "seed": 466468,
+    "attempts": 80000,
+    "stoneRadius": 1.9,
+    "clearings": [[166, 180, 10]]
+  },
+  "foliage": [
+    {
+      "species": "sapling",
+      "density": 55,
+      "slope": [0, 32],
+      "height": null,
+      "spacing": [3.4, 3.4],
+      "collision": "trunk",
+      "stands": false,
+      "grassThreshold": 0.18,
+      "standThreshold": 0.42,
+      "far": null
+    }
+  ],
+  "grass": [
+    {
+      "species": "grass",
+      "density": 1,
+      "slope": [0, 30],
+      "height": null,
+      "spacing": 1.8,
+      "slopeFalloff": 22,
+      "heightFalloff": 28,
+      "mats": [0.47, 0.3],
+      "waterMargin": 7.5,
+      "beach": null,
+      "detailSpacing": 0.5,
+      "drift": {
+        "field": "mats",
+        "frequency": [1, 1],
+        "offset": 0,
+        "amplitude": 1,
+        "band": [0.45, 0.3]
+      },
+      "bladeScale": 0.45,
+      "bladeJitter": 0.3,
+      "scrubChance": 0.22,
+      "scrubScale": 0.55,
+      "scrubJitter": 0.5,
+      "scrubBush": true,
+      "shoreGround": false,
+      "cobbledBed": false
+    }
+  ],
+  "layers": [
+    {
+      "layer": "alpine",
+      "from": 0.6,
+      "to": 1.2
+    },
+    {
+      "layer": "rock",
+      "from": 0.06,
+      "to": 1.25
+    },
+    {
+      "layer": "treeline",
+      "from": 6.5,
+      "to": 10
+    },
+    {
+      "layer": "cap",
+      "from": 14,
+      "to": 17
+    },
+    {
+      "layer": "desertRock",
+      "from": 0.18,
+      "to": 0.48
+    },
+    {
+      "layer": "alpineRock",
+      "from": 0.06,
+      "to": 0.14
+    },
+    {
+      "layer": "alpineHollow",
+      "from": 0.05,
+      "to": 0.12
+    },
+    {
+      "layer": "snow",
+      "from": 0.15,
+      "to": 0.45,
+      "shedFrom": 0.04,
+      "shedTo": 0.22
+    }
+  ],
+  "water": [
+    {
+      "kind": "river",
+      "width": 5.32
+    },
+    {
+      "kind": "river",
+      "width": 3.04
+    },
+    {
+      "kind": "lake",
+      "radius": 34
+    },
+    {
+      "kind": "lake",
+      "radius": 46
+    }
+  ],
+  "spawn": {
+    "at": [180, 160],
+    "cameraOffset": [28, 24, 42],
+    "focus": [150, 160]
+  },
+  "species": ["boulder", "bush", "riverrock", "sapling", "scree", "scrub"],
+  "aliases": ["tundra", "arctic", "ice"]
+}

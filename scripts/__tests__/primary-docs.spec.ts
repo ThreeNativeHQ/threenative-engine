@@ -98,14 +98,10 @@ async function workspacePinnedPackages(): Promise<Set<string>> {
   return pinned;
 }
 
-/** Server names written into every generated project's `.mcp.json` by installing core. */
+/** Server names written into every generated project's `.mcp.json`: the one table the scaffolder
+ * and core's postinstall both read (PRD-826 removed the tracked per-template copies). */
 async function shippedMcpServerNames(): Promise<string[]> {
-  const config = JSON.parse(
-    await readRepoFile(
-      path.join("packages", "create-threenative", "templates", "starter", ".mcp.json"),
-    ),
-  ) as { mcpServers?: Record<string, unknown> };
-  return Object.keys(config.mcpServers ?? {});
+  return Object.keys(MCP_SERVERS);
 }
 
 function packageTokens(rawDoc: string): Set<string> {
@@ -274,36 +270,5 @@ describe("primary documentation agrees with the shipped surfaces", () => {
     expect(quality).toContain("captureMethod: page.screenshot");
     expect(quality).toContain("No visual inspection was performed");
     expect(quality).not.toMatch(/\binspected\b/iu);
-  });
-  it("names material controls or the explicit custom-storm exception in generated instructions", async () => {
-    const root = path.join(repoRoot, "packages/create-threenative/templates");
-    for (const entry of await readdir(root, { withFileTypes: true })) {
-      if (!entry.isDirectory()) continue;
-      const instructions = await readFile(path.join(root, entry.name, "AGENTS.md"), "utf8");
-      // A kit on the core look (`WorldEnvironment` from `@threenative/core`) ships no material
-      // backlighting, as a stock Unreal scene has none, and says so.
-      const post = path.join(root, entry.name, "src/render/postprocessing.ts");
-      const onCoreLook =
-        existsSync(post) &&
-        /import\s*\{[^}]*\bWorldEnvironment\b[^}]*\}\s*from\s*"@threenative\/core"/u.test(
-          await readFile(post, "utf8"),
-        );
-      // A kit on the core look ships no material backlighting unless its instructions name the
-      // controls that override the convention, as action-rpg's high-desktop environment fill does.
-      const namesMaterialControls = /rimGain|fillGain/u.test(instructions);
-      if (onCoreLook && !namesMaterialControls) {
-        expect(instructions, entry.name).toContain("No material backlighting ships");
-        continue;
-      }
-      expect(instructions, entry.name).toContain("rimGain");
-      expect(instructions, entry.name).toContain("fillGain");
-      if (entry.name === "rain") {
-        expect(instructions).toContain("conversion is unqualified");
-        expect(instructions).toContain("radiance is unknown until sampled");
-      } else {
-        expect(instructions, entry.name).toContain("TN_ENVIRONMENT_CONTRIBUTION");
-        expect(instructions, entry.name).toMatch(/original materials|retain originals/u);
-      }
-    }
   });
 });

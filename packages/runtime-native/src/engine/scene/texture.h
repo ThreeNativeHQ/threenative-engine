@@ -19,6 +19,7 @@
 #include <utility>
 #include <vector>
 
+#include "engine/scene/event.h"
 #include "engine/foundation/math/Vector.h"
 
 namespace tn::engine {
@@ -34,6 +35,8 @@ inline constexpr uint16_t kTextureUnsignedByteType = 1009;  // three's UnsignedB
 inline constexpr uint16_t kTextureFloatType = 1015;         // three's FloatType
 inline constexpr uint16_t kTextureHalfFloatType = 1016;     // three's HalfFloatType: IEEE binary16 bits
 inline constexpr uint16_t kTextureRGBAFormat = 1023;        // three's RGBAFormat
+inline constexpr uint16_t kTextureRedFormat = 1028;         // three's RedFormat (widened to RGBA)
+inline constexpr uint16_t kTextureRGFormat = 1030;          // three's RGFormat (render targets only)
 
 /**
  * A texture's identity for GPU caches: unique for the process lifetime, never reused (an address is),
@@ -133,10 +136,13 @@ struct TextureSource {
     std::shared_ptr<const ExternalImage> external;
 };
 
-class Texture {
+class Texture : public EventDispatcher {
 public:
     // Copies share the image source; sampler state, transforms and GPU identity stay per texture.
     const std::shared_ptr<TextureSource> imageSource = std::make_shared<TextureSource>();
+    Texture() = default;
+    /** A fresh texture (default sampler state, its own GPU identity) over an image another texture decoded. */
+    explicit Texture(std::shared_ptr<TextureSource> source) : imageSource(std::move(source)) {}
     virtual ~Texture() = default;
 
     TextureId ident;  // identity for GPU caches; see TextureId
@@ -169,6 +175,9 @@ public:
     bool depthTexture = false;
     bool storageTexture = false, mipmapsAutoUpdate = true;
     bool volume = false;  // three's isData3DTexture: uploaded and sampled as a 3D texture, at any depth
+    bool array = false;   // three's isDataArrayTexture: `depth` layers of one 2D size, each with its own mip chain
+    /** three's `source.dataReady`: false when the texels are written on the GPU (copyTextureToTexture), so none are uploaded or held. */
+    bool dataReady = true;
     /**
      * The render target this texture is the colour of (three's `renderTarget.texture`,
      * scene/render_target.h): the renderer samples that target's last render instead of uploading
@@ -180,6 +189,16 @@ public:
 
     /** three.js `texture.needsUpdate`: a GPU record rebuilds when its counter moves. */
     void needsUpdate() { ++version_; ++imageSource->version; }
+
+    /**
+     * three's `Texture.dispose()`: the renderer lets the GPU copy go and the texture uploads again on
+     * its next use, so the version moves; then `dispose` is dispatched, as three does.
+     */
+    void dispose() {
+        needsUpdate();
+        Event event{"dispose"};
+        dispatchEvent(event);
+    }
     [[nodiscard]] uint32_t version() const { return version_; }
 
     [[nodiscard]] std::string storageFormat() const {
@@ -198,7 +217,7 @@ public:
     /** Bytes per RGBA texel as stored in `data` and uploaded: RGBA8, RGBA16Float or RGBA32Float. */
     [[nodiscard]] uint32_t bytesPerTexel() const { return isFloat() ? 16u : isHalfFloat() ? 8u : 4u; }
     [[nodiscard]] bool isSRGB() const { return colorSpace == TextureColorSpace::SRGB; }
-    [[nodiscard]] bool hasImage() const { return width > 0 && height > 0 && depth > 0 && (!data.empty() || external); }
+    [[nodiscard]] bool hasImage() const { return width > 0 && height > 0 && depth > 0 && (!data.empty() || external || !dataReady); }
     /** A material can sample it: an uploaded image, or a render target's last render. */
     [[nodiscard]] bool sampleable() const { return ((depthTexture || storageTexture) && width > 0 && height > 0) || hasImage() || !renderTarget.expired(); }
 
@@ -221,6 +240,8 @@ public:
         format = kTextureRGBAFormat;
         type = kTextureUnsignedByteType;
     }
+    /** Built as RedFormat: stored as RGBA, so `image.data` takes one lane per texel and widens it too. */
+    bool redSource = false;
 
     void setImage(const std::vector<double>& values, const std::string& arrayType, uint32_t w, uint32_t h,
                   uint16_t fmt, uint16_t dataType, bool bump = true) {

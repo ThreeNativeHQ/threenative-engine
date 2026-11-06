@@ -1,5 +1,9 @@
 #include "package.h"
 
+#include <algorithm>
+#include <array>
+#include <cctype>
+#include <functional>
 #include <string_view>
 #include <bit>
 #include <cstring>
@@ -104,13 +108,113 @@ StageModule buildStage(const Program& program, uint32_t group) {
         const bool depth = program.textureKinds_[i] == Program::TextureKind::Depth2d ||
                            program.textureKinds_[i] == Program::TextureKind::DepthCube || values;
         const bool volume = program.textureKinds_[i] == Program::TextureKind::Float3d;
+        const bool array = program.textureKinds_[i] == Program::TextureKind::Float2dArray;
         const bool cube = program.textureKinds_[i] == Program::TextureKind::DepthCube || values ||
                           program.textureKinds_[i] == Program::TextureKind::FloatCube;
-        module.bindings.push_back(Binding{group, binding++, BindingKind::Texture, "t_" + name, 0, depth, cube, volume});
-        if (program.textureNeedsSampler(i))
-            module.bindings.push_back(Binding{group, binding++, BindingKind::Sampler, "smp_" + name, 0, depth, cube, volume, values});
+        module.bindings.push_back(Binding{group, binding++, BindingKind::Texture, "t_" + name, 0, depth, cube, volume, false, array});
+        if (program.textureNeedsSampler(i) && program.samplerOwner(i) == i)
+            module.bindings.push_back(Binding{group, binding++, BindingKind::Sampler, "smp_" + name, 0, depth, cube, volume, values, array});
     }
     return module;
+}
+
+namespace {
+/**
+ * Finds `pattern` in `code` from `from` on, skipping by the pattern's length (Boyer-Moore-Horspool). WGSL is dense in
+ * the patterns' first letter, so std::string::find, which stops at each one, was as slow as a character loop.
+ */
+class Finder {
+public:
+    explicit Finder(std::string_view pattern) : searcher_(pattern.begin(), pattern.end()) {}
+    size_t operator()(const std::string& code, size_t from) const {
+        if (from >= code.size()) return std::string::npos;
+        const auto found = std::search(code.begin() + std::ptrdiff_t(from), code.end(), searcher_);
+        return found == code.end() ? std::string::npos : size_t(found - code.begin());
+    }
+
+private:
+    std::boyer_moore_horspool_searcher<std::string_view::const_iterator> searcher_;
+};
+}  // namespace
+
+void positionalGraphTextures(StageModule& module) {
+    static constexpr std::string_view prefix = "nodeMapT";
+    auto& labels = module.graphTextureLabels;
+    const auto digitsEnd = [](std::string_view text, size_t from) {
+        while (from < text.size() && text[from] >= '0' && text[from] <= '9') ++from;
+        return from;
+    };
+    // Bindings first: they follow the stage's declaration order, so equal structures number their maps alike.
+    for (Binding& b : module.bindings) {
+        const size_t at = b.name.rfind(prefix, 4);
+        if (at != 2 && at != 4) continue;  // "t_nodeMapT12" or "smp_nodeMapT12"
+        if (b.name.substr(0, at) != (at == 2 ? "t_" : "smp_") || digitsEnd(b.name, at + prefix.size()) != b.name.size() ||
+            b.name.size() == at + prefix.size()) continue;
+        const std::string own = b.name.substr(at);
+        auto found = std::find_if(labels.begin(), labels.end(), [&](const auto& label) { return label.second == own; });
+        if (found == labels.end()) found = labels.insert(labels.end(), {"nodeMapP" + std::to_string(labels.size()), own});
+        b.name = b.name.substr(0, at) + found->first;
+    }
+    if (labels.empty()) return;
+    // Jump between matches and copy the text between them whole: a character-at-a-time copy of a 140 KB fragment
+    // cost 1.5 ms in Wasm, paid again by every program a streamed batch copied mid-walk.
+    const std::string& code = module.wgsl.code;
+    std::string out;
+    size_t from = 0;  // code[from, i) is not yet copied
+    const Finder find(prefix);
+    for (size_t i = find(code, 0); i != std::string::npos; i = find(code, i)) {
+        const size_t end = digitsEnd(code, i + prefix.size());
+        if (end == i + prefix.size()) { ++i; continue; }
+        const std::string_view own(code.data() + i, end - i);
+        const auto found = std::find_if(labels.begin(), labels.end(), [&](const auto& label) { return label.second == own; });
+        if (found == labels.end()) { i = end; continue; }  // not one of this stage's maps: the text stays
+        if (out.empty()) out.reserve(code.size());
+        out.append(code, from, i - from);
+        out += found->first;
+        from = i = end;
+    }
+    if (from == 0) return;
+    out.append(code, from, std::string::npos);
+    module.wgsl.code = std::move(out);
+}
+
+void positionalSerialNames(StageModule& module) {
+    static constexpr std::string_view prefixes[] = {"nodeUniform", "nodeVarying", "varyingProperty"};
+    const std::string& code = module.wgsl.code;
+    const auto word = [](char c) { return std::isalnum(static_cast<unsigned char>(c)) || c == '_'; };
+    std::vector<std::pair<std::string, std::string>> names;  // own serial name, positional name
+    // As positionalGraphTextures: jump to the nearest prefix and copy the text between matches whole (2.9 ms a
+    // 140 KB fragment, character at a time).
+    std::string out;
+    size_t from = 0;  // code[from, i) is not yet copied
+    const std::array<Finder, std::size(prefixes)> finds{Finder(prefixes[0]), Finder(prefixes[1]), Finder(prefixes[2])};
+    std::array<size_t, std::size(prefixes)> next{};
+    for (size_t k = 0; k < next.size(); ++k) next[k] = finds[k](code, 0);
+    for (;;) {
+        const size_t k = size_t(std::min_element(next.begin(), next.end()) - next.begin());
+        const size_t i = next[k];
+        if (i == std::string::npos) break;
+        const std::string_view prefix = prefixes[k];
+        size_t end = i + prefix.size();
+        while (end < code.size() && code[end] >= '0' && code[end] <= '9') ++end;
+        if (end == i + prefix.size() || (end < code.size() && word(code[end]))) {  // a serial ends the word
+            next[k] = finds[k](code, i + 1);
+            continue;
+        }
+        const std::string_view own(code.data() + i, end - i);
+        auto found = std::find_if(names.begin(), names.end(), [&](const auto& name) { return name.first == own; });
+        if (found == names.end())
+            found = names.insert(names.end(), {std::string(own), std::string(prefix) + "S" + std::to_string(names.size())});
+        if (out.empty()) out.reserve(code.size());
+        out.append(code, from, i - from);
+        out += found->second;
+        from = end;
+        for (size_t j = 0; j < next.size(); ++j)
+            if (next[j] != std::string::npos && next[j] < end) next[j] = finds[j](code, end);
+    }
+    if (names.empty()) return;
+    out.append(code, from, std::string::npos);
+    module.wgsl.code = std::move(out);
 }
 
 bool acceptPackage(const ShaderPackage& package, std::string& error) {

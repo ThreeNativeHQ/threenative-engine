@@ -1083,6 +1083,19 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
                         tn_handle_t h{};
                         if (!d->adapter->unwrap(info.This(), h)) return;
                         try {
+                            // three's MRTNode: its named outputs, one engine graph node each, as a plain object.
+                            if (d->name == "mrtNode") {
+                                v8::Isolate* isolate = info.GetIsolate();
+                                v8::Local<v8::Context> ctx = isolate->GetCurrentContext();
+                                v8::Local<v8::Object> outputs = v8::Object::New(isolate);
+                                for (const auto& [slot, node] : tn::abi::mrtOutputs(h))
+                                    outputs->Set(ctx, str(isolate, slot), d->adapter->tsl().wrap(node)).Check();
+                                v8::Local<v8::Object> mrt = v8::Object::New(isolate);
+                                mrt->Set(ctx, str(isolate, "isMRTNode"), v8::True(isolate)).Check();
+                                mrt->Set(ctx, str(isolate, "outputs"), outputs).Check();
+                                info.GetReturnValue().Set(mrt);
+                                return;
+                            }
                             const auto node = tn::abi::shaderNode(h, d->name);
                             info.GetReturnValue().Set(node ? v8::Local<v8::Value>(d->adapter->tsl().wrap(node))
                                                           : v8::Local<v8::Value>(v8::Null(info.GetIsolate())));
@@ -1094,9 +1107,51 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
                         auto* d = static_cast<MethodData*>(info.Data().As<v8::External>()->Value());
                         tn_handle_t h{};
                         if (!d->adapter->unwrap(info.This(), h)) return;
+                        v8::Isolate* isolate = info.GetIsolate();
+                        v8::Local<v8::Context> ctx = isolate->GetCurrentContext();
+                        // three's MRTNode: unwrap each named output and set its own slot path, as the browser
+                        // facade does over the C ABI; a removed output clears its slot.
+                        if (d->name == "mrtNode") {
+                            std::vector<std::pair<std::string, engine::shader::graph::Node>> slots;
+                            if (info.Length() != 1 || info[0]->IsNull()) {
+                                try { tn::abi::setMrtOutputs(h, {}); } catch (const std::exception& e) {
+                                    isolate->ThrowException(v8::Exception::TypeError(str(isolate, e.what())));
+                                }
+                                return;
+                            }
+                            v8::Local<v8::Value> outputsValue;
+                            if (!info[0]->IsObject() || !info[0].As<v8::Object>()->Get(ctx, str(isolate, "outputs")).ToLocal(&outputsValue) ||
+                                !outputsValue->IsObject()) {
+                                isolate->ThrowException(v8::Exception::TypeError(str(isolate, "TN_TSL_PROPERTY: mrtNode takes mrt()")));
+                                return;
+                            }
+                            v8::Local<v8::Array> keys;
+                            if (!outputsValue.As<v8::Object>()->GetOwnPropertyNames(ctx).ToLocal(&keys)) return;
+                            for (uint32_t i = 0; i < keys->Length(); ++i) {
+                                v8::Local<v8::Value> key, value;
+                                engine::shader::graph::Node node;
+                                if (!keys->Get(ctx, i).ToLocal(&key) || !outputsValue.As<v8::Object>()->Get(ctx, key).ToLocal(&value)) return;
+                                v8::String::Utf8Value name(isolate, key);
+                                // mrt() always carries the pass's own slots. The scene pass draws them, so only custom
+                                // slots reach the engine, as pass-node.ts isCustomMrtOutput does on the browser side.
+                                if (engine::shader::engineTargetName(*name ? *name : "")) continue;
+                                v8::Local<v8::Value> marker;
+                                if (value->IsObject() && value.As<v8::Object>()->Get(ctx, str(isolate, "isMRTSlot")).ToLocal(&marker) &&
+                                    marker->IsTrue()) continue;
+                                if (!d->adapter->tsl().unwrap(value, node)) {
+                                    isolate->ThrowException(v8::Exception::TypeError(str(isolate, "TN_TSL_PROPERTY: mrtNode output expected a node")));
+                                    return;
+                                }
+                                slots.emplace_back(*name ? *name : "", node);
+                            }
+                            try { tn::abi::setMrtOutputs(h, std::move(slots)); } catch (const std::exception& e) {
+                                isolate->ThrowException(v8::Exception::TypeError(str(isolate, e.what())));
+                            }
+                            return;
+                        }
                         engine::shader::graph::Node node;
                         if (info.Length() != 1 || (!info[0]->IsNull() && !d->adapter->tsl().unwrap(info[0], node))) {
-                            info.GetIsolate()->ThrowException(v8::Exception::TypeError(str(info.GetIsolate(), "TN_TSL_PROPERTY: expected a node or null")));
+                            isolate->ThrowException(v8::Exception::TypeError(str(isolate, "TN_TSL_PROPERTY: expected a node or null")));
                             return;
                         }
                         try { tn::abi::setShaderNode(h, d->name, std::move(node)); }

@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import {
   capabilityDetail,
+  capabilitySituationTokens,
   defaultManifestPath,
   loadCapabilityManifest,
   searchCapabilities,
@@ -23,6 +24,19 @@ function searchResults(
 }
 
 describe("threenative-engine-mcp", () => {
+  it("drops a stop word in every inflection, so 'keeps' cannot match a 'keep' situation", () => {
+    expect(capabilitySituationTokens("keeps the arena readable")).not.toContain("keep");
+    const symbols = searchResults(
+      "Use an angled camera that keeps the player and the arena readable at once.",
+    ).map((r) => r.symbol);
+    expect(symbols[0]).toBe("defineGame");
+    expect(symbols).not.toContain("Billboard3D");
+  });
+  it("drops an inflection whose stem is no longer the stop word itself", () => {
+    // `make`, `give`, `take` and `have` are stop words; their inflections stem to `mak`, `giv`,
+    // `tak` and `hav`, which the raw set never matched, so they survived the post-stem filter.
+    expect(capabilitySituationTokens("makes gives takes having")).toEqual([]);
+  });
   it("finds the global illumination and shadow quality tier watchers by Unreal's names", () => {
     const symbols = (situation: string) => searchResults(situation).map((r) => r.symbol);
     expect(symbols("global illumination quality")).toContain("GIBudget");
@@ -47,6 +61,7 @@ describe("threenative-engine-mcp", () => {
       "engine_search_references",
       "engine_reference_detail",
       "engine_save_reference",
+      "engine_watch_reference",
     ]);
   });
 
@@ -57,10 +72,19 @@ describe("threenative-engine-mcp", () => {
         "engine_search_references",
         "engine_reference_detail",
         "engine_save_reference",
+        "engine_watch_reference",
       ]);
       expect(response.guidance).toContain("engine_search_references");
     }
-    expect(searchCapabilities("double jump", workspaceManifest).referenceTools).toBeUndefined();
+    // PRD-827 AC-3: every search names the reference tools, with no special wording.
+    const plain = searchCapabilities("double jump", workspaceManifest);
+    expect(plain.referenceTools).toEqual([
+      "engine_search_references",
+      "engine_reference_detail",
+      "engine_save_reference",
+      "engine_watch_reference",
+    ]);
+    expect(plain.guidance).not.toContain("Reverse engineer the game");
     for (const tool of toolDefinitions().filter((t) => t.name.includes("reference")))
       expect(tool.description.toLowerCase()).toContain("reverse engineer");
   });

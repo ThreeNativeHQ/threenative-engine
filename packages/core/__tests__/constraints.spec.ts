@@ -80,12 +80,60 @@ describe("core constraints", () => {
           // the parent, so recolouring the parent recolours every partition. It constructs no
           // material, configures none and reads no property that describes how anything looks.
           file !== "instanced-batch-lod.ts" &&
+          // A far card level keeps a share of the geometry's cards and grows each about its own
+          // centre, so the crown holds its area; the caller names the share. The one match is the
+          // error that refuses a geometry cut into material groups, which this thinning cannot
+          // keep. It reads geometry structure alone and picks no colour, material or light. The
+          // assertions below cover it too.
+          file !== "card-lod.ts" &&
           // WorldCells streams a package: it reads the geometry and surface out of the package's
           // own GLBs and hands them to `InstancedBatch` by reference. It constructs no material,
           // light, colour or shader, and reads no appearance property — a cutout is
           // `render/foliage-alpha.ts`'s, and a cutoff a part names is the part's own. The word
           // "light" the generic filter trips on is inside `loadsInFlight`.
           file !== "world-cells.ts" &&
+          // These exact seams carry the formerly allowed WorldCells code: package surface identity,
+          // load flight counts and numeric contracts. The same appearance checks below cover each.
+          file !== "world-cell-data.ts" &&
+          file !== "world-cell-prewarm.ts" &&
+          file !== "world-cell-chunks.ts" &&
+          file !== "world-cell-impostors.ts" &&
+          file !== "world-cell-models.ts" &&
+          file !== "world-cell-render.ts" &&
+          // PRD-798 and PRD-799 split these five out of `world-cells.ts` and `world-cell-render.ts`
+          // with their content unchanged, so each keeps its parent's reason.
+          // `world-cell-placements.ts` builds a batch on the package's own part surface.
+          // `world-cell-residency.ts` counts model loads in flight, where "light" sits inside
+          // "flight". `world-cell-render-bundles.ts` reads a mesh's surface identity and revision to
+          // decide whether a bundle may record. `world-cell-render-util.ts` clones the mesh's surface
+          // so each mesh owns its node, and scans that surface for an `instanceIndex` read.
+          // `world-cell-render-gpu-dress.ts` derives a level's surface from the package's own
+          // material, and the distances, width and floor all come from the host. All five construct
+          // nothing that describes a look. The same appearance checks below cover each.
+          file !== "world-cell-placements.ts" &&
+          file !== "world-cell-residency.ts" &&
+          file !== "world-cell-render-bundles.ts" &&
+          file !== "world-cell-render-util.ts" &&
+          file !== "world-cell-render-gpu-dress.ts" &&
+          // The bundle-safety seam moved out of `world-cells.ts` unchanged. It reads a material's
+          // version, transparency, visibility, transmission and node graph to decide whether a draw
+          // can be recorded. It constructs, sets and colours none of them. The generic filter
+          // matches "material" in its names; the appearance checks below apply to this file.
+          file !== "world-bundle-safety.ts" &&
+          // The load limiter queues model loads and bounds how many run at once. It constructs no
+          // material, light, colour or shader and reads no appearance property. The generic filter
+          // matches "light" inside "flight", as in "in flight" and "inFlight".
+          file !== "world-load-limiter.ts" &&
+          // The shared batch merges many cells into one InstancedMesh. It transports game-owned
+          // material identity: a batch draws the material its caller hands it, by reference. It
+          // constructs no material and reads no appearance property. The generic filter matches
+          // "material" for that identity, not for a look the module chooses.
+          file !== "world-cell-batches.ts" &&
+          // The chunk shadow seam builds position-only depth proxies for a merged chunk. Each proxy
+          // takes the world's own material for a side by reference. It constructs no material,
+          // light or colour and reads no appearance property. The generic filter matches "material"
+          // in its names. The assertions below apply to this file.
+          file !== "world-chunk-shadow.ts" &&
           // The cell proxy decides whether a baked HLOD stand-in may replace a cell's source draws.
           // It reads a material's identity and whether it is opaque, standard and untransformed to
           // make that call, and constructs, configures and colours none. The assertions below keep
@@ -125,6 +173,7 @@ describe("core constraints", () => {
           file !== "look/reflection-trace.ts" &&
           file !== "look/gi-registry.ts" &&
           file !== "look/ao-reach.ts" &&
+          file !== "look/ao-admission.ts" &&
           file !== "look/ao-multibounce.ts" &&
           file !== "look/local-exposure.ts" &&
           file !== "look/unreal-bloom.ts" &&
@@ -148,7 +197,16 @@ describe("core constraints", () => {
           // The virtual shadow attaches to a light and renders depth through three's own
           // ShadowNode; it creates no material, light, colour or filter of its own.
           file !== "render/virtual-shadow.ts" &&
+          // PRD-806 moved the shadow level and its stock node out of the file above to keep it under the
+          // file cap; `LevelLight` is a placeholder the stock shadow node reads a position from, not a light.
+          file !== "render/virtual-shadow-level.ts" &&
           file !== "render/virtual-shadow-pages.ts" &&
+          // PRD-802 moved the node's option vocabulary and its marker parser out of the file above
+          // without adding any appearance decision. The only matches here are prose and an option
+          // NAME — "the light's own", `lightDistance`, "spot and point light maps" — not a material,
+          // a light or a tone curve. The assertions below keep it that way.
+          file !== "render/virtual-shadow-options.ts" &&
+          file !== "render/virtual-shadow-markers.ts" &&
           // The partial redraw resets a shadow rectangle with one internal quad that writes the stock
           // clear's far depth and transparent black into the shadow map. That material never reaches
           // the screen, copies nothing from the game and chooses no look.
@@ -230,9 +288,20 @@ describe("core constraints", () => {
           // The opacity convention makes the game's own opacity take effect: it turns `transparent`
           // on where opacity < 1 would otherwise be ignored, and sets no value of its own; checked below.
           file !== "profiling/opacity-convention.ts" &&
+          // AGENTS.md rule 3, second exception (owner, 2026-10-31): every `@threenative/core/spells`
+          // factory ships a stock look, and each colour, size and timing is a named override.
+          !file.startsWith("spells/") &&
+          // The spells' particle kind table; PRD-789 deletes it with the from-scratch spells.
+          file !== "particle-kinds.ts" &&
           file !== "index.ts",
       )
-      .map((file) => withoutComments(readFileSync(path.join(sourceDirectory, file), "utf8")))
+      .map((file) =>
+        // Type-only re-exports transport vocabulary without choosing runtime appearance.
+        withoutComments(readFileSync(path.join(sourceDirectory, file), "utf8")).replace(
+          /export\s+type\s*\{[^}]*\}\s*from\s*["'][^"']+["'];?/gu,
+          " ",
+        ),
+      )
       .join("\n");
 
     expect(source).not.toMatch(/material|light|tonemapping|postprocessing|\.wgsl/iu);
@@ -541,19 +610,40 @@ describe("core constraints", () => {
     );
     expect(clusteredBatch.match(/#[0-9a-f]{6}\b|0x[0-9a-f]{6}\b/giu)).toBeNull();
 
-    // `world-cells.ts` is exempted on the same terms as `instanced-batch.ts`: streaming a package
-    // means naming the geometry and surface its GLBs carry and handing both to `InstancedBatch` by
-    // reference. It constructs no material, light or colour and reads no property that describes
-    // how anything looks. The assertions below are what keep that true.
-    const worldCells = readFileSync(path.join(sourceDirectory, "world-cells.ts"), "utf8");
-    expect(worldCells).not.toMatch(
-      /new\s+\w*(Material|Light)|new\s+Color|tonemapping|postprocessing|\.wgsl/iu,
-    );
-    // A property read, not the `Array.prototype.map` call the package's bookkeeping uses.
-    expect(worldCells).not.toMatch(
-      /\.(color|map|roughness|metalness|emissive|opacity|envMap)\b(?!\s*\()/iu,
-    );
-    expect(worldCells.match(/#[0-9a-f]{6}\b|0x[0-9a-f]{6}\b/giu)).toBeNull();
+    // `world-cells.ts`, its PRD-798 and PRD-799 split modules, `world-bundle-safety.ts`,
+    // `world-load-limiter.ts`, `world-cell-batches.ts`, `world-chunk-shadow.ts` and `card-lod.ts`
+    // are exempted on the same terms as `instanced-batch.ts`: none constructs a material, light or
+    // colour, and none reads a property that describes how anything looks. The assertions below are
+    // what keep that true.
+    for (const file of [
+      "world-cells.ts",
+      "world-cell-data.ts",
+      "world-cell-prewarm.ts",
+      "world-cell-chunks.ts",
+      "world-cell-impostors.ts",
+      "world-cell-models.ts",
+      "world-cell-render.ts",
+      "world-cell-placements.ts",
+      "world-cell-residency.ts",
+      "world-cell-render-bundles.ts",
+      "world-cell-render-util.ts",
+      "world-cell-render-gpu-dress.ts",
+      "card-lod.ts",
+      "world-bundle-safety.ts",
+      "world-load-limiter.ts",
+      "world-cell-batches.ts",
+      "world-chunk-shadow.ts",
+    ]) {
+      const cellSource = readFileSync(path.join(sourceDirectory, file), "utf8");
+      expect(cellSource).not.toMatch(
+        /new\s+\w*(Material|Light)|new\s+Color|tonemapping|postprocessing|\.wgsl/iu,
+      );
+      // A property read, not the `Array.prototype.map` call the package's bookkeeping uses.
+      expect(cellSource).not.toMatch(
+        /\.(color|map|roughness|metalness|emissive|opacity|envMap)\b(?!\s*\()/iu,
+      );
+      expect(cellSource.match(/#[0-9a-f]{6}\b|0x[0-9a-f]{6}\b/giu)).toBeNull();
+    }
 
     // `world-cell-proxy.ts` is exempted on the same terms as `world-cells.ts`: it reads whether a
     // surface is safe to replace and builds nothing that describes how anything looks.

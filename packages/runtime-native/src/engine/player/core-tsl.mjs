@@ -25,8 +25,10 @@ export const syncUniforms = live.sync;
 export const { float, int, uint, vec2, vec3, color } = constants;
 export const vec4 = markNormalTarget(constants.vec4, globalThis.tsl.normalView);
 export const Fn = withFnBuilder(globalThis.tsl.Fn);
+// three's lights([...]) takes one array; each light crosses as its own engine object.
+export const lights = (list = []) => globalThis.tsl.lights(...list);
 export const {
-  atomicAdd, atomicStore, atomicLoad, Break, Continue, Return, log, lightShadowMatrix, attribute, uv, renderOutput, If, Loop, luminance, viewZToOrthographicDepth, viewZToPerspectiveDepth, logarithmicDepthToViewZ, vertexIndex,
+  atomicAdd, atomicStore, atomicLoad, Break, Continue, Return, Discard, log, lightShadowMatrix, attribute, uv, renderOutput, If, Loop, luminance, viewZToOrthographicDepth, viewZToPerspectiveDepth, logarithmicDepthToViewZ, vertexIndex,
   add, sub, mul, div, negate, lessThan, greaterThan, equal, lessThanEqual, greaterThanEqual, and, or, not, all, any, abs, sin, cos,
   floor, fract, sqrt, exp, exp2, log2, normalize, length, min, max, pow, step, dot,
   distance, cross, mix, clamp, smoothstep, select, positionLocal, positionWorld, positionWorldDirection,
@@ -117,3 +119,8 @@ export const Stack = unsupportedExport("Stack");
 export const getShadowMaterial = unsupportedExport("getShadowMaterial");
 export const shadow = unsupportedExport("shadow");
 export const shadowPositionWorld = unsupportedExport("shadowPositionWorld");
+// Core's rough diffuse lighting model reads these on three's renderer only; the engine shades roughDiffuse in C++.
+// biome-ignore lint/style/useNamingConvention: the name is three/tsl's export, which core imports.
+export const F_Schlick = unsupportedExport("F_Schlick");
+export const specularColor = unsupportedExport("specularColor");
+export const specularF90 = unsupportedExport("specularF90");

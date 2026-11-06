@@ -1,0 +1,71 @@
+{
+  "name": "native-starter-forest-walk",
+  "target": "desktop",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1920,
+    "height": 1080
+  },
+  "warmupFrames": 60,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "forest-loads",
+      "waitTicks": 240,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "walk-forward",
+      "press": "ArrowUp",
+      "holdTicks": 300,
+      "release": true
+    }
+  ],
+  "assert": {
+    "components": [
+      {
+        "allowTrivial": "Held invariant: the spawn stands on the cooked forest floor, so the figure starts attached. The end-of-walk sample proves it stays attached while the player walks.",
+        "component": "visualAttached",
+        "entity": "player",
+        "equals": true
+      },
+      {
+        "allowTrivial": "Held invariant: the spawn rests on the cooked forest floor within 0.1 m. The end-of-walk sample proves the feet stay on the surface while the player walks.",
+        "component": "groundClearance",
+        "entity": "player",
+        "gte": -0.1,
+        "lte": 0.1
+      },
+      {
+        "allowTrivial": "Held invariant: the spawn stands on the terrain, so the body starts grounded. The end-of-walk sample proves the player still stands on the terrain.",
+        "component": "grounded",
+        "entity": "player",
+        "equals": true
+      },
+      {
+        "allowTrivial": "Held invariant: correction is enabled while the body is grounded. The end-of-walk sample proves correction stays enabled on the terrain.",
+        "component": "groundCorrectionEnabled",
+        "entity": "player",
+        "equals": true
+      },
+      {
+        "allowTrivial": "Held invariant: the figure starts facing north. Walking north must preserve that heading after animation updates.",
+        "component": "facingZ",
+        "entity": "player",
+        "lte": -0.95
+      }
+    ],
+    "movement": {
+      "entity": "player",
+      "minAxisDelta": {
+        "axis": "-z",
+        "min": 0.5
+      }
+    },
+    "performance": {
+      "maxFrameMsP95": 16.7
+    }
+  }
+}

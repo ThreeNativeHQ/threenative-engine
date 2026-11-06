@@ -357,7 +357,7 @@ describe("reference MCP tools", () => {
     });
     expect(tier2.results[0].guidance).toContain("engine_save_reference");
   });
-  it("adds at most three stubs on none and no references on matched", async () => {
+  it("adds at most three stubs and the reference tools on every search (PRD-827 AC-3)", async () => {
     const emptyManifest = path.join(project, "capabilities.json");
     writeFileSync(emptyManifest, JSON.stringify({ version: 2, entries: [], notOwned: [] }));
     const none = await call(
@@ -372,7 +372,19 @@ describe("reference MCP tools", () => {
       situation: "put a weapon in a character's hand",
     });
     expect(matched.verdict).toBe("matched");
-    expect(matched.references).toBeUndefined();
+    expect(matched.referenceTools).toContain("engine_search_references");
+    expect(matched.references.results.length).toBeLessThanOrEqual(3);
+    const mechanic = await call("engine_search_capabilities", {
+      situation: "triple jump",
+      scope: "mechanic",
+    });
+    expect(mechanic.references.results[0].id).toBe("triple-jump");
+    const request = await call("engine_search_capabilities", {
+      situation: "a platformer with a triple jump",
+      scope: "request",
+    });
+    expect(request.referenceTools).toContain("engine_reference_detail");
+    expect(request.references.results.map((r: { id: string }) => r.id)).toContain("triple-jump");
   });
   it("keeps capability discovery usable when optional references are malformed", async () => {
     const emptyManifest = path.join(project, "capabilities.json");
@@ -420,13 +432,12 @@ describe("reference MCP tools", () => {
     const response = await call("engine_search_references", { situation: "triple jump" });
     expect(response.guidance).toContain("references unavailable");
     expect(response.results).toEqual([]);
-    expect(
-      (
-        await call("engine_search_capabilities", {
-          situation: "put a weapon in a character's hand",
-        })
-      ).verdict,
-    ).toBe("matched");
+    const offline = await call("engine_search_capabilities", {
+      situation: "put a weapon in a character's hand",
+    });
+    expect(offline.verdict).toBe("matched");
+    expect(offline.results.length).toBeGreaterThan(0);
+    expect(offline.references.guidance).toContain("references unavailable");
   });
 });
 

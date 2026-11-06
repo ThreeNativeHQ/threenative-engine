@@ -249,17 +249,25 @@ describe("a streamed world's shadow invalidation", () => {
       regions.length = 0;
       clock = 1000;
       world.update();
-      expect(regions).toHaveLength(1);
-      expect(regions[0]).toMatchObject({ admission: true });
+      // One tell, one box per admitted source: boxes that do not overlap are never merged, because
+      // their union covers the ground between them and with it the fine level's whole window.
+      const told = regions.filter((region): region is IShadowRegion => region !== undefined);
+      expect(told.length).toBeGreaterThan(1);
+      expect(told).toHaveLength(regions.length);
+      for (const region of told) {
+        expect(region).toMatchObject({ admission: true, min: { y: -2 }, max: { y: 2 } });
+        expect(region.max.x - region.min.x).toBe(2);
+        expect(region.max.z - region.min.z).toBe(2);
+      }
       const first = cellCenter(0, 0);
       const last = cellCenter(2, 2);
-      expect(regions[0]).toMatchObject({
-        min: { x: first.x - 1, y: -2, z: first.z - 1 },
-        max: { x: last.x + 1, y: 2, z: last.z + 1 },
-      });
+      expect(Math.min(...told.map((region) => region.min.x))).toBe(first.x - 1);
+      expect(Math.min(...told.map((region) => region.min.z))).toBe(first.z - 1);
+      expect(Math.max(...told.map((region) => region.max.x))).toBe(last.x + 1);
+      expect(Math.max(...told.map((region) => region.max.z))).toBe(last.z + 1);
       clock = 2000;
       world.update();
-      expect(regions).toHaveLength(1);
+      expect(regions).toHaveLength(told.length);
     } finally {
       world.dispose();
     }
@@ -292,25 +300,33 @@ describe("a streamed world's shadow invalidation", () => {
       expect(regions).toHaveLength(0);
       clock = 2000;
       world.update();
-      expect(regions).toHaveLength(2);
-      const admission = regions.find((region) => region?.admission === true);
-      const eviction = regions.find((region) => region !== undefined && !region.admission);
-      expect(admission).toBeDefined();
-      expect(eviction).toBeDefined();
-      expect(eviction?.max.z).toBe(cellCenter(1, 0).z + 1);
-      expect(admission?.max.x).toBe(cellCenter(2, 2).x + 1);
-      // Hysteresis and refiltering choose the changed cells; every edge still comes from a source.
-      for (const region of [admission, eviction]) {
-        expect(region).toMatchObject({ min: { y: -2 }, max: { y: 2 } });
+      const told = regions.length;
+      const admissions = regions.filter((region) => region?.admission === true);
+      const evictions = regions.filter((region) => region !== undefined && !region.admission);
+      expect(admissions.length).toBeGreaterThan(0);
+      expect(evictions.length).toBeGreaterThan(0);
+      expect(admissions.length + evictions.length).toBe(told);
+      expect(Math.max(...admissions.map((region) => region?.max.x ?? Number.NaN))).toBe(
+        cellCenter(2, 2).x + 1,
+      );
+      // Hysteresis and refiltering choose the changed records; each region is one record's own box,
+      // the ground cover's (half a metre) or the pine's (one metre), never the cell around it.
+      for (const region of [...admissions, ...evictions]) {
+        expect(region?.min.y).toBeGreaterThanOrEqual(-2);
+        expect(region?.max.y).toBeLessThanOrEqual(2);
         for (const axis of ["x", "z"] as const) {
           const centers = [0, 1, 2].map((index) => cellCenter(index, index)[axis]);
-          expect(centers.map((center) => center - 1)).toContain(region?.min[axis]);
-          expect(centers.map((center) => center + 1)).toContain(region?.max[axis]);
+          expect(centers.flatMap((center) => [center - 1, center - 0.5])).toContain(
+            region?.min[axis],
+          );
+          expect(centers.flatMap((center) => [center + 0.5, center + 1])).toContain(
+            region?.max[axis],
+          );
         }
       }
       clock = 3000;
       world.update();
-      expect(regions).toHaveLength(2);
+      expect(regions).toHaveLength(told);
     } finally {
       world.dispose();
     }

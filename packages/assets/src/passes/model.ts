@@ -27,7 +27,7 @@ import {
   type IAssetPass,
   type IAssetPassOutput,
   classify,
-} from "../compile.js";
+} from "../compile-types.js";
 import { type IMaterialMergeSummary, mergeIdenticalMaterials } from "../foliage.js";
 import { EXTTextureAstc, createGltfReader, readGltfDocument } from "../gltf-io.js";
 import {
@@ -926,13 +926,13 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
         options.lod === undefined || options.lod === false || options.lod === "none"
           ? undefined
           : options.lod;
-      const geometryActive =
-        options.vertexLayout !== undefined ||
+      const transformsActive =
         Object.values(enabled).some(Boolean) ||
         options.simplify !== undefined ||
         lodOptions !== undefined ||
         virtualOptions !== undefined ||
         compactRequested(options.compact);
+      const geometryActive = options.vertexLayout !== undefined || transformsActive;
       if (!geometryActive && textureOptions === undefined) return input;
 
       const document = await readDocument(input, logicalPath);
@@ -952,6 +952,15 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
           extension.dispose();
       }
       const source = reachableStats(document.getRoot());
+      if (!transformsActive && textureOptions === undefined) {
+        const { buffer, extensions, verified } = await writeAndVerify(
+          document,
+          logicalPath,
+          options.vertexLayout,
+        );
+        assertNoDrift(source, reachableStats(verified), logicalPath);
+        return { buffer, entry: { extensions } };
+      }
       const jointFloor = jointComponentSizes(document.getRoot());
 
       // Fixed order: dedup → prune → simplify → reorder → quantize → textures → meshopt.

@@ -755,10 +755,63 @@ engine::shader::graph::Node shaderNode(tn_handle_t handle, const std::string& pa
     return value.node;
 }
 
+void setMrtOutput(tn_handle_t handle, const std::string& name, engine::shader::graph::Node node) {
+    auto* context = contextFor(handle.context);
+    auto* object = context ? context->object(handle) : nullptr;
+    if (!object || !binding::isMaterialClass(object->cls)) throw std::runtime_error("TN_HANDLE_INVALID: shader node owner");
+    if (engine::shader::engineTargetName(name))
+        throw std::runtime_error("TN_NATIVE_MRT_UNSUPPORTED: '" + name + "' is an engine pass target, not a custom slot");
+    auto& material = *static_cast<engine::Material*>(object->ptr.get());
+    auto& slots = material.nodes.mrt;
+    const auto found = std::find_if(slots.begin(), slots.end(), [&](const engine::shader::MrtOutput& slot) { return slot.name == name; });
+    if (!node) {
+        if (found == slots.end()) return;
+        slots.erase(found);
+    } else if (found != slots.end()) {
+        if (found->node == node) return;
+        found->node = std::move(node);
+    } else {
+        slots.push_back({name, std::move(node)});
+    }
+    material.needsUpdate();
+}
+
+std::vector<std::pair<std::string, engine::shader::graph::Node>> mrtOutputs(tn_handle_t handle) {
+    auto* context = contextFor(handle.context);
+    auto* object = context ? context->object(handle) : nullptr;
+    if (!object || !binding::isMaterialClass(object->cls)) return {};
+    std::vector<std::pair<std::string, engine::shader::graph::Node>> slots;
+    for (const auto& slot : static_cast<engine::Material*>(object->ptr.get())->nodes.mrt) slots.emplace_back(slot.name, slot.node);
+    return slots;
+}
+
+void setMrtOutputs(tn_handle_t handle, std::vector<std::pair<std::string, engine::shader::graph::Node>> slots) {
+    auto* context = contextFor(handle.context);
+    auto* object = context ? context->object(handle) : nullptr;
+    if (!object || !binding::isMaterialClass(object->cls)) throw std::runtime_error("TN_HANDLE_INVALID: shader node owner");
+    auto& material = *static_cast<engine::Material*>(object->ptr.get());
+    std::vector<engine::shader::MrtOutput> next;
+    next.reserve(slots.size());
+    for (auto& [name, node] : slots) {
+        if (engine::shader::engineTargetName(name))
+            throw std::runtime_error("TN_NATIVE_MRT_UNSUPPORTED: '" + name + "' is an engine pass target, not a custom slot");
+        next.push_back({name, std::move(node)});
+    }
+    if (material.nodes.mrt == next) return;
+    material.nodes.mrt = std::move(next);
+    material.needsUpdate();
+}
+
 void setShaderNode(tn_handle_t handle, const std::string& path, engine::shader::graph::Node node) {
     auto* context = contextFor(handle.context);
     auto* object = context ? context->object(handle) : nullptr;
     if (!object) throw std::runtime_error("TN_HANDLE_INVALID: shader node owner");
+    // A custom MRT slot is set by its own path: one call per slot, so a name is dynamic (the V8 and browser facades).
+    static constexpr std::string_view kMrtPrefix = "mrtNode.";
+    if (path.starts_with(kMrtPrefix)) {
+        setMrtOutput(handle, path.substr(kMrtPrefix.size()), std::move(node));
+        return;
+    }
     const auto& setters = classRegistry().at(object->cls).setters;
     const auto found = setters.find(path);
     if (found == setters.end()) throw std::runtime_error("TN_NATIVE_UNSUPPORTED: " + path);
@@ -1133,10 +1186,11 @@ extern "C" tn_status_t tn_tsl_release(tn_context_t* context, uint64_t node, tn_d
 
 extern "C" tn_status_t tn_tsl_set(tn_context_t* context, tn_handle_t material, const char* path,
                                    uint64_t node, tn_diagnostic_t* diagnostic) {
-    if (!context || material.context != context->objects.context() || !path || !context->tslNodes.contains(node))
+    // Node 0 clears a slot (a removed mrt() output); every real node id is above 0.
+    if (!context || material.context != context->objects.context() || !path || (node && !context->tslNodes.contains(node)))
         return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_TSL_ARGUMENT");
     return guarded(diagnostic, [&]() -> tn_status_t {
-        tn::abi::setShaderNode(material, path, context->tslNodes.at(node));
+        tn::abi::setShaderNode(material, path, node ? context->tslNodes.at(node) : tn::engine::shader::graph::Node{});
         return ok(diagnostic);
     });
 }

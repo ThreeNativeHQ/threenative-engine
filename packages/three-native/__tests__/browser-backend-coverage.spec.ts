@@ -382,10 +382,13 @@ interface IAttribute {
   getX(index: number): number;
   getY(index: number): number;
   getZ(index: number): number;
+  getComponent(index: number, component: number): number;
   setX(index: number, value: number): unknown;
   setY(index: number, value: number): unknown;
   setXYZ(index: number, x: number, y: number, z: number): unknown;
   copyAt(index: number, attribute: unknown, source: number): unknown;
+  addUpdateRange(start: number, count: number): unknown;
+  clearUpdateRanges(): unknown;
 }
 
 interface IGeometry {
@@ -457,7 +460,9 @@ describe("BufferAttribute sync between the JS array and the engine, on the brows
     const matrices = new Map<string, readonly number[]>();
     const instances = new Map<string, { matrices: IEngineRef; color: IEngineRef | null }>();
     // Every whole-array write the engine received, as the bytes three's own array would hold.
-    const writes: { key: string; values: number[] }[] = [];
+    const writes: { key: string; values: number[]; offset: number }[] = [];
+    // Each attribute's declared update ranges, as the engine keeps them for its next upload.
+    const updateRanges = new Map<string, { start: number; count: number }[]>();
     const counts = { reads: 0, writes: 0 };
     let next = 0;
     /** An engine-side attribute: its store, its item size, and the ref the game's `array` reads. */
@@ -547,6 +552,15 @@ describe("BufferAttribute sync between the JS array and the engine, on the brows
           for (let c = 0; c < lanes; c++) write(self, index, c, Number(args[1 + c]));
           return null;
         }
+        case "addUpdateRange":
+          updateRanges.set(self.key, [
+            ...(updateRanges.get(self.key) ?? []),
+            { start: Number(args[0]), count: Number(args[1]) },
+          ]);
+          return null;
+        case "clearUpdateRanges":
+          updateRanges.delete(self.key);
+          return null;
         case "copyAt": {
           const source = args[1] as IEngineRef;
           for (let c = 0; c < size(self); c++)
@@ -654,6 +668,7 @@ describe("BufferAttribute sync between the JS array and the engine, on the brows
           return attributes === undefined ? "" : [...attributes.keys()].join("\n");
         }
         if (property === "itemSize") return itemSizes.get(self.key) ?? 0;
+        if (property === "updateRanges") return JSON.stringify(updateRanges.get(self.key) ?? []);
         if (property === "count") {
           const stride = size(self);
           return stride === 0 ? 0 : store(self).length / stride;
@@ -675,7 +690,7 @@ describe("BufferAttribute sync between the JS array and the engine, on the brows
       attributeWrite: (self, array, offset = 0) => {
         store(self).set(array as never, offset);
         counts.writes += array.length;
-        writes.push({ key: self.key, values: Array.from(array as ArrayLike<number>) });
+        writes.push({ key: self.key, values: Array.from(array as ArrayLike<number>), offset });
       },
     };
     return { runtime, matrices, instances, counts, writes };
@@ -713,6 +728,29 @@ describe("BufferAttribute sync between the JS array and the engine, on the brows
     p.setXYZ(0, 1, 2, 3);
     p.needsUpdate = true;
     expect([p.getX(0), p.getY(0), p.getZ(0)]).toEqual([1, 2, 3]);
+  });
+
+  it("sends only the declared update ranges on needsUpdate, as three's upload does", () => {
+    const { classes, counts, writes } = facade();
+    const Attribute = attributeClass(classes);
+    const a = new Attribute(new Float32Array(64), 4);
+    a.needsUpdate = true; // the adopted array's first send, whole
+    const sent = counts.writes;
+    const array = a.array;
+    array.fill(3, 16, 32);
+    a.clearUpdateRanges();
+    a.addUpdateRange(16, 16);
+    a.needsUpdate = true;
+    // Bookkeeping flushed nothing, and the send was the one declared range, not the 64 elements.
+    expect(counts.writes - sent).toBe(16);
+    expect(writes.at(-1)).toMatchObject({ offset: 16, values: new Array(16).fill(3) });
+    expect(a.getX(4)).toBe(3);
+    // No range declared: the whole array, as before.
+    a.clearUpdateRanges();
+    array[0] = 9;
+    a.needsUpdate = true;
+    expect(counts.writes - sent).toBe(16 + 64);
+    expect(a.getX(0)).toBe(9);
   });
 
   it("still sends a direct array edit to the engine on needsUpdate", () => {
@@ -817,6 +855,32 @@ describe("BufferAttribute sync between the JS array and the engine, on the brows
     destination.copyAt(1, source, 0);
     destination.needsUpdate = true;
     expect(destination.getY(1)).toBe(9);
+  });
+
+  // core's pose measurement walks every vertex with getX/getY/getZ: one engine crossing each cost a
+  // licensed forest 15 s of load. The getters read the coherent shadow instead, fetched once.
+  it("reads per-vertex getters from the shadow without an engine call each", () => {
+    const { runtime, counts } = engine();
+    let invokes = 0;
+    const invoke = runtime.invoke.bind(runtime);
+    runtime.invoke = (self, method, args) => {
+      if (/^get[XYZW]$|^getComponent$/u.test(method)) invokes += 1;
+      return invoke(self, method, args);
+    };
+    const { classes } = defineBrowserClasses(registry, runtime, loadCatalog(REPO));
+    const Attribute = attributeClass(classes);
+    const p = new Attribute(
+      new Float32Array(3000 * 3).map((_, i) => i),
+      3,
+    );
+    let sum = 0;
+    for (let i = 0; i < 3000; i++) sum += p.getX(i) + p.getY(i) + p.getZ(i);
+    expect(sum).toBe(((9000 - 1) * 9000) / 2);
+    expect(invokes).toBe(0);
+    expect(counts.reads).toBeLessThanOrEqual(9000);
+    p.setY(5, -1);
+    expect(p.getY(5)).toBe(-1);
+    expect(p.getComponent(5, 1)).toBe(-1);
   });
 
   it("preserves a normalized integer attribute's raw bytes and type", () => {

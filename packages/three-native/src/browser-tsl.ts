@@ -11,6 +11,7 @@ import {
   type ConstClasses,
   booleanUniforms,
   liveUniforms,
+  matrixElements,
   uniformLanes,
   withConstValues,
 } from "./tsl-uniforms.js";
@@ -117,10 +118,14 @@ const FUNCTIONS = [
   "nodeObject",
   "color",
   "ivec2",
+  "ivec3",
+  "ivec4",
   "uvec2",
+  "bool",
   "storageTexture",
   "textureLoad",
   "textureSize",
+  "mrt",
   "reflect",
   "dFdx",
   "dFdy",
@@ -144,6 +149,7 @@ const FUNCTIONS = [
   "struct",
   "wgslFunction",
   "lightShadowMatrix",
+  "lights",
   "luminance",
   "viewZToOrthographicDepth",
   "viewZToPerspectiveDepth",
@@ -156,7 +162,12 @@ const FUNCTIONS = [
   "reflector",
   "transformDirection",
   "transformNormalToView",
+  "getViewPosition",
+  "bumpMap",
+  "normalMap",
   "property",
+  "varyingProperty",
+  "instanceMatrix",
   "radians",
   "degrees",
   "inverseSqrt",
@@ -209,6 +220,7 @@ const FUNCTIONS = [
 ] as const;
 /** The inputs TSL exports as values (tn::abi::tslConstants), each built once, when first read. */
 const CONSTANTS = [
+  "modelViewProjection",
   "viewportLinearDepth",
   "frameGroup",
   "renderGroup",
@@ -224,6 +236,9 @@ const CONSTANTS = [
   "normalWorld",
   "positionLocal",
   "positionWorld",
+  "positionView",
+  "frontFacing",
+  "faceDirection",
   "positionWorldDirection",
   "normalViewGeometry",
   "cameraViewMatrix",
@@ -242,6 +257,9 @@ const CONSTANTS = [
   "screenCoordinate",
   "normalGeometry",
   "tangentGeometry",
+  "normalLocal",
+  "tangentLocal",
+  "positionPrevious",
   "normalWorldGeometry",
   "EPSILON",
   "INFINITY",
@@ -306,6 +324,7 @@ const METHODS = [
   "smoothstep",
   "select",
   "sample",
+  "setInterpolation",
   "__rtt",
   "oneMinus",
   "dispose",
@@ -319,6 +338,7 @@ const METHODS = [
   "flipW",
   "level",
   "bias",
+  "depth",
   "transformDirection",
   "radians",
   "degrees",
@@ -393,6 +413,7 @@ function takesEngineObject(name: string, index: number): boolean {
         name === "storageTexture" ||
         name === "textureStore" ||
         name === "lightShadowMatrix")) ||
+    name === "lights" ||
     (index < 2 && (name === "reflector" || name === "__rtt"))
   );
 }
@@ -441,7 +462,10 @@ export function defineTsl(
     // and textureLoad also takes a texture node.
     if (
       index === 0 &&
-      (name === "texture" || name === "textureValue") &&
+      (name === "texture" ||
+        name === "textureValue" ||
+        name === "textureLoad" ||
+        name === "textureSize") &&
       typeof value === "object" &&
       engineRef(value) !== undefined
     )
@@ -495,7 +519,9 @@ export function defineTsl(
   const node = (id: number): TslArgValue => ({ kind: "node", node: id });
   const capture = (form: string, callback: unknown, input?: unknown): number => {
     if (typeof callback !== "function") throw new TypeError(`TN_TSL ${form}: expected a callback`);
-    runtime.release(runtime.call("scope:open", null, []));
+    runtime.release(
+      runtime.call("scope:open", null, form === "Fn" ? [{ kind: "string", text: "Fn" }] : []),
+    );
     depth++;
     let returned: TslArgValue[] = [];
     try {
@@ -518,9 +544,8 @@ export function defineTsl(
     if (depth === 0) throw new TypeError(`TN_TSL ${form}: statement outside Fn`);
   };
   prototype.toVar = function (this: ITslNode) {
-    // Outside a function body there is no stack to declare a variable in (rain's fragment node names its
-    // terms this way); the expression itself is the value, read where it is used.
-    if (depth === 0) return this;
+    // Outside a function body the engine declares the variable at the top of the program (rain's fragment node
+    // names its terms this way; a Fn assigns one handed to it as an `out` argument).
     return wrap(runtime.call("toVar", this[TSL_NODE], []));
   };
   prototype.assign = function (this: ITslNode, value: unknown) {
@@ -572,6 +597,8 @@ export function defineTsl(
   exports.NodeUpdateType = NodeUpdateType;
   for (const name of FUNCTIONS)
     exports[name] = (...args: unknown[]) => wrap(call(name, null, args));
+  // three's lights([...]) takes one array; each light crosses as its own engine object.
+  exports.lights = (list: readonly unknown[] = []) => wrap(call("lights", null, [...list]));
   exports.nodeObject = (value: unknown) =>
     isTslNode(value) ? value : wrap(call("nodeObject", null, [value]));
   exports.texture = (initial: unknown, ...args: unknown[]) => {
@@ -614,8 +641,13 @@ export function defineTsl(
         (Array.isArray(first) || first.constructor === Object)
           ? first
           : args;
+      // As three's nodeObject: a plain object or array (a struct of nodes, a list) passes through unchanged.
       const asNode = (value: unknown) =>
-        isTslNode(value) ? value : wrap(call("nodeObject", null, [value]));
+        isTslNode(value) ||
+        Array.isArray(value) ||
+        (typeof value === "object" && value !== null && value.constructor === Object)
+          ? value
+          : wrap(call("nodeObject", null, [value]));
       const parameters = Array.isArray(inputs)
         ? inputs.map(asNode)
         : Object.fromEntries(Object.entries(inputs).map(([key, value]) => [key, asNode(value)]));
@@ -634,8 +666,9 @@ export function defineTsl(
     // quality-allow: the export table is untyped; defineStorageTextures narrows it to the builders it reads.
     defineStorageTextures(exports as unknown as Parameters<typeof defineStorageTextures>[0]),
   );
-  // r185's Break(), Continue() and Return(): a loop or kernel ends early (statements, like atomicAdd).
-  for (const name of ["Break", "Continue", "Return"])
+  // r185's Break(), Continue() and Return(): a loop or kernel ends early (statements, like atomicAdd);
+  // Discard(conditional) ends the fragment, under If(conditional) when one is given.
+  for (const name of ["Break", "Continue", "Return", "Discard"])
     exports[name] = (...args: unknown[]) => {
       statement(name);
       return wrap(call(name, null, args));
@@ -781,9 +814,22 @@ export function defineTsl(
       },
     });
   }
-  const live = liveUniforms(
-    exports.uniform as (value: unknown, type?: unknown) => ITslNode,
-    (node, lanes) => runtime.setUniform(node[TSL_NODE], lanes),
+  // uniform(matrix): the engine takes a matN uniform's first value as a constant matN, built here
+  // from the matrix's columns; later edits sync through uniformLanes (the 9 or 16 elements).
+  const valueUniform = exports.uniform as (value: unknown, type?: unknown) => ITslNode;
+  const vec = (n: number) => exports[`vec${n}`] as (...lanes: number[]) => ITslNode;
+  const matrixUniform = (value: unknown, type?: unknown): ITslNode => {
+    const elements = matrixElements(value);
+    if (elements === undefined)
+      return type === undefined ? valueUniform(value) : valueUniform(value, type);
+    const n = elements.length === 16 ? 4 : 3;
+    const columns = Array.from({ length: n }, (_, c) =>
+      vec(n)(...Array.from({ length: n }, (_, r) => elements[c * n + r] as number)),
+    );
+    return valueUniform((exports[`mat${n}`] as (...columns: ITslNode[]) => ITslNode)(...columns));
+  };
+  const live = liveUniforms(matrixUniform, (node, lanes) =>
+    runtime.setUniform(node[TSL_NODE], lanes),
   );
   exports.uniform = booleanUniforms(live.uniform, (scalar) =>
     wrap(call("notEqual", scalar[TSL_NODE], [0])),

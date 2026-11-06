@@ -64,159 +64,6 @@
       "since": "17306d6c1"
     },
     {
-      "layer": "L1",
-      "sun": "sun60",
-      "pose": "exterior",
-      "region": "Sky",
-      "metric": "deltaE",
-      "threshold": 1,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L1",
-      "sun": "sun60",
-      "pose": "exterior",
-      "region": "Sky",
-      "metric": "dP50",
-      "threshold": 0.01,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L1",
-      "sun": "sun60",
-      "pose": "exterior",
-      "region": "Room",
-      "metric": "deltaE",
-      "threshold": 1,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L2",
-      "sun": "sun60",
-      "pose": "exterior",
-      "region": "Sky",
-      "metric": "dP50",
-      "threshold": 0.01,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L2",
-      "sun": "sun60",
-      "pose": "exterior",
-      "region": "Room",
-      "metric": "deltaE",
-      "threshold": 1,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L2",
-      "sun": "sun60",
-      "pose": "exterior",
-      "region": "Room",
-      "metric": "dP50",
-      "threshold": 0.01,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L3",
-      "sun": "sun60",
-      "pose": "exterior",
-      "region": "Room",
-      "metric": "deltaE",
-      "threshold": 1,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L4",
-      "sun": "sun60",
-      "pose": "exterior",
-      "region": "Sky",
-      "metric": "deltaE",
-      "threshold": 1,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L4",
-      "sun": "sun60",
-      "pose": "exterior",
-      "region": "Sky",
-      "metric": "dP50",
-      "threshold": 0.01,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L4",
-      "sun": "sun60",
-      "pose": "exterior",
-      "region": "Room",
-      "metric": "deltaE",
-      "threshold": 1,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L5",
-      "sun": "sun60",
-      "pose": "exterior",
-      "region": "Sky",
-      "metric": "deltaE",
-      "threshold": 1,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L5",
-      "sun": "sun60",
-      "pose": "exterior",
-      "region": "Sky",
-      "metric": "dP50",
-      "threshold": 0.01,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L6",
-      "sun": "sun60",
-      "pose": "exterior",
-      "region": "Sky",
-      "metric": "deltaE",
-      "threshold": 1,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L6",
-      "sun": "sun60",
-      "pose": "exterior",
-      "region": "Sky",
-      "metric": "dP50",
-      "threshold": 0.01,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L6",
-      "sun": "sun60",
-      "pose": "exterior",
-      "region": "BacklitWall",
-      "metric": "deltaE",
-      "threshold": 1,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L6",
-      "sun": "sun60",
-      "pose": "exterior",
-      "region": "BacklitWall",
-      "metric": "dP50",
-      "threshold": 0.01,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L6",
-      "sun": "sun60",
-      "pose": "exterior",
-      "region": "Capsule",
-      "metric": "deltaE",
-      "threshold": 1,
-      "since": "17306d6c1"
-    },
-    {
       "layer": "L0",
       "sun": "sun15",
       "pose": "exterior",
@@ -280,114 +127,6 @@
       "since": "17306d6c1"
     },
     {
-      "layer": "L1",
-      "sun": "sun15",
-      "pose": "exterior",
-      "region": "Sky",
-      "metric": "deltaE",
-      "threshold": 1,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L1",
-      "sun": "sun15",
-      "pose": "exterior",
-      "region": "Sky",
-      "metric": "dP50",
-      "threshold": 0.01,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L1",
-      "sun": "sun15",
-      "pose": "exterior",
-      "region": "Room",
-      "metric": "deltaE",
-      "threshold": 1,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L1",
-      "sun": "sun15",
-      "pose": "exterior",
-      "region": "Capsule",
-      "metric": "deltaE",
-      "threshold": 1,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L2",
-      "sun": "sun15",
-      "pose": "exterior",
-      "region": "Sky",
-      "metric": "deltaE",
-      "threshold": 1,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L2",
-      "sun": "sun15",
-      "pose": "exterior",
-      "region": "Sky",
-      "metric": "dP50",
-      "threshold": 0.01,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L4",
-      "sun": "sun15",
-      "pose": "exterior",
-      "region": "LitFloor",
-      "metric": "dP50",
-      "threshold": 0.01,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L5",
-      "sun": "sun15",
-      "pose": "exterior",
-      "region": "Floor",
-      "metric": "dP50",
-      "threshold": 0.01,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L5",
-      "sun": "sun15",
-      "pose": "exterior",
-      "region": "Room",
-      "metric": "dP50",
-      "threshold": 0.01,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L5",
-      "sun": "sun15",
-      "pose": "exterior",
-      "region": "LitFloor",
-      "metric": "dP50",
-      "threshold": 0.01,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L6",
-      "sun": "sun15",
-      "pose": "exterior",
-      "region": "Floor",
-      "metric": "dP50",
-      "threshold": 0.01,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L6",
-      "sun": "sun15",
-      "pose": "exterior",
-      "region": "LitFloor",
-      "metric": "dP50",
-      "threshold": 0.01,
-      "since": "17306d6c1"
-    },
-    {
       "layer": "L0",
       "sun": "sun04",
       "pose": "exterior",
@@ -448,105 +187,6 @@
       "region": "Capsule",
       "metric": "iou",
       "threshold": 0.98,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L1",
-      "sun": "sun04",
-      "pose": "exterior",
-      "region": "Sky",
-      "metric": "deltaE",
-      "threshold": 1,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L1",
-      "sun": "sun04",
-      "pose": "exterior",
-      "region": "Sky",
-      "metric": "dP50",
-      "threshold": 0.01,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L1",
-      "sun": "sun04",
-      "pose": "exterior",
-      "region": "Capsule",
-      "metric": "deltaE",
-      "threshold": 1,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L2",
-      "sun": "sun04",
-      "pose": "exterior",
-      "region": "Sky",
-      "metric": "deltaE",
-      "threshold": 1,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L2",
-      "sun": "sun04",
-      "pose": "exterior",
-      "region": "Floor",
-      "metric": "dP50",
-      "threshold": 0.01,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L2",
-      "sun": "sun04",
-      "pose": "exterior",
-      "region": "Room",
-      "metric": "dP50",
-      "threshold": 0.01,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L2",
-      "sun": "sun04",
-      "pose": "exterior",
-      "region": "LitFloor",
-      "metric": "dP50",
-      "threshold": 0.01,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L4",
-      "sun": "sun04",
-      "pose": "exterior",
-      "region": "Sky",
-      "metric": "dP50",
-      "threshold": 0.01,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L4",
-      "sun": "sun04",
-      "pose": "exterior",
-      "region": "Room",
-      "metric": "dP50",
-      "threshold": 0.01,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L5",
-      "sun": "sun04",
-      "pose": "exterior",
-      "region": "Sky",
-      "metric": "dP50",
-      "threshold": 0.01,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L6",
-      "sun": "sun04",
-      "pose": "exterior",
-      "region": "Sky",
-      "metric": "dP50",
-      "threshold": 0.01,
       "since": "17306d6c1"
     },
     {
@@ -667,267 +307,6 @@
       "since": "17306d6c1"
     },
     {
-      "layer": "L1",
-      "sun": "sun60",
-      "pose": "spheres",
-      "region": "Sky",
-      "metric": "deltaE",
-      "threshold": 1,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L1",
-      "sun": "sun60",
-      "pose": "spheres",
-      "region": "Sky",
-      "metric": "dP50",
-      "threshold": 0.01,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L1",
-      "sun": "sun60",
-      "pose": "spheres",
-      "region": "Sphere_Chrome",
-      "metric": "deltaE",
-      "threshold": 1,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L1",
-      "sun": "sun60",
-      "pose": "spheres",
-      "region": "Sphere_Chrome",
-      "metric": "dP50",
-      "threshold": 0.01,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L1",
-      "sun": "sun60",
-      "pose": "spheres",
-      "region": "Sphere_Emissive",
-      "metric": "deltaE",
-      "threshold": 1,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L1",
-      "sun": "sun60",
-      "pose": "spheres",
-      "region": "Sphere_Emissive",
-      "metric": "dP50",
-      "threshold": 0.01,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L1",
-      "sun": "sun60",
-      "pose": "spheres",
-      "region": "Room",
-      "metric": "deltaE",
-      "threshold": 1,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L2",
-      "sun": "sun60",
-      "pose": "spheres",
-      "region": "Sky",
-      "metric": "dP50",
-      "threshold": 0.01,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L2",
-      "sun": "sun60",
-      "pose": "spheres",
-      "region": "Sphere_Chrome",
-      "metric": "deltaE",
-      "threshold": 1,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L2",
-      "sun": "sun60",
-      "pose": "spheres",
-      "region": "Sphere_Chrome",
-      "metric": "dP50",
-      "threshold": 0.01,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L2",
-      "sun": "sun60",
-      "pose": "spheres",
-      "region": "Sphere_Emissive",
-      "metric": "deltaE",
-      "threshold": 1,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L2",
-      "sun": "sun60",
-      "pose": "spheres",
-      "region": "Sphere_Emissive",
-      "metric": "dP50",
-      "threshold": 0.01,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L3",
-      "sun": "sun60",
-      "pose": "spheres",
-      "region": "Sphere_Emissive",
-      "metric": "deltaE",
-      "threshold": 1,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L3",
-      "sun": "sun60",
-      "pose": "spheres",
-      "region": "Sphere_Emissive",
-      "metric": "dP50",
-      "threshold": 0.01,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L3",
-      "sun": "sun60",
-      "pose": "spheres",
-      "region": "Room",
-      "metric": "deltaE",
-      "threshold": 1,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L4",
-      "sun": "sun60",
-      "pose": "spheres",
-      "region": "Sky",
-      "metric": "deltaE",
-      "threshold": 1,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L4",
-      "sun": "sun60",
-      "pose": "spheres",
-      "region": "Sphere_Emissive",
-      "metric": "deltaE",
-      "threshold": 1,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L4",
-      "sun": "sun60",
-      "pose": "spheres",
-      "region": "Sphere_Emissive",
-      "metric": "dP50",
-      "threshold": 0.01,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L4",
-      "sun": "sun60",
-      "pose": "spheres",
-      "region": "Room",
-      "metric": "deltaE",
-      "threshold": 1,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L4",
-      "sun": "sun60",
-      "pose": "spheres",
-      "region": "Room",
-      "metric": "dP50",
-      "threshold": 0.01,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L5",
-      "sun": "sun60",
-      "pose": "spheres",
-      "region": "Sky",
-      "metric": "deltaE",
-      "threshold": 1,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L5",
-      "sun": "sun60",
-      "pose": "spheres",
-      "region": "Sphere_Emissive",
-      "metric": "deltaE",
-      "threshold": 1,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L5",
-      "sun": "sun60",
-      "pose": "spheres",
-      "region": "Sphere_Emissive",
-      "metric": "dP50",
-      "threshold": 0.01,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L5",
-      "sun": "sun60",
-      "pose": "spheres",
-      "region": "Room",
-      "metric": "deltaE",
-      "threshold": 1,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L5",
-      "sun": "sun60",
-      "pose": "spheres",
-      "region": "Room",
-      "metric": "dP50",
-      "threshold": 0.01,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L6",
-      "sun": "sun60",
-      "pose": "spheres",
-      "region": "Sky",
-      "metric": "deltaE",
-      "threshold": 1,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L6",
-      "sun": "sun60",
-      "pose": "spheres",
-      "region": "Sphere_RoughDielectric",
-      "metric": "deltaE",
-      "threshold": 1,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L6",
-      "sun": "sun60",
-      "pose": "spheres",
-      "region": "Sphere_RoughDielectric",
-      "metric": "dP50",
-      "threshold": 0.01,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L6",
-      "sun": "sun60",
-      "pose": "spheres",
-      "region": "Capsule",
-      "metric": "deltaE",
-      "threshold": 1,
-      "since": "17306d6c1"
-    },
-    {
       "layer": "L0",
       "sun": "sun15",
       "pose": "spheres",
@@ -1042,285 +421,6 @@
       "region": "Capsule",
       "metric": "iou",
       "threshold": 0.98,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L1",
-      "sun": "sun15",
-      "pose": "spheres",
-      "region": "Sky",
-      "metric": "deltaE",
-      "threshold": 1,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L1",
-      "sun": "sun15",
-      "pose": "spheres",
-      "region": "Sky",
-      "metric": "dP50",
-      "threshold": 0.01,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L1",
-      "sun": "sun15",
-      "pose": "spheres",
-      "region": "Sphere_RoughDielectric",
-      "metric": "deltaE",
-      "threshold": 1,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L1",
-      "sun": "sun15",
-      "pose": "spheres",
-      "region": "Sphere_RoughDielectric",
-      "metric": "dP50",
-      "threshold": 0.01,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L1",
-      "sun": "sun15",
-      "pose": "spheres",
-      "region": "Sphere_SmoothDielectric",
-      "metric": "deltaE",
-      "threshold": 1,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L1",
-      "sun": "sun15",
-      "pose": "spheres",
-      "region": "Sphere_Chrome",
-      "metric": "deltaE",
-      "threshold": 1,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L1",
-      "sun": "sun15",
-      "pose": "spheres",
-      "region": "Sphere_Chrome",
-      "metric": "dP50",
-      "threshold": 0.01,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L1",
-      "sun": "sun15",
-      "pose": "spheres",
-      "region": "Sphere_Emissive",
-      "metric": "deltaE",
-      "threshold": 1,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L1",
-      "sun": "sun15",
-      "pose": "spheres",
-      "region": "Sphere_Emissive",
-      "metric": "dP50",
-      "threshold": 0.01,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L1",
-      "sun": "sun15",
-      "pose": "spheres",
-      "region": "Box_White",
-      "metric": "deltaE",
-      "threshold": 1,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L1",
-      "sun": "sun15",
-      "pose": "spheres",
-      "region": "Room",
-      "metric": "deltaE",
-      "threshold": 1,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L1",
-      "sun": "sun15",
-      "pose": "spheres",
-      "region": "Capsule",
-      "metric": "deltaE",
-      "threshold": 1,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L2",
-      "sun": "sun15",
-      "pose": "spheres",
-      "region": "Sky",
-      "metric": "deltaE",
-      "threshold": 1,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L2",
-      "sun": "sun15",
-      "pose": "spheres",
-      "region": "Sky",
-      "metric": "dP50",
-      "threshold": 0.01,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L2",
-      "sun": "sun15",
-      "pose": "spheres",
-      "region": "Sphere_Emissive",
-      "metric": "deltaE",
-      "threshold": 1,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L2",
-      "sun": "sun15",
-      "pose": "spheres",
-      "region": "Sphere_Emissive",
-      "metric": "dP50",
-      "threshold": 0.01,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L2",
-      "sun": "sun15",
-      "pose": "spheres",
-      "region": "Room",
-      "metric": "dP50",
-      "threshold": 0.01,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L3",
-      "sun": "sun15",
-      "pose": "spheres",
-      "region": "Sphere_Emissive",
-      "metric": "deltaE",
-      "threshold": 1,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L3",
-      "sun": "sun15",
-      "pose": "spheres",
-      "region": "Sphere_Emissive",
-      "metric": "dP50",
-      "threshold": 0.01,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L3",
-      "sun": "sun15",
-      "pose": "spheres",
-      "region": "Room",
-      "metric": "deltaE",
-      "threshold": 1,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L4",
-      "sun": "sun15",
-      "pose": "spheres",
-      "region": "Sphere_Emissive",
-      "metric": "deltaE",
-      "threshold": 1,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L4",
-      "sun": "sun15",
-      "pose": "spheres",
-      "region": "Sphere_Emissive",
-      "metric": "dP50",
-      "threshold": 0.01,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L4",
-      "sun": "sun15",
-      "pose": "spheres",
-      "region": "Room",
-      "metric": "deltaE",
-      "threshold": 1,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L4",
-      "sun": "sun15",
-      "pose": "spheres",
-      "region": "Room",
-      "metric": "dP50",
-      "threshold": 0.01,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L4",
-      "sun": "sun15",
-      "pose": "spheres",
-      "region": "ShadowedFloor",
-      "metric": "dP50",
-      "threshold": 0.01,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L5",
-      "sun": "sun15",
-      "pose": "spheres",
-      "region": "Sphere_Emissive",
-      "metric": "deltaE",
-      "threshold": 1,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L5",
-      "sun": "sun15",
-      "pose": "spheres",
-      "region": "Sphere_Emissive",
-      "metric": "dP50",
-      "threshold": 0.01,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L5",
-      "sun": "sun15",
-      "pose": "spheres",
-      "region": "Room",
-      "metric": "deltaE",
-      "threshold": 1,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L5",
-      "sun": "sun15",
-      "pose": "spheres",
-      "region": "Room",
-      "metric": "dP50",
-      "threshold": 0.01,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L6",
-      "sun": "sun15",
-      "pose": "spheres",
-      "region": "Sphere_Emissive",
-      "metric": "dP50",
-      "threshold": 0.01,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L6",
-      "sun": "sun15",
-      "pose": "spheres",
-      "region": "Box_Red",
-      "metric": "dP50",
-      "threshold": 0.01,
       "since": "17306d6c1"
     },
     {
@@ -1441,6 +541,987 @@
       "since": "17306d6c1"
     },
     {
+      "layer": "L0",
+      "sun": "sun60",
+      "pose": "interior",
+      "region": "Floor",
+      "metric": "iou",
+      "threshold": 0.98,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L0",
+      "sun": "sun60",
+      "pose": "interior",
+      "region": "Room",
+      "metric": "iou",
+      "threshold": 0.98,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L0",
+      "sun": "sun15",
+      "pose": "interior",
+      "region": "Floor",
+      "metric": "iou",
+      "threshold": 0.98,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L0",
+      "sun": "sun15",
+      "pose": "interior",
+      "region": "Room",
+      "metric": "iou",
+      "threshold": 0.98,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L0",
+      "sun": "sun04",
+      "pose": "interior",
+      "region": "Floor",
+      "metric": "iou",
+      "threshold": 0.98,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L0",
+      "sun": "sun04",
+      "pose": "interior",
+      "region": "Room",
+      "metric": "iou",
+      "threshold": 0.98,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L0",
+      "sun": "sun60",
+      "pose": "backlit",
+      "region": "Sky",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L0",
+      "sun": "sun60",
+      "pose": "backlit",
+      "region": "Sky",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L0",
+      "sun": "sun60",
+      "pose": "backlit",
+      "region": "Sky",
+      "metric": "iou",
+      "threshold": 0.98,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L0",
+      "sun": "sun60",
+      "pose": "backlit",
+      "region": "Floor",
+      "metric": "iou",
+      "threshold": 0.98,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L0",
+      "sun": "sun60",
+      "pose": "backlit",
+      "region": "BacklitWall",
+      "metric": "iou",
+      "threshold": 0.98,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L0",
+      "sun": "sun15",
+      "pose": "backlit",
+      "region": "Sky",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L0",
+      "sun": "sun15",
+      "pose": "backlit",
+      "region": "Sky",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L0",
+      "sun": "sun15",
+      "pose": "backlit",
+      "region": "Sky",
+      "metric": "iou",
+      "threshold": 0.98,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L0",
+      "sun": "sun15",
+      "pose": "backlit",
+      "region": "Floor",
+      "metric": "iou",
+      "threshold": 0.98,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L0",
+      "sun": "sun15",
+      "pose": "backlit",
+      "region": "BacklitWall",
+      "metric": "iou",
+      "threshold": 0.98,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L0",
+      "sun": "sun04",
+      "pose": "backlit",
+      "region": "Sky",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L0",
+      "sun": "sun04",
+      "pose": "backlit",
+      "region": "Sky",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L0",
+      "sun": "sun04",
+      "pose": "backlit",
+      "region": "Sky",
+      "metric": "iou",
+      "threshold": 0.98,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L0",
+      "sun": "sun04",
+      "pose": "backlit",
+      "region": "Floor",
+      "metric": "iou",
+      "threshold": 0.98,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L0",
+      "sun": "sun04",
+      "pose": "backlit",
+      "region": "BacklitWall",
+      "metric": "iou",
+      "threshold": 0.98,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "Sky",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "Sky",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "Room",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "Sky",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "Room",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "Room",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "Room",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "Sky",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "Sky",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "Room",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L5",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "Sky",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L5",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "Sky",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L6",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "Sky",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L6",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "Sky",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L6",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "BacklitWall",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L6",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "Capsule",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "Sky",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "Sky",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "Room",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "Capsule",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "Sky",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "Sky",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L5",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "Room",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun04",
+      "pose": "exterior",
+      "region": "Sky",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun04",
+      "pose": "exterior",
+      "region": "Sky",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun04",
+      "pose": "exterior",
+      "region": "Capsule",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun04",
+      "pose": "exterior",
+      "region": "Sky",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun04",
+      "pose": "exterior",
+      "region": "Room",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun04",
+      "pose": "exterior",
+      "region": "LitFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun04",
+      "pose": "exterior",
+      "region": "Sky",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L5",
+      "sun": "sun04",
+      "pose": "exterior",
+      "region": "Sky",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L6",
+      "sun": "sun04",
+      "pose": "exterior",
+      "region": "Sky",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Sky",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Sky",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Sphere_Chrome",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Sphere_Chrome",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Sphere_Emissive",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Sphere_Emissive",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Room",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Sky",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Sphere_Chrome",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Sphere_Chrome",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Sphere_Emissive",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Sphere_Emissive",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Sphere_Emissive",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Sphere_Emissive",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Sky",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Sphere_Emissive",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Sphere_Emissive",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Room",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L5",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Sky",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L5",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Sphere_Emissive",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L5",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Sphere_Emissive",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L5",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Room",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L6",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Sky",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L6",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Sphere_RoughDielectric",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L6",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Sphere_RoughDielectric",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L6",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Capsule",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Sky",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Sky",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Sphere_RoughDielectric",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Sphere_RoughDielectric",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Sphere_SmoothDielectric",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Sphere_Chrome",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Sphere_Chrome",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Sphere_Emissive",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Sphere_Emissive",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Box_White",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Room",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Capsule",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Sky",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Sky",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Sphere_Emissive",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Sphere_Emissive",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Room",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Sphere_Emissive",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Sphere_Emissive",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Room",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Sphere_Emissive",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Sphere_Emissive",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Room",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Room",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L5",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Sphere_Emissive",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L5",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Sphere_Emissive",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L5",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Room",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L5",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Room",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L6",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Sphere_Emissive",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "17306d6c1"
+    },
+    {
+      "layer": "L6",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Box_Red",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "17306d6c1"
+    },
+    {
       "layer": "L1",
       "sun": "sun04",
       "pose": "spheres",
@@ -1552,15 +1633,6 @@
       "layer": "L2",
       "sun": "sun04",
       "pose": "spheres",
-      "region": "Floor",
-      "metric": "dP50",
-      "threshold": 0.01,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L2",
-      "sun": "sun04",
-      "pose": "spheres",
       "region": "Sphere_Chrome",
       "metric": "deltaE",
       "threshold": 1,
@@ -1588,15 +1660,6 @@
       "layer": "L3",
       "sun": "sun04",
       "pose": "spheres",
-      "region": "Floor",
-      "metric": "dP50",
-      "threshold": 0.01,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L3",
-      "sun": "sun04",
-      "pose": "spheres",
       "region": "Sphere_Emissive",
       "metric": "deltaE",
       "threshold": 1,
@@ -1607,15 +1670,6 @@
       "sun": "sun04",
       "pose": "spheres",
       "region": "Sphere_Emissive",
-      "metric": "dP50",
-      "threshold": 0.01,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L3",
-      "sun": "sun04",
-      "pose": "spheres",
-      "region": "Room",
       "metric": "dP50",
       "threshold": 0.01,
       "since": "17306d6c1"
@@ -1666,51 +1720,6 @@
       "since": "17306d6c1"
     },
     {
-      "layer": "L6",
-      "sun": "sun04",
-      "pose": "spheres",
-      "region": "Room",
-      "metric": "dP50",
-      "threshold": 0.01,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L0",
-      "sun": "sun60",
-      "pose": "interior",
-      "region": "Floor",
-      "metric": "iou",
-      "threshold": 0.98,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L0",
-      "sun": "sun60",
-      "pose": "interior",
-      "region": "Room",
-      "metric": "iou",
-      "threshold": 0.98,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L0",
-      "sun": "sun15",
-      "pose": "interior",
-      "region": "Floor",
-      "metric": "iou",
-      "threshold": 0.98,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L0",
-      "sun": "sun15",
-      "pose": "interior",
-      "region": "Room",
-      "metric": "iou",
-      "threshold": 0.98,
-      "since": "17306d6c1"
-    },
-    {
       "layer": "L1",
       "sun": "sun15",
       "pose": "interior",
@@ -1738,46 +1747,10 @@
       "since": "17306d6c1"
     },
     {
-      "layer": "L2",
-      "sun": "sun15",
-      "pose": "interior",
-      "region": "ShadowedFloor",
-      "metric": "deltaE",
-      "threshold": 1,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L2",
-      "sun": "sun15",
-      "pose": "interior",
-      "region": "ShadowedFloor",
-      "metric": "dP50",
-      "threshold": 0.01,
-      "since": "17306d6c1"
-    },
-    {
       "layer": "L3",
       "sun": "sun15",
       "pose": "interior",
       "region": "Room",
-      "metric": "dP50",
-      "threshold": 0.01,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L3",
-      "sun": "sun15",
-      "pose": "interior",
-      "region": "ShadowedFloor",
-      "metric": "deltaE",
-      "threshold": 1,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L3",
-      "sun": "sun15",
-      "pose": "interior",
-      "region": "ShadowedFloor",
       "metric": "dP50",
       "threshold": 0.01,
       "since": "17306d6c1"
@@ -1789,33 +1762,6 @@
       "region": "Room",
       "metric": "dP50",
       "threshold": 0.01,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L4",
-      "sun": "sun15",
-      "pose": "interior",
-      "region": "ShadowedFloor",
-      "metric": "dP50",
-      "threshold": 0.01,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L0",
-      "sun": "sun04",
-      "pose": "interior",
-      "region": "Floor",
-      "metric": "iou",
-      "threshold": 0.98,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L0",
-      "sun": "sun04",
-      "pose": "interior",
-      "region": "Room",
-      "metric": "iou",
-      "threshold": 0.98,
       "since": "17306d6c1"
     },
     {
@@ -1855,51 +1801,6 @@
       "since": "17306d6c1"
     },
     {
-      "layer": "L0",
-      "sun": "sun60",
-      "pose": "backlit",
-      "region": "Sky",
-      "metric": "deltaE",
-      "threshold": 1,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L0",
-      "sun": "sun60",
-      "pose": "backlit",
-      "region": "Sky",
-      "metric": "dP50",
-      "threshold": 0.01,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L0",
-      "sun": "sun60",
-      "pose": "backlit",
-      "region": "Sky",
-      "metric": "iou",
-      "threshold": 0.98,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L0",
-      "sun": "sun60",
-      "pose": "backlit",
-      "region": "Floor",
-      "metric": "iou",
-      "threshold": 0.98,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L0",
-      "sun": "sun60",
-      "pose": "backlit",
-      "region": "BacklitWall",
-      "metric": "iou",
-      "threshold": 0.98,
-      "since": "17306d6c1"
-    },
-    {
       "layer": "L1",
       "sun": "sun60",
       "pose": "backlit",
@@ -1942,51 +1843,6 @@
       "region": "Sky",
       "metric": "dP50",
       "threshold": 0.01,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L0",
-      "sun": "sun15",
-      "pose": "backlit",
-      "region": "Sky",
-      "metric": "deltaE",
-      "threshold": 1,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L0",
-      "sun": "sun15",
-      "pose": "backlit",
-      "region": "Sky",
-      "metric": "dP50",
-      "threshold": 0.01,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L0",
-      "sun": "sun15",
-      "pose": "backlit",
-      "region": "Sky",
-      "metric": "iou",
-      "threshold": 0.98,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L0",
-      "sun": "sun15",
-      "pose": "backlit",
-      "region": "Floor",
-      "metric": "iou",
-      "threshold": 0.98,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L0",
-      "sun": "sun15",
-      "pose": "backlit",
-      "region": "BacklitWall",
-      "metric": "iou",
-      "threshold": 0.98,
       "since": "17306d6c1"
     },
     {
@@ -2041,51 +1897,6 @@
       "region": "Sky",
       "metric": "dP50",
       "threshold": 0.01,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L0",
-      "sun": "sun04",
-      "pose": "backlit",
-      "region": "Sky",
-      "metric": "deltaE",
-      "threshold": 1,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L0",
-      "sun": "sun04",
-      "pose": "backlit",
-      "region": "Sky",
-      "metric": "dP50",
-      "threshold": 0.01,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L0",
-      "sun": "sun04",
-      "pose": "backlit",
-      "region": "Sky",
-      "metric": "iou",
-      "threshold": 0.98,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L0",
-      "sun": "sun04",
-      "pose": "backlit",
-      "region": "Floor",
-      "metric": "iou",
-      "threshold": 0.98,
-      "since": "17306d6c1"
-    },
-    {
-      "layer": "L0",
-      "sun": "sun04",
-      "pose": "backlit",
-      "region": "BacklitWall",
-      "metric": "iou",
-      "threshold": 0.98,
       "since": "17306d6c1"
     },
     {
@@ -2605,15 +2416,6 @@
       "layer": "L9",
       "sun": "sun15",
       "pose": "spheres",
-      "region": "Floor",
-      "metric": "dP50",
-      "threshold": 0.0392,
-      "since": "ef8871272"
-    },
-    {
-      "layer": "L9",
-      "sun": "sun15",
-      "pose": "spheres",
       "region": "LitFloor",
       "metric": "dP50",
       "threshold": 0.0392,
@@ -2651,15 +2453,6 @@
       "sun": "sun04",
       "pose": "spheres",
       "region": "Box_White",
-      "metric": "dP50",
-      "threshold": 0.0392,
-      "since": "ef8871272"
-    },
-    {
-      "layer": "L9",
-      "sun": "sun60",
-      "pose": "interior",
-      "region": "Room",
       "metric": "dP50",
       "threshold": 0.0392,
       "since": "ef8871272"
@@ -2708,6 +2501,4686 @@
       "metric": "deltaE",
       "threshold": 1,
       "since": "e7bd94f01"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "Floor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "Floor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "Room",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "BacklitWall",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "BacklitWall",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "Capsule",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "Capsule",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "LitFloor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "LitFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "ShadowedFloor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "ShadowedFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "Floor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "Floor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "BacklitWall",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "BacklitWall",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "Capsule",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "Capsule",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "LitFloor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "LitFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "ShadowedFloor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "ShadowedFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "Floor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "Floor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "Room",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "BacklitWall",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "Capsule",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "Capsule",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "LitFloor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "LitFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "ShadowedFloor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "ShadowedFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "Floor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "Floor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "Room",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "BacklitWall",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "Capsule",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "Capsule",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "LitFloor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "LitFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "ShadowedFloor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "ShadowedFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L5",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "Floor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L5",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "Floor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L5",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "BacklitWall",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L5",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "Capsule",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L5",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "Capsule",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L5",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "LitFloor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L5",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "LitFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L6",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "Floor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L6",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "Floor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L6",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "Capsule",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L6",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "LitFloor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L6",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "LitFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L7",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "Sky",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L7",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "LitFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L8",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "Sky",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L8",
+      "sun": "sun60",
+      "pose": "exterior",
+      "region": "LitFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "Floor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "Floor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "Room",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "BacklitWall",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "BacklitWall",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "Capsule",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "LitFloor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "LitFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "ShadowedFloor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "ShadowedFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "Floor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "Room",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "Room",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "BacklitWall",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "BacklitWall",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "Capsule",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "Capsule",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "LitFloor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "LitFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "ShadowedFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "Sky",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "Floor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "Floor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "Room",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "Room",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "BacklitWall",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "BacklitWall",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "Capsule",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "Capsule",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "LitFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "ShadowedFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "Room",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "Room",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "BacklitWall",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "BacklitWall",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "Capsule",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "Capsule",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L5",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "Room",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L5",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "BacklitWall",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L5",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "BacklitWall",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L5",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "Capsule",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L5",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "Capsule",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L6",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "Room",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L6",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "Room",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L6",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "BacklitWall",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L6",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "BacklitWall",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L6",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "Capsule",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L6",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "Capsule",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L7",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "Floor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L7",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "Floor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L7",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "Room",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L7",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "Room",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L7",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "BacklitWall",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L7",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "BacklitWall",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L7",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "Capsule",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L7",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "Capsule",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L7",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "LitFloor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L7",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "LitFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L8",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "Floor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L8",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "Floor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L8",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "Room",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L8",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "Room",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L8",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "BacklitWall",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L8",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "BacklitWall",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L8",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "Capsule",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L8",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "Capsule",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L8",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "LitFloor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L8",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "LitFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L9",
+      "sun": "sun15",
+      "pose": "exterior",
+      "region": "LitFloor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun04",
+      "pose": "exterior",
+      "region": "Room",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun04",
+      "pose": "exterior",
+      "region": "BacklitWall",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun04",
+      "pose": "exterior",
+      "region": "BacklitWall",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun04",
+      "pose": "exterior",
+      "region": "Capsule",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun04",
+      "pose": "exterior",
+      "region": "Room",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun04",
+      "pose": "exterior",
+      "region": "BacklitWall",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun04",
+      "pose": "exterior",
+      "region": "BacklitWall",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun04",
+      "pose": "exterior",
+      "region": "Capsule",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun04",
+      "pose": "exterior",
+      "region": "Capsule",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun04",
+      "pose": "exterior",
+      "region": "Room",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun04",
+      "pose": "exterior",
+      "region": "Capsule",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun04",
+      "pose": "exterior",
+      "region": "Capsule",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun04",
+      "pose": "exterior",
+      "region": "LitFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun04",
+      "pose": "exterior",
+      "region": "Room",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun04",
+      "pose": "exterior",
+      "region": "BacklitWall",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun04",
+      "pose": "exterior",
+      "region": "BacklitWall",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun04",
+      "pose": "exterior",
+      "region": "Capsule",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L5",
+      "sun": "sun04",
+      "pose": "exterior",
+      "region": "Room",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L5",
+      "sun": "sun04",
+      "pose": "exterior",
+      "region": "BacklitWall",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L5",
+      "sun": "sun04",
+      "pose": "exterior",
+      "region": "BacklitWall",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L5",
+      "sun": "sun04",
+      "pose": "exterior",
+      "region": "Capsule",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L6",
+      "sun": "sun04",
+      "pose": "exterior",
+      "region": "Room",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L6",
+      "sun": "sun04",
+      "pose": "exterior",
+      "region": "BacklitWall",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L6",
+      "sun": "sun04",
+      "pose": "exterior",
+      "region": "BacklitWall",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L6",
+      "sun": "sun04",
+      "pose": "exterior",
+      "region": "Capsule",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L7",
+      "sun": "sun04",
+      "pose": "exterior",
+      "region": "Capsule",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L8",
+      "sun": "sun04",
+      "pose": "exterior",
+      "region": "Capsule",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Floor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Floor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Sphere_RoughDielectric",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Sphere_RoughDielectric",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Sphere_SmoothDielectric",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Sphere_SmoothDielectric",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Box_Red",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Box_Red",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Box_White",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Box_White",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Room",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Capsule",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Capsule",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "LitFloor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "LitFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "ShadowedFloor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "ShadowedFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Floor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Floor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Sphere_RoughDielectric",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Sphere_RoughDielectric",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Sphere_SmoothDielectric",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Sphere_SmoothDielectric",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Box_Red",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Box_Red",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Box_White",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Box_White",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Room",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Room",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Capsule",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Capsule",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "LitFloor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "LitFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "ShadowedFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Floor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Floor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Sphere_RoughDielectric",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Sphere_RoughDielectric",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Sphere_SmoothDielectric",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Sphere_SmoothDielectric",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Box_Red",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Box_Red",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Box_White",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Box_White",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Room",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Capsule",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Capsule",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "LitFloor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "LitFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "ShadowedFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Sky",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Floor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Floor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Sphere_RoughDielectric",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Sphere_RoughDielectric",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Sphere_SmoothDielectric",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Sphere_SmoothDielectric",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Box_White",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Box_White",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "LitFloor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "LitFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "ShadowedFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L5",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Sky",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L5",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Floor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L5",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Floor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L5",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Sphere_RoughDielectric",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L5",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Sphere_RoughDielectric",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L5",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Sphere_SmoothDielectric",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L5",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Sphere_SmoothDielectric",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L5",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Box_White",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L5",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Box_White",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L5",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Capsule",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L5",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "LitFloor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L5",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "LitFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L6",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Sky",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L6",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Floor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L6",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Floor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L6",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Sphere_SmoothDielectric",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L6",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Sphere_SmoothDielectric",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L6",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Box_White",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L6",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Box_White",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L6",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Room",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L6",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Capsule",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L6",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "LitFloor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L6",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "LitFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L7",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Sky",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L7",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Floor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L7",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Floor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L7",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Sphere_SmoothDielectric",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L7",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Box_Red",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L7",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Room",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L7",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Room",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L7",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Capsule",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L7",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "LitFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L8",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Sky",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L8",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Floor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L8",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Floor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L8",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Sphere_SmoothDielectric",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L8",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Sphere_Chrome",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L8",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Room",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L8",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Room",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L8",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Capsule",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L8",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "LitFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L9",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Sphere_RoughDielectric",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L9",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Box_Red",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L9",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Room",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Floor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Floor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Sphere_SmoothDielectric",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Box_Red",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Box_Red",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Box_White",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Room",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Capsule",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "LitFloor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "LitFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "ShadowedFloor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "ShadowedFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Sphere_RoughDielectric",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Sphere_RoughDielectric",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Sphere_SmoothDielectric",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Sphere_SmoothDielectric",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Box_Red",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Box_Red",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Box_White",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Box_White",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Room",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Capsule",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Capsule",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "LitFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Sphere_RoughDielectric",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Sphere_RoughDielectric",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Sphere_SmoothDielectric",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Sphere_SmoothDielectric",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Box_Red",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Box_Red",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Box_White",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Box_White",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Room",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Capsule",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Capsule",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "LitFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Sphere_RoughDielectric",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Sphere_RoughDielectric",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Sphere_SmoothDielectric",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Sphere_SmoothDielectric",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Box_Red",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Box_Red",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Box_White",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Box_White",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Capsule",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Capsule",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L5",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Sphere_RoughDielectric",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L5",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Sphere_RoughDielectric",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L5",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Sphere_SmoothDielectric",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L5",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Sphere_SmoothDielectric",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L5",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Box_Red",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L5",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Box_Red",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L5",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Capsule",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L5",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Capsule",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L6",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Sphere_RoughDielectric",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L6",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Sphere_RoughDielectric",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L6",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Sphere_SmoothDielectric",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L6",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Sphere_SmoothDielectric",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L6",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Box_Red",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L6",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Room",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L6",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Room",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L6",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Capsule",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L6",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Capsule",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L7",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Floor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L7",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Sphere_RoughDielectric",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L7",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Sphere_RoughDielectric",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L7",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Sphere_SmoothDielectric",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L7",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Sphere_SmoothDielectric",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L7",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Box_Red",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L7",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Room",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L7",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Room",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L7",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Capsule",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L7",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Capsule",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L7",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "LitFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L8",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Floor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L8",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Sphere_RoughDielectric",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L8",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Sphere_RoughDielectric",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L8",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Sphere_SmoothDielectric",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L8",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Sphere_SmoothDielectric",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L8",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Box_Red",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L8",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Room",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L8",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Room",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L8",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Capsule",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L8",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Capsule",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L8",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "LitFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun04",
+      "pose": "spheres",
+      "region": "Sphere_SmoothDielectric",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun04",
+      "pose": "spheres",
+      "region": "Box_Red",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun04",
+      "pose": "spheres",
+      "region": "Box_Red",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun04",
+      "pose": "spheres",
+      "region": "Room",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun04",
+      "pose": "spheres",
+      "region": "Capsule",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun04",
+      "pose": "spheres",
+      "region": "Sphere_RoughDielectric",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun04",
+      "pose": "spheres",
+      "region": "Sphere_RoughDielectric",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun04",
+      "pose": "spheres",
+      "region": "Sphere_SmoothDielectric",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun04",
+      "pose": "spheres",
+      "region": "Sphere_SmoothDielectric",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun04",
+      "pose": "spheres",
+      "region": "Box_Red",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun04",
+      "pose": "spheres",
+      "region": "Box_Red",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun04",
+      "pose": "spheres",
+      "region": "Box_White",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun04",
+      "pose": "spheres",
+      "region": "Box_White",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun04",
+      "pose": "spheres",
+      "region": "Room",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun04",
+      "pose": "spheres",
+      "region": "Room",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun04",
+      "pose": "spheres",
+      "region": "Capsule",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun04",
+      "pose": "spheres",
+      "region": "Capsule",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun04",
+      "pose": "spheres",
+      "region": "Sphere_RoughDielectric",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun04",
+      "pose": "spheres",
+      "region": "Sphere_RoughDielectric",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun04",
+      "pose": "spheres",
+      "region": "Sphere_SmoothDielectric",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun04",
+      "pose": "spheres",
+      "region": "Sphere_SmoothDielectric",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun04",
+      "pose": "spheres",
+      "region": "Box_Red",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun04",
+      "pose": "spheres",
+      "region": "Box_Red",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun04",
+      "pose": "spheres",
+      "region": "Box_White",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun04",
+      "pose": "spheres",
+      "region": "Box_White",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun04",
+      "pose": "spheres",
+      "region": "Capsule",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun04",
+      "pose": "spheres",
+      "region": "Sky",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun04",
+      "pose": "spheres",
+      "region": "Sphere_RoughDielectric",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun04",
+      "pose": "spheres",
+      "region": "Sphere_RoughDielectric",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun04",
+      "pose": "spheres",
+      "region": "Sphere_SmoothDielectric",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun04",
+      "pose": "spheres",
+      "region": "Box_Red",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun04",
+      "pose": "spheres",
+      "region": "Box_Red",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun04",
+      "pose": "spheres",
+      "region": "Room",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun04",
+      "pose": "spheres",
+      "region": "Capsule",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun04",
+      "pose": "spheres",
+      "region": "Capsule",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L5",
+      "sun": "sun04",
+      "pose": "spheres",
+      "region": "Sky",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L5",
+      "sun": "sun04",
+      "pose": "spheres",
+      "region": "Sphere_RoughDielectric",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L5",
+      "sun": "sun04",
+      "pose": "spheres",
+      "region": "Sphere_RoughDielectric",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L5",
+      "sun": "sun04",
+      "pose": "spheres",
+      "region": "Sphere_SmoothDielectric",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L5",
+      "sun": "sun04",
+      "pose": "spheres",
+      "region": "Room",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L5",
+      "sun": "sun04",
+      "pose": "spheres",
+      "region": "Capsule",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L5",
+      "sun": "sun04",
+      "pose": "spheres",
+      "region": "Capsule",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L6",
+      "sun": "sun04",
+      "pose": "spheres",
+      "region": "Sky",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L6",
+      "sun": "sun04",
+      "pose": "spheres",
+      "region": "Sphere_RoughDielectric",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L6",
+      "sun": "sun04",
+      "pose": "spheres",
+      "region": "Sphere_RoughDielectric",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L6",
+      "sun": "sun04",
+      "pose": "spheres",
+      "region": "Sphere_SmoothDielectric",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L6",
+      "sun": "sun04",
+      "pose": "spheres",
+      "region": "Room",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L6",
+      "sun": "sun04",
+      "pose": "spheres",
+      "region": "Capsule",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L6",
+      "sun": "sun04",
+      "pose": "spheres",
+      "region": "Capsule",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L7",
+      "sun": "sun04",
+      "pose": "spheres",
+      "region": "Sky",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L7",
+      "sun": "sun04",
+      "pose": "spheres",
+      "region": "Capsule",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L8",
+      "sun": "sun04",
+      "pose": "spheres",
+      "region": "Sky",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L8",
+      "sun": "sun04",
+      "pose": "spheres",
+      "region": "Capsule",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L9",
+      "sun": "sun04",
+      "pose": "spheres",
+      "region": "Sky",
+      "metric": "dP50",
+      "threshold": 0.0392,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun60",
+      "pose": "interior",
+      "region": "Floor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun60",
+      "pose": "interior",
+      "region": "Floor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun60",
+      "pose": "interior",
+      "region": "Room",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun60",
+      "pose": "interior",
+      "region": "Room",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun60",
+      "pose": "interior",
+      "region": "LitFloor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun60",
+      "pose": "interior",
+      "region": "LitFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun60",
+      "pose": "interior",
+      "region": "ShadowedFloor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun60",
+      "pose": "interior",
+      "region": "ShadowedFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun60",
+      "pose": "interior",
+      "region": "Floor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun60",
+      "pose": "interior",
+      "region": "Floor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun60",
+      "pose": "interior",
+      "region": "Room",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun60",
+      "pose": "interior",
+      "region": "Room",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun60",
+      "pose": "interior",
+      "region": "LitFloor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun60",
+      "pose": "interior",
+      "region": "LitFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun60",
+      "pose": "interior",
+      "region": "ShadowedFloor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun60",
+      "pose": "interior",
+      "region": "ShadowedFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun60",
+      "pose": "interior",
+      "region": "Floor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun60",
+      "pose": "interior",
+      "region": "Floor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun60",
+      "pose": "interior",
+      "region": "Room",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun60",
+      "pose": "interior",
+      "region": "LitFloor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun60",
+      "pose": "interior",
+      "region": "LitFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun60",
+      "pose": "interior",
+      "region": "ShadowedFloor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun60",
+      "pose": "interior",
+      "region": "ShadowedFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun60",
+      "pose": "interior",
+      "region": "Floor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun60",
+      "pose": "interior",
+      "region": "Floor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun60",
+      "pose": "interior",
+      "region": "Room",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun60",
+      "pose": "interior",
+      "region": "LitFloor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun60",
+      "pose": "interior",
+      "region": "LitFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun60",
+      "pose": "interior",
+      "region": "ShadowedFloor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun60",
+      "pose": "interior",
+      "region": "ShadowedFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun15",
+      "pose": "interior",
+      "region": "Floor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun15",
+      "pose": "interior",
+      "region": "LitFloor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun15",
+      "pose": "interior",
+      "region": "LitFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun15",
+      "pose": "interior",
+      "region": "ShadowedFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun15",
+      "pose": "interior",
+      "region": "Room",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun15",
+      "pose": "interior",
+      "region": "Room",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun15",
+      "pose": "interior",
+      "region": "Room",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun15",
+      "pose": "interior",
+      "region": "Room",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L7",
+      "sun": "sun15",
+      "pose": "interior",
+      "region": "Floor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L7",
+      "sun": "sun15",
+      "pose": "interior",
+      "region": "LitFloor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L7",
+      "sun": "sun15",
+      "pose": "interior",
+      "region": "LitFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L8",
+      "sun": "sun15",
+      "pose": "interior",
+      "region": "Floor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L8",
+      "sun": "sun15",
+      "pose": "interior",
+      "region": "LitFloor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L8",
+      "sun": "sun15",
+      "pose": "interior",
+      "region": "LitFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun04",
+      "pose": "interior",
+      "region": "Room",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun04",
+      "pose": "interior",
+      "region": "Room",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun04",
+      "pose": "interior",
+      "region": "Room",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun04",
+      "pose": "interior",
+      "region": "Room",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L7",
+      "sun": "sun04",
+      "pose": "interior",
+      "region": "Floor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L8",
+      "sun": "sun04",
+      "pose": "interior",
+      "region": "Floor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun60",
+      "pose": "backlit",
+      "region": "Floor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun60",
+      "pose": "backlit",
+      "region": "Floor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun60",
+      "pose": "backlit",
+      "region": "LitFloor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun60",
+      "pose": "backlit",
+      "region": "LitFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun60",
+      "pose": "backlit",
+      "region": "ShadowedFloor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun60",
+      "pose": "backlit",
+      "region": "ShadowedFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun60",
+      "pose": "backlit",
+      "region": "Floor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun60",
+      "pose": "backlit",
+      "region": "Floor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun60",
+      "pose": "backlit",
+      "region": "BacklitWall",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun60",
+      "pose": "backlit",
+      "region": "LitFloor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun60",
+      "pose": "backlit",
+      "region": "LitFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun60",
+      "pose": "backlit",
+      "region": "ShadowedFloor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun60",
+      "pose": "backlit",
+      "region": "ShadowedFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun60",
+      "pose": "backlit",
+      "region": "Floor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun60",
+      "pose": "backlit",
+      "region": "Floor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun60",
+      "pose": "backlit",
+      "region": "LitFloor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun60",
+      "pose": "backlit",
+      "region": "LitFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun60",
+      "pose": "backlit",
+      "region": "ShadowedFloor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun60",
+      "pose": "backlit",
+      "region": "ShadowedFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun60",
+      "pose": "backlit",
+      "region": "Floor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun60",
+      "pose": "backlit",
+      "region": "Floor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun60",
+      "pose": "backlit",
+      "region": "LitFloor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun60",
+      "pose": "backlit",
+      "region": "LitFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun60",
+      "pose": "backlit",
+      "region": "ShadowedFloor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun60",
+      "pose": "backlit",
+      "region": "ShadowedFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L5",
+      "sun": "sun60",
+      "pose": "backlit",
+      "region": "Floor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L5",
+      "sun": "sun60",
+      "pose": "backlit",
+      "region": "Floor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L5",
+      "sun": "sun60",
+      "pose": "backlit",
+      "region": "LitFloor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L5",
+      "sun": "sun60",
+      "pose": "backlit",
+      "region": "LitFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L6",
+      "sun": "sun60",
+      "pose": "backlit",
+      "region": "Floor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L6",
+      "sun": "sun60",
+      "pose": "backlit",
+      "region": "Floor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L6",
+      "sun": "sun60",
+      "pose": "backlit",
+      "region": "LitFloor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L6",
+      "sun": "sun60",
+      "pose": "backlit",
+      "region": "LitFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L7",
+      "sun": "sun60",
+      "pose": "backlit",
+      "region": "Floor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L7",
+      "sun": "sun60",
+      "pose": "backlit",
+      "region": "Floor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L7",
+      "sun": "sun60",
+      "pose": "backlit",
+      "region": "LitFloor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L7",
+      "sun": "sun60",
+      "pose": "backlit",
+      "region": "LitFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L8",
+      "sun": "sun60",
+      "pose": "backlit",
+      "region": "Floor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L8",
+      "sun": "sun60",
+      "pose": "backlit",
+      "region": "Floor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L8",
+      "sun": "sun60",
+      "pose": "backlit",
+      "region": "LitFloor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L8",
+      "sun": "sun60",
+      "pose": "backlit",
+      "region": "LitFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun15",
+      "pose": "backlit",
+      "region": "Floor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun15",
+      "pose": "backlit",
+      "region": "LitFloor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun15",
+      "pose": "backlit",
+      "region": "LitFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun15",
+      "pose": "backlit",
+      "region": "ShadowedFloor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun15",
+      "pose": "backlit",
+      "region": "ShadowedFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun15",
+      "pose": "backlit",
+      "region": "Floor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun15",
+      "pose": "backlit",
+      "region": "Floor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun15",
+      "pose": "backlit",
+      "region": "LitFloor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun15",
+      "pose": "backlit",
+      "region": "LitFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun15",
+      "pose": "backlit",
+      "region": "ShadowedFloor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun15",
+      "pose": "backlit",
+      "region": "ShadowedFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun15",
+      "pose": "backlit",
+      "region": "Floor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun15",
+      "pose": "backlit",
+      "region": "Floor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun15",
+      "pose": "backlit",
+      "region": "LitFloor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun15",
+      "pose": "backlit",
+      "region": "LitFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun15",
+      "pose": "backlit",
+      "region": "ShadowedFloor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun15",
+      "pose": "backlit",
+      "region": "ShadowedFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L4",
+      "sun": "sun15",
+      "pose": "backlit",
+      "region": "LitFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L5",
+      "sun": "sun15",
+      "pose": "backlit",
+      "region": "LitFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L6",
+      "sun": "sun15",
+      "pose": "backlit",
+      "region": "LitFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L7",
+      "sun": "sun15",
+      "pose": "backlit",
+      "region": "LitFloor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L7",
+      "sun": "sun15",
+      "pose": "backlit",
+      "region": "LitFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L8",
+      "sun": "sun15",
+      "pose": "backlit",
+      "region": "LitFloor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L8",
+      "sun": "sun15",
+      "pose": "backlit",
+      "region": "LitFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L1",
+      "sun": "sun04",
+      "pose": "backlit",
+      "region": "LitFloor",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun04",
+      "pose": "backlit",
+      "region": "Sky",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun04",
+      "pose": "backlit",
+      "region": "Floor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L2",
+      "sun": "sun04",
+      "pose": "backlit",
+      "region": "ShadowedFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun04",
+      "pose": "backlit",
+      "region": "Sky",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun04",
+      "pose": "backlit",
+      "region": "Floor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
+    },
+    {
+      "layer": "L3",
+      "sun": "sun04",
+      "pose": "backlit",
+      "region": "ShadowedFloor",
+      "metric": "dP50",
+      "threshold": 0.01,
+      "since": "57f8925b8"
     }
   ]
 }

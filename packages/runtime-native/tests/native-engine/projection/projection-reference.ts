@@ -211,6 +211,12 @@ export const SCENES: ISceneSpec[] = [
   { name: "props-below-floor", ...crowdAssets, objects: [props(150)] },
   { name: "props-floor-exact", ...crowdAssets, minMeshes: 50, objects: [props(50)] },
   { name: "props-with-hook", ...crowdAssets, objects: [props(299), props(1, { hook: true })] },
+  // Too small to batch: the floor is the reason, whatever hook the scene carries.
+  {
+    name: "props-hook-below-floor",
+    ...crowdAssets,
+    objects: [props(49), props(1, { hook: true })],
+  },
   { name: "crowd-8", ...crowdAssets, objects: [rigs(8)] },
   { name: "crowd-8-props", ...crowdAssets, objects: [rigs(8), props(300)] },
   {

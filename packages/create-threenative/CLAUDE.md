@@ -50,14 +50,14 @@ a copy only where a symlink is not permitted). Every scaffold also gets
 `ponytail` — the lazy-first skill whose reuse rung *is* the mandatory capability search — and a
 project-scoped hook (`.claude/settings.json`, `.codex/hooks.json`, both launching
 `.claude/hooks/ponytail-context.mjs`) that re-injects its ruleset every session, prompt and
-subagent. The hook stays local: no mode file, no statusline, no machine-wide state, `PONYTAIL=off`
-to opt out, and Codex needs `/hooks` trust before it runs.
+subagent; `PONYTAIL=off` opts out, and Codex needs `/hooks` trust. Both also run `discovery-gate.mjs`:
+no new `src/` file until the engine was searched since the prompt (PRD-827, `TN_DISCOVERY_GATE=off`).
 Long recipes live in `agent-docs/references/*.md`, not the templates. The scaffolder copies nothing;
 instructions link the installed `node_modules/create-threenative/agent-docs/references/<page>.md`,
-and it fails closed when a template names a missing page. Keep each template `AGENTS.md` under 100
-lines; `scripts/instruction-budget.ts` still bounds rendered words, references, and the `CLAUDE.md`
-mirror. Keep mandatory rules (first-use capability search, platform constraints, fail-closed
-playtest rules) in the root; move detailed workflows into a skill or reference and link its path.
+and it fails closed when a template names a missing page. A kit `AGENTS.md` is a generated router
+(PRD-825): at most 120 lines and 1,200 words (`scripts/instruction-budget.ts`). Edit only its "This
+kit" lines; `pnpm sync:agents` writes the rest from `agent-docs/kit-*.md`, `kit.json`, the kit tree
+and `conventions.json` (`scripts/kit-agent-docs.ts`). A new convention is a registry row plus anchor.
 
 **A template's platform claims must match what was executed.** The status paragraph under each
 template's Commands block is a fail-closed statement, not marketing; narrow it when a dependency
@@ -93,7 +93,7 @@ local tarballs. `pnpm dev` inside a generated project is a package script, never
 The MCP servers reach a generated project through the configs installing `@threenative/core`
 writes — asset, sculpt and capability servers, each launching through a shim inside core, wired for
 every host that reads a project-scoped config. `MCP_HOSTS` in `packages/core/mcp/install.mjs` is that
-list; `pnpm sync:mcp` writes it into every template and `--check` fails the budgets when one is stale.
+list; the scaffolder writes it into each generated project with `ensureHostMcpConfigs`, and no template tracks a config (PRD-826).
 A host that reads only a machine-wide config is deliberately absent: installing a library into one
 game must never edit a file governing every other project. The asset server stays the externally
 pinned `threenative-asset-mcp`; never vendor it. Its surface is `asset-mcp-tools.json`, updated by

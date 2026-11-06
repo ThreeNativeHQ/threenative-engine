@@ -86,6 +86,23 @@
     },
     {
       "aliases": [],
+      "constraints": [],
+      "example": "await cookTerrainWorld({ state, species, out: \"assets/world\" });",
+      "importPath": "@threenative/assets",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/assets",
+      "signature": "export function cookTerrainWorld( options: IPreparedTerrainWorldOptions, ): Promise< { … }",
+      "situations": [
+        "bake a terrain world headlessly into a GLB with instanced trees and rocks",
+        "generate a forest world for my game"
+      ],
+      "summary": "Bake evaluated terrain and static species into an instanced GLB and streaming world package.",
+      "supersedes": [],
+      "symbol": "cookTerrainWorld"
+    },
+    {
+      "aliases": [],
       "constraints": [
         "the signature ignores the material name, which is what made every imported part a singleton, and keeps materials apart on any field it does not understand",
         "the census reads geometry and materials only: no GPU, no runtime, no game"
@@ -434,6 +451,22 @@
     {
       "aliases": [],
       "constraints": [
+        "mutates the supplied document; rejects unsupported MASK topology and invalid ratios"
+      ],
+      "example": "thinFoliageCards(document, 0.14);",
+      "importPath": "@threenative/assets",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/assets",
+      "signature": "export function thinFoliageCards(document: Document, keepRatio: number): number { … }",
+      "situations": ["prepare a far foliage mesh by thinning whole cards instead of triangles"],
+      "summary": "Build a standalone card-thinned foliage mesh, preserving opaque parts and vertex attributes.",
+      "supersedes": [],
+      "symbol": "thinFoliageCards"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "reads geometry and materials only: no GPU, no runtime, no game",
         "a texture whose size the document does not state is reported excluded, never assumed square",
         "a model the reader cannot open is named, never skipped silently"
@@ -569,7 +602,7 @@
         "add hundreds of built objects to the scene without one multi-second frame",
         "stream a detail tier in behind a loading curtain without the page looking hung"
       ],
-      "summary": "Attach hundreds of built objects to the scene in slices, presenting a frame between each.",
+      "summary": "Attach hundreds of built objects to the scene in slices with an 8 ms default budget, presenting a frame between each.",
       "supersedes": [],
       "symbol": "addInSlices"
     },
@@ -2345,6 +2378,22 @@
     },
     {
       "aliases": [],
+      "constraints": ["a geometry the loader built no chain for returns undefined"],
+      "example": "const chain = lodChainOf(baseGeometryOf(mesh)); const far = chain?.levels.at(-1);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function lodChainOf(geometry: BufferGeometry): ILodChain | undefined { … }",
+      "situations": [
+        "draw a cooked reduced level of a model in an instanced batch or streamed world level"
+      ],
+      "summary": "The cooked automatic LOD chain (`TN_discrete_lod`) a loaded geometry carries, or `undefined`. Its levels share the base's vertex attributes and differ only in index, and `errors` are each level's world-unit error in the base's own space. A caller that draws one geometry many times (an instanced batch, a streamed world level) reads the reduced shapes here instead of re-cooking.",
+      "supersedes": [],
+      "symbol": "lodChainOf"
+    },
+    {
+      "aliases": [],
       "constraints": [
         "a non-positive viewport height, a non-positive frustum height or an unprojectable camera throws",
         "a non-positive depth has no projected scale and returns Infinity"
@@ -3678,6 +3727,24 @@
       "symbol": "SurfaceLights"
     },
     {
+      "aliases": [],
+      "constraints": [
+        "the geometry must be indexed and carry no material groups, else it throws",
+        "keep is in (0, 1]; a share that drops nothing returns the same geometry",
+        "the choice is deterministic, and the source geometry is left untouched"
+      ],
+      "example": "const far = thinCards(needles.geometry, 0.4); // 40% of the cards, same area",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function thinCards(geometry: BufferGeometry, keep: number): BufferGeometry { … }",
+      "situations": ["far trees draw too many alpha-tested needle or leaf card triangles"],
+      "summary": "A far level for a card mesh (needle or leaf quads): keep a share of its cards and grow each kept card about its own centre, so the crown holds its total surface area, as Unreal's Nanite \"Preserve Area\" foliage does. A simplifier cannot reduce disconnected cards, so the cooked chain leaves them at full count.",
+      "supersedes": [],
+      "symbol": "thinCards"
+    },
+    {
       "aliases": ["lumen reflections", "dedicated reflection rays"],
       "constraints": [
         "the pack is a snapshot of the static triangles taken when the object is built: build a new one after geometry moves",
@@ -3920,6 +3987,7 @@
       "overrides": [
         "bias, biasNode, normalBias, intensity, radius, blurSamples, mapType and filterNode stay on `light.shadow`; mapSize and the other options here have defaults, and `marker: false` silences the TN_VIRTUAL_SHADOW line, not the measurement",
         "bias, biasNode, normalBias, intensity, radius, blurSamples, mapType and filterNode stay on `light.shadow`; mapSize and the other options here have defaults",
+        "setFocus(point) centres every window on a subject (a third-person hero) instead of the eye, so an orbiting eye moves no shadow; setFocus(undefined) hands them back",
         "followViewFocus: false keeps eye follow; receiverPlaneBias: false uses only authored bias",
         "minWindowAspect: below 1, a level is as high as `sin(sun elevation)` times its width, never under this, so a low sun's floor shadows keep the texel density of a high sun's; the default 1 keeps square levels"
       ],
@@ -3929,7 +3997,8 @@
         "crisp shadows close to the player across a large outdoor level",
         "shadow map too coarse over a big terrain",
         "one directional light shadow for a whole open world",
-        "shadows shimmer when the camera moves"
+        "shadows shimmer when the camera moves",
+        "shadow edges, tree lighting or level sharpness change while a third-person camera turns around its hero"
       ],
       "summary": "One directional shadow for a whole open world: camera-centred clip levels, each snapped to its own texel grid and re-rendered only when its window moves. Tracked casters draw into a per-level mover map every frame, so animated casters do not invalidate the cached levels after the one refresh caused by tracking or untracking them. Plugs into three's own `light.shadow.shadowNode` slot, so every material receives it.",
       "supersedes": [],
@@ -4256,6 +4325,329 @@
     },
     {
       "aliases": [],
+      "constraints": [
+        "the pool is fixed and recycles the cast alive longest; it never grows",
+        "a ball that has passed its target lands on the target, however late the frame notices"
+      ],
+      "example": "const casts = new CastPool(world);\ncasts.cast(fireball, target, { from: hand });\ncasts.update(dt);",
+      "importPath": "@threenative/core/spells",
+      "kind": "class",
+      "overrides": [
+        "timing, shape, speed and radius come from the spell; a cast may override shape and seed"
+      ],
+      "package": "@threenative/core",
+      "signature": "export class CastPool { … }",
+      "situations": [
+        "a fireball or a lightning bolt that charges, flies, lands and lingers",
+        "several spells mid-flight, with no allocation per cast"
+      ],
+      "summary": "Step a spell's timeline: charge, release, travel, impact, linger, done.",
+      "supersedes": [],
+      "symbol": "CastPool"
+    },
+    {
+      "aliases": [],
+      "constraints": ["every colour, size, count and timing is a named override on the call"],
+      "example": "const aegis = createAegis(world);\ncasts.cast(aegis, world.focus);",
+      "importPath": "@threenative/core/spells",
+      "kind": "function",
+      "overrides": [
+        "core, highlight, charge, impact, linger, radius, light",
+        "core, highlight, charge, impact, linger, radius, light, shake"
+      ],
+      "package": "@threenative/core",
+      "signature": "export function createAegis(world: SpellWorld, overrides: IFireSpellOverrides = { … }",
+      "situations": [
+        "a shield spell a player casts on themselves",
+        "a magic barrier that forms around the caster",
+        "make a protective bubble spell",
+        "a defensive bubble that flashes when it breaks"
+      ],
+      "summary": "A ward around the caster: it forms, holds, and breaks outward when it expires.",
+      "supersedes": [],
+      "symbol": "createAegis"
+    },
+    {
+      "aliases": [],
+      "constraints": ["every colour, size, count and timing is a named override on the call"],
+      "example": "const barrage = createArcaneBarrage(world);\ncasts.cast(barrage, target);",
+      "importPath": "@threenative/core/spells",
+      "kind": "function",
+      "overrides": ["core, highlight, speed, charge, impact, linger, radius, burst, light"],
+      "package": "@threenative/core",
+      "signature": "export function createArcaneBarrage(world: SpellWorld, overrides: IFireSpellOverrides = { … }",
+      "situations": [
+        "an arcane missile spell that fires projectiles at a target",
+        "a magic barrage a mage class spams",
+        "a magic missile spell",
+        "make an arcane bolt spell",
+        "an arcane missile spell that fires several projectiles at a target",
+        "a pink energy bolt with a short charge"
+      ],
+      "summary": "A volley of arcane missiles: fast, precise, and each one pops on arrival.",
+      "supersedes": [],
+      "symbol": "createArcaneBarrage"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "the first cast costs what the hundredth does: nothing is built at cast time",
+        "the stock look ships as the default, and no override rebuilds a pipeline"
+      ],
+      "example": "const fireball = createFireball(world);\ncasts.cast(fireball, target);",
+      "importPath": "@threenative/core/spells",
+      "kind": "function",
+      "overrides": [
+        "core, highlight, speed, charge, impact, linger, radius, burst, trail, lingerBurst, light, shake, scorch"
+      ],
+      "package": "@threenative/core",
+      "signature": "export function createFireball(world: SpellWorld, overrides: IFireSpellOverrides = { … }",
+      "situations": [
+        "a fireball spell the player casts at an enemy",
+        "a burning projectile that explodes and scorches the ground",
+        "a wizard's fire attack with a wind-up, a flight and an aftermath",
+        "make a fireball",
+        "a fireball spell a player casts at an enemy"
+      ],
+      "summary": "A ball of fire that charges, crosses the room and leaves the floor burning.",
+      "supersedes": [],
+      "symbol": "createFireball"
+    },
+    {
+      "aliases": [],
+      "constraints": ["every colour, size, count and timing is a named override on the call"],
+      "example": "const spike = createGlacialSpike(world);\ncasts.cast(spike, target);",
+      "importPath": "@threenative/core/spells",
+      "kind": "function",
+      "overrides": ["core, highlight, speed, charge, impact, linger, radius, burst, trail, light"],
+      "package": "@threenative/core",
+      "signature": "export function createGlacialSpike(world: SpellWorld, overrides: IFireSpellOverrides = { … }",
+      "situations": [
+        "an ice spike spell that flies at a target and shatters",
+        "a freezing projectile that leaves frost on the floor",
+        "make an ice spell",
+        "a cold spell with a charge, a flight and a lingering chill"
+      ],
+      "summary": "A shard of ice that flies flat and fast, and freezes the ground it breaks on.",
+      "supersedes": [],
+      "symbol": "createGlacialSpike"
+    },
+    {
+      "aliases": [],
+      "constraints": ["every colour, size, count and timing is a named override on the call"],
+      "example": "const inferno = createInferno(world);\ncasts.cast(inferno, target);",
+      "importPath": "@threenative/core/spells",
+      "kind": "function",
+      "overrides": [
+        "core, highlight, charge, impact, linger, radius, burst, trail, light, shake, scorch"
+      ],
+      "package": "@threenative/core",
+      "signature": "export function createInferno(world: SpellWorld, overrides: IFireSpellOverrides = { … }",
+      "situations": [
+        "a fire area spell that erupts at a point and burns there",
+        "an inferno column a boss drops on the arena",
+        "make a sustained fire area spell",
+        "a sustained flame that scorches the ground for seconds"
+      ],
+      "summary": "A pillar of fire that erupts where it lands and keeps burning.",
+      "supersedes": [],
+      "symbol": "createInferno"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "read the world through SpellWorld only, so a game can swap the scene and the floor"
+      ],
+      "example": "const spell = createSpell(world, recipe);",
+      "importPath": "@threenative/core/spells",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function createSpell(world: SpellWorld, recipe: ISpellRecipe): ISpell { … }",
+      "situations": ["author a spell the catalog does not cover, out of the same beats"],
+      "summary": "Build a spell from a recipe: four beats, a tint, and the numbers between them.",
+      "supersedes": [],
+      "symbol": "createSpell"
+    },
+    {
+      "aliases": [],
+      "constraints": ["every colour, size, count and timing is a named override on the call"],
+      "example": "const bolt = createThunderstrike(world);\ncasts.cast(bolt, target);",
+      "importPath": "@threenative/core/spells",
+      "kind": "function",
+      "overrides": ["core, highlight, charge, impact, linger, radius, light, shake, scorch"],
+      "package": "@threenative/core",
+      "signature": "export function createThunderstrike(world: SpellWorld, overrides: IFireSpellOverrides = { … }",
+      "situations": [
+        "a lightning strike spell that hits a point immediately",
+        "a thunderbolt with a wind-up and a burnt mark where it lands",
+        "make a lightning spell",
+        "an electrical spell with a column of light from above"
+      ],
+      "summary": "A bolt out of the sky: it charges, strikes the point instantly, and the ground remembers it.",
+      "supersedes": [],
+      "symbol": "createThunderstrike"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "set writes uniforms; no kernel, material or pipeline is rebuilt",
+        "a table knows only the kinds it was asked for, so an unused kind costs nothing"
+      ],
+      "example": "const kinds = new ParticleKindTable([\"flame\", \"smoke\"]);\nkinds.set(\"flame\", { lifetime: [0.3, 0.6], colour: [0.4, 0.8, 1] });",
+      "importPath": "@threenative/core/spells",
+      "kind": "class",
+      "overrides": [
+        "lifetime, size, speed, cone, gravity, drag, buoyancy, alpha, colour and highlight"
+      ],
+      "package": "@threenative/core",
+      "signature": "export class ParticleKindTable { … }",
+      "situations": [
+        "retune a spell's particles at run time from a settings screen",
+        "change how long, how fast or how heavy a kind of particle is without a new pipeline"
+      ],
+      "summary": "Tune what a particle kind does, as data rather than a shader.",
+      "supersedes": [],
+      "symbol": "ParticleKindTable"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "it draws nothing; the game decides what a mark looks like",
+        "the patch is finite and every channel decays on its own half-life"
+      ],
+      "example": "field.splat({ heat: 1, char: 0.6, radius: 2.5, x: hit.x, z: hit.z });\nfield.update(dt);",
+      "importPath": "@threenative/core/spells",
+      "kind": "class",
+      "overrides": [
+        "halfLife, resolution and size tune the patch; pattern, radius, seed and angle set each mark"
+      ],
+      "package": "@threenative/core",
+      "signature": "export class ReactionField { … }",
+      "situations": [
+        "a fireball impact that leaves a scorch and fades over time",
+        "ice that melts where lightning spread, or a lava geyser's crack"
+      ],
+      "summary": "The marks a spell leaves on the floor: heat, char, wet, frost, crack and glow.",
+      "supersedes": [],
+      "symbol": "ReactionField"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "the whole pool exists before the first cast; a cast changes intensity, never the list",
+        "flash returns undefined when the pool is busy; a spell carries on without one"
+      ],
+      "example": "lights.flash({ x, y, z, color, intensity: 40, range: 12, seconds: 0.35 });",
+      "importPath": "@threenative/core/spells",
+      "kind": "class",
+      "overrides": [
+        "count is the pool size; each flash supplies position, colour, intensity, range and seconds"
+      ],
+      "package": "@threenative/core",
+      "signature": "export class SpellLights { … }",
+      "situations": [
+        "a spell impact that glows without changing the light count",
+        "a charge glow or a falling meteor lighting what it passes"
+      ],
+      "summary": "A fixed pool of spell lights, created once at zero intensity.",
+      "supersedes": [],
+      "symbol": "SpellLights"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "damage, mana, cooldowns and who the target is stay in the game",
+        "with reducedFlashes on, a fourth flash inside one second is refused, never dimmed"
+      ],
+      "example": "const world = new SpellWorld({ scene, groundAt });\nconst casts = new CastPool(world);",
+      "importPath": "@threenative/core/spells",
+      "kind": "class",
+      "overrides": [
+        "groundAt, castSlots, lightCount, reaction, shake and reducedFlashes are named options"
+      ],
+      "package": "@threenative/core",
+      "signature": "export class SpellWorld implements ICastEnvironment { … }",
+      "situations": [
+        "cast an engine spell without passing a scene into every call",
+        "honour an accessibility setting that limits flashing"
+      ],
+      "summary": "Everything a spell may touch: the scene, the floor, the light pool, the surface field, one shake and one flash limiter.",
+      "supersedes": [],
+      "symbol": "SpellWorld"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "costs about 0.6 s at 64^3 and about 5 s at 128^3 on the main thread; bake once at load"
+      ],
+      "example": "bakeNoise({ noiseSize: 64 }); // once at load, before createFx draws",
+      "importPath": "@threenative/core/spells/ultra",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function bakeNoise( { … }",
+      "situations": [
+        "the noise and blackbody textures an Ultra Elements spell needs before it first draws"
+      ],
+      "summary": "CPU bake of the Ultra Elements 3D noise, curl and blackbody textures that every spell volume samples.",
+      "supersedes": [],
+      "symbol": "bakeNoise"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "call bakeNoise first: the volume shaders sample its noise, curl and blackbody textures"
+      ],
+      "example": "const ultra = createFx({ camera, size: () => ({ width: innerWidth, height: innerHeight }), seed: 777 }); const fireball = ultra.addSpell(fire); scene.add(ultra.fx.scenes.fx);",
+      "importPath": "@threenative/core/spells/ultra",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function createFx(o: IFxOptions) { … }",
+      "situations": [
+        "an Ultra Elements spell such as the raymarched teardrop Fireball cast at a target",
+        "a volumetric fire spell drawn through the Three.js TSL node API on WebGPU"
+      ],
+      "summary": "The shared Ultra Elements spell world: casts, volumes, spell lights and the per-frame CPU tick. Add `fx.scenes.fx` to the scene, `addSpell` each ported spell, call `renderFrame(dt)` each frame.",
+      "supersedes": [],
+      "symbol": "createFx"
+    },
+    {
+      "aliases": [],
+      "constraints": [],
+      "example": "const shade = groundShade(positionWorld, { albedo, rough: float(0.85), metal: float(0) }); floor.colorNode = vec4(shade.color, 1);",
+      "importPath": "@threenative/core/spells/ultra",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function groundShade(wp: V3, surface: IGroundSurface) { … }",
+      "situations": [
+        "a floor that shows the Fireball's scorch and hot ground cooling over seconds"
+      ],
+      "summary": "The Ultra Elements arena floor's response to the ground field and spell impacts (scorch, char, wet, glowing hot ground) as nodes for a game's own floor material: `color`, `roughness`, `metalness`, `emissive` from the floor's own surface at a world position.",
+      "supersedes": [],
+      "symbol": "groundShade"
+    },
+    {
+      "aliases": [],
+      "constraints": [],
+      "example": "const flames = ultra.fx.particles.emitter(\"fire.flame\"); // ultra from createFx",
+      "importPath": "@threenative/core/spells/ultra",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export class Particles { … }",
+      "situations": [
+        "the flames, embers, sparks, smoke and debris an Ultra Elements spell emits as it charges, flies and hits"
+      ],
+      "summary": "The Ultra Elements GPU particle system behind `fx.particles`: a spell's kinds, emitters and field emitters.",
+      "supersedes": [],
+      "symbol": "Particles"
+    },
+    {
+      "aliases": [],
       "constraints": ["the transport is discovered, never configured; no game names the web view"],
       "example": "const bridge = connectUiBridge({ end: \"ui\" });",
       "importPath": "@threenative/core/ui-layer",
@@ -4401,6 +4793,58 @@
     {
       "aliases": [],
       "constraints": [
+        "url names the loaded GLB; tnTerrainSurface extras name a relative world package JSON"
+      ],
+      "example": "await applyTerrainSurface(world.scene, { assets: ctx.assets, renderer: ctx.renderer, url: \"world/world.glb\" });",
+      "importPath": "@threenative/core/world",
+      "kind": "function",
+      "overrides": [
+        "`table` may replace `base`, `breakup`, `macro` and `layers`; baked `splat` and `textures` stay package-owned"
+      ],
+      "package": "@threenative/core",
+      "signature": "export async function applyTerrainSurface( root: Object3D, options: ILoadTerrainSplatOptions, ): Promise<void> { … }",
+      "situations": ["apply the authored layered terrain surface after loading a cooked world GLB"],
+      "summary": "Apply a cooked GLB's package-authored layered surface to its marked terrain meshes. `url` is the loaded GLB URL; extras pointers are relative to it. Uses the same asset/fetch path as loadTerrainSplat on web and native. The caller owns the assigned materials' lifetime.",
+      "supersedes": [],
+      "symbol": "applyTerrainSurface"
+    },
+    {
+      "aliases": [],
+      "constraints": ["octaves is a build-time number; each octave is one filtered volume read"],
+      "example": "const macro = bakedFractalNoise(vec3(positionWorld.x, 0, positionWorld.z).mul(0.014), 3);",
+      "importPath": "@threenative/core/world",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function bakedFractalNoise( p: Node<\"vec3\">, octaves = 3, lacunarity = 2, diminish = 0.5, amplitude: Scalar = 1, ): Node<\"float\"> { … }",
+      "situations": ["fractal or fbm noise in a material costs too much GPU time per pixel"],
+      "summary": "Drop-in for `mx_fractal_noise_float(p, octaves, lacunarity, diminish, amplitude)`: one read an octave.",
+      "supersedes": [],
+      "symbol": "bakedFractalNoise"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "the field tiles every NOISE_PERIOD units of p; at p = world metres x 2.6 that is a 3 m repeat",
+        "vec3 input only: three's 2D Perlin is another function"
+      ],
+      "example": "const patch = smoothstep(-0.35, 0.35, bakedNoise(positionWorld.mul(0.025)));",
+      "importPath": "@threenative/core/world",
+      "kind": "function",
+      "overrides": ["keep mx_noise_float where exact analytic noise matters more than the frame"],
+      "package": "@threenative/core",
+      "signature": "export function bakedNoise( p: Node<\"vec3\">, amplitude: Scalar = 1, pivot: Scalar = 0, channel: 0 | 1 | 2 | 3 = 0, ): Node<\"float\"> { … }",
+      "situations": [
+        "a terrain, foliage or water shader calls mx_noise_float per pixel and the frame is GPU bound",
+        "open world ground material with procedural variation that must hold 60 FPS"
+      ],
+      "summary": "Drop-in for `mx_noise_float(p, amplitude, pivot)` on a vec3 `p`: one filtered read of the baked volume instead of the per-pixel Perlin. Only the 3D form: three's 2D Perlin is another function (0.66 scale), so a vec2 caller keeps `mx_noise_float`. `channel` 1 to 3 are independent fields.",
+      "supersedes": [],
+      "symbol": "bakedNoise"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "the returned view aliases the caller's buffer; writing to it mutates the source"
       ],
       "example": "const records = cellPlacements(buffer, { asset: \"tree\", offset: 0, count: 120 });",
@@ -4464,6 +4908,26 @@
     {
       "aliases": [],
       "constraints": [
+        "every ring vertex asks the game's `height` callback; core owns no terrain look",
+        "the collar is a ring of triangles, not a field: `heightAt` answers on it and null off it"
+      ],
+      "example": "const collar = new HeightfieldCollar({ resolution: 129, size: 512, rings: 384, ringDistance: (ring) => (ring / 384) ** 1.65 * 2100, walkBand: 200, height: ({ x, z }) => surveyed.heightAt(x, z) });",
+      "importPath": "@threenative/core/world",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export class HeightfieldCollar { … }",
+      "situations": [
+        "draw the terrain past the playable square without hand-building a ring grid",
+        "ground a character past the square, out to the walk band, on drawn triangles"
+      ],
+      "summary": "A heightfield's far ring: `rings` square rings past its playable square, one vertex per boundary sample, and the index grid that draws them.",
+      "supersedes": [],
+      "symbol": "HeightfieldCollar"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "the sampler reads the game's data; the framework never selects a terrain shape"
       ],
       "example": "const sampleHeight = heightSamplerFromHeightmap(terrain, extent, await loadWorldHeightmap(url));",
@@ -4482,6 +4946,37 @@
     },
     {
       "aliases": [],
+      "constraints": [],
+      "example": "const phase = instanceRandom().mul(6.2831);",
+      "importPath": "@threenative/core/world",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function instanceRandom(): Node<\"float\"> { … }",
+      "situations": [
+        "a per-instance random number that stays with each streamed placement as WorldCells repacks",
+        "replace instanceIndex in a WorldCells part material, which WorldCells refuses"
+      ],
+      "summary": "A random in [0, 1) that stays with its instance, as UE 5.8.3's PerInstanceRandom: hashed from the instance's world origin, never from its draw slot. WorldCells repacks instances on every refilter, main-pass cull and LOD switch, so `instanceIndex` names another tree from one frame to the next; a wind phase hashed from it re-rolled each crown about every 0.7 s of a walk and snapped its top by a median 0.37 m. Parts of one placement share its translation, so its bark and needles read one value.",
+      "supersedes": [],
+      "symbol": "instanceRandom"
+    },
+    {
+      "aliases": [],
+      "constraints": ["reads the heightfield at every bearing, once per lake, never per frame"],
+      "example": "const reach = lakeReach(field, { ...lake, margin: 1.12 });",
+      "importPath": "@threenative/core/world",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function lakeReach(field: Heightfield, lake: IWaterLake): number { … }",
+      "situations": ["size a lake's footprint from its basin and the cap its biome row names"],
+      "summary": "How far a lake's water reaches: the waterline its basin measures, `margin` times out, capped. The drawn surface and the swim footprint both size themselves here, so the shore a player sees is the shore they stop at.",
+      "supersedes": [],
+      "symbol": "lakeReach"
+    },
+    {
+      "aliases": [],
       "constraints": [
         "the package's world.json must carry `terrain.layers.table` and `terrain.layers.splat`, written by `export_terrain_layers` in the `export_world.py` recipe",
         "WebGPU allows 16 sampled textures per stage: same-size layers stack into one array texture per set, and `TN_TERRAIN_SPLAT samplers=<n>` reports what is left"
@@ -4490,7 +4985,7 @@
       "importPath": "@threenative/core/world",
       "kind": "function",
       "overrides": [
-        "every value comes from the package's table; the returned material is the game's to adjust"
+        "`table` may replace `base`, `breakup`, `macro` and `layers` from game source; baked `splat` and `textures` stay package-owned"
       ],
       "package": "@threenative/core",
       "signature": "export async function loadTerrainSplat(options: ILoadTerrainSplatOptions): Promise<Material> { … }",
@@ -4515,6 +5010,22 @@
       "summary": "Fetch a raw little-endian uint16 heightmap and expose it as samples.",
       "supersedes": [],
       "symbol": "loadWorldHeightmap"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "baked once per page on the main thread (about 0.15 s); every channel is an independent field"
+      ],
+      "example": "const volume = noiseVolume();",
+      "importPath": "@threenative/core/world",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function noiseVolume(): Data3DTexture { … }",
+      "situations": ["a material needs the raw baked noise texture to sample in its own TSL"],
+      "summary": "The one volume every material shares: baked on first use, 1 MiB of RGBA8 (it stays in L2).",
+      "supersedes": [],
+      "symbol": "noiseVolume"
     },
     {
       "aliases": [],
@@ -4623,11 +5134,51 @@
     {
       "aliases": [],
       "constraints": [
+        "every station, level, extent and speed comes from the game's own bake; a lake is measured on the field passed in"
+      ],
+      "example": "const water = new WaterBodies({ ribbons, lakes, field }); const height = water.surfaceAt(x, z);",
+      "importPath": "@threenative/core/world",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export class WaterBodies { … }",
+      "situations": [
+        "ask how high the water is where a player swims",
+        "ask which way a current carries a body",
+        "ask which water body covers a point, and how high its surface is",
+        "share one water store between rendering and physics"
+      ],
+      "summary": "One world's water, queried: surface height, current and footprint from the baked arrays. Rendering and physics read the same store, as they do for `Heightfield`, so the surface a player sees and the surface a swimmer rests on cannot disagree. Every station, level, extent and speed comes from the game, and the shading stays in the game's own `src/render/`. A river's segments sit in a uniform grid, so a query tests the few that can reach its cell instead of every station of every river.",
+      "supersedes": [],
+      "symbol": "WaterBodies"
+    },
+    {
+      "aliases": [],
+      "constraints": ["returns metres on the furthest bearing; the caller applies its own cap"],
+      "example": "const reach = waterlineRadius(field, lake.at, lake.level) * 1.12;",
+      "importPath": "@threenative/core/world",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function waterlineRadius( field: Heightfield, centre: readonly number[], level: number, ): number { … }",
+      "situations": [
+        "measure where a lake's water meets the ground it floods",
+        "size a lake's drawn surface or the footprint a swimmer may enter"
+      ],
+      "summary": "The furthest a lake's basin reaches on a bearing: where the drawn ground crosses its level. Twenty-four bearings step outwards and stop at the first bank, because binary-searching the whole ray can jump a dry ridge into another pond. Eighteen halvings land inside two centimetres at this scale, well under the ground's own sample spacing.",
+      "supersedes": [],
+      "symbol": "waterlineRadius"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "surface is the game's; this class creates no material, colour or geometry",
         "a cell's model loads at `soon` priority, so a file the running scene awaits through `ctx.assets` starts first",
         "budgets are hard caps that report pressure instead of over-committing",
+        "`whenSpawnReady(position, radius, timeoutMs)` snapshots a fixed region and settles from existing updates or disposal; it does not drive streaming, and `prewarmed` remains the separate draw gate",
         "model loads are bounded by `concurrency` (default 12) across every resident cell, not per cell",
         "refilters are bounded by `rebuildsPerUpdate` (default 16) per update, nearest cell first",
+        "residency and `placementReach` follow `follow`; levels and `maxDistance` are graded from the render camera, as UE picks instance LODs per view; `lodFrom: \"follow\"`, `?tnLodFromCamera=0` or `TN_LOD_FROM_CAMERA=0` grade from `follow`, reported as `TN_WORLD_MAIN_CULL lodFrom=`",
         "admission is bounded by `admissionBudgetMs` (default 2) per update across every path, plus at most one unit each for terrain and props; while props are queued terrain takes at most half, so neither starves the other, and a deferred cell keeps drawing what it has",
         "SkinnedMesh parts are skipped; an instanced copy would draw one rest pose",
         "a baked chain's switch distances are measured against `autoLod` (default 4 px of error over 60° and 1080 raster rows), because an instanced draw cannot select a level per instance; an asset with nonempty authored `lods` never consults it; explicit empty lists enroll only unchanged static geometry/material parts",
@@ -4643,7 +5194,7 @@
       "importPath": "@threenative/core/world",
       "kind": "class",
       "overrides": [
-        "`hlod: false` keeps source rendering; ring, budgets, terrain tile size/resolution, terrain stream and collider radius, `transparentScatter`, `clusterSize` and `shadows.invalidate`, load `concurrency`, `rebuildsPerUpdate`, `admissionBudgetMs` and the package's per-asset maxDistance"
+        "`hlod: false` keeps source rendering; ring, budgets, terrain tile size/resolution, terrain stream and collider radius, `transparentScatter`, `clusterSize` and `shadows.invalidate`, load `concurrency`, `rebuildsPerUpdate`, `admissionBudgetMs` and the package's per-asset maxDistance; `impostorFar: \"always\"` keeps the far aggregate the near ring's guaranteed radius made unnecessary"
       ],
       "package": "@threenative/core",
       "signature": "export class WorldCells extends Group implements IComputeDriven { … }",
@@ -4878,22 +5429,31 @@
         "enemy targets cooldown reload win condition",
         "platformer double jump",
         "first person",
-        "run jump coins goal"
+        "run jump coins goal",
+        "swimming buoyancy water volume wade"
       ],
-      "constraints": ["use moveAndSlide inside the physics update"],
+      "constraints": [
+        "use moveAndSlide inside the physics update",
+        "pass `water: (x, z) => surfaceHeight | undefined`; the body reads `swimming`, `immersionDepth` and `waterSurface` each moveAndSlide",
+        "pass `waterCurrent: (x, z) => { x, z } | undefined` in m/s to have the water carry the body; it reads `currentVelocity` back"
+      ],
       "deprecated": [
         "Constructor option `world` is deprecated; pass an IPhysicsContext as `physics` instead. CharacterBody3D itself is not deprecated."
       ],
       "example": "const body = new CharacterBody3D({ object: hero, physics: ctx.physics, shape: CollisionShape3D.capsule(0.5, 0.35) });",
       "importPath": "@threenative/physics",
       "kind": "class",
-      "overrides": [],
+      "overrides": [
+        "buoyancy (1.6, floats; Unreal 1.0 sinks), maxSwimSpeed (3 m/s) and fluidFriction (12) tune the Unreal MOVE_Swimming defaults"
+      ],
       "package": "@threenative/physics",
       "requires": ["npm i @threenative/physics"],
       "signature": "export class CharacterBody3D { … }",
       "situations": [
         "move an enemy or player through a level",
-        "keep a character from walking through walls"
+        "keep a character from walking through walls",
+        "swim in a river, lake or sea; float at the surface and wade slower in shallow water",
+        "river current carries a swimmer downstream while it floats"
       ],
       "summary": "Move a character body with collision-aware sliding.",
       "supersedes": [],
@@ -5015,6 +5575,7 @@
       "signature": "export class RigidBody3D { … }",
       "situations": [
         "give a crate or prop physical motion",
+        "a ball rolls across the floor",
         "create a body that collides with a character",
         "fire physical cannonballs that collide with ships or scenery",
         "fire a cannonball projectile with cannon smoke particles",
@@ -5023,6 +5584,28 @@
       "summary": "Simulate a dynamic or static rigid body.",
       "supersedes": [],
       "symbol": "RigidBody3D"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "pass each instance's solid part (stone, bark), not its leaves; shapes are measured: a slender base is a trunk capsule, the rest an 18-DOP hull, and pieces under 0.25 m get none",
+        "call update() every frame; it rescans only after the follow point moves a quarter of `radius` (default 40 m)",
+        "`collision: \"hull\" | \"trunk\" | \"none\"` on an instance overrides the measured shape"
+      ],
+      "example": "const solids = new ScatterColliders({ physics: ctx.physics, follow: player, collisionLayer: 4, instances: rocks.map((matrix) => ({ geometry: rockGeometry, matrix })) });",
+      "importPath": "@threenative/physics",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/physics",
+      "requires": ["npm i @threenative/physics"],
+      "signature": "export class ScatterColliders { … }",
+      "situations": [
+        "stop the player walking through scattered rocks and trees",
+        "give instanced or streamed foliage props collision in an open world"
+      ],
+      "summary": "Make scattered props solid: fixed bodies for rocks and trunks near a followed point, streamed with it.",
+      "supersedes": [],
+      "symbol": "ScatterColliders"
     },
     {
       "aliases": [],
@@ -7546,6 +8129,23 @@
     {
       "aliases": [],
       "constraints": [
+        "every instance's asset must be in `assets`; every instance must land in exactly one cell run"
+      ],
+      "example": "const baked = bakeBiome({ state: terrain.evaluate(), spec: validateBiome(json, \"savanna\"), assets });",
+      "importPath": "@threenative/terrain",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function bakeBiome(options: IBakeBiomeOptions): IBakedBiome { … }",
+      "situations": ["bake one biome's world package from an evaluated recipe and a biome file"],
+      "summary": "Bake one biome: the recipe's evaluated state and the world package it streams. This is the composition `terrain_generate` and a game's build script both call, so the file layout a player streams is decided in one place. The biome is validated first — an inline spec from a request is checked here, not trusted — and the package's own placement runs are checked against the state they came from, so a bake can never ship a cell list that lost instances.",
+      "supersedes": [],
+      "symbol": "bakeBiome"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "no material is chosen; vertex colours exist only with a caller-supplied palette"
       ],
       "example": "const mesh = bakeMesh(new Terrain({ resolution: 17 }).evaluate());",
@@ -7592,9 +8192,45 @@
       "requires": ["npm i -D @threenative/terrain"],
       "signature": "export function bakeWorldPackage( state: ITerrainState, options: IBakeWorldPackageOptions, ): IBakedWorldPackage { … }",
       "situations": ["hand an evaluated Strata terrain to a game without a Blender round trip"],
-      "summary": "Bake an evaluated terrain into the engine's world package: a `world.json` manifest, a uint16 heightmap, a splat mask array, a placement buffer of eight float32 per instance, and the square cells that stream them. The encodings and row orders are the ones the Blender recipe `export_world.py` writes, so one runtime streams both without a second reader.",
+      "summary": "Bake an evaluated terrain into the engine's world package: a `world.json` manifest, a uint16 heightmap, a splat mask array, a placement buffer of eight float32 per instance, a placement ID sidecar and the square cells that stream them. The encodings and row orders are the ones the Blender recipe `export_world.py` writes, so one runtime streams both without a second reader.",
       "supersedes": [],
       "symbol": "bakeWorldPackage"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "the collar decides where a tree stands; this sampler never resamples the square"
+      ],
+      "example": "const sampler = collarSampler(collar); const height = sampler.at(x, z);",
+      "importPath": "@threenative/terrain",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function collarSampler(collar: HeightfieldCollar) { … }",
+      "situations": ["plant a far field on a drawn collar and paint the canopy its crowns cover"],
+      "summary": "The collar's height at any (x, z), and a way to raise one of its per-vertex attributes at a placement: both read the collar's own quad grid, so a lane that reshapes the collar moves the trees with it.",
+      "supersedes": [],
+      "symbol": "collarSampler"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "headless; the caller decides every placement, its streamed world, its reach and its pose"
+      ],
+      "example": "const pkg = compilePropBuckets(entries, { bounds });",
+      "importPath": "@threenative/terrain",
+      "kind": "function",
+      "overrides": ["cellSize and the base extent; the bucket, reach and kind of every entry"],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function compilePropBuckets( entries: readonly IPropBucketEntry[], options: ICompilePropBucketsOptions = { … }",
+      "situations": [
+        "bake the prop worlds a game streams, once, instead of compiling them at load"
+      ],
+      "summary": "Group placements into their streamed worlds and write each world's cells and records. The order is the streamed one: cells sorted by `x` then `z`, assets sorted by name inside a cell, and records in the order the entries arrived inside a run. Same-cell, same-asset placements keep their input order, so a re-run of a seeded bake reproduces the buffer byte for byte.",
+      "supersedes": [],
+      "symbol": "compilePropBuckets"
     },
     {
       "aliases": [],
@@ -7723,6 +8359,43 @@
     },
     {
       "aliases": [],
+      "constraints": [
+        "the row's `far` block decides every density; the caller supplies the collar and layer"
+      ],
+      "example": "const trees = farForestPlacements({ size, resolution, collar, treeline, rules, asset, layer });",
+      "importPath": "@threenative/terrain",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function farForestPlacements(options: IFarFieldOptions): IPlacement[] { … }",
+      "situations": ["plant the stand past a game's playable square, out to the drawn collar"],
+      "summary": "Far-field placements on the collar; also paints the collar's `canopy` attribute under each crown.",
+      "supersedes": [],
+      "symbol": "farForestPlacements"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "the field is a value, so two worlds sample the same formula with their own numbers"
+      ],
+      "example": "const stand = fieldWeight(STAND_FIELD, x, z);",
+      "importPath": "@threenative/terrain",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function fieldWeight(field: ICoverField, x: number, z: number): number { … }",
+      "situations": [
+        "sample the stand field a biome's trees and cover thin on",
+        "measure the drift a biome's blades grow by, or the mat field its cover follows"
+      ],
+      "summary": "A field's weight at (x, z), clamped to 0..1.",
+      "supersedes": [],
+      "symbol": "fieldWeight"
+    },
+    {
+      "aliases": [],
       "constraints": ["authoring data only; the game owns appearance, physics and rendering"],
       "example": "const gradient = gradientAt(new Terrain({ resolution: 17 }).evaluate(), 0, 0);",
       "importPath": "@threenative/terrain",
@@ -7738,6 +8411,51 @@
     },
     {
       "aliases": [],
+      "constraints": [
+        "returns an ordinary `Terrain`: add roads, rivers, scatter or more layers, then `evaluate()` in a build script",
+        "shape only; materials, colours and textures belong to the game",
+        "calibrated at size 5000, resolution 513; other sizes keep the same slopes and scale the relief with `size`"
+      ],
+      "example": "const terrain = landform(\"alpine\", { size: 5000, resolution: 513, seed: 4 }); const state = terrain.evaluate();",
+      "importPath": "@threenative/terrain",
+      "kind": "function",
+      "overrides": [
+        "`relief` is the highest-minus-lowest height in metres before the finishing passes shave a few percent; `size`, `resolution` and `seed` as in `Terrain`"
+      ],
+      "package": "@threenative/terrain",
+      "requires": ["npm i @threenative/terrain"],
+      "signature": "export function landform(kind: LandformKind, options: ILandformOptions = { … }",
+      "situations": [
+        "start an open world, a distant backdrop or a mountain level from a kind of place"
+      ],
+      "summary": "One call, one landscape: a calibrated layer recipe for a kind of environment.",
+      "supersedes": [],
+      "symbol": "landform"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "resolution up to 513: the window is cut from a world twice as wide at the same spacing; build script only",
+        "shape only; the game places, colours and fades it"
+      ],
+      "example": "const { size, resolution, heights } = landformBackdrop(\"temperateMountains\", { seed: 7, centerHeight: 13 });",
+      "importPath": "@threenative/terrain",
+      "kind": "function",
+      "overrides": [
+        "`relief` and `centerHeight` in metres; `size`, `resolution` and `seed` as in `landform`"
+      ],
+      "package": "@threenative/terrain",
+      "requires": ["npm i @threenative/terrain"],
+      "signature": "export function landformBackdrop( kind: LandformKind, options: IBackdropOptions = { … }",
+      "situations": [
+        "add a mountain backdrop around a playable area that the game's detail terrain covers"
+      ],
+      "summary": "Distant mountains around a playable area: a landform window with a valley floor at its centre.",
+      "supersedes": [],
+      "symbol": "landformBackdrop"
+    },
+    {
+      "aliases": [],
       "constraints": ["authoring data only; the game owns appearance, physics and rendering"],
       "example": "const terrain = new Terrain({ resolution: 17 }); const file = await makeExport(terrain.evaluate(), terrain.toJSON(), \"project\");",
       "importPath": "@threenative/terrain",
@@ -7745,11 +8463,94 @@
       "overrides": [],
       "package": "@threenative/terrain",
       "requires": ["npm i @threenative/terrain"],
-      "signature": "export async function makeExport( state: ITerrainState, recipe: ITerrainDocument, kind: ExportKind, ): Promise<IExportArchive> { … }",
+      "signature": "export function makeExport( state: ITerrainState | null, recipe: ITerrainDocument, kind: \"project\", ): Promise<IExportArchive>;",
       "situations": ["export a terrain recipe and its numerical runtime data"],
       "summary": "Recovered numerical/project exports; GLB/runtime outputs contain terrain only.",
       "supersedes": [],
       "symbol": "makeExport"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "samples are finite and at least one; a flat field resolves every band onto its one height"
+      ],
+      "example": "const bands = measureBands(spec.layers, state.height);",
+      "importPath": "@threenative/terrain",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function measureBands( layers: readonly ILayerInfo[], heights: ArrayLike<number>, ): IMeasuredBands { … }",
+      "situations": [
+        "turn a biome file's height fractions into the metres a world actually measured"
+      ],
+      "summary": "Resolve a biome's fraction bands against this world's own height samples.",
+      "supersedes": [],
+      "symbol": "measureBands"
+    },
+    {
+      "aliases": [],
+      "constraints": ["the file carries one foliage row, one grass row and a cover block"],
+      "example": "const rules = orderedScatterRules(spec);",
+      "importPath": "@threenative/terrain",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function orderedScatterRules(spec: IBiomeSpec): IOrderedScatterRules { … }",
+      "situations": ["run a biome file's rows through the ordered scatter"],
+      "summary": "A biome's rows as the ordered generators read them. The rule is short and shared; only these numbers differ between a wood, a barren shoulder, a dune field and a tundra, so the biome file names them rather than the code. A biome whose tree is not one this generator has art for fails here, naming the species, rather than planting nothing.",
+      "supersedes": [],
+      "symbol": "orderedScatterRules"
+    },
+    {
+      "aliases": [],
+      "constraints": [],
+      "example": "const asset = propAssetOf(\"spruce:2\"); // \"spruce\"",
+      "importPath": "@threenative/terrain",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function propAssetOf(modelKey: string): string { … }",
+      "situations": [
+        "count one species across a world's prop buckets, or name the asset a run draws"
+      ],
+      "summary": "The asset a package run names. A prop run names the model it draws, `asset:variant[@shape]`; a container written by `bakeWorldPackage` names the asset alone. Both reduce to the asset here, which is what a count, a material or a placement's own `asset` field holds.",
+      "supersedes": [],
+      "symbol": "propAssetOf"
+    },
+    {
+      "aliases": [],
+      "constraints": [],
+      "example": "const file = propPackageFile(\"forest\", \"local:true\", \"props.bin\"); // \"forest.local-true.props.bin\"",
+      "importPath": "@threenative/terrain",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function propPackageFile(world: string, bucket: string, suffix: string): string { … }",
+      "situations": ["name one of a bucket's three files without a bucket key that breaks a path"],
+      "summary": "A path under `world/` that no bucket name can break: `local:true` becomes `local-true`. The bucket's own name is kept in the manifest, so this rename is only a file-system concern.",
+      "supersedes": [],
+      "symbol": "propPackageFile"
+    },
+    {
+      "aliases": [],
+      "constraints": ["the manifest names the files; nothing here touches a file system"],
+      "example": "const { manifest, files } = propPackageFiles(pkg, \"forest\");",
+      "importPath": "@threenative/terrain",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function propPackageFiles(pkg: IPropPackage, world: string): IPropPackageFiles { … }",
+      "situations": [
+        "write a compiled package to disk: one manifest and three files per streamed world"
+      ],
+      "summary": "Write a compiled package as the manifest the game fetches and one set of files per bucket. The manifest names the files rather than embedding them, so a loader fetches only the buckets its query flags keep (`?farForest=on` keeps the far field, `?meadow=off` drops the vista cover).",
+      "supersedes": [],
+      "symbol": "propPackageFiles"
     },
     {
       "aliases": [],
@@ -7765,6 +8566,23 @@
       "summary": "Bilinear query of canonical height samples; triangle sampling is a separate contract.",
       "supersedes": [],
       "symbol": "sampleHeight"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "`data.rules` is the biome's rows, and `data.field` the ground they were graded on"
+      ],
+      "example": "const { placements, counts } = scatterProps(data, focus, clearings);",
+      "importPath": "@threenative/terrain",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function scatterProps( data: IOrderedScatterField, focus: { … }",
+      "situations": ["bake a biome that says `\"stream\": \"ordered\"`"],
+      "summary": "Every placement, for one world, from one seed: the game's own rule set, in its own draw order.",
+      "supersedes": [],
+      "symbol": "scatterProps"
     },
     {
       "aliases": [],
@@ -7834,7 +8652,8 @@
       "signature": "export class Terrain { … }",
       "situations": [
         "author seeded terrain with noise, sculpting, erosion, roads, rivers and scatter",
-        "generate a procedural heightmap landscape or island for a game"
+        "generate a procedural heightmap landscape or island for a game",
+        "make realistic mountains, hills, desert, coast, tundra or volcano terrain: start from `landform(kind)`, or add `erode({ method: \"fluvial\" })` for dendritic valleys"
       ],
       "summary": "Ordered, stable-ID terrain authoring with synchronous atomic transactions.",
       "supersedes": [],
@@ -7854,6 +8673,42 @@
       "summary": "Recovered prefix-caching authoring evaluator. Returned buffers belong to the caller.",
       "supersedes": [],
       "symbol": "TerrainEvaluator"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "square grids only; compare crops of equal spacing, because slope and curvature depend on it"
+      ],
+      "example": "const stats = terrainStats(state.height, state.resolution, state.size);",
+      "importPath": "@threenative/terrain",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i @threenative/terrain"],
+      "signature": "export function terrainStats(height: ArrayLike<number>, n: number, size: number): ITerrainStats { … }",
+      "situations": ["compare generated terrain with a USGS or SRTM crop on the same footprint"],
+      "summary": "Landform statistics used to calibrate generators against real DEMs.",
+      "supersedes": [],
+      "symbol": "terrainStats"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "The file carries no appearance; colours, materials and shading stay game source"
+      ],
+      "example": "const spec = validateBiome(JSON.parse(text), \"forest\");",
+      "importPath": "@threenative/terrain",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i @threenative/terrain"],
+      "signature": "export function validateBiome(spec: unknown, name: string): IBiomeSpec { … }",
+      "situations": [
+        "read a biome's rules from `starter/<biome>/biome.data.json` before a game or a cook uses them"
+      ],
+      "summary": "One biome file, checked field by field. The file is `biome.data.json`: `biome.json` is Biome's own configuration name, and a data file called that is parsed as a project config and fails the lint.",
+      "supersedes": [],
+      "symbol": "validateBiome"
     },
     {
       "aliases": [],
@@ -7907,6 +8762,72 @@
       "summary": "Check that the images an environment names are registered environment or image assets. @summary Validate the assets a preview environment refers to",
       "supersedes": [],
       "symbol": "checkEnvironmentAssets"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "the caller supplies the TransformControls, proxy, controller and every drawing callback"
+      ],
+      "example": "const selection = createEditorSelection({ gizmo, proxy, controller, grounding, surface, defaultFootprintSize, refreshPose, drawFootprint, restorePlacement, previewPlacement, setSaving, selectedChanged, setNavigation, message });",
+      "importPath": "@threenative/terrain/editor",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function createEditorSelection( { … }",
+      "situations": ["drive terrain-editor selection, gizmo drags, undo and saved transactions"],
+      "summary": "Gesture and transaction mechanics; the caller owns the controls, proxy and all rendering.",
+      "supersedes": [],
+      "symbol": "createEditorSelection"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "the point is multiplied in place; the pose needs finite position, quaternion and scale"
+      ],
+      "example": "const centre = editorPlacementCenter(localCentre.clone(), placement);",
+      "importPath": "@threenative/terrain/editor",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function editorPlacementCenter(point: Vector3, pose: IPlacementOverride): Vector3 { … }",
+      "situations": ["find the world-space centre of a placed terrain-editor instance"],
+      "summary": "Transform the caller's measured geometry centre into the evaluated placement's world space.",
+      "supersedes": [],
+      "symbol": "editorPlacementCenter"
+    },
+    {
+      "aliases": [],
+      "constraints": ["the point is projected in place; pass a clone to keep the original"],
+      "example": "const [x, y] = editorPointToClient(point.clone(), camera, canvas.getBoundingClientRect());",
+      "importPath": "@threenative/terrain/editor",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function editorPointToClient( point: Vector3, camera: Camera, box: { … }",
+      "situations": ["convert a terrain-editor world point to viewport client pixels"],
+      "summary": "Project an injected world point to client pixels in the caller's viewport.",
+      "supersedes": [],
+      "symbol": "editorPointToClient"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "the supplied mesh and raycast determine the surface; missing intersections return undefined"
+      ],
+      "example": "const height = editorSurfaceHeight(ctx, terrainMesh, x, z);",
+      "importPath": "@threenative/terrain/editor",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function editorSurfaceHeight( ctx: { … }",
+      "situations": ["query terrain-editor surface elevation at world X/Z coordinates"],
+      "summary": "Query the rendered heightfield, including its triangulation rather than an interpolated bake.",
+      "supersedes": [],
+      "symbol": "editorSurfaceHeight"
     },
     {
       "aliases": [],
@@ -7968,6 +8889,23 @@
     {
       "aliases": [],
       "constraints": [
+        "the caller supplies world and default footprint sizes; unsupported layers return undefined"
+      ],
+      "example": "const pose = landformPose(layer, terrain.size, footprintSize);",
+      "importPath": "@threenative/terrain/editor",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function landformPose(layer: Layer, worldSize: number, defaultSize: number) { … }",
+      "situations": ["derive a terrain-editor gizmo pose from a landform layer"],
+      "summary": "Recipe footprints are heights over X/Z, never independently transformed solids.",
+      "supersedes": [],
+      "symbol": "landformPose"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "browser authoring only; createView and materialColours are required game choices"
       ],
       "example": "await mountTerrainEditor({ createView: createEditorView, materialColours: terrainPalette });",
@@ -7981,6 +8919,40 @@
       "summary": "Mount recovered terrain controls around the project-owned ThreeNative view.",
       "supersedes": [],
       "symbol": "mountTerrainEditor"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "the caller supplies the raycast context, terrain mesh, instanced meshes and evaluated placements"
+      ],
+      "example": "const id = pickEditorPlacement(ctx, terrainMesh, meshes, placements, event.clientX, event.clientY);",
+      "importPath": "@threenative/terrain/editor",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function pickEditorPlacement( ctx: Parameters<typeof pickEditorSurface>[0], terrain: Mesh, meshes: readonly Object3D[], placements: Iterable< { … }",
+      "situations": [
+        "pick a placed instance in the terrain editor from viewport client coordinates"
+      ],
+      "summary": "A foreground terrain hit occludes placements; matching uses the evaluated world position.",
+      "supersedes": [],
+      "symbol": "pickEditorPlacement"
+    },
+    {
+      "aliases": [],
+      "constraints": ["the caller supplies the raycast implementation and ordered targets"],
+      "example": "const hit = pickEditorSurface(ctx, [terrainMesh], event.clientX, event.clientY);",
+      "importPath": "@threenative/terrain/editor",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function pickEditorSurface( ctx: { … }",
+      "situations": ["pick a terrain-editor surface from viewport client coordinates"],
+      "summary": "Convert viewport client coordinates once; the installed picker owns ray intersection.",
+      "supersedes": [],
+      "symbol": "pickEditorSurface"
     },
     {
       "aliases": [],
@@ -8087,6 +9059,23 @@
       "summary": "HTTP controller for the project-local terrain editor.",
       "supersedes": [],
       "symbol": "TerrainEditorController"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "finite coordinates and positive scales are required; X/Z rotations that overhang throw"
+      ],
+      "example": "const next = transformedLandform(layer, position, quaternion, scale, surfaceHeight);",
+      "importPath": "@threenative/terrain/editor",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function transformedLandform( layer: Layer, position: Vector3, quaternion: Quaternion, scale: Vector3, anchor: number, ): Layer { … }",
+      "situations": ["apply a terrain-editor gizmo transform to a landform layer"],
+      "summary": "Convert a terrain-editor gizmo pose into a heightfield landform footprint.",
+      "supersedes": [],
+      "symbol": "transformedLandform"
     },
     {
       "aliases": [],
@@ -8260,24 +9249,105 @@
     {
       "aliases": [],
       "constraints": [
-        "browser authoring (FileReader/canvas); caller supplies all appearance and coherent baked water; root and /three remain headless"
+        "browser authoring FileReader/canvas; all appearance and coherent water come from the game"
       ],
-      "example": "const output = await exportWorldGLB({ revision, snapshotTime: 0, state, terrain, assets, transforms });",
+      "example": "const prepared = await prepareWorldGLTF(input);",
       "importPath": "@threenative/terrain/export",
       "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export async function prepareWorldGLTF(input: IWorldGLBInput): Promise< { … }",
+      "situations": [
+        "export the terrain as a glb for another three.js project via the headless cook",
+        "prepare the terrain editor's resolved world for headless portable GLB cooking"
+      ],
+      "summary": "Prepare the game's validated, frozen portable scene; the server cook owns GLB encoding.",
+      "supersedes": [],
+      "symbol": "prepareWorldGLTF"
+    },
+    {
+      "aliases": [],
+      "constraints": ["Node authoring only; recipes, asset tables and sky paths stay in the game"],
+      "example": "await bakeKit(import.meta.url, { sky: \"hdri/game-sky.hdr\" });",
+      "importPath": "@threenative/terrain/kit",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export async function bakeKit( url: string, { … }",
+      "situations": ["bake a copied terrain starter kit into its offline world package"],
+      "summary": "Bake a copied kit, optionally using the caller's installed world cook.",
+      "supersedes": [],
+      "symbol": "bakeKit"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "Node authoring only; verifies archive size and SHA256 before atomic extraction"
+      ],
+      "example": "const assets = await starterAssetsDir();",
+      "importPath": "@threenative/terrain/kit",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export async function starterAssetsDir(): Promise<string> { … }",
+      "situations": ["resolve terrain kit models and textures for offline baking"],
+      "summary": "Resolve shared starter assets locally, or download the package's pinned archive on demand.",
+      "supersedes": [],
+      "symbol": "starterAssetsDir"
+    },
+    {
+      "aliases": [],
+      "constraints": ["Runtime subpath; the game supplies every appearance and collision choice"],
+      "example": "await addStarterWorld(ctx, follow, spec);",
+      "importPath": "@threenative/terrain/starter",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export async function addStarterWorld<Extra extends { … }",
+      "situations": [
+        "attach a baked starter world with game-owned surfaces, prop dressing and water"
+      ],
+      "summary": "Load caller-authored starter data with one scene lifetime; all appearance comes from spec.",
+      "supersedes": [],
+      "symbol": "addStarterWorld"
+    },
+    {
+      "aliases": [],
+      "constraints": [],
+      "example": "const edited = editWorldPlacements(data, { remove: [\"scree:candidate:7:41\"] }, (x, z) => field.heightAt(x, z));",
+      "importPath": "@threenative/terrain/starter",
+      "kind": "function",
       "overrides": [
-        "actual static models, final matrices and baked PBR maps are supplied by the game"
+        "grounding defaults on, while `grounding: false` preserves the authored Y coordinate"
       ],
       "package": "@threenative/terrain",
       "requires": ["npm i -D @threenative/terrain"],
-      "signature": "export async function exportWorldGLB(input: IWorldGLBInput): Promise<IWorldGLBExport> { … }",
+      "signature": "export function editWorldPlacements( data: { … }",
       "situations": [
-        "export terrain, resolved models and final manual placement transforms as a portable GLB",
-        "export the whole terrain world as one glb for another three.js project"
+        "change generated terrain composition from game source without rebaking the world"
       ],
-      "summary": "Export a committed evaluated world using ordinary glTF 2.0 nodes and embedded PBR images.",
+      "summary": "Apply deterministic startup edits to the decoded placement data before a world is loaded.",
       "supersedes": [],
-      "symbol": "exportWorldGLB"
+      "symbol": "editWorldPlacements"
+    },
+    {
+      "aliases": [],
+      "constraints": ["Shapes and reach are supplied by the game; detach releases every body"],
+      "example": "new PropColliders(ctx, follow, manifest, records, shapes, reach, name);",
+      "importPath": "@threenative/terrain/starter",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export class PropColliders extends Object3D implements IComputeDriven { … }",
+      "situations": ["attach nearby prop collision bodies from baked placement records"],
+      "summary": "Stream caller-specified fixed collision shapes around a moving follow object.",
+      "supersedes": [],
+      "symbol": "PropColliders"
     },
     {
       "aliases": [],
@@ -9091,7 +10161,7 @@
         "procedural trees",
         "swaying trees",
         "tree foliage wind sway",
-        "generate a forest of trees"
+        "grow procedural tree meshes"
       ]
     },
     {
@@ -9112,7 +10182,7 @@
       "blurb": "A three-room grid dungeon of mannequin fighters: melee, the Arcane Surge, loot, equipment, persistence, and a real character sheet.",
       "name": "action-rpg",
       "title": "Action RPG",
-      "words": ["action-rpg"]
+      "words": ["action-rpg", "diablo", "arpg", "hack-and-slash", "dungeon-crawler"]
     },
     {
       "blurb": "Wren crosses a sunlit clearing and a three-room moss dungeon with lock-on sword combat, a shield, a block-and-switch puzzle, a small key and the Stone Warden mini-boss.",

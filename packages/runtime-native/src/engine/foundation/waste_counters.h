@@ -25,20 +25,21 @@ namespace tn::engine::waste {
 // `Pan` (the window moved and kept its pages), `Rebuild` (first map, camera cut, depth or size change) and
 // `Invalidation` (a caster changed under a window that stayed put); `shadowPagesRefreshed` pages were drawn for them,
 // `shadowPageEvictions` pages were evicted to make room, and the static page rows drew `shadowPageInstances` instances
-// in `shadowPageRows` rows. With `tnDebug=1` they land in TN_FRAME_BUDGET.counters.engine, one frame's difference each.
+// in `shadowPageRows` rows; `shadowCasterChurn` counts casters whose arrival or departure invalidated their bounds.
+// With `tnDebug=1` they land in TN_FRAME_BUDGET.counters.engine, one frame's difference each.
 #define TN_DEBUG_COUNTERS(X) \
     X(gateAttempts) X(gateDeclinedCapacity) X(gateDeclinedAge) \
     X(bufferCreatedBytes) X(textureCreatedBytes) X(bufferFreedBytes) X(textureFreedBytes) \
-    X(bufferUploadBytes) X(textureUploadBytes) X(bindGroups) X(pipelineCompiles) \
+    X(bufferUploadBytes) X(textureUploadBytes) X(bindGroups) X(pipelineCompiles) X(pipelineDeferredDraws) \
     X(sceneDirtyMarks) X(sceneVisits) X(sceneAdds) X(sceneRemoves) X(queueSubmits) \
     X(readbackMaps) X(readbackBytes) X(timestampResolves) X(timestampSamplesDelivered) X(gpuTimestampUnrequestedSamples) \
     X(velocityCandidates) X(velocitySkipped) X(temporalActiveFrames) X(temporalInvalidFrames) X(temporalRejectedPixels) \
     X(temporalClampedPixels) X(temporalMeasuredPixels) X(pipelineCreateMicros) \
     X(queueCallbackMicros) X(queueDeliveryMicros) X(queueCallbacks) \
     X(handleCreates) X(handleReleases) X(attributeUploadBytes) X(uniformUploadBytes) \
-    X(renderFrames) X(renderDraws) X(shadowDraws) X(auxPasses) X(cullCandidates) X(culledObjects) \
+    X(renderFrames) X(renderDraws) X(shadowDraws) X(auxPasses) X(auxFragments) X(cullCandidates) X(culledObjects) \
     X(shadowRefreshes) X(shadowRefreshPan) X(shadowRefreshRebuild) X(shadowRefreshInvalidation) \
-    X(shadowPagesRefreshed) X(shadowPageEvictions) X(shadowPageRows) X(shadowPageInstances)
+    X(shadowPagesRefreshed) X(shadowPageEvictions) X(shadowPageRows) X(shadowPageInstances) X(shadowCasterChurn)
 
 struct Counters {
     std::atomic<uint64_t> gcPauses{0}, gcPauseMicros{0};  // V8-only: Wasm does not expose unobserved GC.

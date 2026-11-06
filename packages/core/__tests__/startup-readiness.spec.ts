@@ -2,6 +2,111 @@ import { describe, expect, it, vi } from "vitest";
 import { StartupReadiness } from "../src/startup-readiness.js";
 
 describe("StartupReadiness", () => {
+  it.each(["compile", "hold", "warmup"])("cancels timers and late %s completion", async (phase) => {
+    vi.useFakeTimers();
+    try {
+      let finish!: () => void;
+      const pending = new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      const readiness = new StartupReadiness({
+        stableFrames: 1,
+        settled: () => false,
+        afterHolds: () => pending,
+      });
+      const ready = vi.fn();
+      const failed = vi.fn();
+      void readiness.whenReady().then(ready, failed);
+      if (phase !== "compile")
+        readiness.hold("view", phase === "hold" ? pending : Promise.resolve());
+      readiness.start(phase === "compile" ? () => pending : undefined);
+      await Promise.resolve();
+      readiness.observe(1);
+      readiness.cancel();
+      readiness.cancel();
+      expect(vi.getTimerCount()).toBe(0);
+      finish();
+      await vi.advanceTimersByTimeAsync(60_000);
+      readiness.observe(1);
+      readiness.observe(1);
+      expect(vi.getTimerCount()).toBe(0);
+      expect(ready).not.toHaveBeenCalled();
+      expect(failed).not.toHaveBeenCalled();
+      expect(readiness.ready).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each(["world", "hold"])(
+    "reveals after the window when required %s settlement never arrives, and says so",
+    async (missing) => {
+      vi.useFakeTimers();
+      try {
+        let resident = true;
+        const readiness = new StartupReadiness({
+          stableFrames: 1,
+          stableWindowMs: 100,
+          settled: () => missing !== "world",
+        });
+        readiness.hold("view", () => resident);
+        const ready = vi.fn();
+        const failed = vi.fn();
+        void readiness.whenReady().then(ready, failed);
+        readiness.start();
+        readiness.observe(1);
+        resident = missing !== "hold";
+        readiness.observe(1);
+        await vi.advanceTimersByTimeAsync(99);
+        expect(ready).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(1);
+        // A slow settlement costs a late shadow or prop, never a game that does not start.
+        expect(ready).toHaveBeenCalledTimes(1);
+        expect(failed).not.toHaveBeenCalled();
+        expect(readiness.ready).toBe(true);
+        expect(readiness.timedOut).toBe("settlement");
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+
+  it("requires two quiet rendered polls after warm-up and resets for late work", async () => {
+    let shadowSettled = false;
+    let resident = true;
+    let finishWarmup!: () => void;
+    const readiness = new StartupReadiness({
+      stableFrames: 1,
+      settled: () => shadowSettled,
+      afterHolds: () =>
+        new Promise<void>((resolve) => {
+          finishWarmup = resolve;
+        }),
+    });
+    readiness.hold("view", () => resident);
+    readiness.start();
+    readiness.observe(1);
+    expect(readiness.ready).toBe(false);
+    finishWarmup();
+    for (let i = 0; i < 4; i++) await Promise.resolve();
+    shadowSettled = true;
+    readiness.observe(1);
+    expect(readiness.ready).toBe(false);
+    resident = false;
+    readiness.observe(1);
+    resident = true;
+    readiness.observe(1);
+    expect(readiness.ready).toBe(false);
+    shadowSettled = false;
+    readiness.observe(1);
+    shadowSettled = true;
+    readiness.observe(1);
+    expect(readiness.ready).toBe(false);
+    readiness.observe(1);
+    expect(readiness.ready).toBe(true);
+    await readiness.whenReady();
+  });
+
   it("waits for compile work and consecutive in-budget frames", async () => {
     let resolveCompile: () => void = () => undefined;
     const readiness = new StartupReadiness({
@@ -371,24 +476,54 @@ describe("StartupReadiness holds", () => {
     expect(order).toEqual(["warm-started", "warm-finished", "ready"]);
   });
 
-  it("resolves anyway when the second warm-up throws", async () => {
+  it("rejects readiness when the second warm-up fails", async () => {
     const readiness = new StartupReadiness({
       afterHolds: () => {
         throw new Error("no renderer");
       },
       stableFrames: 3,
     });
-    let ready = false;
-    void readiness.whenReady().then(() => {
-      ready = true;
-    });
+    const rejected = expect(readiness.whenReady()).rejects.toThrow("no renderer");
     readiness.hold("detail-tier", Promise.resolve());
     readiness.start();
     for (let index = 0; index < 6; index += 1) await Promise.resolve();
     for (let index = 0; index < 3; index += 1) readiness.observe(1);
     for (let index = 0; index < 8; index += 1) await Promise.resolve();
-    // A warm-up that fails costs hitches, never a game that will not start.
-    expect(ready).toBe(true);
+    await rejected;
+  });
+
+  it("bounds a held warm-up that never settles, then still checks settlement", async () => {
+    vi.useFakeTimers();
+    try {
+      let settled = false;
+      const readiness = new StartupReadiness({
+        afterHolds: () => new Promise<void>(() => undefined),
+        settled: () => settled,
+        stableFrames: 1,
+        stableWindowMs: 20,
+      });
+      const ready = vi.fn();
+      const failed = vi.fn();
+      void readiness.whenReady().then(ready, failed);
+      readiness.hold("detail-tier", Promise.resolve());
+      readiness.start();
+      for (let index = 0; index < 6; index += 1) await Promise.resolve();
+      readiness.observe(1);
+      for (let index = 0; index < 6; index += 1) await Promise.resolve();
+
+      await vi.advanceTimersByTimeAsync(20);
+      expect(ready).not.toHaveBeenCalled();
+      expect(readiness.timedOut).toBe("warmup");
+      settled = true;
+      readiness.observe(1);
+      readiness.observe(1);
+      await Promise.resolve();
+      expect(ready).toHaveBeenCalledTimes(1);
+      expect(failed).not.toHaveBeenCalled();
+      expect(readiness.timedOut).toBe("warmup");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("does not warm a second time for a game that never held startup", async () => {
@@ -411,6 +546,109 @@ describe("StartupReadiness holds", () => {
 });
 
 describe("StartupReadiness predicate holds", () => {
+  it("fails open if a previously true predicate throws during a quiet recheck", async () => {
+    vi.useFakeTimers();
+    const readiness = new StartupReadiness({
+      stableFrames: 1,
+      stableWindowMs: 100,
+      settled: () => true,
+    });
+    const ready = vi.fn();
+    const failed = vi.fn();
+    void readiness.whenReady().then(ready, failed);
+    try {
+      let broken = false;
+      readiness.hold("late-error", () => {
+        if (broken) throw new Error("late hold error");
+        return true;
+      });
+      readiness.start();
+      readiness.observe(1);
+      readiness.observe(1);
+      expect(readiness.ready).toBe(false);
+      broken = true;
+      expect(() => readiness.observe(1)).not.toThrow();
+      await Promise.resolve();
+      expect(readiness.ready).toBe(true);
+      expect(ready).toHaveBeenCalledOnce();
+      expect(failed).not.toHaveBeenCalled();
+      expect(readiness.holdReport).toEqual([{ label: "late-error", expired: false }]);
+    } finally {
+      readiness.cancel();
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps an expired false predicate fail-open during required-world quiet polls", async () => {
+    vi.useFakeTimers();
+    const readiness = new StartupReadiness({
+      holdBudgetMs: 10,
+      stableFrames: 1,
+      stableWindowMs: 100,
+      settled: () => true,
+    });
+    const ready = vi.fn();
+    const failed = vi.fn();
+    void readiness.whenReady().then(ready, failed);
+    try {
+      readiness.hold("never", () => false);
+      readiness.start();
+      readiness.observe(1);
+      await vi.advanceTimersByTimeAsync(9);
+      expect(readiness.holdReport).toEqual([{ label: "never", expired: false }]);
+      expect(readiness.ready).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(readiness.holdReport).toEqual([{ label: "never", expired: true }]);
+      readiness.observe(1);
+      expect(readiness.ready).toBe(false);
+      readiness.observe(1);
+      await Promise.resolve();
+      expect(readiness.ready).toBe(true);
+      expect(ready).toHaveBeenCalledOnce();
+      expect(failed).not.toHaveBeenCalled();
+    } finally {
+      readiness.cancel();
+      vi.useRealTimers();
+    }
+  });
+
+  it.each(["always throws", "throws once then returns false"])(
+    "keeps a predicate that %s fail-open during required-world quiet polls",
+    async (behavior) => {
+      vi.useFakeTimers();
+      const readiness = new StartupReadiness({
+        stableFrames: 1,
+        stableWindowMs: 100,
+        settled: () => true,
+      });
+      const ready = vi.fn();
+      const failed = vi.fn();
+      void readiness.whenReady().then(ready, failed);
+      try {
+        let calls = 0;
+        readiness.hold("broken", () => {
+          calls += 1;
+          if (behavior === "always throws" || calls === 1) throw new Error("lost hold");
+          return false;
+        });
+        readiness.start();
+        expect(() => readiness.observe(1)).not.toThrow();
+        expect(readiness.holdReport).toEqual([{ label: "broken", expired: false }]);
+        expect(readiness.ready).toBe(false);
+        expect(() => readiness.observe(1)).not.toThrow();
+        expect(readiness.ready).toBe(false);
+        expect(() => readiness.observe(1)).not.toThrow();
+        await Promise.resolve();
+        expect(readiness.ready).toBe(true);
+        expect(ready).toHaveBeenCalledOnce();
+        expect(failed).not.toHaveBeenCalled();
+      } finally {
+        readiness.cancel();
+        vi.useRealTimers();
+      }
+    },
+  );
+
   // A game observed its spawn gate only in afterPhysics; the playtest's deterministic clock advances
   // no fixed step while startup is held, so the gate never ran and the hold met its 120 s deadline.
   // A predicate hold is polled on every rendered frame, so no simulation tick is involved.

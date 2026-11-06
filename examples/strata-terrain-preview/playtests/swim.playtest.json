@@ -1,0 +1,142 @@
+{
+  "schemaVersion": 1,
+  "name": "strata-terrain-swim",
+  "subject": "The player walks into the forest river, swims across it afloat with the swim clip, and climbs out on the far bank",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 90,
+  "artifacts": {
+    "screenshots": true,
+    "console": true
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "grounded",
+      "waitTicks": 120,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "face-east",
+      "press": "KeyD",
+      "holdTicks": 60,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "walk-east",
+      "press": "KeyW",
+      "holdTicks": 1000,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "in-river",
+      "press": "KeyW",
+      "holdTicks": 90,
+      "release": true,
+      "screenshot": "forest-swim"
+    },
+    {
+      "kind": "wait",
+      "label": "float",
+      "waitTicks": 180
+    },
+    {
+      "kind": "input",
+      "label": "on-bank",
+      "press": "KeyW",
+      "holdTicks": 300,
+      "release": true,
+      "screenshot": "forest-bank"
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "GameState",
+        "path": "swimming",
+        "equals": false,
+        "atSteps": [
+          {
+            "label": "grounded",
+            "equals": false
+          },
+          {
+            "label": "in-river",
+            "equals": true
+          },
+          {
+            "label": "on-bank",
+            "equals": false
+          }
+        ],
+        "allowTrivial": "The player spawns on dry land; atSteps proves the change: false at spawn, true afloat mid-river, false again on the far bank."
+      },
+      {
+        "id": "GameState",
+        "path": "grounded",
+        "equals": true,
+        "atSteps": [
+          {
+            "label": "in-river",
+            "equals": false
+          },
+          {
+            "label": "on-bank",
+            "equals": true
+          }
+        ],
+        "allowTrivial": "The player spawns grounded; atSteps proves the change: off the bed while swimming mid-river, grounded again on the far bank."
+      },
+      {
+        "id": "GameState",
+        "path": "immersionDepth",
+        "lte": 0.8,
+        "atSteps": [
+          {
+            "label": "in-river",
+            "lte": 0.8
+          }
+        ],
+        "allowTrivial": "Afloat, CharacterBody3D holds buoyancy 1.6 x immersion = 1, so 0.625 of the 1.7 m capsule is under water; a body standing on the 1.7 m deep bed reads 1.0."
+      },
+      {
+        "id": "GameState",
+        "path": "swimSamples",
+        "gte": 60,
+        "allowTrivial": "Samples swimming with Swim_Fwd_Loop or Swim_Idle_Loop playing; before the swim mechanism the player walked the bed and this stayed 0."
+      },
+      {
+        "id": "GameState",
+        "path": "swimDrift",
+        "gte": 1.5,
+        "allowTrivial": "Metres the river carried the player downstream while it floated with no key held for three seconds; 0 with ?current=off, where the same water stands still."
+      },
+      {
+        "id": "GameState",
+        "path": "swimFloatSamples",
+        "gte": 30
+      },
+      {
+        "id": "GameState",
+        "path": "swimExits",
+        "gte": 1
+      },
+      {
+        "id": "GameState",
+        "path": "travel",
+        "gte": 110,
+        "allowTrivial": "Spawn x -220 to past the east bank near x -100: the walk crossed the river."
+      }
+    ]
+  }
+}

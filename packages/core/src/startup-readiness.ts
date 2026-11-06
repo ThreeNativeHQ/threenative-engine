@@ -27,6 +27,12 @@ const IMAGE_COLD: IStartupImageState = {
 };
 
 export interface IStartupReadinessOptions {
+  /**
+   * Final render-owned work (such as shadow maps), checked after warm-up for two quiet frames.
+   * Settlement still missing after stableWindowMs resolves readiness anyway and sets `timedOut`:
+   * a late shadow costs a pop, never a game that does not start.
+   */
+  readonly settled?: () => boolean;
   /** Maximum wall-clock time spent waiting for first-use compilation. */
   readonly compileBudgetMs?: number;
   /** Maximum measured callback duration for a stable startup frame. */
@@ -70,8 +76,9 @@ export interface IStartupReadinessOptions {
    * then hit 28 main-thread tasks over 40 ms, the worst 267 ms, dominated by TSL graph `build` and
    * by the main thread idling on GPU pipeline creation.
    *
-   * Rejections are swallowed: a warm-up that fails must cost hitches, never a game that will not
-   * start.
+   * A rejection fails `whenReady()` so the loading layer can report a first-use failure instead
+   * of revealing a world whose pipeline creation failed. A warm-up still running after
+   * `stableWindowMs` is slow, not failed: the gate moves on to settlement and sets `timedOut`.
    */
   readonly afterHolds?: () => Promise<void> | void;
 }
@@ -126,8 +133,8 @@ export const STARTUP_IMAGE_TIMEOUT_MS = 3_000;
 /** One registered hold: the game's own launch work, and the bounded wait for it. */
 interface IHold {
   readonly label: string;
-  /** Polled once per rendered frame for a predicate hold; absent for a promise hold. */
-  readonly ready?: () => boolean;
+  /** Polled for a predicate hold; absent for a promise hold or a failed-open predicate. */
+  ready?: () => boolean;
   release?: (expired: boolean) => void;
   settled: boolean;
   timer: ReturnType<typeof setTimeout> | undefined;
@@ -145,6 +152,13 @@ export class StartupReadiness {
   #stableFrameCount = 0;
   #started = false;
   #ready = false;
+  #failed = false;
+  #cancelled = false;
+  readonly #settled: (() => boolean) | undefined;
+  #quietFrames = 0;
+  #finishing = false;
+  #afterHoldsDone = false;
+  #timedOut: "warmup" | "settlement" | undefined;
   #frameWindowDone = false;
   readonly #holds = new Map<string, IHold>();
   #holdBudgetMs: number;
@@ -156,6 +170,7 @@ export class StartupReadiness {
   #compileTimer: ReturnType<typeof setTimeout> | undefined;
   #windowTimer: ReturnType<typeof setTimeout> | undefined;
   #resolveReady: () => void = () => undefined;
+  #rejectReady: (error: Error) => void = () => undefined;
   #resolveFrameworkReady: () => void = () => undefined;
   readonly #readyPromise: Promise<void>;
   readonly #frameworkReadyPromise: Promise<void>;
@@ -182,13 +197,28 @@ export class StartupReadiness {
       "holdBudgetMs",
     );
     this.#afterHolds = options.afterHolds;
+    this.#settled = options.settled;
     this.#imageReady = options.imageReady;
-    this.#readyPromise = new Promise<void>((resolve) => {
+    this.#readyPromise = new Promise<void>((resolve, reject) => {
       this.#resolveReady = resolve;
+      this.#rejectReady = reject;
     });
     this.#frameworkReadyPromise = new Promise<void>((resolve) => {
       this.#resolveFrameworkReady = resolve;
     });
+  }
+
+  /** Stop observing a discarded launch without publishing readiness or failure. */
+  cancel(): void {
+    this.#cancelled = true;
+    if (this.#compileTimer !== undefined) clearTimeout(this.#compileTimer);
+    if (this.#windowTimer !== undefined) clearTimeout(this.#windowTimer);
+    this.#compileTimer = undefined;
+    this.#windowTimer = undefined;
+    for (const hold of this.#holds.values()) {
+      if (hold.timer !== undefined) clearTimeout(hold.timer);
+      hold.timer = undefined;
+    }
   }
 
   whenReady(): Promise<void> {
@@ -225,6 +255,11 @@ export class StartupReadiness {
    */
   get frameworkReady(): boolean {
     return this.#frameWindowDone;
+  }
+
+  /** Which bounded post-hold wait ran out, if any; readiness resolved anyway. */
+  get timedOut(): "warmup" | "settlement" | undefined {
+    return this.#timedOut;
   }
 
   /** Labels of holds that have not settled yet, in registration order. */
@@ -283,6 +318,7 @@ export class StartupReadiness {
     budgetMs: number = this.#holdBudgetMs,
     progress?: () => number,
   ): void {
+    if (this.#cancelled) return;
     if (typeof label !== "string" || label.trim() === "")
       throw new Error("TN_STARTUP_HOLD_LABEL_INVALID: a hold needs a non-empty label.");
     if (this.#holds.has(label))
@@ -303,7 +339,7 @@ export class StartupReadiness {
     };
     this.#holds.set(label, hold);
     const release = (expired: boolean): void => {
-      if (hold.settled) return;
+      if (this.#cancelled || hold.settled) return;
       this.#sampleHold(hold);
       hold.progress = undefined;
       hold.settled = true;
@@ -332,6 +368,17 @@ export class StartupReadiness {
     }
   }
 
+  #holdReady(hold: IHold): boolean {
+    if (hold.expired || hold.ready === undefined) return true;
+    try {
+      return hold.ready();
+    } catch {
+      // Like a rejected promise, a failed predicate remains settled on later quiet polls.
+      hold.ready = undefined;
+      return true;
+    }
+  }
+
   /**
    * Predicate holds settle on rendered frames, not simulation steps: a deterministic playtest clock
    * advances no fixed step while startup is held, so a gate read only in `afterPhysics` waited on
@@ -340,13 +387,7 @@ export class StartupReadiness {
   #pollHolds(): void {
     for (const hold of this.#holds.values()) {
       if (hold.settled || hold.ready === undefined) continue;
-      let done: boolean;
-      try {
-        done = hold.ready();
-      } catch {
-        done = true;
-      }
-      if (done) hold.release?.(false);
+      if (this.#holdReady(hold)) hold.release?.(false);
     }
   }
 
@@ -408,7 +449,7 @@ export class StartupReadiness {
 
   /** Begin the one-time first-use gate after the entered scene has been built. */
   start(compile?: StartupCompile): void {
-    if (this.#started) return;
+    if (this.#cancelled || this.#started) return;
     this.#started = true;
     if (compile === undefined) {
       this.#finishCompile();
@@ -419,7 +460,9 @@ export class StartupReadiness {
     // Defer the call one microtask so the already-visible loading layer gets a present before a
     // renderer that performs synchronous first-use work starts compiling.
     void Promise.resolve()
-      .then(() => compile())
+      .then(() => {
+        if (!this.#cancelled) return compile();
+      })
       .then(
         () => this.#finishCompile(),
         () => this.#finishCompile(),
@@ -428,11 +471,24 @@ export class StartupReadiness {
 
   /** Feed actual callback wall time, not requestAnimationFrame timestamp spacing. */
   observe(frameMs: number): void {
+    if (this.#cancelled || this.#failed) return;
     if (!this.#ready) {
       this.#pollHolds();
       this.#pollImage();
     }
     if (!this.#started || this.#ready) return;
+    if (this.#afterHoldsDone && this.#settled !== undefined) {
+      const quiet =
+        this.#settled() &&
+        [...this.#holds.values()].every((hold) => hold.settled && this.#holdReady(hold));
+      this.#quietFrames = quiet ? this.#quietFrames + 1 : 0;
+      if (this.#quietFrames >= 2) {
+        if (this.#windowTimer !== undefined) clearTimeout(this.#windowTimer);
+        this.#windowTimer = undefined;
+        this.#ready = true;
+        this.#resolveReady();
+      }
+    }
     if (
       this.#compileSettled &&
       Number.isFinite(frameMs) &&
@@ -449,7 +505,7 @@ export class StartupReadiness {
   }
 
   #finishCompile(): void {
-    if (this.#compileSettled) return;
+    if (this.#cancelled || this.#compileSettled) return;
     this.#compileSettled = true;
     if (this.#compileTimer !== undefined) clearTimeout(this.#compileTimer);
     this.#compileTimer = undefined;
@@ -463,7 +519,7 @@ export class StartupReadiness {
 
   /** The framework's own work is done. Whether the *world* is ready also depends on the holds and the picture. */
   #finishFrameWindow(): void {
-    if (this.#frameWindowDone) return;
+    if (this.#cancelled || this.#frameWindowDone) return;
     this.#frameWindowDone = true;
     if (this.#windowTimer !== undefined) clearTimeout(this.#windowTimer);
     this.#windowTimer = undefined;
@@ -473,7 +529,7 @@ export class StartupReadiness {
   }
 
   #resolveIfComplete(): void {
-    if (this.#ready || !this.#frameWindowDone) return;
+    if (this.#cancelled || this.#ready || this.#finishing || !this.#frameWindowDone) return;
     for (const hold of this.#holds.values()) if (!hold.settled) return;
     // Last, because it is the only wait that is not the caller's: a renderer that has not drawn a world a
     // player may see yet keeps the cover, whatever the timers say — and no longer than its own deadline.
@@ -483,26 +539,64 @@ export class StartupReadiness {
       this.#armImageDeadline();
       return;
     }
-    // Claim readiness before awaiting, so a hold that settles during `afterHolds` cannot re-enter
-    // and run it twice.
-    this.#ready = true;
-    if (this.#imageTimer !== undefined) clearTimeout(this.#imageTimer);
-    this.#imageTimer = undefined;
+    this.#finishing = true;
+    const finish = (): void => {
+      if (this.#cancelled || this.#failed || this.#afterHoldsDone) return;
+      this.#afterHoldsDone = true;
+      // `#finishing` claims the reveal before awaiting, so a hold that settles during `afterHolds`
+      // cannot re-enter; the image deadline is spent the moment the reveal is decided.
+      if (this.#imageTimer !== undefined) clearTimeout(this.#imageTimer);
+      this.#imageTimer = undefined;
+      if (this.#settled === undefined) {
+        this.#ready = true;
+        this.#resolveReady();
+      } else {
+        // Bounded by the frame-window budget. A slow machine gets the world with a late shadow,
+        // and `timedOut` says so, instead of a loading screen that never lifts.
+        this.#windowTimer = setTimeout(() => {
+          this.#windowTimer = undefined;
+          if (this.#cancelled || this.#failed || this.#ready) return;
+          this.#timedOut ??= "settlement";
+          this.#ready = true;
+          this.#resolveReady();
+        }, this.#stableWindowMs);
+      }
+    };
     const afterHolds = this.#afterHolds;
-    // No holds means no second tier, which means the framework's own pass already saw the whole
-    // scene. Resolving synchronously there keeps every game that does not stream exactly as it was.
     if (afterHolds === undefined || this.#holds.size === 0) {
-      this.#resolveReady();
+      finish();
       return;
     }
-    void (async () => {
-      try {
-        await afterHolds();
-      } catch {
-        // Swallowed on purpose: a warm-up that fails costs hitches, not a game that never starts.
-      }
-      this.#resolveReady();
-    })();
+    this.#windowTimer = setTimeout(() => {
+      this.#windowTimer = undefined;
+      if (this.#cancelled || this.#failed || this.#ready) return;
+      // A slow warm-up costs first-use hitches, never a game that does not start.
+      this.#timedOut = "warmup";
+      finish();
+    }, this.#stableWindowMs);
+    let afterHoldsWork: Promise<void> | void;
+    try {
+      afterHoldsWork = afterHolds();
+    } catch (error) {
+      afterHoldsWork = Promise.reject(error);
+    }
+    void Promise.resolve(afterHoldsWork).then(
+      () => {
+        if (this.#afterHoldsDone) return;
+        if (this.#windowTimer !== undefined) clearTimeout(this.#windowTimer);
+        this.#windowTimer = undefined;
+        finish();
+      },
+      (error: unknown) => {
+        // A failure after the warm-up already timed out arrives too late to hold the reveal.
+        if (this.#afterHoldsDone) return;
+        if (this.#windowTimer !== undefined) clearTimeout(this.#windowTimer);
+        this.#windowTimer = undefined;
+        if (this.#cancelled || this.#failed || this.#ready) return;
+        this.#failed = true;
+        this.#rejectReady(error instanceof Error ? error : new Error(String(error)));
+      },
+    );
   }
 }
 

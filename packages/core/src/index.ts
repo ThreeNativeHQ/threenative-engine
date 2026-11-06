@@ -6,7 +6,7 @@
  * unavoidable here — core is bundled for browsers and cannot read `package.json` at runtime — so
  * the spec now asserts this equals the manifest instead of asserting a number somebody typed.
  */
-export const version = "0.3.11";
+export const version = "0.3.12";
 
 /**
  * Play a skinned or sprite animation from game code.
@@ -536,6 +536,31 @@ export {
  * @example const geometry = baseGeometryOf(mesh);
  */
 export { baseGeometryOf } from "./model-lod.js";
+/**
+ * The cooked automatic LOD chain (`TN_discrete_lod`) a loaded geometry carries, or `undefined`.
+ *
+ * Its levels share the base's vertex attributes and differ only in index, and `errors` are each
+ * level's world-unit error in the base's own space. A caller that draws one geometry many times
+ * (an instanced batch, a streamed world level) reads the reduced shapes here instead of re-cooking.
+ *
+ * @situation draw a cooked reduced level of a model in an instanced batch or streamed world level
+ * @constraint a geometry the loader built no chain for returns undefined
+ * @example const chain = lodChainOf(baseGeometryOf(mesh)); const far = chain?.levels.at(-1);
+ */
+export { lodChainOf } from "./model-lod.js";
+/**
+ * A far level for a card mesh (needle or leaf quads): keep a share of its cards and grow each kept
+ * card about its own centre, so the crown holds its total surface area, as Unreal's Nanite
+ * "Preserve Area" foliage does. A simplifier cannot reduce disconnected cards, so the cooked chain
+ * leaves them at full count.
+ *
+ * @situation far trees draw too many alpha-tested needle or leaf card triangles
+ * @constraint the geometry must be indexed and carry no material groups, else it throws
+ * @constraint keep is in (0, 1]; a share that drops nothing returns the same geometry
+ * @constraint the choice is deterministic, and the source geometry is left untouched
+ * @example const far = thinCards(needles.geometry, 0.4); // 40% of the cards, same area
+ */
+export { thinCards } from "./card-lod.js";
 /**
  * The screen pixels one world unit covers at `depth` for this camera and viewport.
  *
@@ -1291,7 +1316,7 @@ export {
 } from "./render/exposure-units.js";
 export type { IVirtualShadowOptions, IVirtualShadowStats } from "./render/virtual-shadow.js";
 /**
- * Attach hundreds of built objects to the scene in slices, presenting a frame between each.
+ * Attach hundreds of built objects to the scene in slices with an 8 ms default budget, presenting a frame between each.
  * @situation add hundreds of built objects to the scene without one multi-second frame
  * @situation stream a detail tier in behind a loading curtain without the page looking hung
  * @constraint the objects, and where each one goes, stay the game's; this decides only when each joins the graph

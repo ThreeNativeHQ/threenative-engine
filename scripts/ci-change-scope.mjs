@@ -151,6 +151,7 @@ const FULL_JOBS = [
   "test-native",
   "test-browser",
   "test-playtest",
+  "strata",
   "golden-path-template",
   "template-nonvisual",
   "template-engine-cost",
@@ -177,6 +178,23 @@ const CI_JOBS = new Set(["typecheck", "test-unit", "budgets", "build-artifacts"]
 // `test-native` saves `native-build-*`, `native-third-party-*` and its ccache through the cache
 // action's own post step. A warm run verifies nothing else, so nothing else runs.
 const WARM_JOBS = ["build-artifacts", "test-native"];
+// Strata terrain jobs: runs when terrain, example or core world modules change, or full qualification.
+const STRATA_PATHS = [
+  /^packages\/terrain\//u,
+  /^examples\/strata-terrain-preview\//u,
+  /^packages\/core\/(?:src\/world(?:-|\.ts)|src\/terrain-jobs|__tests__\/world-)/u,
+];
+
+export function isStrataPath(file) {
+  return STRATA_PATHS.some((pattern) => pattern.test(file));
+}
+
+function strataSelected(files, qualification) {
+  if (qualification) return true;
+  if (files.some(isStrataPath)) return true;
+  return false;
+}
+
 // PRD-731. The thin lane a ready pull request into develop runs; the merge queue runs the board.
 const REVIEW_JOBS = [
   "typecheck",
@@ -201,6 +219,11 @@ export function selectionPlan(
   target = "",
   qualification = selection === "full" && target !== "develop",
   nightly = false,
+  // Strata needs a real GPU: SwiftShader allows 16 sampled textures per stage, the terrain binds
+  // 24, and the view-window gate needs GPU timings (owner, 2026-11-06). The workflow says whether
+  // this run's `runs-on` reaches the GPU runner; unset means a caller outside CI. The plan records
+  // a `false` so every replay of it (`--validate-plan`, carried legs) owes the same jobs.
+  strataGpu = process.env.TN_CI_STRATA_GPU !== "false",
 ) {
   const full = selection === "full";
   const reused = selection === "reused";
@@ -232,6 +255,25 @@ export function selectionPlan(
     FULL_JOBS.map((name) => {
       // `ci` narrows the board to the gates that read the configuration and `warm` to the two cache
       // producers; neither widens one, so any other job is exempt exactly as it is for prose.
+      if (name === "strata") {
+        const selected = full && strataSelected(files, qualification);
+        const required = selected && strataGpu;
+        return [
+          name,
+          {
+            required,
+            reason: required
+              ? qualification
+                ? `Full dependency closure: ${reason}`
+                : `Selected dependency closure: ${reason}`
+              : selected
+                ? exemption(
+                    "Exempt: no GPU runner serves this run (TN_RUNNER_GPU / TN_RUNNER_GPU_HEAD), and hosted SwiftShader cannot draw the Strata world",
+                  )
+                : exemption(`Exempt: the ${selection} dependency closure does not reach ${name}`),
+          },
+        ];
+      }
       // The engine job is the one lane a full board owes only conditionally: when the diff reaches the
       // engine tree, or when the run qualifies a whole candidate. Every other full diff reads as before.
       // The engine-cost row is nightly only (owner, 2026-11-01): it costs 180 job-minutes a board.
@@ -329,6 +371,7 @@ export function selectionPlan(
     version: 2,
     qualification,
     nightly,
+    ...(strataGpu ? {} : { strataGpu: false }),
     files,
     reason,
     scope: selection,
@@ -377,6 +420,7 @@ export function owedPlan(value) {
     value.target,
     value.qualification,
     value.nightly,
+    value.strataGpu !== false,
   );
 }
 
@@ -387,6 +431,7 @@ export function validatePlan(value) {
     value.version !== 2 ||
     typeof value.qualification !== "boolean" ||
     typeof value.nightly !== "boolean" ||
+    ("strataGpu" in value && value.strataGpu !== false) ||
     (value.qualification &&
       (value.selection !== "full" || !value.native || value.reusedRunId !== 0)) ||
     !SELECTIONS.has(value.selection) ||
@@ -474,9 +519,13 @@ export function validateEventPlan(value, { eventName, baseRef, forceFull = false
       !owed.native ||
       owed.nativeTier !== "full" ||
       owed.reusedRunId !== 0 ||
-      // Only the nightly owes the engine-cost row.
+      // Only the nightly owes the engine-cost row, and strata is owed only where a GPU runner serves
+      // the run (the plan records the GPU-less exemption, so it is never silent).
       Object.entries(owed.jobs).some(
-        ([name, job]) => !job.required && (name !== "template-engine-cost" || event === "schedule"),
+        ([name, job]) =>
+          !job.required &&
+          (name !== "template-engine-cost" || event === "schedule") &&
+          (name !== "strata" || owed.strataGpu !== false),
       ) ||
       JSON.stringify(owed.templateMatrix.template) !== JSON.stringify(TEMPLATE_NAMES) ||
       JSON.stringify(owed.goldenMatrix.template) !== JSON.stringify(["starter", "platformer"]) ||
@@ -1400,6 +1449,7 @@ function reuseOrKeep(plan, options, candidateSha) {
       plan.target,
       plan.qualification,
       plan.nightly,
+      plan.strataGpu !== false,
     );
   // PRD-730: the queue takes its own narrow rule, never the generic cross-commit one below.
   if (options.eventName === "merge_group") {

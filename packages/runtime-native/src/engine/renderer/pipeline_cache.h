@@ -13,12 +13,14 @@
 #endif
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
 #include <webgpu/webgpu.h>
 
 #include "engine/shader/package.h"
+#include "engine/renderer/aux_targets.h"
 
 namespace tn::engine {
 
@@ -45,7 +47,7 @@ struct PipelineTarget {
     WGPUTextureFormat color = WGPUTextureFormat_RGBA8Unorm;  // Undefined: depth-only (shadow) pass
     WGPUTextureFormat depth = WGPUTextureFormat_Depth32Float;
     WGPUCullMode cull = WGPUCullMode_Back;
-    uint8_t blend = 0;       // 0 none, three's NormalBlending (1) or AdditiveBlending (2), premultipliedAlpha false; 3 premultiplied "over" (a UI overlay); 4 the TRAA responsive mark
+    uint8_t blend = 0;       // 0 none, three's NormalBlending (1) or AdditiveBlending (2), premultipliedAlpha false; 3 premultiplied "over" (a UI overlay); 4 the TRAA responsive mark; 5 `blendState`
     bool depthWrite = true;  // material.depthWrite
     bool colorWrite = true;  // material.colorWrite: false masks every colour channel
     uint32_t sampleCount = 1;
@@ -64,10 +66,32 @@ struct PipelineTarget {
     WGPUPrimitiveTopology topology = WGPUPrimitiveTopology_TriangleList;
     WGPUIndexFormat stripIndexFormat = WGPUIndexFormat_Undefined;  // an indexed line strip's index format
     // The colour targets after `color` (MRT, the fragment's @location(1...)): the first Undefined ends the list. They
-    // share colorWrite and take no blend.
-    std::array<WGPUTextureFormat, 4> moreColors{WGPUTextureFormat_Undefined, WGPUTextureFormat_Undefined,
-                                                WGPUTextureFormat_Undefined, WGPUTextureFormat_Undefined};
+    // share colorWrite and take no blend. Seven slots fill WebGPU's guaranteed eight colour attachments with `color`.
+    std::array<WGPUTextureFormat, 7> moreColors{WGPUTextureFormat_Undefined, WGPUTextureFormat_Undefined,
+                                                WGPUTextureFormat_Undefined, WGPUTextureFormat_Undefined,
+                                                WGPUTextureFormat_Undefined, WGPUTextureFormat_Undefined,
+                                                WGPUTextureFormat_Undefined};
+    /** Bit i: target i+1 (moreColors[i]) is written. A transparent MRT draw masks the named targets and writes its own
+     *  slots only, so the opaque pass's surface targets keep their values under it. */
+    uint8_t moreWrites = 0xff;
+    /** material.colorWrite, masked on every attachment: `colorWrite` above also carries a custom-only draw's
+     *  named-target mask, which must not silence that draw's own MRT slot. */
+    bool materialColorWrite = true;
+    uint32_t blendState = 0;  // blend 5: a material's resolved blend state (materialBlend)
 };
+
+// The device's eight colour attachments are `color` and the seven that follow it, and the aux pass's budget is that
+// same eight (aux_targets.h): one array's size is the other's limit.
+static_assert(std::tuple_size_v<decltype(PipelineTarget::moreColors)> + 1 == kMaxColourTargets,
+              "PipelineTarget must declare WebGPU's guaranteed eight colour targets");
+
+/**
+ * three r187's WebGPUPipelineUtils._getBlending for a material: the PipelineTarget `blend` code for its
+ * `blending` (three's constant), `transparent` and Material::blendFactors(). 0 when it does not blend (NoBlending, an
+ * opaque NormalBlending, or a Subtractive/Multiply without premultipliedAlpha, which three refuses with an error),
+ * 1 and 2 for the plain Normal and Additive states, else 5 with `state` packing the factors and operations.
+ */
+uint8_t materialBlend(uint8_t blending, bool transparent, uint64_t factors, uint32_t& state);
 
 /**
  * Every bind group the renderer creates goes through here, so a steady frame can be held to creating
@@ -129,6 +153,14 @@ public:
     /** Missing keys compile on two native workers, or through WebGPU's browser async entry. */
     std::shared_ptr<PipelineCompilation> getAsync(const shader::StageModule& vertex,
         const shader::StageModule* fragment, const PipelineTarget& target);
+    /**
+     * Unreal's DelayUntilPSOPrecached (r.PSOPrecache.ProxyCreationStrategy 1, its default): a missing key starts its
+     * async compile and answers null with `deferred` set, so the caller skips that draw until the pipeline lands instead
+     * of holding the GPU queue behind a synchronous compile (a 138 KB lit fragment held Chrome's for 200 ms). A key whose
+     * async compile was refused compiles here synchronously, so the caller still reports the refusal.
+     */
+    WGPURenderPipeline getOrDefer(const shader::StageModule& vertex, const shader::StageModule* fragment,
+        const PipelineTarget& target, bool& deferred);
     /** Adopt completed pipelines on the renderer thread; workers never mutate the cache. */
     void poll();
 
@@ -136,6 +168,8 @@ public:
     /** Lookups that had to build the text key: the ones an id did not answer. */
     uint64_t textLookups() const { return textLookups_; }
     size_t size() const { return pipelines_.size(); }
+    /** Async compiles not adopted yet. It polls first, so a compile that landed no longer counts. */
+    size_t pending() { poll(); return compiling_.size(); }
 
 private:
     /** The same pipeline by the ids of its stages' texts: a lookup that copies and hashes no WGSL. */
@@ -154,6 +188,7 @@ private:
     static WGPURenderPipeline create(WGPUDevice device, const shader::StageModule& vertex,
         const shader::StageModule* fragment, const PipelineTarget& target, const std::shared_ptr<Pending>& pending = {});
     std::unordered_map<std::string, std::shared_ptr<Pending>> compiling_;
+    std::unordered_set<std::string> refused_;  // keys an async compile refused: getOrDefer compiles them in the draw
 #ifndef __EMSCRIPTEN__
     std::array<std::thread, 2> workers_;
     std::mutex workMutex_;
@@ -184,6 +219,8 @@ public:
 
     WGPUBindGroupLayout bindGroup(const std::string& key, const std::vector<WGPUBindGroupLayoutEntry>& entries);
     WGPUPipelineLayout pipeline(const std::string& key, WGPUBindGroupLayout first, WGPUBindGroupLayout second);
+    /** Distinct pipeline layouts: a browser hands out a new handle per creation, where Dawn native dedupes equal ones. */
+    size_t pipelineLayouts() const { return pipelines_.size(); }
 
 private:
     WGPUDevice device_;

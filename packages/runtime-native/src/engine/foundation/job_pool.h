@@ -3,6 +3,7 @@
 #include <atomic>
 #include <condition_variable>  // TN_WORKER_ONLY: the pool's workers park on it between frame jobs
 #include <cstdint>
+#include <exception>
 #include <mutex>
 #include <thread>
 #include <type_traits>
@@ -58,7 +59,10 @@ public:
     /** True once `shared()` started the process pool (and its threads). */
     [[nodiscard]] static bool started();
 
-    /** Runs `body(i)` for every `i` in [0, count) across the caller and the workers. */
+    /**
+     * Runs `body(i)` for every `i` in [0, count) across the caller and the workers. An item that throws, on any thread,
+     * is rethrown here once every worker has left the job; the first failure wins and the other items still run.
+     */
     template <class F>
     void forEach(uint32_t count, F&& body) {
         run(count, [](void* f, uint32_t i) { (*static_cast<std::remove_reference_t<F>*>(f))(i); },
@@ -82,6 +86,7 @@ private:
     std::condition_variable wake_;  // TN_WORKER_ONLY: workers park here; the caller only notifies
     // The job in flight, or none: a worker joins it while it is here, and the caller clears it at the join.
     std::vector<Job> pending_;
+    std::exception_ptr failure_;  // the job's first failed item, under mutex_; rethrown on the caller at the join
     uint64_t generation_ = 0;
     bool stopping_ = false;
     std::atomic<uint32_t> next_{0};

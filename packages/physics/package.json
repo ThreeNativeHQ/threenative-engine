@@ -1,6 +1,6 @@
 {
   "name": "@threenative/physics",
-  "version": "0.3.11",
+  "version": "0.3.12",
   "license": "MIT",
   "description": "Thin Rapier physics bindings for ThreeNative games.",
   "keywords": ["threenative", "three", "threejs", "physics", "rapier", "navigation", "gamedev"],
@@ -10,7 +10,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ThreeNativeHQ/threenative.git",
+    "url": "git+https://github.com/ThreeNativeHQ/threenative-engine.git",
     "directory": "packages/physics"
   },
   "type": "module",
@@ -39,7 +39,7 @@
     "recast-navigation": "catalog:"
   },
   "peerDependencies": {
-    "@threenative/core": ">=0.3.11 <0.4.0",
+    "@threenative/core": ">=0.3.12 <0.4.0",
     "three": ">=0.187.0 <0.188.0"
   },
   "scripts": {

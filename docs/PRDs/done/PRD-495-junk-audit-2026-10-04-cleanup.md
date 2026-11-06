@@ -181,7 +181,7 @@ that touch live code for a ~21-line net win, leaving them to
   verification step 2; its "NOT STARTED" status is stale because `91e46d34f` did that work and left
   a record showing the bench run at exit 0),
   `templates/rain/tools/verify-noise-volume.mjs` (an owner's manual storm-volume proof that needs
-  an external `tempest.html`), and `plans/technical-debt-audit-2026-08-20.md` (a distinct audit of
+  an external `tempest.html`), and `plans/technical-debt-audit-2026-08-20.md` (deleted by PRD-826) (a distinct audit of
   `d75f4644`, not a duplicate). All three are restored byte-identical to `origin/develop`
   (`64aed30fe`). Focus checks on the restored tree: `pnpm exec vitest run
   packages/create-threenative/__tests__/scaffold.spec.ts -t "keeps every no-install scaffold tree
@@ -329,7 +329,7 @@ native tree lost the Android sample JS and the orphan Metal shader.
 | E23 `stamp:template-loading` | not unreachable junk, and not deleted: `restampTemplateLoadingCopies` has no other caller in the tree, so this entry point is the only way to apply a canonical `loading.ts` change to the tracked templates — the exact role its sibling `stamp:template-render.ts` plays for shared render sources, and that sibling is itself a contract-tested input (`scripts/__tests__/ci-template-selection.spec.ts`). The audit's premise ("manual-only duplicate entry point") holds only if the function it wraps is reachable some other way; it is not |
 | B `packages/physics/scripts/bench-allocations.ts` | **restored 2026-10-05** — the audit called it unused because it read PRD-191 as NOT STARTED (`docs/PRDs/performance/PRD-191-physics-feature-frames-reuse-crossing-storage.md:7`). That status is stale: commit `91e46d34f` did the PRD-191 work (296 added bench lines) and its verification record shows `NODE_OPTIONS=--expose-gc pnpm --filter @threenative/physics exec tsx scripts/bench-allocations.ts — exit 0`. The open PRD still names the bench as its Phase 3 EDIT target and verification step 2 (`PRD-191-*.md:20,83,96`). Deleting it would have removed the measurement PRD-191 still has to run |
 | D `templates/rain/tools/verify-noise-volume.mjs` | **restored 2026-10-05** — an owner's manual proof that the storm noise volume matches byte for byte. It needs `tempest.html`, which exists only on the owner's disk, so nothing in the repo runs it; done `docs/PRDs/done/starter-kits/PRD-473-rain-starter-kit.md` and `docs/PRDs/production-readiness/RELEASE-READINESS-2026-09-23.md:23` cite it as history. Retained under "fix otherwise" rather than dropped: a useful proof that needs an external input is not junk |
-| E `plans/technical-debt-audit-2026-08-20.md` | **restored 2026-10-05** — the audit called it a duplicate. It is a distinct audit of `d75f4644`, not a copy of `junk-audit-2026-10-04.md`, and its items are still tracked: P0-2 (`:57`, libuv handle storage) by `docs/PRDs/BLOCKED/requires-asan-libuv-source-build/PRD-177-*.md` and `PRD-184-*.md`, P0-4 (`:83`, failure-atomic startup and teardown) by `docs/PRDs/done/PRD-180-core-lifecycle-failure-atomicity.md`. A historical record with live follow-ups is not proven junk |
+| E `plans/technical-debt-audit-2026-08-20.md` (deleted by PRD-826) | **restored 2026-10-05** — the audit called it a duplicate. It is a distinct audit of `d75f4644`, not a copy of `junk-audit-2026-10-04.md`, and its items are still tracked: P0-2 (`:57`, libuv handle storage) by `docs/PRDs/BLOCKED/requires-asan-libuv-source-build/PRD-177-*.md` and `PRD-184-*.md`, P0-4 (`:83`, failure-atomic startup and teardown) by `docs/PRDs/done/PRD-180-core-lifecycle-failure-atomicity.md`. A historical record with live follow-ups is not proven junk |
 
 ### Deferred (4)
 
@@ -369,7 +369,7 @@ example build.
 #### Phase 3: repo surface (docs and scripts)
 
 **Status:** DONE — deleted and re-pointed; both boxes green.
-**Files:** `docs/product/*.pdf`, `docs/README.md`, `scripts/{analyze-prd-exp-002,analyze-prd-075-render-advisor}.mjs`, `scripts/{gate-status,evidence-citations,round-ledger,realism-effects-coverage}.ts`, `packages/playtest/__tests__/display-advice.spec.ts` (`plans/technical-debt-audit-2026-08-20.md` dropped from this list on 2026-10-05: the review proved it a distinct audit, not a duplicate)
+**Files:** `docs/product/*.pdf`, `docs/README.md`, `scripts/{analyze-prd-exp-002,analyze-prd-075-render-advisor}.mjs`, `scripts/{gate-status,evidence-citations,round-ledger,realism-effects-coverage}.ts`, `packages/playtest/__tests__/display-advice.spec.ts` (`plans/technical-debt-audit-2026-08-20.md` (deleted by PRD-826) dropped from this list on 2026-10-05: the review proved it a distinct audit, not a duplicate)
 **Implementation:** delete the unreferenced PDFs and the two unreachable
 analysis scripts; drop the five dead exports; correct the two stale round-ledger pointers.
 `scripts/stamp-template-loading.ts` and its `package.json` entry point are **kept** — see the E23

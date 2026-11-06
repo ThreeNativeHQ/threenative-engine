@@ -167,6 +167,28 @@ export class CollisionShape3D {
     });
   }
 
+  /** Godot's ConcavePolygonShape3D: x, y, z vertex triples in body-local metres and triangle indices. */
+  static trimesh(vertices: Float32Array, indices: Uint32Array): CollisionShape3D {
+    if (
+      vertices.length < 9 ||
+      vertices.length % 3 !== 0 ||
+      indices.length < 3 ||
+      indices.length % 3 !== 0
+    )
+      throw new Error("CollisionShape3D.trimesh requires vertex triples and triangle indices.");
+    return new CollisionShape3D({
+      collisionLayer: 1,
+      collisionMask: 0xffff,
+      kind: "trimesh",
+      sensor: false,
+      x: 0,
+      y: 0,
+      z: 0,
+      vertices,
+      indices,
+    });
+  }
+
   static fromMesh(mesh: Mesh, kind?: CollisionShapeKind): CollisionShape3D {
     const geometry = mesh.geometry;
     const inferred =

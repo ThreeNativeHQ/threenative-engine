@@ -1,0 +1,158 @@
+import { readFileSync } from "node:fs";
+import { terrainStats } from "@threenative/terrain";
+import { Vector3 } from "three";
+import { describe, expect, it } from "vitest";
+import { BENCHMARK } from "../src/render/benchmark.js";
+import { BIOMES, measureBiome } from "../src/render/biomes.js";
+import { prefiltered } from "../src/render/horizon.js";
+
+// `pnpm test` bakes first, so the forest backdrop in horizon.json is the one the game loads.
+// The smooth USGS surroundings that read as rounded blobs measure curvature kurtosis 13.7; the
+// generated fluvial backdrop measures about 80 (alpine DEM 89). The floor is set between them.
+describe("forest backdrop", () => {
+  const { forest } = JSON.parse(
+    readFileSync(new URL("../src/world/horizon.json", import.meta.url), "utf8"),
+  ) as { forest: { size: number; resolution: number; heights: number[] } };
+  const stats = terrainStats(forest.heights, forest.resolution, forest.size);
+
+  it("keeps the real place's relief and a sharp, branching surface", () => {
+    expect(stats.relief).toBeGreaterThan(800);
+    // Owner goal 2026-11-04 (rocky alpine peaks, then a near massif in the vista): 950 became 1200.
+    expect(stats.relief).toBeLessThan(1200);
+    expect(stats.curvatureKurtosis).toBeGreaterThan(40);
+  });
+
+  it("stands the vista's near massif in the upper left of its frame", () => {
+    // Owner goal 2026-11-04 ("make sure we have the proper mountain on this capture"): the goal
+    // frame's summit is ~2% below its top edge and its massif fills the left ~45% of the width.
+    // The generated backdrop had a valley on that bearing, its skyline 27-42% down the frame.
+    const vista = BENCHMARK.forest.poses.vista;
+    if (!vista) throw new Error("The forest has no vista pose");
+    const { at, eyeY = 0, look, lookY = 0 } = vista;
+    const n = forest.resolution;
+    const cell = forest.size / (n - 1);
+    const sample = (row: number, column: number) => forest.heights[row * n + column] as number;
+    const height = (x: number, z: number) => {
+      const u = Math.min(Math.max((x + forest.size / 2) / cell, 0), n - 1.001);
+      const v = Math.min(Math.max((z + forest.size / 2) / cell, 0), n - 1.001);
+      const [i, j] = [Math.floor(u), Math.floor(v)];
+      const [a, b] = [u - i, v - j];
+      return (
+        (sample(j, i) * (1 - a) + sample(j, i + 1) * a) * (1 - b) +
+        (sample(j + 1, i) * (1 - a) + sample(j + 1, i + 1) * a) * b
+      );
+    };
+    // The game's camera: 60 degree vertical field, the playtest's 1280 x 720 viewport.
+    const forward = new Vector3(look[0] - at[0], lookY - eyeY, look[1] - at[1]).normalize();
+    const right = forward
+      .clone()
+      .cross(new Vector3(0, 1, 0))
+      .normalize();
+    const up = right.clone().cross(forward);
+    const t = Math.tan(Math.PI / 6);
+    const skyline: number[] = [];
+    for (let column = 0; column <= 576; column += 16) {
+      const ray = forward
+        .clone()
+        .addScaledVector(right, ((2 * (column + 0.5)) / 1280 - 1) * t * (16 / 9))
+        .setY(0)
+        .normalize();
+      let top = Number.NEGATIVE_INFINITY;
+      for (let d = 30; d < 4500; d += 5) {
+        const [x, z] = [at[0] + ray.x * d, at[1] + ray.z * d];
+        if (Math.max(Math.abs(x), Math.abs(z)) > 2356) break;
+        const toGround = new Vector3(x - at[0], height(x, z) - eyeY, z - at[1]);
+        top = Math.max(top, toGround.dot(up) / toGround.dot(forward));
+      }
+      skyline.push((1 - top / t) / 2);
+    }
+    expect(Math.min(...skyline)).toBeLessThan(0.1);
+    expect(skyline.reduce((sum, row) => sum + row, 0) / skyline.length).toBeLessThan(0.15);
+  });
+
+  it("breaks the massif into peaks with cliff faces, not one 30 degree wall", () => {
+    // The fluvial pass alone left one smooth wall: 6% of the collar steeper than 40 degrees and a
+    // 34 degree 90th percentile, cut by straight radial channels that read as vertical streaks.
+    const n = forest.resolution;
+    const cell = forest.size / (n - 1);
+    let collar = 0;
+    let cliffs = 0;
+    for (let row = 1; row < n - 1; row++)
+      for (let column = 1; column < n - 1; column++) {
+        const reach = Math.max(Math.abs(column / (n - 1) - 0.5), Math.abs(row / (n - 1) - 0.5));
+        if (reach * forest.size <= 256 || reach * forest.size > 2356) continue;
+        const at = (r: number, c: number) => forest.heights[r * n + c] as number;
+        const dx = (at(row, column + 1) - at(row, column - 1)) / (2 * cell);
+        const dz = (at(row + 1, column) - at(row - 1, column)) / (2 * cell);
+        collar++;
+        if (Math.atan(Math.hypot(dx, dz)) > (40 * Math.PI) / 180) cliffs++;
+      }
+    expect(cliffs / collar).toBeGreaterThan(0.15);
+    expect(stats.slopeP90).toBeGreaterThan(42);
+  });
+
+  it("keeps snow to the peaks instead of every saddle", () => {
+    // The cap band is a fraction of the 41 m walkable range; at 227 m it lay under a third of the
+    // generated ridges and read as a white band across the valley from the spawn.
+    const baked = JSON.parse(
+      readFileSync(new URL("../src/world/baked.json", import.meta.url), "utf8"),
+    ) as { forest: { heights: number[] } };
+    const [snowline] = measureBiome(BIOMES.forest, baked.forest.heights).heightBands.cap;
+    const n = forest.resolution;
+    let collar = 0;
+    let snowy = 0;
+    for (let row = 0; row < n; row++)
+      for (let column = 0; column < n; column++) {
+        const reach = Math.max(Math.abs(column / (n - 1) - 0.5), Math.abs(row / (n - 1) - 0.5));
+        const metres = reach * forest.size;
+        if (metres <= 256 || metres > 2356) continue;
+        collar++;
+        if ((forest.heights[row * n + column] as number) > snowline) snowy++;
+      }
+    expect(snowy / collar).toBeLessThan(0.15);
+  });
+
+  it("meets the surveyed ground at the centre", () => {
+    const half = (forest.resolution - 1) / 2;
+    expect(forest.heights[half * forest.resolution + half]).toBeCloseTo(13.1, 0);
+  });
+
+  it("hazes the ridges instead of swapping them for cloudless sky", () => {
+    // The haze composite replaces a surface with sky by `horizonFade`; at [400, 1500] the median
+    // 700 m+ ridge kept 0% and showed only as a hole when a cloud passed behind it.
+    const [start, end] = BIOMES.forest.atmosphere.horizonFade;
+    const n = forest.resolution;
+    const ridges: number[] = [];
+    for (let row = 0; row < n; row++)
+      for (let column = 0; column < n; column++) {
+        const x = (column / (n - 1) - 0.5) * forest.size;
+        const z = (row / (n - 1) - 0.5) * forest.size;
+        const inCollar = Math.max(Math.abs(x), Math.abs(z)) <= 2356;
+        if (inCollar && (forest.heights[row * n + column] as number) > 700)
+          ridges.push(Math.hypot(x, z));
+      }
+    ridges.sort((a, b) => a - b);
+    const median = ridges[ridges.length >> 1] as number;
+    const t = Math.min(1, Math.max(0, (median - start) / (end - start)));
+    expect(1 - t * t * (3 - 2 * t)).toBeGreaterThan(0.5);
+  });
+
+  it("prefilters the far collar so a wall cannot alias into skyline stairs", () => {
+    const n = forest.resolution;
+    const source = Float32Array.from(forest.heights);
+    const smooth = prefiltered(source, n);
+    const maxStep = (v: Float32Array) => {
+      let max = 0;
+      for (let row = 0; row < n; row++)
+        for (let column = 0; column < n - 1; column++)
+          max = Math.max(
+            max,
+            Math.abs((v[row * n + column + 1] as number) - (v[row * n + column] as number)),
+          );
+      return max;
+    };
+    const mean = (v: Float32Array) => v.reduce((sum, h) => sum + h, 0) / v.length;
+    expect(maxStep(smooth)).toBeLessThan(maxStep(source) * 0.6);
+    expect(Math.abs(mean(smooth) - mean(source))).toBeLessThan(0.5);
+  });
+});

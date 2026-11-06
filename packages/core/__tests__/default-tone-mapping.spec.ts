@@ -1,7 +1,11 @@
 import { ACESFilmicToneMapping, AgXToneMapping, CustomToneMapping, NoToneMapping } from "three";
 import { describe, expect, it, vi } from "vitest";
 import { applyRendererToneMapping } from "../src/look/default-tone-mapping.js";
-import { FILMIC_CURVE, installFilmicToneMapping } from "../src/look/filmic-tone-mapping.js";
+import {
+  FILMIC_CURVE,
+  filmicToneMappingNode,
+  installFilmicToneMapping,
+} from "../src/look/filmic-tone-mapping.js";
 import { createRenderer } from "../src/renderer.js";
 
 // Owner 2026-10-22: a renderer with no look options starts with a fresh Unreal 5.8.3 project's tone curve.
@@ -74,6 +78,24 @@ describe("default tone mapping", () => {
     // A curve that differs still reaches the library: three keeps whichever came first, and says so.
     expect(installFilmicToneMapping(raw, { ...FILMIC_CURVE, slope: 0.5 })).toBe(CustomToneMapping);
     expect(addToneMapping).toHaveBeenCalledTimes(2);
+  });
+
+  // CI run 42263498963: the old `fract(sin(dot(p, k)) * 43758.5453)` grain multiplied float rounding
+  // by 43758, so Chrome and the desktop host drew uncorrelated grain and 57% of a dithered frame differed.
+  it("draws the output dither from integer math, with no sine to round apart per backend", async () => {
+    const { float, vec3 } = await import("three/tsl");
+    const ops = new Set<string>();
+    const seen = new Set<object>();
+    const walk = (node: unknown): void => {
+      if (!node || typeof node !== "object" || seen.has(node)) return;
+      seen.add(node);
+      const n = node as { method?: string; getChildren?: () => Iterable<unknown> };
+      if (typeof n.method === "string") ops.add(n.method);
+      for (const child of n.getChildren?.() ?? []) walk(child);
+    };
+    walk(filmicToneMappingNode({ ...FILMIC_CURVE, dither: 1 })(vec3(0.2, 0.3, 0.4), float(1)));
+    expect(ops.has("sqrt"), "the walk reaches the grain").toBe(true);
+    expect(ops.has("sin")).toBe(false);
   });
 
   it("throws on an unknown mode instead of falling back", () => {

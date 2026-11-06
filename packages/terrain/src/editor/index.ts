@@ -12,7 +12,7 @@ import type {
 } from "./cameras.js";
 import type { IEnvironment, IEnvironmentOperation, IEnvironmentResult } from "./environment.js";
 import type { IAuthoringDocument, IEditorActivation, IEditorSnapshot } from "./server.js";
-import { editorShell } from "./shell.js";
+import { createEditorShell } from "./shell.js";
 import type { ISpatialObservation, ISpatialQuery } from "./spatialInspector.js";
 
 export {
@@ -250,6 +250,12 @@ export class TerrainEditorController {
   ): Promise<IEditorSnapshot> {
     return this.#request("document", transaction);
   }
+  reload(): Promise<IEditorSnapshot> {
+    return this.#request("reload", {});
+  }
+  restoreLastValid(): Promise<IEditorSnapshot> {
+    return this.#request("restore", {});
+  }
   subscribe(listener: (snapshot: IEditorSnapshot) => void, onError: () => void): () => void {
     const events = new EventSource(new URL("events", this.baseUrl));
     events.onmessage = ({ data }) => {
@@ -277,11 +283,7 @@ export async function mountTerrainEditor(options: {
   materialColours: readonly (readonly [number, number, number])[];
   onEvaluated?(event: { revision: string; state: ITerrainState; ms: number }): void;
 }): Promise<{ controller: TerrainEditorController; dispose(): void }> {
-  document.body.innerHTML = editorShell;
-  const lock = document.createElement("style");
-  lock.textContent =
-    'body[data-saving="true"] button,body[data-saving="true"] input,body[data-saving="true"] select,body[data-saving="true"] textarea{pointer-events:none}';
-  document.head.append(lock);
+  document.body.replaceChildren(createEditorShell());
   const host = document.getElementById("viewport");
   if (!host) throw new Error("Recovered editor has no viewport");
   const controller = new TerrainEditorController(new URL("./", location.href).href);
@@ -317,7 +319,17 @@ export async function mountTerrainEditor(options: {
       unsubscribe();
       controls.dispose();
       view.dispose();
-      lock.remove();
     },
   };
 }
+
+export { landformPose, transformedLandform } from "./landforms.js";
+export {
+  pickEditorSurface,
+  pickEditorPlacement,
+  editorPointToClient,
+  editorPlacementCenter,
+  editorSurfaceHeight,
+} from "./picking.js";
+
+export { createEditorSelection } from "./selection.js";

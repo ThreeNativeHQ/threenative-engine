@@ -78,7 +78,8 @@ void tslSetUniform(const engine::shader::graph::Node& uniform, const double* val
  *   Else (receiver If, body)       gives the last If of this body its else branch; returns the new If
  *   ElseIf (receiver If, cond, body) gives it an else branch holding one more If; returns that If, the next tip
  *   Loop:index ([type])            the index node the loop callback gets as `{ i }`: "int" (default) or "uint"
- *   Loop (end, index, body [, start]) appends a loop over that index from `start` (default 0) to `end`
+ *   Loop (end, index, body [, start [, step [, inclusive]]]) appends a loop over that index from
+ *                                 `start` (default 0) to `end`, or up to and including it when `inclusive` is set
  */
 class TslScopes {
 public:
@@ -92,6 +93,7 @@ private:
     struct Body {
         uint64_t id;
         std::vector<engine::shader::graph::Node> statements;
+        bool fn = false;  // a Fn call's body: inside another body it runs at the call, as GLSL calls run
     };
     std::vector<Body>& open();
     std::vector<Body> open_;

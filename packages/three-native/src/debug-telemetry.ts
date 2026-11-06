@@ -26,6 +26,9 @@ export class DebugTelemetry {
     name: string,
     amount = 1,
     area = "bridge",
+    // Every counter the back end adds keeps this name, including the ones `browser-wasm-runtime.ts`
+    // adds since PRD-803 split it out: the split moved code, so the attribution a debug report shows
+    // does not move with it.
     caller = "browser-backend.ts",
     unit?: string,
   ): void {

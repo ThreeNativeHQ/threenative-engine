@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { expect, it } from "vitest";
 
 const {
@@ -22,13 +23,13 @@ const selected = [
   "ci:typecheck",
 ];
 
-it("lists the 66 eligible HEAVY instances as 49 ci + 13 integration + 4 native", () => {
+it("lists the 67 eligible HEAVY instances as 50 ci + 13 integration + 4 native", () => {
   expect(ADMISSION_NAMESPACES).toEqual(["ci", "integration", "native"]);
-  expect(ADMISSION_INVENTORY).toHaveLength(66);
-  expect(here("ci")).toHaveLength(49);
+  expect(ADMISSION_INVENTORY).toHaveLength(67);
+  expect(here("ci")).toHaveLength(50);
   expect(here("integration")).toHaveLength(13);
   expect(here("native")).toHaveLength(4);
-  expect(new Set(ADMISSION_INVENTORY).size).toBe(66);
+  expect(new Set(ADMISSION_INVENTORY).size).toBe(67);
 });
 
 it("counts each matrix leg as its own instance", () => {
@@ -59,6 +60,47 @@ it("admits at most the published slots, in the caller's order, across every work
     "integration:csg",
   ]);
   expect(admissionPlan(selected, 1)).toEqual(["ci:test-unit:1/4"]);
+});
+
+it("keeps GPU-designated instances out of CPU slots only when a GPU runner is configured", () => {
+  const selected = [
+    "ci:test-unit:1/4",
+    "ci:benchmark",
+    "ci:template-nonvisual:racing",
+    "ci:strata",
+    "ci:typecheck",
+  ];
+  expect(admissionPlan(selected, 3, { gpuRunner: "tn-gpu" })).toEqual([
+    "ci:test-unit:1/4",
+    "ci:typecheck",
+  ]);
+  expect(admissionPlan(selected, 3)).toEqual(selected.slice(0, 3));
+});
+
+// The workflow is the authority on which legs take the GPU label; a leg it sends there must not
+// also spend a shared CPU slot, or rain's leg idles one slot and pushes another job to a hosted
+// runner.
+it("keeps every template-nonvisual leg the workflow routes to the GPU runner out of CPU slots", async () => {
+  const workflow = await readFile(
+    new URL("../../.github/workflows/ci.yml", import.meta.url),
+    "utf8",
+  );
+  const job = workflow.slice(workflow.indexOf("\n  template-nonvisual:"));
+  const runsOn = job.slice(job.indexOf("\n    runs-on:")).split("\n")[1];
+  if (runsOn === undefined) throw new Error("template-nonvisual has no runs-on line in ci.yml");
+  const gpuTemplates = [...runsOn.matchAll(/matrix\.template == '([^']+)'/gu)].map((m) => m[1]);
+  expect(gpuTemplates).toContain("racing");
+  expect(gpuTemplates).toContain("rain");
+  for (const template of gpuTemplates)
+    expect(
+      admissionPlan([`ci:template-nonvisual:${template}`, "ci:typecheck"], 5, {
+        gpuRunner: "tn-gpu",
+      }),
+    ).toEqual(["ci:typecheck"]);
+});
+
+it("keeps GPU-designated instances hosted for forks even when both runner labels exist", () => {
+  expect(admissionPlan(selected, 5, { fork: true, gpuRunner: "tn-gpu" })).toEqual([]);
 });
 
 it("treats zero capacity, a missing count or an absent runner as hosted", () => {
@@ -104,6 +146,7 @@ it("selects only the plan-required instances, in the inventory's CPU-heavy order
   const plan = {
     jobs: {
       typecheck: { required: true },
+      strata: { required: true },
       "test-unit": { required: true },
       benchmark: { required: false },
       integration: { required: true },
@@ -117,6 +160,7 @@ it("selects only the plan-required instances, in the inventory's CPU-heavy order
     "ci:test-unit:1/4",
     "ci:test-unit:2/4",
     "ci:typecheck",
+    "ci:strata",
     "integration:csg",
   ]);
   expect(selectInstances(plan, {})).not.toContain("integration:csg");

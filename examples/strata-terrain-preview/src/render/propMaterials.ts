@@ -1,3 +1,4 @@
+import type { IAssetLoader } from "@threenative/core";
 // The surfaces the starter props draw with, and the wind that moves them.
 //
 // All of it is appearance and all of it is this game's: which CC0 map goes on the bark, how the
@@ -12,7 +13,7 @@
 //      moment two branches cross on screen.
 //   2. The wind is a vertex-stage displacement weighted by the baked `sway` attribute, so a branch
 //      card and the trunk it hangs from move as one and the base of the tree never moves at all.
-import type { IAssetLoader } from "@threenative/core";
+import { bakedNoise } from "@threenative/core/world";
 import {
   Color,
   DataTexture,
@@ -24,6 +25,7 @@ import {
   LinearMipmapLinearFilter,
   type Material,
   RedFormat,
+  RepeatWrapping,
   type Texture,
   Vector3,
 } from "three";
@@ -41,7 +43,6 @@ import {
   log2,
   max,
   mix,
-  mx_noise_float,
   normalMap,
   normalViewGeometry,
   normalWorld,
@@ -52,6 +53,7 @@ import {
   pow,
   renderGroup,
   rotateUV,
+  sign,
   smoothstep,
   texture,
   textureSize,
@@ -65,6 +67,7 @@ import {
 import type { Node } from "three/webgpu";
 import { MeshStandardNodeMaterial } from "three/webgpu";
 import {
+  DRY_STONE_MAPS,
   FERN_MAPS,
   FIR_MAPS,
   GROUND_MAPS,
@@ -78,7 +81,8 @@ import {
   SOIL_MAP,
 } from "../world/terrainAssets.js";
 import {
-  type IBiome,
+  BIOMES,
+  type IWorldBiome,
   alpineRockAlbedo,
   alpineRockColor,
   alpineSnowCover,
@@ -192,7 +196,20 @@ export function lightNeedles(
     .clamp(0, 1)
     .pow(3);
   const albedo = (material.colorNode as Node<"vec4">).rgb;
+  // Green light scattered by neighbouring needles; the crown's occlusion retains dark interiors.
+  const glow = albedo.mul(vec3(0.12, 0.8, 0.06)).mul(occlusion);
+  material.emissiveNode = glow;
   const through = albedo.mul(backlit.mul(translucency)).mul(smoothstep(0.16, 0.5, occlusion));
+  // engine-override: the owned engine has no setupLightingModel hook, so the same transmission node
+  // goes into the emissive instead of the sun's direct term: same albedo scale, same occlusion gate,
+  // and it misses the sun's shadow. Two Sided Foliage (PRD-643) is not a stand-in: its transmittance
+  // is one uniform colour, neither albedo-scaled nor gated by the card's facing, so it lifted this
+  // forest's canopy by 2x over three at the overview pose (canopy 90/108/66 with it, 51/70/55 with the
+  // term cleared, three 45/62/52).
+  if (typeof material.setupLightingModel !== "function") {
+    material.emissiveNode = glow.add(through);
+    return;
+  }
   // Add transmission where Three has already applied the sun's shadow to its light colour.
   // Reading the raw virtual-shadow node again in emissive broke forest→coast material bindings.
   const setup = material.setupLightingModel.bind(material);
@@ -207,8 +224,6 @@ export function lightNeedles(
     };
     return model;
   };
-  // Green light scattered by neighbouring needles; the crown's occlusion retains dark interiors.
-  material.emissiveNode = albedo.mul(vec3(0.12, 0.8, 0.06)).mul(occlusion);
 }
 
 /** Alpha cutoff for every cutout surface. Half coverage: a needle card is mostly empty. */
@@ -221,7 +236,7 @@ const CUTOUT = 0.42;
  * not: replacing the bark map with one of a different resolution changes nothing about how big a
  * bark plate is.
  */
-const TILE = { bark: 1.6, stone: 2.4 } as const;
+const TILE = { bark: 1.6, stone: 1.4 } as const;
 
 /**
  * The prepared pine's own cutoff, which is a seventh of the shared one.
@@ -248,9 +263,11 @@ const TILE = { bark: 1.6, stone: 2.4 } as const;
  */
 
 /** Load one starter map, or nothing. A prop still draws without it, on its own colours. */
-async function map(assets: IAssetLoader | undefined, path: string, data: boolean) {
+async function map(assets: IAssetLoader | undefined, path: string, data: boolean, repeat = false) {
   if (assets === undefined) return undefined;
-  const found = await assets.texture(path, { data }).catch(() => undefined);
+  const found = await assets
+    .texture(path, { data, ...(repeat ? { wrap: RepeatWrapping } : {}) })
+    .catch(() => undefined);
   if (found === undefined) return undefined;
   // Cutout maps need mips and an anisotropy filter: a needle card sampled without them shimmers at
   // a grazing angle, which is exactly the angle a meadow is viewed from.
@@ -300,13 +317,19 @@ function windOffset(clock: Node<"float">, amplitude: number) {
   return vec3(WIND.direction[0], 0, WIND.direction[1]).mul(wave.add(gust));
 }
 
-/** Attach the wind to a material's vertex stage, and to its shadow pass so the shadow sways too. */
+/**
+ * Attach the wind to a material's vertex stage; the shadow pass reads the rest pose instead. Virtual
+ * shadow pages are cached, so a cast that moved with the wind froze the frame its page last drew and
+ * then snapped every nearby tree's shadow when walking re-rendered that page.
+ */
 function sway(base: MeshStandardNodeMaterial, clock: Node<"float">, amplitude: number) {
   const offset = windOffset(clock, amplitude);
   base.positionNode = positionLocal.add(offset);
-  // Without this the tree's shadow stays put while the tree moves, and a windy meadow is covered in
-  // shadows belonging to trees that are no longer there.
-  base.castShadowPositionNode = positionLocal.add(offset);
+  base.castShadowPositionNode = positionLocal;
+  // engine-override: the farthest windOffset moves a vertex (both sines at a full weight along a unit
+  // direction). The owned engine grows each tree's shadow box by it and culls the trees per shadow page.
+  (base as MeshStandardNodeMaterial & { maxPositionOffset?: number }).maxPositionOffset =
+    amplitude * 1.55;
 }
 
 /**
@@ -392,7 +415,7 @@ function groundHeight(ground: IPropGround): {
  */
 function groundShare(height: Node<"float"> | undefined): Node<"float"> {
   if (height === undefined) return float(0);
-  const wander = mx_noise_float(positionWorld.mul(1.7)).mul(0.18);
+  const wander = bakedNoise(positionWorld.mul(1.7)).mul(0.18);
   const above = positionWorld.y.sub(height).add(wander);
   return float(1).sub(smoothstep(float(0.02), float(GROUND_BLEND.reach), above));
 }
@@ -420,13 +443,14 @@ function intoGround(
 export async function createRockGround(
   assets?: IAssetLoader,
   ground?: IPropGround,
-  biome?: IBiome,
+  biome?: IWorldBiome,
 ) {
-  if (!ground) return undefined;
+  const look = biome ?? BIOMES.forest;
+  // Beach stones keep their dry surface: the temperate contact band paints grass onto sand.
+  if (!ground || !look.stoneGroundBand) return undefined;
   const under = groundHeight(ground);
   const paths = biome?.maps ?? GROUND_MAPS;
-  const temperate = !biome || biome.world === "forest" || biome.world === "coastal";
-  const rockPaths = temperate ? ROCKFACE_MAPS : paths.rock;
+  const rockPaths = look.contactRockface ? ROCKFACE_MAPS : paths.rock;
   const [grass, relief, rock, rockNormal, snow] = await Promise.all([
     map(assets, paths.grass.diffuse, false),
     paths.grass.normal ? map(assets, paths.grass.normal, true) : undefined,
@@ -439,14 +463,16 @@ export async function createRockGround(
             found ?? (paths.rock.normal ? map(assets, paths.rock.normal, true) : undefined),
         )
       : undefined,
-    biome?.world === "alpine" || biome?.world === "tundra"
-      ? map(assets, paths.snow.diffuse, false)
-      : undefined,
+    look.crestRock ? map(assets, paths.snow.diffuse, false) : undefined,
   ]);
   return {
     apply(material: MeshStandardNodeMaterial): void {
       if (!grass || !material.colorNode) return;
-      const share = groundShare(under.node);
+      // World-space distance across the side gives a half-metre, noise-broken contact falloff.
+      const radial = positionWorld.y.sub(under.node).div(length(normalWorldGeometry.xz).max(0.25));
+      const share = float(1).sub(
+        smoothstep(0, 0.5, radial.add(bakedNoise(positionWorld.mul(1.7)).mul(0.12))),
+      );
       const floor = groundTurf(groundLayer(grass, "grass").rgb, biome);
       const slope = smoothstep(0.17, 0.33, under.normal.y.oneMinus());
       const soil = share;
@@ -459,12 +485,14 @@ export async function createRockGround(
             biome,
             float(1).sub(under.normal.y),
             float(0),
-            mx_noise_float(positionWorld.mul(0.05)),
+            bakedNoise(positionWorld.mul(0.05)),
           ).snow ?? float(0);
         contact = mix(contact, groundLayer(snow, "snow").rgb.mul(vec3(...biome.snowTint)), cover);
       }
       material.colorNode = mix(material.colorNode as Node<"vec3">, contact, soil);
-      material.aoNode = mix(1, 0.86, share);
+      material.aoNode = ((material.aoNode as Node<"float"> | null) ?? float(1)).mul(
+        mix(1, 0.86, share),
+      );
       const lit =
         material.normalNode ??
         (material.normalMap
@@ -500,31 +528,46 @@ export async function createRockGround(
   };
 }
 
-function stoneSurface(maps: { diffuse?: Texture; normal?: Texture }) {
+function stoneSurface(maps: { diffuse?: Texture; normal?: Texture; arm?: Texture }) {
   const material = new MeshStandardNodeMaterial({ metalness: 0, roughness: 0.93, side: FrontSide });
   const tile = float(TILE.stone);
-  const weight = abs(normalWorld).normalize();
+  const detail = float(1).sub(smoothstep(25, 90, length(cameraPosition.sub(positionWorld))));
+  const geometryNormal = normalWorldGeometry;
+  const axis = abs(geometryNormal).pow(4);
+  const share = axis.div(axis.x.add(axis.y).add(axis.z));
+  const xUV = positionWorld.zy.div(tile);
+  const yUV = positionWorld.xz.div(tile);
+  const zUV = positionWorld.xy.div(tile);
   if (maps.diffuse === undefined) material.colorNode = vec3(0.42, 0.43, 0.38);
   else {
-    // Each wall reads its own projection rather than stretching an XZ photograph.
-    const axis = abs(normalWorldGeometry).pow(4);
-    const share = axis.div(axis.x.add(axis.y).add(axis.z));
     material.colorNode = share.x
-      .mul(texture(maps.diffuse, positionWorld.zy.div(tile)).rgb)
-      .add(share.y.mul(texture(maps.diffuse, positionWorld.xz.div(tile)).rgb))
-      .add(share.z.mul(texture(maps.diffuse, positionWorld.xy.div(tile)).rgb));
+      .mul(texture(maps.diffuse, xUV).rgb)
+      .add(share.y.mul(texture(maps.diffuse, yUV).rgb))
+      .add(share.z.mul(texture(maps.diffuse, zUV).rgb));
   }
   if (maps.normal !== undefined) {
-    const source = maps.normal;
-    const x = texture(source, positionWorld.yz.div(tile)).xy.mul(2).sub(1);
-    const y = texture(source, positionWorld.zx.div(tile)).xy.mul(2).sub(1);
-    const z = texture(source, positionWorld.xy.div(tile)).xy.mul(2).sub(1);
-    const relief = weight.x
-      .mul(vec3(0, x.x, x.y))
-      .add(weight.y.mul(vec3(y.y, 0, y.x)))
-      .add(weight.z.mul(vec3(z.x, z.y, 0)))
-      .mul(1.15);
-    material.normalNode = transformNormalToView(normalize(normalWorld.add(relief)));
+    // GL maps encode +Y in green. Match each tangent component to its colour projection.
+    const x = texture(maps.normal, xUV).xy.mul(2).sub(1);
+    const y = texture(maps.normal, yUV).xy.mul(2).sub(1);
+    const z = texture(maps.normal, zUV).xy.mul(2).sub(1);
+    const relief = share.x
+      .mul(vec3(0, x.y, x.x.mul(sign(geometryNormal.x))))
+      .add(share.y.mul(vec3(y.x, 0, y.y)))
+      .add(share.z.mul(vec3(z.x.mul(sign(geometryNormal.z)), z.y, 0)))
+      .mul(maps.arm ? 0.45 : 0.7)
+      .mul(detail);
+    const tangent = relief.sub(geometryNormal.mul(dot(geometryNormal, relief)));
+    material.normalNode = transformNormalToView(normalize(geometryNormal.add(tangent)));
+  }
+  if (maps.arm) {
+    // One dominant-axis ARM tap shares roughness/AO; broad data needs no three-way blend.
+    const plane = axis.x
+      .greaterThan(axis.y)
+      .and(axis.x.greaterThan(axis.z))
+      .select(xUV, axis.y.greaterThan(axis.z).select(yUV, zUV));
+    const arm = texture(maps.arm, plane);
+    material.roughnessNode = arm.g.mul(0.2).add(0.8);
+    material.aoNode = arm.r.max(0.65);
   }
   return material;
 }
@@ -871,7 +914,7 @@ export function skyEnvironment(material: MeshStandardNodeMaterial, sky: Texture)
 export async function createPropSurfaces(
   assets?: IAssetLoader,
   ground?: IPropGround,
-  biome?: IBiome,
+  biome?: IWorldBiome,
   skyLight?: Texture,
 ): Promise<IPropSurfaces> {
   const seconds = uniform(0).setGroup(renderGroup) as unknown as Node<"float">;
@@ -882,36 +925,39 @@ export async function createPropSurfaces(
   ]);
   const soil = await map(
     assets,
-    biome && biome.world !== "forest" && biome.world !== "coastal"
-      ? biome.maps.grass.diffuse
-      : SOIL_MAP,
+    biome !== undefined && !biome.lawnGround ? biome.maps.grass.diffuse : SOIL_MAP,
     false,
   );
   const [bark, stone, atlas, relief] = await Promise.all([
     surfaceMaps(assets, PROP_MAPS.bark),
-    surfaceMaps(
-      assets,
-      biome?.world === "desert" || biome?.world === "alpine"
-        ? {
-            diffuse: biome.maps.rock.diffuse,
-            normal: biome.maps.rock.normal ?? PROP_MAPS.stone.normal,
-            roughness: "cliff_side/cliff_side_rough_1k.jpg",
-          }
-        : biome?.world === "tundra"
+    (async () => {
+      const set = biome?.dryStones
+        ? DRY_STONE_MAPS
+        : biome?.crestRock
           ? {
-              diffuse: "lichen_rock/lichen_rock_diff_512.jpg",
-              normal: "lichen_rock/lichen_rock_nor_gl_512.jpg",
-              roughness: PROP_MAPS.stone.roughness,
+              diffuse: biome.maps.rock.diffuse,
+              normal: biome.maps.rock.normal ?? PROP_MAPS.stone.normal,
             }
-          : PROP_MAPS.stone,
-    ),
+          : biome?.mossGround
+            ? {
+                diffuse: "lichen_rock/lichen_rock_diff_512.jpg",
+                normal: "lichen_rock/lichen_rock_nor_gl_512.jpg",
+              }
+            : PROP_MAPS.stone;
+      const [diffuse, normal, arm] = await Promise.all([
+        map(assets, set.diffuse, false, true),
+        map(assets, set.normal, true, true),
+        biome?.dryStones ? map(assets, DRY_STONE_MAPS.arm, true, true) : undefined,
+      ]);
+      return { diffuse, normal, arm };
+    })(),
     map(assets, NEEDLE_ATLAS, false),
     map(assets, NEEDLE_SURFACE, true),
   ]);
-  const alpineSnow =
-    biome?.world === "alpine" ? await map(assets, biome.maps.snow.diffuse, false) : undefined;
+  const rockSnow =
+    biome?.stoneSnow === true ? await map(assets, biome.maps.snow.diffuse, false) : undefined;
   const textures: Texture[] = [
-    ...(alpineSnow ? [alpineSnow] : []),
+    ...(rockSnow ? [rockSnow] : []),
     ...(under ? [under.texture] : []),
     ...(soil ? [soil] : []),
     ...[fernDiffuse, fernAlpha].filter((found): found is Texture => found !== undefined),
@@ -920,6 +966,7 @@ export async function createPropSurfaces(
     bark.roughness,
     stone.diffuse,
     stone.normal,
+    stone.arm,
     atlas,
     relief,
   ].filter((found): found is Texture => found !== undefined);
@@ -1059,6 +1106,21 @@ export async function createPropSurfaces(
   sway(petalMaterial, seconds, WIND.amplitude.petal);
 
   const stoneMaterial = stoneSurface(stone);
+  // Cast the sun-facing surface: back-face depth leaves a lit strip at the sand intersection.
+  if (biome?.stoneFrontFace) stoneMaterial.shadowSide = FrontSide;
+  if (biome?.propStoneTint && stoneMaterial.colorNode)
+    stoneMaterial.colorNode = (
+      stone.diffuse ? (stoneMaterial.colorNode as Node<"vec3">) : vec3(0.4, 0.35, 0.3)
+    ).mul(vec3(...biome.propStoneTint));
+  if (biome?.propStoneTint && stoneMaterial.colorNode) {
+    const albedo = stoneMaterial.colorNode as Node<"vec3">;
+    const far = smoothstep(45, 140, length(cameraPosition.sub(positionWorld)));
+    const luminance = dot(albedo, vec3(0.2126, 0.7152, 0.0722));
+    const ceiling = dot(vec3(...biome.distantStone), vec3(0.2126, 0.7152, 0.0722));
+    stoneMaterial.colorNode = albedo.mul(
+      mix(1, ceiling.div(luminance.max(ceiling).max(0.0001)), far),
+    );
+  }
   const rockGround = await createRockGround(assets, ground, biome);
   const materials: IPropMaterials = {
     bark: barkMaterial,
@@ -1072,35 +1134,51 @@ export async function createPropSurfaces(
     stem: stemMaterial,
     stone: stoneMaterial,
   };
-  if (biome && biome.world !== "forest" && biome.world !== "coastal") {
+  if (biome !== undefined && !biome.lawnGround) {
     // colorNode already consumes blade colour; Three must not multiply it a second time.
     grassMaterial.vertexColors = false;
-    grassMaterial.colorNode = blade.mul(
-      vec3(
-        ...(biome.world === "desert"
-          ? ([1.65, 0.92, 0.42] as const)
-          : biome.world === "tundra"
-            ? ([1.1, 0.86, 0.55] as const)
-            : ([0.86, 0.92, 0.6] as const)),
-      ),
-    );
+    grassMaterial.colorNode = blade.mul(vec3(...biome.propGrassTint));
     grassMaterial.emissiveNode = vec3(0);
-    if (stoneMaterial.colorNode)
+    if (!biome.propStoneTint && stoneMaterial.colorNode)
       stoneMaterial.colorNode = (stoneMaterial.colorNode as Node<"vec3">).mul(
         vec3(...biome.stoneTint),
       );
   }
-  if (biome?.world === "alpine") {
+  if (biome?.crestRock) {
     const rock = stone.diffuse ? alpineRockAlbedo(stone.diffuse) : vec3(0.42, 0.43, 0.38);
-    const snow = alpineSnow
-      ? texture(alpineSnow, positionWorld.xz.div(12)).rgb
-      : vec3(0.82, 0.86, 0.9);
+    const snow = rockSnow ? texture(rockSnow, positionWorld.xz.div(12)).rgb : vec3(0.82, 0.86, 0.9);
     stoneMaterial.colorNode = mix(
       alpineRockColor(rock),
       snow.mul(vec3(...biome.snowTint)),
-      smoothstep(0.12, 0.82, alpineSnowCover()),
+      smoothstep(0.12, 0.82, alpineSnowCover(biome)),
     );
   }
+  if (biome?.mossGround) {
+    stoneMaterial.colorNode = (stoneMaterial.colorNode as Node<"vec3">).mul(1.35);
+    const cover =
+      biomeWeights(
+        biome,
+        float(1).sub(normalWorldGeometry.y),
+        float(0),
+        bakedNoise(positionWorld.mul(0.05)),
+      ).snow ?? float(0);
+    const snow = rockSnow ? texture(rockSnow, positionWorld.xz.div(12)).rgb : vec3(0.82, 0.86, 0.9);
+    const side = stoneMaterial.colorNode as Node<"vec3">;
+    stoneMaterial.emissiveNode = side.mul(0.18).mul(float(1).sub(cover));
+    stoneMaterial.colorNode = mix(side, snow.mul(vec3(...biome.snowTint)), cover);
+    stoneMaterial.normalNode = normalize(
+      mix(
+        (stoneMaterial.normalNode as Node<"vec3"> | null) ??
+          transformNormalToView(normalWorldGeometry),
+        transformNormalToView(normalWorldGeometry),
+        cover,
+      ),
+    );
+    if (skyLight) skyEnvironment(stoneMaterial, skyLight);
+  }
+  // Albedo-coloured ground bounce keeps unlit beach faces legible without another texture tap.
+  if (biome?.propStoneTint && stoneMaterial.colorNode)
+    stoneMaterial.emissiveNode = (stoneMaterial.colorNode as Node<"vec3">).mul(0.07);
   rockGround?.apply(stoneMaterial);
   // The alpha-cut, double-sided surfaces: a needle card, a frond, a petal. Without an image-based
   // light each is a flat paddle, which is the paperboard the engine warns about at scene entry.

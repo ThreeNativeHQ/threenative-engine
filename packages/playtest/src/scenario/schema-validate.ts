@@ -14,6 +14,7 @@ export const PLAYTEST_ROOT_KEYS = [
   "awaitStartup",
   "bootFailure",
   "clock",
+  "drawEvery",
   "inputDelivery",
   "name",
   "network",
@@ -49,6 +50,9 @@ export function validatePlaytestScenario(value: unknown, scenarioPath: string, a
   }
   if (value.startTick !== undefined && (!Number.isSafeInteger(value.startTick) || (value.startTick as number) < 0)) {
     throw invalidScenario(scenarioPath, "Scenario startTick must be a nonnegative safe integer when present.");
+  }
+  if (value.drawEvery !== undefined && (!Number.isSafeInteger(value.drawEvery) || (value.drawEvery as number) <= 0)) {
+    throw invalidScenario(scenarioPath, "Scenario drawEvery must be a positive safe integer when present.");
   }
   if (value.bootFailure !== undefined && value.bootFailure !== "renderer-no-adapter") {
     throw invalidScenario(scenarioPath, "Scenario bootFailure must be 'renderer-no-adapter' when present.");
@@ -115,6 +119,7 @@ export function validatePlaytestScenario(value: unknown, scenarioPath: string, a
     ...(typeof value.awaitStartup === "boolean" ? { awaitStartup: value.awaitStartup } : {}),
     ...(value.bootFailure === "renderer-no-adapter" ? { bootFailure: value.bootFailure } : {}),
     ...(value.clock === "wall-clock" ? { clock: value.clock } : {}),
+    ...(value.drawEvery === undefined ? {} : { drawEvery: value.drawEvery as number }),
     inputDelivery,
     name,
     ...(network === undefined ? {} : { network }),

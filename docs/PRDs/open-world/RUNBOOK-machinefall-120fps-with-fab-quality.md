@@ -224,7 +224,7 @@ this host, so it is not attributed. The prewarm (`e580e76cb`) stays off this PR,
     is no walk to compare. Nothing ticked, nothing to capture, and that arm must not merge; the row
     needs one instrumented run to separate the gate's node builds from its own per-update shadow
     invalidation before this mechanism is retried. Details in "Where we stand".
-- [ ] **A8 · [PRD-539](../Unreal/performance/PRD-539-low-resolution-temporal-reconstruction-quality-and-cost.md): temporal reconstruction closes the GPU gap (successor of PRD-455).** After: A7. ⏱🌍👁
+- [ ] **A8 · [PRD-539](../done/PRD-539-low-resolution-temporal-reconstruction-quality-and-cost.md): temporal reconstruction closes the GPU gap (successor of PRD-455).** After: A7. ⏱🌍👁
 - [ ] **A9 · PRD-478 acceptance.** After: A8. ⏱🌍👁
   - Done when: AC-1, AC-2 and AC-3 are ticked on a quiet host 🙋; then PRD-478 may move to `done/`.
 - [ ] **A10 · PRD-477 Phases 2–3 and AC-1: budgets and switches become engine decisions.** After: A9. ⏱🌍👁

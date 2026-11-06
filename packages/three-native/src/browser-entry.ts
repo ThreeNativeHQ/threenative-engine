@@ -32,7 +32,12 @@ import { type ITslRuntime, defineTsl, isTslNode } from "./browser-tsl.js";
 import type { CatalogEntry, ICatalog } from "./catalog.js";
 import { CPU_STAGE_FIELDS } from "./gpu-stages.js";
 import { withMathUtilsExtras } from "./math-utils.js";
-import { Material, defineObjectSurface, defineTypeFlags } from "./object-surface.js";
+import {
+  Material,
+  defineObjectSurface,
+  defineReleaseNoops,
+  defineTypeFlags,
+} from "./object-surface.js";
 import { type PassDraw, definePass } from "./pass-node.js";
 import { definePropertyBinding } from "./property-binding.js";
 import { defineQuadMesh } from "./quad-mesh.js";
@@ -52,7 +57,8 @@ const UPSTREAM_SOURCES = new Set(["three", "three/webgpu", "three/tsl"]);
 /**
  * A value that throws `diagnostic` on any call, construction or property access. Its `prototype`
  * alone reads, so a module may declare a subclass (core's `VirtualShadowNode extends ShadowBaseNode`)
- * and fail only when it constructs one.
+ * and fail only when it constructs one. `Symbol.hasInstance` reads as absent, so `x instanceof Sub`
+ * is the ordinary prototype check (always false here) instead of a throw on every caller.
  */
 function refused(name: string, diagnostic: string): unknown {
   const fail = (): never => {
@@ -61,7 +67,8 @@ function refused(name: string, diagnostic: string): unknown {
   return new Proxy(function refusedExport() {}, {
     apply: fail,
     construct: fail,
-    get: (target, key) => (key === "prototype" ? target.prototype : fail()),
+    get: (target, key) =>
+      key === "prototype" ? target.prototype : key === Symbol.hasInstance ? undefined : fail(),
     set: fail,
     has: fail,
     ownKeys: fail,
@@ -170,13 +177,7 @@ export async function bindWebEngine(
         }
       : counters;
   defineTypeFlags(classes);
-  // three's BatchedMesh/InstancedMesh.dispose frees the instance textures; the engine frees its instance
-  // buffers with the object, so the call has nothing to release (core's projection mirror makes it).
-  for (const name of ["BatchedMesh", "InstancedMesh"]) {
-    const prototype = (classes[name] as { prototype: { dispose?: () => void } } | undefined)
-      ?.prototype;
-    if (prototype !== undefined) prototype.dispose ??= () => {};
-  }
+  defineReleaseNoops(classes);
   // attributes/groups, shape.holes and the abstract Material, as on the V8 player (object-surface.ts).
   const entries = engineCatalog.entries;
   const extending = (base: string) =>
@@ -232,6 +233,8 @@ export async function bindWebEngine(
   bound.MathUtils = withMathUtilsExtras(bound.MathUtils as new () => object);
   // Offscreen PassNodes (pass-node.ts) draw into their targets at the top of each frame; the TSL block below binds it.
   let drawSecondaryPasses: PassUpdate = () => {};
+  // A frame PassNode's updateBefore runs once a frame, as three's node update system runs it.
+  let updatePasses: (frame?: { frameId?: number }) => void = () => {};
   // The product host draws; a module without it (the ABI-only test module) keeps the refusal.
   // Before each frame: edited Color/VectorN uniform values reach the engine, world poses WebAudio,
   // and the wrapper safe point runs (collect: held while the engine references them).
@@ -244,6 +247,9 @@ export async function bindWebEngine(
       module,
       classes.Color as never,
       (frame) => {
+        // Each renderer render runs the live frame passes' updateBefore, as three's node update does;
+        // a render that advances no frame (a standing frame the runner asks for) still hears them.
+        updatePasses(frame);
         // A compute dispatch passes no frame: it belongs to the frame already collected.
         const frameId = frame?.frameId ?? collectedFrame;
         if (updating || (frameId !== undefined && frameId === collectedFrame)) {
@@ -281,6 +287,8 @@ export async function bindWebEngine(
     // draws the scene and camera the pass points at.
     const target: { scene?: unknown; camera?: unknown } = {};
     bound.RenderPipeline = defineRenderPipeline(runtime.tsl, target);
+    // The frame counters a host module answers (0 from a module without one, before it draws).
+    const hostFrame = (module as Partial<WebHostModule>)._tnw_web_frame;
     const passes = definePass(
       tsl.exports as never,
       (scene, camera) => {
@@ -289,11 +297,21 @@ export async function bindWebEngine(
       },
       classes.RenderTarget === undefined
         ? undefined
-        : // quality-allow: three's class name, so a back end passes its class map.
-          // biome-ignore lint/style/useNamingConvention: three's class name, so a back end passes its class map.
-          { RenderTarget: classes.RenderTarget as never },
+        : {
+            // quality-allow: three's class name, so a back end passes its class map.
+            // biome-ignore lint/style/useNamingConvention: three's class name, so a back end passes its class map.
+            RenderTarget: classes.RenderTarget as never,
+            // The frame pass draws at the engine's input size, at the frame's sample count (tnw_web_frame's
+            // 35, 36 and 18), so a game reads the size and MSAA the engine actually drew.
+            surface: () => ({
+              width: hostFrame?.call(module, 35) ?? 0,
+              height: hostFrame?.call(module, 36) ?? 0,
+            }),
+            samples: () => hostFrame?.call(module, 18) ?? 0,
+          },
     );
     drawSecondaryPasses = passes.updateSecondaryPasses;
+    updatePasses = passes.updateFramePasses;
     Object.assign(bound, passes);
   }
   return bindUpstreamExports(names, engineCatalog, bound);

@@ -2,7 +2,7 @@ import { completionWindowEnvironment, completionWindowLabel, measureCompletionWi
 import { cpuWindowLabels, measureCpuWindow, type ICpuWindow } from "./linuxCpuWindow.js";
 import type { IPlaytestToneAssertion } from "../scenario/schema-base.js";
 import type { IPlaytestToneCaptureObservation } from "../tone.js";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, writeFile, type FileHandle } from "node:fs/promises";
 import { join } from "node:path";
 
 import { assertCaptureNotBlank, assertDesktopCaptureNotBlank, collectRegionalTone } from "../capture.js";
@@ -46,7 +46,6 @@ import {
   DeviceBridgeTransport,
   DeviceMailboxTransport,
   deviceTimeoutDiagnostic,
-  type IDeviceResponseObservation,
   type IDevicePlaytestTransport,
   type IDeviceMailbox,
 } from "./deviceTransport.js";
@@ -183,6 +182,17 @@ async function runDevicePlaytestInternal(
     canDriveAndroidLifecycle(target.driver),
   );
   if (unsupported !== undefined) return failureReport(config, scenario, unsupported, target.name);
+  // `drawEvery` is the browser runner's per-step cadence. These lanes advance counted ticks
+  // without a per-step draw window, so honouring the field here would be a second mechanism with
+  // its own semantics. A scenario that asks for it fails by name instead of sampling whatever the
+  // host happens to draw, which is the failure the field exists to remove.
+  if (scenario.drawEvery !== undefined) {
+    return failureReport(config, scenario, unsupportedDiagnostic(
+      "a drawEvery tick cadence",
+      "Run this scenario on --target browser, which owns the fixed-step draw cadence, or remove drawEvery.",
+      target.name,
+    ), target.name);
+  }
   if (
     target.name === "android"
     && scenario.assert?.framebufferCoverage !== undefined
@@ -218,10 +228,20 @@ async function runDevicePlaytestInternal(
   let coverageRecordingStarted = false;
   let framebufferCoverage: IPlaytestFramebufferCoverageObservation | undefined;
   const coverageVideoPath = join(config.artifactDirectory, "framebuffer-coverage.mp4");
-  const responseObservations: IDeviceResponseObservation[] = [];
-  transport.setResponseObserver?.((observation) => responseObservations.push(observation));
+  let responseArchive: FileHandle | undefined;
+  let responseWritten = false;
+  let responseWrite = Promise.resolve();
   const metrics = deviceMetricsRecorder(target);
   try {
+    const archive = await open(join(config.artifactDirectory, "device-response-observations.json"), "w");
+    responseArchive = archive;
+    await archive.writeFile(`{\n  "responsePath": ${JSON.stringify(target.mailboxPaths.response)},\n  "observations": [`, "utf8");
+    transport.setResponseObserver?.((observation) => {
+      // Only one bounded response is serialized; the mailbox awaits disk backpressure.
+      responseWrite = archive.writeFile(`${responseWritten ? "," : ""}\n    ${JSON.stringify(observation)}`, "utf8");
+      responseWritten = true;
+      return responseWrite;
+    });
     await throwIfAborted(target);
     await transport.start();
     await throwIfAborted(target);
@@ -691,16 +711,6 @@ async function runDevicePlaytestInternal(
         cleanupErrors.push(error);
       }
     };
-    await attemptCleanup(async () => {
-      await writeFile(
-        join(config.artifactDirectory, "device-response-observations.json"),
-        `${JSON.stringify({
-          responsePath: target.mailboxPaths.response,
-          observations: responseObservations,
-        }, null, 2)}\n`,
-        "utf8",
-      );
-    });
     if (scenario.steps.some((step) => step.pointers !== undefined)) {
       await attemptCleanup(async () => {
         if (target.name === "ios") {
@@ -723,6 +733,14 @@ async function runDevicePlaytestInternal(
       await bridge?.close();
     });
     await attemptCleanup(() => transport.close());
+    const archive = responseArchive;
+    if (archive !== undefined) {
+      await attemptCleanup(async () => {
+        await responseWrite;
+        await archive.writeFile(`${responseWritten ? "\n  " : ""}]\n}\n`, "utf8");
+      });
+      await attemptCleanup(() => archive.close());
+    }
     metrics?.stop();
     if (cleanupErrors.length > 0) cleanupState.error = cleanupFailure(cleanupErrors);
   }

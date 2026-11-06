@@ -88,7 +88,8 @@ PostEffects::PostEffects(WGPUDevice device, WGPUQueue queue, std::vector<shader:
                         entry.texture.sampleType =
                             binding.depth ? WGPUTextureSampleType_Depth : WGPUTextureSampleType_Float;
                         entry.texture.viewDimension =
-                            binding.volume ? WGPUTextureViewDimension_3D : WGPUTextureViewDimension_2D;
+                            binding.volume ? WGPUTextureViewDimension_3D
+                            : binding.array ? WGPUTextureViewDimension_2DArray : WGPUTextureViewDimension_2D;
                     } else if (binding.kind == shader::BindingKind::Sampler) {
                         entry.sampler.type = binding.depth ? WGPUSamplerBindingType_Comparison : WGPUSamplerBindingType_Filtering;
                     } else
@@ -114,10 +115,8 @@ PostEffects::PostEffects(WGPUDevice device, WGPUQueue queue, std::vector<shader:
                 target.cull = material.side == Side::Double ? WGPUCullMode_None
                               : material.side == Side::Back ? WGPUCullMode_Front
                                                             : WGPUCullMode_Back;
-                target.blend = material.blending == Blending::None ||
-                                       (material.blending == Blending::Normal && !material.transparent)
-                                   ? 0
-                                   : uint8_t(material.blending);
+                target.blend = materialBlend(uint8_t(material.blending), material.transparent,
+                                             material.blendFactors(), target.blendState);
             }
             target.layout = pass.pipelineLayout;
             pass.pipeline = pipelines_.get(stages[0], &stages[1], target);

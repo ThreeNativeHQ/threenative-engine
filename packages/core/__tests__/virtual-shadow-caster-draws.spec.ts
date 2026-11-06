@@ -72,6 +72,7 @@ function nodeFor(
   options: { clipExtents?: readonly number[]; invalidationDelay?: number } = {},
 ): VirtualShadowNode {
   const node = new VirtualShadowNode(light, {
+    maxLevelRatio: Number.POSITIVE_INFINITY,
     clipExtents: [24, 96],
     mapSize: 1024,
     marker: false,

@@ -60,13 +60,17 @@ void alphaHash() {
         if (!vs.wgsl.ok() || !fs.wgsl.ok()) continue;
         CHECK(fs.wgsl.code.find("dpdx(") != std::string::npos);
         CHECK(fs.wgsl.code.find("i_positionLocal") != std::string::npos);
+        // PRD-539 lever 7: the map reads at the renderer's view mip bias, Unreal's upscaled-view rule.
+        CHECK(fs.wgsl.code.find("textureSampleBias(t_map, smp_map,") != std::string::npos);
+        CHECK(fs.wgsl.code.find("u.f_viewMipBias") != std::string::npos);
         stagesAgree(p.fragment, vs.wgsl.code, fs.wgsl.code);
     }
     const auto depth = buildDepth(variant);
     const auto vs = buildStage(depth.vertex, 0), fs = buildStage(depth.fragment, 1);
     CHECK(vs.wgsl.ok() && fs.wgsl.ok());
     CHECK(fs.wgsl.code.find("@builtin(frag_depth)") != std::string::npos);
-    CHECK(fs.wgsl.code.find("textureSample(") != std::string::npos);
+    // The shadow pass leaves viewMipBias zero-filled: Unreal's shadow views sample at bias 0.
+    CHECK(fs.wgsl.code.find("textureSampleBias(t_map") != std::string::npos);
     CHECK(fs.wgsl.code.find("dpdx(") != std::string::npos);
     stagesAgree(depth.fragment, vs.wgsl.code, fs.wgsl.code);
     CHECK(variant.key() != VertexVariant{}.key());
@@ -253,6 +257,58 @@ void aoNode() {
     CHECK(with.code.find("f_nodeAo") != std::string::npos);
 }
 
+// NodeMaterial.maskNode (three r187 setupDiffuseColor): a false mask discards the colour-pass fragment. The binding
+// had no maskNode setter, so a game's mask stayed a JS expando and every pixel drew: a near-camera tree fade did
+// nothing on the default engine. The slot is part of the program key, and each colour builder adds one discard.
+void maskNode() {
+    namespace g = tn::engine::shader::graph;
+    VertexVariant plain;
+    VertexVariant masked;
+    masked.nodes.maskNode = g::lessThan(g::uniform("nodeFade", Type::f32(), {0.5f}), g::float_(0.25));
+    CHECK(plain.key() != masked.key());
+    const auto discards = [](const std::string& code) {
+        std::size_t count = 0;
+        for (std::size_t at = code.find("discard"); at != std::string::npos; at = code.find("discard", at + 1)) ++count;
+        return count;
+    };
+    const std::pair<Program, Program> pairs[] = {
+        {buildStandard(StandardMaterial{}, plain).fragment, buildStandard(StandardMaterial{}, masked).fragment},
+        {buildLambert(plain).fragment, buildLambert(masked).fragment},
+        {buildBasic(plain).fragment, buildBasic(masked).fragment},
+    };
+    for (const auto& [without, with] : pairs) {
+        const auto a = WgslEmitter::emit(without, 1), b = WgslEmitter::emit(with, 1);
+        CHECK(a.ok() && b.ok());
+        CHECK(a.code.find("f_nodeFade") == std::string::npos);
+        CHECK(b.code.find("f_nodeFade") != std::string::npos);
+        CHECK(discards(b.code) == discards(a.code) + 1);
+    }
+}
+
+// NodeMaterial.alphaTestNode (three r187 setupDiffuseColor): the node replaces alphaTest as the cutoff in every colour
+// builder and in the masked shadow depth fragment, and a set node tests without the alphaTest > 0 gate.
+void alphaTestNodeProgram() {
+    namespace g = tn::engine::shader::graph;
+    VertexVariant plain;
+    VertexVariant cut;
+    cut.nodes.alphaTestNode = g::uniform("nodeCut", Type::f32(), {0.2f});
+    CHECK(plain.key() != cut.key());
+    const auto gated = [](const std::string& code) { return code.find("(0f < u.f_alphaTest)") != std::string::npos; };
+    const Program programs[][2] = {
+        {buildStandard(StandardMaterial{}, plain).fragment, buildStandard(StandardMaterial{}, cut).fragment},
+        {buildLambert(plain).fragment, buildLambert(cut).fragment},
+        {buildBasic(plain).fragment, buildBasic(cut).fragment},
+        {buildMaskedDepth(plain).fragment, buildMaskedDepth(cut).fragment},
+    };
+    for (const auto& pair : programs) {
+        const auto without = WgslEmitter::emit(pair[0], 1), with = WgslEmitter::emit(pair[1], 1);
+        CHECK(without.ok() && with.ok());
+        CHECK(without.code.find("f_nodeCut") == std::string::npos);
+        CHECK(with.code.find("f_nodeCut") != std::string::npos);
+        CHECK(gated(without.code) && !gated(with.code));
+    }
+}
+
 // PRD-653: material.roughDiffuse shades direct light with the EON model. The variant key changes, a lamp's Source
 // Radius enters the fragment only for the marked material (a sun has none), and the EON constants appear only there.
 void roughDiffuse() {
@@ -336,6 +392,24 @@ void albedoOutput() {
                 CHECK(auxFragment.wgsl.code.find("mix(", output) == std::string::npos);
             }
         }
+    }
+    // A normalNode's shading normal is a further output of the lit fragment (the post normal target, PRD-762): it
+    // exists for Standard and Physical, and writing it keeps the fragment's layout.
+    for (int kind = 3; kind < 5; ++kind) {
+        VertexVariant lit;
+        lit.nodes.normalNode = graph::normalize(graph::add(graph::varying("normalViewGeometry", Type::vec(3)),
+                                                         graph::vec3({graph::float_(0.3), graph::float_(0), graph::float_(0)})));
+        const auto build = [&] { return kind == 3 ? buildStandard({}, lit) : buildPhysical({}, lit); };
+        auto targets = build();
+        CHECK(targets.normal != kInvalid);
+        auto& f = targets.fragment;
+        f.output("aux1", f.construct(Type::vec(4), {targets.normal, f.constant(0.f)}));
+        const auto litFragment = buildStage(build().fragment, 1), auxFragment = buildStage(f, 1);
+        CHECK(litFragment.wgsl.ok() && auxFragment.wgsl.ok());
+        CHECK(auxFragment.uniforms.size() == litFragment.uniforms.size());
+        CHECK(auxFragment.bindings.size() == litFragment.bindings.size());
+        CHECK(auxFragment.uniformBlockSize == litFragment.uniformBlockSize);
+        CHECK(auxFragment.wgsl.code.find("@location(1) o_aux1") != std::string::npos);
     }
 }
 
@@ -484,6 +558,8 @@ void builds() {
     nodes();
     surfacePrefix();
     aoNode();
+    maskNode();
+    alphaTestNodeProgram();
     irradianceNode();
     albedoOutput();
     VertexVariant storage; storage.instanced = storage.instanceStorage = storage.instanceColor = true;
@@ -529,6 +605,21 @@ void builds() {
     CHECK(programs.diagnostics.empty());
     CHECK(WgslEmitter::emit(programs.vertex, 0).ok());
     CHECK(WgslEmitter::emit(programs.fragment, 1).ok());
+    // A light a material's lightsNode leaves out keeps its index but the program declares and reads nothing of it.
+    for (bool physical : {false, true}) {
+        const auto chosen = physical ? buildPhysical(StandardMaterial{}, VertexVariant{}, LightLayout{"D-p"})
+                                     : buildStandard(StandardMaterial{}, VertexVariant{}, LightLayout{"D-p"});
+        CHECK(chosen.diagnostics.empty());
+        const auto fragment = WgslEmitter::emit(chosen.fragment, 1);
+        CHECK(fragment.ok());
+        CHECK(fragment.code.find("light0Color") != std::string::npos && fragment.code.find("light2Color") != std::string::npos);
+        CHECK(fragment.code.find("light1") == std::string::npos);
+    }
+    for (bool phong : {false, true}) {
+        const auto chosen = phong ? buildPhong(VertexVariant{}, LightLayout{"-d"}) : buildLambert(VertexVariant{}, LightLayout{"-d"});
+        const auto fragment = WgslEmitter::emit(chosen.fragment, 1);
+        CHECK(fragment.ok() && fragment.code.find("light1Color") != std::string::npos && fragment.code.find("light0") == std::string::npos);
+    }
     // The environment variant samples the PMREM as a cube (r187 PMREMNode.setup), at
     // roughnessToMip = maxLod * r * (2 - r), and keeps its derivatives before any branch.
     VertexVariant environment;
@@ -746,6 +837,95 @@ void ssrRejectsInputs() {
     }
 }
 
+// A material's custom MRT slot (three's mrtNode output, e.g. the Strata water proof's "diagnostic"): the colour
+// program lowers the node without writing it, so the aux pass's fragment declares the same uniforms, textures and
+// varyings, writes the slot at the next colour location after `color`, and keeps the lit fragment's layout exactly.
+void mrtSlot() {
+    namespace g = tn::engine::shader::graph;
+    const auto value = g::mul(g::uniform("diagnosticScale", Type::f32(), {1.0}),
+                              g::vec4({g::float_(0.25), g::float_(0), g::float_(0), g::float_(1)}));
+    for (int kind = 1; kind < 5; ++kind) {
+        VertexVariant variant;
+        variant.nodes.mrt = {{"diagnostic", value}};
+        const auto build = [&] {
+            return kind == 1 ? buildLambert(variant) : kind == 2 ? buildPhong(variant)
+                 : kind == 3 ? buildStandard({}, variant) : buildPhysical({}, variant);
+        };
+        auto lit = build();
+        CHECK(lit.diagnostics.empty());
+        CHECK(lit.mrt.size() == 1 && lit.mrt[0] != kInvalid);
+        // The colour program declares the slot's graph and writes only `color`.
+        const auto litFragment = buildStage(build().fragment, 1);
+        CHECK(litFragment.wgsl.ok());
+        CHECK(litFragment.wgsl.code.find("diagnosticScale") != std::string::npos);
+        CHECK(litFragment.wgsl.code.find("o_mrt") == std::string::npos);
+        // The aux pass's fragment writes it at @location(1), after `color`, and keeps the lit layout.
+        auto aux = build();
+        auto& f = aux.fragment;
+        f.output("color", f.construct(Type::vec(4), {f.constant(0.f), f.constant(0.f), f.constant(0.f), f.constant(0.f)}));
+        f.output("mrt1", aux.mrt[0]);
+        f.pruneDeadStatements();
+        const auto auxFragment = buildStage(f, 1);
+        CHECK(auxFragment.wgsl.ok());
+        CHECK(auxFragment.wgsl.code.find("@location(1) o_mrt1: vec4<f32>") != std::string::npos);
+        CHECK(auxFragment.uniforms.size() == litFragment.uniforms.size());
+        CHECK(auxFragment.uniformBlockSize == litFragment.uniformBlockSize);
+        CHECK(auxFragment.bindings.size() == litFragment.bindings.size());
+        for (std::size_t i = 0; i < litFragment.uniforms.size(); ++i) {
+            CHECK(auxFragment.uniforms[i].name == litFragment.uniforms[i].name);
+            CHECK(auxFragment.uniforms[i].offset == litFragment.uniforms[i].offset);
+        }
+    }
+    // The slot's name and node are part of the program key: two materials never share a program across slots, and a
+    // material with a slot never shares an empty one's.
+    VertexVariant a, b, c;
+    a.nodes.mrt = {{"diagnostic", value}};
+    b.nodes.mrt = {{"coverage", value}};
+    c.nodes.mrt = {{"diagnostic", g::vec4({g::float_(1), g::float_(0), g::float_(0), g::float_(1)})}};
+    const MaterialNodes none;
+    CHECK(a.nodes.key() != b.nodes.key());
+    CHECK(a.nodes.key() != c.nodes.key());
+    CHECK(a.nodes.key() != none.key());
+    // The slot's graph is walked with the material's own, so its uniform is collected for the draw.
+    bool found = false;
+    a.nodes.forEachGraph([&](const g::Node& graph) {
+        for (const auto& [name, values] : g::uniforms(graph))
+            if (name == "diagnosticScale") found = true;
+    });
+    CHECK(found);
+}
+
+// MaterialNode.envNode (three's NodeMaterial.envNode, the Strata ocean's sky radiance): with no environment map, the
+// node is the environment's radiance, and its irradiance is that radiance times pi (EnvironmentNode.setup), so the
+// standard material's indirect light comes from the author's own sky. Without the slot the ocean renders unlit.
+void envNode() {
+    namespace g = tn::engine::shader::graph;
+    const auto radiance = g::mul(g::uniform("authoredRadiance", Type::vec(3), {0.8, 0.9, 1.0}),
+                                 g::vec3({g::float_(1), g::float_(1), g::float_(1)}));
+    VertexVariant lit;
+    lit.nodes.envNode = radiance;
+    const auto withNode = buildStandard({}, lit);
+    CHECK(withNode.diagnostics.empty());
+    const auto fs = buildStage(buildStandard({}, lit).fragment, 1);
+    for (const auto& e : fs.wgsl.errors) std::fprintf(stderr, "%s\n", e.c_str());
+    CHECK(fs.wgsl.ok());
+    // The author's graph reaches the fragment, so its uniform is collected for the draw.
+    CHECK(fs.wgsl.code.find("authoredRadiance") != std::string::npos);
+    // No environment map is sampled: the node replaces it, so the fragment binds no extra texture.
+    VertexVariant plain;
+    const auto without = buildStage(buildStandard({}, plain).fragment, 1);
+    CHECK(without.wgsl.ok());
+    CHECK(fs.bindings.size() == without.bindings.size());
+    CHECK(without.wgsl.code.find("authoredRadiance") == std::string::npos);
+    CHECK(lit.nodes.key() != plain.nodes.key());
+    bool collected = false;
+    lit.nodes.forEachGraph([&](const g::Node& graph) {
+        for (const auto& [name, values] : g::uniforms(graph))
+            if (name == "authoredRadiance") collected = true;
+    });
+    CHECK(collected);
+}
+
 void depthTextureLowering() {
     namespace g = graph;
     for (bool namedDepth : {false, true}) for (bool load : {false, true}) {
@@ -779,6 +959,41 @@ void depthTextureLowering() {
     }
 }
 
+// An unlit (Basic) graph that reads the normalView varying gets the vertex stage's normal output.
+void basicNormalView() {
+    namespace g = tn::engine::shader::graph;
+    VertexVariant variant;
+    variant.nodes.colorNode = g::vec4({g::swizzle(g::varying("normalView", Type::vec(3)), "x"), g::float_(0), g::float_(0), g::float_(1)});
+    const auto p = buildBasic(variant);
+    CHECK(p.diagnostics.empty());
+    CHECK(p.vertex.dump().find("output normalView = ") != std::string::npos);
+}
+
 }  // namespace
 
-TN_TEST_MAIN({"alpha_hash", alphaHash}, {"ssr_passes", ssrPasses}, {"denoise_reads_raw_normals", denoiseReadsRawNormals}, {"ssr_rejects_inputs", ssrRejectsInputs}, {"depth_texture_lowering", depthTextureLowering}, {"depth_node_writes_frag_depth", depthNodeWritesFragDepth}, {"unsupported", unsupported}, {"emissive_output", emissiveOutput}, {"builds", builds}, {"fog", fog}, {"rough_diffuse", roughDiffuse}, {"fog_node_mixes_color", fogNodeMixesColor}, {"node_key", nodeKey}, {"bloom_passes", bloomPasses}, {"slots_share_one_lowering", slotsShareOneLowering})
+// PRD-539 lever 7: every implicit-LOD material texture reads at the view mip bias (UE 5.8.3:
+// SceneVisibility.cpp:5337-5351 sets MaterialTextureMipBias for all material samplers), including a
+// node material's texture() node, which Unreal compiles as a TextureSample of the material.
+void viewMipBiasSamples() {
+    namespace g = tn::engine::shader::graph;
+    VertexVariant variant;
+    variant.normalMap = true;
+    variant.pbrMaps = static_cast<uint16_t>(1u << kRoughnessMap);
+    VertexVariant bumped;  // three's BumpMapNode runs only without a normalMap
+    bumped.pbrMaps = static_cast<uint16_t>(1u << kBumpMap);
+    const std::string lit = WgslEmitter::emit(buildStandard({}, variant).fragment, 1).code +
+                            WgslEmitter::emit(buildStandard({}, bumped).fragment, 1).code;
+    for (const char* map : {"t_normalMap", "t_roughnessMap", "t_bumpMap"}) {
+        const bool biased = lit.find(std::string("textureSampleBias(") + map) != std::string::npos;
+        if (!biased) std::fprintf(stderr, "%s reads without the view mip bias\n", map);
+        CHECK(biased);
+    }
+    VertexVariant node;
+    node.nodes.colorNode = g::texture("detail", g::uv());
+    const auto colored = WgslEmitter::emit(buildBasic(node).fragment, 1);
+    CHECK(colored.ok());
+    CHECK(colored.code.find("textureSampleBias(t_detail") != std::string::npos);
+    CHECK(colored.code.find("u.f_viewMipBias") != std::string::npos);
+}
+
+TN_TEST_MAIN({"alpha_hash", alphaHash}, {"view_mip_bias_samples", viewMipBiasSamples}, {"ssr_passes", ssrPasses}, {"denoise_reads_raw_normals", denoiseReadsRawNormals}, {"ssr_rejects_inputs", ssrRejectsInputs}, {"depth_texture_lowering", depthTextureLowering}, {"depth_node_writes_frag_depth", depthNodeWritesFragDepth}, {"unsupported", unsupported}, {"emissive_output", emissiveOutput}, {"builds", builds}, {"fog", fog}, {"rough_diffuse", roughDiffuse}, {"fog_node_mixes_color", fogNodeMixesColor}, {"node_key", nodeKey}, {"bloom_passes", bloomPasses}, {"slots_share_one_lowering", slotsShareOneLowering}, {"mrt_slot", mrtSlot}, {"env_node", envNode}, {"basic_normal_view", basicNormalView})

@@ -15,6 +15,7 @@ import {
  * would have left both of them quietly describing a project that no longer exists.
  */
 
+export { ensureHostMcpConfigs } from "../../core/mcp/install.mjs";
 export { MCP_PACKAGES, MCP_SERVERS };
 export type { IMcpPackage, IMcpServerEntry };
 

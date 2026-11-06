@@ -3,6 +3,7 @@
 #include "engine/scene/raycaster.h"
 #include "engine/foundation/prefetch.h"
 #include "render_database.h"
+#include "engine/renderer/reflection_pass.h"
 #include "engine/renderer/reflector.h"
 
 #include "engine/animation/skinning/skeleton.h"
@@ -28,11 +29,12 @@ namespace tn::engine {
 namespace {
 
 // What a material's node graphs read from outside the material: the texture pmremTexture
-// prefilters and the reflector a reflector() node samples, or null. One of each per material: a
-// second, different source is refused rather than silently sharing the first one's.
+// prefilters and the reflectors a reflector() node samples. One pmrem source per material: a second,
+// different one is refused rather than silently sharing the first one's. Reflectors are a list, as
+// three gives each ReflectorNode its own render target, so a material may sample two mirrors.
 struct GraphFind {
     const Texture* texture = nullptr;
-    std::shared_ptr<const void> reflector;
+    std::vector<std::pair<std::string, std::shared_ptr<const void>>> reflectors;  // by binding name
     std::vector<shader::graph::Node> textureNodes;
     std::vector<std::pair<std::string, const Texture*>> textures;  // texture(object) samples, by binding
     std::vector<std::pair<std::string, const BufferAttribute*>> storages;  // storage(attribute) reads, by binding
@@ -50,22 +52,29 @@ GraphFind findGraphSources(const Material& material) {
             found.texture = texture;
         } else if ((node->kind == shader::graph::Kind::Texture || node->kind == shader::graph::Kind::StorageTexture) && node->textureObject()) {
             const auto* texture = static_cast<const Texture*>(node->textureObject().get());
-            if (std::none_of(found.textures.begin(), found.textures.end(),
-                             [&](const auto& entry) { return entry.first == node->name; }))
+            const auto same = std::find_if(found.textures.begin(), found.textures.end(),
+                                           [&](const auto& entry) { return entry.first == node->name; });
+            if (same == found.textures.end())
                 { found.textures.emplace_back(node->name, texture); found.textureNodes.push_back(node); }
+            // Nodes over one texture share its binding (tsl_call.cpp "texture"); a `.value` that moved only one of
+            // them cannot be drawn from that one binding.
+            else if (same->second != texture)
+                throw std::runtime_error("TN_NATIVE_TEXTURE_VALUE_SHARED: " + node->name +
+                                         " is sampled by two nodes that now hold different textures; give each its own texture()");
         } else if (node->kind == shader::graph::Kind::StorageElement && node->object) {
             if (std::none_of(found.storages.begin(), found.storages.end(),
                              [&](const auto& entry) { return entry.first == node->name; }))
                 found.storages.emplace_back(node->name, static_cast<const BufferAttribute*>(node->object.get()));
         } else if (node->kind == shader::graph::Kind::Reflector) {
-            if (found.reflector && found.reflector != node->object)
-                throw std::runtime_error("TN_NATIVE_REFLECTOR_UNSUPPORTED: one material samples two reflectors");
-            found.reflector = node->object;
+            // Each mirror has its own binding name and its own pass; two nodes over one mirror share both.
+            if (std::none_of(found.reflectors.begin(), found.reflectors.end(),
+                             [&](const auto& entry) { return entry.first == node->name; }))
+                found.reflectors.emplace_back(node->name, node->object);
         }
         for (const auto* list : {&node->args, &node->body, &node->otherwise})
             for (const auto& child : *list) visit(child);
     };
-    for (const auto& graph : material.nodes.graphs()) visit(graph);
+    material.nodes.forEachGraph(visit);
     return found;
 }
 
@@ -256,11 +265,25 @@ MaterialKind kindOf(MaterialType type) {
     }
 }
 
+// three's MRT (MRTNode.setup): the material's mrtNode output named after the attachment this database draws is written
+// there as it is (no setupOutput), so it becomes the draw's fragmentNode. An attachment the mrt() does not name keeps the
+// material's own output when it is the target's first texture, and is written zero otherwise.
+// ponytail: each attachment is a scene draw of its own (render_target_pass.cpp), N draws for N textures; one pass with
+// N colour attachments when an MRT pass costs a frame.
+void resolveMrt(shader::MaterialNodes& nodes, const std::string& name, bool primary) {
+    if (nodes.mrt.empty()) return;
+    for (const auto& slot : nodes.mrt)
+        if (slot.name == name) { nodes.fragmentNode = slot.node; return; }
+    if (!primary) nodes.fragmentNode = shader::graph::vec4({shader::graph::float_(0.0), shader::graph::float_(0.0),
+                                                            shader::graph::float_(0.0), shader::graph::float_(0.0)});
+}
+
 shader::StandardMaterial paramsOf(const Material& m) {
     shader::StandardMaterial p;
     p.color = {float(m.color.r), float(m.color.g), float(m.color.b)};
     p.opacity = float(m.opacity);
     p.alphaTest = float(m.alphaTest);
+    p.maxPositionOffset = m.maxPositionOffset;
     p.alphaHash = m.alphaHash;
     p.roughness = float(m.roughness);
     p.metalness = float(m.metalness);
@@ -296,6 +319,7 @@ std::size_t materialSignature(const Material& m) {
         mix(bits ^ (bits >> 32));
     }
     mix(static_cast<uint64_t>(m.blending));
+    mix(m.blendFactors());
     mix(m.shadowSide ? 1 + static_cast<uint64_t>(*m.shadowSide) : 0);
     // Sorted by slot name (a std::map): a renamed slot moves uniformHash, so only the bit can change here.
     for (const auto& entry : m.maps) mix(entry.second && entry.second->sampleable() ? 1 : 0);
@@ -358,6 +382,27 @@ void RenderDatabase::geometryInputsOf(const BufferGeometry& geometry, DrawItem& 
         d.attributes->push_back({name, floatStore(geometry, name.c_str()), attribute->perInstance});
     }
     if (geometry.instanced) d.instanceCount = instanceCountOf(geometry);
+}
+
+// three's render list keys a draw by the world position of its geometry's bounding-sphere centre
+// (renderers/common/StandardDrawingPipeline.js:236-241), computing the sphere on the first frame that needs
+// it, exactly as projectObject does. That is not the object's origin: a geometry whose vertices sit
+// off-centre, such as a waterfall's arc, ranks the other way round, and the wrong transparent order draws
+// the pale inner sheet over the outer one.
+void RenderDatabase::sortCenterOf(const BufferGeometry& geometry, DrawItem& d) {
+    const auto position = geometry.getAttribute("position");
+    if (!position) return;  // no vertices to centre on: the object origin stays the key
+    if (const Sphere* sphere = geometry.boundingSphere.get()) {  // already computed: one copy, no pass
+        d.sortCenter = std::array<double, 3>{sphere->center.x, sphere->center.y, sphere->center.z};
+        return;
+    }
+    // BufferGeometry.js:1074-1080: the sphere is centred on the box, so the box centre is the key.
+    Box3 box;
+    Vector3 point, center;
+    box.makeEmpty();
+    for (uint64_t i = 0, count = position->count(); i < count; ++i) box.expandByPoint(position->getXYZ(i, point));
+    box.getCenter(center);
+    d.sortCenter = std::array<double, 3>{center.x, center.y, center.z};
 }
 
 // three's polygonOffset as WebGPUPipelineUtils sets it: depthBias = units, slope scale = factor.
@@ -529,8 +574,11 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
     vertexColorsOf(*r.canonical, *material, d);
     depthBiasOf(*material, d);
     geometryInputsOf(*r.canonical, d);
+    sortCenterOf(*r.canonical, d);
     d.matrixWorld = toArray(mesh.matrixWorld);
-    d.kind = material->nodes.fragmentNode ? MaterialKind::Basic : kindOf(material->type);
+    r.draw->nodes = material->nodes;
+    resolveMrt(r.draw->nodes, mrtName, mrtPrimary);
+    d.kind = r.draw->nodes.fragmentNode ? MaterialKind::Basic : kindOf(material->type);
     d.renderOrder = mesh.renderOrder();
     d.transparent = material->transparent;
     d.forceSinglePass = material->forceSinglePass;
@@ -539,13 +587,13 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
     d.colorWrite = material->colorWrite;
     d.materialKey = material;
     d.positionNode = material->positionNode;
-    r.draw->nodes = material->nodes;
     d.side = static_cast<uint8_t>(material->side);
     d.shadowSide = material->shadowSide ? static_cast<uint8_t>(*material->shadowSide) : 255;
     d.flatShading = material->flatShading;
     d.twoSidedFoliage = material->twoSidedFoliage;
     d.roughDiffuse = material->roughDiffuse;
     d.blending = static_cast<uint8_t>(material->blending);
+    d.blendFactors = material->blendFactors();
     r.drawable = d.positions != nullptr;
     return r;
 }
@@ -578,9 +626,12 @@ DrawItem& RenderDatabase::refresh(const Mesh& mesh, Record& r) {
         d.twoSidedFoliage = r.material->twoSidedFoliage;
         d.roughDiffuse = r.material->roughDiffuse;
         d.blending = static_cast<uint8_t>(r.material->blending);
+        d.blendFactors = r.material->blendFactors();
         d.positionNode = r.material->positionNode;
         ++projection::detail::materialNodeCopyCount();
         r.draw->nodes = r.material->nodes;
+        resolveMrt(r.draw->nodes, mrtName, mrtPrimary);
+        d.kind = r.draw->nodes.fragmentNode ? MaterialKind::Basic : kindOf(r.material->type);
         d.nodes = &r.draw->nodes;
         d.map = nullptr;
         d.normalMap = nullptr;
@@ -600,6 +651,7 @@ DrawItem& RenderDatabase::refresh(const Mesh& mesh, Record& r) {
         if (r.canonical) vertexColorsOf(*r.canonical, *r.material, d);
         depthBiasOf(*r.material, d);
         if (r.canonical) geometryInputsOf(*r.canonical, d);
+        if (r.canonical) sortCenterOf(*r.canonical, d);
         // A non-float colour or custom attribute reaches the draw as a converted copy that `needsUpdate` replaces
         // without moving the geometry revision: such a record re-reads those inputs every frame, as before FM1.
         r.convertedInputs = false;
@@ -625,19 +677,22 @@ DrawItem& RenderDatabase::refresh(const Mesh& mesh, Record& r) {
 
 const RenderDatabase::GraphSources& RenderDatabase::graphSources(const Material& material) {
     static const GraphSources none;
-    std::array<const void*, 14> roots{};
+    std::array<const void*, shader::kMaterialGraphRoots> roots{};
     const auto graphs = material.nodes.pointers();
     static_assert(decltype(graphs){}.size() == decltype(roots){}.size(), "a node slot was added to MaterialNodes");
     std::copy(graphs.begin(), graphs.end(), roots.begin());
-    if (std::all_of(roots.begin(), roots.end(), [](const void* root) { return root == nullptr; })) return none;
+    if (std::all_of(roots.begin(), roots.end(), [](const void* root) { return root == nullptr; }) && material.nodes.mrt.empty()) return none;
     GraphSources& cached = graphSources_[&material];
     if (cached.roots != roots || cached.version != material.version()) {
         auto& diagnostic = Material::diagnostics();
         Material::DiagnosticTimer rebuildTimer(diagnostic.enabled, diagnostic.graphCpuNs);
         if (diagnostic.enabled) ++diagnostic.graphRebuilds;
         GraphFind found = findGraphSources(material);
-        cached = GraphSources{material.version(), roots, found.texture, std::move(found.reflector),
+        cached = GraphSources{material.version(), roots, found.texture, std::move(found.reflectors), {},
                               std::move(found.textures), std::move(found.textureNodes), std::move(found.storages)};
+        cached.reflectorViews.reserve(cached.reflectors.size());
+        for (const auto& [name, mirror] : cached.reflectors)
+            cached.reflectorViews.push_back(GraphReflector{name, mirror.get()});
     }
     for (size_t i = 0; i < cached.textureNodes.size(); ++i)
         cached.textures[i].second = static_cast<const Texture*>(cached.textureNodes[i]->textureObject().get());
@@ -656,11 +711,16 @@ bool RenderDatabase::boundingSphereOf(Object3D& object, std::string_view type, S
         if (instanced.boundingSphere == nullptr) instanced.computeBoundingSphere();
         if (instanced.boundingSphere == nullptr) return false;
         sphere.copy(*instanced.boundingSphere);
+    } else if (type == "SkinnedMesh") {
+        // three reads `SkinnedMesh.boundingSphere`, computed from the posed vertices. A pose can reach
+        // far past the bind pose, so only the posed bound may cull: `rigCastsShadow` asks it, and this
+        // answer keeps the main camera's culling where it was, none.
+        return false;
     } else {
         auto& mesh = static_cast<Mesh&>(object);
-        // ponytail: skinned and morphed meshes always draw; native bounds ignore bones and morph
-        // targets, which three's include. Add bone- and morph-aware spheres when they draw off screen.
-        if (type == "SkinnedMesh" || mesh.geometry == nullptr ||
+        // ponytail: a morphed mesh relies on morph targets, whose posed bounds native does not measure
+        // (three's geometry sphere ignores them too; this is stricter). Add one when it draws off screen.
+        if (mesh.geometry == nullptr ||
             (!mesh.geometry->morphPositions.empty() && !mesh.morphTargetInfluences.empty()))
             return false;
         if (mesh.geometry->boundingSphere == nullptr) mesh.geometry->computeBoundingSphere();
@@ -683,6 +743,42 @@ bool RenderDatabase::inShadowFrustum(const Object3D& object, const Sphere* spher
         if ((mask & sf.layersMask) != 0 && sf.frustum.intersectsSphere(*sphere)) return true;
     }
     return false;
+}
+
+// A rig's shadow bound, cheapest first. A rig no shadow frustum's layers see never casts, and that
+// answer needs no bound. Its bind-pose sphere proves it inside one without reading a bone. Only when
+// that misses does the posed reach decide: O(bones) per frame, and it publishes a deferred pose and
+// joins its palette, which `gpu_joint_production` counts. A reach nothing can place always casts,
+// because the bind pose alone would wrongly cull a rig whose pose reaches into the box.
+bool RenderDatabase::rigCastsShadow(Object3D& object) {
+    if (shadowPointLightActive_ || virtualShadows_) return true;
+    if (shadowFrustums_.empty()) return false;
+    const uint32_t mask = Layers::bits(object.layers().mask);
+    if (std::none_of(shadowFrustums_.begin(), shadowFrustums_.end(),
+                     [&](const ShadowFrustum& sf) { return (mask & sf.layersMask) != 0; }))
+        return false;
+    auto& rig = static_cast<SkinnedMesh&>(object);
+    Sphere sphere;
+    const auto inside = [&] {
+        sphere.applyMatrix4(object.matrixWorld);
+        return inShadowFrustum(object, &sphere);
+    };
+    if (rig.geometry) {
+        if (rig.geometry->boundingSphere == nullptr) rig.geometry->computeBoundingSphere();
+        if (rig.geometry->boundingSphere != nullptr) {
+            sphere.copy(*rig.geometry->boundingSphere);
+            if (inside()) return true;
+        }
+    }
+    // A detached bind keeps `bindMatrixInverse` off the mesh's own world matrix, so the reach is not in
+    // this object's space; a bound nothing can place keeps the rig a caster.
+    Box3 reach;
+    if (!rig.attached || !rig.boneReachBounds(reach) || reach.isEmpty()) return true;
+    Vector3 centre, size;
+    reach.getCenter(centre);
+    reach.getSize(size);
+    sphere.set(centre, size.length() * 0.5);
+    return inside();
 }
 
 void RenderDatabase::collectShadowFrustums(Object3D& root, const Camera& mainCamera) {
@@ -807,8 +903,13 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
                     if (!measured) bounded = boundingSphereOf(object, type, sphere), measured = true;
                     return bounded;
                 };
-                if (mainPass && measure() && !frustum_.intersectsSphere(sphere)) mainPass = false;
-                if (shadowCaster && !inShadowFrustum(object, measure() ? &sphere : nullptr)) shadowCaster = false;
+                // A compile pass keeps what the eye cannot see yet: a turn must not meet its first pipeline mid-frame
+                // (UE 5.8.3: Engine/Source/Runtime/Engine/Private/PSOPrecache.cpp:230 precaches a primitive's PSOs when it
+                // enters the scene, not when it enters the view).
+                if (mainPass && !compiling_ && measure() && !frustum_.intersectsSphere(sphere)) mainPass = false;
+                if (shadowCaster && !compiling_)
+                    shadowCaster = type == "SkinnedMesh" ? rigCastsShadow(object)
+                                                         : inShadowFrustum(object, measure() ? &sphere : nullptr);
             }
             if (!mainPass && !shadowCaster) {
                 if (mesh.frustumCulled && !cullExempt_) waste::debugAdd(waste::counters().culledObjects);
@@ -936,6 +1037,7 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
             const auto& l = static_cast<const AmbientLight&>(object);
             for (int c = 0; c < 3; ++c)
                 lights.ambient[c] += scaled(l.color, l.intensity)[c];
+            lights.ambients.emplace_back(object.id(), scaled(l.color, l.intensity));
         } else if (mainPass && type == "DirectionalLight") {
             auto& l = static_cast<DirectionalLight&>(object); // its shadow camera moves, as three's does
             // three reads light.target.matrixWorld as it stands: only a scene traversal refreshes it, so a target
@@ -995,6 +1097,7 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
                 lights.hemisphereSky = scaled(l.color, l.intensity);
                 lights.hemisphereGround = scaled(l.groundColor, l.intensity);
                 lights.hemisphereUp = normalized(worldPosition(l));
+                lights.hemisphereId = object.id();
             }
         }
     } else if (!lightsOnly && cached && cached->meshId == object.id()) {
@@ -1681,7 +1784,9 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
         // environment and the material no envMap, else the material's envMapRotation (identity here).
         const GraphSources& sources = graphSources(source);
         item.pmremMap = sources.texture;
-        item.reflector = sources.reflector.get();
+        // The render publishes each mirror pass's view on the material's sources (the cached entry, which
+        // outlives the frame), so the draw binds the view that pass drew this frame.
+        item.reflectors = sources.reflectors.empty() ? nullptr : &const_cast<GraphSources&>(sources).reflectorViews;
         item.nodeTextures = sources.textures.empty() ? nullptr : &sources.textures;
         item.nodeStorages = sources.storages.empty() ? nullptr : &sources.storages;
         if (item.pmremMap) {
@@ -1699,7 +1804,10 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
         Matrix4 rotation;
         if (!env && world) rotation.makeRotationFromEuler(world->environmentRotation).transpose();
         item.envRotation = toArray(rotation);
-        if (item.envMap && !item.envMap->hasImage()) item.envMap = nullptr;
+        // three's NodeMaterial.setupEnvironment takes material.envNode before material.envMap and before
+        // scene.environment (NodeMaterial.js:968-970, MeshStandardNodeMaterial.js:110-116). The program then
+        // lowers the author's node alone, so the draw binds no environment map.
+        if ((item.envMap && !item.envMap->hasImage()) || item.nodes->envNode) item.envMap = nullptr;
     }
     // three's Renderer.renderObject: a transparent DoubleSide material (forceSinglePass false) draws
     // twice, its BackSide pass and then its FrontSide pass, so the far half composites under the near.
@@ -1780,7 +1888,9 @@ std::vector<std::shared_ptr<PipelineCompilation>> RenderDatabase::compileAsync(R
     state.matrixWorld = toArray(camera.matrixWorld);
     state.matrixWorldInverse = toArray(camera.matrixWorldInverse);
     state.projectionMatrix = toArray(camera.projectionMatrix);
-    return renderer.compileAsync(items, state, lights, outputFormat);
+    auto compilations = renderer.compileAsync(items, state, lights, outputFormat);
+    if (!reflecting_) precacheReflections(renderer, root, camera, targetScene, compilations);
+    return compilations;
 }
 
 bool RenderDatabase::prepareEnvironments(Renderer& renderer, Object3D& scene, Camera& camera) {
@@ -1839,8 +1949,10 @@ uint64_t RenderDatabase::render(Renderer& renderer, Object3D& scene, Camera& cam
         std::tie(cameraState_.near, cameraState_.far) = std::pair{perspective->near, perspective->far};
     else if (const auto* orthographic = dynamic_cast<const OrthographicCamera*>(&camera))
         std::tie(cameraState_.near, cameraState_.far) = std::pair{orthographic->near, orthographic->far};
-    if (const auto* world = dynamic_cast<const Scene*>(&scene); world && world->background)
-        clear = {world->background->r, world->background->g, world->background->b, 1};
+    const auto* world = dynamic_cast<const Scene*>(&scene);
+    if (world && world->background) clear = {world->background->r, world->background->g, world->background->b, 1};
+    const bool keep = !autoClear && !(world && world->background);
+    renderer.keepContents(keep, keep);
     const auto prepared = cpuMs ? Clock::now() : Clock::time_point{};
     chargeScene();
     uint64_t result;
@@ -1863,20 +1975,81 @@ uint64_t RenderDatabase::render(Renderer& renderer, Object3D& scene, Camera& cam
     return result;
 }
 
+RenderDatabase::ReflectionPass& RenderDatabase::reflectionPass(Renderer& renderer,
+                                                               const std::shared_ptr<const Reflector>& reflector) {
+    // Keyed by the reflector's address: a pass whose reflector is gone built nothing for whoever lives there now.
+    ReflectionPass& pass = reflections_[reflector.get()];
+    if (!pass.database || reflectionPassIsStale(pass.owner)) {
+        pass.owner = reflector;
+        pass.renderer = &renderer.reflectionRenderer(reflector);
+        pass.database = std::make_unique<RenderDatabase>();
+        pass.database->reflecting_ = true;
+    }
+    pass.database->batching = batching;
+    pass.database->reuseMainFrame = reuseMainFrame;
+    pass.database->shadowMapEnabled = shadowMapEnabled;
+    pass.renderer->setOutput(renderer.output());
+    pass.renderer->setSize(uint32_t(std::lround(renderer.width() * reflector->resolutionScale)),
+                           uint32_t(std::lround(renderer.height() * reflector->resolutionScale)));
+    return pass;
+}
+
+void RenderDatabase::precacheReflections(Renderer& renderer, Object3D& root, Camera& camera, Object3D* targetScene,
+                                         std::vector<std::shared_ptr<PipelineCompilation>>& compilations) {
+    // Every reflector in the compiled set, seen or not: the mirror's first frame is the turn that shows the water.
+    std::vector<std::shared_ptr<const Reflector>> reflectors;
+    std::vector<Material*> hidden;
+    for (const DrawItem& item : items_) {
+        if (!item.reflectors) continue;
+        auto* material = const_cast<Material*>(static_cast<const Material*>(item.materialKey));
+        if (std::find(hidden.begin(), hidden.end(), material) == hidden.end()) hidden.push_back(material);
+        for (const auto& [name, mirror] : graphSources(*material).reflectors) {
+            const auto reflector = std::static_pointer_cast<const Reflector>(mirror);
+            if (std::none_of(reflectors.begin(), reflectors.end(), [&](const auto& r) { return r.get() == reflector.get(); }))
+                reflectors.push_back(reflector);
+        }
+    }
+    if (reflectors.empty()) return;
+    // The mirror hides the reflecting materials while it draws (renderReflections), so it compiles without them.
+    std::vector<bool> wasVisible;
+    for (Material* material : hidden) {
+        wasVisible.push_back(material->visible);
+        material->visible = false;
+    }
+    struct Restore {
+        std::vector<Material*>& materials;
+        std::vector<bool>& visible;
+        ~Restore() {
+            for (std::size_t i = 0; i < materials.size(); ++i) materials[i]->visible = visible[i];
+        }
+    } restore{hidden, wasVisible};
+    for (const auto& reflector : reflectors) {
+        ReflectionPass& pass = reflectionPass(renderer, reflector);
+        // A camera under the plane leaves the mirror's last pose: a program does not depend on where it looks.
+        poseReflection(*reflector, camera, *reflector->camera);
+        auto more = pass.database->compileAsync(*pass.renderer, root, *reflector->camera, targetScene);
+        compilations.insert(compilations.end(), more.begin(), more.end());
+    }
+}
+
 void RenderDatabase::renderReflections(Renderer& renderer, Object3D& scene, Camera& camera, std::vector<DrawItem>& items,
                                        std::array<double, 4> clear) {
     for (auto it = reflections_.begin(); it != reflections_.end();)
-        it = it->second.owner.expired() ? reflections_.erase(it) : std::next(it);
+        it = reflectionPassIsStale(it->second.owner) ? reflections_.erase(it) : std::next(it);
     reflectionMs_ = {0, 0};
     reflectionItems_ = 0;
     std::vector<std::shared_ptr<const Reflector>> drawn;
     std::vector<Material*> hidden;
     for (const DrawItem& item : items) {
-        if (!item.mainPass || !item.reflector) continue;
+        if (!item.mainPass || !item.reflectors) continue;
         auto* material = const_cast<Material*>(static_cast<const Material*>(item.materialKey));
         if (std::find(hidden.begin(), hidden.end(), material) == hidden.end()) hidden.push_back(material);
-        if (std::none_of(drawn.begin(), drawn.end(), [&](const auto& r) { return r.get() == item.reflector; }))
-            drawn.push_back(std::static_pointer_cast<const Reflector>(graphSources(*material).reflector));
+        // One pass per distinct mirror, however many draws sample it.
+        for (const auto& [name, mirror] : graphSources(*material).reflectors) {
+            const auto reflector = std::static_pointer_cast<const Reflector>(mirror);
+            if (std::none_of(drawn.begin(), drawn.end(), [&](const auto& r) { return r.get() == reflector.get(); }))
+                drawn.push_back(reflector);
+        }
     }
     if (drawn.empty()) return;
     // three hides the reflecting material while its pass draws (material.visible = false).
@@ -1893,19 +2066,7 @@ void RenderDatabase::renderReflections(Renderer& renderer, Object3D& scene, Came
         }
     } restore{hidden, wasVisible};
     for (const auto& reflector : drawn) {
-        ReflectionPass& pass = reflections_[reflector.get()];
-        if (!pass.renderer) {
-            pass.owner = reflector;
-            pass.renderer = renderer.sibling();
-            pass.database = std::make_unique<RenderDatabase>();
-            pass.database->reflecting_ = true;
-        }
-        pass.database->batching = batching;
-        pass.database->reuseMainFrame = reuseMainFrame;
-        pass.database->shadowMapEnabled = shadowMapEnabled;
-        pass.renderer->setOutput(renderer.output());
-        pass.renderer->setSize(uint32_t(std::lround(renderer.width() * reflector->resolutionScale)),
-                               uint32_t(std::lround(renderer.height() * reflector->resolutionScale)));
+        ReflectionPass& pass = reflectionPass(renderer, reflector);
         PerspectiveCamera& virtualCamera = *reflector->camera;
         if (poseReflection(*reflector, camera, virtualCamera)) {
             pass.database->matricesFresh_ = reuseMainFrame && !ranCallbacks_;
@@ -1925,15 +2086,20 @@ void RenderDatabase::renderReflections(Renderer& renderer, Object3D& scene, Came
         }
         else if (encodeJobs) {
             pass.renderer->renderDeferred({}, CameraState{}, LightState{}, {0, 0, 0, 0});
-            encodeJobs->push_back([renderer = pass.renderer.get()] { renderer->encodePending(); });
+            encodeJobs->push_back([renderer = pass.renderer] { renderer->encodePending(); });
         } else
             pass.renderer->render({}, CameraState{}, LightState{}, {0, 0, 0, 0});
         for (const auto& message : pass.database->diagnostics()) diagnostics_.push_back(message);
     }
-    for (DrawItem& item : items) {
-        if (!item.reflector) continue;
-        item.reflectorView = reflections_.at(item.reflector).renderer->sceneColorView();
-        item.reflectorSampler = renderer.linearClampSampler();
+    // Each sampled mirror reads its own pass's view, published on the material's graph sources.
+    for (const DrawItem& item : items) {
+        if (!item.reflectors) continue;
+        for (GraphReflector& mirror : *item.reflectors) {
+            const auto pass = reflections_.find(mirror.reflector);
+            if (pass == reflections_.end()) continue;  // no pass yet: this draw is not in the main view
+            mirror.view = pass->second.renderer->sceneColorView();
+            mirror.sampler = renderer.linearClampSampler();
+        }
     }
 }
 

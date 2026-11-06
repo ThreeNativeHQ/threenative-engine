@@ -163,9 +163,12 @@ export function classifyRunnerError(
   if (message.includes("ENOENT") || /Playtest scenario .*could not be read/u.test(message)) {
     return scenarioUnreadable(message, options);
   }
+  const diagnosticMessage = error instanceof Error && error.stack !== undefined
+    ? `${message}\n${error.stack}`
+    : message;
   return diagnostic(
     "TN_PLAYTEST_RUNNER_FAILED",
-    message,
+    diagnosticMessage,
     "Unexpected runner error; inspect this message and rerun the command.",
   );
 }

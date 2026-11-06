@@ -136,6 +136,14 @@ function finitePositions(primitive: Primitive): boolean {
   for (let index = 0; index < array.length; index += 1) {
     if (!Number.isFinite(array[index] as number)) return false;
   }
+  // Complete, unnormalized vectors of finite components necessarily have finite bounds.
+  if (
+    !position.getNormalized() &&
+    position.getType() === "VEC3" &&
+    array.length > 0 &&
+    array.length % 3 === 0
+  )
+    return true;
   const min = position.getMin([0, 0, 0]);
   const max = position.getMax([0, 0, 0]);
   return min.every(Number.isFinite) && max.every(Number.isFinite);
@@ -187,24 +195,26 @@ function nonManifold(primitive: Primitive): boolean {
   if (indices === null) return false;
   const array = indices.getArray();
   if (array === null) return false;
-  const seen = new Map<number, number>();
+  const edges = new Float64Array(array.length);
+  let written = 0;
+  const vertices = primitive.getAttribute("POSITION")?.getCount() ?? 0;
   for (let index = 0; index + 2 < array.length; index += 3) {
     const a = array[index] as number;
     const b = array[index + 1] as number;
     const c = array[index + 2] as number;
     if (a === b || b === c || a === c) continue;
-    for (const [u, v] of [
-      [a, b],
-      [b, c],
-      [c, a],
-    ] as const) {
+    for (let edge = 0; edge < 3; edge++) {
+      const u = edge === 0 ? a : edge === 1 ? b : c;
+      const v = edge === 0 ? b : edge === 1 ? c : a;
       const low = Math.min(u, v);
       const high = Math.max(u, v);
-      const key = low * 0x1_0000_0000 + high;
-      const count = (seen.get(key) ?? 0) + 1;
-      if (count > 2) return true;
-      seen.set(key, count);
+      edges[written++] = low * vertices + high;
     }
+  }
+  // Numeric typed-array sorting avoids a boxed Map entry for every distinct edge.
+  const sorted = edges.subarray(0, written).sort();
+  for (let index = 2; index < sorted.length; index++) {
+    if (sorted[index] === sorted[index - 2]) return true;
   }
   return false;
 }

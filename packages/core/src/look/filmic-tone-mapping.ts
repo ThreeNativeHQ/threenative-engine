@@ -23,6 +23,7 @@ import {
   exp,
   exp2,
   float,
+  hash,
   log,
   max,
   min,
@@ -32,7 +33,6 @@ import {
   sign,
   sqrt,
   step,
-  vec2,
   vec3,
 } from "three/tsl";
 import type { Node } from "three/webgpu";
@@ -71,13 +71,17 @@ export interface IFilmicCurve {
    * The largest scene-linear value, after exposure, that one channel can hold when the colour goes into Unreal's
    * colour LUT (the top of its 14-stop log shaper, `Engine/Shaders/Private/GammaCorrectionCommon.ush`: `LogToLin(1)`
    * minus `LogToLin(0)`). A channel above it is clipped there, so the sun disc and a hot emitter lose their hue
-   * earlier than an unbounded curve would. 0, the default, leaves the channel unbounded; pass `LUT_CLIP` for Unreal's.
+   * earlier than an unbounded curve would. `LUT_CLIP` is the default, as in Unreal; 0 is the named override that leaves
+   * the channel unbounded.
    */
   readonly lutClip: number;
 }
 
 // Unreal's log shaper: 14 stops about mid grey 0.18, grey at code 444 of 1023.
-/** Unreal's LUT channel clip, 43.7. Off by default (it moves hot-emitter pixels); `filmicCurve: { lutClip: LUT_CLIP }` turns it on. */
+/**
+ * Unreal's LUT channel clip, 43.7, on by default (PRD-632 GAP-4: on the L9 spheres cells, 5 runs per arm, no region moved
+ * and the judge read NEUTRAL). `filmicCurve: { lutClip: 0 }` turns it off.
+ */
 export const LUT_CLIP = 2 ** ((1 - 444 / 1023) * 14) * 0.18 - 2 ** ((-444 / 1023) * 14) * 0.18;
 
 /** Unreal 5.8.3 project defaults. Change these numbers to change the curve. */
@@ -92,7 +96,7 @@ export const FILMIC_CURVE: IFilmicCurve = {
   glow: 1,
   redModifier: 1,
   dither: 1,
-  lutClip: 0,
+  lutClip: LUT_CLIP,
 };
 
 type Vec3 = readonly [number, number, number];
@@ -672,17 +676,15 @@ const toLinear = (v: Node<"vec3">) =>
  * (`Engine/Shaders/Private/PostProcessTonemap.usf`, scaled by `BackbufferQuantizationDithering` in
  * `Engine/Source/Runtime/Renderer/Private/PostProcess/PostProcessTonemap.cpp`). The pipeline applies the sRGB
  * transfer after this node, so the grain goes in on the display value and the result comes back to linear.
- * The shape is Unreal's triangle on [-1, 1]. The hash is white noise of the pixel position, with the sine
- * argument kept under pi. Unreal's grain moves every frame; this one stays on its pixel, so two captures of
- * one frame match bit for bit. The hash reads the pixel position: `screenUV` gave no grain in this stage on
- * the owned engine.
+ * The shape is Unreal's triangle on [-1, 1]. The noise is three's integer PCG `hash` of the pixel index, so
+ * every backend draws the same grain: the old `fract(sin(dot(p, k)) * 43758.5453)` hash multiplied float
+ * rounding by 43758, and Chrome and the desktop host drew uncorrelated grain (half the frame 1-2 levels
+ * apart). Unreal's grain moves every frame; this one stays on its pixel, so two captures of one frame match
+ * bit for bit. The hash reads the pixel position: `screenUV` gave no grain in this stage on the owned engine.
  */
 function dithered(linear: Node<"vec3">, steps: number): Node<"vec3"> {
-  const uniform = dot(screenCoordinate, vec2(12.9898, 78.233))
-    .mod(Math.PI)
-    .sin()
-    .mul(43758.5453)
-    .fract();
+  // y * 4096 is exact, so the seed is one rounded add on every backend (FMA or not); hash truncates it to u32.
+  const uniform = hash(screenCoordinate.y.mul(4096).add(screenCoordinate.x));
   // The inverse of the triangular CDF: one root for each half of the unit interval.
   const grain = mix(
     uniform.mul(2).sqrt().sub(1),

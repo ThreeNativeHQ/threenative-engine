@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { qualityPreset } from "../../packages/core/src/look/quality.js";
 import {
-  EMISSIVE_UNITS,
-  SKY_TO_SUN,
   SUN_ILLUMINANCE,
   SUN_KELVIN,
   bakeSkyRadiance,
@@ -22,18 +21,19 @@ describe("the harness lighting model against Unreal 5.8.3 frames (PRD-632, PRD-6
     expect(b / g).toBeCloseTo(0.9069 / 0.8596, 1);
   });
 
-  it("the sun is Unreal's 6 lux in three's units, pi times larger", () => {
-    expect(SUN_ILLUMINANCE).toBeCloseTo(6 * Math.PI, 10);
+  it("the sun is Unreal's 6 lux as it stands: three's Lambert shades lux as Unreal's does", () => {
+    expect(SUN_ILLUMINANCE).toBe(6);
   });
 
-  it("emissive 5 outshines a white surface under the sun by Unreal's ratio, 5 / (6 / pi)", () => {
-    // Unreal: emissive as it stands, against albedo / pi x lux (Diffuse_Lambert, BRDF.ush:157).
-    const unreal = 5 / (6 / Math.PI);
-    // Here: three's Lambert divides the sun by pi, so a white surface at normal incidence reads
-    // SUN_ILLUMINANCE / pi, and the emissive intensity is scaled by EMISSIVE_UNITS.
-    const here = (5 * EMISSIVE_UNITS) / (SUN_ILLUMINANCE / Math.PI);
-    expect(here).toBeCloseTo(unreal, 10);
-    expect(unreal).toBeCloseTo(2.618, 3);
+  it("the fixed exposure is Unreal's with its meter off, 2.4, and it reproduces the Unreal L1 white box", () => {
+    const exposure = qualityPreset("high").exposure ?? Number.NaN;
+    // SceneView.cpp:2060-2069 pins the average to 0.18 / 1.2; key / average (PostProcessEyeAdaptation.cpp:810-821).
+    expect(exposure).toBeCloseTo(2.4, 10);
+    // Unreal L1 EXR, sun04 exterior, Box_White (albedo 0.8, the face toward the sun): 3.59 / 3.39 / 3.57, luminance
+    // about 3.43. The face meets the sun almost square on, so albedo / pi x lux x exposure is the whole of it.
+    const shaded = (0.8 / Math.PI) * SUN_ILLUMINANCE * exposure;
+    expect(shaded / 3.43).toBeGreaterThan(0.98);
+    expect(shaded / 3.43).toBeLessThan(1.1);
   });
 
   it("the sun reddens as it sets, to within a few percent of the Unreal L2 sun-lit boxes", () => {
@@ -91,7 +91,7 @@ describe("the harness lighting model against Unreal 5.8.3 frames (PRD-632, PRD-6
   });
 
   it("the distant sky light, that fog and clouds are lit with, stays near the Unreal-derived colour", () => {
-    // Unreal L3 sea at a fixed exposure, divided by the sun's tint and illuminance and SKY_TO_SUN
+    // Unreal L3 sea at a fixed exposure, divided by the sun's tint and illuminance and the fixed exposure
     // (the colour height fog takes from GetViewDistanceSkyLightColor), per unit sun.
     const unreal = {
       60: [0.00929, 0.01971, 0.03803],
@@ -135,7 +135,8 @@ describe("the harness lighting model against Unreal 5.8.3 frames (PRD-632, PRD-6
     for (const deg of [60, 15] as const) {
       const rad = (deg * Math.PI) / 180;
       const light = viewDistanceSkyLight({ x: Math.cos(rad), y: Math.sin(rad), z: 0 });
-      const fog = light.map((v, c) => v * (tint[c] ?? 1) * SUN_ILLUMINANCE * SKY_TO_SUN);
+      const exposure = qualityPreset("high").exposure ?? Number.NaN;
+      const fog = light.map((v, c) => v * (tint[c] ?? 1) * SUN_ILLUMINANCE * exposure);
       const shown = filmicToneMap(fog as [number, number, number]).map(encode);
       shown.forEach((v, c) => {
         const expected = unreal[deg][c];

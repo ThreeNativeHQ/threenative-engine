@@ -117,6 +117,26 @@ void halfFloat() {
     CHECK(half(*t, 0) == 0x4000 && t->data.size() == 16);
 }
 
+void countDispose(const tn::engine::Event&, void* context) { ++*static_cast<int*>(context); }
+
+// three's EventDispatcher on a texture: clone (the `clone` binding's `Texture(*texture)` and the glTF
+// transform copy) is a fresh dispatcher, so its dispose reaches neither the original's listener nor the
+// original's language bridge entry.
+void cloneStartsWithoutListeners() {
+    Texture original;
+    int fired = 0;
+    original.addEventListener("dispose", &countDispose, &fired);
+    original.languageListeners = std::make_shared<int>(0);
+    original.dispose();
+    CHECK(fired == 1);
+
+    const std::shared_ptr<Texture> clone = std::make_shared<Texture>(original);
+    CHECK(!clone->hasEventListener("dispose", &countDispose, &fired));
+    CHECK(clone->languageListeners == nullptr);
+    clone->dispose();
+    CHECK(fired == 1);
+}
+
 }  // namespace
 
-TN_TEST_MAIN({"half_float", halfFloat})
+TN_TEST_MAIN({"half_float", halfFloat}, {"clone_listeners", cloneStartsWithoutListeners})

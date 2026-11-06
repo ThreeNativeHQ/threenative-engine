@@ -202,6 +202,52 @@ static ExprId nodeType(Program& p, ExprId id, Type type) {
     return p.construct(type, {id});
 }
 
+// The engine TSL instanceMatrix(): the drawn instance's matrix, as graph inputs tnInstanceMatrix0..3 (a mat4 cannot
+// cross stages; each vec4 column can). Each is the column applyInstance reads, or identity for a draw that is not
+// instanced, so one node material serves instanced and plain meshes: what three's Fn reads through builder.object.
+static ExprId instanceColumn(Program& v, const VertexVariant& variant, int index, const std::string& previous = "") {
+    if (!variant.instanced) {
+        std::vector<ExprId> lanes;
+        for (int row = 0; row < 4; ++row) lanes.push_back(v.constant(row == index ? 1.0f : 0.0f));
+        return v.construct(Type::vec(4), lanes);
+    }
+    if (!variant.instanceStorage) return v.attribute("instanceMatrix" + std::to_string(index), Type::vec(4));
+    const uint32_t instances = v.storageBuffer(previous + "instances", Type::vec(4));
+    const ExprId base = v.add(v.construct(Type::u32(), {v.uniform(previous + "instanceBase", Type::f32())}),
+                              v.mul(v.builtin("instanceIndex"), v.construct(Type::u32(), {v.constant(5)})));
+    return v.loadStorage(instances, v.add(base, v.construct(Type::u32(), {v.constant(index)})));
+}
+static constexpr std::string_view kInstanceColumn = "tnInstanceMatrix";
+// True when `root` reads an attribute or named varying whose name starts with `prefix`.
+static bool readsInput(const graph::Node& root, std::string_view prefix) {
+    std::unordered_set<const graph::NodeData*> seen;
+    const std::function<bool(const graph::Node&)> visit = [&](const graph::Node& n) {
+        if (!n || !seen.insert(n.get()).second) return false;
+        if ((n->kind == graph::Kind::Attribute || n->kind == graph::Kind::Varying) && n->name.starts_with(prefix)) return true;
+        for (const auto* list : {&n->args, &n->body, &n->otherwise})
+            for (const auto& child : *list)
+                if (visit(child)) return true;
+        return false;
+    };
+    return visit(root);
+}
+// The inputs a vertex-stage lowering of `graph` reads beside positionLocal: r187's positionWorld and positionView
+// there are modelWorldMatrix (then the view) times positionLocal, computed in the stage rather than read as the
+// fragment's varyings (a wind-swayed caster's positionNode, Strata's forest). instanceMatrix()'s columns bind only
+// when the graph reads them.
+static void vertexInputs(Program& v, const VertexVariant& variant, const graph::Node& graph,
+                           std::unordered_map<std::string, ExprId>& inputs, const std::string& previous = "") {
+    const bool world = readsInput(graph, "positionWorld"), view = readsInput(graph, "positionView");
+    if (const auto local = inputs.find("positionLocal"); local != inputs.end() && (world || view)) {
+        const ExprId placed = v.mul(v.uniform("modelMatrix", Type::mat(4, 4)),
+                                    v.construct(Type::vec(4), {local->second, v.constant(1.0f)}));
+        if (world) inputs.try_emplace("positionWorld", v.swizzle(placed, "xyz"));
+        if (view) inputs.try_emplace("positionView", v.swizzle(v.mul(v.uniform("viewMatrix", Type::mat(4, 4)), placed), "xyz"));
+    }
+    if (!readsInput(graph, kInstanceColumn)) return;
+    for (int i = 0; i < 4; ++i) inputs[std::string(kInstanceColumn) + std::to_string(i)] = instanceColumn(v, variant, i, previous);
+}
+
 static LocalVertex localVertex(Program& v, const VertexVariant& variant, bool withNormal,
                                const std::unordered_map<std::string, ExprId>& uniformInputs = {},
                                bool previousFrame = false) {
@@ -322,6 +368,7 @@ static LocalVertex localVertex(Program& v, const VertexVariant& variant, bool wi
         tsl::Build build(v);
         auto inputs = uniformInputs;
         inputs["positionLocal"] = position;
+        vertexInputs(v, variant, variant.nodes.positionNode, inputs, previous);
         position = nodeType(v, graph::lower(variant.nodes.positionNode, v, inputs), Type::vec(3));
     }
     ExprId instanceColor = !variant.instanceColor ? kInvalid : variant.instanceStorage
@@ -344,8 +391,9 @@ static LocalVertex localVertex(Program& v, const VertexVariant& variant, bool wi
 static ExprId clipPosition(Program& v, const VertexVariant& variant, const LocalVertex& local, ExprId clip) {
     if (!variant.nodes.vertexNode) return clip;
     tsl::Build build(v);
-    return nodeType(v, graph::lower(variant.nodes.vertexNode, v, {{"positionLocal", v.swizzle(local.position, "xyz")}}),
-                    Type::vec(4));
+    std::unordered_map<std::string, ExprId> inputs{{"positionLocal", v.swizzle(local.position, "xyz")}};
+    vertexInputs(v, variant, variant.nodes.vertexNode, inputs);
+    return nodeType(v, graph::lower(variant.nodes.vertexNode, v, inputs), Type::vec(4));
 }
 
 OutputPrograms velocityPrograms(const VertexVariant& variant) {
@@ -396,13 +444,16 @@ static ExprId nodeValue(Program& f, const graph::Node& node, Type type, ExprId f
                         ExprId normalView = kInvalid, ExprId geometryNormal = kInvalid);
 
 // NodeMaterial.setup: `vec4(outgoingLight, diffuseColor.a).max(0)`, which forces unsigned output,
-// then setupOutput mixes the fog into the clamped colour.
+// then setupOutput mixes the fog into the clamped colour and, with premultipliedAlpha, multiplies it by alpha.
 ExprId materialOutput(Program& f, const VertexVariant& variant, ExprId outgoing, ExprId alpha) {
     const ExprId clamped = f.call("max", {f.construct(Type::vec(4), {outgoing, alpha}),
                                           f.construct(Type::vec(4), {f.constant(0.0f)})});
-    return !variant.fog && !variant.nodes.fogNode
-        ? clamped  // no fog to mix: one clamp expression, not one per lane
-        : f.construct(Type::vec(4), {fogColor(f, variant, f.swizzle(clamped, "xyz")), f.swizzle(clamped, "w")});
+    if (!variant.fog && !variant.nodes.fogNode && !variant.premultipliedAlpha)
+        return clamped;  // nothing to mix: one clamp expression, not one per lane
+    const ExprId a = f.swizzle(clamped, "w");
+    ExprId rgb = fogColor(f, variant, f.swizzle(clamped, "xyz"));
+    if (variant.premultipliedAlpha) rgb = f.mul(rgb, a);
+    return f.construct(Type::vec(4), {rgb, a});
 }
 
 ExprId fogColor(Program& f, const VertexVariant& variant, ExprId outgoing) {
@@ -435,13 +486,19 @@ static ExprId perturbNormal2Arb(Program& f, ExprId eye, ExprId uv, ExprId surfac
 // The tint varying: the instance colour (vec3), or a vec4 once a vertex colour multiplies it.
 static Type tintType(const VertexVariant& variant) { return Type::vec(variant.vertexColors ? 4 : 3); }
 
+// A material texture read at the renderer's `viewMipBias` (0 unless a temporal pass upscales; see
+// Renderer::viewMipBias), as Unreal biases every material sampler of an upscaled view.
+static ExprId materialSample(Program& f, uint32_t texture, ExprId at) {
+    return f.sampleBias(texture, at, f.uniform("viewMipBias", Type::f32()));
+}
+
 static ExprId perturbedNormal(Program& f, const VertexVariant& variant, ExprId surfaceNormal) {
     const ExprId eye = f.varying("positionView", Type::vec(3));
     if (variant.tinted()) f.varying("instanceColor", tintType(variant));
     const ExprId uv = f.varying("uv", Type::vec(2));
     const ExprId transform = f.uniform("normalUvTransform", Type::mat(3, 3));
     const ExprId at = f.swizzle(f.mul(transform, f.construct(Type::vec(3), {uv, f.constant(1.0f)})), "xy");
-    const ExprId texel = f.swizzle(f.sample(f.texture2d("normalMap"), at), "xyz");
+    const ExprId texel = f.swizzle(materialSample(f, f.texture2d("normalMap"), at), "xyz");
     const ExprId decoded = f.sub(f.mul(texel, f.constant(2.0f)), f.constant(1.0f));
     const ExprId scaled = f.mul(f.swizzle(decoded, "xy"), f.uniform("normalScale", Type::vec(2)));
     const ExprId mapN = f.construct(Type::vec(3), {scaled, f.swizzle(decoded, "z")});
@@ -474,7 +531,7 @@ static ExprId pbrTexel(Program& f, const VertexVariant& variant, PbrMap map) {
     if (variant.tinted()) f.varying("instanceColor", tintType(variant));
     const ExprId uv = f.varying("uv", Type::vec(2));
     const ExprId transform = f.uniform(name + "UvTransform", Type::mat(3, 3));
-    return f.sample(f.texture2d(name), f.swizzle(f.mul(transform, f.construct(Type::vec(3), {uv, f.constant(1.0f)})), "xy"));
+    return materialSample(f, f.texture2d(name), f.swizzle(f.mul(transform, f.construct(Type::vec(3), {uv, f.constant(1.0f)})), "xy"));
 }
 
 // MaterialNode.NORMAL with a bumpMap and no normalMap: three's BumpMapNode (Mikkelsen's surface
@@ -488,7 +545,7 @@ static ExprId bumpedNormal(Program& f, const VertexVariant& variant, ExprId surf
     const uint32_t map = f.texture2d(kPbrMapNames[kBumpMap]);
     const auto height = [&](ExprId coordinate) {
         const ExprId at = f.swizzle(f.mul(transform, f.construct(Type::vec(3), {coordinate, f.constant(1.0f)})), "xy");
-        return f.swizzle(f.sample(map, at), "x");
+        return f.swizzle(materialSample(f, map, at), "x");
     };
     const ExprId scale = f.uniform("bumpScale", Type::f32());
     const ExprId Hll = height(uv);
@@ -527,7 +584,7 @@ static ExprId mapTexel(Program& f, const VertexVariant& variant) {
     const ExprId uv = f.varying("uv", Type::vec(2));
     const ExprId transform = f.uniform("uvTransform", Type::mat(3, 3));
     const ExprId at = f.swizzle(f.mul(transform, f.construct(Type::vec(3), {uv, f.constant(1.0f)})), "xy");
-    const ExprId texel = f.sample(f.texture2d("map"), at);
+    const ExprId texel = materialSample(f, f.texture2d("map"), at);
     if (!variant.mapSRGB) return texel;
     const ExprId rgb = f.construct(Type::vec(3), {srgbDecode(f, f.swizzle(texel, "x")),
                                                    srgbDecode(f, f.swizzle(texel, "y")),
@@ -560,7 +617,7 @@ static ExprId nodeValue(Program& f, const graph::Node& node, Type type, ExprId f
                         ExprId normalView, ExprId geometryNormal) {
     if (!node) return fallback;
     tsl::Build build(f);
-    std::unordered_map<std::string, ExprId> inputs;
+    std::unordered_map<std::string, ExprId> inputs{{"viewMipBias", kInvalid}};  // a material: its 2D texture() nodes take the view mip bias
     if (normalView != kInvalid) inputs.emplace("normalView", normalView);
     if (geometryNormal != kInvalid) inputs.emplace("normalViewGeometry", geometryNormal);
     return nodeType(f, graph::lower(node, f, inputs), type);
@@ -575,8 +632,10 @@ static void materialInputs(Program& f, const VertexVariant& variant,
                            std::unordered_map<std::string, ExprId>& inputs) {
     const auto pinned = [&](Type type, ExprId value) { return f.load(f.var(type, value)); };
     const auto& nodes = variant.nodes;  // the slots this fragment lowers; position, vertex and scale nodes run in the vertex stage
-    for (const auto& node : {nodes.colorNode, nodes.emissiveNode, nodes.roughnessNode, nodes.metalnessNode, nodes.opacityNode,
-                             nodes.aoNode, nodes.irradianceNode, nodes.fragmentNode, nodes.depthNode})
+    std::vector<graph::Node> slots{nodes.colorNode, nodes.emissiveNode, nodes.roughnessNode, nodes.metalnessNode, nodes.opacityNode,
+                                   nodes.aoNode, nodes.irradianceNode, nodes.envNode, nodes.fragmentNode, nodes.depthNode, nodes.maskNode, nodes.alphaTestNode};
+    for (const auto& slot : nodes.mrt) slots.push_back(slot.node);
+    for (const auto& node : slots)
         for (const std::string& name : graph::materialInputs(node)) {
             const std::string key = "material:" + name;
             if (inputs.count(key)) continue;
@@ -597,7 +656,7 @@ static void materialInputs(Program& f, const VertexVariant& variant,
 // A slot read through the program's one lowering: a node two slots share (a march feeding colour and
 // depth) lowers once, as three builds a material once. `normalView` is the slot input every slot sees.
 static graph::Lowering slotLowering(Program& f, const VertexVariant& variant, ExprId normalView) {
-    std::unordered_map<std::string, ExprId> inputs;
+    std::unordered_map<std::string, ExprId> inputs{{"viewMipBias", kInvalid}};  // a material: its 2D texture() nodes take the view mip bias
     if (normalView != kInvalid) inputs.emplace("normalView", normalView);
     materialInputs(f, variant, inputs);
     return graph::Lowering(f, std::move(inputs));
@@ -606,6 +665,25 @@ static ExprId slotValue(Program& f, graph::Lowering& slots, const graph::Node& n
     if (!node) return fallback;
     tsl::Build build(f);
     return nodeType(f, slots.lower(node), type);
+}
+
+// three's mrtNode: the material's custom colour attachments. The colour program lowers them without an output, so its
+// uniforms, textures and varyings are declared in the order the aux pass's MRT fragment declares them (one draw's bind
+// groups serve both); Renderer::auxFragment writes the values at their own locations.
+static void lowerMrtOutputs(StandardPrograms& out, graph::Lowering& slots, const VertexVariant& variant) {
+    for (const auto& slot : variant.nodes.mrt) out.mrt.push_back(slot.node ? slots.lower(slot.node) : kInvalid);
+}
+
+// three r187 NodeMaterial.setupDiffuseColor: `bool(maskNode).not().discard()`, before the colour is read.
+static void discardMasked(Program& f, graph::Lowering& slots, const VertexVariant& variant) {
+    if (!variant.nodes.maskNode) return;
+    const ExprId keep = slotValue(f, slots, variant.nodes.maskNode, Type::boolean(), kInvalid);
+    f.If(f.select(keep, f.constant(false), f.constant(true)), [&] { f.discard(); });
+}
+
+// three r187 NodeMaterial.setupDiffuseColor: the cutoff is `alphaTestNode ?? alphaTest`; kInvalid keeps the flat uniform.
+static ExprId alphaCutoff(Program& f, graph::Lowering& slots, const VertexVariant& variant) {
+    return slotValue(f, slots, variant.nodes.alphaTestNode, Type::f32(), kInvalid);
 }
 
 static ExprId diffuseAlpha(Program& f, graph::Lowering& slots, const VertexVariant& variant, ExprId diffuse, ExprId texel) {
@@ -628,7 +706,7 @@ static ExprId diffuseAlpha(Program& f, graph::Lowering& slots, const VertexVaria
 // Graph attributes can be first used in any slot. Link the two stages by name, in fragment order.
 void linkNodeVaryings(StandardPrograms& out, const VertexVariant& variant, ExprId position, ExprId normal) {
     bool hasNodes = false;
-    for (const auto& node : variant.nodes.graphs()) hasNodes |= bool(node);
+    variant.nodes.forEachGraph([&](const graph::Node& node) { hasNodes |= bool(node); });
     // Every builder ends here: the fragment's read order, not declaration order, fixes the locations.
     if (!hasNodes && !variant.alphaHash) return out.vertex.linkVaryings(out.fragment);
     Program& v = out.vertex;
@@ -645,14 +723,16 @@ void linkNodeVaryings(StandardPrograms& out, const VertexVariant& variant, ExprI
         for (const auto* list : {&n->args, &n->body, &n->otherwise})
             for (const auto& child : *list) collect(child);
     };
-    for (const auto& node : variant.nodes.graphs()) collect(node);
+    variant.nodes.forEachGraph(collect);
     for (const auto& [name, type] : out.fragment.varyings()) {
         if ((name == "backgroundDirection" && variant.background) || name == "normalView" || (name == "positionView" && v.hasOutput(name)) ||
             (name == "instanceColor" && variant.tinted()) || (name == "uv" && (variant.map || variant.normalMap || variant.pbrMaps))) continue;
         ExprId value;
         if (const auto found = carried.find(name); found != carried.end()) {
             tsl::Build build(v);
-            value = graph::lower(found->second->args[0], v, {{"positionLocal", v.swizzle(position, "xyz")}});
+            std::unordered_map<std::string, ExprId> inputs{{"positionLocal", v.swizzle(position, "xyz")}};
+            vertexInputs(v, variant, found->second->args[0], inputs);
+            value = graph::lower(found->second->args[0], v, inputs);
         } else if (name == "positionWorldDirection")
             value = v.call("normalize", {v.swizzle(v.mul(v.uniform("modelMatrix", Type::mat(4, 4)),
                 v.construct(Type::vec(4), {v.swizzle(position, "xyz"), v.constant(0.0f)})), "xyz")});
@@ -673,6 +753,8 @@ void linkNodeVaryings(StandardPrograms& out, const VertexVariant& variant, ExprI
         else if (name == "normalWorldGeometry" && normal != kInvalid)
             value = v.mul(v.uniform("modelNormalMatrix", Type::mat(3, 3)), normal);
         else if (name == "instanceIndex" || name == "vertexIndex") value = v.builtin(name);
+        else if (name.starts_with(kInstanceColumn) && name.size() == kInstanceColumn.size() + 1)
+            value = instanceColumn(v, variant, name.back() - '0');
         else if (name == "positionGeometry") value = v.attribute("position", type);
         else if (name == "vertexColor") value = v.attribute("color", type);
         else value = v.attribute(name, type);
@@ -988,7 +1070,7 @@ static ExprId lampSoftShadowFactor(Program& f, Tsl& t, std::size_t index, ExprId
 // VirtualShadowNode's stock PCF filter and coarse-to-fine guarded blending. Physical pages
 // replace only the texture addressing; all coordinates and filter operations remain level-local.
 static ExprId virtualShadowFactor(Program& f, Tsl& t, std::size_t index, int levels,
-                                  ExprId positionWorld, ExprId normalWorld, bool leaf) {
+                                  ExprId positionWorld, ExprId normalWorld, bool leaf, bool sourceAngle) {
     const std::string at = "light" + std::to_string(index);
     const uint32_t map = f.textureDepth("vsm" + std::to_string(index));
     const uint32_t table = f.storageBuffer("vsmTable" + std::to_string(index), Type::vec(4));
@@ -1045,7 +1127,10 @@ static ExprId virtualShadowFactor(Program& f, Tsl& t, std::size_t index, int lev
         const ExprId footprint = f.add(f.call("max", {radius, t.f(0)}), t.f(1));
         // table entry.w carries receiverPlaneBias so changing the policy never changes a program.
         const ExprId slopeBias = f.mul(f.div(f.div(f.mul(slope, f.mul(extent, t.f(2))), mapSize), span), footprint);
-        const ExprId baseZ = f.add(f.swizzle(projected, "z"), f.uniform(at + "ShadowBias", Type::f32()));
+        // The bias is depth over the casters' fitted span (params.w); the level's range adds a pad for pans, which must not
+        // turn the same bias into more metres.
+        const ExprId baseZ = f.add(f.swizzle(projected, "z"),
+            f.mul(f.uniform(at + "ShadowBias", Type::f32()), f.div(f.swizzle(params, "w"), span)));
         const ExprId mover = f.loadStorage(table, f.construct(Type::u32(), {
             f.add(t.f(float(levels * 9 + l)), total)}));
         auto sampleLayer = [&](bool moving) {
@@ -1070,7 +1155,10 @@ static ExprId virtualShadowFactor(Program& f, Tsl& t, std::size_t index, int lev
         }
         return f.mul(sum, t.f(1.0f / 5.0f));
         };
-        // The filter replaces the 5-tap PCF where it is on, so a pixel pays for one of the two.
+        // The filter replaces the 5-tap PCF where it is on, so a pixel pays for one of the two. A light without
+        // the filter compiles the PCF alone: the unused filter, once per level and layer, held registers that
+        // cost the forest about 12% of its GPU frame (lane-perf A/B, 2026-11-04).
+        if (!sourceAngle) return pcf();
         const VarId filtered = f.var(Type::f32(), t.f(1));
         const ExprId filterIndex = f.add(t.f(float(levels * 10)), total);
         const ExprId filter = f.loadStorage(table, f.construct(Type::u32(), {filterIndex}));
@@ -1127,7 +1215,10 @@ static ExprId virtualShadowFactor(Program& f, Tsl& t, std::size_t index, int lev
                 return f.construct(Type::vec(2), {f.call("max", {texel, f.div(metres, width)}),
                                                   f.call("max", {texel, f.div(f.div(metres, width), aspect)})});
             };
-            const ExprId search = uvRadius(f.mul(f.mul(baseZ, span), tangent));
+            // No blocker is nearer the light than the top of the fitted casters, which sits half the pan pad,
+            // (span - fitted span) / 2, below the near plane: the search reaches from there, not from the plane.
+            const ExprId topCaster = f.mul(f.sub(span, f.swizzle(params, "w")), t.f(0.5f));
+            const ExprId search = uvRadius(f.mul(f.call("max", {t.f(0), f.sub(f.mul(baseZ, span), topCaster)}), tangent));
             const VarId blockerSum = f.var(Type::f32(), t.f(0)), blockerCount = f.var(Type::f32(), t.f(0));
             f.Loop(f.construct(Type::i32(), {blockers}), [&](ExprId i) {
                 const ExprId offset = f.mul(disk(i, blockers), search);
@@ -1214,8 +1305,10 @@ static Incoming incoming(Program& f, Tsl& t, char kind, std::size_t index, ExprI
                          ExprId positionWorld = kInvalid, ExprId normalWorld = kInvalid, bool leaf = false, bool lampSize = false) {
     const std::string at = "light" + std::to_string(index);
     ExprId color = f.uniform(at + "Color", Type::vec(3));
-    if (kind >= '1' && kind <= '8') {
-        color = f.mul(color, virtualShadowFactor(f, t, index, kind - '0', positionWorld, normalWorld, leaf));
+    if (kind >= '1' && kind <= '@') {  // '1'..'8' PCF, '9'..'@' the source-angle filter: the level count past '0' or '8'
+        const bool sourceAngle = kind > '8';
+        color = f.mul(color, virtualShadowFactor(f, t, index, kind - (sourceAngle ? '8' : '0'), positionWorld, normalWorld,
+                                                 leaf, sourceAngle));
         kind = 'd';
     }
     if (kind == 'Q' || kind == 'R') {  // a lamp with sourceRadiusShadowFilter: 'Q' point, 'R' spot
@@ -1319,6 +1412,7 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     const ExprId normalWorld = f.call("normalize", {f.swizzle(f.mul(f.construct(Type::vec(4), {n, f.constant(0.0f)}),
                                                                      f.uniform("viewMatrix", Type::mat(4, 4))), "xyz")});
     graph::Lowering slots = slotLowering(f, variant, n);
+    discardMasked(f, slots, variant);
     const ExprId diffuse = slotValue(f, slots, variant.nodes.colorNode, Type::vec(4), f.uniform("diffuse", Type::vec(4)));
     const ExprId texel = variant.nodes.colorNode ? kInvalid : mapTexel(f, variant);
     ExprId diffuseColor = materialColor(f, variant, diffuse);
@@ -1424,13 +1518,20 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     // SubstrateEvaluation.ush:881-899 (the SSS_TYPE_TWO_SIDED_WRAP branch); Opacity 1 keeps the light's own shadow.
     const ExprId subsurface = variant.twoSidedFoliage ? f.uniform("subsurfaceColor", Type::vec(3)) : kInvalid;
     for (std::size_t i = 0; i < lights.kinds.size(); ++i) {
+        if (lights.kinds[i] == LightLayout::kExcluded) continue;  // not in the material's lightsNode
         const Incoming light = incoming(f, t, lights.kinds[i], i, fragmentView, positionWorld, normalWorld, variant.leafReceiver, variant.roughDiffuse);
         const ExprId irradiance = f.mul(t.saturate(t.dot(n, light.direction)), light.color);
         // PhysicalLightingModel.direct :675-678: F_Schlick on the specular interface at dotVH, which the
         // diffuse layer loses.
         const ExprId halfDir = f.call("normalize", {f.add(light.direction, positionViewDirection)});
         const ExprId dotVH = t.saturate(t.dot(positionViewDirection, halfDir));
-        const ExprId oneMinusF = t.oneMinus(fSchlick(t, f0Dielectric, specularF90, dotVH));
+        // A fresh Unreal project's Substrate slab (GBuffer format 0) compiles with its energy conservation off: the
+        // diffuse keeps all the light and the specular lobe takes no multi-scattering weight. UE 5.8.3:
+        // Engine/Shaders/Private/ShadingEnergyConservation.ush:7-31, ShadingEnergyConservationTemplate.ush:73-78 and
+        // :134-135, used at Substrate/SubstrateEvaluation.ush:585-589 and :836.
+        const ExprId oneMinusF =
+            variant.roughDiffuse ? t.f(1) : t.oneMinus(fSchlick(t, f0Dielectric, specularF90, dotVH));
+        const ExprId specularWeight = variant.roughDiffuse ? t.f(1) : multiScatteringCompensation;
         ExprId diffuseBrdf = brdfLambert;
         if (variant.roughDiffuse) {
             // EON's roughness is 0.4 x the material's, fading to Lambert as the lamp's Source Radius reaches 20 cm.
@@ -1441,7 +1542,7 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
         }
         directDiffuse = f.add(directDiffuse, f.mul(f.mul(irradiance, diffuseBrdf), oneMinusF));
         directSpecular =
-            f.add(directSpecular, f.mul(f.mul(irradiance, brdfGgx(t, surface, light.direction)), multiScatteringCompensation));
+            f.add(directSpecular, f.mul(f.mul(irradiance, brdfGgx(t, surface, light.direction)), specularWeight));
         if (subsurface != kInvalid) {
             const ExprId wrap = t.saturate(f.div(f.add(f.neg(t.dot(n, light.direction)), t.f(0.5f)), t.f(2.25f)));
             const ExprId scatter = dGgx(t, t.f(0.6f), t.saturate(f.neg(t.dot(positionViewDirection, light.direction))));
@@ -1501,6 +1602,18 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
             clearcoatSpecularIndirect = f.mul(clearcoatRadiance, clearcoatEnv);
         }
     }
+    // MaterialNode.envNode with no environment map: the author's node is the radiance itself, and its irradiance is
+    // that radiance times pi (EnvironmentNode.js:90-107 with a plain env node, whose roughness context it ignores),
+    // so the cosine-weighted irradiance is the radiance. The Strata ocean's sky reflection comes from here; without
+    // it the water has no indirect light at all and renders black.
+    else if (variant.nodes.envNode) {
+        const ExprId radiance = f.mul(slotValue(f, slots, variant.nodes.envNode, Type::vec(3), kInvalid),
+                                      f.uniform("envMapIntensity", Type::f32()));
+        const ExprId single = f.call("mix", {dielectric.single, metallic.single, metalness});
+        const ExprId multi = f.call("mix", {dielectric.multi, metallic.multi, metalness});
+        environmentSpecular = f.add(f.mul(radiance, single), f.mul(multi, radiance));
+        environmentDiffuse = f.mul(f.mul(diffuseContribution, energyLoss), radiance);
+    }
 
     // No environment: irradianceNode is still the material's indirect diffuse, as an IrradianceNode adds to the
     // irradiance with no environment present (PhysicalLightingModel.indirectDiffuse, Lambert). A baked GI cache in a
@@ -1549,8 +1662,10 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     // Linear HDR out: tone mapping and the output colour space belong to the output pass (output.h).
     out.albedo = diffuseColor;
     out.emissive = emissive;
-    f.output("color", materialOutput(f, variant, outgoing, materialAlpha(f, alpha, variant.alphaHash)));
+    out.normal = n;
+    f.output("color", materialOutput(f, variant, outgoing, materialAlpha(f, alpha, variant.alphaHash, alphaCutoff(f, slots, variant))));
     outputDepthNode(f, slots, variant);
+    lowerMrtOutputs(out, slots, variant);
     linkNodeVaryings(out, variant, local.position, local.normal);
     for (const Program* stage : {&out.vertex, &out.fragment}) {
         for (const Diagnostic& d : stage->diagnostics()) {
@@ -1649,6 +1764,7 @@ StandardPrograms buildLit(bool phong, const VertexVariant& variant, const LightL
     const ExprId normalWorld = f.call("normalize", {f.swizzle(f.mul(f.construct(Type::vec(4), {n, f.constant(0.0f)}),
                                                                      f.uniform("viewMatrix", Type::mat(4, 4))), "xyz")});
     graph::Lowering slots = slotLowering(f, variant, n);
+    discardMasked(f, slots, variant);
     const ExprId diffuse = slotValue(f, slots, variant.nodes.colorNode, Type::vec(4), f.uniform("diffuse", Type::vec(4)));
     const ExprId texel = variant.nodes.colorNode ? kInvalid : mapTexel(f, variant);
     ExprId diffuseColor = materialColor(f, variant, diffuse);
@@ -1661,6 +1777,7 @@ StandardPrograms buildLit(bool phong, const VertexVariant& variant, const LightL
     const ExprId shininess = phong ? f.call("max", {f.uniform("shininess", Type::f32()), t.f(1e-4f)}) : kInvalid;
     ExprId directDiffuse = f.construct(Type::vec(3), {t.f(0)}), directSpecular = directDiffuse;
     for (std::size_t i = 0; i < lights.kinds.size(); ++i) {
+        if (lights.kinds[i] == LightLayout::kExcluded) continue;  // not in the material's lightsNode
         const Incoming light = incoming(f, t, lights.kinds[i], i, fragmentView, positionWorld, normalWorld, variant.leafReceiver);
         const ExprId irradiance = f.mul(t.saturate(t.dot(n, light.direction)), light.color);
         directDiffuse = f.add(directDiffuse, f.mul(irradiance, brdfLambert));
@@ -1683,8 +1800,9 @@ StandardPrograms buildLit(bool phong, const VertexVariant& variant, const LightL
     // Linear HDR out: tone mapping and the output colour space belong to the output pass (output.h).
     out.albedo = diffuseColor;
     out.emissive = emissive;
-    f.output("color", materialOutput(f, variant, outgoing, materialAlpha(f, alpha, variant.alphaHash)));
+    f.output("color", materialOutput(f, variant, outgoing, materialAlpha(f, alpha, variant.alphaHash, alphaCutoff(f, slots, variant))));
     outputDepthNode(f, slots, variant);
+    lowerMrtOutputs(out, slots, variant);
     linkNodeVaryings(out, variant, local.position, local.normal);
     for (const Program* stage : {&out.vertex, &out.fragment}) {
         for (const Diagnostic& d : stage->diagnostics()) {
@@ -1714,8 +1832,9 @@ StandardPrograms buildBasic(const VertexVariant& variant) {
                 for (const auto& child : *list) if (visit(child)) return true;
             return false;
         };
-        for (const auto& node : variant.nodes.graphs()) if (visit(node)) return true;
-        return false;
+        bool found = false;
+        variant.nodes.forEachGraph([&](const graph::Node& n) { found = found || visit(n); });
+        return found;
     };
     const bool needsNormal = reads("normalView");
     const LocalVertex local = localVertex(v, variant, needsNormal || reads("normalWorldGeometry"));
@@ -1749,6 +1868,7 @@ StandardPrograms buildBasic(const VertexVariant& variant) {
             color = f.construct(Type::vec(4), {color, f.constant(1.0f)});
         f.output("color", color);
         outputDepthNode(f, slots, variant);  // rain's coast quad writes the coast's depth, so drops hide behind it
+        lowerMrtOutputs(out, slots, variant);
         linkNodeVaryings(out, variant, local.position, local.normal);
         return out;
     }
@@ -1756,6 +1876,7 @@ StandardPrograms buildBasic(const VertexVariant& variant) {
     // MeshBasicNodeMaterial.setupNormal: negateOnBackSide(normalViewGeometry); a normalNode is not read.
     const ExprId normalView = needsNormal ? facedNormal(f, variant, f.call("normalize", {f.varying("normalView", Type::vec(3))})) : kInvalid;
     graph::Lowering slots = slotLowering(f, variant, normalView);
+    discardMasked(f, slots, variant);
     const ExprId diffuse = slotValue(f, slots, variant.nodes.colorNode, Type::vec(4), f.uniform("diffuse", Type::vec(4)));
     ExprId texel = kInvalid;
     if (variant.background && !variant.nodes.colorNode) {
@@ -1774,8 +1895,9 @@ StandardPrograms buildBasic(const VertexVariant& variant) {
     const ExprId alpha = diffuseAlpha(f, slots, variant, diffuse, texel);
     const ExprId outgoing = variant.nodes.emissiveNode ? f.add(diffuseColor, slotValue(f, slots, variant.nodes.emissiveNode, Type::vec(3), kInvalid)) : diffuseColor;
     // Background.js writes opaque output regardless of the source texture's alpha.
-    f.output("color", materialOutput(f, variant, outgoing, variant.background ? f.constant(1.0f) : materialAlpha(f, alpha, variant.alphaHash)));
+    f.output("color", materialOutput(f, variant, outgoing, variant.background ? f.constant(1.0f) : materialAlpha(f, alpha, variant.alphaHash, alphaCutoff(f, slots, variant))));
     outputDepthNode(f, slots, variant);
+    lowerMrtOutputs(out, slots, variant);
     linkNodeVaryings(out, variant, local.position, local.normal);
     return out;
 }
@@ -1802,11 +1924,12 @@ StandardPrograms buildMaskedDepth(const VertexVariant& variant) {
     StandardPrograms out = buildBasic(variant);
     out.fragment = Program{Stage::Fragment};
     Program& f = out.fragment;
+    graph::Lowering slots = slotLowering(f, variant, kInvalid);
     const ExprId texel = mapTexel(f, variant);
     ExprId alpha = f.swizzle(f.uniform("diffuse", Type::vec(4)), "w");
     if (texel != kInvalid) alpha = f.mul(alpha, f.swizzle(texel, "w"));
     // The stage needs an output; a depth-only pipeline has no colour target, so it is never written.
-    f.output("color", f.construct(Type::vec(4), {f.constant(0.0f), f.constant(0.0f), f.constant(0.0f), materialAlpha(f, alpha, variant.alphaHash)}));
+    f.output("color", f.construct(Type::vec(4), {f.constant(0.0f), f.constant(0.0f), f.constant(0.0f), materialAlpha(f, alpha, variant.alphaHash, alphaCutoff(f, slots, variant))}));
     out.vertex.linkVaryings(out.fragment);
     return out;
 }
@@ -1874,12 +1997,12 @@ static ExprId alphaHashThreshold(Program& f) {
     return f.call("clamp", {f.select(f.less(x, t.oneMinus(a)), f.select(f.less(x, a), c0, c1), c2), t.f(kEpsilon), t.f(1)});
 }
 
-ExprId materialAlpha(Program& f, ExprId alpha, bool alphaHash) {
-    const ExprId alphaTest = f.uniform("alphaTest", Type::f32());
+ExprId materialAlpha(Program& f, ExprId alpha, bool alphaHash, ExprId cutoff) {
+    const ExprId alphaTest = f.uniform("alphaTest", Type::f32());  // always declared: the uniform layout follows creation order
     const ExprId no = f.constant(false);
-    // alpha <= alphaTest is !(alphaTest < alpha); the test applies only when alphaTest > 0.
-    const ExprId atOrBelow = f.select(f.less(alphaTest, alpha), no, f.constant(true));
-    f.If(f.select(f.less(f.constant(0.0f), alphaTest), atOrBelow, no), [&] { f.discard(); });
+    // alpha <= cutoff is !(cutoff < alpha). three's alphaTestNode tests always; the flat alphaTest only when > 0.
+    const ExprId atOrBelow = f.select(f.less(cutoff == kInvalid ? alphaTest : cutoff, alpha), no, f.constant(true));
+    f.If(cutoff == kInvalid ? f.select(f.less(f.constant(0.0f), alphaTest), atOrBelow, no) : atOrBelow, [&] { f.discard(); });
     if (alphaHash) {
         const ExprId threshold = alphaHashThreshold(f);
         f.If(f.less(alpha, threshold), [&] { f.discard(); });

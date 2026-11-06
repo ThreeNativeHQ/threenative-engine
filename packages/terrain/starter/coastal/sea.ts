@@ -21,6 +21,7 @@ import {
   clamp,
   color,
   float,
+  fwidth,
   mix,
   mx_fractal_noise_float,
   mx_noise_float,
@@ -124,6 +125,11 @@ function createSeaMesh(ocean: SpectralOcean, data: ICoastalSeaData): Mesh {
   // through more than 2 m of water leaves sheltered lagoons out of the breaking-surf mask.
   const n = data.resolution;
   const cell = data.size / (n - 1);
+  // The surveyed deepest bed sets the tint range and the open-sea continuation.
+  const deepDepth = data.heights.reduce(
+    (deepest, height) => Math.max(deepest, level - height),
+    cell,
+  );
   const distance = Float32Array.from(data.heights, (height) => (height >= level ? 0 : 1e4));
   const exposed = new Uint8Array(n * n);
   const queue: number[] = [];
@@ -207,12 +213,15 @@ function createSeaMesh(ocean: SpectralOcean, data: ICoastalSeaData): Mesh {
     roughness: 0.12,
   });
   const shoreUV = (x: Node<"float">, z: Node<"float">) =>
-    vec2(x.div(data.size).add(0.5), z.div(data.size).add(0.5));
+    vec2(x.div(data.size).add(0.5), z.div(data.size).add(0.5))
+      .mul((n - 1) / n)
+      .add(0.5 / n);
+  // Outside the surveyed bed, continue its edge depth before easing into open sea.
   const inside = (x: Node<"float">, z: Node<"float">) =>
-    float(1).sub(smoothstep(data.size / 2 - 2, data.size / 2 + 2, x.abs().max(z.abs())));
+    float(1).sub(smoothstep(data.size / 2, data.size * 0.75, x.abs().max(z.abs())));
   const vertexLand = texture(heightTexture, shoreUV(positionLocal.x, positionLocal.z)).r;
   const vertexDepth = mix(
-    float(28),
+    float(deepDepth),
     float(level).sub(vertexLand),
     inside(positionLocal.x, positionLocal.z),
   );
@@ -246,7 +255,7 @@ function createSeaMesh(ocean: SpectralOcean, data: ICoastalSeaData): Mesh {
   );
   const shore = texture(heightTexture, shoreUV(positionWorld.x, positionWorld.z));
   const local = inside(positionWorld.x, positionWorld.z);
-  const depth = mix(float(28), positionWorld.y.sub(shore.r), local);
+  const depth = mix(float(deepDepth), float(level).sub(shore.r), local);
   const damp = smoothstep(0.1, 2.5, depth);
   const wind = mx_noise_float(
     vec3(positionWorld.x.mul(0.07).sub(time.mul(0.04)), positionWorld.z.mul(0.07), time.mul(0.015)),
@@ -269,24 +278,48 @@ function createSeaMesh(ocean: SpectralOcean, data: ICoastalSeaData): Mesh {
   const bounced = view.negate().reflect(normal);
   // The standard material supplies Fresnel and the sun's specular lobe; the sky supplies the radiance.
   material.envNode = mix(color(0xb6cbd5), color(0x568fbd), clamp(bounced.y, 0, 1)).mul(1.15);
-  const water = mix(OCEAN_LOOK.shallow, OCEAN_LOOK.deep, smoothstep(0.4, 9, depth));
-  const surf = mx_noise_float(
-    vec3(positionWorld.x.mul(0.9), positionWorld.z.mul(0.9), time.mul(0.45)),
-  )
+  const water = mix(
+    OCEAN_LOOK.shallow,
+    OCEAN_LOOK.deep,
+    smoothstep(deepDepth * 0.25, deepDepth, depth).pow(2),
+  );
+  const surfPoint = vec3(positionWorld.x, positionWorld.z, time.mul(0.45));
+  const broadSurf = mx_noise_float(surfPoint.mul(vec3(0.18, 0.18, 0.3)))
     .mul(0.5)
     .add(0.5);
+  const surf = mx_noise_float(surfPoint.mul(vec3(0.9, 0.9, 1)))
+    .mul(0.5)
+    .add(0.5);
+  // A pixel covering a bubble fades it out; derivative-wide thresholds soften the remaining edges.
+  const footprint = fwidth(positionWorld.xz).length().mul(0.9);
+  const antialias = fwidth(surf).max(0.025);
+  const bubbles = smoothstep(
+    float(0.5).sub(broadSurf.mul(0.16)).sub(antialias),
+    float(0.65).sub(broadSurf.mul(0.16)).add(antialias),
+    surf,
+  ).mul(float(1).sub(smoothstep(0.35, 1, footprint)));
+  const shoreReach = float(1)
+    .sub(smoothstep(3, 12, shore.g))
+    .mul(shore.b.mul(0.65).add(0.35))
+    .mul(local);
   const shoreFoam = float(1)
-    .sub(smoothstep(0.25, 1.8, depth))
+    .sub(smoothstep(0.25, 1.8, depth.add(time.mul(0.85).sin().mul(0.18))))
     .mul(smoothstep(0.015, 0.08, depth))
-    .mul(float(1).sub(smoothstep(1, 5.5, shore.g)))
-    .mul(smoothstep(0.25, 0.65, surf).mul(0.7).add(0.3))
-    .mul(shore.b)
-    .mul(local)
-    .mul(0.8);
-  material.colorNode = mix(water, color(FOAM), shoreFoam);
+    .mul(bubbles)
+    .mul(broadSurf.mul(0.6).add(0.25))
+    .mul(shoreReach);
+  const swash = float(1)
+    .sub(smoothstep(0.1, 2.5, depth))
+    .mul(smoothstep(0, 0.12, depth))
+    .mul(broadSurf.mul(0.5).add(0.5))
+    .mul(shoreReach)
+    .mul(0.12);
+  material.colorNode = mix(water, color(FOAM), shoreFoam.add(swash));
   // The surface runs to the fogged horizon, and fades into the sky there rather than ending on a hard band.
   const horizonFade = float(1).sub(smoothstep(1200, 3500, eyeDistance));
-  material.opacityNode = smoothstep(-0.03, 0.35, depth).max(shoreFoam.mul(0.9)).mul(horizonFade);
+  material.opacityNode = smoothstep(0, Math.min(2.5, deepDepth), depth)
+    .max(shoreFoam.mul(0.9))
+    .mul(horizonFade);
   material.roughnessNode = mix(
     float(0.12).add(smoothstep(70, 700, eyeDistance).mul(0.07)),
     float(0.7),

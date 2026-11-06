@@ -1,10 +1,25 @@
 import {
+  edgeVertexHeight,
+  edgeVertexIndex,
+  opposingEdge,
+  pushBridgeState,
+  pushLevelState,
+  renderedLevel,
+  sameState,
+  seamObservation,
+  seamState,
+  tileEdgeFrame,
+  validateBridgeTriangleTopology,
+} from "./world-tile-observation.js";
+
+import {
   Box3,
-  BufferAttribute,
+  type BufferAttribute,
   BufferGeometry,
   type Camera,
+  Frustum,
   LOD,
-  type Matrix4,
+  Matrix4,
   Mesh,
   Object3D,
   Sphere,
@@ -35,16 +50,76 @@ import {
   createTerrainJobRunner,
   edgeWorldPoint,
 } from "./terrain-jobs.js";
-import { summarizeWorldTopology } from "./world-topology.js";
-import { terrainValidationRequested } from "./world-validate.js";
 import {
   Heightfield,
   type IHeightfieldOrigin,
   type IHeightfieldSamplerOptions,
   type IHeightfieldWorldPassOptions,
-} from "./world.js";
+} from "./world-heightfield.js";
+import {
+  CONSTRUCTION_CHUNK_SAMPLES,
+  EmptyCollider,
+  LOD_POP_THRESHOLD,
+  LOD_TRANSITION_FRAMES,
+  MAX_RAW_TOPOLOGY_SAMPLES,
+  TERRAIN_MERGE_BLOCK,
+  TERRAIN_TILE_MARKER_MS,
+  TerrainTileBudgetError,
+  blockCoordinates,
+  blockKeyFor,
+  estimatedLevelBytes,
+  estimatedTileBytes,
+  finite,
+  integerAtLeast,
+  keyFor,
+  lodLevelForDistance,
+  positive,
+  resolutionFor,
+  settleJob,
+  terrainMergeOptedOut,
+  timedSpan,
+  validateTopologyObservation,
+} from "./world-tile-budget.js";
+import { summarizeWorldTopology } from "./world-topology.js";
+import { terrainValidationRequested } from "./world-validate.js";
 
-type MeshSurface = NonNullable<ConstructorParameters<typeof Mesh>[1]>;
+export { TerrainTileBudgetError } from "./world-tile-budget.js";
+// The four seams `world-tile-seams.spec.ts` pins stay reachable from this module so a consumer of the
+// old path keeps working: they moved to the leaf modules with the code that reads them (PRD-797).
+export { neighborPairs, neighborBridgeRequest } from "./world-tile-stitch.js";
+export { interpolatedLevelHeight, surfaceDeltaFromSamples } from "./world-tile-lod.js";
+import type { MeshSurface } from "./world-tile-geometry.js";
+import {
+  buildLevel,
+  fieldHeightGrid,
+  geometryBytes,
+  mergeJob,
+  mergedBlockGeometry,
+  restoreLevelEdge,
+  restoreLevelSurface,
+  terrainMesh,
+  updateStitchBridge,
+} from "./world-tile-geometry.js";
+import {
+  buildLodMorphTargets,
+  coarsestSelectableLevel,
+  surfaceDeltaFromSamples,
+  surfaceHeights,
+  updateLodMorph,
+  updateLodTransitionGeometry,
+  widenLevelBoundsForBlend,
+} from "./world-tile-lod.js";
+import type { IStitchRequest } from "./world-tile-stitch.js";
+import {
+  collectNeighborPairs,
+  coordinatedLevels,
+  hasPendingTarget,
+  neighborBridgeRequest,
+  neighborLodCorrection,
+  neighborPairKey,
+  newStitchBridge,
+  setManualLodLevel,
+} from "./world-tile-stitch.js";
 
 export interface IWorldTileCollider {
   dispose(): void;
@@ -130,6 +205,13 @@ export interface IWorldTilesOptions {
   readonly residentByteBudget: number;
   readonly residentTileBudget: number;
   readonly sampleHeight: IHeightfieldSamplerOptions["sampleHeight"];
+  /** The ground's footprint in tile-local metres: a tile wholly outside it is never meshed (it only repeats the edge sample). */
+  readonly extent?: {
+    readonly maxX: number;
+    readonly maxZ: number;
+    readonly minX: number;
+    readonly minZ: number;
+  };
   /** How deep each edge skirt extends below its surface. Defaults to one tile width. */
   readonly skirtDepth?: number;
   /** Square tile neighborhood to consider around the followed point. Defaults to 1. */
@@ -162,7 +244,7 @@ export interface IWorldTilesOptions {
   readonly topologyObservation?: IWorldTilesTopologyObservation;
 }
 
-interface ILevelGeometry {
+export interface ILevelGeometry {
   surfaceError: number;
   readonly edgeSamples: IEdgeSamples;
   geometry: BufferGeometry;
@@ -172,14 +254,14 @@ interface ILevelGeometry {
   readonly skirtVertexCount: number;
 }
 
-interface IEdgeSamples {
+export interface IEdgeSamples {
   readonly east: Float32Array;
   readonly north: Float32Array;
   readonly south: Float32Array;
   readonly west: Float32Array;
 }
 
-interface IResidentTile extends Omit<IWorldTile, "lodLevel"> {
+export interface IResidentTile extends Omit<IWorldTile, "lodLevel"> {
   readonly assetKey?: string;
   collider: IWorldTileCollider | undefined;
   readonly levels: readonly ILevelGeometry[];
@@ -192,14 +274,14 @@ interface IResidentTile extends Omit<IWorldTile, "lodLevel"> {
   readonly skirts: number;
 }
 
-interface ILodTransition {
+export interface ILodTransition {
   readonly from: number;
   readonly to: number;
   elapsedFrames: number;
   remainingFrames: number;
 }
 
-interface IStitchBridge {
+export interface IStitchBridge {
   readonly keys: readonly [string, string];
   geometry: BufferGeometry;
   readonly mesh: Mesh;
@@ -240,1739 +322,7 @@ interface ISeamObservation {
   seenPlain: number;
 }
 
-const MAX_RAW_TOPOLOGY_SAMPLES = 10_000;
-const LOD_POP_THRESHOLD = 16;
-const LOD_TRANSITION_FRAMES = 3;
-/** Maximum sampled vertices or quads in one terrain-construction admission unit. */
-const CONSTRUCTION_CHUNK_SAMPLES = 256;
-/** Tiles per side in a merged super-tile block. Small, because a block is culled as one object. */
-const TERRAIN_MERGE_BLOCK = 4;
-const TERRAIN_MERGE_FLAG = "TN_TERRAIN_MERGE";
-const TERRAIN_TILE_MARKER_MS = 5_000;
-const BRIDGE_COORDINATE_EPSILON = 1e-4;
-
-/**
- * Whether this launch asked for terrain tile merging to be turned off.
- *
- * The merge is on by default, so this only has to hear the three ways every other launch switch is
- * read: a native launch sets the environment variable, a browser asks with the query string, and a
- * test or harness sets the global. Only `0` and `false` count, so a URL that never mentioned the
- * switch — or one that still carries the `=1` that used to ask for the merge — stays on.
- */
-function terrainMergeOptedOut(): boolean {
-  const host = globalThis as { process?: { env?: Record<string, unknown> } } & Record<
-    string,
-    unknown
-  >;
-  const fromEnv = host.process?.env?.[TERRAIN_MERGE_FLAG];
-  if (fromEnv === "0" || fromEnv === "false") return true;
-  const query = globalThis.location?.search;
-  if (typeof query === "string" && /[?&]tnTerrainMerge=(?:0|false)(?:&|$)/u.test(query))
-    return true;
-  return (
-    host.__tnTerrainMerge === false || host.__tnTerrainMerge === 0 || host.__tnTerrainMerge === "0"
-  );
-}
-
-/** A block's key: its LOD tier and which K×K cell of the tile grid it covers. */
-function blockKeyFor(lod: number, tileX: number, tileZ: number): string {
-  return `${String(lod)}:${String(Math.floor(tileX / TERRAIN_MERGE_BLOCK))},${String(
-    Math.floor(tileZ / TERRAIN_MERGE_BLOCK),
-  )}`;
-}
-
-function blockCoordinates(key: string): { lod: number; blockX: number; blockZ: number } {
-  const separator = key.indexOf(":");
-  const comma = key.indexOf(",", separator + 1);
-  return {
-    lod: Number(key.slice(0, separator)),
-    blockX: Number(key.slice(separator + 1, comma)),
-    blockZ: Number(key.slice(comma + 1)),
-  };
-}
-const BRIDGE_COORDINATE_RELATIVE_EPSILON = 2 ** -22;
-const BRIDGE_STRIP_INDEX_PATTERN = [0, 1, 2, 2, 1, 3, 2, 1, 0, 3, 1, 2] as const;
-type PositionAttribute = BufferAttribute | InterleavedBufferAttribute;
-
-function bridgeCoordinateMatches(actual: number, expected: number): boolean {
-  return (
-    Math.abs(actual - expected) <=
-    Math.max(
-      BRIDGE_COORDINATE_EPSILON,
-      Math.max(1, Math.abs(actual), Math.abs(expected)) * BRIDGE_COORDINATE_RELATIVE_EPSILON,
-    )
-  );
-}
-
-class EmptyCollider implements IWorldTileCollider {
-  #disposed = false;
-
-  get disposed(): boolean {
-    return this.#disposed;
-  }
-
-  dispose(): void {
-    this.#disposed = true;
-  }
-}
-
-/**
- * The one throw a hard cap produces, so a caller composing `TerrainTiles` can tell "a tile no longer
- * fits" from a defect in game-owned input by `instanceof` rather than by a name any error can borrow.
- * Not re-exported from `world.ts`: the cap's condition is the caller's to absorb, not to handle.
- */
-export class TerrainTileBudgetError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "TerrainTileBudgetError";
-  }
-}
-
-function finite(value: number, name: string): number {
-  if (!Number.isFinite(value)) throw new Error(`TerrainTiles ${name} must be finite.`);
-  return value;
-}
-
-function positive(value: number, name: string): number {
-  finite(value, name);
-  if (value <= 0) throw new Error(`TerrainTiles ${name} must be greater than zero.`);
-  return value;
-}
-
-function integerAtLeast(value: number, minimum: number, name: string): number {
-  if (!Number.isInteger(value) || value < minimum)
-    throw new Error(`TerrainTiles ${name} must be an integer of at least ${minimum}.`);
-  return value;
-}
-
-function keyFor(tileX: number, tileZ: number): string {
-  return `${String(tileX)}:${String(tileZ)}`;
-}
-
-function lodLevelForDistance(distance: number, thresholds: readonly number[]): number {
-  let level = 0;
-  for (const threshold of thresholds) {
-    if (distance < threshold) break;
-    level += 1;
-  }
-  return level;
-}
-
-function resolutionFor(tileResolution: number, factor: number): number {
-  const cells = (tileResolution - 1) / factor;
-  if (!Number.isInteger(cells))
-    throw new Error("TerrainTiles tileResolution minus one must divide every lod factor.");
-  return cells + 1;
-}
-
-function morphBytes(resolution: number, targets: number): number {
-  const vertices = resolution * resolution + resolution * 4;
-  // Stock Three packs both vec3 deltas into RGBA32F: retain its CPU texture and GPU copy too.
-  const texels = vertices * 2;
-  // Any row width pads to < 2 * texels; admission precedes renderer-limit discovery.
-  const packedTexels = texels * 2;
-  return targets * (vertices * 3 * 4 * 2 + packedTexels * 4 * 4 * 2);
-}
-
-function estimatedLevelBytes(resolution: number, targets = 0): number {
-  const vertices = resolution * resolution + resolution * 4;
-  const triangles = (resolution - 1) * (resolution - 1) + (resolution - 1) * 4;
-  const edgeSampleBytes = resolution * 4 * Float32Array.BYTES_PER_ELEMENT;
-  return (
-    vertices * 3 * Float32Array.BYTES_PER_ELEMENT * 2 +
-    triangles * 6 * Uint32Array.BYTES_PER_ELEMENT +
-    edgeSampleBytes +
-    morphBytes(resolution, targets)
-  );
-}
-
-function estimatedFieldBytes(
-  tileResolution: number,
-  worldPasses: IHeightfieldWorldPassOptions | undefined,
-): number {
-  const sampleBytes = tileResolution * tileResolution * Float32Array.BYTES_PER_ELEMENT;
-  if (worldPasses === undefined) return sampleBytes * 2;
-  // The GPU path retains the canonical/collider values plus several ping-pong storage buffers.
-  // Admission is deliberately conservative so backend allocation overhead cannot break the cap.
-  return sampleBytes * (worldPasses.gpu === false ? 4 : 24);
-}
-
-function estimatedTileBytes(
-  tileResolution: number,
-  factors: readonly number[],
-  worldPasses: IHeightfieldWorldPassOptions | undefined,
-  validate: boolean,
-): number {
-  return factors.reduce(
-    (total, factor) =>
-      total +
-      estimatedLevelBytes(
-        resolutionFor(tileResolution, factor),
-        validate ? 0 : factors.filter((candidate) => candidate >= factor).length - 1,
-      ),
-    estimatedFieldBytes(tileResolution, worldPasses),
-  );
-}
-
-function tiledObservationResolution(
-  extent: number,
-  tileSize: number,
-  tileResolution: number,
-  axis: string,
-): number {
-  const tileCount = extent / tileSize;
-  if (!Number.isInteger(tileCount) || tileCount < 1)
-    throw new Error(
-      `TerrainTiles topologyObservation ${axis} must cover a positive whole number of rendered tiles.`,
-    );
-  return tileCount * (tileResolution - 1) + 1;
-}
-
-function validateTopologyObservation(
-  observation: IWorldTilesTopologyObservation,
-  tileSize: number,
-  tileResolution: number,
-): void {
-  const expectedColumns = tiledObservationResolution(
-    observation.width,
-    tileSize,
-    tileResolution,
-    "width",
-  );
-  const expectedRows = tiledObservationResolution(
-    observation.depth,
-    tileSize,
-    tileResolution,
-    "depth",
-  );
-  if (observation.columns !== expectedColumns)
-    throw new Error(
-      `TerrainTiles topologyObservation columns must match the rendered tile grid (expected ${String(expectedColumns)}, received ${String(observation.columns)}).`,
-    );
-  if (observation.rows !== expectedRows)
-    throw new Error(
-      `TerrainTiles topologyObservation rows must match the rendered tile grid (expected ${String(expectedRows)}, received ${String(observation.rows)}).`,
-    );
-}
-
-function edgeSamplesFor(values: readonly number[], resolution: number): IEdgeSamples {
-  const north = new Float32Array(resolution);
-  const south = new Float32Array(resolution);
-  const west = new Float32Array(resolution);
-  const east = new Float32Array(resolution);
-  for (let index = 0; index < resolution; index += 1) {
-    north[index] = values[index] as number;
-    south[index] = values[(resolution - 1) * resolution + index] as number;
-    west[index] = values[index * resolution] as number;
-    east[index] = values[index * resolution + resolution - 1] as number;
-  }
-  return { east, north, south, west };
-}
-
-/** One field's own rectangle and side, which is all a world point along an edge needs. */
-function tileEdgeFrame(field: Heightfield, side: keyof IEdgeSamples): ITerrainEdgeFrame {
-  return { depth: field.depth, origin: field.origin, side, width: field.width };
-}
-
-/**
- * Apply a job's result, whenever it arrives. An inline host resolves inside the call, so the caller
- * keeps the synchronous shape it always had; a worker host applies in its reply. A reply that throws
- * rejects the promise instead of returning, so a budget overflow off this thread is a loud failure
- * rather than a swallowed one.
- */
-function settleJob<T>(result: T | Promise<T>, apply: (value: T) => void): void {
-  if (result instanceof Promise) result.then(apply);
-  else apply(result);
-}
-
-/**
- * Runs one unit of main-thread terrain work and charges it to a frame span.
- *
- * Added, not bracketed: a worker host's block swap arrives in a job reply and an inline host's runs
- * inside the same `follow`, so `begin`/`end` at both call sites would nest and count one unit twice.
- * `addSpan` accumulates whatever runs on this thread with no nesting to get wrong, and costs one
- * guarded return when spans are off — no clock read, no allocation. The frame-span table's
- * `TN_FRAME_SPANS` report is where the number surfaces; nothing here decides anything.
- */
-function timedSpan<T>(id: SpanId, run: () => T): T {
-  if (spanRecorder() === undefined) return run();
-  const start = spanNow();
-  try {
-    return run();
-  } finally {
-    addSpan(id, spanNow() - start);
-  }
-}
-
-function edgeVertexIndex(level: ILevelGeometry, side: keyof IEdgeSamples, index: number): number {
-  const row = side === "north" ? 0 : side === "south" ? level.resolution - 1 : index;
-  const column = side === "west" ? 0 : side === "east" ? level.resolution - 1 : index;
-  return row * level.resolution + column;
-}
-
-function appendQuad(
-  indices: number[],
-  topLeft: number,
-  bottomLeft: number,
-  topRight: number,
-  bottomRight: number,
-): void {
-  indices.push(topLeft, bottomLeft, topRight, topRight, bottomLeft, bottomRight);
-}
-
-/**
- * The field's own sample heights, once, with a ring of clamped neighbours around them.
- *
- * `normalAt` reads the height at the point and at its four field-cell neighbours, so a level built
- * vertex by vertex asked the field six times per vertex — 33,800 `heightAt` calls for a 65x65 tile
- * and every coarser level with it (46 ms + 46 ms a streaming frame). This is the same set of samples
- * read once, and the ring repeats the edge sample, which is exactly the clamp `normalAt` applies at
- * the field's own border. One grid serves every level of the tile, because a level's vertices are
- * every `lodFactor`-th of the field's.
- */
-function* fieldHeightGrid(field: Heightfield, chunked: boolean): Generator<void, Float32Array> {
-  const columns = field.columns + 2;
-  const cellWidth = field.width / (field.columns - 1);
-  const cellDepth = field.depth / (field.rows - 1);
-  const minimumX = field.origin.x - field.width / 2;
-  const minimumZ = field.origin.z - field.depth / 2;
-  const grid = new Float32Array(columns * (field.rows + 2));
-  for (let row = 0; row < field.rows + 2; row += 1) {
-    const z = minimumZ + Math.min(field.rows - 1, Math.max(0, row - 1)) * cellDepth;
-    for (let column = 0; column < columns; column += 1) {
-      const x = minimumX + Math.min(field.columns - 1, Math.max(0, column - 1)) * cellWidth;
-      grid[row * columns + column] = field.heightAt(x, z);
-      if (chunked && (row * columns + column + 1) % CONSTRUCTION_CHUNK_SAMPLES === 0) yield;
-    }
-  }
-  return grid;
-}
-
-/**
- * How many field samples a level's vertices are apart. An integer by `resolutionFor`'s own check,
- * and the reason one grid serves every level: vertex column `n` sits on field sample `n * step`.
- */
-function fieldStep(field: Heightfield, resolution: number): number {
-  const step = (field.columns - 1) / (resolution - 1);
-  if (!Number.isInteger(step) || step < 1)
-    throw new Error("TerrainTiles level vertices must land on the field's own sample grid.");
-  return step;
-}
-
-/**
- * Tags a mesh as terrain, so the frame budget counts its main-pass draw under `terrain` instead of
- * under the `other` every mesh no world system claimed lands in. Every mesh this file creates goes
- * through here — a tile level, a stitch bridge and a merged block — because a source that is tagged
- * at three of the four places it exists is a split nobody can reconcile.
- */
-function terrainMesh(mesh: Mesh): Mesh {
-  mesh.userData.tnDrawSource = "terrain";
-  // Visibility only swaps this mesh with a twin over the same ground (its merged block, or the
-  // neighbouring LOD level), so a cached shadow map need not redraw for it; see `casterFlag`.
-  mesh.userData.tnShadowSwap = true;
-  return mesh;
-}
-
-/** Three's box/sphere arithmetic, over the same float32 positions, in admission-sized scans. */
-function* levelBounds(
-  positions: Float32Array,
-  chunked: boolean,
-): Generator<void, { box: Box3; sphere: Sphere }> {
-  const box = new Box3();
-  const point = new Vector3();
-  for (let index = 0; index < positions.length; index += 3) {
-    point.fromArray(positions, index);
-    box.expandByPoint(point);
-    if (chunked && (index / 3 + 1) % CONSTRUCTION_CHUNK_SAMPLES === 0) yield;
-  }
-  const sphere = new Sphere();
-  box.getCenter(sphere.center);
-  let radiusSquared = 0;
-  for (let index = 0; index < positions.length; index += 3) {
-    point.fromArray(positions, index);
-    radiusSquared = Math.max(radiusSquared, sphere.center.distanceToSquared(point));
-    if (chunked && (index / 3 + 1) % CONSTRUCTION_CHUNK_SAMPLES === 0) yield;
-  }
-  sphere.radius = Math.sqrt(radiusSquared);
-  return { box, sphere };
-}
-
-function* buildLevel(
-  field: Heightfield,
-  resolution: number,
-  skirtDepth: number,
-  surface: MeshSurface,
-  grid: Float32Array,
-  chunked: boolean,
-): Generator<void, ILevelGeometry> {
-  const positions: number[] = [];
-  const normals: number[] = [];
-  const heights: number[] = [];
-  const minimumX = field.origin.x - field.width / 2;
-  const minimumZ = field.origin.z - field.depth / 2;
-  const cellWidth = field.width / (resolution - 1);
-  const cellDepth = field.depth / (resolution - 1);
-  const fieldCellWidth = field.width / (field.columns - 1);
-  const fieldCellDepth = field.depth / (field.rows - 1);
-  const gridColumns = field.columns + 2;
-  const step = fieldStep(field, resolution);
-  const normal = new Vector3();
-  for (let row = 0; row < resolution; row += 1) {
-    const z = minimumZ + row * cellDepth;
-    const fieldRow = row * step;
-    const gridRow = fieldRow + 1;
-    for (let column = 0; column < resolution; column += 1) {
-      const x = minimumX + column * cellWidth;
-      const fieldColumn = column * step;
-      const at = gridRow * gridColumns + fieldColumn + 1;
-      const height = grid[at] as number;
-      heights.push(height);
-      positions.push(x - field.origin.x, height, z - field.origin.z);
-      // `normalAt`'s stencil, off the same grid: a field cell either side, clamped at the border,
-      // over the distance those two samples really are apart.
-      const column0 = Math.min(field.columns - 1, Math.max(0, fieldColumn - 1));
-      const column1 = Math.min(field.columns - 1, fieldColumn + 1);
-      const row0 = Math.min(field.rows - 1, Math.max(0, fieldRow - 1));
-      const row1 = Math.min(field.rows - 1, fieldRow + 1);
-      const slopeX =
-        ((grid[gridRow * gridColumns + column1 + 1] as number) -
-          (grid[gridRow * gridColumns + column0 + 1] as number)) /
-        ((column1 - column0) * fieldCellWidth);
-      const slopeZ =
-        ((grid[(row1 + 1) * gridColumns + fieldColumn + 1] as number) -
-          (grid[(row0 + 1) * gridColumns + fieldColumn + 1] as number)) /
-        ((row1 - row0) * fieldCellDepth);
-      normal.set(-slopeX, 1, -slopeZ).normalize();
-      normals.push(normal.x, normal.y, normal.z);
-      if (chunked && (row * resolution + column + 1) % CONSTRUCTION_CHUNK_SAMPLES === 0) yield;
-    }
-  }
-  const indices: number[] = [];
-  for (let row = 0; row < resolution - 1; row += 1) {
-    for (let column = 0; column < resolution - 1; column += 1) {
-      const topLeft = row * resolution + column;
-      appendQuad(indices, topLeft, topLeft + resolution, topLeft + 1, topLeft + resolution + 1);
-      if (chunked && (row * (resolution - 1) + column + 1) % CONSTRUCTION_CHUNK_SAMPLES === 0)
-        yield;
-    }
-  }
-
-  const edges = [
-    (index: number) => index,
-    (index: number) => (resolution - 1) * resolution + index,
-    (index: number) => index * resolution,
-    (index: number) => index * resolution + resolution - 1,
-  ];
-  for (const edge of edges) {
-    const bottom = positions.length / 3;
-    for (let index = 0; index < resolution; index += 1) {
-      const top = edge(index);
-      positions.push(
-        positions[top * 3] as number,
-        (positions[top * 3 + 1] as number) - skirtDepth,
-        positions[top * 3 + 2] as number,
-      );
-      normals.push(0, 1, 0);
-    }
-    for (let index = 0; index < resolution - 1; index += 1) {
-      const topLeft = edge(index);
-      const topRight = edge(index + 1);
-      appendQuad(indices, topLeft, bottom + index, topRight, bottom + index + 1);
-    }
-  }
-
-  const positionArray = Float32Array.from(positions);
-  const bounds = yield* levelBounds(positionArray, chunked);
-  const geometry = new BufferGeometry();
-  geometry.morphTargetsRelative = true;
-  geometry.setAttribute("position", new BufferAttribute(positionArray, 3));
-  geometry.setAttribute("normal", new BufferAttribute(Float32Array.from(normals), 3));
-  geometry.setIndex(new BufferAttribute(Uint32Array.from(indices), 1));
-  geometry.boundingBox = bounds.box;
-  geometry.boundingSphere = bounds.sphere;
-  const skirt = inspectSkirtGeometry(geometry, resolution, edges);
-  return {
-    surfaceError: 0,
-    edgeSamples: edgeSamplesFor(heights, resolution),
-    geometry,
-    mesh: terrainMesh(new Mesh(geometry, surface)),
-    resolution,
-    skirtDepth: skirt.depth,
-    skirtVertexCount: skirt.vertexCount,
-  };
-}
-
-/**
- * A block's merged attributes, as the geometry the main thread swaps in. The concatenation itself
- * is `mergeBlockAttributes`, which runs in a worker wherever a host has one; this is the part that
- * cannot leave the main thread — a `BufferGeometry` and its bounds.
- */
-function mergedBlockGeometry(result: ITerrainMergeResult): BufferGeometry {
-  const geometry = new BufferGeometry();
-  geometry.setAttribute("position", new BufferAttribute(result.positions, 3));
-  geometry.setAttribute("normal", new BufferAttribute(result.normals, 3));
-  geometry.setIndex(new BufferAttribute(result.indices, 1));
-  geometry.computeBoundingBox();
-  geometry.computeBoundingSphere();
-  return geometry;
-}
-
-/** One settled tile level's attributes, as the merge job reads them. */
-function mergeJob(
-  parts: readonly { readonly geometry: BufferGeometry; readonly origin: IHeightfieldOrigin }[],
-  blockOrigin: IHeightfieldOrigin,
-): ITerrainMergeJob {
-  return {
-    blockOrigin,
-    kind: "merge",
-    parts: parts.map(({ geometry, origin }) => {
-      const index = geometry.getIndex();
-      if (index === null)
-        throw new Error("TerrainTiles merged block geometry needs an index buffer.");
-      return {
-        indices: index.array as Uint32Array,
-        normals: (geometry.getAttribute("normal") as BufferAttribute).array as Float32Array,
-        origin,
-        positions: (geometry.getAttribute("position") as BufferAttribute).array as Float32Array,
-      };
-    }),
-  };
-}
-
-function inspectSkirtGeometry(
-  geometry: BufferGeometry,
-  resolution: number,
-  edges: readonly ((index: number) => number)[],
-): { depth: number; vertexCount: number } {
-  const position = geometry.getAttribute("position");
-  const surfaceVertexCount = resolution * resolution;
-  const vertexCount = position.count - surfaceVertexCount;
-  if (vertexCount < 0 || vertexCount % edges.length !== 0)
-    throw new Error("TerrainTiles generated skirt geometry has an invalid vertex count.");
-  if (vertexCount === 0) return { depth: 0, vertexCount: 0 };
-  const edgeVertexCount = vertexCount / edges.length;
-  let depth = Number.POSITIVE_INFINITY;
-  for (const [edgeIndex, edge] of edges.entries()) {
-    for (let index = 0; index < edgeVertexCount; index += 1) {
-      const top = edge(index);
-      const bottom = surfaceVertexCount + edgeIndex * edgeVertexCount + index;
-      depth = Math.min(depth, position.getY(top) - position.getY(bottom));
-    }
-  }
-  if (!Number.isFinite(depth) || depth < 0)
-    throw new Error("TerrainTiles generated skirt geometry has an invalid depth.");
-  return { depth, vertexCount };
-}
-
-function opposingEdge(
-  a: IResidentTile,
-  b: IResidentTile,
-): [keyof IEdgeSamples, keyof IEdgeSamples] {
-  if (a.tileX < b.tileX) return ["east", "west"];
-  if (a.tileX > b.tileX) return ["west", "east"];
-  if (a.tileZ < b.tileZ) return ["south", "north"];
-  return ["north", "south"];
-}
-
-function renderedLevel(tile: IResidentTile): ILevelGeometry | undefined {
-  return tile.levels.find(({ mesh }) => mesh.visible) ?? tile.levels[tile.lodLevel];
-}
-
-/**
- * An attribute's vertex count while every component it draws is finite, `NaN` once one is not.
- * Every writer this package owns goes through `needsUpdate`, which bumps `version`, so a version
- * alone cannot see a writer that reached past the attribute — and `NaN` never compares equal to the
- * finite state the last reconcile recorded, so a settled seam still fails closed on it. The scan is
- * the cost of that, against the per-sample walk it keeps off a settled frame, so it is validation:
- * with `validate` off the count alone is compared, and a writer that reached past `needsUpdate`
- * leaves a geometry the next reconcile reads the same way it always did.
- */
-function positionFingerprint(position: BufferAttribute | undefined, validate: boolean): number {
-  if (position === undefined) return -1;
-  if (!validate) return position.count;
-  const values = position.array;
-  for (let index = 0; index < values.length; index += 1)
-    if (!Number.isFinite(values[index])) return Number.NaN;
-  return position.count;
-}
-
-/**
- * What a pair's seam was reconciled against: each side's rendered level, its buffers and where its
- * mesh sits. Every writer to a level sets `needsUpdate`, which bumps the version, so an unchanged
- * state means neither facing edge can have moved since — and an edge is sampled through
- * `level.mesh.matrixWorld`, so a level mesh moved from outside changed what the observation reads
- * without touching a single version. Its own transform is what that matrix composes from, and it is
- * what any outside writer moves: an ancestor of it is either the tiles group, whose own movement the
- * bridge state already observes, or the LOD this package owns and never moves, and a seam exists
- * only where a bridge is. Numbers, not a string, and pushed rather than returned: this runs for
- * every resident pair every frame (544 pairs on a 289-tile ring) into a reused buffer, and the
- * intermediate array per level and per bridge was itself the cost the settled ring was measured on.
- */
-function pushLevelState(state: number[], level: ILevelGeometry): void {
-  const geometry = level.geometry;
-  const { mesh } = level;
-  state.push(
-    geometry.id,
-    (geometry.getAttribute("position") as BufferAttribute).version,
-    (geometry.getAttribute("normal") as BufferAttribute).version,
-    mesh.position.x,
-    mesh.position.y,
-    mesh.position.z,
-    mesh.quaternion.x,
-    mesh.quaternion.y,
-    mesh.quaternion.z,
-    mesh.quaternion.w,
-    mesh.scale.x,
-    mesh.scale.y,
-    mesh.scale.z,
-  );
-}
-
-/** Whether both sides of a pair have a rendered level, which is what its state needs to exist. */
-function pushPairState(state: number[], pair: NeighborPair): boolean {
-  const aLevel = renderedLevel(pair[0]);
-  const bLevel = renderedLevel(pair[1]);
-  if (aLevel === undefined || bLevel === undefined) return false;
-  pushLevelState(state, aLevel);
-  pushLevelState(state, bLevel);
-  return true;
-}
-
-/**
- * Everything a seam observation reads: the pair's state plus the bridge's placement, parent, draw
- * range and buffers. A diagnostic exists to catch a bridge moved, detached, emptied or rewritten,
- * so each of those has to change this state and force a fresh observation.
- */
-function pushBridgeState(state: number[], bridge: IStitchBridge, validate: boolean): void {
-  const { mesh } = bridge;
-  // The mesh's own geometry rather than the record's: a bridge retargeted to foreign geometry reads
-  // perfectly well from the record, and `bridgeCoverageContext` is the only thing that rejects it.
-  const geometry = mesh.geometry;
-  const position = geometry.getAttribute("position") as BufferAttribute | undefined;
-  const normal = geometry.getAttribute("normal") as BufferAttribute | undefined;
-  const index = geometry.getIndex();
-  mesh.updateMatrixWorld();
-  state.push(mesh.id, mesh.parent?.id ?? -1, mesh.visible ? 1 : 0);
-  const elements = mesh.matrixWorld.elements;
-  for (let element = 0; element < elements.length; element += 1)
-    state.push(elements[element] as number);
-  state.push(
-    geometry.id,
-    position?.version ?? -1,
-    positionFingerprint(position, validate),
-    normal?.id ?? -1,
-    index?.id ?? -1,
-    index?.version ?? -1,
-    geometry.drawRange.start,
-    geometry.drawRange.count,
-  );
-}
-
-function seamState(
-  pair: NeighborPair,
-  bridge: IStitchBridge | undefined,
-  validate: boolean,
-): number[] | undefined {
-  const state: number[] = [];
-  if (!pushPairState(state, pair)) return undefined;
-  if (bridge !== undefined) pushBridgeState(state, bridge, validate);
-  return state;
-}
-
-function sameState(a: readonly number[] | undefined, b: readonly number[] | undefined): boolean {
-  if (a === undefined || b === undefined || a.length !== b.length) return false;
-  for (let index = 0; index < a.length; index += 1) if (a[index] !== b[index]) return false;
-  return true;
-}
-
-function edgeVertexHeight(level: ILevelGeometry, side: keyof IEdgeSamples, index: number): number {
-  const value = level.geometry.getAttribute("position").getY(edgeVertexIndex(level, side, index));
-  if (!Number.isFinite(value))
-    throw new Error("TerrainTiles seam diagnostic edge height must be finite.");
-  return value;
-}
-
-function edgeWorldVertexHeight(
-  level: ILevelGeometry,
-  side: keyof IEdgeSamples,
-  index: number,
-  target: Vector3,
-): number {
-  const position = level.geometry.getAttribute("position");
-  const vertex = edgeVertexIndex(level, side, index);
-  const localX = position.getX(vertex);
-  const localY = position.getY(vertex);
-  const localZ = position.getZ(vertex);
-  if (!Number.isFinite(localX) || !Number.isFinite(localY) || !Number.isFinite(localZ))
-    throw new Error("TerrainTiles seam diagnostic bridge coordinates must be finite.");
-  target.set(localX, localY, localZ).applyMatrix4(level.mesh.matrixWorld);
-  if (!Number.isFinite(target.x) || !Number.isFinite(target.y) || !Number.isFinite(target.z))
-    throw new Error("TerrainTiles seam diagnostic bridge world coordinates must be finite.");
-  return target.y;
-}
-
-function edgeWorldHeight(
-  level: ILevelGeometry,
-  side: keyof IEdgeSamples,
-  normalized: number,
-  target: Vector3,
-): number {
-  const position = Math.max(0, Math.min(1, normalized)) * (level.resolution - 1);
-  const lower = Math.floor(position);
-  const upper = Math.min(level.resolution - 1, lower + 1);
-  const mix = position - lower;
-  return (
-    edgeWorldVertexHeight(level, side, lower, target) * (1 - mix) +
-    edgeWorldVertexHeight(level, side, upper, target) * mix
-  );
-}
-
-function bridgeEndpointWorldHeight(
-  position: PositionAttribute,
-  matrixWorld: Matrix4,
-  vertex: number,
-  expectedX: number,
-  expectedY: number,
-  expectedZ: number,
-  worldPosition: Vector3,
-): number {
-  const localX = position.getX(vertex);
-  const localY = position.getY(vertex);
-  const localZ = position.getZ(vertex);
-  if (!Number.isFinite(localX) || !Number.isFinite(localY) || !Number.isFinite(localZ))
-    throw new Error("TerrainTiles seam diagnostic bridge coordinates must be finite.");
-  worldPosition.set(localX, localY, localZ).applyMatrix4(matrixWorld);
-  if (
-    !Number.isFinite(worldPosition.x) ||
-    !Number.isFinite(worldPosition.y) ||
-    !Number.isFinite(worldPosition.z)
-  )
-    throw new Error("TerrainTiles seam diagnostic bridge world coordinates must be finite.");
-  if (
-    !Number.isFinite(expectedX) ||
-    !Number.isFinite(expectedY) ||
-    !Number.isFinite(expectedZ) ||
-    !bridgeCoordinateMatches(worldPosition.x, expectedX) ||
-    !bridgeCoordinateMatches(worldPosition.y, expectedY) ||
-    !bridgeCoordinateMatches(worldPosition.z, expectedZ)
-  )
-    throw new Error(
-      "TerrainTiles seam diagnostic bridge topology does not match current neighboring edges.",
-    );
-  return worldPosition.y;
-}
-
-function bridgeEndpointHeight(
-  bridge: IStitchBridge,
-  position: PositionAttribute,
-  sample: number,
-  endpoint: number,
-  tile: IResidentTile,
-  side: keyof IEdgeSamples,
-  level: ILevelGeometry,
-  worldPosition: Vector3,
-  expectedWorldPosition: Vector3,
-): number {
-  const sampleNormalized = sample / (bridge.resolution - 1);
-  const [expectedX, , expectedZ] = edgeWorldPoint(
-    tileEdgeFrame(tile.field, side),
-    sampleNormalized,
-    0,
-  );
-  const expectedY = edgeWorldHeight(level, side, sampleNormalized, expectedWorldPosition);
-  return bridgeEndpointWorldHeight(
-    position,
-    bridge.mesh.matrixWorld,
-    sample * 2 + endpoint,
-    expectedX,
-    expectedY,
-    expectedZ,
-    worldPosition,
-  );
-}
-
-interface IBridgeEndpoint {
-  readonly level: ILevelGeometry;
-  readonly side: keyof IEdgeSamples;
-  readonly tile: IResidentTile;
-}
-
-function bridgeEndpointPair(
-  a: IResidentTile,
-  aSide: keyof IEdgeSamples,
-  b: IResidentTile,
-  bSide: keyof IEdgeSamples,
-): readonly [IBridgeEndpoint, IBridgeEndpoint] {
-  const aLevel = renderedLevel(a);
-  const bLevel = renderedLevel(b);
-  if (aLevel === undefined || bLevel === undefined)
-    throw new Error(
-      "TerrainTiles seam diagnostic bridge topology has no rendered neighboring edge.",
-    );
-  const aEndpoint = { level: aLevel, side: aSide, tile: a };
-  const bEndpoint = { level: bLevel, side: bSide, tile: b };
-  return aLevel.resolution > bLevel.resolution ? [aEndpoint, bEndpoint] : [bEndpoint, aEndpoint];
-}
-
-function refreshEdgeSamples(level: ILevelGeometry): void {
-  for (const side of ["east", "north", "south", "west"] as const) {
-    const samples = level.edgeSamples[side];
-    for (let index = 0; index < level.resolution; index += 1)
-      samples[index] = edgeVertexHeight(level, side, index);
-  }
-}
-
-/**
- * A level mid-blend already carries the union of both levels' bounds, widened once when the
- * transition started, and the canonical edge this writes is inside it. So the blend's three frames
- * restore the edge and leave the bounds alone: recomputing them walked the level's ~4,500
- * positions per seam per frame, which is the `setFromBufferAttribute` + `computeBoundingSphere` +
- * `computeBoundingBox` + `expandByPoint` the six-second walk spent inside a transition.
- */
-function restoreLevelEdge(
-  tile: IResidentTile,
-  level: ILevelGeometry,
-  side: keyof IEdgeSamples,
-): boolean {
-  const field = tile.field;
-  const position = level.geometry.getAttribute("position");
-  const normalAttribute = level.geometry.getAttribute("normal");
-  const normal = new Vector3();
-  const frame = tileEdgeFrame(field, side);
-  let changed = false;
-  for (let index = 0; index < level.resolution; index += 1) {
-    const normalized = index / (level.resolution - 1);
-    const [x, , z] = edgeWorldPoint(frame, normalized, 0);
-    const vertex = edgeVertexIndex(level, side, index);
-    // Compared at float32, the precision the attributes store: a float64 sample never equals its
-    // stored copy, so an exact compare reported every edge changed on every call and recomputed
-    // the whole tile's bounds per seam per frame (~39 ms/frame on a 25-tile ring).
-    const height = Math.fround(field.heightAt(x, z));
-    field.normalAt(x, z, normal);
-    if (position.getY(vertex) !== height) {
-      position.setY(vertex, height);
-      changed = true;
-    }
-    if (
-      normalAttribute.getX(vertex) !== Math.fround(normal.x) ||
-      normalAttribute.getY(vertex) !== Math.fround(normal.y) ||
-      normalAttribute.getZ(vertex) !== Math.fround(normal.z)
-    ) {
-      normalAttribute.setXYZ(vertex, normal.x, normal.y, normal.z);
-      changed = true;
-    }
-  }
-  if (!changed) return false;
-  updateLevelSkirts(level);
-  refreshEdgeSamples(level);
-  position.needsUpdate = true;
-  normalAttribute.needsUpdate = true;
-  if (tile.lodTransition === undefined) {
-    level.geometry.computeBoundingBox();
-    level.geometry.computeBoundingSphere();
-  }
-  return true;
-}
-
-/** One level's edge as the bridge job reads it: the row's own heights, copied out of the level. */
-function edgeJob(
-  tile: IResidentTile,
-  level: ILevelGeometry,
-  side: keyof IEdgeSamples,
-): ITerrainEdgeJob {
-  return {
-    depth: tile.field.depth,
-    origin: tile.field.origin,
-    samples: level.edgeSamples[side].slice(),
-    side,
-    width: tile.field.width,
-  };
-}
-
-/** The same edge with the resolution the fine side of a bridge needs. */
-function fineEdgeJob(
-  tile: IResidentTile,
-  level: ILevelGeometry,
-  side: keyof IEdgeSamples,
-): ITerrainFineEdgeJob {
-  return { ...edgeJob(tile, level, side), resolution: level.resolution };
-}
-
-function stitchGeometry(data: ITerrainBridgeAttributes): BufferGeometry {
-  const geometry = new BufferGeometry();
-  geometry.setAttribute("position", new BufferAttribute(data.positions, 3));
-  geometry.setAttribute("normal", new BufferAttribute(data.normals, 3));
-  geometry.setIndex(new BufferAttribute(data.indices, 1));
-  geometry.computeBoundingBox();
-  geometry.computeBoundingSphere();
-  return geometry;
-}
-
-function geometryBytes(geometry: BufferGeometry): number {
-  const index = geometry.getIndex();
-  return (
-    geometry.getAttribute("position").array.byteLength +
-    geometry.getAttribute("normal").array.byteLength +
-    (index?.array.byteLength ?? 0)
-  );
-}
-
-function validateBridgeTriangleTopology(
-  geometry: BufferGeometry,
-  expectedVertexCount?: number,
-): PositionAttribute {
-  const position = geometry.getAttribute("position");
-  const index = geometry.getIndex();
-  const drawRange = geometry.drawRange;
-  const positionArray = position?.array;
-  if (
-    position === undefined ||
-    position.itemSize !== 3 ||
-    !Number.isInteger(position.count) ||
-    position.count < 6 ||
-    position.count % 2 !== 0 ||
-    positionArray === undefined ||
-    positionArray.length < position.count * position.itemSize ||
-    (expectedVertexCount !== undefined && position.count !== expectedVertexCount) ||
-    index === null ||
-    index.itemSize !== 1 ||
-    !Number.isInteger(index.count) ||
-    index.array.length !== index.count ||
-    !(index.array instanceof Uint16Array || index.array instanceof Uint32Array) ||
-    !Number.isInteger(drawRange.start) ||
-    drawRange.start !== 0 ||
-    (drawRange.count !== Number.POSITIVE_INFINITY &&
-      (!Number.isInteger(drawRange.count) ||
-        drawRange.count < index.count ||
-        drawRange.count % 3 !== 0))
-  )
-    throw new Error(
-      "TerrainTiles seam diagnostic bridge topology has invalid rendered triangle data.",
-    );
-  const vertexCount = position.count;
-  const stripResolution = vertexCount / 2;
-  const expectedIndexCount = (stripResolution - 1) * BRIDGE_STRIP_INDEX_PATTERN.length;
-  if (index.count !== expectedIndexCount)
-    throw new Error(
-      "TerrainTiles seam diagnostic bridge topology has invalid rendered triangle data.",
-    );
-  for (let vertex = 0; vertex < vertexCount; vertex += 1) {
-    if (
-      !Number.isFinite(position.getX(vertex)) ||
-      !Number.isFinite(position.getY(vertex)) ||
-      !Number.isFinite(position.getZ(vertex))
-    )
-      throw new Error("TerrainTiles seam diagnostic bridge coordinates must be finite.");
-  }
-  for (let offset = 0; offset < index.count; offset += 1) {
-    const segment = Math.floor(offset / BRIDGE_STRIP_INDEX_PATTERN.length);
-    const pair = segment * 2;
-    const expected =
-      pair + (BRIDGE_STRIP_INDEX_PATTERN[offset % BRIDGE_STRIP_INDEX_PATTERN.length] as number);
-    const vertex = index.getX(offset);
-    if (vertex !== expected)
-      throw new Error("TerrainTiles seam diagnostic bridge topology has invalid index data.");
-  }
-  return position;
-}
-
-function updateStitchBridge(bridge: IStitchBridge, data: ITerrainBridgeAttributes): void {
-  const position = validateBridgeTriangleTopology(bridge.geometry, bridge.resolution * 2);
-  if (bridge.resolution !== data.positions.length / 6) {
-    const previous = bridge.geometry;
-    bridge.geometry = stitchGeometry(data);
-    bridge.mesh.geometry = bridge.geometry;
-    bridge.resolution = data.positions.length / 6;
-    bridge.bytes = geometryBytes(bridge.geometry);
-    previous.dispose();
-  } else {
-    const normal = bridge.geometry.getAttribute("normal");
-    const index = bridge.geometry.getIndex();
-    if (
-      normal === undefined ||
-      normal.itemSize !== 3 ||
-      normal.count !== position.count ||
-      index === null
-    )
-      throw new Error(
-        "TerrainTiles seam diagnostic bridge topology has invalid rendered triangle data.",
-      );
-    position.array.set(data.positions);
-    normal.array.set(data.normals);
-    index.array.set(data.indices);
-    position.needsUpdate = true;
-    normal.needsUpdate = true;
-    index.needsUpdate = true;
-    bridge.geometry.computeBoundingBox();
-    bridge.geometry.computeBoundingSphere();
-  }
-  bridge.coverageDepth = data.coverageDepth;
-}
-
-/**
- * The position attribute is passed in rather than looked up per sample: these run four times a
- * vertex for a blend and four times a sample for the pop measurement — 33,800 `getAttribute` map
- * lookups a transition frame on a 65x65 tile, for a name that cannot change while the level is
- * being written.
- */
-function levelHeight(
-  position: BufferAttribute,
-  resolution: number,
-  row: number,
-  column: number,
-): number {
-  const value = position.getY(row * resolution + column);
-  if (!Number.isFinite(value)) throw new Error("TerrainTiles LOD geometry has an invalid height.");
-  return value;
-}
-
-function interpolatedLevelHeight(
-  level: ILevelGeometry,
-  position: BufferAttribute,
-  x: number,
-  z: number,
-): number {
-  const column = Math.max(0, Math.min(1, x)) * (level.resolution - 1);
-  const row = Math.max(0, Math.min(1, z)) * (level.resolution - 1);
-  const column0 = Math.floor(column);
-  const row0 = Math.floor(row);
-  const column1 = Math.min(level.resolution - 1, column0 + 1);
-  const row1 = Math.min(level.resolution - 1, row0 + 1);
-  const columnMix = column - column0;
-  const rowMix = row - row0;
-  const upperLeft = levelHeight(position, level.resolution, row0, column0);
-  const upperRight = levelHeight(position, level.resolution, row0, column1);
-  const lowerLeft = levelHeight(position, level.resolution, row1, column0);
-  const lowerRight = levelHeight(position, level.resolution, row1, column1);
-  const upper = upperLeft + (upperRight - upperLeft) * columnMix;
-  const lower = lowerLeft + (lowerRight - lowerLeft) * columnMix;
-  return upper + (lower - upper) * rowMix;
-}
-
-function interpolatedLevelNormal(
-  level: ILevelGeometry,
-  normal: BufferAttribute,
-  x: number,
-  z: number,
-  target: Vector3,
-): Vector3 {
-  const column = Math.max(0, Math.min(1, x)) * (level.resolution - 1);
-  const row = Math.max(0, Math.min(1, z)) * (level.resolution - 1);
-  const column0 = Math.floor(column);
-  const row0 = Math.floor(row);
-  const column1 = Math.min(level.resolution - 1, column0 + 1);
-  const row1 = Math.min(level.resolution - 1, row0 + 1);
-  const columnMix = column - column0;
-  const rowMix = row - row0;
-  const upperLeft = row0 * level.resolution + column0;
-  const upperRight = row0 * level.resolution + column1;
-  const lowerLeft = row1 * level.resolution + column0;
-  const lowerRight = row1 * level.resolution + column1;
-  const blend = (upper: number, lower: number): number => upper + (lower - upper) * rowMix;
-  const interpolate = (
-    topLeft: number,
-    topRight: number,
-    bottomLeft: number,
-    bottomRight: number,
-  ) =>
-    blend(
-      topLeft + (topRight - topLeft) * columnMix,
-      bottomLeft + (bottomRight - bottomLeft) * columnMix,
-    );
-  return target
-    .set(
-      interpolate(
-        normal.getX(upperLeft),
-        normal.getX(upperRight),
-        normal.getX(lowerLeft),
-        normal.getX(lowerRight),
-      ),
-      interpolate(
-        normal.getY(upperLeft),
-        normal.getY(upperRight),
-        normal.getY(lowerLeft),
-        normal.getY(lowerRight),
-      ),
-      interpolate(
-        normal.getZ(upperLeft),
-        normal.getZ(upperRight),
-        normal.getZ(lowerLeft),
-        normal.getZ(lowerRight),
-      ),
-    )
-    .normalize();
-}
-
-/** Immutable stock morph buffers; shared sides keep the canonical surface used by seam jobs. */
-function* buildLodMorphTargets(
-  finer: ILevelGeometry,
-  coarserLevels: readonly ILevelGeometry[],
-  sharedEdges: number,
-  chunked: boolean,
-): Generator<void> {
-  const position = finer.geometry.getAttribute("position");
-  const normal = finer.geometry.getAttribute("normal");
-  const positions: BufferAttribute[] = [];
-  const normals: BufferAttribute[] = [];
-  const coarseNormal = new Vector3();
-  const last = finer.resolution - 1;
-  for (const coarser of coarserLevels) {
-    const deltaPosition = new BufferAttribute(new Float32Array(position.count * 3), 3);
-    const deltaNormal = new BufferAttribute(new Float32Array(position.count * 3), 3);
-    const coarsePosition = coarser.geometry.getAttribute("position") as BufferAttribute;
-    const coarseNormals = coarser.geometry.getAttribute("normal") as BufferAttribute;
-    for (let row = 0; row <= last; row += 1) {
-      for (let column = 0; column <= last; column += 1) {
-        const index = row * finer.resolution + column;
-        const pinned =
-          (row === 0 && sharedEdges & 1) ||
-          (row === last && sharedEdges & 2) ||
-          (column === 0 && sharedEdges & 4) ||
-          (column === last && sharedEdges & 8);
-        if (!pinned) {
-          deltaPosition.setY(
-            index,
-            interpolatedLevelHeight(coarser, coarsePosition, column / last, row / last) -
-              position.getY(index),
-          );
-          interpolatedLevelNormal(coarser, coarseNormals, column / last, row / last, coarseNormal);
-          deltaNormal.setXYZ(
-            index,
-            coarseNormal.x - normal.getX(index),
-            coarseNormal.y - normal.getY(index),
-            coarseNormal.z - normal.getZ(index),
-          );
-        }
-        if (chunked && (index + 1) % (CONSTRUCTION_CHUNK_SAMPLES / 2) === 0) yield;
-      }
-    }
-    const edges = [
-      (index: number) => index,
-      (index: number) => last * finer.resolution + index,
-      (index: number) => index * finer.resolution,
-      (index: number) => index * finer.resolution + last,
-    ];
-    for (const [edgeIndex, edge] of edges.entries())
-      for (let index = 0; index <= last; index += 1)
-        deltaPosition.setY(
-          finer.resolution ** 2 + edgeIndex * finer.resolution + index,
-          deltaPosition.getY(edge(index)),
-        );
-    positions.push(deltaPosition);
-    normals.push(deltaNormal);
-  }
-  finer.geometry.morphAttributes.position = positions;
-  finer.geometry.morphAttributes.normal = normals;
-}
-
-function updateLodMorph(tile: IResidentTile, transition: ILodTransition, progress: number): void {
-  const from = tile.levels[transition.from];
-  const to = tile.levels[transition.to];
-  if (from === undefined || to === undefined)
-    throw new Error("TerrainTiles LOD transition references a missing level.");
-  const finer = from.resolution >= to.resolution ? from : to;
-  const coarser = finer === from ? to : from;
-  const target = tile.levels
-    .filter((level) => level !== finer && level.resolution <= finer.resolution)
-    .indexOf(coarser);
-  const influences = finer.mesh.morphTargetInfluences;
-  if (influences === undefined || influences[target] === undefined)
-    throw new Error("TerrainTiles LOD transition references a missing morph target.");
-  influences.fill(0);
-  influences[target] = finer === from ? progress : 1 - progress;
-}
-
-function updateLevelSkirts(level: ILevelGeometry): void {
-  const position = level.geometry.getAttribute("position");
-  const normal = level.geometry.getAttribute("normal");
-  const surfaceVertexCount = level.resolution * level.resolution;
-  const edges = [
-    (index: number) => index,
-    (index: number) => (level.resolution - 1) * level.resolution + index,
-    (index: number) => index * level.resolution,
-    (index: number) => index * level.resolution + level.resolution - 1,
-  ];
-  for (const [edgeIndex, edge] of edges.entries()) {
-    for (let index = 0; index < level.resolution; index += 1) {
-      const top = edge(index);
-      const bottom = surfaceVertexCount + edgeIndex * level.resolution + index;
-      position.setY(bottom, position.getY(top) - level.skirtDepth);
-      normal.setXYZ(bottom, 0, 1, 0);
-    }
-  }
-}
-
-function restoreLevelSurface(field: Heightfield, level: ILevelGeometry): void {
-  const position = level.geometry.getAttribute("position");
-  const normalAttribute = level.geometry.getAttribute("normal");
-  const minimumX = field.origin.x - field.width / 2;
-  const minimumZ = field.origin.z - field.depth / 2;
-  const cellWidth = field.width / (level.resolution - 1);
-  const cellDepth = field.depth / (level.resolution - 1);
-  const normal = new Vector3();
-  for (let row = 0; row < level.resolution; row += 1) {
-    const z = minimumZ + row * cellDepth;
-    for (let column = 0; column < level.resolution; column += 1) {
-      const x = minimumX + column * cellWidth;
-      const index = row * level.resolution + column;
-      position.setY(index, field.heightAt(x, z));
-      field.normalAt(x, z, normal);
-      normalAttribute.setXYZ(index, normal.x, normal.y, normal.z);
-    }
-  }
-  updateLevelSkirts(level);
-  refreshEdgeSamples(level);
-  position.needsUpdate = true;
-  normalAttribute.needsUpdate = true;
-  level.geometry.computeBoundingBox();
-  level.geometry.computeBoundingSphere();
-}
-
-/**
- * A blend only ever moves a vertex between the two levels' surfaces, so the union of the two
- * known bounds holds every frame of it. Widened once when the transition starts instead of
- * recomputed per blend frame: `computeBoundingBox` + `computeBoundingSphere` walked the finer
- * level's ~8,600 positions every frame of every transition (56 + 45 + 27 + 29 ms over a six-second
- * walk). `#restoreLodTransition` puts the finer level's own bounds back when the blend ends.
- */
-function widenLevelBoundsForBlend(finer: ILevelGeometry, coarser: ILevelGeometry): void {
-  const box = finer.geometry.boundingBox;
-  const sphere = finer.geometry.boundingSphere;
-  const coarserBox = coarser.geometry.boundingBox;
-  if (box === null || sphere === null || coarserBox === null)
-    throw new Error("TerrainTiles LOD transition needs both levels' bounds to be known.");
-  box.union(coarserBox);
-  box.getBoundingSphere(sphere);
-}
-
-function updateLodTransitionGeometry(
-  tile: IResidentTile,
-  transition: ILodTransition,
-  progress: number,
-): void {
-  const from = tile.levels[transition.from];
-  const to = tile.levels[transition.to];
-  if (from === undefined || to === undefined)
-    throw new Error("TerrainTiles LOD transition references a missing level.");
-  const finer = from.resolution >= to.resolution ? from : to;
-  const coarser = finer === from ? to : from;
-  const fromIsFiner = finer === from;
-  const position = finer.geometry.getAttribute("position");
-  const normalAttribute = finer.geometry.getAttribute("normal");
-  const coarsePosition = coarser.geometry.getAttribute("position") as BufferAttribute;
-  const coarseNormalAttribute = coarser.geometry.getAttribute("normal") as BufferAttribute;
-  const minimumX = tile.field.origin.x - tile.field.width / 2;
-  const minimumZ = tile.field.origin.z - tile.field.depth / 2;
-  const cellWidth = tile.field.width / (finer.resolution - 1);
-  const cellDepth = tile.field.depth / (finer.resolution - 1);
-  const fineNormal = new Vector3();
-  const coarseNormal = new Vector3();
-  const blendedNormal = new Vector3();
-  for (let row = 0; row < finer.resolution; row += 1) {
-    const z = minimumZ + row * cellDepth;
-    const normalizedZ = row / (finer.resolution - 1);
-    for (let column = 0; column < finer.resolution; column += 1) {
-      const x = minimumX + column * cellWidth;
-      const normalizedX = column / (finer.resolution - 1);
-      const index = row * finer.resolution + column;
-      const fineHeight = tile.field.heightAt(x, z);
-      const coarseHeight = interpolatedLevelHeight(
-        coarser,
-        coarsePosition,
-        normalizedX,
-        normalizedZ,
-      );
-      const startHeight = fromIsFiner ? fineHeight : coarseHeight;
-      const endHeight = fromIsFiner ? coarseHeight : fineHeight;
-      position.setY(index, startHeight + (endHeight - startHeight) * progress);
-
-      tile.field.normalAt(x, z, fineNormal);
-      interpolatedLevelNormal(
-        coarser,
-        coarseNormalAttribute,
-        normalizedX,
-        normalizedZ,
-        coarseNormal,
-      );
-      const startNormal = fromIsFiner ? fineNormal : coarseNormal;
-      const endNormal = fromIsFiner ? coarseNormal : fineNormal;
-      blendedNormal
-        .set(
-          startNormal.x + (endNormal.x - startNormal.x) * progress,
-          startNormal.y + (endNormal.y - startNormal.y) * progress,
-          startNormal.z + (endNormal.z - startNormal.z) * progress,
-        )
-        .normalize();
-      normalAttribute.setXYZ(index, blendedNormal.x, blendedNormal.y, blendedNormal.z);
-    }
-  }
-  updateLevelSkirts(finer);
-  refreshEdgeSamples(finer);
-  position.needsUpdate = true;
-  normalAttribute.needsUpdate = true;
-}
-
-function* surfaceHeightChunks(
-  level: ILevelGeometry,
-  chunked: boolean,
-): Generator<void, Float32Array> {
-  const position = level.geometry.getAttribute("position");
-  const heights = new Float32Array(level.resolution * level.resolution);
-  for (let index = 0; index < heights.length; index += 1) {
-    heights[index] = position.getY(index);
-    if (chunked && (index + 1) % CONSTRUCTION_CHUNK_SAMPLES === 0) yield;
-  }
-  return heights;
-}
-
-function surfaceHeights(level: ILevelGeometry): Float32Array {
-  return surfaceHeightChunks(level, false).next().value as Float32Array;
-}
-
-function interpolatedSamplesHeight(
-  samples: Float32Array,
-  resolution: number,
-  x: number,
-  z: number,
-): number {
-  const column = Math.max(0, Math.min(1, x)) * (resolution - 1);
-  const row = Math.max(0, Math.min(1, z)) * (resolution - 1);
-  const column0 = Math.floor(column);
-  const row0 = Math.floor(row);
-  const column1 = Math.min(resolution - 1, column0 + 1);
-  const row1 = Math.min(resolution - 1, row0 + 1);
-  const columnMix = column - column0;
-  const rowMix = row - row0;
-  const upperLeft = samples[row0 * resolution + column0] as number;
-  const upperRight = samples[row0 * resolution + column1] as number;
-  const lowerLeft = samples[row1 * resolution + column0] as number;
-  const lowerRight = samples[row1 * resolution + column1] as number;
-  const upper = upperLeft + (upperRight - upperLeft) * columnMix;
-  const lower = lowerLeft + (lowerRight - lowerLeft) * columnMix;
-  return upper + (lower - upper) * rowMix;
-}
-
-function* surfaceDeltaChunks(
-  samples: Float32Array,
-  resolution: number,
-  level: ILevelGeometry,
-  chunked: boolean,
-): Generator<void, number> {
-  const sampleCount = Math.max(resolution, level.resolution);
-  const position = level.geometry.getAttribute("position") as BufferAttribute;
-  let maximum = 0;
-  for (let row = 0; row < sampleCount; row += 1) {
-    for (let column = 0; column < sampleCount; column += 1) {
-      const x = column / (sampleCount - 1);
-      const z = row / (sampleCount - 1);
-      maximum = Math.max(
-        maximum,
-        Math.abs(
-          interpolatedSamplesHeight(samples, resolution, x, z) -
-            interpolatedLevelHeight(level, position, x, z),
-        ),
-      );
-      if (chunked && (row * sampleCount + column + 1) % CONSTRUCTION_CHUNK_SAMPLES === 0) yield;
-    }
-  }
-  return maximum;
-}
-
-function surfaceDeltaFromSamples(
-  samples: Float32Array,
-  resolution: number,
-  level: ILevelGeometry,
-): number {
-  return surfaceDeltaChunks(samples, resolution, level, false).next().value as number;
-}
-
-/**
- * The coarsest level a tile may ever show. A level is selectable only when its height error
- * against *every* finer level fits the pop bound, which is what keeps the per-frame displacement
- * inside it: a transition walks one LOD_TRANSITION_FRAMES-th of the way between two levels, and
- * an interrupted transition snaps back to a level endpoint, which is never further from the
- * surface it replaced than the bound between any two selectable levels. A cliff therefore keeps
- * its tile at a finer level instead of throwing out of the frame.
- */
-function* coarsestSelectableLevel(
-  levels: readonly ILevelGeometry[],
-  chunked: boolean,
-): Generator<void, number> {
-  let coarsest = 0;
-  for (let index = 1; index < levels.length; index += 1) {
-    const level = levels[index];
-    if (level === undefined) break;
-    let error = 0;
-    for (let finerIndex = 0; finerIndex < index; finerIndex += 1) {
-      const finer = levels[finerIndex];
-      if (finer === undefined) break;
-      error = Math.max(
-        error,
-        yield* surfaceDeltaChunks(
-          yield* surfaceHeightChunks(finer, chunked),
-          finer.resolution,
-          level,
-          chunked,
-        ),
-      );
-    }
-    level.surfaceError = error;
-    if (error > LOD_POP_THRESHOLD) break;
-    coarsest = index;
-  }
-  return coarsest;
-}
-
-function seamCoverageDepth(a: IResidentTile, b: IResidentTile): number {
-  const aLevel = a.levels[a.lodLevel];
-  const bLevel = b.levels[b.lodLevel];
-  if (aLevel === undefined || bLevel === undefined) return 0;
-  return Math.min(aLevel.skirtDepth, bLevel.skirtDepth);
-}
-
-/**
- * One edge of one level, addressed in the position buffer directly.
- *
- * The seam diagnostic reads two edges once per sample of every pair, four times a frame, so the
- * per-read cost is the per-frame cost: resolving the attribute and calling `getY` per vertex was
- * ~40% of a settled 289-tile frame. The Y of edge vertex `index` sits at `first + index * span`
- * in the interleaved array, and stepping an edge by one vertex steps the array by `span`.
- */
-interface IEdgeWalk {
-  readonly first: number;
-  readonly heights: Float32Array;
-  readonly resolution: number;
-  readonly span: number;
-}
-
-function edgeWalk(level: ILevelGeometry, side: keyof IEdgeSamples): IEdgeWalk {
-  const position = level.geometry.getAttribute("position");
-  const array = position.array as Float32Array;
-  const last = level.resolution - 1;
-  const first =
-    side === "north" ? 0 : side === "south" ? last * level.resolution : side === "west" ? 0 : last;
-  return {
-    first: first * 3 + 1,
-    heights: array,
-    resolution: level.resolution,
-    span: (side === "north" || side === "south" ? 1 : level.resolution) * 3,
-  };
-}
-
-function edgeWalkHeight(walk: IEdgeWalk, index: number): number {
-  const lower = walk.heights[walk.first + index * walk.span] as number;
-  if (!Number.isFinite(lower))
-    throw new Error("TerrainTiles seam diagnostic edge height must be finite.");
-  return lower;
-}
-
-/** The walk's height at `normalized`, interpolating exactly as `edgeHeight` does. */
-function edgeWalkAt(walk: IEdgeWalk, normalized: number): number {
-  const position = normalized * (walk.resolution - 1);
-  const lower = Math.floor(position);
-  const mix = position - lower;
-  const lowerValue = edgeWalkHeight(walk, lower);
-  if (mix === 0) return lowerValue;
-  return (
-    lowerValue * (1 - mix) + edgeWalkHeight(walk, Math.min(walk.resolution - 1, lower + 1)) * mix
-  );
-}
-
-/** A pair's bridge, validated and placed once so the per-sample loop only measures. */
-interface IBridgeCoverage {
-  readonly bridge: IStitchBridge;
-  readonly coarser: IBridgeEndpoint;
-  readonly finer: IBridgeEndpoint;
-  readonly position: PositionAttribute;
-}
-
-function bridgeCoverageContext(
-  bridge: IStitchBridge,
-  a: IResidentTile,
-  aSide: keyof IEdgeSamples,
-  b: IResidentTile,
-  bSide: keyof IEdgeSamples,
-): IBridgeCoverage {
-  if (bridge.mesh.geometry !== bridge.geometry)
-    throw new Error("TerrainTiles seam diagnostic bridge geometry is not attached to its mesh.");
-  if (!Number.isInteger(bridge.resolution) || bridge.resolution < 2)
-    throw new Error("TerrainTiles seam diagnostic bridge resolution is invalid.");
-  if (
-    bridge.keys[0] !== (a.key < b.key ? a.key : b.key) ||
-    bridge.keys[1] !== (a.key < b.key ? b.key : a.key)
-  )
-    throw new Error("TerrainTiles seam diagnostic bridge topology does not match its tile pair.");
-  const position = validateBridgeTriangleTopology(bridge.mesh.geometry, bridge.resolution * 2);
-  if (position.count !== bridge.resolution * 2)
-    throw new Error("TerrainTiles seam diagnostic bridge topology has invalid coverage.");
-  const [finer, coarser] = bridgeEndpointPair(a, aSide, b, bSide);
-  // Nothing inside the sample loop moves these, so deriving them per sample only repeated work:
-  // three world-matrix updates and a full revalidation of the bridge's own topology for every
-  // edge vertex of every pair, four times a frame.
-  bridge.mesh.updateWorldMatrix(true, false);
-  finer.level.mesh.updateWorldMatrix(true, false);
-  coarser.level.mesh.updateWorldMatrix(true, false);
-  return { bridge, coarser, finer, position };
-}
-
-function bridgeCoverageAt(
-  coverage: IBridgeCoverage,
-  normalized: number,
-  worldPosition: Vector3,
-  expectedWorldPosition: Vector3,
-): number {
-  if (!Number.isFinite(normalized))
-    throw new Error("TerrainTiles seam diagnostic bridge sample coordinate must be finite.");
-  const { bridge, coarser, finer, position } = coverage;
-  const samplePosition = Math.max(0, Math.min(1, normalized)) * (bridge.resolution - 1);
-  const lower = Math.floor(samplePosition);
-  const upper = Math.min(bridge.resolution - 1, lower + 1);
-  const mix = samplePosition - lower;
-  const fine =
-    bridgeEndpointHeight(
-      bridge,
-      position,
-      lower,
-      0,
-      finer.tile,
-      finer.side,
-      finer.level,
-      worldPosition,
-      expectedWorldPosition,
-    ) *
-      (1 - mix) +
-    bridgeEndpointHeight(
-      bridge,
-      position,
-      upper,
-      0,
-      finer.tile,
-      finer.side,
-      finer.level,
-      worldPosition,
-      expectedWorldPosition,
-    ) *
-      mix;
-  const coarse =
-    bridgeEndpointHeight(
-      bridge,
-      position,
-      lower,
-      1,
-      coarser.tile,
-      coarser.side,
-      coarser.level,
-      worldPosition,
-      expectedWorldPosition,
-    ) *
-      (1 - mix) +
-    bridgeEndpointHeight(
-      bridge,
-      position,
-      upper,
-      1,
-      coarser.tile,
-      coarser.side,
-      coarser.level,
-      worldPosition,
-      expectedWorldPosition,
-    ) *
-      mix;
-  const covered = Math.abs(fine - coarse);
-  if (!Number.isFinite(covered))
-    throw new Error("TerrainTiles seam diagnostic bridge coverage must be finite.");
-  return covered;
-}
-
-function seamObservation(
-  a: IResidentTile,
-  b: IResidentTile,
-  bridge: IStitchBridge | undefined,
-  owner: Object3D,
-  includeBridgeCoverage: boolean,
-): { gap: number; visualGap: number } {
-  const [aSide, bSide] = opposingEdge(a, b);
-  const aLevel = renderedLevel(a);
-  const bLevel = renderedLevel(b);
-  if (aLevel === undefined || bLevel === undefined)
-    throw new Error("TerrainTiles seam diagnostic observation has no rendered level.");
-  const samples = Math.max(aLevel.resolution, bLevel.resolution);
-  const aWalk = edgeWalk(aLevel, aSide);
-  const bWalk = edgeWalk(bLevel, bSide);
-  const coverage =
-    includeBridgeCoverage &&
-    bridge !== undefined &&
-    bridge.mesh.parent === owner &&
-    bridge.mesh.visible
-      ? bridgeCoverageContext(bridge, a, aSide, b, bSide)
-      : undefined;
-  const skirt = seamCoverageDepth(a, b);
-  const worldPosition = new Vector3();
-  const expectedWorldPosition = new Vector3();
-  let gap = 0;
-  let visualGap = 0;
-  for (let index = 0; index < samples; index += 1) {
-    const normalized = samples === 1 ? 0 : index / (samples - 1);
-    const currentGap = Math.abs(edgeWalkAt(aWalk, normalized) - edgeWalkAt(bWalk, normalized));
-    if (!Number.isFinite(currentGap))
-      throw new Error("TerrainTiles seam diagnostic observation must be finite.");
-    gap = Math.max(gap, currentGap);
-    const covered =
-      coverage === undefined
-        ? 0
-        : bridgeCoverageAt(coverage, normalized, worldPosition, expectedWorldPosition);
-    visualGap = Math.max(visualGap, Math.max(0, currentGap - Math.max(skirt, covered)));
-  }
-  if (!Number.isFinite(visualGap))
-    throw new Error("TerrainTiles visual seam diagnostic observation must be finite.");
-  return { gap, visualGap };
-}
-
-type NeighborPair = readonly [IResidentTile, IResidentTile];
-
-/**
- * One pair's bridge, as the seam job carries it: the two edges it is made of, and what the bridge it
- * produces is called and keyed by.
- */
-interface IStitchRequest {
-  readonly coarse: ITerrainEdgeJob;
-  readonly fine: ITerrainFineEdgeJob;
-  readonly keys: [string, string];
-  readonly resolution: number;
-}
-
-function neighborPairKey(pair: NeighborPair): string {
-  const [a, b] = pair;
-  return a.key < b.key ? `${a.key}|${b.key}` : `${b.key}|${a.key}`;
-}
-
-/**
- * Every facing pair of the resident set, from the residency key map rather than from a scan of
- * every tile against every other tile.
- *
- * `follow` and `process` each want this list, four times a frame, and the scan was quadratic in
- * the resident count: 41k comparisons for the 289-tile ring a `streamRadius: 8` game streams,
- * which is the whole per-frame regression. A tile's east and south neighbors are its only
- * unfaced-inward partners, so two map lookups per tile enumerate each pair exactly once.
- */
-function neighborPairs(tiles: ReadonlyMap<string, IResidentTile>): NeighborPair[] {
-  const pairs: NeighborPair[] = [];
-  collectNeighborPairs(tiles, pairs);
-  return pairs;
-}
-
-/** `neighborPairs` into a buffer the caller already owns, so a frame allocates no pair arrays. */
-function collectNeighborPairs(
-  tiles: ReadonlyMap<string, IResidentTile>,
-  into: NeighborPair[],
-): NeighborPair[] {
-  into.length = 0;
-  for (const tile of tiles.values()) {
-    const east = tiles.get(keyFor(tile.tileX + 1, tile.tileZ));
-    if (east !== undefined) into.push([tile, east]);
-    const south = tiles.get(keyFor(tile.tileX, tile.tileZ + 1));
-    if (south !== undefined) into.push([tile, south]);
-  }
-  return into;
-}
-
-function hasPendingTarget(targets: ReadonlyMap<IResidentTile, number>): boolean {
-  for (const [tile, target] of targets)
-    if (Math.min(target, tile.maxLodLevel) !== tile.lodLevel) return true;
-  return false;
-}
-
-/** Each resident tile's target level after the neighbour rule: no two neighbours two levels apart. */
-function coordinatedLevels(
-  resident: ReadonlyMap<string, IResidentTile>,
-  targets: ReadonlyMap<IResidentTile, number>,
-): Map<IResidentTile, number> {
-  const levels = new Map<IResidentTile, number>();
-  for (const tile of resident.values())
-    levels.set(tile, Math.min(targets.get(tile) ?? tile.lodLevel, tile.maxLodLevel));
-  const pairs = neighborPairs(resident);
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (const [a, b] of pairs) {
-      const aLevel = levels.get(a) as number;
-      const bLevel = levels.get(b) as number;
-      if (Math.abs(aLevel - bLevel) <= 1) continue;
-      if (aLevel > bLevel) levels.set(a, bLevel + 1);
-      else levels.set(b, aLevel + 1);
-      changed = true;
-    }
-  }
-  return levels;
-}
-
-function neighborLodCorrection(
-  pair: NeighborPair,
-): { coarser: IResidentTile; level: number } | undefined {
-  const [a, b] = pair;
-  if (Math.abs(a.lodLevel - b.lodLevel) <= 1) return undefined;
-  const finer = a.lodLevel < b.lodLevel ? a : b;
-  const coarser = finer === a ? b : a;
-  return { coarser, level: finer.lodLevel + 1 };
-}
-
-/**
- * One neighbor pair's bridge request, or `undefined` when the pair needs no bridge.
- *
- * The two edges are restored here — that reads the game's field sampler, which cannot cross into a
- * worker — and everything the bridge strip is made of is copied out as numbers. The strip itself is
- * built wherever the jobs run, so the main thread only swaps the attributes it gets back.
- */
-function neighborBridgeRequest(pair: NeighborPair): IStitchRequest | undefined {
-  const [a, b] = pair;
-  const [aSide, bSide] = opposingEdge(a, b);
-  const aLevel = renderedLevel(a);
-  const bLevel = renderedLevel(b);
-  if (aLevel === undefined || bLevel === undefined)
-    throw new Error("TerrainTiles cannot reconcile a neighbor with no rendered LOD level.");
-  restoreLevelEdge(a, aLevel, aSide);
-  restoreLevelEdge(b, bLevel, bSide);
-  if (aLevel.resolution === bLevel.resolution) return undefined;
-  const finerLevel = aLevel.resolution > bLevel.resolution ? aLevel : bLevel;
-  return {
-    coarse: edgeJob(
-      finerLevel === aLevel ? b : a,
-      finerLevel === aLevel ? bLevel : aLevel,
-      finerLevel === aLevel ? bSide : aSide,
-    ),
-    fine: fineEdgeJob(
-      finerLevel === aLevel ? a : b,
-      finerLevel,
-      finerLevel === aLevel ? aSide : bSide,
-    ),
-    keys: [a.key, b.key].sort() as [string, string],
-    resolution: finerLevel.resolution,
-  };
-}
-
-function newStitchBridge(
-  request: IStitchRequest,
-  data: ITerrainBridgeAttributes,
-  surface: MeshSurface,
-): IStitchBridge {
-  const geometry = stitchGeometry(data);
-  const mesh = terrainMesh(new Mesh(geometry, surface));
-  mesh.frustumCulled = true;
-  return {
-    bytes: geometryBytes(geometry),
-    coverageDepth: data.coverageDepth,
-    geometry,
-    keys: request.keys,
-    mesh,
-    resolution: request.resolution,
-  };
-}
-
-function setManualLodLevel(lod: LOD, level: number): void {
-  // Three's renderer reads `autoUpdate`, and its update method owns this private-ish marker. Keep
-  // that marker aligned with the visible child for callers that inspect the composed LOD.
-  (lod as LOD & { _currentLevel: number })._currentLevel = level;
-}
+export type NeighborPair = readonly [IResidentTile, IResidentTile];
 
 /**
  * Stream a bounded square of game-authored heightfields and keep their render and physics units
@@ -2008,6 +358,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   readonly #surface: MeshSurface;
   readonly #sampleHeight: IWorldTilesOptions["sampleHeight"];
   readonly #streamRadius: number;
+  readonly #extent: IWorldTilesOptions["extent"];
   /** Diagnostics outlive construction; their canonical field is never used by resident tiles. */
   #topology:
     | (Pick<Heightfield, "columns" | "depth" | "origin" | "rows" | "width"> & {
@@ -2110,6 +461,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     this.residentByteBudget = integerAtLeast(options.residentByteBudget, 1, "residentByteBudget");
     this.skirtDepth = positive(options.skirtDepth ?? this.tileSize, "skirtDepth");
     this.#streamRadius = integerAtLeast(options.streamRadius ?? 1, 0, "streamRadius");
+    this.#extent = options.extent;
     this.#receiveShadow = options.receiveShadow === true;
     this.#colliderRadius = integerAtLeast(
       options.colliderRadius ?? this.#streamRadius,
@@ -2121,6 +473,9 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       throw new Error("TerrainTiles surface is required and must be game-owned.");
     this.#validate = options.validate ?? terrainValidationRequested();
     this.#mergeTiles = options.mergeTiles ?? !terrainMergeOptedOut();
+    // Streamed ground batches itself into blocks; `AutoBatch` merging those again hid the live
+    // terrain from every ray walk of this subtree and re-merged on each stream step.
+    this.userData.batch = "off";
     this.#sampleHeight = options.sampleHeight;
     if (typeof options.sampleHeight !== "function")
       throw new Error("TerrainTiles sampleHeight is required.");
@@ -2406,6 +761,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
         tileX <= centerX + this.#streamRadius;
         tileX += 1
       ) {
+        if (!this.#touchesExtent(tileX, tileZ)) continue;
         const tileCenterX = tileX * this.tileSize;
         const tileCenterZ = tileZ * this.tileSize;
         wanted.push({
@@ -2568,6 +924,55 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     for (const tile of this.#resident.values())
       if (tile.tileX >= lowX && tile.tileX <= highX && tile.tileZ >= lowZ && tile.tileZ <= highZ)
         loaded++;
+    return { required, loaded };
+  }
+
+  /** Loaded selected tiles intersecting the camera; bounds include terrain heights before admission. */
+  readinessInView(
+    camera: Camera,
+    heightBounds: readonly [number, number],
+  ): { required: number; loaded: number } {
+    if (
+      heightBounds.length !== 2 ||
+      !Number.isFinite(heightBounds[0]) ||
+      !Number.isFinite(heightBounds[1]) ||
+      heightBounds[0] > heightBounds[1]
+    )
+      throw new Error("TerrainTiles visible readiness requires finite ordered height bounds.");
+    camera.updateWorldMatrix(true, false);
+    this.updateWorldMatrix(true, false);
+    const frustum = new Frustum().setFromProjectionMatrix(
+      new Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse),
+      camera.coordinateSystem,
+    );
+    const focus = this.#focus ?? this.worldToLocal(camera.getWorldPosition(new Vector3()));
+    const centerX = Math.floor((focus.x + this.tileSize / 2) / this.tileSize);
+    const centerZ = Math.floor((focus.z + this.tileSize / 2) / this.tileSize);
+    const wanted: Array<{ x: number; z: number; distance: number }> = [];
+    for (let z = centerZ - this.#streamRadius; z <= centerZ + this.#streamRadius; z++)
+      for (let x = centerX - this.#streamRadius; x <= centerX + this.#streamRadius; x++)
+        if (this.#touchesExtent(x, z))
+          wanted.push({
+            x,
+            z,
+            distance: Math.hypot(focus.x - x * this.tileSize, focus.z - z * this.tileSize),
+          });
+    wanted.sort((a, b) => a.distance - b.distance || a.z - b.z || a.x - b.x);
+    const bounds = new Box3();
+    let required = 0;
+    let loaded = 0;
+    for (const { x, z } of wanted.slice(0, this.residentTileBudget)) {
+      bounds.min.set(
+        (x - 0.5) * this.tileSize,
+        heightBounds[0] - this.skirtDepth,
+        (z - 0.5) * this.tileSize,
+      );
+      bounds.max.set((x + 0.5) * this.tileSize, heightBounds[1], (z + 0.5) * this.tileSize);
+      bounds.applyMatrix4(this.matrixWorld);
+      if (!frustum.intersectsBox(bounds)) continue;
+      required++;
+      if (!this.#released && this.#resident.has(keyFor(x, z))) loaded++;
+    }
     return { required, loaded };
   }
 
@@ -2974,6 +1379,19 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     this.#setLodLevel(tile, this.#targetLod(tile, distance), countTransition);
   }
 
+  /** Whether the tile's square overlaps the ground at all; always true when no extent was given. */
+  #touchesExtent(tileX: number, tileZ: number): boolean {
+    const extent = this.#extent;
+    if (extent === undefined) return true;
+    const half = this.tileSize / 2;
+    return (
+      tileX * this.tileSize + half > extent.minX &&
+      tileX * this.tileSize - half < extent.maxX &&
+      tileZ * this.tileSize + half > extent.minZ &&
+      tileZ * this.tileSize - half < extent.maxZ
+    );
+  }
+
   #setLodView(view: IWorldTilesLodView | undefined): void {
     if (
       view !== undefined &&
@@ -3040,7 +1458,14 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
         geometry.boundingSphere = previous.boundingSphere?.clone() ?? null;
         const influences = level.mesh.morphTargetInfluences?.slice();
         // Three caches morph textures by geometry, ignoring attribute versions; retire that cache.
-        for (const _ of buildLodMorphTargets({ ...level, geometry }, coarser, shared, false)) {
+        geometry.morphAttributes = { ...previous.morphAttributes };
+        for (const _ of buildLodMorphTargets(
+          { ...level, geometry },
+          coarser,
+          shared,
+          false,
+          previous,
+        )) {
         }
         level.geometry = geometry;
         level.mesh.geometry = geometry;

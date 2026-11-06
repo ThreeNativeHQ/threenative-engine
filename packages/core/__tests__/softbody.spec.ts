@@ -120,6 +120,8 @@ describe("SoftBody3D cloth", () => {
       if (property === "count")
         return (arrays.get(ref.key)?.length ?? 0) / (sizes.get(ref.key) ?? 1);
       if (property === "itemSize") return sizes.get(ref.key) ?? 1;
+      // The engine hands `updateRanges` as canonical JSON; needsUpdate reads it to pick the upload.
+      if (property === "updateRanges") return "[]";
       return get(ref, property);
     };
     runtime.attributeArray = (ref) => arrays.get(ref.key) as never;

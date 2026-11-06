@@ -150,7 +150,8 @@ test_port="$(node --input-type=module -e '
     server.close();
   });
 ')"
-timeout 5s node packages/playtest/dist/runner/cli.js \
+# pnpm's persistent compile cache is unrelated to runner teardown; keep it out of this namespace.
+DISABLE_V8_COMPILE_CACHE=1 timeout 5s node packages/playtest/dist/runner/cli.js \
   --scenario examples/abyss-framework/playtest/moves.json \
   --project . \
   --url "http://127.0.0.1:$test_port" \

@@ -741,6 +741,29 @@ def key_light(ref, sequence, spec, scene, frames):
     ref.log("motion light keys " + key_summary(channel))
 
 
+def key_show(ref, sequence, scene, run, frames):
+    """A visibility track per `hidden` box: drawn until the frame the run's `show` names, hidden from it on.
+
+    The box stays visible in the level, because the glTF export skips hidden actors; a run that does not
+    name it hides it from frame 0.
+    """
+    for box in scene["boxes"]:
+        if not box.get("hidden"):
+            continue
+        until = run.get("show", {}).get(box["name"], 0)
+        actor = next(a for a in ref.actor_subsystem.get_all_level_actors() if a.get_actor_label() == box["name"])
+        track = sequence.add_possessable(actor).add_track(unreal.MovieSceneVisibilityTrack)
+        track.set_property_name_and_path("bHiddenInGame", "bHiddenInGame")
+        section = track.add_section()
+        section.set_range(0, frames)
+        channel = section.get_all_channels()[0]
+        # A visibility key reads true as visible (MovieSceneVisibilitySystem.cpp:120-124).
+        if until > 0:
+            channel.add_key(unreal.FrameNumber(0), True, 0.0, UNIT)
+        channel.add_key(unreal.FrameNumber(until), False, 0.0, UNIT)
+        ref.log(f"motion show {box['name']} keys " + key_summary(channel))
+
+
 def motion_sequence(ref, name, scene, run, sequence_name, frames, pose_at, with_light):
     """One Level Sequence at 30 frames a second: a spawnable camera, its cut, a keyed turn when the run pans, and the light track."""
     sequence = ref.asset_tools.create_asset(sequence_name, root(name) + "/Sequences", unreal.LevelSequence, unreal.LevelSequenceFactoryNew())
@@ -758,6 +781,8 @@ def motion_sequence(ref, name, scene, run, sequence_name, frames, pose_at, with_
         key_pan(ref, binding, run["camera"], frames)
     if with_light and run.get("light"):
         key_light(ref, sequence, run["light"], scene, frames)
+    if with_light:
+        key_show(ref, sequence, scene, run, frames)
     unreal.EditorAssetLibrary.save_loaded_asset(sequence)
 
 

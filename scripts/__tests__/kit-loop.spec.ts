@@ -8,7 +8,32 @@ const { appendRow, goalsFor, measureDir, renderHtml } = await import(
 );
 const { emptyLedger } = await import(new URL("../ci-speed-loop.mjs", import.meta.url).href);
 
+const jsonl = (events: readonly unknown[]) =>
+  events.map((event) => JSON.stringify(event)).join("\n");
+const toolUse = (name: string, input: Record<string, unknown>) => ({
+  type: "assistant",
+  message: { content: [{ type: "tool_use", name, input }] },
+});
+const callMjs = "node node_modules/@threenative/core/mcp/call.mjs threenative-engine";
+const init = (status: string) => ({
+  type: "system",
+  subtype: "init",
+  cwd: "/g",
+  mcp_servers: [{ name: "threenative-engine", status }],
+});
+// PRD-825 AC-1: the stream-json events of the cold session, from `claude -p --output-format stream-json`.
+const events = jsonl([
+  init("connected"),
+  toolUse("Read", { file_path: "/g/AGENTS.md" }),
+  toolUse("mcp__threenative-engine__engine_search_capabilities", { situation: "mario" }),
+  toolUse("Bash", { command: `${callMjs} engine_search_references '{"situation":"x"}'` }),
+  toolUse("Edit", { file_path: "/g/AGENTS.md" }),
+  toolUse("Write", { file_path: "/g/src/Jump.ts" }),
+  toolUse("mcp__threenative-assets__asset_search_sources", {}),
+]);
+
 const inputs = {
+  "events.jsonl": events,
   "transcript.json": {
     type: "result",
     num_turns: 41,
@@ -39,7 +64,11 @@ const inputs = {
 function coldBuild(overrides: Record<string, unknown> = {}) {
   const dir = makeTempDirSync("kit-loop");
   for (const [name, value] of Object.entries({ ...inputs, ...overrides })) {
-    if (value !== undefined) writeFileSync(path.join(dir, name), JSON.stringify(value));
+    if (value !== undefined)
+      writeFileSync(
+        path.join(dir, name),
+        typeof value === "string" ? value : JSON.stringify(value),
+      );
   }
   return dir;
 }
@@ -62,6 +91,56 @@ describe("kit-loop", () => {
     });
     expect(row.friction).toEqual({ searchMisses: 2, duplicates: 1, wrongApi: 3, retries: 4 });
     expect(row.retro.frictions[0].transcriptLine).toBe(212);
+    expect(row.discovery).toEqual({
+      mcpCallsBeforeFirstSrcWrite: 2,
+      capabilitySearchBeforeFirstSrcWrite: true,
+      referenceSearchBeforeFirstSrcWrite: true,
+      callMjsWhileLoaded: 1,
+      firstSrcWrite: "src/Jump.ts",
+    });
+  });
+
+  it("sums K1 over every result event when a background task resumed the session", () => {
+    const result = (input: number, turns: number, ms: number) => ({
+      type: "result",
+      num_turns: turns,
+      duration_ms: ms,
+      usage: { input_tokens: input, output_tokens: 0, cache_creation_input_tokens: 0 },
+    });
+    const row = measureDir(
+      coldBuild({
+        "events.jsonl": `${events}\n${jsonl([result(24_000, 5, 600_000), result(7_000, 6, 30_000)])}`,
+        "transcript.json": result(7_000, 6, 30_000),
+      }),
+    );
+    expect(row.metrics).toMatchObject({ k1Tokens: 31_000, k1Turns: 11, k1WallMin: 11 });
+  });
+
+  it("counts call.mjs only while the engine server is loaded, and every MCP call when nothing is written", () => {
+    const row = measureDir(
+      coldBuild({
+        "events.jsonl": jsonl([
+          init("failed"),
+          toolUse("Bash", { command: `${callMjs} engine_search_capabilities '{}'` }),
+        ]),
+      }),
+    );
+    expect(row.discovery).toEqual({
+      mcpCallsBeforeFirstSrcWrite: 1,
+      capabilitySearchBeforeFirstSrcWrite: true,
+      referenceSearchBeforeFirstSrcWrite: false,
+      callMjsWhileLoaded: 0,
+      firstSrcWrite: null,
+    });
+  });
+
+  it("fails closed on a session with no tool events or no init event", () => {
+    expect(() => measureDir(coldBuild({ "events.jsonl": jsonl([init("connected")]) }))).toThrow(
+      /no tool events/u,
+    );
+    expect(() =>
+      measureDir(coldBuild({ "events.jsonl": jsonl([toolUse("Read", { file_path: "/g/a" })]) })),
+    ).toThrow(/init/u);
   });
 
   it("fails closed on a missing input file or a missing field, never a zero", () => {

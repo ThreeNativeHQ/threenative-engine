@@ -1,0 +1,114 @@
+{
+  "look": "desert",
+  "bake": {
+    "file": "desert",
+    "key": null
+  },
+  "landform": "desertMesa",
+  "sizeMeters": 512,
+  "seed": 97,
+  "stream": "ordered",
+  "cover": {
+    "ground": "mesa",
+    "seed": 466468,
+    "attempts": 80000,
+    "stoneRadius": 1.9,
+    "clearings": [[195, 190, 10]]
+  },
+  "foliage": [
+    {
+      "species": "sapling",
+      "density": 0,
+      "slope": [0, 32],
+      "height": null,
+      "spacing": [3.4, 3.4],
+      "collision": "trunk",
+      "stands": false,
+      "grassThreshold": 0.18,
+      "standThreshold": 0.42,
+      "far": null
+    }
+  ],
+  "grass": [
+    {
+      "species": "grass",
+      "density": 0.32,
+      "slope": [0, 24],
+      "height": null,
+      "spacing": 7,
+      "slopeFalloff": 20,
+      "heightFalloff": 28,
+      "mats": null,
+      "waterMargin": 7.5,
+      "beach": null,
+      "detailSpacing": 1.8,
+      "drift": {
+        "field": "stand",
+        "frequency": [6.3, 5.7],
+        "offset": 0.08,
+        "amplitude": 0.6,
+        "band": [0.5, 0.3]
+      },
+      "bladeScale": 0.95,
+      "bladeJitter": 0.5,
+      "scrubChance": 0.65,
+      "scrubScale": 0.8,
+      "scrubJitter": 0.6,
+      "scrubBush": false,
+      "shoreGround": false,
+      "cobbledBed": false
+    }
+  ],
+  "layers": [
+    {
+      "layer": "alpine",
+      "from": 0.28,
+      "to": 0.49
+    },
+    {
+      "layer": "rock",
+      "from": 0.08,
+      "to": 0.52
+    },
+    {
+      "layer": "treeline",
+      "from": 0.8,
+      "to": 1.8
+    },
+    {
+      "layer": "cap",
+      "from": 2,
+      "to": 2.8
+    },
+    {
+      "layer": "desertRock",
+      "from": 0.18,
+      "to": 0.48
+    },
+    {
+      "layer": "alpineRock",
+      "from": 0.06,
+      "to": 0.14
+    },
+    {
+      "layer": "alpineHollow",
+      "from": 0.05,
+      "to": 0.12
+    },
+    {
+      "layer": "snow",
+      "from": 2,
+      "to": 3,
+      "shedFrom": 0.04,
+      "shedTo": 0.22
+    }
+  ],
+  "water": [],
+  "spawn": {
+    "at": [180, 160],
+    "cameraOffset": [28, 24, 42],
+    "focus": [170, 180]
+  },
+  "species": ["boulder", "grass", "reveal", "riverrock", "scree", "scrub", "volcanic"],
+  "aliases": ["desert", "dune", "dunes", "sand"]
+}

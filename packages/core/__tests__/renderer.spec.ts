@@ -2,12 +2,16 @@ import { Color, Object3D, PerspectiveCamera, Scene } from "three";
 import { pass } from "three/tsl";
 import { NodeFrame, NodeUpdateType, RenderPipeline } from "three/webgpu";
 import { describe, expect, it, vi } from "vitest";
+import { defineGame } from "../src/game.js";
+import { RenderChain } from "../src/render/chain.js";
 import {
   beginAsyncPipelines,
   createRenderer,
   drawPastFrameGate,
   prewarm,
 } from "../src/renderer.js";
+import { RESOLUTION_SCALER, ResolutionScaler } from "../src/resolution-scaler.js";
+import { Scene as GameScene, type ICtx } from "../src/scene.js";
 
 function testCanvas(): HTMLCanvasElement {
   const canvas = new EventTarget() as EventTarget & Partial<HTMLCanvasElement>;
@@ -20,6 +24,73 @@ function testCanvas(): HTMLCanvasElement {
 }
 
 describe("createRenderer", () => {
+  it("keeps the desktop temporalUpscale floor for a TRAA chain without lifting it for velocity", async () => {
+    let frame: FrameRequestCallback | undefined;
+    let chain: RenderChain | undefined;
+    vi.stubGlobal("navigator", { gpu: {} });
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      frame = callback;
+      return 1;
+    });
+    vi.stubGlobal("cancelAnimationFrame", () => {});
+    const pipeline = vi.spyOn(RenderPipeline.prototype, "render").mockImplementation(() => {});
+    const observe = vi.spyOn(ResolutionScaler.prototype, "observe");
+    class TemporalScene extends GameScene {
+      override enter(ctx: ICtx): void {
+        chain = new RenderChain(ctx.renderer, {
+          input: pass(ctx.scene, ctx.camera),
+          stages: [{ name: "traa", build: (input) => input }],
+          request: { tier: "high", stages: ["traa"], velocity: { perObject: true } },
+          report: () => {},
+        });
+      }
+    }
+    const canvas = testCanvas();
+    const game = defineGame({
+      initialState: {},
+      scenes: { TemporalScene },
+      start: "TemporalScene",
+      frameBudget: { reportEvery: 2, report: () => {} },
+      renderer: {
+        canvas,
+        webgpuFactory: () => ({
+          domElement: canvas,
+          init: async () => {},
+          render: () => {},
+          setSize: () => {},
+          dispose: () => {},
+        }),
+      },
+    });
+    try {
+      await game.start();
+      expect(chain?.applied.stages).toEqual(["traa"]);
+      expect(chain?.applied.velocity.provisioned).toBe(true);
+      if (!frame) throw new Error("No game frame scheduled");
+      for (let i = 1; i <= 10; i++) frame(i * 16.7);
+      const scaler = observe.mock.contexts[0];
+      expect(scaler).toBeInstanceOf(ResolutionScaler);
+      if (!(scaler instanceof ResolutionScaler)) throw new Error("Game did not observe its scaler");
+      for (let i = 0; i < 30; i++) {
+        scaler.observe({
+          fps: 5 / scaler.scale ** 2,
+          gpuMs: 200 * scaler.scale ** 2,
+          gpuAgeFrames: 0,
+          presented: { p50: 200, p95: 200, p99: 200, max: 200 },
+        });
+        expect(scaler.scale).toBeGreaterThanOrEqual(RESOLUTION_SCALER.desktopFloorScale);
+      }
+      expect(scaler.scale).toBe(RESOLUTION_SCALER.desktopFloorScale);
+      expect(scaler.atFloor).toBe(true);
+    } finally {
+      chain?.dispose();
+      game.stop();
+      observe.mockRestore();
+      pipeline.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("keeps its browser-created canvas layout independent of drawing-buffer scale", async () => {
     const canvas = testCanvas();
     const style = { width: "", height: "" };
@@ -502,6 +573,66 @@ describe("createRenderer", () => {
       await first;
       // The renderer must be exactly as it was found: a frame that renders now goes to the screen.
       expect((renderer.raw as { getRenderTarget: () => unknown }).getRenderTarget()).toBe(null);
+      renderer.dispose();
+    } finally {
+      if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+      else Object.defineProperty(globalThis, "navigator", descriptor);
+    }
+  });
+
+  it("puts the frame-buffer texture name back once, after overlapping compiles settle", async () => {
+    const canvas = testCanvas();
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: { gpu: {} } });
+    try {
+      // The frame-buffer target's one texture is named for a compile so an MRT material can resolve
+      // its outputs. A frame that runs inside one compile's window sees the screen, and a compile it
+      // starts sees the target: two claims on one texture with nothing recording who named it first.
+      // The later claim captures the earlier one's temporary name as "what was here before", and
+      // when it finishes last it writes that capture back, leaving a pass output's name on the
+      // target for every later compile that names none.
+      const frameBufferTexture = { name: "" };
+      const frameBufferTarget = { samples: 4, textures: [frameBufferTexture] };
+      const seenByCompile: string[] = [];
+      let second: Promise<void> | undefined;
+      const renderer = await createRenderer({
+        canvas,
+        webgpuFactory: () => ({
+          needsFrameBufferTarget: true,
+          getRenderTarget: () => null,
+          _getFrameBufferTarget: () => frameBufferTarget,
+          // The yield between objects three's own compile makes; the test resumes at its first await.
+          compileAsync: () => {
+            seenByCompile.push(frameBufferTexture.name);
+            return Promise.resolve();
+          },
+          domElement: canvas,
+          // A frame inside the first compile's window warms a view of its own.
+          render: () => {
+            if (second === undefined) second = renderer.compileAsync({} as never, {} as never);
+          },
+          setSize: () => undefined,
+        }),
+      });
+      const scene = new Scene();
+      const camera = new PerspectiveCamera();
+      const worldPass = pass(scene, camera);
+      const targetTexture = worldPass.renderTarget.textures[0];
+      if (targetTexture === undefined) throw new Error("Missing world pass texture");
+      targetTexture.name = "beauty";
+      const installed = renderer.setOutputNode(worldPass.getTextureNode(), worldPass);
+      if (installed === undefined) throw new Error("Missing installation receipt");
+      const first = renderer.compileAsync(scene, camera);
+      renderer.renderOverlay({} as never, {} as never);
+      expect(second).toBeDefined();
+      await first;
+      await second;
+      // Each compile still got its answer ...
+      expect(seenByCompile).toEqual(["beauty", "beauty"]);
+      // ... and the target carries the name it had before either of them.
+      expect(frameBufferTexture.name).toBe("");
+      installed.dispose();
+      worldPass.dispose();
       renderer.dispose();
     } finally {
       if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");

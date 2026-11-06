@@ -195,7 +195,7 @@ function requiredVersion(versions: ReadonlyMap<string, string>, name: string): s
   return version;
 }
 
-function syncPeerRanges(repo: string, versions: ReadonlyMap<string, string>): number {
+export function syncPeerRanges(repo: string, versions: ReadonlyMap<string, string>): number {
   const coreVersion = requiredVersion(versions, "@threenative/core");
   const playtestVersion = requiredVersion(versions, "@threenative/playtest");
   const assetsVersion = requiredVersion(versions, "@threenative/assets");
@@ -221,6 +221,16 @@ function syncPeerRanges(repo: string, versions: ReadonlyMap<string, string>): nu
   for (const [file, dependency, version] of Object.values(ranges)) {
     if (syncDependencyRange(file, dependency, version)) changed += 1;
   }
+  // A terrain peer is shipped (@threenative/core, @threenative/physics) or external, such as
+  // three and vite; sync either kind only when the release cohort names it.
+  const terrain = path.join(repo, "packages/terrain/package.json");
+  const { peerDependencies = {} } = JSON.parse(readFileSync(terrain, "utf8")) as {
+    peerDependencies?: Record<string, string>;
+  };
+  for (const dependency of Object.keys(peerDependencies)) {
+    const version = versions.get(dependency);
+    if (version !== undefined && syncDependencyRange(terrain, dependency, version)) changed += 1;
+  }
   return changed;
 }
 
@@ -229,6 +239,9 @@ export function syncSourceVersions(repo: string, versions: ReadonlyMap<string, s
   const engineVersion = versions.get("threenative-engine-mcp");
   if (coreVersion === undefined || engineVersion === undefined)
     throw new Error("TN_RELEASE_COHORT_INCOMPLETE: required release package is missing.");
+  const terrainVersion = requiredVersion(versions, "@threenative/terrain");
+  // The animation server ships bundled in core and as its own package; both report one version.
+  const animationVersion = versions.get("threenative-animation-mcp");
 
   const sourceUpdates: readonly [string, RegExp, string][] = [
     [
@@ -267,10 +280,34 @@ export function syncSourceVersions(repo: string, versions: ReadonlyMap<string, s
       `$1${engineVersion}$2`,
     ],
     [
+      path.join(repo, "packages/core/mcp/servers.mjs"),
+      /(name: "@threenative\/terrain", version: ")[^"]+(")/u,
+      `$1${terrainVersion}$2`,
+    ],
+    [
+      path.join(repo, "packages/terrain/src/core/io.ts"),
+      /(generator: "@threenative\/terrain )[^"]+(")/u,
+      `$1${terrainVersion}$2`,
+    ],
+    [
       path.join(repo, "examples/abyss-framework/playtests/replay.playtest.json"),
       /("core": ")[^"]+(")/u,
       `$1${coreVersion}$2`,
     ],
+    ...(animationVersion === undefined
+      ? []
+      : ([
+          [
+            path.join(repo, "packages/core/mcp/servers.mjs"),
+            /(name: "threenative-animation-mcp", version: ")[^"]+(")/u,
+            `$1${animationVersion}$2`,
+          ],
+          [
+            path.join(repo, "packages/animation-mcp/src/index.ts"),
+            /(new McpServer\(\{ name: "threenative-animation", version: ")[^"]+(")/u,
+            `$1${animationVersion}$2`,
+          ],
+        ] satisfies [string, RegExp, string][])),
   ];
   let changed = 0;
   for (const [file, pattern, replacement] of sourceUpdates) {

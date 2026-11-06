@@ -23,9 +23,10 @@ interface IPixels {
 interface ICanvasLike {
   readonly width: number;
   readonly height: number;
-  getContext(
-    kind: "2d",
-  ): { getImageData(x: number, y: number, w: number, h: number): IPixels } | null;
+  getContext(kind: "2d"): {
+    getImageData(x: number, y: number, w: number, h: number): IPixels;
+    getContextAttributes?(): { willReadFrequently?: boolean };
+  } | null;
 }
 
 /** three's Texture defaults: an image is flipped, linear-filtered and mipmapped, unlike DataTexture's. */
@@ -40,25 +41,33 @@ function isPixels(image: unknown): image is IPixels {
   return ArrayBuffer.isView(candidate?.data) && typeof candidate?.width === "number";
 }
 
-/** An image's RGBA pixels: its own `data`, a canvas's 2D readback, or a drawable drawn once. */
+/** An image's RGBA pixels: its own `data`, a CPU-backed canvas read directly, or a drawable copied. */
 function pixelsOf(image: unknown): IPixels {
   if (isPixels(image)) return image;
-  const source = isCanvas(image) ? image : undefined;
-  if (source !== undefined) {
-    const pixels = source.getContext("2d")?.getImageData(0, 0, source.width, source.height);
-    if (pixels !== undefined) return pixels;
-  }
+  const own = isCanvas(image) ? image.getContext("2d") : null;
+  // A canvas made `willReadFrequently` is CPU-backed, so its own readback is exact and needs no copy,
+  // which keeps a canvas redrawn and re-sent each frame at one getImageData.
+  if (own?.getContextAttributes?.().willReadFrequently === true)
+    return own.getImageData(0, 0, (image as ICanvasLike).width, (image as ICanvasLike).height);
   const drawable = image as { width?: number; height?: number } | null;
-  if (
-    typeof OffscreenCanvas !== "undefined" &&
-    drawable?.width &&
-    drawable.height &&
-    !isCanvas(image)
-  ) {
-    const context = new OffscreenCanvas(drawable.width, drawable.height).getContext("2d");
+  if (typeof OffscreenCanvas !== "undefined" && drawable?.width && drawable.height) {
+    // A GPU-backed canvas does not hand its pixels back: measured on Chromium over Vulkan,
+    // `getImageData` of a red `fillRect` reads 0/0/0 there and 255/0/0 in a `willReadFrequently`
+    // canvas, which uploaded every `assets.texture()` as black (the Strata tundra ground). A canvas
+    // made with `document.createElement` and a default 2D context is GPU-backed, and a webgl canvas
+    // has no 2D context at all. Drawing either into a CPU-backed canvas is a plain copy the browser
+    // performs correctly, whatever context the caller created.
+    const context = new OffscreenCanvas(drawable.width, drawable.height).getContext("2d", {
+      willReadFrequently: true,
+    });
     context?.drawImage(image as CanvasImageSource, 0, 0);
     const pixels = context?.getImageData(0, 0, drawable.width, drawable.height);
     if (pixels !== undefined) return pixels;
+  }
+  if (own !== null) {
+    // No OffscreenCanvas to copy into: the caller's canvas is the only readback left.
+    const { width, height } = image as ICanvasLike;
+    return own.getImageData(0, 0, width, height);
   }
   throw new TypeError(
     "TN_BROWSER_TEXTURE_SOURCE: expected ImageData, a canvas with a 2D context, or an image OffscreenCanvas can draw",
@@ -72,12 +81,13 @@ export function defineTextureSources(
 ): Record<string, unknown> {
   const BaseTexture = classes.Texture as EngineClass;
   const BaseVolume = classes.Data3DTexture as EngineClass | undefined;
+  const BaseLayers = classes.DataArrayTexture as EngineClass | undefined;
   const BaseData = classes.DataTexture as EngineClass;
   const BaseCanvas = classes.CanvasTexture as EngineClass | undefined;
   if (BaseCanvas === undefined) throw new TypeError("TN_BROWSER_UNBOUND: CanvasTexture");
   const sources = new WeakMap<object, unknown>();
   const prototype = BaseData.prototype as object;
-  for (const Native of [BaseTexture, BaseData, BaseCanvas, BaseVolume]) {
+  for (const Native of [BaseTexture, BaseData, BaseCanvas, BaseVolume, BaseLayers]) {
     if (Native === undefined) continue;
     const target = Native.prototype as { clone(): object };
     const clone = target.clone;
@@ -86,6 +96,19 @@ export function defineTextureSources(
       if (sources.has(this)) sources.set(result, sources.get(this));
       return result;
     };
+  }
+  // three's `texture.source`: `dataReady = false` tells renderer.initTexture that copyTextureToTexture writes the texels.
+  const dataSources = new WeakMap<object, { dataReady: boolean }>();
+  for (const Native of [BaseTexture, BaseData, BaseCanvas, BaseVolume, BaseLayers]) {
+    if (Native === undefined) continue;
+    Object.defineProperty(Native.prototype, "source", {
+      configurable: true,
+      get(this: object) {
+        const source = dataSources.get(this) ?? { dataReady: true };
+        dataSources.set(this, source);
+        return source;
+      },
+    });
   }
   /** `image` is the JS source; `needsUpdate` re-sends its pixels, as three re-reads `texture.image`. */
   const followSource = (target: object, name: string): void => {
@@ -122,6 +145,7 @@ export function defineTextureSources(
   };
   followSource(prototype, "DataTexture");
   if (BaseVolume !== undefined) followSource(BaseVolume.prototype as object, "Data3DTexture");
+  if (BaseLayers !== undefined) followSource(BaseLayers.prototype as object, "DataArrayTexture");
   followSource(BaseCanvas.prototype as object, "CanvasTexture");
 
   /** An engine DataTexture holding `pixels`, re-read from `image` on every needsUpdate. */
@@ -171,6 +195,32 @@ export function defineTextureSources(
     return texture;
   }
   if (BaseVolume !== undefined) Data3DTexture.prototype = BaseVolume.prototype;
+
+  /** three's DataArrayTexture(data, width, height, depth): the engine's own class, `depth` layers of RGBA texels. */
+  function DataArrayTexture(
+    this: unknown,
+    data?: ArrayLike<number> | null,
+    width = 1,
+    height = 1,
+    depth = 1,
+  ) {
+    if (BaseLayers === undefined) throw new TypeError("TN_BROWSER_UNBOUND: DataArrayTexture");
+    const texture = Reflect.construct(
+      BaseLayers,
+      [data ?? undefined, width, height, depth],
+      new.target ?? DataArrayTexture,
+    );
+    sources.set(texture, { data: data ?? null, width, height, depth });
+    return texture;
+  }
+  if (BaseLayers !== undefined) {
+    DataArrayTexture.prototype = BaseLayers.prototype;
+    // three's flags: r185 names the array class both ways.
+    Object.assign(BaseLayers.prototype as object, {
+      isArrayTexture: true,
+      isDataArrayTexture: true,
+    });
+  }
 
   /** three's CanvasTexture: the engine's own class over the canvas's pixels, with a full mip chain. */
   function CanvasTexture(this: unknown, canvas: unknown, ...rest: unknown[]) {
@@ -267,6 +317,7 @@ export function defineTextureSources(
     CanvasTexture,
     DataTexture,
     ...(BaseVolume === undefined ? {} : { Data3DTexture }),
+    ...(BaseLayers === undefined ? {} : { DataArrayTexture }),
     ImageBitmapLoader,
     Texture,
     TextureLoader,

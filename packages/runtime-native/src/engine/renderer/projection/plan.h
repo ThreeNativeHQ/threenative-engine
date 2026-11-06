@@ -194,6 +194,7 @@ inline bool sameUniforms(const Material& a, const Material& b) {
            a.depthTest == b.depthTest && a.depthWrite == b.depthWrite && a.colorWrite == b.colorWrite && a.forceSinglePass == b.forceSinglePass &&
            a.polygonOffset == b.polygonOffset && a.polygonOffsetFactor == b.polygonOffsetFactor &&
            a.polygonOffsetUnits == b.polygonOffsetUnits &&
+           a.blending == b.blending && a.blendFactors() == b.blendFactors() &&
            a.side == b.side && a.visible == b.visible &&
            a.toneMapped == b.toneMapped && a.fog == b.fog &&
            ((a.opacity == b.opacity) & (a.alphaTest == b.alphaTest) & (a.alphaHash == b.alphaHash) & eq(a.emissive, b.emissive) &
@@ -297,6 +298,7 @@ inline std::size_t uniformHash(const Material& m) {
     mix(reinterpret_cast<std::uintptr_t>(m.positionNode.get()));
     for (const auto* node : m.nodes.pointers())
         mix(reinterpret_cast<std::uintptr_t>(node));
+    for (const auto& slot : m.nodes.mrt) mix(reinterpret_cast<std::uintptr_t>(slot.node.get()));
     for (const auto& [name, texture] : m.maps) {
         mix(std::hash<std::string>{}(name));
         mix(reinterpret_cast<std::uintptr_t>(texture.get()));
@@ -576,12 +578,14 @@ inline Decision decide(Object3D& scene, int minMeshes = 200, bool skinnedVerdict
         }
         for (auto it = object->children.rbegin(); it != object->children.rend(); ++it) stack.push_back(*it);
     }
-    if (!blocked.empty()) {
-        d.reasonCode = blocked;
-        return d;
-    }
+    // The floor first, as core's scanProjection: a scene too small to batch declines whatever it carries, so a
+    // hook there is not the reason. The walk counts every eligible mesh past a block.
     if (int(eligible.size()) + int(skinned.size()) * kSkinnedFloorWeight < minMeshes) {
         d.reasonCode = "belowMeshFloor";
+        return d;
+    }
+    if (!blocked.empty()) {
+        d.reasonCode = blocked;
         return d;
     }
 

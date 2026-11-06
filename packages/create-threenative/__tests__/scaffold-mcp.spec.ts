@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { type ChildProcessWithoutNullStreams, execFile, spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createInterface } from "node:readline";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
-import { staleHostConfigs } from "../../../scripts/sync-mcp-configs.js";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { MCP_HOSTS } from "../../core/mcp/install.mjs";
 import { MCP_SERVERS } from "../../core/mcp/servers.mjs";
@@ -13,6 +13,7 @@ import { createProject, discoverTemplateNames } from "../src/index.js";
 
 // Read off disk, so a kit added tomorrow has its MCP wiring gated the day it ships.
 const templates = discoverTemplateNames();
+const templateRoot = path.resolve("packages/create-threenative/templates");
 const engineMcp = "threenative-engine-mcp";
 const enginePackageRoot = path.resolve("packages/engine-mcp");
 const corePackageRoot = path.resolve("packages/core");
@@ -446,8 +447,8 @@ async function probeEngineServer(target: string): Promise<void> {
       clientInfo: { name: "scaffold-mcp-test", version: "0" },
       protocolVersion: "2025-06-18",
     });
-    expect(initialized.instructions).toContain("New games: steps 1-8");
-    expect(initialized.instructions).toContain("Existing games: steps 5-7 only");
+    expect(initialized.instructions).toContain("Authoring flow in the game's AGENTS.md");
+    expect(initialized.instructions).toContain("every change to an existing game");
     expect(initialized.instructions).toContain("subagents focused on specific areas");
     child.stdin.write('{"jsonrpc":"2.0","method":"notifications/initialized"}\n');
     const listed = await request(child, nextId, lines, "tools/list");
@@ -458,6 +459,7 @@ async function probeEngineServer(target: string): Promise<void> {
       "engine_search_references",
       "engine_reference_detail",
       "engine_save_reference",
+      "engine_watch_reference",
     ]);
     const called = await request(child, nextId, lines, "tools/call", {
       arguments: { situation: "enemy walks around a wall" },
@@ -561,7 +563,7 @@ describe("scaffolded engine MCP", () => {
       );
       expect(authoring).toContain("## New game");
       expect(authoring).toContain("## Existing game");
-      expect(authoring).toContain("Use steps 5-7 only");
+      expect(authoring).toContain("A change to an existing game skips step 1");
       expect(authoring).toContain("subagents focused on specific areas");
       await linkEngineMcp(target);
       await linkCore(target);
@@ -848,16 +850,31 @@ describe("scaffolded host MCP configs", () => {
     },
     SCAFFOLD_ONLY_TEST_TIMEOUT_MS,
   );
+
+  // PRD-827 AC-1: Claude Code holds a project server at "Pending approval" until the user approves
+  // it; naming each server in the project settings loads all of them in the first session.
+  it("approves every core server in the Claude Code project settings", async () => {
+    const root = await makeTempDir("threenative-scaffold-approve-");
+    temporaryRoots.push(root);
+    const { target } = await createProject({ install: false, target: "game" }, root);
+    const settings = JSON.parse(
+      await readFile(path.join(target, ".claude/settings.json"), "utf8"),
+    ) as { enabledMcpjsonServers?: string[] };
+    expect(settings.enabledMcpjsonServers).toEqual(Object.keys(MCP_SERVERS));
+  });
 });
 
-// `pnpm sync:mcp` writes these files and `pnpm budgets` runs its `--check`. That gate lives at the
-// end of a chain that takes minutes; this one runs in the unit suite, so a hand-edited template
-// config is caught by a plain `pnpm test` too. It calls the generator's own comparison rather than
-// re-deriving the expectation: a second derivation would be a second generator, green against its
-// own copy of the rule.
+// The scaffolder writes every host config from core's one server table (PRD-826), so a template
+// that tracks one is a second copy that can go stale. The scaffold tests above prove each written
+// file; this one proves nothing is committed beside them.
 
-describe("committed template MCP host configs", () => {
-  it("should keep every template host config equal to the generator output", () => {
-    expect(staleHostConfigs()).toEqual([]);
+describe("template MCP host configs", () => {
+  it("should track no host config in any template", () => {
+    const tracked = templates.flatMap((template) =>
+      MCP_HOSTS.map((host) => path.join(templateRoot, template, host.file)).filter((file) =>
+        existsSync(file),
+      ),
+    );
+    expect(tracked).toEqual([]);
   });
 });

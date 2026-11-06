@@ -1,10 +1,11 @@
 import { spawnSync } from "node:child_process";
 import { cp, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { runInNewContext } from "node:vm";
 import { describe, expect, it } from "vitest";
 import { makeTempDir } from "../../test-support/temp-dir.js";
 import { allTemplates } from "../../test-support/templates.js";
-import { declaredNeeds } from "../ci-workflow.js";
+import { declaredNeeds, jobSections } from "../ci-workflow.js";
 import { parsePerformanceLaneManifest } from "../engine-load-test/report.js";
 import {
   collectorCoverage,
@@ -541,18 +542,6 @@ function triggerPaths(source: string): readonly string[] {
   return entries;
 }
 
-function jobSections(source: string): readonly [string, string][] {
-  const jobsIndex = source.indexOf("\njobs:\n");
-  if (jobsIndex < 0) throw new Error("CI workflow did not include a jobs mapping.");
-  const jobs = source.slice(jobsIndex);
-  const matches = [...jobs.matchAll(/^ {2}([A-Za-z0-9_-]+):\n/gm)];
-  return matches.map((match, index) => {
-    const name = match[1];
-    if (name === undefined) throw new Error("CI job heading did not include a name.");
-    return [name, jobs.slice(match.index, matches[index + 1]?.index ?? jobs.length)];
-  });
-}
-
 function requiredJob(source: string, name: string): string {
   const section = jobSections(source).find(([job]) => job === name)?.[1];
   if (section === undefined) throw new Error(`CI job ${name} was not found.`);
@@ -748,6 +737,11 @@ describe("CI pipeline structure", () => {
     expect(scope).toContain("selection: ${{ steps.classify.outputs.selection }}");
     expect(scope).toContain("reason: ${{ steps.classify.outputs.reason }}");
     expect(scope).not.toContain("pnpm install");
+    // Scope reads only scripts/ and the kit.json files: a full blob-less checkout fetched every
+    // HEAD blob (488 MB) and outlasted the 5-minute bound on a loaded runner (runs 41688746026, 41702153229).
+    expect(scope).toMatch(
+      /sparse-checkout: \|\n\s+scripts\n\s+packages\/create-threenative\/templates\n/u,
+    );
 
     for (const name of [
       "typecheck",
@@ -1228,6 +1222,21 @@ describe("CI pipeline structure", () => {
     expect(requiredJob(ci, "golden-path-template")).toContain("needs: [scope, build-artifacts]");
   });
 
+  it("publishes through npm Trusted Publishing: an OIDC token and npm 11.5.1 or later", async () => {
+    // NPM_TOKEN was rejected with E404 on every PUT of 0.3.10 and 0.3.11; the OIDC exchange needs
+    // `id-token: write` and an npm CLI that knows it, and Node 20.19 bundles npm 10.
+    const ship = requiredJob(
+      await readFile(path.join(repo, ".github/workflows/npm-release.yml"), "utf8"),
+      "ship",
+    );
+    expect(ship).toContain("id-token: write");
+    const install = /npm install -g npm@(\d+)\.(\d+)\.(\d+)/u.exec(ship);
+    if (!install) throw new Error("ship installs no pinned npm before it publishes");
+    const [major = 0, minor = 0, patch = 0] = install.slice(1).map(Number);
+    expect(major * 1_000_000 + minor * 1_000 + patch).toBeGreaterThanOrEqual(11_005_001);
+    expect(ship.indexOf(install[0])).toBeLessThan(ship.indexOf("pnpm release:ship"));
+  });
+
   it("hands the emulator action a one-line script, so the arguments survive", async () => {
     // `android-emulator-runner` runs `script` through the emulator shell a line at a time. A
     // `\`-continued command therefore loses everything after its first line, and from 2026-09-01
@@ -1312,6 +1321,239 @@ describe("CI pipeline structure", () => {
     `\${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.${need}.outputs.runner_admission || '[]'), '${id}')) && 'ubuntu-24.04' || vars.TN_RUNNER }}`;
   const heavyMatrix = (format: string, axis: string, need = "scope") =>
     `\${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.${need}.outputs.runner_admission || '[]'), format('${format}', ${axis}))) && 'ubuntu-24.04' || vars.TN_RUNNER }}`;
+  const gpuPinGuard =
+    "(!vars.TN_RUNNER_GPU_HEAD || (github.event.pull_request.head.sha || github.event.merge_group.head_sha || (github.event_name == 'push' && github.sha) || '') == vars.TN_RUNNER_GPU_HEAD) && vars.TN_RUNNER_GPU || ''";
+  const gpuHeavy = (id: string, need = "scope") =>
+    `\${{ github.event.pull_request.head.repo.fork && 'ubuntu-24.04' || (${gpuPinGuard}) || ((!vars.TN_RUNNER || !contains(fromJSON(needs.${need}.outputs.runner_admission || '[]'), '${id}')) && 'ubuntu-24.04' || vars.TN_RUNNER) }}`;
+  const gpuHeavyMatrix = (format: string, axis: string, need = "scope") =>
+    `\${{ github.event.pull_request.head.repo.fork && 'ubuntu-24.04' || ((${axis} == 'racing' || ${axis} == 'rain') && (${gpuPinGuard})) || ((!vars.TN_RUNNER || !contains(fromJSON(needs.${need}.outputs.runner_admission || '[]'), format('${format}', ${axis}))) && 'ubuntu-24.04' || vars.TN_RUNNER) }}`;
+  const workflowMatrixContext = (input: {
+    template: string;
+    fork?: boolean;
+    pin?: string;
+    gpu?: string;
+    runner?: string;
+    admitted?: boolean;
+  }) => ({
+    matrix: { template: input.template },
+    vars: {
+      TN_RUNNER_GPU_HEAD: input.pin ?? "",
+      TN_RUNNER_GPU: input.gpu ?? "",
+      TN_RUNNER: input.runner ?? "",
+    },
+    github: {
+      event_name: "pull_request",
+      event: {
+        pull_request: { head: { sha: "candidate-sha", repo: { fork: input.fork ?? false } } },
+        merge_group: { head_sha: "" },
+      },
+      sha: "",
+    },
+    needs: {
+      scope: {
+        outputs: {
+          runner_admission: JSON.stringify(
+            input.admitted === false ? [] : [`ci:template-nonvisual:${input.template}`],
+          ),
+        },
+      },
+    },
+    fromJSON: JSON.parse,
+    contains: (values: unknown[], value: unknown) => values.includes(value),
+    format: (pattern: string, value: unknown) => pattern.replace("{0}", String(value)),
+  });
+
+  it("pins optional GPU routing to the exact supported event SHA without changing fallbacks", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const scope = requiredJob(ci, "scope");
+    const gpuGuard = scope.match(/TN_RUNNER_GPU: \$\{\{ (.+) \}\}/u)?.[1];
+    expect(gpuGuard).toBe(gpuPinGuard);
+
+    const pinnedGpuHeavy = (id: string) =>
+      `\${{ github.event.pull_request.head.repo.fork && 'ubuntu-24.04' || (${gpuPinGuard}) || ((!vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), '${id}')) && 'ubuntu-24.04' || vars.TN_RUNNER) }}`;
+    const pinnedGpuMatrix = gpuHeavyMatrix("ci:template-nonvisual:{0}", "matrix.template");
+    for (const [job, expected] of [
+      ["strata", pinnedGpuHeavy("ci:strata")],
+      ["benchmark", pinnedGpuHeavy("ci:benchmark")],
+      ["template-nonvisual", pinnedGpuMatrix],
+    ] as const) {
+      expect(requiredJob(ci, job).match(/^ {4}runs-on: (.+)$/mu)?.[1], `${job} GPU pin`).toBe(
+        expected,
+      );
+    }
+
+    const evaluateGpuGuard = (input: {
+      isPullRequest: boolean;
+      headSha?: string;
+      eventName?: string;
+      eventSha?: string;
+      mergeGroupSha?: string;
+      pin?: string;
+      gpuLabel?: string;
+    }): unknown =>
+      runInNewContext(gpuGuard ?? "", {
+        vars: {
+          TN_RUNNER_GPU_HEAD: input.pin ?? "",
+          TN_RUNNER_GPU: input.gpuLabel ?? "",
+        },
+        github: {
+          event_name: input.eventName ?? (input.isPullRequest ? "pull_request" : "push"),
+          sha: input.eventSha ?? "",
+          event: {
+            pull_request: { head: { sha: input.isPullRequest ? (input.headSha ?? "") : "" } },
+            merge_group: { head_sha: input.mergeGroupSha ?? "" },
+          },
+        },
+      });
+    expect(
+      evaluateGpuGuard({
+        isPullRequest: true,
+        headSha: "candidate-sha",
+        eventSha: "merge-candidate-sha",
+        pin: "candidate-sha",
+        gpuLabel: "tn-gpu-pr483",
+      }),
+    ).toBe("tn-gpu-pr483");
+    expect(
+      evaluateGpuGuard({
+        isPullRequest: true,
+        headSha: "different-sha",
+        eventSha: "candidate-sha",
+        pin: "candidate-sha",
+        gpuLabel: "tn-gpu-pr483",
+      }),
+    ).toBe("");
+    expect(
+      evaluateGpuGuard({ isPullRequest: true, headSha: "candidate-sha", gpuLabel: "tn-gpu-pr483" }),
+    ).toBe("tn-gpu-pr483");
+    expect(
+      evaluateGpuGuard({
+        isPullRequest: true,
+        headSha: "candidate-sha",
+        pin: "candidate-sha",
+      }),
+    ).toBe("");
+    expect(
+      evaluateGpuGuard({
+        isPullRequest: false,
+        pin: "candidate-sha",
+        gpuLabel: "tn-gpu-pr483",
+      }),
+    ).toBe("");
+    for (const eventName of ["push", "merge_group"]) {
+      for (const matches of [true, false]) {
+        expect
+          .soft(
+            evaluateGpuGuard({
+              isPullRequest: false,
+              eventName,
+              eventSha: eventName === "push" ? "candidate-sha" : "different-event-sha",
+              mergeGroupSha: eventName === "merge_group" ? "candidate-sha" : "",
+              pin: matches ? "candidate-sha" : "different-pin",
+              gpuLabel: "tn-gpu-pr483",
+            }),
+            `${eventName} exact pin match=${matches}`,
+          )
+          .toBe(matches ? "tn-gpu-pr483" : "");
+      }
+    }
+    for (const eventName of ["workflow_dispatch", "schedule"]) {
+      expect(
+        evaluateGpuGuard({
+          isPullRequest: false,
+          eventName,
+          eventSha: "candidate-sha",
+          pin: "candidate-sha",
+          gpuLabel: "tn-gpu-pr483",
+        }),
+        `${eventName} cannot use a pinned GPU route`,
+      ).toBe("");
+      expect(evaluateGpuGuard({ isPullRequest: false, eventName, gpuLabel: "tn-gpu-pr483" })).toBe(
+        "tn-gpu-pr483",
+      );
+    }
+  });
+
+  it("routes Rain to the pinned GPU only for eligible non-fork runs", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const job = requiredJob(ci, "template-nonvisual");
+    const matrixExpression = job.match(/^ {4}runs-on: \$\{\{ (.+) \}\}$/mu)?.[1] ?? "";
+    const softwareExpression =
+      job.match(/^ {6}TN_PLAYTEST_ALLOW_SOFTWARE: \$\{\{ (.+) \}\}$/mu)?.[1] ?? "";
+    const cases = [
+      { template: "rain", pin: "candidate-sha", gpu: "", expected: "ubuntu-24.04" },
+      {
+        template: "rain",
+        pin: "candidate-sha",
+        gpu: "tn-gpu-pr483",
+        expected: "tn-gpu-pr483",
+      },
+      {
+        template: "racing",
+        pin: "candidate-sha",
+        gpu: "tn-gpu-pr483",
+        expected: "tn-gpu-pr483",
+      },
+      {
+        template: "rain",
+        pin: "candidate-sha",
+        gpu: "tn-gpu-pr483",
+        admitted: false,
+        expected: "tn-gpu-pr483",
+      },
+      {
+        template: "rain",
+        fork: true,
+        pin: "candidate-sha",
+        gpu: "tn-gpu-pr483",
+        expected: "ubuntu-24.04",
+      },
+      {
+        template: "rain",
+        pin: "different-sha",
+        gpu: "tn-gpu-pr483",
+        runner: "tn-local",
+        expected: "tn-local",
+      },
+      {
+        template: "starter",
+        pin: "candidate-sha",
+        gpu: "tn-gpu-pr483",
+        runner: "tn-local",
+        expected: "tn-local",
+      },
+      {
+        template: "rain",
+        pin: "different-sha",
+        gpu: "tn-gpu-pr483",
+        admitted: false,
+        expected: "ubuntu-24.04",
+      },
+    ];
+    for (const input of cases) {
+      const result = runInNewContext(matrixExpression, workflowMatrixContext(input));
+      expect(result, `${input.template} routes to ${input.expected}`).toBe(input.expected);
+    }
+
+    const softwareCases = [
+      { template: "rain", pin: "candidate-sha", gpu: "tn-gpu-pr483", expected: "0" },
+      {
+        template: "rain",
+        fork: true,
+        pin: "candidate-sha",
+        gpu: "tn-gpu-pr483",
+        expected: "1",
+      },
+      { template: "rain", pin: "different-sha", gpu: "tn-gpu-pr483", expected: "1" },
+      { template: "rain", pin: "candidate-sha", gpu: "", expected: "1" },
+      { template: "starter", pin: "candidate-sha", gpu: "tn-gpu-pr483", expected: "1" },
+    ];
+    for (const input of softwareCases)
+      expect(runInNewContext(softwareExpression, workflowMatrixContext(input))).toBe(
+        input.expected,
+      );
+  });
+
   // `starter-linux` resolves its per-row runner inside the scope job, so the admission output it
   // reads is a step output there, not a `needs` one.
   const heavyStep = (id: string) =>
@@ -1325,13 +1567,14 @@ describe("CI pipeline structure", () => {
     ["ci.yml:test-native", heavy("ci:test-native")],
     ["ci.yml:test-browser", heavy("ci:test-browser")],
     ["ci.yml:test-playtest", heavy("ci:test-playtest")],
-    ["ci.yml:benchmark", heavy("ci:benchmark")],
+    ["ci.yml:strata", gpuHeavy("ci:strata")],
+    ["ci.yml:benchmark", gpuHeavy("ci:benchmark")],
     ["ci.yml:build-artifacts", heavy("ci:build-artifacts")],
     ["ci.yml:performance-contracts", heavy("ci:performance-contracts")],
     ["ci.yml:budgets", heavy("ci:budgets")],
     ["ci.yml:test-unit", heavyMatrix("ci:test-unit:{0}", "matrix.shard")],
     ["ci.yml:golden-path-template", heavyMatrix("ci:golden-path-template:{0}", "matrix.template")],
-    ["ci.yml:template-nonvisual", heavyMatrix("ci:template-nonvisual:{0}", "matrix.template")],
+    ["ci.yml:template-nonvisual", gpuHeavyMatrix("ci:template-nonvisual:{0}", "matrix.template")],
     ["ci.yml:template-engine-cost", heavyMatrix("ci:template-engine-cost:{0}", "matrix.template")],
     ["ci.yml:native-engine", heavy("ci:native-engine")],
     ["integration.yml:animation", heavy("integration:animation", "paths")],
@@ -1400,6 +1643,9 @@ describe("CI pipeline structure", () => {
         expect(section).toContain("uses: ./.github/actions/android-v8-source");
         expect(section).toContain("recipe-hash: ${{ steps.v8.outputs.recipe-hash }}");
         expect(section).toContain("published: ${{ steps.v8.outputs.published }}");
+        // The release write consumes `trusted`, not `built`: a develop or main push that hits its
+        // own cache must still be able to republish a missing asset (PRD-628 review round 2).
+        expect(section).toContain("trusted: ${{ steps.v8.outputs.trusted }}");
       }
     },
   );
@@ -1539,7 +1785,7 @@ describe("CI pipeline structure", () => {
     return rows;
   }
 
-  it("routes every movable Linux job through exactly one TN_RUNNER switch", async () => {
+  it("routes every movable Linux job through its configured runner pool", async () => {
     const directory = path.join(repo, ".github/workflows");
     const routed = [
       ".github/workflows/ci.yml",
@@ -1640,6 +1886,7 @@ describe("CI pipeline structure", () => {
     expect(scope).toContain("runner_admission: ${{ steps.admission.outputs.runner_admission }}");
     expect(scope).toContain("node scripts/ci-runner-admission.mjs --admit");
     expect(scope).toContain("TN_RUNNER_SLOTS: ${{ vars.TN_RUNNER_SLOTS }}");
+    expect(scope).toContain(`TN_RUNNER_GPU: \${{ ${gpuPinGuard} }}`);
     const forwarded =
       ci.match(/runner_admission: \$\{\{ needs\.scope\.outputs\.runner_admission \}\}/gu) ?? [];
     expect(forwarded, "one plan reaches both reusable workflows").toHaveLength(2);
@@ -2184,12 +2431,16 @@ describe("CI pipeline structure", () => {
     const job = requiredJob(ci, "template-nonvisual");
     // Runs on every event since 2026-09-01 (owner call): the PR skip reported nothing on the
     // branch where the regression was written, and the merge that shipped it reported too late.
-    expect(job).not.toContain("github.event_name == 'push'");
+    // Only the job-level gate (4-space key) counts: since 2026-11-01 (owner) single steps such as
+    // the starter's scenarios run nightly only, which leaves the job itself on every event.
+    expect(job).not.toMatch(/^ {4}if:.*github\.event_name/mu);
     // An `if:` gate naming the event, not any mention of it: the TN_RUNNER routing expression
     // (PRD-480) reads `github.event.pull_request.head.repo.fork` in every routed job and gates
     // nothing on it. What this forbids is a gate that skips pull requests.
     expect(job).not.toMatch(/^\s+if:.*pull_request/mu);
-    expect(job).toContain('TN_PLAYTEST_ALLOW_SOFTWARE: "1"');
+    expect(job).toContain(
+      "TN_PLAYTEST_ALLOW_SOFTWARE: ${{ (matrix.template == 'rain' && !github.event.pull_request.head.repo.fork &&",
+    );
     expect(job).toContain("non-visual-scenarios.mjs");
     expect(job).toContain("threenative-playtest");
     expect(matrixTemplates(job)).toEqual([...expectedTemplates].sort());
@@ -2238,7 +2489,7 @@ describe("CI pipeline structure", () => {
     expect(lane).not.toMatch(/^\s+max-parallel:/mu);
     expect(lane).toContain("fail-fast: false");
     expect(lane).toContain(
-      `runs-on: ${heavyMatrix("ci:template-nonvisual:{0}", "matrix.template")}`,
+      `runs-on: ${gpuHeavyMatrix("ci:template-nonvisual:{0}", "matrix.template")}`,
     );
   });
 
@@ -3264,7 +3515,7 @@ describe("CI pipeline structure", () => {
     // The lane it delegates to has to run the same classifier and runner, on every event.
     expect(nonVisual).toContain("non-visual-scenarios.mjs");
     expect(nonVisual).toContain("threenative-playtest");
-    expect(nonVisual).not.toContain("github.event_name == 'push'");
+    expect(nonVisual).not.toMatch(/^ {4}if:.*github\.event_name/mu);
     // And it has to cover every template this matrix drives.
     const driven = matrixTemplates(goldenPath);
     expect(driven.length).toBeGreaterThan(0);
@@ -3651,6 +3902,48 @@ ${script}
     expect(performance).toContain("release-soak");
     expect(performance).toContain("pnpm native:qualify:physical");
     expect(performance).toContain("7200000");
+  });
+
+  // Two crons fire on a Sunday, so every sampled run after the first showed this job as `skipped`
+  // and it looked like a schedule that never matched. The run that did reach the condition then died
+  // in 20 s on ERR_MODULE_NOT_FOUND before it measured a template, which is why nothing re-measured
+  // the templates for two months. Both halves are guarded here: the condition names the cron that
+  // fires it and no other, and the job builds the workspace and the web engine before the rotation.
+  it("aims the weekly template rotation at the cron that fires it, and builds before it measures", async () => {
+    const performance = await readFile(
+      path.join(repo, ".github/workflows/performance-regression.yml"),
+      "utf8",
+    );
+    const crons = [
+      ...performance
+        .slice(0, performance.indexOf("\njobs:\n"))
+        .matchAll(/^\s+- cron: "([^"]+)"$/gmu),
+    ].map((match) => match[1] ?? "");
+    expect(crons.length).toBeGreaterThan(1);
+    // A `*` day-of-week fires daily; the weekly rotation is the one cron whose day-of-week is fixed.
+    const weekly = crons.filter((cron) => cron.split(/\s+/u)[4] !== "*");
+    expect(weekly).toHaveLength(1);
+    const weeklyCron = weekly[0] ?? "";
+    expect(weeklyCron).not.toBe("");
+    const section =
+      jobSections(performance).find(([name]) => name === "weekly-workload-rotation")?.[1] ?? "";
+    expect(section).not.toBe("");
+    const condition = /^ {4}if: (.+)$/mu.exec(section)?.[1] ?? "";
+    expect(condition).toContain("github.event_name == 'schedule'");
+    expect(condition).toContain(`github.event.schedule == '${weeklyCron}'`);
+    for (const cron of crons.filter((candidate) => candidate !== weeklyCron))
+      expect(condition).not.toContain(cron);
+    // The rotation imports `@threenative/assets` through the CLI's config and packs the local
+    // framework, so the workspace bundles and the web engine are its prerequisites, not its output.
+    const build = section.indexOf("uses: ./.github/actions/workspace-dist");
+    const engine = section.indexOf("uses: ./.github/actions/native-engine-wasm");
+    const rotation = section.indexOf("run: pnpm test:templates");
+    expect(build).toBeGreaterThan(-1);
+    expect(engine).toBeGreaterThan(-1);
+    expect(rotation).toBeGreaterThan(build);
+    expect(rotation).toBeGreaterThan(engine);
+    // A hosted runner has no GPU: the scaffold's own test refuses a software adapter without this.
+    expect(section).toContain('TN_PLAYTEST_ALLOW_SOFTWARE: "1"');
   });
 
   it("reports a scheduled missing baseline before fetching or checking out source", async () => {
@@ -4097,6 +4390,119 @@ describe("PRD-373 selective feature verification", () => {
     }
   });
 
+  describe("strata terrain CI selection", () => {
+    it.each([
+      "packages/terrain/src/index.ts",
+      "examples/strata-terrain-preview/src/game.ts",
+      "packages/core/src/world.ts",
+      "packages/core/src/world-cells.ts",
+      "packages/core/__tests__/world-cells-terrain.spec.ts",
+    ])("selects strata job when %s changes on develop PR", async (path) => {
+      const fixture = await scopeFixture();
+      try {
+        const head = await commitScopeChange(
+          fixture,
+          path,
+          "export const terrainTouch = true;\n",
+          "terrain change",
+        );
+        const plan = classifyScope(fixture.root, fixture.base, head, ["--target", "develop"]);
+        expect(plan.selection).toBe("full");
+        const jobs = plan.jobs as Record<string, { required: boolean }>;
+        expect(jobs.strata?.required).toBe(true);
+      } finally {
+        await removeFixture(fixture.root);
+      }
+    });
+
+    it("exempts strata, with the reason, when this run reaches no GPU runner", async () => {
+      const { selectionPlan, validatePlan, validateEventPlan } = (await import(
+        new URL("../ci-change-scope.mjs", import.meta.url).href
+      )) as {
+        selectionPlan: (...args: unknown[]) => {
+          jobs: Record<string, { required: boolean; reason: string }>;
+        };
+        validatePlan: (plan: unknown) => unknown;
+        validateEventPlan: (
+          plan: unknown,
+          event: { eventName: string; baseRef: string },
+        ) => unknown;
+      };
+      const plan = () =>
+        selectionPlan("full", "fixture", [], "a".repeat(40), false, 0, "main").jobs.strata;
+      const saved = process.env.TN_CI_STRATA_GPU;
+      try {
+        process.env.TN_CI_STRATA_GPU = "false";
+        expect(plan()?.required).toBe(false);
+        expect(plan()?.reason).toMatch(/no GPU runner serves this run/u);
+        // A caller job replays the plan with no GPU answer of its own (native-platforms runs
+        // `--validate-plan`): the plan carries the answer, so the replay owes the same jobs.
+        const exempt = selectionPlan("full", "fixture", [], "a".repeat(40), true, 0, "main");
+        Reflect.deleteProperty(process.env, "TN_CI_STRATA_GPU");
+        expect(() => validatePlan(JSON.parse(JSON.stringify(exempt)))).not.toThrow();
+        // A promotion still qualifies with the recorded exemption, and only that one.
+        const promotion = { eventName: "pull_request", baseRef: "main" };
+        expect(() =>
+          validateEventPlan(JSON.parse(JSON.stringify(exempt)), promotion),
+        ).not.toThrow();
+        process.env.TN_CI_STRATA_GPU = "true";
+        expect(plan()?.required).toBe(true);
+      } finally {
+        if (saved === undefined) Reflect.deleteProperty(process.env, "TN_CI_STRATA_GPU");
+        else process.env.TN_CI_STRATA_GPU = saved;
+      }
+      const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+      // The scope step's GPU answer and the strata job's runs-on GPU branch read the same variables.
+      expect(ci).toContain("TN_CI_STRATA_GPU: ${{ !github.event.pull_request.head.repo.fork");
+      expect(ci).toMatch(/strata:[\s\S]*?vars\.TN_RUNNER_GPU_HEAD[\s\S]*?vars\.TN_RUNNER_GPU /u);
+    });
+
+    it("skips strata job for an unrelated template change on develop PR", async () => {
+      const fixture = await scopeFixture();
+      try {
+        const head = await commitScopeChange(
+          fixture,
+          "packages/create-threenative/templates/rain/src/game.ts",
+          "export const rainTouch = true;\n",
+          "unrelated template",
+        );
+        const plan = classifyScope(fixture.root, fixture.base, head, ["--target", "develop"]);
+        const jobs = plan.jobs as Record<string, { required: boolean }>;
+        expect(jobs.strata?.required).toBe(false);
+      } finally {
+        await removeFixture(fixture.root);
+      }
+    });
+
+    it("runs every strata proof lane, gated by the scope plan", async () => {
+      const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+      const strata = requiredJob(ci, "strata");
+      expect(strata).toContain("fromJSON(needs.scope.outputs.plan).jobs.strata.required");
+      for (const lane of ["web", "editor", "authored", "custom", "export"]) {
+        expect(strata).toContain(`test:terrain:${lane}`);
+      }
+      expect(strata).toContain("test:consumer");
+    });
+
+    it("requires strata job in full qualification mode", async () => {
+      const fixture = await scopeFixture();
+      try {
+        const head = await commitScopeChange(
+          fixture,
+          "packages/create-threenative/templates/rain/src/game.ts",
+          "export const rainTouch = true;\n",
+          "unrelated template",
+        );
+        const plan = classifyScope(fixture.root, fixture.base, head, ["--target", "main"]);
+        expect(plan.qualification).toBe(true);
+        const jobs = plan.jobs as Record<string, { required: boolean }>;
+        expect(jobs.strata?.required).toBe(true);
+      } finally {
+        await removeFixture(fixture.root);
+      }
+    });
+  });
+
   it("a fresh install cannot stop on the interactive node_modules purge prompt", () => {
     // A checkout whose node_modules was not created by this pnpm makes `pnpm install` ask before
     // purging it. Agents run without a TTY, so the prompt hangs them until `CI=true` is added by
@@ -4383,6 +4789,7 @@ const CI_SKIPPED_JOBS = [
   "golden-path-template",
   "native-platforms",
   "performance-contracts",
+  "strata",
   "template-nonvisual",
   "test",
   "test-browser",
@@ -4434,10 +4841,13 @@ describe("a CI-configuration-only pull request", () => {
       expect(Object.values(jobs).filter((job) => job.required).length).toBeGreaterThan(6);
       // Every gate the `ci` selection skipped comes back. `native-platforms` is the one a clean
       // develop diff legitimately waives, and this diff does not touch a native path.
-      for (const name of CI_SKIPPED_JOBS.filter((job) => job !== "native-platforms")) {
+      for (const name of CI_SKIPPED_JOBS.filter(
+        (job) => job !== "native-platforms" && job !== "strata",
+      )) {
         expect(jobs[name]?.required, name).toBe(true);
       }
       expect(jobs["native-platforms"]?.required).toBe(true);
+      expect(jobs.strata?.required).toBe(false);
     } finally {
       await removeFixture(fixture.root);
     }

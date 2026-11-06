@@ -8,7 +8,7 @@ prd_contract: v1
 **Priority:** P3 — Phase 1 is open: the default temporal resolve clips history in the frame's own color space with one variance gamma, and no measurement says whether dark regions ghost or bright regions flicker because of it.
 **Complexity:** 6 (MEDIUM) — 2–4 files (+1), a color-space change in a shared resolve (+2), the same rule on the owned engine (+2), a visual judge (+1); risk override: none
 **Owner:** João
-**Depends on:** [PRD-539](PRD-539-low-resolution-temporal-reconstruction-quality-and-cost.md) for the corpus, which also names the moire error of lever 4. `docs/PRDs/Unreal/look/PRD-632-the-frame-is-exposed-and-tone-mapped-the-way-a-fresh-unreal-project-is.md` (on `feat/unreal-look-epic`) for the exposure the rejection reads.
+**Depends on:** [PRD-539](../../done/PRD-539-low-resolution-temporal-reconstruction-quality-and-cost.md) for the corpus, which also names the moire error of lever 4. `docs/PRDs/done/PRD-632-the-frame-is-exposed-and-tone-mapped-the-way-a-fresh-unreal-project-is.md` (on `feat/unreal-look-epic`) for the exposure the rejection reads.
 
 ## Context
 

@@ -166,6 +166,27 @@ export async function patchScaffold(
       ),
     );
   // The render modules that only the overlay has: the baseline arm gets inert stand-ins (the template look).
+  if (baseline) {
+    await writeFile(
+      path.join(target, "src/render/specular.ts"),
+      [
+        "// The baseline arm draws the template look: the diagnosis knob changes nothing here.",
+        'import type { MeshPhysicalMaterial, MeshStandardMaterial } from "three";',
+        "export const noSpecularTwin = (source: MeshStandardMaterial) =>",
+        "  source as unknown as MeshPhysicalMaterial;",
+        "",
+      ].join("\n"),
+    );
+    await writeFile(
+      path.join(target, "src/render/diffuseEnergy.ts"),
+      [
+        "// The baseline arm draws the template look: the diffuse keeps three's own energy term.",
+        'export const diffuseEnergyMode = () => "three" as const;',
+        "export const applyDiffuseEnergy = () => 0;",
+        "",
+      ].join("\n"),
+    );
+  }
   await cp(
     path.join(SCAFFOLD_DIR, baseline ? "tuningBaseline.ts.in" : "tuning.ts.in"),
     path.join(target, "src/scenes/tuning.ts"),

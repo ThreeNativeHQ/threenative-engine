@@ -11,14 +11,14 @@ export const lookDiagnostics: {
   aaAlphaSqueezed: boolean;
   /** Runs N denoise passes over the SSGI gather at any layer, for an A/B against the tier's count. */
   denoisePasses: number | undefined;
-  /** Turns on the film curve's 43.7 channel clip (off by default), the ON arm of a paired capture. */
-  lutClipOn: boolean;
+  /** Turns off the film curve's 43.7 channel clip (on by default), the OFF arm of a paired capture. */
+  lutClipOff: boolean;
   /** Draws one GI term alone (PRD-646); needs the gather, so it applies at layer 7 and above. */
   giVisualize: GIVisualizeMode;
 } = {
   layer: 9,
   aaAlphaSqueezed: false,
   denoisePasses: undefined,
-  lutClipOn: false,
+  lutClipOff: false,
   giVisualize: "off",
 };

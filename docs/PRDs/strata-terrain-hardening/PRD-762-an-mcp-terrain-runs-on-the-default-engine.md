@@ -1,0 +1,52 @@
+# PRD-762: An MCP-generated terrain runs on the default engine
+
+**Status:** IN PROGRESS
+**Priority:** P0. An agent that follows the shipped path gets a game that does not start.
+**Epic:** [Strata terrain hardening](README.md). Delivered with PR #483.
+
+## Problem
+
+The owner asked for a third-person sandbox game with a decent terrain that loads fast. The user path
+is: scaffold a game, call `terrain_generate` on the `threenative-terrain` MCP, and paste the returned
+load snippet. That path fails on the default Wasm engine (`engine: "threenative"`).
+
+Reproduced on 2026-10-28 with `pnpm sandbox --genre open-world` (a starter game) and
+`terrain_generate {"request":"a pine forest valley with a lake ..."}`. The MCP cooked the world in 5.4 s:
+4,820 instances, 25 draws, a 21 MB GLB. The game then refused to start:
+
+1. `TN_NATIVE_UNCATALOGUED_DATAARRAYTEXTURE` at `loadTerrainSplat` (`world-terrain-splat.ts:255`).
+2. With the splat skipped (probe only): `TN_TSL uniform: argument 0 is not a TSL node ...`, which is
+   `uniform(new Matrix4())` at `world-gpu-scene.ts:1916`.
+
+The forest starter kit hits the same engine gaps plus four sky gaps. The 12 gaps were sized on PR #483
+(comment 6484895203 and the AFK log): varyingProperty, modelViewProjection, assign on an expression,
+vec3 construction (sky); array textures; MeshPhysicalNodeMaterial; material addEventListener;
+`TN_virtual_geometry`; mat4 uniform; the reflector hook; VirtualShadowNode; world prewarm.
+
+Rule: the native engine stays the default. An `engine: "threejs"` pin does not count as done.
+
+### Phase 1 — the MCP terrain path starts on the default engine
+
+Fix each refusal in the layer that owns it, in the order the path hits them. Every fix gets a red-green
+spec.
+
+- [x] mat4 uniform: `WorldGpuScene` builds its occlusion-view uniform on first kernel use, not in a class field. proof: `world-gpu-scene-engine-uniforms.spec.ts` fails without the change and passes with it; `world-gpu-scene.spec.ts` plus the new spec: 106/106 pass; core `tsc` 0 errors.
+- [x] Splat stacking refuses a layer set that mixes a cooked (BC7) layer with a raw one, instead of a copy WebGPU rejects (seen on the sandbox in dev). proof: new `world-terrain-splat.spec.ts` case red without the fix (1 failed), green with it (46/46).
+- [x] Array textures, `.depth(layer)`, material dispose events and `MeshPhysicalNodeMaterial` on the Wasm engine (4c7ef4bbe, 90356e139, 1ffc15261). proof: `browser-textures.spec.ts` and `material-fields.spec.ts` red then green, 477/477; `array.playtest.json` Wasm scenario green (SwiftShader); the sandbox now passes `loadTerrainSplat` (`TN_TERRAIN_SPLAT layers=4 samplers=9`).
+- [x] A model whose dev cook adds the optional `TN_virtual_geometry` loads on the engine loader, which hosts no cluster plugin (was `TN_NATIVE_GLTF_PLUGIN_UNSUPPORTED` on fir.glb). proof: new `model-lod-engine-loader.spec.ts` case red (the sandbox error verbatim), green after; 111/111 with the asset and LOD specs; core `tsc` 0.
+- [x] A material `normalNode` (the terrain splat) writes its shading normal to the post normal target instead of `TN_POST_NORMAL_UNSUPPORTED` losing the renderer (42d68e353). proof: `material_test` `emissive_output` normal case red (2 CHECK failures) then green; sandbox on the RTX 2080 Wasm engine runs past it with no `TN_POST_NORMAL_*`.
+- [x] A fragment program over 16 samplers (the splat's 14 stacked-layer reads plus env, dfg, shadow) shares samplers of equal state instead of losing the renderer (`TN_WASM_RENDERER_LOST`, 17 samplers). proof: `shader_ir_test` `types` case red without sharing (4 CHECK failures), green with it; `limits.playtest.json` 17-texture read sums 153 on the RTX 2080 (red: renderer lost with `TN_PROGRAM_SAMPLERS`); sandbox boot has no `RENDERER_LOST` for 60 s.
+- [ ] Every later refusal on this path, each with its own box as it is found. proof: the sandbox log names the next refusal, or none
+- [ ] The sandbox game starts on the default engine from the MCP snippet, with no game edit. proof: headed WebGPU, adapter checked, `TN_STARTUP_READY`.
+
+### Phase 2 — the forest starter kit starts on the default engine
+
+- [ ] Sky gaps 1-4 (Daylight → SkyMesh). proof: a three-native spec per gap
+- [ ] The remaining kit gaps: VirtualShadowNode, world prewarm, `TN_virtual_geometry`, the reflector hook. proof: a spec per gap
+- [ ] `verify-starter-kit.mjs` passes on the default engine. proof: `node examples/strata-terrain-preview/scripts/verify-starter-kit.mjs` exit 0
+
+### Phase 3 — proof
+
+- [ ] A playtest scenario for the MCP terrain path on the default engine. proof: `playtest <scenario> --browser-recipe webgpu` pass
+- [ ] Load time to reveal, and presented FPS on a real display, both measured on the default engine. proof: `playtest perf` on the real display, adapter checked
+- [ ] Visual judge: the default engine against the `engine: "threejs"` arm at the same poses, 2 runs per arm. proof: a fresh judge verdict on the PR

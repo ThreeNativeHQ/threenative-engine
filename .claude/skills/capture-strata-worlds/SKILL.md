@@ -23,8 +23,10 @@ GPU give comparable frames. A visual change still needs the visual judge subagen
 
 1. Build the example from the repo root:
    `pnpm --filter strata-terrain-preview build`
-2. Serve the build on loopback:
-   `python3 -m http.server 8092 --bind 127.0.0.1 -d examples/strata-terrain-preview/dist &`
+2. Serve the build on loopback with `vite preview`. Its middleware serves the asset library
+   (spruce GLBs, rockface textures, the HDR); a static server returns 404 for them and the frames
+   miss those assets:
+   `pnpm --filter strata-terrain-preview exec vite preview --host 127.0.0.1 --port 8092 --strictPort &`
 3. Capture (headed, real display):
    `DISPLAY=:0 node .claude/skills/capture-strata-worlds/shoot-worlds.mjs http://127.0.0.1:8092 <outDir>`
    Add `--worlds alpine,desert` for a subset, and `--repo <path>` when the served build came from another worktree, so `report.json` records that checkout's commit.

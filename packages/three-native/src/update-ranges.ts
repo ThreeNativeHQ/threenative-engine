@@ -22,6 +22,22 @@ const MUTATORS = new Set([
   "copyWithin",
 ]);
 
+const UPLOAD_RANGES = Symbol("tnUploadRanges");
+
+/**
+ * The `{ start, count }` element ranges the attribute's next upload sends, or none for the whole array,
+ * as three's `WebGPUAttributeUtils.updateAttribute` reads `updateRanges`. Malformed engine JSON throws.
+ */
+export function uploadRanges(attribute: object): readonly IRange[] {
+  const read = Reflect.get(attribute, UPLOAD_RANGES) as (() => string) | undefined;
+  const json = read?.call(attribute) ?? "[]";
+  if (json === "[]") return [];
+  const ranges = JSON.parse(json) as unknown;
+  if (!Array.isArray(ranges))
+    throw new TypeError(`TN_NATIVE_UNSUPPORTED updateRanges: expected a JSON array, got ${json}`);
+  return ranges as IRange[];
+}
+
 export function withUpdateRanges(prototype: object): void {
   const read = Object.getOwnPropertyDescriptor(prototype, "updateRanges")?.get;
   const proto = prototype as {
@@ -43,6 +59,13 @@ export function withUpdateRanges(prototype: object): void {
     emptied.delete(this);
     return result;
   };
+  // The ranges the engine's next upload sends, as one getter read: no proxy, no parse when empty.
+  Object.defineProperty(prototype, UPLOAD_RANGES, {
+    configurable: true,
+    value(this: object): string {
+      return emptied.has(this) ? "[]" : String(read.call(this));
+    },
+  });
   Object.defineProperty(prototype, "updateRanges", {
     configurable: true,
     get(this: object) {

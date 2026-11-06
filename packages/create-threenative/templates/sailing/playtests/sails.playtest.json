@@ -4,6 +4,7 @@
   "schemaVersion": 1,
   "viewport": { "width": 1280, "height": 720 },
   "warmupFrames": 20,
+  "drawEvery": 60,
   "subject": "player",
   "steps": [
     {

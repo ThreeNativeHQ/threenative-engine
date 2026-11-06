@@ -1,9 +1,11 @@
 #include "engine/foundation/waste_counters.h"
 #include <chrono>
 #include "pipeline_cache.h"
+#include "attachment_mask.h"
 
 #include <algorithm>
 #include <bit>
+#include <cstdio>
 #include <stdexcept>
 #include <optional>
 
@@ -89,15 +91,63 @@ PipelineCache::~PipelineCache() {
     }
 }
 
+uint8_t materialBlend(uint8_t blending, bool transparent, uint64_t factors, uint32_t& state) {
+    state = 0;
+    if (blending == 0 || (blending == 1 && !transparent)) return 0;
+    const bool premultiplied = (factors >> 54) & 1;
+    if (!premultiplied && (blending == 1 || blending == 2)) return blending;  // the plain states keep their codes
+    const auto constant = [&](int i) { return int((factors >> (45 - 9 * i)) & 0x1ff) - 1; };  // -1: null
+    const auto factor = [](int value) {
+        static constexpr WGPUBlendFactor kFactors[] = {
+            WGPUBlendFactor_Zero, WGPUBlendFactor_One, WGPUBlendFactor_Src, WGPUBlendFactor_OneMinusSrc,
+            WGPUBlendFactor_SrcAlpha, WGPUBlendFactor_OneMinusSrcAlpha, WGPUBlendFactor_DstAlpha,
+            WGPUBlendFactor_OneMinusDstAlpha, WGPUBlendFactor_Dst, WGPUBlendFactor_OneMinusDst,
+            WGPUBlendFactor_SrcAlphaSaturated,
+            // WebGPU has one constant factor: three maps ConstantColor and ConstantAlpha (and their inverses) to it.
+            WGPUBlendFactor_Constant, WGPUBlendFactor_OneMinusConstant, WGPUBlendFactor_Constant,
+            WGPUBlendFactor_OneMinusConstant};
+        return kFactors[value - 200];  // the bindings hold factors to 200..214
+    };
+    const auto operation = [](int value) {
+        static constexpr WGPUBlendOperation kOperations[] = {WGPUBlendOperation_Add, WGPUBlendOperation_Subtract,
+            WGPUBlendOperation_ReverseSubtract, WGPUBlendOperation_Min, WGPUBlendOperation_Max};
+        return kOperations[value - 100];  // the bindings hold equations to 100..104
+    };
+    WGPUBlendFactor cs, cd, as, ad;
+    WGPUBlendOperation co = WGPUBlendOperation_Add, ao = WGPUBlendOperation_Add;
+    if (blending == 5) {
+        const int src = constant(0), dst = constant(1), eq = constant(2);
+        cs = factor(src); cd = factor(dst); co = operation(eq);
+        as = factor(constant(3) < 0 ? src : constant(3));
+        ad = factor(constant(4) < 0 ? dst : constant(4));
+        ao = operation(constant(5) < 0 ? eq : constant(5));
+    } else if (!premultiplied) {
+        std::fprintf(stderr, "TN_MATERIAL_BLENDING: %s requires material.premultipliedAlpha = true; the draw does not blend\n",
+                     blending == 3 ? "SubtractiveBlending" : "MultiplyBlending");
+        return 0;
+    } else if (blending == 1) {
+        cs = WGPUBlendFactor_One; cd = WGPUBlendFactor_OneMinusSrcAlpha; as = WGPUBlendFactor_One; ad = WGPUBlendFactor_OneMinusSrcAlpha;
+    } else if (blending == 2) {
+        cs = cd = as = ad = WGPUBlendFactor_One;
+    } else if (blending == 3) {
+        cs = WGPUBlendFactor_Zero; cd = WGPUBlendFactor_OneMinusSrc; as = WGPUBlendFactor_Zero; ad = WGPUBlendFactor_One;
+    } else {
+        cs = WGPUBlendFactor_Dst; cd = WGPUBlendFactor_OneMinusSrcAlpha; as = WGPUBlendFactor_Zero; ad = WGPUBlendFactor_One;
+    }
+    state = uint32_t(cs) | uint32_t(cd) << 5 | uint32_t(co) << 10 | uint32_t(as) << 13 | uint32_t(ad) << 18 | uint32_t(ao) << 23;
+    return 5;
+}
+
 bool PipelineCache::IdKey::operator==(const IdKey& o) const {
     return vertex == o.vertex && fragment == o.fragment && vertexSize == o.vertexSize &&
            fragmentSize == o.fragmentSize && target.color == o.target.color && target.moreColors == o.target.moreColors &&
            target.depth == o.target.depth && target.sampleCount == o.target.sampleCount &&
-           target.cull == o.target.cull && target.blend == o.target.blend &&
+           target.cull == o.target.cull && target.blend == o.target.blend && target.blendState == o.target.blendState &&
            target.depthWrite == o.target.depthWrite && target.colorWrite == o.target.colorWrite && target.layout == o.target.layout &&
            target.skinIndex == o.target.skinIndex && target.frontFace == o.target.frontFace &&
            target.depthCompare == o.target.depthCompare && target.depthBias == o.target.depthBias &&
            target.depthBiasSlopeScale == o.target.depthBiasSlopeScale && target.instanceStepMask == o.target.instanceStepMask &&
+           target.moreWrites == o.target.moreWrites && target.materialColorWrite == o.target.materialColorWrite &&
            target.topology == o.target.topology && target.stripIndexFormat == o.target.stripIndexFormat;
 }
 
@@ -171,8 +221,10 @@ size_t PipelineCache::IdKeyHash::operator()(const IdKey& key) const {
     mix(reinterpret_cast<uintptr_t>(key.target.layout));
     mix(uint64_t(uint32_t(key.target.depthBias)) | uint64_t(std::bit_cast<uint32_t>(key.target.depthBiasSlopeScale)) << 32);
     mix(key.target.instanceStepMask);
+    mix(key.target.blendState);
     mix(uint64_t(key.target.topology) | uint64_t(key.target.stripIndexFormat) << 32);
     for (const WGPUTextureFormat format : key.target.moreColors) mix(uint64_t(format));
+    mix(uint64_t(key.target.moreWrites) | uint64_t(key.target.materialColorWrite) << 8);
     return size_t(h ^ h >> 32);
 }
 
@@ -188,13 +240,14 @@ std::string PipelineCache::textKey(const shader::StageModule& vertex, const shad
     key += '\x1f';
     if (fragment) key += fragment->wgsl.code;
     key += '\x1f' + std::to_string(target.color) + ':' + std::to_string(target.depth) + ':' + std::to_string(target.sampleCount) + ':' +
-           std::to_string(target.cull) + ':' + std::to_string(target.blend) + ':' + std::to_string(target.depthWrite) + std::to_string(target.colorWrite) +
+           std::to_string(target.cull) + ':' + std::to_string(target.blend) + ':' + std::to_string(target.blendState) + ':' + std::to_string(target.depthWrite) + std::to_string(target.colorWrite) +
            ':' + std::to_string(reinterpret_cast<uintptr_t>(target.layout)) + ':' + std::to_string(target.skinIndex) +
            ':' + std::to_string(target.frontFace) + ':' + std::to_string(target.depthCompare) + ':' +
            std::to_string(target.depthBias) + ':' + std::to_string(std::bit_cast<uint32_t>(target.depthBiasSlopeScale)) +
            ':' + std::to_string(target.instanceStepMask) + ':' + std::to_string(target.topology) + ':' +
            std::to_string(target.stripIndexFormat);
     for (const WGPUTextureFormat format : target.moreColors) key += ':' + std::to_string(format);
+    key += ':' + std::to_string(target.moreWrites) + (target.materialColorWrite ? "w" : "m");
     return key;
 }
 
@@ -205,7 +258,10 @@ void PipelineCache::poll() {
         auto ready = it++;
         const std::string key = ready->first;
         compiling_.erase(ready);
-        if (request->status_.load(std::memory_order_acquire) < 0) continue;  // only its ticket rejects
+        if (request->status_.load(std::memory_order_acquire) < 0) {  // only its ticket rejects
+            refused_.insert(key);
+            continue;
+        }
         const auto pipeline = request->get();
         const auto [stored, inserted] = pipelines_.emplace(key, pipeline);
         if (inserted) wgpuRenderPipelineAddRef(pipeline);  // cache and completion each own a reference
@@ -237,6 +293,20 @@ WGPURenderPipeline PipelineCache::get(const shader::StageModule& vertex, const s
         found->second->complete(pipeline, {}, true);  // the draw fulfills the speculative ticket too
     }
     return pipeline;
+}
+
+WGPURenderPipeline PipelineCache::getOrDefer(const shader::StageModule& vertex, const shader::StageModule* fragment,
+                                             const PipelineTarget& target, bool& deferred) {
+    deferred = false;
+    poll();
+    if (vertex.wgsl.id != 0 && (!fragment || fragment->wgsl.id != 0))
+        if (const auto found = byId_.find(idKey(vertex, fragment, target)); found != byId_.end()) return found->second;
+    const std::string key = textKey(vertex, fragment, target);
+    if (pipelines_.contains(key) || refused_.contains(key)) return get(vertex, fragment, target);
+    if (!compiling_.contains(key)) getAsync(vertex, fragment, target);  // the ticket stays in compiling_ until poll adopts it
+    waste::debugAdd(waste::counters().pipelineDeferredDraws);
+    deferred = true;
+    return nullptr;
 }
 
 std::shared_ptr<PipelineCompilation> PipelineCache::getAsync(const shader::StageModule& vertex,
@@ -367,6 +437,12 @@ WGPURenderPipeline PipelineCache::create(WGPUDevice device, const shader::StageM
     blend.alpha = {WGPUBlendOperation_Add, WGPUBlendFactor_One, dst};
     // 4 scales the destination by 1 - alpha and adds nothing: a transparent draw's responsive mark in the motion flag.
     if (target.blend == 4) blend.color = blend.alpha = {WGPUBlendOperation_Add, WGPUBlendFactor_Zero, WGPUBlendFactor_OneMinusSrcAlpha};
+    // 5: a material's own state (materialBlend), 5 bits a factor and 3 an operation.
+    if (target.blend == 5) {
+        const auto bits = [&](int at, int width) { return (target.blendState >> at) & ((1u << width) - 1); };
+        blend.color = {WGPUBlendOperation(bits(10, 3)), WGPUBlendFactor(bits(0, 5)), WGPUBlendFactor(bits(5, 5))};
+        blend.alpha = {WGPUBlendOperation(bits(23, 3)), WGPUBlendFactor(bits(13, 5)), WGPUBlendFactor(bits(18, 5))};
+    }
     if (target.blend) color.blend = &blend;
     std::array<WGPUColorTargetState, 1 + std::tuple_size_v<decltype(target.moreColors)>> colors{color};
     size_t colorCount = target.color != WGPUTextureFormat_Undefined ? 1 : 0;
@@ -374,7 +450,11 @@ WGPURenderPipeline PipelineCache::create(WGPUDevice device, const shader::StageM
         if (!colorCount || format == WGPUTextureFormat_Undefined) break;
         colors[colorCount] = {};
         colors[colorCount].format = format;
-        colors[colorCount++].writeMask = color.writeMask;
+        colors[colorCount].writeMask = colourTargetWritten(colorCount, target.colorWrite, target.moreWrites,
+                                                           target.materialColorWrite)
+            ? WGPUColorWriteMask_All
+            : WGPUColorWriteMask_None;
+        ++colorCount;
     }
     WGPUFragmentState fragmentState = {};
     if (fs) {

@@ -1,4 +1,4 @@
-import type { IHeightfieldRegionBounds } from "./world.js";
+import type { IHeightfieldRegionBounds } from "./world-heightfield.js";
 
 /** The smallest window covering both; `current` may be absent. Internal to the world modules. */
 export function unionBounds(

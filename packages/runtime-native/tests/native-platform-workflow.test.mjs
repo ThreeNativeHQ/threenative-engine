@@ -63,16 +63,21 @@ test('static SDL is position independent for native PIE consumers', () => {
   expect(linuxPreset).toContain('"CMAKE_POSITION_INDEPENDENT_CODE": "ON"');
 });
 
-test('native compiler caches restore only the current CMake inputs', () => {
+test('native compiler caches restore only the current CMake inputs, except test-native', () => {
+  // PRD-628: test-native restores any tree's cache of its own lane. ccache keys each object by compiler,
+  // flags and source, so a cache from other CMake inputs only misses; the CMake hash cost 45% to 99% of hits.
+  const laneOnly = 'native-ccache-ci-test-native-${{ runner.os }}-${{ runner.arch }}-gcc-';
   for (const source of [workflow, ciWorkflow]) {
     const restoreKeys = [...source.matchAll(/^\s+restore-keys:\s*(native-ccache[^\n]+)$/gmu)].map(
       (match) => match[1] ?? '',
     );
     expect(restoreKeys.length).toBeGreaterThan(0);
     for (const restoreKey of restoreKeys) {
+      if (restoreKey === laneOnly) continue;
       expect(restoreKey).toContain('hashFiles(');
     }
   }
+  expect(ciWorkflow).toContain(`restore-keys: ${laneOnly}\n`);
 });
 
 test('green native platform lane is required by primary CI', () => {
@@ -210,8 +215,10 @@ test('Android V8 interruption leaves time to cache and resume Ninja state', () =
   );
   expect(saveStep).toContain('always()');
   expect(saveStep).toContain("steps.build.outcome == 'failure'");
-  // A superseded pull request is not an interrupted build; its cancel must not save 3 GB.
-  expect(saveStep).toContain("github.event_name != 'pull_request'");
+  // PRD-628: a superseded pull request keeps its Ninja progress too. It is the only thing the next
+  // push can resume from, and it is bounded to one entry per recipe by ci-janitor's prune job.
+  expect(saveStep).toContain("steps.build.outcome == 'cancelled'");
+  expect(saveStep).not.toContain("github.event_name != 'pull_request'");
   expect(saveStep).toContain('third_party/.v8-source');
 
   const root = makeTempDirSync('tn-v8-resume-action-');
@@ -247,8 +254,11 @@ wait "$child"
   const env = {
     ...process.env,
     ANDROID_NDK_HOME: root,
+    // Actions sets this for every `run:` step; the build shell writes `built=true` into it.
+    GITHUB_OUTPUT: join(root, 'output.txt'),
     PATH: `${bin}:${process.env.PATH ?? ''}`,
   };
+  writeFileSync(join(root, 'output.txt'), '');
   try {
     // Shorten only this fixture's clock; the extracted command is otherwise the action's exact
     // build shell. The timeout must fail after the fake Ninja state has been written.
@@ -267,6 +277,8 @@ wait "$child"
     );
     expect(resumed.status).toBe(0);
     expect(readFileSync(state, 'utf8')).toBe('resumed');
+    // Only a run that compiled the payload may publish it, and the publish job requires this.
+    expect(readFileSync(join(root, 'output.txt'), 'utf8')).toBe('built=true\n');
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

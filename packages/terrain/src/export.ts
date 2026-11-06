@@ -201,15 +201,17 @@ function staticModel(source: Object3D, name: string, terrain = false): Object3D 
 }
 
 /**
- * Export a committed evaluated world using ordinary glTF 2.0 nodes and embedded PBR images.
+ * Prepare the game's validated, frozen portable scene; the server cook owns GLB encoding.
  * @requires npm i -D @threenative/terrain
- * @situation export terrain, resolved models and final manual placement transforms as a portable GLB
- * @situation export the whole terrain world as one glb for another three.js project
- * @constraint browser authoring (FileReader/canvas); caller supplies all appearance and coherent baked water; root and /three remain headless
- * @example const output = await exportWorldGLB({ revision, snapshotTime: 0, state, terrain, assets, transforms });
- * @override actual static models, final matrices and baked PBR maps are supplied by the game
+ * @situation export the terrain as a glb for another three.js project via the headless cook
+ * @situation prepare the terrain editor's resolved world for headless portable GLB cooking
+ * @constraint browser authoring FileReader/canvas; all appearance and coherent water come from the game
+ * @example const prepared = await prepareWorldGLTF(input);
  */
-export async function exportWorldGLB(input: IWorldGLBInput): Promise<IWorldGLBExport> {
+export async function prepareWorldGLTF(input: IWorldGLBInput): Promise<{
+  json: Record<string, unknown>;
+  report: IWorldGLBExport["report"];
+}> {
   const { state } = input;
   if (!/^[a-f0-9]{64}$/.test(input.revision) || !Number.isFinite(input.snapshotTime))
     throw new Error("World export requires a content revision and finite snapshot time");
@@ -323,7 +325,7 @@ export async function exportWorldGLB(input: IWorldGLBInput): Promise<IWorldGLBEx
     root.add(copy);
   }
   if (typeof FileReader === "undefined" || typeof document === "undefined")
-    throw new Error("exportWorldGLB needs browser authoring FileReader/canvas");
+    throw new Error("prepareWorldGLTF needs browser authoring FileReader/canvas");
   // Freeze shared resources once before asynchronous encoding; live edits cannot mix revisions.
   const geometries = new Map<BufferGeometry, BufferGeometry>();
   const materials = new Map<Material, Material>();
@@ -372,7 +374,7 @@ export async function exportWorldGLB(input: IWorldGLBInput): Promise<IWorldGLBEx
     materials.set(source, copy);
     return copy;
   }
-  let binary: ArrayBuffer | { [key: string]: unknown };
+  let json: ArrayBuffer | { [key: string]: unknown };
   try {
     root.traverse((object) => {
       if (!(object instanceof Mesh)) return;
@@ -384,8 +386,8 @@ export async function exportWorldGLB(input: IWorldGLBInput): Promise<IWorldGLBEx
         : freezeMaterial(object.material);
     });
     root.updateMatrixWorld(true);
-    binary = await new GLTFExporter().parseAsync(root, {
-      binary: true,
+    json = await new GLTFExporter().parseAsync(root, {
+      binary: false,
       onlyVisible: true,
       includeCustomExtensions: false,
     });
@@ -394,41 +396,21 @@ export async function exportWorldGLB(input: IWorldGLBInput): Promise<IWorldGLBEx
     for (const value of materials.values()) value.dispose();
     for (const value of textures.values()) value.dispose();
   }
-  if (!(binary instanceof ArrayBuffer)) throw new Error("GLTFExporter did not return a GLB");
-  const header = new DataView(binary);
-  if (
-    header.getUint32(0, true) !== 0x46546c67 ||
-    header.getUint32(4, true) !== 2 ||
-    header.getUint32(8, true) !== binary.byteLength ||
-    header.getUint32(16, true) !== 0x4e4f534a
-  )
-    throw new Error("GLTFExporter returned a malformed GLB");
-  const json = JSON.parse(
-    new TextDecoder().decode(new Uint8Array(binary, 20, header.getUint32(12, true))),
-  ) as { images?: { uri?: string }[]; buffers?: { uri?: string }[]; extensionsRequired?: string[] };
-  if (
-    [...(json.images ?? []), ...(json.buffers ?? [])].some((resource) => resource.uri) ||
-    json.extensionsRequired?.some((name) => !name.startsWith("KHR_"))
-  )
-    throw new Error("World GLB contains an external resource or nonportable required extension");
-  return {
-    name: "world.glb",
-    mime: "model/gltf-binary",
-    bytes: new Uint8Array(binary),
-    report: {
-      revision: input.revision,
-      resolution: n,
-      snapshotTime: input.snapshotTime,
-      placementIds: [...ids],
-      waterIds: [...waterIds],
-      receivingGameSupplies: [
-        "lighting",
-        "sky/environment",
-        "fog",
-        "exposure",
-        "post-processing",
-        "live water/wind",
-      ],
-    },
+  const report: IWorldGLBExport["report"] = {
+    revision: input.revision,
+    resolution: n,
+    snapshotTime: input.snapshotTime,
+    placementIds: [...ids],
+    waterIds: [...waterIds],
+    receivingGameSupplies: [
+      "lighting",
+      "sky/environment",
+      "fog",
+      "exposure",
+      "post-processing",
+      "live water/wind",
+    ],
   };
+  if (json instanceof ArrayBuffer) throw new Error("Expected prepared glTF JSON");
+  return { json, report };
 }

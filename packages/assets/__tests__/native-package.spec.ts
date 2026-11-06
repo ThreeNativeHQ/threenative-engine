@@ -362,7 +362,7 @@ describe("assets.nativePackage", () => {
         nodes: [{ name: "n" }],
         scene: 0,
         scenes: [{ nodes: [0] }],
-      }).padEnd(84, " "),
+      }).padEnd(88, " "),
     );
     const glb = Buffer.alloc(12 + 8 + json.length);
     glb.write("glTF", 0, "ascii");

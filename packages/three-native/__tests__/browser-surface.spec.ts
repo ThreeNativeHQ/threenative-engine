@@ -21,6 +21,7 @@ import {
 import { TSL_NODE, engineRef } from "../src/browser-backend.js";
 import { type ITslRuntime, defineTsl } from "../src/browser-tsl.js";
 import { loadCatalog } from "../src/catalog.js";
+import { definePass } from "../src/pass-node.js";
 
 const REPO = process.cwd();
 const catalog = loadCatalog(REPO);
@@ -92,6 +93,27 @@ describe("browser back end object surface", () => {
     expect(mesh.isMaterial).toBeUndefined();
     const material = new (classes.MeshStandardMaterial as Constructor)();
     expect(material.isMeshStandardMaterial && material.isMaterial).toBe(true);
+  });
+
+  it("fires three's dispose event from Object3D.dispose(), so a subclass's super.dispose() works", () => {
+    const { classes } = defineBrowserClasses(registry, sceneRuntime(new Map(), new Set()), catalog);
+    // WorldCells extends Group and ends its dispose() with super.dispose(), as three r187 allows.
+    const Group = classes.Group as Constructor;
+    class Cells extends Group {
+      dispose(): void {
+        (Group.prototype.dispose as (this: object) => void).call(this);
+      }
+    }
+    const cells = new Cells();
+    const disposed = vi.fn();
+    (cells.addEventListener as (type: string, fn: () => void) => void).call(
+      cells,
+      "dispose",
+      disposed,
+    );
+    (cells.dispose as () => void)();
+    expect(disposed).toHaveBeenCalledTimes(1);
+    expect(typeof (classes.Object3D as Constructor).prototype.dispose).toBe("function");
   });
 
   it("keeps one userData object per engine object", () => {
@@ -201,4 +223,112 @@ it("bridges Scene.backgroundNode and live uniforms through the shared TSL runtim
   }).toThrow("TN_BROWSER_SHADER_NODE");
   scene.backgroundNode = null;
   expect(scene.backgroundNode).toBe(null);
+  // A camelCase slot (`castShadowPositionNode`) is a TSL slot too, not a plain ABI value.
+  const material = new (
+    classes.MeshStandardNodeMaterial as new () => { castShadowPositionNode: unknown }
+  )();
+  material.castShadowPositionNode = graph;
+  expect(material.castShadowPositionNode).toBe(graph);
+  expect(tslRuntime.set).toHaveBeenCalledWith(
+    engineRef(material),
+    "castShadowPositionNode",
+    graph[TSL_NODE],
+  );
+});
+
+it("carries a material's TSL slots through clone and copy, as the engine carries its graphs", () => {
+  const tslRuntime: ITslRuntime = {
+    call: vi.fn(() => 1),
+    release: vi.fn(),
+    set: vi.fn(),
+    setUniform: vi.fn(),
+    effectParameter: vi.fn(() => 0),
+    setPost: vi.fn(),
+    compute: vi.fn(),
+    readStorage: vi.fn(),
+    deleteStorage: vi.fn(),
+  };
+  const base = sceneRuntime(new Map(), new Set());
+  let clones = 0;
+  const runtime: IBrowserRuntime = {
+    ...base,
+    invoke(self, method, args) {
+      if (method === "clone")
+        return { key: `MeshPhysicalNodeMaterial:0:${100 + ++clones}:1`, type: self.type };
+      return base.invoke(self, method, args);
+    },
+  };
+  const { classes } = defineBrowserClasses(registry, { ...runtime, tsl: tslRuntime }, catalog);
+  const tsl = defineTsl(tslRuntime).exports as unknown as {
+    uniform(value: number): { [TSL_NODE]: number };
+  };
+  interface ISlots {
+    maskNode: unknown;
+    alphaTestNode: unknown;
+    colorNode: unknown;
+    clone(): ISlots;
+    copy(source: ISlots): ISlots;
+  }
+  const Material = classes.MeshPhysicalNodeMaterial as new () => ISlots;
+  const source = new Material();
+  const mask = tsl.uniform(1);
+  const color = tsl.uniform(0.5);
+  const cutoff = tsl.uniform(0.2);
+  source.maskNode = mask;
+  source.alphaTestNode = cutoff; // the engine's alphaTestNode slot: a registry member, so the clone carries it
+  source.colorNode = color;
+  // A composed mask (core's LOD crossfade) reads the clone's slot: null there drops the source's.
+  const twin = source.clone();
+  expect(twin.maskNode).toBe(mask);
+  expect(twin.alphaTestNode).toBe(cutoff);
+  expect(twin.colorNode).toBe(color);
+  const target = new Material();
+  target.colorNode = tsl.uniform(2);
+  target.copy(source);
+  expect(target.maskNode).toBe(mask);
+  expect(target.alphaTestNode).toBe(cutoff);
+  expect(target.colorNode).toBe(color);
+  target.copy(new Material());
+  expect(target.maskNode).toBe(null);
+  expect(target.alphaTestNode).toBe(null);
+});
+
+it("writes only a material's custom MRT slots, since the scene pass draws the reserved targets", () => {
+  let serial = 0;
+  const tslRuntime: ITslRuntime = {
+    call: vi.fn(() => ++serial),
+    release: vi.fn(),
+    set: vi.fn(),
+    setUniform: vi.fn(),
+    effectParameter: vi.fn(() => 0),
+    setPost: vi.fn(),
+    compute: vi.fn(),
+    readStorage: vi.fn(),
+    deleteStorage: vi.fn(),
+  };
+  const runtime = sceneRuntime(new Map(), new Set());
+  const { classes } = defineBrowserClasses(registry, { ...runtime, tsl: tslRuntime }, catalog);
+  const authoring = defineTsl(tslRuntime);
+  const tsl = authoring.exports as unknown as {
+    uniform(value: number): { readonly [TSL_NODE]: number };
+  };
+  const { mrt, output, normalView } = definePass(authoring.exports as never);
+  const value = tsl.uniform(0.5);
+  const material = new (classes.MeshStandardNodeMaterial as new () => { mrtNode: unknown })();
+  material.mrtNode = mrt({ output, normal: normalView, diagnostic: value });
+  expect(tslRuntime.set).toHaveBeenCalledWith(
+    engineRef(material),
+    "mrtNode.diagnostic",
+    value[TSL_NODE],
+  );
+  for (const reserved of ["mrtNode.output", "mrtNode.normal"])
+    expect(tslRuntime.set).not.toHaveBeenCalledWith(
+      engineRef(material),
+      reserved,
+      expect.anything(),
+    );
+  material.mrtNode = null;
+  expect(tslRuntime.set).toHaveBeenCalledWith(engineRef(material), "mrtNode.diagnostic", 0);
+  expect(tslRuntime.set).not.toHaveBeenCalledWith(engineRef(material), "mrtNode.output", 0);
+  expect(tslRuntime.set).not.toHaveBeenCalledWith(engineRef(material), "mrtNode.normal", 0);
 });

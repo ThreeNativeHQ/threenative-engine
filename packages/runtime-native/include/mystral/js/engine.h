@@ -44,13 +44,13 @@ inline uint64_t g_bridgeOverheadNs = 0;
 inline uint64_t g_jsFrameNs = 0;
 // Screenshot mode leaves through _exit(), which runs no destructor, so the sampled JavaScript
 // profile has to be flushed explicitly from the exit path.
-inline std::function<void()> g_dumpCpuProfile;
+inline thread_local std::function<void()> g_dumpCpuProfile;
 // Started on demand at the first eligible frame so shader compilation and asset decode during
 // startup do not contaminate the steady-state sample.
-inline std::function<void()> g_startCpuProfile;
+inline thread_local std::function<void()> g_startCpuProfile;
 // Where `--cpu-prof <path>` wants the DevTools `.cpuprofile` written. Empty means the printed
 // self-time summary is the whole output, which is what TN_JS_CPU_PROFILE alone has always done.
-inline std::string g_cpuProfilePath;
+inline thread_local std::string g_cpuProfilePath;
 // Set when a requested profile could not be written, so the host exits non-zero instead of
 // reporting a green run whose artifact is missing.
 inline bool g_cpuProfileFailed = false;

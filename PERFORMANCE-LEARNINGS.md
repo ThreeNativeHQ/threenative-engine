@@ -741,6 +741,20 @@ no COOP/COEP); that lane is open.
   workers' changes after the arm wrapper restarted a stopped worker: stop a lane by its wrapper, not its child.
 - Revisit when: FP2 is split into its two changes and each is measured on top of FS11+FS12.
 
+### 2026-11-05 — Strata: dlmalloc returns to the threaded web engine (FB1 reverted) — REVERT
+- Where: `packages/runtime-native/cmake/NativeEngineCore.cmake`, the `TN_WEB_THREADS` link options (`-sMALLOC=dlmalloc`);
+  lock: `packages/runtime-native/__tests__/web-threads-allocator.spec.ts`.
+- Result: the Strata preview, owned engine, one page, forest -> coastal -> alpine -> desert. mimalloc: the Wasm heap held
+  2.54-2.84 GB after each world and reached the 4 GB cap (65535 pages) on the desert load in 4 of 4 runs. At the cap a
+  job pool worker died, the main thread spun on the join, and the page froze or crashed. The desert alone peaked at
+  2.6 GB. A forced `gc()` before each switch and a serial image decode changed nothing. dlmalloc: the forest held
+  918-925 MB, the whole sequence ended at 1310-1328 MB, 2 of 2 runs with no stall.
+- Insight: mimalloc over Emscripten's emmalloc kept the freed multi-MB blocks (decoded images, PNG scratch, model file
+  copies) out of reuse, so each large load grew the heap again. A heap that grows only must not carry a big-asset
+  world. The FB1 CPU win (frame p50 -4% to -7% on `?stress`) is given back and was not re-measured on this lane.
+- Revisit when: an allocator returns freed large blocks on Emscripten, or the engine moves big decode buffers out of
+  the Wasm heap. Re-measure `?stress` CPU frame p50 and the Strata switch heap peak together.
+
 ### 2026-10-30 — Stress lab: mimalloc on the threaded web engine (FB1) — KEEP
 - Where: `packages/runtime-native/cmake/NativeEngineCore.cmake`, the `TN_WEB_THREADS` link options (`-sMALLOC=mimalloc`);
   lock: `packages/runtime-native/__tests__/web-threads-allocator.spec.ts`.
@@ -1017,3 +1031,109 @@ no COOP/COEP); that lane is open.
   when `/sys/class/drm/card1-*/status` shows no `connected`.
 - Revisit when: a game changes the bone list of a live skeleton (the raw pointers then need a rebuild), or a light has mover pages with
   different caster sets.
+
+### 2026-11-04 — Strata forest load: a model's images decode across the job pool, and the web pool starts with the renderer — KEEP
+
+- Where: `packages/runtime-native/src/engine/assets/gltf/loader.cpp` `predecodeImages` (reads bytes on the loading thread, decodes on
+  `JobPool`), `uriImageKey` (8-byte words, once per image per load), and `src/engine/wasm/web_host.cpp` `tnw_web_init` (starts the pool).
+- Cause: the forest loads 52 licensed 2048 px PNG atlases (822 MB of RGBA) through `stb_image`, one after another on the web's main
+  thread. The pre-decode alone did nothing: the web pool started on its first job, and each pthread needs main-thread turns to start, so
+  the workers joined only after the load's long tasks (probe: `wallMs` equal to the item sum on 10 of 12 models).
+- Result, paired on one tree with only the threaded Wasm swapped (forest, headed WebGPU, 2 runs per arm): glTF `load()` total 5877, 5755
+  to 2988, 2848 ms; glTF long frames 7.4, 7.0 to 4.4, 4.1 s; time to ready 20.8, 21.3 to 18.0, 17.6 s. Pixels are the same decode.
+- Test: `gltf_hierarchy_test` "a model's two images decode on the job pool" (0 pool items before, 2 after).
+- Revisit when: a single model holds most of the images (the pool then has nothing to share), or the per-model decode wall (about 150 ms
+  for one 2048 px PNG in Wasm) matters. The next step there is GPU-compressed textures that the web engine reads without a decode.
+
+### 2026-11-04 — Strata forest boot: `ctx.raycast` honours an object's own `raycast`, so decoration never builds a picking tree — KEEP
+
+- Where: `packages/core/src/picking.ts` `ownsRaycast` (used by `#collect`, `#testBatched` and `#hitTest`), and the forest collar in
+  `examples/strata-terrain-preview/src/render/terrain.ts` (`horizon.raycast = () => undefined`).
+- Cause: the player's ground-contact ray targets the terrain mesh, which holds the decorative horizon collar (786K triangles) as a
+  child. `ScenePicker` built a MeshBVH for every mesh it reached and called `object.raycast` only for a mesh it could not build a tree
+  for, so three's standard opt-out (an instance `raycast`, honoured by a stock `Raycaster` and by three-mesh-bvh) did nothing.
+- Result (forest, headed WebGPU, NVIDIA Turing): the afterPhysics hook that holds the contact ray went from 1273 ms to 179 ms on its
+  first frame; the 165 ms left is the walkable terrain's own tree (131K triangles). Time to ready did not move (15.7, 16.9 s).
+- Test: `picking.spec.ts` "honours a mesh's own no-op raycast without building its tree"; `prop-surfaces.spec.ts` "keeps the
+  decorative horizon collar out of ground rays".
+- Revisit when: the 165 ms terrain tree matters. The field is a heightfield, so a grid walk answers the same ray with no tree.
+
+### 2026-11-04 — Strata forest walk: materials that differ only in their maps share one program — KEEP
+
+- Where: `packages/runtime-native/src/engine/shader/graph/graph.cpp` `serialName` (now also `nodeMapT<ident>`) and
+  `Renderer::equalStages` in `renderer.cpp`, which renames the copied program's `graphTextureLabels` to the new material's maps.
+- Cause: each streamed spruce, grass and fern batch samples its own textures. The canonical key kept the texture names, so
+  `equalStages` missed and `Renderer::program` generated the whole shader again (5-8 ms a program), only to land on WGSL text that
+  already existed (`positionalGraphTextures`). Counters hid it: `compiles` stayed 0 and only `textLookups` moved. A temporary
+  timer around the program miss in the `CpuPlan` span found it.
+- Result (forest, headed WebGPU, NVIDIA Turing, walk 10 s): program builds after reveal 6 -> 0; walk worst frame 33-60 ms ->
+  16.76 ms, frames over 20 ms 2-5 -> 0. Visual judge NEUTRAL.
+- Test: `render_database_test.cpp` `maps_share_one_pipeline` asserts `equalProgramReuses() == 1`; its pixels prove each draw
+  samples its own map.
+- Revisit when: the 360-degree turn still shows 1-2 frames over 50 ms. Those are first-time programs for one species and LOD
+  level (the level is a baked constant in `worldLodMaterial`'s mask) plus a GPU-process stall from a synchronous shadow-depth
+  pipeline (`renderer.cpp` shadow paths call `pipelines_->get`).
+
+### 2026-11-04 — Strata forest turn: far needle cards thinned at equal area, LOD level as a uniform — KEEP
+
+- Where: `packages/core/src/card-lod.ts` `thinCards` (new export) used by the forest's far spruce level
+  (`examples/strata-terrain-preview/src/render/pack.ts`, `FAR_NEEDLE_TRIANGLES`), and
+  `worldLodMaterial` in `packages/core/src/render/world-impostor-surface.ts` (level and gate distances are uniforms).
+- Cause: in a 360-degree turn one view sector drew 21-23 M main-pass triangles (8 M at spawn) and GPU frames
+  reached 18.3 ms. Hiding the far needle cards measured the ceiling: 8.7 M triangles, 5 ms of GPU. No simplifier
+  reduces disconnected cards, so they stayed at full count to the horizon (no impostor bake on the Wasm engine).
+  Separately, `worldLodMaterial` baked the level as constants, so each level of a species was its own program and
+  pipeline, compiled the frame it first came into view.
+- Result (forest, headed WebGPU, NVIDIA Turing, two runs): turn GPU peak 18.28 -> 15.93 / 15.47 ms, turn frames
+  over 20 ms 6 -> 1 / 1, pipeline compiles in the turn 4 -> 0, compiles at reveal 59 -> 47. Visual judge NEUTRAL
+  (far crowns slightly lumpier at 3x zoom only).
+- Test: `card-lod.spec.ts` (count, equal area, centre-scaled cards, determinism, fail-closed inputs);
+  `world-impostor-surface.spec.ts` asserts both levels build one comparison structure with the level as a uniform.
+- Revisit when: the last turn hitch is a CPU plan spike (planDraws ~10 ms + planVirtualPages ~7 ms in one frame), and
+  far trees hidden behind near crowns still draw: the GPU scene's Hi-Z test only measures (`TN_OCCLUSION=measure`)
+  and the forest runs `gpuScene: false`. Real occlusion culling is the next GPU lever.
+
+### 2026-11-04 — Every added program: positional WGSL renames copy text in chunks — KEEP
+
+- Where: `positionalGraphTextures` and `positionalSerialNames` in `packages/runtime-native/src/engine/shader/package.cpp`,
+  which `Renderer::add` runs on every program, including each equal-structure copy a streamed batch makes.
+- Cause: both passes copied the 120-140 KB fragment WGSL one character at a time: 1.5 + 2.9 ms per program in Wasm
+  (a temporary timer split `add()`: layouts 0.1 ms). A forest walk copied three programs in one frame, so `planDraws`
+  hit 14.6-15.3 ms and the frame missed vsync. `std::string::find` alone did not help: WGSL is dense in `n`, the
+  prefixes' first letter, so the passes now skip with a Boyer-Moore-Horspool searcher and append the text between names.
+- Result (forest, headed WebGPU, NVIDIA Turing, two runs): walk `planDraws` peak 14.6-15.3 -> 3.0 ms, walk CPU p95 peak
+  28-32 -> 20 ms, turn frames over 20 ms 1 -> 1 / 0, pre-reveal frame `wasmPlan` 1368 -> 910 ms. Native: 16.8 MB of text
+  230 -> 26 ms.
+- Test: `shader_package_test.cpp` `positional_renames`: exact output on the edge cases, and a time bound against a plain
+  copy (30x a copy + 10 ms) that the character loop fails at 230 ms.
+- Revisit when: the walk's steady CPU frame (jsBefore ~4.5 ms + planShadowLists ~4.4 ms + planVirtualPages ~2.5 ms +
+  encode ~2.7 ms) sits near 17 ms, so any extra work tips a frame over vsync.
+
+### 2026-11-04 — Strata forest load: pipelines compile off the queue while the loading cover holds — KEEP
+
+- Where: `tnw_web_set_presentation_hold` and field 72 in `packages/runtime-native/src/engine/wasm/web_host.cpp`,
+  `PipelineCache::pending` in `packages/runtime-native/src/engine/renderer/pipeline_cache.h`.
+- Cause: the Wasm host turned `deferUncompiledDraws` on only at the reveal, so every held loading frame compiled its
+  missing pipelines synchronously in the draw, one after another: the frame before the reveal spent 865-905 ms in
+  `wasmPlan`. Now deferral starts with the hold (Unreal's DelayUntilPSOPrecached), Chrome compiles them in parallel, and
+  field 72 (`shadowInputsReady`) stays false while a compile is pending, so the cover never reveals a skipped draw. Core's
+  3 s `TN_STARTUP_IMAGE_TIMEOUT` still caps the wait.
+- Result (forest, headed WebGPU, NVIDIA Turing, paired A/B, two runs per arm, alternating): time to ready 14.65/14.63 ->
+  13.77/13.61 s, pre-reveal `wasmPlan` peak 865/905 -> 384/396 ms, no image timeout, compiles 47 -> 46. The GPU wait after
+  it (`hostGap` peak about 1.0 s) did not move.
+- Test: `renderer_caches_test.cpp` `deferred_draw` asserts `pending()` is 1 while the compile runs and 0 once it lands.
+- Revisit when: the pre-reveal `hostGap` (about 1 s of Chrome GPU-process work) is the load's largest piece; shadow-depth
+  draws still compile in the draw (`pipelines_->get` in the shadow build) and the VSM page cache needs an invalidation
+  when a caster's pipeline lands before they can defer.
+
+### 2026-11-04 — Strata forest idle and walk: a 33 ms present every 256 frames — PARKED
+
+- Symptom: one frame presents at 33 ms every 4.28 s (256 frames at 60 Hz), at idle and in the walk; it is every walk and
+  idle hitch left. The frame's CPU (under 10 ms) and GPU timestamps (under 11 ms) are normal.
+- Ruled out, each measured: the main thread (a MessageChannel ticker saw no task over 5 ms around it), GPU headroom
+  (render scale 0.5 halved GPU 10.6 -> 5.2 ms, same beat), the page's WebGPU calls (a per-frame census of every
+  `GPU*` prototype call showed nothing unusual before it), the renderer's 256-plan instance-slot sweep (a probe: no
+  clear, 0 copies), the shadow build (a probe: 0.3 ms per frame, not the 4.4 ms an earlier entry estimated). The walk's
+  CPU frame measures 7.7 ms mean, 9.8 ms p95. A plain 2D canvas on the same tab stalled once in 12 s, not three times.
+- Revisit when: a quiet lane (no other GPU client: the desktop shares the GPU with KWin, a second browser and a CUDA
+  process) or a Chrome GPU-process trace can catch one; a 5 s DevTools trace started a fresh phase and caught none.

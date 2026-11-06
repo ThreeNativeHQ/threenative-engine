@@ -366,9 +366,57 @@ void poolFailsClosedWhenNoWorkerStarts() {
 #endif
 }
 
+// An item that throws on a worker reaches the caller, and the pool runs the next job (Strata desert switch,
+// 2026-11-05: a decode's std::bad_alloc on a worker ended that thread before it left the job, and the caller
+// spun forever on the join). An item that throws on the caller leaves no job behind either.
+void itemFailureReachesTheCaller() {
+    // The inline path (no worker, or a nested forEach) keeps the same contract: every item runs, the first failure
+    // is rethrown after the last one.
+    {
+        JobPool inlinePool(0);
+        std::atomic<uint32_t> ran{0};
+        std::string message;
+        try {
+            inlinePool.forEach(8, [&](uint32_t i) {
+                ran.fetch_add(1, std::memory_order_relaxed);
+                if (i == 2 || i == 5) throw std::runtime_error("item " + std::to_string(i) + " failed");
+            });
+        } catch (const std::runtime_error& error) {
+            message = error.what();
+        }
+        std::printf("job pool: an inline item that throws: %s after %u of 8 items\n",
+                    message.empty() ? "no failure reached the caller" : message.c_str(), ran.load());
+        CHECK(message == "item 2 failed");
+        CHECK(ran.load() == 8);
+    }
+    if constexpr (!kThreaded) {
+        std::printf("job pool: this build starts no thread: a worker's failure is not measured\n");
+        return;
+    }
+    JobPool pool(4);
+    const std::thread::id caller = std::this_thread::get_id();
+    for (const bool onWorker : {true, false}) {
+        std::string message;
+        try {
+            pool.forEach(256, [&](uint32_t) {
+                std::this_thread::sleep_for(std::chrono::microseconds(200));
+                if ((std::this_thread::get_id() != caller) == onWorker) throw std::runtime_error("item failed");
+            });
+        } catch (const std::runtime_error& error) {
+            message = error.what();
+        }
+        std::printf("job pool: an item that throws on the %s: %s\n", onWorker ? "worker" : "caller",
+                    message.empty() ? "no failure reached the caller" : message.c_str());
+        CHECK(message == "item failed");
+        std::atomic<uint32_t> ran{0};
+        pool.forEach(64, [&](uint32_t) { ran.fetch_add(1, std::memory_order_relaxed); });
+        CHECK(ran.load() == 64);
+    }
+}
+
 }  // namespace
 
-TN_TEST_MAIN({"for_each_once", forEachOnce}, {"matrix_walk_jobs", matrixWalkJobs},
+TN_TEST_MAIN({"for_each_once", forEachOnce}, {"item_failure_reaches_the_caller", itemFailureReachesTheCaller}, {"matrix_walk_jobs", matrixWalkJobs},
              {"matrix_walk_threshold", matrixWalkThreshold}, {"pool_starts_on_need", poolStartsOnNeed}, {"pool_is_always_on", poolIsAlwaysOn},
              {"dispatch_floor", dispatchFloor}, {"workers_cover_the_machine", workersCoverTheMachine},
              {"pool_fails_closed_when_no_worker_starts", poolFailsClosedWhenNoWorkerStarts})
