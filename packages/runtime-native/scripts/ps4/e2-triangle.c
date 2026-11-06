@@ -14,6 +14,8 @@
 #include <string.h>
 #include "vk_ps4_log.h"
 
+int sceKernelUsleep(unsigned int microseconds);
+
 /* === E2 readback patch (PRD-784): copy one presented frame back to a
  * host-visible buffer, count non-clear pixels, log one marker line, exit. === */
 #define E2_W 1920u
@@ -743,6 +745,12 @@ int main(void) {
     }
     printf("Render loop done\n");
     vk_ps4_log_raw("TEST: render loop done");
+    /* Hold the last presented frame until the harness stops the run, as E1 idles after its marker:
+     * a guest that exits blanks the window before a late host capture (run-experiment.mjs judges
+     * the last one), and how soon 600 frames end depends on the host's load. */
+    printf("TN_PS4_E2 holding the last frame\n");
+    for (;;)
+        sceKernelUsleep(1000000);
 
     /* 15. Cleanup */
     vk_ps4_log_raw("TEST: cleanup start");

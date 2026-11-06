@@ -17,6 +17,8 @@
 
 #include <dawn/webgpu.h>
 
+extern "C" int sceKernelUsleep(unsigned int microseconds);
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -371,6 +373,12 @@ int main(void) {
     }
 
     TN_LOG("TN_PS4_E3 errors=%d", g_errors);
+    // Hold the last presented frame until the harness stops the run (see e2-triangle.c): an exiting
+    // guest blanks the window before a late host capture.
+    if (g_errors == 0 && pipeline != nullptr) {
+        TN_LOG("TN_PS4_E3 holding the last frame");
+        for (;;) sceKernelUsleep(1000000);
+    }
     wgpuRenderPipelineRelease(pipeline);
     wgpuDeviceRelease(device);
     wgpuAdapterRelease(adapter);

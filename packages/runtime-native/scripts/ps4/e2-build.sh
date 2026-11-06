@@ -149,6 +149,25 @@ git apply "$SCRIPTS/patches/0015-opengnm-psbc-vs-fetch-shader-prolog.patch"
 # descriptor-using shader. Reserve the second SGPR and take the high half from
 # it.
 git apply "$SCRIPTS/patches/0017-opengnm-psbc-64bit-descriptor-set-pointers.patch"
+# WebGPU's Compatibility guarantee is four bind groups and vulkan-ps4 already
+# reports maxBindGroups 4, but psbc refused any resource whose descriptor set
+# was not 0 -- and the engine's material fragment module binds @group(1), so
+# every material pipeline died with "resource uses descriptor set 1, only set 0
+# is supported" -> VK_ERROR_FEATURE_NOT_PRESENT. Each used set now gets its own
+# layout, and each set's base is reported as its own input-usage slot (apislot =
+# set index) over its own 64-bit user-SGPR pair: four sets cost eight of a
+# stage's sixteen user SGPRs, and a four-set PS4 vertex shader spends twelve
+# (eight for the sets, two for the fetch-shader prolog pointer, one for the
+# vertex-buffer table, one for the base vertex). radv's fallback -- one pointer
+# to an indirect table of 32-bit set pointers -- would truncate a set base above
+# 4 GiB, so the compiler names that limit instead of emitting it.
+git apply "$SCRIPTS/patches/0022-opengnm-psbc-descriptor-sets-0-3.patch"
+# Wave32 does not exist before GFX10, but the subgroup-size chooser took the
+# "small workgroup" branch anyway and handed radv_nir_shader_info_pass a
+# wave_size of 32 on a GFX8 target, whose assert (radv_shader_info.c:1125)
+# aborts the whole process: the first small compute shader in the engine did
+# exactly that, before any frame. Below GFX10 a compute stage is wave64.
+git apply "$SCRIPTS/patches/0024-opengnm-psbc-wave64-below-gfx10.patch"
 
 # === 3. opengnm (orbis) ======================================================
 cd "$SRC/opengnm"
@@ -284,6 +303,17 @@ git apply "$SCRIPTS/patches/0016-vk-ps4-vertex-buffer-table.patch"
 # return VK_ERROR_OUT_OF_DEVICE_MEMORY (vk_ps4_image.c:81 colour target, :155 texture) and on the
 # depth fallback, so the failing resource is named instead of guessed.
 git apply "$SCRIPTS/patches/0018-vk-ps4-log-image-create.patch"
+# A descriptor set has to reach the shader as the memory radv's lowering reads:
+# one 64-byte slot per binding (psbc's PSBC_BINDING_STRIDE), binding N's GNM
+# descriptors at N*64, with dynamic offsets shifting a buffer's base in the
+# copy. psbc emits one base slot per used set, apislot naming the set; binding
+# set S writes S's base pointer to that slot's user-SGPR pair (one
+# SetPointerUserData writes both halves), so firstSet > 0 and several sets in
+# one call both land on the right registers. Before this the driver looked the
+# slot up as a *binding number* across every bound set and pointed the pair at
+# that binding's GnmBuffer array, so a set with more than one binding read the
+# wrong bytes and any set past the first was never bound at all.
+git apply "$SCRIPTS/patches/0023-vk-ps4-bind-every-descriptor-set.patch"
 # Two tile-mode gaps, both returning VK_ERROR_OUT_OF_DEVICE_MEMORY for an image the hardware
 # supports. A depth target was created with GNM_TM_DISPLAY_2D_THIN, which sceGnmDrtSetTileMode
 # rejects (it takes GNM_TM_DEPTH_2D_THIN_64 .. GNM_TM_DEPTH_2D_THIN_PRT_1K), so EVERY depth
