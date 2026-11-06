@@ -105,6 +105,8 @@ jobs:
           TN_CI_QUEUE_REF: ${{ github.event.merge_group.head_ref }}
           TN_CI_BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
           TN_CI_HEAD: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
+          # The GPU branch of the strata job's `runs-on`, verbatim: without it strata is exempt.
+          TN_CI_STRATA_GPU: ${{ !github.event.pull_request.head.repo.fork && vars.TN_RUNNER_GPU != '' && (!vars.TN_RUNNER_GPU_HEAD || (github.event.pull_request.head.sha || github.event.merge_group.head_sha || (github.event_name == 'push' && github.sha) || '') == vars.TN_RUNNER_GPU_HEAD) }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail

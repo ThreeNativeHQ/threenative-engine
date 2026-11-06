@@ -251,7 +251,12 @@ export function selectionPlan(
       // `ci` narrows the board to the gates that read the configuration and `warm` to the two cache
       // producers; neither widens one, so any other job is exempt exactly as it is for prose.
       if (name === "strata") {
-        const required = full && strataSelected(files, qualification);
+        const selected = full && strataSelected(files, qualification);
+        // Strata needs a real GPU: SwiftShader allows 16 sampled textures per stage, the terrain binds
+        // 24, and the view-window gate needs GPU timings (owner, 2026-11-06). The workflow says
+        // whether this run's `runs-on` reaches the GPU runner; unset means a caller outside CI.
+        const gpu = process.env.TN_CI_STRATA_GPU !== "false";
+        const required = selected && gpu;
         return [
           name,
           {
@@ -260,7 +265,11 @@ export function selectionPlan(
               ? qualification
                 ? `Full dependency closure: ${reason}`
                 : `Selected dependency closure: ${reason}`
-              : exemption(`Exempt: the ${selection} dependency closure does not reach ${name}`),
+              : selected
+                ? exemption(
+                    "Exempt: no GPU runner serves this run (TN_RUNNER_GPU / TN_RUNNER_GPU_HEAD), and hosted SwiftShader cannot draw the Strata world",
+                  )
+                : exemption(`Exempt: the ${selection} dependency closure does not reach ${name}`),
           },
         ];
       }

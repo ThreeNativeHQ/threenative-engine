@@ -4415,6 +4415,33 @@ describe("PRD-373 selective feature verification", () => {
       }
     });
 
+    it("exempts strata, with the reason, when this run reaches no GPU runner", async () => {
+      const { selectionPlan } = (await import(
+        new URL("../ci-change-scope.mjs", import.meta.url).href
+      )) as {
+        selectionPlan: (...args: unknown[]) => {
+          jobs: Record<string, { required: boolean; reason: string }>;
+        };
+      };
+      const plan = () =>
+        selectionPlan("full", "fixture", [], "a".repeat(40), false, 0, "main").jobs.strata;
+      const saved = process.env.TN_CI_STRATA_GPU;
+      try {
+        process.env.TN_CI_STRATA_GPU = "false";
+        expect(plan()?.required).toBe(false);
+        expect(plan()?.reason).toMatch(/no GPU runner serves this run/u);
+        process.env.TN_CI_STRATA_GPU = "true";
+        expect(plan()?.required).toBe(true);
+      } finally {
+        if (saved === undefined) Reflect.deleteProperty(process.env, "TN_CI_STRATA_GPU");
+        else process.env.TN_CI_STRATA_GPU = saved;
+      }
+      const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+      // The scope step's GPU answer and the strata job's runs-on GPU branch read the same variables.
+      expect(ci).toContain("TN_CI_STRATA_GPU: ${{ !github.event.pull_request.head.repo.fork");
+      expect(ci).toMatch(/strata:[\s\S]*?vars\.TN_RUNNER_GPU_HEAD[\s\S]*?vars\.TN_RUNNER_GPU /u);
+    });
+
     it("skips strata job for an unrelated template change on develop PR", async () => {
       const fixture = await scopeFixture();
       try {
