@@ -150,7 +150,13 @@ it("pins reviewed old source and requires the real command inside benchmark", ()
   assert(gate, "startup gate body missing");
   expect(gate).toContain("EXPECTED_SOURCE_SHA: ${{ needs.scope.outputs.candidate_sha }}");
   expect(gate).toContain("timeout 9m pnpm tsx scripts/verify-strata-startup.ts");
-  expect(gate).not.toMatch(/continue-on-error:|if:|\|\|\s*(true|:)|set \+e/);
+  // The one skip is the GPU route (no runner has a GPU, SwiftShader cannot draw the forest).
+  const gpuOnly = "if: env.TN_STRATA_GPU == 'true'";
+  expect(gate).toContain(gpuOnly);
+  expect(gate.replace(gpuOnly, "")).not.toMatch(/continue-on-error:|if:|\|\|\s*(true|:)|set \+e/);
+  expect(benchmark).toContain(
+    "TN_STRATA_GPU: ${{ !github.event.pull_request.head.repo.fork && vars.TN_RUNNER_GPU != '' && (!vars.TN_RUNNER_GPU_HEAD ||",
+  );
 });
 
 it("parses real runner log framing and rejects absent or malformed reports", () => {
