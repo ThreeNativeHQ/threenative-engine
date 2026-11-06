@@ -352,6 +352,39 @@ describe("registry publication", () => {
     }
   }, 30_000);
 
+  it("packs create-threenative without maintainer notes, a duplicate manifest or a stale patch (PRD-826)", async () => {
+    const packageDirectory = path.resolve("packages/create-threenative");
+    const { stdout } = await run("npm", ["pack", "--dry-run", "--json"], {
+      cwd: packageDirectory,
+      maxBuffer: 64 * 1024 * 1024,
+    });
+    const packed = (JSON.parse(stdout) as Array<{ files: Array<{ path: string }> }>)[0]?.files.map(
+      (file) => file.path,
+    );
+    expect(packed?.length).toBeGreaterThan(0);
+    // Maintainer notes for people editing the templates; the scaffolder never copies them.
+    expect(packed).not.toContain("templates/AGENTS.md");
+    expect(packed).not.toContain("templates/CLAUDE.md");
+    // The canonical manifest is core's own copy, which the MCP server reads.
+    expect(packed).not.toContain("capabilities.json");
+    // Exactly the patches the kits declare: a patch from an older build must not ride along.
+    const declared = new Set<string>();
+    const templatesRoot = path.join(packageDirectory, "templates");
+    for (const entry of await readdir(templatesRoot, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const kit = JSON.parse(
+        await readFile(path.join(templatesRoot, entry.name, "package.json"), "utf8"),
+      ) as { pnpm?: { patchedDependencies?: Record<string, string> } };
+      for (const patch of Object.values(kit.pnpm?.patchedDependencies ?? {}))
+        declared.add(path.basename(patch));
+    }
+    const shipped = (packed ?? [])
+      .filter((file) => file.startsWith("template-assets/patches/"))
+      .map((file) => path.basename(file))
+      .sort();
+    expect(shipped).toEqual([...declared].sort());
+  }, 120_000);
+
   it("keeps authoring secrets and scratch records out of staged files and runtime output", async () => {
     const root = await makeTempDir("threenative-packed-hygiene-");
     const fixture = await referenceFixture();

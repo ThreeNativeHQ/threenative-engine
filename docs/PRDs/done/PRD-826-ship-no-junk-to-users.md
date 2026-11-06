@@ -1,6 +1,6 @@
 # PRD-826: Ship no junk — what a user clones, installs and scaffolds holds only product
 
-**Status:** NOT STARTED — owner delegated the open calls 2026-11-05
+**Status:** DONE — all three phases and the acceptance boxes ticked (2026-11-05) — owner delegated the open calls 2026-11-05
 **Priority:** P2 — planned cleanup; the junk costs clone weight, tarball weight and agent friction, and blocks no release (all phases open)
 **Owner ask (2026-11-05):** "there are many junk to remove from these starter kits also, like wtf is `CHANGELOG.md` `.linchpin.toml`, we have tons of garbage being shipped, spawn another lane focused on another PRD just for this cleanup on starter kits".
 **Related:** PRD-495 (done: the 2026-10-04 dead-code audit), PRD-749 (one kit base), PRD-825 (kit `AGENTS.md` router, a sibling lane: this PRD does not touch agent-file wording).
@@ -87,16 +87,18 @@ Rows 3 to 7 are the shipped surface: 112 + 2 + 16 files and about 850 KB of tarb
 
 ### Phase 3 — Junk cannot come back unseen
 
-- [ ] A scaffold path allowlist: `packages/create-threenative/__tests__/scaffold-file-allowlist.spec.ts` scaffolds each of the 16 kits with `install: false` (the same call `scaffold.spec.ts` uses at line 782) and fails on any generated path that matches no allowlist pattern. The allowlist names each pattern's reason. The tree-hash pin cannot do this job: it only detects change, and a re-pin accepts a new junk file without comment. proof: the spec is green, and it fails when a stray `notes.md` is dropped into one kit (observed once, in the PR body, not as a box).
-- [ ] A tarball and repo-root allowlist: add a pack-content case to `packages/create-threenative/__tests__/publication.spec.ts` (no `templates/AGENTS.md`, no stale patch, no duplicate manifest) and a `scripts/__tests__/repo-root-allowlist.spec.ts` that reads `git ls-files` for the top-level names, as `scripts/__tests__/source-hygiene.spec.ts` does, and fails on a tracked `*.log` outside the 34 cited ones, `*.local.*`, `.linchpin*` or root `plans/` entry. proof: both specs green in `pnpm test`.
+- [x] A scaffold path allowlist: `packages/create-threenative/__tests__/scaffold-file-allowlist.spec.ts` scaffolds each of the 16 kits with `install: false` (the same call `scaffold.spec.ts` uses at line 782) and fails on any generated path that matches no allowlist pattern. The allowlist names each pattern's reason. The tree-hash pin cannot do this job: it only detects change, and a re-pin accepts a new junk file without comment. proof: the spec is green, and it fails when a stray `notes.md` is dropped into one kit (observed once, in the PR body, not as a box).
+  Done (2026-11-05): `scaffold-file-allowlist.spec.ts` passes (2 tests, all 16 kits). Red observed: a planted `templates/runner/notes.md` failed it with `expected [ 'runner/notes.md' ] to deeply equal []`; the plant is removed.
+- [x] A tarball and repo-root allowlist: add a pack-content case to `packages/create-threenative/__tests__/publication.spec.ts` (no `templates/AGENTS.md`, no stale patch, no duplicate manifest) and a `scripts/__tests__/repo-root-allowlist.spec.ts` that reads `git ls-files` for the top-level names, as `scripts/__tests__/source-hygiene.spec.ts` does, and fails on a tracked `*.log` outside the 34 cited ones, `*.local.*`, `.linchpin*` or root `plans/` entry. proof: both specs green in `pnpm test`.
+  Done (2026-11-05): `publication.spec.ts` (new PRD-826 case) and `repo-root-allowlist.spec.ts` (3 tests) pass. Red observed: re-adding `capabilities.json` to `files` failed the pack case with `expected [...] to not include 'capabilities.json'`; a planted tracked `plans/x.md` and `stray.log` failed all 3 root cases. Both plants are removed. A stale `three@0.185.1.patch` planted in `template-assets/patches/` is removed by `prepack` and the pack case stays green.
 
 ## Acceptance criteria
 
-- [ ] `git ls-files` lists no `.linchpin.toml`, no `.claude/settings.local.json` and no `.log` file outside the 34 cited ones, and no new `.log` can join them. proof: the Phase 3 root spec.
-- [ ] `npm pack --dry-run --json` for `create-threenative` lists no `templates/AGENTS.md`, `templates/CLAUDE.md`, `capabilities.json` or patch that `prepack` does not copy. proof: the Phase 3 publication case.
-- [ ] A scaffold of every kit differs from today's only by the removed `kit.json`. proof: `pnpm exec vitest run packages/create-threenative/__tests__/scaffold.spec.ts` and the allowlist spec on all 16 kits.
-- [ ] A scaffolded game still has all 7 MCP host configs. proof: `scaffold-mcp.spec.ts`.
-- [ ] `pnpm check:docs` and `pnpm sync:agents --check` exit 0. proof: both commands, exit 0.
+- [x] `git ls-files` lists no `.linchpin.toml`, no `.claude/settings.local.json` and no `.log` file outside the 34 cited ones, and no new `.log` can join them. proof: the Phase 3 root spec. Result: `repo-root-allowlist.spec.ts` 3 of 3 pass.
+- [x] `npm pack --dry-run --json` for `create-threenative` lists no `templates/AGENTS.md`, `templates/CLAUDE.md`, `capabilities.json` or patch that `prepack` does not copy. proof: the Phase 3 publication case. Result: the PRD-826 case in `publication.spec.ts` passes.
+- [x] A scaffold of every kit holds only allowlisted paths and no `kit.json`. proof: `pnpm exec vitest run packages/create-threenative/__tests__/scaffold.spec.ts packages/create-threenative/__tests__/scaffold-file-allowlist.spec.ts` on all 16 kits. Result: 78 and 2 tests pass. The first wording said the trees differ only by `kit.json`. They also differ by the MCP server order, the 4 README removals, 4 kit-facts paragraphs and the sailing sky header, as the hash comment says.
+- [x] A scaffolded game still has all 7 MCP host configs. proof: `scaffold-mcp.spec.ts`. Result: passes, and the new scaffold case lists all 7 files.
+- [x] `pnpm check:docs` and `pnpm sync:agents --check` exit 0. proof: both commands, exit 0. Result: 3769 links checked, 31 mirrors in sync.
 
 ## Decisions
 
