@@ -11,7 +11,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { createReadStream, existsSync } from 'node:fs';
-import { chmod, copyFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, copyFile, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { stripVTControlCharacters } from 'node:util';
 import path from 'node:path';
@@ -42,11 +42,13 @@ const SCRATCH_ROOT = path.dirname(DEPS_DIR);
 
 const MARKER = 'TN_PS4_E1_MARKER';
 
-// E2's pass rule reads the guest's own frame on the host, because the guest's count only proves
-// what its readback buffer held. The triangle covers 12.5% of a 1920x1080 frame; the band leaves
-// room for a smaller or partly replaced draw, and rejects "nothing but the clear" and "no clear".
+// E2's pass rule reads the frame shadPS4 PRESENTED, captured from the private X display: the
+// guest's own count only proves what its readback buffer held. The triangle covers 12.5% of the
+// frame; the band leaves room for a smaller or partly replaced draw, and rejects "nothing but the
+// clear" and "no clear".
 const E2_CLEAR = [26, 26, 51]; // 0.1, 0.1, 0.2 cleared as UNORM8
-const E2_TOLERANCE = 8; // per-channel distance from the clear colour that counts as drawn
+const E2_TOLERANCE = 8; // per-channel distance from the clear colour that counts as clear
+const E2_CLEAR_MIN = 0.2;
 const E2_DRAWN_MIN = 0.02;
 const E2_DRAWN_MAX = 0.75;
 
@@ -55,6 +57,27 @@ const E2_DRAWN_MAX = 0.75;
 // is unified, so a guest copying a rendered image reads stale memory without this -- a config
 // fix, not a cheat. Relaxed=1, Precise=2; TN_PS4_READBACKS_MODE lets a red try the other mode.
 const READBACKS_MODE = Number(process.env.TN_PS4_READBACKS_MODE ?? 2);
+
+// What shadPS4 PRESENTS comes from its host image, which is not the guest memory a GPU-side copy
+// of a render target reads. TN_PS4_SCREENSHOT_AT=3,5,7,9 captures the private X display's root
+// window that many seconds after launch, so a screenshot separates "the draw never happened"
+// from "the draw happened but the guest's readback reads stale memory". E2 always captures: its
+// verdict is the presented frame, so it falls back to the experiment's own default times.
+function captureTimes(fallback = []) {
+  const times = (process.env.TN_PS4_SCREENSHOT_AT ?? '')
+    .split(',')
+    .map(entry => entry.trim())
+    .filter(Boolean);
+  for (const at of times) {
+    if (!(Number(at) > 0)) throw new Error(`TN_PS4_SCREENSHOT_AT entries are seconds, got "${at}"`);
+  }
+  return times.length ? times : fallback;
+}
+
+// Shader dumps land in <UserDir>/shader/dumps as <stage>_<hash>.{bin,spv} plus the recompiler's IR
+// (vk_pipeline_cache.cpp:747, shader_recompiler/ir/program.cpp:22 at v.0.21.0). config.json names
+// the key dump_shaders; the camelCase dumpShaders spelling belongs to the config.toml migration.
+const DUMP_SHADERS = process.env.TN_PS4_DUMP_SHADERS === '1';
 
 // One entry per experiment; build and boot are shared, only the build step, the marker and the
 // pass rule differ.
@@ -77,12 +100,15 @@ const EXPERIMENTS = {
     // The vulkan-ps4 triangle (E2 readback) with a Vulkan pipeline + shader compile inside the
     // emulator, so it gets a longer boot window than E1's marker print.
     timeoutMs: 300_000,
+    // The guest draws 600 frames before it prints, so both captures land while it still presents.
+    screenshots: ['5', '7'],
     build: (outDir, toolchain) => buildE2(outDir, toolchain),
     // The guest's readback line ends the boot wait and is reported, but it is not the verdict:
-    // E2's frame itself is judged on the host. The test also logs any vk* failure as "TEST: ...".
+    // E2's presented frame is judged on the host. The test also logs any vk* failure as
+    // "TEST: ...".
     markerPattern: /TN_PS4_E2 pixels nonblank=(\d+) of (\d+)/,
     failurePattern: /TEST:[^\n]*FAILED/,
-    verdict: (match, frame, log) => judgeE2(match, frame, log),
+    verdict: (match, frame, log, shots) => judgeE2(match, frame, log, shots),
   },
 };
 
@@ -113,51 +139,120 @@ function readPpm(buffer) {
   return { width, height, pixels };
 }
 
-// Drawn = differs from the clear colour by more than the tolerance on any channel and is not
-// black: black is guest memory nothing ever wrote, never something the draw made.
-function countDrawn({ width, height, pixels }) {
-  let drawn = 0;
-  for (let i = 0; i < width * height; i++) {
-    const r = pixels[i * 3];
-    const g = pixels[i * 3 + 1];
-    const b = pixels[i * 3 + 2];
-    if (r <= 8 && g <= 8 && b <= 8) continue;
-    if (
-      Math.abs(r - E2_CLEAR[0]) > E2_TOLERANCE ||
-      Math.abs(g - E2_CLEAR[1]) > E2_TOLERANCE ||
-      Math.abs(b - E2_CLEAR[2]) > E2_TOLERANCE
-    )
-      drawn++;
+// Clear = the guest's clear colour; drawn = anything else that is not black. Black is what a
+// whole-screenshot capture holds where nothing rendered, so it is neither.
+//
+// Every pixel is measured only inside the box that carries the clear colour, not over the whole
+// screenshot: the capture is the emulator's WINDOW, so it also holds the host's letterbox around
+// the presented image -- black on one host, grey (128,128,128) on another -- which no guest drew.
+// The box is that image, with the draw inside it. ponytail: one box, so an off-image stray pixel
+// of the clear colour would widen it; the frames this judges are flat colour plus the draw.
+// The box holding every pixel of the clear colour; an empty box (right < left) means the guest
+// presented nothing. See countRegions for why the box and not the whole capture.
+function clearBox({ width, height, pixels }) {
+  const box = { left: width, top: height, right: -1, bottom: -1 };
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      if (!nearClear(pixels, (y * width + x) * 3)) continue;
+      box.left = Math.min(box.left, x);
+      box.right = Math.max(box.right, x);
+      box.top = Math.min(box.top, y);
+      box.bottom = Math.max(box.bottom, y);
+    }
   }
-  return drawn;
+  return box;
+}
+
+function nearClear(pixels, at) {
+  return (
+    Math.abs(pixels[at] - E2_CLEAR[0]) <= E2_TOLERANCE &&
+    Math.abs(pixels[at + 1] - E2_CLEAR[1]) <= E2_TOLERANCE &&
+    Math.abs(pixels[at + 2] - E2_CLEAR[2]) <= E2_TOLERANCE
+  );
+}
+
+function countRegions(raster) {
+  const { width, pixels } = raster;
+  const { left, top, right, bottom } = clearBox(raster);
+  let clear = 0;
+  let drawn = 0;
+  for (let y = top; y <= bottom; y++) {
+    for (let x = left; x <= right; x++) {
+      const at = (y * width + x) * 3;
+      if (pixels[at] <= 8 && pixels[at + 1] <= 8 && pixels[at + 2] <= 8) continue;
+      if (nearClear(pixels, at)) clear++;
+      else drawn++;
+    }
+  }
+  return { clear, drawn };
+}
+
+// The screenshot is a PNG; ImageMagick already on the lane (the captures use it) converts it to
+// the P6 raster readPpm reads, so no npm decoder. 8-bit output keeps maxval at the 255 readPpm
+// requires whatever depth the source claims.
+function pngToPpm(file) {
+  const args = [file, '-depth', '8', 'ppm:-'];
+  for (const command of ['magick', 'convert']) {
+    const converted = spawnSync(command, args, { maxBuffer: 1 << 30 });
+    if (converted.error) {
+      if (converted.error.code === 'ENOENT') continue;
+      throw converted.error;
+    }
+    if (converted.status !== 0)
+      throw new Error(`${command} exited ${converted.status ?? converted.signal}: ${String(converted.stderr ?? '').trim()}`);
+    return converted.stdout;
+  }
+  throw new Error('neither magick nor convert is on PATH, so the screenshot cannot be read');
 }
 
 // E2's verdict: the config must have taken effect (else a red frame blames the wrong layer),
-// then the guest's frame must show a triangle and no larger-than-a-frame draw.
-async function judgeE2(match, frame, log) {
+// then the LAST host screenshot -- what shadPS4 presented -- must hold the guest's clear colour
+// and a triangle over it. The guest's own readback is information only: CopyBuffer copies guest
+// memory, and shadPS4 never flushes a source render target into it (v.0.21.0), so it reads clear
+// even when the frame on screen holds the draw. A missing, unreadable or all-black screenshot
+// fails: an absent observation is not a pass.
+async function judgeE2(match, frame, log, shots) {
   const wanted = `GPU readbacksMode: ${READBACKS_MODE}`;
   if (!log.includes(wanted) || !log.includes('GPU readbackLinearImages: true'))
     return {
       ok: false,
       reason: `shadPS4 did not take the config: its log lacks "${wanted}" and/or "GPU readbackLinearImages: true"`,
     };
-  const guest = ` guest-nonblank=${match[1]} of ${match[2]}`;
-  if (!frame.ppm) return { ok: false, reason: 'the guest wrote no PPM, so there is no frame to judge' };
+  const guest = ` guest-readback=${match[1]} of ${match[2]} (stale: shadPS4 CopyBuffer does not flush render targets)`;
+  const image = shots.at(-1) ?? '';
+  if (!image) return { ok: false, reason: 'the run saved no host screenshot, so there is no presented frame to judge', info: guest };
   let raster;
   try {
-    raster = readPpm(await readFile(frame.ppm));
+    raster = readPpm(pngToPpm(image));
   } catch (error) {
-    return { ok: false, reason: `${frame.ppm} is unreadable: ${error.message}` };
+    return { ok: false, reason: `${image} is unreadable: ${error.message}`, info: guest };
   }
-  const total = raster.width * raster.height;
-  const drawn = countDrawn(raster);
-  const ratio = drawn / total;
-  const counts = `drawn=${drawn} of ${total} (${(ratio * 100).toFixed(2)}%)`;
-  if (ratio < E2_DRAWN_MIN)
-    return { ok: false, reason: `${counts}, below the ${E2_DRAWN_MIN * 100}% band, so the frame is only the clear colour`, info: guest };
-  if (ratio > E2_DRAWN_MAX)
-    return { ok: false, reason: `${counts}, above the ${E2_DRAWN_MAX * 100}% band, so nothing cleared the frame`, info: guest };
-  return { ok: true, detail: ` drawn=${(ratio * 100).toFixed(2)}%`, info: guest };
+  const { clear, drawn } = countRegions(raster);
+  const nonBlack = clear + drawn;
+  if (!nonBlack)
+    return {
+      ok: false,
+      reason: `${image} holds no clear pixel (or nothing but black), so the guest presented no frame`,
+      info: guest,
+      image,
+    };
+  const clearPct = clear / nonBlack;
+  const drawnPct = drawn / nonBlack;
+  const counts = `clear=${(clearPct * 100).toFixed(2)}% drawn=${(drawnPct * 100).toFixed(2)}% of ${nonBlack} presented pixels`;
+  const failed = reason => ({ ok: false, reason: `${counts}, ${reason}`, info: guest, image });
+  if (clearPct < E2_CLEAR_MIN) return failed(`below the ${E2_CLEAR_MIN * 100}% clear, so the guest's clear never reached the screen`);
+  if (drawnPct < E2_DRAWN_MIN) return failed(`drawn below the ${E2_DRAWN_MIN * 100}% band, so the frame is only the clear colour`);
+  if (drawnPct > E2_DRAWN_MAX) return failed(`drawn above the ${E2_DRAWN_MAX * 100}% band, so nothing cleared the frame`);
+  return { ok: true, detail: ` drawn=${(drawnPct * 100).toFixed(2)}%`, info: guest, image };
+}
+
+// The run's host screenshots, oldest first: <out>/screen-<seconds>.png, one per requested time.
+async function screenShots(out) {
+  const names = (await readdir(out).catch(() => [])).filter(name => /^screen-\d+(\.\d+)?\.png$/.test(name));
+  return names
+    .map(name => ({ at: Number(name.slice('screen-'.length, -'.png'.length)), file: path.join(out, name) }))
+    .sort((a, b) => a.at - b.at)
+    .map(entry => entry.file);
 }
 
 function run(command, args, options = {}) {
@@ -261,12 +356,13 @@ async function buildGuest(outDir, toolchain, source, stem, sfoFields) {
 // pinned commits and compiles a Mesa fork, which is its own recipe and its own length.
 async function buildE2(outDir, toolchain) {
   runInherit('bash', [path.join(HERE, 'e2-build.sh'), '--out', outDir], { env: { ...process.env, OO_PS4_TOOLCHAIN: toolchain } });
-  // TN_PS4_E2_GUEST isolates the layer on a red: `vk` is the same test with a pristine ICD
-  // (is the readback patch the cause?), `gnm` is a plain GNM triangle (is vulkan-ps4 the cause?),
-  // `vid` is the same guest with no vertex buffer or vertex-input state (is the fetch shader
-  // the cause?).
+  // `vid` is the guest that presents: it is one source with one define, so a red still isolates
+  // the fetch shader. TN_PS4_E2_GUEST isolates the layer on a red: `vk` is the same test with a
+  // pristine ICD (is the readback patch the cause?), `gnm` is a plain GNM triangle (is
+  // vulkan-ps4 the cause?), `e2` is the vertex-buffer build (is the fetch shader the cause?)
+  // and `vid` the same guest with no vertex buffer or vertex-input state.
   const alias = { e2: 'e2-triangle', vk: 'vk-triangle', gnm: 'gnm-triangle', vid: 'e2-triangle-vid' };
-  const guest = alias[process.env.TN_PS4_E2_GUEST ?? 'e2'];
+  const guest = alias[process.env.TN_PS4_E2_GUEST ?? 'vid'];
   if (!guest) throw new Error(`TN_PS4_E2_GUEST must be one of ${Object.keys(alias).join('|')}`);
   const appDir = path.join(outDir, 'out', guest, 'app');
   const eboot = path.join(appDir, 'eboot.bin');
@@ -321,6 +417,23 @@ async function stop(child) {
   }
 }
 
+// $1 = appimage, $3 = eboot, $4 = output directory, $5.. = capture times in seconds.
+// `import -window root -screen` reads the displayed pixels: a bare root-window grab misses what a
+// compositor draws through the composite overlay window.
+const CAPTURE_SCRIPT = `out="$4"
+appimage="$1"
+eboot="$3"
+shift 4
+"$appimage" -g "$eboot" &
+game=$!
+for at in "$@"; do
+  ( sleep "$at"; import -window root -screen "$out/screen-$at.png" || echo "screenshot $at failed" >&2 ) &
+done
+wait "$game"
+status=$?
+exit "$status"
+`;
+
 // Boot headless: xvfb.sh owns the private X display, the sandbox home keeps shadPS4's config,
 // users and log out of the real ~/.local/share (whose stale profile opens a Save Migration dialog).
 async function boot(experiment, built, appimage, outDir) {
@@ -353,16 +466,27 @@ async function boot(experiment, built, appimage, outDir) {
   // the run. Every experiment gets it; E1 does not care.
   await writeFile(
     path.join(env.XDG_DATA_HOME, 'shadPS4', 'config.json'),
-    `${JSON.stringify({ GPU: { readbacks_mode: READBACKS_MODE, readback_linear_images_enabled: true } }, null, 2)}\n`,
+    `${JSON.stringify({ GPU: { readbacks_mode: READBACKS_MODE, readback_linear_images_enabled: true, ...(DUMP_SHADERS ? { dump_shaders: true } : {}) } }, null, 2)}\n`,
   );
   await mkdir(env.XDG_CONFIG_HOME, { recursive: true });
   await mkdir(env.XDG_CACHE_HOME, { recursive: true });
   const logOut = path.join(outDir, 'out');
   await mkdir(logOut, { recursive: true });
+  // An earlier run's capture is not this run's frame: the verdict reads the LAST screenshot, so a
+  // leftover at a later second would be judged instead of the one this run took.
+  for (const name of await readdir(logOut)) if (/^screen-.+\.png$/.test(name)) await rm(path.join(logOut, name));
 
   const wrapper = path.join(REPO_ROOT, 'scripts', 'xvfb.sh');
   if (!existsSync(wrapper)) throw new Error(`missing ${wrapper}`);
-  const child = spawn('sh', [wrapper, appimage, '-g', built.artifacts.eboot], { env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
+  const launch = [appimage, '-g', built.artifacts.eboot];
+  const shots = captureTimes(experiment.screenshots);
+  // xvfb.sh exports the private DISPLAY to its child, so the captures run inside the wrapper: the
+  // emulator goes to the background, and each capture is its own subshell sleeping an absolute
+  // time from launch (a broken capture reports itself and never changes the exit status).
+  const command = shots.length
+    ? ['sh', '-c', CAPTURE_SCRIPT, 'tn-ps4-launch', appimage, '-g', built.artifacts.eboot, logOut, ...shots]
+    : launch;
+  const child = spawn('sh', [wrapper, ...command], { env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
   let output = '';
   child.stdout.setEncoding('utf8').on('data', chunk => { output += chunk; });
   child.stderr.setEncoding('utf8').on('data', chunk => { output += chunk; });
@@ -437,16 +561,27 @@ async function main(argv) {
   }
   const result = await boot(experiment, built, appimage, outDir);
   const frame = await collectFrame(outDir);
-  const image = frame.image;
+  // Printed before the verdict: they are the evidence a red run is read from.
+  const out = path.join(outDir, 'out');
+  const shots = await screenShots(out);
+  for (const shot of shots) console.log(`${label} screenshot ${shot}`);
+  if (DUMP_SHADERS) {
+    const dumps = path.join(outDir, 'home', '.local', 'share', 'shadPS4', 'shader', 'dumps');
+    const names = (await readdir(dumps).catch(() => [])).sort();
+    console.log(`${label} shader dumps ${dumps} (${names.length} files)`);
+    for (const name of names) console.log(`${label} dump ${path.join(dumps, name)}`);
+  }
 
-  // Pass rule: the experiment's own verdict over the marker it captured, and nothing else.
-  const verdict = result.match ? await experiment.verdict(result.match, frame, result.log) : null;
+  // Pass rule: the experiment's own verdict over the evidence it captured, and nothing else.
+  const verdict = result.match ? await experiment.verdict(result.match, frame, result.log, shots) : null;
+  if (verdict?.info) console.log(`${label} info:${verdict.info}`);
+  // The verdict names the frame it judged; the guest's own frame is only a fallback.
+  const image = verdict?.image || frame.image;
   if (verdict?.ok) {
     console.log(`${label} PASS${verdict.detail}${image ? ` image=${image}` : ''}`);
-    if (verdict.info) console.log(`${label} info:${verdict.info}`);
     return 0;
   }
-  const reason = result.failure || (verdict && `${verdict.reason}${verdict.info ?? ''}`) || 'the guest printed no marker';
+  const reason = result.failure || verdict?.reason || 'the guest printed no marker';
   const text = result.output.trim() ? result.output : result.log;
   const tail = text.trimEnd().split('\n').slice(-20).join('\n');
   const firmware = /sys_modules|firmware/i.test(result.output + result.log) ? ' (shadPS4 reported a firmware/sys_modules requirement)' : '';

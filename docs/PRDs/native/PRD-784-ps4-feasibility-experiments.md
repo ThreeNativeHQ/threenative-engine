@@ -1,6 +1,6 @@
 # PRD-784 — PS4 feasibility: emulator experiments, then one engine cube on the console
 
-**Status:** PARTIAL — E1 green on `PS4_EMULATED`
+**Status:** PARTIAL — E1 and E2 green on `PS4_EMULATED`
 **Priority:** P2 — Owner-requested feasibility: boxes E1 to E6 and the Blocked on console run are all open, and no release waits on them.
 **Complexity:** 7 (HIGH)
 **Owner:** Joao Paulo Furtado (console steps only); agent (everything else)
@@ -115,19 +115,22 @@ performance work. A go result opens a second PRD for those.
 - 2026-11-02 (João): No legal gate for now. Practical limit kept by the agent: dumped Sony modules, keys and jailbreak binaries stay out of this public repository, because a public commit is hard to undo.
 - 2026-11-02 (João): Experiments stop at the engine cube and a go/no-go. A starter kit is a later PRD.
 - 2026-11-06 (João): E5 targets the store's Cube Spin game (`threenative-store/examples/cube-spin`, private repo), so the PS4 frame can be compared with the published build. The runner reads it with `--scene <path>`, and the game is not copied into this public repository. It imports no physics and no WebAssembly, so it can run on jitless V8. `examples/native-smoke` stays the first step when Cube Spin fails.
+- 2026-11-06 (agent): The pinned vulkan-ps4 and OpenGNM stack could not draw on any target. Seven of its 12 patches fix six gaps that real hardware also hits: no static viewport, no `CB_COLOR_CONTROL`, no `SPI_SHADER_COL_FORMAT`, a shared epilogue buffer rewritten in flight, shader code below 256-byte alignment, and a swapchain clear that does nothing. The other five fix the build, compiler diagnostics, the emulator encoding (`int_sel` 3 to 2, as Sony's libgnm uses) and the readback test. Treat the driver as immature, not as console-proven.
+- 2026-11-06 (agent): E2 judges shadPS4's presented frame, not the guest readback. shadPS4 keeps render targets in host VRAM, and a guest GPU copy from them reads stale guest memory. The runner turns on GPU readbacks (`readbacks_mode` 2), but that path does not flush a render target that a GPU copy reads.
 - 2026-11-06 (agent): Each shadPS4 run gets a private HOME, XDG folders and Xvfb, with no Wayland, D-Bus or `QT_QPA_PLATFORM` from the session. The run also creates `home/1000` first. Without both, shadPS4 opens its "Save Migration" box on the owner's desktop (`src/core/user_manager.cpp:293-300` at v.0.21.0).
 
 ## Execution Phases
 
 #### Phase 1: The emulator lane and a native triangle
 
-**Status:** PARTIAL
+**Status:** DONE
 **Files:** `packages/runtime-native/scripts/ps4/run-experiment.mjs` (pins, boot, log marker, non-blank check, fails closed), `packages/runtime-native/scripts/ps4/e1-hello.c`.
 **Implementation:** Pin shadPS4 v.0.21.0, OpenOrbis and the OpenGNM commits in the script. Clone them outside tracked paths. Pass the output folder with `--mount`.
 **Verification:** each box below. A boot with no marker or a blank capture fails.
 
 - [x] E1: OpenOrbis ELF prints its marker in shadPS4. proof: `node packages/runtime-native/scripts/ps4/run-experiment.mjs e1` — 2026-11-06 `PS4_EMULATED E1 PASS`, exit 0, guest `[stdout] TN_PS4_E1_MARKER hello`, empty `sys_modules`. shadPS4 rejects the plain ELF (`e_type 0x3`), so the run boots the `create-fself` SELF
-- [ ] E2: `vulkan-ps4` draws a non-blank triangle in shadPS4. proof: `node packages/runtime-native/scripts/ps4/run-experiment.mjs e2`
+- [x] E2: `vulkan-ps4` draws a non-blank triangle in shadPS4. proof: `node packages/runtime-native/scripts/ps4/run-experiment.mjs e2` — 2026-11-06 `PS4_EMULATED E2 PASS drawn=12.55%`, exit 0, two agent runs and one coordinator run. The judge reads shadPS4's presented frame. Control: `TN_PS4_E2_GUEST=e2` (vertex buffer) exits 1 with 0% drawn. The default guest takes its positions from `gl_VertexIndex`. The pinned stack needs 12 patches (`scripts/ps4/patches/`)
+  Open for E5: a vertex-buffer draw reaches the VS with zero attributes, and a guest GPU copy of a render target reads stale memory (shadPS4 `CopyBuffer` does not flush the source image, `vk_rasterizer.cpp:1236`)
 
 #### Phase 2: The two seams, GPU and JavaScript
 

@@ -134,6 +134,9 @@ cp config.orbis.mak config.mak
 # shadPS4 traps on EVENT_WRITE_EOP int_sel 3 (video_core/amdgpu/pm4_cmds.h:510);
 # libgnm's encoding for the same fence is 2, so both sites emit 2.
 git apply "$SCRIPTS/patches/0004-opengnm-eop-int-sel-confirm.patch"
+# opengnm has no CB_COLOR_CONTROL (0x28808) setter, so nothing ever left mode
+# Disable (0) and shadPS4 bound no colour target: adds the setter patch 0012 calls.
+git apply "$SCRIPTS/patches/0011-opengnm-cb-color-control.patch"
 # config.orbis.mak's `CC ?= clang` loses to make's builtin CC=cc.
 make -j"$JOBS" CC=clang AR=llvm-ar lib > "$LOGS/opengnm.log" 2>&1
 
@@ -209,6 +212,12 @@ git apply "$SCRIPTS/patches/0009-vk-ps4-swapchain-color-clear.patch"
 # VK_DYNAMIC_STATE_VIEWPORT rasterized through a zero-size viewport (xscale 0)
 # and drew nothing. vkCmdBindPipeline now applies the copied static arrays.
 git apply "$SCRIPTS/patches/0010-vk-ps4-static-viewport-scissor.patch"
+# Three context registers shadPS4's rasterizer needs for a colour draw and no
+# driver here ever wrote: CB_COLOR_CONTROL (else no colour target is bound),
+# SPI_SHADER_COL_FORMAT (else the PS translator drops every colour export) and
+# PA_CL_CLIP_CNTL (else the VS is patched for screen-space output and the geometry
+# collapses). vkCmdBindPipeline emits all three per bind.
+git apply "$SCRIPTS/patches/0012-vk-ps4-colour-draw-context-regs.patch"
 # The Makefile compiles TEST_SRC relative to the vulkan-ps4 tree.
 cp "$SCRIPTS/e2-triangle.c" "$SRC/e2-triangle.c"
 make -f Makefile.orbis -j"$JOBS" TEST_SRC=../e2-triangle.c self > "$LOGS/e2-triangle.log" 2>&1
