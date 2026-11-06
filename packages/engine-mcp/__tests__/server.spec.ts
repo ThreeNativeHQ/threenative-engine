@@ -57,6 +57,7 @@ describe("threenative-engine-mcp stdio contract", async () => {
       "engine_search_references",
       "engine_reference_detail",
       "engine_save_reference",
+      "engine_watch_reference",
     ]);
     expect(response.result.tools).toEqual(
       expect.arrayContaining([

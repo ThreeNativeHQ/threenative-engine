@@ -11,6 +11,7 @@ import {
   loadReleaseReferenceGame,
   referenceStubs,
   saveReferenceGame,
+  watchReference,
 } from "./references.js";
 
 export interface ICapabilityEntry {
@@ -97,7 +98,7 @@ export interface IEngineTool {
       {
         readonly description?: string;
         readonly enum?: readonly string[];
-        readonly type: "string" | "object";
+        readonly type: "string" | "object" | "number";
       }
     >;
     readonly required: readonly string[];
@@ -111,6 +112,7 @@ export const ENGINE_MCP_TOOL_NAMES = [
   "engine_search_references",
   "engine_reference_detail",
   "engine_save_reference",
+  "engine_watch_reference",
 ] as const;
 
 const DEFAULT_MANIFEST_FILE = "capabilities.json";
@@ -752,11 +754,13 @@ const REFERENCE_TOOLS = [
   "engine_search_references",
   "engine_reference_detail",
   "engine_save_reference",
+  "engine_watch_reference",
 ];
 
-/** A reverse-engineer request leads with the reference tools (PRD-735); the mechanics follow unchanged. */
+/** Every search names the reference tools (PRD-827), so "double jump" learns pinned game
+ * references exist; a reverse-engineer request also leads its guidance with them (PRD-735). */
 function withReferenceTools(situation: string, response: ICapabilitySearchResponse) {
-  if (!REVERSE_ENGINEER.test(situation)) return response;
+  if (!REVERSE_ENGINEER.test(situation)) return { referenceTools: REFERENCE_TOOLS, ...response };
   return {
     referenceTools: REFERENCE_TOOLS,
     ...response,
@@ -943,6 +947,31 @@ const TOOL_DEFINITIONS: readonly IEngineTool[] = [
       required: ["game"],
     },
   },
+  {
+    name: "engine_watch_reference",
+    description:
+      "Watch what you reverse engineer: see a game mechanic before you build it. Searches YouTube for gameplay of a reference game, download one short segment and slice frames plus one contact sheet into a tmp folder. Returns sheet (read it first), frames and watch.json (video, segment, frame times). Needs yt-dlp and ffmpeg. Frames are reference only: never commit them.",
+    annotations: { destructiveHint: false, openWorldHint: true, readOnlyHint: true },
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        query: {
+          type: "string",
+          description: "Game and mechanic, e.g. 'super mario 64 triple jump'.",
+        },
+        duration: { type: "number", description: "Seconds of gameplay to sample (default 90)." },
+        frames: { type: "number", description: "Frames to slice from the segment (default 12)." },
+        at: { type: "string", description: "Exact timestamps, comma separated, e.g. '12,35,61'." },
+        pick: { type: "number", description: "Search result index (default 0, the top one)." },
+        from: {
+          type: "string",
+          description: "Segment start: seconds, mm:ss or NN% (default 10%).",
+        },
+      },
+      required: ["query"],
+    },
+  },
 ];
 
 export function toolDefinitions(): readonly IEngineTool[] {
@@ -1090,19 +1119,14 @@ async function handleToolCall(
       tool: name,
       verdict: response.verdict,
     });
-    return toolText(
-      response.verdict === "none"
-        ? {
-            ...response,
-            references: await searchReferences(argumentsValue.situation, 3).catch(
-              (error: unknown) => ({
-                results: [],
-                guidance: `references unavailable: ${String(error)}`,
-              }),
-            ),
-          }
-        : response,
-    );
+    // Up to three reference stubs on every search; an offline host still gets its capability hits.
+    return toolText({
+      ...response,
+      references: await searchReferences(argumentsValue.situation, 3).catch((error: unknown) => ({
+        results: [],
+        guidance: `references unavailable: ${String(error)}`,
+      })),
+    });
   }
   if (name === "engine_capability_detail") {
     if (typeof argumentsValue.symbol !== "string")
@@ -1177,6 +1201,27 @@ async function handleToolCall(
     const saved = saveReferenceGame(argumentsValue.game);
     logToolCall({ tool: name, saved: saved.saved });
     return toolText(saved);
+  }
+  if (name === "engine_watch_reference") {
+    const { query, duration, frames, at, pick, from } = argumentsValue;
+    if (typeof query !== "string" || !query.trim())
+      throw new Error("engine_watch_reference requires a non-empty string 'query'.");
+    for (const [key, value] of Object.entries({ duration, frames, pick }))
+      if (value !== undefined && typeof value !== "number")
+        throw new Error(`engine_watch_reference '${key}' must be a number when given.`);
+    for (const [key, value] of Object.entries({ at, from }))
+      if (value !== undefined && typeof value !== "string")
+        throw new Error(`engine_watch_reference '${key}' must be a string when given.`);
+    const result = await watchReference({
+      query,
+      ...(typeof duration === "number" ? { duration } : {}),
+      ...(typeof frames === "number" ? { frames } : {}),
+      ...(typeof at === "string" ? { at } : {}),
+      ...(typeof pick === "number" ? { pick } : {}),
+      ...(typeof from === "string" ? { from } : {}),
+    });
+    logToolCall({ tool: name, query, sheet: result.sheet });
+    return toolText(result);
   }
   throw new Error(`Unknown engine MCP tool '${String(name)}'.`);
 }
