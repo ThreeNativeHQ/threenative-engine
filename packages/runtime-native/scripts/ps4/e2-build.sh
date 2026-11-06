@@ -61,7 +61,7 @@ SRC="$OUT/src"
 LOGS="$OUT/logs"
 VENV="$OUT/venv"
 PY="$VENV/bin/python"
-JOBS="$(nproc)"
+JOBS="${JOBS:-$(nproc)}"
 SCRIPTS="$HERE"
 
 [ -d "$OO_PS4_TOOLCHAIN" ] || { echo "OO_PS4_TOOLCHAIN not found: $OO_PS4_TOOLCHAIN" >&2; exit 1; }
@@ -159,6 +159,19 @@ git apply "$SCRIPTS/patches/0004-opengnm-eop-int-sel-confirm.patch"
 # opengnm has no CB_COLOR_CONTROL (0x28808) setter, so nothing ever left mode
 # Disable (0) and shadPS4 bound no colour target: adds the setter patch 0012 calls.
 git apply "$SCRIPTS/patches/0011-opengnm-cb-color-control.patch"
+# A 4x MSAA colour target is four fragments per pixel, and Gpa's numfragsperpixel is that
+# count: `1 << ci->numfragments` read the sample COUNT (4) as a fragment index and laid out
+# sixteen fragments per pixel -- four times the surface, and for a 64 bpp format a bank
+# structure the address library rejects outright. 0019 uses the count GNM's own register
+# field derives (`num_fragments = ci->numfragments >> 1`, i.e. log2).
+git apply "$SCRIPTS/patches/0019-opengnm-msaa-fragment-count.patch"
+# computeSurfaceAlignmentsMacroTiled carries Sony's own comment -- "Sony's library ignores any
+# failure, so do the same" -- and then returned the failure. HwlReduceBankWidthHeight has
+# already written the reduced bank width/height into the tile info, so the create can go on;
+# returning the error made sceGnmCreateRenderTarget answer GNM_ERROR_INTERNAL_FAILURE for a
+# surface the hardware tiles fine: 4x MSAA RGBA16F at 1920x1080 (tile split 256 B, bank height
+# align 512) is exactly the case whose sanity rule cannot be met.
+git apply "$SCRIPTS/patches/0020-opengnm-gpa-bank-sanity-advisory.patch"
 # config.orbis.mak's `CC ?= clang` loses to make's builtin CC=cc.
 make -j"$JOBS" CC=clang AR=llvm-ar lib > "$LOGS/opengnm.log" 2>&1
 
@@ -264,6 +277,21 @@ git apply "$SCRIPTS/patches/0014-vk-ps4-surface-queries.patch"
 # ci->numinstancedata") when the table is sized per binding, so a second
 # attribute sharing binding 0 left the VS running with an empty VGPR block.
 git apply "$SCRIPTS/patches/0016-vk-ps4-vertex-buffer-table.patch"
+# An image OpenGNM rejects came back as a bare VK_ERROR_OUT_OF_DEVICE_MEMORY with no record of
+# which image: no allocation is attempted for it, so neither the memory log nor the size names it.
+# 0018 logs the whole VkImageCreateInfo (format, extent, mips, layers, samples, usage, type,
+# flags) and the OpenGNM error code from the create call that refused it, on both paths that
+# return VK_ERROR_OUT_OF_DEVICE_MEMORY (vk_ps4_image.c:81 colour target, :155 texture) and on the
+# depth fallback, so the failing resource is named instead of guessed.
+git apply "$SCRIPTS/patches/0018-vk-ps4-log-image-create.patch"
+# Two tile-mode gaps, both returning VK_ERROR_OUT_OF_DEVICE_MEMORY for an image the hardware
+# supports. A depth target was created with GNM_TM_DISPLAY_2D_THIN, which sceGnmDrtSetTileMode
+# rejects (it takes GNM_TM_DEPTH_2D_THIN_64 .. GNM_TM_DEPTH_2D_THIN_PRT_1K), so EVERY depth
+# image fell through to the texture fallback and no depth render target existed; it now takes
+# GNM_TM_DEPTH_2D_THIN_1K. A multisampled colour target is thin macro-tiled, not a display
+# scanout surface: samples > 1 uses GNM_TM_THIN_2D_THIN (the tile mode opengnm's
+# sceGnmRtInitColorTargetCreateInfo is documented with), 1 sample keeps the display mode.
+git apply "$SCRIPTS/patches/0021-vk-ps4-depth-and-msaa-tile-modes.patch"
 # The Makefile compiles TEST_SRC relative to the vulkan-ps4 tree.
 cp "$SCRIPTS/e2-triangle.c" "$SRC/e2-triangle.c"
 make -f Makefile.orbis -j"$JOBS" TEST_SRC=../e2-triangle.c self > "$LOGS/e2-triangle.log" 2>&1

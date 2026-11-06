@@ -782,6 +782,14 @@ async function boot(experiment, built, appimage, outDir) {
     ? ['sh', '-c', CAPTURE_SCRIPT, 'tn-ps4-launch', appimage, '-g', built.artifacts.eboot, logOut, ...shots]
     : launch;
   const child = spawn('sh', [wrapper, ...command], { env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
+  const startedAt = Date.now();
+  // A capture is taken that many seconds after THIS launch (CAPTURE_SCRIPT sleeps from launch), and
+  // stopping the run stops its capture subshells with it, so the marker must not end the wait before
+  // the last capture is due: a verdict that reads two frames has to let both be taken. E5 asks for
+  // 300 frames but prints its marker at the 300th, seconds before the captures at 20 s and 40 s. The
+  // grace is the capture's own startup: its sleep ends at the capture time, and a stop() in the same
+  // instant kills the import with the process group.
+  const lastShotMs = shots.length ? Math.max(...shots.map(Number)) * 1000 + 5_000 : 0;
   let output = '';
   child.stdout.setEncoding('utf8').on('data', chunk => { output += chunk; });
   child.stderr.setEncoding('utf8').on('data', chunk => { output += chunk; });
@@ -815,6 +823,13 @@ async function boot(experiment, built, appimage, outDir) {
     }
     if (seen.match) {
       match = seen.match;
+      if (Date.now() - startedAt >= lastShotMs) break;
+      // A run that has exited takes no further capture: break now and let the verdict say which frame
+      // it is missing, instead of sitting out the timeout for a screenshot that can never come.
+      if (child.exitCode === null) {
+        await delay(250);
+        continue;
+      }
       break;
     }
     if (child.exitCode !== null) {
