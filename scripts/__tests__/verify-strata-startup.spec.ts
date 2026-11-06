@@ -120,19 +120,29 @@ it("permits only historical BEFORE late counter failures", () => {
   runs[0].report.pass = false;
   assertion(runs[0], 4).pass = false;
   assertion(runs[0], 4).details.after = 5;
+  // The runner reports each failed component assertion as a diagnostic too.
+  const lateDiagnostic = {
+    code: "TN_PLAYTEST_COMPONENT_ASSERTION_FAILED",
+    message:
+      "Component 'reveal' on entity 'props' path 'publishedBatchesInView' did not satisfy the assertion.",
+  };
+  Object.assign(runs[0].report, { diagnostics: [lateDiagnostic] });
   expect(verifyStartupRuns(runs).ratio).toBe(1.2);
+  Object.assign(runs[3].report, { diagnostics: [lateDiagnostic] });
+  expect(() => verifyStartupRuns(runs)).toThrow(/diagnostics/);
+  Object.assign(runs[3].report, { diagnostics: [] });
   assertion(runs[1], 4).pass = false;
   expect(() => verifyStartupRuns(runs)).toThrow();
 });
 it("pins reviewed old source and requires the real command inside benchmark", () => {
-  expect(BASELINE_SHA).toBe("88b988cd70d5db7266eb0281e5f74bd0e030b3e7");
+  expect(BASELINE_SHA).toBe("972d1e371728121b973a085e34ed045ed868b6df");
   const ci = readFileSync(".github/workflows/ci.yml", "utf8");
   const section = ci.split("  benchmark:\n")[1];
   assert(section, "benchmark job missing");
   const benchmark = section.split("\n  # visuals")[0];
   assert(benchmark, "benchmark body missing");
   expect(benchmark).not.toContain("continue-on-error:");
-  expect(benchmark).toContain("ref: 88b988cd70d5db7266eb0281e5f74bd0e030b3e7");
+  expect(benchmark).toContain("ref: 972d1e371728121b973a085e34ed045ed868b6df");
   expect(benchmark).toContain("path: .worktrees/strata-startup-baseline");
   const gateSection = benchmark.split("      - name: Enforce Strata startup median")[1];
   assert(gateSection, "startup gate missing");

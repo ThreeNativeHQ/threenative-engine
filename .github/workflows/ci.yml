@@ -1219,7 +1219,7 @@ jobs:
       # Software startup regression contract only; hardware and visual acceptance remain separate.
       - uses: actions/checkout@v7
         with:
-          ref: 88b988cd70d5db7266eb0281e5f74bd0e030b3e7
+          ref: 972d1e371728121b973a085e34ed045ed868b6df
           path: .worktrees/strata-startup-baseline
       - name: Build isolated reviewed Strata baseline
         timeout-minutes: 5

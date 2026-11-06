@@ -17,7 +17,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import type { IStandalonePlaytestReport } from "../packages/playtest/src/runner/shared.js";
 import { workspacePackages } from "./workspace-packages.js";
 
-export const BASELINE_SHA = "88b988cd70d5db7266eb0281e5f74bd0e030b3e7";
+export const BASELINE_SHA = "972d1e371728121b973a085e34ed045ed868b6df";
 const ORDER = ["before", "after", "after", "before", "before", "after"] as const;
 const late = ["publishedBatchesInView", "shadowInvalidated", "impostorPendingPeak"].map(
   (key) => `component.props.reveal.${key}`,
@@ -61,8 +61,17 @@ export function verifyStartupRuns(runs: readonly IStartupRun[]) {
   let adapter: unknown;
   for (const { arm, status, report } of runs) {
     assert(status === 0 || (arm === "before" && status === 1), "subprocess failure");
+    // A historical BEFORE late-counter failure also reaches the runner's diagnostics.
+    const failedLate = (diagnostic: { code?: string; message?: string }) =>
+      arm === "before" &&
+      diagnostic.code === "TN_PLAYTEST_COMPONENT_ASSERTION_FAILED" &&
+      late.some(
+        (id) =>
+          diagnostic.message?.includes(`path '${id.split(".").pop()}'`) &&
+          report.assertionResults?.some((a) => a.id === id && a.pass === false),
+      );
     assert(
-      Array.isArray(report.diagnostics) && report.diagnostics.length === 0,
+      Array.isArray(report.diagnostics) && report.diagnostics.every(failedLate),
       "diagnostics must be empty",
     );
     assert(Array.isArray(report.observations?.console), "console observations missing");
