@@ -1,0 +1,188 @@
+diff --git a/include/vk_ps4_internal.h b/include/vk_ps4_internal.h
+index 7634d6b..5462689 100644
+--- a/include/vk_ps4_internal.h
++++ b/include/vk_ps4_internal.h
+@@ -150,6 +150,11 @@ struct VkPs4PhysicalDevice {
+ 
+ /* === Device === */
+ #define VK_PS4_MAX_QUEUES 16
++/* In-flight submissions that can hold an epilogue slice at once (see
++ * gnm_epilogue_cmd).  The guest waits on its EOP fence every frame, so a
++ * handful of frames of slack is plenty. */
++#define VK_PS4_GNM_EPILOGUE_SLOTS 16u
++
+ struct VkPs4Device {
+     VkPs4ObjectType type;
+     VkPs4PhysicalDevice *physical_device;
+@@ -168,12 +173,17 @@ struct VkPs4Device {
+     GnmDirectMemory gnm_init_mem;
+     uint32_t *gnm_init_cmd;
+     uint32_t gnm_init_cmd_dwords;
+-    /* Epilogue command buffer used by QueueSubmit to emit EOP event writes
+-         * for fence/semaphore signaling.  Reused across submits — only one
+-         * submit is in flight at a time because QueueSubmit is serialized. */
++    /* Epilogue command buffers used by QueueSubmit to emit WaitMem and EOP
++     * event writes for semaphore/fence signaling.  Each submission takes the
++     * next slice of VK_PS4_GNM_EPILOGUE_SLOTS: the GPU reads a submitted command
++     * buffer asynchronously, so a single shared buffer was rewritten while the
++     * previous submit was still being walked (a desynced walk reads its payload
++     * as a packet header: "Unimplemented PM4 type 0").  A slice is reusable
++     * once the guest has waited on the fence whose EOP write signals it. */
+     GnmDirectMemory gnm_epilogue_mem;
+     uint32_t *gnm_epilogue_cmd;
+-    uint32_t gnm_epilogue_cmd_dwords;
++    uint32_t gnm_epilogue_cmd_dwords; /* per slice */
++    uint32_t gnm_epilogue_next;       /* rotating slice index */
+     /* Embedded clear pixel shader for tiled RT clears.
+      * The clear PS outputs a UBO vec4 to MRT0, enabling draw-based
+      * clears on tiled surfaces where FillMemory doesn't work.
+diff --git a/src/vk_ps4_device.c b/src/vk_ps4_device.c
+index 9d8a83f..b9b56e4 100644
+--- a/src/vk_ps4_device.c
++++ b/src/vk_ps4_device.c
+@@ -89,10 +89,12 @@ static VkResult vk_ps4_device_init_gnm(VkPs4Device *dev) {
+     }
+     vk_ps4_log_raw("init_gnm: SubmitDone OK");
+ 
+-    /* Allocate the epilogue command buffer used by QueueSubmit for EOP
+-         * fence/semaphore signal writes.  Small and reused across submits. */
++    /* Allocate the epilogue command buffers used by QueueSubmit for WaitMem
++         * and EOP fence/semaphore signal writes: one slice per in-flight submit,
++         * plus one dword after the last slice as QueueWaitIdle's idle label. */
+     const uint64_t epilogue_bytes =
+-        (uint64_t)VK_PS4_GNM_EPILOGUE_CMD_DWORDS * sizeof(uint32_t);
++        ((uint64_t)VK_PS4_GNM_EPILOGUE_SLOTS * VK_PS4_GNM_EPILOGUE_CMD_DWORDS + 1u) *
++        sizeof(uint32_t);
+     err = sceGnmDirectMemoryAllocate(
+         &dev->gnm_epilogue_mem, epilogue_bytes, alignment,
+         GNM_DIRECT_MEMORY_TYPE_WC_GARLIC, GNM_PROT_CPU_GPU_RW
+@@ -105,6 +107,7 @@ static VkResult vk_ps4_device_init_gnm(VkPs4Device *dev) {
+     }
+     dev->gnm_epilogue_cmd = (uint32_t *)dev->gnm_epilogue_mem.mapped;
+     dev->gnm_epilogue_cmd_dwords = VK_PS4_GNM_EPILOGUE_CMD_DWORDS;
++    dev->gnm_epilogue_next = 0;
+ 
+     /* Load the embedded clear pixel shader for tiled RT clears.
+      * Copy the static binary to a malloc'd buffer (GPU-accessible on PS4)
+diff --git a/src/vk_ps4_queue.c b/src/vk_ps4_queue.c
+index 683667b..3c5e769 100644
+--- a/src/vk_ps4_queue.c
++++ b/src/vk_ps4_queue.c
+@@ -18,14 +18,25 @@
+ 
+ #include <string.h>
+ 
+-/* Emit an EOP event write into the epilogue command buffer that writes
+- * signal_value to the GPU label at gpuaddr.  Returns the number of bytes
+- * written to the epilogue buffer. */
+-static uint32_t vk_ps4_queue_emit_eop(
+-    VkPs4Device *dev, uint64_t gpuaddr, uint32_t signal_value
++/* Take the next epilogue slice.  Each submission gets its own: the GPU walks a
++ * submitted buffer asynchronously, so reusing one buffer rewrote a submit that
++ * was still queued (shadPS4's walk then read payload as a packet header:
++ * "Unimplemented PM4 type 0").  16 slices = 8 frames of slack, and the guest
++ * waits on the EOP fence before re-recording, which frees its slices again. */
++static uint32_t *vk_ps4_queue_next_epilogue(VkPs4Device *dev) {
++    uint32_t *slot = dev->gnm_epilogue_cmd +
++        (dev->gnm_epilogue_next++ % VK_PS4_GNM_EPILOGUE_SLOTS) *
++            dev->gnm_epilogue_cmd_dwords;
++    return slot;
++}
++
++/* Emit an EOP event write into `slot`, writing signal_value to the GPU label
++ * at gpuaddr.  Returns the number of bytes written. */
++static uint32_t vk_ps4_queue_emit_eop_at(
++    VkPs4Device *dev, uint32_t *slot, uint64_t gpuaddr, uint32_t signal_value
+ ) {
+     GnmCommandBuffer cmd = sceGnmCmdInit(
+-        dev->gnm_epilogue_cmd,
++        slot,
+         dev->gnm_epilogue_cmd_dwords * sizeof(uint32_t),
+         NULL, NULL
+     );
+@@ -38,14 +49,14 @@ static uint32_t vk_ps4_queue_emit_eop(
+     return (uint32_t)(cmd.cmdptr - cmd.beginptr) * sizeof(uint32_t);
+ }
+ 
+-/* Emit a WAIT_REG_MEM packet into the epilogue command buffer that blocks
+- * the GPU until the label at gpuaddr equals refval.  Returns the number of
+- * bytes written.  This is used for wait-semaphore GPU synchronization. */
+-static uint32_t vk_ps4_queue_emit_waitmem(
+-    VkPs4Device *dev, uint64_t gpuaddr, uint32_t refval
++/* Emit a WAIT_REG_MEM packet into `slot`, blocking the GPU until the label at
++ * gpuaddr equals refval.  Returns the number of bytes written.  This is used
++ * for wait-semaphore GPU synchronization. */
++static uint32_t vk_ps4_queue_emit_waitmem_at(
++    VkPs4Device *dev, uint32_t *slot, uint64_t gpuaddr, uint32_t refval
+ ) {
+     GnmCommandBuffer cmd = sceGnmCmdInit(
+-        dev->gnm_epilogue_cmd,
++        slot,
+         dev->gnm_epilogue_cmd_dwords * sizeof(uint32_t),
+         NULL, NULL
+     );
+@@ -85,10 +96,10 @@ vk_ps4_QueueSubmit(VkQueue queue, uint32_t submitCount, const VkSubmitInfo *pSub
+             if (dev && dev->gnm_epilogue_cmd && sem->label) {
+                 /* GPU wait: emit WaitMem into epilogue and submit it. */
+                 uint64_t label_addr = (uint64_t)(uintptr_t)sem->label;
+-                uint32_t wait_bytes = vk_ps4_queue_emit_waitmem(
+-                    dev, label_addr, sem->signal_value
++                void *wait_addr = vk_ps4_queue_next_epilogue(dev);
++                uint32_t wait_bytes = vk_ps4_queue_emit_waitmem_at(
++                    dev, wait_addr, label_addr, sem->signal_value
+                 );
+-                void *wait_addr = dev->gnm_epilogue_cmd;
+                 int32_t wait_result = sceGnmSubmitCommandBuffers(
+                     1, &wait_addr, &wait_bytes, NULL, NULL
+                 );
+@@ -153,10 +164,10 @@ vk_ps4_QueueSubmit(VkQueue queue, uint32_t submitCount, const VkSubmitInfo *pSub
+             sem->signaled = false;
+             if (dev && dev->gnm_epilogue_cmd && sem->label) {
+                 uint64_t label_addr = (uint64_t)(uintptr_t)sem->label;
+-                uint32_t eop_bytes = vk_ps4_queue_emit_eop(
+-                    dev, label_addr, sem->signal_value
++                void *eop_addr = vk_ps4_queue_next_epilogue(dev);
++                uint32_t eop_bytes = vk_ps4_queue_emit_eop_at(
++                    dev, eop_addr, label_addr, sem->signal_value
+                 );
+-                void *eop_addr = dev->gnm_epilogue_cmd;
+                 int32_t result = sceGnmSubmitCommandBuffers(
+                     1, &eop_addr, &eop_bytes, NULL, NULL
+                 );
+@@ -189,10 +200,10 @@ vk_ps4_QueueSubmit(VkQueue queue, uint32_t submitCount, const VkSubmitInfo *pSub
+         f->signaled = false;
+         if (dev && dev->gnm_epilogue_cmd && f->label) {
+             uint64_t label_addr = (uint64_t)(uintptr_t)f->label;
+-            uint32_t eop_bytes = vk_ps4_queue_emit_eop(
+-                dev, label_addr, f->signal_value
++            void *eop_addr = vk_ps4_queue_next_epilogue(dev);
++            uint32_t eop_bytes = vk_ps4_queue_emit_eop_at(
++                dev, eop_addr, label_addr, f->signal_value
+             );
+-            void *eop_addr = dev->gnm_epilogue_cmd;
+             int32_t result = sceGnmSubmitCommandBuffers(
+                 1, &eop_addr, &eop_bytes, NULL, NULL
+             );
+@@ -232,16 +243,16 @@ vk_ps4_QueueWaitIdle(VkQueue queue) {
+      * no-op EOP write and poll it. */
+     VkPs4Device *dev = q->device;
+     if (dev && dev->gnm_epilogue_cmd) {
+-        /* Use the last dword of the epilogue buffer as the idle label.
+-         * The EOP packet (~6 dwords) is written at the start of the buffer,
+-         * so it won't overlap the label at the end. */
++        /* Use the dword after the last epilogue slice as the idle label: no
++         * slice reaches it, so an in-flight submit can't overwrite it. */
+         volatile uint32_t *idle_label =
+             (volatile uint32_t *)((uintptr_t)dev->gnm_epilogue_cmd +
+-                (dev->gnm_epilogue_cmd_dwords - 1) * sizeof(uint32_t));
++                (uint64_t)VK_PS4_GNM_EPILOGUE_SLOTS *
++                    dev->gnm_epilogue_cmd_dwords * sizeof(uint32_t));
+         *idle_label = 0;
+         uint64_t label_addr = (uint64_t)(uintptr_t)idle_label;
+-        uint32_t eop_bytes = vk_ps4_queue_emit_eop(dev, label_addr, 1);
+-        void *eop_addr = dev->gnm_epilogue_cmd;
++        void *eop_addr = vk_ps4_queue_next_epilogue(dev);
++        uint32_t eop_bytes = vk_ps4_queue_emit_eop_at(dev, eop_addr, label_addr, 1);
+         int32_t result = sceGnmSubmitCommandBuffers(
+             1, &eop_addr, &eop_bytes, NULL, NULL
+         );
