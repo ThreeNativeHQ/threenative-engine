@@ -567,7 +567,7 @@ void catalogCoverage() {
     for (const auto& [name, want] : numbers) CHECK(tableConstants.count(name) == 1);
     for (const auto& [name, want] : strings) CHECK(tableConstants.count(name) == 1);
     // Supported TSL functions live on the TSL module, rather than the class/constant globals.
-    const std::set<std::string> tslFunctions = {"atomicAdd", "atomicStore", "lightShadowMatrix", "rtt", "storageTexture",
+    const std::set<std::string> tslFunctions = {"atomicAdd", "atomicStore", "lightShadowMatrix", "lights", "rtt", "storageTexture",
                                                 "textureStore", "uvec2"};
     // TSL nodes the catalog publishes as functions that the engine installs as node objects.
     const std::set<std::string> tslNodes = {"modelWorldMatrix"};

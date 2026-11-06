@@ -113,6 +113,21 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         node->name = "authoredLightShadowMatrix" + std::to_string(light->id());
         return node;
     }
+    if (!method && name == "lights") {
+        // three's lights([...]): a LightsNode of exactly these lights, for NodeMaterial.lightsNode. The JS side spreads the array.
+        auto node = std::make_shared<g::NodeData>();
+        node->kind = g::Kind::Struct; node->name = "lights";
+        for (const TslArg& light : args) {
+            if (light.kind != TslArg::Kind::Object || !light.object ||
+                (light.cls != "AmbientLight" && light.cls != "DirectionalLight" && light.cls != "HemisphereLight" &&
+                 light.cls != "PointLight" && light.cls != "SpotLight"))
+                throw std::runtime_error("lights requires an array of lights");
+            auto entry = std::make_shared<g::NodeData>();
+            entry->object = light.object;
+            node->args.push_back(std::move(entry));
+        }
+        return node;
+    }
     if (!method && name == "wgslFunction") {
         if (args.size() < 3 || args.size() > 7) throw std::runtime_error("wgslFn requires source, name, result type and up to four input types");
         auto function = std::make_shared<g::NodeData>();
