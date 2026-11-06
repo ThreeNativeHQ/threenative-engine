@@ -322,6 +322,14 @@ git apply "$SCRIPTS/patches/0023-vk-ps4-bind-every-descriptor-set.patch"
 # scanout surface: samples > 1 uses GNM_TM_THIN_2D_THIN (the tile mode opengnm's
 # sceGnmRtInitColorTargetCreateInfo is documented with), 1 sample keeps the display mode.
 git apply "$SCRIPTS/patches/0021-vk-ps4-depth-and-msaa-tile-modes.patch"
+# The embedded clear PS is the one shader binary in this driver that predates psbc's 256-byte code
+# layout (0006): its GCN code sits at blob+0x74. sceGnmPsRegsSetAddress keeps only bits 8..63 of a
+# program address (opengnm include/gnm_shader.h:162), so that address was truncated to the 256-byte
+# boundary BELOW the code and the PS stage ran from the container's file header instead: shadPS4
+# decoded SPI_SHADER_PGM_HI (0xffffffff) as an instruction and aborted at decode.cpp:115 "illegal
+# encoding: 0xffffffff". 0025 places the blob in its buffer so the code lands on a boundary
+# (breadcrumb: code=0x...1000, pgmhi=0).
+git apply "$SCRIPTS/patches/0025-vk-ps4-clear-ps-code-256-aligned.patch"
 # The Makefile compiles TEST_SRC relative to the vulkan-ps4 tree.
 cp "$SCRIPTS/e2-triangle.c" "$SRC/e2-triangle.c"
 make -f Makefile.orbis -j"$JOBS" TEST_SRC=../e2-triangle.c self > "$LOGS/e2-triangle.log" 2>&1
