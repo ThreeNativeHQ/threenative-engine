@@ -5,7 +5,9 @@
 //   pnpm kit:loop show
 //   pnpm dashboard   # the Kit loop tab renders docs/kit-loop/ledger.json on each load (PRD-751)
 //
-// A cold-build dir holds five files, each required (a missing one fails closed, never a zero):
+// A cold-build dir holds six files, each required (a missing one fails closed, never a zero):
+//   events.jsonl     the same session as `--output-format stream-json --verbose` (PRD-825): the init
+//                    event and every tool call, for the discovery counts
 //   transcript.json  the cold agent's `claude -p --output-format json` result (K1: usage, duration_ms, num_turns)
 //   gates.json       { scenarios: { total, green }, presentedP95Ms, costP95Ms, budgetMs, visualVerdict }  (K2)
 //   friction.json    { searchMisses, duplicates, wrongApi, retries } from score-build-experience (K3)
@@ -93,8 +95,66 @@ const strings = (value, field) => {
   return value;
 };
 
+const ENGINE_SEARCH = "engine_search_capabilities";
+const REFERENCE_SEARCH = "engine_search_references";
+const WRITE_TOOLS = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit"]);
+
+/** PRD-825: what the cold session did before its first new code. MCP calls (loaded tools and the
+ * `call.mjs` bridge) before the first Write/Edit under `src/`, whether the capability and reference
+ * searches were among them, and `call.mjs` calls made while the engine server was loaded. */
+export function discovery(dir) {
+  let text;
+  try {
+    text = readFileSync(join(dir, "events.jsonl"), "utf8");
+  } catch {
+    throw new Error(`events.jsonl is missing from ${dir}`);
+  }
+  const events = text
+    .split("\n")
+    .filter((line) => line.trim() !== "")
+    .map((line, index) => {
+      try {
+        return JSON.parse(line);
+      } catch (error) {
+        throw new Error(`events.jsonl line ${index + 1} is not JSON: ${error.message}`);
+      }
+    });
+  const init = events.find((event) => event.type === "system" && event.subtype === "init");
+  if (init === undefined) throw new Error("events.jsonl has no init event");
+  const loaded = (init.mcp_servers ?? []).some(
+    (server) => server.name === "threenative-engine" && server.status === "connected",
+  );
+  const calls = events.flatMap((event) =>
+    event.type === "assistant" && Array.isArray(event.message?.content)
+      ? event.message.content.filter((block) => block.type === "tool_use")
+      : [],
+  );
+  if (calls.length === 0) throw new Error("events.jsonl has no tool events");
+  const bridged = (call) =>
+    call.name === "Bash" && /mcp\/call\.mjs/u.test(call.input?.command ?? "");
+  const mcp = (call) => call.name.startsWith("mcp__threenative-") || bridged(call);
+  const names = (call, tool) =>
+    call.name.endsWith(`__${tool}`) || (bridged(call) && call.input.command.includes(tool));
+  const srcPath = (call) => {
+    const file = call.input?.file_path ?? call.input?.notebook_path;
+    if (!WRITE_TOOLS.has(call.name) || typeof file !== "string") return undefined;
+    const relative = file.startsWith(`${init.cwd}/`) ? file.slice(init.cwd.length + 1) : file;
+    return relative.startsWith("src/") ? relative : undefined;
+  };
+  const first = calls.findIndex((call) => srcPath(call) !== undefined);
+  const before = first === -1 ? calls : calls.slice(0, first);
+  return {
+    mcpCallsBeforeFirstSrcWrite: before.filter(mcp).length,
+    capabilitySearchBeforeFirstSrcWrite: before.some((call) => names(call, ENGINE_SEARCH)),
+    referenceSearchBeforeFirstSrcWrite: before.some((call) => names(call, REFERENCE_SEARCH)),
+    callMjsWhileLoaded: loaded ? calls.filter(bridged).length : 0,
+    firstSrcWrite: first === -1 ? null : srcPath(calls[first]),
+  };
+}
+
 /** One cold build's K1-K4 and retro. Throws on any missing file or field. */
 export function measureDir(dir) {
+  const discovered = discovery(dir);
   const transcript = read(dir, "transcript.json");
   const gates = read(dir, "gates.json");
   const friction = read(dir, "friction.json");
@@ -144,6 +204,7 @@ export function measureDir(dir) {
       k4Grade: count(grade.grade, "play-grade.json grade", { min: 1, max: 5 }),
     },
     friction: parts,
+    discovery: discovered,
     retro: {
       worked: strings(retro.worked, "retro.worked"),
       failed: strings(retro.failed, "retro.failed"),
