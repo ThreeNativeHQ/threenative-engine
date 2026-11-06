@@ -26,7 +26,9 @@ import {
   transformPrimitive,
   unpartition,
 } from "@gltf-transform/functions";
-import { bakeTerrain, bakeWorldPackage, decodeRAW16, sampleHeight } from "@threenative/terrain";
+// Type-only at load: `@threenative/terrain` imports `@threenative/core`, an optional peer this compiler (and the
+// create-threenative CLI that loads it) does not install. The cook loads the baker when it runs.
+import type { bakeWorldPackage } from "@threenative/terrain";
 import type { IPlacement, ITerrainState } from "@threenative/terrain";
 import { MeshoptSimplifier } from "meshoptimizer";
 import { createGltfReader, createGltfWriter, readGltfDocument } from "../gltf-io.js";
@@ -833,6 +835,9 @@ export async function cookTerrainWorld(
     await pool.dispose();
   }
 
+  const { bakeTerrain, bakeWorldPackage, decodeRAW16, sampleHeight } = await import(
+    "@threenative/terrain"
+  );
   // Fail closed before any glTF work or output write: the shared baker validates finite heights,
   // known assets and uniform poses, and hands back the exact binary files this cook writes.
   const worldPackage = bakeWorldPackage(state, {
