@@ -236,6 +236,21 @@ const BUG_REPORT_SKILL_PATHS = [
 // every no-install scaffold (three 0.187.0, the rts kit and the dropped Blender server), so no value
 // from either parent applies to the merged bytes.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
+  // PRD-825 (2026-11-05): all sixteen trees move, measured by this test. Each kit AGENTS/CLAUDE pair
+  // becomes a generated router (flow, MCP servers, kit files, commands, convention index, stuck);
+  // the `threenative-capabilities` skill follows the router's step order, and the ponytail hook
+  // rung 2 points to the router flow. The shared fragments, the registry and the kit notes pages
+  // stay in the package.
+  // PRD-827 (2026-11-05): all sixteen trees move, measured by this test. The scaffold
+  // `.claude/settings.json` names the six core servers in `enabledMcpjsonServers`, and every tree
+  // gains the discovery gate (`.claude/hooks/discovery-gate.mjs`, wired as a `PreToolUse` and
+  // `UserPromptSubmit` hook in `.claude/settings.json` and `.codex/hooks.json`).
+  // 2026-11-05 (PRD-826): two causes move all sixteen trees, measured by this test. The scaffolder
+  // now writes the seven MCP host configs from core's one server table instead of copying tracked
+  // files, so their servers sit in table order (the tracked copies had `threenative-terrain` last).
+  // `kit.json` is no longer copied into the game, and the four kit READMEs are gone; the sailing
+  // tree also gains the sky credit header, and the runner, sailing, snow and tower-defense
+  // AGENTS/CLAUDE pairs gain a kit-facts paragraph.
   // Re-measured 2026-11-04 on the merge of origin/develop (11 commits, through 44ca79995) into PR #483:
   // every tree carries both sides' bytes (develop's kit docs and sources, the lane's shared three patch),
   // so all sixteen were measured again by this test on the merged tree.
@@ -357,7 +372,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Re-pinned 2026-10-31: the starter crate gets a stacked-disc contact shadow (render/contactShadow.ts)
   // that keeps its contact coverage above the 0.02 floor at the core +1 EV key.
   // 2026-11-04 (PRD-777 on PRD-632): action-rpg AGENTS/CLAUDE name the spell factories in one line. Measured by this test.
-  "action-rpg": "1c8da570e399f27b877637ecfd2d0522ab728d22b00ef5fff5e58f16a0ba3523",
+  "action-rpg": "9f8318901b385a1181eb2e005da0eeb77fd6436939780d1f33998e979282b4b4",
   // PRD-732 (2026-10-23): the new Hop Garden kit, measured through createProject (method checked
   // against platformer's unchanged value). Recomputed 2026-10-24 for the PRD-732 polish round: the
   // new hero, the dust and sparkle effects and the effects scenario. Recomputed 2026-10-24 for
@@ -371,7 +386,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-24 for the shadow window: the 52 m map now travels 14 m ahead of the hero,
   // so the castle and trees the camera sees keep their shadows; the 2048 map and shadow pass cost
   // stay the same.
-  collectathon: "24ad7132dbe8e86a80d836f5fb66256ce59fc961c420d71866efd56e4a6a77f2",
+  collectathon: "a602a8941e34a63a0c68faa1dba1e804a64e692b43b6e0dc001b19ca357244f4",
   // PRD-733 (2026-10-23): the new Lantern Vale kit, measured through createProject.
   // Recomputed 2026-10-24 for the owner perf round: the fixed-step catch-up cap and the gentler
   // wind on the crowns, clusters and grass tufts. Only this tree moves.
@@ -380,14 +395,14 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Re-pinned 2026-10-26 (PRD-748 loading cover): adventure loses its `loaded` gate, rain
   // reads state through `useUiStateDuringStartup`.
   // Re-pinned 2026-10-27 (PRD-749 hud-clean): adventure, collectathon and rain HUD text reaches 3:1.
-  adventure: "9cb66d1a10c4b26af74997e26676385baf6ba8641c5156e0b9a560625dde1c0c",
+  adventure: "f1d92acd124d9c1fc269b5ab3dbcae2098c3f971fb5103f70a2e6ebeaa4ab197",
   // PRD-734 (2026-10-24): the new Clover Cup kart kit, measured through createProject.
-  kart: "1383b89d4bc8f45eec5f6a9d8cfbea7f26f45542f59234b10aff046220fec622",
-  minimal: "27b47feaabaeae6b0c7e14fde1f0e0aa1daabf59e409f5eb3b0eb460bf80f954",
-  platformer: "040cf73cf292919f6dad157c12354b96892eabddd4f07127d2e52d1f38ce103a",
-  puzzle: "69a1e6902b90249d818f71dc00c27f4d822be9887af600aa4ffc2fbc6ef7ca6e",
-  racing: "9f2078757211a99468b72c4b82397d3f984ccc4097ec9ade8bb3e861eae33d62",
-  rain: "f837da1d7a66963e85fbcaadbaca5cc98f6f5c91577eba3a0b81cb54c78b8046",
+  kart: "c12dfb5b57f4c357a3b3c027170a225e5b3c390acb2f0752b47a35d1ce7b0dcb",
+  minimal: "54271d0cfcde7c8ec8805f03abf23a634596df50f6ea1cbd5c91e2f57d486a22",
+  platformer: "4e37e11800062715c30f3a0f6586915e2c2981dfe4f0fc2a970e2bc7237d3f76",
+  puzzle: "8731d6a9dea44eebe7f107d3c50b3be309dbee17c9ccc47b9292453251d1a24f",
+  racing: "46e3af84abe3ff7f4f8692fdbb121fc41651781f9e20e2b6bd2443fabb664cf9",
+  rain: "db0eacb64f103baf178eaf6135e5f25534ae6087e7aef8881008d9c96ffa49e1",
   // Re-pinned 2026-10-28: the rts high tier turns camera motion blur off (an RTS pan smeared every unit).
   // Re-pinned 2026-10-28 (PRD-765): rts becomes AstraCraft — painted ground, mesas, scrub, ACES 1.02 look and the command HUD;
   // then its legacy-linear colours, gamma fog of war, no bloom or environment, and a frame-sized shadow window.
@@ -404,18 +419,18 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // and the engine pin goes, so the tree moves. Measured again the same day for the corrected
   // `performance.maxTriangles` bound (45,000 to 54,000), which is a scenario file in the tree.
   // Measured by this test.
-  rts: "f296547f9d47902ffb341e8d7584b04ca37969b03dda93300612911e5e9efbda",
-  runner: "e436b0937b4b79ea52dfbc0126ba9304e8e0adce028ec0f6ca95a2d39274d34f",
+  rts: "7da721e1b8f308a8043c01d0214a79a07edb521fdfb9c3fe323b86193adc90c3",
+  runner: "6ab96315672f757823d153a2ce43790f92de00d44b015a80abc93f3ca810310d",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
   // Re-measured 2026-11-03 (PRD-617): its AGENTS/CLAUDE engine section no longer claims an engine
   // pin the template does not carry. Measured by this test.
   // Re-measured 2026-11-03 (PRD-617): `sails.playtest.json` sets `drawEvery: 60`, so the scenario
   // asks the runner for 30 drawn frames per 1,800-tick hold instead of taking as many readback
   // samples as the adapter happens to draw. Only this tree moves.
-  sailing: "9abb0ca62059f386f4993a1c92e51ebc529185fcdc84cb8d4e76271a43730ce9",
+  sailing: "ade5828cec36b5b3d12d7409258155d45fc739627e91645704c4f15775eb9152",
   // Recomputed 2026-10-26 (PRD-746): the scene merges the town through mergeByMaterial (src/townBatch.ts).
-  shooter: "5aaaab25090aea742781dc023f31fb6ad97329f1b4c2175ce84f9b63368a7112",
-  snow: "b0b557798281b522904fa60796303ab5af8c5809e07dbd09aa7d1440634d126a",
+  shooter: "256093857202816f5507509d03df399b11ccb6304c1ecc87c1ab4054567c99b3",
+  snow: "cd1652b453879767759929158d5bd4aedfa2ef31df98a1af5cd94c1cce6c5004",
   // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.
   // Recomputed 2026-10-16: starter's adaptiveQuality split its policy resolution into qualityPolicy.ts
   // to stay under the 200-line render-file cap; only starter's tree moves.
@@ -428,8 +443,8 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Play.ts's motion samples between presented frames and fixed steps, and moved two native
   // playtests; #606 moved the render resolve. Starter is the one template both sides changed.
   // Measured by this test.
-  starter: "02a0c33567c75b64318964157079379ef8cf63044b38c76aef27c7d25398353c",
-  "tower-defense": "98b557a62a55fc3b71cf39b10e43033f8a39b65954b16eb7a968e95d582b4dfc",
+  starter: "c288e9b2834b0dd5c90a46279fefd3446ced4f0cc2a86f1a80315c32e83b0a3e",
+  "tower-defense": "a52c1b37795845e2d6ce9275d5f246b615fe39fe5ee8ba609cee50ea488d5b71",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
@@ -523,10 +538,10 @@ const STARTER_PATHS = [
   "CLAUDE.md",
   ".claude/settings.json",
   ".claude/hooks/ponytail-context.mjs",
+  ".claude/hooks/discovery-gate.mjs",
   ".claude/skills/ponytail/SKILL.md",
   ".agents/skills/ponytail/SKILL.md",
   ".codex/hooks.json",
-  "kit.json",
   "package.json",
   "eslint.config.js",
   "biome.json",
@@ -612,7 +627,6 @@ const MINIMAL_RENDER_PATHS = [
 const PLATFORMER_PATHS = [
   "AGENTS.md",
   "CLAUDE.md",
-  "kit.json",
   "package.json",
   "threenative.config.ts",
   "src/game.ts",
@@ -978,8 +992,8 @@ describe("create-threenative", () => {
             `${file} links a page the package does not ship: ${page}`,
           ).toBe(true);
         }
-        // Not a vacuous pass: the template's own instructions are the link index.
-        if (file === "AGENTS.md") expect(pages.length).toBeGreaterThan(10);
+        // Not a vacuous pass: the kit router names the conventions page, its kit notes and the recipes.
+        if (file === "AGENTS.md") expect(pages.length).toBeGreaterThanOrEqual(4);
       }
       // Nothing substitutes into the pages any more, so a token would ship literally.
       for (const page of await readdir(bundleDirectory)) {
@@ -1023,7 +1037,14 @@ describe("create-threenative", () => {
       await expect(stat(path.join(result.target, "scripts/reference.mjs"))).resolves.toBeTruthy();
       await expect(stat(path.join(result.target, "scripts/visual-loop.mjs"))).resolves.toBeTruthy();
       const gitignore = await readFile(path.join(result.target, ".gitignore"), "utf8");
-      for (const rule of [".dream-loop/", "node_modules/", ".env", ".env.*", "!.env.example"])
+      for (const rule of [
+        ".dream-loop/",
+        ".threenative/discovery-gate.json",
+        "node_modules/",
+        ".env",
+        ".env.*",
+        "!.env.example",
+      ])
         expect(gitignore).toContain(rule);
     } finally {
       await rm(root, { force: true, recursive: true });
@@ -1722,43 +1743,7 @@ describe("create-threenative", () => {
     }
   });
 
-  // Being on disk is not the same as shipping. `.gitignore` carries an unanchored `.mcp.json`
-  // rule for the copy an install writes at the repo root, and it swallowed the template copies
-  // too: the file generated fine, `git status` stayed silent, and the template shipped without
-  // it. Four suites then failed on CI with
-  //   Error: Scaffold produced no .mcp.json at '.../puzzle/.mcp.json'
-  // for a file that was present on the author's machine the entire time. Reading the working
-  // tree cannot catch that. Asking git what it tracks can.
-  it("should track every template's agent config, not merely have it on disk", async () => {
-    const { stdout } = await run("git", [
-      "ls-files",
-      "--",
-      "packages/create-threenative/templates/*/.mcp.json",
-    ]);
-    const tracked = new Set(
-      stdout
-        .split("\n")
-        .map((line) => line.trim())
-        .filter((line) => line !== ""),
-    );
-    const missing = ALL_TEMPLATES.filter(
-      (template) => !tracked.has(`packages/create-threenative/templates/${template}/.mcp.json`),
-    );
-    expect(
-      missing,
-      "these templates' .mcp.json is untracked; git is ignoring it and the scaffold ships without it",
-    ).toEqual([]);
-  });
-
-  it("should ship the same MCP config and pins in every template", async () => {
-    const configs = await Promise.all(
-      ALL_TEMPLATES.map((template) => readFile(path.join(TEMPLATE_ROOT, template, ".mcp.json"))),
-    );
-    const codexConfigs = await Promise.all(
-      ALL_TEMPLATES.map((template) =>
-        readFile(path.join(TEMPLATE_ROOT, template, ".codex", "config.toml")),
-      ),
-    );
+  it("should pin no MCP server package in any template", async () => {
     const pins = await Promise.all(
       ALL_TEMPLATES.map(async (template) => {
         const manifest = JSON.parse(
@@ -1771,8 +1756,6 @@ describe("create-threenative", () => {
         };
       }),
     );
-    expect(new Set(configs.map((config) => config.toString("utf8"))).size).toBe(1);
-    expect(new Set(codexConfigs.map((config) => config.toString("utf8"))).size).toBe(1);
     expect(pins.every(({ asset, engine, sculpt }) => !asset && !engine && !sculpt)).toBe(true);
   });
 
@@ -1841,75 +1824,55 @@ describe("create-threenative", () => {
     }
   });
 
-  it("should throw when .mcp.json is missing from the template", async () => {
-    const root = await makeTempDir("threenative-mcp-missing-");
+  it("should write every host MCP config because no template ships one", async () => {
+    const root = await makeTempDir("threenative-mcp-generated-");
     try {
-      await withBrokenTemplateFile("starter/.mcp.json", undefined, async (templates) => {
-        await expect(
-          createProject(
-            { install: false, target: "my-game", template: "starter" },
-            root,
-            templates,
-          ),
-        ).rejects.toThrow(/no \.mcp\.json/u);
-      });
+      const result = await createProject(
+        { install: false, target: "my-game", template: "starter" },
+        root,
+      );
+      for (const file of [
+        ".mcp.json",
+        ".codex/config.toml",
+        ".cursor/mcp.json",
+        ".vscode/mcp.json",
+        ".gemini/settings.json",
+        ".zed/settings.json",
+        "opencode.json",
+      ]) {
+        await expect(stat(path.join(result.target, file)), file).resolves.toBeDefined();
+      }
     } finally {
       await rm(root, { recursive: true, force: true });
     }
-    // Copies every template tree into a temp dir, which is thousands of files; the 5 s default
-    // trips on a loaded machine and reports a timeout where there is no defect.
   }, 30_000);
 
-  it("should throw when .mcp.json omits the sculpt server", async () => {
-    const root = await makeTempDir("threenative-mcp-sculpt-missing-");
+  it("should complete a template .mcp.json that lists only some servers", async () => {
+    const root = await makeTempDir("threenative-mcp-partial-");
     try {
-      const broken = JSON.stringify({
+      const partial = JSON.stringify({
         mcpServers: {
-          "threenative-assets": {
-            command: "node",
-            args: [`${CORE_SHIM}/assets.mjs`],
-          },
+          "threenative-assets": { command: "node", args: [`${CORE_SHIM}/assets.mjs`] },
         },
       });
-      await withBrokenTemplateFile("starter/.mcp.json", broken, async (templates) => {
-        await expect(
-          createProject(
-            { install: false, target: "my-game", template: "starter" },
-            root,
-            templates,
-          ),
-        ).rejects.toThrow(/missing required MCP server 'threenative-sculpt'/u);
-      });
-    } finally {
-      await rm(root, { recursive: true, force: true });
-    }
-    // Copies every template tree into a temp dir, which is thousands of files; the 5 s default
-    // trips on a loaded machine and reports a timeout where there is no defect.
-  }, 30_000);
-
-  it("should throw when .mcp.json omits the engine server", async () => {
-    const root = await makeTempDir("threenative-mcp-engine-missing-");
-    try {
-      const broken = JSON.stringify({
-        mcpServers: {
-          "threenative-assets": {
-            command: "node",
-            args: [`${CORE_SHIM}/assets.mjs`],
-          },
-          "threenative-sculpt": {
-            command: "node",
-            args: [`${CORE_SHIM}/sculpt.mjs`],
-          },
-        },
-      });
-      await withBrokenTemplateFile("starter/.mcp.json", broken, async (templates) => {
-        await expect(
-          createProject(
-            { install: false, target: "my-game", template: "starter" },
-            root,
-            templates,
-          ),
-        ).rejects.toThrow(/missing required MCP server 'threenative-engine'/u);
+      await withBrokenTemplateFile("starter/.mcp.json", partial, async (templates) => {
+        const result = await createProject(
+          { install: false, target: "my-game", template: "starter" },
+          root,
+          templates,
+        );
+        const config = JSON.parse(
+          await readFile(path.join(result.target, ".mcp.json"), "utf8"),
+        ) as {
+          mcpServers: Record<string, unknown>;
+        };
+        expect(Object.keys(config.mcpServers)).toEqual(
+          expect.arrayContaining([
+            "threenative-assets",
+            "threenative-sculpt",
+            "threenative-engine",
+          ]),
+        );
       });
     } finally {
       await rm(root, { recursive: true, force: true });

@@ -9,7 +9,7 @@
 
 ## Context
 
-Source: reflection follow-up in [the investigation](../../../plans/engine-performance-architecture-2026-10-28.md).
+Source: reflection follow-up in [the investigation](investigation.md).
 Engine layer: `packages/runtime-native/src/engine/renderer/render_database.cpp:1806` creates a
 normal sibling renderer, `:1814` copies output settings and `:1841` consumes `sceneColorView()`.
 `renderer.cpp:5168` already skips output for `sceneOnly_`; `renderer.h:377` exposes

@@ -1,0 +1,33 @@
+# Kit notes: shooter
+
+Kit-specific facts moved out of the kit `AGENTS.md`. Shared conventions: `conventions.md`.
+
+## Ownership
+
+This repository owns the town, the soldiers, the rifle, the HUD and the look; `src/game.ts` is portable, `src/main.ts` is the web-only React mount.
+
+
+## Start every change
+
+`@threenative/physics/navigation` is browser-only WASM; use the direct physics queries already in this kit instead of a navmesh or distance scan.
+
+
+## Commands and map
+
+Contract: a 105-second round in a procedurally built 84 m waterfront town; 12 hits completes it, zero health or an expired clock fails it, Enter restarts. Mouse looks, WASD or arrows move, Space or left click fires, F or right click aims, R reloads, shift sprints, ctrl/C crouches. `src/render/town.ts` owns the layout — blocks, quay, pier, raised decks, routes, spawns — and every solid in it is both a collider and a raycast target. `src/entities/` owns the fight: `FpsPlayer` moves, `Rifle` fires and zeroes, `Enemy` patrols, hears, sees and shoots back, `Target` scores the plates. `src/scenes/Play.ts` wires them and `src/ui/Hud.tsx` is the only HUD. `index.html` runs `game.ts` in a web worker (`src/worker.ts`, page side `src/worker-page.ts`), so a busy page cannot stall its frames; `main.html` is the named override that runs it on the page thread. `playtests/survives.playtest.json` is the durable smoke proof. The soldiers are `assets/mannequin-combat.glb` (Quaternius UAL, CC0); the hands in `assets/player-viewmodel.glb` are "Animated FPS hands (rifle animation pack)" by Cransh, CC-BY-4.0 — https://sketchfab.com/3d-models/animated-fps-hands-rifle-animation-pack-5f2d0ed780a94724b36ab505f7564057.
+
+
+## Portable authoring contracts
+
+Leave `assets` absent: the cook selects target-decodable passes, and `models.compact` (default `{ flatten: true, join: true, instance: true }`) flattens the scene graph losslessly while keeping any node matching `protectedPattern` or `protectedNames`, an animation target, or a skin joint individually addressable; `compact: false` ships it as authored. `models`/`textures`/`audio`: `"none"` skip those passes and report uncooked bytes, and a codec override must satisfy four-pixel block alignment — `codec: "none"` opts out. `assets.exclude` (source-relative globs) omits files and reports saved bytes. `assets.budget` accepts `{ uncooked?: number | "none", total?: number | "none" }`, default `{ uncooked: 64_000_000, total: "none" }`: only bytes left uncooked where cooking was possible count, an unaligned source image is retained unchanged and still counted, and cooking never resizes one to fix alignment. Android/iOS skip compression and dedupe. First person, four rules: place the camera in the plugin hook after the physics step, never at the end of the frame function, or the eye sits one step behind the body and shots land in the floor on the deck stairs; start every shot at `player.aimRay()`, where the crosshair is, and let `Rifle.converge` lean the weapon to meet it; the trigger takes `pressed` and `justPressed`, because the cooldown makes the cadence and the edge catches a click the harness delivers no other way; `src/render/scale.ts` is the only size table.
+
+Rigged assets: put a `.glb` in `assets/`, await `ctx.assets.model("hero.glb")` in `Scene.load()`, size it with `normaliseToMetres` at a named joint, drive `AnimationPlayer` beside its entity, and reach a held prop with `attachToBone`. `input.vector("move").y` is +up, so forward uses one explicit `-move.y`. `ctx.goto(name)` rebuilds without resetting game state (from a frame function, `goto` then `return`); `ctx.state.set({ … })` is a partial patch; `game.goto()` rebuilds and resets. Seeded randomness needs `defineGame({ seed })`. `src/render/sky.ts` draws Unreal's default sky (an atmosphere with clouds: `atmosphere.ts`, `clouds.ts`, `gpuSky.ts`) as background, environment light and height-fog colour, and `lighting.ts` tints the sun at `SUN_DIRECTION` by the air it crosses; `SKY_OPTIONS` takes `sky: "photo"` for `assets/sky.jpg` (Poly Haven, CC0) or `clouds: false`, and `ground: false` once the game has its own global illumination (the sunlit ground under the horizon stands in for the bounce); `src/render/quality.ts` owns `low`, `medium`, `high`; the GPU family from `ctx.renderer.gpuClass` sets the start (`discrete` `high`, `integrated` and `mobile-high` `medium`, other phones `low`); `isMobile()` chooses `low`, otherwise `high` when the family is `unknown`; override with `setupPost(..., { tier: "low" })`. Unknown tiers throw, `TN_QUALITY_TIER` reports the source, and the bridge flushes about 100 ms — keep score/phase in state, feedback in Three.js. The shared look comes from core through `src/render/quality.ts`; the filmic curve and metered auto exposure are enabled by default. `src/render/exposure.ts` holds this game's meter policy (`key` 0.14, `maxStops` 0.5, `minStops` -2). It has Unreal's bloom with no threshold (`unrealBloomEnabled`), local exposure (`localExposureEnabled`, off on `low`), a cosine-fourth vignette (`vignetteAmount: 0.4`) and no motion blur on any tier: a mouse turn smeared the whole frame and the hands (`motionBlurEnabled: true` brings it back).
+
+When an animation looks wrong, measure it before rewriting it: `clipPoseError` scores a retargeted clip per bone in degrees relative to each rig's own bind pose, `clipTrackBindings` names tracks that bind nothing (the `<bone>.undefined` failure that plays the bind pose), `clipBoneCoverage` names bones the clip does not drive, and `boneContact` reports whether a bone reaches its prop. A soldier reads as a soldier only when every AI state picks a clip that names the action — patrol and chase `Rifle_Walk`, standing aim `Rifle_Idle`, firing `Rifle_Shoot`, crouch `Rifle_Crouch_To_Idle`/`Rifle_Crouch_Walk` (the six `Rifle_*` clips are Mixamo rifle clips retargeted onto the mannequin, and `RIFLE_HOLD` in `Enemy.ts` turns the rifle to each; the soldier's `rightHandContact`/`leftHandContact` are `boneContact` metres, held under 0.05), hit `Rifle_Hit`, dead `Death01` — crossfaded, feet snapped to the floor, body turned into the direction of travel or aim, and tinted so he does not vanish into the white first-person hands.
+
+
+## Budget real time for the look
+
+Open a capture after visual changes; a scenario with no assertions or missing observations fails. `npx threenative doctor` repeats the last verdict; `TN_FRAME_SPANS=1` adds the render phase's own span tree.
+
+On a touch-primary device, `src/entities/TouchControls.ts` adds a movement stick, a look stick, and fire, aim, reload and crouch pads; the stick pushed to its rim sprints.

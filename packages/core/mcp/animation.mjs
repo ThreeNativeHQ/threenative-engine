@@ -7,9 +7,8 @@ import { MCP_PACKAGES } from "./servers.mjs";
 
 // Core carries the built animation server beside this shim, exactly as it carries Blender's, so a
 // project that installed `@threenative/core` has working animation tools with no network and no
-// extra install. It must stay that way for a while: `threenative-animation-mcp` is not published
-// yet, so the npx fallback below cannot work — it is the E404 that made the Blender bundle
-// mandatory, and `mcp-install.spec.ts` holds the same line for this server.
+// extra install. The npx fallback below fetches the published `threenative-animation-mcp` at the
+// version `servers.mjs` pins, which `prepare-release.ts` keeps equal to the package (PRD-827).
 const localServer = path.resolve(fileURLToPath(import.meta.url), "..", "animation-server.mjs");
 if (existsSync(localServer)) {
   const { runServer } = await import("./animation-server.mjs");

@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { kitFragments } from "./kit-agent-docs.js";
 
 const SKIP_DIRECTORIES = new Set([
   "node_modules",
@@ -152,6 +153,15 @@ async function validateSharedFragmentUsage(
   }
 }
 
+/** Shared fragments plus, for a kit template, the regions generated from its own files (PRD-825). */
+export async function fragmentsFor(
+  agentsPath: string,
+  shared: ReadonlyMap<string, string>,
+): Promise<ReadonlyMap<string, string>> {
+  const generated = await kitFragments(path.dirname(agentsPath));
+  return generated.size === 0 ? shared : new Map([...shared, ...generated]);
+}
+
 export interface SyncResult {
   readonly changed: string[];
   readonly checked: string[];
@@ -166,7 +176,11 @@ export async function syncAgentDocs(root: string, check = false): Promise<SyncRe
     const claudePath = path.join(path.dirname(agentsPath), "CLAUDE.md");
     const relativeAgentsPath = path.relative(root, agentsPath);
     const currentAgents = await readFile(agentsPath, "utf8");
-    const expandedAgents = expandSharedRegions(currentAgents, fragments, relativeAgentsPath);
+    const expandedAgents = expandSharedRegions(
+      currentAgents,
+      await fragmentsFor(agentsPath, fragments),
+      relativeAgentsPath,
+    );
     if (currentAgents !== expandedAgents) {
       changed.push(relativeAgentsPath);
       if (!check) await writeFile(agentsPath, expandedAgents);

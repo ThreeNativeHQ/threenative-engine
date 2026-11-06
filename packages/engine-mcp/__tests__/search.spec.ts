@@ -61,6 +61,7 @@ describe("threenative-engine-mcp", () => {
       "engine_search_references",
       "engine_reference_detail",
       "engine_save_reference",
+      "engine_watch_reference",
     ]);
   });
 
@@ -71,10 +72,19 @@ describe("threenative-engine-mcp", () => {
         "engine_search_references",
         "engine_reference_detail",
         "engine_save_reference",
+        "engine_watch_reference",
       ]);
       expect(response.guidance).toContain("engine_search_references");
     }
-    expect(searchCapabilities("double jump", workspaceManifest).referenceTools).toBeUndefined();
+    // PRD-827 AC-3: every search names the reference tools, with no special wording.
+    const plain = searchCapabilities("double jump", workspaceManifest);
+    expect(plain.referenceTools).toEqual([
+      "engine_search_references",
+      "engine_reference_detail",
+      "engine_save_reference",
+      "engine_watch_reference",
+    ]);
+    expect(plain.guidance).not.toContain("Reverse engineer the game");
     for (const tool of toolDefinitions().filter((t) => t.name.includes("reference")))
       expect(tool.description.toLowerCase()).toContain("reverse engineer");
   });

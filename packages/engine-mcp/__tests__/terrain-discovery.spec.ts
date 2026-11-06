@@ -67,7 +67,7 @@ describe("terrain authoring discovery", () => {
     for (const { name } of names) {
       for (const file of ["AGENTS.md", "CLAUDE.md"]) {
         expect(readFileSync(path.join(templates, name, file), "utf8"), `${name}/${file}`).toContain(
-          "agent-docs/references/terrain-authoring.md",
+          "references/terrain-authoring.md",
         );
       }
       const pkg = JSON.parse(readFileSync(path.join(templates, name, "package.json"), "utf8"));

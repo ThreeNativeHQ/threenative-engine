@@ -141,6 +141,9 @@ docs/benchmark/sweeps/*/assets/generated/
 # `git add -f` if a result is disputed; do not carry every run's in history by default.
 docs/benchmark/sweeps/*/transcript.jsonl.gz
 .linchpin/
+# Per-owner agent-orchestrator model config and per-user Claude Code settings (PRD-826).
+.linchpin.toml
+.claude/settings.local.json
 .gauntlet/
 
 # Shared editor settings are committed — they keep VS Code's watcher and TypeScript server out

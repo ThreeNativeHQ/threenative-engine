@@ -9,7 +9,7 @@
 
 ## Context
 
-Source: sensor follow-up in [the investigation](../../../plans/engine-performance-architecture-2026-10-28.md).
+Source: sensor follow-up in [the investigation](investigation.md).
 Engine layer: `packages/runtime-native/native/physics/src/lib.rs:1336` rebuilds a collider→body
 HashMap and allocates a pair Vec in `area_intersections()`; `:2090` exposes the bulk read.
 The plugin already retains membership buffers and dispatches events. The source investigation

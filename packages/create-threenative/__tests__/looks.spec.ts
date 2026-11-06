@@ -482,7 +482,7 @@ describe("starter visual floor", () => {
     for (const root of [starter, minimal, platformer]) {
       const agents = await readFile(path.join(root, "AGENTS.md"), "utf8");
       expect(agents).toContain("Budget real time for the look");
-      expect(agents).toContain(".agents/skills/threenative-visuals/SKILL.md");
+      expect(agents).toContain("`threenative-visuals`");
       // AGENTS.md is the source; CLAUDE.md is generated from it by pnpm
       // sync:agents, so it has to carry the same instruction.
       const mirror = await readFile(path.join(root, "CLAUDE.md"), "utf8");

@@ -37,15 +37,14 @@ describe("threenative-engine-mcp stdio contract", async () => {
     });
   });
 
-  it("hands actual MCP clients the new-game and existing-game authoring routes", async () => {
+  it("points MCP clients to the kit Authoring flow without restating its steps", async () => {
     const response = JSON.parse((await handleLine(frame(1, "initialize", {}), manifestFile)) ?? "");
     const instructions = response.result.instructions as string;
-    expect(instructions).toContain("New games: steps 1-8");
-    expect(instructions).toContain("Existing games: steps 5-7 only");
-    expect(instructions).toContain("existing context");
-    expect(instructions).toContain("reference-image visual judge");
+    expect(instructions).toContain("Authoring flow in the game's AGENTS.md");
+    expect(instructions).toContain("every change to an existing game");
     expect(instructions).toContain("subagents focused on specific areas");
-    expect(instructions).toContain("coordinator integration before step 7");
+    expect(instructions).toContain("coordinator integration before mechanics playtests");
+    expect(instructions).not.toMatch(/steps? \d/u);
     expect(instructions).not.toContain("Before planning or writing game source");
   });
 
@@ -57,6 +56,7 @@ describe("threenative-engine-mcp stdio contract", async () => {
       "engine_search_references",
       "engine_reference_detail",
       "engine_save_reference",
+      "engine_watch_reference",
     ]);
     expect(response.result.tools).toEqual(
       expect.arrayContaining([

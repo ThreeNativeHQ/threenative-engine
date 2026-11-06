@@ -101,6 +101,52 @@ describe("release preparation", () => {
     expect(scenario.assert.world.runtime.core).toBe("9.9.9");
     expect(scenario.assert.movement).toBeDefined();
   });
+
+  // PRD-827 AC-2: the animation server had three numbers (servers.mjs 0.1.3, package 0.1.8,
+  // serverInfo 0.1.3). The checked-in pins equal the package, and a bump moves every pin.
+  it("keeps one animation server version and moves it with a bump", async () => {
+    const sourceRoot = path.resolve(import.meta.dirname, "../..");
+    const pins = [
+      ["packages/core/mcp/servers.mjs", /name: "threenative-animation-mcp", version: "([^"]+)"/u],
+      ["packages/animation-mcp/src/index.ts", /name: "threenative-animation", version: "([^"]+)"/u],
+    ] as const;
+    const read = (root: string) =>
+      pins.map(
+        ([file, pattern]) => fs.readFileSync(path.join(root, file), "utf8").match(pattern)?.[1],
+      );
+    const { version } = JSON.parse(
+      fs.readFileSync(path.join(sourceRoot, "packages/animation-mcp/package.json"), "utf8"),
+    ) as { version: string };
+    expect(read(sourceRoot)).toEqual([version, version]);
+
+    const repo = await makeTempDir("threenative-animation-pin-");
+    const copied = [
+      "packages/core/src/index.ts",
+      "packages/create-threenative/src/doctor.ts",
+      "packages/engine-mcp/src/index.ts",
+      "packages/engine-mcp/__tests__/server.spec.ts",
+      "packages/core/mcp/servers.mjs",
+      "packages/create-threenative/engine-mcp-tools.json",
+      "packages/terrain/src/core/io.ts",
+      "packages/animation-mcp/src/index.ts",
+      "examples/abyss-framework/playtests/replay.playtest.json",
+    ];
+    for (const relative of copied) {
+      const target = path.join(repo, relative);
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.copyFileSync(path.join(sourceRoot, relative), target);
+    }
+    syncSourceVersions(
+      repo,
+      new Map([
+        ["@threenative/core", "9.9.9"],
+        ["@threenative/terrain", "9.9.9"],
+        ["threenative-engine-mcp", "9.9.9"],
+        ["threenative-animation-mcp", "7.7.7"],
+      ]),
+    );
+    expect(read(repo)).toEqual(["7.7.7", "7.7.7"]);
+  });
 });
 
 /**

@@ -9,7 +9,7 @@
 
 ## Context
 
-Source: proposal 3 in [the investigation](../../../plans/engine-performance-architecture-2026-10-28.md).
+Source: proposal 3 in [the investigation](investigation.md).
 Engine layer: `packages/core/src/game.ts:1574` routes `ctx.raycast` to `ScenePicker`.
 `picking.ts:139` updates each root's matrices and `:183` recursively discovers objects per query.
 The geometry BVH at `:292` accelerates triangles within one mesh, not scene discovery. No new

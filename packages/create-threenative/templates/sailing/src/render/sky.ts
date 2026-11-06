@@ -1,5 +1,9 @@
 // Generated for you. This is ordinary Three.js — edit or delete it freely.
 //
+// The organization of this file is adapted from VictorZakharov/beautiful-water
+// (https://github.com/VictorZakharov/beautiful-water), released under the MIT License. The water
+// is original: `src/render/ocean.ts` is written against `SpectralOcean`.
+//
 // The sky is a photograph: `assets/sky.jpg`, Poly Haven's "Kloofendal 48d Partly Cloudy (Pure Sky)"
 // by Greg Zaal and Jarod Guest, CC0 (https://polyhaven.com/a/kloofendal_48d_partly_cloudy_puresky).
 // The same image is the background, the environment light every surface is filled by, and — through

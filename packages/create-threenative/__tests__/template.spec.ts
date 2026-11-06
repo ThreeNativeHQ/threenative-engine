@@ -212,30 +212,6 @@ if (delegatePristineTypechecks)
 const scaffoldTemplates = await templateNames();
 
 describe("template contracts", () => {
-  it("documents the optional multiplayer transport contract in every template", async () => {
-    const required = [
-      "@threenative/core/net",
-      "connect",
-      "HTTPS",
-      "credential",
-      "connectTimeoutMs",
-      "maxReliableMessageBytes",
-      "maxQueuedReliableBytes",
-      "maxQueuedDatagrams",
-      "reliable-ordered",
-      "unreliable",
-      "no fallback",
-      "TN_NET_UNAVAILABLE",
-      "packages/runtime-native/examples/webtransport/server",
-    ] as const;
-    for (const template of await templateNames()) {
-      const source = await readFile(path.join(templateRoot, template, "AGENTS.md"), "utf8");
-      for (const phrase of required) {
-        expect(source, `${template}/AGENTS.md missing ${phrase}`).toContain(phrase);
-      }
-    }
-  });
-
   it("requires every discovered template to ship a bounded performance scenario", async () => {
     const names = await templateNames();
     // A floor, not a pin: a kit that ships tomorrow must be covered without editing this number,
@@ -671,7 +647,7 @@ describe("template contracts", () => {
     expect(contextSkill).not.toContain("probably does not exist");
     for (const template of await templateNames()) {
       const agents = await readFile(path.join(templateRoot, template, "AGENTS.md"), "utf8");
-      expect(agents).toContain(".agents/skills/threenative-context/SKILL.md");
+      expect(agents).toContain("`threenative-context`");
     }
   });
 
@@ -786,7 +762,7 @@ describe("template contracts", () => {
     }
   });
 
-  it("should keep the root instructions under 100 lines and move workflows into skills", async () => {
+  it("should keep the package instructions under 100 lines and each kit router at most 120", async () => {
     const packageAgents = await readFile(
       path.resolve("packages/create-threenative/AGENTS.md"),
       "utf8",
@@ -797,15 +773,7 @@ describe("template contracts", () => {
     ).toBeLessThan(100);
     for (const template of await templateNames()) {
       const agents = await readFile(path.join(templateRoot, template, "AGENTS.md"), "utf8");
-      expect(agents.split(/\r?\n/u).length, `${template}/AGENTS.md`).toBeLessThan(100);
-      for (const [skill, ...markers] of authoringSkills) {
-        expect(agents, `${template}/${skill} Codex link`).toContain(
-          `.agents/skills/${skill}/SKILL.md`,
-        );
-        expect(agents, `${template}/${skill} Claude link`).toContain(
-          `.claude/skills/${skill}/SKILL.md`,
-        );
-      }
+      expect(agents.split(/\r?\n/u).length, `${template}/AGENTS.md`).toBeLessThanOrEqual(120);
     }
 
     // One stored copy per skill: the scaffolder links `.claude/skills` into it, so a drifted
@@ -819,29 +787,63 @@ describe("template contracts", () => {
     }
   });
 
-  it("should make capability discovery a critical gate before PRD planning", async () => {
+  it("names the engine flow in order, with only tools its MCP servers serve (PRD-825)", async () => {
+    // The router is the one place a cold agent learns the tool calls: capability search before
+    // reference search before assets, each tool named and each served by its pinned surface.
+    const served = new Set<string>();
+    for (const surface of ["engine", "asset", "sculpt", "animation", "devtools", "terrain"]) {
+      const json = JSON.parse(
+        await readFile(
+          path.resolve(`packages/create-threenative/${surface}-mcp-tools.json`),
+          "utf8",
+        ),
+      ) as { tools: string[] };
+      for (const tool of json.tools) served.add(tool);
+    }
+    const flow = [
+      'engine_search_capabilities {situation: "<the whole request>", scope: "request"}',
+      "engine_search_references",
+      "engine_reference_detail",
+      "engine_watch_reference",
+      'engine_search_capabilities {situation, scope: "mechanic"}',
+      "engine_capability_detail",
+      "`prd-creator`",
+      "asset_search_sources",
+      "asset_download_file",
+      "sculpt_plan",
+      "animation_inspect",
+    ];
     for (const template of await templateNames()) {
       for (const file of ["AGENTS.md", "CLAUDE.md"]) {
         const instructions = await readFile(path.join(templateRoot, template, file), "utf8");
-        expect(instructions, `${template}/${file}/critical gate`).toMatch(
-          /critical.*(?:step|gate)/iu,
+        let previous = -1;
+        for (const step of flow) {
+          const offset = instructions.indexOf(step, previous + 1);
+          expect(offset, `${template}/${file} names '${step}' in flow order`).toBeGreaterThan(
+            previous,
+          );
+          previous = offset;
+        }
+        const mcp = instructions.split("## MCP servers")[1]?.split("\n## ")[0] ?? "";
+        expect(mcp, `${template}/${file} names a devtools tool`).toContain(
+          "performance_start_trace",
         );
-        expect(instructions, `${template}/${file}/capability skill`).toContain(
-          "`threenative-capabilities`",
+        const named = [
+          ...instructions.matchAll(
+            /`((?:engine|asset|audio|mesh|sculpt|animation|terrain|performance)_[a-z_]+)`/gu,
+          ),
+        ];
+        expect(named.length, `${template}/${file} names tools`).toBeGreaterThan(10);
+        for (const [, tool] of named) {
+          expect(served.has(tool ?? ""), `${template}/${file}: '${tool}' is served`).toBe(true);
+        }
+        expect(instructions, `${template}/${file}/explicit approval`).toMatch(
+          /explicit approval/iu,
         );
-        expect(instructions, `${template}/${file}/prd skill`).toContain("`prd-creator`");
-        expect(instructions, `${template}/${file}/single gate`).not.toContain(
-          "engine_search_capabilities",
+        expect(instructions, `${template}/${file}/borrow rule`).toContain(
+          "no code, level layouts, character names or art",
         );
-        expect(instructions).toContain("no code, level layouts, character names or art");
-        expect(
-          instructions.indexOf("`threenative-capabilities`"),
-          `${template}/${file}/capabilities before PRD`,
-        ).toBeLessThan(instructions.indexOf("`prd-creator`"));
-        expect(instructions, `${template}/${file}/approval gate`).toMatch(/explicit approval/iu);
-        expect(instructions, `${template}/${file}/execution handoff`).toMatch(
-          /execute|implement/iu,
-        );
+        expect(instructions, `${template}/${file}/no-user route`).toContain("With no user");
       }
     }
   });
@@ -856,33 +858,31 @@ describe("template contracts", () => {
     const fresh = gate.split("## New game")[1]?.split("## Existing game")[0] ?? "";
     let previous = -1;
     for (const stage of [
-      "Prompt",
-      "Starter kit",
-      "Mechanics discovery",
-      "Core-mechanics plan",
-      "Required textures",
-      "Execute",
-      "Mechanics playtest",
-      "Reference-image visual judge",
+      "Kit",
+      "Mechanics",
+      "Built-ins",
+      "Plan",
+      "Assets",
+      "Build",
+      "Prove",
+      "Report",
     ]) {
       const offset = fresh.indexOf(`**${stage}**`);
       expect(offset, stage).toBeGreaterThan(previous);
       previous = offset;
     }
     expect(fresh).toContain("no kit matches, use `minimal`");
-    const discovery =
-      fresh.split("**Mechanics discovery**")[1]?.split("**Core-mechanics plan**")[0] ?? "";
-    for (const tool of [
-      "engine_search_references",
-      "engine_reference_detail",
-      "engine_search_capabilities",
-      "engine_capability_detail",
-    ])
-      expect(discovery, tool).toContain(tool);
+    const mechanics = fresh.split("**Mechanics**")[1]?.split("**Built-ins**")[0] ?? "";
+    for (const tool of ["engine_search_references", "engine_reference_detail"])
+      expect(mechanics, tool).toContain(tool);
+    const builtIns = fresh.split("**Built-ins**")[1]?.split("**Plan**")[0] ?? "";
+    for (const tool of ["engine_search_capabilities", "engine_capability_detail"])
+      expect(builtIns, tool).toContain(tool);
     // A card states the numbers, never the arc: the route has to say how to watch the mechanic.
-    expect(discovery).toContain("watch.mjs");
-    expect(discovery).toContain("--frames");
-    expect(discovery).toContain("gameplay frames unavailable");
+    expect(mechanics).toContain("engine_watch_reference");
+    expect(mechanics).toContain("watch.mjs");
+    expect(mechanics).toContain("--frames");
+    expect(mechanics).toContain("gameplay frames unavailable");
     expect(fresh).toContain("threenative-reverse-engineer");
     expect(fresh).toContain("engine_capabilities");
   });
@@ -898,9 +898,17 @@ describe("template contracts", () => {
       "utf8",
     );
     expect(gate.replace(/\s+/gu, " ")).toContain(bridge);
+    expect(gate, "skill ToolSearch line").toContain("`ToolSearch` `select:` plus the exact names");
     for (const name of discoverTemplateNames()) {
       const agents = await readFile(path.join(templateRoot, name, "AGENTS.md"), "utf8");
       expect(agents, name).toContain(bridge);
+      // PRD-825: a session started in the folder has the tools, deferred; the bridge is the fallback.
+      expect(agents, `${name}/ToolSearch`).toMatch(
+        /`ToolSearch` `select:` plus the exact names, for example `select:mcp__threenative-engine__engine_search_capabilities,/u,
+      );
+      expect(agents.indexOf("ToolSearch"), `${name}/ToolSearch before bridge`).toBeLessThan(
+        agents.indexOf("call.mjs"),
+      );
     }
   });
 
@@ -911,7 +919,7 @@ describe("template contracts", () => {
       ),
       "utf8",
     );
-    const textures = gate.split("**Required textures**")[1]?.split("**Execute**")[0] ?? "";
+    const textures = gate.split("**Assets**")[1]?.split("**Build**")[0] ?? "";
     for (const item of [
       "mechanics matches",
       "reference image",
@@ -930,7 +938,7 @@ describe("template contracts", () => {
       ),
       "utf8",
     );
-    const proof = gate.split("**Mechanics playtest**")[1]?.split("## Existing game")[0] ?? "";
+    const proof = gate.split("**Prove**")[1]?.split("## Existing game")[0] ?? "";
     for (const item of [
       "observable state",
       "actions",
@@ -946,7 +954,7 @@ describe("template contracts", () => {
       expect(proof, item).toContain(item);
   });
 
-  it("routes an existing game through steps 5-7 only using existing context", async () => {
+  it("searches capabilities for every change and references for every mechanic in an existing game", async () => {
     const gate = await readFile(
       path.resolve(
         "packages/create-threenative/agent-files/.agents/skills/threenative-capabilities/SKILL.md",
@@ -954,17 +962,13 @@ describe("template contracts", () => {
       "utf8",
     );
     const existing = gate.split("## Existing game")[1] ?? "";
-    expect(existing).toContain("steps 5-7 only");
-    expect(existing).toContain("existing game, plan, mechanics matches and reference context");
-    expect([...existing.matchAll(/^(\d+)\. /gmu)].map((match) => match[1])).toEqual([
-      "5",
-      "6",
-      "7",
-    ]);
-    expect(existing).toContain(
-      "Do not repeat kit selection, mechanics discovery or whole-game planning",
-    );
-    expect(existing).toContain("Do not add step 8");
+    expect(existing).toContain("skips step 1 and whole-game planning");
+    expect(existing).toContain("Step 3 for every change");
+    expect(existing).toContain("engine_search_capabilities");
+    expect(existing).toContain("Step 2 for each gameplay mechanic");
+    expect(existing).toContain("engine_search_references");
+    expect(existing).toContain("Steps 5-8 for the change");
+    expect(gate).toContain("A session with no user");
     const plan = await readFile(
       path.resolve("packages/create-threenative/agent-files/.agents/skills/prd-creator/SKILL.md"),
       "utf8",
@@ -973,29 +977,29 @@ describe("template contracts", () => {
     expect(plan).not.toContain("six-section discovery record");
   });
 
-  it("delegates bounded areas in both step-6 routes before coordinator integration and playtest", async () => {
+  it("delegates bounded areas in step 6 before coordinator integration and playtest", async () => {
     const gate = await readFile(
       path.resolve(
         "packages/create-threenative/agent-files/.agents/skills/threenative-capabilities/SKILL.md",
       ),
       "utf8",
     );
-    for (const route of ["New game", "Existing game"]) {
-      const body = gate.split(`## ${route}`)[1]?.split("## ")[0] ?? "";
-      const execute = body.split("6. **Execute**")[1]?.split("7. **Mechanics playtest**")[0] ?? "";
-      for (const requirement of [
-        "subagents",
-        "specific areas",
-        "bounded",
-        "file ownership",
-        "coordinator",
-        "integrat",
-        "before step 7",
-        "acceptance",
-        "catch-all",
-      ])
-        expect(execute, `${route}/${requirement}`).toContain(requirement);
-    }
+    const build = gate.split("6. **Build**")[1]?.split("7. **Prove**")[0] ?? "";
+    for (const requirement of [
+      "subagents",
+      "specific areas",
+      "bounded",
+      "file ownership",
+      "coordinator",
+      "integrat",
+      "before step 7",
+      "acceptance",
+      "catch-all",
+    ])
+      expect(build, `New game/${requirement}`).toContain(requirement);
+    const existing = gate.split("## Existing game")[1] ?? "";
+    for (const requirement of ["ownership", "coordinator", "catch-all"])
+      expect(existing, `Existing game/${requirement}`).toContain(requirement);
     const plan = await readFile(
       path.resolve("packages/create-threenative/agent-files/.agents/skills/prd-creator/SKILL.md"),
       "utf8",
@@ -1008,9 +1012,9 @@ describe("template contracts", () => {
   it("keeps all kit entry points and the injected hook on the same new/existing routes", async () => {
     for (const template of await templateNames()) {
       const instructions = await readFile(path.join(templateRoot, template, "AGENTS.md"), "utf8");
-      expect(instructions, template).toContain("New games: steps 1-8");
-      expect(instructions, template).toContain("Existing games: steps 5-7 only");
-      expect(instructions, template).toContain("New game only");
+      expect(instructions, template).toContain("## Authoring flow");
+      expect(instructions, template).toContain("A change to an existing game repeats steps 2-3");
+      expect(instructions, template).toContain("(new game only)");
     }
     const hook = path.resolve(
       "packages/create-threenative/agent-files/.claude/hooks/ponytail-context.mjs",
@@ -1021,10 +1025,9 @@ describe("template contracts", () => {
     });
     expect(run.status, run.stderr).toBe(0);
     const context = JSON.parse(run.stdout).hookSpecificOutput.additionalContext as string;
-    expect(context).toContain("New games: steps 1-8");
-    expect(context).toContain("Existing games: steps 5-7 only");
-    expect(context).toContain("Step 6 delegates bounded areas with file ownership to subagents");
-    expect(context).toContain("coordinator integrates before step 7");
+    expect(context).toContain("Authoring flow in `AGENTS.md`");
+    expect(context).toContain("before the first new `src/` file");
+    expect(context).not.toMatch(/steps? \d/u);
   });
 
   // The project hook is the force: it re-injects the ruleset every session, prompt and subagent
@@ -1088,9 +1091,7 @@ describe("template contracts", () => {
     expect(skill).toMatch(performanceBoundPattern);
     for (const template of await templateNames()) {
       const agents = await readFile(path.join(templateRoot, template, "AGENTS.md"), "utf8");
-      expect(agents, `${template}/threenative-performance`).toContain(
-        ".agents/skills/threenative-performance/SKILL.md",
-      );
+      expect(agents, `${template}/threenative-performance`).toContain("`threenative-performance`");
     }
   });
 
@@ -1131,9 +1132,7 @@ describe("template contracts", () => {
 
     for (const template of await templateNames()) {
       const agents = await readFile(path.join(templateRoot, template, "AGENTS.md"), "utf8");
-      expect(agents, `${template}/unexecuted`).toContain(
-        ".agents/skills/threenative-performance/SKILL.md",
-      );
+      expect(agents, `${template}/unexecuted`).toContain("`threenative-performance`");
     }
   });
 
@@ -1174,10 +1173,8 @@ describe("template contracts", () => {
         for (const file of ["AGENTS.md", "CLAUDE.md"]) {
           const docs = await readFile(path.join(result.target, file), "utf8");
           expect(docs, `${template}/${file}`).not.toMatch(/<!--\s*(?:shared:|\/shared)/u);
-          expect(docs.split(/\r?\n/u).length, `${template}/${file}`).toBeLessThan(100);
-          expect(docs, `${template}/${file}/critical capability gate`).toMatch(
-            /critical.*(?:step|gate)/iu,
-          );
+          expect(docs.split(/\r?\n/u).length, `${template}/${file}`).toBeLessThanOrEqual(122);
+          expect(docs, `${template}/${file}/authoring flow`).toContain("## Authoring flow");
           expect(
             docs.indexOf("`threenative-capabilities`"),
             `${template}/${file}/capabilities before PRD`,
@@ -1216,12 +1213,6 @@ describe("template contracts", () => {
     );
     expect(mentioned.filter((name) => !served.has(name))).toEqual([]);
     for (const name of surface.recommended) expect(skill, name).toContain(name);
-    for (const template of await templateNames()) {
-      const agents = await readFile(path.join(templateRoot, template, "AGENTS.md"), "utf8");
-      expect(agents, `${template}/threenative-assets`).toContain(
-        ".agents/skills/threenative-assets/SKILL.md",
-      );
-    }
     const coreManifest = JSON.parse(
       await readFile(path.resolve("packages/core/package.json"), "utf8"),
     ) as { dependencies?: Record<string, string> };

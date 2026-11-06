@@ -226,7 +226,7 @@ jobs:
         if: ${{ needs.scope.outputs.selection != 'full' && fromJSON(needs.scope.outputs.plan).checks.instructions }}
         run: |
           pnpm sync:agents --check
-          pnpm exec vitest run scripts/__tests__/instruction-budget.spec.ts scripts/__tests__/primary-docs.spec.ts scripts/__tests__/check-template-conventions.spec.ts scripts/__tests__/check-template-quality.spec.ts packages/playtest/__tests__/doc-drift.spec.ts packages/core/__tests__/constraints.spec.ts
+          pnpm exec vitest run scripts/__tests__/instruction-budget.spec.ts scripts/__tests__/primary-docs.spec.ts scripts/__tests__/kit-conventions.spec.ts scripts/__tests__/check-template-quality.spec.ts packages/playtest/__tests__/doc-drift.spec.ts packages/core/__tests__/constraints.spec.ts
 
   # `pnpm test` needs the native contract executables; nothing else here does. Keeping the browser
   # and playtest lanes in their own jobs means one run reports every failure instead of teaching us

@@ -1,94 +1,105 @@
-# AGENTS.md — __PROJECT_NAME__ tower defense
+<!-- shared: kit-identity -->
+# AGENTS.md — __PROJECT_NAME__ (Tower defense, the tower-defense kit)
 
-Instructions for the AI agent in this game. `CLAUDE.md` mirrors this file; edit `AGENTS.md`.
+Four towers with three upgrade levels, twelve waves, two bosses and an orbital strike on a mossy diorama. Routing words: strategy. `CLAUDE.md` is a copy of this file.
+<!-- /shared -->
 
-## Ownership
-ThreeNative owns bootstrap, renderer, fixed-step loop, input, loading, physics bindings, and the state bridge. This repository owns the road, pads, enemies, towers, economy, waves, HUD, and look;
-`src/game.ts` is portable and React mounts only from `src/main.ts`. The render camera also skips an object that projects under **0.5 px** in it; `renderer.minimumProjectedPixels` raises that threshold (`false` disables the cut, not the count) and `alwaysRender(object)` exempts an object, while camera-attached objects and shadow casters are kept. The engine also owns the per-frame world-matrix walk, and by default it does not descend into a hidden subtree — so a game that reads a hidden object's `matrixWorld` directly must use `getWorldPosition` (or call `object.updateWorldMatrix(true, false)`) first; `renderer.matrixWorld: "all"` restores three's every-node walk, and `TN_PROJECTION` reports the visited-node count either way. Physics bodies and `ctx.camera` interpolate between fixed ticks by default; `physicsInterpolation: false` disables it globally, `body.interpolate = false` disables one body, `ctx.interpolate(object)` opts in another transform, and `ctx.resetInterpolation(object)` resets game-driven teleports (`TN_PHYSICS_INTERPOLATION` reports the setting and tracked count).
+<!-- shared: kit-router -->
+## Authoring flow
 
-## Start every change
+Detail for each step: `threenative-capabilities` skill. Do the steps in order. A step with no result records `none: <reason>`. A blank step blocks the next. A hook blocks the first new file under `src/` until step 3 ran for the current prompt (`TN_DISCOVERY_GATE=off` opts out; Codex needs `/hooks` trust).
 
-1. **Critical authoring gate:** invoke `threenative-capabilities` to choose the route. New games: steps 1-8. Existing games: steps 5-7 only, using existing context. Follow the `ponytail` ladder. References borrow mechanics only: no code, level layouts, character names or art. A session started outside this folder has no `mcp__threenative-*` tools: call them with `node node_modules/@threenative/core/mcp/call.mjs <server> <tool> '<json>'`.
-2. **New game only:** run discovery in `threenative-capabilities` before `prd-creator`. Draft the core-mechanics plan from the kit, both discovery passes and binding constraints,
-   direct the user to review it, and wait for explicit approval plus an instruction to implement it.
-3. Treat returned constraints as binding. `@threenative/physics/navigation` is browser-only WASM;
-   this kit deliberately uses an authored `PathFollow3D` route instead of a navmesh.
-4. If a build, import, device, or blank frame fails, run `npx threenative doctor` and
-   `npx @threenative/playtest doctor`; missing observations are not zero.
-For *"a bullet passes through a wall"*, `RigidBody3D` defaults to continuous collision; `continuousCollision` is the named per-body override, and `body.continuousCollision` reports the effective setting on web/native.
+1. **Kit** (new game only): `engine_search_capabilities {situation: "<the whole request>", scope: "request"}` returns the matching starter kit first. This folder is already a kit.
+2. **Mechanics**: per mechanic, `engine_search_references {situation}`, then `engine_reference_detail` on each hit for pinned constants and feel. To see a mechanic move, `engine_watch_reference {query: "<game> <mechanic>"}` returns a contact sheet of real gameplay. Borrow mechanics only: no code, level layouts, character names or art. Cite `file:line`.
+3. **Built-ins**: per mechanic, system or symptom, `engine_search_capabilities {situation, scope: "mechanic"}`, then `engine_capability_detail {symbol, importPath}` on every hit. Constraints are binding. `verdict: "none"` means the game writes it in `src/`.
+4. **Plan** (new game, or a change to several systems): `prd-creator` with the kit, references and built-ins. With a user, wait for explicit approval, then implement. With no user (`claude -p`, a script), record the plan and assumptions, then continue.
+5. **Assets**: `asset_search_sources`, the source's search tool, then `asset_download_file`; record source and licence in `CREDITS.md`. Nothing fits: `sculpt_plan`. A rigged GLB: `animation_inspect` (`threenative-assets` skill).
+6. **Build**: gameplay in `src/`, look in `src/render/` (`threenative-context` and `threenative-ui` skills). For parallel work, give each subagent one area and its files, then integrate.
+7. **Prove**: one fail-closed playtest per mechanic, then `pnpm test` (`threenative-playtest` skill). A fresh judge compares a `--browser-recipe webgpu --headed` capture to the reference image (`threenative-visuals` skill; `node_modules/create-threenative/agent-docs/references/dream-loop.md`).
+8. **Report**: the `pnpm dev` URL, `TN_FRAME_BUDGET`, `TN_SCENE_WARNING`, `TN_RENDER_PROJECTION`, and each skipped step with its reason.
 
-## When the framework blocks you, write plain Three.js
+A change to an existing game repeats steps 2-3 for that change, then steps 5-8.
+<!-- /shared -->
 
-When an `@threenative/*` API is broken, missing, or does not do what you need, replace only that
-piece with portable Three.js/plain code. Keep the loop, scenes, input, registry, and playtest
-bridge; avoid DOM globals, dynamic `import()`, and raw physics handles. **Report what blocked you**
-(API, expectation, result, replacement); never stall the game.
+<!-- shared: kit-mcp -->
+## MCP servers
 
-## Workflow skills
+`.mcp.json` wires six servers, and a session started in this folder loads them. Their tools can show as deferred: load them with `ToolSearch` `select:` plus the exact names, for example `select:mcp__threenative-engine__engine_search_capabilities,mcp__threenative-engine__engine_capability_detail,mcp__threenative-engine__engine_search_references,mcp__threenative-engine__engine_reference_detail,mcp__threenative-engine__engine_watch_reference`. A session started outside this folder runs `node node_modules/@threenative/core/mcp/call.mjs <server> <tool> '<json>'`; `call.mjs <server>` lists that server's tools.
 
-- `.agents/skills/prd-creator/SKILL.md` / `.claude/skills/prd-creator/SKILL.md` — game plan and approval gate.
-- `.agents/skills/threenative-capabilities/SKILL.md` / `.claude/skills/threenative-capabilities/SKILL.md` — capability search and classic-game mechanics references.
-- `.agents/skills/threenative-playtest/SKILL.md` / `.claude/skills/threenative-playtest/SKILL.md` — diagnosis and proof.
-- `.agents/skills/threenative-assets/SKILL.md` / `.claude/skills/threenative-assets/SKILL.md` — assets and sculpting.
-- `.agents/skills/threenative-visuals/SKILL.md` / `.claude/skills/threenative-visuals/SKILL.md` — captures and look.
-- `.agents/skills/threenative-performance/SKILL.md` / `.claude/skills/threenative-performance/SKILL.md` — measured budgets; read it first when the game is slow or stutters: `playtest trace`, then the `threenative-devtools` MCP server.
-- `.agents/skills/threenative-ui/SKILL.md` / `.claude/skills/threenative-ui/SKILL.md` — native-safe UI.
-- `.agents/skills/threenative-context/SKILL.md` / `.claude/skills/threenative-context/SKILL.md` — portable ctx APIs.
-- Confirmed framework bugs: use `file-engine-bug` in `.agents/skills/` or `.claude/skills/` after a minimal repro. A game-side `patches/` fix is temporary: once it is settled, it moves into the engine in one PR. Lazy-first: `.agents/skills/ponytail/SKILL.md` / `.claude/skills/ponytail/SKILL.md` — smallest correct change, and its reuse rung is the capability search above. Engine: The owned C++ engine is the default for a new game: the Wasm engine on web and the engine player on desktop. This template runs on it: `threenative.config.ts` names no `engine`. `engine: "threejs"` switches to upstream Three.js only when the user asks for it; it is never a fix for a build error. Android and iOS use the legacy host.
+- `threenative-engine`: before any new mechanic, helper or render stage, and on a slow frame or a wrong image. `engine_search_capabilities`, `engine_capability_detail`, `engine_search_references`, `engine_reference_detail`, `engine_watch_reference`.
+- `threenative-assets`: a texture, HDRI, sound or model. `asset_search_sources`, `asset_download_file`, `audio_search_assets`, `mesh_optimize`.
+- `threenative-sculpt`: a bespoke mesh or character from a reference image. `sculpt_plan`, `sculpt_spec_gate`, `sculpt_compare`, `sculpt_pass_gate`.
+- `threenative-animation`: a rigged GLB with a held prop, foot slide or loop seam. `animation_inspect`, `animation_attach`, `animation_verify`.
+- `threenative-terrain`: a starter terrain kit. `terrain_generate`.
+- `threenative-devtools`: after `npx @threenative/playtest trace` names no cause. `performance_start_trace`, `performance_analyze_insight`.
+<!-- /shared -->
 
-## Commands and map
+## This kit
+
+<!-- shared: kit-files -->
+Source in `src/`: `balance.ts`, `board/`, `camera-rig.ts`, `economy.ts`, `effects/`, `enemies/`, `game.ts`, `intents.ts`, `main.ts`, `physics.ts`, `playtest-events.ts`, `render/`, `scenes/`, `state.ts`, `towers/`, `ui/`, `waves.ts`.
+12 scenarios in `playtests/`; `playtests/survives.playtest.json` is the smoke proof.
+Exposure policy: `src/render/exposure.ts` (`node_modules/create-threenative/agent-docs/references/auto-exposure.md`).
+Kit notes: `node_modules/create-threenative/agent-docs/references/kit-tower-defense.md`.
+<!-- /shared -->
+
+`src/balance.ts` holds every number (costs, ranges, wave rules) with no engine import; `src/waves.ts` and `src/economy.ts` are pure, so a unit test pins them without a renderer.
+This repository owns the road, pads, enemies, towers, economy, waves, HUD and look.
+
+<!-- shared: kit-commands -->
+## Commands
 
 ```sh
-pnpm dev
-pnpm build
-pnpm build --target desktop
-pnpm test   # runs `pnpm check` first: typecheck, ESLint, Biome format
-pnpm typecheck
+pnpm dev                     # play in the browser
+pnpm test                    # typecheck, lint, format, then every playtest
+pnpm build --target desktop  # also: web, android, ios
+npx threenative doctor       # build, import, device or blank-frame failure
 ```
+<!-- /shared -->
 
-`src/balance.ts` holds every number — costs, ranges, wave rules — with no engine import; `src/waves.ts`
-and `src/economy.ts` are pure, so a unit test can pin them without a renderer. `src/enemies/Enemy.ts`
-walks the same `PathFollow3D` curve the road is drawn from; `src/towers/Tower.ts` finds targets with a
-jittered `intersectShape` query. Change the road and pads in `src/board/Route.ts`, the look in `src/render/`.
-The HUD reads `GameState` and sends intents (`arm`, `launch`, `upgrade`, `recycle`, `target`, `strike`) that
-`src/intents.ts` queues for the scene. Register gameplay entities with `ctx.entities`. Keep
-`playtests/survives.playtest.json` as smoke proof (a held key pans the camera while a wave is fought) and update the other scenarios with each rule: `defeat` is the end of the game.
+<!-- shared: kit-conventions -->
+## Conventions
 
-## Portable authoring contracts
+Each is on by default with a named override. Detail: `node_modules/create-threenative/agent-docs/references/conventions.md#<id>`.
 
-Leave `assets` absent: the cook selects target-decodable passes, with `models.sharedImages: true` deduplicating images. `sharedImages: false` embeds duplicate copies; `models.compact` (default `{ flatten: true, join: true, instance: true }`) flattens the scene graph, merges primitives by material and batches a mesh shared by several nodes as `EXT_mesh_gpu_instancing` — all lossless, keeping any node matching `protectedPattern` (or named in `protectedNames`), an animation target, or a skin joint individually addressable; `compact: false` ships the scene graph as authored. `models: "none"` / `textures: "none"` / `audio: "none"` skip those passes and report uncooked bytes. Android/iOS currently skip compression and model dedupe. `assets.exclude` defaults to `[]`; source-relative globs (for example `["unused/**"]`) omit matching files and report saved bytes. `assets.budget` accepts `{ uncooked?: number | "none", total?: number | "none" }`, default `{ uncooked: 64_000_000, total: "none" }`: only bytes left uncooked where cooking was possible count toward `uncooked`. A number sets that ceiling; `"none"` disables both gates. Either disabled gate still reports bytes. Automatic texture cooking retains unaligned source images unchanged and reports `block-size`; those bytes still count toward the uncooked budget. An explicit compression codec override must satisfy four-pixel block alignment; `codec: "none"` opts out. Cooking never silently resizes an image to fix alignment.
+- **Look** `#look`: filmic curve, metered auto exposure. Override: `tonemapMode: "aces"`; `autoExposureEnabled: false` + `exposure`. Marker: `TN_WORLD_ENVIRONMENT`.
+- **Quality tier (`src/render/quality.ts`)** `#quality`: GPU class picks `high`, `medium` or `low`. Override: `setupPost(..., { tier: "low" })`. Marker: `TN_QUALITY_TIER`.
+- **Resolution scale** `#resolution`: `"auto"`, 0.85 on mobile-low. Override: numeric `resolutionScale`. Marker: `TN_FRAME_BUDGET`.
+- **Budget real time for the look** `#frame-budget`: frame meter and scene verdict on. Override: `frameBudget: false`. Marker: `TN_FRAME_BUDGET`, `TN_SCENE_WARNING`.
+- **Anti-aliasing** `#aa`: 4x MSAA on `high`, else SMAA. Override: `temporalAA: true`.
+- **World-matrix walk** `#matrix-world`: visible subtrees only. Override: `renderer.matrixWorld: "all"`. Marker: `TN_PROJECTION`.
+- **Projected-pixel cull** `#projected-cull`: under 0.5 px. Override: `minimumProjectedPixels`; `alwaysRender(obj)`. Marker: `TN_RENDER_PROJECTION`.
+- **Physics interpolation** `#interpolation`: on for bodies and `ctx.camera`. Override: `physicsInterpolation: false`. Marker: `TN_PHYSICS_INTERPOLATION`.
+- **Continuous collision** `#continuous`: on for `RigidBody3D`. Override: `continuousCollision: false`. Marker: `body.continuousCollision`.
+- **Loading** `#loading`: `loadAll` keeps order; `addInSlices` attaches in 8 ms slices. Override: `concurrency`, `sliceSize`, `marker: false`. Marker: `TN_LOAD_ALL`.
+- **Loading curtain** `#startup`: `ctx.startup.hold(label, () => ready)`. Override: reveal on measured readiness only.
+- **Asset cache** `#asset-cache`: on, with idle fill. Override: `assets: { cache: false, backgroundFill: false }`. Marker: `ctx.assets.cache`.
+- **Asset cook** `#asset-cook`: compact, shared images. Override: `compact: false`; `assets.exclude`; `assets.budget`. Marker: `TN_ASSETS_CONFIG`.
+- **Animation rate** `#animation-rate`: `updateRate: "auto"`. Override: `updateRate: 1`. Marker: `updateRateReport`.
+- **Rigged assets** `#rigged`: `.glb` in `assets/`; `AnimationPlayer` drives clips. Override: `ctx.assets.model("hero.glb")` in `Scene.load()`.
+- **Clip conformance** `#clip-conformance`: measure a clip before rewriting it. Override: `clipPoseError`; `clipTrackBindings`; `clipBoneCoverage`. Marker: `boneContact`.
+- **Unlit foliage** `#unlit-foliage`: warns. Override: `material.userData.tnUnlitOk = true`. Marker: `TN_UNLIT_FOLIAGE`.
+- **Material backlight** `#backlight`: none, as in stock Unreal. Override: `rimGain`; `fillGain`.
+- **Environment contribution** `#env-contribution`: reported even at zero. Override: `environmentSampling`. Marker: `TN_ENVIRONMENT_CONTRIBUTION`.
+- **Pointer look** `#pointer-look`: captures the canvas on click. Override: `captureOnClick: false` + `ctx.input.captureMouse()`.
+- **Static scenery** `#static`: unwritten transforms stay cheap. Override: `markStatic(root)`; `invalidateStatic(obj)`. Marker: `TN_RENDERLIST_VALIDATE`.
+- **Frame spans** `#spans`: off. Override: `TN_FRAME_SPANS=1`. Marker: `TN_FRAME_SPANS`.
+- **Multiplayer** `#net`: none; unsupported transport rejects. Override: `connect` from `@threenative/core/net` with four limits. Marker: `TN_NET_UNAVAILABLE`.
+- **Desktop window** `#desktop-mode`: CLI, then `display.fullscreen`, then `window.maximized`. Override: `--windowed`; `--maximized`; `--fullscreen`.
+- **Terrain** `#terrain`: authored in the game. Override: optional `@threenative/terrain`; `references/terrain-authoring.md`.
+- **Navigation** `#navigation`: none; browser-only WASM. Override: import `@threenative/physics/navigation` on purpose.
+- **Move input** `#move-axis`: `input.vector("move").y` is +up. Override: one explicit `-move.y` conversion.
+- **Scene change** `#scene-change`: `ctx.goto(name)` keeps state. Override: `game.goto(name)` resets state.
+- **Randomness** `#seed`: unseeded. Override: `defineGame({ seed })`.
+- **Engine** `#engine`: owned C++ engine. Override: `engine: "threejs"` only when the user asks. Marker: `TN_NATIVE_ENGINE_UNBOUND`.
+<!-- /shared -->
 
-Relative look capture: a binding with `pointerRelative: true` captures the canvas on click by default; set `captureOnClick: false` and call `ctx.input.captureMouse()` from your own gesture to opt out. Desktop mode precedence is CLI (`--windowed`, `--maximized`, `--fullscreen`) over `display.fullscreen` over `window.maximized`; with both false, `window.width`/`height` size the normal window.
-Scenes use `load`, `enter`, `update`, `exit`, `render`; physics nodes are Godot-named and disposable.
-Generated conventions call `GroundSnap` for floor contact and `normaliseToMetres` for authored model scale.
-`input.vector("move").y` is +up, so forward uses one explicit `-move.y` conversion. Rigged assets: put a `.glb` in `assets/`, await `ctx.assets.model("hero.glb")` in `Scene.load()`, then drive
-`AnimationPlayer` beside its entity. Imported foliage (Fab/Megascans cutouts) draws with its own albedo, normal map and alpha cutoff under the scene's environment light — never tint it, fake its emission or flatten its normals to make up for missing light; `TN_UNLIT_FOLIAGE` names cutout materials drawn with no environment. `ctx.goto(name)` rebuilds without resetting game state; from
-a frame function `goto` and then `return`; `ctx.state.set({ /* copy this game's initial-state shape */ })`
-is a partial patch. `game.goto("<scene-name>")` also rebuilds the scene, but it resets the game's
-state. Seeded randomness is deterministic only when `defineGame({ seed })` is configured.
+<!-- shared: kit-stuck -->
+## When the framework blocks you, write plain Three.js
 
-When an animation looks wrong, measure it before rewriting it. `clipPoseError` scores a
-retargeted clip against its source per bone in degrees — whole quaternions relative to each rig's
-own bind pose, so the two rigs' bind conventions cancel and a limb rolled about its own axis is
-caught where a bone-direction check reads zero. `clipTrackBindings` names tracks that bind nothing
-(the `<bone>.undefined` failure that plays the bind pose instead of the animation),
-`clipBoneCoverage` names bones the clip does not drive and which therefore keep the previous
-clip's pose, and `boneContact` reports in metres whether a named bone reaches the prop it is
-supposed to be touching. Two loading conventions come from `@threenative/core`, not from your own loops: `loadAll(items, load)` fetches six at a time and returns results **in the input's order** (a pool that pushes returns completion order, so a positional pick lands a different asset every load), and `addInSlices(objects, (object) => ctx.add(object))` attaches in 8 ms slices so hundreds of objects never land in one long frame; override `concurrency`/`sliceSize`, pass `while: () => alive` to stop a torn-down scene without throwing, and `marker: false` silences `TN_LOAD_ALL`/`TN_ADD_SLICES` but never the measurement. Gate the loading curtain on a measured readiness with `ctx.startup.hold(label, () => ready)`: core polls it every rendered frame, so it settles without a physics step. Assets download on demand and stay on disk between web visits: await everything the spawn camera sees before the reveal, and `await ctx.assets.prefetch(["next-level.glb"])` before `ctx.goto` only for what is out of view (a reveal before the visible content loads shows a half-built world); the idle fill downloads the rest after the reveal. Overrides on `defineGame`'s `assets`: `cache: false`, `backgroundFill: false`, both reported on `ctx.assets.cache`; native hosts read installed files.
+When an `@threenative/*` API is broken, missing, or does not do what you need, replace only that piece with portable Three.js/plain code. Keep the loop, scenes, input, registry, and playtest bridge; avoid DOM globals, dynamic `import()`, and raw physics handles. **Report what blocked you** (API, expectation, result, replacement); do not stall the game.
 
-`updateRate: "auto"` is the default and follows measured camera policy; `updateRate: 1` is full evaluation, another positive safe integer names a frame interval, and `updateRateReport` shows the effective rate, override status and latest evaluation; one-shots/fades, public mixer listeners/speed overrides, root-motion `AnimationComposer`, automatic camera-ray targets and camera-parented rigs stay full-rate.
-## Look and evidence
+## Stuck
 
-## Budget real time for the look
-Reference-driven authoring starts at `node_modules/create-threenative/agent-docs/references/dream-loop.md`.
-
-WebGPU reports `TN_GPU_CLASS` once per launch. Automatic `render.resolutionScale` starts at 0.85 for `mobile-low`, otherwise 1; a numeric value pins it. `TN_FRAME_BUDGET` reports the actual scale under both policies. Edit `src/render/` directly; `postprocessing.ts` reports stages but decides no game colour. Quality
-tiers live in `src/render/quality.ts`: `low`, `medium`, `high`; the GPU family from `ctx.renderer.gpuClass` sets the start (`discrete` `high`, `integrated` and `mobile-high` `medium`, other phones `low`); `isMobile()` chooses `low`, otherwise
-`high` when the family is `unknown`; override with `setupPost(..., { tier: "low" })`. Unknown tiers throw and `TN_QUALITY_TIER`
-reports the source. The shared look comes from core through `src/render/quality.ts`; the filmic curve and metered auto exposure are enabled by default. `src/render/exposure.ts` holds this game's meter policy (`maxStops` 0.3, `minStops` -1, so the dark void keeps its depth). Set `tonemapMode: "aces"` to choose ACES, or `autoExposureEnabled: false` with a fixed `exposure` to choose manual exposure, on the same quality preset; the render log reports the override. It has Unreal's bloom with no threshold (`unrealBloomEnabled`), local exposure (`localExposureEnabled`, off on `low`), a cosine-fourth vignette (`vignetteAmount: 0.4`) and no camera motion blur (`motionBlurEnabled: true` is the opt-in). Anti-aliasing is core's: 4x MSAA on `high`, SMAA on `medium` and `low`; `temporalAA: true` is the named opt-in. The grade is neutral and the frame has no film grain. Each stage has a named override: `unrealBloomEnabled: false` returns to Three's `BloomNode` (`bloomStrength`, `bloomRadius`, `bloomThreshold`), and `vignetteAmount: 0` removes the vignette. For a colour grade or grain, add the starter's `grade.ts` and `public/grade.cube`, then set `gradeIntensity` and `grainIntensity`. A scenario with no assertions or missing observations fails; open a real capture. The engine warns you before a human does: `TN_SCENE_WARNING` fires when the GPU used under a third of the frame while the JS render phase ran longer than the display's own period, and names the census behind it — objects considered, draws per pass, triangles per draw, shadow-exempt casters. It is a scene-shape verdict, so answer it by moving the draw and object counts, not the engine: read the bucket census before promising a merge. `npx threenative doctor` repeats the last verdict and the `DEV_MODE=true` chip shows it on screen (it draws the verdict alone — no frame rate, which reads throttled under a compositor or a virtual display; see `agent-docs/references/performance-basics.md`); `TN_FRAME_SPANS=1` adds the render phase's own span tree when you need to know which part costs the milliseconds. The cheapest static object is one whose transform you never write: measured on 1,561 objects, leaving them alone costs 10.10 ms of render phase against 17.45 ms when the game rewrites every transform each frame, because three skips the per-object binding update when nothing changed. So do not touch a transform you do not need to — that is worth ~7 ms where `markStatic(root)`, which additionally composes a never-moving subtree once, measured 0.009 ms. Use it for scenery you are sure of, and `invalidateStatic(object)` to announce a write inside one; it deletes matrix arithmetic, not the walk. `TN_RENDERLIST_VALIDATE=1` recomputes every world matrix the long way each frame and throws on the first that disagrees, which is how you prove a freeze did not leave something stale on screen.
-
-For terrain generation or editing, read `node_modules/create-threenative/agent-docs/references/terrain-authoring.md`; install optional `@threenative/terrain`, bake before play, and own its appearance in `src/render/`; test water proximity with its `createSegmentIndex` and steep ground with `slopeQuantile`, never a per-point scan or fixed degrees. Recipes in the installed create-threenative: `node_modules/create-threenative/agent-docs/references/assertion-reference.md`, `node_modules/create-threenative/agent-docs/references/build-profiles.md`, `node_modules/create-threenative/agent-docs/references/capability-reference.md`, `node_modules/create-threenative/agent-docs/references/capture-the-frame.md`, `node_modules/create-threenative/agent-docs/references/creating-creatures.md`, `node_modules/create-threenative/agent-docs/references/ctx-cookbook.md`, `node_modules/create-threenative/agent-docs/references/debug-surface.md`, `node_modules/create-threenative/agent-docs/references/finding-assets.md`, `node_modules/create-threenative/agent-docs/references/gameplay-recipes.md`, `node_modules/create-threenative/agent-docs/references/menu-screens.md`, `node_modules/create-threenative/agent-docs/references/mobile-memory-budget.md`, `node_modules/create-threenative/agent-docs/references/performance-basics.md`, `node_modules/create-threenative/agent-docs/references/rigging-characters.md`, `node_modules/create-threenative/agent-docs/references/sculpt-from-a-reference.md`, `node_modules/create-threenative/agent-docs/references/trace-a-slow-frame.md`, `node_modules/create-threenative/agent-docs/references/visual-baseline.md`, and `node_modules/create-threenative/agent-docs/references/webview-ui.md`.
-## Optional multiplayer transport
-For online play only, import `connect` from `@threenative/core/net` with an HTTPS URL and nonempty identity credential; configure `connectTimeoutMs`, `maxReliableMessageBytes`, `maxQueuedReliableBytes`, and `maxQueuedDatagrams` (10s/65,536/1 MiB/256), use `reliable-ordered` for ordered reliable messages and bounded `unreliable` datagrams that may drop, and keep serialization, replication, prediction, interpolation, snapshots and rejoin in this game's `src/` and server. There is no fallback: unsupported WebTransport/native rejects with `TN_NET_UNAVAILABLE`; reference Go server: `packages/runtime-native/examples/webtransport/server`.
-Material backlighting lives in `src/render/lighting.ts`: named `rimGain` and `fillGain` controls preserve the authored palette; `materialLighting.ts` reports `TN_ENVIRONMENT_CONTRIBUTION`. Admission is limited to high hardware desktop WebGPU; mobile/software/WebGL/native retain original materials. Existing authored fill stays authoritative.
-`src/render/exposure.ts` is optional game policy; pass it as `exposurePolicy` in `quality.ts` to use it. Core owns adaptation and its readback. The default look is `tonemapMode: "filmic"` with metered auto exposure. Lights are in lux, as in Unreal (EV100 exposure): the sun is 6 lux, and while the meter is off the fixed `exposure` is 2.4. `tonemapMode: "aces"` and `autoExposureEnabled: false` with a fixed `exposure` are the overrides. Recipe: `node_modules/create-threenative/agent-docs/references/auto-exposure.md`.
+`npx threenative doctor`, then `npx @threenative/playtest doctor`; a missing observation is not zero. A confirmed engine bug: `file-engine-bug` skill. Smallest correct change: `ponytail` skill. Slow frame: `threenative-performance` skill.
+<!-- /shared -->

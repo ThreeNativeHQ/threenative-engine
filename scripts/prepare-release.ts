@@ -240,6 +240,8 @@ export function syncSourceVersions(repo: string, versions: ReadonlyMap<string, s
   if (coreVersion === undefined || engineVersion === undefined)
     throw new Error("TN_RELEASE_COHORT_INCOMPLETE: required release package is missing.");
   const terrainVersion = requiredVersion(versions, "@threenative/terrain");
+  // The animation server ships bundled in core and as its own package; both report one version.
+  const animationVersion = versions.get("threenative-animation-mcp");
 
   const sourceUpdates: readonly [string, RegExp, string][] = [
     [
@@ -292,6 +294,20 @@ export function syncSourceVersions(repo: string, versions: ReadonlyMap<string, s
       /("core": ")[^"]+(")/u,
       `$1${coreVersion}$2`,
     ],
+    ...(animationVersion === undefined
+      ? []
+      : ([
+          [
+            path.join(repo, "packages/core/mcp/servers.mjs"),
+            /(name: "threenative-animation-mcp", version: ")[^"]+(")/u,
+            `$1${animationVersion}$2`,
+          ],
+          [
+            path.join(repo, "packages/animation-mcp/src/index.ts"),
+            /(new McpServer\(\{ name: "threenative-animation", version: ")[^"]+(")/u,
+            `$1${animationVersion}$2`,
+          ],
+        ] satisfies [string, RegExp, string][])),
   ];
   let changed = 0;
   for (const [file, pattern, replacement] of sourceUpdates) {
