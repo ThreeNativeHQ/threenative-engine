@@ -36,9 +36,11 @@ const names = [
 ].filter((name) => name !== "default");
 const refusals = refusalsOf(bindUpstreamExports(names, catalog, classes), names);
 
+/** What booting the installed engine yields; a case swaps it to model a failed boot. */
+let boot: () => Promise<ReadonlyMap<string, string>> = async () => refusals;
 vi.mock("../src/web-engine.js", async (original) => ({
   ...(await original<typeof import("../src/web-engine.js")>()),
-  upstreamRefusals: async () => refusals,
+  upstreamRefusals: () => boot(),
 }));
 
 const { createEngineCatalogPlugin } = await import("../src/engine-catalog.js");
@@ -59,6 +61,7 @@ const partial = catalog.entries.find(
 const roots: string[] = [];
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { force: true, recursive: true })));
+  boot = async () => refusals;
 });
 
 async function game(engine?: "threejs" | "threenative"): Promise<string> {
@@ -154,6 +157,20 @@ describe("createEngineCatalogPlugin", () => {
     expect({ linked, installed }).toEqual({ linked: {}, installed: {} });
   });
 
+  it("names a mismatched engine pair when the installed Wasm engine does not boot", async () => {
+    boot = async () => {
+      throw new Error("TN_ABI_6: TSL constant:modelViewProjection");
+    };
+    const root = await game();
+    const source = 'import { Mesh } from "three";\n';
+    const { error } = await transform(root, "src/a.ts", source);
+    expect(error?.message).toMatch(
+      /^TN_ENGINE_CATALOG: the installed Wasm engine did not boot .*TN_ABI_6.*pnpm up create-threenative @threenative\/\*/u,
+    );
+    const { warning } = await transform(root, "src/a.ts", source, "warn");
+    expect(warning).toMatch(/^TN_ENGINE_CATALOG: the installed Wasm engine did not boot/u);
+  });
+
   it("is off under engine threejs and says so once", async () => {
     const root = await game("threejs");
     const info = vi.spyOn(console, "info").mockImplementation(() => {});
@@ -189,6 +206,45 @@ describe("createEngineCatalogPlugin", () => {
       info.mockRestore();
     }
   });
+
+  it("shows the dev overlay error with the code and file:line after one save (AC-4)", async () => {
+    const { createServer } = await import("vite");
+    const root = await game();
+    const main = path.join(root, "src/main.ts");
+    await writeFile(main, "export const ready = true;\n");
+    const server = await createServer({
+      root,
+      logLevel: "silent",
+      configFile: false,
+      plugins: [createEngineCatalogPlugin()],
+      server: { port: 0, strictPort: false, ws: false },
+    });
+    const overlay: { message?: string; loc?: { line: number; column: number } }[] = [];
+    const hot = server.environments.client.hot;
+    const send = hot.send.bind(hot);
+    hot.send = ((payload: { type: string; err?: (typeof overlay)[number] }) => {
+      if (payload.type === "error" && payload.err !== undefined) overlay.push(payload.err);
+      return send(payload as never);
+    }) as typeof hot.send;
+    try {
+      await server.listen();
+      const url = `${server.resolvedUrls?.local[0] ?? ""}src/main.ts`;
+      expect((await fetch(url)).status).toBe(200);
+      const saved = new Promise<void>((resolve) => server.watcher.once("change", () => resolve()));
+      await writeFile(
+        main,
+        'export const ready = true;\nimport { TetrahedronGeometry } from "three";\nexport const t = TetrahedronGeometry;\n',
+      );
+      await saved;
+      expect((await fetch(url)).status).toBe(500);
+      expect(overlay[0]?.message).toContain(
+        'TN_NATIVE_UNCATALOGUED_TETRAHEDRONGEOMETRY: TetrahedronGeometry from "three" is not available on the Wasm engine (src/main.ts:2:10)',
+      );
+      expect(overlay[0]?.loc).toMatchObject({ line: 2, column: 9 });
+    } finally {
+      await server.close();
+    }
+  }, 30_000);
 
   it("fails a real Vite build at the import line, and the threejs build passes", async () => {
     const { build } = await import("vite");

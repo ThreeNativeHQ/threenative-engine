@@ -35,7 +35,7 @@ interface ITransformContext {
   error(failure: {
     readonly message: string;
     readonly id: string;
-    readonly loc: { readonly file: string; readonly line: number; readonly column: number };
+    readonly loc?: { readonly file: string; readonly line: number; readonly column: number };
   }): never;
   warn(message: string): void;
 }
@@ -111,7 +111,8 @@ export function createEngineCatalogPlugin(
   const mode = options.mode ?? "error";
   let root = process.cwd();
   let active = false;
-  let refusals: Promise<ReadonlyMap<string, string>> | undefined;
+  let bootWarned = false;
+  let refusals: Promise<ReadonlyMap<string, string> | Error> | undefined;
   async function transform(this: ITransformContext, code: string, id: string): Promise<null> {
     const file = id.split("?")[0] ?? id;
     // Game source only: a linked engine package resolves outside the root, an installed one under node_modules.
@@ -120,8 +121,21 @@ export function createEngineCatalogPlugin(
       return null;
     if (where.split(path.sep).includes("node_modules")) return null;
     if (!SOURCE_FILE.test(file) || !IMPORTS_THREE.test(code)) return null;
-    refusals ??= upstreamRefusals(root);
-    const found = await refusedImports(code, file, await refusals);
+    // A boot failure is one engine pair the page cannot bind either: named once, never a refusal.
+    refusals ??= upstreamRefusals(root).catch(
+      (error: unknown) =>
+        new Error(
+          `TN_ENGINE_CATALOG: the installed Wasm engine did not boot under this create-threenative, so the page cannot bind it either (${error instanceof Error ? error.message : String(error)}). Install one release of both: pnpm up create-threenative @threenative/*`,
+        ),
+    );
+    const known = await refusals;
+    if (known instanceof Error) {
+      if (mode === "error") return this.error({ message: known.message, id: file });
+      if (!bootWarned) this.warn(known.message);
+      bootWarned = true;
+      return null;
+    }
+    const found = await refusedImports(code, file, known);
     const first = found[0];
     if (first === undefined) return null;
     const message = [
