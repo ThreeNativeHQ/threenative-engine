@@ -5028,3 +5028,21 @@ describe("a CI-configuration-only pull request", () => {
     }
   });
 });
+
+// Release run 42296982894: release-candidate's `resolve` ran a root `pnpm build` with no web Wasm engine,
+// and examples/spell-lab (default engine) stopped at TN_WASM_ENGINE_MISSING, so `ship` published nothing.
+describe("a job that runs the root build restores the web Wasm engine first", () => {
+  it("puts native-engine-wasm before every root `pnpm build`", async () => {
+    const missing: string[] = [];
+    const dir = path.join(process.cwd(), ".github/workflows");
+    for (const relative of (await readdir(dir)).filter((name) => name.endsWith(".yml"))) {
+      const source = await readFile(path.join(dir, relative), "utf8");
+      for (const [job, section] of jobSections(source)) {
+        const build = section.search(/^\s+(?:-\s+)?run:\s+pnpm build\s*$/mu);
+        if (build >= 0 && !section.slice(0, build).includes("./.github/actions/native-engine-wasm"))
+          missing.push(`${relative}:${job}`);
+      }
+    }
+    expect(missing).toEqual([]);
+  });
+});
