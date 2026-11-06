@@ -116,8 +116,9 @@ describe("WorldCells view distance", () => {
     const stats = cellsWorld.stats();
     expect(stats.residentColliders).toBe(9);
     expect(live.size).toBe(9);
-    // The column the follow point left is still drawn, but it no longer has a body.
-    expect(stats.residentTiles).toBeGreaterThanOrEqual(49);
+    // The terrain ring still draws far past the bodies: 7 columns by 7 rows, less the one column
+    // that now lies wholly past the 8x8 map and is never meshed.
+    expect(stats.residentTiles).toBe(42);
     cellsWorld.dispose();
   });
 });

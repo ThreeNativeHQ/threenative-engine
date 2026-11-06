@@ -27,7 +27,8 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { deflateSync } from "node:zlib";
+import { deflateSync, inflateSync } from "node:zlib";
+import { starterAssetsDir } from "@threenative/terrain/kit";
 import { createServer } from "vite";
 import {
   advanceFixedStep,
@@ -38,6 +39,43 @@ import {
 
 const root = resolve(".");
 const PORT = 5185;
+
+// The seeded generator writes RGBA/filter-0 PNGs; whole-cell UVs need transparent borders.
+const atlas = readFileSync(
+  new URL("../../../packages/terrain/starter-assets/needle-atlas.png", import.meta.url),
+);
+assert.equal(atlas.readUInt32BE(16), 1024);
+assert.equal(atlas.readUInt32BE(20), 1024);
+const compressed = [];
+for (let offset = 8; offset < atlas.length; ) {
+  const length = atlas.readUInt32BE(offset);
+  if (atlas.toString("ascii", offset + 4, offset + 8) === "IDAT")
+    compressed.push(atlas.subarray(offset + 8, offset + 8 + length));
+  offset += length + 12;
+}
+const pixels = inflateSync(Buffer.concat(compressed));
+assert.equal(pixels.length, (1024 * 4 + 1) * 1024);
+for (let y = 0; y < 1024; y += 1) assert.equal(pixels[y * 4097], 0, "atlas PNG filter");
+for (const [name, column, row] of [
+  ["dense", 0, 0],
+  ["open", 1, 0],
+  ["tip", 0, 1],
+]) {
+  let covered = 0;
+  for (let y = 0; y < 512; y += 1) {
+    for (let x = 0; x < 512; x += 1) {
+      const alpha = pixels[(row * 512 + y) * 4097 + 1 + (column * 512 + x) * 4 + 3];
+      if (x === 0 || x === 511 || y === 0 || y === 511)
+        assert.equal(alpha, 0, `${name}: clipped needle at cell boundary (${x}, ${y})`);
+      if (alpha > 132) covered += 1;
+    }
+  }
+  assert(covered > 512, `${name}: empty needle silhouette`);
+}
+if (process.argv.includes("--needle-only")) {
+  console.log("Needle atlas: three nonempty silhouettes with transparent whole-cell borders");
+  process.exit(0);
+}
 
 /** Every path the stock mapping names. A request for any of them is a starter request. */
 const STARTER_PREFIXES = [
@@ -303,6 +341,14 @@ export const GROUND_MAPS = {
   snow: ${JSON.stringify(flat)},
 };
 export const GROUND_TILE = { dirt: 3.4, grass: 2.6, moss: 3.6, rock: 9, sand: 3.2, snow: 12 };
+// The rock-face pair the temperate stone binds, in the stock table's own two keys, pointing at this
+// consumer's own files. Its crag placements are empty because they are owner-local licensed models
+// and a consumer that ships none exports none: the loaders read an absent model as procedural stone.
+export const ROCKFACE_MAPS = {
+  diffuse: ${JSON.stringify(one(files.albedo))},
+  normal: ${JSON.stringify(one(files.normal))},
+};
+export const WORLD_ROCKS = [];
 export const PROP_MAPS = { bark: ${JSON.stringify(surface)}, stone: ${JSON.stringify(surface)} };
 export const SOIL_MAP = ${JSON.stringify(one(files.albedo))};
 export const NEEDLE_ATLAS = ${JSON.stringify(one(files.albedo))};
@@ -393,7 +439,7 @@ try {
     const server = await createServer({
       root,
       configFile: false,
-      publicDir: stock ? resolve(root, "../../packages/terrain/starter-assets") : false,
+      publicDir: stock ? await starterAssetsDir() : false,
       plugins: stock ? [] : [customArt()],
       server: { host: "127.0.0.1", port: PORT },
       optimizeDeps: { exclude: ["@threenative/terrain/editor"] },
@@ -401,7 +447,7 @@ try {
     });
     try {
       await server.listen();
-      const url = `http://127.0.0.1:${PORT}/`;
+      const url = `http://127.0.0.1:${PORT}/?showcase=1`;
       const config = parseStandalonePlaytestArgs([
         "--scenario",
         "playtests/terrain.playtest.json",
@@ -413,7 +459,7 @@ try {
         "--timeout",
         "180000",
         "--artifacts",
-        `artifacts/playtest/custom-${arm}`,
+        join(temporary, `capture-${arm}`),
       ]);
       let observation = {};
       await withBrowserCapture(config, async (session) => {
@@ -478,6 +524,16 @@ try {
   }
 
   const customSource = customMappingSource(files, servedRoot);
+  // Every export the game's own table names must be in the consumer's copy of it, or a module that
+  // imports it fails to link and the run reports that as a browser error rather than as this. The
+  // names are read from the committed table, so a table that gains one cannot leave this behind.
+  for (const [, name] of stockSource.matchAll(/^export const (\w+)/gmu))
+    assert.match(
+      customSource,
+      new RegExp(`^export const ${name}\\b`, "mu"),
+      `The consumer mapping does not export ${name}, which src/world/terrainAssets.ts exports`,
+    );
+
   const stock = await runArm("stock", stockSource, true);
   const custom = await runArm("custom", customSource, false);
 

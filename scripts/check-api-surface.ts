@@ -110,6 +110,15 @@ export function deriveApiSurface(root = REPO): IApiSurface {
   };
 }
 
+/**
+ * A signature without the formatter's line wrapping: a parameter list the formatter split over lines
+ * reads `f( a, b, )` once its whitespace collapses, and one it joined reads `f(a, b)`. Both are the
+ * same API, so a reformat is no break.
+ */
+export function unwrappedSignature(signature: string): string {
+  return signature.replace(/([([<]) /gu, "$1").replace(/,? ([)\]>])/gu, "$1");
+}
+
 /** How a recorded symbol differs from the live one, or not at all. */
 function signatureDrift(
   live: IApiSurfacePackage,
@@ -118,7 +127,7 @@ function signatureDrift(
 ): "changed" | "removed" | undefined {
   const present = live.symbols[key];
   if (present === undefined) return "removed";
-  return present === signature ? undefined : "changed";
+  return unwrappedSignature(present) === unwrappedSignature(signature) ? undefined : "changed";
 }
 
 function recordPackageDrift(

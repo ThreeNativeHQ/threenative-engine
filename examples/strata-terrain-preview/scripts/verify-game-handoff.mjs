@@ -74,12 +74,18 @@ export async function verifyGameHandoff({ repo, temporary, polished, withPage })
       ...templateManifest.optionalDependencies,
     }),
   );
-  const packages = JSON.parse(
+  const workspacePackages = JSON.parse(
     execFileSync("pnpm", ["exec", "tsx", "scripts/workspace-packages.ts", "--json"], {
       cwd: repo,
       encoding: "utf8",
     }),
-  ).filter(({ name }) => dependencies.has(name));
+  );
+  // `@threenative/assets` (the template's dev-only asset pipeline) depends on `@threenative/terrain`,
+  // so the terrain tarball is packed to supply the pnpm override for that transitive edge. The game
+  // itself must not declare or install the authoring package (asserted below).
+  const packages = workspacePackages.filter(
+    ({ name }) => dependencies.has(name) || name === "@threenative/terrain",
+  );
   assert(packages.length > 0, "minimal template has no workspace packages to pack");
   for (const { name, directory } of packages) {
     const before = new Set(readdirSync(packs));
@@ -93,10 +99,23 @@ export async function verifyGameHandoff({ repo, temporary, polished, withPage })
     pathToFileURL(join(repo, "packages/create-threenative/dist/index.js")).href
   );
   const scaffolded = await createProject(
-    { install: true, packageSources: archives, target: "handoff-game", template: "minimal" },
+    { install: false, packageSources: archives, target: "handoff-game", template: "minimal" },
     temporary,
   );
   const game = scaffolded.target;
+  // `packageSources` writes the terrain source into `dependencies`; the game must not depend on it,
+  // so it is removed and the install runs with the pnpm override alone. The override still resolves
+  // the asset pipeline's transitive edge to the local tarball, without linking terrain into the
+  // game's own tree.
+  const gameManifestPath = join(game, "package.json");
+  const gameManifest = JSON.parse(readFileSync(gameManifestPath, "utf8"));
+  gameManifest.dependencies = Object.fromEntries(
+    Object.entries(gameManifest.dependencies ?? {}).filter(
+      ([name]) => name !== "@threenative/terrain",
+    ),
+  );
+  writeFileSync(gameManifestPath, `${JSON.stringify(gameManifest, null, 2)}\n`);
+  run("pnpm", ["install"], { cwd: game });
 
   // --- no authoring package in the game, by its manifest, its install and its source ------------------
   const manifest = JSON.parse(readFileSync(join(game, "package.json"), "utf8"));

@@ -12,7 +12,7 @@ import {
   read as readKTX2,
   write as writeKTX2,
 } from "ktx-parse";
-import { resolveBasisTranscoder } from "./compile.js";
+import { resolveBasisTranscoder } from "./compile-basis.js";
 import { decodeAstcKtx2 } from "./ktx2-encoder.js";
 
 // The sculpt MCP math is not present in this repository. Minimal SSIM port: Rec.709

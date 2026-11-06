@@ -1,0 +1,408 @@
+{
+  "schemaVersion": 1,
+  "name": "terrain-editor-save-conflict",
+  "inputDelivery": "focused-dom",
+  "steps": [
+    {
+      "label": "conflict-terrain-ready",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "vertexCount",
+        "gte": 16641
+      },
+      "timeoutMs": 10000,
+      "release": true
+    },
+    {
+      "kind": "click",
+      "at": {
+        "element": {
+          "selector": "[data-tool=\"select\"]"
+        }
+      },
+      "release": true,
+      "waitFrames": 1
+    },
+    {
+      "kind": "click",
+      "at": {
+        "element": {
+          "id": "viewport"
+        }
+      },
+      "release": true,
+      "waitFrames": 3
+    },
+    {
+      "kind": "input",
+      "press": "Digit1",
+      "release": true,
+      "waitFrames": 3,
+      "holdFrames": 1
+    },
+    {
+      "kind": "input",
+      "press": "ArrowDown",
+      "release": true,
+      "waitFrames": 3,
+      "holdFrames": 1
+    },
+    {
+      "kind": "input",
+      "press": "ArrowDown",
+      "release": true,
+      "waitFrames": 3,
+      "holdFrames": 1
+    },
+    {
+      "kind": "input",
+      "press": "ArrowDown",
+      "release": true,
+      "waitFrames": 3,
+      "holdFrames": 1
+    },
+    {
+      "kind": "input",
+      "press": "ArrowDown",
+      "release": true,
+      "waitFrames": 3,
+      "holdFrames": 1
+    },
+    {
+      "kind": "input",
+      "press": "ArrowDown",
+      "release": true,
+      "waitFrames": 3,
+      "holdFrames": 1
+    },
+    {
+      "kind": "input",
+      "press": "Enter",
+      "holdTicks": 1,
+      "waitTicks": 1,
+      "release": true
+    },
+    {
+      "label": "refused-stroke",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "editorUnsentCount",
+        "equals": 1
+      },
+      "timeoutMs": 10000,
+      "release": true,
+      "screenshot": "not-saved-list"
+    },
+    {
+      "label": "refused-intent-idle",
+      "waitFrames": 60
+    },
+    {
+      "kind": "click",
+      "at": {
+        "element": {
+          "selector": "#not-saved-list button[data-save-action=\"retry\"]"
+        }
+      },
+      "waitTicks": 1,
+      "release": true
+    },
+    {
+      "label": "retry-refused-edit",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "editorPersistedStrokes",
+        "equals": 1
+      },
+      "timeoutMs": 10000,
+      "release": true,
+      "screenshot": "retry-saved"
+    },
+    {
+      "kind": "click",
+      "at": {
+        "element": {
+          "selector": "[data-tool=\"select\"]"
+        }
+      },
+      "release": true,
+      "waitFrames": 1
+    },
+    {
+      "kind": "click",
+      "at": {
+        "element": {
+          "id": "viewport"
+        }
+      },
+      "release": true,
+      "waitFrames": 3
+    },
+    {
+      "kind": "input",
+      "press": "Digit1",
+      "release": true,
+      "waitFrames": 3,
+      "holdFrames": 1
+    },
+    {
+      "kind": "input",
+      "press": "Enter",
+      "holdTicks": 1,
+      "waitTicks": 1,
+      "release": true
+    },
+    {
+      "label": "second-refused-stroke",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "editorUnsentCount",
+        "equals": 1
+      },
+      "timeoutMs": 10000,
+      "release": true
+    },
+    {
+      "label": "second-listed-intent-idle",
+      "waitFrames": 60
+    },
+    {
+      "kind": "click",
+      "at": {
+        "element": {
+          "selector": "#not-saved-list button[data-save-action=\"discard\"]"
+        }
+      },
+      "waitTicks": 1,
+      "release": true
+    },
+    {
+      "label": "discard-refused-edit",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "editorUnsentCount",
+        "equals": 0
+      },
+      "timeoutMs": 10000,
+      "release": true
+    },
+    {
+      "kind": "click",
+      "at": {
+        "element": {
+          "selector": "[data-tool=\"select\"]"
+        }
+      },
+      "release": true,
+      "waitFrames": 1
+    },
+    {
+      "kind": "click",
+      "at": {
+        "element": {
+          "id": "viewport"
+        }
+      },
+      "release": true,
+      "waitFrames": 3
+    },
+    {
+      "kind": "input",
+      "press": "Digit1",
+      "release": true,
+      "waitFrames": 3,
+      "holdFrames": 1
+    },
+    {
+      "kind": "input",
+      "press": "ArrowRight",
+      "holdFrames": 1,
+      "waitFrames": 3,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": "Enter",
+      "holdTicks": 1,
+      "waitTicks": 1,
+      "release": true
+    },
+    {
+      "label": "save-after-discard",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "editorPersistedStrokes",
+        "equals": 2
+      },
+      "timeoutMs": 10000,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true,
+      "noConsoleErrors": false,
+      "consoleErrorsOptOutReason": "The fixture deliberately produces four HTTP 409 responses; verify-editor checks their exact console messages."
+    },
+    "resources": [
+      {
+        "id": "GameState",
+        "path": "editorUnsentVisible",
+        "atSteps": [
+          {
+            "label": "refused-stroke",
+            "equals": true
+          },
+          {
+            "label": "retry-refused-edit",
+            "equals": false
+          },
+          {
+            "label": "second-refused-stroke",
+            "equals": true
+          },
+          {
+            "label": "discard-refused-edit",
+            "equals": false
+          }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "editorUnsentCount",
+        "atSteps": [
+          {
+            "label": "refused-stroke",
+            "equals": 1
+          },
+          {
+            "label": "retry-refused-edit",
+            "equals": 0
+          },
+          {
+            "label": "second-refused-stroke",
+            "equals": 1
+          },
+          {
+            "label": "discard-refused-edit",
+            "equals": 0
+          },
+          {
+            "label": "save-after-discard",
+            "equals": 0
+          },
+          {
+            "label": "refused-intent-idle",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "editorUnsentRetry",
+        "atSteps": [
+          {
+            "label": "refused-stroke",
+            "equals": true
+          }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "editorUnsentDiscard",
+        "atSteps": [
+          {
+            "label": "refused-stroke",
+            "equals": true
+          }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "editorStaleWriteConflicts",
+        "atSteps": [
+          {
+            "label": "refused-stroke",
+            "equals": 2
+          }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "editorPersistedStrokes",
+        "atSteps": [
+          {
+            "label": "refused-stroke",
+            "equals": 0
+          },
+          {
+            "label": "retry-refused-edit",
+            "equals": 1
+          },
+          {
+            "label": "second-refused-stroke",
+            "equals": 1
+          },
+          {
+            "label": "discard-refused-edit",
+            "equals": 1
+          },
+          {
+            "label": "save-after-discard",
+            "equals": 2
+          }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "editorUnsentText",
+        "atSteps": [
+          {
+            "label": "refused-stroke",
+            "textIncludes": "rejected: 409: Stale base revision"
+          }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "editorCommitWrites",
+        "atSteps": [
+          {
+            "label": "refused-stroke",
+            "equals": "2"
+          },
+          {
+            "label": "retry-refused-edit",
+            "equals": "3"
+          },
+          {
+            "label": "second-refused-stroke",
+            "equals": "3,2"
+          },
+          {
+            "label": "second-listed-intent-idle",
+            "equals": "3,2"
+          },
+          {
+            "label": "discard-refused-edit",
+            "equals": "3,2"
+          },
+          {
+            "label": "save-after-discard",
+            "equals": "3,2,1"
+          },
+          {
+            "label": "refused-intent-idle",
+            "equals": "2"
+          }
+        ]
+      }
+    ]
+  },
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "warmupFrames": 90
+}

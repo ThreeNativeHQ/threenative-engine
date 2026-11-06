@@ -877,6 +877,22 @@
       "reject": []
     },
     {
+      "id": "request.terrain-forest-world",
+      "query": "generate a forest for my game",
+      "scope": "request",
+      "source": "template:starter#Budget real time for the look \u2014 see `node_modules/create-threenative/agent-docs/references/dream-loop.md`",
+      "expect": ["cookTerrainWorld"],
+      "reject": []
+    },
+    {
+      "id": "request.swim-water-volume",
+      "query": "Swim across a river or lake in a water volume, floating with buoyancy and wading slower in shallow water.",
+      "scope": "request",
+      "source": "template:sailing#Ownership",
+      "expect": ["CharacterBody3D"],
+      "reject": []
+    },
+    {
       "id": "spell.fireball",
       "query": "Cast a fireball at a target that explodes and scorches the floor.",
       "scope": "mechanic",

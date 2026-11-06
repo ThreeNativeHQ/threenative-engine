@@ -1,0 +1,123 @@
+{
+  "schemaVersion": 1,
+  "name": "strata-terrain-loop",
+  "subject": "The owner's forest loop builds no pipeline: reveal, walk 10 s, turn the camera about 250 degrees, idle 3 s",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 0,
+  "artifacts": {
+    "screenshots": true,
+    "console": true
+  },
+  "steps": [
+    {
+      "label": "world-ready",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "timeToReadyMs",
+        "gte": 1
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "reveal-plus-3s",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "revealComplete",
+        "equals": true
+      },
+      "timeoutMs": 30000,
+      "release": true,
+      "screenshot": "reveal"
+    },
+    {
+      "kind": "input",
+      "label": "walk",
+      "press": "KeyW",
+      "holdTicks": 600,
+      "release": true,
+      "screenshot": "walk"
+    },
+    {
+      "kind": "input",
+      "label": "capture-pointer",
+      "pointerPosition": {
+        "buttons": 1,
+        "x": 0.02,
+        "y": 0.5
+      },
+      "holdTicks": 2,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "turn-half",
+      "pointerPosition": {
+        "buttons": 1,
+        "x": 0.5,
+        "y": 0.5
+      },
+      "holdTicks": 30,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "turn",
+      "pointerPosition": {
+        "buttons": 1,
+        "x": 0.98,
+        "y": 0.5
+      },
+      "holdTicks": 30,
+      "release": true,
+      "screenshot": "turn"
+    },
+    {
+      "kind": "wait",
+      "label": "idle",
+      "waitTicks": 180,
+      "release": true,
+      "screenshot": "idle"
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "GameState",
+        "path": "travel",
+        "gte": 40,
+        "allowTrivial": "The walk must cover ground, so the loop reaches trees and LOD gates the reveal never showed."
+      },
+      {
+        "id": "GameState",
+        "path": "grounded",
+        "equals": true,
+        "allowTrivial": "The hero ends the loop on the ground."
+      }
+    ],
+    "components": [
+      {
+        "entity": "props",
+        "component": "reveal",
+        "path": "pipelineCensusAvailable",
+        "equals": true,
+        "allowTrivial": "A pipeline counter (the census, else the owned engine's compile count) must measure the loop, or a zero below is silence, not a measurement."
+      },
+      {
+        "entity": "props",
+        "component": "reveal",
+        "path": "pipelinesSinceReveal",
+        "equals": 0,
+        "allowTrivial": "Held invariant: the walk, the turn and the idle create no device pipeline after the reveal (a created pipeline was a 50 ms frame in a 360 turn)."
+      }
+    ]
+  }
+}

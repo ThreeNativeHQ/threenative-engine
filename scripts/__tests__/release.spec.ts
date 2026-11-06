@@ -335,6 +335,7 @@ describe("pnpm release cohort guards", () => {
       "threenative-assets",
       "threenative-sculpt",
       "threenative-engine",
+      "threenative-terrain",
       "threenative-animation",
       "threenative-devtools",
     ]);

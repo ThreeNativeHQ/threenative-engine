@@ -20,6 +20,7 @@ const transform = {
 function fixture() {
   const terrain = new Terrain({ size: 64, resolution: 17, seed: 73 }).scatter({
     id: "trees",
+    asset: "pine",
     count: 40,
     minDistance: 0,
     avoidWater: false,

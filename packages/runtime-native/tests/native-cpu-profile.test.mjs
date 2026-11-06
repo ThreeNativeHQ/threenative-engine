@@ -159,8 +159,53 @@ test("--cpu-prof writes the DevTools .cpuprofile itself, escaping every string",
   assert.doesNotMatch(v8Engine, /profile->Serialize\(/u);
   assert.match(v8Engine, /static void writeJsonString\(std::ostream& out, const char\* text\)/u);
   assert.match(v8Engine, /writeCpuProfile\(isolate_, profile, temporaryPath,/u);
-  assert.match(engineHeader, /inline std::string g_cpuProfilePath;/u);
+  assert.match(engineHeader, /inline thread_local std::string g_cpuProfilePath;/u);
   assert.match(engineHeader, /inline bool g_cpuProfileFailed = false;/u);
+});
+
+const compiler = process.env.CXX || "c++";
+const compilerProbe = spawnSync(compiler, ["--version"], { encoding: "utf8" });
+
+test.skipIf(compilerProbe.error?.code === "ENOENT")("CPU profile paths and callbacks belong to their engine thread", () => {
+  assert.equal(compilerProbe.status, 0, compilerProbe.error?.message ?? compilerProbe.stderr);
+  const dir = makeTempDirSync("tn-cpu-prof-thread-");
+  const cpp = join(dir, "ownership.cpp");
+  const executable = join(dir, process.platform === "win32" ? "ownership.exe" : "ownership");
+  writeFileSync(cpp, `
+#include "mystral/js/engine.h"
+#include <iostream>
+#include <thread>
+int main() {
+  using namespace mystral::js;
+  int mainStarts = 0, mainDumps = 0, workerStarts = 0, workerDumps = 0;
+  bool wrongThread = false, workerEmpty = false;
+  const auto mainThread = std::this_thread::get_id();
+  g_cpuProfilePath = "main.cpuprofile";
+  g_startCpuProfile = [&] { wrongThread |= std::this_thread::get_id() != mainThread; ++mainStarts; };
+  g_dumpCpuProfile = [&] { wrongThread |= std::this_thread::get_id() != mainThread; ++mainDumps; };
+  std::thread worker([&] {
+    workerEmpty = g_cpuProfilePath.empty() && !g_startCpuProfile && !g_dumpCpuProfile;
+    const auto workerThread = std::this_thread::get_id();
+    g_cpuProfilePath = "worker.cpuprofile";
+    g_startCpuProfile = [&, workerThread] { wrongThread |= std::this_thread::get_id() != workerThread; ++workerStarts; };
+    g_dumpCpuProfile = [&, workerThread] { wrongThread |= std::this_thread::get_id() != workerThread; ++workerDumps; };
+    g_startCpuProfile();
+    g_dumpCpuProfile();
+  });
+  worker.join(); // Serialize access even with the unfixed, process-global declarations.
+  const bool mainPathPreserved = g_cpuProfilePath == "main.cpuprofile";
+  g_startCpuProfile();
+  g_dumpCpuProfile();
+  if (!workerEmpty || !mainPathPreserved || wrongThread || mainStarts != 1 ||
+      mainDumps != 1 || workerStarts != 1 || workerDumps != 1) {
+    std::cerr << "profiler ownership failed: workerEmpty=" << workerEmpty
+              << " mainPathPreserved=" << mainPathPreserved << " wrongThread=" << wrongThread << '\\n';
+    return 1;
+  }
+}
+`);
+  execFileSync(compiler, ["-std=c++17", "-pthread", "-I", fileURLToPath(new URL("../include", import.meta.url)), cpp, "-o", executable], { stdio: "pipe", timeout: 30_000 });
+  execFileSync(executable, [], { stdio: "pipe", timeout: 5_000 });
 });
 
 const host = fileURLToPath(new URL("../build/tn-linux/mystral", import.meta.url));

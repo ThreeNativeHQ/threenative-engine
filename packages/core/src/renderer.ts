@@ -9,6 +9,10 @@ import {
   type StorageBufferAttribute,
   type Renderer as ThreeRenderer,
 } from "three/webgpu";
+import {
+  CompressedTextureUploads,
+  type ICompressedUploadDevice,
+} from "./compressed-texture-preparation.js";
 import { ComputeTimingScopes, type IComputeTimingReceipt } from "./compute-timing.js";
 import type { IFrameSurfaceState } from "./frame-budget.js";
 import {
@@ -30,7 +34,7 @@ import {
   createPipelineCensus,
 } from "./pipeline-census.js";
 import { hostDocument, hostResizeObserver } from "./platform.js";
-import type { ITimestampQueryPool } from "./render-pass-budget.js";
+import { type ITimestampQueryPool, RenderPassBudget } from "./render-pass-budget.js";
 import { AlphaAntialiasing, type IAlphaAntialiasingReport } from "./render/alpha-antialiasing.js";
 import {
   type IRenderChainBudgetWindow,
@@ -289,11 +293,18 @@ export interface IRendererLike {
    * Ordinary textures and the WebGL fallback retain their existing paths and report no work.
    * `onProgress` receives the completed unique compressed texture count after each preparation
    * promise resolves; queued textures and writes that have not settled receive no credit.
+   *
+   * Pass `replacements` to receive caller-owned `original -> prepared` pairs. The renderer owns
+   * the prepared GPU textures and publishes the map only after the whole call succeeds; an abort
+   * or failure leaves the caller's map unchanged. Without it the call keeps the numeric contract
+   * and prepared compressed replacements stay unpublished, so a material that samples the
+   * original keeps its borrowed identity.
    */
   prepareTextures?(
     textures: Iterable<Texture>,
     signal?: AbortSignal,
     onProgress?: (completed: number) => void,
+    replacements?: Map<Texture, Texture>,
   ): Promise<number>;
   /**
    * Copies one GPU storage attribute back to the CPU, asynchronously.
@@ -520,10 +531,6 @@ type RendererInstance = IStorageBufferSource & {
   domElement: HTMLCanvasElement;
   init?: () => Promise<void>;
   compileAsync?: (scene: Object3D, camera: Camera, targetScene?: Object3D) => Promise<void>;
-  prepareTextureAsync?: (
-    texture: Texture,
-    options: { budgetMs: number; maxBytesPerWrite: number; signal: AbortSignal },
-  ) => Promise<void>;
   compute?: (node: unknown) => void;
   getArrayBufferAsync?: (
     attribute: unknown,
@@ -682,8 +689,14 @@ function wrapRenderer(
   let renderChainUsesPerObjectVelocity = false;
   let activeCompiles = 0;
   let compileCount = 0;
+  // Compiles that overlap while drawing to the screen share three's one frame-buffer target. Only
+  // the first claim captures the name it found, and only the last one out puts it back; without
+  // that, a second claim captures the first one's temporary name and leaves it on the target.
+  const frameBufferNames = new WeakMap<object, { depth: number; saved: string }>();
   let disposed = false;
-  const texturePreparations = new Set<AbortController>();
+  const texturePreparations = new CompressedTextureUploads(
+    () => (raw.backend as { device?: ICompressedUploadDevice } | undefined)?.device,
+  );
   const storageBuffers = new StorageBufferLeases(() => raw);
   let computeTimings: ComputeTimingScopes | undefined;
   let pendingScale: { scale: number; source: "auto" | "auto-pinned" } | undefined;
@@ -866,7 +879,9 @@ function wrapRenderer(
             pipelineCensus.warmUpScopeSettled(label, target),
         }),
     get warmUpWorldPass() {
-      if (outputPipeline === undefined) return undefined;
+      // The ThreeNative engine refuses RendererUtils, so the pass could not restore the renderer
+      // state it changes there; the engine compiles the output pass at its first frame instead.
+      if (outputPipeline === undefined || !restoresRendererState()) return undefined;
       const drawOnce = (
         scene: Object3D,
         camera: Camera,
@@ -1178,6 +1193,24 @@ function wrapRenderer(
           (previousGetRenderTarget as () => unknown).call(raw) ??
           (renderingFrame > 0 ? null : overrideTarget);
       }
+      // Three's frame-buffer target carries one unnamed texture. An MRT node resolves its outputs by
+      // name, so a material with an `mrtNode` (a transparent sea, say) compiled against it builds an
+      // empty output struct and its pipeline fails. Name that texture after the pass's first output
+      // for this compile only. ponytail: first output only; a material needing a later output still
+      // warms up empty.
+      const frameBufferTexture = (overrideTarget as { textures?: { name: string }[] } | undefined)
+        ?.textures?.[0];
+      const firstOutputName = outputPass?.renderTarget?.textures[0]?.name;
+      let frameBufferClaim: { depth: number; saved: string } | undefined;
+      if (frameBufferTexture !== undefined) {
+        frameBufferClaim = frameBufferNames.get(frameBufferTexture);
+        if (frameBufferClaim === undefined) {
+          frameBufferClaim = { depth: 0, saved: frameBufferTexture.name };
+          frameBufferNames.set(frameBufferTexture, frameBufferClaim);
+        }
+        frameBufferClaim.depth += 1;
+        if (firstOutputName) frameBufferTexture.name = firstOutputName;
+      }
       activeCompiles += 1;
       compileCount += 1;
       try {
@@ -1191,6 +1224,13 @@ function wrapRenderer(
           else await raw.compileAsync(scene, camera, targetScene);
         }
       } finally {
+        if (frameBufferTexture !== undefined && frameBufferClaim !== undefined) {
+          frameBufferClaim.depth -= 1;
+          if (frameBufferClaim.depth === 0) {
+            frameBufferTexture.name = frameBufferClaim.saved;
+            frameBufferNames.delete(frameBufferTexture);
+          }
+        }
         if (overrideTarget !== undefined) {
           if (hadOwnGetRenderTarget) raw.getRenderTarget = previousGetRenderTarget;
           else Reflect.deleteProperty(raw as object, "getRenderTarget");
@@ -1273,39 +1313,47 @@ function wrapRenderer(
       }
       return created;
     },
-    prepareTextures: async (textures, signal, onProgress) => {
+    prepareTextures: async (textures, signal, onProgress, replacements) => {
       if (disposed) throw new Error("Renderer disposed during texture preparation.");
       if (kind !== "webgpu") return 0;
-      const unique = new Set(
-        [...textures].filter(
-          (texture) => "isCompressedTexture" in texture && texture.isCompressedTexture === true,
-        ),
-      );
-      if (unique.size === 0) return 0;
-      if (typeof raw.prepareTextureAsync !== "function")
-        throw new Error("WebGPU renderer lacks bounded compressed texture preparation.");
-      const controller = new AbortController();
-      const abort = () => controller.abort(signal?.reason);
-      if (signal?.aborted) abort();
-      else signal?.addEventListener("abort", abort, { once: true });
-      texturePreparations.add(controller);
+      // Snapshot the caller's iterable once. An owned replacement resolves back to its original,
+      // so a repeated call that hands back a published replacement keeps a stable identity instead
+      // of looking like an unrelated texture and returning stale work.
+      const inputs: Texture[] = [];
+      const originals = new Set<Texture>();
+      for (const texture of textures) {
+        inputs.push(texture);
+        const original = texturePreparations.resolveOriginal(texture);
+        const compressed =
+          "isCompressedTexture" in original && original.isCompressedTexture === true;
+        const compressedArray =
+          "isCompressedArrayTexture" in original && original.isCompressedArrayTexture === true;
+        if (original !== texture || compressed || compressedArray) originals.add(original);
+      }
+      if (originals.size === 0) return 0;
+      const preparedReplacements = new Map<Texture, Texture>();
       let completed = 0;
-      try {
-        for (const texture of unique) {
-          if (controller.signal.aborted) throw controller.signal.reason;
-          await raw.prepareTextureAsync(texture, {
-            budgetMs: 2,
-            maxBytesPerWrite: 65_536,
-            signal: controller.signal,
-          });
+      for (const original of originals) {
+        if (signal?.aborted) throw signal.reason;
+        const prepared = await texturePreparations.upload(original, signal);
+        if (prepared !== original) {
+          preparedReplacements.set(original, prepared);
           completed += 1;
           onProgress?.(completed);
         }
-        return unique.size;
-      } finally {
-        texturePreparations.delete(controller);
-        signal?.removeEventListener("abort", abort);
       }
+      if (disposed) throw new Error("Renderer disposed during texture preparation.");
+      if (signal?.aborted) throw signal.reason;
+      // Publish only after every texture in this call succeeded; abort or failure left this local.
+      if (replacements !== undefined) {
+        for (const [original, prepared] of preparedReplacements) {
+          replacements.set(original, prepared);
+          for (const input of inputs)
+            if (texturePreparations.resolveOriginal(input) === original)
+              replacements.set(input, prepared);
+        }
+      }
+      return completed;
     },
     scenePassDepth: () => {
       // Three's implicit depth is in Textures.updateRenderTarget's data, not target.depthTexture.
@@ -1411,9 +1459,7 @@ function wrapRenderer(
       disposed = true;
       state.resolutionSubrect?.deactivate?.();
       state.resolutionSubrect = undefined;
-      for (const preparation of texturePreparations)
-        preparation.abort(new Error("Renderer disposed during texture preparation."));
-      texturePreparations.clear();
+      texturePreparations.dispose();
       gpuObservation?.dispose();
       gpuObservation = undefined;
       pendingScale = undefined;
@@ -1442,7 +1488,7 @@ function wrapRenderer(
       if (!timestampFramesManaged) setTimestampTracking();
       renderingFrame += 1;
       try {
-        renderFrame(scene, camera);
+        RenderPassBudget.renderWorld(raw, scene, camera, () => renderFrame(scene, camera));
       } finally {
         renderingFrame -= 1;
       }
@@ -1971,6 +2017,15 @@ export async function adapterTextureLimits(): Promise<{ requiredLimits?: Record<
     return Object.keys(requiredLimits).length === 0 ? {} : { requiredLimits };
   } catch {
     return {};
+  }
+}
+
+/** False on the ThreeNative engine, whose RendererUtils throws its catalog diagnostic on access. */
+function restoresRendererState(): boolean {
+  try {
+    return typeof RendererUtils.restoreRendererState === "function";
+  } catch {
+    return false;
   }
 }
 

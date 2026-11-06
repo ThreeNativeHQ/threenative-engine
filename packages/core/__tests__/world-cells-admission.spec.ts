@@ -1,7 +1,19 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { BoxGeometry, Group, InstancedMesh, Mesh, MeshBasicMaterial, type Object3D } from "three";
+import {
+  Box3,
+  BoxGeometry,
+  Frustum,
+  Group,
+  InstancedMesh,
+  Matrix4,
+  Mesh,
+  MeshBasicMaterial,
+  type Object3D,
+  PerspectiveCamera,
+  WebGPUCoordinateSystem,
+} from "three";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { type IWorldPackage, TerrainTiles, WorldCells } from "../src/world.js";
 
@@ -73,6 +85,7 @@ it("keeps a failed spawn pending and reports its model failure by region", async
     expect(world.readinessAt(at).failures).toBeGreaterThan(0);
     expect(world.readinessAt(at).ready).toBe(false);
     expect(world.stats().loadedCells).toBe(0);
+    expect(world.stats().admissionCompletedUnits).toBe(0);
     expect(() => world.readinessAt({ x: Number.NaN, z: 0 })).toThrow("finite");
   } finally {
     world.dispose();
@@ -279,6 +292,287 @@ afterEach(() => {
 });
 
 describe("WorldCells admission budget", () => {
+  it("builds the nearest cell first even when its model loads last", async () => {
+    // Each model's load queues every resident cell at once, so append order put the spawn cell of
+    // the last-loaded model behind the whole ring: the forest waited ~25 s for its own feet.
+    stubFixtureFetch();
+    const at = cellCenter(1, 1);
+    let elapsed = 0;
+    let releasePine!: () => void;
+    const pineHeld = new Promise<void>((resolve) => {
+      releasePine = resolve;
+    });
+    const world = await WorldCells.load({
+      admissionBudgetMs: 2,
+      admissionNow: () => {
+        elapsed += UNIT_MS;
+        return elapsed;
+      },
+      budgets,
+      follow: followAt(at.x, at.z),
+      loadModel: async (url) => {
+        if (url.includes("pine")) await pineHeld;
+        return model();
+      },
+      ring: 1,
+      surface,
+      terrain: false,
+      url: "/world/world.json",
+    });
+    try {
+      world.update();
+      await flush();
+      world.update();
+      releasePine();
+      await flush();
+      let readyAt = -1;
+      let frames = 0;
+      for (; frames < 10_000; frames += 1) {
+        world.update();
+        if (readyAt < 0 && world.readinessAt(at, 0).ready) readyAt = frames;
+        const { backlog, deferred } = world.stats().admission;
+        if (backlog === 0 && deferred === 0) break;
+      }
+      expect(readyAt).toBeGreaterThanOrEqual(0);
+      // Nine resident cells share the backlog; the spawn cell's own work is a small part of it.
+      expect(readyAt, JSON.stringify({ readyAt, frames })).toBeLessThan(frames / 3);
+    } finally {
+      world.dispose();
+    }
+  });
+
+  it("counts completed admission units but not queued or idle work", async () => {
+    const { world } = await makeWorld({ admissionBudgetMs: 1, priced: true });
+    try {
+      const stats = () => world.stats();
+      expect(stats().admissionCompletedUnits).toBe(0);
+
+      world.update();
+      await flush();
+      expect(world.stats().admissionBacklog).toBeGreaterThan(0);
+      expect(stats().admissionCompletedUnits).toBe(0);
+
+      world.update();
+      expect(stats().admissionCompletedUnits).toBeGreaterThan(0);
+
+      drain(world);
+      const afterWork = stats().admissionCompletedUnits;
+      world.update();
+      expect(stats().admissionCompletedUnits).toBe(afterWork);
+    } finally {
+      world.dispose();
+    }
+  });
+
+  it("flushes each covered publication to shadows while uncovered notifications remain throttled", async () => {
+    const notifications = async (covered: boolean): Promise<number[]> => {
+      stubFixtureFetch();
+      let clock = 0;
+      const tells: number[] = [];
+      const at = cellCenter(1, 1);
+      const world = await WorldCells.load({
+        url: "/world/world.json",
+        surface,
+        follow: followAt(at.x, at.z),
+        terrain: false,
+        ring: 1,
+        budgets,
+        gpuScene: false,
+        admissionBudgetMs: 1,
+        coveredAdmissionBudgetMs: 1,
+        admissionNow: () => ++clock,
+        shadows: {
+          cast: true,
+          invalidate: (region) => {
+            // Prewarm also requests blanket invalidations; measure publication notifications only.
+            if (region?.admission) tells.push(clock);
+          },
+        },
+        loadModel: async () => model(),
+      });
+      world.process(undefined, undefined, covered);
+      await flush();
+      drain(world, 4000, covered);
+      world.dispose();
+      return tells;
+    };
+    const uncovered = await notifications(false);
+    const covered = await notifications(true);
+    const gaps = (times: number[]) =>
+      [...new Set(times)]
+        .slice(1)
+        .map((time, index) => time - ([...new Set(times)][index] as number));
+    expect(gaps(uncovered).every((gap) => gap >= 1000)).toBe(true);
+    expect(gaps(covered).some((gap) => gap < 1000)).toBe(true);
+  });
+
+  it("reuses exact view membership while readiness, projection and mutable reach stay live", async () => {
+    stubFixtureFetch();
+    const at = cellCenter(1, 1);
+    const camera = new PerspectiveCamera(60, 1, 0.1, 500);
+    camera.position.set(at.x, 20, at.z + 200);
+    camera.lookAt(at.x, 0, at.z);
+    const reach = new Float32Array(
+      readFileSync(path.join(fixture, "placements.bin")).byteLength / 32,
+    ).fill(Number.POSITIVE_INFINITY);
+    const world = await WorldCells.load({
+      url: "/world/world.json",
+      surface,
+      follow: camera,
+      terrain: false,
+      ring: 4,
+      budgets,
+      gpuScene: false,
+      placementReach: reach,
+      admissionBudgetMs: 1,
+      loadModel: async () => model(),
+    });
+    const bounds = vi.spyOn(Box3.prototype, "applyMatrix4");
+    try {
+      const initial = world.readinessAt(camera);
+      expect(initial.requiredCells).toBeGreaterThan(2);
+      expect(initial.ready).toBe(false);
+      const scans = bounds.mock.calls.length;
+      expect(scans).toBeGreaterThan(0);
+      expect(world.readinessAt(camera)).toEqual(initial);
+      expect(bounds.mock.calls.length).toBe(scans);
+      world.update();
+      await flush();
+      world.update();
+      expect(world.readinessAt(camera).ready).toBe(false);
+      for (let i = 0; i < 4000 && !world.readinessAt(camera).ready; i++) {
+        world.update();
+        await flush();
+      }
+      expect(world.readinessAt(camera)).toMatchObject({
+        ready: true,
+        requiredCells: initial.requiredCells,
+      });
+      reach.fill(1);
+      expect(world.readinessAt(camera).requiredCells).toBe(2);
+      reach.fill(Number.POSITIVE_INFINITY);
+      expect(world.readinessAt(camera).requiredCells).toBe(initial.requiredCells);
+      camera.far = 1;
+      camera.updateProjectionMatrix();
+      expect(world.readinessAt(camera).requiredCells).toBe(0);
+      camera.far = 500;
+      camera.updateProjectionMatrix();
+      expect(world.readinessAt(camera).requiredCells).toBe(initial.requiredCells);
+      const beforeCoordinateChange = bounds.mock.calls.length;
+      camera.coordinateSystem = WebGPUCoordinateSystem;
+      world.readinessAt(camera);
+      expect(bounds.mock.calls.length).toBeGreaterThan(beforeCoordinateChange);
+      camera.lookAt(at.x, 20, at.z + 400);
+      expect(world.readinessAt(camera).requiredCells).toBe(0);
+      camera.position.x += 1;
+      const changed = bounds.mock.calls.length;
+      world.readinessAt(camera);
+      expect(bounds.mock.calls.length).toBeGreaterThan(changed);
+      world.dispose();
+      expect(world.readinessAt(camera)).toMatchObject({ ready: false, cancelled: true });
+    } finally {
+      bounds.mockRestore();
+      world.dispose();
+    }
+  });
+
+  it("requires visible distant placements within their draw reach, while preserving circle queries", async () => {
+    stubFixtureFetch();
+    const at = cellCenter(1, 1);
+    const camera = new PerspectiveCamera(60, 1, 0.1, 500);
+    camera.position.set(at.x, 20, at.z + 200);
+    camera.lookAt(at.x, 0, at.z);
+    camera.updateMatrixWorld();
+    const world = await WorldCells.load({
+      url: "/world/world.json",
+      surface,
+      follow: camera,
+      terrain: false,
+      ring: 4,
+      budgets,
+      gpuScene: false,
+      loadModel: async () => model(),
+    });
+    const visible = world.readinessAt(camera);
+    expect(visible.requiredCells).toBeGreaterThan(1);
+    expect(visible.ready).toBe(false);
+    expect(world.readinessAt(at, 0).requiredCells).toBe(1);
+    camera.lookAt(at.x, 20, at.z + 400);
+    camera.updateMatrixWorld();
+    expect(world.readinessAt(camera).requiredCells).toBe(0);
+    world.dispose();
+
+    const reached = await WorldCells.load({
+      url: "/world/world.json",
+      surface,
+      follow: camera,
+      terrain: false,
+      ring: 4,
+      budgets,
+      gpuScene: false,
+      loadModel: async () => model(),
+      placementReach: new Float32Array(
+        readFileSync(path.join(fixture, "placements.bin")).byteLength / 32,
+      ).fill(1),
+    });
+    camera.lookAt(at.x, 0, at.z);
+    camera.updateMatrixWorld();
+    // Two fixture cells also contain chunks: placement reach must not hide those draws.
+    expect(reached.readinessAt(camera).requiredCells).toBe(2);
+    expect(reached.readinessAt(camera).requiredCells).toBeLessThan(visible.requiredCells);
+    reached.dispose();
+  });
+
+  it("observes drawable runs before cell readiness, but excludes outside-view publications", async () => {
+    stubFixtureFetch();
+    const at = cellCenter(1, 1);
+    const camera = new PerspectiveCamera(45, 1, 0.1, 300);
+    camera.position.set(at.x, 15, at.z + 40);
+    camera.lookAt(at.x, 0, at.z);
+    camera.updateMatrixWorld();
+    const frustum = new Frustum().setFromProjectionMatrix(
+      new Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse),
+    );
+    let published = 0;
+    let inView = 0;
+    let partial = false;
+    let world: WorldCells;
+    let elapsed = 0;
+    world = await WorldCells.load({
+      url: "/world/world.json",
+      surface,
+      follow: followAt(at.x, at.z),
+      terrain: false,
+      ring: 1,
+      budgets,
+      gpuScene: false,
+      admissionBudgetMs: 1,
+      admissionNow: () => ++elapsed,
+      shadows: { cast: false },
+      loadModel: async () => model(),
+      onPublication: (bounds) => {
+        // An allocated/staged mesh is insufficient: its instance records must be live.
+        expect([...drawn(world).values()].some((count) => count > 0)).toBe(true);
+        published++;
+        if (frustum.intersectsBox(bounds)) inView++;
+      },
+    });
+    world.update();
+    await flush();
+    // Placement slices and staged parts cannot yet draw or notify.
+    world.update();
+    expect(published).toBe(0);
+    for (let frame = 0; frame < 4000; frame++) {
+      world.update();
+      if (inView > 0 && !world.readinessAt(at, 0).ready) partial = true;
+      if (world.stats().admission.deferred === 0) break;
+    }
+    expect(partial).toBe(true);
+    expect(inView).toBeGreaterThan(0);
+    expect(published).toBeGreaterThan(inView);
+    world.dispose();
+  });
+
   it("spends at most the budget plus one unit per update, however long the backlog", async () => {
     const BUDGET_MS = 2;
     const { world: cells } = await makeWorld({ admissionBudgetMs: BUDGET_MS, priced: true });

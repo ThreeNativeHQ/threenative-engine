@@ -57,8 +57,18 @@ export interface IRenderTargetEngine {
   draw(target: unknown, root: unknown, camera: unknown): void;
   /** Clears `target`'s colour (to the renderer's clear colour) and/or depth. */
   clear(target: unknown, color: boolean, depth: boolean): void;
-  /** The region's rows in the target's format (see targetTexelBytes), top row first. */
-  read(target: unknown, x: number, y: number, width: number, height: number): Promise<Uint8Array>;
+  /**
+   * The region's rows in the target's format (see targetTexelBytes), top row first, of colour
+   * attachment `textureIndex` (three's index into `target.textures`).
+   */
+  read(
+    target: unknown,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    textureIndex?: number,
+  ): Promise<Uint8Array>;
 }
 
 /**
@@ -118,8 +128,16 @@ export function defineRenderTargets(
       y: number,
       width: number,
       height: number,
+      textureIndex = 0,
+      faceIndex = 0,
     ): Promise<Uint8Array | Uint16Array | Float32Array> {
-      const bytes = await engineOf(this).read(target, x, y, width, height);
+      if (faceIndex !== 0)
+        throw new Error(
+          "TN_NATIVE_RENDER_TARGET_UNSUPPORTED: a cube face other than 0 is not read natively",
+        );
+      const bytes = await engineOf(this).read(target, x, y, width, height, textureIndex);
+      // The engine crops tightly, and so does three 0.187.0 (copyTextureToBuffer removes the row
+      // padding), so the array a game reads has the same tight stride on both back ends.
       return pixelsOfType(bytes, target.texture.type);
     },
   });

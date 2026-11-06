@@ -162,3 +162,20 @@ executed sanitizer/filesystem and pinned dependency builds from host lifetime an
 evidence still being collected. Hosted Lavapipe serializes only a header: its separate lifecycle
 contract cannot prove compiled-data persistence, a speedup, or Pixel performance. The original
 compiled-data-growth test stays strict. No <=8,000 ms or >=75% startup compile reduction is claimed.
+
+## Desktop V8 profile ownership (2026-10-18)
+
+The CLI profile path and start/dump callbacks are thread-local, so a worker engine cannot replace
+the main engine's profiler. The two-thread regression fails with the previous declarations and
+passes with this repair. Five profiler tests pass; the default-path built-host test is skipped.
+Separately, a Release V8/Dawn host with `TN_JS_PROFILE=ON`, built from `3e5fb67ba`, has SHA-256
+`0b8431a256892180d043572d492962d5391631a9928accd2cd25bce86d79a5a6`. Its actual headless
+NVIDIA GeForce RTX 2080/Vulkan run of the existing quoted/backslash source-URL fixture produces
+valid JSON, preserves the exact URL, and records 654 samples over 0.515223 seconds. This proves
+desktop profiling plumbing, not a performance improvement or an Android result.
+
+The Strata terrain diagnostic now records the main game bundle instead of only worker scripts:
+718,835 samples over 495.070974 seconds. The host's supported SIGTERM flush ended this
+instrumented run after 15 screenshots. The final CLI diagnostic is `Invalid string length`;
+its origin and timing are unproven, and the failed report does not retain the game's adapter
+identity. Full scenario acceptance, matched timing and physical Android attribution remain open.

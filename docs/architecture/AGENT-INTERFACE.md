@@ -9,7 +9,9 @@ document argues for has shipped: [`threenative-engine-mcp`](../../packages/engin
 `engine_search_capabilities` and `engine_capability_detail` over the committed capability
 manifest, and installing `@threenative/core` writes every project a `.mcp.json` wiring five
 servers — `threenative-assets` (the externally pinned `threenative-asset-mcp`, launched through
-a shim inside core), `threenative-sculpt`, `threenative-engine`, `threenative-animation`
+a shim inside core), `threenative-sculpt`, `threenative-engine`, `threenative-terrain`
+(a shim inside core that starts the project's installed `@threenative/terrain` bin and cooks a
+starter terrain kit into a `world.glb`), and `threenative-animation`
 ([`threenative-animation-mcp`](../../packages/animation-mcp/), which inspects a rig, attaches props
 for good, edits and verifies clips, and opens a calibrator page — every operation is a build-time
 edit of one GLB, so no game depends on it at runtime), and `threenative-devtools` (the externally

@@ -528,6 +528,8 @@ describe("VirtualShadowNode per-level refresh and region invalidation", () => {
     light.castShadow = true;
     light.target.position.set(0, 0, 0);
     const built = new VirtualShadowNode(light, {
+      // These cases read the authored levels; the 2x clip ladder (32adb239d) leaves them alone.
+      maxLevelRatio: Number.POSITIVE_INFINITY,
       clipExtents: [24, 96, 320],
       mapSize: 512,
       marker: false,

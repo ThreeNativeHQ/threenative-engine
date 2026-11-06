@@ -28,5 +28,37 @@
     },
     "mid": "fir_tree_01/fir-c-lod2.glb",
     "midDistance": 45
+  },
+  "fern-a": {
+    "near": "fern_02/fern-a.glb",
+    "maxDistance": 50,
+    "bounds": {
+      "min": [-0.699, 0, -0.744],
+      "max": [0.764, 0.62, 0.802]
+    }
+  },
+  "fern-b": {
+    "near": "fern_02/fern-b.glb",
+    "maxDistance": 50,
+    "bounds": {
+      "min": [-0.758, 0, -0.879],
+      "max": [0.655, 0.687, 0.643]
+    }
+  },
+  "boulder-small-a": {
+    "near": "rock_moss_set_01/pebble-a.glb",
+    "maxDistance": 80,
+    "bounds": {
+      "min": [-1.029, 0, -1.712],
+      "max": [1.137, 1.462, 1.683]
+    }
+  },
+  "boulder-small-b": {
+    "near": "rock_moss_set_01/pebble-b.glb",
+    "maxDistance": 80,
+    "bounds": {
+      "min": [-0.955, 0, -0.784],
+      "max": [1.128, 1.736, 1.09]
+    }
   }
 }

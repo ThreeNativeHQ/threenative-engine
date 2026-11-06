@@ -70,6 +70,20 @@ export async function compileAssets( options: IAssetCompileOptions = { … }
 const result = await compileAssets({ source: "assets", output: "public" });
 ```
 
+### `cookTerrainWorld`
+
+`function` — Bake evaluated terrain and static species into an instanced GLB and streaming world package.
+
+```ts
+export function cookTerrainWorld( options: IPreparedTerrainWorldOptions, ): Promise< { … }
+```
+
+- **Use when:** bake a terrain world headlessly into a GLB with instanced trees and rocks · generate a forest world for my game
+
+```ts
+await cookTerrainWorld({ state, species, out: "assets/world" });
+```
+
 ### `dedupeMaterials`
 
 `function` — Collapse materials that became identical once their textures shared an atlas page, and count the buckets a merge would find — before and after — so the promise can be checked rather than made.
@@ -340,6 +354,21 @@ export function texturePass(options: ITexturePassOptions = { … }
 const pass = texturePass({ quality: 150 });
 ```
 
+### `thinFoliageCards`
+
+`function` — Build a standalone card-thinned foliage mesh, preserving opaque parts and vertex attributes.
+
+```ts
+export function thinFoliageCards(document: Document, keepRatio: number): number { … }
+```
+
+- **Use when:** prepare a far foliage mesh by thinning whole cards instead of triangles
+- **Constraints:** mutates the supplied document; rejects unsupported MASK topology and invalid ratios
+
+```ts
+thinFoliageCards(document, 0.14);
+```
+
 ### `totalCensus`
 
 `function` — Census one glTF document, or a directory of them: the merge buckets a scene has now, and the buckets it would have once its atlasable textures shared pages.
@@ -434,7 +463,7 @@ addFoliageBackLight(leaf, backIrradiance);
 
 ### `addInSlices`
 
-`function` — Attach hundreds of built objects to the scene in slices, presenting a frame between each.
+`function` — Attach hundreds of built objects to the scene in slices with an 8 ms default budget, presenting a frame between each.
 
 ```ts
 export async function addInSlices<T>( objects: Iterable<T>, add: (object: T, index: number) => void, options: IAddInSlicesOptions = { … }
@@ -1763,6 +1792,21 @@ export async function loadAll<TIn, TOut>( items: readonly TIn[], load: (item: TI
 const species = await loadAll(names, (name) => ctx.assets.model(`flora/${name}.glb`));
 ```
 
+### `lodChainOf`
+
+`function` — The cooked automatic LOD chain (`TN_discrete_lod`) a loaded geometry carries, or `undefined`. Its levels share the base's vertex attributes and differ only in index, and `errors` are each level's world-unit error in the base's own space. A caller that draws one geometry many times (an instanced batch, a streamed world level) reads the reduced shapes here instead of re-cooking.
+
+```ts
+export function lodChainOf(geometry: BufferGeometry): ILodChain | undefined { … }
+```
+
+- **Use when:** draw a cooked reduced level of a model in an instanced batch or streamed world level
+- **Constraints:** a geometry the loader built no chain for returns undefined
+
+```ts
+const chain = lodChainOf(baseGeometryOf(mesh)); const far = chain?.levels.at(-1);
+```
+
 ### `lodPixelScale`
 
 `function` — The screen pixels one world unit covers at `depth` for this camera and viewport. Perspective divides the projected scale by the depth; orthographic has no depth term and uses the frustum height instead. This is the number a level of detail is chosen against: multiply a level's world-space error by it and you have the on-screen error a player can see, which is the comparison `updateModelLods` makes from the baked chain.
@@ -2837,6 +2881,21 @@ export class SurfaceLights { … }
 const lamps = new SurfaceLights(lights); lamps.shade(point, normal, albedo, out, (i) => !occluded(i));
 ```
 
+### `thinCards`
+
+`function` — A far level for a card mesh (needle or leaf quads): keep a share of its cards and grow each kept card about its own centre, so the crown holds its total surface area, as Unreal's Nanite "Preserve Area" foliage does. A simplifier cannot reduce disconnected cards, so the cooked chain leaves them at full count.
+
+```ts
+export function thinCards(geometry: BufferGeometry, keep: number): BufferGeometry { … }
+```
+
+- **Use when:** far trees draw too many alpha-tested needle or leaf card triangles
+- **Constraints:** the geometry must be indexed and carry no material groups, else it throws · keep is in (0, 1]; a share that drops nothing returns the same geometry · the choice is deterministic, and the source geometry is left untouched
+
+```ts
+const far = thinCards(needles.geometry, 0.4); // 40% of the cards, same area
+```
+
 ### `TracedReflections`
 
 `class` — Reflection rays against the scene's triangles, in TSL. For a smooth surface, a ray finds what the screen cannot show (a room behind the camera, the far side of an object) and returns the hit's position, normal and material. The game lights the hit in its own stage. The kernel is plain TSL: float textures and a loop, no storage buffer.
@@ -3028,9 +3087,9 @@ tracker.commit(scene);
 export class VirtualShadowNode extends ShadowBaseNode { … }
 ```
 
-- **Use when:** crisp shadows close to the player across a large outdoor level · shadow map too coarse over a big terrain · one directional light shadow for a whole open world · shadows shimmer when the camera moves
+- **Use when:** crisp shadows close to the player across a large outdoor level · shadow map too coarse over a big terrain · one directional light shadow for a whole open world · shadows shimmer when the camera moves · shadow edges, tree lighting or level sharpness change while a third-person camera turns around its hero
 - **Constraints:** the light must be a DirectionalLight with `castShadow` and a target in the scene · clipExtents are half-widths in world units, finest first, strictly increasing · movers sort themselves: a layer-0 caster whose world matrix, instance matrix or deformation changed draws through the mover maps and leaves the cached levels, and returns to them after `staticAfterFrames` quiet frames; the cache redraws only the region it left · `trackCaster(object)` is the override that pins an object as a mover for good (it enables layer `VIRTUAL_SHADOW_MOVER_LAYER` on the object and its descendants), and `pinStatic(object)` opts an object out of detection; tracking or untracking refreshes only that object's region · call `object.layers.set(VIRTUAL_SHADOW_CASTER_LAYER)` for a mesh that exists only to cast; the level cameras already render that layer and the main camera never does
-- **Overrides:** bias, biasNode, normalBias, intensity, radius, blurSamples, mapType and filterNode stay on `light.shadow`; mapSize and the other options here have defaults, and `marker: false` silences the TN_VIRTUAL_SHADOW line, not the measurement · bias, biasNode, normalBias, intensity, radius, blurSamples, mapType and filterNode stay on `light.shadow`; mapSize and the other options here have defaults · followViewFocus: false keeps eye follow; receiverPlaneBias: false uses only authored bias · minWindowAspect: below 1, a level is as high as `sin(sun elevation)` times its width, never under this, so a low sun's floor shadows keep the texel density of a high sun's; the default 1 keeps square levels
+- **Overrides:** bias, biasNode, normalBias, intensity, radius, blurSamples, mapType and filterNode stay on `light.shadow`; mapSize and the other options here have defaults, and `marker: false` silences the TN_VIRTUAL_SHADOW line, not the measurement · bias, biasNode, normalBias, intensity, radius, blurSamples, mapType and filterNode stay on `light.shadow`; mapSize and the other options here have defaults · setFocus(point) centres every window on a subject (a third-person hero) instead of the eye, so an orbiting eye moves no shadow; setFocus(undefined) hands them back · followViewFocus: false keeps eye follow; receiverPlaneBias: false uses only authored bias · minWindowAspect: below 1, a level is as high as `sin(sun elevation)` times its width, never under this, so a low sun's floor shadows keep the texel density of a high sun's; the default 1 keeps square levels
 
 ```ts
 const sun = new DirectionalLight(0xffffff, 3);
@@ -3698,6 +3757,53 @@ const handle = startWorkerGame(new Worker(new URL("./worker.ts", import.meta.url
 
 ## `@threenative/core/world`
 
+### `applyTerrainSurface`
+
+`function` — Apply a cooked GLB's package-authored layered surface to its marked terrain meshes. `url` is the loaded GLB URL; extras pointers are relative to it. Uses the same asset/fetch path as loadTerrainSplat on web and native. The caller owns the assigned materials' lifetime.
+
+```ts
+export async function applyTerrainSurface( root: Object3D, options: ILoadTerrainSplatOptions, ): Promise<void> { … }
+```
+
+- **Use when:** apply the authored layered terrain surface after loading a cooked world GLB
+- **Constraints:** url names the loaded GLB; tnTerrainSurface extras name a relative world package JSON
+- **Overrides:** `table` may replace `base`, `breakup`, `macro` and `layers`; baked `splat` and `textures` stay package-owned
+
+```ts
+await applyTerrainSurface(world.scene, { assets: ctx.assets, renderer: ctx.renderer, url: "world/world.glb" });
+```
+
+### `bakedFractalNoise`
+
+`function` — Drop-in for `mx_fractal_noise_float(p, octaves, lacunarity, diminish, amplitude)`: one read an octave.
+
+```ts
+export function bakedFractalNoise( p: Node<"vec3">, octaves = 3, lacunarity = 2, diminish = 0.5, amplitude: Scalar = 1, ): Node<"float"> { … }
+```
+
+- **Use when:** fractal or fbm noise in a material costs too much GPU time per pixel
+- **Constraints:** octaves is a build-time number; each octave is one filtered volume read
+
+```ts
+const macro = bakedFractalNoise(vec3(positionWorld.x, 0, positionWorld.z).mul(0.014), 3);
+```
+
+### `bakedNoise`
+
+`function` — Drop-in for `mx_noise_float(p, amplitude, pivot)` on a vec3 `p`: one filtered read of the baked volume instead of the per-pixel Perlin. Only the 3D form: three's 2D Perlin is another function (0.66 scale), so a vec2 caller keeps `mx_noise_float`. `channel` 1 to 3 are independent fields.
+
+```ts
+export function bakedNoise( p: Node<"vec3">, amplitude: Scalar = 1, pivot: Scalar = 0, channel: 0 | 1 | 2 | 3 = 0, ): Node<"float"> { … }
+```
+
+- **Use when:** a terrain, foliage or water shader calls mx_noise_float per pixel and the frame is GPU bound · open world ground material with procedural variation that must hold 60 FPS
+- **Constraints:** the field tiles every NOISE_PERIOD units of p; at p = world metres x 2.6 that is a 3 m repeat · vec3 input only: three's 2D Perlin is another function
+- **Overrides:** keep mx_noise_float where exact analytic noise matters more than the frame
+
+```ts
+const patch = smoothstep(-0.35, 0.35, bakedNoise(positionWorld.mul(0.025)));
+```
+
 ### `cellPlacements`
 
 `function` — Borrow the run's placement records as a live view over the placement buffer.
@@ -3745,6 +3851,21 @@ export class Heightfield extends Group implements IComputeDriven { … }
 const field = Heightfield.fromSampler({ rows: 65, columns: 65, width: 64, depth: 64, origin: { x: 0, z: 0 }, sampleHeight: terrainHeight });
 ```
 
+### `HeightfieldCollar`
+
+`class` — A heightfield's far ring: `rings` square rings past its playable square, one vertex per boundary sample, and the index grid that draws them.
+
+```ts
+export class HeightfieldCollar { … }
+```
+
+- **Use when:** draw the terrain past the playable square without hand-building a ring grid · ground a character past the square, out to the walk band, on drawn triangles
+- **Constraints:** every ring vertex asks the game's `height` callback; core owns no terrain look · the collar is a ring of triangles, not a field: `heightAt` answers on it and null off it
+
+```ts
+const collar = new HeightfieldCollar({ resolution: 129, size: 512, rings: 384, ringDistance: (ring) => (ring / 384) ** 1.65 * 2100, walkBand: 200, height: ({ x, z }) => surveyed.heightAt(x, z) });
+```
+
 ### `heightSamplerFromHeightmap`
 
 `function` — Build a game-usable `sampleHeight` from a raw v1 heightmap. The returned function interpolates bilinearly in world units and clamps to the map edges, so it plugs straight into `Heightfield.fromSampler` and `TerrainTiles`. Height is `heightMin + v / 65535 * (heightMax - heightMin)` at vertex `(column, row)`.
@@ -3760,6 +3881,35 @@ export function heightSamplerFromHeightmap( terrain: IWorldTerrain, extent: IWor
 const sampleHeight = heightSamplerFromHeightmap(terrain, extent, await loadWorldHeightmap(url));
 ```
 
+### `instanceRandom`
+
+`function` — A random in [0, 1) that stays with its instance, as UE 5.8.3's PerInstanceRandom: hashed from the instance's world origin, never from its draw slot. WorldCells repacks instances on every refilter, main-pass cull and LOD switch, so `instanceIndex` names another tree from one frame to the next; a wind phase hashed from it re-rolled each crown about every 0.7 s of a walk and snapped its top by a median 0.37 m. Parts of one placement share its translation, so its bark and needles read one value.
+
+```ts
+export function instanceRandom(): Node<"float"> { … }
+```
+
+- **Use when:** a per-instance random number that stays with each streamed placement as WorldCells repacks · replace instanceIndex in a WorldCells part material, which WorldCells refuses
+
+```ts
+const phase = instanceRandom().mul(6.2831);
+```
+
+### `lakeReach`
+
+`function` — How far a lake's water reaches: the waterline its basin measures, `margin` times out, capped. The drawn surface and the swim footprint both size themselves here, so the shore a player sees is the shore they stop at.
+
+```ts
+export function lakeReach(field: Heightfield, lake: IWaterLake): number { … }
+```
+
+- **Use when:** size a lake's footprint from its basin and the cap its biome row names
+- **Constraints:** reads the heightfield at every bearing, once per lake, never per frame
+
+```ts
+const reach = lakeReach(field, { ...lake, margin: 1.12 });
+```
+
 ### `loadTerrainSplat`
 
 `function` — The splat terrain surface a world package describes, for `WorldCells.load({ surface })`. Layers blend over a base by mask channels read as linear data (the masks ship raw, beside the heightmap, so no cook moves a blend threshold), with noise-broken edges and macro brightness variation. Texture sets tile in world metres on the package's ground plane (x, -z: a Z-up authoring tool's x and y), cliffs can be triplanar, and the base plus any layer that asks carries a normal map. Each layer answers light from its own ORM map where the table ships one and from the table's own roughness and metalness where it does not; a layer that states neither is matte and dielectric, and named in a warning. Nothing here is a look choice: textures, tiles, tints, thresholds, surface response and noise scales all come from the package's table, which the game authors once and its DCC shares.
@@ -3770,7 +3920,7 @@ export async function loadTerrainSplat(options: ILoadTerrainSplatOptions): Promi
 
 - **Use when:** terrain textured by splat masks exported from Blender with the world package · the game's terrain should match the DCC's terrain material without a second copy
 - **Constraints:** the package's world.json must carry `terrain.layers.table` and `terrain.layers.splat`, written by `export_terrain_layers` in the `export_world.py` recipe · WebGPU allows 16 sampled textures per stage: same-size layers stack into one array texture per set, and `TN_TERRAIN_SPLAT samplers=<n>` reports what is left
-- **Overrides:** every value comes from the package's table; the returned material is the game's to adjust
+- **Overrides:** `table` may replace `base`, `breakup`, `macro` and `layers` from game source; baked `splat` and `textures` stay package-owned
 
 ```ts
 const surface = await loadTerrainSplat({ assets: ctx.assets, renderer: ctx.renderer, url: "world/world.json" });
@@ -3790,6 +3940,21 @@ export async function loadWorldHeightmap(url: string): Promise<Uint16Array> { �
 
 ```ts
 const data = await loadWorldHeightmap("/world/terrain/heightmap.u16");
+```
+
+### `noiseVolume`
+
+`function` — The one volume every material shares: baked on first use, 1 MiB of RGBA8 (it stays in L2).
+
+```ts
+export function noiseVolume(): Data3DTexture { … }
+```
+
+- **Use when:** a material needs the raw baked noise texture to sample in its own TSL
+- **Constraints:** baked once per page on the main thread (about 0.15 s); every channel is an independent field
+
+```ts
+const volume = noiseVolume();
 ```
 
 ### `snowDiscFootprint`
@@ -3878,6 +4043,36 @@ export function validateWorldPackage( manifest: unknown, options: IWorldPackageV
 const { ok, errors } = validateWorldPackage(json, { placementsByteLength: buffer.byteLength });
 ```
 
+### `WaterBodies`
+
+`class` — One world's water, queried: surface height, current and footprint from the baked arrays. Rendering and physics read the same store, as they do for `Heightfield`, so the surface a player sees and the surface a swimmer rests on cannot disagree. Every station, level, extent and speed comes from the game, and the shading stays in the game's own `src/render/`. A river's segments sit in a uniform grid, so a query tests the few that can reach its cell instead of every station of every river.
+
+```ts
+export class WaterBodies { … }
+```
+
+- **Use when:** ask how high the water is where a player swims · ask which way a current carries a body · ask which water body covers a point, and how high its surface is · share one water store between rendering and physics
+- **Constraints:** every station, level, extent and speed comes from the game's own bake; a lake is measured on the field passed in
+
+```ts
+const water = new WaterBodies({ ribbons, lakes, field }); const height = water.surfaceAt(x, z);
+```
+
+### `waterlineRadius`
+
+`function` — The furthest a lake's basin reaches on a bearing: where the drawn ground crosses its level. Twenty-four bearings step outwards and stop at the first bank, because binary-searching the whole ray can jump a dry ridge into another pond. Eighteen halvings land inside two centimetres at this scale, well under the ground's own sample spacing.
+
+```ts
+export function waterlineRadius( field: Heightfield, centre: readonly number[], level: number, ): number { … }
+```
+
+- **Use when:** measure where a lake's water meets the ground it floods · size a lake's drawn surface or the footprint a swimmer may enter
+- **Constraints:** returns metres on the furthest bearing; the caller applies its own cap
+
+```ts
+const reach = waterlineRadius(field, lake.at, lake.level) * 1.12;
+```
+
 ### `WorldCells`
 
 `class` — Stream a Blender-authored world package by cell and keep it resident around a followed point. The class composes `TerrainTiles` for the package's heightmap, builds one `InstancedBatch` per resident cell asset run, distance level and mesh part, and loads hand-placed chunk GLBs through `loadAll` + `addInSlices`. Ring residency, CPU per-asset `maxDistance` filtering, GPU dispatch culling, the per-asset `lods` levels, hard budgets and generation-tokened cancellation all live here; every geometry, material and surface still comes from the package's GLBs and the game. An asset is drawn per part, not per model: a GLB with several primitives is one `InstancedBatch` each, and a scattered part whose own material is transparent draws as an alpha cutout unless the game asks for blending, because an `InstancedMesh` cannot sort its instances. An asset with no nonempty authored `lods` can draw its own model's baked AutoLOD chain at distances measured over the `autoLod` viewport. An explicit empty list enrolls only unchanged static parts; section ranges, custom attributes, alpha foliage and vertex deformation retain source geometry.
@@ -3887,8 +4082,8 @@ export class WorldCells extends Group implements IComputeDriven { … }
 ```
 
 - **Use when:** stream a large Blender-authored world by cell instead of one huge GLB · keep scattered props and hand-placed chunks resident around a moving player · honour per-asset draw distances and hard streaming budgets without a mid-frame throw
-- **Constraints:** surface is the game's; this class creates no material, colour or geometry · a cell's model loads at `soon` priority, so a file the running scene awaits through `ctx.assets` starts first · budgets are hard caps that report pressure instead of over-committing · model loads are bounded by `concurrency` (default 12) across every resident cell, not per cell · refilters are bounded by `rebuildsPerUpdate` (default 16) per update, nearest cell first · admission is bounded by `admissionBudgetMs` (default 2) per update across every path, plus at most one unit each for terrain and props; while props are queued terrain takes at most half, so neither starves the other, and a deferred cell keeps drawing what it has · SkinnedMesh parts are skipped; an instanced copy would draw one rest pose · a baked chain's switch distances are measured against `autoLod` (default 4 px of error over 60° and 1080 raster rows), because an instanced draw cannot select a level per instance; an asset with nonempty authored `lods` never consults it; explicit empty lists enroll only unchanged static geometry/material parts · eligible static sources can use cooked HLOD (chunk-only alongside GPU scatter, whole-cell on CPU) after compilation and an observed main-context backend submission; projected-error hysteresis requires actual source triangle reduction and no extra material draws, unsupported or shared source stays resident, and collision/shadow paths retain source representations; stats().hlod counts lifecycle and charged resources, not GPU timing or physical allocation · `prewarmed` resolves once every prewarmed shared batch has been drawn; a game with a loading screen waits on it, and `stats().pendingPrewarm` is the same gate as a number · every `asset:level:part` is one InstancedMesh for the main pass, plus one caster InstancedMesh per world-grid square of `clusterSize` on the shadow caster layer, so the main pass draws one mesh per key and a shadow level submits only the squares it covers · two definitions the asset loader resolves to one model — the same cooked `glb`, the same `lods` at the same distances, the same `maxDistance` and bounds — are one asset under the lexicographically smallest id: one model load, one set of `asset:level:part` keys, one prewarm and one refcount, released when the last cell holding any member of the group leaves the ring; `TN_WORLD_ASSET_ALIAS` reports how many of the package's assets are really distinct · the main pass mesh draws only the squares the render camera's frustum covers — on by default, narrowed once per frame for every main batch by the engine's render-cadence dispatch, never for an orthographic camera — a batch with nothing to draw is hidden rather than submitted at `count 0`, and `TN_WORLD_MAIN_CULL` reports both every five seconds · a loaded chunk is merged by material before it is added, so it submits one draw per material rather than one per node; a skinned, multi-material or morph-target mesh, one carrying a baked AutoLOD chain, and an instanced mesh past `chunkMergeMaxTriangles` (default 43,690 triangles) or with a shape over 2,048 triangles, all keep their own geometry; a material group crossing 131,072 vertices (4 MiB of position + normal + uv) is split into several meshes in traversal order instead of one giant upload, indexed parts keep their index, and `TN_WORLD_CHUNK_MERGE` reports what the merge did and the bytes it left · `shadows.castDistance` is accepted and ignored (clusters replaced it); `shadows.invalidate` is called at most once a second after streamed records changed
-- **Overrides:** `hlod: false` keeps source rendering; ring, budgets, terrain tile size/resolution, terrain stream and collider radius, `transparentScatter`, `clusterSize` and `shadows.invalidate`, load `concurrency`, `rebuildsPerUpdate`, `admissionBudgetMs` and the package's per-asset maxDistance
+- **Constraints:** surface is the game's; this class creates no material, colour or geometry · a cell's model loads at `soon` priority, so a file the running scene awaits through `ctx.assets` starts first · budgets are hard caps that report pressure instead of over-committing · `whenSpawnReady(position, radius, timeoutMs)` snapshots a fixed region and settles from existing updates or disposal; it does not drive streaming, and `prewarmed` remains the separate draw gate · model loads are bounded by `concurrency` (default 12) across every resident cell, not per cell · refilters are bounded by `rebuildsPerUpdate` (default 16) per update, nearest cell first · residency and `placementReach` follow `follow`; levels and `maxDistance` are graded from the render camera, as UE picks instance LODs per view; `lodFrom: "follow"`, `?tnLodFromCamera=0` or `TN_LOD_FROM_CAMERA=0` grade from `follow`, reported as `TN_WORLD_MAIN_CULL lodFrom=` · admission is bounded by `admissionBudgetMs` (default 2) per update across every path, plus at most one unit each for terrain and props; while props are queued terrain takes at most half, so neither starves the other, and a deferred cell keeps drawing what it has · SkinnedMesh parts are skipped; an instanced copy would draw one rest pose · a baked chain's switch distances are measured against `autoLod` (default 4 px of error over 60° and 1080 raster rows), because an instanced draw cannot select a level per instance; an asset with nonempty authored `lods` never consults it; explicit empty lists enroll only unchanged static geometry/material parts · eligible static sources can use cooked HLOD (chunk-only alongside GPU scatter, whole-cell on CPU) after compilation and an observed main-context backend submission; projected-error hysteresis requires actual source triangle reduction and no extra material draws, unsupported or shared source stays resident, and collision/shadow paths retain source representations; stats().hlod counts lifecycle and charged resources, not GPU timing or physical allocation · `prewarmed` resolves once every prewarmed shared batch has been drawn; a game with a loading screen waits on it, and `stats().pendingPrewarm` is the same gate as a number · every `asset:level:part` is one InstancedMesh for the main pass, plus one caster InstancedMesh per world-grid square of `clusterSize` on the shadow caster layer, so the main pass draws one mesh per key and a shadow level submits only the squares it covers · two definitions the asset loader resolves to one model — the same cooked `glb`, the same `lods` at the same distances, the same `maxDistance` and bounds — are one asset under the lexicographically smallest id: one model load, one set of `asset:level:part` keys, one prewarm and one refcount, released when the last cell holding any member of the group leaves the ring; `TN_WORLD_ASSET_ALIAS` reports how many of the package's assets are really distinct · the main pass mesh draws only the squares the render camera's frustum covers — on by default, narrowed once per frame for every main batch by the engine's render-cadence dispatch, never for an orthographic camera — a batch with nothing to draw is hidden rather than submitted at `count 0`, and `TN_WORLD_MAIN_CULL` reports both every five seconds · a loaded chunk is merged by material before it is added, so it submits one draw per material rather than one per node; a skinned, multi-material or morph-target mesh, one carrying a baked AutoLOD chain, and an instanced mesh past `chunkMergeMaxTriangles` (default 43,690 triangles) or with a shape over 2,048 triangles, all keep their own geometry; a material group crossing 131,072 vertices (4 MiB of position + normal + uv) is split into several meshes in traversal order instead of one giant upload, indexed parts keep their index, and `TN_WORLD_CHUNK_MERGE` reports what the merge did and the bytes it left · `shadows.castDistance` is accepted and ignored (clusters replaced it); `shadows.invalidate` is called at most once a second after streamed records changed
+- **Overrides:** `hlod: false` keeps source rendering; ring, budgets, terrain tile size/resolution, terrain stream and collider radius, `transparentScatter`, `clusterSize` and `shadows.invalidate`, load `concurrency`, `rebuildsPerUpdate`, `admissionBudgetMs` and the package's per-asset maxDistance; `impostorFar: "always"` keeps the far aggregate the near ring's guaranteed radius made unnecessary
 
 ```ts
 const world = await WorldCells.load({ url: "/world/world.json", surface, follow, ring: 1, budgets: { residentCells: 25, instances: 20000, bytes: 8000000 } });
@@ -4092,9 +4287,10 @@ const footprint = capsuleFootprint(0.5, 0.2);
 export class CharacterBody3D { … }
 ```
 
-- **Use when:** move an enemy or player through a level · keep a character from walking through walls
-- **Constraints:** use moveAndSlide inside the physics update
+- **Use when:** move an enemy or player through a level · keep a character from walking through walls · swim in a river, lake or sea; float at the surface and wade slower in shallow water · river current carries a swimmer downstream while it floats
+- **Constraints:** use moveAndSlide inside the physics update · pass `water: (x, z) => surfaceHeight | undefined`; the body reads `swimming`, `immersionDepth` and `waterSurface` each moveAndSlide · pass `waterCurrent: (x, z) => { x, z } | undefined` in m/s to have the water carry the body; it reads `currentVelocity` back
 - **Requires:** npm i @threenative/physics
+- **Overrides:** buoyancy (1.6, floats; Unreal 1.0 sinks), maxSwimSpeed (3 m/s) and fluidFriction (12) tune the Unreal MOVE_Swimming defaults
 - **Deprecated:** Constructor option `world` is deprecated; pass an IPhysicsContext as `physics` instead. CharacterBody3D itself is not deprecated.
 
 ```ts
@@ -4190,7 +4386,7 @@ const game = defineGame({ plugins: [rapier()] });
 export class RigidBody3D { … }
 ```
 
-- **Use when:** give a crate or prop physical motion · create a body that collides with a character · fire physical cannonballs that collide with ships or scenery · fire a cannonball projectile with cannon smoke particles · a bullet passes through a wall
+- **Use when:** give a crate or prop physical motion · a ball rolls across the floor · create a body that collides with a character · fire physical cannonballs that collide with ships or scenery · fire a cannonball projectile with cannon smoke particles · a bullet passes through a wall
 - **Constraints:** register rapier() in the game plugin list before using bodies
 - **Requires:** npm i @threenative/physics
 - **Overrides:** continuousCollision: false opts one body out while body.continuousCollision still reports the effective setting
@@ -4198,6 +4394,22 @@ export class RigidBody3D { … }
 
 ```ts
 const crate = new RigidBody3D({ object, physics: ctx.physics, shape: CollisionShape3D.box(1, 1, 1), mass: 8 });
+```
+
+### `ScatterColliders`
+
+`class` — Make scattered props solid: fixed bodies for rocks and trunks near a followed point, streamed with it.
+
+```ts
+export class ScatterColliders { … }
+```
+
+- **Use when:** stop the player walking through scattered rocks and trees · give instanced or streamed foliage props collision in an open world
+- **Constraints:** pass each instance's solid part (stone, bark), not its leaves; shapes are measured: a slender base is a trunk capsule, the rest an 18-DOP hull, and pieces under 0.25 m get none · call update() every frame; it rescans only after the follow point moves a quarter of `radius` (default 40 m) · `collision: "hull" | "trunk" | "none"` on an instance overrides the measured shape
+- **Requires:** npm i @threenative/physics
+
+```ts
+const solids = new ScatterColliders({ physics: ctx.physics, follow: player, collisionLayer: 4, instances: rocks.map((matrix) => ({ geometry: rockGeometry, matrix })) });
 ```
 
 ### `softBodyCollision`
@@ -6435,6 +6647,22 @@ export function applyPlacementOverrides(state: ITerrainState, value: unknown): I
 const state = applyPlacementOverrides(terrain.evaluate(), document.placementOverrides ?? {});
 ```
 
+### `bakeBiome`
+
+`function` — Bake one biome: the recipe's evaluated state and the world package it streams. This is the composition `terrain_generate` and a game's build script both call, so the file layout a player streams is decided in one place. The biome is validated first — an inline spec from a request is checked here, not trusted — and the package's own placement runs are checked against the state they came from, so a bake can never ship a cell list that lost instances.
+
+```ts
+export function bakeBiome(options: IBakeBiomeOptions): IBakedBiome { … }
+```
+
+- **Use when:** bake one biome's world package from an evaluated recipe and a biome file
+- **Constraints:** every instance's asset must be in `assets`; every instance must land in exactly one cell run
+- **Requires:** npm i -D @threenative/terrain
+
+```ts
+const baked = bakeBiome({ state: terrain.evaluate(), spec: validateBiome(json, "savanna"), assets });
+```
+
 ### `bakeMesh`
 
 `function` — Bakes the recovered indexed top surface and optional vertical skirts into caller-owned arrays.
@@ -6471,7 +6699,7 @@ const baked = bakeTerrain(new Terrain({ resolution: 129 }).evaluate(), { chunkCe
 
 ### `bakeWorldPackage`
 
-`function` — Bake an evaluated terrain into the engine's world package: a `world.json` manifest, a uint16 heightmap, a splat mask array, a placement buffer of eight float32 per instance, and the square cells that stream them. The encodings and row orders are the ones the Blender recipe `export_world.py` writes, so one runtime streams both without a second reader.
+`function` — Bake an evaluated terrain into the engine's world package: a `world.json` manifest, a uint16 heightmap, a splat mask array, a placement buffer of eight float32 per instance, a placement ID sidecar and the square cells that stream them. The encodings and row orders are the ones the Blender recipe `export_world.py` writes, so one runtime streams both without a second reader.
 
 ```ts
 export function bakeWorldPackage( state: ITerrainState, options: IBakeWorldPackageOptions, ): IBakedWorldPackage { … }
@@ -6484,6 +6712,39 @@ export function bakeWorldPackage( state: ITerrainState, options: IBakeWorldPacka
 
 ```ts
 const { manifest, files } = bakeWorldPackage(state, { assets });
+```
+
+### `collarSampler`
+
+`function` — The collar's height at any (x, z), and a way to raise one of its per-vertex attributes at a placement: both read the collar's own quad grid, so a lane that reshapes the collar moves the trees with it.
+
+```ts
+export function collarSampler(collar: HeightfieldCollar) { … }
+```
+
+- **Use when:** plant a far field on a drawn collar and paint the canopy its crowns cover
+- **Constraints:** the collar decides where a tree stands; this sampler never resamples the square
+- **Requires:** npm i -D @threenative/terrain
+
+```ts
+const sampler = collarSampler(collar); const height = sampler.at(x, z);
+```
+
+### `compilePropBuckets`
+
+`function` — Group placements into their streamed worlds and write each world's cells and records. The order is the streamed one: cells sorted by `x` then `z`, assets sorted by name inside a cell, and records in the order the entries arrived inside a run. Same-cell, same-asset placements keep their input order, so a re-run of a seeded bake reproduces the buffer byte for byte.
+
+```ts
+export function compilePropBuckets( entries: readonly IPropBucketEntry[], options: ICompilePropBucketsOptions = { … }
+```
+
+- **Use when:** bake the prop worlds a game streams, once, instead of compiling them at load
+- **Constraints:** headless; the caller decides every placement, its streamed world, its reach and its pose
+- **Requires:** npm i -D @threenative/terrain
+- **Overrides:** cellSize and the base extent; the bucket, reach and kind of every entry
+
+```ts
+const pkg = compilePropBuckets(entries, { bounds });
 ```
 
 ### `createSegmentIndex`
@@ -6614,6 +6875,38 @@ export function encodeZIP(files: readonly IExportFile[]) { … }
 const archive = encodeZIP([{ name: "height.raw", bytes: new Uint8Array(8) }]);
 ```
 
+### `farForestPlacements`
+
+`function` — Far-field placements on the collar; also paints the collar's `canopy` attribute under each crown.
+
+```ts
+export function farForestPlacements(options: IFarFieldOptions): IPlacement[] { … }
+```
+
+- **Use when:** plant the stand past a game's playable square, out to the drawn collar
+- **Constraints:** the row's `far` block decides every density; the caller supplies the collar and layer
+- **Requires:** npm i -D @threenative/terrain
+
+```ts
+const trees = farForestPlacements({ size, resolution, collar, treeline, rules, asset, layer });
+```
+
+### `fieldWeight`
+
+`function` — A field's weight at (x, z), clamped to 0..1.
+
+```ts
+export function fieldWeight(field: ICoverField, x: number, z: number): number { … }
+```
+
+- **Use when:** sample the stand field a biome's trees and cover thin on · measure the drift a biome's blades grow by, or the mat field its cover follows
+- **Constraints:** the field is a value, so two worlds sample the same formula with their own numbers
+- **Requires:** npm i -D @threenative/terrain
+
+```ts
+const stand = fieldWeight(STAND_FIELD, x, z);
+```
+
 ### `gradientAt`
 
 `function` — World-space height gradient from the canonical samples.
@@ -6630,12 +6923,46 @@ export function gradientAt(grid: ISampledGrid, x: number, z: number): [number, n
 const gradient = gradientAt(new Terrain({ resolution: 17 }).evaluate(), 0, 0);
 ```
 
+### `landform`
+
+`function` — One call, one landscape: a calibrated layer recipe for a kind of environment.
+
+```ts
+export function landform(kind: LandformKind, options: ILandformOptions = { … }
+```
+
+- **Use when:** start an open world, a distant backdrop or a mountain level from a kind of place
+- **Constraints:** returns an ordinary `Terrain`: add roads, rivers, scatter or more layers, then `evaluate()` in a build script · shape only; materials, colours and textures belong to the game · calibrated at size 5000, resolution 513; other sizes keep the same slopes and scale the relief with `size`
+- **Requires:** npm i @threenative/terrain
+- **Overrides:** `relief` is the highest-minus-lowest height in metres before the finishing passes shave a few percent; `size`, `resolution` and `seed` as in `Terrain`
+
+```ts
+const terrain = landform("alpine", { size: 5000, resolution: 513, seed: 4 }); const state = terrain.evaluate();
+```
+
+### `landformBackdrop`
+
+`function` — Distant mountains around a playable area: a landform window with a valley floor at its centre.
+
+```ts
+export function landformBackdrop( kind: LandformKind, options: IBackdropOptions = { … }
+```
+
+- **Use when:** add a mountain backdrop around a playable area that the game's detail terrain covers
+- **Constraints:** resolution up to 513: the window is cut from a world twice as wide at the same spacing; build script only · shape only; the game places, colours and fades it
+- **Requires:** npm i @threenative/terrain
+- **Overrides:** `relief` and `centerHeight` in metres; `size`, `resolution` and `seed` as in `landform`
+
+```ts
+const { size, resolution, heights } = landformBackdrop("temperateMountains", { seed: 7, centerHeight: 13 });
+```
+
 ### `makeExport`
 
 `function` — Recovered numerical/project exports; GLB/runtime outputs contain terrain only.
 
 ```ts
-export async function makeExport( state: ITerrainState, recipe: ITerrainDocument, kind: ExportKind, ): Promise<IExportArchive> { … }
+export function makeExport( state: ITerrainState | null, recipe: ITerrainDocument, kind: "project", ): Promise<IExportArchive>;
 ```
 
 - **Use when:** export a terrain recipe and its numerical runtime data
@@ -6644,6 +6971,84 @@ export async function makeExport( state: ITerrainState, recipe: ITerrainDocument
 
 ```ts
 const terrain = new Terrain({ resolution: 17 }); const file = await makeExport(terrain.evaluate(), terrain.toJSON(), "project");
+```
+
+### `measureBands`
+
+`function` — Resolve a biome's fraction bands against this world's own height samples.
+
+```ts
+export function measureBands( layers: readonly ILayerInfo[], heights: ArrayLike<number>, ): IMeasuredBands { … }
+```
+
+- **Use when:** turn a biome file's height fractions into the metres a world actually measured
+- **Constraints:** samples are finite and at least one; a flat field resolves every band onto its one height
+- **Requires:** npm i -D @threenative/terrain
+
+```ts
+const bands = measureBands(spec.layers, state.height);
+```
+
+### `orderedScatterRules`
+
+`function` — A biome's rows as the ordered generators read them. The rule is short and shared; only these numbers differ between a wood, a barren shoulder, a dune field and a tundra, so the biome file names them rather than the code. A biome whose tree is not one this generator has art for fails here, naming the species, rather than planting nothing.
+
+```ts
+export function orderedScatterRules(spec: IBiomeSpec): IOrderedScatterRules { … }
+```
+
+- **Use when:** run a biome file's rows through the ordered scatter
+- **Constraints:** the file carries one foliage row, one grass row and a cover block
+- **Requires:** npm i -D @threenative/terrain
+
+```ts
+const rules = orderedScatterRules(spec);
+```
+
+### `propAssetOf`
+
+`function` — The asset a package run names. A prop run names the model it draws, `asset:variant[@shape]`; a container written by `bakeWorldPackage` names the asset alone. Both reduce to the asset here, which is what a count, a material or a placement's own `asset` field holds.
+
+```ts
+export function propAssetOf(modelKey: string): string { … }
+```
+
+- **Use when:** count one species across a world's prop buckets, or name the asset a run draws
+- **Requires:** npm i -D @threenative/terrain
+
+```ts
+const asset = propAssetOf("spruce:2"); // "spruce"
+```
+
+### `propPackageFile`
+
+`function` — A path under `world/` that no bucket name can break: `local:true` becomes `local-true`. The bucket's own name is kept in the manifest, so this rename is only a file-system concern.
+
+```ts
+export function propPackageFile(world: string, bucket: string, suffix: string): string { … }
+```
+
+- **Use when:** name one of a bucket's three files without a bucket key that breaks a path
+- **Requires:** npm i -D @threenative/terrain
+
+```ts
+const file = propPackageFile("forest", "local:true", "props.bin"); // "forest.local-true.props.bin"
+```
+
+### `propPackageFiles`
+
+`function` — Write a compiled package as the manifest the game fetches and one set of files per bucket. The manifest names the files rather than embedding them, so a loader fetches only the buckets its query flags keep (`?farForest=on` keeps the far field, `?meadow=off` drops the vista cover).
+
+```ts
+export function propPackageFiles(pkg: IPropPackage, world: string): IPropPackageFiles { … }
+```
+
+- **Use when:** write a compiled package to disk: one manifest and three files per streamed world
+- **Constraints:** the manifest names the files; nothing here touches a file system
+- **Requires:** npm i -D @threenative/terrain
+
+```ts
+const { manifest, files } = propPackageFiles(pkg, "forest");
 ```
 
 ### `sampleHeight`
@@ -6660,6 +7065,22 @@ sampleHeight = (grid: ISampledGrid, x: number, z: number): number => sampleGrid(
 
 ```ts
 const height = sampleHeight(new Terrain({ resolution: 17 }).evaluate(), 0, 0);
+```
+
+### `scatterProps`
+
+`function` — Every placement, for one world, from one seed: the game's own rule set, in its own draw order.
+
+```ts
+export function scatterProps( data: IOrderedScatterField, focus: { … }
+```
+
+- **Use when:** bake a biome that says `"stream": "ordered"`
+- **Constraints:** `data.rules` is the biome's rows, and `data.field` the ground they were graded on
+- **Requires:** npm i -D @threenative/terrain
+
+```ts
+const { placements, counts } = scatterProps(data, focus, clearings);
 ```
 
 ### `slopeAtIndex`
@@ -6718,7 +7139,7 @@ const points = splinePoints([[0, 4, 0], [10, 2, 10]], 3, false);
 export class Terrain { … }
 ```
 
-- **Use when:** author seeded terrain with noise, sculpting, erosion, roads, rivers and scatter · generate a procedural heightmap landscape or island for a game
+- **Use when:** author seeded terrain with noise, sculpting, erosion, roads, rivers and scatter · generate a procedural heightmap landscape or island for a game · make realistic mountains, hills, desert, coast, tundra or volcano terrain: start from `landform(kind)`, or add `erode({ method: "fluvial" })` for dendritic valleys
 - **Constraints:** authoring stays outside the game's steady-play graph; no renderer or physics is created · units are metres with Y up; `size` is the world edge in metres (1 to 100000), centred on the origin · `resolution` counts vertices per edge and must be one of 17, 33, 65, 129, 257, 513 or 1025 · `seed` is an integer from 0 to 4294967295; one document and seed evaluate to the same arrays · `evaluate()` is synchronous on the calling thread: run it in a build script, never per frame · no art is chosen or shipped: materials, models and texture paths belong to the game
 - **Requires:** npm i @threenative/terrain
 - **Overrides:** size, resolution, seed and all layer parameters are caller choices
@@ -6742,6 +7163,38 @@ export class TerrainEvaluator { … }
 
 ```ts
 const terrain = new Terrain({ resolution: 17 }); const evaluator = new TerrainEvaluator(); const state = evaluator.evaluate(terrain.toJSON());
+```
+
+### `terrainStats`
+
+`function` — Landform statistics used to calibrate generators against real DEMs.
+
+```ts
+export function terrainStats(height: ArrayLike<number>, n: number, size: number): ITerrainStats { … }
+```
+
+- **Use when:** compare generated terrain with a USGS or SRTM crop on the same footprint
+- **Constraints:** square grids only; compare crops of equal spacing, because slope and curvature depend on it
+- **Requires:** npm i @threenative/terrain
+
+```ts
+const stats = terrainStats(state.height, state.resolution, state.size);
+```
+
+### `validateBiome`
+
+`function` — One biome file, checked field by field. The file is `biome.data.json`: `biome.json` is Biome's own configuration name, and a data file called that is parsed as a project config and fails the lint.
+
+```ts
+export function validateBiome(spec: unknown, name: string): IBiomeSpec { … }
+```
+
+- **Use when:** read a biome's rules from `starter/<biome>/biome.data.json` before a game or a cook uses them
+- **Constraints:** The file carries no appearance; colours, materials and shading stay game source
+- **Requires:** npm i @threenative/terrain
+
+```ts
+const spec = validateBiome(JSON.parse(text), "forest");
 ```
 
 ### `validateDocument`
@@ -6796,6 +7249,70 @@ export function checkEnvironmentAssets( environment: IEnvironment, assets: reado
 checkEnvironmentAssets({ sky: { image: "dusk" } }, document.assets ?? []);
 ```
 
+### `createEditorSelection`
+
+`function` — Gesture and transaction mechanics; the caller owns the controls, proxy and all rendering.
+
+```ts
+export function createEditorSelection( { … }
+```
+
+- **Use when:** drive terrain-editor selection, gizmo drags, undo and saved transactions
+- **Constraints:** the caller supplies the TransformControls, proxy, controller and every drawing callback
+- **Requires:** npm i -D @threenative/terrain
+
+```ts
+const selection = createEditorSelection({ gizmo, proxy, controller, grounding, surface, defaultFootprintSize, refreshPose, drawFootprint, restorePlacement, previewPlacement, setSaving, selectedChanged, setNavigation, message });
+```
+
+### `editorPlacementCenter`
+
+`function` — Transform the caller's measured geometry centre into the evaluated placement's world space.
+
+```ts
+export function editorPlacementCenter(point: Vector3, pose: IPlacementOverride): Vector3 { … }
+```
+
+- **Use when:** find the world-space centre of a placed terrain-editor instance
+- **Constraints:** the point is multiplied in place; the pose needs finite position, quaternion and scale
+- **Requires:** npm i -D @threenative/terrain
+
+```ts
+const centre = editorPlacementCenter(localCentre.clone(), placement);
+```
+
+### `editorPointToClient`
+
+`function` — Project an injected world point to client pixels in the caller's viewport.
+
+```ts
+export function editorPointToClient( point: Vector3, camera: Camera, box: { … }
+```
+
+- **Use when:** convert a terrain-editor world point to viewport client pixels
+- **Constraints:** the point is projected in place; pass a clone to keep the original
+- **Requires:** npm i -D @threenative/terrain
+
+```ts
+const [x, y] = editorPointToClient(point.clone(), camera, canvas.getBoundingClientRect());
+```
+
+### `editorSurfaceHeight`
+
+`function` — Query the rendered heightfield, including its triangulation rather than an interpolated bake.
+
+```ts
+export function editorSurfaceHeight( ctx: { … }
+```
+
+- **Use when:** query terrain-editor surface elevation at world X/Z coordinates
+- **Constraints:** the supplied mesh and raycast determine the surface; missing intersections return undefined
+- **Requires:** npm i -D @threenative/terrain
+
+```ts
+const height = editorSurfaceHeight(ctx, terrainMesh, x, z);
+```
+
 ### `focusCamera`
 
 `function` — Frame a point, prop, landmark or region for the live viewport and projection. @summary Frame a focus target with an editor observation camera
@@ -6847,6 +7364,22 @@ export function inspectSpatial( state: ITerrainState, revision: string, query: I
 const observation = inspectSpatial(state, revision, { kind: "point", at: [0, 0] });
 ```
 
+### `landformPose`
+
+`function` — Recipe footprints are heights over X/Z, never independently transformed solids.
+
+```ts
+export function landformPose(layer: Layer, worldSize: number, defaultSize: number) { … }
+```
+
+- **Use when:** derive a terrain-editor gizmo pose from a landform layer
+- **Constraints:** the caller supplies world and default footprint sizes; unsupported layers return undefined
+- **Requires:** npm i -D @threenative/terrain
+
+```ts
+const pose = landformPose(layer, terrain.size, footprintSize);
+```
+
 ### `mountTerrainEditor`
 
 `function` — Mount recovered terrain controls around the project-owned ThreeNative view.
@@ -6862,6 +7395,38 @@ export async function mountTerrainEditor(options: { … }
 
 ```ts
 await mountTerrainEditor({ createView: createEditorView, materialColours: terrainPalette });
+```
+
+### `pickEditorPlacement`
+
+`function` — A foreground terrain hit occludes placements; matching uses the evaluated world position.
+
+```ts
+export function pickEditorPlacement( ctx: Parameters<typeof pickEditorSurface>[0], terrain: Mesh, meshes: readonly Object3D[], placements: Iterable< { … }
+```
+
+- **Use when:** pick a placed instance in the terrain editor from viewport client coordinates
+- **Constraints:** the caller supplies the raycast context, terrain mesh, instanced meshes and evaluated placements
+- **Requires:** npm i -D @threenative/terrain
+
+```ts
+const id = pickEditorPlacement(ctx, terrainMesh, meshes, placements, event.clientX, event.clientY);
+```
+
+### `pickEditorSurface`
+
+`function` — Convert viewport client coordinates once; the installed picker owns ray intersection.
+
+```ts
+export function pickEditorSurface( ctx: { … }
+```
+
+- **Use when:** pick a terrain-editor surface from viewport client coordinates
+- **Constraints:** the caller supplies the raycast implementation and ordered targets
+- **Requires:** npm i -D @threenative/terrain
+
+```ts
+const hit = pickEditorSurface(ctx, [terrainMesh], event.clientX, event.clientY);
 ```
 
 ### `probeTerrain`
@@ -6964,6 +7529,22 @@ export class TerrainEditorController { … }
 
 ```ts
 const controller = new TerrainEditorController(editorUrl); const snapshot = await controller.snapshot();
+```
+
+### `transformedLandform`
+
+`function` — Convert a terrain-editor gizmo pose into a heightfield landform footprint.
+
+```ts
+export function transformedLandform( layer: Layer, position: Vector3, quaternion: Quaternion, scale: Vector3, anchor: number, ): Layer { … }
+```
+
+- **Use when:** apply a terrain-editor gizmo transform to a landform layer
+- **Constraints:** finite coordinates and positive scales are required; X/Z rotations that overhang throw
+- **Requires:** npm i -D @threenative/terrain
+
+```ts
+const next = transformedLandform(layer, position, quaternion, scale, surfaceHeight);
 ```
 
 ### `validateAsset`
@@ -7123,21 +7704,104 @@ const document = new TerrainEditorDocument("/project/terrain/world.json"); const
 
 ## `@threenative/terrain/export`
 
-### `exportWorldGLB`
+### `prepareWorldGLTF`
 
-`function` — Export a committed evaluated world using ordinary glTF 2.0 nodes and embedded PBR images.
+`function` — Prepare the game's validated, frozen portable scene; the server cook owns GLB encoding.
 
 ```ts
-export async function exportWorldGLB(input: IWorldGLBInput): Promise<IWorldGLBExport> { … }
+export async function prepareWorldGLTF(input: IWorldGLBInput): Promise< { … }
 ```
 
-- **Use when:** export terrain, resolved models and final manual placement transforms as a portable GLB · export the whole terrain world as one glb for another three.js project
-- **Constraints:** browser authoring (FileReader/canvas); caller supplies all appearance and coherent baked water; root and /three remain headless
+- **Use when:** export the terrain as a glb for another three.js project via the headless cook · prepare the terrain editor's resolved world for headless portable GLB cooking
+- **Constraints:** browser authoring FileReader/canvas; all appearance and coherent water come from the game
 - **Requires:** npm i -D @threenative/terrain
-- **Overrides:** actual static models, final matrices and baked PBR maps are supplied by the game
 
 ```ts
-const output = await exportWorldGLB({ revision, snapshotTime: 0, state, terrain, assets, transforms });
+const prepared = await prepareWorldGLTF(input);
+```
+
+## `@threenative/terrain/kit`
+
+### `bakeKit`
+
+`function` — Bake a copied kit, optionally using the caller's installed world cook.
+
+```ts
+export async function bakeKit( url: string, { … }
+```
+
+- **Use when:** bake a copied terrain starter kit into its offline world package
+- **Constraints:** Node authoring only; recipes, asset tables and sky paths stay in the game
+- **Requires:** npm i -D @threenative/terrain
+
+```ts
+await bakeKit(import.meta.url, { sky: "hdri/game-sky.hdr" });
+```
+
+### `starterAssetsDir`
+
+`function` — Resolve shared starter assets locally, or download the package's pinned archive on demand.
+
+```ts
+export async function starterAssetsDir(): Promise<string> { … }
+```
+
+- **Use when:** resolve terrain kit models and textures for offline baking
+- **Constraints:** Node authoring only; verifies archive size and SHA256 before atomic extraction
+- **Requires:** npm i -D @threenative/terrain
+
+```ts
+const assets = await starterAssetsDir();
+```
+
+## `@threenative/terrain/starter`
+
+### `addStarterWorld`
+
+`function` — Load caller-authored starter data with one scene lifetime; all appearance comes from spec.
+
+```ts
+export async function addStarterWorld<Extra extends { … }
+```
+
+- **Use when:** attach a baked starter world with game-owned surfaces, prop dressing and water
+- **Constraints:** Runtime subpath; the game supplies every appearance and collision choice
+- **Requires:** npm i -D @threenative/terrain
+
+```ts
+await addStarterWorld(ctx, follow, spec);
+```
+
+### `editWorldPlacements`
+
+`function` — Apply deterministic startup edits to the decoded placement data before a world is loaded.
+
+```ts
+export function editWorldPlacements( data: { … }
+```
+
+- **Use when:** change generated terrain composition from game source without rebaking the world
+- **Requires:** npm i -D @threenative/terrain
+- **Overrides:** grounding defaults on, while `grounding: false` preserves the authored Y coordinate
+
+```ts
+const edited = editWorldPlacements(data, { remove: ["scree:candidate:7:41"] }, (x, z) => field.heightAt(x, z));
+```
+
+### `PropColliders`
+
+`class` — Stream caller-specified fixed collision shapes around a moving follow object.
+
+```ts
+export class PropColliders extends Object3D implements IComputeDriven { … }
+```
+
+- **Use when:** attach nearby prop collision bodies from baked placement records
+- **Constraints:** Shapes and reach are supplied by the game; detach releases every body
+- **Requires:** npm i -D @threenative/terrain
+
+```ts
+new PropColliders(ctx, follow, manifest, records, shapes, reach, name);
 ```
 
 ## `@threenative/terrain/three`

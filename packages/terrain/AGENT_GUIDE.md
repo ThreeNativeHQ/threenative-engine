@@ -79,6 +79,18 @@ t.materials({ id: 'surfaces', base: 'grass', rules: [
 t.paint({ id: 'camp-dirt', at: [-70,50], radius: 27, material: 'dirt', strength: .9 });
 ```
 
+## Realistic mountains and environments
+
+Start from a kind, not from noise. `landform(kind, { size, resolution, seed, relief })` returns an ordinary `Terrain` with a calibrated recipe: `alpine`, `temperateMountains`, `rollingHills`, `desertMesa`, `coastalCliffs`, `tundra`, `volcanic`. `LANDFORMS[kind]` names the real reference landscape and the measured targets. It decides shape only, never material or colour. Calibrated at size 5000, resolution 513; other sizes keep slopes and scale relief with `size`. `relief` (metres, highest minus lowest) defaults to the kind's real ratio times `size`.
+
+```js
+import { landform, terrainStats } from '@threenative/terrain';
+const state = landform('alpine', { seed: 4 }).evaluate();   // build script, about 1.5 s at 513
+terrainStats(state.height, state.resolution, state.size);   // relief, slopes, hypsometry, curvature kurtosis
+```
+
+`erode({ method: 'fluvial' })` is the engine behind it: stream-power incision with uplift (Braun & Willett 2013, Cordonnier et al. 2016). The earlier layers are the uplift envelope; it cuts dendritic valleys and sharp divides that droplet erosion at game resolution does not. Params: `iterations` (default 40), `uplift` m/yr, `erodibility` K, `timeStep` yr, `talus` landslide threshold, `relief` metres. Follow it with a short `thermal` pass and `smooth` to remove the 8-neighbour grain. Bake a backdrop: `node packages/terrain/scripts/bake-horizon.mjs alpine --seed 4 --out alpine-horizon.json`.
+
 ## Roads, rivers and water
 
 A road, river or ramp **grades itself to the ground it crosses** when a control point leaves its elevation out (`null`, or `NaN` in code) or when it sets `followTerrain: true`. The elevation is sampled along the centreline, low-passed along arc length, then held inside `maxGrade` (default 0.12) and `maxCut`/`maxFill` (default 2.5 m / 1.5 m); the shoulder widens into a batter with the cut or fill, so a corridor never stands on a retaining step. Leaving the ground is the hard limit: where the ground itself is steeper than `maxGrade`, the road is steep too. Absolute elevations are still honoured exactly, so existing documents keep their meaning. Horizontal spline interpolation is Catmull–Rom; vertical interpolation is linear between controls to avoid vertical overshoot. Use `smooth:false` for a polyline.
@@ -169,11 +181,11 @@ panel that calls the same code. A write names `baseRevision`; a stale one is a 4
 
 ## Resolved static-world GLB
 
-Import `exportWorldGLB` from `@threenative/terrain/export` in browser authoring source. Its import is DOM-free; encoding requires FileReader and canvas. Root and `/three` remain headless. This entry uses the installed Three.js GLTFExporter rather than a terrain-specific loader format.
+Import `prepareWorldGLTF` from `@threenative/terrain/export` in browser authoring source. Its import is DOM-free; scene preparation requires FileReader and canvas. Root and `/three` remain headless. This entry uses the installed Three.js GLTFExporter to prepare glTF JSON; the Node assets cook owns GLB encoding.
 
 ```ts
-import { exportWorldGLB } from '@threenative/terrain/export';
-const output = await exportWorldGLB({
+import { prepareWorldGLTF } from '@threenative/terrain/export';
+const prepared = await prepareWorldGLTF({
   revision,             // accepted document's 64-character content hash
   snapshotTime,         // finite seconds, pinned across all baked deformations
   state,                // evaluated committed recipe with applied override records
@@ -182,7 +194,10 @@ const output = await exportWorldGLB({
   transforms,           // Map<placementId, Matrix4>: actual final grounded root matrices
   water,                // [{ id, object, time: snapshotTime, staleFrames: 0 }]
 });
-// output.bytes is the self-contained world.glb; persist only after success.
+// Send prepared.json to your Node authoring process, then:
+// import { cookTerrainWorld } from '@threenative/assets';
+// const { worldGlb } = await cookTerrainWorld({ preparedWorld: prepared.json });
+// worldGlb is the self-contained world.glb; persist only after success.
 ```
 
 Game source owns all geometry, materials and images. The terrain needs albedo `map`, `normalMap`, `roughnessMap` and `aoMap`; vertex colours alone are insufficient. MeshStandardMaterial metallic/roughness surfaces are supported. Colour/emissive images are sRGB, data maps are NoColorSpace. Supply decoded byte images (at most 16 megapixels); DataTexture images need complete RGBA bytes. Bake alpha into the colour image. Bake displacement, bump/light maps, node shaders, skinning/morphing and wind into the supplied static geometry/material first. Use tangent-space normal maps with equal X/Y scale magnitudes; bake object-space/anisotropic maps first. MeshPhysicalMaterial extensions are outside this bounded encoder's contract.

@@ -473,3 +473,39 @@ describe("a chunk streamed into a walking world", () => {
     world.dispose();
   });
 });
+
+it("settles the draw gate for a world holding no cell near the follow point", async () => {
+  vi.spyOn(console, "info").mockImplementation(() => undefined);
+  stubFixtureFetch();
+  // The whole fixture lies west of this follow point, so no cell is resident, nothing loads and no
+  // later update of this load can queue a prewarm. A game awaiting `prewarmed` there used to wait
+  // for its own admission deadline and land nothing; see the Strata spawn gate.
+  const world = await WorldCells.load({
+    admissionBudgetMs: Number.POSITIVE_INFINITY,
+    budgets,
+    follow: { position: { x: MIN_X + 200 * CELL_SIZE, z: MIN_Z + 0.5 * CELL_SIZE } },
+    loadModel: async () => model(),
+    prefetchSeconds: 0,
+    ring: 1,
+    shadows: { cast: false },
+    terrain: false,
+    bundles: false,
+    surface,
+    url: "/world/world.json",
+  });
+  new Group().add(world);
+  let settled = false;
+  void world.prewarmed.then(() => {
+    settled = true;
+  });
+  try {
+    for (let frame = 0; frame < 10 && !settled; frame++) {
+      world.update();
+      await flush(1);
+    }
+    expect(world.stats().residentCells).toBe(0);
+    expect(settled).toBe(true);
+  } finally {
+    world.dispose();
+  }
+});

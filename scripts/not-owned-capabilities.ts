@@ -46,7 +46,7 @@ export const NOT_OWNED_CAPABILITIES: readonly INotOwnedCapability[] = [
       "procedural trees",
       "swaying trees",
       "tree foliage wind sway",
-      "generate a forest of trees",
+      "grow procedural tree meshes",
     ],
   },
   {

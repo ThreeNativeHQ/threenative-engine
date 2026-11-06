@@ -36,6 +36,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Breaking
 
+- `@threenative/terrain/export` removes `exportWorldGLB`. Prepare the browser scene with
+  `prepareWorldGLTF`, then encode it in Node with `cookTerrainWorld({ preparedWorld: prepared.json })`
+  from `@threenative/assets`; the editor already uses this shared cook.
+
+- `@threenative/assets`'s `cookTerrainWorld` declaration adds a prepared-world JSON overload
+  for the terrain editor's portable GLB export. Existing state/species/out calls remain valid;
+  the new overload embeds the game's frozen scene without instancing or filesystem output.
+
+- `@threenative/terrain`'s `makeExport` declaration adds a `"project"` overload accepting
+  a null terrain state, so recipes can be exported before the first evaluation. Existing
+  calls remain valid; non-project exports still require an evaluated state.
 - `@threenative/core`'s `AutoExposureNode` extends Three's `Node` instead of the `TempNode` that
   Three 0.187 deprecated (PRD-775), so its recorded signature changes. No game code names that
   base class: `exposure` still returns the same node with the same constructor arguments, and the

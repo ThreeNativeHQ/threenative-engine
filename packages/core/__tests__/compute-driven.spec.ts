@@ -137,7 +137,10 @@ describe("ComputeDrivenRegistry", () => {
       const prewarmDraws = loadingDraws;
       game.ctx.canvasLayer.keepWorldRendering = false;
       complete();
-      for (let i = 13; i <= 30; i++) {
+      // The held warm-up yields frames and settlement needs two quiet ones, so run until ready
+      // (bounded); ordinary work must stay held on every frame before that.
+      for (let i = 13; i <= 60 && game.ctx.startup.phase !== "ready"; i++) {
+        expect(ordinary.processed).toBe(0);
         frame(i * 16);
         await Promise.resolve();
       }
@@ -234,14 +237,16 @@ describe("ComputeDrivenRegistry", () => {
       for (let index = 0; index < 4; index += 1) await Promise.resolve();
       await new Promise<void>((resolve) => setTimeout(resolve, 0));
       await Promise.resolve();
-      for (const time of [32, 48, 64, 80, 96]) {
+      // Readiness needs five in-budget frames after compile settles, then two rendered quiet
+      // polls once the world has been admitted, before render-cadence compute is allowed.
+      for (const time of [32, 48, 64, 80, 96, 112, 128]) {
         frame(time);
         await Promise.resolve();
       }
       await ready;
 
-      frame(112);
-      frame(128);
+      frame(144);
+      frame(160);
       expect(dispatched).toHaveLength(2);
     } finally {
       game.stop();

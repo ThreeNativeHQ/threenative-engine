@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { TerrainEditorController } from "@threenative/terrain/editor";
 import { terrainEditor } from "@threenative/terrain/editor/server";
+import { starterAssetsDir } from "@threenative/terrain/kit";
 import { createServer } from "vite";
 import {
   advanceFixedStep,
@@ -31,7 +32,7 @@ const server = await createServer({
   configFile: false,
   // The game's own starter maps, served as the real dev server serves them: the surface proof binds
   // imported images into these textures, so they have to be the ones that loaded.
-  publicDir: resolve("../../packages/terrain/starter-assets"),
+  publicDir: await starterAssetsDir(),
   server: { host: "127.0.0.1", port: Number(process.env.EDITOR_PORT ?? 5197) },
   plugins: [plugin],
   optimizeDeps: { exclude: ["@threenative/terrain/editor"] },
@@ -63,7 +64,10 @@ try {
       if (message.type() === "error") errors.push(message.text());
     });
     await session.page.waitForFunction(
-      () => window.strata?.state && !window.strata.busy,
+      () =>
+        window.strata?.state &&
+        !window.strata.busy &&
+        window.strata.view.inspect().renderedRevision,
       {},
       { timeout: 10000 },
     );
@@ -78,7 +82,9 @@ try {
       });
       const start = performance.now();
       await session.page.waitForFunction(
-        (revision) => window.strata?.renderedRevision === revision,
+        (revision) =>
+          window.strata?.renderedRevision === revision &&
+          window.strata.view.inspect().renderedRevision === revision,
         accepted.revision,
         { timeout: 2000 },
       );
@@ -419,15 +425,90 @@ try {
       "Only the deliberately rejected GUI imports may produce a console error",
     );
   });
+  // A heavy erosion layer makes the 513 preview build run about 6 s, so the scenario's cancel click
+  // (which arrives roughly 3 s after the build starts, behind the runner's per-step settling) lands mid-build.
+  const cancellationFixture = await controller.snapshot();
+  await controller.commit({
+    baseRevision: cancellationFixture.revision,
+    commands: [
+      {
+        op: "upsert",
+        layer: {
+          id: "worker-cancel-erosion",
+          type: "erode",
+          enabled: true,
+          params: { method: "hydraulic", droplets: 200000, maxSteps: 128 },
+        },
+      },
+    ],
+  });
   const report = await runStandalonePlaytest(config);
+  const strokeTicks = report.observations?.resourceSeries
+    ?.filter((sample) => ["brush-apply", "second-stroke-50ms"].includes(sample.label))
+    .map(({ label, tick }) => ({ label, tick }));
+  console.log(
+    JSON.stringify({
+      editorAssertions: report.assertionResults?.filter((result) =>
+        /editor(PersistedStrokes|Announcement|Focus|Tool)/u.test(result.id),
+      ),
+      strokeTicks,
+    }),
+  );
+  assert.equal(strokeTicks?.length, 2, "Both stroke boundaries must be observed");
+  assert.equal(
+    strokeTicks[1].tick - strokeTicks[0].tick,
+    3,
+    "Stroke boundaries must be 50 ms apart in fixed time",
+  );
+  const diskStrokes = JSON.parse(readFileSync(path, "utf8")).recipe.layers.filter(
+    (layer) => layer.name === "Sculpt stroke",
+  ).length;
+  const snapshotStrokes = (await controller.snapshot()).document.recipe.layers.filter(
+    (layer) => layer.name === "Sculpt stroke",
+  ).length;
+  assert.equal(diskStrokes, snapshotStrokes, "world.json must contain every acknowledged stroke");
+  const initialStrokes = cancellationFixture.document.recipe.layers.filter(
+    (layer) => layer.name === "Sculpt stroke",
+  ).length;
+  assert.equal(
+    diskStrokes - initialStrokes,
+    4,
+    "world.json must retain the three keyboard strokes and recovery edit",
+  );
+  console.log(JSON.stringify({ diskStrokes, snapshotStrokes, initialStrokes }));
   assert(report.assertionResults?.length > 0, "Scenario assertions were not observed");
   assert(
     report.assertionResults.every((result) => result.pass),
-    JSON.stringify(report.assertionResults),
+    JSON.stringify({ results: report.assertionResults, diagnostics: report.diagnostics }),
   );
   assert(
     !report.diagnostics.some((diagnostic) => diagnostic.severity === "error"),
     JSON.stringify(report.diagnostics),
+  );
+  const conflictReport = await runStandalonePlaytest({
+    ...config,
+    scenarioPath: resolve("playtests/editor-conflict.playtest.json"),
+    url: new URL("conflict.html", activation.editorUrl).href,
+    artifactDirectory: resolve("artifacts/playtest/editor-conflict"),
+  });
+  assert.deepEqual(
+    conflictReport.observations?.console
+      .filter((message) => message.type === "error")
+      .map((message) => message.text),
+    Array(4).fill("Failed to load resource: the server responded with a status of 409 (Conflict)"),
+    "Only the four injected stale writes may produce conflict-lane console errors",
+  );
+  assert(conflictReport.assertionResults?.length > 0, "Conflict assertions were not observed");
+  assert(
+    conflictReport.assertionResults.every((result) => result.pass),
+    JSON.stringify({
+      results: conflictReport.assertionResults,
+      diagnostics: conflictReport.diagnostics,
+    }),
+  );
+  assert(
+    !conflictReport.diagnostics.some((diagnostic) => diagnostic.severity === "error"),
+    JSON.stringify(conflictReport.diagnostics),
   );
 } finally {
   await server.close();

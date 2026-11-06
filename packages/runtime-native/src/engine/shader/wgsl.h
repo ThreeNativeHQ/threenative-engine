@@ -40,6 +40,8 @@ private:
     explicit WgslEmitter(const Program& program);
     std::string type(const Type& t) const;
     std::string expr(ExprId id) const;
+    /** A filtered read's coordinate argument(s): an array texture takes the uv (xy) and its layer (z, an i32) apart. */
+    std::string coordinate(const Expr& e) const;
     std::string inlined(ExprId id) const;
     void block(uint32_t index, int depth, std::string& out) const;
 

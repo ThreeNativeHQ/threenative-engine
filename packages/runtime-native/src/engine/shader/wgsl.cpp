@@ -163,6 +163,12 @@ WgslEmitter::WgslEmitter(const Program& program)
     }
 }
 
+std::string WgslEmitter::coordinate(const Expr& e) const {
+    const std::string uv = expr(e.args[0]);
+    if (p_.textureKinds_[e.immediate] != Program::TextureKind::Float2dArray) return uv;
+    return "(" + uv + ").xy, i32(floor((" + uv + ").z))";
+}
+
 std::string WgslEmitter::expr(ExprId id) const {
     if (bound_[id]) return "e" + std::to_string(id);
     std::string text = inlined(id);
@@ -207,11 +213,11 @@ std::string WgslEmitter::inlined(ExprId id) const {
             return "textureLoad(t_" + p_.textures_[e.immediate] + ", " + expr(e.args[0]) + ", " + expr(e.args[1]) + ")";
         case Op::SampleBias: {
             const std::string& name = p_.textures_[e.immediate];
-            return "textureSampleBias(t_" + name + ", smp_" + name + ", " + expr(e.args[0]) + ", " + expr(e.args[1]) + ")";
+            return "textureSampleBias(t_" + name + ", smp_" + p_.textures_[p_.samplerOwner(e.immediate)] + ", " + coordinate(e) + ", " + expr(e.args[1]) + ")";
         }
         case Op::SampleLevel: {
             const std::string& name = p_.textures_[e.immediate];
-            return "textureSampleLevel(t_" + name + ", smp_" + name + ", " + expr(e.args[0]) + ", " + expr(e.args[1]) + ")";
+            return "textureSampleLevel(t_" + name + ", smp_" + p_.textures_[p_.samplerOwner(e.immediate)] + ", " + coordinate(e) + ", " + expr(e.args[1]) + ")";
         }
         case Op::Sample: {
             if (e.argc == 2 && e.type == Type::vec(4)) {  // three's gather().compare(), a whole-texel offset
@@ -227,8 +233,8 @@ std::string WgslEmitter::inlined(ExprId id) const {
                 return "textureSampleCompareLevel(t_" + name +
                        ", smp_" + name + ", " + expr(e.args[0]) + ", " + expr(e.args[1]) + ")";
             return p_.stage_ == Stage::Fragment
-                       ? "textureSample(t_" + name + ", smp_" + name + ", " + expr(e.args[0]) + ")"
-                       : "textureSampleLevel(t_" + name + ", smp_" + name + ", " + expr(e.args[0]) + ", 0.0)";
+                       ? "textureSample(t_" + name + ", smp_" + p_.textures_[p_.samplerOwner(e.immediate)] + ", " + coordinate(e) + ")"
+                       : "textureSampleLevel(t_" + name + ", smp_" + p_.textures_[p_.samplerOwner(e.immediate)] + ", " + coordinate(e) + ", 0.0)";
         }
         case Op::Neg: return "(-" + expr(e.args[0]) + ")";
         case Op::Select:
@@ -414,10 +420,11 @@ WgslModule WgslEmitter::emit(const Program& program, uint32_t group) {
         out += "@group(" + std::to_string(group) + ") @binding(" + std::to_string(binding++) + ") var t_" + name +
                (kind == Program::TextureKind::DepthCube || kind == Program::TextureKind::DepthCubeValues ? ": texture_depth_cube;\n"
                 : kind == Program::TextureKind::Float3d ? ": texture_3d<f32>;\n"
+                : kind == Program::TextureKind::Float2dArray ? ": texture_2d_array<f32>;\n"
                 : kind == Program::TextureKind::FloatCube ? ": texture_cube<f32>;\n"
                 : depth                                 ? ": texture_depth_2d;\n"
                                                         : ": texture_2d<f32>;\n");
-        if (program.textureNeedsSampler(i))
+        if (program.textureNeedsSampler(i) && program.samplerOwner(i) == i)
             out += "@group(" + std::to_string(group) + ") @binding(" + std::to_string(binding++) + ") var smp_" + name +
                    (depth ? ": sampler_comparison;\n" : ": sampler;\n");
     }
@@ -434,7 +441,7 @@ WgslModule WgslEmitter::emit(const Program& program, uint32_t group) {
             if (name == "position") out += std::string("  ") + (program.invariantPosition_ ? "@invariant " : "") + "@builtin(position) position: vec4<f32>,\n";
             else if (name == "color") out += "  @location(0) color: vec4<f32>,\n";
             else if (name == "fragDepth") out += "  @builtin(frag_depth) depth: f32,\n";
-            else out += "  " + std::string(slot.type.scalar == Type::Scalar::I32 || slot.type.scalar == Type::Scalar::U32 ? "@interpolate(flat) " : "") + "@location(" + std::to_string(location++) + ") o_" + name + ": " + e.type(slot.type) + ",\n";
+            else out += "  " + std::string(slot.type.scalar == Type::Scalar::I32 || slot.type.scalar == Type::Scalar::U32 || name.starts_with("tnFlat") ? "@interpolate(flat) " : "") + "@location(" + std::to_string(location++) + ") o_" + name + ": " + e.type(slot.type) + ",\n";
         }
         if (program.outputs_.empty()) {
             module.errors.push_back("TN_SHADER_PACKAGE_INVALID: a render stage writes no output");
@@ -478,7 +485,8 @@ WgslModule WgslEmitter::emit(const Program& program, uint32_t group) {
     // ponytail: varyings take locations in first-use order, which matches a vertex stage that
     // outputs them in the same order; a package-level link step replaces this when stages differ.
     for (ExprId id : varyings) {
-        out += std::string(first ? "" : ", ") + (program.exprs_[id].type.scalar == Type::Scalar::I32 || program.exprs_[id].type.scalar == Type::Scalar::U32 ? "@interpolate(flat) " : "") + "@location(" + std::to_string(location++) + ") i_" +
+        out += std::string(first ? "" : ", ") + (program.exprs_[id].type.scalar == Type::Scalar::I32 || program.exprs_[id].type.scalar == Type::Scalar::U32 ||
+                program.names_[program.exprs_[id].immediate].starts_with("tnFlat") ? "@interpolate(flat) " : "") + "@location(" + std::to_string(location++) + ") i_" +
                program.names_[program.exprs_[id].immediate] + ": " + e.type(program.exprs_[id].type);
         first = false;
     }

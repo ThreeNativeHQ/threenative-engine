@@ -119,7 +119,7 @@ ExprId Program::attribute(std::string_view name, Type type, Where where) {
 }
 
 ExprId Program::varying(std::string_view name, Type type, Where where) {
-    if (stage_ != Stage::Fragment) return fail("varying", "varyings are fragment inputs", where);
+    if (stage_ != Stage::Fragment) return fail("varying " + std::string(name), "varyings are fragment inputs", where);
     return pure(Expr{Op::Varying, type, {}, 0, intern(name)});
 }
 
@@ -264,9 +264,9 @@ ExprId Program::construct(Type type, const std::vector<ExprId>& parts, Where whe
         if (parts[i] == kInvalid) return kInvalid;
         ExprId id = parts[i];
         Type part = exprs_[id].type;
-        // One numeric part of the same shape converts, as WGSL's u32(x) and vec3<f32>(v) do.
+        // One part of the same shape converts, as WGSL's u32(x), vec3<f32>(v) and f32(bool) (true is 1.0) do.
         const auto numeric = [](Type t) { return t.scalar != Type::Scalar::Bool && !t.isMatrix(); };
-        const bool conversion = parts.size() == 1 && numeric(part) && numeric(type) && part.rows == type.rows;
+        const bool conversion = parts.size() == 1 && !part.isMatrix() && !type.isMatrix() && part.rows == type.rows;
         // Several parts: three's JoinNode casts each input to the vector's element type, so ivec2(a, b) of
         // whole numbers and vec2(i32, f32) build. A scalar part converts first; WGSL has no implicit cast.
         if (parts.size() > 1 && part.isScalar() && numeric(part) && numeric(type) && part.scalar != type.scalar) {
@@ -655,6 +655,14 @@ uint32_t Program::texture3d(std::string_view name) {
     return static_cast<uint32_t>(textures_.size() - 1);
 }
 
+uint32_t Program::texture2dArray(std::string_view name) {
+    for (std::size_t i = 0; i < textures_.size(); ++i)
+        if (textures_[i] == name && textureKinds_[i] == TextureKind::Float2dArray) return static_cast<uint32_t>(i);
+    textures_.emplace_back(name);
+    textureKinds_.push_back(TextureKind::Float2dArray);
+    return static_cast<uint32_t>(textures_.size() - 1);
+}
+
 uint32_t Program::textureCube(std::string_view name) {
     for (std::size_t i = 0; i < textures_.size(); ++i)
         if (textures_[i] == name && textureKinds_[i] == TextureKind::FloatCube) return static_cast<uint32_t>(i);
@@ -679,6 +687,35 @@ uint32_t Program::textureDepthCubeValues(std::string_view name) {
     textures_.emplace_back(name);
     textureKinds_.push_back(TextureKind::DepthCubeValues);
     return static_cast<uint32_t>(textures_.size() - 1);
+}
+
+void Program::setSamplerState(uint32_t texture, std::string state) {
+    if (texture >= textures_.size()) return;
+    samplerStates_.resize(textures_.size());
+    samplerStates_[texture] = std::move(state);
+}
+
+uint32_t Program::samplerOwner(uint32_t texture) const {
+    if (samplerStates_.empty()) return texture;
+    // Valid while no texture or expression was added since: a build adds both before it emits.
+    const std::size_t key = textures_.size() * 1000003u + exprs_.size();
+    if (samplerOwnersKey_ != key) {
+        samplerOwnersKey_ = key;
+        std::vector<bool> needs(textures_.size());
+        uint32_t needed = 0;
+        for (uint32_t i = 0; i < textures_.size(); ++i) needed += needs[i] = textureNeedsSampler(i);
+        samplerOwners_.resize(textures_.size());
+        for (uint32_t i = 0; i < textures_.size(); ++i) {
+            samplerOwners_[i] = i;
+            if (needed <= kMaxSamplers || i >= samplerStates_.size() || samplerStates_[i].empty()) continue;
+            for (uint32_t j = 0; j < i; ++j)
+                if (needs[j] && j < samplerStates_.size() && samplerStates_[j] == samplerStates_[i]) {
+                    samplerOwners_[i] = j;
+                    break;
+                }
+        }
+    }
+    return samplerOwners_[texture];
 }
 
 bool Program::textureNeedsSampler(uint32_t texture) const {
@@ -721,11 +758,21 @@ ExprId Program::gatherCompare(uint32_t texture, ExprId uv, ExprId reference, int
     return pure(Expr{Op::Sample, Type::vec(4), {uv, reference}, 2, gatherImmediate(texture, offsetX, offsetY)});
 }
 
+bool Program::filteredTexture(uint32_t texture) const {
+    const TextureKind kind = textureKinds_[texture];
+    return kind == TextureKind::Float2d || kind == TextureKind::Float3d || kind == TextureKind::FloatCube ||
+           kind == TextureKind::Float2dArray;
+}
+
+Type Program::coordinateType(uint32_t texture) const {
+    return textureKinds_[texture] == TextureKind::Float2d ? Type::vec(2) : Type::vec(3);
+}
+
 ExprId Program::sample(uint32_t texture, ExprId uv, Where where) {
     if (uv == kInvalid) return kInvalid;
-    if (texture >= textures_.size() || (textureKinds_[texture] != TextureKind::Float2d && textureKinds_[texture] != TextureKind::Float3d && textureKinds_[texture] != TextureKind::FloatCube))
+    if (texture >= textures_.size() || !filteredTexture(texture))
         return fail("sample", "no such texture", where);
-    if (exprs_[uv].type != ((textureKinds_[texture] == TextureKind::Float3d || textureKinds_[texture] == TextureKind::FloatCube) ? Type::vec(3) : Type::vec(2))) return fail("sample " + textures_[texture], "uv is " + exprs_[uv].type.name(), where);
+    if (exprs_[uv].type != coordinateType(texture)) return fail("sample " + textures_[texture], "uv is " + exprs_[uv].type.name(), where);
     return pure(Expr{Op::Sample, Type::vec(4), {uv}, 1, texture});
 }
 
@@ -733,10 +780,9 @@ ExprId Program::sampleBias(uint32_t texture, ExprId uv, ExprId bias, Where where
     if (uv == kInvalid || bias == kInvalid) return kInvalid;
     if (stage_ != Stage::Fragment)
         return fail("sampleBias", "requires the fragment stage", where);
-    if (texture >= textures_.size() || (textureKinds_[texture] != TextureKind::Float2d &&
-        textureKinds_[texture] != TextureKind::Float3d && textureKinds_[texture] != TextureKind::FloatCube))
+    if (texture >= textures_.size() || !filteredTexture(texture))
         return fail("sampleBias", "no such float texture", where);
-    const auto coordinate = textureKinds_[texture] == TextureKind::Float2d ? Type::vec(2) : Type::vec(3);
+    const auto coordinate = coordinateType(texture);
     if (exprs_[uv].type != coordinate)
         return fail("sampleBias " + textures_[texture], "uv is " + exprs_[uv].type.name(), where);
     if (exprs_[bias].type != Type::f32())
@@ -751,9 +797,9 @@ ExprId Program::sampleLevel(uint32_t texture, ExprId uv, ExprId level, Where whe
             return fail("sampleLevel " + textures_[texture], "a depth cube reads a vec3 direction at an i32 level", where);
         return pure(Expr{Op::SampleLevel, Type::f32(), {uv, level}, 2, texture});
     }
-    if (texture >= textures_.size() || (textureKinds_[texture] != TextureKind::Float2d && textureKinds_[texture] != TextureKind::Float3d && textureKinds_[texture] != TextureKind::FloatCube))
+    if (texture >= textures_.size() || !filteredTexture(texture))
         return fail("sampleLevel", "no such texture", where);
-    if (exprs_[uv].type != ((textureKinds_[texture] == TextureKind::Float3d || textureKinds_[texture] == TextureKind::FloatCube) ? Type::vec(3) : Type::vec(2)))
+    if (exprs_[uv].type != coordinateType(texture))
         return fail("sampleLevel " + textures_[texture], "uv is " + exprs_[uv].type.name(), where);
     if (exprs_[level].type != Type::f32())
         return fail("sampleLevel " + textures_[texture], "level is " + exprs_[level].type.name(), where);
@@ -1019,6 +1065,91 @@ void Program::linkVaryings(const Program& fragment) {
         if (stmt.kind != StmtKind::Output) continue;
         const auto name = previous[stmt.a].name;
         for (size_t i = 0; i < outputs_.size(); ++i) if (outputs_[i].name == name) { stmt.a = i; break; }
+    }
+}
+
+void Program::pruneDeadStatements() {
+    const auto grid = [&] {
+        std::vector<std::vector<uint8_t>> flags(blocks_.size());
+        for (std::size_t b = 0; b < blocks_.size(); ++b) flags[b].assign(blocks_[b].size(), 0);
+        return flags;
+    };
+    // An output that a later entry-block write of the same output replaces is dead, wherever it sits before that write.
+    auto shadowed = grid();
+    std::vector<uint8_t> written(outputs_.size());
+    const auto shadow = [&](auto& self, uint32_t block) -> void {
+        for (std::size_t i = 0; i < blocks_[block].size(); ++i) {
+            const Stmt& s = blocks_[block][i];
+            if (s.kind == StmtKind::Output && written[s.a]) shadowed[block][i] = 1;
+            if (s.kind == StmtKind::If || s.kind == StmtKind::Loop) self(self, s.body);
+            if (s.kind == StmtKind::If && s.otherwise) self(self, s.otherwise);
+        }
+    };
+    for (std::size_t i = blocks_[0].size(); i-- > 0;) {
+        const Stmt& s = blocks_[0][i];
+        if (s.kind == StmtKind::Output) {
+            shadowed[0][i] = written[s.a];
+            written[s.a] = 1;
+        } else if (s.kind == StmtKind::If || s.kind == StmtKind::Loop) {
+            shadow(shadow, s.body);
+            if (s.kind == StmtKind::If && s.otherwise) shadow(shadow, s.otherwise);
+        }
+    }
+    std::vector<uint8_t> liveExpr(exprs_.size()), liveVar(vars_.size());
+    bool grew = false;
+    const auto mark = [&](auto& self, ExprId id) -> void {
+        if (id == kInvalid || liveExpr[id]) return;
+        liveExpr[id] = 1;
+        grew = true;
+        const Expr& e = exprs_[id];
+        if (e.op == Op::LoadVar) liveVar[e.immediate] = 1;
+        for (uint8_t i = 0; i < e.argc; ++i) self(self, e.args[i]);
+    };
+    auto live = grid();
+    // Liveness only grows (a live load makes its variable's assignments live), so walking until nothing new is
+    // marked reaches the fixed point.
+    const auto walk = [&](auto& self, uint32_t block, bool loopLive) -> bool {
+        bool any = false;
+        for (std::size_t i = 0; i < blocks_[block].size(); ++i) {
+            const Stmt& s = blocks_[block][i];
+            bool on = false;
+            switch (s.kind) {
+            case StmtKind::Output: on = !shadowed[block][i]; if (on) mark(mark, s.b); break;
+            case StmtKind::Store:
+            case StmtKind::TextureStore: on = true; mark(mark, s.b); mark(mark, s.c); break;
+            case StmtKind::Discard:
+            case StmtKind::Return: on = true; break;
+            case StmtKind::Break:
+            case StmtKind::Continue: on = loopLive; break;
+            case StmtKind::Eval: on = liveExpr[s.b] || exprs_[s.b].op == Op::AtomicAdd; if (on) mark(mark, s.b); break;
+            case StmtKind::Assign: on = liveVar[s.a] != 0; if (on) mark(mark, s.b); break;
+            case StmtKind::If: {
+                const bool then = self(self, s.body, loopLive);
+                const bool otherwise = s.otherwise != 0 && self(self, s.otherwise, loopLive);
+                on = then || otherwise;
+                if (on) mark(mark, s.a);
+                break;
+            }
+            case StmtKind::Loop:
+                // A live loop keeps its own breaks and continues: they decide which iterations reach the live work.
+                on = self(self, s.body, false);
+                if (on) self(self, s.body, true), mark(mark, s.a);
+                break;
+            }
+            live[block][i] = on;
+            any = any || on;
+        }
+        return any;
+    };
+    do {
+        grew = false;
+        walk(walk, 0, false);
+    } while (grew);
+    for (std::size_t b = 0; b < blocks_.size(); ++b) {
+        std::vector<Stmt> kept;
+        for (std::size_t i = 0; i < blocks_[b].size(); ++i)
+            if (live[b][i]) kept.push_back(blocks_[b][i]);
+        blocks_[b] = std::move(kept);
     }
 }
 

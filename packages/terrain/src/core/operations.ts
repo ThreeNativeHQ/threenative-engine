@@ -1,4 +1,5 @@
 import { hydraulic, thermal } from "./erosion.js";
+import { fluvial } from "./fluvial.js";
 import { MATERIAL_IDS, compileMask, paintWeights, rasterMask } from "./masks.js";
 import {
   clamp,
@@ -550,24 +551,26 @@ export function applyOperation(s: ITerrainState, layer: Layer): void {
       };
       s.erosion ??= structuredClone(observations);
       const eroded =
-        p.method === "hydraulic"
-          ? hydraulic(
-              s.height,
-              n,
-              s.size,
-              {
-                seed,
-                droplets: p.droplets,
-                maxSteps: p.maxSteps,
-                inertia: p.inertia,
-                capacity: p.capacity,
-                erosion: p.erosion,
-                deposition: p.deposition,
-                evaporation: p.evaporation,
-              },
-              observations,
-            )
-          : thermal(s.height, n, s.size, p, observations);
+        p.method === "fluvial"
+          ? fluvial(s.height, n, s.size, p)
+          : p.method === "hydraulic"
+            ? hydraulic(
+                s.height,
+                n,
+                s.size,
+                {
+                  seed,
+                  droplets: p.droplets,
+                  maxSteps: p.maxSteps,
+                  inertia: p.inertia,
+                  capacity: p.capacity,
+                  erosion: p.erosion,
+                  deposition: p.deposition,
+                  evaporation: p.evaporation,
+                },
+                observations,
+              )
+            : thermal(s.height, n, s.size, p, observations);
       let influence = mask;
       if (p.at || p.points) influence = brushWeights(s, p, mask, seed);
       for (let i = 0; i < s.height.length; i += 1) {
@@ -833,7 +836,7 @@ export function finalizeState(s: ITerrainState): ITerrainState {
       accepted.push({
         id: `${rule.id}:candidate:${seed}:${attempt}`,
         layer: rule.id,
-        asset: rule.asset ?? "pine",
+        asset: rule.asset,
         position: [x, h + (rule.offsetY ?? 0), z],
         rotation: yaw,
         scale: itemScale,
@@ -845,7 +848,7 @@ export function finalizeState(s: ITerrainState): ITerrainState {
       bucket.push(index);
       buckets.set(key, bucket);
     }
-    s.instances.push(...accepted);
+    for (const instance of accepted) s.instances.push(instance);
     if (accepted.length < count)
       s.diagnostics.push(
         `Scatter '${rule.id}': placed ${accepted.length}/${count}; masks or spacing exhausted the attempt budget.`,

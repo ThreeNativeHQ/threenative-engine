@@ -17,6 +17,7 @@ import {
   type WorkCountName,
 } from "./gpu-stages.js";
 import type { PassDraw } from "./pass-node.js";
+import { frameAttachmentName } from "./pass-node.js";
 import { defineRenderTargets, targetTexelBytes } from "./render-target.js";
 import { ShadowMap } from "./shadow-map.js";
 import { syncVirtualShadowLods } from "./shadow-node.js";
@@ -45,6 +46,10 @@ type HostCall =
   | "_tnw_web_read_target"
   | "_tnw_web_read_target_take"
   | "_tnw_web_capture_face"
+  | "_tnw_web_init_texture"
+  | "_tnw_web_copy_texture"
+  | "_tnw_web_read_mrt"
+  | "_tnw_web_device_limit"
   | "_tnw_web_threads";
 
 export type WebHostModule = Record<HostCall, (...args: number[]) => number> & {
@@ -61,7 +66,7 @@ export function isWebHostModule(module: TnAbiModule): module is WebEngineModule 
  * The tnw_* contract this facade speaks (web_host.cpp `kWebHostAbi`). Bump both on every tnw_*
  * signature change: web-host-abi.spec.ts pins the signatures per number, and a mismatch fails init.
  */
-export const WEB_HOST_ABI = 9;
+export const WEB_HOST_ABI = 11;
 
 /** The canvas key the host's surface looks up; Emscripten resolves it before any DOM query. */
 const CANVAS_TARGET = "!threenative-canvas";
@@ -84,6 +89,20 @@ interface IAdapterInfo {
   readonly architecture: string;
   readonly description: string;
   readonly device: string;
+}
+
+/** three's Box2 and Box3 as a texture copy reads them: a region by its corners. */
+interface IRegionLike {
+  readonly isBox3?: boolean;
+  readonly min: { readonly x: number; readonly y: number; readonly z?: number };
+  readonly max: { readonly x: number; readonly y: number; readonly z?: number };
+}
+
+/** A Vector2 or Vector3: the destination origin of a texture copy, z the array layer. */
+interface IPositionLike {
+  readonly x: number;
+  readonly y: number;
+  readonly z?: number;
 }
 
 interface IColorLike {
@@ -334,7 +353,14 @@ export function defineWebRenderer(
       getTimestampFrames(type: string): number[];
       pipelineCompiles(): number;
       /** Resolves as three's GPUDevice.lost does once the host loses its device; core reports it (TN_DEVICE_LOST). */
-      readonly device: { readonly lost: Promise<{ reason: string; message: string }> };
+      readonly device: {
+        readonly lost: Promise<{ reason: string; message: string }>;
+        /** three's GPUDevice.limits: the pair the colour-attachment proofs check, read from the device once. */
+        readonly limits: {
+          readonly maxColorAttachments: number;
+          readonly maxColorAttachmentBytesPerSample: number;
+        };
+      };
     };
     #deviceLost: (info: { reason: string; message: string }) => void = () => undefined;
     /** The environment a preparation gave up on at its deadline, until a drawn frame finds it baked. */
@@ -397,6 +423,14 @@ export function defineWebRenderer(
           lost: new Promise((resolve) => {
             this.#deviceLost = resolve;
           }),
+          limits: {
+            get maxColorAttachments() {
+              return module._tnw_web_device_limit(0);
+            },
+            get maxColorAttachmentBytesPerSample() {
+              return module._tnw_web_device_limit(1);
+            },
+          },
         },
       };
     }
@@ -657,6 +691,12 @@ export function defineWebRenderer(
           this.info.engine.gpuStages = stages;
           this.info.engine.shadows.sunGpuMs = module._tnw_web_frame(19);
           this.info.engine.shadows.lampGpuMs = module._tnw_web_frame(24);
+          // Opt-in, as `__tnPassLog`: a probe that sets `__tnGpuSegments` to an array gets each resolved sample's
+          // split (frame_gpu_timer.h segments: sun shadow, scene, other passes, output, gather, lamp shadow).
+          (globalThis as { __tnGpuSegments?: number[][] }).__tnGpuSegments?.push([
+            gpuMs,
+            ...[19, 20, 21, 22, 23, 24].map((field) => module._tnw_web_frame(field)),
+          ]);
         }
       }
       const engine = this.info.engine;
@@ -1007,6 +1047,57 @@ export function defineWebRenderer(
       return this;
     }
 
+    /**
+     * three's initTexture: the engine builds the texture's GPU copy now. `source.dataReady = false` (set by a caller
+     * that fills the texture with copyTextureToTexture) uploads nothing and drops the CPU texels.
+     */
+    initTexture(texture: unknown): void {
+      if (this.#adapter === undefined)
+        throw new Error("TN_WASM_RENDERER: initTexture() before init() finished.");
+      writeHandle(0, texture, "texture");
+      const dataReady = (texture as { source?: { dataReady?: boolean } }).source?.dataReady;
+      check(module._tnw_web_init_texture(handles, dataReady === false ? 1 : 0));
+    }
+
+    /**
+     * three's copyTextureToTexture: `srcRegion` is a Box2 or Box3 (the source's image size when null), `dstPosition`
+     * a Vector2 or Vector3 whose z is the destination's array layer. Both textures are initialised first.
+     */
+    copyTextureToTexture(
+      source: unknown,
+      destination: unknown,
+      srcRegion: IRegionLike | null = null,
+      dstPosition: IPositionLike | null = null,
+      srcLevel = 0,
+      dstLevel = 0,
+    ): void {
+      if (this.#adapter === undefined)
+        throw new Error("TN_WASM_RENDERER: copyTextureToTexture() before init() finished.");
+      writeHandle(0, source, "source texture");
+      writeHandle(12, destination, "destination texture");
+      const { min, max } = srcRegion ?? {};
+      // A Box2 has no z: its depth is one layer, a Box3's its own.
+      const size =
+        min && max ? [max.x - min.x, max.y - min.y, (max.z ?? 1) - (min.z ?? 0)] : [-1, -1, 1];
+      check(
+        module._tnw_web_copy_texture(
+          handles,
+          handles + 12,
+          min?.x ?? 0,
+          min?.y ?? 0,
+          min?.z ?? 0,
+          size[0] as number,
+          size[1] as number,
+          srcRegion?.isBox3 ? (size[2] as number) : 1,
+          dstPosition?.x ?? 0,
+          dstPosition?.y ?? 0,
+          dstPosition?.z ?? 0,
+          srcLevel,
+          dstLevel,
+        ),
+      );
+    }
+
     getRenderTarget(): null {
       return null;
     }
@@ -1028,12 +1119,8 @@ export function defineWebRenderer(
       this.setPresentationHeld(false);
     }
   };
-  const read = async (target: unknown, x: number, y: number, width: number, height: number) => {
-    writeHandle(24, target, "render target");
-    const id = module._tnw_web_read_target(handles + 24, x, y, width, height);
-    if (id === 0) check(1);
-    const { type, format } = (target as { texture: { type: number; format?: number } }).texture;
-    const size = width * height * targetTexelBytes(type, format);
+  /** Polls a read id until it delivers, then returns the region's bytes. */
+  const take = async (id: number, size: number) => {
     const out = module._malloc(size) >>> 0;
     try {
       for (;;) {
@@ -1052,6 +1139,39 @@ export function defineWebRenderer(
     } finally {
       module._free(out);
     }
+  };
+  const read = async (
+    target: unknown,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    textureIndex = 0,
+  ) => {
+    // An RG attachment's texel is two channels, so the region's bytes follow its format as well as its type.
+    const { type, format } = (target as { texture: { type: number; format?: number } }).texture;
+    const size = width * height * targetTexelBytes(type, format);
+    // three's textureIndex selects an attachment of the target. The frame pass's attachments are the
+    // engine's own colour targets, so the index names one and the host reads that slot.
+    const attachment = frameAttachmentName(target, textureIndex);
+    if (attachment !== undefined) {
+      const name = string(attachment);
+      try {
+        const id = module._tnw_web_read_mrt(name, x, y, width, height);
+        if (id === 0) check(1);
+        return await take(id, size);
+      } finally {
+        module._free(name);
+      }
+    }
+    if (textureIndex !== 0)
+      throw new Error(
+        `TN_WASM_READ_TARGET: the target has no colour attachment ${String(textureIndex)}`,
+      );
+    writeHandle(24, target, "render target");
+    const id = module._tnw_web_read_target(handles + 24, x, y, width, height);
+    if (id === 0) check(1);
+    return take(id, size);
   };
   if (DataTexture !== undefined)
     Object.assign(Renderer.prototype, {

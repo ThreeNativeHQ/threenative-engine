@@ -5,6 +5,7 @@
 // for the target in `gpu` (renderer/render_target_pass.h), so the bindings never depend on it.
 // A target made with `count` > 1 (three's MRT) holds one more target per extra colour texture.
 
+#include "engine/scene/event.h"
 #include "engine/scene/texture.h"
 
 #include <algorithm>
@@ -14,7 +15,7 @@
 
 namespace tn::engine {
 
-class RenderTarget : public std::enable_shared_from_this<RenderTarget> {
+class RenderTarget : public std::enable_shared_from_this<RenderTarget>, public EventDispatcher {
 public:
     /** `type` is three's texture type constant (UnsignedByteType, HalfFloatType, FloatType). */
     static std::shared_ptr<RenderTarget> make(uint32_t width, uint32_t height, uint16_t type) {
@@ -52,9 +53,16 @@ public:
             depthTexture->width = width; depthTexture->height = height; depthTexture->needsUpdate();
         }
     }
-    /** three's dispose: the GPU state goes; the target can render again and rebuilds it. */
+    /**
+     * three's dispose: the GPU state goes, the target can render again and rebuilds it, and `dispose`
+     * is dispatched on the target (then its texture's own `dispose`, as three does), as is every
+     * further attachment's.
+     */
     void dispose() {
         gpu.reset();
+        Event event{"dispose"};
+        dispatchEvent(event);
+        if (texture) texture->dispose();
         for (const auto& attachment : more) attachment->dispose();
     }
 

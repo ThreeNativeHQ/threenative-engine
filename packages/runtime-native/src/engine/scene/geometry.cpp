@@ -602,6 +602,10 @@ void BufferGeometry::dispose() {
     for (const auto& [name, attribute] : attributes) attribute->store->releaseGpuCopy();
     for (const auto& target : morphPositions) target->store->releaseGpuCopy();
     for (const auto& target : morphNormals) target->store->releaseGpuCopy();
+    // three's BufferGeometry.dispose dispatches `dispose` after the GPU copies go, so a listener runs
+    // once per dispose and may release whatever it built from this geometry.
+    Event event{"dispose"};
+    dispatchEvent(event);
 }
 
 std::shared_ptr<BufferGeometry> BufferGeometry::toNonIndexed() const {

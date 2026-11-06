@@ -15,6 +15,7 @@ import {
   validateVisualScores,
   visualServerProcessGroup,
   waitForPaintedFrame,
+  withVisualCaptureLease,
 } from "../visual-gate.js";
 
 describe("visual gate", () => {
@@ -27,6 +28,27 @@ describe("visual gate", () => {
   it("terminates the complete visual server process group outside Windows", () => {
     expect(visualServerProcessGroup(1234, "linux")).toBe(-1234);
     expect(visualServerProcessGroup(1234, "win32")).toBe(1234);
+  });
+
+  it("releases the shared capture lease when a browser capture fails", async () => {
+    const root = await makeTempDir("threenative-visual-capture-lease-");
+    const lockRoot = path.join(root, "capture-lock");
+    const holderPath = path.join(lockRoot, "lock", "holder.json");
+    try {
+      await expect(
+        withVisualCaptureLease(
+          async () => {
+            const holder = JSON.parse(await readFile(holderPath, "utf8")) as { pid: number };
+            expect(holder.pid).toBe(process.pid);
+            throw new Error("browser capture failed");
+          },
+          { lockRoot },
+        ),
+      ).rejects.toThrow("browser capture failed");
+      await expect(readFile(holderPath, "utf8")).rejects.toThrow();
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
   });
 
   it("refuses to capture on a port already owned by another process", async () => {

@@ -6,7 +6,7 @@ const queries = [
   "foliage vegetation trees wind sway",
   "procedural trees",
   "trees swaying in the wind",
-  "generate a forest of trees",
+  "grow procedural tree meshes",
 ];
 
 describe("procedural vegetation guidance", () => {

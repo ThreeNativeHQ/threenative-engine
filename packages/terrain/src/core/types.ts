@@ -177,10 +177,19 @@ export interface IStampParams extends IOperationBase {
 export interface IPasteParams extends Omit<IStampParams, "shape" | "roughness" | "amplitude"> {}
 
 export interface IErodeParams extends IBrushParams {
-  readonly method?: "thermal" | "hydraulic";
+  readonly method?: "thermal" | "hydraulic" | "fluvial";
+  /** Thermal passes, or fluvial time steps (default 40). */
   readonly iterations?: number;
-  /** Maximum stable slope in degrees. */
+  /** Maximum stable slope in degrees; `fluvial` also enforces it as its landslide threshold. */
   readonly talus?: number;
+  /** `fluvial`: rock uplift at the highest input point, m/yr (default 1e-3). Relief scales with uplift / erodibility. */
+  readonly uplift?: number;
+  /** `fluvial`: stream-power erodibility K, m^(1-2m)/yr (default 5e-6). */
+  readonly erodibility?: number;
+  /** `fluvial`: years per step (default 2e4); the implicit solver is stable at any value. */
+  readonly timeStep?: number;
+  /** `fluvial`: metres; rescales the eroded surface to this highest-minus-lowest. Omit to keep the natural relief. */
+  readonly relief?: number;
   readonly rate?: number;
   readonly droplets?: number;
   readonly maxSteps?: number;
@@ -218,7 +227,7 @@ export interface IBiomeParams extends IBrushParams {
 }
 
 export interface IScatterParams extends IOperationBase {
-  readonly asset?: string;
+  readonly asset: string;
   readonly count?: number;
   /** Guaranteed within one rule, never across rules. */
   readonly minDistance?: number;

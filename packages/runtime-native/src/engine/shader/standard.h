@@ -27,6 +27,7 @@ struct StandardMaterial {
     std::array<float, 3> color{1, 1, 1};
     float opacity = 1;
     float alphaTest = 0;  // > 0: fragments with opacity <= alphaTest are discarded
+    double maxPositionOffset = 0;  // Material::maxPositionOffset: how far a positionNode moves a vertex, 0 unknown
     bool alphaHash = false;
     float roughness = 1;
     float metalness = 0;
@@ -197,8 +198,9 @@ struct VertexVariant {
  * (the temporal pass's frame mod 8, else 0). A program is specialized per layout, as three's is per
  * lights hash; the default is the one directional light the first renderer drew.
  */
-// '1'..'8': a directional virtual shadow with that many clip levels. It reads the depth
-// atlas `vsm{i}` and storage page table `vsmTable{i}` in both standard and basic lit programs.
+// '1'..'8': a directional virtual shadow with that many clip levels, '9'..'@' the same with its
+// source-angle filter compiled in. It reads the depth atlas `vsm{i}` and storage page table
+// `vsmTable{i}` in both standard and basic lit programs.
 struct LightLayout {
     /** A light the material's lightsNode leaves out: its slot keeps its index, the program reads nothing of it. */
     static constexpr char kExcluded = '-';
@@ -206,7 +208,7 @@ struct LightLayout {
     /** Any upper-case kind: that light's shadow map is read (`light{i}Shadow*`, texture `shadow{i}`). */
     [[nodiscard]] bool shadowed() const {
         for (const char c : kinds)
-            if ((c >= 'A' && c <= 'Z') || (c >= '1' && c <= '8')) return true;
+            if ((c >= 'A' && c <= 'Z') || (c >= '1' && c <= '@')) return true;
         return false;
     }
 };
@@ -226,6 +228,9 @@ struct StandardPrograms {
      *  geometry normal. The normal post target holds it for a draw whose material authors a normalNode
      *  (Renderer::auxFragment). kInvalid for an unlit program. */
     ExprId normal = kInvalid;
+    /** The material's custom MRT slots, lowered in this program's order: one expression per MaterialNodes::mrt entry.
+     *  The colour program declares what they read and writes none of them; Renderer::auxFragment writes them. */
+    std::vector<ExprId> mrt;
     std::vector<std::string> diagnostics;  // TN_MATERIAL_UNSUPPORTED ...; empty when drawable
 };
 
@@ -280,7 +285,7 @@ StandardPrograms buildDepth(const VertexVariant& variant);
 /**
  * The shadow depth program of an alpha-tested caster (PRD-651): buildBasic's vertex, uv included, and a
  * fragment that writes nothing and discards where materialAlpha would (map alpha x diffuse opacity at or
- * below alphaTest), as three's shadow pass copies alphaTest and map. Fragment uniforms "diffuse",
+ * below alphaTest or the variant's alphaTestNode), as three's shadow pass copies alphaTest, alphaTestNode and map. Fragment uniforms "diffuse",
  * "alphaTest", "opaque", "uvTransform"; binding "map" when variant.map.
  */
 StandardPrograms buildMaskedDepth(const VertexVariant& variant);
@@ -296,11 +301,12 @@ void linkNodeVaryings(StandardPrograms& out, const VertexVariant& variant, ExprI
 
 /**
  * NodeMaterial.setupDiffuseColor's alpha tail, shared by every material program: discard when
+ * alpha <= cutoff (the `alphaTestNode` value when the caller passes one, tested always) or, with no cutoff,
  * alphaTest > 0 and alpha <= alphaTest, then alpha 1 for an opaque material (builder.isOpaque()).
  * Uniform-driven (uniforms "alphaTest", "opaque" 0/1) rather than per-variant programs; the output is
  * the same. Returns the alpha to write.
  */
-ExprId materialAlpha(Program& f, ExprId alpha, bool alphaHash = false);
+ExprId materialAlpha(Program& f, ExprId alpha, bool alphaHash = false, ExprId cutoff = kInvalid);
 /** Pinned nodes/fog/Fog.js rangeFogFactor / densityFogFactor, shared by all material tails. */
 /** CubeRenderTarget.fromEquirectangularTexture: camera rotation, level-0 equirectUV sample. */
 StandardPrograms buildEquirectangularCube();

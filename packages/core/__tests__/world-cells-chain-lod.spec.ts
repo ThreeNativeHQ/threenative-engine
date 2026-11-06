@@ -754,6 +754,113 @@ describe("WorldCells with a baked AutoLOD chain and no authored lods", () => {
     world.dispose();
   });
 
+  it("tells the shadow levels nothing when a refilter only moves the same casters between levels", async () => {
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const model = await chainedModel(REGISTERED_PIXEL_ERROR);
+    stubManifestFetch(withoutAuthoredLods());
+    // Past `castLevels` a tree casts with the coarsest casting shape (`castLevelOf`), so moving the
+    // same placements between levels moves no caster. Telling the levels anyway made a walk through
+    // the forest redraw whole clip levels every few metres (2.6 million shadow instances, 400 ms).
+    let clock = 0;
+    const regions: unknown[] = [];
+    const follow = { position: { x: -64, z: -64 } };
+    const world = await loadWorld({
+      admissionNow: () => {
+        clock += 2000;
+        return clock;
+      },
+      budgets,
+      follow,
+      loadModel: chainLoader(model),
+      ring: 0,
+      shadows: { cast: true, invalidate: (region) => region && regions.push(region) },
+      surface,
+      url: "/world/world.json",
+    });
+    world.update();
+    await flushed(world);
+    world.update();
+    expect(regions.length).toBeGreaterThan(0); // the cell's arrival is told
+    regions.length = 0;
+
+    follow.position.x = -32;
+    follow.position.z = -32;
+    world.update();
+    world.update();
+    expect(world.stats().rebuilds).toBe(1);
+    expect(liveCount(levelMesh(world, "pine", 0)) + liveCount(levelMesh(world, "pine", 1))).toBe(
+      85,
+    );
+    expect(regions).toEqual([]);
+    world.dispose();
+  });
+
+  it("tells only the boxes of the placements a refilter added or dropped, never the cell", async () => {
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const model = await chainedModel(REGISTERED_PIXEL_ERROR);
+    const pkg = withoutAuthoredLods();
+    stubManifestFetch(pkg);
+    // A reach between the two follow points' distances, so the step drops some placements and adds
+    // others. The cell box this used to tell covers the finest shadow level's whole window, and a
+    // walk through the forest redrew whole clip levels for a bush crossing its reach 60 m away.
+    const bin = readFileSync(path.join(fixture, "placements.bin"));
+    const records = new Float32Array(bin.buffer, bin.byteOffset, bin.byteLength / 4);
+    const run = pkg.cells[0]?.runs[0];
+    if (run === undefined) throw new Error("the fixture cell has no pine run.");
+    const near: number[] = [];
+    for (let index = run.offset; index < run.offset + run.count; index++)
+      near.push(
+        Math.hypot((records[index * 8] as number) + 32, (records[index * 8 + 2] as number) + 32),
+      );
+    near.sort((a, b) => a - b);
+    const reach = near[Math.floor(near.length / 2)] as number;
+    let clock = 0;
+    const regions: { min: { x: number; z: number }; max: { x: number; z: number } }[] = [];
+    const follow = { position: { x: -64, z: -64 } };
+    const world = await loadWorld({
+      admissionNow: () => {
+        clock += 2000;
+        return clock;
+      },
+      budgets,
+      follow,
+      loadModel: chainLoader(model),
+      placementReach: new Float32Array(records.length / 8).fill(reach),
+      ring: 0,
+      shadows: { cast: true, invalidate: (region) => region && regions.push(region) },
+      surface,
+      url: "/world/world.json",
+    });
+    world.update();
+    await flushed(world);
+    world.update();
+    // The cell's arrival is told the same way: its placements' own boxes, never the cell around them.
+    const spread = (axis: "x" | "z"): number =>
+      Math.max(...regions.map((region) => region.max[axis])) -
+      Math.min(...regions.map((region) => region.min[axis]));
+    expect(regions.length).toBeGreaterThan(1);
+    for (const region of regions)
+      expect((region.max.x - region.min.x) * (region.max.z - region.min.z)).toBeLessThan(
+        (spread("x") * spread("z")) / 4,
+      );
+    regions.length = 0;
+
+    follow.position.x = -32;
+    follow.position.z = -32;
+    world.update();
+    world.update();
+    expect(world.stats().rebuilds).toBe(1);
+    expect(regions.length).toBeGreaterThan(1);
+    const size = pkg.assets.pine?.bounds;
+    if (size === undefined) throw new Error("the fixture pine has no bounds.");
+    const widest = Math.hypot(size.max[0] - size.min[0], size.max[2] - size.min[2]) * 4;
+    for (const region of regions) {
+      expect(region.max.x - region.min.x).toBeLessThan(widest);
+      expect(region.max.z - region.min.z).toBeLessThan(widest);
+    }
+    world.dispose();
+  });
+
   it("refilters on the 2 m step, not on the smaller moves inside it", async () => {
     vi.spyOn(console, "info").mockImplementation(() => undefined);
     const model = await chainedModel(REGISTERED_PIXEL_ERROR);

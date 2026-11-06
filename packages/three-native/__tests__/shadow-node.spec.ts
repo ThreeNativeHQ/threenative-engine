@@ -94,6 +94,8 @@ it("constructs core's automatic-depth node and installs through the facade sette
   const installedWrites = writes.length;
   shadow.shadowNode = node;
   expect(writes).toHaveLength(installedWrites);
+  // Core normalizes the authored extents into its own ladder (a 2x step inserts a level between 8
+  // and 24), and the facade forwards that ladder unchanged, so the assertion reads it from the node.
   expect(writes).toContainEqual([
     expect.any(Object),
     "shadowNode",
@@ -101,7 +103,7 @@ it("constructs core's automatic-depth node and installs through the facade sette
       autoDepth: true,
       adaptiveRefresh: true,
       followViewFocus: true,
-      clipExtents: [8, 24],
+      clipExtents: node.options.clipExtents,
     }),
   ]);
   const caster = new Mesh(new BufferGeometry());

@@ -13,12 +13,36 @@
  */
 
 import { ENGINE_COST_KNOB, createBridgeMeter } from "./bridge-meter.js";
+import {
+  type EngineValue,
+  type IBrowserRuntime,
+  type IEngineRef,
+  isRef,
+} from "./browser-abi-types.js";
+import { ATTRIBUTE_CLASSES, defineAttributeSync, denormalize } from "./browser-attribute-sync.js";
+import { REF, type TypedArray, isPlainObject, setValues } from "./browser-marshal.js";
 import { UpstreamVector3, defineMath } from "./browser-math.js";
-import type { ITslRuntime, TslArgValue } from "./browser-tsl.js";
-import { type DebugTelemetry, debugTelemetry } from "./debug-telemetry.js";
+import {
+  type IValueClass,
+  defaultPlan,
+  defineValueViews,
+  valuePlans,
+} from "./browser-value-views.js";
+import { debugTelemetry } from "./debug-telemetry.js";
+import { isCustomMrtOutput } from "./pass-node.js";
 import { detachVirtualShadow, shadowFilterOptions, virtualShadowOptions } from "./shadow-node.js";
-import { UNWATCH } from "./tsl-uniforms.js";
-import { withUpdateRanges } from "./update-ranges.js";
+import { uploadRanges, withUpdateRanges } from "./update-ranges.js";
+
+// The surface this module has always exported, kept on its path (PRD-803): `browser-entry.ts`,
+// `browser-renderer.ts`, `browser-tsl.ts`, `texture-sources.ts` and the specs import them here.
+export type {
+  EngineValue,
+  IBrowserRuntime,
+  IEngineRef,
+  TnAbiModule,
+} from "./browser-abi-types.js";
+export { createWasmRuntime } from "./browser-wasm-runtime.js";
+export { eulerFromQuaternion } from "./browser-value-views.js";
 
 export interface IRegistryClass {
   readonly constructor: boolean;
@@ -38,83 +62,6 @@ export interface IRegistryClass {
 
 export interface IRegistryDump {
   readonly classes: Readonly<Record<string, IRegistryClass>>;
-}
-
-/** A ref with its handle words kept (see `createWasmRuntime`): type | context << 16, index, generation. */
-interface IPackedRef extends IEngineRef {
-  w0: number;
-  w1: number;
-  w2: number;
-}
-
-/** An engine object as the back end sees it: an opaque key and its catalog type id. */
-export interface IEngineRef {
-  readonly key: string;
-  readonly type: number;
-}
-
-export type EngineValue =
-  | null
-  | undefined
-  | number
-  | boolean
-  | string
-  | TypedArray
-  | readonly EngineValue[]
-  | IEngineRef
-  | { readonly [key: string]: EngineValue };
-
-/** What the classes call; the Wasm ABI implements it, and a surface-only runtime refuses every call. */
-export interface IBrowserRuntime {
-  readonly debugTelemetry?: DebugTelemetry;
-  typeId(className: string): number;
-  construct(className: string, args: readonly EngineValue[]): IEngineRef;
-  invoke(self: IEngineRef, method: string, args: readonly EngineValue[]): EngineValue;
-  get(self: IEngineRef, path: string): EngineValue;
-  set(self: IEngineRef, path: string, value: EngineValue): void;
-  release(self: IEngineRef): void;
-  /** For each ref, how many references other engine objects hold to its object; one call a batch. */
-  engineReferences?(refs: readonly IEngineRef[]): ArrayLike<number>;
-  /** A numeric typed array argument crosses as is, no boxed copy; Wasm only. */
-  readonly typedArrays?: boolean;
-  /** Doubles at `address` in the engine's memory (one as a number, more as an array); Wasm only. */
-  readDoubles?(address: number, count: number): number | number[];
-  /**
-   * The engine's memory as doubles, current: Emscripten replaces the view when the memory grows, so a caller
-   * reads it per operation and never keeps it. Wasm only.
-   */
-  heapF64?(): Float64Array;
-  /** The byte at `address` in the engine's memory; Wasm only. A registry field `[offset, 0]` is a byte flag. */
-  readByte?(address: number): number;
-  /** The 32-bit word at `address` in the engine's memory (the hierarchy counter's low word); Wasm only. */
-  readWord?(address: number): number;
-  /** Writes one double at `address` in the engine's memory; Wasm only. */
-  writeDouble?(address: number, value: number): void;
-  /** Writes the byte at `address` in the engine's memory (a flag field); Wasm only. */
-  writeByte?(address: number, value: number): void;
-  /**
-   * A copy of the attribute's data, of its scalar type; three's `attribute.array` is built on it.
-   * With `offset`/`count`, a copy of that scalar subrange only (a per-vertex setter syncs one item).
-   */
-  attributeArray?(self: IEngineRef, offset?: number, count?: number): TypedArray;
-  /**
-   * Writes `array` into the attribute's data; present with attributeArray. With `offset`, writes that
-   * subrange; without it, `array` must be the attribute's whole data.
-   */
-  attributeWrite?(self: IEngineRef, array: TypedArray, offset?: number): void;
-  /** Sets (or, with null, clears) a callback the engine runs; `handler` gets the engine's arguments. */
-  setCallback(
-    self: IEngineRef,
-    name: string,
-    handler: ((args: readonly EngineValue[]) => void) | null,
-  ): void;
-  /** TSL by name (PRD-540), when the module carries `tn_tsl_call`. */
-  readonly tsl?: ITslRuntime;
-  /** A GLB through the engine's own glTF loader (PRD-540), when the module carries the web host. */
-  loadGltf?(
-    bytes: Uint8Array,
-    files?: ReadonlyMap<string, Uint8Array>,
-  ): { readonly scene: IEngineRef; readonly animations: IEngineRef[] };
 }
 
 /** The engine node id a TSL wrapper (`browser-tsl.ts`) carries. */
@@ -141,41 +88,10 @@ export interface IBrowserEngine {
 /** Safe points a pass over the settled wrappers spans. */
 const SETTLED_PASS = 64;
 
-const REF = Symbol("tn.engineRef");
 /** An engine object's address, kept on it after the first ask: every lane read and write needs it. */
 const ADDRESS = Symbol("tn.engineAddress");
 
-type TypedArray =
-  | Float32Array
-  | Float64Array
-  | Int8Array
-  | Uint8Array
-  | Int16Array
-  | Uint16Array
-  | Int32Array
-  | Uint32Array;
-/** A number list that came from a typed array names it, so the engine keeps three's storage type. */
-const TYPED = Symbol("tn.typedArray");
-// The engine's Scalar order: F32, F64, I8, U8, I16, U16, I32, U32.
-const SCALARS = [
-  Float32Array,
-  Float64Array,
-  Int8Array,
-  Uint8Array,
-  Int16Array,
-  Uint16Array,
-  Int32Array,
-  Uint32Array,
-];
-const ATTRIBUTE_CLASSES = new Set([
-  "BufferAttribute",
-  "Float32BufferAttribute",
-  "Uint16BufferAttribute",
-  "Uint32BufferAttribute",
-  "InstancedBufferAttribute",
-]);
-
-interface IWrapped {
+export interface IWrapped {
   [REF]: IEngineRef;
 }
 
@@ -196,54 +112,6 @@ function defineOwn(target: object, own: readonly IOwnField[]): void {
 /** The engine object behind a back-end wrapper, for a host that talks to the ABI directly. */
 export function engineRef(object: object): IEngineRef | undefined {
   return (object as Partial<IWrapped>)[REF];
-}
-
-function isRef(value: unknown): value is IEngineRef {
-  return typeof value === "object" && value !== null && "key" in value && "type" in value;
-}
-
-function isPlainObject(value: unknown): boolean {
-  return (
-    typeof value === "object" && value !== null && Object.getPrototypeOf(value) === Object.prototype
-  );
-}
-
-function isWrapperOf(
-  value: unknown,
-  className: string,
-): value is Record<string, (...args: unknown[]) => unknown> {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    REF in value &&
-    value.constructor.name === className
-  );
-}
-
-/** three's `Color.set`: a hex number, a CSS string, or another Color. */
-function setColor(color: Record<string, (...args: unknown[]) => unknown>, value: unknown): void {
-  if (typeof value === "number") color.setHex?.(value);
-  else if (typeof value === "string") color.setStyle?.(value);
-  else color.copy?.(value);
-}
-
-/**
- * three's `Material.setValues`: an undefined value is skipped, a Color member is set from a hex,
- * a CSS string or another Color, a Vector3 member copies a Vector3, everything else is assigned.
- * three warns and drops a key the object does not have; here that key fails.
- */
-function setValues(target: object, className: string, values: object): void {
-  const self = target as Record<string, unknown>;
-  for (const [key, value] of Object.entries(values)) {
-    if (value === undefined) continue;
-    const current = self[key];
-    if (current === undefined)
-      throw new TypeError(`TN_BROWSER_PARAMETER_UNSUPPORTED: ${className} has no '${key}'`);
-    if (isWrapperOf(current, "Color")) setColor(current, value);
-    else if (isWrapperOf(current, "Vector3") && (value as { isVector3?: boolean }).isVector3)
-      current.copy?.(value);
-    else self[key] = value;
-  }
 }
 
 /** What the back end reads from the catalog: each class's parent and three's `is*` flags. */
@@ -271,7 +139,17 @@ export const LANGUAGE_MEMBERS = [
   "getObjectByName",
   "getObjectById",
   "raycast",
+  "dispose",
 ] as const;
+
+/**
+ * three r187's `Object3D.dispose()`: it fires `dispose`, the event a renderer frees the object's
+ * render objects on, so a game's `Group` subclass can end its own `dispose()` with
+ * `super.dispose()`. An engine binding with a `dispose` of its own keeps that one.
+ */
+function disposeObject(this: { dispatchEvent?(event: { type: string }): void }): void {
+  this.dispatchEvent?.({ type: "dispose" });
+}
 
 type TraverseCallback = (object: object) => void;
 
@@ -728,458 +606,8 @@ export function defineBrowserClasses(
     Object.defineProperty(self, ADDRESS, { value: address });
     return address;
   };
-  // three's math values are JS (browser-math.ts): `new Vector3()` holds its own lanes. The engine's
-  // vectors (`mesh.position`) share that prototype through `engine`, whose lanes are its memory.
-  // An engine call takes a JS value by value: a method borrows a pooled engine object and copies
-  // the lanes back after the call (an output argument); a constructor or setter, which may keep the
-  // object, gets the value itself turned into an engine object in place, so identity survives.
-  //
-  // A class may store its lanes under three's private names (`Quaternion._x`, `Matrix4.elements`) or
-  // hold them in member vectors (`Box3.min`): its plan reads and writes those, and says which own
-  // properties a promoted value must drop so the engine accessors take over.
-  /** A value class's JS storage: its public lanes, three's private names, and member vectors. */
-  interface IValueLanes {
-    [key: string]: unknown;
-    _x?: number;
-    _y?: number;
-    _z?: number;
-    _w?: number;
-    _order?: string;
-    elements?: number[];
-    radius?: number;
-    min?: { x: number; y: number; z: number; set(x: number, y: number, z: number): unknown };
-    max?: { x: number; y: number; z: number; set(x: number, y: number, z: number): unknown };
-    center?: { x: number; y: number; z: number; set(x: number, y: number, z: number): unknown };
-  }
-  interface IValuePlan {
-    /** The engine's lane names, in the order its constructor takes them. */
-    lanes: readonly string[];
-    /** Own JS properties the class keeps its storage in; a promoted value drops them. */
-    drop: readonly string[];
-    /** The lanes of a JS value, in `lanes` order (Euler appends its order). */
-    read(value: IValueLanes): number[];
-    /** Writes engine lanes back into a JS value, as `lend` copies them back. */
-    write(value: IValueLanes, values: readonly number[]): void;
-    /** Engine constructor arguments; the lanes themselves by default. */
-    args?(values: number[], make: (name: string, values: number[]) => IEngineRef): EngineValue[];
-    /** A method argument becomes an engine object in place: whole-object lanes and output targets. */
-    promote?: boolean;
-    /** Copies the lanes from one value to another with no list between: a loan's two copies. */
-    copy?(target: IValueLanes, source: IValueLanes): void;
-  }
-  interface IValueClass {
-    name: string;
-    engine: object;
-    pool: object[];
-    top: number;
-    plan: IValuePlan;
-  }
-  const eulerOrders = ["XYZ", "YXZ", "ZXY", "ZYX", "YZX", "XZY"] as const;
-  const defaultPlan = (lanes: readonly string[]): IValuePlan => ({
-    lanes,
-    drop: lanes,
-    copy: (target, source) => {
-      for (const lane of lanes) target[lane] = source[lane];
-    },
-    read: (value) => lanes.map((lane) => value[lane] as number),
-    write: (value, values) => {
-      lanes.forEach((lane, index) => {
-        value[lane] = values[index] as number;
-      });
-    },
-  });
-  /** A value's member vector (`Box3.min`, `Sphere.center`): present on every real instance. */
-  const memberVector = (vector: IValueLanes["min"]): NonNullable<IValueLanes["min"]> => {
-    if (vector === undefined)
-      throw new TypeError("TN_BROWSER_VALUE_MEMBER: the value has no vector");
-    return vector;
-  };
-  // three's private storage names, and the classes whose lanes are not plain fields.
-  const valuePlans: Record<string, IValuePlan> = {
-    // quality-allow: the plan table is keyed by three's PascalCase class names, so the name rule cannot apply.
-    // biome-ignore lint/style/useNamingConvention: keyed by three's class name.
-    Color: defaultPlan(["r", "g", "b"]),
-    // quality-allow: the plan table is keyed by three's PascalCase class names, so the name rule cannot apply.
-    // biome-ignore lint/style/useNamingConvention: keyed by three's class name.
-    Vector4: defaultPlan(["x", "y", "z", "w"]),
-    // quality-allow: the plan table is keyed by three's PascalCase class names, so the name rule cannot apply.
-    // biome-ignore lint/style/useNamingConvention: keyed by three's class name.
-    Quaternion: {
-      lanes: ["x", "y", "z", "w"],
-      drop: ["_x", "_y", "_z", "_w"],
-      read: (value) => [value._x, value._y, value._z, value._w] as number[],
-      write: (value, values) => {
-        value._x = values[0];
-        value._y = values[1];
-        value._z = values[2];
-        value._w = values[3];
-      },
-    },
-    // quality-allow: the plan table is keyed by three's PascalCase class names, so the name rule cannot apply.
-    // biome-ignore lint/style/useNamingConvention: keyed by three's class name.
-    Euler: {
-      lanes: ["x", "y", "z"],
-      drop: ["_x", "_y", "_z", "_order"],
-      read: (value) =>
-        [
-          value._x,
-          value._y,
-          value._z,
-          eulerOrders.indexOf(value._order as (typeof eulerOrders)[number]),
-        ] as number[],
-      write: (value, values) => {
-        value._x = values[0];
-        value._y = values[1];
-        value._z = values[2];
-        value._order = eulerOrders[values[3] as number] ?? "XYZ";
-      },
-      args: (values) => [
-        values[0],
-        values[1],
-        values[2],
-        eulerOrders[values[3] as number] ?? "XYZ",
-      ],
-    },
-    // quality-allow: the plan table is keyed by three's PascalCase class names, so the name rule cannot apply.
-    // biome-ignore lint/style/useNamingConvention: keyed by three's class name.
-    Matrix3: {
-      promote: true,
-      lanes: ["elements"],
-      drop: ["elements"],
-      read: (value) => Array.from(value.elements as number[]),
-      write: (value, values) => {
-        value.elements = Array.from(values);
-      },
-      // `elements` is column-major; the engine constructor takes three's row-major set order.
-      args: (values) => [0, 3, 6, 1, 4, 7, 2, 5, 8].map((index) => values[index] as number),
-    },
-    // quality-allow: the plan table is keyed by three's PascalCase class names, so the name rule cannot apply.
-    // biome-ignore lint/style/useNamingConvention: keyed by three's class name.
-    Matrix4: {
-      promote: true,
-      lanes: ["elements"],
-      drop: ["elements"],
-      read: (value) => Array.from(value.elements as number[]),
-      write: (value, values) => {
-        value.elements = Array.from(values);
-      },
-      // `elements` is column-major; the engine constructor takes three's row-major set order.
-      args: (values) =>
-        [0, 4, 8, 12, 1, 5, 9, 13, 2, 6, 10, 14, 3, 7, 11, 15].map(
-          (index) => values[index] as number,
-        ),
-    },
-    // quality-allow: the plan table is keyed by three's PascalCase class names, so the name rule cannot apply.
-    // biome-ignore lint/style/useNamingConvention: keyed by three's class name.
-    Box3: {
-      promote: true,
-      lanes: [],
-      drop: ["min", "max"],
-      read: (value) => {
-        const min = memberVector(value.min);
-        const max = memberVector(value.max);
-        return [min.x, min.y, min.z, max.x, max.y, max.z];
-      },
-      write: (value, values) => {
-        memberVector(value.min).set(values[0] as number, values[1] as number, values[2] as number);
-        memberVector(value.max).set(values[3] as number, values[4] as number, values[5] as number);
-      },
-      args: (values, make) => [
-        make("Vector3", values.slice(0, 3).map(Number)),
-        make("Vector3", values.slice(3, 6).map(Number)),
-      ],
-    },
-    // quality-allow: the plan table is keyed by three's PascalCase class names, so the name rule cannot apply.
-    // biome-ignore lint/style/useNamingConvention: keyed by three's class name.
-    Sphere: {
-      promote: true,
-      lanes: ["radius"],
-      drop: ["center", "radius"],
-      read: (value) => {
-        const center = memberVector(value.center);
-        return [center.x, center.y, center.z, value.radius as number];
-      },
-      write: (value, values) => {
-        memberVector(value.center).set(
-          values[0] as number,
-          values[1] as number,
-          values[2] as number,
-        );
-        value.radius = values[3] as number;
-      },
-      args: (values, make) => [make("Vector3", values.slice(0, 3).map(Number)), values[3]],
-    },
-  };
+
   const math = defineMath() as Record<string, new (...args: unknown[]) => object>;
-  const valueClasses = new Map<object, IValueClass>(); // JS prototype -> its engine side
-  const loans: [IValueLanes, IValueLanes, IValueClass][] = [];
-  let borrowing = false;
-  const toEngineArgs = (args: readonly unknown[]): EngineValue[] => {
-    borrowing = true;
-    try {
-      return args.map(toEngine);
-    } finally {
-      borrowing = false;
-    }
-  };
-  // A plan's member-vector arguments (Box3's two, Sphere's one) are native temporaries: the engine
-  // copies them, so they are released as soon as the value that owns the lanes is constructed.
-  const engineArgs = (
-    info: IValueClass,
-    values: number[],
-  ): { args: EngineValue[]; temporaries: IEngineRef[] } => {
-    if (info.plan.args === undefined) return { args: values, temporaries: [] };
-    const temporaries: IEngineRef[] = [];
-    const args = info.plan.args(values, (name, lanes) => {
-      const ref = runtime.construct(name, lanes);
-      temporaries.push(ref);
-      return ref;
-    });
-    return { args, temporaries };
-  };
-  const lend = (value: IValueLanes, info: IValueClass): IEngineRef => {
-    let scratch = info.pool[info.top];
-    if (scratch === undefined) {
-      const built = engineArgs(info, info.plan.read(value));
-      try {
-        scratch = wrap(runtime.construct(info.name, built.args));
-      } finally {
-        for (const temporary of built.temporaries) runtime.release(temporary);
-      }
-      info.pool.push(scratch);
-    }
-    info.top++;
-    const lanes = scratch as IValueLanes;
-    if (info.plan.copy !== undefined) info.plan.copy(lanes, value);
-    else info.plan.write(lanes, info.plan.read(value));
-    loans.push([value, lanes, info]);
-    return refOf(scratch);
-  };
-  // Copies each borrowed object's lanes back to its JS value; the result answers the value itself.
-  const repay = (mark: number, returned: unknown): unknown => {
-    let result = returned;
-    for (let i = loans.length - 1; i >= mark; i--) {
-      const [value, scratch, info] = loans[i] as (typeof loans)[number];
-      if (info.plan.copy !== undefined) info.plan.copy(value, scratch);
-      else info.plan.write(value, info.plan.read(scratch));
-      info.top--;
-      if (result === scratch) result = value;
-    }
-    loans.length = mark;
-    return result;
-  };
-  const promote = (value: IValueLanes, info: IValueClass): void => {
-    const values = info.plan.read(value);
-    (value as { [UNWATCH]?: () => void })[UNWATCH]?.(); // a uniform's watched lanes go: scan it instead
-    for (const key of info.plan.drop) delete value[key];
-    Object.setPrototypeOf(value, info.engine);
-    const built = engineArgs(info, values);
-    try {
-      adopt(value, runtime.construct(info.name, built.args));
-    } finally {
-      for (const temporary of built.temporaries) runtime.release(temporary);
-    }
-  };
-  // An engine-owned value reads and writes its lanes in the engine's memory through accessors named
-  // for the storage its class actually uses. Quaternion and Euler store `_x`, Matrix stores
-  // `elements`, and an Euler's order is a string over the engine's byte enum; Box3 and Sphere reach
-  // their vectors through the registry's fixed members, so they need nothing here.
-  const defineValueView = (
-    name: string,
-    accessors: Record<string, unknown>,
-    binding: IRegistryClass,
-    skip: Set<string>,
-  ): void => {
-    const read = runtime.readDoubles;
-    const write = runtime.writeDouble;
-    const peek = runtime.readByte;
-    if (read === undefined || write === undefined) return;
-    const heap = runtime.heapF64;
-    const lane = heap
-      ? (address: number): number => heap()[address / 8] as number
-      : (address: number): number => read(address, 1) as number;
-    if (name === "Quaternion" && binding.fields !== undefined) {
-      const offsets = ["x", "y", "z", "w"].map((key) => binding.fields?.[key]?.[0] ?? 0);
-      ["_x", "_y", "_z", "_w"].forEach((key, index) => {
-        const offset = offsets[index] as number;
-        Object.defineProperty(accessors, key, {
-          configurable: true,
-          get(this: object): number {
-            return lane(addressOf(this) + offset);
-          },
-          set(this: object, value: number): void {
-            const address = addressOf(this) + offset;
-            const next = Number(value);
-            sharedTransformWrite?.(this, address, next);
-            write(address, next);
-          },
-        });
-      });
-      skip.add("x").add("y").add("z").add("w");
-      // three syncs an Object3D's rotation from its quaternion. Physics interpolation sets every body's
-      // quaternion every frame, so a call per sync cost 1,732 crossings a frame on the stress lab. This is
-      // Euler::setFromQuaternion with update off (Euler.cpp), written into the rotation's lanes: the same
-      // formulas, and Math is V8's fdlibm, which the engine's ieee754 functions are, so the bits match.
-      const eulerFields = registry.classes.Euler?.fields;
-      const angles = ["x", "y", "z"].map((key) => eulerFields?.[key]?.[0]);
-      const orderAt = eulerFields?.__order?.[0];
-      const local =
-        peek !== undefined && orderAt !== undefined && angles.every((at) => at !== undefined);
-      const [ax, ay, az] = angles as [number, number, number];
-      Object.defineProperty(accessors, "_onChangeCallback", {
-        configurable: true,
-        writable: true,
-        value(this: object): void {
-          const owner = quaternions.get(this) as
-            | { rotation?: object & { _order?: string } }
-            | undefined;
-          if (owner?.rotation === undefined) return;
-          if (!local) {
-            // The rotation's own order; the engine refuses a missing one on this call.
-            runtime.invoke(refOf(owner.rotation), "setFromQuaternion", [
-              refOf(this),
-              owner.rotation._order ?? "XYZ",
-            ]);
-            return;
-          }
-          const q = addressOf(this);
-          const e = addressOf(owner.rotation);
-          const [ex, ey, ez] = eulerFromQuaternion(
-            lane(q + (offsets[0] as number)),
-            lane(q + (offsets[1] as number)),
-            lane(q + (offsets[2] as number)),
-            lane(q + (offsets[3] as number)),
-            eulerOrders[(peek as (address: number) => number)(e + (orderAt as number))] ?? "XYZ",
-          );
-          write(e + ax, ex);
-          write(e + ay, ey);
-          write(e + az, ez);
-        },
-      });
-      return;
-    }
-    if (name === "Euler" && binding.fields !== undefined && peek !== undefined) {
-      const offsets = ["x", "y", "z"].map((key) => binding.fields?.[key]?.[0] ?? 0) as number[];
-      const orderAt = binding.fields.__order?.[0] ?? 0;
-      const quaternionFields = registry.classes.Quaternion?.fields;
-      const targets = ["x", "y", "z", "w"].map((key) => quaternionFields?.[key]?.[0] ?? 0);
-      // three's setFromEuler: each order only signs the second terms, in the engine enum's order.
-      const signs = [
-        [1, -1, 1, -1],
-        [1, -1, -1, 1],
-        [-1, 1, 1, -1],
-        [-1, 1, -1, 1],
-        [1, 1, -1, -1],
-        [-1, -1, 1, 1],
-      ];
-      const sync = (euler: object): void => {
-        const owner = rotations.get(euler) as { quaternion?: object } | undefined;
-        if (owner?.quaternion === undefined) return;
-        const at = addressOf(euler);
-        const q = addressOf(owner.quaternion);
-        const x = lane(at + (offsets[0] as number)) / 2;
-        const y = lane(at + (offsets[1] as number)) / 2;
-        const z = lane(at + (offsets[2] as number)) / 2;
-        const sign = signs[peek(at + orderAt)] ?? (signs[0] as number[]);
-        const c1 = Math.cos(x);
-        const c2 = Math.cos(y);
-        const c3 = Math.cos(z);
-        const s1 = Math.sin(x);
-        const s2 = Math.sin(y);
-        const s3 = Math.sin(z);
-        write(q + (targets[0] as number), s1 * c2 * c3 + (sign[0] as number) * c1 * s2 * s3);
-        write(q + (targets[1] as number), c1 * s2 * c3 + (sign[1] as number) * s1 * c2 * s3);
-        write(q + (targets[2] as number), c1 * c2 * s3 + (sign[2] as number) * s1 * s2 * c3);
-        write(q + (targets[3] as number), c1 * c2 * c3 + (sign[3] as number) * s1 * s2 * s3);
-      };
-      ["_x", "_y", "_z"].forEach((key, index) => {
-        const offset = offsets[index] as number;
-        Object.defineProperty(accessors, key, {
-          configurable: true,
-          get(this: object): number {
-            return lane(addressOf(this) + offset);
-          },
-          set(this: object, value: number): void {
-            const address = addressOf(this) + offset;
-            const next = Number(value);
-            sharedTransformWrite?.(this, address, next);
-            write(address, next);
-          },
-        });
-      });
-      Object.defineProperty(accessors, "_order", {
-        configurable: true,
-        get(this: object): string {
-          return eulerOrders[peek(addressOf(this) + orderAt)] ?? "XYZ";
-        },
-        set(this: object, value: unknown): void {
-          const index = eulerOrders.indexOf(value as (typeof eulerOrders)[number]);
-          if (index < 0)
-            throw new TypeError(
-              `Euler order is not one of ${eulerOrders.join(", ")}: ${String(value)}`,
-            );
-          // The order is the engine's byte enum: its setter reorders and syncs, so only a change
-          // crosses (four numbers are not worth a call on every `rotation.set`).
-          if (index !== peek(addressOf(this) + orderAt))
-            runtime.set(refOf(this), "order", value as string);
-        },
-      });
-      Object.defineProperty(accessors, "_onChangeCallback", {
-        configurable: true,
-        writable: true,
-        value(this: object): void {
-          sync(this);
-        },
-      });
-      skip.add("x").add("y").add("z").add("order");
-      return;
-    }
-    if ((name === "Matrix3" || name === "Matrix4") && binding.fields?.elements !== undefined) {
-      const [offset = 0, count = 0] = binding.fields.elements;
-      // three keeps one `elements` array; this keeps one proxy per matrix over a mirrored array and
-      // writes every element it sets straight to engine memory, so the array never detaches.
-      const mirrors = new WeakMap<object, { values: number[]; view: number[] }>();
-      // Off the heap view when there is one: a game reads `matrixWorld.elements` hundreds of times
-      // a frame, and a copy call allocates two arrays a read.
-      const refresh = heap
-        ? (address: number, values: number[]): void => {
-            const memory = heap();
-            for (let i = 0, at = address / 8; i < count; i++) values[i] = memory[at + i] as number;
-          }
-        : (address: number, values: number[]): void => {
-            const memory = read(address, count) as number[];
-            for (let i = 0; i < count; i++) values[i] = memory[i] as number;
-          };
-      Object.defineProperty(accessors, "elements", {
-        configurable: true,
-        get(this: object): number[] {
-          const address = addressOf(this) + offset;
-          let mirror = mirrors.get(this);
-          if (mirror === undefined) {
-            const values = new Array<number>(count);
-            const view = new Proxy(values, {
-              set: (target, key, value): boolean => {
-                const index = typeof key === "string" ? Number(key) : Number.NaN;
-                if (Number.isInteger(index) && index >= 0 && index < count)
-                  write(address + index * 8, Number(value));
-                target[key as never] = value as never;
-                return true;
-              },
-            });
-            mirror = { values, view };
-            mirrors.set(this, mirror);
-          }
-          refresh(address, mirror.values);
-          return mirror.view;
-        },
-        set(this: object, value: ArrayLike<number>): void {
-          const address = addressOf(this) + offset;
-          for (let i = 0; i < count; i++) write(address + i * 8, Number(value[i]));
-        },
-      });
-      skip.add("elements");
-    }
-  };
   const wrappers = new Map<string, WeakRef<object>>();
   // Callbacks: the function lives on its wrapper (a WeakMap entry), so wrapper -> closure is an edge
   // the collector sees; `held` roots a wrapper while the engine may still call it.
@@ -1195,112 +623,7 @@ export function defineBrowserClasses(
   // userData is the game's: it lives with the wrapper, which `held` keeps while the engine references it.
   const userData = new WeakMap<object, unknown>();
   const shaderNodes = new Map<string, Map<string, unknown>>(); // material key -> slot -> TSL node
-  // three's `attribute.array` is the attribute's own JS typed array (PRD-540): the array the
-  // constructor was handed, or a copy of the engine's data on first read. A view of Wasm memory
-  // would detach when the memory grows, so the shadow is a JS array. The shadow and the engine's
-  // store are kept in step (PRD-617): an engine mutator copies back ONLY the range it wrote, so a
-  // later game edit to the array wins, and `needsUpdate` sends the array to the engine. A read hands
-  // the game the array, so the attribute is `pending` until its array is written back before the next
-  // engine call (a per-vertex setter reads no kept array and flushes nothing).
-  const { attributeArray, attributeWrite } = runtime;
-  const arrays = new WeakMap<object, { array: TypedArray }>();
-  const itemSizes = new WeakMap<object, number>();
-  // Shape survives data uploads and transform calls; only copy/replacement changes it.
-  const shapes = new WeakMap<object, Map<string, unknown>>();
-  const pending = new Set<object>();
-  const writeBack = (): void => {
-    for (const attribute of pending) {
-      const entry = arrays.get(attribute);
-      if (entry !== undefined) attributeWrite?.call(runtime, refOf(attribute), entry.array);
-    }
-    pending.clear();
-  };
-  const itemSizeOf = (attribute: object): number => {
-    let size = itemSizes.get(attribute);
-    if (size === undefined) {
-      size = Number(runtime.get(refOf(attribute), "itemSize"));
-      itemSizes.set(attribute, size);
-    }
-    return size;
-  };
-  // The scalar range an attribute mutator wrote: derived from the method and its arguments, so the
-  // engine syncs back only those elements. A component setter writes one, setXY/XYZ/XYZW an item's
-  // lanes, copyAt a whole destination item.
-  const lanes: Record<string, number> = { setX: 0, setY: 1, setZ: 2, setW: 3 };
-  const rangeOf = (
-    method: string,
-    args: readonly unknown[],
-    itemSize: number,
-  ): readonly [number, number] => {
-    const at = Number(args[0]) * itemSize;
-    if (method === "copyAt") return [at, itemSize];
-    const component = lanes[method];
-    if (component !== undefined) return [at + component, 1];
-    if (method === "setComponent") return [at + Number(args[1]), 1];
-    return [at, method === "setXY" ? 2 : method === "setXYZ" ? 3 : 4];
-  };
-  const syncRange = (
-    attribute: object,
-    entry: { array: TypedArray },
-    offset: number,
-    count: number,
-  ): void => {
-    // A malformed range (a fraction, NaN, Infinity, a negative offset or a non-positive count) names
-    // no element: it must fail, not slip to element 0 through subarray's own coercion. A range that
-    // only runs past the end is the engine's documented bounds no-op (`setComponent`/`setRaw`
-    // ignore it, as JS does), so there is nothing to read back. A required range read that comes
-    // back missing or short is a provider fault, never a silently stale shadow.
-    if (!Number.isSafeInteger(offset) || !Number.isSafeInteger(count) || offset < 0 || count <= 0)
-      throw new RangeError(
-        `TN_NATIVE_ATTRIBUTE_RANGE: [${String(offset)}, ${String(count)}) is not a valid element range`,
-      );
-    if (offset + count > entry.array.length) return;
-    const fresh = attributeArray?.call(runtime, refOf(attribute), offset, count);
-    if (fresh === undefined || fresh.length !== count)
-      throw new TypeError(
-        `TN_NATIVE_ATTRIBUTE_SYNC: attributeArray gave ${fresh === undefined ? "no array" : `${String(fresh.length)} elements`} for [${String(offset)}, ${String(count)})`,
-      );
-    entry.array.set(fresh, offset);
-  };
-  const syncFull = (attribute: object, entry: { array: TypedArray }): void => {
-    const fresh = attributeArray?.call(runtime, refOf(attribute));
-    if (fresh === undefined) return;
-    if (fresh.length === entry.array.length) entry.array.set(fresh);
-    else entry.array = fresh;
-  };
-  // three's `InstancedMesh.setMatrixAt`/`setColorAt` write the mesh's own `instanceMatrix`/
-  // `instanceColor` array item (`index * 16`, `index * 3`); the engine's mesh-level call writes only
-  // its own store, so the shadow a game already holds (core's velocity capture reads one per mesh a
-  // frame) would send its frozen snapshot back at `needsUpdate` and leave the mesh where it stood.
-  // Take the item the call writes into that same array, as three does. No shadow, no work: this is
-  // a pair of map lookups and an array copy, never an engine call.
-  const instanceItem = (
-    mesh: object,
-    attribute: string,
-    index: unknown,
-    argument: unknown,
-  ): { array: TypedArray; at: number; values: ArrayLike<number> } | undefined => {
-    const held = shapes.get(mesh)?.get(attribute);
-    if (held === null || held === undefined) return undefined;
-    const entry = arrays.get(held as object);
-    if (entry === undefined) return undefined;
-    const source = argument as {
-      elements?: ArrayLike<number>;
-      r?: number;
-      g?: number;
-      b?: number;
-    } | null;
-    const values =
-      attribute === "instanceMatrix"
-        ? source?.elements
-        : [Number(source?.r), Number(source?.g), Number(source?.b)];
-    if (values === undefined) return undefined;
-    const at = Number(index) * values.length;
-    // three's `toArray` writes one lane at a time, so a lane outside the array is ignored, not an error.
-    if (!Number.isSafeInteger(at) || at < 0 || at + values.length > entry.array.length)
-      return undefined;
-    return { array: entry.array, at, values };
-  };
+
   const released = new FinalizationRegistry<IEngineRef>((ref) => {
     if (wrappers.get(ref.key)?.deref() === undefined) {
       debug?.add("bridgeWrappersReleased");
@@ -1340,56 +663,34 @@ export function defineBrowserClasses(
       );
     return ref;
   };
-  const toEngine = (value: unknown): EngineValue => {
-    if (value === null || value === undefined) return null;
-    if (typeof value === "number" || typeof value === "boolean" || typeof value === "string")
-      return value;
-    if (ArrayBuffer.isView(value) && !(value instanceof DataView)) {
-      // An image's `getImageData` pixels are a Uint8ClampedArray: boxed into a list, a 4096x2048 sky took 1.4 s.
-      if (
-        runtime.typedArrays === true &&
-        (value instanceof Uint8ClampedArray || SCALARS.some((scalar) => value instanceof scalar))
-      )
-        return value as TypedArray;
-      // quality-allow: a typed-array view read as its numeric index signature, which ArrayBufferView does not declare.
-      const list = Array.from(value as unknown as ArrayLike<number>);
-      Object.defineProperty(list, TYPED, { value: value.constructor.name });
-      return list;
-    }
-    if (Array.isArray(value)) return Array.from(value as ArrayLike<unknown>, toEngine);
-    const info = valueClasses.get(Object.getPrototypeOf(value) as object);
-    if (info !== undefined) {
-      if (borrowing && info.plan.promote !== true) return lend(value as IValueLanes, info);
-      promote(value as IValueLanes, info);
-    }
-    if (typeof value === "object" && REF in value) {
-      // A wrapper passed into the engine is held until the next safe point decides (collect()).
-      hold(value);
-      return (value as IWrapped)[REF];
-    }
-    // An options object (`new ExtrudeGeometry(shape, { depth })`) crosses as a record of scalars and
-    // engine objects, as the V8 adapter passes it; an undefined value is left out, as three reads it.
-    if (isPlainObject(value)) {
-      const fields: Record<string, EngineValue> = {};
-      for (const [key, item] of Object.entries(value as object)) {
-        if (item === undefined) continue;
-        if (
-          item !== null &&
-          typeof item === "object" &&
-          !(REF in item) &&
-          !valueClasses.has(Object.getPrototypeOf(item) as object)
-        )
-          throw new TypeError(
-            `TN_BROWSER_ARGUMENT_UNSUPPORTED: option ${key} cannot cross to the engine`,
-          );
-        fields[key] = toEngine(item);
-      }
-      return fields;
-    }
-    throw new TypeError(
-      `TN_BROWSER_ARGUMENT_UNSUPPORTED: ${typeof value} cannot cross to the engine`,
-    );
-  };
+
+  const { toEngine, valueClasses, loans, repay, toEngineArgs, defineValueView } = defineValueViews({
+    runtime,
+    registry,
+    refOf,
+    adopt,
+    wrap,
+    hold,
+    addressOf,
+    rotations,
+    quaternions,
+    sharedTransformWrite,
+  });
+  const {
+    attributeArray,
+    attributeWrite,
+    arrays,
+    itemSizes,
+    shapes,
+    pending,
+    writeBack,
+    itemSizeOf,
+    rangeOf,
+    syncRange,
+    syncFull,
+    instanceItem,
+  } = defineAttributeSync({ runtime, refOf });
+
   const fromEngine = (value: EngineValue): unknown => {
     if (isRef(value)) return wrap(value);
     if (Array.isArray(value)) return value.map(fromEngine);
@@ -1564,6 +865,10 @@ export function defineBrowserClasses(
       // kinds are exclusive, so an attribute setter never enumerates a geometry and vice versa.
       const rangeMethod = attributeClass && rangeMethods.has(method);
       const transformMethod = attributeClass && transformMethods.has(method);
+      // Update-range bookkeeping reads no attribute bytes, so it flushes no shadow: a streamed batch
+      // that clears and re-adds its range each write sent every pending array, whole, twice.
+      const bookkeeping =
+        attributeClass && (method === "clearUpdateRanges" || method === "addUpdateRange");
       const geometryWrite = geometryClass && geometryWrites.has(method);
       // A mesh-level write into an attribute a game can hold a shadow of (see `instanceItem`).
       const instanceWrite =
@@ -1614,7 +919,7 @@ export function defineBrowserClasses(
           } else if (schedule === "all") scheduling = new WeakMap();
           // A per-vertex setter writes its own range and reads no kept array, so a whole-shadow flush
           // would cost O(N) a call; it syncs just its range back below. Anything else flushes edits.
-          if (pending.size > 0 && !rangeMethod) writeBack();
+          if (pending.size > 0 && !rangeMethod && !bookkeeping) writeBack();
           // A full-array attribute transform reads its own array: send the game's shadow first.
           if (transformMethod) {
             const entry = arrays.get(this);
@@ -1663,6 +968,14 @@ export function defineBrowserClasses(
           } finally {
             if (loans.length > mark) result = repay(mark, result);
             if (drives) animated = new WeakMap();
+          }
+          // The engine's clone and copy carry the material's graphs; the TSL nodes a slot reads back
+          // follow them, or `clone().maskNode` answers null and a composed mask drops the source's.
+          if (materialClass && (method === "clone" || method === "copy")) {
+            const [from, to] = method === "clone" ? [this, result] : [args[0], this];
+            const slots = shaderNodes.get(refOf(from as object).key);
+            if (slots === undefined) shaderNodes.delete(refOf(to as object).key);
+            else shaderNodes.set(refOf(to as object).key, new Map(slots));
           }
           if (method === "copy") {
             shapes.delete(this);
@@ -1770,7 +1083,7 @@ export function defineBrowserClasses(
     const setters = new Set(binding.setters);
     // A node material's TSL slots (`colorNode`) take an engine graph node, which no ABI value
     // carries: the graph goes in through the TSL runtime, and reading the slot answers the node set.
-    for (const property of binding.setters.filter((key) => /^[a-z]+Node$/u.test(key))) {
+    for (const property of binding.setters.filter((key) => /^[a-z][A-Za-z]*Node$/u.test(key))) {
       Object.defineProperty(prototype, property, {
         configurable: true,
         get(this: object) {
@@ -1807,6 +1120,47 @@ export function defineBrowserClasses(
             const slots = shaderNodes.get(ref.key) ?? new Map<string, unknown>();
             if (slots.get(property) !== value) detachVirtualShadow(slots.get(property));
             shaderNodes.set(ref.key, slots.set(property, value));
+            return;
+          }
+          // three's MRTNode: one engine graph node per output name, each at its own slot path, so a
+          // material writes every colour target its mrt() names (pass-node.ts accepts any name).
+          if (property === "mrtNode") {
+            const slots = shaderNodes.get(ref.key) ?? new Map<string, unknown>();
+            const previous =
+              (slots.get(property) as { outputs?: Record<string, unknown> } | undefined)?.outputs ??
+              {};
+            if (value === null) {
+              for (const [slot, node] of Object.entries(previous))
+                if (isCustomMrtOutput(slot, node)) runtime.tsl?.set(ref, `mrtNode.${slot}`, 0);
+              slots.delete(property);
+              shaderNodes.set(ref.key, slots);
+              return;
+            }
+            const outputs = (value as { isMRTNode?: boolean; outputs?: unknown }).outputs;
+            if (
+              (value as { isMRTNode?: boolean }).isMRTNode !== true ||
+              outputs === null ||
+              typeof outputs !== "object"
+            )
+              throw new TypeError(`TN_BROWSER_SHADER_NODE: ${name}.mrtNode takes mrt()`);
+            for (const [slot, node] of Object.entries(outputs as Record<string, unknown>)) {
+              // The scene pass draws the reserved targets itself; a material writes the custom ones.
+              if (!isCustomMrtOutput(slot, node)) continue;
+              if (node === null || typeof node !== "object" || !(TSL_NODE in node))
+                throw new TypeError(
+                  `TN_BROWSER_SHADER_NODE: ${name}.mrtNode '${slot}' is not a TSL node`,
+                );
+              runtime.tsl?.set(
+                ref,
+                `mrtNode.${slot}`,
+                (node as Record<symbol, number>)[TSL_NODE] as number,
+              );
+            }
+            for (const [slot, node] of Object.entries(previous))
+              if (isCustomMrtOutput(slot, node) && !Object.hasOwn(outputs as object, slot))
+                runtime.tsl?.set(ref, `mrtNode.${slot}`, 0);
+            slots.set(property, value);
+            shaderNodes.set(ref.key, slots);
             return;
           }
           if (value === null) {
@@ -2248,6 +1602,12 @@ export function defineBrowserClasses(
         walked,
         raycasts(name),
       );
+      if (!binding.methods.includes("dispose"))
+        Object.defineProperty(prototype, "dispose", {
+          configurable: true,
+          writable: true,
+          value: disposeObject,
+        });
     }
     classes[name] = cls;
     byType.set(runtime.typeId(name), { prototype: accessors, ...(materialClass ? { own } : {}) });
@@ -2280,7 +1640,61 @@ export function defineBrowserClasses(
           return entry.array;
         },
       });
+      // three's per-element getters read the attribute's own array; one engine call each made a vertex
+      // walk (core's pose measurement over a licensed forest) cost 15 s of load. They read the shadow,
+      // which the engine's own mutators keep in step, fetched once without marking it pending: the game
+      // never holds this array, so there is no edit to write back.
+      const shadow = (attribute: object): TypedArray => {
+        let entry = arrays.get(attribute);
+        if (entry === undefined) {
+          entry = { array: attributeArray.call(runtime, refOf(attribute)) };
+          arrays.set(attribute, entry);
+        }
+        return entry.array;
+      };
+      const component = (attribute: object, index: number, lane: number): number => {
+        const array = shadow(attribute);
+        const value = Number(array[index * itemSizeOf(attribute) + lane]);
+        return (attribute as { normalized?: boolean }).normalized === true
+          ? denormalize(value, array)
+          : value;
+      };
+      Object.defineProperties(cls.prototype, {
+        getX: {
+          configurable: true,
+          value(this: object, i: number) {
+            return component(this, i, 0);
+          },
+        },
+        getY: {
+          configurable: true,
+          value(this: object, i: number) {
+            return component(this, i, 1);
+          },
+        },
+        getZ: {
+          configurable: true,
+          value(this: object, i: number) {
+            return component(this, i, 2);
+          },
+        },
+        getW: {
+          configurable: true,
+          value(this: object, i: number) {
+            return component(this, i, 3);
+          },
+        },
+        getComponent: {
+          configurable: true,
+          value(this: object, i: number, lane: number) {
+            return component(this, i, lane);
+          },
+        },
+      });
       // needsUpdate is a property write, not a call: it hands the shadow to the engine as it stands.
+      // Declared update ranges send only themselves, as three's own upload does
+      // (WebGPUAttributeUtils.updateAttribute): a 10,000-instance batch that rewrote 40 records sent
+      // all 10,000 each time. An edit outside the declared ranges stays unsent, as on three's GPU.
       const needsUpdate = Object.getOwnPropertyDescriptor(cls.prototype, "needsUpdate");
       if (needsUpdate?.set !== undefined)
         Object.defineProperty(cls.prototype, "needsUpdate", {
@@ -2288,7 +1702,18 @@ export function defineBrowserClasses(
           set(this: object, value: unknown) {
             const entry = arrays.get(this);
             if (value === true && entry !== undefined) {
-              attributeWrite.call(runtime, refOf(this), entry.array);
+              const ranges = uploadRanges(this);
+              if (ranges.length === 0) attributeWrite.call(runtime, refOf(this), entry.array);
+              for (const { start, count } of ranges) {
+                const end = Math.min(start + count, entry.array.length);
+                if (end > start)
+                  attributeWrite.call(
+                    runtime,
+                    refOf(this),
+                    entry.array.subarray(start, end),
+                    start,
+                  );
+              }
               pending.delete(this);
             }
             needsUpdate.set?.call(this, value);
@@ -2424,881 +1849,4 @@ export function defineBrowserClasses(
       });
     },
   };
-}
-
-/**
- * The engine's C ABI as built by `tn-native-engine-abi-module` (Emscripten, wasm32). The names are
- * Emscripten's (`HEAPU8`, `_malloc`, `_tn_*`), so they are declared as record keys.
- */
-type AbiCall =
-  | "_malloc"
-  | "_free"
-  | "_tn_engine_version"
-  | "_tn_context_create"
-  | "_tn_type_id"
-  | "_tn_object_release"
-  | "_tn_object_engine_references"
-  | "_tn_construct"
-  | "_tn_invoke"
-  | "_tn_get"
-  | "_tn_set"
-  | "_tn_set_callback"
-  | "_tn_diagnostic_release";
-export type TnAbiModule = Record<AbiCall, (...args: number[]) => number> &
-  Partial<
-    Record<"_tnw_attribute_view" | "_tnw_attribute_view_release", (...args: number[]) => number>
-  > &
-  Record<"HEAPU8", Uint8Array> &
-  Record<"HEAPF64", Float64Array> &
-  Record<"UTF8ToString", (pointer: number, maxBytes?: number) => string> &
-  Record<
-    "addFunction",
-    (fn: (...args: number[]) => number | undefined, signature: string) => number
-  > & {
-    stringToUTF8(text: string, pointer: number, maxBytes: number): void;
-    lengthBytesUTF8(text: string): number;
-  };
-
-// wasm32 layouts of tn_abi.h, measured with offsetof under emcc: tn_handle_t 12 bytes; tn_value_t
-// 56 bytes (kind 0, boolean 4, number 8, handle 16, text 32, count 40, numbers 48); tn_diagnostic_t
-// 8 bytes (message 0, code 4); tn_version_info_t 32 bytes. A struct passed by value goes by pointer.
-const HANDLE = 12;
-const VALUE = 56;
-const KIND = {
-  null: 0,
-  number: 1,
-  bool: 2,
-  string: 3,
-  handle: 4,
-  numbers: 5,
-  array: 6,
-  record: 7,
-  undefined: 8,
-  bytes: 9,
-} as const;
-
-// wasm32 layout of tn_tsl_arg_t (tn_tsl.h): kind 0, lanes 4, node 8 (u64), number 16, text 24,
-// numbers 32 (four f64); 64 bytes. A handle argument's 12 bytes start at lanes (4) and run through node.
-const TSL_ARG = 64;
-const TSL_KIND = {
-  node: 0,
-  number: 1,
-  string: 2,
-  named: 3,
-  rgb: 4,
-  vector: 5,
-  other: 6,
-  handle: 7,
-} as const;
-type TslCall =
-  | "_tn_tsl_call"
-  | "_tn_tsl_release"
-  | "_tn_tsl_set"
-  | "_tn_tsl_set_uniform"
-  | "_tn_tsl_effect_parameter"
-  | "_tnw_web_set_post"
-  | "_tnw_web_compute"
-  | "_tnw_web_compute_flush"
-  | "_tnw_web_read_storage"
-  | "_tnw_web_read_storage_size"
-  | "_tnw_web_read_storage_take"
-  | "_tnw_web_delete_storage"
-  | "_tnw_web_poll"
-  | "_tnw_web_error";
-
-interface IAbiHelpers {
-  scoped<T>(work: () => T): T;
-  alloc(size: number): number;
-  string(text: string): { pointer: number; bytes: number };
-  diagnostic(): number;
-  check(status: number, diag: number, what: string): void;
-  handleOf(ref: IEngineRef): number;
-  writeHandle(pointer: number, ref: IEngineRef): void;
-  view(): DataView;
-}
-
-/** The engine glTF loader over the product web host's `tnw_web_load_gltf`, when the module has it. */
-function gltfOf(
-  abi: TnAbiModule,
-  context: number,
-  h: Pick<IAbiHelpers, "scoped" | "alloc"> & { keyOf(pointer: number): IEngineRef },
-): Pick<IBrowserRuntime, "loadGltf"> {
-  // quality-allow: the Emscripten module is read through the exports this call site names, not its full surface.
-  const host = abi as unknown as Partial<
-    Record<
-      | "_tnw_web_load_gltf"
-      | "_tnw_web_load_error"
-      | "_tnw_web_gltf_file"
-      | "_tnw_web_gltf_files_clear",
-      (...args: number[]) => number
-    >
-  >;
-  const {
-    _tnw_web_load_gltf: load,
-    _tnw_web_load_error: error,
-    _tnw_web_gltf_file: file,
-    _tnw_web_gltf_files_clear: clearFiles,
-  } = host;
-  if (load === undefined || error === undefined) return {};
-  return {
-    loadGltf: (bytes, files) =>
-      h.scoped(() => {
-        // Files the model names by relative uri (shared images), read by the engine loader.
-        if (files !== undefined && files.size > 0) {
-          if (file === undefined || clearFiles === undefined)
-            throw new Error(
-              "TN_WASM_GLTF_FILES_UNAVAILABLE: this web engine cannot read a model's image files",
-            );
-          for (const [uri, content] of files) {
-            const name = h.alloc(abi.lengthBytesUTF8(uri) + 1);
-            abi.stringToUTF8(uri, name, abi.lengthBytesUTF8(uri) + 1);
-            const copy = h.alloc(Math.max(1, content.byteLength));
-            abi.HEAPU8.set(content, copy);
-            file(name, copy, content.byteLength);
-          }
-        }
-        try {
-          const data = h.alloc(Math.max(1, bytes.byteLength));
-          abi.HEAPU8.set(bytes, data);
-          const count = h.alloc(4);
-          // Retried once with the exact size when the model has more clips than the first guess.
-          for (let capacity = 64; ; ) {
-            const out = h.alloc(HANDLE * capacity);
-            const status = load(context, data, bytes.byteLength, out, capacity, count);
-            const needed = new DataView(abi.HEAPU8.buffer).getUint32(count, true);
-            if (status === 0) {
-              const refs = Array.from({ length: needed }, (_, i) => h.keyOf(out + i * HANDLE));
-              return { scene: refs[0] as IEngineRef, animations: refs.slice(1) };
-            }
-            const reason = abi.UTF8ToString(error());
-            if (reason !== "TN_WASM_GLTF_CAPACITY" || needed <= capacity) throw new Error(reason);
-            capacity = needed;
-          }
-        } finally {
-          clearFiles?.();
-        }
-      }),
-  };
-}
-
-/** TSL by name over `tn_tsl_call`, when the module exports it (the product web host does). */
-function tslOf(
-  abi: TnAbiModule,
-  context: number,
-  h: IAbiHelpers,
-): { tsl: ITslRuntime } | undefined {
-  // Node ids are u64 in the C ABI; Emscripten passes a 64-bit parameter as a BigInt.
-  // quality-allow: the Emscripten module is read through the TSL call exports this call site names, not its full surface.
-  const calls = abi as unknown as Partial<
-    Record<TslCall, (...args: (number | bigint)[]) => number>
-  >;
-  const {
-    _tn_tsl_call: call,
-    _tn_tsl_release: release,
-    _tn_tsl_set: set,
-    _tn_tsl_set_uniform: setUniform,
-    _tn_tsl_effect_parameter: effectParameter,
-    _tnw_web_set_post: setPost,
-    _tnw_web_compute: computeNode,
-    _tnw_web_compute_flush: computeFlush,
-    _tnw_web_read_storage: readStorage,
-    _tnw_web_read_storage_size: readStorageSize,
-    _tnw_web_read_storage_take: readStorageTake,
-    _tnw_web_delete_storage: deleteStorage,
-    _tnw_web_poll: poll,
-    _tnw_web_error: webError,
-  } = calls;
-  if (
-    call === undefined ||
-    release === undefined ||
-    set === undefined ||
-    setUniform === undefined ||
-    effectParameter === undefined
-  )
-    return undefined;
-  // Writes tn_tsl_arg_t values; text is allocated first, since an allocation can grow the memory.
-  const writeArgs = (args: readonly TslArgValue[]): number => {
-    const pointer = h.alloc(Math.max(TSL_ARG, args.length * TSL_ARG));
-    args.forEach((arg, i) => {
-      const at = pointer + i * TSL_ARG;
-      const text = arg.kind === "string" || arg.kind === "named" ? h.string(arg.text).pointer : 0;
-      const v = h.view();
-      v.setUint32(at, TSL_KIND[arg.kind], true);
-      if (arg.kind === "node") v.setBigUint64(at + 8, BigInt(arg.node), true);
-      else if (arg.kind === "number") v.setFloat64(at + 16, arg.number, true);
-      else if (arg.kind === "rgb" || arg.kind === "vector") {
-        v.setUint32(at + 4, arg.numbers.length, true);
-        arg.numbers.forEach((c, j) => v.setFloat64(at + 32 + j * 8, c, true));
-      } else if (arg.kind === "handle") h.writeHandle(at + 4, arg.ref);
-      else v.setUint32(at + 24, text, true);
-    });
-    return pointer;
-  };
-  const nodeOf = (node: number | null): number => {
-    if (node === null) return 0;
-    const pointer = h.alloc(8);
-    h.view().setBigUint64(pointer, BigInt(node), true);
-    return pointer;
-  };
-  return {
-    tsl: {
-      call: (name, receiver, args) =>
-        h.scoped(() => {
-          const pointer = writeArgs(args);
-          const self = nodeOf(receiver);
-          const out = h.alloc(8);
-          const diag = h.diagnostic();
-          h.check(
-            call(context, h.string(name).pointer, self, pointer, args.length, out, diag),
-            diag,
-            `TSL ${name}`,
-          );
-          return Number(h.view().getBigUint64(out, true));
-        }),
-      release: (node) =>
-        h.scoped(() => {
-          const diag = h.diagnostic();
-          release(context, BigInt(node), diag);
-          abi._tn_diagnostic_release(diag);
-        }),
-      set: (material, path, node) =>
-        h.scoped(() => {
-          const diag = h.diagnostic();
-          h.check(
-            set(context, h.handleOf(material), h.string(path).pointer, BigInt(node), diag),
-            diag,
-            `set ${path}`,
-          );
-        }),
-      effectParameter: (node, name, value) =>
-        h.scoped(() => {
-          const self = nodeOf(node);
-          const input = value === undefined ? 0 : h.alloc(8);
-          if (value !== undefined) h.view().setFloat64(input, value, true);
-          const out = h.alloc(8);
-          const diag = h.diagnostic();
-          h.check(
-            effectParameter(context, self, h.string(name).pointer, input, out, diag),
-            diag,
-            `effect ${name}`,
-          );
-          return h.view().getFloat64(out, true);
-        }),
-      // three's RenderPipeline on the product web host: the graph between scene and output.
-      setPost: (node) =>
-        h.scoped(() => {
-          if (setPost === undefined) throw new Error("TN_WASM_POST: this module has no web host");
-          if (setPost(context, nodeOf(node), 0) !== 0) throw new Error("TN_WASM_POST: refused");
-        }),
-      setToneMapping: (node) =>
-        h.scoped(() => {
-          if (setPost === undefined)
-            throw new Error("TN_NATIVE_CUSTOM_TONEMAPPING_MISSING: no web output binding");
-          if (setPost(context, nodeOf(node), 1) !== 0)
-            throw new Error("TN_NATIVE_CUSTOM_TONEMAPPING_INVALID: refused output node");
-        }),
-      // PRD-620: renderer.compute and storage reads over the product web host.
-      compute: (node) =>
-        h.scoped(() => {
-          if (computeNode === undefined || webError === undefined)
-            throw new Error("TN_WASM_COMPUTE: this module has no web host");
-          if (computeNode(context, nodeOf(node)) !== 0)
-            throw new Error(abi.UTF8ToString(webError()));
-        }),
-      readStorage: async (attribute) => {
-        if (
-          readStorage === undefined ||
-          readStorageSize === undefined ||
-          readStorageTake === undefined ||
-          computeFlush === undefined ||
-          poll === undefined ||
-          webError === undefined
-        )
-          throw new Error("TN_WASM_COMPUTE: this module has no web host");
-        const id = h.scoped(() => {
-          const pointer = h.alloc(HANDLE);
-          h.writeHandle(pointer, attribute);
-          return readStorage(pointer);
-        });
-        if (id === 0) throw new Error(abi.UTF8ToString(webError()));
-        computeFlush();
-        for (;;) {
-          poll();
-          const size = readStorageSize(id);
-          if (size > 0 || readStorageTake(id, 0, 0) < 0) {
-            const out = abi._malloc(size) >>> 0;
-            try {
-              if (readStorageTake(id, out, size) === 1)
-                return abi.HEAPU8.slice(out, out + size).buffer;
-            } finally {
-              abi._free(out);
-            }
-            throw new Error("TN_NATIVE_READ_STORAGE: the read failed");
-          }
-          await new Promise((resolve) => setTimeout(resolve, 0));
-        }
-      },
-      deleteStorage: (attribute) =>
-        h.scoped(() => {
-          if (deleteStorage === undefined || webError === undefined)
-            throw new Error("TN_WASM_COMPUTE: this module has no web host");
-          const pointer = h.alloc(HANDLE);
-          h.writeHandle(pointer, attribute);
-          if (deleteStorage(pointer) !== 0) throw new Error(abi.UTF8ToString(webError()));
-        }),
-      setUniform: (node, lanes) =>
-        h.scoped(() => {
-          const pointer = h.alloc(8);
-          const values = h.alloc(Math.max(8, lanes.length * 8));
-          const v = h.view();
-          v.setBigUint64(pointer, BigInt(node), true);
-          lanes.forEach((lane, i) => v.setFloat64(values + i * 8, lane, true));
-          const diag = h.diagnostic();
-          h.check(setUniform(context, pointer, values, lanes.length, diag), diag, "uniform.value");
-        }),
-    },
-  };
-}
-
-/** The runtime over a loaded ABI module: one engine context, every call checked. */
-/**
- * Opt-in boundary census for `pnpm profile:wasm-page --calls`: while the page sets
- * `globalThis.__tnCallCounts` to a Map, every engine get, set and invoke counts under
- * "<kind> <type id>.<name>" (`__tnEngineTypes` names the type ids). Off, it costs one global read.
- */
-function countCall(kind: string, self: IEngineRef, name: string): void {
-  const counts = (globalThis as { __tnCallCounts?: Map<string, number> }).__tnCallCounts;
-  if (counts === undefined) return;
-  const key = `${kind} ${self.type}.${name}`;
-  counts.set(key, (counts.get(key) ?? 0) + 1);
-}
-
-export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
-  const debug = debugTelemetry(abi);
-  let encoding = "arguments";
-  // The heap's views, made again only when the memory grows: Emscripten replaces HEAPU8 then, so one
-  // identity test per use stands in for reading two `.buffer`s, which every crossing paid (PRD-748).
-  let heap = abi.HEAPU8;
-  let heapBytes = heap.byteLength;
-  let dataView = new DataView(heap.buffer);
-  let words = new Uint32Array(heap.buffer);
-  const grown = () => {
-    debug?.add("wasmGrowthEvents");
-    debug?.add("wasmGrowthBytes", Math.max(0, abi.HEAPU8.byteLength - heapBytes), "memory");
-    heap = abi.HEAPU8;
-    heapBytes = heap.byteLength;
-    dataView = new DataView(heap.buffer);
-    words = new Uint32Array(heap.buffer);
-  };
-  const view = () => {
-    if (abi.HEAPU8 !== heap) grown();
-    return dataView;
-  };
-  const wordView = () => {
-    if (abi.HEAPU8 !== heap) grown();
-    return words;
-  };
-  // Each call frees what it allocated, and only that: a callback can run a nested call.
-  // A call's scratch (its handle, arguments, result and diagnostic) comes from one arena that each
-  // scope rewinds, a stack as nested calls (a callback inside an invoke) need; a scope that outgrows
-  // it falls back to malloc and frees on exit. Every engine call crosses here, many per frame.
-  const arenaSize = 64 * 1024;
-  const arenaBase = abi._malloc(arenaSize) >>> 0;
-  let arenaTop = arenaBase;
-  const allocations: number[] = [];
-  const alloc = (size: number): number => {
-    const aligned = (size + 7) & ~7;
-    debug?.add("bridgeScratchBytes", aligned);
-    let pointer: number;
-    if (arenaTop + aligned <= arenaBase + arenaSize) {
-      pointer = arenaTop;
-      arenaTop += aligned;
-    } else {
-      // `>>> 0`: the module addresses up to 4 GB, and an export returns a pointer as a signed i32.
-      pointer = abi._malloc(aligned) >>> 0;
-      allocations.push(pointer);
-      debug?.add("bridgeOverflowAllocations");
-      debug?.add("bridgeOverflowBytes", aligned);
-    }
-    // A call's scratch is a few words (a handle, a value, a diagnostic): word stores beat a fill call.
-    // `wordView` first: a `_malloc` above may have grown the memory.
-    const w = wordView();
-    if (aligned > 64) heap.fill(0, pointer, pointer + aligned);
-    else for (let at = pointer >>> 2, end = (pointer + aligned) >>> 2; at < end; at++) w[at] = 0;
-    return pointer;
-  };
-  const scoped = <T>(work: () => T): T => {
-    const mark = allocations.length;
-    const top = arenaTop;
-    try {
-      return work();
-    } finally {
-      while (allocations.length > mark) abi._free(allocations.pop() as number);
-      arenaTop = top;
-    }
-  };
-  const string = (text: string): { pointer: number; bytes: number } => {
-    const bytes = abi.lengthBytesUTF8(text);
-    const pointer = alloc(bytes + 1);
-    abi.stringToUTF8(text, pointer, bytes + 1);
-    return { pointer, bytes };
-  };
-  // Member, method and class names: a bounded set, encoded once and kept for the module's life.
-  const names = new Map<string, number>();
-  const name = (text: string): number => {
-    let pointer = names.get(text);
-    if (pointer === undefined) {
-      const bytes = abi.lengthBytesUTF8(text);
-      pointer = abi._malloc(bytes + 1) >>> 0;
-      abi.stringToUTF8(text, pointer, bytes + 1);
-      names.set(text, pointer);
-    }
-    return pointer;
-  };
-  const diagnostic = () => alloc(8);
-  const check = (status: number, diag: number, what: string) => {
-    if (status === 0) return;
-    const message = view().getUint32(diag, true);
-    const text = message === 0 ? "" : abi.UTF8ToString(message);
-    abi._tn_diagnostic_release(diag);
-    throw new Error(`TN_ABI_${status}: ${what}${text ? `: ${text}` : ""}`);
-  };
-  // A handle is three words in memory: type and context as two halves of the first, then index and
-  // generation. A ref made here keeps those words, so writing one back is three stores, no parse.
-  const keyOf = (pointer: number): IEngineRef => {
-    const v = view();
-    const type = v.getUint16(pointer, true);
-    const context = v.getUint16(pointer + 2, true);
-    const index = v.getUint32(pointer + 4, true);
-    const generation = v.getUint32(pointer + 8, true);
-    const ref: IPackedRef = {
-      key: `${type}:${context}:${index}:${generation}`,
-      type,
-      w0: (type | (context << 16)) >>> 0,
-      w1: index,
-      w2: generation,
-    };
-    return ref;
-  };
-  const writeHandle = (pointer: number, ref: IEngineRef) => {
-    let packed = ref as Partial<IPackedRef>;
-    if (packed.w0 === undefined) {
-      // A ref some other source made: parse its key once and keep the words on it.
-      const [type = 0, context = 0, index = 0, generation = 0] = ref.key.split(":").map(Number);
-      packed = Object.isExtensible(ref) ? (ref as IPackedRef) : { ...ref };
-      Object.assign(packed, { w0: (type | (context << 16)) >>> 0, w1: index, w2: generation });
-    }
-    if ((pointer & 3) === 0) {
-      const at = pointer >>> 2;
-      const w = wordView();
-      w[at] = packed.w0 as number;
-      w[at + 1] = packed.w1 as number;
-      w[at + 2] = packed.w2 as number;
-      return;
-    }
-    const v = view();
-    v.setUint32(pointer, packed.w0 as number, true);
-    v.setUint32(pointer + 4, packed.w1 as number, true);
-    v.setUint32(pointer + 8, packed.w2 as number, true);
-  };
-  const handleOf = (ref: IEngineRef): number => {
-    const pointer = alloc(HANDLE);
-    writeHandle(pointer, ref);
-    return pointer;
-  };
-  const writeValue = (pointer: number, value: EngineValue) => {
-    const v = view();
-    if (value === null) return v.setUint32(pointer, KIND.null, true);
-    if (value === undefined) return v.setUint32(pointer, KIND.undefined, true);
-    if (typeof value === "number") {
-      v.setUint32(pointer, KIND.number, true);
-      return v.setFloat64(pointer + 8, value, true);
-    }
-    if (typeof value === "boolean") {
-      v.setUint32(pointer, KIND.bool, true);
-      return v.setUint32(pointer + 4, value ? 1 : 0, true);
-    }
-    if (typeof value === "string") {
-      const text = string(value);
-      const w = view();
-      w.setUint32(pointer, KIND.string, true);
-      w.setUint32(pointer + 32, text.pointer, true);
-      return w.setBigUint64(pointer + 40, BigInt(text.bytes), true);
-    }
-    if (isRef(value)) {
-      v.setUint32(pointer, KIND.handle, true);
-      return writeHandle(pointer + 16, value);
-    }
-    if (ArrayBuffer.isView(value) && !(value instanceof DataView)) {
-      // A forwarded typed array (see `toEngine`): one heap copy, its view bounds kept, no boxed list.
-      const typed = value as TypedArray;
-      debug?.widen(typed, encoding, typed.byteLength);
-      const numbers = alloc(Math.max(8, typed.byteLength));
-      abi.HEAPU8.set(new Uint8Array(typed.buffer, typed.byteOffset, typed.byteLength), numbers);
-      const name = string(typed.constructor.name).pointer;
-      const w = view();
-      w.setUint32(pointer, KIND.bytes, true);
-      w.setUint32(pointer + 32, name, true);
-      w.setUint32(pointer + 48, numbers, true);
-      return w.setBigUint64(pointer + 40, BigInt(typed.length), true);
-    }
-    if (!Array.isArray(value)) {
-      // A record: count key/value pairs, each key a string value, as the engine returns one.
-      const entries = Object.entries(value as Record<string, EngineValue>);
-      const children = values(entries.flat());
-      const w = view();
-      w.setUint32(pointer, KIND.record, true);
-      w.setUint32(pointer + 48, children, true);
-      return w.setBigUint64(pointer + 40, BigInt(entries.length), true);
-    }
-    if (value.every((item) => typeof item === "number")) {
-      const numbers = alloc(Math.max(8, value.length * 8));
-      abi.HEAPF64.set(value as number[], numbers / 8);
-      const typed = (value as { [TYPED]?: string })[TYPED];
-      const name = typed === undefined ? 0 : string(typed).pointer;
-      const w = view();
-      w.setUint32(pointer, KIND.numbers, true);
-      w.setUint32(pointer + 32, name, true);
-      w.setUint32(pointer + 48, numbers, true);
-      w.setBigUint64(pointer + 40, BigInt(value.length), true);
-    } else {
-      const children = values(value);
-      const w = view();
-      w.setUint32(pointer, KIND.array, true);
-      w.setUint32(pointer + 48, children, true);
-      w.setBigUint64(pointer + 40, BigInt(value.length), true);
-    }
-  };
-  const values = (args: readonly EngineValue[]): number => {
-    const pointer = alloc(Math.max(VALUE, args.length * VALUE));
-    args.forEach((arg, i) => writeValue(pointer + i * VALUE, arg));
-    return pointer;
-  };
-  const readValue = (pointer: number): EngineValue => {
-    const v = view();
-    switch (v.getUint32(pointer, true)) {
-      case KIND.undefined:
-        return undefined;
-      case KIND.number:
-        return v.getFloat64(pointer + 8, true);
-      case KIND.bool:
-        return v.getUint32(pointer + 4, true) !== 0;
-      case KIND.string:
-        return abi.UTF8ToString(
-          v.getUint32(pointer + 32, true),
-          Number(v.getBigUint64(pointer + 40, true)),
-        );
-      case KIND.handle:
-        return keyOf(pointer + 16);
-      case KIND.array: {
-        const at = v.getUint32(pointer + 48, true);
-        return Array.from({ length: Number(v.getBigUint64(pointer + 40, true)) }, (_, i) =>
-          readValue(at + i * VALUE),
-        );
-      }
-      case KIND.record: {
-        const at = v.getUint32(pointer + 48, true);
-        return Object.fromEntries(
-          Array.from({ length: Number(v.getBigUint64(pointer + 40, true)) }, (_, i) => {
-            const key = readValue(at + i * 2 * VALUE);
-            if (typeof key !== "string") throw new TypeError("TN_ABI_RECORD_KEY: expected string");
-            return [key, readValue(at + (i * 2 + 1) * VALUE)];
-          }),
-        );
-      }
-      case KIND.numbers: {
-        const at = v.getUint32(pointer + 48, true) / 8;
-        return Array.from(
-          abi.HEAPF64.subarray(at, at + Number(v.getBigUint64(pointer + 40, true))),
-        );
-      }
-      default:
-        return null;
-    }
-  };
-
-  // Callbacks: one invoke and one release trampoline in the function table; the context is a
-  // handler id, and the engine's release (once per pair) forgets it.
-  const handlers = new Map<number, (args: readonly EngineValue[]) => void>();
-  let nextHandler = 1;
-  let invokeTrampoline = 0;
-  let releaseTrampoline = 0;
-  const trampolines = () => {
-    if (invokeTrampoline !== 0) return;
-    invokeTrampoline = abi.addFunction((id, rawArgs, count, rawError, capacity) => {
-      // Pointers arrive as signed i32; the module addresses up to 4 GB.
-      const args = (rawArgs ?? 0) >>> 0;
-      const error = (rawError ?? 0) >>> 0;
-      const handler = handlers.get(id ?? 0);
-      if (handler === undefined) return 0;
-      const decoded: EngineValue[] = [];
-      for (let i = 0; i < (count ?? 0); i++) decoded.push(readValue(args + i * VALUE));
-      try {
-        handler(decoded);
-        return 0;
-      } catch (thrown) {
-        abi.stringToUTF8(
-          thrown instanceof Error ? thrown.message : String(thrown),
-          error,
-          capacity ?? 0,
-        );
-        return 8; // TN_ERROR_INVALID_STATE: the engine records it and goes on
-      }
-    }, "iiiiii");
-    releaseTrampoline = abi.addFunction((id) => {
-      handlers.delete(id ?? 0);
-      return undefined;
-    }, "vi");
-  };
-
-  // A view over the attribute's storage, used only inside one call: the lease pins the storage and
-  // nothing in between can grow the memory and detach the view. A kept view would detach on growth,
-  // so the back end keeps JS arrays and copies through this (see defineBrowserClasses).
-  const withAttributeView = <T>(self: IEngineRef, use: (view: TypedArray) => T): T =>
-    scoped(() => {
-      const call = abi._tnw_attribute_view;
-      if (call === undefined)
-        throw new TypeError("TN_WASM_MODULE: this module exports no attribute views");
-      const out = alloc(24);
-      const lease = call(handleOf(self), out);
-      if (lease === 0) throw new TypeError("TN_NATIVE_UNSUPPORTED array: not an attribute");
-      try {
-        const v = view();
-        const [address, count, scalar] = [0, 8, 16].map((at) =>
-          Number(v.getBigUint64(out + at, true)),
-        );
-        const Typed = SCALARS[scalar ?? -1];
-        if (Typed === undefined)
-          throw new TypeError(`TN_NATIVE_UNSUPPORTED array: scalar ${String(scalar)}`);
-        return use(new Typed(abi.HEAPU8.buffer as ArrayBuffer, address ?? 0, count ?? 0));
-      } finally {
-        abi._tnw_attribute_view_release?.(lease);
-      }
-    });
-
-  const context = scoped(() => {
-    const version = alloc(32);
-    abi._tn_engine_version(version);
-    const contextOut = alloc(4);
-    const diag = diagnostic();
-    check(abi._tn_context_create(contextOut, version, diag), diag, "tn_context_create");
-    return view().getUint32(contextOut, true);
-  });
-
-  return {
-    ...(tslOf(abi, context, {
-      scoped,
-      alloc,
-      string,
-      diagnostic,
-      check,
-      handleOf,
-      writeHandle,
-      view,
-    }) ?? {}),
-    ...gltfOf(abi, context, { scoped, alloc, keyOf }),
-    ...(debug === undefined ? {} : { debugTelemetry: debug }),
-    typedArrays: true,
-    typeId: (className) => abi._tn_type_id(name(className)),
-    construct: (className, args) =>
-      scoped(() => {
-        const out = alloc(HANDLE);
-        const diag = diagnostic();
-        check(
-          abi._tn_construct(
-            context,
-            string(className).pointer,
-            values(args),
-            args.length,
-            out,
-            diag,
-          ),
-          diag,
-          `new ${className}`,
-        );
-        return keyOf(out);
-      }),
-    invoke: (self, method, args) =>
-      scoped(() => {
-        countCall("call", self, method);
-        if (debug !== undefined) encoding = method;
-        const out = alloc(VALUE);
-        const diag = diagnostic();
-        check(
-          abi._tn_invoke(handleOf(self), name(method), values(args), args.length, out, diag),
-          diag,
-          `${method}()`,
-        );
-        return readValue(out);
-      }),
-    engineReferences: (refs) =>
-      scoped(() => {
-        const handles = alloc(Math.max(1, refs.length) * HANDLE);
-        refs.forEach((ref, i) => writeHandle(handles + i * HANDLE, ref));
-        const out = alloc(Math.max(1, refs.length) * 4);
-        abi._tn_object_engine_references(handles, refs.length, out);
-        const v = view();
-        return refs.map((_, i) => v.getUint32(out + i * 4, true));
-      }),
-    readByte: (address) => abi.HEAPU8[address] as number,
-    readWord: (address) => view().getUint32(address, true),
-    writeDouble: (address, value) => {
-      abi.HEAPF64[address / 8] = value;
-    },
-    writeByte: (address, value) => {
-      abi.HEAPU8[address] = value;
-    },
-    heapF64: () => abi.HEAPF64,
-    readDoubles: (address, count) => {
-      const at = address / 8;
-      return count === 1
-        ? (abi.HEAPF64[at] as number)
-        : Array.from(abi.HEAPF64.subarray(at, at + count));
-    },
-    get: (self, path) =>
-      scoped(() => {
-        countCall("get", self, path);
-        const out = alloc(VALUE);
-        const diag = diagnostic();
-        check(abi._tn_get(handleOf(self), name(path), out, diag), diag, `get ${path}`);
-        return readValue(out);
-      }),
-    set: (self, path, value) =>
-      scoped(() => {
-        countCall("set", self, path);
-        if (debug !== undefined) encoding = path;
-        // One value written in place: no one-item list per write.
-        const pointer = alloc(VALUE);
-        writeValue(pointer, value);
-        const diag = diagnostic();
-        check(abi._tn_set(handleOf(self), name(path), pointer, diag), diag, `set ${path}`);
-      }),
-    release: (self) =>
-      scoped(() => {
-        const diag = diagnostic();
-        abi._tn_object_release(handleOf(self), diag);
-        abi._tn_diagnostic_release(diag);
-      }),
-    attributeArray: (self, offset, count) =>
-      withAttributeView(self, (target) => {
-        const from = offset === undefined ? 0 : offset;
-        const length = count === undefined ? target.length - from : count;
-        if (
-          !Number.isSafeInteger(from) ||
-          !Number.isSafeInteger(length) ||
-          from < 0 ||
-          length < 0 ||
-          from + length > target.length
-        )
-          throw new RangeError(
-            `TN_NATIVE_ATTRIBUTE_RANGE: [${String(from)}, ${String(length)}) is outside ${String(target.length)} elements`,
-          );
-        return target.subarray(from, from + length).slice();
-      }),
-    attributeWrite: (self, array, offset) =>
-      withAttributeView(self, (target) => {
-        // An omitted offset writes the whole attribute, so the array must be its exact data; an
-        // explicit offset (including 0) writes that subrange.
-        if (offset === undefined) {
-          if (target.length !== array.length)
-            throw new RangeError(
-              `TN_NATIVE_ATTRIBUTE_LENGTH: attribute.array has ${String(array.length)} elements, the attribute ${String(target.length)}`,
-            );
-          target.set(array);
-          return;
-        }
-        if (!Number.isSafeInteger(offset) || offset < 0 || offset + array.length > target.length)
-          throw new RangeError(
-            `TN_NATIVE_ATTRIBUTE_LENGTH: attribute.array has ${String(array.length)} elements at ${String(offset)}, the attribute ${String(target.length)}`,
-          );
-        target.set(array, offset);
-      }),
-    setCallback: (self, name, handler) =>
-      scoped(() => {
-        const diag = diagnostic();
-        if (handler === null) {
-          check(
-            abi._tn_set_callback(handleOf(self), string(name).pointer, 0, 0, 0, diag),
-            diag,
-            `clear ${name}`,
-          );
-          return;
-        }
-        trampolines();
-        const id = nextHandler++;
-        handlers.set(id, handler);
-        const status = abi._tn_set_callback(
-          handleOf(self),
-          string(name).pointer,
-          invokeTrampoline,
-          id,
-          releaseTrampoline,
-          diag,
-        );
-        if (status !== 0) handlers.delete(id); // a refused pair was never taken
-        check(status, diag, `set ${name}`);
-      }),
-  };
-}
-
-/**
- * three's `Euler.setFromQuaternion` (and the engine's Euler.cpp, whose ieee754 functions are V8's fdlibm, so the
- * bits match): the rotation matrix of a unit quaternion, then the angles of the given order.
- */
-export function eulerFromQuaternion(
-  x: number,
-  y: number,
-  z: number,
-  w: number,
-  order: string,
-): [number, number, number] {
-  const x2 = x + x;
-  const y2 = y + y;
-  const z2 = z + z;
-  const xx = x * x2;
-  const xy = x * y2;
-  const xz = x * z2;
-  const yy = y * y2;
-  const yz = y * z2;
-  const zz = z * z2;
-  const wx = w * x2;
-  const wy = w * y2;
-  const wz = w * z2;
-  const m11 = 1 - (yy + zz);
-  const m12 = xy - wz;
-  const m13 = xz + wy;
-  const m21 = xy + wz;
-  const m22 = 1 - (xx + zz);
-  const m23 = yz - wx;
-  const m31 = xz - wy;
-  const m32 = yz + wx;
-  const m33 = 1 - (xx + yy);
-  const asin = (value: number): number => Math.asin(Math.max(-1, Math.min(1, value)));
-  const free = (value: number): boolean => Math.abs(value) < 0.9999999;
-  switch (order) {
-    case "YXZ":
-      return free(m23)
-        ? [-asin(m23), Math.atan2(m13, m33), Math.atan2(m21, m22)]
-        : [-asin(m23), Math.atan2(-m31, m11), 0];
-    case "ZXY":
-      return free(m32)
-        ? [asin(m32), Math.atan2(-m31, m33), Math.atan2(-m12, m22)]
-        : [asin(m32), 0, Math.atan2(m21, m11)];
-    case "ZYX":
-      return free(m31)
-        ? [Math.atan2(m32, m33), -asin(m31), Math.atan2(m21, m11)]
-        : [0, -asin(m31), Math.atan2(-m12, m22)];
-    case "YZX":
-      return free(m21)
-        ? [Math.atan2(-m23, m22), Math.atan2(-m31, m11), asin(m21)]
-        : [0, Math.atan2(m13, m33), asin(m21)];
-    case "XZY":
-      return free(m12)
-        ? [Math.atan2(m32, m22), Math.atan2(m13, m11), -asin(m12)]
-        : [Math.atan2(-m23, m33), 0, -asin(m12)];
-    default:
-      return free(m13)
-        ? [Math.atan2(-m23, m33), asin(m13), Math.atan2(-m12, m11)]
-        : [Math.atan2(m32, m22), asin(m13), 0];
-  }
 }

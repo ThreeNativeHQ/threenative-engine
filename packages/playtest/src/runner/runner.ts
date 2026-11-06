@@ -490,12 +490,20 @@ async function runStandalonePlaytestOnce(
       pageLifecycle.closed = true;
     });
     const activePage = page;
+    if (activeConfig.cpuProfilePath !== undefined) {
+      cpuProfile = await startBrowserCpuProfile(activePage, activeConfig.cpuProfilePath);
+    }
     // Started before navigation: the frames a player sees first are the ones a cover must own.
     const coverRecorder = scenario.assert?.startup?.steadyCover === true ? await recordStartupCover(page) : undefined;
     const bridge = await openRunnerPage(page, browserConfig, scenario, options.remoteBrowser);
     // Browser flags are per process, so the thread the game draws on can only pick them on a relaunch.
     if (options.gameThread === undefined && measurementArgs.includes("--disable-frame-rate-limit")
-      && await runsGameInWorker(page)) throw new WorkerGameRelaunch();
+      && await runsGameInWorker(page)) {
+      // The profile starts above this check so it covers navigation; this attempt's is not the
+      // run's, and the retry starts its own. Drop it, so the `finally` reports the retry's.
+      cpuProfile = undefined;
+      throw new WorkerGameRelaunch();
+    }
     // From here on the page is expected to stay put; anything that moves it is evidence.
     pageLifecycle.settled = true;
     const setupApplication = bridge?.setupApplication;
@@ -789,9 +797,6 @@ async function runStandalonePlaytestOnce(
           : {})
       : undefined;
     let framebufferCoverage: IPlaytestFramebufferCoverageObservation | undefined;
-    if (activeConfig.cpuProfilePath !== undefined) {
-      cpuProfile = await startBrowserCpuProfile(activePage, activeConfig.cpuProfilePath);
-    }
     const footSlip: IPlaytestFootSlipObservation[] = [];
     const footSlipAt = (label: string | undefined) =>
       label === undefined ? undefined : scenario.assert?.footSlip?.find(({ atStep }) => atStep === label);

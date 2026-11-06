@@ -251,6 +251,18 @@ describe("SceneRenderProjection", () => {
     expect(projection.report.reasonCode).toBe("belowMeshFloor");
   });
 
+  it("names the mesh floor, not a render hook, when the scene is too small to batch anyway", () => {
+    // A hook on a 50-mesh world declined nothing the floor had not declined already, yet it was
+    // reported as a hook: a perf warning on every Strata playtest with nothing to fix behind it.
+    const scene = new Scene();
+    const meshes = fill(scene, new MeshStandardMaterial(), 50);
+    (meshes[3] as Mesh).onBeforeRender = () => undefined;
+    const projection = projected(scene, 2, 200);
+
+    expect(projection.root).toBe(scene);
+    expect(projection.report.reasonCode).toBe("belowMeshFloor");
+  });
+
   it("gives the frame back to the authored scene when an object hooks its own draw", () => {
     const scene = new Scene();
     const meshes = fill(scene, new MeshStandardMaterial(), 300);

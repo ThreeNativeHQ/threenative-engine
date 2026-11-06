@@ -559,6 +559,23 @@ describe("debug bridge ABI observations", () => {
   });
 });
 
+describe("Wasm memory growth under the bridge", () => {
+  // A move, not a change: the counters keep the default attribution the back end always gave them,
+  // so a debug report reads the same across the split.
+  it("attributes a growth counter with the back end's default caller", () => {
+    vi.stubEnv("TN_DEBUG", "1");
+    vi.stubGlobal("__tnDebugSources", {});
+    const { module, grow } = growableModule();
+    const runtime = createWasmRuntime(module);
+    runtime.engineReferences?.([{ key: "5:2:7:9", type: 5 }]);
+    grow();
+    runtime.engineReferences?.([{ key: "6:0:1:2", type: 6 }]);
+    const caller = (globalThis as { __tnDebugSources?: Record<string, { caller?: string }> })
+      .__tnDebugSources?.wasmGrowthEvents?.caller;
+    expect(caller).toBe("browser-backend.ts");
+  });
+});
+
 describe("shared transform write telemetry", () => {
   it("observes repeated same-value position and quaternion writes without changing their values or crossings", () => {
     function run(enabled: boolean) {

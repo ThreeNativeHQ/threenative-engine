@@ -1659,6 +1659,103 @@ void sceneFogNode() {
     CHECK(!draws[0].nodes->fogNode && draws[0].fog == scene.fog.get());
 }
 
+// A standard material with no envMap lights itself from NodeMaterial.envNode alone, and three scales that
+// radiance by materialEnvIntensity: material.envMapIntensity when the material carries an envMap, else
+// scene.environmentIntensity (MaterialProperties.js:23). The Strata ocean builds its whole sky in envNode and
+// owns no envMap, so the program reads the factor on a draw whose envMap is null. Keyed on the envMap alone the
+// factor was never written, the program read 0, and the author's radiance reached nothing: the sea drew black.
+void envNodeWithoutEnvMapLightsTheMaterial() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(64, 64);
+    renderer.setOutput(OutputState{shader::ToneMapping::ACESFilmic, 1, true});
+    Scene scene; PerspectiveCamera camera(55, 1.0, 0.1, 100);
+    camera.position.set(0, 0, 3);
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
+    scene.updateMatrixWorld(true);
+    auto material = std::make_shared<Material>(MaterialType::Standard);
+    material->nodes.colorNode = shader::graph::vec3({shader::graph::float_(0)});
+    material->nodes.envNode = shader::graph::vec3(
+        {shader::graph::float_(1), shader::graph::float_(0), shader::graph::float_(0)});
+    material->roughness = 0.2;
+    scene.add(*std::make_shared<Mesh>(makeSphereGeometry(), material));
+    RenderDatabase database;
+    database.render(renderer, scene, camera, {0, 0, 0, 1});
+    for (const std::string& d : database.diagnostics()) std::fprintf(stderr, "%s\n", d.c_str());
+    CHECK(database.diagnostics().empty());
+    const std::vector<uint8_t> px = read(renderer, events);
+    CHECK(px.size() == 64 * 64 * 4);
+    if (px.size() != 64 * 64 * 4) return;
+    // The sphere fills the frame: the centre sees the radiance at normal incidence (F0 0.04, ~0.04 of red as
+    // sRGB) and the rim sees it at grazing incidence. Both are red; black means the factor was never written.
+    const size_t centre = size_t{32} * 64 * 4 + size_t{32} * 4;
+    const size_t rim = size_t{32} * 64 * 4 + size_t{13} * 4;
+    std::printf("envNode centre %d,%d,%d rim %d,%d,%d\n", px[centre], px[centre + 1], px[centre + 2], px[rim],
+                px[rim + 1], px[rim + 2]);
+    CHECK(px[centre] > 20 && px[centre] > px[centre + 1] + 10 && px[centre] > px[centre + 2] + 10);
+    CHECK(px[rim] > px[centre]);
+}
+
+// three's NodeMaterial.setupEnvironment takes material.envNode first (NodeMaterial.js:968-970), and
+// MeshStandardNodeMaterial.js:110-116 falls back to the scene environment only when the material has no envNode.
+// So a scene environment must not change a material that carries its own envNode: the Strata ocean builds its sky
+// there. The program tested the scene environment first, so the author's sky was never read.
+void envNodeBeatsSceneEnvironment() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(64, 64);
+    renderer.setOutput(OutputState{shader::ToneMapping::ACESFilmic, 1, true});
+    const auto draw = [&](bool sceneEnvironment) {
+        Scene scene; PerspectiveCamera camera(55, 1.0, 0.1, 100);
+        camera.position.set(0, 0, 3);
+        camera.lookAt(0, 0, 0);
+        camera.updateProjectionMatrix();
+        scene.updateMatrixWorld(true);
+        if (sceneEnvironment) {
+            auto sky = std::make_shared<DataTexture>(); sky->mapping = 303; sky->width = 128; sky->height = 64;
+            sky->data.resize(128 * 64 * 4, 255); sky->needsUpdate();
+            scene.environment = sky;
+        }
+        auto material = std::make_shared<Material>(MaterialType::Standard);
+        material->nodes.colorNode = shader::graph::vec3({shader::graph::float_(0)});
+        material->nodes.envNode = shader::graph::vec3(
+            {shader::graph::float_(1), shader::graph::float_(0), shader::graph::float_(0)});
+        material->roughness = 0.2;
+        scene.add(*std::make_shared<Mesh>(makeSphereGeometry(), material));
+        RenderDatabase database;
+        // The scene environment bakes lazily and a frame that waits for it draws nothing, so render until one draws.
+        uint64_t drawn = 0;
+        for (int frame = 0; frame < 5000 && drawn == 0; ++frame) {
+            drawn = database.render(renderer, scene, camera, {0, 0, 0, 1});
+            renderer.poll();
+            events.drain();
+            if (drawn == 0) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        CHECK(drawn > 0);
+        CHECK(database.diagnostics().empty());
+        return read(renderer, events);
+    };
+    const std::vector<uint8_t> alone = draw(false);
+    const std::vector<uint8_t> withScene = draw(true);
+    CHECK(alone.size() == 64 * 64 * 4 && withScene.size() == alone.size());
+    if (alone.size() != 64 * 64 * 4 || withScene.size() != alone.size()) return;
+    const size_t centre = size_t{32} * 64 * 4 + size_t{32} * 4;
+    const size_t rim = size_t{32} * 64 * 4 + size_t{13} * 4;
+    std::printf("envNode alone centre %d,%d,%d rim %d,%d,%d; with scene environment centre %d,%d,%d rim %d,%d,%d\n",
+                alone[centre], alone[centre + 1], alone[centre + 2], alone[rim], alone[rim + 1], alone[rim + 2],
+                withScene[centre], withScene[centre + 1], withScene[centre + 2], withScene[rim], withScene[rim + 1],
+                withScene[rim + 2]);
+    for (size_t k = 0; k < 3; ++k) {
+        CHECK(withScene[centre + k] == alone[centre + k]);
+        CHECK(withScene[rim + k] == alone[rim + k]);
+    }
+}
+
 // three draws a lit mesh whose geometry has no `normal` attribute: Normal.js supplies (0, 1, 0), and
 // getGeometryRoughness returns zero. The draw item carries that fallback per vertex, including for the sailing sea.
 void litMeshWithoutNormals() {
@@ -4998,6 +5095,101 @@ void maskedShadow() {
     CHECK(frontFacingLight < 0.05);        // three's shadowSide: a FrontSide caster draws its back faces
 }
 
+// three r187 NodeMaterial.setupDiffuseColor: `alphaTestNode ?? alphaTest` is the cutoff, and a set node tests even
+// when alphaTest is 0. The shadow pass copies alphaTestNode too. The owned engine had no slot, so a mip-compensated
+// cutoff (Strata's spruce crowns) stayed the flat alphaTest in both passes. The card's texel alpha is 0.302.
+void alphaTestNode() {
+    namespace g = shader::graph;
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(64, 64);
+    Scene scene;
+    OrthographicCamera camera(-2, 2, 2, -2, 0.1, 20);
+    camera.position.set(0, 10, 0.001);
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
+    DirectionalLight light{Color(1, 1, 1), 3};
+    light.position.set(0.001, 10, 0);
+    light.setCastShadow(true);
+    light.shadow.camera->setLayerMask(double((1 << 0) | (1 << 2)));
+    scene.add(light);
+    auto floorMaterial = std::make_shared<Material>(MaterialType::Standard);
+    Mesh floor{makePlaneGeometry(4, 4), floorMaterial};
+    floor.rotation.set(-M_PI / 2, 0, 0);
+    floor.setReceiveShadow(true);
+    scene.add(floor);
+    auto map = std::make_shared<Texture>();
+    map->width = 1; map->height = 1;
+    map->data = {255, 255, 255, 77};
+    map->needsUpdate();
+    auto leaf = std::make_shared<Material>(MaterialType::Standard);
+    leaf->maps["map"] = map;
+    leaf->side = Side::Double;
+    Mesh card{makePlaneGeometry(2, 2), leaf};
+    card.rotation.set(-M_PI / 2, 0, 0);
+    card.position.y = 1;
+    scene.add(card);
+    scene.updateMatrixWorld(true);
+    RenderDatabase database;
+    database.shadowMapEnabled = true;
+    // The fraction of the card's footprint (the centre 32 x 32 pixels) darker than half the lit floor.
+    const auto dark = [&] {
+        database.render(renderer, scene, camera);
+        std::vector<uint8_t> pixels;
+        bool read = false;
+        renderer.readPixels([&](GpuStatus status, std::vector<uint8_t> px) {
+            if (status == GpuStatus::Ok) pixels = std::move(px);
+            read = true;
+        });
+        for (int i = 0; i < 5000 && !read; ++i) {
+            renderer.poll();
+            events.drain();
+            if (!read) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        CHECK(pixels.size() == size_t{64} * 64 * 4);
+        const uint8_t lit = pixels[(size_t{2} * 64 + 2) * 4];
+        CHECK(lit > 64);
+        int count = 0;
+        for (int y = 18; y < 46; ++y)
+            for (int x = 18; x < 46; ++x) count += pixels[(size_t(y) * 64 + x) * 4] < lit / 2;
+        return count / double(28 * 28);
+    };
+    // Colour pass: a black card on the camera's layer hides the floor where it draws.
+    leaf->color = {0, 0, 0};
+    card.setCastShadow(false);
+    card.setLayer(0);
+    leaf->alphaTest = 0.5; leaf->nodes = {};
+    const double flatDiscard = dark();  // 0.302 <= 0.5
+    leaf->nodes.alphaTestNode = g::float_(0.2); leaf->needsUpdate();
+    const double nodeLowers = dark();   // 0.302 > 0.2
+    leaf->alphaTest = 0;
+    const double nodeAlone = dark();    // a set node tests with alphaTest 0
+    leaf->nodes.alphaTestNode = g::float_(0.9); leaf->needsUpdate();
+    const double nodeRaises = dark();   // 0.302 <= 0.9
+    // Shadow pass: a white card on the light's layer casts the footprint its cutoff keeps.
+    leaf->color = {1, 1, 1};
+    card.setCastShadow(true);
+    card.setLayer(2);
+    leaf->alphaTest = 0.5; leaf->nodes = {};
+    const double shadowFlat = dark();
+    leaf->nodes.alphaTestNode = g::float_(0.2); leaf->needsUpdate();
+    const double shadowLowers = dark();
+    leaf->alphaTest = 0.1;
+    leaf->nodes.alphaTestNode = g::float_(0.9); leaf->needsUpdate();
+    const double shadowRaises = dark();
+    std::printf("alphaTestNode: colour flat %.3f, node 0.2 %.3f, node alone %.3f, node 0.9 %.3f; shadow flat %.3f, node 0.2 %.3f, node 0.9 %.3f\n",
+                flatDiscard, nodeLowers, nodeAlone, nodeRaises, shadowFlat, shadowLowers, shadowRaises);
+    CHECK(flatDiscard < 0.05);
+    CHECK(nodeLowers > 0.95);
+    CHECK(nodeAlone > 0.95);
+    CHECK(nodeRaises < 0.05);
+    CHECK(shadowFlat < 0.05);
+    CHECK(shadowLowers > 0.95);
+    CHECK(shadowRaises < 0.05);
+}
+
 // PRD-643: a Two Sided Foliage leaf lets the sun through from behind, as Unreal's SSS_TYPE_TWO_SIDED_WRAP does:
 // subsurfaceColor x saturate((-N.L + 0.5) / 2.25) x D_GGX(alpha 0.6, saturate(-V.L)) x the sun, with no N.L and no
 // 1/pi. Three cards face the camera with the sun straight behind them, so no card takes front light: the marked
@@ -8237,6 +8429,36 @@ void virtualShadowBoundsCache() {
     const auto settled = cache.shadowBoundsBuilds;
     sample();
     CHECK(cache.shadowBoundsBuilds == settled);
+    // A GPU positionNode leaves the bind-pose box unchanged: it stays cached.
+    item.positionNode = std::make_shared<const shader::PositionNode>();
+    sample(); sample();
+    CHECK(cache.shadowBoundsBuilds == settled);
+    // Its material's maxPositionOffset grows the union and every instance box by that many metres, so a page can
+    // place the swaying instances one by one (Unreal's MaxWorldPositionOffsetDisplacement); a rigid draw ignores it.
+    shader::StandardMaterial swaying;
+    swaying.maxPositionOffset = 2;
+    item.material = &swaying;
+    CHECK(sample().first.max.x == 10 && sample().first.min.x == 4);
+    CHECK(cache.shadowInstanceBoxes.size() == 1 && cache.shadowInstanceBoxes[0].max.x == 10 &&
+          cache.shadowInstanceBoxes[0].min.y == -3);
+    Matrix4 doubled; doubled.makeTranslation(3, 0, 0).scale(Vector3(2, 2, 2));
+    item.matrixWorld = doubled.elements;  // the offset is in the geometry's units: twice the size, twice the reach
+    CHECK(sample().first.max.x == 17 && cache.shadowInstanceBoxes[0].min.x == 5);
+    item.matrixWorld = model.elements;
+    item.positionNode = nullptr;
+    // three's castShadowPositionNode: a node material that sways in its positionNode but casts from a bare
+    // positionLocal casts its rest pose, so its shadow box takes no wind margin (and a page refresh redraws the
+    // same shadow instead of snapping it to the wind of that frame).
+    shader::MaterialNodes windy;
+    windy.positionNode = shader::graph::positionLocal();
+    shader::MaterialNodes* const plain = item.nodes;
+    item.nodes = &windy;
+    CHECK(sample().first.max.x == 10);
+    windy.castShadowPositionNode = shader::graph::positionLocal();
+    CHECK(sample().first.max.x == 8);
+    item.nodes = plain;
+    CHECK(sample().first.max.x == 8);
+    item.material = nullptr;
     std::vector<float> bones;
     item.boneMatrices = &bones;
     const auto deforming = cache.shadowBoundsBuilds;
@@ -8751,6 +8973,161 @@ void casterRecordAllocatesPerFrame() {
     JobPool::resetShared(0);
 }
 
+// Two materials that differ only in their TSL texture(object) maps are one shader structure: as an Unreal material
+// instance shares its parent's shader, they share one WGSL text and one pipeline, and each draw still samples its own
+// map. tsl_call named each binding by its texture, so every map was a text of its own, and each text cost the browser a
+// module parse (100 ms for Strata's 138 KB foliage fragment) and a pipeline compile the first time a turn met it.
+void mapsShareOnePipeline() {
+    namespace g = shader::graph;
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(64, 64);
+    renderer.setOutput(OutputState{std::nullopt, 1, false});  // linear out: the bytes are the sampled values
+    OrthographicCamera camera(-2, 2, 2, -2, 0.1, 10);
+    camera.position.z = 5;
+    camera.updateMatrixWorld();
+    Scene scene;
+    const auto plane = [](uint8_t red, uint8_t green, double x) {
+        auto texture = std::make_shared<Texture>();
+        texture->width = texture->height = 2;
+        for (int i = 0; i < 4; ++i) texture->data.insert(texture->data.end(), {red, green, 0, 255});
+        texture->needsUpdate();
+        auto material = std::make_shared<Material>(MaterialType::Basic, true);
+        material->rawNodeMaterial = true;
+        // As tsl_call names a sampleable texture(object): by the texture's own identity.
+        material->nodes.fragmentNode =
+            g::objectTexture(texture, "nodeMapT" + std::to_string(texture->ident.value()), g::uv());
+        auto mesh = std::make_shared<Mesh>(makePlaneGeometry(2, 2), material);
+        mesh->position.set(x, 0, 0);
+        return mesh;
+    };
+    const auto left = plane(255, 0, -1), right = plane(0, 255, 1);
+    scene.add(*left);
+    scene.updateMatrixWorld(true);
+    RenderDatabase database;
+    database.render(renderer, scene, camera, {0, 0, 0, 1});
+    CHECK(!read(renderer, events).empty());
+    const uint64_t compiled = renderer.pipelines().compiles();
+    const size_t layouts = renderer.layouts().pipelineLayouts();
+    scene.add(*right);
+    scene.updateMatrixWorld(true);
+    database.render(renderer, scene, camera, {0, 0, 0, 1});
+    const std::vector<uint8_t> pixels = read(renderer, events);
+    std::printf("maps share one pipeline: %llu compiled for the first map, %llu more for the second\n",
+                (unsigned long long)compiled, (unsigned long long)(renderer.pipelines().compiles() - compiled));
+    CHECK(renderer.pipelines().compiles() == compiled);  // the second map's draw compiled nothing
+    // ...and built no shader: a streamed forest batch whose maps were its own spent 5-8 ms a program generating the WGSL
+    // the first batch already had, 15-25 ms in one walk frame. Each draw still binds its own map (the pixels below).
+    CHECK(renderer.equalProgramReuses() == 1);
+    // ...on a browser too, where every layout creation is a new handle: Dawn native dedupes equal layouts by content,
+    // so the pipeline above would match there even if each program interned a layout of its own.
+    CHECK(renderer.layouts().pipelineLayouts() == layouts);
+    CHECK(pixels.size() == 64 * 64 * 4);
+    if (pixels.size() != 64 * 64 * 4) return;
+    const auto at = [&](int x, int y) { return &pixels[(size_t(y) * 64 + size_t(x)) * 4]; };
+    CHECK(at(16, 32)[0] > 200 && at(16, 32)[1] < 50);  // the left plane samples its red map
+    CHECK(at(48, 32)[1] > 200 && at(48, 32)[0] < 50);  // the right plane its green one
+    CHECK(renderer.diagnostics().empty());
+}
+
+// tsl_call names an unnamed uniform(value) and varying(node) by a process-wide serial, so one TSL function called once
+// per streamed batch (core's worldLodMaterial: a part's inverse matrix) gave every batch its own WGSL text. Each text
+// cost a module parse and a pipeline compile mid-walk (150-300 ms of Chrome GPU-process stall). As three's NodeBuilder
+// numbers a build's uniforms from 0, equal structures now share one text and one pipeline; each draw binds its own value.
+void serialUniformsShareOnePipeline() {
+    namespace g = shader::graph;
+    {
+        // The canonical key numbers serial names across a material's slots: one uniform two slots share is not two.
+        const auto u = [](int serial) { return g::uniform("nodeUniform" + std::to_string(serial), shader::Type::vec(4), {1, 0, 0, 1}); };
+        const auto nodes = [](g::Node colour, g::Node opacity) {
+            shader::MaterialNodes n;
+            n.colorNode = colour;
+            n.opacityNode = g::swizzle(opacity, "w");
+            return n;
+        };
+        const auto shared = u(5), other = u(9);
+        std::vector<std::string> a, b, c;
+        const std::string sharedKey = nodes(shared, shared).canonicalKey(a);
+        CHECK(sharedKey == nodes(other, other).canonicalKey(b));  // one function, two calls: one program
+        CHECK(sharedKey != nodes(u(11), u(12)).canonicalKey(c));  // two uniforms where one stood: not the same program
+        CHECK(a == std::vector<std::string>{"nodeUniform5"} && b == std::vector<std::string>{"nodeUniform9"});
+        CHECK(nodes(shared, shared).key() != nodes(other, other).key());  // the own keys still bind each draw by name
+    }
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(64, 64);
+    renderer.setOutput(OutputState{std::nullopt, 1, false});
+    OrthographicCamera camera(-2, 2, 2, -2, 0.1, 10);
+    camera.position.z = 5;
+    camera.updateMatrixWorld();
+    Scene scene;
+    const auto plane = [](double red, double green, int serial, double x) {
+        auto material = std::make_shared<Material>(MaterialType::Basic, true);
+        material->rawNodeMaterial = true;
+        // As tsl_call names them: uniform(value) and varying(node), each by the next serial.
+        const auto colour = g::uniform("nodeUniform" + std::to_string(serial), shader::Type::vec(4), {red, green, 0, 1});
+        const auto uv = g::varying(g::uv(), "nodeVarying" + std::to_string(serial + 1));
+        material->nodes.fragmentNode =
+            g::select(g::greaterThanEqual(g::swizzle(uv, "x"), g::float_(-1.0)), colour, g::splat(g::float_(0.0), 4));
+        auto mesh = std::make_shared<Mesh>(makePlaneGeometry(2, 2), material);
+        mesh->position.set(x, 0, 0);
+        return mesh;
+    };
+    const auto left = plane(1, 0, 264, -1), right = plane(0, 1, 270, 1);
+    scene.add(*left);
+    scene.updateMatrixWorld(true);
+    RenderDatabase database;
+    database.render(renderer, scene, camera, {0, 0, 0, 1});
+    CHECK(!read(renderer, events).empty());
+    const uint64_t compiled = renderer.pipelines().compiles();
+    scene.add(*right);
+    scene.updateMatrixWorld(true);
+    database.render(renderer, scene, camera, {0, 0, 0, 1});
+    const std::vector<uint8_t> pixels = read(renderer, events);
+    std::printf("serial uniforms share one pipeline: %llu compiled for the first batch, %llu more for the second\n",
+                (unsigned long long)compiled, (unsigned long long)(renderer.pipelines().compiles() - compiled));
+    CHECK(renderer.pipelines().compiles() == compiled);  // the second batch's draw compiled nothing
+    CHECK(renderer.equalProgramReuses() == 1);             // ...and generated no WGSL: it copied the first's stages
+    CHECK(pixels.size() == 64 * 64 * 4);
+    if (pixels.size() != 64 * 64 * 4) return;
+    const auto at = [&](int x, int y) { return &pixels[(size_t(y) * 64 + size_t(x)) * 4]; };
+    CHECK(at(16, 32)[0] > 200 && at(16, 32)[1] < 50);  // the left plane binds its own red
+    CHECK(at(48, 32)[1] > 200 && at(48, 32)[0] < 50);  // the right plane its own green
+    CHECK(renderer.diagnostics().empty());
+}
+
+// A mirror's first frame draws with the programs the warm-up compiled: compileAsync covers each reflector's
+// pass, seen or not, in the main renderer's own mirror renderer, so a throwaway compile database (core's
+// warm-up through tnw_web_compile_async) still leaves them where the frame's mirror draws. Unreal precaches
+// a primitive's PSOs for every mesh pass as it enters the scene (UE 5.8.3: Engine/Source/Runtime/Engine/
+// Private/PSOPrecache.cpp:230); the Strata forest's lake first drew its mirror mid-turn, a 133 ms frame.
+void mirrorProgramsPrecompiled() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(160, 120);
+    ReflectionScene s;
+    {
+        RenderDatabase compiling;
+        compiling.shadowMapEnabled = true;
+        CHECK(!compiling.compileAsync(renderer, s.scene, s.camera).empty());
+    }
+    Renderer& mirror = renderer.reflectionRenderer(s.reflector);
+    const size_t precompiled = mirror.programCount();
+    CHECK(precompiled > 0);
+    RenderDatabase database;
+    database.shadowMapEnabled = true;
+    database.render(renderer, s.scene, s.camera);
+    CHECK(database.reflectionDatabase(s.reflector.get()) != nullptr);  // the mirror drew this frame
+    CHECK(mirror.programCount() == precompiled);
+    std::printf("mirror programs: %zu precompiled, %zu after its first frame\n", precompiled, mirror.programCount());
+}
+
 // FM3: a draw's four probes (perDrawFragment, perDrawVertex, readsViewport, readsPostTexture) are pure
 // functions of its program's stage modules, and a texture resolves to the same GPU record until its
 // version (or, for a render target, its view) moves. Before FM3 every draw of every pass of every frame
@@ -8995,7 +9372,7 @@ void staticInstancesAreNotRecopied() {
     CHECK(frame(-12).copies == 0);
 }
 
-TN_TEST_MAIN({"virtual_shadow_depth_holds", virtualShadowDepthHoldsWhileCastersFit}, {"virtual_shadow_pan_redraws_entering_rects", virtualShadowPanRedrawsTheRectsThatEnter}, {"virtual_shadow_page_jobs", virtualShadowPageJobs}, {"lamp_size_ignores_temporal_jitter", lampSizeIgnoresTemporalJitter}, {"caster_record_allocates_per_frame", casterRecordAllocatesPerFrame}, {"virtual_shadow_instance_pages", virtualShadowInstancePages}, {"virtual_shadow_page_draws_only_its_instances", virtualShadowPageDrawsOnlyItsInstances}, {"virtual_shadow_bounds_cache", virtualShadowBoundsCache}, {"gpu_joint_production", gpuJointProduction}, {"virtual_shadow_casters_batch_in_main_pass", virtualShadowCastersBatchInMainPass}, {"virtual_shadow_rigs_batch_in_main_pass", virtualShadowRigsBatchInMainPass}, {"virtual_shadow_pages_instance_skinned_casters", shadowPagesInstanceSkinnedCasters}, {"skinned_palettes_share_by_bytes", skinnedPalettesShareByBytes}, {"clone_keeps_shared_skeletons", cloneKeepsSharedSkeletons}, {"compute_kernel_walks_once", computeKernelWalksOnce}, {"bone_reach_bounds_hold_posed_vertices", boneReachBoundsHoldPosedVertices}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"content_identical_geometry_batches", contentIdenticalGeometryBatches}, {"steady_state", steadyState}, {"steady_state_draw_refresh_work", steadyStateDrawRefreshWork}, {"draw_refresh_guard_holes", drawRefreshGuardHoles}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"depth_test_off_draws_over_nearer", depthTestOffDrawsOverNearer}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"gtao_fade_distance", gtaoFadeDistance}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"scene_stage_is_metered", sceneStageIsMetered}, {"overlay_leaves_stage_totals", overlayLeavesStageTotals}, {"present_direct", presentDirect}, {"canvas_layer_overlay", canvasLayerOverlay}, {"post_survives_overlay", postSurvivesOverlay}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"target_samples_late_traa_output", targetSamplesLateTraaOutput}, {"unchanged_frame_storage", unchangedFrameStorage}, {"static_instances_are_not_recopied", staticInstancesAreNotRecopied}, {"instance_places_survive_a_draw_leaving_the_view", instancePlacesSurviveADrawLeavingTheView}, {"instance_upload_is_stable_across_a_camera_turn", instanceUploadIsStableAcrossACameraTurn}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene}, {"transparent_sort_uses_geometry_center", transparentSortUsesTheGeometryCenter}, {"translucent_target", translucentTarget}, {"frame_slab_is_per_program", frameSlabIsPerProgram},
+TN_TEST_MAIN({"virtual_shadow_depth_holds", virtualShadowDepthHoldsWhileCastersFit}, {"virtual_shadow_pan_redraws_entering_rects", virtualShadowPanRedrawsTheRectsThatEnter}, {"virtual_shadow_page_jobs", virtualShadowPageJobs}, {"lamp_size_ignores_temporal_jitter", lampSizeIgnoresTemporalJitter}, {"caster_record_allocates_per_frame", casterRecordAllocatesPerFrame}, {"virtual_shadow_instance_pages", virtualShadowInstancePages}, {"virtual_shadow_page_draws_only_its_instances", virtualShadowPageDrawsOnlyItsInstances},{"virtual_shadow_bounds_cache", virtualShadowBoundsCache}, {"gpu_joint_production", gpuJointProduction}, {"virtual_shadow_casters_batch_in_main_pass", virtualShadowCastersBatchInMainPass}, {"virtual_shadow_rigs_batch_in_main_pass", virtualShadowRigsBatchInMainPass}, {"virtual_shadow_pages_instance_skinned_casters", shadowPagesInstanceSkinnedCasters}, {"skinned_palettes_share_by_bytes", skinnedPalettesShareByBytes}, {"clone_keeps_shared_skeletons", cloneKeepsSharedSkeletons}, {"compute_kernel_walks_once", computeKernelWalksOnce}, {"bone_reach_bounds_hold_posed_vertices", boneReachBoundsHoldPosedVertices}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"content_identical_geometry_batches", contentIdenticalGeometryBatches}, {"steady_state", steadyState}, {"steady_state_draw_refresh_work", steadyStateDrawRefreshWork}, {"draw_refresh_guard_holes", drawRefreshGuardHoles}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"depth_test_off_draws_over_nearer", depthTestOffDrawsOverNearer}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"gtao_fade_distance", gtaoFadeDistance}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"scene_stage_is_metered", sceneStageIsMetered}, {"overlay_leaves_stage_totals", overlayLeavesStageTotals}, {"present_direct", presentDirect}, {"canvas_layer_overlay", canvasLayerOverlay}, {"post_survives_overlay", postSurvivesOverlay}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"target_samples_late_traa_output", targetSamplesLateTraaOutput}, {"unchanged_frame_storage", unchangedFrameStorage}, {"static_instances_are_not_recopied", staticInstancesAreNotRecopied}, {"instance_places_survive_a_draw_leaving_the_view", instancePlacesSurviveADrawLeavingTheView}, {"instance_upload_is_stable_across_a_camera_turn", instanceUploadIsStableAcrossACameraTurn}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"env_node_without_env_map", envNodeWithoutEnvMapLightsTheMaterial}, {"env_node_beats_scene_environment", envNodeBeatsSceneEnvironment}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene}, {"translucent_target", translucentTarget}, {"frame_slab_is_per_program", frameSlabIsPerProgram},{"transparent_sort_uses_geometry_center", transparentSortUsesTheGeometryCenter}, 
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"virtual_sun_room_seam", virtualSunRoomSeam},
@@ -9004,7 +9381,7 @@ TN_TEST_MAIN({"virtual_shadow_depth_holds", virtualShadowDepthHoldsWhileCastersF
              {"virtual_sun_level_sizes", virtualSunLevelSizes},
              {"virtual_sun_auto_map_size", virtualSunAutoMapSize},
              {"batched_vs_unbatched", batchedVsUnbatched}, {"stable_passes_match_direct", stablePassesMatchDirect}, {"camera_cull_keeps_bundle", cameraCull}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_decline_cadence", skinnedDeclineCadence}, {"skinned_projecting_cadence", skinnedProjectingCadence}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"env_map_slot_is_read", envMapSlotIsRead}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_offscreen", gpuTimerCoversOffscreen}, {"gpu_timer_splits_the_gather", gpuTimerSplitsTheLabelledGather}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"flat_shading_needs_no_normals", flatShadingNeedsNoNormals}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"batch_keeps_member_id", batchKeepsMemberId}, {"frustum_culling", frustumCulling},
-             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"skinned_shadow_caster_frustum_culling", skinnedShadowCasterFrustumCulling}, {"masked_shadow", maskedShadow}, {"leaf_receiver", leafReceiver}, {"shadow_noise_frame", shadowNoiseFrame},{"foliage_transmission", foliageTransmission}, {"rough_diffuse", roughDiffuse}, {"point_shadow_cube_faces", pointShadowCubeFaces}, {"lamp_source_radius", lampSourceRadius}, {"lamp_source_radius_wall", lampSourceRadiusWall}, {"lamp_source_radius_crate", lampSourceRadiusCrate}, {"contact_shadow_foot", contactShadowFoot}, {"virtual_sun_contact_foot", virtualSunContactFoot}, {"lamp_cache", lampCache}, {"cached_lamp_has_no_uniform_upload", cachedLampHasNoUniformUpload}, {"sun_cache", sunCache}, {"lamp_atlas", lampAtlas}, {"gpu_timer_splits_lamp_shadows", gpuTimerSplitsLampShadows}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse}, {"program_probes_are_resolved_once", programProbesAreResolvedOnce})
+             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"skinned_shadow_caster_frustum_culling", skinnedShadowCasterFrustumCulling}, {"masked_shadow", maskedShadow}, {"alpha_test_node", alphaTestNode}, {"leaf_receiver", leafReceiver}, {"shadow_noise_frame", shadowNoiseFrame},{"foliage_transmission", foliageTransmission}, {"rough_diffuse", roughDiffuse}, {"point_shadow_cube_faces", pointShadowCubeFaces}, {"lamp_source_radius", lampSourceRadius}, {"lamp_source_radius_wall", lampSourceRadiusWall}, {"lamp_source_radius_crate", lampSourceRadiusCrate}, {"contact_shadow_foot", contactShadowFoot}, {"virtual_sun_contact_foot", virtualSunContactFoot}, {"lamp_cache", lampCache}, {"cached_lamp_has_no_uniform_upload", cachedLampHasNoUniformUpload}, {"sun_cache", sunCache}, {"lamp_atlas", lampAtlas}, {"gpu_timer_splits_lamp_shadows", gpuTimerSplitsLampShadows}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse}, {"program_probes_are_resolved_once", programProbesAreResolvedOnce}, {"maps_share_one_pipeline", mapsShareOnePipeline}, {"serial_uniforms_share_one_pipeline", serialUniformsShareOnePipeline}, {"mirror_programs_precompiled", mirrorProgramsPrecompiled})
 
 
 

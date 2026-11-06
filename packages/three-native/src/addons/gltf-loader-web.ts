@@ -197,6 +197,33 @@ function hostPlugins(
   return { parser, plugins };
 }
 
+/**
+ * One fetch per image file while it is in flight: models loaded together that share an image (ten
+ * spruce models and their 12 MB atlas in the Strata forest) wait on the same bytes instead of each
+ * downloading them. The engine copies the bytes, so sharing them is safe. Nothing is kept once the
+ * fetch lands. ponytail: a model loaded later fetches again; keep the bytes if that shows in a load.
+ */
+const inFlight = new Map<string, Promise<Uint8Array>>();
+function imageBytes(url: string): Promise<Uint8Array> {
+  const key = new URL(url, globalThis.location?.href ?? "http://localhost/").href;
+  let pending = inFlight.get(key);
+  if (pending === undefined) {
+    pending = (async () => {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`TN_WASM_GLTF_FETCH: ${response.status} ${url}`);
+      // A dev server answers a missing file with its page and a 200 (Vite's SPA fallback); the
+      // engine would refuse those bytes only as "undecoded images", without the file's name.
+      if (response.headers.get("content-type")?.startsWith("text/html"))
+        throw new Error(`TN_WASM_GLTF_FETCH: text/html ${url}`);
+      return new Uint8Array(await response.arrayBuffer());
+    })();
+    inFlight.set(key, pending);
+    const settled = () => inFlight.delete(key);
+    pending.then(settled, settled);
+  }
+  return pending;
+}
+
 export class GLTFLoader {
   path = "";
   /** A plugin defect (a chain the file declares and cannot deliver) rejects the load; core's plugin logs it on stock three. */
@@ -280,16 +307,8 @@ export class GLTFLoader {
       return;
     }
     Promise.all(
-      uris.map(async (uri) => {
-        const response = await fetch(path + uri);
-        if (!response.ok) throw new Error(`TN_WASM_GLTF_FETCH: ${response.status} ${path + uri}`);
-        // A dev server answers a missing file with its page and a 200 (Vite's SPA fallback); the
-        // engine would refuse those bytes only as "undecoded images", without the file's name.
-        if (response.headers.get("content-type")?.startsWith("text/html"))
-          throw new Error(`TN_WASM_GLTF_FETCH: text/html ${path + uri}`);
-        // The engine loader asks for the uri with its percent escapes decoded.
-        return [decodeURIComponent(uri), new Uint8Array(await response.arrayBuffer())] as const;
-      }),
+      // The engine loader asks for the uri with its percent escapes decoded.
+      uris.map(async (uri) => [decodeURIComponent(uri), await imageBytes(path + uri)] as const),
     ).then(
       (files) => settle(new Map(files)),
       (error: unknown) => {

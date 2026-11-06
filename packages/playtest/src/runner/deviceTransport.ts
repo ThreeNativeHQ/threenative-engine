@@ -54,7 +54,7 @@ export interface IDeviceRequestContext {
 
 export interface IDevicePlaytestTransport extends IBridgeTransport {
   start(): Promise<void>;
-  setResponseObserver?(observer: (observation: IDeviceResponseObservation) => void): void;
+  setResponseObserver?(observer: (observation: IDeviceResponseObservation) => unknown): void;
   getPendingRequest?(): IDeviceRequestContext | undefined;
 }
 
@@ -184,10 +184,11 @@ export class DeviceMailboxTransport implements IDevicePlaytestTransport {
   private nextId = 1;
   private nextOrder = 1;
   private pendingRequest?: IDeviceRequestContext;
+  private responsePoll?: Promise<IPlaytestDeviceResponse>;
   // Calls that gave up before the host answered. The host still answers them, late, and that
   // answer is theirs, not an error in whichever call is waiting when it lands.
   private readonly abandonedIds = new Set<string>();
-  private responseObserver?: (observation: IDeviceResponseObservation) => void;
+  private responseObserver?: (observation: IDeviceResponseObservation) => unknown;
 
   constructor(
     private readonly mailbox: IDeviceMailbox,
@@ -195,7 +196,7 @@ export class DeviceMailboxTransport implements IDevicePlaytestTransport {
     private readonly operationTimeoutMs: number = PLAYTEST_PROTOCOL_LIMITS.operationTimeoutMs,
   ) {}
 
-  setResponseObserver(observer: (observation: IDeviceResponseObservation) => void): void {
+  setResponseObserver(observer: (observation: IDeviceResponseObservation) => unknown): void {
     this.responseObserver = observer;
   }
 
@@ -234,7 +235,14 @@ export class DeviceMailboxTransport implements IDevicePlaytestTransport {
       id,
       method,
     } satisfies IPlaytestDeviceRequest));
-    const response = await this.waitForResponse(id, method, order, timeoutMs);
+    const pending = this.waitForResponse(id, method, order, timeoutMs);
+    this.responsePoll = pending;
+    let response: IPlaytestDeviceResponse;
+    try {
+      response = await pending;
+    } finally {
+      if (this.responsePoll === pending) this.responsePoll = undefined;
+    }
     this.pendingRequest = undefined;
     if (response.error !== undefined) throw new Error(response.error.message);
     return response.result as T;
@@ -242,6 +250,7 @@ export class DeviceMailboxTransport implements IDevicePlaytestTransport {
 
   async close(): Promise<void> {
     this.closed = true;
+    await this.responsePoll?.catch(() => undefined);
     this.pendingRequest = undefined;
     await this.mailbox.remove(this.paths.request).catch(() => undefined);
     await this.mailbox.remove(this.paths.response).catch(() => undefined);
@@ -275,7 +284,7 @@ export class DeviceMailboxTransport implements IDevicePlaytestTransport {
       const raw = await readMailboxFile(this.mailbox, this.paths.response);
       if (raw !== undefined) {
         const response = parseResponse(raw);
-        this.responseObserver?.({ body: raw, method, order, requestId: response.id });
+        await this.responseObserver?.({ body: raw, method, order, requestId: response.id });
         await this.mailbox.remove(this.paths.response);
         if (response.id === id) return response;
         if (this.abandonedIds.has(response.id)) continue;

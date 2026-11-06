@@ -486,6 +486,7 @@ var STOP_WORDS = /* @__PURE__ */ new Set([
   "is",
   "it",
   "its",
+  "keep",
   "let",
   "made",
   "make",
@@ -651,8 +652,9 @@ function suffixStripped(token) {
   if (token.length > 3 && token.endsWith("s") && !token.endsWith("ss")) return token.slice(0, -1);
   return token;
 }
+var STOP_WORD_STEMS = new Set([...STOP_WORDS].map(stem));
 function capabilitySituationTokens(value) {
-  return value.toLocaleLowerCase().split(/[^a-z0-9]+/u).filter((token) => token.length > 1 && !STOP_WORDS.has(token)).map(stem);
+  return value.toLocaleLowerCase().split(/[^a-z0-9]+/u).filter((token) => token.length > 1 && !STOP_WORDS.has(token)).map(stem).filter((token) => !STOP_WORD_STEMS.has(token));
 }
 var tokens = capabilitySituationTokens;
 function tokenWeights(entries) {

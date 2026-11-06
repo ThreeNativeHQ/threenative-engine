@@ -1,11 +1,9 @@
 /**
  * Why a launch stopped, said where the player can read it.
  *
- * A launch has exactly two ways to go wrong quietly, and both were measured on a real game:
- * progress stops moving (a decode that never returns, an asset that never settles) and the GPU
- * device is lost (another process had taken 94% of VRAM). In both the loop keeps iterating, the
- * loading layer keeps painting, and the only account of what happened is a line on stdout — which
- * a player does not have, and which a bug report therefore never carries.
+ * A launch can fail when a scene load rejects, progress stops moving, or the GPU device is
+ * lost. Without a report, the player sees a loading layer while the actionable error stays
+ * on stdout or in a discarded scene-transition promise.
  *
  * So the failure is reported as text, once, through `onLaunchFailure` — and core stops there. Core
  * cannot draw it: on the native host `document` is a Three.js compatibility stub whose
@@ -14,16 +12,18 @@
  * asked for when they report a launch that hung); this owns the noticing and the wording.
  */
 
-/**
- * What failed. `stalled` is "no progress for a while"; `device-lost` is the GPU going away;
- * `scene-load-failed` is a scene's `load()` rejecting and `start-failed` is `start()` rejecting,
- * each of which otherwise reads as a stall.
- */
-export type LaunchFailureKind = "stalled" | "device-lost" | "scene-load-failed" | "start-failed";
+/** What failed: startup progress, a rejected scene load/start, or a lost GPU device. */
+export type LaunchFailureKind =
+  | "stalled"
+  | "device-lost"
+  | "load-failed"
+  | "scene-load-failed"
+  | "start-failed";
 
 const MARKERS: Readonly<Record<LaunchFailureKind, string>> = {
   stalled: "TN_STARTUP_STALLED",
   "device-lost": "TN_DEVICE_LOST",
+  "load-failed": "TN_STARTUP_FAILED",
   "scene-load-failed": "TN_SCENE_LOAD_FAILED",
   "start-failed": "TN_START_FAILED",
 };
@@ -60,7 +60,9 @@ export function reportLaunchFailure(failure: ILaunchFailure): void {
   // A launch that failed to start or load stops making progress too; that stall is not news.
   if (
     failure.kind === "stalled" &&
-    (reported.has("scene-load-failed") || reported.has("start-failed"))
+    (reported.has("load-failed") ||
+      reported.has("scene-load-failed") ||
+      reported.has("start-failed"))
   )
     return;
   reported.add(failure.kind);
@@ -162,5 +164,13 @@ export function watchDeviceLoss(
       kind: "device-lost",
       message: `The GPU device was lost${named}: ${info?.message ?? "no reason given"}\n${cause}`,
     });
+  });
+}
+
+/** Preserve the actual loader error for the shell and playtest console diagnostics. */
+export function reportSceneLoadFailure(error: unknown): void {
+  reportLaunchFailure({
+    kind: "load-failed",
+    message: error instanceof Error ? error.message : String(error),
   });
 }

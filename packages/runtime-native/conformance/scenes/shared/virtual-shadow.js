@@ -15,7 +15,24 @@ export function assertVirtualShadowProof({ renderer, light, node }) {
 }
 
 export function startScene(canvas, dimensions) {
-  return startVisualScene(canvas, dimensions, "virtual-shadow", ({ renderer, scene, camera }) => {
+  return startVisualScene(canvas, dimensions, "virtual-shadow", (context) => {
+    const { renderer, scene, camera } = context;
+    const subject = buildVirtualShadowScene(context);
+    let frame = 0;
+    return {
+      ...subject,
+      detail: { ...subject.detail, automaticMover: true },
+      render() {
+        // Exercise automatic departure from the cache, then quiet-frame readmission at a fixed pose.
+        frame += 1;
+        if (frame <= 30) subject.ball.position.x = frame / 15;
+        renderer.render(scene, camera);
+      },
+    };
+  });
+}
+
+export function buildVirtualShadowScene({ renderer, scene, camera }) {
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     camera.position.set(0, 4, 7);
@@ -41,21 +58,16 @@ export function startScene(canvas, dimensions) {
     light.shadow.mapSize.set(1024, 1024);
     light.shadow.bias = -0.0005;
     light.shadow.normalBias = 0.02;
-    const node = new VirtualShadowNode(light, { clipExtents: [6, 18, 54], mapSize: 1024, marker: false });
+    // The proof's three authored levels: `maxLevelRatio: Infinity` is the named override of the 2x level step.
+    const node = new VirtualShadowNode(light, {
+      clipExtents: [6, 18, 54],
+      maxLevelRatio: Number.POSITIVE_INFINITY,
+      mapSize: 1024,
+      marker: false,
+    });
     light.shadow.shadowNode = node;
     assertVirtualShadowProof({ renderer, light, node });
 
     scene.add(floor, ball, light, light.target, new THREE.AmbientLight(0xffffff, 0.15));
-    let frame = 0;
-    return {
-      ball, floor, light, node,
-      detail: { levels: node.options.clipExtents.length, automaticMover: true },
-      render() {
-        // Exercise automatic departure from the cache, then quiet-frame readmission at a fixed pose.
-        frame += 1;
-        if (frame <= 30) ball.position.x = frame / 15;
-        renderer.render(scene, camera);
-      },
-    };
-  });
+    return { ball, floor, light, node, detail: { levels: node.options.clipExtents.length } };
 }

@@ -7,7 +7,6 @@ import {
   type InstancedBufferAttribute,
   InstancedInterleavedBuffer,
   type Material,
-  type Object3D,
   Sphere,
   Vector3,
 } from "three";
@@ -29,6 +28,7 @@ import {
   element,
   float,
   floor,
+  fract,
   instanceIndex,
   instancedBufferAttribute,
   instancedDynamicBufferAttribute,
@@ -40,25 +40,42 @@ import {
   modelWorldMatrix,
   normalize,
   positionGeometry,
+  screenCoordinate,
   select,
+  sin,
   storage,
   texture,
   transformNormal,
   uniform,
+  varying,
   varyingProperty,
   vec2,
   vec3,
   vec4,
 } from "three/tsl";
+import * as threeTsl from "three/tsl";
 import {
   EventNode,
   MeshBasicNodeMaterial,
   MeshPhysicalNodeMaterial,
   MeshStandardNodeMaterial,
   type Node,
+  type NodeBuilder,
   type NodeMaterial,
 } from "three/webgpu";
 import { IMPOSTOR_VIEW_GRID, type WorldImpostorAtlas } from "./world-impostor.js";
+
+type InstanceMatrixFn = () => Node<"mat4">;
+/**
+ * The owned engine's drawn-instance matrix, identity for a plain mesh. The engine compiles a node
+ * material once per variant, so a `Fn` cannot read `builder.object`; the web engine hands the node over
+ * in `__tnTsl`, the V8 player as a `three/tsl` name. Upstream three has neither and keeps the builder
+ * path below. Read through `Reflect` so a bundler does not resolve a name upstream does not export.
+ */
+const engineInstanceMatrix = (Reflect.get(threeTsl, "instanceMatrix") ??
+  (Reflect.get(threeTsl, "__tnTsl") as Record<string, unknown> | undefined)?.instanceMatrix) as
+  | InstanceMatrixFn
+  | undefined;
 
 /** The surface reconstructs alpha-covered ray/depth crossings in the three neighboring views. */
 export const IMPOSTOR_SURFACE_PARALLAX = true;
@@ -262,6 +279,8 @@ export function instanceSyncEvent(
 /**
  * The per-instance matrix as a `mat4` node, choosing the path by the attribute three installed.
  *
+ * Standard instancing already built the column nodes: reuse those exact nodes and its upload
+ * synchronization. Only a custom vertex path without them needs the fallback below.
  * A `StorageInstancedBufferAttribute` is read through `storage(...).element(instanceIndex)`, which
  * is the same seam three's own `Instance.js` uses and which includes the indirect draw's
  * `firstInstance`. A plain CPU `InstancedBufferAttribute` cannot require storage support, so it is
@@ -270,7 +289,41 @@ export function instanceSyncEvent(
  * derived buffer exactly as `Instance.js` does — a derived buffer nobody re-uploads draws a stale
  * pose. See {@link instanceSyncEvent}.
  */
-function instanceMatrixNode(attribute: InstancedBufferAttribute): Node<"mat4"> {
+function instanceMatrixNode(
+  attribute: InstancedBufferAttribute,
+  builder: NodeBuilder,
+): Node<"mat4"> {
+  // Reuse Three's actual column nodes: a second interleaved buffer consumes four more locations.
+  // Three 0.187 (048e6bea2) builds each column as a `BufferAttributeNode` over an
+  // `InterleavedBufferAttribute` view of the matrix; older Three nodes held an
+  // `InstancedInterleavedBuffer` over the same array. Both carry that matrix, so both are reused.
+  // On a real renderer r187 binds the matrix per object instead (`referenceAttribute`), and only
+  // those columns follow the drawn object: a build is shared by every mesh of the program, and
+  // `SharedBatch#resize` swaps a mesh's buffer, so a column over the build-time array draws another
+  // mesh's or a 64-record buffer past its end, which invalidates the whole recorded bundle.
+  const columns = [...(Reflect.get(builder, "nodes") as Iterable<Node>)].filter((node) => {
+    if (Reflect.get(node, "isReferenceBufferAttributeNode") === true)
+      return Reflect.get(node, "referenceNode")?.property === "instanceMatrix";
+    const value = Reflect.get(node, "value");
+    if (value?.isInterleavedBufferAttribute === true) return value.data === attribute;
+    return (
+      value?.isInstancedInterleavedBuffer === true &&
+      value.array === attribute.array &&
+      Reflect.get(node, "bufferStride") === 16
+    );
+  });
+  if (columns.length === 4) {
+    const offsetOf = (node: Node): number => {
+      const value = Reflect.get(node, "value");
+      return (
+        (value?.isInterleavedBufferAttribute === true
+          ? value.offset
+          : Reflect.get(node, "bufferOffset")) ?? 0
+      );
+    };
+    columns.sort((a, b) => offsetOf(a) - offsetOf(b));
+    return mat4(...(columns as [Node<"vec4">, Node<"vec4">, Node<"vec4">, Node<"vec4">]));
+  }
   const count = Math.max(attribute.count, 1);
   if (
     (attribute as { isStorageInstancedBufferAttribute?: boolean })
@@ -286,7 +339,7 @@ function instanceMatrixNode(attribute: InstancedBufferAttribute): Node<"mat4"> {
     attribute.usage === DynamicDrawUsage
       ? instancedDynamicBufferAttribute
       : instancedBufferAttribute;
-  const columns = [
+  const ownColumns = [
     bufferFn(interleaved, "vec4", 16, 0),
     bufferFn(interleaved, "vec4", 16, 4),
     bufferFn(interleaved, "vec4", 16, 8),
@@ -294,17 +347,16 @@ function instanceMatrixNode(attribute: InstancedBufferAttribute): Node<"mat4"> {
   ];
   instanceSyncEvent(attribute, interleaved).toStack();
   return mat4(
-    columns[0] as Node<"vec4">,
-    columns[1] as Node<"vec4">,
-    columns[2] as Node<"vec4">,
-    columns[3] as Node<"vec4">,
+    ownColumns[0] as Node<"vec4">,
+    ownColumns[1] as Node<"vec4">,
+    ownColumns[2] as Node<"vec4">,
+    ownColumns[3] as Node<"vec4">,
   ) as Node<"mat4">;
 }
 
 /** `cameraViewMatrix * modelWorldMatrix * instanceMatrix`: asset-space to view-space per instance. */
-function instanceViewMatrixNode(object: Object3D): Node<"mat4"> {
-  const attribute = (object as { instanceMatrix?: InstancedBufferAttribute }).instanceMatrix;
-  const instance = attribute === undefined ? identityMat4() : instanceMatrixNode(attribute);
+function instanceViewMatrixNode(builder: NodeBuilder): Node<"mat4"> {
+  const instance = userInstanceMatrix(builder);
   return cameraViewMatrix.mul(modelWorldMatrix).mul(instance) as Node<"mat4">;
 }
 
@@ -318,9 +370,14 @@ function identityMat4(): Node<"mat4"> {
   ) as Node<"mat4">;
 }
 
-/** A node twin of a source material: its class and every value it authored, by reference. */
+/** A node twin retaining the source material's authored values and shader nodes. */
 function cloneLitMaterial(source: Material): NodeMaterial {
-  if (Reflect.get(source, "isNodeMaterial") === true) return (source as NodeMaterial).clone();
+  if (Reflect.get(source, "isNodeMaterial") === true) {
+    const twin = (source as NodeMaterial).clone();
+    // NodeMaterial.copy skips the inherited alphaTest accessor and its private backing value.
+    twin.alphaTest = source.alphaTest;
+    return twin;
+  }
   const nodeClass = NODE_CLASSES.get(source.type);
   if (nodeClass === undefined)
     throw new Error(`WorldImpostorSurface cannot convert material type '${source.type}'.`);
@@ -390,9 +447,8 @@ export class WorldImpostorSurface {
     const relVarying = varyingProperty("vec3", `${name}Rel`);
     const dirVarying = varyingProperty("vec3", `${name}Dir`);
 
-    const positionNode = Fn((_inputs: unknown, builder: { readonly object: Object3D }) => {
-      const object = builder.object;
-      const instance = userInstanceMatrix(object);
+    const positionNode = Fn((_inputs: unknown, builder: NodeBuilder) => {
+      const instance = userInstanceMatrix(builder);
       const view = cameraViewMatrix.mul(modelWorldMatrix).mul(instance);
       const centerView = view.mul(vec4(centerUniform, 1)).xyz;
       // The authored cull contract in `world-gpu-scene.ts` `cullAndSelect` measures horizontal
@@ -449,8 +505,8 @@ export class WorldImpostorSurface {
     material.colorNode = vec4(fragment.albedo, fragment.coverage);
     material.alphaTestNode = fragment.threshold;
     material.maskShadowNode = fragment.coverage.greaterThan(fragment.threshold);
-    material.normalNode = Fn((_inputs: unknown, builder: { readonly object: Object3D }) =>
-      transformNormal(fragment.normalAsset, instanceViewMatrixNode(builder.object)),
+    material.normalNode = Fn((_inputs: unknown, builder: NodeBuilder) =>
+      transformNormal(fragment.normalAsset, instanceViewMatrixNode(builder)),
     )();
     material.positionNode = positionNode;
 
@@ -487,10 +543,37 @@ export class WorldImpostorSurface {
 let surfaceId = 0;
 
 /** The attribute node for the position pass; a plain `Mesh` falls back to the identity. */
-function userInstanceMatrix(object: Object3D): Node<"mat4"> {
+function userInstanceMatrix(builder: NodeBuilder): Node<"mat4"> {
+  if (engineInstanceMatrix !== undefined) return engineInstanceMatrix();
+  const object = builder.object;
   const attribute = (object as { instanceMatrix?: InstancedBufferAttribute }).instanceMatrix;
-  return attribute === undefined ? identityMat4() : instanceMatrixNode(attribute);
+  return attribute === undefined ? identityMat4() : instanceMatrixNode(attribute, builder);
 }
+
+/**
+ * A random in [0, 1) that stays with its instance, as UE 5.8.3's PerInstanceRandom: hashed from the
+ * instance's world origin, never from its draw slot. WorldCells repacks instances on every refilter,
+ * main-pass cull and LOD switch, so `instanceIndex` names another tree from one frame to the next; a
+ * wind phase hashed from it re-rolled each crown about every 0.7 s of a walk and snapped its top by a
+ * median 0.37 m. Parts of one placement share its translation, so its bark and needles read one value.
+ *
+ * @situation a per-instance random number that stays with each streamed placement as WorldCells repacks
+ * @situation replace instanceIndex in a WorldCells part material, which WorldCells refuses
+ * @example const phase = instanceRandom().mul(6.2831);
+ */
+export function instanceRandom(): Node<"float"> {
+  return Fn((_inputs: unknown, builder: NodeBuilder) => {
+    const origin = userInstanceMatrix(builder).mul(vec4(0, 0, 0, 1)).xyz;
+    // Quantised like `worldLodMaterial`'s origin, so float rounding in a rewritten matrix keeps the hash.
+    const snapped = floor(origin.mul(16).add(0.5)).div(16);
+    return fract(sin(dot(snapped.xz, vec2(12.9898, 78.233))).mul(43758.5453));
+  })() as Node<"float">;
+}
+
+/** Coarse ray-march steps across an impostor's depth; see `buildFragmentNodes`. */
+export const IMPOSTOR_MARCH_STEPS = 32;
+/** Bisection steps per crossing: 32 x 1024 places a hit as finely as 128 texel steps x 256 did. */
+export const IMPOSTOR_BISECTION_STEPS = 10;
 
 interface IFragmentNodes {
   readonly albedo: Node<"vec3">;
@@ -545,6 +628,7 @@ function buildFragmentNodes(
 
   const colorMap = texture(atlas.color);
   const normalMap = texture(atlas.normal);
+  const steps = Math.min(atlas.pixels, IMPOSTOR_MARCH_STEPS);
   const uvs: Node<"vec2">[] = [];
   const colors: Node<"vec4">[] = [];
   const normals: Node<"vec4">[] = [];
@@ -562,23 +646,38 @@ function buildFragmentNodes(
       .mul(grid)
       .add(cellX[index] as Node<"float">)
       .toInt();
-    // A crossing must remain covered throughout refinement; alpha holes and depth jumps
-    // cannot create an interior surface. One march step per baked texel, eight refinements.
+    // Positive baked coverage owns ray/depth geometry; the authored cutoff is applied once by the
+    // final mip-aware fragment threshold. Alpha holes and depth jumps cannot create an interior
+    // surface. A march step every four baked texels at most, ten refinements: one step per texel
+    // was ~770 atlas reads a fragment over three frames, 26 ms of a 42 ms walking frame with 383 fir
+    // impostors on screen, and two more bisection steps keep each crossing as precise as before.
+    // March on the mip the fragment's own footprint resolves: mip 0 under a far tree a few pixels
+    // wide reads scattered texels on every step and thrashes the texture cache (24 ms of a 48 ms
+    // walking frame on 53k far trees). Depth is coverage-premultiplied, so a mip keeps its meaning.
+    // Taken here, in uniform control flow, because derivatives inside the loop are undefined.
+    const footUv = vec2(dot(relVarying, basis.right), dot(relVarying, basis.up).negate())
+      .div(radiusUniform)
+      .mul(0.5)
+      .add(0.5);
+    const marchLevel = max(
+      log2(max(length(dFdx(footUv).mul(atlas.pixels)), length(dFdy(footUv).mul(atlas.pixels)))),
+      float(0),
+    ).toVar();
     const hit = Fn(() => {
       const found = float(0).toVar();
       const hitUv = vec2(2).toVar();
       const previousGap = float(0).toVar();
       const previousAlpha = float(0).toVar();
       const previousT = radiusUniform.toVar();
-      Loop({ start: 0, end: atlas.pixels + 1, type: "int" }, ({ i }) => {
-        const t = float(1).sub(float(i).div(atlas.pixels).mul(2)).mul(radiusUniform);
+      Loop({ start: 0, end: steps + 1, type: "int" }, ({ i }) => {
+        const t = float(1).sub(float(i).div(steps).mul(2)).mul(radiusUniform);
         const point = relVarying.add(ray.mul(t));
         const sampleUv = vec2(dot(point, basis.right), dot(point, basis.up).negate())
           .div(radiusUniform)
           .mul(0.5)
           .add(0.5);
-        const c = colorMap.depth(layer).sample(sampleUv).level(float(0)).toVar();
-        const n = normalMap.depth(layer).sample(sampleUv).level(float(0)).toVar();
+        const c = colorMap.depth(layer).sample(sampleUv).level(marchLevel).toVar();
+        const n = normalMap.depth(layer).sample(sampleUv).level(marchLevel).toVar();
         const depth = float(1)
           .sub(
             float(1)
@@ -591,23 +690,23 @@ function buildFragmentNodes(
         If(
           found
             .equal(0)
-            .and(previousAlpha.greaterThan(cutoff))
-            .and(c.a.greaterThan(cutoff))
+            .and(previousAlpha.greaterThan(0))
+            .and(c.a.greaterThan(0))
             .and(previousGap.greaterThan(0))
             .and(gap.lessThanEqual(0)),
           () => {
             const front = previousT.toVar();
             const back = t.toVar();
             const valid = float(1).toVar();
-            Loop({ start: 0, end: 8, type: "int" }, () => {
+            Loop({ start: 0, end: IMPOSTOR_BISECTION_STEPS, type: "int" }, () => {
               const mid = front.add(back).mul(0.5).toVar();
               const p = relVarying.add(ray.mul(mid));
               const u = vec2(dot(p, basis.right), dot(p, basis.up).negate())
                 .div(radiusUniform)
                 .mul(0.5)
                 .add(0.5);
-              const mc = colorMap.depth(layer).sample(u).level(float(0)).toVar();
-              const mn = normalMap.depth(layer).sample(u).level(float(0)).toVar();
+              const mc = colorMap.depth(layer).sample(u).level(marchLevel).toVar();
+              const mn = normalMap.depth(layer).sample(u).level(marchLevel).toVar();
               const md = float(1)
                 .sub(
                   float(1)
@@ -617,7 +716,7 @@ function buildFragmentNodes(
                 )
                 .mul(radiusUniform);
               const mg = dot(p, direction).sub(md);
-              If(mc.a.lessThanEqual(cutoff), () => {
+              If(mc.a.lessThanEqual(0), () => {
                 valid.assign(0);
               });
               If(mg.greaterThan(0), () => {
@@ -631,8 +730,8 @@ function buildFragmentNodes(
               .div(radiusUniform)
               .mul(0.5)
               .add(0.5);
-            const hc = colorMap.depth(layer).sample(u).level(float(0)).toVar();
-            const hn = normalMap.depth(layer).sample(u).level(float(0)).toVar();
+            const hc = colorMap.depth(layer).sample(u).level(marchLevel).toVar();
+            const hn = normalMap.depth(layer).sample(u).level(marchLevel).toVar();
             const hd = float(1)
               .sub(
                 float(1)
@@ -644,7 +743,7 @@ function buildFragmentNodes(
             If(
               valid
                 .equal(1)
-                .and(hc.a.greaterThan(cutoff))
+                .and(hc.a.greaterThan(0))
                 .and(
                   abs(dot(p, direction).sub(hd)).lessThanEqual(
                     radiusUniform.mul(2 / 255).div(max(hc.a, float(0.001))),
@@ -719,4 +818,164 @@ export function impostorFrameUv(
     u: (relative.dot(basis.right) / radius) * 0.5 + 0.5,
     v: 0.5 - (relative.dot(basis.up) / radius) * 0.5,
   };
+}
+
+/**
+ * How long a published level change fades, in seconds: UE 5.8.3 `lod.TemporalLag`
+ * (Engine/Source/Runtime/Engine/Private/SceneManagement.cpp:28-32).
+ */
+export const LOD_TEMPORAL_LAG = 0.5;
+
+/**
+ * UE 5.8.3's temporal LOD state (Engine/Source/Runtime/Engine/Private/SceneManagement.cpp:113-140):
+ * two lagged view origins and the blend between them. LOD is chosen at both and cross-faded by
+ * `alpha`, so a placement crossing a gate fades over one `lag` window and none stays mid-fade while
+ * the viewer stands still.
+ */
+export interface ITemporalLod {
+  readonly from: Vector3;
+  readonly to: Vector3;
+  fromTime: number;
+  toTime: number;
+  alpha: number;
+}
+
+/** Advance {@link ITemporalLod} to `now` seconds with the view at `eye`, as UE's UpdateTemporalLODTransition. */
+export function advanceTemporalLod(
+  state: ITemporalLod,
+  eye: Vector3,
+  now: number,
+  lag = LOD_TEMPORAL_LAG,
+): void {
+  if (!Number.isFinite(state.toTime) || now < state.toTime) {
+    state.from.copy(eye);
+    state.to.copy(eye);
+    state.fromTime = now;
+    state.toTime = now;
+  } else if (state.toTime < now - lag) {
+    if (state.fromTime < state.toTime) {
+      state.from.copy(state.to);
+      state.fromTime = state.toTime;
+    }
+    state.to.copy(eye);
+    state.toTime = now;
+  }
+  const window = state.toTime - state.fromTime;
+  state.alpha = window > 0 ? Math.min(1, Math.max(0, (now - lag - state.fromTime) / window)) : 1;
+}
+
+/** Complementary LOD masks over the caller's distance bands, shared by colour and shadow passes. */
+export function worldLodMaterial(
+  source: Material,
+  local: import("three").Matrix4,
+  distances: readonly number[],
+  level: number,
+  width: number,
+  eye: Node<"vec3">,
+  distanceBias: Node<"float">,
+  spatial: boolean,
+  publishedRanges = false,
+  clock?: Node<"float">,
+  temporal?: {
+    readonly from: Node<"vec3">;
+    readonly to: Node<"vec3">;
+    readonly alpha: Node<"float">;
+  },
+  shadowFloor = 0,
+): NodeMaterial {
+  const material = cloneLitMaterial(source);
+  const inverse = uniform(local.clone().invert());
+  const root = Fn(
+    (_inputs: unknown, builder: NodeBuilder) =>
+      userInstanceMatrix(builder)
+        .mul(inverse)
+        .mul(vec4(0, 0, 0, 1)).xyz,
+  )();
+  // Quantise recovered roots so part-local float rounding cannot change the instance hash.
+  const origin = varying(floor(root.mul(16).add(0.5)).div(16));
+  const distanceTo = (at: Node<"vec3">) =>
+    (spatial ? length(origin.sub(at)) : length(origin.xz.sub(at.xz))).mul(distanceBias);
+  const distance = distanceTo(eye);
+  const random = fract(sin(dot(origin.xz, vec2(12.9898, 78.233))).mul(43758.5453));
+  const noise = fract(sin(dot(floor(screenCoordinate.xy), vec2(12.9898, 78.233))).mul(43758.5453));
+  // CPU-admitted batches publish the levels their instance currently has beside its matrix. During
+  // a queued refilter, an old level outside that set remains whole until the replacement is swapped.
+  // LOD indices are categorical; interpolating 2 below 2 can clip an otherwise whole tree.
+  // `.zw` is the fade a swap stamped: the level the record was whole at (-1: none) and when.
+  const published = publishedRanges
+    ? varying(attribute("tnPublishedLodRange", "vec4") as Node<"vec4">).setInterpolation("flat")
+    : undefined;
+  // The level and the gate distances are uniforms, not constants, so every level of an asset (and
+  // every asset with as many gates) is one shader program and one pipeline, as an Unreal material
+  // instance shares its parent's shader. Baked, each level was a first-time program that compiled in
+  // the frame it first came into view: 14 ms of CPU and a 50 ms frame in a 360-degree turn.
+  const lod = uniform(level);
+  const gates = distances.map((at) => uniform(at));
+  const always = float(1).greaterThan(0);
+  // `mixAt(gate)` is how far past the gate this placement is, 0..1; pixels with noise below it draw
+  // the coarser level.
+  const levelMask = (
+    mixAt: (at: Node<"float">, span: Node<"float">) => Node<"float">,
+    first = 1,
+  ) => {
+    let mask = always;
+    for (let gate = first; gate < distances.length; gate++) {
+      const at = gates[gate] as Node<"float">;
+      let span = at.mul(width).min(at.sub(gates[gate - 1] as Node<"float">).mul(width));
+      if (gate + 1 < distances.length)
+        span = span.min((gates[gate + 1] as Node<"float">).sub(at).mul(width));
+      const mix = mixAt(at, span);
+      // `gate === level` fades this level in past the gate; `gate === level + 1` fades it out.
+      const fadeIn =
+        published === undefined
+          ? noise.lessThan(mix)
+          : select(published.x.lessThan(lod), noise.lessThan(mix), always);
+      const fadeOut =
+        published === undefined
+          ? noise.greaterThanEqual(mix)
+          : select(published.y.greaterThan(lod), noise.greaterThanEqual(mix), always);
+      mask = mask.and(lod.notEqual(gate).or(fadeIn)).and(lod.notEqual(gate - 1).or(fadeOut));
+    }
+    return mask;
+  };
+  const rampAt = (at: Node<"float">, span: Node<"float">) =>
+    distance.sub(at).div(span).add(0.5).add(random.sub(0.5).mul(0.5)).clamp(0, 1);
+  const mask = levelMask(rampAt);
+  // `shadowFloor`: finer placements cast in the floor level's shape (`castLevelOf`), so the floor's
+  // shadow covers every distance under its outer gate and a finer level casts nothing.
+  const shadow =
+    shadowFloor > 0
+      ? lod.greaterThanEqual(shadowFloor).and(levelMask(rampAt, shadowFloor + 1))
+      : mask;
+  // Temporal: the gate is hard in space and the colour pass blends the level seen from the older
+  // eye into the level seen from the newer one, as UE's instanced foliage does.
+  const past = (eyeAt: Node<"vec3">, at: Node<"float">) =>
+    select(distanceTo(eyeAt).greaterThan(at), float(1), float(0));
+  const crossFaded =
+    temporal === undefined
+      ? mask
+      : levelMask((at) =>
+          past(temporal.from, at)
+            .mul(float(1).sub(temporal.alpha))
+            .add(past(temporal.to, at).mul(temporal.alpha)),
+        );
+  // A refilter that lands late turns a whole tree into a dithered pair in one frame. The colour pass
+  // keeps the old whole level on a shrinking share of pixels for `LOD_TEMPORAL_LAG`, as UE fades
+  // every LOD change in time; the shares stay complementary, so no pixel holds both or neither.
+  // Shadows take the new answer at once: a cached shadow page must not keep a frame of the fade.
+  let colour = crossFaded;
+  if (published !== undefined && clock !== undefined) {
+    const progress = clock.sub(published.w).div(LOD_TEMPORAL_LAG);
+    const blend = fract(
+      sin(dot(floor(screenCoordinate.xy), vec2(39.3468, 11.1353))).mul(24634.6345),
+    );
+    const holdOld = published.z.greaterThanEqual(0).and(blend.greaterThanEqual(progress));
+    colour = select(holdOld, published.z.sub(lod).abs().lessThan(0.5), crossFaded);
+  }
+  material.maskNode = material.maskNode ? (material.maskNode as Node<"bool">).and(colour) : colour;
+  material.maskShadowNode = material.maskShadowNode
+    ? (material.maskShadowNode as Node<"bool">).and(shadow)
+    : shadow;
+  if (publishedRanges) material.userData.tnPublishedLodRange = true;
+  return material;
 }

@@ -24,6 +24,10 @@ void notePresentationFrame(int64_t frameTimeNs);
 PresentationPacingPath paceToPresentationCap();
 // Zero restores the production display wait (two intervals plus 50 ms).
 void setPresentationPacingTimeoutForTest(std::chrono::milliseconds timeout);
+// Test-only. How many times the pacing owner has blocked so far: one display-frame wait, or one
+// software-deadline sleep. A test proves "returns without waiting" by reading it around the call,
+// instead of measuring a wall clock a loaded runner overruns.
+uint32_t presentationPacingWaitCountForTest();
 
 // Shared by the legacy bindings and JS-free player, including resize/recovery.
 void configurePresentationSurface(WGPUSurfaceImpl* surface, const WGPUSurfaceConfiguration* config);

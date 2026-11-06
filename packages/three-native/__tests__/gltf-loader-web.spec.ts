@@ -69,6 +69,30 @@ describe("the web GLTFLoader's image files", () => {
     expect([...(files?.get("shared/images/a b.jpg") ?? [])]).toEqual([1, 2, 3]);
   });
 
+  // The Strata forest loads ten spruce models at once that share one 12 MB atlas: ten fetches of it,
+  // 835 MB of a 1,051 MB load, before this.
+  it("fetches an image once while models that share it load at the same time", async () => {
+    const fetched: string[] = [];
+    vi.stubGlobal("fetch", async (url: string) => {
+      fetched.push(url);
+      return {
+        arrayBuffer: async () => new Uint8Array([7]).buffer,
+        headers: new Headers({ "content-type": "image/png" }),
+        ok: true,
+        status: 200,
+      };
+    });
+    await Promise.all([
+      new GLTFLoader().parseAsync(MODEL, "shared-load/a/"),
+      new GLTFLoader().parseAsync(MODEL, "shared-load/a/"),
+      new GLTFLoader().parseAsync(MODEL, "shared-load/b/../a/"),
+    ]);
+    expect(fetched).toEqual(["shared-load/a/shared/images/a%20b.jpg"]);
+    expect(loadGltf).toHaveBeenCalledTimes(3);
+    for (const call of loadGltf.mock.calls)
+      expect([...(call[1].get("shared/images/a b.jpg") ?? [])]).toEqual([7]);
+  });
+
   it("fails by name when an image file is missing, rather than loading the model bare", async () => {
     vi.stubGlobal("fetch", async () => ({ ok: false, status: 404 }));
     await expect(new GLTFLoader().parseAsync(MODEL, "assets/")).rejects.toThrow(

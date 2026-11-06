@@ -214,6 +214,14 @@ void binding() {
     set(&chained.shadow, lodCommand({rung, rung}, {0.25, 1.0}), geometries);
     const auto& chains = chained.shadow.virtualShadow->control->lods;
     CHECK(chains.count(7) == 1 && chains.at(7).rungs.size() == 2 && chains.at(7).errors == std::vector<double>({0.25, 1.0}));
+    // A chain redraws only its own caster's pages: a streamed forest registers one per arriving batch, and a blanket
+    // invalidation per chain redrew every level each time the player walked into a new cell.
+    auto& chainControl = *chained.shadow.virtualShadow->control;
+    CHECK(!chainControl.invalidateAll && chainControl.lodChanged.count(7) == 1);
+    chainControl.lodChanged.clear();
+    set(&chained.shadow, Value::record({{"command", Value{Value::Kind::String, 0, "unlod"}}, {"id", Value::of(7.0)}}), geometries);
+    CHECK(chains.count(7) == 0 && !chainControl.invalidateAll && chainControl.lodChanged.count(7) == 1);
+    set(&chained.shadow, lodCommand({rung, rung}, {0.25, 1.0}), geometries);
     const auto refusesLod = [&](Value command, bool known = true) {
         geometries.known = known;
         bool refused = false;
@@ -328,6 +336,25 @@ void policies() {
     CHECK(!atlas->isMover(1));
     atlas->updateCasters({});
     CHECK(!atlas->isMover(1));
+
+    // An owner-told caster (off layer 0) whose instance count falls to zero and comes back is the same
+    // content change as any other count change: its owner names the region, the atlas redraws nothing.
+    {
+        auto told = PageAtlas::create(options, error);
+        CasterState batch; batch.key = 9; batch.automatic = false; batch.signature = "1:1:40";
+        batch.bounds.set(Vector3(-20, 0, -20), Vector3(20, 4, 20));
+        told->updateCasters({batch});
+        for (int frame = 0; frame < 8; ++frame) told->update(eye, sun);
+        CHECK(told->update(eye, sun).empty());
+        told->updateCasters({}, {9});
+        CHECK(told->update(eye, sun).empty());
+        batch.signature = "1:2:12";
+        told->updateCasters({batch});
+        CHECK(told->update(eye, sun).empty() && told->update(eye, sun).empty());
+        // A caster that really leaves (not reported empty) still clears its pages.
+        told->updateCasters({});
+        CHECK(!told->update(eye, sun).empty());
+    }
 
     options.adaptiveRefresh = false; options.adaptiveCasterGate = false;
     options.invalidationDelay = {0.25, 0.75};
@@ -492,16 +519,22 @@ void continuousInvalidation() {
 
 void sampling() {
     using namespace shader;
-    const auto standard = buildStandard({}, {}, {"2"});
-    const auto lambert = buildLambert({}, {"2"});
-    const auto phong = buildPhong({}, {"2"});
-    for (const auto* p : {&standard, &lambert, &phong}) {
-        const auto vertex = buildStage(p->vertex, 0), fragment = buildStage(p->fragment, 1);
-        CHECK(vertex.wgsl.ok() && fragment.wgsl.ok());
-        CHECK(fragment.wgsl.code.find("vsmTable0") != std::string::npos);
-        CHECK(fragment.wgsl.code.find("textureSampleCompare") != std::string::npos);
-        CHECK(fragment.wgsl.code.find("textureLoad") != std::string::npos);
-        CHECK(vertex.wgsl.code.find("positionWorld") != std::string::npos);
+    // "2": two levels of PCF. ":" ('8' + 2): the same with the source-angle filter, whose blocker search
+    // and filter taps are the only integer loads of the atlas. A light without the filter must not
+    // compile them: the dead branch cost the forest about 12% of its GPU frame in registers.
+    for (const char* kinds : {"2", ":"}) {
+        const bool sourceAngle = kinds[0] == ':';
+        const auto standard = buildStandard({}, {}, {kinds});
+        const auto lambert = buildLambert({}, {kinds});
+        const auto phong = buildPhong({}, {kinds});
+        for (const auto* p : {&standard, &lambert, &phong}) {
+            const auto vertex = buildStage(p->vertex, 0), fragment = buildStage(p->fragment, 1);
+            CHECK(vertex.wgsl.ok() && fragment.wgsl.ok());
+            CHECK(fragment.wgsl.code.find("vsmTable0") != std::string::npos);
+            CHECK(fragment.wgsl.code.find("textureSampleCompare") != std::string::npos);
+            CHECK((fragment.wgsl.code.find("textureLoad(t_vsm0") != std::string::npos) == sourceAngle);
+            CHECK(vertex.wgsl.code.find("positionWorld") != std::string::npos);
+        }
     }
 }
 
@@ -628,6 +661,60 @@ void mapSizes() {
 
 // A panned window keeps the pages it still covers, as Unreal's clipmap panning does: only the
 // pages that enter at the edge are drawn. A depth change or a dirty page still redraws.
+// A fixed depth range (autoDepth off) is Unreal's cached Z radius. Under a tilted sun a pan also moves the camera along
+// the light, and the level keeps its depth centre and its pages while that drift plus the level radius stays inside 0.9
+// of the radius (UE 5.8.3: VirtualShadowMapCacheManager.cpp:276). Re-centring on every pan redrew the whole level each
+// time the window moved: a walking forest player paid 2.6 million shadow instances, 410 ms of GPU, per step.
+void tiltedPanKeepsPages() {
+    std::string error;
+    AtlasOptions options;
+    options.clipExtents = {8, 24}; options.mapSize = 256; options.pageTexels = 64;
+    auto atlas = PageAtlas::create(options, error);
+    CHECK(atlas.has_value()); if (!atlas) return;
+    Vector3 sun(0.4, 1, 0.3);
+    sun.normalize();
+    for (int frame = 0; frame < 3; ++frame) atlas->update(Vector3(0, 0, 0), sun);
+    CHECK(atlas->update(Vector3(0, 0, 0), sun).empty());
+    waste::setDebugEnabled(true);
+    auto& counts = waste::counters();
+    const uint64_t rebuilds = counts.shadowRefreshRebuild.load(), pans = counts.shadowRefreshPan.load();
+    std::size_t fine = 0;
+    for (int frame = 0; frame < 3; ++frame)
+        for (const auto& page : atlas->update(Vector3(4.5, 0.5, 0), sun)) fine += page.level == 0;
+    const uint64_t panRebuilds = counts.shadowRefreshRebuild.load() - rebuilds, panned = counts.shadowRefreshPan.load() - pans;
+    std::printf("tilted pan: %zu fine page(s) redrawn, %llu pan(s), %llu rebuild(s)\n", fine,
+                (unsigned long long)panned, (unsigned long long)panRebuilds);
+    CHECK(fine > 0 && fine < 16);
+    CHECK(panned > 0);
+    CHECK(panRebuilds == 0);
+    // Past the guard band the level re-centres: climbing 240 m in 6 m steps (no camera cut) drifts the light depth past
+    // 0.9 x 199 m, and the depth range follows the camera instead of leaving it outside.
+    const uint64_t before = counts.shadowRefreshRebuild.load();
+    for (int frame = 1; frame <= 40; ++frame) atlas->update(Vector3(4.5, 0.5 + 6.0 * frame, 0), sun);
+    CHECK(counts.shadowRefreshRebuild.load() > before);
+    waste::setDebugEnabled(false);
+}
+
+// A level is selected around the followed centre, not its snapped window: a window steps by `refreshStep`, and
+// selecting around it moved the level edge across a whole tree in one frame (lit, then self-shadowed).
+void selectionFollowsCentre() {
+    std::string error;
+    AtlasOptions options;
+    options.clipExtents = {8, 24}; options.mapSize = 256; options.pageTexels = 64;
+    auto atlas = PageAtlas::create(options, error);
+    CHECK(atlas.has_value()); if (!atlas) return;
+    const Vector3 sun(0, 1, 0);
+    for (int frame = 0; frame < 3; ++frame) atlas->update(Vector3(0, 0, 0), sun);
+    // Half a metre is under level 0's one-metre step: no level re-renders, and the selection centre follows.
+    const Vector3 eye(0.5, 0, 0.25);
+    CHECK(atlas->update(eye, sun).empty());
+    const auto centre = atlas->clipmap().project(eye);
+    for (int level = 0; level < 2; ++level) {
+        CHECK(std::abs(atlas->table()[level * 36 + 16] - centre.u) < 1e-4);
+        CHECK(std::abs(atlas->table()[level * 36 + 17] - centre.v) < 1e-4);
+    }
+}
+
 void panKeepsPages() {
     std::string error;
     AtlasOptions options;
@@ -771,4 +858,67 @@ void initialized() {
     CHECK(atlas->initialized());
 }
 
-TN_TEST_MAIN({"atlas", atlas}, {"initialized", initialized}, {"pan_keeps_pages", panKeepsPages}, {"refresh_reasons", refreshReasons}, {"packing", packing}, {"map_sizes", mapSizes}, {"continuous_invalidation", continuousInvalidation}, {"sampling", sampling}, {"ground_window", groundWindow}, {"lod_rung", lodRung})
+
+// A declared focus (UE 5.8.3: VirtualShadowMapClipmap.cpp:256-295 moves the clipmap WorldOrigin to the view target)
+// owns the clip windows, so an eye that orbits it, as a third-person camera does, pans and redraws nothing.
+void focusPoint() {
+    std::string error;
+    AtlasOptions options;
+    options.clipExtents = {8, 24, 48}; options.mapSize = 256; options.pageTexels = 64;
+    options.adaptiveRefresh = false; options.adaptiveCasterGate = false;
+    const Vector3 sun(0, 1, 0);
+    auto warm = [&](PageAtlas& atlas) { for (int grant = 0; grant < 3; ++grant) atlas.update(Vector3(0, 0, 0), sun); };
+    // Without a focus the window follows the eye: a 12 m step redraws.
+    auto eyeFollowing = PageAtlas::create(options, error);
+    CHECK(eyeFollowing.has_value()); if (!eyeFollowing) return;
+    warm(*eyeFollowing);
+    CHECK(eyeFollowing->update(Vector3(0, 0, 0), sun).empty());
+    CHECK(!eyeFollowing->update(Vector3(12, 0, 0), sun).empty());
+    // With one, the eye can walk a full orbit (radius 12 m) and every update is served from the cache.
+    options.control->focus = Vector3(0, 0, 0);
+    auto focused = PageAtlas::create(options, error);
+    CHECK(focused.has_value()); if (!focused) return;
+    warm(*focused);
+    const auto held = focused->table();
+    for (int step = 0; step < 36; ++step) {
+        const double angle = step * 3.14159265358979 / 18;
+        CHECK(focused->update(Vector3(12 * std::cos(angle), 0, 12 * std::sin(angle)), sun).empty());
+    }
+    CHECK(focused->table() == held);
+    // The focus moving is what moves the windows.
+    options.control->focus = Vector3(12, 0, 0);
+    CHECK(!focused->update(Vector3(0, 0, 0), sun).empty());
+    // Clearing it hands the windows back to the eye.
+    options.control->focus.reset();
+    for (int grant = 0; grant < 3; ++grant) focused->update(Vector3(0, 0, 0), sun);
+    CHECK(focused->update(Vector3(0, 0, 0), sun).empty());
+    // The command that carries it: three numbers sets it, an empty list clears it, a short list throws.
+    struct EmptyStore : tn::binding::Store {
+        tn::binding::Object* find(const tn::binding::Value&) override { return nullptr; }
+        tn::binding::Value adopt(std::string, std::shared_ptr<void>) override { return {}; }
+        tn::binding::Value adoptAlias(std::string, void*, void*) override { return {}; }
+        tn::binding::Value share(std::string, std::shared_ptr<void>) override { return {}; }
+        std::vector<double> numbers(const tn::binding::Value&) override { return {}; }
+    } store;
+    using tn::binding::Value;
+    tn::binding::Registry registry;
+    registerMaterialBindings(registry);
+    const auto& set = registry.at("DirectionalLightShadow").setters.at("shadowNode");
+    DirectionalLight light;
+    set(&light.shadow, Value::record({{"clipExtents", Value::list({8, 24})}, {"mapSize", Value::of(256.0)},
+        {"lightDistance", Value::of(20.0)}, {"depthRange", Value::of(40.0)}}), store);
+    CHECK(light.shadow.virtualShadow != nullptr); if (!light.shadow.virtualShadow) return;
+    const auto control = light.shadow.virtualShadow->control;
+    auto command = [&](std::vector<double> at) {
+        set(&light.shadow, Value::record({{"command", Value{Value::Kind::String, 0, "focus"}}, {"at", Value::list(std::move(at))}}), store);
+    };
+    command({1, 2, 3});
+    CHECK(control->focus && control->focus->x == 1 && control->focus->y == 2 && control->focus->z == 3);
+    command({});
+    CHECK(!control->focus);
+    bool refused = false;
+    try { command({1, 2}); } catch (const tn::binding::Unsupported&) { refused = true; }
+    CHECK(refused);
+}
+
+TN_TEST_MAIN({"focus_point", focusPoint}, {"atlas", atlas}, {"initialized", initialized}, {"selection_follows_centre", selectionFollowsCentre}, {"pan_keeps_pages", panKeepsPages}, {"tilted_pan_keeps_pages", tiltedPanKeepsPages}, {"refresh_reasons", refreshReasons}, {"packing", packing}, {"map_sizes", mapSizes}, {"continuous_invalidation", continuousInvalidation}, {"sampling", sampling}, {"ground_window", groundWindow}, {"lod_rung", lodRung})

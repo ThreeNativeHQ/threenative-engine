@@ -108,10 +108,10 @@ function stamp(target, x, y, coverage, colour) {
 function drawNeedle(target, from, to, width, colour) {
   const [ax, ay] = from;
   const [bx, by] = to;
-  const minX = Math.max(0, Math.floor(Math.min(ax, bx) - width - 1));
-  const maxX = Math.min(CELL - 1, Math.ceil(Math.max(ax, bx) + width + 1));
-  const minY = Math.max(0, Math.floor(Math.min(ay, by) - width - 1));
-  const maxY = Math.min(CELL - 1, Math.ceil(Math.max(ay, by) + width + 1));
+  const minX = Math.max(1, Math.floor(Math.min(ax, bx) - width - 1));
+  const maxX = Math.min(CELL - 2, Math.ceil(Math.max(ax, bx) + width + 1));
+  const minY = Math.max(1, Math.floor(Math.min(ay, by) - width - 1));
+  const maxY = Math.min(CELL - 2, Math.ceil(Math.max(ay, by) + width + 1));
   for (let y = minY; y <= maxY; y += 1) {
     for (let x = minX; x <= maxX; x += 1) {
       const distance = distanceToSegment(x + 0.5, y + 0.5, ax, ay, bx, by);
@@ -135,10 +135,10 @@ function drawTwig(target, points, width, colour) {
       const x = ax + (bx - ax) * t;
       const y = ay + (by - ay) * t;
       const taper = width * (1 - t * 0.55);
-      const minX = Math.max(0, Math.floor(x - taper - 1));
-      const maxX = Math.min(CELL - 1, Math.ceil(x + taper + 1));
-      const minY = Math.max(0, Math.floor(y - taper - 1));
-      const maxY = Math.min(CELL - 1, Math.ceil(y + taper + 1));
+      const minX = Math.max(1, Math.floor(x - taper - 1));
+      const maxX = Math.min(CELL - 2, Math.ceil(x + taper + 1));
+      const minY = Math.max(1, Math.floor(y - taper - 1));
+      const maxY = Math.min(CELL - 2, Math.ceil(y + taper + 1));
       for (let py = minY; py <= maxY; py += 1) {
         for (let px = minX; px <= maxX; px += 1) {
           const distance = distanceToSegment(px + 0.5, py + 0.5, x, y, x, y);

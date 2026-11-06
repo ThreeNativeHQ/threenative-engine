@@ -128,6 +128,10 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     tn_native_engine_test(tn-native-engine-reflection-capture-test tests/native-engine/reflection_capture_test.cpp
         native_engine_reflection_capture=validation)
     target_link_libraries(tn-native-engine-reflection-capture-test PRIVATE tn_engine_renderer)
+    # One material sampling two reflectors (two ponds, one stream): each gets its own binding and pass.
+    tn_native_engine_test(tn-native-engine-reflector-multi-test tests/native-engine/reflector_multi_test.cpp
+        native_engine_reflector_multi=two_reflectors)
+    target_link_libraries(tn-native-engine-reflector-multi-test PRIVATE tn_engine_renderer tn_host_services)
     tn_native_engine_test(tn-native-engine-renderer-test tests/native-engine/renderer_test.cpp
         native_engine_history_depth_rows=history_depth_rows
         native_engine_raw_target_scene_only=raw_target_scene_only
@@ -362,6 +366,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_frustum_culling=frustum_culling
         native_engine_renderer_shadow_caster_frustum_culling=shadow_caster_frustum_culling
         native_engine_masked_shadow=masked_shadow
+        native_engine_alpha_test_node=alpha_test_node
         native_engine_leaf_receiver=leaf_receiver
         native_engine_shadow_noise_frame=shadow_noise_frame
         native_engine_foliage_transmission=foliage_transmission
@@ -391,7 +396,10 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_reflection_reuse=reflection_reuse
         native_engine_renderer_depth_node_sets_fragment_depth=depth_node_sets_fragment_depth
         native_engine_renderer_depth_node_reaches_every_material_program=depth_node_reaches_every_material_program
-        native_engine_program_probes_are_resolved_once=program_probes_are_resolved_once)
+        native_engine_program_probes_are_resolved_once=program_probes_are_resolved_once
+        native_engine_maps_share_one_pipeline=maps_share_one_pipeline
+        native_engine_serial_uniforms_share_one_pipeline=serial_uniforms_share_one_pipeline
+        native_engine_mirror_programs_precompiled=mirror_programs_precompiled)
     # The skinned cases drive the player's SkinnedCrowd scene.
     target_link_libraries(tn-native-engine-render-database-test PRIVATE tn_engine_renderer tn_host_services tn_engine_player)
     target_compile_definitions(tn-native-engine-render-database-test PRIVATE
@@ -441,7 +449,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND MYSTRAL_USE_DAWN)
         target_compile_definitions(tn-native-engine-renderer-caches-test PRIVATE TN_TEST_PIPELINE_WORKERS)
         target_link_options(tn-native-engine-renderer-caches-test PRIVATE "-Wl,--wrap=wgpuDeviceCreateRenderPipeline")
-        foreach(case failed_ticket synchronous_adoption shutdown_queue nonstandard_exception)
+        foreach(case failed_ticket synchronous_adoption shutdown_queue nonstandard_exception deferred_draw)
             add_test(NAME native_engine_renderer_pipeline_${case} COMMAND tn-native-engine-renderer-caches-test ${case})
             set_tests_properties(native_engine_renderer_pipeline_${case} PROPERTIES LABELS "native-engine" TIMEOUT 10)
         endforeach()

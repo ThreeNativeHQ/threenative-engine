@@ -6,6 +6,7 @@ import * as ts from "typescript";
 export const LIMITS = {
   fileNotice: 400,
   fileLoud: 800,
+  fileCap: 3000,
   biomeIgnoreBaseline: 1,
   unknownCastBaseline: 10,
 } as const;
@@ -186,6 +187,8 @@ async function collectSourceFindings(root: string): Promise<{
           ),
         );
       }
+      if (length > LIMITS.fileCap)
+        findings.push(finding(file, 1, "file-cap", length, LIMITS.fileCap));
       lines.forEach((sourceLine, index) => {
         const line = index + 1;
         const waiver = waiverFromLine(file, line, sourceLine);
@@ -479,6 +482,8 @@ export function fatalQualityFindings(
 ): readonly QualityFinding[] {
   return findings.filter((item) => {
     if (item.signal === "waiver-without-reason" || item.signal === "stale-waiver") return true;
+    // A god file regrows the moment the gate lets it: the cap is fatal, the length notices stay advisory.
+    if (item.signal === "file-cap") return item.state === "new" || item.state === "grew";
     const suppressionClass =
       item.signal.startsWith("suppression/") || item.signal === "lint-coverage-hole";
     return suppressionClass && (item.state === "new" || item.state === "grew");
@@ -513,7 +518,7 @@ async function main(): Promise<void> {
   const fatal = fatalQualityFindings(findings);
   if (fatal.length > 0) {
     console.error(
-      `quality gate failed: ${fatal.length} suppression-class finding(s) are new, grew, or lack a waiver reason`,
+      `quality gate failed: ${fatal.length} fatal finding(s) are new, grew, or lack a waiver reason`,
     );
     process.exitCode = 1;
   }

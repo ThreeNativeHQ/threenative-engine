@@ -13,6 +13,7 @@ import {
   deriveApiSurface,
   recordApiSurface,
   unannouncedBreaks,
+  unwrappedSignature,
 } from "../check-api-surface.js";
 import { publicWorkspacePackages } from "../workspace-packages.js";
 
@@ -64,6 +65,16 @@ const breaking = (bullet: string): string =>
   ["## [Unreleased]", "", "### Breaking", "", `- ${bullet}`, ""].join("\n");
 
 describe("stable public API surface (PRD-446)", () => {
+  it("reads a reformatted parameter list as the same signature, and a retyped one as changed", () => {
+    // Biome split bakedNoise's parameters over lines; collapsed, that read as a changed signature.
+    const joined = 'export function f(p: Node<"vec3">, amount = 1): Node<"float"> { … }';
+    const wrapped = 'export function f( p: Node<"vec3">, amount = 1, ): Node<"float"> { … }';
+    expect(unwrappedSignature(wrapped)).toBe(unwrappedSignature(joined));
+    expect(unwrappedSignature(joined.replace("amount = 1", "amount = 2"))).not.toBe(
+      unwrappedSignature(wrapped),
+    );
+  });
+
   it("fails closed when the committed snapshot has no packages", () => {
     expect(() => compareApiSurface({ packages: {} }, SURFACE)).toThrow(
       /TN_API_SURFACE_SNAPSHOT_EMPTY/u,

@@ -42,6 +42,7 @@ One source, two runtimes: browser WebGPU and an owned C++ host for desktop/Andro
 | --- | --- |
 | Anything that **decides how it looks** — materials, shaders, TSL, lights, tonemapping, post, framing — and any preset or default picking one | `templates/*/src/render/`, as generated user source |
 | The **mechanism** that puts it on screen — pooling, lifetime, billboarding, instancing, dispatch, culling — with every appearance parameter from the game; plumbing every game repeats | `packages/core/src/` |
+| Optional terrain authoring and terrain-only editor companions, within the CHARTER allowance | `packages/terrain/`; appearance remains generated game source |
 | Physics or navigation (WASM dep) · React HUD/menu bindings · C++ host, platform bring-up, native systems · scenario harness and assertions | `packages/physics/` · `ui/` · `runtime-native/` · `playtest/` |
 | Gameplay, never in a package · proof that any of it works | an example or template · `<package>/__tests__/*.spec.ts` **and** a playtest scenario |
 
@@ -63,7 +64,7 @@ pnpm check:docs && pnpm exec vitest run scripts/__tests__/check-doc-links.spec.t
 pnpm test:playtest                         # playtests against the in-repo example fixture
 pnpm test:templates                        # playtests against each scaffolded template
 pnpm budgets                               # hard invariants fail; LOC triggers only report
-pnpm quality                               # file length, suppressions, lint holes; never fatal
+pnpm quality                               # file length notices; a 3 000-line cap and suppressions are fatal
 pnpm sync:agents                           # regenerate CLAUDE.md mirrors
 pnpm prd:progress <prd file>               # PRD boxes -> prd:25/50/75/100 label; exit 1 = no phase boxes
 pnpm release:prepare                       # bump, build, preflight the release cohort

@@ -4,6 +4,7 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { makeTempDirSync } from "../../test-support/temp-dir.js";
 import { ciJobGraph, declaredNeeds, jobSections } from "../ci-workflow.js";
+import { BASELINE_SHA as STRATA_STARTUP_BASELINE_SHA } from "../verify-strata-startup.js";
 
 const { copyTemplateOwnership, integrationEvidence } = await import(
   new URL("../../test-support/ci-integration-fixture.ts", import.meta.url).href
@@ -631,6 +632,16 @@ describe("PRD-373 fixed full candidates and current package products", () => {
         if (name === "scope") continue;
         for (const checkout of section.split("uses: actions/checkout@").slice(1)) {
           const step = checkout.split(/^ {6}- /mu)[0] ?? "";
+          // The benchmark compares the candidate with an isolated, reviewed baseline;
+          // its separate contract pins that checkout's path and SHA.
+          if (
+            relative === ".github/workflows/ci.yml" &&
+            name === "benchmark" &&
+            step.includes("path: .worktrees/strata-startup-baseline")
+          ) {
+            expect(step, `${relative}: ${name}`).toContain(`ref: ${STRATA_STARTUP_BASELINE_SHA}`);
+            continue;
+          }
           expect(step, `${relative}: ${name}`).toContain(
             "ref: ${{ needs.scope.outputs.candidate_sha",
           );

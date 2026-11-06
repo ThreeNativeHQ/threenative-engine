@@ -151,6 +151,7 @@ const FULL_JOBS = [
   "test-native",
   "test-browser",
   "test-playtest",
+  "strata",
   "golden-path-template",
   "template-nonvisual",
   "template-engine-cost",
@@ -177,6 +178,23 @@ const CI_JOBS = new Set(["typecheck", "test-unit", "budgets", "build-artifacts"]
 // `test-native` saves `native-build-*`, `native-third-party-*` and its ccache through the cache
 // action's own post step. A warm run verifies nothing else, so nothing else runs.
 const WARM_JOBS = ["build-artifacts", "test-native"];
+// Strata terrain jobs: runs when terrain, example or core world modules change, or full qualification.
+const STRATA_PATHS = [
+  /^packages\/terrain\//u,
+  /^examples\/strata-terrain-preview\//u,
+  /^packages\/core\/(?:src\/world(?:-|\.ts)|src\/terrain-jobs|__tests__\/world-)/u,
+];
+
+export function isStrataPath(file) {
+  return STRATA_PATHS.some((pattern) => pattern.test(file));
+}
+
+function strataSelected(files, qualification) {
+  if (qualification) return true;
+  if (files.some(isStrataPath)) return true;
+  return false;
+}
+
 // PRD-731. The thin lane a ready pull request into develop runs; the merge queue runs the board.
 const REVIEW_JOBS = [
   "typecheck",
@@ -232,6 +250,20 @@ export function selectionPlan(
     FULL_JOBS.map((name) => {
       // `ci` narrows the board to the gates that read the configuration and `warm` to the two cache
       // producers; neither widens one, so any other job is exempt exactly as it is for prose.
+      if (name === "strata") {
+        const required = full && strataSelected(files, qualification);
+        return [
+          name,
+          {
+            required,
+            reason: required
+              ? qualification
+                ? `Full dependency closure: ${reason}`
+                : `Selected dependency closure: ${reason}`
+              : exemption(`Exempt: the ${selection} dependency closure does not reach ${name}`),
+          },
+        ];
+      }
       // The engine job is the one lane a full board owes only conditionally: when the diff reaches the
       // engine tree, or when the run qualifies a whole candidate. Every other full diff reads as before.
       // The engine-cost row is nightly only (owner, 2026-11-01): it costs 180 job-minutes a board.

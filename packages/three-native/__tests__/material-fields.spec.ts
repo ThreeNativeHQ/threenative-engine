@@ -83,15 +83,16 @@ function readable(name: string): string[] {
     (key) =>
       !key.includes(".") &&
       !binding.methods.includes(key) &&
-      // A node slot (`colorNode`) is no value field. It is a graph, set through the TSL runtime.
-      !(name.endsWith("NodeMaterial") && /^[a-z]+Node$/u.test(key)),
+      // A node slot (`colorNode`, `castShadowPositionNode`) is no value field. It is a graph, set
+      // through the TSL runtime, by the same rule as `browser-backend.ts`.
+      !(name.endsWith("NodeMaterial") && /^[a-z][A-Za-z]*Node$/u.test(key)),
   );
 }
 
 const MATERIALS = Object.keys(registry.classes).filter((name) => name.endsWith("Material"));
 
 /** Fields the engine adds to a material that three has not: a new one needs a line here and a reason. */
-const ENGINE_FIELDS = ["twoSidedFoliage", "roughDiffuse", "subsurfaceColor"];
+const ENGINE_FIELDS = ["twoSidedFoliage", "roughDiffuse", "subsurfaceColor", "maxPositionOffset"];
 
 describe("a native material's fields are enumerable", () => {
   it("covers the material classes of the registry", () => {
@@ -249,5 +250,27 @@ describe("a native material's fields are enumerable", () => {
     const classes = classesOf();
     expect(Object.keys(new (classes.Mesh as Constructible)())).toEqual([]);
     expect(Object.keys(new (classes.BoxGeometry as Constructible)())).toEqual([]);
+  });
+
+  it("is an EventDispatcher: a dispose listener registers natively and hears the engine's event", () => {
+    const callbacks = new Map<string, ((args: EngineValue[]) => void) | null>();
+    const base = runtime();
+    const { classes } = defineBrowserClasses(registry, {
+      ...base,
+      setCallback: (_self, name, fn) => void callbacks.set(name, fn),
+    });
+    type Dispatcher = {
+      addEventListener(type: string, listener: (event: { target: unknown }) => void): void;
+      removeEventListener(type: string, listener: (event: { target: unknown }) => void): void;
+    };
+    const material = new (classes.MeshPhysicalNodeMaterial as Constructible)() as Dispatcher;
+    const heard: unknown[] = [];
+    const release = (event: { target: unknown }) => heard.push(event.target);
+    material.addEventListener("dispose", release);
+    expect(callbacks.get("dispose")).toBeTypeOf("function");
+    callbacks.get("dispose")?.([{ type: "dispose" } as unknown as EngineValue]);
+    expect(heard).toEqual([material]);
+    material.removeEventListener("dispose", release);
+    expect(callbacks.get("dispose")).toBeNull();
   });
 });

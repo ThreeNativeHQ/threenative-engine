@@ -123,6 +123,72 @@ test("Android mailbox transport observes the raw response before consuming it", 
   }
 });
 
+test.each([false, true])("mailbox awaits response archive backpressure and fails closed on rejection %s", async (rejectWrite) => {
+  const paths = androidMailboxPaths("com.example.game", "/backpressure-device-files");
+  const mailbox = new FakeMailbox(paths);
+  const transport = new DeviceMailboxTransport(mailbox, paths);
+  let entered!: () => void;
+  const observing = new Promise<void>((resolve) => { entered = resolve; });
+  let release!: () => void;
+  const blocked = new Promise<void>((resolve) => { release = resolve; });
+  transport.setResponseObserver(async () => {
+    entered();
+    await blocked;
+    if (rejectWrite) throw new Error("archive disk full");
+  });
+  await transport.start();
+  try {
+    await mailbox.write(paths.response, JSON.stringify({ id: "ready", result: null }));
+    await transport.waitForBridge(1000);
+    const call = transport.call("sample");
+    const result = call.then(() => "success", (error: Error) => error.message);
+    await observing;
+    let settled = false;
+    void result.then(() => { settled = true; });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(settled).toBe(false);
+    expect(mailbox.files.has(paths.response)).toBe(true);
+    release();
+    expect(await result).toBe(rejectWrite ? "archive disk full" : "success");
+    expect(mailbox.files.has(paths.response)).toBe(rejectWrite);
+  } finally {
+    release();
+    await transport.close();
+  }
+});
+
+test("mailbox close waits for the accepted response archive write", async () => {
+  const paths = androidMailboxPaths("com.example.game", "/closing-device-files");
+  const mailbox = new FakeMailbox(paths);
+  const transport = new DeviceMailboxTransport(mailbox, paths);
+  let entered!: () => void;
+  const observing = new Promise<void>((resolve) => { entered = resolve; });
+  let release!: () => void;
+  const blocked = new Promise<void>((resolve) => { release = resolve; });
+  const events: string[] = [];
+  transport.setResponseObserver(async () => {
+    entered();
+    await blocked;
+    events.push("response");
+  });
+  await transport.start();
+  await mailbox.write(paths.response, JSON.stringify({ id: "ready", result: null }));
+  await transport.waitForBridge(1000);
+  const call = transport.call("sample");
+  await observing;
+  const closing = transport.close().then(() => { events.push("footer"); });
+  try {
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(events).toEqual([]);
+  } finally {
+    release();
+    await call;
+    await closing;
+  }
+  expect(events).toEqual(["response", "footer"]);
+  await expect(transport.call("sample")).rejects.toThrow("closed");
+});
+
 test("mailbox operations honor the configured runner timeout", async () => {
   const paths = androidMailboxPaths("com.example.game", "/silent-device-files");
   const files = new Map<string, string>();

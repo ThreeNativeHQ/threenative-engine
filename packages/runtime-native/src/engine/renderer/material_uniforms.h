@@ -48,13 +48,13 @@ inline void bindMaterialUniforms(std::vector<BoundUniform>& values, const Materi
     };
     bind("time", std::span<const double>(&clock[0], 1));
     bind("deltaTime", std::span<const double>(&clock[1], 1));
-    for (const auto& graph : nodes.graphs()) {
-        if (!graph) continue;
+    nodes.forEachGraph([&](const graph::Node& graph) {
+        if (!graph) return;
         for (const auto& node : graph::uniformList(graph)) {
             if (node->values.empty()) continue;
             bind(node->name, node->values);
         }
-    }
+    });
 }
 
 /**

@@ -6,6 +6,7 @@
 #include <stdexcept>
 #include <string>
 #include <system_error>
+#include <utility>
 
 #ifdef __EMSCRIPTEN_PTHREADS__
 #include <emscripten/em_js.h>
@@ -98,14 +99,32 @@ void JobPool::resetShared(unsigned workers) {
 }
 
 void JobPool::runItems(const Job& job) {
-    for (uint32_t i; (i = next_.fetch_add(1, std::memory_order_relaxed)) < job.count;) job.call(job.context, i);
+    // An exception that left a worker's item ended that thread before it left the job, and the caller spun on the
+    // join forever. An item's failure now reaches the caller like any other error.
+    for (uint32_t i; (i = next_.fetch_add(1, std::memory_order_relaxed)) < job.count;) {
+        try {
+            job.call(job.context, i);
+        } catch (...) {
+            std::lock_guard lock(mutex_);
+            if (!failure_) failure_ = std::current_exception();
+        }
+    }
 }
 
 void JobPool::run(uint32_t count, Call call, void* context) {
     if (count == 0) return;
     // One job at a time: a second caller (another thread, or an item) runs its items inline.
     if (threads_.empty() || count == 1 || inJob_ || running_.exchange(true, std::memory_order_acquire)) {
-        for (uint32_t i = 0; i < count; ++i) call(context, i);
+        // The same contract as the shared path: every item runs, and the first failure is rethrown after the last.
+        std::exception_ptr first;
+        for (uint32_t i = 0; i < count; ++i) {
+            try {
+                call(context, i);
+            } catch (...) {
+                if (!first) first = std::current_exception();
+            }
+        }
+        if (first) std::rethrow_exception(first);
         return;
     }
     runs_.fetch_add(1, std::memory_order_relaxed);
@@ -134,6 +153,12 @@ void JobPool::run(uint32_t count, Call call, void* context) {
 #ifdef __EMSCRIPTEN_PTHREADS__
     if (emscripten_get_heap_size() != heap) tn_job_pool_refresh_views();
 #endif
+    std::exception_ptr failure;
+    {
+        std::lock_guard lock(mutex_);
+        failure = std::exchange(failure_, nullptr);
+    }
+    if (failure) std::rethrow_exception(failure);
 }
 
 void JobPool::work() {

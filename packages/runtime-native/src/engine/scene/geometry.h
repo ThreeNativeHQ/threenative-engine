@@ -132,7 +132,7 @@ struct GeometryContentClass;  // engine/renderer/projection/plan.h
 struct TriangleBVH;  // engine/scene/raycaster.cpp
 
 /** three's BufferGeometry: attributes, index, groups, bounds and the mutation methods on them. */
-class BufferGeometry {
+class BufferGeometry : public EventDispatcher {
 public:
     static uint64_t nextId();
 

@@ -1061,8 +1061,9 @@ static bool replayFrameRecords(BindingsState* state, const uint8_t* data, size_t
             .count());
     if (replayNs >= kSlowReplayNs)
         reportSlowReplay(replayNs, opTiming, kFrameOpNames, kFrameOpCount, seen);
+    // Finished, unsubmitted buffers are valid discarded work; only recording objects remain open.
     if (r.ok && (!renderPasses.empty() || !renderOwners.empty() || !computePasses.empty() ||
-                 !computeOwners.empty() || !encoders.empty() || !commandBuffers.empty())) {
+                 !computeOwners.empty() || !encoders.empty())) {
         fail("frame ended with unfinished GPU objects");
     }
     if (!r.ok || seen != declaredOps || r.cursor != declaredBytes) {
@@ -1100,6 +1101,10 @@ static bool replayFrameRecords(BindingsState* state, const uint8_t* data, size_t
     computePasses.clear();
     computeOwners.clear();
     encoders.clear();
+    // Submitted buffers were already released and erased; release discarded buffers here.
+    for (const auto& [id, commandBuffer] : commandBuffers) {
+        wgpuCommandBufferRelease(commandBuffer);
+    }
     commandBuffers.clear();
     submittedCommandBuffers.clear();
     rawCommandBuffers.clear();

@@ -17,12 +17,30 @@
 #include <functional>
 #include <limits>
 #include <stdexcept>
+#include <unordered_set>
 
 namespace tn::abi {
 namespace g = engine::shader::graph;
 using engine::shader::Type;
 
 namespace {
+/** `bits` on a Varying read that varyingProperty made: the one varying a vertex Fn may assign. */
+constexpr uint64_t kVaryingProperty = 1;
+
+/** Whether `node` reads a Fn variable anywhere below it. */
+bool readsVariable(const g::Node& node) {
+    std::unordered_set<const g::NodeData*> seen;
+    const std::function<bool(const g::Node&)> visit = [&](const g::Node& n) {
+        if (!n || !seen.insert(n.get()).second) return false;
+        if (n->kind == g::Kind::VarRead || n->kind == g::Kind::Var) return true;
+        for (const auto* list : {&n->args, &n->body, &n->otherwise})
+            for (const auto& child : *list)
+                if (visit(child)) return true;
+        return false;
+    };
+    return visit(node);
+}
+
 double number(const TslArg& value) {
     if (value.kind != TslArg::Kind::Number || !std::isfinite(value.number))
         throw std::runtime_error("expected a finite number");
@@ -292,6 +310,27 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         if (wanted == Type::vec(3)) return g::vec3({zero});
         if (wanted == Type::vec(4)) return g::vec4({zero});
         throw std::runtime_error("property: unsupported type " + text(args[0]));
+    }
+    // The engine's instanceMatrix() (no three export; reached through __tnTsl): the drawn instance's matrix, identity
+    // for a mesh that is not instanced. three's Fn reads it through builder.object.instanceMatrix, which a shader
+    // built once per variant cannot see; the vertex stage binds the four columns (standard.cpp instanceColumn).
+    if (!method && name == "instanceMatrix") {
+        arity(0);
+        auto matrix = std::make_shared<g::NodeData>();
+        matrix->kind = g::Kind::Join;
+        matrix->type = Type::mat(4, 4);
+        for (int i = 0; i < 4; ++i) matrix->args.push_back(g::attribute("tnInstanceMatrix" + std::to_string(i), Type::vec(4)));
+        return matrix;
+    }
+    // r187's varyingProperty(type, name): a property the vertex stage assigns and the fragment reads,
+    // interpolated (PropertyNode with varying = true). Read, it is the fragment input `name`; the one
+    // `assign` in a vertex Fn binds it as varying(value, name) (TslScopes::call "assign").
+    if (!method && name == "varyingProperty") {
+        if (args.empty() || args.size() > 2) throw std::runtime_error("varyingProperty takes a type and an optional name");
+        auto read = std::const_pointer_cast<g::NodeData>(
+            g::varying(args.size() == 2 ? text(args[1]) : "varyingProperty" + std::to_string(++serial), type(text(args[0]))));
+        read->bits = kVaryingProperty;
+        return read;
     }
     // r185's transformNormalToView(normal) outside a material's normal setup:
     // transformNormalByViewMatrix(modelNormalMatrix * normal, cameraViewMatrix).
@@ -696,7 +735,7 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
             throw std::runtime_error("TN_NATIVE_TEXTURE_VALUE_TYPE: expected an engine Texture");
         const auto next = std::static_pointer_cast<const engine::Texture>(args[0].object);
         const auto previous = std::static_pointer_cast<const engine::Texture>(receiver->node->textureObject());
-        if (next->depthTexture != previous->depthTexture || next->volume != previous->volume)
+        if (next->depthTexture != previous->depthTexture || next->volume != previous->volume || next->array != previous->array)
             throw std::runtime_error("TN_NATIVE_TEXTURE_VALUE_TYPE: replacement must preserve texture dimension and sample type");
         receiver->node->textureBinding->object = args[0].object;
         return receiver->node;
@@ -725,7 +764,12 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
             if (args[0].cls.find("Texture") == std::string::npos || !args[0].object)
                 throw std::runtime_error("texture needs an engine Texture");
             const auto* source = static_cast<const engine::Texture*>(args[0].object.get());
-            if (source->sampleable() || source->name.empty())
+            // One binding per texture, as r187's TextureNode.getUniformHash merges nodes by `value.uuid`: a
+            // triplanar or bump read samples one map several times, and a binding per node passed the 48-texture
+            // stage limit (Strata's forest, 83). The imageless placeholder keeps its own, as `.value` swaps it.
+            if (source->sampleable())
+                return g::objectTexture(args[0].object, "nodeMapT" + std::to_string(source->ident.value()), uvInput());
+            if (source->name.empty())
                 return g::objectTexture(args[0].object, "nodeMap" + std::to_string(++serial), uvInput());
             return g::texture(source->name, uvInput());
         }
@@ -744,7 +788,8 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         const auto* source = static_cast<const engine::Texture*>(args[0].object.get());
         if (!source->sampleable()) throw std::runtime_error("texture3D needs a Data3DTexture with texels");
         const auto half = [] { return g::float_(0.5); };
-        auto node = g::objectTexture(args[0].object, "nodeMap" + std::to_string(++serial),
+        // One binding per volume, as for texture() above: a baked noise read 44 times a pixel took 212 bindings.
+        auto node = g::objectTexture(args[0].object, "nodeMapT" + std::to_string(source->ident.value()),
                                      args.size() > 1 ? arg(1) : g::vec3({half(), half(), half()}));
         if (args.size() == 3) {
             auto level = std::make_shared<g::NodeData>(*node);
@@ -770,6 +815,18 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         auto node = std::make_shared<g::NodeData>(*source);
         node->sampleBias = true;
         node->args.push_back(bias);
+        return node;
+    }
+    // TextureNode.depth(layer): the layer of a DataArrayTexture the uv reads; the coordinate becomes (uv, layer).
+    if (method && name == "depth") {
+        arity(1);
+        const auto source = lhs();
+        const auto object = source->kind == g::Kind::Texture && source->textureBinding ? source->textureObject() : nullptr;
+        if (!object || !static_cast<const engine::Texture*>(object.get())->array)
+            throw std::runtime_error("TN_NATIVE_TEXTURE_DEPTH_TYPE: depth(layer) needs a texture node over a DataArrayTexture");
+        auto node = std::make_shared<g::NodeData>(*source);
+        const auto uv = source->args[0];
+        node->args[0] = g::vec3({g::swizzle(uv, "x"), g::swizzle(uv, "y"), g::float_(arg(0))});
         return node;
     }
     // TextureNode.level(n): the same texture read at an explicit mip level.
@@ -889,6 +946,21 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
     if (name == "varying") {
         if (args.empty() || args.size() > 2) throw std::runtime_error("expected a node and an optional name");
         return g::varying(arg(0), args.size() == 2 ? text(args[1]) : "nodeVarying" + std::to_string(++serial));
+    }
+    // r187's VaryingNode.setInterpolation(type, sampling): "flat" carries the vertex value unblended, as a
+    // categorical index needs (core's tnPublishedLodRange). A `tnFlat` name is what wgsl.cpp emits flat in both
+    // stages; "perspective" is the default. ponytail: "linear" and a sampling mode refuse until a caller needs one.
+    if (name == "setInterpolation" && method) {
+        if (args.empty() || args.size() > 2) throw std::runtime_error("expected an interpolation type and an optional sampling");
+        const auto node = receiver->node;
+        if (!node || node->kind != g::Kind::Varying || node->args.empty())
+            throw std::runtime_error("setInterpolation requires varying(node)");
+        const std::string type = text(args[0]);
+        if (args.size() == 2 && args[1].kind != TslArg::Kind::Other)
+            throw std::runtime_error("TN_NATIVE_UNSUPPORTED: setInterpolation sampling");
+        if (type == "perspective") return node;
+        if (type != "flat") throw std::runtime_error("TN_NATIVE_UNSUPPORTED: setInterpolation " + type);
+        return g::varying(node->args[0], node->name.starts_with("tnFlat") ? node->name : "tnFlat" + node->name);
     }
     if (name == "__rtt" && method) {
         arity(2);
@@ -1086,6 +1158,59 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
             UNARY(negate) UNARY(abs) UNARY(sin) UNARY(cos) UNARY(floor) UNARY(fract) UNARY(sqrt) UNARY(exp) UNARY(exp2)
                 UNARY(log2) UNARY(log) UNARY(normalize) UNARY(length) UNARY(dFdx) UNARY(dFdy) UNARY(sign) UNARY(fwidth) UNARY(all) UNARY(any)
 #undef UNARY
+    // r187's bumpMap(textureNode, scale = 1, normal = normalView) (display/BumpMapNode.js, Mikkelsen's
+    // unparametrized bump): the height's screen-space gradient from forward differences of the texture at its own
+    // uv, then perturbNormalArb over positionView. standard.cpp bumpedNormal runs the same steps for a bumpMap map.
+    if (!method && name == "bumpMap") {
+        if (args.empty() || args.size() > 3) throw std::runtime_error("expected 1 to 3 arguments");
+        const g::Node map = arg(0);
+        if (!map || map->kind != g::Kind::Texture || map->args.empty())
+            throw std::runtime_error("bumpMap requires a texture node");
+        const g::Node scale = args.size() > 1 ? arg(1) : g::float_(1);
+        const g::Node normal = args.size() > 2 ? arg(2) : g::normalize(g::varying("normalView", Type::vec(3)));
+        const g::Node uv = map->args[0];
+        const auto height = [&](const g::Node& at) {
+            auto sampled = std::make_shared<g::NodeData>(*map);
+            sampled->args[0] = at;
+            return g::swizzle(sampled, "x");
+        };
+        const g::Node Hll = height(uv);
+        const g::Node dHdx = g::mul(g::sub(height(g::add(uv, g::dFdx(uv))), Hll), scale);
+        const g::Node dHdy = g::mul(g::sub(height(g::add(uv, g::dFdy(uv))), Hll), scale);
+        const g::Node eye = g::varying("positionView", Type::vec(3));
+        const g::Node sigmaX = g::normalize(g::dFdx(eye));
+        const g::Node sigmaY = g::normalize(g::dFdy(eye));
+        const g::Node r1 = g::cross(sigmaY, normal);
+        const g::Node r2 = g::cross(normal, sigmaX);
+        const g::Node face = g::select(g::builtin("frontFacing"), g::float_(1), g::float_(-1));
+        const g::Node det = g::mul(g::dot(sigmaX, r1), face);
+        const g::Node grad = g::mul(g::sign(det), g::add(g::mul(dHdx, r1), g::mul(dHdy, r2)));
+        return g::normalize(g::sub(g::mul(g::abs(det), normal), grad));
+    }
+    // r187's normalMap(node, scale = vec2(1)) (display/NormalMapNode.js, tangent space): the texel decoded to
+    // [-1, 1], its xy times scale, then perturbNormal2Arb around normalView from the screen derivatives of
+    // positionView and the geometry uv. standard.cpp perturbedNormal runs the same steps for material.normalMap.
+    if (!method && name == "normalMap") {
+        if (args.empty() || args.size() > 2) throw std::runtime_error("expected a normal node and an optional scale");
+        const g::Node texel = g::swizzle(arg(0), "xyz");
+        const g::Node decoded = g::sub(g::mul(texel, g::float_(2)), g::float_(1));
+        const g::Node xy = args.size() > 1 ? g::mul(g::swizzle(decoded, "xy"), arg(1)) : g::swizzle(decoded, "xy");
+        const g::Node mapN = g::vec3({g::swizzle(xy, "x"), g::swizzle(xy, "y"), g::swizzle(decoded, "z")});
+        const g::Node normal = g::normalize(g::varying("normalView", Type::vec(3)));
+        const g::Node eye = g::varying("positionView", Type::vec(3));
+        const g::Node uv = g::uv();
+        const g::Node q0 = g::dFdx(eye), q1 = g::dFdy(eye);
+        const g::Node st0 = g::dFdx(uv), st1 = g::dFdy(uv);
+        const g::Node q1perp = g::cross(q1, normal), q0perp = g::cross(normal, q0);
+        const g::Node T = g::add(g::mul(q1perp, g::swizzle(st0, "x")), g::mul(q0perp, g::swizzle(st1, "x")));
+        const g::Node B = g::add(g::mul(q1perp, g::swizzle(st0, "y")), g::mul(q0perp, g::swizzle(st1, "y")));
+        const g::Node det = g::max(g::dot(T, T), g::dot(B, B));
+        const g::Node face = g::select(g::builtin("frontFacing"), g::float_(1), g::float_(-1));
+        const g::Node scale = g::mul(face, g::div(g::float_(1), g::sqrt(det)));
+        return g::normalize(g::add(g::add(g::mul(T, g::mul(g::swizzle(mapN, "x"), scale)),
+                                          g::mul(B, g::mul(g::swizzle(mapN, "y"), scale))),
+                                   g::mul(normal, g::swizzle(mapN, "z"))));
+    }
     // r185's cbrt (MathNode.js): sign(a) * pow(abs(a), 1 / 3).
     if (name == "cbrt") {
         arity(method ? 0 : 1);
@@ -1267,12 +1392,26 @@ std::vector<std::pair<std::string, g::Node>> tslConstants() {
             {"PI", g::float_(3.141592653589793)}, {"PI2", g::float_(6.283185307179586)},
             {"TWO_PI", g::float_(6.283185307179586)}, {"HALF_PI", g::float_(1.5707963267948966)},
             {"positionLocal", g::positionLocal()},
+            // r187's modelViewProjection: the clip position as a vertex variable three lets the stage assign (SkyMesh
+            // writes `position.z.assign(position.w)`). A Var with no declaration statement: each program declares it,
+            // projectionMatrix * viewMatrix * modelMatrix * vec4(positionLocal, 1), where it is first used.
+            {"modelViewProjection", [] {
+                 g::Block block;
+                 return g::Node(block.var(g::mul(g::uniform("projectionMatrix", Type::mat(4, 4)),
+                     g::mul(g::uniform("viewMatrix", Type::mat(4, 4)),
+                         g::mul(g::uniform("modelMatrix", Type::mat(4, 4)), g::vec4({g::positionLocal(), g::float_(1)}))))).declaration);
+             }()},
             {"positionWorld", g::varying("positionWorld", Type::vec(3))},
+            // positionView: the view-space position, carried from the vertex stage (standard.cpp linkNodeVaryings).
+            {"positionView", g::varying("positionView", Type::vec(3))},
             {"normalViewGeometry", g::varying("normalViewGeometry", Type::vec(3))},
             {"cameraViewMatrix", g::uniform("viewMatrix", Type::mat(4, 4))},
             {"modelWorldMatrix", g::uniform("modelMatrix", Type::mat(4, 4))},
             {"instanceIndex", g::instanceIndex()},
             {"vertexIndex", g::builtin("vertexIndex")},
+            // three's frontFacing and faceDirection (FrontFacingNode): the fragment's facing, and +1 or -1 by it.
+            {"frontFacing", g::builtin("frontFacing")},
+            {"faceDirection", g::select(g::builtin("frontFacing"), g::float_(1), g::float_(-1))},
             {"screenUV", g::screenUV()},
             // three's materialColor is the material's colour, a vec3 (MaterialNode COLOR, type 'color').
             // Each is the material's uniform times its map, as MaterialNode builds it: the program that lowers the
@@ -1444,7 +1583,25 @@ bool TslScopes::call(const std::string& name, const TslArg* receiver, const std:
             out = target;
             return true;
         }
-        if (target->kind != g::Kind::Var && target->kind != g::Kind::StorageElement)
+        // varyingProperty.assign(value): the statement is varying(value, name), which the vertex stage
+        // computes and links to the fragment's read by name (linkNodeVaryings). The vertex stage
+        // recomputes `value` from the graph, so a value that reads a Fn variable (toVar) would see the
+        // variable's initial value, not its assignments: refused by name.
+        if (target->kind == g::Kind::Varying && target->args.empty() && target->bits == kVaryingProperty) {
+            const g::Node value = input(args[0]);
+            if (readsVariable(value))
+                throw std::runtime_error("TN_TSL_VARYING_PROPERTY_VARIABLE: " + target->name +
+                                         " is assigned a value that reads a Fn variable; assign an expression");
+            open().back().statements.push_back(g::varying(value, target->name));
+            out = target;
+            return true;
+        }
+        // three r187 assigns any node a Fn made (Node.toAssignable): an expression gets a variable at its first
+        // assignment (graph.cpp `assigned_`). Inputs the engine does not write back stay refused.
+        const bool expression = target->kind == g::Kind::Unary || target->kind == g::Kind::Binary ||
+            target->kind == g::Kind::Math || target->kind == g::Kind::Join || target->kind == g::Kind::Convert ||
+            target->kind == g::Kind::Select || target->kind == g::Kind::Call;
+        if (target->kind != g::Kind::Var && target->kind != g::Kind::StorageElement && !expression)
             throw std::runtime_error(target->kind == g::Kind::Attribute || target->kind == g::Kind::Varying
                 ? name + " requires a variable or storage element: " + target->name +
                       " is a read here (normalLocal, tangentLocal and positionPrevious are not written back)"

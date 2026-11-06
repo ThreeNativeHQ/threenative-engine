@@ -54,6 +54,51 @@ export interface ICharacterBody3DOptions {
    * which reads as a physics bug rather than a default.
    */
   readonly pushesDynamicBodies?: boolean;
+  /**
+   * The water surface height in metres at world (x, z), or `undefined` where there is none. With
+   * it the body swims the way Unreal's CharacterMovementComponent does: once its centre is under
+   * the surface it is `swimming`, buoyancy and fluid friction replace gravity, and its horizontal
+   * speed is held to `maxSwimSpeed`; shallower water only slows it. Without it nothing changes.
+   */
+  readonly water?: CharacterWaterQuery;
+  /**
+   * The water's own velocity at world (x, z) in m/s, or `undefined` where there is none. While any
+   * part of the body is under water it is carried downstream, added to its horizontal motion before
+   * its own move input: a swimmer floats at the river's full speed, and a wader, whose feet hold the
+   * bed, takes a share that grows with depth until its centre goes under. Unreal pushes a body in a
+   * river towards the spline's own velocity while it moves slower than the water, so a floating body
+   * settles at the water's speed (UE 5.8.3:
+   * Engine/Plugins/Experimental/Water/Source/Runtime/Private/BuoyancyComponent.cpp:724-753).
+   * Without it nothing changes.
+   */
+  readonly waterCurrent?: CharacterWaterCurrentQuery;
+  /**
+   * Unreal's `Buoyancy`: the body floats where `buoyancy * immersionDepth = 1`. Default 1.6, which
+   * floats it with its centre just under the surface. Unreal ships 1.0, which is neutral: the body
+   * drifts to the bottom.
+   */
+  readonly buoyancy?: number;
+  /** Unreal's `MaxSwimSpeed` in m/s: half its walk speed. Default 3. */
+  readonly maxSwimSpeed?: number;
+  /**
+   * Unreal's water-volume `FluidFriction`, applied to vertical speed while swimming. Default 12,
+   * which settles a swimmer in about a second; Unreal's 0.3 bobs it for many seconds.
+   */
+  readonly fluidFriction?: number;
+}
+
+/** Water surface height at world (x, z), or `undefined` where there is no water. */
+export type CharacterWaterQuery = (x: number, z: number) => number | undefined;
+
+/** The water's own velocity in m/s at world (x, z), or `undefined` where there is no water. */
+export type CharacterWaterCurrentQuery = (
+  x: number,
+  z: number,
+) => { x: number; z: number } | undefined;
+
+function halfHeightOf(shape: CollisionShape3D): number | undefined {
+  const { kind, x, y } = shape.descriptor;
+  return kind === "capsule" ? x + y : kind === "box" ? y : kind === "sphere" ? x : undefined;
 }
 
 export class CharacterBody3D {
@@ -73,6 +118,26 @@ export class CharacterBody3D {
   groundBody: IPhysicsBodyHandle | undefined;
   /** Radians between `groundNormal` and world up (+Y). */
   slopeAngle = 0;
+  /** See `ICharacterBody3DOptions.water`; assign it once the water exists. */
+  water: CharacterWaterQuery | undefined;
+  /** See `ICharacterBody3DOptions.waterCurrent`; assign it once the water exists. */
+  waterCurrent: CharacterWaterCurrentQuery | undefined;
+  /**
+   * The water's own velocity the last `moveAndSlide` applied, in m/s: the full current while
+   * swimming, a depth-weighted share of it while wading, `(0, 0)` out of water. Read it to tell a
+   * drift from a step.
+   */
+  readonly currentVelocity = { x: 0, z: 0 };
+  buoyancy: number;
+  maxSwimSpeed: number;
+  fluidFriction: number;
+  /** True while the body's centre is under the water surface (Unreal's MOVE_Swimming). */
+  swimming = false;
+  /** Unreal's `ImmersionDepth`: the share of the collider's height under water, 0 to 1. */
+  immersionDepth = 0;
+  /** The water surface height the last `moveAndSlide` read, or `undefined` out of water. */
+  waterSurface: number | undefined;
+  readonly #halfHeight: number | undefined;
   readonly #simulation: IPhysicsSimulation;
   readonly #physics: IPhysicsContext | undefined;
   #desired = { x: 0, y: 0, z: 0 };
@@ -104,6 +169,16 @@ export class CharacterBody3D {
     this.gravity = options.gravity ?? -9.81;
     this.maxFallSpeed = options.maxFallSpeed ?? 50;
     this.oneWayLayers = options.oneWayLayers ?? 0;
+    this.water = options.water;
+    this.waterCurrent = options.waterCurrent;
+    this.buoyancy = options.buoyancy ?? 1.6;
+    this.maxSwimSpeed = options.maxSwimSpeed ?? 3;
+    this.fluidFriction = options.fluidFriction ?? 12;
+    if (!(this.buoyancy >= 0 && this.maxSwimSpeed > 0 && this.fluidFriction >= 0))
+      throw new Error(
+        "CharacterBody3D needs buoyancy >= 0, maxSwimSpeed > 0 and fluidFriction >= 0.",
+      );
+    this.#halfHeight = halfHeightOf(options.shape);
     const shape = options.shape.descriptor;
     if (options.collisionLayer !== undefined || options.collisionMask !== undefined) {
       const layer = options.collisionLayer ?? shape.collisionLayer;
@@ -172,10 +247,32 @@ export class CharacterBody3D {
   moveAndSlide(dt: number): void {
     if (!Number.isFinite(dt) || dt < 0)
       throw new Error("CharacterBody3D.moveAndSlide requires a finite non-negative dt.");
-    this.velocity.y = Math.max(this.velocity.y + this.gravity * dt, -this.maxFallSpeed);
-    this.#desired.x = this.velocity.x * dt;
+    const depth = this.#immerse();
+    let fall = this.gravity;
+    if (this.swimming) {
+      // UE 5.8.3 PhysSwimming: a fast rise is damped so the body cannot leap out, fluid friction
+      // grows with depth, and buoyancy cancels gravity where buoyancy * depth = 1.
+      const rise = 0.33 * this.maxSwimSpeed;
+      if (this.velocity.y > rise) this.velocity.y = Math.max(rise, this.velocity.y * depth * depth);
+      this.velocity.y *= 1 - Math.min(0.5 * this.fluidFriction * depth * dt, 1);
+      fall *= 1 - this.buoyancy * depth;
+    }
+    this.velocity.y = Math.max(this.velocity.y + fall * dt, -this.maxFallSpeed);
+    if (depth > 0) {
+      // Wading slows the body towards swim speed, reached as its centre goes under.
+      const cap = this.maxSwimSpeed / Math.min(1, 2 * depth);
+      const speed = Math.hypot(this.velocity.x, this.velocity.z);
+      if (speed > cap) {
+        this.velocity.x *= cap / speed;
+        this.velocity.z *= cap / speed;
+      }
+    }
+    this.#carry(depth);
+    // The water moves the body first and the player's own input rides on top of it, so swimming
+    // across a river is a heading and not a fight with a speed cap.
+    this.#desired.x = (this.velocity.x + this.currentVelocity.x) * dt;
     this.#desired.y = this.velocity.y * dt;
-    this.#desired.z = this.velocity.z * dt;
+    this.#desired.z = (this.velocity.z + this.currentVelocity.z) * dt;
     this.#sliding = true;
   }
 
@@ -278,6 +375,46 @@ export class CharacterBody3D {
     this.#physics?.remove(this);
     this.#simulation.removeBody(this.body.id);
     this.#clearGroundState();
+  }
+
+  /**
+   * UE 5.8.3 river forces settle a floating body at the water's own speed, so a swimmer (centre
+   * under, `immersionDepth > 0.5`) takes the whole current. A wader's feet hold the bed: it takes
+   * `(2 * depth)^2` of it, drag on the wetted height, which reaches the whole current exactly where
+   * swimming starts, so stepping off the bed is not a jolt. A lake's current is zero.
+   */
+  #carry(depth: number): void {
+    const query = this.waterCurrent;
+    const current =
+      depth > 0 && query !== undefined
+        ? query(this.object.position.x, this.object.position.z)
+        : undefined;
+    if (current !== undefined && (!Number.isFinite(current.x) || !Number.isFinite(current.z)))
+      throw new Error(
+        "CharacterBody3D.waterCurrent must return finite x and z in m/s, or undefined.",
+      );
+    const share = Math.min(1, 2 * depth) ** 2;
+    this.currentVelocity.x = current === undefined ? 0 : current.x * share;
+    this.currentVelocity.z = current === undefined ? 0 : current.z * share;
+  }
+
+  /** UE 5.8.3 ImmersionDepth: the share of the collider below the surface, from top to bottom. */
+  #immerse(): number {
+    const { x, y, z } = this.object.position;
+    const surface = this.water?.(x, z);
+    if (surface !== undefined && !Number.isFinite(surface))
+      throw new Error("CharacterBody3D.water must return a finite surface height or undefined.");
+    const half = this.#halfHeight;
+    if (surface !== undefined && half === undefined)
+      throw new Error("CharacterBody3D.water needs a capsule, box or sphere shape to measure.");
+    this.waterSurface = surface;
+    this.immersionDepth =
+      surface === undefined || half === undefined
+        ? 0
+        : Math.min(1, Math.max(0, (surface - y + half) / (2 * half)));
+    // Unreal swims once the body's centre is inside the water volume.
+    this.swimming = this.immersionDepth > 0.5;
+    return this.immersionDepth;
   }
 
   #clearGroundState(): void {

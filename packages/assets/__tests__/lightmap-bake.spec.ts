@@ -77,8 +77,8 @@ function blockerScene(receiverUv: readonly number[]): Document {
 }
 
 describe("bakeStaticLightmap", () => {
-  it("casts blocker occlusion instead of writing a flat fill", () => {
-    const result = bakeStaticLightmap(blockerScene([0, 0, 1, 0, 1, 1, 0, 1]), 16, 16, 0);
+  it("casts blocker occlusion instead of writing a flat fill", async () => {
+    const result = await bakeStaticLightmap(blockerScene([0, 0, 1, 0, 1, 1, 0, 1]), 16, 16, 0);
     const left = result.pixels[(8 * 16 + 3) * 4];
     const right = result.pixels[(8 * 16 + 12) * 4];
 
@@ -87,8 +87,8 @@ describe("bakeStaticLightmap", () => {
     expect(right).toBe(255);
   });
 
-  it("dilates populated chart texels into empty borders", () => {
-    const result = bakeStaticLightmap(
+  it("dilates populated chart texels into empty borders", async () => {
+    const result = await bakeStaticLightmap(
       blockerScene([0.25, 0.25, 0.75, 0.25, 0.75, 0.75, 0.25, 0.75]),
       16,
       16,

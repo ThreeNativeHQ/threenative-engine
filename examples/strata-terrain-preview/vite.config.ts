@@ -1,8 +1,11 @@
-import { createReadStream, existsSync, statSync } from "node:fs";
+import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { fileURLToPath } from "node:url";
 import { terrainEditor } from "@threenative/terrain/editor/server";
+import { starterAssetsDir } from "@threenative/terrain/kit";
+import { createWebBrandPlugin } from "create-threenative";
 import { type Plugin, defineConfig } from "vite";
+import { worldFiles } from "./scripts/world-files.mjs";
 
 /**
  * The game's own licensed art, served beside the starter's.
@@ -25,8 +28,16 @@ import { type Plugin, defineConfig } from "vite";
  * resolve its images without being repacked. The traversal check is therefore a
  * per-segment test rather than "no separator anywhere".
  */
+const MANNEQUIN = "../../packages/create-threenative/template-assets/assets/mannequin.glb";
+
+const WORLD_DIR = fileURLToPath(new URL("./src/world", import.meta.url));
+
 function preparedAssets(): Plugin {
-  const roots: { mount: string; dir: string; flat: boolean }[] = [
+  const roots: { mount: string; dir: string; flat: boolean; file?: string }[] = [
+    { dir: "./src/world", flat: true, mount: "/world" },
+    { dir: "./assets/assets.manifest.json", flat: true, mount: "/", file: "assets.manifest.json" },
+    // The player is the starter kit's mannequin, served from the scaffolder's tracked copy.
+    { dir: MANNEQUIN, flat: true, mount: "/", file: "mannequin.glb" },
     { dir: "./local-assets/temperate", flat: false, mount: "/temperate" },
     { dir: "./local-assets/temperate/basis", flat: true, mount: "/basis" },
     { dir: "./local-assets/prepared", flat: true, mount: "/prepared" },
@@ -34,12 +45,15 @@ function preparedAssets(): Plugin {
     // The Basis transcoder a cooked KTX2 model decodes through, which the engine's asset pipeline
     // copies into `public/basis/` and this example has no pipeline. Same source, same path.
     { dir: "./local-assets/landscape-pro/basis", flat: true, mount: "/basis" },
+    // Explicit `?stage=before|after|wildwood` forest arms: each folder is a baked copy of the forest kit.
+    { dir: "./local-assets/forest-stage", flat: false, mount: "/forest-stage" },
   ].map((entry) => ({
     ...entry,
     dir: fileURLToPath(new URL(entry.dir, import.meta.url)),
   }));
   const types: Record<string, string> = {
     ".glb": "model/gltf-binary",
+    ".json": "application/json",
     ".jpg": "image/jpeg",
     ".ktx2": "image/ktx2",
     ".png": "image/png",
@@ -61,7 +75,13 @@ function preparedAssets(): Plugin {
         // resolver only ever asks for a name; the pack root keeps them,
         // because a cooked GLB resolves its own images through them.
         const bad = name === "" || name.includes("..") || (!entry.flat && name.endsWith("/"));
-        const path = bad || (entry.flat && name.includes("/")) ? undefined : `${entry.dir}/${name}`;
+        const fileMismatch = entry.file !== undefined && name !== entry.file;
+        const path =
+          bad || fileMismatch || (entry.flat && name.includes("/"))
+            ? undefined
+            : entry.file === undefined
+              ? `${entry.dir}/${name}`
+              : entry.dir;
         if (path === undefined || !existsSync(path) || !statSync(path).isFile()) {
           next();
           return;
@@ -78,6 +98,23 @@ function preparedAssets(): Plugin {
     name: "strata-prepared-assets",
     configureServer: serve,
     configurePreviewServer: serve,
+    generateBundle() {
+      // The baked terrain JSON is fetched, never imported: a 7–12 MB JSON module cost about 3 s to
+      // compile in dev, where fetch and JSON.parse take a sixth of that. Which world files a build
+      // carries is the bake's own manifest (`scripts/world-files.mjs`), so a bake change cannot
+      // leave the build short of a prop package the game fetches.
+      this.emitFile({
+        type: "asset",
+        fileName: "mannequin.glb",
+        source: readFileSync(fileURLToPath(new URL(MANNEQUIN, import.meta.url))),
+      });
+      for (const file of worldFiles(WORLD_DIR))
+        this.emitFile({
+          type: "asset",
+          fileName: `world/${file}`,
+          source: readFileSync(new URL(`./src/world/${file}`, import.meta.url)),
+        });
+    },
   };
 }
 
@@ -85,8 +122,11 @@ export default defineConfig({
   // The starter PBR sets are the terrain package's prepared art, served to the game rather than
   // duplicated into this example's `public/`: `/leafy_grass/…` reaches the same bytes in dev and in
   // a build, and `ctx.assets` loads them by that path.
-  publicDir: fileURLToPath(new URL("../../packages/terrain/starter-assets", import.meta.url)),
+  publicDir: await starterAssetsDir(),
   plugins: [
+    // `TN_ENGINE=threenative pnpm dev` serves the forest on the owned Wasm engine (threenative.config.ts),
+    // with the same local art as the three.js path, so the two arms compare one asset set.
+    ...(process.env.TN_ENGINE === "threenative" ? [createWebBrandPlugin()] : []),
     terrainEditor({
       documentPath: fileURLToPath(new URL("./terrain/world.json", import.meta.url)),
     }),

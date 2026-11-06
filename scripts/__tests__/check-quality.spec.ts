@@ -400,6 +400,62 @@ const ignored: any = value;
     );
   });
 
+  // PRD-800 phase 1, green on the pre-cap code: 3 000 lines is only a report-only `file-length`.
+  it("reports a file just over the 3 000-line cap without failing the gate", async () => {
+    const root = await fixtureRoot();
+    await sourceFile(root, `${"const line = 1;\n".repeat(3001)}`);
+    await updateQualityBaseline(root);
+    const findings = await runQuality(root);
+    expect(findings).toContainEqual(
+      expect.objectContaining({ signal: "file-length", value: 3001, state: "inherited" }),
+    );
+    expect(fatalQualityFindings(findings)).toEqual([]);
+  });
+
+  // AC-1: a file the baseline does not record, over the cap, fails and names the file.
+  it("fails a source file over the 3 000-line cap that no baseline records", async () => {
+    const root = await fixtureRoot();
+    await sourceFile(root, `${"const line = 1;\n".repeat(2999)}`);
+    await updateQualityBaseline(root);
+
+    await sourceFile(root, `${"const line = 1;\n".repeat(3001)}`);
+    const findings = await runQuality(root);
+    expect(findings).toContainEqual(
+      expect.objectContaining({ signal: "file-cap", value: 3001, threshold: 3000, state: "new" }),
+    );
+    expect(fatalQualityFindings(findings)).toContainEqual(
+      expect.objectContaining({ file: "packages/core/src/fixture.ts", signal: "file-cap" }),
+    );
+  });
+
+  // AC-2: a baselined file may shrink and may not grow; shrinking tightens the entry.
+  it("fails a baselined file that grows past the cap and tightens one that shrinks", async () => {
+    const root = await fixtureRoot();
+    await sourceFile(root, `${"const line = 1;\n".repeat(3100)}`);
+    await updateQualityBaseline(root);
+
+    await sourceFile(root, `${"const line = 1;\n".repeat(3150)}`);
+    expect(fatalQualityFindings(await runQuality(root))).toContainEqual(
+      expect.objectContaining({ signal: "file-cap", value: 3150, state: "grew" }),
+    );
+
+    await sourceFile(root, `${"const line = 1;\n".repeat(3050)}`);
+    const shrank = await runQuality(root);
+    expect(shrank).toContainEqual(
+      expect.objectContaining({ signal: "file-cap", value: 3050, state: "inherited" }),
+    );
+    expect(fatalQualityFindings(shrank)).toEqual([]);
+
+    const tightened = await updateQualityBaseline(root);
+    expect(tightened.findings).toContainEqual(
+      expect.objectContaining({ signal: "file-cap", value: 3050, threshold: 3000 }),
+    );
+
+    await sourceFile(root, `${"const line = 1;\n".repeat(3000)}`);
+    const dropped = await updateQualityBaseline(root);
+    expect(dropped.findings).not.toContainEqual(expect.objectContaining({ signal: "file-cap" }));
+  });
+
   it("makes a waiver without a reason fatal", async () => {
     const root = await fixtureRoot();
     await sourceFile(root, "// quality-allow:\nconst value = 1;\n");

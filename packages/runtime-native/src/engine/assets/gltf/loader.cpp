@@ -10,13 +10,16 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <iterator>
 #include <map>
+#include <mutex>
 #include <set>
 #include <string>
 
 #include "cgltf.h"
 #include "engine/animation/skinning/skeleton.h"
 #include "engine/assets/gltf/image_decode.h"
+#include "engine/foundation/job_pool.h"
 #include "engine/foundation/json.h"
 #include "engine/scene/geometry.h"
 #include "engine/scene/material.h"
@@ -31,6 +34,38 @@ using animation::AnimationClip;
 using animation::Interpolation;
 using animation::KeyframeTrack;
 using animation::TrackType;
+
+/**
+ * Images a model names by uri (the cook's shared images), decoded once for every model that names the
+ * same bytes: ten spruce files over six 2048 px atlases held ten RGBA copies each and ran the web
+ * engine's 4 GB heap out mid-load. Weak, so the pixels go when the last texture over them does.
+ * Keyed by uri, size and FNV-1a of the bytes, so two files that reuse one name never share pixels.
+ */
+std::shared_ptr<TextureSource> decodedUriImage(const std::string& key, std::shared_ptr<TextureSource> store = {}) {
+    static std::mutex mutex;
+    static std::map<std::string, std::weak_ptr<TextureSource>> images;
+    std::lock_guard<std::mutex> lock(mutex);
+    if (store) return images[key] = store, store;
+    for (auto it = images.begin(); it != images.end();) it = it->second.expired() ? images.erase(it) : std::next(it);
+    const auto found = images.find(key);
+    return found == images.end() ? nullptr : found->second.lock();
+}
+
+// FNV-1a over 8-byte words with a fold of the high half, then the tail bytes: every byte still counts,
+// at an eighth of the byte loop's dependent multiplies. The byte loop cost the forest about 1 s of load,
+// since each model that names a shared 2048 px atlas hashes its 10 MB again.
+std::string uriImageKey(const std::string& uri, std::span<const uint8_t> bytes) {
+    uint64_t hash = 14695981039346656037ull;
+    std::size_t at = 0;
+    for (; at + 8 <= bytes.size(); at += 8) {
+        uint64_t word;
+        std::memcpy(&word, bytes.data() + at, 8);
+        hash = (hash ^ word) * 1099511628211ull;
+        hash ^= hash >> 32;
+    }
+    for (; at < bytes.size(); ++at) hash = (hash ^ bytes[at]) * 1099511628211ull;
+    return uri + '\n' + std::to_string(bytes.size()) + '\n' + std::to_string(hash);
+}
 
 const Value* member(const Value* v, std::string_view key) { return v && v->isObject() ? v->find(key) : nullptr; }
 const Value* item(const Value* v, std::size_t i) {
@@ -86,6 +121,7 @@ class Builder {
         LoadResult result;
         if (!checkExtensions()) return fail(result);
         markDefs();
+        predecodeImages();
         const Value* scenes = member(&json_, "scenes");
         for (std::size_t i = 0; i < data_.scenes_count; ++i) {
             result.scenes.push_back(loadScene(i, item(scenes, i)));
@@ -779,15 +815,21 @@ class Builder {
         }
         std::shared_ptr<Texture>& texture = textures_[index];
         if (!texture) {
-            auto made = std::make_shared<Texture>();
-            made->name = text(member(def, "name"));
             // GLTFTextureWebPExtension: a texture with EXT_texture_webp draws its WebP source when
             // WebP decodes (checkExtensions refused the file otherwise); `source` is the fallback.
             const Value* webp = member(member(def, "extensions"), "EXT_texture_webp");
-            made->source = static_cast<int>(number(member(webp ? webp : def, "source"), -1));
+            const int source = static_cast<int>(number(member(webp ? webp : def, "source"), -1));
+            const std::string key = sharedImageKey(source);
+            std::shared_ptr<TextureSource> decoded = key.empty() ? nullptr : decodedUriImage(key);
+            auto made = decoded ? std::make_shared<Texture>(decoded) : std::make_shared<Texture>();
+            made->name = text(member(def, "name"));
+            made->source = source;
             made->flipY = false;
             applySampler(*made, index);
-            decodeImage(*made);
+            if (!decoded) {
+                decodeImage(*made);
+                if (!key.empty() && !made->data.empty()) decodedUriImage(key, made->imageSource);
+            }
             texture = made;
         }
         // GLTFTextureTransformExtension.extendTexture: a transform clones the texture (a new GPU identity,
@@ -842,6 +884,25 @@ class Builder {
     // The texture's image bytes (a GLB view or a base64 data URI) become RGBA8. A format this loader
     // does not decode, or an image in an external file the host cannot read, stays undecoded and the player refuses the
     // model by name; a PNG or JPEG that will not decode is a damaged file and fails the load.
+    /** The decode-once key of an image read through readUri; empty for embedded or host-decoded images. */
+    std::string sharedImageKey(int source) {
+        if (source < 0 || static_cast<std::size_t>(source) >= data_.images_count || options_.externalImage ||
+            !options_.readUri)
+            return {};
+        // Once per image per load: predecodeImages and every texture over the image ask for it.
+        if (const auto known = imageKeys_.find(source); known != imageKeys_.end()) return known->second;
+        return imageKeys_[source] = hashImageKey(source);
+    }
+    std::string hashImageKey(int source) {
+        const cgltf_image& image = data_.images[source];
+        if (image.buffer_view || !image.uri || std::strncmp(image.uri, "data:", 5) == 0) return {};
+        std::string uri = image.uri;
+        cgltf_decode_uri(uri.data());
+        uri.resize(std::strlen(uri.c_str()));
+        const auto bytes = options_.readUri(uri);
+        return bytes.empty() ? std::string{} : uriImageKey(uri, bytes);
+    }
+
     void decodeImage(Texture& texture) {
         if (texture.source < 0 || static_cast<std::size_t>(texture.source) >= data_.images_count) return;
         if (options_.externalImage) {
@@ -851,6 +912,13 @@ class Builder {
                 texture.external = std::move(image);
                 return;
             }
+        }
+        if (const auto found = predecoded_.find(texture.source); found != predecoded_.end()) {
+            texture.width = found->second.width;
+            texture.height = found->second.height;
+            texture.data = std::move(found->second.data);
+            predecoded_.erase(found);  // a second texture over this image decodes it again, as before
+            return;
         }
         const cgltf_image& image = data_.images[texture.source];
         void* freeAfter = nullptr;  // a base64 image's decoded copy, read in place
@@ -888,6 +956,54 @@ class Builder {
             refuse("TN_NATIVE_GLTF_IMAGE_INVALID image " + std::to_string(texture.source));
         }
         std::free(freeAfter);
+    }
+
+    /**
+     * The images this model's textures name, decoded across the job pool before the scene walk asks for
+     * them: the Strata forest's 52 licensed 2048 px atlases, decoded one after another, held the web
+     * engine's loading thread for 8 s. Bytes are read here on the loading thread (a host's `readUri` may
+     * call into the host) and only the decode runs on the workers. A data-URI image, an image already
+     * decoded for another model and a format these decoders do not read stay with `decodeImage`, and an
+     * image that fails here decodes again there, which refuses the model by name as before.
+     */
+    void predecodeImages() {
+        if (options_.externalImage) return;
+        struct Job {
+            int source;
+            std::span<const uint8_t> bytes;
+            TextureSource image;
+            bool decoded = false;
+        };
+        std::vector<Job> jobs;
+        std::vector<bool> queued(data_.images_count, false);
+        const Value* textures = member(&json_, "textures");
+        for (std::size_t index = 0; index < data_.textures_count; ++index) {
+            const Value* def = item(textures, index);
+            const Value* webp = member(member(def, "extensions"), "EXT_texture_webp");
+            const int source = static_cast<int>(number(member(webp ? webp : def, "source"), -1));
+            if (source < 0 || static_cast<std::size_t>(source) >= data_.images_count || queued[source]) continue;
+            queued[source] = true;
+            const cgltf_image& image = data_.images[source];
+            std::span<const uint8_t> bytes;
+            if (image.buffer_view) {
+                bytes = {static_cast<const uint8_t*>(cgltf_buffer_view_data(image.buffer_view)), image.buffer_view->size};
+            } else if (image.uri && std::strncmp(image.uri, "data:", 5) != 0 && options_.readUri) {
+                if (const std::string key = sharedImageKey(source); key.empty() || decodedUriImage(key)) continue;
+                std::string uri = image.uri;
+                cgltf_decode_uri(uri.data());
+                uri.resize(std::strlen(uri.c_str()));
+                bytes = options_.readUri(uri);
+            }
+            if (!bytes.empty() && imageFormat(bytes.data(), bytes.size()) != ImageFormat::Unknown)
+                jobs.push_back({source, bytes, {}});
+        }
+        if (jobs.size() < 2) return;  // one image gains nothing from the pool
+        JobPool::shared().forEach(static_cast<uint32_t>(jobs.size()), [&](uint32_t i) {
+            Job& job = jobs[i];
+            job.decoded = gltf::decodeImage(job.bytes.data(), job.bytes.size(), job.image.width, job.image.height, job.image.data);
+        });
+        for (Job& job : jobs)
+            if (job.decoded) predecoded_.emplace(job.source, std::move(job.image));
     }
 
     // SkinnedMesh.normalizeSkinWeights: each vertex's weights over their sum; all zero becomes (1,0,0,0).
@@ -1037,6 +1153,8 @@ class Builder {
     std::map<long, std::shared_ptr<Material>> materials_;
     std::map<std::string, std::shared_ptr<Material>> finalMaterials_;
     std::map<std::size_t, std::shared_ptr<Texture>> textures_;
+    std::map<int, std::string> imageKeys_;      // sharedImageKey by glTF image index
+    std::map<int, TextureSource> predecoded_;  // predecodeImages' pixels by glTF image index, until a texture takes them
 };
 
 } // namespace

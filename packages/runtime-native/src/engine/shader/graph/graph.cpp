@@ -1,4 +1,5 @@
 #include "engine/shader/graph/graph.h"
+#include "engine/renderer/reflector.h"
 #include "engine/scene/texture.h"
 
 #include "engine/shader/tsl/tsl.h"
@@ -95,6 +96,10 @@ private:
     std::unordered_map<const NodeData*, std::pair<uint32_t, ExprId>> temps_;
     std::unordered_map<const NodeData*, std::vector<ExprId>> aggregates_;
     std::unordered_map<const NodeData*, VarId> vars_;
+    // three r187's assignable nodes (Node.toAssignable): an expression a Fn assigns after making it, as SkyMesh's
+    // `Lin.mulAssign(...)`. The engine declares the variable at the first assignment, from the node's value there;
+    // later reads load it. The pair is the declaring scope and the variable.
+    std::unordered_map<const NodeData*, std::pair<uint32_t, VarId>> assigned_;
     /** Variables made outside any Fn (toVar at the top level), found by analyze: declared before the graph lowers. */
     std::vector<Node> hoisted_;
     std::unordered_map<const NodeData*, ExprId> loopIndex_;
@@ -148,6 +153,12 @@ void Lowerer::analyze(Node node) {
 ExprId Lowerer::expression(Node node) {
     if (!node) return kInvalid;
     if (const auto effect = effects_.find(node.get()); effect != effects_.end()) return effect->second;
+    if (const auto held = assigned_.find(node.get()); held != assigned_.end()) {
+        if (std::find(scopes_.begin(), scopes_.end(), held->second.first) == scopes_.end())
+            throw std::runtime_error("TN_TSL_ASSIGNABLE_SCOPE: a node assigned inside a nested block is read outside it; "
+                                     "call toVar() where the node is made");
+        return program_.load(held->second.second);
+    }
     const auto temp = temps_.find(node.get());
     if (temp != temps_.end() && std::find(scopes_.begin(), scopes_.end(), temp->second.first) != scopes_.end())
         return temp->second.second;
@@ -424,7 +435,7 @@ ExprId Lowerer::emit(Node node) {
         case Kind::Select:
             return program_.select(expression(d.args[0]), expression(d.args[1]), expression(d.args[2]));
         case Kind::Reflector:
-            return program_.sample(program_.texture2d("reflector"), expression(d.args[0]));
+            return program_.sample(program_.texture2d(d.name), expression(d.args[0]));
         case Kind::ScreenUv: {
             // ScreenNode.UV: screenCoordinate / screenSize, the render target's size when drawing into one.
             const auto input = inputs_.find("screenUV");
@@ -458,8 +469,13 @@ ExprId Lowerer::emit(Node node) {
             return d.type == Type::f32() ? program_.swizzle(sample,"x") : sample;
         }
         case Kind::Texture: {
-            const ExprId coordinate = expression(d.args[0]);
+            ExprId coordinate = expression(d.args[0]);
             if (coordinate == kInvalid) return kInvalid;
+            // A DataArrayTexture reads at (uv, layer); a texture(array, uv) with no `.depth(layer)` reads layer 0.
+            const auto object = d.textureObject();
+            const bool array = object && static_cast<const tn::engine::Texture*>(object.get())->array;
+            if (array && program_.expr(coordinate).type == Type::vec(2))
+                coordinate = program_.construct(Type::vec(3), {coordinate, program_.constant(0.0f)});
             // A depth texture, or the scene pass's own depth (a texture named "depth" with no object
             // behind it), has no filtered sample: read the texel under the uv.
             if (d.bits == 1 || (d.name == "depth" && !d.textureBinding)) {
@@ -472,24 +488,35 @@ ExprId Lowerer::emit(Node node) {
                 const auto loaded = program_.textureLoad(texture, texel, program_.constant(int32_t(0)));
                 return d.bits == 1 ? loaded : convert(loaded, d.type == Type{} ? Type::vec(4) : d.type);
             }
+            // The sampler the renderer will bind for this texture, so a stage over the sampler limit shares equal ones.
+            const auto declared = [&](uint32_t texture) {
+                const auto* source = static_cast<const tn::engine::Texture*>(object.get());
+                if (source && source->renderTarget.expired() && !source->depthTexture && !source->storageTexture)
+                    program_.setSamplerState(texture, std::to_string(source->wrapS) + "," + std::to_string(source->wrapT) + "," +
+                        std::to_string(source->wrapR) + "," + std::to_string(source->magFilter) + "," +
+                        std::to_string(source->minFilter) + "," + std::to_string(std::min(source->anisotropy, 16.0)));
+                return texture;
+            };
+            const auto textureOf = [&] {
+                return declared(array ? program_.texture2dArray(d.name)
+                                : program_.expr(coordinate).type == Type::vec(3) ? program_.texture3d(d.name) : program_.texture2d(d.name));
+            };
             // TextureNode.level(n): an explicit mip, which a vertex stage needs.
             if (d.args.size() == 2) {
                 const ExprId level = expression(d.args[1]);
                 if (level == kInvalid) return kInvalid;
-                const auto texture = program_.expr(coordinate).type == Type::vec(3)
-                    ? program_.texture3d(d.name) : program_.texture2d(d.name);
+                const auto texture = textureOf();
                 return d.sampleBias ? program_.sampleBias(texture, coordinate, level)
                                     : program_.sampleLevel(texture, coordinate, level);
             }
-            const bool volume = program_.expr(coordinate).type == Type::vec(3);
-            const auto texture = volume ? program_.texture3d(d.name) : program_.texture2d(d.name);
             // A material's 2D texture() reads at the view mip bias (PRD-539 lever 7): surface detail the
             // reduced raster loses. The material lowering marks itself with a `viewMipBias` input and the
             // uniform is declared here, at first use, so a node material without a texture keeps its
-            // layout. Volumes (probe GI, LUTs) and post or compute graphs keep the implicit LOD.
-            if (!volume && inputs_.count("viewMipBias") && program_.stage() == Stage::Fragment)
-                return program_.sampleBias(texture, coordinate, program_.uniform("viewMipBias", Type::f32()));
-            return program_.sample(texture, coordinate);
+            // layout. Volumes (probe GI, LUTs), arrays and post or compute graphs keep the implicit LOD.
+            const bool volume = program_.expr(coordinate).type == Type::vec(3);
+            if (!volume && !array && inputs_.count("viewMipBias") && program_.stage() == Stage::Fragment)
+                return program_.sampleBias(textureOf(), coordinate, program_.uniform("viewMipBias", Type::f32()));
+            return program_.sample(textureOf(), coordinate);
         }
         case Kind::StorageElement:
             return program_.loadStorage(ensureStorage(d), index(node));
@@ -600,6 +627,14 @@ void Lowerer::statement(Node node) {
             } else if (target->kind == Kind::StorageElement) {
                 const uint32_t buffer = ensureStorage(*target);
                 program_.store(buffer, index(target), convert(expression(s.args[1]), target->type));
+            } else {
+                auto held = assigned_.find(target.get());
+                if (held == assigned_.end()) {
+                    const ExprId initial = expression(target);
+                    held = assigned_.emplace(target.get(), std::pair{scopes_.back(), program_.var(program_.expr(initial).type, initial)}).first;
+                }
+                const VarId variable = held->second.second;
+                program_.assign(variable, convert(expression(s.args[1]), program_.expr(program_.load(variable)).type));
             }
             return;
         }
@@ -745,6 +780,9 @@ Node pmremTexture(std::shared_ptr<const void> texture, Node direction, Node leve
 
 Node reflectorTexture(std::shared_ptr<const void> reflector, Node uvs) {
     auto data = makeNode(Kind::Reflector, Type::vec(4));
+    // The mirror's own binding ("reflector<serial>"): one material may sample two of them, and each
+    // pass's view is bound under its own name.
+    data->name = std::static_pointer_cast<const Reflector>(reflector)->name;
     data->object = std::move(reflector);
     data->args = {std::move(uvs)};
     return data;
@@ -777,8 +815,9 @@ void setUniformValues(const Node& uniform, std::vector<double> values) {
     // A uniform built without a value (cameraViewMatrix, materialColor) is the engine's to fill.
     if (uniform->values.empty()) throw std::runtime_error("TN_TSL_UNIFORM_VALUE: " + uniform->name + " is engine-provided");
     const Type type = uniform->type;
-    const size_t lanes = size_t(type.rows) * type.cols;  // a matrix takes its elements, column by column
-    if (type.scalar == Type::Scalar::Bool || values.size() != lanes)
+    // A matN uniform takes its column-major elements (three's Matrix.elements order).
+    const size_t lanes = size_t(type.rows) * type.cols;
+    if ((type.isMatrix() && type.scalar != Type::Scalar::F32) || type.scalar == Type::Scalar::Bool || values.size() != lanes)
         throw std::runtime_error("TN_TSL_UNIFORM_VALUE: " + uniform->name + " takes " +
                                  std::to_string(lanes) + " " + type.name() + " value(s)");
     for (double& value : values) {
@@ -1009,11 +1048,30 @@ uint64_t keySerializations = 0;
 
 uint64_t keyBuilds() { return keySerializations; }
 
-std::string key(const Graph& graph) {
+bool serialName(std::string_view name) {
+    if (name.starts_with("tnFlat")) name.remove_prefix(6);
+    for (const std::string_view prefix : {std::string_view("nodeUniform"), std::string_view("nodeVarying"), std::string_view("varyingProperty"),
+                                          std::string_view("nodeMapT")}) {
+        if (!name.starts_with(prefix) || name.size() == prefix.size()) continue;
+        return std::all_of(name.begin() + prefix.size(), name.end(), [](char c) { return c >= '0' && c <= '9'; });
+    }
+    return false;
+}
+
+namespace {
+std::string serialize(const Graph& graph, std::vector<std::string>* serials) {
     ++keySerializations;
     std::unordered_map<const NodeData*, size_t> ids;
     std::string out;
-    const auto text = [&](const std::string& s) { out += std::to_string(s.size()) + ":" + s; };
+    const auto text = [&](const std::string& s) {
+        if (serials && serialName(s)) {  // the number, not the name; a flat varying stays flat
+            auto found = std::find(serials->begin(), serials->end(), s);
+            if (found == serials->end()) found = serials->insert(serials->end(), s);
+            out += (s.starts_with("tnFlat") ? "tnFlat~" : "~") + std::to_string(found - serials->begin()) + ":";
+            return;
+        }
+        out += std::to_string(s.size()) + ":" + s;
+    };
     const std::function<void(Node)> visit = [&](Node n) {
         if (!n) { out += "null;"; return; }
         const auto [it, fresh] = ids.emplace(n.get(), ids.size());
@@ -1035,6 +1093,11 @@ std::string key(const Graph& graph) {
     visit(graph);
     return out;
 }
+}  // namespace
+
+std::string key(const Graph& graph) { return serialize(graph, nullptr); }
+
+std::string canonicalKey(const Graph& graph, std::vector<std::string>& serials) { return serialize(graph, &serials); }
 
 uint64_t keyId(const Graph& graph) {
     if (!graph) return 0;

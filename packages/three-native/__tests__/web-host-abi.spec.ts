@@ -23,6 +23,11 @@ const PINNED: Record<number, string> = {
   7: "8947e7786e5634b2",
   8: "3c6476b841380e81",
   9: "9cc4cfcd1b657e41",
+  // 10 = tnw_web_read_mrt (a PassNode's custom MRT attachment) and tnw_web_device_limit.
+  10: "c641a6bba0370d6f",
+  // 11 = the merged host: develop's 9 (tnw_web_clear_target, render-target flags) beside the Strata lane's
+  // 9 and 10 (init/copy texture, read_mrt, device_limit) met under one number, so both moved up.
+  11: "6ca2e45be11e2c12",
 };
 
 function signatures(): string[] {

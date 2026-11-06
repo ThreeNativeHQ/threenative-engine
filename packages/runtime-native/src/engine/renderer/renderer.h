@@ -12,6 +12,7 @@
 #include <span>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <memory>
 #include <tuple>
 #include <vector>
@@ -76,6 +77,19 @@ enum class MaterialKind : uint8_t { Standard, Basic, Lambert, Phong, Physical };
 using GraphTextures = std::vector<std::pair<std::string, const Texture*>>;
 
 /**
+ * A material graph's reflector() reads: the mirror's binding name ("reflector<serial>"), the mirror
+ * (an engine::Reflector) whose pass drew the view, and that view and its sampler. A draw binds each
+ * one by name, as it binds its graph textures, so one material may sample two mirrors.
+ */
+struct GraphReflector {
+    std::string name;
+    const void* reflector = nullptr;
+    WGPUTextureView view = nullptr;
+    WGPUSampler sampler = nullptr;
+};
+using GraphReflectors = std::vector<GraphReflector>;
+
+/**
  * Diagnostic switch (TN_PROGRAM_PROBES=per-draw, or set by a test before a frame): a program's per-draw
  * probes are resolved on every draw again, as before FM3, so the two arms' pixels can be compared. False
  * by default: they are resolved once, when the program's layouts are built.
@@ -115,7 +129,7 @@ struct DrawCache {
     // other draw. A virtual shadow page draws only the instances whose box can reach it.
     std::vector<Box3> shadowInstanceBoxes;
     using ShadowBoundsKey = std::tuple<const BufferStore*, uint32_t, uint64_t, uint64_t,
-                                      const BufferStore*, uint32_t, uint64_t, uint64_t, uint32_t, Matrix>;
+                                      const BufferStore*, uint32_t, uint64_t, uint64_t, uint32_t, Matrix, double>;
     std::optional<ShadowBoundsKey> shadowBoundsKey;
     std::weak_ptr<const BufferStore> shadowPositionsOwner, shadowInstancesOwner;
     uint64_t shadowBoundsBuilds = 0;
@@ -187,10 +201,8 @@ struct DrawItem {
     /** A node graph's storage(attribute) reads, by storage buffer name; null when it has none. */
     const std::vector<std::pair<std::string, const BufferAttribute*>>* nodeStorages = nullptr;
     Matrix pmremRotation{1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};  // three's materialEnvRotation
-    /** A node graph's reflector (an engine::Reflector) and the view of its mirrored pass, sampled as "reflector". */
-    const void* reflector = nullptr;
-    WGPUTextureView reflectorView = nullptr;
-    WGPUSampler reflectorSampler = nullptr;
+    /** A node graph's reflectors (engine::Reflector), each with its mirrored pass's view; null when it has none. */
+    GraphReflectors* reflectors = nullptr;
     MaterialKind kind = MaterialKind::Standard;
     /** three's Line (LineStrip) and LineSegments (LineList) draw lines; everything else triangles. */
     WGPUPrimitiveTopology topology = WGPUPrimitiveTopology_TriangleList;
@@ -393,6 +405,12 @@ public:
     GpuStatus readAlbedoPixels(ReadbackCallback done);
     /** The emitted radiance (RGBA16Float); InvalidHandle until a post pass reads "emissive". */
     GpuStatus readEmissivePixels(ReadbackCallback done);
+    /**
+     * The region [x, y, width, height] of one custom MRT slot's attachment (three's PassNode.getTexture(slot)
+     * read back), packed RGBA16Float rows, top row first. InvalidHandle until a frame draws that slot.
+     */
+    GpuStatus readMrtPixels(std::string_view slot, uint32_t x, uint32_t y, uint32_t width, uint32_t height,
+                            ReadbackCallback done);
     /** Textures the renderer holds GPU copies of (a destroyed Texture's are released at the next frame). */
     std::size_t materialTextureCount() const { return textures_->records.size(); }
     /** What the last frame refused or skipped by name; cleared at the start of each frame. */
@@ -419,7 +437,14 @@ public:
     /** The face camera of a probe capture, shared so a render callback that keeps its handle is safe. The
      *  capture creates it on the first face and poses it again for each one. */
     std::shared_ptr<PerspectiveCamera>& probeCaptureCamera() { return probeCamera_; }
-    /** Another renderer on this device, with its own targets: a reflection pass draws into one. */
+    /**
+     * The renderer `owner`'s mirror pass draws with, one per reflector for this renderer's life. The frame's
+     * database and a compile-only database (core's warm-up) share it, so the program a warm-up builds for the
+     * mirror is the one the mirror draws with: Unreal precaches a primitive's PSOs for every mesh pass when it
+     * enters the scene, not when a view first reaches it (UE 5.8.3: Engine/Source/Runtime/Engine/Private/
+     * PSOPrecache.cpp:230). An expired owner's renderer is released on the next call.
+     */
+    Renderer& reflectionRenderer(const std::shared_ptr<const void>& owner);
     /** A renderer on the same device for a render target or a reflection: it shares this one's map
      *  textures, geometry copies, and layout and pipeline caches, as three's one renderer does. */
     std::unique_ptr<Renderer> sibling(bool sceneOnly = false) {
@@ -480,6 +505,14 @@ public:
         return it == virtualShadows_.end() ? nullptr : &it->second.atlas;
     }
     /**
+     * Light `light`'s virtual-shadow depth map, or null. `setVirtualShadow` creates it with the entry, because a
+     * cached program's bind groups are rebuilt before the frame's first shadow pass draws the atlas.
+     */
+    WGPUTextureView virtualShadowMapView(std::size_t light) const {
+        const auto it = virtualShadows_.find(light);
+        return it == virtualShadows_.end() ? nullptr : it->second.map.view;
+    }
+    /**
      * FS11: one record per light, one entry per position in the frame's frozen draw list. The frame's caster
      * bookkeeping (bounds, diameter, whether the draw casts into this light) is a flat index, not two maps keyed by
      * `DrawItem::key`, so a frame neither allocates a node per caster nor descends a tree per probe. The vector is
@@ -537,6 +570,14 @@ public:
     bool temporalUpscale() const { return traa_ != nullptr; }
     uint32_t inputWidth() const { return inputWidth_; }
     uint32_t inputHeight() const { return inputHeight_; }
+    /**
+     * From now on a main-pass or post-target draw whose pipeline is not built yet waits for its async compile instead of
+     * compiling in the draw (PipelineCache::getOrDefer). Off by default, as three compiles on first draw; the Wasm host
+     * turns it on at core's startup reveal, after compileAsync built what the first frames draw.
+     */
+    void deferUncompiledDraws(bool on) { deferUncompiled_ = on; }
+    /** Pipelines still compiling off the queue: a frame planned while one is pending skipped the draws that need it. */
+    size_t pipelinesCompiling() { return pipelines_->pending(); }
     /** The multisampling the game asks for. A traa() effect in the post graph replaces it: see sampleCount(). */
     void setSampleCount(uint32_t samples);
     /** The samples the scene draws with: 1 while a traa() effect is in the post graph, otherwise the requested count. */
@@ -630,6 +671,16 @@ public:
     uint64_t textureUploadBytes() const { return textures_->uploadBytes; }
     /** Upload through the draw path now, including submission of generated mipmaps. */
     void initTexture(const Texture& texture);
+    /** three's copyTextureToTexture arguments: the source region (width 0 is the source's image size) and the destination origin. */
+    struct TextureCopy {
+        uint32_t srcX = 0, srcY = 0, srcZ = 0, width = 0, height = 0, depth = 1;
+        uint32_t dstX = 0, dstY = 0, dstZ = 0, srcLevel = 0, dstLevel = 0;
+    };
+    /**
+     * Copies a region of one uploaded texture into another on the GPU, as three's renderer does (both are uploaded
+     * first); the destination's mip chain is rebuilt when it asks for one and level 0 was written.
+     */
+    void copyTextureToTexture(const Texture& source, const Texture& destination, const TextureCopy& copy);
     /**
      * How the host copies its decoded image (Texture::external) into level 0 of `texture`, flipped
      * when `flipY`: the web host's copyExternalImageToTexture. Returns false when it cannot.
@@ -862,6 +913,7 @@ public:
     uint32_t deviceLimitReads() const { return deviceLimitReads_; }
     const GeometryCache& geometry() const { return geometry_->cache; }
     const PipelineCache& pipelines() const { return *pipelines_; }
+    const PipelineLayoutCache& layouts() const { return *layouts_; }
     /** Material programs built or refused so far; a steady frame adds none. */
     size_t programCount() const { return programs_.size(); }
     /** Program key strings built and Program* lookups done so far; a steady frame adds none. */
@@ -944,6 +996,8 @@ private:
         std::vector<uint64_t> lightSelection;
         std::array<std::unique_ptr<shader::StageModule>, 16> aux;  // by AuxTarget mask, built on first request
         uint16_t auxBuilt = 0;  // bit `mask`: aux[mask] was asked for (it stays null when refused)
+        /** The aux fragment that also writes custom MRT slots, keyed by the frame's slot list (mask included). */
+        std::map<std::string, std::unique_ptr<shader::StageModule>> auxMrt;
         /** What its stage modules alone decide about a draw of it (FM3): resolved once, never re-scanned. */
         DrawProbes probes;
     };
@@ -957,8 +1011,9 @@ private:
      * call, so its layout equals the program's and the draw's bind groups serve it; null for an unlit kind, or when
      * the builder refuses the variant or the layout differs.
      */
-    const shader::StageModule* auxFragment(Program& program, uint8_t mask);
-    void buildLayouts(Program& program, const std::string& key);
+    const shader::StageModule* auxFragment(Program& program, uint8_t mask, const std::vector<std::string>& slots,
+                                           bool zeroNamed = false);
+    void buildLayouts(Program& program);
     /** The program for a material kind, vertex variant and light layout, built on first use; null
      *  when its WGSL is invalid, which is reported once in diagnostics() and its draws are skipped,
      *  as three logs a shader error and draws the rest of the scene. */
@@ -966,12 +1021,25 @@ private:
     /** The shadow pass's depth-only program for a vertex variant (0 plain, 1 instanced). */
     Program& depthProgram(const shader::VertexVariant& variant, bool masked);
     Program& add(const std::string& key, shader::StageModule vertex, shader::StageModule fragment);
+    /**
+     * The stages of a built program whose nodes differ from `nodes` only in tsl_call's serial names, each uniform field
+     * renamed to this material's own name (a draw binds by name), or nullopt. One TSL function called per material (a
+     * streamed batch's LOD surface) otherwise generated the same WGSL again for each: ~17 ms per program on the web, met
+     * mid-walk. `canonical` and `serials` come back for rememberEqual() once the program is built (empty: nothing to share).
+     */
+    std::optional<std::pair<shader::StageModule, shader::StageModule>> equalStages(
+        const std::string& key, const shader::MaterialNodes& nodes, std::string& canonical, std::vector<std::string>& serials) const;
+    void rememberEqual(const Program& built, std::string canonical, std::vector<std::string> serials);
+public:
+    /** Programs built from an equal structure's stages (equalStages) instead of generated; a test reads it. */
+    uint64_t equalProgramReuses() const { return equalProgramReuses_; }
+private:
     struct MaterialTexture;
     /** blitTo's pass-through copy into `format`, blended by PipelineTarget's `blend`. */
     WGPURenderPipeline copyPipeline(WGPUTextureFormat format, uint8_t blend,
         std::vector<std::shared_ptr<PipelineCompilation>>* compilation = nullptr);
     /** Records a texture's mip chain into the pending mip encoder; `submit` flushes it first. */
-    void generateMipmaps(WGPUTexture texture, WGPUTextureFormat format, uint32_t levels);
+    void generateMipmaps(WGPUTexture texture, WGPUTextureFormat format, uint32_t levels, uint32_t layers = 1);
     /** Submits the mip passes of every texture uploaded since the last submit, as one command buffer. */
     void flushMipmaps();
     /** Every frame, readback and pass submit goes through here so a sampled texture's mips exist first. */
@@ -983,7 +1051,7 @@ private:
                             WGPUTextureView normalView = nullptr, WGPUSampler normalSampler = nullptr,
                             const std::array<const MaterialTexture*, shader::kPbrMapCount>* pbrMaps = nullptr,
                             WGPUTextureView pmremView = nullptr, WGPUSampler pmremSampler = nullptr,
-                            WGPUTextureView reflectorView = nullptr, WGPUSampler reflectorSampler = nullptr,
+                            const GraphReflectors* reflectors = nullptr,
                             const GraphTextures* graphTextures = nullptr, RecentBindGroups* cache = nullptr);
     /** The GPU texture and sampler for a material map: rebuilt when its shape or sampler moves, written in place
      *  when only its pixels do. */
@@ -1000,11 +1068,14 @@ private:
             WGPUTextureFormat format = WGPUTextureFormat_Undefined;
             WGPUTextureUsage usage = WGPUTextureUsage_None;
             uint8_t kind = kNone;
+            // A DataArrayTexture: `depth` layers of one 2D texture, sampled as a 2DArray view. Part of the key
+            // because the same width/height/depth with and without it needs a different view dimension.
+            bool array = false;
             uint16_t wrapS = 0, wrapT = 0, wrapR = 0, magFilter = 0, minFilter = 0;
             double anisotropy = 0;
             [[nodiscard]] bool operator==(const Key& other) const {
                 return kind == other.kind && width == other.width && height == other.height && depth == other.depth &&
-                       levels == other.levels && format == other.format && usage == other.usage &&
+                       levels == other.levels && format == other.format && usage == other.usage && array == other.array &&
                        wrapS == other.wrapS && wrapT == other.wrapT && wrapR == other.wrapR &&
                        magFilter == other.magFilter && minFilter == other.minFilter && anisotropy == other.anisotropy;
             }
@@ -1098,6 +1169,8 @@ private:
     void buildEnvironmentPipelines();
     void releaseEnvironments();
     void rebuildGroups();
+    /** Creates light `light`'s virtual-shadow depth map and view once; true when it did. */
+    bool ensureVirtualShadowMap(std::size_t light);
     void releaseTargets();
     void resolveDepth(WGPUCommandEncoder encoder);  // 4x: depth_ takes sample 0 of msaaDepth_
     GpuStatus readRgba16(WGPUTexture texture, ReadbackCallback done, uint32_t texelBytes = 8);
@@ -1109,6 +1182,7 @@ private:
 
     WGPUInstance instance_;
     std::unique_ptr<Renderer> probeCapture_;
+    std::unordered_map<const void*, std::pair<std::weak_ptr<const void>, std::unique_ptr<Renderer>>> mirrors_;  // reflectionRenderer()
     std::shared_ptr<PerspectiveCamera> probeCamera_;
     WGPUDevice device_;
     WGPUQueue queue_;
@@ -1132,11 +1206,15 @@ private:
     // Shared with every sibling(): a render target's renderer draws the same programs, and a pipeline
     // compiled for one layout serves them all only if the layout handles are the same too.
     std::shared_ptr<PipelineCache> pipelines_;
+    bool deferUncompiled_ = false;  // see deferUncompiledDraws(); a sibling() keeps three's draw-time compile
     std::shared_ptr<PipelineLayoutCache> layouts_;
     // By MaterialKind, vertex variant (0 plain, 1 instanced, 2 instanced with instanceColor) and light
     // layout; held by pointer so a frame's plan keeps its addresses while new programs are added.
     std::map<std::string, std::unique_ptr<Program>> programs_;  // a null entry: refused, never retried
     std::map<std::string, std::string> refusedPrograms_;          // why, reported each frame it skips draws
+    struct EqualProgram { const Program* program; std::vector<std::string> serials; };
+    std::unordered_map<std::string, EqualProgram> equalPrograms_;  // by canonical key: see equalStages()
+    mutable uint64_t equalProgramReuses_ = 0;
     uint64_t programKeyBuilds_ = 0, programLookups_ = 0, samplersCreated_ = 0;
     // Moves whenever the per-draw bind groups (mapGroups_) are released, so a DrawCache's group
     // handles built under an older epoch are never reused.
@@ -1244,6 +1322,11 @@ private:
     WGPUTextureView albedoView_ = nullptr;
     WGPUTexture emissiveTexture_ = nullptr;
     WGPUTextureView emissiveView_ = nullptr;
+    /** A material's custom MRT targets (three's mrt() slots other than the named ones), one RGBA16F texture per slot
+     *  name, drawn by the aux pass and read by the post graph by that name; created with the first frame that writes
+     *  one, released with the targets. */
+    std::map<std::string, WGPUTexture> mrtTextures_;
+    std::map<std::string, WGPUTextureView> mrtViews_;
     /** What the transparent draws composited over the frame, for a post pass that must keep the occlusion off them
      *  (three's MRT `translucent`): the same lit fragment each draw wrote to the colour target, drawn in its own pass
      *  over the colour pass's depth. Created with the first such frame, released with the targets. */
@@ -1256,6 +1339,7 @@ private:
     WGPUTexture materialTexture_ = nullptr;
     WGPUTextureView materialView_ = nullptr;
     std::vector<std::string> diagnostics_;
+    std::unordered_set<uint64_t> unboundedNoted_;  // TN_SHADOW_UNBOUNDED_CASTER, once per draw key
     OutputState output_;
     std::shared_ptr<const shader::PostNode> post_;
     shader::graph::Node postGraph_;

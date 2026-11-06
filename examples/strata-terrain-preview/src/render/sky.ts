@@ -1,10 +1,21 @@
 // Game-owned sun, shadows and daylight; atmosphere.ts owns the LUT sky and surface air.
 import { Atmosphere, Daylight, type ICtx, VirtualShadowNode } from "@threenative/core";
-import { Color, DirectionalLight, Mesh, type Object3D, SphereGeometry, Vector3 } from "three";
+import {
+  Color,
+  DirectionalLight,
+  HalfFloatType,
+  Mesh,
+  NoColorSpace,
+  type Object3D,
+  RGBAFormat,
+  SphereGeometry,
+  Vector3,
+} from "three";
 import { denoise } from "three/addons/tsl/display/DenoiseNode.js";
 import { ao } from "three/addons/tsl/display/GTAONode.js";
 import { traa } from "three/addons/tsl/display/TRAANode.js";
 import {
+  PCFShadowFilter,
   abs,
   cameraPosition,
   dot,
@@ -31,10 +42,11 @@ import type { Node } from "three/webgpu";
 import { aerialPerspective, cloudDome, createAtmosphere, skyColour } from "./atmosphere.js";
 import { BIOMES, type IBiome } from "./biomes.js";
 import { setCanopySun } from "./propMaterials.js";
+import { installWaterProof, waterProofEnabled, waterProofMode } from "./waterProof.js";
 
-const omitted = new Set(
-  new URLSearchParams(globalThis.location?.search ?? "").get("off")?.split(",") ?? [],
-);
+const query = new URLSearchParams(globalThis.location?.search ?? "");
+const omitted = new Set(query.get("off")?.split(",") ?? []);
+const added = new Set(query.get("on")?.split(",") ?? []);
 
 /**
  * The sun, in the same units the `L` key swings it: a position, not a direction, so the toggle and
@@ -92,10 +104,25 @@ export interface IOutdoorSky {
   /** The sun's x in the sun's own metres: what the `L` key swings and the playtest reads. */
   readonly sunX: number;
   setSunX(x: number): void;
+  /**
+   * Centre the sun's shadow levels, and the fade of the outer one, on the player instead of the camera
+   * (`undefined` hands them back). The orbit camera's eye travels a 9 m arm when it turns; windows, level
+   * picks and the fade centred on the eye moved shadow edges with it. Call it each frame with the player.
+   */
+  focusShadows(point: Vector3 | undefined): void;
 }
 
 /** Shared daylight plumbing with game-owned LUT sky, clouds and surface air. */
-export function createOutdoorSky(camera: Object3D, biome?: IBiome): IOutdoorSky {
+/**
+ * `renderer` is read only to tell the two engines apart: the owned engine publishes `info.engine`,
+ * upstream three does not. It filters its own virtual shadows and refuses upstream's TSL filter
+ * nodes by name (`TN_NATIVE_UNCATALOGUED_PCFSHADOWFILTER`).
+ */
+export function createOutdoorSky(
+  camera: Object3D,
+  biome?: IBiome,
+  renderer?: { readonly info?: unknown },
+): IOutdoorSky {
   const direction = biome ? new Vector3(...biome.sun.direction) : SUN.direction;
   const sunColor = biome ? new Color(biome.sun.color) : SUN.colour;
   const rig = biome
@@ -111,18 +138,42 @@ export function createOutdoorSky(camera: Object3D, biome?: IBiome): IOutdoorSky 
         exposure: biome.exposure,
       }
     : RIG;
+  const look = biome ?? BIOMES.forest;
   const sun = new DirectionalLight(sunColor, biome?.sun.intensity ?? SUN.intensity);
   sun.name = "temperate-sun";
   sun.castShadow = true;
-  sun.shadow.normalBias = 0.035;
   sun.shadow.radius = biome?.sun.shadowRadius ?? BIOMES.forest.sun.shadowRadius;
+  // engine-override: the owned engine filters its own virtual shadow maps and has no upstream TSL
+  // filter node, so this look's filter is a three.js-path setting only.
+  const engineInfo = (renderer?.info as { engine?: unknown } | null | undefined)?.engine;
+  if (engineInfo === undefined && look.softShadowFilter) {
+    // The deterministic filter avoids the forest's fine screen-space rotation hatching. r186 removed
+    // `PCFSoftShadowFilter` (WebGPU's `PCFSoftShadowMap` falls back to PCF), so `PCFShadowFilter` is
+    // the only filter left that carries a render group to share; see `three-shared-render-group.spec.ts`.
+    (sun.shadow as typeof sun.shadow & { filterNode?: unknown }).filterNode = PCFShadowFilter;
+  }
   if (omitted.has("sun")) sun.intensity = 0;
-  const farShadows = biome?.world === "alpine" || biome?.world === "desert";
+  const mapSize = look.shadowMapSize;
+  // A look whose stones showed a lit rim wins a normal bias tied to the shadow resolution; every
+  // other look keeps its judged bias until close-ups prove a change.
+  const tightContacts = look.tightShadowContacts;
+  sun.shadow.normalBias = tightContacts ? (2 * rig.shadowExtents[0]) / mapSize : 0.035;
+  const outerExtent = rig.shadowExtents[rig.shadowExtents.length - 1] ?? 320;
   const shadows = new VirtualShadowNode(sun, {
     clipExtents: [...rig.shadowExtents],
-    mapSize: farShadows ? 4096 : 2048,
-    ...(farShadows ? { refreshStep: [0.2, 0.125] } : {}),
+    mapSize,
+    // engine-override: footprint-wide slope bias detaches low-relief contacts such as beach stones.
+    ...(tightContacts ? { receiverPlaneBias: false } : {}),
+    ...(look.shadowRefreshStep ? { refreshStep: [...look.shadowRefreshStep] } : {}),
+    // engine-override: the owned engine cannot measure the depth of wind-swayed (GPU-deformed) casters, so
+    // its light-space depth spans the outer cascade's whole window. The three.js path keeps derived depth.
+    ...(engineInfo === undefined
+      ? {}
+      : { lightDistance: 2 * outerExtent, depthRange: 4 * outerExtent }),
   });
+  // The fade is centred where the windows are: the eye, or the player once `focusShadows` names it.
+  const focusAt = uniform(new Vector3());
+  const focusOn = uniform(0);
   // Fade the outer cascade before its cached window ends, including its refresh trail.
   const shadowSetup = shadows.setup.bind(shadows);
   shadows.setup = (builder) => {
@@ -130,7 +181,7 @@ export function createOutdoorSky(camera: Object3D, biome?: IBiome): IOutdoorSky 
     if (!value) return value;
     const right = normalize(SUN_VECTOR.cross(vec3(0, 1, 0)));
     const up = normalize(right.cross(SUN_VECTOR));
-    const offset = positionWorld.sub(cameraPosition);
+    const offset = positionWorld.sub(mix(cameraPosition, focusAt, focusOn));
     const distance = max(abs(dot(offset, right)), abs(dot(offset, up)));
     const extent = rig.shadowExtents[rig.shadowExtents.length - 1] ?? 320;
     return mix(
@@ -194,7 +245,25 @@ export function createOutdoorSky(camera: Object3D, biome?: IBiome): IOutdoorSky 
     },
     setSunX,
     sun,
+    focusShadows(point: Vector3 | undefined) {
+      shadows.setFocus(point);
+      if (point !== undefined) focusAt.value.copy(point);
+      focusOn.value = point === undefined ? 0 : 1;
+    },
   };
+}
+
+export function createOutdoorTRAA(
+  input: Node,
+  depth: Parameters<typeof traa>[1],
+  velocityNode: Parameters<typeof traa>[2],
+  camera: ICtx["camera"],
+  renderer: Pick<ICtx["renderer"], "surface">,
+): Node {
+  const node = traa(input as Node<"vec4">, depth, velocityNode as never, camera) as unknown as Node;
+  const surface = renderer.surface();
+  Reflect.get(node, "beautyNode").setSize(surface.drawingBufferWidth, surface.drawingBufferHeight);
+  return node;
 }
 
 /** Contact-scale occlusion through the installed chain; daylight still owns exposure and tone. */
@@ -214,12 +283,30 @@ export function installOutdoorOcclusion(
   scene.fogNode = null;
   scene.fog = null;
   // AO darkens RGB only; multiplying alpha leaked the backdrop through dark alpine crags.
-  // TRAA is the forest's anti-aliasing: sub-pixel blades and needles dither under coverage alone.
-  // It copies this pass's depth, which a multisampled target refuses. Other worlds keep MSAA until
-  // their own captures are judged.
-  const temporal = look.world === "forest" && !omitted.has("traa");
+  // 4x MSAA is the anti-aliasing: TRAA left every still pixel jittering (frame-to-frame change 20x
+  // MSAA's on a still camera). `?on=traa` is the opt-in; it needs a single-sample pass, since TRAA
+  // copies this pass's depth and a multisampled target refuses that.
+  const temporal = look.temporalAA && added.has("traa");
   const world = pass(scene, camera, temporal ? { samples: 0 } : undefined);
-  world.setMRT(mrt({ output, normal: normalView }));
+  // Proof opt-in, one look at a time: keep the 4x MSAA pass and add one resolved RGBA16F diagnostic
+  // attachment. A look with TRAA has a single-sample path, which this proof leaves alone.
+  const proofing = look.waterProof && !temporal && waterProofEnabled();
+  world.setMRT(mrt({ output, normal: normalView, ...(proofing ? { diagnostic: vec4(0) } : {}) }));
+  let disposeWaterProof: (() => void) | undefined;
+  if (proofing) {
+    const diagnostic = world.getTexture("diagnostic");
+    diagnostic.format = RGBAFormat;
+    diagnostic.type = HalfFloatType;
+    diagnostic.colorSpace = NoColorSpace;
+    disposeWaterProof = installWaterProof({
+      world,
+      worldName: look.world,
+      mode: waterProofMode(),
+      renderer: renderer.raw,
+      camera,
+      texture: diagnostic,
+    });
+  }
   const daylight = scene.children.find((child) => child instanceof Daylight);
   const depth = world.getTextureNode("depth");
   // An uncovered MSAA depth sample must not leave a one-pixel terrain edge against the sky.
@@ -246,7 +333,12 @@ export function installOutdoorOcclusion(
     world.getTextureNode("output"),
     airDepth.greaterThanEqual(1).toFloat(),
   );
-  const normals = world.getTextureNode("normal");
+  // `?aoNormals=depth`: GTAO and its denoise derive normals from depth, as UE 5.8.3 does by default
+  // (r.GTAO.UseNormals 0, PostProcessAmbientOcclusion.cpp:104). Nothing then reads the MRT normal,
+  // so the engine skips its second full-scene normal pass. three's typings omit the null its nodes accept.
+  const normals = (
+    query.get("aoNormals") === "depth" ? null : world.getTextureNode("normal")
+  ) as Node;
   const contact = ao(depth, normals, camera);
   contact.radius.value = 0.85;
   contact.scale.value = 0.8;
@@ -288,13 +380,7 @@ export function installOutdoorOcclusion(
         name: "traa",
         minimumTier: "high",
         build: (input, context) =>
-          traa(
-            input as Node<"vec4">,
-            depth,
-            // The chain hands the scene-side velocity node; three's declaration asks for a texture node.
-            context.velocityNode as never,
-            camera,
-          ) as unknown as Node,
+          createOutdoorTRAA(input as Node, depth, context.velocityNode as never, camera, renderer),
       },
       {
         name: "grade",
@@ -318,6 +404,7 @@ export function installOutdoorOcclusion(
     ],
   });
   return () => {
+    disposeWaterProof?.();
     if (scene.fogNode === null) scene.fogNode = previousFog;
     if (scene.fog === null) scene.fog = previousClassicFog;
     // The example owns these shadow maps. Removing the lights alone retained their targets.

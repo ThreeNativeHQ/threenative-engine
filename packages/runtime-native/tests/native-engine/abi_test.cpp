@@ -3,6 +3,8 @@
 #include "threenative/abi/tn_tsl.h"
 #include "engine/abi/abi_internal.h"
 #include "engine/shader/graph/graph.h"
+#include "engine/shader/standard.h"
+#include "engine/shader/wgsl.h"
 #include "engine/shader/tsl/tsl.h"
 #include "engine/abi/pooled_shared.h"
 #include "engine/abi/bindings.h"
@@ -1192,7 +1194,8 @@ void tsl_call() {
         const auto receiver = tn::abi::TslArg::of(texture);
         CHECK(tn::abi::tslCall("textureValue", &receiver, {tn::abi::TslArg::objectOf("Texture", second)}, serial) == texture);
         CHECK(texture->textureObject() == second && copy->textureObject() == second);
-        CHECK(other->textureObject() == first && other->name != texture->name);
+        // Both read `first` under one binding, as r187 merges TextureNodes by value.uuid; `.value` moves only its own.
+        CHECK(other->textureObject() == first && other->name == texture->name);
         CHECK(g::key(texture) == key);
         // three's placeholder, `texture(new Texture())` then `.value = target.texture` (the exposure meter).
         const auto placeholder = std::make_shared<tn::engine::Texture>();
@@ -1864,6 +1867,23 @@ void data_texture_bytes() {
     CHECK(same(texels(bytes("Int16Array", wide, 4), 1009), clamped, sizeof(clamped)));
     const float notHalf[4] = {0.5f, 0, 0, 1};
     CHECK(texels(bytes("Float32Array", notHalf, 4), 1016).empty());
+    // RedFormat (1028) samples as (r, 0, 0, 1): the engine stores it widened to RGBA (Strata's prop ground heights).
+    {
+        const uint16_t red[2] = {0x3800, 0x3c00};  // 0.5, 1.0 as binary16
+        const tn_value_t redArgs[5] = {bytes("Uint16Array", red, 2), num(2), num(1), num(1028), num(1016)};
+        tn_handle_t redTexture{};
+        CHECK(tn_construct(ctx, "DataTexture", redArgs, 5, &redTexture, &d.value) == TN_OK);
+        if (redTexture.index != 0 || redTexture.generation != 0) {
+            const auto* widened = engineObject<tn::engine::DataTexture>(redTexture);
+            const uint16_t expected[8] = {0x3800, 0, 0, 0x3c00, 0x3c00, 0, 0, 0x3c00};
+            CHECK(widened->format == 1023 && same(widened->data, expected, sizeof(expected)));
+            const uint16_t next[2] = {0x3c00, 0x3800};
+            const tn_value_t redImage = bytes("Uint16Array", next, 2);
+            CHECK(tn_set(redTexture, "image.data", &redImage, &d.value) == TN_OK);
+            const uint16_t updated[8] = {0x3c00, 0, 0, 0x3c00, 0x3800, 0, 0, 0x3c00};
+            CHECK(same(widened->data, updated, sizeof(updated)));
+        }
+    }
 
     // `image.data = array` keeps the bytes the same way, and the new texels wait for needsUpdate.
     const float zeros[4] = {};
@@ -1890,6 +1910,44 @@ void data_texture_bytes() {
     const auto* cubeData = engineObject<tn::engine::DataTexture>(cube);
     CHECK(cubeData && cubeData->type == 1016 && same(cubeData->data, halves, sizeof(halves)));
 
+    // DataArrayTexture(data, width, height, depth): the typed array's bytes, `depth` layers, an array flag.
+    const uint8_t layerBytes[2 * 2 * 3 * 4] = {1, 2, 3, 4};
+    const tn_value_t layerArgs[4] = {bytes("Uint8Array", layerBytes, sizeof(layerBytes)), num(2), num(2), num(3)};
+    tn_handle_t layers{};
+    CHECK(tn_construct(ctx, "DataArrayTexture", layerArgs, 4, &layers, &d.value) == TN_OK);
+    const auto* layerData = engineObject<tn::engine::DataTexture>(layers);
+    CHECK(layerData && layerData->array && !layerData->volume && layerData->depth == 3 && layerData->hasImage());
+    CHECK(layerData && same(layerData->data, layerBytes, sizeof(layerBytes)));
+    const tn_value_t shortLayers[4] = {bytes("Uint8Array", layerBytes, 2 * 2 * 2 * 4), num(2), num(2), num(3)};
+    tn_handle_t refusedLayers{};
+    CHECK(tn_construct(ctx, "DataArrayTexture", shortLayers, 4, &refusedLayers, &d.value) != TN_OK);
+
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
+// three's EventDispatcher on a material: material.dispose() tells its listeners, a clone starts with none, and
+// MeshPhysicalNodeMaterial is a class the engine constructs.
+void material_events() {
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+    for (const char* cls : {"MeshStandardMaterial", "MeshPhysicalNodeMaterial"}) {
+        tn_handle_t material{};
+        CHECK(tn_construct(ctx, cls, nullptr, 0, &material, &d.value) == TN_OK);
+        Calls disposed;
+        CHECK(tn_set_callback(material, "dispose", recordCall, &disposed, releaseCall, &d.value) == TN_OK);
+        tn_value_t result{};
+        CHECK(tn_invoke(material, "dispose", nullptr, 0, &result, &d.value) == TN_OK);
+        CHECK(disposed.invoked == 1);
+        tn_value_t copy{};
+        CHECK(tn_invoke(material, "clone", nullptr, 0, &copy, &d.value) == TN_OK && copy.kind == TN_VALUE_HANDLE);
+        CHECK(tn_invoke(copy.handle, "dispose", nullptr, 0, &result, &d.value) == TN_OK);
+        CHECK(disposed.invoked == 1);
+        CHECK(tn_set_callback(material, "dispose", nullptr, nullptr, nullptr, &d.value) == TN_OK);
+        CHECK(tn_invoke(material, "dispose", nullptr, 0, &result, &d.value) == TN_OK);
+        CHECK(disposed.invoked == 1);
+    }
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 
@@ -2513,6 +2571,111 @@ void rtt_quad_depth_has_a_vertex_output() {
     CHECK(vertex.wgsl.ok() && vertex.wgsl.code.find("positionView") != std::string::npos);
 }
 
+// r187's bumpMap(texture(height), scale) as a material's normalNode (Strata's prop relief): the height is read
+// at its uv and at the uv's two screen derivatives, and perturbNormalArb faces the normal by frontFacing.
+// r187's normalMap(texture, scale): NormalMapNode in tangent space on a geometry without tangents, the
+// perturbNormal2Arb frame from screen derivatives (the same steps standard.cpp runs for material.normalMap).
+void tsl_normal_map() {
+    namespace g = tn::engine::shader::graph;
+    namespace s = tn::engine::shader;
+    using tn::abi::TslArg;
+    uint64_t serial = 0;
+    const auto map = g::texture("detailNormal", g::uv());
+    const auto scale = g::vec2({g::float_(0.4), g::float_(0.4)});
+    const auto mapped = tn::abi::tslCall("normalMap", nullptr, {TslArg::of(map), TslArg::of(scale)}, serial);
+    CHECK(mapped != nullptr);
+    if (!mapped) return;
+    s::VertexVariant variant;
+    variant.nodes.normalNode = mapped;
+    const auto standard = s::buildStandard(s::StandardMaterial{}, variant);
+    for (const auto& error : standard.diagnostics) std::fprintf(stderr, "normalMap: %s\n", error.c_str());
+    CHECK(standard.diagnostics.empty());
+    const auto fragment = s::WgslEmitter::emit(standard.fragment, 1);
+    CHECK(fragment.ok() && fragment.code.find("front_facing") != std::string::npos &&
+          fragment.code.find("dpdx") != std::string::npos && fragment.code.find("t_detailNormal") != std::string::npos);
+    CHECK(tn::abi::tslCall("normalMap", nullptr, {TslArg::of(map)}, serial) != nullptr);
+    bool refused = false;
+    try { tn::abi::tslCall("normalMap", nullptr, {}, serial); } catch (const std::exception&) { refused = true; }
+    CHECK(refused);
+}
+
+void tsl_bump_map() {
+    namespace g = tn::engine::shader::graph;
+    namespace s = tn::engine::shader;
+    using tn::abi::TslArg;
+    uint64_t serial = 0;
+    const auto height = g::texture("relief", g::uv());
+    const auto bumped = tn::abi::tslCall("bumpMap", nullptr, {TslArg::of(height), TslArg::of(g::float_(0.55))}, serial);
+    CHECK(bumped != nullptr);
+    if (!bumped) return;
+    s::VertexVariant variant;
+    variant.nodes.normalNode = bumped;
+    const auto standard = s::buildStandard(s::StandardMaterial{}, variant);
+    for (const auto& error : standard.diagnostics) std::fprintf(stderr, "bumpMap: %s\n", error.c_str());
+    CHECK(standard.diagnostics.empty());
+    const auto fragment = s::WgslEmitter::emit(standard.fragment, 1);
+    CHECK(fragment.ok() && fragment.code.find("front_facing") != std::string::npos &&
+          fragment.code.find("dpdx") != std::string::npos && fragment.code.find("t_relief") != std::string::npos);
+    bool refused = false;
+    try { tn::abi::tslCall("bumpMap", nullptr, {TslArg::of(g::float_(1))}, serial); } catch (const std::exception&) { refused = true; }
+    CHECK(refused);
+    // texture(map, a) and texture(map, b) share one binding, as r187 merges TextureNodes by value.uuid; another
+    // texture keeps its own.
+    const auto texel = [] {
+        auto t = std::make_shared<tn::engine::DataTexture>();
+        t->setImage({255, 255, 255, 255}, "Uint8Array", 1, 1, 1023, 1009);
+        return t;
+    };
+    const auto map = texel(), other = texel();
+    const auto read = [&](const std::shared_ptr<tn::engine::DataTexture>& t, double u) {
+        return tn::abi::tslCall("texture", nullptr,
+            {TslArg::objectOf("DataTexture", t), TslArg::of(g::vec2({g::float_(u), g::float_(0)}))}, serial);
+    };
+    CHECK(read(map, 0)->name == read(map, 0.5)->name);
+    CHECK(read(map, 0)->name != read(other, 0)->name);
+}
+
+// varying(attribute).setInterpolation("flat"): a categorical per-instance value (core's tnPublishedLodRange)
+// reaches the fragment unblended, flat in both stages; another mode refuses by name.
+void tsl_flat_varying() {
+    namespace g = tn::engine::shader::graph;
+    namespace s = tn::engine::shader;
+    using tn::abi::TslArg;
+    uint64_t serial = 0;
+    const auto carried = tn::abi::tslCall("varying", nullptr, {TslArg::of(g::attribute("range", s::Type::vec(2)))}, serial);
+    const auto self = TslArg::of(carried);
+    const auto flat = tn::abi::tslCall("setInterpolation", &self, {TslArg::of(std::string("flat"))}, serial);
+    CHECK(flat && flat->name.starts_with("tnFlat"));
+    if (!flat) return;
+    s::VertexVariant variant;
+    variant.nodes.colorNode = g::vec4({g::swizzle(flat, "x"), g::float_(0), g::float_(0), g::float_(1)});
+    const auto standard = s::buildStandard(s::StandardMaterial{}, variant);
+    CHECK(standard.diagnostics.empty());
+    const auto vertex = s::WgslEmitter::emit(standard.vertex, 0), fragment = s::WgslEmitter::emit(standard.fragment, 1);
+    CHECK(vertex.ok() && vertex.code.find("@interpolate(flat) @location") != std::string::npos);
+    CHECK(fragment.ok() && fragment.code.find("@interpolate(flat) @location") != std::string::npos);
+    bool refused = false;
+    try { tn::abi::tslCall("setInterpolation", &self, {TslArg::of(std::string("linear"))}, serial); } catch (const std::exception&) { refused = true; }
+    CHECK(refused);
+}
+
+// A positionNode that reads positionWorld (wind sway keyed by world position) lowers in the vertex stage, as
+// modelMatrix * positionLocal, in the lit program and in the shadow depth program (buildBasic).
+void vertex_position_world() {
+    namespace g = tn::engine::shader::graph;
+    namespace s = tn::engine::shader;
+    const auto world = g::varying("positionWorld", s::Type::vec(3));  // tslConstants' positionWorld
+    const auto sway = g::add(g::positionLocal(), g::vec3({g::sin(g::swizzle(world, "x")), g::float_(0), g::float_(0)}));
+    s::VertexVariant variant;
+    variant.nodes.positionNode = sway;
+    const auto lit = s::buildStandard(s::StandardMaterial{}, variant);
+    for (const auto& error : lit.diagnostics) std::fprintf(stderr, "lit: %s\n", error.c_str());
+    CHECK(lit.diagnostics.empty() && lit.vertex.ok());
+    const auto depth = s::buildBasic(variant);
+    CHECK(depth.vertex.ok());
+    CHECK(s::WgslEmitter::emit(depth.vertex, 0).ok());
+}
+
 void post_output_depth_has_a_vertex_output() {
     namespace g = tn::engine::shader::graph;
     namespace s = tn::engine::shader;
@@ -2882,6 +3045,18 @@ void starter_post_bindings() {
     g::setUniformValues(intensity, {0.7f});
     CHECK(g::key(film) == key);
     CHECK(g::uniforms(film).at("grainIntensity").at(0) == 0.7f);
+    // uniform(matrix4).value = next: a mat4 uniform takes its 16 column-major lanes (sky.ts's camera matrix).
+    {
+        const auto mat = g::uniform("skyMatrix", tn::engine::shader::Type::mat(4, 4), std::vector<double>(16, 0.0));
+        std::vector<double> lanes(16, 0.0);
+        lanes[5] = 2.0;
+        bool accepted = true;
+        try { g::setUniformValues(mat, lanes); } catch (const std::exception&) { accepted = false; }
+        CHECK(accepted && mat->values.at(5) == 2.0);
+        bool refusedShort = false;
+        try { g::setUniformValues(mat, std::vector<double>(4, 0.0)); } catch (const std::exception&) { refusedShort = true; }
+        CHECK(refusedShort);
+    }
     const auto volume = std::make_shared<tn::engine::DataTexture>();
     volume->volume = true;
     volume->setImage(std::vector<double>(32, 0.5), "Float32Array", 2, 2, 1023, 1015);
@@ -2894,6 +3069,57 @@ void starter_post_bindings() {
     bool hasVolume = false;
     for (const auto& binding : grade.bindings) hasVolume |= binding.volume;
     CHECK(hasVolume);
+    // Two reads of one volume are one binding, as two texture() reads of one map are: a baked noise read 44
+    // times a pixel otherwise took 212 sampled textures, past the stage limit of 48.
+    {
+        const auto at = [&](double s) {
+            return call("texture3D", {TslArg::objectOf("Data3DTexture", volume),
+                                      TslArg::of(g::vec3({g::float_(s), g::float_(s), g::float_(s)}))});
+        };
+        const auto first = at(0.25), second = at(0.75);
+        CHECK(first && second);
+        if (first && second) {
+            const auto stage = compile(g::add(first, second));
+            int volumes = 0;
+            for (const auto& binding : stage.bindings) volumes += binding.volume && binding.name.rfind("t_", 0) == 0 ? 1 : 0;
+            CHECK(volumes == 1);
+        }
+    }
+    // A DataArrayTexture samples as texture_2d_array: texture(array, uv).depth(layer) reads (uv, layer), and a
+    // texture(array, uv) alone reads layer 0. A texture that is not an array refuses depth(layer).
+    {
+        const auto layers = std::make_shared<tn::engine::DataTexture>();
+        layers->array = true;
+        layers->setImage(std::vector<double>(48, 128), "Uint8Array", 2, 2, 1023, 1009);
+        layers->depth = 3;
+        const auto sampled = call("texture", {TslArg::objectOf("DataArrayTexture", layers)});
+        const auto sampledReceiver = sampled ? TslArg::of(sampled) : TslArg::other();
+        const auto layered = sampled ? tn::abi::tslCall("depth", &sampledReceiver, {TslArg::of(g::int_(2))}, serial) : nullptr;
+        CHECK(layered != nullptr);
+        if (layered) {
+            const auto stage = compile(g::vec4({g::swizzle(layered, "xyz"), g::float_(1)}));
+            bool hasArray = false;
+            for (const auto& binding : stage.bindings) hasArray |= binding.array && !binding.volume;
+            CHECK(hasArray);
+            CHECK(stage.wgsl.code.find("texture_2d_array<f32>") != std::string::npos);
+            CHECK(stage.wgsl.code.find("textureSample(t_" + layered->name + ", smp_" + layered->name) != std::string::npos);
+            CHECK(stage.wgsl.code.find("i32(floor(") != std::string::npos);
+            const auto flat = compile(g::vec4({g::swizzle(sampled, "xyz"), g::float_(1)}));
+            CHECK(flat.wgsl.code.find("texture_2d_array<f32>") != std::string::npos);
+            const auto leveledLayer = tn::abi::tslCall("level", &sampledReceiver, {TslArg::of(g::float_(1))}, serial);
+            CHECK(leveledLayer != nullptr);
+            if (leveledLayer)
+                CHECK(compile(g::vec4({g::swizzle(leveledLayer, "xyz"), g::float_(1)})).wgsl.code.find("textureSampleLevel(t_") != std::string::npos);
+        }
+        const auto plain = std::make_shared<tn::engine::DataTexture>();
+        plain->setImage(std::vector<double>(4, 128), "Uint8Array", 1, 1, 1023, 1009);
+        const auto flatTexture = call("texture", {TslArg::objectOf("DataTexture", plain)});
+        const auto flatReceiver = flatTexture ? TslArg::of(flatTexture) : TslArg::other();
+        bool refused = false;
+        try { tn::abi::tslCall("depth", &flatReceiver, {TslArg::of(g::int_(0))}, serial); }
+        catch (const std::exception& error) { refused = std::string(error.what()).find("TN_NATIVE_TEXTURE_DEPTH_TYPE") != std::string::npos; }
+        CHECK(refused);
+    }
     const double size = 4;
     CHECK(tn::abi::tslEffectParameter(graded, "size", &size) == 4);
     CHECK(tn::abi::tslEffectParameter(graded, "size", nullptr) == 4);
@@ -3077,8 +3303,8 @@ void binding_fn() {
     CHECK(watch.expired() && !copy);
 }
 
-TN_TEST_MAIN({"denoise_over_a_red_field_keeps_one_lane", denoise_over_a_red_field_keeps_one_lane}, {"binding_fn", binding_fn}, {"tsl_ssr_parameters", tsl_ssr_parameters}, {"tsl_texture_store", tsl_texture_store}, {"tsl_mat4_element", tsl_mat4_element}, {"body_result_lowers_once", body_result_lowers_once}, {"body_result_in_a_branch", body_result_in_a_branch}, {"join_converts_integer_parts", join_converts_integer_parts}, {"struct_function_return", struct_function_return}, {"authored_output", authored_output}, {"fragment_node_vec3_is_opaque", fragment_node_vec3_is_opaque}, {"rtt_quad_depth_has_a_vertex_output", rtt_quad_depth_has_a_vertex_output}, {"post_output_depth_has_a_vertex_output", post_output_depth_has_a_vertex_output}, {"skinned_bounds_before_the_first_frame", skinned_bounds_before_the_first_frame}, {"tsl_mat2_scalar_order", tsl_mat2_scalar_order}, {"starter_post_bindings", starter_post_bindings}, {"gpu_bind_escape", gpu_bind_escape}, {"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene},
+TN_TEST_MAIN({"denoise_over_a_red_field_keeps_one_lane", denoise_over_a_red_field_keeps_one_lane}, {"binding_fn", binding_fn}, {"tsl_ssr_parameters", tsl_ssr_parameters}, {"tsl_texture_store", tsl_texture_store}, {"tsl_mat4_element", tsl_mat4_element}, {"body_result_lowers_once", body_result_lowers_once}, {"body_result_in_a_branch", body_result_in_a_branch}, {"join_converts_integer_parts", join_converts_integer_parts}, {"struct_function_return", struct_function_return}, {"authored_output", authored_output}, {"fragment_node_vec3_is_opaque", fragment_node_vec3_is_opaque}, {"rtt_quad_depth_has_a_vertex_output", rtt_quad_depth_has_a_vertex_output}, {"post_output_depth_has_a_vertex_output", post_output_depth_has_a_vertex_output}, {"skinned_bounds_before_the_first_frame", skinned_bounds_before_the_first_frame}, {"tsl_mat2_scalar_order", tsl_mat2_scalar_order}, {"tsl_bump_map", tsl_bump_map}, {"tsl_normal_map", tsl_normal_map}, {"tsl_flat_varying", tsl_flat_varying}, {"vertex_position_world", vertex_position_world}, {"starter_post_bindings", starter_post_bindings}, {"gpu_bind_escape", gpu_bind_escape}, {"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene},
              {"unsupported_member", unsupported_member}, {"material", material}, {"light", light}, {"spot_target_in_scene", spot_target_in_scene}, {"hierarchy_revision", hierarchy_revision}, {"matrix_evaluations", matrix_evaluations}, {"source_guard", source_guard}, {"shadow_camera_in_scene", shadow_camera_in_scene}, {"lifetime", lifetime},
-             {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_matrix_columns", tsl_matrix_columns}, {"tsl_statements", tsl_statements}, {"tsl_loop_nested", tsl_loop_nested}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind}, {"euler_order_field", euler_order_field}, {"object_addresses", object_addresses}, {"geometry_shapes", geometry_shapes}, {"typed_bytes", typed_bytes}, {"array_offset", array_offset}, {"data_texture_bytes", data_texture_bytes}, {"attribute_view_writes", attribute_view_writes},
+             {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_matrix_columns", tsl_matrix_columns}, {"tsl_statements", tsl_statements}, {"tsl_loop_nested", tsl_loop_nested}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind}, {"euler_order_field", euler_order_field}, {"object_addresses", object_addresses}, {"geometry_shapes", geometry_shapes}, {"typed_bytes", typed_bytes}, {"array_offset", array_offset}, {"data_texture_bytes", data_texture_bytes}, {"material_events", material_events}, {"attribute_view_writes", attribute_view_writes},
              {"attribute_defer", attribute_defer}, {"material_uuid", material_uuid}, {"material_alpha_hash", material_alpha_hash}, {"matrix_walk_count", matrix_walk_count}, {"geometry_index_null", geometry_index_null}, {"world_space_conversions", world_space_conversions},
              {"projected_cull_list", projected_cull_list}, {"projected_cull_held_restore", projected_cull_held_restore})

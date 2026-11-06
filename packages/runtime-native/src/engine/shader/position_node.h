@@ -1,15 +1,35 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <string>
+#include <string_view>
 #include <array>
+#include <vector>
 #include "engine/shader/graph/graph.h"
 #include "engine/shader/graph/post_effects.h"
 
 namespace tn::engine::shader {
 
 class Program;
+
+/** A material's custom MRT output: the colour node written to the scene pass's target named `name` (three's mrt()). */
+struct MrtOutput {
+    std::string name;
+    graph::Node node;
+    bool operator==(const MrtOutput&) const = default;
+};
+
+/** The slot names the engine's own scene pass owns: its colour, depth, velocity and named surface targets. A custom
+ *  MRT slot keeps its own name, as pass-node.ts refuses the same reserved names on the game side. */
+inline bool engineTargetName(std::string_view name) {
+    return name == "output" || name == "depth" || name == "velocity" || name == "normal" ||
+           name == "metalness" || name == "roughness" || name == "diffuseColor" || name == "emissive";
+}
+
+/** One graph root per MaterialNodes::pointers(), for the arrays that hold them (the draw's source cache). */
+inline constexpr std::size_t kMaterialGraphRoots = 18;
 
 /** NodeMaterial slots; null nodes use the non-node material path. */
 struct MaterialNodes {
@@ -18,18 +38,31 @@ struct MaterialNodes {
     graph::Node aoNode;
     /** The scene environment's diffuse term, replaced: cosine-weighted irradiance (E / pi, in the units of the PMREM level-1 sample) for the surface's own normalWorld. */
     graph::Node irradianceNode;
+    /** NodeMaterial.envNode: the environment's radiance itself (vec3), replacing the environment map's sample. Its
+     *  irradiance is this radiance times pi, as EnvironmentNode.setup reads a plain env node; with no env map the
+     *  node is the material's whole indirect light (the Strata ocean's sky reflection). */
+    graph::Node envNode;
     /** NodeMaterial.vertexNode: the clip-space position itself, replacing model-view-projection. */
     graph::Node vertexNode, fragmentNode;
     /** NodeMaterial.depthNode: the fragment's depth (frag_depth), replacing the rasterised one. */
     graph::Node depthNode;
+    /** NodeMaterial.castShadowPositionNode: the local position the shadow depth pass casts from, in place of
+     *  positionNode. A bare positionLocal casts the rest pose, so a cached shadow page holds what any later
+     *  refresh draws again: a swaying tree's shadow cannot snap when its page re-renders. */
+    graph::Node castShadowPositionNode;
+    /** NodeMaterial.maskNode: a bool; a colour-pass fragment where it is false is discarded before its colour is read
+     *  (three's setupDiffuseColor). The shadow depth pass draws without it, as it draws without the colour slots. */
+    graph::Node maskNode;
+    /** NodeMaterial.alphaTestNode: a float that replaces material.alphaTest as the cutoff, in the colour pass and the
+     *  shadow depth pass (three's setupDiffuseColor and shadow override). A set node tests even when alphaTest is 0. */
+    graph::Node alphaTestNode;
     /** SpriteNodeMaterial.scaleNode (a vec2 beside the model scale) and rotationNode (radians, over the material's). */
     graph::Node scaleNode, rotationNode;
+    /** NodeMaterial.mrtNode's custom slots, in author order (three's mrt() takes any name and node). The named
+     *  engine targets (normal, metalness, roughness, diffuseColor, emissive) keep their own fast paths, not here. */
+    std::vector<MrtOutput> mrt;
     /** The scene's `fogNode`, a vec4(color, factor) mixed into the finished colour; set on draw items, never on a material. */
     graph::Node fogNode;
-    /** NodeMaterial.mrtNode: an mrt() of named outputs. The render database resolves it to the fragmentNode of the
-     *  attachment it draws (RenderDatabase::mrtName) before a draw item is built, so no program reads it; it stays
-     *  in the slot lists so the textures, storages and uniforms only an output reads are found. */
-    graph::Node mrtNode;
     /** NodeMaterial.lightsNode: a `lights([...])` of the only lights the material sums (three's LightsNode). Not a
      *  graph: its args hold the light objects, so it stays out of graphs() and the renderer keys the program on it. */
     graph::Node lightsNode;
@@ -40,13 +73,29 @@ struct MaterialNodes {
                           emissiveNode.get(), roughnessNode.get(), metalnessNode.get(),
                           opacityNode.get(),  vertexNode.get(),    fragmentNode.get(),
                           scaleNode.get(),    rotationNode.get(),  depthNode.get(),
-                          aoNode.get(),       irradianceNode.get(), mrtNode.get()};
+                          aoNode.get(),       irradianceNode.get(), castShadowPositionNode.get(),
+                          maskNode.get(),     envNode.get(),
+                          alphaTestNode.get()};
     }
     auto graphs() const {
         return std::array{colorNode,     positionNode, normalNode, emissiveNode, roughnessNode,
                           metalnessNode, opacityNode,  vertexNode, fragmentNode,
                           scaleNode,     rotationNode, depthNode,
-                          aoNode,        irradianceNode, fogNode, mrtNode};
+                          aoNode,        irradianceNode, fogNode, castShadowPositionNode,
+                          maskNode,      envNode,
+                          alphaTestNode};
+    }
+    /** Every graph a material owns: the fixed slots, then the custom MRT slots, in one walk. */
+    template <typename Fn>
+    void forEachGraph(Fn&& visit) const {
+        for (const auto& node : graphs()) visit(node);
+        for (const auto& slot : mrt) visit(slot.node);
+    }
+    /** The position graph a shadow depth pass casts from: castShadowPositionNode when set (none for a bare
+     *  positionLocal, the rest pose), else positionNode, as three's shadow pass assigns it. */
+    graph::Node shadowPositionNode() const {
+        if (!castShadowPositionNode) return positionNode;
+        return castShadowPositionNode->kind == graph::Kind::PositionLocal ? graph::Node{} : castShadowPositionNode;
     }
     std::string key() const {
         std::string out;
@@ -56,6 +105,21 @@ struct MaterialNodes {
             if (!node) { out += "5:null;"; continue; }
             out += "#" + std::to_string(graph::keyId(node)) + ";";  // the structure, interned
         }
+        // A custom MRT slot's name is part of the key: a program built for one slot name writes that name's target.
+        for (const auto& slot : mrt) {
+            out += "m" + std::to_string(slot.name.size()) + ":" + slot.name + ":";
+            out += slot.node ? "#" + std::to_string(graph::keyId(slot.node)) + ";" : "5:null;";
+        }
+        return out;
+    }
+    /** key() with tsl_call's serial names numbered by first use across the slots (graph::canonicalKey): equal for two
+     *  materials one TSL function made, whose programs differ only in those names. Built once per program miss. */
+    std::string canonicalKey(std::vector<std::string>& serials) const {
+        std::string out;
+        for (const auto& node : graphs()) out += node ? "{" + graph::canonicalKey(node, serials) + "};" : "5:null;";
+        for (const auto& slot : mrt)
+            out += "{" + std::to_string(slot.name.size()) + ":" + slot.name + ":" +
+                   (slot.node ? graph::canonicalKey(slot.node, serials) : "null") + "};";
         return out;
     }
 };

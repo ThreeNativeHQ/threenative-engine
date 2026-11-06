@@ -3,6 +3,7 @@
 #include "pages.h"
 #include <cmath>
 #include <memory>
+#include <optional>
 #include "engine/foundation/math/Matrix.h"
 
 namespace tn::engine { class BufferGeometry; }
@@ -33,7 +34,11 @@ struct AtlasControl {
     std::set<uint64_t> pinned, tracked;
     std::vector<Box3> regions;
     std::map<uint64_t, ShadowLodChain> lods;
+    /** Casters whose LOD chain arrived or left since the last frame: only their own pages redraw. */
+    std::set<uint64_t> lodChanged;
     bool invalidateAll = false;
+    /** The point the clip windows centre on in place of the eye (UE 5.8.3 view target); unset follows the eye. */
+    std::optional<Vector3> focus;
 };
 struct AtlasOptions {
     std::shared_ptr<AtlasControl> control = std::make_shared<AtlasControl>();
@@ -87,7 +92,10 @@ public:
     std::vector<AtlasPage> update(const Vector3& eye, const Vector3& direction, bool cameraCut = false,
                                   const std::vector<Box3>& casters = {}, double deltaSeconds = 1.0 / 60);
     void invalidate(const Box3& bounds, bool urgent = false);
-    void updateCasters(const std::vector<CasterState>& casters);
+    // `emptied`: keys of owner-told casters (not on layer 0) drawn this frame with no instances. They keep
+    // their last state, so a count that crosses zero is the content change any count change is: the owner
+    // names the region (the streamed world does, per changed batch) and the atlas redraws nothing for it.
+    void updateCasters(const std::vector<CasterState>& casters, const std::vector<uint64_t>& emptied = {});
     bool isMover(uint64_t key) const;
     bool drawsStatic(uint64_t key) const;
     void appendMoverPages(std::vector<AtlasPage>& pages) const;

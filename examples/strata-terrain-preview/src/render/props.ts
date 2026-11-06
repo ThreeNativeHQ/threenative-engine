@@ -1,33 +1,27 @@
 // The starter props of the Temperate world: three seeded spruce variants, three boulders, grass
-// clumps and poppy patches, each instanced through the engine's existing `InstancedBatch`.
+// clumps and poppy patches. `propWorld.ts` hands their draws to `WorldCells`.
 //
 // What lives here and what does not:
 //
 //   - The shapes, their variants, their materials and their placement rule are all this file's. They
 //     are the picture, and the picture is the game's (AGENTS rule 3).
-//   - Instancing, transform composition and ground contact are not. `InstancedBatch` collapses the
-//     draws and `GroundSnap` grounds the model, and both are engine mechanisms this file calls.
-//
-// Every prop keeps the same contract the editor has always relied on: a placement resolves to a
-// prepared matrix, that matrix is written into the instanced mesh by index, and the editor can read
-// it back and overwrite it. Adding a variant changes the shape, never that contract.
-import { GroundSnap, InstancedBatch, addInSlices, createRandom } from "@threenative/core";
+//   - preparePose grounds each pose on plain math; propWorld.ts delegates instancing and LOD to WorldCells.
+import { createRandom } from "@threenative/core";
 import type { IPlacement, IPlacementOverride } from "@threenative/terrain";
 import {
   type BufferGeometry,
   DoubleSide,
   Euler,
   Group,
-  type InstancedMesh,
   type Material,
-  type Matrix4,
-  Mesh,
+  Matrix4,
   MeshStandardMaterial,
   Quaternion,
   Vector3,
 } from "three";
 import { boulder, fernClump, grassClump, poppyCluster } from "./cover.js";
-import { ATLAS_CELLS, spruceVariants } from "./spruce.js";
+import { FAR_FOREST_LAYER } from "./farForest.js";
+import { ATLAS_CELLS, spruceFarCrown, spruceVariants } from "./spruce.js";
 
 /** Which cell of the needle atlas the poppy petals sample. */
 const POPPY_PETAL = { u0: 0.5, v0: 0, u1: 1, v1: 0.5 };
@@ -38,7 +32,11 @@ export const VARIANTS = {
   bush: 2,
   fern: 3,
   grass: 4,
+  /** The open meadow's dense base layer (`meadowCover`). */
+  meadow: 2,
   poppy: 4,
+  /** The open meadow's white and violet wildflowers (`meadowCover`). */
+  bloom: 4,
   sapling: 3,
   scrub: 3,
   spruce: 5,
@@ -64,14 +62,19 @@ export const VARIANTS = {
  */
 export const DRAW_REACH: Record<string, number> = {
   grass: 112,
+  /** The vista meadow's base layer: `meadowCover` thins it with distance itself, so it is not faded. */
+  meadow: 230,
   scrub: 110,
   fern: 105,
   poppy: 65,
+  bloom: 65,
   sapling: 160,
   bush: 120,
   litter: 16,
   boulder: 170,
   riverrock: 100,
+  /** River-bed cobbles: a 0.2 m stone under water is sub-pixel well before 45 m. */
+  pebble: 45,
   scree: 190,
   cliff: 300,
   mountain: 650,
@@ -86,7 +89,17 @@ export const DRAW_REACH: Record<string, number> = {
  * less far.
  */
 export const VARIANT_REACH: Record<string, number> = {};
-export const NO_SHADOW_ASSETS = new Set(["sapling", "scrub", "grass", "fern", "poppy", "litter"]);
+export const NO_SHADOW_ASSETS = new Set([
+  "sapling",
+  "scrub",
+  "grass",
+  "meadow",
+  "fern",
+  "poppy",
+  "bloom",
+  "litter",
+  "pebble",
+]);
 /** The species whose cover thins out with distance instead of switching off at a fixed reach. */
 export const FADED_ASSETS = new Set(["grass", "scrub", "fern"]);
 
@@ -112,11 +125,69 @@ export type PropRole =
  *
  * The bands are the game's, because the triangle budget behind them is the game's: a prop is drawn
  * from its full prepared detail inside `near`, from the mid level past it, and from the far
- * cross-card past that. The hysteresis is a fifth of the band rather than a fixed number of
+ * engine impostor past that. The dither transition is a fifth of the band rather than a fixed number of
  * metres, so the same slack works for a two-metre rock, a fourteen-metre spruce and a
  * twenty-two-metre pine.
  */
-export const LOD_BANDS = { far: 150, hysteresis: 0.2, mid: 60, near: 22 } as const;
+export const LOD_BANDS = { far: 150, hysteresis: 0.2, mid: 80, near: 22 } as const;
+
+/**
+ * The draw reach a placement's variant gives it, shortened by its seeded fade for `FADED_ASSETS`.
+ *
+ * `variantIndex` counts the placements the bake drew before this one on the same variant, so the
+ * fade is a stable number per blade: the bake writes the reach it computes into the package, and the
+ * load path counts live placements on from there.
+ */
+export function streamedReach(placement: IPlacement, variantIndex: number): number {
+  const variant = `${placement.asset}:${variantFor(placement, placement.asset)}`;
+  const reach = VARIANT_REACH[variant] ?? DRAW_REACH[placement.asset] ?? Number.POSITIVE_INFINITY;
+  if (!FADED_ASSETS.has(placement.asset)) return reach;
+  const seed = (Math.imul(variantIndex + 1, 2654435761) >>> 0) / 4294967296;
+  return 28 + (reach - 28) * (1 - Math.sqrt(seed));
+}
+
+/**
+ * The streamed world a placement draws in: the far forest alone, or its reach and shadow policy.
+ *
+ * The bake writes one container per name, and the load path keeps or drops a container by kind, so
+ * `?farForest=` and `?meadow=` answer the same question at load that they answered at compile.
+ */
+export function streamedBucket(placement: IPlacement, reach: number): string {
+  if (placement.layer === FAR_FOREST_LAYER) return "far:false";
+  return `${reach === Number.POSITIVE_INFINITY ? "horizon" : "local"}:${!NO_SHADOW_ASSETS.has(placement.asset)}`;
+}
+
+/**
+ * The terminal gate a spruce variant switches to the engine's whole-asset impostor at.
+ *
+ * A scaled tree's gate divides by its scale, so the minimum scale of its variant is what keeps the
+ * gate beyond the last authored level. A gate inside that step pops the whole tree at a distance the
+ * player can see it.
+ */
+export function impostorDistanceForScale(minScale: number, lastLodDistance: number): number {
+  if (!Number.isFinite(minScale) || minScale === 0)
+    throw new Error("Spruce terminal distance requires a positive finite placement scale.");
+  return Math.max(LOD_BANDS.far / Math.abs(minScale), lastLodDistance * (1 + Number.EPSILON));
+}
+
+/**
+ * The scale each streamed spruce variant's terminal gate divides by: the smallest one it draws.
+ *
+ * The gate divides by a variant's minimum scale, so the minimum is taken over the placements that
+ * actually draw it — every spruce the far forest does not own, keyed by the variant that draws it.
+ * One bucket's minimum, or a far tree's, puts a gate inside a step the player sees pop.
+ */
+export function spruceGateScales(
+  drawn: Iterable<{ readonly placement: IPlacement; readonly scale: number }>,
+): Map<string, number> {
+  const gates = new Map<string, number>();
+  for (const { placement, scale } of drawn) {
+    if (placement.asset !== "spruce" || placement.layer === FAR_FOREST_LAYER) continue;
+    const variant = `${placement.asset}:${variantFor(placement, placement.asset)}`;
+    gates.set(variant, Math.min(gates.get(variant) ?? Number.POSITIVE_INFINITY, Math.abs(scale)));
+  }
+  return gates;
+}
 
 export interface IPropPart {
   readonly geometry: BufferGeometry;
@@ -179,6 +250,8 @@ export function buildPropVariants(
       // Each variant leans on a different needle card, so three spruce silhouettes are three
       // textures rather than one texture at three sizes.
       { geometry: spruce.crown, role: "crown", variant: index },
+      { geometry: spruce.trunk.clone(), role: "bark", variant: index, level: 1 },
+      { geometry: spruceFarCrown(spruce.crown), role: "crown", variant: index, level: 1 },
     ]);
   }
   for (let i = 0; i < PROP_COUNTS.boulder; i += 1) {
@@ -229,6 +302,8 @@ export function buildPropVariants(
     variants.set(`sapling:${i}`, [
       { geometry: young.trunk, role: "bark", variant: i },
       { geometry: young.crown, role: "crown", variant: i },
+      { geometry: young.trunk.clone(), role: "bark", variant: i, level: 1 },
+      { geometry: spruceFarCrown(young.crown), role: "crown", variant: i, level: 1 },
     ]);
   }
   for (let i = 0; i < PROP_COUNTS.bush; i += 1) {
@@ -248,32 +323,42 @@ export function buildPropVariants(
       continue;
     }
     variants.set(`scrub:${i}`, [
-      { geometry: grassClump((VARIANTS.seed ^ (i * 0x165667b1)) >>> 0), role: "grass", variant: i },
+      {
+        geometry: grassClump((VARIANTS.seed ^ (i * 0x165667b1)) >>> 0, i),
+        role: "grass",
+        variant: i,
+      },
     ]);
   }
-  for (let i = 0; i < VARIANTS.grass; i += 1) {
-    const ready = prepared?.get(`grass:${i}`);
+  for (const [asset, i] of [
+    ...Array.from({ length: VARIANTS.grass }, (_, i) => ["grass", i] as const),
+    ...Array.from({ length: VARIANTS.meadow }, (_, i) => ["meadow", i] as const),
+  ]) {
+    const ready = prepared?.get(`${asset}:${i}`);
     // Imported grass draws as imported: a darkened procedural clump under each photographed tuft
     // read as a black star at every root.
     variants.set(
-      `grass:${i}`,
+      `${asset}:${i}`,
       ready ?? [
         {
-          geometry: grassClump((VARIANTS.seed ^ (i * 0xc2b2ae35)) >>> 0),
+          geometry: grassClump((VARIANTS.seed ^ (i * 0xc2b2ae35)) >>> 0, i),
           role: "grass",
           variant: i,
         },
       ],
     );
   }
-  for (let i = 0; i < VARIANTS.poppy; i += 1) {
-    const ready = prepared?.get(`poppy:${i}`);
+  for (const [asset, i] of [
+    ...Array.from({ length: VARIANTS.poppy }, (_, i) => ["poppy", i] as const),
+    ...Array.from({ length: VARIANTS.bloom }, (_, i) => ["bloom", i] as const),
+  ]) {
+    const ready = prepared?.get(`${asset}:${i}`);
     if (ready) {
-      variants.set(`poppy:${i}`, [...ready]);
+      variants.set(`${asset}:${i}`, [...ready]);
       continue;
     }
     const cluster = poppyCluster((VARIANTS.seed ^ (i * 0x27d4eb2f)) >>> 0, POPPY_PETAL);
-    variants.set(`poppy:${i}`, [
+    variants.set(`${asset}:${i}`, [
       { geometry: cluster.stems, role: "stem", variant: i },
       { geometry: cluster.petals, role: "petal", variant: i },
     ]);
@@ -291,10 +376,10 @@ export function buildPropVariants(
     twig.scale(1.7, 0.22, 1.7);
     variants.set(`litter:${i}`, [{ geometry: twig, role: "grass", variant: i }]);
   }
-  for (const asset of ["riverrock", "scree", "cliff", "mountain", "volcanic", "reveal"])
+  for (const asset of ["riverrock", "scree", "cliff", "mountain", "volcanic", "reveal", "pebble"])
     for (
       let variant = 0;
-      variant < (asset === "mountain" || asset === "reveal" ? 2 : asset === "volcanic" ? 4 : 1);
+      variant < (PROP_COUNTS[asset as keyof typeof PROP_COUNTS] ?? 1);
       variant++
     ) {
       const ready = prepared?.get(`${asset}:${variant}`);
@@ -302,7 +387,11 @@ export function buildPropVariants(
         variants.set(`${asset}:${variant}`, ready);
         continue;
       }
-      const fallback = boulder(VARIANTS.seed ^ variant);
+      const fallback = boulder(
+        asset === "pebble"
+          ? (VARIANTS.seed ^ ((variant + 7) * 0x85ebca6b)) >>> 0
+          : VARIANTS.seed ^ variant,
+      );
       if (["mountain", "volcanic", "reveal"].includes(asset)) {
         if (asset === "mountain") fallback.scale(0.65, 1.45, 1.8);
         fallback.computeBoundingBox();
@@ -326,6 +415,8 @@ export function buildPropVariants(
 const PROP_COUNTS = {
   ...VARIANTS,
   riverrock: 1,
+  /** River-bed cobbles: the boulder generator, three seeds. */
+  pebble: 3,
   scree: 1,
   cliff: 1,
   mountain: 2,
@@ -342,8 +433,8 @@ export type PropGroundQuery = (
   position: [number, number, number],
 ) => { height: number | null; offset: number };
 export interface IPropInstance {
-  mesh: InstancedMesh;
-  index: number;
+  material: Material;
+  onTransform?: (transform: IPlacementOverride | undefined) => void;
   placement: IPlacement;
   pose: Matrix4;
   geometry: BufferGeometry;
@@ -351,43 +442,186 @@ export interface IPropInstance {
   clearance: number | null;
   cragBaseClearance?: number;
   cragRingSamples?: number;
-  /** Every draw of this placement, so a transform write reaches all of them. */
-  parts: { mesh: InstancedMesh; index: number }[];
 }
+/** A geometry's vertices, lowest local y first, and their widest horizontal reach. */
+const bottomFirst = new WeakMap<BufferGeometry, { xyz: Float32Array; reach: number }>();
+
+function verticesBottomFirst(geometry: BufferGeometry): { xyz: Float32Array; reach: number } {
+  const cached = bottomFirst.get(geometry);
+  if (cached) return cached;
+  const position = geometry.getAttribute("position");
+  const order = Array.from({ length: position.count }, (_, i) => i).sort(
+    (a, b) => position.getY(a) - position.getY(b),
+  );
+  const xyz = new Float32Array(position.count * 3);
+  let reach = 0;
+  order.forEach((i, k) => {
+    xyz[k * 3] = position.getX(i);
+    xyz[k * 3 + 1] = position.getY(i);
+    xyz[k * 3 + 2] = position.getZ(i);
+    reach = Math.max(reach, Math.hypot(position.getX(i), position.getZ(i)));
+  });
+  const entry = { xyz, reach };
+  bottomFirst.set(geometry, entry);
+  return entry;
+}
+
+/**
+ * Exact lowest world Y of a static geometry under `matrix` (GroundSnap's precise measurement). A tilted pose scans the vertices bottom first and stops once no later vertex
+ * can be lower: |x e1 + z e9| is at most reach * hypot(e1, e9). The full scan cost 3.4 s of the
+ * forest's load (218,816 placements, 976 vertices each).
+ */
+export function lowestY(geometry: BufferGeometry, matrix: Matrix4): number {
+  const e = matrix.elements;
+  if (e[1] === 0 && e[9] === 0) {
+    if (geometry.boundingBox === null) geometry.computeBoundingBox();
+    const box = geometry.boundingBox;
+    if (box) return (e[5] < 0 ? box.max.y : box.min.y) * e[5] + e[13];
+  }
+  const { xyz, reach } = verticesBottomFirst(geometry);
+  const tilt = reach * Math.hypot(e[1], e[9]);
+  const upright = e[5] > 0;
+  let lowest = Number.POSITIVE_INFINITY;
+  for (let k = 0; k < xyz.length; k += 3) {
+    const y = xyz[k + 1] as number;
+    if (upright && y * e[5] + e[13] - tilt >= lowest) break;
+    lowest = Math.min(
+      lowest,
+      (xyz[k] as number) * e[1] + y * e[5] + (xyz[k + 2] as number) * e[9] + e[13],
+    );
+  }
+  return lowest;
+}
+
+/**
+ * The quaternion a placement's own scatter numbers describe: the normal tilt, then the yaw.
+ *
+ * The bake writes it into the record, and the load path hands it back to `preparePose` as the pose
+ * override, so one rule composes the rotation and the record carries the result.
+ */
+export function authoredQuaternion(
+  placement: IPlacement,
+): readonly [number, number, number, number] {
+  const up = new Vector3(0, 1, 0);
+  const quaternion = new Quaternion();
+  if (placement.alignToNormal)
+    quaternion.setFromUnitVectors(up, new Vector3().fromArray(placement.normal));
+  quaternion.multiply(new Quaternion().setFromAxisAngle(up, placement.rotation));
+  return quaternion.toArray();
+}
+
+/**
+ * A placement as a package record stores it: the authored pose becomes its transform, at one scale.
+ *
+ * A record holds position, quaternion and one uniform scale, so an edited placement's own transform
+ * is folded down to the scale its record carries. The shape that scale removed is `propKey`'s ratio,
+ * and the drawable model that ratio names carries it instead.
+ */
+export function withAuthoredPose(placement: IPlacement): IPlacement {
+  const scale = placement.transform?.scale ?? [placement.scale, placement.scale, placement.scale];
+  const scalar = scale[0] === 0 ? 1 : scale[0];
+  return {
+    ...placement,
+    transform: {
+      grounding: placement.transform?.grounding ?? true,
+      position: placement.transform?.position ?? placement.position,
+      quaternion: (placement.transform?.quaternion ?? authoredQuaternion(placement)) as [
+        number,
+        number,
+        number,
+        number,
+      ],
+      scale: [scalar, scalar, scalar],
+    },
+  };
+}
+
+/**
+ * The model a record draws: its asset, its variant, and the shape a non-uniform edit gave it.
+ *
+ * `WorldCells` names the model through the run the record sits in, so this key is what the container
+ * stores. A placement with one uniform scale draws its variant as authored (`spruce:2`); a placement
+ * the editor scaled unevenly draws a model of that shape (`spruce:2@1,0.5,0.5`), so the record stays
+ * one uniform scale and the picture keeps the edit.
+ */
+export function propKey(placement: IPlacement): string {
+  const variant = `${placement.asset}:${variantFor(placement, placement.asset)}`;
+  const scale = placement.transform?.scale ?? [placement.scale, placement.scale, placement.scale];
+  const scalar = scale[0] === 0 ? 1 : scale[0];
+  const ratio = scale.map((value) => value / scalar);
+  const off = ratio.reduce((sum, value) => sum + (value - 1) ** 2, 0);
+  return off < 1e-16 ? variant : `${variant}@${ratio.join(",")}`;
+}
+
+/** The shape `propKey` wrote, so the loader scales the model the record's one scale cannot carry. */
+export function propRatio(key: string): [number, number, number] {
+  const at = key.indexOf("@");
+  if (at < 0) return [1, 1, 1];
+  const ratio = key
+    .slice(at + 1)
+    .split(",")
+    .map(Number);
+  // A negative component is a mirror, which the renderer composes like any other shape.
+  if (ratio.length !== 3 || ratio.some((value) => !Number.isFinite(value) || value === 0))
+    throw new Error(`Prop key '${key}' does not name a usable shape.`);
+  return [ratio[0] as number, ratio[1] as number, ratio[2] as number];
+}
+
+/**
+ * The pose a baked package record carries: the quaternion the bake authored for the placement.
+ *
+ * A world-v1 record holds position, quaternion and scale, and nothing about `alignToNormal` or the
+ * scatter yaw, so the load path hands the record's quaternion here. It replaces the rotation the
+ * placement would compose, and every step below it — the ground snap, the boulder burial, the
+ * four-footprint sink and the mountain base ring — still runs, because the record is a pose and not
+ * an override of the pose.
+ */
+export interface IPropPoseOverride {
+  readonly quaternion: readonly [number, number, number, number];
+}
+
 export function preparePose(
   geometry: BufferGeometry,
-  material: Material,
+  _material: Material,
   placement: IPlacement,
   transform: IPlacementOverride | undefined,
   groundAt: PropGroundQuery,
+  pose?: IPropPoseOverride,
 ) {
-  // This measurement mesh is never added to the scene; the actual draw stays instanced.
-  const model = new Mesh(geometry, material);
+  // Plain math, not a Mesh: on the owned engine every Object3D is an engine object, and a detached
+  // Mesh per placement cost 30 s of the forest's load (218,816 placements, 0.14 ms each).
+  const model = {
+    position: new Vector3(),
+    quaternion: new Quaternion(),
+    scale: new Vector3(1, 1, 1),
+    matrix: new Matrix4(),
+    updateMatrix() {
+      this.matrix.compose(this.position, this.quaternion, this.scale);
+    },
+  };
   model.position.fromArray(transform?.position ?? placement.position);
   if (transform) {
     model.quaternion.fromArray(transform.quaternion);
     model.scale.fromArray(transform.scale);
   } else {
-    const up = new Vector3(0, 1, 0);
-    if (placement.alignToNormal)
-      model.quaternion.setFromUnitVectors(up, new Vector3().fromArray(placement.normal));
-    model.quaternion.multiply(new Quaternion().setFromAxisAngle(up, placement.rotation));
+    model.quaternion.fromArray(pose?.quaternion ?? authoredQuaternion(placement));
     model.scale.setScalar(placement.scale);
   }
   const grounding = transform?.grounding ?? true;
   const ground = groundAt(placement, model.position.toArray());
-  const snap = new GroundSnap(model, { enabled: grounding });
+  // GroundSnap's rule: the lowest posed point meets the surface, then the authored offset applies.
+  let clearance: number | null = null;
   if (ground.height === null) {
     if (grounding)
       throw new Error(
         `Missing terrain ground for '${placement.id}' at ${JSON.stringify(model.position.toArray())}`,
       );
   } else {
-    snap.apply(model, ground.height, 0);
-    if (grounding && ground.offset !== 0) {
-      model.position.y += ground.offset;
-      snap.enabled = false;
-      snap.apply(model, ground.height, 0);
+    model.updateMatrix();
+    clearance = lowestY(geometry, model.matrix) - ground.height;
+    if (grounding) {
+      model.position.y += ground.offset - clearance;
+      clearance = ground.offset;
     }
   }
   // A boulder is a rock that is part buried: GroundSnap puts its lowest point on the surface, and on a
@@ -395,7 +629,7 @@ export function preparePose(
   if (
     grounding &&
     !transform &&
-    ["boulder", "riverrock", "scree", "cliff", "mountain", "volcanic", "reveal"].includes(
+    ["boulder", "riverrock", "pebble", "scree", "cliff", "mountain", "volcanic", "reveal"].includes(
       placement.asset,
     ) &&
     ground.height !== null
@@ -417,6 +651,22 @@ export function preparePose(
               ? 0.55
               : BOULDER_BURIAL) * height;
     }
+  }
+  // Bury the flat footprint on the downhill side too; a centre-only snap leaves a visible lip.
+  if (grounding && !transform && ["boulder", "riverrock", "scree"].includes(placement.asset)) {
+    const base = geometry.boundingBox?.min.y;
+    const positions = geometry.getAttribute("position");
+    const point = new Vector3();
+    let gap = 0;
+    model.updateMatrix();
+    for (let i = 0; i < positions.count; i++) {
+      if (Math.abs(positions.getY(i) - (base ?? Number.POSITIVE_INFINITY)) > 1e-5) continue;
+      point.fromBufferAttribute(positions, i).applyMatrix4(model.matrix);
+      const height = groundAt(placement, point.toArray()).height;
+      if (height === null) throw new Error(`Missing ground under rock '${placement.id}'`);
+      gap = Math.max(gap, point.y - height + 0.08);
+    }
+    model.position.y -= gap;
   }
   let cragBaseClearance: number | undefined;
   let cragRingSamples: number | undefined;
@@ -471,7 +721,7 @@ export function preparePose(
   return {
     matrix: model.matrix.clone(),
     grounding,
-    clearance: snap.clearance,
+    clearance,
     cragBaseClearance,
     cragRingSamples,
   };
@@ -481,30 +731,23 @@ export function preparePropTransform(
   transform: IPlacementOverride | undefined,
   groundAt: PropGroundQuery,
 ) {
-  const { material } = instance.mesh;
-  if (Array.isArray(material))
-    throw new Error(`Prop '${instance.placement.id}' has a multi-material draw`);
-  return preparePose(instance.geometry, material, instance.placement, transform, groundAt);
+  return {
+    ...preparePose(instance.geometry, instance.material, instance.placement, transform, groundAt),
+    transform,
+  };
 }
-let poseVersion = 0;
-
 export function writePropTransform(
   instance: IPropInstance,
   prepared: ReturnType<typeof preparePropTransform>,
 ): void {
+  const changed =
+    !instance.pose.equals(prepared.matrix) || instance.grounding !== prepared.grounding;
   instance.pose.copy(prepared.matrix);
-  poseVersion++;
-  // A spruce is a trunk draw and a crown draw, so a transform write has to reach both or the tree
-  // comes apart when the editor drags it.
-  for (const part of instance.parts) {
-    part.mesh.setMatrixAt(part.index, prepared.matrix);
-    part.mesh.instanceMatrix.needsUpdate = true;
-    part.mesh.computeBoundingSphere();
-  }
   instance.grounding = prepared.grounding;
   instance.clearance = prepared.clearance;
   instance.cragBaseClearance = prepared.cragBaseClearance;
   instance.cragRingSamples = prepared.cragRingSamples;
+  if (changed) instance.onTransform?.(prepared.transform);
 }
 export function readPropTransform(instance: IPropInstance): IPlacementOverride {
   const matrix = instance.pose;
@@ -596,351 +839,4 @@ export function flatPropMaterials(): IPropMaterials & { dispose: () => void } {
       for (const material of Object.values(materials)) material.dispose();
     },
   };
-}
-
-/** One variant's placements, their poses, and the draws each detail level of it owns. */
-interface IVariantGroup {
-  readonly entries: { instance: IPropInstance; pose: Matrix4 }[];
-  /** This variant's `asset:variant` key, which a per-variant draw reach is named by. */
-  readonly key: string;
-  /** One mesh per level per role, so a level is one draw and the matrix write reaches all of them. */
-  readonly levels: Map<number, InstancedMesh[]>;
-  /** Which level each placement drew last frame. The hysteresis reads it and writes it. */
-  readonly state: Uint8Array;
-  readonly asset: string;
-  readonly members: number[][];
-  readonly slots: Int32Array;
-}
-
-/**
- * Which detail level a placement draws at, and when it is allowed to change its mind.
- *
- * A step down happens at the band for the level it is leaving, and a step back up only once the
- * camera has come a fifth further inside it. Without that slack a camera sitting on a boundary
- * assigns a different level to the same tree on alternate frames, which reads as the tree
- * flickering rather than as a change of detail.
- *
- * The bands are indexed by level rather than picked from a pair, because a variant may have two
- * levels or three: the pine has a far cross-card as well as a mid mesh, and a two-band ladder
- * would leave the third level unreachable or reachable at the wrong distance.
- */
-export function levelFor(distance: number, current: number, levelCount: number): number {
-  let level = current;
-  const bands = [LOD_BANDS.mid, LOD_BANDS.far];
-  while (level + 1 < levelCount && distance > (bands[level] ?? LOD_BANDS.far)) level++;
-  while (level > 0 && distance < (bands[level - 1] ?? LOD_BANDS.mid) * (1 - LOD_BANDS.hysteresis))
-    level--;
-  return level;
-}
-
-/**
- * Place every prop and build one instanced mesh per (asset, variant, level, role).
- *
- * The grouping is what bounds the draw count: a forest of 200 spruces across three variants is six
- * draws, not six hundred, because every copy of a variant shares one geometry and one material and
- * differs only by its matrix. A variant with more than one detail level owns one mesh per level per
- * role, and {@link setPropLevels} refills them from the camera each frame; a variant with one never
- * touches its matrices again.
- */
-function* propWork(
-  placements: readonly IPlacement[],
-  groundAt: PropGroundQuery,
-  parts: Map<string, IPropPart[]>,
-  materials: IPropMaterials,
-) {
-  const object = new Group();
-  const meshes: InstancedMesh[] = [];
-  const byId = new Map<string, IPropInstance>();
-
-  // Group by variant first, then place once per group: the poses a group shares are the same
-  // matrices written into every one of its draws.
-  const groups = new Map<string, { instance: IPropInstance; pose: Matrix4 }[]>();
-  for (const placement of placements) {
-    const key = `${placement.asset}:${variantFor(placement, placement.asset)}`;
-    const chosen = parts.get(key);
-    if (!chosen) throw new Error(`Prop asset '${key}' was never built`);
-    // Grounding measures the prop's own lowest point, so it measures the part that reaches the
-    // ground: the trunk of a spruce, not its crown, and the body of a boulder.
-    const foot = chosen.find((part) => part.role === "bark" || part.role === "stone") ?? chosen[0];
-    if (!foot) throw new Error(`Prop asset '${key}' has no parts`);
-    const pose = preparePose(
-      foot.geometry,
-      materials[foot.role],
-      placement,
-      placement.transform,
-      groundAt,
-    );
-    const entries = groups.get(key) ?? [];
-    entries.push({
-      instance: {
-        clearance: pose.clearance,
-        cragBaseClearance: pose.cragBaseClearance,
-        cragRingSamples: pose.cragRingSamples,
-        grounding: pose.grounding,
-        index: 0,
-        // Filled in below once this group's meshes exist; the trunk draw is the one the editor
-        // picks and measures against.
-        mesh: undefined as unknown as InstancedMesh,
-        parts: [],
-        placement,
-        pose: pose.matrix,
-        geometry: foot.geometry,
-      },
-      pose: pose.matrix,
-    });
-    groups.set(key, entries);
-    yield;
-  }
-
-  function dispose(): void {
-    for (const mesh of meshes) mesh.dispose();
-    object.clear();
-    byId.clear();
-    groups.clear();
-    banded.length = 0;
-  }
-  /** Every variant with more than one detail level, which is the only thing that refills. */
-  const banded: IVariantGroup[] = [];
-  let completed = false;
-  try {
-    for (const [key, entries] of groups) {
-      const chosen = parts.get(key);
-      if (!chosen) throw new Error(`Prop asset '${key}' was never built`);
-      // Which role the editor treats as the prop's body: the part that touches the ground, because
-      // that is the one whose bounds centre the selection gizmo on the tree rather than on its leaves.
-      const bodyRole = chosen.some((part) => part.role === "bark")
-        ? "bark"
-        : chosen.some((part) => part.role === "stone")
-          ? "stone"
-          : chosen[0]?.role;
-      const levels = [...new Set(chosen.map((part) => part.level ?? 0))].sort((a, b) => a - b);
-      const byLevel = new Map<number, InstancedMesh[]>();
-      for (const level of levels) {
-        const levelParts = chosen.filter((part) => (part.level ?? 0) === level);
-        for (const part of levelParts) {
-          const batch = new InstancedBatch({
-            geometry: part.geometry,
-            // A pack species wears the material it was authored with; everything else wears the
-            // starter's surface for its role, which is what the lit surfaces later swap in.
-            material: part.material ?? materials[part.role],
-          });
-          for (const entry of entries) batch.add(entry.pose);
-          const mesh = batch.build({
-            name: `props:${key}:${part.role}`,
-            parent: object,
-            // Crowns and bark cast; grass does too, because its own shadow is most of its depth. The
-            // poppy's petals and stems do not, at five centimetres they only cost the shadow pass —
-            // and neither does the undergrowth that grew under the canopy, for the same reason one
-            // order of magnitude up: a thousand seedlings and shrubs drawn a second time into a
-            // shadow map is the single largest thing the pass could be asked to do, and none of it
-            // reaches the ground the shadow is cast on.
-            castShadow:
-              part.role !== "petal" &&
-              part.role !== "stem" &&
-              !NO_SHADOW_ASSETS.has(key.split(":")[0] ?? ""),
-            receiveShadow: true,
-          });
-          if (!mesh) throw new Error(`Empty prop batch '${key}:${part.role}'`);
-          mesh.userData.placementIds = entries.map((entry) => entry.instance.placement.id);
-          // Recorded rather than inferred later: the surface swap has to leave a pack species alone,
-          // and "does the role name appear in the lit set" is not the same question.
-          mesh.userData.ownMaterial = part.material !== undefined;
-          mesh.userData.body = part.role === bodyRole;
-          meshes.push(mesh);
-          const list = byLevel.get(level) ?? [];
-          list.push(mesh);
-          byLevel.set(level, list);
-          entries.forEach((entry, index) => {
-            entry.instance.parts.push({ index, mesh });
-            if (part.role === bodyRole) {
-              entry.instance.mesh = mesh;
-              entry.instance.index = index;
-            }
-          });
-        }
-      }
-      // Every level's mesh was filled with every placement at build time, so the bounding sphere
-      // `InstancedBatch` computed is already the union over the levels — the same bound, correct
-      // for whichever subset a frame happens to draw, and computed once.
-      banded.push({
-        asset: key.split(":")[0] ?? "",
-        key,
-        entries,
-        levels: byLevel,
-        state: new Uint8Array(entries.length),
-        members: levels.map((level) => (level === 0 ? entries.map((_, i) => i) : [])),
-        slots: Int32Array.from(entries.map((_, i) => i)),
-      });
-      for (const entry of entries) {
-        if (entry.instance.mesh === undefined)
-          throw new Error(`Prop '${entry.instance.placement.id}' built no body draw`);
-        entry.instance.parts = (byLevel.get(0) ?? []).map((mesh) => ({
-          mesh,
-          index: entry.instance.index,
-        }));
-        const body = byLevel.get(0)?.find((mesh) => mesh.userData.body);
-        if (body) entry.instance.mesh = body;
-        byId.set(entry.instance.placement.id, entry.instance);
-      }
-      for (const [level, list] of byLevel)
-        for (const mesh of list) {
-          mesh.count = level === 0 ? entries.length : 0;
-          if (level !== 0) mesh.userData.placementIds = [];
-        }
-      yield;
-    }
-    const levelCount = new Map<IVariantGroup, number>();
-
-    // Swap-delete only band crossings. Stable members retain their GPU buffer slot and editor
-    // handle; initial bounds cover every possible member, so moving the eye never rebuilds them.
-    const seenFrom = new Vector3(Number.NaN, 0, 0);
-    let seenPoseVersion = poseVersion;
-    const setLevels = (camera: Vector3): void => {
-      // The existing 0.75 m camera slack and authored hysteresis remain unchanged.
-      const edited = seenPoseVersion !== poseVersion;
-      if (!edited && seenFrom.distanceToSquared(camera) < 0.75 ** 2) return;
-      seenFrom.copy(camera);
-      seenPoseVersion = poseVersion;
-      const cx = camera.x;
-      const cy = camera.y;
-      const cz = camera.z;
-      for (const group of banded) {
-        const levels = levelCount.get(group) ?? 0;
-        const dirty = new Set<InstancedMesh>();
-        // Per group, so the walk below is three reads and arithmetic. `entries.entries()` allocated a
-        // pair per placement and the fade test allocated a literal array per placement, which on a
-        // forest of this size is half a million short-lived arrays on every camera move.
-        const poses = group.entries;
-        const reach = VARIANT_REACH[group.key] ?? DRAW_REACH[group.asset];
-        const thins = reach !== undefined && FADED_ASSETS.has(group.asset);
-        const fadeEnd = reach ?? 0;
-        const bindSlot = (index: number, level: number, slot: number): void => {
-          const entry = group.entries[index];
-          if (!entry) throw new Error(`Missing prop slot '${group.key}:${index}'`);
-          entry.instance.parts = [];
-          for (const mesh of group.levels.get(level) ?? []) {
-            mesh.setMatrixAt(slot, entry.pose);
-            mesh.userData.placementIds[slot] = entry.instance.placement.id;
-            entry.instance.parts.push({ mesh, index: slot });
-            if (mesh.userData.body) {
-              entry.instance.mesh = mesh;
-              entry.instance.index = slot;
-            }
-            dirty.add(mesh);
-          }
-          group.slots[index] = slot;
-        };
-        for (let index = 0; index < poses.length; index++) {
-          // The pose's own translation rather than `setFromMatrixPosition`: a Matrix4 decompose per
-          // placement is what made this the most expensive function in a walk.
-          const entry = poses[index];
-          if (!entry) throw new Error(`Missing prop placement '${group.key}:${index}'`);
-          const elements = entry.pose.elements;
-          const dx = elements[12] - cx;
-          const dy = elements[13] - cy;
-          const dz = elements[14] - cz;
-          const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
-          let visible = reach === undefined || distance <= reach;
-          if (visible && thins) {
-            const fade = Math.max(0, (distance - 28) / (fadeEnd - 28));
-            const seed = (Math.imul(index + 1, 2654435761) >>> 0) / 4294967296;
-            visible = seed <= (1 - fade) ** 2;
-          }
-          const previous = group.state[index] ?? 0;
-          const level = levelFor(distance, previous, levels);
-          const slot = group.slots[index] ?? -1;
-          if (slot >= 0 === visible && (!visible || previous === level)) continue;
-          if (slot >= 0) {
-            const members = group.members[previous];
-            if (!members) throw new Error(`Missing prop band '${group.key}:${previous}'`);
-            const last = members.pop();
-            if (last !== undefined && last !== index) {
-              members[slot] = last;
-              bindSlot(last, previous, slot);
-            }
-            for (const mesh of group.levels.get(previous) ?? []) {
-              mesh.userData.placementIds.length = members.length;
-              dirty.add(mesh);
-            }
-          }
-          entry.instance.parts = [];
-          group.slots[index] = -1;
-          if (visible) {
-            const members = group.members[level];
-            if (!members) throw new Error(`Missing prop band '${group.key}:${level}'`);
-            bindSlot(index, level, members.length);
-            members.push(index);
-            group.state[index] = level;
-          }
-        }
-        for (const [level, list] of group.levels) {
-          for (const mesh of list) {
-            mesh.count = group.members[level]?.length ?? 0;
-            if (dirty.has(mesh)) mesh.instanceMatrix.needsUpdate = true;
-            // The build's sphere already bounds ALL placements, not just this band's subset.
-            // A transform edit may extend it; camera movement cannot.
-            if (edited) {
-              const sphere = mesh.boundingSphere;
-              if (sphere)
-                for (const entry of group.entries) {
-                  if (mesh.geometry.boundingSphere === null) mesh.geometry.computeBoundingSphere();
-                  const local = mesh.geometry.boundingSphere?.clone().applyMatrix4(entry.pose);
-                  if (local) sphere.union(local);
-                }
-            }
-          }
-        }
-      }
-    };
-    for (const group of banded) levelCount.set(group, group.levels.size);
-    completed = true;
-    return { object, meshes, byId, dispose, setLevels };
-  } finally {
-    if (!completed) dispose();
-  }
-}
-
-export function createProps(
-  placements: readonly IPlacement[],
-  groundAt: PropGroundQuery,
-  parts: Map<string, IPropPart[]>,
-  materials: IPropMaterials,
-) {
-  const work = propWork(placements, groundAt, parts, materials);
-  for (;;) {
-    const step = work.next();
-    if (step.done) return step.value;
-  }
-}
-
-export async function createPropsInSlices(
-  placements: readonly IPlacement[],
-  groundAt: PropGroundQuery,
-  parts: Map<string, IPropPart[]>,
-  materials: IPropMaterials,
-  whileCurrent?: () => boolean,
-) {
-  const work = propWork(placements, groundAt, parts, materials);
-  const groups = new Set(
-    placements.map((placement) => `${placement.asset}:${variantFor(placement, placement.asset)}`),
-  );
-  try {
-    const report = await addInSlices(
-      Array.from({ length: placements.length + groups.size }),
-      () => {
-        work.next();
-      },
-      { while: whileCurrent },
-    );
-    if (report.stopped) {
-      work.return(undefined as never);
-      return undefined;
-    }
-    const result = work.next();
-    if (!result.done) throw new Error("Prop build did not finish its scheduled work");
-    return result.value;
-  } catch (error) {
-    work.return(undefined as never);
-    throw error;
-  }
 }

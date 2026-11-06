@@ -59,7 +59,7 @@ function padTo4(bytes: Uint8Array, fill: number): Uint8Array {
 }
 
 /** Two primitives on two nodes; only the second carries a chain, so the mapping is exercised. */
-function cookedGlb(extension: object = {}): Uint8Array {
+function cookedGlb(extension: object = {}, alsoUsed: readonly string[] = []): Uint8Array {
   const positions = gridPositions();
   const lod0 = gridIndices(LOD0_TRIANGLES);
   const level = gridIndices(COARSE_TRIANGLES);
@@ -99,7 +99,7 @@ function cookedGlb(extension: object = {}): Uint8Array {
       },
     ],
     buffers: [{ byteLength: bin.length }],
-    extensionsUsed: ["TN_discrete_lod"],
+    extensionsUsed: ["TN_discrete_lod", ...alsoUsed],
     meshes: [
       { primitives: [{ attributes: { POSITION: 0 }, indices: 1, mode: 4 }] },
       {
@@ -200,6 +200,16 @@ describe("a TN_discrete_lod model on the Wasm engine's glTF loader", () => {
       baseGeometryOf(chained).getAttribute("position"),
     );
     expect(warn).not.toHaveBeenCalledWith(expect.stringContaining("TN_DISCRETE_LOD_UNAVAILABLE"));
+  });
+
+  it("loads a file whose cluster bake is optional, drawing the chain the engine hosts", async () => {
+    // The dev cook adds TN_virtual_geometry to every model past its triangle floor, never required.
+    // The engine loader hosts no cluster plugin, so core must not register one there (PRD-762).
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const { meshes, scene } = engineScene();
+    await load(cookedGlb({}, ["TN_virtual_geometry"]), scene);
+    expect(baseGeometryOf(meshes[1] as Mesh).index?.count).toBe(LOD0_TRIANGLES * 3);
+    expect(info).toHaveBeenCalledWith(expect.stringContaining("TN_VIRTUAL_GEOMETRY_SKIPPED"));
   });
 
   it("refuses a chain it cannot read, by name, instead of dropping the LOD", async () => {

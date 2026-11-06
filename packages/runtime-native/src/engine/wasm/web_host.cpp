@@ -28,6 +28,7 @@
 #endif
 
 #include <emscripten/emscripten.h>
+#include <emscripten/console.h>
 
 #include <map>
 #include <memory>
@@ -45,7 +46,9 @@ namespace {
 // 7 = tnw_web_prepare_environment: the startup bake presents no surface frame.
 // 8 = tnw_web_set_presentation_hold, and the startup's world submission and shadow inputs as frame fields 71, 72.
 // 9 = tnw_web_clear_target, and tnw_web_render_target flags (bit 2: autoClear false).
-constexpr uint32_t kWebHostAbi = 9;
+// 10 = tnw_web_init_texture and tnw_web_copy_texture (PRD-762); the 6 the terrain work first took is 8's.
+// 11 = tnw_web_read_mrt (a PassNode's custom MRT attachment) and tnw_web_device_limit.
+constexpr uint32_t kWebHostAbi = 11;
 
 enum WebState : int { Pending = 0, Ready = 1, Failed = 2 };
 
@@ -87,7 +90,8 @@ uint32_t sampleCount = 1;  // three's samples: 1 or 4x MSAA
 tn::engine::FrameGate frameGate;
 // Startup's first real frame (ABI 8). While the facade holds presentation every ordinary render still draws its
 // scene, shadow, post and temporal passes but takes no canvas texture, so a startup frame whose inputs are not
-// ready yet never reaches the display. `worldSubmissions` is field 71, `shadowInputsReady` field 72, and 72 is
+// ready yet never reaches the display. `worldSubmissions` is field 71, `shadowInputsReady` field 72 (its shadow atlases
+// walked and no pipeline still compiling, so no draw was skipped), and 72 is
 // recomputed only while the hold is up: it walks every active atlas, and nothing reads it once the cover is gone.
 bool presentationHeld = false;
 uint64_t worldSubmissions = 0;
@@ -196,6 +200,7 @@ void onDevice(WGPURequestDeviceStatus status, WGPUDevice result, WGPUStringView 
     setenv("TN_GPU_PASSES", EM_ASM_INT({ return globalThis.TN_GPU_PASSES === true; }) ? "1" : "0", 1);
     renderer = std::make_unique<Renderer>(instance, device, queue, events);
     renderer->setGpuTimer(timestampTracking);
+    if (presentationHeld) renderer->deferUncompiledDraws(true);
     configureWebSurface();
     renderer->setOutput(output);
     outputChanged = false;
@@ -231,6 +236,13 @@ void onAdapter(WGPURequestAdapterStatus status, WGPUAdapter adapter, WGPUStringV
     WGPUDeviceDescriptor desc = {};
     desc.requiredFeatureCount = features.size();
     desc.requiredFeatures = features.data();
+    // The limits the desktop host asks for (webgpu/context.cpp): the adapter's own, not the defaults. A default
+    // device caps a fragment stage at 16 sampled textures; a terrain splat material reads more.
+    WGPULimits limits = {};
+    if (wgpuAdapterGetLimits(adapter, &limits) == WGPUStatus_Success) {
+        if (limits.maxColorAttachmentBytesPerSample >= 64) limits.maxColorAttachmentBytesPerSample = 64;
+        desc.requiredLimits = &limits;
+    }
     desc.uncapturedErrorCallbackInfo.callback = [](WGPUDevice const*, WGPUErrorType, WGPUStringView message, void*, void*) {
         events.post([message = text(message)] { fail("TN_WASM_DEVICE_ERROR: " + message); });
     };
@@ -290,6 +302,16 @@ extern "C" int tnw_web_init(const char* selector, uint32_t w, uint32_t h, uint32
     if (selector == nullptr || !validSize(w, h)) return fail("TN_WASM_INIT: canvas selector or size invalid");
     width = w;
     height = h;
+    // The realm that renders starts the job pool's workers now, not on the first job: a web worker needs the
+    // main thread for each step of its start, so a pool first asked for by the asset load (the glTF
+    // loader decodes a model's images across it) came up only after the load's long tasks, 5 s late, and
+    // the forest's 52 atlases decoded on one thread. The page that only hosts the game's worker never
+    // initializes a renderer, so it still starts none. The single-thread build has no workers to start.
+    try {
+        tn::engine::JobPool::shared();
+    } catch (const std::exception& error) {
+        return fail(error.what());
+    }
     instance = wgpuCreateInstance(nullptr);
     if (instance == nullptr) return fail("TN_WASM_INIT: no WebGPU instance");
     WGPUEmscriptenSurfaceSourceCanvasHTMLSelector canvas = {};
@@ -336,7 +358,14 @@ extern "C" int tnw_web_resize(uint32_t w, uint32_t h) {
  * player keeps seeing the cover. An overlay still presents over what is already on the canvas. Core releases the hold
  * on the first frame whose inputs are ready (frame fields 71 and 72) and the next world frame is presented.
  */
-extern "C" void tnw_web_set_presentation_hold(int held) { presentationHeld = held != 0; }
+extern "C" void tnw_web_set_presentation_hold(int held) {
+    // From the hold on, a draw whose pipeline is missing compiles off the queue and waits, as Unreal's
+    // DelayUntilPSOPrecached default does. A synchronous compile held Chrome's GPU queue 200 ms after the reveal, and
+    // while the cover held, the forest's frame before the reveal compiled them in a row: 1368 ms of plan, then 2.5 s of
+    // GPU wait. Async compiles run in parallel in Chrome's GPU process; field 72 keeps the cover up until they land.
+    if ((held || presentationHeld) && renderer) renderer->deferUncompiledDraws(true);
+    presentationHeld = held != 0;
+}
 
 /**
  * Draws `scene` from `camera` into the canvas; the browser presents it at its animation boundary. A nonzero `overlay`
@@ -414,7 +443,9 @@ extern "C" int tnw_web_render(const tn_handle_t* sceneHandle, const tn_handle_t*
                 ++worldSubmissions;
                 presentedWorld = !presentationHeld;
                 // Every active atlas walked, so only a held frame asks: nothing reads this field once the cover is gone.
-                if (presentationHeld) shadowInputsReady = renderer->virtualShadowsInitialized();
+                // A held frame planned while a pipeline compiled skipped the draws that need it: not the first image.
+                if (presentationHeld)
+                    shadowInputsReady = renderer->virtualShadowsInitialized() && renderer->pipelinesCompiling() == 0;
             }
         }
     } catch (const std::exception& error) {
@@ -445,7 +476,10 @@ extern "C" int tnw_web_render(const tn_handle_t* sceneHandle, const tn_handle_t*
         if (reported.insert(diagnostic).second) {
             const bool note = diagnostic.rfind("TN_POST_NORMAL_SKIPPED", 0) == 0 || diagnostic.rfind("TN_TRAA_VELOCITY_SKIPPED", 0) == 0 ||
                               diagnostic.rfind("TN_TRAA_MSAA_OFF", 0) == 0;
-            std::fprintf(note ? stdout : stderr, "TN_RENDERER: %s\n", diagnostic.c_str());
+            // A scene the engine draws correctly but slowly is a warning, which names what to change.
+            if (diagnostic.rfind("TN_SHADOW_UNBOUNDED_CASTER", 0) == 0)
+                emscripten_console_warn(("TN_RENDERER: " + diagnostic).c_str());
+            else std::fprintf(note ? stdout : stderr, "TN_RENDERER: %s\n", diagnostic.c_str());
         }
     if (!refused.empty()) return fail(refused);
     const RenderDatabase& drawn = overlay ? overlayDatabase : database;
@@ -634,6 +668,103 @@ extern "C" uint32_t tnw_web_read_target(const tn_handle_t* targetHandle, uint32_
                                                         : "TN_WASM_READ_TARGET: region outside the target"), 0;
     }
     return id;
+}
+
+namespace {
+/** Any texture class, as the renderer reads it: the cast every material map takes (abi/bindings_material.cpp). */
+Texture* textureOf(const tn_handle_t* handle) {
+    auto* object = handle == nullptr ? nullptr : tn::abi::objectOf(*handle);
+    // The array and volume classes are no material map (isTextureClass), but a texture copy writes into them.
+    if (object == nullptr || !(tn::binding::isTextureClass(object->cls) || object->cls == "DataArrayTexture" ||
+                               object->cls == "Data3DTexture"))
+        return nullptr;
+    return static_cast<Texture*>(object->ptr.get());
+}
+}  // namespace
+
+/**
+ * three's renderer.initTexture: builds the texture's GPU copy now. A nonzero `texelsOnGpu` is three's
+ * `source.dataReady = false`: nothing is uploaded and the CPU texels are dropped, because copyTextureToTexture writes them.
+ */
+extern "C" int tnw_web_init_texture(const tn_handle_t* textureHandle, int texelsOnGpu) {
+    tnw_web_poll();
+    if (state != Ready) return fail(state == Pending ? "TN_WASM_RENDER: device not ready" : failure);
+    auto* texture = textureOf(textureHandle);
+    if (texture == nullptr) return refuse("TN_WASM_INIT_TEXTURE: not a texture");
+    try {
+        texture->dataReady = texelsOnGpu == 0;
+        renderer->initTexture(*texture);
+        if (texelsOnGpu != 0) std::vector<uint8_t>().swap(texture->data);
+        return 0;
+    } catch (const std::exception& error) {
+        return refuse(error.what());
+    }
+}
+
+/**
+ * three's renderer.copyTextureToTexture(source, destination, region, position, srcLevel, dstLevel): a region of
+ * `source` (a negative `w` takes its image size) into `destination` at (dx, dy, dz), where z is the array layer.
+ */
+extern "C" int tnw_web_copy_texture(const tn_handle_t* sourceHandle, const tn_handle_t* destinationHandle, int32_t sx,
+                                    int32_t sy, int32_t sz, int32_t w, int32_t h, int32_t d, int32_t dx, int32_t dy,
+                                    int32_t dz, int32_t srcLevel, int32_t dstLevel) {
+    tnw_web_poll();
+    if (state != Ready) return fail(state == Pending ? "TN_WASM_RENDER: device not ready" : failure);
+    auto* source = textureOf(sourceHandle);
+    auto* destination = textureOf(destinationHandle);
+    if (source == nullptr || destination == nullptr) return refuse("TN_WASM_COPY_TEXTURE: not a texture");
+    if (std::min({sx, sy, sz, dx, dy, dz, srcLevel, dstLevel, d}) < 0 || (w >= 0 && h < 0))
+        return refuse("TN_WASM_COPY_TEXTURE: negative origin, level or extent");
+    flushCompute();
+    try {
+        Renderer::TextureCopy copy;
+        copy.srcX = uint32_t(sx); copy.srcY = uint32_t(sy); copy.srcZ = uint32_t(sz);
+        copy.width = w < 0 ? 0 : uint32_t(w); copy.height = w < 0 ? 0 : uint32_t(h); copy.depth = uint32_t(d);
+        copy.dstX = uint32_t(dx); copy.dstY = uint32_t(dy); copy.dstZ = uint32_t(dz);
+        copy.srcLevel = uint32_t(srcLevel); copy.dstLevel = uint32_t(dstLevel);
+        renderer->copyTextureToTexture(*source, *destination, copy);
+        return 0;
+    } catch (const std::exception& error) {
+        return refuse(error.what());
+    }
+}
+
+/**
+ * Starts reading [x, y, w, h] of the frame pass's custom MRT slot `name` (three's PassNode.getTexture(slot)):
+ * the attachment the aux pass wrote there last frame. Returns the read id, or 0 (tnw_web_error says why).
+ */
+extern "C" uint32_t tnw_web_read_mrt(const char* name, uint32_t x, uint32_t y, uint32_t w, uint32_t h) {
+    if (state != Ready || !renderer) return fail("TN_WASM_READ_TARGET: device not ready"), 0;
+    flushCompute();
+    const uint32_t id = ++nextTargetRead;
+    targetReads[id] = {};
+    const GpuStatus started = renderer->readMrtPixels(name ? name : "", x, y, w, h,
+        [id](GpuStatus status, std::vector<uint8_t> bytes) {
+            auto found = targetReads.find(id);
+            if (found == targetReads.end()) return;
+            found->second.status = status == GpuStatus::Ok ? 1 : -1;
+            found->second.bytes = std::move(bytes);
+        });
+    if (started != GpuStatus::Ok) {
+        targetReads.erase(id);
+        // A slot name the frame pass does not write is a page's own mistake: it fails this read and the
+        // host keeps drawing, as a refused program does. fail() here would stop every later tnw_web_poll.
+        return refuse(started == GpuStatus::InvalidHandle
+                          ? std::string("TN_WASM_READ_TARGET: the frame pass writes no '") + (name ? name : "") + "' colour attachment"
+                          : "TN_WASM_READ_TARGET: region outside the attachment"), 0;
+    }
+    return id;
+}
+
+/** The device's limits a facade publishes (three's GPUDevice.limits): the requested pair, 0 when no device. */
+extern "C" double tnw_web_device_limit(int field) {
+    if (!renderer) return 0;
+    const WGPULimits& limits = renderer->deviceLimits();
+    switch (field) {
+        case 0: return double(limits.maxColorAttachments);
+        case 1: return double(limits.maxColorAttachmentBytesPerSample);
+        default: return 0;
+    }
 }
 
 /** Starts one HDR cube face. -2 means environment pending, -1 refusal, otherwise a read id. */
@@ -842,7 +973,13 @@ extern "C" int tnw_web_load_gltf(tn_context_t* context, const uint8_t* bytes, ui
         const auto found = modelFiles.find(uri);
         return found == modelFiles.end() ? std::span<const uint8_t>{} : std::span<const uint8_t>(found->second);
     };
-    auto loaded = gltf::load(std::span<const uint8_t>(bytes, size), options);
+    gltf::LoadResult loaded;
+    try {
+        loaded = gltf::load(std::span<const uint8_t>(bytes, size), options);
+    } catch (const std::exception& error) {
+        // A decode that ran the heap out (std::bad_alloc on a job pool worker) is named, not an opaque Wasm throw.
+        return loadFailure = std::string("TN_WASM_GLTF_LOAD_FAILED: ") + error.what(), 1;
+    }
     if (!loaded.error.empty()) return loadFailure = loaded.error, 1;
     if (!loaded.scene) return loadFailure = "TN_WASM_GLTF: the file has no scene", 1;
     bool undecoded = false;

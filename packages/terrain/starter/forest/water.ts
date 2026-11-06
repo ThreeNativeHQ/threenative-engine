@@ -18,6 +18,7 @@ import {
   MeshStandardMaterial,
 } from "three";
 import {
+  attribute,
   cameraPosition,
   clamp,
   dot,
@@ -61,19 +62,17 @@ export const SKY_REFLECTION_LAYER = 3;
 /** The ribbon sits this far above its profile, clear of the carved bed. */
 const RIVER_LIFT = 0.05;
 /** Metres of water over the bed at which the lake is fully opaque; thinner water fades into the shore. */
-const SHORE_DEPTH = 0.3;
+const SHORE_DEPTH = 1.8;
 /**
  * The colour the mirrored sky takes at grazing angles, in linear light. The sky's horizon is near-neutral,
- * so the tint carries the lake's blue; the mirror keeps the sky's gradient.
+ * so the tint carries the lake's teal; the mirror keeps the sky's gradient.
  */
-const SHEEN = new Color(0x8fa2b1);
+const SHEEN = new Color(0x94b9bf);
 /** Deep water's own colour; the bed shows through where the lake is shallow. */
-const BODY = new Color(0x1c3d3f);
+const BODY = new Color(0x285b59);
 const RIVER = new Color(0x2a4b4c);
-/** The pale, silty band where the water thins over the bank; it reads as a wet shore, not a cut edge. */
-const SHORE = new Color(0xb8c2b2);
-/** Water thinner than this many metres takes the SHORE colour, fading in as it thins. */
-const SHORE_BAND = 2;
+/** Shallow water stays teal, gently darkening with the measured depth of the bed. */
+const SHALLOW = new Color(0x3c746e);
 
 /** The heightfield's sample grid in world metres: one node per column and row, the first at (x0, z0). */
 function gridOf(field: Heightfield): { stepX: number; stepZ: number; x0: number; z0: number } {
@@ -133,16 +132,16 @@ function lakeGeometry(field: Heightfield, lake: ILake, flooded: Uint8Array): Buf
   const { stepX, stepZ, x0, z0 } = gridOf(field);
   const positions: number[] = [];
   const indices: number[] = [];
+  const depths: number[] = [];
   const vertexOf = new Map<number, number>();
   const vertex = (node: number): number => {
     const known = vertexOf.get(node);
     if (known !== undefined) return known;
     const index = positions.length / 3;
-    positions.push(
-      x0 + (node % columns) * stepX,
-      lake.level,
-      z0 + Math.floor(node / columns) * stepZ,
-    );
+    const x = x0 + (node % columns) * stepX;
+    const z = z0 + Math.floor(node / columns) * stepZ;
+    positions.push(x, lake.level, z);
+    depths.push(lake.level - field.heightAt(x, z));
     vertexOf.set(node, index);
     return index;
   };
@@ -161,14 +160,15 @@ function lakeGeometry(field: Heightfield, lake: ILake, flooded: Uint8Array): Buf
     }
   const geometry = new BufferGeometry();
   geometry.setAttribute("position", new BufferAttribute(new Float32Array(positions), 3));
+  geometry.setAttribute("waterDepth", new BufferAttribute(new Float32Array(depths), 1));
   geometry.setIndex(indices);
   return geometry;
 }
 
 /**
  * The lake's surface: the sky mirrored in it at grazing angles, the bed seen through it where it is
- * shallow, and the body's own colour where it is deep. Schlick at water's 1.333 index, so the water at
- * your feet is clear and the far bank is a mirror. Where the water is thinner than SHORE_DEPTH it fades
+ * shallow, and the body's own colour where it is deep. Capped Schlick at water's 1.333 index keeps
+ * the far bank's reflection subdued. Where the water is thinner than SHORE_DEPTH it fades
  * to nothing, because the ground has risen through the level there.
  */
 function lakeMaterial(surface: WaterSurface3D): MeshBasicNodeMaterial {
@@ -176,16 +176,26 @@ function lakeMaterial(surface: WaterSurface3D): MeshBasicNodeMaterial {
   const facing = clamp(dot(vec3(0, 1, 0), view), float(0), float(1));
   const fresnel = float(0.02).add(pow(float(1).sub(facing), 5).mul(0.98));
   const thickness = surface.thicknessAt();
-  const body = vec3(BODY.r, BODY.g, BODY.b);
+  // Bed depth shades the shore consistently; screen depth still preserves the bed and its shadows.
+  const bedDepth = attribute<"float">("waterDepth", "float");
+  const body = mix(
+    vec3(SHALLOW.r, SHALLOW.g, SHALLOW.b),
+    vec3(BODY.r, BODY.g, BODY.b),
+    smoothstep(float(0), float(3), bedDepth),
+  );
   const submerged = mix(surface.refractionAt(), body, smoothstep(float(0.4), float(3), thickness));
   const material = new MeshBasicNodeMaterial({ transparent: true, side: DoubleSide });
   // The HDR mirror is compressed, then tinted: its horizon is neutral, the water should not be.
   const mirror = surface.reflectionAt();
   const compressed = mirror.div(mirror.add(vec3(1, 1, 1)));
-  const open = mix(submerged, compressed.mul(vec3(SHEEN.r, SHEEN.g, SHEEN.b)), fresnel);
-  const edge = float(1).sub(smoothstep(float(0.05), float(SHORE_BAND), thickness));
-  material.colorNode = mix(open, vec3(SHORE.r, SHORE.g, SHORE.b), edge.mul(0.16));
-  material.opacityNode = smoothstep(float(0), float(SHORE_DEPTH), thickness);
+  // A small sky floor reveals the mirror; the cap keeps grazing water from becoming an ice sheet.
+  const reflection = clamp(float(0.16).add(fresnel.mul(0.3)), float(0), float(0.46));
+  const open = mix(submerged, compressed.mul(vec3(SHEEN.r, SHEEN.g, SHEEN.b)), reflection);
+  // Cap linear radiance before the scene tone curve, including the glancing shoreline.
+  material.colorNode = clamp(open, vec3(0, 0, 0), vec3(0.22, 0.22, 0.22));
+  material.opacityNode = smoothstep(float(0), float(SHORE_DEPTH), bedDepth).mul(
+    smoothstep(float(0), float(0.3), thickness),
+  );
   return material;
 }
 

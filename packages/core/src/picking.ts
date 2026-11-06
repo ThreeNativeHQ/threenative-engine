@@ -60,6 +60,11 @@ function isWithin(object: Object3D, root: Object3D): boolean {
   return false;
 }
 
+/** The game set `raycast` on this instance: a stock `Raycaster` would call it, so picking does too. */
+function ownsRaycast(object: Object3D): boolean {
+  return Object.hasOwn(object, "raycast");
+}
+
 export class ScenePicker {
   #camera: Camera;
   #pointer: () => Vector2;
@@ -186,7 +191,8 @@ export class ScenePicker {
     root: Object3D,
   ): void {
     if (excluded.size !== 0 && this.#isExcluded(object, excluded)) return;
-    const pick = autoBatchOf(object);
+    // An object with its own `raycast` answers for itself, merged or not (see `#hitTest`).
+    const pick = ownsRaycast(object) ? undefined : autoBatchOf(object);
     if (pick !== undefined) {
       // A source the engine merged and hid: its merged mesh answers for it, once per ray.
       if (object.layers.test(this.#raycaster.layers)) this.#reach(pick, root);
@@ -237,7 +243,12 @@ export class ScenePicker {
     for (const hit of found) {
       const source =
         hit.face === null || hit.face === undefined ? undefined : pick.sourceAt(hit.face.a);
-      if (source === undefined || !roots.some((root) => isWithin(source, root))) continue;
+      if (
+        source === undefined ||
+        ownsRaycast(source) ||
+        !roots.some((root) => isWithin(source, root))
+      )
+        continue;
       if (excluded.size !== 0 && this.#isExcluded(source, excluded)) continue;
       this.#hits.push(this.#asSource(hit, source));
     }
@@ -258,7 +269,10 @@ export class ScenePicker {
     // node identity. Authored primitives are hidden from the render, never from a ray test, so the
     // proxy must be skipped or a pick at distance would answer with an object the game never added.
     if (isLodJoinProxy(object) || isAutoBatchMerged(object)) return;
-    const tree = this.#treeFor(object);
+    // three's convention: an instance `raycast` (a no-op for decoration, or custom picking) wins
+    // over the prototype, as it does under a stock Raycaster and three-mesh-bvh. Building a tree
+    // first would cost a decorative 1.5M-triangle mesh a second on its first ray, then be ignored.
+    const tree = ownsRaycast(object) ? undefined : this.#treeFor(object);
     if (tree === undefined) {
       object.raycast(this.#raycaster, into);
       return;

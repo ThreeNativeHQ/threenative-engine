@@ -1,3 +1,4 @@
+import { ok } from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -21,14 +22,30 @@ import {
   Texture,
   Vector3,
 } from "three";
-import { getCurrentStack, setCurrentStack, stack } from "three/tsl";
+import ThreeNodeFrame from "three/src/nodes/core/NodeFrame.js";
+// @ts-expect-error Three's private chain map has no public declarations.
+import ChainMap from "three/src/renderers/common/ChainMap.js";
+// @ts-expect-error Three's node manager has no public declarations.
+import NodeManager from "three/src/renderers/common/nodes/NodeManager.js";
+import {
+  float,
+  getCurrentStack,
+  instanceIndex,
+  positionLocal,
+  setCurrentStack,
+  stack,
+  vec3,
+} from "three/tsl";
+import { renderGroup } from "three/tsl";
 import {
   BufferAttributeNode,
   EventNode,
+  MeshBasicNodeMaterial,
   type Node,
   NodeBuilder,
   type NodeMaterial,
   NodeUpdateType,
+  WGSLNodeBuilder,
 } from "three/webgpu";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -48,16 +65,38 @@ vi.mock("../src/assets.js", async (importOriginal) => {
 });
 
 import { type IAssetLoader, createAssetLoader } from "../src/assets.js";
+import { setLodBias } from "../src/model-lod.js";
 import { RenderCameraCull } from "../src/render-camera-cull.js";
 import {
   IMPOSTOR_FAR_CULL_ATTRIBUTE,
   WorldImpostorSurface,
 } from "../src/render/world-impostor-surface.js";
-import { type IImpostorRawRenderer, WorldImpostorAtlas } from "../src/render/world-impostor.js";
+import {
+  type ITemporalLod,
+  advanceTemporalLod,
+  instanceRandom,
+} from "../src/render/world-impostor-surface.js";
+import {
+  type IImpostorRawRenderer,
+  IMPOSTOR_FRAME_PIXELS,
+  IMPOSTOR_VIEWS,
+  WorldImpostorAtlas,
+} from "../src/render/world-impostor.js";
 import type { IRendererLike } from "../src/renderer.js";
+import { UNDITHERED_LOD_WIDTH } from "../src/world-cell-render.js";
 import { type IKernelInput, WorldGpuScene, cullAndSelect } from "../src/world-gpu-scene.js";
 import { type IWorldAsset, type IWorldRun, cellPlacements } from "../src/world-package.js";
 import { type IWorldPackage, WorldCells } from "../src/world.js";
+
+// Two full-mip RGBA8 attachments per atlas, one layer per view.
+const atlasBytes =
+  2 *
+  Array.from(
+    { length: Math.floor(Math.log2(IMPOSTOR_FRAME_PIXELS)) + 1 },
+    (_, level) => Math.max(1, IMPOSTOR_FRAME_PIXELS >> level) ** 2 * IMPOSTOR_VIEWS * 4,
+  ).reduce((sum, bytes) => sum + bytes, 0);
+const atlasBudget = 128 * 1024 * 1024;
+const atlasCapacity = Math.floor(atlasBudget / atlasBytes);
 
 // Exercise the installed renderer's actual upload decision; its private module has no declarations.
 interface ITestAttributes {
@@ -97,6 +136,12 @@ function attributeUploads(attribute: BufferAttribute | InterleavedBufferAttribut
 /** Build only the real surface's CPU column bindings, not a GPU shader or a mirrored usage branch. */
 function farMatrixRoute(mesh: InstancedMesh) {
   const material = mesh.material as NodeMaterial;
+  const AttributeBuilder = NodeBuilder as unknown as new (
+    object: InstancedMesh,
+    renderer: null,
+    parser: null,
+  ) => NodeBuilder;
+  const builder = new AttributeBuilder(mesh, null, null);
   const body = (
     material.positionNode as unknown as {
       // r187 TSL returns the call node itself; the r185 proxy wrapper (`.node`) is gone.
@@ -118,7 +163,7 @@ function farMatrixRoute(mesh: InstancedMesh) {
   };
   setCurrentStack(scope);
   try {
-    body([], { object: mesh }).traverse(collect);
+    body([], builder as NodeBuilder & { object: Object3D }).traverse(collect);
     scope.traverse(collect);
   } finally {
     setCurrentStack(previous);
@@ -126,12 +171,6 @@ function farMatrixRoute(mesh: InstancedMesh) {
   expect(columns.size).toBe(4);
   // The installed JS base implements attribute setup; its declarations require a shader subclass.
   // No shader generation or renderer/backend method is invoked by this CPU binding setup.
-  const AttributeBuilder = NodeBuilder as unknown as new (
-    object: InstancedMesh,
-    renderer: null,
-    parser: null,
-  ) => NodeBuilder;
-  const builder = new AttributeBuilder(mesh, null, null);
   for (const column of columns) column.setup(builder);
   const attribute = [...columns][0]?.attribute as InterleavedBufferAttribute;
   expect(attribute.data.array).toBe(mesh.instanceMatrix.array);
@@ -510,9 +549,9 @@ function liveWideCasters(world: WorldCells, asset: string): InstancedMesh[] {
   return meshes;
 }
 
-/** Drive the bake's sixteen views to completion, one per render-cadence update. */
+/** Drive every bake view to completion, one per render-cadence update. */
 function runBake(world: WorldCells, renderer: IRendererLike): void {
-  for (let view = 0; view < 16; view += 1) world.update(renderer);
+  for (let view = 0; view < IMPOSTOR_VIEWS; view += 1) world.update(renderer);
 }
 
 // Impostors are opt-in (PRD-473 AC-3): this suite launches with the opt-in so the default path under
@@ -528,6 +567,613 @@ afterEach(() => {
 });
 
 describe("WorldCells automatic impostors", () => {
+  it("uploads the emitted LOD eye and bias for settled batches while keeping object uniforms static", async () => {
+    const pkg = pineOnly();
+    stubManifestFetch(pkg);
+    const follow = { position: { x: -84, z: -64 } };
+    let clock = 0;
+    let holdAdmission = false;
+    const world = await loadPine(treeLoader(), {
+      adaptiveLod: true,
+      admissionBudgetMs: 2,
+      admissionNow: () => (holdAdmission ? ++clock : clock),
+      gpuScene: false,
+      lodHysteresis: 0.2,
+      mainGpuShare: 0.1,
+      preserveAuthoredParts: true,
+      follow,
+    });
+    try {
+      await flushed(world);
+      for (let pass = 0; pass < 100; pass += 1) {
+        world.update();
+        await flush();
+      }
+      const mesh = partsOf(world, "pine", 0, 0).find((candidate) => candidate.count > 0);
+      ok(mesh, "the settled pine LOD batch was emitted");
+      const material = mesh.material as NodeMaterial;
+      const maskNode = material.maskNode;
+      ok(maskNode, "the emitted WorldCells LOD material has a mask node");
+
+      const emittedUniforms: Node[] = [];
+      maskNode.traverse((node) => {
+        if (Reflect.get(node, "isUniformNode") === true) emittedUniforms.push(node);
+      });
+      const eye = emittedUniforms.find((node) => Reflect.get(node, "value") instanceof Vector3);
+      const bias = emittedUniforms.find(
+        (node) =>
+          Reflect.get(node, "value") === 1 && typeof Reflect.get(node, "value") === "number",
+      );
+      ok(eye, "the emitted WorldCells mask has an eye uniform");
+      ok(bias, "the emitted WorldCells mask has a bias uniform");
+
+      const system = {
+        backend: {
+          isWebGPUBackend: true,
+          utils: { getTextureSampleData: () => ({ primarySamples: 1 }) },
+        },
+        // r187's node builder reads the diagnostics switches off `renderer.debug`.
+        debug: { diagnostics: { keywords: false } },
+        hasCompatibility: () => true,
+        hasFeature: () => false,
+        library: { fromMaterial: () => null },
+        reversedDepthBuffer: false,
+        shadowMap: { enabled: true, type: 1 },
+      };
+      const builder = new WGSLNodeBuilder(mesh, system as never) as unknown as {
+        setShaderStage(stage: "fragment"): void;
+        setActiveStack(stack: Node): void;
+        removeActiveStack(stack: Node): void;
+        flowStagesNode(node: Node, output: "bool"): { code: string };
+        buildUpdateNodes(): void;
+        updateNodes: Node[];
+        getBindings(): Array<{ bindings: Array<Record<string, unknown>> }>;
+      };
+      builder.setShaderStage("fragment");
+      const baseStack = Reflect.get(builder, "stack") as Node;
+      builder.setActiveStack(baseStack);
+      try {
+        builder.flowStagesNode(maskNode, "bool");
+      } finally {
+        builder.removeActiveStack(baseStack);
+      }
+      builder.buildUpdateNodes();
+      const groups = builder.getBindings().flatMap((group) => group.bindings);
+      const eyeGroup = Reflect.get(eye, "groupNode");
+      const lodBinding = groups.find(
+        (binding) =>
+          Reflect.get(binding, "isNodeUniformsGroup") === true &&
+          Reflect.get(binding, "groupNode") === eyeGroup,
+      ) as
+        | {
+            readonly groupNode: object;
+            readonly buffer: Float32Array;
+            update(): boolean;
+          }
+        | undefined;
+      ok(lodBinding, "the compiled shader bound the actual LOD uniforms");
+
+      const nodeManager = Object.create(NodeManager.prototype) as {
+        groupsData: InstanceType<typeof ChainMap>;
+        updateGroup(binding: unknown, settled: boolean): boolean;
+      };
+      nodeManager.groupsData = new ChainMap();
+      expect(
+        nodeManager.updateGroup(lodBinding, false),
+        "seed the initial uploaded eye and bias",
+      ).toBe(true);
+      lodBinding.update();
+      const oldEye = (Reflect.get(eye, "value") as Vector3).clone();
+      const oldBias = Reflect.get(bias, "value") as number;
+
+      follow.position.x += 3;
+      follow.position.z += 4;
+      holdAdmission = true;
+      world.update();
+      expect(
+        mesh?.parent,
+        "the old batch remains resident while replacement admission is held",
+      ).not.toBeNull();
+      const newEye = Reflect.get(eye, "value") as Vector3;
+      // Model the adaptive controller's write to the emitted uniform, then prove its renderGroup
+      // upload refreshes even after the batch's object group has settled.
+      Reflect.set(bias, "value", 1.25);
+      const newBias = Reflect.get(bias, "value") as number;
+      expect(newEye.equals(oldEye)).toBe(false);
+      expect(newBias).toBeGreaterThan(oldBias);
+
+      // Three's real NodeFrame updates the renderGroup registered by the material builder, which
+      // bumps that group's version exactly as it does before a render.
+      const groupUpdate = builder.updateNodes.find((node) => node === renderGroup);
+      ok(groupUpdate, "the emitted shader registers renderGroup as an update node");
+      expect(groupUpdate.getUpdateType()).toBe(NodeUpdateType.RENDER);
+      const nodeFrame = new ThreeNodeFrame() as unknown as {
+        renderId: number;
+        updateNode(node: Node): void;
+      };
+      const previousGroupVersion = renderGroup.version;
+      nodeFrame.renderId += 1;
+      nodeFrame.updateNode(groupUpdate);
+      expect(renderGroup.version).toBeGreaterThan(previousGroupVersion);
+
+      // The settled static draw still refreshes this changed binding; a normal object-group
+      // control remains skipped.
+      const shouldRefresh = nodeManager.updateGroup(lodBinding, true);
+      expect(
+        shouldRefresh,
+        "the settled LOD binding must observe moved eye and adaptive bias",
+      ).toBe(true);
+      if (shouldRefresh) lodBinding.update();
+      expect(Array.from(lodBinding.buffer)).toContain(newEye.x);
+      expect(Array.from(lodBinding.buffer)).toContain(newEye.z);
+      expect(Array.from(lodBinding.buffer).some((value) => Math.abs(value - newBias) < 1e-5)).toBe(
+        true,
+      );
+
+      const objectBinding = groups.find(
+        (binding) =>
+          Reflect.get(binding, "isNodeUniformsGroup") === true &&
+          Reflect.get(binding, "groupNode") !== eyeGroup,
+      );
+      expect(
+        objectBinding,
+        "the emitted material retains ordinary per-object uniforms",
+      ).toBeDefined();
+      expect(
+        nodeManager.updateGroup(objectBinding, true),
+        "settled per-object control stays skipped",
+      ).toBe(false);
+    } finally {
+      setLodBias(1);
+      world.dispose();
+    }
+  });
+
+  it("gives a drawn CPU batch the LOD range column when the bake turns its surface range-aware", async () => {
+    // The terminal level's gates arrive after the near batches hold records; the Wasm engine refuses
+    // a draw whose material reads `tnPublishedLodRange` from a geometry without it.
+    const pkg = pineOnly();
+    const definition = pkg.assets.pine as IWorldAsset;
+    // One authored level: until the bake adds the terminal one, the asset has no LOD gate at all.
+    const single = { ...definition, lods: [], impostorDistance: 150 };
+    const one = {
+      ...pkg,
+      assets: { pine: single },
+      cells: [{ x: 1, z: 1, runs: [{ asset: "pine", offset: 0, count: 1 }] }],
+    };
+    stubPlacementFetch(one, new Float32Array([-32, 0, -32, 0, 0, 0, 1, 1]));
+    const world = await loadPine(treeLoader(), {
+      terrain: false,
+      ring: 10,
+      gpuScene: false,
+      preserveAuthoredParts: true,
+      impostors: true,
+      lodHysteresis: 0.2,
+      adaptiveLod: false,
+    });
+    try {
+      await flushed(world);
+      runBake(world, rendererStub());
+      await flushed(world);
+      const aware: string[] = [];
+      const missing: string[] = [];
+      world.traverse((object: Object3D) => {
+        if (!(object instanceof InstancedMesh) || object.count === 0) return;
+        if ((object.material as Material).userData.tnPublishedLodRange !== true) return;
+        aware.push(object.name);
+        if (object.geometry.getAttribute("tnPublishedLodRange") === undefined)
+          missing.push(object.name);
+      });
+      expect(aware.length).toBeGreaterThan(0);
+      expect(missing).toEqual([]);
+    } finally {
+      world.dispose();
+    }
+  });
+
+  it("keeps CPU LOD batches visible until a refilter publishes their replacement ranges", async () => {
+    stubManifestFetch(pineOnly());
+    const follow = { position: { x: -84, z: -64 } };
+    let holdAdmission = false;
+    let clock = 0;
+    const world = await loadPine(treeLoader(), {
+      admissionBudgetMs: 2,
+      admissionNow: () => (holdAdmission ? ++clock : 0),
+      gpuScene: false,
+      lodHysteresis: 0.2,
+      follow,
+    });
+    const range = (level: number, instance = 0): number[] => {
+      const mesh = partsOf(world, "pine", level, 0).find((candidate) => candidate.count > 0);
+      const attribute = mesh?.geometry.getAttribute("tnPublishedLodRange");
+      expect(attribute).toBeDefined();
+      return Array.from((attribute?.array as Float32Array).slice(instance * 4, instance * 4 + 2));
+    };
+    const rootAt = (level: number, instance: number): Vector3 => {
+      const mesh = partsOf(world, "pine", level, 0).find((candidate) => candidate.count > 0);
+      const matrix = new Matrix4();
+      mesh?.getMatrixAt(instance, matrix);
+      return new Vector3().setFromMatrixPosition(matrix);
+    };
+    try {
+      await flushed(world);
+      for (let pass = 0; pass < 100; pass++) {
+        world.update();
+        await flush();
+      }
+      const nearMesh = partsOf(world, "pine", 0, 0).find((candidate) => candidate.count > 0);
+      expect(nearMesh).toBeDefined();
+      expect((nearMesh?.material as Material).userData.tnPublishedLodRange).toBe(true);
+      const published = nearMesh?.geometry.getAttribute("tnPublishedLodRange")?.array as
+        | Float32Array
+        | undefined;
+      expect(
+        Array.from({ length: nearMesh?.count ?? 0 }, (_, index) => [
+          published?.[index * 4],
+          published?.[index * 4 + 1],
+        ]).some(([min, max]) => min === 0 && max === 1),
+      ).toBe(true);
+      const nearIndex = Array.from({ length: nearMesh?.count ?? 0 }, (_, index) => index).find(
+        (index) => range(0, index)[0] === 0 && range(0, index)[1] === 0,
+      );
+      expect(nearIndex).toBeDefined();
+      const root = rootAt(0, nearIndex ?? 0);
+
+      follow.position.x = -150;
+      holdAdmission = true;
+      world.update();
+      expect(range(0, nearIndex ?? 0)).toEqual([0, 0]);
+      holdAdmission = false;
+      for (let pass = 0; pass < 100; pass++) {
+        world.update();
+        await flush();
+      }
+      const farMesh = partsOf(world, "pine", 1, 0).find((candidate) => candidate.count > 0);
+      expect(farMesh).toBeDefined();
+      const farIndex = Array.from({ length: farMesh?.count ?? 0 }, (_, index) => index).find(
+        (index) => rootAt(1, index).distanceTo(root) < 0.01,
+      );
+      expect(farIndex).toBeDefined();
+      expect(range(1, farIndex ?? 0)).toEqual([1, 1]);
+    } finally {
+      world.dispose();
+    }
+  });
+
+  it("gives each lodTransition its gate and its colour and shadow masks", async () => {
+    // A tree standing in a dithered band crawled under MSAA as the viewer walked. "temporal" (UE's
+    // instanced foliage) and "none" keep the gate below a pixel step; only "temporal" and "band"
+    // cross-fade the colour pass, and the shadow mask never fades.
+    const lodMask = async (lodTransition: "band" | "none" | "temporal" | undefined) => {
+      stubManifestFetch(pineOnly());
+      const world = await loadPine(treeLoader(), {
+        gpuScene: false,
+        lodHysteresis: 0.2,
+        ...(lodTransition === undefined ? {} : { lodTransition }),
+        follow: { position: { x: -84, z: -64 } },
+      });
+      try {
+        await flushed(world);
+        for (let pass = 0; pass < 100; pass++) {
+          world.update();
+          await flush();
+        }
+        const mesh = partsOf(world, "pine", 0, 0).find((candidate) => candidate.count > 0);
+        const material = mesh?.material as Material & {
+          maskNode?: unknown;
+          maskShadowNode?: unknown;
+        };
+        expect(material.userData.tnPublishedLodRange).toBe(true);
+        const constants = new Set<unknown>();
+        const seen = new Set<unknown>();
+        const walk = (node: unknown): void => {
+          if (typeof node !== "object" || node === null || seen.has(node)) return;
+          seen.add(node);
+          const record = node as Record<string, unknown>;
+          if (record.isConstNode === true) constants.add(record.value);
+          for (const value of Object.values(record))
+            if (Array.isArray(value)) value.forEach(walk);
+            else if ((value as { isNode?: boolean } | null)?.isNode === true) walk(value);
+        };
+        walk(material.maskShadowNode);
+        return {
+          sharedWithShadow: material.maskNode === material.maskShadowNode,
+          undithered: constants.has(UNDITHERED_LOD_WIDTH),
+        };
+      } finally {
+        world.dispose();
+      }
+    };
+    expect(await lodMask("none")).toEqual({ sharedWithShadow: true, undithered: true });
+    expect(await lodMask("temporal")).toEqual({ sharedWithShadow: false, undithered: true });
+    expect(await lodMask(undefined)).toEqual({ sharedWithShadow: false, undithered: false });
+  });
+
+  it("casts every placement finer than shadows.minLevel in that level's shape, so a view swap never moves a shadow", async () => {
+    // A cached shadow page redraws at most once a second, so a tree that crossed a view gate since
+    // swapped its shadow in a batch the player saw. UE 5.8.3 shadows draw a level coarser by default
+    // (r.Shadow.NaniteLODBias 1, Shadows/ShadowSceneRenderer.cpp:48-52): with `minLevel` 1 no caster
+    // holds the finest shape, and the level-1 shadow mask carries no gate at the first distance.
+    const pine = manifest.assets.pine;
+    const firstGate = (pine?.lods ?? [])[0]?.distance;
+    expect(firstGate).toBeTypeOf("number");
+    const casters = async (minLevel?: number) => {
+      stubManifestFetch(pineOnly());
+      const world = await loadPine(treeLoader(), {
+        gpuScene: false,
+        lodHysteresis: 0.2,
+        lodTransition: "temporal",
+        shadows: { cast: true, castLevels: 3, ...(minLevel === undefined ? {} : { minLevel }) },
+      });
+      try {
+        await flushed(world);
+        for (let pass = 0; pass < 100; pass++) {
+          world.update();
+          await flush();
+        }
+        const levels = new Set<number>();
+        let gated = false;
+        world.traverse((object: Object3D) => {
+          if (!(object instanceof InstancedMesh) || object.layers.mask !== 1 << 28) return;
+          const array = object.instanceMatrix.array as Float32Array;
+          let live = false;
+          for (let index = 0; index < object.count && !live; index += 1)
+            live = array[index * 16 + 15] !== 0;
+          if (!live) return;
+          const level = Number(object.name.split(":")[1]);
+          levels.add(level);
+          if (level !== 1) return;
+          const seen = new Set<unknown>();
+          const walk = (node: unknown): void => {
+            if (typeof node !== "object" || node === null || seen.has(node)) return;
+            seen.add(node);
+            const record = node as Record<string, unknown>;
+            if (record.isUniformNode === true && record.value === firstGate) gated = true;
+            for (const value of Object.values(record))
+              if (Array.isArray(value)) value.forEach(walk);
+              else if ((value as { isNode?: boolean } | null)?.isNode === true) walk(value);
+          };
+          walk((object.material as Material & { maskShadowNode?: unknown }).maskShadowNode);
+        });
+        return { finest: levels.has(0), mid: levels.has(1), gated };
+      } finally {
+        world.dispose();
+      }
+    };
+    expect(await casters()).toEqual({ finest: true, mid: true, gated: true });
+    expect(await casters(1)).toEqual({ finest: false, mid: true, gated: false });
+  });
+
+  it("advances UE's temporal LOD origins without a jump while the viewer walks and settles", () => {
+    // UE 5.8.3 SceneManagement.cpp:113-140. The level a placement shows is chosen at the blend of the
+    // two origins; walking at 6 m/s that blend must move continuously, lag at most two windows, and
+    // reach the viewer within one window of stopping.
+    const state: ITemporalLod = {
+      from: new Vector3(),
+      to: new Vector3(),
+      fromTime: Number.NaN,
+      toTime: Number.NaN,
+      alpha: 1,
+    };
+    const eye = new Vector3();
+    const seen = (): number => state.from.x + (state.to.x - state.from.x) * state.alpha;
+    let previous = Number.NaN;
+    let largestStep = 0;
+    for (let frame = 0; frame <= 600; frame++) {
+      const now = frame / 60;
+      eye.x = Math.min(now, 5) * 6;
+      advanceTemporalLod(state, eye, now, 0.5);
+      if (Number.isFinite(previous))
+        largestStep = Math.max(largestStep, Math.abs(seen() - previous));
+      previous = seen();
+      if (frame > 0 && now <= 5) expect(eye.x - seen()).toBeLessThanOrEqual(6 * 1.0 + 1e-6);
+    }
+    expect(largestStep).toBeLessThan(0.21);
+    expect(seen()).toBeCloseTo(30, 6);
+    // UE keeps sampling every window at rest; both origins are the viewer, so the blend is moot.
+    expect([state.from.x, state.to.x]).toEqual([30, 30]);
+  });
+
+  it("refuses a part material that reads instanceIndex, which WorldCells repacks", async () => {
+    // Strata hashed its wind phase from the slot: every refilter and cull re-rolled each crown's
+    // phase and snapped its top. The same graph through instanceRandom() loads.
+    const loader = (phase: Node<"float">): ITreeLoader => {
+      const tree = treeLoader();
+      return {
+        geometryFor: tree.geometryFor,
+        load: async (url) => {
+          const group = await tree.load(url);
+          const bark = group.children[0] as Mesh;
+          const material = new MeshBasicNodeMaterial();
+          material.positionNode = positionLocal.add(vec3(phase, 0, 0));
+          bark.material = material;
+          return group;
+        },
+      };
+    };
+    const admit = async (phase: Node<"float">) => {
+      stubManifestFetch(pineOnly());
+      const world = await loadPine(loader(phase));
+      try {
+        await flushed(world);
+      } finally {
+        world.dispose();
+      }
+    };
+    await expect(admit(float(instanceIndex))).rejects.toThrow(
+      /reads instanceIndex in positionNode/,
+    );
+    await expect(admit(instanceRandom())).resolves.toBeUndefined();
+  });
+
+  it("stamps a fade when a late refilter turns a whole far tree into a dithered pair", async () => {
+    // UE 5.8.3 fades every LOD change over lod.TemporalLag; a record that was whole at level 1 and
+    // now publishes 0..1 names level 1 as the level to fade from, with the time it reached the GPU.
+    stubManifestFetch(pineOnly());
+    const follow = { position: { x: -84, z: -64 } };
+    const world = await loadPine(treeLoader(), {
+      admissionBudgetMs: 2,
+      gpuScene: false,
+      lodHysteresis: 0.2,
+      follow,
+    });
+    const settle = async (): Promise<void> => {
+      for (let pass = 0; pass < 100; pass++) {
+        world.update();
+        await flush();
+      }
+    };
+    const records = (level: number): { root: Vector3; range: number[] }[] => {
+      const mesh = partsOf(world, "pine", level, 0).find((candidate) => candidate.count > 0);
+      const array = mesh?.geometry.getAttribute("tnPublishedLodRange")?.array as Float32Array;
+      const matrix = new Matrix4();
+      return Array.from({ length: mesh?.count ?? 0 }, (_, index) => {
+        mesh?.getMatrixAt(index, matrix);
+        return {
+          root: new Vector3().setFromMatrixPosition(matrix),
+          range: Array.from(array.slice(index * 4, index * 4 + 4)),
+        };
+      });
+    };
+    try {
+      await flushed(world);
+      await settle();
+      const whole = records(1).find(({ range }) => range[0] === 1 && range[1] === 1);
+      expect(whole, "a far tree published whole at level 1").toBeDefined();
+      expect(whole?.range[2], "nothing to fade on first admission").toBe(-1);
+      const root = whole?.root ?? new Vector3();
+      follow.position.x = root.x - 60;
+      follow.position.z = root.z;
+      await settle();
+      const pair = records(0).find(({ root: at }) => at.distanceTo(root) < 0.01);
+      expect(pair?.range.slice(0, 3), "now dithered 0..1, fading from 1").toEqual([0, 1, 1]);
+      expect(pair?.range[3] ?? 0, "stamped with the renderer clock").toBeGreaterThan(0);
+    } finally {
+      world.dispose();
+    }
+  });
+
+  it("rebuilds cached LOD surfaces when a streamed asset reloads with new source materials", async () => {
+    stubManifestFetch(pineOnly());
+    let sourceColor = 0xff0000;
+    const loader = treeLoader();
+    const changingLoader: ITreeLoader = {
+      ...loader,
+      load: async (url) => {
+        const model = await loader.load(url);
+        model.traverse((object: Object3D) => {
+          if (object instanceof Mesh)
+            (object.material as MeshBasicMaterial).color.setHex(sourceColor);
+        });
+        return model;
+      },
+    };
+    const follow = { position: { x: -32, z: -32 } };
+    const world = await loadPine(changingLoader, {
+      follow,
+      gpuScene: false,
+      impostors: false,
+      lodHysteresis: 0.2,
+      preserveAuthoredParts: true,
+      ring: 0,
+    });
+    const nearMaterial = (): MeshBasicMaterial | undefined => {
+      const mesh = partsOf(world, "pine", 0, 0).find((candidate) => candidate.count > 0);
+      return mesh?.material as MeshBasicMaterial | undefined;
+    };
+    try {
+      await flushed(world);
+      for (let pass = 0; pass < 20; pass += 1) world.update();
+      expect(nearMaterial()?.color.getHex()).toBe(0xff0000);
+      const oldLodMaterial = nearMaterial();
+      let oldLodDisposed = false;
+      oldLodMaterial?.addEventListener("dispose", () => {
+        oldLodDisposed = true;
+      });
+
+      follow.position.x = 100_000;
+      follow.position.z = 100_000;
+      world.update();
+      await flushed(world);
+      expect(world.stats().residentCells).toBe(0);
+
+      sourceColor = 0x0000ff;
+      follow.position.x = -32;
+      follow.position.z = -32;
+      world.update();
+      await flushed(world);
+      for (let pass = 0; pass < 20; pass += 1) world.update();
+      expect(nearMaterial()?.color.getHex()).toBe(0x0000ff);
+      expect(oldLodDisposed).toBe(true);
+    } finally {
+      world.dispose();
+    }
+  });
+
+  it("keeps authored parts and draws a terminal impostor at its authored distance", async () => {
+    const pkg = pineOnly();
+    const definition = pkg.assets.pine as IWorldAsset;
+    const data = { ...pkg, assets: { pine: { ...definition, impostorDistance: 150 } } };
+    const placements = new Float32Array([-32, 0, -32, 0, 0, 0, 1, 1]);
+    const one = {
+      ...data,
+      cells: [{ x: 1, z: 1, runs: [{ asset: "pine", offset: 0, count: 1 }] }],
+    };
+    stubPlacementFetch(one, placements);
+    const follow = { position: { x: -32, z: -32 } };
+    const world = await loadPine(treeLoader(), {
+      follow,
+      terrain: false,
+      ring: 10,
+      gpuScene: false,
+      preserveAuthoredParts: true,
+      impostors: true,
+      lodHysteresis: 0.2,
+      adaptiveLod: false,
+    });
+    try {
+      await flushed(world);
+      runBake(world, rendererStub());
+      await flushed(world);
+      expect(world.stats().impostor.assets).toBe(1);
+      expect(world.stats().impostor.pending).toBe(0);
+      follow.position.z = -232;
+      for (let i = 0; i < 100; i++) {
+        world.update();
+        await flush();
+      }
+      expect(world.stats().impostor.drawn).toBeGreaterThan(0);
+      expect(partsOf(world, "pine", 2, 0)[0]?.geometry.index?.count).toBe(6);
+      expect(partsOf(world, "pine", 2, 1)).toHaveLength(0);
+    } finally {
+      world.dispose();
+    }
+  });
+
+  it.each([false, true])(
+    "drains queued atlases while covered (in-flight: %s)",
+    async (inFlight) => {
+      stubManifestFetch(manyAlphaAssets(2));
+      const world = await loadPine(treeLoader());
+      try {
+        await flushed(world);
+        const renderer = rendererStub();
+        const capture = vi.spyOn(renderer.raw as IImpostorRawRenderer, "render");
+        if (inFlight) {
+          world.process(renderer, undefined, false);
+          expect(capture).toHaveBeenCalledTimes(1);
+        }
+        expect(world.stats().impostor.pending).toBe(2);
+        world.process(renderer, undefined, true);
+        expect(capture).toHaveBeenCalledTimes(32);
+        expect(world.stats().impostor.assets).toBe(2);
+        expect(world.stats().impostor.pending).toBe(0);
+      } finally {
+        world.dispose();
+      }
+    },
+  );
+
   it("bakes an alpha-cutout asset over the render cadence and appends a two-triangle terminal level", async () => {
     stubManifestFetch(pineOnly());
     const loader = treeLoader();
@@ -557,7 +1203,7 @@ describe("WorldCells automatic impostors", () => {
     expect(impostor.assets).toBe(1);
     expect(impostor.pending).toBe(0);
     expect(impostor.terminalTriangles).toBe(2);
-    expect(impostor.atlasBytes).toBe(2_796_160);
+    expect(impostor.atlasBytes).toBe(atlasBytes);
     // The bake is independent of the GPU-driven main pass: this renderer is WebGPU but carries no
     // GPU-scene features, so the scene stays off while the atlas still lands on the CPU path.
     expect(world.stats().gpuScene.on).toBe(false);
@@ -609,13 +1255,19 @@ describe("WorldCells automatic impostors", () => {
     expect(world.stats().impostor.pending).toBe(1);
     const refilters = world.stats().levelRefilters;
     const sources = scene.placements.map((placement) => ({ ...placement }));
-    // Offset the cadence so the first check lands on the exact update that finishes the 16-view bake.
-    for (let dispatch = 0; dispatch < 14; dispatch += 1) scene.dispatch(renderer, camera);
-    for (let view = 0; view < 15; view += 1) {
+    // Match WorldGpuScene's cadence so a check lands on the exact update finishing the full bake.
+    const validationEvery = 30;
+    const dispatchOffset = (validationEvery - (IMPOSTOR_VIEWS % validationEvery)) % validationEvery;
+    for (let dispatch = 0; dispatch < dispatchOffset; dispatch += 1)
+      scene.dispatch(renderer, camera);
+    for (let view = 1; view < IMPOSTOR_VIEWS; view += 1) {
+      const compared = scene.validation.compared;
       world.update(renderer, camera);
       await flush();
+      if (view === IMPOSTOR_VIEWS - 1) expect(scene.validation.compared).toBeGreaterThan(compared);
     }
     await flush();
+    expect(world.stats().impostor.assets).toBe(1);
 
     // Drain any post-publication admission: the regression used to enqueue two real CPU jobs.
     world.update(renderer, camera);
@@ -656,7 +1308,8 @@ describe("WorldCells automatic impostors", () => {
     ];
     for (const corruption of corruptions) {
       scene.slot("pine", { ...published, ...corruption });
-      for (let dispatch = 0; dispatch < 30; dispatch += 1) scene.dispatch(renderer, camera);
+      for (let dispatch = 0; dispatch < validationEvery; dispatch += 1)
+        scene.dispatch(renderer, camera);
       await flush();
       expect(scene.validation.verdict).toBe("mismatch");
       expect(scene.validation.meshMismatched).toBeGreaterThan(0);
@@ -1210,47 +1863,47 @@ describe("WorldCells automatic impostors", () => {
     world.dispose();
   });
 
-  it("bounds the default cache at 48 active atlases and keeps the refused asset's source LODs", async () => {
-    const count = 49;
+  it("bounds the active atlas cache at the default byte budget and keeps the refused asset's source LODs", async () => {
+    const count = atlasCapacity + 1;
     stubManifestFetch(manyAlphaAssets(count));
     const world = await loadPine(treeLoader());
     // Settle the loads with no renderer: every asset is adopted and queued, and the first bake
-    // begins but cannot advance, so all 49 want an atlas before any lands.
+    // begins but cannot advance, so every asset wants an atlas before any lands.
     await flushed(world);
 
     const dispose = vi.spyOn(WorldImpostorAtlas.prototype, "dispose");
     const stub = rendererStub();
     const raw = stub.raw as unknown as { render: () => void };
     const render = vi.spyOn(raw, "render");
-    const budget = 128 * 1024 * 1024;
-    for (let pass = 0; pass < (count + 1) * 16 + 64; pass += 1) {
+    const budget = atlasBudget;
+    for (let pass = 0; pass < (count + 1) * IMPOSTOR_VIEWS + 64; pass += 1) {
       world.update(stub);
       await flush(1);
     }
 
     const impostor = world.stats().impostor;
     expect(world.stats().failures).toBe(0);
-    // 48 atlases fit in the default budget; the 49th is refused rather than overrunning it, and no
+    // The budget holds exactly atlasCapacity atlases; the next is refused, and no
     // atlas is disposed while a live asset still borrows it (that would have made a surface read a
-    // destroyed atlas). One bake per landed asset: 16 capture calls each.
-    expect(impostor.assets).toBe(48);
+    // destroyed atlas). One bake per landed asset: IMPOSTOR_VIEWS capture calls each.
+    expect(impostor.assets).toBe(atlasCapacity);
     expect(impostor.pending).toBe(0);
-    expect(impostor.atlasBytes).toBe(48 * 2_796_160);
+    expect(impostor.atlasBytes).toBe(atlasCapacity * atlasBytes);
     expect(impostor.atlasBytes).toBeLessThanOrEqual(budget);
     expect(impostor.budgetBytes).toBe(budget);
-    expect(render).toHaveBeenCalledTimes(48 * 16);
+    expect(render).toHaveBeenCalledTimes(atlasCapacity * IMPOSTOR_VIEWS);
     expect(dispose).not.toHaveBeenCalled();
 
     // A landed asset appended its terminal level; the refused one kept every source level and
     // appended none.
     expect(partsOf(world, "tree_0", 1, 0).length).toBeGreaterThan(0);
-    expect(partsOf(world, "tree_48", 1, 0).length).toBe(0);
-    expect(partsOf(world, "tree_48", 0, 0).length).toBeGreaterThan(0);
-    expect(partsOf(world, "tree_48", 0, 1).length).toBeGreaterThan(0);
+    expect(partsOf(world, `tree_${atlasCapacity}`, 1, 0).length).toBe(0);
+    expect(partsOf(world, `tree_${atlasCapacity}`, 0, 0).length).toBeGreaterThan(0);
+    expect(partsOf(world, `tree_${atlasCapacity}`, 0, 1).length).toBeGreaterThan(0);
 
     // Teardown releases each owned atlas exactly once, no more and no fewer.
     world.dispose();
-    expect(dispose).toHaveBeenCalledTimes(48);
+    expect(dispose).toHaveBeenCalledTimes(atlasCapacity);
   });
 
   it("shares one bake between two entries over the same cooked LOD0 with different metadata", async () => {
@@ -1262,19 +1915,19 @@ describe("WorldCells automatic impostors", () => {
     const stub = rendererStub();
     const raw = stub.raw as unknown as { render: () => void };
     const render = vi.spyOn(raw, "render");
-    for (let pass = 0; pass < 3 * 16 + 32; pass += 1) {
+    for (let pass = 0; pass < 3 * IMPOSTOR_VIEWS + 32; pass += 1) {
       world.update(stub);
       await flush(1);
     }
 
     // Both entries landed a terminal level, but from ONE atlas: the second re-checked the completed
     // cache when it was dequeued and reused the first bake instead of building a second surface on
-    // a disposed atlas. One bake is 16 capture calls, not 32.
+    // a disposed atlas. The capture count must equal exactly one full bake.
     const impostor = world.stats().impostor;
     expect(world.stats().failures).toBe(0);
     expect(impostor.assets).toBe(2);
-    expect(impostor.atlasBytes).toBe(2_796_160);
-    expect(render).toHaveBeenCalledTimes(16);
+    expect(impostor.atlasBytes).toBe(atlasBytes);
+    expect(render).toHaveBeenCalledTimes(IMPOSTOR_VIEWS);
     expect(dispose).not.toHaveBeenCalled();
     expect(partsOf(world, "alpha_a", 2, 0).length).toBeGreaterThan(0);
     expect(partsOf(world, "alpha_b", 1, 0).length).toBeGreaterThan(0);
@@ -1291,12 +1944,12 @@ describe("WorldCells automatic impostors", () => {
  */
 describe("WorldCells far impostor residency", () => {
   /** The committed package with every cell's pine run, so the near ring is a strict subset. */
-  function pineEverywhere(): IWorldPackage {
+  function pineEverywhere(impostorDistance?: number): IWorldPackage {
     const pine = manifest.assets.pine;
     if (pine === undefined) throw new Error("the committed package has no pine asset.");
     return {
       ...manifest,
-      assets: { pine },
+      assets: { pine: impostorDistance === undefined ? pine : { ...pine, impostorDistance } },
       cells: manifest.cells.map((cell) => ({
         ...cell,
         chunks: [],
@@ -1371,11 +2024,52 @@ describe("WorldCells far impostor residency", () => {
     return live;
   }
 
-  async function loadPineEverywhere(follow: {
-    position: { x: number; z: number };
-  }): Promise<WorldCells> {
-    stubManifestFetch(pineEverywhere());
-    const world = await loadPine(treeLoader(), { follow });
+  /** Unique original roots in authored part-0 meshes, deduplicating overlapping authored LODs. */
+  function nearPineRoots(world: WorldCells): number {
+    return instanceRootKeys(world, (name) => /^pine:\d+:0$/u.test(name), false).size;
+  }
+
+  function instanceRootKeys(
+    world: WorldCells,
+    accepts: (name: string) => boolean,
+    far: boolean,
+  ): Set<string> {
+    const roots = new Set<string>();
+    world.traverse((object: Object3D) => {
+      if (!(object instanceof InstancedMesh) || !accepts(object.name)) return;
+      const array = object.instanceMatrix.array as Float32Array;
+      for (let index = 0; index < object.count; index += 1) {
+        const base = index * 16;
+        if (far ? !farRecordLive(array, index) : array[base + 15] === 0) continue;
+        roots.add(`${array[base + 12]},${array[base + 13]},${array[base + 14]}`);
+      }
+    });
+    return roots;
+  }
+
+  /**
+   * Bake every species the map places and settle the far half: one bake extent per asset, one view
+   * per update, then one idle acquisition per frame for the species no resident run asks for.
+   */
+  async function bakeEvery(world: WorldCells, rounds = 8, idle = 32): Promise<void> {
+    const stub = rendererStub();
+    await flushed(world);
+    for (let round = 0; round < rounds; round += 1) {
+      runBake(world, stub);
+      await flushed(world);
+    }
+    for (let pass = 0; pass < idle; pass += 1) world.update(stub);
+  }
+
+  async function loadPineEverywhere(
+    follow: {
+      position: { x: number; z: number };
+    },
+    options: Partial<Parameters<typeof WorldCells.load>[0]> = {},
+    pkg = pineEverywhere(),
+  ): Promise<WorldCells> {
+    stubManifestFetch(pkg);
+    const world = await loadPine(treeLoader(), { follow, ...options });
     await flushed(world);
     runBake(world, rendererStub());
     await flushed(world);
@@ -1423,6 +2117,149 @@ describe("WorldCells far impostor residency", () => {
     expect(stats.far.bytes).toBe(799 * 68);
     expect(stats.far.uploads).toBeGreaterThan(0);
     world.dispose();
+  });
+
+  it("builds no far aggregate for an asset whose authored cull ends inside the near ring", async () => {
+    // The committed package: `ground_cover` authors maxDistance 30 (a 26.25 m cull) and `cellSize` is
+    // 64, so a ring of 1 guarantees every one of its cells is resident within 64 m — the far half
+    // owns only runs further away than its own cull, and could never draw one of them.
+    stubManifestFetch(manifest);
+    const follow = { position: { x: -32, z: -32 } };
+    const world = await loadPine(treeLoader(), { follow });
+    await bakeEvery(world);
+
+    const names = farMeshes(world).map((mesh) => mesh.name);
+    expect(names).not.toContain("tn-far:ground_cover");
+    // The species whose own distance reaches past the ring keep theirs: pine authors no maxDistance.
+    expect(names).toContain("tn-far:pine");
+    expect(world.stats().impostor.far.aggregates).toBe(names.length);
+    // The short-range asset still draws in the ring, through its own levels.
+    expect(partsOf(world, "ground_cover", 0, 0).length).toBeGreaterThan(0);
+    world.dispose();
+  });
+
+  it("keeps that aggregate when `impostorFar: 'always'` overrides the ring rule, and reports it", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    stubManifestFetch(manifest);
+    const follow = { position: { x: -32, z: -32 } };
+    const world = await loadPine(treeLoader(), { follow, impostorFar: "always" });
+    await bakeEvery(world);
+
+    expect(farMeshes(world).map((mesh) => mesh.name)).toContain("tn-far:ground_cover");
+    const lines = info.mock.calls.map((call) => String(call[0]));
+    expect(
+      lines.filter(
+        (line) =>
+          line.startsWith("TN_WORLD_IMPOSTOR_FAR") &&
+          line.includes("asset=ground_cover") &&
+          line.includes("override=impostorFar") &&
+          line.includes("cull=26.25") &&
+          line.includes("nearRingRadius=64"),
+      ).length,
+    ).toBe(1);
+    world.dispose();
+  });
+
+  it("never loads a species the map places only outside the ring when its cull ends inside it", async () => {
+    const pine = manifest.assets.pine;
+    const cover = manifest.assets.ground_cover;
+    if (pine === undefined || cover === undefined)
+      throw new Error("the committed package lost its pine or ground_cover asset.");
+    const loader = treeLoader();
+    const loaded: string[] = [];
+    const counting: ITreeLoader = {
+      geometryFor: loader.geometryFor,
+      load: (url) => {
+        loaded.push(url);
+        return loader.load(url);
+      },
+    };
+    // The cover sits in cell (3, 3), three cells outside the ring the follow point at (-32, -32)
+    // holds, so no resident run ever asks for it: its aggregate is the only reason to load it at all.
+    stubManifestFetch({
+      ...manifest,
+      assets: { ground_cover: cover, pine },
+      cells: [
+        { chunks: [], runs: [{ asset: "pine", count: 1, offset: 0 }], x: 1, z: 1 },
+        { chunks: [], runs: [{ asset: "ground_cover", count: 1, offset: 0 }], x: 3, z: 3 },
+      ],
+    });
+    const world = await loadPine(counting, { follow: { position: { x: -32, z: -32 } } });
+    // The far pump adopts a species at most one per idle frame; give it more than the map holds.
+    await bakeEvery(world, 16, 64);
+
+    expect(loaded.some((url) => url.includes("ground_cover"))).toBe(false);
+    expect(farMeshes(world).map((mesh) => mesh.name)).toEqual(["tn-far:pine"]);
+    world.dispose();
+  });
+
+  it("hands preserved authored parts to and from the whole-map far aggregate without a gap or double draw", async () => {
+    const follow = { position: { x: -32, z: -32 } };
+    const world = await loadPineEverywhere(
+      follow,
+      {
+        adaptiveLod: false,
+        gpuScene: false,
+        impostors: true,
+        lodHysteresis: 0.2,
+        preserveAuthoredParts: true,
+        shadows: { cast: true, castLevels: 3 },
+        terrain: false,
+      },
+      pineEverywhere(150),
+    );
+    try {
+      expect(world.stats().impostor.assets).toBe(1);
+      expect(world.stats().impostor.pending).toBe(0);
+      expect(partsOf(world, "pine", 0, 0).length).toBeGreaterThan(0);
+      expect(partsOf(world, "pine", 0, 1).length).toBeGreaterThan(0);
+
+      const resident = farMeshes(world)[0];
+      expect(resident).toBeDefined();
+      const residentFar = resident as InstancedMesh;
+      expect(residentFar.castShadow).toBe(true);
+      expect(residentFar.layers.isEnabled(27)).toBe(true);
+      const residentFarRoots = instanceRootKeys(world, (name) => name === "tn-far:pine", true);
+      const residentNearRoots = instanceRootKeys(
+        world,
+        (name) => /^pine:\d+:0@\*$/u.test(name),
+        false,
+      );
+      expect(residentFarRoots.size).toBe(263);
+      expect(residentNearRoots.size).toBe(536);
+      expect([...residentFarRoots].filter((root) => residentNearRoots.has(root))).toHaveLength(0);
+      expect(nearPineRoots(world)).toBe(536);
+      expect(residentFarRoots.size + residentNearRoots.size).toBe(799);
+
+      follow.position.x = 100_000;
+      follow.position.z = 100_000;
+      world.update();
+      await flushed(world);
+      for (let pass = 0; pass < 32; pass += 1) world.update();
+      const away = farMeshes(world)[0] as InstancedMesh;
+      expect(nearPineRoots(world)).toBe(0);
+      expect(farLive(away)).toBe(799);
+      expect(instanceRootKeys(world, (name) => /^pine:\d+:0@\*$/u.test(name), false).size).toBe(0);
+
+      follow.position.x = -32;
+      follow.position.z = -32;
+      world.update();
+      await flushed(world);
+      for (let pass = 0; pass < 32; pass += 1) world.update();
+      const restored = farMeshes(world)[0] as InstancedMesh;
+      const restoredFarRoots = instanceRootKeys(world, (name) => name === "tn-far:pine", true);
+      const restoredNearRoots = instanceRootKeys(
+        world,
+        (name) => /^pine:\d+:0@\*$/u.test(name),
+        false,
+      );
+      expect(restoredNearRoots.size).toBe(536);
+      expect([...restoredFarRoots].filter((root) => restoredNearRoots.has(root))).toHaveLength(0);
+      expect(farLive(restored)).toBe(263);
+      expect(restoredFarRoots.size + restoredNearRoots.size).toBe(799);
+    } finally {
+      world.dispose();
+    }
   });
 
   it("hands each run between the near ring and the far mesh with no double and no hole", async () => {
@@ -1557,7 +2394,7 @@ describe("WorldCells far impostor residency", () => {
     // Every near source mesh is gone and the asset itself has been released, but the far mesh still
     // draws every original root from an atlas the far aggregate holds its own user on.
     expect(nearPineLive(world)).toBe(0);
-    expect(world.stats().impostor.atlasBytes).toBe(2_796_160);
+    expect(world.stats().impostor.atlasBytes).toBe(atlasBytes);
     const far = farMeshes(world)[0] as InstancedMesh;
     expect(farLive(far)).toBe(799);
     expect(dispose).not.toHaveBeenCalled();
@@ -1619,7 +2456,7 @@ describe("WorldCells far impostor residency", () => {
     await flushed(world);
     runBake(world, rendererStub());
     await flushed(world);
-    expect(world.stats().impostor.atlasBytes).toBe(2_796_160);
+    expect(world.stats().impostor.atlasBytes).toBe(atlasBytes);
 
     const sourceDisposes = sourceTextures.map((texture) => vi.spyOn(texture, "dispose"));
     for (const dispose of sourceDisposes) expect(dispose).not.toHaveBeenCalled();
@@ -1633,7 +2470,7 @@ describe("WorldCells far impostor residency", () => {
     await flushed(world);
 
     expect(farMeshes(world).length).toBe(1);
-    expect(world.stats().impostor.atlasBytes).toBe(2_796_160);
+    expect(world.stats().impostor.atlasBytes).toBe(atlasBytes);
     expect(sourceDisposes.length).toBeGreaterThan(0);
     for (const dispose of sourceDisposes) expect(dispose).toHaveBeenCalledTimes(1);
     expect(unrelatedDispose).not.toHaveBeenCalled();
@@ -1846,7 +2683,7 @@ describe("WorldCells far impostor residency", () => {
     await flushed(world);
 
     const stub = rendererStub();
-    for (let pass = 0; pass < 4 * 16 + 96; pass += 1) {
+    for (let pass = 0; pass < 4 * IMPOSTOR_VIEWS + 96; pass += 1) {
       world.update(stub);
       await flush(1);
     }
@@ -1866,8 +2703,86 @@ describe("WorldCells far impostor residency", () => {
     expect(oak).toBeDefined();
     expect(farLive(oak as InstancedMesh)).toBe(1);
     // Its temporary source is released the moment the retried aggregate lands.
-    expect(world.stats().impostor.atlasBytes).toBe(2 * 2_796_160);
+    expect(world.stats().impostor.atlasBytes).toBe(2 * atlasBytes);
     world.dispose();
+  });
+
+  it("budgets the retained whole-map far buffer alongside the resident placement allowance", async () => {
+    const pkg = pineEverywhere(150);
+    const placements = pkg.cells.reduce(
+      (total, cell) => total + cell.runs.reduce((count, run) => count + run.count, 0),
+      0,
+    );
+    const follow = { position: { x: -32, z: -32 } };
+
+    stubManifestFetch(pkg);
+    const undersized = await loadPine(treeLoader(), {
+      follow,
+      gpuScene: false,
+      impostors: true,
+      preserveAuthoredParts: true,
+      budgets: { bytes: placements * 32, instances: placements, residentCells: 25 },
+    });
+    try {
+      await flushed(undersized);
+      runBake(undersized, rendererStub());
+      await flushed(undersized);
+      expect(undersized.stats().impostor.far.aggregates).toBe(0);
+    } finally {
+      undersized.dispose();
+    }
+
+    stubManifestFetch(pkg);
+    const priorRange = await loadPine(treeLoader(), {
+      follow: { position: { ...follow.position } },
+      gpuScene: false,
+      impostors: true,
+      preserveAuthoredParts: true,
+      lodHysteresis: 0.2,
+      budgets: {
+        bytes: placements * (32 + 16 * 4 + 4),
+        instances: placements * 2,
+        residentCells: 25,
+      },
+    });
+    try {
+      await flushed(priorRange);
+      runBake(priorRange, rendererStub());
+      await flushed(priorRange);
+      expect(priorRange.stats().impostor.far.aggregates).toBe(0);
+    } finally {
+      priorRange.dispose();
+    }
+
+    stubManifestFetch(pkg);
+    const world = await loadPine(treeLoader(), {
+      follow: { position: { ...follow.position } },
+      gpuScene: false,
+      impostors: true,
+      preserveAuthoredParts: true,
+      lodHysteresis: 0.2,
+      budgets: {
+        bytes: placements * (32 + 16 + 16 * 4 + 4),
+        instances: placements * 2,
+        residentCells: 25,
+      },
+    });
+    try {
+      await flushed(world);
+      runBake(world, rendererStub());
+      await flushed(world);
+
+      const stats = world.stats();
+      expect(stats.instances).toBeGreaterThan(0);
+      expect(stats.impostor.far.instances).toBe(placements);
+      expect(stats.impostor.far.live).toBeGreaterThan(0);
+      expect(stats.impostor.far.nearOwned).toBeGreaterThan(0);
+      expect(stats.impostor.far.live + stats.impostor.far.nearOwned).toBe(placements);
+      expect(stats.pressure.instances).toBe(0);
+      expect(stats.pressure.bytes).toBe(0);
+    } finally {
+      world.dispose();
+    }
   });
 
   it("lets the far half receive shadows when the world is configured to receive them", async () => {
@@ -1964,7 +2879,7 @@ describe("WorldCells far impostor residency", () => {
     expect(farMeshes(world).length).toBe(0);
 
     const stub = rendererStub();
-    for (let pass = 0; pass < 4 * 16 + 96; pass += 1) {
+    for (let pass = 0; pass < 4 * IMPOSTOR_VIEWS + 96; pass += 1) {
       world.update(stub);
       await flush(1);
     }
@@ -1985,12 +2900,12 @@ describe("WorldCells far impostor residency", () => {
     for (const geometry of oakGeometries)
       expect(vi.mocked(geometry.dispose).mock.calls.length).toBe(1);
     // Two distinct atlases (pine + oak) held after oak's source is gone.
-    expect(world.stats().impostor.atlasBytes).toBe(2 * 2_796_160);
+    expect(world.stats().impostor.atlasBytes).toBe(2 * atlasBytes);
     world.dispose();
   });
 
   it("keeps a far-pinned atlas out of the LRU when the cache is full", async () => {
-    const count = 49;
+    const count = atlasCapacity + 1;
     const pine = manifest.assets.pine;
     if (pine === undefined) throw new Error("the committed package has no pine asset.");
     const assets: Record<string, IWorldAsset> = {};
@@ -2008,18 +2923,18 @@ describe("WorldCells far impostor residency", () => {
 
     const dispose = vi.spyOn(WorldImpostorAtlas.prototype, "dispose");
     const stub = rendererStub();
-    for (let pass = 0; pass < (count + 2) * 24 + 128; pass += 1) {
+    for (let pass = 0; pass < (count + 2) * (IMPOSTOR_VIEWS + 8) + 128; pass += 1) {
       world.update(stub);
       await flush(1);
     }
 
     const stats = world.stats().impostor;
     expect(world.stats().failures).toBe(0);
-    // 48 atlases fit; the 49th is refused. Every one of the 48 is pinned by a far aggregate, so the
+    // Exactly atlasCapacity atlases fit; the next is refused. Each is pinned by a far aggregate, so the
     // LRU finds nothing inactive to evict and no atlas is disposed under a live far surface.
-    expect(stats.atlasBytes).toBe(48 * 2_796_160);
-    expect(stats.far.aggregates).toBe(48);
-    expect(stats.far.instances).toBe(48);
+    expect(stats.atlasBytes).toBe(atlasCapacity * atlasBytes);
+    expect(stats.far.aggregates).toBe(atlasCapacity);
+    expect(stats.far.instances).toBe(atlasCapacity);
     expect(dispose).not.toHaveBeenCalled();
     world.dispose();
   });
@@ -2161,7 +3076,7 @@ describe("WorldCells far impostor cohorts", () => {
     // Roots/cardinality: two canonical ids, two placement roots, one aggregate and one bake.
     expect(mesh.count).toBe(2);
     expect(world.stats().impostor.assets).toBe(2);
-    expect(world.stats().impostor.atlasBytes).toBe(2_796_160);
+    expect(world.stats().impostor.atlasBytes).toBe(atlasBytes);
     world.dispose();
   });
 
@@ -2202,7 +3117,7 @@ describe("WorldCells far impostor cohorts", () => {
     });
     await flushed(world);
     const stub = rendererStub();
-    for (let pass = 0; pass < 4 * 16 + 96; pass += 1) {
+    for (let pass = 0; pass < 4 * IMPOSTOR_VIEWS + 96; pass += 1) {
       world.update(stub);
       await flush(1);
     }

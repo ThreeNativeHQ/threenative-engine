@@ -1,5 +1,6 @@
 #include "check.h"
 #include "engine/shader/ir.h"
+#include "engine/shader/package.h"
 #include "engine/shader/wgsl.h"
 
 #include <cstdio>
@@ -28,6 +29,38 @@ void textureBias() {
             ? invalid.construct(Type::vec(2), {invalid.constant(0.5f)}) : invalid.constant(-0.5f);
         CHECK(invalid.sampleBias(bad == 6 ? tex + 1 : tex, at, bias) == kInvalid);
         CHECK(!invalid.ok() && invalid.diagnostics().size() == 1);
+    }
+}
+
+// A stage allows 16 samplers: past that, textures whose samplers have the same state read one binding. Under it every
+// texture keeps its own, as before.
+void sharedSamplers() {
+    for (const int count : {16, 20}) {
+        Program p(Stage::Fragment);
+        ExprId sum = p.constant(0.f);
+        const auto uv = p.construct(Type::vec(2), {p.constant(0.5f)});
+        for (int i = 0; i < count; ++i) {
+            const auto texture = p.texture2d("map" + std::to_string(i));
+            p.setSamplerState(texture, i < count - 2 ? "repeat" : "clamp");  // the last two differ
+            sum = p.add(sum, p.swizzle(p.sample(texture, uv), "x"));
+        }
+        p.output("color", p.construct(Type::vec(4), {sum, sum, sum, sum}));
+        CHECK(p.ok());
+        const auto module = buildStage(p, 1);
+        CHECK(module.wgsl.ok());
+        int textures = 0, samplers = 0;
+        for (const auto& b : module.bindings) {
+            textures += b.kind == BindingKind::Texture;
+            samplers += b.kind == BindingKind::Sampler;
+        }
+        CHECK(textures == count);
+        CHECK(samplers == (count == 16 ? 16 : 2));
+        if (count == 20) {
+            const auto& code = module.wgsl.code;
+            CHECK(code.find("textureSample(t_map5, smp_map0,") != std::string::npos);
+            CHECK(code.find("textureSample(t_map19, smp_map18,") != std::string::npos);
+            CHECK(code.find("var smp_map5") == std::string::npos && code.find("var smp_map19") == std::string::npos);
+        }
     }
 }
 
@@ -88,8 +121,22 @@ void order() {
 }
 
 // Each case must raise TN_TSL_TYPE at the line that authored it.
+// f32(bool) is WGSL's conversion (true is 1.0): three's float(a.lessThan(b)) in a post output program.
+void boolConversion() {
+    Program p(Stage::Fragment);
+    const auto lit = p.construct(Type::f32(), {p.less(p.uniform("a", Type::f32()), p.constant(0.5f))});
+    p.output("color", p.construct(Type::vec(4), {lit, lit, lit, lit}));
+    CHECK(p.ok());
+    const auto module = WgslEmitter::emit(p);
+    CHECK(module.ok() && module.code.find("f32(") != std::string::npos);
+    Program matrix(Stage::Fragment);
+    CHECK(matrix.construct(Type::mat(4, 4), {matrix.less(matrix.constant(0.f), matrix.constant(1.f))}) == kInvalid);
+}
+
 void types() {
     textureBias();
+    sharedSamplers();
+    boolConversion();
     struct Case {
         const char* name;
         Stage stage;
@@ -238,6 +285,41 @@ void storageTextures() {
     CHECK(!p.ok() && p.diagnostics()[0].node == "storageTexture2d");
 }
 
+// The aux pass rebuilds a lit program and points `color` at the normal (Renderer::auxFragment): what only the replaced
+// colour read must leave the WGSL, while a discard, a live loop's break and the stage's layout stay.
+void pruneDead() {
+    Program p(Stage::Fragment);
+    const auto lit = p.texture2d("lit");
+    const auto cut = p.texture2d("cut");
+    const auto uv = p.varying("uv", Type::vec(2));
+    const auto shade = p.var(Type::vec(4), p.sample(lit, uv));
+    p.output("color", p.load(shade));
+    p.If(p.less(p.swizzle(p.sample(cut, uv), "w"), p.constant(0.5f)), [&] { p.discard(); });
+    const auto sum = p.var(Type::f32(), p.constant(0.f));
+    p.Loop(p.constant(int32_t(4)), [&](ExprId i) {
+        p.If(p.equal(i, p.constant(int32_t(2))), [&] { p.breakLoop(); });
+        p.assign(sum, p.add(p.load(sum), p.constant(1.f)));
+    });
+    const auto unused = p.var(Type::f32(), p.constant(3.f));
+    p.Loop(p.constant(int32_t(8)), [&](ExprId) {
+        p.assign(unused, p.add(p.load(unused), p.swizzle(p.sample(lit, uv), "x")));
+    });
+    p.output("color", p.construct(Type::vec(4), {p.load(sum), p.constant(0.f), p.constant(0.f), p.constant(1.f)}));
+    CHECK(p.ok());
+    const auto before = buildStage(p, 1);
+    CHECK(before.wgsl.ok() && before.wgsl.code.find("textureSample(t_lit") != std::string::npos);
+    p.pruneDeadStatements();
+    const auto after = buildStage(p, 1);
+    CHECK(after.wgsl.ok());
+    CHECK(after.wgsl.code.find("textureSample(t_lit") == std::string::npos);
+    CHECK(after.wgsl.code.find("textureSample(t_cut") != std::string::npos);
+    CHECK(after.wgsl.code.find("discard") != std::string::npos);
+    CHECK(after.wgsl.code.find("break") != std::string::npos);
+    CHECK(after.wgsl.code.find("var t_lit") != std::string::npos);
+    CHECK(after.bindings.size() == before.bindings.size() && after.uniformBlockSize == before.uniformBlockSize);
+    if (!after.wgsl.ok() || after.wgsl.code.find("textureSample(t_lit") != std::string::npos) std::fputs(after.wgsl.code.c_str(), stderr);
+}
+
 }  // namespace
 
-TN_TEST_MAIN({"storage_textures", storageTextures}, {"order", order}, {"types", types}, {"unsupported", unsupported})
+TN_TEST_MAIN({"storage_textures", storageTextures}, {"order", order}, {"types", types}, {"unsupported", unsupported}, {"prune_dead", pruneDead})

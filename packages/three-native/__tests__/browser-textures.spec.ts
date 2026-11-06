@@ -143,6 +143,23 @@ describe("browser texture sources", () => {
     ]);
   });
 
+  it("builds a DataArrayTexture over the engine's class and re-sends its layers on needsUpdate", () => {
+    const { bound, constructed, writes } = recording();
+    const layers = new Uint8Array(2 * 2 * 3 * 4).fill(7);
+    const map = new (bound.DataArrayTexture as Ctor)(layers, 2, 2, 3);
+    expect(constructed.at(-1)).toEqual(["DataArrayTexture", [Array(48).fill(7), 2, 2, 3]]);
+    expect(map.isDataArrayTexture).toBe(true);
+    expect(map.isArrayTexture).toBe(true);
+    expect(map instanceof (bound.DataArrayTexture as Ctor)).toBe(true);
+    expect((map.image as { data: unknown }).data).toBe(layers);
+    layers[0] = 9;
+    map.needsUpdate = true;
+    expect(writes.slice(-2).map(([, field, value]) => [field, value])).toEqual([
+      ["image.data", [9, ...Array(47).fill(7)]],
+      ["needsUpdate", true],
+    ]);
+  });
+
   it("reads a canvas through its 2D context when built and again on needsUpdate", () => {
     const { bound, constructed, writes } = recording();
     let reads = 0;
@@ -173,6 +190,101 @@ describe("browser texture sources", () => {
     expect(reads).toBe(2);
   });
 
+  it("copies a canvas into a CPU-backed canvas, so a GPU-backed one still gives up its pixels", () => {
+    const { bound, constructed, writes } = recording();
+    // A canvas drawn with a default 2D context is GPU-backed on Chromium over Vulkan: its own
+    // getImageData answers zeros for the red fillRect the caller drew. Drawing it into the facade's
+    // own willReadFrequently canvas is a copy the browser performs correctly, whatever context drew
+    // the caller's canvas, so the readback copies unless the caller's context is willReadFrequently.
+    const drawn = new Uint8ClampedArray([255, 0, 0, 255]);
+    let copied: Uint8ClampedArray | null = null;
+    const contexts = vi.fn(() => ({
+      getImageData: () => ({ data: new Uint8ClampedArray(4), width: 1, height: 1 }),
+    }));
+    const canvas = { width: 1, height: 1, drawn, getContext: contexts };
+    vi.stubGlobal(
+      "OffscreenCanvas",
+      class {
+        getContext(_kind: string, options?: { willReadFrequently?: boolean }) {
+          return {
+            drawImage: (source: { drawn?: Uint8ClampedArray }) => {
+              copied = source.drawn ?? null;
+            },
+            getImageData: () => ({
+              data:
+                options?.willReadFrequently === true && copied ? copied : new Uint8ClampedArray(4),
+              width: 1,
+              height: 1,
+            }),
+          };
+        }
+      },
+    );
+    const texture = new (bound.CanvasTexture as Ctor)(canvas);
+    expect(constructed.at(-1)).toEqual(["CanvasTexture", [[255, 0, 0, 255], 1, 1]]);
+    texture.needsUpdate = true;
+    expect(writes.map(([, field, value]) => [field, value])).toEqual([
+      ["image.data", [255, 0, 0, 255]],
+      ["needsUpdate", true],
+    ]);
+    // The caller's context is asked only for its attributes: it is not willReadFrequently, so the
+    // zeros its own getImageData would give never reach the upload (the red copy above did).
+    expect(contexts).toHaveBeenCalled();
+  });
+
+  it("reads a willReadFrequently canvas directly, with no copy, on every needsUpdate", () => {
+    const { bound, writes } = recording();
+    let offscreen = 0;
+    vi.stubGlobal(
+      "OffscreenCanvas",
+      class {
+        constructor() {
+          offscreen++;
+        }
+        getContext() {
+          return null;
+        }
+      },
+    );
+    const canvas = {
+      width: 1,
+      height: 1,
+      getContext: () => ({
+        getContextAttributes: () => ({ willReadFrequently: true }),
+        getImageData: () => ({ data: new Uint8ClampedArray([1, 2, 3, 255]), width: 1, height: 1 }),
+      }),
+    };
+    const texture = new (bound.CanvasTexture as Ctor)(canvas);
+    texture.needsUpdate = true;
+    texture.needsUpdate = true;
+    expect(writes.filter(([, field]) => field === "image.data")).toHaveLength(2);
+    expect(offscreen).toBe(0);
+  });
+
+  it("copies a canvas whose getContext('2d') is null (a webgl canvas) by drawing it", () => {
+    const { bound, constructed } = recording();
+    const canvas = { width: 1, height: 1, getContext: vi.fn(() => null) };
+    const drawn: unknown[] = [];
+    vi.stubGlobal(
+      "OffscreenCanvas",
+      class {
+        getContext() {
+          return {
+            drawImage: (source: unknown) => drawn.push(source),
+            getImageData: () => ({
+              data: new Uint8ClampedArray([4, 5, 6, 255]),
+              width: 1,
+              height: 1,
+            }),
+          };
+        }
+      },
+    );
+    new (bound.CanvasTexture as Ctor)(canvas);
+    expect(constructed.at(-1)).toEqual(["CanvasTexture", [[4, 5, 6, 255], 1, 1]]);
+    expect(drawn).toEqual([canvas]);
+  });
+
   it("uploads an image's pixels for new Texture(image), and refuses what it cannot read", () => {
     const { bound, constructed } = recording();
     const Texture = bound.Texture as Ctor;
@@ -201,6 +313,35 @@ describe("browser texture sources", () => {
     expect(adopted instanceof Texture).toBe(true);
     vi.unstubAllGlobals();
     expect(() => new Texture(42)).toThrow("TN_BROWSER_TEXTURE_SOURCE");
+  });
+
+  it("reads an adopted image through a CPU-backed canvas, the only kind whose getImageData returns its pixels", () => {
+    const { bound, constructed } = recording();
+    // A GPU-backed canvas answers getImageData with zeros on this Chromium over Vulkan: a red
+    // fillRect reads back 0/0/0 there and 255/0/0 on a willReadFrequently canvas. The hint is the
+    // only way to ask for the CPU-backed one, so the readback must pass it.
+    const pixels = new Uint8ClampedArray([5, 6, 7, 8]);
+    const asked: unknown[] = [];
+    vi.stubGlobal(
+      "OffscreenCanvas",
+      class {
+        getContext(_kind: string, options?: { willReadFrequently?: boolean }) {
+          asked.push(options);
+          return {
+            drawImage: () => undefined,
+            getImageData: () => ({
+              data: options?.willReadFrequently === true ? pixels : new Uint8ClampedArray(4),
+              width: 1,
+              height: 1,
+            }),
+          };
+        }
+      },
+    );
+    new (bound.Texture as Ctor)({ width: 1, height: 1, close: () => undefined });
+    expect(constructed.at(-1)).toEqual(["DataTexture", [[5, 6, 7, 8], 1, 1]]);
+    expect(asked).toEqual([{ willReadFrequently: true }]);
+    vi.unstubAllGlobals();
   });
 
   it("gives an adopted image three's mipmap chain, so a minified dial or label does not shimmer (Midway's cockpit)", () => {

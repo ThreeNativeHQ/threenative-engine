@@ -99,7 +99,7 @@ thesis: each spends the training-data advantage to buy a surface the model then 
 | An authored IR, a compiler of game code, a serialized scene format | Your game is TypeScript. The compiler was 25,898 LOC and bought nothing a model can't do with a `.ts` file. The opt-in native engine's shader IR is internal: no game or author writes it. |
 | A second *renderer* | 32% of v1's commits went to a runtime no benchmark ever measured. §7's host runs Three.js, it does not replace it. **One exception (owner, 2026-10-12):** ThreeNative owns one C++ engine, renderer plus internal shader IR, behind the Three.js API. The engine is the default for web and desktop since 2026-10-15 (owner), and a game sets `engine: "threejs"` to keep the legacy host ([`NATIVE-ENGINE-DECISION.md`](NATIVE-ENGINE-DECISION.md)). Any renderer beyond that one engine has become v1. |
 | A JSON/structured-source ECS | Measured at **14x vanilla Three.js** on greenfield work, and scored lower on playability and visuals. |
-| An editor | Not in v1. The paid editor is a separate product in a separate repository. |
+| A general game editor | The paid editor is a separate product in a separate repository. Terrain-only authoring companions are admitted by the narrow allowance below. |
 | A bespoke CLI vocabulary | 178 command forms, a 2,477-word root help. Models are worst at discovering novel API surfaces. |
 | A runtime recipe/preset system that generates a genre | 0 of 7 presets ever reproduced their genre. **One exception (owner, 2026-10-23):** a request that names a game or genre ("like Mario", "Zelda") routes to a starter kit through `--genre`, `kit.json` aliases and capability search. A kit is plain source the game owns, not a runtime preset. |
 | A code-first ECS (miniplex, bitECS) | Entities are plain classes (§9b). Gameplay architecture is the model's job. A game that wants one runs `pnpm add miniplex`; the framework neither ships nor fights it. |
@@ -280,7 +280,10 @@ geometry, placement, colour and material all come from the game); **`clipPoseErr
 `clipTrackBindings`, `clipBoneCoverage`, `boneContact`** (instruments that drive a clip, read the
 pose and report degrees, names and metres — they select no clip and move nothing); and
 **`Heightfield`** (one row-major buffer, interpolation, normals, and the ordering physics consumes;
-every height comes from the game's own sampler); **`SnowField`** (indentation, displaced bank,
+every height comes from the game's own sampler); **`WaterBodies`** (water-body queries — surface height,
+current and footprint — over one baked store, queryable storage shared by rendering and physics like
+`Heightfield`; the game supplies every station, level, extent and speed, and the shading stays in
+`src/render/`); **`SnowField`** (indentation, displaced bank,
 compaction and disturbance channels over one canonical `Heightfield`, load-dependent penetration
 and bounded sparse recovery; the game supplies the terrain, the snow depth, the contact footprint,
 the load and every response coefficient, and no renderer or GPU encoding is involved);

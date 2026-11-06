@@ -212,15 +212,21 @@ describe("animal qualification scene acquisition and cleanup", () => {
     builder.build();
     const renderObject = {
       geometry: probe.geometry,
-      attributes: null,
+      material: probe.material,
+      attributes: null as BufferAttribute[] | null,
       getNodeBuilderState: () => ({ nodeAttributes: builder.getAttributesArray() }),
+      getAttributes() {
+        return RenderObject.prototype.getAttributes.call(this as never);
+      },
+      getMonitor: () => undefined,
     };
-    const attributes = RenderObject.prototype.getAttributes.call(renderObject as never);
+    const attributes = renderObject.getAttributes();
     expect(
       attributes.filter((item) => Reflect.get(item, "isStorageInstancedBufferAttribute") === true),
     ).toHaveLength(5);
     const live = new Set<object>();
     const backend = {
+      createAttribute: () => {},
       createStorageAttribute: (item: object) => live.add(item),
       destroyAttribute: (item: object) => live.delete(item),
       getBufferAttribute: (item: object) => item,
@@ -239,9 +245,18 @@ describe("animal qualification scene acquisition and cleanup", () => {
     expect(info.memory.geometries).toBe(1);
     probe.detach();
     expect(live.size).toBe(0);
+    expect(info.memory.storageAttributes).toBe(0);
     expect(info.memory.geometries).toBe(0);
-    expect(destroyed).toHaveBeenCalledTimes(5);
+    expect(
+      destroyed.mock.calls.filter(
+        ([item]) => Reflect.get(item, "isStorageInstancedBufferAttribute") === true,
+      ),
+    ).toHaveLength(5);
     probe.detach();
-    expect(destroyed).toHaveBeenCalledTimes(5);
+    expect(
+      destroyed.mock.calls.filter(
+        ([item]) => Reflect.get(item, "isStorageInstancedBufferAttribute") === true,
+      ),
+    ).toHaveLength(5);
   });
 });
