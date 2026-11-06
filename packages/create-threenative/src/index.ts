@@ -5,7 +5,7 @@ import { cp, mkdir, readFile, readdir, rename, rm, symlink, writeFile } from "no
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { inspectCommand, inspectHelp } from "./inspect.js";
-import { MCP_SERVERS, serverEntryPath } from "./mcp-servers.js";
+import { MCP_SERVERS, ensureHostMcpConfigs, serverEntryPath } from "./mcp-servers.js";
 
 export { createEngineFreshnessPlugin, hashEngineDist } from "./engine-freshness.js";
 export { createWebBrandPlugin, renderWebManifest } from "./web-brand.js";
@@ -782,6 +782,19 @@ function mcpPackageName(entry: string): string {
     : (segments[0] ?? "");
 }
 
+/** Writes the project-scoped MCP config of every supported agent host from the one server table in
+ * `@threenative/core`, the same call its postinstall makes (PRD-826). The kits track none of these
+ * files, so a kit can never hold a stale copy. A kit that does ship its own config keeps it:
+ * "conflict" leaves a differing server alone and `assertMcpConfig` then judges the result. Only a
+ * config the writer cannot read or write fails here, because the scaffold would ship without it. */
+function writeHostMcpConfigs(target: string): void {
+  for (const [host, outcome] of ensureHostMcpConfigs(target)) {
+    if (outcome === "unreadable" || outcome === "unwritable") {
+      throw new Error(`TN_MCP_HOST_CONFIG: the ${host} MCP config is '${outcome}'.`);
+    }
+  }
+}
+
 /** Fails closed: a project whose MCP config is missing, incomplete, or points at a package it
  * does not install would silently hand the user's agent none of its authoring tools. */
 async function assertMcpConfig(target: string): Promise<void> {
@@ -897,6 +910,9 @@ export async function createProject(
   try {
     const source = path.join(root, template);
     await cp(source, target, { recursive: true, errorOnExist: true });
+    // `kit.json` is lookup data for `--genre` and `engine_search_capabilities`, which read the
+    // packaged templates. Nothing in a generated game reads it (PRD-826).
+    await rm(path.join(target, "kit.json"), { force: true });
     if (["starter", "collectathon", "adventure", "kart"].includes(template))
       for (const relative of SHARED_RENDER_SOURCES)
         await cp(canonicalRenderSourcePath(relative, root), path.join(target, relative));
@@ -926,6 +942,7 @@ export async function createProject(
     await renderTemplate(target, replacements);
     await copyFrameworkPatches(target, root);
     await applyPackageSources(target, options.packageSources);
+    writeHostMcpConfigs(target);
     await assertMcpConfig(target);
     await assertReferenceBundle(target, root);
     if (installed) await runInstall(target);

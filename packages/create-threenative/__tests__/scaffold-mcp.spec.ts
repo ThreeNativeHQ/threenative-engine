@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { type ChildProcessWithoutNullStreams, execFile, spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createInterface } from "node:readline";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
-import { staleHostConfigs } from "../../../scripts/sync-mcp-configs.js";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { MCP_HOSTS } from "../../core/mcp/install.mjs";
 import { MCP_SERVERS } from "../../core/mcp/servers.mjs";
@@ -13,6 +13,7 @@ import { createProject, discoverTemplateNames } from "../src/index.js";
 
 // Read off disk, so a kit added tomorrow has its MCP wiring gated the day it ships.
 const templates = discoverTemplateNames();
+const templateRoot = path.resolve("packages/create-threenative/templates");
 const engineMcp = "threenative-engine-mcp";
 const enginePackageRoot = path.resolve("packages/engine-mcp");
 const corePackageRoot = path.resolve("packages/core");
@@ -850,14 +851,17 @@ describe("scaffolded host MCP configs", () => {
   );
 });
 
-// `pnpm sync:mcp` writes these files and `pnpm budgets` runs its `--check`. That gate lives at the
-// end of a chain that takes minutes; this one runs in the unit suite, so a hand-edited template
-// config is caught by a plain `pnpm test` too. It calls the generator's own comparison rather than
-// re-deriving the expectation: a second derivation would be a second generator, green against its
-// own copy of the rule.
+// The scaffolder writes every host config from core's one server table (PRD-826), so a template
+// that tracks one is a second copy that can go stale. The scaffold tests above prove each written
+// file; this one proves nothing is committed beside them.
 
-describe("committed template MCP host configs", () => {
-  it("should keep every template host config equal to the generator output", () => {
-    expect(staleHostConfigs()).toEqual([]);
+describe("template MCP host configs", () => {
+  it("should track no host config in any template", () => {
+    const tracked = templates.flatMap((template) =>
+      MCP_HOSTS.map((host) => path.join(templateRoot, template, host.file)).filter((file) =>
+        existsSync(file),
+      ),
+    );
+    expect(tracked).toEqual([]);
   });
 });

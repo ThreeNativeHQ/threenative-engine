@@ -93,7 +93,7 @@ local tarballs. `pnpm dev` inside a generated project is a package script, never
 The MCP servers reach a generated project through the configs installing `@threenative/core`
 writes — asset, sculpt and capability servers, each launching through a shim inside core, wired for
 every host that reads a project-scoped config. `MCP_HOSTS` in `packages/core/mcp/install.mjs` is that
-list; `pnpm sync:mcp` writes it into every template and `--check` fails the budgets when one is stale.
+list; the scaffolder writes it into each generated project with `ensureHostMcpConfigs`, and no template tracks a config (PRD-826).
 A host that reads only a machine-wide config is deliberately absent: installing a library into one
 game must never edit a file governing every other project. The asset server stays the externally
 pinned `threenative-asset-mcp`; never vendor it. Its surface is `asset-mcp-tools.json`, updated by

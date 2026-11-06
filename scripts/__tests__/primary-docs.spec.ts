@@ -98,14 +98,10 @@ async function workspacePinnedPackages(): Promise<Set<string>> {
   return pinned;
 }
 
-/** Server names written into every generated project's `.mcp.json` by installing core. */
+/** Server names written into every generated project's `.mcp.json`: the one table the scaffolder
+ * and core's postinstall both read (PRD-826 removed the tracked per-template copies). */
 async function shippedMcpServerNames(): Promise<string[]> {
-  const config = JSON.parse(
-    await readRepoFile(
-      path.join("packages", "create-threenative", "templates", "starter", ".mcp.json"),
-    ),
-  ) as { mcpServers?: Record<string, unknown> };
-  return Object.keys(config.mcpServers ?? {});
+  return Object.keys(MCP_SERVERS);
 }
 
 function packageTokens(rawDoc: string): Set<string> {
