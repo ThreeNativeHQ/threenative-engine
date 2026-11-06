@@ -315,6 +315,14 @@ bool openWindow(Window& window) {
     // SDL reads the hint in SDL_Init: set after it, a Wayland session keeps Wayland and no surface.
     SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "x11");
 #endif
+#if defined(TN_PS4)
+    // The dummy driver owns the window handle the loop sizes its drawing buffer from and the events
+    // it pumps; the frame itself reaches the screen through Dawn's VideoOut swapchain (context.cpp's
+    // PLATFORM_PS4). It is opt-in: SDL3's DUMMY_Available (SDL_nullvideo.c) accepts only a hint that
+    // names it, so without this line SDL_Init fails with "No available video device" and the player
+    // falls back to a headless run that presents nothing.
+    SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "dummy");
+#endif
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
         std::printf("[Playtest] SDL_Init failed: %s\n", SDL_GetError());
         return false;
@@ -322,7 +330,11 @@ bool openWindow(Window& window) {
     SDL_WindowFlags flags = SDL_WINDOW_RESIZABLE;
 #if defined(__APPLE__)
     flags |= SDL_WINDOW_METAL;
-#elif !defined(_WIN32)
+#elif defined(_WIN32) || defined(TN_PS4)
+    // A plain window: the frame reaches the screen through Dawn's own surface (DXGI on Windows, the
+    // VideoOut swapchain on PS4, context.cpp's PLATFORM_PS4). SDL_WINDOW_VULKAN exists for SDL's own
+    // Vulkan path, and the dummy driver a console runs refuses it.
+#else
     flags |= SDL_WINDOW_VULKAN;
 #endif
     window.handle = SDL_CreateWindow(surfaceConfig().title.c_str(), static_cast<int>(surfaceConfig().width),
@@ -676,6 +688,11 @@ struct Session {
     // queue them ahead of the next readback faster than a software GPU executes them.
     uint64_t lastRenderedTick = UINT64_MAX;
     bool hasRendered = false;
+#if defined(TN_PS4)
+    // A console has no frame meter and no shell to ask: the frames this loop presented are counted
+    // here and printed every 100 by step(), which is the account a judged run reads.
+    uint64_t presentedFrames = 0;
+#endif
     std::set<std::string> renderNotes;  // a renderer note (a skipped draw) prints once, not every frame
     double updateMs = 0, readyMs = 0, updateCpuMs = 0, updateInstructions = 0, updateCycles = 0;
     double updateMixerCpuMs = 0;
@@ -1324,6 +1341,12 @@ int Session::step() {
     // the queue ahead of the next render-target readback and make it wait behind all of them.
     if (presenter || !hasRendered || tick() != lastRenderedTick) {
         renderFrame();
+#if defined(TN_PS4)
+        if (++presentedFrames % 100 == 0) {
+            std::printf("TN_PLAYER_FRAMES %llu\n", static_cast<unsigned long long>(presentedFrames));
+            std::fflush(stdout);
+        }
+#endif
     } else {
         renderer->poll();
         events.drain();

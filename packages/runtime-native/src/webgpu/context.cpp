@@ -1152,6 +1152,13 @@ bool Context::createSurfaceWithDisplay(void* display, void* window, int platform
     WGPURequestAdapterOptions adapterOptions = {};
     adapterOptions.compatibleSurface = surface_;
     adapterOptions.powerPreference = WGPUPowerPreference_HighPerformance;
+#if defined(TN_PS4)
+    // Compatibility, not Core, and that is the honest level for this driver: vulkan-ps4 reports
+    // 4096 for maxFramebuffer{Width,Height} and maxViewportDimensions (vk_ps4_instance.c), below
+    // WebGPU Core's 8192 minimum, so Dawn filters the adapter out of a Core request and the callback
+    // lands on "No supported adapters" (the same finding E3 recorded for its triangle).
+    adapterOptions.featureLevel = WGPUFeatureLevel_Compatibility;
+#endif
 
     AdapterRequestData adapterData;
 

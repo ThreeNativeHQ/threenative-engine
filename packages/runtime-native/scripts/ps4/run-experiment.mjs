@@ -2,7 +2,7 @@
 // PRD-784 PS4 experiments: build a guest program with the OpenOrbis toolchain, boot it in the
 // shadPS4 emulator headless, and pass only when the guest prints its marker.
 //
-// Usage: node packages/runtime-native/scripts/ps4/run-experiment.mjs <e1|e2|e3|e4>
+// Usage: node packages/runtime-native/scripts/ps4/run-experiment.mjs <e1|e2|e3|e4|e5> [--scene <game dir>]
 //
 // Every product stays under the scratch root (sibling of the dependency root), one directory per
 // experiment (<scratch>/e1, <scratch>/e2, <scratch>/e3, <scratch>/e4), never in the repo.
@@ -53,6 +53,39 @@ const E2_TOLERANCE = 8; // per-channel distance from the clear colour that count
 const E2_CLEAR_MIN = 0.2;
 const E2_DRAWN_MIN = 0.02;
 const E2_DRAWN_MAX = 0.75;
+
+// E5 presents a game's own frame, so its clear colour is whatever the scene clears to AFTER the
+// stock filmic tone curve and metered auto exposure: it is read from the presented frame (its most
+// common colour, the background) instead of guessed from the scene's clear value. TN_PS4_E5_CLEAR
+// pins it -- "r,g,b" -- when a run needs a fixed answer. The bundled scene turns its cube every
+// frame, so two captures at different times must differ over at least this much of the frame; a
+// frozen, blank or never-presented frame changes nothing.
+const E5_MOVED_MIN = 0.01;
+const E5_FRAMES_MIN = 300;
+
+// The game E5 bundles and boots: the smallest in-repo cube scene. examples/wasm-engine-boot is one
+// lit box and a sphere over bare three, with no assets, no TSL, no post and no physics (PRD-540),
+// which is the least a 300-frame proof can ask of the player. `--scene <dir>` or TN_PS4_SCENE runs
+// any other game project, including one outside this repository.
+const DEFAULT_E5_SCENE = path.join(REPO_ROOT, 'examples', 'wasm-engine-boot');
+// What the e5 entry bundles: the default until main() reads --scene or TN_PS4_SCENE.
+let sceneRoot = DEFAULT_E5_SCENE;
+
+// The experiment name, then optionally the game project. --scene wins over TN_PS4_SCENE, and a
+// relative path is read from where the runner was started. A name that is not an experiment is the
+// same refusal as no name at all: the usage line, one place.
+function parseArgs(argv) {
+  const [name, ...rest] = argv;
+  if (!EXPERIMENTS[name])
+    throw new Error(`usage: node packages/runtime-native/scripts/ps4/run-experiment.mjs <${Object.keys(EXPERIMENTS).join('|')}> [--scene <game dir>]`);
+  let scene = process.env.TN_PS4_SCENE ?? '';
+  for (let i = 0; i < rest.length; i++) {
+    if (rest[i] !== '--scene' || rest[i + 1] === undefined)
+      throw new Error(`unknown argument ${rest[i]}: --scene <game dir> is the only option`);
+    scene = rest[++i];
+  }
+  return { name, scene: scene ? path.resolve(scene) : DEFAULT_E5_SCENE };
+}
 
 // shadPS4 keeps render targets in host VRAM and writes them back to guest memory only when GPU
 // readbacks are on (default Disabled: src/core/emulator_settings.h:421 at v.0.21.0). PS4 memory
@@ -147,6 +180,25 @@ const EXPERIMENTS = {
     // thread_local that lost its init image (PT_TLS alignment, see ps4-malloc.c).
     failurePattern: /V8 error:|TN_PS4_E4 tls probe=(?!0x5a17c0de)/,
     verdict: match => ({ ok: true, detail: ` mode=${match[1]}` }),
+  },
+  e5: {
+    // The engine's own V8 player: 21 engine archives, SDL3, Dawn and the V8 monolith boot before the
+    // first frame, and past that 300 frames of jitless JS run on a software-rendered GPU.
+    timeoutMs: 600_000,
+    // Both captures land while the player presents. The cube turns every frame, so two frames at
+    // different times differ only if the loop really ran.
+    screenshots: ['20', '40'],
+    build: (outDir, toolchain) => buildE5(outDir, toolchain, sceneRoot),
+    // run.cpp counts presented frames on PS4 and prints one line per 100 (TN_PLAYER_FRAMES). The
+    // marker waits for the 300-frame box, so a run that never gets there ends at the timeout and is
+    // read from the TN_PLAYER_STAGE lines the player prints on the way.
+    markerPattern: new RegExp(`TN_PLAYER_FRAMES (${E5_FRAMES_MIN}|[4-9]\\d\\d|\\d{4,})`),
+    // A JS-side failure is a valid fail-closed result when it names the call: the player exits with
+    // the V8 error on stderr, or the game never publishes a scene. An emulator crash (ASSERT_MSG
+    // aborts with "Assertion Failed!") is a red of the GPU stack under the player, and its line
+    // names the pass that refused the shader.
+    failurePattern: /TN_PLAYER_V8_GAME:|TN_V8_UPDATE_FAILED|TN_V8_FRAME_FAILED|TN_PLAYER_NO_SCENE|TN_PS4_E5 stage=exit status=[1-9]|[\w./_-]+\.cpp:\d+ \w+: Assertion Failed!(?:\n[^\n]{0,80})?/,
+    verdict: (match, frame, log, shots) => judgeE5(match, frame, log, shots),
   },
 };
 
@@ -329,6 +381,84 @@ async function judgeE3(match, frame, log, shots) {
   return verdict.ok ? { ...verdict, detail: `${verdict.detail} adapter=${adapter} limits ${limits}` } : verdict;
 }
 
+// The colour a presented frame cleared to: its most common colour. A game's clear reaches the
+// screen through the stock filmic tone curve and metered auto exposure, so the value in the scene
+// is not the value a judge can match; the background is. TN_PS4_E5_CLEAR="r,g,b" pins it.
+function e5ClearColour({ width, height, pixels }) {
+  const pinned = (process.env.TN_PS4_E5_CLEAR ?? '').split(',').map(Number).filter(Number.isFinite);
+  if (pinned.length === 3) return pinned;
+  const counts = new Map();
+  for (let at = 0; at < width * height * 3; at += 3) {
+    const key = (pixels[at] << 16) | (pixels[at + 1] << 8) | pixels[at + 2];
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  let common = 0;
+  let seen = -1;
+  for (const [key, count] of counts) {
+    if (count > seen) {
+      common = key;
+      seen = count;
+    }
+  }
+  return [(common >> 16) & 255, (common >> 8) & 255, common & 255];
+}
+
+// The share of the frame that changed between two captures, over the pixels both carry. Two frames
+// of a turning cube differ over the silhouette it moved across; identical or never-drawn frames
+// differ by nothing.
+function differingFraction(a, b) {
+  const pixels = Math.min(a.width * a.height, b.width * b.height);
+  if (!pixels) return 0;
+  let differing = 0;
+  for (let at = 0; at < pixels * 3; at += 3) {
+    for (let channel = 0; channel < 3; channel++) {
+      if (Math.abs(a.pixels[at + channel] - b.pixels[at + channel]) > E2_TOLERANCE) {
+        differing++;
+        break;
+      }
+    }
+  }
+  return differing / pixels;
+}
+
+// E5's verdict: the player presented the 300 frames the box asks for, the presented frame holds the
+// scene's own clear colour with the game drawn inside it, and two frames at different times differ
+// (the cube moved). The guest's own count is what the marker carries; the frames are judged on the
+// host, because a guest GPU readback reads stale memory on shadPS4 (see judgePresented).
+async function judgeE5(match, frame, log, shots) {
+  const frames = Number(match[1]);
+  const info = ` frames=${frames}`;
+  if (!(frames >= E5_FRAMES_MIN))
+    return { ok: false, reason: `TN_PLAYER_FRAMES ${frames}: the player presented fewer than ${E5_FRAMES_MIN} frames`, info };
+  if (shots.length < 2)
+    return {
+      ok: false,
+      reason: `${shots.length} host screenshot(s): a green run needs two, at different times, to prove the cube moved`,
+      info,
+    };
+  let first;
+  let last;
+  try {
+    first = readPpm(pngToPpm(shots[0]));
+    last = readPpm(pngToPpm(shots.at(-1)));
+  } catch (error) {
+    return { ok: false, reason: `${shots[0]} or ${shots.at(-1)} is unreadable: ${error.message}`, info };
+  }
+  const clear = e5ClearColour(last);
+  const moved = differingFraction(first, last);
+  const detail = ` frames=${frames} clear=${clear.join(',')} moved=${(moved * 100).toFixed(2)}%`;
+  const verdict = await judgePresented(log, shots, { clearColour: clear, requireReadbacks: false, info: detail });
+  if (!verdict.ok) return verdict;
+  if (moved < E5_MOVED_MIN)
+    return {
+      ok: false,
+      reason: `${(moved * 100).toFixed(2)}% of the frame differs between ${shots[0]} and ${shots.at(-1)}, below the ${E5_MOVED_MIN * 100}% a moving cube must change`,
+      info: detail,
+      image: verdict.image,
+    };
+  return { ...verdict, detail: `${verdict.detail}${detail}` };
+}
+
 // The run's host screenshots, oldest first: <out>/screen-<seconds>.png, one per requested time.
 async function screenShots(out) {
   const names = (await readdir(out).catch(() => [])).filter(name => /^screen-\d+(\.\d+)?\.png$/.test(name));
@@ -487,12 +617,55 @@ async function buildE4(outDir, toolchain) {
   return { appDir, artifacts: { eboot } };
 }
 
+// E5's guest is the engine's own V8 player (e5-build.sh owns the ninja step, ld.lld, create-fself
+// and the SELF) plus the game bundle the player opens at /app0/game.js. bundle-native-engine.mjs
+// writes that one IIFE and cooks the scene's assets beside it; an unbound name fails the bundle by
+// name (TN_NATIVE_ENGINE_UNBOUND), which is the honest red for a game the player cannot run.
+async function buildE5(outDir, toolchain, scene) {
+  runInherit('bash', [path.join(HERE, 'e5-build.sh'), '--out', outDir], { env: { ...process.env, OO_PS4_TOOLCHAIN: toolchain } });
+  const appDir = path.join(outDir, 'out', 'app');
+  const eboot = path.join(appDir, 'eboot.bin');
+  if (!existsSync(eboot)) throw new Error(`e5-build.sh wrote no ${eboot}`);
+  const entry = path.join(scene, 'src', 'game.ts');
+  if (!existsSync(entry)) throw new Error(`scene ${scene} has no src/game.ts (--scene names a game project)`);
+  const bundle = path.join(appDir, 'game.js');
+  run(process.execPath, [
+    path.join(REPO_ROOT, 'packages/runtime-native/scripts/bundle-native-engine.mjs'),
+    '--engine', 'native', '--game-runtime', 'v8', '--entry', entry, '--out', bundle, '--assets', scene,
+  ]);
+  if (!existsSync(bundle)) throw new Error(`the bundler wrote no ${bundle}`);
+  // A scene with no asset files gets no pack (the player opens native/assets.tnpk only when the
+  // game asks for an asset), so its absence is a fact about the scene, not a build failure.
+  const assets = path.join(appDir, 'native', 'assets.tnpk');
+  return { appDir, artifacts: { eboot, bundle, assets: existsSync(assets) ? assets : '' } };
+}
+
 async function readText(file) {
   try {
     return await readFile(file, 'utf8');
   } catch {
     return '';
   }
+}
+
+// The owner's jitless JS cost, when the player measured it: core prints a windowed
+// TN_FRAME_BUDGET line whose `frame` summary is the game's own frame callback, entry to exit. One
+// summary line -- the median of the windows' p50s -- so a run's JS cost is on record without a
+// second instrument. A run that presents no frame has no window and prints nothing.
+function frameBudgetMs(text) {
+  const windows = [];
+  for (const match of text.matchAll(/TN_FRAME_BUDGET:(\{[^\n]*\})/g)) {
+    try {
+      const window = JSON.parse(stripVTControlCharacters(match[1]));
+      if (Number.isFinite(window.frame?.p50)) windows.push(window.frame.p50);
+    } catch {
+      // A log can be read in the middle of a write: half a line is not a window.
+    }
+  }
+  if (!windows.length) return '';
+  const sorted = [...windows].sort((a, b) => a - b);
+  const median = sorted[Math.floor(sorted.length / 2)];
+  return `js median ${median.toFixed(2)} ms/frame (frame.p50 over ${windows.length} window${windows.length === 1 ? '' : 's'})`;
 }
 
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -662,12 +835,16 @@ async function boot(experiment, built, appimage, outDir) {
 }
 
 async function main(argv) {
-  const name = argv[2];
-  const experiment = EXPERIMENTS[name];
-  if (!experiment) {
-    console.error(`usage: node packages/runtime-native/scripts/ps4/run-experiment.mjs <${Object.keys(EXPERIMENTS).join('|')}>`);
+  let options;
+  try {
+    options = parseArgs(argv.slice(2));
+  } catch (error) {
+    console.error(error.message);
     return 2;
   }
+  const name = options.name;
+  const experiment = EXPERIMENTS[name];
+  sceneRoot = options.scene;
   const label = `PS4_EMULATED ${name.toUpperCase()}`;
   const outDir = path.join(SCRATCH_ROOT, name);
   await mkdir(outDir, { recursive: true });
@@ -693,6 +870,9 @@ async function main(argv) {
     console.log(`${label} shader dumps ${dumps} (${names.length} files)`);
     for (const name of names) console.log(`${label} dump ${path.join(dumps, name)}`);
   }
+
+  const jsCost = frameBudgetMs(`${result.output}\n${result.log}`);
+  if (jsCost) console.log(`${label} ${jsCost}`);
 
   // Pass rule: the experiment's own verdict over the evidence it captured, and nothing else.
   const verdict = result.match ? await experiment.verdict(result.match, frame, result.log, shots) : null;
