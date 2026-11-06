@@ -1,6 +1,6 @@
 # PRD-829 — An existing game receives the current authoring layer
 
-**Status:** PROPOSED
+**Status:** IN PROGRESS
 **Priority:** P1 — AC-1..AC-6 are open, and until they land every authoring fix (PRD-825, PRD-827, #616) reaches new scaffolds only, not one of the 40 sandbox games
 **Complexity:** 4 (MEDIUM) — 3 implementation files in one package (`doctor.ts`, `index.ts`, `threenative.ts`); risk override: none (writes are limited to scaffold-owned files and fail closed on edits)
 **Owner:** João Paulo Furtado
@@ -79,10 +79,10 @@ subtree) is never overwritten silently — it is kept and reported. `--fix` touc
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local]: a fresh scaffold writes `.threenative/agent-files.json` whose hashes match the files on disk, and `threenative doctor` reports `authoring layer: ok`. proof: red-green `packages/create-threenative/__tests__/scaffold.spec.ts` (new case) — Evidence: pending.
-- [ ] AC-2 [local]: a scaffold made by the previous published `create-threenative` reports `authoring layer: warn` naming both versions and the stale file count. proof: red-green `__tests__/doctor.spec.ts` fixture — Evidence: pending.
-- [ ] AC-3 [local]: `doctor --fix` on that fixture leaves it byte-equal to a fresh scaffold of the current version (same kit, same project name), and `doctor` then reports `ok`. proof: `__tests__/doctor-fix.spec.ts` tree diff — Evidence: pending.
-- [ ] AC-4 [local]: an edited `AGENTS.md` survives `--fix` unchanged, is listed as kept, and the run exits 1; `--force` overwrites it. proof: same spec, two cases — Evidence: pending.
+- [x] AC-1 [local]: a fresh scaffold writes `.threenative/agent-files.json` whose hashes match the files on disk, and `threenative doctor` reports `authoring layer: ok`. proof: red-green `packages/create-threenative/__tests__/scaffold.spec.ts` (new case) — Evidence: case "stamps the authoring layer it wrote, and doctor reports it ok (PRD-829)". Red (2026-11-06): the 8 new cases failed with `ENOENT ... .threenative/agent-files.json` and `doctor: unknown option '--fix'`. Green: `scaffold.spec.ts` 79 passed.
+- [x] AC-2 [local]: a scaffold made by the previous published `create-threenative` reports `authoring layer: warn` naming both versions and the stale file count. proof: red-green `__tests__/doctor.spec.ts` fixture — Evidence: `doctor.spec.ts` case "warns on an authoring layer an older create-threenative stamped" asserts `stamp 0.2.15, installed create-threenative 0.2.17 (starter kit): 1 stale file`. Red (2026-11-06): the 8 new cases failed with `ENOENT ... .threenative/agent-files.json` and `doctor: unknown option '--fix'`. Green: 98 passed in `doctor.spec.ts`. No published version writes a stamp yet (npm latest is 0.2.15), so the fixture is a current scaffold with an older stamp. Real check: `npx create-threenative@0.2.15 fox --template minimal --no-install`, then `authoringLayerStatus` reads `{"installed":"0.2.17","kit":"minimal"}` with 9 stale files and no stamp, so the row reads `stamp absent, installed create-threenative 0.2.17 (minimal kit): 9 stale files`.
+- [x] AC-3 [local]: `doctor --fix` on that fixture leaves it byte-equal to a fresh scaffold of the current version (same kit, same project name), and `doctor` then reports `ok`. proof: `__tests__/doctor-fix.spec.ts` tree diff — Evidence: case "leaves an older game byte-equal to a fresh scaffold, and the status then reads current": 3 files written, the dropped `agent-docs/old.md` deleted, every stamped file and the stamp byte-equal to a fresh scaffold. Red (2026-11-06): the 8 new cases failed with `ENOENT ... .threenative/agent-files.json` and `doctor: unknown option '--fix'`. Green: `doctor-fix.spec.ts` 6 passed. Real check on the 0.2.15 `minimal` scaffold: `--fix` wrote 1 and kept 8 (no stamp, so every differing file counts as edited), `--fix --force` wrote 8. Then 24 of 24 layer files and the stamp equal a fresh 0.2.17 scaffold, and the status reads `stamped 0.2.17`, 0 stale. `diff -rq` shows changes only in the authoring layer, the MCP host configs and `.gitignore`.
+- [x] AC-4 [local]: an edited `AGENTS.md` survives `--fix` unchanged, is listed as kept, and the run exits 1; `--force` overwrites it. proof: same spec, two cases — Evidence: cases "keeps an AGENTS.md the game edited and lists it; --force overwrites it" and "exits 1 with TN_AUTHORING_LAYER_EDITED when a file was kept" (stderr `kept AGENTS.md`, exit 1 through `runDoctorCommand`). Red (2026-11-06): the 8 new cases failed with `ENOENT ... .threenative/agent-files.json` and `doctor: unknown option '--fix'`. Green: 6 passed.
 - [ ] AC-5 [local]: `--fix` on Starlance (0.2.15, no stamp) through the packed tarball installs the PRD-827 hooks and `enabledMcpjsonServers`, the 120-line router, and changes no file outside the authoring layer. proof: `git -C sandbox/starlance diff --stat` after `pnpm exec threenative doctor --fix --force`, plus `claude mcp get threenative-engine` in that folder shows no pending approval — Evidence: pending.
 - [ ] AC-6 [local]: after AC-5, a cold `claude -p` session in Starlance asked for a new gameplay file calls `engine_search_capabilities` through the loaded MCP tool (not `call.mjs`) before its first `src/` write. proof: `pnpm kit:loop record <dir>` counts on that transcript (the PRD-825 AC-1 counter) — Evidence: pending.
 
@@ -98,6 +98,16 @@ subtree) is never overwritten silently — it is kept and reported. `--fix` touc
 
 - 2026-11-06 (agent): `doctor --fix`, not a new `threenative agents sync` verb. Reason: the closed list forbids bespoke CLI vocabulary, and the doctor already owns "is this project what the tools assume".
 - 2026-11-06 (agent): edited files are kept unless `--force`; no three-way merge. Reason: git is the merge tool in every sandbox game, and a merge engine costs more code than the problem.
+- 2026-11-06 (agent): phases 1 and 2 land in one commit. Reason: the scaffold, the status row and `--fix` share one renderer (`renderedAuthoringLayer`), so a phase-1-only commit would need a second code path.
+- 2026-11-06 (agent): the shared writer is `renderedAuthoringLayer(target, kit, root)`, not `writeAuthoringLayer(target, kit)`. It copies the kit router pair, runs `copyAgentFiles` and `renderTemplate` into a temporary folder and returns each path's hash. The scaffold stamps those hashes. `--fix` copies from that folder, then runs `linkClaudeSkills`, `writeHostMcpConfigs`, `assertMcpConfig`, `installAuthoringGitignore` and `assertReferenceBundle` on the game. Reason: the scaffold already renders the whole template tree in one pass, so it needs only the list and hashes.
+- 2026-11-06 (agent): the stamp records the package's bytes for every path, also for a kept file. Reason: a kept edit must read as edited on the next run, or the next `--fix` overwrites it silently.
+- 2026-11-06 (agent): the game's kit comes from the stamp, else the `kit.json` that scaffolds before PRD-826 copied, else the router title (`the shooter kit`, or the last word of `# AGENTS.md — starlance minimal`). Reason: 0.2.6-0.2.15 games carry `kit.json`, and 0.2.17 scaffolds carry only the title. With none, the row warns and `--fix` fails with `TN_AUTHORING_LAYER_KIT`.
+- 2026-11-06 (agent): the MCP host configs and `.gitignore` are written by their existing merge writers, not stamped. Reason: `@threenative/core` postinstall also writes the configs, so a stamped hash would read as an edit after every install.
+- 2026-11-06 (agent): `--force` also deletes a dropped file the game edited. Reason: `--force` means "the package wins", and git is the undo.
+- 2026-11-06 (agent): `--fix` prints its lines to stderr. Reason: stdout keeps the JSON report that `doctor` prints by default.
+- 2026-11-06 (agent): the router names the flow as one Commands line, `npx threenative doctor --fix  # refresh agent files`, not a convention row. Reason: it is a command, not a convention with an override, and the `action-rpg` router is at 1,200 of 1,200 words after this line. `threenative doctor --help` names `pnpm up create-threenative @threenative/*` first.
+- 2026-11-06 (agent): no version bump. Reason: npm latest is 0.2.15 and the tree is at 0.2.17, which is not published, so this change rides the 0.2.17 cohort.
+- 2026-11-06 (agent): `tsup` keeps `./index.js` external. Reason: `threenative.js` now imports the scaffolder, and an inlined copy would run the scaffolder's entry check against `threenative.js` and scaffold a project.
 
 ## Execution Phases
 
@@ -106,14 +116,14 @@ subtree) is never overwritten silently — it is kept and reported. `--fix` touc
 **Files:** `packages/create-threenative/src/index.ts` (write the stamp after the writers), `src/doctor.ts` (the row), tests.
 **Implementation:** hash every authoring-layer path the scaffold wrote; the stamp lists paths, not globs. The doctor row reads the stamp, or renders the current layer into a temp dir to compare when there is none.
 **Verification:** `pnpm exec vitest run packages/create-threenative/__tests__/scaffold.spec.ts packages/create-threenative/__tests__/doctor.spec.ts` — AC-1, AC-2.
-- [ ] Phase 1 done: stamp written by scaffold, `authoring layer` doctor row (AC-1, AC-2). proof: scaffold.spec.ts and doctor.spec.ts. Evidence: pending.
+- [x] Phase 1 done: stamp written by scaffold, `authoring layer` doctor row (AC-1, AC-2). proof: scaffold.spec.ts and doctor.spec.ts. Evidence: AC-1 and AC-2 above. The scaffold hash test now skips the stamp (it records bytes the test already hashes). The allowlist spec names `.threenative/agent-files.json`. All 16 tree hashes were re-measured for the new router line.
 
 #### Phase 2: `doctor --fix`
 **Status:** NOT STARTED
 **Files:** `src/threenative.ts` (flag and help text), `src/index.ts` (export the writers as one `writeAuthoringLayer(target, kit)` used by both scaffold and fix), `src/doctor.ts`.
 **Implementation:** scaffold calls `writeAuthoringLayer`; `--fix` renders it into a temp dir, then copies per the keep/overwrite/delete rules above. Fails closed with `TN_AUTHORING_LAYER_EDITED` on kept files.
 **Verification:** `pnpm exec vitest run packages/create-threenative/__tests__/doctor-fix.spec.ts`, then `pnpm typecheck && pnpm lint && pnpm test` in the engine — AC-3, AC-4.
-- [ ] Phase 2 done: `doctor --fix` and `--force` through the shared writers (AC-3, AC-4). proof: doctor-fix.spec.ts. Evidence: pending.
+- [x] Phase 2 done: `doctor --fix` and `--force` through the shared writers (AC-3, AC-4). proof: doctor-fix.spec.ts. Evidence: AC-3 and AC-4 above. Related specs: `doctor-fix`, `doctor`, `scaffold`, `cli`, `cli-bin`, `consumer-cli`, `scaffold-file-allowlist`, `scaffold-mcp`, `publication`, `discovery-gate`, `template`, `template-conventions`, `sync-agent-docs`, `kit-conventions`, `instruction-budget`: all pass. `pnpm typecheck` exit 0, `pnpm lint` exit 0. The built `dist/threenative.js` imports `./index.js` as its own module, and `threenative doctor --text` in an empty folder writes nothing.
 
 #### Phase 3: Starlance proof
 **Status:** NOT STARTED

@@ -422,7 +422,7 @@
     {
       "id": "engine-catalog",
       "name": "Refused imports",
-      "default": "a refused `three` import fails at its line in dev and build",
+      "default": "refused `three` imports fail at their line",
       "override": "`createEngineCatalogPlugin({ mode: \"warn\" })`",
       "marker": "TN_ENGINE_CATALOG",
       "kits": "all"

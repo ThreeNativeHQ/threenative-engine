@@ -23,6 +23,7 @@ import { installCommandFor, resolveBlender } from "@threenative/blender-bridge/b
 import { MCP_HOSTS } from "../../core/mcp/install.mjs";
 import { resolveRuntimeAssetCapabilities } from "./build.js";
 import { loadConfig } from "./config.js";
+import { type IAuthoringLayerStatus, authoringLayerStatus } from "./index.js";
 import {
   type IMcpPackage,
   MCP_PACKAGES,
@@ -123,6 +124,8 @@ export interface IProjectSnapshot {
   readonly resolvePackageDirectory?: (name: string) => string | undefined;
   /** Runs the same playtest doctor, optionally against the launch capture named by the CLI. */
   readonly runPlaytestDoctor?: (capturePath?: string) => string;
+  /** The game's agent files against the installed create-threenative (PRD-829). */
+  readonly authoringLayer?: IAuthoringLayerStatus;
 }
 
 /** What `resolveBlender` answers, narrowed to what doctor reports. */
@@ -2061,6 +2064,9 @@ export function diagnoseProject(
         },
     sceneShapeCheck(snapshot),
     ...capabilitySearchChecks(snapshot),
+    ...(snapshot.authoringLayer === undefined
+      ? []
+      : [authoringLayerCheck(snapshot.authoringLayer)]),
     editorActivationCheck(snapshot),
     ...(blender === undefined ? [] : [blender]),
   ];
@@ -2079,6 +2085,25 @@ export function diagnoseProject(
             : unrequestedTarget(check);
         });
   return { checks: scoped, pass: scoped.every(({ status }) => status !== "fail") };
+}
+
+const AUTHORING_LAYER_FIX =
+  "After 'pnpm up create-threenative', run 'pnpm exec threenative doctor --fix'; add --force to overwrite files this game edited.";
+
+function authoringLayerCheck(layer: IAuthoringLayerStatus): IDoctorCheck {
+  const name = "authoring layer";
+  if (layer.problem !== undefined)
+    return { detail: layer.problem, fix: AUTHORING_LAYER_FIX, name, status: "warn" };
+  const where = `installed create-threenative ${layer.installed} (${layer.kit} kit)`;
+  if (layer.stamped === layer.installed && layer.stale.length === 0)
+    return { detail: `stamp matches ${where}`, name, status: "ok" };
+  const count = `${layer.stale.length} stale file${layer.stale.length === 1 ? "" : "s"}`;
+  return {
+    detail: `stamp ${layer.stamped ?? "absent"}, ${where}: ${count}`,
+    fix: AUTHORING_LAYER_FIX,
+    name,
+    status: "warn",
+  };
 }
 
 async function collectFiles(root: string, relative = "", depth = 0): Promise<string[]> {
@@ -2151,6 +2176,13 @@ export async function readProject(root: string): Promise<IProjectSnapshot> {
       ? undefined
       : await runtimeReleaseManifestUrl(runtimeRoot, runtimeVersion);
   const playtestRunnerPath = resolveBinaryFrom(projectRoot, PLAYTEST_BINARY);
+  const authoringLayer = await authoringLayerStatus(projectRoot).catch(
+    (error: unknown): IAuthoringLayerStatus => ({
+      installed: "unknown",
+      problem: error instanceof Error ? error.message : String(error),
+      stale: [],
+    }),
+  );
   const mcpServerHealth = new Map<string, IMcpServerHealth>();
   if (SHAPE_VERIFIABLE_HOSTS.some(({ file }) => files.has(file))) {
     for (const spec of MCP_SERVER_SPECS) {
@@ -2164,6 +2196,7 @@ export async function readProject(root: string): Promise<IProjectSnapshot> {
     }
   }
   return {
+    authoringLayer,
     config,
     files,
     installedVersions,
@@ -2231,7 +2264,8 @@ export function formatDoctorReport(report: IDoctorReport): string {
   const symbols: Record<DoctorStatus, string> = { fail: "✗", ok: "✓", warn: "!" };
   const isBaseline = (name: string): boolean =>
     ["package.json", "dependencies", "versions"].includes(name);
-  const isCraft = (name: string): boolean => name.startsWith("capability search");
+  const isCraft = (name: string): boolean =>
+    name.startsWith("capability search") || name === "authoring layer";
   const isTest = (name: string): boolean => name === "playtest" || name === "playtests";
   const groups: readonly [string, (name: string) => boolean][] = [
     ["Baseline", isBaseline],

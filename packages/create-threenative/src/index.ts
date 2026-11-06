@@ -1,7 +1,20 @@
 #!/usr/bin/env node
 import { execFileSync, spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
-import { cp, mkdir, readFile, readdir, rename, rm, symlink, writeFile } from "node:fs/promises";
+import {
+  cp,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rename,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { inspectCommand, inspectHelp } from "./inspect.js";
@@ -506,6 +519,20 @@ function packageName(target: string): string {
   return name;
 }
 
+/** The template tokens for a game at `target`; the scaffold and `doctor --fix` render with the same values. */
+function templateReplacements(target: string): Readonly<Record<string, string>> {
+  const projectName = packageName(target);
+  const compactProjectId = projectName.toLowerCase().replace(/[^a-z0-9]+/gu, "") || "game";
+  const projectId = /^[a-z]/u.test(compactProjectId) ? compactProjectId : `game${compactProjectId}`;
+  // Entries rather than an object literal: these are template tokens, not identifiers. Written as
+  // property names they read as names the naming rule must judge, and `__PROJECT_NAME__` is
+  // neither ours to rename nor expressible in camelCase.
+  return Object.fromEntries([
+    ["__PROJECT_NAME__", projectName],
+    ["__PROJECT_ID__", projectId],
+  ]) as Readonly<Record<string, string>>;
+}
+
 async function isEmpty(directory: string): Promise<boolean> {
   const entries = await readdir(directory).catch((error: unknown) =>
     (error as NodeJS.ErrnoException | undefined)?.code === "ENOENT" ? [] : undefined,
@@ -592,6 +619,7 @@ async function linkClaudeSkills(target: string): Promise<void> {
     if (!entry.isDirectory()) continue;
     if (existsSync(path.join(subagents, `${entry.name}.md`))) continue;
     const link = path.join(hostSkills, entry.name);
+    if (await lstat(link).catch(() => undefined)) continue; // doctor --fix: the game already has it
     const relative = path.relative(hostSkills, path.join(stored, entry.name));
     try {
       await symlink(relative, link, "dir");
@@ -870,6 +898,203 @@ async function assertMcpConfig(target: string): Promise<void> {
   }
 }
 
+/** The game's record of the authoring layer the scaffold or `doctor --fix` wrote (PRD-829). */
+const AUTHORING_STAMP = path.join(".threenative", "agent-files.json");
+const KIT_TITLE = /\bthe ([a-z][a-z0-9-]*) kit\b/u;
+
+interface IAuthoringStamp {
+  readonly createThreenative?: string;
+  readonly kit?: string;
+  readonly files?: Readonly<Record<string, string>>;
+}
+
+export interface IAuthoringLayerStatus {
+  /** The create-threenative version running this check, which is the one the game installed. */
+  readonly installed: string;
+  readonly kit?: string;
+  /** Why the layer cannot be checked; set instead of `stale`'s meaning. */
+  readonly problem?: string;
+  /** Layer paths whose bytes differ from the installed package, and dropped files still present. */
+  readonly stale: readonly string[];
+  readonly stamped?: string;
+}
+
+export interface IAuthoringLayerFix {
+  readonly deleted: readonly string[];
+  readonly kept: readonly string[];
+  readonly written: readonly string[];
+}
+
+const sha256 = (bytes: Buffer | string): string => createHash("sha256").update(bytes).digest("hex");
+
+async function fileHash(file: string): Promise<string | undefined> {
+  return readFile(file).then(sha256, () => undefined);
+}
+
+/** Path → sha256 of every regular file under `directory`; linked skill folders are not files. */
+async function hashFiles(directory: string, relative = ""): Promise<Record<string, string>> {
+  const hashes: Record<string, string> = {};
+  for (const entry of await readdir(path.join(directory, relative), { withFileTypes: true })) {
+    const next = path.posix.join(relative, entry.name);
+    if (entry.isDirectory()) Object.assign(hashes, await hashFiles(directory, next));
+    else if (entry.isFile()) hashes[next] = sha256(await readFile(path.join(directory, next)));
+  }
+  return hashes;
+}
+
+/**
+ * Renders `kit`'s authoring layer for a game at `target` with the scaffold's own writers — the kit
+ * router pair, then `copyAgentFiles`, then `renderTemplate` — and returns each path's hash.
+ * `directory` receives the bytes when given; otherwise they go to a temporary folder.
+ */
+async function renderedAuthoringLayer(
+  target: string,
+  kit: string,
+  root: string,
+  directory?: string,
+): Promise<Record<string, string>> {
+  const into = directory ?? (await mkdtemp(path.join(tmpdir(), "threenative-authoring-")));
+  try {
+    for (const file of ["AGENTS.md", "CLAUDE.md"])
+      await cp(path.join(root, kit, file), path.join(into, file));
+    await copyAgentFiles(into, root);
+    await renderTemplate(into, templateReplacements(target));
+    return await hashFiles(into);
+  } finally {
+    if (directory === undefined) await rm(into, { force: true, recursive: true });
+  }
+}
+
+function packageVersion(root: string): string {
+  const manifest = JSON.parse(
+    readFileSync(path.join(path.dirname(root), "package.json"), "utf8"),
+  ) as { version?: unknown };
+  if (typeof manifest.version !== "string")
+    throw new Error("TN_AUTHORING_LAYER_VERSION: create-threenative has no version.");
+  return manifest.version;
+}
+
+async function writeAuthoringStamp(
+  target: string,
+  kit: string,
+  files: Readonly<Record<string, string>>,
+  root: string,
+): Promise<void> {
+  const stamp: IAuthoringStamp = { createThreenative: packageVersion(root), kit, files };
+  await mkdir(path.join(target, path.dirname(AUTHORING_STAMP)), { recursive: true });
+  await writeFile(path.join(target, AUTHORING_STAMP), `${JSON.stringify(stamp, null, 2)}\n`);
+}
+
+async function readJsonRecord(file: string): Promise<Record<string, unknown> | undefined> {
+  const text = await readFile(file, "utf8").catch(() => undefined);
+  if (text === undefined) return undefined;
+  const value: unknown = JSON.parse(text);
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    throw new Error(`TN_AUTHORING_LAYER_STAMP: '${file}' is not a JSON object.`);
+  return value as Record<string, unknown>;
+}
+
+/** The game's kit: the stamp, else the `kit.json` older scaffolds copied, else the router title. */
+async function gameKit(
+  game: string,
+  stamp: IAuthoringStamp | undefined,
+  root: string,
+): Promise<string | undefined> {
+  const kits = discoverTemplateNames(root);
+  const kitJson = (await readJsonRecord(path.join(game, "kit.json")))?.name;
+  const title = (await readFile(path.join(game, "AGENTS.md"), "utf8").catch(() => ""))
+    .split("\n", 1)[0]
+    ?.trim();
+  const titleKit =
+    title === undefined ? undefined : (KIT_TITLE.exec(title)?.[1] ?? title.split(" ").at(-1));
+  return [stamp?.kit, kitJson, titleKit].find(
+    (name): name is string => typeof name === "string" && kits.includes(name),
+  );
+}
+
+async function authoringContext(game: string, root: string) {
+  const stamp = (await readJsonRecord(path.join(game, AUTHORING_STAMP))) as
+    | IAuthoringStamp
+    | undefined;
+  return { kit: await gameKit(game, stamp, root), stamp };
+}
+
+const NO_KIT =
+  'no stamp, kit.json or kit router title names a kit; write {"kit": "<kit>"} to .threenative/agent-files.json';
+
+/** How far the game's authoring layer is from what the installed create-threenative renders. */
+export async function authoringLayerStatus(
+  game: string,
+  root = templateRoot(),
+): Promise<IAuthoringLayerStatus> {
+  const installed = packageVersion(root);
+  const { kit, stamp } = await authoringContext(game, root);
+  const stamped = stamp?.createThreenative;
+  const versions = { installed, ...(stamped === undefined ? {} : { stamped }) };
+  if (kit === undefined) return { ...versions, problem: NO_KIT, stale: [] };
+  const expected = await renderedAuthoringLayer(game, kit, root);
+  const stale: string[] = [];
+  for (const [file, hash] of Object.entries(expected))
+    if ((await fileHash(path.join(game, file))) !== hash) stale.push(file);
+  for (const file of Object.keys(stamp?.files ?? {}))
+    if (!(file in expected) && existsSync(path.join(game, file))) stale.push(file);
+  return { ...versions, kit, stale: stale.sort() };
+}
+
+/**
+ * `threenative doctor --fix` (PRD-829): re-renders the authoring layer from the installed package with
+ * the scaffold's writers. A file whose bytes still match the stamp is overwritten, an edited one is
+ * kept unless `force`, and a file the package dropped is deleted only when unedited. Without a stamp,
+ * every differing file counts as edited.
+ */
+export async function fixAuthoringLayer(
+  game: string,
+  options: { readonly force: boolean },
+  root = templateRoot(),
+): Promise<IAuthoringLayerFix> {
+  const { kit, stamp } = await authoringContext(game, root);
+  if (kit === undefined) throw new Error(`TN_AUTHORING_LAYER_KIT: ${NO_KIT}.`);
+  const stamped = stamp?.files ?? {};
+  const rendered = await mkdtemp(path.join(tmpdir(), "threenative-authoring-"));
+  const result = { deleted: [] as string[], kept: [] as string[], written: [] as string[] };
+  try {
+    const expected = await renderedAuthoringLayer(game, kit, root, rendered);
+    for (const [file, hash] of Object.entries(expected).sort(([left], [right]) =>
+      left < right ? -1 : 1,
+    )) {
+      const current = await fileHash(path.join(game, file));
+      if (current === hash) continue;
+      if (current !== undefined && current !== stamped[file] && !options.force) {
+        result.kept.push(file);
+        continue;
+      }
+      await mkdir(path.dirname(path.join(game, file)), { recursive: true });
+      await cp(path.join(rendered, file), path.join(game, file));
+      result.written.push(file);
+    }
+    for (const file of Object.keys(stamped).sort()) {
+      if (file in expected) continue;
+      const current = await fileHash(path.join(game, file));
+      if (current === undefined) continue;
+      if (current !== stamped[file] && !options.force) result.kept.push(file);
+      else {
+        await rm(path.join(game, file));
+        result.deleted.push(file);
+      }
+    }
+    await linkClaudeSkills(game);
+    writeHostMcpConfigs(game);
+    await assertMcpConfig(game);
+    await installAuthoringGitignore(game);
+    await assertReferenceBundle(game, root);
+    // The stamp keeps the package's bytes, so a kept edit still reads as edited next time.
+    await writeAuthoringStamp(game, kit, expected, root);
+  } finally {
+    await rm(rendered, { force: true, recursive: true });
+  }
+  return result;
+}
+
 async function runInstall(target: string): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const child = spawn("pnpm", ["install"], { cwd: target, stdio: "inherit" });
@@ -928,18 +1153,7 @@ export async function createProject(
       await rename(path.join(target, "gitignore"), path.join(target, ".gitignore"));
     }
     await installAuthoringGitignore(target);
-    const projectName = packageName(target);
-    const compactProjectId = projectName.toLowerCase().replace(/[^a-z0-9]+/gu, "") || "game";
-    const projectId = /^[a-z]/u.test(compactProjectId)
-      ? compactProjectId
-      : `game${compactProjectId}`;
-    // Entries rather than an object literal: these are template tokens, not identifiers. Written as
-    // property names they read as names the naming rule must judge, and `__PROJECT_NAME__` is
-    // neither ours to rename nor expressible in camelCase.
-    const replacements = Object.fromEntries([
-      ["__PROJECT_NAME__", projectName],
-      ["__PROJECT_ID__", projectId],
-    ]) as Readonly<Record<string, string>>;
+    const replacements = templateReplacements(target);
     await stampTemplateLoading(target, source, root);
     await copyAgentFiles(target, root);
     await renderTemplate(target, replacements);
@@ -948,6 +1162,12 @@ export async function createProject(
     writeHostMcpConfigs(target);
     await assertMcpConfig(target);
     await assertReferenceBundle(target, root);
+    await writeAuthoringStamp(
+      target,
+      template,
+      await renderedAuthoringLayer(target, template, root),
+      root,
+    );
     if (installed) await runInstall(target);
   } catch (error) {
     await discardScaffold(target, existedBefore);
