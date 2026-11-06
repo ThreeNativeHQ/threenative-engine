@@ -6,6 +6,7 @@
 **Owner:** João Paulo Furtado
 **Depends on:** none. PRD-825 (the kit router) names the tool this PRD adds and runs the A/B after this PRD lands.
 **Siblings:** PRD-825 (kit `AGENTS.md` router), PRD-826 (junk that ships to users)
+**Order with PRD-826:** PRD-826 moves the 7 MCP host configs to scaffold time. Whichever lands second rebases its config change onto the other.
 **PR:** one draft PR for this PRD, opened at the first commit
 
 ## Context
@@ -90,7 +91,7 @@ See the phase boxes. Each box names its proof.
 **Files:** the scaffold `.claude/settings.json` source in `packages/create-threenative/agent-files/` or `templates/`, `scripts/sync-mcp-configs.ts` if it owns the list, `packages/create-threenative/__tests__/scaffold.spec.ts`.
 
 - [ ] AC-1 [local]: a `claude -p` session started in a scratch scaffold lists the five `threenative-*` servers as connected in its init event, with no approval step. proof: the init event's `mcp_servers` before (expected: pending approval or absent) and after; `scaffold.spec.ts` asserts the five names in `enabledMcpjsonServers`
-- [ ] AC-2 [local]: the animation server version is one number: `servers.mjs:51` says `0.1.3` and `animation-mcp-tools.json` records `0.1.8`. The shipped one wins, and its npx fallback resolves. proof: `npm view threenative-animation-mcp versions` (or the bundled server's `--version`) recorded here; `pnpm sync:mcp --check` green
+- [ ] AC-2 [local]: the animation server version is one number: `servers.mjs:51` says `0.1.3` and `animation-mcp-tools.json` records `0.1.8`. The shipped one wins, and its npx fallback resolves. proof: `npm view threenative-animation-mcp versions` (or the bundled server's `--version`) recorded here; the MCP config spec green (`pnpm sync:mcp --check` today, `scaffold-mcp.spec.ts` after PRD-826 removes the tracked copies)
 
 #### Phase 2: References on every search, and the gameplay watcher
 

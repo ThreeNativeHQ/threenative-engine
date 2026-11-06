@@ -170,7 +170,7 @@ See the phase boxes. Each box names its proof. The PRD is done when AC-8 and AC-
 
 ## Out of scope
 
-- Files that ship to users but should not: PRD-826.
+- Files that ship to users but should not: PRD-826. Both PRDs re-pin the 16 scaffold tree hashes in `scaffold.spec.ts`. Each lane re-pins once, in its own commit, and names the cause in the comment block.
 - The discovery gate hook, the gameplay watcher tool and MCP loading in a fresh session: PRD-827. AC-8 runs after PRD-827 lands, so the A/B measures the whole change.
 - Rewriting the eleven other skills beyond the lines AC-7 names. A skill that contradicts the router gets one line fixed here and a follow-up note.
 - New engine systems.
