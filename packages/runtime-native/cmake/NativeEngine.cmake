@@ -37,6 +37,10 @@ if(SDL3_STATIC_TARGET)
 elseif(SDL3_LIBRARY)
     target_link_libraries(tn_host_services PRIVATE ${SDL3_LIBRARY})
     target_include_directories(tn_host_services PRIVATE ${SDL3_INCLUDE_DIR})
+elseif(SDL3_INCLUDE_DIR)
+    # PS4: headers without an archive (no PS4 SDL3 driver exists yet), so the engine compiles and
+    # slice 2 picks the driver. Nothing links, which is all a cross configure can do here anyway.
+    target_include_directories(tn_host_services PRIVATE ${SDL3_INCLUDE_DIR})
 endif()
 
 # The same pacing checks must link with the JS-free host, not only the legacy bindings.

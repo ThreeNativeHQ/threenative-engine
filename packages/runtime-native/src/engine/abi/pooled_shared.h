@@ -1,7 +1,10 @@
 #pragma once
 
 #include <memory>
-#if defined(__EMSCRIPTEN__) || !defined(__APPLE__)
+// The pool is Wasm-only (makeShared below), so a native build compiles this class and never uses it.
+// Apple already skipped it for that reason; PS4 joins them because OpenOrbis libc++ 11 has no
+// <memory_resource> at all, and std::pmr::synchronized_pool_resource is not something to reimplement.
+#if defined(__EMSCRIPTEN__) || (!defined(__APPLE__) && !defined(TN_PS4))
 #include <memory_resource>
 #include <mutex>
 #endif
@@ -12,7 +15,7 @@ namespace tn::engine { class Mesh; }
 
 namespace tn::binding::detail {
 
-#if defined(__EMSCRIPTEN__) || !defined(__APPLE__)
+#if defined(__EMSCRIPTEN__) || (!defined(__APPLE__) && !defined(TN_PS4))
 // Native Apple builds do not use the pool and need no dependency on newer system PMR symbols.
 // Keep allocator identity alive through VM/static teardown; return chunks at the last pooled
 // allocation. allocate_shared blocks include weak owners. Object destruction runs outside the lock.

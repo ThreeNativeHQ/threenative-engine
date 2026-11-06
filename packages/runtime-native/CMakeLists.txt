@@ -270,7 +270,12 @@ endif()
 # Platform Detection
 # ============================================================================
 
-if(APPLE)
+if(TN_PS4)
+    # PS4 (OpenOrbis): cmake/ps4.toolchain.cmake sets TN_PS4 before anything here. The target is
+    # GNU-ish, so without this branch the chain would match UNIX and name the platform "linux",
+    # configuring SDL3/X11/fontconfig for a host that cannot run them.
+    set(MYSTRAL_PLATFORM "ps4")
+elseif(APPLE)
     if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
         set(MYSTRAL_PLATFORM "ios")
         set(MYSTRAL_USE_V8 OFF)
@@ -420,6 +425,21 @@ endif()
 
 if(NOT SDL3_FOUND)
     message(WARNING "SDL3 not found. Run 'node scripts/download-deps.mjs' first.")
+endif()
+
+if(TN_PS4)
+    # PS4: SDL3 is the input/audio seam the player's loop is written against, and no PS4 video or
+    # audio driver exists to build yet. The headers are enough to compile the engine's host-services
+    # unit; scripts/ps4/ps4-deps.sh stages them beside the Dawn and V8 prebuilts.
+    file(GLOB TN_PS4_SDL3_INCLUDE_DIRS ${THIRD_PARTY_DIR}/sdl3/SDL3-*/include)
+    if(TN_PS4_SDL3_INCLUDE_DIRS)
+        list(GET TN_PS4_SDL3_INCLUDE_DIRS 0 SDL3_INCLUDE_DIR)
+        set(SDL3_FOUND ON)
+        message(STATUS "PS4: SDL3 headers only, no driver lib: ${SDL3_INCLUDE_DIR}")
+    else()
+        message(FATAL_ERROR
+            "TN_PS4_SDL3_MISSING: no SDL3 headers under ${THIRD_PARTY_DIR}/sdl3; run scripts/ps4/ps4-deps.sh")
+    endif()
 endif()
 
 # wgpu-native
