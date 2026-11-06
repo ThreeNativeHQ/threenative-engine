@@ -1,6 +1,6 @@
 # PRD-830 — A Three.js export the Wasm engine refuses fails at the edit, not at the first frame
 
-**Status:** PROPOSED
+**Status:** IN PROGRESS
 **Priority:** P1 — AC-1..AC-5 are open; until they land, every refused export on the default engine shows up as an aborted scene or a blank frame in a playtest, not as an error at the import line
 **Complexity:** 3 (LOW) — 2 implementation files in `create-threenative` (one Vite plugin, one template `vite.config.ts` line per kit through the shared fragment); risk override: none
 **Owner:** João Paulo Furtado
@@ -70,7 +70,7 @@ fails that AC.
 ## Acceptance Criteria
 
 - [ ] AC-1 [local]: a kit file importing `TetrahedronGeometry` from `three` fails `threenative build --target web` with `TN_NATIVE_UNCATALOGUED_TETRAHEDRONGEOMETRY` at that file's import line, and the same import with `engine: "threejs"` builds and prints `TN_ENGINE_CATALOG: off (engine threejs)`. proof: red-green `packages/create-threenative/__tests__/engine-catalog-plugin.spec.ts` — Evidence: pending.
-- [ ] AC-2 [local]: an `unsupported` catalog entry fails with the entry's own diagnostic; a `partial` entry and an `import type` of an uncatalogued name pass. proof: same spec — Evidence: pending.
+- [x] AC-2 [local]: an `unsupported` catalog entry fails with the entry's own diagnostic; a `partial` entry and an `import type` of an uncatalogued name pass. proof: same spec — Evidence: 2026-11-06, `engine-catalog-plugin.spec.ts` cases "refuses an unsupported entry with that entry's own diagnostic" and "passes a partial entry, an import type, a type-only specifier and an aliased bound name". Red: `Cannot find module '/packages/create-threenative/src/engine-catalog.js'`. Green: 7 passed (7).
 - [ ] AC-3 [local]: all 16 kits and Starlance build with the plugin on and report zero refusals, so the plugin refuses no name the runtime binds. proof: `pnpm exec vitest run packages/create-threenative/__tests__/template.spec.ts` (kit builds) and `pnpm build:web` in Starlance through the packed tarball — Evidence: pending.
 - [ ] AC-4 [local]: in `pnpm dev`, saving a file that adds a refused import shows the Vite error overlay naming the code and `file:line` within one reload, with no playtest run. proof: a `threenative-playtest` scenario against the dev server that asserts the overlay text, or the spec's Vite dev-server case — Evidence: pending.
 - [ ] AC-5 [local]: the convention index row exists in every kit router and the template `AGENTS.md` names the `mode: "warn"` override. proof: `pnpm sync:agents --check` and `kit-conventions.spec.ts` — Evidence: pending.
@@ -85,6 +85,11 @@ fails that AC.
 ## Decisions
 
 - 2026-11-06 (agent): a Vite transform check, not shipping `generated/three.d.ts` through `tsconfig` `paths`. Reason: the generated declarations cover 511 names with looser signatures than `@types/three` (for example `struct(...): Function`), so mapping `three` to them would weaken every game's types to catch the refusals. One plugin covers dev, build and `pnpm test` with no type regression.
+- 2026-11-06 (agent): the plugin asks the installed runtime which names it refuses, not `catalog.json` directly. Reason: the catalog marks `WebGPURenderer`, `pass` and `uniform` `unsupported`, but `bindWebEngine` binds them, so a catalog lookup refuses names that every kit imports and AC-3 fails. `upstreamRefusals` boots the single-thread Wasm engine in Node once per Vite process (331 ms measured) and reads back each refusal and its code. The catalog that the runtime bundles is still the one source.
+- 2026-11-06 (agent): the plugin checks `three`, `three/webgpu` and `three/tsl` only. Reason: these are the names `bindUpstreamExports` binds one by one. An addon path resolves to a whole module in `createWebEnginePlugin`, so it has no per-name refusal to match.
+- 2026-11-06 (agent): the plugin checks only files inside the Vite root and outside `node_modules`. Reason: engine packages import refused names that they use only on some paths (`packages/core/dist/index.js` imports `CubeCamera` and `Points`), and a linked package resolves outside the root.
+- 2026-11-06 (agent): the plugin is off for the native host bundle (`THREENATIVE_NATIVE_BUNDLE`) and prints `TN_ENGINE_CATALOG: off (native host bundle)`. Reason: that bundle does not bind through the Wasm page runtime, the same rule `createWebBrandPlugin` uses for the web engine.
+- 2026-11-06 (agent): imports are parsed with `typescript`, an existing dependency, loaded on the first game file that imports `three`. Reason: the plugin runs with `enforce: "pre"` on the original TypeScript, so `import type` and the reported line stay exact. The plugin also adds itself to `worker.plugins`, because the kits run the game in a worker and Vite bundles a worker with those plugins only.
 
 ## Execution Phases
 
@@ -93,7 +98,7 @@ fails that AC.
 **Files:** `packages/create-threenative/src/engine-catalog.ts` (new plugin, exported beside the freshness plugin), `src/index.ts` export, `__tests__/engine-catalog-plugin.spec.ts`.
 **Implementation:** parse imports with `es-module-lexer` or the parser Vite already exposes (`this.parse`) — no new dependency; read the catalog once per server; honour `engine` from the game config.
 **Verification:** `pnpm exec vitest run packages/create-threenative/__tests__/engine-catalog-plugin.spec.ts` — AC-1, AC-2.
-- [ ] Phase 1 done: plugin and spec (AC-1, AC-2). proof: engine-catalog-plugin.spec.ts. Evidence: pending.
+- [x] Phase 1 done: plugin and spec (AC-1, AC-2). proof: engine-catalog-plugin.spec.ts. Evidence: 2026-11-06. `pnpm exec vitest run packages/create-threenative/__tests__/engine-catalog-plugin.spec.ts`: red `Cannot find module '/packages/create-threenative/src/engine-catalog.js'`, then 7 passed (7). The spec includes a real Vite `build()` that fails with `TN_NATIVE_UNCATALOGUED_TETRAHEDRONGEOMETRY ... src/main.ts:1:10` and passes under `engine: "threejs"`. A second red came from a real starter build: the plugin refused `CubeCamera` inside the linked `packages/core/dist/index.js`. The case "checks only the game's own files" went red (`... (../engine/packages/core/dist/index.js:1:10)`) and then green. Real engine: `upstreamRefusals` on this tree's Wasm (`pnpm wasm:build`, emsdk 6.0.11) boots in 331 ms and refuses 788 names. `TetrahedronGeometry` is refused. `WebGPURenderer`, `pass`, `uniform` and `lights` are bound. `pnpm typecheck` exit 0, `pnpm lint` exit 0.
 
 #### Phase 2: Every kit uses it
 **Status:** NOT STARTED

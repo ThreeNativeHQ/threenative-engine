@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { inspectCommand, inspectHelp } from "./inspect.js";
 import { MCP_SERVERS, ensureHostMcpConfigs, serverEntryPath } from "./mcp-servers.js";
 
+export { createEngineCatalogPlugin } from "./engine-catalog.js";
 export { createEngineFreshnessPlugin, hashEngineDist } from "./engine-freshness.js";
 export { createWebBrandPlugin, renderWebManifest } from "./web-brand.js";
 export { webRuntimeDecoders } from "./web-engine.js";
