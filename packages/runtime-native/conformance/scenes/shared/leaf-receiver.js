@@ -43,7 +43,13 @@ export function startScene(canvas, dimensions) {
     light.shadow.mapSize.set(1024, 1024);
     light.shadow.bias = -0.0005;
     light.shadow.normalBias = 0.3;
-    const node = new VirtualShadowNode(light, { clipExtents: [6, 18, 54], mapSize: 1024, marker: false });
+    // The proof's three authored levels: `maxLevelRatio: Infinity` is the named override of the 2x level step.
+    const node = new VirtualShadowNode(light, {
+      clipExtents: [6, 18, 54],
+      maxLevelRatio: Number.POSITIVE_INFINITY,
+      mapSize: 1024,
+      marker: false,
+    });
     light.shadow.shadowNode = node;
     assertVirtualShadowProof({ renderer, light, node });
     assertCondition(leaf.material.twoSidedFoliage === true, "the card must be a Two Sided Foliage receiver");
