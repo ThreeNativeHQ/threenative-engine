@@ -75,6 +75,10 @@ fails that AC.
 - [x] AC-4 [local]: in `pnpm dev`, saving a file that adds a refused import shows the Vite error overlay naming the code and `file:line` within one reload, with no playtest run. proof: a `threenative-playtest` scenario against the dev server that asserts the overlay text, or the spec's Vite dev-server case — Evidence: 2026-11-06, the spec's Vite dev-server case "shows the dev overlay error with the code and file:line after one save (AC-4)". A real `createServer().listen()` serves `src/main.ts` (200). The case saves the file with an added `TetrahedronGeometry` import and waits for the watcher `change` event. The next request returns 500, and the overlay payload (`environments.client.hot.send({ type: "error" })`) carries `TN_NATIVE_UNCATALOGUED_TETRAHEDRONGEOMETRY ... (src/main.ts:2:10)` with `loc` line 2. No playtest runs. Negative control: the same case with the plugin removed fails (`expected 'Failed to resolve import "three" from…' to contain 'TN_NATIVE_UNCATALOGUED_TETRAHEDRONGEO…'`). `engine-catalog-plugin.spec.ts`: 9 passed.
 - [x] AC-5 [local]: the convention index row exists in every kit router and the template `AGENTS.md` names the `mode: "warn"` override. proof: `pnpm sync:agents --check` and `kit-conventions.spec.ts` — Evidence: 2026-11-06. Row `engine-catalog` in `conventions.json`, anchor in `agent-docs/references/conventions.md`. All 16 routers carry `- **Refused imports** #engine-catalog: ... Override: createEngineCatalogPlugin({ mode: "warn" })`. `pnpm sync:agents --check`: "agent docs in sync: 31 CLAUDE.md mirrors". `kit-conventions.spec.ts`, `template-conventions.spec.ts`, `instruction-budget.spec.ts`, `sync-agent-docs.spec.ts`: 60 passed. The first row text put `action-rpg` at 1,202 of 1,200 words (red), and the shorter text passes.
 
+## Blocked on
+
+- AC-3 (Starlance half) and Phase 3: Starlance installs `@threenative/core` and `@threenative/runtime-native` 0.3.11, and its `create-threenative` now points at this branch's 0.2.17 tarball. The 0.2.17 web runtime refuses the 0.3.11 Wasm build with `TN_ABI_6`, so `pnpm build:web` exits 1 with the plugin's `TN_ENGINE_CATALOG: the installed Wasm engine did not boot under this create-threenative ...` message. The page boot uses the same pair, so the plugin reports the mismatch at build time instead of at the first frame. Unblock: publish one release of `create-threenative` and `@threenative/*` from this branch, upgrade Starlance with `pnpm up create-threenative @threenative/*`, and rerun `pnpm build:web`. With this tree's engine pair, the plugin finds 0 refusals over Starlance `src/` (54 files).
+
 ## Integration Ledger
 
 | Capability | Reachable consumer/trigger | Replaces / disposition | Evidence |
@@ -95,20 +99,20 @@ fails that AC.
 ## Execution Phases
 
 #### Phase 1: The plugin and its spec
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** `packages/create-threenative/src/engine-catalog.ts` (new plugin, exported beside the freshness plugin), `src/index.ts` export, `__tests__/engine-catalog-plugin.spec.ts`.
 **Implementation:** parse imports with `es-module-lexer` or the parser Vite already exposes (`this.parse`) — no new dependency; read the catalog once per server; honour `engine` from the game config.
 **Verification:** `pnpm exec vitest run packages/create-threenative/__tests__/engine-catalog-plugin.spec.ts` — AC-1, AC-2.
 - [x] Phase 1 done: plugin and spec (AC-1, AC-2). proof: engine-catalog-plugin.spec.ts. Evidence: 2026-11-06. `pnpm exec vitest run packages/create-threenative/__tests__/engine-catalog-plugin.spec.ts`: red `Cannot find module '/packages/create-threenative/src/engine-catalog.js'`, then 7 passed (7). The spec includes a real Vite `build()` that fails with `TN_NATIVE_UNCATALOGUED_TETRAHEDRONGEOMETRY ... src/main.ts:1:10` and passes under `engine: "threejs"`. A second red came from a real starter build: the plugin refused `CubeCamera` inside the linked `packages/core/dist/index.js`. The case "checks only the game's own files" went red (`... (../engine/packages/core/dist/index.js:1:10)`) and then green. Real engine: `upstreamRefusals` on this tree's Wasm (`pnpm wasm:build`, emsdk 6.0.11) boots in 331 ms and refuses 788 names. `TetrahedronGeometry` is refused. `WebGPURenderer`, `pass`, `uniform` and `lights` are bound. `pnpm typecheck` exit 0, `pnpm lint` exit 0.
 
 #### Phase 2: Every kit uses it
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** 16 `templates/*/vite.config.ts` (generated from the shared fragment if one exists), convention registry row, router regeneration.
 **Verification:** `pnpm sync:agents --check`, kit build spec, `pnpm typecheck && pnpm lint && pnpm test` in the engine — AC-3 (kits), AC-5.
 - [x] Phase 2 done: every kit uses the plugin, convention row (AC-3 kits, AC-5). proof: template-vite-plugins.spec.ts, kit builds and sync:agents --check. Evidence: 2026-11-06. No shared `vite.config.ts` fragment exists, so each of the 16 kit files adds `createEngineCatalogPlugin()` after `createWebBrandPlugin()`. New case "fails every template's refused three import at the edit (PRD-830)" in `template-vite-plugins.spec.ts`: red with `minimal` reverted (`+ "minimal: createEngineCatalogPlugin()"`), then green. `scaffold.spec.ts` scaffold hashes re-measured for all 16 trees: `scaffold.spec.ts` and `template-vite-plugins.spec.ts` 86 passed. Kit builds: see AC-3.
 
 #### Phase 3: Starlance proof
-**Status:** NOT STARTED
+**Status:** BLOCKED (see `## Blocked on`)
 **Files:** pack per the sandbox `AGENTS.md` (content-hashed tarball), Starlance `vite.config.ts`.
 **Verification:** Starlance `pnpm build:web` green with zero refusals (AC-3); dev-server overlay case (AC-4).
-- [ ] Phase 3 done: Starlance builds with zero refusals, dev overlay case (AC-3 Starlance, AC-4). proof: Starlance pnpm build:web and dev-server overlay case. Evidence: pending.
+- [ ] Phase 3 done: Starlance builds with zero refusals, dev overlay case (AC-3 Starlance, AC-4). proof: Starlance pnpm build:web and dev-server overlay case. Evidence: open. The dev-server overlay case passes (AC-4). Starlance `pnpm build:web` is blocked (see `## Blocked on`): it exits 1 with the `TN_ENGINE_CATALOG` boot message, because Starlance pairs create-threenative 0.2.17 with `@threenative/*` 0.3.11.
