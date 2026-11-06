@@ -130,6 +130,15 @@ git apply "$SCRIPTS/patches/0005-opengnm-psbc-spirv-caps-shader.patch"
 # The GNM program-address registers carry only bits 8..63 of the shader code
 # address, so the code has to sit at a 256-byte offset in the binary.
 git apply "$SCRIPTS/patches/0006-opengnm-psbc-shader-code-256-aligned.patch"
+# A PS4 vertex shader fetches its attributes through a fetch shader and reads
+# the results from VGPRs (s_swappc_b64 s[0:1], s[0:1] at the top). The
+# standalone compiler has no VkPipelineVertexInputStateCreateInfo, so radv's
+# non-prolog path saw every attribute as unassigned and folded each load_input
+# to (0,0,0,0): the vertex-buffer triangle compiled to a 52-byte VS with no
+# buffer load in it and collapsed to a point. Declaring the VS prolog keeps the
+# inputs live, emits the SUBPTR_FETCHSHADER / PTR_VERTEXBUFFERTABLE usage slots
+# and prepends the s_swappc the driver's fetch shader hangs off.
+git apply "$SCRIPTS/patches/0015-opengnm-psbc-vs-fetch-shader-prolog.patch"
 
 # === 3. opengnm (orbis) ======================================================
 cd "$SRC/opengnm"
@@ -232,6 +241,19 @@ git apply "$SCRIPTS/patches/0013-vk-ps4-shader-stage-entry-point.patch"
 # access violation at code address 0x0". 0014 answers for the one surface the PS4 has, the
 # GnmVideoOut display vk_ps4_swapchain.c opens.
 git apply "$SCRIPTS/patches/0014-vk-ps4-surface-queries.patch"
+# The PTR_VERTEXBUFFERTABLE user data points at one V# per vertex input, in
+# semantic order (sceGnmCreateFetchShader loads V#[i] for input i), and each V#
+# has to carry that attribute's data format, offset and its binding's stride.
+# The ICD filled the table per *binding* with a fixed GNM_FMT_R32_FLOAT and only
+# when a fetch shader existed, so a vec2 position + vec3 colour at offset 8 read
+# back as four raw floats: the vertex shader ran but every vertex landed on the
+# same point. 0016 builds the table from the pipeline's attributes at draw time,
+# emits the pointer whenever the pipeline has a VB table slot, and gives
+# sceGnmCreateFetchShader one instancing mode per vertex *input*: it rejects the
+# whole fetch shader (GNM_ERROR_INVALID_ARGS, opengnm src/shader.c "i + cursem >=
+# ci->numinstancedata") when the table is sized per binding, so a second
+# attribute sharing binding 0 left the VS running with an empty VGPR block.
+git apply "$SCRIPTS/patches/0016-vk-ps4-vertex-buffer-table.patch"
 # The Makefile compiles TEST_SRC relative to the vulkan-ps4 tree.
 cp "$SCRIPTS/e2-triangle.c" "$SRC/e2-triangle.c"
 make -f Makefile.orbis -j"$JOBS" TEST_SRC=../e2-triangle.c self > "$LOGS/e2-triangle.log" 2>&1

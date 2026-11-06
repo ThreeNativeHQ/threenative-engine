@@ -131,7 +131,7 @@ performance work. A go result opens a second PRD for those.
 
 - [x] E1: OpenOrbis ELF prints its marker in shadPS4. proof: `node packages/runtime-native/scripts/ps4/run-experiment.mjs e1` — 2026-11-06 `PS4_EMULATED E1 PASS`, exit 0, guest `[stdout] TN_PS4_E1_MARKER hello`, empty `sys_modules`. shadPS4 rejects the plain ELF (`e_type 0x3`), so the run boots the `create-fself` SELF
 - [x] E2: `vulkan-ps4` draws a non-blank triangle in shadPS4. proof: `node packages/runtime-native/scripts/ps4/run-experiment.mjs e2` — 2026-11-06 `PS4_EMULATED E2 PASS drawn=12.55%`, exit 0, two agent runs and one coordinator run. The judge reads shadPS4's presented frame. Control: `TN_PS4_E2_GUEST=e2` (vertex buffer) exits 1 with 0% drawn. The default guest takes its positions from `gl_VertexIndex`. The pinned stack needs 12 patches (`scripts/ps4/patches/`)
-  Open for E5: a vertex-buffer draw reaches the VS with zero attributes, and a guest GPU copy of a render target reads stale memory (shadPS4 `CopyBuffer` does not flush the source image, `vk_rasterizer.cpp:1236`)
+  Vertex buffers fixed on 2026-11-06: `TN_PS4_E2_GUEST=e2` (positions and colours from a VkBuffer) → `PS4_EMULATED E2 PASS drawn=12.55%`, with the interpolated RGB triangle checked by eye. Patch 0015 makes psbc emit the VS fetch-shader prolog, with its pointer in user SGPR 0 as Sony's ABI expects. Patch 0016 makes vulkan-ps4 write one V# per attribute and one instancing mode per input. An unmapped vertex format logs and reads as R32_FLOAT. Still open for E5: a guest GPU copy of a render target reads stale memory (shadPS4 `CopyBuffer` does not flush the source image, `vk_rasterizer.cpp:1236`)
 
 #### Phase 2: The two seams, GPU and JavaScript
 
