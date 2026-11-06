@@ -166,6 +166,7 @@ export { interactionGroups } from "./collision.js";
 /**
  * Simulate a dynamic or static rigid body.
  * @situation give a crate or prop physical motion
+ * @situation a ball rolls across the floor
  * @situation create a body that collides with a character
  * @situation fire physical cannonballs that collide with ships or scenery
  * @situation fire a cannonball projectile with cannon smoke particles

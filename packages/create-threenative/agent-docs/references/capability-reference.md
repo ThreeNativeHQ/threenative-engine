@@ -4386,7 +4386,7 @@ const game = defineGame({ plugins: [rapier()] });
 export class RigidBody3D { … }
 ```
 
-- **Use when:** give a crate or prop physical motion · create a body that collides with a character · fire physical cannonballs that collide with ships or scenery · fire a cannonball projectile with cannon smoke particles · a bullet passes through a wall
+- **Use when:** give a crate or prop physical motion · a ball rolls across the floor · create a body that collides with a character · fire physical cannonballs that collide with ships or scenery · fire a cannonball projectile with cannon smoke particles · a bullet passes through a wall
 - **Constraints:** register rapier() in the game plugin list before using bodies
 - **Requires:** npm i @threenative/physics
 - **Overrides:** continuousCollision: false opts one body out while body.continuousCollision still reports the effective setting
