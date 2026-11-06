@@ -195,6 +195,22 @@ describe("PRD-477 world capture fixture", () => {
     expect(previous).toBe(180);
   });
 
+  it("keeps the camera's line of sight on the map after the route leaves it", async () => {
+    // The fixture is 4 x 4 cells of 64 m from -128, and no terrain tile wholly off it is meshed, so
+    // a gaze that lands past the edge frames empty sky (CI `integration / capture`, walk-28).
+    const run = await probe();
+    run.fly(true);
+    for (let tick = 0; tick < 400; tick++) {
+      run.scene.update(run.ctx, 1 / 60);
+      const [px, py, pz] = run.debug()?.cameraPosition as number[];
+      const [tx, ty, tz] = run.debug()?.cameraTarget as number[];
+      const reach = py / (py - ty);
+      const gaze = [px + (tx - px) * reach, pz + (tz - pz) * reach];
+      for (const axis of gaze) expect(Math.abs(axis)).toBeLessThanOrEqual(128 + 1e-9);
+    }
+    expect(run.debug()?.cameraPosition).toEqual([180, 24, 0]);
+  });
+
   it.each([
     ["traverses and returns to the same resident count", 3, 8, 9, true],
     ["frozen warm-up residency", 3, 2, 9, false],
