@@ -2579,7 +2579,8 @@ Renderer::Program* Renderer::program(MaterialKind kind, const shader::VertexVari
         if (backgroundNode) throw std::runtime_error(message);
         return refuse(message);
     };
-    const shader::LightLayout layout{lights};
+    const std::size_t selection = lights.find('#');  // a lightsNode program: kinds, then `#` and the listed ids
+    const shader::LightLayout layout{lights.substr(0, selection)};
     shader::StandardPrograms source;
     try {
         switch (kind) {
@@ -2606,7 +2607,12 @@ Renderer::Program* Renderer::program(MaterialKind kind, const shader::VertexVari
         return refuseBuild(errors.empty() ? "no reason" : errors.front());
     }
     Program& built = add(key, std::move(vertex), std::move(fragment));
-    built.kind = kind; built.variant = vv; built.lightKinds = lights;
+    built.kind = kind; built.variant = vv; built.lightKinds = layout.kinds;
+    if (selection != std::string::npos) {
+        built.selective = true;
+        for (std::size_t at = selection + 1; at < lights.size(); at = lights.find(',', at) + 1)
+            built.lightSelection.push_back(std::stoull(lights.substr(at)));
+    }
     return &built;
 }
 
@@ -3584,12 +3590,33 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     const uint64_t lightKindsKey = hashBytes(lightKinds.data(), lightKinds.size());
     const uint64_t unshadowedKindsKey = hashBytes(unshadowedKinds.data(), unshadowedKinds.size());
     const uint64_t basicLightsKey = hashBytes("", 0) ^ 0x5bf03635ull;
-    const auto drawLightsKey = [&](const DrawItem& item) {
+    // NodeMaterial.lightsNode: the kinds with every light it does not list marked excluded, then `#` and the ids it
+    // lists. The ids key the program, whose frame slab then holds only their ambient and hemisphere terms.
+    // ponytail: rebuilt per draw each frame; cache it on the draw when many materials carry a lightsNode.
+    const auto selectiveLights = [&](const DrawItem& item) {
+        const shader::graph::Node& node = item.nodes ? item.nodes->lightsNode : shader::graph::Node{};
+        std::string out;
+        if (!node || item.kind == MaterialKind::Basic) return out;
+        std::vector<uint64_t> ids;
+        for (const auto& entry : node->args)
+            ids.push_back(static_cast<const Light*>(entry->object.get())->id());
+        std::sort(ids.begin(), ids.end());
+        ids.erase(std::unique(ids.begin(), ids.end()), ids.end());
+        const auto listed = [&](uint64_t id) { return std::binary_search(ids.begin(), ids.end(), id); };
+        out = item.receiveShadow ? lightKinds : unshadowedKinds;
+        for (std::size_t i = 0; i < lights.direct.size(); ++i)
+            if (!listed(lights.direct[i].id)) out[i] = shader::LightLayout::kExcluded;
+        out += '#';
+        for (const uint64_t id : ids) out += std::to_string(id) + ',';
+        return out;
+    };
+    const auto drawLightsKey = [&](const DrawItem& item, const std::string& selective) {
         // A receiving mesh reads its lights' shadow maps, any other the unshadowed kinds: three keys a program on
         // receiveShadow, and r187 has one shadow filter, so the map type no longer enters the key.
-        return item.kind == MaterialKind::Basic ? basicLightsKey
-               : item.receiveShadow            ? lightKindsKey
-                                               : unshadowedKindsKey;
+        return !selective.empty()                 ? hashBytes(selective.data(), selective.size())
+               : item.kind == MaterialKind::Basic ? basicLightsKey
+               : item.receiveShadow               ? lightKindsKey
+                                                  : unshadowedKindsKey;
     };
     // The pipeline target inputs not already in the VertexVariant: side, blending, depth state and
     // the vertex layout. Equal keys mean the same pipeline, so the cached handle can be reused.
@@ -3743,16 +3770,31 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         }
         put(block, f, fs[kShadowNoiseFrame], std::array<double, 1>{shadowNoiseFrame()});
         put(block, f, fs[kViewMipBias], std::array<double, 1>{viewMipBias()});
-        put(block, f, fs[kHemisphereSky], lights.hemisphereSky);
-        put(block, f, fs[kHemisphereGround], lights.hemisphereGround);
         put(block, f, fs[kHemisphereDirection], lights.hemisphereUp);  // world space: it meets normalWorld
-        put(block, f, fs[kAmbient], lights.ambient);
+        if (!program.selective) {
+            put(block, f, fs[kHemisphereSky], lights.hemisphereSky);
+            put(block, f, fs[kHemisphereGround], lights.hemisphereGround);
+            put(block, f, fs[kAmbient], lights.ambient);
+            return;
+        }
+        // A lightsNode program: only the ambient and hemisphere lights it lists (the slab starts zeroed).
+        const auto& ids = program.lightSelection;
+        const auto listed = [&](uint64_t id) { return std::find(ids.begin(), ids.end(), id) != ids.end(); };
+        std::array<double, 3> ambient{0, 0, 0};
+        for (const auto& [id, term] : lights.ambients)
+            if (listed(id)) for (int c = 0; c < 3; ++c) ambient[c] += term[c];
+        put(block, f, fs[kAmbient], ambient);
+        if (lights.hemisphereId != 0 && listed(lights.hemisphereId)) {
+            put(block, f, fs[kHemisphereSky], lights.hemisphereSky);
+            put(block, f, fs[kHemisphereGround], lights.hemisphereGround);
+        }
     };
     for (const auto& [depthKey, drawn] : opaque) {
         const DrawItem& item = *drawn;
         if (!item.mainPass) continue;
         shader::VertexVariant variant = variantOf(item);
-        const uint64_t lightsKey = drawLightsKey(item);
+        const std::string selective = selectiveLights(item);
+        const uint64_t lightsKey = drawLightsKey(item, selective);
         DrawCache* cache = item.cache;
         Program* built = nullptr;
         if (cache && cache->program && cache->kind == item.kind && cache->lightsKey == lightsKey &&
@@ -3760,7 +3802,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             built = static_cast<Program*>(cache->program);
         } else {
             built = this->program(item.kind, variant,
-                                  item.kind == MaterialKind::Basic ? ""
+                                  !selective.empty()               ? selective
+                                  : item.kind == MaterialKind::Basic ? ""
                                   : item.receiveShadow            ? lightKinds
                                                                   : unshadowedKinds);
             if (!built) continue;

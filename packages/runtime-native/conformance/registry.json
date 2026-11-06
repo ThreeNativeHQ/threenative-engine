@@ -2249,6 +2249,20 @@
       "required": false
     },
     {
+      "id": "material-lights",
+      "title": "a material lightsNode sums only the lights it lists (a camera-parented cockpit lit by its cabin lamp)",
+      "category": "lights",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/material-lights.js",
+      "browserRecipe": "webgpu",
+      "tolerance": {
+        "pixelMismatchRatio": 0.03,
+        "perceptualDeltaE": 6.0
+      },
+      "desktopGate": false,
+      "required": false
+    },
+    {
       "id": "compute-texture-load",
       "title": "compute kernel reading a float DataTexture only with textureLoad (no sampler bound)",
       "category": "webgpu-tsl",

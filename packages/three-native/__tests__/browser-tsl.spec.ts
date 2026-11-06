@@ -408,3 +408,14 @@ describe("MaterialNode accessor census", () => {
     expect(bridged.sort()).toEqual([...MAP_AWARE].sort());
   });
 });
+
+// three's `lights([...])` (a LightsNode for NodeMaterial.lightsNode) takes one array: each light must cross as its own
+// engine object, so the engine can key the material's program on exactly those lights.
+it("lights([...]) spreads its list into one engine object argument per light", () => {
+  const { runtime, tsl } = setup();
+  const { lights } = tsl as unknown as { lights(list?: readonly unknown[]): INode };
+  expect(lights([])[TSL_NODE]).toBeGreaterThan(0);
+  expect(runtime.call).toHaveBeenLastCalledWith("lights", null, []);
+  // A plain object is not an engine light: refused by its position in the list, not as an array.
+  expect(() => lights([{}])).toThrow("TN_TSL lights: argument 0 is not");
+});

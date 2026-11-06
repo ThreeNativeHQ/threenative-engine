@@ -25,6 +25,8 @@ export const syncUniforms = live.sync;
 export const { float, int, uint, vec2, vec3, color } = constants;
 export const vec4 = markNormalTarget(constants.vec4, globalThis.tsl.normalView);
 export const Fn = withFnBuilder(globalThis.tsl.Fn);
+// three's lights([...]) takes one array; each light crosses as its own engine object.
+export const lights = (list = []) => globalThis.tsl.lights(...list);
 export const {
   atomicAdd, atomicStore, atomicLoad, Break, Continue, Return, Discard, log, lightShadowMatrix, attribute, uv, renderOutput, If, Loop, luminance, viewZToOrthographicDepth, viewZToPerspectiveDepth, logarithmicDepthToViewZ, vertexIndex,
   add, sub, mul, div, negate, lessThan, greaterThan, equal, lessThanEqual, greaterThanEqual, and, or, not, all, any, abs, sin, cos,

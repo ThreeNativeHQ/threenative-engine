@@ -1507,6 +1507,7 @@ depthTest: boolean;
 depthWrite: boolean;
 emissiveNode: Node | null;
 readonly id: number;
+lightsNode: Node | null;
 metalnessNode: Node | null;
 name: string;
 normalNode: Node | null;
@@ -1656,6 +1657,7 @@ emissiveIntensity: number;
 emissiveNode: Node | null;
 envMapIntensity: number;
 readonly id: number;
+lightsNode: Node | null;
 metalness: number;
 metalnessNode: Node | null;
 name: string;
@@ -1803,6 +1805,7 @@ fog: boolean;
 forceSinglePass: boolean;
 fragmentNode: Node | null;
 readonly id: number;
+lightsNode: Node | null;
 name: string;
 normalNode: Node | null;
 opacity: number;
@@ -2679,6 +2682,7 @@ depthTest: boolean;
 depthWrite: boolean;
 emissiveNode: Node | null;
 readonly id: number;
+lightsNode: Node | null;
 metalnessNode: Node | null;
 name: string;
 normalNode: Node | null;
@@ -3350,6 +3354,9 @@ export declare const ZeroStencilOp: 0;
 
 /** Catalog supported: three/tsl/lightShadowMatrix. */
 export declare function lightShadowMatrix(light: Light): Node;
+
+/** Catalog supported: three/tsl/lights. */
+export declare function lights(lights: Light[]): Node;
 
 /** Catalog supported: three/tsl/rtt. */
 export declare function rtt(node: Node, width?: number | null, height?: number | null, options?: Record<string, unknown>): Node;

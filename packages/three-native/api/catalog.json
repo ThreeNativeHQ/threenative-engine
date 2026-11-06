@@ -11775,6 +11775,15 @@
           }
         },
         {
+          "name": "lightsNode",
+          "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
           "name": "metalnessNode",
           "type": "Node | null",
           "mutable": true,
@@ -13112,6 +13121,15 @@
           }
         },
         {
+          "name": "lightsNode",
+          "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
           "name": "metalness",
           "type": "number",
           "mutable": true,
@@ -14004,6 +14022,15 @@
           "name": "id",
           "type": "number",
           "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "lightsNode",
+          "type": "Node | null",
+          "mutable": true,
           "lifetime": "owned",
           "status": {
             "kind": "supported"
@@ -20974,6 +21001,15 @@
           }
         },
         {
+          "name": "lightsNode",
+          "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
           "name": "metalnessNode",
           "type": "Node | null",
           "mutable": true,
@@ -26814,6 +26850,22 @@
         {
           "name": "light",
           "type": "Light",
+          "optional": false
+        }
+      ],
+      "returns": "Node"
+    },
+    {
+      "name": "lights",
+      "kind": "function",
+      "source": "three/tsl",
+      "status": {
+        "kind": "supported"
+      },
+      "parameters": [
+        {
+          "name": "lights",
+          "type": "Light[]",
           "optional": false
         }
       ],
