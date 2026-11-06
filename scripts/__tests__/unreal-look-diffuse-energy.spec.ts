@@ -3,14 +3,19 @@ import { BufferGeometry, Color, Group, Mesh, MeshStandardMaterial, Texture, Vect
 import { MeshStandardNodeMaterial } from "three/webgpu";
 import { describe, expect, it } from "vitest";
 import {
+  ENERGY_CONSERVATION,
   NUMBER_ARITHMETIC,
   applyDiffuseEnergy,
   diffuseEnergyMode,
+  diffuseEnergyScale,
   energyPreservation,
   energyPreservingTwin,
   fresnel,
   ggxEnergyLookup,
+  physicalAblationTwin,
+  specularTerms,
 } from "../unreal-look/scaffold/render/diffuseEnergy.js";
+import { noSpecularTwin } from "../unreal-look/scaffold/render/specular.js";
 
 /** A calibration scene's surface (MI_White of `cornell`, from its scene.json: 0.73 grey, roughness 1). */
 function source(): MeshStandardMaterial {
@@ -100,6 +105,89 @@ describe("?diffuseEnergy, Unreal's diffuse energy preservation (PRD-646 round 9)
     expect(() => energyPreservingTwin(rough, { direction: new Vector3(0, 1, 0) })).toThrow(
       /TN_DIFFUSE_ENERGY_MAP/,
     );
+  });
+
+  it("loses no diffuse energy in a blendable-GBuffer Substrate project: the term compiles out (round 13)", () => {
+    // The project's own value: `r.Substrate.ProjectGBufferFormat=0` keeps the blendable Substrate GBuffer, so
+    // `SUBSTRATE_GBUFFER_FORMAT` is 0 and `USE_ENERGY_CONSERVATION` is 0
+    // (UE 5.8.3: Engine/Shaders/Private/ShadingEnergyConservation.ush:20-31).
+    const project = readFileSync("tools/unreal-reference/Config/DefaultEngine.ini", "utf8");
+    expect(project).toMatch(/^r\.Substrate\.ProjectGBufferFormat=0$/m);
+    expect(ENERGY_CONSERVATION).toBe(false);
+    // Round 12's two measured `cornell` rows: `Floor` (NoV 0.29906, VoH 0.67856) and a grazing one (0.085, 0.274),
+    // with the loss E each took (3.21% and 5.63%).
+    for (const [noV, dotVH, loss] of [
+      [0.29906, 0.67856, 0.0321],
+      [0.085, 0.274, 0.0563],
+    ] as const) {
+      const terms = { roughness: 1, noV, f0: 0.04, f90: 1, dotVH };
+      const scale = diffuseEnergyScale(NUMBER_ARITHMETIC, terms);
+      const threeLoss = fresnel(NUMBER_ARITHMETIC, { f0: 0.04, f90: 1, dotVH });
+      // The engine multiplies the albedo by `1 - F` (packages/runtime-native/src/engine/shader/standard.cpp:1433-1442):
+      // the scale cancels it to exactly 1, so the diffuse keeps all of its light, as Unreal's does.
+      near(scale * (1 - threeLoss), 1, 1e-12);
+      // The loss the harness took until round 12 (E) is real on these rows, and is what the switch now drops.
+      near(1 - energyPreservation(NUMBER_ARITHMETIC, terms), loss, 0.001);
+    }
+  });
+
+  it("keeps ?specular=0 off through the term: an energy twin of an ablation slot stays physical", () => {
+    // `?specular=0` swaps each slot for a physical material with `ior` 1 and `specularIntensity` 0, so F0 is 0
+    // (render/specular.ts:17-35). The engine picks its F0/F90 body from the material's class, and the standard body
+    // is the fixed 0.04 / 1 (packages/runtime-native/src/engine/shader/standard.cpp:1265-1268, :1354-1372), so an
+    // energy twin of the standard class would turn the lobe back on.
+    const ablated = energyPreservingTwin(noSpecularTwin(source()), {
+      direction: new Vector3(0, 1, 0),
+    });
+    expect(ablated.type).toBe("MeshPhysicalNodeMaterial");
+    // The engine reads the ablation's own numbers off the twin: F0 0 and F90 0, so the lobe is off at every angle.
+    expect(specularTerms(ablated)).toEqual({ f0: 0, f90: 0 });
+    // The albedo still carries the term: the ablation survives it, it is not swapped for it.
+    expect(ablated.colorNode).not.toBeNull();
+    // And the term divides out the loss this slot really takes, which at F0 0 and F90 0 is none: the engine's
+    // `1 - F` is 1, so the scale is exactly 1 and the arm keeps the bare diffuse.
+    expect(specularTerms(noSpecularTwin(source()))).toEqual({ f0: 0, f90: 0 });
+    for (const dotVH of [0.67856, 0.274]) {
+      near(
+        diffuseEnergyScale(NUMBER_ARITHMETIC, { roughness: 1, noV: 0.29906, f0: 0, f90: 0, dotVH }),
+        1,
+        1e-12,
+      );
+    }
+    // Round 7's F0-only reading survives too: F0 0, F90 1.
+    const f0Only = energyPreservingTwin(noSpecularTwin(source(), true), {
+      direction: new Vector3(0, 1, 0),
+    });
+    expect(specularTerms(f0Only)).toEqual({ f0: 0, f90: 1 });
+    near(
+      diffuseEnergyScale(NUMBER_ARITHMETIC, {
+        roughness: 1,
+        noV: 0.29906,
+        f0: 0,
+        f90: 1,
+        dotVH: 0.67856,
+      }) *
+        (1 - fresnel(NUMBER_ARITHMETIC, { f0: 0, f90: 1, dotVH: 0.67856 })),
+      1,
+      1e-12,
+    );
+    // A plain slot keeps the standard twin: the class follows the source, it is not always physical.
+    expect(energyPreservingTwin(source(), { direction: new Vector3(0, 1, 0) }).type).toBe(
+      "MeshStandardNodeMaterial",
+    );
+    // The shared 0.04 and 1 of a standard material, which is what the scenes' slots carry.
+    expect(specularTerms(source())).toEqual({ f0: 0.04, f90: 1 });
+  });
+
+  it("refuses an ablation where the engine bridges no physical node material, rather than a lobe that came back", () => {
+    // The owned engine binds no `MeshPhysicalNodeMaterial` (packages/three-native/api/catalog.json), so `new` on it
+    // throws `TN_NATIVE_UNCATALOGUED_MESHPHYSICALNODEMATERIAL`; round 12 measured the silent version of that: the
+    // specular-on and specular-off arms drew one frame.
+    expect(() =>
+      physicalAblationTwin("MI_White", () => {
+        throw new Error("TN_NATIVE_UNCATALOGUED_MESHPHYSICALNODEMATERIAL");
+      }),
+    ).toThrow(/TN_DIFFUSE_ENERGY_SPECULAR: MI_White .* physical node material/);
   });
 
   it("leaves every material alone under three's term", () => {

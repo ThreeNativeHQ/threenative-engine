@@ -17,16 +17,23 @@
 // grazing row loses 4 to 7 times too much of its diffuse.
 //
 // The engine is not this harness's to change (PRD-646 round 9), so the term arrives on the material: the albedo
-// is scaled by (1 - E) / (1 - F). The engine multiplies that albedo by `NdotL * light * (1 - F)` for the scene's
-// one direct light, which leaves exactly `NdotL * light * (1 - E)`. It is exact where the frame is the direct
-// light alone, layer L1; from L2 the sky and GI diffuse already lose the integrated term through three's own
+// is scaled by `preservation / (1 - F)`. The engine multiplies that albedo by `NdotL * light * (1 - F)` for the
+// scene's one direct light, which leaves exactly `NdotL * light * preservation`. It is exact where the frame is the
+// direct light alone, layer L1; from L2 the sky and GI diffuse already lose the integrated term through three's own
 // `energyLoss`, which a per-material scale cannot be separated from, so later layers keep three's term.
+//
+// Round 13: `preservation` follows the project's own switch, and this project compiles the term out
+// (`ENERGY_CONSERVATION` below), so the scale is `1 / (1 - F)` and the diffuse keeps every bit of its light. Round 12
+// measured the pair on `cornell`: Unreal's specular on/off is 1 + the lobe (Floor 1.0274, Back 1.0138), the harness's
+// was 1 - E + the lobe (0.9993, 1.0038).
 //
 // F0 and F90 are the two engines' shared values: F0 = 0.04, `DielectricSpecularToF0(Specular)` = `0.08 x
 // Specular` (Engine/Shaders/Private/ShadingCommon.ush:122-125) with Unreal's default Specular 0.5, and F90 = 1
 // for a dielectric (`ComputeF90` with the default edge colour, `:170-176`); a standard material carries the same
-// 0.04 and 1 (standard.cpp:1367-1371). ?diffuseEnergy=three restores three's term and leaves every material
-// untouched, so that arm draws the frame the harness drew before this file existed.
+// 0.04 and 1 (standard.cpp:1367-1371). The term reads them from the material the engine will draw
+// (`specularTerms`), so a diagnosis ablation's zero F0 and its own F90 divide out the loss the engine really
+// subtracts. ?diffuseEnergy=three restores three's term and leaves every material untouched, so that arm draws the
+// frame the harness drew before this file existed.
 import { type Material, type Object3D, Vector3 } from "three";
 import {
   cameraPosition,
@@ -41,7 +48,11 @@ import {
   vec3,
   vec4,
 } from "three/tsl";
-import { type MeshStandardMaterial, MeshStandardNodeMaterial } from "three/webgpu";
+import {
+  MeshPhysicalNodeMaterial,
+  type MeshStandardMaterial,
+  MeshStandardNodeMaterial,
+} from "three/webgpu";
 import { copyFields } from "./giCache.js";
 
 /** Which loss the direct diffuse takes: Unreal's integrated term (default) or three's pointwise Fresnel. */
@@ -163,6 +174,22 @@ export function fresnel<A>(
   return a.add(a.mul(terms.f0, a.sub(a.constant(1), fc)), a.mul(terms.f90, fc));
 }
 
+/**
+ * `USE_ENERGY_CONSERVATION` for the reference project: off, so a lit slab's diffuse loses nothing.
+ *
+ * The macro is 1 only when `(SUBSTRATE_ENABLED && SUBSTRATE_GBUFFER_FORMAT>0) ||
+ * LEGACY_MATERIAL_ENERGYCONSERVATION` (UE 5.8.3: Engine/Shaders/Private/ShadingEnergyConservation.ush:20-31). This
+ * project asks for the blendable Substrate GBuffer, `r.Substrate.ProjectGBufferFormat=0`
+ * (tools/unreal-reference/Config/DefaultEngine.ini), which keeps the blendable format
+ * (`Engine/Source/Runtime/RenderCore/Private/RenderUtils.cpp:2226-2233`) and compiles `SUBSTRATE_GBUFFER_FORMAT` to
+ * 0 (`Engine/Source/Runtime/Engine/Private/ShaderCompiler/ShaderCompiler.cpp:4093`); legacy energy conservation
+ * defaults to 0 (`Engine/Source/Runtime/Renderer/Private/ShadingEnergyConservation.cpp:72-74`). With both off,
+ * `ComputeEnergyPreservation` returns 1 and `ComputeEnergyConservation` returns `W`
+ * (ShadingEnergyConservationTemplate.ush:126-143). Round 12 measured the pair on `cornell`: Unreal's specular
+ * on/off is 1 + the lobe (Floor 1.0274), the harness's is 1 - E + the lobe (0.9993).
+ */
+export const ENERGY_CONSERVATION: boolean = false;
+
 /** A float-valued node: the type every arithmetic step of the formula returns. */
 type TslFloat = import("three/webgpu").Node<"float">;
 /** A vec3-valued node, as a light's direction or a colour. */
@@ -180,22 +207,59 @@ const TSL_ARITHMETIC: IEnergyArithmetic<TslFloat> = {
 };
 
 /**
- * `(1 - E) / (1 - F)` for one surface, in world space: the engine's own angles (`VoH` at the half angle, `NoV`
- * at the view), so that the engine's `(1 - F)` and this ratio cancel to Unreal's `(1 - E)`.
+ * One surface's albedo scale, `preservation / (1 - F)`: the engine's own `1 - F` divides out of the diffuse, which
+ * leaves Unreal's `1 - E` where the project keeps the term and every bit of the light where it compiles it out.
+ * The angles are the engine's own (`VoH` at the half angle, `NoV` at the view), so the pair cancels exactly.
  */
+export function diffuseEnergyScale<A>(
+  arithmetic: IEnergyArithmetic<A>,
+  terms: { roughness: A; noV: A; f0: A; f90: A; dotVH: A },
+): A {
+  const a = arithmetic;
+  // The project's switch, not the shader's default: no `1 - E` where Unreal compiles the term out.
+  const preservation = ENERGY_CONSERVATION ? energyPreservation(a, terms) : a.constant(1);
+  return a.div(preservation, a.sub(a.constant(1), fresnel(a, terms)));
+}
+
+/** The part of a material `setupSpecular` reads: the class flag, and the physical body's two numbers. */
+export interface ISpecularSource {
+  readonly isMeshPhysicalMaterial?: boolean;
+  readonly ior?: number;
+  readonly specularIntensity?: number;
+  readonly metalness: number;
+}
+
+/** The engine's own class test for the physical body: true for three's physical material and its node class. */
+function isPhysical(source: ISpecularSource): boolean {
+  return source.isMeshPhysicalMaterial === true;
+}
+
+/**
+ * The F0 and F90 the engine reads for this material, from `setupSpecular`
+ * (packages/runtime-native/src/engine/shader/standard.cpp:1354-1372): a standard material carries the fixed 0.04
+ * and 1, and a physical one derives F0 from its `ior` and `specularIntensity` and F90 from `specularIntensity` and
+ * `metalness`. That is how a diagnosis ablation zeroes the lobe, and the ratio has to divide out that same value:
+ * `?specular=0` leaves the engine no loss to cancel. specularColor is white on every physical slot of these scenes (the
+ * ablation twin's, `render/specular.ts`), so the scalar product is the material's F0.
+ */
+export function specularTerms(source: ISpecularSource): { f0: number; f90: number } {
+  if (!isPhysical(source)) return { f0: 0.04, f90: 1 };
+  const ior = source.ior ?? 1.5;
+  const intensity = source.specularIntensity ?? 1;
+  return {
+    f0: ((ior - 1) / (ior + 1)) ** 2 * intensity,
+    f90: intensity + (1 - intensity) * source.metalness,
+  };
+}
+
+/** `diffuseEnergyScale` for one surface, in world space: the lamp's direction or position, the view and its angles. */
 function albedoScale(source: MeshStandardMaterial, light: IDirectLight): TslFloat {
   const a = TSL_ARITHMETIC;
-  const f0 = a.constant(0.04);
-  const f90 = a.constant(1);
+  const terms = specularTerms(source);
+  const f0 = a.constant(terms.f0);
+  const f90 = a.constant(terms.f90);
   const view = cameraPosition.sub(positionWorld).normalize() as unknown as TslVec3;
   const noV = saturateNode(dot(normalWorld.normalize(), view)) as TslFloat;
-  // The material's roughness is a number, not a map value: the scenes this harness measures carry one per slot.
-  const preservation = energyPreservation(a, {
-    roughness: a.constant(source.roughness),
-    noV,
-    f0,
-    f90,
-  });
   const toLight =
     light.direction !== undefined
       ? (vec3(light.direction.clone()).normalize() as unknown as TslVec3)
@@ -208,13 +272,46 @@ function albedoScale(source: MeshStandardMaterial, light: IDirectLight): TslFloa
     toLight.z.add(view.z),
   ).normalize();
   const dotVH = saturateNode(dot(view, half)) as TslFloat;
-  return preservation.div(fresnel(a, { f0, f90, dotVH }).oneMinus()) as TslFloat;
+  // The material's roughness is a number, not a map value: the scenes this harness measures carry one per slot.
+  return diffuseEnergyScale(a, {
+    roughness: a.constant(source.roughness),
+    noV,
+    f0,
+    f90,
+    dotVH,
+  }) as TslFloat;
 }
 
 /**
- * The term on one surface: the same material with its albedo scaled by `(1 - E) / (1 - F)` at the scene's one
- * direct light, so the engine's diffuse loses Unreal's `1 - E`. A mapped surface fails closed: this path carries
- * no `map` (and no map-driven roughness), so a silent pass would change the albedo instead of the loss.
+ * The twin a specular ablation needs, `?specular=0` or `=f0` (`render/specular.ts`): the physical class keeps the
+ * ablation's F0 0 and F90, which its `ior` 1 and `specularIntensity` set. The engine picks its F0/F90 body from the
+ * material's class (packages/runtime-native/src/engine/shader/standard.cpp:1265-1268, `:1612-1616`), and its standard
+ * body is the fixed 0.04 / 1 (`:1354-1372`). The owned engine bridges no `MeshPhysicalNodeMaterial`
+ * (packages/three-native/api/catalog.json), so there the ablation would silently read as a lobe that came back: it
+ * fails closed by name instead.
+ */
+export function physicalAblationTwin(
+  name: string,
+  // `new MeshPhysicalNodeMaterial()`: injectable so the refusal has a test that the engine cannot give it.
+  construct: () => MeshStandardNodeMaterial = () =>
+    new MeshPhysicalNodeMaterial() as unknown as MeshStandardNodeMaterial,
+): MeshStandardNodeMaterial {
+  try {
+    return construct();
+  } catch {
+    throw new Error(
+      `TN_DIFFUSE_ENERGY_SPECULAR: ${name} is a specular ablation, and this engine bridges no physical node material: the term would turn its lobe back on`,
+    );
+  }
+}
+
+/**
+ * The term on one surface: the same material with its albedo scaled by `preservation / (1 - F)` at the scene's one
+ * direct light, so the engine's diffuse loses what Unreal's does.
+ *
+ * The twin keeps its source's class, as the engine picks its material body from the class, so a diagnosis ablation
+ * stays an ablation under the term. A mapped surface fails closed: this path carries no `map` (and no map-driven
+ * roughness), so a silent pass would change the albedo instead of the loss.
  */
 export function energyPreservingTwin(
   source: MeshStandardMaterial,
@@ -225,7 +322,9 @@ export function energyPreservingTwin(
     throw new Error(
       `TN_DIFFUSE_ENERGY_MAP: ${source.name} takes its roughness or metalness from a map`,
     );
-  const twin = new MeshStandardNodeMaterial();
+  const twin = isPhysical(source)
+    ? physicalAblationTwin(source.name)
+    : new MeshStandardNodeMaterial();
   copyFields(source, twin as unknown as Record<string, unknown>);
   // The albedo as a node: the material's own colour times its base map, which the twin's `colorNode` replaces (a
   // uniform and a texture, as the ID pass reads them, so the values are the numbers the material holds).

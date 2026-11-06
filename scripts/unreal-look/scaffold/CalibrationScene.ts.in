@@ -220,7 +220,9 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
       // Diagnosis knob: ?specular=0 takes the specular off every surface, as Unreal's ShowFlag.Specular does
       // (render/specular.ts carries both citations), so its share of a direct-light row can be read on both engines.
       // ?specular=f0 is round 7's F0-only reading, kept so its recorded arms stay reproducible.
-      // It runs before the shadowSide loop and before `shadeLikeSubstrate`, so both mark the twin.
+      // It runs before the shadowSide loop and before `shadeLikeSubstrate`, so both mark the twin. It also runs
+      // before `applyDiffuseEnergy` below, whose twin keeps this one's class, so the ablation survives the term
+      // (render/diffuseEnergy.ts; round 12 measured the two knobs reading as one frame).
       const specular = params.get("specular");
       if (specular !== null)
         for (const mesh of meshes)
