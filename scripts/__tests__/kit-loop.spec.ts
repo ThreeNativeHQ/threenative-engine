@@ -32,7 +32,7 @@ const events = jsonl([
   toolUse("mcp__threenative-assets__asset_search_sources", {}),
 ]);
 
-const inputs: Record<string, unknown> = {
+const inputs = {
   "events.jsonl": events,
   "transcript.json": {
     type: "result",
