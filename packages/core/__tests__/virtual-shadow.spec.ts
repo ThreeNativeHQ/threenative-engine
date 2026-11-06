@@ -3033,6 +3033,28 @@ describe("VirtualShadowNode derived depth and caster size gate", () => {
     expect(invalidatedBy(false)).toBe(3);
   });
 
+  it("should not invalidate cached maps when a mesh that casts nothing flips visibility", () => {
+    // A world's main-pass batch casts nothing (its caster halves do) and hides when it empties:
+    // the Strata fallback forest emptied five of them after the reveal and redrew every level.
+    const invalidatedBy = (castShadow: boolean): number => {
+      const { camera, light, tall } = shadowWorld();
+      tall.castShadow = castShadow;
+      const node = setupNode(light, {
+        clipExtents: [24, 96, 320],
+        invalidationDelay: 0,
+        mapSize: 64,
+      });
+      settle(node, camera);
+      tall.visible = false;
+      node.updateBefore(frameFor(camera));
+      const { invalidated } = node.stats;
+      node.dispose();
+      return invalidated;
+    };
+    expect(invalidatedBy(false)).toBe(0);
+    expect(invalidatedBy(true)).toBe(3);
+  });
+
   it("should not redraw cached maps for an arriving mesh that casts nothing or is a swap twin", () => {
     const invalidatedByArrival = (castShadow: boolean, swap: boolean): number => {
       const { camera, light, scene, tall } = shadowWorld();

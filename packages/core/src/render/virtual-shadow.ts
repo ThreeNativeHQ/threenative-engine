@@ -75,6 +75,7 @@ import {
   POOL_STRIDE,
   casterFlag,
   deforms,
+  flagCasts,
   instanceDiameter,
   shadowLod,
 } from "./virtual-shadow-casters.js";
@@ -1177,8 +1178,12 @@ export class VirtualShadowNode extends ShadowBaseNode {
       const mesh = table[entry];
       if (mesh === undefined) continue;
       const flag = casterFlag(mesh);
-      if (flags[entry] === flag) continue;
+      const was = flags[entry] ?? 0;
+      if (was === flag) continue;
       flags[entry] = flag;
+      // A mesh that casts in neither state drew nothing into any map either way: a main-pass
+      // batch that empties and hides is not a shadow change.
+      if (!flagCasts(was) && !flagCasts(flag)) continue;
       this.#askAboutCaster(mesh);
     }
   }

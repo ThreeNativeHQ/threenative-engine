@@ -132,6 +132,11 @@ export function casterFlag(mesh: {
   );
 }
 
+/** A `casterFlag` whose mesh draws into a level map: shown, casting and admitted. */
+export function flagCasts(flag: number): boolean {
+  return (flag & 7) === 3;
+}
+
 /**
  * The diameter a shadow level's texel gate judges one caster by: the part's own geometry radius
  * times the largest instance scale `WorldCells` placed into this batch, or the mesh's own sphere
