@@ -23,6 +23,7 @@ import {
   exp,
   exp2,
   float,
+  hash,
   log,
   max,
   min,
@@ -32,7 +33,6 @@ import {
   sign,
   sqrt,
   step,
-  vec2,
   vec3,
 } from "three/tsl";
 import type { Node } from "three/webgpu";
@@ -676,17 +676,15 @@ const toLinear = (v: Node<"vec3">) =>
  * (`Engine/Shaders/Private/PostProcessTonemap.usf`, scaled by `BackbufferQuantizationDithering` in
  * `Engine/Source/Runtime/Renderer/Private/PostProcess/PostProcessTonemap.cpp`). The pipeline applies the sRGB
  * transfer after this node, so the grain goes in on the display value and the result comes back to linear.
- * The shape is Unreal's triangle on [-1, 1]. The hash is white noise of the pixel position, with the sine
- * argument kept under pi. Unreal's grain moves every frame; this one stays on its pixel, so two captures of
- * one frame match bit for bit. The hash reads the pixel position: `screenUV` gave no grain in this stage on
- * the owned engine.
+ * The shape is Unreal's triangle on [-1, 1]. The noise is three's integer PCG `hash` of the pixel index, so
+ * every backend draws the same grain: the old `fract(sin(dot(p, k)) * 43758.5453)` hash multiplied float
+ * rounding by 43758, and Chrome and the desktop host drew uncorrelated grain (half the frame 1-2 levels
+ * apart). Unreal's grain moves every frame; this one stays on its pixel, so two captures of one frame match
+ * bit for bit. The hash reads the pixel position: `screenUV` gave no grain in this stage on the owned engine.
  */
 function dithered(linear: Node<"vec3">, steps: number): Node<"vec3"> {
-  const uniform = dot(screenCoordinate, vec2(12.9898, 78.233))
-    .mod(Math.PI)
-    .sin()
-    .mul(43758.5453)
-    .fract();
+  // y * 4096 is exact, so the seed is one rounded add on every backend (FMA or not); hash truncates it to u32.
+  const uniform = hash(screenCoordinate.y.mul(4096).add(screenCoordinate.x));
   // The inverse of the triangular CDF: one root for each half of the unit interval.
   const grain = mix(
     uniform.mul(2).sqrt().sub(1),
