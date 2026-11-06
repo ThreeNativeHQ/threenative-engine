@@ -617,8 +617,11 @@ describe("createRenderer", () => {
       const scene = new Scene();
       const camera = new PerspectiveCamera();
       const worldPass = pass(scene, camera);
-      worldPass.renderTarget.textures[0].name = "beauty";
+      const targetTexture = worldPass.renderTarget.textures[0];
+      if (targetTexture === undefined) throw new Error("Missing world pass texture");
+      targetTexture.name = "beauty";
       const installed = renderer.setOutputNode(worldPass.getTextureNode(), worldPass);
+      if (installed === undefined) throw new Error("Missing installation receipt");
       const first = renderer.compileAsync(scene, camera);
       renderer.renderOverlay({} as never, {} as never);
       expect(second).toBeDefined();
