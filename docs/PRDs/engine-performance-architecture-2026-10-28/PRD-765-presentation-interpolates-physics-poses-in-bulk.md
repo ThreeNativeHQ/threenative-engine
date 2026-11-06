@@ -9,7 +9,7 @@
 
 ## Context
 
-Source: proposal 5 in [the investigation](../../../plans/engine-performance-architecture-2026-10-28.md).
+Source: proposal 5 in [the investigation](investigation.md).
 Engine layer: `packages/core/src/interpolation.ts:30` allocates pose history per tracked object;
 `:68–79` captures ticks; `:94–125` snapshots participants, saves/writes draw poses and restores
 solved poses. Engine math already uses memory views; scalar-access counts are not ABI timings.

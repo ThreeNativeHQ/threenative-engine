@@ -9,7 +9,7 @@
 
 ## Context
 
-Source: proposal 2 in [the investigation](../../../plans/engine-performance-architecture-2026-10-28.md).
+Source: proposal 2 in [the investigation](investigation.md).
 Engine layer: `packages/physics/src/plugin.ts:212` and `:219` scan all registered bodies for
 kinematics and characters; `:244` requests a full snapshot and `:255` dispatches every row.
 `simulation.ts:1467` still visits all bodies despite cached backend pose reads. Native physics

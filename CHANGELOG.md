@@ -9,6 +9,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+Nothing yet. Add the next change here. A removed or changed public symbol needs a `### Breaking`
+entry that names it (`pnpm api:surface:check`).
+
+## [0.3.11] - 2026-11-03
+
+The entries below were recorded while `develop` moved from 0.3.3 to 0.3.11. Per-version notes for
+0.3.4 to 0.3.10 were not reconstructed from git.
+
 ### Added
 
 - `threenative-capabilities` step 3 now says how to *see* a mechanic, not only read it: the
@@ -85,11 +93,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the sweep existed, at about 1.1 µs a material per frame. Any other value throws at startup rather
   than falling back to a default nobody asked for.
 
-## [0.3.3] - unreleased (release candidate)
+## [0.3.3]
 
-The current cohort, prepared from `develop` at 0.3.3 (`create-threenative` 0.2.6). It is not yet
-published, and no `runtime-native-v0.3.3` prebuilt release exists; publishing the cohort is
-PRD-196.
+Superseded by 0.3.4 (tag `v0.3.4`, 2026-10-01). The release date of 0.3.3 was not recorded.
 
 ### Added
 

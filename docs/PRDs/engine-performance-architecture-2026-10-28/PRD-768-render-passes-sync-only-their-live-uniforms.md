@@ -9,7 +9,7 @@
 
 ## Context
 
-Source: uniform follow-up in [the investigation](../../../plans/engine-performance-architecture-2026-10-28.md).
+Source: uniform follow-up in [the investigation](investigation.md).
 Engine layer: `packages/three-native/src/tsl-uniforms.ts:223` scans global callback and object
 collections on sync. `browser-entry.ts:231/238` invokes sync during render preparation. Native
 `packages/runtime-native/src/engine/player/core-tsl.mjs:18` instantiates the same `liveUniforms`

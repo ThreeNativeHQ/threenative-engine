@@ -1,6 +1,6 @@
 # Engine performance architecture — 2026-10-28
 
-Sliced from [the architecture investigation](../../../plans/engine-performance-architecture-2026-10-28.md).
+Sliced from [the architecture investigation](investigation.md).
 All seven new PRDs are **NOT STARTED, 0%**. This batch authorizes planning only; the investigation's
 operation counts and historical timings are inputs, not implementation or performance acceptance.
 

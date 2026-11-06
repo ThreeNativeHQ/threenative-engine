@@ -24,7 +24,7 @@ Stars rate **expected impact relative to implementation effort**, discounted for
 
 ### 1. Clear forces only on bodies that received them — ⭐⭐⭐⭐⭐
 
-**Evidence.** [simulation.ts:1457](../packages/physics/src/simulation.ts) walks every body and calls `resetForces(true)` and `resetTorques(true)` on every dynamic body after each solve. Fixed bodies already skip these calls. Force application has centralized seams at lines 1332 and 1337. Native [lib.rs:1204](../packages/runtime-native/native/physics/src/lib.rs) clears both on every entry.
+**Evidence.** [simulation.ts:1457](../../../packages/physics/src/simulation.ts) walks every body and calls `resetForces(true)` and `resetTorques(true)` on every dynamic body after each solve. Fixed bodies already skip these calls. Force application has centralized seams at lines 1332 and 1337. Native [lib.rs:1204](../../../packages/runtime-native/native/physics/src/lib.rs) clears both on every entry.
 
 **Architecture change.** Track bodies receiving a force or force-at-point in a reusable collection. Clear only those bodies after the solve, then empty the collection. Preserve the one-fixed-step force contract on both backends. This is a small change to existing simulation ownership, not a new command framework.
 
@@ -38,7 +38,7 @@ Stars rate **expected impact relative to implementation effort**, discounted for
 
 ### 2. Publish changed poses instead of replaying the entire physics world — ⭐⭐⭐⭐
 
-**Evidence.** [plugin.ts:212](../packages/physics/src/plugin.ts) scans the complete body collection for kinematics, then again for characters at line 219. Lines 244–262 request and dispatch all transform records. Web [simulation.ts:1467](../packages/physics/src/simulation.ts) visits every valid body; native [lib.rs:1996](../packages/runtime-native/native/physics/src/lib.rs) exports every entry. The web resting-pose cache at `simulation.ts:987` already avoids repeated backend pose reads for fixed/resting bodies; it still copies their records into the output.
+**Evidence.** [plugin.ts:212](../../../packages/physics/src/plugin.ts) scans the complete body collection for kinematics, then again for characters at line 219. Lines 244–262 request and dispatch all transform records. Web [simulation.ts:1467](../../../packages/physics/src/simulation.ts) visits every valid body; native [lib.rs:1996](../../../packages/runtime-native/native/physics/src/lib.rs) exports every entry. The web resting-pose cache at `simulation.ts:987` already avoids repeated backend pose reads for fixed/resting bodies; it still copies their records into the output.
 
 **Architecture change.** Maintain kinematic and character registries through registration/removal. Add an internal changed-pose stream for the plugin, backed by reusable typed arrays. Keep the complete `readVisibleTransforms()` snapshot contract for existing consumers and diagnostics. Publish initial poses, teleports, wake/sleep transitions and externally driven changes explicitly.
 
@@ -50,7 +50,7 @@ Stars rate **expected impact relative to implementation effort**, discounted for
 
 ### 3. Move object selection out of repeated JavaScript ray walks — ⭐⭐⭐⭐
 
-**Evidence.** Each query calls `root.updateMatrixWorld()` and recursively collects objects at [picking.ts:139](../packages/core/src/picking.ts). Lines 183–211 visit children; nearest-hit queries still inspect reached objects before selecting the global nearest result. The per-geometry `MeshBVH` cache at lines 292–315 accelerates triangle tests inside a mesh, not scene-object discovery.
+**Evidence.** Each query calls `root.updateMatrixWorld()` and recursively collects objects at [picking.ts:139](../../../packages/core/src/picking.ts). Lines 183–211 visit children; nearest-hit queries still inspect reached objects before selecting the global nearest result. The per-geometry `MeshBVH` cache at lines 292–315 accelerates triangle tests inside a mesh, not scene-object discovery.
 
 **Architecture change.** Retain an index over queryable object bounds, separating static and moving members. Update affected bounds and traverse candidates nearest-first. On the owned engine, keep candidate selection and intersection inside one engine operation; batch multiple rays when callers can naturally submit them together. Reuse existing engine query/geometry machinery and the current picker API. Start with shared transform freshness and candidate filtering before committing to a larger index.
 
@@ -62,7 +62,7 @@ Stars rate **expected impact relative to implementation effort**, discounted for
 
 ### 4. Reduce temporal-resolve bandwidth after auditing history consumers — ⭐⭐⭐⭐
 
-**Evidence.** [PRD-756 Phase 1](../docs/PRDs/Unreal/performance/PRD-756-the-temporal-resolve-feeds-one-shared-post-chain.md) records 1080p `traaResolve` at **4.546 and 4.532 ms** on Iris Xe. Phase 2 remains open. [traa.cpp:657](../packages/runtime-native/src/engine/renderer/post/traa.cpp) binds previous history and writes display color, dynamic mask and next history as three attachments at lines 667–669.
+**Evidence.** [PRD-756 Phase 1](../../../docs/PRDs/Unreal/performance/PRD-756-the-temporal-resolve-feeds-one-shared-post-chain.md) records 1080p `traaResolve` at **4.546 and 4.532 ms** on Iris Xe. Phase 2 remains open. [traa.cpp:657](../../../packages/runtime-native/src/engine/renderer/post/traa.cpp) binds previous history and writes display color, dynamic mask and next history as three attachments at lines 667–669.
 
 **Architecture change.** Continue the existing Phase 2: audit history alpha/range consumers, then evaluate packed HDR history and optional shader-f16 where supported, with an honest fallback. Audit actual attachment formats and bytes transferred before selecting a replacement. Borrow algorithm/default/guard decisions from the pinned Unreal source before implementation, as the repository requires.
 
@@ -74,7 +74,7 @@ Stars rate **expected impact relative to implementation effort**, discounted for
 
 ### 5. Interpolate presentation poses without repeatedly rewriting simulation objects — ⭐⭐⭐
 
-**Evidence.** [interpolation.ts:30](../packages/core/src/interpolation.ts) stores six JS math objects per tracked participant. Lines 68–79 copy previous/current poses around every tick. Each interpolated render snapshots participants into a new array, saves poses, writes interpolated poses, draws, restores solved poses and updates changed matrices at lines 94–125.
+**Evidence.** [interpolation.ts:30](../../../packages/core/src/interpolation.ts) stores six JS math objects per tracked participant. Lines 68–79 copy previous/current poses around every tick. Each interpolated render snapshots participants into a new array, saves poses, writes interpolated poses, draws, restores solved poses and updates changed matrices at lines 94–125.
 
 **Architecture change.** Extend the existing transform-record seam with previous/current presentation state and send alpha once to an engine-owned bulk interpolation operation. Keep solved simulation transforms authoritative. Build presentation matrices in the rendering path rather than round-tripping every body through JS writes. Retain the existing implementation for the legacy Three.js backend.
 
@@ -88,9 +88,9 @@ Stars rate **expected impact relative to implementation effort**, discounted for
 
 | Suggestion | Effort × impact rating | Effort | Evidence and boundary |
 | --- | --- | --- | --- |
-| Skip unused reflection output processing | ⭐⭐⭐⭐ | 1–2 days | [render_database.cpp:1803](../packages/runtime-native/src/engine/renderer/render_database.cpp) creates reflection siblings and copies output settings; line 1841 consumes scene color. [renderer.cpp:5168](../packages/runtime-native/src/engine/renderer/renderer.cpp) gates output on `sceneOnly_`; ordinary [render targets already skip output](../packages/runtime-native/src/engine/renderer/render_target_pass.cpp). Reuse that mechanism after proving every reflection consumer needs only scene color. Savings apply to reflectors; verify reflection fixtures and sailing with a visual judge. |
-| Retain sensor membership indices and scratch storage | ⭐⭐⭐ | 2–4 days | Native [lib.rs:1336](../packages/runtime-native/native/physics/src/lib.rs) rebuilds a collider→body HashMap and pair Vec during area refresh. Retain the index across body lifetime and reuse storage first. Consider change epochs only after preserving new/moved sensors, sleeping occupants and filter edits. Run area/collision/native-contract tests and many-trigger scaling cases. Gain unmeasured. |
-| Synchronize only uniforms owned by the current pass | ⭐⭐ | 2–4 days | [tsl-uniforms.ts:223](../packages/three-native/src/tsl-uniforms.ts) scans global updating/object collections for each render. Unchanged lane writes and FRAME callbacks already deduplicate; remaining RENDER callbacks and object extraction still execute. Associate live uniforms with prepared pass/material owners, preserving render cameras and in-place edits. Historical once-per-frame extraction sizing was only 0.08–0.15 ms/frame, so keep this below the larger targets. Run uniform specs, post-chain playtests and a visual judge. |
+| Skip unused reflection output processing | ⭐⭐⭐⭐ | 1–2 days | [render_database.cpp:1803](../../../packages/runtime-native/src/engine/renderer/render_database.cpp) creates reflection siblings and copies output settings; line 1841 consumes scene color. [renderer.cpp:5168](../../../packages/runtime-native/src/engine/renderer/renderer.cpp) gates output on `sceneOnly_`; ordinary [render targets already skip output](../../../packages/runtime-native/src/engine/renderer/render_target_pass.cpp). Reuse that mechanism after proving every reflection consumer needs only scene color. Savings apply to reflectors; verify reflection fixtures and sailing with a visual judge. |
+| Retain sensor membership indices and scratch storage | ⭐⭐⭐ | 2–4 days | Native [lib.rs:1336](../../../packages/runtime-native/native/physics/src/lib.rs) rebuilds a collider→body HashMap and pair Vec during area refresh. Retain the index across body lifetime and reuse storage first. Consider change epochs only after preserving new/moved sensors, sleeping occupants and filter edits. Run area/collision/native-contract tests and many-trigger scaling cases. Gain unmeasured. |
+| Synchronize only uniforms owned by the current pass | ⭐⭐ | 2–4 days | [tsl-uniforms.ts:223](../../../packages/three-native/src/tsl-uniforms.ts) scans global updating/object collections for each render. Unchanged lane writes and FRAME callbacks already deduplicate; remaining RENDER callbacks and object extraction still execute. Associate live uniforms with prepared pass/material owners, preserving render cameras and in-place edits. Historical once-per-frame extraction sizing was only 0.08–0.15 ms/frame, so keep this below the larger targets. Run uniform specs, post-chain playtests and a visual judge. |
 
 ## What the ABI scan actually says
 
@@ -101,7 +101,7 @@ Stars rate **expected impact relative to implementation effort**, discounted for
 | Wasm engine → browser WebGPU | C++ engine reaches browser GPU APIs through glue; retained rendering already exists | GPU-call census, pass elimination and stable resource/bundle reuse only where remaining cost is measured |
 | Native V8 → C++/Rust | Same high-level API, native bindings and bulk physics seam | Native-specific call census; browser crossing costs do not establish desktop savings |
 
-[PERFORMANCE-LEARNINGS.md:210–259](../PERFORMANCE-LEARNINGS.md) records shooter route crossings falling from roughly 3,200 to 800–1,024/frame in prior rounds. Later counted kit runs recorded 455 and 655 real crossings/frame, while 83–90% of wrapper entries stayed in JS. Counted glue cost was **estimated** at about 0.37–0.49 ms/frame. Much larger DevTools attribution was affected by tracing overhead.
+[PERFORMANCE-LEARNINGS.md:210–259](../../../PERFORMANCE-LEARNINGS.md) records shooter route crossings falling from roughly 3,200 to 800–1,024/frame in prior rounds. Later counted kit runs recorded 455 and 655 real crossings/frame, while 83–90% of wrapper entries stayed in JS. Counted glue cost was **estimated** at about 0.37–0.49 ms/frame. Much larger DevTools attribution was affected by tracing overhead.
 
 **Decision:** a general replacement ABI or universal command buffer has a small demonstrated ceiling in those kits and substantial compatibility cost. Prefer a bulk operation at the owner of a measured repeated task. Batching a synchronous query must preserve when its answer becomes available; deferring reads indiscriminately changes gameplay.
 
@@ -111,7 +111,7 @@ Stars rate **expected impact relative to implementation effort**, discounted for
 | --- | --- |
 | More generic property caching, local JS math, visible-only matrices, static freezing, automatic batching or animation-rate selection | ✅ Existing mechanisms. Search and extend them rather than creating parallel systems. |
 | Add a native render thread, retained bundles, pipeline caching or bulk frame uniforms | ✅ Existing mechanisms. Native frame uniform upload is already bulk at `renderer.cpp:3942`; the render-thread result is documented in `PERFORMANCE-LEARNINGS.md:366`. |
-| Incremental projection change sets | ⚠️ [PRD-753](../docs/PRDs/Unreal/performance/PRD-753-a-scene-change-updates-only-the-batches-it-touches.md) deferred after target functions measured only 0.06–0.32% of game-thread time. Revisit its ≥2% gate rather than the stale 10.8% premise. |
+| Incremental projection change sets | ⚠️ [PRD-753](../../../docs/PRDs/Unreal/performance/PRD-753-a-scene-change-updates-only-the-batches-it-touches.md) deferred after target functions measured only 0.06–0.32% of game-thread time. Revisit its ≥2% gate rather than the stale 10.8% premise. |
 | Reorder retained opaque draws by state | ❌ PRD-754's attempted ordering changed coplanar winners and received a visual REGRESSION. Keep ordering semantics; native shadow bundle wins already landed. |
 | Share every post downsample chain or remove history copies again | ⚠️ PRD-756 sized shared-chain removal at 0.44 ms, below its 1 ms gate. PRD-755's history swaps already landed without a measurable Iris Xe gain. |
 
@@ -166,4 +166,4 @@ pnpm exec vitest run \
 
 ✅ Three bounded read-only scouts investigated native rendering/bindings, core frame/query/interpolation paths and physics synchronization. Findings retained here were checked against source and current performance learnings. Capability search and detail inspection covered the installed matrix, projection, static, physics, animation, warmup and profiling-related mechanisms.
 
-⚠️ No source implementation, builds, live GPU/native/device benchmarks, new visual captures or optimization visual judging were performed. Historical timings were not rerun. Shader precision, history-format feasibility, raw physics force compatibility and end-to-end gains remain unverified. Asset streaming/decode, audio, networking, terrain and every platform-specific host were not exhaustively audited. Existing local edits and deletions were left intact; this report was written separately under `plans/`.
+⚠️ No source implementation, builds, live GPU/native/device benchmarks, new visual captures or optimization visual judging were performed. Historical timings were not rerun. Shader precision, history-format feasibility, raw physics force compatibility and end-to-end gains remain unverified. Asset streaming/decode, audio, networking, terrain and every platform-specific host were not exhaustively audited. Existing local edits and deletions were left intact; this report was written separately under `plans/` and moved here by PRD-826.
