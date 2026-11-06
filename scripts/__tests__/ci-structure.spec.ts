@@ -4416,12 +4416,13 @@ describe("PRD-373 selective feature verification", () => {
     });
 
     it("exempts strata, with the reason, when this run reaches no GPU runner", async () => {
-      const { selectionPlan } = (await import(
+      const { selectionPlan, validatePlan } = (await import(
         new URL("../ci-change-scope.mjs", import.meta.url).href
       )) as {
         selectionPlan: (...args: unknown[]) => {
           jobs: Record<string, { required: boolean; reason: string }>;
         };
+        validatePlan: (plan: unknown) => unknown;
       };
       const plan = () =>
         selectionPlan("full", "fixture", [], "a".repeat(40), false, 0, "main").jobs.strata;
@@ -4430,6 +4431,11 @@ describe("PRD-373 selective feature verification", () => {
         process.env.TN_CI_STRATA_GPU = "false";
         expect(plan()?.required).toBe(false);
         expect(plan()?.reason).toMatch(/no GPU runner serves this run/u);
+        // A caller job replays the plan with no GPU answer of its own (native-platforms runs
+        // `--validate-plan`): the plan carries the answer, so the replay owes the same jobs.
+        const exempt = selectionPlan("full", "fixture", [], "a".repeat(40), true, 0, "main");
+        Reflect.deleteProperty(process.env, "TN_CI_STRATA_GPU");
+        expect(() => validatePlan(JSON.parse(JSON.stringify(exempt)))).not.toThrow();
         process.env.TN_CI_STRATA_GPU = "true";
         expect(plan()?.required).toBe(true);
       } finally {

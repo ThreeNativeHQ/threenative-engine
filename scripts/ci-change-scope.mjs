@@ -219,6 +219,11 @@ export function selectionPlan(
   target = "",
   qualification = selection === "full" && target !== "develop",
   nightly = false,
+  // Strata needs a real GPU: SwiftShader allows 16 sampled textures per stage, the terrain binds
+  // 24, and the view-window gate needs GPU timings (owner, 2026-11-06). The workflow says whether
+  // this run's `runs-on` reaches the GPU runner; unset means a caller outside CI. The plan records
+  // a `false` so every replay of it (`--validate-plan`, carried legs) owes the same jobs.
+  strataGpu = process.env.TN_CI_STRATA_GPU !== "false",
 ) {
   const full = selection === "full";
   const reused = selection === "reused";
@@ -252,11 +257,7 @@ export function selectionPlan(
       // producers; neither widens one, so any other job is exempt exactly as it is for prose.
       if (name === "strata") {
         const selected = full && strataSelected(files, qualification);
-        // Strata needs a real GPU: SwiftShader allows 16 sampled textures per stage, the terrain binds
-        // 24, and the view-window gate needs GPU timings (owner, 2026-11-06). The workflow says
-        // whether this run's `runs-on` reaches the GPU runner; unset means a caller outside CI.
-        const gpu = process.env.TN_CI_STRATA_GPU !== "false";
-        const required = selected && gpu;
+        const required = selected && strataGpu;
         return [
           name,
           {
@@ -370,6 +371,7 @@ export function selectionPlan(
     version: 2,
     qualification,
     nightly,
+    ...(strataGpu ? {} : { strataGpu: false }),
     files,
     reason,
     scope: selection,
@@ -418,6 +420,7 @@ export function owedPlan(value) {
     value.target,
     value.qualification,
     value.nightly,
+    value.strataGpu !== false,
   );
 }
 
@@ -428,6 +431,7 @@ export function validatePlan(value) {
     value.version !== 2 ||
     typeof value.qualification !== "boolean" ||
     typeof value.nightly !== "boolean" ||
+    ("strataGpu" in value && value.strataGpu !== false) ||
     (value.qualification &&
       (value.selection !== "full" || !value.native || value.reusedRunId !== 0)) ||
     !SELECTIONS.has(value.selection) ||
@@ -1441,6 +1445,7 @@ function reuseOrKeep(plan, options, candidateSha) {
       plan.target,
       plan.qualification,
       plan.nightly,
+      plan.strataGpu !== false,
     );
   // PRD-730: the queue takes its own narrow rule, never the generic cross-commit one below.
   if (options.eventName === "merge_group") {
