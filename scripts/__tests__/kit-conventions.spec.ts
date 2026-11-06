@@ -92,3 +92,49 @@ describe("kit convention index", () => {
     expect(hand.length, `${kit} hand block`).toBeLessThanOrEqual(6);
   });
 });
+
+/**
+ * PRD-825: the authoring step list lives in two places only, `agent-docs/kit-router.md` (and the
+ * kit files generated from it) and the `threenative-capabilities` skill. The engine server
+ * instructions, the ponytail hook, the other skills and the reference pages point to that flow.
+ */
+describe("authoring step list", () => {
+  const STEP_LIST = /\*\*Built-ins\*\*|steps? 1-8|steps? 5-7/u;
+  const AGENT_FILES = path.join(CREATE, "agent-files");
+
+  function filesUnder(directory: string, suffix: RegExp): string[] {
+    return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+      const full = path.join(directory, entry.name);
+      if (entry.isDirectory()) return filesUnder(full, suffix);
+      return suffix.test(entry.name) ? [full] : [];
+    });
+  }
+
+  const outside = [
+    path.resolve("packages/engine-mcp/src/index.ts"),
+    path.resolve("packages/core/mcp/engine-server.mjs"),
+    ...filesUnder(path.join(AGENT_FILES, ".claude"), /\.mjs$/u),
+    ...filesUnder(path.join(AGENT_FILES, ".agents/skills"), /SKILL\.md$/u).filter(
+      (file) => !file.includes("threenative-capabilities"),
+    ),
+    ...filesUnder(path.join(CREATE, "agent-docs"), /\.md$/u).filter(
+      (file) => !file.endsWith("kit-router.md"),
+    ),
+  ];
+
+  it("appears only in the router fragment and the capabilities skill", () => {
+    expect(outside.length).toBeGreaterThan(10);
+    for (const file of outside) {
+      expect(readFileSync(file, "utf8"), path.relative(process.cwd(), file)).not.toMatch(STEP_LIST);
+    }
+  });
+
+  it("is present in both homes", () => {
+    for (const file of [
+      path.join(CREATE, "agent-docs/kit-router.md"),
+      path.join(AGENT_FILES, ".agents/skills/threenative-capabilities/SKILL.md"),
+    ]) {
+      expect(readFileSync(file, "utf8"), file).toMatch(/\*\*Built-ins\*\*/u);
+    }
+  });
+});

@@ -6,8 +6,9 @@ description: Plan new ThreeNative games only, after kit selection plus mechanics
 # ThreeNative game PRD
 
 Use this for new games only, at step 4 of `threenative-capabilities`, after kit selection and both
-mechanics-reference and built-in capability discovery. Existing-game changes follow steps 5-7
-using their existing context; do not invoke this skill to restart whole-game planning.
+mechanics-reference and built-in capability discovery. Existing-game changes search per
+change (existing-game route in `threenative-capabilities`) and keep their context; do not invoke
+this skill to restart whole-game planning.
 The outcome is a small, distinctive, playable plan grounded in both discovery passes.
 
 ## Plan

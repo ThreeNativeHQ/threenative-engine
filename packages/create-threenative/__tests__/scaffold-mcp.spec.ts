@@ -447,8 +447,8 @@ async function probeEngineServer(target: string): Promise<void> {
       clientInfo: { name: "scaffold-mcp-test", version: "0" },
       protocolVersion: "2025-06-18",
     });
-    expect(initialized.instructions).toContain("New games: steps 1-8");
-    expect(initialized.instructions).toContain("Existing games: steps 5-7 only");
+    expect(initialized.instructions).toContain("Authoring flow in the game's AGENTS.md");
+    expect(initialized.instructions).toContain("every change to an existing game");
     expect(initialized.instructions).toContain("subagents focused on specific areas");
     child.stdin.write('{"jsonrpc":"2.0","method":"notifications/initialized"}\n');
     const listed = await request(child, nextId, lines, "tools/list");
@@ -563,7 +563,7 @@ describe("scaffolded engine MCP", () => {
       );
       expect(authoring).toContain("## New game");
       expect(authoring).toContain("## Existing game");
-      expect(authoring).toContain("Use steps 5-7 only");
+      expect(authoring).toContain("A change to an existing game skips step 1");
       expect(authoring).toContain("subagents focused on specific areas");
       await linkEngineMcp(target);
       await linkCore(target);

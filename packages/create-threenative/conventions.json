@@ -163,10 +163,7 @@
       "default": "on",
       "override": "`strideSync: false`",
       "marker": "—",
-      "kits": [
-        "action-rpg",
-        "adventure"
-      ]
+      "kits": ["action-rpg", "adventure"]
     },
     {
       "id": "ground-snap",
@@ -175,13 +172,7 @@
       "override": "`enabled: false`",
       "marker": "—",
       "symbol": "GroundSnap",
-      "kits": [
-        "action-rpg",
-        "minimal",
-        "runner",
-        "shooter",
-        "starter"
-      ]
+      "kits": ["action-rpg", "minimal", "runner", "shooter", "starter"]
     },
     {
       "id": "attach",
@@ -190,11 +181,7 @@
       "override": "a portable `Bone` named `RightHand`",
       "marker": "—",
       "symbol": "attachToBone",
-      "kits": [
-        "action-rpg",
-        "adventure",
-        "shooter"
-      ]
+      "kits": ["action-rpg", "adventure", "shooter"]
     },
     {
       "id": "scale",
@@ -203,15 +190,7 @@
       "override": "per-call options",
       "marker": "—",
       "symbol": "normaliseToMetres",
-      "kits": [
-        "action-rpg",
-        "minimal",
-        "racing",
-        "runner",
-        "sailing",
-        "shooter",
-        "starter"
-      ]
+      "kits": ["action-rpg", "minimal", "racing", "runner", "sailing", "shooter", "starter"]
     },
     {
       "id": "rigged",
@@ -249,9 +228,7 @@
       "default": "on",
       "override": "`material.roughDiffuse = false`",
       "marker": "—",
-      "kits": [
-        "starter"
-      ]
+      "kits": ["starter"]
     },
     {
       "id": "unlit-foliage",
@@ -312,10 +289,7 @@
       "default": "soft by source radius",
       "override": "`penumbraScale`; `VirtualShadowNode` options",
       "marker": "TN_SHADOW_TIER",
-      "kits": [
-        "minimal",
-        "starter"
-      ]
+      "kits": ["minimal", "starter"]
     },
     {
       "id": "pointer-look",
@@ -363,9 +337,7 @@
       "default": "every factory ships a stock look",
       "override": "per-call options on `@threenative/core/spells`",
       "marker": "—",
-      "kits": [
-        "action-rpg"
-      ]
+      "kits": ["action-rpg"]
     },
     {
       "id": "net",

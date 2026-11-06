@@ -858,33 +858,31 @@ describe("template contracts", () => {
     const fresh = gate.split("## New game")[1]?.split("## Existing game")[0] ?? "";
     let previous = -1;
     for (const stage of [
-      "Prompt",
-      "Starter kit",
-      "Mechanics discovery",
-      "Core-mechanics plan",
-      "Required textures",
-      "Execute",
-      "Mechanics playtest",
-      "Reference-image visual judge",
+      "Kit",
+      "Mechanics",
+      "Built-ins",
+      "Plan",
+      "Assets",
+      "Build",
+      "Prove",
+      "Report",
     ]) {
       const offset = fresh.indexOf(`**${stage}**`);
       expect(offset, stage).toBeGreaterThan(previous);
       previous = offset;
     }
     expect(fresh).toContain("no kit matches, use `minimal`");
-    const discovery =
-      fresh.split("**Mechanics discovery**")[1]?.split("**Core-mechanics plan**")[0] ?? "";
-    for (const tool of [
-      "engine_search_references",
-      "engine_reference_detail",
-      "engine_search_capabilities",
-      "engine_capability_detail",
-    ])
-      expect(discovery, tool).toContain(tool);
+    const mechanics = fresh.split("**Mechanics**")[1]?.split("**Built-ins**")[0] ?? "";
+    for (const tool of ["engine_search_references", "engine_reference_detail"])
+      expect(mechanics, tool).toContain(tool);
+    const builtIns = fresh.split("**Built-ins**")[1]?.split("**Plan**")[0] ?? "";
+    for (const tool of ["engine_search_capabilities", "engine_capability_detail"])
+      expect(builtIns, tool).toContain(tool);
     // A card states the numbers, never the arc: the route has to say how to watch the mechanic.
-    expect(discovery).toContain("watch.mjs");
-    expect(discovery).toContain("--frames");
-    expect(discovery).toContain("gameplay frames unavailable");
+    expect(mechanics).toContain("engine_watch_reference");
+    expect(mechanics).toContain("watch.mjs");
+    expect(mechanics).toContain("--frames");
+    expect(mechanics).toContain("gameplay frames unavailable");
     expect(fresh).toContain("threenative-reverse-engineer");
     expect(fresh).toContain("engine_capabilities");
   });
@@ -900,6 +898,7 @@ describe("template contracts", () => {
       "utf8",
     );
     expect(gate.replace(/\s+/gu, " ")).toContain(bridge);
+    expect(gate, "skill ToolSearch line").toContain("`ToolSearch` `select:` plus the exact names");
     for (const name of discoverTemplateNames()) {
       const agents = await readFile(path.join(templateRoot, name, "AGENTS.md"), "utf8");
       expect(agents, name).toContain(bridge);
@@ -920,7 +919,7 @@ describe("template contracts", () => {
       ),
       "utf8",
     );
-    const textures = gate.split("**Required textures**")[1]?.split("**Execute**")[0] ?? "";
+    const textures = gate.split("**Assets**")[1]?.split("**Build**")[0] ?? "";
     for (const item of [
       "mechanics matches",
       "reference image",
@@ -939,7 +938,7 @@ describe("template contracts", () => {
       ),
       "utf8",
     );
-    const proof = gate.split("**Mechanics playtest**")[1]?.split("## Existing game")[0] ?? "";
+    const proof = gate.split("**Prove**")[1]?.split("## Existing game")[0] ?? "";
     for (const item of [
       "observable state",
       "actions",
@@ -955,7 +954,7 @@ describe("template contracts", () => {
       expect(proof, item).toContain(item);
   });
 
-  it("routes an existing game through steps 5-7 only using existing context", async () => {
+  it("searches capabilities for every change and references for every mechanic in an existing game", async () => {
     const gate = await readFile(
       path.resolve(
         "packages/create-threenative/agent-files/.agents/skills/threenative-capabilities/SKILL.md",
@@ -963,17 +962,13 @@ describe("template contracts", () => {
       "utf8",
     );
     const existing = gate.split("## Existing game")[1] ?? "";
-    expect(existing).toContain("steps 5-7 only");
-    expect(existing).toContain("existing game, plan, mechanics matches and reference context");
-    expect([...existing.matchAll(/^(\d+)\. /gmu)].map((match) => match[1])).toEqual([
-      "5",
-      "6",
-      "7",
-    ]);
-    expect(existing).toContain(
-      "Do not repeat kit selection, mechanics discovery or whole-game planning",
-    );
-    expect(existing).toContain("Do not add step 8");
+    expect(existing).toContain("skips step 1 and whole-game planning");
+    expect(existing).toContain("Step 3 for every change");
+    expect(existing).toContain("engine_search_capabilities");
+    expect(existing).toContain("Step 2 for each gameplay mechanic");
+    expect(existing).toContain("engine_search_references");
+    expect(existing).toContain("Steps 5-8 for the change");
+    expect(gate).toContain("A session with no user");
     const plan = await readFile(
       path.resolve("packages/create-threenative/agent-files/.agents/skills/prd-creator/SKILL.md"),
       "utf8",
@@ -982,29 +977,29 @@ describe("template contracts", () => {
     expect(plan).not.toContain("six-section discovery record");
   });
 
-  it("delegates bounded areas in both step-6 routes before coordinator integration and playtest", async () => {
+  it("delegates bounded areas in step 6 before coordinator integration and playtest", async () => {
     const gate = await readFile(
       path.resolve(
         "packages/create-threenative/agent-files/.agents/skills/threenative-capabilities/SKILL.md",
       ),
       "utf8",
     );
-    for (const route of ["New game", "Existing game"]) {
-      const body = gate.split(`## ${route}`)[1]?.split("## ")[0] ?? "";
-      const execute = body.split("6. **Execute**")[1]?.split("7. **Mechanics playtest**")[0] ?? "";
-      for (const requirement of [
-        "subagents",
-        "specific areas",
-        "bounded",
-        "file ownership",
-        "coordinator",
-        "integrat",
-        "before step 7",
-        "acceptance",
-        "catch-all",
-      ])
-        expect(execute, `${route}/${requirement}`).toContain(requirement);
-    }
+    const build = gate.split("6. **Build**")[1]?.split("7. **Prove**")[0] ?? "";
+    for (const requirement of [
+      "subagents",
+      "specific areas",
+      "bounded",
+      "file ownership",
+      "coordinator",
+      "integrat",
+      "before step 7",
+      "acceptance",
+      "catch-all",
+    ])
+      expect(build, `New game/${requirement}`).toContain(requirement);
+    const existing = gate.split("## Existing game")[1] ?? "";
+    for (const requirement of ["ownership", "coordinator", "catch-all"])
+      expect(existing, `Existing game/${requirement}`).toContain(requirement);
     const plan = await readFile(
       path.resolve("packages/create-threenative/agent-files/.agents/skills/prd-creator/SKILL.md"),
       "utf8",
@@ -1030,10 +1025,9 @@ describe("template contracts", () => {
     });
     expect(run.status, run.stderr).toBe(0);
     const context = JSON.parse(run.stdout).hookSpecificOutput.additionalContext as string;
-    expect(context).toContain("New games: steps 1-8");
-    expect(context).toContain("Existing games: steps 5-7 only");
-    expect(context).toContain("Step 6 delegates bounded areas with file ownership to subagents");
-    expect(context).toContain("coordinator integrates before step 7");
+    expect(context).toContain("Authoring flow in `AGENTS.md`");
+    expect(context).toContain("before the first new `src/` file");
+    expect(context).not.toMatch(/steps? \d/u);
   });
 
   // The project hook is the force: it re-injects the ruleset every session, prompt and subagent
