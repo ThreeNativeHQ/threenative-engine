@@ -131,11 +131,12 @@ test("virtual shadow first-frame pins the parity bound hosted llvmpipe needs", (
   const registry = JSON.parse(readFileSync(join(root, "conformance/registry.json"), "utf8"));
   const diagnostic = registry.tests.find(({ id }) => id === "virtual-shadow-first-frame");
   assert.ok(diagnostic, "the first-frame virtual-shadow row must be registered");
-  // The pixel bound covers one-level rasterizer rounding with headroom: hosted llvmpipe measures
-  // 0.0125 (11,488 pixels off by exactly one level) and an NVIDIA adapter measures 0. The 3.0
+  // The pixel bound covers one-level rasterizer rounding with headroom: CI's lavapipe desktop against
+  // SwiftShader Chrome measures 0.0217 (run 42263498963: a one-level floor band, desktop darker, plus
+  // 11 sphere-silhouette ties), an earlier hosted llvmpipe run measured 0.0125, NVIDIA measures 0. The 3.0
   // deltaE is the bound `32-animated-shadows` and `33-virtual-shadow` share, not a one-level claim:
   // the pixel ratio rejects a shadow regression, and deltaE only caps the frame's mean shift.
-  assert.deepEqual(diagnostic.tolerance, { pixelMismatchRatio: 0.02, perceptualDeltaE: 3.0 });
+  assert.deepEqual(diagnostic.tolerance, { pixelMismatchRatio: 0.03, perceptualDeltaE: 3.0 });
 });
 
 test("World GPU readback gives awaited scene frames time to reach their proof deadline", () => {
