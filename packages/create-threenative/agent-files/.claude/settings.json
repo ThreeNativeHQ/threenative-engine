@@ -27,6 +27,23 @@
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/ponytail-context.mjs\"",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/discovery-gate.mjs\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/discovery-gate.mjs\"",
+            "timeout": 5
           }
         ]
       }

@@ -237,7 +237,9 @@ const BUG_REPORT_SKILL_PATHS = [
 // from either parent applies to the merged bytes.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // PRD-827 (2026-11-05): all sixteen trees move, measured by this test. The scaffold
-  // `.claude/settings.json` names the six core servers in `enabledMcpjsonServers`.
+  // `.claude/settings.json` names the six core servers in `enabledMcpjsonServers`, and every tree
+  // gains the discovery gate (`.claude/hooks/discovery-gate.mjs`, wired as a `PreToolUse` and
+  // `UserPromptSubmit` hook in `.claude/settings.json` and `.codex/hooks.json`).
   // 2026-11-05 (PRD-826): two causes move all sixteen trees, measured by this test. The scaffolder
   // now writes the seven MCP host configs from core's one server table instead of copying tracked
   // files, so their servers sit in table order (the tracked copies had `threenative-terrain` last).
@@ -365,7 +367,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Re-pinned 2026-10-31: the starter crate gets a stacked-disc contact shadow (render/contactShadow.ts)
   // that keeps its contact coverage above the 0.02 floor at the core +1 EV key.
   // 2026-11-04 (PRD-777 on PRD-632): action-rpg AGENTS/CLAUDE name the spell factories in one line. Measured by this test.
-  "action-rpg": "a725ff348fbd3d7b3be66b13d00e3b12557863a8e84820e6bc8d20ad82f4a45b",
+  "action-rpg": "f59d93aba8307b1a9ffca3601e189a1d2bbcddbfb0bb90caca98d7635d9a96d6",
   // PRD-732 (2026-10-23): the new Hop Garden kit, measured through createProject (method checked
   // against platformer's unchanged value). Recomputed 2026-10-24 for the PRD-732 polish round: the
   // new hero, the dust and sparkle effects and the effects scenario. Recomputed 2026-10-24 for
@@ -379,7 +381,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-24 for the shadow window: the 52 m map now travels 14 m ahead of the hero,
   // so the castle and trees the camera sees keep their shadows; the 2048 map and shadow pass cost
   // stay the same.
-  collectathon: "f1ddbae158e3d382f9376957a5d0cb50d295d59551660f31851323a152fc7148",
+  collectathon: "606a317cf4e8d5a5a29103c4fbc5fbb06a3061f4b233e8310e6ed3602ce006d7",
   // PRD-733 (2026-10-23): the new Lantern Vale kit, measured through createProject.
   // Recomputed 2026-10-24 for the owner perf round: the fixed-step catch-up cap and the gentler
   // wind on the crowns, clusters and grass tufts. Only this tree moves.
@@ -388,14 +390,14 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Re-pinned 2026-10-26 (PRD-748 loading cover): adventure loses its `loaded` gate, rain
   // reads state through `useUiStateDuringStartup`.
   // Re-pinned 2026-10-27 (PRD-749 hud-clean): adventure, collectathon and rain HUD text reaches 3:1.
-  adventure: "955f6e0de3d1029a6053eb191f88112d8b88e0fb711741281a0cadcda6ca172b",
+  adventure: "8b21f03a43925d919961e079c90d44e02d582dc8c59dd3738c09795f35ec3b1c",
   // PRD-734 (2026-10-24): the new Clover Cup kart kit, measured through createProject.
-  kart: "9dbae6bcae014d543e94f6b1f021ff2fd9f395469bd3563b32305ae1eaa44f7a",
-  minimal: "62f9f86b7022b7e8c840f328ecc29fdf7c6bcf100b99747f7415c16912ec198a",
-  platformer: "1532c7ad7a1426a235d8309285929e99e3abf555dfb43cc31fd947d70cd38644",
-  puzzle: "22f62fb2424360344ec5896d2b7ad64af717cd6e060f273986cdaa577fadcdb3",
-  racing: "4873f1769c268a506dbfb84416e4ebf0d48dfe0b645271e387dba6d931f0e913",
-  rain: "a40cfaeff21d5448afd2c26b5bac341f41bcf712a18e2ca66f4e373406a523c8",
+  kart: "0b9b315fbb0841411e338b3a275daa06ebe7cdffa81743f35f228aa0ddabce9d",
+  minimal: "4f6a82f45399c8e17f10f05ad99d1410853eb8a1674621805c70f0d9e0334797",
+  platformer: "d7eabd7796b37bd010201693a95536de04a13c566d4f83b1a6d2d47b6288902d",
+  puzzle: "80a8011d5d43bcd7c588bab7626e40c0f2a48c3e27681c355ccff2ebee7dc84d",
+  racing: "330b81f25222f97f1c90e86285abad7df8bf2cf6c5ad9facca640678327e16cd",
+  rain: "0a42d83e6936f305dedff908839857d769aec74554137de15a96a24fe17a9df2",
   // Re-pinned 2026-10-28: the rts high tier turns camera motion blur off (an RTS pan smeared every unit).
   // Re-pinned 2026-10-28 (PRD-765): rts becomes AstraCraft — painted ground, mesas, scrub, ACES 1.02 look and the command HUD;
   // then its legacy-linear colours, gamma fog of war, no bloom or environment, and a frame-sized shadow window.
@@ -412,18 +414,18 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // and the engine pin goes, so the tree moves. Measured again the same day for the corrected
   // `performance.maxTriangles` bound (45,000 to 54,000), which is a scenario file in the tree.
   // Measured by this test.
-  rts: "c5870b7eb132293369ddbc469d6fd5a73bec77a5d5df6e34f76bb34f4375eada",
-  runner: "611a446181f8d1abdb325a48bef0f24ac4aa1c87a389cddba05fc67e69036229",
+  rts: "78ac1ebff238e00c0d93aedaa58e5fc18888f158ead995accb7a178a40697392",
+  runner: "4a1b81e2b6ca7e616eff17ac6eefc5cb61a1292b69a0d6a5deeee0cbffedfd54",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
   // Re-measured 2026-11-03 (PRD-617): its AGENTS/CLAUDE engine section no longer claims an engine
   // pin the template does not carry. Measured by this test.
   // Re-measured 2026-11-03 (PRD-617): `sails.playtest.json` sets `drawEvery: 60`, so the scenario
   // asks the runner for 30 drawn frames per 1,800-tick hold instead of taking as many readback
   // samples as the adapter happens to draw. Only this tree moves.
-  sailing: "b7a0ce66ee1d9520e2d57787d56f772e319d3d19a8b040c3bed41f93a1f8a875",
+  sailing: "dd56ce23accf7be32040836da4e261349df7af26937b7737cc47e71cdb2b6557",
   // Recomputed 2026-10-26 (PRD-746): the scene merges the town through mergeByMaterial (src/townBatch.ts).
-  shooter: "487ac9d9a2f9f2ef45f623d696e25395a380b0c72f8f9d2743ac2ca2b177123f",
-  snow: "4e75fc36522183d079bbffa1d4bdd39b58f98062b263a97e1ca0e8747a250ae0",
+  shooter: "7ec05118ccbfd1ebc0d8e60ff6671fb0756024fe60e15a3427cbb91ec9511830",
+  snow: "939f0feee3f099662740ae7fde673980adbc21fac23af29c10dce1a677ff8315",
   // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.
   // Recomputed 2026-10-16: starter's adaptiveQuality split its policy resolution into qualityPolicy.ts
   // to stay under the 200-line render-file cap; only starter's tree moves.
@@ -436,8 +438,8 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Play.ts's motion samples between presented frames and fixed steps, and moved two native
   // playtests; #606 moved the render resolve. Starter is the one template both sides changed.
   // Measured by this test.
-  starter: "ad2eb1834d20b1350b0cb45c1057005e88f29fdb869d17056b2e169188f8f457",
-  "tower-defense": "f9ebc43bd59b456e358d6345c9764ed5e0a49eab766ea20bfcbfe72c91455e04",
+  starter: "0dd4e5a99ede6752745fa328dc3920324574e7087907b93e64bae893bf429d8e",
+  "tower-defense": "fa9b82d3ef725af21a9e56e4d6abcc0dc7c6581f5682da8ff33dbd5c386ac5ed",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
@@ -531,6 +533,7 @@ const STARTER_PATHS = [
   "CLAUDE.md",
   ".claude/settings.json",
   ".claude/hooks/ponytail-context.mjs",
+  ".claude/hooks/discovery-gate.mjs",
   ".claude/skills/ponytail/SKILL.md",
   ".agents/skills/ponytail/SKILL.md",
   ".codex/hooks.json",
@@ -1029,7 +1032,14 @@ describe("create-threenative", () => {
       await expect(stat(path.join(result.target, "scripts/reference.mjs"))).resolves.toBeTruthy();
       await expect(stat(path.join(result.target, "scripts/visual-loop.mjs"))).resolves.toBeTruthy();
       const gitignore = await readFile(path.join(result.target, ".gitignore"), "utf8");
-      for (const rule of [".dream-loop/", "node_modules/", ".env", ".env.*", "!.env.example"])
+      for (const rule of [
+        ".dream-loop/",
+        ".threenative/discovery-gate.json",
+        "node_modules/",
+        ".env",
+        ".env.*",
+        "!.env.example",
+      ])
         expect(gitignore).toContain(rule);
     } finally {
       await rm(root, { force: true, recursive: true });

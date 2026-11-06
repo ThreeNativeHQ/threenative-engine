@@ -555,6 +555,8 @@ const AGENT_FILES_DIRECTORY = "agent-files";
 const AUTHORING_GITIGNORE_RULES = [
   "# ThreeNative local authoring state and dependency secrets",
   ".dream-loop/",
+  // The discovery gate's per-session prompt time (PRD-827).
+  ".threenative/discovery-gate.json",
   "node_modules/",
   ".env",
   ".env.*",

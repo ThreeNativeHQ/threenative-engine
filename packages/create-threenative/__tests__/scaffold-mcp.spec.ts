@@ -459,6 +459,7 @@ async function probeEngineServer(target: string): Promise<void> {
       "engine_search_references",
       "engine_reference_detail",
       "engine_save_reference",
+      "engine_watch_reference",
     ]);
     const called = await request(child, nextId, lines, "tools/call", {
       arguments: { situation: "enemy walks around a wall" },

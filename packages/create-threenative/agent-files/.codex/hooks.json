@@ -1,5 +1,5 @@
 {
-  "description": "Project-scoped ponytail activation; review and trust it with /hooks.",
+  "description": "Project-scoped ponytail activation and the discovery gate; review and trust them with /hooks.",
   "hooks": {
     "SessionStart": [
       {
@@ -20,6 +20,23 @@
           {
             "type": "command",
             "command": "node .claude/hooks/ponytail-context.mjs",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "node .claude/hooks/discovery-gate.mjs",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "apply_patch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/discovery-gate.mjs",
             "timeout": 5
           }
         ]

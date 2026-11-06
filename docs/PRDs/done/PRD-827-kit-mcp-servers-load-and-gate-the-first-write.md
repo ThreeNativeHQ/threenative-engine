@@ -1,6 +1,6 @@
 # PRD-827 — A kit session loads its MCP servers, can watch gameplay, and searches the engine before its first new file
 
-**Status:** IN PROGRESS
+**Status:** DONE (2026-11-05)
 **Priority:** P1 — the owner sees agents reach the ThreeNative MCP servers only through `node_modules` and only when asked, which breaks the primary "make me a game like X" workflow
 **Complexity:** 3 (LOW) — 1 hook, 1 MCP tool, 1 search change, scaffold settings, 3 specs; risk override: none
 **Owner:** João Paulo Furtado
@@ -64,7 +64,11 @@ Nothing.
 
 ## Acceptance Criteria
 
-See the phase boxes. Each box names its proof.
+Each phase box names its proof. The outcome:
+
+- [x] A fresh kit session has the ThreeNative servers with no approval step. proof: AC-1. Result: `claude mcp get` reads `Pending approval` before and an approved launch after; the scaffold spec is green.
+- [x] Any capability search tells the agent that game references exist, and footage of a mechanic is one tool call away. proof: AC-3, AC-4. Result: `references` and `referenceTools` on every search; a real `engine_watch_reference` call returned a nonblank 1944×738 contact sheet. Open outside this repo: the reverse-engineer release needs a new tag before the default URL serves `watch.mjs`.
+- [x] The first new `src/` file after a prompt waits for an engine search, on Claude Code and on Codex. proof: AC-5, AC-6. Result: 10/10 gate specs; both hosts blocked a live write.
 
 ## Integration Ledger
 
@@ -109,11 +113,13 @@ See the phase boxes. Each box names its proof.
 
 #### Phase 3: The discovery gate hook
 
-**Status:** OPEN
+**Status:** DONE (2026-11-05)
 **Files:** `packages/create-threenative/agent-files/.claude/hooks/discovery-gate.mjs` (new), the scaffold `.claude/settings.json` hooks block, `agent-files/.codex/hooks.json`, `packages/create-threenative/__tests__/discovery-gate.spec.ts` (new).
 
-- [ ] AC-5 [local]: the Claude Code `PreToolUse` hook blocks a `Write` or `Edit` that creates a new path under `src/` when `.threenative/engine-mcp.log` has no `engine_search_capabilities` line newer than the last prompt time. The block message names the exact MCP call and the `call.mjs` form. Existing-file edits pass. `TN_DISCOVERY_GATE=off` passes and reports the opt-out once. A missing or unreadable log blocks with the reason. proof: red-green `discovery-gate.spec.ts` with fixtures (no search → block, search before the prompt → block, search after → pass, opt-out → pass with notice, missing log → block)
-- [ ] AC-6 [local]: the same script runs from `.codex/hooks.json` on Codex's write tool, with a Codex hook-input fixture in the same spec. If Codex cannot run it, this box records why and the PRD-825 router says so. proof: the Codex fixture green, or the recorded reason
+- [x] AC-5 [local]: the Claude Code `PreToolUse` hook blocks a `Write` or `Edit` that creates a new path under `src/` when `.threenative/engine-mcp.log` has no `engine_search_capabilities` line newer than the last prompt time. The block message names the exact MCP call and the `call.mjs` form. Existing-file edits pass. `TN_DISCOVERY_GATE=off` passes and reports the opt-out once. A missing or unreadable log blocks with the reason. proof: red-green `discovery-gate.spec.ts` with fixtures (no search → block, search before the prompt → block, search after → pass, opt-out → pass with notice, missing log → block)
+  - Done (2026-11-05): `agent-files/.claude/hooks/discovery-gate.mjs` runs on `UserPromptSubmit` (writes the prompt time to `.threenative/discovery-gate.json`, now in the generated `.gitignore`) and on `PreToolUse` `Write|Edit|MultiEdit`. It is a second command beside the ponytail hook, not inside it, so `PONYTAIL=off` cannot switch the gate off. It denies with `permissionDecision: "deny"`. `discovery-gate.spec.ts`: 10 red with the script absent, 10 green after (no search → deny naming `mcp__threenative-engine__engine_search_capabilities` and the `call.mjs` form; search older than the prompt → deny; newer → allow; existing file and a non-`src/` file → allow; opt-out → allow plus a one-time `additionalContext`, silent the second time; missing log → deny `cannot read .threenative/engine-mcp.log`; settings wiring). Live: `claude -p` (haiku, `--setting-sources project`) in a `--no-install` scaffold asked to Write `src/Probe.ts` was blocked with that message and the file does not exist.
+- [x] AC-6 [local]: the same script runs from `.codex/hooks.json` on Codex's write tool, with a Codex hook-input fixture in the same spec. If Codex cannot run it, this box records why and the PRD-825 router says so. proof: the Codex fixture green, or the recorded reason
+  - Done (2026-11-05): Codex 0.167 sends `PreToolUse` with `tool_name: "apply_patch"` and `tool_input.command` holding the patch (probe: a logging hook under `codex exec --dangerously-bypass-hook-trust`); its output schema takes the same `hookSpecificOutput.permissionDecision`. `.codex/hooks.json` runs the same script on `UserPromptSubmit` and on `PreToolUse` matcher `apply_patch`; the script reads `*** Add File:` lines. The Codex fixtures in `discovery-gate.spec.ts` (add file blocked then allowed, update-only patch allowed, wiring) are green. Live: `codex exec --dangerously-bypass-hook-trust` in the scaffold printed `hook: PreToolUse Blocked` with the gate message and `src/Probe.ts` was not created. Limit: an interactive Codex session runs project hooks only after the user trusts them with `/hooks`, so the PRD-825 router says the gate needs that trust on Codex.
 
 ## Out of scope
 

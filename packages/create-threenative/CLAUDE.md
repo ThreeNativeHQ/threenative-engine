@@ -50,8 +50,8 @@ a copy only where a symlink is not permitted). Every scaffold also gets
 `ponytail` — the lazy-first skill whose reuse rung *is* the mandatory capability search — and a
 project-scoped hook (`.claude/settings.json`, `.codex/hooks.json`, both launching
 `.claude/hooks/ponytail-context.mjs`) that re-injects its ruleset every session, prompt and
-subagent. The hook stays local: no mode file, no statusline, no machine-wide state, `PONYTAIL=off`
-to opt out, and Codex needs `/hooks` trust before it runs.
+subagent; `PONYTAIL=off` opts out, and Codex needs `/hooks` trust. Both also run `discovery-gate.mjs`:
+no new `src/` file until the engine was searched since the prompt (PRD-827, `TN_DISCOVERY_GATE=off`).
 Long recipes live in `agent-docs/references/*.md`, not the templates. The scaffolder copies nothing;
 instructions link the installed `node_modules/create-threenative/agent-docs/references/<page>.md`,
 and it fails closed when a template names a missing page. Keep each template `AGENTS.md` under 100
