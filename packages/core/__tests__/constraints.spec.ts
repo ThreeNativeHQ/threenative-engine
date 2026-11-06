@@ -197,6 +197,9 @@ describe("core constraints", () => {
           // The virtual shadow attaches to a light and renders depth through three's own
           // ShadowNode; it creates no material, light, colour or filter of its own.
           file !== "render/virtual-shadow.ts" &&
+          // PRD-806 moved the shadow level and its stock node out of the file above to keep it under the
+          // file cap; `LevelLight` is a placeholder the stock shadow node reads a position from, not a light.
+          file !== "render/virtual-shadow-level.ts" &&
           file !== "render/virtual-shadow-pages.ts" &&
           // PRD-802 moved the node's option vocabulary and its marker parser out of the file above
           // without adding any appearance decision. The only matches here are prose and an option
