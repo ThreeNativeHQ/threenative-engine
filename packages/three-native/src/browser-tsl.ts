@@ -149,6 +149,7 @@ const FUNCTIONS = [
   "struct",
   "wgslFunction",
   "lightShadowMatrix",
+  "lights",
   "luminance",
   "viewZToOrthographicDepth",
   "viewZToPerspectiveDepth",
@@ -412,6 +413,7 @@ function takesEngineObject(name: string, index: number): boolean {
         name === "storageTexture" ||
         name === "textureStore" ||
         name === "lightShadowMatrix")) ||
+    name === "lights" ||
     (index < 2 && (name === "reflector" || name === "__rtt"))
   );
 }
@@ -595,6 +597,8 @@ export function defineTsl(
   exports.NodeUpdateType = NodeUpdateType;
   for (const name of FUNCTIONS)
     exports[name] = (...args: unknown[]) => wrap(call(name, null, args));
+  // three's lights([...]) takes one array; each light crosses as its own engine object.
+  exports.lights = (list: readonly unknown[] = []) => wrap(call("lights", null, [...list]));
   exports.nodeObject = (value: unknown) =>
     isTslNode(value) ? value : wrap(call("nodeObject", null, [value]));
   exports.texture = (initial: unknown, ...args: unknown[]) => {

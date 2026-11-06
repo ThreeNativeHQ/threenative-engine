@@ -605,6 +605,21 @@ void builds() {
     CHECK(programs.diagnostics.empty());
     CHECK(WgslEmitter::emit(programs.vertex, 0).ok());
     CHECK(WgslEmitter::emit(programs.fragment, 1).ok());
+    // A light a material's lightsNode leaves out keeps its index but the program declares and reads nothing of it.
+    for (bool physical : {false, true}) {
+        const auto chosen = physical ? buildPhysical(StandardMaterial{}, VertexVariant{}, LightLayout{"D-p"})
+                                     : buildStandard(StandardMaterial{}, VertexVariant{}, LightLayout{"D-p"});
+        CHECK(chosen.diagnostics.empty());
+        const auto fragment = WgslEmitter::emit(chosen.fragment, 1);
+        CHECK(fragment.ok());
+        CHECK(fragment.code.find("light0Color") != std::string::npos && fragment.code.find("light2Color") != std::string::npos);
+        CHECK(fragment.code.find("light1") == std::string::npos);
+    }
+    for (bool phong : {false, true}) {
+        const auto chosen = phong ? buildPhong(VertexVariant{}, LightLayout{"-d"}) : buildLambert(VertexVariant{}, LightLayout{"-d"});
+        const auto fragment = WgslEmitter::emit(chosen.fragment, 1);
+        CHECK(fragment.ok() && fragment.code.find("light1Color") != std::string::npos && fragment.code.find("light0") == std::string::npos);
+    }
     // The environment variant samples the PMREM as a cube (r187 PMREMNode.setup), at
     // roughnessToMip = maxLod * r * (2 - r), and keeps its derivatives before any branch.
     VertexVariant environment;

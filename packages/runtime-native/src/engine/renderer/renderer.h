@@ -331,6 +331,9 @@ struct LightState {
     std::array<double, 3> hemisphereGround{0, 0, 0};
     std::array<double, 3> hemisphereUp{0, 1, 0};
     std::array<double, 3> ambient{0, 0, 0};
+    /** Each AmbientLight's own term and the drawn HemisphereLight's id: a material's lightsNode sums only the ones it lists. */
+    std::vector<std::pair<uint64_t, std::array<double, 3>>> ambients;
+    uint64_t hemisphereId = 0;
 };
 
 /** three's renderer output settings: `toneMapping`, `toneMappingExposure`, `outputColorSpace`. */
@@ -987,6 +990,10 @@ private:
         MaterialKind kind = MaterialKind::Standard;
         shader::VertexVariant variant;
         std::string lightKinds;
+        /** Built for a material lightsNode (the key's `#id,id,` tail): the ids of the lights it sums, so the frame slab
+         *  writes only their ambient and hemisphere terms. */
+        bool selective = false;
+        std::vector<uint64_t> lightSelection;
         std::array<std::unique_ptr<shader::StageModule>, 16> aux;  // by AuxTarget mask, built on first request
         uint16_t auxBuilt = 0;  // bit `mask`: aux[mask] was asked for (it stays null when refused)
         /** The aux fragment that also writes custom MRT slots, keyed by the frame's slot list (mask included). */

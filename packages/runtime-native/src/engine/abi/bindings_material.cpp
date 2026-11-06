@@ -392,6 +392,14 @@ void registerMeshMaterial(ClassBinding& b, MaterialType type, bool node = false,
         material.nodes.mrt = std::move(slots);
         material.needsUpdate();
     };
+    b.getters["lightsNode"] = [](void* self) { return Value::shaderNode(as<Material>(self)->nodes.lightsNode); };
+    b.setters["lightsNode"] = [](void* self, const Value& v) {
+        if (v.kind != Value::Kind::Null && (v.kind != Value::Kind::ShaderNode || !v.node ||
+                                            v.node->kind != shader::graph::Kind::Struct || v.node->name != "lights"))
+            throw Unsupported{"lightsNode must be a lights([...]) node or null"};
+        as<Material>(self)->nodes.lightsNode = v.node;
+        as<Material>(self)->needsUpdate();
+    };
 }
 
 // ------------------------------------------------------------------------------- lights

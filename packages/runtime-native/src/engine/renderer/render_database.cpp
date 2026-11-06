@@ -1037,6 +1037,7 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
             const auto& l = static_cast<const AmbientLight&>(object);
             for (int c = 0; c < 3; ++c)
                 lights.ambient[c] += scaled(l.color, l.intensity)[c];
+            lights.ambients.emplace_back(object.id(), scaled(l.color, l.intensity));
         } else if (mainPass && type == "DirectionalLight") {
             auto& l = static_cast<DirectionalLight&>(object); // its shadow camera moves, as three's does
             // three reads light.target.matrixWorld as it stands: only a scene traversal refreshes it, so a target
@@ -1096,6 +1097,7 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
                 lights.hemisphereSky = scaled(l.color, l.intensity);
                 lights.hemisphereGround = scaled(l.groundColor, l.intensity);
                 lights.hemisphereUp = normalized(worldPosition(l));
+                lights.hemisphereId = object.id();
             }
         }
     } else if (!lightsOnly && cached && cached->meshId == object.id()) {

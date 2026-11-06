@@ -2936,6 +2936,15 @@ void starter_post_bindings() {
     const auto shadowMatrix = call("lightShadowMatrix", {TslArg::objectOf("DirectionalLight", sun)});
     if (!shadowMatrix) return;
     CHECK(shadowMatrix->name == "authoredLightShadowMatrix" + std::to_string(sun->id()));
+    // three's lights([...]) for NodeMaterial.lightsNode: one engine object per light, kept in order; a non-light is refused.
+    const auto cabin = std::make_shared<tn::engine::PointLight>();
+    const auto chosen = call("lights", {TslArg::objectOf("PointLight", cabin), TslArg::objectOf("DirectionalLight", sun)});
+    if (!chosen) return;
+    CHECK(chosen->kind == g::Kind::Struct && chosen->name == "lights" && chosen->args.size() == 2);
+    CHECK(chosen->args[0]->object == cabin && chosen->args[1]->object == sun);
+    bool refusedLights = false;
+    try { tn::abi::tslCall("lights", nullptr, {TslArg::of(g::float_(1))}, serial); } catch (const std::exception&) { refusedLights = true; }
+    CHECK(refusedLights);
     {
         const auto buffer = g::storage("rejection", tn::engine::shader::Type::u32());
         auto element = std::make_shared<g::NodeData>(*buffer.element(g::uint_(0)));

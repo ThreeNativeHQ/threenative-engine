@@ -63,6 +63,9 @@ struct MaterialNodes {
     std::vector<MrtOutput> mrt;
     /** The scene's `fogNode`, a vec4(color, factor) mixed into the finished colour; set on draw items, never on a material. */
     graph::Node fogNode;
+    /** NodeMaterial.lightsNode: a `lights([...])` of the only lights the material sums (three's LightsNode). Not a
+     *  graph: its args hold the light objects, so it stays out of graphs() and the renderer keys the program on it. */
+    graph::Node lightsNode;
     bool operator==(const MaterialNodes&) const = default;
     /** The material's own slots: the draw item's `fogNode` is the scene's, so no material owns it. */
     auto pointers() const {

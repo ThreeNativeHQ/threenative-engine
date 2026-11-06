@@ -202,6 +202,8 @@ struct VertexVariant {
 // source-angle filter compiled in. It reads the depth atlas `vsm{i}` and storage page table
 // `vsmTable{i}` in both standard and basic lit programs.
 struct LightLayout {
+    /** A light the material's lightsNode leaves out: its slot keeps its index, the program reads nothing of it. */
+    static constexpr char kExcluded = '-';
     std::string kinds = "d";
     /** Any upper-case kind: that light's shadow map is read (`light{i}Shadow*`, texture `shadow{i}`). */
     [[nodiscard]] bool shadowed() const {

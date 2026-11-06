@@ -1518,6 +1518,7 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     // SubstrateEvaluation.ush:881-899 (the SSS_TYPE_TWO_SIDED_WRAP branch); Opacity 1 keeps the light's own shadow.
     const ExprId subsurface = variant.twoSidedFoliage ? f.uniform("subsurfaceColor", Type::vec(3)) : kInvalid;
     for (std::size_t i = 0; i < lights.kinds.size(); ++i) {
+        if (lights.kinds[i] == LightLayout::kExcluded) continue;  // not in the material's lightsNode
         const Incoming light = incoming(f, t, lights.kinds[i], i, fragmentView, positionWorld, normalWorld, variant.leafReceiver, variant.roughDiffuse);
         const ExprId irradiance = f.mul(t.saturate(t.dot(n, light.direction)), light.color);
         // PhysicalLightingModel.direct :675-678: F_Schlick on the specular interface at dotVH, which the
@@ -1776,6 +1777,7 @@ StandardPrograms buildLit(bool phong, const VertexVariant& variant, const LightL
     const ExprId shininess = phong ? f.call("max", {f.uniform("shininess", Type::f32()), t.f(1e-4f)}) : kInvalid;
     ExprId directDiffuse = f.construct(Type::vec(3), {t.f(0)}), directSpecular = directDiffuse;
     for (std::size_t i = 0; i < lights.kinds.size(); ++i) {
+        if (lights.kinds[i] == LightLayout::kExcluded) continue;  // not in the material's lightsNode
         const Incoming light = incoming(f, t, lights.kinds[i], i, fragmentView, positionWorld, normalWorld, variant.leafReceiver);
         const ExprId irradiance = f.mul(t.saturate(t.dot(n, light.direction)), light.color);
         directDiffuse = f.add(directDiffuse, f.mul(irradiance, brdfLambert));
