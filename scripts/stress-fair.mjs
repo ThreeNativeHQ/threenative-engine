@@ -219,6 +219,22 @@ export function poolRuns(runs) {
   const report = { ...first.report, metrics: meanFields(valid.map((run) => run.report.metrics)) };
   if (first.report.extra !== undefined)
     report.extra = meanFields(valid.map((run) => run.report.extra));
+  // A report may carry a record of per-stage numbers (the PRD-771 frame stages, PRD-828 AC-1). Pooling
+  // `metrics` alone would leave it reading the first run, so a bar would be decided by run order. A stage
+  // one run never measured is the mean of the runs that did; a stage no run measured stays absent.
+  const stages = (() => {
+    const names = new Set(valid.flatMap((run) => Object.keys(run.report.stages ?? {})));
+    if (names.size === 0) return undefined;
+    return Object.fromEntries(
+      [...names]
+        .map((name) => [
+          name,
+          mean(valid.map((run) => run.report.stages?.[name] ?? null).filter((v) => v !== null)),
+        ])
+        .filter(([, value]) => typeof value === "number"),
+    );
+  })();
+  if (stages !== undefined) report.stages = stages;
   return {
     ...first,
     runs: valid.length,
