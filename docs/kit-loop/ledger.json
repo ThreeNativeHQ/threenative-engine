@@ -209,6 +209,450 @@
           }
         ]
       }
+    },
+    {
+      "id": 5,
+      "at": "2026-11-06T09:07:44.251Z",
+      "decision": "iteration",
+      "kit": "collectathon",
+      "reference": "sm64",
+      "fixes": [],
+      "notes": "PRD-825 AC-1 baseline arm run 1 (ff64e81d4: PRD-827 on, old kit text). Sandbox scaffolded from this branch's tarballs; session started in the game folder; claude -p opus-5-5, --setting-sources project, claudeMdExcludes, stream-json; run 2 copies run 1's pristine folder (PRD-825 Decisions 2026-11-06). The agent changed no src/ file, so K2 and K4 are measured once per kit on the pristine folder and shared by both arms. The agent read AGENTS.md and replied the folder already is that game in 3 turns, no MCP call. K2: 22/23 green; production-performance (wall-clock) hangs before the game starts on this host in 5 tries (suite, alone, shortened, and twice inside router sessions), so cost p95 12.29 ms is TN_FRAME_BUDGET frame.p95 of the stepped explore scenario, presented 66.67 ms is Xvfb cadence. Visual CLOSE, play 4/5 (fresh Opus judge ab6e3ea33f3839e0e).",
+      "metrics": {
+        "k1Tokens": 24130,
+        "k1WallMin": 1,
+        "k1Turns": 3,
+        "k2ScenarioPct": 96,
+        "k2PresentedP95Ms": 66.67,
+        "k2CostP95Ms": 12.29,
+        "k2BudgetMs": 16.7,
+        "k2BudgetMet": true,
+        "k2Visual": "CLOSE",
+        "k3Friction": 0,
+        "k4Grade": 4
+      },
+      "friction": {
+        "searchMisses": 0,
+        "duplicates": 0,
+        "wrongApi": 0,
+        "retries": 0
+      },
+      "discovery": {
+        "mcpCallsBeforeFirstSrcWrite": 0,
+        "capabilitySearchBeforeFirstSrcWrite": false,
+        "referenceSearchBeforeFirstSrcWrite": false,
+        "callMjsWhileLoaded": 0,
+        "firstSrcWrite": null
+      },
+      "retro": {
+        "worked": [
+          "Listed src and playtests, then ran typecheck and build: both pass (L14-L17)",
+          "Gave a clear summary of the existing Hop Garden game (L19)"
+        ],
+        "failed": [
+          "Changed no code: said the folder already has the game",
+          "Ran no engine search and no reference search"
+        ],
+        "frictions": [
+          {
+            "text": "Treated 'already has that game' as done; never opened the kit router or searched engine capabilities",
+            "transcriptLine": 19
+          }
+        ]
+      }
+    },
+    {
+      "id": 6,
+      "at": "2026-11-06T09:07:44.616Z",
+      "decision": "iteration",
+      "kit": "collectathon",
+      "reference": "sm64",
+      "fixes": [],
+      "notes": "PRD-825 AC-1 baseline arm run 2 (ff64e81d4). Sandbox scaffolded from this branch's tarballs; session started in the game folder; claude -p opus-5-5, --setting-sources project, claudeMdExcludes, stream-json; run 2 copies run 1's pristine folder (PRD-825 Decisions 2026-11-06). The agent changed no src/ file, so K2 and K4 are measured once per kit on the pristine folder and shared by both arms. Same 3-turn reply, no MCP call. K2: 22/23 green; production-performance (wall-clock) hangs before the game starts on this host in 5 tries (suite, alone, shortened, and twice inside router sessions), so cost p95 12.29 ms is TN_FRAME_BUDGET frame.p95 of the stepped explore scenario, presented 66.67 ms is Xvfb cadence. Visual CLOSE, play 4/5 (fresh Opus judge ab6e3ea33f3839e0e).",
+      "metrics": {
+        "k1Tokens": 24682,
+        "k1WallMin": 0,
+        "k1Turns": 3,
+        "k2ScenarioPct": 96,
+        "k2PresentedP95Ms": 66.67,
+        "k2CostP95Ms": 12.29,
+        "k2BudgetMs": 16.7,
+        "k2BudgetMet": true,
+        "k2Visual": "CLOSE",
+        "k3Friction": 0,
+        "k4Grade": 4
+      },
+      "friction": {
+        "searchMisses": 0,
+        "duplicates": 0,
+        "wrongApi": 0,
+        "retries": 0
+      },
+      "discovery": {
+        "mcpCallsBeforeFirstSrcWrite": 0,
+        "capabilitySearchBeforeFirstSrcWrite": false,
+        "referenceSearchBeforeFirstSrcWrite": false,
+        "callMjsWhileLoaded": 0,
+        "firstSrcWrite": null
+      },
+      "retro": {
+        "worked": [
+          "Surveyed src and playtests, read brief.md, ran typecheck: pass (L7-L14)",
+          "Summary of existing Hop Garden game and its tuning file (L18)"
+        ],
+        "failed": [
+          "Changed no code: said the game already exists",
+          "Ran no engine search and no reference search; did not run the game or playtests"
+        ],
+        "frictions": [
+          {
+            "text": "Stopped at 'You already have one' after a typecheck; no search, no build step",
+            "transcriptLine": 18
+          }
+        ]
+      }
+    },
+    {
+      "id": 7,
+      "at": "2026-11-06T09:07:44.994Z",
+      "decision": "iteration",
+      "kit": "shooter",
+      "reference": "doom",
+      "fixes": [],
+      "notes": "PRD-825 AC-1 baseline arm run 1 (ff64e81d4). Sandbox scaffolded from this branch's tarballs; session started in the game folder; claude -p opus-5-5, --setting-sources project, claudeMdExcludes, stream-json; run 2 copies run 1's pristine folder (PRD-825 Decisions 2026-11-06). The agent changed no src/ file, so K2 and K4 are measured once per kit on the pristine folder and shared by both arms. Plan only; 9 engine calls, all through call.mjs while the engine server was loaded, 4 with a wrong argument name. K2: 38/38 green incl. production-performance (cost p95 14.1 ms CPU / 6.13 GPU vs 16.7 ms, presented 66.67 ms Xvfb cadence). Visual FAR: the sweep reference is a walled firing range, the kit a sunny town (both arms). Play 3/5 (fresh Opus judge ab6e3ea33f3839e0e).",
+      "metrics": {
+        "k1Tokens": 65216,
+        "k1WallMin": 3,
+        "k1Turns": 20,
+        "k2ScenarioPct": 100,
+        "k2PresentedP95Ms": 66.67,
+        "k2CostP95Ms": 14.1,
+        "k2BudgetMs": 16.7,
+        "k2BudgetMet": true,
+        "k2Visual": "FAR",
+        "k3Friction": 8,
+        "k4Grade": 3
+      },
+      "friction": {
+        "searchMisses": 0,
+        "duplicates": 0,
+        "wrongApi": 4,
+        "retries": 4
+      },
+      "discovery": {
+        "mcpCallsBeforeFirstSrcWrite": 9,
+        "capabilitySearchBeforeFirstSrcWrite": true,
+        "referenceSearchBeforeFirstSrcWrite": true,
+        "callMjsWhileLoaded": 9,
+        "firstSrcWrite": null
+      },
+      "retro": {
+        "worked": [
+          "Found shooter kit and read reference cards (doom-3-bfg damage-and-armor etc.) and capability results (L39, L44)",
+          "Wrote PRD.md, SUMMARY.md, tasks.json under .agent and asked for approval (L67-L75)"
+        ],
+        "failed": [
+          "Changed no game code; stopped at the plan",
+          "Used node call.mjs bridge with wrong argument names, four tool errors"
+        ],
+        "frictions": [
+          {
+            "text": "Search calls failed on argument names ('query' vs 'situation', missing 'kind') through the call.mjs bridge; the bridge gives no schema up front",
+            "transcriptLine": 20
+          },
+          {
+            "text": "Passed 'game id' as one shell-split string, three failing detail loops in a row",
+            "transcriptLine": 34
+          },
+          {
+            "text": "Re-ran the same capability search a third time only to see output hidden by grep/head",
+            "transcriptLine": 47
+          }
+        ]
+      }
+    },
+    {
+      "id": 8,
+      "at": "2026-11-06T09:07:45.360Z",
+      "decision": "iteration",
+      "kit": "shooter",
+      "reference": "doom",
+      "fixes": [],
+      "notes": "PRD-825 AC-1 baseline arm run 2 (ff64e81d4). Sandbox scaffolded from this branch's tarballs; session started in the game folder; claude -p opus-5-5, --setting-sources project, claudeMdExcludes, stream-json; run 2 copies run 1's pristine folder (PRD-825 Decisions 2026-11-06). The agent changed no src/ file, so K2 and K4 are measured once per kit on the pristine folder and shared by both arms. Plan only; 5 engine calls, all through call.mjs while loaded. K2: 38/38 green incl. production-performance (cost p95 14.1 ms CPU / 6.13 GPU vs 16.7 ms, presented 66.67 ms Xvfb cadence). Visual FAR: the sweep reference is a walled firing range, the kit a sunny town (both arms). Play 3/5 (fresh Opus judge ab6e3ea33f3839e0e).",
+      "metrics": {
+        "k1Tokens": 49242,
+        "k1WallMin": 2,
+        "k1Turns": 13,
+        "k2ScenarioPct": 100,
+        "k2PresentedP95Ms": 66.67,
+        "k2CostP95Ms": 14.1,
+        "k2BudgetMs": 16.7,
+        "k2BudgetMet": true,
+        "k2Visual": "FAR",
+        "k3Friction": 7,
+        "k4Grade": 3
+      },
+      "friction": {
+        "searchMisses": 0,
+        "duplicates": 0,
+        "wrongApi": 4,
+        "retries": 3
+      },
+      "discovery": {
+        "mcpCallsBeforeFirstSrcWrite": 5,
+        "capabilitySearchBeforeFirstSrcWrite": true,
+        "referenceSearchBeforeFirstSrcWrite": true,
+        "callMjsWhileLoaded": 5,
+        "firstSrcWrite": null
+      },
+      "retro": {
+        "worked": [
+          "Picked shooter kit and found quake ground-acceleration and air-control cards (L23, L30)",
+          "Matched createFireball and Area3D triggers; wrote plan files (L43-L47)"
+        ],
+        "failed": [
+          "Changed no game code; stopped at the plan for approval",
+          "Four tool errors from wrong arguments via call.mjs"
+        ],
+        "frictions": [
+          {
+            "text": "Search call failed twice on 'query' vs 'situation' via the call.mjs bridge",
+            "transcriptLine": 18
+          },
+          {
+            "text": "reference_detail failed for missing 'kind' and then for card id game-weapons not found",
+            "transcriptLine": 28
+          },
+          {
+            "text": "Wrote PRD with a heredoc after a long Bash chain; plan only, no code",
+            "transcriptLine": 43
+          }
+        ]
+      }
+    },
+    {
+      "id": 9,
+      "at": "2026-11-06T09:07:45.737Z",
+      "decision": "iteration",
+      "kit": "collectathon",
+      "reference": "sm64",
+      "fixes": [],
+      "notes": "PRD-825 AC-8 router arm run 1 (router kit text). Sandbox scaffolded from this branch's tarballs; session started in the game folder; claude -p opus-5-5, --setting-sources project, claudeMdExcludes, stream-json; run 2 copies run 1's pristine folder (PRD-825 Decisions 2026-11-06). The agent changed no src/ file, so K2 and K4 are measured once per kit on the pristine folder and shared by both arms. The agent ran pnpm test, reported the kit covers the request and changed nothing; no capability or reference search. K1 sums 3 result events (a background pnpm test resumed the session); the hung performance scenario cost a retry and about 70 min of wall time. K2: 22/23 green; production-performance (wall-clock) hangs before the game starts on this host in 5 tries (suite, alone, shortened, and twice inside router sessions), so cost p95 12.29 ms is TN_FRAME_BUDGET frame.p95 of the stepped explore scenario, presented 66.67 ms is Xvfb cadence. Visual CLOSE, play 4/5 (fresh Opus judge ab6e3ea33f3839e0e).",
+      "metrics": {
+        "k1Tokens": 34071,
+        "k1WallMin": 11,
+        "k1Turns": 13,
+        "k2ScenarioPct": 96,
+        "k2PresentedP95Ms": 66.67,
+        "k2CostP95Ms": 12.29,
+        "k2BudgetMs": 16.7,
+        "k2BudgetMet": true,
+        "k2Visual": "CLOSE",
+        "k3Friction": 1,
+        "k4Grade": 4
+      },
+      "friction": {
+        "searchMisses": 0,
+        "duplicates": 0,
+        "wrongApi": 0,
+        "retries": 1
+      },
+      "discovery": {
+        "mcpCallsBeforeFirstSrcWrite": 0,
+        "capabilitySearchBeforeFirstSrcWrite": false,
+        "referenceSearchBeforeFirstSrcWrite": false,
+        "callMjsWhileLoaded": 0,
+        "firstSrcWrite": null
+      },
+      "retro": {
+        "worked": [
+          "Read the kit and judged that the request is already covered by the existing game (L7)",
+          "Typecheck, lint, format passed and 16 of 23 playtests passed (L100, L105)"
+        ],
+        "failed": [
+          "Changed no code and ran no engine, reference or capability search",
+          "Full pnpm test did not finish: first run cut by timeout, second run stuck after the look scenario at the 1 hour limit; 7 playtests never ran"
+        ],
+        "frictions": [
+          {
+            "text": "Ran the whole pnpm test with timeout 900; it was interrupted by signal and had to be restarted",
+            "transcriptLine": 63
+          },
+          {
+            "text": "Needed ToolSearch to load Monitor then peeked at background output files several times while waiting",
+            "transcriptLine": 40
+          },
+          {
+            "text": "Stopped at 'kit already covers the request' with no search",
+            "transcriptLine": 48
+          }
+        ]
+      }
+    },
+    {
+      "id": 10,
+      "at": "2026-11-06T09:07:46.116Z",
+      "decision": "iteration",
+      "kit": "collectathon",
+      "reference": "sm64",
+      "fixes": [],
+      "notes": "PRD-825 AC-8 router arm run 2. Sandbox scaffolded from this branch's tarballs; session started in the game folder; claude -p opus-5-5, --setting-sources project, claudeMdExcludes, stream-json; run 2 copies run 1's pristine folder (PRD-825 Decisions 2026-11-06). The agent changed no src/ file, so K2 and K4 are measured once per kit on the pristine folder and shared by both arms. Same outcome as run 1, no search; K1 sums 4 result events; the agent ran pkill -f 'vite preview' (kills every preview server on the host) to clear the hung scenario. K2: 22/23 green; production-performance (wall-clock) hangs before the game starts on this host in 5 tries (suite, alone, shortened, and twice inside router sessions), so cost p95 12.29 ms is TN_FRAME_BUDGET frame.p95 of the stepped explore scenario, presented 66.67 ms is Xvfb cadence. Visual CLOSE, play 4/5 (fresh Opus judge ab6e3ea33f3839e0e).",
+      "metrics": {
+        "k1Tokens": 40213,
+        "k1WallMin": 22,
+        "k1Turns": 18,
+        "k2ScenarioPct": 96,
+        "k2PresentedP95Ms": 66.67,
+        "k2CostP95Ms": 12.29,
+        "k2BudgetMs": 16.7,
+        "k2BudgetMet": true,
+        "k2Visual": "CLOSE",
+        "k3Friction": 2,
+        "k4Grade": 4
+      },
+      "friction": {
+        "searchMisses": 0,
+        "duplicates": 0,
+        "wrongApi": 0,
+        "retries": 2
+      },
+      "discovery": {
+        "mcpCallsBeforeFirstSrcWrite": 0,
+        "capabilitySearchBeforeFirstSrcWrite": false,
+        "referenceSearchBeforeFirstSrcWrite": false,
+        "callMjsWhileLoaded": 0,
+        "firstSrcWrite": null
+      },
+      "retro": {
+        "worked": [
+          "Judged the kit already covers the request and checked it instead of rebuilding (L8)",
+          "22 of 23 playtests pass; the six remaining gameplay scenarios exit 0 when run alone (L131)"
+        ],
+        "failed": [
+          "Changed no code and ran no engine, reference or capability search",
+          "performance.playtest.json hangs in the full run and alone, so pnpm test never finishes; doctor run did not explain it"
+        ],
+        "frictions": [
+          {
+            "text": "Ran pkill -f \"vite preview\", which kills every vite preview server on the host, not just this game's",
+            "transcriptLine": 92
+          },
+          {
+            "text": "Full pnpm test hit the 580 s timeout and had to be restarted in the background, then waited 17+ min on a hung scenario",
+            "transcriptLine": 35
+          },
+          {
+            "text": "Chained wait loops and a ScheduleWakeup on a hung run (a 600 s wait moved to background)",
+            "transcriptLine": 67
+          }
+        ]
+      }
+    },
+    {
+      "id": 11,
+      "at": "2026-11-06T09:07:46.475Z",
+      "decision": "iteration",
+      "kit": "shooter",
+      "reference": "doom",
+      "fixes": [],
+      "notes": "PRD-825 AC-8 router arm run 1. Sandbox scaffolded from this branch's tarballs; session started in the game folder; claude -p opus-5-5, --setting-sources project, claudeMdExcludes, stream-json; run 2 copies run 1's pristine folder (PRD-825 Decisions 2026-11-06). The agent changed no src/ file, so K2 and K4 are measured once per kit on the pristine folder and shared by both arms. Loaded the tools with ToolSearch: 20 MCP calls (capability search x6, reference search x4, details), 0 call.mjs, 0 wrong arguments; stopped at a plan waiting for approval although the router says a no-user session continues. K2: 38/38 green incl. production-performance (cost p95 14.1 ms CPU / 6.13 GPU vs 16.7 ms, presented 66.67 ms Xvfb cadence). Visual FAR: the sweep reference is a walled firing range, the kit a sunny town (both arms). Play 3/5 (fresh Opus judge ab6e3ea33f3839e0e).",
+      "metrics": {
+        "k1Tokens": 88168,
+        "k1WallMin": 2,
+        "k1Turns": 32,
+        "k2ScenarioPct": 100,
+        "k2PresentedP95Ms": 66.67,
+        "k2CostP95Ms": 14.1,
+        "k2BudgetMs": 16.7,
+        "k2BudgetMet": true,
+        "k2Visual": "FAR",
+        "k3Friction": 0,
+        "k4Grade": 3
+      },
+      "friction": {
+        "searchMisses": 0,
+        "duplicates": 0,
+        "wrongApi": 0,
+        "retries": 0
+      },
+      "discovery": {
+        "mcpCallsBeforeFirstSrcWrite": 20,
+        "capabilitySearchBeforeFirstSrcWrite": true,
+        "referenceSearchBeforeFirstSrcWrite": true,
+        "callMjsWhileLoaded": 0,
+        "firstSrcWrite": null
+      },
+      "retro": {
+        "worked": [
+          "Loaded MCP tools once via ToolSearch and used them directly; no tool errors (L17-L65)",
+          "Ran 1 request search, 4 reference searches, 5 reference details, 5 capability searches and 5 capability details",
+          "Wrote a PRD plan under .agent (L90)"
+        ],
+        "failed": ["Changed no game code; stopped at the plan for approval"],
+        "frictions": [
+          {
+            "text": "Needed a ToolSearch round trip to load the MCP tools before the first search",
+            "transcriptLine": 17
+          },
+          {
+            "text": "Read Play.ts and several large files before planning",
+            "transcriptLine": 70
+          }
+        ]
+      }
+    },
+    {
+      "id": 12,
+      "at": "2026-11-06T09:07:46.836Z",
+      "decision": "iteration",
+      "kit": "shooter",
+      "reference": "doom",
+      "fixes": [],
+      "notes": "PRD-825 AC-8 router arm run 2. Sandbox scaffolded from this branch's tarballs; session started in the game folder; claude -p opus-5-5, --setting-sources project, claudeMdExcludes, stream-json; run 2 copies run 1's pristine folder (PRD-825 Decisions 2026-11-06). The agent changed no src/ file, so K2 and K4 are measured once per kit on the pristine folder and shared by both arms. 10 MCP calls through ToolSearch, both searches, 0 call.mjs; stopped at the plan, same as run 1. K2: 38/38 green incl. production-performance (cost p95 14.1 ms CPU / 6.13 GPU vs 16.7 ms, presented 66.67 ms Xvfb cadence). Visual FAR: the sweep reference is a walled firing range, the kit a sunny town (both arms). Play 3/5 (fresh Opus judge ab6e3ea33f3839e0e).",
+      "metrics": {
+        "k1Tokens": 85172,
+        "k1WallMin": 1,
+        "k1Turns": 23,
+        "k2ScenarioPct": 100,
+        "k2PresentedP95Ms": 66.67,
+        "k2CostP95Ms": 14.1,
+        "k2BudgetMs": 16.7,
+        "k2BudgetMet": true,
+        "k2Visual": "FAR",
+        "k3Friction": 0,
+        "k4Grade": 3
+      },
+      "friction": {
+        "searchMisses": 0,
+        "duplicates": 0,
+        "wrongApi": 0,
+        "retries": 0
+      },
+      "discovery": {
+        "mcpCallsBeforeFirstSrcWrite": 10,
+        "capabilitySearchBeforeFirstSrcWrite": true,
+        "referenceSearchBeforeFirstSrcWrite": true,
+        "callMjsWhileLoaded": 0,
+        "firstSrcWrite": null
+      },
+      "retro": {
+        "worked": [
+          "MCP tools loaded once via ToolSearch and used without error (L16-L40)",
+          "Reused kit movement.ts values already at Doom 3 numbers (L56, L75)",
+          "Wrote PRD under .agent (L72)"
+        ],
+        "failed": ["Changed no game code; stopped at the plan for approval"],
+        "frictions": [
+          {
+            "text": "cat of whole Play.ts gave 39.8KB output, then re-read from the saved file",
+            "transcriptLine": 47
+          },
+          {
+            "text": "Reference searches returned weak hits (need-for-speed arcade-drive for Doom movement, RE4 action-select for pickups)",
+            "transcriptLine": 24
+          }
+        ]
+      }
     }
   ]
 }

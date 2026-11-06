@@ -100,6 +100,22 @@ describe("kit-loop", () => {
     });
   });
 
+  it("sums K1 over every result event when a background task resumed the session", () => {
+    const result = (input: number, turns: number, ms: number) => ({
+      type: "result",
+      num_turns: turns,
+      duration_ms: ms,
+      usage: { input_tokens: input, output_tokens: 0, cache_creation_input_tokens: 0 },
+    });
+    const row = measureDir(
+      coldBuild({
+        "events.jsonl": `${events}\n${jsonl([result(24_000, 5, 600_000), result(7_000, 6, 30_000)])}`,
+        "transcript.json": result(7_000, 6, 30_000),
+      }),
+    );
+    expect(row.metrics).toMatchObject({ k1Tokens: 31_000, k1Turns: 11, k1WallMin: 11 });
+  });
+
   it("counts call.mjs only while the engine server is loaded, and every MCP call when nothing is written", () => {
     const row = measureDir(
       coldBuild({

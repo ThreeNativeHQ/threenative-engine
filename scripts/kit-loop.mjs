@@ -8,7 +8,7 @@
 // A cold-build dir holds six files, each required (a missing one fails closed, never a zero):
 //   events.jsonl     the same session as `--output-format stream-json --verbose` (PRD-825): the init
 //                    event and every tool call, for the discovery counts
-//   transcript.json  the cold agent's `claude -p --output-format json` result (K1: usage, duration_ms, num_turns)
+//   transcript.json  the cold agent's last `claude -p` result; K1 sums every result event in events.jsonl
 //   gates.json       { scenarios: { total, green }, presentedP95Ms, costP95Ms, budgetMs, visualVerdict }  (K2)
 //   friction.json    { searchMisses, duplicates, wrongApi, retries } from score-build-experience (K3)
 //   play-grade.json  { grade: 1..5, judge } from the fresh Opus play judge (K4)
@@ -149,24 +149,33 @@ export function discovery(dir) {
     referenceSearchBeforeFirstSrcWrite: before.some((call) => names(call, REFERENCE_SEARCH)),
     callMjsWhileLoaded: loaded ? calls.filter(bridged).length : 0,
     firstSrcWrite: first === -1 ? null : srcPath(calls[first]),
+    // A background task that finishes after the reply resumes the session, which then ends
+    // with one more result event; `transcript.json` holds only the last.
+    results: events.filter((event) => event.type === "result"),
   };
 }
 
 /** One cold build's K1-K4 and retro. Throws on any missing file or field. */
 export function measureDir(dir) {
-  const discovered = discovery(dir);
-  const transcript = read(dir, "transcript.json");
+  const { results, ...discovered } = discovery(dir);
+  const last = read(dir, "transcript.json");
   const gates = read(dir, "gates.json");
   const friction = read(dir, "friction.json");
   const grade = read(dir, "play-grade.json");
   const retro = read(dir, "retro.json");
 
-  const usage = transcript.usage;
-  if (usage === null || typeof usage !== "object") throw new Error("transcript.json has no usage");
-  const k1Tokens =
-    count(usage.input_tokens, "usage.input_tokens") +
-    count(usage.output_tokens, "usage.output_tokens") +
-    count(usage.cache_creation_input_tokens, "usage.cache_creation_input_tokens");
+  const sessions = results.length > 0 ? results : [last];
+  const sum = (field) =>
+    sessions.reduce((total, result) => total + count(result[field], `transcript.${field}`), 0);
+  let k1Tokens = 0;
+  for (const { usage } of sessions) {
+    if (usage === null || typeof usage !== "object")
+      throw new Error("transcript.json has no usage");
+    k1Tokens +=
+      count(usage.input_tokens, "usage.input_tokens") +
+      count(usage.output_tokens, "usage.output_tokens") +
+      count(usage.cache_creation_input_tokens, "usage.cache_creation_input_tokens");
+  }
   const total = count(gates.scenarios?.total, "gates.scenarios.total", { min: 1 });
   const green = count(gates.scenarios?.green, "gates.scenarios.green", { max: total });
   const p95 = count(gates.presentedP95Ms, "gates.presentedP95Ms");
@@ -192,8 +201,8 @@ export function measureDir(dir) {
   return {
     metrics: {
       k1Tokens,
-      k1WallMin: Math.round(count(transcript.duration_ms, "transcript.duration_ms") / 60_000),
-      k1Turns: count(transcript.num_turns, "transcript.num_turns"),
+      k1WallMin: Math.round(sum("duration_ms") / 60_000),
+      k1Turns: sum("num_turns"),
       k2ScenarioPct: Math.round((green / total) * 100),
       k2PresentedP95Ms: p95,
       k2CostP95Ms: cost,

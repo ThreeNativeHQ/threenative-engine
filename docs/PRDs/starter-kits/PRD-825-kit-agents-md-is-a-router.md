@@ -145,10 +145,11 @@ See the phase boxes. Each box names its proof. The PRD is done when AC-8 and AC-
 
 #### Phase 1: Baseline, convention registry and its index
 
-**Status:** OPEN
+**Status:** DONE (2026-11-06)
 **Files:** `docs/kit-loop/ledger.json` (rows), `scripts/kit-loop.mjs`, `packages/create-threenative/conventions.json` (new, or rows in `capabilities.json` `overrides[]` where the manifest already holds them; decide in the phase), `scripts/kit-agent-docs.ts` (new), `scripts/__tests__/kit-conventions.spec.ts` (new), `scripts/check-template-conventions.ts`, the per-convention phrase specs it replaces.
 
-- [ ] AC-1 [local]: before any kit file changes, two cold builds per kit on today's files for `collectathon` and `shooter`, with the prompts and isolation the Phase 3 arm reuses. `scripts/kit-loop.mjs` adds two counts per row: MCP calls before the first `src/` write, and `call.mjs` calls while the tools were loaded. A transcript without tool events fails closed. proof: red-green `scripts/__tests__/kit-loop.spec.ts`; `pnpm kit:loop record <dir>` per run, 4 ledger rows
+- [x] AC-1 [local]: before any kit file changes, two cold builds per kit on today's files for `collectathon` and `shooter`, with the prompts and isolation the Phase 3 arm reuses. `scripts/kit-loop.mjs` adds two counts per row: MCP calls before the first `src/` write, and `call.mjs` calls while the tools were loaded. A transcript without tool events fails closed. proof: red-green `scripts/__tests__/kit-loop.spec.ts`; `pnpm kit:loop record <dir>` per run, 4 ledger rows
+  - Done (2026-11-06): `discovery()` in `scripts/kit-loop.mjs` reads `events.jsonl` (stream-json) and adds `mcpCallsBeforeFirstSrcWrite`, the two search flags, `callMjsWhileLoaded` and `firstSrcWrite`; no init or no tool event throws. Red-green `kit-loop.spec.ts`: 4 failed, then 7 passed. A background task that resumes a `claude -p` session adds a result event, and `transcript.json` holds only the last, so K1 now sums every result event: red 1 failed (7,000 vs 31,000), green 8 passed. Baseline arm at `ff64e81d4`, ledger rows 5–8 (collectathon 24,130 / 24,682 tokens, 0 MCP calls; shooter 65,216 / 49,242 tokens, 9 / 5 engine calls all through `call.mjs` while the server was loaded).
 - [x] AC-2 [local]: the registry holds every convention the 16 kits state today, each with name, default, named override, report marker and reference page. The 30 rows of the caps scout table are the floor. A row with no override or page fails. proof: `pnpm exec vitest run scripts/__tests__/kit-conventions.spec.ts`, red on a row with no page, then green
   - Done (2026-11-06): `packages/create-threenative/conventions.json`, 37 rows (floor 30), each with id, name, default, override, marker, kits, and an anchor in the new `agent-docs/references/conventions.md`. A new file, not `capabilities.json` `overrides[]`: that holds a few rows and no kit list or marker. Rows with a `symbol` (`GroundSnap`, `attachToBone`, `normaliseToMetres`) apply to exactly the kits whose `src/` calls it. `kit-conventions.spec.ts` red: `row 'aa': no anchor in conventions.md`; green after.
 - [x] AC-3 [local]: one spec asserts each registry row appears in the index of each kit that applies it. It replaces the per-convention phrase specs (`render-camera-cull-docs`, `matrix-world-docs`, the `template.spec.ts:213-234` net block, `primary-docs.spec.ts:279-307`, `check-template-conventions.ts`). Each removed assertion maps to a registry row, and each cut paragraph exists in a page under `agent-docs/references/`. proof: old-assertion → row table in this box; the spec red when a row leaves one kit; `pnpm exec vitest run scripts/__tests__/instruction-budget.spec.ts`
@@ -183,7 +184,21 @@ See the phase boxes. Each box names its proof. The PRD is done when AC-8 and AC-
 **Files:** `docs/kit-loop/ledger.json`, root `AGENTS.md` (rule text), `pnpm sync:agents` mirrors.
 
 - [ ] AC-8 [local]: the post-change arm repeats AC-1 (same kits, prompts, isolation, two runs each). Pass bar: each run calls `engine_search_capabilities`, and for a new game `engine_search_references`, before its first `src/` write; 0 `call.mjs` calls while the tools are loaded; K2 scenarios and visual verdict not worse than baseline; K1 tokens at most 10% above baseline; K3 not worse. A fresh read-only judge reads both arms' captures and returns NEUTRAL or IMPROVEMENT. proof: 4 ledger rows, the judge verdict, a per-KPI table in this box
-- [ ] AC-9 [local]: root `AGENTS.md` says "A convention missing from the templates' convention index does not exist", and the mirrors regenerate. This file moves to `docs/PRDs/done/` with `git mv` in the closing commit. proof: `pnpm sync:agents --check`, `pnpm check:docs` and the prose-lane specs in root `AGENTS.md`
+  - Open (2026-11-06): measured, does not meet the pass bar. Ledger rows 9–12; judge `ab6e3ea33f3839e0e` (fresh, read-only, Opus): 8 of 8 sheets NEUTRAL, overall **NEUTRAL** (`~/Downloads/prd-825-ab/`, branch `prd-825-screenshots`). No run changed `src/`, so K2 and K4 come from one pristine measurement per kit, shared by both arms.
+    | KPI (mean of 2 runs) | collectathon base → router | shooter base → router | Bar | Result |
+    | --- | --- | --- | --- | --- |
+    | K1 tokens | 24,406 → 37,142 (+52%) | 57,229 → 86,670 (+51%) | ≤ +10% | ❌ both |
+    | Capability + reference search before first `src/` write | no → no | yes → yes | each run | ❌ collectathon (no write, no search) |
+    | `call.mjs` while tools loaded | 0 → 0 | 7 → 0 | 0 | ✅ |
+    | K2 scenarios / visual | 96% CLOSE → same | 100% FAR → same | not worse | ✅ |
+    | K3 friction | 0 → 1.5 | 7.5 → 0 | not worse | ❌ collectathon, ✅ shooter |
+    | K4 play grade | 4 → 4 | 3 → 3 | — | same |
+    | Judge | — | — | NEUTRAL or better | ✅ NEUTRAL |
+  - Why: the router sends a new-game request through its eight steps, so shooter runs read the kit page, ran 6 capability and 4 reference searches and the details (88k / 85k tokens) where baseline ran 9 / 5 bridged calls. Collectathon runs ran `pnpm test`, which hangs on `production-performance` (below), and paid for the retries and waits; baseline replied in 3 turns. Both router shooter runs stopped at a plan waiting for approval although the router says a no-user session continues.
+  - Kit fault found, not this PRD: collectathon `playtests/performance.playtest.json` (wall-clock) hangs before the game starts in 5 of 5 tries on this host; the other 22 scenarios and the shooter's wall-clock performance scenario pass. Unverified on `develop`.
+  - Decision for the owner: keep the +10% K1 bar (then the router must trim discovery for a kit that already covers the request), or raise it for the discovery the router now requires.
+- [x] AC-9 [local]: root `AGENTS.md` says "A convention missing from the templates' convention index does not exist", and the mirrors regenerate. This file moves to `docs/PRDs/done/` with `git mv` in the closing commit. proof: `pnpm sync:agents --check`, `pnpm check:docs` and the prose-lane specs in root `AGENTS.md`
+  - Done (2026-11-06): root `AGENTS.md` line 9 names the convention index and `conventions.json`. `pnpm sync:agents --check` in sync (31 mirrors), `pnpm check:docs` 3,769 links, prose-lane specs plus `primary-docs` and `kit-conventions`: 8 files, 339 passed. The move to `docs/PRDs/done/` waits for AC-8.
 
 ## Out of scope
 
