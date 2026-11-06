@@ -1,0 +1,451 @@
+{
+  "comment": "One row per convention a generated kit states. `kits` is the list of kits that apply it, or \"all\". The router's `## Conventions` index is generated from these rows, `id` is the anchor in agent-docs/references/conventions.md, and scripts/__tests__/kit-conventions.spec.ts fails on a row with no override, no anchor or a missing kit line. A row with `symbol` applies to exactly the kits whose src/ calls it.",
+  "rows": [
+    {
+      "id": "look",
+      "name": "Look",
+      "default": "filmic curve, metered auto exposure",
+      "override": "`tonemapMode: \"aces\"`; `autoExposureEnabled: false` + `exposure`",
+      "marker": "TN_WORLD_ENVIRONMENT",
+      "kits": "all"
+    },
+    {
+      "id": "quality",
+      "name": "Quality tier (`src/render/quality.ts`)",
+      "default": "GPU class picks `high`, `medium` or `low`",
+      "override": "`setupPost(..., { tier: \"low\" })`",
+      "marker": "TN_QUALITY_TIER",
+      "kits": "all"
+    },
+    {
+      "id": "resolution",
+      "name": "Resolution scale",
+      "default": "`\"auto\"`, 0.85 on mobile-low",
+      "override": "numeric `resolutionScale`",
+      "marker": "TN_FRAME_BUDGET",
+      "kits": "all"
+    },
+    {
+      "id": "frame-budget",
+      "name": "Budget real time for the look",
+      "default": "frame meter and scene verdict on",
+      "override": "`frameBudget: false`",
+      "marker": "TN_FRAME_BUDGET, TN_SCENE_WARNING",
+      "kits": "all"
+    },
+    {
+      "id": "aa",
+      "name": "Anti-aliasing",
+      "default": "4x MSAA on `high`, else SMAA",
+      "override": "`temporalAA: true`",
+      "marker": "—",
+      "kits": [
+        "action-rpg",
+        "collectathon",
+        "kart",
+        "minimal",
+        "platformer",
+        "puzzle",
+        "racing",
+        "rain",
+        "rts",
+        "sailing",
+        "shooter",
+        "snow",
+        "starter",
+        "tower-defense"
+      ]
+    },
+    {
+      "id": "matrix-world",
+      "name": "World-matrix walk",
+      "default": "visible subtrees only",
+      "override": "`renderer.matrixWorld: \"all\"`",
+      "marker": "TN_PROJECTION",
+      "kits": "all"
+    },
+    {
+      "id": "projected-cull",
+      "name": "Projected-pixel cull",
+      "default": "under 0.5 px",
+      "override": "`minimumProjectedPixels`; `alwaysRender(obj)`",
+      "marker": "TN_RENDER_PROJECTION",
+      "kits": "all"
+    },
+    {
+      "id": "interpolation",
+      "name": "Physics interpolation",
+      "default": "on for bodies and `ctx.camera`",
+      "override": "`physicsInterpolation: false`",
+      "marker": "TN_PHYSICS_INTERPOLATION",
+      "kits": "all"
+    },
+    {
+      "id": "continuous",
+      "name": "Continuous collision",
+      "default": "on for `RigidBody3D`",
+      "override": "`continuousCollision: false`",
+      "marker": "body.continuousCollision",
+      "kits": [
+        "action-rpg",
+        "adventure",
+        "collectathon",
+        "minimal",
+        "platformer",
+        "puzzle",
+        "racing",
+        "rts",
+        "runner",
+        "sailing",
+        "shooter",
+        "snow",
+        "starter",
+        "tower-defense"
+      ]
+    },
+    {
+      "id": "loading",
+      "name": "Loading",
+      "default": "`loadAll` keeps order; `addInSlices` attaches in 8 ms slices",
+      "override": "`concurrency`, `sliceSize`, `marker: false`",
+      "marker": "TN_LOAD_ALL",
+      "kits": "all"
+    },
+    {
+      "id": "startup",
+      "name": "Loading curtain",
+      "default": "`ctx.startup.hold(label, () => ready)`",
+      "override": "reveal on measured readiness only",
+      "marker": "—",
+      "kits": "all"
+    },
+    {
+      "id": "asset-cache",
+      "name": "Asset cache",
+      "default": "on, with idle fill",
+      "override": "`assets: { cache: false, backgroundFill: false }`",
+      "marker": "ctx.assets.cache",
+      "kits": "all"
+    },
+    {
+      "id": "asset-cook",
+      "name": "Asset cook",
+      "default": "compact, shared images",
+      "override": "`compact: false`; `assets.exclude`; `assets.budget`",
+      "marker": "TN_ASSETS_CONFIG",
+      "kits": "all"
+    },
+    {
+      "id": "animation-rate",
+      "name": "Animation rate",
+      "default": "`updateRate: \"auto\"`",
+      "override": "`updateRate: 1`",
+      "marker": "updateRateReport",
+      "kits": [
+        "action-rpg",
+        "minimal",
+        "platformer",
+        "puzzle",
+        "racing",
+        "rain",
+        "rts",
+        "runner",
+        "sailing",
+        "shooter",
+        "snow",
+        "starter",
+        "tower-defense"
+      ]
+    },
+    {
+      "id": "stride-sync",
+      "name": "Stride sync",
+      "default": "on",
+      "override": "`strideSync: false`",
+      "marker": "—",
+      "kits": [
+        "action-rpg",
+        "adventure"
+      ]
+    },
+    {
+      "id": "ground-snap",
+      "name": "Feet on the floor",
+      "default": "`GroundSnap`",
+      "override": "`enabled: false`",
+      "marker": "—",
+      "symbol": "GroundSnap",
+      "kits": [
+        "action-rpg",
+        "minimal",
+        "runner",
+        "shooter",
+        "starter"
+      ]
+    },
+    {
+      "id": "attach",
+      "name": "Held prop",
+      "default": "`attachToBone`",
+      "override": "a portable `Bone` named `RightHand`",
+      "marker": "—",
+      "symbol": "attachToBone",
+      "kits": [
+        "action-rpg",
+        "adventure",
+        "shooter"
+      ]
+    },
+    {
+      "id": "scale",
+      "name": "One metre is one metre",
+      "default": "`normaliseToMetres`",
+      "override": "per-call options",
+      "marker": "—",
+      "symbol": "normaliseToMetres",
+      "kits": [
+        "action-rpg",
+        "minimal",
+        "racing",
+        "runner",
+        "sailing",
+        "shooter",
+        "starter"
+      ]
+    },
+    {
+      "id": "rigged",
+      "name": "Rigged assets",
+      "default": "`.glb` in `assets/`; `AnimationPlayer` drives clips",
+      "override": "`ctx.assets.model(\"hero.glb\")` in `Scene.load()`",
+      "marker": "—",
+      "kits": "all"
+    },
+    {
+      "id": "clip-conformance",
+      "name": "Clip conformance",
+      "default": "measure a clip before rewriting it",
+      "override": "`clipPoseError`; `clipTrackBindings`; `clipBoneCoverage`",
+      "marker": "boneContact",
+      "kits": [
+        "action-rpg",
+        "collectathon",
+        "minimal",
+        "platformer",
+        "puzzle",
+        "racing",
+        "rain",
+        "runner",
+        "sailing",
+        "shooter",
+        "snow",
+        "starter",
+        "tower-defense"
+      ]
+    },
+    {
+      "id": "rough-diffuse",
+      "name": "Rough diffuse",
+      "default": "on",
+      "override": "`material.roughDiffuse = false`",
+      "marker": "—",
+      "kits": [
+        "starter"
+      ]
+    },
+    {
+      "id": "unlit-foliage",
+      "name": "Unlit foliage",
+      "default": "warns",
+      "override": "`material.userData.tnUnlitOk = true`",
+      "marker": "TN_UNLIT_FOLIAGE",
+      "kits": [
+        "action-rpg",
+        "adventure",
+        "collectathon",
+        "minimal",
+        "platformer",
+        "puzzle",
+        "racing",
+        "rain",
+        "rts",
+        "runner",
+        "sailing",
+        "shooter",
+        "snow",
+        "starter",
+        "tower-defense"
+      ]
+    },
+    {
+      "id": "backlight",
+      "name": "Material backlight",
+      "default": "none, as in stock Unreal",
+      "override": "`rimGain`; `fillGain`",
+      "marker": "—",
+      "kits": "all"
+    },
+    {
+      "id": "env-contribution",
+      "name": "Environment contribution",
+      "default": "reported even at zero",
+      "override": "`environmentSampling`",
+      "marker": "TN_ENVIRONMENT_CONTRIBUTION",
+      "kits": [
+        "action-rpg",
+        "minimal",
+        "platformer",
+        "puzzle",
+        "racing",
+        "rts",
+        "runner",
+        "sailing",
+        "shooter",
+        "snow",
+        "starter",
+        "tower-defense"
+      ]
+    },
+    {
+      "id": "shadows",
+      "name": "Shadows",
+      "default": "soft by source radius",
+      "override": "`penumbraScale`; `VirtualShadowNode` options",
+      "marker": "TN_SHADOW_TIER",
+      "kits": [
+        "minimal",
+        "starter"
+      ]
+    },
+    {
+      "id": "pointer-look",
+      "name": "Pointer look",
+      "default": "captures the canvas on click",
+      "override": "`captureOnClick: false` + `ctx.input.captureMouse()`",
+      "marker": "—",
+      "kits": [
+        "action-rpg",
+        "adventure",
+        "collectathon",
+        "minimal",
+        "platformer",
+        "puzzle",
+        "racing",
+        "rain",
+        "rts",
+        "runner",
+        "sailing",
+        "shooter",
+        "snow",
+        "starter",
+        "tower-defense"
+      ]
+    },
+    {
+      "id": "static",
+      "name": "Static scenery",
+      "default": "unwritten transforms stay cheap",
+      "override": "`markStatic(root)`; `invalidateStatic(obj)`",
+      "marker": "TN_RENDERLIST_VALIDATE",
+      "kits": "all"
+    },
+    {
+      "id": "spans",
+      "name": "Frame spans",
+      "default": "off",
+      "override": "`TN_FRAME_SPANS=1`",
+      "marker": "TN_FRAME_SPANS",
+      "kits": "all"
+    },
+    {
+      "id": "spells",
+      "name": "Spells",
+      "default": "every factory ships a stock look",
+      "override": "per-call options on `@threenative/core/spells`",
+      "marker": "—",
+      "kits": [
+        "action-rpg"
+      ]
+    },
+    {
+      "id": "net",
+      "name": "Multiplayer",
+      "default": "none; unsupported transport rejects",
+      "override": "`connect` from `@threenative/core/net` with four limits",
+      "marker": "TN_NET_UNAVAILABLE",
+      "kits": "all"
+    },
+    {
+      "id": "desktop-mode",
+      "name": "Desktop window",
+      "default": "CLI, then `display.fullscreen`, then `window.maximized`",
+      "override": "`--windowed`; `--maximized`; `--fullscreen`",
+      "marker": "—",
+      "kits": "all"
+    },
+    {
+      "id": "terrain",
+      "name": "Terrain",
+      "default": "authored in the game",
+      "override": "optional `@threenative/terrain`; `references/terrain-authoring.md`",
+      "marker": "—",
+      "kits": "all"
+    },
+    {
+      "id": "navigation",
+      "name": "Navigation",
+      "default": "none; browser-only WASM",
+      "override": "import `@threenative/physics/navigation` on purpose",
+      "marker": "—",
+      "kits": "all"
+    },
+    {
+      "id": "move-axis",
+      "name": "Move input",
+      "default": "`input.vector(\"move\").y` is +up",
+      "override": "one explicit `-move.y` conversion",
+      "marker": "—",
+      "kits": [
+        "action-rpg",
+        "adventure",
+        "collectathon",
+        "minimal",
+        "platformer",
+        "puzzle",
+        "racing",
+        "rain",
+        "rts",
+        "runner",
+        "sailing",
+        "shooter",
+        "snow",
+        "starter",
+        "tower-defense"
+      ]
+    },
+    {
+      "id": "scene-change",
+      "name": "Scene change",
+      "default": "`ctx.goto(name)` keeps state",
+      "override": "`game.goto(name)` resets state",
+      "marker": "—",
+      "kits": "all"
+    },
+    {
+      "id": "seed",
+      "name": "Randomness",
+      "default": "unseeded",
+      "override": "`defineGame({ seed })`",
+      "marker": "—",
+      "kits": "all"
+    },
+    {
+      "id": "engine",
+      "name": "Engine",
+      "default": "owned C++ engine",
+      "override": "`engine: \"threejs\"` only when the user asks",
+      "marker": "TN_NATIVE_ENGINE_UNBOUND",
+      "kits": "all"
+    }
+  ]
+}
