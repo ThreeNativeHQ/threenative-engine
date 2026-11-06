@@ -560,12 +560,14 @@ int main() {
         const uint64_t itemsBefore = JobPool::items();
         auto both = gltf::load(std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(pair.data()), pair.size()), pairOptions);
         const uint64_t pooled = JobPool::items() - itemsBefore;
+        // A web build without `-pthread` has 0 workers (job_pool.h): its items run inline and count none, with the same pixels.
+        const uint64_t expectedPooled = JobPool::shared().workers() > 0 ? 2 : 0;
         auto* pairMesh = both.scene && !both.scene->children.empty() ? dynamic_cast<Mesh*>(both.scene->children[0]) : nullptr;
         const auto pairMap = [&](const char* slot) -> const Texture* {
             return pairMesh && pairMesh->material && pairMesh->material->maps.count(slot) ? pairMesh->material->maps.at(slot).get() : nullptr;
         };
         if (!both.error.empty() || !pairMap("map") || !pairMap("emissiveMap") || pairMap("map")->data != pngPixels ||
-            pairMap("emissiveMap")->data != pngPixels || pooled != 2) {
+            pairMap("emissiveMap")->data != pngPixels || pooled != expectedPooled) {
             std::printf("image textures: a model's two images did not decode on the job pool (%llu items, %s)\n",
                         static_cast<unsigned long long>(pooled), both.error.c_str()); ++differ;
         }
