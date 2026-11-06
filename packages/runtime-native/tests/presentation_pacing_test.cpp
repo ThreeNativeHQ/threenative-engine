@@ -24,6 +24,7 @@ using mystral::webgpu::notePresentationFramesStarted;
 using mystral::webgpu::notePresentationFramesStopped;
 using mystral::webgpu::paceToPresentationCap;
 using mystral::webgpu::PresentationPacingPath;
+using mystral::webgpu::presentationPacingWaitCountForTest;
 using mystral::webgpu::setPresentationCapHz;
 using mystral::webgpu::setPresentationPacingTimeoutForTest;
 
@@ -79,15 +80,17 @@ void widenDisplayReleaseTimeout() {
 }
 
 // Uncapped: the only way a game presents above the ceiling is maxFps 0, and it must not wait,
-// even with a live display signal.
+// even with a live display signal. "Does not wait" is observed, not timed: the owner counts the
+// blocks it performs, so a loaded runner cannot turn a fast return into a failure the way a
+// wall-clock bound did.
 void testUncappedIgnoresDisplay() {
     resetPacing(0);
     notePresentationFramesStarted();
     notePresentationFrame(frameMs(1));
-    const auto begin = clock::now();
+    const uint32_t waitsBefore = presentationPacingWaitCountForTest();
     check(paceToPresentationCap() == PresentationPacingPath::Uncapped, "maxFps 0 uses uncapped pacing");
-    const auto elapsed = clock::now() - begin;
-    check(elapsed < std::chrono::milliseconds(5), "maxFps 0 returns without waiting");
+    check(presentationPacingWaitCountForTest() == waitsBefore,
+          "maxFps 0 returns without waiting");
     notePresentationFramesStopped();
 }
 
@@ -98,6 +101,7 @@ void testNoSignalUsesSoftwareDeadline() {
     // Time from before the scheduling call, which is where the deadline is set: a stall between
     // that call and the wait would otherwise eat into the interval and fail the lower bound.
     const auto begin = clock::now();
+    const uint32_t waitsBefore = presentationPacingWaitCountForTest();
     check(paceToPresentationCap() == PresentationPacingPath::SoftwareDeadline,
           "no display signal schedules software pacing");
     const auto path = paceToPresentationCap();  // must wait the software interval
@@ -110,6 +114,10 @@ void testNoSignalUsesSoftwareDeadline() {
               std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count()) +
               " ms)");
     check(path == PresentationPacingPath::SoftwareDeadline, "no display signal keeps software pacing");
+    // The elapsed bound above measures the wait; this pins that a wait is what the uncapped case
+    // reads as zero -- otherwise "returns without waiting" could hold because nothing is counted.
+    check(presentationPacingWaitCountForTest() > waitsBefore,
+          "the software interval blocks, so a wait is counted");
     notePresentationFramesStopped();
 }
 
