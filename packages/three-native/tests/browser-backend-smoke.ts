@@ -24,6 +24,7 @@ import {
 } from "../src/browser-backend.js";
 import { bindWebEngine } from "../src/browser-entry.js";
 import { type ITslRuntime, type TslArgValue, defineTsl } from "../src/browser-tsl.js";
+import { definePass } from "../src/pass-node.js";
 import { defineReflector } from "../src/reflector.js";
 import type { ConstClasses } from "../src/tsl-uniforms.js";
 
@@ -1434,7 +1435,11 @@ if (runtime.tsl !== undefined) {
       countThrew = true;
     }
     check(countThrew, "RenderTarget count over 8 is refused");
-    const outputs = tsl.mrt("accum,reveal", tsl.vec4(1, 0, 0, 1), tsl.float(0.5));
+    // The facade's mrt({...}) record, the form a game writes: the engine's raw mrt(names, ...nodes) carries no outputs.
+    const outputs = definePass(tsl as never).mrt({
+      accum: tsl.vec4(1, 0, 0, 1),
+      reveal: tsl.float(0.5),
+    });
     const mrtMaterial = new MeshBasicNodeMaterial() as unknown as Record<string, unknown>;
     mrtMaterial.mrtNode = outputs;
     check(mrtMaterial.mrtNode === outputs, "material.mrtNode takes an mrt() of named outputs");
