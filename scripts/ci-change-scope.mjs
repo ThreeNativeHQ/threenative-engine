@@ -519,9 +519,13 @@ export function validateEventPlan(value, { eventName, baseRef, forceFull = false
       !owed.native ||
       owed.nativeTier !== "full" ||
       owed.reusedRunId !== 0 ||
-      // Only the nightly owes the engine-cost row.
+      // Only the nightly owes the engine-cost row, and strata is owed only where a GPU runner serves
+      // the run (the plan records the GPU-less exemption, so it is never silent).
       Object.entries(owed.jobs).some(
-        ([name, job]) => !job.required && (name !== "template-engine-cost" || event === "schedule"),
+        ([name, job]) =>
+          !job.required &&
+          (name !== "template-engine-cost" || event === "schedule") &&
+          (name !== "strata" || owed.strataGpu !== false),
       ) ||
       JSON.stringify(owed.templateMatrix.template) !== JSON.stringify(TEMPLATE_NAMES) ||
       JSON.stringify(owed.goldenMatrix.template) !== JSON.stringify(["starter", "platformer"]) ||

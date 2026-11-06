@@ -4416,13 +4416,17 @@ describe("PRD-373 selective feature verification", () => {
     });
 
     it("exempts strata, with the reason, when this run reaches no GPU runner", async () => {
-      const { selectionPlan, validatePlan } = (await import(
+      const { selectionPlan, validatePlan, validateEventPlan } = (await import(
         new URL("../ci-change-scope.mjs", import.meta.url).href
       )) as {
         selectionPlan: (...args: unknown[]) => {
           jobs: Record<string, { required: boolean; reason: string }>;
         };
         validatePlan: (plan: unknown) => unknown;
+        validateEventPlan: (
+          plan: unknown,
+          event: { eventName: string; baseRef: string },
+        ) => unknown;
       };
       const plan = () =>
         selectionPlan("full", "fixture", [], "a".repeat(40), false, 0, "main").jobs.strata;
@@ -4436,6 +4440,11 @@ describe("PRD-373 selective feature verification", () => {
         const exempt = selectionPlan("full", "fixture", [], "a".repeat(40), true, 0, "main");
         Reflect.deleteProperty(process.env, "TN_CI_STRATA_GPU");
         expect(() => validatePlan(JSON.parse(JSON.stringify(exempt)))).not.toThrow();
+        // A promotion still qualifies with the recorded exemption, and only that one.
+        const promotion = { eventName: "pull_request", baseRef: "main" };
+        expect(() =>
+          validateEventPlan(JSON.parse(JSON.stringify(exempt)), promotion),
+        ).not.toThrow();
         process.env.TN_CI_STRATA_GPU = "true";
         expect(plan()?.required).toBe(true);
       } finally {
