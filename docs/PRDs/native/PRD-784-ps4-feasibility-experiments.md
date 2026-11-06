@@ -1,6 +1,6 @@
 # PRD-784 — PS4 feasibility: emulator experiments, then one engine cube on the console
 
-**Status:** PARTIAL — E1 and E2 green on `PS4_EMULATED`
+**Status:** PARTIAL — E1, E2 and E3 green on `PS4_EMULATED`
 **Priority:** P2 — Owner-requested feasibility: boxes E1 to E6 and the Blocked on console run are all open, and no release waits on them.
 **Complexity:** 7 (HIGH)
 **Owner:** Joao Paulo Furtado (console steps only); agent (everything else)
@@ -117,6 +117,7 @@ performance work. A go result opens a second PRD for those.
 - 2026-11-06 (João): E5 targets the store's Cube Spin game (`threenative-store/examples/cube-spin`, private repo), so the PS4 frame can be compared with the published build. The runner reads it with `--scene <path>`, and the game is not copied into this public repository. It imports no physics and no WebAssembly, so it can run on jitless V8. `examples/native-smoke` stays the first step when Cube Spin fails.
 - 2026-11-06 (agent): The pinned vulkan-ps4 and OpenGNM stack could not draw on any target. Seven of its 12 patches fix six gaps that real hardware also hits: no static viewport, no `CB_COLOR_CONTROL`, no `SPI_SHADER_COL_FORMAT`, a shared epilogue buffer rewritten in flight, shader code below 256-byte alignment, and a swapchain clear that does nothing. The other five fix the build, compiler diagnostics, the emulator encoding (`int_sel` 3 to 2, as Sony's libgnm uses) and the readback test. Treat the driver as immature, not as console-proven.
 - 2026-11-06 (agent): E2 judges shadPS4's presented frame, not the guest readback. shadPS4 keeps render targets in host VRAM, and a guest GPU copy from them reads stale guest memory. The runner turns on GPU readbacks (`readbacks_mode` 2), but that path does not flush a render target that a GPU copy reads.
+- 2026-11-06 (agent): E3 takes route A, Dawn's `webgpu.h` on its Vulkan backend over vulkan-ps4. The driver lacked the `VK_KHR_surface` queries and ignored `pName`, so patches 0013–0014 add them in the driver, not as fakes in Dawn, because real hardware needs the same entry points. The device runs in Compatibility mode, because the GNM limit of 4096 for 2D textures is below Core's 8192. Engine features that need Core limits must gate on the adapter. The VideoOut scanout is RGBA8 in memory order, so the swapchain offers only `R8G8B8A8_UNORM`.
 - 2026-11-06 (agent): Each shadPS4 run gets a private HOME, XDG folders and Xvfb, with no Wayland, D-Bus or `QT_QPA_PLATFORM` from the session. The run also creates `home/1000` first. Without both, shadPS4 opens its "Save Migration" box on the owner's desktop (`src/core/user_manager.cpp:293-300` at v.0.21.0).
 
 ## Execution Phases
@@ -139,7 +140,7 @@ performance work. A go result opens a second PRD for those.
 **Implementation:** Run E3 through the routes in order and record the chosen route under `## Decisions`. Run E4 at the same time, because it has no dependency on E3. Build V8 from the version pinned in `js-engine-versions.json`, try JIT first, then `--jitless`.
 **Verification:** each box below. Log the adapter limits at E3, because they decide which engine features need a gate.
 
-- [ ] E3: A triangle draws through `webgpu.h` in shadPS4. proof: `node packages/runtime-native/scripts/ps4/run-experiment.mjs e3`
+- [x] E3: A triangle draws through `webgpu.h` in shadPS4. proof: `node packages/runtime-native/scripts/ps4/run-experiment.mjs e3` → `PS4_EMULATED E3 PASS drawn=12.55%`, three runs on 2026-11-06 (two by the arm, one by the coordinator). The WGSL shader compiles at run time (Tint → SPIR-V → psbc → GCN), and the presented frame shows the shader's orange `vec4f(1,0.55,0)` on the clear `0.25` blue, checked by eye. Route A (Dawn `d14ae3d9`, Vulkan backend on vulkan-ps4, Compatibility mode). Adapter `PS4 GPU (GNM)`, vendor 0x1002, device 0x9920. Limits: maxTextureDimension2D 4096, maxBindGroups 4, maxStorageBuffersPerShaderStage 8, maxComputeWorkgroupSizeX 1024, maxBufferSize 4 GiB. E2 still passes after a from-scratch rebuild with driver patches 0013–0014.
 - [ ] E4: V8 runs a script in shadPS4 and logs its mode. proof: `node packages/runtime-native/scripts/ps4/run-experiment.mjs e4`
 
 #### Phase 3: The engine cube and the console bundle

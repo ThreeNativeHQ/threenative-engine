@@ -2,10 +2,10 @@
 // PRD-784 PS4 experiments: build a guest program with the OpenOrbis toolchain, boot it in the
 // shadPS4 emulator headless, and pass only when the guest prints its marker.
 //
-// Usage: node packages/runtime-native/scripts/ps4/run-experiment.mjs <e1|e2>
+// Usage: node packages/runtime-native/scripts/ps4/run-experiment.mjs <e1|e2|e3|e4>
 //
 // Every product stays under the scratch root (sibling of the dependency root), one directory per
-// experiment (<scratch>/e1, <scratch>/e2), never in the repo.
+// experiment (<scratch>/e1, <scratch>/e2, <scratch>/e3, <scratch>/e4), never in the repo.
 // shadPS4 reads no raw ELF: it wants a SELF (eboot.bin), which create-fself writes from our ELF.
 // No Sony firmware module is downloaded or required; a run that asks for one fails.
 import { spawn, spawnSync } from 'node:child_process';
@@ -47,6 +47,8 @@ const MARKER = 'TN_PS4_E1_MARKER';
 // frame; the band leaves room for a smaller or partly replaced draw, and rejects "nothing but the
 // clear" and "no clear".
 const E2_CLEAR = [26, 26, 51]; // 0.1, 0.1, 0.2 cleared as UNORM8
+// E3's guest clears to 0.0, 0.0, 0.25 (e3-triangle.cc DrawInto) and draws the same triangle.
+const E3_CLEAR = [0, 0, 64];
 const E2_TOLERANCE = 8; // per-channel distance from the clear colour that counts as clear
 const E2_CLEAR_MIN = 0.2;
 const E2_DRAWN_MIN = 0.02;
@@ -110,7 +112,63 @@ const EXPERIMENTS = {
     failurePattern: /TEST:[^\n]*FAILED/,
     verdict: (match, frame, log, shots) => judgeE2(match, frame, log, shots),
   },
+  e3: {
+    // Dawn (webgpu.h over vulkan-ps4) brings up a Vulkan device, compiles WGSL and presents 600
+    // frames, on top of the boot E1 already pays for.
+    timeoutMs: 300_000,
+    // The guest presents 600 frames before it prints the marker, so both captures land while it
+    // still presents.
+    screenshots: ['5', '7'],
+    build: (outDir, toolchain) => buildE3(outDir, toolchain),
+    // The marker is what the guest prints after 600 presents: reaching it means the surface
+    // configured, every frame drew, and every frame was handed to vulkan-ps4's VideoOut flip.
+    markerPattern: /TN_PS4_E3 frames=600 presented/,
+    // A Dawn uncaptured/device error is the engine's own account of the red; it ends the wait early.
+    // `error type=` is the line the guest's error callback prints (e3-triangle.cc:107) -- a bare
+    // /TN_PS4_E3 error/ also matches the guest's own success line "TN_PS4_E3 errors=0".
+    failurePattern: /TN_PS4_E3 error type=/,
+    verdict: (match, frame, log, shots) => judgeE3(match, frame, log, shots),
+  },
+  e4: {
+    // V8 builds a heap and compiles one script inside the emulator before it prints, on top of the
+    // boot E1 already pays for.
+    timeoutMs: 120_000,
+    sfo: {
+      TITLE: 'ThreeNative PS4 E4',
+      TITLE_ID: 'TNPRD784E4',
+      VERSION: '1.00',
+      CONTENT_ID: 'IV0000-TNPRD784E4_00-TNPS4E4000000000',
+    },
+    build: (outDir, toolchain) => buildE4(outDir, toolchain),
+    // The verdict is the value V8 COMPUTED: the guest source holds only '6*7', so an engine that
+    // cannot run the script never prints 42, and a mode it did not take never matches either.
+    markerPattern: /TN_PS4_E4 42 mode=(jitless|jit)/,
+    // A V8 exception is the engine's own account of the red; it ends the wait early.
+    failurePattern: /V8 error:/,
+    verdict: match => ({ ok: true, detail: ` mode=${match[1]}` }),
+  },
 };
+
+// TN_PS4_GDB=<gdb command file> debugs the emulator instead of only running it. shadPS4 executes
+// guest x86-64 natively at the guest's own addresses, so one host breakpoint or watchpoint sees
+// guest code and guest data (e4-gdb-isolate-slot.gdb is the E4 example). The AppImage is a stub
+// that forks AppRun (a shell script) and the emulator below it as separate processes, and gdb
+// inside the stub debugs one of those instead of the emulator, so the emulator binary comes out of
+// the image and AppRun's own env is what this run already provides. The run keeps the isolation
+// env, the private HOME and the experiment's own timeout.
+const gdbCommands = process.env.TN_PS4_GDB ? path.resolve(process.env.TN_PS4_GDB) : '';
+async function emulatorUnderGdb(appimage) {
+  if (!existsSync(gdbCommands)) throw new Error(`TN_PS4_GDB names no file: ${gdbCommands}`);
+  const root = path.join(path.dirname(appimage), 'squashfs-root');
+  const binary = path.join(root, 'usr/bin/shadps4');
+  if (!existsSync(binary)) {
+    // --appimage-extract writes squashfs-root beside the image; AppRun execs usr/bin/shadps4 with
+    // LD_LIBRARY_PATH only (that script is the one process chain gdb must not enter).
+    run(appimage, ['--appimage-extract'], { cwd: path.dirname(appimage) });
+    if (!existsSync(binary)) throw new Error(`${appimage} extracted no ${binary}`);
+  }
+  return binary;
+}
 
 // Parse a binary PPM (P6, maxval 255), the form the guest writes: "P6\n<w> <h>\n255\n" followed
 // by width*height*3 bytes. '#' starts a comment, as the format allows.
@@ -149,11 +207,11 @@ function readPpm(buffer) {
 // of the clear colour would widen it; the frames this judges are flat colour plus the draw.
 // The box holding every pixel of the clear colour; an empty box (right < left) means the guest
 // presented nothing. See countRegions for why the box and not the whole capture.
-function clearBox({ width, height, pixels }) {
+function clearBox({ width, height, pixels }, clearColour) {
   const box = { left: width, top: height, right: -1, bottom: -1 };
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
-      if (!nearClear(pixels, (y * width + x) * 3)) continue;
+      if (!nearClear(pixels, (y * width + x) * 3, clearColour)) continue;
       box.left = Math.min(box.left, x);
       box.right = Math.max(box.right, x);
       box.top = Math.min(box.top, y);
@@ -163,24 +221,24 @@ function clearBox({ width, height, pixels }) {
   return box;
 }
 
-function nearClear(pixels, at) {
+function nearClear(pixels, at, clearColour) {
   return (
-    Math.abs(pixels[at] - E2_CLEAR[0]) <= E2_TOLERANCE &&
-    Math.abs(pixels[at + 1] - E2_CLEAR[1]) <= E2_TOLERANCE &&
-    Math.abs(pixels[at + 2] - E2_CLEAR[2]) <= E2_TOLERANCE
+    Math.abs(pixels[at] - clearColour[0]) <= E2_TOLERANCE &&
+    Math.abs(pixels[at + 1] - clearColour[1]) <= E2_TOLERANCE &&
+    Math.abs(pixels[at + 2] - clearColour[2]) <= E2_TOLERANCE
   );
 }
 
-function countRegions(raster) {
+function countRegions(raster, clearColour) {
   const { width, pixels } = raster;
-  const { left, top, right, bottom } = clearBox(raster);
+  const { left, top, right, bottom } = clearBox(raster, clearColour);
   let clear = 0;
   let drawn = 0;
   for (let y = top; y <= bottom; y++) {
     for (let x = left; x <= right; x++) {
       const at = (y * width + x) * 3;
       if (pixels[at] <= 8 && pixels[at + 1] <= 8 && pixels[at + 2] <= 8) continue;
-      if (nearClear(pixels, at)) clear++;
+      if (nearClear(pixels, at, clearColour)) clear++;
       else drawn++;
     }
   }
@@ -205,45 +263,69 @@ function pngToPpm(file) {
   throw new Error('neither magick nor convert is on PATH, so the screenshot cannot be read');
 }
 
-// E2's verdict: the config must have taken effect (else a red frame blames the wrong layer),
-// then the LAST host screenshot -- what shadPS4 presented -- must hold the guest's clear colour
-// and a triangle over it. The guest's own readback is information only: CopyBuffer copies guest
-// memory, and shadPS4 never flushes a source render target into it (v.0.21.0), so it reads clear
-// even when the frame on screen holds the draw. A missing, unreadable or all-black screenshot
-// fails: an absent observation is not a pass.
-async function judgeE2(match, frame, log, shots) {
-  const wanted = `GPU readbacksMode: ${READBACKS_MODE}`;
-  if (!log.includes(wanted) || !log.includes('GPU readbackLinearImages: true'))
-    return {
-      ok: false,
-      reason: `shadPS4 did not take the config: its log lacks "${wanted}" and/or "GPU readbackLinearImages: true"`,
-    };
-  const guest = ` guest-readback=${match[1]} of ${match[2]} (stale: shadPS4 CopyBuffer does not flush render targets)`;
+// A presented-frame verdict: the config must have taken effect (else a red frame blames the wrong
+// layer), then the LAST host screenshot -- what shadPS4 presented -- must hold the guest's clear
+// colour and a triangle over it. The guest's own readback is information only: CopyBuffer copies
+// guest memory, and shadPS4 never flushes a source render target into it (v.0.21.0), so it reads
+// clear even when the frame on screen holds the draw. A missing, unreadable or all-black screenshot
+// fails: an absent observation is not a pass. E2 and E3 present the same shape of frame (one clear
+// colour plus one triangle) and differ only in the colour and in what the guest says about itself.
+async function judgePresented(log, shots, { clearColour, requireReadbacks, info }) {
+  if (requireReadbacks) {
+    const wanted = `GPU readbacksMode: ${READBACKS_MODE}`;
+    if (!log.includes(wanted) || !log.includes('GPU readbackLinearImages: true'))
+      return {
+        ok: false,
+        reason: `shadPS4 did not take the config: its log lacks "${wanted}" and/or "GPU readbackLinearImages: true"`,
+      };
+  }
   const image = shots.at(-1) ?? '';
-  if (!image) return { ok: false, reason: 'the run saved no host screenshot, so there is no presented frame to judge', info: guest };
+  if (!image) return { ok: false, reason: 'the run saved no host screenshot, so there is no presented frame to judge', info };
   let raster;
   try {
     raster = readPpm(pngToPpm(image));
   } catch (error) {
-    return { ok: false, reason: `${image} is unreadable: ${error.message}`, info: guest };
+    return { ok: false, reason: `${image} is unreadable: ${error.message}`, info };
   }
-  const { clear, drawn } = countRegions(raster);
+  const { clear, drawn } = countRegions(raster, clearColour);
   const nonBlack = clear + drawn;
   if (!nonBlack)
     return {
       ok: false,
       reason: `${image} holds no clear pixel (or nothing but black), so the guest presented no frame`,
-      info: guest,
+      info,
       image,
     };
   const clearPct = clear / nonBlack;
   const drawnPct = drawn / nonBlack;
   const counts = `clear=${(clearPct * 100).toFixed(2)}% drawn=${(drawnPct * 100).toFixed(2)}% of ${nonBlack} presented pixels`;
-  const failed = reason => ({ ok: false, reason: `${counts}, ${reason}`, info: guest, image });
+  const failed = reason => ({ ok: false, reason: `${counts}, ${reason}`, info, image });
   if (clearPct < E2_CLEAR_MIN) return failed(`below the ${E2_CLEAR_MIN * 100}% clear, so the guest's clear never reached the screen`);
   if (drawnPct < E2_DRAWN_MIN) return failed(`drawn below the ${E2_DRAWN_MIN * 100}% band, so the frame is only the clear colour`);
   if (drawnPct > E2_DRAWN_MAX) return failed(`drawn above the ${E2_DRAWN_MAX * 100}% band, so nothing cleared the frame`);
-  return { ok: true, detail: ` drawn=${(drawnPct * 100).toFixed(2)}%`, info: guest, image };
+  return { ok: true, detail: ` drawn=${(drawnPct * 100).toFixed(2)}%`, info, image };
+}
+
+// E2's verdict: the readback config must have taken effect, then the presented frame. The guest's
+// readback count is reported as information, not judged (see judgePresented).
+async function judgeE2(match, frame, log, shots) {
+  return judgePresented(log, shots, {
+    clearColour: E2_CLEAR,
+    requireReadbacks: true,
+    info: ` guest-readback=${match[1]} of ${match[2]} (stale: shadPS4 CopyBuffer does not flush render targets)`,
+  });
+}
+
+// E3's verdict: the presented frame, plus the adapter and limits the guest logged. Those lines are
+// the evidence that Dawn reached an adapter and a device over vulkan-ps4 at all -- a frame alone
+// would not say which backend drew it, and the limits are the numbers a later lane budgets against.
+async function judgeE3(match, frame, log, shots) {
+  const line = pattern => pattern.exec(log)?.[1]?.trim() ?? '(missing)';
+  const adapter = line(/TN_PS4_E3 adapter=([^\n]*)/);
+  const limits = line(/TN_PS4_E3 limits ([^\n]*)/);
+  const info = ` adapter=${adapter} limits ${limits}`;
+  const verdict = await judgePresented(log, shots, { clearColour: E3_CLEAR, requireReadbacks: false, info });
+  return verdict.ok ? { ...verdict, detail: `${verdict.detail} adapter=${adapter} limits ${limits}` } : verdict;
 }
 
 // The run's host screenshots, oldest first: <out>/screen-<seconds>.png, one per requested time.
@@ -319,8 +401,7 @@ async function buildGuest(outDir, toolchain, source, stem, sfoFields) {
   await mkdir(path.join(appDir, 'sce_sys'), { recursive: true });
   await mkdir(buildDir, { recursive: true });
 
-  // PkgTool.Core is a .NET app and the host has no ICU package; invariant mode is its own escape hatch.
-  const env = { ...process.env, OO_PS4_TOOLCHAIN: toolchain, DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: '1' };
+  const env = { ...process.env, OO_PS4_TOOLCHAIN: toolchain };
   const object = path.join(buildDir, `${stem}.o`);
   const elf = path.join(buildDir, `${stem}.elf`);
   const oelf = path.join(buildDir, `${stem}.oelf`);
@@ -331,25 +412,33 @@ async function buildGuest(outDir, toolchain, source, stem, sfoFields) {
   run(path.join(toolchain, 'bin', 'linux', 'create-fself'), [`-in=${elf}`, `-out=${oelf}`, '--eboot', 'eboot.bin', '--paid', '0x3800000000000011'], { env, cwd: appDir });
 
   const sfo = path.join(appDir, 'sce_sys', 'param.sfo');
+  writeSfo(sfo, sfoFields, toolchain);
+
+  return { appDir, artifacts: { object, elf, oelf, eboot, sfo } };
+}
+
+// The title metadata every PS4 app folder carries, written by PkgTool.Core: generated here, never
+// copied out of a dumped game. PkgTool.Core is a .NET app and the host has no ICU package;
+// invariant mode is its own escape hatch.
+function writeSfo(sfo, fields, toolchain) {
+  const env = { ...process.env, OO_PS4_TOOLCHAIN: toolchain, DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: '1' };
   const pkgtool = path.join(toolchain, 'bin', 'linux', 'PkgTool.Core');
   run(pkgtool, ['sfo_new', sfo], { env });
   const entries = [
     ['APP_TYPE', 'Integer', '4', '1'],
-    ['APP_VER', 'Utf8', '8', sfoFields.VERSION],
+    ['APP_VER', 'Utf8', '8', fields.VERSION],
     ['ATTRIBUTE', 'Integer', '4', '0'],
     ['CATEGORY', 'Utf8', '4', 'gd'],
-    ['CONTENT_ID', 'Utf8', '48', sfoFields.CONTENT_ID],
+    ['CONTENT_ID', 'Utf8', '48', fields.CONTENT_ID],
     ['DOWNLOAD_DATA_SIZE', 'Integer', '4', '0'],
     ['SYSTEM_VER', 'Integer', '4', '0'],
-    ['TITLE', 'Utf8', '128', sfoFields.TITLE],
-    ['TITLE_ID', 'Utf8', '12', sfoFields.TITLE_ID],
-    ['VERSION', 'Utf8', '8', sfoFields.VERSION],
+    ['TITLE', 'Utf8', '128', fields.TITLE],
+    ['TITLE_ID', 'Utf8', '12', fields.TITLE_ID],
+    ['VERSION', 'Utf8', '8', fields.VERSION],
   ];
   for (const [key, type, maxsize, value] of entries) {
     run(pkgtool, ['sfo_setentry', sfo, key, '--type', type, '--maxsize', maxsize, '--value', value], { env });
   }
-
-  return { appDir, artifacts: { object, elf, oelf, eboot, sfo } };
 }
 
 // E2's guest is built by the shell script next to this file: it clones six upstream repos at
@@ -367,6 +456,33 @@ async function buildE2(outDir, toolchain) {
   const appDir = path.join(outDir, 'out', guest, 'app');
   const eboot = path.join(appDir, 'eboot.bin');
   if (!existsSync(eboot)) throw new Error(`e2-build.sh wrote no ${eboot}`);
+  return { appDir, artifacts: { eboot } };
+}
+
+// E3's guest is Dawn itself: e3-build.sh owns the pins, the seven patches, the CMake/Ninja tree
+// and the build stamps, so a rerun that changes nothing builds nothing.
+async function buildE3(outDir, toolchain) {
+  runInherit('bash', [path.join(HERE, 'e3-build.sh'), '--out', outDir], { env: { ...process.env, OO_PS4_TOOLCHAIN: toolchain } });
+  // The whole app folder (eboot.bin + sce_sys/param.sfo) is that script's product: the title
+  // metadata belongs with the app it boots, not with the harness that boots it.
+  const appDir = path.join(outDir, 'out', 'app');
+  const eboot = path.join(appDir, 'eboot.bin');
+  if (!existsSync(eboot)) throw new Error(`e3-build.sh wrote no ${eboot}`);
+  return { appDir, artifacts: { eboot } };
+}
+
+// E4's guest is a jitless V8 monolith (2715 gn/ninja steps) plus its embedder: e4-build.sh owns
+// the pins, the patches and the build stamp, so a rerun that changes nothing builds nothing.
+async function buildE4(outDir, toolchain) {
+  runInherit('bash', [path.join(HERE, 'e4-build.sh'), '--out', outDir], { env: { ...process.env, OO_PS4_TOOLCHAIN: toolchain } });
+  const product = path.join(outDir, 'out', 'eboot.bin');
+  if (!existsSync(product)) throw new Error(`e4-build.sh wrote no ${product}`);
+  // shadPS4 boots an app folder -- eboot.bin beside sce_sys/param.sfo -- the same shape as E1's.
+  const appDir = path.join(outDir, 'out', 'app');
+  const eboot = path.join(appDir, 'eboot.bin');
+  await mkdir(path.join(appDir, 'sce_sys'), { recursive: true });
+  await copyFile(product, eboot);
+  writeSfo(path.join(appDir, 'sce_sys', 'param.sfo'), EXPERIMENTS.e4.sfo, toolchain);
   return { appDir, artifacts: { eboot } };
 }
 
@@ -478,8 +594,13 @@ async function boot(experiment, built, appimage, outDir) {
 
   const wrapper = path.join(REPO_ROOT, 'scripts', 'xvfb.sh');
   if (!existsSync(wrapper)) throw new Error(`missing ${wrapper}`);
-  const launch = [appimage, '-g', built.artifacts.eboot];
   const shots = captureTimes(experiment.screenshots);
+  let launch = [appimage, '-g', built.artifacts.eboot];
+  if (gdbCommands) {
+    // A command file cannot wrap the capture subshell's background launch, and one launch a run.
+    if (shots.length) throw new Error('TN_PS4_GDB cannot be combined with TN_PS4_SCREENSHOT_AT');
+    launch = ['gdb', '-q', '-batch', '-x', gdbCommands, '--args', await emulatorUnderGdb(appimage), '-g', built.artifacts.eboot];
+  }
   // xvfb.sh exports the private DISPLAY to its child, so the captures run inside the wrapper: the
   // emulator goes to the background, and each capture is its own subshell sleeping an absolute
   // time from launch (a broken capture reports itself and never changes the exit status).
@@ -582,7 +703,9 @@ async function main(argv) {
     return 0;
   }
   const reason = result.failure || verdict?.reason || 'the guest printed no marker';
-  const text = result.output.trim() ? result.output : result.log;
+  // The emulator's log carries every guest line (its Tty forwarder) without the private X server's
+  // startup noise that also lands on the child's stderr, so it is what a red is read from.
+  const text = result.log.trim() ? result.log : result.output;
   const tail = text.trimEnd().split('\n').slice(-20).join('\n');
   const firmware = /sys_modules|firmware/i.test(result.output + result.log) ? ' (shadPS4 reported a firmware/sys_modules requirement)' : '';
   console.log(`${label} FAIL: ${reason}${firmware}${image ? ` image=${image}` : ''}\n${tail}`);

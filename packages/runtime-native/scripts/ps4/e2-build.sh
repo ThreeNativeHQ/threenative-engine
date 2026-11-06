@@ -48,7 +48,10 @@ SPIRV_HEADERS_REF="${SPIRV_HEADERS_REF:-6efe5ae6b7c6ad29da3f2cc3f164b9c3d72b78b1
 # The inputs below the stamp are not re-cloned, so the stamp holds their hash: an
 # edited patch or guest source must rebuild, never silently reuse the old binaries.
 STAMP="$OUT/.build-complete"
-INPUT_HASH="$(cat "$HERE"/patches/*.patch "$HERE/e2-triangle.c" | sha256sum | cut -d' ' -f1)"
+# Only this lane's own patches: scripts/ps4/patches also holds the Dawn (dawn-*/oo-*/abseil-*)
+# and V8 (v8-*) patches of E3/E4, and a stamp that hashed those would rebuild Mesa for a change
+# it does not consume.
+INPUT_HASH="$(cat "$HERE"/patches/0*.patch "$HERE/e2-triangle.c" | sha256sum | cut -d' ' -f1)"
 if [ -f "$STAMP" ] && [ "$FORCE" != 1 ] && [ "$(cat "$STAMP")" = "$INPUT_HASH" ]; then
   echo "e2-build: reusing build in $OUT (rm $STAMP or --force to rebuild)"
   exit 0
@@ -218,6 +221,17 @@ git apply "$SCRIPTS/patches/0010-vk-ps4-static-viewport-scissor.patch"
 # PA_CL_CLIP_CNTL (else the VS is patched for screen-space output and the geometry
 # collapses). vkCmdBindPipeline emits all three per bind.
 git apply "$SCRIPTS/patches/0012-vk-ps4-colour-draw-context-regs.patch"
+# Dawn names every WebGPU entry point "dawn_entry_point" in the SPIR-V it hands to the ICD,
+# and vulkan-ps4 compiled a fixed entry point "main" (vk_ps4_shader.c:166), ignoring
+# VkPipelineShaderStageCreateInfo::pName -- so every Dawn pipeline died in libpsbc with
+# "Entry point not found for vertex shader "main"". This passes pName through.
+git apply "$SCRIPTS/patches/0013-vk-ps4-shader-stage-entry-point.patch"
+# The ICD advertises VK_KHR_surface but implements no query from it, so a caller that reads the
+# surface capabilities to size a swapchain got a null proc: Dawn's wgpuSurfaceConfigure reads
+# them and destroys its surface handle first, and shadPS4 caught the null jump as "Unhandled
+# access violation at code address 0x0". 0014 answers for the one surface the PS4 has, the
+# GnmVideoOut display vk_ps4_swapchain.c opens.
+git apply "$SCRIPTS/patches/0014-vk-ps4-surface-queries.patch"
 # The Makefile compiles TEST_SRC relative to the vulkan-ps4 tree.
 cp "$SCRIPTS/e2-triangle.c" "$SRC/e2-triangle.c"
 make -f Makefile.orbis -j"$JOBS" TEST_SRC=../e2-triangle.c self > "$LOGS/e2-triangle.log" 2>&1
