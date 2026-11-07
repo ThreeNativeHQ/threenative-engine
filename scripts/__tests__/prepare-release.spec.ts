@@ -75,6 +75,7 @@ describe("release preparation", () => {
     const copied = [
       "packages/core/src/index.ts",
       "packages/create-threenative/src/doctor.ts",
+      "packages/create-threenative/src/mcp-servers.ts",
       "packages/engine-mcp/src/index.ts",
       "packages/engine-mcp/__tests__/server.spec.ts",
       "packages/core/mcp/servers.mjs",
@@ -123,6 +124,7 @@ describe("release preparation", () => {
     const copied = [
       "packages/core/src/index.ts",
       "packages/create-threenative/src/doctor.ts",
+      "packages/create-threenative/src/mcp-servers.ts",
       "packages/engine-mcp/src/index.ts",
       "packages/engine-mcp/__tests__/server.spec.ts",
       "packages/core/mcp/servers.mjs",
@@ -219,6 +221,7 @@ describe("terrain release metadata", () => {
   const sourceFiles = [
     "packages/core/src/index.ts",
     "packages/create-threenative/src/doctor.ts",
+    "packages/create-threenative/src/mcp-servers.ts",
     "packages/engine-mcp/src/index.ts",
     "packages/engine-mcp/__tests__/server.spec.ts",
     "packages/core/mcp/servers.mjs",

@@ -194,6 +194,8 @@ describe("template loading screen", () => {
     await cp(path.join(templateRoot, "..", "agent-docs"), path.join(root, "agent-docs"), {
       recursive: true,
     });
+    // The authoring stamp records the package version (PRD-829).
+    await cp(path.join(templateRoot, "..", "package.json"), path.join(root, "package.json"));
 
     const canonicalPath = path.join(root, "template-assets", "loading.ts");
     const canonical = await readFile(canonicalPath, "utf8");

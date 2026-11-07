@@ -72,6 +72,18 @@ describe("template vite configs", () => {
     expect(unwired).toEqual([]);
   });
 
+  it("fails every template's refused three import at the edit (PRD-830)", async () => {
+    // A name the Wasm engine refuses otherwise surfaces as an aborted scene at the first frame.
+    const unwired: string[] = [];
+    for (const template of await templates()) {
+      const source = await readFile(path.join(TEMPLATE_ROOT, template, "vite.config.ts"), "utf8");
+      const plugins = /plugins:\s*\[([^\]]*)\]/.exec(source)?.[1] ?? "";
+      if (!plugins.includes("createEngineCatalogPlugin("))
+        unwired.push(`${template}: createEngineCatalogPlugin()`);
+    }
+    expect(unwired).toEqual([]);
+  });
+
   it("holds every dev server that cooks assets until the first cook settles", async () => {
     // A fresh scaffold's `public/` holds only the icon and favicon, so until the dev pipeline
     // cooks `assets/` into it every request answers from the source fallback and

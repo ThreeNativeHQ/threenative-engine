@@ -19,6 +19,13 @@ export { ensureHostMcpConfigs } from "../../core/mcp/install.mjs";
 export { MCP_PACKAGES, MCP_SERVERS };
 export type { IMcpPackage, IMcpServerEntry };
 
+/** The package every project always has, and the release this create-threenative is built against:
+ * the template pins and the doctor's MCP table both name it, and `doctor --fix` refuses a game on
+ * another release before it writes. `doctor.spec.ts` holds the version equal to
+ * `packages/core/package.json`, and `scripts/check-version-pins.ts` holds the templates there. */
+export const CORE_PACKAGE_NAME = "@threenative/core";
+export const CORE_PACKAGE_VERSION = "0.3.12";
+
 /** The shim a server launches, for example `./node_modules/@threenative/core/mcp/assets.mjs`. */
 export function serverEntryPath(server: IMcpServerEntry): string {
   const entry = server.args[0];
