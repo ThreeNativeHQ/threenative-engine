@@ -161,7 +161,11 @@ const DESCRIPTOR_AT_RULES = new Set(["property", "font-face", "counter-style", "
 function scan(css) {
   const state = { props: new Set(), atRules: new Set(), values: [], stack: [] };
   for (const raw of css.split("\n")) scanLine(raw.trim(), state);
-  return { props: [...state.props].sort(), atRules: [...state.atRules].sort(), values: state.values };
+  return {
+    props: [...state.props].sort(),
+    atRules: [...state.atRules].sort(),
+    values: state.values,
+  };
 }
 
 /** One trimmed line of a compiled rule, folded into the scan's state. */
@@ -226,7 +230,18 @@ export async function deriveUnits() {
       continue;
     }
     unit.classes.push(name);
-    if (stronger(name, strength.get(name), unit.probe, strength.get(unit.probe))) unit.probe = name;
+    if (
+      stronger(
+        name,
+        css,
+        strength.get(name),
+        unit.probe,
+        classCss.get(unit.probe) ?? "",
+        strength.get(unit.probe),
+      )
+    ) {
+      unit.probe = name;
+    }
   }
   const variants = design.getVariants().map((variant) => ({
     name: variant.name,
@@ -255,19 +270,41 @@ function magnitude(values) {
 /**
  * Which class of a unit should be its probe.
  *
- * Not the shortest name: `ring` is a 1 px ring and `radius` a 4 px corner, and a 1 px change on a
- * 120x40 box does not move SSIM past the 0.99 bar, so the cell cannot tell a correct engine from one
- * that dropped the declaration. The probe is the *strongest* class that still fits a 320x240 cell —
- * `ring-4`, `rounded-3xl` — because a real effect has to be big enough for the bar to see it.
+ * Not the shortest name. Two reasons: `ring` is a 1 px ring and `rounded` a 4 px corner, and a 1 px
+ * change on a 120x40 box does not move SSIM past the 0.99 bar, so the cell cannot tell a correct
+ * engine from one that dropped the declaration; and `animate-none` or `transition-normal` paints the
+ * same frame as no class at all. The probe is the strongest class that is not an identity value and
+ * still fits a 320x240 cell — `ring-4`, `rounded-3xl`, `animate-spin`.
  */
 const PROBE_STRENGTH_CAP = 40;
 
-function stronger(candidate, want, current, have) {
-  want = Math.min(want, PROBE_STRENGTH_CAP);
-  have = Math.min(have, PROBE_STRENGTH_CAP);
-  if (want !== have) return want > have;
-  if (candidate.length !== current.length) return candidate.length < current.length;
-  return candidate < current;
+const IDENTITY_VALUE = /:\s*(none|normal|auto|visible|0px|0%|0)\s*(!important)?\s*[};]/u;
+
+/** Negative is stronger, so the tuple compares with `<`. */
+function probeRank(name, css, strength) {
+  return [
+    IDENTITY_VALUE.test(css) ? 1 : 0,
+    -Math.min(strength, PROBE_STRENGTH_CAP),
+    name.length,
+    name,
+  ];
+}
+
+function stronger(
+  candidate,
+  candidateCss,
+  candidateStrength,
+  current,
+  currentCss,
+  currentStrength,
+) {
+  const a = probeRank(candidate, candidateCss, candidateStrength);
+  const b = probeRank(current, currentCss, currentStrength);
+  for (const [index, value] of a.entries()) {
+    if (value === b[index]) continue;
+    return value < b[index];
+  }
+  return false;
 }
 
 // -------------------------------------------------------------------------------------------------
@@ -1380,6 +1417,16 @@ async function driveWeb(page, steps) {
   for (const step of steps) await driveStep(page, step);
 }
 
+/**
+ * The motion bar's clock: 0, 25, 50, 75 and 100 % of a one-second animation, in milliseconds.
+ *
+ * One second is the duration Tailwind's own `animate-*` utilities use (`spin`, `ping` and `bounce`
+ * are 1 s; `pulse` is 2 s, so it is sampled at half cycle and at full). The clock is *virtual* on
+ * both subjects: the browser's animations are paused and given a `currentTime`, and the engine is
+ * advanced by `drive.json`, so the two sides compare the same frame at the same time.
+ */
+const MOTION_SAMPLES = [0, 250, 500, 750, 1000];
+
 /** The two subjects' handles, so a relaunched browser is the one every capture uses. */
 let site;
 let browser;
@@ -1407,7 +1454,7 @@ async function webPanel(panel, options) {
 }
 
 /** One panel in pinned headless Chromium, through the real component, optionally driven. */
-async function chromiumPanel(browser, base, panel, { strip = false, drive = [] } = {}) {
+async function chromiumPanel(browser, base, panel, { strip = false, drive = [], sample } = {}) {
   const context = await browser.newContext({
     viewport: { width: panel.width, height: panel.height },
     deviceScaleFactor: 1,
@@ -1421,6 +1468,16 @@ async function chromiumPanel(browser, base, panel, { strip = false, drive = [] }
     await document.fonts.ready;
   });
   for (const steps of drive) await driveWeb(page, steps);
+  if (sample !== undefined) {
+    // A CSS animation is driven by the compositor, not by a JS timer, so the clock is moved through
+    // its own interface: pause every animation the document has and pin it to the sample.
+    await page.evaluate((at) => {
+      for (const animation of document.getAnimations()) {
+        animation.pause();
+        animation.currentTime = at;
+      }
+    }, sample);
+  }
   const boxes = await page.evaluate(() =>
     [...document.querySelectorAll("[data-n]")].map((element) => {
       const rect = element.getBoundingClientRect();
@@ -1440,7 +1497,7 @@ async function chromiumPanel(browser, base, panel, { strip = false, drive = [] }
 }
 
 /** One panel in the crate's headless example, with the same device state and the same input. */
-function cratePanel(panel, dir, { drive = [] } = {}) {
+function cratePanel(panel, dir, { drive = [], sample } = {}) {
   rmSync(dir, { force: true, recursive: true });
   mkdirSync(join(dir, "ui"), { recursive: true });
   // The same fonts and images the browser page gets, staged flat into `ui/`: without this the
@@ -1451,7 +1508,11 @@ function cratePanel(panel, dir, { drive = [] } = {}) {
   const fixture = { name: panel.id, size: [panel.width, panel.height], css: panel.css, tree };
   writeFileSync(join(dir, "batch.json"), JSON.stringify(ops(fixture, number(tree), "")));
   if (panel.env !== undefined) writeFileSync(join(dir, "env.json"), JSON.stringify(panel.env));
-  if (drive.length > 0) writeFileSync(join(dir, "drive.json"), JSON.stringify(drive.flat()));
+  const steps = drive.flat();
+  // The engine's animation clock starts at zero in a fresh process, so one absolute advance is the
+  // same sample the browser was pinned to.
+  const timeline = sample === undefined ? steps : [...steps, { t: "advance", ms: sample }];
+  if (timeline.length > 0) writeFileSync(join(dir, "drive.json"), JSON.stringify(timeline));
   const run = spawnSync(
     "cargo",
     [
@@ -1567,6 +1628,47 @@ function cellScore(cell, web, native) {
     region,
     score: matchScore(west, east),
   };
+}
+
+/**
+ * The motion bar: every cell at each step of the clock, on both subjects.
+ *
+ * A keyframe animation cannot be proven by one frame — two renderers can agree at rest and disagree
+ * halfway — so a motion panel is captured at 0, 25, 50, 75 and 100 % and a cell passes only when
+ * every sample passes both bars. The report keeps the *worst* sample, which is the one to read.
+ */
+async function measureMotion(panel, dir, drive) {
+  const cells = new Map();
+  for (const sample of MOTION_SAMPLES) {
+    const web = await webPanel(panel, { drive, sample });
+    const native = cratePanel(panel, join(dir, `native-t${sample}`), { drive, sample });
+    if (native.refused !== undefined) {
+      return panel.cells.map((cell) => ({
+        ...cell,
+        pass: false,
+        why: `the engine refused this stage: ${native.refused}`,
+      }));
+    }
+    const stripped = await webPanel(panel, { drive, strip: true, sample });
+    for (const cell of comparePanel(panel, web, native, vacuityOf(panel, web, stripped))) {
+      const seen = cells.get(cell.unit);
+      const one = { at: sample, ssim: cell.ssim, pass: cell.pass };
+      if (seen === undefined) {
+        cells.set(cell.unit, { ...cell, samples: [one] });
+        continue;
+      }
+      seen.samples.push(one);
+      seen.pass = seen.pass && cell.pass;
+      if (cell.ssim < seen.ssim) {
+        Object.assign(seen, { ssim: cell.ssim, edgeMisses: cell.edgeMisses, why: cell.why });
+      }
+    }
+    if (sample === MOTION_SAMPLES.at(-1)) {
+      writeFileSync(join(dir, "web", "frame.png"), PNG.sync.write(web.png));
+      writeFileSync(join(dir, "native", "frame.png"), PNG.sync.write(native.png));
+    }
+  }
+  return [...cells.values()];
 }
 
 /**
@@ -1874,12 +1976,15 @@ try {
     const motion = MOTION.test(panel.css);
     const probeBoxes = (await webPanel(panel)).boxes;
     const drive = panel.cells.map((cell) => driverFor(cell, probeBoxes));
-    const web = await webPanel(panel, { drive });
-    const native = cratePanel(panel, join(dir, "native"), { drive });
-    // Two capture runs per side: a subject that does not paint the same frame twice cannot be
-    // compared with one that does, and a difference would otherwise read as a parity gap. A panel
-    // with a running keyframe animation is compared by the motion bar at fixed times instead.
-    if (!motion) {
+    let measured;
+    let vacuous = new Map();
+    if (motion) {
+      measured = await measureMotion(panel, dir, drive);
+    } else {
+      const web = await webPanel(panel, { drive });
+      const native = cratePanel(panel, join(dir, "native"), { drive });
+      // Two capture runs per side: a subject that does not paint the same frame twice cannot be
+      // compared with one that does, and a difference would otherwise read as a parity gap.
       const webAgain = await webPanel(panel, { drive });
       const nativeAgain = cratePanel(panel, join(dir, "native-again"), { drive });
       if (!same(web.png.data, webAgain.png.data)) {
@@ -1892,15 +1997,16 @@ try {
           `TN_PARITY_NONDETERMINISTIC the engine painted ${panel.id} twice differently`,
         );
       }
+      writeFileSync(join(dir, "web", "frame.png"), PNG.sync.write(web.png));
+      if (native.refused === undefined) {
+        writeFileSync(join(dir, "native", "frame.png"), PNG.sync.write(native.png));
+      }
+      // The vacuity arm, in the meter's own run: a cell whose unit class changes nothing is a scene
+      // defect, so it fails here rather than counting as a pass the ratchet would then protect.
+      const stripped = await webPanel(panel, { drive, strip: true });
+      vacuous = vacuityOf(panel, web, stripped);
+      measured = comparePanel(panel, web, native, vacuous);
     }
-    writeFileSync(join(dir, "web", "frame.png"), PNG.sync.write(web.png));
-    if (native.refused === undefined)
-      writeFileSync(join(dir, "native", "frame.png"), PNG.sync.write(native.png));
-    // The vacuity arm, in the meter's own run: a cell whose unit class changes nothing is a scene
-    // defect, so it fails here rather than counting as a pass the ratchet would then protect.
-    const stripped = await webPanel(panel, { drive, strip: true });
-    const vacuous = vacuityOf(panel, web, stripped);
-    const measured = comparePanel(panel, web, native, vacuous);
     report.push(...measured);
     if (wants.sheet === undefined) {
       console.log(

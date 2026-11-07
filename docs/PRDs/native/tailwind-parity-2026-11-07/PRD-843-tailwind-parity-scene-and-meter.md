@@ -126,9 +126,10 @@ tailwind-parity: 145/503 (28.8 %)  [250 do not discriminate, 31 exempt, 4 perman
   `@starting-style` (PRD-847). Four more — `print:`, `noscript:`, `visited:`, `target:` — are
   permanently inactive on both subjects by the batch's decisions and are out of the denominator.
 - **`--host`.** Not implemented; the flag exits `TN_PARITY_HOST_UNSUPPORTED`.
-- **The motion bar.** Not built: no stepped clock at 0/25/50/75/100 %, and a panel whose sheet carries
-  `animation`/`transition`/`@starting-style` skips the byte-equality double capture instead of being
-  sampled at fixed times. PRD-847 owns both.
+- **The motion bar is built** (PRD-847): a motion panel is captured at 0, 25, 50, 75 and 100 % of a
+  one-second clock on both subjects and a cell passes only when every sample does. A motion panel
+  still skips the byte-equality double capture, because a keyframe panel is not expected to repaint
+  identically — that is what the five samples are for.
 - **`--env`.** A panel carries its own device descriptor (`dark`, `touch`, reduced motion, viewport)
   and both subjects apply it, but there is no `--env <input|all>` CLI switch.
 - **Refused stages (15 units).** The crate's closed `TAGS` list refuses `table`, `input`,
@@ -154,6 +155,12 @@ tailwind-parity: 145/503 (28.8 %)  [250 do not discriminate, 31 exempt, 4 perman
   the unit's rule in `@layer utilities`. The cell furniture went into the same layer, so it no longer
   beats every `w-*` unit. The classes the contrast values came from are emitted with the panel, so a
   `var(--spacing)` contrast makes Tailwind write `--spacing`.
+- 2026-11-07 (agent): **a cell scores the worst of R, G, B and luminance.** The corpus's bar is
+  luminance SSIM, and luminance cannot see the families this batch is about: `grayscale(1)` maps
+  `rgb(37,99,235)` to `rgb(96,96,96)`, whose luminance is 95.7 against 95.7 — an identical frame by
+  that measure and an obviously different one to a viewer. Every `grayscale`, `saturate`,
+  `hue-rotate` and `sepia` cell was reported as "does not discriminate" before this; they now report
+  the real gap (0.20 to 0.87 against the 0.99 bar).
 - 2026-11-07 (agent): **a cell is measured over the probe's own box**, not the 320×240 cell. The probe
   is about 6 % of the cell, and a dropped 40-level colour change still scores SSIM 0.987 over the
   whole cell — the bar cannot see it. The region is the probe's box plus 20 px for what escapes it

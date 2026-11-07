@@ -109,7 +109,10 @@ One command: `pnpm --filter threenative-native-css-hud parity:tailwind`
 4. **Pass bars per unit** (the existing corpus bars, not relaxed):
    - geometry: each element's border box is within 1 CSS px on each edge;
    - pixels: cell luminance SSIM is at least 0.99, or 0.98 when the cell draws glyphs;
-   - motion: the same two bars at 0, 25, 50, 75 and 100 % of the duration, on a stepped clock;
+   - colour: the worst of R, G, B and luminance SSIM, because luminance is blind to `grayscale`,
+     `saturate`, `hue-rotate` and `sepia`;
+   - motion: the same two bars at 0, 25, 50, 75 and 100 % of a one-second clock, pinned on both
+     subjects (`Animation.currentTime` in the browser, `advance` in `drive.json`);
    - state: the existing interaction scripts (`corpus/interactions.mjs`) drive hover, focus, active
      and touch before the capture.
 5. **Two native subjects.** The default run uses the crate's headless `oracle` example (the same
