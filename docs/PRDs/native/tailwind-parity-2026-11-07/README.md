@@ -17,7 +17,7 @@ are in the session scratchpad and are not tracked. The unit counts below are the
 | Fact | Value |
 | --- | --- |
 | Tailwind classes / utility roots / variants | 23 286 / 169 / 88 |
-| Coverage units (root x emitted property set x at-rule, see Meter) | 423 utility units + 88 variants = **511** (the 2026-11-07 exploration's 402 + 88 is not reproducible from that method; the generator in PRD-843 is now the denominator) |
+| Coverage units (root x emitted property set x at-rule, see Meter) | 423 utility units + 88 variants = **507** (the 2026-11-07 exploration's 402 + 88 is not reproducible from that method; the generator in PRD-843 is now the denominator) |
 | CSS properties Tailwind emits | 276 |
 | Properties the oracle corpus proves (`examples/native-css-hud/corpus/`) | 56 of 276 |
 | Properties neither proven nor refused by the build scanner | 200 (examples: `text-shadow`, `-webkit-line-clamp`, `list-style-type`, logical insets and borders, `scale`/`rotate`/`translate`, conic and radial `background-image`) |
@@ -50,9 +50,19 @@ Engine facts behind the gaps:
   `.table` rules. This scan found 3 starter findings. The PS4 session reported 9; the cause of the
   difference is unverified.
 
+## Meter status (measured 2026-11-07, crate subject)
+
+```
+tailwind-parity: 136/472 (28.8 %)  [291 vacuous, 35 exempt, 507 cells]
+```
+
+A cell counts as evidence only: an exempt cell is excluded from the denominator, and a vacuous cell
+fails. The score is therefore *lower* than "cells whose pixels match" and cannot overstate coverage.
+The vacuity gap is scene staging in PRD-843, not engine work — see that PRD's `## Open`.
+
 ## PRDs
 
-Every one of the 511 units has exactly one owner PRD. The generator in PRD-843 tags each unit, and
+Every one of the 507 units has exactly one owner PRD. The generator in PRD-843 tags each unit, and
 `--check` fails when a unit has no owner.
 
 | PRD | Owns | Priority |
@@ -66,7 +76,7 @@ Every one of the 511 units has exactly one owner PRD. The generator in PRD-843 t
 | [PRD-849](PRD-849-native-css-selectors-pseudo-elements-and-media.md) | structural, relational and state variants, pseudo-elements, media and `supports-*` variants | P2 |
 | [PRD-850](PRD-850-native-css-paint-and-typography-families.md) | the 200 unproven paint and typography properties, inline SVG `fill`/`stroke`, cursor, scrollbars | P2 |
 | [PRD-851](PRD-851-native-css-form-controls-and-text-input.md) | form controls, text input and every form variant | P2 |
-| [PRD-852](PRD-852-tailwind-parity-reaches-511.md) | 511 of 511, the denylist deleted, all 14 kits build clean, the CI ratchet | P1 |
+| [PRD-852](PRD-852-tailwind-parity-reaches-507.md) | 507 of 507, the denylist deleted, all 14 kits build clean, the CI ratchet | P1 |
 
 Order: PRD-843 first. PRD-844 to PRD-851 are independent and can run in parallel. PRD-852 closes.
 
@@ -77,7 +87,7 @@ One command: `pnpm --filter threenative-native-css-hud parity:tailwind`
 
 1. **Denominator from Tailwind, not from us.** The generator loads Tailwind's design system and
    groups every class into units by root, emitted CSS property set and at-rule. It adds one unit per
-   variant. 4.3.3 gives 511. A Tailwind upgrade that adds a utility adds a unit, and `--check` fails
+   variant. 4.3.3 gives 507. A Tailwind upgrade that adds a utility adds a unit, and `--check` fails
    until the scene has a cell for it.
 2. **One scene, one component.** `src/ui/TailwindParity.tsx` renders the generated
    `tailwind-parity.scene.json` as panels of cells. react-dom mounts it in pinned Chromium.
@@ -94,7 +104,7 @@ One command: `pnpm --filter threenative-native-css-hud parity:tailwind`
 5. **Two native subjects.** The default run uses the crate's headless `oracle` example (the same
    engine, CPU raster, every unit). `--host` runs the same panels on the real desktop host
    (`corpus/desktop.mjs` path). A family box ticks only when both subjects pass.
-6. **Output**: `tailwind-parity: N/511 (P %)`, plus `report.json` with each failing unit by family,
+6. **Output**: `tailwind-parity: N/507 (P %)`, plus `report.json` with each failing unit by family,
    element and edge. `--ratchet` fails when the score falls below `corpus/tailwind-parity.floor.json`
    or when a unit that passed before fails. Each PRD raises the floor in the commit that turns its
    units green.

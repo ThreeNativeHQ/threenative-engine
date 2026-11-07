@@ -41,7 +41,7 @@
  * ## Usage
  *
  *   node corpus/tailwind-parity.mjs                 # score the crate subject, keeping the scene current
- *   node corpus/tailwind-parity.mjs --host          # the real desktop host as the subject
+ *   node corpus/tailwind-parity.mjs --host          # not implemented: exits non-zero, never a silent crate score
  *   node corpus/tailwind-parity.mjs --write         # regenerate the scene only
  *   node corpus/tailwind-parity.mjs --check         # denominator, ownership, freshness, vacuity
  *   node corpus/tailwind-parity.mjs --family PRD-844 [--group mask]
@@ -143,16 +143,38 @@ async function buildSheet(classes) {
 /** The utility root: the class name without a leading `-`, up to its first `-`. */
 const rootOf = (name) => (name.startsWith("-") ? name.slice(1) : name).split("-")[0];
 
-/** Every declaration property name and enclosing at-rule in one compiled rule. */
+/**
+ * Every declaration property name and enclosing at-rule in one compiled rule.
+ *
+ * A *descriptor* block (`@property --tw-x { syntax: ...; inherits: false }`, `@font-face`) describes
+ * a rule; its members are not properties the element paints. Reading them as declarations gave 46
+ * units a no-op "contrast" such as `syntax:"<length>"` and changed the unit key, so they are skipped
+ * and the descriptor at-rule is not recorded either.
+ */
+const DESCRIPTOR_AT_RULES = new Set(["property", "font-face", "counter-style", "page"]);
+
 function scan(css) {
   const props = new Set();
   const atRules = new Set();
+  const stack = [];
   for (const raw of css.split("\n")) {
     const line = raw.trim();
     if (line.endsWith("{")) {
-      if (line.startsWith("@")) atRules.add(line.slice(0, -1).trim());
+      const prelude = line.slice(0, -1).trim();
+      if (prelude.startsWith("@")) {
+        const name = /^@([-\w]+)/u.exec(prelude)?.[1].toLowerCase() ?? "";
+        if (!DESCRIPTOR_AT_RULES.has(name)) atRules.add(prelude);
+        stack.push(DESCRIPTOR_AT_RULES.has(name) ? "descriptor" : "group");
+      } else {
+        stack.push("rule");
+      }
       continue;
     }
+    if (line === "}") {
+      stack.pop();
+      continue;
+    }
+    if (stack[stack.length - 1] !== "rule") continue;
     const declaration = /^([-a-zA-Z][-a-zA-Z0-9]*)\s*:/u.exec(line);
     if (declaration !== null) props.add(declaration[1]);
   }
@@ -928,10 +950,10 @@ export async function buildScene({ design, units, variants, classCss }) {
   }
 
   const entries = [];
-  for (const [index, unit] of units.entries()) {
+  for (const unit of units) {
     const { owner, group } = classifyUtility(unit);
     entries.push({
-      id: `${owner}/${group}/${unit.root}#${index}`,
+      id: `${owner}/${group}|${unit.key}`,
       owner,
       group,
       label: unit.probe,
@@ -952,7 +974,7 @@ export async function buildScene({ design, units, variants, classCss }) {
     const cls = stage.class ?? variantClass(variant.name, variant.arbitrary);
     const compiled = design.candidatesToCss([cls])[0];
     entries.push({
-      id: `${owner}/${group}/variant/${variant.name}`,
+      id: `${owner}/${group}|variant|${variant.name}`,
       owner,
       group,
       label: cls,
@@ -1044,7 +1066,7 @@ export async function buildScene({ design, units, variants, classCss }) {
           label: entry.label,
           owner: entry.owner,
           group: entry.group,
-          glyphs: drawsGlyphs(tree[0].children[cellIndex]),
+          glyphs: probeDrawsGlyphs(tree[0].children[cellIndex], entry),
           drive: entry.drive,
           exempt: entry.exempt,
           probe: probeId(tree[0].children[cellIndex], entry),
@@ -1070,6 +1092,22 @@ export async function buildScene({ design, units, variants, classCss }) {
 }
 
 const drawsGlyphs = (node) => node.text !== undefined || node.children.some((child) => drawsGlyphs(child));
+
+/**
+ * Does the *probe* draw glyphs? The cell's label always does, so asking the cell would put every
+ * cell on the 0.98 bar and the 0.99 bar would never apply to anything.
+ */
+function probeDrawsGlyphs(cellNode, entry) {
+  const stack = [cellNode];
+  while (stack.length > 0) {
+    const node = stack.shift();
+    if (node.text !== undefined) continue;
+    const classes = String(node.attrs.class ?? "");
+    if (classes.startsWith("probe") || classes.includes(` ${entry.class}`)) return drawsGlyphs(node);
+    stack.push(...node.children);
+  }
+  return false;
+}
 
 const tailwindVersion = () =>
   JSON.parse(readFileSync(join(example, "node_modules", "tailwindcss", "package.json"), "utf8")).version;
@@ -1214,6 +1252,10 @@ async function chromiumPanel(browser, base, panel, { strip = false, drive = [] }
 function cratePanel(panel, dir, { drive = [] } = {}) {
   rmSync(dir, { force: true, recursive: true });
   mkdirSync(join(dir, "ui"), { recursive: true });
+  // The same fonts and images the browser page gets, staged flat into `ui/`: without this the
+  // engine resolves no `@font-face` and falls back to a system face, so the two subjects would be
+  // measured with different text.
+  stageAssets(dir);
   const tree = panel.tree;
   const fixture = { name: panel.id, size: [panel.width, panel.height], css: panel.css, tree };
   writeFileSync(join(dir, "batch.json"), JSON.stringify(ops(fixture, number(tree), "")));
@@ -1262,33 +1304,89 @@ function crop(png, box) {
   return out;
 }
 
-/** Compare one panel per cell: geometry on the cell's elements, pixels on the cell's crop. */
-function comparePanel(panel, web, native) {
+/**
+ * The region a cell is measured over: the probe's own box plus a margin for what escapes it (a
+ * ring, an outline, a shadow), clamped inside the cell.
+ *
+ * The cell's whole 320x240 crop cannot see a dropped declaration: the probe is about 6 % of it, and
+ * a missing 40-level colour change still scores SSIM 0.987 there. The probe's own box is where the
+ * unit lands.
+ */
+const PROBE_PAD = 20;
+
+function measureRegion(cellBox, probeBox) {
+  if (probeBox === undefined) return cellBox;
+  const left = Math.max(cellBox.x, probeBox.x - PROBE_PAD);
+  const top = Math.max(cellBox.y, probeBox.y - PROBE_PAD);
+  const right = Math.min(cellBox.x + cellBox.w, probeBox.x + probeBox.w + PROBE_PAD);
+  const bottom = Math.min(cellBox.y + cellBox.h, probeBox.y + probeBox.h + PROBE_PAD);
+  return { x: left, y: top, w: Math.max(1, right - left), h: Math.max(1, bottom - top) };
+}
+
+/** The SSIM of one cell's measured region between the two subjects. */
+function cellScore(cell, web, native) {
+  const cellBox = web.boxes.find((candidate) => candidate.n === cell.first);
+  if (cellBox === undefined) return undefined;
+  const probeBox = web.boxes.find((candidate) => candidate.n === cell.probe);
+  const region = measureRegion(cellBox, probeBox);
+  const west = crop(web.png, region);
+  const east = crop(native.png, region);
+  return { cellBox, region, score: ssim(luminance(west), luminance(east), west.width, west.height) };
+}
+
+/**
+ * Compare one panel per cell: geometry on the cell's elements, pixels on the probe's region.
+ *
+ * A cell that names an exemption is not evidence — the variant never fires on either subject — so
+ * it is counted separately and never as a pass. A cell whose unit class changes nothing (the vacuity
+ * arm) is a scene defect and fails, because a cell that proves nothing must not lift the score.
+ */
+function comparePanel(panel, web, native, vacuous) {
   return panel.cells.map((cell) => {
+    if (cell.exempt !== undefined) {
+      return { ...cell, exempt: true, pass: false, why: `exempt: ${cell.exempt.why} (${cell.exempt.owner})` };
+    }
     if (native.refused !== undefined) {
       return { ...cell, pass: false, why: `the engine refused this stage: ${native.refused}` };
     }
-    const box = web.boxes.find((candidate) => candidate.n === cell.first);
-    if (box === undefined) return { ...cell, pass: false, why: "no cell box in Chromium" };
+    const measured = cellScore(cell, web, native);
+    if (measured === undefined) return { ...cell, pass: false, why: "no cell box in Chromium" };
     const elements = web.boxes.filter((candidate) => candidate.n >= cell.first && candidate.n <= cell.last);
     const misses = edgeMisses(elements, native.rects, EDGE_PX);
-    const west = crop(web.png, box);
-    const nativ = crop(native.png, box);
-    const score = ssim(luminance(west), luminance(nativ), west.width, west.height);
     const min = cell.glyphs ? SSIM_MIN_GLYPHS : SSIM_MIN;
+    if (vacuous.has(cell.unit)) {
+      return { ...cell, ...measured, edgeMisses: misses, ssim: Number(measured.score.toFixed(4)), ssimMin: min, pass: false, why: "vacuous: the unit class changes nothing" };
+    }
     return {
       unit: cell.unit,
       class: cell.class,
       label: cell.label,
       owner: cell.owner,
       group: cell.group,
-      box,
+      box: cell.box ?? measured.cellBox,
+      region: measured.region,
       edgeMisses: misses,
-      ssim: Number(score.toFixed(4)),
+      ssim: Number(measured.score.toFixed(4)),
       ssimMin: min,
-      pass: misses.length === 0 && score >= min,
+      pass: misses.length === 0 && measured.score >= min,
     };
   });
+}
+
+/** Cells whose measured region is identical with and without the unit class. */
+function vacuityOf(panel, withClass, stripped) {
+  const vacuous = new Set();
+  for (const cell of panel.cells) {
+    if (cell.exempt !== undefined) continue;
+    const cellBox = withClass.boxes.find((candidate) => candidate.n === cell.first);
+    if (cellBox === undefined) continue;
+    const probeBox = withClass.boxes.find((candidate) => candidate.n === cell.probe);
+    const region = measureRegion(cellBox, probeBox);
+    const a = crop(withClass.png, region);
+    const b = crop(stripped.png, region);
+    if (ssim(luminance(a), luminance(b), a.width, a.height) === 1) vacuous.add(cell.unit);
+  }
+  return vacuous;
 }
 
 /** Steps for a cell's driver, with the probe's centre as the pointer position. */
@@ -1361,6 +1459,13 @@ const selected = (panel) =>
   (wants.family === undefined || panel.owner === wants.family) &&
   (wants.group === undefined || panel.group === wants.group);
 
+if (flag("host")) {
+  // Advertising a subject that is not implemented is the failure this check exists to prevent: a
+  // run that silently scores the crate while claiming the host is worse than no run.
+  console.error("TN_PARITY_HOST_UNSUPPORTED: --host has no host subject yet; the crate subject is the only one");
+  process.exit(1);
+}
+
 const derived = await deriveUnits();
 const scene = await buildScene(derived);
 const cells = scene.panels.flatMap((panel) => panel.cells);
@@ -1397,7 +1502,7 @@ if (flag("check")) {
     site = await serveWeb();
     browser = await chromium.launch({ args: CHROMIUM_ARGS });
     try {
-      const vacuous = [];
+      const vacuousCells = [];
       for (const panel of scene.panels.filter(selected)) {
         if (panel.cells.every((cell) => cell.exempt !== undefined)) continue;
         // The driver's coordinates come from the same measurement the meter hands the engine.
@@ -1405,23 +1510,14 @@ if (flag("check")) {
         const drive = panel.cells.map((cell) => driverFor(cell, probeBoxes));
         const withClass = await webPanel(panel, { drive });
         const without = await webPanel(panel, { drive, strip: true });
-        for (const cell of panel.cells) {
-          if (cell.exempt !== undefined) continue;
-          const box = withClass.boxes.find((candidate) => candidate.n === cell.first);
-          if (box === undefined) {
-            vacuous.push({ cell, why: "no box" });
-            continue;
-          }
-          const a = crop(withClass.png, box);
-          const b = crop(without.png, box);
-          const score = ssim(luminance(a), luminance(b), a.width, a.height);
-          if (score === 1) vacuous.push({ cell, why: "the unit class changes nothing" });
+        for (const unit of vacuityOf(panel, withClass, without)) {
+          vacuousCells.push(panel.cells.find((cell) => cell.unit === unit));
         }
       }
-      if (vacuous.length > 0) {
-        problems.push(`${vacuous.length} vacuous cells (their unit class changes nothing in Chromium)`);
-        for (const { cell, why } of vacuous.slice(0, 60)) problems.push(`    ${cell.class}  ${why}`);
-        if (vacuous.length > 60) problems.push(`    ... and ${vacuous.length - 60} more`);
+      if (vacuousCells.length > 0) {
+        problems.push(`${vacuousCells.length} vacuous cells (their unit class changes nothing in Chromium)`);
+        for (const cell of vacuousCells.slice(0, 60)) problems.push(`    ${cell.class}`);
+        if (vacuousCells.length > 60) problems.push(`    ... and ${vacuousCells.length - 60} more`);
       }
     } finally {
       await browser.close();
@@ -1494,11 +1590,17 @@ try {
     }
     writeFileSync(join(dir, "web", "frame.png"), PNG.sync.write(web.png));
     if (native.refused === undefined) writeFileSync(join(dir, "native", "frame.png"), PNG.sync.write(native.png));
-    const measured = comparePanel(panel, web, native);
+    // The vacuity arm, in the meter's own run: a cell whose unit class changes nothing is a scene
+    // defect, so it fails here rather than counting as a pass the ratchet would then protect.
+    const stripped = await webPanel(panel, { drive, strip: true });
+    const vacuous = vacuityOf(panel, web, stripped);
+    const measured = comparePanel(panel, web, native, vacuous);
     report.push(...measured);
     if (wants.sheet === undefined) {
+      const scored = measured.filter((cell) => cell.exempt !== true);
       console.log(
-        `${panel.owner}/${panel.group} ${panel.id}: ${measured.filter((c) => c.pass).length}/${measured.length}`,
+        `${panel.owner}/${panel.group} ${panel.id}: ${scored.filter((c) => c.pass).length}/${scored.length}` +
+          (vacuous.size > 0 ? ` (${vacuous.size} vacuous)` : ""),
       );
     }
   }
@@ -1507,10 +1609,16 @@ try {
   await site.close();
 }
 
-const passed = report.filter((cell) => cell.pass).length;
-const percent = report.length === 0 ? 0 : Math.round((passed / report.length) * 1000) / 10;
+const scored = report.filter((cell) => cell.exempt !== true);
+const passed = scored.filter((cell) => cell.pass).length;
+const vacuousCount = report.filter((cell) => (cell.why ?? "").startsWith("vacuous")).length;
+const exemptCount = report.length - scored.length;
+const percent = scored.length === 0 ? 0 : Math.round((passed / scored.length) * 1000) / 10;
 writeFileSync(join(outRoot, "report.json"), `${JSON.stringify(report, null, 2)}\n`);
-console.log(`tailwind-parity: ${passed}/${report.length} (${percent} %)`);
+// The score is evidence only: an exempt cell is not counted at all, and a vacuous one fails.
+console.log(
+  `tailwind-parity: ${passed}/${scored.length} (${percent} %)  [${vacuousCount} vacuous, ${exemptCount} exempt, ${report.length} cells]`,
+);
 
 if (wants.sheet !== undefined) {
   const outDir = join(homedir(), "Downloads", "tailwind-parity", wants.sheet);
