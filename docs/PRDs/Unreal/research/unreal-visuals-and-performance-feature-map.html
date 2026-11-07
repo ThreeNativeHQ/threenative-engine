@@ -76,6 +76,22 @@ button { font: inherit; color: inherit; }
 .prd .t small { display: block; color: var(--muted); font-size: 12px; }
 .prd .m { font-family: var(--mono); font-size: 11px; color: var(--muted); text-align: right; white-space: nowrap; }
 .prd.closed .t { opacity: .6; }
+.chain { padding: 10px; overflow-x: auto; }
+.chain svg { display: block; }
+.chain .n { cursor: pointer; transition: opacity .15s; }
+.chain .n rect.box { fill: var(--panel); stroke: var(--line); stroke-width: 1.2; }
+.chain .n.done rect.box { fill: color-mix(in srgb, var(--shipped) 14%, var(--panel)); stroke: var(--shipped); }
+.chain .n.ready rect.box { stroke: var(--accent); stroke-width: 2.5; }
+.chain .n.sel rect.box { fill: var(--hi); stroke: var(--fg); stroke-width: 2.5; }
+.chain .n text { fill: var(--fg); font-size: 11.5px; font-family: var(--display); }
+.chain .n text.id { font-family: var(--mono); font-size: 11px; font-weight: 600; }
+.chain .n text.ct { fill: var(--muted); font-family: var(--mono); font-size: 10.5px; }
+.chain .n.blocked text { fill: var(--muted); }
+.chain .e { fill: none; stroke: var(--muted); stroke-width: 1.2; opacity: .45; transition: opacity .15s; }
+.chain .e.ready { stroke: var(--accent); opacity: .8; }
+.chain.focus .n:not(.on) { opacity: .18; }
+.chain.focus .e:not(.on) { opacity: .06; }
+.chain.focus .e.on { opacity: 1; stroke: var(--fg); stroke-width: 1.8; }
 .prd .rk { display: block; font-family: var(--mono); font-size: 11px; color: var(--muted); font-weight: 500; }
 .badges { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
 .bdg { display: inline-flex; align-items: center; gap: 4px; font-family: var(--mono); font-size: 11px; line-height: 1; padding: 3px 6px; border-radius: 4px;
@@ -233,6 +249,13 @@ tr:last-child td { border-bottom: 0; }
       <div class="panel matrix"><svg id="matrix" viewBox="0 0 520 440" role="img" aria-label="Open PRDs plotted by complexity and impact"></svg></div>
       <div class="panel waves" id="waves"></div>
     </div>
+  </section>
+
+  <section>
+    <div class="section-head"><div><h2>Dependency chain</h2>
+      <div class="note">Every PRD that waits on another, read left to right: a PRD sits one column right of the deepest PRD it waits on. <span class="pill"><span class="dot" style="background:var(--accent)"></span>ready: everything it waits on is done</span> <span class="pill"><span class="dot s-shipped"></span>done</span> <span class="pill"><span class="dot s-notfiled"></span>blocked</span> The left stripe is the wave. Select a PRD to light its whole chain, up and down.</div>
+      <p class="note" id="chain-ready" style="margin:6px 0 0"></p></div></div>
+    <div class="panel chain"><svg id="chain" role="group" aria-label="PRD dependency chain"></svg></div>
   </section>
 
   <section id="detail-sec">
@@ -732,7 +755,7 @@ let selSys = "lumen", selPrd = null;
 function select(sys, prd, scroll) {
   if (sys) selSys = sys;
   selPrd = prd;
-  renderMatrix(); renderWaves(); renderRail(); renderDetail();
+  renderMatrix(); renderWaves(); renderChain(); renderRail(); renderDetail();
   if (scroll) document.getElementById("detail-sec").scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
 }
 
@@ -825,6 +848,63 @@ document.getElementById("waves").addEventListener("click", onPick);
 const mx = document.getElementById("matrix");
 mx.addEventListener("click", onPick);
 mx.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onPick(e); } });
+
+// ---------- dependency chain: edges come from each PORT row's "waits on"; a waited-on id outside PORT still gets a node
+const chainIds = s => s === "—" ? [] : s.split(/[,\s]+/).map(w => w.replace(/^PRD-/, "")).filter(Boolean);
+const CHAIN = (() => {
+  const deps = new Map();
+  for (const p of PORT) for (const d of chainIds(p.waits)) deps.set(p.id, [...(deps.get(p.id) || []), d]);
+  const ids = new Set([...deps.keys(), ...[...deps.values()].flat()]);
+  const info = id => { const p = PORT.find(q => q.id === id), r = PRDS[id];
+    const done = r ? r.f === "done" || (r.n > 0 && r.d >= r.n) : !!p && p.done >= p.total;
+    return { id, p, title: p?.title ?? r?.t ?? "Not in the port order", done, d: r ? (r.f === "done" ? r.n : r.d) : p?.done ?? 0, n: r?.n ?? p?.total ?? 0, wave: p?.wave }; };
+  const nodes = new Map([...ids].map(id => [id, info(id)]));
+  const depth = new Map(), seen = new Set();
+  const dep = id => { if (depth.has(id)) return depth.get(id); if (seen.has(id)) throw new Error(`dependency cycle at PRD-${id}`); seen.add(id);
+    const v = Math.max(-1, ...(deps.get(id) || []).map(dep)) + 1; depth.set(id, v); return v; };
+  for (const id of ids) { const n = nodes.get(id); n.depth = dep(id); n.deps = deps.get(id) || [];
+    n.state = n.done ? "done" : n.deps.every(d => nodes.get(d).done) ? "ready" : "blocked"; }
+  const up = new Map([...ids].map(id => [id, []]));
+  for (const [id, ds] of deps) for (const d of ds) up.get(d).push(id);
+  return { nodes, up };
+})();
+const reach = (id, next) => { const out = new Set([id]), st = [id]; while (st.length) for (const n of next(st.pop())) if (!out.has(n)) { out.add(n); st.push(n); } return out; };
+function renderChain() {
+  const { nodes, up } = CHAIN, W = 158, H = 44, GX = 30, GY = 8, P = 6;
+  const cols = d3.groups([...nodes.values()], n => n.depth).sort((a, b) => a[0] - b[0]).map(c => c[1]);
+  const pos = new Map();
+  cols.forEach((col, ci) => {
+    // order each column by the mean row of what it waits on, so edges cross less; then by wave and id
+    const key = n => n.deps.length ? d3.mean(n.deps, d => pos.get(d)?.row ?? 0) : (n.wave ?? 9) * 100;
+    col.sort((a, b) => key(a) - key(b) || (a.wave ?? 9) - (b.wave ?? 9) || a.id.localeCompare(b.id));
+    col.forEach((n, row) => pos.set(n.id, { row, x: P + ci * (W + GX), y: P + row * (H + GY) }));
+  });
+  const width = P * 2 + cols.length * (W + GX) - GX, height = P * 2 + d3.max(cols, c => c.length) * (H + GY) - GY;
+  const on = selPrd && nodes.has(selPrd) ? new Set([...reach(selPrd, id => nodes.get(id).deps), ...reach(selPrd, id => up.get(id))]) : null;
+  let s = "";
+  for (const n of nodes.values()) for (const d of n.deps) {
+    const a = pos.get(d), b = pos.get(n.id), x1 = a.x + W, y1 = a.y + H / 2, x2 = b.x, y2 = b.y + H / 2, mx = (x1 + x2) / 2;
+    s += `<path class="e${n.state === "ready" ? " ready" : ""}${on && on.has(d) && on.has(n.id) ? " on" : ""}" d="M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}"/>`;
+  }
+  for (const n of nodes.values()) {
+    const { x, y } = pos.get(n.id), t = n.title.length > 24 ? n.title.slice(0, 23) + "…" : n.title;
+    const why = n.state === "done" ? "done" : n.state === "ready" ? "ready to start" : `blocked by ${n.deps.filter(d => !nodes.get(d).done).map(d => "PRD-" + d).join(", ")}`;
+    s += `<g class="n ${n.state}${on?.has(n.id) ? " on" : ""}${selPrd === n.id ? " sel" : ""}" transform="translate(${x} ${y})"${n.p ? ` data-id="${n.id}" tabindex="0" role="button"` : ""} aria-label="PRD-${n.id} ${esc(n.title)}, ${why}">
+      <title>PRD-${n.id}: ${esc(n.title)} (${n.d}/${n.n} boxes, ${why}${n.p ? `, wave ${n.wave}, rank ${n.p.rank ?? "–"}` : ""})</title>
+      <rect class="box" width="${W}" height="${H}" rx="7"/><rect width="5" height="${H - 10}" x="3" y="5" rx="2" fill="${n.wave ? `var(--w${n.wave})` : "var(--notfiled)"}"/>
+      <text class="id" x="14" y="17">PRD-${n.id}${n.state === "done" ? " ✓" : ""}</text><text class="ct" x="${W - 8}" y="17" text-anchor="end">${n.d}/${n.n}</text>
+      <text x="14" y="34">${esc(t)}</text></g>`;
+  }
+  const svg = document.getElementById("chain");
+  svg.setAttribute("viewBox", `0 0 ${width} ${height}`); svg.setAttribute("width", width); svg.setAttribute("height", height);
+  svg.innerHTML = s;
+  svg.parentElement.classList.toggle("focus", !!on);
+  const ready = [...nodes.values()].filter(n => n.state === "ready" && n.p).sort((a, b) => (a.p.rank ?? 1e9) - (b.p.rank ?? 1e9));
+  document.getElementById("chain-ready").innerHTML = `<b>Ready now, by rank:</b> ${ready.map(n => `PRD-${n.id} <span class="mono">#${n.p.rank}</span>`).join(" · ") || "none"}`;
+}
+const chainSvg = document.getElementById("chain");
+chainSvg.addEventListener("click", onPick);
+chainSvg.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onPick(e); } });
 
 // ---------- coverage explorer
 const GH = "https://github.com/ThreeNativeHQ/threenative-engine/blob/";
