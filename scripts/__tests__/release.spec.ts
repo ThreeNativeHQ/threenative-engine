@@ -478,7 +478,9 @@ describe("pnpm release cohort guards", () => {
       // pnpm in a folder named "pack @threenative/core" and failed every pack.
       expect(typeof call.options).toBe("object");
       expect(call.options).toMatchObject({ code: "TN_RELEASE_STEP_FAILED" });
-      expect((call.options as { cwd: string }).cwd).toMatch(/threenative-engine(\/|\.worktrees)/u);
+      expect((call.options as { cwd: string }).cwd).toBe(
+        path.resolve(import.meta.dirname, "../.."),
+      );
     }
   });
 

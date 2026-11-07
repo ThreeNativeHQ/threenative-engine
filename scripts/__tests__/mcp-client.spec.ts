@@ -90,11 +90,12 @@ describe("the MCP client", () => {
   });
 
   it("should refuse a request when the server closes its input", async () => {
-    // A server that stops reading leaves the next write facing a closed pipe. The server says on
-    // stderr when fd 0 is gone, so the write below lands *after* the close and the kernel answers
-    // EPIPE; without a listener on stdin that is an uncaught stream error and takes the script down.
+    // A server that stops reading leaves the next write facing a closed pipe. The server is ESM, so
+    // it imports `closeSync` — a `require` here would be a swallowed ReferenceError and fd 0 would
+    // stay open, which is exactly how a weaker version of this spec used to pass either way.
     const script = server([
-      "try { require('node:fs').closeSync(0); } catch {}",
+      'import { closeSync } from "node:fs";',
+      "closeSync(0);",
       "process.stderr.write('input closed\\n');",
       "setInterval(() => {}, 1_000);",
     ]);
@@ -104,11 +105,7 @@ describe("the MCP client", () => {
       expect(client.stderr()).toContain("input closed");
       const error = await client.request("tools/list").catch((caught: unknown) => caught);
       expect(error).toBeInstanceOf(McpError);
-      // Measured: under vitest's worker the closed read end does not surface as EPIPE, so the
-      // request's own deadline wins; outside it, the same construction answers
-      // `TN_MCP_EXITED: … closed its input: write EPIPE` (probed by hand). Either way the client
-      // must refuse rather than hang, which is what this asserts.
-      expect((error as Error).message).toMatch(/TN_MCP_(EXITED|TIMEOUT): closing server/u);
+      expect((error as Error).message).toMatch(/TN_MCP_EXITED: closing server closed its input/u);
     } finally {
       client.close();
     }
