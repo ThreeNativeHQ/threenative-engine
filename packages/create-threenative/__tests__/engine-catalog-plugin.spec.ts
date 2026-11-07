@@ -6,6 +6,7 @@
  */
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
+import { createServer as createNetServer } from "node:net";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
@@ -75,6 +76,16 @@ async function game(engine?: "threejs" | "threenative"): Promise<string> {
       `export default { engine: ${JSON.stringify(engine)} };\n`,
     );
   return root;
+}
+
+/** A port this shard is not using, for the one case that drives a real dev server. */
+async function freePort(): Promise<number> {
+  const probe = createNetServer();
+  await new Promise<void>((resolve) => probe.listen(0, "127.0.0.1", resolve));
+  const address = probe.address();
+  await new Promise<void>((resolve) => probe.close(() => resolve()));
+  if (address === null || typeof address === "string") throw new Error("the probe bound no port");
+  return address.port;
 }
 
 interface IFailure {
@@ -212,12 +223,17 @@ describe("createEngineCatalogPlugin", () => {
     const root = await game();
     const main = path.join(root, "src/main.ts");
     await writeFile(main, "export const ready = true;\n");
+    const port = await freePort();
     const server = await createServer({
       root,
       logLevel: "silent",
       configFile: false,
       plugins: [createEngineCatalogPlugin()],
-      server: { port: 0, strictPort: false, ws: false },
+      // `port: 0` is Vite's "unset", not "any port": it fell back to the default 5173, so this
+      // server raced every other Vite server in the shard on one shared port — a run talked to a
+      // sibling's server and got 200, the next found nothing there and got ECONNREFUSED. A port
+      // nothing else is using, on IPv4 loopback, is the only address the request below assumes.
+      server: { host: "127.0.0.1", port, strictPort: true, ws: false },
     });
     const overlay: { message?: string; loc?: { line: number; column: number } }[] = [];
     const hot = server.environments.client.hot;
@@ -228,7 +244,7 @@ describe("createEngineCatalogPlugin", () => {
     }) as typeof hot.send;
     try {
       await server.listen();
-      const url = `${server.resolvedUrls?.local[0] ?? ""}src/main.ts`;
+      const url = `http://127.0.0.1:${port}/src/main.ts`;
       expect((await fetch(url)).status).toBe(200);
       await writeFile(
         main,
