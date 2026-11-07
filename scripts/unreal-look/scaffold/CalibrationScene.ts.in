@@ -369,10 +369,15 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
                       (sky.data[1] ?? 0) * sky.scale[1],
                       (sky.data[2] ?? 0) * sky.scale[2],
                     ),
-                // ?giDensity=<probes per metre> and ?giRays=<rays per side>: the field's grid and ray count.
+                // ?giDensity=<probes per metre> and ?giRays=<rays per side>: the field's grid and ray count. The rays default
+                // to Unreal's 32 per side (UE 5.8.3: Engine/Source/Runtime/Renderer/Private/Lumen/LumenScreenProbeGather.cpp:641,
+                // GRadianceCacheProbeResolution): at 8 a lone ray onto the lamp shade's underside lit one probe 6x its neighbours.
                 Number(params.get("giDensity") ?? 1),
-                params.get("giRays") === null ? undefined : Number(params.get("giRays")),
-                Number(params.get("giBias") ?? 0),
+                Number(params.get("giRays") ?? 32),
+                // ?giBias=<share of a probe spacing>: Unreal's screen probe traces the near field itself and reads the cache
+                // only past ProbeTMin + cell * sqrt(3) (LumenRadianceCacheInterpolation.ush:190); this gather traces screen
+                // space only, so it reads the field half a spacing off the surface, away from the probes inside a solid.
+                Number(params.get("giBias") ?? 0.5),
               )
             : undefined;
         if (field !== undefined) (window as unknown as { __tnGiField: unknown }).__tnGiField = field;

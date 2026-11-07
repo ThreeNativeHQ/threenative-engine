@@ -26,7 +26,7 @@ export function tracedGiField(
   density = 1,
   /** Rays per probe along one side: `probeResolution` squared rays (the cache's default is 8, 64 rays). */
   probeResolution?: number,
-  /** Diagnosis: read the field this share of a probe spacing off the surface, along its normal. */
+  /** Read the field this share of a probe spacing off the surface, along its normal (the near field this gather cannot trace). */
   normalBias = 0,
 ): IGiTracedField {
   // A glass pane is not a surface the probes see (the cache's own rule): only opaque meshes are packed.
