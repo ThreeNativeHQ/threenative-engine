@@ -9,8 +9,6 @@ import {
   type NodeFrame,
   NodeMaterial,
   NodeUpdateType,
-  QuadMesh,
-  type Renderer,
   RendererUtils,
 } from "three/webgpu";
 import {
@@ -35,6 +33,7 @@ import {
   reduceExposure,
 } from "./exposure-graph.js";
 import { ExposureReadback } from "./exposure-readback.js";
+import { drawQuadPass } from "./quad-pass.js";
 
 /** Scene-referred exposure changes light, never coverage/compositing alpha. */
 export function applyExposure(colour: Node<"vec4">, exposure: Node<"float">): Node<"vec4"> {
@@ -61,8 +60,6 @@ export class AutoExposureNode extends Node<"float"> {
   readonly #seed = uniform(0);
   readonly #enabled = uniform(false);
   readonly #bias = uniform(0);
-  // PRD-828: one quad per pass, so a frame assigns no material (each assignment is an engine crossing).
-  readonly #quads = new Map<NodeMaterial, QuadMesh>();
   readonly #meterMaterial = new NodeMaterial();
   readonly #reduceMaterial = new NodeMaterial();
   readonly #tilesMaterial = new NodeMaterial();
@@ -213,17 +210,17 @@ export class AutoExposureNode extends Node<"float"> {
           this.#reduced.value = previous.texture;
           this.#reduceSize.value.set(previous.width, previous.height);
         }
-        this.#draw(renderer, i === 0 ? this.#meterMaterial : this.#reduceMaterial, level);
+        drawQuadPass(renderer, i === 0 ? this.#meterMaterial : this.#reduceMaterial, level);
       }
       const final = this.#levels.at(-1);
       if (final === undefined) throw new Error("Exposure reduction is empty.");
       this.#blocks.value = final.texture;
       this.#blockSize.value.set(final.width, final.height);
-      this.#draw(renderer, this.#tilesMaterial, this.#tilesTarget);
-      this.#draw(renderer, this.#histogramMaterial, this.#histogramTarget);
+      drawQuadPass(renderer, this.#tilesMaterial, this.#tilesTarget);
+      drawQuadPass(renderer, this.#histogramMaterial, this.#histogramTarget);
       const write = this.#writeTarget;
       this.#previous.value = this.#readTarget.texture;
-      this.#draw(renderer, this.#adaptMaterial, write);
+      drawQuadPass(renderer, this.#adaptMaterial, write);
       this.#result.value = write.texture;
       this.#writeTarget = this.#readTarget;
       this.#readTarget = write;
@@ -232,16 +229,6 @@ export class AutoExposureNode extends Node<"float"> {
     } finally {
       RendererUtils.restoreRendererState(renderer, this.#rendererState);
     }
-  }
-
-  #draw(renderer: Renderer, material: NodeMaterial, target: RenderTarget): void {
-    let quad = this.#quads.get(material);
-    if (quad === undefined) {
-      quad = new QuadMesh(material);
-      this.#quads.set(material, quad);
-    }
-    renderer.setRenderTarget(target);
-    quad.render(renderer);
   }
 
   override dispose(): void {
