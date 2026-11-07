@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { discoverKitManifests } from "../src/index.js";
-import { kitPlumbingDelta, tsconfigText } from "../src/plumbing.js";
+import { kitPlumbingDelta, kitViteDelta, tsconfigText, viteConfigText } from "../src/plumbing.js";
 
 const TEMPLATES = path.resolve(import.meta.dirname, "../templates");
 
@@ -16,6 +16,34 @@ describe("generated build plumbing", () => {
       return readFileSync(file, "utf8") !== tsconfigText(kitPlumbingDelta(name, TEMPLATES));
     });
     expect(stale.map(({ name }) => name)).toEqual([]);
+  });
+
+  it("should hold every kit's vite config to the one source", () => {
+    const stale = discoverKitManifests(TEMPLATES).filter(({ name }) => {
+      const file = path.join(TEMPLATES, name, "vite.config.ts");
+      return readFileSync(file, "utf8") !== viteConfigText(kitViteDelta(name, TEMPLATES));
+    });
+    expect(stale.map(({ name }) => name)).toEqual([]);
+  });
+
+  it("should derive each Vite delta from the kit itself", () => {
+    // React and Tailwind by dependency, the second entry by `main.html`: no list to update.
+    expect(kitViteDelta("minimal", TEMPLATES)).toMatchObject({
+      react: false,
+      tailwind: false,
+      workerEntry: false,
+    });
+    expect(kitViteDelta("starter", TEMPLATES)).toMatchObject({
+      react: true,
+      tailwind: true,
+      workerEntry: true,
+    });
+    expect(viteConfigText({ react: false, tailwind: false, workerEntry: false })).not.toContain(
+      "tailwindcss()",
+    );
+    expect(viteConfigText({ react: true, tailwind: true, workerEntry: true })).toContain(
+      'build: { rollupOptions: { input: { index: "index.html", main: "main.html" } } },',
+    );
   });
 
   it("should derive the React delta from the kit's own manifest", () => {

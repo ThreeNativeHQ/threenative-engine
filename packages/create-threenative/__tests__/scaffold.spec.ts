@@ -145,7 +145,7 @@ const SCAFFOLD_TREE_HASHES: Readonly<Record<string, IScaffoldTreePin>> = {
   },
   rain: {
     shared: "8992369754fbf3ae91fc4eb25a0a5f747fabd378c599a904d9e5ad28cf08006f",
-    kit: "dc0d69d5894815629954130d3aa5c804901f6bcf394fd0942576aee46bd74d28",
+    kit: "af86dc28c43c28e11eb7be58cac0504f62aeb2ee8ee085bbef852362937b3706",
   },
   rts: {
     shared: "9a70169ea61815f89d039f7f68efed675f2d3e784676d28d0764535e1b5730e2",
@@ -157,7 +157,7 @@ const SCAFFOLD_TREE_HASHES: Readonly<Record<string, IScaffoldTreePin>> = {
   },
   sailing: {
     shared: "340f2baff9217e437f472729827319320d908c1598869bb96023c1d262d132e4",
-    kit: "5a7822641b0288c81ae877c08a616679c4ab7965a40635bf008100a0adee4401",
+    kit: "d8851aae9b35fb01a0644b99e34dca0dbcde01cedc206401f6c212dd373080e5",
   },
   shooter: {
     shared: "3647846e2f52d39ac7447b7d03b12dcfd1f8a1effdd6f74fc05175706500703a",
@@ -165,7 +165,7 @@ const SCAFFOLD_TREE_HASHES: Readonly<Record<string, IScaffoldTreePin>> = {
   },
   snow: {
     shared: "2846cb5f6e4fa1c350a36a91c4b85233e9c28ba5434a9038a55b0b1399337228",
-    kit: "a8f985dea5b93ff6355c921ec8ad73045eab5ef0ff9bdb8a359abc2817a6cad9",
+    kit: "2ea9cadeb6f272be58f2dc6fafb0518899bc44e0ca9c4eda55cf41369cc67777",
   },
   starter: {
     shared: "e6d4c8926c4f65e1d94c51b5ac8e60ef249d34209a5c7b58112d4108674a971b",

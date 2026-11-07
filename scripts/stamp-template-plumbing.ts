@@ -12,7 +12,12 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { kitPlumbingDelta, tsconfigText } from "../packages/create-threenative/src/plumbing.js";
+import {
+  kitPlumbingDelta,
+  kitViteDelta,
+  tsconfigText,
+  viteConfigText,
+} from "../packages/create-threenative/src/plumbing.js";
 import { templateNames } from "./lib/repo-inventory.mjs";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -20,10 +25,16 @@ const TEMPLATES = path.join(REPO, "packages", "create-threenative", "templates")
 
 /** Every plumbing file this stamp owns, with the text a kit should hold. */
 export function plumbingFiles(): readonly { readonly file: string; readonly text: string }[] {
-  return templateNames().map((kit) => ({
-    file: path.join(TEMPLATES, kit, "tsconfig.json"),
-    text: tsconfigText(kitPlumbingDelta(kit, TEMPLATES)),
-  }));
+  return templateNames().flatMap((kit) => [
+    {
+      file: path.join(TEMPLATES, kit, "tsconfig.json"),
+      text: tsconfigText(kitPlumbingDelta(kit, TEMPLATES)),
+    },
+    {
+      file: path.join(TEMPLATES, kit, "vite.config.ts"),
+      text: viteConfigText(kitViteDelta(kit, TEMPLATES)),
+    },
+  ]);
 }
 
 function main(argv: readonly string[]): number {
