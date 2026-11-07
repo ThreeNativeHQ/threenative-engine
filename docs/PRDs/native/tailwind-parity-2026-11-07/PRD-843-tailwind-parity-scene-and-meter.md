@@ -31,21 +31,12 @@ inventory and the meter and judge contract.
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local]: the scene has a non-vacuous cell for each unit, and each unit has one owner PRD.
-  proof: `pnpm --filter threenative-native-css-hud parity:tailwind --check` — Evidence: 507 units
-  (419 utility, 88 variant), 0 unowned, 0 duplicated, 0 uncompilable probes, scene fresh. NOT met: the
-  discrimination guard is red on 312 cells (see `## Open`), and 31 variant cells name a pending exemption
-  owned by PRD-847/848/849/851 (four more are permanently inactive by the batch's own decisions).
-- [ ] AC-2 [local]: the meter prints a baseline score from the crate subject and from the host subject, and `--ratchet` fails below the committed floor.
-  proof: `parity:tailwind` and `parity:tailwind --host` — Evidence: the crate subject prints
-  `tailwind-parity: 118/503 (23.5 %)  [312 do not discriminate, 31 exempt, 4 permanently inactive, 15 refused]`, and
-  `--floor` wrote the ratchet baseline. NOT met: `--host` exits `TN_PARITY_HOST_UNSUPPORTED` — there is
-  no host subject, and a flag that silently scored the crate instead would be worse than none.
-- [ ] AC-3 [local]: the starter kit builds for `ui.renderer: "native-css"` with zero findings.
-  proof: `threenative build --target desktop` on a scaffolded starter with `ui.renderer: "native-css"`, then an empty
-  `.threenative/build/native-css-compat.json` — Evidence: NOT run. The source-scan fix is in all 14 Tailwind
-  kits and a Tailwind oxide scan shows the starter's incidental `.blur`, `.filter` and `.table` rules gone,
-  but the scaffolded build itself was not executed.
+- [ ] AC-1 [local]: the scene has a discriminating cell for each unit, and each unit has one owner PRD. proof: `pnpm --filter threenative-native-css-hud parity:tailwind --check`
+  Evidence: 507 units (419 utility, 88 variant), 0 unowned, 0 duplicated, 0 uncompilable probes, scene fresh. NOT met: the discrimination guard is red on 312 cells (see `## Open`), and 31 variant cells name a pending exemption owned by PRD-847/848/849/851 (four more are permanently inactive by the batch's own decisions).
+- [ ] AC-2 [local]: the meter prints a baseline score from the crate subject and from the host subject, and `--ratchet` fails below the committed floor. proof: `parity:tailwind` and `parity:tailwind --host`
+  Evidence: the crate subject prints `tailwind-parity: 118/503 (23.5 %)  [312 do not discriminate, 31 exempt, 4 permanently inactive, 15 refused]`, and `--floor` wrote the 118-unit ratchet baseline. NOT met: `--host` exits `TN_PARITY_HOST_UNSUPPORTED` — there is no host subject, and a flag that silently scored the crate instead would be worse than none.
+- [ ] AC-3 [local]: the starter kit builds for `ui.renderer: "native-css"` with zero findings. proof: `threenative build --target desktop` on a scaffolded starter with `ui.renderer: "native-css"`, then an empty `.threenative/build/native-css-compat.json`
+  Evidence: NOT run. The source-scan fix is in all 14 Tailwind kits and a Tailwind oxide scan shows the starter's incidental `.blur`, `.filter` and `.table` rules gone, but the scaffolded build itself was not executed.
 
 ## Integration Ledger
 
@@ -60,10 +51,10 @@ inventory and the meter and judge contract.
 **Status:** PARTIAL
 **Files:** `examples/native-css-hud/corpus/tailwind-parity.mjs` (generator plus `--check`), `src/ui/TailwindParity.tsx`, `src/ui/tailwind-parity.scene.json` (generated, committed), `package.json` (`parity:tailwind` script).
 
-- [x] The generator reports one unit per (root, emitted property set, at-rule) plus one per variant, each with an owner PRD.
+- [x] The generator reports one unit per (root, emitted property set, at-rule) plus one per variant, each with an owner PRD. proof: `parity:tailwind --check`
   proof: `parity:tailwind --check` prints `507 units (419 utility, 88 variant), 0 unowned` — Evidence: measured, with a descriptor block (`@property`) contributing no properties and `root` being the class name's first
   segment (see Decisions).
-- [ ] The vacuity guard fails a cell whose class changes nothing in Chromium, and every unit has a cell that changes.
+- [ ] The discrimination guard fails a cell that cannot tell a correct engine from one that dropped the declaration, and every unit has a cell that can. proof: `parity:tailwind --check`
   proof: `parity:tailwind --check` — Evidence: the guard works — it caught a scene with 439 vacuous cells and the
   staging fixes brought it to 312 — but it is still red; `## Open` names what is left.
 
@@ -75,22 +66,18 @@ generator tags; `--family PRD-845 --group mask` narrows both. A *panel* carries 
 descriptor (`dark`, `touch`, reduced motion, viewport) and both subjects apply it — Playwright's
 context options in Chromium, `env.json` in the engine. There is no `--env <input|all>` CLI switch.
 
-- [x] The crate subject prints the score and writes `report.json` by family. The baseline goes in the batch README.
-  proof: `parity:tailwind` — Evidence: `tailwind-parity: 118/503 (23.5 %)  [312 do not discriminate, 31 exempt, 4 permanently inactive, 15 refused]`, and `## Meter status` in the batch README. The score counts
-  evidence only: a pending exemption counts as a failure, a non-discriminating cell fails, and the four
-  permanently inactive units leave the denominator.
+- [x] The crate subject prints the score and writes `report.json` by family, and the baseline goes in the batch README. proof: `parity:tailwind`
+  Evidence: `tailwind-parity: 118/503 (23.5 %)  [312 do not discriminate, 31 exempt, 4 permanently inactive, 15 refused]`, and `## Meter status` in the batch README. The score counts evidence only: a pending exemption counts as a failure, a non-discriminating cell fails, and the four permanently inactive units leave the denominator.
 - [ ] The host subject runs the same panels on the CSS-enabled desktop host and prints its own N. proof: `parity:tailwind --host` (needs `TN_ENABLE_CSS_UI=1 TN_ENABLE_UI_OVERLAY=0 pnpm native:build`)
-- [x] `--sheet <PRD-id>` writes WEB|NATIVE contact sheets with burned-in labels to `~/Downloads/tailwind-parity/<PRD-id>/`.
-  proof: `parity:tailwind --sheet PRD-845` — Evidence: 7 sheets, one row per unit with the class burned in at 32 px.
-  The two-capture rule is a byte-equality assertion inside the same run rather than a second sheet.
+- [x] `--sheet <PRD-id>` writes WEB|NATIVE contact sheets with burned-in labels to `~/Downloads/tailwind-parity/<PRD-id>/`. proof: `parity:tailwind --sheet PRD-845`
+  Evidence: 7 sheets, one row per unit with the class burned in at 32 px. The two-capture rule is a byte-equality assertion inside the same run rather than a second sheet.
 
 #### Phase 3: Starter unblock
 **Status:** PARTIAL
 **Files:** `packages/create-threenative/templates/*/src/style.css` (14 kits, one line each).
 
-- [x] Kit stylesheets exclude `src/render/` from the Tailwind source scan.
-  proof: AC-3 — Evidence: `@source not "./render";` in all 14 Tailwind kits; a Tailwind oxide scan of the starter
-  shows `.blur`, `.filter` and `.table` gone from its emitted sheet. The scaffolded build has not been run.
+- [x] Kit stylesheets exclude `src/render/` from the Tailwind source scan. proof: the oxide scan below
+  Evidence: `@source not "./render";` in all 14 Tailwind kits; a Tailwind oxide scan of the starter shows `.blur`, `.filter` and `.table` gone from its emitted sheet. The scaffolded build has not been run (AC-3).
 
 ## Open
 
