@@ -575,13 +575,16 @@ async function judgeE5(match, frame, log, shots) {
   const moved = differingFraction(first, last);
   // run.cpp averages the game's JS update and the whole frame over each 100 presented frames.
   const windows = [...log.matchAll(/TN_PLAYER_FRAMES \d+ js_ms=([\d.]+) frame_ms=([\d.]+)(?: kernel_frame_ms=([\d.]+))?/g)];
-  const timing = windows.at(-1);
+  // The first window has no start time and prints 0: the last window with a real measurement counts.
+  const timing = windows.filter(w => Number(w[2]) > 0).at(-1);
   const fps = timing && Number(timing[3] ?? timing[2]) > 0 ? 1000 / Number(timing[3] ?? timing[2]) : 0;
   const detail = ` frames=${frames} clear=${clear.join(',')} moved=${(moved * 100).toFixed(2)}%${timing ? ` js_ms=${timing[1]} frame_ms=${timing[2]} kernel_frame_ms=${timing[3] ?? '?'} fps=${fps.toFixed(1)}` : ''}`;
   // steady_clock drives the game's dt: it must agree with libkernel's wall clock in every measured
   // window, or the game runs at the wrong speed (musl's CLOCK_MONOTONIC once read CPU time).
   const skewed = windows.filter(w => w[3] !== undefined && Number(w[3]) > 0 && Number(w[2]) > 0)
     .find(w => Math.abs(Number(w[2]) / Number(w[3]) - 1) > E5_CLOCK_SKEW_MAX);
+  if (!timing)
+    return { ok: false, reason: `no measured 100-frame window: ${windows.length} TN_PLAYER_FRAMES line(s), none with frame_ms > 0 (did the guest stdout reach the log?)`, info: detail };
   if (skewed)
     return { ok: false, reason: `steady_clock frame_ms=${skewed[2]} disagrees with libkernel's kernel_frame_ms=${skewed[3]} by more than ${E5_CLOCK_SKEW_MAX * 100}%: the guest clock is not wall time`, info: detail };
   // A scene with no background clears to black, and judgePresented treats black as "nothing
