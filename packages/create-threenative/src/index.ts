@@ -18,7 +18,13 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { inspectCommand, inspectHelp } from "./inspect.js";
-import { MCP_SERVERS, ensureHostMcpConfigs, serverEntryPath } from "./mcp-servers.js";
+import {
+  CORE_PACKAGE_NAME,
+  CORE_PACKAGE_VERSION,
+  MCP_SERVERS,
+  ensureHostMcpConfigs,
+  serverEntryPath,
+} from "./mcp-servers.js";
 
 export { createEngineCatalogPlugin } from "./engine-catalog.js";
 export { createEngineFreshnessPlugin, hashEngineDist } from "./engine-freshness.js";
@@ -826,9 +832,23 @@ function writeHostMcpConfigs(target: string): void {
   }
 }
 
+/** Fails closed on a host config that names a shim the installed core does not ship (PRD-829):
+ * the agent would start none of its servers and report nothing. Only a project that has installed
+ * its packages is judged; a scaffold writes the configs before `pnpm install` runs. */
+function assertMcpShims(target: string): void {
+  if (!existsSync(path.join(target, "node_modules"))) return;
+  for (const [name, entry] of Object.entries(REQUIRED_MCP_SERVERS)) {
+    if (existsSync(path.resolve(target, entry))) continue;
+    throw new Error(
+      `MCP server '${name}' launches '${entry}', which this project does not have. Run 'pnpm install', or install one release of both: ${ENGINE_PAIR_UPGRADE}`,
+    );
+  }
+}
+
 /** Fails closed: a project whose MCP config is missing, incomplete, or points at a package it
  * does not install would silently hand the user's agent none of its authoring tools. */
 async function assertMcpConfig(target: string): Promise<void> {
+  assertMcpShims(target);
   const configPath = path.join(target, ".mcp.json");
   const raw = await readFile(configPath, "utf8").catch(() => {
     throw new Error(`Scaffold produced no .mcp.json at '${configPath}'.`);
@@ -1022,6 +1042,38 @@ async function authoringContext(game: string, root: string) {
 const NO_KIT =
   'no stamp, kit.json or kit router title names a kit; write {"kit": "<kit>"} to .threenative/agent-files.json';
 
+/** The one command that moves create-threenative and the engine packages to one release. */
+const ENGINE_PAIR_UPGRADE = "pnpm up create-threenative @threenative/*";
+
+async function installedCoreVersion(game: string): Promise<string | undefined> {
+  const manifest = await readFile(
+    path.join(game, "node_modules", CORE_PACKAGE_NAME, "package.json"),
+    "utf8",
+  ).catch(() => undefined);
+  if (manifest === undefined) return undefined;
+  try {
+    const version = (JSON.parse(manifest) as { version?: unknown }).version;
+    return typeof version === "string" ? version : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Fails closed before `--fix` writes anything when the installed core is not the release this
+ * create-threenative is built against (PRD-829). The layer it writes names core's MCP shims, and
+ * the page boots the engine `@threenative/runtime-native` ships, so a mixed pair hands the game an
+ * authoring layer whose servers do not start and a page that throws `TN_ABI_6` at boot.
+ */
+async function assertEnginePair(game: string): Promise<void> {
+  const installed = await installedCoreVersion(game);
+  if (installed === CORE_PACKAGE_VERSION) return;
+  const got = installed === undefined ? "no installed core" : `${CORE_PACKAGE_NAME}@${installed}`;
+  throw new Error(
+    `TN_AUTHORING_LAYER_PAIR: this create-threenative pairs with ${CORE_PACKAGE_NAME}@${CORE_PACKAGE_VERSION}, and this game installs ${got}. Run '${ENGINE_PAIR_UPGRADE}' first, then 'pnpm exec threenative doctor --fix'.`,
+  );
+}
+
 /** How far the game's authoring layer is from what the installed create-threenative renders. */
 export async function authoringLayerStatus(
   game: string,
@@ -1052,6 +1104,9 @@ export async function fixAuthoringLayer(
   options: { readonly force: boolean },
   root = templateRoot(),
 ): Promise<IAuthoringLayerFix> {
+  // Before any write: a layer rendered for another release is a layer that does not run.
+  await assertEnginePair(game);
+  assertMcpShims(game);
   const { kit, stamp } = await authoringContext(game, root);
   if (kit === undefined) throw new Error(`TN_AUTHORING_LAYER_KIT: ${NO_KIT}.`);
   const stamped = stamp?.files ?? {};

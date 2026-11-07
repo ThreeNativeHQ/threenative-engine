@@ -4,15 +4,22 @@
  * unless `--force`, and a file the package no longer ships is deleted only when unedited.
  */
 import { createHash } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { authoringLayerStatus, createProject, fixAuthoringLayer } from "../src/index.js";
+import { MCP_SERVERS, serverEntryPath } from "../src/mcp-servers.js";
 
 const STAMP = ".threenative/agent-files.json";
 const OLD = "0.2.15";
+/** The core release this create-threenative pairs with, from core's own manifest. */
+const CORE = (
+  JSON.parse(readFileSync(new URL("../../core/package.json", import.meta.url), "utf8")) as {
+    version: string;
+  }
+).version;
 
 interface IStamp {
   createThreenative: string;
@@ -27,10 +34,33 @@ afterEach(async () => {
 
 const sha256 = (bytes: Buffer | string): string => createHash("sha256").update(bytes).digest("hex");
 
+/**
+ * The installed package `--fix` writes for: core's manifest at the paired release and every MCP shim
+ * it launches. A game without it cannot be paired with, and `--fix` refuses before writing.
+ */
+async function installCore(target: string, version = CORE): Promise<void> {
+  const core = path.join(target, "node_modules", "@threenative", "core");
+  await mkdir(core, { recursive: true });
+  await writeFile(
+    path.join(core, "package.json"),
+    `${JSON.stringify({ name: "@threenative/core", version })}\n`,
+  );
+  for (const server of Object.values(MCP_SERVERS)) {
+    const shim = path.join(target, serverEntryPath(server));
+    await mkdir(path.dirname(shim), { recursive: true });
+    await writeFile(shim, "// core's MCP shim\n");
+  }
+}
+
 async function scaffold(name = "fox"): Promise<string> {
   const root = await makeTempDir("threenative-doctor-fix-");
   roots.push(root);
-  return (await createProject({ install: false, target: name, template: "shooter" }, root)).target;
+  const { target } = await createProject(
+    { install: false, target: name, template: "shooter" },
+    root,
+  );
+  await installCore(target);
+  return target;
 }
 
 async function readStamp(target: string): Promise<IStamp> {
@@ -149,6 +179,41 @@ describe("doctor --fix", () => {
     expect(exitCode).toBe(1);
     expect(out.join("")).toContain("kept AGENTS.md");
     expect(out.join("")).toContain("TN_AUTHORING_LAYER_EDITED");
+  });
+
+  it("refuses a game on another core release, before it writes anything", async () => {
+    const target = await olderGame();
+    await installCore(target, "0.3.11");
+    const agents = await readFile(path.join(target, "AGENTS.md"), "utf8");
+    const stamp = await readFile(path.join(target, STAMP), "utf8");
+    await expect(fixAuthoringLayer(target, { force: true })).rejects.toThrow(
+      /TN_AUTHORING_LAYER_PAIR/u,
+    );
+    await expect(fixAuthoringLayer(target, { force: true })).rejects.toThrow(
+      /pnpm up create-threenative @threenative\/\*/u,
+    );
+    expect(await readFile(path.join(target, "AGENTS.md"), "utf8")).toBe(agents);
+    expect(await readFile(path.join(target, STAMP), "utf8")).toBe(stamp);
+  });
+
+  it("refuses a game with no installed core at all, and names the upgrade", async () => {
+    const target = await olderGame();
+    await rm(path.join(target, "node_modules"), { force: true, recursive: true });
+    await expect(fixAuthoringLayer(target, { force: true })).rejects.toThrow(
+      /TN_AUTHORING_LAYER_PAIR: .*installs no installed core.*pnpm up create-threenative/u,
+    );
+  });
+
+  it("refuses a core that does not ship an MCP shim, before a config names it", async () => {
+    const target = await olderGame();
+    await rm(path.join(target, "node_modules/@threenative/core/mcp/terrain.mjs"));
+    const agents = await readFile(path.join(target, "AGENTS.md"), "utf8");
+    const config = await readFile(path.join(target, ".mcp.json"), "utf8");
+    await expect(fixAuthoringLayer(target, { force: true })).rejects.toThrow(
+      /'threenative-terrain' launches '\.\/node_modules\/@threenative\/core\/mcp\/terrain\.mjs'/u,
+    );
+    expect(await readFile(path.join(target, ".mcp.json"), "utf8")).toBe(config);
+    expect(await readFile(path.join(target, "AGENTS.md"), "utf8")).toBe(agents);
   });
 
   it("refuses --force without --fix", async () => {

@@ -25,6 +25,8 @@ import { resolveRuntimeAssetCapabilities } from "./build.js";
 import { loadConfig } from "./config.js";
 import { type IAuthoringLayerStatus, authoringLayerStatus } from "./index.js";
 import {
+  CORE_PACKAGE_NAME,
+  CORE_PACKAGE_VERSION,
   type IMcpPackage,
   MCP_PACKAGES,
   MCP_SERVERS,
@@ -214,8 +216,6 @@ interface IMcpServerSpec {
  * a development checkout whose bundle has not been built. Doctor probes what the project actually
  * resolves, so it must name core — and core's own version, which `doctor.spec.ts` holds equal to
  * `packages/core/package.json`. */
-const CORE_PACKAGE_NAME = "@threenative/core";
-const CORE_PACKAGE_VERSION = "0.3.12";
 const CORE_RESOLVED_SERVERS: ReadonlySet<string> = new Set([
   "threenative-engine",
   "threenative-animation",
