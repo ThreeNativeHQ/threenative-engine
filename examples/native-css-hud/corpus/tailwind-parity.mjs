@@ -986,14 +986,11 @@ const COMPANIONS = [
   [/^--tw-ordinal|^--tw-slashed-zero|^--tw-numeric/u, "tabular-nums"],
   [/^--tw-text-shadow/u, "text-shadow-sm"],
   [/^--tw-duration|^--tw-ease|^--tw-delay/u, "transition"],
-  [/^--tw-mask/u, "mask-linear"],
 ];
-
 /** The companion classes a unit needs: one per custom-property family it only sets. */
 function companionsFor(unit) {
   const found = [];
   for (const property of unit.props) {
-    if (!property.startsWith("--")) continue;
     for (const [pattern, companion] of COMPANIONS) {
       if (pattern.test(property) && !found.includes(companion)) found.push(companion);
     }

@@ -1,6 +1,6 @@
 # PRD-845 — native-css composites blend modes, masks and clip paths like Chromium
 
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **Priority:** P1 — `mask-*` is 6 265 of Tailwind's classes, two kits ship `clip-path`, and AC-1 to AC-3 are open.
 **Complexity:** 5 (MEDIUM) — 3 to 5 Rust files (+1), vendored paint path (+2), meter run (+2).
 **Owner:** ThreeNative maintainers
@@ -40,20 +40,41 @@ the commit that turns their units green.
 ## Execution Phases
 
 #### Phase 1: Blend modes
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **Files:** `vendor/blitz-paint-0.3.0-beta.2/src/render.rs`, `layers.rs`, `vendor/PATCHES.md`.
 
 - [ ] Both blend properties and `isolation` reach the layer. proof: AC-1
 
 #### Phase 2: Masks and clip paths
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **Files:** `render/mask.rs`, `render/clip_path.rs`, `vendor/PATCHES.md`.
 
 - [ ] Gradient masks compose, and luminance mode paints. proof: AC-2
 - [ ] `inset()` takes its radius. proof: AC-3
 
 #### Phase 3: Profile opens
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **Files:** `packages/create-threenative/src/native-css-compat.ts`, its spec, `docs/guides/native-css-support.md`, `corpus/tailwind-parity.floor.json`.
 
 - [ ] The rows leave the denylist, the guide lists the families, and the floor rises. proof: `pnpm exec vitest run packages/create-threenative/__tests__/native-css-compat.spec.ts` plus `parity:tailwind --ratchet`
+
+## Open
+
+Measured with `pnpm --filter threenative-native-css-hud parity:tailwind --family PRD-845`: **9 of 56 units pass**
+across the three groups, 36 cells do not discriminate.
+
+- **Masks: 9 of 50 pass, 33 do not discriminate.** Two separate things, and the first matters more. The scene
+  reports a smaller number than an earlier run because that run counted *vacuous matches*: both renderers painted
+  an unclipped box, the whole-cell luminance bar saw nothing, and 25 cells read as passes; nine still pass with the honest measure. The measure is now
+  colour-aware and scored over the probe, so it no longer accepts those. Staging is the other half:
+  `mask-linear-0` alone is a one-stop gradient — a solid image that hides nothing — and the stops are other
+  units, so a mask unit needs them as companions. Adding `mask-linear-from-20%`/`to-80%` as companions on both
+  arms made it worse (40 of 50 stopped discriminating) because the mask then hid the probe in both arms; the
+  staging that works is per-unit and is not written yet.
+- **Blend: 0 of 4 pass, 3 do not discriminate.** `mix-blend-hue` scores 0.5069 and fails: `blitz-paint` never reads `mix-blend-mode`, and
+  `layers.rs` hardcodes `Mix::Normal` in `maybe_push_layer`. The fix is to thread the computed blend mode to that
+  call — five call sites — and to give the probe a coloured backdrop for the unit to blend with. `bg-blend-*`
+  needs two background layers on the probe; `isolate`/`isolation-auto` need a blended child to isolate, so those
+  three are staging.
+- **Clip: 0 of 2, and neither is non-discriminating** — both measure a real mismatch. `clip-path` with an
+  `inset()` radius is `render/clip_path.rs`'s upstream TODO.
