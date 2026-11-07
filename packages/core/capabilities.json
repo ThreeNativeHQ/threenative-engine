@@ -1515,15 +1515,17 @@
     },
     {
       "aliases": [],
-      "constraints": ["the key is spelled here and nowhere else"],
-      "example": "import { DEV_GLOBAL_KEY, devGlobal } from \"@threenative/core\";\nconst tools = devGlobal();",
+      "constraints": [
+        "this is the key every dev surface publishes under; the worker's mirror list names it too,"
+      ],
+      "example": "import { DEV_GLOBAL_KEY, devGlobal } from \"@threenative/core\";\nconst tools = devGlobal(globalThis);",
       "importPath": "@threenative/core",
       "kind": "function",
       "overrides": [],
       "package": "@threenative/core",
       "signature": "export function devGlobal(scope: unknown): DevGlobal | undefined { … }",
       "situations": ["read or extend the `__THREENATIVE__` object a dev launch publishes"],
-      "summary": "The one name every dev surface publishes under, and the reader/writer for it.",
+      "summary": "The one name every dev surface publishes under, and the reader/writer for it. because that list is a typed tuple its mirror machinery builds from",
       "supersedes": [],
       "symbol": "devGlobal"
     },
@@ -2718,15 +2720,17 @@
     },
     {
       "aliases": [],
-      "constraints": ["the key is spelled here and nowhere else"],
-      "example": "import { DEV_GLOBAL_KEY, devGlobal } from \"@threenative/core\";\nconst tools = devGlobal();",
+      "constraints": [
+        "this is the key every dev surface publishes under; the worker's mirror list names it too,"
+      ],
+      "example": "import { DEV_GLOBAL_KEY, devGlobal } from \"@threenative/core\";\nconst tools = devGlobal(globalThis);",
       "importPath": "@threenative/core",
       "kind": "function",
       "overrides": [],
       "package": "@threenative/core",
       "signature": "export function publishDevGlobal(name: string, value: unknown, scope: unknown): void { … }",
       "situations": ["read or extend the `__THREENATIVE__` object a dev launch publishes"],
-      "summary": "The one name every dev surface publishes under, and the reader/writer for it.",
+      "summary": "The one name every dev surface publishes under, and the reader/writer for it. because that list is a typed tuple its mirror machinery builds from",
       "supersedes": [],
       "symbol": "publishDevGlobal"
     },

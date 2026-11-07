@@ -1163,18 +1163,18 @@ defineGame({ display: { maxFps: 60 }, scenes: { Play } });
 
 ### `devGlobal`
 
-`function` — The one name every dev surface publishes under, and the reader/writer for it.
+`function` — The one name every dev surface publishes under, and the reader/writer for it. because that list is a typed tuple its mirror machinery builds from
 
 ```ts
 export function devGlobal(scope: unknown): DevGlobal | undefined { … }
 ```
 
 - **Use when:** read or extend the `__THREENATIVE__` object a dev launch publishes
-- **Constraints:** the key is spelled here and nowhere else
+- **Constraints:** this is the key every dev surface publishes under; the worker's mirror list names it too,
 
 ```ts
 import { DEV_GLOBAL_KEY, devGlobal } from "@threenative/core";
-const tools = devGlobal();
+const tools = devGlobal(globalThis);
 ```
 
 ### `directionalTransmittance`
@@ -2078,18 +2078,18 @@ const probes = new ProbeVolume({ bounds, density: 0.5 }); ctx.add(probes); void 
 
 ### `publishDevGlobal`
 
-`function` — The one name every dev surface publishes under, and the reader/writer for it.
+`function` — The one name every dev surface publishes under, and the reader/writer for it. because that list is a typed tuple its mirror machinery builds from
 
 ```ts
 export function publishDevGlobal(name: string, value: unknown, scope: unknown): void { … }
 ```
 
 - **Use when:** read or extend the `__THREENATIVE__` object a dev launch publishes
-- **Constraints:** the key is spelled here and nowhere else
+- **Constraints:** this is the key every dev surface publishes under; the worker's mirror list names it too,
 
 ```ts
 import { DEV_GLOBAL_KEY, devGlobal } from "@threenative/core";
-const tools = devGlobal();
+const tools = devGlobal(globalThis);
 ```
 
 ### `qualityPreset`

@@ -1,7 +1,7 @@
 # PRD-837 — Core owns each shared fact once
 
-**Status:** PARTIAL — Phase 2 and Phase 3 landed, and Phase 1's four boxes are down to one: the near-plane default, whose code is landed and whose visual judge is open.
-**Priority:** P2 — the open boxes delete 6 inline copies of the LOD recipe (which already disagree on the near-plane default), the 3 declarations of `world.json`, and 3 GPU-sample freshness rules.
+**Status:** PARTIAL — Phase 2 and Phase 3 landed, and Phase 1's three boxes are down to one: the near-plane default, whose code is landed and whose visual judge is open.
+**Priority:** P2 — the boxes are landed but for one; what is open is a visual judge on the near-plane value, so the tier rates that verification rather than a copy count.
 **Complexity:** 6 (MEDIUM); risk override: LOD selection and the renderer facts decide what is drawn, so the owner's visual-judge rule applies to Phases 1 and 2
 **Owner:** ThreeNative maintainers
 **Depends on:** None
@@ -35,6 +35,10 @@ Report ids C2, C1, C4, C5, B2, B4, A5. Follows the refactoring batch rule "one o
 - [ ] AC-1 [local]: Strata forest and the abyss example load and draw, and the visual judge returns NEUTRAL or better. proof: `capture-strata-worlds` forest plus the abyss scenario, with the judge verdict on this box
 - [ ] AC-2 [local]: Affected core tests stay green. proof: `pnpm --filter @threenative/core test`
 
+## Decisions
+
+- **The logical asset load is out of this PRD** (2026-11-07). The Context row and the Solution promise "a `loadLogical` exported from the core world subpath, and a report when `WorldCells` is built without `assets`", but no box carries it and no code does it. It is a behaviour change for every game that streams a world without an asset pipeline, so it needs its own red-green pass and its own proof rather than a line in this PRD's Solution. Filed here so it is not lost.
+
 ## Integration Ledger
 
 | Capability | Reachable consumer/trigger | Replaces / disposition | Evidence |
@@ -46,15 +50,15 @@ Report ids C2, C1, C4, C5, B2, B4, A5. Follows the refactoring batch rule "one o
 ## Execution Phases
 
 #### Phase 1: World facts
-**Status:** NOT STARTED
+**Status:** PARTIAL — one box left: the near-plane default awaits its judge
 **Files:** `model-lod.ts`, `instanced-batch-lod.ts`, `world-tiles.ts`, `world-cell-chunks.ts`, `world-package.ts`, `packages/terrain/src/core/world-package.ts`, `packages/assets/src/world/proxy.ts`.
 
 The LOD recipe is two claims, because one of them changes what is drawn and the other does not:
 
-- [x] One `selectLodFor` owns `worldSphere → conservativeViewDepth → bias`, with every current caller reading it. `model-lod.ts` exports it, returning **both** the raw `depth` (a reporter projects an error from it) and the `biased` distance (a level selection compares it), because the six callers each want one of the two and each used to spell the step itself. What each caller does next stays its own — the error chain and hysteresis, the per-placement budget, the two reporting paths, the selector — because those are six different decisions, not one recipe. No behaviour changed: every site keeps its own near plane for now, which is the next box. proof: `rg -n 'conservativeViewDepth\(' packages/core/src` finds only `model-lod.ts`; `npx vitest run packages/core/__tests__` → 4570 passed, 4 skipped.
+- [x] One `selectLodFor` owns `worldSphere → conservativeViewDepth → bias`, with every current caller reading it. `model-lod.ts` exports it, returning **both** the raw `depth` (a reporter projects an error from it) and the `biased` distance (a level selection compares it), because the six callers each want one of the two and each used to spell the step itself. What each caller does next stays its own — the error chain and hysteresis, the per-placement budget, the two reporting paths, the selector — because those are six different decisions, not one recipe. No behaviour changed: every site keeps its own near plane for now, which is the next box. Known gap: no spec pins terrain’s raw-depth choice — the branch matches the base at that site, so nothing moved, but `selectLodFor` returns `biased` beside `depth` and the mistake is easy to repeat. proof: `rg -n 'conservativeViewDepth\(' packages/core/src` finds only `model-lod.ts`; `npx vitest run packages/core/__tests__` → 4570 passed, 4 skipped.
 - [x] Terrain uses core's world package type, and the biome `impostor` value reaches `impostorDistance`. Terrain's `IWorldPackageManifest`, `IWorldPackageAsset` and `IWorldPackageRun` are `import("@threenative/core/world")` type aliases — erased before the bundle, so the "no core import" boundary was never at risk — and the bake refuses a stated distance that is not positive or not beyond every authored LOD gate, naming the species, rather than letting core reject it at load. proof: `npx vitest run packages/terrain/__tests__/impostor-distance.spec.ts` → 4 passed.
 
-- [ ] The near-plane default is one value. **The code is landed**: `LOD_NEAR_PLANE = 0` is exported by `model-lod.ts`, `world-cell-chunks.ts` and `geometry-capture.ts` take it instead of their `?? 0.1`, and `lod-near-plane.spec.ts` pins the value, fails on any caller that reintroduces a private default, and pins the one behaviour change — a sphere ten centimetres ahead is no longer `degenerate`. **The judge is open**: that change moves a level in those two callers for a surface within 10 cm of the camera, which is what the PRD's risk line means by the visual-judge rule, so this box stays unticked until the BEFORE/AFTER capture set (starter, racing, snow, same pose) is judged. proof so far: `npx vitest run packages/core/__tests__` → 4573 passed, 4 skipped; the box closes with the verdict recorded here.
+- [ ] The near-plane default is one value. **The code is landed**: `LOD_NEAR_PLANE = 0` is exported by `model-lod.ts`, `world-cell-chunks.ts` and `geometry-capture.ts` take it instead of their `?? 0.1`, and `lod-near-plane.spec.ts` pins the value, fails on any caller that reintroduces a private default, and pins the one behaviour change — a sphere ten centimetres ahead is no longer `degenerate`. **The judge is open**: the reach is a camera object with **no** `near` — every three.js camera has one (0.1 by default), so the starter, racing and snow poses should judge NEUTRAL by construction — and this box stays unticked until that verdict exists. proof: `npx vitest run packages/core/__tests__` → 4573 passed, 4 skipped; the box closes with the verdict recorded here.
 
 #### Phase 2: Renderer facts
 **Status:** DONE
