@@ -1042,6 +1042,26 @@ export {
   ProbeVolume,
 } from "./render/probe-volume.js";
 /**
+ * A probe field of diffuse irradiance that refreshes by tracing the packed scene, with no scene draw: the
+ * radiance cache of a dynamic global-illumination pass. Probes in view refresh first, oldest first, within
+ * `numProbesToTraceBudget` a frame; a lamp toggled in game code or a sun that steps more than one degree
+ * re-traces them while the old values keep lighting the frame.
+ * @situation light follows a lamp that switches on and off in a room
+ * @situation bounce light that updates when the sun moves, with no baked lightmap
+ * @situation global illumination that refreshes fast enough to read as dynamic
+ * @alias lumen radiance cache
+ * @alias radiance cache
+ * @alias irradiance field
+ * @alias dynamic probe gi
+ * @constraint build a GPUSceneBVH of the static meshes first and pass it as trace.bvh; the cache reads colour and emissive from each material, a texture or a node is counted as ignored
+ * @constraint add the cache with ctx.add() so its refresh is measured in the render phase, and read it with sampleNode(position, normal) from a game-owned material
+ * @constraint a one-sided material is not seen from behind, as a cube capture would not draw it
+ * @override numProbesToTraceBudget (100), probeResolution (32, so 1024 rays a probe), bounds, density, bounces and the sun and sky values are game-owned
+ * @example const bvh = new GPUSceneBVH(ctx.scene); ctx.add(bvh); const cache = new RadianceCache({ bounds, density: 0.5, trace: { bvh, sun, sky, camera: ctx.camera } }); ctx.add(cache);
+ */
+export { RadianceCache } from "./render/radiance-cache.js";
+export type { IRadianceCacheOptions } from "./render/radiance-cache.js";
+/**
  * The Surface Cache: what a traced global-illumination ray reads where it hits a surface. A material atlas
  * (base colour and emissive maps reduced to small tiles) answers the albedo and the glow at the hit UV; a flat
  * material keeps its colour. `SurfaceLights` adds the scene's point and spot lamps at the hit, the brightest eight.

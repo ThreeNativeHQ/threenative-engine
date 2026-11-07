@@ -21,6 +21,7 @@ import {
   ProbeVolume,
   readProbeVolumeObservation,
 } from "../src/render/probe-volume.js";
+import { RadianceCache } from "../src/render/radiance-cache.js";
 import type { IRendererLike } from "../src/renderer.js";
 
 const bounds = new Box3(new Vector3(0, 0, 0), new Vector3(2, 2, 2));
@@ -1076,6 +1077,26 @@ describe("ProbeVolume", () => {
       sun.intensity = 5;
       await settle(subject, renderer, 1);
       expect(subject.observation.status).toBe("baking");
+    });
+
+    it("builds a RadianceCache that always updates by trace", async () => {
+      const cache = new RadianceCache({
+        bounds,
+        density: 1,
+        maxTextureDimension3D: 128,
+        report: () => undefined,
+        trace: {
+          bvh: new GPUSceneBVH(emitterScene()),
+          sky: new Color(0, 0, 0),
+          sun: { color: new Color(1, 1, 1), direction: new Vector3(0, 1, 0), intensity: 0 },
+        },
+      });
+      const { raw, renderer } = traceRenderer([1, 0, 0]);
+      const bake = cache.requestBake(new Scene());
+      await settle(cache, renderer, 4);
+      await bake;
+      expect(cache.observation.update).toBe("trace");
+      expect(raw.render).not.toHaveBeenCalled();
     });
 
     it("keeps the old field readable while a new request refreshes it", async () => {
