@@ -54,9 +54,9 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { chromium } from "@playwright/test";
+import react from "@vitejs/plugin-react";
 import { PNG } from "pngjs";
 import { build } from "vite";
-import react from "@vitejs/plugin-react";
 import {
   CHROMIUM_ARGS,
   EDGE_PX,
@@ -68,8 +68,8 @@ import {
   luminance,
   number,
   ops,
-  stageAssets,
   ssim,
+  stageAssets,
 } from "./shared.mjs";
 
 // -------------------------------------------------------------------------------------------------
@@ -176,7 +176,11 @@ function openBlock(prelude, state) {
   if (!DESCRIPTOR_AT_RULES.has(name)) state.atRules.add(prelude);
   // An at-rule nested inside a style rule (`@container`, the `@supports` Tailwind emits for
   // gradient interpolation) still declares properties of that rule.
-  const kind = DESCRIPTOR_AT_RULES.has(name) ? "descriptor" : state.stack.at(-1) === "rule" ? "rule" : "group";
+  const kind = DESCRIPTOR_AT_RULES.has(name)
+    ? "descriptor"
+    : state.stack.at(-1) === "rule"
+      ? "rule"
+      : "group";
   state.stack.push(kind);
 }
 
@@ -213,7 +217,10 @@ export async function deriveUnits() {
       continue;
     }
     unit.classes.push(name);
-    if (name.length < unit.probe.length || (name.length === unit.probe.length && name < unit.probe)) {
+    if (
+      name.length < unit.probe.length ||
+      (name.length === unit.probe.length && name < unit.probe)
+    ) {
       unit.probe = name;
     }
   }
@@ -245,12 +252,19 @@ const UTILITY_OWNERS = [
   [(u) => u.props.includes("clip-path") || u.probe === "sr-only", P845, "clip"],
   [
     (u) =>
-      u.props.some((p) => p.startsWith("perspective") || p === "transform-style" || p === "backface-visibility") ||
+      u.props.some(
+        (p) =>
+          p.startsWith("perspective") || p === "transform-style" || p === "backface-visibility",
+      ) ||
       /^(perspective|backface|transform-3d\(|rotate-[xyz]-|translate-z-|scale-z-)/u.test(u.probe),
     P846,
     "transform3d",
   ],
-  [(u) => u.props.some((p) => p.startsWith("animation") || p === "transition-behavior"), P847, "motion"],
+  [
+    (u) => u.props.some((p) => p.startsWith("animation") || p === "transition-behavior"),
+    P847,
+    "motion",
+  ],
   [
     (u) =>
       /^(table|inline-table|table-(row|cell|column|caption|row-group|header-group|footer-group|column-group))$/u.test(
@@ -417,7 +431,8 @@ function classifyVariant(name) {
   for (const [test, owner, group] of VARIANT_OWNERS) if (test(name)) return { owner, group };
   if (PSEUDO_VARIANTS.includes(name)) return { owner: P849, group: "pseudo" };
   if (MEDIA_VARIANTS.includes(name)) return { owner: P849, group: "media" };
-  if (/^(max|min|pointer-|any-pointer-|supports)/u.test(name)) return { owner: P849, group: "media" };
+  if (/^(max|min|pointer-|any-pointer-|supports)/u.test(name))
+    return { owner: P849, group: "media" };
   return { owner: P849, group: "selectors" };
 }
 
@@ -449,7 +464,10 @@ const VARIANT_STAGE = {
   peer: {
     class: "peer-checked:bg-red-500",
     peer: true,
-    exempt: { owner: P851, why: "peer-* needs a checked control, and the engine paints no form controls" },
+    exempt: {
+      owner: P851,
+      why: "peer-* needs a checked control, and the engine paints no form controls",
+    },
   },
   "first-letter": { class: "first-letter:text-red-400", text: "Abc" },
   "first-line": { class: "first-line:text-red-400", text: "Abc" },
@@ -457,15 +475,24 @@ const VARIANT_STAGE = {
   selection: {
     class: "selection:bg-yellow-300",
     text: "Abc",
-    exempt: { owner: P851, why: "::selection needs a text selection, and the engine has no selection model" },
+    exempt: {
+      owner: P851,
+      why: "::selection needs a text selection, and the engine has no selection model",
+    },
   },
   backdrop: {
     class: "backdrop:bg-black/50",
-    exempt: { owner: P851, why: "::backdrop needs a top-layer dialog, which the engine does not paint" },
+    exempt: {
+      owner: P851,
+      why: "::backdrop needs a top-layer dialog, which the engine does not paint",
+    },
   },
   "details-content": {
     class: "details-content:text-red-400",
-    exempt: { owner: P851, why: "::details-content needs a <details> element, which the engine does not paint" },
+    exempt: {
+      owner: P851,
+      why: "::details-content needs a <details> element, which the engine does not paint",
+    },
   },
   file: {
     class: "file:text-red-400",
@@ -473,7 +500,10 @@ const VARIANT_STAGE = {
   },
   placeholder: {
     class: "placeholder:text-red-400",
-    exempt: { owner: P851, why: "::placeholder needs a text input, which the engine does not paint" },
+    exempt: {
+      owner: P851,
+      why: "::placeholder needs a text input, which the engine does not paint",
+    },
   },
   before: { class: "before:content-['x']" },
   after: { class: "after:content-['x']" },
@@ -503,7 +533,10 @@ const VARIANT_STAGE = {
   },
   open: {
     class: "open:bg-red-500",
-    exempt: { owner: P851, why: "open: needs <details>/<dialog> open state, which the engine does not paint" },
+    exempt: {
+      owner: P851,
+      why: "open: needs <details>/<dialog> open state, which the engine does not paint",
+    },
   },
   default: {
     class: "default:bg-red-500",
@@ -583,15 +616,24 @@ const VARIANT_STAGE = {
   "motion-reduce": { class: "motion-reduce:bg-red-500", env: { reducedMotion: true } },
   starting: {
     class: "starting:bg-red-500",
-    exempt: { owner: P847, why: "@starting-style needs a transition to sample, which the motion bar drives" },
+    exempt: {
+      owner: P847,
+      why: "@starting-style needs a transition to sample, which the motion bar drives",
+    },
   },
   "contrast-more": {
     class: "contrast-more:bg-red-500",
-    exempt: { owner: P849, why: "the engine's device descriptor has no prefers-contrast input yet" },
+    exempt: {
+      owner: P849,
+      why: "the engine's device descriptor has no prefers-contrast input yet",
+    },
   },
   "contrast-less": {
     class: "contrast-less:bg-red-500",
-    exempt: { owner: P849, why: "the engine's device descriptor has no prefers-contrast input yet" },
+    exempt: {
+      owner: P849,
+      why: "the engine's device descriptor has no prefers-contrast input yet",
+    },
   },
   "forced-colors": {
     class: "forced-colors:bg-red-500",
@@ -613,7 +655,10 @@ const VARIANT_STAGE = {
   min: { class: "min-xl:bg-red-500" },
   "@max": {
     class: "@max-lg:bg-red-500",
-    exempt: { owner: P848, why: "container queries need a sized container ancestor, which the engine's @container support is proven by PRD-848" },
+    exempt: {
+      owner: P848,
+      why: "container queries need a sized container ancestor, which the engine's @container support is proven by PRD-848",
+    },
   },
   "@": {
     class: "@lg:bg-red-500",
@@ -706,12 +751,18 @@ const TEXT_PROPS = new Set([
   "list-style-image",
   "vertical-align",
 ]);
-const PROSE_PROPS = new Set(["-webkit-line-clamp", "-webkit-box-orient", "column-count", "column-width"]);
+const PROSE_PROPS = new Set([
+  "-webkit-line-clamp",
+  "-webkit-box-orient",
+  "column-count",
+  "column-width",
+]);
 
 const LOREM =
   "Lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor incididunt ut labore et dolore magna aliqua ut enim ad minim veniam quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat";
 
-const IDENTITY = /(^|\s)(0|0\.0+|none|auto|normal|visible|initial|inherit|unset|revert|revert-layer|contents)(\s|$)/u;
+const IDENTITY =
+  /(^|\s)(0|0\.0+|none|auto|normal|visible|initial|inherit|unset|revert|revert-layer|contents)(\s|$)/u;
 
 /** A class that would hide or remove the probe: never a contrast source. */
 const HIDING = /display:\s*none|visibility:\s*hidden|opacity:\s*0(?:\.0+)?\s*[;}]|animation:/u;
@@ -772,7 +823,10 @@ const COMPANIONS = [
   [/^--tw-shadow/u, "shadow"],
   [/^--tw-inset-ring/u, "inset-ring"],
   [/^--tw-ring-/u, "ring"],
-  [/^--tw-blur|^--tw-brightness|^--tw-contrast|^--tw-grayscale|^--tw-hue-rotate|^--tw-invert|^--tw-saturate|^--tw-sepia|^--tw-drop-shadow/u, "filter"],
+  [
+    /^--tw-blur|^--tw-brightness|^--tw-contrast|^--tw-grayscale|^--tw-hue-rotate|^--tw-invert|^--tw-saturate|^--tw-sepia|^--tw-drop-shadow/u,
+    "filter",
+  ],
   [/^--tw-backdrop/u, "backdrop-blur"],
   [/^--tw-scale|^--tw-rotate|^--tw-translate|^--tw-skew/u, "transform"],
   [/^--tw-space-/u, "space-x-4"],
@@ -811,8 +865,10 @@ function layoutFor(unit) {
   ) {
     return "table";
   }
-  if (/^(flex|items|justify|self|place|order|basis|grow|shrink|gap|content-)/u.test(unit.probe)) return "row";
-  if (/^(grid-cols|grid-rows|col-|row-|auto-cols|auto-rows|grid-flow)/u.test(unit.probe)) return "grid";
+  if (/^(flex|items|justify|self|place|order|basis|grow|shrink|gap|content-)/u.test(unit.probe))
+    return "row";
+  if (/^(grid-cols|grid-rows|col-|row-|auto-cols|auto-rows|grid-flow)/u.test(unit.probe))
+    return "grid";
   return "plain";
 }
 
@@ -821,12 +877,21 @@ function layoutFor(unit) {
  * one gets a panel to itself, so the refusal is one cell's reported failure instead of eleven
  * innocent neighbours reading as parity gaps.
  */
-const REFUSED_TAGS = new Set(["table", "tbody", "tr", "td", "th", "caption", "textarea", "input", "select", "option"]);
+const REFUSED_TAGS = new Set([
+  "table",
+  "tbody",
+  "tr",
+  "td",
+  "th",
+  "caption",
+  "textarea",
+  "input",
+  "select",
+  "option",
+]);
 
 /** A probe's class list: the marker, the utilities that consume what the unit sets, then the unit. */
-const probeClass = (companions, unit) =>
-  ["probe", ...companions, unit].join(" ");
-
+const probeClass = (companions, unit) => ["probe", ...companions, unit].join(" ");
 
 // -------------------------------------------------------------------------------------------------
 // The scene.
@@ -850,7 +915,11 @@ function probeInner(stage, cell, innerCount) {
 
 /** The list variant's probe is the `<li>`, so the marker it paints is the one being measured. */
 function listStage(count, probe, classes, attrs) {
-  const prepared = el("ul", { class: "stage-list" }, el("li", { class: classes, ...attrs }, ...probe.children));
+  const prepared = el(
+    "ul",
+    { class: "stage-list" },
+    el("li", { class: classes, ...attrs }, ...probe.children),
+  );
   for (let i = 0; i < count - 1; i++) {
     prepared.children.push(el("li", { class: "stage-fill" }, text(`Item ${i + 2}`)));
   }
@@ -860,10 +929,18 @@ function listStage(count, probe, classes, attrs) {
 /** The wrapper a layout needs around the probe. */
 function layoutStage(cell, probe, classes, before, after) {
   const siblings = [...before, probe, ...after];
-  if (cell.layout === "row") return [el("div", { class: "stage-row" }, ...siblings, el("div", { class: "stage-fill" }))];
-  if (cell.layout === "grid") return [el("div", { class: "stage-grid" }, ...siblings, el("div", { class: "stage-fill" }))];
+  if (cell.layout === "row")
+    return [el("div", { class: "stage-row" }, ...siblings, el("div", { class: "stage-fill" }))];
+  if (cell.layout === "grid")
+    return [el("div", { class: "stage-grid" }, ...siblings, el("div", { class: "stage-fill" }))];
   if (cell.layout === "scroll") {
-    return [el("div", { class: "stage-scroll" }, el("div", { class: "stage-scroll-body" }, ...siblings, ...fillers(2)))];
+    return [
+      el(
+        "div",
+        { class: "stage-scroll" },
+        el("div", { class: "stage-scroll-body" }, ...siblings, ...fillers(2)),
+      ),
+    ];
   }
   if (cell.layout === "table") {
     return [
@@ -879,7 +956,8 @@ function layoutStage(cell, probe, classes, before, after) {
       ),
     ];
   }
-  if (cell.layout === "float") return [el("div", { class: "stage-prose" }, ...siblings, text(` ${LOREM}`))];
+  if (cell.layout === "float")
+    return [el("div", { class: "stage-prose" }, ...siblings, text(` ${LOREM}`))];
   if (cell.prose === true) {
     probe.attrs.class = `probe stage-prose ${classes}`;
     return [probe];
@@ -901,7 +979,14 @@ function cellTree(cell) {
   else if (stage.peer === true) {
     children = [el("input", { type: "checkbox", checked: "", class: "stage-fill peer" }), probe];
   } else if (stage.wrap !== undefined) children = [el("div", { class: stage.wrap }, probe)];
-  else children = layoutStage(cell, probe, classes, blanks(stage.before ?? 0), blanks(stage.after ?? 0));
+  else
+    children = layoutStage(
+      cell,
+      probe,
+      classes,
+      blanks(stage.before ?? 0),
+      blanks(stage.after ?? 0),
+    );
 
   return el(
     "div",
@@ -955,7 +1040,8 @@ function probeId(cellNode, cell) {
 }
 
 /** Build the scene: units grouped into (owner, group) panels of 12 cells. */
-export async function buildScene({ design, units, variants, classCss }) {
+/** Every class that declares each property, so a unit with no family member can still find contrast. */
+function propertyIndex(classCss) {
   const byProperty = new Map();
   for (const [name, css] of classCss) {
     for (const property of scan(css).props) {
@@ -964,132 +1050,163 @@ export async function buildScene({ design, units, variants, classCss }) {
       byProperty.set(property, list);
     }
   }
+  return byProperty;
+}
 
-  const entries = [];
-  for (const unit of units) {
-    const { owner, group } = classifyUtility(unit);
-    entries.push({
-      id: `${owner}/${group}|${unit.key}`,
-      owner,
-      group,
-      label: unit.probe,
-      class: unit.probe,
-      contrast: contrastDeclarations(unit, classCss, byProperty),
-      companions: companionsFor(unit),
-      inner: /^(space|divide)$/u.test(unit.root) ? 2 : undefined,
-      layout: layoutFor(unit),
-      needsRefusedTag: layoutFor(unit) === "table" || /^(accent|caret|appearance|field-sizing|resize)/u.test(unit.probe),
-      prose: unit.props.some((p) => PROSE_PROPS.has(p)),
-      unit,
-      own: true,
-    });
-  }
-  for (const variant of variants) {
-    const { owner, group } = classifyVariant(variant.name);
-    const stage = VARIANT_STAGE[variant.name] ?? {};
-    const cls = stage.class ?? variantClass(variant.name, variant.arbitrary);
-    const compiled = design.candidatesToCss([cls])[0];
-    entries.push({
-      id: `${owner}/${group}|variant|${variant.name}`,
-      owner,
-      group,
-      label: cls,
-      class: cls,
-      contrast: { declarations: stage.contrast ?? "background-color:#3f3f46", sources: [] },
-      companions: stage.companions ?? [],
-      layout: "plain",
-      unit: {
-        probe: cls,
-        root: "bg",
-        props: ["background-color"],
-        atRules: [],
-        classes: [cls],
-        key: `variant|${variant.name}`,
-        compiled: compiled ?? "",
-      },
-      drive: stage.drive,
-      env: stage.env,
-      viewport: stage.viewport,
-      exempt: stage.exempt,
-      alone:
-        stage.drive !== undefined ||
-        stage.env !== undefined ||
-        stage.viewport !== undefined ||
-        stage.peer === true ||
-        stage.list !== undefined ||
-        stage.inside !== undefined,
-      own: false,
-    });
-  }
+/** One utility unit's entry in the scene. */
+function utilityEntry(unit, classCss, byProperty) {
+  const { owner, group } = classifyUtility(unit);
+  const layout = layoutFor(unit);
+  return {
+    id: `${owner}/${group}|${unit.key}`,
+    owner,
+    group,
+    label: unit.probe,
+    class: unit.probe,
+    contrast: contrastDeclarations(unit, classCss, byProperty),
+    companions: companionsFor(unit),
+    inner: /^(space|divide)$/u.test(unit.root) ? 2 : undefined,
+    layout,
+    needsRefusedTag:
+      layout === "table" || /^(accent|caret|appearance|field-sizing|resize)/u.test(unit.probe),
+    prose: unit.props.some((p) => PROSE_PROPS.has(p)),
+    unit,
+  };
+}
 
-  // A cell that needs the device to itself gets a panel to itself; the rest batch by family.
+/** One variant unit's entry in the scene, from its staging row. */
+function variantEntry(variant) {
+  const { owner, group } = classifyVariant(variant.name);
+  const stage = VARIANT_STAGE[variant.name] ?? {};
+  const cls = stage.class ?? variantClass(variant.name, variant.arbitrary);
+  return {
+    id: `${owner}/${group}|variant|${variant.name}`,
+    owner,
+    group,
+    label: cls,
+    class: cls,
+    contrast: { declarations: stage.contrast ?? "background-color:#3f3f46", sources: [] },
+    companions: stage.companions ?? [],
+    layout: "plain",
+    unit: {
+      probe: cls,
+      root: "bg",
+      props: ["background-color"],
+      atRules: [],
+      classes: [cls],
+      key: `variant|${variant.name}`,
+    },
+    drive: stage.drive,
+    env: stage.env,
+    viewport: stage.viewport,
+    exempt: stage.exempt,
+    alone:
+      stage.drive !== undefined ||
+      stage.env !== undefined ||
+      stage.viewport !== undefined ||
+      stage.peer === true ||
+      stage.list !== undefined ||
+      stage.inside !== undefined,
+  };
+}
+
+/** A cell that needs the device to itself gets a panel to itself; the rest batch by family. */
+function bucketEntries(entries) {
   const buckets = new Map();
   for (const entry of entries) {
-    const key = entry.alone === true || entry.needsRefusedTag === true ? `alone|${entry.id}` : `${entry.owner}|${entry.group}`;
+    const key =
+      entry.alone === true || entry.needsRefusedTag === true
+        ? `alone|${entry.id}`
+        : `${entry.owner}|${entry.group}`;
     const bucket = buckets.get(key) ?? { owner: entry.owner, group: entry.group, entries: [] };
     bucket.entries.push(entry);
     buckets.set(key, bucket);
   }
+  return [...buckets.values()];
+}
 
+/** The classes a panel's sheet must contain, in the order that makes the unit win. */
+function sheetClasses(slice) {
+  const emitted = [];
+  const seen = new Set();
+  for (const entry of slice) {
+    for (const name of entry.contrast?.sources ?? []) emitted.push(name);
+  }
+  for (const entry of slice) {
+    for (const name of [...(entry.companions ?? []), entry.class]) {
+      if (name === undefined || seen.has(name)) continue;
+      seen.add(name);
+      emitted.push(name);
+    }
+  }
+  return emitted;
+}
+
+/** One panel: its tree, its stylesheet, and the cell keys the meter reads boxes by. */
+async function makePanel(bucket, slice, index) {
+  for (const [cellIndex, entry] of slice.entries()) entry.index = cellIndex;
+  const tree = [el("div", { class: "panel" }, ...slice.map(cellTree))];
+  const contrast = slice
+    .map((entry) => {
+      const declarations = entry.contrast?.declarations ?? "";
+      return declarations === "" ? "" : `:where(.c${entry.index}) .probe{${declarations}}`;
+    })
+    .join("\n");
+  const { count, ranges } = numberPanel(tree);
+  const sheet = await buildSheet(sheetClasses(slice));
+  const viewport = slice.find((entry) => entry.viewport !== undefined)?.viewport;
+  const panel = {
+    index,
+    id: `panel-${String(index).padStart(2, "0")}`,
+    owner: bucket.owner,
+    group: bucket.group,
+    width: viewport?.width ?? PANEL_W,
+    height: viewport?.height ?? PANEL_H,
+    // The furniture and the contrast defaults sit in Tailwind's `base` layer. Tailwind emits its
+    // utilities in `@layer utilities`, and a layered rule loses to an unlayered one whatever the
+    // source order — so an unlayered `.probe{width:120px}` would beat every `w-*` unit in the sheet,
+    // and the scene would be measuring its own furniture instead of Tailwind.
+    css: `${FONT_CSS}@layer base{${PANEL_CSS}${contrast}}${sheet}`,
+    tree,
+    elements: count,
+    env: slice.map((entry) => entry.env).find((value) => value !== undefined),
+    cells: [],
+  };
+  for (const [cellIndex, range] of ranges.entries()) {
+    const entry = slice[cellIndex];
+    panel.cells.push({
+      unit: entry.id,
+      class: entry.class,
+      label: entry.label,
+      owner: entry.owner,
+      group: entry.group,
+      glyphs: probeDrawsGlyphs(tree[0].children[cellIndex], entry),
+      drive: entry.drive,
+      exempt: entry.exempt,
+      probe: probeId(tree[0].children[cellIndex], entry),
+      ...range,
+    });
+  }
+  return panel;
+}
+
+/** Build the scene: units grouped into (owner, group) panels of 12 cells. */
+export async function buildScene({ design, units, variants, classCss }) {
+  const byProperty = propertyIndex(classCss);
+  const entries = [
+    ...units.map((unit) => utilityEntry(unit, classCss, byProperty)),
+    ...variants.map(variantEntry),
+  ];
   const panels = [];
-  for (const bucket of buckets.values()) {
+  for (const bucket of bucketEntries(entries)) {
     for (let offset = 0; offset < bucket.entries.length; offset += CELLS_PER_PANEL) {
-      const slice = bucket.entries.slice(offset, offset + CELLS_PER_PANEL);
-      for (const [index, entry] of slice.entries()) entry.index = index;
-      const tree = [el("div", { class: "panel" }, ...slice.map(cellTree))];
-      const contrast = slice
-        .map((entry) => {
-          const declarations = entry.contrast?.declarations ?? "";
-          return declarations === "" ? "" : `:where(.c${entry.index}) .probe{${declarations}}`;
-        })
-        .join("\n");
-      const { count, ranges } = numberPanel(tree);
-      // The contrast class first, then the unit class, so the unit's rule is the later one.
-      const emitted = [];
-      const seen = new Set();
-      for (const entry of slice) {
-        if (entry.contrast?.sources !== undefined) for (const name of entry.contrast.sources) emitted.push(name);
-      }
-      for (const entry of slice) for (const name of [...(entry.companions ?? []), entry.class]) {
-        if (name === undefined || seen.has(name)) continue;
-        seen.add(name);
-        emitted.push(name);
-      }
-      const sheet = await buildSheet(emitted);
-      const index = panels.length;
-      const panel = {
-        index,
-        id: `panel-${String(index).padStart(2, "0")}`,
-        owner: bucket.owner,
-        group: bucket.group,
-        width: slice.find((entry) => entry.viewport !== undefined)?.viewport.width ?? PANEL_W,
-        height: slice.find((entry) => entry.viewport !== undefined)?.viewport.height ?? PANEL_H,
-        // The furniture and the contrast defaults sit in Tailwind's `base` layer. Tailwind emits its
-        // utilities in `@layer utilities`, and a layered rule loses to an unlayered one whatever the
-        // source order — so an unlayered `.probe{width:120px}` would beat every `w-*` unit in the
-        // sheet, and the scene would be measuring its own furniture instead of Tailwind.
-        css: `${FONT_CSS}@layer base{${PANEL_CSS}${contrast}}${sheet}`,
-        tree,
-        elements: count,
-        env: slice.map((entry) => entry.env).find((v) => v !== undefined),
-        cells: [],
-      };
-      for (const [cellIndex, range] of ranges.entries()) {
-        const entry = slice[cellIndex];
-        panel.cells.push({
-          unit: entry.id,
-          class: entry.class,
-          label: entry.label,
-          owner: entry.owner,
-          group: entry.group,
-          glyphs: probeDrawsGlyphs(tree[0].children[cellIndex], entry),
-          drive: entry.drive,
-          exempt: entry.exempt,
-          probe: probeId(tree[0].children[cellIndex], entry),
-          ...range,
-        });
-      }
-      panels.push(panel);
+      panels.push(
+        await makePanel(
+          bucket,
+          bucket.entries.slice(offset, offset + CELLS_PER_PANEL),
+          panels.length,
+        ),
+      );
     }
   }
   return {
@@ -1098,8 +1215,8 @@ export async function buildScene({ design, units, variants, classCss }) {
     total: entries.length,
     utilityUnits: units.length,
     variantUnits: variants.length,
-    owners: [...new Set(entries.map((e) => e.owner))].sort(),
-    groups: [...new Set(entries.map((e) => `${e.owner}/${e.group}`))].sort(),
+    owners: [...new Set(entries.map((entry) => entry.owner))].sort(),
+    groups: [...new Set(entries.map((entry) => `${entry.owner}/${entry.group}`))].sort(),
     exemptions: entries
       .filter((entry) => entry.exempt !== undefined)
       .map((entry) => ({ unit: entry.id, class: entry.class, ...entry.exempt })),
@@ -1107,7 +1224,8 @@ export async function buildScene({ design, units, variants, classCss }) {
   };
 }
 
-const drawsGlyphs = (node) => node.text !== undefined || node.children.some((child) => drawsGlyphs(child));
+const drawsGlyphs = (node) =>
+  node.text !== undefined || node.children.some((child) => drawsGlyphs(child));
 
 /**
  * Does the *probe* draw glyphs? The cell's label always does, so asking the cell would put every
@@ -1119,14 +1237,16 @@ function probeDrawsGlyphs(cellNode, entry) {
     const node = stack.shift();
     if (node.text !== undefined) continue;
     const classes = String(node.attrs.class ?? "");
-    if (classes.startsWith("probe") || classes.includes(` ${entry.class}`)) return drawsGlyphs(node);
+    if (classes.startsWith("probe") || classes.includes(` ${entry.class}`))
+      return drawsGlyphs(node);
     stack.push(...node.children);
   }
   return false;
 }
 
 const tailwindVersion = () =>
-  JSON.parse(readFileSync(join(example, "node_modules", "tailwindcss", "package.json"), "utf8")).version;
+  JSON.parse(readFileSync(join(example, "node_modules", "tailwindcss", "package.json"), "utf8"))
+    .version;
 
 /** The spelling Tailwind accepts for a variant's probe, or the arbitrary form's fallback. */
 function variantClass(name, arbitrary) {
@@ -1181,7 +1301,9 @@ async function serveWeb() {
     const file = join(dir, path === "/" ? "parity.html" : path);
     try {
       const body = readFileSync(file);
-      response.writeHead(200, { "content-type": MIME[extname(file)] ?? "application/octet-stream" });
+      response.writeHead(200, {
+        "content-type": MIME[extname(file)] ?? "application/octet-stream",
+      });
       response.end(body);
     } catch {
       response.writeHead(404).end("not found");
@@ -1189,7 +1311,11 @@ async function serveWeb() {
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const { port } = server.address();
-  return { dir, base: `http://127.0.0.1:${port}`, close: () => new Promise((r) => server.close(r)) };
+  return {
+    dir,
+    base: `http://127.0.0.1:${port}`,
+    close: () => new Promise((r) => server.close(r)),
+  };
 }
 
 /** One Playwright action for one step of the corpus's input grammar. */
@@ -1283,7 +1409,18 @@ function cratePanel(panel, dir, { drive = [] } = {}) {
   if (drive.length > 0) writeFileSync(join(dir, "drive.json"), JSON.stringify(drive.flat()));
   const run = spawnSync(
     "cargo",
-    ["run", "--release", "--quiet", "--example", "oracle", "--", dir, String(panel.width), String(panel.height), "1"],
+    [
+      "run",
+      "--release",
+      "--quiet",
+      "--example",
+      "oracle",
+      "--",
+      dir,
+      String(panel.width),
+      String(panel.height),
+      "1",
+    ],
     // A panel the engine does not finish in two minutes is a result, not a reason to hang the
     // meter: it is reported against the cell's own stage and the run continues to the next panel.
     { cwd: crate, encoding: "utf8", timeout: 120_000 },
@@ -1294,7 +1431,9 @@ function cratePanel(panel, dir, { drive = [] } = {}) {
   if (run.status !== 0) {
     // A stage the engine refuses to build is a result, not a crash: every cell of this panel is
     // reported against the engine's own words, and the rest of the run still scores.
-    return { refused: (run.stderr || run.stdout).trim().split("\n").slice(-2).join(" ").slice(0, 300) };
+    return {
+      refused: (run.stderr || run.stdout).trim().split("\n").slice(-2).join(" ").slice(0, 300),
+    };
   }
   const rects = JSON.parse(readFileSync(join(dir, "rects.json"), "utf8"));
   const rgba = readFileSync(join(dir, "frame.rgba"));
@@ -1318,7 +1457,8 @@ function crop(png, box) {
     for (let x = 0; x < width; x++) {
       const from = ((top + y) * png.width + (left + x)) * 4;
       const to = (y * width + x) * 4;
-      for (let channel = 0; channel < 4; channel++) out.data[to + channel] = png.data[from + channel] ?? 0;
+      for (let channel = 0; channel < 4; channel++)
+        out.data[to + channel] = png.data[from + channel] ?? 0;
     }
   }
   return out;
@@ -1353,7 +1493,11 @@ function cellScore(cell, web, native) {
   const region = measureRegion(cellBox, probeBox);
   const west = crop(web.png, region);
   const east = crop(native.png, region);
-  return { cellBox, region, score: ssim(luminance(west), luminance(east), west.width, west.height) };
+  return {
+    cellBox,
+    region,
+    score: ssim(luminance(west), luminance(east), west.width, west.height),
+  };
 }
 
 /**
@@ -1383,7 +1527,9 @@ function comparePanel(panel, web, native, vacuous) {
     }
     const measured = cellScore(cell, web, native);
     if (measured === undefined) return { ...cell, pass: false, why: "no cell box in Chromium" };
-    const elements = web.boxes.filter((candidate) => candidate.n >= cell.first && candidate.n <= cell.last);
+    const elements = web.boxes.filter(
+      (candidate) => candidate.n >= cell.first && candidate.n <= cell.last,
+    );
     const misses = edgeMisses(elements, native.rects, EDGE_PX);
     const min = cell.glyphs ? SSIM_MIN_GLYPHS : SSIM_MIN;
     if (vacuous.has(cell.unit)) {
@@ -1442,13 +1588,17 @@ function vacuityOf(panel, withClass, stripped) {
     const moved = withClass.boxes
       .filter((box) => box.n >= cell.first && box.n <= cell.last)
       .some((box) => {
-      const other = stripped.boxes.find((candidate) => candidate.n === box.n);
-      return (
-        other === undefined ||
-        Math.max(Math.abs(box.x - other.x), Math.abs(box.y - other.y), Math.abs(box.w - other.w), Math.abs(box.h - other.h)) >
-          EDGE_PX
-      );
-    });
+        const other = stripped.boxes.find((candidate) => candidate.n === box.n);
+        return (
+          other === undefined ||
+          Math.max(
+            Math.abs(box.x - other.x),
+            Math.abs(box.y - other.y),
+            Math.abs(box.w - other.w),
+            Math.abs(box.h - other.h),
+          ) > EDGE_PX
+        );
+      });
     if (score >= min && !moved) useless.set(cell.unit, Number(score.toFixed(4)));
   }
   return useless;
@@ -1461,7 +1611,9 @@ function driverFor(cell, boxes) {
   if (box === undefined) return [];
   const x = Math.round(box.x + box.w / 2);
   const y = Math.round(box.y + box.h / 2);
-  return cell.drive.map((step) => (step.at === "probe" ? { t: "pointer", type: step.type, x, y } : step));
+  return cell.drive.map((step) =>
+    step.at === "probe" ? { t: "pointer", type: step.type, x, y } : step,
+  );
 }
 
 // -------------------------------------------------------------------------------------------------
@@ -1469,7 +1621,8 @@ function driverFor(cell, boxes) {
 // -------------------------------------------------------------------------------------------------
 
 const slug = (value) => value.replaceAll(/[^a-zA-Z0-9]+/gu, "-").replaceAll(/^-|-$/gu, "");
-const escapeHtml = (value) => value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+const escapeHtml = (value) =>
+  value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 
 async function writeSheet(browser, panel, cells, dir, outDir) {
   mkdirSync(outDir, { recursive: true });
@@ -1477,8 +1630,14 @@ async function writeSheet(browser, panel, cells, dir, outDir) {
     const name = `${panel.id}-${slug(cell.class)}`;
     const webPath = join(outDir, `${name}-web.png`);
     const nativePath = join(outDir, `${name}-native.png`);
-    writeFileSync(webPath, PNG.sync.write(crop(PNG.sync.read(readFileSync(join(dir, "web", "frame.png"))), cell.box)));
-    writeFileSync(nativePath, PNG.sync.write(crop(PNG.sync.read(readFileSync(join(dir, "native", "frame.png"))), cell.box)));
+    writeFileSync(
+      webPath,
+      PNG.sync.write(crop(PNG.sync.read(readFileSync(join(dir, "web", "frame.png"))), cell.box)),
+    );
+    writeFileSync(
+      nativePath,
+      PNG.sync.write(crop(PNG.sync.read(readFileSync(join(dir, "native", "frame.png"))), cell.box)),
+    );
     const verdict = cell.pass
       ? `meter: PASS  (ssim ${cell.ssim} >= ${cell.ssimMin}, 0 edge misses)`
       : `meter: FAIL  (ssim ${cell.ssim} < ${cell.ssimMin}, ${cell.edgeMisses.length} edge misses)`;
@@ -1527,7 +1686,9 @@ const selected = (panel) =>
 if (flag("host")) {
   // Advertising a subject that is not implemented is the failure this check exists to prevent: a
   // run that silently scores the crate while claiming the host is worse than no run.
-  console.error("TN_PARITY_HOST_UNSUPPORTED: --host has no host subject yet; the crate subject is the only one");
+  console.error(
+    "TN_PARITY_HOST_UNSUPPORTED: --host has no host subject yet; the crate subject is the only one",
+  );
   process.exit(1);
 }
 
@@ -1549,13 +1710,16 @@ if (flag("check")) {
   for (const cell of cells) counts.set(cell.unit, (counts.get(cell.unit) ?? 0) + 1);
   const duplicated = [...counts].filter(([, n]) => n > 1);
   if (duplicated.length > 0) problems.push(`${duplicated.length} units have more than one cell`);
-  if (cells.length !== scene.total) problems.push(`scene has ${cells.length} cells for ${scene.total} units`);
+  if (cells.length !== scene.total)
+    problems.push(`scene has ${cells.length} cells for ${scene.total} units`);
 
   // Every probe class must be a class Tailwind emits: a misspelt arbitrary variant would otherwise
   // sit in the scene proving nothing while looking like coverage.
   const uncompilable = cells.filter((cell) => {
     const css = derived.classCss.get(cell.class);
-    return cell.class.includes(":") ? (derived.design.candidatesToCss([cell.class])[0] ?? "") === "" : css === undefined;
+    return cell.class.includes(":")
+      ? (derived.design.candidatesToCss([cell.class])[0] ?? "") === ""
+      : css === undefined;
   });
   if (uncompilable.length > 0) {
     problems.push(`${uncompilable.length} probes Tailwind does not compile:`);
@@ -1581,7 +1745,8 @@ if (flag("check")) {
         problems.push(
           `${vacuousCells.length} cells do not discriminate (dropping the unit class stays at or above the cell's bar)`,
         );
-        for (const [unit, score] of vacuousCells.slice(0, 60)) problems.push(`    ${unit}  counterfactual ${score}`);
+        for (const [unit, score] of vacuousCells.slice(0, 60))
+          problems.push(`    ${unit}  counterfactual ${score}`);
         if (vacuousCells.length > 60) problems.push(`    ... and ${vacuousCells.length - 60} more`);
       }
     } finally {
@@ -1605,7 +1770,9 @@ if (flag("check")) {
 
 if (flag("write")) {
   writeFileSync(sceneFile, `${JSON.stringify(scene, null, 0)}\n`);
-  console.log(`tailwind-parity --write: ${scene.total} units in ${scene.panels.length} panels -> ${sceneFile}`);
+  console.log(
+    `tailwind-parity --write: ${scene.total} units in ${scene.panels.length} panels -> ${sceneFile}`,
+  );
   process.exit(0);
 }
 
@@ -1647,14 +1814,19 @@ try {
       const webAgain = await webPanel(panel, { drive });
       const nativeAgain = cratePanel(panel, join(dir, "native-again"), { drive });
       if (!same(web.png.data, webAgain.png.data)) {
-        throw new Error(`TN_PARITY_NONDETERMINISTIC Chromium painted ${panel.id} twice differently`);
+        throw new Error(
+          `TN_PARITY_NONDETERMINISTIC Chromium painted ${panel.id} twice differently`,
+        );
       }
       if (native.refused === undefined && !same(native.png.data, nativeAgain.png.data)) {
-        throw new Error(`TN_PARITY_NONDETERMINISTIC the engine painted ${panel.id} twice differently`);
+        throw new Error(
+          `TN_PARITY_NONDETERMINISTIC the engine painted ${panel.id} twice differently`,
+        );
       }
     }
     writeFileSync(join(dir, "web", "frame.png"), PNG.sync.write(web.png));
-    if (native.refused === undefined) writeFileSync(join(dir, "native", "frame.png"), PNG.sync.write(native.png));
+    if (native.refused === undefined)
+      writeFileSync(join(dir, "native", "frame.png"), PNG.sync.write(native.png));
     // The vacuity arm, in the meter's own run: a cell whose unit class changes nothing is a scene
     // defect, so it fails here rather than counting as a pass the ratchet would then protect.
     const stripped = await webPanel(panel, { drive, strip: true });
@@ -1663,8 +1835,9 @@ try {
     report.push(...measured);
     if (wants.sheet === undefined) {
       console.log(
-        `${panel.owner}/${panel.group} ${panel.id}: ${measured.filter((c) => c.pass).length}/${measured.length}` +
-          (vacuous.size > 0 ? ` (${vacuous.size} do not discriminate)` : ""),
+        `${panel.owner}/${panel.group} ${panel.id}: ${measured.filter((c) => c.pass).length}/${measured.length}${
+          vacuous.size > 0 ? ` (${vacuous.size} do not discriminate)` : ""
+        }`,
       );
     }
   }
@@ -1677,7 +1850,9 @@ const passed = report.filter((cell) => cell.pass).length;
 const denominator = report.filter((cell) => cell.permanent !== true).length;
 const useless = report.filter((cell) => (cell.why ?? "").startsWith("does not discriminate"));
 const exemptCount = report.filter((cell) => cell.exempt === true).length;
-const refusedCount = report.filter((cell) => (cell.why ?? "").startsWith("the engine refused")).length;
+const refusedCount = report.filter((cell) =>
+  (cell.why ?? "").startsWith("the engine refused"),
+).length;
 const percent = denominator === 0 ? 0 : Math.round((passed / denominator) * 1000) / 10;
 const permanentCount = report.length - denominator;
 writeFileSync(join(outRoot, "report.json"), `${JSON.stringify(report, null, 2)}\n`);
@@ -1692,9 +1867,13 @@ if (wants.sheet !== undefined) {
   const browser2 = await chromium.launch({ args: CHROMIUM_ARGS });
   try {
     for (const panel of panels) {
-      const measured = report.filter((entry) => panel.cells.some((cell) => cell.unit === entry.unit));
+      const measured = report.filter((entry) =>
+        panel.cells.some((cell) => cell.unit === entry.unit),
+      );
       if (measured.length === 0) continue;
-      console.log(`sheet ${await writeSheet(browser2, panel, measured, join(outRoot, panel.id), outDir)}`);
+      console.log(
+        `sheet ${await writeSheet(browser2, panel, measured, join(outRoot, panel.id), outDir)}`,
+      );
     }
   } finally {
     await browser2.close();
@@ -1716,7 +1895,9 @@ if (flag("floor")) {
 }
 
 if (flag("ratchet")) {
-  const floor = existsSync(floorFile) ? JSON.parse(readFileSync(floorFile, "utf8")) : { passed: 0, units: [] };
+  const floor = existsSync(floorFile)
+    ? JSON.parse(readFileSync(floorFile, "utf8"))
+    : { passed: 0, units: [] };
   // A filtered run scores a subset, so comparing it with the global floor is meaningless in both
   // directions: it would always look like a regression.
   if (wants.family !== undefined || wants.group !== undefined) {
