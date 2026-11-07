@@ -459,9 +459,12 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
           this.#dispose?.();
           const world = new WorldEnvironment({
             ...qualityPreset("high"),
-            // The Epic gather is opt-in here: on the sunlit room it smooths the walls but lights the wall under the sill
-            // 30 levels above Unreal (PRD-638 judge round 2026-10-21), so the default stays medium until PRD-640's probes land.
-            ...(params.get("ssgiQuality") === "epic" ? EPIC_SSGI : {}),
+            // A GI calibration model is compared with Unreal's L7-Epic, so it gathers with the Epic tier: at the medium tier the
+            // sun patch, seen by a few rays a pixel, left blotches and streaks in the sunlit room's back-wall glow (PRD-831
+            // judge 2026-11-07: every pose IMPROVEMENT and CLOSE, sun60-window smooth only at Epic). The 2026-10-21 objection
+            // (the wall under the sill 30 levels high) predates the per-ray cache read. ?ssgiQuality=medium is the BEFORE arm;
+            // the template's own reference scene (no model) keeps the medium tier.
+            ...((params.get("ssgiQuality") ?? (params.get("model") === null ? null : "epic")) === "epic" ? EPIC_SSGI : {}),
             // Diagnosis: ?ssgiQuality=<tier>, ?ssgiScale=N, ?ssgiIntensity=N and ?ssgiDenoise=N bracket the gather.
             ...(params.get("ssgiQuality") === null ? {} : { ssgiQuality: params.get("ssgiQuality") as "epic" }),
             ...(params.get("ssgiScale") === null ? {} : { ssgiResolutionScale: Number(params.get("ssgiScale")) }),
