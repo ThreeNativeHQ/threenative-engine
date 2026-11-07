@@ -24,6 +24,7 @@
 
 #include "engine/foundation/math/Euler.h"
 #include "engine/foundation/math/Matrix.h"
+#include "engine/foundation/math/Primitives.h"
 #include "engine/foundation/math/Quaternion.h"
 #include "engine/foundation/math/Vector.h"
 #include "engine/scene/camera.h"
@@ -430,6 +431,24 @@ void registerObject3D(ClassBinding& b) {
         std::vector<Object3D*> rigs;
         for (const Value& ref : refsOf(a.at(3))) rigs.push_back(&objectArg(store, ref));
         return Value::list(projectedCullOf(*as<Object3D>(self)).bandRates(rigs, *camera, flag(a.at(1)), number(a.at(2))));
+    };
+    // Engine-internal (PRD-828): GPUParticles3D's view test in one call. `__boundsInView(camera, localBox, padding)`
+    // updates both world matrices as three's would, carries the local box to world space, pads it (a NaN
+    // padding is half the largest world scale) and answers whether the camera's frustum touches it.
+    b.methods["__boundsInView"] = [](void* self, const Args& a, Store& store) {
+        auto* camera = dynamic_cast<Camera*>(&objectArg(store, a.at(0)));
+        if (camera == nullptr) throw Unsupported{"__boundsInView needs a camera"};
+        Object3D& object = *as<Object3D>(self);
+        if (camera->matrixWorldAutoUpdate) camera->updateMatrixWorld();
+        object.updateWorldMatrix(true, false);
+        Matrix4 viewProjection;
+        viewProjection.multiplyMatrices(camera->projectionMatrix, camera->matrixWorldInverse);
+        Frustum frustum;
+        frustum.setFromProjectionMatrix(viewProjection, camera->coordinateSystem, camera->reversedDepth());
+        const double padding = number(a.at(2));
+        Box3 world = store.ref<Box3>(a.at(1), "Box3");
+        world.applyMatrix4(object.matrixWorld).expandByScalar(std::isnan(padding) ? 0.5 * object.matrixWorld.getMaxScaleOnAxis() : padding);
+        return Value::of(frustum.intersectsBox(world));
     };
     // Engine-internal: core's AutoBatch guard. `__tnGuardWatch(sources)` replaces the watched list with
     // each source's state now; `__tnGuardCheck(limit)` compares up to `limit` sources from where the last

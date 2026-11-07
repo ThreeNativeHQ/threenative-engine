@@ -2340,6 +2340,39 @@ void projected_cull_held_restore() {
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 
+// PRD-828: GPUParticles3D's view test in one call. The emitter's local box, carried by its world matrix and padded,
+// is tested against the camera's frustum as core's JS fallback does (particles.ts process).
+void bounds_in_view() {
+    using namespace tn::engine;
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    const tn_version_info_t version = tn_engine_version();
+    CHECK(tn_context_create(&ctx, &version, &d.value) == TN_OK);
+    auto emitter = std::make_shared<Object3D>();
+    const auto object = tn::abi::shareObject(ctx, "Object3D", emitter);
+    const auto view = tn::abi::shareObject(ctx, "PerspectiveCamera", std::make_shared<PerspectiveCamera>(50, 1, 0.1, 5000));
+    tn_handle_t box{}, lo{}, hi{};
+    const tn_value_t low[3] = {num(-0.001), num(-0.001), num(-0.001)}, high[3] = {num(0.001), num(0.001), num(0.001)};
+    CHECK(tn_construct(ctx, "Vector3", low, 3, &lo, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Vector3", high, 3, &hi, &d.value) == TN_OK);
+    const tn_value_t ends[2] = {ref(lo), ref(hi)};
+    CHECK(tn_construct(ctx, "Box3", ends, 2, &box, &d.value) == TN_OK);
+    const auto inView = [&](double x, double padding) {
+        emitter->position.x = x;
+        emitter->position.z = -5;
+        const tn_value_t args[3] = {ref(view), ref(box), num(padding)};
+        tn_value_t out{};
+        CHECK(tn_invoke(object, "__boundsInView", args, 3, &out, &d.value) == TN_OK);
+        return out.kind == TN_VALUE_BOOL && out.boolean;
+    };
+    CHECK(inView(0, std::nan("")));     // ahead of the camera
+    CHECK(!inView(100, std::nan("")));  // far to the side; the default padding is half a unit
+    CHECK(inView(100, 200));  // a padding wide enough reaches the view
+    emitter->scale.set(400, 400, 400);
+    CHECK(inView(100, std::nan("")));   // the default padding follows the world scale, as three's getMaxScaleOnAxis
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
 // PRD-610 AC-4: the projected-size cull reads a flat list of the tree, built once per hierarchy version, instead
 // of comparing type strings and casting every node every frame (7.7% of a Midway tick). The answer is the same:
 // a hidden subtree is skipped whole, a sub-threshold mesh is hidden for the frame, and an added mesh is seen.
@@ -3425,4 +3458,4 @@ TN_TEST_MAIN({"denoise_over_a_red_field_keeps_one_lane", denoise_over_a_red_fiel
              {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_set_uniforms", tsl_set_uniforms}, {"tsl_matrix_columns", tsl_matrix_columns}, {"tsl_statements", tsl_statements}, {"tsl_loop_nested", tsl_loop_nested}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind}, {"euler_order_field", euler_order_field}, {"object_addresses", object_addresses}, {"geometry_shapes", geometry_shapes}, {"typed_bytes", typed_bytes}, {"array_offset", array_offset}, {"data_texture_bytes", data_texture_bytes}, {"material_events", material_events}, {"attribute_view_writes", attribute_view_writes},
              {"attribute_defer", attribute_defer}, {"material_uuid", material_uuid}, {"material_alpha_hash", material_alpha_hash}, {"matrix_walk_count", matrix_walk_count}, {"geometry_index_null", geometry_index_null}, {"world_space_conversions", world_space_conversions},
              {"projected_cull_list", projected_cull_list}, {"projected_cull_bands", projected_cull_bands},
-             {"projected_cull_held_restore", projected_cull_held_restore})
+             {"bounds_in_view", bounds_in_view}, {"projected_cull_held_restore", projected_cull_held_restore})

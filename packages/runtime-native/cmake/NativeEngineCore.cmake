@@ -490,6 +490,7 @@ tn_native_engine_test(tn-native-engine-abi-test tests/native-engine/abi_test.cpp
     native_engine_abi_world_space_conversions=world_space_conversions
     native_engine_abi_projected_cull_list=projected_cull_list
     native_engine_abi_projected_cull_bands=projected_cull_bands
+    native_engine_abi_bounds_in_view=bounds_in_view
     native_engine_abi_projected_cull_held_restore=projected_cull_held_restore)
 target_link_libraries(tn-native-engine-abi-test PRIVATE tn_engine_abi)
 

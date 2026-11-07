@@ -4,6 +4,7 @@
       "constructor": true,
       "methods": [
         "__bandRigs",
+        "__boundsInView",
         "__cullProjected",
         "__restoreCull",
         "__tnCopyMatrixWorld",
@@ -284,6 +285,7 @@
       "constructor": true,
       "methods": [
         "__bandRigs",
+        "__boundsInView",
         "__cullProjected",
         "__restoreCull",
         "__tnCopyMatrixWorld",
@@ -603,6 +605,7 @@
       "constructor": true,
       "methods": [
         "__bandRigs",
+        "__boundsInView",
         "__cullProjected",
         "__restoreCull",
         "__tnCopyMatrixWorld",
@@ -1035,6 +1038,7 @@
       "constructor": true,
       "methods": [
         "__bandRigs",
+        "__boundsInView",
         "__cullProjected",
         "__restoreCull",
         "__tnCopyMatrixWorld",
@@ -1939,6 +1943,7 @@
       "constructor": true,
       "methods": [
         "__bandRigs",
+        "__boundsInView",
         "__cullProjected",
         "__restoreCull",
         "__tnCopyMatrixWorld",
@@ -2481,6 +2486,7 @@
       "constructor": true,
       "methods": [
         "__bandRigs",
+        "__boundsInView",
         "__cullProjected",
         "__restoreCull",
         "__tnCopyMatrixWorld",
@@ -2650,6 +2656,7 @@
       "constructor": true,
       "methods": [
         "__bandRigs",
+        "__boundsInView",
         "__cullProjected",
         "__restoreCull",
         "__tnCopyMatrixWorld",
@@ -3064,6 +3071,7 @@
       "constructor": true,
       "methods": [
         "__bandRigs",
+        "__boundsInView",
         "__cullProjected",
         "__restoreCull",
         "__tnCopyMatrixWorld",
@@ -3384,6 +3392,7 @@
       "constructor": true,
       "methods": [
         "__bandRigs",
+        "__boundsInView",
         "__cullProjected",
         "__restoreCull",
         "__tnCopyMatrixWorld",
@@ -3666,6 +3675,7 @@
       "constructor": true,
       "methods": [
         "__bandRigs",
+        "__boundsInView",
         "__cullProjected",
         "__restoreCull",
         "__tnCopyMatrixWorld",
@@ -4056,6 +4066,7 @@
       "constructor": true,
       "methods": [
         "__bandRigs",
+        "__boundsInView",
         "__cullProjected",
         "__restoreCull",
         "__tnCopyMatrixWorld",
@@ -4455,6 +4466,7 @@
       "constructor": true,
       "methods": [
         "__bandRigs",
+        "__boundsInView",
         "__cullProjected",
         "__restoreCull",
         "__tnCopyMatrixWorld",
@@ -5996,6 +6008,7 @@
       "constructor": true,
       "methods": [
         "__bandRigs",
+        "__boundsInView",
         "__cullProjected",
         "__restoreCull",
         "__tnCopyMatrixWorld",
@@ -6250,6 +6263,7 @@
       "constructor": true,
       "methods": [
         "__bandRigs",
+        "__boundsInView",
         "__cullProjected",
         "__restoreCull",
         "__tnCopyMatrixWorld",
@@ -6473,6 +6487,7 @@
       "constructor": true,
       "methods": [
         "__bandRigs",
+        "__boundsInView",
         "__cullProjected",
         "__restoreCull",
         "__tnCopyMatrixWorld",
@@ -6792,6 +6807,7 @@
       "constructor": true,
       "methods": [
         "__bandRigs",
+        "__boundsInView",
         "__cullProjected",
         "__restoreCull",
         "__tnCopyMatrixWorld",
@@ -7302,6 +7318,7 @@
       "constructor": true,
       "methods": [
         "__bandRigs",
+        "__boundsInView",
         "__cullProjected",
         "__restoreCull",
         "__tnCopyMatrixWorld",
@@ -7635,6 +7652,7 @@
       "constructor": true,
       "methods": [
         "__bandRigs",
+        "__boundsInView",
         "__cullProjected",
         "__restoreCull",
         "__tnCopyMatrixWorld",
@@ -8081,6 +8099,7 @@
       "constructor": true,
       "methods": [
         "__bandRigs",
+        "__boundsInView",
         "__cullProjected",
         "__restoreCull",
         "__tnCopyMatrixWorld",
@@ -8308,6 +8327,7 @@
       "constructor": true,
       "methods": [
         "__bandRigs",
+        "__boundsInView",
         "__cullProjected",
         "__restoreCull",
         "__tnCopyMatrixWorld",
