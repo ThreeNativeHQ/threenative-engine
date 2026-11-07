@@ -1016,8 +1016,9 @@ describe("ProbeVolume", () => {
       await bake;
       expect(raw.render).not.toHaveBeenCalled();
       expect(raw.setRenderTarget).not.toHaveBeenCalled();
-      // With no GPU timing, a frame traces its start of 16 probes: 27 probes are two traces and two projections.
-      expect(compute).toHaveBeenCalledTimes(4);
+      // With no GPU timing, a frame traces its start of 16 probes: 27 probes are two traces and two projections,
+      // after the empty dispatch of each kernel that builds its pipeline outside a refresh slice.
+      expect(compute).toHaveBeenCalledTimes(6);
       expect(subject.observation).toMatchObject({
         status: "ready",
         update: "trace",
@@ -1044,7 +1045,8 @@ describe("ProbeVolume", () => {
         expect(readProbeVolumeObservation(subject.observation)).toBeDefined();
       }
       expect(traced27).toEqual([10, 10, 7]);
-      expect(compute).toHaveBeenCalledTimes(6);
+      // Three traces and three projections, after the two warm-up dispatches.
+      expect(compute).toHaveBeenCalledTimes(8);
       await settle(subject, renderer, 2);
       expect(resolved).toBe(true);
       expect(subject.observation.bakeProgress.fraction).toBe(1);

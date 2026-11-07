@@ -49,7 +49,7 @@ export function probeCostMode(): ProbeCostMode | undefined {
   return value === "capture" || value === "trace" ? value : undefined;
 }
 
-/** `?probeRays=8` traces 8 x 8 = 64 rays a probe, the PRD's gate spike; the default is the engine's. */
+/** `?probeRays=32` traces 32 x 32 = 1,024 rays a probe; the default is the engine's 8 x 8 = 64, the PRD's gate spike. */
 function probeResolution(): number | undefined {
   const value = Number(new URLSearchParams(globalThis.location?.search ?? "").get("probeRays"));
   return Number.isInteger(value) && value > 0 ? value : undefined;
@@ -165,7 +165,7 @@ export class ProbeCostProbe {
           },
         },
       });
-      this.report.raysPerProbe = (resolution ?? 32) ** 2;
+      this.report.raysPerProbe = (resolution ?? 8) ** 2;
       this.report.workItemsPerProbe = 1;
     } else {
       // The capture's own fail-closed budget would stop the bake at the first slow face; the measurement

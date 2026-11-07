@@ -45,6 +45,11 @@ export interface IProbeVolumeFixtureState extends Record<string, unknown> {
     /** Frames from the lamp switch to a field that every probe refreshed into, -1 until then. */
     lampRefreshFrames: number;
     sampleRedLampOff: number;
+    /** A 10 degree sun sweep (`?sunSweep=1`): frames swept, frames the volume spent refreshing, and their ratio. */
+    sweepFrames: number;
+    sweepRefreshFrames: number;
+    sweepSteps: number;
+    sweepDuty: number;
   };
   volumeEnabled: boolean;
 }
@@ -68,6 +73,10 @@ const initialState: IProbeVolumeFixtureState = {
     lampOn: true,
     lampRefreshFrames: -1,
     sampleRedLampOff: -1,
+    sweepFrames: 0,
+    sweepRefreshFrames: 0,
+    sweepSteps: 0,
+    sweepDuty: 0,
   },
   volumeEnabled: false,
 };
@@ -76,6 +85,14 @@ function updateMode(): "capture" | "trace" {
   return new URLSearchParams(globalThis.location?.search ?? "").get("update") === "trace"
     ? "trace"
     : "capture";
+}
+
+/** `?sunSweep=1` turns the sun 10 degrees over 600 frames once the field is ready, to measure the refresh duty cycle. */
+const SWEEP_FRAMES = 600;
+const SWEEP_DEGREES = 10;
+
+function sunSweeps(): boolean {
+  return new URLSearchParams(globalThis.location?.search ?? "").get("sunSweep") === "1";
 }
 
 function volumeIsEnabled(): boolean {
@@ -126,17 +143,26 @@ class ProbeVolumeFixture extends Scene<IProbeVolumeFixtureState> {
       density: 0.5,
       maxWorkItemsPerFrame: 1,
     };
+    const sweeping = sunSweeps();
+    const sun = {
+      color: new Color(1, 1, 1),
+      direction: new Vector3(0, 1, 0),
+      intensity: sweeping ? 1 : 0,
+    };
+    const sweep = { duty: 0, frames: 0, refreshing: 0, steps: 0, wasBaking: false };
     let volume: ProbeVolume | undefined;
     if (volumeEnabled && update === "trace") {
       const bvh = new GPUSceneBVH(ctx.scene);
       ctx.add(bvh);
       volume = new ProbeVolume({
         ...options,
+        // The lamp is a small emitter, 0.55% of the sphere from a probe: 1,024 rays hit it, 64 mostly miss.
+        probeResolution: 32,
         trace: {
           bvh,
           camera: ctx.camera,
           sky: new Color(0, 0, 0),
-          sun: { color: new Color(1, 1, 1), direction: new Vector3(0, 1, 0), intensity: 0 },
+          sun,
         },
       });
     } else if (volumeEnabled) {
@@ -196,12 +222,17 @@ class ProbeVolumeFixture extends Scene<IProbeVolumeFixtureState> {
       if (observation?.status === "baking") bakeFrames += 1;
       maxBakeCostMs = Math.max(maxBakeCostMs, observation?.bakeCostMs ?? 0);
       trackLampRefresh(lamp, frame, observation, update);
+      if (sweeping) advanceSweep(sweep, sun, observation);
       frameCtx.state.set({
         probe: {
           ...fixtureProbeState(observation, sampleNodeInstalled, bakeFrames, samples),
           lampOn: lamp.on,
           lampRefreshFrames: lamp.frames,
           maxBakeCostMs,
+          sweepDuty: sweep.duty,
+          sweepFrames: sweep.frames,
+          sweepRefreshFrames: sweep.refreshing,
+          sweepSteps: sweep.steps,
           probesTraced: observation?.probesTraced ?? 0,
           update: volume === undefined ? "off" : update,
         },
@@ -214,6 +245,32 @@ class ProbeVolumeFixture extends Scene<IProbeVolumeFixtureState> {
   override render(_ctx: ICtx<IProbeVolumeFixtureState>): void {
     this.#sampleReadback?.();
   }
+}
+
+interface ISunSweep {
+  frames: number;
+  refreshing: number;
+  steps: number;
+  duty: number;
+  wasBaking: boolean;
+}
+
+/** One frame of the sweep: it starts once the first refresh is ready, then turns the sun and counts refresh frames. */
+function advanceSweep(
+  sweep: ISunSweep,
+  sun: { direction: Vector3 },
+  observation: IProbeVolumeObservation | undefined,
+): void {
+  if (observation === undefined || sweep.frames >= SWEEP_FRAMES) return;
+  if (sweep.frames === 0 && observation.status !== "ready") return;
+  sweep.frames += 1;
+  const radians = ((sweep.frames / SWEEP_FRAMES) * SWEEP_DEGREES * Math.PI) / 180;
+  sun.direction.set(Math.sin(radians), Math.cos(radians), 0);
+  const baking = observation.status === "baking";
+  if (baking) sweep.refreshing += 1;
+  if (baking && !sweep.wasBaking) sweep.steps += 1;
+  sweep.wasBaking = baking;
+  sweep.duty = sweep.refreshing / sweep.frames;
 }
 
 /** The frames from the lamp switch to the first frame the volume reports every probe refreshed again. */
@@ -234,7 +291,21 @@ function fixtureProbeState(
   sampleNodeInstalled: boolean,
   bakeFrames: number,
   sample: { sampleHueRatio: number; sampleRed: number; sampleRedLampOff: number },
-): IProbeVolumeFixtureState["probe"] {
+): Pick<
+  IProbeVolumeFixtureState["probe"],
+  | "atlasBytes"
+  | "bakeCostMs"
+  | "bakeFrames"
+  | "completed"
+  | "fraction"
+  | "probeCount"
+  | "sampleHueRatio"
+  | "sampleNodeInstalled"
+  | "sampleRed"
+  | "sampleRedLampOff"
+  | "stale"
+  | "status"
+> {
   const exposed = observation?.status === "ready";
   return {
     ...sample,

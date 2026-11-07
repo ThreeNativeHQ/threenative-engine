@@ -138,8 +138,9 @@ export interface IProbeVolumeOptions {
   /** Most probes one frame traces (Unreal's r.Lumen.RadianceCache.NumProbesToTraceBudget, 100). */
   readonly numProbesToTraceBudget?: number;
   /**
-   * Rays per probe along one side: `probeResolution` squared rays. Unreal's r.Lumen.RadianceCache.ProbeResolution
-   * default, 32 (1,024 rays); a small emitter far from a probe needs that many to be hit at all.
+   * Rays per probe along one side: `probeResolution` squared rays. The default is 8 (64 rays), the cost gate's
+   * figure: an Intel Xe traces about 0.09 ms a probe at 8 and 0.41 ms at 32 (1,024 rays, Unreal's radiance-cache
+   * ProbeResolution). A small emitter far from a probe needs the larger value to be hit at all.
    */
   readonly probeResolution?: number;
 }
@@ -364,7 +365,8 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
   readonly #traceBudget: number;
   /** Probes traced a frame now: it follows the measured GPU cost toward `bakeBudgetMs`, up to the budget. */
   #traceRate = 0;
-  #lastBatch = 0;
+  /** The last four batch sizes: a timestamp arrives frames late, so a reading is charged to the smallest of them. */
+  #recentBatches: number[] = [];
   readonly #raysPerProbe: number;
   #kernels: IProbeTraceKernels | undefined;
   #kernelVersion = -1;
@@ -418,7 +420,7 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
       "numProbesToTraceBudget",
     );
     this.#traceRate = Math.min(this.#traceBudget, TRACE_START_PROBES);
-    const probeResolution = positiveInteger(options.probeResolution ?? 32, "probeResolution");
+    const probeResolution = positiveInteger(options.probeResolution ?? 8, "probeResolution");
     this.#raysPerProbe = probeResolution * probeResolution;
 
     const normalizedBounds = normalizeBounds(options.bounds);
@@ -901,11 +903,12 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
   }
 
   #processTrace(renderer: IRendererLike, trace: IProbeVolumeTrace): void {
-    const started = this.#now();
     this.#frame += 1;
     this.#probesTraced = 0;
+    let started = this.#now();
     try {
-      const kernels = this.#ensureKernels(trace);
+      const kernels = this.#ensureKernels(trace, renderer);
+      started = this.#now();
       const lighting = {
         color: trace.sun.color,
         direction: trace.sun.direction,
@@ -943,7 +946,7 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
     this.#startTracePasses(this.#tracePasses);
   }
 
-  #ensureKernels(trace: IProbeVolumeTrace): IProbeTraceKernels {
+  #ensureKernels(trace: IProbeVolumeTrace, renderer: IRendererLike): IProbeTraceKernels {
     const version = trace.bvh.version;
     if (this.#kernels !== undefined && this.#kernelVersion === version) return this.#kernels;
     const previous = this.#kernels;
@@ -970,6 +973,10 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
     if (this.#kernelVersion >= 0 && this.#status !== "unbaked")
       this.#startTracePasses(this.#tracePasses);
     this.#kernelVersion = version;
+    // First-use pipeline work belongs to scene entry, not to a bounded refresh slice: an empty dispatch builds both.
+    this.#kernels.batchSize.value = 0;
+    renderer.compute(this.#kernels.trace);
+    renderer.compute(this.#kernels.project);
     return this.#kernels;
   }
 
@@ -1035,8 +1042,8 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
    */
   #adaptTraceRate(renderer: IRendererLike): void {
     const gpuMs = (renderer as { gpuComputeMs?: () => number | undefined }).gpuComputeMs?.();
-    if (gpuMs === undefined || !(gpuMs > 0) || this.#lastBatch === 0) return;
-    const fit = Math.floor((this.#bakeBudgetMs * this.#lastBatch) / gpuMs);
+    if (gpuMs === undefined || !(gpuMs > 0) || this.#recentBatches.length === 0) return;
+    const fit = Math.floor((this.#bakeBudgetMs * Math.min(...this.#recentBatches)) / gpuMs);
     const ceiling = Math.min(this.#traceBudget, this.#probeCount);
     const next = fit > this.#traceRate ? Math.min(fit, this.#traceRate * 2) : fit;
     this.#traceRate = Math.max(1, Math.min(ceiling, next));
@@ -1057,7 +1064,7 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
         this.#lastTraced[probe] = this.#frame;
       }
       this.#probesTraced = batch.length;
-      this.#lastBatch = batch.length;
+      this.#recentBatches = [...this.#recentBatches, batch.length].slice(-4);
       this.#traceCompleted += batch.length;
       this.#dispatchSerial += 1;
     }

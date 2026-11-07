@@ -2086,7 +2086,7 @@ export class RadianceCache extends ProbeVolume { … }
 
 - **Use when:** light follows a lamp that switches on and off in a room · bounce light that updates when the sun moves, with no baked lightmap · global illumination that refreshes fast enough to read as dynamic
 - **Constraints:** build a GPUSceneBVH of the static meshes first and pass it as trace.bvh; the cache reads colour and emissive from each material, a texture or a node is counted as ignored · add the cache with ctx.add() so its refresh is measured in the render phase, and read it with sampleNode(position, normal) from a game-owned material · a one-sided material is not seen from behind, as a cube capture would not draw it
-- **Overrides:** numProbesToTraceBudget (100), probeResolution (32, so 1024 rays a probe), bounds, density, bounces and the sun and sky values are game-owned
+- **Overrides:** numProbesToTraceBudget (100), probeResolution (8, so 64 rays a probe; 32 for a small emitter), bounds, density, bounces and the sun and sky values are game-owned
 
 ```ts
 const bvh = new GPUSceneBVH(ctx.scene); ctx.add(bvh); const cache = new RadianceCache({ bounds, density: 0.5, trace: { bvh, sun, sky, camera: ctx.camera } }); ctx.add(cache);
