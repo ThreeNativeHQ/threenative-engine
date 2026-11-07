@@ -18,9 +18,11 @@ const rig = (dt: number): IAnimationTickRig => ({
   mixer: {},
   action: null,
   strideRoot: null,
-  targetWeight: 1,
-  transition: 0,
   dt,
+  elapsed: dt,
+  step: true,
+  reset: false,
+  lastRate: 1,
   clipGroundSpeed: 2,
   strideSync: true,
 });
