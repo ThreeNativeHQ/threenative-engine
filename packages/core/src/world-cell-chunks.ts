@@ -10,12 +10,7 @@ import {
 } from "three";
 import { markEngineRenderHook } from "./engine-render-hook.js";
 import { mergeByMaterial } from "./merge-parts.js";
-import {
-  conservativeViewDepth,
-  isLodJoinProxy,
-  lodChainOf,
-  setModelLodLayers,
-} from "./model-lod.js";
+import { isLodJoinProxy, lodChainOf, selectLodFor, setModelLodLayers } from "./model-lod.js";
 import { displacesVertices } from "./projection-plan.js";
 import type { IRendererLike } from "./renderer.js";
 import { markStatic } from "./static-transform.js";
@@ -777,12 +772,7 @@ export class CellChunks {
       const view =
         camera === undefined
           ? undefined
-          : conservativeViewDepth(
-              camera,
-              sphere.center,
-              sphere.radius,
-              Reflect.get(camera, "near") ?? 0.1,
-            );
+          : selectLodFor(camera, sphere, Reflect.get(camera, "near") ?? 0.1);
       const height = renderer?.domElement.height;
       const selected = state.selector.select({
         sourceReady: cellLoaded(cell),

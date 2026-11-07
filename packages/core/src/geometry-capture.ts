@@ -27,7 +27,7 @@
 import { Frustum, Matrix4, Sphere, Vector3 } from "three";
 import type { Camera, Object3D } from "three";
 import { markEngineRenderHook } from "./engine-render-hook.js";
-import { baseGeometryOf, conservativeViewDepth, lodPixelScale, worldSphere } from "./model-lod.js";
+import { baseGeometryOf, lodPixelScale, selectLodFor, worldSphere } from "./model-lod.js";
 import type { FramePassKind, IRenderPassSample } from "./render-pass-budget.js";
 
 /** Rows returned when a request does not name a limit. */
@@ -427,7 +427,7 @@ function projectedSize(
   let depth: number;
   let degenerate: boolean;
   try {
-    const view = conservativeViewDepth(camera, sphere.center, sphere.radius, near);
+    const view = selectLodFor(camera, sphere, near);
     depth = view.depth;
     degenerate = view.degenerate;
   } catch {
