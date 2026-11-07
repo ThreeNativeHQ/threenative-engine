@@ -1,6 +1,6 @@
 # PRD-833 — Template mechanism lives once
 
-**Status:** PARTIAL — Phase 3 landed; Phases 1 and 2 (mechanism into core, shared build plumbing) are open
+**Status:** PARTIAL — Phase 3 landed; Phases 1 and 2 (mechanism into core, shared build plumbing) are open. Phase 1 has one blocker to invert first: `environmentSampling.ts` imports `isWebGLFallbackRenderer`, `materialLightingEnabled` and `IMaterialLightingEnvironment` from the kit's `quality.ts`, so the core module needs a parameter object (or the core WebGL predicate this phase also adds) before it can move.
 **Priority:** P1 — open Phase 2 deletes 84 template copies of 7 render-mechanism files, where a fix to one kit leaves 11 kits wrong with every test green.
 **Complexity:** 6 (MEDIUM); risk override: the moved files measure the environment and wire the backlight, so the owner's visual-judge rule applies
 **Owner:** ThreeNative maintainers
