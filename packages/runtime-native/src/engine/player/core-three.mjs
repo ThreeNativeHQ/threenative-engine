@@ -6,6 +6,7 @@ import {
   defineTypeFlags,
 } from "../../../../three-native/src/object-surface.ts";
 import { definePropertyBinding } from "../../../../three-native/src/property-binding.ts";
+import { defineGridHelper } from "../../../../three-native/src/grid-helper.ts";
 // Identity-preserving imports over the V8 adapter, never upstream Three.js.
 import { audio } from "./core-audio.mjs";
 export const {
@@ -168,6 +169,8 @@ export const clone = (root) => skeletonUtils.clone(root);
 export const { BatchedMesh } = globalThis;
 // three's InstancedBufferGeometry: an engine class, drawn instanceCount times.
 export const { InstancedBufferGeometry } = globalThis;
+// three's GridHelper: engine LineSegments with vertex colours (shared definer, ported from three).
+export const GridHelper = defineGridHelper(globalThis);
 // three exports the engine does not provide: refused at use, by name, as on Wasm (unsupportedExport).
 export const LineLoop = unsupportedExport("LineLoop");
 export const Points = unsupportedExport("Points");

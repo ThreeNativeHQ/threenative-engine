@@ -31,6 +31,7 @@ import {
 import { type ITslRuntime, defineTsl, isTslNode } from "./browser-tsl.js";
 import type { CatalogEntry, ICatalog } from "./catalog.js";
 import { CPU_STAGE_FIELDS } from "./gpu-stages.js";
+import { defineGridHelper } from "./grid-helper.js";
 import { withMathUtilsExtras } from "./math-utils.js";
 import {
   Material,
@@ -227,6 +228,8 @@ export async function bindWebEngine(
   Object.assign(bound, { AudioContext, AudioListener, Audio, PositionalAudio, AudioLoader });
   // three's QuadMesh over the engine Mesh (quad-mesh.ts), shared with the V8 player.
   bound.QuadMesh = defineQuadMesh(classes as never);
+  // three's GridHelper over the engine LineSegments (grid-helper.ts), shared with the V8 player.
+  bound.GridHelper = defineGridHelper(classes as never);
   // three/webgpu's BlendMode, the record mrt().setBlendMode takes (data only, as on the engine's scene pass).
   bound.BlendMode = BlendMode;
   // The engine's four MathUtils functions, with the rest of three's number-only ones beside them.

@@ -456,6 +456,9 @@ constexpr const char* kDocumentShim = R"JS(
       if (String(tag).toLowerCase() === "canvas") return canvas();
       throw new Error("TN_PLAYER_DOCUMENT: document.createElement('" + tag + "') is not available in the engine player");
     },
+    // The player has no page: no element has an id. null is the answer the legacy host gives for a non-canvas id,
+    // so a game's `document.getElementById("app") ?? undefined` mount lookup reads "none" (vfx-gallery).
+    getElementById: () => null,
   };
   globalThis.document.createElementNS = (_ns, tag) => globalThis.document.createElement(tag);
 })();

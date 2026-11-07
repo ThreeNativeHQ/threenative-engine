@@ -36,4 +36,14 @@ describe('V8 engine player host globals', () => {
     expect(vm.runInContext('new URLSearchParams("a=1&b=2").get("b")', context)).toBe('2');
     expect(vm.runInContext('new AbortController().signal.aborted', context)).toBe(false);
   });
+
+  // vfx-gallery mounts with `document.getElementById("app") ?? undefined`; the player's document had no
+  // getElementById, so the bundle died with "document.getElementById is not a function" on PS4.
+  it('answers getElementById with null: the player has no page', () => {
+    const shim = /kDocumentShim = R"JS\(([\s\S]*?)\)JS"/.exec(player)?.[1];
+    expect(shim, 'v8_main.cpp names no kDocumentShim').toBeDefined();
+    const context = vm.createContext({ __tnCreateCanvas2D: () => ({}) });
+    vm.runInContext(shim, context);
+    expect(vm.runInContext('document.getElementById("app")', context)).toBeNull();
+  });
 });
