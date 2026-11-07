@@ -3,8 +3,7 @@
  *
  * Two questions an agent answers differently in every game, both of which cost a rewrite: how do I
  * turn this on for one run without changing the code, and how does a capture script reach the object
- * it wants to look at. The answers here are one function each, and neither decides how anything
- * looks.
+ * it wants to look at. The answers here are one function each, neither decides how anything looks.
  */
 
 import { devGlobal, publishDevGlobal } from "./dev-global.js";
