@@ -95,6 +95,8 @@ test('a mipmapped colour target is micro-tiled on every level, so its rendered l
   assert.match(readFileSync(path.join(root, 'scripts/ps4/patches/0055-vk-ps4-mipmapped-targets-micro-tiled.patch'), 'utf8'), /^\+\s+tex_ci\.tilemodehint = mip_levels > 1 \? GNM_TM_DISPLAY_1D_THIN/mu);
   assert.match(readFileSync(path.join(root, 'scripts/ps4/e2-build.sh'), 'utf8'), /git apply "\$SCRIPTS\/patches\/0056-opengnm-psbc-front-face-float\.patch"/u);
   assert.match(readFileSync(path.join(root, 'scripts/ps4/patches/0056-opengnm-psbc-front-face-float.patch'), 'utf8'), /^\+\s+\.spibaryccntl = S_0286E0_FRONT_FACE_ALL_BITS\(0\),/mu);
+  assert.match(readFileSync(path.join(root, 'scripts/ps4/e2-build.sh'), 'utf8'), /git apply "\$SCRIPTS\/patches\/0057-vk-ps4-volumes-linear\.patch"/u);
+  assert.match(readFileSync(path.join(root, 'scripts/ps4/patches/0057-vk-ps4-volumes-linear.patch'), 'utf8'), /^\+\s+if \(pCreateInfo->imageType == VK_IMAGE_TYPE_3D\) tex_ci\.tilemodehint = GNM_TM_DISPLAY_LINEAR_ALIGNED;/mu);
 });
 
 test('refuses a UI with no stylesheet', () => {

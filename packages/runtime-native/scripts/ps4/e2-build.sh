@@ -511,6 +511,9 @@ git apply "$SCRIPTS/patches/0054-vk-ps4-sampler-lod-clamp.patch"
 # A mipmapped colour target is micro-tiled on every level: 2D tiling degraded to 1D on the small levels, so the
 # rendered PMREM levels had another array mode than the cube that samples them and shadPS4 dropped them (black sky fill).
 git apply "$SCRIPTS/patches/0055-vk-ps4-mipmapped-targets-micro-tiled.patch"
+# A 3D texture is linear: its upload is the row copy (the tiled upload refuses depth > 1), which
+# only lands right in a linear surface. Tiled, the cloud noise volume scrambled (PRD-784 visuals).
+git apply "$SCRIPTS/patches/0057-vk-ps4-volumes-linear.patch"
 # The Makefile compiles TEST_SRC relative to the vulkan-ps4 tree.
 cp "$SCRIPTS/e2-triangle.c" "$SRC/e2-triangle.c"
 make -f Makefile.orbis -j"$JOBS" TEST_SRC=../e2-triangle.c self > "$LOGS/e2-triangle.log" 2>&1
