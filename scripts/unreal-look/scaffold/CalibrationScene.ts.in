@@ -382,7 +382,10 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
             : undefined;
         if (field !== undefined) (window as unknown as { __tnGiField: unknown }).__tnGiField = field;
         const gi = installGi(ctx, model, {
-          ...(field === undefined ? {} : { field }),
+          // Diagnosis: ?giFallback=irradiance gives the gather the cosine-convolved read per ray (the pre-PRD-831 arm).
+          ...(field === undefined
+            ? {}
+            : { field: params.get("giFallback") === "irradiance" ? { irradiance: field.irradiance } : field }),
           // A traced ray finds the floor itself: the painted floor of the cube capture is not needed.
           paintGround: !tracing,
           // Diagnosis: ?bounces=N brackets how much of the indirect light the later bounces carry.
