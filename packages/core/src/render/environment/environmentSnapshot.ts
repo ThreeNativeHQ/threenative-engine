@@ -17,6 +17,11 @@ export interface IEnvironmentSourceSnapshot {
   readonly mapping: number | null;
   readonly image: unknown;
 }
+/**
+ * The provenance of a scene's environment: which texture, at which intensity, in which colour space.
+ *
+ * @situation reject an environment readback that belongs to a different sky
+ */
 export function captureEnvironmentSnapshot(scene: Scene): IEnvironmentSourceSnapshot {
   const source = scene.environment;
   return {
@@ -29,6 +34,11 @@ export function captureEnvironmentSnapshot(scene: Scene): IEnvironmentSourceSnap
     image: source?.image ?? null,
   };
 }
+/**
+ * Whether the scene's environment still matches the snapshot a sample was taken from.
+ *
+ * @situation hold a material's fill light to the sky that is on screen now
+ */
 export function environmentSnapshotCurrent(
   scene: Scene,
   snapshot: IEnvironmentSourceSnapshot,
@@ -45,6 +55,11 @@ export function environmentSnapshotCurrent(
   );
 }
 
+/**
+ * Whether an environment texture's mapping and colour space are qualified for the bounded GPU sample.
+ *
+ * @situation know why an environment was not sampled on the GPU
+ */
 export function samplingSourceSupported(source: NonNullable<Scene["environment"]>): boolean {
   return (
     source.mapping === EquirectangularReflectionMapping &&

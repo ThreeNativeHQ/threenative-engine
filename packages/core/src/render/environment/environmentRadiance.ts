@@ -5,6 +5,13 @@ const HEIGHT = 32;
 function unmeasured(reason: string): IEnvironmentMeasurement {
   return { status: "unknown", meanRadiance: null, meanRGB: null, reason };
 }
+/**
+ * The mean radiance and colour of a bounded linear sample, or `unknown` with the reason.
+ *
+ * @situation turn an environment readback into the radiance a material's fill light needs
+ * @situation know why an environment sample could not be measured
+ * @constraint the sample must be the qualified 64x32 float RGBA readback; anything else is refused by name
+ */
 export function sampledRadiance(samples: unknown, intensity: number): IEnvironmentMeasurement {
   if (!(samples instanceof Float32Array) || samples.length !== WIDTH * HEIGHT * 4)
     return unmeasured("GPU readback did not provide the qualified float RGBA sample layout.");

@@ -71,6 +71,10 @@
       "types": "./dist/world.d.ts",
       "import": "./dist/world.js"
     },
+    "./render/environment": {
+      "types": "./dist/render-environment.d.ts",
+      "import": "./dist/render-environment.js"
+    },
     "./net": {
       "types": "./dist/net.d.ts",
       "import": "./dist/net.js"

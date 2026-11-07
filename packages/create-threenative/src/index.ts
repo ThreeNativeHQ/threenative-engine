@@ -128,17 +128,12 @@ export function stampLoadingSource(canonical: string, template: string): string 
  * kit editing it would be a mistake rather than a choice.
  *
  * `__tests__/shared-render-drift.spec.ts` fails on any render source that ships byte-identical in
- * two or more kits and is missing here, so a new copy cannot land unrestamped.
+ * two or more kits and is missing here, so a new copy cannot land unrestamped. The environment
+ * measure-and-sample mechanism and the backlight used to be seven of these copies; they live in
+ * `@threenative/core/render/environment` now (PRD-833).
  */
 export const SHARED_RENDER_SOURCES: readonly string[] = [
   "src/render/atmosphere.ts",
-  "src/render/backlightControls.ts",
-  "src/render/backlightMaterial.ts",
-  "src/render/environmentContribution.ts",
-  "src/render/environmentRadiance.ts",
-  "src/render/environmentSampleCache.ts",
-  "src/render/environmentSampling.ts",
-  "src/render/environmentSnapshot.ts",
   "src/render/gpuSky.ts",
   "src/render/kitExposure.ts",
   "src/render/temporalDetailStage.ts",

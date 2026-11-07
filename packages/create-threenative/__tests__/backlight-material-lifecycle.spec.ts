@@ -1,3 +1,4 @@
+import { sampleEnvironment } from "@threenative/core/render/environment";
 import {
   BoxGeometry,
   Camera,
@@ -13,7 +14,6 @@ import {
   Texture,
 } from "three";
 import { afterEach, expect, test, vi } from "vitest";
-import { sampleEnvironment } from "../templates/starter/src/render/environmentSampling.js";
 import { createMaterialLighting } from "../templates/starter/src/render/materialLighting.js";
 import { materialLightingEnabled } from "../templates/starter/src/render/quality.js";
 const desktop = { web: true, rendererKind: "webgpu", mobile: false, software: false };

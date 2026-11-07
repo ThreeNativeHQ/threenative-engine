@@ -1,6 +1,6 @@
+import { type IEnvironmentSample, sampleEnvironment } from "@threenative/core/render/environment";
 // Generated for you. Sample the loaded photograph without adding a duplicate sky to the game.
 import { Mesh, Scene } from "three";
-import { type IEnvironmentSample, sampleEnvironment } from "./environmentSampling.js";
 import type { IMaterialLightingEnvironment } from "./quality.js";
 import { setupSky } from "./sky.js";
 let sample: IEnvironmentSample | undefined;

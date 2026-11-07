@@ -23,7 +23,7 @@ import {
   type IMaterialLightingEnvironment,
   isWebGLFallbackRenderer,
   materialLightingEnabled,
-} from "./quality.js";
+} from "./gate.js";
 export interface IEnvironmentSample extends IEnvironmentSourceSnapshot {
   readonly measurement: IEnvironmentMeasurement;
 }
@@ -31,7 +31,14 @@ export interface IEnvironmentSample extends IEnvironmentSourceSnapshot {
 const ENVIRONMENT_READBACK_TIMEOUT_MS = 1000;
 const WIDTH = 64;
 const HEIGHT = 32;
-/** Call from the scene's awaited load(), after its actual environment is bound. */
+/**
+ * Measures and samples the scene's real environment on the GPU, bounded by a readback deadline.
+ *
+ * @situation measure what a scene's environment actually contributes without stalling the frame
+ * @situation give a material's fill light the environment's own radiance
+ * @constraint off unless the renderer is the admitted high-tier WebGPU lane; every refusal is reported by name
+ * @constraint the readback is abandoned after the deadline and the frame keeps the previous answer
+ */
 export async function sampleEnvironment(
   renderer: unknown,
   scene: Scene,

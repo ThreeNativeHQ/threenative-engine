@@ -227,8 +227,13 @@ describe("starter visual floor", () => {
     );
     for (const entries of files) {
       for (const [name, source] of entries) {
+        // Two framework entries are the same admission the core boundary check makes: the engine
+        // root, and the environment mechanism PRD-833 moved out of the twelve kits that held copies
+        // of it. Everything else is still a framework reaching into the game's look.
         expect(
-          source.replaceAll('from "@threenative/core"', 'from "shared-core"'),
+          source
+            .replaceAll('from "@threenative/core"', 'from "shared-core"')
+            .replaceAll('from "@threenative/core/render/environment"', 'from "shared-core"'),
           name,
         ).not.toContain("@threenative/");
         // Loading is the one generated surface that carries real startup behavior: safe-area

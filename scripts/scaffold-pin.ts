@@ -96,6 +96,13 @@ async function main(argv: readonly string[]): Promise<number> {
             : "shared and kit";
     process.stdout.write(`stale ${kit}: ${which}\n`);
   }
+  // A pin that moved for every kit moved on a shared input, and the running kitting says so: one
+  // line the operator can read instead of sixteen.
+  if (stale.length === kits.length && kits.length > 1) {
+    process.stdout.write(
+      "every kit moved: a shared input changed (agent-files, template-assets, core's tables)\n",
+    );
+  }
   if (check) {
     process.stdout.write(
       stale.length === 0

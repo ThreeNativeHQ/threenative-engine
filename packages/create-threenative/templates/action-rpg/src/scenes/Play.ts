@@ -7,6 +7,7 @@ import {
   isMobile,
   isTouchscreenAvailable,
 } from "@threenative/core";
+import { type IEnvironmentSample, sampleEnvironment } from "@threenative/core/render/environment";
 import { CastPool, SpellWorld, createFireball } from "@threenative/core/spells";
 import { CollisionShape3D, type IPhysicsContext, buildStaticColliders } from "@threenative/physics";
 import { type PerspectiveCamera, type Texture, Vector3 } from "three";
@@ -20,7 +21,6 @@ import { emitPlaytestEvent } from "../playtest-events.js";
 import { loadProgress, saveProgress } from "../progress.js";
 import { createDungeonCamera } from "../render/camera.js";
 import { createDungeon, isSolid } from "../render/dungeon.js";
-import { type IEnvironmentSample, sampleEnvironment } from "../render/environmentSampling.js";
 import { setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
 import { createMaterialLighting } from "../render/materialLighting.js";

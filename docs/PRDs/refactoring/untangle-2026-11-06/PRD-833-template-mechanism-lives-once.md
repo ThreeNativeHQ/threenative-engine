@@ -1,6 +1,6 @@
 # PRD-833 — Template mechanism lives once
 
-**Status:** PARTIAL — Phase 3 landed; Phases 1 and 2 (mechanism into core, shared build plumbing) are open. Phase 1 has one blocker to invert first: `environmentSampling.ts` imports `isWebGLFallbackRenderer`, `materialLightingEnabled` and `IMaterialLightingEnvironment` from the kit's `quality.ts`, so the core module needs a parameter object (or the core WebGL predicate this phase also adds) before it can move.
+**Status:** PARTIAL — Phases 1 and 3 landed; Phase 2 (shared build plumbing) and AC-2 (the visual judge on starter, racing and snow) are open.
 **Priority:** P1 — open Phase 2 deletes 84 template copies of 7 render-mechanism files, where a fix to one kit leaves 11 kits wrong with every test green.
 **Complexity:** 6 (MEDIUM); risk override: the moved files measure the environment and wire the backlight, so the owner's visual-judge rule applies
 **Owner:** ThreeNative maintainers
@@ -47,11 +47,11 @@ Report ids B1, F1, F2, F3, F4, F8, B2. Root `AGENTS.md` puts "plumbing every gam
 ## Execution Phases
 
 #### Phase 1: Mechanism into core
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** new `packages/core/src/render/environment/*.ts` and subpath export; edit `templates/*/src/render/` callers; delete the 84 copies.
 
-- [ ] The core subpath owns the 7 files, and every kit imports it. `md5sum templates/*/src/render/environment*.ts` finds no file. proof: `pnpm --filter @threenative/core exec vitest run __tests__/` for the moved units, plus `pnpm --filter create-threenative exec vitest run __tests__/backlight-shared-graph.spec.ts`
-- [ ] One core WebGL-fallback predicate; no `quality.ts` defines its own. proof: `rg -n 'function .*[Ww]ebgl[A-Za-z]*Fallback' packages/create-threenative/templates` returns nothing
+- [x] The core subpath `@threenative/core/render/environment` owns the 7 files, plus the admission gate they needed; every kit imports it, and all 84 copies are deleted. The one cross-boundary import (`environmentSampling.ts` reading the kit's `quality.ts` for the gate) was inverted by moving the gate into the same subpath, so no parameter object was needed — the tier it compares is still the caller's. Wiring: tsup entry, `exports`, root `tsconfig` path. The kit-side proof is that a real build resolves it: `scaffold.spec.ts`'s recast case builds a scaffolded minimal kit with the new import. proof: `rg -n 'function .*[Ww]ebgl[A-Za-z]*Fallback' packages/create-threenative/templates` returns nothing; `pnpm --filter create-threenative exec vitest run __tests__/backlight-shared-graph.spec.ts __tests__/backlight-render-matrices.spec.ts __tests__/backlight-material-lifecycle.spec.ts __tests__/minimal-material-lighting.spec.ts __tests__/sailing-snow-material-lighting.spec.ts` → 39 passed; `npx vitest run packages/core/__tests__ packages/create-threenative/__tests__` → 7123 passed, 4 skipped, and `pnpm typecheck` → 0.
+- [x] One core WebGL-fallback predicate; no `quality.ts` defines its own. Each kit's `quality.ts` is now a three-line re-export of `IMaterialLightingEnvironment`, `isWebGLFallbackRenderer` and `materialLightingEnabled` from the subpath, and the starter's `rendererGate.ts` is deleted. The charter and portability checks were extended deliberately, not bypassed: `constraints.spec.ts` admits `render/environment/**` with a tighter assertion that the block originates no material, light, colour or shader (only the sampling quad's own material and the node twin of the *game's* material, and tone mapping only as the readback's save/restore), and `check-core-boundary.ts` admits the mechanism names with the same proof. proof: the `rg` above returns nothing; `npx vitest run packages/core/__tests__/constraints.spec.ts` → 4 passed.
 
 #### Phase 2: One source for shared plumbing
 **Status:** NOT STARTED

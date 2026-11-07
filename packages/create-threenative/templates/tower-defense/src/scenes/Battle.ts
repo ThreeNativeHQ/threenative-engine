@@ -6,6 +6,7 @@ import {
   getPlatform,
   isMobile,
 } from "@threenative/core";
+import { type IEnvironmentSample, sampleEnvironment } from "@threenative/core/render/environment";
 import type { IPhysicsContext } from "@threenative/physics";
 import { type Group, type Mesh, type PerspectiveCamera, type Texture, Vector3 } from "three";
 import {
@@ -34,7 +35,6 @@ import { Enemy } from "../enemies/Enemy.js";
 import { drainIntents } from "../intents.js";
 import { emitPlaytestEvent } from "../playtest-events.js";
 import { setupCamera } from "../render/camera.js";
-import { type IEnvironmentSample, sampleEnvironment } from "../render/environmentSampling.js";
 import { setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
 import { createMaterialLighting } from "../render/materialLighting.js";

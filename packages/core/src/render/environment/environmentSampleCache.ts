@@ -3,6 +3,12 @@ import type { Scene, Texture } from "three";
 import type { IEnvironmentSample } from "./environmentSampling.js";
 import { environmentSnapshotCurrent } from "./environmentSnapshot.js";
 const samples = new WeakMap<object, WeakMap<Texture, IEnvironmentSample>>();
+/**
+ * The sample this renderer took of `scene`'s environment, if it is still current.
+ *
+ * @situation skip a second environment readback in the same frame
+ * @constraint a sample whose source texture or intensity moved is dropped, so a stale one never reaches a material
+ */
 export function cachedEnvironmentSample(
   renderer: object,
   scene: Scene,
@@ -13,6 +19,11 @@ export function cachedEnvironmentSample(
     ? copySample(sample)
     : undefined;
 }
+/**
+ * Remembers `sample` as this renderer's reading of `scene`'s environment.
+ *
+ * @situation reuse one environment readback across the materials of a scene
+ */
 export function cacheEnvironmentSample(
   renderer: object,
   scene: Scene,
