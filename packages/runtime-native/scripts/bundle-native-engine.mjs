@@ -114,6 +114,9 @@ function unboundDiagnostic(specifier, name) {
 
 /** Bundle the portable entry against native imports; publish nothing when a binding is absent. */
 export async function bundleNativeEngine({ entry, outfile, boot = true, define = {}, host = boot }) {
+  // React and its reconciler branch on `process.env.NODE_ENV`; the player has no `process` (Vite defines it
+  // on the desktop path, bundle.mjs). A caller's own define wins.
+  define = { "process.env.NODE_ENV": JSON.stringify(process.env.NODE_ENV ?? "production"), ...define };
   let engineCommit;
   try {
     const git = (args) => execFileSync("git", args, { cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
@@ -134,6 +137,9 @@ export async function bundleNativeEngine({ entry, outfile, boot = true, define =
     external: ["three", "three/*", "three-mesh-bvh", "three-mesh-bvh/*",
       "@threenative/core", "@threenative/core/*"],
     logLevel: "silent", metafile: true, sourcemap: "inline", sourcesContent: true,
+    // A UI component imports its stylesheet; the native-css backend reads the extracted sheets from the
+    // ui dir, so in the JS realm the import is only a side effect (the desktop path is Vite's CSS split).
+    loader: { ".css": "empty" },
     // A script entry that imports core's loader by relative path (the load test's Fox) would inline the
     // browser loader and its GLTFLoader; it reads the cooked package like core's own imports do.
     plugins: [packageImports, { name: "native-assets", setup(builder) {
@@ -206,6 +212,7 @@ export async function bundleNativeEngine({ entry, outfile, boot = true, define =
     bundle: true, write: false, format: "iife", platform: "neutral", target: "es2022",
     conditions: ["threenative-native"], define: { "import.meta.env": "{}", ...define }, metafile: true,
     logLevel: "silent", outfile, sourcemap: "external", sourcesContent: true,
+    loader: { ".css": "empty" },
     plugins: [packageImports, { name: "native-engine", setup(builder) {
       builder.onResolve({ filter: /(?:^|\/)assets\.js$/ }, (args) => {
         if (args.importer.startsWith(`${resolve(core, "src")}${sep}`))

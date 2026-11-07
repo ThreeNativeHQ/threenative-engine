@@ -16,6 +16,7 @@ import { homedir } from 'node:os';
 import { stripVTControlCharacters } from 'node:util';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { stageGuestUi } from './stage-guest-ui.mjs';
 
 const PINS = {
   // shadPS4 v.0.21.0; the AppImage inside the release zip is the emulator binary.
@@ -823,6 +824,8 @@ async function buildE5(outDir, toolchain, scene) {
   // The scene is checked before the build: a wrong --scene fails in a second, not after it.
   const entry = path.join(scene, 'src', 'game.ts');
   if (!existsSync(entry)) throw new Error(`scene ${scene} has no src/game.ts (--scene names a game project)`);
+  // A scene with a native-css HUD names it in src/native.tsx; otherwise src/game.ts is the entry.
+  const nativeEntry = existsSync(path.join(scene, 'src', 'native.tsx')) ? path.join(scene, 'src', 'native.tsx') : entry;
   runInherit('bash', [path.join(HERE, 'e5-build.sh'), '--out', outDir], { env: { ...process.env, OO_PS4_TOOLCHAIN: toolchain } });
   const appDir = path.join(outDir, 'out', 'app');
   const eboot = path.join(appDir, 'eboot.bin');
@@ -830,13 +833,19 @@ async function buildE5(outDir, toolchain, scene) {
   const bundle = path.join(appDir, 'game.js');
   run(process.execPath, [
     path.join(REPO_ROOT, 'packages/runtime-native/scripts/bundle-native-engine.mjs'),
-    '--engine', 'native', '--game-runtime', 'v8', '--entry', entry, '--out', bundle, '--assets', scene,
+    '--engine', 'native', '--game-runtime', 'v8', '--entry', nativeEntry, '--out', bundle, '--assets', scene,
   ]);
   if (!existsSync(bundle)) throw new Error(`the bundler wrote no ${bundle}`);
+  // PRD-784: the guest draws a HUD with the native-css backend when /app0/ui exists. The scene's
+  // src/native.tsx (createCssUiRoot().render(...), default-exporting the game) runs React in the
+  // game's V8; its built stylesheets come from .threenative/build/ui-css or TN_PS4_UI_DIR.
+  const ui = stageGuestUi(scene, appDir);
+  if (existsSync(path.join(scene, 'src', 'native.tsx')) && !ui)
+    throw new Error(`scene ${scene} has src/native.tsx but no built UI (build ${path.join(scene, '.threenative/build/ui-css')} or set TN_PS4_UI_DIR)`);
   // A scene with no asset files gets no pack (the player opens native/assets.tnpk only when the
   // game asks for an asset), so its absence is a fact about the scene, not a build failure.
   const assets = path.join(appDir, 'native', 'assets.tnpk');
-  return { appDir, artifacts: { eboot, bundle, assets: existsSync(assets) ? assets : '' } };
+  return { appDir, artifacts: { eboot, bundle, assets: existsSync(assets) ? assets : '', ui } };
 }
 
 async function readText(file) {

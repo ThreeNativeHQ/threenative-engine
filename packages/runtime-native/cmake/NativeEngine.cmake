@@ -688,6 +688,10 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     option(TN_ENGINE_PLAYER_UI_OVERLAY "Link the desktop web-view UI overlay into the engine players (Linux; needs node scripts/build-native-ui-overlay.mjs and webkit2gtk-4.1)" OFF)
     if(TN_ENGINE_PLAYER_UI_OVERLAY)
         include(cmake/NativeEnginePlayerUiOverlay.cmake)
+    elseif(TN_PS4 AND TN_ENABLE_CSS_UI)
+        # PS4 (PRD-784): the HUD is the CSS backend, a pure-Rust staticlib with no web view. Only the
+        # define is set here; scripts/ps4/e5-build.sh links the archive by hand beside the physics one.
+        target_compile_definitions(tn_engine_player PRIVATE TN_ENABLE_UI_OVERLAY=0 TN_ENABLE_CSS_UI=1)
     else()
         target_compile_definitions(tn_engine_player PRIVATE TN_ENABLE_UI_OVERLAY=0 TN_ENABLE_CSS_UI=0)
     endif()

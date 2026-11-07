@@ -68,6 +68,27 @@ if grep -q '^TN_ENABLE_NATIVE_PHYSICS:BOOL=ON' "$BUILD/CMakeCache.txt" 2>/dev/nu
   [ -f "$PHYSICS_LIB" ] || die "no native physics archive at $PHYSICS_LIB (node scripts/build-native-physics.mjs --ps4)"
 fi
 
+# The CSS UI (Rust, blitz + vello_cpu; the HUD backend v8_main.cpp picks on PS4): only when the tn-ps4
+# tree compiled the CSS path into tn_engine_player. Both Rust archives carry their own std, which is
+# why the link below already allows multiple definitions.
+CSS_UI_LIB=""
+if grep -q '^TN_ENABLE_CSS_UI:BOOL=ON' "$BUILD/CMakeCache.txt" 2>/dev/null; then
+  CSS_UI_LIB="$HERE/../../native/css-ui/target/x86_64-unknown-linux-musl/release/libthreenative_css_ui.a"
+  [ -f "$CSS_UI_LIB" ] || die "no CSS UI archive at $CSS_UI_LIB (node scripts/build-native-css-ui.mjs --ps4)"
+fi
+
+# The Rust archives speak musl's libc ABI (struct dirent, struct stat, Linux O_* flags); OpenOrbis'
+# libc speaks FreeBSD's. Their copies call ps4-guest-libcxx.cc's tn_musl_* converters instead; the
+# C/C++ objects keep libc's own. Without it Rust's read_dir returned names cut by 11 bytes.
+musl_abi() {
+  mkdir -p "$OUT/out"; local copy="$OUT/out/$(basename "$1" .a).musl-abi.a"
+  printf 'readdir tn_musl_readdir\nstat tn_musl_stat\nlstat tn_musl_lstat\nfstat tn_musl_fstat\nopen tn_musl_open\nopenat tn_musl_openat\n' > "$OUT/out/musl-abi.syms"
+  llvm-objcopy --redefine-syms="$OUT/out/musl-abi.syms" "$1" "$copy" || die "llvm-objcopy failed on $1"
+  printf '%s' "$copy"
+}
+[ -z "$PHYSICS_LIB" ] || PHYSICS_LIB="$(musl_abi "$PHYSICS_LIB")"
+[ -z "$CSS_UI_LIB" ] || CSS_UI_LIB="$(musl_abi "$CSS_UI_LIB")"
+
 # 1. The player: every object and archive the link below reads. Ninja owns the compile flags (the
 #    tn-ps4 preset), so this step and slice 1 cannot disagree about them.
 if [ "$FORCE" = 1 ]; then rm -f "$BUILD"/*.a; fi
@@ -149,6 +170,7 @@ CORES="${JOBS}" nice -n 19 ld.lld -m elf_x86_64 -pie --script "$OO/link.x" --eh-
     "$E2/src/vulkan-ps4/libvulkan_ps4.a" "$E2/src/opengnm/libopengnm.a" \
     "$E2/src/opengnm-psbc/libpsbc.orbis.a" \
     ${PHYSICS_LIB:+"$PHYSICS_LIB"} \
+    ${CSS_UI_LIB:+"$CSS_UI_LIB"} \
   --end-group \
   -lkernel -lc -lc++ -lc++abi -lunwind -lSceGnmDriver -lSceVideoOut -lScePad -lSceUserService \
   "$OO/lib/crtn.o" \

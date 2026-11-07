@@ -119,4 +119,7 @@ done
 # The preset links native physics (Rust Rapier, as on Android and iOS): its PS4 staticlib.
 log "native physics: node scripts/build-native-physics.mjs --ps4"
 (cd "$REPO" && node scripts/build-native-physics.mjs --ps4) || die "native physics build failed (rustup target add x86_64-unknown-linux-musl)"
+# ... and the CSS UI (Rust; the HUD backend): its PS4 staticlib, built without system fonts.
+log "css ui: node scripts/build-native-css-ui.mjs --ps4"
+(cd "$REPO" && node scripts/build-native-css-ui.mjs --ps4) || die "css ui build failed (rustup target add x86_64-unknown-linux-musl)"
 log "done: cmake --preset tn-ps4 && cmake --build --preset tn-ps4"

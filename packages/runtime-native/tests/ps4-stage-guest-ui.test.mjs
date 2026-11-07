@@ -1,0 +1,61 @@
+import assert from 'node:assert/strict';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { afterEach, test } from 'vitest';
+import { stageGuestUi } from '../scripts/ps4/stage-guest-ui.mjs';
+
+const root = fileURLToPath(new URL('../', import.meta.url));
+const temps = [];
+afterEach(() => { for (const dir of temps.splice(0)) rmSync(dir, { force: true, recursive: true }); });
+
+function scene(files) {
+  const dir = mkdtempSync(path.join(tmpdir(), 'tn-ps4-ui-'));
+  temps.push(dir);
+  const built = path.join(dir, 'scene', '.threenative', 'build', 'ui-css');
+  mkdirSync(built, { recursive: true });
+  for (const [name, text] of Object.entries(files)) writeFileSync(path.join(built, name), text);
+  mkdirSync(path.join(dir, 'app'));
+  return { app: path.join(dir, 'app'), scene: path.join(dir, 'scene') };
+}
+
+test('stages the built UI, a stub index.html and one OFL font beside game.js (PRD-784)', () => {
+  const { app, scene: dir } = scene({ 'index-1.css': 'body{color:red}', 'stylesheets.json': '{"version":1,"stylesheets":["index-1.css"]}' });
+  const ui = stageGuestUi(dir, app, {});
+  assert.equal(ui, path.join(app, 'ui'));
+  assert.ok(existsSync(path.join(ui, 'index.html')));
+  assert.ok(readdirSync(ui).includes('NotoSans-Regular.ttf'));
+  assert.deepEqual(JSON.parse(readFileSync(path.join(ui, 'stylesheets.json'), 'utf8')).stylesheets, ['index-1.css', 'zz-ps4-fonts.css']);
+});
+
+test('keeps the UI font when the build ships one, and stages nothing for a scene with no UI', () => {
+  const { app, scene: dir } = scene({ 'a.css': 'x{}', 'own.woff2': 'f' });
+  assert.ok(!readdirSync(stageGuestUi(dir, app, {})).includes('zz-ps4-fonts.css'));
+  assert.equal(stageGuestUi(path.join(dir, 'missing'), app, {}), '');
+  // The previous scene's ui/ must go, or the player attaches a UI this scene never shipped.
+  assert.ok(!existsSync(path.join(app, 'ui')));
+});
+
+test('the Rust archives call the musl-ABI shims, not OpenOrbis libc (PRD-784)', () => {
+  const e5 = readFileSync(path.join(root, 'scripts/ps4/e5-build.sh'), 'utf8');
+  for (const name of ['readdir', 'stat', 'lstat', 'fstat', 'open', 'openat']) assert.match(e5, new RegExp(`${name} tn_musl_${name}`, 'u'));
+  assert.match(e5, /CSS_UI_LIB="\$\(musl_abi "\$CSS_UI_LIB"\)"/u);
+  const shim = readFileSync(path.join(root, 'scripts/ps4/ps4-guest-libcxx.cc'), 'utf8');
+  for (const name of ['readdir', 'stat', 'lstat', 'fstat', 'open', 'openat']) assert.match(shim, new RegExp(` tn_musl_${name}\\(`, 'u'));
+  assert.match(shim, /#undef pthread_getattr_np/u);
+});
+
+test('refuses a UI with no stylesheet', () => {
+  const { app, scene: dir } = scene({ 'a.png': 'x' });
+  assert.throws(() => stageGuestUi(dir, app, {}), /TN_PS4_UI_NO_CSS/u);
+});
+
+test('the PS4 eboot links the CSS UI archive, built by ps4-deps (PRD-784)', () => {
+  const e5 = readFileSync(path.join(root, 'scripts/ps4/e5-build.sh'), 'utf8');
+  assert.match(e5, /x86_64-unknown-linux-musl\/release\/libthreenative_css_ui\.a/u);
+  assert.match(e5, /\$\{CSS_UI_LIB:\+"\$CSS_UI_LIB"\}/u);
+  assert.match(e5, /build-native-css-ui\.mjs --ps4/u);
+  assert.match(readFileSync(path.join(root, 'scripts/ps4/ps4-deps.sh'), 'utf8'), /build-native-css-ui\.mjs --ps4/u);
+  assert.match(readFileSync(path.join(root, 'CMakePresets.json'), 'utf8'), /"TN_ENABLE_CSS_UI": "ON"/u);
+});

@@ -1860,6 +1860,19 @@ int main(int argc, char** argv) {
     // what the game's `adapter.info` and the playtest's adapter class come from. A check has no GPU.
     if (!checkGame) game.setAdapter(player::adapterIdentity());
     std::string error;
+    const std::filesystem::path uiRoot = std::filesystem::path(gamePath).parent_path() / "ui";
+    std::error_code noUi;
+    const bool hasUi = std::filesystem::is_regular_file(uiRoot / "index.html", noUi);
+#if defined(TN_PS4)
+    // The guest has no environment to set, and the CSS backend is the only UI it links (PRD-784).
+    const bool cssUi = true;
+#else
+    const char* uiRenderer = std::getenv("TN_UI_RENDERER");
+    const bool cssUi = uiRenderer != nullptr && std::string(uiRenderer) == "native-css";
+#endif
+    // `createCssUiRoot().render(...)` commits while the bundle boots, before the window the CSS UI
+    // attaches to exists; held, those first frames reach the document instead of vanishing.
+    if (hasUi && cssUi && !checkGame) mystral::platform::holdUiPostsUntilCssAttach();
     if (!game.start(gamePath, error))
         return std::fprintf(stderr, "TN_PLAYER_V8_GAME: %s\n", error.c_str()), 1;
 
@@ -1922,11 +1935,7 @@ int main(int argc, char** argv) {
     // PRD-554: a built UI beside the game bundle (`ui/index.html`, where the packager stages it beside
     // the executable for the legacy host), through the legacy host's overlay seam; TN_UI_RENDERER=
     // native-css picks the CSS backend. The loop reaches it only through these hooks.
-    const std::filesystem::path uiRoot = std::filesystem::path(gamePath).parent_path() / "ui";
-    std::error_code noUi;
-    if (std::filesystem::is_regular_file(uiRoot / "index.html", noUi)) {
-        const char* renderer = std::getenv("TN_UI_RENDERER");
-        const bool cssUi = renderer != nullptr && std::string(renderer) == "native-css";
+    if (hasUi) {
 #if defined(__linux__) && !defined(__ANDROID__)
         if (!cssUi) {
             // As the legacy host does (cli/main.cpp): the web view attaches to an X11 surface, so GTK

@@ -5,7 +5,13 @@
 // libc++'s thread_local support reach for them: without these two, ld.lld reports them undefined
 // and nothing links. e3-triangle.cc carries the same pair for the bare Dawn guest; this is the
 // engine player's copy (the E3 lane is a scratch experiment and is not edited from here).
+#include <dirent.h>
 #include <errno.h>
+#include <fcntl.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <string.h>
+#include <sys/stat.h>
 #include <pthread.h>
 #include <stdlib.h>
 #include <time.h>
@@ -118,6 +124,11 @@ int __wrap_clock_gettime(clockid_t id, struct timespec* ts) {
 // Rust std (the native physics staticlib, built for x86_64-unknown-linux-musl) names two glibc/musl
 // extensions OpenOrbis does not ship. std treats a failing pthread_getattr_np as "no stack guard
 // known" and a thread name as a hint, so both report "not supported".
+// OpenOrbis's <pthread.h> renames both to their BSD names by macro, so without the #undef these
+// defined pthread_attr_get_np / pthread_set_name_np and the Linux names stayed undefined (the CSS UI
+// crate's std reaches both; the physics crate never did).
+#undef pthread_getattr_np
+#undef pthread_setname_np
 int pthread_getattr_np(pthread_t, pthread_attr_t*) { return ENOSYS; }
 int pthread_setname_np(pthread_t, const char*) { return 0; }
 // std also takes three Linux calls as weak references; left undefined, a weak reference becomes a
@@ -141,4 +152,63 @@ long getrandom(void* buffer, unsigned long length, unsigned) {
 }
 int pidfd_getpid(int) { errno = ENOSYS; return -1; }
 int pidfd_spawnp(int*, const char*, const void*, const void*, char* const[], char* const[]) { errno = ENOSYS; return -1; }
+
+// The Rust archives are built for x86_64-unknown-linux-musl, so their std reads musl's struct layouts
+// and passes Linux O_* flags, while OpenOrbis' libc speaks FreeBSD's: a dirent name at offset 8 (musl
+// reads 19, so `index-DCvBpG7G.css` arrived as `G7G.css`), a 32-bit dev/ino stat, BSD open flags.
+// e5-build.sh points only the Rust archives at these (objcopy --redefine-syms); C/C++ keep libc's.
+struct TnMuslDirent { uint64_t ino; int64_t off; uint16_t reclen; uint8_t type; char name[256]; };
+static_assert(offsetof(TnMuslDirent, name) == 19, "musl x86_64 dirent");
+void* tn_musl_readdir(DIR* dir) {
+    static thread_local TnMuslDirent out;
+    const dirent* entry = readdir(dir);
+    if (entry == nullptr) return nullptr;
+    uint32_t fileno;  // <dirent.h> #defines d_fileno to a d_ino the struct does not have: read offset 0
+    memcpy(&fileno, entry, sizeof fileno);
+    out.ino = fileno;
+    out.off = 0;
+    out.reclen = sizeof out;
+    out.type = entry->d_type;
+    const size_t length = entry->d_namlen < sizeof out.name - 1 ? entry->d_namlen : sizeof out.name - 1;
+    memcpy(out.name, entry->d_name, length);
+    out.name[length] = '\0';
+    return &out;
+}
+struct TnMuslStat {
+    uint64_t dev, ino, nlink;
+    uint32_t mode, uid, gid, pad0;
+    uint64_t rdev;
+    int64_t size, blksize, blocks;
+    timespec atim, mtim, ctim;
+    int64_t unused[3];
+};
+static_assert(sizeof(TnMuslStat) == 144, "musl x86_64 stat");
+static int tnMuslStat(int result, const struct stat& in, TnMuslStat* out) {
+    if (result != 0) return result;
+    *out = TnMuslStat{};
+    out->dev = in.st_dev; out->ino = in.st_ino; out->nlink = in.st_nlink;
+    out->mode = in.st_mode; out->uid = in.st_uid; out->gid = in.st_gid;
+    out->rdev = in.st_rdev; out->size = in.st_size; out->blksize = in.st_blksize; out->blocks = in.st_blocks;
+    out->atim = in.st_atim; out->mtim = in.st_mtim; out->ctim = in.st_ctim;
+    return 0;
+}
+int tn_musl_stat(const char* path, TnMuslStat* out) { struct stat in; return tnMuslStat(stat(path, &in), in, out); }
+int tn_musl_lstat(const char* path, TnMuslStat* out) { struct stat in; return tnMuslStat(lstat(path, &in), in, out); }
+int tn_musl_fstat(int fd, TnMuslStat* out) { struct stat in; return tnMuslStat(fstat(fd, &in), in, out); }
+static int tnMuslFlags(int linux) {
+    int flags = linux & 3;  // O_RDONLY / O_WRONLY / O_RDWR agree
+    if (linux & 0x40) flags |= O_CREAT;
+    if (linux & 0x80) flags |= O_EXCL;
+    if (linux & 0x200) flags |= O_TRUNC;
+    if (linux & 0x400) flags |= O_APPEND;
+    if (linux & 0x800) flags |= O_NONBLOCK;
+    if (linux & 0x10000) flags |= O_DIRECTORY;
+    if (linux & 0x20000) flags |= O_NOFOLLOW;
+    if (linux & 0x80000) flags |= O_CLOEXEC;
+    return flags;
+}
+int tn_musl_open(const char* path, int flags, unsigned mode) { return open(path, tnMuslFlags(flags), mode); }
+int tn_musl_openat(int dir, const char* path, int flags, unsigned mode) {
+    return openat(dir == -100 ? AT_FDCWD : dir, path, tnMuslFlags(flags), mode);  // Linux AT_FDCWD is -100
+}
 }  // extern "C"
