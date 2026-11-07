@@ -4173,7 +4173,7 @@ const footprint = snowDiscFootprint(0.25);
 export class SnowField { … }
 ```
 
-- **Use when:** leave footprints, tracks and tyre ruts in snow that persist and fill in over time · let a pushed sphere carve a connected track and a dropped one settle into a crater · store snow deformation that rendered geometry and collision both read · reset a snowfield between rounds or change its depth at runtime · show how packed the snow is where people have walked or objects have rested
+- **Use when:** leave footprints, tracks and tyre ruts in snow that persist and fill in over time · let a fresh snowfall slowly fill older tracks back in as the field recovers · let a pushed sphere carve a connected track and a dropped one settle into a crater · store snow deformation that rendered geometry and collision both read · reset a snowfield between rounds or change its depth at runtime · show how packed the snow is where people have walked or objects have rested
 - **Constraints:** the field composes onto a Heightfield; construct the terrain first and let this own the surface · zero depth is bare ground: contacts register no indentation at all · out-of-region heightAt and normalAt follow Heightfield's error contract; sample returns zeros
 - **Requires:** @threenative/core/world Heightfield as the canonical terrain and surface
 - **Overrides:** depth, hardness, yieldFraction, maxBank and responseTime name the response coefficients
