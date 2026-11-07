@@ -417,7 +417,7 @@ export class GPUSceneBVH extends Group implements IComputeDriven {
     normals: null,
     positions: null,
   };
-  #packedStorage = {
+  #packedStorage: { indices: Uint32Array; normals: Float32Array; positions: Float32Array } = {
     indices: new Uint32Array([0, 0, 0]),
     normals: new Float32Array([0, 1, 0, 0]),
     positions: new Float32Array([0, 0, 0, 0]),
@@ -451,19 +451,22 @@ export class GPUSceneBVH extends Group implements IComputeDriven {
   /** Packed triangle indices as a storage node, built on first read. */
   get indices(): StorageBufferNode<"uvec3"> {
     if (this.#released) throw new Error("GPUSceneBVH indices were read after release.");
-    return (this.#backings.indices ??= readStorage(this.#packedStorage.indices, "uvec3", 3));
+    this.#backings.indices ??= readStorage(this.#packedStorage.indices, "uvec3", 3);
+    return this.#backings.indices;
   }
 
   /** Packed vertex normals as a storage node, built on first read. */
   get normals(): StorageBufferNode<"vec3"> {
     if (this.#released) throw new Error("GPUSceneBVH normals were read after release.");
-    return (this.#backings.normals ??= readStorage(this.#packedStorage.normals, "vec3", 4));
+    this.#backings.normals ??= readStorage(this.#packedStorage.normals, "vec3", 4);
+    return this.#backings.normals;
   }
 
   /** Packed world-space vertex positions as a storage node, built on first read. */
   get positions(): StorageBufferNode<"vec3"> {
     if (this.#released) throw new Error("GPUSceneBVH positions were read after release.");
-    return (this.#backings.positions ??= readStorage(this.#packedStorage.positions, "vec3", 4));
+    this.#backings.positions ??= readStorage(this.#packedStorage.positions, "vec3", 4);
+    return this.#backings.positions;
   }
 
   /** The upstream TSL query's node table, built on first read. */
