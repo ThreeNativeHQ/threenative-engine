@@ -116,15 +116,15 @@ const SCAFFOLD_TREE_HASHES: Readonly<Record<string, IScaffoldTreePin>> = {
     kit: "a089e811e0921922ebbb7908a06469dffad94e5c0ee65a869c055c533b2da20d",
   },
   adventure: {
-    shared: "137ea0cd89c80f9bc9c2861731f3e3ddb9ac1fe07af6c8f53e3648dcb02fd4dd",
-    kit: "2f2bfe68824aec79634b7cd1156bbe2978fd058542139a3fdc2cce97b6f1d065",
+    shared: "3b6a65384397ad4fcde5179b6d7b795ccf504ab76fa21ab0c3cb998389cf6bd6",
+    kit: "bda581d964fa8d028116507f6c22e8071b14e1d1455255441adf7039a8b810f1",
   },
   collectathon: {
-    shared: "b61727797b335aaa9fd194b2a5393dedc5320f2a08dbd3cc38bd0119caddcd37",
+    shared: "9f91c785a0d40371417559c17eb4ad9ebd739796a20e716c9290398f44e31d07",
     kit: "51104ab8cd60af8bf829ddfee2ae9f085b294856b0c8e02831fb10e585cc38af",
   },
   kart: {
-    shared: "27b59fa56f502534afb6c966bc11b33be2af268bef853bd91e5b710748dc60cf",
+    shared: "218aac5c0eaefff40b1ab6dab8e353c0cd2e182e7aa6b8009477655e739c6b76",
     kit: "35f8006d6f569c10527363e56c5d87851d33cd634a4e17dee2c04030523198e5",
   },
   minimal: {
@@ -144,7 +144,7 @@ const SCAFFOLD_TREE_HASHES: Readonly<Record<string, IScaffoldTreePin>> = {
     kit: "c168035be8a2356c5f8fa9b2800972d4ef29af4b63a95e31b6560ca4736d902b",
   },
   rain: {
-    shared: "d8357a7bee2866d756b42d4a7f059114dff4c123316ec0b0d2b362b9caab13aa",
+    shared: "767d4f566511b7d2cdefb5de42e8cd49e13d8859c8ec3041323ef580270462d6",
     kit: "92424f0927f4faf5dddf76105ad45b987d0bcd630b419a79461c299a35c6b4bd",
   },
   rts: {

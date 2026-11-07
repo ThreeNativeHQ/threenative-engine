@@ -15,6 +15,7 @@ import { existsSync } from "node:fs";
 import { readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { SHARED_RENDER_SOURCES, templateRoot } from "../src/index.js";
+import { kitMainDelta } from "../src/plumbing.js";
 
 /** Output, not source: the same exclusions the tree pin always had. */
 const GENERATED_SCAFFOLD_METADATA =
@@ -30,8 +31,8 @@ const COHORT_PIN =
 /**
  * Files that live in the kit's tree but are generated from one source, so a change to that source
  * moves the `shared` hash rather than sixteen `kit` hashes: the instruction routers, and the build
- * plumbing `src/plumbing.ts` writes. `adventure`'s `src/main.ts` is not here — it is hand-written
- * and `kit.json` says so.
+ * plumbing `src/plumbing.ts` writes. A kit that declares its entry hand-written keeps that entry in
+ * its own bucket (see `isSharedScaffoldPath`), so an edit there moves one `kit` hash.
  */
 const GENERATED_INSTRUCTION_FILES: ReadonlySet<string> = new Set([
   "AGENTS.md",
@@ -69,6 +70,9 @@ export function isSharedScaffoldPath(
   template: string,
   root = templateRoot(),
 ): boolean {
+  // A kit's entry is generated from one source, except where the kit declares its own: that file is
+  // the kit's bytes and a hand edit there must move the kit hash, not the shared one.
+  if (relativePath === "src/main.ts" && kitMainDelta(template, root).handWritten) return false;
   if (GENERATED_INSTRUCTION_FILES.has(relativePath)) return true;
   if (SHARED_RENDER_SOURCES.includes(relativePath)) return true;
   const source = RENAMED_BY_SCAFFOLDER[relativePath] ?? relativePath;

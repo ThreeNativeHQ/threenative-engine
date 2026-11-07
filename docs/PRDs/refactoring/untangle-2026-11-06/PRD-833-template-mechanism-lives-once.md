@@ -27,7 +27,7 @@ Report ids B1, F1, F2, F3, F4, F8, B2. Root `AGENTS.md` puts "plumbing every gam
    Each template keeps a small parameter object for its colours, gains and thresholds: the
    `GPUParticles3D` shape. The WebGL predicate becomes one core export.
 2. Build plumbing comes from one shared source, restamped by `createProject`. A per-kit delta in
-   `kit.json` names the extra Vite plugins. One `template-assets/patches/manifest.json` feeds
+   the kit's own manifest names the Vite plugins it needs. One `template-assets/patches/manifest.json` feeds
    `copyFrameworkPatches`, `prepack` and the catalog script.
 3. `scaffold.spec.ts` keeps two hashes per kit, `shared` and `kit`. `pnpm scaffold:pin` rewrites them
    and names the moved input. `STARTER_PATHS` and its siblings are deleted, and the allowlist owns names.
@@ -41,16 +41,16 @@ Report ids B1, F1, F2, F3, F4, F8, B2. Root `AGENTS.md` puts "plumbing every gam
 
 | Capability | Reachable consumer/trigger | Replaces / disposition | Evidence |
 | --- | --- | --- | --- |
-| Environment measure and backlight | Kit `src/render/` imports the core subpath | 84 template copies deleted | Phase 1 |
+| Environment measure and sample | Kit `src/render/` imports the core subpath | 60 template copies deleted; the backlight stays kit source, restamped | Phase 1 |
 | Shared build plumbing | `npm create threenative` → `createProject` | Per-kit copies deleted | Phase 2 |
 
 ## Execution Phases
 
 #### Phase 1: Mechanism into core
 **Status:** DONE
-**Files:** new `packages/core/src/render/environment/*.ts` and subpath export; edit `templates/*/src/render/` callers; delete the 84 copies.
+**Files:** new `packages/core/src/render/environment/*.ts` and subpath export; edit `templates/*/src/render/` callers; delete the copies of the five moved files (60), and list the backlight in `SHARED_RENDER_SOURCES` instead of moving it.
 
-- [x] The core subpath `@threenative/core/render/environment` owns five of the seven files plus the admission gate they needed; the backlight (`backlightMaterial`, `backlightControls`) returned to each kit's `src/render/` under `SHARED_RENDER_SOURCES`, because its shader constants decide how a surface looks; every kit imports it, and all 84 copies are deleted. The one cross-boundary import (`environmentSampling.ts` reading the kit's `quality.ts` for the gate) was inverted by moving the gate into the same subpath, so no parameter object was needed — the tier it compares is still the caller's. Wiring: tsup entry, `exports`, root `tsconfig` path. The kit-side proof is that a real build resolves it: `scaffold.spec.ts`'s recast case builds a scaffolded minimal kit with the new import. proof: `rg -n 'function .*[Ww]ebgl[A-Za-z]*Fallback' packages/create-threenative/templates` returns nothing; `pnpm --filter create-threenative exec vitest run __tests__/backlight-shared-graph.spec.ts __tests__/backlight-render-matrices.spec.ts __tests__/backlight-material-lifecycle.spec.ts __tests__/minimal-material-lighting.spec.ts __tests__/sailing-snow-material-lighting.spec.ts` → 39 passed; `npx vitest run packages/core/__tests__ packages/create-threenative/__tests__` → 7123 passed, 4 skipped, and `pnpm typecheck` → 0.
+- [x] The core subpath `@threenative/core/render/environment` owns five of the seven files plus the admission gate they needed; the backlight (`backlightMaterial`, `backlightControls`) returned to each kit's `src/render/` under `SHARED_RENDER_SOURCES`, because its shader constants decide how a surface looks; every kit imports it, and the 60 environment copies are deleted (the 32 backlight copies stay, one per kit that ships the lane, restamped from one source). The one cross-boundary import (`environmentSampling.ts` reading the kit's `quality.ts` for the gate) was inverted by moving the gate into the same subpath, so no parameter object was needed — the tier it compares is still the caller's. Wiring: tsup entry, `exports`, root `tsconfig` path. The kit-side proof is that a real build resolves it: `scaffold.spec.ts`'s recast case builds a scaffolded minimal kit with the new import. proof: `rg -n 'function .*[Ww]ebgl[A-Za-z]*Fallback' packages/create-threenative/templates` returns nothing; `pnpm --filter create-threenative exec vitest run __tests__/backlight-shared-graph.spec.ts __tests__/backlight-render-matrices.spec.ts __tests__/backlight-material-lifecycle.spec.ts __tests__/minimal-material-lighting.spec.ts __tests__/sailing-snow-material-lighting.spec.ts` → 39 passed; `npx vitest run packages/create-threenative/__tests__ scripts/__tests__/check-core-boundary.spec.ts` → 2056 passed, and `pnpm typecheck` → 0.
 - [x] One core WebGL-fallback predicate; no `quality.ts` defines its own. Each kit's `quality.ts` is now a three-line re-export of `IMaterialLightingEnvironment`, `isWebGLFallbackRenderer` and `materialLightingEnabled` from the subpath, and the starter's `rendererGate.ts` is deleted. The charter and portability checks were extended deliberately, not bypassed: `constraints.spec.ts` admits `render/environment/**` with a tighter assertion that the block originates no material, light, colour or shader (only the sampling quad's own material and the node twin of the *game's* material, and tone mapping only as the readback's save/restore), and `check-core-boundary.ts` admits the mechanism names with the same proof. proof: the `rg` above returns nothing; `npx vitest run packages/core/__tests__/constraints.spec.ts` → 4 passed.
 
 #### Phase 2: One source for shared plumbing

@@ -291,12 +291,10 @@ describe("core constraints", () => {
           // AGENTS.md rule 3, second exception (owner, 2026-10-31): every `@threenative/core/spells`
           // factory ships a stock look, and each colour, size and timing is a named override.
           !file.startsWith("spells/") &&
-          // PRD-833 moved the environment measure-and-sample mechanism and the backlight out of the
-          // twelve kits that held byte-identical copies. None of it originates appearance: it reads
-          // the scene's own environment, and `backlightMaterial` copies the *game's* material into a
-          // node twin (`new MeshStandardNodeMaterial().copy(source)`) and drives it from
-          // `materialColor`/`materialEmissive`/`materialRoughness`/`materialMetalness`, so the game
-          // still decides every value. The assertions below hold the block to that.
+          // PRD-833 moved the environment measure-and-sample mechanism out of the twelve kits that
+          // held byte-identical copies. None of it originates appearance: it reads the scene's own
+          // environment and refuses by name. The backlight is NOT here — its shader constants decide
+          // how a surface looks — so it stays in each kit's `src/render/`.
           !file.startsWith("render/environment/") &&
           file !== "render-environment.ts" &&
           // The spells' particle kind table; PRD-789 deletes it with the from-scratch spells.
@@ -320,8 +318,6 @@ describe("core constraints", () => {
     const environment = [
       "render-environment.ts",
       ...[
-        "backlightControls.ts",
-        "backlightMaterial.ts",
         "environmentContribution.ts",
         "environmentRadiance.ts",
         "environmentSampleCache.ts",
@@ -340,13 +336,11 @@ describe("core constraints", () => {
       )
       .join("\n");
     expect(environment).not.toMatch(/postprocessing|\.wgsl|new\s+\w*Light|new\s+Color/iu);
-    // Two shader materials, both of them plumbing: the sampling quad that reads the environment
-    // into an offscreen target (never attached to the scene), and the node twin of the *game's*
-    // material, whose every value is copied from it. No third one may appear.
-    expect(environment.match(/new\s+\w*Material/gu) ?? []).toHaveLength(2);
-    expect(environment).toMatch(/new MeshStandardNodeMaterial\(\)\.copy\(\w+\)/u);
+    // One shader material, and it is plumbing: the sampling quad that reads the environment into an
+    // offscreen target and is never attached to the scene. The backlight's node twin left with the
+    // backlight, which now lives in each kit's `src/render/` where its constants are the game's.
+    expect(environment.match(/new\s+\w*Material/gu) ?? []).toHaveLength(1);
     expect(environment).toMatch(/new MeshBasicNodeMaterial\(/u);
-    expect(environment).toMatch(/materialColor|materialEmissive/u);
     // Tone mapping appears only as the readback's own bracket: the sample is taken with tone
     // mapping off and the renderer's previous value is put back in the same `finally`. No curve is
     // chosen here - `applyRendererToneMapping` is the one writer of it.

@@ -67,11 +67,8 @@ const RENDER_PORTABLE_CORE_SYMBOLS: ReadonlySet<string> = new Set([
 
 // `import { … }`, `import type { … }`, `export { … }` and `export type { … }`: a named re-export of a
 // whitelisted symbol is the same admission as importing it, whether the file uses it or passes it on.
-/** The one core subpath a kit's `src/render/` may import from, and only for the names below. */
+/** The one core subpath a kit's `src/render/` may import from; its entry file is the whole list. */
 const RENDER_ENVIRONMENT_SUBPATH = "core/render/environment";
-
-/** The environment mechanism (PRD-833): reads the scene's own environment, decides no appearance. */
-const RENDER_ENVIRONMENT_SYMBOLS: ReadonlySet<string> = new Set([]);
 
 const FRAMEWORK_IMPORT =
   /(?:import|export)\s+(?:type\s+)?\{([^}]*)\}\s+from\s+["']@threenative\/([^"']+)["'];?/gu;
