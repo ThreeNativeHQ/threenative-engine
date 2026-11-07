@@ -504,19 +504,6 @@ export function defineBrowserClasses(
       (binding.fixedMembers?.includes(property) === true || /^(map|[a-z]+Map)$/u.test(property)));
   const labels = new WeakMap<object, Map<string, unknown>>();
   let animated = new WeakMap<object, Map<string, unknown>>();
-  /**
-   * PRD-828: the fields `tn_anim_tick` writes in the engine. A batched tick reaches the engine without
-   * `invoke`, so it does not drop the whole animation mirror the way an ordinary mixer or action call
-   * does; dropping exactly what it wrote is the difference between a fresh read and a pose integrated
-   * at last frame's rate.
-   */
-  const actionFieldsWrittenByTick = ["time", "timeScale", "weight"] as const;
-  const mixerFieldsWrittenByTick = ["time"] as const;
-  const forgetAnimated = (object: object, fields: readonly string[]): void => {
-    const table = animated.get(object);
-    if (table === undefined) return;
-    for (const field of fields) table.delete(field);
-  };
   // An action's `isScheduled()`: the mixer's list of active actions, which only the action's own
   // play/stop and the mixer's stopAllAction/uncache calls change (animation/mixer.cpp), never update,
   // setTime or clipAction (a rifle asks clipAction each frame).
@@ -1803,16 +1790,10 @@ export function defineBrowserClasses(
       const first = mixers[0];
       if (meter.counting && first !== undefined) meter.record("call", first, "tn_anim_tick");
       source.animTick?.({ mixers, actions, roots, values, status });
-      // The engine just wrote state the JS mirror caches, and this call did not go through `invoke`:
-      // drop the fields the batch can change, so a read after it is not the value from before it. Only
-      // these: resetting the whole mirror would re-read `mixer.timeScale` and `paused` per rig, which is
-      // the per-rig crossing this call exists to remove.
-      for (let i = 0; i < count; i += 1) {
-        const rig = rigs[i];
-        if (rig === undefined) continue;
-        if (rig.action !== null) forgetAnimated(rig.action, actionFieldsWrittenByTick);
-        forgetAnimated(rig.mixer, mixerFieldsWrittenByTick);
-      }
+      // Nothing to invalidate: every field this call writes — the mixer's `time`, the action's `time`,
+      // `timeScale` and `weight` — is an engine-memory field on this back end (`fastGetter` over
+      // `readDoubles` in the registry's `fields`), not a JS mirror, so a read after it is the engine's
+      // answer. `bridge-mirror.spec.ts` pins exactly that.
     };
   }
 
