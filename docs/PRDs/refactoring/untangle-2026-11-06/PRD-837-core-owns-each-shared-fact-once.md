@@ -33,7 +33,7 @@ Report ids C2, C1, C4, C5, B2, B4, A5. Follows the refactoring batch rule "one o
 ## Acceptance Criteria
 
 - [ ] AC-1 [local]: Strata forest and the abyss example load and draw, and the visual judge returns NEUTRAL or better. proof: `capture-strata-worlds` forest plus the abyss scenario, with the judge verdict on this box
-- [ ] AC-2 [local]: Affected core tests stay green. proof: `pnpm --filter @threenative/core test`
+- [x] AC-2 [local]: Affected core tests stay green. proof: `npx vitest run packages/core/__tests__` (the root vitest project, which is what `pnpm --filter @threenative/core test` delegates to `publint` for) → **4607 passed, 4 skipped, 321 files**, including the four areas this PRD touched (`renderer-facts.spec.ts`, `gpu-readings.spec.ts`, `lod-near-plane.spec.ts`, and the dev-global constraint). `pnpm --filter @threenative/core test` itself runs `publint --strict` only → `All good!`.
 
 ## Decisions
 

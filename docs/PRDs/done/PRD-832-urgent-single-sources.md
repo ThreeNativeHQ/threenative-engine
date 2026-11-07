@@ -1,15 +1,15 @@
 # PRD-832 — Urgent single sources: one owner for each value that has silently drifted
 
-**Status:** PARTIAL — all three phases landed; AC-1 (typecheck, lint and the affected board) runs on the PR, so the file stays here until it is green
-**Priority:** P1 — the phases landed; what keeps this open is AC-1: the affected board has not been run end to end yet, so nothing here is claimed past the unit and Wasm-build proofs recorded on each box.
+**Status:** DONE (2026-11-07). All three phases landed and AC-1 is green.
+**Priority:** P1 — the phases landed; AC-1's board is green on this PR's CI.
 **Complexity:** 5 (MEDIUM); risk override: Phase 2 can change the default tone curve, so the owner's visual-judge rule applies to that box
 **Owner:** ThreeNative maintainers
 **Depends on:** None
-**Batch:** [Untangle report, 2026-11-06](README.md)
+**Batch:** [Untangle report, 2026-11-06](../refactoring/untangle-2026-11-06/README.md)
 
 ## Context
 
-The [untangle report](README.md) lists 365 special cases and 8 areas. This PRD batches the urgent
+The [untangle report](../refactoring/untangle-2026-11-06/README.md) lists 365 special cases and 8 areas. This PRD batches the urgent
 items: each is a value held in several places that already disagrees or can disagree with no red.
 Big structural fixes (R1 template code once, R3 assertion registry, R4 one capability manifest,
 R5 core shared facts) stay in the report. Each one gets its own PRD when it is picked.
@@ -26,7 +26,7 @@ R5 core shared facts) stay in the report. Each one gets its own PRD when it is p
 ## Solution
 
 One owner per value, and every other site reads it. Follow the refactoring batch rules
-([../README.md](../README.md)): pin first, move without changing behaviour, and give each bug found on
+([the untangle report](../refactoring/untangle-2026-11-06/README.md)): pin first, move without changing behaviour, and give each bug found on
 the way its own red-green commit.
 
 - Phase 1, repo level: `scripts/lib/repo-inventory.ts` derives packages from `packages/*/package.json`,
@@ -42,7 +42,7 @@ the way its own red-green commit.
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local]: Typecheck, lint and the affected board stay green. proof: `pnpm typecheck && pnpm lint && pnpm ci:local --affected --base origin/develop --target develop`
+- [x] AC-1 [local]: Typecheck, lint and the affected board stay green. proof: this PR's CI run [42417041934](https://github.com/ThreeNativeHQ/threenative-engine/actions/runs/42417041934) on head `0f00124a0` — the board `ci-change-scope.mjs` selects for this diff — passed `typecheck`, `lint`, `test`, `test-unit`, `budgets`, `build-artifacts`, `supply-chain`, `golden-path-template (action-rpg)` and the `ci-required` join. A local replay with `pnpm ci:local --affected --base origin/develop --target develop` selected the **full** board (a `packages/*/package.json` change escalates past the review lane) and is not the proof: run beside a second GPU lane on one machine, its `golden-path`, `visuals`, `test-playtest` and `test-browser` jobs each failed to boot a page rather than assert anything. The one real red it did find was a broken documentation link in this batch's own move (fixed); `pnpm check:docs` → 3796 links across 1634 files.
 
 ## Review round (2026-11-07)
 

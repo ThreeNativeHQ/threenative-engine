@@ -1,11 +1,11 @@
 # PRD-836 — One committed capability manifest
 
-**Status:** PARTIAL — both phases landed; AC-1 (the sandbox scaffold reaching the MCP) runs on the PR. `scripts/api-surface.json` stays tracked: it is the API-break baseline, not derived output, and untracking it would let an unannounced removal through locally.
+**Status:** DONE (2026-11-07). `scripts/api-surface.json` stays tracked: it is the API-break baseline, not derived output, and untracking it would let an unannounced removal through locally.
 **Priority:** P2 — open Phase 1 deletes the second 556 KB `capabilities.json` that 82 of 117 `core/src/index.ts` commits had to carry, and Phase 2 moves the other derived files out of commits.
 **Complexity:** 4 (MEDIUM)
 **Owner:** ThreeNative maintainers
 **Depends on:** None
-**Batch:** [Untangle report, 2026-11-06](README.md) — R4
+**Batch:** [Untangle report, 2026-11-06](../refactoring/untangle-2026-11-06/README.md) — R4
 
 ## Context
 
@@ -29,8 +29,8 @@ longer stages files the author did not touch.
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local]: An installed project still finds capabilities through the engine MCP. proof: `pnpm sandbox` scaffold, then `engine_search_capabilities` returns hits for `WorldEnvironment`
-- [ ] AC-2 [local]: The tarball ships the manifest and the derived docs. proof: `pnpm --filter create-threenative pack` plus `tar -tzf` lists them
+- [x] AC-1 [local]: An installed project still finds capabilities through the engine MCP. proof: `pnpm sandbox --genre platformer --template starter --name mcp-check --out /home/joao/projects/threenative/sandbox` scaffolded an install from the packed tarballs, then `node node_modules/@threenative/core/mcp/call.mjs threenative-engine engine_search_capabilities '{"situation":"WorldEnvironment tone mapping exposure"}'` → `verdict: matched`, with `WorldEnvironment` itself the second hit (score 0.28) behind `installFilmicToneMapping`, read from the installed package, not the repository.
+- [x] AC-2 [local]: The tarball ships the manifest and the derived docs. proof: `npm pack --dry-run --json` in `packages/core` lists `capabilities.json` among 353 files; `pnpm --filter create-threenative pack` then `tar -tzf create-threenative-0.2.17.tgz` lists `package/agent-docs/references/capability-reference.md` and `package/agent-files/.agents/skills/threenative-capabilities/SKILL.md`. The manifest rides **core's** tarball, not the scaffolder's: Phase 1 deleted the second copy, so asking create-threenative to ship one would restore the file this PRD removes. The scaffolder's tarball carries the generated docs, and the engine MCP resolves the manifest from `node_modules/@threenative/core/capabilities.json`.
 
 ## Integration Ledger
 
@@ -41,7 +41,7 @@ longer stages files the author did not touch.
 ## Execution Phases
 
 #### Phase 1: One manifest
-**Status:** PARTIAL — the hook no longer stages on its own; the second copy is still tracked
+**Status:** DONE
 **Files:** `scripts/build-capability-manifest.ts`, `packages/create-threenative/package.json`, `packages/engine-mcp/src/index.ts`, `githooks/pre-commit`.
 
 - [x] `packages/create-threenative/capabilities.json` is **untracked** and the one committed manifest is `packages/core/capabilities.json`. The generator writes one file; `create-threenative` keeps none — it reads core's at build time, and the engine MCP already resolved `@threenative/core/capabilities.json` in a project and `packages/core/capabilities.json` in the repo, so nothing had to change there. Eight readers and eleven specs followed the path (`capability-recall`, `check-capability-docs`, `check-api-surface`, `check-capability-examples`, `detect-capability-duplicates`, the two generators, the engine-mcp specs); the legacy path stays named as a constant so a stale copy is reported rather than silently used. proof: `npx vitest run scripts/__tests__/capability-manifest.spec.ts scripts/__tests__/capability-recall.spec.ts scripts/__tests__/check-capability-docs.spec.ts scripts/__tests__/capability-site-docs.spec.ts scripts/__tests__/budgets.spec.ts scripts/__tests__/generate-capability-reference.spec.ts packages/engine-mcp/__tests__ packages/core/__tests__/frame-budget.spec.ts packages/create-threenative/__tests__/scaffold-manifest-imports.spec.ts` → 246 passed, 1 skipped; `npx tsx scripts/capability-recall.ts` → recallAtK 0.9369 (unchanged); `git ls-files packages/create-threenative/capabilities.json` returns nothing.
