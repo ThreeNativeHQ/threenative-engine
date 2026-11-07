@@ -34,7 +34,8 @@ import {
 import { texture, uniform, vec4 } from "three/tsl";
 import { MeshBasicNodeMaterial, type Node } from "three/webgpu";
 import { gtaoUrlKnobs } from "../render/aoReach.js";
-import { giCache, installGi } from "../render/giCache.js";
+import { giCache, installGi, skyRadiance } from "../render/giCache.js";
+import { tracedGiField } from "../render/giTraced.js";
 import { watchGi } from "../render/giTier.js";
 import { type IGlbMaterialImages, fetchGlbMaterialImages } from "../render/glbImages.js";
 import { reflectionTrace } from "../render/reflectionTrace.js";
@@ -344,7 +345,35 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
           m.material = (m.material as MeshBasicMaterial).clone();
           (m.material as unknown as { color: Color }).color.setScalar(0);
         }
+        // PRD-831: ?giField=trace lights the materials from a RadianceCache that traces the scene on the GPU, in place of the
+        // CPU bake's field; the bake still runs for the sky shares and the emitters. The probes need a few frames: the capture
+        // waits for `window.__tnGiField.ready()`.
+        const sky = skyRadiance.current;
+        const field =
+          params.get("giField") === "trace"
+            ? tracedGiField(
+                ctx,
+                model,
+                {
+                  lights: lights.map((l) => ({
+                    color: l.color,
+                    distance: l.distance,
+                    intensity: l.intensity,
+                    position: l.position,
+                  })),
+                },
+                sky === undefined
+                  ? new Color(0, 0, 0)
+                  : new Color(
+                      (sky.data[0] ?? 0) * sky.scale[0],
+                      (sky.data[1] ?? 0) * sky.scale[1],
+                      (sky.data[2] ?? 0) * sky.scale[2],
+                    ),
+              )
+            : undefined;
+        if (field !== undefined) (window as unknown as { __tnGiField: unknown }).__tnGiField = field;
         const gi = installGi(ctx, model, {
+          ...(field === undefined ? {} : { field }),
           // A traced ray finds the floor itself: the painted floor of the cube capture is not needed.
           paintGround: !tracing,
           // Diagnosis: ?bounces=N brackets how much of the indirect light the later bounces carry.
