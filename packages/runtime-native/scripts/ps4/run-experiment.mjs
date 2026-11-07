@@ -770,12 +770,13 @@ async function buildE4(outDir, toolchain) {
 // writes that one IIFE and cooks the scene's assets beside it; an unbound name fails the bundle by
 // name (TN_NATIVE_ENGINE_UNBOUND), which is the honest red for a game the player cannot run.
 async function buildE5(outDir, toolchain, scene) {
+  // The scene is checked before the build: a wrong --scene fails in a second, not after it.
+  const entry = path.join(scene, 'src', 'game.ts');
+  if (!existsSync(entry)) throw new Error(`scene ${scene} has no src/game.ts (--scene names a game project)`);
   runInherit('bash', [path.join(HERE, 'e5-build.sh'), '--out', outDir], { env: { ...process.env, OO_PS4_TOOLCHAIN: toolchain } });
   const appDir = path.join(outDir, 'out', 'app');
   const eboot = path.join(appDir, 'eboot.bin');
   if (!existsSync(eboot)) throw new Error(`e5-build.sh wrote no ${eboot}`);
-  const entry = path.join(scene, 'src', 'game.ts');
-  if (!existsSync(entry)) throw new Error(`scene ${scene} has no src/game.ts (--scene names a game project)`);
   const bundle = path.join(appDir, 'game.js');
   run(process.execPath, [
     path.join(REPO_ROOT, 'packages/runtime-native/scripts/bundle-native-engine.mjs'),

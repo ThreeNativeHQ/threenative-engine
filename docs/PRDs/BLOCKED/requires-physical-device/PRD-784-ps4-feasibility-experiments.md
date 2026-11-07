@@ -14,7 +14,7 @@ target (+2), external toolchains (+1) = 7. Risk override: none.
 The owner wants to know if ThreeNative can run on a PS4, and wants at least one proof of concept on
 the console. Emulator runs come first, so the work costs the owner as little time as possible.
 
-[`docs/spikes/PS4_PS5_Emulation_Spike.md`](../../spikes/PS4_PS5_Emulation_Spike.md) (2026-08-27)
+[`docs/spikes/PS4_PS5_Emulation_Spike.md`](../../../spikes/PS4_PS5_Emulation_Spike.md) (2026-08-27)
 already maps the landscape. This PRD keeps its evidence labels and its fail-closed rule. It replaces
 the parts below, because the spike predates the C++ engine decision of 2026-10-15.
 
@@ -92,8 +92,8 @@ performance work. A go result opens a second PRD for those.
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local]: The engine and V8 render the cube for 300 frames on `PS4_EMULATED`, from one command. proof: `node packages/runtime-native/scripts/ps4/run-experiment.mjs e5` — Evidence: pending.
-- [ ] AC-2 [local]: A failed run exits non-zero and names the failing experiment and call. proof: `node packages/runtime-native/scripts/ps4/run-experiment.mjs e5 --scene missing` — Evidence: pending.
+- [x] AC-1 [local]: The engine and V8 render the cube for 300 frames on `PS4_EMULATED`, from one command. proof: `node packages/runtime-native/scripts/ps4/run-experiment.mjs e5` — Evidence (2026-11-06): `PS4_EMULATED E5 PASS drawn=9.74% frames=300 clear=0,0,0 moved=3.71% js_ms=0.030 frame_ms=5.930`; the one command builds the player, bundles the scene, boots shadPS4 and judges the presented frames.
+- [x] AC-2 [local]: A failed run exits non-zero and names the failing experiment and call. proof: `node packages/runtime-native/scripts/ps4/run-experiment.mjs e5 --scene missing` — Evidence (2026-11-06): exit 1, `PS4_EMULATED E5 FAIL: build -- scene <cwd>/missing has no src/game.ts (--scene names a game project)`, raised before any build step.
 
 ## Blocked on
 
