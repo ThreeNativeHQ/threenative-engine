@@ -10,6 +10,7 @@
 #include <fcntl.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <pthread.h>
@@ -104,6 +105,15 @@ extern "C" void TnAnimationMixerCpuTimingTlsInit() {}
 // the flips were 29 ms apart. e5-build.sh links with --wrap=clock_gettime, so every static caller
 // (libc++ chrono.cpp, libc, V8, Dawn, the engine) reaches this translation first.
 extern "C" {
+// Every abort() in the guest (libc, libc++abi, Dawn, OpenGNM, the driver) names its caller first:
+// shadPS4 reports only "signal 6" and abort's own address, so a bare abort had no call site
+// (PRD-784). llvm-symbolizer on the ELF at `caller - 0x400000` names the function.
+[[noreturn]] void __real_abort(void);
+[[noreturn]] void __wrap_abort(void) {
+    fprintf(stderr, "TN_PS4_ABORT caller=%p\n", __builtin_return_address(0));
+    fflush(stderr);
+    __real_abort();
+}
 int __real_clock_gettime(clockid_t, struct timespec*);
 int __wrap_clock_gettime(clockid_t id, struct timespec* ts) {
     // Linux id -> FreeBSD/Orbis id (shadPS4 kernel/time.h ORBIS_CLOCK_*).

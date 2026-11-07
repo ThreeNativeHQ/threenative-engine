@@ -482,6 +482,14 @@ git apply "$SCRIPTS/patches/0047-vk-ps4-ps-input-cntl.patch"
 # 16 epilogue slices were about one frame of Dawn submits, so the submit thread spun until the GPU retired
 # the previous frame (93% of its samples on the starter). 256 slices let the CPU run ahead (PRD-784).
 git apply "$SCRIPTS/patches/0048-vk-ps4-epilogue-slots.patch"
+# Every image view kept the image's 2D T# type, so a cube view of the environment's PMREM was sampled as
+# one 2D slice. Cube and array views now set their T# type and depth (PRD-784 P4-3).
+git apply "$SCRIPTS/patches/0049-vk-ps4-cube-array-view-types.patch"
+# A (mip, layer) colour target: the layer by CB_COLOR_VIEW.SLICE_START (radv), the mip's own degraded tile
+# mode, and CB_COLOR_SLICE from the level table (64 KB against the texture's 32 KB at 64 px RGBA16F wrote
+# each face onto the next and past the image: a guest heap abort). A target that still reaches past the
+# image is refused with TN_VKPS4_LEVEL_RT_OVERRUN.
+git apply "$SCRIPTS/patches/0050-vk-ps4-level-target-layout.patch"
 # The Makefile compiles TEST_SRC relative to the vulkan-ps4 tree.
 cp "$SCRIPTS/e2-triangle.c" "$SRC/e2-triangle.c"
 make -f Makefile.orbis -j"$JOBS" TEST_SRC=../e2-triangle.c self > "$LOGS/e2-triangle.log" 2>&1

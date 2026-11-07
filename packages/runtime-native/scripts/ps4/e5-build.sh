@@ -159,6 +159,7 @@ log "linking $ELF"
 CORES="${JOBS}" nice -n 19 ld.lld -m elf_x86_64 -pie --script "$OO/link.x" --eh-frame-hdr \
   --allow-multiple-definition \
   --wrap=clock_gettime \
+  --wrap=abort \
   -z max-page-size=0x4000 --gc-sections --dynamic-linker /libexec/ld-elf.so.1 \
   -L"$OO/lib" \
   "$OUT/out/ps4-malloc.o" "$OUT/out/ps4-guest-libcxx.o" "$OUT/out/mesa_stubs.o" "$OO/lib/crt1.o" \

@@ -46,6 +46,11 @@ test('the Rust archives call the musl-ABI shims, not OpenOrbis libc (PRD-784)', 
   assert.match(shim, /#undef pthread_getattr_np/u);
 });
 
+test('a guest abort names its caller (PRD-784)', () => {
+  assert.match(readFileSync(path.join(root, 'scripts/ps4/e5-build.sh'), 'utf8'), /--wrap=abort/u);
+  assert.match(readFileSync(path.join(root, 'scripts/ps4/ps4-guest-libcxx.cc'), 'utf8'), /void __wrap_abort\(void\)[^}]*TN_PS4_ABORT caller=/su);
+});
+
 test('refuses a UI with no stylesheet', () => {
   const { app, scene: dir } = scene({ 'a.png': 'x' });
   assert.throws(() => stageGuestUi(dir, app, {}), /TN_PS4_UI_NO_CSS/u);
