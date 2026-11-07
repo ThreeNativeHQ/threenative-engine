@@ -405,4 +405,23 @@ describe("the gather's occlusion", () => {
     expect(gathers).toHaveLength(3);
     expect(dependenciesOf(node.getAONode()).has(gathers[2])).toBe(true);
   });
+
+  // With a cache tier below, a ray that hits already returns `hit - cache`: the frame keeps the cache along that ray
+  // and the gather swaps it for what the ray found. Multiplying the frame by the hit share too removed that light a
+  // second time, and the direct light with it (cornell corner floor 61 against Unreal's 98, 2026-11-06).
+  it("answers no occlusion over a fallback tier, for both gathers, since each hit already replaced the cache", () => {
+    for (const probes of [
+      undefined,
+      { downsampleFactor: 16, viewport: { width: 1280, height: 720 } },
+    ]) {
+      const { tsl, gathers } = upstreamTable();
+      const node = defineScreenSpaceGi(tsl)(chain(), chain(), chain(), {
+        camera,
+        fallback: () => upstreamTsl.vec3(0.2),
+        ...(probes === undefined ? {} : { probes }),
+      });
+      for (const gather of gathers)
+        expect(dependenciesOf(node.getAONode()).has(gather)).toBe(false);
+    }
+  });
 });

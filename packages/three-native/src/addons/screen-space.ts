@@ -479,7 +479,7 @@ const GI_MAX_LUMINANCE = 40;
  * share of its rays and answers `pow(clamp(1 - occludedShare), aoIntensity)` for the caller to multiply the lit frame
  * by (SSGINode.js:637-638, 651). This answers the same quantity as `pow(clamp(1 - a), aoIntensity)` over rgb. A
  * constant 1 dropped the term: the frame kept the light the occluder blocked and SSGI only added its gather
- * (2026-11-02, PRD-617 AC-7).
+ * (2026-11-02, PRD-617 AC-7). With a `fallback` tier it answers 1: each hit already replaced the cache along its ray.
  */
 export function defineScreenSpaceGi(tsl: IScreenSpaceTsl) {
   return function ssgi(
@@ -521,7 +521,11 @@ export function defineScreenSpaceGi(tsl: IScreenSpaceTsl) {
     const screenEdgeFade = uniform(0.1);
     const probeJitter = uniform(1);
     const probeDebug = uniform(0);
+    // Over a fallback tier the frame holds no occluded light to remove: a ray that hits returns `hit - fallback`, so
+    // the cache along it is already swapped for what the ray found, and the hit share multiplied in again took that
+    // light out twice, with the direct light (Lumen's screen probe gather applies no such term over its radiance cache).
     const occlusion = (gather: TslNode): TslNode => {
+      if (options.fallback !== undefined) return vec4(1, 1, 1, 1);
       const ao = pow(clamp(float(1).sub(gather.a), float(0), float(1)), aoIntensity);
       return vec4(ao, ao, ao, 1);
     };
