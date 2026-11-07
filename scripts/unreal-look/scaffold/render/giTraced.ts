@@ -1,5 +1,6 @@
 import { GPUSceneBVH, type ICtx, RadianceCache } from "@threenative/core";
 import { Box3, Color, type Mesh, type Object3D } from "three";
+import { normalize } from "three/tsl";
 import type { IGiOptions } from "./giCache.js";
 
 /**
@@ -25,6 +26,8 @@ export function tracedGiField(
   density = 1,
   /** Rays per probe along one side: `probeResolution` squared rays (the cache's default is 8, 64 rays). */
   probeResolution?: number,
+  /** Diagnosis: read the field this share of a probe spacing off the surface, along its normal. */
+  normalBias = 0,
 ): IGiTracedField {
   // A glass pane is not a surface the probes see (the cache's own rule): only opaque meshes are packed.
   const bvh = ctx.add(
@@ -60,6 +63,11 @@ export function tracedGiField(
       },
     }),
   );
+  const spacing = Math.min(
+    ...(["x", "y", "z"] as const).map(
+      (a) => (bounds.max[a] - bounds.min[a]) / Math.max(1, volume.resolution[a] - 1),
+    ),
+  );
   /** The largest value in the atlas: 0 while no probe has landed, or when the lamps reach nothing. */
   const atlasMax = (): number => {
     let max = 0;
@@ -86,7 +94,13 @@ export function tracedGiField(
     log(`frame ${frame}`);
   });
   return {
-    irradiance: (position, normal) => volume.sampleNode(position, normal).div(Math.PI),
+    irradiance: (position, normal) =>
+      volume
+        .sampleNode(
+          normalBias > 0 ? position.add(normalize(normal).mul(normalBias * spacing)) : position,
+          normal,
+        )
+        .div(Math.PI),
     ready: () => volume.observation.status === "ready",
   };
 }
