@@ -158,6 +158,17 @@ describe("probe trace scene (PRD-603)", () => {
     expect(lightingStepped(from, key(0, 1, 1.0))).toBe(true);
     expect(lightingStepped(key(0, 0), key(0, 0))).toBe(false);
     expect(lightingStepped(key(0, 0), key(0, 1))).toBe(true);
+    // A scene with no sun (cornell) passes a zero direction: an unlit sun has no direction to step, and three's
+    // angleTo reads a zero vector as 90 degrees, which restarted the bake every frame (PRD-831).
+    const dark = (x: number, y: number, z: number) =>
+      lightingKey({
+        color: new Color(0, 0, 0),
+        direction: new Vector3(x, y, z),
+        intensity: 0,
+        sky: new Color(),
+      });
+    expect(lightingStepped(dark(0, 0, 0), dark(0, 0, 0))).toBe(false);
+    expect(lightingStepped(dark(0, 1, 0), dark(1, 0, 0))).toBe(false);
   });
 
   it("reports a material table unchanged on a second write, even for a colour float32 rounds", () => {

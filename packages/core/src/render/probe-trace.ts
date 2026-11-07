@@ -834,10 +834,14 @@ const ratioStepped = (from: number, to: number): boolean => {
   return ratio > LIGHTING_STEP_RATIO || ratio < 1 / LIGHTING_STEP_RATIO;
 };
 
-/** True when `to` differs from `from` by more than the field may serve as a small drift. */
+/**
+ * True when `to` differs from `from` by more than the field may serve as a small drift. The direction counts only while
+ * the sun lights the scene: an unlit sun has none, and three's `angleTo` reads a zero vector as 90 degrees, so a scene
+ * with no sun would restart its bake every frame.
+ */
 export function lightingStepped(from: ILightingKey, to: ILightingKey): boolean {
   return (
-    from.direction.angleTo(to.direction) > LIGHTING_STEP_RADIANS ||
+    (from.sun > 0 && to.sun > 0 && from.direction.angleTo(to.direction) > LIGHTING_STEP_RADIANS) ||
     ratioStepped(from.sun, to.sun) ||
     ratioStepped(from.sky, to.sky)
   );
