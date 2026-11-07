@@ -1307,6 +1307,9 @@ bool V8Game::start(const std::string& path, std::string& error) {
             navigator = v8::Object::New(isolate_);
         navigator->Set(ctx, v8str(isolate_, "getGamepads"),
                        v8::Function::New(ctx, &getGamepadsCallback).ToLocalChecked()).Check();
+        // A string, as the legacy host gives (webgpu/bindings.cpp): core's playtest replay record names the
+        // runtime by navigator.userAgent, and `undefined` there failed the bridge's JSON check (vfx-gallery).
+        navigator->Set(ctx, v8str(isolate_, "userAgent"), v8str(isolate_, "ThreeNative engine player (V8)")).Check();
         global->Set(ctx, v8str(isolate_, "navigator"), navigator).Check();
     }
 #if TN_PLAYER_NATIVE_PHYSICS
