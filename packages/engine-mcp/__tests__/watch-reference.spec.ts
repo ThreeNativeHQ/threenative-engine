@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, readdirSync, writeFileSync } from "node:fs";
 import { type Server, createServer } from "node:http";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -26,6 +26,8 @@ let server: Server;
 let baseUrl: string;
 let bin: string;
 let serveWatcher = true;
+let watcherSource = STUB_WATCHER;
+let tmp: string;
 
 async function call(args: unknown) {
   const { handleLine } = await import("../src/index.js");
@@ -53,14 +55,18 @@ function fakeTool(name: string): void {
 beforeEach(async () => {
   vi.resetModules();
   serveWatcher = true;
+  watcherSource = STUB_WATCHER;
   bin = makeTempDirSync("watch-bin-");
+  // The watch folder is returned to the caller, so it lands in a registered test folder.
+  tmp = makeTempDirSync("watch-tmp-");
+  vi.stubEnv("TMPDIR", tmp);
   // HOME is replaced so the `~/.local/bin` lookup cannot find this host's own yt-dlp.
   vi.stubEnv("HOME", makeTempDirSync("watch-home-"));
   vi.stubEnv("PATH", bin);
   vi.stubEnv("THREENATIVE_REFERENCES_CACHE", makeTempDirSync("watch-cache-"));
   vi.stubEnv("THREENATIVE_ENGINE_MCP_LOG", "off");
   server = createServer((req, res) => {
-    if (req.url === "/watch.mjs" && serveWatcher) res.end(STUB_WATCHER);
+    if (req.url === "/watch.mjs" && serveWatcher) res.end(watcherSource);
     else res.writeHead(404).end();
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -121,6 +127,16 @@ describe("engine_watch_reference", () => {
     await expect(call({ query: "sm64 long jump" })).rejects.toThrow(
       new RegExp(`TN_WATCH_UNAVAILABLE.*${baseUrl.replaceAll(".", "\\.")}watch\\.mjs`, "u"),
     );
+  });
+
+  it("removes its frame folder when the watcher fails", async () => {
+    fakeTool("yt-dlp");
+    fakeTool("ffmpeg");
+    watcherSource = `console.error("no video found"); process.exit(1);`;
+    await expect(call({ query: "sm64 long jump" })).rejects.toThrow(
+      /TN_WATCH_FAILED.*no video found/u,
+    );
+    expect(readdirSync(tmp).filter((name) => name.startsWith("threenative-watch-"))).toEqual([]);
   });
 
   it("rejects a call with no query", async () => {

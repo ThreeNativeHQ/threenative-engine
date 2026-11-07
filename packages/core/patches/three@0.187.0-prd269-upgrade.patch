@@ -1,0 +1,2102 @@
+diff --git a/build/three.tsl.js b/build/three.tsl.js
+index f23dc1ee0ac72e328e9360ccd1ba2c9f6d9b2d56..b87cf38629b2c52804888a10bda3b814a1493316 100644
+--- a/build/three.tsl.js
++++ b/build/three.tsl.js
+@@ -24442,8 +24442,11 @@ const instance = /*@__PURE__*/ Fn( ( [ matrices, colors = null ], builder ) => {
+ 
+ 			const { previousInstanceMatrix } = _previousInstanceMatrices.get( object );
+ 
++			if ( object[ Symbol.for( 'threenative.velocity.previousInstanceMatricesApplied' ) ] === scheduledPrevious ) return;
++
+ 			previousInstanceMatrix.array.set( scheduledPrevious );
+ 			previousInstanceMatrix.needsUpdate = true;
++			object[ Symbol.for( 'threenative.velocity.previousInstanceMatricesApplied' ) ] = scheduledPrevious;
+ 
+ 		} );
+ 
+@@ -24452,6 +24455,8 @@ const instance = /*@__PURE__*/ Fn( ( [ matrices, colors = null ], builder ) => {
+ 
+ 			if ( object[ Symbol.for( 'threenative.velocity.previousInstanceMatrices' ) ] !== undefined ) return;
+ 
++			object[ Symbol.for( 'threenative.velocity.previousInstanceMatricesApplied' ) ] = undefined;
++
+ 			const { previousInstanceMatrix } = _previousInstanceMatrices.get( object );
+ 
+ 			previousInstanceMatrix.array.set( matrices.array );
+@@ -24502,8 +24507,11 @@ const instancedMesh = /*@__PURE__*/ Fn( ( [ instancedMesh ], builder ) => {
+ 
+ 				const previous = getPreviousMatrix$1( object );
+ 
++				if ( object[ Symbol.for( 'threenative.velocity.previousInstanceMatricesApplied' ) ] === scheduledPrevious ) return;
++
+ 				previous.array.set( scheduledPrevious );
+ 				previous.needsUpdate = true;
++				object[ Symbol.for( 'threenative.velocity.previousInstanceMatricesApplied' ) ] = scheduledPrevious;
+ 
+ 			} );
+ 
+@@ -24512,6 +24520,8 @@ const instancedMesh = /*@__PURE__*/ Fn( ( [ instancedMesh ], builder ) => {
+ 
+ 				if ( object[ Symbol.for( 'threenative.velocity.previousInstanceMatrices' ) ] !== undefined ) return;
+ 
++				object[ Symbol.for( 'threenative.velocity.previousInstanceMatricesApplied' ) ] = undefined;
++
+ 				const previous = getPreviousMatrix$1( object );
+ 
+ 				previous.array.set( object.instanceMatrix.array );
+@@ -26338,7 +26348,8 @@ class NodeMaterialObserver {
+ 				environmentRotation: scene.environmentRotation.clone(),
+ 				environmentIntensity: scene.environmentIntensity,
+ 				materialVersion: material.version,
+-				geometryVersion: geometry.version
++				geometryVersion: geometry.version,
++				pmremSwaps: renderObject.renderer._tnPmremSwaps
+ 			};
+ 
+ 			data.settledState = false;
+@@ -26351,7 +26362,9 @@ class NodeMaterialObserver {
+ 			settled.environmentRotation.equals( scene.environmentRotation ) !== true ||
+ 			settled.environmentIntensity !== scene.environmentIntensity ||
+ 			settled.materialVersion !== material.version ||
+-			settled.geometryVersion !== geometry.version ) {
++			settled.geometryVersion !== geometry.version ||
++			// a PMREM finished and swapped the texture its node samples: a settled object would keep the old one
++			settled.pmremSwaps !== renderObject.renderer._tnPmremSwaps ) {
+ 
+ 			// re-arm with the current state, so the object settles again once it stops changing
+ 
+@@ -26360,6 +26373,7 @@ class NodeMaterialObserver {
+ 			settled.environmentIntensity = scene.environmentIntensity;
+ 			settled.materialVersion = material.version;
+ 			settled.geometryVersion = geometry.version;
++			settled.pmremSwaps = renderObject.renderer._tnPmremSwaps;
+ 
+ 			data.settledState = false;
+ 
+@@ -39401,6 +39415,9 @@ class PMREMNode extends Node {
+ 
+ 				this._pmrem = pmrem;
+ 
++				// count the swap, so every settled object that samples this node refreshes once (NodeMaterialObserver)
++				if ( this._texture.value !== pmrem && frame.renderer ) frame.renderer._tnPmremSwaps = ( frame.renderer._tnPmremSwaps || 0 ) + 1;
++
+ 				this.updateFromTexture( pmrem );
+ 
+ 			}
+diff --git a/build/three.webgpu.js b/build/three.webgpu.js
+index b72762aeb47f25485ce9b7f6beab3cf5d4d882ed..25db376c0930d86abd7e6fe7132869ee66b31118 100644
+--- a/build/three.webgpu.js
++++ b/build/three.webgpu.js
+@@ -6495,6 +6495,7 @@ class RenderObjects {
+ 			this.pipelines.delete( renderObject );
+ 			this.bindings.deleteForRender( renderObject );
+ 			this.nodes.delete( renderObject );
++			this.geometries.releaseRenderObject( renderObject );
+ 
+ 			chainMap.delete( renderObject.getChainArray() );
+ 
+@@ -6964,6 +6965,9 @@ class Geometries extends DataMap {
+ 		 * @type {WeakMap<RenderObject,Map<BufferAttribute,number>>}
+ 		 */
+ 		this._settledAttributes = new WeakMap();
++		this._geometryAttributeOwners = new WeakMap();
++		this._sharedAttributeOwners = new WeakMap();
++		this._renderObjectAttributeGeometry = new WeakMap();
+ 
+ 	}
+ 
+@@ -6989,6 +6993,7 @@ class Geometries extends DataMap {
+ 		const geometry = renderObject.geometry;
+ 
+ 		if ( this.has( geometry ) === false ) this.initGeometry( geometry );
++		if ( this.geometryAttributesChanged( renderObject ) ) this.syncGeometryAttributes( renderObject );
+ 
+ 		// A settled static object has no attribute that could have changed since the last refresh,
+ 		// unless a writer bumped one. An InstancedMesh's instance buffer is a vertex attribute of
+@@ -7016,13 +7021,18 @@ class Geometries extends DataMap {
+ 		const index = this.getIndex( renderObject );
+ 		const settled = this._settledAttributes.get( renderObject );
+ 
+-		if ( settled !== undefined && settled.size === attributes.length + ( index === null ? 0 : 1 ) ) {
++		if ( settled !== undefined && settled.attributes.length === attributes.length && settled.index === index ) {
+ 
+ 			let changed = false;
+ 
+-			for ( const attribute of attributes ) {
++			for ( let i = 0; i < attributes.length; i ++ ) {
++
++				const attribute = attributes[ i ];
++				const data = attribute.isInterleavedBufferAttribute ? attribute.data : attribute;
++				const previous = settled.attributes[ i ];
+ 
+-				if ( settled.get( attribute.isInterleavedBufferAttribute ? attribute.data : attribute ) !== attribute.version ) {
++				// an interleaved wrapper has no version of its own: its buffer's version is the write signal
++				if ( previous.attribute !== attribute || previous.data !== data || previous.version !== data.version ) {
+ 
+ 					changed = true;
+ 					break;
+@@ -7031,25 +7041,122 @@ class Geometries extends DataMap {
+ 
+ 			}
+ 
+-			if ( changed === false && ( index === null || settled.get( index ) === index.version ) ) return false;
++			if ( changed === false && ( index === null || settled.indexVersion === index.version ) ) return false;
++
++		}
++
++		const versions = attributes.map( ( attribute ) => {
++
++			const data = attribute.isInterleavedBufferAttribute ? attribute.data : attribute;
++			return { attribute, data, version: data.version };
++
++		} );
++
++		this._settledAttributes.set( renderObject, { attributes: versions, index, indexVersion: index === null ? undefined : index.version } );
++
++		return true;
++
++	}
++
++	/** Compare the published attribute identities without allocating on settled frames. */
++	geometryAttributesChanged( renderObject ) {
++
++		const geometry = renderObject.geometry;
++		const owner = this._geometryAttributeOwners.get( geometry )?.get( renderObject );
++		if ( owner === undefined || owner.index !== geometry.index ) return true;
++
++		const attributes = renderObject.getAttributes();
++		if ( owner.attributes.length !== attributes.length ) return true;
++		for ( let i = 0; i < attributes.length; i ++ ) {
++			const attribute = attributes[ i ];
++			if ( owner.attributes[ i ] !== ( attribute.isInterleavedBufferAttribute ? attribute.data : attribute ) ) return true;
++		}
++
++		return false;
++
++	}
+ 
++	/** Add this render object's current geometry attributes to the renderer's shared-resource owners. */
++	syncGeometryAttributes( renderObject ) {
++
++		const { geometry } = renderObject;
++		const previousGeometry = this._renderObjectAttributeGeometry.get( renderObject );
++		if ( previousGeometry !== undefined && previousGeometry !== geometry ) this.releaseRenderObject( renderObject );
++		this._renderObjectAttributeGeometry.set( renderObject, geometry );
++		let geometryOwners = this._geometryAttributeOwners.get( geometry );
++
++		if ( geometryOwners === undefined ) {
++			geometryOwners = new Map();
++			this._geometryAttributeOwners.set( geometry, geometryOwners );
+ 		}
+ 
+-		const versions = new Map();
++		const previous = geometryOwners.get( renderObject )?.keys ?? new Map();
++		const current = new Map();
++		const attributes = renderObject.getAttributes();
++		const attributeKeys = [];
+ 
+ 		for ( const attribute of attributes ) {
++			const key = attribute.isInterleavedBufferAttribute ? attribute.data : attribute;
++			current.set( key, true );
++			attributeKeys.push( key );
++		}
++		const index = geometry.index;
++		if ( index !== null ) current.set( index, true );
+ 
+-			const data = attribute.isInterleavedBufferAttribute ? attribute.data : attribute;
++		for ( const key of current.keys() ) {
++			let record = this._sharedAttributeOwners.get( key );
++			if ( record === undefined ) record = { owners: new Set() };
++			if ( previous.has( key ) === false ) record.owners.add( renderObject );
++			this._sharedAttributeOwners.set( key, record );
++		}
+ 
+-			versions.set( data, data.version );
++		for ( const key of previous.keys() ) {
++			if ( current.has( key ) === false ) this.releaseSharedAttribute( key, renderObject );
++		}
++
++		geometryOwners.set( renderObject, { keys: current, attributes: attributeKeys, index } );
+ 
++	}
++
++	/** Drop a render object from its geometry before its material-owned node attributes go stale. */
++	releaseRenderObject( renderObject ) {
++
++		const geometry = this._renderObjectAttributeGeometry.get( renderObject );
++		if ( geometry === undefined ) return;
++		const geometryOwners = this._geometryAttributeOwners.get( geometry );
++		const owned = geometryOwners?.get( renderObject )?.keys;
++		if ( owned !== undefined ) {
++			for ( const key of owned.keys() ) this.releaseSharedAttribute( key, renderObject );
++			geometryOwners.delete( renderObject );
++			if ( geometryOwners.size === 0 ) this._geometryAttributeOwners.delete( geometry );
+ 		}
++		this._renderObjectAttributeGeometry.delete( renderObject );
++
++	}
+ 
+-		if ( index !== null ) versions.set( index, index.version );
++	/** Release a shared GPU resource only after its last live geometry render object lets it go. */
++	releaseSharedAttribute( key, owner ) {
+ 
+-		this._settledAttributes.set( renderObject, versions );
++		const record = this._sharedAttributeOwners.get( key );
++		if ( record === undefined ) return;
++		record.owners.delete( owner );
++		if ( record.owners.size !== 0 ) return;
+ 
+-		return true;
++		this.attributes.delete( key );
++		this._sharedAttributeOwners.delete( key );
++
++	}
++
++	/** Release the recorded sets, not a potentially replaced render object's current attributes. */
++	releaseGeometryAttributes( geometry ) {
++
++		const geometryOwners = this._geometryAttributeOwners.get( geometry );
++		if ( geometryOwners === undefined ) return;
++		for ( const [ owner, attributes ] of geometryOwners ) {
++			for ( const key of attributes.keys.keys() ) this.releaseSharedAttribute( key, owner );
++			this._renderObjectAttributeGeometry.delete( owner );
++		}
++		this._geometryAttributeOwners.delete( geometry );
+ 
+ 	}
+ 
+@@ -7070,23 +7177,10 @@ class Geometries extends DataMap {
+ 
+ 			this.info.memory.geometries --;
+ 
+-			// index
+-
+-			const index = geometry.index;
++			// index and geometry attributes: release this geometry's owners, so a buffer another
++			// geometry still draws stays alive until its last owner lets it go
+ 
+-			if ( index !== null ) {
+-
+-				this.attributes.delete( index );
+-
+-			}
+-
+-			// geometry attributes
+-
+-			for ( const attribute of Object.values( geometry.attributes ) ) {
+-
+-				this.attributes.delete( this.backend.getBufferAttribute( attribute ) );
+-
+-			}
++			this.releaseGeometryAttributes( geometry );
+ 
+ 			// wireframe attributes
+ 
+@@ -7264,17 +7358,9 @@ class Geometries extends DataMap {
+ 	 */
+ 	deleteNodeAttributes( renderObject ) {
+ 
+-		const currentAttributes = new Set( Object.values( renderObject.geometry.attributes ) );
+-
+-		for ( const attribute of renderObject.getAttributes() ) {
++		// node attributes can be shared with other render objects: release this object's owners
+ 
+-			if ( currentAttributes.has( attribute ) === false ) {
+-
+-				this.attributes.delete( this.backend.getBufferAttribute( attribute ) );
+-
+-			}
+-
+-		}
++		this.releaseRenderObject( renderObject );
+ 
+ 	}
+ 
+@@ -8919,6 +9005,21 @@ class Bindings extends DataMap {
+ 
+ 			if ( groupData.usedTimes === 0 ) {
+ 
++				// Stop disposed bind groups from being invalidated by later texture disposal:
++				// untrack every texture the group was ever tracked on, not only its current one.
++				const bindingData = this.backend.get( bindGroup );
++				if ( bindingData.trackedTextures ) {
++
++					for ( const textureData of bindingData.trackedTextures ) {
++
++						textureData.bindGroups.delete( bindGroup );
++
++					}
++
++					bindingData.trackedTextures.clear();
++
++				}
++
+ 				for ( const binding of bindGroup.bindings ) {
+ 
+ 					if ( binding.isUniformBuffer ) {
+@@ -9009,7 +9110,11 @@ class Bindings extends DataMap {
+ 		// a settled object keeps the values it uploaded the last time it refreshed, so an object
+ 		// group it has already written is the one thing in here it may skip
+ 
+-		let needsBindingsUpdate = false;
++		// a destroyed texture dropped this group's cached GPU groups: rebuild it even if no binding reports a change
++		const bindingsData = backend.get( bindGroup );
++		const forceBindingsUpdate = bindingsData.forceUpdate === true;
++
++		let needsBindingsUpdate = forceBindingsUpdate;
+ 		let cacheBindings = true;
+ 		let cacheKeyLength = 0;
+ 		let version = 0;
+@@ -9018,7 +9123,7 @@ class Bindings extends DataMap {
+ 
+ 		for ( const binding of bindGroup.bindings ) {
+ 
+-			const updatedGroup = this.nodes.updateGroup( binding, settled );
++			const updatedGroup = forceBindingsUpdate || this.nodes.updateGroup( binding, settled );
+ 
+ 			// every uniforms group is a uniform buffer. So if no update is required,
+ 			// we move one with the next binding. Otherwise the next if block will update the group.
+@@ -9111,12 +9216,20 @@ class Bindings extends DataMap {
+ 
+ 					}
+ 
+-					// keep track which bind groups refer to the current texture (this is needed for dispose)
++				}
++
++				// keep track which bind groups refer to the current texture (this is needed for dispose),
++				// also when the binding's first update reported no change: a destroy must reach this group
+ 
+-					texturesTextureData.bindGroups.add( bindGroup );
++				texturesTextureData.bindGroups.add( bindGroup );
++				if ( bindingsData.trackedTextures === undefined ) {
++
++					bindingsData.trackedTextures = new Set();
+ 
+ 				}
+ 
++				bindingsData.trackedTextures.add( texturesTextureData );
++
+ 				const textureData = backend.get( texture );
+ 
+ 				if ( textureData.externalTexture !== undefined || texturesTextureData.isDefaultTexture ) {
+@@ -9183,6 +9296,7 @@ class Bindings extends DataMap {
+ 			const cacheKey = cacheBindings ? _cacheKeyIds.join( ',' ) : '';
+ 
+ 			this.backend.updateBindings( bindGroup, bindings, cacheKey, version );
++			bindingsData.forceUpdate = false;
+ 
+ 		}
+ 
+@@ -10517,6 +10631,7 @@ class Textures extends DataMap {
+ 
+ 					bindingsData.groups = undefined;
+ 					bindingsData.versions = undefined;
++					bindingsData.forceUpdate = true;
+ 
+ 				}
+ 
+@@ -11087,6 +11202,7 @@ class Textures extends DataMap {
+ 
+ 					bindingsData.groups = undefined;
+ 					bindingsData.versions = undefined;
++					bindingsData.forceUpdate = true;
+ 
+ 					// go through all bindings and if one points to the destroyed texture, trigger dispose as well
+ 
+@@ -43674,6 +43790,13 @@ class WGSLNodeBuilder extends NodeBuilder {
+ 
+ 		super( object, renderer, new WGSLNodeParser() );
+ 
++		/**
++		 * Comparison samplers shared by identical keys, and the WGSL sampler name of each texture
++		 * that reads through another texture's sampler.
++		 */
++		this.sharedCompareSamplers = new Map();
++		this.samplerNames = new Map();
++
+ 		/**
+ 		 * A dictionary that holds for each shader stage ('vertex', 'fragment', 'compute')
+ 		 * another dictionary which manages UBOs per group ('render','frame','object').
+@@ -43750,21 +43873,21 @@ class WGSLNodeBuilder extends NodeBuilder {
+ 
+ 				if ( offsetSnippet ) {
+ 
+-					return `textureSample( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ depthSnippet }, ${ offsetSnippet } )`;
++					return `textureSample( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ depthSnippet }, ${ offsetSnippet } )`;
+ 
+ 				}
+ 
+-				return `textureSample( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ depthSnippet } )`;
++				return `textureSample( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ depthSnippet } )`;
+ 
+ 			} else {
+ 
+ 				if ( offsetSnippet ) {
+ 
+-					return `textureSample( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ offsetSnippet } )`;
++					return `textureSample( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ offsetSnippet } )`;
+ 
+ 				}
+ 
+-				return `textureSample( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet } )`;
++				return `textureSample( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet } )`;
+ 
+ 			}
+ 
+@@ -43796,21 +43919,21 @@ class WGSLNodeBuilder extends NodeBuilder {
+ 
+ 				if ( offsetSnippet ) {
+ 
+-					return `textureSampleLevel( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ depthSnippet }, ${ levelSnippet }, ${ offsetSnippet } )`;
++					return `textureSampleLevel( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ depthSnippet }, ${ levelSnippet }, ${ offsetSnippet } )`;
+ 
+ 				}
+ 
+-				return `textureSampleLevel( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ depthSnippet }, ${ levelSnippet } )`;
++				return `textureSampleLevel( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ depthSnippet }, ${ levelSnippet } )`;
+ 
+ 			} else {
+ 
+ 				if ( offsetSnippet ) {
+ 
+-					return `textureSampleLevel( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ levelSnippet }, ${ offsetSnippet } )`;
++					return `textureSampleLevel( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ levelSnippet }, ${ offsetSnippet } )`;
+ 
+ 				}
+ 
+-				return `textureSampleLevel( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ levelSnippet } )`;
++				return `textureSampleLevel( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ levelSnippet } )`;
+ 
+ 			}
+ 
+@@ -44073,7 +44196,7 @@ class WGSLNodeBuilder extends NodeBuilder {
+ 			// Depth textures require integer level, regular textures use float
+ 			const levelType = texture.isDepthTexture ? 'u32' : 'f32';
+ 
+-			return `textureSampleLevel( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ levelType }( ${ levelSnippet } ) )`;
++			return `textureSampleLevel( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ levelType }( ${ levelSnippet } ) )`;
+ 
+ 		}
+ 
+@@ -44217,6 +44340,18 @@ class WGSLNodeBuilder extends NodeBuilder {
+ 	 * @param {Texture} texture - The texture.
+ 	 * @return {boolean} Whether the sampled values of the given texture should be compared against a reference value or not.
+ 	 */
++	/**
++	 * The WGSL sampler a texture reads through: its own, or a shared comparison sampler.
++	 *
++	 * @param {string} textureProperty - The texture's WGSL name.
++	 * @return {string} The sampler's WGSL name.
++	 */
++	getSamplerName( textureProperty ) {
++
++		return this.samplerNames.get( textureProperty ) ?? `${ textureProperty }_sampler`;
++
++	}
++
+ 	isSampleCompare( texture ) {
+ 
+ 		return texture.isDepthTexture === true && texture.compareFunction !== null && this.renderer.hasCompatibility( Compatibility.TEXTURE_COMPARE );
+@@ -44293,21 +44428,21 @@ class WGSLNodeBuilder extends NodeBuilder {
+ 
+ 				if ( offsetSnippet ) {
+ 
+-					return `textureSampleGrad( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ depthSnippet }, ${ gradSnippet[ 0 ] }, ${ gradSnippet[ 1 ] }, ${ offsetSnippet } )`;
++					return `textureSampleGrad( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ depthSnippet }, ${ gradSnippet[ 0 ] }, ${ gradSnippet[ 1 ] }, ${ offsetSnippet } )`;
+ 
+ 				}
+ 
+-				return `textureSampleGrad( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ depthSnippet }, ${ gradSnippet[ 0 ] }, ${ gradSnippet[ 1 ] } )`;
++				return `textureSampleGrad( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ depthSnippet }, ${ gradSnippet[ 0 ] }, ${ gradSnippet[ 1 ] } )`;
+ 
+ 			} else {
+ 
+ 				if ( offsetSnippet ) {
+ 
+-					return `textureSampleGrad( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ gradSnippet[ 0 ] }, ${ gradSnippet[ 1 ] }, ${ offsetSnippet } )`;
++					return `textureSampleGrad( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ gradSnippet[ 0 ] }, ${ gradSnippet[ 1 ] }, ${ offsetSnippet } )`;
+ 
+ 				}
+ 
+-				return `textureSampleGrad( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ gradSnippet[ 0 ] }, ${ gradSnippet[ 1 ] } )`;
++				return `textureSampleGrad( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ gradSnippet[ 0 ] }, ${ gradSnippet[ 1 ] } )`;
+ 
+ 			}
+ 
+@@ -44340,21 +44475,21 @@ class WGSLNodeBuilder extends NodeBuilder {
+ 
+ 				if ( offsetSnippet ) {
+ 
+-					return `textureSampleCompare( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ depthSnippet }, ${ compareSnippet }, ${ offsetSnippet } )`;
++					return `textureSampleCompare( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ depthSnippet }, ${ compareSnippet }, ${ offsetSnippet } )`;
+ 
+ 				}
+ 
+-				return `textureSampleCompare( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ depthSnippet }, ${ compareSnippet } )`;
++				return `textureSampleCompare( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ depthSnippet }, ${ compareSnippet } )`;
+ 
+ 			}
+ 
+ 			if ( offsetSnippet ) {
+ 
+-				return `textureSampleCompare( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ compareSnippet }, ${ offsetSnippet } )`;
++				return `textureSampleCompare( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ compareSnippet }, ${ offsetSnippet } )`;
+ 
+ 			}
+ 
+-			return `textureSampleCompare( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ compareSnippet } )`;
++			return `textureSampleCompare( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ compareSnippet } )`;
+ 
+ 		} else {
+ 
+@@ -44419,21 +44554,21 @@ class WGSLNodeBuilder extends NodeBuilder {
+ 
+ 			if ( offsetSnippet ) {
+ 
+-				return `textureGather( ${componentSnippet}${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ depthSnippet }, ${ offsetSnippet } )`;
++				return `textureGather( ${componentSnippet}${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ depthSnippet }, ${ offsetSnippet } )`;
+ 
+ 			}
+ 
+-			return `textureGather( ${componentSnippet}${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ depthSnippet } )`;
++			return `textureGather( ${componentSnippet}${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ depthSnippet } )`;
+ 
+ 		}
+ 
+ 		if ( offsetSnippet ) {
+ 
+-			return `textureGather( ${componentSnippet}${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ offsetSnippet } )`;
++			return `textureGather( ${componentSnippet}${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ offsetSnippet } )`;
+ 
+ 		}
+ 
+-		return `textureGather( ${componentSnippet}${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet })`;
++		return `textureGather( ${componentSnippet}${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet })`;
+ 
+ 	}
+ 
+@@ -44454,21 +44589,21 @@ class WGSLNodeBuilder extends NodeBuilder {
+ 
+ 			if ( offsetSnippet ) {
+ 
+-				return `textureGatherCompare( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ depthSnippet }, ${ compareSnippet }, ${ offsetSnippet } )`;
++				return `textureGatherCompare( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ depthSnippet }, ${ compareSnippet }, ${ offsetSnippet } )`;
+ 
+ 			}
+ 
+-			return `textureGatherCompare( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ depthSnippet }, ${ compareSnippet })`;
++			return `textureGatherCompare( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ depthSnippet }, ${ compareSnippet })`;
+ 
+ 		}
+ 
+ 		if ( offsetSnippet ) {
+ 
+-			return `textureGatherCompare( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ compareSnippet }, ${ offsetSnippet } )`;
++			return `textureGatherCompare( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ compareSnippet }, ${ offsetSnippet } )`;
+ 
+ 		}
+ 
+-		return `textureGatherCompare( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ compareSnippet })`;
++		return `textureGatherCompare( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ compareSnippet })`;
+ 
+ 	}
+ 
+@@ -44491,21 +44626,21 @@ class WGSLNodeBuilder extends NodeBuilder {
+ 
+ 				if ( offsetSnippet ) {
+ 
+-					return `textureSampleLevel( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ depthSnippet }, ${ levelSnippet }, ${ offsetSnippet } )`;
++					return `textureSampleLevel( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ depthSnippet }, ${ levelSnippet }, ${ offsetSnippet } )`;
+ 
+ 				}
+ 
+-				return `textureSampleLevel( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ depthSnippet }, ${ levelSnippet } )`;
++				return `textureSampleLevel( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ depthSnippet }, ${ levelSnippet } )`;
+ 
+ 			} else {
+ 
+ 				if ( offsetSnippet ) {
+ 
+-					return `textureSampleLevel( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ levelSnippet }, ${ offsetSnippet } )`;
++					return `textureSampleLevel( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ levelSnippet }, ${ offsetSnippet } )`;
+ 
+ 				}
+ 
+-				return `textureSampleLevel( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ levelSnippet } )`;
++				return `textureSampleLevel( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ levelSnippet } )`;
+ 
+ 			}
+ 
+@@ -44541,21 +44676,21 @@ class WGSLNodeBuilder extends NodeBuilder {
+ 
+ 				if ( offsetSnippet ) {
+ 
+-					return `textureSampleBias( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ depthSnippet }, ${ biasSnippet }, ${ offsetSnippet } )`;
++					return `textureSampleBias( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ depthSnippet }, ${ biasSnippet }, ${ offsetSnippet } )`;
+ 
+ 				}
+ 
+-				return `textureSampleBias( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ depthSnippet }, ${ biasSnippet } )`;
++				return `textureSampleBias( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ depthSnippet }, ${ biasSnippet } )`;
+ 
+ 			} else {
+ 
+ 				if ( offsetSnippet ) {
+ 
+-					return `textureSampleBias( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ biasSnippet }, ${ offsetSnippet } )`;
++					return `textureSampleBias( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ biasSnippet }, ${ offsetSnippet } )`;
+ 
+ 				}
+ 
+-				return `textureSampleBias( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ biasSnippet } )`;
++				return `textureSampleBias( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ biasSnippet } )`;
+ 
+ 			}
+ 
+@@ -44799,11 +44934,27 @@ class WGSLNodeBuilder extends NodeBuilder {
+ 				// Also textureGather always need sampler.
+ 				const needsSampler = node.isRawTextureNode !== true && ( node.value.isCubeTexture === true || ( this.isUnfilterable( node.value ) === false && texture.store === false ) || node.gatherNode !== null );
+ 
+-				if ( needsSampler ) {
++				// Identical comparison samplers share one binding. Every shadow map of a clipmap compares the
++				// same way, and a sampler per map exhausts maxSamplersPerShaderStage (16 on most adapters).
++				const sharedKey = needsSampler && this.isSampleCompare( node.value ) && node.isSampleCompare() ? `${ groupName }:${ shaderStage }:${ node.value.compareFunction }:${ node.value.wrapS }:${ node.value.wrapT }:${ node.value.wrapR }:${ node.value.minFilter }:${ node.value.magFilter }` : null;
++				const sharedSampler = sharedKey === null ? undefined : this.sharedCompareSamplers.get( sharedKey );
++
++				if ( sharedSampler !== undefined ) {
++
++					this.samplerNames.set( uniformNode.name, sharedSampler.name );
++					nodeData.sharedSampler = true;
++
++					bindings.push( texture );
++
++					uniformGPU = [ sharedSampler, texture ];
++
++				} else if ( needsSampler ) {
+ 
+ 					const sampler = new NodeSampler( `${ uniformNode.name }_sampler`, uniformNode.node, group );
+ 					sampler.setVisibility( gpuShaderStageLib[ shaderStage ] );
+ 
++					if ( sharedKey !== null ) this.sharedCompareSamplers.set( sharedKey, sampler );
++
+ 					bindings.push( sampler, texture );
+ 
+ 					uniformGPU = [ sampler, texture ];
+@@ -45615,7 +45766,8 @@ ${ flowData.code }
+ 				const uniformGPU = nodeData.uniformGPU;
+ 				const needsSampler = Array.isArray( uniformGPU ) && uniformGPU[ 0 ].isSampler === true && uniformGPU[ 0 ].isSampledTexture !== true;
+ 
+-				if ( needsSampler ) {
++				// A shared comparison sampler is declared once, by the texture that created it.
++				if ( needsSampler && nodeData.sharedSampler !== true ) {
+ 
+ 					if ( this.isSampleCompare( texture ) && textureNode.isSampleCompare() ) {
+ 
+diff --git a/build/three.webgpu.nodes.js b/build/three.webgpu.nodes.js
+index 5d1c3e9b32d4347ac6605fdf59438fd634d40cd7..790d97c1247564c7fd3aea2ee54ea0a6ffa50c62 100644
+--- a/build/three.webgpu.nodes.js
++++ b/build/three.webgpu.nodes.js
+@@ -413,7 +413,8 @@ class NodeMaterialObserver {
+ 				environmentRotation: scene.environmentRotation.clone(),
+ 				environmentIntensity: scene.environmentIntensity,
+ 				materialVersion: material.version,
+-				geometryVersion: geometry.version
++				geometryVersion: geometry.version,
++				pmremSwaps: renderObject.renderer._tnPmremSwaps
+ 			};
+ 
+ 			data.settledState = false;
+@@ -426,7 +427,9 @@ class NodeMaterialObserver {
+ 			settled.environmentRotation.equals( scene.environmentRotation ) !== true ||
+ 			settled.environmentIntensity !== scene.environmentIntensity ||
+ 			settled.materialVersion !== material.version ||
+-			settled.geometryVersion !== geometry.version ) {
++			settled.geometryVersion !== geometry.version ||
++			// a PMREM finished and swapped the texture its node samples: a settled object would keep the old one
++			settled.pmremSwaps !== renderObject.renderer._tnPmremSwaps ) {
+ 
+ 			// re-arm with the current state, so the object settles again once it stops changing
+ 
+@@ -435,6 +438,7 @@ class NodeMaterialObserver {
+ 			settled.environmentIntensity = scene.environmentIntensity;
+ 			settled.materialVersion = material.version;
+ 			settled.geometryVersion = geometry.version;
++			settled.pmremSwaps = renderObject.renderer._tnPmremSwaps;
+ 
+ 			data.settledState = false;
+ 
+@@ -20355,8 +20359,11 @@ const instance = /*@__PURE__*/ Fn( ( [ matrices, colors = null ], builder ) => {
+ 
+ 			const { previousInstanceMatrix } = _previousInstanceMatrices.get( object );
+ 
++			if ( object[ Symbol.for( 'threenative.velocity.previousInstanceMatricesApplied' ) ] === scheduledPrevious ) return;
++
+ 			previousInstanceMatrix.array.set( scheduledPrevious );
+ 			previousInstanceMatrix.needsUpdate = true;
++			object[ Symbol.for( 'threenative.velocity.previousInstanceMatricesApplied' ) ] = scheduledPrevious;
+ 
+ 		} );
+ 
+@@ -20365,6 +20372,8 @@ const instance = /*@__PURE__*/ Fn( ( [ matrices, colors = null ], builder ) => {
+ 
+ 			if ( object[ Symbol.for( 'threenative.velocity.previousInstanceMatrices' ) ] !== undefined ) return;
+ 
++			object[ Symbol.for( 'threenative.velocity.previousInstanceMatricesApplied' ) ] = undefined;
++
+ 			const { previousInstanceMatrix } = _previousInstanceMatrices.get( object );
+ 
+ 			previousInstanceMatrix.array.set( matrices.array );
+@@ -20415,8 +20424,11 @@ const instancedMesh = /*@__PURE__*/ Fn( ( [ instancedMesh ], builder ) => {
+ 
+ 				const previous = getPreviousMatrix$1( object );
+ 
++				if ( object[ Symbol.for( 'threenative.velocity.previousInstanceMatricesApplied' ) ] === scheduledPrevious ) return;
++
+ 				previous.array.set( scheduledPrevious );
+ 				previous.needsUpdate = true;
++				object[ Symbol.for( 'threenative.velocity.previousInstanceMatricesApplied' ) ] = scheduledPrevious;
+ 
+ 			} );
+ 
+@@ -20425,6 +20437,8 @@ const instancedMesh = /*@__PURE__*/ Fn( ( [ instancedMesh ], builder ) => {
+ 
+ 				if ( object[ Symbol.for( 'threenative.velocity.previousInstanceMatrices' ) ] !== undefined ) return;
+ 
++				object[ Symbol.for( 'threenative.velocity.previousInstanceMatricesApplied' ) ] = undefined;
++
+ 				const previous = getPreviousMatrix$1( object );
+ 
+ 				previous.array.set( object.instanceMatrix.array );
+@@ -29633,6 +29647,9 @@ class PMREMNode extends Node {
+ 
+ 				this._pmrem = pmrem;
+ 
++				// count the swap, so every settled object that samples this node refreshes once (NodeMaterialObserver)
++				if ( this._texture.value !== pmrem && frame.renderer ) frame.renderer._tnPmremSwaps = ( frame.renderer._tnPmremSwaps || 0 ) + 1;
++
+ 				this.updateFromTexture( pmrem );
+ 
+ 			}
+@@ -33621,6 +33638,7 @@ class RenderObjects {
+ 			this.pipelines.delete( renderObject );
+ 			this.bindings.deleteForRender( renderObject );
+ 			this.nodes.delete( renderObject );
++			this.geometries.releaseRenderObject( renderObject );
+ 
+ 			chainMap.delete( renderObject.getChainArray() );
+ 
+@@ -34090,6 +34108,9 @@ class Geometries extends DataMap {
+ 		 * @type {WeakMap<RenderObject,Map<BufferAttribute,number>>}
+ 		 */
+ 		this._settledAttributes = new WeakMap();
++		this._geometryAttributeOwners = new WeakMap();
++		this._sharedAttributeOwners = new WeakMap();
++		this._renderObjectAttributeGeometry = new WeakMap();
+ 
+ 	}
+ 
+@@ -34115,6 +34136,7 @@ class Geometries extends DataMap {
+ 		const geometry = renderObject.geometry;
+ 
+ 		if ( this.has( geometry ) === false ) this.initGeometry( geometry );
++		if ( this.geometryAttributesChanged( renderObject ) ) this.syncGeometryAttributes( renderObject );
+ 
+ 		// A settled static object has no attribute that could have changed since the last refresh,
+ 		// unless a writer bumped one. An InstancedMesh's instance buffer is a vertex attribute of
+@@ -34142,13 +34164,18 @@ class Geometries extends DataMap {
+ 		const index = this.getIndex( renderObject );
+ 		const settled = this._settledAttributes.get( renderObject );
+ 
+-		if ( settled !== undefined && settled.size === attributes.length + ( index === null ? 0 : 1 ) ) {
++		if ( settled !== undefined && settled.attributes.length === attributes.length && settled.index === index ) {
+ 
+ 			let changed = false;
+ 
+-			for ( const attribute of attributes ) {
++			for ( let i = 0; i < attributes.length; i ++ ) {
++
++				const attribute = attributes[ i ];
++				const data = attribute.isInterleavedBufferAttribute ? attribute.data : attribute;
++				const previous = settled.attributes[ i ];
+ 
+-				if ( settled.get( attribute.isInterleavedBufferAttribute ? attribute.data : attribute ) !== attribute.version ) {
++				// an interleaved wrapper has no version of its own: its buffer's version is the write signal
++				if ( previous.attribute !== attribute || previous.data !== data || previous.version !== data.version ) {
+ 
+ 					changed = true;
+ 					break;
+@@ -34157,25 +34184,122 @@ class Geometries extends DataMap {
+ 
+ 			}
+ 
+-			if ( changed === false && ( index === null || settled.get( index ) === index.version ) ) return false;
++			if ( changed === false && ( index === null || settled.indexVersion === index.version ) ) return false;
+ 
+ 		}
+ 
+-		const versions = new Map();
++		const versions = attributes.map( ( attribute ) => {
++
++			const data = attribute.isInterleavedBufferAttribute ? attribute.data : attribute;
++			return { attribute, data, version: data.version };
++
++		} );
++
++		this._settledAttributes.set( renderObject, { attributes: versions, index, indexVersion: index === null ? undefined : index.version } );
++
++		return true;
++
++	}
++
++	/** Compare the published attribute identities without allocating on settled frames. */
++	geometryAttributesChanged( renderObject ) {
++
++		const geometry = renderObject.geometry;
++		const owner = this._geometryAttributeOwners.get( geometry )?.get( renderObject );
++		if ( owner === undefined || owner.index !== geometry.index ) return true;
++
++		const attributes = renderObject.getAttributes();
++		if ( owner.attributes.length !== attributes.length ) return true;
++		for ( let i = 0; i < attributes.length; i ++ ) {
++			const attribute = attributes[ i ];
++			if ( owner.attributes[ i ] !== ( attribute.isInterleavedBufferAttribute ? attribute.data : attribute ) ) return true;
++		}
++
++		return false;
++
++	}
++
++	/** Add this render object's current geometry attributes to the renderer's shared-resource owners. */
++	syncGeometryAttributes( renderObject ) {
++
++		const { geometry } = renderObject;
++		const previousGeometry = this._renderObjectAttributeGeometry.get( renderObject );
++		if ( previousGeometry !== undefined && previousGeometry !== geometry ) this.releaseRenderObject( renderObject );
++		this._renderObjectAttributeGeometry.set( renderObject, geometry );
++		let geometryOwners = this._geometryAttributeOwners.get( geometry );
++
++		if ( geometryOwners === undefined ) {
++			geometryOwners = new Map();
++			this._geometryAttributeOwners.set( geometry, geometryOwners );
++		}
++
++		const previous = geometryOwners.get( renderObject )?.keys ?? new Map();
++		const current = new Map();
++		const attributes = renderObject.getAttributes();
++		const attributeKeys = [];
+ 
+ 		for ( const attribute of attributes ) {
++			const key = attribute.isInterleavedBufferAttribute ? attribute.data : attribute;
++			current.set( key, true );
++			attributeKeys.push( key );
++		}
++		const index = geometry.index;
++		if ( index !== null ) current.set( index, true );
+ 
+-			const data = attribute.isInterleavedBufferAttribute ? attribute.data : attribute;
++		for ( const key of current.keys() ) {
++			let record = this._sharedAttributeOwners.get( key );
++			if ( record === undefined ) record = { owners: new Set() };
++			if ( previous.has( key ) === false ) record.owners.add( renderObject );
++			this._sharedAttributeOwners.set( key, record );
++		}
+ 
+-			versions.set( data, data.version );
++		for ( const key of previous.keys() ) {
++			if ( current.has( key ) === false ) this.releaseSharedAttribute( key, renderObject );
++		}
++
++		geometryOwners.set( renderObject, { keys: current, attributes: attributeKeys, index } );
++
++	}
++
++	/** Drop a render object from its geometry before its material-owned node attributes go stale. */
++	releaseRenderObject( renderObject ) {
+ 
++		const geometry = this._renderObjectAttributeGeometry.get( renderObject );
++		if ( geometry === undefined ) return;
++		const geometryOwners = this._geometryAttributeOwners.get( geometry );
++		const owned = geometryOwners?.get( renderObject )?.keys;
++		if ( owned !== undefined ) {
++			for ( const key of owned.keys() ) this.releaseSharedAttribute( key, renderObject );
++			geometryOwners.delete( renderObject );
++			if ( geometryOwners.size === 0 ) this._geometryAttributeOwners.delete( geometry );
+ 		}
++		this._renderObjectAttributeGeometry.delete( renderObject );
++
++	}
+ 
+-		if ( index !== null ) versions.set( index, index.version );
++	/** Release a shared GPU resource only after its last live geometry render object lets it go. */
++	releaseSharedAttribute( key, owner ) {
+ 
+-		this._settledAttributes.set( renderObject, versions );
++		const record = this._sharedAttributeOwners.get( key );
++		if ( record === undefined ) return;
++		record.owners.delete( owner );
++		if ( record.owners.size !== 0 ) return;
+ 
+-		return true;
++		this.attributes.delete( key );
++		this._sharedAttributeOwners.delete( key );
++
++	}
++
++	/** Release the recorded sets, not a potentially replaced render object's current attributes. */
++	releaseGeometryAttributes( geometry ) {
++
++		const geometryOwners = this._geometryAttributeOwners.get( geometry );
++		if ( geometryOwners === undefined ) return;
++		for ( const [ owner, attributes ] of geometryOwners ) {
++			for ( const key of attributes.keys.keys() ) this.releaseSharedAttribute( key, owner );
++			this._renderObjectAttributeGeometry.delete( owner );
++		}
++		this._geometryAttributeOwners.delete( geometry );
+ 
+ 	}
+ 
+@@ -34196,23 +34320,10 @@ class Geometries extends DataMap {
+ 
+ 			this.info.memory.geometries --;
+ 
+-			// index
+-
+-			const index = geometry.index;
+-
+-			if ( index !== null ) {
+-
+-				this.attributes.delete( index );
+-
+-			}
+-
+-			// geometry attributes
+-
+-			for ( const attribute of Object.values( geometry.attributes ) ) {
++			// index and geometry attributes: release this geometry's owners, so a buffer another
++			// geometry still draws stays alive until its last owner lets it go
+ 
+-				this.attributes.delete( this.backend.getBufferAttribute( attribute ) );
+-
+-			}
++			this.releaseGeometryAttributes( geometry );
+ 
+ 			// wireframe attributes
+ 
+@@ -34390,17 +34501,9 @@ class Geometries extends DataMap {
+ 	 */
+ 	deleteNodeAttributes( renderObject ) {
+ 
+-		const currentAttributes = new Set( Object.values( renderObject.geometry.attributes ) );
+-
+-		for ( const attribute of renderObject.getAttributes() ) {
++		// node attributes can be shared with other render objects: release this object's owners
+ 
+-			if ( currentAttributes.has( attribute ) === false ) {
+-
+-				this.attributes.delete( this.backend.getBufferAttribute( attribute ) );
+-
+-			}
+-
+-		}
++		this.releaseRenderObject( renderObject );
+ 
+ 	}
+ 
+@@ -36045,6 +36148,21 @@ class Bindings extends DataMap {
+ 
+ 			if ( groupData.usedTimes === 0 ) {
+ 
++				// Stop disposed bind groups from being invalidated by later texture disposal:
++				// untrack every texture the group was ever tracked on, not only its current one.
++				const bindingData = this.backend.get( bindGroup );
++				if ( bindingData.trackedTextures ) {
++
++					for ( const textureData of bindingData.trackedTextures ) {
++
++						textureData.bindGroups.delete( bindGroup );
++
++					}
++
++					bindingData.trackedTextures.clear();
++
++				}
++
+ 				for ( const binding of bindGroup.bindings ) {
+ 
+ 					if ( binding.isUniformBuffer ) {
+@@ -36135,7 +36253,11 @@ class Bindings extends DataMap {
+ 		// a settled object keeps the values it uploaded the last time it refreshed, so an object
+ 		// group it has already written is the one thing in here it may skip
+ 
+-		let needsBindingsUpdate = false;
++		// a destroyed texture dropped this group's cached GPU groups: rebuild it even if no binding reports a change
++		const bindingsData = backend.get( bindGroup );
++		const forceBindingsUpdate = bindingsData.forceUpdate === true;
++
++		let needsBindingsUpdate = forceBindingsUpdate;
+ 		let cacheBindings = true;
+ 		let cacheKeyLength = 0;
+ 		let version = 0;
+@@ -36144,7 +36266,7 @@ class Bindings extends DataMap {
+ 
+ 		for ( const binding of bindGroup.bindings ) {
+ 
+-			const updatedGroup = this.nodes.updateGroup( binding, settled );
++			const updatedGroup = forceBindingsUpdate || this.nodes.updateGroup( binding, settled );
+ 
+ 			// every uniforms group is a uniform buffer. So if no update is required,
+ 			// we move one with the next binding. Otherwise the next if block will update the group.
+@@ -36237,12 +36359,20 @@ class Bindings extends DataMap {
+ 
+ 					}
+ 
+-					// keep track which bind groups refer to the current texture (this is needed for dispose)
++				}
++
++				// keep track which bind groups refer to the current texture (this is needed for dispose),
++				// also when the binding's first update reported no change: a destroy must reach this group
++
++				texturesTextureData.bindGroups.add( bindGroup );
++				if ( bindingsData.trackedTextures === undefined ) {
+ 
+-					texturesTextureData.bindGroups.add( bindGroup );
++					bindingsData.trackedTextures = new Set();
+ 
+ 				}
+ 
++				bindingsData.trackedTextures.add( texturesTextureData );
++
+ 				const textureData = backend.get( texture );
+ 
+ 				if ( textureData.externalTexture !== undefined || texturesTextureData.isDefaultTexture ) {
+@@ -36309,6 +36439,7 @@ class Bindings extends DataMap {
+ 			const cacheKey = cacheBindings ? _cacheKeyIds.join( ',' ) : '';
+ 
+ 			this.backend.updateBindings( bindGroup, bindings, cacheKey, version );
++			bindingsData.forceUpdate = false;
+ 
+ 		}
+ 
+@@ -37643,6 +37774,7 @@ class Textures extends DataMap {
+ 
+ 					bindingsData.groups = undefined;
+ 					bindingsData.versions = undefined;
++					bindingsData.forceUpdate = true;
+ 
+ 				}
+ 
+@@ -38213,6 +38345,7 @@ class Textures extends DataMap {
+ 
+ 					bindingsData.groups = undefined;
+ 					bindingsData.versions = undefined;
++					bindingsData.forceUpdate = true;
+ 
+ 					// go through all bindings and if one points to the destroyed texture, trigger dispose as well
+ 
+@@ -85519,6 +85652,13 @@ class WGSLNodeBuilder extends NodeBuilder {
+ 
+ 		super( object, renderer, new WGSLNodeParser() );
+ 
++		/**
++		 * Comparison samplers shared by identical keys, and the WGSL sampler name of each texture
++		 * that reads through another texture's sampler.
++		 */
++		this.sharedCompareSamplers = new Map();
++		this.samplerNames = new Map();
++
+ 		/**
+ 		 * A dictionary that holds for each shader stage ('vertex', 'fragment', 'compute')
+ 		 * another dictionary which manages UBOs per group ('render','frame','object').
+@@ -85595,21 +85735,21 @@ class WGSLNodeBuilder extends NodeBuilder {
+ 
+ 				if ( offsetSnippet ) {
+ 
+-					return `textureSample( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ depthSnippet }, ${ offsetSnippet } )`;
++					return `textureSample( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ depthSnippet }, ${ offsetSnippet } )`;
+ 
+ 				}
+ 
+-				return `textureSample( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ depthSnippet } )`;
++				return `textureSample( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ depthSnippet } )`;
+ 
+ 			} else {
+ 
+ 				if ( offsetSnippet ) {
+ 
+-					return `textureSample( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ offsetSnippet } )`;
++					return `textureSample( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ offsetSnippet } )`;
+ 
+ 				}
+ 
+-				return `textureSample( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet } )`;
++				return `textureSample( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet } )`;
+ 
+ 			}
+ 
+@@ -85641,21 +85781,21 @@ class WGSLNodeBuilder extends NodeBuilder {
+ 
+ 				if ( offsetSnippet ) {
+ 
+-					return `textureSampleLevel( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ depthSnippet }, ${ levelSnippet }, ${ offsetSnippet } )`;
++					return `textureSampleLevel( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ depthSnippet }, ${ levelSnippet }, ${ offsetSnippet } )`;
+ 
+ 				}
+ 
+-				return `textureSampleLevel( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ depthSnippet }, ${ levelSnippet } )`;
++				return `textureSampleLevel( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ depthSnippet }, ${ levelSnippet } )`;
+ 
+ 			} else {
+ 
+ 				if ( offsetSnippet ) {
+ 
+-					return `textureSampleLevel( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ levelSnippet }, ${ offsetSnippet } )`;
++					return `textureSampleLevel( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ levelSnippet }, ${ offsetSnippet } )`;
+ 
+ 				}
+ 
+-				return `textureSampleLevel( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ levelSnippet } )`;
++				return `textureSampleLevel( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ levelSnippet } )`;
+ 
+ 			}
+ 
+@@ -85918,7 +86058,7 @@ class WGSLNodeBuilder extends NodeBuilder {
+ 			// Depth textures require integer level, regular textures use float
+ 			const levelType = texture.isDepthTexture ? 'u32' : 'f32';
+ 
+-			return `textureSampleLevel( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ levelType }( ${ levelSnippet } ) )`;
++			return `textureSampleLevel( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ levelType }( ${ levelSnippet } ) )`;
+ 
+ 		}
+ 
+@@ -86062,6 +86202,18 @@ class WGSLNodeBuilder extends NodeBuilder {
+ 	 * @param {Texture} texture - The texture.
+ 	 * @return {boolean} Whether the sampled values of the given texture should be compared against a reference value or not.
+ 	 */
++	/**
++	 * The WGSL sampler a texture reads through: its own, or a shared comparison sampler.
++	 *
++	 * @param {string} textureProperty - The texture's WGSL name.
++	 * @return {string} The sampler's WGSL name.
++	 */
++	getSamplerName( textureProperty ) {
++
++		return this.samplerNames.get( textureProperty ) ?? `${ textureProperty }_sampler`;
++
++	}
++
+ 	isSampleCompare( texture ) {
+ 
+ 		return texture.isDepthTexture === true && texture.compareFunction !== null && this.renderer.hasCompatibility( Compatibility.TEXTURE_COMPARE );
+@@ -86138,21 +86290,21 @@ class WGSLNodeBuilder extends NodeBuilder {
+ 
+ 				if ( offsetSnippet ) {
+ 
+-					return `textureSampleGrad( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ depthSnippet }, ${ gradSnippet[ 0 ] }, ${ gradSnippet[ 1 ] }, ${ offsetSnippet } )`;
++					return `textureSampleGrad( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ depthSnippet }, ${ gradSnippet[ 0 ] }, ${ gradSnippet[ 1 ] }, ${ offsetSnippet } )`;
+ 
+ 				}
+ 
+-				return `textureSampleGrad( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ depthSnippet }, ${ gradSnippet[ 0 ] }, ${ gradSnippet[ 1 ] } )`;
++				return `textureSampleGrad( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ depthSnippet }, ${ gradSnippet[ 0 ] }, ${ gradSnippet[ 1 ] } )`;
+ 
+ 			} else {
+ 
+ 				if ( offsetSnippet ) {
+ 
+-					return `textureSampleGrad( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ gradSnippet[ 0 ] }, ${ gradSnippet[ 1 ] }, ${ offsetSnippet } )`;
++					return `textureSampleGrad( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ gradSnippet[ 0 ] }, ${ gradSnippet[ 1 ] }, ${ offsetSnippet } )`;
+ 
+ 				}
+ 
+-				return `textureSampleGrad( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ gradSnippet[ 0 ] }, ${ gradSnippet[ 1 ] } )`;
++				return `textureSampleGrad( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ gradSnippet[ 0 ] }, ${ gradSnippet[ 1 ] } )`;
+ 
+ 			}
+ 
+@@ -86185,21 +86337,21 @@ class WGSLNodeBuilder extends NodeBuilder {
+ 
+ 				if ( offsetSnippet ) {
+ 
+-					return `textureSampleCompare( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ depthSnippet }, ${ compareSnippet }, ${ offsetSnippet } )`;
++					return `textureSampleCompare( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ depthSnippet }, ${ compareSnippet }, ${ offsetSnippet } )`;
+ 
+ 				}
+ 
+-				return `textureSampleCompare( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ depthSnippet }, ${ compareSnippet } )`;
++				return `textureSampleCompare( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ depthSnippet }, ${ compareSnippet } )`;
+ 
+ 			}
+ 
+ 			if ( offsetSnippet ) {
+ 
+-				return `textureSampleCompare( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ compareSnippet }, ${ offsetSnippet } )`;
++				return `textureSampleCompare( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ compareSnippet }, ${ offsetSnippet } )`;
+ 
+ 			}
+ 
+-			return `textureSampleCompare( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ compareSnippet } )`;
++			return `textureSampleCompare( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ compareSnippet } )`;
+ 
+ 		} else {
+ 
+@@ -86264,21 +86416,21 @@ class WGSLNodeBuilder extends NodeBuilder {
+ 
+ 			if ( offsetSnippet ) {
+ 
+-				return `textureGather( ${componentSnippet}${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ depthSnippet }, ${ offsetSnippet } )`;
++				return `textureGather( ${componentSnippet}${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ depthSnippet }, ${ offsetSnippet } )`;
+ 
+ 			}
+ 
+-			return `textureGather( ${componentSnippet}${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ depthSnippet } )`;
++			return `textureGather( ${componentSnippet}${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ depthSnippet } )`;
+ 
+ 		}
+ 
+ 		if ( offsetSnippet ) {
+ 
+-			return `textureGather( ${componentSnippet}${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ offsetSnippet } )`;
++			return `textureGather( ${componentSnippet}${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ offsetSnippet } )`;
+ 
+ 		}
+ 
+-		return `textureGather( ${componentSnippet}${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet })`;
++		return `textureGather( ${componentSnippet}${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet })`;
+ 
+ 	}
+ 
+@@ -86299,21 +86451,21 @@ class WGSLNodeBuilder extends NodeBuilder {
+ 
+ 			if ( offsetSnippet ) {
+ 
+-				return `textureGatherCompare( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ depthSnippet }, ${ compareSnippet }, ${ offsetSnippet } )`;
++				return `textureGatherCompare( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ depthSnippet }, ${ compareSnippet }, ${ offsetSnippet } )`;
+ 
+ 			}
+ 
+-			return `textureGatherCompare( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ depthSnippet }, ${ compareSnippet })`;
++			return `textureGatherCompare( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ depthSnippet }, ${ compareSnippet })`;
+ 
+ 		}
+ 
+ 		if ( offsetSnippet ) {
+ 
+-			return `textureGatherCompare( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ compareSnippet }, ${ offsetSnippet } )`;
++			return `textureGatherCompare( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ compareSnippet }, ${ offsetSnippet } )`;
+ 
+ 		}
+ 
+-		return `textureGatherCompare( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ compareSnippet })`;
++		return `textureGatherCompare( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ compareSnippet })`;
+ 
+ 	}
+ 
+@@ -86336,21 +86488,21 @@ class WGSLNodeBuilder extends NodeBuilder {
+ 
+ 				if ( offsetSnippet ) {
+ 
+-					return `textureSampleLevel( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ depthSnippet }, ${ levelSnippet }, ${ offsetSnippet } )`;
++					return `textureSampleLevel( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ depthSnippet }, ${ levelSnippet }, ${ offsetSnippet } )`;
+ 
+ 				}
+ 
+-				return `textureSampleLevel( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ depthSnippet }, ${ levelSnippet } )`;
++				return `textureSampleLevel( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ depthSnippet }, ${ levelSnippet } )`;
+ 
+ 			} else {
+ 
+ 				if ( offsetSnippet ) {
+ 
+-					return `textureSampleLevel( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ levelSnippet }, ${ offsetSnippet } )`;
++					return `textureSampleLevel( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ levelSnippet }, ${ offsetSnippet } )`;
+ 
+ 				}
+ 
+-				return `textureSampleLevel( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ levelSnippet } )`;
++				return `textureSampleLevel( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ levelSnippet } )`;
+ 
+ 			}
+ 
+@@ -86386,21 +86538,21 @@ class WGSLNodeBuilder extends NodeBuilder {
+ 
+ 				if ( offsetSnippet ) {
+ 
+-					return `textureSampleBias( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ depthSnippet }, ${ biasSnippet }, ${ offsetSnippet } )`;
++					return `textureSampleBias( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ depthSnippet }, ${ biasSnippet }, ${ offsetSnippet } )`;
+ 
+ 				}
+ 
+-				return `textureSampleBias( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ depthSnippet }, ${ biasSnippet } )`;
++				return `textureSampleBias( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ depthSnippet }, ${ biasSnippet } )`;
+ 
+ 			} else {
+ 
+ 				if ( offsetSnippet ) {
+ 
+-					return `textureSampleBias( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ biasSnippet }, ${ offsetSnippet } )`;
++					return `textureSampleBias( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ biasSnippet }, ${ offsetSnippet } )`;
+ 
+ 				}
+ 
+-				return `textureSampleBias( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ biasSnippet } )`;
++				return `textureSampleBias( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ biasSnippet } )`;
+ 
+ 			}
+ 
+@@ -86644,11 +86796,27 @@ class WGSLNodeBuilder extends NodeBuilder {
+ 				// Also textureGather always need sampler.
+ 				const needsSampler = node.isRawTextureNode !== true && ( node.value.isCubeTexture === true || ( this.isUnfilterable( node.value ) === false && texture.store === false ) || node.gatherNode !== null );
+ 
+-				if ( needsSampler ) {
++				// Identical comparison samplers share one binding. Every shadow map of a clipmap compares the
++				// same way, and a sampler per map exhausts maxSamplersPerShaderStage (16 on most adapters).
++				const sharedKey = needsSampler && this.isSampleCompare( node.value ) && node.isSampleCompare() ? `${ groupName }:${ shaderStage }:${ node.value.compareFunction }:${ node.value.wrapS }:${ node.value.wrapT }:${ node.value.wrapR }:${ node.value.minFilter }:${ node.value.magFilter }` : null;
++				const sharedSampler = sharedKey === null ? undefined : this.sharedCompareSamplers.get( sharedKey );
++
++				if ( sharedSampler !== undefined ) {
++
++					this.samplerNames.set( uniformNode.name, sharedSampler.name );
++					nodeData.sharedSampler = true;
++
++					bindings.push( texture );
++
++					uniformGPU = [ sharedSampler, texture ];
++
++				} else if ( needsSampler ) {
+ 
+ 					const sampler = new NodeSampler( `${ uniformNode.name }_sampler`, uniformNode.node, group );
+ 					sampler.setVisibility( gpuShaderStageLib[ shaderStage ] );
+ 
++					if ( sharedKey !== null ) this.sharedCompareSamplers.set( sharedKey, sampler );
++
+ 					bindings.push( sampler, texture );
+ 
+ 					uniformGPU = [ sampler, texture ];
+@@ -87460,7 +87628,8 @@ ${ flowData.code }
+ 				const uniformGPU = nodeData.uniformGPU;
+ 				const needsSampler = Array.isArray( uniformGPU ) && uniformGPU[ 0 ].isSampler === true && uniformGPU[ 0 ].isSampledTexture !== true;
+ 
+-				if ( needsSampler ) {
++				// A shared comparison sampler is declared once, by the texture that created it.
++				if ( needsSampler && nodeData.sharedSampler !== true ) {
+ 
+ 					if ( this.isSampleCompare( texture ) && textureNode.isSampleCompare() ) {
+ 
+diff --git a/src/materials/nodes/manager/NodeMaterialObserver.js b/src/materials/nodes/manager/NodeMaterialObserver.js
+index bd94730965dcc321ecb12083980f7da5f1cfbf9b..239556dc65ed767755f10a57d82dbfee0b79bce3 100644
+--- a/src/materials/nodes/manager/NodeMaterialObserver.js
++++ b/src/materials/nodes/manager/NodeMaterialObserver.js
+@@ -407,7 +407,8 @@ class NodeMaterialObserver {
+ 				environmentRotation: scene.environmentRotation.clone(),
+ 				environmentIntensity: scene.environmentIntensity,
+ 				materialVersion: material.version,
+-				geometryVersion: geometry.version
++				geometryVersion: geometry.version,
++				pmremSwaps: renderObject.renderer._tnPmremSwaps
+ 			};
+ 
+ 			data.settledState = false;
+@@ -420,7 +421,9 @@ class NodeMaterialObserver {
+ 			settled.environmentRotation.equals( scene.environmentRotation ) !== true ||
+ 			settled.environmentIntensity !== scene.environmentIntensity ||
+ 			settled.materialVersion !== material.version ||
+-			settled.geometryVersion !== geometry.version ) {
++			settled.geometryVersion !== geometry.version ||
++			// a PMREM finished and swapped the texture its node samples: a settled object would keep the old one
++			settled.pmremSwaps !== renderObject.renderer._tnPmremSwaps ) {
+ 
+ 			// re-arm with the current state, so the object settles again once it stops changing
+ 
+@@ -429,6 +432,7 @@ class NodeMaterialObserver {
+ 			settled.environmentIntensity = scene.environmentIntensity;
+ 			settled.materialVersion = material.version;
+ 			settled.geometryVersion = geometry.version;
++			settled.pmremSwaps = renderObject.renderer._tnPmremSwaps;
+ 
+ 			data.settledState = false;
+ 
+diff --git a/src/nodes/accessors/Instance.js b/src/nodes/accessors/Instance.js
+index 57b6ebfcc3e8be56ec503a9d4ac491dee9d607af..d8594793e78a2f0b8ad38cecef9451ed9c8a32aa 100644
+--- a/src/nodes/accessors/Instance.js
++++ b/src/nodes/accessors/Instance.js
+@@ -304,8 +304,11 @@ export const instance = /*@__PURE__*/ Fn( ( [ matrices, colors = null ], builder
+ 
+ 			const { previousInstanceMatrix } = _previousInstanceMatrices.get( object );
+ 
++			if ( object[ Symbol.for( 'threenative.velocity.previousInstanceMatricesApplied' ) ] === scheduledPrevious ) return;
++
+ 			previousInstanceMatrix.array.set( scheduledPrevious );
+ 			previousInstanceMatrix.needsUpdate = true;
++			object[ Symbol.for( 'threenative.velocity.previousInstanceMatricesApplied' ) ] = scheduledPrevious;
+ 
+ 		} );
+ 
+@@ -314,6 +317,8 @@ export const instance = /*@__PURE__*/ Fn( ( [ matrices, colors = null ], builder
+ 
+ 			if ( object[ Symbol.for( 'threenative.velocity.previousInstanceMatrices' ) ] !== undefined ) return;
+ 
++			object[ Symbol.for( 'threenative.velocity.previousInstanceMatricesApplied' ) ] = undefined;
++
+ 			const { previousInstanceMatrix } = _previousInstanceMatrices.get( object );
+ 
+ 			previousInstanceMatrix.array.set( matrices.array );
+@@ -364,8 +369,11 @@ export const instancedMesh = /*@__PURE__*/ Fn( ( [ instancedMesh ], builder ) =>
+ 
+ 				const previous = getPreviousMatrix( object );
+ 
++				if ( object[ Symbol.for( 'threenative.velocity.previousInstanceMatricesApplied' ) ] === scheduledPrevious ) return;
++
+ 				previous.array.set( scheduledPrevious );
+ 				previous.needsUpdate = true;
++				object[ Symbol.for( 'threenative.velocity.previousInstanceMatricesApplied' ) ] = scheduledPrevious;
+ 
+ 			} );
+ 
+@@ -374,6 +382,8 @@ export const instancedMesh = /*@__PURE__*/ Fn( ( [ instancedMesh ], builder ) =>
+ 
+ 				if ( object[ Symbol.for( 'threenative.velocity.previousInstanceMatrices' ) ] !== undefined ) return;
+ 
++				object[ Symbol.for( 'threenative.velocity.previousInstanceMatricesApplied' ) ] = undefined;
++
+ 				const previous = getPreviousMatrix( object );
+ 
+ 				previous.array.set( object.instanceMatrix.array );
+diff --git a/src/nodes/pmrem/PMREMNode.js b/src/nodes/pmrem/PMREMNode.js
+index 0f7851b615cadc9cb971e0377bfecb5c23c4afef..5dc2f396f729b6eca2d04c4114bb163930fc2e92 100644
+--- a/src/nodes/pmrem/PMREMNode.js
++++ b/src/nodes/pmrem/PMREMNode.js
+@@ -438,6 +438,9 @@ class PMREMNode extends Node {
+ 
+ 				this._pmrem = pmrem;
+ 
++				// count the swap, so every settled object that samples this node refreshes once (NodeMaterialObserver)
++				if ( this._texture.value !== pmrem && frame.renderer ) frame.renderer._tnPmremSwaps = ( frame.renderer._tnPmremSwaps || 0 ) + 1;
++
+ 				this.updateFromTexture( pmrem );
+ 
+ 			}
+diff --git a/src/renderers/common/Bindings.js b/src/renderers/common/Bindings.js
+index d44e9db6b1b87139f40eb33ab217ac8094ad4ce9..a0423e27dde75aaf072c8b26eb5101051e8b5193 100644
+--- a/src/renderers/common/Bindings.js
++++ b/src/renderers/common/Bindings.js
+@@ -384,6 +384,21 @@ class Bindings extends DataMap {
+ 
+ 			if ( groupData.usedTimes === 0 ) {
+ 
++				// Stop disposed bind groups from being invalidated by later texture disposal:
++				// untrack every texture the group was ever tracked on, not only its current one.
++				const bindingData = this.backend.get( bindGroup );
++				if ( bindingData.trackedTextures ) {
++
++					for ( const textureData of bindingData.trackedTextures ) {
++
++						textureData.bindGroups.delete( bindGroup );
++
++					}
++
++					bindingData.trackedTextures.clear();
++
++				}
++
+ 				for ( const binding of bindGroup.bindings ) {
+ 
+ 					if ( binding.isUniformBuffer ) {
+@@ -474,7 +489,11 @@ class Bindings extends DataMap {
+ 		// a settled object keeps the values it uploaded the last time it refreshed, so an object
+ 		// group it has already written is the one thing in here it may skip
+ 
+-		let needsBindingsUpdate = false;
++		// a destroyed texture dropped this group's cached GPU groups: rebuild it even if no binding reports a change
++		const bindingsData = backend.get( bindGroup );
++		const forceBindingsUpdate = bindingsData.forceUpdate === true;
++
++		let needsBindingsUpdate = forceBindingsUpdate;
+ 		let cacheBindings = true;
+ 		let cacheKeyLength = 0;
+ 		let version = 0;
+@@ -483,7 +502,7 @@ class Bindings extends DataMap {
+ 
+ 		for ( const binding of bindGroup.bindings ) {
+ 
+-			const updatedGroup = this.nodes.updateGroup( binding, settled );
++			const updatedGroup = forceBindingsUpdate || this.nodes.updateGroup( binding, settled );
+ 
+ 			// every uniforms group is a uniform buffer. So if no update is required,
+ 			// we move one with the next binding. Otherwise the next if block will update the group.
+@@ -576,12 +595,20 @@ class Bindings extends DataMap {
+ 
+ 					}
+ 
+-					// keep track which bind groups refer to the current texture (this is needed for dispose)
++				}
++
++				// keep track which bind groups refer to the current texture (this is needed for dispose),
++				// also when the binding's first update reported no change: a destroy must reach this group
++
++				texturesTextureData.bindGroups.add( bindGroup );
++				if ( bindingsData.trackedTextures === undefined ) {
+ 
+-					texturesTextureData.bindGroups.add( bindGroup );
++					bindingsData.trackedTextures = new Set();
+ 
+ 				}
+ 
++				bindingsData.trackedTextures.add( texturesTextureData );
++
+ 				const textureData = backend.get( texture );
+ 
+ 				if ( textureData.externalTexture !== undefined || texturesTextureData.isDefaultTexture ) {
+@@ -648,6 +675,7 @@ class Bindings extends DataMap {
+ 			const cacheKey = cacheBindings ? _cacheKeyIds.join( ',' ) : '';
+ 
+ 			this.backend.updateBindings( bindGroup, bindings, cacheKey, version );
++			bindingsData.forceUpdate = false;
+ 
+ 		}
+ 
+diff --git a/src/renderers/common/Geometries.js b/src/renderers/common/Geometries.js
+index 0dbd75a8f0a5cbd9b0ef00d91b426aafc0132a6e..5d9268aecd1189ff355055e120a8993cb1be48cc 100644
+--- a/src/renderers/common/Geometries.js
++++ b/src/renderers/common/Geometries.js
+@@ -168,6 +168,9 @@ class Geometries extends DataMap {
+ 		 * @type {WeakMap<RenderObject,Map<BufferAttribute,number>>}
+ 		 */
+ 		this._settledAttributes = new WeakMap();
++		this._geometryAttributeOwners = new WeakMap();
++		this._sharedAttributeOwners = new WeakMap();
++		this._renderObjectAttributeGeometry = new WeakMap();
+ 
+ 	}
+ 
+@@ -193,6 +196,7 @@ class Geometries extends DataMap {
+ 		const geometry = renderObject.geometry;
+ 
+ 		if ( this.has( geometry ) === false ) this.initGeometry( geometry );
++		if ( this.geometryAttributesChanged( renderObject ) ) this.syncGeometryAttributes( renderObject );
+ 
+ 		// A settled static object has no attribute that could have changed since the last refresh,
+ 		// unless a writer bumped one. An InstancedMesh's instance buffer is a vertex attribute of
+@@ -220,13 +224,18 @@ class Geometries extends DataMap {
+ 		const index = this.getIndex( renderObject );
+ 		const settled = this._settledAttributes.get( renderObject );
+ 
+-		if ( settled !== undefined && settled.size === attributes.length + ( index === null ? 0 : 1 ) ) {
++		if ( settled !== undefined && settled.attributes.length === attributes.length && settled.index === index ) {
+ 
+ 			let changed = false;
+ 
+-			for ( const attribute of attributes ) {
++			for ( let i = 0; i < attributes.length; i ++ ) {
+ 
+-				if ( settled.get( attribute.isInterleavedBufferAttribute ? attribute.data : attribute ) !== attribute.version ) {
++				const attribute = attributes[ i ];
++				const data = attribute.isInterleavedBufferAttribute ? attribute.data : attribute;
++				const previous = settled.attributes[ i ];
++
++				// an interleaved wrapper has no version of its own: its buffer's version is the write signal
++				if ( previous.attribute !== attribute || previous.data !== data || previous.version !== data.version ) {
+ 
+ 					changed = true;
+ 					break;
+@@ -235,25 +244,122 @@ class Geometries extends DataMap {
+ 
+ 			}
+ 
+-			if ( changed === false && ( index === null || settled.get( index ) === index.version ) ) return false;
++			if ( changed === false && ( index === null || settled.indexVersion === index.version ) ) return false;
+ 
+ 		}
+ 
+-		const versions = new Map();
++		const versions = attributes.map( ( attribute ) => {
++
++			const data = attribute.isInterleavedBufferAttribute ? attribute.data : attribute;
++			return { attribute, data, version: data.version };
++
++		} );
++
++		this._settledAttributes.set( renderObject, { attributes: versions, index, indexVersion: index === null ? undefined : index.version } );
++
++		return true;
++
++	}
++
++	/** Compare the published attribute identities without allocating on settled frames. */
++	geometryAttributesChanged( renderObject ) {
++
++		const geometry = renderObject.geometry;
++		const owner = this._geometryAttributeOwners.get( geometry )?.get( renderObject );
++		if ( owner === undefined || owner.index !== geometry.index ) return true;
++
++		const attributes = renderObject.getAttributes();
++		if ( owner.attributes.length !== attributes.length ) return true;
++		for ( let i = 0; i < attributes.length; i ++ ) {
++			const attribute = attributes[ i ];
++			if ( owner.attributes[ i ] !== ( attribute.isInterleavedBufferAttribute ? attribute.data : attribute ) ) return true;
++		}
++
++		return false;
++
++	}
++
++	/** Add this render object's current geometry attributes to the renderer's shared-resource owners. */
++	syncGeometryAttributes( renderObject ) {
++
++		const { geometry } = renderObject;
++		const previousGeometry = this._renderObjectAttributeGeometry.get( renderObject );
++		if ( previousGeometry !== undefined && previousGeometry !== geometry ) this.releaseRenderObject( renderObject );
++		this._renderObjectAttributeGeometry.set( renderObject, geometry );
++		let geometryOwners = this._geometryAttributeOwners.get( geometry );
++
++		if ( geometryOwners === undefined ) {
++			geometryOwners = new Map();
++			this._geometryAttributeOwners.set( geometry, geometryOwners );
++		}
++
++		const previous = geometryOwners.get( renderObject )?.keys ?? new Map();
++		const current = new Map();
++		const attributes = renderObject.getAttributes();
++		const attributeKeys = [];
+ 
+ 		for ( const attribute of attributes ) {
++			const key = attribute.isInterleavedBufferAttribute ? attribute.data : attribute;
++			current.set( key, true );
++			attributeKeys.push( key );
++		}
++		const index = geometry.index;
++		if ( index !== null ) current.set( index, true );
++
++		for ( const key of current.keys() ) {
++			let record = this._sharedAttributeOwners.get( key );
++			if ( record === undefined ) record = { owners: new Set() };
++			if ( previous.has( key ) === false ) record.owners.add( renderObject );
++			this._sharedAttributeOwners.set( key, record );
++		}
+ 
+-			const data = attribute.isInterleavedBufferAttribute ? attribute.data : attribute;
++		for ( const key of previous.keys() ) {
++			if ( current.has( key ) === false ) this.releaseSharedAttribute( key, renderObject );
++		}
++
++		geometryOwners.set( renderObject, { keys: current, attributes: attributeKeys, index } );
+ 
+-			versions.set( data, data.version );
++	}
+ 
++	/** Drop a render object from its geometry before its material-owned node attributes go stale. */
++	releaseRenderObject( renderObject ) {
++
++		const geometry = this._renderObjectAttributeGeometry.get( renderObject );
++		if ( geometry === undefined ) return;
++		const geometryOwners = this._geometryAttributeOwners.get( geometry );
++		const owned = geometryOwners?.get( renderObject )?.keys;
++		if ( owned !== undefined ) {
++			for ( const key of owned.keys() ) this.releaseSharedAttribute( key, renderObject );
++			geometryOwners.delete( renderObject );
++			if ( geometryOwners.size === 0 ) this._geometryAttributeOwners.delete( geometry );
+ 		}
++		this._renderObjectAttributeGeometry.delete( renderObject );
+ 
+-		if ( index !== null ) versions.set( index, index.version );
++	}
+ 
+-		this._settledAttributes.set( renderObject, versions );
++	/** Release a shared GPU resource only after its last live geometry render object lets it go. */
++	releaseSharedAttribute( key, owner ) {
+ 
+-		return true;
++		const record = this._sharedAttributeOwners.get( key );
++		if ( record === undefined ) return;
++		record.owners.delete( owner );
++		if ( record.owners.size !== 0 ) return;
++
++		this.attributes.delete( key );
++		this._sharedAttributeOwners.delete( key );
++
++	}
++
++	/** Release the recorded sets, not a potentially replaced render object's current attributes. */
++	releaseGeometryAttributes( geometry ) {
++
++		const geometryOwners = this._geometryAttributeOwners.get( geometry );
++		if ( geometryOwners === undefined ) return;
++		for ( const [ owner, attributes ] of geometryOwners ) {
++			for ( const key of attributes.keys.keys() ) this.releaseSharedAttribute( key, owner );
++			this._renderObjectAttributeGeometry.delete( owner );
++		}
++		this._geometryAttributeOwners.delete( geometry );
+ 
+ 	}
+ 
+@@ -274,23 +380,10 @@ class Geometries extends DataMap {
+ 
+ 			this.info.memory.geometries --;
+ 
+-			// index
+-
+-			const index = geometry.index;
+-
+-			if ( index !== null ) {
++			// index and geometry attributes: release this geometry's owners, so a buffer another
++			// geometry still draws stays alive until its last owner lets it go
+ 
+-				this.attributes.delete( index );
+-
+-			}
+-
+-			// geometry attributes
+-
+-			for ( const attribute of Object.values( geometry.attributes ) ) {
+-
+-				this.attributes.delete( this.backend.getBufferAttribute( attribute ) );
+-
+-			}
++			this.releaseGeometryAttributes( geometry );
+ 
+ 			// wireframe attributes
+ 
+@@ -468,17 +561,9 @@ class Geometries extends DataMap {
+ 	 */
+ 	deleteNodeAttributes( renderObject ) {
+ 
+-		const currentAttributes = new Set( Object.values( renderObject.geometry.attributes ) );
++		// node attributes can be shared with other render objects: release this object's owners
+ 
+-		for ( const attribute of renderObject.getAttributes() ) {
+-
+-			if ( currentAttributes.has( attribute ) === false ) {
+-
+-				this.attributes.delete( this.backend.getBufferAttribute( attribute ) );
+-
+-			}
+-
+-		}
++		this.releaseRenderObject( renderObject );
+ 
+ 	}
+ 
+diff --git a/src/renderers/common/RenderObjects.js b/src/renderers/common/RenderObjects.js
+index 882a39dcc5ab9e62236c2e02e20aa282b90ee421..99d89385ccc4eef01c8072f809f976db455a66a0 100644
+--- a/src/renderers/common/RenderObjects.js
++++ b/src/renderers/common/RenderObjects.js
+@@ -244,6 +244,7 @@ class RenderObjects {
+ 			this.pipelines.delete( renderObject );
+ 			this.bindings.deleteForRender( renderObject );
+ 			this.nodes.delete( renderObject );
++			this.geometries.releaseRenderObject( renderObject );
+ 
+ 			chainMap.delete( renderObject.getChainArray() );
+ 
+diff --git a/src/renderers/common/Textures.js b/src/renderers/common/Textures.js
+index f8e762fcf1c7ca0a9192e38f2afe26926e03edc8..ceea39f57fbe0a885e0dc75781e53d2e8a28104b 100644
+--- a/src/renderers/common/Textures.js
++++ b/src/renderers/common/Textures.js
+@@ -327,6 +327,7 @@ class Textures extends DataMap {
+ 
+ 					bindingsData.groups = undefined;
+ 					bindingsData.versions = undefined;
++					bindingsData.forceUpdate = true;
+ 
+ 				}
+ 
+@@ -897,6 +898,7 @@ class Textures extends DataMap {
+ 
+ 					bindingsData.groups = undefined;
+ 					bindingsData.versions = undefined;
++					bindingsData.forceUpdate = true;
+ 
+ 					// go through all bindings and if one points to the destroyed texture, trigger dispose as well
+ 
+diff --git a/src/renderers/webgpu/nodes/WGSLNodeBuilder.js b/src/renderers/webgpu/nodes/WGSLNodeBuilder.js
+index c662dfaa40d14a04d38e886a0730c314a85a8bd5..48c5779133deee480709402615417c3f6e58cebb 100644
+--- a/src/renderers/webgpu/nodes/WGSLNodeBuilder.js
++++ b/src/renderers/webgpu/nodes/WGSLNodeBuilder.js
+@@ -306,6 +306,13 @@ class WGSLNodeBuilder extends NodeBuilder {
+ 
+ 		super( object, renderer, new WGSLNodeParser() );
+ 
++		/**
++		 * Comparison samplers shared by identical keys, and the WGSL sampler name of each texture
++		 * that reads through another texture's sampler.
++		 */
++		this.sharedCompareSamplers = new Map();
++		this.samplerNames = new Map();
++
+ 		/**
+ 		 * A dictionary that holds for each shader stage ('vertex', 'fragment', 'compute')
+ 		 * another dictionary which manages UBOs per group ('render','frame','object').
+@@ -382,21 +389,21 @@ class WGSLNodeBuilder extends NodeBuilder {
+ 
+ 				if ( offsetSnippet ) {
+ 
+-					return `textureSample( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ depthSnippet }, ${ offsetSnippet } )`;
++					return `textureSample( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ depthSnippet }, ${ offsetSnippet } )`;
+ 
+ 				}
+ 
+-				return `textureSample( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ depthSnippet } )`;
++				return `textureSample( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ depthSnippet } )`;
+ 
+ 			} else {
+ 
+ 				if ( offsetSnippet ) {
+ 
+-					return `textureSample( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ offsetSnippet } )`;
++					return `textureSample( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ offsetSnippet } )`;
+ 
+ 				}
+ 
+-				return `textureSample( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet } )`;
++				return `textureSample( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet } )`;
+ 
+ 			}
+ 
+@@ -428,21 +435,21 @@ class WGSLNodeBuilder extends NodeBuilder {
+ 
+ 				if ( offsetSnippet ) {
+ 
+-					return `textureSampleLevel( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ depthSnippet }, ${ levelSnippet }, ${ offsetSnippet } )`;
++					return `textureSampleLevel( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ depthSnippet }, ${ levelSnippet }, ${ offsetSnippet } )`;
+ 
+ 				}
+ 
+-				return `textureSampleLevel( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ depthSnippet }, ${ levelSnippet } )`;
++				return `textureSampleLevel( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ depthSnippet }, ${ levelSnippet } )`;
+ 
+ 			} else {
+ 
+ 				if ( offsetSnippet ) {
+ 
+-					return `textureSampleLevel( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ levelSnippet }, ${ offsetSnippet } )`;
++					return `textureSampleLevel( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ levelSnippet }, ${ offsetSnippet } )`;
+ 
+ 				}
+ 
+-				return `textureSampleLevel( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ levelSnippet } )`;
++				return `textureSampleLevel( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ levelSnippet } )`;
+ 
+ 			}
+ 
+@@ -705,7 +712,7 @@ class WGSLNodeBuilder extends NodeBuilder {
+ 			// Depth textures require integer level, regular textures use float
+ 			const levelType = texture.isDepthTexture ? 'u32' : 'f32';
+ 
+-			return `textureSampleLevel( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ levelType }( ${ levelSnippet } ) )`;
++			return `textureSampleLevel( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ levelType }( ${ levelSnippet } ) )`;
+ 
+ 		}
+ 
+@@ -849,6 +856,18 @@ class WGSLNodeBuilder extends NodeBuilder {
+ 	 * @param {Texture} texture - The texture.
+ 	 * @return {boolean} Whether the sampled values of the given texture should be compared against a reference value or not.
+ 	 */
++	/**
++	 * The WGSL sampler a texture reads through: its own, or a shared comparison sampler.
++	 *
++	 * @param {string} textureProperty - The texture's WGSL name.
++	 * @return {string} The sampler's WGSL name.
++	 */
++	getSamplerName( textureProperty ) {
++
++		return this.samplerNames.get( textureProperty ) ?? `${ textureProperty }_sampler`;
++
++	}
++
+ 	isSampleCompare( texture ) {
+ 
+ 		return texture.isDepthTexture === true && texture.compareFunction !== null && this.renderer.hasCompatibility( Compatibility.TEXTURE_COMPARE );
+@@ -925,21 +944,21 @@ class WGSLNodeBuilder extends NodeBuilder {
+ 
+ 				if ( offsetSnippet ) {
+ 
+-					return `textureSampleGrad( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ depthSnippet }, ${ gradSnippet[ 0 ] }, ${ gradSnippet[ 1 ] }, ${ offsetSnippet } )`;
++					return `textureSampleGrad( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ depthSnippet }, ${ gradSnippet[ 0 ] }, ${ gradSnippet[ 1 ] }, ${ offsetSnippet } )`;
+ 
+ 				}
+ 
+-				return `textureSampleGrad( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ depthSnippet }, ${ gradSnippet[ 0 ] }, ${ gradSnippet[ 1 ] } )`;
++				return `textureSampleGrad( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ depthSnippet }, ${ gradSnippet[ 0 ] }, ${ gradSnippet[ 1 ] } )`;
+ 
+ 			} else {
+ 
+ 				if ( offsetSnippet ) {
+ 
+-					return `textureSampleGrad( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ gradSnippet[ 0 ] }, ${ gradSnippet[ 1 ] }, ${ offsetSnippet } )`;
++					return `textureSampleGrad( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ gradSnippet[ 0 ] }, ${ gradSnippet[ 1 ] }, ${ offsetSnippet } )`;
+ 
+ 				}
+ 
+-				return `textureSampleGrad( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ gradSnippet[ 0 ] }, ${ gradSnippet[ 1 ] } )`;
++				return `textureSampleGrad( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ gradSnippet[ 0 ] }, ${ gradSnippet[ 1 ] } )`;
+ 
+ 			}
+ 
+@@ -972,21 +991,21 @@ class WGSLNodeBuilder extends NodeBuilder {
+ 
+ 				if ( offsetSnippet ) {
+ 
+-					return `textureSampleCompare( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ depthSnippet }, ${ compareSnippet }, ${ offsetSnippet } )`;
++					return `textureSampleCompare( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ depthSnippet }, ${ compareSnippet }, ${ offsetSnippet } )`;
+ 
+ 				}
+ 
+-				return `textureSampleCompare( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ depthSnippet }, ${ compareSnippet } )`;
++				return `textureSampleCompare( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ depthSnippet }, ${ compareSnippet } )`;
+ 
+ 			}
+ 
+ 			if ( offsetSnippet ) {
+ 
+-				return `textureSampleCompare( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ compareSnippet }, ${ offsetSnippet } )`;
++				return `textureSampleCompare( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ compareSnippet }, ${ offsetSnippet } )`;
+ 
+ 			}
+ 
+-			return `textureSampleCompare( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ compareSnippet } )`;
++			return `textureSampleCompare( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ compareSnippet } )`;
+ 
+ 		} else {
+ 
+@@ -1051,21 +1070,21 @@ class WGSLNodeBuilder extends NodeBuilder {
+ 
+ 			if ( offsetSnippet ) {
+ 
+-				return `textureGather( ${componentSnippet}${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ depthSnippet }, ${ offsetSnippet } )`;
++				return `textureGather( ${componentSnippet}${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ depthSnippet }, ${ offsetSnippet } )`;
+ 
+ 			}
+ 
+-			return `textureGather( ${componentSnippet}${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ depthSnippet } )`;
++			return `textureGather( ${componentSnippet}${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ depthSnippet } )`;
+ 
+ 		}
+ 
+ 		if ( offsetSnippet ) {
+ 
+-			return `textureGather( ${componentSnippet}${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ offsetSnippet } )`;
++			return `textureGather( ${componentSnippet}${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ offsetSnippet } )`;
+ 
+ 		}
+ 
+-		return `textureGather( ${componentSnippet}${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet })`;
++		return `textureGather( ${componentSnippet}${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet })`;
+ 
+ 	}
+ 
+@@ -1086,21 +1105,21 @@ class WGSLNodeBuilder extends NodeBuilder {
+ 
+ 			if ( offsetSnippet ) {
+ 
+-				return `textureGatherCompare( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ depthSnippet }, ${ compareSnippet }, ${ offsetSnippet } )`;
++				return `textureGatherCompare( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ depthSnippet }, ${ compareSnippet }, ${ offsetSnippet } )`;
+ 
+ 			}
+ 
+-			return `textureGatherCompare( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ depthSnippet }, ${ compareSnippet })`;
++			return `textureGatherCompare( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ depthSnippet }, ${ compareSnippet })`;
+ 
+ 		}
+ 
+ 		if ( offsetSnippet ) {
+ 
+-			return `textureGatherCompare( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ compareSnippet }, ${ offsetSnippet } )`;
++			return `textureGatherCompare( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ compareSnippet }, ${ offsetSnippet } )`;
+ 
+ 		}
+ 
+-		return `textureGatherCompare( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ compareSnippet })`;
++		return `textureGatherCompare( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ compareSnippet })`;
+ 
+ 	}
+ 
+@@ -1123,21 +1142,21 @@ class WGSLNodeBuilder extends NodeBuilder {
+ 
+ 				if ( offsetSnippet ) {
+ 
+-					return `textureSampleLevel( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ depthSnippet }, ${ levelSnippet }, ${ offsetSnippet } )`;
++					return `textureSampleLevel( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ depthSnippet }, ${ levelSnippet }, ${ offsetSnippet } )`;
+ 
+ 				}
+ 
+-				return `textureSampleLevel( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ depthSnippet }, ${ levelSnippet } )`;
++				return `textureSampleLevel( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ depthSnippet }, ${ levelSnippet } )`;
+ 
+ 			} else {
+ 
+ 				if ( offsetSnippet ) {
+ 
+-					return `textureSampleLevel( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ levelSnippet }, ${ offsetSnippet } )`;
++					return `textureSampleLevel( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ levelSnippet }, ${ offsetSnippet } )`;
+ 
+ 				}
+ 
+-				return `textureSampleLevel( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ levelSnippet } )`;
++				return `textureSampleLevel( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ levelSnippet } )`;
+ 
+ 			}
+ 
+@@ -1173,21 +1192,21 @@ class WGSLNodeBuilder extends NodeBuilder {
+ 
+ 				if ( offsetSnippet ) {
+ 
+-					return `textureSampleBias( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ depthSnippet }, ${ biasSnippet }, ${ offsetSnippet } )`;
++					return `textureSampleBias( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ depthSnippet }, ${ biasSnippet }, ${ offsetSnippet } )`;
+ 
+ 				}
+ 
+-				return `textureSampleBias( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ depthSnippet }, ${ biasSnippet } )`;
++				return `textureSampleBias( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ depthSnippet }, ${ biasSnippet } )`;
+ 
+ 			} else {
+ 
+ 				if ( offsetSnippet ) {
+ 
+-					return `textureSampleBias( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ biasSnippet }, ${ offsetSnippet } )`;
++					return `textureSampleBias( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ biasSnippet }, ${ offsetSnippet } )`;
+ 
+ 				}
+ 
+-				return `textureSampleBias( ${ textureProperty }, ${ textureProperty }_sampler, ${ uvSnippet }, ${ biasSnippet } )`;
++				return `textureSampleBias( ${ textureProperty }, ${ this.getSamplerName( textureProperty ) }, ${ uvSnippet }, ${ biasSnippet } )`;
+ 
+ 			}
+ 
+@@ -1431,11 +1450,27 @@ class WGSLNodeBuilder extends NodeBuilder {
+ 				// Also textureGather always need sampler.
+ 				const needsSampler = node.isRawTextureNode !== true && ( node.value.isCubeTexture === true || ( this.isUnfilterable( node.value ) === false && texture.store === false ) || node.gatherNode !== null );
+ 
+-				if ( needsSampler ) {
++				// Identical comparison samplers share one binding. Every shadow map of a clipmap compares the
++				// same way, and a sampler per map exhausts maxSamplersPerShaderStage (16 on most adapters).
++				const sharedKey = needsSampler && this.isSampleCompare( node.value ) && node.isSampleCompare() ? `${ groupName }:${ shaderStage }:${ node.value.compareFunction }:${ node.value.wrapS }:${ node.value.wrapT }:${ node.value.wrapR }:${ node.value.minFilter }:${ node.value.magFilter }` : null;
++				const sharedSampler = sharedKey === null ? undefined : this.sharedCompareSamplers.get( sharedKey );
++
++				if ( sharedSampler !== undefined ) {
++
++					this.samplerNames.set( uniformNode.name, sharedSampler.name );
++					nodeData.sharedSampler = true;
++
++					bindings.push( texture );
++
++					uniformGPU = [ sharedSampler, texture ];
++
++				} else if ( needsSampler ) {
+ 
+ 					const sampler = new NodeSampler( `${ uniformNode.name }_sampler`, uniformNode.node, group );
+ 					sampler.setVisibility( gpuShaderStageLib[ shaderStage ] );
+ 
++					if ( sharedKey !== null ) this.sharedCompareSamplers.set( sharedKey, sampler );
++
+ 					bindings.push( sampler, texture );
+ 
+ 					uniformGPU = [ sampler, texture ];
+@@ -2247,7 +2282,8 @@ ${ flowData.code }
+ 				const uniformGPU = nodeData.uniformGPU;
+ 				const needsSampler = Array.isArray( uniformGPU ) && uniformGPU[ 0 ].isSampler === true && uniformGPU[ 0 ].isSampledTexture !== true;
+ 
+-				if ( needsSampler ) {
++				// A shared comparison sampler is declared once, by the texture that created it.
++				if ( needsSampler && nodeData.sharedSampler !== true ) {
+ 
+ 					if ( this.isSampleCompare( texture ) && textureNode.isSampleCompare() ) {
+ 

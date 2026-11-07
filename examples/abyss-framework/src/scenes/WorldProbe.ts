@@ -40,6 +40,13 @@ const END_X = 180;
 const SPEED = 64;
 /** Above the fixture's measured maximum height (4.86 m), so the camera never enters the terrain. */
 const ALTITUDE = 24;
+/** The camera looks at a point this far ahead and this far below it. */
+const LOOK_AHEAD = 40;
+const LOOK_DROP = 14;
+/** How far ahead of the camera its line of sight meets the ground. */
+const GAZE_REACH = (LOOK_AHEAD * ALTITUDE) / LOOK_DROP;
+/** The fixture's far x edge. No terrain tile wholly off the map is meshed, so past it is sky. */
+const MAP_MAX_X = 128;
 const RING = 1;
 /** The fixture's cell size; terrain tiles default to it. */
 const CELL_SIZE = 64;
@@ -98,7 +105,7 @@ export class WorldProbe extends Scene<WorldState> {
   #maxResident = 0;
   #maxInstances = 0;
   #maxAdmissionSpentMs = 0;
-  #cameraTarget: [number, number, number] = [START_X + 40, ALTITUDE - 14, 0];
+  #cameraTarget: [number, number, number] = [START_X + LOOK_AHEAD, ALTITUDE - LOOK_DROP, 0];
   #residenceChanges = 0;
   #shadow: VirtualShadowNode | undefined;
   #ball: Mesh | undefined;
@@ -230,7 +237,14 @@ export class WorldProbe extends Scene<WorldState> {
     }
     const x = Math.min(START_X + this.#elapsed * SPEED, END_X);
     ctx.camera.position.set(x, ALTITUDE, 0);
-    this.#cameraTarget = [x + 40, ALTITUDE - 14, 0];
+    // The route overshoots the map to prove eviction. The camera yaws only as far as it must to
+    // keep its gaze landing on the map: straight ahead until the gaze reaches the edge, then round.
+    const yaw = Math.acos(Math.min(1, Math.max(-1, (MAP_MAX_X - x) / GAZE_REACH)));
+    this.#cameraTarget = [
+      x + LOOK_AHEAD * Math.cos(yaw),
+      ALTITUDE - LOOK_DROP,
+      LOOK_AHEAD * Math.sin(yaw),
+    ];
     ctx.camera.lookAt(...this.#cameraTarget);
     this.#sample(ctx);
   }

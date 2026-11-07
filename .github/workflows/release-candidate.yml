@@ -45,7 +45,8 @@ permissions:
 jobs:
   resolve:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    # A cache miss builds the web Wasm engine with emsdk, so the job needs more than 20 minutes.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -54,6 +55,9 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # The root build includes the examples on the default engine, which stop at
+      # TN_WASM_ENGINE_MISSING without the web Wasm engine (release run 42296982894).
+      - uses: ./.github/actions/native-engine-wasm
       - name: Build the workspace packages before comparing published bytes
         run: pnpm build
       - name: Write the request and workflow-derived availability

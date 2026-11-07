@@ -9,6 +9,7 @@ import {
   pageData,
   readPrd,
   squarify,
+  syncPortTable,
   updateHistory,
 } from "../unreal-port-status.js";
 
@@ -27,6 +28,36 @@ describe("unreal-port-status", () => {
       "# PRD-123 — A frame is fast\n\n**Status:** PARTIAL\n\n- [x] one\n  - [X] two\n- [ ] three\n",
     );
     expect(prd).toMatchObject({ t: "A frame is fast", s: "PARTIAL", d: 2, n: 3, f: "done" });
+  });
+
+  it("rewrites the Done cell of each port-order row from the PRD files", () => {
+    const entry = (d: number, n: number, f: "open" | "done") => ({
+      t: "",
+      p: "",
+      r: "",
+      s: "",
+      d,
+      n,
+      f,
+    });
+    const md = [
+      "| Wave | PRD | What | Layer | Complexity | Impact | Done | Waits on | Why |",
+      "| 1 | PRD-632 | Tone | L1 | 6 | 5 | 4/16 | PRD-631 | Every pixel |",
+      "| 2 | PRD-633 | Sky | L2 | 6 | 5 | 1/11 | PRD-632 | Sky |",
+      "| 3 | PRD-VQ-08 | Clouds | L4 | 7 est. | 3 | 0/9 | PRD-633 | Clouds |",
+      "| 5 | PRD-999 | Unfiled | Perf | 5 | 1 | 0/4 | — | No file |",
+    ].join("\n");
+    const out = syncPortTable(md, {
+      "632": entry(4, 16, "done"),
+      "633": entry(2, 9, "open"),
+      "VQ-08": entry(3, 9, "open"),
+    });
+    expect(out.split("\n").slice(1)).toEqual([
+      "| 1 | PRD-632 | Tone | L1 | 6 | 5 | 16/16 | PRD-631 | Every pixel |",
+      "| 2 | PRD-633 | Sky | L2 | 6 | 5 | 2/9 | PRD-632 | Sky |",
+      "| 3 | PRD-VQ-08 | Clouds | L4 | 7 est. | 3 | 3/9 | PRD-633 | Clouds |",
+      "| 5 | PRD-999 | Unfiled | Perf | 5 | 1 | 0/4 | — | No file |",
+    ]);
   });
 
   const snap = (date: string, done: number, total = 100): ISnap => ({
