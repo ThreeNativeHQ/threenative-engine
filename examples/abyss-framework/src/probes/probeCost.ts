@@ -55,6 +55,12 @@ function probeResolution(): number | undefined {
   return Number.isInteger(value) && value > 0 ? value : undefined;
 }
 
+/** `?probeBudgetMs=8` sets the traced refresh's GPU budget; the engine default is 2 ms. */
+function probeBudgetMs(): number | undefined {
+  const value = Number(new URLSearchParams(globalThis.location?.search ?? "").get("probeBudgetMs"));
+  return value > 0 ? value : undefined;
+}
+
 interface IRendererInfo {
   readonly info?: { readonly render?: { readonly calls?: number; readonly drawCalls?: number } };
 }
@@ -154,6 +160,7 @@ export class ProbeCostProbe {
       this.#volume = new ProbeVolume({
         ...options,
         ...(resolution === undefined ? {} : { probeResolution: resolution }),
+        ...(probeBudgetMs() === undefined ? {} : { bakeBudgetMs: probeBudgetMs() }),
         trace: {
           bvh,
           camera: ctx.camera,

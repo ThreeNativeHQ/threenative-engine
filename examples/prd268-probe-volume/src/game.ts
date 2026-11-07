@@ -266,7 +266,8 @@ function advanceSweep(
   sweep.frames += 1;
   const radians = ((sweep.frames / SWEEP_FRAMES) * SWEEP_DEGREES * Math.PI) / 180;
   sun.direction.set(Math.sin(radians), Math.cos(radians), 0);
-  const baking = observation.status === "baking";
+  // The readback may land between two frames, so a refresh frame is one that traced probes, not one that reads "baking".
+  const baking = (observation.probesTraced ?? 0) > 0;
   if (baking) sweep.refreshing += 1;
   if (baking && !sweep.wasBaking) sweep.steps += 1;
   sweep.wasBaking = baking;
