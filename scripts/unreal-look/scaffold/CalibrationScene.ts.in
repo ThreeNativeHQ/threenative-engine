@@ -369,6 +369,9 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
                       (sky.data[1] ?? 0) * sky.scale[1],
                       (sky.data[2] ?? 0) * sky.scale[2],
                     ),
+                // ?giDensity=<probes per metre> and ?giRays=<rays per side>: the field's grid and ray count.
+                Number(params.get("giDensity") ?? 1),
+                params.get("giRays") === null ? undefined : Number(params.get("giRays")),
               )
             : undefined;
         if (field !== undefined) (window as unknown as { __tnGiField: unknown }).__tnGiField = field;

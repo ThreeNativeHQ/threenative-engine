@@ -245,10 +245,20 @@ interface IStorageSet {
 }
 
 const RAY_EPSILON = 1e-4;
+/**
+ * A probe is rejected when more than this share of its rays first meet a surface from behind: it sits inside a solid,
+ * or outside the walls looking at their backs. Unreal's GPU Lightmass rejects an irradiance cache record at the same
+ * share (UE 5.8.3: Engine/Plugins/Experimental/GPULightmass/Shaders/Private/IrradianceCachingCommon.ush:8,
+ * LightmapPathTracing.usf:449-455). The share rides in the `w` of a probe's first coefficient.
+ */
+export const BACKFACE_REJECTION_SHARE = 1 / 64;
 const SURFACE_OFFSET = 1e-3;
 const INV_PI = 1 / Math.PI;
 
-/** Closest (or, with `anyHit`, first) hit along a ray through the threaded BVH. Builds graph nodes inline. */
+/**
+ * Closest (or, with `anyHit`, first) hit along a ray through the threaded BVH. Builds graph nodes inline. With `back`
+ * (a float variable), it also keeps the nearest surface the ray skipped because it arrived on the side that is not drawn.
+ */
 function traceRay(
   buffers: IStorageSet,
   nodeCount: AnyNode,
@@ -256,6 +266,7 @@ function traceRay(
   direction: AnyNode,
   far: number | AnyNode,
   anyHit: boolean,
+  back?: AnyNode,
 ): { t: AnyNode; triangle: AnyNode } {
   const best = float(far).toVar();
   const hitTriangle = int(-1).toVar();
@@ -302,21 +313,20 @@ function traceRay(
               .lessThan(0.5)
               .and(behind)
               .or(side.greaterThan(0.5).and(side.lessThan(1.5)).and(behind.not()));
-            const inside = culled
-              .not()
-              .and(
-                abs(det)
-                  .greaterThan(1e-12)
-                  .and(u.greaterThanEqual(0))
-                  .and(v.greaterThanEqual(0))
-                  .and(u.add(v).lessThanEqual(1))
-                  .and(t.greaterThan(RAY_EPSILON))
-                  .and(t.lessThan(best)),
-              );
-            If(inside, () => {
+            const crossed = abs(det)
+              .greaterThan(1e-12)
+              .and(u.greaterThanEqual(0))
+              .and(v.greaterThanEqual(0))
+              .and(u.add(v).lessThanEqual(1))
+              .and(t.greaterThan(RAY_EPSILON))
+              .and(t.lessThan(best))
+              .toVar();
+            If(culled.not().and(crossed), () => {
               best.assign(t);
               hitTriangle.assign(triangle);
             });
+            if (back !== undefined)
+              If(culled.and(crossed).and(t.lessThan(back)), () => back.assign(t));
           },
         );
         node.assign(link.x);
@@ -446,7 +456,10 @@ export function createProbeTraceKernels(
   const volumeMin = vec3(grid.min.x, grid.min.y, grid.min.z);
   const far = 4 * Math.max(grid.size.x, grid.size.y, grid.size.z, 1) + 1e4;
 
-  /** Trilinear L2 irradiance of the previous generation at a world point. */
+  /**
+   * Trilinear L2 irradiance of the previous generation at a world point. A rejected probe (inside a solid, or outside
+   * the walls) takes no weight, so a surface between the room and the outside does not bounce the outside's light.
+   */
   const previousIrradiance = (point: AnyNode, normal: AnyNode): V3 => {
     const local = clamp(
       point.sub(volumeMin).div(vec3(spacing.x, spacing.y, spacing.z)),
@@ -456,21 +469,29 @@ export function createProbeTraceKernels(
     const base = min(floor(local), vec3(nx - 2, ny - 2, nz - 2)).toVar();
     const fraction = local.sub(base);
     let sum: AnyNode = vec3(0);
+    let total: AnyNode = float(0);
     for (let corner = 0; corner < 8; corner += 1) {
       const dx = corner & 1;
       const dy = (corner >> 1) & 1;
       const dz = (corner >> 2) & 1;
-      const weight = (dx ? fraction.x : float(1).sub(fraction.x))
-        .mul(dy ? fraction.y : float(1).sub(fraction.y))
-        .mul(dz ? fraction.z : float(1).sub(fraction.z));
       const probe = int(base.x.add(dx))
         .add(int(base.y.add(dy)).mul(int(nx)))
         .add(int(base.z.add(dz)).mul(int(nx * ny)));
+      const open = select(
+        coefficientNode.element(probe.mul(int(9))).w.greaterThan(BACKFACE_REJECTION_SHARE),
+        float(0),
+        float(1),
+      );
+      const weight = (dx ? fraction.x : float(1).sub(fraction.x))
+        .mul(dy ? fraction.y : float(1).sub(fraction.y))
+        .mul(dz ? fraction.z : float(1).sub(fraction.z))
+        .mul(open);
       const coefficient = (index: number) =>
         coefficientNode.element(probe.mul(int(9)).add(int(index))).xyz as V3;
       sum = sum.add(shIrradiance(coefficient, normal).mul(weight));
+      total = total.add(weight);
     }
-    return sum as V3;
+    return sum.div(max(total, 1e-4)) as V3;
   };
 
   const trace = Fn(() => {
@@ -485,7 +506,8 @@ export function createProbeTraceKernels(
       .add(vec3(float(ix), float(iy), float(iz)).mul(vec3(spacing.x, spacing.y, spacing.z)))
       .toVar();
     const direction = directions.element(ray).xyz.toVar();
-    const hit = traceRay(buffers, nodeCount, origin, direction, far, false);
+    const back = float(far).toVar();
+    const hit = traceRay(buffers, nodeCount, origin, direction, far, false, back);
     const result = vec3(sky).toVar();
     If(hit.triangle.greaterThanEqual(0), () => {
       const a = buffers.triangles.element(hit.triangle.mul(int(3)));
@@ -526,7 +548,10 @@ export function createProbeTraceKernels(
       const irradiance = direct.add(previousIrradiance(point, facing).mul(bounce));
       result.assign(emission.add(albedo.mul(irradiance).mul(INV_PI)));
     });
-    radianceNode.element(instanceIndex).assign(vec4(result, 1));
+    // w: 1 when the ray first met a surface from behind (the probe's rejection share, `BACKFACE_REJECTION_SHARE`).
+    radianceNode
+      .element(instanceIndex)
+      .assign(vec4(result, select(back.lessThan(hit.t), float(1), float(0))));
   })().compute(maxBatch * raysPerProbe);
 
   const project = Fn(() => {
@@ -534,11 +559,14 @@ export function createProbeTraceKernels(
     If(slot.greaterThanEqual(batchSize), () => Return());
     const probe = probes.element(slot);
     const sums = Array.from({ length: 9 }, () => vec3(0).toVar());
+    const backfaces = float(0).toVar();
     const add = (index: number, value: AnyNode) => (sums[index] as AnyNode).addAssign(value);
     Loop(
       { start: int(0), end: int(raysPerProbe), type: "int", condition: "<" },
       ({ i }: { i: AnyNode }) => {
-        const value = radianceNode.element(slot.mul(int(raysPerProbe)).add(i)).xyz;
+        const sample = radianceNode.element(slot.mul(int(raysPerProbe)).add(i));
+        const value = sample.xyz;
+        backfaces.addAssign(sample.w);
         const d = directions.element(i);
         add(0, value.mul(0.282095));
         add(1, value.mul(d.y.mul(0.488603)));
@@ -555,7 +583,7 @@ export function createProbeTraceKernels(
     sums.forEach((sum, index) => {
       coefficientNode
         .element(probe.mul(int(9)).add(int(index)))
-        .assign(vec4((sum as AnyNode).mul(norm), 0));
+        .assign(vec4((sum as AnyNode).mul(norm), index === 0 ? backfaces.div(raysPerProbe) : 0));
     });
   })().compute(maxBatch);
 
@@ -577,6 +605,64 @@ export function createProbeTraceKernels(
     sunRadiance,
     trace,
   };
+}
+
+/**
+ * Replace each rejected probe's 27 coefficients (9 SH x RGB) with the mean of its open face neighbours, in rings
+ * outward, so a reader that interpolates across a wall never mixes in the light a probe saw from inside it or from
+ * behind it. A rejected probe with no open probe anywhere keeps its own value. Returns the number rejected.
+ */
+export function fillRejectedProbes(
+  coefficients: Float32Array,
+  shares: Float32Array,
+  resolution: { readonly x: number; readonly y: number; readonly z: number },
+): number {
+  const { x: nx, y: ny, z: nz } = resolution;
+  const open = Uint8Array.from(shares, (share) => (share > BACKFACE_REJECTION_SHARE ? 0 : 1));
+  const rejected = open.length - open.reduce((sum, value) => sum + value, 0);
+  let filled = [0];
+  while (filled.length > 0) {
+    filled = [];
+    for (let probe = 0; probe < open.length; probe += 1) {
+      const neighbours = open[probe] === 1 ? [] : openNeighbours(probe, open, nx, ny, nz);
+      if (neighbours.length === 0) continue;
+      meanInto(coefficients, probe, neighbours);
+      filled.push(probe);
+    }
+    for (const probe of filled) open[probe] = 1;
+  }
+  return rejected;
+}
+
+/** One probe's 27 coefficients become the mean of its neighbours'. */
+function meanInto(coefficients: Float32Array, probe: number, neighbours: readonly number[]): void {
+  const stride = 27;
+  for (let k = 0; k < stride; k += 1) {
+    let sum = 0;
+    for (const n of neighbours) sum += coefficients[n * stride + k] ?? 0;
+    coefficients[probe * stride + k] = sum / neighbours.length;
+  }
+}
+
+/** The open face neighbours of a probe in an nx x ny x nz grid. */
+function openNeighbours(
+  probe: number,
+  open: Uint8Array,
+  nx: number,
+  ny: number,
+  nz: number,
+): number[] {
+  const ix = probe % nx;
+  const iy = Math.floor(probe / nx) % ny;
+  const iz = Math.floor(probe / (nx * ny));
+  return [
+    ix > 0 ? probe - 1 : -1,
+    ix < nx - 1 ? probe + 1 : -1,
+    iy > 0 ? probe - nx : -1,
+    iy < ny - 1 ? probe + nx : -1,
+    iz > 0 ? probe - nx * ny : -1,
+    iz < nz - 1 ? probe + nx * ny : -1,
+  ].filter((n) => n >= 0 && open[n] === 1);
 }
 
 /** A lighting step: where the sun points and how bright the sun and the sky are, at one moment. */

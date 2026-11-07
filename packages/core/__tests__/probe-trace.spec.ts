@@ -23,6 +23,7 @@ import { buildCpuBvh } from "../src/render/cpu-bvh.js";
 import {
   type IThreadedScene,
   applyTraceLighting,
+  fillRejectedProbes,
   flatMaterial,
   lightingKey,
   lightingStepped,
@@ -306,5 +307,34 @@ describe("the CPU BVH for an engine whose MeshBVH builds no tree (PRD-831)", () 
       expect(found).toBeCloseTo(expected, 4);
     }
     expect(hits).toBeGreaterThan(10);
+  });
+});
+
+describe("rejected probes take their open neighbours' light (PRD-603)", () => {
+  it("fills a probe that saw back faces from its open face neighbours, ring by ring, and counts it", () => {
+    // A 4 x 1 x 1 row: probe 0 sits inside a wall (every ray met a back face), probe 1 behind it saw a few, 2 and 3 are open.
+    const coefficients = new Float32Array(4 * 27);
+    coefficients.fill(100, 0, 27); // the outside light the walled-in probe saw
+    coefficients.fill(80, 27, 54);
+    coefficients.fill(2, 54, 81);
+    coefficients.fill(4, 81, 108);
+    const shares = Float32Array.from([1, 0.1, 0, 0]);
+    const rejected = fillRejectedProbes(coefficients, shares, { x: 4, y: 1, z: 1 });
+    expect(rejected).toBe(2);
+    // Probe 1 takes probe 2 (its one open neighbour); probe 0 then takes probe 1.
+    expect(coefficients[27]).toBe(2);
+    expect(coefficients[0]).toBe(2);
+    expect(coefficients[81]).toBe(4);
+  });
+
+  it("keeps an open probe as traced and leaves a field with no open probe unchanged", () => {
+    const coefficients = new Float32Array(2 * 27).fill(7);
+    expect(
+      fillRejectedProbes(coefficients, Float32Array.from([0, 1 / 64]), { x: 2, y: 1, z: 1 }),
+    ).toBe(0);
+    expect(fillRejectedProbes(coefficients, Float32Array.from([1, 1]), { x: 2, y: 1, z: 1 })).toBe(
+      2,
+    );
+    expect([...coefficients].every((v) => v === 7)).toBe(true);
   });
 });

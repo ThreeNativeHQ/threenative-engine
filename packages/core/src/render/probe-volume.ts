@@ -56,6 +56,7 @@ import {
   type IProbeTraceScene,
   applyTraceLighting,
   createProbeTraceKernels,
+  fillRejectedProbes,
   lightingKey,
   lightingStepped,
   threadScene,
@@ -195,6 +196,8 @@ export interface IProbeVolumeObservation {
   readonly update?: "capture" | "trace";
   /** Trace path: probes traced in the last frame. */
   readonly probesTraced?: number;
+  /** Trace path: probes of the last field that sat inside a solid or behind a wall, filled from open neighbours. */
+  readonly probesRejected?: number;
   /** Trace path: frames since the least recently traced probe was traced, `null` while one never was. */
   readonly oldestProbeAgeFrames?: number | null;
   /** Trace path: materials whose texture or node graph the flat material table ignored. */
@@ -396,6 +399,8 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
   #generations = 0;
   #dispatchSerial = 0;
   #readbackSerial = 0;
+  /** Probes of the last traced field that sat inside a solid or behind a wall, filled from their open neighbours. */
+  #probesRejected = 0;
   #readbackInFlight = false;
   #passSerial = -1;
   readonly #frustum = new Frustum();
@@ -584,6 +589,7 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
       marker: PROBE_VOLUME_MARKER,
       oldestProbeAgeFrames: oldest,
       probeCount: this.#probeCount,
+      probesRejected: this.#probesRejected,
       probesTraced: this.#probesTraced,
       samplingIsolated: false,
       stale: !ready,
@@ -1125,6 +1131,11 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
         this.#coefficients[index * SH_CHANNEL_COUNT + channel] = field[index * 4 + channel] ?? 0;
       }
     }
+    // The first coefficient's w is the share of the probe's rays that met a surface from behind.
+    const shares = new Float32Array(this.#probeCount);
+    for (let probe = 0; probe < this.#probeCount; probe += 1)
+      shares[probe] = field[probe * SH_COEFFICIENT_COUNT * 4 + 3] ?? 0;
+    this.#probesRejected = fillRejectedProbes(this.#coefficients, shares, this.resolution);
     this.#packCpuAtlas();
     this.#readbackSerial = serial;
     if (this.#passSerial < 0 || serial < this.#passSerial || this.#status !== "baking") return;

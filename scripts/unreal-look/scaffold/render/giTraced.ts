@@ -23,6 +23,8 @@ export function tracedGiField(
   skyColor: Color,
   /** Probes per metre. */
   density = 1,
+  /** Rays per probe along one side: `probeResolution` squared rays (the cache's default is 8, 64 rays). */
+  probeResolution?: number,
 ): IGiTracedField {
   // A glass pane is not a surface the probes see (the cache's own rule): only opaque meshes are packed.
   const bvh = ctx.add(
@@ -35,6 +37,7 @@ export function tracedGiField(
     new RadianceCache({
       bounds,
       density,
+      ...(probeResolution === undefined ? {} : { probeResolution }),
       // A calibration capture is a few hundred stepped frames: the whole field traces at once (a game keeps the 2 ms budget).
       bakeBudgetMs: 200,
       numProbesToTraceBudget: 4096,
@@ -66,7 +69,7 @@ export function tracedGiField(
   const log = (event: string): void => {
     const o = volume.observation;
     console.info(
-      `TN_GI_CACHE_FIELD ${JSON.stringify({ event, probes: volume.probeCount, status: o.status, traced: o.probesTraced, cost: o.bakeCostMs, atlasMax: atlasMax() })}`,
+      `TN_GI_CACHE_FIELD ${JSON.stringify({ event, probes: volume.probeCount, status: o.status, traced: o.probesTraced, rejected: o.probesRejected, cost: o.bakeCostMs, atlasMax: atlasMax() })}`,
     );
   };
   log("created");
