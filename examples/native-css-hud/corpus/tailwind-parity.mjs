@@ -835,6 +835,18 @@ const PROSE_PROPS = new Set([
   "column-width",
 ]);
 
+/** Units that only show on a run long enough to wrap, break or be clamped. */
+const WRAPPING_PROPS = new Set([
+  "text-wrap",
+  "word-break",
+  "overflow-wrap",
+  "white-space",
+  "text-overflow",
+  "hyphens",
+  "text-align",
+  "text-indent",
+]);
+
 const LOREM =
   "Lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor incididunt ut labore et dolore magna aliqua ut enim ad minim veniam quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat";
 
@@ -1049,8 +1061,12 @@ function probeInner(stage, cell, innerCount) {
   if (cell.prose === true) return [text(LOREM)];
   if (stage.text !== undefined) return [text(stage.text)];
   // `false` from the predicate is not a text node: a probe that needs no text gets none.
-  if (cell.unit?.props.some((p) => TEXT_PROPS.has(p)) === true) return [text("Abc def ghi")];
-  return [];
+  if (cell.unit?.props.some((p) => TEXT_PROPS.has(p)) !== true) return [];
+  // A wrapping, clamping or breaking unit needs a run long enough to wrap; a numeric variant needs
+  // digits to vary (`tabular-nums` on letters is the same frame as `normal-nums`); a tab needs a tab.
+  if (cell.unit.props.some((p) => WRAPPING_PROPS.has(p))) return [text(LOREM)];
+  if (cell.unit.props.includes("tab-size")) return [text("\tAbc 123")];
+  return [text("Abc 123 fgh 456 ooo")];
 }
 
 /** The list variant's probe is the `<li>`, so the marker it paints is the one being measured. */
