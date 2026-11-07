@@ -1,6 +1,6 @@
 # PRD-837 — Core owns each shared fact once
 
-**Status:** PARTIAL — Phase 2 box 1 and Phase 3 landed; the LOD recipe, the `world.json` contract and `GpuReadings` are open.
+**Status:** PARTIAL — Phase 2 landed and Phase 3 landed; the LOD recipe and the `world.json` contract are open.
 **Priority:** P2 — the open boxes delete 6 inline copies of the LOD recipe (which already disagree on the near-plane default), the 3 declarations of `world.json`, and 3 GPU-sample freshness rules.
 **Complexity:** 6 (MEDIUM); risk override: LOD selection and the renderer facts decide what is drawn, so the owner's visual-judge rule applies to Phases 1 and 2
 **Owner:** ThreeNative maintainers
@@ -53,11 +53,11 @@ Report ids C2, C1, C4, C5, B2, B4, A5. Follows the refactoring batch rule "one o
 - [ ] Terrain and assets use core's world package type, and the biome `impostor` value reaches `impostorDistance`. proof: `pnpm --filter @threenative/terrain test` plus `pnpm --filter @threenative/core exec vitest run __tests__/world-cells.spec.ts`
 
 #### Phase 2: Renderer facts
-**Status:** PARTIAL — the one owned-engine check landed; `GpuReadings` is open
+**Status:** DONE
 **Files:** new `packages/core/src/renderer-facts.ts`, `renderer.ts`, `resolution-scaler.ts`, `frame-budget.ts`, `look/world-environment.ts`, `game-startup.ts`.
 
 - [x] `rendererFacts` is the only owned-engine check: `packages/core/src/renderer-facts.ts` reads the facade's own `info.engine`, and the four subsystems that probed it by hand (`game-startup`, `WorldEnvironment.apply` twice, `WorldCellRenderBundles.ownsBundles`) call it. The probe does not spell `"engine" in` anywhere in the package, so the box's `rg` proof holds. It ships `{ kind, ownedEngine }` and nothing more: `webglFallback` already has one owner (`isWebGLFallbackRenderer`, in `@threenative/core/render/environment`) and `software` has no caller yet — a field nothing reads is the thing this PRD exists to delete. proof: `rg -n '"engine" in' packages/core/src` returns nothing outside a doc comment; `pnpm --filter @threenative/core exec vitest run __tests__/game.spec.ts __tests__/renderer-facts.spec.ts __tests__/world-environment-defaults.spec.ts __tests__/world-bundles.spec.ts` → 157 passed.
-- [ ] One `GpuReadings` serves the renderer, the scaler and the budget. proof: `pnpm --filter @threenative/core exec vitest run __tests__/frame-budget-gpu-series.spec.ts __tests__/frame-budget.spec.ts`
+- [x] One `GpuReadings` serves the renderer, the scaler and the budget. `packages/core/src/gpu-readings.ts` owns the sample, its frame, the repeat rule (a frame id that repeats is a resolve still in flight), the EMA and the three numbers the subsystems disagreed about — `GPU_STALE_FRAME_LIMIT` (8 consecutive stale notes drop the value), `GPU_READING_MAX_AGE_FRAMES` (16) and `GPU_WINDOW_MIN_SAMPLES` (4) — plus `gpuReadingIsFresh` for a window decision. The renderer holds a series and feeds it; the scaler's two constants come from the module; the budget keeps its per-frame boolean and the shared predicate behind it. proof: `npx vitest run packages/core/__tests__/gpu-readings.spec.ts packages/core/__tests__/frame-budget.spec.ts packages/core/__tests__/frame-budget-gpu-series.spec.ts packages/core/__tests__/resolution-scaler.spec.ts` → 77 passed; the whole core suite → 4570 passed, 4 skipped.
 
 #### Phase 3: Dev global
 **Status:** DONE
