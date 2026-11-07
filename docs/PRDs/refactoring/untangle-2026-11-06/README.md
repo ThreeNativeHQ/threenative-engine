@@ -17,6 +17,24 @@ Raw scout reports (local to the owner machine, not tracked): `~/.cache/tmp-tn/un
 
 Verified by the coordinator (re-ran the command): B1/F2 (7 render files, 12 copies, 1 hash each), A1 (two byte-identical 556 KB `capabilities.json`), A6 (literal `version = "0.3.12"`), C2 (`?? 0.1` outlier at `world-cell-chunks.ts:784`), D5 (`MYSTRAL_USE_LIBUV_TIMERS` defined in no build), E1 (`924b92f82` = 18 files in `playtest/src` for one assertion kind), E3 (`PlaytestTarget = "web" | "desktop" | "bevy"`), F5 (stale 4-kit name list at `index.ts:918`), G4 (recall list misses 3 kits), G7 (`.mjs` duplicate unused), H2 (`renderer.cpp` 7 102 lines), A2 (`Object.defineProperties` boot proxy). Everything else is a scout claim, not verified.
 
+## PRDs
+
+| PRD | Report id | Goal | Priority |
+| --- | --- | --- | --- |
+| [PRD-832](PRD-832-urgent-single-sources.md) | Q1-Q5, R2 slice | Urgent single sources: kit inventory, render drift guard, launch flags, tone curve, core version, named `tnw_web_frame` fields | P1 |
+| [PRD-833](PRD-833-template-mechanism-lives-once.md) | R1 | Template mechanism lives once | P1 |
+| [PRD-835](PRD-835-one-registry-entry-per-assertion.md) | R3 | One registry entry per assertion | P1 |
+| [PRD-840](PRD-840-platform-difference-is-a-value.md) | N3 | Platform difference is a value, not a scattered `#ifdef` | P1 |
+| [PRD-834](PRD-834-cross-language-contracts-are-generated.md) | R2 | Cross-language contracts are generated | P2 |
+| [PRD-836](PRD-836-one-committed-capability-manifest.md) | R4 | One committed capability manifest | P2 |
+| [PRD-837](PRD-837-core-owns-each-shared-fact-once.md) | R5 | Core owns each shared fact once | P2 |
+| [PRD-838](PRD-838-scripts-share-one-runtime-layer.md) | N1 | Scripts share one runtime layer | P2 |
+| [PRD-839](PRD-839-ci-contract-is-a-model-not-text.md) | N2 | The CI contract is a model, not text matches | P2 |
+| [PRD-841](PRD-841-game-ts-stops-being-the-hub.md) | N4 | `game.ts` stops being the hub | P2 |
+| [PRD-842](PRD-842-native-tests-check-behaviour-not-source-text.md) | N5 | Native tests check behaviour, not source text | P2 |
+
+The "Later" god-file splits below have no PRD yet. Each one gets its own PRD when it is picked.
+
 ## Priority table (effort x impact)
 
 Effort: S < 1 h, M half day, L 1-3 days. Impact 1-5 (5 = touches most future changes in the area).
