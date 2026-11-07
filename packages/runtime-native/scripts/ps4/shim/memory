@@ -1,0 +1,18 @@
+// PS4 shim: OpenOrbis libc++ 11 has no std::construct_at (libc++ 16), which the scene pool uses to
+// reset a recycled slot in place. std::destroy_at is already there.
+// Put this dir BEFORE .../include/c++/v1 on -isystem so it wins.
+#ifndef _PS4_SHIM_MEMORY
+#define _PS4_SHIM_MEMORY
+#include_next <memory>
+#include <new>
+#include <utility>
+
+namespace std {
+
+template <class _Tp, class... _Args>
+constexpr _Tp* construct_at(_Tp* __location, _Args&&... __args) {
+    return ::new (static_cast<void*>(__location)) _Tp(std::forward<_Args>(__args)...);
+}
+
+}  // namespace std
+#endif  // _PS4_SHIM_MEMORY

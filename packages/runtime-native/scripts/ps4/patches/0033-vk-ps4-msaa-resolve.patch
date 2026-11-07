@@ -1,0 +1,218 @@
+--- a/src/vk_ps4_command.c
++++ b/src/vk_ps4_command.c
+@@ -100,6 +100,19 @@
+ }
+ 
+ /* Convert float to uint32 bit pattern (like fui()). */
++/* PA_SC_AA_CONFIG: MSAA_NUM_SAMPLES is log2 of the sample count (0 = 1x,
++ * 2 = 4x) and MAX_SAMPLE_DIST the sample grid's distance field. Nothing in
++ * this driver ever wrote the register, so a 4x target rasterized against the
++ * boot value of 1x: one sample per pixel, the other three never written and a
++ * coverage mask the resolve reads as empty. */
++static void vk_ps4_emit_aa_config(VkPs4CommandBuffer *cmd, uint32_t samples) {
++    uint32_t log2 = 0;
++    for (uint32_t n = samples; n > 1; n >>= 1) log2++;
++    if (log2 > 3) log2 = 3;   /* 3-bit field, 8x is the PS4's maximum */
++    vk_ps4_emit_context_reg(&cmd->gnm_cmd, R_028BE0_PA_SC_AA_CONFIG,
++        S_028BE0_MSAA_NUM_SAMPLES(log2) | S_028BE0_MAX_SAMPLE_DIST(log2));
++}
++
+ static inline uint32_t vk_ps4_fui(float f) {
+     union { float f; uint32_t u; } v;
+     v.f = f;
+@@ -470,6 +483,12 @@
+         sceGnmDrawCmdSetViewport(&cmd->gnm_cmd, 0, &vp);
+     }
+ 
++    /* The clear draw rasterizes into whatever target slot 0 now holds, so it needs
++     * that target's own sample count: PA_SC_AA_CONFIG is sticky from the last
++     * pipeline bind, and a 4x target cleared with a 1x raster only writes sample
++     * 0 -- the other three stay undefined and the resolve averages them in. */
++    vk_ps4_emit_aa_config(cmd, (uint32_t)img->create_info.samples);
++
+     /* Bind the clear pixel shader and fullscreen VS */
+     sceGnmDrawCmdSetPsShader(&cmd->gnm_cmd, &dev->clear_ps_regs);
+     sceGnmDrawCmdSetEmbeddedVsShader(&cmd->gnm_cmd, GNM_EMBEDDED_VSH_FULLSCREEN, 0);
+@@ -727,6 +746,122 @@
+         memset(&ds_off, 0, sizeof(ds_off));
+         sceGnmDrawCmdSetDepthStencilControl(&cmd->gnm_cmd, &ds_off);
+     }
++
++    vk_ps4_emit_aa_config(cmd, (uint32_t)pipe->multisample_state.rasterizationSamples);
++}
++
++/* === MSAA resolve: the GCN colour-buffer ROP ===============================
++ * A multisampled colour target is resolved by the CB hardware, not by a
++ * shader copy. CB_COLOR_CONTROL.MODE = CB_RESOLVE turns the next draw into a
++ * resolve: ROP3 0xCC (copy) moves CB_COLOR0's samples into CB_COLOR1, and
++ * CB_TARGET_MASK names which RT slots take part. That is the register recipe
++ * RADV uses on GFX7 (radv_meta_resolve.c hw path), and the one shadPS4
++ * executes at draw time: vk_rasterizer.cpp FilterDraw runs
++ * `if (regs.color_control.mode == Resolve) Resolve();` before the draw, and
++ * Resolve() looks both images up as color_buffers[0] / color_buffers[1] with
++ * last_cb_extent[0] / [1], then copies the first into the second.
++ *
++ * Until this existed, pResolveAttachments was stored
++ * (vk_ps4_render_pass.c:102) and never acted on, so a Dawn pass that renders
++ * into a 4x target and names a 1x resolveTarget left the resolve target black
++ * and every later pass sampled black.
++ *
++ * The draw is only the trigger: shadPS4 filters it out before any pipeline or
++ * shader is built, so the clear PS the draw-based clear already uses serves
++ * here and its UBO is never read. Everything clobbered (RT slots, mask, blend,
++ * scissor, viewport, shaders, CB_COLOR_CONTROL) is restored by the caller with
++ * vk_ps4_bind_subpass_targets + vk_ps4_rebind_pipeline_state, which is the
++ * contract the draw-based clear already relies on. */
++static void vk_ps4_resolve_color_draw(VkPs4CommandBuffer *cmd,
++                                     VkPs4Image *src, VkPs4Image *dst) {
++    VkPs4Device *dev = cmd->device;
++    if (!dev || !src || !dst) return;
++
++    /* CB_COLOR0 = the multisampled source, CB_COLOR1 = the 1x destination,
++     * CB_TARGET_MASK = RT0|RT1 (4 bits per slot). */
++    sceGnmDrawCmdSetRenderTarget(&cmd->gnm_cmd, 0, &src->gnm_rt);
++    sceGnmDrawCmdSetRenderTarget(&cmd->gnm_cmd, 1, &dst->gnm_rt);
++    sceGnmDrawCmdSetRenderTargetMask(&cmd->gnm_cmd, 0x000000FFu);
++
++    sceGnmDrawCmdSetCbControl(&cmd->gnm_cmd, V_028808_CB_RESOLVE, V_028808_ROP3_COPY);
++    vk_ps4_emit_aa_config(cmd, (uint32_t)src->create_info.samples);
++
++    /* A resolve is a ROP, not a shaded draw: no depth, no blending. */
++    {
++        GnmDepthStencilControl ds_off;
++        memset(&ds_off, 0, sizeof(ds_off));
++        sceGnmDrawCmdSetDepthStencilControl(&cmd->gnm_cmd, &ds_off);
++    }
++    {
++        GnmBlendControl no_blend;
++        memset(&no_blend, 0, sizeof(no_blend));
++        sceGnmDrawCmdSetBlendControl(&cmd->gnm_cmd, 0, &no_blend);
++        sceGnmDrawCmdSetBlendControl(&cmd->gnm_cmd, 1, &no_blend);
++    }
++
++    /* Cover the destination: a fullscreen triangle through the same viewport
++     * mapping the draw-based clear uses. */
++    sceGnmDrawCmdSetScreenScissor(&cmd->gnm_cmd, 0, 0,
++        dst->create_info.extent.width, dst->create_info.extent.height);
++    {
++        GnmSetViewportInfo vp;
++        memset(&vp, 0, sizeof(vp));
++        vp.dmin = 0.0f;
++        vp.dmax = 1.0f;
++        vp.scale[0] = dst->create_info.extent.width * 0.5f;
++        vp.scale[1] = dst->create_info.extent.height * 0.5f;
++        vp.scale[2] = 0.5f;
++        vp.offset[0] = vp.scale[0];
++        vp.offset[1] = vp.scale[1];
++        vp.offset[2] = 0.5f;
++        sceGnmDrawCmdSetViewport(&cmd->gnm_cmd, 0, &vp);
++    }
++
++    sceGnmDrawCmdSetPsShader(&cmd->gnm_cmd, &dev->clear_ps_regs);
++    sceGnmDrawCmdSetEmbeddedVsShader(&cmd->gnm_cmd, GNM_EMBEDDED_VSH_FULLSCREEN, 0);
++    sceGnmDrawCmdSetPrimitiveType(&cmd->gnm_cmd, GNM_PT_TRILIST);
++    sceGnmDrawCmdSetNumInstances(&cmd->gnm_cmd, 1);
++    sceGnmDrawCmdDrawIndexAuto(&cmd->gnm_cmd, 3);
++
++    /* Back to ordinary colour writes before anything else runs. */
++    sceGnmDrawCmdSetCbControl(&cmd->gnm_cmd, V_028808_CB_NORMAL, V_028808_ROP3_COPY);
++}
++
++/* Resolve every colour attachment of the current subpass that names a resolve
++ * target (`pResolveAttachments`, what Dawn's resolveTarget becomes) and is
++ * multisampled. Called while the subpass is still open, so its targets are the
++ * ones bound. shadPS4 resolves the whole surface the descriptors name, so the
++ * whole image is what moves; a sub-rect resolve would need a scissored path
++ * shadPS4 does not implement. */
++static void vk_ps4_resolve_subpass(VkPs4CommandBuffer *cmd) {
++    VkPs4RenderPass *rp = cmd->current_render_pass.pass;
++    VkPs4Framebuffer *fb = cmd->current_render_pass.framebuffer;
++    if (!rp || !fb) return;
++    uint32_t sub = cmd->current_render_pass.current_subpass;
++    if (sub >= rp->subpass_count) return;
++    const VkSubpassDescription *sp = &rp->subpasses[sub];
++    if (!sp->pColorAttachments || !sp->pResolveAttachments) return;
++
++    bool resolved = false;
++    for (uint32_t j = 0; j < sp->colorAttachmentCount; j++) {
++        uint32_t src_idx = sp->pColorAttachments[j].attachment;
++        uint32_t dst_idx = sp->pResolveAttachments[j].attachment;
++        if (src_idx == VK_ATTACHMENT_UNUSED || dst_idx == VK_ATTACHMENT_UNUSED) continue;
++        VkPs4ImageView *src_view = vk_ps4_get_attachment_view(cmd, src_idx);
++        VkPs4ImageView *dst_view = vk_ps4_get_attachment_view(cmd, dst_idx);
++        if (!src_view || !dst_view || !src_view->image || !dst_view->image) continue;
++        if (src_view->image->create_info.samples == VK_SAMPLE_COUNT_1_BIT) continue;
++        vk_ps4_resolve_color_draw(cmd, src_view->image, dst_view->image);
++        resolved = true;
++    }
++    if (!resolved) return;
++
++    /* The resolve left CB_COLOR0/1 pointing at the resolve pair. Re-binding the
++     * subpass's own targets is what puts slot 0 back; slot 1 keeps the last
++     * descriptor it was given, and the next pipeline's CB_TARGET_MASK decides
++     * whether anything writes there. */
++    vk_ps4_bind_subpass_targets(cmd);
++    vk_ps4_rebind_pipeline_state(cmd);
+ }
+ 
+ /* Helper: compute bytes-per-pixel for a VkFormat (for copy operations).
+@@ -1241,6 +1376,9 @@
+         }
+         sceGnmDrawCmdSetCbControl(&cmd->gnm_cmd, 1 /* NORMAL */, logic_rop3);
+ 
++        /* Sample-rate state for the target this draw rasterizes into. */
++        vk_ps4_emit_aa_config(cmd, (uint32_t)pipe->multisample_state.rasterizationSamples);
++
+         /* SPI_SHADER_COL_FORMAT: shadPS4's PS translator drops a colour export
+          * outright when the format reads Zero (export.cpp:62), which is what the
+          * zeroed default says, so the fragment shader wrote nothing even with a
+@@ -2212,10 +2350,25 @@
+                        VkImage dstImage, VkImageLayout dstImageLayout,
+                        uint32_t regionCount, const VkImageResolve *pRegions) {
+     /* CmdResolveImage resolves a multisampled source image to a non-multisampled
+-     * destination image. Since we don't support MSAA yet (all images are 1-sample),
+-     * resolve is equivalent to a copy. */
++     * destination image. */
+     if (!commandBuffer || !pRegions) return;
+ 
++    VkPs4CommandBuffer *cmd = (VkPs4CommandBuffer *)commandBuffer;
++    VkPs4Image *src = (VkPs4Image *)srcImage;
++    VkPs4Image *dst = (VkPs4Image *)dstImage;
++
++    /* A multisampled source is resolved by the CB hardware (see
++     * vk_ps4_resolve_color_draw); the copy below would move sample 0's tiles
++     * and leave a 4x surface's layout meaningless to a 1x reader. */
++    if (src && dst && regionCount > 0 &&
++        src->create_info.samples != VK_SAMPLE_COUNT_1_BIT &&
++        src->is_render_target && dst->is_render_target) {
++        vk_ps4_resolve_color_draw(cmd, src, dst);
++        vk_ps4_bind_subpass_targets(cmd);
++        vk_ps4_rebind_pipeline_state(cmd);
++        return;
++    }
++
+     /* Process in chunks of 16 to avoid stack overflow on large region counts */
+     for (uint32_t chunk_start = 0; chunk_start < regionCount; chunk_start += 16) {
+         VkImageCopy copies[16];
+@@ -2544,6 +2697,10 @@
+     if (!commandBuffer) return;
+     VkPs4CommandBuffer *cmd = (VkPs4CommandBuffer *)commandBuffer;
+ 
++    /* Resolve first: pResolveAttachments is what a NAMED resolve target (Dawn's
++     * resolveTarget) becomes, and the CB ROP only runs while the pass is open. */
++    vk_ps4_resolve_subpass(cmd);
++
+     /* Reset DB_RENDER_CONTROL clear flags.
+      * The lazy clear is triggered immediately by vk_ps4_clear_depth_draw()
+      * in CmdBeginRenderPass/CmdClearAttachments, so by the time we reach
+@@ -2580,6 +2737,10 @@
+     uint32_t next = cmd->current_render_pass.current_subpass + 1;
+     if (next >= rp->subpass_count) return;
+ 
++    /* The subpass being left may name resolve targets; resolve it while its
++     * attachments are still the ones bound. */
++    vk_ps4_resolve_subpass(cmd);
++
+     cmd->current_render_pass.current_subpass = next;
+     vk_ps4_bind_subpass_targets(cmd);
+ 

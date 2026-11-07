@@ -124,7 +124,8 @@ globalThis.tn.onUpdate((dt) => {
 
 const readSize = () => ({ width: canvas.width, height: canvas.height, aspect: canvas.width / canvas.height });
 export const platform = {
-  input: () => [],
+  // The player's navigator.getGamepads (v8_main.cpp: scePad on PS4, SDL3 on desktop) in the W3C standard mapping.
+  input: () => globalThis.navigator?.getGamepads?.() ?? [],
   inputTarget: canvas,
   renderer: { createCanvas: () => canvas, hasWebGPU: () => true, readSize: () => [1280, 720], observeResize: () => () => {} },
   viewport: { readSize, observeResize: () => () => {} },

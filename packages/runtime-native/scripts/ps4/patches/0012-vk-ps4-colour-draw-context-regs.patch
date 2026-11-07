@@ -1,0 +1,59 @@
+diff --git a/src/vk_ps4_command.c b/src/vk_ps4_command.c
+--- a/src/vk_ps4_command.c
++++ b/src/vk_ps4_command.c
+@@ -1138,6 +1138,55 @@
+             sceGnmDrawCmdSetRenderTargetMask(&cmd->gnm_cmd, 0xFFFFFFFF);
+         }
+ 
++        /* CB_COLOR_CONTROL: no command in this driver ever wrote it, so shadPS4
++         * read mode Disable (0) out of the zeroed register and bound no colour
++         * target at all (vk_rasterizer.cpp:114), which made every draw a no-op.
++         * NORMAL + ROP3 copy (0xCC) is the per-draw state Sony's stack sets.
++         * ROP3 0 is a logic-op CLEAR, so the zeroed register would also wipe the
++         * target wherever logic ops are supported; a pipeline that asks for one
++         * passes its own value. AMD ROP3 is a 4-bit operand selector duplicated
++         * into both nibbles, indexed by VkLogicOp. */
++        static const uint32_t logic_op_rop3[16] = {
++            0x00, 0x88, 0x44, 0xCC, 0x22, 0xAA, 0x66, 0xEE,
++            0x11, 0x99, 0x55, 0xDD, 0x33, 0xBB, 0x77, 0xFF
++        };
++        uint32_t logic_rop3 = 0xCC;
++        if (pipe->has_blend_state && pipe->color_blend_state.logicOpEnable &&
++            (uint32_t)pipe->color_blend_state.logicOp < 16) {
++            logic_rop3 = logic_op_rop3[(uint32_t)pipe->color_blend_state.logicOp];
++        }
++        sceGnmDrawCmdSetCbControl(&cmd->gnm_cmd, 1 /* NORMAL */, logic_rop3);
++
++        /* SPI_SHADER_COL_FORMAT: shadPS4's PS translator drops a colour export
++         * outright when the format reads Zero (export.cpp:62), which is what the
++         * zeroed default says, so the fragment shader wrote nothing even with a
++         * target bound. psbc packs a vec4 export into two VGPRs (compressed,
++         * exp.compr=1), and only the packed formats survive that path
++         * (NumberFormatCompressed, export.cpp:26), so name FP16_ABGR for every
++         * attachment the pipeline binds. A 32-bit export would want 32_ABGR
++         * instead; add the split when a guest's shader needs one. */
++        {
++            uint32_t natt = pipe->has_blend_state
++                ? pipe->color_blend_state.attachmentCount : 0;
++            uint32_t col_format = 0;
++            if (natt > 8) natt = 8;
++            for (uint32_t j = 0; j < natt; j++) {
++                col_format |= 4u << (j * 4);   /* V_028714_SPI_SHADER_FP16_ABGR */
++            }
++            vk_ps4_emit_context_reg(&cmd->gnm_cmd,
++                R_028714_SPI_SHADER_COL_FORMAT,
++                col_format ? col_format : 4u);
++        }
++
++        /* PA_CL_CLIP_CNTL: nothing writes it, so shadPS4 applied its
++         * fpPS4-derived default 0x00090000 (regs.cpp:70), whose CLIP_DISABLE bit
++         * is set. With clipping disabled shadPS4 rewrites the vertex position
++         * from window space to clip space (emit_spirv_special.cpp:74), so a
++         * shader that already outputs NDC collapses its geometry to the viewport
++         * corner and writes no pixel. Vulkan clip space is -w..w with clipping
++         * on, which is this all-zero word. */
++        vk_ps4_emit_context_reg(&cmd->gnm_cmd, R_028810_PA_CL_CLIP_CNTL, 0);
++
+         /* Emit depth/stencil state.
+          * When pDepthStencilState is NULL, the Vulkan spec requires that
+          * no depth/stencil operations are performed. We must explicitly

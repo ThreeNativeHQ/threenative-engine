@@ -45,7 +45,10 @@ target_link_libraries(tn_adapter_v8 PUBLIC tn_engine_abi tn_engine_bindings tn_e
 # definitions are folded rather than refused.
 function(tn_adapter_v8_executable target)
     set_target_properties(${target} PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
-    if(NOT APPLE AND NOT WIN32)
+    if(TN_PS4)
+        # PS4's target is a STATIC library that scripts/ps4/e5-build.sh links: link options belong to
+        # that link, and the script passes --allow-multiple-definition when duplicates need it.
+    elseif(NOT APPLE AND NOT WIN32)
         target_link_options(${target} PRIVATE "LINKER:--allow-multiple-definition")
     elseif(APPLE)
         # ld64 has no --allow-multiple-definition: V8 and Dawn both carry Abseil, and native physics
@@ -104,7 +107,20 @@ tn_adapter_v8_executable(tn-native-engine-host)
 #   node scripts/bundle-native-engine.mjs --engine native --game-runtime v8 --entry <template>/src/game.ts \
 #     --out <dir>/game.js --assets <template> --asset-source packages/create-threenative/template-assets/assets
 # which cooks into the template's public/ (remove those untracked outputs afterwards), then run the scenario.
-add_executable(tn-native-engine-player-v8 EXCLUDE_FROM_ALL src/engine/player/v8_main.cpp)
+if(TN_PS4)
+    # PS4 has no CMake link step (cmake/ps4.toolchain.cmake cannot link against OpenOrbis):
+    # scripts/ps4/e5-build.sh owns ld.lld with OO's link.x, the malloc object's precedence,
+    # create-fself and the SELF. Ninja's share is the compile, so the target is the archive that
+    # script links. v8_main.cpp keeps its main() everywhere else; on PS4 the OpenOrbis crt's `main`
+    # reaches src/platform/ps4_main.cpp, which supplies the bundle path, the scanout size and V8's
+    # flags a console cannot pass on a command line.
+    add_library(tn-native-engine-player-v8 STATIC EXCLUDE_FROM_ALL
+        src/engine/player/v8_main.cpp src/engine/player/gamepads.cpp src/platform/ps4_main.cpp)
+    set_source_files_properties(src/engine/player/v8_main.cpp PROPERTIES COMPILE_DEFINITIONS "main=tn_player_v8_main")
+else()
+    add_executable(tn-native-engine-player-v8 EXCLUDE_FROM_ALL src/engine/player/v8_main.cpp
+        src/engine/player/gamepads.cpp)
+endif()
 target_link_libraries(tn-native-engine-player-v8 PRIVATE tn_adapter_v8 tn_engine_player tn_engine_assets)
 if(TARGET tn_engine_gltf)
     target_link_libraries(tn-native-engine-player-v8 PRIVATE tn_engine_gltf)
@@ -146,7 +162,9 @@ if(TN_ENABLE_NATIVE_PHYSICS AND TARGET threenative-native-physics)
     target_compile_definitions(tn-native-engine-player-v8 PRIVATE TN_PLAYER_NATIVE_PHYSICS=1)
 endif()
 tn_adapter_v8_executable(tn-native-engine-player-v8)
-if(TN_NODE_EXECUTABLE)
+# Both tests run the host's node against the player binary; on PS4 the target is a cross-compiled
+# archive, so there is nothing here to run.
+if(TN_NODE_EXECUTABLE AND NOT TN_PS4)
     set(TN_PLAYER_IMPORTS_MODE)
     if(NOT TN_ENABLE_NATIVE_PHYSICS OR NOT TARGET tn_engine_gltf)
         set(TN_PLAYER_IMPORTS_MODE --imports-only)

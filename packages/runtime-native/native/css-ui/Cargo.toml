@@ -13,12 +13,19 @@ publish = false
 name = "threenative_css_ui"
 crate-type = ["staticlib", "rlib"]
 
+# Host system fonts (fontconfig on Linux). On by default; the PS4 guest has no fontconfig and no
+# system fonts, so `build-native-css-ui.mjs --ps4` builds with `--no-default-features` and the
+# game's `@font-face` files are the only fonts.
+[features]
+default = ["system-fonts"]
+system-fonts = ["blitz-dom/system-fonts", "parley/system"]
+
 [dependencies]
 # Pinned exactly: blitz 0.3.0-beta.2 is the release whose DOM mutation API, hit testing and
 # event driver this crate is written against, and Stylo's behaviour (including the
 # `position: fixed` containing-block bug worked around in `lib.rs`) can shift under a
 # different one.
-blitz-dom = "=0.3.0-beta.2"
+blitz-dom = { version = "=0.3.0-beta.2", default-features = false, features = ["svg", "woff", "accessibility", "file-input", "custom-widget"] }
 blitz-paint = "=0.3.0-beta.2"
 blitz-traits = "=0.3.0-beta.2"
 # `anyrender` is the paint-scene trait blitz-paint 0.3 emits into; `vello_cpu` is the one
@@ -27,7 +34,7 @@ blitz-traits = "=0.3.0-beta.2"
 anyrender = "0.13.0"
 anyrender_vello_cpu = "0.17.0"
 # Blitz drives text through Parley.
-parley = "0.11.1"
+parley = { version = "0.11.1", default-features = false, features = ["std"] }
 # The only hand-written parsing here: a mutation batch is one JSON string, and the host's own
 # reader already exists as a C ABI, so a serde derive tree would be one more thing to keep in
 # step for no gain.

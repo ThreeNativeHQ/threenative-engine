@@ -1,0 +1,29 @@
+diff --git a/src/rendertarget.c b/src/rendertarget.c
+index 37b3723..2a75290 100644
+--- a/src/rendertarget.c
++++ b/src/rendertarget.c
+@@ -219,7 +219,10 @@ GnmError sceGnmCreateRenderTarget(
+ 	    .linearwidth = actualw,
+ 	    .linearheight = actualh,
+ 	    .lineardepth = actualdepth,
+-	    .numfragsperpixel = 1 << ci->numfragments,
++	    // ci->numfragments is the SAMPLE COUNT (1, 2, 4, 8), as vulkan-ps4 and
++	    // the numsamples/numfragments check above use it; Gpa wants that count.
++	    // 1 << ci->numfragments read a 4x target as 16 fragments per pixel.
++	    .numfragsperpixel = ci->numfragments,
+ 	    .basetiledpitch = ci->pitch,
+ 
+ 	    .miplevel = 0,
+@@ -273,9 +276,10 @@ GnmError sceGnmCreateRenderTarget(
+ 	rt->info.alt_tile_mode = ci->mingpumode == GNM_GPU_NEO;
+ 
+ 	// setnumsamples
+-	rt->attrib.num_samples = ci->numsamples >> 1;
++	// The register keeps log2 of the count: >> 1 gave 8x the value 4, not 3.
++	rt->attrib.num_samples = __builtin_ctz(ci->numsamples);
+ 	// setnumfragments
+-	rt->attrib.num_fragments = ci->numfragments >> 1;
++	rt->attrib.num_fragments = __builtin_ctz(ci->numfragments);
+ 	// setTileMode
+ 	rt->attrib.tilemode_index = surfinfo.tilemode;
+ 	// setFmaskTileMode

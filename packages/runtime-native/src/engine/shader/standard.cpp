@@ -516,7 +516,9 @@ static ExprId perturbNormal2Arb(Program& f, ExprId eye, ExprId uv, ExprId surfac
     const ExprId B = f.add(f.mul(q1perp, f.swizzle(st0, "y")), f.mul(q0perp, f.swizzle(st1, "y")));
     const ExprId det = f.call("max", {f.call("dot", {T, T}), f.call("dot", {B, B})});
     const ExprId faceDirection = f.select(f.builtin("frontFacing"), f.constant(1.0f), f.constant(-1.0f));
-    const ExprId scale = f.mul(faceDirection, f.div(f.constant(1.0f), f.call("sqrt", {det})));
+    // TangentUtils: a zero det (no uv change across the pixel) scales the frame to 0, never 0 * inf = NaN.
+    const ExprId inverseLength = f.select(f.equal(det, f.constant(0.0f)), f.constant(0.0f), f.div(f.constant(1.0f), f.call("sqrt", {det})));
+    const ExprId scale = f.mul(faceDirection, inverseLength);
     const ExprId result = f.add(f.add(f.mul(T, f.mul(f.swizzle(mapN, "x"), scale)), f.mul(B, f.mul(f.swizzle(mapN, "y"), scale))),
                                 f.mul(surfaceNormal, f.swizzle(mapN, "z")));
     // Held in a variable: the derivatives above must run in uniform control flow, and a pure
