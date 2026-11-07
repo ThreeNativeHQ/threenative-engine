@@ -236,6 +236,21 @@ function countEngineCost(name: string): void {
   host.__tnEngineCost[name] = (host.__tnEngineCost[name] ?? 0) + 1;
 }
 
+/** A scene root whose engine answers the animation rate bands (scene/projected_cull.h bandRates). */
+interface IEngineBandRoot {
+  __bandRigs(
+    camera: Camera,
+    cameraResolved: boolean,
+    scale: number,
+    rigs: readonly Object3D[],
+  ): readonly number[];
+}
+
+function engineBandRoot(root: unknown): IEngineBandRoot | undefined {
+  const candidate = root as Partial<IEngineBandRoot> | null;
+  return typeof candidate?.__bandRigs === "function" ? (candidate as IEngineBandRoot) : undefined;
+}
+
 function engineCullRoot(root: unknown): IEngineCullRoot | undefined {
   const candidate = root as Partial<IEngineCullRoot> | null;
   return typeof candidate?.__cullProjected === "function" &&
@@ -278,6 +293,8 @@ export class RenderCameraCull {
   readonly #animatedFrom: (Object3D | IAnimationRateState | number | undefined)[] = [];
   /** The renderables under each rate root, in walk order, from the same walk as {@link #animated}. */
   readonly #rigParts = new Map<Object3D, Object3D[]>();
+  /** The rigs measured this frame, handed to the engine's band call in one list. */
+  readonly #banding: Object3D[] = [];
   /** A rig inside a rig: the inner rate comes from the outer walk, so no rig may skip its walk. */
   #nestedRigs = false;
   #collectingParts: Object3D[] = [];
@@ -424,14 +441,24 @@ export class RenderCameraCull {
       !this.#nestedRigs &&
       animationRateCarriers.size === 0 &&
       animationRateRoots.size >= RATE_HOLD_RIGS;
+    // On the engine, with no rig inside a rig and no stand-in, the bands of every rig measured this
+    // frame come from one call (scene/projected_cull.h bandRates), not a part walk in JS.
+    const engine =
+      rootShown && !this.#nestedRigs && animationRateCarriers.size === 0
+        ? engineBandRoot(root)
+        : undefined;
+    const banding = this.#banding;
+    banding.length = 0;
     let turn = this.#animationFrame;
     for (const ref of animationRateRoots) {
       const rig = ref.deref();
       if (rig === undefined || !this.#reaches(rig, root)) continue;
       turn += 1;
-      if (!holds || turn % RATE_MEASURE_FRAMES === 0 || !this.#holdRate(rig))
-        this.#visitRig(rig, rootShown);
+      if (holds && turn % RATE_MEASURE_FRAMES !== 0 && this.#holdRate(rig)) continue;
+      if (engine === undefined) this.#visitRig(rig, rootShown);
+      else banding.push(rig);
     }
+    if (engine !== undefined && banding.length > 0) this.#takeBands(engine, camera, banding);
     for (const ref of animationRateCarriers) {
       const carrier = ref.deref();
       const sources = carrier === undefined ? undefined : animationRateSources.get(carrier);
@@ -444,6 +471,20 @@ export class RenderCameraCull {
       let observes = false;
       for (const source of sources.keys()) observes ||= this.#animated.has(source);
       if (observes && this.#reaches(carrier, root)) carrier.traverseVisible(this.#animationVisitor);
+    }
+  }
+
+  /** Each measured rig's band from the engine, written to its state as the JS walk writes it. */
+  #takeBands(engine: IEngineBandRoot, camera: Camera, banding: readonly Object3D[]): void {
+    const rates = engine.__bandRigs(camera, this.#cameraResolved, this.#scale, banding);
+    for (let index = 0; index < banding.length; index += 1) {
+      const rate = rates[index] as number;
+      // 0: no part of the rig was visited, and the JS walk would have left its state alone.
+      if (rate === 0) continue;
+      const state = animationRateStates.get(banding[index] as Object3D) as IAnimationRateState;
+      state.rate = rate;
+      state.source = this;
+      state.frame = this.#animationFrame;
     }
   }
 

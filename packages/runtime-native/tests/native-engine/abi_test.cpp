@@ -2275,6 +2275,55 @@ void projected_cull_held_restore() {
 // PRD-610 AC-4: the projected-size cull reads a flat list of the tree, built once per hierarchy version, instead
 // of comparing type strings and casting every node every frame (7.7% of a Midway tick). The answer is the same:
 // a hidden subtree is skipped whole, a sub-threshold mesh is hidden for the frame, and an added mesh is seen.
+// PRD-828: the rate bands core's #observeAnimation picks, from the engine in one call per frame.
+void projected_cull_bands() {
+    using namespace tn::engine;
+    auto scene = std::make_shared<Scene>();
+    auto geometry = std::make_shared<BufferGeometry>();
+    auto unit = std::make_shared<BufferAttribute>(Scalar::F32, 6, 3);
+    unit->setXYZ(0, -1, 0, 0).setXYZ(1, 1, 0, 0);  // a sphere of radius 1 at the origin
+    geometry->setAttribute("position", unit);
+    const auto rigAt = [&](double x, double z) {
+        auto rig = std::make_shared<Object3D>();
+        auto part = std::make_shared<Mesh>(geometry, nullptr);
+        rig->position.x = x;
+        rig->position.z = z;
+        rig->add(*part);
+        scene->add(*rig);
+        return std::make_pair(rig, part);
+    };
+    auto [onRay, onRayPart] = rigAt(0, -500);    // the forward ray meets it: never banded
+    auto [mid, midPart] = rigAt(5, -40);         // 2 / 39.3 * 772 = 39 px: band 2
+    auto [far, farPart] = rigAt(20, -400);       // 3.9 px: band 8
+    auto [behind, behindPart] = rigAt(-200, -10);  // outside the frustum: 8
+    auto [hidden, hiddenPart] = rigAt(5, -40);
+    hiddenPart->setVisible(false);               // no part visited: 0, core leaves it alone
+    auto [marked, markedPart] = rigAt(20, -400);
+    markedPart->alwaysRender = true;             // alwaysRender keeps the gameplay rate
+    // A rig is banded by the union of its parts' spheres, as core's #rigSphere grows it: two small parts 360 m
+    // apart read as one large rig, band 1, though each alone reads 2 and 8.
+    auto [pair, pairNear] = rigAt(5, -40);
+    auto pairFar = std::make_shared<Mesh>(geometry, nullptr);
+    pairFar->position.z = -360;
+    pair->add(*pairFar);
+    PerspectiveCamera camera(50, 1, 0.1, 5000);
+    camera.updateMatrixWorld();
+    scene->updateMatrixWorld();
+    const double scale = 720 / (2 * std::tan(25 * 3.141592653589793 / 180));
+    ProjectedCull cull;
+    const std::vector<Object3D*> rigs = {onRay.get(), mid.get(), far.get(), behind.get(),
+                                         hidden.get(), marked.get(), pair.get()};
+    for (int frame = 0; frame < 3; ++frame) {
+        const auto rates = cull.bandRates(rigs, camera, true, scale);
+        CHECK(rates == (std::vector<double>{1, 2, 8, 8, 0, 1, 1}));
+    }
+    // An unresolved camera bands nothing: every visited rig keeps the gameplay rate.
+    CHECK(cull.bandRates(rigs, camera, false, scale) == (std::vector<double>{1, 1, 1, 1, 0, 1, 1}));
+    // The band walk keeps its own bound versions: the cull that follows it still culls the far rig.
+    CHECK(cull.apply(*scene, camera, true, scale, 8, true).culled == 4);  // on-ray, far, behind, the pair's far part
+    cull.restore();
+}
+
 void projected_cull_list() {
     using namespace tn::engine;
     auto scene = std::make_shared<Scene>();
@@ -3307,4 +3356,5 @@ TN_TEST_MAIN({"denoise_over_a_red_field_keeps_one_lane", denoise_over_a_red_fiel
              {"unsupported_member", unsupported_member}, {"material", material}, {"light", light}, {"spot_target_in_scene", spot_target_in_scene}, {"hierarchy_revision", hierarchy_revision}, {"matrix_evaluations", matrix_evaluations}, {"source_guard", source_guard}, {"shadow_camera_in_scene", shadow_camera_in_scene}, {"lifetime", lifetime},
              {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_matrix_columns", tsl_matrix_columns}, {"tsl_statements", tsl_statements}, {"tsl_loop_nested", tsl_loop_nested}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind}, {"euler_order_field", euler_order_field}, {"object_addresses", object_addresses}, {"geometry_shapes", geometry_shapes}, {"typed_bytes", typed_bytes}, {"array_offset", array_offset}, {"data_texture_bytes", data_texture_bytes}, {"material_events", material_events}, {"attribute_view_writes", attribute_view_writes},
              {"attribute_defer", attribute_defer}, {"material_uuid", material_uuid}, {"material_alpha_hash", material_alpha_hash}, {"matrix_walk_count", matrix_walk_count}, {"geometry_index_null", geometry_index_null}, {"world_space_conversions", world_space_conversions},
-             {"projected_cull_list", projected_cull_list}, {"projected_cull_held_restore", projected_cull_held_restore})
+             {"projected_cull_list", projected_cull_list}, {"projected_cull_bands", projected_cull_bands},
+             {"projected_cull_held_restore", projected_cull_held_restore})

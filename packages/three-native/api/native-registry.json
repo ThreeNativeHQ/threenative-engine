@@ -3,6 +3,7 @@
     "AmbientLight": {
       "constructor": true,
       "methods": [
+        "__bandRigs",
         "__cullProjected",
         "__restoreCull",
         "__tnCopyMatrixWorld",
@@ -281,6 +282,7 @@
     "BatchedMesh": {
       "constructor": true,
       "methods": [
+        "__bandRigs",
         "__cullProjected",
         "__restoreCull",
         "__tnCopyMatrixWorld",
@@ -598,6 +600,7 @@
     "Bone": {
       "constructor": true,
       "methods": [
+        "__bandRigs",
         "__cullProjected",
         "__restoreCull",
         "__tnCopyMatrixWorld",
@@ -1028,6 +1031,7 @@
     "Camera": {
       "constructor": true,
       "methods": [
+        "__bandRigs",
         "__cullProjected",
         "__restoreCull",
         "__tnCopyMatrixWorld",
@@ -1930,6 +1934,7 @@
     "DirectionalLight": {
       "constructor": true,
       "methods": [
+        "__bandRigs",
         "__cullProjected",
         "__restoreCull",
         "__tnCopyMatrixWorld",
@@ -2470,6 +2475,7 @@
     "Group": {
       "constructor": true,
       "methods": [
+        "__bandRigs",
         "__cullProjected",
         "__restoreCull",
         "__tnCopyMatrixWorld",
@@ -2637,6 +2643,7 @@
     "HemisphereLight": {
       "constructor": true,
       "methods": [
+        "__bandRigs",
         "__cullProjected",
         "__restoreCull",
         "__tnCopyMatrixWorld",
@@ -3049,6 +3056,7 @@
     "InstancedMesh": {
       "constructor": true,
       "methods": [
+        "__bandRigs",
         "__cullProjected",
         "__restoreCull",
         "__tnCopyMatrixWorld",
@@ -3367,6 +3375,7 @@
     "LOD": {
       "constructor": true,
       "methods": [
+        "__bandRigs",
         "__cullProjected",
         "__restoreCull",
         "__tnCopyMatrixWorld",
@@ -3647,6 +3656,7 @@
     "Line": {
       "constructor": true,
       "methods": [
+        "__bandRigs",
         "__cullProjected",
         "__restoreCull",
         "__tnCopyMatrixWorld",
@@ -4035,6 +4045,7 @@
     "LineSegments": {
       "constructor": true,
       "methods": [
+        "__bandRigs",
         "__cullProjected",
         "__restoreCull",
         "__tnCopyMatrixWorld",
@@ -4432,6 +4443,7 @@
     "Mesh": {
       "constructor": true,
       "methods": [
+        "__bandRigs",
         "__cullProjected",
         "__restoreCull",
         "__tnCopyMatrixWorld",
@@ -5971,6 +5983,7 @@
     "Object3D": {
       "constructor": true,
       "methods": [
+        "__bandRigs",
         "__cullProjected",
         "__restoreCull",
         "__tnCopyMatrixWorld",
@@ -6223,6 +6236,7 @@
     "OrthographicCamera": {
       "constructor": true,
       "methods": [
+        "__bandRigs",
         "__cullProjected",
         "__restoreCull",
         "__tnCopyMatrixWorld",
@@ -6444,6 +6458,7 @@
     "PerspectiveCamera": {
       "constructor": true,
       "methods": [
+        "__bandRigs",
         "__cullProjected",
         "__restoreCull",
         "__tnCopyMatrixWorld",
@@ -6761,6 +6776,7 @@
     "PointLight": {
       "constructor": true,
       "methods": [
+        "__bandRigs",
         "__cullProjected",
         "__restoreCull",
         "__tnCopyMatrixWorld",
@@ -7269,6 +7285,7 @@
     "Scene": {
       "constructor": true,
       "methods": [
+        "__bandRigs",
         "__cullProjected",
         "__restoreCull",
         "__tnCopyMatrixWorld",
@@ -7600,6 +7617,7 @@
     "SkinnedMesh": {
       "constructor": true,
       "methods": [
+        "__bandRigs",
         "__cullProjected",
         "__restoreCull",
         "__tnCopyMatrixWorld",
@@ -8044,6 +8062,7 @@
     "SpotLight": {
       "constructor": true,
       "methods": [
+        "__bandRigs",
         "__cullProjected",
         "__restoreCull",
         "__tnCopyMatrixWorld",
@@ -8269,6 +8288,7 @@
     "Sprite": {
       "constructor": true,
       "methods": [
+        "__bandRigs",
         "__cullProjected",
         "__restoreCull",
         "__tnCopyMatrixWorld",

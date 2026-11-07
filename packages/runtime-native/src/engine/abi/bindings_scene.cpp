@@ -419,6 +419,15 @@ void registerObject3D(ClassBinding& b) {
             counts.push_back(Value::of(double(count)));
         return Value::array(std::move(counts));
     };
+    // Engine-internal: core's animation rate bands in one call. `__bandRigs(camera, cameraResolved, scale, rigs)`
+    // answers each rig's rate (1, 2, 4 or 8; 0 when no part was visited), kept with this root's cull state.
+    b.methods["__bandRigs"] = [](void* self, const Args& a, Store& store) {
+        auto* camera = dynamic_cast<Camera*>(&objectArg(store, a.at(0)));
+        if (camera == nullptr) throw Unsupported{"__bandRigs needs a camera"};
+        std::vector<Object3D*> rigs;
+        for (const Value& ref : refsOf(a.at(3))) rigs.push_back(&objectArg(store, ref));
+        return Value::list(projectedCullOf(*as<Object3D>(self)).bandRates(rigs, *camera, flag(a.at(1)), number(a.at(2))));
+    };
     // Engine-internal: core's AutoBatch guard. `__tnGuardWatch(sources)` replaces the watched list with
     // each source's state now; `__tnGuardCheck(limit)` compares up to `limit` sources from where the last
     // check stopped and answers the indices that changed, which it stops watching.
