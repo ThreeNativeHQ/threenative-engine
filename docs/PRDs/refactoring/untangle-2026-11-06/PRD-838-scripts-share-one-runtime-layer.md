@@ -1,7 +1,7 @@
 # PRD-838 — Scripts share one runtime layer
 
 **Status:** PARTIAL — both phases landed; AC-1 (the golden path and one visual gate end to end) runs on the PR.
-**Priority:** P2 — open Phase 1 replaces 4 helper families copied 5 to 11 times. Five of the 7 dev-server waits burn their full timeout when the server dies at start.
+**Priority:** P2 — both phases landed; only AC-1 (the golden path and one visual gate end to end) is open, so the tier rates that run rather than a copy count.
 **Complexity:** 5 (MEDIUM)
 **Owner:** ThreeNative maintainers
 **Depends on:** PRD-832 (its Phase 1 creates `scripts/lib/repo-inventory.ts`, the first shared module)

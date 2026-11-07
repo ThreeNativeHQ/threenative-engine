@@ -87,6 +87,7 @@ describe("the gh wrapper", () => {
   it("should not repeat a shape it does not recognise as a read", () => {
     for (const args of [
       ["api", "repos/a/b/actions/workflows/1/dispatches", "--method=POST"],
+      ["api", "repos/a/b/actions/workflows/1/dispatches", "--method", "POST"],
       ["api", "repos/a/b/actions/workflows/1/dispatches", "-XPOST"],
       ["api", "repos/a/b/issues/1", "--raw-field", "body=hi"],
       ["workflow", "run", "ci.yml"],

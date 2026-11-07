@@ -51,7 +51,8 @@ function isRepeatableRead(args) {
       arg.startsWith("--input=") ||
       arg.startsWith("--method=") ||
       /^-X/u.test(arg) ||
-      (arg === "-X" && (args[index + 1] ?? "GET") !== "GET"),
+      (arg === "-X" && (args[index + 1] ?? "GET") !== "GET") ||
+      (arg === "--method" && (args[index + 1] ?? "GET") !== "GET"),
   );
 }
 

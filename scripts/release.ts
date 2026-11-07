@@ -331,7 +331,13 @@ async function defaultArtifactSteps(): Promise<IReleaseArtifactSteps> {
         return false;
       }
     },
-    buildWebEngine: () => run("pnpm", ["wasm:build"], { cwd: REPO, label: "pnpm wasm:build" }),
+    buildWebEngine: () =>
+      run("pnpm", ["wasm:build"], {
+        code: "TN_RELEASE_STEP_FAILED",
+        cwd: REPO,
+        detail: "Nothing further was published.",
+        label: "pnpm wasm:build",
+      }),
     ensureGradleWrapper: (output) => android.ensureGradleWrapper({ output }),
   };
 }
@@ -614,7 +620,12 @@ async function main(args: readonly string[]): Promise<void> {
     run("pnpm", ["lint"], { code: "TN_RELEASE_STEP_FAILED", cwd: REPO, label: "pnpm lint" });
     run("pnpm", ["test"], { code: "TN_RELEASE_STEP_FAILED", cwd: REPO, label: "pnpm test" });
   }
-  run("pnpm", ["build"], { cwd: REPO, label: "pnpm build" });
+  run("pnpm", ["build"], {
+    code: "TN_RELEASE_STEP_FAILED",
+    cwd: REPO,
+    detail: "Nothing further was published.",
+    label: "pnpm build",
+  });
 
   // Assemble the native payload before any npm publish: a declared key with no staged binary must
   // refuse the whole release while nothing irreversible has happened, not after the cohort is up.

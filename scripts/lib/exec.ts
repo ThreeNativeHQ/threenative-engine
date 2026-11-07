@@ -15,6 +15,8 @@ export interface IExecOptions {
   readonly label?: string;
   /** The failure's code prefix, e.g. `TN_RELEASE_STEP_FAILED`. */
   readonly code?: string;
+  /** What the failure adds after its sentence, e.g. what it means for the run. */
+  readonly detail?: string;
   /**
    * `"inherit"` (the default) streams the child's output straight to the terminal; `"capture"`
    * collects it, forwards it, and returns it.
@@ -65,7 +67,8 @@ function failure(
       : exitCode === null
         ? "did not start"
         : `exited ${String(exitCode)}`;
-  const suffix = detail === undefined || detail === "" ? "" : `\n${detail}`;
+  const parts = [detail, options.detail].filter((part) => part !== undefined && part !== "");
+  const suffix = parts.length === 0 ? "" : `\n${parts.join(" ")}`;
   return new ExecError(
     options.code ?? "TN_EXEC_FAILED",
     `${describe(command, args, options)} ${how}.${suffix}`,

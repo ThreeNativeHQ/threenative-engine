@@ -463,12 +463,15 @@ describe("pnpm release cohort guards", () => {
       path.resolve(import.meta.dirname, "../release.ts"),
       "utf8",
     );
-    const build = source.indexOf('run("pnpm", ["build"], { cwd: REPO, label: "pnpm build" })');
+    // The build step is multi-line now that it carries the release code and its sentence.
+    const build = source.indexOf('run("pnpm", ["build"], {');
+    const buildLabel = source.indexOf('label: "pnpm build",', build);
     const clean = source.indexOf("assertCleanPackageTree(REPO);", build);
     const preflight = source.indexOf("const postBuildReport", build);
     const cohort = source.indexOf("const publishPackages = unpublishedReleasePackages", preflight);
     const upgrade = source.indexOf("proveUpgradeFromLatest(packages, tarballs)", cohort);
     expect(build).toBeGreaterThanOrEqual(0);
+    expect(buildLabel).toBeGreaterThan(build);
     expect(clean).toBeGreaterThan(build);
     expect(preflight).toBeGreaterThan(clean);
     // The upgrade proof reads the previous `latest`, so it has to run before the first publish —
