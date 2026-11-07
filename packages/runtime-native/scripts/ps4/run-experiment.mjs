@@ -119,6 +119,10 @@ function captureTimes(fallback = []) {
 // the key dump_shaders; the camelCase dumpShaders spelling belongs to the config.toml migration.
 const DUMP_SHADERS = process.env.TN_PS4_DUMP_SHADERS === '1';
 
+// TN_PS4_GPU='{"window_width":320,"window_height":180}' merges extra GPUSettings fields
+// (emulator_settings.h:414-470 at v.0.21.0) into the run's config.json, for present-path probes.
+const GPU_OVERRIDES = JSON.parse(process.env.TN_PS4_GPU || '{}');
+
 // A lost host device leaves one line: the driver reports VK_ERROR_DEVICE_LOST from vkQueueSubmit
 // and says nothing about which access caused it (vk_scheduler.cpp:241 at v.0.21.0). The Khronos
 // validation layer is the only account that does, and shadPS4 already routes its messages into
@@ -533,19 +537,19 @@ function e5ClearColour({ width, height, pixels }) {
 // The share of the frame that changed between two captures, over the pixels both carry. Two frames
 // of a turning cube differ over the silhouette it moved across; identical or never-drawn frames
 // differ by nothing.
-function differingFraction(a, b) {
+// `rect` [x0, y0, x1, y1] limits the count to the guest window inside a larger X root.
+function differingFraction(a, b, rect) {
   const pixels = Math.min(a.width * a.height, b.width * b.height);
   if (!pixels) return 0;
+  const [x0, y0, x1, y1] = rect ?? [0, 0, a.width - 1, Math.floor(pixels / a.width) - 1];
   let differing = 0;
-  for (let at = 0; at < pixels * 3; at += 3) {
-    for (let channel = 0; channel < 3; channel++) {
-      if (Math.abs(a.pixels[at + channel] - b.pixels[at + channel]) > E2_TOLERANCE) {
-        differing++;
-        break;
-      }
+  for (let y = y0; y <= y1; y++)
+    for (let x = x0; x <= x1; x++) {
+      const at = (y * a.width + x) * 3;
+      if ([0, 1, 2].some(channel => Math.abs(a.pixels[at + channel] - b.pixels[at + channel]) > E2_TOLERANCE)) differing++;
     }
-  }
-  return differing / pixels;
+  const total = (x1 - x0 + 1) * (y1 - y0 + 1);
+  return total > 0 ? differing / total : 0;
 }
 
 // E5's verdict: the player presented the 300 frames the box asks for, the presented frame holds the
@@ -627,11 +631,21 @@ async function judgeE5(match, frame, log, captures) {
       info: detail,
       image: shots.at(-1),
     };
-  const verdict = { ok: true, detail: ` drawn=${(drawnShare * 100).toFixed(2)}%`, info: detail, image: shots.at(-1) };
-  if (moved < E5_MOVED_MIN)
+  // Movement counts inside the guest window: a small shadPS4 window (TN_PS4_GPU window_width) would
+  // otherwise dilute the cube's change over the whole X root.
+  // The window is what differs from the root corner, even when the root grey equals the clear.
+  let win = [last.width, last.height, -1, -1];
+  for (let y = 0; y < last.height; y++)
+    for (let x = 0; x < last.width; x++)
+      if ([0, 1, 2].some(c => px(x, y, c) !== backdrop[c]))
+        win = [Math.min(win[0], x), Math.min(win[1], y), Math.max(win[2], x), Math.max(win[3], y)];
+  if (win[2] < 0) win = [0, 0, last.width - 1, last.height - 1];
+  const movedWindow = Math.max(...drawn.slice(1).map(({ raster }) => differingFraction(first, raster, win)));
+  const verdict = { ok: true, detail: ` drawn=${(drawnShare * 100).toFixed(2)}% moved_window=${(movedWindow * 100).toFixed(2)}%`, info: detail, image: shots.at(-1) };
+  if (movedWindow < E5_MOVED_MIN)
     return {
       ok: false,
-      reason: `${(moved * 100).toFixed(2)}% of the frame differs at most between ${shots[0]} and any later drawn frame (${shots.slice(1).map(f => path.basename(f)).join(", ")}), below the ${E5_MOVED_MIN * 100}% a moving cube must change`,
+      reason: `${(movedWindow * 100).toFixed(2)}% of the guest window differs at most between ${shots[0]} and any later drawn frame (${shots.slice(1).map(f => path.basename(f)).join(", ")}), below the ${E5_MOVED_MIN * 100}% a moving cube must change`,
       info: detail,
       image: verdict.image,
     };
@@ -961,7 +975,7 @@ async function boot(experiment, built, appimage, outDir) {
   };
   await writeFile(
     path.join(env.XDG_DATA_HOME, 'shadPS4', 'config.json'),
-    `${JSON.stringify({ GPU: { readbacks_mode: READBACKS_MODE, readback_linear_images_enabled: true, ...(DUMP_SHADERS ? { dump_shaders: true } : {}) }, ...(Object.keys(vulkan).length ? { Vulkan: vulkan } : {}) }, null, 2)}\n`,
+    `${JSON.stringify({ GPU: { readbacks_mode: READBACKS_MODE, readback_linear_images_enabled: true, ...(DUMP_SHADERS ? { dump_shaders: true } : {}), ...GPU_OVERRIDES }, ...(Object.keys(vulkan).length ? { Vulkan: vulkan } : {}) }, null, 2)}\n`,
   );
   await mkdir(env.XDG_CONFIG_HOME, { recursive: true });
   await mkdir(env.XDG_CACHE_HOME, { recursive: true });
