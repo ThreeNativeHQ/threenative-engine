@@ -11,6 +11,7 @@ function unmeasured(reason: string): IEnvironmentMeasurement {
  * @situation turn an environment readback into the radiance a material's fill light needs
  * @situation know why an environment sample could not be measured
  * @constraint the sample must be the qualified 64x32 float RGBA readback; anything else is refused by name
+ * @example const m = sampledRadiance(readback, 1);
  */
 export function sampledRadiance(samples: unknown, intensity: number): IEnvironmentMeasurement {
   if (!(samples instanceof Float32Array) || samples.length !== WIDTH * HEIGHT * 4)

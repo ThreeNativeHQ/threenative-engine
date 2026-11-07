@@ -21,6 +21,7 @@ export interface IEnvironmentSourceSnapshot {
  * The provenance of a scene's environment: which texture, at which intensity, in which colour space.
  *
  * @situation reject an environment readback that belongs to a different sky
+ * @example const snapshot = captureEnvironmentSnapshot(scene);
  */
 export function captureEnvironmentSnapshot(scene: Scene): IEnvironmentSourceSnapshot {
   const source = scene.environment;
@@ -38,6 +39,7 @@ export function captureEnvironmentSnapshot(scene: Scene): IEnvironmentSourceSnap
  * Whether the scene's environment still matches the snapshot a sample was taken from.
  *
  * @situation hold a material's fill light to the sky that is on screen now
+ * @example if (environmentSnapshotCurrent(scene, snapshot)) draw(snapshot);
  */
 export function environmentSnapshotCurrent(
   scene: Scene,
@@ -59,6 +61,7 @@ export function environmentSnapshotCurrent(
  * Whether an environment texture's mapping and colour space are qualified for the bounded GPU sample.
  *
  * @situation know why an environment was not sampled on the GPU
+ * @example if (samplingSourceSupported(source)) sample(source);
  */
 export function samplingSourceSupported(source: NonNullable<Scene["environment"]>): boolean {
   return (

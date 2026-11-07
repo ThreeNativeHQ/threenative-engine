@@ -95,6 +95,7 @@ function accumulate(source: IReadableSource, srgb: boolean) {
  * CPU-readable equirectangular source radiance only; no DOM/canvas or invented JPEG mean.
  * Rows are weighted by their exact spherical solid angle, rather than overweighting the poles.
  * Arbitrary GPU/compressed/HTML/cube sources remain explicitly unknown until separately proven.
+ * @example const m = measureEnvironment(scene, 2048);
  */
 export function measureEnvironment(scene: Scene, maxSourceTexels: number): IEnvironmentMeasurement {
   if (!Number.isSafeInteger(maxSourceTexels) || maxSourceTexels < 1)
@@ -153,7 +154,10 @@ function fillReport(options: IContributionControls) {
     reason,
   };
 }
-/** Overrides change the look, never whether its source contribution is measured/reported. */
+/**
+ * Overrides change the look, never whether its source contribution is measured/reported.
+ * @example reportEnvironmentContribution(m, { maxSourceTexels: 2048 });
+ */
 export function reportEnvironmentContribution(
   scene: Scene,
   options: IContributionControls,

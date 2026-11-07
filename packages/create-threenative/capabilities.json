@@ -4362,7 +4362,7 @@
       "constraints": [
         "a sample whose source texture or intensity moved is dropped, so a stale one never reaches a material"
       ],
-      "example": "",
+      "example": "const hit = cachedEnvironmentSample(renderer, scene);",
       "importPath": "@threenative/core/render/environment",
       "kind": "function",
       "overrides": [],
@@ -4376,7 +4376,7 @@
     {
       "aliases": [],
       "constraints": [],
-      "example": "",
+      "example": "cacheEnvironmentSample(renderer, scene, sample);",
       "importPath": "@threenative/core/render/environment",
       "kind": "function",
       "overrides": [],
@@ -4390,7 +4390,7 @@
     {
       "aliases": [],
       "constraints": [],
-      "example": "",
+      "example": "const snapshot = captureEnvironmentSnapshot(scene);",
       "importPath": "@threenative/core/render/environment",
       "kind": "function",
       "overrides": [],
@@ -4404,7 +4404,7 @@
     {
       "aliases": [],
       "constraints": [],
-      "example": "",
+      "example": "if (environmentSnapshotCurrent(scene, snapshot)) draw(snapshot);",
       "importPath": "@threenative/core/render/environment",
       "kind": "function",
       "overrides": [],
@@ -4418,7 +4418,7 @@
     {
       "aliases": [],
       "constraints": [],
-      "example": "",
+      "example": "if (isWebGLFallbackRenderer(renderer)) skipMaterialLane();",
       "importPath": "@threenative/core/render/environment",
       "kind": "function",
       "overrides": [],
@@ -4436,7 +4436,7 @@
       "constraints": [
         "high tier, browser, hardware WebGPU, not mobile, not software, not a WebGL fallback"
       ],
-      "example": "",
+      "example": "if (materialLightingEnabled(\"high\", env)) lightMaterials();",
       "importPath": "@threenative/core/render/environment",
       "kind": "function",
       "overrides": [],
@@ -4450,7 +4450,7 @@
     {
       "aliases": [],
       "constraints": [],
-      "example": "",
+      "example": "const m = measureEnvironment(scene, 2048);",
       "importPath": "@threenative/core/render/environment",
       "kind": "function",
       "overrides": [],
@@ -4469,7 +4469,7 @@
     {
       "aliases": [],
       "constraints": [],
-      "example": "",
+      "example": "reportEnvironmentContribution(m, { maxSourceTexels: 2048 });",
       "importPath": "@threenative/core/render/environment",
       "kind": "function",
       "overrides": [],
@@ -4490,7 +4490,7 @@
       "constraints": [
         "the sample must be the qualified 64x32 float RGBA readback; anything else is refused by name"
       ],
-      "example": "",
+      "example": "const m = sampledRadiance(readback, 1);",
       "importPath": "@threenative/core/render/environment",
       "kind": "function",
       "overrides": [],
@@ -4510,7 +4510,7 @@
         "off unless the renderer is the admitted high-tier WebGPU lane; every refusal is reported by name",
         "the readback is abandoned after the deadline and the frame keeps the previous answer"
       ],
-      "example": "",
+      "example": "const sample = await sampleEnvironment(renderer, scene, env);",
       "importPath": "@threenative/core/render/environment",
       "kind": "function",
       "overrides": [],
@@ -4527,7 +4527,7 @@
     {
       "aliases": [],
       "constraints": [],
-      "example": "",
+      "example": "if (samplingSourceSupported(source)) sample(source);",
       "importPath": "@threenative/core/render/environment",
       "kind": "function",
       "overrides": [],

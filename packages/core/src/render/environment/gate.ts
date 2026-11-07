@@ -24,6 +24,7 @@ export interface IMaterialLightingEnvironment {
  *
  * @situation decide whether this renderer is the admitted material lane
  * @constraint high tier, browser, hardware WebGPU, not mobile, not software, not a WebGL fallback
+ * @example if (materialLightingEnabled("high", env)) lightMaterials();
  */
 export function materialLightingEnabled(
   tier: QualityTier,
@@ -43,6 +44,7 @@ export function materialLightingEnabled(
  * Whether a `WebGPURenderer` wrapper is running three's WebGL backend behind it.
  *
  * @situation refuse a GPU-only lane on a WebGL fallback instead of drawing something wrong
+ * @example if (isWebGLFallbackRenderer(renderer)) skipMaterialLane();
  */
 export function isWebGLFallbackRenderer(renderer: unknown): boolean {
   if (renderer === null || typeof renderer !== "object") return false;

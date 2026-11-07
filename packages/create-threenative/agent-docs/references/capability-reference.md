@@ -3414,6 +3414,10 @@ export function cachedEnvironmentSample( renderer: object, scene: Scene, ): IEnv
 - **Use when:** skip a second environment readback in the same frame
 - **Constraints:** a sample whose source texture or intensity moved is dropped, so a stale one never reaches a material
 
+```ts
+const hit = cachedEnvironmentSample(renderer, scene);
+```
+
 ### `cacheEnvironmentSample`
 
 `function` — Remembers `sample` as this renderer's reading of `scene`'s environment.
@@ -3423,6 +3427,10 @@ export function cacheEnvironmentSample( renderer: object, scene: Scene, sample: 
 ```
 
 - **Use when:** reuse one environment readback across the materials of a scene
+
+```ts
+cacheEnvironmentSample(renderer, scene, sample);
+```
 
 ### `captureEnvironmentSnapshot`
 
@@ -3434,6 +3442,10 @@ export function captureEnvironmentSnapshot(scene: Scene): IEnvironmentSourceSnap
 
 - **Use when:** reject an environment readback that belongs to a different sky
 
+```ts
+const snapshot = captureEnvironmentSnapshot(scene);
+```
+
 ### `environmentSnapshotCurrent`
 
 `function` — Whether the scene's environment still matches the snapshot a sample was taken from.
@@ -3444,6 +3456,10 @@ export function environmentSnapshotCurrent( scene: Scene, snapshot: IEnvironment
 
 - **Use when:** hold a material's fill light to the sky that is on screen now
 
+```ts
+if (environmentSnapshotCurrent(scene, snapshot)) draw(snapshot);
+```
+
 ### `isWebGLFallbackRenderer`
 
 `function` — Whether a `WebGPURenderer` wrapper is running three's WebGL backend behind it.
@@ -3453,6 +3469,10 @@ export function isWebGLFallbackRenderer(renderer: unknown): boolean { … }
 ```
 
 - **Use when:** refuse a GPU-only lane on a WebGL fallback instead of drawing something wrong
+
+```ts
+if (isWebGLFallbackRenderer(renderer)) skipMaterialLane();
+```
 
 ### `materialLightingEnabled`
 
@@ -3465,6 +3485,10 @@ export function materialLightingEnabled( tier: QualityTier, environment: IMateri
 - **Use when:** decide whether this renderer is the admitted material lane
 - **Constraints:** high tier, browser, hardware WebGPU, not mobile, not software, not a WebGL fallback
 
+```ts
+if (materialLightingEnabled("high", env)) lightMaterials();
+```
+
 ### `measureEnvironment`
 
 `function` — The environment measure-and-sample mechanism every kit repeats: what the scene's environment actually contributes, a bounded GPU sample of it with a cache and a readback deadline, the provenance a stale readback is rejected by, and the gate that decides which renderer may run the material lane. The backlight itself is a shader with fixed constants, so it stays in each kit's `src/render/` (stamped from one source there) where the game can change how it looks. This is machinery, not a look: every colour, gain and threshold arrives as an argument, and a kit that wants a different bound passes a different one. It lives here because twelve kits held byte-identical copies — 9 084 lines — so a fix to one left eleven wrong with every gate green (`c93b427d0` touched 552 files for one look change).
@@ -3475,6 +3499,10 @@ export function measureEnvironment(scene: Scene, maxSourceTexels: number): IEnvi
 
 - **Use when:** measure what a scene's environment actually contributes · sample the environment on the GPU without stalling the frame · keep an environment readback from reaching a frame it does not belong to · add a backlit sheen to a material without editing the material graph
 
+```ts
+const m = measureEnvironment(scene, 2048);
+```
+
 ### `reportEnvironmentContribution`
 
 `function` — The environment measure-and-sample mechanism every kit repeats: what the scene's environment actually contributes, a bounded GPU sample of it with a cache and a readback deadline, the provenance a stale readback is rejected by, and the gate that decides which renderer may run the material lane. The backlight itself is a shader with fixed constants, so it stays in each kit's `src/render/` (stamped from one source there) where the game can change how it looks. This is machinery, not a look: every colour, gain and threshold arrives as an argument, and a kit that wants a different bound passes a different one. It lives here because twelve kits held byte-identical copies — 9 084 lines — so a fix to one left eleven wrong with every gate green (`c93b427d0` touched 552 files for one look change).
@@ -3484,6 +3512,10 @@ export function reportEnvironmentContribution( scene: Scene, options: IContribut
 ```
 
 - **Use when:** measure what a scene's environment actually contributes · sample the environment on the GPU without stalling the frame · keep an environment readback from reaching a frame it does not belong to · add a backlit sheen to a material without editing the material graph
+
+```ts
+reportEnvironmentContribution(m, { maxSourceTexels: 2048 });
+```
 
 ### `sampledRadiance`
 
@@ -3496,6 +3528,10 @@ export function sampledRadiance(samples: unknown, intensity: number): IEnvironme
 - **Use when:** turn an environment readback into the radiance a material's fill light needs · know why an environment sample could not be measured
 - **Constraints:** the sample must be the qualified 64x32 float RGBA readback; anything else is refused by name
 
+```ts
+const m = sampledRadiance(readback, 1);
+```
+
 ### `sampleEnvironment`
 
 `function` — Measures and samples the scene's real environment on the GPU, bounded by a readback deadline.
@@ -3507,6 +3543,10 @@ export async function sampleEnvironment( renderer: unknown, scene: Scene, enviro
 - **Use when:** measure what a scene's environment actually contributes without stalling the frame · give a material's fill light the environment's own radiance
 - **Constraints:** off unless the renderer is the admitted high-tier WebGPU lane; every refusal is reported by name · the readback is abandoned after the deadline and the frame keeps the previous answer
 
+```ts
+const sample = await sampleEnvironment(renderer, scene, env);
+```
+
 ### `samplingSourceSupported`
 
 `function` — Whether an environment texture's mapping and colour space are qualified for the bounded GPU sample.
@@ -3516,6 +3556,10 @@ export function samplingSourceSupported(source: NonNullable<Scene["environment"]
 ```
 
 - **Use when:** know why an environment was not sampled on the GPU
+
+```ts
+if (samplingSourceSupported(source)) sample(source);
+```
 
 ## `@threenative/core/spells`
 

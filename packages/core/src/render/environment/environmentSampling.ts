@@ -38,6 +38,7 @@ const HEIGHT = 32;
  * @situation give a material's fill light the environment's own radiance
  * @constraint off unless the renderer is the admitted high-tier WebGPU lane; every refusal is reported by name
  * @constraint the readback is abandoned after the deadline and the frame keeps the previous answer
+ * @example const sample = await sampleEnvironment(renderer, scene, env);
  */
 export async function sampleEnvironment(
   renderer: unknown,

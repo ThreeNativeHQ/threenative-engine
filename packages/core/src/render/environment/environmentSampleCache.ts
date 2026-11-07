@@ -8,6 +8,7 @@ const samples = new WeakMap<object, WeakMap<Texture, IEnvironmentSample>>();
  *
  * @situation skip a second environment readback in the same frame
  * @constraint a sample whose source texture or intensity moved is dropped, so a stale one never reaches a material
+ * @example const hit = cachedEnvironmentSample(renderer, scene);
  */
 export function cachedEnvironmentSample(
   renderer: object,
@@ -23,6 +24,7 @@ export function cachedEnvironmentSample(
  * Remembers `sample` as this renderer's reading of `scene`'s environment.
  *
  * @situation reuse one environment readback across the materials of a scene
+ * @example cacheEnvironmentSample(renderer, scene, sample);
  */
 export function cacheEnvironmentSample(
   renderer: object,
