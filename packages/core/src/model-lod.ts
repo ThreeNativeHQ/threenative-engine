@@ -131,6 +131,15 @@ export function biasedLodDistance(distance: number): number {
 const nearest = new Vector3();
 
 /**
+ * The near plane a caller with no camera `near` uses for the degenerate test.
+ *
+ * A camera inside (or within this of) a sphere reports `degenerate`. Two callers used `0.1` and the
+ * rest `0`, so the same camera answered two different questions; this is the one value, and it is
+ * `0` because the test is "is the centre inside the sphere", not "is the surface close".
+ */
+export const LOD_NEAR_PLANE = 0;
+
+/**
  * The conservative nearest view-space depth of a world-space bounding sphere.
  *
  * The distance along the view axis to the sphere's centre minus its radius is the closest the

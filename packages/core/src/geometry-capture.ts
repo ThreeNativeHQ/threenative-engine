@@ -27,7 +27,13 @@
 import { Frustum, Matrix4, Sphere, Vector3 } from "three";
 import type { Camera, Object3D } from "three";
 import { markEngineRenderHook } from "./engine-render-hook.js";
-import { baseGeometryOf, lodPixelScale, selectLodFor, worldSphere } from "./model-lod.js";
+import {
+  LOD_NEAR_PLANE,
+  baseGeometryOf,
+  lodPixelScale,
+  selectLodFor,
+  worldSphere,
+} from "./model-lod.js";
 import type { FramePassKind, IRenderPassSample } from "./render-pass-budget.js";
 
 /** Rows returned when a request does not name a limit. */
@@ -420,7 +426,7 @@ function projectedSize(
 ): { readonly pixels: number; readonly distance: number } | undefined {
   if (!(viewportHeight > 0)) return undefined;
   const like = camera as ICameraLike;
-  const near = like.near ?? 0.1;
+  const near = like.near ?? LOD_NEAR_PLANE;
   const distance = centreScratch
     .copy(sphere.center)
     .distanceTo(camera.getWorldPosition(new Vector3()));
