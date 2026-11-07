@@ -35,7 +35,8 @@ function renderCopies(): Map<string, Map<string, readonly string[]>> {
       const digest = createHash("sha256")
         .update(readFileSync(path.join(render, file)))
         .digest("hex");
-      const byDigest = copies.get(`${RENDER_PREFIX}${file}`) ?? new Map<string, readonly string[]>();
+      const byDigest =
+        copies.get(`${RENDER_PREFIX}${file}`) ?? new Map<string, readonly string[]>();
       byDigest.set(digest, [...(byDigest.get(digest) ?? []), entry.name]);
       copies.set(`${RENDER_PREFIX}${file}`, byDigest);
     }
