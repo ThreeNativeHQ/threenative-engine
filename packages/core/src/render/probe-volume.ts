@@ -2,8 +2,11 @@ import {
   Box2,
   Box3,
   type Camera,
+  type Color,
   type CoordinateSystem,
   CubeCamera,
+  Frustum,
+  Matrix4,
   Mesh,
   Object3D,
   OrthographicCamera,
@@ -46,6 +49,14 @@ import {
 import type { Node, TextureNode } from "three/webgpu";
 import type { IComputeDriven } from "../compute-driven.js";
 import type { IRendererLike } from "../renderer.js";
+import {
+  type IProbeTraceKernels,
+  type IProbeTraceScene,
+  applyTraceLighting,
+  createProbeTraceKernels,
+  threadScene,
+  writeMaterialTable,
+} from "./probe-trace.js";
 
 /** The atlas has one copied edge texel on either side of each packed SH sub-volume. */
 export const ATLAS_PADDING = 1;
@@ -110,6 +121,33 @@ export interface IProbeVolumeOptions {
   /** Injectable clock for deterministic scheduling tests. */
   readonly now?: () => number;
   readonly report?: (line: string) => void;
+  /**
+   * Refresh probes by tracing a GPUSceneBVH (PRD-603) instead of drawing the scene six times per probe.
+   * The default is `trace` when `trace` inputs are given and `capture` otherwise. `capture` is the named
+   * override for scenes that need textured albedo or local lights in their bounce.
+   */
+  readonly update?: "capture" | "trace";
+  /** The traced refresh's inputs: the packed scene, and the sun and sky the game already holds. */
+  readonly trace?: IProbeVolumeTrace;
+  /** Most probes one frame traces (Unreal's r.Lumen.RadianceCache.NumProbesToTraceBudget, 100). */
+  readonly numProbesToTraceBudget?: number;
+  /**
+   * Rays per probe along one side: `probeResolution` squared rays. Unreal's r.Lumen.RadianceCache.ProbeResolution
+   * default, 32 (1,024 rays); a small emitter far from a probe needs that many to be hit at all.
+   */
+  readonly probeResolution?: number;
+}
+
+/** What a traced refresh reads. Every value is the game's: the volume owns no light and no colour. */
+export interface IProbeVolumeTrace {
+  /** A GPUSceneBVH, or anything with its CPU snapshot and version. */
+  readonly bvh: { readonly traceScene: IProbeTraceScene; readonly version: number };
+  /** World direction toward the sun, its linear colour and its intensity; read every frame. */
+  readonly sun: { readonly direction: Vector3; readonly color: Color; readonly intensity: number };
+  /** Radiance of a ray that leaves the scene; black for a closed interior. Read every frame. */
+  readonly sky: Color;
+  /** The view whose frustum marks probes as in use, so they refresh first. Absent: none ranks first. */
+  readonly camera?: Camera;
 }
 
 export interface IProbeVolumeBakeProgress {
@@ -138,6 +176,14 @@ export interface IProbeVolumeObservation {
   readonly bakeBudgetMs: number;
   /** True while pass zero samples a black texture instead of a previous bake. */
   readonly samplingIsolated: boolean;
+  /** Which refresh ran: `capture` (six scene draws a probe) or `trace` (one dispatch). Absent means capture. */
+  readonly update?: "capture" | "trace";
+  /** Trace path: probes traced in the last frame. */
+  readonly probesTraced?: number;
+  /** Trace path: frames since the least recently traced probe was traced, `null` while one never was. */
+  readonly oldestProbeAgeFrames?: number | null;
+  /** Trace path: materials whose texture or node graph the flat material table ignored. */
+  readonly ignoredTextureMaterials?: number;
 }
 
 /** Read a complete marker-shaped observation without accepting malformed data. */
@@ -307,6 +353,31 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
   #samplingIsolated = false;
   #lastReported = "";
   #released = false;
+  // The traced refresh (PRD-603). Undefined on a capture volume.
+  readonly #trace: IProbeVolumeTrace | undefined;
+  readonly #traceBudget: number;
+  readonly #raysPerProbe: number;
+  #kernels: IProbeTraceKernels | undefined;
+  #kernelVersion = -1;
+  #ignoredTextureMaterials = 0;
+  /** Per probe: 1 while it waits for a trace. */
+  #traceStale: Uint8Array;
+  /** Per probe: the frame of its last trace, -1 before the first. */
+  #lastTraced: Int32Array;
+  /** Per probe: the last frame it sat inside the camera frustum, -1 before. */
+  #lastUsed: Int32Array;
+  #frame = 0;
+  #probesTraced = 0;
+  #tracePass = 0;
+  #tracePasses = 1;
+  #traceCompleted = 0;
+  #generations = 0;
+  #dispatchSerial = 0;
+  #readbackSerial = 0;
+  #readbackInFlight = false;
+  #passSerial = -1;
+  readonly #frustum = new Frustum();
+  readonly #viewProjection = new Matrix4();
 
   constructor(options: IProbeVolumeOptions) {
     super();
@@ -324,6 +395,20 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
     if (this.#far <= this.#near) throw new Error("ProbeVolume far must be greater than near.");
     this.#bounces = nonNegativeInteger(options.bounces ?? 0, "bounces");
     this.#bakePasses = this.#bounces + 1;
+    const update = options.update ?? (options.trace === undefined ? "capture" : "trace");
+    if (update !== "capture" && update !== "trace")
+      throw new Error(
+        `ProbeVolume update must be "capture" or "trace", received ${String(update)}.`,
+      );
+    if (update === "trace" && options.trace === undefined)
+      throw new Error('ProbeVolume update "trace" needs trace inputs: { bvh, sun, sky }.');
+    this.#trace = update === "trace" ? options.trace : undefined;
+    this.#traceBudget = positiveInteger(
+      options.numProbesToTraceBudget ?? 100,
+      "numProbesToTraceBudget",
+    );
+    const probeResolution = positiveInteger(options.probeResolution ?? 32, "probeResolution");
+    this.#raysPerProbe = probeResolution * probeResolution;
 
     const normalizedBounds = normalizeBounds(options.bounds);
     this.boundingBox = normalizedBounds;
@@ -361,6 +446,9 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
     this.#atlasTexture = createCpuAtlas(this.#atlasData, this.resolution, this.#atlasDepth);
     this.#emptyAtlasTexture = createCpuAtlas(new Float32Array(4), new Vector3(1, 1, 1), 1);
     this.#atlasNode = texture3D(this.#atlasTexture);
+    this.#traceStale = new Uint8Array(this.#probeCount);
+    this.#lastTraced = new Int32Array(this.#probeCount).fill(-1);
+    this.#lastUsed = new Int32Array(this.#probeCount).fill(-1);
     this.#boundsMinNode = uniform(this.boundingBox.min.clone());
     this.#boundsSizeNode = uniform(this.#boundsSize.clone());
     this.#publish(true);
@@ -396,6 +484,7 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
   }
 
   get observation(): IProbeVolumeObservation {
+    if (this.#trace !== undefined) return this.#traceObservation();
     const progress = this.#pending;
     const total = progress?.totalWork ?? this.totalWork;
     const completed = progress?.completedWork ?? (this.#status === "ready" ? total : 0);
@@ -428,6 +517,54 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
     };
   }
 
+  #traceObservation(): IProbeVolumeObservation {
+    const perPass = this.#probeCount + 1;
+    const passes = this.#tracePasses;
+    const ready = this.#status === "ready";
+    const baking = this.#status === "baking";
+    const pass = ready ? passes - 1 : baking ? this.#tracePass : 0;
+    const total = passes * perPass;
+    const completed = ready ? total : baking ? pass * perPass + this.#traceCompleted : 0;
+    let oldest: number | null = 0;
+    for (const traced of this.#lastTraced) {
+      if (traced < 0) {
+        oldest = null;
+        break;
+      }
+      oldest = Math.max(oldest, this.#frame - traced);
+    }
+    return {
+      atlas: { depth: this.#atlasDepth, height: this.resolution.y, width: this.resolution.x },
+      atlasBytes: this.#atlasBytes,
+      bakeBudgetMs: this.#bakeBudgetMs,
+      bakeCostMs: this.#lastBakeCostMs,
+      bakeProgress: {
+        completed,
+        fraction: completed / total,
+        pass,
+        passes,
+        probesCompleted: ready
+          ? this.#probeCount * passes
+          : baking
+            ? pass * this.#probeCount + this.#traceCompleted
+            : 0,
+        probesTotal: this.#probeCount * passes,
+        total,
+      },
+      ignoredTextureMaterials: this.#ignoredTextureMaterials,
+      marker: PROBE_VOLUME_MARKER,
+      oldestProbeAgeFrames: oldest,
+      probeCount: this.#probeCount,
+      probesTraced: this.#probesTraced,
+      samplingIsolated: false,
+      stale: !ready,
+      stalenessFrames: this.#stalenessFrames,
+      status: this.#status,
+      unbaked: this.#status === "unbaked",
+      update: "trace",
+    };
+  }
+
   /** Attach the active renderer; only WebGPU has the 3D render-target contract this class needs. */
   attachRenderer(renderer: IRendererLike): void {
     if (this.#released) throw new Error("ProbeVolume.attachRenderer called after detach().");
@@ -441,6 +578,8 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
     const raw = renderer.raw as IProbeRenderer;
     const deviceLimit = readTextureLimit(raw);
     if (deviceLimit !== undefined) assertTextureLimit(this.maximumDimension, deviceLimit);
+    // The traced refresh writes the CPU atlas: no cube camera, no render target, no repack draw.
+    if (this.#trace !== undefined) return;
     this.#startAtlasProbe(raw);
     this.#ensureGpuResources();
     if (this.#pending !== undefined) this.#prepareBake(this.#pending.scene, this.#pending.passes);
@@ -452,6 +591,7 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
     if (!(scene instanceof Scene)) throw new Error("ProbeVolume.requestBake requires a Scene.");
     const bounces = options.bounces ?? this.#bounces;
     nonNegativeInteger(bounces, "bounces");
+    if (this.#trace !== undefined) return this.#requestTrace(bounces + 1);
     if (this.#pending !== undefined && this.#bakePromise !== undefined)
       return this.#bakePromise.promise;
     this.#bakePasses = bounces + 1;
@@ -661,6 +801,10 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
     if (this.#renderer === undefined) this.attachRenderer(renderer);
     if (this.#renderer !== renderer)
       throw new Error("ProbeVolume.process received a different renderer.");
+    if (this.#trace !== undefined) {
+      this.#processTrace(renderer, this.#trace);
+      return;
+    }
     if (this.#pending === undefined) {
       this.#publishIdleFrame();
       return;
@@ -725,6 +869,210 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
     this.#publish(true);
   }
 
+  /**
+   * Mark every probe stale for `passes` full refreshes. The old field stays readable until each probe is
+   * replaced, and a request made while one runs restarts its passes under the same promise.
+   */
+  #requestTrace(passes: number): Promise<void> {
+    this.#bakePromise ??= deferred();
+    this.#startTracePasses(passes);
+    this.#publish(true);
+    return this.#bakePromise.promise;
+  }
+
+  #startTracePasses(passes: number): void {
+    this.#tracePasses = passes;
+    this.#tracePass = 0;
+    this.#traceCompleted = 0;
+    this.#passSerial = -1;
+    this.#traceStale.fill(1);
+    this.#status = "baking";
+  }
+
+  #processTrace(renderer: IRendererLike, trace: IProbeVolumeTrace): void {
+    const started = this.#now();
+    this.#frame += 1;
+    this.#probesTraced = 0;
+    try {
+      const kernels = this.#ensureKernels(trace);
+      applyTraceLighting(kernels, {
+        color: trace.sun.color,
+        direction: trace.sun.direction,
+        intensity: trace.sun.intensity,
+        sky: trace.sky,
+      });
+      this.#refreshMaterials(trace, kernels);
+      this.#markUsed(trace.camera);
+      if (this.#status === "baking") this.#dispatchTrace(renderer, kernels);
+      this.#startReadback(renderer, kernels);
+    } catch (error) {
+      this.#failTrace(error);
+      throw error;
+    }
+    if (this.#status === "ready" && this.#stalenessFrames !== null) this.#stalenessFrames += 1;
+    this.#lastBakeCostMs = Math.max(0, this.#now() - started);
+    this.#publish(this.#probesTraced > 0);
+  }
+
+  #ensureKernels(trace: IProbeVolumeTrace): IProbeTraceKernels {
+    const version = trace.bvh.version;
+    if (this.#kernels !== undefined && this.#kernelVersion === version) return this.#kernels;
+    const previous = this.#kernels;
+    const threaded = threadScene(trace.bvh.traceScene);
+    this.#ignoredTextureMaterials = threaded.ignoredTextureMaterials;
+    this.#kernels = createProbeTraceKernels(
+      threaded,
+      {
+        min: this.boundingBox.min,
+        probeCount: this.#probeCount,
+        resolution: this.resolution,
+        size: this.#boundsSize,
+      },
+      this.#raysPerProbe,
+      Math.min(this.#traceBudget, this.#probeCount),
+    );
+    // Carry the field across a scene rebuild, so the new kernels bounce from the old light.
+    if (previous !== undefined) {
+      (this.#kernels.coefficients.array as Float32Array).set(
+        previous.coefficients.array as Float32Array,
+      );
+      previous.dispose();
+    }
+    if (this.#kernelVersion >= 0 && this.#status !== "unbaked")
+      this.#startTracePasses(this.#tracePasses);
+    this.#kernelVersion = version;
+    return this.#kernels;
+  }
+
+  /** A material the game changed (a lamp switched on) re-uploads the table and refreshes every probe. */
+  #refreshMaterials(trace: IProbeVolumeTrace, kernels: IProbeTraceKernels): void {
+    // ponytail: every material each frame; a dirty flag from the game when scenes carry thousands.
+    const table = writeMaterialTable(
+      trace.bvh.traceScene.materials,
+      kernels.materials.array as Float32Array,
+    );
+    this.#ignoredTextureMaterials = table.ignored;
+    if (!table.changed) return;
+    kernels.materials.needsUpdate = true;
+    if (this.#status !== "unbaked") this.#startTracePasses(this.#tracePasses);
+  }
+
+  /** A probe is in use while it sits inside the camera frustum: Unreal's last-used frame. */
+  #markUsed(camera: Camera | undefined): void {
+    if (camera === undefined) return;
+    camera.updateMatrixWorld();
+    this.#viewProjection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    this.#frustum.setFromProjectionMatrix(this.#viewProjection, camera.coordinateSystem);
+    const point = new Vector3();
+    for (let probe = 0; probe < this.#probeCount; probe += 1) {
+      this.#probeAt(probe, point);
+      if (this.#frustum.containsPoint(point)) this.#lastUsed[probe] = this.#frame;
+    }
+  }
+
+  #probeAt(probe: number, target: Vector3): Vector3 {
+    const nx = this.resolution.x;
+    const ny = this.resolution.y;
+    return this.probePosition(
+      probe % nx,
+      Math.floor(probe / nx) % ny,
+      Math.floor(probe / (nx * ny)),
+      target,
+    );
+  }
+
+  /**
+   * The stale probes this frame traces, at most the budget: never-traced first, then the largest gap between
+   * last use and last trace (Unreal's priority, UE 5.8.3: LumenRadianceCacheUpdate.usf:221-241), then index.
+   */
+  selectStaleProbes(): number[] {
+    const candidates: number[] = [];
+    for (let probe = 0; probe < this.#probeCount; probe += 1) {
+      if (this.#traceStale[probe] === 1) candidates.push(probe);
+    }
+    // ponytail: a full sort per frame; a bucketed partial selection when volumes reach 1e5 probes.
+    const priority = (probe: number) =>
+      (this.#lastTraced[probe] ?? 0) < 0
+        ? Number.POSITIVE_INFINITY
+        : (this.#lastUsed[probe] ?? -1) - (this.#lastTraced[probe] ?? 0);
+    candidates.sort((a, b) => priority(b) - priority(a) || a - b);
+    return candidates.slice(0, Math.min(this.#traceBudget, this.#probeCount));
+  }
+
+  #dispatchTrace(renderer: IRendererLike, kernels: IProbeTraceKernels): void {
+    const batch = this.selectStaleProbes();
+    if (batch.length > 0) {
+      (kernels.probeList.array as Int32Array).set(batch);
+      kernels.probeList.needsUpdate = true;
+      kernels.batchSize.value = batch.length;
+      kernels.bounce.value = this.#generations > 0 ? 1 : 0;
+      renderer.compute(kernels.trace);
+      renderer.compute(kernels.project);
+      for (const probe of batch) {
+        this.#traceStale[probe] = 0;
+        this.#lastTraced[probe] = this.#frame;
+      }
+      this.#probesTraced = batch.length;
+      this.#traceCompleted += batch.length;
+      this.#dispatchSerial += 1;
+    }
+    if (this.#traceCompleted < this.#probeCount) return;
+    // Every probe of this pass is dispatched. The next pass bounces from it; the last waits for its readback.
+    if (this.#tracePass + 1 < this.#tracePasses) {
+      this.#generations += 1;
+      this.#tracePass += 1;
+      this.#traceCompleted = 0;
+      this.#traceStale.fill(1);
+      return;
+    }
+    if (this.#passSerial < 0) this.#passSerial = this.#dispatchSerial;
+  }
+
+  /** Copy the field back into the CPU atlas: one readback at a time, so the atlas never holds half a refresh. */
+  #startReadback(renderer: IRendererLike, kernels: IProbeTraceKernels): void {
+    if (this.#readbackInFlight || this.#readbackSerial >= this.#dispatchSerial) return;
+    const serial = this.#dispatchSerial;
+    this.#readbackInFlight = true;
+    renderer.readback(kernels.coefficients).then(
+      (bytes) => {
+        this.#readbackInFlight = false;
+        if (this.#released || this.#kernels !== kernels) return;
+        this.#acceptReadback(new Float32Array(bytes), serial);
+      },
+      (error: unknown) => {
+        this.#readbackInFlight = false;
+        this.#failTrace(error);
+      },
+    );
+  }
+
+  #acceptReadback(field: Float32Array, serial: number): void {
+    for (let index = 0; index < this.#probeCount * SH_COEFFICIENT_COUNT; index += 1) {
+      for (let channel = 0; channel < SH_CHANNEL_COUNT; channel += 1) {
+        this.#coefficients[index * SH_CHANNEL_COUNT + channel] = field[index * 4 + channel] ?? 0;
+      }
+    }
+    this.#packCpuAtlas();
+    this.#readbackSerial = serial;
+    if (this.#passSerial < 0 || serial < this.#passSerial || this.#status !== "baking") return;
+    this.#generations += 1;
+    this.#status = "ready";
+    this.#stalenessFrames = 0;
+    this.#passSerial = -1;
+    const promise = this.#bakePromise;
+    this.#bakePromise = undefined;
+    this.#publish(true);
+    promise?.resolve();
+  }
+
+  #failTrace(error: unknown): void {
+    const promise = this.#bakePromise;
+    this.#bakePromise = undefined;
+    this.#status = "unbaked";
+    this.#publish(true);
+    promise?.reject(error);
+  }
+
   detach(): void {
     if (this.#released) return;
     this.#released = true;
@@ -733,6 +1081,11 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
       this.#pending = undefined;
       this.#bakePromise = undefined;
     }
+    if (this.#trace !== undefined)
+      this.#bakePromise?.reject(new Error("ProbeVolume detached while a bake was pending."));
+    this.#bakePromise = undefined;
+    this.#kernels?.dispose();
+    this.#kernels = undefined;
     this.#restoreSceneState();
     this.#cubeRenderTarget?.dispose();
     this.#projectionTarget?.dispose();
@@ -763,6 +1116,7 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
   }
 
   get totalWork(): number {
+    if (this.#trace !== undefined) return this.#tracePasses * (this.#probeCount + 1);
     return (
       this.#bakePasses *
       (this.#probeCount * CAPTURE_WORK_ITEMS_PER_PROBE +
@@ -1670,10 +2024,33 @@ function isProbeVolumeObservation(value: unknown): value is IProbeVolumeObservat
   )
     return false;
   if (!isProbeVolumeAtlas(atlas, probeCount, atlasBytes)) return false;
-  if (!isProbeVolumeBakeProgress(progress, status, probeCount, atlas.depth)) return false;
+  const trace = observationUpdate(value);
+  if (trace === undefined) return false;
+  if (!isProbeVolumeBakeProgress(progress, status, probeCount, atlas.depth, trace)) return false;
   if (stale !== (status !== "ready") || unbaked !== (status === "unbaked")) return false;
-  if (status === "baking" && samplingIsolated !== (progress.pass === 0)) return false;
+  // A traced refresh never isolates: the old field serves until each probe is replaced.
+  if (trace ? samplingIsolated : status === "baking" && samplingIsolated !== (progress.pass === 0))
+    return false;
   return status !== "ready" || (stalenessFrames !== null && !samplingIsolated);
+}
+
+/** `true` for a complete trace observation, `false` for a capture one, `undefined` for a malformed one. */
+function observationUpdate(value: Record<string, unknown>): boolean | undefined {
+  const { update, probesTraced, oldestProbeAgeFrames, ignoredTextureMaterials } = value;
+  if (update === undefined || update === "capture") return false;
+  if (update !== "trace") return undefined;
+  const complete =
+    isProgressValue(probesTraced) &&
+    isProgressValue(ignoredTextureMaterials) &&
+    (oldestProbeAgeFrames === null || isProgressValue(oldestProbeAgeFrames));
+  return complete ? true : undefined;
+}
+
+/** Work items a probe costs, and the work that closes a pass: the repack slices, or one readback. */
+function passWork(trace: boolean, atlasDepth: number): { perProbe: number; tail: number } {
+  return trace
+    ? { perProbe: 1, tail: 1 }
+    : { perProbe: CAPTURE_WORK_ITEMS_PER_PROBE, tail: atlasDepth };
 }
 
 function isProbeVolumeAtlas(
@@ -1712,11 +2089,13 @@ function isProbeVolumeBakeProgress(
   status: IProbeVolumeObservation["status"],
   probeCount: number,
   atlasDepth: number,
+  trace = false,
 ): value is IProbeVolumeBakeProgress {
   if (!isProbeVolumeBakeProgressShape(value)) return false;
   const { completed, total, fraction, probesCompleted, probesTotal, pass, passes } = value;
   const expectedProbesTotal = probeCount * passes;
-  const workPerPass = probeCount * CAPTURE_WORK_ITEMS_PER_PROBE + atlasDepth;
+  const { perProbe: itemsPerProbe, tail } = passWork(trace, atlasDepth);
+  const workPerPass = probeCount * itemsPerProbe + tail;
   const expectedTotal = workPerPass * passes;
   if (
     !isPositiveIntegerValue(expectedProbesTotal) ||
@@ -1749,11 +2128,9 @@ function isProbeVolumeBakeProgress(
     currentProbes > probeCount
   )
     return false;
-  if (currentProbes === probeCount) return currentWork >= probeCount * CAPTURE_WORK_ITEMS_PER_PROBE;
-  const minimumWork = currentProbes * CAPTURE_WORK_ITEMS_PER_PROBE;
-  return (
-    currentWork >= minimumWork && currentWork <= minimumWork + CAPTURE_WORK_ITEMS_PER_PROBE - 1
-  );
+  if (currentProbes === probeCount) return currentWork >= probeCount * itemsPerProbe;
+  const minimumWork = currentProbes * itemsPerProbe;
+  return currentWork >= minimumWork && currentWork <= minimumWork + itemsPerProbe - 1;
 }
 
 function isProbeVolumeBakeProgressShape(value: unknown): value is IProbeVolumeBakeProgress {

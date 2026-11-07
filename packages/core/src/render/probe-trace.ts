@@ -1,0 +1,514 @@
+// PRD-603: a probe refresh that traces the packed scene instead of drawing it six times.
+//
+// Unreal's radiance cache traces each probe against a scene proxy and reads the lit surface at the hit;
+// it never draws the scene again for a probe (UE 5.8.3: Engine/Shaders/Private/Lumen/LumenSoftwareRayTracing.ush:670-700).
+// Here the proxy is the GPUSceneBVH snapshot and the lit surface is a flat material table: albedo times the
+// sun through one shadow ray, plus emission, plus the previous generation of the field at the hit (the bounce).
+// A miss returns the game's sky radiance. One kernel traces every ray of the selected probes, a second projects
+// each probe's rays onto the L2 basis the atlas already stores, so sampling does not change.
+//
+// The traversal is stackless (a threaded BVH: each node carries the node to visit after it), because the owned
+// engine's TSL has loops and storage buffers but no local arrays, and refuses the upstream WGSL ray query.
+import { Color, type Material, MeshBasicMaterial, type Texture, Vector3 } from "three";
+import {
+  Break,
+  Fn,
+  If,
+  Loop,
+  Return,
+  abs,
+  clamp,
+  cross,
+  dot,
+  float,
+  floor,
+  instanceIndex,
+  int,
+  max,
+  min,
+  normalize,
+  select,
+  storage,
+  uniform,
+  vec3,
+  vec4,
+} from "three/tsl";
+import { StorageBufferAttribute } from "three/webgpu";
+import type { Node } from "three/webgpu";
+
+/** The CPU snapshot a GPUSceneBVH packs, in BVH leaf order, that the probe trace reads. */
+export interface IProbeTraceScene {
+  /** three-mesh-bvh serialized root: 8 words per node. */
+  readonly nodes: Uint32Array;
+  /** World positions, 4 floats per vertex. */
+  readonly positions: Float32Array;
+  /** Leaf-ordered triangle corners, 3 per triangle. */
+  readonly indices: Uint32Array;
+  /** Leaf-ordered material slot per triangle, an index into `materials`. */
+  readonly triangleMaterials: Uint32Array;
+  readonly materials: readonly Material[];
+}
+
+/** The sun and sky the game already holds for its daylight; the volume owns no light. */
+export interface IProbeTraceLighting {
+  /** World direction toward the sun (the light's position minus its target). */
+  readonly direction: Vector3;
+  readonly color: Color;
+  readonly intensity: number;
+  /** Radiance of a ray that leaves the scene. Black for an interior with no sky. */
+  readonly sky: Color;
+}
+
+/** What a scene BVH snapshot becomes on the GPU: a threaded node table, triangles and the material table. */
+export interface IThreadedScene {
+  /** Two vec4 per node: bounds min, bounds max. */
+  readonly bounds: Float32Array;
+  /** One ivec4 per node: next node after this one, leaf triangle offset, leaf triangle count, 1 for a leaf. */
+  readonly links: Int32Array;
+  /** Three vec4 per triangle: the corners, and the first corner's w holds the material slot. */
+  readonly triangles: Float32Array;
+  /** Two vec4 per material: albedo, emitted radiance. */
+  readonly materials: Float32Array;
+  readonly nodeCount: number;
+  /** Materials whose texture or node graph the flat table cannot read. */
+  readonly ignoredTextureMaterials: number;
+}
+
+const NODE_WORDS = 8;
+const LEAF_FLAG = 0xffff0000;
+const COUNT_MASK = 0xffff;
+
+/**
+ * Thread a three-mesh-bvh node buffer: every node gets the node a depth-first walk visits next when it
+ * skips this node's subtree (its "miss" link). A walk that follows the left child on a box hit and the miss
+ * link otherwise visits every node it must with no stack. `nodeCount` ends the walk.
+ */
+export function threadBvh(nodes: Uint32Array): {
+  bounds: Float32Array;
+  links: Int32Array;
+  nodeCount: number;
+} {
+  const nodeCount = nodes.length / NODE_WORDS;
+  if (!Number.isInteger(nodeCount) || nodeCount < 1)
+    throw new Error("threadBvh needs whole 8-word nodes.");
+  const floats = new Float32Array(nodes.buffer, nodes.byteOffset, nodes.length);
+  const bounds = new Float32Array(nodeCount * 8);
+  const links = new Int32Array(nodeCount * 4);
+  const stack: number[] = [0, nodeCount];
+  while (stack.length > 0) {
+    const miss = stack.pop() as number;
+    const node = stack.pop() as number;
+    const word = node * NODE_WORDS;
+    bounds.set(floats.subarray(word, word + 3), node * 8);
+    bounds.set(floats.subarray(word + 3, word + 6), node * 8 + 4);
+    const info = nodes[word + 7] ?? 0;
+    links[node * 4] = miss;
+    if ((info & LEAF_FLAG) !== 0) {
+      links[node * 4 + 1] = nodes[word + 6] ?? 0;
+      links[node * 4 + 2] = info & COUNT_MASK;
+      links[node * 4 + 3] = 1;
+      continue;
+    }
+    const right = node + (nodes[word + 6] ?? 0);
+    if (right <= node || right >= nodeCount)
+      throw new Error(`threadBvh: node ${node} has no valid right child.`);
+    stack.push(right, miss, node + 1, right);
+  }
+  return { bounds, links, nodeCount };
+}
+
+/** The radiance a flat material returns: albedo for the lit model, emission, and whether a texture was dropped. */
+export function flatMaterial(material: Material): {
+  albedo: Color;
+  emission: Color;
+  ignored: boolean;
+} {
+  const fields = material as Material & {
+    color?: Color;
+    emissive?: Color;
+    emissiveIntensity?: number;
+    map?: Texture | null;
+    emissiveMap?: Texture | null;
+    colorNode?: unknown;
+    emissiveNode?: unknown;
+  };
+  const color = fields.color?.clone() ?? new Color(0.5, 0.5, 0.5);
+  const ignored =
+    (fields.map ?? null) !== null ||
+    (fields.emissiveMap ?? null) !== null ||
+    (fields.colorNode ?? null) !== null ||
+    (fields.emissiveNode ?? null) !== null;
+  // An unlit material shows its colour whatever lights the scene, exactly as a cube capture records it.
+  if (material instanceof MeshBasicMaterial)
+    return { albedo: new Color(0, 0, 0), emission: color, ignored };
+  const emission = (fields.emissive?.clone() ?? new Color(0, 0, 0)).multiplyScalar(
+    fields.emissiveIntensity ?? 1,
+  );
+  return { albedo: color, emission, ignored };
+}
+
+/**
+ * Write the flat material table into `target` (2 vec4 a material) and count the materials it could not read.
+ * Returns whether any value changed, so a lamp switched on in game code restarts the refresh by itself.
+ */
+export function writeMaterialTable(
+  materials: readonly Material[],
+  target: Float32Array,
+): { changed: boolean; ignored: number } {
+  let changed = false;
+  let ignored = 0;
+  materials.forEach((material, slot) => {
+    const flat = flatMaterial(material);
+    if (flat.ignored) ignored += 1;
+    const values = [
+      flat.albedo.r,
+      flat.albedo.g,
+      flat.albedo.b,
+      0,
+      flat.emission.r,
+      flat.emission.g,
+      flat.emission.b,
+      0,
+    ];
+    values.forEach((value, offset) => {
+      if (target[slot * 8 + offset] === value) return;
+      target[slot * 8 + offset] = value;
+      changed = true;
+    });
+  });
+  return { changed, ignored };
+}
+
+/** Lay a BVH snapshot out for the trace kernel. */
+export function threadScene(scene: IProbeTraceScene): IThreadedScene {
+  const { bounds, links, nodeCount } = threadBvh(scene.nodes);
+  const triangleCount = scene.indices.length / 3;
+  const triangles = new Float32Array(Math.max(1, triangleCount) * 12);
+  for (let triangle = 0; triangle < triangleCount; triangle += 1) {
+    for (let corner = 0; corner < 3; corner += 1) {
+      const vertex = scene.indices[triangle * 3 + corner] ?? 0;
+      triangles.set(
+        scene.positions.subarray(vertex * 4, vertex * 4 + 3),
+        triangle * 12 + corner * 4,
+      );
+    }
+    triangles[triangle * 12 + 3] = scene.triangleMaterials[triangle] ?? 0;
+  }
+  const materials = new Float32Array(Math.max(1, scene.materials.length) * 8);
+  const ignoredTextureMaterials = writeMaterialTable(scene.materials, materials).ignored;
+  return { bounds, links, materials, nodeCount, triangles, ignoredTextureMaterials };
+}
+
+/** Rays per probe on a spherical Fibonacci set: even coverage, fixed order, so a refresh is deterministic. */
+export function probeRayDirections(count: number): Float32Array {
+  const directions = new Float32Array(count * 4);
+  for (let ray = 0; ray < count; ray += 1) {
+    const y = 1 - (2 * (ray + 0.5)) / count;
+    const radius = Math.sqrt(Math.max(0, 1 - y * y));
+    const phi = ray * 2.399963229728653;
+    directions.set([radius * Math.cos(phi), y, radius * Math.sin(phi), 0], ray * 4);
+  }
+  return directions;
+}
+
+type V3 = Node<"vec3">;
+// quality-allow: the kernel is arithmetic over TSL nodes, which three types per swizzle and refuses on storage elements.
+// biome-ignore lint/suspicious/noExplicitAny: three's TSL types refuse the swizzles the trace kernel reads.
+type AnyNode = any;
+
+interface IStorageSet {
+  readonly bounds: AnyNode;
+  readonly links: AnyNode;
+  readonly triangles: AnyNode;
+  readonly materials: AnyNode;
+}
+
+const RAY_EPSILON = 1e-4;
+const SURFACE_OFFSET = 1e-3;
+const INV_PI = 1 / Math.PI;
+
+/** Closest (or, with `anyHit`, first) hit along a ray through the threaded BVH. Builds graph nodes inline. */
+function traceRay(
+  buffers: IStorageSet,
+  nodeCount: AnyNode,
+  origin: AnyNode,
+  direction: AnyNode,
+  far: number,
+  anyHit: boolean,
+): { t: AnyNode; triangle: AnyNode } {
+  const best = float(far).toVar();
+  const hitTriangle = int(-1).toVar();
+  const safe = (component: AnyNode) =>
+    select(abs(component).lessThan(1e-8), float(1e8), float(1).div(component));
+  const inverse = vec3(safe(direction.x), safe(direction.y), safe(direction.z)).toVar();
+  const node = int(0).toVar();
+  Loop({ start: int(0), end: nodeCount.mul(2).add(1), type: "int", condition: "<" }, () => {
+    If(node.greaterThanEqual(nodeCount), () => Break());
+    const low = buffers.bounds.element(node.mul(2)).xyz;
+    const high = buffers.bounds.element(node.mul(2).add(1)).xyz;
+    const t0 = low.sub(origin).mul(inverse);
+    const t1 = high.sub(origin).mul(inverse);
+    const near = max(max(min(t0.x, t1.x), min(t0.y, t1.y)), min(t0.z, t1.z));
+    const exit = min(min(max(t0.x, t1.x), max(t0.y, t1.y)), max(t0.z, t1.z));
+    const boxHit = exit.greaterThanEqual(max(near, 0)).and(near.lessThan(best));
+    const link = buffers.links.element(node);
+    If(boxHit.and(link.w.equal(1)), () => {
+      Loop({ start: int(0), end: link.z, type: "int", condition: "<" }, ({ i }: { i: AnyNode }) => {
+        const triangle = link.y.add(i);
+        const a = buffers.triangles.element(triangle.mul(3)).xyz;
+        const edge1 = buffers.triangles.element(triangle.mul(3).add(1)).xyz.sub(a);
+        const edge2 = buffers.triangles.element(triangle.mul(3).add(2)).xyz.sub(a);
+        const p = cross(direction, edge2);
+        const det = dot(edge1, p);
+        const inverseDet = select(abs(det).greaterThan(1e-12), float(1).div(det), float(0));
+        const s = origin.sub(a);
+        const u = dot(s, p).mul(inverseDet);
+        const q = cross(s, edge1);
+        const v = dot(direction, q).mul(inverseDet);
+        const t = dot(edge2, q).mul(inverseDet);
+        const inside = abs(det)
+          .greaterThan(1e-12)
+          .and(u.greaterThanEqual(0))
+          .and(v.greaterThanEqual(0))
+          .and(u.add(v).lessThanEqual(1))
+          .and(t.greaterThan(RAY_EPSILON))
+          .and(t.lessThan(best));
+        If(inside, () => {
+          best.assign(t);
+          hitTriangle.assign(triangle);
+        });
+      });
+      node.assign(link.x);
+      if (anyHit) If(hitTriangle.greaterThanEqual(0), () => Break());
+    })
+      .ElseIf(boxHit, () => {
+        node.assign(node.add(1));
+      })
+      .Else(() => {
+        node.assign(link.x);
+      });
+  });
+  return { t: best, triangle: hitTriangle };
+}
+
+/** L2 irradiance for a normal from nine RGB coefficients: the same constants `ProbeVolume.sampleNode` uses. */
+function shIrradiance(coefficient: (index: number) => V3, n: V3): V3 {
+  return coefficient(0)
+    .mul(0.886227)
+    .add(coefficient(1).mul(n.y).mul(1.023328))
+    .add(coefficient(2).mul(n.z).mul(1.023328))
+    .add(coefficient(3).mul(n.x).mul(1.023328))
+    .add(coefficient(4).mul(n.x.mul(n.y)).mul(0.858086))
+    .add(coefficient(5).mul(n.y.mul(n.z)).mul(0.858086))
+    .add(coefficient(6).mul(n.z.mul(n.z).mul(0.743125).sub(0.247708)))
+    .add(coefficient(7).mul(n.x.mul(n.z)).mul(0.858086))
+    .add(
+      coefficient(8)
+        .mul(n.x.mul(n.x).sub(n.y.mul(n.y)))
+        .mul(0.429043),
+    )
+    .max(0) as V3;
+}
+
+/** The per-volume inputs of the kernels. */
+export interface IProbeTraceGrid {
+  readonly min: Vector3;
+  readonly size: Vector3;
+  readonly resolution: Vector3;
+  readonly probeCount: number;
+}
+
+/** Everything one volume dispatches: two kernels, their buffers and the uniforms the CPU updates per frame. */
+export interface IProbeTraceKernels {
+  readonly trace: AnyNode;
+  readonly project: AnyNode;
+  /** probeCount * 9 vec4: the field the volume reads back into its atlas. */
+  readonly coefficients: StorageBufferAttribute;
+  /** The flat material table, rewritten when a material changes. */
+  readonly materials: StorageBufferAttribute;
+  /** The probe indices one dispatch refreshes. */
+  readonly probeList: StorageBufferAttribute;
+  readonly batchSize: { value: number };
+  readonly sunDirection: { value: Vector3 };
+  readonly sunRadiance: { value: Vector3 };
+  readonly sky: { value: Vector3 };
+  /** 1 once a previous generation exists to bounce from. */
+  readonly bounce: { value: number };
+  readonly raysPerProbe: number;
+  readonly maxBatch: number;
+  dispose(): void;
+}
+
+/** Build the trace and projection kernels for one volume over one threaded scene. */
+export function createProbeTraceKernels(
+  scene: IThreadedScene,
+  grid: IProbeTraceGrid,
+  raysPerProbe: number,
+  maxBatch: number,
+): IProbeTraceKernels {
+  const attributes: StorageBufferAttribute[] = [];
+  const buffer = (array: Float32Array | Int32Array, itemSize: number) => {
+    const attribute = new StorageBufferAttribute(array as never, itemSize);
+    attributes.push(attribute);
+    return attribute;
+  };
+  const read = (array: Float32Array | Int32Array, type: "vec4" | "ivec4" | "int"): AnyNode => {
+    const itemSize = type === "int" ? 1 : 4;
+    return storage(buffer(array, itemSize), type, array.length / itemSize).toReadOnly();
+  };
+  const materialNode = read(scene.materials, "vec4");
+  const buffers: IStorageSet = {
+    bounds: read(scene.bounds, "vec4"),
+    links: read(scene.links, "ivec4"),
+    materials: materialNode,
+    triangles: read(scene.triangles, "vec4"),
+  };
+  const directions = read(probeRayDirections(raysPerProbe), "vec4");
+  const probeList = buffer(new Int32Array(maxBatch), 1);
+  const probes = storage(probeList, "int", maxBatch).toReadOnly() as AnyNode;
+  const radiance = buffer(new Float32Array(maxBatch * raysPerProbe * 4), 4);
+  const radianceNode = storage(radiance, "vec4", maxBatch * raysPerProbe) as AnyNode;
+  const coefficients = buffer(new Float32Array(grid.probeCount * 9 * 4), 4);
+  const coefficientNode = storage(coefficients, "vec4", grid.probeCount * 9) as AnyNode;
+
+  const nodeCount = uniform(scene.nodeCount, "int") as AnyNode;
+  const batchSize = uniform(0, "int");
+  const sunDirection = uniform(new Vector3(0, 1, 0));
+  const sunRadiance = uniform(new Vector3());
+  const sky = uniform(new Vector3());
+  const bounce = uniform(0);
+  const nx = grid.resolution.x;
+  const ny = grid.resolution.y;
+  const nz = grid.resolution.z;
+  const spacing = new Vector3(
+    grid.size.x / (nx - 1),
+    grid.size.y / (ny - 1),
+    grid.size.z / (nz - 1),
+  );
+  const volumeMin = vec3(grid.min.x, grid.min.y, grid.min.z);
+  const far = 4 * Math.max(grid.size.x, grid.size.y, grid.size.z, 1) + 1e4;
+
+  /** Trilinear L2 irradiance of the previous generation at a world point. */
+  const previousIrradiance = (point: AnyNode, normal: AnyNode): V3 => {
+    const local = clamp(
+      point.sub(volumeMin).div(vec3(spacing.x, spacing.y, spacing.z)),
+      vec3(0),
+      vec3(nx - 1, ny - 1, nz - 1),
+    );
+    const base = min(floor(local), vec3(nx - 2, ny - 2, nz - 2)).toVar();
+    const fraction = local.sub(base);
+    let sum: AnyNode = vec3(0);
+    for (let corner = 0; corner < 8; corner += 1) {
+      const dx = corner & 1;
+      const dy = (corner >> 1) & 1;
+      const dz = (corner >> 2) & 1;
+      const weight = (dx ? fraction.x : float(1).sub(fraction.x))
+        .mul(dy ? fraction.y : float(1).sub(fraction.y))
+        .mul(dz ? fraction.z : float(1).sub(fraction.z));
+      const probe = int(base.x.add(dx))
+        .add(int(base.y.add(dy)).mul(nx))
+        .add(int(base.z.add(dz)).mul(nx * ny));
+      const coefficient = (index: number) =>
+        coefficientNode.element(probe.mul(9).add(index)).xyz as V3;
+      sum = sum.add(shIrradiance(coefficient, normal).mul(weight));
+    }
+    return sum as V3;
+  };
+
+  const trace = Fn(() => {
+    const slot = int(instanceIndex).div(raysPerProbe);
+    const ray = int(instanceIndex).sub(slot.mul(raysPerProbe));
+    If(slot.greaterThanEqual(batchSize), () => Return());
+    const probe = probes.element(slot);
+    const ix = probe.mod(nx);
+    const iy = probe.div(nx).mod(ny);
+    const iz = probe.div(nx * ny);
+    const origin = volumeMin
+      .add(vec3(float(ix), float(iy), float(iz)).mul(vec3(spacing.x, spacing.y, spacing.z)))
+      .toVar();
+    const direction = directions.element(ray).xyz.toVar();
+    const hit = traceRay(buffers, nodeCount, origin, direction, far, false);
+    const result = vec3(sky).toVar();
+    If(hit.triangle.greaterThanEqual(0), () => {
+      const a = buffers.triangles.element(hit.triangle.mul(3));
+      const b = buffers.triangles.element(hit.triangle.mul(3).add(1)).xyz;
+      const c = buffers.triangles.element(hit.triangle.mul(3).add(2)).xyz;
+      const facing = normalize(cross(b.sub(a.xyz), c.sub(a.xyz))).toVar();
+      // Two-sided: the side the ray arrived from is the side that returns light.
+      If(dot(facing, direction).greaterThan(0), () => facing.assign(facing.negate()));
+      const material = int(a.w);
+      const albedo = buffers.materials.element(material.mul(2)).xyz;
+      const emission = buffers.materials.element(material.mul(2).add(1)).xyz;
+      const point = origin.add(direction.mul(hit.t)).add(facing.mul(SURFACE_OFFSET)).toVar();
+      const cosine = max(dot(facing, sunDirection), 0).toVar();
+      const visible = float(0).toVar();
+      If(cosine.greaterThan(0).and(dot(sunRadiance, vec3(1)).greaterThan(0)), () => {
+        const shadow = traceRay(buffers, nodeCount, point, sunDirection, far, true);
+        visible.assign(select(shadow.triangle.lessThan(0), float(1), float(0)));
+      });
+      const irradiance = vec3(sunRadiance)
+        .mul(cosine.mul(visible))
+        .add(previousIrradiance(point, facing).mul(bounce));
+      result.assign(emission.add(albedo.mul(irradiance).mul(INV_PI)));
+    });
+    radianceNode.element(instanceIndex).assign(vec4(result, 1));
+  })().compute(maxBatch * raysPerProbe);
+
+  const project = Fn(() => {
+    const slot = int(instanceIndex);
+    If(slot.greaterThanEqual(batchSize), () => Return());
+    const probe = probes.element(slot);
+    const sums = Array.from({ length: 9 }, () => vec3(0).toVar());
+    const add = (index: number, value: AnyNode) => (sums[index] as AnyNode).addAssign(value);
+    Loop(
+      { start: int(0), end: int(raysPerProbe), type: "int", condition: "<" },
+      ({ i }: { i: AnyNode }) => {
+        const value = radianceNode.element(slot.mul(raysPerProbe).add(i)).xyz;
+        const d = directions.element(i);
+        add(0, value.mul(0.282095));
+        add(1, value.mul(d.y.mul(0.488603)));
+        add(2, value.mul(d.z.mul(0.488603)));
+        add(3, value.mul(d.x.mul(0.488603)));
+        add(4, value.mul(d.x.mul(d.y).mul(1.092548)));
+        add(5, value.mul(d.y.mul(d.z).mul(1.092548)));
+        add(6, value.mul(d.z.mul(d.z).mul(3).sub(1).mul(0.315392)));
+        add(7, value.mul(d.x.mul(d.z).mul(1.092548)));
+        add(8, value.mul(d.x.mul(d.x).sub(d.y.mul(d.y)).mul(0.546274)));
+      },
+    );
+    const norm = (4 * Math.PI) / raysPerProbe;
+    sums.forEach((sum, index) => {
+      coefficientNode.element(probe.mul(9).add(index)).assign(vec4((sum as AnyNode).mul(norm), 0));
+    });
+  })().compute(maxBatch);
+
+  return {
+    batchSize,
+    bounce,
+    coefficients,
+    dispose: () => {
+      for (const attribute of attributes) (attribute as { dispose?: () => void }).dispose?.();
+    },
+    materials: materialNode.value as StorageBufferAttribute,
+    maxBatch,
+    probeList,
+    project,
+    raysPerProbe,
+    sky,
+    sunDirection,
+    sunRadiance,
+    trace,
+  };
+}
+
+/** Pack the lighting inputs into the kernel uniforms. */
+export function applyTraceLighting(
+  kernels: IProbeTraceKernels,
+  lighting: IProbeTraceLighting,
+): void {
+  kernels.sunDirection.value.copy(lighting.direction).normalize();
+  kernels.sunRadiance.value
+    .set(lighting.color.r, lighting.color.g, lighting.color.b)
+    .multiplyScalar(lighting.intensity);
+  kernels.sky.value.set(lighting.sky.r, lighting.sky.g, lighting.sky.b);
+}

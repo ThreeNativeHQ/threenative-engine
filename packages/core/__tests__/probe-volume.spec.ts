@@ -1,7 +1,19 @@
-import { Box3, Data3DTexture, type Mesh, Scene, Vector3, WebGPUCoordinateSystem } from "three";
+import {
+  Box3,
+  BoxGeometry,
+  Color,
+  Data3DTexture,
+  Mesh,
+  MeshBasicMaterial,
+  PerspectiveCamera,
+  Scene,
+  Vector3,
+  WebGPUCoordinateSystem,
+} from "three";
 import type { Node } from "three/webgpu";
 import { describe, expect, it, vi } from "vitest";
 import { FrameBudget } from "../src/frame-budget.js";
+import { GPUSceneBVH } from "../src/gpu-scene-bvh.js";
 import {
   ATLAS_PADDING,
   type IProbeVolumeCoefficient,
@@ -918,6 +930,172 @@ describe("ProbeVolume", () => {
       const forced = await bakeOn(device, { atlasTarget: "copy" });
       expect(forced.subject.atlasTarget).toBe("copy");
       expect(device.createTexture).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("traced refresh (PRD-603)", () => {
+    function emitterScene(): Scene {
+      const scene = new Scene();
+      const emitter = new Mesh(
+        new BoxGeometry(0.5, 0.5, 0.5),
+        new MeshBasicMaterial({ color: 0xff0000 }),
+      );
+      emitter.position.set(1, 1, 1);
+      scene.add(emitter);
+      scene.updateMatrixWorld(true);
+      return scene;
+    }
+
+    /** A renderer that runs no GPU: `readback` answers a field whose every probe holds `c0 = rgb`. */
+    function traceRenderer(rgb: readonly [number, number, number]) {
+      const compute = vi.fn();
+      const readback = vi.fn(async (attribute: { array: Float32Array }) => {
+        const field = new Float32Array(attribute.array.length);
+        for (let at = 0; at < field.length; at += 36) field.set([...rgb, 0], at);
+        return field.buffer;
+      });
+      const raw = {
+        coordinateSystem: WebGPUCoordinateSystem,
+        render: vi.fn(),
+        setRenderTarget: vi.fn(),
+      };
+      const renderer = { compute, kind: "webgpu", raw, readback } as unknown as IRendererLike;
+      return { compute, raw, readback, renderer };
+    }
+
+    function traced(options: Partial<ConstructorParameters<typeof ProbeVolume>[0]> = {}) {
+      const scene = emitterScene();
+      const sun = { color: new Color(1, 1, 1), direction: new Vector3(0, 1, 0), intensity: 0 };
+      const subject = volume({
+        report: () => undefined,
+        trace: { bvh: new GPUSceneBVH(scene), sky: new Color(0, 0, 0), sun },
+        ...options,
+      });
+      return { scene, subject, sun };
+    }
+
+    async function settle(subject: ProbeVolume, renderer: IRendererLike, frames: number) {
+      for (let frame = 0; frame < frames; frame += 1) {
+        subject.process(renderer);
+        await Promise.resolve();
+        await Promise.resolve();
+      }
+    }
+
+    it("refreshes a probe with no scene draw, where capture draws the scene six times a probe", async () => {
+      const capture = volume({ maxWorkItemsPerFrame: 1000, now: () => 0, report: () => undefined });
+      const captureRaw = webgpuRenderer();
+      const scene = emitterScene();
+      capture.attachRenderer(captureRaw);
+      const captureBake = capture.requestBake(scene);
+      for (let frame = 0; frame < 50 && capture.observation.status === "baking"; frame += 1) {
+        capture.process(captureRaw);
+        await Promise.resolve();
+      }
+      await captureBake;
+      const sceneDraws = (
+        captureRaw.raw as { render: ReturnType<typeof vi.fn> }
+      ).render.mock.calls.filter(([drawn]) => drawn === scene).length;
+      expect(sceneDraws).toBe(6 * capture.probeCount);
+      expect(capture.totalWork).toBe(capture.probeCount * 8 + 7 * capture.paddedSlices);
+
+      const { subject } = traced();
+      const { compute, raw, renderer } = traceRenderer([1, 0, 0]);
+      const bake = subject.requestBake(new Scene());
+      await settle(subject, renderer, 4);
+      await bake;
+      expect(raw.render).not.toHaveBeenCalled();
+      expect(raw.setRenderTarget).not.toHaveBeenCalled();
+      // One trace and one projection dispatch refresh all 27 probes inside the default budget of 100.
+      expect(compute).toHaveBeenCalledTimes(2);
+      expect(subject.observation).toMatchObject({
+        status: "ready",
+        update: "trace",
+        oldestProbeAgeFrames: expect.any(Number),
+      });
+      expect(readProbeVolumeObservation(subject.observation)).toBeDefined();
+      // The read-back field lands in the same atlas `sampleNode` and `sampleIrradiance` read.
+      const sample = subject.sampleIrradiance(new Vector3(1, 1, 1), new Vector3(0, 0, 1));
+      expect(sample.x).toBeCloseTo(0.886227, 5);
+      expect(sample.y).toBe(0);
+    });
+
+    it("traces at most the budget a frame and resolves the bake once every probe refreshed", async () => {
+      const { subject } = traced({ numProbesToTraceBudget: 10 });
+      const { compute, renderer } = traceRenderer([0, 1, 0]);
+      let resolved = false;
+      void subject.requestBake(new Scene()).then(() => {
+        resolved = true;
+      });
+      const traced27: number[] = [];
+      for (let frame = 0; frame < 3; frame += 1) {
+        await settle(subject, renderer, 1);
+        traced27.push(subject.observation.probesTraced ?? -1);
+        expect(readProbeVolumeObservation(subject.observation)).toBeDefined();
+      }
+      expect(traced27).toEqual([10, 10, 7]);
+      expect(compute).toHaveBeenCalledTimes(6);
+      await settle(subject, renderer, 2);
+      expect(resolved).toBe(true);
+      expect(subject.observation.bakeProgress.fraction).toBe(1);
+    });
+
+    it("keeps the old field readable while a new request refreshes it", async () => {
+      const { subject } = traced({ numProbesToTraceBudget: 5 });
+      const { renderer } = traceRenderer([2, 0, 0]);
+      const bake = subject.requestBake(new Scene());
+      await settle(subject, renderer, 8);
+      await bake;
+      void subject.requestBake(new Scene());
+      expect(subject.observation.status).toBe("baking");
+      expect(subject.observation.samplingIsolated).toBe(false);
+      expect(readProbeVolumeObservation(subject.observation)).toBeDefined();
+      expect(
+        subject.sampleIrradiance(new Vector3(1, 1, 1), new Vector3(0, 1, 0)).x,
+      ).toBeGreaterThan(1);
+    });
+
+    it("refreshes every probe by itself when the game switches a lamp off", async () => {
+      const { scene, subject } = traced({ numProbesToTraceBudget: 10 });
+      const { compute, renderer } = traceRenderer([1, 0, 0]);
+      const bake = subject.requestBake(new Scene());
+      await settle(subject, renderer, 5);
+      await bake;
+      await settle(subject, renderer, 2);
+      const before = compute.mock.calls.length;
+      ((scene.children[0] as Mesh).material as MeshBasicMaterial).color.setRGB(0, 0, 0);
+      subject.process(renderer);
+      expect(subject.observation.status).toBe("baking");
+      expect(compute.mock.calls.length).toBe(before + 2);
+      await settle(subject, renderer, 4);
+      expect(subject.observation.status).toBe("ready");
+    });
+
+    it("refreshes never-traced probes first, then the probes in view the longest since their trace", async () => {
+      // A narrow view down -z through x = 1, y = 1 sees probes 4, 13 and 22 of the 3 x 3 x 3 grid.
+      const camera = new PerspectiveCamera(10, 1, 0.1, 100);
+      camera.position.set(1, 1, 6);
+      camera.lookAt(1, 1, 0);
+      camera.updateMatrixWorld(true);
+      const lazy = volume({
+        numProbesToTraceBudget: 10,
+        report: () => undefined,
+        trace: {
+          bvh: new GPUSceneBVH(emitterScene()),
+          camera,
+          sky: new Color(0, 0, 0),
+          sun: { color: new Color(1, 1, 1), direction: new Vector3(0, 1, 0), intensity: 0 },
+        },
+      });
+      void lazy.requestBake(new Scene());
+      expect(lazy.selectStaleProbes()).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+      const { renderer } = traceRenderer([1, 1, 1]);
+      // Frames 1-3 trace probes 0-9, 10-19 and 20-26; frames 4-6 only mark the probes in view as used.
+      await settle(lazy, renderer, 6);
+      expect(lazy.observation.status).toBe("ready");
+      void lazy.requestBake(new Scene());
+      // In view, the oldest trace first (4, then 13, then 22); out of view, the oldest trace first.
+      expect(lazy.selectStaleProbes()).toEqual([4, 13, 22, 0, 1, 2, 3, 5, 6, 7]);
     });
   });
 });
