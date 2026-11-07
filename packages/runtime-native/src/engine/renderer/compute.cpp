@@ -10,6 +10,7 @@
 #include <stdexcept>
 #include <unordered_set>
 
+#include "engine/foundation/waste_counters.h"
 #include "engine/renderer/renderer.h"
 #include "engine/scene/texture.h"
 #include "engine/shader/tsl/tsl.h"
@@ -37,14 +38,14 @@ ComputePass::ComputePass(WGPUDevice device, GpuResources& gpu, const shader::Pro
         error_ = "TN_COMPUTE_PIPELINE_REFUSED";
         return;
     }
-    if (module_.uniformBlockSize) uniforms_ = gpu_.createBuffer(module_.uniformBlockSize, WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
+    if (module_.uniformBlockSize) uniforms_.push_back(gpu_.createBuffer(module_.uniformBlockSize, WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst));
 }
 
 ComputePass::~ComputePass() {
     for (const CachedGroup& cached : groups_) release(cached);
     if (layout_) wgpuBindGroupLayoutRelease(layout_);
     if (pipeline_) wgpuComputePipelineRelease(pipeline_);
-    if (module_.uniformBlockSize) gpu_.destroy(uniforms_);
+    for (const Handle block : uniforms_) gpu_.destroy(block);
 }
 
 bool ComputePass::dispatch(WGPUCommandEncoder encoder, std::span<const Handle> storage, uint32_t invocations,
@@ -62,7 +63,8 @@ bool ComputePass::dispatch(WGPUCommandEncoder encoder, std::span<const Handle> s
 }
 
 void ComputePass::dispatchValues(WGPUCommandEncoder encoder, std::span<const Handle> storage, uint32_t invocations,
-                                 const std::map<std::string, std::vector<double>>& uniforms, const FrameClock& clock, std::span<const WGPUBindGroupEntry> textures) {
+                                 const std::map<std::string, std::vector<double>>& uniforms, const FrameClock& clock, std::span<const WGPUBindGroupEntry> textures,
+                                 ComputeBatch* batch) {
     std::vector<uint8_t> block(module_.uniformBlockSize);
     for (const shader::UniformField& f : module_.uniforms) {
         // The engine's own frame clock, as the render passes get it.
@@ -80,20 +82,33 @@ void ComputePass::dispatchValues(WGPUCommandEncoder encoder, std::span<const Han
                                      std::to_string(lanes.size()) + " value(s)");
         shader::writeUniform(block, f, lanes);
     }
-    if (!pipeline_ || !encode(encoder, storage, invocations, block, textures))
+    if (!pipeline_ || !encode(encoder, storage, invocations, block, textures, batch))
         throw std::runtime_error(error_.empty() ? std::string("TN_COMPUTE_PIPELINE_REFUSED") : error_);
 }
 
 bool ComputePass::encode(WGPUCommandEncoder encoder, std::span<const Handle> storage, uint32_t invocations,
-                         const std::vector<uint8_t>& uniformBlock, std::span<const WGPUBindGroupEntry> textures) {
-    if (module_.uniformBlockSize) gpu_.writeBuffer(uniforms_, 0, uniformBlock.data(), uniformBlock.size());
+                         const std::vector<uint8_t>& uniformBlock, std::span<const WGPUBindGroupEntry> textures, ComputeBatch* batch) {
+    if (module_.uniformBlockSize) {
+        // Every queue write lands before the batch's one command buffer runs: a value set this batch already
+        // bound reuses its block, and a new one takes the next slot rather than overwrite one a dispatch reads.
+        bool write = true;
+        if (!batch) slot_ = 0, batchSerial_ = 0;
+        else if (batch->serial != batchSerial_) batchSerial_ = batch->serial, slot_ = 0;
+        else if (uniformBlock == slotBlock_) write = false;
+        else if (++slot_ == uniforms_.size())
+            uniforms_.push_back(gpu_.createBuffer(module_.uniformBlockSize, WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst));
+        if (write) {
+            gpu_.writeBuffer(uniforms_[slot_], 0, uniformBlock.data(), uniformBlock.size());
+            slotBlock_ = uniformBlock;
+        }
+    }
     std::vector<WGPUBindGroupEntry> entries;
     size_t next = 0;
     for (const shader::Binding& b : module_.bindings) {
         WGPUBindGroupEntry e = {};
         e.binding = b.binding;
         if (b.kind == shader::BindingKind::Uniform) {
-            e.buffer = gpu_.buffer(uniforms_);
+            e.buffer = gpu_.buffer(uniforms_[slot_]);
             e.size = module_.uniformBlockSize;
         } else if (b.kind == shader::BindingKind::Storage) {
             if (next >= storage.size() || gpu_.buffer(storage[next]) == nullptr) {
@@ -121,14 +136,21 @@ bool ComputePass::encode(WGPUCommandEncoder encoder, std::span<const Handle> sto
         error_ = "TN_COMPUTE_BINDING: the device refused the bind group";
         return false;
     }
-    WGPUComputePassDescriptor passDesc = {};
-    WGPUComputePassEncoder pass = beginTimedComputePass(encoder, &passDesc);
+    WGPUComputePassEncoder pass = batch ? batch->pass : nullptr;
+    if (!pass) {
+        WGPUComputePassDescriptor passDesc = {};
+        pass = beginTimedComputePass(encoder, &passDesc);
+        waste::debugAdd(waste::counters().computePasses);
+        if (batch) batch->pass = pass;
+    }
+    waste::debugAdd(waste::counters().computeDispatches);
     wgpuComputePassEncoderSetPipeline(pass, pipeline_);
     wgpuComputePassEncoderSetBindGroup(pass, 0, group, 0, nullptr);
     // One row of at most 65535 workgroups; a longer dispatch stacks rows, which instanceIndex folds back.
     const uint64_t groups = (static_cast<uint64_t>(invocations) + workgroup_ - 1) / workgroup_;
     const uint32_t across = static_cast<uint32_t>(std::min<uint64_t>(groups, 65535));
     wgpuComputePassEncoderDispatchWorkgroups(pass, across, across == 0 ? 1 : static_cast<uint32_t>((groups + across - 1) / across), 1);
+    if (batch) return true;  // the batch's owner ends the pass
     wgpuComputePassEncoderEnd(pass);
     wgpuComputePassEncoderRelease(pass);
     return true;
@@ -379,7 +401,8 @@ ComputePass& GraphCompute::prepare(const graph::Node& node) {
     return *passes_.emplace(id, std::move(pass)).first->second;
 }
 
-std::vector<WGPUBuffer> GraphCompute::record(WGPUCommandEncoder encoder, const ComputeDispatch& dispatch, const FrameClock& clock, Renderer& renderer) {
+std::vector<WGPUBuffer> GraphCompute::record(WGPUCommandEncoder encoder, const ComputeDispatch& dispatch, const FrameClock& clock, Renderer& renderer,
+                                             ComputeBatch* batch) {
     ComputePass& pass = prepare(dispatch.node);
     std::unordered_map<std::string, std::shared_ptr<BufferAttribute>> attributes;
     collectStorages(dispatch.node, attributes);
@@ -410,7 +433,7 @@ std::vector<WGPUBuffer> GraphCompute::record(WGPUCommandEncoder encoder, const C
         else entry.textureView = gpu->view;
         textures.push_back(entry);
     }
-    pass.dispatchValues(encoder, storage, static_cast<uint32_t>(dispatch.node->bits), dispatch.uniforms, clock, textures);
+    pass.dispatchValues(encoder, storage, static_cast<uint32_t>(dispatch.node->bits), dispatch.uniforms, clock, textures, batch);
     std::vector<WGPUBuffer> reads{pass.uniformBuffer()};
     for (const Handle handle : storage) reads.push_back(gpu_.buffer(handle));
     return reads;
@@ -453,18 +476,21 @@ void ComputeQueue::flush(Renderer& renderer, const std::function<void(const std:
     // Items queued while this runs (a completion callback never runs inside it) wait for the next flush.
     std::vector<Item> items;
     items.swap(items_);
-    for (Item& item : items) {
-        if (item.release) {
+    std::vector<ComputeDispatch> run;
+    for (size_t i = 0; i < items.size(); ++i) {
+        Item& item = items[i];
+        if (!item.attribute) {
+            // A run of dispatches records one compute pass; the next readback or release ends it.
+            run.push_back(std::move(item.dispatch));
+            if (i + 1 == items.size() || items[i + 1].attribute) {
+                renderer.dispatchCompute(run, failed);
+                run.clear();
+            }
+        } else if (item.release) {
             renderer.releaseStorage(*item.attribute);
         } else if (item.attribute) {
             const GpuStatus status = renderer.readStorage(*item.attribute, item.done);
             if (status != GpuStatus::Ok) item.done(status, {});
-        } else {
-            try {
-                renderer.dispatchCompute(item.dispatch);
-            } catch (const std::exception& error) {
-                failed(error.what());
-            }
         }
     }
 }

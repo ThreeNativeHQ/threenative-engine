@@ -56,8 +56,10 @@ const ENGINE_GUARD_CHUNK = 2048;
  * compares it in place, so a lap of 8,000 sources fits the budget the JS slice spent on 200.
  */
 interface IEngineGuard {
-  __tnGuardWatch(sources: readonly Mesh[]): number;
+  __tnGuardWatch(sources: readonly Mesh[], ancestors?: readonly Object3D[]): number;
   __tnGuardCheck(limit: number): ArrayLike<number>;
+  /** PRD-828: the sources' ancestors, checked whole in the engine; absent on an older engine. */
+  __tnGuardCheckAncestors?(): ArrayLike<number>;
 }
 
 function engineGuardOf(scene: Object3D): IEngineGuard | undefined {
@@ -340,6 +342,8 @@ export class AutoBatch {
   readonly #excluded = new WeakSet<Object3D>();
   #records: IRecord[] = [];
   readonly #ancestors = new Map<Object3D, IAncestor>();
+  /** The ancestors in the order the engine's guard watches them, so its indices name them. */
+  #watchedAncestors: Object3D[] = [];
   #watched = new Map<Mesh, Float64Array>();
   #state: State = "idle";
   #known = Number.NaN;
@@ -461,8 +465,8 @@ export class AutoBatch {
   reset(): void {
     for (const record of this.#records) if (!record.out) this.#giveBack(record);
     this.#records = [];
-    this.#watchEngine();
     this.#ancestors.clear();
+    this.#watchEngine();
     this.#watched.clear();
     this.#state = "idle";
     this.#known = Number.NaN;
@@ -674,15 +678,33 @@ export class AutoBatch {
   /** Every frame, because there are few ancestors and one moved parent changes thousands of sources. */
   #checkAncestors(): number {
     let given = 0;
+    const engine = this.#engine;
+    if (engine?.__tnGuardCheckAncestors !== undefined) {
+      const changed = engine.__tnGuardCheckAncestors();
+      for (let at = 0; at < changed.length; at += 1) {
+        const node = this.#watchedAncestors[changed[at] as number];
+        if (node !== undefined) given += this.#giveBackUnder(node);
+      }
+      return given;
+    }
     for (const [node, entry] of this.#ancestors) {
       if (node.parent === entry.parent && stampMatches(node, entry.stamp)) continue;
-      this.#excluded.add(node);
-      this.#ancestors.delete(node);
-      for (const record of entry.records) {
-        if (record.out) continue;
-        this.#giveBack(record);
-        given += 1;
-      }
+      given += this.#giveBackUnder(node);
+    }
+    return given;
+  }
+
+  /** An ancestor moved: it never merges again, and every source under it goes back to the game. */
+  #giveBackUnder(node: Object3D): number {
+    const entry = this.#ancestors.get(node);
+    if (entry === undefined) return 0;
+    let given = 0;
+    this.#excluded.add(node);
+    this.#ancestors.delete(node);
+    for (const record of entry.records) {
+      if (record.out) continue;
+      this.#giveBack(record);
+      given += 1;
     }
     return given;
   }
@@ -692,7 +714,12 @@ export class AutoBatch {
    * and each give-back, so no game code runs between the state merged and the state watched.
    */
   #watchEngine(): void {
-    this.#engine?.__tnGuardWatch(this.#records.map((record) => record.mesh));
+    if (this.#engine === undefined) return;
+    this.#watchedAncestors = [...this.#ancestors.keys()];
+    this.#engine.__tnGuardWatch(
+      this.#records.map((record) => record.mesh),
+      this.#watchedAncestors,
+    );
   }
 
   /** A slice of the sources bounded by {@link GUARD_BUDGET_MS}, or all of them under `everyFrame`. */

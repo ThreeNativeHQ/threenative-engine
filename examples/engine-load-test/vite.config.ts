@@ -98,7 +98,17 @@ function axesEnvironment(): Record<string, string | undefined> {
   };
 }
 
+// The web-engine arm runs the owned Wasm engine, which starts worker threads and therefore needs the
+// page cross-origin isolated; without these it refuses with TN_WEB_THREADS_OFF. Microsecond CPU spans
+// need the isolated clock too. The plain-Three arm is unaffected by headers it does not use.
+const isolation = {
+  "Cross-Origin-Embedder-Policy": "require-corp",
+  "Cross-Origin-Opener-Policy": "same-origin",
+};
+
 export default defineConfig({
+  server: { headers: isolation },
+  preview: { headers: isolation },
   plugins: native
     ? []
     : [

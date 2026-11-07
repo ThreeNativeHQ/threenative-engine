@@ -77,6 +77,30 @@ describe("stress-fair (PRD-770)", () => {
       /different builds/u,
     );
   });
+
+  // PRD-828 AC-1 measures the JS frame stages, and a window measures an arm twice: the pooled report has
+  // to carry one number per stage, or the bar is decided by which run happened to be first.
+  it("pools the frame stages across the valid runs", () => {
+    const run = (update: number, stages: Record<string, number> | undefined) => ({
+      url: "u",
+      load: [3],
+      build: { kind: "wasm", sha256: "aaaaaaaaaaaa", commit: "c" },
+      report: { metrics: { fps: 60 }, counts: {}, stages },
+    });
+    const all = { jsBefore: 2.06, update: 2.34, engineJs: 0.78, residual: 0.39 };
+    const pooled = poolRuns([run(2.34, all), run(2.46, { ...all, update: 2.46 })]);
+    expect(pooled?.report.stages).toEqual({
+      jsBefore: 2.06,
+      update: 2.4,
+      engineJs: 0.78,
+      residual: 0.39,
+    });
+    // A stage only one run measured is that run's value, never null and never zero.
+    const partial = poolRuns([run(2, { update: 2 }), run(4, { update: 4, residual: 0.5 })]);
+    expect(partial?.report.stages).toEqual({ update: 3, residual: 0.5 });
+    // An arm whose report carries no stages keeps none: absent, never zero.
+    expect(poolRuns([run(2, undefined), run(3, undefined)])?.report.stages).toBeUndefined();
+  });
   it("starts a run only after the GPU stays under 10% for 5 s, and refuses after the timeout", async () => {
     let at = 0;
     const clockOf = {

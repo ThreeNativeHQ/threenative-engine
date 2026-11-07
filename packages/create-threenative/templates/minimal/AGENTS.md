@@ -55,6 +55,7 @@ pnpm test                    # typecheck, lint, format, then every playtest
 pnpm build --target desktop  # also: web, android, ios
 pnpm studio                  # open the game in Studio
 npx threenative doctor       # build, import, device or blank-frame failure
+npx threenative doctor --fix # refresh agent files
 ```
 <!-- /shared -->
 
@@ -96,6 +97,7 @@ Each is on by default with a named override. Detail: `node_modules/create-threen
 - **Scene change** `#scene-change`: `ctx.goto(name)` keeps state. Override: `game.goto(name)` resets state.
 - **Randomness** `#seed`: unseeded. Override: `defineGame({ seed })`.
 - **Engine** `#engine`: owned C++ engine. Override: `engine: "threejs"` only when the user asks. Marker: `TN_NATIVE_ENGINE_UNBOUND`.
+- **Refused imports** `#engine-catalog`: refused `three` imports fail at their line. Override: `createEngineCatalogPlugin({ mode: "warn" })`. Marker: `TN_ENGINE_CATALOG`.
 <!-- /shared -->
 
 <!-- shared: kit-stuck -->

@@ -985,6 +985,31 @@ describe("threenative doctor command", () => {
     expect(JSON.parse(written.join("")).pass).toBe(false);
   });
 
+  it("warns on an authoring layer an older create-threenative stamped, naming both versions (PRD-829)", async () => {
+    const { createProject } = await import("../src/index.js");
+    const { makeTempDir } = await import("../../../test-support/temp-dir.js");
+    const root = await makeTempDir("tn-doctor-layer-");
+    const { target } = await createProject(
+      { install: false, target: "older", template: "starter" },
+      root,
+    );
+    const stampPath = path.join(target, ".threenative/agent-files.json");
+    const stamp = JSON.parse(await readFile(stampPath, "utf8")) as { createThreenative: string };
+    const installed = stamp.createThreenative;
+    await writeFile(stampPath, JSON.stringify({ ...stamp, createThreenative: "0.2.15" }));
+    await writeFile(path.join(target, "AGENTS.md"), "# AGENTS.md — older starter\n");
+    const check = diagnoseProject(await readProject(target)).checks.find(
+      ({ name }) => name === "authoring layer",
+    );
+    expect(check?.status).toBe("warn");
+    expect(check?.detail).toBe(
+      `stamp 0.2.15, installed create-threenative ${installed} (starter kit): 1 stale file`,
+    );
+    expect(check?.fix).toContain("threenative doctor --fix");
+    const { cliHelp } = await import("../src/threenative.js");
+    expect(cliHelp("doctor")).toContain("pnpm up --latest create-threenative");
+  });
+
   it("names doctor in the top-level help", async () => {
     const { cliHelp } = await import("../src/threenative.js");
     expect(cliHelp()).toMatch(/doctor/);

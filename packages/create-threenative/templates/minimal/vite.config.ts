@@ -1,5 +1,6 @@
 import { watchAssets } from "@threenative/assets";
 import {
+  createEngineCatalogPlugin,
   createEngineFreshnessPlugin,
   createWebBrandPlugin,
   webRuntimeDecoders,
@@ -31,7 +32,12 @@ function assetsWatchPlugin(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [createEngineFreshnessPlugin(), createWebBrandPlugin(), assetsWatchPlugin()],
+  plugins: [
+    createEngineFreshnessPlugin(),
+    createWebBrandPlugin(),
+    createEngineCatalogPlugin(),
+    assetsWatchPlugin(),
+  ],
   server: {
     watch: {
       ignored: ["**/artifacts/**", "**/screenshots/**", "**/playtests/**"],

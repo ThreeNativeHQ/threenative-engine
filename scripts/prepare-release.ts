@@ -250,7 +250,7 @@ export function syncSourceVersions(repo: string, versions: ReadonlyMap<string, s
       `export const version = ${JSON.stringify(coreVersion)};`,
     ],
     [
-      path.join(repo, "packages/create-threenative/src/doctor.ts"),
+      path.join(repo, "packages/create-threenative/src/mcp-servers.ts"),
       /const CORE_PACKAGE_VERSION = "[^"]+";/u,
       `const CORE_PACKAGE_VERSION = ${JSON.stringify(coreVersion)};`,
     ],
