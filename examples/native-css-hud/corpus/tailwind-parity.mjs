@@ -1463,7 +1463,7 @@ if (panels.length === 0) {
 
 /** Byte equality: a subject that repaints differently twice cannot be compared at all. */
 const same = (a, b) => a.length === b.length && Buffer.compare(a, b) === 0;
-const MOTION = /animation/u;
+const MOTION = /animation|transition|@starting-style/u;
 
 rmSync(outRoot, { force: true, recursive: true });
 site = await serveWeb();
@@ -1483,7 +1483,7 @@ try {
     // compared with one that does, and a difference would otherwise read as a parity gap. A panel
     // with a running keyframe animation is compared by the motion bar at fixed times instead.
     if (!motion) {
-      const webAgain = await webPanel(panel);
+      const webAgain = await webPanel(panel, { drive });
       const nativeAgain = cratePanel(panel, join(dir, "native-again"), { drive });
       if (!same(web.png.data, webAgain.png.data)) {
         throw new Error(`TN_PARITY_NONDETERMINISTIC Chromium painted ${panel.id} twice differently`);
