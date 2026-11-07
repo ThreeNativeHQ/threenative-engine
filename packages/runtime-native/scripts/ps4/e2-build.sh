@@ -182,6 +182,10 @@ git apply "$SCRIPTS/patches/0041-opengnm-psbc-no-s-lshr-b64.patch"
 # The same emulator gap for S_OR_SAVEEXEC_B64 (shadPS4 has the AND and ORN2
 # forms only). A pass after lower_branches rewrites it as s_mov_b64 + s_or_b64.
 git apply "$SCRIPTS/patches/0042-opengnm-psbc-no-s-or-saveexec.patch"
+# Varyings by slot: VS export and PS input semantics were dense indices (15 + i), so a pixel shader
+# that reads a subset of the VS outputs could not be matched to them. Both now carry the varying slot
+# (SPIR-V location), VS exports the parameter radv assigned, PS inputs a flat bit (PRD-784 P4-3).
+git apply "$SCRIPTS/patches/0046-opengnm-psbc-varying-slot-semantics.patch"
 
 # === 3. opengnm (orbis) ======================================================
 cd "$SRC/opengnm"
@@ -472,6 +476,9 @@ git apply "$SCRIPTS/patches/0044-vk-ps4-wait-counters.patch"
 # (shadPS4 then read garbage PM4). Uploads into tiled (DISPLAY_2D_THIN) surfaces are tiled on the CPU
 # with sceGpaTileSurfaceRegion; linear row DMA scrambled them. Depth mips stay level 0.
 git apply "$SCRIPTS/patches/0045-vk-ps4-mip-levels.patch"
+# SPI_PS_INPUT_CNTL was never programmed, so a lit material's pixel shader read its UVs from another
+# varying (flat floor, no grid). Bind now matches PS inputs to VS exports by slot (PRD-784 P4-3).
+git apply "$SCRIPTS/patches/0047-vk-ps4-ps-input-cntl.patch"
 # The Makefile compiles TEST_SRC relative to the vulkan-ps4 tree.
 cp "$SCRIPTS/e2-triangle.c" "$SRC/e2-triangle.c"
 make -f Makefile.orbis -j"$JOBS" TEST_SRC=../e2-triangle.c self > "$LOGS/e2-triangle.log" 2>&1
