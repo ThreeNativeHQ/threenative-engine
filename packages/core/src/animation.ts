@@ -1391,10 +1391,6 @@ export class AnimationPlayer {
     if (action.paused) return false;
     // Deferred per-action time is integrated below in JS; the batch takes the frame's own interval.
     if (this.#pendingActionTimes.size !== 0) return false;
-    // A held tick of a clip whose measurement only reports pays nothing today: it banks its dt.
-    const reportOnly =
-      this.#strideReportOnlyFor !== undefined && this.#strideReportOnlyFor === name;
-    if (!this.#evaluated && reportOnly) return false;
     if (this.mixer instanceof LoopAwareAnimationMixer && this.mixer.hasPublicListeners)
       return false;
     if (animationTickExecutor() === undefined) return false;
