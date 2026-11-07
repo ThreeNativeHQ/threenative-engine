@@ -15,6 +15,7 @@ import * as upstreamWebGPU from "three-mesh-bvh/webgpu";
 import { storage } from "three/tsl";
 import { StorageBufferAttribute, type StorageBufferNode, type StructTypeNode } from "three/webgpu";
 import type { IComputeDriven } from "./compute-driven.js";
+import { buildCpuBvh } from "./render/cpu-bvh.js";
 import type { IProbeTraceScene } from "./render/probe-trace.js";
 import type { IRendererLike } from "./renderer.js";
 
@@ -288,7 +289,7 @@ function materialGroupsFor(materials: Uint32Array): IGPUSceneBVHMaterialGroup[] 
  * it, so a leaf's triangle offset and the material ranges address the same layout.
  */
 function permuteToLeafOrder(
-  bvh: MeshBVH,
+  resolveTriangleIndex: (slot: number) => number,
   sourceIndices: Uint32Array,
   sourceMaterials: readonly number[],
   sourceSlots: readonly number[],
@@ -298,7 +299,7 @@ function permuteToLeafOrder(
   const materials = new Uint32Array(triangleCount);
   const slots = new Uint32Array(triangleCount);
   for (let slot = 0; slot < triangleCount; slot += 1) {
-    const triangle = bvh.resolveTriangleIndex(slot);
+    const triangle = resolveTriangleIndex(slot);
     indices[slot * 3] = sourceIndices[triangle * 3] ?? 0;
     indices[slot * 3 + 1] = sourceIndices[triangle * 3 + 1] ?? 0;
     indices[slot * 3 + 2] = sourceIndices[triangle * 3 + 2] ?? 0;
@@ -306,6 +307,35 @@ function permuteToLeafOrder(
     slots[slot] = sourceSlots[triangle] ?? 0;
   }
   return { indices, materialGroups: materialGroupsFor(materials), slots };
+}
+
+/**
+ * The BVH nodes and leaf order. Upstream `MeshBVH` builds them where it builds a tree; the owned engine's
+ * `MeshBVH` refuses the build options and holds no tree, so a CPU build (`render/cpu-bvh.ts`) stands in.
+ */
+function buildNodes(
+  geometry: BufferGeometry,
+  positions: Float32Array,
+  indices: Uint32Array,
+): { nodes: Uint32Array; resolveTriangleIndex: (slot: number) => number } {
+  try {
+    const bvh = new MeshBVH(geometry, {
+      indirect: true,
+      strategy: SAH,
+      targetLeafSize: 10,
+      verbose: false,
+    });
+    const root = MeshBVH.serialize(bvh, { cloneBuffers: false }).roots[0];
+    if (root === undefined) throw new Error("GPUSceneBVH could not serialize its root node.");
+    return {
+      nodes: new Uint32Array(root),
+      resolveTriangleIndex: (slot) => bvh.resolveTriangleIndex(slot),
+    };
+  } catch (error) {
+    if (!String((error as Error).message).includes("TN_NATIVE_MESH_BVH")) throw error;
+    const built = buildCpuBvh(positions, indices);
+    return { nodes: built.nodes, resolveTriangleIndex: (slot) => built.order[slot] as number };
+  }
 }
 
 function packScene(scene: Object3D, include: (object: Mesh) => boolean): IPackedScene {
@@ -343,18 +373,10 @@ function packScene(scene: Object3D, include: (object: Mesh) => boolean): IPacked
   if (state.indices.length > 0) {
     // Indirect keeps `geometry.index` in source order, so the material assignment collected above
     // still lines up with it; the leaf order is then applied to both at once below.
-    const bvh = new MeshBVH(geometry, {
-      indirect: true,
-      strategy: SAH,
-      targetLeafSize: 10,
-      verbose: false,
-    });
-    const serialized = MeshBVH.serialize(bvh, { cloneBuffers: false });
-    const root = serialized.roots[0];
-    if (root === undefined) throw new Error("GPUSceneBVH could not serialize its root node.");
-    nodes = new Uint32Array(root);
+    const built = buildNodes(geometry, tightPositions, sourceIndices);
+    nodes = built.nodes;
     const permuted = permuteToLeafOrder(
-      bvh,
+      built.resolveTriangleIndex,
       sourceIndices,
       state.triangleMaterials,
       state.triangleSlots,

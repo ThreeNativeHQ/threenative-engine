@@ -19,6 +19,7 @@ import { color } from "three/tsl";
 import { MeshBasicNodeMaterial } from "three/webgpu";
 import { describe, expect, it } from "vitest";
 import { GPUSceneBVH } from "../src/gpu-scene-bvh.js";
+import { buildCpuBvh } from "../src/render/cpu-bvh.js";
 import {
   type IThreadedScene,
   applyTraceLighting,
@@ -264,5 +265,46 @@ describe("point lights in the trace lighting (PRD-831)", () => {
     expect(kernels.points[1]?.radiance.value.toArray()).toEqual([0, 0, 0]);
     applyTraceLighting(kernels, { ...lighting, points: undefined });
     expect(kernels.points[0]?.radiance.value.toArray()).toEqual([0, 0, 0]);
+  });
+});
+
+describe("the CPU BVH for an engine whose MeshBVH builds no tree (PRD-831)", () => {
+  it("finds the same closest hit as every triangle tested, for 300 rays", () => {
+    const geometry = new TorusKnotGeometry(1, 0.3, 64, 8);
+    const source = geometry.getAttribute("position").array as Float32Array;
+    const index = Uint32Array.from(geometry.getIndex()?.array ?? []);
+    const { nodes, order } = buildCpuBvh(source, index);
+    const ordered = new Uint32Array(index.length);
+    order.forEach((triangle, slot) => {
+      ordered.set(index.subarray(triangle * 3, triangle * 3 + 3), slot * 3);
+    });
+    const padded = new Float32Array((source.length / 3) * 4);
+    for (let vertex = 0; vertex < source.length / 3; vertex += 1)
+      padded.set(source.subarray(vertex * 3, vertex * 3 + 3), vertex * 4);
+    const scene = threadScene({
+      indices: ordered,
+      materials: [new MeshStandardMaterial()],
+      nodes,
+      positions: padded,
+      triangleMaterials: new Uint32Array(index.length / 3),
+    });
+    expect([...order].sort((a, b) => a - b)).toEqual(
+      Array.from({ length: index.length / 3 }, (_, i) => i),
+    );
+    let seed = 7;
+    const random = () => {
+      seed = (seed * 1664525 + 1013904223) >>> 0;
+      return seed / 2 ** 32;
+    };
+    let hits = 0;
+    for (let ray = 0; ray < 300; ray += 1) {
+      const origin = new Vector3(random() * 8 - 4, random() * 8 - 4, random() * 8 - 4);
+      const direction = new Vector3(random() - 0.5, random() - 0.5, random() - 0.5).normalize();
+      const expected = bruteForce(scene, origin, direction);
+      const found = walk(scene, origin, direction).t;
+      if (Number.isFinite(expected)) hits += 1;
+      expect(found).toBeCloseTo(expected, 4);
+    }
+    expect(hits).toBeGreaterThan(10);
   });
 });
