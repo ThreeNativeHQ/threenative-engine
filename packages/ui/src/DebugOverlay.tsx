@@ -1,4 +1,4 @@
-import { DEV_GLOBAL_KEY, devGlobal } from "@threenative/core";
+import { devGlobal } from "@threenative/core";
 import type {
   GeometryCaptureSort,
   IGeometryCaptureReport,

@@ -232,4 +232,3 @@ dist-one-spell/
 /packages/create-threenative/capabilities.json
 /packages/create-threenative/agent-docs/references/capability-reference.md
 /packages/create-threenative/agent-files/.agents/skills/threenative-context/SKILL.md
-/scripts/api-surface.json

@@ -13,7 +13,6 @@
  * @situation measure what a scene's environment actually contributes
  * @situation sample the environment on the GPU without stalling the frame
  * @situation keep an environment readback from reaching a frame it does not belong to
- * @situation add a backlit sheen to a material without editing the material graph
  */
 export {
   type IEnvironmentMeasurement,

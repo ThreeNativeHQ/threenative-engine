@@ -43,6 +43,12 @@ export function devGlobal(scope: unknown): DevGlobal | undefined {
 export function publishDevGlobal(name: string, value: unknown, scope: unknown): void {
   const host = scope as Record<string, unknown> | undefined;
   if (host === undefined) return;
-  const current = devGlobal(scope) ?? {};
-  host[DEV_GLOBAL_KEY] = { ...current, [name]: value };
+  // In place: a surface that published earlier keeps its identity, which is what lets a disposer
+  // check `devGlobal(host) === mine` and leave another surface's members alone.
+  const current = devGlobal(scope);
+  if (current !== undefined) {
+    current[name] = value;
+    return;
+  }
+  host[DEV_GLOBAL_KEY] = { [name]: value };
 }

@@ -40,11 +40,10 @@ pnpm api:surface:sync
 # five silent files, and how a worktree came to hold changes nobody wrote.
 git add -- packages/core/capabilities.json
 
-derived=$(git diff --name-only -- \
+derived=$(git status --porcelain -- \
   packages/create-threenative/capabilities.json \
   packages/create-threenative/agent-docs/references/capability-reference.md \
-  packages/create-threenative/agent-files/.agents/skills/threenative-context/SKILL.md \
-  scripts/api-surface.json)
+  packages/create-threenative/agent-files/.agents/skills/threenative-context/SKILL.md)
 if [[ -n "$derived" ]]; then
   # Fail closed rather than commit them behind the author's back: they are in the tree, so the
   # commit is one `git add` away, and the message says which files and why.
