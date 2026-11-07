@@ -56,12 +56,15 @@ Engine facts behind the gaps:
 tailwind-parity: 118/503 (23.5 %)  [312 do not discriminate, 31 exempt, 4 permanently inactive, 15 refused]
 ```
 
-A cell is evidence only when it discriminates (see Meter, item 3). The 312 non-discriminating cells are the scene's own staging gaps; the 31 pending exemptions are unproven
-units their owner PRD removes; the 15 refused stages are the engine's closed `TAGS` list and a
-multicolumn panel it does not finish. The `480` an unconditional "cells whose pixels match" comparison reports
-overstates what is proven, and a pixel-only discrimination test understates it (it misses a unit
-that only moves a box):
-`118/503` is what this meter can defend.
+A cell is evidence only when it discriminates (see Meter, item 3). The 312 non-discriminating cells
+are the scene's own staging gaps; the 31 pending exemptions are unproven units their owner PRD
+removes; the 15 refused stages are the engine's closed `TAGS` list and a multicolumn panel it does
+not finish.
+
+For comparison, `427/507` cells have matching pixels *and* boxes, but 13 of those are exempt or
+refused and 3 change nothing, so a pixel comparison overstates what is proven; a pixel-only
+discrimination test understates it, because it misses a unit that only moves a box. `118/503` is
+what this meter can defend.
 
 ## PRDs
 

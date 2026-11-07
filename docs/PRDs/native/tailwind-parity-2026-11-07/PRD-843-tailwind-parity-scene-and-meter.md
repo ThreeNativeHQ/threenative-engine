@@ -172,19 +172,24 @@ tailwind-parity: 118/503 (23.5 %)  [312 do not discriminate, 31 exempt, 4 perman
 - 2026-11-07 (agent): **a cell is measured over the probe's own box**, not the 320×240 cell. The probe
   is about 6 % of the cell, and a dropped 40-level colour change still scores SSIM 0.987 over the
   whole cell — the bar cannot see it. The region is the probe's box plus 20 px for what escapes it
-  (a ring, an outline, a shadow), clamped inside the cell; the glyph bar comes from the probe's
-  subtree rather than the cell's label, so the 0.99 bar applies where nothing draws glyphs.
+  (a ring, an outline, a shadow), clamped inside the cell and never reaching into the cell's 26 px
+  label band. The glyph bar comes from the probe's subtree rather than the cell's label, so the
+  0.99 bar applies where the probe draws no glyph — except in the 31 scroll cells, whose region holds
+  the filler text "Row 1/2" that the probe-subtree test does not see.
 - 2026-11-07 (agent): **the score counts evidence only.** A *pending* exemption stays in the
   denominator and counts as a failure; the four units the batch's decisions make permanently
   inactive leave it; and a cell that does not discriminate fails. This Decision supersedes the first
   draft's rule, which excluded every exemption from the denominator: that hid 25 engine gaps
   (21 form states, 3 container queries, `@starting-style`) inside a smaller number. The measured
-  values are `118/503` with the per-cell edge check, `117/503` with a pixel-only test, and
-  `480/507` for counting every cell whose pixels match. The last two are not coverage: the pixel-only
-  test misses a unit that only moves a box, and the unconditional one counts nine tenths of the
-  scene. A panel-wide edge test is also wrong — the strip arm removes every probe's class at once, so
-  a neighbouring cell that moves would mark its neighbours as discriminating; the check is limited
-  to the cell's own elements, which is what turned 176 into 118.
+  values are `118/503` with the per-cell edge check, `117/503` with a pixel-only test, `427/507`
+  for cells whose pixels and edges both match, and `507/507` for cells a naive equality test would
+  call "identical" once its own exemption and vacuity arms are ignored. Only the first is coverage:
+  the pixel-only test misses a unit that only moves a box, and a pixel match without a
+  discrimination test counts cells that cannot tell a correct engine from a dropped declaration —
+  35 exempt, 15 refused, and 3 that match while changing nothing. A panel-wide edge test is also
+  wrong — the strip arm removes every probe's class at once, so a neighbouring cell that moves would
+  mark its neighbours as discriminating; the check is limited to the cell's own elements, which is
+  what turned 176 into 118.
 - 2026-11-07 (agent): **a unit that only sets custom properties is staged with the utility that reads
   them** (`from-red-500` with `bg-linear-to-r`, `--tw-ring-*` with `ring`). Alone it paints nothing,
   and that is a fact about Tailwind rather than a gap in the engine.
