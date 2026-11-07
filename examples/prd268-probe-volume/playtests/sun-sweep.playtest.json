@@ -1,0 +1,50 @@
+{
+  "name": "prd603-sun-sweep",
+  "schemaVersion": 1,
+  "subject": "a 10 degree sun sweep re-traces the field on each degree step and spends at most a quarter of the frames refreshing",
+  "target": "web",
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 0,
+  "artifacts": { "screenshots": false },
+  "steps": [
+    {
+      "kind": "click",
+      "at": { "x": 1, "y": 1 },
+      "label": "sweep-the-sun",
+      "waitFrames": 900,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "GameState",
+        "path": "probe.update",
+        "equals": "trace",
+        "allowTrivial": "the mode is fixed by the URL; this holds it"
+      },
+      { "id": "GameState", "path": "probe.sweepFrames", "gte": 600, "changed": true },
+      { "id": "GameState", "path": "probe.sweepSteps", "gte": 8, "changed": true },
+      {
+        "id": "GameState",
+        "path": "probe.sweepSteps",
+        "lte": 12,
+        "allowTrivial": "0 before the sweep is below the bound; the gte assertion proves the sweep ran"
+      },
+      { "id": "GameState", "path": "probe.sweepRefreshFrames", "gte": 1, "changed": true },
+      { "id": "GameState", "path": "probe.sweepDuty", "gte": 0.001, "changed": true },
+      {
+        "id": "GameState",
+        "path": "probe.sweepDuty",
+        "lte": 0.25,
+        "allowTrivial": "0 before the sweep is below the bound; the gt assertion proves the sweep ran"
+      }
+    ]
+  }
+}

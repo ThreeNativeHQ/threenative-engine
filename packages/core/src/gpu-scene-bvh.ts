@@ -3,6 +3,7 @@ import {
   BufferGeometry,
   Group,
   InstancedMesh,
+  type Material,
   Matrix3,
   Matrix4,
   Mesh,
@@ -14,6 +15,8 @@ import * as upstreamWebGPU from "three-mesh-bvh/webgpu";
 import { storage } from "three/tsl";
 import { StorageBufferAttribute, type StorageBufferNode, type StructTypeNode } from "three/webgpu";
 import type { IComputeDriven } from "./compute-driven.js";
+import { buildCpuBvh } from "./render/cpu-bvh.js";
+import type { IProbeTraceScene } from "./render/probe-trace.js";
 import type { IRendererLike } from "./renderer.js";
 
 /** Selects the meshes that become part of a GPU trace set. */
@@ -50,21 +53,26 @@ interface IPackedScene {
   readonly geometry: BufferGeometry;
   readonly indices: Uint32Array;
   readonly materialGroups: readonly IGPUSceneBVHMaterialGroup[];
+  readonly materials: readonly Material[];
   readonly nodes: Uint32Array;
   readonly normals: Float32Array;
   readonly objectCount: number;
   readonly positions: Float32Array;
   readonly triangleCount: number;
+  readonly triangleMaterials: Uint32Array;
   readonly vertexCount: number;
 }
 
 interface IBuildState {
   indices: number[];
+  /** One slot per distinct Material, in first-seen order: the trace's material table. */
+  materialSlots: Map<Material, number>;
   normals: number[];
   objectCount: number;
   positions: number[];
   triangleCount: number;
   triangleMaterials: number[];
+  triangleSlots: number[];
 }
 
 interface IRange {
@@ -207,7 +215,19 @@ function padVec3(array: Float32Array): Float32Array {
   return padded;
 }
 
+function materialSlot(mesh: Mesh, materialIndex: number, state: IBuildState): number {
+  const material = Array.isArray(mesh.material) ? mesh.material[materialIndex] : mesh.material;
+  if (material === undefined) return 0;
+  let slot = state.materialSlots.get(material);
+  if (slot === undefined) {
+    slot = state.materialSlots.size;
+    state.materialSlots.set(material, slot);
+  }
+  return slot;
+}
+
 function appendTriangles(
+  mesh: Mesh,
   index: ReturnType<BufferGeometry["getIndex"]>,
   ranges: readonly IRange[],
   vertexOffset: number,
@@ -219,8 +239,10 @@ function appendTriangles(
       state.indices.push(vertexOffset + sourceIndex);
     }
     const triangles = range.count / 3;
+    const slot = materialSlot(mesh, range.materialIndex, state);
     for (let triangle = 0; triangle < triangles; triangle += 1) {
       state.triangleMaterials.push(range.materialIndex);
+      state.triangleSlots.push(slot);
     }
     state.triangleCount += triangles;
   }
@@ -242,7 +264,7 @@ function appendMesh(mesh: Mesh, state: IBuildState): void {
     matrixFor(mesh, instance, matrix);
     normalMatrix.getNormalMatrix(matrix);
     appendVertices(mesh, position, normal, matrix, normalMatrix, state);
-    appendTriangles(index, ranges, vertexOffset, state);
+    appendTriangles(mesh, index, ranges, vertexOffset, state);
   }
 }
 
@@ -267,32 +289,66 @@ function materialGroupsFor(materials: Uint32Array): IGPUSceneBVHMaterialGroup[] 
  * it, so a leaf's triangle offset and the material ranges address the same layout.
  */
 function permuteToLeafOrder(
-  bvh: MeshBVH,
+  resolveTriangleIndex: (slot: number) => number,
   sourceIndices: Uint32Array,
   sourceMaterials: readonly number[],
-): { indices: Uint32Array; materialGroups: IGPUSceneBVHMaterialGroup[] } {
+  sourceSlots: readonly number[],
+): { indices: Uint32Array; materialGroups: IGPUSceneBVHMaterialGroup[]; slots: Uint32Array } {
   const triangleCount = sourceIndices.length / 3;
   const indices = new Uint32Array(sourceIndices.length);
   const materials = new Uint32Array(triangleCount);
+  const slots = new Uint32Array(triangleCount);
   for (let slot = 0; slot < triangleCount; slot += 1) {
-    const triangle = bvh.resolveTriangleIndex(slot);
+    const triangle = resolveTriangleIndex(slot);
     indices[slot * 3] = sourceIndices[triangle * 3] ?? 0;
     indices[slot * 3 + 1] = sourceIndices[triangle * 3 + 1] ?? 0;
     indices[slot * 3 + 2] = sourceIndices[triangle * 3 + 2] ?? 0;
     materials[slot] = sourceMaterials[triangle] ?? 0;
+    slots[slot] = sourceSlots[triangle] ?? 0;
   }
-  return { indices, materialGroups: materialGroupsFor(materials) };
+  return { indices, materialGroups: materialGroupsFor(materials), slots };
+}
+
+/**
+ * The BVH nodes and leaf order. Upstream `MeshBVH` builds them where it builds a tree; the owned engine's
+ * `MeshBVH` refuses the build options and holds no tree, so a CPU build (`render/cpu-bvh.ts`) stands in.
+ */
+function buildNodes(
+  geometry: BufferGeometry,
+  positions: Float32Array,
+  indices: Uint32Array,
+): { nodes: Uint32Array; resolveTriangleIndex: (slot: number) => number } {
+  try {
+    const bvh = new MeshBVH(geometry, {
+      indirect: true,
+      strategy: SAH,
+      targetLeafSize: 10,
+      verbose: false,
+    });
+    const root = MeshBVH.serialize(bvh, { cloneBuffers: false }).roots[0];
+    if (root === undefined) throw new Error("GPUSceneBVH could not serialize its root node.");
+    return {
+      nodes: new Uint32Array(root),
+      resolveTriangleIndex: (slot) => bvh.resolveTriangleIndex(slot),
+    };
+  } catch (error) {
+    if (!String((error as Error).message).includes("TN_NATIVE_MESH_BVH")) throw error;
+    const built = buildCpuBvh(positions, indices);
+    return { nodes: built.nodes, resolveTriangleIndex: (slot) => built.order[slot] as number };
+  }
 }
 
 function packScene(scene: Object3D, include: (object: Mesh) => boolean): IPackedScene {
   scene.updateMatrixWorld(true);
   const state: IBuildState = {
     indices: [],
+    materialSlots: new Map(),
     normals: [],
     objectCount: 0,
     positions: [],
     triangleCount: 0,
     triangleMaterials: [],
+    triangleSlots: [],
   };
   scene.traverse((candidate) => {
     if (!(candidate instanceof Mesh) || candidate.visible === false || !include(candidate)) return;
@@ -313,32 +369,33 @@ function packScene(scene: Object3D, include: (object: Mesh) => boolean): IPacked
   let nodes = emptyNodes();
   let indices: Uint32Array = sourceIndices;
   let materialGroups: readonly IGPUSceneBVHMaterialGroup[] = [];
+  let triangleMaterials: Uint32Array = new Uint32Array(state.triangleSlots);
   if (state.indices.length > 0) {
     // Indirect keeps `geometry.index` in source order, so the material assignment collected above
     // still lines up with it; the leaf order is then applied to both at once below.
-    const bvh = new MeshBVH(geometry, {
-      indirect: true,
-      strategy: SAH,
-      targetLeafSize: 10,
-      verbose: false,
-    });
-    const serialized = MeshBVH.serialize(bvh, { cloneBuffers: false });
-    const root = serialized.roots[0];
-    if (root === undefined) throw new Error("GPUSceneBVH could not serialize its root node.");
-    nodes = new Uint32Array(root);
-    const permuted = permuteToLeafOrder(bvh, sourceIndices, state.triangleMaterials);
+    const built = buildNodes(geometry, tightPositions, sourceIndices);
+    nodes = built.nodes;
+    const permuted = permuteToLeafOrder(
+      built.resolveTriangleIndex,
+      sourceIndices,
+      state.triangleMaterials,
+      state.triangleSlots,
+    );
     indices = permuted.indices;
     materialGroups = permuted.materialGroups;
+    triangleMaterials = permuted.slots;
   }
   return {
     geometry,
     indices,
     materialGroups,
+    materials: [...state.materialSlots.keys()],
     nodes,
     normals,
     objectCount: state.objectCount,
     positions,
     triangleCount: state.triangleCount,
+    triangleMaterials,
     vertexCount: tightPositions.length / 3,
   };
 }
@@ -353,17 +410,23 @@ function packScene(scene: Object3D, include: (object: Mesh) => boolean): IPacked
  */
 export class GPUSceneBVH extends Group implements IComputeDriven {
   #backings: INodeBackings = {
-    indices: readStorage(new Uint32Array([0, 0, 0]), "uvec3", 3),
-    nodes: readNodeStorage(emptyNodes()),
-    normals: readStorage(new Float32Array([0, 1, 0, 0]), "vec3", 4),
-    positions: readStorage(new Float32Array([0, 0, 0, 0]), "vec3", 4),
+    // Each backing is built on first read: the owned engine refuses the upstream node struct and
+    // freezes storage nodes, and the probe trace (`traceScene`) needs none of them.
+    indices: null,
+    nodes: null,
+    normals: null,
+    positions: null,
   };
-  readonly indices: StorageBufferNode<"uvec3">;
-  readonly nodes: StorageBufferNode<"struct">;
-  readonly normals: StorageBufferNode<"vec3">;
-  readonly positions: StorageBufferNode<"vec3">;
+  #packedStorage: { indices: Uint32Array; normals: Float32Array; positions: Float32Array } = {
+    indices: new Uint32Array([0, 0, 0]),
+    normals: new Float32Array([0, 1, 0, 0]),
+    positions: new Float32Array([0, 0, 0, 0]),
+  };
   readonly warmupNodes: readonly unknown[] = [];
   #buildMs = 0;
+  #packedNodes: Uint32Array = emptyNodes();
+  #traceScene: IProbeTraceScene | undefined;
+  #version = 0;
   #include: (object: Mesh) => boolean;
   #materialGroups: readonly IGPUSceneBVHMaterialGroup[] = [];
   #objectCount = 0;
@@ -381,12 +444,48 @@ export class GPUSceneBVH extends Group implements IComputeDriven {
     }
     this.#scene = scene;
     this.#include = options.include ?? (() => true);
-    this.nodes = this.#backings.nodes as StorageBufferNode<"struct">;
-    this.positions = this.#backings.positions as StorageBufferNode<"vec3">;
-    this.indices = this.#backings.indices as StorageBufferNode<"uvec3">;
-    this.normals = this.#backings.normals as StorageBufferNode<"vec3">;
     this.addEventListener("removed", this.#onRemoved);
     this.rebuild();
+  }
+
+  /** Packed triangle indices as a storage node, built on first read. */
+  get indices(): StorageBufferNode<"uvec3"> {
+    if (this.#released) throw new Error("GPUSceneBVH indices were read after release.");
+    this.#backings.indices ??= readStorage(this.#packedStorage.indices, "uvec3", 3);
+    return this.#backings.indices;
+  }
+
+  /** Packed vertex normals as a storage node, built on first read. */
+  get normals(): StorageBufferNode<"vec3"> {
+    if (this.#released) throw new Error("GPUSceneBVH normals were read after release.");
+    this.#backings.normals ??= readStorage(this.#packedStorage.normals, "vec3", 4);
+    return this.#backings.normals;
+  }
+
+  /** Packed world-space vertex positions as a storage node, built on first read. */
+  get positions(): StorageBufferNode<"vec3"> {
+    if (this.#released) throw new Error("GPUSceneBVH positions were read after release.");
+    this.#backings.positions ??= readStorage(this.#packedStorage.positions, "vec3", 4);
+    return this.#backings.positions;
+  }
+
+  /** The upstream TSL query's node table, built on first read. */
+  get nodes(): StorageBufferNode<"struct"> {
+    if (this.#released) throw new Error("GPUSceneBVH nodes were read after release.");
+    this.#backings.nodes ??= readNodeStorage(this.#packedNodes);
+    return this.#backings.nodes;
+  }
+
+  /** The CPU snapshot in leaf order, with one material slot per triangle: what `RadianceCache` traces. */
+  get traceScene(): IProbeTraceScene {
+    if (this.#traceScene === undefined)
+      throw new Error("GPUSceneBVH has no snapshot after release.");
+    return this.#traceScene;
+  }
+
+  /** Increments on every rebuild, so a consumer of `traceScene` knows to re-upload. */
+  get version(): number {
+    return this.#version;
   }
 
   get buildMs(): number {
@@ -426,14 +525,27 @@ export class GPUSceneBVH extends Group implements IComputeDriven {
     if (this.#released) throw new Error("GPUSceneBVH cannot rebuild after release.");
     const started = now();
     const packed = packScene(this.#scene, this.#include);
-    const nextNodes = readNodeStorage(packed.nodes);
-    const nextPositions = readStorage(packed.positions, "vec3", 4);
-    const nextIndices = readStorage(packed.indices, "uvec3", 3);
-    const nextNormals = readStorage(packed.normals, "vec3", 4);
-    replaceStorage(this.#backings.nodes as StorageBufferNode<"struct">, nextNodes);
-    replaceStorage(this.#backings.positions as StorageBufferNode<"vec3">, nextPositions);
-    replaceStorage(this.#backings.indices as StorageBufferNode<"uvec3">, nextIndices);
-    replaceStorage(this.#backings.normals as StorageBufferNode<"vec3">, nextNormals);
+    this.#packedNodes = packed.nodes;
+    if (this.#backings.nodes !== null) {
+      replaceStorage(this.#backings.nodes, readNodeStorage(packed.nodes));
+    }
+    this.#traceScene = {
+      indices: packed.indices,
+      materials: packed.materials,
+      nodes: packed.nodes,
+      positions: packed.positions,
+      triangleMaterials: packed.triangleMaterials,
+    };
+    this.#version += 1;
+    this.#packedStorage = {
+      indices: packed.indices,
+      normals: packed.normals,
+      positions: packed.positions,
+    };
+    const { positions, indices, normals } = this.#backings;
+    if (positions !== null) replaceStorage(positions, readStorage(packed.positions, "vec3", 4));
+    if (indices !== null) replaceStorage(indices, readStorage(packed.indices, "uvec3", 3));
+    if (normals !== null) replaceStorage(normals, readStorage(packed.normals, "vec3", 4));
     this.#packedGeometry?.dispose();
     this.#packedGeometry = packed.geometry;
     this.#materialGroups = packed.materialGroups;
@@ -457,6 +569,7 @@ export class GPUSceneBVH extends Group implements IComputeDriven {
     this.#backings.normals = null;
     this.#packedGeometry?.dispose();
     this.#packedGeometry = undefined;
+    this.#traceScene = undefined;
     this.#released = true;
   }
 
