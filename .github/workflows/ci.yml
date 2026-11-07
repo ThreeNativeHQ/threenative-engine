@@ -1454,6 +1454,9 @@ jobs:
           shared-artifact: workspace-packages
           save-bundles: "false"
           pack-archives: "false"
+      # The capability reference is build output (PRD-836): `budgets --check`s it, so a clean
+      # checkout generates it first, exactly as the docs lane does.
+      - run: pnpm capabilities:sync
       - run: pnpm budgets
       - run: pnpm quality
       - run: pnpm sync:agents --check

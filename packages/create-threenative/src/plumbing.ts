@@ -85,6 +85,8 @@ export function viteConfigText(delta: IVitePlumbingDelta): string {
     'import { watchAssets } from "@threenative/assets";',
     ...(delta.react ? ['import react from "@vitejs/plugin-react";'] : []),
     "import {",
+    // PRD-829's catalog plugin: every kit serves the engine catalog in dev, so it is plumbing.
+    "  createEngineCatalogPlugin,",
     "  createEngineFreshnessPlugin,",
     "  createWebBrandPlugin,",
     "  webRuntimeDecoders,",
@@ -96,6 +98,7 @@ export function viteConfigText(delta: IVitePlumbingDelta): string {
   const pluginNames = [
     "createEngineFreshnessPlugin()",
     "createWebBrandPlugin()",
+    "createEngineCatalogPlugin()",
     ...(delta.react ? ["react()"] : []),
     ...(delta.tailwind ? ["tailwindcss()"] : []),
     "assetsWatchPlugin()",

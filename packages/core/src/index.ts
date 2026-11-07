@@ -1,11 +1,15 @@
 /**
  * The version this library reports.
  *
- * `version.ts` is the one owner, generated from `package.json` at build time; this is a re-export
- * so a game that read `version` keeps reading it, and a release cannot leave a stale literal
- * behind in a second place.
+ * `version.ts` is the one owner, generated from `package.json` at build time. Declared here rather
+ * than re-exported under another name: the native engine's bundler reads this barrel for the
+ * bindings a game may import, and `export { CORE_VERSION as version } from …` gave it a name the
+ * module does not export, refusing every game that stamps the version into its HUD
+ * (`TN_NATIVE_ENGINE_UNBOUND`).
  */
-export { CORE_VERSION as version } from "./version.js";
+import { CORE_VERSION } from "./version.js";
+
+export const version = CORE_VERSION;
 
 /**
  * Play a skinned or sprite animation from game code.
