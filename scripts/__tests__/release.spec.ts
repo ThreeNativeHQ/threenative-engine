@@ -463,7 +463,7 @@ describe("pnpm release cohort guards", () => {
       path.resolve(import.meta.dirname, "../release.ts"),
       "utf8",
     );
-    const build = source.indexOf('run("pnpm", ["build"], "pnpm build")');
+    const build = source.indexOf('run("pnpm", ["build"], { cwd: REPO, label: "pnpm build" })');
     const clean = source.indexOf("assertCleanPackageTree(REPO);", build);
     const preflight = source.indexOf("const postBuildReport", build);
     const cohort = source.indexOf("const publishPackages = unpublishedReleasePackages", preflight);

@@ -11,6 +11,7 @@ import {
   npmLookup,
   publishSet,
 } from "./check-publish-state.js";
+import { run } from "./lib/exec.js";
 import { progressOf } from "./prd-progress.js";
 import { provisionReleaseArtifacts, validateReleaseCohort } from "./release.js";
 
@@ -317,11 +318,6 @@ function syncReleaseMetadata(
   );
 }
 
-function run(command: string, args: readonly string[], label: string): void {
-  process.stdout.write(`\n▸ ${label}\n`);
-  execFileSync(command, [...args], { cwd: REPO, stdio: "inherit" });
-}
-
 async function main(): Promise<void> {
   const packages = publishSet(REPO);
   // `--bump`: npm cannot see a version whose runtime tag already holds a public GitHub release.
@@ -344,8 +340,11 @@ async function main(): Promise<void> {
       .join("\n")}\n`,
   );
 
-  run("pnpm", ["build"], "pnpm build");
-  run("pnpm", ["tsx", "scripts/capture-mcp-tools.ts"], "capture animation MCP surface");
+  run("pnpm", ["build"], { cwd: REPO, label: "pnpm build" });
+  run("pnpm", ["tsx", "scripts/capture-mcp-tools.ts"], {
+    cwd: REPO,
+    label: "capture animation MCP surface",
+  });
 
   await provisionReleaseArtifacts(REPO);
   const report = await checkPublishState({

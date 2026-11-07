@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createProject, templateRoot } from "../packages/create-threenative/src/index.js";
+import { runAsync } from "./lib/exec.js";
 import { packageLocalFramework } from "./visual-gate.js";
 
 /**
@@ -105,20 +106,6 @@ ${MATERIAL_ANCHOR}`,
   return `${imports.map((line) => `${line}\n`).join("")}import { VirtualShadowNode } from "@threenative/core";\n${loaded}`;
 }
 
-function run(command: string, args: readonly string[], cwd: string, env?: NodeJS.ProcessEnv) {
-  return new Promise<void>((resolve, reject) => {
-    const child = spawn(command, [...args], {
-      cwd,
-      env: { ...process.env, ...env },
-      stdio: "inherit",
-    });
-    child.once("error", reject);
-    child.once("exit", (code) =>
-      code === 0 ? resolve() : reject(new Error(`${command} ${args.join(" ")} exited ${code}.`)),
-    );
-  });
-}
-
 /** One `tools/call` over the same stdio shim an agent's `.mcp.json` launches. */
 export function callTerrainGenerate(project: string): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -173,8 +160,8 @@ async function main(): Promise<void> {
         path.join(SCENARIO_ROOT, "forest.playtest.json"),
         path.join(project, "playtests/forest.playtest.json"),
       );
-      await run("pnpm", ["build:web"], project);
-      await run(
+      await runAsync("pnpm", ["build:web"], project);
+      await runAsync(
         "pnpm",
         [
           "exec",
@@ -198,8 +185,8 @@ async function main(): Promise<void> {
         path.join(SCENARIO_ROOT, "forest.native.playtest.json"),
         path.join(project, "native-playtests/forest.playtest.json"),
       );
-      await run("pnpm", ["build:desktop"], project);
-      await run(
+      await runAsync("pnpm", ["build:desktop"], project);
+      await runAsync(
         "pnpm",
         [
           "exec",

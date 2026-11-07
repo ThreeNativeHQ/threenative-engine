@@ -1220,7 +1220,11 @@ export async function verifyPackedMutationControl(
       "packages/create-threenative/template-assets/patches",
     );
     await cp(path.join(REPO_ROOT, "packages/create-threenative"), mutatedPackage, {
-      filter: (source) => path.basename(source) !== "node_modules" && source !== generatedPatches,
+      // Only the generated `.patch` copies are left out: prepack rebuilds them from the sources
+      // reproduced below, and the manifest that names those sources is source itself.
+      filter: (source) =>
+        path.basename(source) !== "node_modules" &&
+        !(source.startsWith(generatedPatches) && source.endsWith(".patch")),
       recursive: true,
     });
     // Reproduce prepack's repository-relative inputs, including Vite and Tailwind's patches.
