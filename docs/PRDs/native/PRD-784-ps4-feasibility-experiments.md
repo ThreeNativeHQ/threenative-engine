@@ -152,7 +152,7 @@ performance work. A go result opens a second PRD for those.
 **Verification:** each box below and AC-1, AC-2. A green run needs 300 frames, a non-blank readback and two frames that differ.
 
 - [ ] E5: The engine and V8 render 300 frames of the cube in shadPS4. proof: `node packages/runtime-native/scripts/ps4/run-experiment.mjs e5`
-- [ ] E6: One command builds the E5 artifact and prints each send step for a console address. proof: `node packages/runtime-native/scripts/ps4/send-to-console.mjs --dry-run --host 127.0.0.1`
+- [x] E6: One command builds the E5 artifact and prints each send step for a console address. proof: `node packages/runtime-native/scripts/ps4/send-to-console.mjs --dry-run --host 127.0.0.1` → exit 0 (2026-11-06): builds eboot.bin 49.6 MiB + game.js 1.1 MiB, fake PKG `IV0000-TNPS78405_00-TNPRD784E5000000.pkg` 52.9 MiB (`\x7FCNT` header; PkgTool.Core runs on a pinned private Debian libssl1.1), prints GoldHEN FTP 2121 upload, verify, Package Installer steps, no network I/O. Install and boot on a console are unproven until the hardware run. The artifact still renders 0 frames in shadPS4 (E5 open).
 
 When only the `## Blocked on` lines remain, `git mv` this file to
 `docs/PRDs/BLOCKED/requires-physical-device/`.

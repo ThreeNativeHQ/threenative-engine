@@ -154,16 +154,16 @@ PKGTOOL="$OO/bin/linux/PkgTool.Core"
 while read -r key type maxsize value; do
   "$PKGTOOL" sfo_setentry "$APP/sce_sys/param.sfo" "$key" --type "$type" \
     --maxsize "$maxsize" --value "$value" > /dev/null
-done <<'SFO'
+done <<'SFO'  # a console TITLE_ID is 4 letters + 5 digits and CONTENT_ID is 36 characters (PkgTool pkg_build checks)
 APP_TYPE Integer 4 1
 APP_VER Utf8 8 1.00
 ATTRIBUTE Integer 4 0
 CATEGORY Utf8 4 gd
-CONTENT_ID Utf8 48 IV0000-TNPRD784E5_00-TNPS4E5000000000
+CONTENT_ID Utf8 48 IV0000-TNPS78405_00-TNPRD784E5000000
 DOWNLOAD_DATA_SIZE Integer 4 0
 SYSTEM_VER Integer 4 0
 TITLE Utf8 128 ThreeNative PS4 E5
-TITLE_ID Utf8 12 TNPRD784E5
+TITLE_ID Utf8 12 TNPS78405
 VERSION Utf8 8 1.00
 SFO
 
