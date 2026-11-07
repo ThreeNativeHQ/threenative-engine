@@ -213,6 +213,7 @@
         "@threenative/core#prewarm": "export function prewarm(object: Object3D | readonly Object3D[]): void { … }",
         "@threenative/core#ProbeVolume": "export class ProbeVolume extends Object3D implements IComputeDriven { … }",
         "@threenative/core#qualityPreset": "export function qualityPreset(tier: string): IWorldEnvironmentOptions { … }",
+        "@threenative/core#RadianceCache": "export class RadianceCache extends ProbeVolume { … }",
         "@threenative/core#readGIMarker": "export function readGIMarker(line: string): IGIBudgetReport | undefined { … }",
         "@threenative/core#readLampShadowMarker": "export function readLampShadowMarker(line: string): ILampShadowStats | undefined { … }",
         "@threenative/core#readProbeVolumeObservation": "export function readProbeVolumeObservation(value: unknown): IProbeVolumeObservation | undefined { … }",
