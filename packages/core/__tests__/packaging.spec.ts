@@ -220,11 +220,11 @@ test("should apply the packed Three.js patch in a clean consumer and remain idem
     await run("tar", ["-xzf", join(archiveDirectory, archive), "-C", archiveDirectory]);
 
     const packed = join(archiveDirectory, "package");
-    // Only this release's patch ships. A project on r187 starts from stock three, so there is no
-    // predecessor patch state to migrate and no upgrade patch to carry.
-    await expect(
-      readFile(join(packed, "patches", "three@0.187.0-prd269-upgrade.patch"), "utf8"),
-    ).rejects.toThrow(/ENOENT/u);
+    // 0.3.10 and 0.3.11 already patched r187, so a project upgrading from them is in a predecessor
+    // patch state: the upgrade patch ships beside this release's patch (release run 42307165770).
+    expect(
+      await readFile(join(packed, "patches", "three@0.187.0-prd269-upgrade.patch"), "utf8"),
+    ).toBe(await readFile(join(coreRoot, "patches", "three@0.187.0-prd269-upgrade.patch"), "utf8"));
     expect(await readFile(join(packed, "patches", "three@0.187.0.patch"), "utf8")).toBe(
       await readFile(join(coreRoot, "patches", "three@0.187.0.patch"), "utf8"),
     );
