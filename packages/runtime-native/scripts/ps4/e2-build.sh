@@ -490,6 +490,9 @@ git apply "$SCRIPTS/patches/0049-vk-ps4-cube-array-view-types.patch"
 # each face onto the next and past the image: a guest heap abort). A target that still reaches past the
 # image is refused with TN_VKPS4_LEVEL_RT_OVERRUN.
 git apply "$SCRIPTS/patches/0050-vk-ps4-level-target-layout.patch"
+# A Uint8x4 / Uint16x4 vertex attribute (the skin index) had no GNM mapping and read as R32_FLOAT, so every vertex
+# followed bone 0 and the humanoid stayed in its bind pose. The format table now serves any attribute (PRD-784 P4-4).
+git apply "$SCRIPTS/patches/0051-vk-ps4-integer-vertex-formats.patch"
 # The Makefile compiles TEST_SRC relative to the vulkan-ps4 tree.
 cp "$SCRIPTS/e2-triangle.c" "$SRC/e2-triangle.c"
 make -f Makefile.orbis -j"$JOBS" TEST_SRC=../e2-triangle.c self > "$LOGS/e2-triangle.log" 2>&1

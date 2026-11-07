@@ -51,6 +51,12 @@ test('a guest abort names its caller (PRD-784)', () => {
   assert.match(readFileSync(path.join(root, 'scripts/ps4/ps4-guest-libcxx.cc'), 'utf8'), /void __wrap_abort\(void\)[^}]*TN_PS4_ABORT caller=/su);
 });
 
+test('integer vertex attributes keep their format, so skinned meshes animate (PRD-784)', () => {
+  // Read as R32_FLOAT, the Uint8x4/Uint16x4 skin index gave every vertex bone 0: the humanoid stayed in bind pose.
+  assert.match(readFileSync(path.join(root, 'scripts/ps4/e2-build.sh'), 'utf8'), /git apply "\$SCRIPTS\/patches\/0051-vk-ps4-integer-vertex-formats\.patch"/u);
+  assert.match(readFileSync(path.join(root, 'scripts/ps4/patches/0051-vk-ps4-integer-vertex-formats.patch'), 'utf8'), /^\+\s+GnmDataFormat mapped = vk_ps4_vk_format_to_gnm_buffer\(format\);/mu);
+});
+
 test('refuses a UI with no stylesheet', () => {
   const { app, scene: dir } = scene({ 'a.png': 'x' });
   assert.throws(() => stageGuestUi(dir, app, {}), /TN_PS4_UI_NO_CSS/u);
