@@ -190,6 +190,9 @@ git apply "$SCRIPTS/patches/0046-opengnm-psbc-varying-slot-semantics.patch"
 # asked for the integer form, so every face read back-facing and the normal-map frame scaled to 0
 # (no concrete relief on PS4, PRD-784 visuals).
 git apply "$SCRIPTS/patches/0056-opengnm-psbc-front-face-float.patch"
+# A VS input is named by its attribute location and reads vs_inputs[location]: dense indices broke a VS
+# that skips a location (the pennant reads uv at 1 and no position), so its UVs were undefined (PRD-784 visuals).
+git apply "$SCRIPTS/patches/0059-opengnm-psbc-vs-inputs-by-location.patch"
 
 # === 3. opengnm (orbis) ======================================================
 cd "$SRC/opengnm"
@@ -514,6 +517,12 @@ git apply "$SCRIPTS/patches/0055-vk-ps4-mipmapped-targets-micro-tiled.patch"
 # A 3D texture is linear: its upload is the row copy (the tiled upload refuses depth > 1), which
 # only lands right in a linear surface. Tiled, the cloud noise volume scrambled (PRD-784 visuals).
 git apply "$SCRIPTS/patches/0057-vk-ps4-volumes-linear.patch"
+# A storage buffer's V# range is in bytes: the const-buffer base counted 16-byte records, so 15/16 of every
+# storage buffer read 0 and dropped writes. The cloth pennant collapsed to a point and never moved (PRD-784 visuals).
+git apply "$SCRIPTS/patches/0058-vk-ps4-storage-buffer-byte-range.patch"
+# V# i and instancing mode i follow semantic i (a location), not the dense list of declared attributes, so an
+# attribute the VS does not read no longer shifts the later ones (PRD-784 visuals).
+git apply "$SCRIPTS/patches/0060-vk-ps4-vertex-table-by-semantic.patch"
 # The Makefile compiles TEST_SRC relative to the vulkan-ps4 tree.
 cp "$SCRIPTS/e2-triangle.c" "$SRC/e2-triangle.c"
 make -f Makefile.orbis -j"$JOBS" TEST_SRC=../e2-triangle.c self > "$LOGS/e2-triangle.log" 2>&1

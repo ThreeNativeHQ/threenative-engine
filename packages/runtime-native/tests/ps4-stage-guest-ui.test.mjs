@@ -99,6 +99,21 @@ test('a mipmapped colour target is micro-tiled on every level, so its rendered l
   assert.match(readFileSync(path.join(root, 'scripts/ps4/patches/0057-vk-ps4-volumes-linear.patch'), 'utf8'), /^\+\s+if \(pCreateInfo->imageType == VK_IMAGE_TYPE_3D\) tex_ci\.tilemodehint = GNM_TM_DISPLAY_LINEAR_ALIGNED;/mu);
 });
 
+test('a storage buffer range counts bytes, so compute writes and vertex reads reach the whole buffer (PRD-784)', () => {
+  // num_records stayed in 16-byte records with stride 0: 15/16 of each storage buffer read 0, and the cloth pennant vanished.
+  assert.match(readFileSync(path.join(root, 'scripts/ps4/e2-build.sh'), 'utf8'), /git apply "\$SCRIPTS\/patches\/0058-vk-ps4-storage-buffer-byte-range\.patch"/u);
+  assert.match(readFileSync(path.join(root, 'scripts/ps4/patches/0058-vk-ps4-storage-buffer-byte-range.patch'), 'utf8'), /^\+\s+gnm_buf->numrecords = size;/mu);
+});
+
+test('a VS input is its attribute location on both sides, so a skipped location keeps later inputs (PRD-784)', () => {
+  // The cloth pennant reads uv at location 1 and no position: dense indices fetched uv into the wrong VGPRs.
+  const build = readFileSync(path.join(root, 'scripts/ps4/e2-build.sh'), 'utf8');
+  assert.match(build, /git apply "\$SCRIPTS\/patches\/0059-opengnm-psbc-vs-inputs-by-location\.patch"/u);
+  assert.match(build, /git apply "\$SCRIPTS\/patches\/0060-vk-ps4-vertex-table-by-semantic\.patch"/u);
+  assert.match(readFileSync(path.join(root, 'scripts/ps4/patches/0059-opengnm-psbc-vs-inputs-by-location.patch'), 'utf8'), /^\+\s+\.vgpr = ctx->rargs->ac\.args\[ctx->rargs->vs_inputs\[loc\]\.arg_index\]\.offset,/mu);
+  assert.match(readFileSync(path.join(root, 'scripts/ps4/patches/0060-vk-ps4-vertex-table-by-semantic.patch'), 'utf8'), /^\+\s+if \(vi->pVertexAttributeDescriptions\[j\]\.location == pipe->vs_input_semantics\[i\]\.semantic\) \{/mu);
+});
+
 test('refuses a UI with no stylesheet', () => {
   const { app, scene: dir } = scene({ 'a.png': 'x' });
   assert.throws(() => stageGuestUi(dir, app, {}), /TN_PS4_UI_NO_CSS/u);
