@@ -501,6 +501,12 @@ git apply "$SCRIPTS/patches/0052-vk-ps4-layer-views-and-layer-clears.patch"
 # so shadPS4 ran a negativeOneToOne viewport and every depth landed in 0.5..1: a shadow map held 0.5 + d/2 while the
 # lookup compared the plain d, and no caster shadowed anything. DX_CLIP_SPACE_DEF plus z * (max - min) + min (PRD-784 P4-3).
 git apply "$SCRIPTS/patches/0053-vk-ps4-dx-clip-space-depth.patch"
+# S# MIN_LOD/MAX_LOD are unsigned 4.8. WebGPU's default lodMaxClamp 32 wrapped to 0 under `& 0xFFF`, so every sampler
+# read mip 0: minified grids aliased into dashed lines and the normal map lost its relief next to web (PRD-784 visuals).
+git apply "$SCRIPTS/patches/0054-vk-ps4-sampler-lod-clamp.patch"
+# A mipmapped colour target is micro-tiled on every level: 2D tiling degraded to 1D on the small levels, so the
+# rendered PMREM levels had another array mode than the cube that samples them and shadPS4 dropped them (black sky fill).
+git apply "$SCRIPTS/patches/0055-vk-ps4-mipmapped-targets-micro-tiled.patch"
 # The Makefile compiles TEST_SRC relative to the vulkan-ps4 tree.
 cp "$SCRIPTS/e2-triangle.c" "$SRC/e2-triangle.c"
 make -f Makefile.orbis -j"$JOBS" TEST_SRC=../e2-triangle.c self > "$LOGS/e2-triangle.log" 2>&1

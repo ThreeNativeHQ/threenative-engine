@@ -82,6 +82,18 @@ test('TN_PS4_HOST_HZ runs the emulator in gamescope inside the lane Xvfb, so E5 
   assert.match(runner, /PS4_EMULATED host: plain Xvfb/u);
 });
 
+test('sampler LODs clamp to the 4.8 field, so WebGPU maxLod 32 keeps the mips (PRD-784)', () => {
+  // (32 * 256) & 0xFFF is 0: every sampler read mip 0 and minified grids aliased into dashed lines.
+  assert.match(readFileSync(path.join(root, 'scripts/ps4/e2-build.sh'), 'utf8'), /git apply "\$SCRIPTS\/patches\/0054-vk-ps4-sampler-lod-clamp\.patch"/u);
+  assert.match(readFileSync(path.join(root, 'scripts/ps4/patches/0054-vk-ps4-sampler-lod-clamp.patch'), 'utf8'), /^\+\s+if \(max_lod > 4095\.0f \/ 256\.0f\) max_lod = 4095\.0f \/ 256\.0f;/mu);
+});
+
+test('a mipmapped colour target is micro-tiled on every level, so its rendered levels are sampled (PRD-784)', () => {
+  // 2D tiling degraded to 1D on small levels; shadPS4 then dropped the rough PMREM levels and every shadow read black.
+  assert.match(readFileSync(path.join(root, 'scripts/ps4/e2-build.sh'), 'utf8'), /git apply "\$SCRIPTS\/patches\/0055-vk-ps4-mipmapped-targets-micro-tiled\.patch"/u);
+  assert.match(readFileSync(path.join(root, 'scripts/ps4/patches/0055-vk-ps4-mipmapped-targets-micro-tiled.patch'), 'utf8'), /^\+\s+: mip_levels > 1 \? GNM_TM_DISPLAY_1D_THIN/mu);
+});
+
 test('refuses a UI with no stylesheet', () => {
   const { app, scene: dir } = scene({ 'a.png': 'x' });
   assert.throws(() => stageGuestUi(dir, app, {}), /TN_PS4_UI_NO_CSS/u);

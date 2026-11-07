@@ -405,7 +405,8 @@ tn_native_engine_test(tn-native-engine-reflection-pass-test tests/native-engine/
 if(NOT EMSCRIPTEN AND NOT TN_ENGINE_CORE_ONLY)
     tn_native_engine_test(tn-native-engine-texture-copy-test tests/native-engine/texture_copy_test.cpp
         native_engine_texture_copy_volume=volume_usage
-        native_engine_texture_copy_mips=mip_tail)
+        native_engine_texture_copy_mips=mip_tail
+        native_engine_texture_copy_cpu_mip_level=cpu_mip_level)
     target_link_libraries(tn-native-engine-texture-copy-test PRIVATE tn_engine_renderer)
 endif()
 

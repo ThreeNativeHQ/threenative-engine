@@ -1,0 +1,21 @@
+--- a/src/vk_ps4_image.c
++++ b/src/vk_ps4_image.c
+@@ -269,8 +269,16 @@
+          * target is a thin macro-tiled one (GNM_TM_THIN_2D_THIN, the tile mode
+          * sceGnmRtInitColorTargetCreateInfo is documented with in opengnm's
+          * gnm_helpers.h). */
+-        const GnmTileMode rt_tilemode =
+-            samples > 1 ? GNM_TM_THIN_2D_THIN : GNM_TM_DISPLAY_2D_THIN;
++        /* A mipmapped single-sampled target is micro-tiled on every level. Macro (2D) tiling
++         * degrades to 1D on the small levels, so the level targets the engine renders (PMREM,
++         * mip chains) carried another array mode than the texture that samples them, and
++         * shadPS4 dropped those levels as a chance overlap: the rough PMREM levels, which hold
++         * the sky fill, read black (PRD-784 visuals).
++         * ponytail: 1D costs some bandwidth on these few targets on hardware; drop it when the
++         * lane no longer needs one array mode per image. */
++        const GnmTileMode rt_tilemode = samples > 1 ? GNM_TM_THIN_2D_THIN
++                                        : mip_levels > 1 ? GNM_TM_DISPLAY_1D_THIN
++                                                         : GNM_TM_DISPLAY_2D_THIN;
+         sceGnmRtInitColorTargetCreateInfo(
+             &rt_ci, gnm_fmt,
+             pCreateInfo->extent.width, pCreateInfo->extent.height,
