@@ -57,6 +57,12 @@ test('integer vertex attributes keep their format, so skinned meshes animate (PR
   assert.match(readFileSync(path.join(root, 'scripts/ps4/patches/0051-vk-ps4-integer-vertex-formats.patch'), 'utf8'), /^\+\s+GnmDataFormat mapped = vk_ps4_vk_format_to_gnm_buffer\(format\);/mu);
 });
 
+test('a cube face view and its clear keep their layer, so the environment light is not black (PRD-784)', () => {
+  // A one-face view was a 1-slice 2D T# and a face clear painted layer 0: the PMREM cube came out empty.
+  assert.match(readFileSync(path.join(root, 'scripts/ps4/e2-build.sh'), 'utf8'), /git apply "\$SCRIPTS\/patches\/0052-vk-ps4-layer-views-and-layer-clears\.patch"/u);
+  assert.match(readFileSync(path.join(root, 'scripts/ps4/patches/0052-vk-ps4-layer-views-and-layer-clears.patch'), 'utf8'), /^\+\s+view->create_info\.subresourceRange\.baseArrayLayer\);/mu);
+});
+
 test('refuses a UI with no stylesheet', () => {
   const { app, scene: dir } = scene({ 'a.png': 'x' });
   assert.throws(() => stageGuestUi(dir, app, {}), /TN_PS4_UI_NO_CSS/u);
