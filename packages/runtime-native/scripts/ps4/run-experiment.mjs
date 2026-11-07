@@ -261,7 +261,7 @@ const EXPERIMENTS = {
     // the V8 error on stderr, or the game never publishes a scene. An emulator crash (ASSERT_MSG
     // aborts with "Assertion Failed!") is a red of the GPU stack under the player, and its line
     // names the pass that refused the shader.
-    failurePattern: /TN_PLAYER_V8_GAME:|TN_V8_UPDATE_FAILED|TN_V8_FRAME_FAILED|TN_PLAYER_NO_SCENE|TN_PS4_E5 stage=exit status=[1-9]|[\w./_-]+\.cpp:\d+ \w+: Assertion Failed!(?:\n[^\n]{0,80})?/,
+    failurePattern: /(?:TN_PLAYER_V8_GAME:|TN_V8_UPDATE_FAILED|TN_V8_FRAME_FAILED|TN_PLAYER_NO_SCENE)[^\n]*|TN_PS4_E5 stage=exit status=[1-9]|[\w./_-]+\.cpp:\d+ \w+: Assertion Failed!(?:\n[^\n]{0,80})?/,
     verdict: (match, frame, log, shots) => judgeE5(match, frame, log, shots),
   },
 };

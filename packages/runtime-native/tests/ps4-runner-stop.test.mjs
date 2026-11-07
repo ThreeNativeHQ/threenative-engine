@@ -26,6 +26,17 @@ const until = async (check, ms) => {
   return check();
 };
 
+describe('PS4 E5 failure line', () => {
+  it('keeps the guest error message, not only its token', () => {
+    // The E5 entry's pattern, as the runner compiles it.
+    const source = /failurePattern: (\/\(\?:TN_PLAYER_V8_GAME:[^\n]*\/),\n/.exec(runner)?.[1];
+    expect(source).toBeDefined();
+    const pattern = new Function(`return ${source}`)();
+    const hit = pattern.exec('[stdout] x\nTN_PLAYER_V8_GAME: TypeError: mesh.skeleton is undefined\nnext');
+    expect(hit?.[0]).toBe('TN_PLAYER_V8_GAME: TypeError: mesh.skeleton is undefined');
+  });
+});
+
 describe('PS4 runner stop', () => {
   it('stops an emulator that left the process group', async () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'tn-ps4-stop-'));
