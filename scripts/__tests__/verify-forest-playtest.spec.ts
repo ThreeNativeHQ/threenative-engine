@@ -143,10 +143,22 @@ describe("forest playtest setup", () => {
     });
     // A pipe chunk ends where the reply's id marker ends: the rest arrives 100 ms later.
     const cut = full.indexOf('"id":2') + '"id":2'.length;
+    const initialized = JSON.stringify({
+      id: 1,
+      jsonrpc: "2.0",
+      result: {
+        capabilities: {},
+        protocolVersion: "2025-06-18",
+        serverInfo: { name: "fake", version: "0" },
+      },
+    });
     await mkdir(path.dirname(server), { recursive: true });
     await writeFile(
       server,
       [
+        // The protocol's first reply, then the tool reply in two chunks: the first ends where the
+        // id marker ends, so a client that resolves on a partial line would answer with nothing.
+        `process.stdout.write(${JSON.stringify(`${initialized}\n`)});`,
         `process.stdout.write(${JSON.stringify(full.slice(0, cut))});`,
         `setTimeout(() => process.stdout.write(${JSON.stringify(`${full.slice(cut)}\n`)}), 100);`,
       ].join("\n"),

@@ -1,10 +1,10 @@
-import { spawn } from "node:child_process";
 import { cp, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createProject, templateRoot } from "../packages/create-threenative/src/index.js";
 import { runAsync } from "./lib/exec.js";
+import { startMcpServer } from "./lib/mcp-client.js";
 import { packageLocalFramework } from "./visual-gate.js";
 
 /**
@@ -107,37 +107,23 @@ ${MATERIAL_ANCHOR}`,
 }
 
 /** One `tools/call` over the same stdio shim an agent's `.mcp.json` launches. */
-export function callTerrainGenerate(project: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const child = spawn("node", ["node_modules/@threenative/core/mcp/terrain.mjs"], {
-      cwd: project,
-      stdio: ["pipe", "pipe", "inherit"],
-    });
-    let buffer = "";
-    child.stdout.on("data", (chunk: Buffer) => {
-      buffer += String(chunk);
-      const lines = buffer.split("\n");
-      buffer = lines.pop() ?? "";
-      for (const line of lines) {
-        if (line.includes('"id":2')) {
-          child.kill();
-          resolve(line);
-        }
-      }
-    });
-    child.once("error", reject);
-    child.once("exit", () =>
-      reject(new Error("TN_FOREST_TOOL_EXIT: the terrain server exited before replying.")),
-    );
-    const send = (message: object) => child.stdin.write(`${JSON.stringify(message)}\n`);
-    send({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} });
-    send({
-      jsonrpc: "2.0",
-      id: 2,
-      method: "tools/call",
-      params: { name: "terrain_generate", arguments: { kit: "forest" } },
-    });
+export async function callTerrainGenerate(project: string): Promise<string> {
+  const client = startMcpServer({
+    args: ["node_modules/@threenative/core/mcp/terrain.mjs"],
+    command: "node",
+    cwd: project,
+    label: "terrain server",
   });
+  try {
+    await client.request("initialize", {});
+    const result = await client.request("tools/call", {
+      arguments: { kit: "forest" },
+      name: "terrain_generate",
+    });
+    return JSON.stringify({ id: 2, jsonrpc: "2.0", result });
+  } finally {
+    client.close();
+  }
 }
 
 async function main(): Promise<void> {
