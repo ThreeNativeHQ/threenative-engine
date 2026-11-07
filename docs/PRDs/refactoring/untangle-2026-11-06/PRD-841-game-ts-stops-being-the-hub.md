@@ -1,6 +1,6 @@
 # PRD-841 — `game.ts` stops being the file every feature edits
 
-**Status:** NOT STARTED
+**Status:** PARTIAL — Phase 3 box 1 landed; the boot proxy, the teardown and the UI bridge are open.
 **Priority:** P2 — the open boxes delete the 46-field boot proxy, the hand-ordered teardown and the hard-wired scene-entry audits that put `game.ts` in 116 commits in 90 days.
 **Complexity:** 4 (MEDIUM)
 **Owner:** ThreeNative maintainers
@@ -53,8 +53,8 @@ list. The UI bridge moves to `game-ui.ts`.
 - [ ] Every acquisition pushes its disposer, and `#teardown` only drains `#cleanup`. proof: `pnpm --filter @threenative/core exec vitest run __tests__/game-stop-order.spec.ts`
 
 #### Phase 3: Inspectors and UI out of the hub
-**Status:** NOT STARTED
+**Status:** PARTIAL — the scene-entry audits are one list; the UI bridge is still in `game.ts`
 **Files:** `game.ts`, new `game-ui.ts`, the 3 audit modules.
 
-- [ ] Scene-entry audits register in one ordered list, and adding one does not edit `game.ts`. proof: `pnpm --filter @threenative/core exec vitest run __tests__/game.spec.ts`
+- [x] Scene-entry audits register in one ordered list, and adding one does not edit `game.ts`. `packages/core/src/scene-entry-inspectors.ts` owns the list and the order that matters — the opacity convention first, so the render trap audit reports what the convention made take effect — and `#enterScene` is one call. The list is a field (`#sceneEntryInspectors`), so a game installs its own. proof: `npx vitest run packages/core/__tests__/scene-entry-inspectors.spec.ts packages/core/__tests__/game.spec.ts` → 90 passed (including the order, the level each finding reports at, and a caller-added inspector); the whole core suite → 4575 passed, 4 skipped.
 - [ ] The UI bridge lives in `game-ui.ts`. proof: `pnpm --filter @threenative/ui test`

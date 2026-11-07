@@ -22,18 +22,16 @@ import type { MatrixWorldPass } from "./matrix-world.js";
 import type { ScenePicker } from "./picking.js";
 import type { IPipelineCensus } from "./pipeline-census.js";
 import type { PointerEvents3D } from "./pointer-events.js";
-import { applyOpacityConvention } from "./profiling/opacity-convention.js";
-import { renderTrapAudit } from "./profiling/render-trap-audit.js";
-import {
-  UNLIT_FOLIAGE_FIX,
-  formatUnlitFoliageWarning,
-  unlitFoliageWarning,
-} from "./profiling/unlit-foliage-warning.js";
 import { installQuietMarkers, uninstallQuietMarkers } from "./quiet-markers.js";
 import type { IRandom } from "./random.js";
 import type { RenderCameraCull } from "./render-camera-cull.js";
 import type { SceneRenderProjection } from "./renderProjection.js";
 import type { IRendererLike, IRendererOptions } from "./renderer.js";
+import {
+  SCENE_ENTRY_INSPECTORS,
+  type SceneEntryInspector,
+  inspectSceneEntry,
+} from "./scene-entry-inspectors.js";
 import type { ICtx, IStartupTimeline, Scene, SceneConstructor, SceneFrame } from "./scene.js";
 import type { Scheduler } from "./schedule.js";
 import type { IStartupOffscreenBytes } from "./startup-offscreen-bytes.js";
@@ -474,6 +472,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
   #pendingSceneEnter: Promise<void> | undefined;
   /** One-shot notification after the scene that owns the world has entered, before warm-up. */
   #onStartSceneEntered: (() => void) | undefined;
+
+  /** The scene-entry audits this game runs, in order. The engine's are the default. */
+  #sceneEntryInspectors: readonly SceneEntryInspector[] = SCENE_ENTRY_INSPECTORS;
   #paused = false;
   #started = false;
   #uiBridge: IUiBridge | undefined;
@@ -689,18 +690,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     // now, before either: no frame is ever drawn unmerged, and the compile counts merged meshes,
     // not every source. Anything that moves afterwards is given back by the guard.
     this.#autoBatch?.settleNow();
-    // Before the audit, so an opacity the convention made take effect is reported as a warning.
-    const opacity = applyOpacityConvention(ctx.scene);
-    if (opacity !== undefined) console.warn(opacity);
-    for (const line of renderTrapAudit(ctx.scene)) console.error(line);
-    // Cutout PBR with no image-based light renders as cardboard, and the compensating tint the
-    // author reaches for is invisible in a screenshot review. Once per scene entry, right after
-    // `enter()`: `load()` and `enter()` are where the game builds its meshes and sets its own
-    // environment, so an earlier read would be a census of an empty scene and a later one would be
-    // a census of a scene the author already fixed.
-    const unlit = unlitFoliageWarning(ctx.scene);
-    if (unlit !== undefined)
-      console.warn(`${formatUnlitFoliageWarning(unlit)} ${UNLIT_FOLIAGE_FIX}`);
+    // Every entry audit, in the order `scene-entry-inspectors.ts` states: the opacity convention
+    // first, so an opacity it made take effect is what the render trap audit then reports. Adding a
+    // fourth audit does not edit this file.
+    inspectSceneEntry(ctx.scene, this.#sceneEntryInspectors);
     const entered = this.#onStartSceneEntered;
     this.#onStartSceneEntered = undefined;
     entered?.();
