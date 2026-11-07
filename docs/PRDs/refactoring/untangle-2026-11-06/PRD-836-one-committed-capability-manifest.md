@@ -1,6 +1,6 @@
 # PRD-836 — One committed capability manifest
 
-**Status:** NOT STARTED
+**Status:** PARTIAL — Phase 1 box 2 landed; the second manifest and the derived docs are still tracked.
 **Priority:** P2 — open Phase 1 deletes the second 556 KB `capabilities.json` that 82 of 117 `core/src/index.ts` commits had to carry, and Phase 2 moves the other derived files out of commits.
 **Complexity:** 4 (MEDIUM)
 **Owner:** ThreeNative maintainers
@@ -41,11 +41,11 @@ longer stages files the author did not touch.
 ## Execution Phases
 
 #### Phase 1: One manifest
-**Status:** NOT STARTED
+**Status:** PARTIAL — the hook no longer stages on its own; the second copy is still tracked
 **Files:** `scripts/build-capability-manifest.ts`, `packages/create-threenative/package.json`, `packages/engine-mcp/src/index.ts`, `githooks/pre-commit`.
 
 - [ ] `packages/create-threenative/capabilities.json` is untracked and produced at pack time from core's copy, and the MCP resolves it in a scaffolded project. proof: `pnpm exec vitest run scripts/__tests__/capability-manifest.spec.ts` plus AC-1
-- [ ] The pre-commit hook stages nothing the author did not add. proof: commit one `index.ts` doc edit, then `git show --stat HEAD` lists only `index.ts` and `packages/core/capabilities.json`
+- [x] The pre-commit hook stages nothing the author did not add. It used to regenerate five artifacts and `git add` all of them, so one export edit arrived carrying files nobody chose and a shared worktree collected changes nobody wrote. `packages/core/capabilities.json` stays staged — it is the artifact a commit that adds an export must carry — and the four derived files are regenerated, then the hook **fails closed and names them** when they change, so staging them is the author's call. Demonstrated here: a one-line edit to `debugFlag`'s doc made the hook refuse with `packages/create-threenative/capabilities.json` and `capability-reference.md` named; staging those two and committing carries exactly them plus the source. The box's literal stat — only `index.ts` and `packages/core/capabilities.json` — needs the derived docs untracked, which is the next box. proof: the refusal above, and `git show --stat HEAD` on the following commit listing the two staged files, two sources and the core manifest.
 
 #### Phase 2: Derived docs are build output
 **Status:** NOT STARTED
