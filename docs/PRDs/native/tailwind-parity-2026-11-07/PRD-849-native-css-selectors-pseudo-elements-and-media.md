@@ -43,11 +43,13 @@ the `:has()` row from `native-css-compat.ts` when its units pass.
 
 ## Decisions
 
-- 2026-11-07 (agent, at the owner's "cover everything" request): `print` and `noscript` stay in the
-  denominator. A game host never prints and always runs script, so they pass by both renderers
-  agreeing that the rule is inactive. They are the only vacuity-guard exemptions. `visited` needs
-  links, which the engine does not have (no navigation). Its unit passes by both sides agreeing
-  that an `<a>` is unvisited.
+- 2026-11-07 (agent, at the owner's "cover everything" request): `print` and `noscript` cannot
+  discriminate. A game host never prints and always runs script, so both renderers agree the rule is
+  inactive and no measurement of them can tell a correct engine from a wrong one. `visited` needs
+  links (no navigation) and `target` needs a URL fragment, which neither subject sets. These four are
+  therefore *permanently inactive* and are the only units outside the meter's denominator (507 units,
+  503 scored). Every other exemption the scene names is *pending*: it stays in the denominator and
+  counts as a failure until its owner PRD lands the device input or the control.
 
 ## Execution Phases
 

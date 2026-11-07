@@ -53,23 +53,15 @@ Engine facts behind the gaps:
 ## Meter status (measured 2026-11-07, crate subject)
 
 ```
-tailwind-parity: 117/503 (23.3 %)  [313 do not discriminate, 31 exempt, 4 permanently inactive, 15 refused]
+tailwind-parity: 176/503 (35.0 %)  [253 do not discriminate, 31 exempt, 4 permanently inactive, 15 refused]
 ```
 
-Every cell is in the denominator except the four the batch's own decisions make
-permanently inactive on both subjects (`print:`, `noscript:`, `visited:`, `target:` — the
-renderers must agree the rule never fires, so no measurement of them can distinguish a correct
-engine from a wrong one). A *pending* exemption stays in the denominator and counts as a failure:
-it is an unproven unit, and the family PRD that lands its device input or control removes it.
-
-A cell that **does not discriminate** also fails: dropping its unit class has to take the measured
-region below the cell's own bar. A cell that stays at or above the bar cannot tell a correct engine
-from one that dropped the declaration, so counting it as coverage would overstate the result. The
-honest numbers are 117 passing, 313 non-discriminating, 31 pending exemptions and 15
-refused stages — not the 480 "cells whose pixels match" an unconditional comparison reports.
-
-The vacuity gap is scene staging in PRD-843, not engine work; the refused and mismatched cells are
-the family PRDs' subject matter. See PRD-843's `## Open`.
+A cell is evidence only when it discriminates (see Meter, item 3). The 313
+non-discriminating cells are the scene's own staging gaps; the 31 pending exemptions are unproven
+units their owner PRD removes; the 15 refused stages are the engine's closed `TAGS` list and a
+multicolumn panel it does not finish. The `117` of an earlier draft, and the `480` an unconditional
+"cells whose pixels match" comparison reported, both overstate or understate what is proven:
+`176/503` is what this meter can defend.
 
 ## PRDs
 
@@ -87,7 +79,7 @@ Every one of the 507 units has exactly one owner PRD. The generator in PRD-843 t
 | [PRD-849](PRD-849-native-css-selectors-pseudo-elements-and-media.md) | structural, relational and state variants, pseudo-elements, media and `supports-*` variants | P2 |
 | [PRD-850](PRD-850-native-css-paint-and-typography-families.md) | the 200 unproven paint and typography properties, inline SVG `fill`/`stroke`, cursor, scrollbars | P2 |
 | [PRD-851](PRD-851-native-css-form-controls-and-text-input.md) | form controls, text input and every form variant | P2 |
-| [PRD-852](PRD-852-tailwind-parity-reaches-507.md) | 507 of 507, the denylist deleted, all 14 kits build clean, the CI ratchet | P1 |
+| [PRD-852](PRD-852-tailwind-parity-reaches-503.md) | 503 of 503, the denylist deleted, all 14 kits build clean, the CI ratchet | P1 |
 
 Order: PRD-843 first. PRD-844 to PRD-851 are independent and can run in parallel. PRD-852 closes.
 
@@ -103,9 +95,14 @@ One command: `pnpm --filter threenative-native-css-hud parity:tailwind`
 2. **One scene, one component.** `src/ui/TailwindParity.tsx` renders the generated
    `tailwind-parity.scene.json` as panels of cells. react-dom mounts it in pinned Chromium.
    `createCssUiRoot()` mounts the same component on native.
-3. **Vacuity guard.** In Chromium, each cell renders with and without its unit class. When the two
-   frames are identical, the probe proves nothing and `--check` fails. The only exemptions are the
-   environment variants in PRD-849's Decisions.
+3. **Discrimination guard.** In Chromium, each cell renders with and without its unit class. A cell
+   proves something only when dropping the class takes its measured region below its own SSIM bar
+   *or* moves an element's box by more than 1 px. A cell that does neither cannot tell a correct
+   engine from one that dropped the declaration, so it fails rather than counting as coverage.
+   A **pending** exemption (a device input or control its owner PRD has not landed yet) stays in the
+   denominator and counts as a failure; the four the batch's decisions make permanently inactive —
+   `print:`, `noscript:`, `visited:`, `target:` — leave it, because the renderers must agree the rule
+   never fires and no measurement of them can distinguish anything.
 4. **Pass bars per unit** (the existing corpus bars, not relaxed):
    - geometry: each element's border box is within 1 CSS px on each edge;
    - pixels: cell luminance SSIM is at least 0.99, or 0.98 when the cell draws glyphs;
@@ -115,7 +112,7 @@ One command: `pnpm --filter threenative-native-css-hud parity:tailwind`
 5. **Two native subjects.** The default run uses the crate's headless `oracle` example (the same
    engine, CPU raster, every unit). `--host` runs the same panels on the real desktop host
    (`corpus/desktop.mjs` path). A family box ticks only when both subjects pass.
-6. **Output**: `tailwind-parity: N/507 (P %)`, plus `report.json` with each failing unit by family,
+6. **Output**: `tailwind-parity: N/503 (P %)`, plus `report.json` with each failing unit by family,
    element and edge. `--ratchet` fails when the score falls below `corpus/tailwind-parity.floor.json`
    or when a unit that passed before fails. Each PRD raises the floor in the commit that turns its
    units green.

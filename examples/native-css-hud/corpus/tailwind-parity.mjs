@@ -1433,7 +1433,17 @@ function vacuityOf(panel, withClass, stripped) {
     const b = crop(stripped.png, region);
     const score = ssim(luminance(a), luminance(b), a.width, a.height);
     const min = cell.glyphs ? SSIM_MIN_GLYPHS : SSIM_MIN;
-    if (score >= min) useless.set(cell.unit, Number(score.toFixed(4)));
+    // Layout counts too: `sticky` moves its box 48 px when the class goes, which the pixel bar over
+    // a mostly-empty region can miss. A cell discriminates if either bar would catch the drop.
+    const moved = withClass.boxes.some((box) => {
+      const other = stripped.boxes.find((candidate) => candidate.n === box.n);
+      return (
+        other === undefined ||
+        Math.max(Math.abs(box.x - other.x), Math.abs(box.y - other.y), Math.abs(box.w - other.w), Math.abs(box.h - other.h)) >
+          EDGE_PX
+      );
+    });
+    if (score >= min && !moved) useless.set(cell.unit, Number(score.toFixed(4)));
   }
   return useless;
 }
@@ -1686,6 +1696,12 @@ if (wants.sheet !== undefined) {
 }
 
 if (flag("floor")) {
+  if (wants.family !== undefined || wants.group !== undefined) {
+    // A floor written from a subset would make the next whole-scene ratchet protect only that
+    // subset, so `--floor` takes the whole scene or nothing.
+    console.error("TN_PARITY_FLOOR: --floor needs the whole scene, not --family/--group");
+    process.exit(1);
+  }
   // The ratchet's baseline: the units that pass today, so a later change that turns one of them red
   // is a red gate even while the batch's other families are still open.
   const units = report.filter((cell) => cell.pass).map((cell) => cell.unit);

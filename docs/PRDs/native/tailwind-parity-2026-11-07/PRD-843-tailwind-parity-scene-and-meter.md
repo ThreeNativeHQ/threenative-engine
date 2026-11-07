@@ -38,7 +38,7 @@ inventory and the meter and judge contract.
   owned by PRD-847/848/849/851 (four more are permanently inactive by the batch's own decisions).
 - [ ] AC-2 [local]: the meter prints a baseline score from the crate subject and from the host subject, and `--ratchet` fails below the committed floor.
   proof: `parity:tailwind` and `parity:tailwind --host` — Evidence: the crate subject prints
-  `tailwind-parity: 117/503 (23.3 %)  [313 do not discriminate, 31 exempt, 4 permanently inactive, 15 refused]`, and
+  `tailwind-parity: 176/503 (35.0 %)  [253 do not discriminate, 31 exempt, 4 permanently inactive, 15 refused]`, and
   `--floor` wrote the ratchet baseline. NOT met: `--host` exits `TN_PARITY_HOST_UNSUPPORTED` — there is
   no host subject, and a flag that silently scored the crate instead would be worse than none.
 - [ ] AC-3 [local]: the starter kit builds for `ui.renderer: "native-css"` with zero findings.
@@ -76,8 +76,9 @@ descriptor (`dark`, `touch`, reduced motion, viewport) and both subjects apply i
 context options in Chromium, `env.json` in the engine. There is no `--env <input|all>` CLI switch.
 
 - [x] The crate subject prints the score and writes `report.json` by family. The baseline goes in the batch README.
-  proof: `parity:tailwind` — Evidence: `tailwind-parity: 136/472 (28.8 %)`, and `## Meter status` in the
-  batch README. The score counts evidence only: exempt cells are excluded, vacuous cells fail.
+  proof: `parity:tailwind` — Evidence: `tailwind-parity: 176/503 (35.0 %)  [253 do not discriminate, 31 exempt, 4 permanently inactive, 15 refused]`, and `## Meter status` in the batch README. The score counts
+  evidence only: a pending exemption counts as a failure, a non-discriminating cell fails, and the four
+  permanently inactive units leave the denominator.
 - [ ] The host subject runs the same panels on the CSS-enabled desktop host and prints its own N. proof: `parity:tailwind --host` (needs `TN_ENABLE_CSS_UI=1 TN_ENABLE_UI_OVERLAY=0 pnpm native:build`)
 - [x] `--sheet <PRD-id>` writes WEB|NATIVE contact sheets with burned-in labels to `~/Downloads/tailwind-parity/<PRD-id>/`.
   proof: `parity:tailwind --sheet PRD-845` — Evidence: 7 sheets, one row per unit with the class burned in at 32 px.
@@ -94,57 +95,62 @@ context options in Chromium, `env.json` in the engine. There is no `--env <input
 ## Open
 
 Measured with `pnpm --filter threenative-native-css-hud parity:tailwind` on the crate subject. A cell
-counts only as evidence: an exempt cell is excluded from the denominator, and a vacuous cell fails.
+counts only as evidence: a pending exemption counts as a failure, a non-discriminating cell fails,
+and only the four permanently inactive units leave the denominator.
 
 ```
-tailwind-parity: 136/472 (28.8 %)  [291 vacuous, 35 exempt, 507 cells]
+tailwind-parity: 176/503 (35.0 %)  [253 do not discriminate, 31 exempt, 4 permanently inactive, 15 refused]
 ```
 
-| Family | pass | vacuous |
+| Family | pass | non-discriminating |
 | --- | --- | --- |
-| `PRD-844/filter` | 3/19 | 11 |
-| `PRD-845/blend` | 0/4 | 3 |
+| `PRD-844/filter` | 0/19 | 14 |
+| `PRD-845/blend` | 0/4 | 4 |
 | `PRD-845/clip` | 1/2 | 0 |
-| `PRD-845/mask` | 24/50 | 25 |
+| `PRD-845/mask` | 25/50 | 25 |
 | `PRD-846/transform3d` | 0/9 | 8 |
-| `PRD-847/motion` | 0/4 | 2 |
+| `PRD-847/motion` | 0/5 | 2 |
 | `PRD-848/flow` | 0/15 | 0 |
-| `PRD-848/grid-and-query` | 0/2 | 1 |
-| `PRD-848/logical` | 10/18 | 8 |
-| `PRD-848/scroll` | 1/31 | 30 |
-| `PRD-849/media` | 13/16 | 1 |
-| `PRD-849/pseudo` | 2/5 | 3 |
-| `PRD-849/selectors` | 10/30 | 19 |
-| `PRD-850/misc` | 54/182 | 117 |
-| `PRD-850/paint` | 8/39 | 30 |
-| `PRD-850/type` | 10/41 | 28 |
+| `PRD-848/grid-and-query` | 0/5 | 1 |
+| `PRD-848/logical` | 12/18 | 6 |
+| `PRD-848/scroll` | 7/31 | 24 |
+| `PRD-849/media` | 13/22 | 1 |
+| `PRD-849/pseudo` | 2/8 | 3 |
+| `PRD-849/selectors` | 10/32 | 19 |
+| `PRD-850/misc` | 88/182 | 83 |
+| `PRD-850/paint` | 9/39 | 29 |
+| `PRD-850/type` | 9/41 | 29 |
 | `PRD-851/paint` | 0/5 | 5 |
+| `PRD-851/states` | 0/16 | 0 |
 
-- **Vacuity is the dominant gap (313 of 503 scored cells), and it is scene work, not engine work.**
-  A cell is counted as discriminating only when dropping its unit class takes the measured region
-  below the cell's own bar. Staging already in place: a contrast default in Tailwind's `base` layer,
-  companion utilities for custom-property-only units, a positioned probe, cell-scoped rules, and a
-  measured region that stops at the label band. What is left: `ring`/`shadow`/`inset-ring`/
-  `inset-shadow` (the companion needs a width), `outline-*` (no outline width on the probe),
-  colour-only `border-*` (no border width), `order`/`basis`/`auto-cols`/`auto-rows` (needs a second
-  item and a reflow), `stroke`/`fill`/`pointer-events`/`will-change`/`contain`/`color-scheme`/
-  `scrollbar-*` (no painted consumer), `content-*` (paints only on a pseudo-element), and the
-  `rounded-*-lg` family, whose 16 cells move by less than the bar against their 4 px contrast.
+- **The dominant gap (253 of 503 scored cells) is scene staging, not engine work.** A cell
+  discriminates when dropping its unit class takes the measured region below its own bar or moves an
+  element's box by more than 1 px. Staging already in place: a contrast default in Tailwind's `base`
+  layer, companion utilities for custom-property-only units, a positioned probe, cell-scoped rules, a
+  measured region that stops at the label band, and an edge check beside the pixel bar. What is left:
+  `ring`/`shadow`/`inset-ring`/`inset-shadow` (the companion needs a width), `outline-*` (no outline
+  width on the probe), colour-only `border-*` (no border width), `order`/`basis`/`auto-cols`/
+  `auto-rows` (needs a second item and a reflow), `stroke`/`fill`/`pointer-events`/`will-change`/
+  `contain`/`color-scheme`/`scrollbar-*` (no painted consumer), `content-*` (paints only on a
+  pseudo-element), the `rounded-*-lg` family (16 cells that move less than the bar against their
+  4 px contrast), and the `stick`-family scroll cells, whose filler text sits inside the region while
+  `probeDrawsGlyphs` reads only the probe's own subtree — 31 cells on the wrong bar.
 - **Pending exemptions (31 variant cells).** Each names its owner PRD and stays in the denominator:
   form states and `peer-*` (PRD-851, 21 cells), container queries (PRD-848, 3),
   `prefers-contrast`/forced-colors/inverted-colors/`pointer-none`/`any-pointer-none` (PRD-849), and
   `@starting-style` (PRD-847). Four more — `print:`, `noscript:`, `visited:`, `target:` — are
-  permanently inactive on both subjects by the batch's own decisions and are out of the denominator.
+  permanently inactive on both subjects by the batch's decisions and are out of the denominator.
 - **`--host`.** Not implemented; the flag exits `TN_PARITY_HOST_UNSUPPORTED`.
 - **The motion bar.** Not built: no stepped clock at 0/25/50/75/100 %, and a panel whose sheet carries
   `animation`/`transition`/`@starting-style` skips the byte-equality double capture instead of being
   sampled at fixed times. PRD-847 owns both.
 - **`--env`.** A panel carries its own device descriptor (`dark`, `touch`, reduced motion, viewport)
   and both subjects apply it, but there is no `--env <input|all>` CLI switch.
-- **Refused stages (15 units).** The crate's closed `TAGS` list refuses `table`, `input`, `textarea`,
-  `select` (6 cells); `columns-1` beside a float does not finish in the meter's 120 s budget (9 cells).
-- **The ratchet only gates a whole-scene run**: `--ratchet` with `--family`/`--group` exits non-zero
-  rather than comparing a subset with the global floor, and a floor unit missing from a run fails.
+- **Refused stages (15 units).** The crate's closed `TAGS` list refuses `table`, `input`,
+  `textarea`, `select` (6 cells); `columns-1` beside a float does not finish in the meter's 120 s
+  budget (9 cells).
+- **The ratchet.** `--ratchet` and `--floor` both refuse a filtered (`--family`/`--group`) run, and a
+  floor unit missing from a run fails.
 
 ## Decisions
 
@@ -168,10 +174,13 @@ tailwind-parity: 136/472 (28.8 %)  [291 vacuous, 35 exempt, 507 cells]
   whole cell — the bar cannot see it. The region is the probe's box plus 20 px for what escapes it
   (a ring, an outline, a shadow), clamped inside the cell; the glyph bar comes from the probe's
   subtree rather than the cell's label, so the 0.99 bar applies where nothing draws glyphs.
-- 2026-11-07 (agent): **the score counts evidence only.** An exempt cell is left out of the
-  denominator; a cell whose unit class changes nothing is a scene defect and fails. The first honest
-  measurement of that rule is 136/472, not the 427/507 that counting every pixel match
-  would have reported.
+- 2026-11-07 (agent): **the score counts evidence only.** A *pending* exemption stays in the
+  denominator and counts as a failure; the four units the batch's decisions make permanently
+  inactive leave it; and a cell that does not discriminate fails. This Decision supersedes the first
+  draft's rule, which excluded every exemption from the denominator: that hid 25 engine gaps
+  (21 form states, 3 container queries, `@starting-style`) inside a smaller number. The measured
+  values are `176/503` with the edge check, `117/503` with a pixel-only test, and `480/507` for
+  counting every cell whose pixels match — the last two are not coverage.
 - 2026-11-07 (agent): **a unit that only sets custom properties is staged with the utility that reads
   them** (`from-red-500` with `bg-linear-to-r`, `--tw-ring-*` with `ring`). Alone it paints nothing,
   and that is a fact about Tailwind rather than a gap in the engine.
