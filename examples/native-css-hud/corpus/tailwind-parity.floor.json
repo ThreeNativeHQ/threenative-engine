@@ -1,5 +1,5 @@
 {
-  "passed": 162,
+  "passed": 163,
   "units": [
     "PRD-850/paint|bg|background-size|",
     "PRD-850/paint|border|border-style,border-width|",
@@ -138,6 +138,7 @@
     "PRD-848/scroll|sticky|position|",
     "PRD-844/filter|backdrop|--tw-backdrop-opacity,-webkit-backdrop-filter,backdrop-filter|",
     "PRD-844/filter|blur|--tw-blur,filter|",
+    "PRD-848/flow|table|display|",
     "PRD-849/selectors|variant|first",
     "PRD-849/selectors|variant|last",
     "PRD-849/selectors|variant|only",

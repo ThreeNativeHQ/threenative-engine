@@ -64,6 +64,11 @@ const TAGS: &[&str] = &[
     "div", "section", "aside", "header", "footer", "main", "nav", "article", "h1", "h2", "h3",
     "h4", "h5", "h6", "p", "span", "button", "img", "ul", "ol", "li", "a", "label", "strong",
     "em", "b", "i", "small",
+    // A scoreboard, an inventory grid and a stats page are tables, and blitz-dom lays them out
+    // (`layout/table.rs`); refusing the tag made a whole Tailwind layout family unmeasurable rather
+    // than unsupported. PRD-848 is what proves the layout, so the tag is allowed and the fixtures
+    // decide whether it is right.
+    "table", "thead", "tbody", "tfoot", "tr", "td", "th", "caption", "colgroup", "col",
 ];
 
 /// The attribute names an `attr` op may set, besides any `data-*` or `aria-*`. Everything else

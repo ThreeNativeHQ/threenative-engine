@@ -1,6 +1,6 @@
 # PRD-848 — native-css lays out every Tailwind layout family like Chromium
 
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **Priority:** P1 — the rts kit ships `float-right`, every kit emits `.table`, and AC-1 to AC-4 still refuse or do not prove tables, floats, columns, sticky, subgrid, line clamp, container queries and scroll snap.
 **Complexity:** 7 (HIGH) — 6 to 10 files (+2), layout engine patches (+2), Rust crate plus TS build (+2), scroll state (+1).
 **Owner:** ThreeNative maintainers
@@ -52,20 +52,45 @@ each refused row from `native-css-compat.ts` in the commit that turns its group 
 ## Execution Phases
 
 #### Phase 1: Flow layout
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **Files:** `vendor/blitz-dom-0.3.0-beta.2/src/layout/{table,construct,inline}.rs`, `vendor/PATCHES.md`.
 
+- [x] The tag gate admits the table family, so the flow group can be measured at all. proof: `parity:tailwind --family PRD-848 --group flow`
+  Evidence: `native/css-ui/src/lib.rs`'s closed `TAGS` list refused `table`, `tbody`, `tr`, `td`, `th`, `caption`,
+  `colgroup` and `col`, so six flow cells could not even be staged; they are allowed now and the group measures
+  1/15 with 233 non-discriminating and 1 refused.
 - [ ] Tables, floats and columns pass, and their rows leave the denylist. proof: AC-1
+  Evidence: NOT met — 1 of 15. `columns-12` beside a float is the one stage the engine does not finish in 60 s;
+  each flow cell now has its own panel so that costs one cell instead of nine. The rest are staging gaps:
+  `border-collapse`/`border-spacing`/`caption-top` need a table whose cells have borders, `clear-end` and
+  `break-*` need content that actually breaks, `box-decoration-clone` needs a fragmented box.
 
 #### Phase 2: Scroll family
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **Files:** `vendor/blitz-dom-0.3.0-beta.2/src/{scrolling.rs,layout/mod.rs}`, `corpus/interactions.mjs`.
 
 - [ ] Sticky and snap pass after scroll input, and their rows leave the denylist. proof: AC-2
 
 #### Phase 3: Grid, clamp, queries and logical properties
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **Files:** `vendor/taffy-0.14.0`, `vendor/blitz-dom-0.3.0-beta.2/src/layout/inline.rs`, the guide, the floor.
 
 - [ ] Subgrid, line clamp and container queries pass. proof: AC-3
 - [ ] Logical, grid-auto and display units pass, and the floor rises. proof: AC-4 plus `parity:tailwind --ratchet`
+
+## Open
+
+Measured with `pnpm --filter threenative-native-css-hud parity:tailwind --family PRD-848`: **19 of 69 units pass**
+across the four groups (flow 1/15, logical 12/18, scroll 6/31, grid-and-query 1/5), with 31 cells that do not
+discriminate.
+
+- **Flow (1/15).** The tag gate is open (see Phase 1) and every cell but one is measured. `columns-12` with a float
+  does not finish in the meter's 60 s budget — a real engine hang in the multicolumn path, and the only refused
+  cell left in the batch. The thirteen that do not discriminate are staging: a border-spacing or caption needs a
+  table whose cells carry borders and whose caption is content; `clear-*`/`break-*` need a float to clear and a box
+  that can fragment.
+- **Scroll (6/31).** `scroll-m*`/`scroll-p*`/`snap-*` need a wheel script: at scroll 0 they change nothing, which is
+  what a `scroll-snap-align` looks like before anything scrolls. `corpus/interactions.mjs` already has the grammar
+  (the corpus drives nested scrollers with it); pointing it at a parity panel is the work.
+- **Logical (12/18) and grid-and-query (1/5).** The logical cells that do not discriminate are `border-*-start`-style
+  longhands on a probe with no border width, and the query cells need a sized container ancestor.

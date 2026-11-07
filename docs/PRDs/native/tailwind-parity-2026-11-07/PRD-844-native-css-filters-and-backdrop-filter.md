@@ -81,7 +81,7 @@ record the measured gap and ask the owner under `## Blocked on`. Do not lower th
 ## Open
 
 Measured with `pnpm --filter threenative-native-css-hud parity:tailwind --family PRD-844` on the crate subject:
-**2 of 19 units pass**, 220 do not discriminate and 0 stages are refused.
+**2 of 19 units pass**, 233 do not discriminate and 0 stages are refused.
 
 - **Painting is on for one node.** The `filters` feature is enabled, so `vello_cpu`'s own primitives — gaussian blur,
   drop shadow, offset, flood — paint. `blur-3xl` matches at 0.9951.

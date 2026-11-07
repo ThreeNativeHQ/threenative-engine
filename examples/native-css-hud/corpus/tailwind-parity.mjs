@@ -1229,6 +1229,9 @@ function utilityEntry(unit, classCss, byProperty) {
     layout,
     needsRefusedTag:
       layout === "table" || /^(accent|caret|appearance|field-sizing|resize)/u.test(unit.probe),
+    // A multicolumn cell beside a float is the one case the engine does not finish; giving each
+    // flow cell its own panel means a slow one costs one cell instead of a whole panel's evidence.
+    alone: layout === "prose" || layout === "float",
     prose: unit.props.some((p) => PROSE_PROPS.has(p)),
     unit,
   };

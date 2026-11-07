@@ -27,7 +27,7 @@ the last rows go, the guide stops describing a "Core profile", and CI holds the 
 - [ ] AC-1 [local]: the meter prints `tailwind-parity: 503/503` on the crate subject and on the host subject
   (507 units less the four the batch's decisions make permanently inactive), with zero
   non-discriminating cells and zero pending exemptions. proof: `parity:tailwind` and `parity:tailwind --host` — Evidence: pending.
-  Today it prints `145/503 (28.8 %)` with 220 non-discriminating, 31 pending exemptions and 15 refused stages.
+  Today it prints `145/503 (28.8 %)` with 233 non-discriminating, 31 pending exemptions and 1 refused stages.
 - [ ] AC-2 [local]: all 14 Tailwind kits build for `ui.renderer: "native-css"` with no findings and no refusal. proof: a scripted loop of `threenative build --target desktop` over each scaffolded kit with `ui.renderer: "native-css"` — Evidence: pending.
 - [ ] AC-3 [shared]: the CI job runs `parity:tailwind --ratchet` and fails on a deliberate one-unit regression on a draft branch. proof: the CI run link — Evidence: pending.
 
