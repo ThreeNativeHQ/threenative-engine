@@ -933,6 +933,9 @@ eboot="$3"
 shift 4
 $TN_PS4_HOST_WRAP "$appimage" -g "$eboot" &
 game=$!
+# shadPS4 can run as its own session leader, out of the process group the runner stops, and then it
+# holds the runner's pipes open forever (a 2 h 20 min hang). Stop it by its PID here.
+trap 'kill "$game" 2>/dev/null; sleep 1; kill -KILL "$game" 2>/dev/null' TERM INT
 for at in "$@"; do
   ( sleep "$at"; import -window root -screen "$out/screen-$at.png" || echo "screenshot $at failed" >&2 ) &
 done
@@ -1022,9 +1025,10 @@ async function boot(experiment, built, appimage, outDir) {
   // xvfb.sh exports the private DISPLAY to its child, so the captures run inside the wrapper: the
   // emulator goes to the background, and each capture is its own subshell sleeping an absolute
   // time from launch (a broken capture reports itself and never changes the exit status).
-  const command = shots.length
-    ? ['sh', '-c', CAPTURE_SCRIPT, 'tn-ps4-launch', appimage, '-g', built.artifacts.eboot, logOut, ...shots]
-    : launch;
+  // Every launch but gdb goes through CAPTURE_SCRIPT: it is what stops an emulator that left the group.
+  const command = gdbCommands
+    ? launch
+    : ['sh', '-c', CAPTURE_SCRIPT, 'tn-ps4-launch', appimage, '-g', built.artifacts.eboot, logOut, ...shots];
   const child = spawn('sh', [wrapper, ...command], { env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
   const startedAt = Date.now();
   // A capture is taken that many seconds after THIS launch (CAPTURE_SCRIPT sleeps from launch), and
@@ -1160,4 +1164,5 @@ async function main(argv) {
   return 1;
 }
 
-process.exitCode = await main(process.argv);
+// Exit explicitly: any process left holding an inherited pipe would otherwise keep the runner alive.
+process.exit(await main(process.argv));
