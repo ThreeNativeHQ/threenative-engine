@@ -362,7 +362,8 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
                     position: l.position,
                   })),
                 },
-                sky === undefined
+                // Diagnosis: ?giSky=0 gives the trace's escaping rays no sky.
+                sky === undefined || params.get("giSky") === "0"
                   ? new Color(0, 0, 0)
                   : new Color(
                       (sky.data[0] ?? 0) * sky.scale[0],
