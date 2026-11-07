@@ -61,10 +61,10 @@ are the scene's own staging gaps; the 31 pending exemptions are unproven units t
 removes; the 15 refused stages are the engine's closed `TAGS` list and a multicolumn panel it does
 not finish.
 
-For comparison, `427/507` cells have matching pixels *and* boxes, but 13 of those are exempt or
-refused and 3 change nothing, so a pixel comparison overstates what is proven; a pixel-only
-discrimination test understates it, because it misses a unit that only moves a box. `118/503` is
-what this meter can defend.
+For comparison, `427/507` cells have matching pixels *and* boxes, but 309 of those do not
+discriminate, so a pixel comparison overstates what is proven; a pixel-only discrimination test
+understates it, because it misses a unit that only moves a box. `118/503` is what this meter can
+defend.
 
 ## PRDs
 

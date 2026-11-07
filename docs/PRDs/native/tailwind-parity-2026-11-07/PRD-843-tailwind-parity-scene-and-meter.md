@@ -181,13 +181,10 @@ tailwind-parity: 118/503 (23.5 %)  [312 do not discriminate, 31 exempt, 4 perman
   inactive leave it; and a cell that does not discriminate fails. This Decision supersedes the first
   draft's rule, which excluded every exemption from the denominator: that hid 25 engine gaps
   (21 form states, 3 container queries, `@starting-style`) inside a smaller number. The measured
-  values are `118/503` with the per-cell edge check, `117/503` with a pixel-only test, `427/507`
-  for cells whose pixels and edges both match, and `507/507` for cells a naive equality test would
-  call "identical" once its own exemption and vacuity arms are ignored. Only the first is coverage:
-  the pixel-only test misses a unit that only moves a box, and a pixel match without a
-  discrimination test counts cells that cannot tell a correct engine from a dropped declaration —
-  35 exempt, 15 refused, and 3 that match while changing nothing. A panel-wide edge test is also
-  wrong — the strip arm removes every probe's class at once, so a neighbouring cell that moves would
+  values are `118/503` with the per-cell edge check, `117/503` with a pixel-only test, and
+  `427/507` for cells whose pixels and edges both match. Only the first is coverage: the pixel-only
+  test misses a unit that only moves a box, and 309 of the 427 match without discriminating. A
+  panel-wide edge test is also wrong — the strip arm removes every probe's class at once, so a neighbouring cell that moves would
   mark its neighbours as discriminating; the check is limited to the cell's own elements, which is
   what turned 176 into 118.
 - 2026-11-07 (agent): **a unit that only sets custom properties is staged with the utility that reads
