@@ -9,6 +9,10 @@
  */
 @source "../index.html";
 @source "./";
+/* `src/render/` is shader and material source: a word in its comments ("blur", "filter",
+   "table") became a real utility rule, which is what made a clean HUD look like a native-css
+   profile failure. Tailwind scans what it is told to scan. */
+@source not "./render";
 
 /*
  * Your palette. Every name here becomes a real Tailwind utility — `bg-ink`,

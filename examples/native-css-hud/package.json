@@ -21,6 +21,7 @@
     "three": "catalog:"
   },
   "devDependencies": {
+    "@tailwindcss/node": "catalog:",
     "@tailwindcss/vite": "catalog:",
     "@threenative/runtime-native": "workspace:*",
     "@types/react": "catalog:",

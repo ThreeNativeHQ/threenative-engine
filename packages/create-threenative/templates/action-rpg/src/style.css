@@ -2,6 +2,10 @@
 
 @source "../index.html";
 @source "./";
+/* `src/render/` is shader and material source: a word in its comments ("blur", "filter",
+   "table") became a real utility rule, which is what made a clean HUD look like a native-css
+   profile failure. Tailwind scans what it is told to scan. */
+@source not "./render";
 
 /* The same roles as `src/render/palette.ts`, in the two places the UI can reach: the HUD is a
    web view, so it cannot import a Three.js palette. Keep the two lists in step when you repaint. */
