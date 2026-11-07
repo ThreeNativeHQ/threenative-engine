@@ -101,7 +101,7 @@ const PANEL_CSS = `
 .cell{position:relative;width:${CELL_W}px;height:${CELL_H}px;overflow:hidden;border-right:1px solid #27272a;border-bottom:1px solid #27272a;box-sizing:border-box}
 .cell-label{height:26px;line-height:26px;padding:0 6px;font-size:13px;color:#a1a1aa;white-space:nowrap;overflow:hidden}
 .cell-stage{position:relative;width:${CELL_W - 2}px;height:${CELL_H - 28}px;overflow:hidden;padding:8px;box-sizing:border-box}
-.probe{background:#3f3f46;color:#fafafa;font-size:14px;line-height:20px;box-sizing:border-box;width:120px;height:40px;padding:2px;
+.probe{background:#2563eb;color:#fafafa;font-size:14px;line-height:20px;box-sizing:border-box;width:120px;height:40px;padding:2px;
   /* Positioned, so inset, top/right/bottom/left and z-index have a box to act on: a static probe
      would make sixteen units vacuous for a reason that has nothing to do with the engine. */
   position:relative}
@@ -110,11 +110,16 @@ const PANEL_CSS = `
 .stage-col{display:flex;flex-direction:column;gap:6px;width:100%}
 .stage-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;width:100%}
 .stage-scroll{width:100%;height:${CELL_H - 44}px;overflow:auto}
-.stage-scroll-body{height:600px;display:flex;flex-direction:column;gap:8px}
+.stage-scroll-body{height:600px;display:flex;flex-direction:column;gap:44px}
 .stage-table{border-collapse:separate;border-spacing:0;width:100%}
 .stage-table td,.stage-table th{border:1px solid #52525b;padding:3px 5px;color:#e4e4e7;font-size:13px}
 .stage-prose{font-size:14px;line-height:20px;color:#e4e4e7}
 .stage-fill{width:120px;height:40px;background:#27272a}
+/* A backdrop filter needs something to filter and something translucent to see it through: a
+   saturated band behind the cell and a see-through probe over it. */
+.stage-backdrop{width:100%;height:100%;color:#fafafa;font-size:13px;line-height:16px;padding:2px;
+  background:repeating-linear-gradient(45deg,#e11d48 0 10px,#2563eb 10px 20px,#22c55e 20px 30px,#f59e0b 30px 40px)}
+.probe-translucent{background:rgba(24,24,27,0.35)}
 .stage-list{margin:0;padding-left:18px;list-style:disc}
 `;
 
@@ -154,9 +159,9 @@ const rootOf = (name) => (name.startsWith("-") ? name.slice(1) : name).split("-"
 const DESCRIPTOR_AT_RULES = new Set(["property", "font-face", "counter-style", "page"]);
 
 function scan(css) {
-  const state = { props: new Set(), atRules: new Set(), stack: [] };
+  const state = { props: new Set(), atRules: new Set(), values: [], stack: [] };
   for (const raw of css.split("\n")) scanLine(raw.trim(), state);
-  return { props: [...state.props].sort(), atRules: [...state.atRules].sort() };
+  return { props: [...state.props].sort(), atRules: [...state.atRules].sort(), values: state.values };
 }
 
 /** One trimmed line of a compiled rule, folded into the scan's state. */
@@ -164,8 +169,10 @@ function scanLine(line, state) {
   if (line.endsWith("{")) return openBlock(line.slice(0, -1).trim(), state);
   if (line === "}") return void state.stack.pop();
   if (state.stack.at(-1) !== "rule") return undefined;
-  const declaration = /^([-a-zA-Z][-a-zA-Z0-9]*)\s*:/u.exec(line);
-  if (declaration !== null) state.props.add(declaration[1]);
+  const declaration = /^([-a-zA-Z][-a-zA-Z0-9]*)\s*:(.*)$/u.exec(line);
+  if (declaration === null) return undefined;
+  state.props.add(declaration[1]);
+  state.values.push(declaration[2]);
   return undefined;
 }
 
@@ -203,12 +210,14 @@ export async function deriveUnits() {
   const classes = design.getClassList().map(([name]) => name);
   const compiled = design.candidatesToCss(classes);
   const classCss = new Map();
+  const strength = new Map();
   const units = new Map();
   for (const [index, name] of classes.entries()) {
     const css = compiled[index];
     if (css == null || css === "") continue;
     classCss.set(name, css);
-    const { props, atRules } = scan(css);
+    const { props, atRules, values } = scan(css);
+    strength.set(name, magnitude(values.join(" ")));
     const root = rootOf(name);
     const key = `${root}|${props.join(",")}|${atRules.join(";")}`;
     const unit = units.get(key);
@@ -217,18 +226,48 @@ export async function deriveUnits() {
       continue;
     }
     unit.classes.push(name);
-    if (
-      name.length < unit.probe.length ||
-      (name.length === unit.probe.length && name < unit.probe)
-    ) {
-      unit.probe = name;
-    }
+    if (stronger(name, strength.get(name), unit.probe, strength.get(unit.probe))) unit.probe = name;
   }
   const variants = design.getVariants().map((variant) => ({
     name: variant.name,
     arbitrary: variant.isArbitrary,
   }));
   return { design, units: [...units.values()], variants, classCss, classCount: classes.length };
+}
+
+/**
+ * The largest px-equivalent number a rule *declares*, or 0 when it declares none.
+ *
+ * From the declaration values only: a `@property` descriptor's `initial-value` or `syntax` is not
+ * something the unit paints, and reading it made every ring and shadow class look identical.
+ */
+function magnitude(values) {
+  let largest = 0;
+  for (const match of values.matchAll(/(-?[\d.]+)(px|rem|em|%)?/gu)) {
+    const value = Number(match[1]);
+    if (!Number.isFinite(value)) continue;
+    const scale = match[2] === "rem" || match[2] === "em" ? 16 : 1;
+    largest = Math.max(largest, Math.abs(value) * scale);
+  }
+  return largest;
+}
+
+/**
+ * Which class of a unit should be its probe.
+ *
+ * Not the shortest name: `ring` is a 1 px ring and `radius` a 4 px corner, and a 1 px change on a
+ * 120x40 box does not move SSIM past the 0.99 bar, so the cell cannot tell a correct engine from one
+ * that dropped the declaration. The probe is the *strongest* class that still fits a 320x240 cell —
+ * `ring-4`, `rounded-3xl` — because a real effect has to be big enough for the bar to see it.
+ */
+const PROBE_STRENGTH_CAP = 40;
+
+function stronger(candidate, want, current, have) {
+  want = Math.min(want, PROBE_STRENGTH_CAP);
+  have = Math.min(have, PROBE_STRENGTH_CAP);
+  if (want !== have) return want > have;
+  if (candidate.length !== current.length) return candidate.length < current.length;
+  return candidate < current;
 }
 
 // -------------------------------------------------------------------------------------------------
@@ -796,7 +835,6 @@ function contrastDeclarations(unit, classCss, byProperty) {
     .filter(usable)
     .sort((a, b) => a[0].length - b[0].length || (a[0] < b[0] ? -1 : 1));
   for (const property of unit.props) {
-    if (property.startsWith("--")) continue;
     const chosen =
       family.find((candidate) => differs(candidate, property)) ??
       (byProperty.get(property) ?? [])
@@ -827,7 +865,6 @@ const COMPANIONS = [
     /^--tw-blur|^--tw-brightness|^--tw-contrast|^--tw-grayscale|^--tw-hue-rotate|^--tw-invert|^--tw-saturate|^--tw-sepia|^--tw-drop-shadow/u,
     "filter",
   ],
-  [/^--tw-backdrop/u, "backdrop-blur"],
   [/^--tw-scale|^--tw-rotate|^--tw-translate|^--tw-skew/u, "transform"],
   [/^--tw-space-/u, "space-x-4"],
   [/^--tw-divide-/u, "divide-x"],
@@ -852,6 +889,7 @@ function companionsFor(unit) {
 
 /** Which wrapper a utility unit needs. */
 function layoutFor(unit) {
+  if (unit.props.some((p) => /backdrop-filter/.test(p))) return "backdrop";
   if (unit.props.some((p) => PROSE_PROPS.has(p))) return "prose";
   if (/^(sticky|snap-|scroll-|overscroll-)/u.test(unit.probe)) return "scroll";
   if (unit.props.some((p) => p.startsWith("column"))) return "prose";
@@ -955,6 +993,13 @@ function layoutStage(cell, probe, classes, before, after) {
         ),
       ),
     ];
+  }
+  if (cell.layout === "backdrop") {
+    // A backdrop filter needs something to filter and something to see it through: the probe is
+    // translucent and the cell behind it is a hard-edged band, because a smooth gradient is
+    // unchanged by a blur and a `backdrop-*` unit would then prove nothing.
+    probe.attrs.class = `${classes} probe-translucent`;
+    return [el("div", { class: "stage-backdrop" }, ...siblings)];
   }
   if (cell.layout === "float")
     return [el("div", { class: "stage-prose" }, ...siblings, text(` ${LOREM}`))];
@@ -1446,6 +1491,30 @@ function cratePanel(panel, dir, { drive = [] } = {}) {
 // Measure.
 // -------------------------------------------------------------------------------------------------
 
+/**
+ * SSIM per channel, the worst of the three.
+ *
+ * The corpus's bar is luminance SSIM, and luminance is blind to exactly the families this batch is
+ * about: `grayscale(1)` maps `rgb(37,99,235)` to `rgb(96,96,96)`, whose luminance is 95.7 against
+ * 95.7 — an identical frame by that measure and an obviously different one to a viewer. The colour
+ * channels are measured too, and the *worst* of the four (R, G, B, luminance) is the cell's score.
+ */
+function channelSsim(a, b, offset) {
+  const plane = (png) => {
+    const values = new Float64Array(png.width * png.height);
+    for (let i = 0; i < values.length; i++) values[i] = png.data[i * 4 + offset];
+    return values;
+  };
+  return ssim(plane(a), plane(b), a.width, a.height);
+}
+
+/** The worst of luminance and the three colour channels. */
+function matchScore(a, b) {
+  let worst = ssim(luminance(a), luminance(b), a.width, a.height);
+  for (const offset of [0, 1, 2]) worst = Math.min(worst, channelSsim(a, b, offset));
+  return worst;
+}
+
 /** One cell's crop of a frame, as a PNG the sheets can show and the SSIM can read. */
 function crop(png, box) {
   const width = Math.max(1, Math.round(box.w));
@@ -1496,7 +1565,7 @@ function cellScore(cell, web, native) {
   return {
     cellBox,
     region,
-    score: ssim(luminance(west), luminance(east), west.width, west.height),
+    score: matchScore(west, east),
   };
 }
 
@@ -1579,7 +1648,7 @@ function vacuityOf(panel, withClass, stripped) {
     const region = measureRegion(cellBox, probeBox);
     const a = crop(withClass.png, region);
     const b = crop(stripped.png, region);
-    const score = ssim(luminance(a), luminance(b), a.width, a.height);
+    const score = matchScore(a, b);
     const min = cell.glyphs ? SSIM_MIN_GLYPHS : SSIM_MIN;
     // Layout counts too: `sticky` moves its box 48 px when the class goes, which the pixel bar over
     // a mostly-empty region can miss. A cell discriminates if either bar would catch the drop.

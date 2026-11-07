@@ -1,0 +1,6 @@
+{
+  "git": {
+    "sha1": "c5f889688962ed619cf268b66f514bf185ed58b2"
+  },
+  "path_in_vcs": "crates/anyrender_vello_cpu"
+}

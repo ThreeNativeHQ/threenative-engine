@@ -1,6 +1,6 @@
 # Vendored patches
 
-Five upstream crates are vendored here and wired with `[patch.crates-io]` in this crate's
+Six upstream crates are vendored here and wired with `[patch.crates-io]` in this crate's
 `Cargo.toml`. Each is a pinned version copied from the crates.io registry source unchanged apart
 from the hunks below; `LICENSE-MIT` / `LICENSE-APACHE` are the upstream licences, which the
 published `.crate` archives omit.
@@ -457,3 +457,23 @@ fails on its own: the strut (`box-model-and-sizing`), the order and scale of the
 * **Proves it:** `ua-defaults` — its bare `<button>` takes the UA sheet's `font: 400 13.3333px
   Arial`, and with this hunk its 21px line box is the one Chromium measures on Liberation Sans;
   without it the button is 3.09px tall at the bottom and the column above it with it (2 edge misses).
+
+## `anyrender_vello_cpu-0.17.0` — 6 added code lines
+
+### 1. a filter primitive the backend cannot paint aborted the whole frame
+
+* **Where:** `src/filters.rs` (`convert_filter_effect`).
+* **Why:** this backend's `filters` feature is what makes `filter:` reach pixels at all, and with it
+  on, `vello_common` 0.1.0's `PreparedFilter::new` *panics* on any primitive it has not implemented
+  (`unimplemented!("Other filter primitives not yet implemented")`). Tailwind's colour-matrix
+  utilities — `grayscale`, `brightness`, `contrast`, `saturate`, `sepia`, `hue-rotate`, `invert`, and
+  every `backdrop-*` — are exactly those, so one of them on screen aborted the host's frame instead
+  of painting an unfiltered box. Dropping the primitive keeps the two things apart: a filter the
+  backend cannot paint is a visible difference a comparison reports, and an unsupported feature is
+  no longer a crash that reports nothing.
+* **Proves it:** `parity:tailwind --family PRD-844` — before this hunk seven cells of the filter
+  family were `the engine refused this stage: not implemented: Other filter primitives not yet
+  implemented` and could not be measured at all; after it all nineteen are measured, `blur-3xl`
+  matches Chromium at SSIM 0.9951, and the colour-matrix cells report the real gap (0.20 to 0.87).
+  Multi-primitive graphs and the backdrop filter argument are still unimplemented upstream and are
+  PRD-844's remaining work.

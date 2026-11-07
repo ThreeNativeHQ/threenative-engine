@@ -25,7 +25,10 @@ blitz-traits = "=0.3.0-beta.2"
 # backend that needs no GPU, no window and no system library, which is what makes this
 # runnable in a headless test.
 anyrender = "0.13.0"
-anyrender_vello_cpu = "0.17.0"
+# `filters` is what makes `filter:` reach pixels at all: without it every filter is dropped, and
+# with it vello_cpu's own primitives (gaussian blur, drop shadow, offset, flood, colour matrix,
+# blend) paint the single-node filters Tailwind's colour-matrix utilities emit.
+anyrender_vello_cpu = { version = "0.17.0", features = ["filters"] }
 # Blitz drives text through Parley.
 parley = "0.11.1"
 # The only hand-written parsing here: a mutation batch is one JSON string, and the host's own
@@ -55,3 +58,7 @@ blitz-paint = { path = "vendor/blitz-paint-0.3.0-beta.2" }
 parley = { path = "vendor/parley-0.11.1" }
 taffy = { path = "vendor/taffy-0.14.0" }
 fontique = { path = "vendor/fontique-0.11.1" }
+# `vello_common` 0.1.0 panics on a filter primitive it has not implemented, and a colour matrix
+# is one of them. One hunk drops what the backend cannot paint so a filter is a visible
+# difference rather than an aborted frame; `vendor/PATCHES.md` carries it.
+anyrender_vello_cpu = { path = "vendor/anyrender_vello_cpu-0.17.0" }
