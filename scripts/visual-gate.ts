@@ -24,6 +24,7 @@ import {
   CaptureGuardError,
   assertFrameShowsSomething,
 } from "./capture-guard.js";
+import { templateNames } from "./lib/repo-inventory.mjs";
 import {
   type ImageScoringArtifact,
   createImageBlindBundle,
@@ -40,7 +41,11 @@ const TEMPLATE_ROOT = path.join(
   path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."),
   "packages/create-threenative/templates",
 );
-export const TEMPLATE_NAMES: readonly ScaffoldTemplate[] = discoverTemplateNames(TEMPLATE_ROOT);
+// One inventory owns "what a kit is" (a template directory that ships `kit.json`): this reader is
+// the scaffolder's own and parses each manifest, while the list of names comes from repo-inventory.
+export const TEMPLATE_NAMES: readonly ScaffoldTemplate[] = templateNames(TEMPLATE_ROOT).filter(
+  (name) => discoverTemplateNames(TEMPLATE_ROOT).includes(name),
+);
 export const RENDER_LAYER_FILES = [
   "palette.ts",
   "camera.ts",

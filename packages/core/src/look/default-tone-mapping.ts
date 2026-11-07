@@ -42,8 +42,10 @@ export interface IFilmicToneMappingOptions {
  * mapping; a renderer without a node library cannot run it, keeps ACES and says so (`TN_TONEMAP`).
  * An unknown mode throws rather than quietly becoming the default.
  *
- * This is the only writer of `renderer.toneMapping`: the renderer's own default, `WorldEnvironment`
- * and a template's look all call it, so a scene cannot pick a curve its renderer disagrees with.
+ * Inside the framework this is the only writer of `renderer.toneMapping`: the renderer's own default
+ * and `WorldEnvironment` both call it, so a scene cannot pick a curve its renderer disagrees with.
+ * The Unreal-look capture harness under `scripts/unreal-look/scaffold/` keeps its own copy because
+ * it is a generated arm of that experiment, not framework code.
  */
 export function applyRendererToneMapping(
   raw: unknown,

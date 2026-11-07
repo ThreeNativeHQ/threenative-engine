@@ -1,16 +1,30 @@
 import { PLAYTEST_OBSERVING_GLOBAL, callerOf } from "./bridge-meter.js";
 
-/** Kept local to the bridge so three-native does not depend on core. */
+/**
+ * Kept local to the bridge so three-native does not depend on core, and held to core's rule by
+ * `scripts/__tests__/launch-flag-parity.spec.ts`: `0` and `false` are off, a named-but-empty value
+ * is on, an empty variable is unset, and every seam that names the flag is heard. The two copies
+ * disagreed before — core accepted `?tnDebug=true` and this did not — which is drift nobody sees
+ * until one layer's telemetry is off while the other's is on.
+ */
 export function debugRequested(): boolean {
   const host = globalThis as {
     process?: { env?: Record<string, unknown> };
     [name: string]: unknown;
   };
-  return (
-    host.process?.env?.TN_DEBUG === "1" ||
-    /[?&]tnDebug=1(?:&|$)/u.test(globalThis.location?.search ?? "") ||
-    host.__THREENATIVE_DEBUG__ === true
-  );
+  const values: string[] = [];
+  const env = host.process?.env?.TN_DEBUG;
+  if (typeof env === "string" && env !== "") values.push(env);
+  const search = globalThis.location?.search;
+  if (typeof search === "string") {
+    const fromQuery = new URLSearchParams(search).get("tnDebug");
+    if (fromQuery !== null) values.push(fromQuery);
+  }
+  const set = host.__THREENATIVE_DEBUG__;
+  if (typeof set === "string") values.push(set);
+  else if (typeof set === "number") values.push(String(set));
+  else if (typeof set === "boolean") values.push(set ? "true" : "false");
+  return values.some((value) => value !== "0" && value !== "false");
 }
 
 type DebugSource = { area: string; caller: string; lever?: string; unit?: string };

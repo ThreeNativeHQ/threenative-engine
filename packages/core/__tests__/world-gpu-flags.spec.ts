@@ -121,12 +121,16 @@ describe("bundlesAsked", () => {
     expect(bundlesAsked()).toBe("off");
   });
 
-  it("reads the first seam that names the switch, so the environment beats the query string", () => {
+  it("lets an explicit yes on one seam beat a no on another", () => {
     env(BUNDLE_FLAG, "0");
     query("?tnBundles=1");
-    expect(bundlesAsked()).toBe("off");
+    expect(bundlesAsked()).toBe("on");
     query(undefined);
     expect(bundlesAsked()).toBe("off");
+    // And the other way round: a global's no does not silence the environment's yes.
+    env(BUNDLE_FLAG, "1");
+    setGlobal("__tnBundles", false);
+    expect(bundlesAsked()).toBe("on");
   });
 
   // `bundles` answers three ways where the other switches answer two: a launch that said nothing

@@ -602,6 +602,17 @@ function frameFieldsHeader(fields: readonly IWebFrameField[]): string {
     ),
     "};",
     "",
+    "/// Whether `field` is one this table answers. The host asks before it touches the renderer, so an",
+    "/// id from another table is refused whether or not a frame has been drawn yet.",
+    "constexpr bool tn_is_web_frame_field(int field) {",
+    "    switch (field) {",
+    ...fields.map(
+      (field) => `        case TN_WEB_FRAME_${screamingSnake(field.name)}: return true;`,
+    ),
+    "        default: return false;",
+    "    }",
+    "}",
+    "",
   ].join("\n");
 }
 

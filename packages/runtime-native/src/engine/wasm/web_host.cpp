@@ -1019,6 +1019,15 @@ static int unknownFrameField = 0;
  * answers NaN, because a zero would read as a real measurement from a table that never had it.
  */
 extern "C" double tnw_web_frame(int field) {
+    // An id the manifest does not declare is a facade built against another field table. Refused
+    // before anything else, because a renderer that does not exist yet would answer a silent zero.
+    if (!tn_is_web_frame_field(field)) {
+        if (unknownFrameField != field) {
+            unknownFrameField = field;
+            std::fprintf(stderr, "TN_WEB_FRAME_UNKNOWN_FIELD %d\n", field);
+        }
+        return std::numeric_limits<double>::quiet_NaN();
+    }
     // The CPU stage meters on and off (PRD-771); a static switch, so it answers before the renderer
     // exists. On until a page asks otherwise.
     if (field == TN_WEB_FRAME_CPU_METERS_ON || field == TN_WEB_FRAME_CPU_METERS_OFF) {

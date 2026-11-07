@@ -79,3 +79,84 @@ enum TnWebFrameField : int {
     TN_WEB_FRAME_SHADOW_TRIANGLES = 85,
     TN_WEB_FRAME_FIRST_WORLD_FRAME_DRAWN = 86,
 };
+
+/// Whether `field` is one this table answers. The host asks before it touches the renderer, so an
+/// id from another table is refused whether or not a frame has been drawn yet.
+constexpr bool tn_is_web_frame_field(int field) {
+    switch (field) {
+        case TN_WEB_FRAME_CPU_METERS_OFF: return true;
+        case TN_WEB_FRAME_CPU_METERS_ON: return true;
+        case TN_WEB_FRAME_DEBUG_TIMESTAMP_OFF: return true;
+        case TN_WEB_FRAME_DEBUG_TIMESTAMP_ON: return true;
+        case TN_WEB_FRAME_DRAWS: return true;
+        case TN_WEB_FRAME_TRIANGLES: return true;
+        case TN_WEB_FRAME_PIPELINE_COMPILES: return true;
+        case TN_WEB_FRAME_PIPELINE_LOOKUPS: return true;
+        case TN_WEB_FRAME_BIND_GROUPS_CREATED: return true;
+        case TN_WEB_FRAME_GRAPH_KEY_BUILDS: return true;
+        case TN_WEB_FRAME_PROGRAMS: return true;
+        case TN_WEB_FRAME_GPU_MS: return true;
+        case TN_WEB_FRAME_GPU_SAMPLES: return true;
+        case TN_WEB_FRAME_GPU_SOURCE_FRAME: return true;
+        case TN_WEB_FRAME_GPU_TIMER_AVAILABLE: return true;
+        case TN_WEB_FRAME_GPU_BUSY: return true;
+        case TN_WEB_FRAME_ENVIRONMENT_PENDING: return true;
+        case TN_WEB_FRAME_TEMPORAL_ACTIVE: return true;
+        case TN_WEB_FRAME_TEMPORAL_FRAME: return true;
+        case TN_WEB_FRAME_TEMPORAL_HISTORY_VALID: return true;
+        case TN_WEB_FRAME_TEMPORAL_JITTER_X: return true;
+        case TN_WEB_FRAME_TEMPORAL_JITTER_Y: return true;
+        case TN_WEB_FRAME_SAMPLE_COUNT: return true;
+        case TN_WEB_FRAME_GPU_SEGMENT_SHADOW: return true;
+        case TN_WEB_FRAME_GPU_SEGMENT_SCENE: return true;
+        case TN_WEB_FRAME_GPU_SEGMENT_OTHER: return true;
+        case TN_WEB_FRAME_GPU_SEGMENT_OUTPUT: return true;
+        case TN_WEB_FRAME_GPU_SEGMENT_GATHER: return true;
+        case TN_WEB_FRAME_GPU_SEGMENT_LAMP_SHADOW: return true;
+        case TN_WEB_FRAME_LAMP_REDRAWS: return true;
+        case TN_WEB_FRAME_LAMP_SHADOW_DRAWS: return true;
+        case TN_WEB_FRAME_SHADOW_DRAWS: return true;
+        case TN_WEB_FRAME_LAMP_MAP_MIN: return true;
+        case TN_WEB_FRAME_LAMP_MAP_MAX: return true;
+        case TN_WEB_FRAME_TEMPORAL_REJECTED: return true;
+        case TN_WEB_FRAME_TEMPORAL_CLAMPED: return true;
+        case TN_WEB_FRAME_TEMPORAL_PIXELS: return true;
+        case TN_WEB_FRAME_TEMPORAL_COUNTED_FRAME: return true;
+        case TN_WEB_FRAME_TEMPORAL_UPSCALE: return true;
+        case TN_WEB_FRAME_INPUT_WIDTH: return true;
+        case TN_WEB_FRAME_INPUT_HEIGHT: return true;
+        case TN_WEB_FRAME_TEMPORAL_JITTER_LENGTH: return true;
+        case TN_WEB_FRAME_WIDTH: return true;
+        case TN_WEB_FRAME_HEIGHT: return true;
+        case TN_WEB_FRAME_KEPT_SHADOW_MAPS: return true;
+        case TN_WEB_FRAME_UNIFORM_BYTES: return true;
+        case TN_WEB_FRAME_MAIN_RECORDED: return true;
+        case TN_WEB_FRAME_RECORD_CAUSE: return true;
+        case TN_WEB_FRAME_AUX_RECORDED: return true;
+        case TN_WEB_FRAME_RECORD_MS: return true;
+        case TN_WEB_FRAME_SHADOW_ENCODE_MS: return true;
+        case TN_WEB_FRAME_SHADOW_RECORDED: return true;
+        case TN_WEB_FRAME_CPU_VIRTUAL_PAGES_MS: return true;
+        case TN_WEB_FRAME_CPU_PLAN_MS: return true;
+        case TN_WEB_FRAME_CPU_SHADOW_BUILD_MS: return true;
+        case TN_WEB_FRAME_CPU_PREPARE_MS: return true;
+        case TN_WEB_FRAME_CPU_ENCODE_MS: return true;
+        case TN_WEB_FRAME_WORLD_SUBMISSIONS: return true;
+        case TN_WEB_FRAME_SHADOW_INPUTS_READY: return true;
+        case TN_WEB_FRAME_CPU_POST_MS: return true;
+        case TN_WEB_FRAME_SCENE_MS: return true;
+        case TN_WEB_FRAME_HOST_RENDER_MS: return true;
+        case TN_WEB_FRAME_HOST_COMPUTE_MS: return true;
+        case TN_WEB_FRAME_HOST_SUBMIT_MS: return true;
+        case TN_WEB_FRAME_STAGE_TOTALS_ADDRESS: return true;
+        case TN_WEB_FRAME_HOST_POLL_MS: return true;
+        case TN_WEB_FRAME_HOST_TAIL_MS: return true;
+        case TN_WEB_FRAME_RENDERER_MS: return true;
+        case TN_WEB_FRAME_HOST_DATABASE_MS: return true;
+        case TN_WEB_FRAME_HOST_TARGET_MS: return true;
+        case TN_WEB_FRAME_CPU_METERS_ACTIVE: return true;
+        case TN_WEB_FRAME_SHADOW_TRIANGLES: return true;
+        case TN_WEB_FRAME_FIRST_WORLD_FRAME_DRAWN: return true;
+        default: return false;
+    }
+}

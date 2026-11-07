@@ -2180,8 +2180,9 @@ export class VirtualShadowNode extends ShadowBaseNode {
     if (this.#levelsRequested === undefined) {
       // One read of the URL for both switches: setup runs once, before the shader graph exists.
       const search = globalThis.location?.search;
+      // Query only, as it always was: no environment variable and no global named these switches.
       this.#levelsRequested = readLaunchFlag(
-        { environment: "TN_SHADOW_LEVELS", query: "tnShadowLevels" },
+        { environment: "", query: "tnShadowLevels" },
         "on",
         search,
       );
@@ -2189,11 +2190,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
       // two runs of one route would move their windows at different ticks. Set once, before a frame.
       if (
         this.#adaptiveRefreshGiven === undefined &&
-        readLaunchFlag(
-          { environment: "TN_ADAPTIVE_REFRESH", query: "tnAdaptiveRefresh" },
-          "off",
-          search,
-        )
+        readLaunchFlag({ environment: "", query: "tnAdaptiveRefresh" }, "off", search)
       ) {
         (this.options as { adaptiveRefresh: boolean }).adaptiveRefresh = false;
       }
@@ -2857,10 +2854,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
 
   /** Whether `?tnShadowStats=1` is on this launch's URL, read once. */
   #statsWalkRequested(): boolean {
-    this.#statsRequested ??= readLaunchFlag({
-      environment: "TN_SHADOW_STATS",
-      query: "tnShadowStats",
-    });
+    this.#statsRequested ??= readLaunchFlag({ environment: "", query: "tnShadowStats" });
     return this.#statsRequested;
   }
 

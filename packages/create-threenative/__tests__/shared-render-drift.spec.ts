@@ -73,6 +73,24 @@ describe("shared render sources", () => {
     expect(missing).toEqual([]);
   });
 
+  // The duplicate check above cannot see a listed file one kit edited: it stops being identical, so
+  // it drops out of the grouping and nothing compares it with the copy it is supposed to follow.
+  // That edit is silent until `pnpm stamp:template-render` overwrites it, which is the drift this
+  // whole guard exists for.
+  it("should keep every shipped copy of a listed file byte-identical to the canonical one", () => {
+    const drifted: string[] = [];
+    for (const relativePath of SHARED_RENDER_SOURCES) {
+      const canonical = readFileSync(canonicalRenderSourcePath(relativePath));
+      // Every kit that ships the file, across the digests: a drifted copy is in a different group.
+      const copies = [...(renderCopies().get(relativePath)?.values() ?? [])].flat();
+      for (const copy of copies) {
+        const file = path.join(templateRoot(), copy, relativePath);
+        if (!readFileSync(file).equals(canonical)) drifted.push(file);
+      }
+    }
+    expect(drifted).toEqual([]);
+  });
+
   it("should keep the added set inside the shared set", () => {
     const stray = ADDED_RENDER_SOURCES.filter(
       (relativePath) => !SHARED_RENDER_SOURCES.includes(relativePath),

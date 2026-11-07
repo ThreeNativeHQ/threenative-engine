@@ -100,6 +100,18 @@ export function readLaunchValue(spec: ILaunchFlagSpec): string | undefined {
 }
 
 /**
+ * Every value this launch gave a flag, one per seam that named it, in the order they are read.
+ *
+ * For the switches whose answer is not a yes or a no — a tri-state, a table of spellings — the
+ * caller classifies the whole set rather than only the first seam's answer.
+ *
+ * @situation classify every value a launch gave one switch
+ */
+export function readLaunchValues(spec: ILaunchFlagSpec): readonly string[] {
+  return readLaunchSeams(spec);
+}
+
+/**
  * `process.env` on a host that installed one, narrowed rather than asserted exactly as
  * `isDevLaunch` does in `game.ts`: it exists on the native runtime and not in a browser bundle.
  */

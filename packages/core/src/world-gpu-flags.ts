@@ -6,7 +6,7 @@
  * what a run would use without building a scene, and a test can pin the order the sources are read
  * in without a device.
  */
-import { readLaunchFlag, readLaunchValue } from "./debug.js";
+import { readLaunchFlag, readLaunchValues } from "./debug.js";
 
 /** The launch flag. */
 export const GPU_SCENE_FLAG = "TN_GPU_SCENE";
@@ -65,15 +65,15 @@ export const BUNDLE_FLAG = "TN_BUNDLES";
  */
 export function bundlesAsked(): "default" | "off" | "on" {
   // Its own vocabulary over the one reader: a launch can answer yes, answer no, or say nothing, and
-  // "said nothing" is what a caller has to tell apart from a measurement's default.
-  const value = readLaunchValue({
+  // "said nothing" is what a caller has to tell apart from a measurement's default. Every seam is
+  // heard, as it is for every other switch, so an explicit yes anywhere beats a no anywhere.
+  const values = readLaunchValues({
     environment: BUNDLE_FLAG,
     global: "__tnBundles",
     query: "tnBundles",
   });
-  if (value === undefined) return "default";
-  if (value === "0" || value === "false") return "off";
-  return value === "1" || value === "true" || value === "" ? "on" : "default";
+  if (values.some((value) => value === "1" || value === "true" || value === "")) return "on";
+  return values.some((value) => value === "0" || value === "false") ? "off" : "default";
 }
 
 /**

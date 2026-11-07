@@ -1,7 +1,7 @@
 # PRD-832 — Urgent single sources: one owner for each value that has silently drifted
 
-**Status:** DONE — all three phases landed
-**Priority:** P1 — the open Phase 1 box fixes a live gap: `pnpm budgets` runs capability recall without the `puzzle`, `rts` and `runner` kits. The open Phase 3 boxes remove a web telemetry channel that answers 0 to an unknown field.
+**Status:** PARTIAL — all three phases landed; AC-1 (typecheck, lint and the affected board) runs on the PR, so the file stays here until it is green
+**Priority:** P1 — the phases landed; what keeps this open is AC-1: the affected board has not been run end to end yet, so nothing here is claimed past the unit and Wasm-build proofs recorded on each box.
 **Complexity:** 5 (MEDIUM); risk override: Phase 2 can change the default tone curve, so the owner's visual-judge rule applies to that box
 **Owner:** ThreeNative maintainers
 **Depends on:** None
@@ -44,6 +44,27 @@ the way its own red-green commit.
 
 - [ ] AC-1 [local]: Typecheck, lint and the affected board stay green. proof: `pnpm typecheck && pnpm lint && pnpm ci:local --affected --base origin/develop --target develop`
 
+## Review round (2026-11-07)
+
+An independent read-only review of the three phases raised five gaps, all fixed before the next PRD:
+
+- `shared-render-drift.spec.ts` grouped copies by hash, so a *listed* file one kit edited dropped out of
+  the check entirely. It now also compares every shipped copy of a listed file with
+  `canonicalRenderSourcePath` byte for byte (shown red by appending a line to `minimal`'s `gpuSky.ts`).
+- `debug.ts` changed the truthiness rule for core's readers while `three-native/src/debug-telemetry.ts`
+  kept the old one, so `?tnDebug=true` turned core telemetry on and the facade's off. Both now follow one
+  rule, held to it by `scripts/__tests__/launch-flag-parity.spec.ts`; the two copies exist because the
+  package graph gives three-native no dependency on core.
+- `bundlesAsked` had lost "an explicit yes on any seam beats a no", which the original spec pinned. It
+  reads every naming seam again (`readLaunchValues`), and the rule now has a direct spec.
+- `web-frame-fields.spec.ts` pinned a digest, which cannot tell an allowed append from a renumber. It
+  pins the published `(name, id)` pairs instead, and the generated header now carries
+  `tn_is_web_frame_field`, so an unknown id is refused before a renderer exists, not answered with 0.
+- Three edits were unrequested and are reverted: the spell tier reader (`spells/ultra/engine/quality.ts`
+  is a verbatim upstream port and keeps its own `?q=`/`?mobile` read), the invented `TN_SHADOW_LEVELS`,
+  `TN_ADAPTIVE_REFRESH` and `TN_SHADOW_STATS` environment seams (those switches are query-only, as they
+  were), and a "only writer" comment that ignored the Unreal-look capture harness's own copy.
+
 ## Integration Ledger
 
 | Capability | Reachable consumer/trigger | Replaces / disposition | Evidence |
@@ -75,4 +96,4 @@ the way its own red-green commit.
 **Files:** the field manifest beside `packages/three-native/api/catalog.json`; `packages/three-native/scripts/generate.ts`; `packages/runtime-native/src/engine/wasm/web_host.cpp`; `packages/three-native/src/browser-renderer.ts`, `gpu-stages.ts`, `browser-entry.ts`; `packages/three-native/__tests__/web-host-abi.spec.ts`.
 
 - [x] Every `tnw_web_frame` caller uses a generated name, from one manifest: `packages/three-native/api/web-frame-fields.json` (73 fields) feeds `packages/three-native/scripts/generate.ts`, which writes the TypeScript constant (`src/generated/web-frame-fields.ts`), the C++ enum (`runtime-native/src/engine/wasm/web_frame_fields.h`) and the facade's stage tables (`gpu-stages.ts` `CPU_STAGE_FIELDS`/`SHADOW_SEGMENT_FIELD`, `browser-renderer.ts`'s GPU stage base). The switch names the enum, and an id no manifest entry declares prints `TN_WEB_FRAME_UNKNOWN_FIELD` once and answers NaN instead of a zero the caller would read as a measurement. `__tests__/web-frame-fields.spec.ts` pins the three copies to the manifest and digests the table (`faae3793e5b2581b`), so a renumber goes red. proof: `pnpm --filter @threenative/three-native exec vitest run __tests__/web-frame-fields.spec.ts __tests__/web-host-abi.spec.ts` → 6 passed; `pnpm wasm:build` compiles and links both web engines with the new switch (exit 0).
-- [x] The owned web engine still reports real frame telemetry: `TN_FRAME_BUDGET` on `examples/wasm-engine-boot` (the game page, `--browser-recipe webgpu`, adapter `nvidia`/`turing`) reads GPU `mean 0.05 ms` over 3 samples and non-zero CPU stages (`wasmPlan` mean 0.30, `wasmEncode` 0.26, `wasmScene` 0.06, `wasmPost` 0.16, `engineJs` 0.30) — the renamed stage fields (66-70) answer the values they named before. The starter scaffold needs a full template install-and-build lane, so the proof runs on the in-repo game page that drives the same `tnw_web_frame` path; `pnpm test:templates` remains the starter-wide gate under AC-1. proof: `node packages/playtest/dist/runner/cli.js /tmp/framebudget.playtest.json --url http://127.0.0.1:5293 --server-command "npx vite preview --host 127.0.0.1 --port 5293 --strictPort" --browser-recipe webgpu --headed` → 1 window, values recorded here
+- [x] The owned web engine still reports real frame telemetry: `TN_FRAME_BUDGET` on `examples/wasm-engine-boot` (the game page, `--browser-recipe webgpu`, adapter `nvidia`/`turing`) reads GPU `mean 0.05 ms` over 3 samples and non-zero CPU stages (`wasmPlan` mean 0.30, `wasmEncode` 0.26, `wasmScene` 0.06, `wasmPost` 0.16, `engineJs` 0.30) — the renamed stage fields (66-70) answer the values they named before. The starter scaffold needs a full template install-and-build lane, so the proof runs on the in-repo game page that drives the same `tnw_web_frame` path; `pnpm test:templates` remains the starter-wide gate under AC-1. proof: `pnpm --filter wasm-engine-boot build && pnpm --filter wasm-engine-boot playtest:frame-budget` (the scenario is `examples/wasm-engine-boot/playtests/frame-budget.playtest.json`) → 1 window, values recorded here
