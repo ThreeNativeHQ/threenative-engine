@@ -61,15 +61,26 @@ SPIRV_TOOLS_COMMIT="${SPIRV_TOOLS_COMMIT:-660eff0326c9ca446a4bc891e7a34c1c49a56f
 VULKAN_UTILITY_COMMIT="${VULKAN_UTILITY_COMMIT:-b4e9ebbfc779cba85f1efbe2f69fdfc5744ed5e5}"
 WEBGPU_HEADERS_COMMIT="${WEBGPU_HEADERS_COMMIT:-0bfcdc4f487023d85e33597de0a94fc523e30fca}"
 
+# The guest is e3-triangle.cc in one of two builds: the plain triangle (the E3 pass) or its
+# compute variant (TN_PS4_E3_GUEST=e3cs, the E5 device-lost repro), which is the same source
+# compiled with TN_E3_GUEST_CS=1. Each build owns its own app folder, so one never overwrites the
+# other's eboot.bin and the two stamps cannot mask each other.
+GUEST_STEM="${TN_PS4_E3_GUEST:-e3-triangle}"
+case "$GUEST_STEM" in
+  e3-triangle) GUEST_DEFS="" ;;
+  e3cs) GUEST_DEFS="-DTN_E3_GUEST_CS=1" ;;
+  *) echo "unknown TN_PS4_E3_GUEST: $GUEST_STEM (e3-triangle|e3cs)" >&2; exit 2 ;;
+esac
+
 DAWN="$OUT/dawn"
 BUILD="$OUT/build"
 OUTD="$OUT/out"
 SHIM="$OUT/shim"
-APP="$OUTD/app"
+APP="$OUTD/$GUEST_STEM/app"
 GUEST="$BUILD/guest"
 LIB="$OUTD/libwebgpu_dawn.a"
 EBOOT="$APP/eboot.bin"
-ELF="$GUEST/e3-triangle.elf"
+ELF="$GUEST/$GUEST_STEM.elf"
 
 mkdir -p "$OUT"
 
@@ -124,7 +135,7 @@ EOF
 # copied or replaced .a fails the second and is rebuilt instead of linked.
 PATCHES="$HERE/patches"
 DAWN_STAMP="$OUT/.dawn-stamp"
-GUEST_STAMP="$OUT/.guest-stamp"
+GUEST_STAMP="$OUT/.guest-stamp-$GUEST_STEM"
 
 dawn_inputs() {
   cat "$PATCHES"/dawn-*.patch "$PATCHES"/oo-*.patch "$PATCHES"/abseil-*.patch \
@@ -291,7 +302,7 @@ done
 WANT_GUEST="$({
   cat "$DAWN_STAMP"
   cat "$HERE/e3-triangle.cc"
-  printf '%s\n' "$OO $E2" "$(sha256sum "$E2/src/vulkan-ps4/libvulkan_ps4.a" | cut -d' ' -f1)"
+  printf '%s\n' "$GUEST_STEM $GUEST_DEFS $OO $E2" "$(sha256sum "$E2/src/vulkan-ps4/libvulkan_ps4.a" | cut -d' ' -f1)"
 } | sha256sum | cut -d' ' -f1)"
 
 if reuse "$GUEST_STAMP" "$WANT_GUEST" && [ -f "$EBOOT" ] && [ -f "$ELF" ]; then
@@ -303,11 +314,11 @@ fi
 mkdir -p "$GUEST" "$APP/sce_sys"
 INC="-isysroot $OO -isystem $OO/include -isystem $OO/include/c++/v1 -isystem $SHIM"
 
-log "compiling e3-triangle.cc"
+log "compiling e3-triangle.cc as $GUEST_STEM"
 nice -n 19 clang++ --target=x86_64-pc-freebsd12-elf -fPIC -funwind-tables \
-  -std=c++20 -fno-exceptions -fno-rtti -O2 -D__ORBIS__=1 -D_GNU_SOURCE -D_BSD_SOURCE \
+  -std=c++20 -fno-exceptions -fno-rtti -O2 -D__ORBIS__=1 -D_GNU_SOURCE -D_BSD_SOURCE $GUEST_DEFS \
   $INC -I "$BUILD/gen/include" -I "$DAWN/include" \
-  -c "$HERE/e3-triangle.cc" -o "$GUEST/e3-triangle.o"
+  -c "$HERE/e3-triangle.cc" -o "$GUEST/$GUEST_STEM.o"
 
 # libpsbc.orbis.a references Mesa/BLAKE3 symbols it does not ship; E2 links the same stubs.
 log "compiling mesa_stubs.c (libpsbc's unresolved Mesa/BLAKE3 symbols)"
@@ -318,8 +329,8 @@ nice -n 19 clang --target=x86_64-pc-freebsd12-elf -fPIC -funwind-tables -std=c11
   -I "$E2/src/Vulkan-Headers/include" \
   -c "$E2/src/vulkan-ps4/src/mesa_stubs.c" -o "$GUEST/mesa_stubs.o"
 
-log "linking e3-triangle.elf"
-nice -n 19 ld.lld "$GUEST/e3-triangle.o" "$GUEST/mesa_stubs.o" -o "$ELF" \
+log "linking $GUEST_STEM.elf"
+nice -n 19 ld.lld "$GUEST/$GUEST_STEM.o" "$GUEST/mesa_stubs.o" -o "$ELF" \
   -m elf_x86_64 --script "$OO/link.x" --eh-frame-hdr -L"$OO/lib" -pie \
   -z max-page-size=0x4000 --gc-sections --dynamic-linker /libexec/ld-elf.so.1 \
   "$OO/lib/crt1.o" "$LIB" \
@@ -333,7 +344,7 @@ rm -rf "$APP"
 mkdir -p "$APP/sce_sys"
 export DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
 (cd "$APP" && nice -n 19 "$OO/bin/linux/create-fself" -in="$ELF" \
-  -out="$GUEST/e3-triangle.oelf" --eboot eboot.bin --paid 0x3800000000000011 > /dev/null)
+  -out="$GUEST/$GUEST_STEM.oelf" --eboot eboot.bin --paid 0x3800000000000011 > /dev/null)
 
 # Title metadata, written by PkgTool.Core: generated here, never copied out of a dump.
 PKGTOOL="$OO/bin/linux/PkgTool.Core"

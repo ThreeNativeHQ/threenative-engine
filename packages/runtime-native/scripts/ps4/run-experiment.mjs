@@ -49,6 +49,10 @@ const MARKER = 'TN_PS4_E1_MARKER';
 const E2_CLEAR = [26, 26, 51]; // 0.1, 0.1, 0.2 cleared as UNORM8
 // E3's guest clears to 0.0, 0.0, 0.25 (e3-triangle.cc DrawInto) and draws the same triangle.
 const E3_CLEAR = [0, 0, 64];
+// E3CS's fragment colours the triangle from the compute result: outv[0] = 64 and outv[1] = 65 are
+// written by the dispatch itself, so the drawn pixels are (64, 65, 0) only if the compute pass ran
+// and its writes reached the buffer the fragment reads.
+const E3CS_DRAWN = [64, 65, 0];
 const E2_TOLERANCE = 8; // per-channel distance from the clear colour that counts as clear
 const E2_CLEAR_MIN = 0.2;
 const E2_DRAWN_MIN = 0.02;
@@ -175,6 +179,19 @@ const EXPERIMENTS = {
     failurePattern: /TN_PS4_E3 error type=/,
     verdict: (match, frame, log, shots) => judgeE3(match, frame, log, shots),
   },
+  e3cs: {
+    // The same Dawn guest as E3 (TN_PS4_E3_GUEST=e3cs) with one compute pipeline over two storage
+    // buffers and a uniform, dispatched 512x1x1, whose result colours the triangle: the compute
+    // path E5's device loss runs through, isolated from the engine's kits and its clear shader.
+    timeoutMs: 300_000,
+    screenshots: ['5', '7'],
+    build: (outDir, toolchain) => buildE3(outDir, toolchain, 'e3cs'),
+    markerPattern: /TN_PS4_E3CS frames=600 presented/,
+    // A lost device is shadPS4's own abort, and it is the red this experiment exists to expose:
+    // it ends the wait at once instead of sitting out the boot window.
+    failurePattern: /TN_PS4_E3CS error type=|buffer_cache\.cpp:\d+ [A-Za-z]+: Assertion Failed!(?:\n[^\n]{0,80})?/,
+    verdict: (match, frame, log, shots) => judgeE3CS(match, frame, log, shots),
+  },
   e4: {
     // V8 builds a heap and compiles one script inside the emulator before it prints, on top of the
     // boot E1 already pays for.
@@ -295,6 +312,25 @@ function nearClear(pixels, at, clearColour) {
   );
 }
 
+// Pixels within E2_TOLERANCE of `colour`, inside the same presented-image box countRegions uses.
+// The compute repro's colour is the only thing on screen that proves the dispatch's writes reached
+// the buffer, so this is measured, not assumed.
+function countColour(raster, colour) {
+  const { width, pixels } = raster;
+  const { left, top, right, bottom } = clearBox(raster, colour);
+  if (right < left) return 0;
+  let n = 0;
+  for (let y = top; y <= bottom; y++) {
+    for (let x = left; x <= right; x++) {
+      const at = (y * width + x) * 3;
+      if (Math.abs(pixels[at] - colour[0]) <= E2_TOLERANCE &&
+          Math.abs(pixels[at + 1] - colour[1]) <= E2_TOLERANCE &&
+          Math.abs(pixels[at + 2] - colour[2]) <= E2_TOLERANCE) n++;
+    }
+  }
+  return n;
+}
+
 function countRegions(raster, clearColour) {
   const { width, pixels } = raster;
   const { left, top, right, bottom } = clearBox(raster, clearColour);
@@ -336,7 +372,7 @@ function pngToPpm(file) {
 // clear even when the frame on screen holds the draw. A missing, unreadable or all-black screenshot
 // fails: an absent observation is not a pass. E2 and E3 present the same shape of frame (one clear
 // colour plus one triangle) and differ only in the colour and in what the guest says about itself.
-async function judgePresented(log, shots, { clearColour, requireReadbacks, info }) {
+async function judgePresented(log, shots, { clearColour, requireReadbacks, info, presentColour }) {
   if (requireReadbacks) {
     const wanted = `GPU readbacksMode: ${READBACKS_MODE}`;
     if (!log.includes(wanted) || !log.includes('GPU readbackLinearImages: true'))
@@ -369,6 +405,19 @@ async function judgePresented(log, shots, { clearColour, requireReadbacks, info 
   if (clearPct < E2_CLEAR_MIN) return failed(`below the ${E2_CLEAR_MIN * 100}% clear, so the guest's clear never reached the screen`);
   if (drawnPct < E2_DRAWN_MIN) return failed(`drawn below the ${E2_DRAWN_MIN * 100}% band, so the frame is only the clear colour`);
   if (drawnPct > E2_DRAWN_MAX) return failed(`drawn above the ${E2_DRAWN_MAX * 100}% band, so nothing cleared the frame`);
+  // The draw's colour is a measurement of the step before it: the triangle is all one colour, so
+  // the pixels carrying it are the proof that the compute result reached the presented frame.
+  if (presentColour) {
+    const share = countColour(raster, presentColour) / drawn;
+    if (share < 0.5)
+      return failed(`only ${(share * 100).toFixed(2)}% of the drawn pixels are (${presentColour.join(', ')})`);
+    return {
+      ok: true,
+      detail: ` drawn=${(drawnPct * 100).toFixed(2)}% colour=${presentColour.join(',')} share=${(share * 100).toFixed(2)}%`,
+      info,
+      image,
+    };
+  }
   return { ok: true, detail: ` drawn=${(drawnPct * 100).toFixed(2)}%`, info, image };
 }
 
@@ -392,6 +441,20 @@ async function judgeE3(match, frame, log, shots) {
   const info = ` adapter=${adapter} limits ${limits}`;
   const verdict = await judgePresented(log, shots, { clearColour: E3_CLEAR, requireReadbacks: false, info });
   return verdict.ok ? { ...verdict, detail: `${verdict.detail} adapter=${adapter} limits ${limits}` } : verdict;
+}
+
+// E3CS's verdict: the presented frame, and the triangle's colour is the compute result. A device
+// lost at the dispatch never presents a frame at all, so the two failures stay apart.
+async function judgeE3CS(match, frame, log, shots) {
+  const cs = /TN_PS4_E3CS cs=([a-z]+)/.exec(log)?.[1] ?? '(missing)';
+  const error = /TN_PS4_E3CS error type=\d+ msg=([^\n]*)/.exec(log)?.[1]?.trim() ?? '';
+  const info = ` cs=${cs}${error ? ` error=${error}` : ''}`;
+  return judgePresented(log, shots, {
+    clearColour: E3_CLEAR,
+    requireReadbacks: false,
+    presentColour: E3CS_DRAWN,
+    info,
+  });
 }
 
 // The colour a presented frame cleared to: its most common colour. A game's clear reaches the
@@ -605,11 +668,16 @@ async function buildE2(outDir, toolchain) {
 
 // E3's guest is Dawn itself: e3-build.sh owns the pins, the seven patches, the CMake/Ninja tree
 // and the build stamps, so a rerun that changes nothing builds nothing.
-async function buildE3(outDir, toolchain) {
-  runInherit('bash', [path.join(HERE, 'e3-build.sh'), '--out', outDir], { env: { ...process.env, OO_PS4_TOOLCHAIN: toolchain } });
+async function buildE3(outDir, toolchain, guest = 'e3-triangle') {
+  runInherit(
+    'bash',
+    [path.join(HERE, 'e3-build.sh'), '--out', outDir],
+    { env: { ...process.env, OO_PS4_TOOLCHAIN: toolchain, TN_PS4_E3_GUEST: guest } },
+  );
   // The whole app folder (eboot.bin + sce_sys/param.sfo) is that script's product: the title
-  // metadata belongs with the app it boots, not with the harness that boots it.
-  const appDir = path.join(outDir, 'out', 'app');
+  // metadata belongs with the app it boots, not with the harness that boots it. One folder per
+  // guest build, the same rule e3-build.sh writes them with.
+  const appDir = path.join(outDir, 'out', guest, 'app');
   const eboot = path.join(appDir, 'eboot.bin');
   if (!existsSync(eboot)) throw new Error(`e3-build.sh wrote no ${eboot}`);
   return { appDir, artifacts: { eboot } };
@@ -890,7 +958,9 @@ async function main(argv) {
   const experiment = EXPERIMENTS[name];
   sceneRoot = options.scene;
   const label = `PS4_EMULATED ${name.toUpperCase()}`;
-  const outDir = path.join(SCRATCH_ROOT, name);
+  // e3cs is E3's guest built a second way (one Dawn tree, one E3 scratch dir): its eboot and stamps
+  // live in e3's out/<guest>/ folders, so the shared directory holds no shared product.
+  const outDir = path.join(SCRATCH_ROOT, name === 'e3cs' ? 'e3' : name);
   await mkdir(outDir, { recursive: true });
 
   const toolchain = await ensureToolchain();

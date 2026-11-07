@@ -39,6 +39,24 @@ extern "C" int sceKernelUsleep(unsigned int microseconds);
 // 2a only: the offscreen render must be observable after the queue submits.
 #define TN_READBACK (getenv("TN_E3_READBACK") != nullptr)
 
+// TN_E3_GUEST_CS=1 (TN_PS4_E3_GUEST=e3cs in run-experiment.mjs) turns this guest into the compute
+// repro: the same device and the same triangle, but the draw's colour comes from a buffer a compute
+// pipeline wrote. One compute pipeline (workgroup 8x1x1), a bind group of two storage buffers and
+// one uniform -- the shape of the engine kernel that loses the host device in E5 -- dispatched
+// 512x1x1 groups = 4096 threads, then the triangle's fragment reads storage buffer 0. The frame
+// the guest PRESENTS is the verdict, because a guest readback is stale under shadPS4.
+#ifndef TN_E3_GUEST_CS
+#define TN_E3_GUEST_CS 0
+#endif
+
+// Every marker carries which build printed it, so a log says which guest it came from and the
+// harness's two verdicts never read each other's lines.
+#if TN_E3_GUEST_CS
+#define TN_E3_TAG "TN_PS4_E3CS"
+#else
+#define TN_E3_TAG "TN_PS4_E3"
+#endif
+
 // Vertex positions from vertex_index, constant orange fragment -- in TWO modules, both with the
 // entry point named main. vulkan-ps4 compiles only a shader module whose entry point is literally
 // "main": vk_ps4_compile_shader_module sets PsbcCompileOptions::entrypoint = "main"
@@ -55,11 +73,35 @@ static const char kVertexShader[] =
     "  var pos = array<vec2f, 3>(vec2f(0.0, 0.5), vec2f(-0.5, -0.5), vec2f(0.5, -0.5));\n"
     "  return vec4f(pos[idx], 0.0, 1.0);\n"
     "}\n";
+#if TN_E3_GUEST_CS
+// 4096 u32 elements = 512 groups of 8 threads, exactly the dispatch E5's kernel makes. Params ride
+// in a uniform (vec4u, so the uniform block layout is legal as it stands): x = the value element 0
+// gets, y = the stride each thread adds.
+static const char kComputeShader[] =
+    "@group(0) @binding(0) var<storage, read_write> outv: array<u32>;\n"
+    "@group(0) @binding(1) var<storage, read_write> scratch: array<u32>;\n"
+    "@group(0) @binding(2) var<uniform> params: vec4u;\n"
+    "@compute @workgroup_size(8, 1, 1)\n"
+    "fn main(@builtin(global_invocation_id) gid: vec3u) {\n"
+    "  let v = params.x + gid.x * params.y;\n"
+    "  outv[gid.x] = v;\n"
+    "  scratch[gid.x] = v + 1u;\n"
+    "}\n";
+// The drawn colour IS the compute result: 0.251, 0.255, 0 for the params the guest writes, and
+// black-ish if the dispatch wrote nothing. A blank or wrong-coloured triangle is the red.
+static const char kFragmentShader[] =
+    "@group(0) @binding(0) var<storage, read> outv: array<u32>;\n"
+    "@fragment\n"
+    "fn main() -> @location(0) vec4f {\n"
+    "  return vec4f(f32(outv[0] & 255u) / 255.0, f32(outv[1] & 255u) / 255.0, 0.0, 1.0);\n"
+    "}\n";
+#else
 static const char kFragmentShader[] =
     "@fragment\n"
     "fn main() -> @location(0) vec4f {\n"
     "  return vec4f(1.0, 0.55, 0.0, 1.0);\n"
     "}\n";
+#endif
 
 static int g_adapterDone = 0;
 static int g_deviceDone = 0;
@@ -75,7 +117,7 @@ static void OnAdapter(WGPURequestAdapterStatus status,
     (void)userdata1;
     (void)userdata2;
     if (status != WGPURequestAdapterStatus_Success) {
-        TN_LOG("TN_PS4_E3 adapter_failed status=%d msg=%s", (int)status,
+        TN_LOG(TN_E3_TAG " adapter_failed status=%d msg=%s", (int)status,
                message.data ? message.data : "");
     }
     g_adapter = adapter;
@@ -90,7 +132,7 @@ static void OnDevice(WGPURequestDeviceStatus status,
     (void)userdata1;
     (void)userdata2;
     if (status != WGPURequestDeviceStatus_Success) {
-        TN_LOG("TN_PS4_E3 device_failed status=%d msg=%s", (int)status,
+        TN_LOG(TN_E3_TAG " device_failed status=%d msg=%s", (int)status,
                message.data ? message.data : "");
     }
     g_device = device;
@@ -106,7 +148,7 @@ static void OnError(WGPUDevice const* device,
     (void)userdata1;
     (void)userdata2;
     g_errors++;
-    TN_LOG("TN_PS4_E3 error type=%d msg=%s", (int)type, message.data ? message.data : "");
+    TN_LOG(TN_E3_TAG " error type=%d msg=%s", (int)type, message.data ? message.data : "");
 }
 
 // Both requests are driven by instance.ProcessEvents() (CallbackMode::AllowProcessEvents),
@@ -150,7 +192,7 @@ static WGPUDevice RequestDevice(WGPUInstance instance, WGPUAdapter adapter) {
 static void LogAdapterInfo(WGPUAdapter adapter) {
     WGPUAdapterInfo info = WGPU_ADAPTER_INFO_INIT;
     if (wgpuAdapterGetInfo(adapter, &info) != WGPUStatus_Success) {
-        TN_LOG("TN_PS4_E3 adapter=<unknown> backend=0 info_failed");
+        TN_LOG(TN_E3_TAG " adapter=<unknown> backend=0 info_failed");
         return;
     }
     // The name is whatever vulkan-ps4 reports; deviceID/vendorID pin it down otherwise.
@@ -159,16 +201,16 @@ static void LogAdapterInfo(WGPUAdapter adapter) {
     // (printing %s ran into the next string of the adapter-info block), so the length is what is
     // printed, and it decides the end of the name.
     int nameLength = info.device.data ? (int)(info.device.length < 120 ? info.device.length : 120) : 0;
-    TN_LOG("TN_PS4_E3 adapter=%.*s backend=%d vendor=0x%04x device=0x%04x", nameLength,
+    TN_LOG(TN_E3_TAG " adapter=%.*s backend=%d vendor=0x%04x device=0x%04x", nameLength,
            info.device.data ? info.device.data : "(unnamed)", (int)info.backendType,
            info.vendorID, info.deviceID);
 
     WGPULimits limits = WGPU_LIMITS_INIT;
     if (wgpuAdapterGetLimits(adapter, &limits) != WGPUStatus_Success) {
-        TN_LOG("TN_PS4_E3 limits=<unknown>");
+        TN_LOG(TN_E3_TAG " limits=<unknown>");
         return;
     }
-    TN_LOG("TN_PS4_E3 limits maxTextureDimension2D=%u maxBindGroups=%u "
+    TN_LOG(TN_E3_TAG " limits maxTextureDimension2D=%u maxBindGroups=%u "
            "maxStorageBuffersPerShaderStage=%u maxComputeWorkgroupSizeX=%u maxBufferSize=%llu",
            limits.maxTextureDimension2D, limits.maxBindGroups,
            limits.maxStorageBuffersPerShaderStage, limits.maxComputeWorkgroupSizeX,
@@ -188,6 +230,26 @@ static WGPUShaderModule MakeModule(WGPUDevice device, const char* code) {
     return wgpuDeviceCreateShaderModule(device, &moduleDesc);
 }
 
+#if TN_E3_GUEST_CS
+// The fragment reads the compute result, so the draw needs a bind group of its own: a compute
+// layout (COMPUTE visibility, writable storage) is not a legal render-pipeline layout, and a
+// fragment stage may only be handed read-only storage.
+static WGPUBindGroup g_fragmentGroup = nullptr;
+static WGPUBuffer g_storage[2];  // 0 = what the fragment reads, 1 = the kernel's second buffer
+
+static WGPUBindGroupLayout MakeFragmentLayout(WGPUDevice device) {
+    WGPUBindGroupLayoutEntry entry = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
+    entry.binding = 0;
+    entry.visibility = WGPUShaderStage_Fragment;
+    entry.buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
+
+    WGPUBindGroupLayoutDescriptor desc = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
+    desc.entryCount = 1;
+    desc.entries = &entry;
+    return wgpuDeviceCreateBindGroupLayout(device, &desc);
+}
+#endif
+
 static WGPURenderPipeline MakePipeline(WGPUDevice device, WGPUTextureFormat format) {
     WGPUShaderModule vertexModule = MakeModule(device, kVertexShader);
     WGPUShaderModule fragmentModule = MakeModule(device, kFragmentShader);
@@ -204,7 +266,17 @@ static WGPURenderPipeline MakePipeline(WGPUDevice device, WGPUTextureFormat form
     fragment.targets = &target;
 
     WGPURenderPipelineDescriptor desc = WGPU_RENDER_PIPELINE_DESCRIPTOR_INIT;
+    WGPUPipelineLayout pipelineLayout = nullptr;
+#if TN_E3_GUEST_CS
+    WGPUBindGroupLayout fragmentLayout = MakeFragmentLayout(device);
+    WGPUPipelineLayoutDescriptor layoutDesc = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
+    layoutDesc.bindGroupLayoutCount = 1;
+    layoutDesc.bindGroupLayouts = &fragmentLayout;
+    pipelineLayout = wgpuDeviceCreatePipelineLayout(device, &layoutDesc);
+    desc.layout = pipelineLayout;
+#else
     desc.layout = nullptr;  // auto
+#endif
     desc.vertex.module = vertexModule;
     desc.vertex.entryPoint = WGPU_STRING_VIEW_INIT;
     desc.vertex.entryPoint.data = "main";
@@ -217,6 +289,20 @@ static WGPURenderPipeline MakePipeline(WGPUDevice device, WGPUTextureFormat form
     WGPURenderPipeline pipeline = wgpuDeviceCreateRenderPipeline(device, &desc);
     wgpuShaderModuleRelease(vertexModule);
     wgpuShaderModuleRelease(fragmentModule);
+#if TN_E3_GUEST_CS
+    WGPUBindGroupEntry groupEntry = WGPU_BIND_GROUP_ENTRY_INIT;
+    groupEntry.binding = 0;
+    groupEntry.buffer = g_storage[0];
+    groupEntry.offset = 0;
+    groupEntry.size = WGPU_WHOLE_SIZE;
+    WGPUBindGroupDescriptor groupDesc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
+    groupDesc.layout = fragmentLayout;
+    groupDesc.entryCount = 1;
+    groupDesc.entries = &groupEntry;
+    g_fragmentGroup = wgpuDeviceCreateBindGroup(device, &groupDesc);
+    wgpuPipelineLayoutRelease(pipelineLayout);
+    wgpuBindGroupLayoutRelease(fragmentLayout);
+#endif
     return pipeline;
 }
 
@@ -236,6 +322,11 @@ static void DrawInto(WGPUDevice device, WGPURenderPipeline pipeline, WGPUTexture
     WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(device, nullptr);
     WGPURenderPassEncoder pass = wgpuCommandEncoderBeginRenderPass(encoder, &passDesc);
     wgpuRenderPassEncoderSetPipeline(pass, pipeline);
+#if TN_E3_GUEST_CS
+    // Frame 1 draws straight after the compute submit, so a stale read here is the missing
+    // read-to-write barrier, not a compute failure: the frame colour tells the two apart.
+    if (g_fragmentGroup != nullptr) wgpuRenderPassEncoderSetBindGroup(pass, 0, g_fragmentGroup, 0, nullptr);
+#endif
     wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0);
     wgpuRenderPassEncoderEnd(pass);
     wgpuRenderPassEncoderRelease(pass);
@@ -245,6 +336,86 @@ static void DrawInto(WGPUDevice device, WGPURenderPipeline pipeline, WGPUTexture
     wgpuQueueSubmit(wgpuDeviceGetQueue(device), 1, &commands);
     wgpuCommandBufferRelease(commands);
 }
+
+// === the compute repro: dispatch, then present what it wrote ==========================
+#if TN_E3_GUEST_CS
+// One dispatch of 512 groups x 8 threads over two 4096-element storage buffers and one uniform --
+// the bind-group shape of the engine kernel that loses the host device in E5. Every step logs a
+// marker, so a lost device is attributed to the step that was running.
+static void RunCompute(WGPUInstance instance, WGPUDevice device) {
+    const uint64_t kBytes = 4096u * 4u;
+    // Storage buffers are not uniform buffers: WebGPU refuses one buffer with both usages, and
+    // Dawn says so ("usage (Uniform|Storage(read-write)) includes writable usage and another
+    // usage"), which invalidated the whole command buffer on the first try.
+    WGPUBufferDescriptor bufferDesc = WGPU_BUFFER_DESCRIPTOR_INIT;
+    bufferDesc.usage = WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst;
+    bufferDesc.size = kBytes;
+    for (int i = 0; i < 2; ++i) g_storage[i] = wgpuDeviceCreateBuffer(device, &bufferDesc);
+    WGPUBufferDescriptor uniformDesc = WGPU_BUFFER_DESCRIPTOR_INIT;
+    uniformDesc.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst;
+    uniformDesc.size = 16;
+    WGPUBuffer uniformBuffer = wgpuDeviceCreateBuffer(device, &uniformDesc);
+
+    WGPUShaderModule csModule = MakeModule(device, kComputeShader);
+    WGPUComputePipelineDescriptor pipelineDesc = WGPU_COMPUTE_PIPELINE_DESCRIPTOR_INIT;
+    pipelineDesc.layout = nullptr;  // auto
+    pipelineDesc.compute.module = csModule;
+    pipelineDesc.compute.entryPoint = WGPU_STRING_VIEW_INIT;
+    pipelineDesc.compute.entryPoint.data = "main";
+    WGPUComputePipeline computePipeline = wgpuDeviceCreateComputePipeline(device, &pipelineDesc);
+    wgpuShaderModuleRelease(csModule);
+    if (computePipeline == nullptr) {
+        TN_LOG("TN_PS4_E3CS cs_pipeline=create_failed");
+        return;
+    }
+    WGPUBindGroupLayout layout = wgpuComputePipelineGetBindGroupLayout(computePipeline, 0);
+
+    // x = the value element 0 gets, y = the per-thread stride: 64 + i * 1 -> outv[0] = 64,
+    // outv[1] = 65, so the fragment's red/green are 0.251 and 0.255 and ANY other colour on screen
+    // is a dispatch that did not reach the buffer.
+    const uint32_t params[4] = {64u, 1u, 0u, 0u};
+    WGPUQueue queue = wgpuDeviceGetQueue(device);
+    wgpuQueueWriteBuffer(queue, uniformBuffer, 0, params, sizeof(params));
+
+    WGPUBindGroupEntry entries[3] = {WGPU_BIND_GROUP_ENTRY_INIT, WGPU_BIND_GROUP_ENTRY_INIT,
+                                     WGPU_BIND_GROUP_ENTRY_INIT};
+    for (int i = 0; i < 2; ++i) {
+        entries[i].binding = (uint32_t)i;
+        entries[i].buffer = g_storage[i];
+        entries[i].offset = 0;
+        entries[i].size = WGPU_WHOLE_SIZE;
+    }
+    entries[2].binding = 2;
+    entries[2].buffer = uniformBuffer;
+    entries[2].offset = 0;
+    entries[2].size = 16;
+    WGPUBindGroupDescriptor groupDesc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
+    groupDesc.layout = layout;
+    groupDesc.entryCount = 3;
+    groupDesc.entries = entries;
+    WGPUBindGroup group = wgpuDeviceCreateBindGroup(device, &groupDesc);
+    TN_LOG("TN_PS4_E3CS cs=bound set=%s buffers=2 uniform=1", group ? "ok" : "null");
+
+    WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(device, nullptr);
+    WGPUComputePassEncoder pass = wgpuCommandEncoderBeginComputePass(encoder, nullptr);
+    wgpuComputePassEncoderSetPipeline(pass, computePipeline);
+    wgpuComputePassEncoderSetBindGroup(pass, 0, group, 0, nullptr);
+    wgpuComputePassEncoderDispatchWorkgroups(pass, 512, 1, 1);
+    wgpuComputePassEncoderEnd(pass);
+    wgpuComputePassEncoderRelease(pass);
+    WGPUCommandBuffer commands = wgpuCommandEncoderFinish(encoder, nullptr);
+    wgpuCommandEncoderRelease(encoder);
+    wgpuQueueSubmit(queue, 1, &commands);
+    wgpuCommandBufferRelease(commands);
+    TN_LOG("TN_PS4_E3CS cs=submitted groups=512 threads=8");
+    wgpuDeviceTick(device);
+    wgpuInstanceProcessEvents(instance);
+    TN_LOG("TN_PS4_E3CS cs=done");
+    wgpuBindGroupRelease(group);
+    wgpuBufferRelease(uniformBuffer);
+    wgpuComputePipelineRelease(computePipeline);
+}
+#endif
 
 // === step 2a: offscreen 256x256 =====================================================
 static WGPURenderPipeline RunOffscreen(WGPUInstance instance, WGPUDevice device) {
@@ -267,7 +438,7 @@ static WGPURenderPipeline RunOffscreen(WGPUInstance instance, WGPUDevice device)
 
     WGPURenderPipeline pipeline = MakePipeline(device, format);
     if (pipeline == nullptr) {
-        TN_LOG("TN_PS4_E3 pipeline=create_failed");
+        TN_LOG(TN_E3_TAG " pipeline=create_failed");
         return nullptr;
     }
 
@@ -277,7 +448,7 @@ static WGPURenderPipeline RunOffscreen(WGPUInstance instance, WGPUDevice device)
     wgpuTextureViewRelease(view);
     wgpuTextureRelease(texture);
 
-    TN_LOG("TN_PS4_E3 offscreen=%ux%u", TN_OFFSCREEN, TN_OFFSCREEN);
+    TN_LOG(TN_E3_TAG " offscreen=%ux%u", TN_OFFSCREEN, TN_OFFSCREEN);
     return pipeline;
 }
 
@@ -295,10 +466,10 @@ static void RunSurface(WGPUInstance instance,
 
     WGPUSurface surface = wgpuInstanceCreateSurface(instance, &surfaceDesc);
     if (surface == nullptr) {
-        TN_LOG("TN_PS4_E3 surface=create_failed");
+        TN_LOG(TN_E3_TAG " surface=create_failed");
         return;
     }
-    TN_LOG("TN_PS4_E3 surface=created");
+    TN_LOG(TN_E3_TAG " surface=created");
 
     WGPUSurfaceConfiguration config = WGPU_SURFACE_CONFIGURATION_INIT;
     config.device = device;
@@ -309,20 +480,20 @@ static void RunSurface(WGPUInstance instance,
     config.alphaMode = WGPUCompositeAlphaMode_Auto;
     config.presentMode = WGPUPresentMode_Fifo;
     wgpuSurfaceConfigure(surface, &config);
-    TN_LOG("TN_PS4_E3 surface=configured");
+    TN_LOG(TN_E3_TAG " surface=configured");
 
     for (int frame = 1; frame <= TN_FRAMES; ++frame) {
         WGPUSurfaceTexture surfaceTexture = WGPU_SURFACE_TEXTURE_INIT;
         wgpuSurfaceGetCurrentTexture(surface, &surfaceTexture);
         if (surfaceTexture.status != WGPUSurfaceGetCurrentTextureStatus_SuccessOptimal &&
             surfaceTexture.status != WGPUSurfaceGetCurrentTextureStatus_SuccessSuboptimal) {
-            TN_LOG("TN_PS4_E3 frame=%d get_current_texture status=%d", frame,
+            TN_LOG(TN_E3_TAG " frame=%d get_current_texture status=%d", frame,
                    (int)surfaceTexture.status);
             return;
         }
 
         if (frame == 1) {
-            TN_LOG("TN_PS4_E3 surface=frame1");
+            TN_LOG(TN_E3_TAG " surface=frame1");
         }
         WGPUTextureView view = wgpuTextureCreateView(surfaceTexture.texture, nullptr);
         DrawInto(device, pipeline, view);
@@ -330,16 +501,16 @@ static void RunSurface(WGPUInstance instance,
         wgpuTextureRelease(surfaceTexture.texture);
 
         if (wgpuSurfacePresent(surface) != WGPUStatus_Success) {
-            TN_LOG("TN_PS4_E3 frame=%d present_failed", frame);
+            TN_LOG(TN_E3_TAG " frame=%d present_failed", frame);
             return;
         }
         wgpuInstanceProcessEvents(instance);
 
         if (frame % 60 == 0) {
-            TN_LOG("TN_PS4_E3 frame=%d", frame);
+            TN_LOG(TN_E3_TAG " frame=%d", frame);
         }
     }
-    TN_LOG("TN_PS4_E3 frames=%d presented", TN_FRAMES);
+    TN_LOG(TN_E3_TAG " frames=%d presented", TN_FRAMES);
 }
 
 int main(void) {
@@ -348,42 +519,45 @@ int main(void) {
     WGPUInstanceDescriptor instanceDesc = WGPU_INSTANCE_DESCRIPTOR_INIT;
     WGPUInstance instance = wgpuCreateInstance(&instanceDesc);
     if (instance == nullptr) {
-        TN_LOG("TN_PS4_E3 instance=create_failed");
+        TN_LOG(TN_E3_TAG " instance=create_failed");
         return 1;
     }
 
     WGPUAdapter adapter = RequestAdapter(instance);
     if (adapter == nullptr) {
-        TN_LOG("TN_PS4_E3 adapter=null");
+        TN_LOG(TN_E3_TAG " adapter=null");
         return 1;
     }
     LogAdapterInfo(adapter);
 
     WGPUDevice device = RequestDevice(instance, adapter);
     if (device == nullptr) {
-        TN_LOG("TN_PS4_E3 device=null");
+        TN_LOG(TN_E3_TAG " device=null");
         return 1;
     }
 
+#if TN_E3_GUEST_CS
+    RunCompute(instance, device);
+#endif
     WGPURenderPipeline pipeline = RunOffscreen(instance, device);
     if (pipeline != nullptr) {
-        TN_LOG("TN_PS4_E3 pipeline=ok");
+        TN_LOG(TN_E3_TAG " pipeline=ok");
         if (TN_READBACK) wgpuDeviceTick(device);
         RunSurface(instance, adapter, device, pipeline);
     }
 
-    TN_LOG("TN_PS4_E3 errors=%d", g_errors);
+    TN_LOG(TN_E3_TAG " errors=%d", g_errors);
     // Hold the last presented frame until the harness stops the run (see e2-triangle.c): an exiting
     // guest blanks the window before a late host capture.
     if (g_errors == 0 && pipeline != nullptr) {
-        TN_LOG("TN_PS4_E3 holding the last frame");
+        TN_LOG(TN_E3_TAG " holding the last frame");
         for (;;) sceKernelUsleep(1000000);
     }
     wgpuRenderPipelineRelease(pipeline);
     wgpuDeviceRelease(device);
     wgpuAdapterRelease(adapter);
     wgpuInstanceRelease(instance);
-    TN_LOG("TN_PS4_E3 done");
+    TN_LOG(TN_E3_TAG " done");
     return g_errors == 0 ? 0 : 2;
 }
 
