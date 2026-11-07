@@ -138,6 +138,12 @@ export interface IProbeVolumeOptions {
   /** Most probes one frame traces (Unreal's r.Lumen.RadianceCache.NumProbesToTraceBudget, 100). */
   readonly numProbesToTraceBudget?: number;
   /**
+   * A fixed batch: probes traced a frame, up to `numProbesToTraceBudget`, whatever the GPU reports. Unset, the batch follows
+   * the measured GPU time toward `bakeBudgetMs` and stays at 16 where the adapter reports none (the owned engine today). A
+   * capture that must trace a whole field before its frame sets it; a game leaves it unset.
+   */
+  readonly probesPerFrame?: number;
+  /**
    * Rays per probe along one side: `probeResolution` squared rays. The default is 8 (64 rays), the cost gate's
    * figure: an Intel Xe traces about 0.09 ms a probe at 8 and 0.41 ms at 32 (1,024 rays, Unreal's radiance-cache
    * ProbeResolution). A small emitter far from a probe needs the larger value to be hit at all.
@@ -367,6 +373,8 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
   readonly #traceBudget: number;
   /** Probes traced a frame now: it follows the measured GPU cost toward `bakeBudgetMs`, up to the budget. */
   #traceRate = 0;
+  /** `probesPerFrame` was set: the GPU reading never moves the batch. */
+  readonly #fixedTraceRate: boolean;
   /** The last four batch sizes: a timestamp arrives frames late, so a reading is charged to the smallest of them. */
   #recentBatches: number[] = [];
   readonly #raysPerProbe: number;
@@ -421,7 +429,13 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
       options.numProbesToTraceBudget ?? 100,
       "numProbesToTraceBudget",
     );
-    this.#traceRate = Math.min(this.#traceBudget, TRACE_START_PROBES);
+    this.#fixedTraceRate = options.probesPerFrame !== undefined;
+    this.#traceRate = Math.min(
+      this.#traceBudget,
+      options.probesPerFrame === undefined
+        ? TRACE_START_PROBES
+        : positiveInteger(options.probesPerFrame, "probesPerFrame"),
+    );
     const probeResolution = positiveInteger(options.probeResolution ?? 8, "probeResolution");
     this.#raysPerProbe = probeResolution * probeResolution;
 
@@ -1045,6 +1059,7 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
    * reading cannot jump the cost. With no timestamp reading the batch stays at its start of 16 probes.
    */
   #adaptTraceRate(renderer: IRendererLike): void {
+    if (this.#fixedTraceRate) return;
     const gpuMs = (renderer as { gpuComputeMs?: () => number | undefined }).gpuComputeMs?.();
     if (gpuMs === undefined || !(gpuMs > 0) || this.#recentBatches.length === 0) return;
     const fit = Math.floor((this.#bakeBudgetMs * Math.min(...this.#recentBatches)) / gpuMs);

@@ -14,7 +14,7 @@ export interface IGiTracedField {
   ready(): boolean;
 }
 
-type TracedCtx = Pick<ICtx, "add" | "camera" | "scene">;
+type TracedCtx = Pick<ICtx, "add" | "beforeRender" | "camera" | "scene">;
 
 export function tracedGiField(
   ctx: TracedCtx,
@@ -35,6 +35,10 @@ export function tracedGiField(
     new RadianceCache({
       bounds,
       density,
+      // A calibration capture is a few hundred stepped frames: the whole field traces at once (a game keeps the 2 ms budget).
+      bakeBudgetMs: 200,
+      numProbesToTraceBudget: 4096,
+      probesPerFrame: 4096,
       trace: {
         bvh,
         camera: ctx.camera,
@@ -53,7 +57,31 @@ export function tracedGiField(
       },
     }),
   );
-  void volume.requestBake(ctx.scene);
+  /** The largest value in the atlas: 0 while no probe has landed, or when the lamps reach nothing. */
+  const atlasMax = (): number => {
+    let max = 0;
+    for (const v of volume.atlasData) max = Math.max(max, Math.abs(v));
+    return Math.round(max * 1e4) / 1e4;
+  };
+  const log = (event: string): void => {
+    const o = volume.observation;
+    console.info(
+      `TN_GI_CACHE_FIELD ${JSON.stringify({ event, probes: volume.probeCount, status: o.status, traced: o.probesTraced, cost: o.bakeCostMs, atlasMax: atlasMax() })}`,
+    );
+  };
+  log("created");
+  volume.requestBake(ctx.scene).then(
+    () => log("baked"),
+    (error: unknown) => console.info(`TN_GI_CACHE_FIELD failed ${String(error)}`),
+  );
+  // The field's progress at frames 1, 8, 32, 128 and 512 (a stepped capture owns the page clock, so a timer never fires): a
+  // capture that reads black shows here whether the volume traced.
+  let frame = 0;
+  ctx.beforeRender?.(() => {
+    frame += 1;
+    if (![1, 8, 32, 128, 512].includes(frame)) return;
+    log(`frame ${frame}`);
+  });
   return {
     irradiance: (position, normal) => volume.sampleNode(position, normal).div(Math.PI),
     ready: () => volume.observation.status === "ready",

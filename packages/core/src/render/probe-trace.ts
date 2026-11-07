@@ -274,7 +274,9 @@ function traceRay(
       const near = max(max(min(t0.x, t1.x), min(t0.y, t1.y)), min(t0.z, t1.z));
       const exit = min(min(max(t0.x, t1.x), max(t0.y, t1.y)), max(t0.z, t1.z));
       const boxHit = exit.greaterThanEqual(max(near, 0)).and(near.lessThan(best));
-      const link = buffers.links.element(node);
+      // The links are float storage read as ints: the owned engine's `ivec4` storage reads back wrong (a node never reads as a leaf).
+      const rawLink = buffers.links.element(node);
+      const link = { w: int(rawLink.w), x: int(rawLink.x), y: int(rawLink.y), z: int(rawLink.z) };
       If(boxHit.and(link.w.equal(1)), () => {
         Loop(
           { start: int(0), end: link.z, type: "int", condition: "<" },
@@ -406,7 +408,8 @@ export function createProbeTraceKernels(
   const materialNode = read(scene.materials, "vec4");
   const buffers: IStorageSet = {
     bounds: read(scene.bounds, "vec4"),
-    links: read(scene.links, "ivec4"),
+    // Node and triangle indices below 2^24 are exact in a float.
+    links: read(Float32Array.from(scene.links), "vec4"),
     materials: materialNode,
     triangles: read(scene.triangles, "vec4"),
   };

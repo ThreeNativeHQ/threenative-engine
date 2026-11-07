@@ -90,6 +90,10 @@ export async function startScene(canvas, dimensions) {
       assertCondition(volume.observation.status === "ready", "probe volume bake must complete");
       assertCondition(volume.observation.stale === false, "completed probe volume must not be stale");
       assertCondition(volume.observation.update === "trace", "the volume must refresh by trace");
+      // A ready volume with an all-zero atlas is a trace that read back nothing: the emitter lights the probes.
+      let atlasMax = 0;
+      for (const value of volume.atlasData) atlasMax = Math.max(atlasMax, Math.abs(value));
+      assertCondition(atlasMax > 0.01, `the traced atlas must carry the emitter's light (max ${atlasMax})`);
 
       return {
         detail: {
@@ -98,6 +102,7 @@ export async function startScene(canvas, dimensions) {
           bakeCostMs: volume.observation.bakeCostMs,
           probesTraced: volume.observation.probesTraced,
           update: volume.observation.update,
+          atlasMax,
           emitter: "off-screen",
           marker: volume.observation.marker,
           probeCount: volume.probeCount,

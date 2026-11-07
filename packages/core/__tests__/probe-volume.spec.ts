@@ -1168,6 +1168,21 @@ describe("ProbeVolume", () => {
       expect(subject.observation.status).toBe("ready");
     });
 
+    it("traces a fixed batch a frame when probesPerFrame is set, whatever the GPU reports", () => {
+      const fixed = volume({
+        numProbesToTraceBudget: 10,
+        probesPerFrame: 4,
+        report: () => undefined,
+        trace: {
+          bvh: new GPUSceneBVH(emitterScene()),
+          sky: new Color(0, 0, 0),
+          sun: { color: new Color(1, 1, 1), direction: new Vector3(0, 1, 0), intensity: 0 },
+        },
+      });
+      void fixed.requestBake(new Scene());
+      expect(fixed.selectStaleProbes()).toEqual([0, 1, 2, 3]);
+    });
+
     it("refreshes never-traced probes first, then the probes in view the longest since their trace", async () => {
       // A narrow view down -z through x = 1, y = 1 sees probes 4, 13 and 22 of the 3 x 3 x 3 grid.
       const camera = new PerspectiveCamera(10, 1, 0.1, 100);
