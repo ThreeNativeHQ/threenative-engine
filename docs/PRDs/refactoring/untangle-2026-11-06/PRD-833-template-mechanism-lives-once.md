@@ -1,6 +1,6 @@
 # PRD-833 — Template mechanism lives once
 
-**Status:** NOT STARTED
+**Status:** PARTIAL — Phase 3 landed; Phases 1 and 2 (mechanism into core, shared build plumbing) are open
 **Priority:** P1 — open Phase 2 deletes 84 template copies of 7 render-mechanism files, where a fix to one kit leaves 11 kits wrong with every test green.
 **Complexity:** 6 (MEDIUM); risk override: the moved files measure the environment and wire the backlight, so the owner's visual-judge rule applies
 **Owner:** ThreeNative maintainers
@@ -61,8 +61,8 @@ Report ids B1, F1, F2, F3, F4, F8, B2. Root `AGENTS.md` puts "plumbing every gam
 - [ ] The patch filename lives in one manifest that `prepack` reads. proof: `rg -c 'three@0\.' packages/create-threenative/src packages/create-threenative/package.json` drops to the manifest only, plus `pnpm --filter create-threenative pack` ships the patch
 
 #### Phase 3: Scaffold pins split
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** `packages/create-threenative/__tests__/scaffold.spec.ts`, new `scripts/scaffold-pin.ts`, root `package.json`.
 
-- [ ] Each kit carries a `shared` and a `kit` hash. An edit to `agent-docs/` changes only `shared`, and `pnpm scaffold:pin` rewrites it. proof: `pnpm --filter create-threenative exec vitest run __tests__/scaffold.spec.ts __tests__/scaffold-file-allowlist.spec.ts`
-- [ ] `STARTER_PATHS` and the two sibling path lists are deleted, so the allowlist and per-directory counts are the only ship contract. proof: the same spec run
+- [x] Each kit carries a `shared` and a `kit` hash, and `pnpm scaffold:pin` rewrites them and names which bucket moved. `__tests__/scaffold-tree.ts` owns the classification (a file the kit's own template holds is the kit's; anything the scaffolder built from `agent-files`, `template-assets`, core's tables or the shared render sources is shared, plus the generated `AGENTS.md`/`CLAUDE.md` routers). Proof of the split, run here: appending a line to `agent-files/.agents/skills/file-engine-bug/SKILL.md` makes `pnpm scaffold:pin --check` report `stale <kit>: shared` for all sixteen kits and nothing else; restoring it reports `scaffold pins are current`. The box's example says `agent-docs/`, which ships nothing into a scaffold (PRD-449), so it cannot move a pin; `agent-files/` is the shipped shared input. The block also replaced ~600 lines of re-pin history. proof: `pnpm --filter create-threenative exec vitest run __tests__/scaffold.spec.ts __tests__/scaffold-file-allowlist.spec.ts` → 80 passed.
+- [x] `STARTER_PATHS` (83 entries), `MINIMAL_RENDER_PATHS` and `PLATFORMER_PATHS` are deleted. What they asserted is covered: the two hashes catch a missing or changed file, the allowlist catches a new kind of file, and the two tests that used them keep their other claims (the minimal kit now asserts it ships a render layer at all, instead of a stale seven-name list the directory had outgrown). proof: the same spec run, and `rg -n 'STARTER_PATHS|MINIMAL_RENDER_PATHS|PLATFORMER_PATHS' packages/create-threenative` returns nothing.

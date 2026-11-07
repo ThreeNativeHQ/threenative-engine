@@ -68,6 +68,7 @@
     "round:deletions": "tsx scripts/round-deletions.ts",
     "round:next": "tsx scripts/round-next.ts",
     "sandbox": "tsx scripts/make-sandbox.ts",
+    "scaffold:pin": "tsx scripts/scaffold-pin.ts",
     "stamp:template-loading": "tsx scripts/stamp-template-loading.ts",
     "stamp:template-render": "tsx scripts/stamp-template-render.ts",
     "sweep:archive": "tsx scripts/sweep-archive.ts",
