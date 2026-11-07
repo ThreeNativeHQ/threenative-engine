@@ -138,6 +138,9 @@ if(TARGET swc::swc)
 endif()
 set_target_properties(tn_player_v8_services PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
 target_link_libraries(tn-native-engine-player-v8 PRIVATE tn_player_v8_services)
+# v8_main.cpp installs the shim manifest's pure-JS globals from the embedded runtime scripts.
+target_include_directories(tn-native-engine-player-v8 PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/generated)
+add_dependencies(tn-native-engine-player-v8 threenative-runtime-scripts)
 # WebAudio for three's audio classes: the legacy host's SDL output and worker decode.
 target_sources(tn_player_v8_services PRIVATE src/audio/audio_context.cpp src/audio/audio_bindings.cpp
     src/audio/async_audio_decode.cpp src/audio/vorbis_impl.c)

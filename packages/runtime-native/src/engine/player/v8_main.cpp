@@ -53,6 +53,7 @@
 #include "engine/inspect/endpoint.h"
 #include "engine/player/gamepads.h"
 #include "engine/player/run.h"
+#include "runtime_scripts.h"
 #include "mystral/platform/input.h"
 #include "mystral/platform/ui_overlay.h"
 #include <SDL3/SDL.h>
@@ -89,6 +90,20 @@ v8::Local<v8::String> v8str(v8::Isolate* isolate, const std::string& s) {
     return v8::String::NewFromUtf8(isolate, s.c_str(), v8::NewStringType::kNormal, static_cast<int>(s.size()))
         .ToLocalChecked();
 }
+
+// The shim manifest's pure-JS globals (URL, URLSearchParams, AbortController, TextEncoder/Decoder, Blob,
+// Headers, streams, the Event classes), from the same embedded scripts the legacy host evaluates. Without
+// them a game that reads `location.search` or aborts a request died at startup on the player (PRD-784
+// sweep: skinned-crowd, procedural-animals). Scripts that need host natives the player lacks stay out:
+// storage, image-bitmap and scheduler-yield. tests/player-host-globals.test.mjs runs this list.
+constexpr const char* kPlayerRuntimeScripts[] = {"fetch-polyfill", "streams-polyfill", "url-worker-polyfill", "event-constructors-setup"};
+// fetch-polyfill's fetch calls __httpRequestAsync, which the player has no binding for: a fetch would only
+// reject, and core's asset cache would wrap it. The player keeps no fetch, as before (the declaration is
+// not deletable, so it is cleared). `self` is the global.
+constexpr const char* kPlayerRuntimeTail = R"JS(
+globalThis.fetch = undefined;
+globalThis.self = globalThis;
+)JS";
 
 // The host object, defined before the bundle so the bundle imports nothing. `isDown` reads the
 // held-key set; `onUpdate`, `scene` and `camera` are plain JS properties the host reads.
@@ -1391,6 +1406,16 @@ bool V8Game::start(const std::string& path, std::string& error) {
     v8::Local<v8::Value> ignored;
     if (!v8::Script::Compile(ctx, v8str(isolate_, kPrelude)).ToLocal(&prelude) || !prelude->Run(ctx).ToLocal(&ignored))
         return error = "host prelude failed", false;
+    for (const char* name : kPlayerRuntimeScripts) {
+        const auto script = mystral::runtime_scripts::find(name);
+        v8::Local<v8::Script> compiled;
+        if (script.data == nullptr ||
+            !v8::Script::Compile(ctx, v8str(isolate_, std::string(script.data, script.size))).ToLocal(&compiled) ||
+            !compiled->Run(ctx).ToLocal(&ignored))
+            return error = std::string("host runtime script failed: ") + name, false;
+    }
+    if (!v8::Script::Compile(ctx, v8str(isolate_, kPlayerRuntimeTail)).ToLocal(&prelude) || !prelude->Run(ctx).ToLocal(&ignored))
+        return error = "host runtime tail failed", false;
     // A playtest runner announces itself as on the legacy desktop host, so core's playtest plugin
     // collects the per-frame render samples the runner's performance assertions read.
     if (const char* root = std::getenv("TN_PLAYTEST_MAILBOX_ROOT"); root != nullptr && root[0] != '\0')
