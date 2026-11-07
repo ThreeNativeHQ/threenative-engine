@@ -27,6 +27,9 @@ import {
   flatMaterial,
   lightingKey,
   lightingStepped,
+  octahedralCell,
+  octahedralRayTable,
+  probeRayDirections,
   threadScene,
   writeMaterialTable,
 } from "../src/render/probe-trace.js";
@@ -336,5 +339,61 @@ describe("rejected probes take their open neighbours' light (PRD-603)", () => {
       2,
     );
     expect([...coefficients].every((v) => v === 7)).toBe(true);
+  });
+});
+
+describe("an octahedral radiance map per probe, as Unreal's radiance cache stores (PRD-831)", () => {
+  it("puts each ray in the cell its direction encodes to, and gives every cell at least one ray", () => {
+    const rays = 1024;
+    const resolution = 8;
+    const directions = probeRayDirections(rays);
+    const table = octahedralRayTable(directions, rays, resolution);
+    const cells = resolution * resolution;
+    let entries = 0;
+    for (let cell = 0; cell < cells; cell += 1) {
+      const count = table.ranges[cell * 4 + 1] ?? 0;
+      expect(count).toBeGreaterThan(0);
+      entries += count;
+    }
+    // 1,024 rays over 64 cells: no cell is empty, so no ray is reused.
+    expect(entries).toBe(rays);
+    for (let cell = 0; cell < cells; cell += 1) {
+      const start = table.ranges[cell * 4] ?? 0;
+      const ray = table.rays[start * 4] ?? 0;
+      const d = [
+        directions[ray * 4] ?? 0,
+        directions[ray * 4 + 1] ?? 0,
+        directions[ray * 4 + 2] ?? 0,
+      ];
+      expect(octahedralCell(d[0] ?? 0, d[1] ?? 0, d[2] ?? 0, resolution)).toBe(cell);
+    }
+  });
+
+  it("fills an empty cell with the nearest ray when there are fewer rays than cells", () => {
+    const table = octahedralRayTable(probeRayDirections(16), 16, 8);
+    for (let cell = 0; cell < 64; cell += 1) expect(table.ranges[cell * 4 + 1]).toBeGreaterThan(0);
+  });
+
+  it("maps the six axes to six different cells", () => {
+    const axes = [
+      [1, 0, 0],
+      [-1, 0, 0],
+      [0, 1, 0],
+      [0, -1, 0],
+      [0, 0, 1],
+      [0, 0, -1],
+    ] as const;
+    const cells = new Set(axes.map(([x, y, z]) => octahedralCell(x, y, z, 8)));
+    expect(cells.size).toBe(6);
+  });
+
+  it("fills a rejected probe's map from its open neighbours, beside its SH", () => {
+    const coefficients = new Float32Array(2 * 27).fill(5);
+    const maps = new Float32Array(2 * 4).fill(0);
+    maps.fill(9, 4, 8);
+    fillRejectedProbes(coefficients, Float32Array.from([1, 0]), { x: 2, y: 1, z: 1 }, [
+      { data: maps, stride: 4 },
+    ]);
+    expect([...maps.slice(0, 4)]).toEqual([9, 9, 9, 9]);
   });
 });

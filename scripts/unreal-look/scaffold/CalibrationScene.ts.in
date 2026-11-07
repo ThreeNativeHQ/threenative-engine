@@ -378,6 +378,10 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
                 // only past ProbeTMin + cell * sqrt(3) (LumenRadianceCacheInterpolation.ush:190); this gather traces screen
                 // space only, so it reads the field half a spacing off the surface, away from the probes inside a solid.
                 Number(params.get("giBias") ?? 0.5),
+                // ?giMap=<cells per side>: each probe keeps an octahedral radiance map that the gather reads per ray, as Unreal's
+                // radiance cache stores radiance per probe (LumenScreenProbeGather.cpp:641); SH L2 smears a coloured wall across
+                // the sphere. 8 x 8 cells over 32 x 32 rays averages 16 rays a cell. ?giMap=0 reads the SH (the pre-map arm).
+                Number(params.get("giMap") ?? 8),
               )
             : undefined;
         if (field !== undefined) (window as unknown as { __tnGiField: unknown }).__tnGiField = field;

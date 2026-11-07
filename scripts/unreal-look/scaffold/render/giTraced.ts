@@ -30,6 +30,8 @@ export function tracedGiField(
   probeResolution?: number,
   /** Read the field this share of a probe spacing off the surface, along its normal (the near field this gather cannot trace). */
   normalBias = 0,
+  /** Cells per side of each probe's octahedral radiance map, which the gather's per-ray read uses; 0 reads the SH. */
+  radianceProbeResolution = 0,
 ): IGiTracedField {
   // A glass pane is not a surface the probes see (the cache's own rule): only opaque meshes are packed.
   const bvh = ctx.add(
@@ -43,6 +45,7 @@ export function tracedGiField(
       bounds,
       density,
       ...(probeResolution === undefined ? {} : { probeResolution }),
+      radianceProbeResolution,
       // A calibration capture is a few hundred stepped frames: the whole field traces at once (a game keeps the 2 ms budget).
       bakeBudgetMs: 200,
       numProbesToTraceBudget: 4096,

@@ -17,6 +17,7 @@ import {
 } from "three";
 import {
   Fn,
+  abs,
   clamp,
   cubeTexture,
   float,
@@ -25,6 +26,7 @@ import {
   normalWorld,
   normalize,
   positionWorld,
+  select,
   texture,
   texture3D,
   uniform,
@@ -37,6 +39,7 @@ import {
   ClampToEdgeWrapping,
   CubeRenderTarget,
   Data3DTexture,
+  DataTexture,
   FloatType,
   HalfFloatType,
   LinearFilter,
@@ -150,6 +153,14 @@ export interface IProbeVolumeOptions {
    * ProbeResolution). A small emitter far from a probe needs the larger value to be hit at all.
    */
   readonly probeResolution?: number;
+  /**
+   * Cells per side of an octahedral radiance map per probe, beside the SH: the traced rays binned by direction, as
+   * Unreal's radiance cache stores 32 x 32 radiance per probe (UE 5.8.3:
+   * Engine/Source/Runtime/Renderer/Private/Lumen/LumenScreenProbeGather.cpp:641, GRadianceCacheProbeResolution).
+   * `sampleRadianceNode` then reads the map, sharp where SH L2 smears a coloured wall across the sphere. 0 (the default)
+   * keeps SH only. Traced refresh only.
+   */
+  readonly radianceProbeResolution?: number;
 }
 
 /** What a traced refresh reads. Every value is the game's: the volume owns no light and no colour. */
@@ -381,6 +392,8 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
   /** The last four batch sizes: a timestamp arrives frames late, so a reading is charged to the smallest of them. */
   #recentBatches: number[] = [];
   readonly #raysPerProbe: number;
+  readonly #mapResolution: number;
+  #radianceMapTexture?: DataTexture;
   #kernels: IProbeTraceKernels | undefined;
   #kernelVersion = -1;
   #ignoredTextureMaterials = 0;
@@ -443,6 +456,10 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
     );
     const probeResolution = positiveInteger(options.probeResolution ?? 8, "probeResolution");
     this.#raysPerProbe = probeResolution * probeResolution;
+    this.#mapResolution =
+      options.radianceProbeResolution === undefined || options.radianceProbeResolution === 0
+        ? 0
+        : positiveInteger(options.radianceProbeResolution, "radianceProbeResolution");
 
     const normalizedBounds = normalizeBounds(options.bounds);
     this.boundingBox = normalizedBounds;
@@ -781,7 +798,106 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
     position: Node<"vec3"> = positionWorld,
     direction: Node<"vec3"> = normalWorld,
   ): Node<"vec3"> {
-    return this.#shNode(position, direction, SH_RADIANCE_WEIGHTS);
+    return this.#mapResolution > 0
+      ? this.#radianceMapNode(position, direction)
+      : this.#shNode(position, direction, SH_RADIANCE_WEIGHTS);
+  }
+
+  /**
+   * The octahedral maps laid out as one 2D texture: probe (x, y, z) holds the R x R block at column x and row z * ny + y.
+   * Rejected probes hold their open neighbours' maps (`fillRejectedProbes`), so a reader weights all eight corners.
+   */
+  #packRadianceMap(map: Float32Array): void {
+    const r = this.#mapResolution;
+    const { x: nx, y: ny } = this.resolution;
+    const width = nx * r;
+    const texture = this.#ensureRadianceMapTexture();
+    const data = texture.image.data as Float32Array;
+    for (let probe = 0; probe < this.#probeCount; probe += 1) {
+      const ix = probe % nx;
+      const iy = Math.floor(probe / nx) % ny;
+      const iz = Math.floor(probe / (nx * ny));
+      for (let cell = 0; cell < r * r; cell += 1) {
+        const column = ix * r + (cell % r);
+        const row = (iz * ny + iy) * r + Math.floor(cell / r);
+        const source = (probe * r * r + cell) * 4;
+        data.set(map.subarray(source, source + 4), (row * width + column) * 4);
+      }
+    }
+    texture.needsUpdate = true;
+  }
+
+  #ensureRadianceMapTexture(): DataTexture {
+    if (this.#radianceMapTexture !== undefined) return this.#radianceMapTexture;
+    const r = this.#mapResolution;
+    const { x: nx, y: ny, z: nz } = this.resolution;
+    const map = new DataTexture(
+      new Float32Array(nx * r * ny * nz * r * 4),
+      nx * r,
+      ny * nz * r,
+      RGBAFormat,
+      FloatType,
+    );
+    map.minFilter = NearestFilter;
+    map.magFilter = NearestFilter;
+    map.generateMipmaps = false;
+    map.needsUpdate = true;
+    this.#radianceMapTexture = map;
+    return map;
+  }
+
+  /** The map's radiance along `direction`: the direction's cell in each of the eight probes around `position`, trilinear. */
+  #radianceMapNode(position: Node<"vec3">, direction: Node<"vec3">): Node<"vec3"> {
+    const r = this.#mapResolution;
+    const { x: nx, y: ny, z: nz } = this.resolution;
+    const map = this.#ensureRadianceMapTexture();
+    const d = normalize(vec3(direction));
+    const flat = d.xy.div(abs(d.x).add(abs(d.y)).add(abs(d.z)));
+    const sign = (v: Node<"float">) => select(v.greaterThanEqual(0), float(1), float(-1));
+    const folded = vec2(
+      float(1).sub(abs(flat.y)).mul(sign(flat.x)),
+      float(1).sub(abs(flat.x)).mul(sign(flat.y)),
+    );
+    const octahedron = select(d.z.lessThan(0), folded, flat);
+    const cell = clamp(floor(octahedron.mul(0.5).add(0.5).mul(r)), vec2(0), vec2(r - 1));
+    const min = this.boundingBox.min;
+    const size = this.#boundsSize;
+    const step = vec3(
+      size.x / Math.max(1, nx - 1),
+      size.y / Math.max(1, ny - 1),
+      size.z / Math.max(1, nz - 1),
+    );
+    const top = vec3(Math.max(0, nx - 1), Math.max(0, ny - 1), Math.max(0, nz - 1));
+    const local = clamp(
+      vec3(position)
+        .sub(vec3(min.x, min.y, min.z))
+        .div(step),
+      vec3(0),
+      top,
+    );
+    const base = clamp(
+      floor(local),
+      vec3(0),
+      vec3(Math.max(0, nx - 2), Math.max(0, ny - 2), Math.max(0, nz - 2)),
+    );
+    const fraction = clamp(local.sub(base), vec3(0), vec3(1));
+    const extent = vec2(nx * r, ny * nz * r);
+    let sum: Node<"vec3"> = vec3(0);
+    for (let corner = 0; corner < 8; corner += 1) {
+      const dx = corner & 1;
+      const dy = (corner >> 1) & 1;
+      const dz = (corner >> 2) & 1;
+      const probe = clamp(base.add(vec3(dx, dy, dz)), vec3(0), top);
+      const texel = vec2(
+        probe.x.mul(r).add(cell.x),
+        probe.z.mul(ny).add(probe.y).mul(r).add(cell.y),
+      );
+      const weight = (dx ? fraction.x : float(1).sub(fraction.x))
+        .mul(dy ? fraction.y : float(1).sub(fraction.y))
+        .mul(dz ? fraction.z : float(1).sub(fraction.z));
+      sum = sum.add(texture(map, texel.add(0.5).div(extent)).rgb.mul(weight));
+    }
+    return sum.max(0);
   }
 
   #shNode(position: Node<"vec3">, normal: Node<"vec3">, w: IShWeights): Node<"vec3"> {
@@ -1011,12 +1127,17 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
       this.#raysPerProbe,
       Math.min(this.#traceBudget, this.#probeCount),
       trace.points?.length ?? 0,
+      this.#mapResolution,
     );
     // Carry the field across a scene rebuild, so the new kernels bounce from the old light.
     if (previous !== undefined) {
       (this.#kernels.coefficients.array as Float32Array).set(
         previous.coefficients.array as Float32Array,
       );
+      if (previous.radianceMap !== undefined)
+        (this.#kernels.radianceMap?.array as Float32Array | undefined)?.set(
+          previous.radianceMap.array as Float32Array,
+        );
       previous.dispose();
     }
     if (this.#kernelVersion >= 0 && this.#status !== "unbaked")
@@ -1026,6 +1147,7 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
     this.#kernels.batchSize.value = 0;
     renderer.compute(this.#kernels.trace);
     renderer.compute(this.#kernels.project);
+    if (this.#kernels.octahedral !== undefined) renderer.compute(this.#kernels.octahedral);
     return this.#kernels;
   }
 
@@ -1111,6 +1233,7 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
       kernels.bounce.value = this.#generations > 0 ? 1 : 0;
       renderer.compute(kernels.trace);
       renderer.compute(kernels.project);
+      if (kernels.octahedral !== undefined) renderer.compute(kernels.octahedral);
       for (const probe of batch) {
         this.#traceStale[probe] = 0;
         this.#lastTraced[probe] = this.#frame;
@@ -1137,11 +1260,18 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
     if (this.#readbackInFlight || this.#readbackSerial >= this.#dispatchSerial) return;
     const serial = this.#dispatchSerial;
     this.#readbackInFlight = true;
-    renderer.readback(kernels.coefficients).then(
-      (bytes) => {
+    Promise.all([
+      renderer.readback(kernels.coefficients),
+      kernels.radianceMap === undefined ? undefined : renderer.readback(kernels.radianceMap),
+    ]).then(
+      ([bytes, map]) => {
         this.#readbackInFlight = false;
         if (this.#released || this.#kernels !== kernels) return;
-        this.#acceptReadback(new Float32Array(bytes), serial);
+        this.#acceptReadback(
+          new Float32Array(bytes),
+          serial,
+          map === undefined ? undefined : new Float32Array(map),
+        );
       },
       (error: unknown) => {
         this.#readbackInFlight = false;
@@ -1150,7 +1280,7 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
     );
   }
 
-  #acceptReadback(field: Float32Array, serial: number): void {
+  #acceptReadback(field: Float32Array, serial: number, map?: Float32Array): void {
     for (let index = 0; index < this.#probeCount * SH_COEFFICIENT_COUNT; index += 1) {
       for (let channel = 0; channel < SH_CHANNEL_COUNT; channel += 1) {
         this.#coefficients[index * SH_CHANNEL_COUNT + channel] = field[index * 4 + channel] ?? 0;
@@ -1160,7 +1290,15 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
     const shares = new Float32Array(this.#probeCount);
     for (let probe = 0; probe < this.#probeCount; probe += 1)
       shares[probe] = field[probe * SH_COEFFICIENT_COUNT * 4 + 3] ?? 0;
-    this.#probesRejected = fillRejectedProbes(this.#coefficients, shares, this.resolution);
+    const cells = this.#mapResolution * this.#mapResolution;
+    const radianceMap = map?.slice(0, this.#probeCount * cells * 4);
+    this.#probesRejected = fillRejectedProbes(
+      this.#coefficients,
+      shares,
+      this.resolution,
+      radianceMap === undefined ? [] : [{ data: radianceMap, stride: cells * 4 }],
+    );
+    if (radianceMap !== undefined) this.#packRadianceMap(radianceMap);
     this.#packCpuAtlas();
     this.#readbackSerial = serial;
     if (this.#passSerial < 0 || serial < this.#passSerial || this.#status !== "baking") return;
@@ -1206,6 +1344,8 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
     for (const material of this.#repackMaterials ?? []) material.dispose();
     this.#quadMesh?.geometry.dispose();
     this.#atlasTexture.dispose();
+    this.#radianceMapTexture?.dispose();
+    this.#radianceMapTexture = undefined;
     this.#cubeRenderTarget = undefined;
     this.#projectionTarget = undefined;
     this.#batchTarget = undefined;

@@ -3,6 +3,7 @@ import {
   BoxGeometry,
   Color,
   Data3DTexture,
+  DataTexture,
   Mesh,
   MeshBasicMaterial,
   PerspectiveCamera,
@@ -238,6 +239,24 @@ describe("ProbeVolume", () => {
     );
     expect(subject.sampleIrradiance(at, up).x).toBeCloseTo(0.886227 + 0.5 * 1.023328, 4);
     expect(subject.sampleRadianceNode()).toBeDefined();
+  });
+
+  it("reads radiance from the octahedral map when the volume keeps one, else from the SH (PRD-831)", () => {
+    const mapTextures = (node: Node): string[] => {
+      const sizes = new Set<string>();
+      node.traverse((child) => {
+        const value = (child as { value?: unknown }).value;
+        if (value instanceof DataTexture) sizes.add(`${value.image.width}x${value.image.height}`);
+      });
+      return [...sizes];
+    };
+    const plain = volume({ report: () => undefined });
+    expect(mapTextures(plain.sampleRadianceNode())).toEqual([]);
+    expect(samplerTextureDimensions(plain.sampleRadianceNode())).toEqual(["3x3x35"]);
+    const mapped = volume({ radianceProbeResolution: 4, report: () => undefined });
+    const { x, y, z } = mapped.resolution;
+    expect(mapTextures(mapped.sampleRadianceNode())).toEqual([`${x * 4}x${y * z * 4}`]);
+    expect(() => volume({ radianceProbeResolution: -1 })).toThrow();
   });
 
   it("reads the non-directional value with one atlas fetch, not seven (PRD-643)", () => {
