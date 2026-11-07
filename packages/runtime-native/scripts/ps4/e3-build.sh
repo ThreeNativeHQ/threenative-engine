@@ -61,15 +61,20 @@ SPIRV_TOOLS_COMMIT="${SPIRV_TOOLS_COMMIT:-660eff0326c9ca446a4bc891e7a34c1c49a56f
 VULKAN_UTILITY_COMMIT="${VULKAN_UTILITY_COMMIT:-b4e9ebbfc779cba85f1efbe2f69fdfc5744ed5e5}"
 WEBGPU_HEADERS_COMMIT="${WEBGPU_HEADERS_COMMIT:-0bfcdc4f487023d85e33597de0a94fc523e30fca}"
 
-# The guest is e3-triangle.cc in one of two builds: the plain triangle (the E3 pass) or its
-# compute variant (TN_PS4_E3_GUEST=e3cs, the E5 device-lost repro), which is the same source
-# compiled with TN_E3_GUEST_CS=1. Each build owns its own app folder, so one never overwrites the
-# other's eboot.bin and the two stamps cannot mask each other.
+# The guest is e3-triangle.cc in one of five builds: the plain triangle (the E3 pass), its compute
+# variant (TN_PS4_E3_GUEST=e3cs, the E5 device-lost repro), and the texture repro family -- e3tex
+# (the scene target sampled back, float16), e3tex8 (the same target as R8G8B8A8_UNORM) and
+# e3texmsaa (a 4x multisampled target plus its resolve), which is the render-target -> sampled-image
+# hand-off E5's black frame runs through. Each build owns its own app folder, so one never
+# overwrites another's eboot.bin and the stamps cannot mask each other.
 GUEST_STEM="${TN_PS4_E3_GUEST:-e3-triangle}"
 case "$GUEST_STEM" in
   e3-triangle) GUEST_DEFS="" ;;
   e3cs) GUEST_DEFS="-DTN_E3_GUEST_CS=1" ;;
-  *) echo "unknown TN_PS4_E3_GUEST: $GUEST_STEM (e3-triangle|e3cs)" >&2; exit 2 ;;
+  e3tex) GUEST_DEFS="-DTN_E3_GUEST_TEX=1" ;;
+  e3tex8) GUEST_DEFS="-DTN_E3_GUEST_TEX=1 -DTN_E3_TEX_RGBA8=1" ;;
+  e3texmsaa) GUEST_DEFS="-DTN_E3_GUEST_TEX=1 -DTN_E3_TEX_MSAA=1" ;;
+  *) echo "unknown TN_PS4_E3_GUEST: $GUEST_STEM (e3-triangle|e3cs|e3tex|e3tex8|e3texmsaa)" >&2; exit 2 ;;
 esac
 
 DAWN="$OUT/dawn"

@@ -49,9 +49,30 @@ extern "C" int sceKernelUsleep(unsigned int microseconds);
 #define TN_E3_GUEST_CS 0
 #endif
 
+// TN_E3_GUEST_TEX=1 (TN_PS4_E3_GUEST=e3tex in run-experiment.mjs) turns this guest into the
+// texture repro, the one path E3 and E3CS never touch: pass A renders the same triangle into an
+// offscreen colour target, pass B is a fullscreen triangle that SAMPLES that target into the
+// swapchain. A T# image descriptor, an S# sampler and the render-target -> sampled-image
+// hand-off are what a black E5 frame is made of, and none of the other guests exercise them.
+// TN_E3_TEX_RGBA8=1 renders the scene target as R8G8B8A8_UNORM instead of the float16 format
+// E5's scene pass uses (a float16 encode error and a broken hand-off look the same on screen).
+// TN_E3_TEX_MSAA=1 makes the scene target 4x multisampled with a resolve target pass B samples,
+// because the engine's scene pass may be multisampled too.
+#ifndef TN_E3_GUEST_TEX
+#define TN_E3_GUEST_TEX 0
+#endif
+#ifndef TN_E3_TEX_RGBA8
+#define TN_E3_TEX_RGBA8 0
+#endif
+#ifndef TN_E3_TEX_MSAA
+#define TN_E3_TEX_MSAA 0
+#endif
+
 // Every marker carries which build printed it, so a log says which guest it came from and the
 // harness's two verdicts never read each other's lines.
-#if TN_E3_GUEST_CS
+#if TN_E3_GUEST_TEX
+#define TN_E3_TAG "TN_PS4_E3TEX"
+#elif TN_E3_GUEST_CS
 #define TN_E3_TAG "TN_PS4_E3CS"
 #else
 #define TN_E3_TAG "TN_PS4_E3"
@@ -101,6 +122,55 @@ static const char kFragmentShader[] =
     "fn main() -> @location(0) vec4f {\n"
     "  return vec4f(1.0, 0.55, 0.0, 1.0);\n"
     "}\n";
+#endif
+
+#if TN_E3_GUEST_TEX
+// Pass B. The uv comes from the clip position the vertex stage computes, so the fullscreen
+// triangle needs no vertex buffer: the left half of the frame samples through a linear sampler and
+// the right half loads texels with textureLoad, which is one presented frame that separates the
+// two GNM texture paths.
+static const char kFullscreenVertexShader[] =
+    "struct Varyings {\n"
+    "  @builtin(position) pos: vec4f,\n"
+    "  @location(0) uv: vec2f,\n"
+    "};\n"
+    "@vertex\n"
+    "fn main(@builtin(vertex_index) idx: u32) -> Varyings {\n"
+    // A quad as one triangle strip: idx 0..3 -> (0,0) (1,0) (0,1) (1,1) in [0,1]^2. Derived from
+    // vertex_index ARITHMETICALLY, never from an indexed `array<vec2f, 3>`: an indexed array makes
+    // ACO place its elements in a constant pool at the END of the shader code, and shadPS4's GCN
+    // decoder has no upper bound (GcnCodeSlice::atEnd() is a pointer equality, frontend/decode.h:47
+    // with recompiler.cpp:77 at v.0.21.0), so a tail word that decodes as a literal-taking
+    // instruction (0x40400000 = 3.0f decodes as V_MADAK_F32) walks off the end of the span and
+    // aborts on an illegal encoding -- the bininfo's own hash word. Without a pool the last words
+    // are the S_ENDPGM terminators and the walk lands exactly on the span end.
+    "  let f = vec2f(f32(idx & 1u), f32(idx >> 1u));\n"
+    "  var out: Varyings;\n"
+    "  out.pos = vec4f(f * 2.0 - 1.0, 0.0, 1.0);\n"
+    "  out.uv = vec2f(f.x, 1.0 - f.y);\n"
+    "  return out;\n"
+    "}\n";
+static const char kSampleFragmentShader[] =
+    "struct Varyings {\n"
+    "  @builtin(position) pos: vec4f,\n"
+    "  @location(0) uv: vec2f,\n"
+    "};\n"
+    "@group(0) @binding(0) var scene: texture_2d<f32>;\n"
+    "@group(0) @binding(1) var sceneSampler: sampler;\n"
+    "@fragment\n"
+    "fn main(in: Varyings) -> @location(0) vec4f {\n"
+    // Both paths are evaluated unconditionally and one selected: Tint rejects textureSample inside
+    // non-uniform control flow ("must only be called from uniform control flow"), and a branch on
+    // the fragment position is exactly that.
+    "  let sampled = textureSample(scene, sceneSampler, in.uv);\n"
+    "  let dims = textureDimensions(scene);\n"
+    "  let xy = min(vec2u(clamp(in.uv, vec2f(0.0), vec2f(1.0)) * vec2f(f32(dims.x), f32(dims.y))),\n"
+    "               dims - vec2u(1u));\n"
+    "  let loaded = textureLoad(scene, vec2i(xy), 0);\n"
+    "  return select(loaded, sampled, in.pos.x < 960.0);\n"
+    "}\n";
+
+static WGPUBindGroup g_sampleGroup = nullptr;  // pass B's scene-target view + sampler
 #endif
 
 static int g_adapterDone = 0;
@@ -250,7 +320,7 @@ static WGPUBindGroupLayout MakeFragmentLayout(WGPUDevice device) {
 }
 #endif
 
-static WGPURenderPipeline MakePipeline(WGPUDevice device, WGPUTextureFormat format) {
+static WGPURenderPipeline MakePipeline(WGPUDevice device, WGPUTextureFormat format, uint32_t samples) {
     WGPUShaderModule vertexModule = MakeModule(device, kVertexShader);
     WGPUShaderModule fragmentModule = MakeModule(device, kFragmentShader);
 
@@ -283,7 +353,7 @@ static WGPURenderPipeline MakePipeline(WGPUDevice device, WGPUTextureFormat form
     desc.vertex.bufferCount = 0;  // positions come from vertex_index
     desc.vertex.buffers = nullptr;
     desc.primitive.topology = WGPUPrimitiveTopology_TriangleList;
-    desc.multisample.count = 1;
+    desc.multisample.count = samples;
     desc.fragment = &fragment;
 
     WGPURenderPipeline pipeline = wgpuDeviceCreateRenderPipeline(device, &desc);
@@ -327,7 +397,11 @@ static void DrawInto(WGPUDevice device, WGPURenderPipeline pipeline, WGPUTexture
     // read-to-write barrier, not a compute failure: the frame colour tells the two apart.
     if (g_fragmentGroup != nullptr) wgpuRenderPassEncoderSetBindGroup(pass, 0, g_fragmentGroup, 0, nullptr);
 #endif
-    wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0);
+#if TN_E3_GUEST_TEX
+    // This pipeline IS pass B: the fullscreen quad that reads the scene target, 4 strip vertices.
+    if (g_sampleGroup != nullptr) wgpuRenderPassEncoderSetBindGroup(pass, 0, g_sampleGroup, 0, nullptr);
+#endif
+    wgpuRenderPassEncoderDraw(pass, TN_E3_GUEST_TEX ? 4 : 3, 1, 0, 0);
     wgpuRenderPassEncoderEnd(pass);
     wgpuRenderPassEncoderRelease(pass);
 
@@ -436,7 +510,7 @@ static WGPURenderPipeline RunOffscreen(WGPUInstance instance, WGPUDevice device)
     WGPUTexture texture = wgpuDeviceCreateTexture(device, &texDesc);
     WGPUTextureView view = wgpuTextureCreateView(texture, nullptr);
 
-    WGPURenderPipeline pipeline = MakePipeline(device, format);
+    WGPURenderPipeline pipeline = MakePipeline(device, format, 1);
     if (pipeline == nullptr) {
         TN_LOG(TN_E3_TAG " pipeline=create_failed");
         return nullptr;
@@ -452,7 +526,154 @@ static WGPURenderPipeline RunOffscreen(WGPUInstance instance, WGPUDevice device)
     return pipeline;
 }
 
-// === step 2b: 600 presented frames through the PS4 surface ==========================
+// === the texture repro: two passes, one sampled render target ========================
+#if TN_E3_GUEST_TEX
+// Pass A renders the plain triangle into an offscreen colour target; pass B is a fullscreen
+// triangle that samples it into whatever it is handed (the swapchain, every frame). Both stages the
+// engine's own frame needs and neither E3 nor E3CS runs: a render target that a LATER pass reads.
+static WGPURenderPipeline RunTexturePass(WGPUInstance instance, WGPUDevice device) {
+    // The scene target keeps the format E5's scene pass uses (GNM fmt 97, a float16 colour target);
+    // TN_E3_TEX_RGBA8 swaps in the UNORM format the swapchain already takes.
+    const WGPUTextureFormat sceneFormat =
+        TN_E3_TEX_RGBA8 ? WGPUTextureFormat_RGBA8Unorm : WGPUTextureFormat_RGBA16Float;
+    const uint32_t samples = TN_E3_TEX_MSAA ? 4u : 1u;
+
+    // What pass B samples. Multisampled colour cannot be sampled directly in GNM, so the MSAA arm
+    // resolves into this one and pass B reads the resolve, as the engine's scene pass does.
+    WGPUTextureDescriptor resolvedDesc = WGPU_TEXTURE_DESCRIPTOR_INIT;
+    resolvedDesc.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding;
+    resolvedDesc.dimension = WGPUTextureDimension_2D;
+    resolvedDesc.size = {TN_OFFSCREEN, TN_OFFSCREEN, 1};
+    resolvedDesc.format = sceneFormat;
+    resolvedDesc.mipLevelCount = 1;
+    resolvedDesc.sampleCount = 1;
+    WGPUTexture resolved = wgpuDeviceCreateTexture(device, &resolvedDesc);
+    WGPUTextureView resolvedView = wgpuTextureCreateView(resolved, nullptr);
+
+    WGPUTextureView drawView = resolvedView;
+    WGPUTexture msaa = nullptr;
+    if (samples > 1) {
+        WGPUTextureDescriptor msaaDesc = resolvedDesc;
+        msaaDesc.usage = WGPUTextureUsage_RenderAttachment;
+        msaaDesc.sampleCount = samples;
+        msaa = wgpuDeviceCreateTexture(device, &msaaDesc);
+        drawView = wgpuTextureCreateView(msaa, nullptr);
+    }
+
+    WGPURenderPipeline scenePipeline = MakePipeline(device, sceneFormat, samples);
+    if (scenePipeline == nullptr) {
+        TN_LOG(TN_E3_TAG " pipeline=create_failed");
+        return nullptr;
+    }
+
+    // Pass A: the same triangle, the same clear as DrawInto, into the scene target (and, when the
+    // target is multisampled, resolved into the texture pass B reads).
+    WGPURenderPassColorAttachment attachment = WGPU_RENDER_PASS_COLOR_ATTACHMENT_INIT;
+    attachment.view = drawView;
+    attachment.resolveTarget = samples > 1 ? resolvedView : nullptr;
+    attachment.loadOp = WGPULoadOp_Clear;
+    attachment.storeOp = samples > 1 ? WGPUStoreOp_Discard : WGPUStoreOp_Store;
+    attachment.clearValue = {0.0, 0.0, 0.25, 1.0};
+
+    WGPURenderPassDescriptor passDesc = WGPU_RENDER_PASS_DESCRIPTOR_INIT;
+    passDesc.colorAttachmentCount = 1;
+    passDesc.colorAttachments = &attachment;
+
+    WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(device, nullptr);
+    WGPURenderPassEncoder pass = wgpuCommandEncoderBeginRenderPass(encoder, &passDesc);
+    wgpuRenderPassEncoderSetPipeline(pass, scenePipeline);
+    wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0);
+    wgpuRenderPassEncoderEnd(pass);
+    wgpuRenderPassEncoderRelease(pass);
+    WGPUCommandBuffer commands = wgpuCommandEncoderFinish(encoder, nullptr);
+    wgpuCommandEncoderRelease(encoder);
+    wgpuQueueSubmit(wgpuDeviceGetQueue(device), 1, &commands);
+    wgpuCommandBufferRelease(commands);
+    wgpuDeviceTick(device);
+    wgpuInstanceProcessEvents(instance);
+    wgpuRenderPipelineRelease(scenePipeline);
+    if (msaa != nullptr) {
+        // The resolve has completed, so the multisampled image is no longer needed: only the
+        // resolved texture is sampled from here on.
+        wgpuTextureViewRelease(drawView);
+        wgpuTextureRelease(msaa);
+    }
+
+    // Pass B: fullscreen triangle over a linear sampler and the scene target's view.
+    WGPUSamplerDescriptor samplerDesc = WGPU_SAMPLER_DESCRIPTOR_INIT;
+    samplerDesc.magFilter = WGPUFilterMode_Linear;
+    samplerDesc.minFilter = WGPUFilterMode_Linear;
+    samplerDesc.mipmapFilter = WGPUMipmapFilterMode_Nearest;
+    samplerDesc.addressModeU = WGPUAddressMode_ClampToEdge;
+    samplerDesc.addressModeV = WGPUAddressMode_ClampToEdge;
+    samplerDesc.addressModeW = WGPUAddressMode_ClampToEdge;
+    WGPUSampler sampler = wgpuDeviceCreateSampler(device, &samplerDesc);
+
+    WGPUBindGroupLayoutEntry layoutEntries[2] = {WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT,
+                                                 WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT};
+    layoutEntries[0].binding = 0;
+    layoutEntries[0].visibility = WGPUShaderStage_Fragment;
+    layoutEntries[0].texture.sampleType = WGPUTextureSampleType_Float;
+    layoutEntries[0].texture.viewDimension = WGPUTextureViewDimension_2D;
+    layoutEntries[1].binding = 1;
+    layoutEntries[1].visibility = WGPUShaderStage_Fragment;
+    layoutEntries[1].sampler.type = WGPUSamplerBindingType_Filtering;
+    WGPUBindGroupLayoutDescriptor layoutDesc = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
+    layoutDesc.entryCount = 2;
+    layoutDesc.entries = layoutEntries;
+    WGPUBindGroupLayout layout = wgpuDeviceCreateBindGroupLayout(device, &layoutDesc);
+
+    WGPUShaderModule vertexModule = MakeModule(device, kFullscreenVertexShader);
+    WGPUShaderModule fragmentModule = MakeModule(device, kSampleFragmentShader);
+    WGPUColorTargetState target = WGPU_COLOR_TARGET_STATE_INIT;
+    // Pass B draws into the swapchain, whose only format is R8G8B8A8_UNORM.
+    target.format = WGPUTextureFormat_RGBA8Unorm;
+    target.writeMask = WGPUColorWriteMask_All;
+    WGPUFragmentState fragment = WGPU_FRAGMENT_STATE_INIT;
+    fragment.module = fragmentModule;
+    fragment.entryPoint = WGPU_STRING_VIEW_INIT;
+    fragment.entryPoint.data = "main";
+    fragment.targetCount = 1;
+    fragment.targets = &target;
+    WGPUPipelineLayoutDescriptor pipelineLayoutDesc = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
+    pipelineLayoutDesc.bindGroupLayoutCount = 1;
+    pipelineLayoutDesc.bindGroupLayouts = &layout;
+    WGPUPipelineLayout pipelineLayout = wgpuDeviceCreatePipelineLayout(device, &pipelineLayoutDesc);
+    WGPURenderPipelineDescriptor pipelineDesc = WGPU_RENDER_PIPELINE_DESCRIPTOR_INIT;
+    pipelineDesc.layout = pipelineLayout;
+    pipelineDesc.vertex.module = vertexModule;
+    pipelineDesc.vertex.entryPoint = WGPU_STRING_VIEW_INIT;
+    pipelineDesc.vertex.entryPoint.data = "main";
+    pipelineDesc.vertex.bufferCount = 0;
+    // Pass B draws a 4-vertex strip (the fullscreen quad); the scene pass draws a triangle.
+    pipelineDesc.primitive.topology = WGPUPrimitiveTopology_TriangleStrip;
+    pipelineDesc.multisample.count = 1;
+    pipelineDesc.fragment = &fragment;
+    WGPURenderPipeline samplePipeline = wgpuDeviceCreateRenderPipeline(device, &pipelineDesc);
+    wgpuShaderModuleRelease(vertexModule);
+    wgpuShaderModuleRelease(fragmentModule);
+    wgpuPipelineLayoutRelease(pipelineLayout);
+
+    WGPUBindGroupEntry groupEntries[2] = {WGPU_BIND_GROUP_ENTRY_INIT, WGPU_BIND_GROUP_ENTRY_INIT};
+    groupEntries[0].binding = 0;
+    groupEntries[0].textureView = resolvedView;
+    groupEntries[1].binding = 1;
+    groupEntries[1].sampler = sampler;
+    WGPUBindGroupDescriptor groupDesc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
+    groupDesc.layout = layout;
+    groupDesc.entryCount = 2;
+    groupDesc.entries = groupEntries;
+    g_sampleGroup = wgpuDeviceCreateBindGroup(device, &groupDesc);
+    wgpuBindGroupLayoutRelease(layout);
+    // The resolved texture's view stays referenced by the bind group for every presented frame.
+
+    TN_LOG(TN_E3_TAG " sampled=%ux%u format=%s samples=%u half=sample|load group=%s", TN_OFFSCREEN,
+           TN_OFFSCREEN, TN_E3_TEX_RGBA8 ? "rgba8unorm" : "rgba16float", samples,
+           g_sampleGroup ? "ok" : "null");
+    return samplePipeline;
+}
+#endif
+
 static void RunSurface(WGPUInstance instance,
                        WGPUAdapter adapter,
                        WGPUDevice device,
@@ -539,7 +760,13 @@ int main(void) {
 #if TN_E3_GUEST_CS
     RunCompute(instance, device);
 #endif
+#if TN_E3_GUEST_TEX
+    // Pass B's pipeline is what the surface loop draws with: the scene target was rendered once,
+    // and every presented frame samples it.
+    WGPURenderPipeline pipeline = RunTexturePass(instance, device);
+#else
     WGPURenderPipeline pipeline = RunOffscreen(instance, device);
+#endif
     if (pipeline != nullptr) {
         TN_LOG(TN_E3_TAG " pipeline=ok");
         if (TN_READBACK) wgpuDeviceTick(device);

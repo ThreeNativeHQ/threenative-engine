@@ -131,6 +131,20 @@ const VK_VALIDATION = process.env.TN_PS4_VK_VALIDATION === '1';
 const VK_CRASH_DIAGNOSTIC = process.env.TN_PS4_VK_CRASH_DIAGNOSTIC === '1';
 const VK_LAYER_PATH = process.env.TN_PS4_VK_LAYER_PATH ?? '';
 
+// The texture repro's three arms: one guest source compiled three ways (see e3-build.sh). Each arm
+// is its own experiment so a red names which build produced it. The triangle's orange reaches the
+// presented frame only if the offscreen scene target was rendered AND sampled back, and both scene
+// formats (float16, R8G8B8A8_UNORM) quantise 0.55 to the same 140.
+const E3TEX_DRAWN = [255, 140, 0];
+const e3TexExperiment = guest => ({
+  timeoutMs: 300_000,
+  screenshots: ['5', '7'],
+  build: (outDir, toolchain) => buildE3(outDir, toolchain, guest),
+  markerPattern: /TN_PS4_E3TEX frames=600 presented/,
+  failurePattern: /TN_PS4_E3TEX error type=|buffer_cache\.cpp:\d+ [A-Za-z]+: Assertion Failed!/,
+  verdict: (match, frame, log, shots) => judgeE3Tex(match, frame, log, shots),
+});
+
 // One entry per experiment; build and boot are shared, only the build step, the marker and the
 // pass rule differ.
 const EXPERIMENTS = {
@@ -192,6 +206,9 @@ const EXPERIMENTS = {
     failurePattern: /TN_PS4_E3CS error type=|buffer_cache\.cpp:\d+ [A-Za-z]+: Assertion Failed!(?:\n[^\n]{0,80})?/,
     verdict: (match, frame, log, shots) => judgeE3CS(match, frame, log, shots),
   },
+  e3tex: e3TexExperiment('e3tex'),
+  e3tex8: e3TexExperiment('e3tex8'),
+  e3texmsaa: e3TexExperiment('e3texmsaa'),
   e4: {
     // V8 builds a heap and compiles one script inside the emulator before it prints, on top of the
     // boot E1 already pays for.
@@ -457,6 +474,37 @@ async function judgeE3CS(match, frame, log, shots) {
     presentColour: E3CS_DRAWN,
     info,
   });
+}
+
+// E3TEX's verdict: the scene target's own triangle, in the scene target's own colour, appears in
+// the frame the emulator presented. Pass B has no vertex buffer and no colour source of its own, so
+// those pixels can only arrive through the T#/S# hand-off from the offscreen render -- which is the
+// one thing this experiment exists to measure. The fraction is measured over the whole presented
+// raster (the private X root, with shadPS4's window inside it), the same count for every arm.
+async function judgeE3Tex(match, frame, log, shots) {
+  const sampled = /TN_PS4_E3TEX sampled=([^\n]*)/.exec(log)?.[1]?.trim() ?? '(missing)';
+  const info = ` sampled=${sampled}`;
+  const image = shots.at(-1) ?? '';
+  if (!image)
+    return { ok: false, reason: 'the run saved no host screenshot, so there is no presented frame to judge', info };
+  let raster;
+  try {
+    raster = readPpm(pngToPpm(image));
+  } catch (error) {
+    return { ok: false, reason: `${image} is unreadable: ${error.message}`, info };
+  }
+  const share = countColour(raster, E3TEX_DRAWN) / (raster.width * raster.height);
+  const detail = ` sampled-colour=${(share * 100).toFixed(2)}% of the presented frame`;
+  if (share < E2_DRAWN_MIN)
+    return {
+      ok: false,
+      reason: `only ${(share * 100).toFixed(2)}% of ${image} carries the scene target's triangle (${E3TEX_DRAWN.join(', ')}), so the offscreen render did not reach the sampler`,
+      info: detail,
+      image,
+    };
+  if (share > E2_DRAWN_MAX)
+    return { ok: false, reason: `${(share * 100).toFixed(2)}% of ${image} is the triangle colour, above the ${E2_DRAWN_MAX * 100}% band`, info: detail, image };
+  return { ok: true, detail, info, image };
 }
 
 // The colour a presented frame cleared to: its most common colour. A game's clear reaches the
@@ -960,9 +1008,11 @@ async function main(argv) {
   const experiment = EXPERIMENTS[name];
   sceneRoot = options.scene;
   const label = `PS4_EMULATED ${name.toUpperCase()}`;
-  // e3cs is E3's guest built a second way (one Dawn tree, one E3 scratch dir): its eboot and stamps
-  // live in e3's out/<guest>/ folders, so the shared directory holds no shared product.
-  const outDir = path.join(SCRATCH_ROOT, name === 'e3cs' ? 'e3' : name);
+  // e3cs and the e3tex arms are E3's guest built other ways (one Dawn tree, one E3 scratch dir):
+  // their eboots and stamps live in e3's out/<guest>/ folders, so the shared directory holds no
+  // shared product.
+  const sharedE3 = new Set(['e3cs', 'e3tex', 'e3tex8', 'e3texmsaa']);
+  const outDir = path.join(SCRATCH_ROOT, sharedE3.has(name) ? 'e3' : name);
   await mkdir(outDir, { recursive: true });
 
   const toolchain = await ensureToolchain();
