@@ -164,7 +164,9 @@ function scan(css) {
       if (prelude.startsWith("@")) {
         const name = /^@([-\w]+)/u.exec(prelude)?.[1].toLowerCase() ?? "";
         if (!DESCRIPTOR_AT_RULES.has(name)) atRules.add(prelude);
-        stack.push(DESCRIPTOR_AT_RULES.has(name) ? "descriptor" : "group");
+        // An at-rule nested inside a style rule (`@container`, the `@supports` Tailwind emits for
+        // gradient interpolation) still declares properties of that rule.
+        stack.push(DESCRIPTOR_AT_RULES.has(name) ? "descriptor" : stack.at(-1) === "rule" ? "rule" : "group");
       } else {
         stack.push("rule");
       }
@@ -488,11 +490,19 @@ const VARIANT_STAGE = {
   "only-of-type": { class: "only-of-type:bg-red-500" },
   visited: {
     class: "visited:text-red-400",
-    exempt: { owner: P849, why: "the engine has no navigation, so nothing is ever :visited" },
+    exempt: {
+      owner: P849,
+      permanent: true,
+      why: "the engine has no navigation, so nothing is ever :visited; the batch's own decision is that both sides agree the rule is inactive",
+    },
   },
   target: {
     class: "target:bg-red-500",
-    exempt: { owner: P849, why: ":target needs a URL fragment, which neither subject sets" },
+    exempt: {
+      owner: P849,
+      permanent: true,
+      why: ":target needs a URL fragment, which neither subject sets; both sides agree the rule is inactive",
+    },
   },
   open: {
     class: "open:bg-red-500",
@@ -624,11 +634,19 @@ const VARIANT_STAGE = {
   dark: { class: "dark:bg-red-500", env: { dark: true } },
   print: {
     class: "print:bg-red-500",
-    exempt: { owner: P849, why: "a game host never prints; both sides must agree the rule is inactive (PRD-849 decision)" },
+    exempt: {
+      owner: P849,
+      permanent: true,
+      why: "a game host never prints; both sides agree the rule is inactive (PRD-849 decision)",
+    },
   },
   noscript: {
     class: "noscript:bg-red-500",
-    exempt: { owner: P849, why: "a game host always runs script; both sides agree the rule is inactive (PRD-849 decision)" },
+    exempt: {
+      owner: P849,
+      permanent: true,
+      why: "a game host always runs script; both sides agree the rule is inactive (PRD-849 decision)",
+    },
   },
   "pointer-none": {
     class: "pointer-none:bg-red-500",
@@ -1313,11 +1331,13 @@ function crop(png, box) {
  * unit lands.
  */
 const PROBE_PAD = 20;
+/** The label band at the top of a cell: the region never reaches into it, so no region holds glyphs. */
+const LABEL_H = 26;
 
 function measureRegion(cellBox, probeBox) {
   if (probeBox === undefined) return cellBox;
   const left = Math.max(cellBox.x, probeBox.x - PROBE_PAD);
-  const top = Math.max(cellBox.y, probeBox.y - PROBE_PAD);
+  const top = Math.max(cellBox.y + LABEL_H, probeBox.y - PROBE_PAD);
   const right = Math.min(cellBox.x + cellBox.w, probeBox.x + probeBox.w + PROBE_PAD);
   const bottom = Math.min(cellBox.y + cellBox.h, probeBox.y + probeBox.h + PROBE_PAD);
   return { x: left, y: top, w: Math.max(1, right - left), h: Math.max(1, bottom - top) };
@@ -1344,7 +1364,17 @@ function cellScore(cell, web, native) {
 function comparePanel(panel, web, native, vacuous) {
   return panel.cells.map((cell) => {
     if (cell.exempt !== undefined) {
-      return { ...cell, exempt: true, pass: false, why: `exempt: ${cell.exempt.why} (${cell.exempt.owner})` };
+      // A *pending* exemption stays in the denominator: it is an unproven unit, not a pass, and the
+      // family PRD that lands its device input or control removes it. A *permanent* one is out of
+      // the denominator, because the batch's own decisions say the rule is inactive on both
+      // subjects — no measurement of it can ever distinguish a correct engine from a wrong one.
+      return {
+        ...cell,
+        exempt: true,
+        permanent: cell.exempt.permanent === true,
+        pass: false,
+        why: `exempt: ${cell.exempt.why} (${cell.exempt.owner})`,
+      };
     }
     if (native.refused !== undefined) {
       return { ...cell, pass: false, why: `the engine refused this stage: ${native.refused}` };
@@ -1355,7 +1385,16 @@ function comparePanel(panel, web, native, vacuous) {
     const misses = edgeMisses(elements, native.rects, EDGE_PX);
     const min = cell.glyphs ? SSIM_MIN_GLYPHS : SSIM_MIN;
     if (vacuous.has(cell.unit)) {
-      return { ...cell, ...measured, edgeMisses: misses, ssim: Number(measured.score.toFixed(4)), ssimMin: min, pass: false, why: "vacuous: the unit class changes nothing" };
+      return {
+        ...cell,
+        ...measured,
+        edgeMisses: misses,
+        ssim: Number(measured.score.toFixed(4)),
+        ssimMin: min,
+        counterfactual: vacuous.get(cell.unit),
+        pass: false,
+        why: `does not discriminate: dropping the class leaves the region at ${vacuous.get(cell.unit)}, at or above the ${min} bar`,
+      };
     }
     return {
       unit: cell.unit,
@@ -1373,9 +1412,17 @@ function comparePanel(panel, web, native, vacuous) {
   });
 }
 
-/** Cells whose measured region is identical with and without the unit class. */
+/**
+ * Cells that do not discriminate: dropping the unit class leaves the measured region *at or above
+ * the cell's own bar*.
+ *
+ * Exact equality is too weak a test. A cell that changes by less than the bar cannot tell a correct
+ * engine from one that dropped the declaration — `drop-shadow-lg` scores 0.9982 with and without its
+ * class, above the 0.99 bar — so counting it as a pass inflates the score. The bar the cell is judged
+ * by is the bar its probe must clear.
+ */
 function vacuityOf(panel, withClass, stripped) {
-  const vacuous = new Set();
+  const useless = new Map();
   for (const cell of panel.cells) {
     if (cell.exempt !== undefined) continue;
     const cellBox = withClass.boxes.find((candidate) => candidate.n === cell.first);
@@ -1384,9 +1431,11 @@ function vacuityOf(panel, withClass, stripped) {
     const region = measureRegion(cellBox, probeBox);
     const a = crop(withClass.png, region);
     const b = crop(stripped.png, region);
-    if (ssim(luminance(a), luminance(b), a.width, a.height) === 1) vacuous.add(cell.unit);
+    const score = ssim(luminance(a), luminance(b), a.width, a.height);
+    const min = cell.glyphs ? SSIM_MIN_GLYPHS : SSIM_MIN;
+    if (score >= min) useless.set(cell.unit, Number(score.toFixed(4)));
   }
-  return vacuous;
+  return useless;
 }
 
 /** Steps for a cell's driver, with the probe's centre as the pointer position. */
@@ -1510,13 +1559,13 @@ if (flag("check")) {
         const drive = panel.cells.map((cell) => driverFor(cell, probeBoxes));
         const withClass = await webPanel(panel, { drive });
         const without = await webPanel(panel, { drive, strip: true });
-        for (const unit of vacuityOf(panel, withClass, without)) {
-          vacuousCells.push(panel.cells.find((cell) => cell.unit === unit));
-        }
+        for (const entry of vacuityOf(panel, withClass, without)) vacuousCells.push(entry);
       }
       if (vacuousCells.length > 0) {
-        problems.push(`${vacuousCells.length} vacuous cells (their unit class changes nothing in Chromium)`);
-        for (const cell of vacuousCells.slice(0, 60)) problems.push(`    ${cell.class}`);
+        problems.push(
+          `${vacuousCells.length} cells do not discriminate (dropping the unit class stays at or above the cell's bar)`,
+        );
+        for (const [unit, score] of vacuousCells.slice(0, 60)) problems.push(`    ${unit}  counterfactual ${score}`);
         if (vacuousCells.length > 60) problems.push(`    ... and ${vacuousCells.length - 60} more`);
       }
     } finally {
@@ -1597,10 +1646,9 @@ try {
     const measured = comparePanel(panel, web, native, vacuous);
     report.push(...measured);
     if (wants.sheet === undefined) {
-      const scored = measured.filter((cell) => cell.exempt !== true);
       console.log(
-        `${panel.owner}/${panel.group} ${panel.id}: ${scored.filter((c) => c.pass).length}/${scored.length}` +
-          (vacuous.size > 0 ? ` (${vacuous.size} vacuous)` : ""),
+        `${panel.owner}/${panel.group} ${panel.id}: ${measured.filter((c) => c.pass).length}/${measured.length}` +
+          (vacuous.size > 0 ? ` (${vacuous.size} do not discriminate)` : ""),
       );
     }
   }
@@ -1609,15 +1657,18 @@ try {
   await site.close();
 }
 
-const scored = report.filter((cell) => cell.exempt !== true);
-const passed = scored.filter((cell) => cell.pass).length;
-const vacuousCount = report.filter((cell) => (cell.why ?? "").startsWith("vacuous")).length;
-const exemptCount = report.length - scored.length;
-const percent = scored.length === 0 ? 0 : Math.round((passed / scored.length) * 1000) / 10;
+const passed = report.filter((cell) => cell.pass).length;
+const denominator = report.filter((cell) => cell.permanent !== true).length;
+const useless = report.filter((cell) => (cell.why ?? "").startsWith("does not discriminate"));
+const exemptCount = report.filter((cell) => cell.exempt === true).length;
+const refusedCount = report.filter((cell) => (cell.why ?? "").startsWith("the engine refused")).length;
+const percent = denominator === 0 ? 0 : Math.round((passed / denominator) * 1000) / 10;
+const permanentCount = report.length - denominator;
 writeFileSync(join(outRoot, "report.json"), `${JSON.stringify(report, null, 2)}\n`);
-// The score is evidence only: an exempt cell is not counted at all, and a vacuous one fails.
+// Every cell is in the denominator. An exemption is an unproven unit, and a cell that does not
+// discriminate is a scene defect: neither may be reported as coverage.
 console.log(
-  `tailwind-parity: ${passed}/${scored.length} (${percent} %)  [${vacuousCount} vacuous, ${exemptCount} exempt, ${report.length} cells]`,
+  `tailwind-parity: ${passed}/${denominator} (${percent} %)  [${useless.length} do not discriminate, ${exemptCount - permanentCount} exempt, ${permanentCount} permanently inactive, ${refusedCount} refused]`,
 );
 
 if (wants.sheet !== undefined) {
@@ -1644,13 +1695,25 @@ if (flag("floor")) {
 
 if (flag("ratchet")) {
   const floor = existsSync(floorFile) ? JSON.parse(readFileSync(floorFile, "utf8")) : { passed: 0, units: [] };
+  // A filtered run scores a subset, so comparing it with the global floor is meaningless in both
+  // directions: it would always look like a regression.
+  if (wants.family !== undefined || wants.group !== undefined) {
+    console.error("TN_PARITY_RATCHET: --ratchet needs the whole scene, not --family/--group");
+    process.exit(1);
+  }
   if (passed < floor.passed) {
     console.error(`TN_PARITY_RATCHET ${passed} units pass, the floor is ${floor.passed}`);
     process.exit(1);
   }
   for (const unit of floor.units ?? []) {
     const cell = report.find((candidate) => candidate.unit === unit);
-    if (cell !== undefined && !cell.pass) {
+    if (cell === undefined) {
+      // A floor unit that is gone has been renamed, re-owned or deleted: that fails closed, because
+      // a ratchet that silently forgets a unit protects nothing.
+      console.error(`TN_PARITY_RATCHET ${unit} is in the floor but not in this run`);
+      process.exit(1);
+    }
+    if (!cell.pass) {
       console.error(`TN_PARITY_RATCHET ${unit} used to pass and now fails`);
       process.exit(1);
     }

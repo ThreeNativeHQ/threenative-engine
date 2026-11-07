@@ -34,11 +34,11 @@ inventory and the meter and judge contract.
 - [ ] AC-1 [local]: the scene has a non-vacuous cell for each unit, and each unit has one owner PRD.
   proof: `pnpm --filter threenative-native-css-hud parity:tailwind --check` — Evidence: 507 units
   (419 utility, 88 variant), 0 unowned, 0 duplicated, 0 uncompilable probes, scene fresh. NOT met: the
-  vacuity guard is red on 291 cells (see `## Open`), and 35 variant cells name an exemption owned by
-  PRD-847/848/849/851.
+  vacuity guard is red on 313 cells (see `## Open`), and 31 variant cells name a pending exemption
+  owned by PRD-847/848/849/851 (four more are permanently inactive by the batch's own decisions).
 - [ ] AC-2 [local]: the meter prints a baseline score from the crate subject and from the host subject, and `--ratchet` fails below the committed floor.
   proof: `parity:tailwind` and `parity:tailwind --host` — Evidence: the crate subject prints
-  `tailwind-parity: 136/472 (28.8 %)  [291 vacuous, 35 exempt, 507 cells]`, and
+  `tailwind-parity: 117/503 (23.3 %)  [313 do not discriminate, 31 exempt, 4 permanently inactive, 15 refused]`, and
   `--floor` wrote the ratchet baseline. NOT met: `--host` exits `TN_PARITY_HOST_UNSUPPORTED` — there is
   no host subject, and a flag that silently scored the crate instead would be worse than none.
 - [ ] AC-3 [local]: the starter kit builds for `ui.renderer: "native-css"` with zero findings.
@@ -120,28 +120,31 @@ tailwind-parity: 136/472 (28.8 %)  [291 vacuous, 35 exempt, 507 cells]
 | `PRD-850/type` | 10/41 | 28 |
 | `PRD-851/paint` | 0/5 | 5 |
 
-- **Vacuity is the dominant gap (291 of 472 scored cells), and it is scene work, not engine work.**
-  The staging already in place — a contrast default in Tailwind's `base` layer, companion utilities
-  for custom-property-only units, a positioned probe, cell-scoped rules — took the count from 439 to
-  291. What is left: `ring`/`shadow`/`inset-ring`/`inset-shadow` (the companion needs a width),
-  `outline-*` (no outline width on the probe), colour-only `border-*` (no border width),
-  `order`/`basis`/`auto-cols`/`auto-rows` (needs a second item and a reflow), `stroke`/`fill`/
-  `pointer-events`/`will-change`/`contain`/`color-scheme`/`scrollbar-*` (no painted consumer), and
-  `content-*` (paints only on a pseudo-element). The `mask-*` family renders an unclipped box on
-  *both* subjects, so its 24 passes will move once a mask is staged the way the units need.
-- **Named exemptions (35 variant cells).** Each names its owner PRD and why it cannot be staged yet:
-  form states and `peer-*` (PRD-851), container queries (PRD-848),
-  `prefers-contrast`/forced-colors/inverted-colors/`pointer-none` (PRD-849), `@starting-style`
-  (PRD-847), and the batch's own `print`/`noscript`/`visited`/`target` decisions. They are listed in
-  `tailwind-parity.scene.json` under `exemptions` and never count toward the score.
-- **`--host`.** Not implemented; the flag exits non-zero rather than silently scoring the crate.
+- **Vacuity is the dominant gap (313 of 503 scored cells), and it is scene work, not engine work.**
+  A cell is counted as discriminating only when dropping its unit class takes the measured region
+  below the cell's own bar. Staging already in place: a contrast default in Tailwind's `base` layer,
+  companion utilities for custom-property-only units, a positioned probe, cell-scoped rules, and a
+  measured region that stops at the label band. What is left: `ring`/`shadow`/`inset-ring`/
+  `inset-shadow` (the companion needs a width), `outline-*` (no outline width on the probe),
+  colour-only `border-*` (no border width), `order`/`basis`/`auto-cols`/`auto-rows` (needs a second
+  item and a reflow), `stroke`/`fill`/`pointer-events`/`will-change`/`contain`/`color-scheme`/
+  `scrollbar-*` (no painted consumer), `content-*` (paints only on a pseudo-element), and the
+  `rounded-*-lg` family, whose 16 cells move by less than the bar against their 4 px contrast.
+- **Pending exemptions (31 variant cells).** Each names its owner PRD and stays in the denominator:
+  form states and `peer-*` (PRD-851, 21 cells), container queries (PRD-848, 3),
+  `prefers-contrast`/forced-colors/inverted-colors/`pointer-none`/`any-pointer-none` (PRD-849), and
+  `@starting-style` (PRD-847). Four more — `print:`, `noscript:`, `visited:`, `target:` — are
+  permanently inactive on both subjects by the batch's own decisions and are out of the denominator.
+- **`--host`.** Not implemented; the flag exits `TN_PARITY_HOST_UNSUPPORTED`.
 - **The motion bar.** Not built: no stepped clock at 0/25/50/75/100 %, and a panel whose sheet carries
   `animation`/`transition`/`@starting-style` skips the byte-equality double capture instead of being
   sampled at fixed times. PRD-847 owns both.
-- **Refused stages (15 units).** The crate's closed `TAGS` list (`native/css-ui/src/lib.rs`)
-  refuses `table`, `input`, `textarea` and `select`; and `columns-1` beside a float does not finish in
-  the meter's 60 s budget. A stage that needs one gets a panel to itself, so the refusal is that
-  cell's result rather than eleven innocent neighbours.
+- **`--env`.** A panel carries its own device descriptor (`dark`, `touch`, reduced motion, viewport)
+  and both subjects apply it, but there is no `--env <input|all>` CLI switch.
+- **Refused stages (15 units).** The crate's closed `TAGS` list refuses `table`, `input`, `textarea`,
+  `select` (6 cells); `columns-1` beside a float does not finish in the meter's 120 s budget (9 cells).
+- **The ratchet only gates a whole-scene run**: `--ratchet` with `--family`/`--group` exits non-zero
+  rather than comparing a subset with the global floor, and a floor unit missing from a run fails.
 
 ## Decisions
 

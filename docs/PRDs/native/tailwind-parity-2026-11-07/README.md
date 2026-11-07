@@ -17,7 +17,7 @@ are in the session scratchpad and are not tracked. The unit counts below are the
 | Fact | Value |
 | --- | --- |
 | Tailwind classes / utility roots / variants | 23 286 / 169 / 88 |
-| Coverage units (root x emitted property set x at-rule, see Meter) | 423 utility units + 88 variants = **507** (the 2026-11-07 exploration's 402 + 88 is not reproducible from that method; the generator in PRD-843 is now the denominator) |
+| Coverage units (root x emitted property set x at-rule, see Meter) | 419 utility units + 88 variants = **507** (the 2026-11-07 exploration's 402 + 88 is not reproducible from that method; the generator in PRD-843 is now the denominator) |
 | CSS properties Tailwind emits | 276 |
 | Properties the oracle corpus proves (`examples/native-css-hud/corpus/`) | 56 of 276 |
 | Properties neither proven nor refused by the build scanner | 200 (examples: `text-shadow`, `-webkit-line-clamp`, `list-style-type`, logical insets and borders, `scale`/`rotate`/`translate`, conic and radial `background-image`) |
@@ -53,12 +53,23 @@ Engine facts behind the gaps:
 ## Meter status (measured 2026-11-07, crate subject)
 
 ```
-tailwind-parity: 136/472 (28.8 %)  [291 vacuous, 35 exempt, 507 cells]
+tailwind-parity: 117/503 (23.3 %)  [313 do not discriminate, 31 exempt, 4 permanently inactive, 15 refused]
 ```
 
-A cell counts as evidence only: an exempt cell is excluded from the denominator, and a vacuous cell
-fails. The score is therefore *lower* than "cells whose pixels match" and cannot overstate coverage.
-The vacuity gap is scene staging in PRD-843, not engine work — see that PRD's `## Open`.
+Every cell is in the denominator except the four the batch's own decisions make
+permanently inactive on both subjects (`print:`, `noscript:`, `visited:`, `target:` — the
+renderers must agree the rule never fires, so no measurement of them can distinguish a correct
+engine from a wrong one). A *pending* exemption stays in the denominator and counts as a failure:
+it is an unproven unit, and the family PRD that lands its device input or control removes it.
+
+A cell that **does not discriminate** also fails: dropping its unit class has to take the measured
+region below the cell's own bar. A cell that stays at or above the bar cannot tell a correct engine
+from one that dropped the declaration, so counting it as coverage would overstate the result. The
+honest numbers are 117 passing, 313 non-discriminating, 31 pending exemptions and 15
+refused stages — not the 480 "cells whose pixels match" an unconditional comparison reports.
+
+The vacuity gap is scene staging in PRD-843, not engine work; the refused and mismatched cells are
+the family PRDs' subject matter. See PRD-843's `## Open`.
 
 ## PRDs
 
