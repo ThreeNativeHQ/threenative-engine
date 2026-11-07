@@ -58,6 +58,16 @@ Report ids B1, F1, F2, F3, F4, F8, B2. Root `AGENTS.md` puts "plumbing every gam
 **Files:** `packages/create-threenative/src/index.ts`, `template-assets/`, `templates/*/kit.json`, `packages/create-threenative/package.json`.
 
 - [ ] `vite.config.ts`, `main.ts` and `tsconfig.json` are restamped from one source with a per-kit plugin delta, and each kit reproduces today's bytes. proof: `pnpm --filter create-threenative exec vitest run __tests__/scaffold.spec.ts`
+
+  Measured deltas, so the next attempt starts from data rather than a survey (16 kits; `md5sum templates/*/{vite.config.ts,tsconfig.json,src/main.ts}`):
+
+  | File | Variants | The delta, exactly |
+  | --- | --- | --- |
+  | `vite.config.ts` | 10 / 3 / 2 / 1 | canonical carries five plugins; `minimal` drops `react()` and `tailwindcss()`; `starter` and `shooter` add `build: { rollupOptions: { input: { index: "index.html", main: "main.html" } } }`; `rain`, `sailing`, `snow` differ **only** by the missing doc comment above `assetsWatchPlugin` — drift, not intent, so a restamp changes three kits' bytes by a comment and nothing else (prove it by diffing with comments stripped). |
+  | `tsconfig.json` | 8 / 7 / 1 | `adventure`, `collectathon`, `kart`, `platformer`, `puzzle`, `racing`, `runner`, `tower-defense` include `tests/**/*.ts`; `minimal` drops `jsx: react-jsx` and the `**/*.tsx` glob as well. |
+  | `src/main.ts` | 11 / 3 / 1 / 1 | canonical mounts React through `#root`; `collectathon` differs by one blank line (drift); `minimal` has no React at all and mounts the canvas directly; `adventure` adds a Tab `keydown` preventer above the mount (the only genuine per-kit statement). |
+
+  So the delta a `kit.json` must carry is four flags (`react`, `tailwind`/`plugins`, `tests` include, worker entry) plus one escape hatch for `adventure`'s extra statement — a single canonical file with a placeholder line the scaffolder resolves, failing closed when a placeholder survives.
 - [x] The patch filename lives in one manifest that `prepack` reads: `template-assets/patches/manifest.json` names each patch with its repository source, `packages/create-threenative/scripts/sync-patches.mjs` (run by `prepack` and `pnpm sync:patches`) copies exactly those into the tarball, `copyFrameworkPatches` resolves a kit's `patchedDependencies` through it, and `__tests__/framework-patches.spec.ts` holds every kit to it (shown red by dropping an entry: both the kit check and the shipped-set check fail, naming each kit). proof: `rg -c 'three@0\.' packages/create-threenative/src packages/create-threenative/package.json` returns nothing, and `pnpm --filter create-threenative pack` lists `package/template-assets/patches/{manifest.json,three@0.187.0.patch,vite@8.2.0.patch,@tailwindcss__node@4.3.3.patch}` in the tarball.
 
 #### Phase 3: Scaffold pins split
