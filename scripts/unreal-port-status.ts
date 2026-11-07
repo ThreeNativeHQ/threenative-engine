@@ -19,6 +19,7 @@ import { runInNewContext } from "node:vm";
 
 const ROOT = join(import.meta.dirname, "..");
 export const PAGE = "docs/PRDs/Unreal/research/unreal-visuals-and-performance-feature-map.html";
+const MAP_MD = "docs/PRDs/Unreal/research/unreal-visuals-and-performance-feature-map.md";
 const SVG = "docs/PRDs/Unreal/research/unreal-port-status.svg";
 const README = "README.md";
 const INTERNALS = "docs/PRDs/Unreal/research/internals";
@@ -117,6 +118,17 @@ export function buildRegistry(page: string, files: readonly string[]): Record<st
     if (hit) out[id] = readPrd(hit, readFileSync(join(ROOT, hit), "utf8"));
   }
   return out;
+}
+
+/** Rewrites the Done cell (column 7) of every `| wave | PRD-id |` row from the registry. */
+export function syncPortTable(md: string, registry: Record<string, IPrdEntry>): string {
+  return md.replace(/^\| \d \| PRD-((?:VQ-)?\d+) \|.*\|$/gm, (row, id: string) => {
+    const p = registry[id];
+    if (!p) return row;
+    const cells = row.split(" | ");
+    cells[6] = `${p.f === "done" ? p.n : p.d}/${p.n}`;
+    return cells.join(" | ");
+  });
 }
 
 interface IRect {
@@ -549,6 +561,7 @@ export function refresh(): Map<string, string> {
   if (!marker.test(readme)) throw new Error(`${README}: no unreal-port-status markers`);
   return new Map([
     [PAGE, page],
+    [MAP_MD, syncPortTable(readFileSync(join(ROOT, MAP_MD), "utf8"), registry)],
     [SVG, svg],
     [HISTORY, `${JSON.stringify(history, null, 2)}\n`],
     [PROGRESS_SVG, renderProgressSvg(history)],

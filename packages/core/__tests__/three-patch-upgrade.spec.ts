@@ -622,3 +622,21 @@ ${after
   await expect(applyThreePatch({ packageRoot, threeRoot })).rejects.toThrow("cyclic known upgrade");
   expect(await readFile(target, "utf8")).toBe(STOCK.join("\n"));
 });
+
+// Release run 42307165770: hunks changed after 0.3.11 with no upgrade entry, so a 0.3.11 game failed
+// `pnpm install` at TN_THREE_PATCH_PARTIAL. Each upgrade entry must land on the bytes the current patch
+// installs; a patch edit without a regenerated upgrade file fails here instead of in the release proof.
+it("lands every known upgrade on the blob the current patch installs", async () => {
+  const patches = join(import.meta.dirname, "../patches");
+  const upgrade = await readFile(join(patches, "three@0.187.0-prd269-upgrade.patch"), "utf8");
+  const targets = [
+    ...upgrade.matchAll(/^diff --git a\/(\S+) b\/\S+\nindex [0-9a-f]{40}\.\.([0-9a-f]{40})/gmu),
+  ];
+  expect(targets.length).toBeGreaterThan(0);
+  const three = join(import.meta.dirname, "../node_modules/three");
+  for (const [, file, blob] of targets) {
+    const bytes = await readFile(join(three, file as string));
+    const hash = createHash("sha1").update(`blob ${bytes.length}\0`).update(bytes).digest("hex");
+    expect({ file, hash }).toEqual({ file, hash: blob });
+  }
+});
