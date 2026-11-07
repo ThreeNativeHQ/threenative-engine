@@ -1,5 +1,5 @@
 {
-  "passed": 142,
+  "passed": 145,
   "units": [
     "PRD-850/paint|border|border-style,border-width|",
     "PRD-850/paint|collapse|visibility|",
@@ -63,6 +63,7 @@
     "PRD-850/misc|pr|padding-right|",
     "PRD-850/misc|ps|padding-inline-start|",
     "PRD-850/misc|pt|padding-top|",
+    "PRD-850/misc|ring|--tw-ring-color|",
     "PRD-850/misc|ring|--tw-ring-offset-shadow,--tw-ring-offset-width|",
     "PRD-850/misc|rounded|border-radius|",
     "PRD-850/misc|rounded|border-bottom-left-radius,border-bottom-right-radius|",
@@ -117,6 +118,8 @@
     "PRD-845/mask|mask|--tw-mask-left,--tw-mask-left-from-color,--tw-mask-linear,--tw-mask-right,--tw-mask-right-from-color,mask-composite,mask-image|",
     "PRD-845/mask|mask|--tw-mask-bottom,--tw-mask-bottom-from-color,--tw-mask-linear,--tw-mask-top,--tw-mask-top-from-color,mask-composite,mask-image|",
     "PRD-848/scroll|sticky|position|",
+    "PRD-844/filter|backdrop|--tw-backdrop-opacity,-webkit-backdrop-filter,backdrop-filter|",
+    "PRD-844/filter|blur|--tw-blur,filter|",
     "PRD-845/clip|not|clip-path,height,margin,overflow,padding,position,white-space,width|",
     "PRD-849/selectors|variant|first",
     "PRD-849/selectors|variant|last",
