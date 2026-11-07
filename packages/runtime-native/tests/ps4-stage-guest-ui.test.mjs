@@ -92,6 +92,7 @@ test('a mipmapped colour target is micro-tiled on every level, so its rendered l
   // 2D tiling degraded to 1D on small levels; shadPS4 then dropped the rough PMREM levels and every shadow read black.
   assert.match(readFileSync(path.join(root, 'scripts/ps4/e2-build.sh'), 'utf8'), /git apply "\$SCRIPTS\/patches\/0055-vk-ps4-mipmapped-targets-micro-tiled\.patch"/u);
   assert.match(readFileSync(path.join(root, 'scripts/ps4/patches/0055-vk-ps4-mipmapped-targets-micro-tiled.patch'), 'utf8'), /^\+\s+: mip_levels > 1 \? GNM_TM_DISPLAY_1D_THIN/mu);
+  assert.match(readFileSync(path.join(root, 'scripts/ps4/patches/0055-vk-ps4-mipmapped-targets-micro-tiled.patch'), 'utf8'), /^\+\s+tex_ci\.tilemodehint = mip_levels > 1 \? GNM_TM_DISPLAY_1D_THIN/mu);
 });
 
 test('refuses a UI with no stylesheet', () => {
