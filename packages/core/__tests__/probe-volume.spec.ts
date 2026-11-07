@@ -259,6 +259,29 @@ describe("ProbeVolume", () => {
     expect(() => volume({ radianceProbeResolution: -1 })).toThrow();
   });
 
+  it("depth-tests the eight corner probes only when the volume keeps a map and asks for visibility (PRD-831)", () => {
+    const mapTextures = (node: Node): number => {
+      const reads = new Set<unknown>();
+      node.traverse((child) => {
+        if ((child as { value?: unknown }).value instanceof DataTexture) reads.add(child);
+      });
+      return reads.size;
+    };
+    // The plain read blends the probes with the atlas's own trilinear filter and reads no depth.
+    expect(
+      mapTextures(volume({ radianceProbeResolution: 4, report: () => undefined }).sampleNode()),
+    ).toBe(0);
+    const tested = volume({
+      radianceProbeResolution: 4,
+      probeVisibility: true,
+      report: () => undefined,
+    });
+    // One depth read per corner probe, in the irradiance read and in the radiance read.
+    expect(mapTextures(tested.sampleNode())).toBe(8);
+    expect(mapTextures(tested.sampleRadianceNode())).toBeGreaterThanOrEqual(8);
+    expect(() => volume({ probeVisibility: true })).toThrow(/radianceProbeResolution/);
+  });
+
   it("reads the non-directional value with one atlas fetch, not seven (PRD-643)", () => {
     const subject = volume({ report: () => undefined });
     const fetches = (node: Node): number => {
@@ -1071,6 +1094,40 @@ describe("ProbeVolume", () => {
       const sample = subject.sampleIrradiance(new Vector3(1, 1, 1), new Vector3(0, 0, 1));
       expect(sample.x).toBeCloseTo(0.886227, 5);
       expect(sample.y).toBe(0);
+    });
+
+    it("gives a rejected probe depth 0, so the visibility test never weights a probe inside a solid (PRD-831)", async () => {
+      const { subject } = traced({ radianceProbeResolution: 2, probeVisibility: true });
+      const cells = 4;
+      const { renderer } = traceRenderer([1, 0, 0]);
+      (renderer as unknown as { readback: unknown }).readback = vi.fn(
+        async (attribute: { array: Float32Array }) => {
+          const field = new Float32Array(attribute.array.length);
+          if (field.length === subject.probeCount * cells * 4) {
+            // The map: every cell 3 m deep.
+            for (let at = 3; at < field.length; at += 4) field[at] = 3;
+          } else {
+            // The SH: probe 0 met every ray from behind (share 1), the others none.
+            for (let at = 0; at < field.length; at += 36)
+              field.set([1, 0, 0, at === 0 ? 1 : 0], at);
+          }
+          return field.buffer;
+        },
+      );
+      const bake = subject.requestBake(new Scene());
+      await settle(subject, renderer, 4);
+      await bake;
+      let map: DataTexture | undefined;
+      subject.sampleRadianceNode().traverse((child) => {
+        const value = (child as { value?: unknown }).value;
+        if (value instanceof DataTexture) map = value;
+      });
+      const data = map?.image.data as Float32Array;
+      const { x: nx } = subject.resolution;
+      const depthAt = (ix: number, iy: number, cell: number) =>
+        data[((iy * 2 + Math.floor(cell / 2)) * nx * 2 + ix * 2 + (cell % 2)) * 4 + 3];
+      expect([0, 1, 2, 3].map((cell) => depthAt(0, 0, cell))).toEqual([0, 0, 0, 0]);
+      expect([0, 1, 2, 3].map((cell) => depthAt(1, 0, cell))).toEqual([3, 3, 3, 3]);
     });
 
     it("traces at most the budget a frame and resolves the bake once every probe refreshed", async () => {

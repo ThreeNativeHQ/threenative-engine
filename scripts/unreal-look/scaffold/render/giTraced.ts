@@ -52,6 +52,8 @@ export function tracedGiField(
   normalBias = 0,
   /** Cells per side of each probe's octahedral radiance map, which the gather's per-ray read uses; 0 reads the SH. */
   radianceProbeResolution = 0,
+  /** Depth-test the eight probes a read blends (needs the map): a probe behind a wall drops out. */
+  probeVisibility = false,
 ): IGiTracedField {
   // A glass pane is not a surface the probes see (the cache's own rule): only opaque meshes are packed.
   const bvh = ctx.add(
@@ -66,6 +68,7 @@ export function tracedGiField(
       density,
       ...(probeResolution === undefined ? {} : { probeResolution }),
       radianceProbeResolution,
+      probeVisibility,
       // A calibration capture is a few hundred stepped frames: the whole field traces at once (a game keeps the 2 ms budget).
       bakeBudgetMs: 200,
       numProbesToTraceBudget: 4096,

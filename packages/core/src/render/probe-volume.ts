@@ -23,6 +23,7 @@ import {
   float,
   floor,
   int,
+  length,
   normalWorld,
   normalize,
   positionWorld,
@@ -53,6 +54,7 @@ import type { Node, TextureNode } from "three/webgpu";
 import type { IComputeDriven } from "../compute-driven.js";
 import type { IRendererLike } from "../renderer.js";
 import {
+  BACKFACE_REJECTION_SHARE,
   type ILightingKey,
   type IProbeTraceKernels,
   type IProbeTraceLighting,
@@ -161,6 +163,14 @@ export interface IProbeVolumeOptions {
    * keeps SH only. Traced refresh only.
    */
   readonly radianceProbeResolution?: number;
+  /**
+   * Weight each of the eight probes a read blends by Unreal's depth test: a probe whose map depth toward the read point is
+   * shorter than the point's distance sees a surface first, so it sits behind a wall and drops out (UE 5.8.3:
+   * Engine/Shaders/Private/Lumen/LumenRadianceCacheInterpolation.ush:390, `StepHitDistanceFromProbe` against
+   * `StepRayDistanceFromProbeSq`). Stops light leaking through a wall thinner than a probe spacing. Needs
+   * `radianceProbeResolution`. Off by default.
+   */
+  readonly probeVisibility?: boolean;
 }
 
 /** What a traced refresh reads. Every value is the game's: the volume owns no light and no colour. */
@@ -393,6 +403,7 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
   #recentBatches: number[] = [];
   readonly #raysPerProbe: number;
   readonly #mapResolution: number;
+  readonly #visibility: boolean;
   #radianceMapTexture?: DataTexture;
   #kernels: IProbeTraceKernels | undefined;
   #kernelVersion = -1;
@@ -460,6 +471,11 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
       options.radianceProbeResolution === undefined || options.radianceProbeResolution === 0
         ? 0
         : positiveInteger(options.radianceProbeResolution, "radianceProbeResolution");
+    this.#visibility = options.probeVisibility === true;
+    if (this.#visibility && this.#mapResolution === 0)
+      throw new Error(
+        "ProbeVolume probeVisibility needs radianceProbeResolution (the map holds the depth).",
+      );
 
     const normalizedBounds = normalizeBounds(options.bounds);
     this.boundingBox = normalizedBounds;
@@ -807,8 +823,12 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
    * The octahedral maps laid out as one 2D texture: probe (x, y, z) holds the R x R block at column x and row z * ny + y.
    * Rejected probes hold their open neighbours' maps (`fillRejectedProbes`), so a reader weights all eight corners.
    */
-  #packRadianceMap(map: Float32Array): void {
+  #packRadianceMap(map: Float32Array, shares: Float32Array): void {
     const r = this.#mapResolution;
+    // A rejected probe sits inside a solid: depth 0, so the visibility test never weights it.
+    for (let probe = 0; probe < this.#probeCount; probe += 1)
+      if ((shares[probe] ?? 0) > BACKFACE_REJECTION_SHARE)
+        for (let cell = 0; cell < r * r; cell += 1) map[(probe * r * r + cell) * 4 + 3] = 0;
     const { x: nx, y: ny } = this.resolution;
     const width = nx * r;
     const texture = this.#ensureRadianceMapTexture();
@@ -846,11 +866,9 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
     return map;
   }
 
-  /** The map's radiance along `direction`: the direction's cell in each of the eight probes around `position`, trilinear. */
-  #radianceMapNode(position: Node<"vec3">, direction: Node<"vec3">): Node<"vec3"> {
+  /** The (column, row) of a direction's cell in an R x R octahedral map, as `octahedralCell` folds it on the CPU. */
+  #octahedralCellNode(direction: Node<"vec3">): Node<"vec2"> {
     const r = this.#mapResolution;
-    const { x: nx, y: ny, z: nz } = this.resolution;
-    const map = this.#ensureRadianceMapTexture();
     const d = normalize(vec3(direction));
     const flat = d.xy.div(abs(d.x).add(abs(d.y)).add(abs(d.z)));
     const sign = (v: Node<"float">) => select(v.greaterThanEqual(0), float(1), float(-1));
@@ -859,50 +877,88 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
       float(1).sub(abs(flat.x)).mul(sign(flat.y)),
     );
     const octahedron = select(d.z.lessThan(0), folded, flat);
-    const cell = clamp(floor(octahedron.mul(0.5).add(0.5).mul(r)), vec2(0), vec2(r - 1));
+    return clamp(floor(octahedron.mul(0.5).add(0.5).mul(r)), vec2(0), vec2(r - 1));
+  }
+
+  /** The map texel of `cell` in probe `probe` (grid index), as a texture coordinate. */
+  #mapTexelNode(probe: Node<"vec3">, cell: Node<"vec2">): Node<"vec2"> {
+    const r = this.#mapResolution;
+    const { x: nx, y: ny, z: nz } = this.resolution;
+    return vec2(probe.x.mul(r).add(cell.x), probe.z.mul(ny).add(probe.y).mul(r).add(cell.y))
+      .add(0.5)
+      .div(vec2(nx * r, ny * nz * r));
+  }
+
+  /**
+   * The eight probes around `position`: each one's grid index and weight, trilinear and, with `probeVisibility`, times
+   * the depth test (a floor of 1e-3 keeps a point that every probe fails lit by plain trilinear). `total` is the sum.
+   */
+  #cornersNode(position: Node<"vec3">): {
+    readonly corners: readonly { readonly probe: Node<"vec3">; readonly weight: Node<"float"> }[];
+    readonly total: Node<"float">;
+  } {
+    const { x: nx, y: ny, z: nz } = this.resolution;
     const min = this.boundingBox.min;
     const size = this.#boundsSize;
-    const step = vec3(
+    const spacing = [
       size.x / Math.max(1, nx - 1),
       size.y / Math.max(1, ny - 1),
       size.z / Math.max(1, nz - 1),
-    );
+    ] as const;
+    const step = vec3(...spacing);
+    const origin = vec3(min.x, min.y, min.z);
     const top = vec3(Math.max(0, nx - 1), Math.max(0, ny - 1), Math.max(0, nz - 1));
-    const local = clamp(
-      vec3(position)
-        .sub(vec3(min.x, min.y, min.z))
-        .div(step),
-      vec3(0),
-      top,
-    );
+    const local = clamp(vec3(position).sub(origin).div(step), vec3(0), top);
     const base = clamp(
       floor(local),
       vec3(0),
       vec3(Math.max(0, nx - 2), Math.max(0, ny - 2), Math.max(0, nz - 2)),
     );
     const fraction = clamp(local.sub(base), vec3(0), vec3(1));
-    const extent = vec2(nx * r, ny * nz * r);
-    let sum: Node<"vec3"> = vec3(0);
-    for (let corner = 0; corner < 8; corner += 1) {
+    // The depth test's soft band: a quarter of the smallest spacing past the stored depth fades the probe out.
+    const band = 0.25 * Math.max(1e-4, Math.min(...spacing));
+    const map = this.#visibility ? this.#ensureRadianceMapTexture() : undefined;
+    let total: Node<"float"> = float(0);
+    const corners = Array.from({ length: 8 }, (_, corner) => {
       const dx = corner & 1;
       const dy = (corner >> 1) & 1;
       const dz = (corner >> 2) & 1;
       const probe = clamp(base.add(vec3(dx, dy, dz)), vec3(0), top);
-      const texel = vec2(
-        probe.x.mul(r).add(cell.x),
-        probe.z.mul(ny).add(probe.y).mul(r).add(cell.y),
-      );
-      const weight = (dx ? fraction.x : float(1).sub(fraction.x))
+      let weight: Node<"float"> = (dx ? fraction.x : float(1).sub(fraction.x))
         .mul(dy ? fraction.y : float(1).sub(fraction.y))
         .mul(dz ? fraction.z : float(1).sub(fraction.z));
-      sum = sum.add(texture(map, texel.add(0.5).div(extent)).rgb.mul(weight));
-    }
-    return sum.max(0);
+      if (map !== undefined) {
+        const toPoint = vec3(position).sub(origin.add(probe.mul(step)));
+        const distance = length(toPoint);
+        const depth = texture(
+          map,
+          this.#mapTexelNode(probe, this.#octahedralCellNode(toPoint.add(vec3(1e-5, 2e-5, 3e-5)))),
+        ).a;
+        const visible = clamp(depth.add(band).sub(distance).div(band), 0, 1);
+        weight = weight.mul(visible.max(1e-3));
+      }
+      total = total.add(weight);
+      return { probe, weight };
+    });
+    return { corners, total };
+  }
+
+  /** The map's radiance along `direction`: the direction's cell in each of the eight probes around `position`. */
+  #radianceMapNode(position: Node<"vec3">, direction: Node<"vec3">): Node<"vec3"> {
+    const map = this.#ensureRadianceMapTexture();
+    const cell = this.#octahedralCellNode(direction);
+    const { corners, total } = this.#cornersNode(position);
+    let sum: Node<"vec3"> = vec3(0);
+    for (const { probe, weight } of corners)
+      sum = sum.add(texture(map, this.#mapTexelNode(probe, cell)).rgb.mul(weight));
+    return sum.div(total.max(1e-6)).max(0);
   }
 
   #shNode(position: Node<"vec3">, normal: Node<"vec3">, w: IShWeights): Node<"vec3"> {
     const atlasAt = this.#atlasAt(position);
-    const packed = (subVolume: number) => this.#atlasNode.sample(atlasAt(subVolume));
+    const packed = this.#visibility
+      ? this.#visiblePacked(position)
+      : (subVolume: number) => this.#atlasNode.sample(atlasAt(subVolume));
     const packedValues = Array.from({ length: PACKED_SUB_VOLUME_COUNT }, (_, index) =>
       packed(index),
     );
@@ -935,6 +991,35 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
           .mul(w.l22),
       );
     return value.max(0);
+  }
+
+  /**
+   * The packed SH at `position` blended over the eight corner probes with the depth-tested weights: each corner's texel
+   * centre (where the atlas's linear filter returns that probe alone), weighted and renormalised.
+   */
+  #visiblePacked(position: Node<"vec3">): (subVolume: number) => Node<"vec4"> {
+    const { x: nx, y: ny, z: nz } = this.resolution;
+    const sliceStride = nz + 2 * SAMPLE_ATLAS_PADDING;
+    const { corners, total } = this.#cornersNode(position);
+    const inverse = float(1).div(total.max(1e-6));
+    return (subVolume) => {
+      let sum: Node<"vec4"> = vec4(0);
+      for (const { probe, weight } of corners)
+        sum = sum.add(
+          this.#atlasNode
+            .sample(
+              vec3(
+                probe.x.add(0.5).div(nx),
+                probe.y.add(0.5).div(ny),
+                probe.z
+                  .add(SAMPLE_ATLAS_PADDING + 0.5 + subVolume * sliceStride)
+                  .div(this.#atlasDepth),
+              ),
+            )
+            .mul(weight),
+        );
+      return sum.mul(inverse);
+    };
   }
 
   /** Internal data seam used by unit/conformance fixtures to seed a known SH atlas without a GPU. */
@@ -1298,7 +1383,7 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
       this.resolution,
       radianceMap === undefined ? [] : [{ data: radianceMap, stride: cells * 4 }],
     );
-    if (radianceMap !== undefined) this.#packRadianceMap(radianceMap);
+    if (radianceMap !== undefined) this.#packRadianceMap(radianceMap, shares);
     this.#packCpuAtlas();
     this.#readbackSerial = serial;
     if (this.#passSerial < 0 || serial < this.#passSerial || this.#status !== "baking") return;

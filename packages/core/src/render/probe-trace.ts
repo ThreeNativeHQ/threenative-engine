@@ -640,10 +640,13 @@ export function createProbeTraceKernels(
       const irradiance = direct.add(previousIrradiance(point, facing).mul(bounce));
       result.assign(emission.add(albedo.mul(irradiance).mul(INV_PI)));
     });
-    // w: 1 when the ray first met a surface from behind (the probe's rejection share, `BACKFACE_REJECTION_SHARE`).
+    // w: the hit distance (`far` on a miss), negative when the ray first met a surface from behind (the probe's rejection
+    // share, `BACKFACE_REJECTION_SHARE`). The octahedral map keeps the distance as its depth, as Unreal's radiance cache
+    // keeps a depth atlas beside its radiance (UE 5.8.3: Engine/Shaders/Private/Lumen/LumenRadianceCacheInterpolation.ush:215).
+    const distance = select(hit.triangle.greaterThanEqual(0), max(hit.t, 0.0001), float(far));
     radianceNode
       .element(instanceIndex)
-      .assign(vec4(result, select(back.lessThan(hit.t), float(1), float(0))));
+      .assign(vec4(result, select(back.lessThan(hit.t), distance.negate(), distance)));
   })().compute(maxBatch * raysPerProbe);
 
   const project = Fn(() => {
@@ -658,7 +661,7 @@ export function createProbeTraceKernels(
       ({ i }: { i: AnyNode }) => {
         const sample = radianceNode.element(slot.mul(int(raysPerProbe)).add(i));
         const value = sample.xyz;
-        backfaces.addAssign(sample.w);
+        backfaces.addAssign(select(sample.w.lessThan(0), float(1), float(0)));
         const d = directions.element(i);
         add(0, value.mul(0.282095));
         add(1, value.mul(d.y.mul(0.488603)));
@@ -702,11 +705,17 @@ export function createProbeTraceKernels(
       const first = int(range.x);
       const count = int(range.y);
       const sum = vec3(0).toVar();
+      const depth = float(0).toVar();
       Loop({ start: int(0), end: count, type: "int", condition: "<" }, ({ i }: { i: AnyNode }) => {
         const ray = int(cellRays.element(first.add(i)).x);
-        sum.addAssign(radianceNode.element(slot.mul(int(raysPerProbe)).add(ray)).xyz);
+        const sample = radianceNode.element(slot.mul(int(raysPerProbe)).add(ray));
+        sum.addAssign(sample.xyz);
+        depth.addAssign(abs(sample.w));
       });
-      mapNode.element(probe.mul(int(cells)).add(cell)).assign(vec4(sum.div(float(count)), 1));
+      // w: the cell's mean hit distance, the depth `ProbeVolume`'s visibility test reads.
+      mapNode
+        .element(probe.mul(int(cells)).add(cell))
+        .assign(vec4(sum.div(float(count)), depth.div(float(count))));
     })().compute(maxBatch * cells);
   }
 

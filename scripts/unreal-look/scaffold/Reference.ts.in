@@ -375,6 +375,8 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
               Number(params.get("giDensity") ?? 1),
               Number(params.get("giRays") ?? 32),
               Number(params.get("giBias") ?? 0.5),
+              Number(params.get("giMap") ?? (params.get("giVis") === "1" ? 8 : 0)),
+              params.get("giVis") === "1",
             )
           : undefined;
       if (field !== undefined) (window as unknown as { __tnGiField: unknown }).__tnGiField = field;
