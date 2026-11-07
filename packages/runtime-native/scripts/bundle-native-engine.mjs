@@ -15,6 +15,15 @@ const require = createRequire(resolve(native, "package.json"));
 const { build } = require("esbuild");
 const ts = require("typescript");
 const core = dirname(require.resolve("@threenative/core/package.json"));
+// A core subpath bundles from the source its package export names: "./spells" -> dist/spells/index.js
+// -> src/spells/index.ts. Guessing src/<last segment>.ts missed the nested spells entries.
+export function coreSubpathSource(coreDir, specifier) {
+  const sub = `./${specifier.slice("@threenative/core/".length)}`;
+  const target = JSON.parse(readFileSync(resolve(coreDir, "package.json"), "utf8")).exports?.[sub]?.import;
+  if (typeof target !== "string" || !target.startsWith("./dist/"))
+    throw new Error(`TN_NATIVE_ENGINE_UNBOUND: ${specifier} [@threenative/core exports no ${sub}]`);
+  return resolve(coreDir, target.replace(/^\.\/dist\//, "src/").replace(/\.js$/, ".ts"));
+}
 const threeNative = dirname(require.resolve("@threenative/three-native/package.json"));
 const assetsEntry = resolve(dirname(require.resolve("@threenative/assets/package.json")), "dist/index.js");
 
@@ -228,7 +237,7 @@ export async function bundleNativeEngine({ entry, outfile, boot = true, define =
       builder.onResolve({ filter: /^@threenative\/core$/ }, () => ({ path: "core", namespace: "native-core" }));
       builder.onLoad({ filter: /.*/, namespace: "native-core" }, () => ({ contents: coreExports, resolveDir: repo }));
       builder.onResolve({ filter: /^@threenative\/core\// }, (args) => ({
-        path: resolve(core, "src", `${args.path.split("/").at(-1)}.ts`),
+        path: coreSubpathSource(core, args.path),
       }));
       builder.onResolve({ filter: /^(three(?:\/|$)|three-mesh-bvh(?:\/|$))/ }, async (args) => {
         const source = args.namespace === "native-game" ? code : await readFile(args.importer, "utf8");
