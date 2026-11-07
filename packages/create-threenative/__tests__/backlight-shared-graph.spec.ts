@@ -12,7 +12,7 @@ import type Node from "three/src/nodes/core/Node.js";
 import NodeFrame from "three/src/nodes/core/NodeFrame.js";
 import { test } from "vitest";
 type LiveNode = Node & { value: unknown };
-import { backlightMaterial } from "@threenative/core/render/environment";
+import { backlightMaterial } from "../templates/starter/src/render/backlightMaterial.js";
 test("shared full graph preserves live render boundaries and independent material ownership", () => {
   const scene = new Scene();
   const camera = new Camera();

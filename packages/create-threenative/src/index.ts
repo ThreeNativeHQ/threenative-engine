@@ -133,6 +133,11 @@ export function stampLoadingSource(canonical: string, template: string): string 
  * `@threenative/core/render/environment` now (PRD-833).
  */
 export const SHARED_RENDER_SOURCES: readonly string[] = [
+  // The backlight shader: mechanism every kit repeats, but its constants decide how a surface
+  // looks, so it lives in `src/render/` (rule 3) and is stamped from one source rather than moved
+  // into the engine.
+  "src/render/backlightControls.ts",
+  "src/render/backlightMaterial.ts",
   "src/render/atmosphere.ts",
   "src/render/gpuSky.ts",
   "src/render/kitExposure.ts",

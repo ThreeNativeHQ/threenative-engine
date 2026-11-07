@@ -4326,24 +4326,6 @@
     {
       "aliases": [],
       "constraints": [
-        "every colour, gain and angular size is the caller's; this copies the game's material and adds light"
-      ],
-      "example": "",
-      "importPath": "@threenative/core/render/environment",
-      "kind": "function",
-      "overrides": [],
-      "package": "@threenative/core",
-      "signature": "export function backlightMaterial(source: MeshStandardMaterial, controls: IBacklightControls) { … }",
-      "situations": [
-        "give a material a launcher's glow without editing its colour, texture or roughness"
-      ],
-      "summary": "The game's material, wrapped in a node twin that adds the backlit sheen it was given.",
-      "supersedes": [],
-      "symbol": "backlightMaterial"
-    },
-    {
-      "aliases": [],
-      "constraints": [
         "a sample whose source texture or intensity moved is dropped, so a stale one never reaches a material"
       ],
       "example": "",
@@ -4446,7 +4428,7 @@
         "keep an environment readback from reaching a frame it does not belong to",
         "add a backlit sheen to a material without editing the material graph"
       ],
-      "summary": "The environment measure-and-sample mechanism every kit repeats: what the scene's environment actually contributes, a bounded GPU sample of it with a cache and a readback deadline, the provenance a stale readback is rejected by, and the material lane the backlight wires. This is machinery, not a look: every colour, gain and threshold arrives as an argument, and a kit that wants a different bound passes a different one. It lives here because twelve kits held byte-identical copies — 9 084 lines — so a fix to one left eleven wrong with every gate green (`c93b427d0` touched 552 files for one look change).",
+      "summary": "The environment measure-and-sample mechanism every kit repeats: what the scene's environment actually contributes, a bounded GPU sample of it with a cache and a readback deadline, the provenance a stale readback is rejected by, and the gate that decides which renderer may run the material lane. The backlight itself is a shader with fixed constants, so it stays in each kit's `src/render/` (stamped from one source there) where the game can change how it looks. This is machinery, not a look: every colour, gain and threshold arrives as an argument, and a kit that wants a different bound passes a different one. It lives here because twelve kits held byte-identical copies — 9 084 lines — so a fix to one left eleven wrong with every gate green (`c93b427d0` touched 552 files for one look change).",
       "supersedes": [],
       "symbol": "measureEnvironment"
     },
@@ -4465,23 +4447,9 @@
         "keep an environment readback from reaching a frame it does not belong to",
         "add a backlit sheen to a material without editing the material graph"
       ],
-      "summary": "The environment measure-and-sample mechanism every kit repeats: what the scene's environment actually contributes, a bounded GPU sample of it with a cache and a readback deadline, the provenance a stale readback is rejected by, and the material lane the backlight wires. This is machinery, not a look: every colour, gain and threshold arrives as an argument, and a kit that wants a different bound passes a different one. It lives here because twelve kits held byte-identical copies — 9 084 lines — so a fix to one left eleven wrong with every gate green (`c93b427d0` touched 552 files for one look change).",
+      "summary": "The environment measure-and-sample mechanism every kit repeats: what the scene's environment actually contributes, a bounded GPU sample of it with a cache and a readback deadline, the provenance a stale readback is rejected by, and the gate that decides which renderer may run the material lane. The backlight itself is a shader with fixed constants, so it stays in each kit's `src/render/` (stamped from one source there) where the game can change how it looks. This is machinery, not a look: every colour, gain and threshold arrives as an argument, and a kit that wants a different bound passes a different one. It lives here because twelve kits held byte-identical copies — 9 084 lines — so a fix to one left eleven wrong with every gate green (`c93b427d0` touched 552 files for one look change).",
       "supersedes": [],
       "symbol": "reportEnvironmentContribution"
-    },
-    {
-      "aliases": [],
-      "constraints": [],
-      "example": "",
-      "importPath": "@threenative/core/render/environment",
-      "kind": "function",
-      "overrides": [],
-      "package": "@threenative/core",
-      "signature": "export function resolveKey( controls: IBacklightControls, direction: Vector3, target: Vector3, camera: Camera = controls.camera, ) { … }",
-      "situations": ["point the backlight at the sun the scene actually has"],
-      "summary": "The light and camera a backlit material reads its key direction from.",
-      "supersedes": [],
-      "symbol": "resolveKey"
     },
     {
       "aliases": [],
@@ -4535,22 +4503,6 @@
       "summary": "Whether an environment texture's mapping and colour space are qualified for the bounded GPU sample.",
       "supersedes": [],
       "symbol": "samplingSourceSupported"
-    },
-    {
-      "aliases": [],
-      "constraints": [],
-      "example": "",
-      "importPath": "@threenative/core/render/environment",
-      "kind": "function",
-      "overrides": [],
-      "package": "@threenative/core",
-      "signature": "export function validateControls(controls: IBacklightControls) { … }",
-      "situations": [
-        "fail loudly instead of drawing an unlit material when a backlight has no key light"
-      ],
-      "summary": "Throws when a `IBacklightControls` is missing a light or names a non-finite gain.",
-      "supersedes": [],
-      "symbol": "validateControls"
     },
     {
       "aliases": [],

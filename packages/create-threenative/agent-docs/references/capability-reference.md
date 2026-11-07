@@ -3371,17 +3371,6 @@ root.render(createElement("section", { className: "fixed inset-0 bg-zinc-900/90"
 
 ## `@threenative/core/render/environment`
 
-### `backlightMaterial`
-
-`function` — The game's material, wrapped in a node twin that adds the backlit sheen it was given.
-
-```ts
-export function backlightMaterial(source: MeshStandardMaterial, controls: IBacklightControls) { … }
-```
-
-- **Use when:** give a material a launcher's glow without editing its colour, texture or roughness
-- **Constraints:** every colour, gain and angular size is the caller's; this copies the game's material and adds light
-
 ### `cachedEnvironmentSample`
 
 `function` — The sample this renderer took of `scene`'s environment, if it is still current.
@@ -3446,7 +3435,7 @@ export function materialLightingEnabled( tier: QualityTier, environment: IMateri
 
 ### `measureEnvironment`
 
-`function` — The environment measure-and-sample mechanism every kit repeats: what the scene's environment actually contributes, a bounded GPU sample of it with a cache and a readback deadline, the provenance a stale readback is rejected by, and the material lane the backlight wires. This is machinery, not a look: every colour, gain and threshold arrives as an argument, and a kit that wants a different bound passes a different one. It lives here because twelve kits held byte-identical copies — 9 084 lines — so a fix to one left eleven wrong with every gate green (`c93b427d0` touched 552 files for one look change).
+`function` — The environment measure-and-sample mechanism every kit repeats: what the scene's environment actually contributes, a bounded GPU sample of it with a cache and a readback deadline, the provenance a stale readback is rejected by, and the gate that decides which renderer may run the material lane. The backlight itself is a shader with fixed constants, so it stays in each kit's `src/render/` (stamped from one source there) where the game can change how it looks. This is machinery, not a look: every colour, gain and threshold arrives as an argument, and a kit that wants a different bound passes a different one. It lives here because twelve kits held byte-identical copies — 9 084 lines — so a fix to one left eleven wrong with every gate green (`c93b427d0` touched 552 files for one look change).
 
 ```ts
 export function measureEnvironment(scene: Scene, maxSourceTexels: number): IEnvironmentMeasurement { … }
@@ -3456,23 +3445,13 @@ export function measureEnvironment(scene: Scene, maxSourceTexels: number): IEnvi
 
 ### `reportEnvironmentContribution`
 
-`function` — The environment measure-and-sample mechanism every kit repeats: what the scene's environment actually contributes, a bounded GPU sample of it with a cache and a readback deadline, the provenance a stale readback is rejected by, and the material lane the backlight wires. This is machinery, not a look: every colour, gain and threshold arrives as an argument, and a kit that wants a different bound passes a different one. It lives here because twelve kits held byte-identical copies — 9 084 lines — so a fix to one left eleven wrong with every gate green (`c93b427d0` touched 552 files for one look change).
+`function` — The environment measure-and-sample mechanism every kit repeats: what the scene's environment actually contributes, a bounded GPU sample of it with a cache and a readback deadline, the provenance a stale readback is rejected by, and the gate that decides which renderer may run the material lane. The backlight itself is a shader with fixed constants, so it stays in each kit's `src/render/` (stamped from one source there) where the game can change how it looks. This is machinery, not a look: every colour, gain and threshold arrives as an argument, and a kit that wants a different bound passes a different one. It lives here because twelve kits held byte-identical copies — 9 084 lines — so a fix to one left eleven wrong with every gate green (`c93b427d0` touched 552 files for one look change).
 
 ```ts
 export function reportEnvironmentContribution( scene: Scene, options: IContributionControls, measurement?: IEnvironmentMeasurement, ) { … }
 ```
 
 - **Use when:** measure what a scene's environment actually contributes · sample the environment on the GPU without stalling the frame · keep an environment readback from reaching a frame it does not belong to · add a backlit sheen to a material without editing the material graph
-
-### `resolveKey`
-
-`function` — The light and camera a backlit material reads its key direction from.
-
-```ts
-export function resolveKey( controls: IBacklightControls, direction: Vector3, target: Vector3, camera: Camera = controls.camera, ) { … }
-```
-
-- **Use when:** point the backlight at the sun the scene actually has
 
 ### `sampledRadiance`
 
@@ -3505,16 +3484,6 @@ export function samplingSourceSupported(source: NonNullable<Scene["environment"]
 ```
 
 - **Use when:** know why an environment was not sampled on the GPU
-
-### `validateControls`
-
-`function` — Throws when a `IBacklightControls` is missing a light or names a non-finite gain.
-
-```ts
-export function validateControls(controls: IBacklightControls) { … }
-```
-
-- **Use when:** fail loudly instead of drawing an unlit material when a backlight has no key light
 
 ## `@threenative/core/spells`
 

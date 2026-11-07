@@ -27,8 +27,19 @@ const FRAMEWORK_PATCH = /^patches\/[^/]+\.patch$/u;
 const COHORT_PIN =
   /("(?:@threenative\/[\w-]+|create-threenative|threenative-[\w-]+)":\s*)"\d+\.\d+\.\d+(?:-[\w.]+)?"/gu;
 
-/** The kit's own bytes, rendered from shared fragments: the shared contract decides their content. */
-const GENERATED_INSTRUCTION_FILES: ReadonlySet<string> = new Set(["AGENTS.md", "CLAUDE.md"]);
+/**
+ * Files that live in the kit's tree but are generated from one source, so a change to that source
+ * moves the `shared` hash rather than sixteen `kit` hashes: the instruction routers, and the build
+ * plumbing `src/plumbing.ts` writes. `adventure`'s `src/main.ts` is not here — it is hand-written
+ * and `kit.json` says so.
+ */
+const GENERATED_INSTRUCTION_FILES: ReadonlySet<string> = new Set([
+  "AGENTS.md",
+  "CLAUDE.md",
+  "tsconfig.json",
+  "vite.config.ts",
+  "src/main.ts",
+]);
 
 /** A template file the scaffolder renames on the way out, so the kit holds it under another name. */
 const RENAMED_BY_SCAFFOLDER: Readonly<Record<string, string>> = { ".gitignore": "gitignore" };

@@ -118,7 +118,11 @@ async function main(argv: readonly string[]): Promise<number> {
     return stale.length === 0 ? 0 : 1;
   }
   const table = `\n${formatPins(measured)}\n`;
-  await writeFile(SPEC, source.slice(0, began) + BEGIN + table + source.slice(ended));
+  // `ended` points at the marker's own text, so the line's indent has to stay in front of it or
+  // `biome format` and this tool would rewrite each other forever.
+  const indentStart = source.lastIndexOf("\n", began) + 1;
+  const indent = source.slice(indentStart, began);
+  await writeFile(SPEC, source.slice(0, began) + BEGIN + table + indent + source.slice(ended));
   process.stdout.write(
     `scaffold pins: ${String(kits.length)} kits, ${String(stale.length)} moved\n`,
   );

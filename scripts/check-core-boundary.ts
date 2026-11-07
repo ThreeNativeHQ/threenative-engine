@@ -58,28 +58,21 @@ const RENDER_PORTABLE_CORE_SYMBOLS: ReadonlySet<string> = new Set([
   // PRD-632: Unreal's Substrate slab diffuse is the default look of a rough surface; the game turns it
   // off per material (`material.roughDiffuse = false`) or per tree (`useRoughDiffuse(root, false)`).
   "useRoughDiffuse",
-  // PRD-833: the environment measure-and-sample mechanism and the backlight lane moved out of the
-  // twelve kits that held byte-identical copies. None of it decides how anything looks — every
-  // colour, gain, bound and threshold is an argument — and the kit still owns the call, the policy
-  // tier and every material it wires. Keeping the copies in `src/render/` is what let a fix to one
-  // kit leave eleven wrong with every gate green, so the portable set admits the mechanism.
-  "IBacklightControls",
-  "IEnvironmentMeasurement",
-  "IEnvironmentSample",
-  "IEnvironmentSourceSnapshot",
-  "IMaterialLightingEnvironment",
-  "backlightMaterial",
-  "captureEnvironmentSnapshot",
-  "environmentSnapshotCurrent",
-  "isWebGLFallbackRenderer",
-  "materialLightingEnabled",
-  "measureEnvironment",
-  "reportEnvironmentContribution",
-  "sampleEnvironment",
+  // PRD-833: the environment measure-and-sample mechanism moved out of the twelve kits that held
+  // byte-identical copies. None of it decides how anything looks — it reads the scene's own
+  // environment and refuses by name — so it is reachable from its own subpath. The backlight is NOT
+  // admitted: its shader carries fixed constants that decide how a surface looks, so it stays in
+  // each kit's `src/render/`, stamped from one source there instead.
 ]);
 
 // `import { … }`, `import type { … }`, `export { … }` and `export type { … }`: a named re-export of a
 // whitelisted symbol is the same admission as importing it, whether the file uses it or passes it on.
+/** The one core subpath a kit's `src/render/` may import from, and only for the names below. */
+const RENDER_ENVIRONMENT_SUBPATH = "core/render/environment";
+
+/** The environment mechanism (PRD-833): reads the scene's own environment, decides no appearance. */
+const RENDER_ENVIRONMENT_SYMBOLS: ReadonlySet<string> = new Set([]);
+
 const FRAMEWORK_IMPORT =
   /(?:import|export)\s+(?:type\s+)?\{([^}]*)\}\s+from\s+["']@threenative\/([^"']+)["'];?/gu;
 
@@ -104,11 +97,12 @@ function importedNames(clause: string): readonly string[] {
  */
 function withoutPortableImports(source: string): string {
   return source.replaceAll(FRAMEWORK_IMPORT, (statement, clause: string, specifier: string) => {
-    // `core` or one of its subpaths (`core/world`, `core/render/environment`): the rule is which
-    // package a kit's look may reach into, not which entry point of it.
-    if (specifier.split("/")[0] !== "core") return statement;
+    // The environment subpath exports the mechanism and nothing else (its entry file is the list),
+    // so admitting the subpath admits exactly that mechanism, for an import or a re-export.
+    if (specifier === RENDER_ENVIRONMENT_SUBPATH) return "";
     const names = importedNames(clause);
     if (names.length === 0) return statement;
+    if (specifier !== "core") return statement;
     return names.every((name) => RENDER_PORTABLE_CORE_SYMBOLS.has(name)) ? "" : statement;
   });
 }

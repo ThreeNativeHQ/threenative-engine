@@ -62,8 +62,12 @@ describe("generated build plumbing", () => {
         return readFileSync(path.join(TEMPLATES, name, "src", "main.ts"), "utf8") !== text;
       });
     expect(stale.map(({ name }) => name)).toEqual([]);
-    // The exception is declared, not inferred: one kit's entry carries a statement of its own.
-    expect(kitMainDelta("adventure", TEMPLATES).handWritten).toBe(true);
+    // The exception is declared, not inferred, and it is exactly one kit: a second flag set in a
+    // kit.json would stop stamping that entry with nothing failing.
+    const handWritten = discoverKitManifests(TEMPLATES)
+      .map(({ name }) => name)
+      .filter((name) => kitMainDelta(name, TEMPLATES).handWritten);
+    expect(handWritten).toEqual(["adventure"]);
     expect(mainText(kitMainDelta("adventure", TEMPLATES))).toBeUndefined();
   });
 

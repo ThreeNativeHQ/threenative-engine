@@ -1,4 +1,3 @@
-import { backlightMaterial } from "@threenative/core/render/environment";
 import {
   Camera,
   Color,
@@ -10,6 +9,7 @@ import {
   Vector3,
 } from "three";
 import { expect, test, vi } from "vitest";
+import { backlightMaterial } from "../templates/starter/src/render/backlightMaterial.js";
 interface IUniform {
   isUniformNode?: boolean;
   updateType?: string;

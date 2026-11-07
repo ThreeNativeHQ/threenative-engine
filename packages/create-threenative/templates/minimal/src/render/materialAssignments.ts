@@ -1,6 +1,6 @@
-import { type IBacklightControls, backlightMaterial } from "@threenative/core/render/environment";
 // Generated for you. Own converted materials; preserve borrowed and authored assignments.
 import { Material, Mesh, MeshStandardMaterial, type Scene } from "three";
+import { type IBacklightControls, backlightMaterial } from "./backlightMaterial.js";
 interface IMaterialAssignment {
   readonly mesh: Mesh;
   readonly original: Mesh["material"];
