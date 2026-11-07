@@ -855,6 +855,29 @@ void source_guard() {
     CHECK(tn_set(meshes[2], "position.x", &far, &d.value) == TN_OK);
     CHECK(changed(2).empty());  // sources 0 and 1
     CHECK((changed(2) == std::vector<double>{2}));
+    // PRD-828: a second list watches the sources' ancestors, all checked by __tnGuardCheckAncestors.
+    tn_handle_t holder{}, still{};
+    CHECK(tn_construct(ctx, "Group", nullptr, 0, &holder, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Group", nullptr, 0, &still, &d.value) == TN_OK);
+    const tn_value_t ancestorItems[2] = {ref(holder), ref(still)};
+    tn_value_t lists[2]{list, {}};
+    lists[1].kind = TN_VALUE_ARRAY;
+    lists[1].count = 2;
+    lists[1].values = ancestorItems;
+    CHECK(tn_invoke(scene, "__tnGuardWatch", lists, 2, &result, &d.value) == TN_OK && result.number == 3);
+    const auto ancestorsMoved = [&]() {
+        tn_value_t out{};
+        CHECK(tn_invoke(scene, "__tnGuardCheckAncestors", nullptr, 0, &out, &d.value) == TN_OK);
+        CHECK(out.kind == TN_VALUE_NUMBERS);
+        return std::vector<double>(out.numbers, out.numbers + out.count);
+    };
+    CHECK(ancestorsMoved().empty());
+    const tn_value_t lifted = num(2);
+    CHECK(tn_set(holder, "position.y", &lifted, &d.value) == TN_OK);
+    CHECK((ancestorsMoved() == std::vector<double>{0}));
+    CHECK(ancestorsMoved().empty());  // answered once, then no longer watched
+    CHECK(tn_invoke(scene, "__tnGuardWatch", &list, 1, &result, &d.value) == TN_OK);
+    CHECK(ancestorsMoved().empty());  // a watch without the second list watches no ancestor
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 
@@ -1330,6 +1353,51 @@ void tsl_matrix_columns() {
         CHECK(seen == expected);
         CHECK(g::key(graph) == key);
     }
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
+// PRD-828: one sync's changed uniforms cross as one span; a stale id writes nothing, a refused value stops there.
+void tsl_set_uniforms() {
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+    tn_tsl_arg_t scalar{};
+    scalar.kind = TN_TSL_ARG_NUMBER;
+    tn_tsl_arg_t four{};
+    four.kind = TN_TSL_ARG_VECTOR;
+    four.reserved = 4;
+    uint64_t ids[3]{};
+    CHECK(tn_tsl_call(ctx, "uniform", nullptr, &scalar, 1, &ids[0], &d.value) == TN_OK);
+    CHECK(tn_tsl_call(ctx, "uniform", nullptr, &four, 1, &ids[1], &d.value) == TN_OK);
+    CHECK(tn_tsl_call(ctx, "uniform", nullptr, &scalar, 1, &ids[2], &d.value) == TN_OK);
+    const auto values = [&](int i) { return tn::abi::tslNode(ctx, ids[i])->values; };
+
+    const uint32_t counts[3] = {1, 4, 1};
+    const double lanes[6] = {0.5, 1, 2, 3, 4, 0.25};
+    CHECK(tn_tsl_set_uniforms(ctx, ids, counts, lanes, 3, &d.value) == TN_OK);
+    CHECK(values(0) == std::vector<double>{0.5});
+    CHECK((values(1) == std::vector<double>{1, 2, 3, 4}));
+    CHECK(values(2) == std::vector<double>{0.25});
+    CHECK(tn_tsl_set_uniforms(ctx, nullptr, nullptr, nullptr, 0, &d.value) == TN_OK);  // nothing changed
+
+    // A stale id anywhere in the span writes nothing.
+    const uint64_t stale[2] = {ids[0], 999999};
+    const double next[2] = {0.75, 0.75};
+    const uint32_t ones[2] = {1, 1};
+    CHECK(tn_tsl_set_uniforms(ctx, stale, ones, next, 2, &d.value) != TN_OK);
+    tn_diagnostic_release(&d.value);
+    CHECK(values(0) == std::vector<double>{0.5});
+
+    // A refused value (a float given two lanes) stops the batch there; the writes before it stay.
+    const uint64_t order[3] = {ids[2], ids[0], ids[1]};
+    const uint32_t wrong[3] = {1, 2, 4};
+    const double packed[7] = {0.125, 1, 2, 9, 9, 9, 9};
+    CHECK(tn_tsl_set_uniforms(ctx, order, wrong, packed, 3, &d.value) != TN_OK);
+    tn_diagnostic_release(&d.value);
+    CHECK(values(2) == std::vector<double>{0.125});
+    CHECK(values(0) == std::vector<double>{0.5});
+    CHECK((values(1) == std::vector<double>{1, 2, 3, 4}));
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 
@@ -2272,9 +2340,91 @@ void projected_cull_held_restore() {
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 
+// PRD-828: GPUParticles3D's view test in one call. The emitter's local box, carried by its world matrix and padded,
+// is tested against the camera's frustum as core's JS fallback does (particles.ts process).
+void bounds_in_view() {
+    using namespace tn::engine;
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    const tn_version_info_t version = tn_engine_version();
+    CHECK(tn_context_create(&ctx, &version, &d.value) == TN_OK);
+    auto emitter = std::make_shared<Object3D>();
+    const auto object = tn::abi::shareObject(ctx, "Object3D", emitter);
+    const auto view = tn::abi::shareObject(ctx, "PerspectiveCamera", std::make_shared<PerspectiveCamera>(50, 1, 0.1, 5000));
+    tn_handle_t box{}, lo{}, hi{};
+    const tn_value_t low[3] = {num(-0.001), num(-0.001), num(-0.001)}, high[3] = {num(0.001), num(0.001), num(0.001)};
+    CHECK(tn_construct(ctx, "Vector3", low, 3, &lo, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Vector3", high, 3, &hi, &d.value) == TN_OK);
+    const tn_value_t ends[2] = {ref(lo), ref(hi)};
+    CHECK(tn_construct(ctx, "Box3", ends, 2, &box, &d.value) == TN_OK);
+    const auto inView = [&](double x, double padding) {
+        emitter->position.x = x;
+        emitter->position.z = -5;
+        const tn_value_t args[3] = {ref(view), ref(box), num(padding)};
+        tn_value_t out{};
+        CHECK(tn_invoke(object, "__boundsInView", args, 3, &out, &d.value) == TN_OK);
+        return out.kind == TN_VALUE_BOOL && out.boolean;
+    };
+    CHECK(inView(0, std::nan("")));     // ahead of the camera
+    CHECK(!inView(100, std::nan("")));  // far to the side; the default padding is half a unit
+    CHECK(inView(100, 200));  // a padding wide enough reaches the view
+    emitter->scale.set(400, 400, 400);
+    CHECK(inView(100, std::nan("")));   // the default padding follows the world scale, as three's getMaxScaleOnAxis
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
 // PRD-610 AC-4: the projected-size cull reads a flat list of the tree, built once per hierarchy version, instead
 // of comparing type strings and casting every node every frame (7.7% of a Midway tick). The answer is the same:
 // a hidden subtree is skipped whole, a sub-threshold mesh is hidden for the frame, and an added mesh is seen.
+// PRD-828: the rate bands core's #observeAnimation picks, from the engine in one call per frame.
+void projected_cull_bands() {
+    using namespace tn::engine;
+    auto scene = std::make_shared<Scene>();
+    auto geometry = std::make_shared<BufferGeometry>();
+    auto unit = std::make_shared<BufferAttribute>(Scalar::F32, 6, 3);
+    unit->setXYZ(0, -1, 0, 0).setXYZ(1, 1, 0, 0);  // a sphere of radius 1 at the origin
+    geometry->setAttribute("position", unit);
+    const auto rigAt = [&](double x, double z) {
+        auto rig = std::make_shared<Object3D>();
+        auto part = std::make_shared<Mesh>(geometry, nullptr);
+        rig->position.x = x;
+        rig->position.z = z;
+        rig->add(*part);
+        scene->add(*rig);
+        return std::make_pair(rig, part);
+    };
+    auto [onRay, onRayPart] = rigAt(0, -500);    // the forward ray meets it: never banded
+    auto [mid, midPart] = rigAt(5, -40);         // 2 / 39.3 * 772 = 39 px: band 2
+    auto [far, farPart] = rigAt(20, -400);       // 3.9 px: band 8
+    auto [behind, behindPart] = rigAt(-200, -10);  // outside the frustum: 8
+    auto [hidden, hiddenPart] = rigAt(5, -40);
+    hiddenPart->setVisible(false);               // no part visited: 0, core leaves it alone
+    auto [marked, markedPart] = rigAt(20, -400);
+    markedPart->alwaysRender = true;             // alwaysRender keeps the gameplay rate
+    // A rig is banded by the union of its parts' spheres, as core's #rigSphere grows it: two small parts 360 m
+    // apart read as one large rig, band 1, though each alone reads 2 and 8.
+    auto [pair, pairNear] = rigAt(5, -40);
+    auto pairFar = std::make_shared<Mesh>(geometry, nullptr);
+    pairFar->position.z = -360;
+    pair->add(*pairFar);
+    PerspectiveCamera camera(50, 1, 0.1, 5000);
+    camera.updateMatrixWorld();
+    scene->updateMatrixWorld();
+    const double scale = 720 / (2 * std::tan(25 * 3.141592653589793 / 180));
+    ProjectedCull cull;
+    const std::vector<Object3D*> rigs = {onRay.get(), mid.get(), far.get(), behind.get(),
+                                         hidden.get(), marked.get(), pair.get()};
+    for (int frame = 0; frame < 3; ++frame) {
+        const auto rates = cull.bandRates(rigs, camera, true, scale);
+        CHECK(rates == (std::vector<double>{1, 2, 8, 8, 0, 1, 1}));
+    }
+    // An unresolved camera bands nothing: every visited rig keeps the gameplay rate.
+    CHECK(cull.bandRates(rigs, camera, false, scale) == (std::vector<double>{1, 1, 1, 1, 0, 1, 1}));
+    // The band walk keeps its own bound versions: the cull that follows it still culls the far rig.
+    CHECK(cull.apply(*scene, camera, true, scale, 8, true).culled == 4);  // on-ray, far, behind, the pair's far part
+    cull.restore();
+}
+
 void projected_cull_list() {
     using namespace tn::engine;
     auto scene = std::make_shared<Scene>();
@@ -3305,6 +3455,7 @@ void binding_fn() {
 
 TN_TEST_MAIN({"denoise_over_a_red_field_keeps_one_lane", denoise_over_a_red_field_keeps_one_lane}, {"binding_fn", binding_fn}, {"tsl_ssr_parameters", tsl_ssr_parameters}, {"tsl_texture_store", tsl_texture_store}, {"tsl_mat4_element", tsl_mat4_element}, {"body_result_lowers_once", body_result_lowers_once}, {"body_result_in_a_branch", body_result_in_a_branch}, {"join_converts_integer_parts", join_converts_integer_parts}, {"struct_function_return", struct_function_return}, {"authored_output", authored_output}, {"fragment_node_vec3_is_opaque", fragment_node_vec3_is_opaque}, {"rtt_quad_depth_has_a_vertex_output", rtt_quad_depth_has_a_vertex_output}, {"post_output_depth_has_a_vertex_output", post_output_depth_has_a_vertex_output}, {"skinned_bounds_before_the_first_frame", skinned_bounds_before_the_first_frame}, {"tsl_mat2_scalar_order", tsl_mat2_scalar_order}, {"tsl_bump_map", tsl_bump_map}, {"tsl_normal_map", tsl_normal_map}, {"tsl_flat_varying", tsl_flat_varying}, {"vertex_position_world", vertex_position_world}, {"starter_post_bindings", starter_post_bindings}, {"gpu_bind_escape", gpu_bind_escape}, {"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene},
              {"unsupported_member", unsupported_member}, {"material", material}, {"light", light}, {"spot_target_in_scene", spot_target_in_scene}, {"hierarchy_revision", hierarchy_revision}, {"matrix_evaluations", matrix_evaluations}, {"source_guard", source_guard}, {"shadow_camera_in_scene", shadow_camera_in_scene}, {"lifetime", lifetime},
-             {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_matrix_columns", tsl_matrix_columns}, {"tsl_statements", tsl_statements}, {"tsl_loop_nested", tsl_loop_nested}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind}, {"euler_order_field", euler_order_field}, {"object_addresses", object_addresses}, {"geometry_shapes", geometry_shapes}, {"typed_bytes", typed_bytes}, {"array_offset", array_offset}, {"data_texture_bytes", data_texture_bytes}, {"material_events", material_events}, {"attribute_view_writes", attribute_view_writes},
+             {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_set_uniforms", tsl_set_uniforms}, {"tsl_matrix_columns", tsl_matrix_columns}, {"tsl_statements", tsl_statements}, {"tsl_loop_nested", tsl_loop_nested}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind}, {"euler_order_field", euler_order_field}, {"object_addresses", object_addresses}, {"geometry_shapes", geometry_shapes}, {"typed_bytes", typed_bytes}, {"array_offset", array_offset}, {"data_texture_bytes", data_texture_bytes}, {"material_events", material_events}, {"attribute_view_writes", attribute_view_writes},
              {"attribute_defer", attribute_defer}, {"material_uuid", material_uuid}, {"material_alpha_hash", material_alpha_hash}, {"matrix_walk_count", matrix_walk_count}, {"geometry_index_null", geometry_index_null}, {"world_space_conversions", world_space_conversions},
-             {"projected_cull_list", projected_cull_list}, {"projected_cull_held_restore", projected_cull_held_restore})
+             {"projected_cull_list", projected_cull_list}, {"projected_cull_bands", projected_cull_bands},
+             {"bounds_in_view", bounds_in_view}, {"projected_cull_held_restore", projected_cull_held_restore})

@@ -8,6 +8,7 @@ import {
   formatDoctorReport,
   readProject,
 } from "./doctor.js";
+import { fixAuthoringLayer } from "./index.js";
 
 const DOCTOR_TARGETS: readonly DoctorTarget[] = ["web", "desktop", "android", "ios"];
 const DOCTOR_MODES: readonly DoctorMode[] = ["debug", "release"];
@@ -17,7 +18,7 @@ export function cliHelp(command?: PublicCommand): string {
   if (command === "doctor") {
     return `${[
       "Usage: threenative doctor [--target web|desktop|android|ios] [--mode debug|release]",
-      "                          [--text] [--capture <path>]",
+      "                          [--text] [--capture <path>] [--fix [--force]]",
       "",
       "Checks this project against what the build and the native host assume about it:",
       "installed and version-matched @threenative packages, a portable entry that",
@@ -34,6 +35,11 @@ export function cliHelp(command?: PublicCommand): string {
       "  need once PRD-212 ships it, so a green report here is a forecast, not a release.",
       "Prints JSON by default; --text prints the same report for a person.",
       "--capture forwards a browser census JSON or native TN_PIPELINE_EVENT log to the playtest doctor.",
+      "--fix rewrites this game's authoring layer (AGENTS.md, CLAUDE.md, skills, hooks, MCP configs)",
+      "  from the installed create-threenative, then checks again. To update an existing game:",
+      "  'pnpm up --latest create-threenative @threenative/*', then 'pnpm exec threenative doctor --fix'.",
+      "  A file this game edited is kept and listed, and the run exits 1 (TN_AUTHORING_LAYER_EDITED);",
+      "  --force overwrites it. Git is the undo. .threenative/agent-files.json records what was written.",
       "Exits 0 when nothing failed, 1 when a check failed.",
     ].join("\n")}\n`;
   }
@@ -60,6 +66,8 @@ export async function runDoctorCommand(
   cwd = process.cwd(),
 ): Promise<number> {
   let capturePath: string | undefined;
+  let fix = false;
+  let force = false;
   let mode: DoctorMode | undefined;
   let target: DoctorTarget | undefined;
   const valueFor = (flag: string, value: string | undefined): string => {
@@ -70,6 +78,11 @@ export async function runDoctorCommand(
   for (let index = 0; index < argv.length; index += 1) {
     const flag = argv[index];
     if (flag === "--text") continue;
+    if (flag === "--fix" || flag === "--force") {
+      if (flag === "--fix") fix = true;
+      else force = true;
+      continue;
+    }
     if (flag === "--capture") {
       capturePath = valueFor(flag, argv[index + 1]);
       index += 1;
@@ -96,11 +109,29 @@ export async function runDoctorCommand(
   // A mode with no target would scope nothing: it says how to build something unnamed.
   if (mode !== undefined && target === undefined)
     throw new Error("doctor: '--mode' requires '--target'.");
+  if (force && !fix) throw new Error("doctor: '--force' requires '--fix'.");
+  let kept = 0;
+  if (fix) {
+    const result = await fixAuthoringLayer(cwd, { force });
+    const lines = [
+      ...result.written.map((file) => `wrote ${file}`),
+      ...result.deleted.map((file) => `deleted ${file}`),
+      ...result.kept.map((file) => `kept ${file}`),
+    ];
+    kept = result.kept.length;
+    if (kept > 0)
+      lines.push(
+        `TN_AUTHORING_LAYER_EDITED: kept ${kept} file${kept === 1 ? "" : "s"} this game edited; rerun with --force to overwrite (git is the undo).`,
+      );
+    process.stderr.write(
+      lines.length === 0 ? "authoring layer already current\n" : `${lines.join("\n")}\n`,
+    );
+  }
   const report = diagnoseProject(await readProject(cwd), { capturePath, mode, target });
   process.stdout.write(
     argv.includes("--text") ? formatDoctorReport(report) : `${JSON.stringify(report, null, 2)}\n`,
   );
-  return report.pass ? 0 : 1;
+  return report.pass && kept === 0 ? 0 : 1;
 }
 
 export async function main(argv = process.argv.slice(2)): Promise<void> {

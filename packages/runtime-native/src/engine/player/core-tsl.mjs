@@ -15,7 +15,12 @@ withConstValues(constants, { Vector2, Vector3, Vector4, Color });
 
 // three's `uniform.value = x` (shared with the Wasm back end): a number goes through at once; an
 // edited Color or VectorN goes through `syncUniforms`, which the renderer calls before each frame.
-const live = liveUniforms(globalThis.tsl.uniform, (node, lanes) => globalThis.tsl.setUniform(node, ...lanes));
+const live = liveUniforms(
+  globalThis.tsl.uniform,
+  (node, lanes) => globalThis.tsl.setUniform(node, ...lanes),
+  // PRD-828: a sync's changed uniforms cross as one call.
+  globalThis.tsl.setUniforms && ((nodes, counts, lanes) => globalThis.tsl.setUniforms(nodes, counts, lanes)),
+);
 // A boolean uniform (the exposure meter's `enabled`) is the live float compared with zero, as on the Wasm back end.
 export const uniform = booleanUniforms(live.uniform, (scalar) => globalThis.tsl.notEqual(scalar, 0));
 export const uniformArray = live.uniformArray;

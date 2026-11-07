@@ -116,6 +116,30 @@ describe("the MCP client", () => {
     }
   });
 
+  it("should refuse a reply that is not JSON-RPC 2.0, or that carries no result object", async () => {
+    for (const line of [
+      { id: 1, result: {} },
+      { id: 1, jsonrpc: "1.0", result: {} },
+      { id: 1, jsonrpc: "2.0" },
+      { id: 1, jsonrpc: "2.0", result: [] },
+    ]) {
+      const script = server([
+        "process.stdin.once('data', (chunk) => {",
+        `  process.stdout.write(${JSON.stringify(`${JSON.stringify(line)}\n`)});`,
+        "});",
+        "setTimeout(() => {}, 5_000);",
+      ]);
+      const client = startMcpServer({ ...script, label: "sloppy server", timeoutMs: 3_000 });
+      try {
+        await expect(client.request("tools/list"), JSON.stringify(line)).rejects.toThrow(
+          /TN_MCP_REPLY: sloppy server tools\/list/u,
+        );
+      } finally {
+        client.close();
+      }
+    }
+  });
+
   it("should surface a JSON-RPC error as a refusal naming the method", async () => {
     const script = server([
       "process.stdin.once('data', (chunk) => {",

@@ -127,7 +127,12 @@ export function startMcpServer(options: IMcpServerOptions): IMcpClient {
 
   const lines = createInterface({ input: child.stdout });
   lines.on("line", (line) => {
-    let parsed: { error?: { message?: string }; id?: unknown; result?: Record<string, unknown> };
+    let parsed: {
+      error?: { message?: string };
+      id?: unknown;
+      jsonrpc?: unknown;
+      result?: unknown;
+    };
     try {
       parsed = JSON.parse(line) as typeof parsed;
     } catch {
@@ -148,7 +153,28 @@ export function startMcpServer(options: IMcpServerOptions): IMcpClient {
       );
       return;
     }
-    entry.resolve(parsed.result ?? {});
+    // The strictest variant, restored: a reply that names no protocol, or answers without an
+    // object result, is refused rather than read as an empty success.
+    if (parsed.jsonrpc !== "2.0") {
+      entry.reject(
+        new McpError("TN_MCP_REPLY", `${label} ${entry.method}: not a JSON-RPC 2.0 reply`),
+      );
+      return;
+    }
+    if (
+      typeof parsed.result !== "object" ||
+      parsed.result === null ||
+      Array.isArray(parsed.result)
+    ) {
+      entry.reject(
+        new McpError(
+          "TN_MCP_REPLY",
+          `${label} ${entry.method}: the reply carries no result object`,
+        ),
+      );
+      return;
+    }
+    entry.resolve(parsed.result as Record<string, unknown>);
   });
 
   const request = (method: string, params: Record<string, unknown> = {}) => {

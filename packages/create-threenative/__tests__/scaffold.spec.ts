@@ -88,7 +88,8 @@ async function withBrokenTemplateFile<T>(
     // reaches up to (template-assets, agent-docs, agent-files). The copied tree
     // is the templates dir; the siblings ride along so a test breaks exactly the file it names.
     const packageDirectory = path.dirname(TEMPLATE_ROOT);
-    for (const sibling of ["template-assets", "agent-docs", "agent-files"]) {
+    // package.json: the authoring stamp records the package version (PRD-829).
+    for (const sibling of ["template-assets", "agent-docs", "agent-files", "package.json"]) {
       await cp(path.join(packageDirectory, sibling), path.join(root, sibling), {
         recursive: true,
       });
@@ -112,67 +113,67 @@ async function withBrokenTemplateFile<T>(
 const SCAFFOLD_TREE_HASHES: Readonly<Record<string, IScaffoldTreePin>> = {
   // scaffold-pin:begin
   "action-rpg": {
-    shared: "b0835d2933be141df1342add9f166cda4b4ee48cb128dbcf8c6e6b5338828572",
+    shared: "0b85c3ee13a2a94c38093e42421a6553fc7e04f4913a8cd8c16b58f2f5bc66fb",
     kit: "a089e811e0921922ebbb7908a06469dffad94e5c0ee65a869c055c533b2da20d",
   },
   adventure: {
-    shared: "3b6a65384397ad4fcde5179b6d7b795ccf504ab76fa21ab0c3cb998389cf6bd6",
+    shared: "33a8bf4e58dbaae1aa939e911b594a1118416682167eaece0d5ce872c86c28aa",
     kit: "bda581d964fa8d028116507f6c22e8071b14e1d1455255441adf7039a8b810f1",
   },
   collectathon: {
-    shared: "9f91c785a0d40371417559c17eb4ad9ebd739796a20e716c9290398f44e31d07",
+    shared: "d592ad9b2413a95ebc0d845818f06f89f7f9e443502383398100454cb0fa7479",
     kit: "51104ab8cd60af8bf829ddfee2ae9f085b294856b0c8e02831fb10e585cc38af",
   },
   kart: {
-    shared: "218aac5c0eaefff40b1ab6dab8e353c0cd2e182e7aa6b8009477655e739c6b76",
+    shared: "616a5515cd0d32a982b9d4c82bb3ea20e975dff1fe5bbadb04a95e855b8eed1c",
     kit: "35f8006d6f569c10527363e56c5d87851d33cd634a4e17dee2c04030523198e5",
   },
   minimal: {
-    shared: "a5d6854b2e6b5240a97b6aa6959095c98fd8dbc238ad2570562bbd937a31f70d",
+    shared: "409d6996a7d43589b8ccf6f91431dde524fa9bd72dc8ac131cf0fdfd3f2118cf",
     kit: "8ce6ff050355b9afbc40c3b4fbcf9159603e964c953b082b1f407ce2ebe9bde4",
   },
   platformer: {
-    shared: "9b74e0c1cbfeda86cde77cc0e17aac84f189dd88742e8bcb961f1ca75327940e",
+    shared: "c08cfc5a51d9682780f8b61956d3cca6195f9d42ffa54563bc87a87ea68f6e21",
     kit: "a6565e0cddd574f5b9287632639fe440d0de07123b4ffdad182c9a4add15fdf7",
   },
   puzzle: {
-    shared: "b40517a665a9b338f78494f01fa32742d7af433cbd7b9436fcce95a08bb7812f",
+    shared: "d9c3209a74ae5d8874b00d5c5f419d5815be4848eaec1db29b0602fd102caf10",
     kit: "35adbfd615d6977a169f99bfdec8f9506eec9d4f96b6c5cd5ac3d54cf3c2d58e",
   },
   racing: {
-    shared: "35f9ca4338b5af804986c543866bf4cbef8520bec7a753e7df48e46b51c75ed3",
+    shared: "569bdb4aa075f114f4aa156c9a014dfad7720a32536404e4029d4e7e39215785",
     kit: "c168035be8a2356c5f8fa9b2800972d4ef29af4b63a95e31b6560ca4736d902b",
   },
   rain: {
-    shared: "767d4f566511b7d2cdefb5de42e8cd49e13d8859c8ec3041323ef580270462d6",
+    shared: "b52eb23ccd86b2b93701b6f6c97a97375ee3bc6af6d856f25bd9bc9a2bd53222",
     kit: "92424f0927f4faf5dddf76105ad45b987d0bcd630b419a79461c299a35c6b4bd",
   },
   rts: {
-    shared: "a3aa0ddd8bfc0946f3769f4c48d346b5b2b18499df2f0f41cdb7147d1b33b59e",
+    shared: "03f7fe35fff3bc2f7a412315c794e5b7b8e67b362ac321b7480ae57fc71505c5",
     kit: "beb6ebf54444d17ea4ae3ae271a08c31b387e33d9fd68904ccc6c44dcbfdafa9",
   },
   runner: {
-    shared: "726a1bd15c31764734ec1ce8d2eedc15d9fb08f7ea17d08dd7ace80b10e105b9",
+    shared: "e5f01182dbc4e241335dcc64d36a296159d9d51b86c7b1df7ca5e0a34e29183d",
     kit: "e5c544d818d2efa231f8eb7a65e7d031a348a16f64869c2d9d21f93331f50b42",
   },
   sailing: {
-    shared: "d898c95114a3b1c44c259855028a0c81adefb0b047530f7d84f7163730b8adf8",
+    shared: "b61e407d4f13986b74611cc1a940ff226de1c3b71619bc4187d554289acbf656",
     kit: "d45b2c9e6783a3373f916f8a436d62dc433372dd9a491a010ce8b9e64dad15e1",
   },
   shooter: {
-    shared: "6e62985fc65593e68c50104a834147ae86c3d89f23dea4bc19f0639a9d5efaae",
+    shared: "d5ba9a2a07e1cd9ae859781a14b8c038b71ef0fa77570c20db684010bd091887",
     kit: "8db01aa5616e998055321632d6405f16d3ab74ccdc8f6e451731ee2083a5a2df",
   },
   snow: {
-    shared: "4ba2236312c0b9cd62053fd682e18dbfed8b65bb2504e538d573597a149eecc0",
+    shared: "bf747d6805cd24709b421f7a5cca2058c644c5b51af12c977754f2f876fe0a4b",
     kit: "1cf38c3b4c147a29143d911bcd1997715955f1d7a698d3c1d0762fc7e8c4b400",
   },
   starter: {
-    shared: "4ba2a1b5253f5dde50fe184fbd30543fc965601fde0530e042dadce9d2bdc70f",
+    shared: "44a216f2430e5cebfbf5867c18a5648739c8767ed087d14413afe585c1cb37d5",
     kit: "592ca551a594e846386fb656c1dda11410f63402467ff3eee1db532793d2e4fe",
   },
   "tower-defense": {
-    shared: "1298c4e74f4b66b9ff62185f72e8b1c0d8382b2de93b7607d317bda004b7739a",
+    shared: "cabe7ef27b697c8edd409f5136571331b8379c3e491a4d156160ad1aee1cdffe",
     kit: "4e777a322c9af2bb2841d5d4a314b09ed0c6d74079252150f1d7e95ef04fab69",
   },
   // scaffold-pin:end
@@ -359,6 +360,48 @@ describe("create-threenative", () => {
       }
     },
   );
+
+  it("stamps the authoring layer it wrote, and doctor reports it ok (PRD-829)", async () => {
+    const root = await makeTempDir("threenative-scaffold-stamp-");
+    try {
+      const { target } = await createProject(
+        { install: false, target: "stamped", template: "shooter" },
+        root,
+      );
+      const stamp = JSON.parse(
+        await readFile(path.join(target, ".threenative/agent-files.json"), "utf8"),
+      ) as { createThreenative: string; kit: string; files: Record<string, string> };
+      const own = JSON.parse(
+        await readFile(path.resolve("packages/create-threenative/package.json"), "utf8"),
+      ) as { version: string };
+      expect({ version: stamp.createThreenative, kit: stamp.kit }).toEqual({
+        version: own.version,
+        kit: "shooter",
+      });
+      for (const file of [
+        "AGENTS.md",
+        "CLAUDE.md",
+        ".claude/settings.json",
+        ".claude/hooks/discovery-gate.mjs",
+        ".agents/skills/threenative-capabilities/SKILL.md",
+      ])
+        expect(Object.keys(stamp.files)).toContain(file);
+      for (const [file, hash] of Object.entries(stamp.files))
+        expect(
+          createHash("sha256")
+            .update(await readFile(path.join(target, file)))
+            .digest("hex"),
+          file,
+        ).toBe(hash);
+      const { diagnoseProject, readProject } = await import("../src/doctor.js");
+      const report = diagnoseProject(await readProject(target));
+      expect(report.checks.find(({ name }) => name === "authoring layer")).toMatchObject({
+        status: "ok",
+      });
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  }, 60_000);
 
   it("keeps every no-install scaffold tree byte-stable, in a shared and a kit hash", async () => {
     const root = await makeTempDir("threenative-scaffold-stability-");

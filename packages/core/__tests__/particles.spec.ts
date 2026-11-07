@@ -411,6 +411,22 @@ describe("particle bounds and culling", () => {
     },
   );
 
+  it("asks the native engine's one-call view test when the emitter has one (PRD-828)", () => {
+    const gpu = renderer([]);
+    const emitter = particles({ bounds: localBounds, graceSeconds: 0 });
+    emitter.position.set(100, 0, -5);
+    const engine = vi.fn(() => true);
+    Object.assign(emitter, { __boundsInView: engine });
+    emitter.attachRenderer(gpu);
+    const view = camera();
+    emitter.process(gpu, view);
+    expect(engine).toHaveBeenCalledWith(view, localBounds, Number.NaN);
+    expect(emitter.cull.reason).toBeUndefined();
+    engine.mockReturnValue(false);
+    emitter.process(gpu, view);
+    expect(emitter.cull.reason).toBe("outside-view");
+  });
+
   it("uses an override from frame zero without measurement, and Infinity disables view culling", () => {
     vi.useFakeTimers({ toFake: ["performance"] });
     const gpu = renderer([]);
