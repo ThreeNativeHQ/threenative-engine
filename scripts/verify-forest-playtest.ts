@@ -113,6 +113,9 @@ export async function callTerrainGenerate(project: string): Promise<string> {
     command: "node",
     cwd: project,
     label: "terrain server",
+    // A forest cook bakes a whole `world.glb`; the client's 20 s default is a request deadline,
+    // not a cook deadline.
+    timeoutMs: 600_000,
   });
   try {
     await client.request("initialize", {});

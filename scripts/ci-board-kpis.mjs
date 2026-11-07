@@ -180,7 +180,8 @@ const ndjson = (text) =>
 export function measureBoards({
   since,
   repo = process.env.GITHUB_REPOSITORY ??
-    gh(["repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"]),
+    // `gh` answers with a trailing newline, and this value is spliced into API paths.
+    gh(["repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"]).trim(),
   npmPackage = "@threenative/core",
 }) {
   const runs = ndjson(

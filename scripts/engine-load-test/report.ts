@@ -4,11 +4,6 @@
 
 import os from "node:os";
 import {
-  type IPerfHostLoadSource,
-  absolutesVerdict,
-  readHostLoad as sharedReadHostLoad,
-} from "@threenative/playtest/runner";
-import {
   FRAME_STAT_KEYS,
   type IFoxMeasurement,
   type IFrameStats,
@@ -29,6 +24,13 @@ import {
   type RenderMode,
   isRealisticRung,
 } from "../../examples/engine-load-test/src/workload.js";
+// Relative source, like every other script's package import: a `@threenative/*` specifier resolves
+// to `dist/`, so a script would silently run whatever build happened to be on disk.
+import {
+  type IPerfHostLoadSource,
+  absolutesVerdict,
+  readHostLoad as sharedReadHostLoad,
+} from "../../packages/playtest/src/runner/perf.js";
 import { blankFrameReason } from "../capture-guard.js";
 
 function parseFrameRgba(value: unknown, label: string): NonNullable<IRunReportRung["frameRgba"]> {
@@ -951,7 +953,7 @@ export function parseRunReport(value: unknown): IRunReport {
  * verdict a playtest gives. This lane keeps only its own error code, which the bench scripts already
  * report by name.
  */
-export { absolutesVerdict } from "@threenative/playtest/runner";
+export { absolutesVerdict } from "../../packages/playtest/src/runner/perf.js";
 
 /** The reader's input, kept under this lane's name so its callers and spec do not change. */
 export type IHostLoadSource = IPerfHostLoadSource;

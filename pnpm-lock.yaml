@@ -170,9 +170,6 @@ importers:
       '@threenative/assets':
         specifier: workspace:*
         version: link:packages/assets
-      '@threenative/playtest':
-        specifier: workspace:*
-        version: link:packages/playtest
       '@types/node':
         specifier: 20.19.43
         version: 20.19.43

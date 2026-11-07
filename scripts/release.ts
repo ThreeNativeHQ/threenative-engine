@@ -606,9 +606,13 @@ async function main(args: readonly string[]): Promise<void> {
   }
 
   if (!skipGates) {
-    run("pnpm", ["typecheck"], { cwd: REPO, label: "pnpm typecheck" });
-    run("pnpm", ["lint"], { cwd: REPO, label: "pnpm lint" });
-    run("pnpm", ["test"], { cwd: REPO, label: "pnpm test" });
+    run("pnpm", ["typecheck"], {
+      code: "TN_RELEASE_STEP_FAILED",
+      cwd: REPO,
+      label: "pnpm typecheck",
+    });
+    run("pnpm", ["lint"], { code: "TN_RELEASE_STEP_FAILED", cwd: REPO, label: "pnpm lint" });
+    run("pnpm", ["test"], { code: "TN_RELEASE_STEP_FAILED", cwd: REPO, label: "pnpm test" });
   }
   run("pnpm", ["build"], { cwd: REPO, label: "pnpm build" });
 

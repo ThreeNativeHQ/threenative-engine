@@ -972,8 +972,8 @@ function waitForDevServer(
   );
   return waitForServer({
     child,
-    detail: `Dev server for '${template}' at project '${project}'; corrective command: ${correctiveCommand}.`,
-    label: "TN_GOLDEN_PATH_DEV_UNAVAILABLE",
+    detail: `TN_GOLDEN_PATH_DEV_UNAVAILABLE: dev server for '${template}' at project '${project}'; corrective command: ${correctiveCommand}.`,
+    label: "golden path dev server",
     timeoutMs: 90_000,
     url,
   });

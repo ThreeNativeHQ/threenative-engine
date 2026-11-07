@@ -64,6 +64,19 @@ describe("the exec runner", () => {
     ).rejects.toThrow(/Killed after 50ms without finishing/u);
   });
 
+  it("should return the whole capture even when the child writes right before exiting", async () => {
+    // `close` fires after stdio drains, `exit` before it: resolving on `exit` can truncate a tail
+    // that the caller greps (the desktop probe looks for a `TN_ENGINE_` refusal there).
+    // The child exits from the write callback, so the bytes are the pipe's, not a flush race in
+    // the test's own server.
+    const output = await runAsync(
+      node,
+      ["-e", "process.stdout.write('x'.repeat(200_000), () => process.exit(0));"],
+      { stdio: "capture" },
+    );
+    expect(output.length).toBe(200_000);
+  });
+
   it("should reject a command that cannot start", async () => {
     await expect(runAsync("tn-no-such-binary", [])).rejects.toThrow(/did not start/u);
   });

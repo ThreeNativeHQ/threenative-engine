@@ -57,8 +57,14 @@ function failure(
   options: IExecOptions,
   exitCode: number | null,
   detail?: string,
+  signal?: NodeJS.Signals | null,
 ): ExecError {
-  const how = exitCode === null ? "did not start" : `exited ${String(exitCode)}`;
+  const how =
+    signal !== undefined && signal !== null
+      ? `was killed by ${signal}`
+      : exitCode === null
+        ? "did not start"
+        : `exited ${String(exitCode)}`;
   const suffix = detail === undefined || detail === "" ? "" : `\n${detail}`;
   return new ExecError(
     options.code ?? "TN_EXEC_FAILED",
@@ -130,7 +136,9 @@ export function runAsync(
       if (timer !== undefined) clearTimeout(timer);
       reject(failure(command, args, options, null, error.message));
     });
-    child.once("exit", (exitCode) => {
+    // `close`, not `exit`: `exit` fires when the child ends, `close` when its stdio has drained, and
+    // a capture that resolved early would hand back a truncated log.
+    child.once("close", (exitCode, signal) => {
       if (timer !== undefined) clearTimeout(timer);
       if (timedOut) {
         reject(
@@ -140,12 +148,13 @@ export function runAsync(
             options,
             exitCode,
             `Killed after ${String(options.timeoutMs)}ms without finishing.`,
+            signal,
           ),
         );
         return;
       }
       if (exitCode === 0) resolve(output);
-      else reject(failure(command, args, options, exitCode));
+      else reject(failure(command, args, options, exitCode, undefined, signal));
     });
   });
 }

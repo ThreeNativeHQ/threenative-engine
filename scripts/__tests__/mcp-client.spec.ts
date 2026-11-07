@@ -89,6 +89,23 @@ describe("the MCP client", () => {
     }
   });
 
+  it("should refuse a request when the server closes its input mid-flight", async () => {
+    // A server that exits leaves the next write facing a closed pipe. Without a listener on stdin
+    // that EPIPE is an uncaught stream error and takes the script with it.
+    const script = server([
+      "process.stdin.once('data', () => {",
+      "  process.stdin.destroy();",
+      "  setTimeout(() => process.exit(0), 20);",
+      "});",
+    ]);
+    const client = startMcpServer({ ...script, label: "closing server", timeoutMs: 5_000 });
+    try {
+      await expect(client.request("tools/list")).rejects.toThrow(/closing server/u);
+    } finally {
+      client.close();
+    }
+  });
+
   it("should surface a JSON-RPC error as a refusal naming the method", async () => {
     const script = server([
       "process.stdin.once('data', (chunk) => {",

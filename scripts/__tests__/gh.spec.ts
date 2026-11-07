@@ -84,6 +84,32 @@ describe("the gh wrapper", () => {
     expect(fake.calls()).toBe(1);
   });
 
+  it("should not repeat a shape it does not recognise as a read", () => {
+    for (const args of [
+      ["api", "repos/a/b/actions/workflows/1/dispatches", "--method=POST"],
+      ["api", "repos/a/b/actions/workflows/1/dispatches", "-XPOST"],
+      ["api", "repos/a/b/issues/1", "--raw-field", "body=hi"],
+      ["workflow", "run", "ci.yml"],
+      ["release", "upload", "v1", "file.tgz"],
+      ["secret", "set", "TOKEN", "-b", "x"],
+    ]) {
+      const fake = withFake(1);
+      expect(() => gh(args), args.join(" ")).toThrow(/after 1 attempt/u);
+      expect(fake.calls(), args.join(" ")).toBe(1);
+    }
+  });
+
+  it("should repeat a shape it knows is a read", () => {
+    for (const args of [
+      ["run", "view", "7"],
+      ["api", "repos/a/b"],
+    ]) {
+      const fake = withFake(1, "body\n");
+      expect(gh(args), args.join(" ")).toBe("body\n");
+      expect(fake.calls(), args.join(" ")).toBe(2);
+    }
+  });
+
   it("should treat an api call that sends a body as a write", () => {
     const fake = withFake(1);
     expect(() => gh(["api", "repos/a/b/issues/1/comments", "-f", "body=hi"])).toThrow(

@@ -65,8 +65,9 @@ export class McpError extends Error {
 /**
  * Starts a stdio MCP server and returns the client that talks to it.
  *
- * The client does not handshake for you — `initialize` then `notifications/initialized` are the
- * caller's, because a server's `serverInfo` is part of what some callers record.
+ * `initialize()` is the handshake (`initialize`, then `notifications/initialized`) because the
+ * protocol requires the notification and a caller that wrote it by hand could forget it; a caller
+ * that wants one of the requests without the handshake uses `request()`.
  *
  * @situation talk to an MCP server over stdio from a script
  * @constraint every failure carries the server's own stderr, and no request outlives its deadline
@@ -77,6 +78,7 @@ export function startMcpServer(options: IMcpServerOptions): IMcpClient {
   let stderr = "";
   let nextId = 1;
   let closed = false;
+  let terminal: Error | undefined;
   const pending = new Map<number, IPending>();
 
   const child: ChildProcessWithoutNullStreams = spawn(options.command, [...options.args], {
@@ -86,6 +88,14 @@ export function startMcpServer(options: IMcpServerOptions): IMcpClient {
   });
   child.stderr.on("data", (chunk: Buffer) => {
     stderr += String(chunk);
+  });
+  // A server that dies mid-request leaves the next write facing a closed pipe. Without this
+  // listener that EPIPE is an uncaught stream error and takes the script with it; with it, the
+  // pending requests are refused like any other death, naming the server.
+  child.stdin.on("error", (error: Error) => {
+    terminal =
+      terminal ?? new McpError("TN_MCP_EXITED", `${label} closed its input: ${error.message}`);
+    fail(terminal);
   });
 
   const fail = (error: Error): void => {
@@ -140,8 +150,6 @@ export function startMcpServer(options: IMcpServerOptions): IMcpClient {
     }
     entry.resolve(parsed.result ?? {});
   });
-
-  let terminal: Error | undefined;
 
   const request = (method: string, params: Record<string, unknown> = {}) => {
     if (terminal !== undefined) return Promise.reject(terminal);

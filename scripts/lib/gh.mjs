@@ -8,36 +8,50 @@ import { execFileSync } from "node:child_process";
 /** Board and log queries return megabytes of JSON; the default 1 MB buffer truncates them. */
 const MAX_BUFFER = 512 * 1024 * 1024;
 
-/** Subcommands that change GitHub state, so a retry could apply the change twice. */
-const MUTATING_SUBCOMMANDS = new Set([
-  "cancel",
-  "close",
-  "comment",
-  "create",
-  "delete",
-  "edit",
-  "enable",
-  "disable",
-  "merge",
-  "ready",
-  "rename",
-  "rerun",
-  "review",
-  "unlock",
-  "update",
+/**
+ * The read shapes a CI lane repeats safely: `gh <verb> <sub>` pairs this repository's scripts use to
+ * ask a question. Everything else — a write, a dispatch, a download, a subcommand added tomorrow —
+ * is sent once, because a retry can apply a change twice and a deny-list cannot see what it has
+ * never heard of.
+ */
+const RETRYABLE = new Set([
+  "issue list",
+  "issue view",
+  "pr checks",
+  "pr list",
+  "pr view",
+  "release list",
+  "release view",
+  "repo view",
+  "run list",
+  "run view",
+  "search prs",
+  "search issues",
+  "workflow list",
+  "workflow view",
 ]);
 
-/** Whether `args` reaches a write: a mutating subcommand, or an `api` call that sends a body or a method. */
-function changesState(args) {
-  if (MUTATING_SUBCOMMANDS.has(args[1])) return true;
-  if (args[0] !== "api") return false;
-  return args.some(
-    (arg) =>
+/** Whether `args` is a read this wrapper may repeat: an allow-listed pair, and not an `api` write. */
+function isRepeatableRead(args) {
+  // `gh api <path>` is a read unless it carries a body or a method; every other verb has to name a
+  // subcommand this repository's scripts already ask with.
+  if (args[0] !== "api" && !RETRYABLE.has(`${args[0]} ${args[1]}`)) return false;
+  if (args[0] !== "api") return true;
+  // `gh api` is a read unless it carries a body or a method. Every spelling counts here, including
+  // the joined forms (`--method=POST`, `-XPOST`) and `--raw-field`/`--input`.
+  return !args.some(
+    (arg, index) =>
       arg === "-f" ||
       arg === "-F" ||
       arg === "--field" ||
-      (arg === "-X" && args[args.indexOf(arg) + 1] !== "GET") ||
-      arg === "--input",
+      arg === "--raw-field" ||
+      arg === "--input" ||
+      arg.startsWith("--field=") ||
+      arg.startsWith("--raw-field=") ||
+      arg.startsWith("--input=") ||
+      arg.startsWith("--method=") ||
+      /^-X/u.test(arg) ||
+      (arg === "-X" && (args[index + 1] ?? "GET") !== "GET"),
   );
 }
 
@@ -54,7 +68,7 @@ function label(args) {
  * @returns {string}
  */
 export function gh(args, options = {}) {
-  const retries = options.retries ?? (changesState(args) ? 0 : 1);
+  const retries = options.retries ?? (isRepeatableRead(args) ? 1 : 0);
   let last = "";
   for (let attempt = 0; attempt <= retries; attempt += 1) {
     try {
