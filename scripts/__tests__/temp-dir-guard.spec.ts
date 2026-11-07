@@ -11,6 +11,10 @@ const allowedProductionCreators = new Map<string, string>([
     "The starter-asset archive extracts into a sibling scratch directory renamed into the cache and removed in finally.",
   ],
   [
+    "packages/create-threenative/src/index.ts",
+    "Rendering the authoring layer writes one scratch folder per run, for the scaffold that stamps it and for doctor --fix that copies from it, and both remove it in finally.",
+  ],
+  [
     "packages/assets/src/watch.ts",
     "The dev watcher stages each changed input through a scratch project removed in finally.",
   ],
