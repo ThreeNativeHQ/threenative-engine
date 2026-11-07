@@ -152,7 +152,7 @@ decline the rest. The gaps checked and not filed are listed below the table.
 | Nanite | [PRD-600](rendering/PRD-600-a-clustered-mesh-submits-only-the-clusters-the-view-holds.md) | A clustered mesh submits only the clusters the view holds | — |
 | Nanite | [PRD-601](rendering/PRD-601-far-clusters-keep-the-shading-of-the-source-mesh.md) | Far clusters keep the shading of the source mesh | — |
 | Nanite | [PRD-602](rendering/PRD-602-a-clustered-shadow-caster-draws-what-its-shadow-texel-resolves.md) | A clustered shadow caster draws what its shadow texel resolves | PRD-600 (optional) |
-| Lumen | [PRD-603](rendering/PRD-603-probes-refresh-by-tracing-the-packed-scene-not-by-drawing-it-six-times.md) | Probes refresh by tracing the packed scene, not by six raster captures | — |
+| Lumen | [PRD-603](../done/PRD-603-probes-refresh-by-tracing-the-packed-scene-not-by-drawing-it-six-times.md) | Probes refresh by tracing the packed scene, not by six raster captures | — |
 | Lumen | [PRD-604](rendering/PRD-604-a-surface-is-lit-only-by-probes-that-can-see-it.md) | A surface is lit only by probes that can see it (no leaks through walls) | — |
 | Lumen | [PRD-605](rendering/PRD-605-the-probe-field-follows-the-camera-in-nested-rings.md) | The probe field follows the camera in nested rings | PRD-603, PRD-604 (phases 2–3) |
 | World Partition | [PRD-606](open-world/PRD-606-a-fast-travel-destination-is-ready-before-the-cover-lifts.md) | A fast-travel destination is ready before the cover lifts | — |
@@ -211,7 +211,7 @@ for its own behaviour with that pipeline, and records its visual verdict as a PR
 | Calibration scenes | [PRD-638](../done/PRD-638-calibration-scenes-are-built-in-unreal-and-captured-as-the-gi-target.md) | Calibration scenes are built in Unreal and captured as the GI target | PRD-631 Phase 1 |
 | Scene recreation, visualize modes | [PRD-646](gi/PRD-646-threenative-recreates-each-unreal-calibration-scene-exactly.md) | ThreeNative recreates each Unreal calibration scene exactly | PRD-638, PRD-632 |
 | Calibration loop | [PRD-647](../done/PRD-647-a-visual-judge-calibrates-gi-against-the-unreal-scenes-until-parity.md) | A visual judge calibrates GI against the Unreal scenes until parity | PRD-638, PRD-646 |
-| Radiance cache | [PRD-603](rendering/PRD-603-probes-refresh-by-tracing-the-packed-scene-not-by-drawing-it-six-times.md) | `RadianceCache` refreshes by tracing the packed scene | — |
+| Radiance cache | [PRD-603](../done/PRD-603-probes-refresh-by-tracing-the-packed-scene-not-by-drawing-it-six-times.md) | `RadianceCache` refreshes by tracing the packed scene | — |
 | Irradiance field gather | [PRD-604](rendering/PRD-604-a-surface-is-lit-only-by-probes-that-can-see-it.md) | A surface is lit only by probes that can see it | — |
 | Radiance cache clipmaps | [PRD-605](rendering/PRD-605-the-probe-field-follows-the-camera-in-nested-rings.md) | The probe field follows the camera in nested rings | PRD-603, PRD-604 |
 | Dynamic updates | [PRD-VQ-09](../rendering/PRD-VQ-09-incremental-diffuse-relighting.md) | A door that opens and a lamp that switches change the bounce light | PRD-603, PRD-647 |

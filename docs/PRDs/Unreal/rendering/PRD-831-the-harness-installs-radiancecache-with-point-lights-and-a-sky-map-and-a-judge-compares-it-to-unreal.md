@@ -1,7 +1,7 @@
 # PRD-831 — The harness installs RadianceCache with point lights and a sky map, and a judge compares it to Unreal
 
 **Status:** IN PROGRESS (point lights in the kernel done; the harness arm is blocked on the owned engine)
-**Priority:** P2 — closes the Unreal comparison that [PRD-603](PRD-603-probes-refresh-by-tracing-the-packed-scene-not-by-drawing-it-six-times.md) could not run
+**Priority:** P2 — closes the Unreal comparison that [PRD-603](../../done/PRD-603-probes-refresh-by-tracing-the-packed-scene-not-by-drawing-it-six-times.md) could not run
 **Complexity:** 6 (MEDIUM-HIGH) — a trace-kernel feature, a harness replacement of `giCache.ts`, and a PRD-647 judge round
 **Owner:** unassigned
 **Depends on:** PRD-603 (the traced `RadianceCache`)
