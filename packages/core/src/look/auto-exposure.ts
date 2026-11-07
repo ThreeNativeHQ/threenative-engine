@@ -9,7 +9,6 @@ import {
   type NodeFrame,
   NodeMaterial,
   NodeUpdateType,
-  QuadMesh,
   RendererUtils,
 } from "three/webgpu";
 import {
@@ -34,6 +33,7 @@ import {
   reduceExposure,
 } from "./exposure-graph.js";
 import { ExposureReadback } from "./exposure-readback.js";
+import { drawQuadPass } from "./quad-pass.js";
 
 /** Scene-referred exposure changes light, never coverage/compositing alpha. */
 export function applyExposure(colour: Node<"vec4">, exposure: Node<"float">): Node<"vec4"> {
@@ -60,7 +60,6 @@ export class AutoExposureNode extends Node<"float"> {
   readonly #seed = uniform(0);
   readonly #enabled = uniform(false);
   readonly #bias = uniform(0);
-  readonly #quad: QuadMesh;
   readonly #meterMaterial = new NodeMaterial();
   readonly #reduceMaterial = new NodeMaterial();
   readonly #tilesMaterial = new NodeMaterial();
@@ -116,8 +115,6 @@ export class AutoExposureNode extends Node<"float"> {
       decode,
       this.#bias,
     );
-    // Three 0.187's QuadMesh takes its material in the constructor; each pass replaces it before drawing.
-    this.#quad = new QuadMesh(this.#meterMaterial);
   }
 
   override setup(builder: NodeBuilder): Node<"float"> {
@@ -213,25 +210,17 @@ export class AutoExposureNode extends Node<"float"> {
           this.#reduced.value = previous.texture;
           this.#reduceSize.value.set(previous.width, previous.height);
         }
-        this.#quad.material = i === 0 ? this.#meterMaterial : this.#reduceMaterial;
-        renderer.setRenderTarget(level);
-        this.#quad.render(renderer);
+        drawQuadPass(renderer, i === 0 ? this.#meterMaterial : this.#reduceMaterial, level);
       }
       const final = this.#levels.at(-1);
       if (final === undefined) throw new Error("Exposure reduction is empty.");
       this.#blocks.value = final.texture;
       this.#blockSize.value.set(final.width, final.height);
-      this.#quad.material = this.#tilesMaterial;
-      renderer.setRenderTarget(this.#tilesTarget);
-      this.#quad.render(renderer);
-      this.#quad.material = this.#histogramMaterial;
-      renderer.setRenderTarget(this.#histogramTarget);
-      this.#quad.render(renderer);
+      drawQuadPass(renderer, this.#tilesMaterial, this.#tilesTarget);
+      drawQuadPass(renderer, this.#histogramMaterial, this.#histogramTarget);
       const write = this.#writeTarget;
       this.#previous.value = this.#readTarget.texture;
-      this.#quad.material = this.#adaptMaterial;
-      renderer.setRenderTarget(write);
-      this.#quad.render(renderer);
+      drawQuadPass(renderer, this.#adaptMaterial, write);
       this.#result.value = write.texture;
       this.#writeTarget = this.#readTarget;
       this.#readTarget = write;

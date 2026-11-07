@@ -6,10 +6,10 @@ import {
   type NodeFrame,
   NodeMaterial,
   NodeUpdateType,
-  QuadMesh,
   RendererUtils,
   type TextureNode,
 } from "three/webgpu";
+import { drawQuadPass } from "./quad-pass.js";
 
 type ColourTexture = TextureNode;
 
@@ -103,7 +103,6 @@ export class UnrealBloomNode extends Node<"vec3"> {
   static readonly schedule = bloomSchedule;
   readonly input: ColourTexture;
   readonly #size = new Vector2();
-  readonly #quad: QuadMesh;
   readonly #downMaterials: NodeMaterial[] = [];
   readonly #downTargets: RenderTarget[] = [];
   readonly #downTextures: ColourTexture[] = [];
@@ -142,8 +141,6 @@ export class UnrealBloomNode extends Node<"vec3"> {
       })();
       this.#downMaterials.push(material);
     }
-    // Three 0.187's QuadMesh takes its material in the constructor; each pass replaces it before drawing.
-    this.#quad = new QuadMesh(this.#downMaterials[0] as NodeMaterial);
     // Stage 1 is Bloom1 (tightest, level 1); stage 6 is Bloom6 (widest, level 6). Unreal runs them
     // widest first, each adding the one before it.
     const { sizes, tints, intensity, gaussianIntensity } = unrealBloomSettings;
@@ -264,17 +261,11 @@ export class UnrealBloomNode extends Node<"vec3"> {
     this.#rendererState = RendererUtils.resetRendererState(renderer, this.#rendererState);
     try {
       for (const [i, target] of this.#downTargets.entries()) {
-        this.#quad.material = this.#downMaterials[i] as NodeMaterial;
-        renderer.setRenderTarget(target);
-        this.#quad.render(renderer);
+        drawQuadPass(renderer, this.#downMaterials[i] as NodeMaterial, target);
       }
       for (const stage of this.#stages) {
-        this.#quad.material = stage.acrossMaterial;
-        renderer.setRenderTarget(stage.across);
-        this.#quad.render(renderer);
-        this.#quad.material = stage.outMaterial;
-        renderer.setRenderTarget(stage.out);
-        this.#quad.render(renderer);
+        drawQuadPass(renderer, stage.acrossMaterial, stage.across);
+        drawQuadPass(renderer, stage.outMaterial, stage.out);
       }
     } finally {
       RendererUtils.restoreRendererState(renderer, this.#rendererState);

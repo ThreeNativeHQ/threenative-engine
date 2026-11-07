@@ -3,10 +3,13 @@
     "AmbientLight": {
       "constructor": true,
       "methods": [
+        "__bandRigs",
+        "__boundsInView",
         "__cullProjected",
         "__restoreCull",
         "__tnCopyMatrixWorld",
         "__tnGuardCheck",
+        "__tnGuardCheckAncestors",
         "__tnGuardWatch",
         "__tnProjectionReport",
         "__tnStructureStamp",
@@ -281,10 +284,13 @@
     "BatchedMesh": {
       "constructor": true,
       "methods": [
+        "__bandRigs",
+        "__boundsInView",
         "__cullProjected",
         "__restoreCull",
         "__tnCopyMatrixWorld",
         "__tnGuardCheck",
+        "__tnGuardCheckAncestors",
         "__tnGuardWatch",
         "__tnProjectionReport",
         "__tnStructureStamp",
@@ -598,10 +604,13 @@
     "Bone": {
       "constructor": true,
       "methods": [
+        "__bandRigs",
+        "__boundsInView",
         "__cullProjected",
         "__restoreCull",
         "__tnCopyMatrixWorld",
         "__tnGuardCheck",
+        "__tnGuardCheckAncestors",
         "__tnGuardWatch",
         "__tnProjectionReport",
         "__tnStructureStamp",
@@ -1028,10 +1037,13 @@
     "Camera": {
       "constructor": true,
       "methods": [
+        "__bandRigs",
+        "__boundsInView",
         "__cullProjected",
         "__restoreCull",
         "__tnCopyMatrixWorld",
         "__tnGuardCheck",
+        "__tnGuardCheckAncestors",
         "__tnGuardWatch",
         "__tnProjectionReport",
         "__tnStructureStamp",
@@ -1930,10 +1942,13 @@
     "DirectionalLight": {
       "constructor": true,
       "methods": [
+        "__bandRigs",
+        "__boundsInView",
         "__cullProjected",
         "__restoreCull",
         "__tnCopyMatrixWorld",
         "__tnGuardCheck",
+        "__tnGuardCheckAncestors",
         "__tnGuardWatch",
         "__tnProjectionReport",
         "__tnStructureStamp",
@@ -2470,10 +2485,13 @@
     "Group": {
       "constructor": true,
       "methods": [
+        "__bandRigs",
+        "__boundsInView",
         "__cullProjected",
         "__restoreCull",
         "__tnCopyMatrixWorld",
         "__tnGuardCheck",
+        "__tnGuardCheckAncestors",
         "__tnGuardWatch",
         "__tnProjectionReport",
         "__tnStructureStamp",
@@ -2637,10 +2655,13 @@
     "HemisphereLight": {
       "constructor": true,
       "methods": [
+        "__bandRigs",
+        "__boundsInView",
         "__cullProjected",
         "__restoreCull",
         "__tnCopyMatrixWorld",
         "__tnGuardCheck",
+        "__tnGuardCheckAncestors",
         "__tnGuardWatch",
         "__tnProjectionReport",
         "__tnStructureStamp",
@@ -3049,10 +3070,13 @@
     "InstancedMesh": {
       "constructor": true,
       "methods": [
+        "__bandRigs",
+        "__boundsInView",
         "__cullProjected",
         "__restoreCull",
         "__tnCopyMatrixWorld",
         "__tnGuardCheck",
+        "__tnGuardCheckAncestors",
         "__tnGuardWatch",
         "__tnProjectionReport",
         "__tnStructureStamp",
@@ -3367,10 +3391,13 @@
     "LOD": {
       "constructor": true,
       "methods": [
+        "__bandRigs",
+        "__boundsInView",
         "__cullProjected",
         "__restoreCull",
         "__tnCopyMatrixWorld",
         "__tnGuardCheck",
+        "__tnGuardCheckAncestors",
         "__tnGuardWatch",
         "__tnProjectionReport",
         "__tnStructureStamp",
@@ -3647,10 +3674,13 @@
     "Line": {
       "constructor": true,
       "methods": [
+        "__bandRigs",
+        "__boundsInView",
         "__cullProjected",
         "__restoreCull",
         "__tnCopyMatrixWorld",
         "__tnGuardCheck",
+        "__tnGuardCheckAncestors",
         "__tnGuardWatch",
         "__tnProjectionReport",
         "__tnStructureStamp",
@@ -4035,10 +4065,13 @@
     "LineSegments": {
       "constructor": true,
       "methods": [
+        "__bandRigs",
+        "__boundsInView",
         "__cullProjected",
         "__restoreCull",
         "__tnCopyMatrixWorld",
         "__tnGuardCheck",
+        "__tnGuardCheckAncestors",
         "__tnGuardWatch",
         "__tnProjectionReport",
         "__tnStructureStamp",
@@ -4432,10 +4465,13 @@
     "Mesh": {
       "constructor": true,
       "methods": [
+        "__bandRigs",
+        "__boundsInView",
         "__cullProjected",
         "__restoreCull",
         "__tnCopyMatrixWorld",
         "__tnGuardCheck",
+        "__tnGuardCheckAncestors",
         "__tnGuardWatch",
         "__tnProjectionReport",
         "__tnStructureStamp",
@@ -5971,10 +6007,13 @@
     "Object3D": {
       "constructor": true,
       "methods": [
+        "__bandRigs",
+        "__boundsInView",
         "__cullProjected",
         "__restoreCull",
         "__tnCopyMatrixWorld",
         "__tnGuardCheck",
+        "__tnGuardCheckAncestors",
         "__tnGuardWatch",
         "__tnProjectionReport",
         "__tnStructureStamp",
@@ -6223,10 +6262,13 @@
     "OrthographicCamera": {
       "constructor": true,
       "methods": [
+        "__bandRigs",
+        "__boundsInView",
         "__cullProjected",
         "__restoreCull",
         "__tnCopyMatrixWorld",
         "__tnGuardCheck",
+        "__tnGuardCheckAncestors",
         "__tnGuardWatch",
         "__tnProjectionReport",
         "__tnStructureStamp",
@@ -6444,10 +6486,13 @@
     "PerspectiveCamera": {
       "constructor": true,
       "methods": [
+        "__bandRigs",
+        "__boundsInView",
         "__cullProjected",
         "__restoreCull",
         "__tnCopyMatrixWorld",
         "__tnGuardCheck",
+        "__tnGuardCheckAncestors",
         "__tnGuardWatch",
         "__tnProjectionReport",
         "__tnStructureStamp",
@@ -6761,10 +6806,13 @@
     "PointLight": {
       "constructor": true,
       "methods": [
+        "__bandRigs",
+        "__boundsInView",
         "__cullProjected",
         "__restoreCull",
         "__tnCopyMatrixWorld",
         "__tnGuardCheck",
+        "__tnGuardCheckAncestors",
         "__tnGuardWatch",
         "__tnProjectionReport",
         "__tnStructureStamp",
@@ -7269,10 +7317,13 @@
     "Scene": {
       "constructor": true,
       "methods": [
+        "__bandRigs",
+        "__boundsInView",
         "__cullProjected",
         "__restoreCull",
         "__tnCopyMatrixWorld",
         "__tnGuardCheck",
+        "__tnGuardCheckAncestors",
         "__tnGuardWatch",
         "__tnProjectionReport",
         "__tnStructureStamp",
@@ -7600,10 +7651,13 @@
     "SkinnedMesh": {
       "constructor": true,
       "methods": [
+        "__bandRigs",
+        "__boundsInView",
         "__cullProjected",
         "__restoreCull",
         "__tnCopyMatrixWorld",
         "__tnGuardCheck",
+        "__tnGuardCheckAncestors",
         "__tnGuardWatch",
         "__tnProjectionReport",
         "__tnStructureStamp",
@@ -8044,10 +8098,13 @@
     "SpotLight": {
       "constructor": true,
       "methods": [
+        "__bandRigs",
+        "__boundsInView",
         "__cullProjected",
         "__restoreCull",
         "__tnCopyMatrixWorld",
         "__tnGuardCheck",
+        "__tnGuardCheckAncestors",
         "__tnGuardWatch",
         "__tnProjectionReport",
         "__tnStructureStamp",
@@ -8269,10 +8326,13 @@
     "Sprite": {
       "constructor": true,
       "methods": [
+        "__bandRigs",
+        "__boundsInView",
         "__cullProjected",
         "__restoreCull",
         "__tnCopyMatrixWorld",
         "__tnGuardCheck",
+        "__tnGuardCheckAncestors",
         "__tnGuardWatch",
         "__tnProjectionReport",
         "__tnStructureStamp",

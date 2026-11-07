@@ -1,3 +1,4 @@
+import { flushAnimationTicks } from "./animation-batch.js";
 import type { AutoBatch } from "./auto-batch.js";
 import { updateClusteredMeshes } from "./clustered-mesh.js";
 import type { ComputeDrivenRegistry } from "./compute-driven.js";
@@ -588,11 +589,17 @@ export function startFrameLoop<TState extends Record<string, unknown>, TPhysics>
             game.beforeRenderDepth -= 1;
           }
         }
+        // A game is free to tick its rigs here instead of in the update stage (the skinned crowd does,
+        // to time its own spans); whatever it queued is advanced before the draw, not a frame after it.
+        flushAnimationTicks();
         interpolation.render(gameLoop.clockFrozen || game.paused ? 1 : alpha, () => {
           // Let a depth-coupled scene update its output node while the scene pass is still the
           // next render. Ordinary scenes keep the historical hook order and timing.
           const depthCoupledOutput = game.hasDepthCoupledOutput;
           if (depthCoupledOutput && game.sceneEntered) game.scene?.render(ctx);
+          // A depth-coupled scene may have ticked a rig while the scene pass was still the next
+          // render; it is drawn this frame, not the next.
+          if (depthCoupledOutput) flushAnimationTicks();
           // The engine's own walk owns the frame's world matrices, so the count starts here and
           // covers both applications below: the authored scene the projection reconciles from and
           // the root the renderer is actually handed.
@@ -921,6 +928,9 @@ export function startFrameLoop<TState extends Record<string, unknown>, TPhysics>
         else scene.update(ctx, dt);
         startup.updates += 1;
       }
+      // A scene swap mid-update leaves rigs queued; they are advanced with the frame they belong to,
+      // before this early return can skip the flush and let the next frame's ticks pile on top of them.
+      flushAnimationTicks();
       if (game.scene !== scene || game.sceneFrame !== frame) return;
       for (const plugin of game.activePlugins) {
         if (debug && plugin.update !== undefined)
@@ -934,6 +944,13 @@ export function startFrameLoop<TState extends Record<string, unknown>, TPhysics>
       }
       if (debug) measureDebug("entities", "update", "Registry.sweep", () => game.entities?.sweep());
       else game.entities?.sweep();
+      // PRD-828: every rig the frame's update queued is advanced in one crossing, at the end of the
+      // update stage — after the game's own per-rig loops and before anything reads a pose.
+      if (debug)
+        measureDebug("animationTickBatch", "update", "flushAnimationTicks", () =>
+          flushAnimationTicks(),
+        );
+      else flushAnimationTicks();
       if (game.renderer !== undefined && game.sceneEntered) {
         if (debug)
           measureDebug(

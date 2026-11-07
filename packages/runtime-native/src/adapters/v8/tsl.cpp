@@ -572,6 +572,31 @@ void Tsl::call(const Call& call, const v8::FunctionCallbackInfo<v8::Value>& info
         abi::tslSetUniform(target->node, values.data(), values.size());
         return;
     }
+    if (name == "setUniforms") {
+        // PRD-828, as tn_tsl_set_uniforms: one sync's changed uniforms (nodes, lane counts, packed lanes) in one call.
+        if (info.Length() != 3 || !info[0]->IsArray() || !info[1]->IsArray() || !info[2]->IsArray())
+            throw std::runtime_error("setUniforms needs nodes, lane counts and lanes");
+        const auto ctx = isolate_->GetCurrentContext();
+        const auto at = [&](int arg, uint32_t i) { return info[arg].As<v8::Array>()->Get(ctx, i).ToLocalChecked(); };
+        const uint32_t n = info[0].As<v8::Array>()->Length();
+        if (info[1].As<v8::Array>()->Length() != n) throw std::runtime_error("setUniforms needs one lane count per node");
+        std::vector<Wrapper*> targets;
+        std::vector<double> lanes;
+        std::vector<uint32_t> counts;
+        for (uint32_t i = 0; i < n; ++i) {
+            Wrapper* target = wrapper(at(0, i));
+            if (!target || !target->node) throw std::runtime_error("setUniforms needs uniform nodes");
+            targets.push_back(target);
+            counts.push_back(static_cast<uint32_t>(count(at(1, i))));
+        }
+        for (uint32_t i = 0, total = info[2].As<v8::Array>()->Length(); i < total; ++i) lanes.push_back(number(at(2, i)));
+        size_t offset = 0;
+        for (const uint32_t c : counts) offset += c;
+        if (offset != lanes.size()) throw std::runtime_error("setUniforms lane counts do not match the lanes");
+        offset = 0;
+        for (uint32_t i = 0; i < n; offset += counts[i++]) abi::tslSetUniform(targets[i]->node, lanes.data() + offset, counts[i]);
+        return;
+    }
     // Everything else is the shared table (engine/abi/tsl_call.cpp), which the Wasm back end calls too.
     std::vector<abi::TslArg> args;
     for (int i = 0; i < info.Length(); ++i) args.push_back(argument(name, i, info.Length(), info[i]));
@@ -691,7 +716,7 @@ void Tsl::install(v8::Local<v8::Context> context, v8::Local<v8::Object> target) 
                              "pow",        "step",  "dot",     "distance",  "cross",  "mix",      "clamp",
                              "smoothstep", "select", "nodeObject", "color", "ivec2", "ivec3", "ivec4", "uvec2", "bool", "storageTexture", "textureStore", "textureLoad", "textureSize", "reflect", "convertToTexture", "rtt", "mrt",
                              "dFdx", "dFdy", "lengthSq", "viewportSharedTexture", "viewportDepthTexture", "linearDepth",
-                             "toneMappingColor", "ao", "ssr", "denoise", "smaa", "bloom", "traa", "film", "lut3D", "renderOutput", "pipelineOutput", "struct", "luminance", "viewZToOrthographicDepth", "viewZToPerspectiveDepth", "logarithmicDepthToViewZ", "oneMinus", "varying", "setUniform",
+                             "toneMappingColor", "ao", "ssr", "denoise", "smaa", "bloom", "traa", "film", "lut3D", "renderOutput", "pipelineOutput", "struct", "luminance", "viewZToOrthographicDepth", "viewZToPerspectiveDepth", "logarithmicDepthToViewZ", "oneMinus", "varying", "setUniform", "setUniforms",
                              "mx_noise_float", "mx_worley_noise_float", "mx_worley_noise_vec2", "pmremTexture", "reflector", "transformDirection",
                              "atomicAdd", "atomicStore", "atomicLoad", "lightShadowMatrix", "lights", "wgslFunction", "texture3D", "getViewPosition", "bumpMap", "normalMap", "transformNormalToView", "property", "varyingProperty", "instanceMatrix", "radians", "degrees", "inverseSqrt", "ceil", "sinh", "cosh", "tan", "tanh", "asin", "asinh", "acos", "acosh", "atanh", "sign", "round", "reciprocal", "trunc", "transpose", "determinant", "inverse", "difference", "pow2", "pow3", "pow4", "transformNormalByViewMatrix", "transformNormalByInverseViewMatrix", "cbrt", "saturate", "refract", "faceForward", "rand", "mixElement", "smoothstepElement", "stepElement", "faceforward", "inversesqrt", "notEqual", "xor", "bitAnd", "bitNot", "bitOr", "bitXor", "shiftLeft", "shiftRight", "incrementBefore", "decrementBefore", "increment", "decrement", "mat3", "mat4"})
         module->Set(context, str(isolate_, name), function(context, name, false)->GetFunction(context).ToLocalChecked())

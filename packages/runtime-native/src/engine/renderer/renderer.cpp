@@ -6947,26 +6947,41 @@ GraphCompute& Renderer::graphCompute() {
 void Renderer::prepareCompute(const shader::graph::Node& node) { (void)graphCompute().prepare(node); }
 
 void Renderer::dispatchCompute(const ComputeDispatch& dispatch) {
+    std::string error;
+    dispatchCompute(std::span(&dispatch, 1), [&](const std::string& why) { error = why; });
+    if (!error.empty()) throw std::runtime_error(error);
+}
+
+void Renderer::dispatchCompute(std::span<const ComputeDispatch> dispatches, const std::function<void(const std::string&)>& failed) {
     FrameGpuTimer::Scope timerScope(passTimer_.get());
     WGPUCommandEncoderDescriptor desc = {};
     WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(device_, &desc);
-    std::vector<WGPUBuffer> reads;
-    try {
-        // The clock moves once per rendered frame, as three's NodeFrame does; a dispatch before the first render gets 1/60.
-        const float now = std::chrono::duration<float>(std::chrono::steady_clock::now() - start_).count();
-        if (renderId_ != computeFrame_) {
-            computeDelta_ = computeFrame_ == ~uint64_t{0} ? 1.0f / 60.0f : std::max(0.0f, now - computeTime_);
-            computeTime_ = now;
-            computeFrame_ = renderId_;
-        }
-        reads = graphCompute().record(encoder, dispatch, {now, computeDelta_}, *this);
-    } catch (...) {
-        wgpuCommandEncoderRelease(encoder);
-        throw;
+    // The clock moves once per rendered frame, as three's NodeFrame does; a dispatch before the first render gets 1/60.
+    const float now = std::chrono::duration<float>(std::chrono::steady_clock::now() - start_).count();
+    if (renderId_ != computeFrame_) {
+        computeDelta_ = computeFrame_ == ~uint64_t{0} ? 1.0f / 60.0f : std::max(0.0f, now - computeTime_);
+        computeTime_ = now;
+        computeFrame_ = renderId_;
     }
+    ComputeBatch batch = graphCompute().batch();
+    std::vector<WGPUBuffer> reads;
+    for (const ComputeDispatch& dispatch : dispatches) {
+        try {
+            const auto bound = graphCompute().record(encoder, dispatch, {now, computeDelta_}, *this, &batch);
+            reads.insert(reads.end(), bound.begin(), bound.end());
+        } catch (const std::exception& error) {
+            failed(error.what());
+        }
+    }
+    if (!batch.pass) {
+        wgpuCommandEncoderRelease(encoder);
+        return;
+    }
+    wgpuComputePassEncoderEnd(batch.pass);
+    wgpuComputePassEncoderRelease(batch.pass);
     WGPUCommandBufferDescriptor commandDesc = {};
     // Its own submission, batched with the frame's next one: a queue write to a buffer it binds sends it first,
-    // so the uniform block written for this dispatch is not rewritten before it runs.
+    // so the uniform blocks written for these dispatches are not rewritten before they run.
     flushMipmaps();
     gpu_.submit(wgpuCommandEncoderFinish(encoder, &commandDesc), std::move(reads));
     wgpuCommandEncoderRelease(encoder);

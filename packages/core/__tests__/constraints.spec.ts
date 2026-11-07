@@ -185,6 +185,9 @@ describe("core constraints", () => {
           file !== "look/exposure-readback.ts" &&
           file !== "look/exposure-settings.ts" &&
           file !== "look/filmic-tone-mapping.ts" &&
+          // The look passes above draw their own materials through one quad each (PRD-828); it takes the
+          // material it is given and constructs or configures none.
+          file !== "look/quad-pass.ts" &&
           // PRD-653 swaps the Lambert term of three's own lighting model for Unreal's published EON fit when the game marks
           // a material. Albedo, roughness, lights and a lamp's radius come from the game's own materials and lamps, and
           // the game chooses which materials take it. It constructs no material, light or colour and sets no appearance

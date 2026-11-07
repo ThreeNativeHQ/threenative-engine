@@ -24,6 +24,7 @@
 
 #include "engine/foundation/math/Euler.h"
 #include "engine/foundation/math/Matrix.h"
+#include "engine/foundation/math/Primitives.h"
 #include "engine/foundation/math/Quaternion.h"
 #include "engine/foundation/math/Vector.h"
 #include "engine/scene/camera.h"
@@ -185,6 +186,9 @@ struct SourceGuard {
     };
     std::vector<Entry> entries;
     std::size_t cursor = 0;
+    // The merged sources' ancestors (PRD-828): few, and one moved parent moves thousands of sources, so all of
+    // them are checked every frame, as core's #checkAncestors did in JS.
+    std::vector<Entry> ancestors;
 
     static void lanesOf(Object3D& object, std::array<double, 15>& into) {
         into = {object.position.x, object.position.y, object.position.z, object.quaternion.x,
@@ -419,9 +423,37 @@ void registerObject3D(ClassBinding& b) {
             counts.push_back(Value::of(double(count)));
         return Value::array(std::move(counts));
     };
+    // Engine-internal: core's animation rate bands in one call. `__bandRigs(camera, cameraResolved, scale, rigs)`
+    // answers each rig's rate (1, 2, 4 or 8; 0 when no part was visited), kept with this root's cull state.
+    b.methods["__bandRigs"] = [](void* self, const Args& a, Store& store) {
+        auto* camera = dynamic_cast<Camera*>(&objectArg(store, a.at(0)));
+        if (camera == nullptr) throw Unsupported{"__bandRigs needs a camera"};
+        std::vector<Object3D*> rigs;
+        for (const Value& ref : refsOf(a.at(3))) rigs.push_back(&objectArg(store, ref));
+        return Value::list(projectedCullOf(*as<Object3D>(self)).bandRates(rigs, *camera, flag(a.at(1)), number(a.at(2))));
+    };
+    // Engine-internal (PRD-828): GPUParticles3D's view test in one call. `__boundsInView(camera, localBox, padding)`
+    // updates both world matrices as three's would, carries the local box to world space, pads it (a NaN
+    // padding is half the largest world scale) and answers whether the camera's frustum touches it.
+    b.methods["__boundsInView"] = [](void* self, const Args& a, Store& store) {
+        auto* camera = dynamic_cast<Camera*>(&objectArg(store, a.at(0)));
+        if (camera == nullptr) throw Unsupported{"__boundsInView needs a camera"};
+        Object3D& object = *as<Object3D>(self);
+        if (camera->matrixWorldAutoUpdate) camera->updateMatrixWorld();
+        object.updateWorldMatrix(true, false);
+        Matrix4 viewProjection;
+        viewProjection.multiplyMatrices(camera->projectionMatrix, camera->matrixWorldInverse);
+        Frustum frustum;
+        frustum.setFromProjectionMatrix(viewProjection, camera->coordinateSystem, camera->reversedDepth());
+        const double padding = number(a.at(2));
+        Box3 world = store.ref<Box3>(a.at(1), "Box3");
+        world.applyMatrix4(object.matrixWorld).expandByScalar(std::isnan(padding) ? 0.5 * object.matrixWorld.getMaxScaleOnAxis() : padding);
+        return Value::of(frustum.intersectsBox(world));
+    };
     // Engine-internal: core's AutoBatch guard. `__tnGuardWatch(sources)` replaces the watched list with
     // each source's state now; `__tnGuardCheck(limit)` compares up to `limit` sources from where the last
-    // check stopped and answers the indices that changed, which it stops watching.
+    // check stopped and answers the indices that changed, which it stops watching. An optional second list
+    // watches the sources' ancestors, checked whole by `__tnGuardCheckAncestors()`.
     b.methods["__tnGuardWatch"] = [](void* self, const Args& a, Store& store) {
         SourceGuard& guard = sourceGuardOf(*as<Object3D>(self));
         guard.entries.clear();
@@ -431,7 +463,26 @@ void registerObject3D(ClassBinding& b) {
             SourceGuard::watch(objectArg(store, ref), entry);
             guard.entries.push_back(std::move(entry));
         }
+        guard.ancestors.clear();
+        if (a.size() > 1)
+            for (const Value& ref : refsOf(a.at(1))) {
+                SourceGuard::Entry entry;
+                SourceGuard::watch(objectArg(store, ref), entry);
+                guard.ancestors.push_back(std::move(entry));
+            }
         return Value::of(double(guard.entries.size()));
+    };
+    // `__tnGuardCheckAncestors()` answers the indices of the watched ancestors that moved, and stops watching them.
+    b.methods["__tnGuardCheckAncestors"] = [](void* self, const Args&, Store&) {
+        SourceGuard& guard = sourceGuardOf(*as<Object3D>(self));
+        std::vector<double> changed;
+        for (std::size_t index = 0; index < guard.ancestors.size(); ++index) {
+            SourceGuard::Entry& entry = guard.ancestors[index];
+            if (entry.out || SourceGuard::same(entry)) continue;
+            entry.out = true;
+            changed.push_back(double(index));
+        }
+        return Value::list(std::move(changed));
     };
     b.methods["__tnGuardCheck"] = [](void* self, const Args& a, Store&) {
         SourceGuard& guard = sourceGuardOf(*as<Object3D>(self));

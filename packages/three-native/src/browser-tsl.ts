@@ -42,6 +42,8 @@ export interface ITslRuntime {
   set(material: IEngineRef, path: string, node: number): void;
   /** three's `uniform.value = x`: the uniform's lanes, with no program change. */
   setUniform(node: number, lanes: readonly number[]): void;
+  /** Many `setUniform`s in one crossing: node i takes `counts[i]` of the packed `lanes` (PRD-828). */
+  setUniforms?(nodes: readonly number[], counts: readonly number[], lanes: readonly number[]): void;
   /** A live post effect's scalar uniform, written first when `value` is given; answers its value. */
   effectParameter(node: number, name: string, value?: number): number;
   /** three's RenderPipeline: the post graph the web host draws between scene and output, or none. */
@@ -828,8 +830,17 @@ export function defineTsl(
     );
     return valueUniform((exports[`mat${n}`] as (...columns: ITslNode[]) => ITslNode)(...columns));
   };
-  const live = liveUniforms(matrixUniform, (node, lanes) =>
-    runtime.setUniform(node[TSL_NODE], lanes),
+  const setUniforms = runtime.setUniforms?.bind(runtime);
+  const live = liveUniforms(
+    matrixUniform,
+    (node, lanes) => runtime.setUniform(node[TSL_NODE], lanes),
+    setUniforms &&
+      ((nodes, counts, lanes) =>
+        setUniforms(
+          nodes.map((node) => node[TSL_NODE]),
+          counts,
+          lanes,
+        )),
   );
   exports.uniform = booleanUniforms(live.uniform, (scalar) =>
     wrap(call("notEqual", scalar[TSL_NODE], [0])),

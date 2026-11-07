@@ -390,6 +390,37 @@ describe("AutoBatch", () => {
     expect(cost.autoBatchJsSourceChecks).toBeUndefined();
   });
 
+  // PRD-828: the ancestors' stamps are the engine's to compare, not a JS read per ancestor per frame.
+  it("on the native engine has the engine watch the sources' ancestors", () => {
+    const scene = new Scene();
+    const group = new Group();
+    scene.add(group);
+    town(10, group);
+    let ancestors: readonly Object3D[] = [];
+    let moved: number[] = [];
+    const engine = scene as Scene & Record<string, unknown>;
+    engine.__tnGuardWatch = (sources: readonly Mesh[], watchedAncestors: readonly Object3D[]) => {
+      ancestors = watchedAncestors;
+      return sources.length;
+    };
+    engine.__tnGuardCheck = () => [];
+    engine.__tnGuardCheckAncestors = () => {
+      const changed = moved;
+      moved = [];
+      return changed;
+    };
+    const batch = new AutoBatch(scene, { settleFrames: 3 });
+    run(batch, 8);
+    expect(ancestors).toEqual([group]);
+    expect(draws(scene)).toBe(2);
+    // The engine reports the group moved; the group's own fields did not change, so only the engine's
+    // answer can give its sources back.
+    moved = [0];
+    run(batch, 1);
+    expect(batch.census.restored).toBe(10);
+    expect(ancestors).toEqual([]);
+  });
+
   it("checks every source each frame on request", () => {
     const scene = new Scene();
     const group = new Group();

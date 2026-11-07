@@ -1742,6 +1742,61 @@ export function defineBrowserClasses(
           value: true,
         });
   }
+  // PRD-828: the engine advances a whole frame's animation rigs in one crossing. Core finds it by this
+  // name and keeps its own per-rig loop when a backend installs nothing, so this cannot change a game
+  // that runs on a backend without it.
+  if (source.animTick !== undefined) {
+    (globalThis as { __tnAnimationTick?: unknown }).__tnAnimationTick = (
+      rigs: readonly {
+        readonly mixer: object;
+        readonly action: object | null;
+        readonly strideRoot: object | null;
+        readonly dt: number;
+        readonly elapsed: number;
+        readonly step: boolean;
+        readonly reset: boolean;
+        readonly lastRate: number;
+        readonly clipGroundSpeed: number;
+        readonly strideSync: boolean;
+      }[],
+      status: Float64Array,
+    ): void => {
+      const count = rigs.length;
+      if (count === 0) return;
+      const mixers: ReturnType<typeof refOf>[] = [];
+      const actions: (ReturnType<typeof refOf> | null)[] = [];
+      const roots: (ReturnType<typeof refOf> | null)[] = [];
+      const values = new Float64Array(count * 5);
+      for (let i = 0; i < count; i += 1) {
+        const rig = rigs[i];
+        if (rig === undefined) continue;
+        mixers.push(refOf(rig.mixer));
+        actions.push(rig.action === null ? null : refOf(rig.action));
+        roots.push(rig.strideRoot === null ? null : refOf(rig.strideRoot));
+        values[i * 5] = rig.dt;
+        values[i * 5 + 1] = rig.elapsed;
+        values[i * 5 + 2] = rig.clipGroundSpeed;
+        values[i * 5 + 3] = rig.lastRate;
+        // bit 0: the stride convention applies; bit 1: the action is real; bit 2: the body is real;
+        // bit 3: this tick poses the rig; bit 4: the player spent ticks this batch did not.
+        values[i * 5 + 4] =
+          (rig.strideSync ? 1 : 0) |
+          (rig.action === null ? 0 : 2) |
+          (rig.strideRoot === null ? 0 : 4) |
+          (rig.step ? 8 : 0) |
+          (rig.reset ? 16 : 0);
+      }
+      crossings += 1;
+      const first = mixers[0];
+      if (meter.counting && first !== undefined) meter.record("call", first, "tn_anim_tick");
+      source.animTick?.({ mixers, actions, roots, values, status });
+      // Nothing to invalidate: every field this call writes — the mixer's `time`, the action's `time`,
+      // `timeScale` and `weight` — is an engine-memory field on this back end (`fastGetter` over
+      // `readDoubles` in the registry's `fields`), not a JS mirror, so a read after it is the engine's
+      // answer. `bridge-mirror.spec.ts` pins exactly that.
+    };
+  }
+
   return {
     classes,
     wrap,
