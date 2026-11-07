@@ -117,15 +117,15 @@ const SCAFFOLD_TREE_HASHES: Readonly<Record<string, IScaffoldTreePin>> = {
   },
   adventure: {
     shared: "fc880b43770473cfc23628afe446dc2ca649c4891ffaafd41a691a8985fe82a0",
-    kit: "3dcde149fd95826cb2b5d095302b3854bd3fa3b8523dfe381d098f17da3fee7e",
+    kit: "445eff38ddd728448217aff4629eaf97b543b111389b1959ade01eb3ae4487ee",
   },
   collectathon: {
     shared: "636ab0c762067e9e63b26133bb202a377c89833b5d836ea86d2d233f32c7ecb4",
-    kit: "b93ca9fc6599c7283319d0e67c111cb3b4f594c34a21092f69049d125135a2c0",
+    kit: "a3681b1d4cb46f5cafa714d9577329940881bd0300a0b1a65669cb59ecfe7f56",
   },
   kart: {
     shared: "554d353ef9f6505a543c8937ccb170e1cfb6ae04591545d8994c7e3494dbad7c",
-    kit: "abc11d287b19cd3d50291b69119f53d70a44122bb3f769c22a41bf0f0c3a525f",
+    kit: "a293b97131dd144c2712e093ac2d1f27a91acfee368a34448fa07078582935c7",
   },
   minimal: {
     shared: "e3f95200e101ff1b6c6c9f5165c3405f08e3e0fe261ae8ba06bac6865b81c5f1",
@@ -133,15 +133,15 @@ const SCAFFOLD_TREE_HASHES: Readonly<Record<string, IScaffoldTreePin>> = {
   },
   platformer: {
     shared: "03e7bde17f227297791bff7355d3efd870c3e480d3b147ad8611c92cb120fa6b",
-    kit: "7d7e6a1d790acca98073c65f15811b48fa1d428c664ccab01b60444d2e084310",
+    kit: "286d17362891486bf2446237b178d60832658e6c36c083bbcd6d02bd4f3bed92",
   },
   puzzle: {
     shared: "00e134320097b34fefa55f6ae8768ee9ef94545e92e43652e23bddcce8185b9b",
-    kit: "ebe65fa50e675414362e146f6127693f95e9795ebd12e785468935b7449b7c10",
+    kit: "eefba2e5e9ac3e711f4192985cec058fb8d4ec255eb3cfa15727a49f231cc243",
   },
   racing: {
     shared: "b58b45d7a106e20b9504ce0c77f3f0fbc8984045d7f240967e004739ef048cee",
-    kit: "8af58ed81bae2d52c6150acd0dabb744849dd413aaf223690c530de314ce1a8d",
+    kit: "60d1b6a89d5f2aca84f073b6d0bf8febaec521372dc39c5fba07abab4726dc0c",
   },
   rain: {
     shared: "8992369754fbf3ae91fc4eb25a0a5f747fabd378c599a904d9e5ad28cf08006f",
@@ -153,7 +153,7 @@ const SCAFFOLD_TREE_HASHES: Readonly<Record<string, IScaffoldTreePin>> = {
   },
   runner: {
     shared: "9d130f6a22ff6b0c55a1841044f0c2855b645797b2175fef9f9b2710de615a96",
-    kit: "e80499c0d6545b318e844715b84116b14a5b4d8d2af0e254571728dc61706f3e",
+    kit: "c2dfc4f1c064d16b2e077311eeb7758a9ebaf58dedf5fa7a99f7a8e6d9f6e1be",
   },
   sailing: {
     shared: "340f2baff9217e437f472729827319320d908c1598869bb96023c1d262d132e4",
@@ -173,7 +173,7 @@ const SCAFFOLD_TREE_HASHES: Readonly<Record<string, IScaffoldTreePin>> = {
   },
   "tower-defense": {
     shared: "2c843b749255bde8eb0c128b0e5b084359e1e7f226b940b1982ea4c1f625d4d9",
-    kit: "199ccf6490e21699b6bf4e817c6f2ac222dbbdd1d05207f04b46dc6ed07c7e8d",
+    kit: "3d0a2b7f244ce87b0543d55fd3df335666a00258f58ca4c8279761430edfffa1",
   },
   // scaffold-pin:end
 };
