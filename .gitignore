@@ -228,7 +228,8 @@ examples/strata-terrain-preview/dist-engine/
 
 dist-one-spell/
 
-# PRD-836: the one committed capability manifest is core's; this copy is build output.
+# PRD-836: the one committed capability manifest is core's; this copy and the reference it
+# generates are build output. The context skill is not: its prose is hand-written and one region of
+# it is generated, so it stays tracked or a clean checkout loses the words.
 /packages/create-threenative/capabilities.json
 /packages/create-threenative/agent-docs/references/capability-reference.md
-/packages/create-threenative/agent-files/.agents/skills/threenative-context/SKILL.md
