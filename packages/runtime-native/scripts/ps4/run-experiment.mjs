@@ -581,7 +581,9 @@ async function judgeE5(match, frame, log, captures) {
   const first = drawn[0].raster;
   const last = drawn.at(-1).raster;
   const clear = e5ClearColour(last);
-  const moved = differingFraction(first, last);
+  // The largest change from the first drawn frame: a cube turned by a multiple of 90 degrees looks the
+  // same, so the first and last frames alone can alias to "did not move" (Cube Spin: 3.2% at +6 s, 0.59% at +12 s).
+  const moved = Math.max(...drawn.slice(1).map(({ raster }) => differingFraction(first, raster)));
   // run.cpp averages the game's JS update and the whole frame over each 100 presented frames.
   const windows = [...log.matchAll(/TN_PLAYER_FRAMES \d+ js_ms=([\d.]+) frame_ms=([\d.]+)(?: kernel_frame_ms=([\d.]+))?/g)];
   // The first window has no start time and prints 0: the last window with a real measurement counts.
@@ -629,7 +631,7 @@ async function judgeE5(match, frame, log, captures) {
   if (moved < E5_MOVED_MIN)
     return {
       ok: false,
-      reason: `${(moved * 100).toFixed(2)}% of the frame differs between ${shots[0]} and ${shots.at(-1)}, below the ${E5_MOVED_MIN * 100}% a moving cube must change`,
+      reason: `${(moved * 100).toFixed(2)}% of the frame differs at most between ${shots[0]} and any later drawn frame (${shots.slice(1).map(f => path.basename(f)).join(", ")}), below the ${E5_MOVED_MIN * 100}% a moving cube must change`,
       info: detail,
       image: verdict.image,
     };

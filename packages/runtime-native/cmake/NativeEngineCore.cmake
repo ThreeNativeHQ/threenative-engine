@@ -428,6 +428,7 @@ endif()
 
 tn_native_engine_test(tn-native-engine-material-test tests/native-engine/material_test.cpp
     native_engine_material_alpha_hash=alpha_hash
+    native_engine_material_normal_map_zero_det=normal_map_zero_det
     native_engine_material_depth_node_writes_frag_depth=depth_node_writes_frag_depth
     native_engine_material_unsupported=unsupported
     native_engine_material_standard_builds=builds
