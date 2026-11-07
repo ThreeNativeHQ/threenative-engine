@@ -272,8 +272,10 @@ export async function bundleNativeEngine({ entry, outfile, boot = true, define =
 
 /**
  * Cooks a project's assets for the native engine beside the game bundle: its own `assets` config,
- * decoder-free (the engine's loaders decode no meshopt or KTX2), with the native package on, which
- * the player reads from `<bundle dir>/native/assets.tnpk`. `source` overrides the config's source dir.
+ * with the native package on, which the player reads from `<bundle dir>/native/assets.tnpk`.
+ * Meshopt stays on: the engine compiles the meshoptimizer decoders and its glTF loader decodes
+ * EXT/KHR_meshopt_compression (PRD-515). KTX2 is still refused (TN_NATIVE_KTX2_UNSUPPORTED), so its
+ * cook output is not kept. `source` overrides the config's source dir.
  */
 export async function cookNativeEngineAssets({ project, outfile, source }) {
   project = resolve(project);
@@ -288,7 +290,7 @@ export async function cookNativeEngineAssets({ project, outfile, source }) {
   // A file URL: on Windows, `import("D:\\...")` reads `d:` as a URL scheme and throws (engine#612).
   const { compileAssets } = await import(pathToFileURL(assetsEntry).href);
   await compileAssets({ cwd: project, config: { ...assets, ...(source && { source: resolve(source) }), nativePackage: true }, platform: "desktop",
-    runtimeDecoders: { ktx2: false, meshopt: false } });
+    runtimeDecoders: { ktx2: false, meshopt: true } });
   const output = resolve(project, assets.output ?? "public", "native/assets.tnpk");
   const target = resolve(dirname(resolve(outfile)), "native/assets.tnpk");
   // A game with no asset files gets no pack (TN_ASSETS_NATIVE_PACKAGE_EMPTY), and the player opens
