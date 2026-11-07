@@ -78,6 +78,8 @@ const CAPTURE_WORK_ITEMS_PER_PROBE = CUBE_FACE_COUNT + 2;
 const SAMPLE_ATLAS_PADDING = 1;
 const BYTES_PER_FLOAT = Float32Array.BYTES_PER_ELEMENT;
 const BYTES_PER_TEXEL = 4 * BYTES_PER_FLOAT;
+/** A traced refresh starts at the PRD-603 gate's 16 probes a frame, then follows the measured GPU cost. */
+const TRACE_START_PROBES = 16;
 const BAKE_BUDGET_SLACK_MS = 0.5;
 const SCENE_WARMUP_TIMEOUT_MS = 2_000;
 
@@ -360,6 +362,9 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
   // The traced refresh (PRD-603). Undefined on a capture volume.
   readonly #trace: IProbeVolumeTrace | undefined;
   readonly #traceBudget: number;
+  /** Probes traced a frame now: it follows the measured GPU cost toward `bakeBudgetMs`, up to the budget. */
+  #traceRate = 0;
+  #lastBatch = 0;
   readonly #raysPerProbe: number;
   #kernels: IProbeTraceKernels | undefined;
   #kernelVersion = -1;
@@ -412,6 +417,7 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
       options.numProbesToTraceBudget ?? 100,
       "numProbesToTraceBudget",
     );
+    this.#traceRate = Math.min(this.#traceBudget, TRACE_START_PROBES);
     const probeResolution = positiveInteger(options.probeResolution ?? 32, "probeResolution");
     this.#raysPerProbe = probeResolution * probeResolution;
 
@@ -1019,10 +1025,25 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
         ? Number.POSITIVE_INFINITY
         : (this.#lastUsed[probe] ?? -1) - (this.#lastTraced[probe] ?? 0);
     candidates.sort((a, b) => priority(b) - priority(a) || a - b);
-    return candidates.slice(0, Math.min(this.#traceBudget, this.#probeCount));
+    return candidates.slice(0, Math.min(this.#traceRate, this.#probeCount));
+  }
+
+  /**
+   * One frame traces the probes its GPU compute time allows: the measured cost of the last batch, per probe,
+   * against `bakeBudgetMs`. A slow adapter shrinks the batch at once; a fast one doubles it a frame, so a stale
+   * reading cannot jump the cost. With no timestamp reading the batch stays at its start of 16 probes.
+   */
+  #adaptTraceRate(renderer: IRendererLike): void {
+    const gpuMs = (renderer as { gpuComputeMs?: () => number | undefined }).gpuComputeMs?.();
+    if (gpuMs === undefined || !(gpuMs > 0) || this.#lastBatch === 0) return;
+    const fit = Math.floor((this.#bakeBudgetMs * this.#lastBatch) / gpuMs);
+    const ceiling = Math.min(this.#traceBudget, this.#probeCount);
+    const next = fit > this.#traceRate ? Math.min(fit, this.#traceRate * 2) : fit;
+    this.#traceRate = Math.max(1, Math.min(ceiling, next));
   }
 
   #dispatchTrace(renderer: IRendererLike, kernels: IProbeTraceKernels): void {
+    this.#adaptTraceRate(renderer);
     const batch = this.selectStaleProbes();
     if (batch.length > 0) {
       (kernels.probeList.array as Int32Array).set(batch);
@@ -1036,6 +1057,7 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
         this.#lastTraced[probe] = this.#frame;
       }
       this.#probesTraced = batch.length;
+      this.#lastBatch = batch.length;
       this.#traceCompleted += batch.length;
       this.#dispatchSerial += 1;
     }

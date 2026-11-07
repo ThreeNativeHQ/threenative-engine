@@ -948,7 +948,10 @@ describe("ProbeVolume", () => {
     }
 
     /** A renderer that runs no GPU: `readback` answers a field whose every probe holds `c0 = rgb`. */
-    function traceRenderer(rgb: readonly [number, number, number]) {
+    function traceRenderer(
+      rgb: readonly [number, number, number],
+      gpuComputeMs?: () => number | undefined,
+    ) {
       const compute = vi.fn();
       const readback = vi.fn(async (attribute: { array: Float32Array }) => {
         const field = new Float32Array(attribute.array.length);
@@ -960,7 +963,13 @@ describe("ProbeVolume", () => {
         render: vi.fn(),
         setRenderTarget: vi.fn(),
       };
-      const renderer = { compute, kind: "webgpu", raw, readback } as unknown as IRendererLike;
+      const renderer = {
+        compute,
+        gpuComputeMs,
+        kind: "webgpu",
+        raw,
+        readback,
+      } as unknown as IRendererLike;
       return { compute, raw, readback, renderer };
     }
 
@@ -1007,8 +1016,8 @@ describe("ProbeVolume", () => {
       await bake;
       expect(raw.render).not.toHaveBeenCalled();
       expect(raw.setRenderTarget).not.toHaveBeenCalled();
-      // One trace and one projection dispatch refresh all 27 probes inside the default budget of 100.
-      expect(compute).toHaveBeenCalledTimes(2);
+      // With no GPU timing, a frame traces its start of 16 probes: 27 probes are two traces and two projections.
+      expect(compute).toHaveBeenCalledTimes(4);
       expect(subject.observation).toMatchObject({
         status: "ready",
         update: "trace",
@@ -1077,6 +1086,33 @@ describe("ProbeVolume", () => {
       sun.intensity = 5;
       await settle(subject, renderer, 1);
       expect(subject.observation.status).toBe("baking");
+    });
+
+    it("sizes a frame's batch by the measured GPU cost against the bake budget", async () => {
+      // 0.25 ms a probe: the 2 ms budget fits 8.
+      const slow = traced({ bounds: new Box3(new Vector3(-4, -4, -4), new Vector3(4, 4, 4)) });
+      const slowRenderer = traceRenderer([1, 0, 0], () => 0.25 * slowLast);
+      let slowLast = 0;
+      const slowCounts: number[] = [];
+      void slow.subject.requestBake(new Scene());
+      for (let frame = 0; frame < 4; frame += 1) {
+        await settle(slow.subject, slowRenderer.renderer, 1);
+        slowLast = slow.subject.observation.probesTraced ?? 0;
+        slowCounts.push(slowLast);
+      }
+      expect(slowCounts).toEqual([16, 8, 8, 8]);
+      // 0.000625 ms a probe fits far more than the budget: it doubles a frame, never past the budget of 100.
+      const fast = traced({ bounds: new Box3(new Vector3(-3, -3, -3), new Vector3(3, 3, 3)) });
+      const fastRenderer = traceRenderer([1, 0, 0], () => 0.000625 * fastLast);
+      let fastLast = 0;
+      const fastCounts: number[] = [];
+      void fast.subject.requestBake(new Scene());
+      for (let frame = 0; frame < 4; frame += 1) {
+        await settle(fast.subject, fastRenderer.renderer, 1);
+        fastLast = fast.subject.observation.probesTraced ?? 0;
+        fastCounts.push(fastLast);
+      }
+      expect(fastCounts).toEqual([16, 32, 64, 100]);
     });
 
     it("builds a RadianceCache that always updates by trace", async () => {
