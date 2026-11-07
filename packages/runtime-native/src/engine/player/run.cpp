@@ -692,6 +692,8 @@ struct Session {
     // A console has no frame meter and no shell to ask: the frames this loop presented are counted
     // here and printed every 100 by step(), which is the account a judged run reads.
     uint64_t presentedFrames = 0;
+    double ps4JsMs = 0.0;
+    std::chrono::steady_clock::time_point ps4WindowStart{};
 #endif
     std::set<std::string> renderNotes;  // a renderer note (a skipped draw) prints once, not every frame
     double updateMs = 0, readyMs = 0, updateCpuMs = 0, updateInstructions = 0, updateCycles = 0;
@@ -1328,10 +1330,16 @@ int Session::step() {
     // the clock follows real time instead, as the web loop follows requestAnimationFrame.
     if (!runner || endpoint->liveClock()) {
         nowMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - freeRunStart).count();
+#if defined(TN_PS4)
+        const auto jsBegin = std::chrono::steady_clock::now();
+#endif
         for (uint32_t steps = clock.advance(nowMs); steps > 0 && game.update; --steps) {
             if (runner) ++drivenTicks;
             update(kTickStep);
         }
+#if defined(TN_PS4)
+        ps4JsMs += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - jsBegin).count();
+#endif
     }
     if (endpoint->automaticRenderHeld()) return viewFailed ? -1 : 1;
     if (!refreshView())
@@ -1343,7 +1351,15 @@ int Session::step() {
         renderFrame();
 #if defined(TN_PS4)
         if (++presentedFrames % 100 == 0) {
-            std::printf("TN_PLAYER_FRAMES %llu\n", static_cast<unsigned long long>(presentedFrames));
+            // PRD-784 E5: the game's JS update time and the whole frame's wall time, each averaged
+            // over the last 100 presented frames.
+            const auto frameNow = std::chrono::steady_clock::now();
+            const double wallMs = ps4WindowStart.time_since_epoch().count()
+                ? std::chrono::duration<double, std::milli>(frameNow - ps4WindowStart).count() / 100.0 : 0.0;
+            std::printf("TN_PLAYER_FRAMES %llu js_ms=%.3f frame_ms=%.3f\n", static_cast<unsigned long long>(presentedFrames),
+                        ps4JsMs / 100.0, wallMs);
+            ps4JsMs = 0.0;
+            ps4WindowStart = frameNow;
             std::fflush(stdout);
         }
 #endif

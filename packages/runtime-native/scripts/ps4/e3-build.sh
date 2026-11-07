@@ -73,7 +73,14 @@ case "$GUEST_STEM" in
   e3cs) GUEST_DEFS="-DTN_E3_GUEST_CS=1" ;;
   e3tex) GUEST_DEFS="-DTN_E3_GUEST_TEX=1" ;;
   e3tex8) GUEST_DEFS="-DTN_E3_GUEST_TEX=1 -DTN_E3_TEX_RGBA8=1" ;;
-  e3texmsaa) GUEST_DEFS="-DTN_E3_GUEST_TEX=1 -DTN_E3_TEX_MSAA=1" ;;
+  e3texmsaa) GUEST_DEFS="-DTN_E3_GUEST_TEX=1 -DTN_E3_TEX_MSAA=1 -DTN_E3_TEX_RGBA8=1" ;;
+  # e3texmsaa renders into R8G8B8A8_UNORM, not RGBA16Float: Dawn grants Cap::Multisample to
+  # RGBA16Float only under Feature::CoreFeaturesAndLimits (dawn/native/Format.cpp, the
+  # AddCaps({... RGBA16Float ...}, Cap::Multisample) group), which this guest's device does not
+  # request, so a 4x float16 target is refused at creation with "The texture format
+  # (TextureFormat::RGBA16Float) does not support multisampling" before any resolve is reached.
+  # The resolve mechanism is format-independent; the engine's own float16 MSAA target is E5's
+  # evidence, not this guest's.
   *) echo "unknown TN_PS4_E3_GUEST: $GUEST_STEM (e3-triangle|e3cs|e3tex|e3tex8|e3texmsaa)" >&2; exit 2 ;;
 esac
 

@@ -392,6 +392,16 @@ git apply "$SCRIPTS/patches/0030-vk-ps4-clear-draw-viewport.patch"
 # now go through FillMemory; only a colour the one 32-bit word cannot express, or a sub-rect
 # clear, still needs the draw.
 git apply "$SCRIPTS/patches/0031-vk-ps4-clear-whole-surface-fill.patch"
+# A 4x colour target with a 1x resolve target (Dawn's resolveTarget, which arrives as
+# VkSubpassDescription::pResolveAttachments) was stored and never resolved: nothing acted on
+# the resolve list at CmdEndRenderPass/CmdNextSubpass, so the 1x image stayed black and every
+# later pass sampled black -- the engine's scene pass in E5. 0033 emits the GCN hardware
+# CB resolve (CB_COLOR_CONTROL.MODE = CB_RESOLVE, ROP3 0xCC, CB_COLOR0 = MSAA source,
+# CB_COLOR1 = 1x destination), the register recipe RADV uses on GFX7 and the exact case
+# shadPS4 executes at draw time (vk_rasterizer.cpp FilterDraw -> Rasterizer::Resolve); it also
+# emits PA_SC_AA_CONFIG for the pipeline's sample count, which no register in this driver
+# ever told the hardware.
+git apply "$SCRIPTS/patches/0033-vk-ps4-msaa-resolve.patch"
 # The Makefile compiles TEST_SRC relative to the vulkan-ps4 tree.
 cp "$SCRIPTS/e2-triangle.c" "$SRC/e2-triangle.c"
 make -f Makefile.orbis -j"$JOBS" TEST_SRC=../e2-triangle.c self > "$LOGS/e2-triangle.log" 2>&1

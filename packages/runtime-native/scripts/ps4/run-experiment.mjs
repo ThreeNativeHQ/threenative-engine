@@ -572,9 +572,26 @@ async function judgeE5(match, frame, log, shots) {
   }
   const clear = e5ClearColour(last);
   const moved = differingFraction(first, last);
-  const detail = ` frames=${frames} clear=${clear.join(',')} moved=${(moved * 100).toFixed(2)}%`;
-  const verdict = await judgePresented(log, shots, { clearColour: clear, requireReadbacks: false, info: detail });
-  if (!verdict.ok) return verdict;
+  // run.cpp averages the game's JS update and the whole frame over each 100 presented frames.
+  const timing = [...log.matchAll(/TN_PLAYER_FRAMES \d+ js_ms=([\d.]+) frame_ms=([\d.]+)/g)].at(-1);
+  const detail = ` frames=${frames} clear=${clear.join(',')} moved=${(moved * 100).toFixed(2)}%${timing ? ` js_ms=${timing[1]} frame_ms=${timing[2]}` : ''}`;
+  // A scene with no background clears to black, and judgePresented treats black as "nothing
+  // presented" (right for E2/E3, whose clear is not black). E5 instead measures the share of the
+  // whole frame that differs from the clear: the box and sphere must cover part of it, not all.
+  const total = last.width * last.height;
+  let off = 0;
+  for (let at = 0; at < total * 3; at += 3) {
+    if (Math.max(...[0, 1, 2].map(c => Math.abs(last.pixels[at + c] - clear[c]))) > E2_TOLERANCE) off += 1;
+  }
+  const drawnShare = off / total;
+  if (drawnShare < E2_DRAWN_MIN || drawnShare > E2_DRAWN_MAX)
+    return {
+      ok: false,
+      reason: `${(drawnShare * 100).toFixed(2)}% of ${shots.at(-1)} differs from the clear, outside the ${E2_DRAWN_MIN * 100}-${E2_DRAWN_MAX * 100}% band a drawn scene covers`,
+      info: detail,
+      image: shots.at(-1),
+    };
+  const verdict = { ok: true, detail: ` drawn=${(drawnShare * 100).toFixed(2)}%`, info: detail, image: shots.at(-1) };
   if (moved < E5_MOVED_MIN)
     return {
       ok: false,

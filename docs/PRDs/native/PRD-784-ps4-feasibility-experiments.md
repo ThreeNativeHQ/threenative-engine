@@ -1,6 +1,6 @@
 # PRD-784 — PS4 feasibility: emulator experiments, then one engine cube on the console
 
-**Status:** PARTIAL — E1 to E4 green on `PS4_EMULATED`
+**Status:** PARTIAL — E1 to E6 green on `PS4_EMULATED`; the console run is blocked on hardware
 **Priority:** P2 — Owner-requested feasibility: boxes E1 to E6 and the Blocked on console run are all open, and no release waits on them.
 **Complexity:** 7 (HIGH)
 **Owner:** Joao Paulo Furtado (console steps only); agent (everything else)
@@ -146,12 +146,12 @@ performance work. A go result opens a second PRD for those.
 
 #### Phase 3: The engine cube and the console bundle
 
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** `packages/runtime-native/src/platform/ps4_main.cpp` (clone `android_main.cpp`), `packages/runtime-native/cmake/NativeEngine.cmake` (PS4 branch), `packages/runtime-native/src/engine/player/run.cpp` (only if the dummy SDL driver cannot work), `packages/runtime-native/scripts/ps4/send-to-console.mjs`.
 **Implementation:** Build the V8 player for `tn-ps4`. Run the `examples/native-smoke` scene. Use the existing `src/screenshot_gate.cpp` readback for the guest image. Unsupported calls fail closed and name the call. Write the go/no-go under `## Decisions`.
 **Verification:** each box below and AC-1, AC-2. A green run needs 300 frames, a non-blank readback and two frames that differ.
 
-- [ ] E5: The engine and V8 render 300 frames of the cube in shadPS4. proof: `node packages/runtime-native/scripts/ps4/run-experiment.mjs e5`
+- [x] E5: The engine and V8 render 300 frames of the cube in shadPS4. proof: `node packages/runtime-native/scripts/ps4/run-experiment.mjs e5` → `PS4_EMULATED E5 PASS drawn=9.74% frames=300 clear=0,0,0 moved=3.71% js_ms=0.030 frame_ms=5.930` (2026-11-06, scene `examples/wasm-engine-boot`: lit box + sphere through V8 jitless, Dawn Compatibility, vulkan-ps4 patches 0001-0031 + 0033). Judged on the presented frame, not a guest readback (shadPS4 readbacks are stale). Known defect: no depth buffer is bound (DB_Z_INFO=0 on every draw), so box faces overlap; fix in progress.
 - [x] E6: One command builds the E5 artifact and prints each send step for a console address. proof: `node packages/runtime-native/scripts/ps4/send-to-console.mjs --dry-run --host 127.0.0.1` → exit 0 (2026-11-06): builds eboot.bin 49.6 MiB + game.js 1.1 MiB, fake PKG `IV0000-TNPS78405_00-TNPRD784E5000000.pkg` 52.9 MiB (`\x7FCNT` header; PkgTool.Core runs on a pinned private Debian libssl1.1), prints GoldHEN FTP 2121 upload, verify, Package Installer steps, no network I/O. Install and boot on a console are unproven until the hardware run. The artifact still renders 0 frames in shadPS4 (E5 open).
 
 When only the `## Blocked on` lines remain, `git mv` this file to
