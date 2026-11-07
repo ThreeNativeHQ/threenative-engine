@@ -1,8 +1,8 @@
 # PRD-829 — An existing game receives the current authoring layer
 
-**Status:** PARTIAL — the authoring-layer refresh is proved (AC-1 to AC-5). The pair that refresh leaves does not boot until one release of `create-threenative` and `@threenative/*` publishes (see `## Blocked on`).
+**Status:** PARTIAL — the authoring-layer refresh is proved (AC-1 to AC-7). The pair that refresh leaves does not boot until one release of `create-threenative` and `@threenative/*` publishes (see `## Blocked on`).
 **Blocker:** no npm release carries this `create-threenative` beside a matching `@threenative/core` and `@threenative/runtime-native`. On the packed tarball with core 0.3.11, the smoke playtest fails with `TN_PLAYTEST_BRIDGE_MISSING … TN_ABI_6: TSL constant:modelViewProjection: TN_TSL_DYNAMIC_UNSUPPORTED` (reviewer, 2026-11-06).
-**Priority:** P1 — done 2026-11-06. Before it, an authoring fix (PRD-825, PRD-827, #616) reached new scaffolds only, not one of the 40 sandbox games.
+**Priority:** P1. Before this PRD, an authoring fix (PRD-825, PRD-827, #616) reached new scaffolds only, not one of the 40 sandbox games.
 **Complexity:** 4 (MEDIUM) — 3 implementation files in one package (`doctor.ts`, `index.ts`, `threenative.ts`); risk override: none (writes are limited to scaffold-owned files and fail closed on edits and on a mismatched engine pair)
 **Owner:** João Paulo Furtado
 **Depends on:** None (PRD-825 AC-8 is independent; this PRD ships whatever router is current)
