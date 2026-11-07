@@ -230,13 +230,22 @@ describe("createEngineCatalogPlugin", () => {
       await server.listen();
       const url = `${server.resolvedUrls?.local[0] ?? ""}src/main.ts`;
       expect((await fetch(url)).status).toBe(200);
-      const saved = new Promise<void>((resolve) => server.watcher.once("change", () => resolve()));
       await writeFile(
         main,
         'export const ready = true;\nimport { TetrahedronGeometry } from "three";\nexport const t = TetrahedronGeometry;\n',
       );
-      await saved;
-      expect((await fetch(url)).status).toBe(500);
+      // The save is the trigger, not the moment Vite is done. Its own watcher handling — drop the
+      // cached transform, re-read the file, send the overlay — runs on its own schedule, so a
+      // request issued off the raw `change` event was answered from the pre-save cache on a loaded
+      // runner. Wait for what the developer sees, and fail naming the state it stalled in.
+      await vi.waitFor(
+        async () =>
+          expect({ status: (await fetch(url)).status, overlay: overlay.length > 0 }).toEqual({
+            status: 500,
+            overlay: true,
+          }),
+        { timeout: 20_000 },
+      );
       expect(overlay[0]?.message).toContain(
         'TN_NATIVE_UNCATALOGUED_TETRAHEDRONGEOMETRY: TetrahedronGeometry from "three" is not available on the Wasm engine (src/main.ts:2:10)',
       );
