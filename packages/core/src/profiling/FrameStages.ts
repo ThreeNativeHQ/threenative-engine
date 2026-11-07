@@ -16,6 +16,7 @@
  * stages (`wasmRendererGap` is what `Renderer::render` spends outside its plan and encode halves) so the unlocated time is a number and never a quiet category. On an engine that publishes no
  * stage totals (upstream three), the whole call is `engineJs`.
  */
+import { readLaunchFlag } from "../debug.js";
 
 import type { IFrameCounters } from "./FrameCounters.js";
 
@@ -217,12 +218,10 @@ export function createStageReader(
  * `stages`: the paired A/B that prices the meters runs one build with this switch alone.
  */
 export function stageMetersRequested(): boolean {
-  const host = globalThis as { process?: { env?: Record<string, unknown> }; __tnStages?: unknown };
-  const fromEnv = host.process?.env?.TN_STAGES;
-  if (fromEnv === "0" || fromEnv === "false") return false;
-  const query = globalThis.location?.search;
-  if (typeof query === "string" && /[?&]tnStages=(?:0|false)(?:&|$)/u.test(query)) return false;
-  return host.__tnStages !== false;
+  return !readLaunchFlag(
+    { environment: "TN_STAGES", global: "__tnStages", query: "tnStages" },
+    "off",
+  );
 }
 
 interface IEngineWorkHost {

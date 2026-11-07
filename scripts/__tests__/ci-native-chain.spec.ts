@@ -379,6 +379,12 @@ describe("actual native receipt writer, collector and protected verdict", () => 
         "ci-change-scope.mjs",
       ])
         cpSync(path.join(repository, "scripts", name), path.join(standalone, "scripts", name));
+      mkdirSync(path.join(standalone, "scripts/lib"), { recursive: true });
+      // The shared inventory is the only module `ci-change-scope.mjs` imports besides its siblings.
+      cpSync(
+        path.join(repository, "scripts/lib/repo-inventory.mjs"),
+        path.join(standalone, "scripts/lib/repo-inventory.mjs"),
+      );
       mkdirSync(path.join(standalone, "packages/runtime-native/scripts"), { recursive: true });
       cpSync(
         path.join(repository, "packages/runtime-native/scripts/desktop-build-profile.mjs"),

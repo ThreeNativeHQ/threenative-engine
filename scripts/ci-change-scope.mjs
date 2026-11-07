@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 
 import { spawnSync } from "node:child_process";
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { RELEASE_GATE_JOBS, applyCarried, findCarried } from "./ci-leg-carry.mjs";
+import { templateNames } from "./lib/repo-inventory.mjs";
 
 const EXCLUDED_MARKDOWN = [
   /^docs\/PRDs\/realism-effects\/README\.md$/u,
@@ -51,13 +52,7 @@ function isNativePath(file) {
   return !isEnginePath(file) && NATIVE_PATHS.some((pattern) => pattern.test(file));
 }
 // Derive coverage from shipped kit identities; directory-prefix lookalikes earn no exemption.
-export const TEMPLATE_NAMES = readdirSync(
-  new URL("../packages/create-threenative/templates/", import.meta.url),
-  { withFileTypes: true },
-)
-  .filter((entry) => entry.isDirectory())
-  .map((entry) => entry.name)
-  .sort();
+export const TEMPLATE_NAMES = templateNames();
 for (const name of TEMPLATE_NAMES) {
   const kit = JSON.parse(
     readFileSync(

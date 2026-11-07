@@ -12,6 +12,7 @@
  * loops back and every assertion with them. It is a validation mode, not a proof: it proves the
  * frames it ran on.
  */
+import { readLaunchFlag } from "./debug.js";
 
 /** Marker printed when terrain validation is on, so a log says which mode produced it. */
 export const TERRAIN_VALIDATE_MARKER = "TN_TERRAIN_VALIDATE";
@@ -31,18 +32,9 @@ export const TERRAIN_VALIDATE_FLAG = "TN_TERRAIN_VALIDATE";
  * const tiles = new TerrainTiles({ ...options, validate: terrainValidationRequested() });
  */
 export function terrainValidationRequested(): boolean {
-  const host = globalThis as {
-    process?: { env?: Record<string, unknown> };
-    __tnTerrainValidate?: unknown;
-  };
-  const fromEnv = host.process?.env?.[TERRAIN_VALIDATE_FLAG];
-  if (typeof fromEnv === "string" && fromEnv !== "" && fromEnv !== "0" && fromEnv !== "false")
-    return true;
-  const query = globalThis.location?.search;
-  if (
-    typeof query === "string" &&
-    /[?&]tnTerrainValidate=(?!0(?:&|$))(?!false(?:&|$))[^&]/u.test(query)
-  )
-    return true;
-  return host.__tnTerrainValidate === true || host.__tnTerrainValidate === "1";
+  return readLaunchFlag({
+    environment: TERRAIN_VALIDATE_FLAG,
+    global: "__tnTerrainValidate",
+    query: "tnTerrainValidate",
+  });
 }

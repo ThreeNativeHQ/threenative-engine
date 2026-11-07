@@ -245,21 +245,6 @@ export function syncSourceVersions(repo: string, versions: ReadonlyMap<string, s
 
   const sourceUpdates: readonly [string, RegExp, string][] = [
     [
-      path.join(repo, "packages/core/src/index.ts"),
-      /export const version = "[^"]+";/u,
-      `export const version = ${JSON.stringify(coreVersion)};`,
-    ],
-    [
-      path.join(repo, "packages/create-threenative/src/doctor.ts"),
-      /const CORE_PACKAGE_VERSION = "[^"]+";/u,
-      `const CORE_PACKAGE_VERSION = ${JSON.stringify(coreVersion)};`,
-    ],
-    [
-      path.join(repo, "packages/create-threenative/src/doctor.ts"),
-      /(clientInfo: \{ name: "threenative-doctor", version: ")[^"]+(" \})/u,
-      `$1${coreVersion}$2`,
-    ],
-    [
       path.join(repo, "packages/engine-mcp/src/index.ts"),
       /(serverInfo: \{ name: "threenative-engine-mcp", version: ")[^"]+(",? \})/u,
       `$1${engineVersion}$2`,

@@ -179,6 +179,11 @@ describe("PRD-373 local selection", () => {
     for (const name of ["ci-local.sh", "ci-change-scope.mjs", "ci-leg-carry.mjs"]) {
       await copyFile(path.join(repo, "scripts", name), path.join(fixture.root, "scripts", name));
     }
+    await mkdir(path.join(fixture.root, "scripts/lib"), { recursive: true });
+    await copyFile(
+      path.join(repo, "scripts/lib/repo-inventory.mjs"),
+      path.join(fixture.root, "scripts/lib/repo-inventory.mjs"),
+    );
     await mkdir(path.join(fixture.root, "packages/create-threenative/templates/starter"), {
       recursive: true,
     });

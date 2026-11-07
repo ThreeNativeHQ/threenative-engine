@@ -1,12 +1,11 @@
 /**
  * The version this library reports.
  *
- * It read `0.1.0` while the package published `0.2.0`, and `__tests__/build.spec.ts` asserted the
- * stale literal, so the test held the bug in place rather than catching it. A literal is
- * unavoidable here — core is bundled for browsers and cannot read `package.json` at runtime — so
- * the spec now asserts this equals the manifest instead of asserting a number somebody typed.
+ * `version.ts` is the one owner, generated from `package.json` at build time; this is a re-export
+ * so a game that read `version` keeps reading it, and a release cannot leave a stale literal
+ * behind in a second place.
  */
-export const version = "0.3.12";
+export { CORE_VERSION as version } from "./version.js";
 
 /**
  * Play a skinned or sprite animation from game code.

@@ -21,6 +21,7 @@ import { pathToFileURL } from "node:url";
 import { installCommandFor, resolveBlender } from "@threenative/blender-bridge/bridge";
 
 import { MCP_HOSTS } from "../../core/mcp/install.mjs";
+import { CORE_VERSION } from "../../core/src/version.js";
 import { resolveRuntimeAssetCapabilities } from "./build.js";
 import { loadConfig } from "./config.js";
 import {
@@ -209,10 +210,10 @@ interface IMcpServerSpec {
 /** The engine server resolves to `@threenative/core` itself, not to the package `MCP_PACKAGES`
  * names: core bundles engine discovery and only falls back to `threenative-engine-mcp` over npx in
  * a development checkout whose bundle has not been built. Doctor probes what the project actually
- * resolves, so it must name core — and core's own version, which `doctor.spec.ts` holds equal to
- * `packages/core/package.json`. */
+ * resolves, so it must name core — and core's own version, taken from the constant core generates
+ * from its `package.json`. A literal here went stale between releases with nothing failing. */
 const CORE_PACKAGE_NAME = "@threenative/core";
-const CORE_PACKAGE_VERSION = "0.3.12";
+const CORE_PACKAGE_VERSION = CORE_VERSION;
 const CORE_RESOLVED_SERVERS: ReadonlySet<string> = new Set([
   "threenative-engine",
   "threenative-animation",
@@ -662,7 +663,7 @@ function probeMcpServer(projectRoot: string, spec: IMcpServerSpec): IMcpServerHe
     method: "initialize",
     params: {
       capabilities: {},
-      clientInfo: { name: "threenative-doctor", version: "0.3.12" },
+      clientInfo: { name: "threenative-doctor", version: CORE_PACKAGE_VERSION },
       protocolVersion: "2025-06-18",
     },
   });

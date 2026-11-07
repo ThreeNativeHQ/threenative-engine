@@ -23,6 +23,7 @@
  * The ids are integers on the hot path — a span call must not allocate a string to be cheap enough
  * to put around a per-draw call — and the names exist only in the report.
  */
+import { readLaunchFlag } from "../debug.js";
 
 /** Marker printed once per report window when spans are installed. */
 import { countDebug, debugRequested } from "./debug-telemetry.js";
@@ -535,24 +536,9 @@ export function addSpan(id: SpanId, ms: number): void {
  * `globalThis.__tnFrameSpans` before the game boots.
  */
 export function spansRequested(): boolean {
-  if (debugRequested()) return true;
-  const host = globalThis as {
-    process?: { env?: Record<string, unknown> };
-    __tnFrameSpans?: unknown;
-  };
-  const fromEnv = host.process?.env?.[SPANS_FLAG];
-  if (typeof fromEnv === "string" && fromEnv !== "" && fromEnv !== "0" && fromEnv !== "false")
-    return true;
-  const query = globalThis.location?.search;
-  if (typeof query === "string" && /[?&]tnFrameSpans=(?!0(?:&|$))(?!false(?:&|$))[^&]/u.test(query))
-    return true;
-  const fromGlobal = host.__tnFrameSpans;
   return (
-    fromGlobal === true ||
-    (typeof fromGlobal === "string" &&
-      fromGlobal !== "" &&
-      fromGlobal !== "0" &&
-      fromGlobal !== "false")
+    debugRequested() ||
+    readLaunchFlag({ environment: SPANS_FLAG, global: "__tnFrameSpans", query: "tnFrameSpans" })
   );
 }
 

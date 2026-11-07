@@ -126,8 +126,30 @@ export function stampLoadingSource(canonical: string, template: string): string 
  * render-chain plumbing is not: it is the same 600 lines in every kit, and keeping seven copies by
  * hand let one fall a revision behind without anything failing. A file belongs here only when a
  * kit editing it would be a mistake rather than a choice.
+ *
+ * `__tests__/shared-render-drift.spec.ts` fails on any render source that ships byte-identical in
+ * two or more kits and is missing here, so a new copy cannot land unrestamped.
  */
 export const SHARED_RENDER_SOURCES: readonly string[] = [
+  "src/render/atmosphere.ts",
+  "src/render/backlightControls.ts",
+  "src/render/backlightMaterial.ts",
+  "src/render/environmentContribution.ts",
+  "src/render/environmentRadiance.ts",
+  "src/render/environmentSampleCache.ts",
+  "src/render/environmentSampling.ts",
+  "src/render/environmentSnapshot.ts",
+  "src/render/gpuSky.ts",
+  "src/render/kitExposure.ts",
+  "src/render/temporalDetailStage.ts",
+];
+
+/**
+ * The shared sources `createProject` also writes into a kit that does not ship them. A kit owns its
+ * look, so presence is per kit: `starter` ships the temporal detail stage and the collectathon kits
+ * do not, and all four still get the same plumbing.
+ */
+export const ADDED_RENDER_SOURCES: readonly string[] = [
   "src/render/kitExposure.ts",
   "src/render/temporalDetailStage.ts",
 ];
@@ -916,7 +938,7 @@ export async function createProject(
     // packaged templates. Nothing in a generated game reads it (PRD-826).
     await rm(path.join(target, "kit.json"), { force: true });
     if (["starter", "collectathon", "adventure", "kart"].includes(template))
-      for (const relative of SHARED_RENDER_SOURCES)
+      for (const relative of ADDED_RENDER_SOURCES)
         await cp(canonicalRenderSourcePath(relative, root), path.join(target, relative));
     await copyTemplateIcon(target, root);
     await copySharedAssets(target, root);

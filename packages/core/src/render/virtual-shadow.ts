@@ -53,6 +53,7 @@ import {
   ShadowBaseNode,
   type UniformNode,
 } from "three/webgpu";
+import { readLaunchFlag } from "../debug.js";
 import { shadowRedrawGpuMs } from "../render-pass-budget.js";
 import { DEFAULT_TARGET_FPS } from "../target-fps.js";
 import { isLeafReceiver } from "./soft-shadow.js";
@@ -2177,13 +2178,22 @@ export class VirtualShadowNode extends ShadowBaseNode {
     if (builder.renderer.shadowMap.enabled === false) return null;
     // Read once, like tnShadowStats. Build no diagnostic nodes unless the URL switch is on.
     if (this.#levelsRequested === undefined) {
-      const search = globalThis.location?.search ?? "";
-      this.#levelsRequested = /[?&]tnShadowLevels=(?!0(?:&|$))(?!false(?:&|$))[^&]/u.test(search);
+      // One read of the URL for both switches: setup runs once, before the shader graph exists.
+      const search = globalThis.location?.search;
+      this.#levelsRequested = readLaunchFlag(
+        { environment: "TN_SHADOW_LEVELS", query: "tnShadowLevels" },
+        "on",
+        search,
+      );
       // Counter runs: a fixed refreshStep, since the adaptive step follows measured render cost and
       // two runs of one route would move their windows at different ticks. Set once, before a frame.
       if (
         this.#adaptiveRefreshGiven === undefined &&
-        /[?&]tnAdaptiveRefresh=(?:0|false)(?:&|$)/u.test(search)
+        readLaunchFlag(
+          { environment: "TN_ADAPTIVE_REFRESH", query: "tnAdaptiveRefresh" },
+          "off",
+          search,
+        )
       ) {
         (this.options as { adaptiveRefresh: boolean }).adaptiveRefresh = false;
       }
@@ -2847,9 +2857,10 @@ export class VirtualShadowNode extends ShadowBaseNode {
 
   /** Whether `?tnShadowStats=1` is on this launch's URL, read once. */
   #statsWalkRequested(): boolean {
-    this.#statsRequested ??= /[?&]tnShadowStats=(?!0(?:&|$))(?!false(?:&|$))[^&]/u.test(
-      globalThis.location?.search ?? "",
-    );
+    this.#statsRequested ??= readLaunchFlag({
+      environment: "TN_SHADOW_STATS",
+      query: "tnShadowStats",
+    });
     return this.#statsRequested;
   }
 

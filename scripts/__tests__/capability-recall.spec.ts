@@ -104,6 +104,16 @@ describe("capability recall gate", () => {
     ).rejects.toThrow("template:starter#Heading removed by a later edit");
   });
 
+  it("should resolve a source pointer into every shipped kit, not a hand-typed subset", async () => {
+    await expect(
+      resolveCorpusSources([
+        row({ source: "template:puzzle#Authoring flow" }),
+        row({ source: "template:rts#This kit" }),
+        row({ source: "template:runner#This kit" }),
+      ]),
+    ).resolves.toBeUndefined();
+  });
+
   it("should accept a sandbox game pointer and reject an unknown source kind", async () => {
     await expect(
       resolveCorpusSources([row({ source: "sandbox:midway#render/world.ts" })]),
