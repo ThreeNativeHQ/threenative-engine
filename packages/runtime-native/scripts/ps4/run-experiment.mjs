@@ -233,11 +233,11 @@ const EXPERIMENTS = {
     // The engine's own V8 player: 21 engine archives, SDL3, Dawn and the V8 monolith boot before the
     // first frame, and past that 300 frames of jitless JS run on a software-rendered GPU.
     timeoutMs: 600_000,
-    // Both captures land while the player presents. The cube turns every frame, so two frames at
-    // different times differ only if the loop really ran. The window is measured, not guessed: the
-    // ICD's own flip log puts the first present at 195 ms and frame 870 at 14.8 s, so a capture
-    // taken at 20 s or later lands after the guest is gone and only ever holds a dead window.
-    screenshots: ['8', '12'],
+    // A capture every 2 s while the player presents. The cube turns every frame, so two drawn frames
+    // at different times differ only if the loop really ran. Boot time follows host load: a scene
+    // with local exposure on drew its first frame at 13-14 s on a loaded host (load 11, PRD-784
+    // P4-3), so a capture that is still all black is boot, not a verdict, and judgeE5 skips it.
+    screenshots: ['8', '10', '12', '14', '16', '18'],
     build: (outDir, toolchain) => buildE5(outDir, toolchain, sceneRoot),
     // run.cpp counts presented frames on PS4 and prints one line per 100 (TN_PLAYER_FRAMES). The
     // marker waits for the 300-frame box, so a run that never gets there ends at the timeout and is
@@ -552,25 +552,34 @@ function differingFraction(a, b) {
 // scene's own clear colour with the game drawn inside it, and two frames at different times differ
 // (the cube moved). The guest's own count is what the marker carries; the frames are judged on the
 // host, because a guest GPU readback reads stale memory on shadPS4 (see judgePresented).
-async function judgeE5(match, frame, log, shots) {
+async function judgeE5(match, frame, log, captures) {
   const frames = Number(match[1]);
   const info = ` frames=${frames}`;
   if (!(frames >= E5_FRAMES_MIN))
     return { ok: false, reason: `TN_PLAYER_FRAMES ${frames}: the player presented fewer than ${E5_FRAMES_MIN} frames`, info };
-  if (shots.length < 2)
+  // A capture under 1% non-black was taken before the guest's first drawn frame (shadPS4 paints a few
+  // grey pixels outside the game window from launch): boot, skipped.
+  let rasters;
+  try {
+    rasters = captures.map(file => ({ file, raster: readPpm(pngToPpm(file)) }));
+  } catch (error) {
+    return { ok: false, reason: `a host screenshot is unreadable: ${error.message}`, info };
+  }
+  const lit = ({ pixels, width, height }) => {
+    let count = 0;
+    for (let at = 0; at < pixels.length; at += 3) if (pixels[at] || pixels[at + 1] || pixels[at + 2]) count += 1;
+    return count / (width * height) >= 0.01;
+  };
+  const drawn = rasters.filter(({ raster }) => lit(raster));
+  if (drawn.length < 2)
     return {
       ok: false,
-      reason: `${shots.length} host screenshot(s): a green run needs two, at different times, to prove the cube moved`,
+      reason: `${drawn.length} of ${captures.length} host screenshot(s) show anything but black (${captures.map(f => path.basename(f)).join(', ')}): a green run needs two drawn frames, at different times, to prove the cube moved`,
       info,
     };
-  let first;
-  let last;
-  try {
-    first = readPpm(pngToPpm(shots[0]));
-    last = readPpm(pngToPpm(shots.at(-1)));
-  } catch (error) {
-    return { ok: false, reason: `${shots[0]} or ${shots.at(-1)} is unreadable: ${error.message}`, info };
-  }
+  const shots = drawn.map(({ file }) => file);
+  const first = drawn[0].raster;
+  const last = drawn.at(-1).raster;
   const clear = e5ClearColour(last);
   const moved = differingFraction(first, last);
   // run.cpp averages the game's JS update and the whole frame over each 100 presented frames.
