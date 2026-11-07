@@ -77,6 +77,9 @@ test('TN_PS4_HOST_HZ runs the emulator in gamescope inside the lane Xvfb, so E5 
   assert.match(runner, /'gamescope', '--backend', 'sdl'/u);
   assert.match(runner, /\$TN_PS4_HOST_WRAP "\$appimage" -g "\$eboot" &/u);
   assert.match(runner, /vblank_frequency: HOST_HZ/u);
+  // On by default where gamescope exists; TN_PS4_HOST_HZ=0 is the named override and the run reports it.
+  assert.match(runner, /HOST_HZ_SET \? Number\(process\.env\.TN_PS4_HOST_HZ\) : HAS_GAMESCOPE \? 144 : 0/u);
+  assert.match(runner, /PS4_EMULATED host: plain Xvfb/u);
 });
 
 test('refuses a UI with no stylesheet', () => {
