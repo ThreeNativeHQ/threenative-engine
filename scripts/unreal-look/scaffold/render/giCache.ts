@@ -161,6 +161,12 @@ export interface IGiOptions {
    */
   readonly field?: {
     readonly irradiance: (position: Node<"vec3">, normal: Node<"vec3">) => Node<"vec3">;
+    /**
+     * The radiance arriving along a direction. The screen gather subtracts it per ray: a hit replaces the cache's
+     * radiance along its ray, as Lumen's per-ray radiance-cache read does (LumenScreenProbeTracing.usf:831), not the
+     * irradiance that a surface facing the ray would get. Unset, the gather subtracts `irradiance`.
+     */
+    readonly radiance?: (position: Node<"vec3">, direction: Node<"vec3">) => Node<"vec3">;
   };
 }
 
@@ -1094,6 +1100,8 @@ function irradianceAt(
  */
 export const giCache: {
   irradiance?: (position: Node<"vec3">, normal: Node<"vec3">) => Node<"vec3">;
+  /** The traced field's radiance along a direction, which the gather's per-ray fallback prefers (see IGiOptions.field). */
+  radiance?: (position: Node<"vec3">, direction: Node<"vec3">) => Node<"vec3">;
   /**
    * The baked field at its final resolution, for tools and tests: per texel, six faces of RGB (E / pi), six
    * environment shares, and whether the texel's centre lies inside a solid (a read gives it no weight).
@@ -1130,8 +1138,10 @@ export const giCache: {
  */
 export function cacheFallback(
   camera: PerspectiveCamera,
+  /** "ray" reads the radiance along the direction when the field has it (a gather's per-ray tier); "normal" reads irradiance. */
+  along: "normal" | "ray" = "normal",
 ): ((position: Node<"vec3">, normal: Node<"vec3">) => Node<"vec3">) | undefined {
-  const read = giCache.irradiance;
+  const read = (along === "ray" ? giCache.radiance : undefined) ?? giCache.irradiance;
   if (read === undefined) return undefined;
   const live = (index: number) =>
     uniform(0).onRenderUpdate(() => camera.matrixWorld.elements[index] ?? 0);
@@ -1956,6 +1966,15 @@ function bakeGi(gameCtx: IRayContext, root: Object3D, options: IGiOptions): IGiR
     const light = emitterLight(emitters, position, normal);
     return light === undefined ? base : base.add(light);
   };
+  const traceRadiance = traceField?.radiance;
+  giCache.radiance =
+    traceRadiance === undefined
+      ? undefined
+      : (position, direction) => {
+          const base = traceRadiance(position, direction);
+          const light = emitterLight(emitters, position, direction);
+          return light === undefined ? base : base.add(light);
+        };
   const mean = meanRadianceAt(fine.values, fine.grid, cut.solid);
   giCache.meanRadiance = mean.read;
   giCache.meanTexture = mean.texture;

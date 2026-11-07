@@ -699,15 +699,28 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
   }
 
   sampleIrradiance(position: Vector3, normal: Vector3): Vector3 {
+    return this.#evaluateCpu(position, normal, SH_IRRADIANCE_WEIGHTS, "sampleIrradiance");
+  }
+
+  /**
+   * The radiance arriving along `direction` (the SH itself, not convolved with a cosine lobe), clamped at zero. A
+   * screen gather subtracts this per ray, because a hit replaces the cache's radiance along that ray: Lumen reads its
+   * radiance cache per ray direction (UE 5.8.3: Engine/Shaders/Private/Lumen/LumenScreenProbeTracing.usf:831).
+   */
+  sampleRadiance(position: Vector3, direction: Vector3): Vector3 {
+    return this.#evaluateCpu(position, direction, SH_RADIANCE_WEIGHTS, "sampleRadiance");
+  }
+
+  #evaluateCpu(position: Vector3, normal: Vector3, weights: IShWeights, name: string): Vector3 {
     if (!(position instanceof Vector3) || !(normal instanceof Vector3)) {
-      throw new Error("ProbeVolume.sampleIrradiance requires Vector3 position and normal values.");
+      throw new Error(`ProbeVolume.${name} requires Vector3 position and normal values.`);
     }
     const coefficients = this.#samplePackedCoefficients(position);
     const direction = normal.clone().normalize();
     const result = new Vector3();
-    result.x = evaluateShChannel(coefficients, 0, direction);
-    result.y = evaluateShChannel(coefficients, 1, direction);
-    result.z = evaluateShChannel(coefficients, 2, direction);
+    result.x = evaluateShChannel(coefficients, 0, direction, weights);
+    result.y = evaluateShChannel(coefficients, 1, direction, weights);
+    result.z = evaluateShChannel(coefficients, 2, direction, weights);
     return result.max(new Vector3());
   }
 
@@ -760,6 +773,18 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
     position: Node<"vec3"> = positionWorld,
     normal: Node<"vec3"> = normalWorld,
   ): Node<"vec3"> {
+    return this.#shNode(position, normal, SH_IRRADIANCE_WEIGHTS);
+  }
+
+  /** The GPU graph of `sampleRadiance`: the radiance arriving along `direction`, clamped at zero. */
+  sampleRadianceNode(
+    position: Node<"vec3"> = positionWorld,
+    direction: Node<"vec3"> = normalWorld,
+  ): Node<"vec3"> {
+    return this.#shNode(position, direction, SH_RADIANCE_WEIGHTS);
+  }
+
+  #shNode(position: Node<"vec3">, normal: Node<"vec3">, w: IShWeights): Node<"vec3"> {
     const atlasAt = this.#atlasAt(position);
     const packed = (subVolume: number) => this.#atlasNode.sample(atlasAt(subVolume));
     const packedValues = Array.from({ length: PACKED_SUB_VOLUME_COUNT }, (_, index) =>
@@ -779,21 +804,21 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
     ];
     const direction = normalize(vec3(normal));
     const coefficientAt = (index: number) => valueAt(coefficients, index, "SH coefficient");
-    const irradiance = coefficientAt(0)
-      .mul(0.886227)
-      .add(coefficientAt(1).mul(direction.y).mul(1.023328))
-      .add(coefficientAt(2).mul(direction.z).mul(1.023328))
-      .add(coefficientAt(3).mul(direction.x).mul(1.023328))
-      .add(coefficientAt(4).mul(direction.x.mul(direction.y)).mul(0.858086))
-      .add(coefficientAt(5).mul(direction.y.mul(direction.z)).mul(0.858086))
-      .add(coefficientAt(6).mul(direction.z.mul(direction.z).mul(0.743125).sub(0.247708)))
-      .add(coefficientAt(7).mul(direction.x.mul(direction.z)).mul(0.858086))
+    const value = coefficientAt(0)
+      .mul(w.l0)
+      .add(coefficientAt(1).mul(direction.y).mul(w.l1))
+      .add(coefficientAt(2).mul(direction.z).mul(w.l1))
+      .add(coefficientAt(3).mul(direction.x).mul(w.l1))
+      .add(coefficientAt(4).mul(direction.x.mul(direction.y)).mul(w.l2))
+      .add(coefficientAt(5).mul(direction.y.mul(direction.z)).mul(w.l2))
+      .add(coefficientAt(6).mul(direction.z.mul(direction.z).mul(w.l20).sub(w.l20Offset)))
+      .add(coefficientAt(7).mul(direction.x.mul(direction.z)).mul(w.l2))
       .add(
         coefficientAt(8)
           .mul(direction.x.mul(direction.x).sub(direction.y.mul(direction.y)))
-          .mul(0.429043),
+          .mul(w.l22),
       );
-    return irradiance.max(0);
+    return value.max(0);
   }
 
   /** Internal data seam used by unit/conformance fixtures to seed a known SH atlas without a GPU. */
@@ -1968,18 +1993,53 @@ function cubeFaceCoordinate(face: number, col: number, row: number): IVector3Lik
   return { x: -col, y: row, z: -1 };
 }
 
-function evaluateShChannel(coefficients: Float32Array, channel: number, normal: Vector3): number {
+/** The SH L2 basis constants per band, times each band's lobe weight. */
+interface IShWeights {
+  readonly l0: number;
+  readonly l1: number;
+  readonly l2: number;
+  readonly l20: number;
+  readonly l20Offset: number;
+  readonly l22: number;
+}
+
+/** The basis convolved with a cosine lobe (bands times pi, 2 pi / 3 and pi / 4): irradiance E for a normal. */
+const SH_IRRADIANCE_WEIGHTS: IShWeights = {
+  l0: 0.886227,
+  l1: 1.023328,
+  l2: 0.858086,
+  l20: 0.743125,
+  l20Offset: 0.247708,
+  l22: 0.429043,
+};
+
+/** The bare basis: the radiance arriving along a direction. */
+const SH_RADIANCE_WEIGHTS: IShWeights = {
+  l0: 0.282095,
+  l1: 0.488603,
+  l2: 1.092548,
+  l20: 0.946176,
+  l20Offset: 0.315392,
+  l22: 0.546274,
+};
+
+function evaluateShChannel(
+  coefficients: Float32Array,
+  channel: number,
+  normal: Vector3,
+  w: IShWeights,
+): number {
   const c = (index: number) => coefficients[index * SH_CHANNEL_COUNT + channel] ?? 0;
   return (
-    c(0) * 0.886227 +
-    c(1) * normal.y * 1.023328 +
-    c(2) * normal.z * 1.023328 +
-    c(3) * normal.x * 1.023328 +
-    c(4) * normal.x * normal.y * 0.858086 +
-    c(5) * normal.y * normal.z * 0.858086 +
-    c(6) * (normal.z * normal.z * 0.743125 - 0.247708) +
-    c(7) * normal.x * normal.z * 0.858086 +
-    c(8) * (normal.x * normal.x - normal.y * normal.y) * 0.429043
+    c(0) * w.l0 +
+    c(1) * normal.y * w.l1 +
+    c(2) * normal.z * w.l1 +
+    c(3) * normal.x * w.l1 +
+    c(4) * normal.x * normal.y * w.l2 +
+    c(5) * normal.y * normal.z * w.l2 +
+    c(6) * (normal.z * normal.z * w.l20 - w.l20Offset) +
+    c(7) * normal.x * normal.z * w.l2 +
+    c(8) * (normal.x * normal.x - normal.y * normal.y) * w.l22
   );
 }
 

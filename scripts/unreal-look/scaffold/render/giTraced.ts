@@ -11,6 +11,8 @@ import type { IGiOptions } from "./giCache.js";
 export interface IGiTracedField {
   /** The irradiance node `installGi` reads: E / pi at a world position and normal. */
   readonly irradiance: NonNullable<IGiOptions["field"]>["irradiance"];
+  /** The radiance arriving along a direction (E / pi units), for the screen gather's per-ray fallback. */
+  readonly radiance: NonNullable<NonNullable<IGiOptions["field"]>["radiance"]>;
   /** True once every probe has been traced. */
   ready(): boolean;
 }
@@ -101,6 +103,7 @@ export function tracedGiField(
           normal,
         )
         .div(Math.PI),
+    radiance: (position, direction) => volume.sampleRadianceNode(position, direction),
     ready: () => volume.observation.status === "ready",
   };
 }

@@ -217,6 +217,26 @@ describe("ProbeVolume", () => {
     expect(flat.x).toBeGreaterThan(0);
   });
 
+  it("reads the radiance along a direction, not the cosine-smoothed irradiance (PRD-831)", () => {
+    const subject = volume({ report: () => undefined });
+    // L0 1 and an L1 slot along +y of 0.5: radiance along +y is c0 Y00 + c2 Y1 = 0.282095 + 0.5 x 0.488603, and the
+    // irradiance keeps only 2/3 of the L1 band (pi x 0.282095 + 2 pi / 3 x 0.5 x 0.488603).
+    const seeded = Array.from({ length: 9 }, (_, index) => {
+      const value = index === 0 ? 1 : index === 1 ? 0.5 : 0;
+      return { b: value, g: value, r: value };
+    });
+    for (let iz = 0; iz < subject.resolution.z; iz += 1)
+      for (let iy = 0; iy < subject.resolution.y; iy += 1)
+        for (let ix = 0; ix < subject.resolution.x; ix += 1)
+          subject.setProbeCoefficients(ix, iy, iz, seeded);
+    const at = new Vector3(0.7, 1.2, 0.4);
+    const up = new Vector3(0, 1, 0);
+    expect(subject.sampleRadiance(at, up).x).toBeCloseTo(0.282095 + 0.5 * 0.488603, 4);
+    expect(subject.sampleRadiance(at, up.clone().negate()).x).toBeCloseTo(0.282095 - 0.5 * 0.488603, 4);
+    expect(subject.sampleIrradiance(at, up).x).toBeCloseTo(0.886227 + 0.5 * 1.023328, 4);
+    expect(subject.sampleRadianceNode()).toBeDefined();
+  });
+
   it("reads the non-directional value with one atlas fetch, not seven (PRD-643)", () => {
     const subject = volume({ report: () => undefined });
     const fetches = (node: Node): number => {

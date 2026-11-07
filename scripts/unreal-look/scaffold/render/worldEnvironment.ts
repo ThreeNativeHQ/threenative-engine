@@ -1034,7 +1034,7 @@ export class WorldEnvironment {
           // Engine/Source/Runtime/Renderer/Private/Lumen/LumenScreenProbeGather.cpp).
           // The cache holds scene light and the gather reads the exposed frame: the fallback takes the same gain,
           // or every hit returns far less than the miss it replaces and the frame goes black.
-          const cache = wasmEngine ? cacheFallback(view) : undefined;
+          const cache = wasmEngine ? cacheFallback(view, "ray") : undefined;
           const fallback =
             cache === undefined
               ? undefined
