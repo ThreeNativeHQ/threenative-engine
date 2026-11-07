@@ -100,6 +100,35 @@ export interface IBakedBiome {
 }
 
 /**
+ * The biome's far-impostor distance, carried into each species' asset record.
+ *
+ * `far.impostor` was validated and then read by nothing: a game stating it got no impostor distance
+ * in `world.json`, so the engine's whole-asset impostor never engaged. A caller that names its own
+ * `impostorDistance` keeps it — this fills the gap, it does not override a choice.
+ */
+function withImpostorDistances(
+  assets: Readonly<Record<string, IWorldPackageAsset>> | undefined,
+  spec: IBiomeSpec,
+): Readonly<Record<string, IWorldPackageAsset>> | undefined {
+  if (assets === undefined) return undefined;
+  const distances = new Map<string, number>();
+  for (const foliage of spec.foliage) {
+    const distance = foliage.far?.impostor;
+    if (distance !== undefined) distances.set(foliage.species, distance);
+  }
+  if (distances.size === 0) return assets;
+  const filled: Record<string, IWorldPackageAsset> = {};
+  for (const [species, asset] of Object.entries(assets)) {
+    const distance = distances.get(species);
+    filled[species] =
+      distance === undefined || asset.impostorDistance !== undefined
+        ? asset
+        : { ...asset, impostorDistance: distance };
+  }
+  return filled;
+}
+
+/**
  * Bake one biome: the recipe's evaluated state and the world package it streams.
  *
  * This is the composition `terrain_generate` and a game's build script both call, so the file layout
@@ -125,11 +154,12 @@ export function bakeBiome(options: IBakeBiomeOptions): IBakedBiome {
       : null;
   const state: ITerrainState =
     scatter === null ? options.state : { ...options.state, instances: scatter.placements };
+  const assets = withImpostorDistances(options.assets, spec);
   const baked =
-    options.assets === undefined
+    assets === undefined
       ? null
       : bakeWorldPackage(state, {
-          assets: options.assets,
+          assets,
           ...(options.cellSize === undefined ? {} : { cellSize: options.cellSize }),
           ...(options.layers === undefined ? {} : { layers: options.layers }),
           ...(options.names === undefined ? {} : { names: options.names }),

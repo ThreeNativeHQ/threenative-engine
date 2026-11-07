@@ -15,6 +15,12 @@ export interface IWorldPackageAsset {
     readonly scene?: string;
   }[];
   readonly maxDistance?: number;
+  /**
+   * Metres at which a far instance becomes the engine's whole-asset impostor. Core's contract
+   * declares it (`IWorldPackage.impostorDistance`); the biome's `far.impostor` is where a game
+   * states it, and `bake-biome.ts` carries it into the package.
+   */
+  readonly impostorDistance?: number;
 }
 
 /** One cell's contiguous run of placement records, eight float32 values each. */
