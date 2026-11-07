@@ -478,17 +478,25 @@ export function packedTarballName(name: string, version: string): string {
   return `${prefix}${version}.tgz`;
 }
 
-function packReleaseSet(
+/**
+ * Packs the cohort into `destination`. `execute` is the seam a spec drives: the default is the real
+ * runner, and the third argument it takes is *options*, never a bare label — a bare string is read as
+ * a working directory, which is how a release step once tried to run `pnpm` in a folder named after
+ * its own progress line.
+ */
+export function packReleaseSet(
   packages: readonly IPublishPackage[],
   destination: string,
+  execute: typeof run = run,
 ): Readonly<Record<string, string>> {
   const tarballs: Record<string, string> = {};
   for (const item of packages) {
-    run(
-      "pnpm",
-      ["--filter", item.name, "pack", "--pack-destination", destination],
-      `pack ${item.name}`,
-    );
+    execute("pnpm", ["--filter", item.name, "pack", "--pack-destination", destination], {
+      code: "TN_RELEASE_STEP_FAILED",
+      cwd: REPO,
+      detail: "Nothing further was published.",
+      label: `pack ${item.name}`,
+    });
     tarballs[item.name] = path.join(destination, packedTarballName(item.name, item.version));
   }
   return tarballs;
@@ -768,7 +776,9 @@ async function main(args: readonly string[]): Promise<void> {
   }
 
   run("pnpm", ["tsx", "scripts/verify-registry-install.ts"], {
+    code: "TN_RELEASE_STEP_FAILED",
     cwd: REPO,
+    detail: "Nothing further was published.",
     label: "clean-room install from the registry",
   });
   process.stdout.write("\nPublished, and installable from the registry.\n");

@@ -9,6 +9,7 @@ import {
   UPGRADE_PROOF_TEMPLATES,
   assertCleanPackageTree,
   installableOnRegistry,
+  packReleaseSet,
   packedTarballName,
   prepareReleaseCohort,
   proveUpgradeFromLatest,
@@ -456,6 +457,29 @@ describe("pnpm release cohort guards", () => {
     expect(() => unpublishedReleasePackages(packages, () => ({ state: "unreachable" }))).toThrow(
       /TN_RELEASE_REGISTRY_UNREACHABLE/u,
     );
+  });
+
+  it("packs every cohort tarball in the repository, never in a label", () => {
+    const calls: { command: string; args: readonly string[]; options: unknown }[] = [];
+    const tarballs = packReleaseSet(
+      [
+        { name: "@threenative/core", version: "0.3.12" },
+        { name: "@threenative/ui", version: "0.3.12" },
+      ] as never,
+      "/tmp/packed",
+      ((command: string, args: readonly string[], options: unknown) => {
+        calls.push({ args, command, options });
+      }) as never,
+    );
+    expect(Object.keys(tarballs)).toEqual(["@threenative/core", "@threenative/ui"]);
+    expect(calls).toHaveLength(2);
+    for (const call of calls) {
+      // A bare third argument would be read as a working directory: the release once tried to run
+      // pnpm in a folder named "pack @threenative/core" and failed every pack.
+      expect(typeof call.options).toBe("object");
+      expect(call.options).toMatchObject({ code: "TN_RELEASE_STEP_FAILED" });
+      expect((call.options as { cwd: string }).cwd).toMatch(/threenative-engine(\/|\.worktrees)/u);
+    }
   });
 
   it("keeps the post-build cleanliness and preflight gates before publication", async () => {

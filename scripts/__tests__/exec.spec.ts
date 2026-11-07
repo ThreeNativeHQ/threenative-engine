@@ -77,6 +77,17 @@ describe("the exec runner", () => {
     expect(output.length).toBe(200_000);
   });
 
+  it("should refuse a working directory that does not exist, instead of inventing one", async () => {
+    // A bare third argument is read as a directory; a caller that passed a label used to run the
+    // command in a folder named after its own progress line.
+    expect(() => run(node, ["-e", ""], "pack @threenative/core")).toThrow(
+      /TN_EXEC_FAILED: pnpm|does not exist/u,
+    );
+    await expect(runAsync(node, ["-e", ""], { cwd: "/no/such/directory" })).rejects.toThrow(
+      /working directory '\/no\/such\/directory' does not exist/u,
+    );
+  });
+
   it("should reject a command that cannot start", async () => {
     await expect(runAsync("tn-no-such-binary", [])).rejects.toThrow(/did not start/u);
   });

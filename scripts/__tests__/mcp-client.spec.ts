@@ -89,19 +89,25 @@ describe("the MCP client", () => {
     }
   });
 
-  it("should refuse a request when the server stops reading and never answers", async () => {
-    // A server that closes its input and stays alive leaves the client writing into a pipe with no
-    // reader. The kernel reports that as EPIPE when the pipe is torn down, which races the child's
-    // own exit, so the assertion is on the refusal both paths agree on: an `McpError` naming the
-    // server. The stdin listener makes the EPIPE path give the more specific message.
+  it("should refuse a request when the server closes its input", async () => {
+    // A server that stops reading leaves the next write facing a closed pipe. The server says on
+    // stderr when fd 0 is gone, so the write below lands *after* the close and the kernel answers
+    // EPIPE; without a listener on stdin that is an uncaught stream error and takes the script down.
     const script = server([
       "try { require('node:fs').closeSync(0); } catch {}",
+      "process.stderr.write('input closed\\n');",
       "setInterval(() => {}, 1_000);",
     ]);
-    const client = startMcpServer({ ...script, label: "closing server", timeoutMs: 200 });
+    const client = startMcpServer({ ...script, label: "closing server", timeoutMs: 5_000 });
     try {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      expect(client.stderr()).toContain("input closed");
       const error = await client.request("tools/list").catch((caught: unknown) => caught);
       expect(error).toBeInstanceOf(McpError);
+      // Measured: under vitest's worker the closed read end does not surface as EPIPE, so the
+      // request's own deadline wins; outside it, the same construction answers
+      // `TN_MCP_EXITED: … closed its input: write EPIPE` (probed by hand). Either way the client
+      // must refuse rather than hang, which is what this asserts.
       expect((error as Error).message).toMatch(/TN_MCP_(EXITED|TIMEOUT): closing server/u);
     } finally {
       client.close();

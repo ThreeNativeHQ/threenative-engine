@@ -4,6 +4,7 @@
 // not at all. The strictest variant wins here: a non-zero exit always throws, the message always
 // names the step and the exit, and stdout is either streamed or captured — never silently dropped.
 import { execFileSync, spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 
 /** How to run one command, and what to call it when it fails. */
 export interface IExecOptions {
@@ -35,6 +36,22 @@ export type ExecTarget = string | IExecOptions;
 function optionsOf(target: ExecTarget | undefined): IExecOptions {
   if (target === undefined) return {};
   return typeof target === "string" ? { cwd: target } : target;
+}
+
+/**
+ * Refuses a working directory that is not there.
+ *
+ * A bare string third argument used to be read as a directory, so a caller that passed a human label
+ * ran the command in a folder named after its own progress line — a failure no type can catch,
+ * because both are strings. Naming the missing directory turns that into a refusal at the call.
+ */
+function assertWorkingDirectory(options: IExecOptions, command: string): void {
+  if (options.cwd === undefined || existsSync(options.cwd)) return;
+  throw new ExecError(
+    options.code ?? "TN_EXEC_BAD_CWD",
+    `${describe(command, [], options)}: working directory '${options.cwd}' does not exist.`,
+    null,
+  );
 }
 
 /** A command that exited non-zero, timed out, or could not start. */
@@ -83,6 +100,7 @@ function failure(
  */
 export function run(command: string, args: readonly string[], target?: ExecTarget): string {
   const options = optionsOf(target);
+  assertWorkingDirectory(options, command);
   try {
     const output = execFileSync(command, [...args], {
       cwd: options.cwd,
@@ -112,6 +130,13 @@ export function runAsync(
   target?: ExecTarget,
 ): Promise<string> {
   const options = optionsOf(target);
+  // A refusal is a rejected promise, like every other failure of this runner: a caller that awaits
+  // does not also need a try/catch around the call.
+  try {
+    assertWorkingDirectory(options, command);
+  } catch (error) {
+    return Promise.reject(error);
+  }
   return new Promise<string>((resolve, reject) => {
     const capture = options.stdio === "capture";
     const child = spawn(command, [...args], {
