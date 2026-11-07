@@ -17,7 +17,6 @@ import {
   type IAnimationTickResult,
   type IAnimationTickRig,
   animationTickExecutor,
-  clearAnimationTicks,
   flushAnimationTicks,
   queueAnimationTick,
 } from "./animation-batch.js";
@@ -660,6 +659,12 @@ export class AnimationPlayer {
   #batchLocomotion = false;
   /** The player ran ticks the engine did not since its last batched one: its banked advance is spent. */
   #batchReset = true;
+  /**
+   * The engine holds held-tick time for this rig that JS has not handed back or spent. It cannot be
+   * spent twice — `#evaluate` sets `#batchReset`, so the engine drops any bank a JS advance has already
+   * covered — but dropping it loses the interval, so it is handed back instead.
+   */
+  #engineBank = false;
   /** Seconds the engine has not measured the body over: its last position is that much out of date. */
   #batchGapDt = 0;
   /** Seconds the JS loop has not measured the body over: its last position is that much out of date. */
@@ -1324,12 +1329,14 @@ export class AnimationPlayer {
     // The batch decides before the JS bank does: a tick it takes must not also be banked per action,
     // or the two paths would each other's time.
     const heldBefore = this.#pendingDt;
-    this.#pendingDt += elapsed;
     if (this.#queueTick(dt, elapsed, mixerScale)) {
-      // This tick measured nothing in JS, so JS's last position goes stale by one interval.
+      // The engine banked this tick; JS holds none of it, and measured nothing, so its last position
+      // goes stale by one interval.
+      if (!this.#batchStep) this.#engineBank = true;
       this.#jsGapDt += dt;
       return;
     }
+    this.#pendingDt += elapsed;
     // A full-rate tick with no held time advances through the mixer's own actions; only deferred
     // integration needs per-action elapsed time. Scanning the whole clip library to bank that time
     // costs every full-rate rig every frame.
@@ -1389,29 +1396,56 @@ export class AnimationPlayer {
     if (this.mixer instanceof LoopAwareAnimationMixer && this.mixer.hasPublicListeners)
       return false;
     if (animationTickExecutor() === undefined) return false;
+    this.#queueRig(name, action, dt, elapsed, this.#evaluated);
+    return true;
+  }
+
+  /** One rig's descriptor, in the shape `tn_anim_tick` takes. The held bank is the engine's, not ours. */
+  #queueRig(
+    name: string,
+    action: AnimationAction,
+    dt: number,
+    elapsed: number,
+    step: boolean,
+  ): void {
     const measured = this.#measureOf(name);
     this.#cameraCarried = cameraCarried(this.#strideRoot);
     this.#batchName = name;
-    this.#batchStep = this.#evaluated;
+    this.#batchStep = step;
     this.#batchStrideSync = this.#strideSync ?? !this.#cameraCarried;
     this.#batchLocomotion = measured.groundSpeed >= CLIP_GROUND_FLOOR;
     const rig: IAnimationTickRig = {
       mixer: this.mixer,
       action,
       strideRoot: this.#strideRoot,
-      // The interval the ground is measured over: this frame, plus the time the engine stopped
-      // measuring while the JS loop had the rig, so a switch never divides a stale displacement by
-      // one frame's dt.
+      // The interval the ground is measured over: this tick, plus the time the engine stopped measuring
+      // while the JS loop had the rig, so a switch never divides a stale displacement by one frame's dt.
       dt: dt + this.#batchGapDt,
       elapsed,
-      step: this.#batchStep,
+      step,
       reset: this.#batchReset,
       clipGroundSpeed: measured.groundSpeed,
       strideSync: this.#batchStrideSync,
     };
     queueAnimationTick(rig, this.#applyTick);
     this.#batchQueued = true;
-    return true;
+  }
+
+  /**
+   * The engine holds time this rig banked on held ticks it posed nothing for. Before the JS loop spends
+   * any time of its own, hand that bank back as one step: the engine integrates it at the exact rates it
+   * ran under, and JS then advances only the time it banked itself. Without this, a `warp()`, a slow-mo
+   * frame, a `syncBones` or a clip change would advance the held interval twice.
+   */
+  #handBackToEngine(): void {
+    if (!this.#engineBank) return;
+    this.#engineBank = false;
+    const name = this.#current;
+    const action = name === undefined ? undefined : this.#actions.get(name);
+    if (name === undefined || action === undefined) return;
+    if (animationTickExecutor() === undefined) return;
+    this.#queueRig(name, action, 0, 0, true);
+    flushAnimationTicks();
   }
 
   /**
@@ -1439,6 +1473,7 @@ export class AnimationPlayer {
     }
     if (this.#batchStep) {
       this.#batchStep = false;
+      this.#engineBank = false;
       if (result.changed) this.#advancedFrames += 1;
       this.#pendingDt = 0;
       this.#skippedFrames = 0;
@@ -1578,6 +1613,8 @@ export class AnimationPlayer {
   }
 
   #evaluate(dt: number, mixerScale = this.mixer.timeScale): void {
+    this.#handBackToEngine();
+    this.#batchReset = true;
     // Read before mixer.update(): the "finished" listener fires inside it for a completing
     // once-clip, and that final frame still counts as advancement.
     const wasFinished = this.#finished;
@@ -1666,7 +1703,7 @@ export class AnimationPlayer {
 
   stop(): void {
     this.#settle();
-    clearAnimationTicks();
+    this.#engineBank = false;
     this.#pendingDt = 0;
     this.#pendingActionTimes.clear();
     this.#skippedFrames = 0;
@@ -1692,6 +1729,7 @@ export class AnimationPlayer {
     this.#batchGapDt = 0;
     this.#jsGapDt = 0;
     this.#batchReset = true;
+    this.#engineBank = false;
     this.#strideGroundSpeed = 0;
     this.#strideRate = 1;
     this.#strideSynced = false;

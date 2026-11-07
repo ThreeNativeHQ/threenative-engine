@@ -510,8 +510,8 @@ export function defineBrowserClasses(
    * does; dropping exactly what it wrote is the difference between a fresh read and a pose integrated
    * at last frame's rate.
    */
-  const ACTION_FIELDS_WRITTEN_BY_TICK = ["time", "timeScale", "weight"] as const;
-  const MIXER_FIELDS_WRITTEN_BY_TICK = ["time"] as const;
+  const actionFieldsWrittenByTick = ["time", "timeScale", "weight"] as const;
+  const mixerFieldsWrittenByTick = ["time"] as const;
   const forgetAnimated = (object: object, fields: readonly string[]): void => {
     const table = animated.get(object);
     if (table === undefined) return;
@@ -1808,8 +1808,8 @@ export function defineBrowserClasses(
       for (let i = 0; i < count; i += 1) {
         const rig = rigs[i];
         if (rig === undefined) continue;
-        if (rig.action !== null) forgetAnimated(rig.action, ACTION_FIELDS_WRITTEN_BY_TICK);
-        forgetAnimated(rig.mixer, MIXER_FIELDS_WRITTEN_BY_TICK);
+        if (rig.action !== null) forgetAnimated(rig.action, actionFieldsWrittenByTick);
+        forgetAnimated(rig.mixer, mixerFieldsWrittenByTick);
       }
     };
   }
