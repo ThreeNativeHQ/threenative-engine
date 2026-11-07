@@ -24,6 +24,38 @@ while subprocess.run(["pgrep", "-f", "Shadps4|shadPS4"], capture_output=True).re
 print("vpad: shadPS4 running", flush=True)
 time.sleep(float(sys.argv[1]) if len(sys.argv) > 1 else 25)
 walk = float(sys.argv[3]) if len(sys.argv) > 3 else 0
+# Optional 4th argument: a comma list of steps run in order instead of the default sequence, so a
+# proof drives every bound control. `walk:S` left stick forward, `right:S` left stick right,
+# `run:S` stick forward with R2 held,
+# `cross` taps ✕, `zoom:S` right stick forward, `options` taps OPTIONS, `wait:S` idles.
+if len(sys.argv) > 4:
+    for step in sys.argv[4].split(","):
+        name, _, value = step.partition(":")
+        hold = float(value or 0.3)
+        print("vpad step", name, hold, time.time(), flush=True)
+        if name in ("walk", "run", "right"):
+            if name == "run": pad.write(e.EV_KEY, e.BTN_TR2, 1); pad.write(e.EV_ABS, e.ABS_RZ, 255)
+            axis, full = (e.ABS_X, 255) if name == "right" else (e.ABS_Y, 0)
+            pad.write(e.EV_ABS, axis, full); pad.syn(); time.sleep(hold)
+            pad.write(e.EV_ABS, axis, 128)
+            if name == "run": pad.write(e.EV_KEY, e.BTN_TR2, 0); pad.write(e.EV_ABS, e.ABS_RZ, 0)
+            pad.syn()
+        elif name in ("cross", "options"):
+            button = e.BTN_SOUTH if name == "cross" else e.BTN_START
+            pad.write(e.EV_KEY, button, 1); pad.syn(); time.sleep(hold)
+            pad.write(e.EV_KEY, button, 0); pad.syn()
+        elif name == "zoom":
+            pad.write(e.EV_ABS, e.ABS_RY, 0); pad.syn(); time.sleep(hold)
+            pad.write(e.EV_ABS, e.ABS_RY, 128); pad.syn()
+        elif name == "wait":
+            time.sleep(hold)
+        else:
+            sys.exit(f"vpad: unknown step {name}")
+        time.sleep(0.5)
+    time.sleep(3)
+    pad.close()
+    print("vpad done", flush=True)
+    sys.exit(0)
 if walk > 0:
     pad.write(e.EV_ABS, e.ABS_Y, 0); pad.syn(); print("vpad stick forward", walk, time.time(), flush=True); time.sleep(walk)
     pad.write(e.EV_ABS, e.ABS_Y, 128); pad.syn()
