@@ -191,6 +191,13 @@ git apply "$SCRIPTS/patches/0019-opengnm-msaa-fragment-count.patch"
 # surface the hardware tiles fine: 4x MSAA RGBA16F at 1920x1080 (tile split 256 B, bank height
 # align 512) is exactly the case whose sanity rule cannot be met.
 git apply "$SCRIPTS/patches/0020-opengnm-gpa-bank-sanity-advisory.patch"
+# A PKT3 count field is payload dwords minus one (Mesa's ac_pm4_cmd_end writes
+# ndw - last_pm4 - 2, and shadPS4 consumes count + 2 words, liverpool.cpp:961).
+# DispatchDirect encoded four payload words as count 4, so the command processor
+# swallowed the trailing NOP's header as well and read that NOP's first zero body
+# word as a PM4 type-0 packet: the first compute dispatch in the engine died at
+# liverpool.cpp:291 "Unimplemented PM4 type 0, base reg: 0, size: 1".
+git apply "$SCRIPTS/patches/0027-opengnm-dispatch-direct-count.patch"
 # config.orbis.mak's `CC ?= clang` loses to make's builtin CC=cc.
 make -j"$JOBS" CC=clang AR=llvm-ar lib > "$LOGS/opengnm.log" 2>&1
 
@@ -330,6 +337,14 @@ git apply "$SCRIPTS/patches/0021-vk-ps4-depth-and-msaa-tile-modes.patch"
 # encoding: 0xffffffff". 0025 places the blob in its buffer so the code lands on a boundary
 # (breadcrumb: code=0x...1000, pgmhi=0).
 git apply "$SCRIPTS/patches/0025-vk-ps4-clear-ps-code-256-aligned.patch"
+# A compute pipeline copied only the code address out of the shader binary and left
+# COMPUTE_PGM_RSRC1/RSRC2 and COMPUTE_NUM_THREAD_XYZ zeroed, so every dispatch ran with
+# RSRC2.USER_SGPR=0 while psbc had compiled USER_SGPR=4 (RSRC2=0x88) for the same shader.
+# shadPS4 then translated the shader with no user SGPRs, its descriptor-set ReadConst base
+# came from an undefined SGPR pair, and every compute dispatch died at
+# flatten_extended_userdata_pass.cpp:832 "ReadConst base low not from constant memory".
+# The pipeline copies the whole GnmCsStageRegisters word set before patching the address.
+git apply "$SCRIPTS/patches/0026-vk-ps4-cs-stage-registers.patch"
 # The Makefile compiles TEST_SRC relative to the vulkan-ps4 tree.
 cp "$SCRIPTS/e2-triangle.c" "$SRC/e2-triangle.c"
 make -f Makefile.orbis -j"$JOBS" TEST_SRC=../e2-triangle.c self > "$LOGS/e2-triangle.log" 2>&1
