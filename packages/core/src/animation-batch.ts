@@ -26,6 +26,11 @@ export interface IAnimationTickRig {
   readonly step: boolean;
   /** The player spent ticks this batch did not, so the banked advance the engine holds is already spent. */
   readonly reset: boolean;
+  /**
+   * The rate this rule last applied to the action, or 0 when its scale is the game's own. The engine is
+   * the only writer of a rate, but the player is the side that knows whether it wrote one.
+   */
+  readonly lastRate: number;
   /** Metres of ground the clip covers per clip-second, measured when the clip was analysed. */
   readonly clipGroundSpeed: number;
   readonly strideSync: boolean;
@@ -171,6 +176,7 @@ export function demo(): string {
       elapsed: dt,
       step: true,
       reset: false,
+      lastRate: 0,
       clipGroundSpeed: 1,
       strideSync: true,
     });

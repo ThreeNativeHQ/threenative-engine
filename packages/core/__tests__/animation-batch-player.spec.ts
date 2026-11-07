@@ -33,9 +33,6 @@ interface ITickState {
   hasLast: boolean;
   x: number;
   z: number;
-  lastRate: number;
-  rateApplied: boolean;
-  reported: number;
   pending: number;
   elapsed: number;
 }
@@ -46,35 +43,29 @@ interface ITickState {
  * player's wiring and the engine's rules stop describing the same frame.
  */
 function referenceBatch(): (rigs: readonly IAnimationTickRig[], status: Float64Array) => void {
-  const states = new Map<AnimationAction, ITickState>();
+  // One mixer is one rig, so the body's last position and the banked advance follow the rig across a
+  // clip change; `reset` is what starts the measurement over.
+  const states = new Map<object, ITickState>();
   return (rigs, status) => {
     for (let i = 0; i < rigs.length; i += 1) {
       const rig = rigs[i] as IAnimationTickRig;
       const mixer = rig.mixer as AnimationMixer;
       const action = rig.action as AnimationAction | null;
       const out = i * 3;
-      if (action === null) {
-        if (rig.step) mixer.update(rig.mixerElapsed);
-        status[out + 2] = rig.mixerElapsed > 0 ? 2 : 0;
-        continue;
-      }
-      let state = states.get(action);
+      let state = states.get(mixer);
       if (state === undefined) {
-        state = {
-          hasLast: false,
-          x: 0,
-          z: 0,
-          lastRate: 1,
-          rateApplied: false,
-          reported: 1,
-          pending: 0,
-          elapsed: 0,
-        };
-        states.set(action, state);
+        state = { hasLast: false, x: 0, z: 0, pending: 0, elapsed: 0 };
+        states.set(mixer, state);
       }
       if (rig.reset) {
+        state.hasLast = false;
         state.pending = 0;
         state.elapsed = 0;
+      }
+      if (action === null) {
+        if (rig.step) mixer.update(rig.elapsed);
+        status[out + 2] = rig.elapsed > 0 ? 2 : 0;
+        continue;
       }
       const scaleBefore = action.timeScale;
       state.pending += rig.elapsed * scaleBefore;
@@ -92,9 +83,9 @@ function referenceBatch(): (rigs: readonly IAnimationTickRig[], status: Float64A
       status[out + 1] = groundSpeed;
       const measured = rig.dt > 0;
       const locomotion = rig.clipGroundSpeed >= CLIP_GROUND_FLOOR;
-      let rate = state.reported;
-      if (measured) {
-        rate = locomotion
+      const rate = !measured
+        ? 1
+        : locomotion
           ? Math.min(
               STRIDE_RATE_MAX,
               Math.max(
@@ -105,8 +96,6 @@ function referenceBatch(): (rigs: readonly IAnimationTickRig[], status: Float64A
               ),
             )
           : 1;
-        state.reported = rate;
-      }
       const applies = measured && locomotion && rig.strideSync;
       let flags = 0;
       if (rig.step) {
@@ -134,15 +123,8 @@ function referenceBatch(): (rigs: readonly IAnimationTickRig[], status: Float64A
           flags |= 1;
       }
       let target = scaleBefore;
-      if (applies) {
-        target = rate;
-        state.lastRate = rate;
-        state.rateApplied = true;
-      } else if (measured && state.rateApplied && scaleBefore === state.lastRate) {
-        target = 1;
-        state.lastRate = 1;
-        state.rateApplied = false;
-      }
+      if (applies) target = rate;
+      else if (measured && rig.lastRate !== 0 && scaleBefore === rig.lastRate) target = 1;
       if (action.timeScale !== target) action.setEffectiveTimeScale(target);
       status[out] = rate;
       status[out + 2] = flags;
@@ -262,6 +244,44 @@ describe("the animation tick batch in the player (PRD-828)", () => {
     expect(batched.advancedFrames).toBe(js.advancedFrames);
     for (let frame = 0; frame < js.actionTimes.length; frame += 1)
       expect(batched.actionTimes[frame]).toBeCloseTo(js.actionTimes[frame] as number, 12);
+  });
+
+  it("measures the same body across a clip change, and starts over only on a reset", () => {
+    // The stride belongs to the rig's body, not to the clip: a walk→run change must not floor the rate for
+    // a frame, and returning to an earlier clip must not divide seconds of travel by one frame.
+    const run = (batched: boolean): { readonly first: number; readonly changed: number } => {
+      const holder = new Object3D();
+      const root = new Object3D();
+      const child = new Object3D();
+      child.name = "child";
+      holder.add(root);
+      root.add(child);
+      const walkClip = new AnimationClip("walk", 1, [
+        new VectorKeyframeTrack("child.position", [0, 1], [0, 0, 0, 10, 0, 0]),
+      ]);
+      const runClip = new AnimationClip("run", 1, [
+        new VectorKeyframeTrack("child.position", [0, 1], [0, 0, 0, 10, 0, 0]),
+      ]);
+      const player = new AnimationPlayer({ root, clips: [walkClip, runClip] });
+      player.play("walk");
+      if (batched)
+        (globalThis as { __tnAnimationTick?: unknown }).__tnAnimationTick = referenceBatch();
+      const step = (metres: number) => {
+        holder.position.x = metres;
+        player.update(0.1);
+        return player.stride.rate;
+      };
+      // 1 m a tick against a 10 m/s clip: rate 1, so a floor frame would show as 0.15.
+      for (let frame = 1; frame <= 3; frame += 1) step(frame);
+      player.play("run");
+      const changed = step(4);
+      return { first: 0, changed };
+    };
+    const js = run(false);
+    const batched = run(true);
+    // Both hold the rate the body implies on the first clip after a change: 10 m/s against a 10 m/s clip.
+    expect(batched.changed).toBeCloseTo(js.changed, 12);
+    expect(batched.changed).toBeCloseTo(1, 12);
   });
 
   it("advances the rig once when a game plays a clip after updating it in the same frame", () => {

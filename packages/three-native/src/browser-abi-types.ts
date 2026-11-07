@@ -42,7 +42,8 @@ export interface IAnimationTickBatch {
   readonly actions: readonly (IEngineRef | null)[];
   readonly roots: readonly (IEngineRef | null)[];
   /**
-   * Four per rig: the stride interval, this tick's own time, the clip's ground speed, and the flags word.
+   * Five per rig: the stride interval, this tick's own time, the clip's ground speed, the rate this rule
+   * last applied (0 for none), and the flags word.
    */
   readonly values: Float64Array;
   /** Three per rig, written by the call: stride rate, measured ground speed, flags. */

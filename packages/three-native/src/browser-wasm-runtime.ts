@@ -412,10 +412,10 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
           writeHandle(at + HANDLE, batch.actions[i] ?? mixer);
           writeHandle(at + 2 * HANDLE, batch.roots[i] ?? mixer);
         }
-        const values = alloc(count * 4 * 8);
+        const values = alloc(count * 5 * 8);
         const status = alloc(count * 3 * 8);
         const v = view();
-        for (let i = 0; i < count * 4; i += 1)
+        for (let i = 0; i < count * 5; i += 1)
           v.setFloat64(values + i * 8, batch.values[i] as number, true);
         const diag = diagnostic();
         check(

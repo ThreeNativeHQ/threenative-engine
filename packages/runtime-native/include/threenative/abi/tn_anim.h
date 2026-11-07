@@ -13,14 +13,20 @@ extern "C" {
  * `AnimationMixer::update` per rig without a crossing per rig.
  *
  * `handles` is three `tn_handle_t` per rig: the mixer, the action, and the body the stride is measured
- * from. `rigs` is four doubles per rig: the stride interval (seconds the body's movement is divided by),
- * this tick's own time, the clip's own ground speed in metres per clip-second, and a flags word. The
- * flags say: bit 0 the game's stride convention applies, bit 1 the action handle is real, bit 2 the
- * stride body handle is real, bit 3 this tick poses the rig (a held tick only measures), bit 4 the
- * player ran ticks this batch did not and already spent them. A slot that is not real repeats the
- * mixer's handle, because a zeroed handle aliases the first context. `status` is three doubles per rig:
- * the stride rate the rule chose, the ground speed it measured, and a flags word (bit 0: a once-clip
- * finished on this tick; bit 1: the mixer's clock moved or a rate or weight changed).
+ * from. `rigs` is five doubles per rig: the stride interval (seconds the body's movement is divided by),
+ * this tick's own time, the clip's own ground speed in metres per clip-second, the rate this rule last
+ * applied (0 for none, which is how the caller says the action's scale is the game's), and a flags word.
+ * The flags say: bit 0 the game's stride convention applies, bit 1 the action handle is real, bit 2 the
+ * stride body handle is real, bit 3 this tick poses the rig (a held tick only measures), bit 4 the player
+ * ran ticks this batch did not, so the rig's banked advance and its last measured position are stale. A
+ * slot that is not real repeats the mixer's handle, because a zeroed handle aliases the first context.
+ * `status` is three doubles per rig: the stride rate the rule chose (1 for a zero interval, which the
+ * caller ignores), the ground speed it measured, and a flags word (bit 0: a once-clip finished on this
+ * tick; bit 1: the mixer's clock moved or a rate changed).
+ *
+ * The rig keeps the frame state, on its own mixer: the last ground position of the body and the advance
+ * banked on held ticks. One mixer is one rig, so a clip change measures the same body continuously, and
+ * the call itself is stateless.
  *
  * The engine banks each tick's own time at the rate in force, so an interval the mixer poses once comes
  * out at the same time as one it poses every frame: a rate that changed inside the interval is
@@ -38,7 +44,7 @@ extern "C" {
 #define TN_ANIM_RIG_BODY (1u << 2)
 #define TN_ANIM_RIG_STEP (1u << 3)
 #define TN_ANIM_RIG_RESET (1u << 4)
-#define TN_ANIM_RIG_VALUES 4u
+#define TN_ANIM_RIG_VALUES 5u
 #define TN_ANIM_STATUS_FINISHED (1u << 0)
 #define TN_ANIM_STATUS_CHANGED (1u << 1)
 TN_EXPORT tn_status_t tn_anim_tick(tn_context_t *context, const tn_handle_t *handles,

@@ -1301,7 +1301,7 @@ extern "C" tn_status_t tn_anim_tick(tn_context_t* context, const tn_handle_t* ha
             const double* values = rigs + i * TN_ANIM_RIG_VALUES;
             // The flags word says which of the two optional handles are real: a rig without an action
             // or a stride body leaves its mixer's handle in that slot (a null handle would alias).
-            const uint32_t flags = static_cast<uint32_t>(values[3]);
+            const uint32_t flags = static_cast<uint32_t>(values[4]);
             if ((flags & TN_ANIM_RIG_ACTION) != 0) {
                 tn::binding::Object* act = tn::abi::objectOf(trio[TN_ANIM_ACTION]);
                 if (act == nullptr || act->cls != "AnimationAction")
@@ -1317,6 +1317,7 @@ extern "C" tn_status_t tn_anim_tick(tn_context_t* context, const tn_handle_t* ha
             rig.dt = values[0];
             rig.elapsed = values[1];
             rig.clipGroundSpeed = values[2];
+            rig.lastRate = values[3];
             rig.strideSync = (flags & TN_ANIM_RIG_STRIDE_SYNC) != 0;
             rig.stepMixer = (flags & TN_ANIM_RIG_STEP) != 0;
             rig.reset = (flags & TN_ANIM_RIG_RESET) != 0;

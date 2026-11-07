@@ -11,10 +11,13 @@
 // This is the other side of that loop: the stride rule and the mixer step run over a batch of rigs
 // with no crossing per rig. JS keeps what is genuinely a decision — which clip, how fast the body
 // really moved, which tick poses the rig — and passes it in one span.
+//
+// The batch holds no state of its own: a rig's frame state lives on its `AnimationMixer`
+// (`strideHasLast`, `stridePending`, `strideElapsed`), which is one per rig, so nothing here is keyed by
+// a pointer that can be freed and reused, and nothing has to be pruned.
 
 #include <cstddef>
 #include <cstdint>
-#include <unordered_map>
 #include <vector>
 
 #include "engine/animation/mixer.h"
@@ -28,8 +31,8 @@ namespace tn::engine::animation {
 
 /**
  * three's rates and floors, mirrored from `packages/core/src/animation.ts` (`STRIDE_RATE_MIN`,
- * `STRIDE_RATE_MAX`, `STRIDE_SPEED_FLOOR`, `CLIP_GROUND_FLOOR`). A game changes them through the
- * player's options, not through this file; they are the defaults the batch runs when nothing overrides.
+ * `STRIDE_RATE_MAX`, `STRIDE_SPEED_FLOOR`, `CLIP_GROUND_FLOOR`). They are the defaults the batch runs;
+ * a game changes them through the player's own options, not through this file.
  */
 struct TickPolicy {
     double rateMin = 0.15;
@@ -53,8 +56,14 @@ struct TickRig {
     double elapsed = 0;
     /** True on the tick that poses the rig; a held tick measures the stride and advances nothing. */
     bool stepMixer = true;
-    /** The player ran ticks the batch did not, and already spent them: drop the banked advance. */
+    /** The player spent ticks the batch did not, so the rig's bank and last position are stale. */
     bool reset = false;
+    /**
+     * The rate this rule last applied, or 0 for none. JS owns that answer, because it is the side that
+     * decides whether the stride convention applies at all; passing it keeps the action itself free of
+     * bookkeeping, and the take-back rule can then put back only a rate this rule wrote.
+     */
+    double lastRate = 0;
     /** Metres of ground the clip covers per clip-second, measured when the clip was analysed (JS side). */
     double clipGroundSpeed = 0;
     /** The game's stride convention: false measures and reports the rate but does not apply it. */
@@ -67,16 +76,13 @@ struct TickStatus {
     bool finished = false;
     /** The mixer's clock moved, or a weight or rate changed. */
     bool changed = false;
-    /** The rate the stride rule chose (1 when the clip is not locomotion). */
+    /** The rate the stride rule chose (1 when the clip is not locomotion; unchanged for a `dt` of 0). */
     double strideRate = 1;
     /** Metres a second the body covered, as measured. */
     double groundSpeed = 0;
 };
 
-/**
- * The state the batch keeps between frames for one action: the advanced time it has banked but not
- * yet spent, the last measured world position and the rate this rule owns.
- */
+/** The per-frame animation batch. Stateless: everything it keeps between frames lives on the rig. */
 class TickBatch {
   public:
     /**
@@ -88,40 +94,8 @@ class TickBatch {
      * tick with `stepMixer` false only measures; a tick with it true advances the mixer by the elapsed
      * time it has banked, with the action scaled to its own banked advance, so a rate that changed
      * inside the interval is integrated rather than the last rate owning the whole of it.
-     *
-     * ponytail: the stride position is kept per action, and a rig that changes clip pays one frame at the
-     * rate floor before it measures its new clip. Keeping it on the mixer instead makes a clip change
-     * exact; nothing on the stress lab changes clip mid-run, so it waits for the caller that needs it.
      */
     void run(const std::vector<TickRig>& rigs, std::vector<TickStatus>& status, const TickPolicy& policy = {});
-
-    [[nodiscard]] std::size_t size() const { return states_.size(); }
-
-  private:
-    struct RigState {
-        bool hasLast = false;
-        double lastX = 0;
-        double lastZ = 0;
-        /** The rate this rule last applied, and whether it applied one: the game's own rate stays the game's. */
-        double lastRate = 1;
-        bool rateApplied = false;
-        /** The rate this rule reports for a tick too short to measure, so a held tick reports a stable number. */
-        double reportedRate = 1;
-        /** The time this rig has banked and not yet posed: the action's own advance, and the interval it covers. */
-        double pending = 0;
-        double elapsed = 0;
-        /** The last tick this action was seen on, so state whose action is gone can be dropped. */
-        std::uint64_t lastFrame = 0;
-    };
-    /**
-     * A state is only alive while its action ticks. An action that has not been seen for a while has
-     * been destroyed — a despawned rig, a scene change — and its address may belong to a new action by
-     * now, so dropping it keeps both the map and the pointer reuse bounded without the caller having to
-     * report every teardown across the bridge.
-     */
-    void prune();
-    std::uint64_t frame_ = 0;
-    std::unordered_map<const AnimationAction*, RigState> states_;
 };
 
 }  // namespace tn::engine::animation

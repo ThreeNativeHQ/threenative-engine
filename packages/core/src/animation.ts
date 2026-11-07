@@ -659,6 +659,8 @@ export class AnimationPlayer {
   #batchLocomotion = false;
   /** The player ran ticks the engine did not since its last batched one: its banked advance is spent. */
   #batchReset = true;
+  /** The queued tick measured the ground: a hand-back tick never does, and its status is not a reading. */
+  #batchMeasured = false;
   /**
    * The engine holds held-tick time for this rig that JS has not handed back or spent. It cannot be
    * spent twice — `#evaluate` sets `#batchReset`, so the engine drops any bank a JS advance has already
@@ -1400,30 +1402,39 @@ export class AnimationPlayer {
     return true;
   }
 
-  /** One rig's descriptor, in the shape `tn_anim_tick` takes. The held bank is the engine's, not ours. */
+  /**
+   * One rig's descriptor, in the shape `tn_anim_tick` takes. The held bank is the engine's, not ours.
+   *
+   * `strideRoot` is null for a tick that only has to spend the engine's bank: handing the body over would
+   * move the engine's last measured position without measuring the interval it belongs to.
+   */
   #queueRig(
     name: string,
     action: AnimationAction,
     dt: number,
     elapsed: number,
     step: boolean,
+    strideRoot: object | null = this.#strideRoot,
   ): void {
     const measured = this.#measureOf(name);
     this.#cameraCarried = cameraCarried(this.#strideRoot);
     this.#batchName = name;
     this.#batchStep = step;
+    this.#batchMeasured = dt > 0;
     this.#batchStrideSync = this.#strideSync ?? !this.#cameraCarried;
     this.#batchLocomotion = measured.groundSpeed >= CLIP_GROUND_FLOOR;
     const rig: IAnimationTickRig = {
       mixer: this.mixer,
       action,
-      strideRoot: this.#strideRoot,
+      strideRoot,
       // The interval the ground is measured over: this tick, plus the time the engine stopped measuring
       // while the JS loop had the rig, so a switch never divides a stale displacement by one frame's dt.
       dt: dt + this.#batchGapDt,
       elapsed,
       step,
       reset: this.#batchReset,
+      // The engine must not take back a scale the game chose: 0 says the action's scale is not ours.
+      lastRate: this.#strideSynced ? this.#strideRate : 0,
       clipGroundSpeed: measured.groundSpeed,
       strideSync: this.#batchStrideSync,
     };
@@ -1444,8 +1455,22 @@ export class AnimationPlayer {
     const action = name === undefined ? undefined : this.#actions.get(name);
     if (name === undefined || action === undefined) return;
     if (animationTickExecutor() === undefined) return;
-    this.#queueRig(name, action, 0, 0, true);
+    this.#queueRig(name, action, 0, 0, true, null);
     flushAnimationTicks();
+  }
+
+  /** The stride scalars `#syncStride` would have written for this clip, from the tick's own answer. */
+  #batchStrideReport(name: string | undefined): void {
+    if (this.#batchLocomotion) {
+      this.#strideSynced = this.#batchStrideSync;
+      this.#strideOverridden = !this.#batchStrideSync;
+      this.#strideReportOnlyFor = this.#batchStrideSync ? undefined : name;
+      return;
+    }
+    // Not locomotion: authored at its own rate. The report says so, and reports the ground it covered.
+    this.#strideSynced = false;
+    this.#strideOverridden = false;
+    this.#strideReportOnlyFor = name;
   }
 
   /**
@@ -1458,18 +1483,12 @@ export class AnimationPlayer {
     this.#batchName = undefined;
     this.#batchReset = false;
     this.#batchGapDt = 0;
-    this.#strideGroundSpeed = result.groundSpeed;
-    this.#strideRate = result.strideRate;
-    this.#strideInPlace = name === undefined ? false : this.#measureOf(name).inPlace;
-    if (this.#batchLocomotion) {
-      this.#strideSynced = this.#batchStrideSync;
-      this.#strideOverridden = !this.#batchStrideSync;
-      this.#strideReportOnlyFor = this.#batchStrideSync ? undefined : name;
-    } else {
-      // Not locomotion: authored at its own rate. The report says so, and reports the ground it covered.
-      this.#strideSynced = false;
-      this.#strideOverridden = false;
-      this.#strideReportOnlyFor = name;
+    // A tick that only spent the engine's bank measured nothing: its status is not a stride reading.
+    if (this.#batchMeasured) {
+      this.#strideGroundSpeed = result.groundSpeed;
+      this.#strideRate = result.strideRate;
+      this.#strideInPlace = name === undefined ? false : this.#measureOf(name).inPlace;
+      this.#batchStrideReport(name);
     }
     if (this.#batchStep) {
       this.#batchStep = false;

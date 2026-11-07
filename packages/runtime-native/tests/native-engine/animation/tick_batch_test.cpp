@@ -44,9 +44,13 @@ struct Rig {
         // The player resets the bank after any tick the batch did not take; nothing else does.
         rig.reset = pendingReset;
         pendingReset = false;
+        // The player owns whether a rate is this rule's: 0 says the action's scale is the game's.
+        rig.lastRate = rateOwned ? action->timeScale : 0;
         rig.clipGroundSpeed = groundSpeed;
         return rig;
     }
+    /** Whether this rule owns the action's current time scale, as the player tracks it. */
+    bool rateOwned = false;
     double groundSpeed = 10;
     /** True until the first tick: what the player sends after running ticks of its own. */
     mutable bool pendingReset = true;
@@ -110,22 +114,34 @@ void stride_rate() {
     CHECK(std::abs(authored.action->getEffectiveTimeScale() - 1) < 1e-9);
 }
 
-// State outlives a quiet action only so long: it is dropped after 512 frames untouched, which is what
-// keeps the pointer-keyed map bounded and a freed action's address from handing a new one a dead ramp.
-void state_pruned() {
-    Rig idle(10);
+// The body belongs to the rig, not to the clip: a rig that changes clip measures the same body without a
+// floor frame, and a `reset` (a teleport, a respawn, a path switch) is what starts the measurement over.
+void clip_change_keeps_body() {
+    Rig walk(10);
     TickBatch batch;
     std::vector<TickStatus> status;
-    place(idle, 1.0);
-    batch.run({idle.tick(0.1)}, status);
-    CHECK(batch.size() == 1);
-    // A build with a large enough state is pruned once per 512 frames; a small one is left alone.
-    for (int frame = 0; frame < 511; frame++) batch.run({}, status);
-    CHECK(batch.size() == 1);
-    // Whatever the size, a tick after the gap measures from the last recorded position, never a jump.
-    place(idle, 100.0);
-    batch.run({idle.tick(0.1)}, status);
-    CHECK(std::abs(status[0].groundSpeed - 990.0) < 1e-9);
+    for (int frame = 0; frame < 3; frame++) {
+        place(walk, 1.0 * (frame + 1));
+        batch.run({walk.tick(0.1)}, status);
+    }
+    CHECK(std::abs(status[0].strideRate - 1) < 1e-9);
+    // A second clip on the same mixer: the body has not moved on to a new life, so the rate stays true.
+    auto run = std::make_shared<AnimationClip>(
+        "run", 1, std::vector<KeyframeTrack>{KeyframeTrack(".position", TrackType::Vector, {0, 1}, {0, 0, 0, 10, 0, 0})});
+    walk.action = walk.mixer->clipAction(run);
+    walk.action->play();
+    place(walk, 4.0);
+    batch.run({walk.tick(0.1)}, status);
+    CHECK(std::abs(status[0].groundSpeed - 10) < 1e-9);
+    CHECK(std::abs(status[0].strideRate - 1) < 1e-9);
+    // A reset is the rig saying its body jumped: the next tick measures from nothing, so the rate floors
+    // rather than reading the teleport as a sprint.
+    place(walk, 500.0);
+    TickRig teleport = walk.tick(0.1);
+    teleport.reset = true;
+    batch.run({teleport}, status);
+    CHECK(status[0].groundSpeed == 0);
+    CHECK(std::abs(status[0].strideRate - TickPolicy{}.rateMin) < 1e-9);
 }
 
 // A held tick measures the ground the body covered and poses nothing: the player banks the interval
@@ -194,9 +210,15 @@ void game_rate_kept() {
     // A clip the rule did bend is put back to its authored rate the moment the player stops reporting it
     // as locomotion: the rule undoes its own rate, and nothing else's.
     Rig walk(10);
+    // The player owns the answer "is that scale ours", so the fixture reads it back after each tick the
+    // way `#queueRig` does: the rate this rule reported is the rate it owns.
+    const auto own = [&]() {
+        walk.rateOwned = std::abs(walk.action->getEffectiveTimeScale() - status[0].strideRate) < 1e-12;
+    };
     for (int frame = 0; frame < 3; frame++) {
         place(walk, 0.5 * (frame + 1));
         batch.run({walk.tick(0.1)}, status);
+        own();
     }
     CHECK(std::abs(walk.action->getEffectiveTimeScale() - 0.5) < 1e-9);
     walk.groundSpeed = 0;  // an event now, not locomotion
@@ -207,6 +229,6 @@ void game_rate_kept() {
 
 }  // namespace
 
-TN_TEST_MAIN({"tick_batch", tick_batch}, {"stride_rate", stride_rate}, {"state_pruned", state_pruned},
+TN_TEST_MAIN({"tick_batch", tick_batch}, {"stride_rate", stride_rate}, {"clip_change_keeps_body", clip_change_keeps_body},
              {"held_tick_measures_only", held_tick_measures_only},
              {"grouped_step_integrates", grouped_step_integrates}, {"game_rate_kept", game_rate_kept})
