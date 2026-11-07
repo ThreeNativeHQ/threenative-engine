@@ -31,7 +31,8 @@ for (const patch of manifest.patches) {
 mkdirSync(DIRECTORY, { recursive: true });
 // A patch this repository no longer applies must not survive in a tarball from an earlier build.
 for (const file of readdirSync(DIRECTORY)) {
-  if (file !== "manifest.json" && !names.has(file)) rmSync(path.join(DIRECTORY, file), { force: true });
+  if (file !== "manifest.json" && !names.has(file))
+    rmSync(path.join(DIRECTORY, file), { force: true });
 }
 for (const patch of manifest.patches) {
   const source = path.resolve(REPOSITORY, patch.source);
@@ -43,4 +44,6 @@ for (const patch of manifest.patches) {
   }
 }
 // stderr, not stdout: `pnpm pack --json` parses stdout, and a prepack that logs there corrupts it.
-process.stderr.write(`framework patches: ${manifest.patches.map((patch) => patch.name).join(", ")}\n`);
+process.stderr.write(
+  `framework patches: ${manifest.patches.map((patch) => patch.name).join(", ")}\n`,
+);
