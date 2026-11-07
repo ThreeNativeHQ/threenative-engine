@@ -3,6 +3,7 @@ import fs from "node:fs";
 import { rm } from "node:fs/promises";
 import path from "node:path";
 import { deflateRawSync } from "node:zlib";
+import { PNG } from "pngjs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { readZipEntries } from "../../packages/runtime-native/scripts/check-android-16kb-alignment.mjs";
 import { makeTempDir } from "../../test-support/temp-dir.js";
@@ -24,6 +25,7 @@ import {
   realRunner,
   registryEnvironment,
   tarballIntegrity,
+  verifyNativeFramesOnSoftware,
   verifyRegistryInstall,
 } from "../verify-registry-install.js";
 
@@ -1492,5 +1494,85 @@ describe("a failed child command", () => {
   it("says nothing extra when the child was quiet", () => {
     expect(childOutputTail(new Error("Command failed: pnpm install"))).toBe("");
     expect(childOutputTail("not an error")).toBe("");
+  });
+});
+
+// Release run 42317045442: a hosted runner draws with lavapipe, where the 0.3.12 starter renders 3 FPS
+// (15 frames in 5 s), so the published smoke's completion window (101 frames in 5 s) failed on every
+// software run. The acknowledged software lane proves 300 rendered frames instead of a rate.
+describe("verifyNativeFramesOnSoftware", () => {
+  async function softwareProject(): Promise<string> {
+    const project = await makeTempDir("threenative-registry-software-");
+    roots.push(project);
+    fs.writeFileSync(path.join(project, "package.json"), JSON.stringify({ name: "my-game" }));
+    fs.mkdirSync(path.join(project, "dist-native", "my-game"), { recursive: true });
+    fs.writeFileSync(path.join(project, "dist-native", "my-game", "my-game"), "#!/bin/sh\n", {
+      mode: 0o755,
+    });
+    return project;
+  }
+  const png = (blank: boolean): Buffer => {
+    const image = new PNG({ height: 2, width: 2 });
+    for (let index = 0; index < 4; index += 1)
+      image.data.writeUInt32BE(blank || index === 0 ? 0xff0000ff : 0x00ff00ff, index * 4);
+    return PNG.sync.write(image);
+  };
+  const runnerFor =
+    (report: object, blank = false): CommandRunner =>
+    (_command, args, cwd) => {
+      const out = args[args.indexOf("--artifacts") + 1] as string;
+      fs.writeFileSync(path.join(out, "after.png"), png(blank));
+      expect(cwd).toBeTruthy();
+      return JSON.stringify(report);
+    };
+
+  it("runs a 300-tick fixed-step scenario on the built player, with no completion window", async () => {
+    const project = await softwareProject();
+    const calls: string[][] = [];
+    const run: CommandRunner = (command, args, cwd) => {
+      calls.push([command, ...args]);
+      return runnerFor({
+        assertionResults: [{ id: "diagnostics", pass: true }],
+        frames: 300,
+        pass: true,
+      })(command, args, cwd);
+    };
+    const proof = verifyNativeFramesOnSoftware(
+      project,
+      path.join(project, "dist-native", "my-game"),
+      run,
+    );
+    expect(proof).toMatch(/300 rendered frames/u);
+    const call = calls[0] as string[];
+    expect(call).toContain("--executable");
+    expect(call[call.indexOf("--executable") + 1]).toBe(
+      path.join(project, "dist-native", "my-game", "my-game"),
+    );
+    const scenario = JSON.parse(
+      fs.readFileSync(call.find((arg) => arg.endsWith(".playtest.json")) as string, "utf8"),
+    ) as { steps: { label?: string; waitTicks: number }[] };
+    expect(scenario.steps).toEqual([{ kind: "wait", waitTicks: 300 }]);
+  });
+
+  it("fails a run whose report did not pass, rendered fewer than 300 frames, or drew a blank frame", async () => {
+    const project = await softwareProject();
+    const executable = path.join(project, "dist-native", "my-game");
+    const good = { assertionResults: [{ id: "diagnostics", pass: true }], frames: 300, pass: true };
+    expect(() =>
+      verifyNativeFramesOnSoftware(project, executable, runnerFor({ ...good, pass: false })),
+    ).toThrow(/did not pass/u);
+    expect(() =>
+      verifyNativeFramesOnSoftware(project, executable, runnerFor({ ...good, frames: 15 })),
+    ).toThrow(/300 frames/u);
+    expect(() =>
+      verifyNativeFramesOnSoftware(
+        project,
+        executable,
+        runnerFor({ ...good, assertionResults: [] }),
+      ),
+    ).toThrow(/did not pass/u);
+    expect(() => verifyNativeFramesOnSoftware(project, executable, runnerFor(good, true))).toThrow(
+      /blank/u,
+    );
   });
 });
