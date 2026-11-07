@@ -154,37 +154,34 @@ const rootOf = (name) => (name.startsWith("-") ? name.slice(1) : name).split("-"
 const DESCRIPTOR_AT_RULES = new Set(["property", "font-face", "counter-style", "page"]);
 
 function scan(css) {
-  const props = new Set();
-  const atRules = new Set();
-  const stack = [];
-  for (const raw of css.split("\n")) {
-    const line = raw.trim();
-    if (line.endsWith("{")) {
-      const prelude = line.slice(0, -1).trim();
-      if (prelude.startsWith("@")) {
-        const name = /^@([-\w]+)/u.exec(prelude)?.[1].toLowerCase() ?? "";
-        if (!DESCRIPTOR_AT_RULES.has(name)) atRules.add(prelude);
-        // An at-rule nested inside a style rule (`@container`, the `@supports` Tailwind emits for
-        // gradient interpolation) still declares properties of that rule.
-        stack.push(DESCRIPTOR_AT_RULES.has(name) ? "descriptor" : stack.at(-1) === "rule" ? "rule" : "group");
-      } else {
-        stack.push("rule");
-      }
-      continue;
-    }
-    if (line === "}") {
-      stack.pop();
-      continue;
-    }
-    if (stack[stack.length - 1] !== "rule") continue;
-    const declaration = /^([-a-zA-Z][-a-zA-Z0-9]*)\s*:/u.exec(line);
-    if (declaration !== null) props.add(declaration[1]);
-  }
-  return { props: [...props].sort(), atRules: [...atRules].sort() };
+  const state = { props: new Set(), atRules: new Set(), stack: [] };
+  for (const raw of css.split("\n")) scanLine(raw.trim(), state);
+  return { props: [...state.props].sort(), atRules: [...state.atRules].sort() };
+}
+
+/** One trimmed line of a compiled rule, folded into the scan's state. */
+function scanLine(line, state) {
+  if (line.endsWith("{")) return openBlock(line.slice(0, -1).trim(), state);
+  if (line === "}") return void state.stack.pop();
+  if (state.stack.at(-1) !== "rule") return undefined;
+  const declaration = /^([-a-zA-Z][-a-zA-Z0-9]*)\s*:/u.exec(line);
+  if (declaration !== null) state.props.add(declaration[1]);
+  return undefined;
+}
+
+/** A block opens a rule, a group of rules, or a descriptor block whose members are not painted. */
+function openBlock(prelude, state) {
+  if (!prelude.startsWith("@")) return void state.stack.push("rule");
+  const name = /^@([-\w]+)/u.exec(prelude)?.[1].toLowerCase() ?? "";
+  if (!DESCRIPTOR_AT_RULES.has(name)) state.atRules.add(prelude);
+  // An at-rule nested inside a style rule (`@container`, the `@supports` Tailwind emits for
+  // gradient interpolation) still declares properties of that rule.
+  const kind = DESCRIPTOR_AT_RULES.has(name) ? "descriptor" : state.stack.at(-1) === "rule" ? "rule" : "group";
+  state.stack.push(kind);
 }
 
 /** The value a rule gives one property, or `undefined` when it does not declare it. */
-function valueOf(css, property) {
+function declaredValue(css, property) {
   const escaped = property.replaceAll(/[.*+?^${}()|[\]\\]/gu, "\\$&");
   const pattern = new RegExp(`(?:^|[{;\\s])${escaped}\\s*:\\s*([^;}]+)`, "u");
   const match = pattern.exec(css);
@@ -737,8 +734,8 @@ function contrastDeclarations(unit, classCss, byProperty) {
   // makes Tailwind define `--spacing` — its build only writes the theme variables a candidate uses.
   const sources = new Set();
   const differs = ([, css], property) => {
-    const candidate = valueOf(css, property);
-    return candidate !== undefined && candidate !== valueOf(probeCss, property);
+    const candidate = declaredValue(css, property);
+    return candidate !== undefined && candidate !== declaredValue(probeCss, property);
   };
   const usable = ([, css]) => css !== undefined && css !== probeCss && !HIDING.test(css);
   // The unit's own family first: `m-1` is the smallest honest contrast for `m-0`.
@@ -756,7 +753,7 @@ function contrastDeclarations(unit, classCss, byProperty) {
         .filter((candidate) => usable(candidate) && differs(candidate, property))
         .sort((a, b) => a[0].length - b[0].length || (a[0] < b[0] ? -1 : 1))[0];
     if (chosen === undefined) continue;
-    declarations.push(`${property}:${valueOf(chosen[1], property)}`);
+    declarations.push(`${property}:${declaredValue(chosen[1], property)}`);
     sources.add(chosen[0]);
   }
   return { declarations: declarations.join(";"), sources: [...sources] };
@@ -835,56 +832,41 @@ const probeClass = (companions, unit) =>
 // The scene.
 // -------------------------------------------------------------------------------------------------
 
-/** One cell's tree: the label and the staged probe. `probeN` is filled in after numbering. */
-function cellTree(cell) {
-  const stage = VARIANT_STAGE[cell.label] ?? {};
-  const tag = stage.tag ?? "div";
-  const classes = probeClass(cell.companions ?? [], cell.class);
-  const attrs = { class: classes, ...stage.attrs };
-  const textContent =
-    stage.text ?? (cell.unit !== undefined && cell.unit.props.some((p) => TEXT_PROPS.has(p)) ? "Abc def ghi" : undefined);
-
-  let inner;
-  const innerCount = stage.inner ?? cell.inner;
+/** The probe's inner content: the fillers a child-variant needs, a text run, or nothing. */
+function probeInner(stage, cell, innerCount) {
   if (innerCount !== undefined) {
-    inner = Array.from({ length: innerCount }, (_, i) =>
+    return Array.from({ length: innerCount }, (_, i) =>
       stage.inside === "checked"
         ? el("input", { type: "checkbox", checked: "", class: "stage-fill" })
         : el("div", { class: "stage-fill" }, text(`In ${i + 1}`)),
     );
-  } else if (cell.prose === true) {
-    inner = [text(LOREM)];
-  } else if (textContent !== undefined) {
-    inner = [text(textContent)];
   }
+  if (cell.prose === true) return [text(LOREM)];
+  if (stage.text !== undefined) return [text(stage.text)];
+  // `false` from the predicate is not a text node: a probe that needs no text gets none.
+  if (cell.unit?.props.some((p) => TEXT_PROPS.has(p)) === true) return [text("Abc def ghi")];
+  return [];
+}
 
-  const probe = el(tag, attrs, ...(inner ?? []));
-  const before = blanks(stage.before ?? 0);
-  const after = blanks(stage.after ?? 0);
+/** The list variant's probe is the `<li>`, so the marker it paints is the one being measured. */
+function listStage(count, probe, classes, attrs) {
+  const prepared = el("ul", { class: "stage-list" }, el("li", { class: classes, ...attrs }, ...probe.children));
+  for (let i = 0; i < count - 1; i++) {
+    prepared.children.push(el("li", { class: "stage-fill" }, text(`Item ${i + 2}`)));
+  }
+  return [prepared];
+}
 
-  let stageChildren;
-  if (stage.list !== undefined) {
-    stageChildren = [
-      el("ul", { class: "stage-list" }, ...Array.from({ length: stage.list }, (_, i) => el("li", { class: "stage-fill" }, text(`Item ${i + 1}`)))),
-    ];
-    // The list variant's probe is the `<li>`, so the marker is the one the variant paints.
-    const list = stageChildren[0];
-    list.children[0].attrs.class = classes;
-    list.children[0].attrs = { ...list.children[0].attrs, ...stage.attrs };
-  } else if (stage.peer === true) {
-    stageChildren = [el("input", { type: "checkbox", checked: "", class: "stage-fill peer" }), probe];
-  } else if (stage.wrap !== undefined) {
-    stageChildren = [el("div", { class: stage.wrap }, probe)];
-  } else if (cell.layout === "row") {
-    stageChildren = [el("div", { class: "stage-row" }, ...before, probe, ...after, el("div", { class: "stage-fill" }))];
-  } else if (cell.layout === "grid") {
-    stageChildren = [el("div", { class: "stage-grid" }, ...before, probe, ...after, el("div", { class: "stage-fill" }))];
-  } else if (cell.layout === "scroll") {
-    stageChildren = [
-      el("div", { class: "stage-scroll" }, el("div", { class: "stage-scroll-body" }, ...before, probe, ...after, ...fillers(2))),
-    ];
-  } else if (cell.layout === "table") {
-    stageChildren = [
+/** The wrapper a layout needs around the probe. */
+function layoutStage(cell, probe, classes, before, after) {
+  const siblings = [...before, probe, ...after];
+  if (cell.layout === "row") return [el("div", { class: "stage-row" }, ...siblings, el("div", { class: "stage-fill" }))];
+  if (cell.layout === "grid") return [el("div", { class: "stage-grid" }, ...siblings, el("div", { class: "stage-fill" }))];
+  if (cell.layout === "scroll") {
+    return [el("div", { class: "stage-scroll" }, el("div", { class: "stage-scroll-body" }, ...siblings, ...fillers(2)))];
+  }
+  if (cell.layout === "table") {
+    return [
       el(
         "table",
         { class: `stage-table ${classes}` },
@@ -896,20 +878,36 @@ function cellTree(cell) {
         ),
       ),
     ];
-  } else if (cell.layout === "float") {
-    stageChildren = [el("div", { class: "stage-prose" }, ...before, probe, text(` ${LOREM}`))];
-  } else if (cell.prose === true) {
-    stageChildren = [probe];
-    probe.attrs.class = `probe stage-prose ${classes}`;
-  } else {
-    stageChildren = [...before, probe, ...after];
   }
+  if (cell.layout === "float") return [el("div", { class: "stage-prose" }, ...siblings, text(` ${LOREM}`))];
+  if (cell.prose === true) {
+    probe.attrs.class = `probe stage-prose ${classes}`;
+    return [probe];
+  }
+  return siblings;
+}
+
+/** One cell's tree: the label and the staged probe. */
+function cellTree(cell) {
+  const stage = VARIANT_STAGE[cell.label] ?? {};
+  const classes = probeClass(cell.companions ?? [], cell.class);
+  const probe = el(
+    stage.tag ?? "div",
+    { class: classes, ...stage.attrs },
+    ...probeInner(stage, cell, stage.inner ?? cell.inner),
+  );
+  let children;
+  if (stage.list !== undefined) children = listStage(stage.list, probe, classes, stage.attrs);
+  else if (stage.peer === true) {
+    children = [el("input", { type: "checkbox", checked: "", class: "stage-fill peer" }), probe];
+  } else if (stage.wrap !== undefined) children = [el("div", { class: stage.wrap }, probe)];
+  else children = layoutStage(cell, probe, classes, blanks(stage.before ?? 0), blanks(stage.after ?? 0));
 
   return el(
     "div",
     { class: `cell c${cell.index}` },
     el("div", { class: "cell-label" }, text(cell.label)),
-    el("div", { class: "cell-stage" }, ...stageChildren),
+    el("div", { class: "cell-stage" }, ...children),
   );
 }
 
@@ -1194,17 +1192,21 @@ async function serveWeb() {
   return { dir, base: `http://127.0.0.1:${port}`, close: () => new Promise((r) => server.close(r)) };
 }
 
+/** One Playwright action for one step of the corpus's input grammar. */
+async function driveStep(page, step) {
+  if (step.t === "key") return void (await page.keyboard.press(step.key));
+  if (step.t === "advance") return void (await page.waitForTimeout(step.ms));
+  if (step.t !== "pointer") return undefined;
+  if (step.type === "move") return void (await page.mouse.move(step.x, step.y));
+  if (step.type === "down") return void (await page.mouse.down());
+  if (step.type === "up") return void (await page.mouse.up());
+  if (step.type === "cancel") return void (await page.mouse.move(0, 0));
+  return undefined;
+}
+
 /** Playwright steps for a cell's driver, at coordinates the caller measured on the engine's behalf. */
 async function driveWeb(page, steps) {
-  for (const step of steps) {
-    if (step.t === "key") await page.keyboard.press(step.key);
-    else if (step.t === "pointer") {
-      if (step.type === "move") await page.mouse.move(step.x, step.y);
-      else if (step.type === "down") await page.mouse.down();
-      else if (step.type === "up") await page.mouse.up();
-      else if (step.type === "cancel") await page.mouse.move(0, 0);
-    } else if (step.t === "advance") await page.waitForTimeout(step.ms);
-  }
+  for (const step of steps) await driveStep(page, step);
 }
 
 /** The two subjects' handles, so a relaunched browser is the one every capture uses. */
