@@ -41,7 +41,10 @@ export interface IAnimationTickBatch {
   readonly mixers: readonly IEngineRef[];
   readonly actions: readonly (IEngineRef | null)[];
   readonly roots: readonly (IEngineRef | null)[];
-  /** Five per rig: target weight, transition seconds, dt, the clip's ground speed, the flags word. */
+  /**
+   * Seven per rig: target weight, transition seconds, the stride interval, the mixer time to advance,
+   * the action's own advance over that interval, the clip's ground speed, and the flags word.
+   */
   readonly values: Float64Array;
   /** Three per rig, written by the call: stride rate, measured ground speed, flags. */
   readonly status: Float64Array;

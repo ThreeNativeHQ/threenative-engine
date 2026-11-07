@@ -1,3 +1,4 @@
+import { flushAnimationTicks } from "./animation-batch.js";
 import type { AutoBatch } from "./auto-batch.js";
 import { updateClusteredMeshes } from "./clustered-mesh.js";
 import type { ComputeDrivenRegistry } from "./compute-driven.js";
@@ -588,6 +589,9 @@ export function startFrameLoop<TState extends Record<string, unknown>, TPhysics>
             game.beforeRenderDepth -= 1;
           }
         }
+        // A game is free to tick its rigs here instead of in the update stage (the skinned crowd does,
+        // to time its own spans); whatever it queued is advanced before the draw, not a frame after it.
+        flushAnimationTicks();
         interpolation.render(gameLoop.clockFrozen || game.paused ? 1 : alpha, () => {
           // Let a depth-coupled scene update its output node while the scene pass is still the
           // next render. Ordinary scenes keep the historical hook order and timing.
@@ -934,6 +938,13 @@ export function startFrameLoop<TState extends Record<string, unknown>, TPhysics>
       }
       if (debug) measureDebug("entities", "update", "Registry.sweep", () => game.entities?.sweep());
       else game.entities?.sweep();
+      // PRD-828: every rig the frame's update queued is advanced in one crossing, at the end of the
+      // update stage — after the game's own per-rig loops and before anything reads a pose.
+      if (debug)
+        measureDebug("animationTickBatch", "update", "flushAnimationTicks", () =>
+          flushAnimationTicks(),
+        );
+      else flushAnimationTicks();
       if (game.renderer !== undefined && game.sceneEntered) {
         if (debug)
           measureDebug(

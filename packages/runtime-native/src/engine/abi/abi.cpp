@@ -1298,17 +1298,17 @@ extern "C" tn_status_t tn_anim_tick(tn_context_t* context, const tn_handle_t* ha
                 return report(diagnostic, TN_ERROR_INVALID_HANDLE, 0, "TN_ANIM_MIXER_INVALID");
             animation::TickRig rig;
             rig.mixer = static_cast<animation::AnimationMixer*>(mix->ptr.get());
-            const double* values = rigs + i * 5;
+            const double* values = rigs + i * TN_ANIM_RIG_VALUES;
             // The flags word says which of the two optional handles are real: a rig without an action
             // or a stride body leaves its mixer's handle in that slot (a null handle would alias).
-            const uint32_t flags = static_cast<uint32_t>(values[4]);
-            if ((flags & 2u) != 0) {
+            const uint32_t flags = static_cast<uint32_t>(values[6]);
+            if ((flags & TN_ANIM_RIG_ACTION) != 0) {
                 tn::binding::Object* act = tn::abi::objectOf(trio[TN_ANIM_ACTION]);
                 if (act == nullptr || act->cls != "AnimationAction")
                     return report(diagnostic, TN_ERROR_INVALID_HANDLE, 0, "TN_ANIM_ACTION_INVALID");
                 rig.action = static_cast<animation::AnimationAction*>(act->ptr.get());
             }
-            if ((flags & 4u) != 0) {
+            if ((flags & TN_ANIM_RIG_BODY) != 0) {
                 tn::binding::Object* root = tn::abi::objectOf(trio[TN_ANIM_STRIDE_ROOT]);
                 if (root == nullptr)
                     return report(diagnostic, TN_ERROR_INVALID_HANDLE, 0, "TN_ANIM_STRIDE_ROOT_INVALID");
@@ -1317,8 +1317,11 @@ extern "C" tn_status_t tn_anim_tick(tn_context_t* context, const tn_handle_t* ha
             rig.targetWeight = values[0];
             rig.transition = values[1];
             rig.dt = values[2];
-            rig.clipGroundSpeed = values[3];
-            rig.strideSync = (flags & 1u) != 0;
+            rig.mixerElapsed = values[3];
+            rig.actionPending = values[4];
+            rig.clipGroundSpeed = values[5];
+            rig.strideSync = (flags & TN_ANIM_RIG_STRIDE_SYNC) != 0;
+            rig.stepMixer = (flags & TN_ANIM_RIG_STEP) != 0;
             batch.push_back(rig);
         }
         std::vector<animation::TickStatus> result;

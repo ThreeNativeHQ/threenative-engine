@@ -50,7 +50,14 @@ struct TickRig {
     /** Where the weight ramp is heading, and how long it takes; a zero transition is "now". */
     double targetWeight = 1;
     double transition = 0;
+    /** The interval the body's movement is divided by; the player banks a held tick's `dt` into it. */
     double dt = 0;
+    /** The mixer time to advance by, or 0 with `stepMixer` false on a tick that poses nothing. */
+    double mixerElapsed = 0;
+    /** The action's own advance over that interval: its rate applied frame by frame, as the player summed it. */
+    double actionPending = 0;
+    /** True on the tick that poses the rig; a held tick measures the stride and advances nothing. */
+    bool stepMixer = true;
     /** Metres of ground the clip covers per clip-second, measured when the clip was analysed (JS side). */
     double clipGroundSpeed = 0;
     /** The game's stride convention: false measures and reports the rate but does not apply it. */
@@ -77,7 +84,13 @@ class TickBatch {
   public:
     /**
      * Advance `rigs` one frame: ramp each weight towards its target, hold each stride rate against the
-     * ground the body covered, then step each mixer once. Writes one status per rig.
+     * ground the body covered, and step each mixer at most once. Writes one status per rig.
+     *
+     * The player decides *when* a rig poses and what time to spend on it — a rig in a small screen band
+     * poses one frame in four, and the three frames it skips still measure the ground it covered. So a
+     * tick with `stepMixer` false only measures; a tick with it true advances the mixer by
+     * `mixerElapsed`, with the action scaled to its own banked advance (`actionPending`) so a rate that
+     * changed inside the interval is integrated rather than the last rate owning the whole of it.
      *
      * ponytail: one ramp per action, linear in real time, which is what a blend of one clip needs.
      * A rig with several contributing clips keeps its ramp in JS until the blend path moves here too.
@@ -99,7 +112,22 @@ class TickBatch {
         double rampElapsed = 0;
         double rampDuration = 0;
         double rampTarget = 1;
+        /** The rate this rule last applied, and whether it applied one: the game's own rate stays the game's. */
+        double lastRate = 1;
+        bool rateApplied = false;
+        /** The rate this rule reports for a tick too short to measure, so a held tick reports a stable number. */
+        double reportedRate = 1;
+        /** The last tick this action was seen on, so state whose action is gone can be dropped. */
+        std::uint64_t lastFrame = 0;
     };
+    /**
+     * A state is only alive while its action ticks. An action that has not been seen for a while has
+     * been destroyed — a despawned rig, a scene change — and its address may belong to a new action by
+     * now, so dropping it keeps both the map and the pointer reuse bounded without the caller having to
+     * report every teardown across the bridge.
+     */
+    void prune();
+    std::uint64_t frame_ = 0;
     std::unordered_map<const AnimationAction*, RigState> states_;
 };
 

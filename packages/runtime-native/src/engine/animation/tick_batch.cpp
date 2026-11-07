@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 #include "engine/scene/object3d.h"
 
@@ -23,6 +24,7 @@ double clampRate(double rate, const TickPolicy& policy) {
 void TickBatch::run(const std::vector<TickRig>& rigs, std::vector<TickStatus>& status,
                     const TickPolicy& policy) {
     status.resize(rigs.size());
+    frame_ += 1;
     Vector3 world;
     for (std::size_t i = 0; i < rigs.size(); i++) {
         const TickRig& rig = rigs[i];
@@ -32,11 +34,14 @@ void TickBatch::run(const std::vector<TickRig>& rigs, std::vector<TickStatus>& s
         AnimationAction* action = rig.action;
         if (action == nullptr) {
             // Nothing playing: the mixer still steps, so a scheduled binding keeps three's time.
-            rig.mixer->update(rig.dt);
-            out.changed = rig.dt > 0;
+            if (rig.stepMixer) {
+                rig.mixer->update(rig.mixerElapsed);
+                out.changed = rig.mixerElapsed > 0;
+            }
             continue;
         }
         RigState& state = states_[action];
+        state.lastFrame = frame_;
 
         // 1. The weight ramp: linear in real time towards the caller's target, exactly what
         //    `#advanceBlend` does for a single contributing clip.
@@ -63,7 +68,10 @@ void TickBatch::run(const std::vector<TickRig>& rigs, std::vector<TickStatus>& s
             if (action->getEffectiveWeight() != next) action->setEffectiveWeight(next);
         }
 
-        // 2. The stride rule: how fast this clip must play to cover the ground the body covered.
+        // 2. The stride rule: how fast this clip must play to cover the ground the body covered. It
+        //    chooses the rate for the *next* interval, so it reads the scale the step is about to
+        //    use before the step touches it.
+        const double scaleBeforeStep = action->timeScale;
         double moved = 0;
         if (rig.strideRoot != nullptr) {
             rig.strideRoot->getWorldPosition(world);
@@ -74,35 +82,68 @@ void TickBatch::run(const std::vector<TickRig>& rigs, std::vector<TickStatus>& s
         }
         const double groundSpeed = rig.dt > 0 ? moved / rig.dt : 0;
         out.groundSpeed = groundSpeed;
-        double rate = 1;
-        if (rig.clipGroundSpeed >= policy.clipGroundFloor && rig.dt > 0) {
-            rate = groundSpeed < policy.speedFloor
-                       ? policy.rateMin
-                       : clampRate(groundSpeed / rig.clipGroundSpeed, policy);
-            if (rig.strideSync && action->timeScale != rate) {
-                action->setEffectiveTimeScale(rate);
-            } else if (!rig.strideSync && action->timeScale != 1) {
-                // Not locomotion-synced: the clip plays at its authored rate, and the report says so.
-                action->setEffectiveTimeScale(1);
-                rate = 1;
+        const bool measured = rig.dt > 0;
+        const bool locomotion = rig.clipGroundSpeed >= policy.clipGroundFloor;
+        double rate = state.reportedRate;
+        if (measured) {
+            rate = locomotion ? (groundSpeed < policy.speedFloor
+                                     ? policy.rateMin
+                                     : clampRate(groundSpeed / rig.clipGroundSpeed, policy))
+                              : 1;
+            state.reportedRate = rate;
+        }
+        const bool applies = measured && locomotion && rig.strideSync;
+
+        // 3. The mixer step. The player banks a held tick's action time, so the interval's advance is
+        //    the sum of the rates it ran under: scale the action to that sum over this interval, and
+        //    land a grouped advance exactly on a loop seam rather than a rounding error past it, which
+        //    would hold the last pose for the whole interval instead of looping.
+        if (rig.stepMixer) {
+            double advance = rig.actionPending;
+            const double duration = action->getClip().duration;
+            if (action->loop == Loop::Repeat && duration > 0) {
+                const double end = action->time + advance;
+                const double seam = std::round(end / duration) * duration;
+                if (std::abs(end - seam) <=
+                    std::numeric_limits<double>::epsilon() * 16 *
+                        std::max(duration, std::abs(end)))
+                    advance = seam - action->time;
             }
-        } else if (action->timeScale != 1) {
-            // A non-locomotion clip is authored at its own rate; the stride never bends it.
+            const double scale =
+                rig.mixerElapsed > 0 ? advance / rig.mixerElapsed : scaleBeforeStep;
+            if (scale != scaleBeforeStep) action->setEffectiveTimeScale(scale);
+            const double before = action->time;
+            const bool wasScheduled = action->isScheduled();
+            rig.mixer->update(rig.mixerElapsed);
+            out.changed = action->time != before || wasScheduled != action->isScheduled();
+            // A once-clip that has reached its end on this tick is the frame `finished` fires: three
+            // stops it at the last key and clamps the pose there.
+            out.finished = action->loop == Loop::Once &&
+                           (!action->isScheduled() ||
+                            (action->time >= action->getClip().duration && action->time > before));
+        }
+
+        // 4. Hand the action to the next interval: the measured rate, or the authored one when this
+        //    clip is not locomotion — but only the rate this rule set is ever taken back. A time scale
+        //    the game chose is the game's, and the report says `overridden` rather than clobbering it.
+        if (applies) {
+            if (action->timeScale != rate) action->setEffectiveTimeScale(rate);
+            state.lastRate = rate;
+            state.rateApplied = true;
+        } else if (measured && state.rateApplied && scaleBeforeStep == state.lastRate) {
             action->setEffectiveTimeScale(1);
+            state.lastRate = 1;
+            state.rateApplied = false;
         }
         out.strideRate = rate;
-
-        // 3. The mixer step, once per rig.
-        const double before = action->time;
-        const bool wasScheduled = action->isScheduled();
-        rig.mixer->update(rig.dt);
-        out.changed = action->time != before || wasScheduled != action->isScheduled();
-        // A once-clip that has reached its end on this tick is the frame `finished` fires: three
-        // stops it at the last key and clamps the pose there.
-        out.finished = action->loop == Loop::Once &&
-                       (!action->isScheduled() ||
-                        (action->time >= action->getClip().duration && action->time > before));
     }
+    if (frame_ % 512 == 0 && states_.size() > 256) prune();
+}
+
+/** Drops the state of rigs nothing has ticked for 512 frames (about eight seconds at 60 Hz). */
+void TickBatch::prune() {
+    const std::uint64_t oldest = frame_ > 512 ? frame_ - 512 : 0;
+    std::erase_if(states_, [&](const auto& entry) { return entry.second.lastFrame < oldest; });
 }
 
 void TickBatch::forget(const AnimationAction* action) { states_.erase(action); }

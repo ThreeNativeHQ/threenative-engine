@@ -20,7 +20,14 @@ export interface IAnimationTickRig {
   readonly strideRoot: object | null;
   readonly targetWeight: number;
   readonly transition: number;
+  /** The interval the body's movement is divided by: a held tick banks its own `dt` into this. */
   readonly dt: number;
+  /** The mixer time this tick advances by, or 0 when `step` is false. */
+  readonly mixerElapsed: number;
+  /** The action's own advance over that interval: its rate applied frame by frame, as the player summed it. */
+  readonly actionPending: number;
+  /** True on the tick that poses the rig; a held tick measures the stride and advances nothing. */
+  readonly step: boolean;
   /** Metres of ground the clip covers per clip-second, measured when the clip was analysed. */
   readonly clipGroundSpeed: number;
   readonly strideSync: boolean;
@@ -143,6 +150,9 @@ export function demo(): string {
       targetWeight: 1,
       transition: 0,
       dt,
+      mixerElapsed: dt,
+      actionPending: dt,
+      step: true,
       clipGroundSpeed: 1,
       strideSync: true,
     });

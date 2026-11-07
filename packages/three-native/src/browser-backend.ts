@@ -1754,6 +1754,9 @@ export function defineBrowserClasses(
         readonly targetWeight: number;
         readonly transition: number;
         readonly dt: number;
+        readonly mixerElapsed: number;
+        readonly actionPending: number;
+        readonly step: boolean;
         readonly clipGroundSpeed: number;
         readonly strideSync: boolean;
       }[],
@@ -1764,22 +1767,26 @@ export function defineBrowserClasses(
       const mixers: ReturnType<typeof refOf>[] = [];
       const actions: (ReturnType<typeof refOf> | null)[] = [];
       const roots: (ReturnType<typeof refOf> | null)[] = [];
-      const values = new Float64Array(count * 5);
+      const values = new Float64Array(count * 7);
       for (let i = 0; i < count; i += 1) {
         const rig = rigs[i];
         if (rig === undefined) continue;
         mixers.push(refOf(rig.mixer));
         actions.push(rig.action === null ? null : refOf(rig.action));
         roots.push(rig.strideRoot === null ? null : refOf(rig.strideRoot));
-        values[i * 5] = rig.targetWeight;
-        values[i * 5 + 1] = rig.transition;
-        values[i * 5 + 2] = rig.dt;
-        values[i * 5 + 3] = rig.clipGroundSpeed;
-        // bit 0: the stride convention applies; bit 1: the action is real; bit 2: the body is real.
-        values[i * 5 + 4] =
+        values[i * 7] = rig.targetWeight;
+        values[i * 7 + 1] = rig.transition;
+        values[i * 7 + 2] = rig.dt;
+        values[i * 7 + 3] = rig.mixerElapsed;
+        values[i * 7 + 4] = rig.actionPending;
+        values[i * 7 + 5] = rig.clipGroundSpeed;
+        // bit 0: the stride convention applies; bit 1: the action is real; bit 2: the body is real;
+        // bit 3: this tick poses the rig.
+        values[i * 7 + 6] =
           (rig.strideSync ? 1 : 0) |
           (rig.action === null ? 0 : 2) |
-          (rig.strideRoot === null ? 0 : 4);
+          (rig.strideRoot === null ? 0 : 4) |
+          (rig.step ? 8 : 0);
       }
       crossings += 1;
       const first = mixers[0];

@@ -1,0 +1,217 @@
+/**
+ * PRD-828 Phase 2: the tick that used to walk a rig property by property walks a whole frame's rigs in
+ * one call instead, and every rig has to come out where the JS loop would have left it.
+ *
+ * The native side of the batch has its own C++ cases (`tick_batch_test.cpp`). This is the other half —
+ * the player's wiring — against a reference that runs the same documented rules over the same objects.
+ * Two runs of one rig, one with the batch installed and one with the JS loop, must agree on the pose,
+ * the stride report and the counters, on a fixed seed, including the frames a rate band holds.
+ */
+import {
+  AnimationClip,
+  AnimationMixer,
+  type AnimationAction,
+  LoopOnce,
+  LoopRepeat,
+  Object3D,
+  Vector3,
+  VectorKeyframeTrack,
+} from "three";
+import { afterEach, describe, expect, it } from "vitest";
+
+import { clearAnimationTicks, type IAnimationTickRig } from "../src/animation-batch.js";
+import { AnimationPlayer } from "../src/animation.js";
+
+const STRIDE_RATE_MIN = 0.15;
+const STRIDE_RATE_MAX = 3;
+const STRIDE_SPEED_FLOOR = 1e-4;
+const CLIP_GROUND_FLOOR = 1e-3;
+
+const scratch = new Vector3();
+
+interface ITickState {
+  hasLast: boolean;
+  x: number;
+  z: number;
+  lastRate: number;
+  rateApplied: boolean;
+  reported: number;
+}
+
+/**
+ * The batch's rules, as `tick_batch.cpp` runs them, over the objects a descriptor names. A reference,
+ * not the engine: it is deliberately the arithmetic the native cases pin, so this spec fails when the
+ * player's wiring and the engine's rules stop describing the same frame.
+ */
+function referenceBatch(): (rigs: readonly IAnimationTickRig[], status: Float64Array) => void {
+  const states = new Map<AnimationAction, ITickState>();
+  return (rigs, status) => {
+    for (let i = 0; i < rigs.length; i += 1) {
+      const rig = rigs[i] as IAnimationTickRig;
+      const mixer = rig.mixer as AnimationMixer;
+      const action = rig.action as AnimationAction | null;
+      const out = i * 3;
+      if (action === null) {
+        if (rig.step) mixer.update(rig.mixerElapsed);
+        status[out + 2] = rig.mixerElapsed > 0 ? 2 : 0;
+        continue;
+      }
+      let state = states.get(action);
+      if (state === undefined) {
+        state = { hasLast: false, x: 0, z: 0, lastRate: 1, rateApplied: false, reported: 1 };
+        states.set(action, state);
+      }
+      const scaleBefore = action.timeScale;
+      const body = rig.strideRoot as Object3D | null;
+      let moved = 0;
+      if (body !== null) {
+        body.getWorldPosition(scratch);
+        if (state.hasLast) moved = Math.hypot(scratch.x - state.x, scratch.z - state.z);
+        state.x = scratch.x;
+        state.z = scratch.z;
+        state.hasLast = true;
+      }
+      const groundSpeed = rig.dt > 0 ? moved / rig.dt : 0;
+      status[out + 1] = groundSpeed;
+      const measured = rig.dt > 0;
+      const locomotion = rig.clipGroundSpeed >= CLIP_GROUND_FLOOR;
+      let rate = state.reported;
+      if (measured) {
+        rate = locomotion
+          ? Math.min(
+              STRIDE_RATE_MAX,
+              Math.max(
+                STRIDE_RATE_MIN,
+                groundSpeed < STRIDE_SPEED_FLOOR
+                  ? STRIDE_RATE_MIN
+                  : groundSpeed / rig.clipGroundSpeed,
+              ),
+            )
+          : 1;
+        state.reported = rate;
+      }
+      const applies = measured && locomotion && rig.strideSync;
+      let flags = 0;
+      if (rig.step) {
+        const duration = action.getClip().duration;
+        let advance = rig.actionPending;
+        if (action.loop === LoopRepeat && duration > 0) {
+          const end = action.time + advance;
+          const seam = Math.round(end / duration) * duration;
+          if (Math.abs(end - seam) <= Number.EPSILON * 16 * Math.max(duration, Math.abs(end)))
+            advance = seam - action.time;
+        }
+        const scale = rig.mixerElapsed > 0 ? advance / rig.mixerElapsed : scaleBefore;
+        if (scale !== scaleBefore) action.setEffectiveTimeScale(scale);
+        const before = action.time;
+        const wasScheduled = action.isScheduled();
+        mixer.update(rig.mixerElapsed);
+        if (action.time !== before || wasScheduled !== action.isScheduled()) flags |= 2;
+        if (
+          action.loop === LoopOnce &&
+          (!action.isScheduled() ||
+            (action.time >= action.getClip().duration && action.time > before))
+        )
+          flags |= 1;
+      }
+      if (applies) {
+        if (action.timeScale !== rate) action.setEffectiveTimeScale(rate);
+        state.lastRate = rate;
+        state.rateApplied = true;
+      } else if (measured && state.rateApplied && scaleBefore === state.lastRate) {
+        action.setEffectiveTimeScale(1);
+        state.lastRate = 1;
+        state.rateApplied = false;
+      }
+      status[out] = rate;
+      status[out + 2] = flags;
+    }
+  };
+}
+
+interface ITrace {
+  readonly strideRate: readonly number[];
+  readonly groundSpeed: readonly number[];
+  readonly synced: readonly boolean[];
+  readonly advancedFrames: number;
+  readonly actionTimes: readonly number[];
+}
+
+/**
+ * One run of a walking rig: a clip carrying 10 m a clip-second against a body whose ground speed grows
+ * every frame, so the stride rule's rate changes between frames and a held interval has to integrate.
+ *
+ * The rig sits under a holder because that is how a game moves one: the clip animates a child, and the
+ * stride reads the rig's own world position, so the two ends of the measurement stay separate.
+ */
+function walk(batched: boolean, frames: number, hold: boolean): ITrace {
+  const holder = new Object3D();
+  const root = new Object3D();
+  const child = new Object3D();
+  child.name = "child";
+  holder.add(root);
+  root.add(child);
+  const clip = new AnimationClip("walk", 1, [
+    new VectorKeyframeTrack("child.position", [0, 1], [0, 0, 0, 10, 0, 0]),
+  ]);
+  const player = new AnimationPlayer({ root, clips: [clip] });
+  // `hold` asks for a pose every fourth frame by hand rather than by band: the band's stagger is a
+  // process-wide counter, so two players built in one test would pose on different frames and the two
+  // traces would be comparing their schedules rather than their rules.
+  player.updateRate = hold ? 4_000 : "auto";
+  player.play("walk");
+  const action = player.mixer.clipAction(clip);
+  if (batched) (globalThis as { __tnAnimationTick?: unknown }).__tnAnimationTick = referenceBatch();
+  const strideRate: number[] = [];
+  const groundSpeed: number[] = [];
+  const synced: boolean[] = [];
+  const actionTimes: number[] = [];
+  // A fixed seed: the body's path is a deterministic function of the frame number.
+  for (let frame = 1; frame <= frames; frame += 1) {
+    holder.position.x = 0.05 * frame * frame;
+    player.update(0.1, hold && frame % 4 === 0);
+    // The frame loop's flush is the player's own: a report read settles the queued tick first.
+    const stride = player.stride;
+    strideRate.push(stride.rate);
+    groundSpeed.push(stride.groundSpeed);
+    synced.push(stride.synced);
+    actionTimes.push(action.time);
+  }
+  return {
+    strideRate,
+    groundSpeed,
+    synced,
+    advancedFrames: player.advancedFrames,
+    actionTimes,
+  };
+}
+
+afterEach(() => {
+  Reflect.deleteProperty(globalThis, "__tnAnimationTick");
+  clearAnimationTicks();
+});
+
+describe("the animation tick batch in the player (PRD-828)", () => {
+  it("leaves the rig where the JS loop leaves it, frame by frame", () => {
+    const js = walk(false, 12, false);
+    const batched = walk(true, 12, false);
+    expect(batched.strideRate).toEqual(js.strideRate);
+    expect(batched.groundSpeed).toEqual(js.groundSpeed);
+    expect(batched.synced).toEqual(js.synced);
+    expect(batched.advancedFrames).toBe(js.advancedFrames);
+    expect(batched.actionTimes.length).toBe(js.actionTimes.length);
+    for (let frame = 0; frame < js.actionTimes.length; frame += 1)
+      expect(batched.actionTimes[frame]).toBeCloseTo(js.actionTimes[frame] as number, 12);
+  });
+
+  it("agrees with the JS loop when a rate band holds the rig between poses", () => {
+    const js = walk(false, 32, true);
+    const batched = walk(true, 32, true);
+    expect(batched.strideRate).toEqual(js.strideRate);
+    expect(batched.groundSpeed).toEqual(js.groundSpeed);
+    expect(batched.synced).toEqual(js.synced);
+    expect(batched.advancedFrames).toBe(js.advancedFrames);
+    for (let frame = 0; frame < js.actionTimes.length; frame += 1)
+      expect(batched.actionTimes[frame]).toBeCloseTo(js.actionTimes[frame] as number, 12);
+  });
+});
