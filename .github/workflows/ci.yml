@@ -208,6 +208,9 @@ jobs:
         run: |
           set -euo pipefail
           pnpm lint
+          # PRD-836: the capability reference and the context skill are build output, not tracked
+          # files, and `check:docs` resolves links against the working tree.
+          pnpm capabilities:sync
           pnpm check:docs
           pnpm exec vitest run \
             scripts/__tests__/check-doc-links.spec.ts \

@@ -12,7 +12,7 @@
   "scripts": {
     "alpha:bar": "tsx scripts/alpha-bar.ts",
     "api:surface:check": "tsx scripts/check-api-surface.ts",
-    "api:surface:sync": "tsx scripts/check-api-surface.ts --update && biome format --write scripts/api-surface.json",
+    "api:surface:sync": "tsx scripts/check-api-surface.ts --update && biome format --write --no-errors-on-unmatched scripts/api-surface.json",
     "bake:delete-test": "sh scripts/xvfb.sh tsx scripts/bake-delete-test.ts",
     "bench:engines": "tsx scripts/engine-load-test/cli.ts",
     "bench:engines:report": "tsx scripts/engine-load-test/cli.ts --compare",

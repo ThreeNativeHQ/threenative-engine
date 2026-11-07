@@ -161,10 +161,7 @@ describe("capability documentation gate", () => {
       ],
     };
     await mkdir(path.join(root, "packages/create-threenative"), { recursive: true });
-    await writeFile(
-      path.join(root, "packages/core/capabilities.json"),
-      JSON.stringify(manifest),
-    );
+    await writeFile(path.join(root, "packages/core/capabilities.json"), JSON.stringify(manifest));
 
     const gaps = await findDocTagGaps(root, capabilities);
     expect(gaps).toHaveLength(1);

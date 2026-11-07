@@ -71,7 +71,7 @@
     "build": "tsup --config tsup.config.ts && publint",
     "typecheck": "tsc --noEmit",
     "test": "publint --strict",
-    "prepack": "node scripts/sync-patches.mjs",
+    "prepack": "node scripts/sync-patches.mjs && pnpm --workspace-root capabilities:sync",
     "sync:patches": "node scripts/sync-patches.mjs"
   },
   "dependencies": {

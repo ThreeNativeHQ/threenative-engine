@@ -230,3 +230,6 @@ dist-one-spell/
 
 # PRD-836: the one committed capability manifest is core's; this copy is build output.
 /packages/create-threenative/capabilities.json
+/packages/create-threenative/agent-docs/references/capability-reference.md
+/packages/create-threenative/agent-files/.agents/skills/threenative-context/SKILL.md
+/scripts/api-surface.json

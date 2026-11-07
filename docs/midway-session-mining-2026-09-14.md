@@ -157,4 +157,4 @@ Local transcript links are audit pointers on this machine. OpenCode references i
 
 **Verification performed:** original-source spot checks, current capability search/detail, targeted code inspection, and document/link/ranking checks. No game tests, browser captures, asset rebuilds, or native runs were performed for this report. Historical timings and claimed fixes retain the limitations described above.
 
-**Next action, under two minutes:** open the `reconcileBrowserPointers` entry in [capabilities.json](../packages/create-threenative/capabilities.json) and compare its signature with its example. That is the smallest confirmed issue to turn into an implementation task.
+**Next action, under two minutes:** open the `reconcileBrowserPointers` entry in [capabilities.json](../packages/core/capabilities.json) and compare its signature with its example. That is the smallest confirmed issue to turn into an implementation task.

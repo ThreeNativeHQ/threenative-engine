@@ -302,10 +302,7 @@ describe("capability manifest generator", () => {
   });
 
   it("keeps the IComputeDriven cloth and fluid capability searchable in both manifests", async () => {
-    for (const file of [
-      "packages/core/capabilities.json",
-      "packages/core/capabilities.json",
-    ]) {
+    for (const file of ["packages/core/capabilities.json", "packages/core/capabilities.json"]) {
       const manifest = JSON.parse(await readFile(file, "utf8")) as {
         entries: Array<{ symbol: string; situations: string[] }>;
       };
@@ -327,10 +324,7 @@ describe("capability manifest generator", () => {
   });
 
   it("keeps the measured Pixel 8 cloth cost in the shipped capability manifests", async () => {
-    for (const file of [
-      "packages/core/capabilities.json",
-      "packages/core/capabilities.json",
-    ]) {
+    for (const file of ["packages/core/capabilities.json", "packages/core/capabilities.json"]) {
       const manifest = JSON.parse(await readFile(file, "utf8")) as {
         entries: Array<{ constraints: string[]; symbol: string }>;
       };
