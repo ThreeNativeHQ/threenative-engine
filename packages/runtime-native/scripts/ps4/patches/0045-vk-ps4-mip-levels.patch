@@ -1,0 +1,922 @@
+diff --git a/include/vk_ps4_internal.h b/include/vk_ps4_internal.h
+index 29aeb9e..9f1d45f 100644
+--- a/include/vk_ps4_internal.h
++++ b/include/vk_ps4_internal.h
+@@ -790,6 +790,26 @@ VKAPI_ATTR void VKAPI_CALL vk_ps4_GetBufferMemoryRequirements(VkDevice, VkBuffer
+ VKAPI_ATTR void VKAPI_CALL vk_ps4_GetBufferMemoryRequirements2(VkDevice, const VkBufferMemoryRequirementsInfo2 *, VkMemoryRequirements2 *);
+ VKAPI_ATTR VkResult VKAPI_CALL vk_ps4_BindBufferMemory(VkDevice, VkBuffer, VkDeviceMemory, VkDeviceSize);
+ 
++/* One mip level (and array layer) of an image: where it sits and how wide a
++ * row of it is.  Offsets are byte offsets from the image's bound base address
++ * and follow the layout the driver's size functions allocate with: mip levels
++ * packed in level order, each level being numslices contiguous slices of that
++ * level's surface, which is also the table a T#'s baselevel..lastlevel walks. */
++typedef struct VkPs4ImageLevel {
++    uint64_t offset;  /* byte offset of this level (and layer) from image base */
++    uint64_t size;    /* byte size of one slice of this level */
++    uint32_t pitch;   /* surface pitch of this level, in texels (blocks if BC) */
++    uint32_t width;   /* Vulkan extent of this level: max(1, extent >> level) */
++    uint32_t height;
++} VkPs4ImageLevel;
++
++/* Level geometry from the driver's own surface table.  False when the image has
++ * no level table (a depth target) or the argument is out of range. */
++bool vk_ps4_image_level(const VkPs4Image *img, uint32_t level, uint32_t layer, VkPs4ImageLevel *out);
++/* Colour-target descriptor for one mip level of a render-target image (a
++ * GnmRenderTarget carries no mip fields, so each level is a target of its own). */
++bool vk_ps4_image_level_rt(const VkPs4Image *img, uint32_t level, uint32_t layer, GnmRenderTarget *out);
++
+ /* Image */
+ VKAPI_ATTR VkResult VKAPI_CALL vk_ps4_CreateImage(VkDevice, const VkImageCreateInfo *, const VkAllocationCallbacks *, VkImage *);
+ VKAPI_ATTR void VKAPI_CALL vk_ps4_DestroyImage(VkDevice, VkImage, const VkAllocationCallbacks *);
+diff --git a/src/vk_ps4_command.c b/src/vk_ps4_command.c
+index 97eff8e..6b06a2b 100644
+--- a/src/vk_ps4_command.c
++++ b/src/vk_ps4_command.c
+@@ -1,3 +1,6 @@
++#include <gpuaddr.h>
++#include <stdlib.h>
++#include <stdio.h>
+ /*
+  * vk_ps4_command.c — VkCommandBuffer implementation via GnmCommandBuffer.
+  *
+@@ -348,59 +351,74 @@ static bool vk_ps4_rt_is_tiled(const GnmRenderTarget *rt) {
+  *
+  * Linear RTs use FillMemory (fast, direct memory write).
+  * Tiled RTs use the draw-based clear (vk_ps4_clear_color_draw) which
+- * goes through the CB hardware and respects the tiled memory layout.
+- * Partial tiled RT ranges (sub-rect or multi-mip) still fall back to
+- * FillMemory as a known approximation — full per-mip draw-based clears
+- * are future work. */
++ * goes through the CB hardware and respects the tiled memory layout, one
++ * level at a time (a colour target has no mip fields, so each level is a
++ * target of its own).  Partial tiled RT ranges (sub-rect) still fall back to
++ * FillMemory as a known approximation. */
+ 
+-/* FillMemory-based color clear for a render target.
++/* FillMemory-based color clear of ONE mip level (every array layer of it).
+  * Works correctly for linear RTs. For tiled RTs, the data written
+  * will not match the tiled layout (known limitation). */
+ static void vk_ps4_clear_color_fillmem(GnmCommandBuffer *cmd,
+                                         VkPs4Image *img,
+-                                        const VkClearColorValue *cc) {
++                                        const VkClearColorValue *cc,
++                                        uint32_t level) {
+     uint64_t rt_addr;
+-    uint32_t rt_size;
++    uint64_t rt_size;
+     if (!img->memory) {
+         /* Swapchain images own no VkPs4DeviceMemory: their store is the
+          * display-linear VideoOut buffer held in the image's GnmRenderTarget
+          * (same shape as the CmdCopyImageToBuffer fix).  The byte size is the
+          * RT's own, exactly what sceGnmRtCreateColorTarget reported for that
+-         * buffer: sceGnmRtGetPitch() counts pixels, not bytes. */
++         * buffer: sceGnmRtGetPitch() counts pixels, not bytes.  A swapchain
++         * image is one level, so `level` is moot here. */
+         uint32_t align = 0;
+         uint64_t size = 0;
+         if (!img->is_swapchain_image) return;
+         rt_addr = (uint64_t)sceGnmRtGetBaseAddr(&img->gnm_rt);
+         if (sceGnmRtCalcByteSize(&size, &align, &img->gnm_rt) != GNM_ERROR_OK) return;
+-        rt_size = (uint32_t)size;
++        rt_size = size;
+     } else {
+         if (!img->memory->gnm_mem.mapped) return;
+-        rt_addr = (uint64_t)img->memory->gnm_mem.mapped +
+-                  img->memory_offset;
+-        if (img->is_render_target) {
+-            /* The RT knows its own surface size: a tiled one is a whole number
+-             * of tiles, not width*height*bpp. A constant fill covers either
+-             * shape, so the size the descriptor reports is the one to write. */
++        /* The level's surface size is the driver's own: a tiled surface is a
++         * whole number of tiles, not width*height*bpp.  Its array slices are
++         * contiguous, so one fill covers every layer of the level. */
++        const uint32_t layers = img->create_info.arrayLayers ?
++                                img->create_info.arrayLayers : 1;
++        rt_addr = (uint64_t)img->memory->gnm_mem.mapped + img->memory_offset;
++        VkPs4ImageLevel lv = {0};
++        if (level == 0) {
++            /* Level 0 keeps the size it always had (the table's level-0 size
++             * over-ran suballocated images; see CmdCopyBufferToImage). */
+             uint32_t align = 0;
+             uint64_t size = 0;
+-            rt_size = sceGnmRtCalcByteSize(&size, &align, &img->gnm_rt) == GNM_ERROR_OK &&
+-                      size > 0 && size <= 0xFFFFFFFFull
+-                          ? (uint32_t)size
+-                          : 0;
++            if (img->is_render_target)
++                rt_size = sceGnmRtCalcByteSize(&size, &align, &img->gnm_rt) == GNM_ERROR_OK ? size : 0;
++            else
++                rt_size = (uint64_t)img->create_info.extent.width *
++                          img->create_info.extent.height * vk_format_to_bpp(img->create_info.format);
+         } else {
+-            uint32_t bpp = vk_format_to_bpp(img->create_info.format);
+-            rt_size = img->create_info.extent.width *
+-                      img->create_info.extent.height * bpp;
++            if (!vk_ps4_image_level(img, level, 0, &lv)) return;
++            rt_addr += lv.offset;
++            rt_size = lv.size * layers;
++        }
++        if (img->memory_offset + lv.offset + rt_size > img->memory->size) {
++            fprintf(stderr, "TN_VKPS4_FILL_OOB level=%u layers=%u size=%llu\n", level, layers,
++                    (unsigned long long)rt_size);
++            return;
+         }
+-        rt_size = (rt_size + 3) & ~3u;
+     }
++    rt_size = (rt_size + 3) & ~3ULL;
+     /* FillMemory wants a 4-byte aligned address and a size that is a
+      * multiple of 4.  A GNM RT base is 256-byte aligned and its surface size
+      * is a whole number of bytes, so neither case needs rounding. */
+     if (!rt_addr || rt_size < 4) return;
++    /* FillMemory's size argument is 32-bit: a level bigger than that (a huge
++     * base level) fills what fits rather than truncating to a wrapped size. */
++    if (rt_size > 0xFFFFFFFFull) rt_size = 0xFFFFFFFFull & ~3ULL;
+     uint32_t clear_val = vk_ps4_pack_clear_val_32(
+         img->create_info.format, cc);
+-    sceGnmDrawCmdFillMemory(cmd, rt_addr, rt_size, clear_val);
++    sceGnmDrawCmdFillMemory(cmd, rt_addr, (uint32_t)rt_size, clear_val);
+ }
+ 
+ /* Draw-based color clear using the embedded clear pixel shader.
+@@ -431,20 +449,36 @@ static void vk_ps4_draw_fullscreen_rect(VkPs4CommandBuffer *cmd) {
+ 
+ static void vk_ps4_clear_color_draw(VkPs4CommandBuffer *cmd,
+                                      VkPs4Image *img,
+-                                     const VkClearColorValue *cc) {
++                                     const VkClearColorValue *cc,
++                                     uint32_t level) {
+     VkPs4Device *dev = cmd->device;
+     if (!dev || !dev->clear_ps_ready) {
+         /* No clear PS — fall back to FillMemory */
+-        vk_ps4_clear_color_fillmem(&cmd->gnm_cmd, img, cc);
++        vk_ps4_clear_color_fillmem(&cmd->gnm_cmd, img, cc, level);
+         return;
+     }
+ 
++    /* A colour target has no mip fields, so the image's own RT descriptor names
++     * level 0.  A clear of level N renders into a level-N target: the level's
++     * own address, extent and pitch, built from the level table. */
++    GnmRenderTarget level_rt;
++    const GnmRenderTarget *rt = &img->gnm_rt;
++    uint32_t rt_w = img->create_info.extent.width;
++    uint32_t rt_h = img->create_info.extent.height;
++    VkPs4ImageLevel lv;
++    if (level > 0 && vk_ps4_image_level(img, level, 0, &lv) &&
++        vk_ps4_image_level_rt(img, level, 0, &level_rt)) {
++        rt = &level_rt;
++        rt_w = lv.width;
++        rt_h = lv.height;
++    }
++
+     /* Allocate 16 bytes inside the command buffer for the clear color.
+      * This is GPU-visible memory that the shader can read via the V#. */
+     void *color_buf = sceGnmCmdAllocInside(&cmd->gnm_cmd, 16, 4);
+     if (!color_buf) {
+         /* AllocInside failed — fall back to FillMemory */
+-        vk_ps4_clear_color_fillmem(&cmd->gnm_cmd, img, cc);
++        vk_ps4_clear_color_fillmem(&cmd->gnm_cmd, img, cc, level);
+         return;
+     }
+     memcpy(color_buf, cc->float32, 16);
+@@ -463,7 +497,7 @@ static void vk_ps4_clear_color_draw(VkPs4CommandBuffer *cmd,
+      * it was originally bound to by vk_ps4_bind_subpass_targets.
+      * The original bindings are restored after all clears by a
+      * re-call to vk_ps4_bind_subpass_targets. */
+-    sceGnmDrawCmdSetRenderTarget(&cmd->gnm_cmd, 0, &img->gnm_rt);
++    sceGnmDrawCmdSetRenderTarget(&cmd->gnm_cmd, 0, rt);
+ 
+     /* Disable blending for RT0 so the clear color overwrites the RT
+      * instead of being blended with existing contents.  The previous
+@@ -475,10 +509,7 @@ static void vk_ps4_clear_color_draw(VkPs4CommandBuffer *cmd,
+     sceGnmDrawCmdSetBlendControl(&cmd->gnm_cmd, 0, &no_blend);
+ 
+     /* Set scissor to cover the full RT so the clear draw isn't clipped. */
+-    sceGnmDrawCmdSetScreenScissor(&cmd->gnm_cmd,
+-        0, 0,
+-        img->create_info.extent.width,
+-        img->create_info.extent.height);
++    sceGnmDrawCmdSetScreenScissor(&cmd->gnm_cmd, 0, 0, rt_w, rt_h);
+ 
+     /* A clear is a DRAW, so it rasterizes through whatever viewport the LAST
+      * draw left in the context -- and through the device's init state for the
+@@ -490,8 +521,8 @@ static void vk_ps4_clear_color_draw(VkPs4CommandBuffer *cmd,
+         memset(&vp, 0, sizeof(vp));
+         vp.dmin = 0.0f;
+         vp.dmax = 1.0f;
+-        vp.scale[0] = img->create_info.extent.width * 0.5f;
+-        vp.scale[1] = img->create_info.extent.height * 0.5f;
++        vp.scale[0] = rt_w * 0.5f;
++        vp.scale[1] = rt_h * 0.5f;
+         vp.scale[2] = 0.5f;
+         vp.offset[0] = vp.scale[0];
+         vp.offset[1] = vp.scale[1];
+@@ -518,7 +549,8 @@ static void vk_ps4_clear_color_draw(VkPs4CommandBuffer *cmd,
+  * Tiled RTs require a draw-based clear via the embedded clear PS. */
+ static void vk_ps4_clear_color(VkPs4CommandBuffer *cmd,
+                                 VkPs4Image *img,
+-                                const VkClearColorValue *cc) {
++                                const VkClearColorValue *cc,
++                                uint32_t level) {
+     if (img->is_render_target) {
+         /* Check if the RT is tiled by looking at the tile mode in the
+          * GnmRenderTarget descriptor.  Linear RTs (DISPLAY_LINEAR_GENERAL
+@@ -542,13 +574,13 @@ static void vk_ps4_clear_color(VkPs4CommandBuffer *cmd,
+          * memcpy. So only linear targets keep the fill. */
+         if (tm == GNM_TM_DISPLAY_LINEAR_GENERAL ||
+             tm == GNM_TM_DISPLAY_LINEAR_ALIGNED) {
+-            vk_ps4_clear_color_fillmem(&cmd->gnm_cmd, img, cc);
++            vk_ps4_clear_color_fillmem(&cmd->gnm_cmd, img, cc, level);
+         } else {
+-            vk_ps4_clear_color_draw(cmd, img, cc);
++            vk_ps4_clear_color_draw(cmd, img, cc, level);
+         }
+     } else {
+         /* Non-RT image — use FillMemory */
+-        vk_ps4_clear_color_fillmem(&cmd->gnm_cmd, img, cc);
++        vk_ps4_clear_color_fillmem(&cmd->gnm_cmd, img, cc, level);
+     }
+ }
+ 
+@@ -653,7 +685,22 @@ static void vk_ps4_bind_subpass_targets(VkPs4CommandBuffer *cmd) {
+             if (!view || !view->image) continue;
+ 
+             if (view->image->is_render_target) {
+-                sceGnmDrawCmdSetRenderTarget(&cmd->gnm_cmd, j, &view->image->gnm_rt);
++                /* The engine renders each mip of a texture in turn (and PMREM
++                 * renders into mips): an attachment view whose base level or
++                 * layer is not 0 must target that level's address and extent,
++                 * which is a target of its own -- a GnmRenderTarget has no mip
++                 * fields.  Level 0-layer 0 keeps the image's own descriptor
++                 * untouched (swapchain buffers and plain targets). */
++                const VkImageSubresourceRange *range =
++                    &view->create_info.subresourceRange;
++                GnmRenderTarget level_rt;
++                if ((range->baseMipLevel || range->baseArrayLayer) &&
++                    vk_ps4_image_level_rt(view->image, range->baseMipLevel,
++                                          range->baseArrayLayer, &level_rt)) {
++                    sceGnmDrawCmdSetRenderTarget(&cmd->gnm_cmd, j, &level_rt);
++                } else {
++                    sceGnmDrawCmdSetRenderTarget(&cmd->gnm_cmd, j, &view->image->gnm_rt);
++                }
+             }
+         }
+     }
+@@ -2437,6 +2484,96 @@ vk_ps4_CmdResolveImage(VkCommandBuffer commandBuffer, VkImage srcImage, VkImageL
+     }
+ }
+ 
++/* Tiled upload.  Textures and colour targets are created 2D-tiled
++ * (GNM_TM_DISPLAY_2D_THIN), so writing the staging rows linearly into them left
++ * every uploaded texture scrambled under the sampler (PRD-784 P4-3: the floor's
++ * tile grid read as flat noise).  This tiles the region on the CPU into the
++ * image's own layout with the driver's tiler, which bounds every element write by
++ * `outlen`, here capped at the image's own allocation.
++ * ponytail: runs at record time, so it assumes the staging data is already
++ * written (Dawn fills its upload buffer before it records the copy) and that no
++ * earlier, still-queued command samples the destination; a GPU detile-copy pass
++ * removes both assumptions when a game streams textures mid-frame. */
++static bool vk_ps4_tiled_upload(VkPs4Image *dst, const VkBufferImageCopy *r, const uint8_t *src) {
++    const VkFormat format = dst->create_info.format;
++    if (vk_format_is_compressed(format) || dst->is_depth_target || dst->is_swapchain_image) return false;
++    if (r->imageExtent.depth > 1 || r->imageOffset.z != 0) return false;
++    const uint32_t bpp = vk_format_to_bpp(format);
++    if (bpp == 0) return false;
++
++    GpaTextureInfo info;
++    uint64_t alloc = 0;
++    uint32_t align = 0;
++    if (dst->is_render_target) {
++        /* A colour target names one level: only its level 0 is tiled here. */
++        if (r->imageSubresource.mipLevel != 0) return false;
++        info = sceGnmRtBuildInfo(&dst->gnm_rt);
++        info.height = dst->create_info.extent.height;
++        info.numslices = dst->create_info.arrayLayers ? dst->create_info.arrayLayers : 1;
++        if (sceGnmRtCalcByteSize(&alloc, &align, &dst->gnm_rt) != GNM_ERROR_OK) return false;
++    } else {
++        info = sceGnmTexBuildInfo(&dst->gnm_texture);
++        if (sceGnmTexCalcByteSize(&alloc, &align, &dst->gnm_texture) != GNM_ERROR_OK) return false;
++    }
++    if (info.tm == GNM_TM_DISPLAY_LINEAR_GENERAL || info.tm == GNM_TM_DISPLAY_LINEAR_ALIGNED) return false;
++    const uint32_t level = r->imageSubresource.mipLevel;
++    if (level >= info.nummips) return false;
++
++    const uint32_t row_px = r->bufferRowLength ? r->bufferRowLength : r->imageExtent.width;
++    const uint32_t rows = r->bufferImageHeight ? r->bufferImageHeight : r->imageExtent.height;
++    const uint32_t x0 = (uint32_t)r->imageOffset.x, y0 = (uint32_t)r->imageOffset.y;
++    uint32_t layers = r->imageSubresource.layerCount;
++    if (layers == VK_REMAINING_ARRAY_LAYERS) layers = info.numslices - r->imageSubresource.baseArrayLayer;
++    if (layers == 0) layers = 1;
++
++    /* The staging rows as a linear surface whose (x, y) are the destination's:
++     * the tiler addresses source and destination with the same coordinates. */
++    GpaTilingParams stp;
++    memset(&stp, 0, sizeof(stp));
++    stp.tilemode = GNM_TM_DISPLAY_LINEAR_GENERAL;
++    stp.mingpumode = info.mingpumode;
++    stp.linearwidth = x0 + row_px;
++    stp.linearheight = y0 + rows;
++    stp.lineardepth = 1;
++    stp.numfragsperpixel = 1;
++    stp.bitsperfrag = bpp * 8;
++    GpaSurfaceRegion region = {x0, y0, 0, x0 + r->imageExtent.width, y0 + r->imageExtent.height, 1};
++    const uint64_t layer_bytes = (uint64_t)row_px * rows * bpp;
++
++    uint8_t *base = (uint8_t *)dst->memory->gnm_mem.mapped + dst->memory_offset;
++    for (uint32_t l = 0; l < layers; l++) {
++        const uint32_t slice = r->imageSubresource.baseArrayLayer + l;
++        uint64_t size = 0, offset = 0;
++        if (sceGpaComputeSurfaceSizeOffset(&size, &offset, &info, level, slice) != GPA_ERR_OK) return false;
++        if (offset >= alloc) return false;
++        if (offset + size > alloc) size = alloc - offset;
++        GpaTilingParams dtp;
++        if (sceGpaTpInit(&dtp, &info, level, slice) != GPA_ERR_OK) return false;
++        /* inbuf starts (y0 * pitch + x0) elements before the first staged texel, so
++         * the region's coordinates land on it; the tiler reads only inside it. */
++        const uint8_t *layer_src = src + l * layer_bytes;
++        const uint64_t lead = ((uint64_t)y0 * (x0 + row_px) + x0) * bpp;
++        /* The linear source is (x0 + row_px) wide, so staged row y sits at
++         * (y0 + y) * (x0 + row_px) + x0 elements: copy it into that shape. */
++        const uint64_t linear_bytes = (uint64_t)(x0 + row_px) * (y0 + rows) * bpp;
++        uint8_t *linear = (uint8_t *)malloc(linear_bytes);
++        if (!linear) return false;
++        for (uint32_t y = 0; y < rows; y++)
++            memcpy(linear + lead + (uint64_t)y * (x0 + row_px) * bpp, layer_src + (uint64_t)y * row_px * bpp,
++                   (uint64_t)row_px * bpp);
++        GpaError err = sceGpaTileSurfaceRegion(base + offset, size, linear, linear_bytes, &stp, &dtp, &region);
++        free(linear);
++        if (err != GPA_ERR_OK) {
++            static unsigned reported;
++            if (reported++ < 8)
++                fprintf(stderr, "TN_VKPS4_TILE_UPLOAD_FAILED %s level=%u slice=%u %ux%u bpp=%u tm=%d\n",
++                        sceGpaStrError(err), level, slice, r->imageExtent.width, r->imageExtent.height, bpp, (int)info.tm);
++            return false;
++        }
++    }
++    return true;
++}
++
+ VKAPI_ATTR void VKAPI_CALL
+ vk_ps4_CmdCopyBufferToImage(VkCommandBuffer commandBuffer, VkBuffer srcBuffer, VkImage dstImage,
+                             VkImageLayout dstImageLayout, uint32_t regionCount,
+@@ -2453,18 +2590,36 @@ vk_ps4_CmdCopyBufferToImage(VkCommandBuffer commandBuffer, VkBuffer srcBuffer, V
+      * shader-based copy — deferred to Phase 3. */
+     for (uint32_t i = 0; i < regionCount; i++) {
+         const VkBufferImageCopy *r = &pRegions[i];
++        if (vk_ps4_tiled_upload(dst, r, (const uint8_t *)src->memory->gnm_mem.mapped +
++                                            src->memory_offset + r->bufferOffset))
++            continue;
+         uint32_t bpp = vk_format_to_bpp(dst->create_info.format);
+         bool compressed = vk_format_is_compressed(dst->create_info.format);
+         /* Buffer row length is in pixels; convert to bytes.
+          * For compressed, bufferRowLength is in blocks (per Vulkan spec). */
+         uint32_t src_pitch = r->bufferRowLength * bpp;
+         if (src_pitch == 0)
++            /* bufferRowLength 0 means tightly packed to the region's width, so a
++             * mip's rows are the region's width apart, not level 0's. */
+             src_pitch = vk_format_row_size(dst->create_info.format,
+-                                           dst->create_info.extent.width);
+-        /* Use mip-level-specific dimensions for dst pitch */
+-        uint32_t dst_mip_w = dst->create_info.extent.width >> r->imageSubresource.mipLevel;
++                                           r->imageExtent.width);
++        /* Destination geometry for the region's mip level.  A level of a GNM
++         * surface is a surface of its own, tile-padded and placed by the
++         * driver's level table (vk_ps4_image_level), so level 0's pitch is not
++         * its pitch and writing every region at level 0 overwrote level 0.
++         * A depth target has no level table; keep the packed guess there. */
++        const uint32_t dst_mip = r->imageSubresource.mipLevel;
++        const uint32_t dst_base_layer = r->imageSubresource.baseArrayLayer;
++        VkPs4ImageLevel dst_lv;
++        /* Level 0 keeps the packed geometry that every upload has used so far; the
++         * table places only levels above it (it reads level 0 tile-padded, which
++         * moved every base-level row and overran suballocated images). */
++        const bool have_dst_lv = dst_mip > 0 && vk_ps4_image_level(dst, dst_mip, dst_base_layer, &dst_lv);
++        uint32_t dst_mip_w = dst->create_info.extent.width >> dst_mip;
+         if (dst_mip_w == 0) dst_mip_w = 1;
+-        uint32_t dst_pitch = vk_format_row_size(dst->create_info.format, dst_mip_w);
++        uint32_t dst_pitch = have_dst_lv
++                             ? vk_format_row_size(dst->create_info.format, dst_lv.pitch)
++                             : vk_format_row_size(dst->create_info.format, dst_mip_w);
+         uint32_t copy_width = vk_format_row_size(dst->create_info.format, r->imageExtent.width);
+         uint32_t copy_height = compressed ? (r->imageExtent.height + 3) / 4 : r->imageExtent.height;
+ 
+@@ -2481,14 +2636,20 @@ vk_ps4_CmdCopyBufferToImage(VkCommandBuffer commandBuffer, VkBuffer srcBuffer, V
+             num_layers = dst->create_info.arrayLayers - r->imageSubresource.baseArrayLayer;
+         }
+         if (num_layers == 0) num_layers = 1;
+-        uint64_t dst_slice_size = (uint64_t)dst_pitch * copy_height;
++        /* One image slice of this level: its own surface size when the level
++         * table knows it, so the level's first slice lands at `offset`. */
++        uint64_t dst_slice_size = have_dst_lv ? dst_lv.size
++                                              : (uint64_t)dst_pitch * copy_height;
++        uint64_t dst_level_off = have_dst_lv
++                                 ? dst_lv.offset - (uint64_t)dst_base_layer * dst_slice_size
++                                 : 0;
+         uint64_t src_slice_size = (uint64_t)src_pitch * copy_height;
+ 
+         for (uint32_t z = 0; z < r->imageExtent.depth; z++) {
+             for (uint32_t layer = 0; layer < num_layers; layer++) {
+                 uint64_t src_slice_off = (uint64_t)(layer * r->imageExtent.depth + z) * src_slice_size;
+-                uint64_t dst_slice_off =
+-                    (uint64_t)((r->imageSubresource.baseArrayLayer + layer) * r->imageExtent.depth + z) * dst_slice_size;
++                uint64_t dst_slice_off = dst_level_off +
++                    (uint64_t)((dst_base_layer + layer) * r->imageExtent.depth + z) * dst_slice_size;
+                 for (uint32_t y = 0; y < copy_height; y++) {
+                     uint64_t src_addr = src_base + src_slice_off + (uint64_t)y * src_pitch;
+                     uint64_t dst_addr = dst_base + dst_slice_off +
+@@ -2522,12 +2683,23 @@ vk_ps4_CmdCopyImageToBuffer(VkCommandBuffer commandBuffer, VkImage srcImage, VkI
+         const VkBufferImageCopy *r = &pRegions[i];
+         uint32_t bpp = vk_format_to_bpp(src->create_info.format);
+         bool compressed = vk_format_is_compressed(src->create_info.format);
+-        /* Use mip-level-specific dimensions for src pitch */
+-        uint32_t src_mip_w = src->create_info.extent.width >> r->imageSubresource.mipLevel;
++        /* Source geometry for the region's mip level, from the driver's level
++         * table: reading every region at level 0 returned the wrong level. */
++        const uint32_t src_mip = r->imageSubresource.mipLevel;
++        const uint32_t src_base_layer = r->imageSubresource.baseArrayLayer;
++        VkPs4ImageLevel src_lv;
++        const bool have_src_lv = src_mip > 0 && vk_ps4_image_level(src, src_mip, src_base_layer, &src_lv);
++        uint32_t src_mip_w = src->create_info.extent.width >> src_mip;
+         if (src_mip_w == 0) src_mip_w = 1;
+-        uint32_t src_pitch = vk_format_row_size(src->create_info.format, src_mip_w);
++        uint32_t src_pitch = have_src_lv
++                             ? vk_format_row_size(src->create_info.format, src_lv.pitch)
++                             : vk_format_row_size(src->create_info.format, src_mip_w);
+         uint32_t dst_pitch = r->bufferRowLength * bpp;
+-        if (dst_pitch == 0) dst_pitch = src_pitch;
++        /* bufferRowLength 0 means tightly packed to the region's width.  The
++         * source pitch is the level's tile-padded one, so taking it here wrote
++         * a readback up to 8x past the end of the destination buffer. */
++        if (dst_pitch == 0)
++            dst_pitch = vk_format_row_size(src->create_info.format, r->imageExtent.width);
+         uint32_t copy_width = vk_format_row_size(src->create_info.format, r->imageExtent.width);
+         uint32_t copy_height = compressed ? (r->imageExtent.height + 3) / 4 : r->imageExtent.height;
+ 
+@@ -2543,13 +2715,17 @@ vk_ps4_CmdCopyImageToBuffer(VkCommandBuffer commandBuffer, VkImage srcImage, VkI
+             num_layers = src->create_info.arrayLayers - r->imageSubresource.baseArrayLayer;
+         }
+         if (num_layers == 0) num_layers = 1;
+-        uint64_t src_slice_size = (uint64_t)src_pitch * copy_height;
++        uint64_t src_slice_size = have_src_lv ? src_lv.size
++                                             : (uint64_t)src_pitch * copy_height;
++        uint64_t src_level_off = have_src_lv
++                                 ? src_lv.offset - (uint64_t)src_base_layer * src_slice_size
++                                 : 0;
+         uint64_t dst_slice_size = (uint64_t)dst_pitch * copy_height;
+ 
+         for (uint32_t z = 0; z < r->imageExtent.depth; z++) {
+             for (uint32_t layer = 0; layer < num_layers; layer++) {
+-                uint64_t src_slice_off =
+-                    (uint64_t)((r->imageSubresource.baseArrayLayer + layer) * r->imageExtent.depth + z) * src_slice_size;
++                uint64_t src_slice_off = src_level_off +
++                    (uint64_t)((src_base_layer + layer) * r->imageExtent.depth + z) * src_slice_size;
+                 uint64_t dst_slice_off = (uint64_t)(layer * r->imageExtent.depth + z) * dst_slice_size;
+                 for (uint32_t y = 0; y < copy_height; y++) {
+                     uint64_t src_addr = src_base + src_slice_off +
+@@ -2730,7 +2906,8 @@ vk_ps4_CmdBeginRenderPass(VkCommandBuffer commandBuffer, const VkRenderPassBegin
+             } else if (view->image->is_render_target) {
+                 const VkClearColorValue *cc =
+                     &cmd->current_render_pass.clear_values[i].color;
+-                vk_ps4_clear_color(cmd, view->image, cc);
++                vk_ps4_clear_color(cmd, view->image, cc,
++                                         view->create_info.subresourceRange.baseMipLevel);
+             }
+         }
+     }
+@@ -2818,7 +2995,8 @@ vk_ps4_CmdNextSubpass(VkCommandBuffer commandBuffer, VkSubpassContents contents)
+                 if (att_idx < cmd->current_render_pass.clear_value_count) {
+                     const VkClearColorValue *cc =
+                         &cmd->current_render_pass.clear_values[att_idx].color;
+-                    vk_ps4_clear_color(cmd, view->image, cc);
++                    vk_ps4_clear_color(cmd, view->image, cc,
++                                         view->create_info.subresourceRange.baseMipLevel);
+                 }
+             }
+             /* Also check resolve attachments */
+@@ -2835,7 +3013,8 @@ vk_ps4_CmdNextSubpass(VkCommandBuffer commandBuffer, VkSubpassContents contents)
+                 if (att_idx < cmd->current_render_pass.clear_value_count) {
+                     const VkClearColorValue *cc =
+                         &cmd->current_render_pass.clear_values[att_idx].color;
+-                    vk_ps4_clear_color(cmd, view->image, cc);
++                    vk_ps4_clear_color(cmd, view->image, cc,
++                                         view->create_info.subresourceRange.baseMipLevel);
+                 }
+             }
+         }
+@@ -2856,7 +3035,8 @@ vk_ps4_CmdNextSubpass(VkCommandBuffer commandBuffer, VkSubpassContents contents)
+                     if (att_idx < cmd->current_render_pass.clear_value_count) {
+                         const VkClearColorValue *cc =
+                             &cmd->current_render_pass.clear_values[att_idx].color;
+-                        vk_ps4_clear_color(cmd, view->image, cc);
++                        vk_ps4_clear_color(cmd, view->image, cc,
++                                         view->create_info.subresourceRange.baseMipLevel);
+                     }
+                 } else if (view->image->is_depth_target) {
+                     if (att_idx < cmd->current_render_pass.clear_value_count) {
+@@ -3033,7 +3213,7 @@ vk_ps4_CmdClearColorImage(VkCommandBuffer commandBuffer, VkImage image, VkImageL
+          * (which reads img->memory) cannot clear it.  It is one mip of one
+          * layer on a display-linear VideoOut RT, so the whole-image clear
+          * is exact. */
+-        if (img->is_swapchain_image) vk_ps4_clear_color(cmd, img, pColor);
++        if (img->is_swapchain_image) vk_ps4_clear_color(cmd, img, pColor, 0);
+         return;
+     }
+     if (!img->memory->gnm_mem.mapped) return;
+@@ -3043,10 +3223,10 @@ vk_ps4_CmdClearColorImage(VkCommandBuffer commandBuffer, VkImage image, VkImageL
+      * vk_ps4_clear_color dispatches to the draw-based clear path for
+      * tiled RTs and FillMemory for linear images.
+      *
+-     * The draw-based clear clears the full image at base mip level / layer 0.
+-     * For multi-mip or multi-layer ranges on tiled RTs, we fall back to
+-     * FillMemory (approximate — correct for linear, approximate for tiled).
+-     * Full per-mip draw-based clears are future work. */
++     * The draw-based clear is per level (a colour target has no mip fields, so
++     * each level is a target of its own), so a whole-image range clears every
++     * mip.  Partial ranges on tiled RTs fall back to FillMemory (approximate —
++     * correct for linear, approximate for tiled). */
+     bool is_tiled_rt = false;
+     if (img->is_render_target) {
+         GnmTileMode tm = (GnmTileMode)img->gnm_rt.attrib.tilemode_index;
+@@ -3065,14 +3245,16 @@ vk_ps4_CmdClearColorImage(VkCommandBuffer commandBuffer, VkImage image, VkImageL
+                            (range->layerCount == VK_REMAINING_ARRAY_LAYERS ||
+                             range->layerCount == img->create_info.arrayLayers));
+         if (full_image) {
+-            vk_ps4_clear_color(cmd, img, pColor);
++            const uint32_t mips = img->create_info.mipLevels ?
++                                  img->create_info.mipLevels : 1;
++            for (uint32_t lv = 0; lv < mips; lv++)
++                vk_ps4_clear_color(cmd, img, pColor, lv);
+             (void)imageLayout;
+             return;
+         }
+     }
+ 
+     /* Fall back to FillMemory for linear images and partial tiled RT ranges. */
+-    uint32_t bpp = vk_format_to_bpp(img->create_info.format);
+     uint32_t clear_val = vk_ps4_pack_clear_val_32(img->create_info.format, pColor);
+ 
+     for (uint32_t r = 0; r < rangeCount; r++) {
+@@ -3084,52 +3266,22 @@ vk_ps4_CmdClearColorImage(VkCommandBuffer commandBuffer, VkImage image, VkImageL
+             ? img->create_info.arrayLayers - range->baseArrayLayer
+             : range->layerCount;
+ 
+-        /* Compute the size of each mip level to calculate offsets.
+-         * For tiled surfaces, the actual layout is managed by the GNM
+-         * descriptor, but for linear fill we approximate with packed
+-         * mip layout: each level is w*h*bpp, rounded up to 4-byte alignment. */
+         for (uint32_t lv = 0; lv < level_count; lv++) {
+             uint32_t mip_level = range->baseMipLevel + lv;
+-            uint32_t mip_w = img->create_info.extent.width >> mip_level;
+-            uint32_t mip_h = img->create_info.extent.height >> mip_level;
+-            if (mip_w == 0) mip_w = 1;
+-            if (mip_h == 0) mip_h = 1;
+-            uint64_t mip_size = (uint64_t)mip_w * mip_h * bpp;
+-            mip_size = (mip_size + 3) & ~3ULL;
+-
+-            /* Compute offset to this mip level.
+-             * For simplicity, assume mip levels are packed sequentially
+-             * from the base address. This is correct for linear images
+-             * but approximate for tiled images. */
+-            uint64_t mip_offset = 0;
+-            for (uint32_t m = 0; m < mip_level; m++) {
+-                uint32_t mw = img->create_info.extent.width >> m;
+-                uint32_t mh = img->create_info.extent.height >> m;
+-                if (mw == 0) mw = 1;
+-                if (mh == 0) mh = 1;
+-                uint64_t ms = (uint64_t)mw * mh * bpp;
+-                mip_offset += (ms + 3) & ~3ULL;
+-            }
+-
+-            /* Compute the total size of all mip levels in one layer.
+-             * Used to compute the per-layer stride. */
+-            uint64_t layer_stride = 0;
+-            for (uint32_t m = 0; m < img->create_info.mipLevels; m++) {
+-                uint32_t mw = img->create_info.extent.width >> m;
+-                uint32_t mh = img->create_info.extent.height >> m;
+-                if (mw == 0) mw = 1;
+-                if (mh == 0) mh = 1;
+-                uint64_t ms = (uint64_t)mw * mh * bpp;
+-                layer_stride += (ms + 3) & ~3ULL;
+-            }
+ 
+             for (uint32_t l = 0; l < layer_count; l++) {
++                /* Where this level (and layer) starts and how big its surface is
++                 * comes from the driver's own level table
++                 * (vk_ps4_image_level), not a packed w*h*bpp guess: a tiled
++                 * surface is a whole number of tiles per level. */
++                VkPs4ImageLevel geom;
++                if (!vk_ps4_image_level(img, mip_level,
++                                        range->baseArrayLayer + l, &geom))
++                    continue;
+                 uint64_t addr = (uint64_t)img->memory->gnm_mem.mapped +
+-                                img->memory_offset +
+-                                (uint64_t)(range->baseArrayLayer + l) * layer_stride +
+-                                mip_offset;
++                                img->memory_offset + geom.offset;
+                 /* FillMemory takes uint32_t size — split large fills */
+-                uint64_t remaining = mip_size;
++                uint64_t remaining = (geom.size + 3) & ~3ULL;
+                 uint64_t cur = addr;
+                 while (remaining > 0) {
+                     uint32_t chunk = (remaining > 0xFFFFFFFFu) ? 0xFFFFFFFFu : (uint32_t)remaining;
+@@ -3283,14 +3435,29 @@ vk_ps4_CmdClearAttachments(VkCommandBuffer commandBuffer, uint32_t attachmentCou
+             uint32_t bpp = vk_format_to_bpp(view->image->create_info.format);
+             uint32_t surface_w = view->image->create_info.extent.width;
+             uint32_t surface_h = view->image->create_info.extent.height;
++            /* The view may name a mip level: clear that level's surface, not
++             * level 0's (address, extent and layer stride all move with it). */
++            VkPs4ImageLevel geom;
++            const bool have_geom = vk_ps4_image_level(
++                view->image, view->create_info.subresourceRange.baseMipLevel, 0, &geom);
++            if (have_geom) {
++                rt_addr += geom.offset;
++                surface_w = geom.width;
++                surface_h = geom.height;
++            }
+             uint32_t clear_val = vk_ps4_pack_clear_val_32(
+                 view->image->create_info.format, cc);
+ 
+             if (rectCount == 0) {
+-                uint32_t rt_size = surface_w * surface_h * bpp;
+-                rt_size = (rt_size + 3) & ~3u;
+-                sceGnmDrawCmdFillMemory(&cmd->gnm_cmd, rt_addr, rt_size, clear_val);
++                uint64_t rt_size = have_geom ? geom.size
++                                             : (uint64_t)surface_w * surface_h * bpp;
++                rt_size &= ~3ULL;
++                if (rt_size > 0xFFFFFFFFull) rt_size = 0xFFFFFFFFull & ~3ULL;
++                sceGnmDrawCmdFillMemory(&cmd->gnm_cmd, rt_addr, (uint32_t)rt_size, clear_val);
+             } else {
++                /* A layer of this level is one surface wide. */
++                uint64_t layer_stride = have_geom ? geom.size
++                                                  : (uint64_t)surface_w * surface_h * bpp;
+                 for (uint32_t ri = 0; ri < rectCount; ri++) {
+                     const VkClearRect *rect = &pRects[ri];
+                     uint32_t rx = rect->rect.offset.x;
+@@ -3299,8 +3466,7 @@ vk_ps4_CmdClearAttachments(VkCommandBuffer commandBuffer, uint32_t attachmentCou
+                     uint32_t rh = rect->rect.extent.height;
+                     for (uint32_t layer = 0; layer < rect->layerCount; layer++) {
+                         uint64_t layer_addr = rt_addr +
+-                            (uint64_t)(rect->baseArrayLayer + layer) *
+-                            surface_w * surface_h * bpp;
++                            (uint64_t)(rect->baseArrayLayer + layer) * layer_stride;
+                         vk_ps4_fill_rect_linear(&cmd->gnm_cmd,
+                             layer_addr, bpp, rx, ry, rw, rh,
+                             surface_w, surface_h, clear_val);
+diff --git a/src/vk_ps4_image.c b/src/vk_ps4_image.c
+index 79e628a..27805f6 100644
+--- a/src/vk_ps4_image.c
++++ b/src/vk_ps4_image.c
+@@ -9,6 +9,7 @@
+ 
+ #include "vk_ps4_internal.h"
+ 
++#include <gpuaddr.h>
+ #include <stdio.h>
+ #include <string.h>
+ 
+@@ -29,6 +30,152 @@ static bool vk_image_is_depth(const VkImageCreateInfo *ci) {
+     return (ci->usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) != 0;
+ }
+ 
++/* === Per-level geometry ===
++ *
++ * Array slices of a mipmapped surface are padded to a power of two: that is what
++ * both size functions allocate with (sceGnmTexCalcByteSize sums numslices per
++ * level), and what a T#'s POW2_PAD tells the sampler to walk. */
++static uint32_t vk_ps4_padded_slices(const VkPs4Image *img) {
++    uint32_t slices = img->create_info.arrayLayers ? img->create_info.arrayLayers : 1;
++    const uint32_t mips = img->create_info.mipLevels ? img->create_info.mipLevels : 1;
++    if (mips > 1) {
++        uint32_t padded = 1;
++        while (padded < slices) padded <<= 1;
++        slices = padded;
++    }
++    return slices;
++}
++
++/* A mip level of a GNM surface is a surface of its own.  The layout the driver
++ * allocates with (sceGnmTexCalcByteSize / sceGnmRtCalcByteSize) packs them in
++ * level order -- each level is numslices contiguous slices of that level's
++ * surface size -- and a T#'s baselevel..lastlevel makes the hardware walk that
++ * same table from the image's base address.  Packed w*h*bpp is not that table:
++ * a tiled surface is a whole number of tiles per level.  So level N is placed
++ * by the driver's own table walk, sceGpaComputeSurfaceSizeOffset, over a
++ * GpaTextureInfo that re-describes the image exactly as its size function does
++ * -- which keeps allocation, views, copies and clears on one formula. */
++static bool vk_ps4_image_gpa_info(const VkPs4Image *img, GpaTextureInfo *out) {
++    const VkImageCreateInfo *ci = &img->create_info;
++    const uint32_t mips = ci->mipLevels ? ci->mipLevels : 1;
++
++    if (img->is_depth_target) {
++        /* A GnmDepthRenderTarget carries no level fields at all: a depth image's
++         * mip chain is described nowhere, so there is no table to walk.  Depth
++         * mips stay unsupported (level 0 only). */
++        return false;
++    }
++
++    if (img->is_render_target) {
++        /* Re-describe the colour target with the mip/slice fields an RT lacks.
++         * The tile mode and sample count are the level-0 target's own; the
++         * level-0 pitch is the width the RT was created with
++         * (sceGnmRtInitColorTargetCreateInfo sets pitch = width). */
++        GpaTextureInfo info = sceGnmRtBuildInfo(&img->gnm_rt);
++        info.width = ci->extent.width;
++        info.height = ci->extent.height;
++        info.pitch = ci->extent.width;
++        info.depth = 1;
++        info.nummips = mips;
++        info.numslices = ci->arrayLayers ? ci->arrayLayers : 1;
++        info.numfrags = ci->samples ? ci->samples : 1;
++        info.tm = (GnmTileMode)img->gnm_rt.attrib.tilemode_index;
++        info.pow2pad = mips > 1;
++        *out = info;
++        return true;
++    }
++
++    /* Texture path: sceGnmTexBuildInfo is the argument sceGnmTexCalcByteSize
++     * itself feeds Gpa, so the sizes match the allocation to the byte.  A
++     * descriptor that was never created has no table. */
++    if (img->gnm_texture.dataformat == GNM_IMG_DATA_FORMAT_INVALID) return false;
++    *out = sceGnmTexBuildInfo(&img->gnm_texture);
++    return true;
++}
++
++bool vk_ps4_image_level(const VkPs4Image *img, uint32_t level, uint32_t layer,
++                        VkPs4ImageLevel *out) {
++    if (!img || !out) return false;
++
++    GpaTextureInfo info;
++    if (!vk_ps4_image_gpa_info(img, &info)) return false;
++    if (level >= info.nummips || layer >= info.numslices) return false;
++
++    uint64_t offset = 0;
++    uint64_t size = 0;
++    if (sceGpaComputeSurfaceSizeOffset(&size, &offset, &info, level, layer) != GPA_ERR_OK) {
++        return false;
++    }
++
++    /* The level walk counts the image's raw array slices, but a mipmapped
++     * surface pads them to a power of two -- see vk_ps4_padded_slices.  Put the
++     * offset on the allocation's side of that disagreement (only differs for a
++     * non-power-of-2 layer count on a mipmapped image). */
++    const uint32_t raw_slices = info.numslices;
++    if (info.pow2pad && raw_slices && (raw_slices & (raw_slices - 1)) != 0) {
++        offset = (offset - size * layer) * vk_ps4_padded_slices(img) / raw_slices +
++                 size * layer;
++    }
++
++    /* The level's own pitch is the tile-aligned one Gpa reports, not the
++     * extent: a row of a tiled surface is a tile pitch wide. */
++    GpaTilingParams tp;
++    GpaSurfaceInfo si;
++    if (sceGpaTpInit(&tp, &info, level, layer) != GPA_ERR_OK ||
++        sceGpaComputeSurfaceInfo(&si, &tp) != GPA_ERR_OK) {
++        return false;
++    }
++
++    /* A level that does not fit the memory the image is bound to is a table
++     * this helper got wrong: every caller writes through it (copies, fills,
++     * level targets), so refuse it and let the caller keep its level-0 path
++     * rather than write past the image into whatever follows. */
++    if (img->memory && (img->memory_offset + offset + size > img->memory->size || size == 0)) {
++        static unsigned reported;
++        if (reported++ < 16)
++            fprintf(stderr, "TN_VKPS4_LEVEL_OOB rt=%d %ux%u mips=%u layers=%u level=%u layer=%u offset=%llu size=%llu bound=%llu\n",
++                    (int)img->is_render_target, info.width, info.height, info.nummips, info.numslices, level, layer,
++                    (unsigned long long)offset, (unsigned long long)size,
++                    (unsigned long long)(img->memory->size - img->memory_offset));
++        return false;
++    }
++
++    out->offset = offset;
++    out->size = size;
++    out->pitch = si.pitch;
++    out->width = (info.width >> level) ? (info.width >> level) : 1;
++    out->height = (info.height >> level) ? (info.height >> level) : 1;
++    return true;
++}
++
++bool vk_ps4_image_level_rt(const VkPs4Image *img, uint32_t level, uint32_t layer,
++                           GnmRenderTarget *out) {
++    if (!img || !out || !img->is_render_target) return false;
++    if (!img->memory || !img->memory->gnm_mem.mapped) return false;
++
++    VkPs4ImageLevel lv;
++    if (!vk_ps4_image_level(img, level, layer, &lv)) return false;
++
++    const VkImageCreateInfo *ci = &img->create_info;
++    uint32_t samples = ci->samples ? ci->samples : 1;
++    if (samples > 8) samples = 8;
++
++    /* Build level N's target the way CreateImage built level 0's: same format,
++     * sample count, tile mode and GPU mode, on the level's own address, extent
++     * and pitch.  One slice: a layer is folded into the address, and a colour
++     * attachment is one layer deep. */
++    GnmRenderTargetCreateInfo rt_ci;
++    sceGnmRtInitColorTargetCreateInfo(&rt_ci, sceGnmRtGetFormat(&img->gnm_rt),
++        lv.width, lv.height, 1, samples, samples,
++        (GnmTileMode)img->gnm_rt.attrib.tilemode_index, GNM_GPU_BASE);
++    rt_ci.pitch = lv.pitch;
++    if (sceGnmCreateRenderTarget(out, &rt_ci) != GNM_ERROR_OK) return false;
++
++    sceGnmRtSetBaseAddr(out, (char *)img->memory->gnm_mem.mapped +
++                                 img->memory_offset + lv.offset);
++    return true;
++}
++
+ VKAPI_ATTR VkResult VKAPI_CALL
+ vk_ps4_CreateImage(VkDevice device, const VkImageCreateInfo *pCreateInfo,
+                    const VkAllocationCallbacks *pAllocator, VkImage *pImage) {
+@@ -266,6 +413,24 @@ vk_ps4_GetImageMemoryRequirements(VkDevice device, VkImage image, VkMemoryRequir
+         uint64_t size = 0;
+         uint32_t align = 0;
+         sceGnmRtCalcByteSize(&size, &align, &img->gnm_rt);
++        /* A colour target has no mip fields, so sceGnmRtCalcByteSize only names
++         * level 0.  A mipmapped colour target (the engine renders into each mip
++         * in turn) needs every level resident, so size the whole level table
++         * the levels are addressed from -- and keep the driver's own level-0
++         * answer when it is the larger of the two. */
++        const uint32_t mips = img->create_info.mipLevels;
++        if (mips > 1) {
++            /* Padded slices: a mipmapped surface pads its array slices up, and
++             * the level stride is what the sampler will walk. */
++            const uint32_t slices = vk_ps4_padded_slices(img);
++            uint64_t total = 0;
++            VkPs4ImageLevel lv;
++            for (uint32_t l = 0; l < mips; l++) {
++                if (!vk_ps4_image_level(img, l, 0, &lv)) { total = 0; break; }
++                total += lv.size * slices;
++            }
++            if (total > size) size = total;
++        }
+         if (size == 0) {
+             /* Fallback for unconfigured RTs */
+             GnmDataFormat fmt = vk_ps4_vk_format_to_gnm(img->create_info.format);
+@@ -399,6 +564,42 @@ vk_ps4_CreateImageView(VkDevice device, const VkImageViewCreateInfo *pCreateInfo
+         }
+     }
+ 
++    /* Point the view's T# at the requested subresource range.  baselevel /
++     * lastlevel make the hardware walk only levels [b, b+n) of the image's own
++     * level table, and basearray / lastarray the layer range; the base address
++     * stays the image's, since levels are addressed relative to it.  Without
++     * this every view sampled level 0. */
++    {
++        const VkImageSubresourceRange *r = &pCreateInfo->subresourceRange;
++        const VkImageCreateInfo *ici = &view->image->create_info;
++        const uint32_t mips = ici->mipLevels ? ici->mipLevels : 1;
++        const uint32_t layers = ici->arrayLayers ? ici->arrayLayers : 1;
++        const uint32_t level_count = r->levelCount == VK_REMAINING_MIP_LEVELS
++                                     ? mips - r->baseMipLevel : r->levelCount;
++        const uint32_t layer_count = r->layerCount == VK_REMAINING_ARRAY_LAYERS
++                                     ? layers - r->baseArrayLayer : r->layerCount;
++        const bool multisampled = ici->samples > VK_SAMPLE_COUNT_1_BIT;
++
++        /* A 2D (array) MSAA T# reuses lastlevel for the fragment count. */
++        if (!multisampled && r->baseMipLevel < mips && level_count > 0) {
++            uint32_t last = r->baseMipLevel + level_count - 1;
++            if (last >= mips) last = mips - 1;
++            view->gnm_view.baselevel = r->baseMipLevel & 0xF;
++            view->gnm_view.lastlevel = last & 0xF;
++        }
++        /* POW2_PAD is part of the level table: a mipmapped surface pads its
++         * array slices to a power of two, and the sampler must walk the same
++         * stride the allocation used (an RT-as-texture view is created with
++         * one mip, so it needs this from the image). */
++        view->gnm_view.pow2pad = mips > 1;
++        if (r->baseArrayLayer < layers && layer_count > 0) {
++            uint32_t last = r->baseArrayLayer + layer_count - 1;
++            if (last >= layers) last = layers - 1;
++            view->gnm_view.basearray = r->baseArrayLayer & 0x1FFF;
++            view->gnm_view.lastarray = last & 0x1FFF;
++        }
++    }
++
+     *pImageView = (VkImageView)view;
+     return VK_SUCCESS;
+ }
+@@ -416,11 +617,22 @@ VKAPI_ATTR void VKAPI_CALL
+ vk_ps4_GetImageSubresourceLayout(VkDevice device, VkImage image,
+                                  const VkImageSubresource *pSubresource, VkSubresourceLayout *pLayout) {
+     (void)device;
+-    (void)pSubresource;
+     if (!image || !pLayout) return;
+     VkPs4Image *img = (VkPs4Image *)image;
+     memset(pLayout, 0, sizeof(*pLayout));
+-    /* For linear textures, row pitch = width * bytes_per_pixel */
++    /* The level's placement and its tile pitch: a mip level is a surface of its
++     * own, so level 0's pitch is not its pitch. */
++    VkPs4ImageLevel lv;
++    if (vk_ps4_image_level(img, pSubresource ? pSubresource->mipLevel : 0,
++                           pSubresource ? pSubresource->arrayLayer : 0, &lv)) {
++        uint32_t bpp = 4;
++        pLayout->offset = lv.offset;
++        pLayout->rowPitch = lv.pitch * bpp;
++        pLayout->depthPitch = pLayout->rowPitch * lv.height;
++        pLayout->size = lv.size;
++        return;
++    }
++    /* No level table (a depth target): report the packed level-0 layout. */
+     uint32_t bpp = 4;
+     pLayout->offset = 0;
+     pLayout->rowPitch = img->create_info.extent.width * bpp;

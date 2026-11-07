@@ -464,6 +464,14 @@ git apply "$SCRIPTS/patches/0039-vk-ps4-pooled-sync-labels.patch"
 git apply "$SCRIPTS/patches/0043-vk-ps4-async-flip.patch"
 # Diagnostic: per-100-frame wait counters (PRD-784 P4-2)
 git apply "$SCRIPTS/patches/0044-vk-ps4-wait-counters.patch"
+# Mip levels: images, views, copies, colour targets and clears all walked level 0, so a texture's
+# per-level mip pass overwrote its base level. One level table (sceGpaComputeSurfaceSizeOffset over
+# the image's own tile mode) now drives sizing, the view T#'s base/last level and array range,
+# buffer<->image copies at level > 0, level-N colour targets and clears (PRD-784 P4-3). Level 0 keeps
+# the old copy and fill sizes: tile-padded sizes overran images Dawn suballocates in one VkDeviceMemory
+# (shadPS4 then read garbage PM4). Uploads into tiled (DISPLAY_2D_THIN) surfaces are tiled on the CPU
+# with sceGpaTileSurfaceRegion; linear row DMA scrambled them. Depth mips stay level 0.
+git apply "$SCRIPTS/patches/0045-vk-ps4-mip-levels.patch"
 # The Makefile compiles TEST_SRC relative to the vulkan-ps4 tree.
 cp "$SCRIPTS/e2-triangle.c" "$SRC/e2-triangle.c"
 make -f Makefile.orbis -j"$JOBS" TEST_SRC=../e2-triangle.c self > "$LOGS/e2-triangle.log" 2>&1
