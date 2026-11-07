@@ -34,6 +34,10 @@ const ALLOWED: ReadonlyArray<readonly [RegExp, string]> = [
     "the canonical agent roles, skills and hooks from agent-files",
   ],
   [/^scripts\/(reference|visual-loop)\.mjs$/u, "the two authoring scripts agent-files ships"],
+  [
+    /^\.threenative\/agent-files\.json$/u,
+    "the authoring layer stamp threenative doctor --fix reads (PRD-829)",
+  ],
   [/^patches\//u, "the dependency patches a kit's package.json declares"],
   [/^(src|public|assets|playtests|native-playtests|tools)\//u, "the kit's own game content"],
 ];

@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -137,6 +137,72 @@ async function upstreamNames(root: string): Promise<string[]> {
   return [...new Set(modules.flatMap((module) => Object.keys(module)))]
     .filter((name) => name !== "default" && name !== "module.exports")
     .sort();
+}
+
+/** A refused export's error, as `refused` in three-native's browser-entry.ts words it. */
+const REFUSAL = /^(TN_[A-Z0-9_]+): (\S+) is not available on the Wasm engine\.$/u;
+
+type CreateModule = (options: Record<string, unknown>) => Promise<object>;
+
+/**
+ * Every upstream export name the installed Wasm engine refuses, with the code a page throws on its
+ * first use (PRD-830). The runtime decides, not a copy of its rules: the catalog alone marks names
+ * `unsupported` that the runtime binds (WebGPURenderer, pass). This boots the single-thread engine
+ * in Node, binds the project's names as a page does, and reads back each refusal.
+ */
+export async function upstreamRefusals(
+  root: string,
+  wasm?: string,
+): Promise<ReadonlyMap<string, string>> {
+  const entry = wasmModule(root, wasm);
+  const binary = readFileSync(entry.replace(/\.mjs$/u, ".wasm"));
+  const create = ((await import(pathToFileURL(entry).href)) as { default: CreateModule }).default;
+  const { bindWebEngine } = (await import(pathToFileURL(runtimeModule()).href)) as {
+    bindWebEngine: (
+      create: CreateModule,
+      names: readonly string[],
+    ) => Promise<Record<string, unknown>>;
+  };
+  const names = await upstreamNames(root);
+  const bound = await bindWebEngine(
+    (options) =>
+      create({
+        ...options,
+        print: () => {},
+        printErr: () => {},
+        // The web build fetches its .wasm by URL; Node has no page to fetch from.
+        instantiateWasm(
+          imports: WebAssembly.Imports,
+          receive: (instance: WebAssembly.Instance, module: WebAssembly.Module) => void,
+        ) {
+          void WebAssembly.instantiate(binary, imports).then((result) =>
+            receive(result.instance, result.module),
+          );
+          return {};
+        },
+      }),
+    names,
+  );
+  return refusalsOf(bound, names);
+}
+
+/** Each refused name in `bound` (bindUpstreamExports's output) with the code its first use throws. */
+export function refusalsOf(
+  bound: Readonly<Record<string, unknown>>,
+  names: readonly string[],
+): ReadonlyMap<string, string> {
+  const refusals = new Map<string, string>();
+  for (const name of names) {
+    const value = bound[name];
+    if (typeof value !== "function") continue;
+    try {
+      Reflect.ownKeys(value); // a refusal throws on any read, a bound class never does
+    } catch (error) {
+      const match = REFUSAL.exec(error instanceof Error ? error.message : "");
+      if (match?.[2] === name && match[1] !== undefined) refusals.set(name, match[1]);
+    }
+  }
+  return refusals;
 }
 
 export interface IWebEngineOptions {
