@@ -578,12 +578,25 @@ async function judgeE5(match, frame, log, shots) {
   // A scene with no background clears to black, and judgePresented treats black as "nothing
   // presented" (right for E2/E3, whose clear is not black). E5 instead measures the share of the
   // whole frame that differs from the clear: the box and sphere must cover part of it, not all.
-  const total = last.width * last.height;
-  let off = 0;
-  for (let at = 0; at < total * 3; at += 3) {
-    if (Math.max(...[0, 1, 2].map(c => Math.abs(last.pixels[at + c] - clear[c]))) > E2_TOLERANCE) off += 1;
+  // Only the guest window counts: the X root around it (the corner pixel, when that is not the
+  // clear) would otherwise pass an empty black window as a drawn scene.
+  const px = (x, y, c) => last.pixels[(y * last.width + x) * 3 + c];
+  const backdrop = [0, 1, 2].map(c => px(0, 0, c));
+  const framed = backdrop.some((v, c) => v !== clear[c]);
+  let [x0, y0, x1, y1] = [0, 0, last.width - 1, last.height - 1];
+  if (framed) {
+    [x0, y0, x1, y1] = [last.width, last.height, -1, -1];
+    for (let y = 0; y < last.height; y++)
+      for (let x = 0; x < last.width; x++)
+        if ([0, 1, 2].some(c => px(x, y, c) !== backdrop[c]))
+          [x0, y0, x1, y1] = [Math.min(x0, x), Math.min(y0, y), Math.max(x1, x), Math.max(y1, y)];
   }
-  const drawnShare = off / total;
+  const total = Math.max(0, x1 - x0 + 1) * Math.max(0, y1 - y0 + 1);
+  let off = 0;
+  for (let y = y0; y <= y1; y++)
+    for (let x = x0; x <= x1; x++)
+      if (Math.max(...[0, 1, 2].map(c => Math.abs(px(x, y, c) - clear[c]))) > E2_TOLERANCE) off += 1;
+  const drawnShare = total ? off / total : 0;
   if (drawnShare < E2_DRAWN_MIN || drawnShare > E2_DRAWN_MAX)
     return {
       ok: false,
@@ -868,6 +881,10 @@ game=$!
 for at in "$@"; do
   ( sleep "$at"; import -window root -screen "$out/screen-$at.png" || echo "screenshot $at failed" >&2 ) &
 done
+if [ -n "$TN_PS4_RECORD" ]; then
+  ( sleep "\${TN_PS4_RECORD%,*}"; ffmpeg -loglevel error -y -f x11grab -framerate 30 -i "$DISPLAY" -t "\${TN_PS4_RECORD#*,}" \
+      -c:v libx264 -pix_fmt yuv420p "$out/video.mp4" || echo "recording failed" >&2 ) &
+fi
 wait "$game"
 status=$?
 exit "$status"
@@ -954,7 +971,11 @@ async function boot(experiment, built, appimage, outDir) {
   // 300 frames but prints its marker at the 300th, seconds before the captures at 20 s and 40 s. The
   // grace is the capture's own startup: its sleep ends at the capture time, and a stop() in the same
   // instant kills the import with the process group.
-  const lastShotMs = shots.length ? Math.max(...shots.map(Number)) * 1000 + 5_000 : 0;
+  // TN_PS4_RECORD=<start>,<seconds> also records the private display to <out>/video.mp4 (opt-in,
+  // for a person to watch the run); the wait covers the recording's end like a late capture.
+  const [recordAt, recordFor] = (process.env.TN_PS4_RECORD ?? '').split(',').map(Number);
+  const recordEnd = Number.isFinite(recordAt) && Number.isFinite(recordFor) ? recordAt + recordFor : 0;
+  const lastShotMs = shots.length ? Math.max(recordEnd, ...shots.map(Number)) * 1000 + 5_000 : 0;
   let output = '';
   child.stdout.setEncoding('utf8').on('data', chunk => { output += chunk; });
   child.stderr.setEncoding('utf8').on('data', chunk => { output += chunk; });

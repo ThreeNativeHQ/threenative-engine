@@ -402,6 +402,34 @@ git apply "$SCRIPTS/patches/0031-vk-ps4-clear-whole-surface-fill.patch"
 # emits PA_SC_AA_CONFIG for the pipeline's sample count, which no register in this driver
 # ever told the hardware.
 git apply "$SCRIPTS/patches/0033-vk-ps4-msaa-resolve.patch"
+# A depth target is neither a colour target nor a texture, and neither of those two paths binds
+# it: vk_ps4_BindImageMemory gave the image its sample-time T# address only, and its
+# GnmDepthRenderTarget kept zreadbase256b = zwritebase256b = 0. sceGnmDrawCmdSetDepthRenderTarget
+# (opengnm src/drawcommandbuffer.c) publishes the DB_Z_INFO block only when
+# sceGnmDrtGetZReadAddress() is non-NULL and otherwise writes DB_Z_INFO = DB_STENCIL_INFO = 0, so
+# every draw ran with no depth buffer at all: a register dump of every E5 draw read DB_Z_INFO 0,
+# DB_STENCIL_INFO 0, DB_DEPTH_VIEW 0, DB_DEPTH_SIZE 0 under a DB_DEPTH_CONTROL of 0x36 (Z enable
+# + write) in a render pass with a 4x D32 depth attachment, and shadPS4 binds a depth attachment
+# only when the Z address and format are valid (vk_pipeline_cache.cpp:418 db_enabled,
+# regs_depth.h DepthValid) -- so the box showed its back faces through its front ones. The bind
+# now sets the Z read/write and stencil read/write addresses, the size comes from
+# sceGnmDrtCalcByteSize (a 4x Z plane is four times the 1x one, and the stencil plane follows it)
+# and numfragments is the sample COUNT, not 1, so a 4x pass gets a 4x Z plane. The depth clear's
+# lazy-clear draw also binds and names its own target (scissor, viewport, AA config) and drops
+# DB_RENDER_CONTROL's clear bits again: shadPS4 runs the clear as that draw's depth load op, so a
+# bit left set clears the depth buffer at every later draw of the pass AND disables their depth
+# writes, which is the same no-depth-test symptom.
+git apply "$SCRIPTS/patches/0034-vk-ps4-depth-target-addresses.patch"
+# GNM_EMBEDDED_VSH_FULLSCREEN is a RECTLIST's three corners, not a fullscreen triangle: drawn as a
+# TRILIST it covered half the target below the diagonal, so every clear, depth clear and resolve
+# left the other half stale (E5's box showed old frames past a diagonal edge).
+git apply "$SCRIPTS/patches/0035-vk-ps4-fullscreen-rectlist.patch"
+# 0008's epilogue ring reused a slice while shadPS4 still had its submit queued: a WaitMem (7
+# dwords) written over a queued EOP (6) derailed the parse at "count=7, remaining=6", and an EOP
+# over a queued WaitMem left its poll interval as a type-0 header. Dumps of every submit parsed
+# clean, so the bytes changed after submit. Each slice now ends with a WRITE_DATA of its ticket,
+# and the next use of the slice waits for that ticket.
+git apply "$SCRIPTS/patches/0036-vk-ps4-epilogue-slice-retire.patch"
 # The Makefile compiles TEST_SRC relative to the vulkan-ps4 tree.
 cp "$SCRIPTS/e2-triangle.c" "$SRC/e2-triangle.c"
 make -f Makefile.orbis -j"$JOBS" TEST_SRC=../e2-triangle.c self > "$LOGS/e2-triangle.log" 2>&1
