@@ -35,6 +35,18 @@ export type EngineValue =
   | IEngineRef
   | { readonly [key: string]: EngineValue };
 
+/** PRD-828: one rig of an animation tick batch, as the backend takes it. */
+export interface IAnimationTickBatch {
+  /** One entry per rig: the mixer, the rig's action (null when nothing plays), the body it strides from. */
+  readonly mixers: readonly IEngineRef[];
+  readonly actions: readonly (IEngineRef | null)[];
+  readonly roots: readonly (IEngineRef | null)[];
+  /** Five per rig: target weight, transition seconds, dt, the clip's ground speed, the flags word. */
+  readonly values: Float64Array;
+  /** Three per rig, written by the call: stride rate, measured ground speed, flags. */
+  readonly status: Float64Array;
+}
+
 /** What the classes call; the Wasm ABI implements it, and a surface-only runtime refuses every call. */
 export interface IBrowserRuntime {
   readonly debugTelemetry?: DebugTelemetry;
@@ -46,6 +58,11 @@ export interface IBrowserRuntime {
   release(self: IEngineRef): void;
   /** For each ref, how many references other engine objects hold to its object; one call a batch. */
   engineReferences?(refs: readonly IEngineRef[]): ArrayLike<number>;
+  /**
+   * PRD-828: advances a batch of animation rigs in one crossing — the weight ramp, the stride rate and
+   * one mixer step each. A backend that cannot batch leaves it out and the JS loop keeps running.
+   */
+  animTick?(batch: IAnimationTickBatch): void;
   /** A numeric typed array argument crosses as is, no boxed copy; Wasm only. */
   readonly typedArrays?: boolean;
   /** Doubles at `address` in the engine's memory (one as a number, more as an array); Wasm only. */
@@ -105,7 +122,8 @@ type AbiCall =
   | "_tn_get"
   | "_tn_set"
   | "_tn_set_callback"
-  | "_tn_diagnostic_release";
+  | "_tn_diagnostic_release"
+  | "_tn_anim_tick";
 export type TnAbiModule = Record<AbiCall, (...args: number[]) => number> &
   Partial<
     Record<"_tnw_attribute_view" | "_tnw_attribute_view_release", (...args: number[]) => number>
