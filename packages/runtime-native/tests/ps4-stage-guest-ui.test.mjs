@@ -71,6 +71,14 @@ test('depth uses Vulkan 0..1 clip space, so shadow maps compare the depth they s
   assert.match(patch, /^\+\s+vp_info\.offset\[2\] = vp->minDepth;/mu);
 });
 
+test('TN_PS4_HOST_HZ runs the emulator in gamescope inside the lane Xvfb, so E5 can pass above 60 fps (PRD-784)', () => {
+  // Each present copied into Xvfb held the guest at 60 fps; gamescope takes it with no copy and the captures still read Xvfb.
+  const runner = readFileSync(path.join(root, 'scripts/ps4/run-experiment.mjs'), 'utf8');
+  assert.match(runner, /'gamescope', '--backend', 'sdl'/u);
+  assert.match(runner, /\$TN_PS4_HOST_WRAP "\$appimage" -g "\$eboot" &/u);
+  assert.match(runner, /vblank_frequency: HOST_HZ/u);
+});
+
 test('refuses a UI with no stylesheet', () => {
   const { app, scene: dir } = scene({ 'a.png': 'x' });
   assert.throws(() => stageGuestUi(dir, app, {}), /TN_PS4_UI_NO_CSS/u);

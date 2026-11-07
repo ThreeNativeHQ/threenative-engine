@@ -122,7 +122,13 @@ const DUMP_SHADERS = process.env.TN_PS4_DUMP_SHADERS === '1';
 
 // TN_PS4_GPU='{"window_width":320,"window_height":180}' merges extra GPUSettings fields
 // (emulator_settings.h:414-470 at v.0.21.0) into the run's config.json, for present-path probes.
-const GPU_OVERRIDES = JSON.parse(process.env.TN_PS4_GPU || '{}');
+// TN_PS4_HOST_HZ=144 runs the emulator inside gamescope at that refresh, nested in the lane's Xvfb.
+// Each present copied straight into Xvfb holds the guest at about 60 fps whatever its vblank; gamescope
+// takes the frame with no copy and puts only a 320x180 output on Xvfb, where the captures still read it.
+// The emulated vblank follows the host refresh unless TN_PS4_GPU names its own.
+const HOST_HZ = Number(process.env.TN_PS4_HOST_HZ || 0);
+if (process.env.TN_PS4_HOST_HZ && !(HOST_HZ > 0)) throw new Error(`TN_PS4_HOST_HZ is a refresh rate in Hz, got "${process.env.TN_PS4_HOST_HZ}"`);
+const GPU_OVERRIDES = { ...(HOST_HZ ? { vblank_frequency: HOST_HZ } : {}), ...JSON.parse(process.env.TN_PS4_GPU || '{}') };
 
 // A lost host device leaves one line: the driver reports VK_ERROR_DEVICE_LOST from vkQueueSubmit
 // and says nothing about which access caused it (vk_scheduler.cpp:241 at v.0.21.0). The Khronos
@@ -922,7 +928,7 @@ const CAPTURE_SCRIPT = `out="$4"
 appimage="$1"
 eboot="$3"
 shift 4
-"$appimage" -g "$eboot" &
+$TN_PS4_HOST_WRAP "$appimage" -g "$eboot" &
 game=$!
 for at in "$@"; do
   ( sleep "$at"; import -window root -screen "$out/screen-$at.png" || echo "screenshot $at failed" >&2 ) &
@@ -997,7 +1003,13 @@ async function boot(experiment, built, appimage, outDir) {
   const wrapper = path.join(REPO_ROOT, 'scripts', 'xvfb.sh');
   if (!existsSync(wrapper)) throw new Error(`missing ${wrapper}`);
   const shots = captureTimes(experiment.screenshots);
-  let launch = [appimage, '-g', built.artifacts.eboot];
+  const hostWrap = HOST_HZ
+    ? ['gamescope', '--backend', 'sdl', '-w', String(GPU_OVERRIDES.window_width ?? 1280), '-h', String(GPU_OVERRIDES.window_height ?? 720),
+        '-W', '320', '-H', '180', '-r', String(HOST_HZ), '--']
+    : [];
+  if (HOST_HZ && spawnSync('gamescope', ['--help'], { stdio: 'ignore' }).error) throw new Error('TN_PS4_HOST_HZ needs gamescope on PATH');
+  env.TN_PS4_HOST_WRAP = hostWrap.join(' ');
+  let launch = [...hostWrap, appimage, '-g', built.artifacts.eboot];
   if (gdbCommands) {
     // A command file cannot wrap the capture subshell's background launch, and one launch a run.
     if (shots.length) throw new Error('TN_PS4_GDB cannot be combined with TN_PS4_SCREENSHOT_AT');
