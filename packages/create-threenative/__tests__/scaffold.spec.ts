@@ -236,6 +236,8 @@ const BUG_REPORT_SKILL_PATHS = [
 // every no-install scaffold (three 0.187.0, the rts kit and the dropped Blender server), so no value
 // from either parent applies to the merged bytes.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
+  // PRD-784 (2026-11-07): the starter tree moves, measured by this test. On a console (`isConsole()`)
+  // its menu shows DualShock prompts, `run` takes R2 (button 7) and `restart` takes OPTIONS (9).
   // PRD-829 (2026-11-06): all sixteen trees move, measured by this test. Each kit AGENTS/CLAUDE pair
   // gains the `npx threenative doctor --fix` command line. The new `.threenative/agent-files.json`
   // stamp does not hash: it records bytes this test already reads.
@@ -449,7 +451,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Play.ts's motion samples between presented frames and fixed steps, and moved two native
   // playtests; #606 moved the render resolve. Starter is the one template both sides changed.
   // Measured by this test.
-  starter: "a16db093ce00c0c71eaece0995ddc3e4ecfa3da526ed06f3edf20c07f96800e6",
+  starter: "319e354131fc115a6489f92b25b6ccccc6f96cd3feb1f5583966997e06047a82",
   "tower-defense": "5021ab737137b1d7e02db96fac9a1fc347ce046b5fc024760e02f9453c6e8b3b",
 };
 

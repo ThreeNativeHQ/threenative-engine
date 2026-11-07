@@ -1398,15 +1398,23 @@ bool V8Game::start(const std::string& path, std::string& error) {
     const auto host = ctx->Global()->Get(ctx, v8str(isolate_, "tn")).ToLocalChecked().As<v8::Object>();
     auto platform = v8::Object::New(isolate_);
     platform->Set(ctx, v8str(isolate_, "runtime"), v8str(isolate_, "native")).Check();
-#if defined(_WIN32)
+    // A PS4 is a console: core's isConsole() and isPs4() read these two, so a game swaps keyboard
+    // prompts for DualShock ones. The PS4 build is clang on a FreeBSD triple, so it is tested first.
+#if defined(TN_PS4)
+    const char* os = "ps4";
+    const char* formFactor = "console";
+#elif defined(_WIN32)
     const char* os = "windows";
+    const char* formFactor = "desktop";
 #elif defined(__APPLE__)
     const char* os = "macos";
+    const char* formFactor = "desktop";
 #else
     const char* os = "linux";
+    const char* formFactor = "desktop";
 #endif
     platform->Set(ctx, v8str(isolate_, "os"), v8str(isolate_, os)).Check();
-    platform->Set(ctx, v8str(isolate_, "formFactor"), v8str(isolate_, "desktop")).Check();
+    platform->Set(ctx, v8str(isolate_, "formFactor"), v8str(isolate_, formFactor)).Check();
     platform->Set(ctx, v8str(isolate_, "maxTouchPoints"), v8::Integer::New(isolate_, 0)).Check();
     host->Set(ctx, v8str(isolate_, "platform"), platform).Check();
     host->Set(ctx, v8str(isolate_, "log"), v8::Function::New(ctx, &logCallback).ToLocalChecked()).Check();

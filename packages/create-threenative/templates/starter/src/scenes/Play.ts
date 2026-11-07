@@ -5,6 +5,7 @@ import {
   type SceneFrame,
   createRandom,
   getPlatform,
+  isConsole,
   isMobile,
   isTouchscreenAvailable,
   resolveTargetFps,
@@ -64,6 +65,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     levelX: -99,
     lives: STARTING_LIVES,
     odometer: 0,
+    pad: false,
     paused: false,
     peakRise: 0,
     playerX: -2,
@@ -346,7 +348,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       if (body === player.body) overGoal = true;
     });
     let entityCount = 4;
-    ctx.state.set({ entityCount });
+    // A console has a pad and no keyboard: the menu reads `pad` to show DualShock prompts.
+    ctx.state.set({ entityCount, pad: isConsole() });
     const pickup = new Area3D({
       physics: ctx.physics,
       position: { x: pickupX, y: 0.5, z: 0 },

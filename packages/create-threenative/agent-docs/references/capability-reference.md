@@ -1486,11 +1486,12 @@ model.step(1 / 60, { turn: -1, pitch: 0.4 });
 export function getPlatform(): Readonly<IPlatformInfo> { … }
 ```
 
-- **Use when:** branch a portable game on web or native · choose touch controls for a mobile device · can I raytrace on native
+- **Use when:** branch a portable game on web or native · choose touch controls for a mobile device · can I raytrace on native · show gamepad prompts and bind pad buttons on a games console such as the PS4
 - **Constraints:** only use the returned platform facts; native globals are host-owned · image ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result · a native desktop host with ray tracing hardware traces ray batches with `mystralRT.traceRayBatch`, which writes hit records into a typed array you own; read `mystralRT.capabilities().rayBatch` first, and keep the software BVH trace for the web and every other host · when `mystralRT.capabilities().sharedTransport` is true, `mystralRT.traceRayBatchGpu({ tlas, rays, hits, rayCount })` traces between two GPUBuffers with no copy through CPU memory; `rays` needs the CopySrc usage and `hits` the CopyDst usage, and each call costs CPU time, so measure it against the software trace for your batch size
 
 ```ts
 if (isMobile()) showTouchControls();
+if (isConsole()) showPadPrompts(isPs4() ? "dualshock" : "generic");
 ```
 
 ### `GIBudget`
@@ -1670,6 +1671,22 @@ export function invalidateStatic(object: Object3D): number | undefined { … }
 invalidateStatic(drawbridge);
 ```
 
+### `isConsole`
+
+`function` — Read the host platform without reaching for browser globals.
+
+```ts
+export function isConsole(): boolean { … }
+```
+
+- **Use when:** branch a portable game on web or native · choose touch controls for a mobile device · can I raytrace on native · show gamepad prompts and bind pad buttons on a games console such as the PS4
+- **Constraints:** only use the returned platform facts; native globals are host-owned · image ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result · a native desktop host with ray tracing hardware traces ray batches with `mystralRT.traceRayBatch`, which writes hit records into a typed array you own; read `mystralRT.capabilities().rayBatch` first, and keep the software BVH trace for the web and every other host · when `mystralRT.capabilities().sharedTransport` is true, `mystralRT.traceRayBatchGpu({ tlas, rays, hits, rayCount })` traces between two GPUBuffers with no copy through CPU memory; `rays` needs the CopySrc usage and `hits` the CopyDst usage, and each call costs CPU time, so measure it against the software trace for your batch size
+
+```ts
+if (isMobile()) showTouchControls();
+if (isConsole()) showPadPrompts(isPs4() ? "dualshock" : "generic");
+```
+
 ### `isMobile`
 
 `function` — Read the host platform without reaching for browser globals.
@@ -1678,11 +1695,12 @@ invalidateStatic(drawbridge);
 export function isMobile(): boolean { … }
 ```
 
-- **Use when:** branch a portable game on web or native · choose touch controls for a mobile device · can I raytrace on native
+- **Use when:** branch a portable game on web or native · choose touch controls for a mobile device · can I raytrace on native · show gamepad prompts and bind pad buttons on a games console such as the PS4
 - **Constraints:** only use the returned platform facts; native globals are host-owned · image ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result · a native desktop host with ray tracing hardware traces ray batches with `mystralRT.traceRayBatch`, which writes hit records into a typed array you own; read `mystralRT.capabilities().rayBatch` first, and keep the software BVH trace for the web and every other host · when `mystralRT.capabilities().sharedTransport` is true, `mystralRT.traceRayBatchGpu({ tlas, rays, hits, rayCount })` traces between two GPUBuffers with no copy through CPU memory; `rays` needs the CopySrc usage and `hits` the CopyDst usage, and each call costs CPU time, so measure it against the software trace for your batch size
 
 ```ts
 if (isMobile()) showTouchControls();
+if (isConsole()) showPadPrompts(isPs4() ? "dualshock" : "generic");
 ```
 
 ### `isNative`
@@ -1693,11 +1711,28 @@ if (isMobile()) showTouchControls();
 export function isNative(): boolean { … }
 ```
 
-- **Use when:** branch a portable game on web or native · choose touch controls for a mobile device · can I raytrace on native
+- **Use when:** branch a portable game on web or native · choose touch controls for a mobile device · can I raytrace on native · show gamepad prompts and bind pad buttons on a games console such as the PS4
 - **Constraints:** only use the returned platform facts; native globals are host-owned · image ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result · a native desktop host with ray tracing hardware traces ray batches with `mystralRT.traceRayBatch`, which writes hit records into a typed array you own; read `mystralRT.capabilities().rayBatch` first, and keep the software BVH trace for the web and every other host · when `mystralRT.capabilities().sharedTransport` is true, `mystralRT.traceRayBatchGpu({ tlas, rays, hits, rayCount })` traces between two GPUBuffers with no copy through CPU memory; `rays` needs the CopySrc usage and `hits` the CopyDst usage, and each call costs CPU time, so measure it against the software trace for your batch size
 
 ```ts
 if (isMobile()) showTouchControls();
+if (isConsole()) showPadPrompts(isPs4() ? "dualshock" : "generic");
+```
+
+### `isPs4`
+
+`function` — Read the host platform without reaching for browser globals.
+
+```ts
+export function isPs4(): boolean { … }
+```
+
+- **Use when:** branch a portable game on web or native · choose touch controls for a mobile device · can I raytrace on native · show gamepad prompts and bind pad buttons on a games console such as the PS4
+- **Constraints:** only use the returned platform facts; native globals are host-owned · image ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result · a native desktop host with ray tracing hardware traces ray batches with `mystralRT.traceRayBatch`, which writes hit records into a typed array you own; read `mystralRT.capabilities().rayBatch` first, and keep the software BVH trace for the web and every other host · when `mystralRT.capabilities().sharedTransport` is true, `mystralRT.traceRayBatchGpu({ tlas, rays, hits, rayCount })` traces between two GPUBuffers with no copy through CPU memory; `rays` needs the CopySrc usage and `hits` the CopyDst usage, and each call costs CPU time, so measure it against the software trace for your batch size
+
+```ts
+if (isMobile()) showTouchControls();
+if (isConsole()) showPadPrompts(isPs4() ? "dualshock" : "generic");
 ```
 
 ### `isStatic`
@@ -1723,11 +1758,12 @@ invalidateStatic(drawbridge);
 export function isTouchscreenAvailable(): boolean { … }
 ```
 
-- **Use when:** branch a portable game on web or native · choose touch controls for a mobile device · can I raytrace on native
+- **Use when:** branch a portable game on web or native · choose touch controls for a mobile device · can I raytrace on native · show gamepad prompts and bind pad buttons on a games console such as the PS4
 - **Constraints:** only use the returned platform facts; native globals are host-owned · image ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result · a native desktop host with ray tracing hardware traces ray batches with `mystralRT.traceRayBatch`, which writes hit records into a typed array you own; read `mystralRT.capabilities().rayBatch` first, and keep the software BVH trace for the web and every other host · when `mystralRT.capabilities().sharedTransport` is true, `mystralRT.traceRayBatchGpu({ tlas, rays, hits, rayCount })` traces between two GPUBuffers with no copy through CPU memory; `rays` needs the CopySrc usage and `hits` the CopyDst usage, and each call costs CPU time, so measure it against the software trace for your batch size
 
 ```ts
 if (isMobile()) showTouchControls();
+if (isConsole()) showPadPrompts(isPs4() ? "dualshock" : "generic");
 ```
 
 ### `isWeb`
@@ -1738,11 +1774,12 @@ if (isMobile()) showTouchControls();
 export function isWeb(): boolean { … }
 ```
 
-- **Use when:** branch a portable game on web or native · choose touch controls for a mobile device · can I raytrace on native
+- **Use when:** branch a portable game on web or native · choose touch controls for a mobile device · can I raytrace on native · show gamepad prompts and bind pad buttons on a games console such as the PS4
 - **Constraints:** only use the returned platform facts; native globals are host-owned · image ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result · a native desktop host with ray tracing hardware traces ray batches with `mystralRT.traceRayBatch`, which writes hit records into a typed array you own; read `mystralRT.capabilities().rayBatch` first, and keep the software BVH trace for the web and every other host · when `mystralRT.capabilities().sharedTransport` is true, `mystralRT.traceRayBatchGpu({ tlas, rays, hits, rayCount })` traces between two GPUBuffers with no copy through CPU memory; `rays` needs the CopySrc usage and `hits` the CopyDst usage, and each call costs CPU time, so measure it against the software trace for your batch size
 
 ```ts
 if (isMobile()) showTouchControls();
+if (isConsole()) showPadPrompts(isPs4() ? "dualshock" : "generic");
 ```
 
 ### `lampPenumbraTangent`
