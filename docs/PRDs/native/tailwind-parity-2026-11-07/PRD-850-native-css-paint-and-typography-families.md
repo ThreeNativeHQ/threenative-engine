@@ -1,0 +1,69 @@
+# PRD-850 — native-css proves every unrefused Tailwind paint and typography utility
+
+**Status:** NOT STARTED
+**Priority:** P2 — AC-1 to AC-3 cover about 200 properties that build today but have no proof, so a kit can ship one that paints wrong with no warning.
+**Complexity:** 6 (MEDIUM) — 6 to 10 files (+2), Rust crate plus host (+2), inline SVG (+2).
+**Owner:** ThreeNative maintainers
+**Depends on:** PRD-843
+**Batch:** [Tailwind parity, 2026-11-07](README.md)
+
+## Context
+
+The scanner refuses a short list. Everything else builds, but the guide says "absent is not
+supported". The exploration found 200 emitted properties that no fixture proves. They group as:
+
+| Group | Utilities |
+| --- | --- |
+| Backgrounds | `bg-radial-*`, `bg-conic-*`, gradient stops and `in oklab/oklch` interpolation, `bg-clip-text`, `bg-size`, `bg-repeat-*`, `bg-fixed/local/scroll`, `bg-origin-*`, `bg-position`, `bg-[url()]` |
+| Borders and effects | `border-dashed/dotted/double`, `divide-*`, `space-*`, `ring-*`, `inset-ring-*`, `inset-shadow-*`, `outline-dashed/dotted/double`, `text-shadow-*`, colour `/opacity` modifiers (`color-mix()`) |
+| Transforms | individual `scale-*`, `rotate-*`, `translate-*`, `skew-*`, `origin-*` |
+| Typography | `text-decoration-*`, `underline-offset-*`, `decoration-*`, `italic`, `font-stretch-*`, `font-variant-numeric` (`tabular-nums` and others), `antialiased`, `hyphens-*`, `indent-*`, `text-wrap` balance and pretty, `wrap-anywhere`, `break-*` word, `tab-size`, `uppercase` and other cases, `list-*` (type, position, image) |
+| Misc | `fill-*`, `stroke-*` on inline `<svg>`, `cursor-*` (host cursor), `scrollbar` colour, width and gutter, `visibility`, `zoom`, `scheme-*`, `will-change-*`, `contain-*`, `pointer-events` (variants) |
+
+Inline `<svg>` is not in the guide's element list. `fill` and `stroke` need it.
+
+## Solution
+
+Run the meter per group and fix what fails. Expected engine work:
+
+- radial and conic gradients: blitz-paint `gradient.rs` has both, so verify;
+- `bg-clip-text`: glyphs as the clip path;
+- text shadow: a blur layer under the glyph run;
+- decoration styles;
+- inline SVG through blitz's SVG path (resvg), if it is in the closure; if it is not, add it as the
+  one new dependency and record its licence in `docs/verification/native-css-license-inventory.md`;
+- the host cursor: the `css-ui` hit test reports the computed `cursor`, and the desktop host sets the
+  SDL cursor.
+
+## Acceptance Criteria
+
+- [ ] AC-1 [local]: every background and border-effect unit passes the meter on crate and host, and the judge returns SAME. proof: `parity:tailwind --family PRD-850 --group paint` plus `--host`, and the judge on `--sheet PRD-850` — Evidence: pending.
+- [ ] AC-2 [local]: every transform and typography unit passes, and the judge returns SAME. proof: `--group type` — Evidence: pending.
+- [ ] AC-3 [local]: every misc unit passes, inline SVG `fill`/`stroke` included, and the host shows the computed cursor over a `cursor-pointer` element. proof: `--group misc`, plus a desktop playtest that reads the host cursor state — Evidence: pending.
+
+## Integration Ledger
+
+| Capability | Reachable consumer/trigger | Replaces / disposition | Evidence |
+| --- | --- | --- | --- |
+| Paint and type utilities on native | game Tailwind class → `css-ui` paint and text | Proven in the guide; nothing removed | AC-1, AC-2 |
+| Inline SVG and cursor | game `<svg>` / `cursor-*` → `css-ui` → desktop host SDL cursor | New | AC-3 |
+
+## Execution Phases
+
+#### Phase 1: Backgrounds and effects
+**Status:** NOT STARTED
+**Files:** `vendor/blitz-paint-0.3.0-beta.2/src/{gradient.rs,render/background.rs,render/border.rs,text.rs}`, `vendor/PATCHES.md`.
+
+- [ ] Background and border-effect units pass. proof: AC-1
+
+#### Phase 2: Transforms and typography
+**Status:** NOT STARTED
+**Files:** `vendor/blitz-paint-0.3.0-beta.2/src/text.rs`, `vendor/parley-0.11.1`, `vendor/PATCHES.md`.
+
+- [ ] Transform and typography units pass. proof: AC-2
+
+#### Phase 3: SVG, cursor and the rest
+**Status:** NOT STARTED
+**Files:** `native/css-ui/Cargo.toml` (SVG feature), `native/css-ui/src/abi.rs` (cursor), the desktop host UI overlay seam, the guide, the floor.
+
+- [ ] Misc units pass, and the floor rises. proof: AC-3 plus `parity:tailwind --ratchet`
