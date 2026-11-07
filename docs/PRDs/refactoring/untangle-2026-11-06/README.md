@@ -141,6 +141,16 @@ Later (impact 3-4, god-file splits along their own seams): B5 `renderer.ts`, B7 
 
 ## Defects found on the way (not a bug hunt)
 
+- ⚠️ open, measured 2026-11-07: `pnpm budgets` fails on the capability-recall floor after this
+  branch added public API. `recallAtK` reads 0.9279 against a floor of 0.9369, and `snow.refill`
+  ("fresh snowfall slowly fills old tracks back in", expecting `SnowField`) no longer reaches its
+  symbol — it returns `VehicleBody3D, FrameBudget, renderer.projection`. `SnowField`'s own doc is
+  unchanged and still carries the words, so this is a ranking shift from the new entries
+  (`rendererFacts`, `GpuReadings`, `dev-global`, `selectLodFor`, the environment mechanism), not a
+  doc regression. Deciding it means either re-recording the floor with that reason — `--update-budget`
+  refuses while a row regresses, by design — or tightening the entries that crowd it. Left red rather
+  than silently re-baselined.
+
 - ✅ verified: `scripts/capability-recall.ts:120` skips kits `puzzle`, `rts`, `runner` (fixed by Q2).
 - ✅ verified: LOD near-plane default disagrees (`?? 0.1` vs `?? 0`) (fixed by R5).
 - ⚠️ unverified: failed adapter probe → software machine gets tier `high` (`renderer.ts:1975`, B8).
