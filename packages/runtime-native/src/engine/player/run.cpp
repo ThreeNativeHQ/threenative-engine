@@ -47,6 +47,11 @@
 #include "mystral/webgpu/presentation.h"
 #include "mystral/webgpu_compat.h"
 
+#if defined(TN_PS4)
+// libkernel's wall clock in microseconds: the reference E5 checks std::chrono::steady_clock against.
+extern "C" uint64_t sceKernelGetProcessTime();
+#endif
+
 // The legacy host's SDL-to-DOM input translation (platform/input.cpp), which declares none of these.
 namespace mystral::platform {
 void processKeyboardEvent(const SDL_KeyboardEvent& event, bool isDown);
@@ -694,6 +699,7 @@ struct Session {
     uint64_t presentedFrames = 0;
     double ps4JsMs = 0.0;
     std::chrono::steady_clock::time_point ps4WindowStart{};
+    uint64_t ps4WindowKernelUs = 0;
 #endif
     std::set<std::string> renderNotes;  // a renderer note (a skipped draw) prints once, not every frame
     double updateMs = 0, readyMs = 0, updateCpuMs = 0, updateInstructions = 0, updateCycles = 0;
@@ -1356,10 +1362,15 @@ int Session::step() {
             const auto frameNow = std::chrono::steady_clock::now();
             const double wallMs = ps4WindowStart.time_since_epoch().count()
                 ? std::chrono::duration<double, std::milli>(frameNow - ps4WindowStart).count() / 100.0 : 0.0;
-            std::printf("TN_PLAYER_FRAMES %llu js_ms=%.3f frame_ms=%.3f\n", static_cast<unsigned long long>(presentedFrames),
-                        ps4JsMs / 100.0, wallMs);
+            // The same window on libkernel's clock: steady_clock must agree with it, or every dt and
+            // timer in the guest is off (a wrong clock id once made it read CPU time).
+            const uint64_t kernelUs = sceKernelGetProcessTime();
+            const double kernelMs = ps4WindowKernelUs ? static_cast<double>(kernelUs - ps4WindowKernelUs) / 100000.0 : 0.0;
+            std::printf("TN_PLAYER_FRAMES %llu js_ms=%.3f frame_ms=%.3f kernel_frame_ms=%.3f\n",
+                        static_cast<unsigned long long>(presentedFrames), ps4JsMs / 100.0, wallMs, kernelMs);
             ps4JsMs = 0.0;
             ps4WindowStart = frameNow;
+            ps4WindowKernelUs = kernelUs;
             std::fflush(stdout);
         }
 #endif

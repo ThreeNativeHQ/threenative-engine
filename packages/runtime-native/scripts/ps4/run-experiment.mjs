@@ -56,6 +56,7 @@ const E3CS_DRAWN = [64, 65, 0];
 const E2_TOLERANCE = 8; // per-channel distance from the clear colour that counts as clear
 const E2_CLEAR_MIN = 0.2;
 const E2_DRAWN_MIN = 0.02;
+const E5_CLOCK_SKEW_MAX = 0.05; // steady_clock vs libkernel's clock, per 100-frame window
 const E2_DRAWN_MAX = 0.75;
 
 // E5 presents a game's own frame, so its clear colour is whatever the scene clears to AFTER the
@@ -573,8 +574,16 @@ async function judgeE5(match, frame, log, shots) {
   const clear = e5ClearColour(last);
   const moved = differingFraction(first, last);
   // run.cpp averages the game's JS update and the whole frame over each 100 presented frames.
-  const timing = [...log.matchAll(/TN_PLAYER_FRAMES \d+ js_ms=([\d.]+) frame_ms=([\d.]+)/g)].at(-1);
-  const detail = ` frames=${frames} clear=${clear.join(',')} moved=${(moved * 100).toFixed(2)}%${timing ? ` js_ms=${timing[1]} frame_ms=${timing[2]}` : ''}`;
+  const windows = [...log.matchAll(/TN_PLAYER_FRAMES \d+ js_ms=([\d.]+) frame_ms=([\d.]+)(?: kernel_frame_ms=([\d.]+))?/g)];
+  const timing = windows.at(-1);
+  const fps = timing && Number(timing[3] ?? timing[2]) > 0 ? 1000 / Number(timing[3] ?? timing[2]) : 0;
+  const detail = ` frames=${frames} clear=${clear.join(',')} moved=${(moved * 100).toFixed(2)}%${timing ? ` js_ms=${timing[1]} frame_ms=${timing[2]} kernel_frame_ms=${timing[3] ?? '?'} fps=${fps.toFixed(1)}` : ''}`;
+  // steady_clock drives the game's dt: it must agree with libkernel's wall clock in every measured
+  // window, or the game runs at the wrong speed (musl's CLOCK_MONOTONIC once read CPU time).
+  const skewed = windows.filter(w => w[3] !== undefined && Number(w[3]) > 0 && Number(w[2]) > 0)
+    .find(w => Math.abs(Number(w[2]) / Number(w[3]) - 1) > E5_CLOCK_SKEW_MAX);
+  if (skewed)
+    return { ok: false, reason: `steady_clock frame_ms=${skewed[2]} disagrees with libkernel's kernel_frame_ms=${skewed[3]} by more than ${E5_CLOCK_SKEW_MAX * 100}%: the guest clock is not wall time`, info: detail };
   // A scene with no background clears to black, and judgePresented treats black as "nothing
   // presented" (right for E2/E3, whose clear is not black). E5 instead measures the share of the
   // whole frame that differs from the clear: the box and sphere must cover part of it, not all.

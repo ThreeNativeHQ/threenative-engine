@@ -88,3 +88,29 @@ static int TnRegisterThreadDtor(TnThreadDtor dtor, void* object) {
 extern "C" void TnAnimationMixerCpuTimingTlsInit()
     asm("_ZTHN2tn6engine9animation14AnimationMixer9cpuTimingE");
 extern "C" void TnAnimationMixerCpuTimingTlsInit() {}
+
+// Every clock id in this guest is musl's Linux numbering (OpenOrbis include/time.h:
+// CLOCK_MONOTONIC 1), but clock_gettime resolves to libkernel, which reads FreeBSD numbering: 1 is
+// CLOCK_VIRTUAL, the process's user CPU time (shadPS4 kernel/time.cpp maps it to getrusage). So
+// std::chrono::steady_clock, V8's monotonic time and the game's dt all followed CPU time and ran
+// slow against the wall: E5's box turned at a third of its 1 rad/s and frame_ms read 8.6 ms while
+// the flips were 29 ms apart. e5-build.sh links with --wrap=clock_gettime, so every static caller
+// (libc++ chrono.cpp, libc, V8, Dawn, the engine) reaches this translation first.
+extern "C" {
+int __real_clock_gettime(clockid_t, struct timespec*);
+int __wrap_clock_gettime(clockid_t id, struct timespec* ts) {
+    // Linux id -> FreeBSD/Orbis id (shadPS4 kernel/time.h ORBIS_CLOCK_*).
+    static const clockid_t kOrbis[] = {
+        0,   // REALTIME
+        4,   // MONOTONIC
+        15,  // PROCESS_CPUTIME_ID -> PROCTIME
+        14,  // THREAD_CPUTIME_ID
+        4,   // MONOTONIC_RAW -> MONOTONIC
+        10,  // REALTIME_COARSE -> REALTIME_FAST
+        12,  // MONOTONIC_COARSE -> MONOTONIC_FAST
+        5,   // BOOTTIME -> UPTIME
+    };
+    const unsigned at = static_cast<unsigned>(id);
+    return __real_clock_gettime(at < sizeof kOrbis / sizeof *kOrbis ? kOrbis[at] : id, ts);
+}
+}  // extern "C"

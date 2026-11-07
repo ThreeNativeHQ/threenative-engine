@@ -168,6 +168,20 @@ git apply "$SCRIPTS/patches/0022-opengnm-psbc-descriptor-sets-0-3.patch"
 # aborts the whole process: the first small compute shader in the engine did
 # exactly that, before any frame. Below GFX10 a compute stage is wave64.
 git apply "$SCRIPTS/patches/0024-opengnm-psbc-wave64-below-gfx10.patch"
+# BinaryInfo.length covered ACO's constant data after s_endpgm (a const array:
+# Cube Spin's fullscreen-triangle positions). shadPS4 decodes `length` bytes as
+# GCN (regs_shader.h GetParams), so the float 3.0 decoded as an instruction with
+# a literal and the decoder ran into the footer: "illegal encoding" = the hash.
+# length is now radv's exec_size; the constant data stays in the binary.
+git apply "$SCRIPTS/patches/0040-opengnm-psbc-length-excludes-constant-data.patch"
+# shadPS4 (v0.21.0 and upstream main) does not translate S_LSHR_B64: Cube Spin's
+# fragment shader logged "Unknown opcode S_LSHR_B64", then EmitControlFlowGraph
+# aborted. The PS4 GPU has the instruction; the emulator does not. psbc emits
+# every scalar 64-bit logical right shift as 32-bit SALU ops instead.
+git apply "$SCRIPTS/patches/0041-opengnm-psbc-no-s-lshr-b64.patch"
+# The same emulator gap for S_OR_SAVEEXEC_B64 (shadPS4 has the AND and ORN2
+# forms only). A pass after lower_branches rewrites it as s_mov_b64 + s_or_b64.
+git apply "$SCRIPTS/patches/0042-opengnm-psbc-no-s-or-saveexec.patch"
 
 # === 3. opengnm (orbis) ======================================================
 cd "$SRC/opengnm"
@@ -430,6 +444,19 @@ git apply "$SCRIPTS/patches/0035-vk-ps4-fullscreen-rectlist.patch"
 # clean, so the bytes changed after submit. Each slice now ends with a WRITE_DATA of its ticket,
 # and the next use of the slice waits for that ticket.
 git apply "$SCRIPTS/patches/0036-vk-ps4-epilogue-slice-retire.patch"
+# 0031 moved every uniform-colour render-target clear to a whole-surface FillMemory after the clear
+# draw covered part of its target, which was 0035's TRILIST. A whole-target fill is a CPU-visible
+# write of every byte (15 MB at 720p 4x) that shadPS4 re-syncs into its GPU copy each frame: the E5
+# profile spent a third of the GPU thread in memcpy. Tiled targets clear with the RECTLIST draw again.
+git apply "$SCRIPTS/patches/0037-vk-ps4-draw-clear-render-targets.patch"
+# The format table never set SAMPLED_IMAGE_FILTER_LINEAR on any format, so Dawn reported no
+# float32-filterable and Cube Spin (a linear-filtered FloatType texture) was refused at boot. GCN
+# filters every normalized, sRGB and float format; integer formats stay point-only.
+git apply "$SCRIPTS/patches/0038-vk-ps4-filter-linear-formats.patch"
+# Every VkFence and VkSemaphore took its own 64 KB direct-memory block for an 8-byte label, and
+# Dawn creates and destroys swapchain semaphores every frame: two GPU maps and unmaps per frame,
+# each one a shadPS4 memory-tracker re-sync on its GPU thread. Labels now come from a pooled slab.
+git apply "$SCRIPTS/patches/0039-vk-ps4-pooled-sync-labels.patch"
 # The Makefile compiles TEST_SRC relative to the vulkan-ps4 tree.
 cp "$SCRIPTS/e2-triangle.c" "$SRC/e2-triangle.c"
 make -f Makefile.orbis -j"$JOBS" TEST_SRC=../e2-triangle.c self > "$LOGS/e2-triangle.log" 2>&1
