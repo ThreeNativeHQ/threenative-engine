@@ -432,8 +432,7 @@ export { exposeDebug } from "./debug.js";
 /**
  * The one name every dev surface publishes under, and the reader/writer for it.
  * @situation read or extend the `__THREENATIVE__` object a dev launch publishes
- * @constraint this is the key every dev surface publishes under; the worker's mirror list names it too,
- * because that list is a typed tuple its mirror machinery builds from
+ * @constraint every dev surface publishes under this key; the worker's typed mirror tuple names it too
  * @example import { DEV_GLOBAL_KEY, devGlobal } from "@threenative/core";
  * const tools = devGlobal(globalThis);
  */
