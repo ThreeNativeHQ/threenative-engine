@@ -1007,7 +1007,7 @@ describe("threenative doctor command", () => {
     );
     expect(check?.fix).toContain("threenative doctor --fix");
     const { cliHelp } = await import("../src/threenative.js");
-    expect(cliHelp("doctor")).toContain("pnpm up create-threenative");
+    expect(cliHelp("doctor")).toContain("pnpm up --latest create-threenative");
   });
 
   it("names doctor in the top-level help", async () => {

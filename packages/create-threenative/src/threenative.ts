@@ -37,7 +37,7 @@ export function cliHelp(command?: PublicCommand): string {
       "--capture forwards a browser census JSON or native TN_PIPELINE_EVENT log to the playtest doctor.",
       "--fix rewrites this game's authoring layer (AGENTS.md, CLAUDE.md, skills, hooks, MCP configs)",
       "  from the installed create-threenative, then checks again. To update an existing game:",
-      "  'pnpm up create-threenative @threenative/*', then 'pnpm exec threenative doctor --fix'.",
+      "  'pnpm up --latest create-threenative @threenative/*', then 'pnpm exec threenative doctor --fix'.",
       "  A file this game edited is kept and listed, and the run exits 1 (TN_AUTHORING_LAYER_EDITED);",
       "  --force overwrites it. Git is the undo. .threenative/agent-files.json records what was written.",
       "Exits 0 when nothing failed, 1 when a check failed.",

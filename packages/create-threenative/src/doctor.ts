@@ -2088,7 +2088,7 @@ export function diagnoseProject(
 }
 
 const AUTHORING_LAYER_FIX =
-  "After 'pnpm up create-threenative', run 'pnpm exec threenative doctor --fix'; add --force to overwrite files this game edited.";
+  "After 'pnpm up --latest create-threenative', run 'pnpm exec threenative doctor --fix'; add --force to overwrite files this game edited.";
 
 function authoringLayerCheck(layer: IAuthoringLayerStatus): IDoctorCheck {
   const name = "authoring layer";

@@ -1043,7 +1043,7 @@ const NO_KIT =
   'no stamp, kit.json or kit router title names a kit; write {"kit": "<kit>"} to .threenative/agent-files.json';
 
 /** The one command that moves create-threenative and the engine packages to one release. */
-const ENGINE_PAIR_UPGRADE = "pnpm up create-threenative @threenative/*";
+const ENGINE_PAIR_UPGRADE = "pnpm up --latest create-threenative @threenative/*";
 
 async function installedCoreVersion(game: string): Promise<string | undefined> {
   const manifest = await readFile(

@@ -165,7 +165,7 @@ describe("createEngineCatalogPlugin", () => {
     const source = 'import { Mesh } from "three";\n';
     const { error } = await transform(root, "src/a.ts", source);
     expect(error?.message).toMatch(
-      /^TN_ENGINE_CATALOG: the installed Wasm engine did not boot .*TN_ABI_6.*pnpm up create-threenative @threenative\/\*/u,
+      /^TN_ENGINE_CATALOG: the installed Wasm engine did not boot .*TN_ABI_6.*pnpm up --latest create-threenative @threenative\/\*/u,
     );
     const { warning } = await transform(root, "src/a.ts", source, "warn");
     expect(warning).toMatch(/^TN_ENGINE_CATALOG: the installed Wasm engine did not boot/u);

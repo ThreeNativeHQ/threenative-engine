@@ -190,7 +190,7 @@ describe("doctor --fix", () => {
       /TN_AUTHORING_LAYER_PAIR/u,
     );
     await expect(fixAuthoringLayer(target, { force: true })).rejects.toThrow(
-      /pnpm up create-threenative @threenative\/\*/u,
+      /pnpm up --latest create-threenative @threenative\/\*/u,
     );
     expect(await readFile(path.join(target, "AGENTS.md"), "utf8")).toBe(agents);
     expect(await readFile(path.join(target, STAMP), "utf8")).toBe(stamp);
@@ -200,7 +200,7 @@ describe("doctor --fix", () => {
     const target = await olderGame();
     await rm(path.join(target, "node_modules"), { force: true, recursive: true });
     await expect(fixAuthoringLayer(target, { force: true })).rejects.toThrow(
-      /TN_AUTHORING_LAYER_PAIR: .*installs no installed core.*pnpm up create-threenative/u,
+      /TN_AUTHORING_LAYER_PAIR: .*installs no installed core.*pnpm up --latest create-threenative/u,
     );
   });
 

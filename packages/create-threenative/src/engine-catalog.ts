@@ -125,7 +125,7 @@ export function createEngineCatalogPlugin(
     refusals ??= upstreamRefusals(root).catch(
       (error: unknown) =>
         new Error(
-          `TN_ENGINE_CATALOG: the installed Wasm engine did not boot under this create-threenative, so the page cannot bind it either (${error instanceof Error ? error.message : String(error)}). Install one release of both: pnpm up create-threenative @threenative/*`,
+          `TN_ENGINE_CATALOG: the installed Wasm engine did not boot under this create-threenative, so the page cannot bind it either (${error instanceof Error ? error.message : String(error)}). Install one release of both: pnpm up --latest create-threenative @threenative/*`,
         ),
     );
     const known = await refusals;
