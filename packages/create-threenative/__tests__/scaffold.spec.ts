@@ -110,6 +110,9 @@ async function withBrokenTemplateFile<T>(
 // A shared edit (agent-docs, agent-files, template-assets, core's tables, the shared render sources)
 // moves only `shared`; a kit edit moves only `kit`. `pnpm scaffold:pin` rewrites the block below and
 // says which one moved, so a re-pin no longer needs a paragraph of history to be readable.
+// Pages `prepack` writes into the package; a source checkout has no copy until `pnpm build`.
+const PACK_GENERATED_PAGES: readonly string[] = ["capability-reference.md"];
+
 const SCAFFOLD_TREE_HASHES: Readonly<Record<string, IScaffoldTreePin>> = {
   // scaffold-pin:begin
   "action-rpg": {
@@ -524,6 +527,10 @@ describe("create-threenative", () => {
   // `agent-docs/` at all. The links the generated instructions carry must still resolve, or a
   // cold agent follows one into a dead path — checked here against the package's bundle, which is
   // exactly what the package's `files` list installs.
+  //
+  // One page is not in a source checkout: PRD-836 made the capability reference prepack output, so
+  // a clone that never ran `pnpm build` has no file to look at. `publication.spec.ts` asserts the
+  // packed tarball carries it, which is where the link actually has to resolve.
   it("should ship no reference bundle and leave every link resolving in the package", async () => {
     const root = await makeTempDir("threenative-reference-bundle-");
     const bundleDirectory = path.resolve("packages/create-threenative/agent-docs/references");
@@ -546,7 +553,9 @@ describe("create-threenative", () => {
           ...content.matchAll(
             /create-threenative\/agent-docs\/references\/([a-z0-9][a-z0-9-]*\.md)/gu,
           ),
-        ].map((match) => match[1] ?? "");
+        ]
+          .map((match) => match[1] ?? "")
+          .filter((page) => !PACK_GENERATED_PAGES.includes(page));
         for (const page of pages) {
           expect(
             existsSync(path.join(bundleDirectory, page)),
