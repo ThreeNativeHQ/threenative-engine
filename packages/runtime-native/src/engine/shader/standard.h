@@ -223,6 +223,10 @@ struct StandardPrograms {
     /** A lit fragment's diffuse colour (map, tint and colorNode included, unfogged) and emitted radiance, both vec3:
      *  what the albedo and emissive post targets hold (Renderer::auxFragment). kInvalid for an unlit program. */
     ExprId albedo = kInvalid, emissive = kInvalid;
+    /** A lit fragment's indirect diffuse light (vec3, unfogged, after the material's own aoMap): the hemisphere, ambient,
+     *  environment and irradianceNode share of its outgoing light, never a direct light's. What the indirectDiffuse post
+     *  target holds, so a screen-space occlusion darkens only that share (PRD-635). kInvalid for an unlit program. */
+    ExprId indirectDiffuse = kInvalid;
     /** The lit fragment's own normal: three's `normalView` accessor (`NodeMaterial.setupNormal`), namely the material
      *  normalNode's result when it authors one, else the normal-map or bump-map perturbation, else the view-space
      *  geometry normal. The normal post target holds it for a draw whose material authors a normalNode

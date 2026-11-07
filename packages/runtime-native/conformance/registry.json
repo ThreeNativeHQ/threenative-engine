@@ -2310,6 +2310,20 @@
       "required": false
     },
     {
+      "id": "ao-indirect-only",
+      "title": "ambient occlusion takes only the indirect diffuse light: the owned engine's indirectDiffuse target against a frame without the sky light",
+      "category": "rendering",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/ao-indirect-only.js",
+      "browserRecipe": "webgpu",
+      "tolerance": {
+        "pixelMismatchRatio": 0.04,
+        "perceptualDeltaE": 3
+      },
+      "desktopGate": false,
+      "required": false
+    },
+    {
       "id": "material-lights",
       "title": "a material lightsNode sums only the lights it lists (a camera-parented cockpit lit by its cabin lamp)",
       "category": "lights",
