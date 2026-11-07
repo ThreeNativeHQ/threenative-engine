@@ -50,10 +50,14 @@ import type { Node, TextureNode } from "three/webgpu";
 import type { IComputeDriven } from "../compute-driven.js";
 import type { IRendererLike } from "../renderer.js";
 import {
+  type ILightingKey,
   type IProbeTraceKernels,
+  type IProbeTraceLighting,
   type IProbeTraceScene,
   applyTraceLighting,
   createProbeTraceKernels,
+  lightingKey,
+  lightingStepped,
   threadScene,
   writeMaterialTable,
 } from "./probe-trace.js";
@@ -361,6 +365,7 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
   #kernelVersion = -1;
   #ignoredTextureMaterials = 0;
   /** Per probe: 1 while it waits for a trace. */
+  #lightingKey: ILightingKey | undefined;
   #traceStale: Uint8Array;
   /** Per probe: the frame of its last trace, -1 before the first. */
   #lastTraced: Int32Array;
@@ -895,12 +900,14 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
     this.#probesTraced = 0;
     try {
       const kernels = this.#ensureKernels(trace);
-      applyTraceLighting(kernels, {
+      const lighting = {
         color: trace.sun.color,
         direction: trace.sun.direction,
         intensity: trace.sun.intensity,
         sky: trace.sky,
-      });
+      };
+      applyTraceLighting(kernels, lighting);
+      this.#watchLighting(lighting);
       this.#refreshMaterials(trace, kernels);
       this.#markUsed(trace.camera);
       if (this.#status === "baking") this.#dispatchTrace(renderer, kernels);
@@ -912,6 +919,22 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
     if (this.#status === "ready" && this.#stalenessFrames !== null) this.#stalenessFrames += 1;
     this.#lastBakeCostMs = Math.max(0, this.#now() - started);
     this.#publish(this.#probesTraced > 0);
+  }
+
+  /**
+   * A small sun drift is served by the old field. The first step past the threshold, measured from the last
+   * step, marks every probe stale: the budget stays, and the old values stay readable until replaced.
+   */
+  #watchLighting(lighting: IProbeTraceLighting): void {
+    const key = lightingKey(lighting);
+    const previous = this.#lightingKey;
+    if (previous === undefined) {
+      this.#lightingKey = key;
+      return;
+    }
+    if (this.#status === "unbaked" || !lightingStepped(previous, key)) return;
+    this.#lightingKey = key;
+    this.#startTracePasses(this.#tracePasses);
   }
 
   #ensureKernels(trace: IProbeVolumeTrace): IProbeTraceKernels {

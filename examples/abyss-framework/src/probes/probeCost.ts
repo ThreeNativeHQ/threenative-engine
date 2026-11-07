@@ -21,7 +21,10 @@ export interface IProbeCostReport extends Record<string, unknown> {
   workItemsPerProbe: number;
   /** Frames from the refresh request to every probe refreshed (trace), or the frames sampled (capture). */
   refreshFrames: number;
+  /** The first slice with work: the compute pipeline compiles in it, once. */
+  sliceMsFirst: number;
   sliceMsMean: number;
+  /** The slowest slice after the first. */
   sliceMsMax: number;
   /** Capture: the mean slice cost times the work items of one probe. */
   msPerProbe: number;
@@ -87,6 +90,7 @@ export class ProbeCostProbe {
       probesPerFrame: 0,
       raysPerProbe: 0,
       refreshFrames: 0,
+      sliceMsFirst: 0,
       sliceMsMax: 0,
       sliceMsMean: 0,
       workItemsPerProbe: 0,
@@ -190,13 +194,17 @@ export class ProbeCostProbe {
       Object.assign(refresh, { gpu: refresh.gpu + gpu, gpuSamples: refresh.gpuSamples + 1 });
     if (observation.bakeCostMs > 0) {
       refresh.slices += 1;
-      refresh.sliceSum += observation.bakeCostMs;
-      this.report.sliceMsMax = Math.max(this.report.sliceMsMax, observation.bakeCostMs);
+      if (refresh.slices === 1) {
+        this.report.sliceMsFirst = observation.bakeCostMs;
+      } else {
+        refresh.sliceSum += observation.bakeCostMs;
+        this.report.sliceMsMax = Math.max(this.report.sliceMsMax, observation.bakeCostMs);
+      }
     }
     refresh.traced += observation.probesTraced ?? 0;
     const report = this.report;
     report.refreshFrames = this.#frames;
-    report.sliceMsMean = refresh.slices === 0 ? 0 : refresh.sliceSum / refresh.slices;
+    report.sliceMsMean = refresh.slices < 2 ? 0 : refresh.sliceSum / (refresh.slices - 1);
     report.msPerProbe = report.sliceMsMean * report.workItemsPerProbe;
     report.drawCallsRefresh = refresh.calls / this.#frames;
     report.drawCallsAdded = report.drawCallsRefresh - report.drawCallsBaseline;

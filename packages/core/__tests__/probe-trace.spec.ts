@@ -22,6 +22,8 @@ import { GPUSceneBVH } from "../src/gpu-scene-bvh.js";
 import {
   type IThreadedScene,
   flatMaterial,
+  lightingKey,
+  lightingStepped,
   threadScene,
   writeMaterialTable,
 } from "../src/render/probe-trace.js";
@@ -128,6 +130,30 @@ function room(): Scene {
 }
 
 describe("probe trace scene (PRD-603)", () => {
+  it("steps the lighting at more than one degree or a 4x brightest-channel change", () => {
+    const key = (degrees: number, sun: number, sky = 0.2) =>
+      lightingKey({
+        color: new Color(1, 0.5, 0.2),
+        direction: new Vector3(
+          Math.sin((degrees * Math.PI) / 180),
+          Math.cos((degrees * Math.PI) / 180),
+          0,
+        ),
+        intensity: sun,
+        sky: new Color(sky, sky, sky),
+      });
+    const from = key(0, 1);
+    expect(lightingStepped(from, key(0.9, 1))).toBe(false);
+    expect(lightingStepped(from, key(1.1, 1))).toBe(true);
+    expect(lightingStepped(from, key(0, 3.9))).toBe(false);
+    expect(lightingStepped(from, key(0, 4.1))).toBe(true);
+    expect(lightingStepped(from, key(0, 0.26))).toBe(false);
+    expect(lightingStepped(from, key(0, 0.24))).toBe(true);
+    expect(lightingStepped(from, key(0, 1, 1.0))).toBe(true);
+    expect(lightingStepped(key(0, 0), key(0, 0))).toBe(false);
+    expect(lightingStepped(key(0, 0), key(0, 1))).toBe(true);
+  });
+
   it("reports a material table unchanged on a second write, even for a colour float32 rounds", () => {
     const material = new MeshBasicMaterial({ color: new Color(0xff0030).multiplyScalar(12) });
     const table = new Float32Array(8);

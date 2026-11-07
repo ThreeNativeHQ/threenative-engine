@@ -11,7 +11,7 @@
       "kind": "wait",
       "label": "probe-cost-refresh",
       "release": true,
-      "waitFrames": 600
+      "waitFrames": 1800
     }
   ],
   "assert": {

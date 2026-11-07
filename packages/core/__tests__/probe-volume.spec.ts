@@ -1040,6 +1040,44 @@ describe("ProbeVolume", () => {
       expect(subject.observation.bakeProgress.fraction).toBe(1);
     });
 
+    it("serves a small sun drift from the old field and re-traces every probe on a lighting step", async () => {
+      const { subject, sun } = traced({ numProbesToTraceBudget: 5 });
+      const { renderer } = traceRenderer([2, 0, 0]);
+      sun.intensity = 1;
+      const bake = subject.requestBake(new Scene());
+      await settle(subject, renderer, 10);
+      await bake;
+      expect(subject.observation.status).toBe("ready");
+      const turn = (degrees: number) =>
+        sun.direction.set(
+          Math.sin((degrees * Math.PI) / 180),
+          Math.cos((degrees * Math.PI) / 180),
+          0,
+        );
+      turn(0);
+      await settle(subject, renderer, 1);
+      turn(0.6);
+      await settle(subject, renderer, 3);
+      expect(subject.observation.status).toBe("ready");
+      // Past one degree from the sun at the last step: every probe is stale, the budget stays at 5 a frame.
+      turn(1.5);
+      await settle(subject, renderer, 1);
+      expect(subject.observation.status).toBe("baking");
+      expect(subject.observation.probesTraced).toBe(5);
+      expect(
+        subject.sampleIrradiance(new Vector3(1, 1, 1), new Vector3(0, 1, 0)).x,
+      ).toBeGreaterThan(1);
+      await settle(subject, renderer, 8);
+      expect(subject.observation.status).toBe("ready");
+      // A brightest-channel change beyond 4x steps too; 3x does not.
+      sun.intensity = 3;
+      await settle(subject, renderer, 2);
+      expect(subject.observation.status).toBe("ready");
+      sun.intensity = 5;
+      await settle(subject, renderer, 1);
+      expect(subject.observation.status).toBe("baking");
+    });
+
     it("keeps the old field readable while a new request refreshes it", async () => {
       const { subject } = traced({ numProbesToTraceBudget: 5 });
       const { renderer } = traceRenderer([2, 0, 0]);

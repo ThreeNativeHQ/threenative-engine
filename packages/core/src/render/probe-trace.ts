@@ -528,6 +528,42 @@ export function createProbeTraceKernels(
   };
 }
 
+/** A lighting step: where the sun points and how bright the sun and the sky are, at one moment. */
+export interface ILightingKey {
+  readonly direction: Vector3;
+  readonly sun: number;
+  readonly sky: number;
+}
+
+/** PRD-603 Phase 3: a step is more than one degree of sun direction, or a 4x change of the brightest channel. */
+const LIGHTING_STEP_RADIANS = Math.PI / 180;
+const LIGHTING_STEP_RATIO = 4;
+
+export function lightingKey(lighting: IProbeTraceLighting): ILightingKey {
+  const peak = (color: Color, scale: number) => Math.max(color.r, color.g, color.b) * scale;
+  return {
+    direction: lighting.direction.clone().normalize(),
+    sky: peak(lighting.sky, 1),
+    sun: peak(lighting.color, lighting.intensity),
+  };
+}
+
+const ratioStepped = (from: number, to: number): boolean => {
+  if (from === to) return false;
+  if (from <= 0 || to <= 0) return true;
+  const ratio = to / from;
+  return ratio > LIGHTING_STEP_RATIO || ratio < 1 / LIGHTING_STEP_RATIO;
+};
+
+/** True when `to` differs from `from` by more than the field may serve as a small drift. */
+export function lightingStepped(from: ILightingKey, to: ILightingKey): boolean {
+  return (
+    from.direction.angleTo(to.direction) > LIGHTING_STEP_RADIANS ||
+    ratioStepped(from.sun, to.sun) ||
+    ratioStepped(from.sky, to.sky)
+  );
+}
+
 /** Pack the lighting inputs into the kernel uniforms. */
 export function applyTraceLighting(
   kernels: IProbeTraceKernels,
