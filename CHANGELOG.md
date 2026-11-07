@@ -19,6 +19,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Breaking
 
+- `@threenative/core`'s `devGlobal` and `publishDevGlobal` take their `scope` argument explicitly
+  rather than defaulting to `globalThis`: a default made an explicit `undefined` read the page's
+  global, which is exactly the worker case a caller asks about. Both were new in this branch.
+
 - `@threenative/core/render/environment` does not export `backlightMaterial`, `resolveKey` or
   `validateControls`: the backlight's shader constants decide how a surface looks, so those files
   stay in each game's `src/render/`. A game that imported them from the subpath — only this branch

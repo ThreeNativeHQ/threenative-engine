@@ -157,8 +157,8 @@ export function exposeDebug(name: string, value: unknown): void {
   const isDev =
     (import.meta as ImportMeta & { env?: Record<"DEV", boolean | undefined> }).env?.DEV === true;
   if (!isDev) return;
-  const tools = devGlobal() ?? {};
+  const tools = devGlobal(globalThis) ?? {};
   const debug = (tools.debug as Record<string, unknown> | undefined) ?? {};
   debug[name] = value;
-  publishDevGlobal("debug", debug);
+  publishDevGlobal("debug", debug, globalThis);
 }

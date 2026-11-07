@@ -2,12 +2,7 @@
 // resolve still in flight, the smoothed value drops after the engine's stale limit, and a reading's
 // age decides freshness for a window decision.
 import { describe, expect, it } from "vitest";
-import {
-  GPU_READING_MAX_AGE_FRAMES,
-  GPU_STALE_FRAME_LIMIT,
-  GpuReadings,
-  gpuReadingIsFresh,
-} from "../src/gpu-readings.js";
+import { GPU_STALE_FRAME_LIMIT, GpuReadings } from "../src/gpu-readings.js";
 
 describe("the GPU readings series", () => {
   it("should smooth half and half by default", () => {
@@ -45,14 +40,5 @@ describe("the GPU readings series", () => {
     readings.note(-1, 2);
     expect(readings.ema).toBeUndefined();
     expect(readings.last).toBeUndefined();
-  });
-
-  it("should answer freshness by age, with the engine's window", () => {
-    expect(gpuReadingIsFresh(10, 10)).toBe(true);
-    expect(gpuReadingIsFresh(10, 10 + GPU_READING_MAX_AGE_FRAMES)).toBe(true);
-    expect(gpuReadingIsFresh(10, 11 + GPU_READING_MAX_AGE_FRAMES)).toBe(false);
-    // A frame from the future is not evidence about this one.
-    expect(gpuReadingIsFresh(12, 10)).toBe(false);
-    expect(gpuReadingIsFresh(undefined, 10)).toBe(true);
   });
 });

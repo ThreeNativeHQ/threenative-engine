@@ -1166,7 +1166,7 @@ defineGame({ display: { maxFps: 60 }, scenes: { Play } });
 `function` — The one name every dev surface publishes under, and the reader/writer for it.
 
 ```ts
-export function devGlobal(scope: unknown = globalThis): DevGlobal | undefined { … }
+export function devGlobal(scope: unknown): DevGlobal | undefined { … }
 ```
 
 - **Use when:** read or extend the `__THREENATIVE__` object a dev launch publishes
@@ -2081,7 +2081,7 @@ const probes = new ProbeVolume({ bounds, density: 0.5 }); ctx.add(probes); void 
 `function` — The one name every dev surface publishes under, and the reader/writer for it.
 
 ```ts
-export function publishDevGlobal(name: string, value: unknown, scope: unknown = globalThis): void { … }
+export function publishDevGlobal(name: string, value: unknown, scope: unknown): void { … }
 ```
 
 - **Use when:** read or extend the `__THREENATIVE__` object a dev launch publishes

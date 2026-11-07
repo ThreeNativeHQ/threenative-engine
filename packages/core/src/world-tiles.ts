@@ -1422,7 +1422,9 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     if (finest === undefined || bounds == null) return 0;
     finest.mesh.updateWorldMatrix(true, false);
     const sphere = worldSphere(bounds, finest.mesh);
-    const { biased, degenerate } = selectLodFor(
+    // The raw depth, deliberately: terrain selection never took the adaptive LOD bias, and passing
+    // `biased` here moved a tile's level whenever `setLodBias` raised it.
+    const { depth, degenerate } = selectLodFor(
       view.camera,
       sphere,
       (view.camera as Camera & { near?: number }).near ?? 0,
@@ -1433,7 +1435,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       this.#lodErrors[index] = (tile.levels[index] as ILevelGeometry).surfaceError * scale;
     this.#lodErrors.length = floor + 1;
     return selectLodLevel(this.#lodErrors, tile.lodLevel, view.maxPixelError, view.hysteresis, [
-      { ...view, degenerate, depth: biased },
+      { ...view, degenerate, depth },
     ]);
   }
 

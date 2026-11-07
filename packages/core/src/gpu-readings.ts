@@ -15,7 +15,11 @@
 /** Samples older than this many consecutive stale frames are dropped by the adaptive loop. */
 export const GPU_STALE_FRAME_LIMIT = 8;
 
-/** A resolved sample stays usable for a window decision this many frames after its own frame. */
+/**
+ * A resolved sample stays usable for a window decision this many frames after its own frame. The
+ * scaler reads this; its own age check stays inline because it rejects an unknown age where a series
+ * would treat one as fresh.
+ */
 export const GPU_READING_MAX_AGE_FRAMES = 16;
 
 /** Window GPU samples that make a window's own median fresh evidence when the latest is too old. */
@@ -91,15 +95,4 @@ export class GpuReadings {
     this.#stale += 1;
     if (this.#stale >= this.#staleLimit) this.#ema = undefined;
   }
-}
-
-/** Whether a reading taken at `sampleFrame` still describes `currentFrame`. */
-export function gpuReadingIsFresh(
-  sampleFrame: number | undefined,
-  currentFrame: number,
-  maxAge = GPU_READING_MAX_AGE_FRAMES,
-): boolean {
-  if (sampleFrame === undefined) return true;
-  const age = currentFrame - sampleFrame;
-  return Number.isInteger(age) && age >= 0 && age <= maxAge;
 }

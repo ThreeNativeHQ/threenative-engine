@@ -106,7 +106,7 @@ export interface IBakedBiome {
  * in `world.json`, so the engine's whole-asset impostor never engaged. A caller that names its own
  * `impostorDistance` keeps it — this fills the gap, it does not override a choice.
  */
-function withImpostorDistances(
+export function withImpostorDistances(
   assets: Readonly<Record<string, IWorldPackageAsset>> | undefined,
   spec: IBiomeSpec,
 ): Readonly<Record<string, IWorldPackageAsset>> | undefined {
@@ -114,16 +114,29 @@ function withImpostorDistances(
   const distances = new Map<string, number>();
   for (const foliage of spec.foliage) {
     const distance = foliage.far?.impostor;
-    if (distance !== undefined) distances.set(foliage.species, distance);
+    if (distance === undefined) continue;
+    // The contract refuses a value that is not positive, and one that is not beyond every LOD's own
+    // distance — checked here so a biome states its mistake at bake time, not at load.
+    if (!Number.isFinite(distance) || distance <= 0)
+      throw new Error(
+        `${spec.look}: ${foliage.species}.far.impostor must be a positive distance, got ${String(distance)}.`,
+      );
+    distances.set(foliage.species, distance);
   }
   if (distances.size === 0) return assets;
   const filled: Record<string, IWorldPackageAsset> = {};
   for (const [species, asset] of Object.entries(assets)) {
     const distance = distances.get(species);
-    filled[species] =
-      distance === undefined || asset.impostorDistance !== undefined
-        ? asset
-        : { ...asset, impostorDistance: distance };
+    if (distance === undefined || asset.impostorDistance !== undefined) {
+      filled[species] = asset;
+      continue;
+    }
+    const gate = asset.lods?.reduce((furthest, lod) => Math.max(furthest, lod.distance), 0) ?? 0;
+    if (distance <= gate)
+      throw new Error(
+        `${species}: impostorDistance (${String(distance)}) must follow every authored LOD gate (furthest ${String(gate)}), or the impostor replaces a level that still draws.`,
+      );
+    filled[species] = { ...asset, impostorDistance: distance };
   }
   return filled;
 }
