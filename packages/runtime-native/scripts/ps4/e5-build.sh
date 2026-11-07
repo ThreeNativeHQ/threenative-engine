@@ -139,7 +139,7 @@ CORES="${JOBS}" nice -n 19 ld.lld -m elf_x86_64 -pie --script "$OO/link.x" --eh-
     "$E2/src/vulkan-ps4/libvulkan_ps4.a" "$E2/src/opengnm/libopengnm.a" \
     "$E2/src/opengnm-psbc/libpsbc.orbis.a" \
   --end-group \
-  -lkernel -lc -lc++ -lc++abi -lunwind -lSceGnmDriver -lSceVideoOut \
+  -lkernel -lc -lc++ -lc++abi -lunwind -lSceGnmDriver -lSceVideoOut -lScePad -lSceUserService \
   "$OO/lib/crtn.o" \
   -o "$ELF"
 

@@ -51,6 +51,7 @@
 #include "adapters/v8/adapter.h"
 #include "engine/abi/abi_internal.h"
 #include "engine/inspect/endpoint.h"
+#include "engine/player/gamepads.h"
 #include "engine/player/run.h"
 #include "mystral/platform/input.h"
 #include "mystral/platform/ui_overlay.h"
@@ -151,6 +152,50 @@ void pointerCaptureCallback(const v8::FunctionCallbackInfo<v8::Value>& info) {
 // The UI composite's cost for the frame budget's `ui` phase; 0 until the player composites (PRD-554 phase 2).
 void uiCompositeMsCallback(const v8::FunctionCallbackInfo<v8::Value>& info) {
     info.GetReturnValue().Set(0.0);
+}
+
+// `navigator.getGamepads()`: the browser call core's input samples controllers through
+// (packages/core/src/input.ts browserGamepads), in the shape the legacy host gives it
+// (src/runtime.cpp setupDomEvents) and the W3C Gamepad API spells out. Pads come from the platform
+// (gamepads.cpp: the DS4's Orbis pad on PS4, SDL3 elsewhere).
+void getGamepadsCallback(const v8::FunctionCallbackInfo<v8::Value>& info) {
+    v8::Isolate* isolate = info.GetIsolate();
+    v8::Local<v8::Context> ctx = isolate->GetCurrentContext();
+    mystral::platform::GamepadState pads[4];  // the standard's four slots
+    const int count = player::tnPollGamepads(pads, 4);
+    // A browser's timestamp counts ms from the page's start; this host's counts from its first poll.
+    static const auto epoch = std::chrono::steady_clock::now();
+    const double timestamp =
+        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - epoch).count();
+    v8::Local<v8::Array> gamepads = v8::Array::New(isolate, count);
+    for (int index = 0; index < count; ++index) {
+        const mystral::platform::GamepadState& state = pads[index];
+        v8::Local<v8::Object> gamepad = v8::Object::New(isolate);
+        gamepad->Set(ctx, v8str(isolate, "index"), v8::Number::New(isolate, state.index)).Check();
+        gamepad->Set(ctx, v8str(isolate, "id"), v8str(isolate, state.id)).Check();
+        gamepad->Set(ctx, v8str(isolate, "connected"), v8::True(isolate)).Check();
+        gamepad->Set(ctx, v8str(isolate, "mapping"), v8str(isolate, "standard")).Check();
+        gamepad->Set(ctx, v8str(isolate, "timestamp"), v8::Number::New(isolate, timestamp)).Check();
+        v8::Local<v8::Array> axes = v8::Array::New(isolate, state.numAxes);
+        for (int axis = 0; axis < state.numAxes; ++axis)
+            axes->Set(ctx, axis, v8::Number::New(isolate, state.axes[axis])).Check();
+        gamepad->Set(ctx, v8str(isolate, "axes"), axes).Check();
+        v8::Local<v8::Array> buttons = v8::Array::New(isolate, state.numButtons);
+        for (int button = 0; button < state.numButtons; ++button) {
+            // `touched` is the contact a pad reports separately; neither platform API tells a
+            // resting finger from a pressed switch, so it follows `pressed`.
+            const bool pressed = state.buttons[button];
+            v8::Local<v8::Object> entry = v8::Object::New(isolate);
+            entry->Set(ctx, v8str(isolate, "pressed"), v8::Boolean::New(isolate, pressed)).Check();
+            entry->Set(ctx, v8str(isolate, "touched"), v8::Boolean::New(isolate, pressed)).Check();
+            entry->Set(ctx, v8str(isolate, "value"),
+                       v8::Number::New(isolate, state.buttonValues[button])).Check();
+            buttons->Set(ctx, button, entry).Check();
+        }
+        gamepad->Set(ctx, v8str(isolate, "buttons"), buttons).Check();
+        gamepads->Set(ctx, index, gamepad).Check();
+    }
+    info.GetReturnValue().Set(gamepads);
 }
 
 void logCallback(const v8::FunctionCallbackInfo<v8::Value>& info) {
@@ -1232,6 +1277,20 @@ bool V8Game::start(const std::string& path, std::string& error) {
     // WebAudio is the legacy host's (SDL output, worker decode); the three audio classes sit on it.
     mystral::audio::initializeAudioBindings(services_.get());
     installDocument(ctx);
+    {
+        // navigator, created when missing: this player installs no other navigator member, and a game
+        // reads pads only through it.
+        v8::Local<v8::Object> global = ctx->Global();
+        v8::Local<v8::Value> existing;
+        v8::Local<v8::Object> navigator;
+        if (global->Get(ctx, v8str(isolate_, "navigator")).ToLocal(&existing) && existing->IsObject())
+            navigator = existing.As<v8::Object>();
+        else
+            navigator = v8::Object::New(isolate_);
+        navigator->Set(ctx, v8str(isolate_, "getGamepads"),
+                       v8::Function::New(ctx, &getGamepadsCallback).ToLocalChecked()).Check();
+        global->Set(ctx, v8str(isolate_, "navigator"), navigator).Check();
+    }
 #if TN_PLAYER_NATIVE_PHYSICS
     if (!mystral::physics::initializeNativePhysicsBindings(services_.get()))
         return error = "TN_NATIVE_PHYSICS_MISSING: resident installation failed", false;
