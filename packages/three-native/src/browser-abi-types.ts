@@ -178,6 +178,7 @@ type TslCall =
   | "_tn_tsl_release"
   | "_tn_tsl_set"
   | "_tn_tsl_set_uniform"
+  | "_tn_tsl_set_uniforms"
   | "_tn_tsl_effect_parameter"
   | "_tnw_web_set_post"
   | "_tnw_web_compute"
@@ -284,6 +285,7 @@ export function tslOf(
     _tn_tsl_release: release,
     _tn_tsl_set: set,
     _tn_tsl_set_uniform: setUniform,
+    _tn_tsl_set_uniforms: setUniforms,
     _tn_tsl_effect_parameter: effectParameter,
     _tnw_web_set_post: setPost,
     _tnw_web_compute: computeNode,
@@ -443,6 +445,31 @@ export function tslOf(
           const diag = h.diagnostic();
           h.check(setUniform(context, pointer, values, lanes.length, diag), diag, "uniform.value");
         }),
+      // PRD-828: a sync's changed uniforms as one `tn_tsl_set_uniforms` span; absent on an older module.
+      ...(setUniforms === undefined
+        ? {}
+        : {
+            setUniforms: (
+              nodes: readonly number[],
+              counts: readonly number[],
+              lanes: readonly number[],
+            ) =>
+              h.scoped(() => {
+                const ids = h.alloc(Math.max(8, nodes.length * 8));
+                const widths = h.alloc(Math.max(4, counts.length * 4));
+                const values = h.alloc(Math.max(8, lanes.length * 8));
+                const v = h.view();
+                nodes.forEach((node, i) => v.setBigUint64(ids + i * 8, BigInt(node), true));
+                counts.forEach((count, i) => v.setUint32(widths + i * 4, count, true));
+                lanes.forEach((lane, i) => v.setFloat64(values + i * 8, lane, true));
+                const diag = h.diagnostic();
+                h.check(
+                  setUniforms(context, ids, widths, values, nodes.length, diag),
+                  diag,
+                  "uniform.value",
+                );
+              }),
+          }),
     },
   };
 }

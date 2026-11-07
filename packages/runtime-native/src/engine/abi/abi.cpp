@@ -1182,6 +1182,21 @@ extern "C" tn_status_t tn_tsl_set_uniform(tn_context_t* context, const uint64_t*
     });
 }
 
+// PRD-828: one sync's changed uniforms in one call. Every id is checked before any write, so a stale id writes
+// nothing; a refused value stops the batch there, with the writes before it applied.
+extern "C" tn_status_t tn_tsl_set_uniforms(tn_context_t* context, const uint64_t* nodes, const uint32_t* lane_counts,
+                                            const double* lanes, uint32_t count, tn_diagnostic_t* diagnostic) {
+    if (!context || (count && (!nodes || !lane_counts || !lanes)))
+        return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_TSL_ARGUMENT");
+    for (uint32_t i = 0; i < count; ++i)
+        if (!context->tslNodes.contains(nodes[i])) return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_TSL_ARGUMENT");
+    return guarded(diagnostic, [&]() -> tn_status_t {
+        for (uint32_t i = 0, at = 0; i < count; at += lane_counts[i++])
+            tn::abi::tslSetUniform(context->tslNodes.at(nodes[i]), lanes + at, lane_counts[i]);
+        return ok(diagnostic);
+    });
+}
+
 extern "C" tn_status_t tn_tsl_release(tn_context_t* context, uint64_t node, tn_diagnostic_t* diagnostic) {
     if (!context || context->tslNodes.erase(node) != 1)
         return report(diagnostic, TN_ERROR_INVALID_HANDLE, 0, "TN_TSL_NODE_INVALID");

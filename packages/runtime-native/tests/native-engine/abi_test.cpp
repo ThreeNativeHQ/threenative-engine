@@ -1356,6 +1356,51 @@ void tsl_matrix_columns() {
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 
+// PRD-828: one sync's changed uniforms cross as one span; a stale id writes nothing, a refused value stops there.
+void tsl_set_uniforms() {
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+    tn_tsl_arg_t scalar{};
+    scalar.kind = TN_TSL_ARG_NUMBER;
+    tn_tsl_arg_t four{};
+    four.kind = TN_TSL_ARG_VECTOR;
+    four.reserved = 4;
+    uint64_t ids[3]{};
+    CHECK(tn_tsl_call(ctx, "uniform", nullptr, &scalar, 1, &ids[0], &d.value) == TN_OK);
+    CHECK(tn_tsl_call(ctx, "uniform", nullptr, &four, 1, &ids[1], &d.value) == TN_OK);
+    CHECK(tn_tsl_call(ctx, "uniform", nullptr, &scalar, 1, &ids[2], &d.value) == TN_OK);
+    const auto values = [&](int i) { return tn::abi::tslNode(ctx, ids[i])->values; };
+
+    const uint32_t counts[3] = {1, 4, 1};
+    const double lanes[6] = {0.5, 1, 2, 3, 4, 0.25};
+    CHECK(tn_tsl_set_uniforms(ctx, ids, counts, lanes, 3, &d.value) == TN_OK);
+    CHECK(values(0) == std::vector<double>{0.5});
+    CHECK((values(1) == std::vector<double>{1, 2, 3, 4}));
+    CHECK(values(2) == std::vector<double>{0.25});
+    CHECK(tn_tsl_set_uniforms(ctx, nullptr, nullptr, nullptr, 0, &d.value) == TN_OK);  // nothing changed
+
+    // A stale id anywhere in the span writes nothing.
+    const uint64_t stale[2] = {ids[0], 999999};
+    const double next[2] = {0.75, 0.75};
+    const uint32_t ones[2] = {1, 1};
+    CHECK(tn_tsl_set_uniforms(ctx, stale, ones, next, 2, &d.value) != TN_OK);
+    tn_diagnostic_release(&d.value);
+    CHECK(values(0) == std::vector<double>{0.5});
+
+    // A refused value (a float given two lanes) stops the batch there; the writes before it stay.
+    const uint64_t order[3] = {ids[2], ids[0], ids[1]};
+    const uint32_t wrong[3] = {1, 2, 4};
+    const double packed[7] = {0.125, 1, 2, 9, 9, 9, 9};
+    CHECK(tn_tsl_set_uniforms(ctx, order, wrong, packed, 3, &d.value) != TN_OK);
+    tn_diagnostic_release(&d.value);
+    CHECK(values(2) == std::vector<double>{0.125});
+    CHECK(values(0) == std::vector<double>{0.5});
+    CHECK((values(1) == std::vector<double>{1, 2, 3, 4}));
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
 void tsl_uniform_value() {
     const tn_version_info_t own = tn_engine_version();
     tn_context_t* ctx = nullptr;
@@ -3377,7 +3422,7 @@ void binding_fn() {
 
 TN_TEST_MAIN({"denoise_over_a_red_field_keeps_one_lane", denoise_over_a_red_field_keeps_one_lane}, {"binding_fn", binding_fn}, {"tsl_ssr_parameters", tsl_ssr_parameters}, {"tsl_texture_store", tsl_texture_store}, {"tsl_mat4_element", tsl_mat4_element}, {"body_result_lowers_once", body_result_lowers_once}, {"body_result_in_a_branch", body_result_in_a_branch}, {"join_converts_integer_parts", join_converts_integer_parts}, {"struct_function_return", struct_function_return}, {"authored_output", authored_output}, {"fragment_node_vec3_is_opaque", fragment_node_vec3_is_opaque}, {"rtt_quad_depth_has_a_vertex_output", rtt_quad_depth_has_a_vertex_output}, {"post_output_depth_has_a_vertex_output", post_output_depth_has_a_vertex_output}, {"skinned_bounds_before_the_first_frame", skinned_bounds_before_the_first_frame}, {"tsl_mat2_scalar_order", tsl_mat2_scalar_order}, {"tsl_bump_map", tsl_bump_map}, {"tsl_normal_map", tsl_normal_map}, {"tsl_flat_varying", tsl_flat_varying}, {"vertex_position_world", vertex_position_world}, {"starter_post_bindings", starter_post_bindings}, {"gpu_bind_escape", gpu_bind_escape}, {"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene},
              {"unsupported_member", unsupported_member}, {"material", material}, {"light", light}, {"spot_target_in_scene", spot_target_in_scene}, {"hierarchy_revision", hierarchy_revision}, {"matrix_evaluations", matrix_evaluations}, {"source_guard", source_guard}, {"shadow_camera_in_scene", shadow_camera_in_scene}, {"lifetime", lifetime},
-             {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_matrix_columns", tsl_matrix_columns}, {"tsl_statements", tsl_statements}, {"tsl_loop_nested", tsl_loop_nested}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind}, {"euler_order_field", euler_order_field}, {"object_addresses", object_addresses}, {"geometry_shapes", geometry_shapes}, {"typed_bytes", typed_bytes}, {"array_offset", array_offset}, {"data_texture_bytes", data_texture_bytes}, {"material_events", material_events}, {"attribute_view_writes", attribute_view_writes},
+             {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_set_uniforms", tsl_set_uniforms}, {"tsl_matrix_columns", tsl_matrix_columns}, {"tsl_statements", tsl_statements}, {"tsl_loop_nested", tsl_loop_nested}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind}, {"euler_order_field", euler_order_field}, {"object_addresses", object_addresses}, {"geometry_shapes", geometry_shapes}, {"typed_bytes", typed_bytes}, {"array_offset", array_offset}, {"data_texture_bytes", data_texture_bytes}, {"material_events", material_events}, {"attribute_view_writes", attribute_view_writes},
              {"attribute_defer", attribute_defer}, {"material_uuid", material_uuid}, {"material_alpha_hash", material_alpha_hash}, {"matrix_walk_count", matrix_walk_count}, {"geometry_index_null", geometry_index_null}, {"world_space_conversions", world_space_conversions},
              {"projected_cull_list", projected_cull_list}, {"projected_cull_bands", projected_cull_bands},
              {"projected_cull_held_restore", projected_cull_held_restore})
