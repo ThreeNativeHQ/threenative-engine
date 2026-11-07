@@ -1,4 +1,4 @@
-import { createElement, type ReactElement } from "react";
+import { type ReactElement, createElement } from "react";
 import scene from "./tailwind-parity.scene.json";
 
 /**
@@ -75,7 +75,10 @@ function render(node: ISceneNode, strip: boolean, key: number): ReactElement | s
   );
 }
 
-export function TailwindParity({ panel, stripProbeClass = false }: ITailwindParityProps): ReactElement {
+export function TailwindParity({
+  panel,
+  stripProbeClass = false,
+}: ITailwindParityProps): ReactElement {
   const data = panels[panel];
   if (data === undefined) throw new Error(`TN_PARITY_NO_PANEL: ${panel} of ${panels.length}`);
   return <>{data.tree.map((node, index) => render(node, stripProbeClass, index))}</>;

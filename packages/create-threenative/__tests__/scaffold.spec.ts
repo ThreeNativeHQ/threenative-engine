@@ -383,7 +383,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Re-pinned 2026-10-31: the starter crate gets a stacked-disc contact shadow (render/contactShadow.ts)
   // that keeps its contact coverage above the 0.02 floor at the core +1 EV key.
   // 2026-11-04 (PRD-777 on PRD-632): action-rpg AGENTS/CLAUDE name the spell factories in one line. Measured by this test.
-  "action-rpg": "c8584454d8cc657761f4701c509173794f154a1a54bb2c93bee4f263e6963f8d",
+  "action-rpg": "7090f8071812d2163263786def171c81144782edaf351264171be3070d3d8436",
   // PRD-732 (2026-10-23): the new Hop Garden kit, measured through createProject (method checked
   // against platformer's unchanged value). Recomputed 2026-10-24 for the PRD-732 polish round: the
   // new hero, the dust and sparkle effects and the effects scenario. Recomputed 2026-10-24 for
@@ -455,7 +455,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // playtests; #606 moved the render resolve. Starter is the one template both sides changed.
   // Measured by this test.
   starter: "5a6691faf913e0ef35feecfdb29282a37d7a6ce389eb4b4d0a79f4ddde62ad5e",
-  "tower-defense": "5021ab737137b1d7e02db96fac9a1fc347ce046b5fc024760e02f9453c6e8b3b",
+  "tower-defense": "f431baf7e4c9a3bc664ef8f22d0a1a4a371e12d8eb0877f35c2223c865e8f103",
 };
 
 // The authoring stamp (PRD-829) hashes files this tree hash already reads, plus the cohort version.
