@@ -462,6 +462,8 @@ git apply "$SCRIPTS/patches/0039-vk-ps4-pooled-sync-labels.patch"
 # queues the flip (sceVideoOutSubmitFlip) and returns; Acquire hands back an image only once a
 # later flip completed (sceVideoOutGetFlipStatus), so the display never reads an image in reuse.
 git apply "$SCRIPTS/patches/0043-vk-ps4-async-flip.patch"
+# Diagnostic: per-100-frame wait counters (PRD-784 P4-2)
+git apply "$SCRIPTS/patches/0044-vk-ps4-wait-counters.patch"
 # The Makefile compiles TEST_SRC relative to the vulkan-ps4 tree.
 cp "$SCRIPTS/e2-triangle.c" "$SRC/e2-triangle.c"
 make -f Makefile.orbis -j"$JOBS" TEST_SRC=../e2-triangle.c self > "$LOGS/e2-triangle.log" 2>&1
