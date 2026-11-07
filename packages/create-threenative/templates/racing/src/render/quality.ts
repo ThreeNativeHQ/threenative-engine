@@ -35,7 +35,6 @@ import {
   qualityTiers,
 } from "@threenative/core";
 export type { QualityTier } from "@threenative/core";
-import type { QualityTier } from "@threenative/core";
 
 /**
  * The three names this game's look comes in.

@@ -34,7 +34,6 @@ import {
 } from "@threenative/core";
 import { exposureSettings } from "./exposure.js";
 export type { QualityTier } from "@threenative/core";
-import type { QualityTier } from "@threenative/core";
 
 /**
  * The three names this game's look comes in.
