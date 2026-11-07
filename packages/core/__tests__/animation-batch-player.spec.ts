@@ -36,6 +36,8 @@ interface ITickState {
   lastRate: number;
   rateApplied: boolean;
   reported: number;
+  pending: number;
+  elapsed: number;
 }
 
 /**
@@ -58,10 +60,25 @@ function referenceBatch(): (rigs: readonly IAnimationTickRig[], status: Float64A
       }
       let state = states.get(action);
       if (state === undefined) {
-        state = { hasLast: false, x: 0, z: 0, lastRate: 1, rateApplied: false, reported: 1 };
+        state = {
+          hasLast: false,
+          x: 0,
+          z: 0,
+          lastRate: 1,
+          rateApplied: false,
+          reported: 1,
+          pending: 0,
+          elapsed: 0,
+        };
         states.set(action, state);
       }
+      if (rig.reset) {
+        state.pending = 0;
+        state.elapsed = 0;
+      }
       const scaleBefore = action.timeScale;
+      state.pending += rig.elapsed * scaleBefore;
+      state.elapsed += rig.elapsed;
       const body = rig.strideRoot as Object3D | null;
       let moved = 0;
       if (body !== null) {
@@ -94,18 +111,20 @@ function referenceBatch(): (rigs: readonly IAnimationTickRig[], status: Float64A
       let flags = 0;
       if (rig.step) {
         const duration = action.getClip().duration;
-        let advance = rig.actionPending;
+        let advance = state.pending;
         if (action.loop === LoopRepeat && duration > 0) {
           const end = action.time + advance;
           const seam = Math.round(end / duration) * duration;
           if (Math.abs(end - seam) <= Number.EPSILON * 16 * Math.max(duration, Math.abs(end)))
             advance = seam - action.time;
         }
-        const scale = rig.mixerElapsed > 0 ? advance / rig.mixerElapsed : scaleBefore;
+        const scale = state.elapsed > 0 ? advance / state.elapsed : scaleBefore;
         if (scale !== scaleBefore) action.setEffectiveTimeScale(scale);
         const before = mixer.time;
         const wasScheduled = action.isScheduled();
-        mixer.update(rig.mixerElapsed);
+        mixer.update(state.elapsed);
+        state.pending = 0;
+        state.elapsed = 0;
         if (mixer.time !== before || wasScheduled !== action.isScheduled()) flags |= 2;
         if (
           action.loop === LoopOnce &&
@@ -114,15 +133,17 @@ function referenceBatch(): (rigs: readonly IAnimationTickRig[], status: Float64A
         )
           flags |= 1;
       }
+      let target = scaleBefore;
       if (applies) {
-        if (action.timeScale !== rate) action.setEffectiveTimeScale(rate);
+        target = rate;
         state.lastRate = rate;
         state.rateApplied = true;
       } else if (measured && state.rateApplied && scaleBefore === state.lastRate) {
-        action.setEffectiveTimeScale(1);
+        target = 1;
         state.lastRate = 1;
         state.rateApplied = false;
       }
+      if (action.timeScale !== target) action.setEffectiveTimeScale(target);
       status[out] = rate;
       status[out + 2] = flags;
     }
@@ -241,5 +262,38 @@ describe("the animation tick batch in the player (PRD-828)", () => {
     expect(batched.advancedFrames).toBe(js.advancedFrames);
     for (let frame = 0; frame < js.actionTimes.length; frame += 1)
       expect(batched.actionTimes[frame]).toBeCloseTo(js.actionTimes[frame] as number, 12);
+  });
+
+  it("advances the rig once when a game plays a clip after updating it in the same frame", () => {
+    // `c.update(dt); if (hit) c.play("Hit")` is an ordinary frame: the tick is queued and unflushed
+    // when the clip change flushes the player's own pending time. Spending it there and again in the
+    // batch's flush advances the rig twice and puts the stride on a clip that is no longer playing.
+    const run = (batched: boolean): { readonly mixerTime: number; readonly clip: string } => {
+      const root = new Object3D();
+      const child = new Object3D();
+      child.name = "child";
+      root.add(child);
+      const walkClip = new AnimationClip("walk", 1, [
+        new VectorKeyframeTrack("child.position", [0, 1], [0, 0, 0, 10, 0, 0]),
+      ]);
+      const hitClip = new AnimationClip("hit", 1, [
+        new VectorKeyframeTrack("child.position", [0, 1], [0, 0, 0, 5, 0, 0]),
+      ]);
+      const player = new AnimationPlayer({ root, clips: [walkClip, hitClip] });
+      player.play("walk");
+      if (batched)
+        (globalThis as { __tnAnimationTick?: unknown }).__tnAnimationTick = referenceBatch();
+      child.position.x = 0.1;
+      player.update(0.1);
+      player.play("hit", { mode: "once" });
+      // The frame's end: whatever settles the queue runs here, and a tick spent twice shows up in the
+      // mixer's clock, not in the report.
+      player.stride;
+      return { mixerTime: player.mixer.time, clip: player.current ?? "" };
+    };
+    const js = run(false);
+    const batched = run(true);
+    expect(batched.clip).toBe(js.clip);
+    expect(batched.mixerTime).toBeCloseTo(js.mixerTime, 12);
   });
 });

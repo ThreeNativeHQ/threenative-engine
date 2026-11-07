@@ -18,16 +18,14 @@ export interface IAnimationTickRig {
   readonly action: object | null;
   /** The body the stride is measured from, or null to measure none. */
   readonly strideRoot: object | null;
-  readonly targetWeight: number;
-  readonly transition: number;
   /** The interval the body's movement is divided by: a held tick banks its own `dt` into this. */
   readonly dt: number;
-  /** The mixer time this tick advances by, or 0 when `step` is false. */
-  readonly mixerElapsed: number;
-  /** The action's own advance over that interval: its rate applied frame by frame, as the player summed it. */
-  readonly actionPending: number;
+  /** This tick's own time. The engine banks it at the rate in force; the caller never reads a scale back. */
+  readonly elapsed: number;
   /** True on the tick that poses the rig; a held tick measures the stride and advances nothing. */
   readonly step: boolean;
+  /** The player spent ticks this batch did not, so the banked advance the engine holds is already spent. */
+  readonly reset: boolean;
   /** Metres of ground the clip covers per clip-second, measured when the clip was analysed. */
   readonly clipGroundSpeed: number;
   readonly strideSync: boolean;
@@ -95,6 +93,7 @@ export function flushAnimationTicks(): number {
     // Nothing to run it: the players that queued took the data path only because availability was
     // checked at queue time, so this is a backend that uninstalled mid-frame.
     queue.length = 0;
+    pending.length = 0;
     throw new Error("TN_ANIM_TICK_EXECUTOR_GONE: a rig was queued and no executor is installed.");
   }
   if (status.length < count * STATUS_STRIDE) status = new Float64Array(count * STATUS_STRIDE);
@@ -103,7 +102,16 @@ export function flushAnimationTicks(): number {
     const entry = queue[i];
     if (entry !== undefined) pending[i] = entry.rig;
   }
-  executor(pending, status);
+  countEngineBatch(1);
+  try {
+    executor(pending, status);
+  } catch (error) {
+    // A failed call leaves the rigs unadvanced and their descriptors stale: dropping them is the only
+    // state that cannot advance a rig twice, and the throw still reaches the caller.
+    queue.length = 0;
+    pending.length = 0;
+    throw error;
+  }
   for (let i = 0; i < count; i += 1) {
     const at = i * STATUS_STRIDE;
     const flags = status[at + 2] as number;
@@ -117,6 +125,18 @@ export function flushAnimationTicks(): number {
   queue.length = 0;
   pending.length = 0;
   return 1;
+}
+
+/**
+ * One batch is one crossing for a whole frame's rigs; a reader that settles the queue mid-frame turns
+ * that into one batch per rig, which is a bug that looks like a slow engine. Counted where the playtest
+ * bounds read it (`TN_FRAME_BUDGET.counters.engine`), so a regression names itself.
+ */
+function countEngineBatch(batches: number): void {
+  const host = globalThis as { __tnEngineCost?: Record<string, number> };
+  if (host.__tnEngineCost === undefined) host.__tnEngineCost = {};
+  const bag = host.__tnEngineCost;
+  bag.animationTickBatches = (bag.animationTickBatches ?? 0) + batches;
 }
 
 /** Drops the queue without running it: a scene teardown must not advance rigs it is destroying. */
@@ -147,12 +167,10 @@ export function demo(): string {
       mixer: {},
       action: null,
       strideRoot: null,
-      targetWeight: 1,
-      transition: 0,
       dt,
-      mixerElapsed: dt,
-      actionPending: dt,
+      elapsed: dt,
       step: true,
+      reset: false,
       clipGroundSpeed: 1,
       strideSync: true,
     });

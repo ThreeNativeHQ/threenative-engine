@@ -12,9 +12,6 @@ namespace tn::engine::animation {
 
 namespace {
 
-/** A moved body smaller than this on the ground plane is a jitter, not a stride. */
-constexpr double kStill = 1e-9;
-
 double clampRate(double rate, const TickPolicy& policy) {
     return std::min(policy.rateMax, std::max(policy.rateMin, rate));
 }
@@ -35,43 +32,26 @@ void TickBatch::run(const std::vector<TickRig>& rigs, std::vector<TickStatus>& s
         if (action == nullptr) {
             // Nothing playing: the mixer still steps, so a scheduled binding keeps three's time.
             if (rig.stepMixer) {
-                rig.mixer->update(rig.mixerElapsed);
-                out.changed = rig.mixerElapsed > 0;
+                const double before = rig.mixer->time;
+                rig.mixer->update(rig.elapsed);
+                out.changed = rig.mixer->time != before;
             }
             continue;
         }
         RigState& state = states_[action];
         state.lastFrame = frame_;
-
-        // 1. The weight ramp: linear in real time towards the caller's target, exactly what
-        //    `#advanceBlend` does for a single contributing clip.
-        state.rampTarget = rig.targetWeight;
-        if (rig.transition <= 0) {
-            state.rampFrom = rig.targetWeight;
-            state.rampElapsed = 0;
-            state.rampDuration = 0;
-            if (action->getEffectiveWeight() != rig.targetWeight)
-                action->setEffectiveWeight(rig.targetWeight);
-        } else {
-            if (state.rampDuration != rig.transition) {
-                // A new transition starts where the pose is, not where the last one ended.
-                state.rampFrom = action->getEffectiveWeight();
-                state.rampElapsed = 0;
-                state.rampDuration = rig.transition;
-            }
-            state.rampElapsed = std::min(state.rampDuration, state.rampElapsed + rig.dt);
-            const double progress =
-                state.rampDuration > 0 ? state.rampElapsed / state.rampDuration : 1.0;
-            const double next =
-                progress >= 1 ? state.rampTarget
-                              : state.rampFrom + (state.rampTarget - state.rampFrom) * progress;
-            if (action->getEffectiveWeight() != next) action->setEffectiveWeight(next);
+        if (rig.reset) {
+            state.pending = 0;
+            state.elapsed = 0;
         }
-
-        // 2. The stride rule: how fast this clip must play to cover the ground the body covered. It
-        //    chooses the rate for the *next* interval, so it reads the scale the step is about to
-        //    use before the step touches it.
+        // The rate in force *before* this tick's measurement owns this tick, exactly what the JS loop
+        // banked per action (`#pendingActionTimes`). Banked here, the read is never a stale mirror.
         const double scaleBeforeStep = action->timeScale;
+        state.pending += rig.elapsed * scaleBeforeStep;
+        state.elapsed += rig.elapsed;
+
+        // 1. The stride rule: how fast this clip must play to cover the ground the body covered. It
+        //    chooses the rate for the *next* interval.
         double moved = 0;
         if (rig.strideRoot != nullptr) {
             rig.strideRoot->getWorldPosition(world);
@@ -94,12 +74,11 @@ void TickBatch::run(const std::vector<TickRig>& rigs, std::vector<TickStatus>& s
         }
         const bool applies = measured && locomotion && rig.strideSync;
 
-        // 3. The mixer step. The player banks a held tick's action time, so the interval's advance is
-        //    the sum of the rates it ran under: scale the action to that sum over this interval, and
-        //    land a grouped advance exactly on a loop seam rather than a rounding error past it, which
-        //    would hold the last pose for the whole interval instead of looping.
+        // 2. The mixer step, by the time the increments banked. A grouped advance lands exactly on a
+        //    loop seam: a rounding error past it would hold the last pose for the whole interval instead
+        //    of looping, which is the seam adjustment the JS loop makes for the same reason.
         if (rig.stepMixer) {
-            double advance = rig.actionPending;
+            double advance = state.pending;
             const double duration = action->getClip().duration;
             if (action->loop == Loop::Repeat && duration > 0) {
                 const double end = action->time + advance;
@@ -109,12 +88,12 @@ void TickBatch::run(const std::vector<TickRig>& rigs, std::vector<TickStatus>& s
                         std::max(duration, std::abs(end)))
                     advance = seam - action->time;
             }
-            const double scale =
-                rig.mixerElapsed > 0 ? advance / rig.mixerElapsed : scaleBeforeStep;
+            const double scale = state.elapsed > 0 ? advance / state.elapsed : scaleBeforeStep;
             if (scale != scaleBeforeStep) action->setEffectiveTimeScale(scale);
             const double before = rig.mixer->time;
+            const double actionBefore = action->time;
             const bool wasScheduled = action->isScheduled();
-            rig.mixer->update(rig.mixerElapsed);
+            rig.mixer->update(state.elapsed);
             // `#advancedFrames` counts a frame the mixer's own clock moved, exactly what the JS loop
             // reads after its `mixer.update`: an action can land back on its own playhead, the clock
             // cannot.
@@ -123,21 +102,25 @@ void TickBatch::run(const std::vector<TickRig>& rigs, std::vector<TickStatus>& s
             // stops it at the last key and clamps the pose there.
             out.finished = action->loop == Loop::Once &&
                            (!action->isScheduled() ||
-                            (action->time >= action->getClip().duration && action->time > before));
+                            (action->time >= action->getClip().duration && action->time > actionBefore));
+            state.pending = 0;
+            state.elapsed = 0;
         }
 
-        // 4. Hand the action to the next interval: the measured rate, or the authored one when this
-        //    clip is not locomotion — but only the rate this rule set is ever taken back. A time scale
-        //    the game chose is the game's, and the report says `overridden` rather than clobbering it.
+        // 3. Hand the action to the next interval: the measured rate, or the rate this rule set before,
+        //    taken back to none when the clip stops being locomotion. A scale the game chose is its own,
+        //    and the grouped step's scale never outlives the step.
+        double target = scaleBeforeStep;
         if (applies) {
-            if (action->timeScale != rate) action->setEffectiveTimeScale(rate);
+            target = rate;
             state.lastRate = rate;
             state.rateApplied = true;
         } else if (measured && state.rateApplied && scaleBeforeStep == state.lastRate) {
-            action->setEffectiveTimeScale(1);
+            target = 1;
             state.lastRate = 1;
             state.rateApplied = false;
         }
+        if (action->timeScale != target) action->setEffectiveTimeScale(target);
         out.strideRate = rate;
     }
     if (frame_ % 512 == 0 && states_.size() > 256) prune();
@@ -148,9 +131,5 @@ void TickBatch::prune() {
     const std::uint64_t oldest = frame_ > 512 ? frame_ - 512 : 0;
     std::erase_if(states_, [&](const auto& entry) { return entry.second.lastFrame < oldest; });
 }
-
-void TickBatch::forget(const AnimationAction* action) { states_.erase(action); }
-
-void TickBatch::clear() { states_.clear(); }
 
 }  // namespace tn::engine::animation

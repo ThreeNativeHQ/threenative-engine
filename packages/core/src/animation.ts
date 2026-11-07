@@ -17,6 +17,7 @@ import {
   type IAnimationTickResult,
   type IAnimationTickRig,
   animationTickExecutor,
+  clearAnimationTicks,
   flushAnimationTicks,
   queueAnimationTick,
 } from "./animation-batch.js";
@@ -648,7 +649,6 @@ export class AnimationPlayer {
    * and the next evaluation measures the whole interval, so a held rig pays no world-matrix walk.
    */
   #strideReportOnlyFor: string | undefined;
-  #strideDtDebt = 0;
   /**
    * PRD-828: the tick this player handed to the engine's batch, and what the JS loop was in the middle
    * of when it did. The batch is a whole frame's rigs in one crossing, so each field is one rig's worth.
@@ -658,8 +658,9 @@ export class AnimationPlayer {
   #batchStep = false;
   #batchStrideSync = true;
   #batchLocomotion = false;
-  #batchActionPending = 0;
-  /** Seconds since the last stride measurement, whichever side of the bridge took it. */
+  /** The player ran ticks the engine did not since its last batched one: its banked advance is spent. */
+  #batchReset = true;
+  /** Seconds the engine has not measured the body over: its last position is that much out of date. */
   #batchGapDt = 0;
   /** Seconds the JS loop has not measured the body over: its last position is that much out of date. */
   #jsGapDt = 0;
@@ -1125,6 +1126,7 @@ export class AnimationPlayer {
   }
 
   #start(name: string, options: IAnimationPlayOptions): void {
+    this.#settle();
     const speed = options.speed ?? 1;
     if (!(Number.isFinite(speed) && speed > 0))
       throw new Error(`Animation play speed must be a positive finite number, got ${speed}.`);
@@ -1177,6 +1179,7 @@ export class AnimationPlayer {
     entries: readonly { readonly clip: string; readonly weight: number }[],
     options: { readonly transition?: number; readonly phaseSync?: boolean } = {},
   ): void {
+    this.#settle();
     const transition = options.transition ?? 0;
     if (!Number.isFinite(transition) || transition < 0)
       throw new Error("AnimationPlayer.playWeighted requires a finite non-negative transition.");
@@ -1349,12 +1352,11 @@ export class AnimationPlayer {
       this.#blendTargets === undefined &&
       dt > 0
     ) {
-      this.#strideDtDebt += dt;
+      this.#jsGapDt += dt;
       return;
     }
     if (dt > 0) {
-      const interval = dt + this.#strideDtDebt + this.#jsGapDt;
-      this.#strideDtDebt = 0;
+      const interval = dt + this.#jsGapDt;
       this.#jsGapDt = 0;
       this.#syncStride(interval);
     } else this.#syncStride(dt);
@@ -1393,18 +1395,17 @@ export class AnimationPlayer {
     this.#batchStep = this.#evaluated;
     this.#batchStrideSync = this.#strideSync ?? !this.#cameraCarried;
     this.#batchLocomotion = measured.groundSpeed >= CLIP_GROUND_FLOOR;
-    this.#batchActionPending += action.paused ? 0 : action.timeScale * elapsed;
     const rig: IAnimationTickRig = {
       mixer: this.mixer,
       action,
       strideRoot: this.#strideRoot,
-      // One clip owns the rig here, at full weight; a fade or a blend is what would ramp it.
-      targetWeight: 1,
-      transition: 0,
-      dt: dt + this.#strideDtDebt + this.#batchGapDt,
-      mixerElapsed: this.#pendingDt,
-      actionPending: this.#batchActionPending,
+      // The interval the ground is measured over: this frame, plus the time the engine stopped
+      // measuring while the JS loop had the rig, so a switch never divides a stale displacement by
+      // one frame's dt.
+      dt: dt + this.#batchGapDt,
+      elapsed,
       step: this.#batchStep,
+      reset: this.#batchReset,
       clipGroundSpeed: measured.groundSpeed,
       strideSync: this.#batchStrideSync,
     };
@@ -1421,7 +1422,7 @@ export class AnimationPlayer {
     const name = this.#batchName;
     this.#batchQueued = false;
     this.#batchName = undefined;
-    this.#strideDtDebt = 0;
+    this.#batchReset = false;
     this.#batchGapDt = 0;
     this.#strideGroundSpeed = result.groundSpeed;
     this.#strideRate = result.strideRate;
@@ -1440,8 +1441,6 @@ export class AnimationPlayer {
       this.#batchStep = false;
       if (result.changed) this.#advancedFrames += 1;
       this.#pendingDt = 0;
-      // Only the step consumes the banked advance; a held tick keeps it for the frame that poses.
-      this.#batchActionPending = 0;
       this.#skippedFrames = 0;
       this.#rateState.evaluation += 1;
       this.#rateState.evaluated = true;
@@ -1573,6 +1572,8 @@ export class AnimationPlayer {
   }
 
   #flushPending(): void {
+    // A tick may be queued with time this would spend a second time: settle it first, always.
+    this.#settle();
     if (this.#pendingDt !== 0) this.#evaluate(this.#pendingDt);
   }
 
@@ -1634,7 +1635,6 @@ export class AnimationPlayer {
       this.#evaluationScales.clear();
       this.#pendingDt = 0;
       this.#pendingActionTimes.clear();
-      this.#batchActionPending = 0;
       this.#skippedFrames = 0;
     }
     if (this.#fadeOut.length > 0) {
@@ -1666,6 +1666,7 @@ export class AnimationPlayer {
 
   stop(): void {
     this.#settle();
+    clearAnimationTicks();
     this.#pendingDt = 0;
     this.#pendingActionTimes.clear();
     this.#skippedFrames = 0;
@@ -1688,10 +1689,9 @@ export class AnimationPlayer {
   #resetStride(): void {
     this.#hasLastRootPosition = false;
     this.#strideReportOnlyFor = undefined;
-    this.#strideDtDebt = 0;
     this.#batchGapDt = 0;
     this.#jsGapDt = 0;
-    this.#batchActionPending = 0;
+    this.#batchReset = true;
     this.#strideGroundSpeed = 0;
     this.#strideRate = 1;
     this.#strideSynced = false;

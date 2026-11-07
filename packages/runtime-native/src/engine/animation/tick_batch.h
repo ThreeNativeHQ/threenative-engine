@@ -8,9 +8,9 @@
 // Each of those is a JS property read or write that crosses into Wasm to touch state that already
 // lives here, so the loop that walks 120 rigs costs more than the animation does.
 //
-// This is the other side of that loop: the weight ramp, the stride rule and the mixer step run over a
-// batch of rigs with no crossing per rig. JS keeps what is genuinely a decision — which clip, which
-// weight, which transition, which body moved — and passes it in one span.
+// This is the other side of that loop: the stride rule and the mixer step run over a batch of rigs
+// with no crossing per rig. JS keeps what is genuinely a decision — which clip, how fast the body
+// really moved, which tick poses the rig — and passes it in one span.
 
 #include <cstddef>
 #include <cstdint>
@@ -47,17 +47,14 @@ struct TickRig {
     AnimationAction* action = nullptr;
     /** The body the game moves, whose world position the stride is measured from; null records no movement. */
     Object3D* strideRoot = nullptr;
-    /** Where the weight ramp is heading, and how long it takes; a zero transition is "now". */
-    double targetWeight = 1;
-    double transition = 0;
-    /** The interval the body's movement is divided by; the player banks a held tick's `dt` into it. */
+    /** The interval the body's movement is divided by; the player folds in the time it stopped measuring. */
     double dt = 0;
-    /** The mixer time to advance by, or 0 with `stepMixer` false on a tick that poses nothing. */
-    double mixerElapsed = 0;
-    /** The action's own advance over that interval: its rate applied frame by frame, as the player summed it. */
-    double actionPending = 0;
+    /** This tick's own time. The batch banks it at the rate in force, so a grouped step integrates. */
+    double elapsed = 0;
     /** True on the tick that poses the rig; a held tick measures the stride and advances nothing. */
     bool stepMixer = true;
+    /** The player ran ticks the batch did not, and already spent them: drop the banked advance. */
+    bool reset = false;
     /** Metres of ground the clip covers per clip-second, measured when the clip was analysed (JS side). */
     double clipGroundSpeed = 0;
     /** The game's stride convention: false measures and reports the rate but does not apply it. */
@@ -68,7 +65,7 @@ struct TickRig {
 struct TickStatus {
     /** A once-clip reached its end on this tick: the one frame `finished` fires. */
     bool finished = false;
-    /** The pose advanced, or a weight or rate changed. */
+    /** The mixer's clock moved, or a weight or rate changed. */
     bool changed = false;
     /** The rate the stride rule chose (1 when the clip is not locomotion). */
     double strideRate = 1;
@@ -77,29 +74,26 @@ struct TickStatus {
 };
 
 /**
- * The per-rig state the batch keeps between frames: the last measured world position, and the ramp it
- * is in the middle of. Keyed by action, so a rig that switches clips starts a clean ramp.
+ * The state the batch keeps between frames for one action: the advanced time it has banked but not
+ * yet spent, the last measured world position and the rate this rule owns.
  */
 class TickBatch {
   public:
     /**
-     * Advance `rigs` one frame: ramp each weight towards its target, hold each stride rate against the
-     * ground the body covered, and step each mixer at most once. Writes one status per rig.
+     * Advance `rigs` one frame: hold each stride rate against the ground the body covered, then step
+     * each mixer at most once. Writes one status per rig.
      *
      * The player decides *when* a rig poses and what time to spend on it — a rig in a small screen band
      * poses one frame in four, and the three frames it skips still measure the ground it covered. So a
-     * tick with `stepMixer` false only measures; a tick with it true advances the mixer by
-     * `mixerElapsed`, with the action scaled to its own banked advance (`actionPending`) so a rate that
-     * changed inside the interval is integrated rather than the last rate owning the whole of it.
+     * tick with `stepMixer` false only measures; a tick with it true advances the mixer by the elapsed
+     * time it has banked, with the action scaled to its own banked advance, so a rate that changed
+     * inside the interval is integrated rather than the last rate owning the whole of it.
      *
-     * ponytail: one ramp per action, linear in real time, which is what a blend of one clip needs.
-     * A rig with several contributing clips keeps its ramp in JS until the blend path moves here too.
+     * ponytail: the stride position is kept per action, and a rig that changes clip pays one frame at the
+     * rate floor before it measures its new clip. Keeping it on the mixer instead makes a clip change
+     * exact; nothing on the stress lab changes clip mid-run, so it waits for the caller that needs it.
      */
     void run(const std::vector<TickRig>& rigs, std::vector<TickStatus>& status, const TickPolicy& policy = {});
-
-    /** Drops the state of rigs whose actions are gone; the batch never owns an engine object. */
-    void forget(const AnimationAction* action);
-    void clear();
 
     [[nodiscard]] std::size_t size() const { return states_.size(); }
 
@@ -108,15 +102,14 @@ class TickBatch {
         bool hasLast = false;
         double lastX = 0;
         double lastZ = 0;
-        double rampFrom = 1;
-        double rampElapsed = 0;
-        double rampDuration = 0;
-        double rampTarget = 1;
         /** The rate this rule last applied, and whether it applied one: the game's own rate stays the game's. */
         double lastRate = 1;
         bool rateApplied = false;
         /** The rate this rule reports for a tick too short to measure, so a held tick reports a stable number. */
         double reportedRate = 1;
+        /** The time this rig has banked and not yet posed: the action's own advance, and the interval it covers. */
+        double pending = 0;
+        double elapsed = 0;
         /** The last tick this action was seen on, so state whose action is gone can be dropped. */
         std::uint64_t lastFrame = 0;
     };

@@ -504,6 +504,19 @@ export function defineBrowserClasses(
       (binding.fixedMembers?.includes(property) === true || /^(map|[a-z]+Map)$/u.test(property)));
   const labels = new WeakMap<object, Map<string, unknown>>();
   let animated = new WeakMap<object, Map<string, unknown>>();
+  /**
+   * PRD-828: the fields `tn_anim_tick` writes in the engine. A batched tick reaches the engine without
+   * `invoke`, so it does not drop the whole animation mirror the way an ordinary mixer or action call
+   * does; dropping exactly what it wrote is the difference between a fresh read and a pose integrated
+   * at last frame's rate.
+   */
+  const ACTION_FIELDS_WRITTEN_BY_TICK = ["time", "timeScale", "weight"] as const;
+  const MIXER_FIELDS_WRITTEN_BY_TICK = ["time"] as const;
+  const forgetAnimated = (object: object, fields: readonly string[]): void => {
+    const table = animated.get(object);
+    if (table === undefined) return;
+    for (const field of fields) table.delete(field);
+  };
   // An action's `isScheduled()`: the mixer's list of active actions, which only the action's own
   // play/stop and the mixer's stopAllAction/uncache calls change (animation/mixer.cpp), never update,
   // setTime or clipAction (a rifle asks clipAction each frame).
@@ -1751,12 +1764,10 @@ export function defineBrowserClasses(
         readonly mixer: object;
         readonly action: object | null;
         readonly strideRoot: object | null;
-        readonly targetWeight: number;
-        readonly transition: number;
         readonly dt: number;
-        readonly mixerElapsed: number;
-        readonly actionPending: number;
+        readonly elapsed: number;
         readonly step: boolean;
+        readonly reset: boolean;
         readonly clipGroundSpeed: number;
         readonly strideSync: boolean;
       }[],
@@ -1767,31 +1778,39 @@ export function defineBrowserClasses(
       const mixers: ReturnType<typeof refOf>[] = [];
       const actions: (ReturnType<typeof refOf> | null)[] = [];
       const roots: (ReturnType<typeof refOf> | null)[] = [];
-      const values = new Float64Array(count * 7);
+      const values = new Float64Array(count * 4);
       for (let i = 0; i < count; i += 1) {
         const rig = rigs[i];
         if (rig === undefined) continue;
         mixers.push(refOf(rig.mixer));
         actions.push(rig.action === null ? null : refOf(rig.action));
         roots.push(rig.strideRoot === null ? null : refOf(rig.strideRoot));
-        values[i * 7] = rig.targetWeight;
-        values[i * 7 + 1] = rig.transition;
-        values[i * 7 + 2] = rig.dt;
-        values[i * 7 + 3] = rig.mixerElapsed;
-        values[i * 7 + 4] = rig.actionPending;
-        values[i * 7 + 5] = rig.clipGroundSpeed;
+        values[i * 4] = rig.dt;
+        values[i * 4 + 1] = rig.elapsed;
+        values[i * 4 + 2] = rig.clipGroundSpeed;
         // bit 0: the stride convention applies; bit 1: the action is real; bit 2: the body is real;
-        // bit 3: this tick poses the rig.
-        values[i * 7 + 6] =
+        // bit 3: this tick poses the rig; bit 4: the player spent ticks this batch did not.
+        values[i * 4 + 3] =
           (rig.strideSync ? 1 : 0) |
           (rig.action === null ? 0 : 2) |
           (rig.strideRoot === null ? 0 : 4) |
-          (rig.step ? 8 : 0);
+          (rig.step ? 8 : 0) |
+          (rig.reset ? 16 : 0);
       }
       crossings += 1;
       const first = mixers[0];
       if (meter.counting && first !== undefined) meter.record("call", first, "tn_anim_tick");
       source.animTick?.({ mixers, actions, roots, values, status });
+      // The engine just wrote state the JS mirror caches, and this call did not go through `invoke`:
+      // drop the fields the batch can change, so a read after it is not the value from before it. Only
+      // these: resetting the whole mirror would re-read `mixer.timeScale` and `paused` per rig, which is
+      // the per-rig crossing this call exists to remove.
+      for (let i = 0; i < count; i += 1) {
+        const rig = rigs[i];
+        if (rig === undefined) continue;
+        if (rig.action !== null) forgetAnimated(rig.action, ACTION_FIELDS_WRITTEN_BY_TICK);
+        forgetAnimated(rig.mixer, MIXER_FIELDS_WRITTEN_BY_TICK);
+      }
     };
   }
 

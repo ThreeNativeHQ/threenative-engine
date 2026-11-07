@@ -597,6 +597,9 @@ export function startFrameLoop<TState extends Record<string, unknown>, TPhysics>
           // next render. Ordinary scenes keep the historical hook order and timing.
           const depthCoupledOutput = game.hasDepthCoupledOutput;
           if (depthCoupledOutput && game.sceneEntered) game.scene?.render(ctx);
+          // A depth-coupled scene may have ticked a rig while the scene pass was still the next
+          // render; it is drawn this frame, not the next.
+          if (depthCoupledOutput) flushAnimationTicks();
           // The engine's own walk owns the frame's world matrices, so the count starts here and
           // covers both applications below: the authored scene the projection reconciles from and
           // the root the renderer is actually handed.
@@ -925,6 +928,9 @@ export function startFrameLoop<TState extends Record<string, unknown>, TPhysics>
         else scene.update(ctx, dt);
         startup.updates += 1;
       }
+      // A scene swap mid-update leaves rigs queued; they are advanced with the frame they belong to,
+      // before this early return can skip the flush and let the next frame's ticks pile on top of them.
+      flushAnimationTicks();
       if (game.scene !== scene || game.sceneFrame !== frame) return;
       for (const plugin of game.activePlugins) {
         if (debug && plugin.update !== undefined)

@@ -37,17 +37,19 @@ struct Rig {
         rig.mixer = mixer.get();
         rig.action = action;
         rig.strideRoot = root.get();
-        rig.targetWeight = 1;
-        rig.transition = 0;
         rig.dt = dt;
-        // The player banks each frame's own advance, so a plain tick asks for exactly the rate it has.
-        rig.mixerElapsed = dt;
-        rig.actionPending = dt * action->timeScale;
+        // The player asks for one tick's advance; the batch banks it at the rate in force.
+        rig.elapsed = dt;
         rig.stepMixer = true;
+        // The player resets the bank after any tick the batch did not take; nothing else does.
+        rig.reset = pendingReset;
+        pendingReset = false;
         rig.clipGroundSpeed = groundSpeed;
         return rig;
     }
     double groundSpeed = 10;
+    /** True until the first tick: what the player sends after running ticks of its own. */
+    mutable bool pendingReset = true;
 };
 
 /** A body that moved `metres` this frame, in x, with no rotation: the stride rule's only input. */
@@ -108,46 +110,22 @@ void stride_rate() {
     CHECK(std::abs(authored.action->getEffectiveTimeScale() - 1) < 1e-9);
 }
 
-// The weight ramp is linear in real time and lands exactly on the target.
-void weight_ramp() {
-    Rig rig;
+// State outlives a quiet action only so long: it is dropped after 512 frames untouched, which is what
+// keeps the pointer-keyed map bounded and a freed action's address from handing a new one a dead ramp.
+void state_pruned() {
+    Rig idle(10);
     TickBatch batch;
     std::vector<TickStatus> status;
-    rig.action->setEffectiveWeight(0);
-    const auto ramp = [&](double dt) {
-        TickRig spec = rig.tick(dt);
-        spec.targetWeight = 1;
-        spec.transition = 0.2;
-        batch.run({spec}, status);
-        return rig.action->getEffectiveWeight();
-    };
-    CHECK(std::abs(ramp(0.1) - 0.5) < 1e-9);
-    CHECK(std::abs(ramp(0.05) - 0.75) < 1e-9);
-    CHECK(std::abs(ramp(0.05) - 1) < 1e-9);
-    // A zero transition is "now", and a second request does not restart a ramp that is already done.
-    TickRig instant = rig.tick(0.016);
-    instant.targetWeight = 0.25;
-    batch.run({instant}, status);
-    CHECK(std::abs(rig.action->getEffectiveWeight() - 0.25) < 1e-9);
-}
-
-// The batch keeps one state per action, and forgets one on request: a rig that switches clips ramps
-// from where its pose is, not from the dead clip's last position.
-void forget_state() {
-    Rig rig;
-    TickBatch batch;
-    std::vector<TickStatus> status;
-    place(rig, 1.0);
-    batch.run({rig.tick(0.1)}, status);
+    place(idle, 1.0);
+    batch.run({idle.tick(0.1)}, status);
     CHECK(batch.size() == 1);
-    batch.forget(rig.action);
-    CHECK(batch.size() == 0);
-    // With the state gone the next tick records a position instead of reporting a jump.
-    place(rig, 100.0);
-    batch.run({rig.tick(0.1)}, status);
-    CHECK(status[0].groundSpeed == 0);
-    batch.clear();
-    CHECK(batch.size() == 0);
+    // A build with a large enough state is pruned once per 512 frames; a small one is left alone.
+    for (int frame = 0; frame < 511; frame++) batch.run({}, status);
+    CHECK(batch.size() == 1);
+    // Whatever the size, a tick after the gap measures from the last recorded position, never a jump.
+    place(idle, 100.0);
+    batch.run({idle.tick(0.1)}, status);
+    CHECK(std::abs(status[0].groundSpeed - 990.0) < 1e-9);
 }
 
 // A held tick measures the ground the body covered and poses nothing: the player banks the interval
@@ -164,8 +142,6 @@ void held_tick_measures_only() {
         place(rig, 1.0 * frame);
         TickRig held = rig.tick(0.1);
         held.stepMixer = false;
-        held.mixerElapsed = 0;
-        held.actionPending = 0;
         batch.run({held}, status);
         CHECK(std::abs(rig.action->time - primed) < 1e-12);
     }
@@ -191,17 +167,14 @@ void grouped_step_integrates() {
         place(rig, 2.0 * frame);
         TickRig held = rig.tick(0.1);
         held.stepMixer = false;
-        held.mixerElapsed = 0;
-        held.actionPending = 0;
         batch.run({held}, status);
     }
     place(rig, 8.0);
-    TickRig step = rig.tick(0.1);
-    step.mixerElapsed = 0.4;
-    step.actionPending = 0.4 * 2;
+    const TickRig step = rig.tick(0.1);
     batch.run({step}, status);
-    // 0.8 clip-seconds over four frames of 0.1 s.
-    CHECK(std::abs(rig.action->time - primed - 0.8) < 1e-9);
+    // Each of the four frames banked the rate in force at its own start: the still frame's floor, then
+    // 2x for the three that measured a moving body.
+    CHECK(std::abs(rig.action->time - primed - 0.1 * (TickPolicy{}.rateMin + 2 + 2 + 2)) < 1e-9);
     // And the next interval runs at the measured rate, not at the grouped scale.
     CHECK(std::abs(rig.action->getEffectiveTimeScale() - 2) < 1e-9);
 }
@@ -234,6 +207,6 @@ void game_rate_kept() {
 
 }  // namespace
 
-TN_TEST_MAIN({"tick_batch", tick_batch}, {"stride_rate", stride_rate}, {"weight_ramp", weight_ramp},
-             {"forget_state", forget_state}, {"held_tick_measures_only", held_tick_measures_only},
+TN_TEST_MAIN({"tick_batch", tick_batch}, {"stride_rate", stride_rate}, {"state_pruned", state_pruned},
+             {"held_tick_measures_only", held_tick_measures_only},
              {"grouped_step_integrates", grouped_step_integrates}, {"game_rate_kept", game_rate_kept})
