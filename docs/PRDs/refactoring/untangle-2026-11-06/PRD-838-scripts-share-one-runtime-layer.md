@@ -1,6 +1,6 @@
 # PRD-838 — Scripts share one runtime layer
 
-**Status:** PARTIAL — Phase 2 landed and Phase 1 box 1 landed; the `exec`/MCP-client/`gh` helpers of Phase 1 box 2 are open.
+**Status:** PARTIAL — Phase 2 landed, the dev-server and `gh` helpers landed; `exec` and the MCP client of Phase 1 box 2 are open.
 **Priority:** P2 — open Phase 1 replaces 4 helper families copied 5 to 11 times. Five of the 7 dev-server waits burn their full timeout when the server dies at start.
 **Complexity:** 5 (MEDIUM)
 **Owner:** ThreeNative maintainers
@@ -41,11 +41,11 @@ each orphan gate is wired into `pnpm budgets` or deleted.
 ## Execution Phases
 
 #### Phase 1: Shared lib
-**Status:** PARTIAL — the dev-server wait is shared; `exec`, the MCP client and the `gh` wrapper are open
+**Status:** PARTIAL — the dev-server wait and the `gh` wrapper are shared; `exec` and the MCP client are open
 **Files:** new `scripts/lib/dev-server.ts`, `exec.ts`, `mcp-client.ts`, `gh.ts`, `args.ts`; the callers listed above.
 
 - [x] One dev-server helper fails fast when the server process exits, and every caller uses it. `scripts/lib/dev-server.ts` exports `waitForServer({ url, child?, timeoutMs?, intervalMs?, label?, detail? })` and `DevServerError` with `TN_DEV_SERVER_EXITED` / `TN_DEV_SERVER_TIMEOUT`; it notices `exitCode` **and** `signalCode`, and appends the caller's corrective detail. Nine call sites now route through it (`env-cost-probe`, `visual-gate`, `verify-golden-path`, `profile-starter`, `profile-native-cpu`, `engine-load-test/browser` + `cli` + `skinned-crowd`, `unreal-look/capture-threenative` + `tier-live-step` + `capture-gi-threenative` + `gi-tier-cost`). Two of them had no exit check at all and would have spent their full 120 s on a dead server; the two `waitForServer*` functions left in `scripts/run-networking-proof.mjs` wait on **game** state (players joining, a session ending), not on a dev server, and stay. proof: `npx vitest run scripts/__tests__/dev-server.spec.ts` → 4 passed (a real child that exits at once, a child that dies mid-wait, the deadline, and the corrective detail); `rg -n 'function waitFor(Server|Url|Port)' scripts --glob '!lib/**'` returns only those two game-state waits; `pnpm typecheck` → 0.
-- [ ] One `exec`, one MCP client and one `gh` wrapper, and the local copies are deleted. proof: `pnpm exec vitest run scripts/__tests__/verify-golden-path.spec.ts scripts/__tests__/ci-integration-scope.spec.ts`
+- [ ] One `exec`, one MCP client and one `gh` wrapper, and the local copies are deleted. **`gh` landed**: `scripts/lib/gh.mjs` is the one call, four copies deleted (`native-release-reuse`, `ci-merge-latency`, `ci-queue-watch`, `ci-board-kpis`). It throws with `gh`'s own stderr instead of letting a failure read as an empty answer (two of the four never checked the exit), and retries a read exactly once while never retrying a call that changes state — `run cancel`, `pr comment`, or an `api` call carrying `-f`/`-F`/`--input`/a non-GET method. `exec` (8 copies) and the MCP stdio handshake (5) remain. proof so far: `npx vitest run scripts/__tests__/gh.spec.ts scripts/__tests__/ci-board-kpis.spec.ts scripts/__tests__/native-release-reuse.spec.ts scripts/__tests__/ci-queue-watch.spec.ts` → 46 passed; the box closes with `pnpm exec vitest run scripts/__tests__/verify-golden-path.spec.ts scripts/__tests__/ci-integration-scope.spec.ts` once `exec` and the MCP client move.
 
 #### Phase 2: One perf verdict, no dead scripts
 **Status:** NOT STARTED

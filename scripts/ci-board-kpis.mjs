@@ -2,6 +2,7 @@
 // Whole-board KPIs for the CI speed loop (PRD-782). Attempt 1 of each run, so a retry cannot hide a red.
 import { execFileSync } from "node:child_process";
 import { quantile } from "./ci-merge-latency.mjs";
+import { gh } from "./lib/gh.mjs";
 
 /** A board that ran at least this many jobs is a full board, not a thin lane. */
 const FULL_BOARD_JOBS = 60;
@@ -169,9 +170,11 @@ export function releaseLeadTimes({ publishes, promotions }) {
   return leads;
 }
 
-const gh = (args) =>
-  execFileSync("gh", args, { encoding: "utf8", maxBuffer: 1024 * 1024 * 512 }).trim();
-const ndjson = (text) => (text === "" ? [] : text.split("\n").map((line) => JSON.parse(line)));
+const ndjson = (text) =>
+  text
+    .split("\n")
+    .filter((line) => line.trim() !== "")
+    .map((line) => JSON.parse(line));
 
 /** Live read. About 2 API calls per run, so run it once per loop turn. */
 export function measureBoards({
