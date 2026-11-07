@@ -24,6 +24,7 @@ import {
   CaptureGuardError,
   assertFrameShowsSomething,
 } from "./capture-guard.js";
+import { waitForServer } from "./lib/dev-server.js";
 import { templateNames } from "./lib/repo-inventory.mjs";
 import {
   type ImageScoringArtifact,
@@ -372,25 +373,6 @@ function runCommand(command: string, args: readonly string[], cwd: string): Prom
   });
 }
 
-async function waitForServer(
-  url: string,
-  server: ChildProcess,
-  timeoutMs = 120_000,
-): Promise<void> {
-  const started = Date.now();
-  while (Date.now() - started < timeoutMs) {
-    if (server.exitCode !== null)
-      throw new Error(`Visual server exited with code ${server.exitCode}.`);
-    try {
-      if ((await fetch(url)).ok) return;
-    } catch {
-      // Vite is still starting.
-    }
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  throw new Error(`Visual server did not become ready within ${timeoutMs}ms.`);
-}
-
 export async function packageLocalFramework(root: string): Promise<Record<string, string>> {
   const packageRoot = path.join(root, "packages");
   await mkdir(packageRoot, { recursive: true });
@@ -473,7 +455,11 @@ const captureTemplate: CaptureTemplate = async (
   server.stdout?.on("data", (chunk) => output.push(String(chunk)));
   server.stderr?.on("data", (chunk) => output.push(String(chunk)));
   try {
-    await waitForServer(`http://127.0.0.1:${port}/`, server);
+    await waitForServer({
+      child: server,
+      label: "Visual server",
+      url: `http://127.0.0.1:${port}/`,
+    });
     return await withVisualCaptureLease(async () => {
       const browser = await chromium.launch({
         args: [...WEBGPU_BROWSER_ARGS],

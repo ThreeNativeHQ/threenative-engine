@@ -14,6 +14,7 @@ import { createServer } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { createProject } from "../../packages/create-threenative/src/index.js";
+import { waitForServer } from "../lib/dev-server.js";
 import {
   LOCAL_FRAMEWORK_PACKAGES,
   assertVisualPortAvailable,
@@ -318,20 +319,6 @@ export function freePort(): Promise<number> {
   });
 }
 
-export async function waitForServer(url: string, server: ChildProcess): Promise<void> {
-  const deadline = Date.now() + 120_000;
-  while (Date.now() < deadline) {
-    if (server.exitCode !== null) throw new Error(`dev server exited ${server.exitCode}`);
-    try {
-      if ((await fetch(url)).ok) return;
-    } catch {
-      // Vite is still starting.
-    }
-    await new Promise((resolve) => setTimeout(resolve, 250));
-  }
-  throw new Error(`TN_UNREAL_LOOK_SERVER: ${url} not ready in 120 s`);
-}
-
 export const HIDE_UI = `body * { visibility: hidden !important; }
 [data-threenative-canvas], [data-threenative-canvas] * { visibility: visible !important; }`;
 
@@ -354,7 +341,7 @@ export async function captureThreeNative(options: IThreeNativeCaptureOptions): P
   let count = 0;
   try {
     const origin = `http://127.0.0.1:${port}/`;
-    await waitForServer(origin, server);
+    await waitForServer({ child: server, label: "Unreal-look dev server", url: origin });
     const [width, height] = options.size ?? poses.resolution;
     const browser = await launchWebgpuBrowser();
     try {

@@ -218,16 +218,3 @@ export async function serveDirectory(root: string, port: number): Promise<Server
 export function startProcess(command: string, args: readonly string[], cwd: string): ChildProcess {
   return spawn(command, [...args], { cwd, stdio: ["ignore", "pipe", "pipe"] });
 }
-
-export async function waitForUrl(url: string, timeoutMs: number): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    try {
-      if ((await fetch(url)).ok) return;
-    } catch {
-      // The server has not started listening yet.
-    }
-    await new Promise((resolve) => setTimeout(resolve, 200));
-  }
-  throw new Error(`TN_BENCH_SERVER_TIMEOUT: ${url} never became ready`);
-}

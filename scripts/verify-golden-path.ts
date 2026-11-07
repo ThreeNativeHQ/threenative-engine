@@ -19,6 +19,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { discoverKitManifests, templateRoot } from "../packages/create-threenative/src/index.js";
+import { waitForServer } from "./lib/dev-server.js";
 import { workspacePackageSourceFlag } from "./workspace-packages.js";
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -1065,7 +1066,9 @@ async function freePort(): Promise<number> {
   return address.port;
 }
 
-async function waitForDevServer(
+/** The dev server answers only after the cold asset cook: one ETC1S encode of a template's
+ * 4096x2048 sky is 21 s on an idle desktop and passed 30 s on a loaded merge-queue runner (PR 473). */
+function waitForDevServer(
   child: ChildProcess,
   url: string,
   template: string,
@@ -1075,28 +1078,13 @@ async function waitForDevServer(
   const correctiveCommand = formatCorrectiveCommand(
     goldenPathCorrectiveCommands(project, port).dev,
   );
-  // The dev server answers only after the cold asset cook. One ETC1S encode of a template's
-  // 4096x2048 sky is 21 s on an idle desktop and passed 30 s on a loaded merge-queue runner (PR 473).
-  const deadline = Date.now() + 90_000;
-  let lastError = "no response";
-  while (Date.now() < deadline) {
-    if (child.exitCode !== null) {
-      throw new Error(
-        `TN_GOLDEN_PATH_DEV_UNAVAILABLE: project '${project}' searched '${url}'; corrective command: ${correctiveCommand}. Dev server exited before responding with code ${child.exitCode}.`,
-      );
-    }
-    try {
-      const response = await fetch(url);
-      if (response.ok) return;
-      lastError = `HTTP ${response.status}`;
-    } catch (error) {
-      lastError = error instanceof Error ? error.message : String(error);
-    }
-    await new Promise((resolve) => setTimeout(resolve, 200));
-  }
-  throw new Error(
-    `TN_GOLDEN_PATH_DEV_UNAVAILABLE: project '${project}' searched '${url}'; corrective command: ${correctiveCommand}. Dev server for '${template}' did not answer: ${lastError}.`,
-  );
+  return waitForServer({
+    child,
+    detail: `Dev server for '${template}' at project '${project}'; corrective command: ${correctiveCommand}.`,
+    label: "TN_GOLDEN_PATH_DEV_UNAVAILABLE",
+    timeoutMs: 90_000,
+    url,
+  });
 }
 
 async function runDev(target: string, template: string, port: number): Promise<void> {
