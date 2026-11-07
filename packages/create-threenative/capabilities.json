@@ -1515,6 +1515,20 @@
     },
     {
       "aliases": [],
+      "constraints": ["the key is spelled here and nowhere else"],
+      "example": "import { DEV_GLOBAL_KEY, devGlobal } from \"@threenative/core\";\nconst tools = devGlobal();",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function devGlobal(scope: unknown = globalThis): DevGlobal | undefined { … }",
+      "situations": ["read or extend the `__THREENATIVE__` object a dev launch publishes"],
+      "summary": "The one name every dev surface publishes under, and the reader/writer for it.",
+      "supersedes": [],
+      "symbol": "devGlobal"
+    },
+    {
+      "aliases": [],
       "constraints": ["pass a non-zero direction; coefficients and radii come from the game"],
       "example": "const transmittance = directionalTransmittance(parameters, sunDirection);",
       "importPath": "@threenative/core",
@@ -2701,6 +2715,20 @@
       "summary": "Bake static diffuse irradiance that reaches surfaces from outside the camera view.",
       "supersedes": [],
       "symbol": "ProbeVolume"
+    },
+    {
+      "aliases": [],
+      "constraints": ["the key is spelled here and nowhere else"],
+      "example": "import { DEV_GLOBAL_KEY, devGlobal } from \"@threenative/core\";\nconst tools = devGlobal();",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function publishDevGlobal(name: string, value: unknown, scope: unknown = globalThis): void { … }",
+      "situations": ["read or extend the `__THREENATIVE__` object a dev launch publishes"],
+      "summary": "The one name every dev surface publishes under, and the reader/writer for it.",
+      "supersedes": [],
+      "symbol": "publishDevGlobal"
     },
     {
       "aliases": [],

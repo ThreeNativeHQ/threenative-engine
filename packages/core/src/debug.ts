@@ -7,8 +7,7 @@
  * looks.
  */
 
-/** The shared global the engine's dev surfaces and `exposeDebug` both publish under. */
-const HOST_KEY = "__THREENATIVE__";
+import { devGlobal, publishDevGlobal } from "./dev-global.js";
 
 /** `freeCam` → `FREE_CAM`. A name a developer typed becomes a name a shell can set. */
 function envName(name: string): string {
@@ -158,9 +157,8 @@ export function exposeDebug(name: string, value: unknown): void {
   const isDev =
     (import.meta as ImportMeta & { env?: Record<"DEV", boolean | undefined> }).env?.DEV === true;
   if (!isDev) return;
-  const tools = (Reflect.get(globalThis, HOST_KEY) ?? {}) as { debug?: Record<string, unknown> };
-  const debug = tools.debug ?? {};
+  const tools = devGlobal() ?? {};
+  const debug = (tools.debug as Record<string, unknown> | undefined) ?? {};
   debug[name] = value;
-  tools.debug = debug;
-  Reflect.set(globalThis, HOST_KEY, tools);
+  publishDevGlobal("debug", debug);
 }

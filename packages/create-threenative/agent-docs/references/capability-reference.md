@@ -1161,6 +1161,22 @@ export function describeSceneWarning(warning: ISceneWarning): string { … }
 defineGame({ display: { maxFps: 60 }, scenes: { Play } });
 ```
 
+### `devGlobal`
+
+`function` — The one name every dev surface publishes under, and the reader/writer for it.
+
+```ts
+export function devGlobal(scope: unknown = globalThis): DevGlobal | undefined { … }
+```
+
+- **Use when:** read or extend the `__THREENATIVE__` object a dev launch publishes
+- **Constraints:** the key is spelled here and nowhere else
+
+```ts
+import { DEV_GLOBAL_KEY, devGlobal } from "@threenative/core";
+const tools = devGlobal();
+```
+
 ### `directionalTransmittance`
 
 `function` — Approximate direct transmittance for a ray leaving the game surface.
@@ -2058,6 +2074,22 @@ export class ProbeVolume extends Object3D implements IComputeDriven { … }
 
 ```ts
 const probes = new ProbeVolume({ bounds, density: 0.5 }); ctx.add(probes); void probes.requestBake(scene);
+```
+
+### `publishDevGlobal`
+
+`function` — The one name every dev surface publishes under, and the reader/writer for it.
+
+```ts
+export function publishDevGlobal(name: string, value: unknown, scope: unknown = globalThis): void { … }
+```
+
+- **Use when:** read or extend the `__THREENATIVE__` object a dev launch publishes
+- **Constraints:** the key is spelled here and nowhere else
+
+```ts
+import { DEV_GLOBAL_KEY, devGlobal } from "@threenative/core";
+const tools = devGlobal();
 ```
 
 ### `qualityPreset`

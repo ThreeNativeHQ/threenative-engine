@@ -1,6 +1,6 @@
 # PRD-837 — Core owns each shared fact once
 
-**Status:** PARTIAL — Phase 2 box 1 landed; the LOD recipe, the `world.json` contract, `GpuReadings`, the dev global and the other boxes are open.
+**Status:** PARTIAL — Phase 2 box 1 and Phase 3 landed; the LOD recipe, the `world.json` contract and `GpuReadings` are open.
 **Priority:** P2 — the open boxes delete 6 inline copies of the LOD recipe (which already disagree on the near-plane default), the 3 declarations of `world.json`, and 3 GPU-sample freshness rules.
 **Complexity:** 6 (MEDIUM); risk override: LOD selection and the renderer facts decide what is drawn, so the owner's visual-judge rule applies to Phases 1 and 2
 **Owner:** ThreeNative maintainers
@@ -60,7 +60,7 @@ Report ids C2, C1, C4, C5, B2, B4, A5. Follows the refactoring batch rule "one o
 - [ ] One `GpuReadings` serves the renderer, the scaler and the budget. proof: `pnpm --filter @threenative/core exec vitest run __tests__/frame-budget-gpu-series.spec.ts __tests__/frame-budget.spec.ts`
 
 #### Phase 3: Dev global
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** new `packages/core/src/dev-global.ts`, `debug.ts`, `hot.ts`, `game-dev-tools.ts`, `worker.ts`, `packages/ui/src/DebugOverlay.tsx`.
 
-- [ ] One module owns `__THREENATIVE__`, and worker mode exposes the same members as page mode. proof: `pnpm --filter @threenative/core exec vitest run __tests__/debug.spec.ts`
+- [x] One module owns `__THREENATIVE__`: `packages/core/src/dev-global.ts` exports the key, the `IDevTools`/`DevGlobal` shapes and the `devGlobal`/`publishDevGlobal` accessors, and the debug flag, hot reload, the game's dev tools, the engine's public export and the UI overlay all read it from there instead of spelling the literal. Two honest exceptions, both recorded in that module: the worker keeps its own mirror list, because that list is a typed tuple its mirror machinery builds its runtime shape from (moving it there changed what the worker host forwarded), and `packages/ui` reaches the key through `@threenative/core`'s export. proof: `npx vitest run packages/core/__tests__/dev-global.spec.ts packages/core/__tests__/debug.spec.ts` → 22 passed; the whole core and ui suites → 4592 passed, 4 skipped.

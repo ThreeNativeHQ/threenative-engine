@@ -430,6 +430,20 @@ export { debugFlag } from "./debug.js";
  */
 export { exposeDebug } from "./debug.js";
 /**
+ * The one name every dev surface publishes under, and the reader/writer for it.
+ * @situation read or extend the `__THREENATIVE__` object a dev launch publishes
+ * @constraint the key is spelled here and nowhere else
+ * @example import { DEV_GLOBAL_KEY, devGlobal } from "@threenative/core";
+ * const tools = devGlobal();
+ */
+export {
+  DEV_GLOBAL_KEY,
+  type DevGlobal,
+  type IDevTools,
+  devGlobal,
+  publishDevGlobal,
+} from "./dev-global.js";
+/**
  * Draw a model too detailed for the screen to resolve, without submitting the part it cannot.
  *
  * **This is on, and a game does not call it.** Any primitive of 65,536 triangles or more bakes to a

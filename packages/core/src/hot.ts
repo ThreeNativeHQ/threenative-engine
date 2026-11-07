@@ -1,6 +1,7 @@
 /// <reference path="./import-meta.d.ts" />
 
 import { audioRuntimeSnapshot } from "./audio.js";
+import { devGlobal, publishDevGlobal } from "./dev-global.js";
 import type { IGame } from "./game.js";
 import { hostDocument, hostWindow } from "./platform.js";
 export interface IHotDiagnostics {
@@ -66,13 +67,9 @@ export function acceptHotUpdate<TState extends Record<string, unknown>, TPhysics
   }
   const page = hostWindow();
   if (isDev && page !== undefined) {
-    const host = page as unknown as Record<string, unknown> &
-      Partial<Record<"__THREENATIVE__", Record<string, unknown> & { hot?: () => IHotDiagnostics }>>;
-    host.__THREENATIVE__ = {
-      ...host.__THREENATIVE__,
-      hot: () => diagnostics(game, reloads),
-      snapshot: host.__THREENATIVE__?.snapshot ?? (() => ({})),
-    };
+    publishDevGlobal("hot", () => diagnostics(game, reloads), page);
+    // The overlay reads a snapshot even before the game has one: an empty object, never undefined.
+    if (devGlobal(page)?.snapshot === undefined) publishDevGlobal("snapshot", () => ({}), page);
   }
   let disposed = false;
   hot.dispose((data) => {
