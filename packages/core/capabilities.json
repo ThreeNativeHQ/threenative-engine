@@ -6480,6 +6480,22 @@
     },
     {
       "aliases": [],
+      "constraints": [
+        "an unreadable load is a refusal, not a silence: an unmeasured machine cannot vouch"
+      ],
+      "example": "import { absolutesVerdict, readHostLoad } from \"@threenative/playtest/runner\";\nconst load = readHostLoad();\nif (absolutesVerdict(load) === \"invalid-absolute\") ignoreAbsoluteMilliseconds();",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function absolutesVerdict(reading: IPerfHostLoadReading): IPerfHostLoad[\"absolutes\"] { … }",
+      "situations": ["mark a benchmark run invalid because the machine was busy"],
+      "summary": "The host-load reading and the rule that decides whether absolute milliseconds are trustworthy: absolutes are invalid once the one-minute load passes half the cores.",
+      "supersedes": [],
+      "symbol": "absolutesVerdict"
+    },
+    {
+      "aliases": [],
       "constraints": ["Android evidence must name its target and transport"],
       "example": "const adb = discoverAdb(process.env);",
       "importPath": "@threenative/playtest/runner",
@@ -7185,6 +7201,22 @@
       "summary": "Execute scenario steps, assertions, and evidence capture.",
       "supersedes": [],
       "symbol": "preflightDisplay"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "an unreadable load is a refusal, not a silence: an unmeasured machine cannot vouch"
+      ],
+      "example": "import { absolutesVerdict, readHostLoad } from \"@threenative/playtest/runner\";\nconst load = readHostLoad();\nif (absolutesVerdict(load) === \"invalid-absolute\") ignoreAbsoluteMilliseconds();",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function readHostLoad( source: IPerfHostLoadSource = { … }",
+      "situations": ["mark a benchmark run invalid because the machine was busy"],
+      "summary": "The host-load reading and the rule that decides whether absolute milliseconds are trustworthy: absolutes are invalid once the one-minute load passes half the cores.",
+      "supersedes": [],
+      "symbol": "readHostLoad"
     },
     {
       "aliases": [],

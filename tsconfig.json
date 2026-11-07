@@ -10,7 +10,8 @@
       "@threenative/physics": ["./packages/physics/src/index.ts"],
       "@threenative/playtest": ["./packages/playtest/src/index.ts"],
       "@threenative/ui": ["./packages/ui/src/index.ts"],
-      "@threenative/core/render/environment": ["./packages/core/src/render-environment.ts"]
+      "@threenative/core/render/environment": ["./packages/core/src/render-environment.ts"],
+      "@threenative/playtest/runner": ["./packages/playtest/src/runner/index.ts"]
     }
   },
   "include": [

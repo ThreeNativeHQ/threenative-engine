@@ -4,6 +4,11 @@
 
 import os from "node:os";
 import {
+  type IPerfHostLoadSource,
+  absolutesVerdict,
+  readHostLoad as sharedReadHostLoad,
+} from "@threenative/playtest/runner";
+import {
   FRAME_STAT_KEYS,
   type IFoxMeasurement,
   type IFrameStats,
@@ -940,28 +945,28 @@ export function parseRunReport(value: unknown): IRunReport {
   };
 }
 
-/** Absolutes are invalid once the one-minute load passes half the cores. */
-export function absolutesVerdict(reading: IHostLoadReading): IHostLoad["absolutes"] {
-  return reading.load1 > reading.cores / 2 ? "invalid-absolute" : "valid";
-}
+/**
+ * The verdict rule and the reading are the playtest runner's (`@threenative/playtest/runner`): a
+ * package must not reach into `scripts/`, and a second copy here is a rule that can drift from the
+ * verdict a playtest gives. This lane keeps only its own error code, which the bench scripts already
+ * report by name.
+ */
+export { absolutesVerdict } from "@threenative/playtest/runner";
 
-export interface IHostLoadSource {
-  cores(): number;
-  loadavg(): number[];
-}
+/** The reader's input, kept under this lane's name so its callers and spec do not change. */
+export type IHostLoadSource = IPerfHostLoadSource;
 
 /** Defaults to this machine; a spec passes a stub. */
-export function readHostLoad(
-  source: IHostLoadSource = { cores: () => os.availableParallelism(), loadavg: os.loadavg },
-): IHostLoadReading {
-  const cores = source.cores();
-  const load1 = source.loadavg()[0];
-  if (!Number.isInteger(cores) || cores < 1 || load1 === undefined || !Number.isFinite(load1))
+export function readHostLoad(source?: IHostLoadSource): IHostLoadReading {
+  try {
+    return sharedReadHostLoad(source);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
     throw new BenchError(
       "TN_BENCH_HOST_LOAD_UNREADABLE",
-      `cannot read host load (load1 ${String(load1)}, cores ${String(cores)}); an unmeasured load cannot vouch for absolutes`,
+      message.replace(/^TN_PERF_HOST_LOAD_UNREADABLE: /u, ""),
     );
-  return { cores, load1 };
+  }
 }
 
 export function withHostLoad(run: IRunReport, reading: IHostLoadReading): IRunReport {

@@ -205,9 +205,9 @@ export interface IPerfViolation {
  * The one-minute load average and the core count of the machine that ran the report. Absolute
  * milliseconds measured while more than half the cores are busy are somebody else's contention.
  *
- * The verdict rule and the reading are copied from `scripts/engine-load-test/report.ts`
- * (`readHostLoad`, `absolutesVerdict`) rather than imported: a package must not reach into scripts/,
- * and the rule is ten lines.
+ * This is the rule's one home: `scripts/engine-load-test/report.ts` imports it from here, because a
+ * package must not reach into `scripts/` and the benchmark lane must not keep a second copy that can
+ * drift from the verdict a playtest gives.
  */
 export interface IPerfHostLoadReading {
   readonly cores: number;

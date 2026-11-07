@@ -5121,6 +5121,23 @@ if (requestedPlaytestClockMode() === "wall-clock") host.pumpDrivesTheSimulation(
 
 ## `@threenative/playtest/runner`
 
+### `absolutesVerdict`
+
+`function` — The host-load reading and the rule that decides whether absolute milliseconds are trustworthy: absolutes are invalid once the one-minute load passes half the cores.
+
+```ts
+export function absolutesVerdict(reading: IPerfHostLoadReading): IPerfHostLoad["absolutes"] { … }
+```
+
+- **Use when:** mark a benchmark run invalid because the machine was busy
+- **Constraints:** an unreadable load is a refusal, not a silence: an unmeasured machine cannot vouch
+
+```ts
+import { absolutesVerdict, readHostLoad } from "@threenative/playtest/runner";
+const load = readHostLoad();
+if (absolutesVerdict(load) === "invalid-absolute") ignoreAbsoluteMilliseconds();
+```
+
 ### `AdbAndroidDriver`
 
 `class` — Drive and inspect Android playtest transport.
@@ -5751,6 +5768,23 @@ export function preflightDisplay( config: Pick<IStandalonePlaytestConfig, "headl
 
 ```ts
 const report = await runStandalonePlaytest(options);
+```
+
+### `readHostLoad`
+
+`function` — The host-load reading and the rule that decides whether absolute milliseconds are trustworthy: absolutes are invalid once the one-minute load passes half the cores.
+
+```ts
+export function readHostLoad( source: IPerfHostLoadSource = { … }
+```
+
+- **Use when:** mark a benchmark run invalid because the machine was busy
+- **Constraints:** an unreadable load is a refusal, not a silence: an unmeasured machine cannot vouch
+
+```ts
+import { absolutesVerdict, readHostLoad } from "@threenative/playtest/runner";
+const load = readHostLoad();
+if (absolutesVerdict(load) === "invalid-absolute") ignoreAbsoluteMilliseconds();
 ```
 
 ### `reconcileBrowserPointers`
