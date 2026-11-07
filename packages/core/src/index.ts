@@ -413,7 +413,7 @@ export { mergeByMaterial } from "./merge-parts.js";
 export type { IMergeByMaterialOptions } from "./merge-parts.js";
 /**
  * Read a debug switch from the URL, or from `TN_DEBUG_*` in the environment on a native launch.
- * @situation read a debug toggle from the URL or an environment variable
+ * @situation read a debug toggle from the URL, an environment variable or a harness global
  * @constraint a name in camelCase becomes UPPER_SNAKE: `debugFlag("freeCam")` reads `?freeCam` or `TN_DEBUG_FREE_CAM`
  * @constraint `0` and `false` are off, so a saved URL cannot turn a switch back on
  * @example import { debugFlag } from "@threenative/core";

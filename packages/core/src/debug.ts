@@ -128,7 +128,7 @@ function envValue(name: string): string | undefined {
 /**
  * A debug switch read from the URL, or from the environment on a native launch.
  *
- * @situation read a debug toggle from the URL or an environment variable
+ * @situation read a debug toggle from the URL, an environment variable or a harness global
  *
  * A browser asks with the query string — `?freeCam`, or `?freeCam=0` to force it off — and a native
  * launch asks with `TN_DEBUG_FREE_CAM`, because a query string is not something a developer sets on

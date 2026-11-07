@@ -1438,7 +1438,9 @@
       "overrides": [],
       "package": "@threenative/core",
       "signature": "export function debugFlag(name: string): boolean { … }",
-      "situations": ["read a debug toggle from the URL or an environment variable"],
+      "situations": [
+        "read a debug toggle from the URL, an environment variable or a harness global"
+      ],
       "summary": "Read a debug switch from the URL, or from `TN_DEBUG_*` in the environment on a native launch.",
       "supersedes": [],
       "symbol": "debugFlag"

@@ -1108,7 +1108,7 @@ ctx.add(daylight);
 export function debugFlag(name: string): boolean { … }
 ```
 
-- **Use when:** read a debug toggle from the URL or an environment variable
+- **Use when:** read a debug toggle from the URL, an environment variable or a harness global
 - **Constraints:** a name in camelCase becomes UPPER_SNAKE: `debugFlag("freeCam")` reads `?freeCam` or `TN_DEBUG_FREE_CAM` · `0` and `false` are off, so a saved URL cannot turn a switch back on
 
 ```ts
