@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """A virtual DualShock 4 (uinput, hid-sony layout) for the E5 pad proof: shadPS4 opens it through SDL and the
-guest reads it through scePad. Run beside `run-experiment.mjs e5`: `python3 virtual-ds4.py <delay s> <rounds>`.
+guest reads it through scePad. Run beside `run-experiment.mjs e5`: `python3 virtual-ds4.py <delay s> <rounds> [walk s]`;
+`walk s` holds the left stick forward first, so a game's `move` vector walks its character (P4-4).
 Needs write access to /dev/uinput and python-evdev."""
 import subprocess, sys, time
 from evdev import UInput, ecodes as e, AbsInfo
@@ -22,6 +23,10 @@ while subprocess.run(["pgrep", "-f", "Shadps4|shadPS4"], capture_output=True).re
     time.sleep(1)
 print("vpad: shadPS4 running", flush=True)
 time.sleep(float(sys.argv[1]) if len(sys.argv) > 1 else 25)
+walk = float(sys.argv[3]) if len(sys.argv) > 3 else 0
+if walk > 0:
+    pad.write(e.EV_ABS, e.ABS_Y, 0); pad.syn(); print("vpad stick forward", walk, time.time(), flush=True); time.sleep(walk)
+    pad.write(e.EV_ABS, e.ABS_Y, 128); pad.syn()
 for round in range(int(sys.argv[2]) if len(sys.argv) > 2 else 1):
     for button in (e.BTN_SOUTH, e.BTN_EAST):
         pad.write(e.EV_KEY, button, 1); pad.syn(); print("vpad press", button, round, time.time(), flush=True); time.sleep(1.5)

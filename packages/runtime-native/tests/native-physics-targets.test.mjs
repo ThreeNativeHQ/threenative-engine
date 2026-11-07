@@ -47,3 +47,10 @@ test('native physics builder rejects unknown target options', () => {
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /Unknown native physics target option: --not-a-target/u);
 });
+
+test('native physics builder selects the PS4 musl artifact (PRD-784)', () => {
+  const result = check('--ps4');
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /x86_64-unknown-linux-musl\/release\/libthreenative_native_physics\.a/u);
+  assert.doesNotMatch(result.stdout, /linux-android|apple-ios/u);
+});

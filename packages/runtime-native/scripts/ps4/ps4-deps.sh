@@ -77,6 +77,11 @@ done
 HOST_TP="$MAIN_REPO/packages/runtime-native/third_party"
 ln -sfn "$HOST_TP/stb" "$D/stb"
 ln -sfn "$HOST_TP/cgltf" "$D/cgltf"
+# meshopt decodes EXT_meshopt_compression (the starter's GLBs): the host copy, else fetched into the stage.
+if [ -d "$HOST_TP/meshopt" ]; then ln -sfn "$HOST_TP/meshopt" "$D/meshopt"
+elif [ ! -f "$D/meshopt/vertexcodec.cpp" ]; then
+  node "$HERE/../download-deps.mjs" --only meshopt >/dev/null && mv "$HERE/../../third_party/meshopt" "$D/meshopt" 2>/dev/null || true
+fi
 # SDL3: headers only. The source tree's CMakeLists.txt is deliberately NOT staged, so
 # CMakeLists.txt takes its header-only branch instead of trying to build a driver for a
 # platform upstream SDL3 has no port for.
@@ -111,4 +116,7 @@ for f in "$D/dawn/Dawn-ps4-Release/include/webgpu/webgpu.h" "$D/dawn/Dawn-ps4-Re
          "$D/v8/include/v8.h" "$D/v8/libv8_monolith.a" "$D/dawn/Dawn-ps4-Release/lib64/libwebgpu_dawn.a"; do
   [ -e "$f" ] || die "staged tree is missing $f"
 done
+# The preset links native physics (Rust Rapier, as on Android and iOS): its PS4 staticlib.
+log "native physics: node scripts/build-native-physics.mjs --ps4"
+(cd "$REPO" && node scripts/build-native-physics.mjs --ps4) || die "native physics build failed (rustup target add x86_64-unknown-linux-musl)"
 log "done: cmake --preset tn-ps4 && cmake --build --preset tn-ps4"

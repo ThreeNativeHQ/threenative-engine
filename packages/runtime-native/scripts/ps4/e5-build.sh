@@ -59,6 +59,14 @@ for a in "$E2/src/vulkan-ps4/libvulkan_ps4.a" "$E2/src/opengnm/libopengnm.a" \
          "$E2/src/opengnm-psbc/libpsbc.orbis.a"; do
   [ -f "$a" ] || die "missing E2 archive: $a (scripts/ps4/e2-build.sh)"
 done
+# Native physics (Rust Rapier, the same world Android and iOS link): only when the tn-ps4 tree was
+# configured with TN_ENABLE_NATIVE_PHYSICS, which compiles the bindings into the player services.
+PHYSICS_LIB=""
+if grep -q '^TN_ENABLE_NATIVE_PHYSICS:BOOL=ON' "$BUILD/CMakeCache.txt" 2>/dev/null; then
+  PHYSICS_LIB="$(sed -n 's/^THREENATIVE_PHYSICS_LIBRARY:[A-Z]*=//p' "$BUILD/CMakeCache.txt")"
+  [ -n "$PHYSICS_LIB" ] || PHYSICS_LIB="$HERE/../../.runtime/physics-target/x86_64-unknown-linux-musl/release/libthreenative_native_physics.a"
+  [ -f "$PHYSICS_LIB" ] || die "no native physics archive at $PHYSICS_LIB (node scripts/build-native-physics.mjs --ps4)"
+fi
 
 # 1. The player: every object and archive the link below reads. Ninja owns the compile flags (the
 #    tn-ps4 preset), so this step and slice 1 cannot disagree about them.
@@ -111,6 +119,8 @@ ENGINE_ARCHIVES=(
   libtn_engine_scene.a libtn_engine_vsm.a libtn_engine_graph.a libtn_engine_probes.a
   libtn_engine_assets.a libtn_engine_foundation.a
 )
+# meshopt is optional in CMake: link it when this tree built it (the starter needs it).
+[ -f "$BUILD/libtn_engine_meshopt.a" ] && ENGINE_ARCHIVES+=(libtn_engine_meshopt.a)
 for a in "${ENGINE_ARCHIVES[@]}"; do
   [ -f "$BUILD/$a" ] || die "missing engine archive $BUILD/$a"
 done
@@ -138,6 +148,7 @@ CORES="${JOBS}" nice -n 19 ld.lld -m elf_x86_64 -pie --script "$OO/link.x" --eh-
     "$D/v8/libv8_monolith.a" \
     "$E2/src/vulkan-ps4/libvulkan_ps4.a" "$E2/src/opengnm/libopengnm.a" \
     "$E2/src/opengnm-psbc/libpsbc.orbis.a" \
+    ${PHYSICS_LIB:+"$PHYSICS_LIB"} \
   --end-group \
   -lkernel -lc -lc++ -lc++abi -lunwind -lSceGnmDriver -lSceVideoOut -lScePad -lSceUserService \
   "$OO/lib/crtn.o" \
@@ -147,7 +158,8 @@ CORES="${JOBS}" nice -n 19 ld.lld -m elf_x86_64 -pie --script "$OO/link.x" --eh-
 log "create-fself -> $EBOOT"
 export DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
 (cd "$APP" && nice -n 19 "$OO/bin/linux/create-fself" -in="$ELF" -out="$OELF" \
-  --eboot eboot.bin --paid 0x3800000000000011 > /dev/null)
+  --eboot eboot.bin --paid 0x3800000000000011 > "$OUT/create-fself.log" 2>&1) \
+  || die "create-fself failed: $(tail -3 "$OUT/create-fself.log")"
 
 # 6. Title metadata, written by PkgTool.Core: generated here, never copied out of a dump.
 PKGTOOL="$OO/bin/linux/PkgTool.Core"

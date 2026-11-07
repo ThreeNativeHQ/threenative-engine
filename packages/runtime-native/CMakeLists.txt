@@ -754,6 +754,9 @@ if(TN_ENABLE_NATIVE_PHYSICS)
             set(THREENATIVE_PHYSICS_TARGET "aarch64-apple-ios-sim")
         elseif(CMAKE_SYSTEM_NAME STREQUAL "iOS")
             set(THREENATIVE_PHYSICS_TARGET "aarch64-apple-ios")
+        elseif(TN_PS4)
+            # OpenOrbis links against its own musl: the Linux musl staticlib's libc references resolve there.
+            set(THREENATIVE_PHYSICS_TARGET "x86_64-unknown-linux-musl")
         else()
             message(FATAL_ERROR "Native physics has no prebuilt target for this platform/architecture")
         endif()
@@ -765,7 +768,7 @@ if(TN_ENABLE_NATIVE_PHYSICS)
         message(FATAL_ERROR
             "Native physics artifact is missing: ${THREENATIVE_PHYSICS_LIBRARY}. "
             "Run node scripts/build-native-physics.mjs with --android, --ios-simulator, "
-            "or --ios-device as appropriate, or supply -DTHREENATIVE_PHYSICS_LIBRARY."
+            "--ios-device or --ps4 as appropriate, or supply -DTHREENATIVE_PHYSICS_LIBRARY."
         )
     endif()
     add_library(threenative-native-physics STATIC IMPORTED)

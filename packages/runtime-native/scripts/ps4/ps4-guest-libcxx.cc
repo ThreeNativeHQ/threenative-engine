@@ -5,6 +5,7 @@
 // libc++'s thread_local support reach for them: without these two, ld.lld reports them undefined
 // and nothing links. e3-triangle.cc carries the same pair for the bare Dawn guest; this is the
 // engine player's copy (the E3 lane is a scratch experiment and is not edited from here).
+#include <errno.h>
 #include <pthread.h>
 #include <stdlib.h>
 #include <time.h>
@@ -113,4 +114,31 @@ int __wrap_clock_gettime(clockid_t id, struct timespec* ts) {
     const unsigned at = static_cast<unsigned>(id);
     return __real_clock_gettime(at < sizeof kOrbis / sizeof *kOrbis ? kOrbis[at] : id, ts);
 }
+
+// Rust std (the native physics staticlib, built for x86_64-unknown-linux-musl) names two glibc/musl
+// extensions OpenOrbis does not ship. std treats a failing pthread_getattr_np as "no stack guard
+// known" and a thread name as a hint, so both report "not supported".
+int pthread_getattr_np(pthread_t, pthread_attr_t*) { return ENOSYS; }
+int pthread_setname_np(pthread_t, const char*) { return 0; }
+// std also takes three Linux calls as weak references; left undefined, a weak reference becomes a
+// dynamic import that create-fself cannot map to a PS4 library ("missing library for symbol").
+int gettid(void) { return -1; }
+// ponytail: std seeds HashMap keys (hash-flooding defence, not cryptography) from getrandom, which
+// OpenOrbis does not ship; a clock-seeded xorshift fills it. Use the kernel's RNG if a caller needs secrets.
+long getrandom(void* buffer, unsigned long length, unsigned) {
+    timespec now{};
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    static unsigned long long state = 0x9e3779b97f4a7c15ull;
+    state ^= static_cast<unsigned long long>(now.tv_nsec) ^ (static_cast<unsigned long long>(now.tv_sec) << 32);
+    auto* out = static_cast<unsigned char*>(buffer);
+    for (unsigned long i = 0; i < length; ++i) {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        out[i] = static_cast<unsigned char>(state);
+    }
+    return static_cast<long>(length);
+}
+int pidfd_getpid(int) { errno = ENOSYS; return -1; }
+int pidfd_spawnp(int*, const char*, const void*, const void*, char* const[], char* const[]) { errno = ENOSYS; return -1; }
 }  // extern "C"

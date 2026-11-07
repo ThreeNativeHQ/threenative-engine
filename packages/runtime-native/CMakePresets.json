@@ -166,7 +166,7 @@
         "TN_ENABLE_NATIVE_GLTF": "OFF",
         "TN_ENABLE_DRACO": "OFF",
         "TN_ENABLE_DEBUG_SERVER": "OFF",
-        "TN_ENABLE_NATIVE_PHYSICS": "OFF",
+        "TN_ENABLE_NATIVE_PHYSICS": "ON",
         "TN_ENABLE_METAHUMAN": "OFF",
         "TN_ENGINE_ONLY": "ON",
         "TN_ENGINE_PLAYER": "ON",
