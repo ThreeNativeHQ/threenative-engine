@@ -30,6 +30,7 @@ import {
   type IZipEntry,
   readZipEntries,
 } from "../packages/runtime-native/scripts/check-android-16kb-alignment.mjs";
+import { minimumNodeVersion } from "./lib/repo-inventory.mjs";
 
 const REPO = path.resolve(import.meta.dirname, "..");
 
@@ -187,15 +188,30 @@ export function registryEnvironment(
   };
 }
 
-/** Supported Node is a package contract, not a warning discovered halfway through installation. */
+/**
+ * Supported Node is a package contract, not a warning discovered halfway through installation, and
+ * the number comes from the one place it is declared: the root `package.json` `engines.node`.
+ */
 export function assertSupportedNodeVersion(version = process.versions.node): void {
-  const match = /^(\d+)\.(\d+)\.(\d+)/u.exec(version);
-  const major = Number.parseInt(match?.[1] ?? "-1", 10);
-  const minor = Number.parseInt(match?.[2] ?? "-1", 10);
-  const patch = Number.parseInt(match?.[3] ?? "-1", 10);
-  if (major < 20 || (major === 20 && (minor < 19 || (minor === 19 && patch < 0))))
+  const minimum = minimumNodeVersion()
+    .split(".")
+    .map((part) => Number.parseInt(part, 10));
+  const current = /^(\d+)\.(\d+)\.(\d+)/u
+    .exec(version)
+    ?.slice(1)
+    .map((part) => Number.parseInt(part, 10)) ?? [-1, -1, -1];
+  // A range that names fewer parts than the running version (`>=20.19`) pins only the parts it
+  // names: the rest are zero, never "below".
+  const below = (index: number): boolean => {
+    const have = current[index];
+    if (have === undefined) return false;
+    const want = minimum[index] ?? 0;
+    const higher = current.slice(0, index).every((value, at) => value === (minimum[at] ?? 0));
+    return higher && have < want;
+  };
+  if ([0, 1, 2].some(below))
     throw new Error(
-      `TN_REGISTRY_INSTALL_NODE_UNSUPPORTED: Node ${version} is below the supported minimum 20.19.0. Install Node 20.19.0 or newer before qualifying a registry install.`,
+      `TN_REGISTRY_INSTALL_NODE_UNSUPPORTED: Node ${version} is below the supported minimum ${minimum.join(".")}. Install Node ${minimum.join(".")} or newer before qualifying a registry install.`,
     );
 }
 

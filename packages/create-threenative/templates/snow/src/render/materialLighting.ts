@@ -1,16 +1,16 @@
-// Generated for you. Scene-owned material assignments; no engine appearance hooks.
-import type { Camera, DirectionalLight, Object3D, Scene, Texture } from "three";
-import type { IBacklightControls } from "./backlightMaterial.js";
 import {
   type IEnvironmentMeasurement,
   measureEnvironment,
   reportEnvironmentContribution,
-} from "./environmentContribution.js";
+} from "@threenative/core/render/environment";
 import {
   type IEnvironmentSourceSnapshot,
   captureEnvironmentSnapshot,
   environmentSnapshotCurrent,
-} from "./environmentSnapshot.js";
+} from "@threenative/core/render/environment";
+// Generated for you. Scene-owned material assignments; no engine appearance hooks.
+import type { Camera, DirectionalLight, Object3D, Scene, Texture } from "three";
+import type { IBacklightControls } from "./backlightMaterial.js";
 import { type ILightingConvention, createLightingConvention } from "./lighting.js";
 import { createMaterialAssignments } from "./materialAssignments.js";
 import { type IMaterialLightingEnvironment, materialLightingEnabled } from "./quality.js";

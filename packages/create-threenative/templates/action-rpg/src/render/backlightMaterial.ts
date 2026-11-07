@@ -48,10 +48,10 @@ export interface IBacklightControls {
 const graphs = new WeakMap<IBacklightControls, ReturnType<typeof createGraph>>();
 
 /**
- * Preserve the upstream standard PBR/normal/skinning paths and original material emissive.
- * This is an additive artistic convention, not a physical subsurface model or IBL replacement.
- * Cache at the caller to preserve shared source-material relationships; dispose only conversions
- * it owns, never maps/source materials borrowed from a loaded model.
+ * The game's material, wrapped in a node twin that adds the backlit sheen it was given.
+ *
+ * @situation give a material a launcher's glow without editing its colour, texture or roughness
+ * @constraint every colour, gain and angular size is the caller's; this copies the game's material and adds light
  */
 export function backlightMaterial(source: MeshStandardMaterial, controls: IBacklightControls) {
   if (

@@ -29,6 +29,23 @@ export { resolveBrowserArguments } from "./browser.js";
  */
 export { softwareAdapterName } from "./browser.js";
 /**
+ * The host-load reading and the rule that decides whether absolute milliseconds are trustworthy:
+ * absolutes are invalid once the one-minute load passes half the cores.
+ *
+ * @situation mark a benchmark run invalid because the machine was busy
+ * @constraint an unreadable load is a refusal, not a silence: an unmeasured machine cannot vouch
+ * @example import { absolutesVerdict, readHostLoad } from "@threenative/playtest/runner";
+ * const load = readHostLoad();
+ * if (absolutesVerdict(load) === "invalid-absolute") ignoreAbsoluteMilliseconds();
+ */
+export {
+  type IPerfHostLoad,
+  type IPerfHostLoadReading,
+  type IPerfHostLoadSource,
+  absolutesVerdict,
+  readHostLoad,
+} from "./perf.js";
+/**
  * Decide which display a pixel-producing run paints on, the same decision the runner makes.
  * @situation judge whether a measured frame rate came from a display that can carry one
  * @constraint a private Xvfb is software, so a rate read there measures the X server

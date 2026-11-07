@@ -5,6 +5,7 @@ import { cpus, platform, release } from "node:os";
 import path from "node:path";
 import { chromium } from "@playwright/test";
 import { PNG } from "pngjs";
+import { waitForServer } from "./lib/dev-server.js";
 import type {
   DirtyRatio,
   Hierarchy,
@@ -587,20 +588,6 @@ interface IProfileRun {
   readonly summaries: Record<string, ReturnType<typeof summarizeSamples>>;
 }
 
-async function waitForServer(url: string, server: ChildProcess): Promise<void> {
-  const deadline = Date.now() + 120_000;
-  while (Date.now() < deadline) {
-    if (server.exitCode !== null) throw new Error(`Load-test server exited ${server.exitCode}.`);
-    try {
-      if ((await fetch(url)).ok) return;
-    } catch {
-      // Vite is still starting.
-    }
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  throw new Error("Load-test server did not become ready within 120 seconds.");
-}
-
 async function stopServer(server: ChildProcess): Promise<void> {
   if (server.exitCode !== null) return;
   server.kill("SIGTERM");
@@ -732,7 +719,7 @@ async function runProfile(args: IProfileArgs, rawArguments: readonly string[]): 
   const baseUrl = `http://127.0.0.1:${args.port}/`;
   let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
   try {
-    await waitForServer(baseUrl, server);
+    await waitForServer({ child: server, label: "Load-test server", url: baseUrl });
     browser = await chromium.launch({
       args: [
         "--ozone-platform=x11",

@@ -6,53 +6,26 @@
  * what a run would use without building a scene, and a test can pin the order the sources are read
  * in without a device.
  */
+import { readLaunchFlag, readLaunchValues } from "./debug.js";
 
 /** The launch flag. */
 export const GPU_SCENE_FLAG = "TN_GPU_SCENE";
 
 /**
  * Did this launch ask for `flag` to be **off**? The environment variable, the query string and the
- * global a test sets are the three ways one is asked, and `0` and `false` are the only answers that
- * count: an unset or empty variable is the same as no variable, and a saved URL that used to enable
- * a switch still says "off".
+ * global a test sets are the three ways one is asked, and `debug.ts` owns the rule that reads them
+ * — see {@link readLaunchFlag}.
  */
 function askedOff(flag: string, parameter: string, globalName: string): boolean {
-  const host = globalThis as { process?: { env?: Record<string, unknown> } } & Record<
-    string,
-    unknown
-  >;
-  const fromEnv = host.process?.env?.[flag];
-  if (fromEnv === "0" || fromEnv === "false") return true;
-  const query = globalThis.location?.search;
-  if (
-    typeof query === "string" &&
-    new RegExp(`[?&]${parameter}=(?:0|false)(?:&|$)`, "u").test(query)
-  )
-    return true;
-  const set = host[globalName];
-  return set === false || set === 0 || set === "0" || set === "false";
+  return readLaunchFlag({ environment: flag, global: globalName, query: parameter }, "off");
 }
 
 /**
- * Did this launch ask for `flag` to be **on**? The mirror of {@link askedOff}, for the switches that
- * are opt-in: the environment variable, the query string and the global a test sets, and only
- * `1` and `true` count. An unset or empty variable is the same as no variable, so an old URL that
- * never mentioned the switch stays off.
+ * Did this launch ask for `flag` to be **on**? The mirror of {@link askedOff}, for the switches
+ * that are opt-in.
  */
 function askedOn(flag: string, parameter: string, globalName: string): boolean {
-  const host = globalThis as { process?: { env?: Record<string, unknown> } } & Record<
-    string,
-    unknown
-  >;
-  const fromEnv = host.process?.env?.[flag];
-  if (fromEnv === "1" || fromEnv === "true") return true;
-  const query = globalThis.location?.search;
-  if (
-    typeof query === "string" &&
-    new RegExp(`[?&]${parameter}=(?:1|true)(?:&|$)`, "u").test(query)
-  )
-    return true;
-  return host[globalName] === true || host[globalName] === 1 || host[globalName] === "1";
+  return readLaunchFlag({ environment: flag, global: globalName, query: parameter });
 }
 
 /**
@@ -91,8 +64,16 @@ export const BUNDLE_FLAG = "TN_BUNDLES";
  * variable, a browser asks with the query string, and a test sets the global.
  */
 export function bundlesAsked(): "default" | "off" | "on" {
-  if (askedOn(BUNDLE_FLAG, "tnBundles", "__tnBundles")) return "on";
-  return askedOff(BUNDLE_FLAG, "tnBundles", "__tnBundles") ? "off" : "default";
+  // Its own vocabulary over the one reader: a launch can answer yes, answer no, or say nothing, and
+  // "said nothing" is what a caller has to tell apart from a measurement's default. Every seam is
+  // heard, as it is for every other switch, so an explicit yes anywhere beats a no anywhere.
+  const values = readLaunchValues({
+    environment: BUNDLE_FLAG,
+    global: "__tnBundles",
+    query: "tnBundles",
+  });
+  if (values.some((value) => value === "1" || value === "true" || value === "")) return "on";
+  return values.some((value) => value === "0" || value === "false") ? "off" : "default";
 }
 
 /**
@@ -127,20 +108,7 @@ export const GPU_SCENE_VALIDATE_FLAG = "TN_GPU_SCENE_VALIDATE";
  * browser asks with `?tnGpuSceneValidate=1`, and a test sets the global.
  */
 export function gpuSceneValidationRequested(): boolean {
-  const host = globalThis as {
-    process?: { env?: Record<string, unknown> };
-    __tnGpuSceneValidate?: unknown;
-  };
-  const fromEnv = host.process?.env?.[GPU_SCENE_VALIDATE_FLAG];
-  if (typeof fromEnv === "string" && fromEnv !== "" && fromEnv !== "0" && fromEnv !== "false")
-    return true;
-  const query = globalThis.location?.search;
-  if (
-    typeof query === "string" &&
-    /[?&]tnGpuSceneValidate=(?!0(?:&|$))(?!false(?:&|$))[^&]/u.test(query)
-  )
-    return true;
-  return host.__tnGpuSceneValidate === true || host.__tnGpuSceneValidate === "1";
+  return askedOn(GPU_SCENE_VALIDATE_FLAG, "tnGpuSceneValidate", "__tnGpuSceneValidate");
 }
 
 /** The launch flag. */

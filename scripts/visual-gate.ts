@@ -24,6 +24,8 @@ import {
   CaptureGuardError,
   assertFrameShowsSomething,
 } from "./capture-guard.js";
+import { waitForServer } from "./lib/dev-server.js";
+import { templateNames } from "./lib/repo-inventory.mjs";
 import {
   type ImageScoringArtifact,
   createImageBlindBundle,
@@ -40,7 +42,10 @@ const TEMPLATE_ROOT = path.join(
   path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."),
   "packages/create-threenative/templates",
 );
-export const TEMPLATE_NAMES: readonly ScaffoldTemplate[] = discoverTemplateNames(TEMPLATE_ROOT);
+// One inventory owns "what a kit is" (a template directory that ships `kit.json`), and it reads it
+// from the repository root; `discoverTemplateNames` reads the same directories from the templates
+// folder for the scaffolder's own callers. Every visual lane iterates this list, so it stays derived.
+export const TEMPLATE_NAMES: readonly ScaffoldTemplate[] = templateNames();
 export const RENDER_LAYER_FILES = [
   "palette.ts",
   "camera.ts",
@@ -368,25 +373,6 @@ function runCommand(command: string, args: readonly string[], cwd: string): Prom
   });
 }
 
-async function waitForServer(
-  url: string,
-  server: ChildProcess,
-  timeoutMs = 120_000,
-): Promise<void> {
-  const started = Date.now();
-  while (Date.now() - started < timeoutMs) {
-    if (server.exitCode !== null)
-      throw new Error(`Visual server exited with code ${server.exitCode}.`);
-    try {
-      if ((await fetch(url)).ok) return;
-    } catch {
-      // Vite is still starting.
-    }
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  throw new Error(`Visual server did not become ready within ${timeoutMs}ms.`);
-}
-
 export async function packageLocalFramework(root: string): Promise<Record<string, string>> {
   const packageRoot = path.join(root, "packages");
   await mkdir(packageRoot, { recursive: true });
@@ -469,7 +455,11 @@ const captureTemplate: CaptureTemplate = async (
   server.stdout?.on("data", (chunk) => output.push(String(chunk)));
   server.stderr?.on("data", (chunk) => output.push(String(chunk)));
   try {
-    await waitForServer(`http://127.0.0.1:${port}/`, server);
+    await waitForServer({
+      child: server,
+      label: "Visual server",
+      url: `http://127.0.0.1:${port}/`,
+    });
     return await withVisualCaptureLease(async () => {
       const browser = await chromium.launch({
         args: [...WEBGPU_BROWSER_ARGS],

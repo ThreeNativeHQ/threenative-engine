@@ -1,3 +1,4 @@
+import { sampleEnvironment } from "@threenative/core/render/environment";
 // Qualification only: no shipped default or starter source is changed.
 import {
   AnimationMixer,
@@ -21,7 +22,6 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { type ICtx, Scene, defineGame } from "../../../../core/dist/index.js";
 import { playtest } from "../../../../core/dist/playtest.js";
 import { WorldEnvironment } from "../../../../core/src/look/world-environment.js";
-import { sampleEnvironment } from "../../../templates/starter/src/render/environmentSampling.js";
 import { qualityPreset } from "../../../templates/starter/src/render/quality.js";
 import { setupSky } from "../../../templates/starter/src/render/sky.js";
 import { reportEnvironmentContribution } from "./environment.js";

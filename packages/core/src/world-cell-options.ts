@@ -1,3 +1,4 @@
+import { readLaunchValue } from "./debug.js";
 import { INSTANCED_LOD_MAX_PIXEL_ERROR } from "./instanced-batch-lod.js";
 import type { IWorldCellsLoadOptions } from "./world-cell-data.js";
 import type { IWorldCell, IWorldPackage } from "./world-package.js";
@@ -134,20 +135,7 @@ export const DEFAULT_MAIN_GPU_SHARE = 0.5;
  * be parsed by the caller rather than rounded here.
  */
 function launchValue(parameter: string, flag: string, globalName: string): string | undefined {
-  const host = globalThis as { process?: { env?: Record<string, unknown> } } & Record<
-    string,
-    unknown
-  >;
-  const env = host.process?.env?.[flag];
-  if (typeof env === "string" && env !== "") return env;
-  const query = globalThis.location?.search;
-  if (typeof query === "string") {
-    const value = new URLSearchParams(query).get(parameter);
-    if (value !== null) return value;
-  }
-  const global = host[globalName];
-  if (typeof global === "number") return String(global);
-  return typeof global === "string" ? global : undefined;
+  return readLaunchValue({ environment: flag, global: globalName, query: parameter });
 }
 
 /**

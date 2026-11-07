@@ -9,6 +9,7 @@ import {
   isTouchscreenAvailable,
   resolveTargetFps,
 } from "@threenative/core";
+import { type IEnvironmentSample, sampleEnvironment } from "@threenative/core/render/environment";
 import { Area3D, CollisionShape3D, type IPhysicsContext, RigidBody3D } from "@threenative/physics";
 import {
   BufferAttribute,
@@ -25,7 +26,6 @@ import { type IPlayerModel, PLAYER_STAND_Y, Player } from "../entities/Player.js
 import { createArena, platform } from "../render/arena.js";
 import { createSpringArm } from "../render/camera.js";
 import { pickupRiseEase } from "../render/easing.js";
-import { type IEnvironmentSample, sampleEnvironment } from "../render/environmentSampling.js";
 import { setupLighting, shadeLikeSubstrate } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
 import { createMaterialLighting } from "../render/materialLighting.js";

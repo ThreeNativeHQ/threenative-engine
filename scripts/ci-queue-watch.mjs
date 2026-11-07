@@ -4,9 +4,9 @@
 // the rest, so a red costs minutes of runners and the author does not read a wall of cancelled
 // checks. The failed job keeps its own conclusion: only jobs still in flight are cancelled.
 // PRD-782: a full board on a pull request or a manual run stops the same way, with no comment.
-import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
+import { gh } from "./lib/gh.mjs";
 
 // Aggregates only echo another job's failure; the watcher is not evidence of anything.
 const ECHOES = new Set(["ci-required", "golden-path", "run-summary", "queue-watch"]);
@@ -70,12 +70,6 @@ export function commentBody({ job, runId, repository }) {
     "",
     "Fix, push, re-enqueue.",
   ].join("\n");
-}
-
-function gh(args) {
-  const result = spawnSync("gh", args, { encoding: "utf8", maxBuffer: 1024 * 1024 * 16 });
-  if (result.status !== 0) throw new Error(`gh ${args[0]} failed: ${result.stderr.trim()}`);
-  return result.stdout;
 }
 
 /**

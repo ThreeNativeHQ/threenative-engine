@@ -10,6 +10,11 @@ function finiteColor(color: Color) {
     color.b >= 0
   );
 }
+/**
+ * Throws when a `IBacklightControls` is missing a light or names a non-finite gain.
+ *
+ * @situation fail loudly instead of drawing an unlit material when a backlight has no key light
+ */
 export function validateControls(controls: IBacklightControls) {
   if (
     !Number.isFinite(controls.rimGain) ||
@@ -30,6 +35,11 @@ export function validateControls(controls: IBacklightControls) {
       "Backlight controls require finite nonnegative gains, a direction and angular size in (0, 1.5].",
     );
 }
+/**
+ * The light and camera a backlit material reads its key direction from.
+ *
+ * @situation point the backlight at the sun the scene actually has
+ */
 export function resolveKey(
   controls: IBacklightControls,
   direction: Vector3,

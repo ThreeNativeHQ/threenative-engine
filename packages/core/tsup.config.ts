@@ -10,6 +10,7 @@ export default defineConfig({
     "src/ui-layer.ts",
     "src/worker.ts",
     "src/world.ts",
+    "src/render-environment.ts",
     "src/net.ts",
     "src/spells/index.ts",
     "src/spells/ultra/index.ts",

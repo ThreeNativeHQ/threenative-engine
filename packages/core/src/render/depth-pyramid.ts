@@ -22,6 +22,7 @@ import {
   vec4,
 } from "three/tsl";
 import { StorageBufferAttribute } from "three/webgpu";
+import { readLaunchValue } from "../debug.js";
 
 /**
  * The hierarchical-depth (pyramid) occlusion test, and the max-distance pyramid it reads.
@@ -64,21 +65,12 @@ export type OcclusionMode = "off" | "measure";
  * browser asks with `?tnOcclusion=measure`, and a test sets the global.
  */
 export function occlusionMode(): OcclusionMode {
-  const host = globalThis as {
-    process?: { env?: Record<string, unknown> };
-    __tnOcclusion?: unknown;
-    location?: { search?: string };
-  };
-  const fromEnv = host.process?.env?.[OCCLUSION_FLAG];
-  const query = host.location?.search;
   const asked =
-    typeof fromEnv === "string" && fromEnv !== ""
-      ? fromEnv
-      : typeof query === "string"
-        ? (/[?&]tnOcclusion=([^&]*)/u.exec(query)?.[1] ?? "")
-        : typeof host.__tnOcclusion === "string"
-          ? host.__tnOcclusion
-          : "";
+    readLaunchValue({
+      environment: OCCLUSION_FLAG,
+      global: "__tnOcclusion",
+      query: "tnOcclusion",
+    }) ?? "";
   const value = asked.trim().toLowerCase();
   if (value === "" || value === "0" || value === "off" || value === "false") return "off";
   if (value === "measure" || value === "1" || value === "true") return "measure";

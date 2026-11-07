@@ -16,7 +16,7 @@ import { publicWorkspacePackages } from "./workspace-packages.js";
 
 const REPO = path.resolve(import.meta.dirname, "..");
 export const API_SURFACE_RELATIVE_PATH = path.join("scripts", "api-surface.json");
-const MANIFEST_RELATIVE_PATH = path.join("packages", "create-threenative", "capabilities.json");
+const MANIFEST_RELATIVE_PATH = path.join("packages", "core", "capabilities.json");
 const CHANGELOG_RELATIVE_PATH = "CHANGELOG.md";
 const BULLET = /^\s*[-*]\s/u;
 /** A version heading — `## [Unreleased]`, `## [0.3.3] - unreleased (release candidate)`, `## [0.3.2] - 2026-09-12`. */

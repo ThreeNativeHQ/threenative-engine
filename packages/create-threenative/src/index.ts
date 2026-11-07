@@ -146,8 +146,30 @@ export function stampLoadingSource(canonical: string, template: string): string 
  * render-chain plumbing is not: it is the same 600 lines in every kit, and keeping seven copies by
  * hand let one fall a revision behind without anything failing. A file belongs here only when a
  * kit editing it would be a mistake rather than a choice.
+ *
+ * `__tests__/shared-render-drift.spec.ts` fails on any render source that ships byte-identical in
+ * two or more kits and is missing here, so a new copy cannot land unrestamped. The environment
+ * measure-and-sample mechanism and the backlight used to be seven of these copies; they live in
+ * `@threenative/core/render/environment` now (PRD-833).
  */
 export const SHARED_RENDER_SOURCES: readonly string[] = [
+  // The backlight shader: mechanism every kit repeats, but its constants decide how a surface
+  // looks, so it lives in `src/render/` (rule 3) and is stamped from one source rather than moved
+  // into the engine.
+  "src/render/backlightControls.ts",
+  "src/render/backlightMaterial.ts",
+  "src/render/atmosphere.ts",
+  "src/render/gpuSky.ts",
+  "src/render/kitExposure.ts",
+  "src/render/temporalDetailStage.ts",
+];
+
+/**
+ * The shared sources `createProject` also writes into a kit that does not ship them. A kit owns its
+ * look, so presence is per kit: `starter` ships the temporal detail stage and the collectathon kits
+ * do not, and all four still get the same plumbing.
+ */
+export const ADDED_RENDER_SOURCES: readonly string[] = [
   "src/render/kitExposure.ts",
   "src/render/temporalDetailStage.ts",
 ];
@@ -760,11 +782,35 @@ async function applyPackageSources(
 }
 
 const FRAMEWORK_PATCH_DIRECTORY = "patches";
-const FRAMEWORK_PATCH_SOURCES: Readonly<Record<string, string>> = {
-  "three@0.187.0.patch": "../core/patches/three@0.187.0.patch",
-  "vite@8.2.0.patch": "../../patches/vite@8.2.0.patch",
-  "@tailwindcss__node@4.3.3.patch": "../../patches/@tailwindcss__node@4.3.3.patch",
-};
+
+/** One dependency patch a scaffold may apply: the file in the game, and where its bytes live. */
+interface IFrameworkPatch {
+  /** The file inside the generated project's `patches/` directory. */
+  readonly name: string;
+  /** The patch in this repository, relative to its root. */
+  readonly source: string;
+}
+
+/**
+ * The dependency patches a scaffold applies, from `template-assets/patches/manifest.json`.
+ *
+ * One list, three readers: this function copies the ones a kit declares, the prepack step copies
+ * the whole set into the tarball, and `__tests__/framework-patches.spec.ts` holds every kit's
+ * `patchedDependencies` to it. It used to be spelled in all three places, so a three-version bump
+ * needed each edited by hand.
+ */
+async function frameworkPatches(packageRoot: string): Promise<readonly IFrameworkPatch[]> {
+  const manifest = JSON.parse(
+    await readFile(
+      path.join(packageRoot, "template-assets", FRAMEWORK_PATCH_DIRECTORY, "manifest.json"),
+      "utf8",
+    ),
+  ) as { version?: unknown; patches?: unknown };
+  if (manifest.version !== 1 || !Array.isArray(manifest.patches)) {
+    throw new Error("TN_FRAMEWORK_PATCH_MANIFEST: expected version 1 with a patches array.");
+  }
+  return manifest.patches as readonly IFrameworkPatch[];
+}
 
 async function copyFrameworkPatches(target: string, templateRootDirectory: string): Promise<void> {
   // Copy exactly the dependency patches declared by this template. In particular, minimal
@@ -773,16 +819,18 @@ async function copyFrameworkPatches(target: string, templateRootDirectory: strin
     pnpm?: { patchedDependencies?: Record<string, string> };
   };
   const packageRoot = path.dirname(templateRoot());
+  const supported = await frameworkPatches(packageRoot);
+  const repositoryRoot = path.resolve(packageRoot, "..", "..");
   for (const relative of Object.values(manifest.pnpm?.patchedDependencies ?? {})) {
     const name = path.basename(relative);
-    const fallback = FRAMEWORK_PATCH_SOURCES[name];
-    if (fallback === undefined || relative !== `${FRAMEWORK_PATCH_DIRECTORY}/${name}`) {
+    const patch = supported.find((candidate) => candidate.name === name);
+    if (patch === undefined || relative !== `${FRAMEWORK_PATCH_DIRECTORY}/${name}`) {
       throw new Error(`TN_FRAMEWORK_PATCH_MISSING: unsupported template patch '${relative}'.`);
     }
     const candidates = [...new Set([path.dirname(templateRootDirectory), packageRoot])].map(
       (root) => path.join(root, "template-assets", FRAMEWORK_PATCH_DIRECTORY, name),
     );
-    const canonical = path.resolve(packageRoot, fallback);
+    const canonical = path.resolve(repositoryRoot, patch.source);
     // A source checkout can have an ignored prepack copy from an earlier build. Packaged CLIs
     // omit src/, so they continue to use only the patch bytes delivered in their tarball.
     if (existsSync(path.join(packageRoot, "src", "index.ts"))) candidates.unshift(canonical);
@@ -1197,7 +1245,7 @@ export async function createProject(
     // packaged templates. Nothing in a generated game reads it (PRD-826).
     await rm(path.join(target, "kit.json"), { force: true });
     if (["starter", "collectathon", "adventure", "kart"].includes(template))
-      for (const relative of SHARED_RENDER_SOURCES)
+      for (const relative of ADDED_RENDER_SOURCES)
         await cp(canonicalRenderSourcePath(relative, root), path.join(target, relative));
     await copyTemplateIcon(target, root);
     await copySharedAssets(target, root);

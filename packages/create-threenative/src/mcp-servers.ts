@@ -4,6 +4,7 @@ import {
   MCP_PACKAGES,
   MCP_SERVERS,
 } from "../../core/mcp/servers.mjs";
+import { CORE_VERSION } from "../../core/src/version.js";
 
 /**
  * The scaffolder's view of `@threenative/core`'s one server table.
@@ -24,7 +25,8 @@ export type { IMcpPackage, IMcpServerEntry };
  * another release before it writes. `doctor.spec.ts` holds the version equal to
  * `packages/core/package.json`, and `scripts/check-version-pins.ts` holds the templates there. */
 export const CORE_PACKAGE_NAME = "@threenative/core";
-export const CORE_PACKAGE_VERSION = "0.3.12";
+/** From core's one generated constant (PRD-832): a literal here went stale between releases. */
+export const CORE_PACKAGE_VERSION = CORE_VERSION;
 
 /** The shim a server launches, for example `./node_modules/@threenative/core/mcp/assets.mjs`. */
 export function serverEntryPath(server: IMcpServerEntry): string {

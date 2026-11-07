@@ -1,3 +1,4 @@
+import { devGlobal } from "@threenative/core";
 import type {
   GeometryCaptureSort,
   IGeometryCaptureReport,
@@ -9,16 +10,10 @@ export type DebugSnapshot = Record<string, Record<string, unknown>>;
 
 type GeometryRequest = { limit?: number; sort?: GeometryCaptureSort };
 
-type DevWindow = Window &
-  Partial<
-    Record<
-      "__THREENATIVE__",
-      {
-        snapshot?: () => DebugSnapshot;
-        geometry?: (request?: GeometryRequest) => Promise<IGeometryCaptureReport>;
-      }
-    >
-  >;
+type DevTools = {
+  snapshot?: () => DebugSnapshot;
+  geometry?: (request?: GeometryRequest) => Promise<IGeometryCaptureReport>;
+};
 
 const isDev =
   (import.meta as ImportMeta & { env?: Record<"DEV", boolean | undefined> }).env?.DEV === true;
@@ -31,8 +26,8 @@ const DEFAULT_SMALL_PIXELS = 32;
 
 const SORTS: readonly GeometryCaptureSort[] = ["triangles", "draws", "projected"];
 
-function devTools(): NonNullable<DevWindow["__THREENATIVE__"]> | undefined {
-  return (globalThis.window as DevWindow | undefined)?.__THREENATIVE__;
+function devTools(): DevTools | undefined {
+  return devGlobal(globalThis.window) as DevTools | undefined;
 }
 
 function readSnapshot(): DebugSnapshot {

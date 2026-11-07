@@ -21,6 +21,7 @@ import { pathToFileURL } from "node:url";
 import { installCommandFor, resolveBlender } from "@threenative/blender-bridge/bridge";
 
 import { MCP_HOSTS } from "../../core/mcp/install.mjs";
+import { CORE_VERSION } from "../../core/src/version.js";
 import { resolveRuntimeAssetCapabilities } from "./build.js";
 import { loadConfig } from "./config.js";
 import { type IAuthoringLayerStatus, authoringLayerStatus } from "./index.js";
@@ -665,7 +666,7 @@ function probeMcpServer(projectRoot: string, spec: IMcpServerSpec): IMcpServerHe
     method: "initialize",
     params: {
       capabilities: {},
-      clientInfo: { name: "threenative-doctor", version: "0.3.12" },
+      clientInfo: { name: "threenative-doctor", version: CORE_PACKAGE_VERSION },
       protocolVersion: "2025-06-18",
     },
   });

@@ -11,10 +11,11 @@ import { spawn } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { waitForServer } from "../lib/dev-server.js";
 import { assertVisualPortAvailable, stopVisualServer } from "../visual-gate.js";
 import { launchWebgpuBrowser } from "./browser.js";
 import { patchGi } from "./capture-gi-threenative.js";
-import { HIDE_UI, freePort, scaffold, waitForServer } from "./capture-threenative.js";
+import { HIDE_UI, freePort, scaffold } from "./capture-threenative.js";
 import { readScene } from "./gi.js";
 
 const flag = (name: string): string | undefined => {
@@ -44,7 +45,7 @@ const settle =
   "new Promise((resolve) => { let n = 0; const tick = () => (++n >= 45 ? resolve() : requestAnimationFrame(tick)); requestAnimationFrame(tick); })";
 try {
   const origin = `http://127.0.0.1:${port}/`;
-  await waitForServer(origin, server);
+  await waitForServer({ child: server, label: "Unreal-look dev server", url: origin });
   const browser = await launchWebgpuBrowser();
   try {
     const [width, height] = scene.resolution;

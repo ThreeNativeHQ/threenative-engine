@@ -7,6 +7,7 @@ import {
   loadCapabilityManifest,
   searchCapabilities,
 } from "../packages/engine-mcp/src/index.js";
+import { briefGenres, templateNames } from "./lib/repo-inventory.mjs";
 
 export type CapabilityRecallScope = "request" | "mechanic";
 
@@ -116,31 +117,9 @@ export class CapabilityRecallError extends Error {
 
 const CORPUS_RELATIVE_PATH = path.join("scripts", "fixtures", "capability-recall", "corpus.json");
 const BUDGET_RELATIVE_PATH = path.join("scripts", "fixtures", "capability-recall", "budget.json");
-const MANIFEST_RELATIVE_PATH = path.join("packages", "create-threenative", "capabilities.json");
-const TEMPLATE_NAMES = [
-  "collectathon",
-  "adventure",
-  "kart",
-  "action-rpg",
-  "minimal",
-  "platformer",
-  "racing",
-  "rain",
-  "sailing",
-  "shooter",
-  "snow",
-  "starter",
-  "tower-defense",
-] as const;
-const BRIEF_NAMES = [
-  "endless-runner",
-  "exploration",
-  "fps",
-  "open-world",
-  "physics-puzzle",
-  "platformer",
-  "topdown-action",
-] as const;
+const MANIFEST_RELATIVE_PATH = path.join("packages", "core", "capabilities.json");
+const BRIEF_NAMES = briefGenres();
+const TEMPLATE_NAMES = templateNames();
 const SOURCE_PATTERN = /^(brief|sandbox|template):([a-z0-9-]+)#(.+)$/u;
 const HEADING_PATTERN = /^\s{0,3}#{1,6}\s+(.+?)\s*#?\s*$/u;
 
@@ -360,14 +339,14 @@ export function recallManifestPath(root = process.cwd()): string {
 }
 
 function briefFile(root: string, genre: string): string {
-  if (!BRIEF_NAMES.includes(genre as (typeof BRIEF_NAMES)[number])) {
+  if (!BRIEF_NAMES.includes(genre)) {
     throw recallError(`unknown brief genre '${genre}'`);
   }
   return path.resolve(root, "docs", "benchmark", "genres", genre, "brief.md");
 }
 
 function templateFile(root: string, template: string): string {
-  if (!TEMPLATE_NAMES.includes(template as (typeof TEMPLATE_NAMES)[number])) {
+  if (!TEMPLATE_NAMES.includes(template)) {
     throw recallError(`unknown template '${template}'`);
   }
   return path.resolve(root, "packages", "create-threenative", "templates", template, "AGENTS.md");

@@ -7,6 +7,7 @@ import {
   getPlatform,
   isMobile,
 } from "@threenative/core";
+import { type IEnvironmentSample, sampleEnvironment } from "@threenative/core/render/environment";
 import { CollisionShape3D, type IPhysicsContext, RigidBody3D } from "@threenative/physics";
 import type {
   AnimationClip,
@@ -36,7 +37,6 @@ import { Target } from "../entities/Target.js";
 import { TouchControls } from "../entities/TouchControls.js";
 import { onAfterPhysics } from "../postPhysics.js";
 import { DecalField, bulletHoleTexture } from "../render/decals.js";
-import { type IEnvironmentSample, sampleEnvironment } from "../render/environmentSampling.js";
 import { ImpactBursts, MuzzleFlash, MuzzleFlashPool, softCircleTexture } from "../render/gunfx.js";
 import { setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";

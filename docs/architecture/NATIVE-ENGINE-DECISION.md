@@ -86,7 +86,7 @@ best"), 2026-10-04:
    shader IR is internal and never authored.
 6. **The game API stays vanilla Three.js.** The charter's training-data thesis is the reason. The
    supported surface is the measured denominator (§7), published in
-   `packages/create-threenative/capabilities.json`. An unsupported symbol fails at build, or at
+   `packages/core/capabilities.json`. An unsupported symbol fails at build, or at
    scene preparation, with a named diagnostic. A game that selected the engine gets no silent
    fallback to the legacy host.
 7. **`ctx.renderer.raw` survives as the compatible `WebGPURenderer`.** Templates read only public

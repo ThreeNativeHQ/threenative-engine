@@ -9,6 +9,7 @@ import {
   formatKitContractMatrix,
   runKitContract,
 } from "./kit-contract.js";
+import { runAsync } from "./lib/exec.js";
 import { TEMPLATE_NAMES, inspectAllTemplates, packageLocalFramework } from "./visual-gate.js";
 
 /**
@@ -21,18 +22,6 @@ export const ALREADY_BOOTED_TEMPLATES = new Set(["platformer", "starter"]);
 export const TEMPLATE_PLAYTEST_NAMES = TEMPLATE_NAMES.filter(
   (template) => !ALREADY_BOOTED_TEMPLATES.has(template),
 );
-
-async function run(command: string, args: readonly string[], cwd: string): Promise<void> {
-  await new Promise<void>((resolve, reject) => {
-    const child = spawn(command, [...args], { cwd, stdio: "inherit" });
-    child.once("error", reject);
-    child.once("exit", (code) =>
-      code === 0
-        ? resolve()
-        : reject(new Error(`${command} ${args.join(" ")} exited ${code ?? "unknown"}.`)),
-    );
-  });
-}
 
 export interface ITemplatePlaytestResult {
   readonly error?: string;
@@ -58,7 +47,11 @@ export interface ITemplatePlaytestDependencies {
   readonly auditRoot?: string;
   readonly createProject?: typeof createProject;
   readonly inspectTemplates?: () => readonly ITemplatePlaytestStructure[];
-  readonly run?: typeof run;
+  /**
+   * The runner a caller may replace. Narrow on purpose: a test injects a fake that runs nothing,
+   * and the shared `runAsync` satisfies it.
+   */
+  readonly run?: (command: string, args: readonly string[], cwd: string) => Promise<unknown>;
   readonly templatePlaytestRoot?: string;
 }
 
@@ -79,7 +72,7 @@ export async function runTemplatePlaytests(
   dependencies: ITemplatePlaytestDependencies = {},
 ): Promise<readonly ITemplatePlaytestResult[]> {
   const create = dependencies.createProject ?? createProject;
-  const execute = dependencies.run ?? run;
+  const execute = dependencies.run ?? runAsync;
   const extrasRoot = dependencies.templatePlaytestRoot ?? defaultTemplatePlaytestRoot();
   const results: ITemplatePlaytestResult[] = [];
   for (const template of templates) {

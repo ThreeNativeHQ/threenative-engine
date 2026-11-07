@@ -73,7 +73,7 @@ interface IPackageManifest {
   readonly exports?: unknown;
 }
 
-const MANIFEST_RELATIVE_PATH = path.join("packages", "create-threenative", "capabilities.json");
+const MANIFEST_RELATIVE_PATH = path.join("packages", "core", "capabilities.json");
 
 /**
  * The manifest also contains generated-source guidance for render stages. Those entries are not

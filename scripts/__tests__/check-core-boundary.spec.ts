@@ -123,10 +123,21 @@ describe("core boundary gate", () => {
       'import { SpectralOcean } from "@threenative/core/ocean";\n',
       "reject",
     ],
+    [
+      "the environment mechanism's re-export",
+      'export { isWebGLFallbackRenderer } from "@threenative/core/render/environment";\n',
+      "allow",
+    ],
     ["a namespace import", 'import * as core from "@threenative/core";\n', "reject"],
     ["a default import", 'import core from "@threenative/core";\n', "reject"],
     ["a side-effect import", 'import "@threenative/core";\n', "reject"],
-    ["a re-export", 'export { SpectralOcean } from "@threenative/core";\n', "reject"],
+    // A re-export obeys the same list as an import: a whitelisted symbol may be passed on (the
+    // kits' `quality.ts` does exactly that for the environment gate), a look-owning one may not.
+    [
+      "a re-export of a look-owning symbol",
+      'export { Daylight } from "@threenative/core";\n',
+      "reject",
+    ],
     [
       "a look-owning symbol in the type re-export form",
       'export type { Daylight } from "@threenative/core";\n',

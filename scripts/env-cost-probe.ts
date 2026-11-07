@@ -45,6 +45,7 @@ import {
   steadyWindows,
   summarise,
 } from "./env-cost-report.js";
+import { waitForServer } from "./lib/dev-server.js";
 import { stopVisualServer } from "./visual-gate.js";
 
 const REPO_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
@@ -78,18 +79,6 @@ if (!Number.isFinite(seconds) || seconds <= 0)
 if (resolutionMs !== undefined && (!Number.isFinite(resolutionMs) || resolutionMs <= 0))
   throw new Error(`Unusable resolution ${process.argv[4]}.`);
 
-async function waitForServer(url: string): Promise<void> {
-  for (let attempt = 0; attempt < 240; attempt += 1) {
-    try {
-      if ((await fetch(url)).ok) return;
-    } catch {
-      /* not up yet */
-    }
-    await new Promise((resolve) => setTimeout(resolve, 500));
-  }
-  throw new Error(`No dev server answered at ${url}.`);
-}
-
 const dir = path.join(REPO_ROOT, "examples", "prd307-environment-cost");
 const server = spawn(
   "pnpm",
@@ -104,7 +93,12 @@ const server = spawn(
 const arms: IArmSample[] = [];
 const fpsByArm = new Map<string, number>();
 try {
-  await waitForServer(`http://127.0.0.1:${port}/`);
+  await waitForServer({
+    child: server,
+    label: "Env-cost server",
+    timeoutMs: 120_000,
+    url: `http://127.0.0.1:${port}/`,
+  });
   const browser = await chromium.launch({ args: BROWSER_ARGS, headless: false });
   try {
     for (const [index, run] of RUNS.entries()) {

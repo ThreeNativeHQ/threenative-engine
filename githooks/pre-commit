@@ -34,10 +34,22 @@ pnpm capabilities:sync
 # unannounced — so the break fails here, naming the symbol, rather than reaching `develop`.
 pnpm api:surface:sync
 
-# Stage only deterministic capability artifacts. Never sweep unrelated work into the commit.
-git add -- \
+# The manifest is source: it is the artifact a commit that adds an export must carry, and the hook
+# writes it. The two below are output of that manifest, so the hook regenerates them but never
+# stages them — a regenerated file the author did not choose is how one export edit came to carry
+# five silent files, and how a worktree came to hold changes nobody wrote. The context skill is not
+# output: its prose is hand-written, one region of it is generated, and a clean checkout has no
+# other copy of the words, so the hook leaves it to `pnpm build` like any other source file.
+git add -- packages/core/capabilities.json
+
+derived=$(git status --porcelain -- \
   packages/create-threenative/capabilities.json \
-  packages/core/capabilities.json \
-  packages/create-threenative/agent-docs/references/capability-reference.md \
-  packages/create-threenative/agent-files/.agents/skills/threenative-context/SKILL.md \
-  scripts/api-surface.json
+  packages/create-threenative/agent-docs/references/capability-reference.md)
+if [[ -n "$derived" ]]; then
+  # Fail closed rather than commit them behind the author's back: they are in the tree, so the
+  # commit is one `git add` away, and the message says which files and why.
+  echo "pre-commit: these derived files were regenerated and are not staged:" >&2
+  echo "$derived" | sed 's/^/  /' >&2
+  echo "pre-commit: stage them with \`git add\` if the change is theirs, then commit again." >&2
+  exit 1
+fi

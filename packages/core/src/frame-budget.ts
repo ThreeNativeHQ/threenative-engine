@@ -997,6 +997,7 @@ export class FrameBudget {
           `Frame budget gpu frame must be a non-negative integer, received ${String(frame)}.`,
         );
       }
+      // A repeated frame id is the previous resolve still in flight, not a new measurement.
       if (frame === this.#lastGpuFrame) {
         this.#gpuStaleThisFrame = true;
         return;

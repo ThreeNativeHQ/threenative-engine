@@ -12,6 +12,7 @@ import {
   PLAYTEST_CLOCK_GLOBAL,
 } from "../packages/playtest/src/protocol.js";
 import { PlaywrightTransport } from "../packages/playtest/src/runner/bridgeClient.js";
+import { waitForServer } from "./lib/dev-server.js";
 import { packageLocalFramework } from "./visual-gate.js";
 import { workspacePackageArchives } from "./workspace-packages.js";
 
@@ -203,20 +204,6 @@ function cpuHotspots(profile: CpuProfile): readonly { location: string; selfMs: 
     .map(([location, selfMs]) => ({ location, selfMs }))
     .sort((left, right) => right.selfMs - left.selfMs)
     .slice(0, 8);
-}
-
-async function waitForServer(url: string, server: ChildProcess): Promise<void> {
-  const deadline = Date.now() + 120_000;
-  while (Date.now() < deadline) {
-    if (server.exitCode !== null) throw new Error(`Starter server exited ${server.exitCode}.`);
-    try {
-      if ((await fetch(url)).ok) return;
-    } catch {
-      // Vite is still starting.
-    }
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  throw new Error("Starter server did not become ready within 120 seconds.");
 }
 
 async function stopServer(server: ChildProcess): Promise<void> {
@@ -615,7 +602,7 @@ export async function runStarterProfile(
     server.stdout?.on("data", (chunk) => output.push(String(chunk)));
     server.stderr?.on("data", (chunk) => output.push(String(chunk)));
     const url = `http://127.0.0.1:${args.port}/`;
-    await waitForServer(url, server);
+    await waitForServer({ child: server, label: "Starter server", url });
     const result = await profileUrl(url, args).catch((error: unknown) => {
       throw new Error(
         `${error instanceof Error ? error.message : String(error)}\n${output.join("").slice(-4_000)}`,

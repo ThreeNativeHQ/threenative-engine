@@ -11,9 +11,9 @@ import {
   DISCRETE_LOD_DEFAULT_HYSTERESIS,
   type IModelLodController,
   biasedLodDistance,
-  conservativeViewDepth,
   lodChainOf,
   registerModelLodController,
+  selectLodFor,
   selectLodLevel,
 } from "./model-lod.js";
 
@@ -201,12 +201,7 @@ export function attachInstancedLod(mesh: InstancedMesh, options: IInstancedLodOp
         mesh.getMatrixAt(index, matrix);
         world.multiplyMatrices(mesh.matrixWorld, matrix);
         sphere.copy(local).applyMatrix4(world);
-        const view = conservativeViewDepth(
-          camera,
-          sphere.center,
-          sphere.radius,
-          (camera as Camera & { near?: number }).near ?? 0,
-        );
+        const view = selectLodFor(camera, sphere, (camera as Camera & { near?: number }).near ?? 0);
         let level = 0;
         if (options.lods !== undefined) {
           const distance = biasedLodDistance(cameraPosition.distanceTo(sphere.center));
@@ -224,7 +219,7 @@ export function attachInstancedLod(mesh: InstancedMesh, options: IInstancedLodOp
               {
                 camera,
                 viewportHeight,
-                depth: biasedLodDistance(view.depth),
+                depth: view.biased,
                 degenerate: view.degenerate,
               },
             ],

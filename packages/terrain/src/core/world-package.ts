@@ -2,58 +2,16 @@ import { MATERIAL_IDS } from "./masks.js";
 import type { IPlacement, ITerrainState } from "./types.js";
 
 /** One streamed asset: its LOD0 model, its authored bounds and the levels it swaps to. */
-export interface IWorldPackageAsset {
-  readonly glb: string;
-  readonly bounds: {
-    readonly min: readonly [number, number, number];
-    readonly max: readonly [number, number, number];
-  };
-  readonly lods?: readonly {
-    readonly glb: string;
-    readonly distance: number;
-    /** Scene inside `glb`; a cooked species keeps every level in one file and selects by scene. */
-    readonly scene?: string;
-  }[];
-  readonly maxDistance?: number;
-}
+export type IWorldPackageAsset = import("@threenative/core/world").IWorldAsset;
 
 /** One cell's contiguous run of placement records, eight float32 values each. */
-export interface IWorldPackageRun {
-  readonly asset: string;
-  /** Record offset into the placement buffer, not a byte offset. */
-  readonly offset: number;
-  readonly count: number;
-}
+export type IWorldPackageRun = import("@threenative/core/world").IWorldRun;
 
-/** The `world.json` contract, declared here so this addon needs no `@threenative/core` import. */
-export interface IWorldPackageManifest {
-  readonly version: 1;
-  readonly extent: {
-    readonly minX: number;
-    readonly minZ: number;
-    readonly sizeX: number;
-    readonly sizeZ: number;
-  };
-  readonly cellSize: number;
-  readonly terrain: {
-    readonly heightmap: string;
-    readonly columns: number;
-    readonly rows: number;
-    readonly spacing: number;
-    readonly heightMin: number;
-    readonly heightMax: number;
-    readonly layers?: Readonly<Record<string, string>>;
-  };
-  readonly assets: Readonly<Record<string, IWorldPackageAsset>>;
-  readonly placements: string;
-  /** Optional package-relative JSON array of placement IDs in binary record order. */
-  readonly placementIds?: string;
-  readonly cells: readonly {
-    readonly x: number;
-    readonly z: number;
-    readonly runs: readonly IWorldPackageRun[];
-  }[];
-}
+/**
+ * The `world.json` contract. Its one declaration is core's (`IWorldPackage`), imported as a type so
+ * this addon still pulls nothing from core at runtime — a type import is erased before the bundle.
+ */
+export type IWorldPackageManifest = import("@threenative/core/world").IWorldPackage;
 
 /** The splat layout to copy into a terrain table: eight material masks in two RGBA8 planes. */
 export interface IWorldPackageSplat {

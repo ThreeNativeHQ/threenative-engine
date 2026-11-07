@@ -7,6 +7,7 @@ import {
   isMobile,
   lodPixelScale,
 } from "@threenative/core";
+import { type IEnvironmentSample, sampleEnvironment } from "@threenative/core/render/environment";
 import { Object3D, type OrthographicCamera, type Texture, Vector2, Vector3 } from "three";
 import { onSceneIntent } from "../orders.js";
 import { createArmy } from "../render/army.js";
@@ -22,7 +23,6 @@ import {
   zoomRts,
 } from "../render/camera.js";
 import { createEnvironment } from "../render/environment.js";
-import { type IEnvironmentSample, sampleEnvironment } from "../render/environmentSampling.js";
 import { type ISun, setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
 import { createMaterialLighting } from "../render/materialLighting.js";

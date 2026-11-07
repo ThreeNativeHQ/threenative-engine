@@ -9,11 +9,11 @@
 //
 //   pnpm tsx scripts/capture-mcp-tools.ts            # animation
 //   pnpm tsx scripts/capture-mcp-tools.ts animation   # the same, spelled out
-import { type ChildProcessWithoutNullStreams, execFileSync, spawn } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { createInterface } from "node:readline";
+import { startMcpServer } from "./lib/mcp-client.js";
 
 const REPO = path.resolve(import.meta.dirname, "..");
 /** One row per server this capture covers. `statusTool` is the tool whose reply shape is recorded;
@@ -63,33 +63,6 @@ function installTarball(tarball: string): string {
   return root;
 }
 
-async function request(
-  child: ChildProcessWithoutNullStreams,
-  lines: ReturnType<typeof createInterface>,
-  next: { value: number },
-  method: string,
-  params: Record<string, unknown> = {},
-): Promise<Record<string, unknown>> {
-  const id = next.value++;
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`MCP ${method} timed out`)), 20_000);
-    const onLine = (line: string): void => {
-      let parsed: { id?: unknown; result?: Record<string, unknown> };
-      try {
-        parsed = JSON.parse(line) as typeof parsed;
-      } catch {
-        return;
-      }
-      if (parsed.id !== id) return;
-      clearTimeout(timer);
-      lines.off("line", onLine);
-      resolve(parsed.result ?? {});
-    };
-    lines.on("line", onLine);
-    child.stdin.write(`${JSON.stringify({ id, jsonrpc: "2.0", method, params })}\n`);
-  });
-}
-
 async function main(): Promise<void> {
   const install = installTarball(packTarball());
   const installed = path.join(install, "node_modules", PACKAGE);
@@ -98,24 +71,19 @@ async function main(): Promise<void> {
     version: string;
   };
   const entry = path.join(installed, manifest.bin[PACKAGE] ?? "");
-  const child = spawn(process.execPath, [entry], { cwd: install, stdio: ["pipe", "pipe", "pipe"] });
-  const lines = createInterface({ input: child.stdout });
-  const next = { value: 1 };
+  const client = startMcpServer({
+    args: [entry],
+    command: process.execPath,
+    cwd: install,
+    label: `${SELECTED.label} MCP server`,
+  });
   try {
-    const initialized = await request(child, lines, next, "initialize", {
-      capabilities: {},
-      clientInfo: { name: "tool-snapshot", version: "0" },
-      protocolVersion: "2025-06-18",
-    });
-    child.stdin.write('{"jsonrpc":"2.0","method":"notifications/initialized"}\n');
-    const listed = await request(child, lines, next, "tools/list");
+    const initialized = await client.initialize("tool-snapshot");
+    const listed = await client.request("tools/list");
     const status =
       SELECTED.statusTool === undefined
         ? undefined
-        : await request(child, lines, next, "tools/call", {
-            arguments: {},
-            name: SELECTED.statusTool,
-          });
+        : await client.request("tools/call", { arguments: {}, name: SELECTED.statusTool });
     // The schemas come from the same live response, so the docs never restate an argument by hand.
     const listedTools = listed.tools as readonly {
       name: string;
@@ -151,8 +119,7 @@ async function main(): Promise<void> {
     });
     process.stdout.write(`${SELECTED.label} MCP surface: ${tools.length} tool(s) -> ${SNAPSHOT}\n`);
   } finally {
-    child.kill();
-    lines.close();
+    client.close();
     for (const root of scratch.splice(0)) rmSync(root, { force: true, recursive: true });
   }
 }
