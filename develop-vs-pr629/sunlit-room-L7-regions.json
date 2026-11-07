@@ -1,0 +1,378 @@
+{
+ "sun15-door": [
+  {
+   "id": "Wall_Left",
+   "px": 302950,
+   "before": 61,
+   "after": 63,
+   "unreal": 78
+  },
+  {
+   "id": "#00dec1",
+   "px": 33390,
+   "before": 50,
+   "after": 71,
+   "unreal": 89
+  },
+  {
+   "id": "#00dfc1",
+   "px": 2424,
+   "before": 50,
+   "after": 72,
+   "unreal": 89
+  },
+  {
+   "id": "Ceiling",
+   "px": 13150,
+   "before": 32,
+   "after": 71,
+   "unreal": 87
+  },
+  {
+   "id": "#c100de",
+   "px": 19098,
+   "before": 50,
+   "after": 57,
+   "unreal": 73
+  },
+  {
+   "id": "#dedede",
+   "px": 3692,
+   "before": 12,
+   "after": 32,
+   "unreal": 33
+  },
+  {
+   "id": "#deffde",
+   "px": 299458,
+   "before": 47,
+   "after": 49,
+   "unreal": 53
+  },
+  {
+   "id": "#deffdf",
+   "px": 21408,
+   "before": 47,
+   "after": 49,
+   "unreal": 53
+  },
+  {
+   "id": "#dfffde",
+   "px": 21395,
+   "before": 47,
+   "after": 49,
+   "unreal": 53
+  },
+  {
+   "id": "#dfffdf",
+   "px": 1580,
+   "before": 47,
+   "after": 48,
+   "unreal": 53
+  },
+  {
+   "id": "Floor",
+   "px": 200081,
+   "before": 34,
+   "after": 38,
+   "unreal": 44
+  }
+ ],
+ "sun15-leak": [
+  {
+   "id": "Ceiling",
+   "px": 57240,
+   "before": 19,
+   "after": 34,
+   "unreal": 40
+  },
+  {
+   "id": "#deffde",
+   "px": 206713,
+   "before": 37,
+   "after": 43,
+   "unreal": 48
+  },
+  {
+   "id": "#deffdf",
+   "px": 14958,
+   "before": 37,
+   "after": 43,
+   "unreal": 48
+  },
+  {
+   "id": "#dfffde",
+   "px": 14987,
+   "before": 37,
+   "after": 43,
+   "unreal": 48
+  },
+  {
+   "id": "Floor",
+   "px": 236470,
+   "before": 19,
+   "after": 23,
+   "unreal": 28
+  },
+  {
+   "id": "Wall_Right",
+   "px": 390150,
+   "before": 40,
+   "after": 43,
+   "unreal": 44
+  }
+ ],
+ "sun15-window": [
+  {
+   "id": "Wall_Left",
+   "px": 143909,
+   "before": 34,
+   "after": 44,
+   "unreal": 44
+  },
+  {
+   "id": "Ceiling",
+   "px": 147650,
+   "before": 37,
+   "after": 46,
+   "unreal": 49
+  },
+  {
+   "id": "Front_Right",
+   "px": 82528,
+   "before": 19,
+   "after": 32,
+   "unreal": 34
+  },
+  {
+   "id": "#de00ff",
+   "px": 19121,
+   "before": 32,
+   "after": 42,
+   "unreal": 43
+  },
+  {
+   "id": "#f1c100",
+   "px": 9531,
+   "before": 190,
+   "after": 190,
+   "unreal": 182
+  },
+  {
+   "id": "Floor",
+   "px": 240648,
+   "before": 24,
+   "after": 28,
+   "unreal": 29
+  },
+  {
+   "id": "Front_Left",
+   "px": 82528,
+   "before": 24,
+   "after": 40,
+   "unreal": 40
+  },
+  {
+   "id": "#ffde00",
+   "px": 20433,
+   "before": 22,
+   "after": 32,
+   "unreal": 35
+  },
+  {
+   "id": "Wall_Right",
+   "px": 143909,
+   "before": 31,
+   "after": 43,
+   "unreal": 43
+  }
+ ],
+ "sun60-door": [
+  {
+   "id": "Wall_Left",
+   "px": 302950,
+   "before": 26,
+   "after": 30,
+   "unreal": 42
+  },
+  {
+   "id": "#00dec1",
+   "px": 33390,
+   "before": 9,
+   "after": 29,
+   "unreal": 37
+  },
+  {
+   "id": "#00dfc1",
+   "px": 2424,
+   "before": 9,
+   "after": 29,
+   "unreal": 38
+  },
+  {
+   "id": "Ceiling",
+   "px": 13150,
+   "before": 7,
+   "after": 20,
+   "unreal": 33
+  },
+  {
+   "id": "#c100de",
+   "px": 19098,
+   "before": 23,
+   "after": 30,
+   "unreal": 46
+  },
+  {
+   "id": "#dedede",
+   "px": 3692,
+   "before": 1,
+   "after": 6,
+   "unreal": 9
+  },
+  {
+   "id": "#deffde",
+   "px": 299458,
+   "before": 42,
+   "after": 44,
+   "unreal": 51
+  },
+  {
+   "id": "#deffdf",
+   "px": 21408,
+   "before": 42,
+   "after": 44,
+   "unreal": 51
+  },
+  {
+   "id": "#dfffde",
+   "px": 21395,
+   "before": 42,
+   "after": 44,
+   "unreal": 51
+  },
+  {
+   "id": "#dfffdf",
+   "px": 1580,
+   "before": 42,
+   "after": 44,
+   "unreal": 51
+  },
+  {
+   "id": "Floor",
+   "px": 200081,
+   "before": 14,
+   "after": 20,
+   "unreal": 26
+  }
+ ],
+ "sun60-leak": [
+  {
+   "id": "Ceiling",
+   "px": 57240,
+   "before": 16,
+   "after": 28,
+   "unreal": 40
+  },
+  {
+   "id": "#deffde",
+   "px": 206713,
+   "before": 36,
+   "after": 42,
+   "unreal": 48
+  },
+  {
+   "id": "#deffdf",
+   "px": 14958,
+   "before": 36,
+   "after": 43,
+   "unreal": 48
+  },
+  {
+   "id": "#dfffde",
+   "px": 14987,
+   "before": 36,
+   "after": 43,
+   "unreal": 48
+  },
+  {
+   "id": "Floor",
+   "px": 236470,
+   "before": 19,
+   "after": 22,
+   "unreal": 31
+  },
+  {
+   "id": "Wall_Right",
+   "px": 390150,
+   "before": 36,
+   "after": 41,
+   "unreal": 51
+  }
+ ],
+ "sun60-window": [
+  {
+   "id": "Wall_Left",
+   "px": 143909,
+   "before": 40,
+   "after": 51,
+   "unreal": 60
+  },
+  {
+   "id": "Ceiling",
+   "px": 147650,
+   "before": 46,
+   "after": 55,
+   "unreal": 70
+  },
+  {
+   "id": "Front_Right",
+   "px": 82528,
+   "before": 26,
+   "after": 36,
+   "unreal": 44
+  },
+  {
+   "id": "#de00ff",
+   "px": 19121,
+   "before": 49,
+   "after": 52,
+   "unreal": 61
+  },
+  {
+   "id": "#f1c100",
+   "px": 9531,
+   "before": 223,
+   "after": 223,
+   "unreal": 223
+  },
+  {
+   "id": "Floor",
+   "px": 240648,
+   "before": 25,
+   "after": 27,
+   "unreal": 37
+  },
+  {
+   "id": "Front_Left",
+   "px": 82528,
+   "before": 31,
+   "after": 39,
+   "unreal": 51
+  },
+  {
+   "id": "#ffde00",
+   "px": 20433,
+   "before": 81,
+   "after": 86,
+   "unreal": 96
+  },
+  {
+   "id": "Wall_Right",
+   "px": 143909,
+   "before": 38,
+   "after": 50,
+   "unreal": 56
+  }
+ ]
+}

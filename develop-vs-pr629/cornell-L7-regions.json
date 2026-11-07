@@ -1,0 +1,97 @@
+{
+ "cornell": [
+  {
+   "id": "Back",
+   "px": 87310,
+   "before": 200,
+   "after": 219,
+   "unreal": 228
+  },
+  {
+   "id": "Ceiling",
+   "px": 77706,
+   "before": 184,
+   "after": 198,
+   "unreal": 202
+  },
+  {
+   "id": "Box_Tall",
+   "px": 40948,
+   "before": 157,
+   "after": 167,
+   "unreal": 174
+  },
+  {
+   "id": "#de00ff",
+   "px": 1656,
+   "before": 254,
+   "after": 255,
+   "unreal": 255
+  },
+  {
+   "id": "Floor",
+   "px": 57188,
+   "before": 103,
+   "after": 154,
+   "unreal": 137
+  },
+  {
+   "id": "Wall_Green",
+   "px": 78572,
+   "before": 153,
+   "after": 168,
+   "unreal": 164
+  },
+  {
+   "id": "#ffde00",
+   "px": 30269,
+   "before": 90,
+   "after": 100,
+   "unreal": 60
+  },
+  {
+   "id": "#ffdf00",
+   "px": 2171,
+   "before": 89,
+   "after": 99,
+   "unreal": 60
+  },
+  {
+   "id": "Wall_Red",
+   "px": 78316,
+   "before": 93,
+   "after": 115,
+   "unreal": 110
+  }
+ ],
+ "corner": [
+  {
+   "id": "Back",
+   "px": 56079,
+   "before": 73,
+   "after": 113,
+   "unreal": 114
+  },
+  {
+   "id": "Box_Tall",
+   "px": 382930,
+   "before": 149,
+   "after": 149,
+   "unreal": 165
+  },
+  {
+   "id": "Floor",
+   "px": 65365,
+   "before": 51,
+   "after": 122,
+   "unreal": 98
+  },
+  {
+   "id": "Wall_Red",
+   "px": 417226,
+   "before": 95,
+   "after": 100,
+   "unreal": 101
+  }
+ ]
+}
