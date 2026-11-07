@@ -1435,7 +1435,11 @@ function vacuityOf(panel, withClass, stripped) {
     const min = cell.glyphs ? SSIM_MIN_GLYPHS : SSIM_MIN;
     // Layout counts too: `sticky` moves its box 48 px when the class goes, which the pixel bar over
     // a mostly-empty region can miss. A cell discriminates if either bar would catch the drop.
-    const moved = withClass.boxes.some((box) => {
+    // Only this cell's own elements: the strip arm removes every probe's class at once, so a
+    // neighbour that moves would otherwise mark this cell as discriminating.
+    const moved = withClass.boxes
+      .filter((box) => box.n >= cell.first && box.n <= cell.last)
+      .some((box) => {
       const other = stripped.boxes.find((candidate) => candidate.n === box.n);
       return (
         other === undefined ||
