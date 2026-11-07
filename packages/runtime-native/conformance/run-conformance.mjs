@@ -864,6 +864,14 @@ async function runBrowser(test, bundlePath, result, port, broker, captureRoot) {
     });
     const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
     page.on("pageerror", (error) => pageErrors.push(error.message));
+    // TN_CONFORMANCE_CONSOLE=1 echoes the page's console: a bare "Event" page error names no cause.
+    if (process.env.TN_CONFORMANCE_CONSOLE === "1")
+      {
+        page.on("console", (message) => console.error(`[page ${message.type()}] ${message.text()}`));
+        page.context().on("response", (response) => {
+          if (response.status() >= 400) console.error(`[page ${response.status()}] ${response.url()}`);
+        });
+      }
     if (test.id === "world-gpu-scene-readback")
       page.on("console", (message) => {
         if (message.text().startsWith("TN_WORLD_GPU_")) worldProofOutput.push(message.text());
