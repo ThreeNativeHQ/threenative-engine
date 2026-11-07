@@ -1871,15 +1871,7 @@ Renderer::MaterialTexture::Key Renderer::materialTextureKey(const Texture& textu
         key.usage = kVolumeTextureUsage;
     } else if (texture.hasImage()) {
         // three generates mipmaps for every Texture that is not a DataTexture; float images stay at one level.
-#if defined(TN_PS4)
-        // ponytail: vulkan-ps4 has no mip levels yet. Its image views ignore baseMipLevel, its buffer-to-image
-        // copies and colour targets write level 0, so building a chain overwrites level 0 (a normal map then
-        // decodes to a zero vector and NaN blackens the frame, PRD-784 P4-3). One level until the driver
-        // offsets each level; distant textures alias meanwhile.
-        const bool mipmaps = false;
-#else
         const bool mipmaps = texture.generateMipmaps && texture.bytesPerTexel() == 4;
-#endif
         key.levels = mipmaps ? mipLevelCount(texture.width, texture.height) : 1;
         key.kind = texture.external ? MaterialTexture::kExternal : MaterialTexture::kImage;
         key.format = textureFormat(texture);
