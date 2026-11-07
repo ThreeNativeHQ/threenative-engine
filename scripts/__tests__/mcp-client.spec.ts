@@ -101,7 +101,12 @@ describe("the MCP client", () => {
     ]);
     const client = startMcpServer({ ...script, label: "closing server", timeoutMs: 5_000 });
     try {
-      await new Promise((resolve) => setTimeout(resolve, 300));
+      // Poll rather than sleep: a loaded runner starts Node slowly, and a fixed wait would be a
+      // flaky red that cannot pass falsely either way.
+      const deadline = Date.now() + 10_000;
+      while (!client.stderr().includes("input closed") && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
       expect(client.stderr()).toContain("input closed");
       const error = await client.request("tools/list").catch((caught: unknown) => caught);
       expect(error).toBeInstanceOf(McpError);
