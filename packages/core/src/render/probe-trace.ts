@@ -414,8 +414,11 @@ export function createProbeTraceKernels(
     triangles: read(scene.triangles, "vec4"),
   };
   const directions = read(probeRayDirections(raysPerProbe), "vec4");
-  const probeList = buffer(new Int32Array(maxBatch), 1);
-  const probes = storage(probeList, "int", maxBatch).toReadOnly() as AnyNode;
+  // Float storage read as ints: the owned engine's integer storage reads back zero, which sends every ray to probe 0.
+  // One probe index per vec4 (x), like every other table here.
+  const probeList = buffer(new Float32Array(maxBatch * 4), 4);
+  const floatProbes = storage(probeList, "vec4", maxBatch).toReadOnly() as AnyNode;
+  const probes = { element: (slot: AnyNode) => int(floatProbes.element(slot).x) };
   const radiance = buffer(new Float32Array(maxBatch * raysPerProbe * 4), 4);
   const radianceNode = storage(radiance, "vec4", maxBatch * raysPerProbe) as AnyNode;
   const coefficients = buffer(new Float32Array(grid.probeCount * 9 * 4), 4);
@@ -617,7 +620,9 @@ export function applyTraceLighting(
   kernels: IProbeTraceKernels,
   lighting: IProbeTraceLighting,
 ): void {
-  kernels.sunDirection.value.copy(lighting.direction).normalize();
+  // `set`, not `copy`: the owned engine's uniform vectors take a component write.
+  const { x, y, z } = lighting.direction.clone().normalize();
+  kernels.sunDirection.value.set(x, y, z);
   kernels.sunRadiance.value
     .set(lighting.color.r, lighting.color.g, lighting.color.b)
     .multiplyScalar(lighting.intensity);
@@ -626,7 +631,7 @@ export function applyTraceLighting(
     const source = lighting.points?.[index];
     light.radiance.value.set(0, 0, 0);
     if (source === undefined) return;
-    light.position.value.copy(source.position);
+    light.position.value.set(source.position.x, source.position.y, source.position.z);
     light.radiance.value
       .set(source.color.r, source.color.g, source.color.b)
       .multiplyScalar(source.intensity);

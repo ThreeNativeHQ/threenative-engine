@@ -1072,7 +1072,9 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
     this.#adaptTraceRate(renderer);
     const batch = this.selectStaleProbes();
     if (batch.length > 0) {
-      (kernels.probeList.array as Int32Array).set(batch);
+      batch.forEach((probe, slot) => {
+        (kernels.probeList.array as Float32Array)[slot * 4] = probe;
+      });
       kernels.probeList.needsUpdate = true;
       kernels.batchSize.value = batch.length;
       kernels.bounce.value = this.#generations > 0 ? 1 : 0;
