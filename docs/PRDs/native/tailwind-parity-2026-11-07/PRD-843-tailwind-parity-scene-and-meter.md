@@ -52,11 +52,9 @@ inventory and the meter and judge contract.
 **Files:** `examples/native-css-hud/corpus/tailwind-parity.mjs` (generator plus `--check`), `src/ui/TailwindParity.tsx`, `src/ui/tailwind-parity.scene.json` (generated, committed), `package.json` (`parity:tailwind` script).
 
 - [x] The generator reports one unit per (root, emitted property set, at-rule) plus one per variant, each with an owner PRD. proof: `parity:tailwind --check`
-  proof: `parity:tailwind --check` prints `507 units (419 utility, 88 variant), 0 unowned` — Evidence: measured, with a descriptor block (`@property`) contributing no properties and `root` being the class name's first
-  segment (see Decisions).
+  Evidence: `507 units (419 utility, 88 variant), 0 unowned`, with a descriptor block (`@property`) contributing no properties (see Decisions).
 - [ ] The discrimination guard fails a cell that cannot tell a correct engine from one that dropped the declaration, and every unit has a cell that can. proof: `parity:tailwind --check`
-  proof: `parity:tailwind --check` — Evidence: the guard works — it caught a scene with 439 vacuous cells and the
-  staging fixes brought it to 312 — but it is still red; `## Open` names what is left.
+  Evidence: the guard works — it caught a scene with 439 identical-crop cells and the staging fixes brought the non-discriminating count to 312 — but it is still red; `## Open` names what is left.
 
 #### Phase 2: Meter, ratchet and judge sheets
 **Status:** PARTIAL
