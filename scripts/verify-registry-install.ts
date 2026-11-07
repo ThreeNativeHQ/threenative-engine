@@ -23,6 +23,7 @@ import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { inflateRawSync } from "node:zlib";
+import { PNG } from "pngjs";
 import { MCP_SERVERS } from "../packages/core/mcp/servers.mjs";
 import {
   type IZipArchive,
@@ -1054,6 +1055,92 @@ function assertDoctorTargetCensus(output: string): string {
   return output;
 }
 
+/** Frames the software-adapter smoke must render, the count the published smoke also names. */
+const SOFTWARE_NATIVE_FRAMES = 300;
+
+/**
+ * The native smoke for a runner with no GPU.
+ *
+ * Hosted runners draw with lavapipe, a CPU rasteriser: the 0.3.12 starter renders 3 FPS there (15
+ * frames in 5 s), and the published smoke's completion window demands 101 frames in 5 s, so it fails
+ * on every software run whatever the engine does (release run 42317045442). A software adapter is
+ * acknowledged with `TN_PLAYTEST_ALLOW_SOFTWARE`, so that lane proves what a CPU can: the built
+ * player renders 300 frames of a fixed-step run with no console or runtime diagnostic and draws a
+ * non-blank frame. A lane without the acknowledgement keeps the published rate gate.
+ */
+export function verifyNativeFramesOnSoftware(
+  project: string,
+  executable: string,
+  runner: CommandRunner,
+): string {
+  const launcher = fs.statSync(executable).isDirectory()
+    ? path.join(executable, artifactName(project))
+    : executable;
+  const directory = path.join(project, "artifacts", "native", "software-smoke");
+  fs.rmSync(directory, { force: true, recursive: true });
+  fs.mkdirSync(directory, { recursive: true });
+  const scenario = path.join(directory, "native-smoke-software.playtest.json");
+  fs.writeFileSync(
+    scenario,
+    JSON.stringify({
+      artifacts: { screenshots: "after" },
+      assert: {
+        diagnostics: { noConsoleErrors: true, noRuntimeDiagnostics: true, runtimeReady: true },
+      },
+      name: "native-smoke-software",
+      schemaVersion: 1,
+      steps: [{ kind: "wait", waitTicks: SOFTWARE_NATIVE_FRAMES }],
+    }),
+  );
+  const packages = path.join(project, "node_modules", "@threenative");
+  const output = runner(
+    "sh",
+    [
+      path.join(packages, "runtime-native", "scripts", "xvfb.sh"),
+      "env",
+      "TN_PLAYTEST_HOST_DISPLAY=1",
+      process.execPath,
+      path.join(packages, "playtest", "dist", "runner", "cli.js"),
+      scenario,
+      "--target",
+      "desktop",
+      "--project",
+      project,
+      "--artifacts",
+      directory,
+      "--executable",
+      launcher,
+      "--host-arg",
+      "--windowed",
+    ],
+    project,
+  );
+  const report = JSON.parse(output) as {
+    assertionResults?: readonly { pass?: unknown }[];
+    frames?: unknown;
+    pass?: unknown;
+  };
+  const assertions = report.assertionResults ?? [];
+  if (
+    report.pass !== true ||
+    assertions.length === 0 ||
+    assertions.some((assertion) => assertion.pass !== true)
+  )
+    throw new Error(
+      `Software native smoke did not pass: pass=${String(report.pass)}, assertions=${String(assertions.length)}.`,
+    );
+  if (typeof report.frames !== "number" || report.frames < SOFTWARE_NATIVE_FRAMES)
+    throw new Error(
+      `Software native smoke did not render ${String(SOFTWARE_NATIVE_FRAMES)} frames: frames=${String(report.frames)}.`,
+    );
+  const image = PNG.sync.read(fs.readFileSync(path.join(directory, "after.png")));
+  const colors = new Set<number>();
+  for (let offset = 0; offset < image.data.length; offset += 4)
+    colors.add(image.data.readUInt32BE(offset));
+  if (colors.size < 2) throw new Error("Software native smoke screenshot is blank.");
+  return `${output}\nVerified ${String(report.frames)} rendered frames on a software adapter (no frame-rate gate).`;
+}
+
 function verifyNativeFrames(project: string, runner: CommandRunner): string {
   const verifier = path.join(
     project,
@@ -1463,7 +1550,10 @@ export async function verifyRegistryInstall(
         step(prefix("native"), () => {
           const output = run(command, script("build:desktop"), project);
           const executable = nativeOutput(project);
-          const proof = verifyNativeFrames(project, run);
+          const proof =
+            process.env.TN_PLAYTEST_ALLOW_SOFTWARE === "1"
+              ? verifyNativeFramesOnSoftware(project, executable, run)
+              : verifyNativeFrames(project, run);
           // The verifier records one qualified gameplay row per distributed target and arm it ran;
           // thread them through so each arm's machine and artifact identity survives instead of
           // collapsing a phone and an emulator of one target into a single row.
