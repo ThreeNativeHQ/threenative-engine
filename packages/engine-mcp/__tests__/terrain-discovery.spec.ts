@@ -6,7 +6,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { capabilityDetail, searchCapabilities } from "../src/index.js";
 
-const manifest = path.resolve("packages/create-threenative/capabilities.json");
+const manifest = path.resolve("packages/core/capabilities.json");
 const templates = path.resolve("packages/create-threenative/templates");
 
 /** The first result's import path, so a query that lands on the wrong package fails by name. */

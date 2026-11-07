@@ -3514,7 +3514,10 @@ export function reportEnvironmentContribution( scene: Scene, options: IContribut
 - **Use when:** measure what a scene's environment actually contributes · sample the environment on the GPU without stalling the frame · keep an environment readback from reaching a frame it does not belong to · add a backlit sheen to a material without editing the material graph
 
 ```ts
-reportEnvironmentContribution(m, { maxSourceTexels: 2048 });
+reportEnvironmentContribution(scene, {
+  darkThreshold: 0.02, fillAdmitted: true, fillColor: new Color(1, 1, 1), fillGain: 0.4,
+  maxSourceTexels: 2048, rimGain: 0.6,
+});
 ```
 
 ### `sampledRadiance`

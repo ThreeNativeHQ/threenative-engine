@@ -4469,7 +4469,7 @@
     {
       "aliases": [],
       "constraints": [],
-      "example": "reportEnvironmentContribution(m, { maxSourceTexels: 2048 });",
+      "example": "reportEnvironmentContribution(scene, {\n  darkThreshold: 0.02, fillAdmitted: true, fillColor: new Color(1, 1, 1), fillGain: 0.4,\n  maxSourceTexels: 2048, rimGain: 0.6,\n});",
       "importPath": "@threenative/core/render/environment",
       "kind": "function",
       "overrides": [],

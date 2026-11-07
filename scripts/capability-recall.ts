@@ -117,7 +117,7 @@ export class CapabilityRecallError extends Error {
 
 const CORPUS_RELATIVE_PATH = path.join("scripts", "fixtures", "capability-recall", "corpus.json");
 const BUDGET_RELATIVE_PATH = path.join("scripts", "fixtures", "capability-recall", "budget.json");
-const MANIFEST_RELATIVE_PATH = path.join("packages", "create-threenative", "capabilities.json");
+const MANIFEST_RELATIVE_PATH = path.join("packages", "core", "capabilities.json");
 const BRIEF_NAMES = briefGenres();
 const TEMPLATE_NAMES = templateNames();
 const SOURCE_PATTERN = /^(brief|sandbox|template):([a-z0-9-]+)#(.+)$/u;

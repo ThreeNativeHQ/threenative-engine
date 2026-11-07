@@ -14,7 +14,7 @@ import {
   validateCorpus,
 } from "../capability-recall.js";
 
-const manifestFile = "packages/create-threenative/capabilities.json";
+const manifestFile = "packages/core/capabilities.json";
 
 function row(overrides: Partial<ICapabilityRecallRow> = {}): ICapabilityRecallRow {
   return {

@@ -230,7 +230,7 @@ function parseWindow(line: string): IFrameBudgetWindow {
 
 describe("FrameBudget", () => {
   it("documents the default 8 ms addInSlices budget in capability detail", () => {
-    const detail = capabilityDetail("addInSlices", "packages/create-threenative/capabilities.json");
+    const detail = capabilityDetail("addInSlices", "packages/core/capabilities.json");
     expect(detail.summary).toContain("8 ms default budget");
     expect(detail.overrides?.join(" ")).toContain("8 ms budget unless the game gives `sliceSize`");
   });

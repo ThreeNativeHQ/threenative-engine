@@ -131,7 +131,13 @@ export function measureEnvironment(scene: Scene, maxSourceTexels: number): IEnvi
   };
 }
 
-interface IContributionControls {
+/**
+ * What a contribution report reads: the backlight's gains and the source-texel limit.
+ *
+ * Exported because `reportEnvironmentContribution` takes it — a public function with a private
+ * parameter type cannot be called from a game, which is how its example failed to compile.
+ */
+export interface IContributionControls {
   readonly darkThreshold: number;
   readonly rimGain: number;
   readonly fillGain: number;
@@ -156,7 +162,11 @@ function fillReport(options: IContributionControls) {
 }
 /**
  * Overrides change the look, never whether its source contribution is measured/reported.
- * @example reportEnvironmentContribution(m, { maxSourceTexels: 2048 });
+ * @example
+ * reportEnvironmentContribution(scene, {
+ *   darkThreshold: 0.02, fillAdmitted: true, fillColor: new Color(1, 1, 1), fillGain: 0.4,
+ *   maxSourceTexels: 2048, rimGain: 0.6,
+ * });
  */
 export function reportEnvironmentContribution(
   scene: Scene,

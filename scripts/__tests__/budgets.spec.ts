@@ -492,7 +492,7 @@ describe("budget gate", () => {
   it("should reject stale capabilities when budgets run", async () => {
     const root = await fixtureRoot();
     await capabilityFixture(root);
-    const manifestPath = path.join(root, "packages/create-threenative/capabilities.json");
+    const manifestPath = path.join(root, "packages/core/capabilities.json");
     await writeFile(manifestPath, `${await readFile(manifestPath, "utf8")}\n`);
 
     await expect(enforceBudgets(root)).rejects.toThrow(/Capability manifest is stale/u);

@@ -58,7 +58,7 @@ async function writeExportedPackage(
 }
 
 async function writeCapabilityManifest(root: string, packages: readonly string[]): Promise<void> {
-  const manifestRoot = path.join(root, "packages", "create-threenative");
+  const manifestRoot = path.join(root, "packages", "core");
   await mkdir(manifestRoot, { recursive: true });
   await writeFile(
     path.join(manifestRoot, "capabilities.json"),
@@ -86,9 +86,9 @@ async function writeBuiltImportFixture(root: string): Promise<void> {
   await writeFile(path.join(packageRoot, "dist/index.js"), "export function probe() {}\n");
   await writeFile(path.join(packageRoot, "dist/feature.js"), "export function feature() {}\n");
   await writeFile(path.join(packageRoot, "src/index.js"), "export function probe() {}\n");
-  await mkdir(path.join(root, "packages/create-threenative"), { recursive: true });
+  await mkdir(path.join(root, "packages/core"), { recursive: true });
   await writeFile(
-    path.join(root, "packages/create-threenative/capabilities.json"),
+    path.join(root, "packages/core/capabilities.json"),
     JSON.stringify({
       entries: [
         { importPath: "@threenative/probe", symbol: "probe" },
@@ -162,7 +162,7 @@ describe("capability documentation gate", () => {
     };
     await mkdir(path.join(root, "packages/create-threenative"), { recursive: true });
     await writeFile(
-      path.join(root, "packages/create-threenative/capabilities.json"),
+      path.join(root, "packages/core/capabilities.json"),
       JSON.stringify(manifest),
     );
 
@@ -190,7 +190,7 @@ describe("capability documentation gate", () => {
     ];
     await mkdir(path.join(root, "packages/create-threenative"), { recursive: true });
     await writeFile(
-      path.join(root, "packages/create-threenative/capabilities.json"),
+      path.join(root, "packages/core/capabilities.json"),
       JSON.stringify({ entries: [] }),
     );
 

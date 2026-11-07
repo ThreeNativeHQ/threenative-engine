@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
  */
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const MANIFEST_RELATIVE_PATH = path.join("packages", "create-threenative", "capabilities.json");
+const MANIFEST_RELATIVE_PATH = path.join("packages", "core", "capabilities.json");
 const TARGET_RELATIVE_PATH = path.join(
   "packages",
   "create-threenative",

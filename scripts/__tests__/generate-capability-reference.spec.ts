@@ -32,7 +32,7 @@ describe("generated capability reference", () => {
   it("describes every package represented by the manifest", async () => {
     const manifest = JSON.parse(
       await readFile(
-        path.join(process.cwd(), "packages/create-threenative/capabilities.json"),
+        path.join(process.cwd(), "packages/core/capabilities.json"),
         "utf8",
       ),
     ) as {

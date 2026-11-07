@@ -39,7 +39,7 @@ async function call(args: unknown) {
         method: "tools/call",
         params: { name: "engine_watch_reference", arguments: args },
       }),
-      path.resolve("packages/create-threenative/capabilities.json"),
+      path.resolve("packages/core/capabilities.json"),
     )) ?? "",
   );
   if (response.error) throw new Error(response.error.message);

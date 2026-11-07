@@ -18,7 +18,7 @@ interface IManifestEntry {
 
 const manifestEntries = (
   JSON.parse(
-    readFileSync(path.join(REPO_ROOT, "packages/create-threenative/capabilities.json"), "utf8"),
+    readFileSync(path.join(REPO_ROOT, "packages/core/capabilities.json"), "utf8"),
   ) as { entries: IManifestEntry[] }
 ).entries.filter(
   (entry) =>

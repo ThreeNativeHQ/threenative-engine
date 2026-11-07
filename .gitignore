@@ -227,3 +227,6 @@ tools/unreal-reference/gi/**/__pycache__/
 examples/strata-terrain-preview/dist-engine/
 
 dist-one-spell/
+
+# PRD-836: the one committed capability manifest is core's; this copy is build output.
+/packages/create-threenative/capabilities.json

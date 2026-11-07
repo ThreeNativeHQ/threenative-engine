@@ -401,7 +401,7 @@ async function main(): Promise<void> {
   const manifest: {
     entries: { importPath: string; supersedes: readonly string[]; symbol: string }[];
   } = JSON.parse(
-    await readFile(path.join(repoRoot, "packages/create-threenative/capabilities.json"), "utf8"),
+    await readFile(path.join(repoRoot, "packages/core/capabilities.json"), "utf8"),
   );
   const supersessions = loadSupersessions(manifest);
 
