@@ -153,6 +153,8 @@ export interface IProbeVolumeTrace {
   readonly sun: { readonly direction: Vector3; readonly color: Color; readonly intensity: number };
   /** Radiance of a ray that leaves the scene; black for a closed interior. Read every frame. */
   readonly sky: Color;
+  /** Point lights read every frame; the first `points.length` at build are traced (see `IProbeTraceLighting`). */
+  readonly points?: IProbeTraceLighting["points"];
   /** The view whose frustum marks probes as in use, so they refresh first. Absent: none ranks first. */
   readonly camera?: Camera;
 }
@@ -914,6 +916,7 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
         direction: trace.sun.direction,
         intensity: trace.sun.intensity,
         sky: trace.sky,
+        points: trace.points,
       };
       applyTraceLighting(kernels, lighting);
       this.#watchLighting(lighting);
@@ -962,6 +965,7 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
       },
       this.#raysPerProbe,
       Math.min(this.#traceBudget, this.#probeCount),
+      trace.points?.length ?? 0,
     );
     // Carry the field across a scene rebuild, so the new kernels bounce from the old light.
     if (previous !== undefined) {

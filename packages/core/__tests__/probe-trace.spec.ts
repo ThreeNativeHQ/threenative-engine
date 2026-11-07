@@ -21,6 +21,7 @@ import { describe, expect, it } from "vitest";
 import { GPUSceneBVH } from "../src/gpu-scene-bvh.js";
 import {
   type IThreadedScene,
+  applyTraceLighting,
   flatMaterial,
   lightingKey,
   lightingStepped,
@@ -232,5 +233,36 @@ describe("probe trace scene (PRD-603)", () => {
     expect(flatMaterial(display)).toMatchObject({ ignored: true });
     expect(flatMaterial(display).emission.toArray()).toEqual([0, 0, 0]);
     expect(flatMaterial(new MeshBasicNodeMaterial({ color: 0x00ff00 })).emission.g).toBe(1);
+  });
+});
+
+describe("point lights in the trace lighting (PRD-831)", () => {
+  it("copies a point light into the kernel uniforms and clears a light the game removed", () => {
+    const kernels = {
+      points: [0, 1].map(() => ({
+        distance: { value: -1 },
+        position: { value: new Vector3() },
+        radiance: { value: new Vector3() },
+      })),
+      sky: { value: new Vector3() },
+      sunDirection: { value: new Vector3() },
+      sunRadiance: { value: new Vector3() },
+    } as unknown as Parameters<typeof applyTraceLighting>[0];
+    const lighting = {
+      color: new Color(1, 1, 1),
+      direction: new Vector3(0, 1, 0),
+      intensity: 0,
+      points: [
+        { color: new Color(1, 0.5, 0), distance: 20, intensity: 4, position: new Vector3(1, 2, 3) },
+      ],
+      sky: new Color(0, 0, 0),
+    };
+    applyTraceLighting(kernels, lighting);
+    expect(kernels.points[0]?.radiance.value.toArray()).toEqual([4, 2, 0]);
+    expect(kernels.points[0]?.position.value.toArray()).toEqual([1, 2, 3]);
+    expect(kernels.points[0]?.distance.value).toBe(20);
+    expect(kernels.points[1]?.radiance.value.toArray()).toEqual([0, 0, 0]);
+    applyTraceLighting(kernels, { ...lighting, points: undefined });
+    expect(kernels.points[0]?.radiance.value.toArray()).toEqual([0, 0, 0]);
   });
 });

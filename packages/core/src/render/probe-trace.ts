@@ -27,7 +27,9 @@ import {
   max,
   min,
   normalize,
+  pow,
   select,
+  sqrt,
   storage,
   uniform,
   vec3,
@@ -57,6 +59,19 @@ export interface IProbeTraceLighting {
   readonly intensity: number;
   /** Radiance of a ray that leaves the scene. Black for an interior with no sky. */
   readonly sky: Color;
+  /**
+   * Point lights, at most the count the kernels were built for. Intensity is the irradiance on a surface 1 m
+   * from the light that faces it, in the same units as the sun; `distance` closes the attenuation window
+   * (three's `getDistanceAttenuation`), 0 for none. A change to a point light needs `requestBake`.
+   */
+  readonly points?: readonly IProbeTracePoint[];
+}
+
+export interface IProbeTracePoint {
+  readonly position: Vector3;
+  readonly color: Color;
+  readonly intensity: number;
+  readonly distance?: number;
 }
 
 /** What a scene BVH snapshot becomes on the GPU: a threaded node table, triangles and the material table. */
@@ -239,7 +254,7 @@ function traceRay(
   nodeCount: AnyNode,
   origin: AnyNode,
   direction: AnyNode,
-  far: number,
+  far: number | AnyNode,
   anyHit: boolean,
 ): { t: AnyNode; triangle: AnyNode } {
   const best = float(far).toVar();
@@ -357,6 +372,12 @@ export interface IProbeTraceKernels {
   readonly sunDirection: { value: Vector3 };
   readonly sunRadiance: { value: Vector3 };
   readonly sky: { value: Vector3 };
+  /** One uniform set per point light the kernels were built for. */
+  readonly points: readonly {
+    position: { value: Vector3 };
+    radiance: { value: Vector3 };
+    distance: { value: number };
+  }[];
   /** 1 once a previous generation exists to bounce from. */
   readonly bounce: { value: number };
   readonly raysPerProbe: number;
@@ -370,6 +391,7 @@ export function createProbeTraceKernels(
   grid: IProbeTraceGrid,
   raysPerProbe: number,
   maxBatch: number,
+  pointCount = 0,
 ): IProbeTraceKernels {
   const attributes: StorageBufferAttribute[] = [];
   const buffer = (array: Float32Array | Int32Array, itemSize: number) => {
@@ -401,6 +423,11 @@ export function createProbeTraceKernels(
   const sunDirection = uniform(new Vector3(0, 1, 0));
   const sunRadiance = uniform(new Vector3());
   const sky = uniform(new Vector3());
+  const points = Array.from({ length: pointCount }, () => ({
+    distance: uniform(0),
+    position: uniform(new Vector3()),
+    radiance: uniform(new Vector3()),
+  }));
   const bounce = uniform(0);
   const nx = grid.resolution.x;
   const ny = grid.resolution.y;
@@ -471,9 +498,26 @@ export function createProbeTraceKernels(
         const shadow = traceRay(buffers, nodeCount, point, sunDirection, far, true);
         visible.assign(select(shadow.triangle.lessThan(0), float(1), float(0)));
       });
-      const irradiance = vec3(sunRadiance)
-        .mul(cosine.mul(visible))
-        .add(previousIrradiance(point, facing).mul(bounce));
+      const direct = vec3(sunRadiance).mul(cosine.mul(visible)).toVar();
+      for (const light of points) {
+        const toLight = light.position.sub(point);
+        const squared = max(dot(toLight, toLight), 0.0001);
+        const length = sqrt(squared);
+        const toward = toLight.div(length);
+        const facingLight = max(dot(facing, toward), 0);
+        If(facingLight.greaterThan(0), () => {
+          const shadow = traceRay(buffers, nodeCount, point, toward, length.sub(0.02), true);
+          If(shadow.triangle.lessThan(0), () => {
+            const window = select(
+              light.distance.greaterThan(0),
+              pow(clamp(float(1).sub(pow(length.div(light.distance), 4)), 0, 1), 2),
+              float(1),
+            );
+            direct.addAssign(light.radiance.mul(facingLight.mul(window).div(squared)));
+          });
+        });
+      }
+      const irradiance = direct.add(previousIrradiance(point, facing).mul(bounce));
       result.assign(emission.add(albedo.mul(irradiance).mul(INV_PI)));
     });
     radianceNode.element(instanceIndex).assign(vec4(result, 1));
@@ -520,6 +564,7 @@ export function createProbeTraceKernels(
     maxBatch,
     probeList,
     project,
+    points,
     raysPerProbe,
     sky,
     sunDirection,
@@ -574,4 +619,14 @@ export function applyTraceLighting(
     .set(lighting.color.r, lighting.color.g, lighting.color.b)
     .multiplyScalar(lighting.intensity);
   kernels.sky.value.set(lighting.sky.r, lighting.sky.g, lighting.sky.b);
+  kernels.points.forEach((light, index) => {
+    const source = lighting.points?.[index];
+    light.radiance.value.set(0, 0, 0);
+    if (source === undefined) return;
+    light.position.value.copy(source.position);
+    light.radiance.value
+      .set(source.color.r, source.color.g, source.color.b)
+      .multiplyScalar(source.intensity);
+    light.distance.value = source.distance ?? 0;
+  });
 }
