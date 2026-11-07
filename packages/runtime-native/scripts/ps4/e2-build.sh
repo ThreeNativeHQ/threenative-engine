@@ -186,6 +186,10 @@ git apply "$SCRIPTS/patches/0042-opengnm-psbc-no-s-or-saveexec.patch"
 # that reads a subset of the VS outputs could not be matched to them. Both now carry the varying slot
 # (SPIR-V location), VS exports the parameter radv assigned, PS inputs a flat bit (PRD-784 P4-3).
 git apply "$SCRIPTS/patches/0046-opengnm-psbc-varying-slot-semantics.patch"
+# Front face as a float (+1.0/-1.0): psbc's Mesa reads it with fgt and fsign, but SPI_BARYC_CNTL
+# asked for the integer form, so every face read back-facing and the normal-map frame scaled to 0
+# (no concrete relief on PS4, PRD-784 visuals).
+git apply "$SCRIPTS/patches/0056-opengnm-psbc-front-face-float.patch"
 
 # === 3. opengnm (orbis) ======================================================
 cd "$SRC/opengnm"
