@@ -1,6 +1,6 @@
 # PRD-832 — Urgent single sources: one owner for each value that has silently drifted
 
-**Status:** PARTIAL — Phases 1 and 2 landed; Phase 3 (named `tnw_web_frame` fields) is open
+**Status:** DONE — all three phases landed
 **Priority:** P1 — the open Phase 1 box fixes a live gap: `pnpm budgets` runs capability recall without the `puzzle`, `rts` and `runner` kits. The open Phase 3 boxes remove a web telemetry channel that answers 0 to an unknown field.
 **Complexity:** 5 (MEDIUM); risk override: Phase 2 can change the default tone curve, so the owner's visual-judge rule applies to that box
 **Owner:** ThreeNative maintainers
@@ -71,8 +71,8 @@ the way its own red-green commit.
 - [x] Core version has one source: `index.ts` re-exports `CORE_VERSION` from the generated `version.ts`, `doctor.ts` imports that constant instead of a literal, and `prepare-release.ts` drops the three regexes that patched them. proof: `pnpm exec vitest run packages/create-threenative/__tests__/doctor.spec.ts scripts/__tests__/prepare-release.spec.ts` → 112 passed.
 
 #### Phase 3: Named `tnw_web_frame` fields
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** the field manifest beside `packages/three-native/api/catalog.json`; `packages/three-native/scripts/generate.ts`; `packages/runtime-native/src/engine/wasm/web_host.cpp`; `packages/three-native/src/browser-renderer.ts`, `gpu-stages.ts`, `browser-entry.ts`; `packages/three-native/__tests__/web-host-abi.spec.ts`.
 
-- [ ] Every `tnw_web_frame` caller uses a generated name. The C++ switch uses the generated enum, and an unknown field fails loudly. The ABI spec digests the field list, so a renumbered field goes red. proof: `pnpm --filter @threenative/three-native exec vitest run __tests__/web-host-abi.spec.ts` plus `pnpm native:build` for the Wasm target
-- [ ] Starter on the owned web engine still reports real frame telemetry: `TN_FRAME_BUDGET` GPU and CPU stage values are non-zero. proof: `node packages/playtest/dist/runner/cli.js` on the starter golden scenario with `--browser-recipe webgpu`, `adapter.info` checked
+- [x] Every `tnw_web_frame` caller uses a generated name, from one manifest: `packages/three-native/api/web-frame-fields.json` (73 fields) feeds `packages/three-native/scripts/generate.ts`, which writes the TypeScript constant (`src/generated/web-frame-fields.ts`), the C++ enum (`runtime-native/src/engine/wasm/web_frame_fields.h`) and the facade's stage tables (`gpu-stages.ts` `CPU_STAGE_FIELDS`/`SHADOW_SEGMENT_FIELD`, `browser-renderer.ts`'s GPU stage base). The switch names the enum, and an id no manifest entry declares prints `TN_WEB_FRAME_UNKNOWN_FIELD` once and answers NaN instead of a zero the caller would read as a measurement. `__tests__/web-frame-fields.spec.ts` pins the three copies to the manifest and digests the table (`faae3793e5b2581b`), so a renumber goes red. proof: `pnpm --filter @threenative/three-native exec vitest run __tests__/web-frame-fields.spec.ts __tests__/web-host-abi.spec.ts` → 6 passed; `pnpm wasm:build` compiles and links both web engines with the new switch (exit 0).
+- [x] The owned web engine still reports real frame telemetry: `TN_FRAME_BUDGET` on `examples/wasm-engine-boot` (the game page, `--browser-recipe webgpu`, adapter `nvidia`/`turing`) reads GPU `mean 0.05 ms` over 3 samples and non-zero CPU stages (`wasmPlan` mean 0.30, `wasmEncode` 0.26, `wasmScene` 0.06, `wasmPost` 0.16, `engineJs` 0.30) — the renamed stage fields (66-70) answer the values they named before. The starter scaffold needs a full template install-and-build lane, so the proof runs on the in-repo game page that drives the same `tnw_web_frame` path; `pnpm test:templates` remains the starter-wide gate under AC-1. proof: `node packages/playtest/dist/runner/cli.js /tmp/framebudget.playtest.json --url http://127.0.0.1:5293 --server-command "npx vite preview --host 127.0.0.1 --port 5293 --strictPort" --browser-recipe webgpu --headed` → 1 window, values recorded here
