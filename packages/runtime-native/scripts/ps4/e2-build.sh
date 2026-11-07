@@ -497,6 +497,10 @@ git apply "$SCRIPTS/patches/0051-vk-ps4-integer-vertex-formats.patch"
 # face, and a load-op clear of a face painted layer 0: the PMREM cube came out empty and every face lit only by the
 # environment was black. Layer views are 2D_ARRAY T#s of the whole image; a clear takes its layer (PRD-784 P4-3).
 git apply "$SCRIPTS/patches/0052-vk-ps4-layer-views-and-layer-clears.patch"
+# Vulkan's clip-space z is 0..w. The driver named the -w..w space (PA_CL_CLIP_CNTL 0) and a -1..1 viewport z transform,
+# so shadPS4 ran a negativeOneToOne viewport and every depth landed in 0.5..1: a shadow map held 0.5 + d/2 while the
+# lookup compared the plain d, and no caster shadowed anything. DX_CLIP_SPACE_DEF plus z * (max - min) + min (PRD-784 P4-3).
+git apply "$SCRIPTS/patches/0053-vk-ps4-dx-clip-space-depth.patch"
 # The Makefile compiles TEST_SRC relative to the vulkan-ps4 tree.
 cp "$SCRIPTS/e2-triangle.c" "$SRC/e2-triangle.c"
 make -f Makefile.orbis -j"$JOBS" TEST_SRC=../e2-triangle.c self > "$LOGS/e2-triangle.log" 2>&1

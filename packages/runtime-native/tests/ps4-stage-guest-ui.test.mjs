@@ -63,6 +63,14 @@ test('a cube face view and its clear keep their layer, so the environment light 
   assert.match(readFileSync(path.join(root, 'scripts/ps4/patches/0052-vk-ps4-layer-views-and-layer-clears.patch'), 'utf8'), /^\+\s+view->create_info\.subresourceRange\.baseArrayLayer\);/mu);
 });
 
+test('depth uses Vulkan 0..1 clip space, so shadow maps compare the depth they stored (PRD-784)', () => {
+  // PA_CL_CLIP_CNTL 0 named the -w..w space: every depth landed in 0.5..1 and no caster shadowed anything.
+  assert.match(readFileSync(path.join(root, 'scripts/ps4/e2-build.sh'), 'utf8'), /git apply "\$SCRIPTS\/patches\/0053-vk-ps4-dx-clip-space-depth\.patch"/u);
+  const patch = readFileSync(path.join(root, 'scripts/ps4/patches/0053-vk-ps4-dx-clip-space-depth.patch'), 'utf8');
+  assert.match(patch, /^\+.*R_028810_PA_CL_CLIP_CNTL, S_028810_DX_CLIP_SPACE_DEF\(1\)\);/mu);
+  assert.match(patch, /^\+\s+vp_info\.offset\[2\] = vp->minDepth;/mu);
+});
+
 test('refuses a UI with no stylesheet', () => {
   const { app, scene: dir } = scene({ 'a.png': 'x' });
   assert.throws(() => stageGuestUi(dir, app, {}), /TN_PS4_UI_NO_CSS/u);
