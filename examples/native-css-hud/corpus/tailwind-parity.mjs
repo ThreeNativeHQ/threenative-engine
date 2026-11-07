@@ -795,6 +795,7 @@ const fillers = (count) =>
 const blanks = (count) => Array.from({ length: count }, () => el("div", { class: "stage-fill" }));
 
 const TEXT_PROPS = new Set([
+  "color",
   "font-size",
   "line-height",
   "letter-spacing",
@@ -844,6 +845,54 @@ const IDENTITY =
 const HIDING = /display:\s*none|visibility:\s*hidden|opacity:\s*0(?:\.0+)?\s*[;}]|animation:/u;
 
 /**
+ * Declarations a *default* needs before some units can show anything at all.
+ *
+ * A property is often invisible without its context: `position: absolute` with no inset paints in
+ * the same place as `static`; `border-color` paints nothing while every border-width is zero; a
+ * `background-size` means nothing without a background image to size; `z-index` only orders
+ * positioned boxes. Each entry adds that context to the cell's own default, so the unit's
+ * declaration is the only thing that changes.
+ */
+const CONTRAST_EXTRAS = [
+  [
+    /(^|-)border(-(top|right|bottom|left|x|y|s|e|bs|be|start|end))?-color$/u,
+    "border-width:6px;border-style:solid",
+  ],
+  [/(^|-)outline-color$/u, "outline-width:6px;outline-style:solid"],
+  [/^border-color$/u, "border-width:6px;border-style:solid"],
+  [/^outline$/u, "outline-width:6px;outline-offset:2px"],
+  [
+    /^background-(size|position|repeat|attachment|origin|clip)$/u,
+    "background-image:repeating-linear-gradient(45deg,#f59e0b 0 6px,#2563eb 6px 12px);background-size:24px 24px",
+  ],
+  [/^position$/u, "inset:16px"],
+  [/^z-index$/u, "position:relative"],
+  [
+    /^(top|right|bottom|left|inset|inset-(block|inline|s|e|bs|be|start|end))$/u,
+    "position:absolute",
+  ],
+  [/^float$/u, "width:60px"],
+  [/^(scale|scale-x|scale-y)$/u, "transform:none"],
+];
+
+/** The extra declarations one unit's default needs. */
+function contrastExtras(unit) {
+  const found = [];
+  for (const property of unit.props) {
+    for (const [pattern, declarations] of CONTRAST_EXTRAS) {
+      if (pattern.test(property) && !found.includes(declarations)) found.push(declarations);
+    }
+  }
+  return found;
+}
+
+/** Values a contrast should prefer for one property, best first, because keyword swaps can be invisible. */
+const PREFERRED_CONTRAST = {
+  display: ["inline", "inline-block", "flow-root", "contents"],
+  position: ["absolute", "fixed", "relative"],
+};
+
+/**
  * The default the unit's declarations must beat, as a declaration block.
  *
  * It is emitted *before* Tailwind's sheet with a `:where()` scope, so it has a utility class's own
@@ -872,16 +921,32 @@ function contrastDeclarations(unit, classCss, byProperty) {
     .filter(usable)
     .sort((a, b) => a[0].length - b[0].length || (a[0] < b[0] ? -1 : 1));
   for (const property of unit.props) {
-    const chosen =
-      family.find((candidate) => differs(candidate, property)) ??
-      (byProperty.get(property) ?? [])
-        .map((name) => [name, classCss.get(name)])
-        .filter((candidate) => usable(candidate) && differs(candidate, property))
-        .sort((a, b) => a[0].length - b[0].length || (a[0] < b[0] ? -1 : 1))[0];
+    const options = family
+      .filter((candidate) => differs(candidate, property))
+      .concat(
+        (byProperty.get(property) ?? [])
+          .map((name) => [name, classCss.get(name)])
+          .filter((candidate) => usable(candidate) && differs(candidate, property)),
+      );
+    const preferred = PREFERRED_CONTRAST[property] ?? [];
+    const rank = (candidate) => {
+      const value = declaredValue(candidate[1], property) ?? "";
+      const index = preferred.findIndex((want) => value === want);
+      return index === -1 ? preferred.length : index;
+    };
+    const chosen = options.sort(
+      (a, b) => rank(a) - rank(b) || a[0].length - b[0].length || (a[0] < b[0] ? -1 : 1),
+    )[0];
     if (chosen === undefined) continue;
+    if (process.env.TN_PARITY_DEBUG === unit.probe) {
+      console.error(
+        `DEBUG ${property} <- ${chosen[0]} = ${JSON.stringify(declaredValue(chosen[1], property))} (probe ${JSON.stringify(declaredValue(probeCss, property))})`,
+      );
+    }
     declarations.push(`${property}:${declaredValue(chosen[1], property)}`);
     sources.add(chosen[0]);
   }
+  for (const extra of contrastExtras(unit)) declarations.push(extra);
   return { declarations: declarations.join(";"), sources: [...sources] };
 }
 
