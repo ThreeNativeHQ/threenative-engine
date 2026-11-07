@@ -16,6 +16,9 @@ export class Crate {
     y: number,
     z: number,
     material: Material,
+    // On a tier with a sun shadow sharp enough to ground it, the blob is a second, blurred shadow
+    // beside the sun's; Play.ts draws it only on `low`, which has no ambient occlusion pass.
+    contactShadow: () => boolean = () => true,
   ) {
     this.mesh = new Mesh(roundedBox(1, 1, 1), material);
     this.mesh.position.set(x, y, z);
@@ -31,8 +34,8 @@ export class Crate {
       from.set(x, y, z);
       to.set(x, y - 6, z);
       const gap = ctx.physics.directSpaceState.intersectRay({ from, to })?.distance;
-      this.#shadow.object.visible = gap !== undefined;
-      if (gap === undefined) return;
+      this.#shadow.object.visible = gap !== undefined && contactShadow();
+      if (!this.#shadow.object.visible || gap === undefined) return;
       this.#shadow.object.position.set(x, y - gap + 0.03, z);
       this.#shadow.fade(Math.max(0, 1 - (gap - 0.5) / 1.5));
     });

@@ -301,7 +301,10 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     ctx.add(fixed(floorMesh));
     ctx.add(fixed(floorBase));
     lensBlockers.push(...arena.solids, floorMesh, floorBase);
-    ctx.entities.add("crate", new Crate(ctx, levelX, 4, -1.5, propMaterial));
+    ctx.entities.add(
+      "crate",
+      new Crate(ctx, levelX, 4, -1.5, propMaterial, () => this.#post?.tier === "low"),
+    );
     const pickupBase = block(0.42, 0.14, 0.42, propMaterial);
     const pickupStem = tube(0.08, 0.08, 0.3, propMaterial);
     const pickupOrb = ball(0.16, propMaterial);
