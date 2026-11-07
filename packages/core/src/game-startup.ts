@@ -49,6 +49,7 @@ import {
   resolveRendererAntialias,
   resolveRendererScaleSetting,
 } from "./renderer-config.js";
+import { rendererFacts } from "./renderer-facts.js";
 import { type IRendererLike, createRenderer } from "./renderer.js";
 import type { ICtx, IStartupStatus, IStartupTimeline, Scene, SceneFrame } from "./scene.js";
 import { Scheduler } from "./schedule.js";
@@ -257,8 +258,7 @@ export async function startGameWorld<TState extends Record<string, unknown>, TPh
   // Built before the context because `ctx.startup` reads it: a game asks what the framework's
   // startup is doing, and the answer is this pass.
   // The owned renderer retains its own velocity history; JS snapshots serve Three's accessors.
-  const engineInfo = (renderer.raw as { info?: object }).info;
-  const ownedEngine = engineInfo !== undefined && "engine" in engineInfo;
+  const { ownedEngine } = rendererFacts(renderer);
   const projection = new SceneRenderProjection(threeScene, {
     // The game's `renderer.projection` value verbatim: `false` declines the mirror, an object
     // names the material check beside accepting it, and the projection owns both readings.

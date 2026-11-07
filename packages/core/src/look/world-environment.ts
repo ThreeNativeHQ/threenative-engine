@@ -73,6 +73,7 @@ import {
 } from "../render/chain.js";
 import { GIVisualize, type GIVisualizeMode } from "../render/gi-visualize.js";
 import type { TracedReflections } from "../render/traced-reflections.js";
+import { rendererFacts } from "../renderer-facts.js";
 import { STARTUP_EXPOSURE } from "../renderer.js";
 import { aoRefusal } from "./ao-admission.js";
 import { AO_MULTIBOUNCE_FIT, UNREAL_AO_MULTIBOUNCE_ALBEDO } from "./ao-multibounce.js";
@@ -921,8 +922,7 @@ export class WorldEnvironment {
 
     // Temporal AA is the owned engine's: it jitters the camera and blends the frames ahead of every stage. Any other
     // renderer keeps the spatial filter, and the report says why.
-    const engineInfo = (renderer.raw as { info?: object }).info;
-    const ownedEngine = engineInfo !== undefined && "engine" in engineInfo;
+    const { ownedEngine } = rendererFacts(renderer);
     const temporalRefusal = !options.temporalAA
       ? undefined
       : renderer.kind !== "webgpu"
@@ -1023,7 +1023,7 @@ export class WorldEnvironment {
     const temporalReport = temporal
       ? (): Record<string, unknown> => ({
           method: "traa",
-          ...(engineInfo as { engine?: { temporal?: object } }).engine?.temporal,
+          ...(renderer.raw as { info?: { engine?: { temporal?: object } } }).info?.engine?.temporal,
         })
       : undefined;
     // Contact occlusion dims the light that comes from around. With the world cache baked the frame's indirect
@@ -1189,7 +1189,7 @@ export class WorldEnvironment {
         build: (input) => {
           // The gather reads the lit frame at each ray's hit, so the frame is materialised once and reused.
           const base = convertToTexture(input);
-          const wasmEngine = "engine" in (renderer.raw as { info: object }).info;
+          const wasmEngine = rendererFacts(renderer).ownedEngine;
           // Harness: on the owned engine the gather also answers for the tier below it (the world-space cache), so
           // a ray that hits returns `hit - cache` and the two never add the same light twice (Lumen's tiering,
           // Engine/Source/Runtime/Renderer/Private/Lumen/LumenScreenProbeGather.cpp).

@@ -1,6 +1,6 @@
 # PRD-837 — Core owns each shared fact once
 
-**Status:** NOT STARTED
+**Status:** PARTIAL — Phase 2 box 1 landed; the LOD recipe, the `world.json` contract, `GpuReadings`, the dev global and the other boxes are open.
 **Priority:** P2 — the open boxes delete 6 inline copies of the LOD recipe (which already disagree on the near-plane default), the 3 declarations of `world.json`, and 3 GPU-sample freshness rules.
 **Complexity:** 6 (MEDIUM); risk override: LOD selection and the renderer facts decide what is drawn, so the owner's visual-judge rule applies to Phases 1 and 2
 **Owner:** ThreeNative maintainers
@@ -53,10 +53,10 @@ Report ids C2, C1, C4, C5, B2, B4, A5. Follows the refactoring batch rule "one o
 - [ ] Terrain and assets use core's world package type, and the biome `impostor` value reaches `impostorDistance`. proof: `pnpm --filter @threenative/terrain test` plus `pnpm --filter @threenative/core exec vitest run __tests__/world-cells.spec.ts`
 
 #### Phase 2: Renderer facts
-**Status:** NOT STARTED
+**Status:** PARTIAL — the one owned-engine check landed; `GpuReadings` is open
 **Files:** new `packages/core/src/renderer-facts.ts`, `renderer.ts`, `resolution-scaler.ts`, `frame-budget.ts`, `look/world-environment.ts`, `game-startup.ts`.
 
-- [ ] `rendererFacts` is the only owned-engine check: `rg -n '"engine" in' packages/core/src` returns nothing. proof: `pnpm --filter @threenative/core exec vitest run __tests__/game.spec.ts`
+- [x] `rendererFacts` is the only owned-engine check: `packages/core/src/renderer-facts.ts` reads the facade's own `info.engine`, and the four subsystems that probed it by hand (`game-startup`, `WorldEnvironment.apply` twice, `WorldCellRenderBundles.ownsBundles`) call it. The probe does not spell `"engine" in` anywhere in the package, so the box's `rg` proof holds. It ships `{ kind, ownedEngine }` and nothing more: `webglFallback` already has one owner (`isWebGLFallbackRenderer`, in `@threenative/core/render/environment`) and `software` has no caller yet — a field nothing reads is the thing this PRD exists to delete. proof: `rg -n '"engine" in' packages/core/src` returns nothing outside a doc comment; `pnpm --filter @threenative/core exec vitest run __tests__/game.spec.ts __tests__/renderer-facts.spec.ts __tests__/world-environment-defaults.spec.ts __tests__/world-bundles.spec.ts` → 157 passed.
 - [ ] One `GpuReadings` serves the renderer, the scaler and the budget. proof: `pnpm --filter @threenative/core exec vitest run __tests__/frame-budget-gpu-series.spec.ts __tests__/frame-budget.spec.ts`
 
 #### Phase 3: Dev global
