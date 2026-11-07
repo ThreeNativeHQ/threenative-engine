@@ -9,7 +9,7 @@
 //
 // The traversal is stackless (a threaded BVH: each node carries the node to visit after it), because the owned
 // engine's TSL has loops and storage buffers but no local arrays, and refuses the upstream WGSL ray query.
-import { Color, type Material, MeshBasicMaterial, type Texture, Vector3 } from "three";
+import { Color, type Material, type Texture, Vector3 } from "three";
 import {
   Break,
   Fn,
@@ -139,8 +139,12 @@ export function flatMaterial(material: Material): {
     (fields.colorNode ?? null) !== null ||
     (fields.emissiveNode ?? null) !== null;
   // An unlit material shows its colour whatever lights the scene, exactly as a cube capture records it.
-  if (material instanceof MeshBasicMaterial)
-    return { albedo: new Color(0, 0, 0), emission: color, ignored };
+  // A node-coloured unlit surface shows computed light (often this very field), not light of its own.
+  const unlit = fields as { isMeshBasicMaterial?: boolean; isMeshBasicNodeMaterial?: boolean };
+  if (unlit.isMeshBasicMaterial === true || unlit.isMeshBasicNodeMaterial === true) {
+    const emission = (fields.colorNode ?? null) === null ? color : new Color(0, 0, 0);
+    return { albedo: new Color(0, 0, 0), emission, ignored };
+  }
   const emission = (fields.emissive?.clone() ?? new Color(0, 0, 0)).multiplyScalar(
     fields.emissiveIntensity ?? 1,
   );
@@ -164,14 +168,16 @@ export function writeMaterialTable(
       flat.albedo.r,
       flat.albedo.g,
       flat.albedo.b,
-      0,
+      // The side a ray can hit, three's own numbers: 0 front, 1 back, 2 double. The capture never draws the other side.
+      material.side,
       flat.emission.r,
       flat.emission.g,
       flat.emission.b,
       0,
     ];
     values.forEach((value, offset) => {
-      if (target[slot * 8 + offset] === value) return;
+      // The table is Float32: compare the value as stored, or a colour float32 cannot hold reads changed forever.
+      if (target[slot * 8 + offset] === Math.fround(value)) return;
       target[slot * 8 + offset] = value;
       changed = true;
     });
@@ -242,52 +248,71 @@ function traceRay(
     select(abs(component).lessThan(1e-8), float(1e8), float(1).div(component));
   const inverse = vec3(safe(direction.x), safe(direction.y), safe(direction.z)).toVar();
   const node = int(0).toVar();
-  Loop({ start: int(0), end: nodeCount.mul(2).add(1), type: "int", condition: "<" }, () => {
-    If(node.greaterThanEqual(nodeCount), () => Break());
-    const low = buffers.bounds.element(node.mul(2)).xyz;
-    const high = buffers.bounds.element(node.mul(2).add(1)).xyz;
-    const t0 = low.sub(origin).mul(inverse);
-    const t1 = high.sub(origin).mul(inverse);
-    const near = max(max(min(t0.x, t1.x), min(t0.y, t1.y)), min(t0.z, t1.z));
-    const exit = min(min(max(t0.x, t1.x), max(t0.y, t1.y)), max(t0.z, t1.z));
-    const boxHit = exit.greaterThanEqual(max(near, 0)).and(near.lessThan(best));
-    const link = buffers.links.element(node);
-    If(boxHit.and(link.w.equal(1)), () => {
-      Loop({ start: int(0), end: link.z, type: "int", condition: "<" }, ({ i }: { i: AnyNode }) => {
-        const triangle = link.y.add(i);
-        const a = buffers.triangles.element(triangle.mul(3)).xyz;
-        const edge1 = buffers.triangles.element(triangle.mul(3).add(1)).xyz.sub(a);
-        const edge2 = buffers.triangles.element(triangle.mul(3).add(2)).xyz.sub(a);
-        const p = cross(direction, edge2);
-        const det = dot(edge1, p);
-        const inverseDet = select(abs(det).greaterThan(1e-12), float(1).div(det), float(0));
-        const s = origin.sub(a);
-        const u = dot(s, p).mul(inverseDet);
-        const q = cross(s, edge1);
-        const v = dot(direction, q).mul(inverseDet);
-        const t = dot(edge2, q).mul(inverseDet);
-        const inside = abs(det)
-          .greaterThan(1e-12)
-          .and(u.greaterThanEqual(0))
-          .and(v.greaterThanEqual(0))
-          .and(u.add(v).lessThanEqual(1))
-          .and(t.greaterThan(RAY_EPSILON))
-          .and(t.lessThan(best));
-        If(inside, () => {
-          best.assign(t);
-          hitTriangle.assign(triangle);
-        });
-      });
-      node.assign(link.x);
-      if (anyHit) If(hitTriangle.greaterThanEqual(0), () => Break());
-    })
-      .ElseIf(boxHit, () => {
-        node.assign(node.add(1));
-      })
-      .Else(() => {
+  Loop(
+    { start: int(0), end: nodeCount.mul(int(2)).add(int(1)), type: "int", condition: "<" },
+    () => {
+      If(node.greaterThanEqual(nodeCount), () => Break());
+      const low = buffers.bounds.element(node.mul(int(2))).xyz;
+      const high = buffers.bounds.element(node.mul(int(2)).add(int(1))).xyz;
+      const t0 = low.sub(origin).mul(inverse);
+      const t1 = high.sub(origin).mul(inverse);
+      const near = max(max(min(t0.x, t1.x), min(t0.y, t1.y)), min(t0.z, t1.z));
+      const exit = min(min(max(t0.x, t1.x), max(t0.y, t1.y)), max(t0.z, t1.z));
+      const boxHit = exit.greaterThanEqual(max(near, 0)).and(near.lessThan(best));
+      const link = buffers.links.element(node);
+      If(boxHit.and(link.w.equal(1)), () => {
+        Loop(
+          { start: int(0), end: link.z, type: "int", condition: "<" },
+          ({ i }: { i: AnyNode }) => {
+            const triangle = link.y.add(i);
+            const a = buffers.triangles.element(triangle.mul(int(3))).xyz;
+            const edge1 = buffers.triangles.element(triangle.mul(int(3)).add(int(1))).xyz.sub(a);
+            const edge2 = buffers.triangles.element(triangle.mul(int(3)).add(int(2))).xyz.sub(a);
+            const p = cross(direction, edge2);
+            const det = dot(edge1, p);
+            const inverseDet = select(abs(det).greaterThan(1e-12), float(1).div(det), float(0));
+            const s = origin.sub(a);
+            const u = dot(s, p).mul(inverseDet);
+            const q = cross(s, edge1);
+            const v = dot(direction, q).mul(inverseDet);
+            const t = dot(edge2, q).mul(inverseDet);
+            // A one-sided surface is not there for a ray that arrives behind it, as a cube capture would not draw it.
+            const side = buffers.materials.element(
+              int(buffers.triangles.element(triangle.mul(int(3))).w).mul(int(2)),
+            ).w;
+            const behind = dot(cross(edge1, edge2), direction).greaterThan(0);
+            const culled = side
+              .lessThan(0.5)
+              .and(behind)
+              .or(side.greaterThan(0.5).and(side.lessThan(1.5)).and(behind.not()));
+            const inside = culled
+              .not()
+              .and(
+                abs(det)
+                  .greaterThan(1e-12)
+                  .and(u.greaterThanEqual(0))
+                  .and(v.greaterThanEqual(0))
+                  .and(u.add(v).lessThanEqual(1))
+                  .and(t.greaterThan(RAY_EPSILON))
+                  .and(t.lessThan(best)),
+              );
+            If(inside, () => {
+              best.assign(t);
+              hitTriangle.assign(triangle);
+            });
+          },
+        );
         node.assign(link.x);
-      });
-  });
+        if (anyHit) If(hitTriangle.greaterThanEqual(0), () => Break());
+      })
+        .ElseIf(boxHit, () => {
+          node.assign(node.add(int(1)));
+        })
+        .Else(() => {
+          node.assign(link.x);
+        });
+    },
+  );
   return { t: best, triangle: hitTriangle };
 }
 
@@ -406,23 +431,23 @@ export function createProbeTraceKernels(
         .mul(dy ? fraction.y : float(1).sub(fraction.y))
         .mul(dz ? fraction.z : float(1).sub(fraction.z));
       const probe = int(base.x.add(dx))
-        .add(int(base.y.add(dy)).mul(nx))
-        .add(int(base.z.add(dz)).mul(nx * ny));
+        .add(int(base.y.add(dy)).mul(int(nx)))
+        .add(int(base.z.add(dz)).mul(int(nx * ny)));
       const coefficient = (index: number) =>
-        coefficientNode.element(probe.mul(9).add(index)).xyz as V3;
+        coefficientNode.element(probe.mul(int(9)).add(int(index))).xyz as V3;
       sum = sum.add(shIrradiance(coefficient, normal).mul(weight));
     }
     return sum as V3;
   };
 
   const trace = Fn(() => {
-    const slot = int(instanceIndex).div(raysPerProbe);
-    const ray = int(instanceIndex).sub(slot.mul(raysPerProbe));
+    const slot = int(instanceIndex).div(int(raysPerProbe));
+    const ray = int(instanceIndex).sub(slot.mul(int(raysPerProbe)));
     If(slot.greaterThanEqual(batchSize), () => Return());
     const probe = probes.element(slot);
-    const ix = probe.mod(nx);
-    const iy = probe.div(nx).mod(ny);
-    const iz = probe.div(nx * ny);
+    const ix = probe.mod(int(nx));
+    const iy = probe.div(int(nx)).mod(int(ny));
+    const iz = probe.div(int(nx * ny));
     const origin = volumeMin
       .add(vec3(float(ix), float(iy), float(iz)).mul(vec3(spacing.x, spacing.y, spacing.z)))
       .toVar();
@@ -430,15 +455,15 @@ export function createProbeTraceKernels(
     const hit = traceRay(buffers, nodeCount, origin, direction, far, false);
     const result = vec3(sky).toVar();
     If(hit.triangle.greaterThanEqual(0), () => {
-      const a = buffers.triangles.element(hit.triangle.mul(3));
-      const b = buffers.triangles.element(hit.triangle.mul(3).add(1)).xyz;
-      const c = buffers.triangles.element(hit.triangle.mul(3).add(2)).xyz;
+      const a = buffers.triangles.element(hit.triangle.mul(int(3)));
+      const b = buffers.triangles.element(hit.triangle.mul(int(3)).add(int(1))).xyz;
+      const c = buffers.triangles.element(hit.triangle.mul(int(3)).add(int(2))).xyz;
       const facing = normalize(cross(b.sub(a.xyz), c.sub(a.xyz))).toVar();
       // Two-sided: the side the ray arrived from is the side that returns light.
       If(dot(facing, direction).greaterThan(0), () => facing.assign(facing.negate()));
       const material = int(a.w);
-      const albedo = buffers.materials.element(material.mul(2)).xyz;
-      const emission = buffers.materials.element(material.mul(2).add(1)).xyz;
+      const albedo = buffers.materials.element(material.mul(int(2))).xyz;
+      const emission = buffers.materials.element(material.mul(int(2)).add(int(1))).xyz;
       const point = origin.add(direction.mul(hit.t)).add(facing.mul(SURFACE_OFFSET)).toVar();
       const cosine = max(dot(facing, sunDirection), 0).toVar();
       const visible = float(0).toVar();
@@ -463,7 +488,7 @@ export function createProbeTraceKernels(
     Loop(
       { start: int(0), end: int(raysPerProbe), type: "int", condition: "<" },
       ({ i }: { i: AnyNode }) => {
-        const value = radianceNode.element(slot.mul(raysPerProbe).add(i)).xyz;
+        const value = radianceNode.element(slot.mul(int(raysPerProbe)).add(i)).xyz;
         const d = directions.element(i);
         add(0, value.mul(0.282095));
         add(1, value.mul(d.y.mul(0.488603)));
@@ -478,7 +503,9 @@ export function createProbeTraceKernels(
     );
     const norm = (4 * Math.PI) / raysPerProbe;
     sums.forEach((sum, index) => {
-      coefficientNode.element(probe.mul(9).add(index)).assign(vec4((sum as AnyNode).mul(norm), 0));
+      coefficientNode
+        .element(probe.mul(int(9)).add(int(index)))
+        .assign(vec4((sum as AnyNode).mul(norm), 0));
     });
   })().compute(maxBatch);
 

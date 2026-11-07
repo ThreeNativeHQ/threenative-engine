@@ -1,6 +1,9 @@
 import {
+  BackSide,
   BoxGeometry,
   Color,
+  DoubleSide,
+  FrontSide,
   IcosahedronGeometry,
   InstancedMesh,
   Matrix4,
@@ -12,9 +15,16 @@ import {
   TorusKnotGeometry,
   Vector3,
 } from "three";
+import { color } from "three/tsl";
+import { MeshBasicNodeMaterial } from "three/webgpu";
 import { describe, expect, it } from "vitest";
 import { GPUSceneBVH } from "../src/gpu-scene-bvh.js";
-import { type IThreadedScene, flatMaterial, threadScene } from "../src/render/probe-trace.js";
+import {
+  type IThreadedScene,
+  flatMaterial,
+  threadScene,
+  writeMaterialTable,
+} from "../src/render/probe-trace.js";
 
 /** The slab test the kernel runs: where the ray enters and leaves a node's box. */
 function slab(
@@ -118,6 +128,22 @@ function room(): Scene {
 }
 
 describe("probe trace scene (PRD-603)", () => {
+  it("reports a material table unchanged on a second write, even for a colour float32 rounds", () => {
+    const material = new MeshBasicMaterial({ color: new Color(0xff0030).multiplyScalar(12) });
+    const table = new Float32Array(8);
+    expect(writeMaterialTable([material], table).changed).toBe(true);
+    expect(writeMaterialTable([material], table).changed).toBe(false);
+    material.color.setRGB(0, 0, 0);
+    expect(writeMaterialTable([material], table).changed).toBe(true);
+    // The side word is how the kernel skips a one-sided surface it meets from behind.
+    const sides = [FrontSide, BackSide, DoubleSide].map((side) => {
+      const sided = new Float32Array(8);
+      writeMaterialTable([new MeshBasicMaterial({ side })], sided);
+      return sided[3];
+    });
+    expect(sides).toEqual([0, 1, 2]);
+  });
+
   it("walks the threaded BVH to the exact closest hit with no stack", () => {
     const bvh = new GPUSceneBVH(room());
     const threaded = threadScene(bvh.traceScene);
@@ -174,5 +200,11 @@ describe("probe trace scene (PRD-603)", () => {
     expect(unlit.albedo.toArray()).toEqual([0, 0, 0]);
     expect(unlit.emission.r).toBeCloseTo(12, 5);
     expect(flatMaterial(new MeshStandardMaterial({ map: new Texture() })).ignored).toBe(true);
+    // A node-coloured unlit surface displays computed light, so it emits none of its own.
+    const display = new MeshBasicNodeMaterial();
+    display.colorNode = color(0xffffff);
+    expect(flatMaterial(display)).toMatchObject({ ignored: true });
+    expect(flatMaterial(display).emission.toArray()).toEqual([0, 0, 0]);
+    expect(flatMaterial(new MeshBasicNodeMaterial({ color: 0x00ff00 })).emission.g).toBe(1);
   });
 });
