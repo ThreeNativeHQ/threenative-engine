@@ -479,6 +479,9 @@ git apply "$SCRIPTS/patches/0045-vk-ps4-mip-levels.patch"
 # SPI_PS_INPUT_CNTL was never programmed, so a lit material's pixel shader read its UVs from another
 # varying (flat floor, no grid). Bind now matches PS inputs to VS exports by slot (PRD-784 P4-3).
 git apply "$SCRIPTS/patches/0047-vk-ps4-ps-input-cntl.patch"
+# 16 epilogue slices were about one frame of Dawn submits, so the submit thread spun until the GPU retired
+# the previous frame (93% of its samples on the starter). 256 slices let the CPU run ahead (PRD-784).
+git apply "$SCRIPTS/patches/0048-vk-ps4-epilogue-slots.patch"
 # The Makefile compiles TEST_SRC relative to the vulkan-ps4 tree.
 cp "$SCRIPTS/e2-triangle.c" "$SRC/e2-triangle.c"
 make -f Makefile.orbis -j"$JOBS" TEST_SRC=../e2-triangle.c self > "$LOGS/e2-triangle.log" 2>&1
