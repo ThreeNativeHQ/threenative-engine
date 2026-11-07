@@ -410,16 +410,18 @@ function packScene(scene: Object3D, include: (object: Mesh) => boolean): IPacked
  */
 export class GPUSceneBVH extends Group implements IComputeDriven {
   #backings: INodeBackings = {
-    indices: readStorage(new Uint32Array([0, 0, 0]), "uvec3", 3),
-    // Built on first read: the owned engine refuses the upstream node struct, and the probe trace
-    // (`traceScene`) does not need it.
+    // Each backing is built on first read: the owned engine refuses the upstream node struct and
+    // freezes storage nodes, and the probe trace (`traceScene`) needs none of them.
+    indices: null,
     nodes: null,
-    normals: readStorage(new Float32Array([0, 1, 0, 0]), "vec3", 4),
-    positions: readStorage(new Float32Array([0, 0, 0, 0]), "vec3", 4),
+    normals: null,
+    positions: null,
   };
-  readonly indices: StorageBufferNode<"uvec3">;
-  readonly normals: StorageBufferNode<"vec3">;
-  readonly positions: StorageBufferNode<"vec3">;
+  #packedStorage = {
+    indices: new Uint32Array([0, 0, 0]),
+    normals: new Float32Array([0, 1, 0, 0]),
+    positions: new Float32Array([0, 0, 0, 0]),
+  };
   readonly warmupNodes: readonly unknown[] = [];
   #buildMs = 0;
   #packedNodes: Uint32Array = emptyNodes();
@@ -442,11 +444,26 @@ export class GPUSceneBVH extends Group implements IComputeDriven {
     }
     this.#scene = scene;
     this.#include = options.include ?? (() => true);
-    this.positions = this.#backings.positions as StorageBufferNode<"vec3">;
-    this.indices = this.#backings.indices as StorageBufferNode<"uvec3">;
-    this.normals = this.#backings.normals as StorageBufferNode<"vec3">;
     this.addEventListener("removed", this.#onRemoved);
     this.rebuild();
+  }
+
+  /** Packed triangle indices as a storage node, built on first read. */
+  get indices(): StorageBufferNode<"uvec3"> {
+    if (this.#released) throw new Error("GPUSceneBVH indices were read after release.");
+    return (this.#backings.indices ??= readStorage(this.#packedStorage.indices, "uvec3", 3));
+  }
+
+  /** Packed vertex normals as a storage node, built on first read. */
+  get normals(): StorageBufferNode<"vec3"> {
+    if (this.#released) throw new Error("GPUSceneBVH normals were read after release.");
+    return (this.#backings.normals ??= readStorage(this.#packedStorage.normals, "vec3", 4));
+  }
+
+  /** Packed world-space vertex positions as a storage node, built on first read. */
+  get positions(): StorageBufferNode<"vec3"> {
+    if (this.#released) throw new Error("GPUSceneBVH positions were read after release.");
+    return (this.#backings.positions ??= readStorage(this.#packedStorage.positions, "vec3", 4));
   }
 
   /** The upstream TSL query's node table, built on first read. */
@@ -517,12 +534,15 @@ export class GPUSceneBVH extends Group implements IComputeDriven {
       triangleMaterials: packed.triangleMaterials,
     };
     this.#version += 1;
-    const nextPositions = readStorage(packed.positions, "vec3", 4);
-    const nextIndices = readStorage(packed.indices, "uvec3", 3);
-    const nextNormals = readStorage(packed.normals, "vec3", 4);
-    replaceStorage(this.#backings.positions as StorageBufferNode<"vec3">, nextPositions);
-    replaceStorage(this.#backings.indices as StorageBufferNode<"uvec3">, nextIndices);
-    replaceStorage(this.#backings.normals as StorageBufferNode<"vec3">, nextNormals);
+    this.#packedStorage = {
+      indices: packed.indices,
+      normals: packed.normals,
+      positions: packed.positions,
+    };
+    const { positions, indices, normals } = this.#backings;
+    if (positions !== null) replaceStorage(positions, readStorage(packed.positions, "vec3", 4));
+    if (indices !== null) replaceStorage(indices, readStorage(packed.indices, "uvec3", 3));
+    if (normals !== null) replaceStorage(normals, readStorage(packed.normals, "vec3", 4));
     this.#packedGeometry?.dispose();
     this.#packedGeometry = packed.geometry;
     this.#materialGroups = packed.materialGroups;
