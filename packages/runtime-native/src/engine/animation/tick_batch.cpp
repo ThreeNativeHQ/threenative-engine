@@ -112,10 +112,13 @@ void TickBatch::run(const std::vector<TickRig>& rigs, std::vector<TickStatus>& s
             const double scale =
                 rig.mixerElapsed > 0 ? advance / rig.mixerElapsed : scaleBeforeStep;
             if (scale != scaleBeforeStep) action->setEffectiveTimeScale(scale);
-            const double before = action->time;
+            const double before = rig.mixer->time;
             const bool wasScheduled = action->isScheduled();
             rig.mixer->update(rig.mixerElapsed);
-            out.changed = action->time != before || wasScheduled != action->isScheduled();
+            // `#advancedFrames` counts a frame the mixer's own clock moved, exactly what the JS loop
+            // reads after its `mixer.update`: an action can land back on its own playhead, the clock
+            // cannot.
+            out.changed = rig.mixer->time != before || wasScheduled != action->isScheduled();
             // A once-clip that has reached its end on this tick is the frame `finished` fires: three
             // stops it at the last key and clamps the pose there.
             out.finished = action->loop == Loop::Once &&

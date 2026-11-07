@@ -8,9 +8,9 @@
  * the stride report and the counters, on a fixed seed, including the frames a rate band holds.
  */
 import {
-  AnimationClip,
-  AnimationMixer,
   type AnimationAction,
+  AnimationClip,
+  type AnimationMixer,
   LoopOnce,
   LoopRepeat,
   Object3D,
@@ -19,7 +19,7 @@ import {
 } from "three";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { clearAnimationTicks, type IAnimationTickRig } from "../src/animation-batch.js";
+import { type IAnimationTickRig, clearAnimationTicks } from "../src/animation-batch.js";
 import { AnimationPlayer } from "../src/animation.js";
 
 const STRIDE_RATE_MIN = 0.15;
@@ -103,10 +103,10 @@ function referenceBatch(): (rigs: readonly IAnimationTickRig[], status: Float64A
         }
         const scale = rig.mixerElapsed > 0 ? advance / rig.mixerElapsed : scaleBefore;
         if (scale !== scaleBefore) action.setEffectiveTimeScale(scale);
-        const before = action.time;
+        const before = mixer.time;
         const wasScheduled = action.isScheduled();
         mixer.update(rig.mixerElapsed);
-        if (action.time !== before || wasScheduled !== action.isScheduled()) flags |= 2;
+        if (mixer.time !== before || wasScheduled !== action.isScheduled()) flags |= 2;
         if (
           action.loop === LoopOnce &&
           (!action.isScheduled() ||
@@ -135,6 +135,9 @@ interface ITrace {
   readonly synced: readonly boolean[];
   readonly advancedFrames: number;
   readonly actionTimes: readonly number[];
+  /** Rigs the engine's batch actually ran. Zero means the JS loop took every tick — a false green. */
+  readonly batchedRigs: number;
+  readonly batches: number;
 }
 
 /**
@@ -162,6 +165,19 @@ function walk(batched: boolean, frames: number, hold: boolean): ITrace {
   player.play("walk");
   const action = player.mixer.clipAction(clip);
   if (batched) (globalThis as { __tnAnimationTick?: unknown }).__tnAnimationTick = referenceBatch();
+  let batchedRigs = 0;
+  let batches = 0;
+  if (batched) {
+    const reference = referenceBatch();
+    (globalThis as { __tnAnimationTick?: unknown }).__tnAnimationTick = (
+      rigs: readonly IAnimationTickRig[],
+      status: Float64Array,
+    ) => {
+      batches += 1;
+      batchedRigs += rigs.length;
+      reference(rigs, status);
+    };
+  }
   const strideRate: number[] = [];
   const groundSpeed: number[] = [];
   const synced: boolean[] = [];
@@ -183,6 +199,8 @@ function walk(batched: boolean, frames: number, hold: boolean): ITrace {
     synced,
     advancedFrames: player.advancedFrames,
     actionTimes,
+    batchedRigs,
+    batches,
   };
 }
 
@@ -195,6 +213,11 @@ describe("the animation tick batch in the player (PRD-828)", () => {
   it("leaves the rig where the JS loop leaves it, frame by frame", () => {
     const js = walk(false, 12, false);
     const batched = walk(true, 12, false);
+    // The batch ran every tick, once per frame: a spec that compared two JS runs would pass and prove
+    // nothing.
+    expect(batched.batches).toBe(12);
+    expect(batched.batchedRigs).toBe(12);
+    expect(js.batchedRigs).toBe(0);
     expect(batched.strideRate).toEqual(js.strideRate);
     expect(batched.groundSpeed).toEqual(js.groundSpeed);
     expect(batched.synced).toEqual(js.synced);
@@ -207,6 +230,11 @@ describe("the animation tick batch in the player (PRD-828)", () => {
   it("agrees with the JS loop when a rate band holds the rig between poses", () => {
     const js = walk(false, 32, true);
     const batched = walk(true, 32, true);
+    // Eight poses in thirty-two frames, and every held frame went through the batch instead of the JS
+    // loop's banked `dt`.
+    expect(batched.batches).toBe(32);
+    expect(batched.batchedRigs).toBe(32);
+    expect(js.batchedRigs).toBe(0);
     expect(batched.strideRate).toEqual(js.strideRate);
     expect(batched.groundSpeed).toEqual(js.groundSpeed);
     expect(batched.synced).toEqual(js.synced);

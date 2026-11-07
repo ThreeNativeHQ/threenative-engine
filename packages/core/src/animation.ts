@@ -1318,26 +1318,24 @@ export class AnimationPlayer {
       force ||
       (this.#updateFrame + this.#staggerOffset) % boneRate === 0 ||
       this.#skippedFrames >= boneRate;
-    // A full-rate tick with no held time advances through the mixer's own actions; only deferred
-    // integration needs per-action elapsed time. Scanning the whole clip library to bank that time
-    // costs every full-rate rig every frame.
-    if (
-      !this.#evaluated ||
-      this.#pendingDt !== 0 ||
-      this.#pendingActionTimes.size !== 0 ||
-      rate !== 1
-    ) {
-      for (const action of this.#actions.values()) {
-        if (!action.isScheduled()) continue;
-        const time = action.paused ? 0 : action.timeScale * elapsed;
-        this.#pendingActionTimes.set(action, (this.#pendingActionTimes.get(action) ?? 0) + time);
-      }
-    }
+    // The batch decides before the JS bank does: a tick it takes must not also be banked per action,
+    // or the two paths would each other's time.
+    const heldBefore = this.#pendingDt;
     this.#pendingDt += elapsed;
     if (this.#queueTick(dt, elapsed, mixerScale)) {
       // This tick measured nothing in JS, so JS's last position goes stale by one interval.
       this.#jsGapDt += dt;
       return;
+    }
+    // A full-rate tick with no held time advances through the mixer's own actions; only deferred
+    // integration needs per-action elapsed time. Scanning the whole clip library to bank that time
+    // costs every full-rate rig every frame.
+    if (!this.#evaluated || heldBefore !== 0 || this.#pendingActionTimes.size !== 0 || rate !== 1) {
+      for (const action of this.#actions.values()) {
+        if (!action.isScheduled()) continue;
+        const time = action.paused ? 0 : action.timeScale * elapsed;
+        this.#pendingActionTimes.set(action, (this.#pendingActionTimes.get(action) ?? 0) + time);
+      }
     }
     this.#batchGapDt += dt;
     if (this.#evaluated) this.#evaluate(dt, mixerScale);
@@ -1423,7 +1421,6 @@ export class AnimationPlayer {
     const name = this.#batchName;
     this.#batchQueued = false;
     this.#batchName = undefined;
-    this.#batchActionPending = 0;
     this.#strideDtDebt = 0;
     this.#batchGapDt = 0;
     this.#strideGroundSpeed = result.groundSpeed;
@@ -1443,6 +1440,8 @@ export class AnimationPlayer {
       this.#batchStep = false;
       if (result.changed) this.#advancedFrames += 1;
       this.#pendingDt = 0;
+      // Only the step consumes the banked advance; a held tick keeps it for the frame that poses.
+      this.#batchActionPending = 0;
       this.#skippedFrames = 0;
       this.#rateState.evaluation += 1;
       this.#rateState.evaluated = true;
