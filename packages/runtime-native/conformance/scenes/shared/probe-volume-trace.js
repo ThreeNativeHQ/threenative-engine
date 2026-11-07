@@ -60,7 +60,14 @@ export async function startScene(canvas, dimensions) {
         },
       });
       scene.add(volume);
-      const host = { kind: "webgpu", raw: renderer };
+      // The trace path dispatches compute and reads the coefficients back, as the game renderer wrapper does.
+      const host = {
+        compute: (node) => renderer.compute(node),
+        domElement: renderer.domElement,
+        kind: "webgpu",
+        raw: renderer,
+        readback: (attribute) => renderer.getArrayBufferAsync(attribute),
+      };
       volume.attachRenderer(host);
       wallMaterial.colorNode = volume.sampleNode(positionWorld, normalWorld).mul(8);
       assertCondition(offscreenEmitter.position.x > 2, "emitter must be outside the camera frustum");
