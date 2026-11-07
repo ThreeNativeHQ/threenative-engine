@@ -4,5 +4,9 @@
   "blurb": "Wren crosses a sunlit clearing and a three-room moss dungeon with lock-on sword combat, a shield, a block-and-switch puzzle, a small key and the Stone Warden mini-boss.",
   "genre": "adventure",
   "aliases": ["zelda", "ocarina", "action-adventure", "adventure"],
-  "kit": true
+  "kit": true,
+  "scaffold": {
+    "mainHandWritten": true,
+    "reason": "its entry also binds Tab so the browser cannot move focus off the canvas; the restamp cannot express that statement, so the file stays the kit's"
+  }
 }

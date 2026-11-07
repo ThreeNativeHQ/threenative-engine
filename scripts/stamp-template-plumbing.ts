@@ -13,8 +13,10 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  kitMainDelta,
   kitPlumbingDelta,
   kitViteDelta,
+  mainText,
   tsconfigText,
   viteConfigText,
 } from "../packages/create-threenative/src/plumbing.js";
@@ -34,6 +36,13 @@ export function plumbingFiles(): readonly { readonly file: string; readonly text
       file: path.join(TEMPLATES, kit, "vite.config.ts"),
       text: viteConfigText(kitViteDelta(kit, TEMPLATES)),
     },
+    // A kit whose entry carries a statement of its own keeps it (`kit.json` scaffold.mainHandWritten).
+    ...(() => {
+      const main = mainText(kitMainDelta(kit, TEMPLATES));
+      return main === undefined
+        ? []
+        : [{ file: path.join(TEMPLATES, kit, "src", "main.ts"), text: main }];
+    })(),
   ]);
 }
 

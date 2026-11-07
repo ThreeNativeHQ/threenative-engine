@@ -121,11 +121,11 @@ const SCAFFOLD_TREE_HASHES: Readonly<Record<string, IScaffoldTreePin>> = {
   },
   collectathon: {
     shared: "636ab0c762067e9e63b26133bb202a377c89833b5d836ea86d2d233f32c7ecb4",
-    kit: "a3681b1d4cb46f5cafa714d9577329940881bd0300a0b1a65669cb59ecfe7f56",
+    kit: "0c05e1738ee88aa7fa3982b4c80d0da202620d4ab84124a6e06c92dd6c3d3e2b",
   },
   kart: {
     shared: "554d353ef9f6505a543c8937ccb170e1cfb6ae04591545d8994c7e3494dbad7c",
-    kit: "a293b97131dd144c2712e093ac2d1f27a91acfee368a34448fa07078582935c7",
+    kit: "f3461939704508adce214149dd42733eadeabe4e40edb25ec3ee7292a7b516fd",
   },
   minimal: {
     shared: "e3f95200e101ff1b6c6c9f5165c3405f08e3e0fe261ae8ba06bac6865b81c5f1",
@@ -133,7 +133,7 @@ const SCAFFOLD_TREE_HASHES: Readonly<Record<string, IScaffoldTreePin>> = {
   },
   platformer: {
     shared: "03e7bde17f227297791bff7355d3efd870c3e480d3b147ad8611c92cb120fa6b",
-    kit: "286d17362891486bf2446237b178d60832658e6c36c083bbcd6d02bd4f3bed92",
+    kit: "05a3a71487b3a21db7fb82c0c285a4d511ee634ce1d038e624575112112593b8",
   },
   puzzle: {
     shared: "00e134320097b34fefa55f6ae8768ee9ef94545e92e43652e23bddcce8185b9b",

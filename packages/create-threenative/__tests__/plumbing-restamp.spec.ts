@@ -1,11 +1,18 @@
-// A kit's `tsconfig.json` is generated, not hand-kept: one source (`src/plumbing.ts`) plus the delta
-// the kit's own manifest declares. This holds every kit to that, so an edit to one copy fails here
-// instead of shipping a kit whose typecheck disagrees with its neighbours.
+// The build plumbing is generated, not hand-kept: one source (`src/plumbing.ts`) plus the delta the
+// kit's own manifest declares. This holds every kit to that, so an edit to one copy fails here
+// instead of shipping a kit that disagrees with its neighbours.
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { discoverKitManifests } from "../src/index.js";
-import { kitPlumbingDelta, kitViteDelta, tsconfigText, viteConfigText } from "../src/plumbing.js";
+import {
+  kitMainDelta,
+  kitPlumbingDelta,
+  kitViteDelta,
+  mainText,
+  tsconfigText,
+  viteConfigText,
+} from "../src/plumbing.js";
 
 const TEMPLATES = path.resolve(import.meta.dirname, "../templates");
 
@@ -44,6 +51,20 @@ describe("generated build plumbing", () => {
     expect(viteConfigText({ react: true, tailwind: true, workerEntry: true })).toContain(
       'build: { rollupOptions: { input: { index: "index.html", main: "main.html" } } },',
     );
+  });
+
+  it("should hold every kit's entry to the one source, except the one that declares its own", () => {
+    const stale = discoverKitManifests(TEMPLATES)
+      .map(({ name }) => ({ delta: kitMainDelta(name, TEMPLATES), name }))
+      .filter(({ delta, name }) => {
+        const text = mainText(delta);
+        if (text === undefined) return false;
+        return readFileSync(path.join(TEMPLATES, name, "src", "main.ts"), "utf8") !== text;
+      });
+    expect(stale.map(({ name }) => name)).toEqual([]);
+    // The exception is declared, not inferred: one kit's entry carries a statement of its own.
+    expect(kitMainDelta("adventure", TEMPLATES).handWritten).toBe(true);
+    expect(mainText(kitMainDelta("adventure", TEMPLATES))).toBeUndefined();
   });
 
   it("should derive the React delta from the kit's own manifest", () => {

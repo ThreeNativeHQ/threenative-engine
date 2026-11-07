@@ -166,3 +166,82 @@ export function kitViteDelta(kit: string, root: string): IVitePlumbingDelta {
     workerEntry: existsSync(path.join(root, kit, "main.html")),
   };
 }
+
+/** The `src/main.ts` variants: a game that mounts React, and one that mounts the canvas itself. */
+export interface IMainPlumbingDelta extends IPlumbingDelta {
+  /**
+   * A kit whose entry carries a statement of its own (a key binding, a pre-mount hook) keeps its
+   * file: a restamp that cannot express that statement must not overwrite it.
+   */
+  readonly handWritten: boolean;
+}
+
+/**
+ * The `src/main.ts` a kit ships, or `undefined` when the kit keeps its own.
+ *
+ * The React variant mounts the game's `App` through `#root` and keeps the root across hot updates;
+ * the plain one mounts the canvas itself and turns a failed start into a visible, labelled failure
+ * element rather than an empty page.
+ */
+export function mainText(delta: IMainPlumbingDelta): string | undefined {
+  if (delta.handWritten) return undefined;
+  const hot = ["import.meta.hot?.accept();", "acceptHotUpdate(game, import.meta.hot);"];
+  if (delta.react) {
+    return `${[
+      'import { acceptHotUpdate } from "@threenative/core/hot";',
+      'import { createElement } from "react";',
+      'import { createRoot } from "react-dom/client";',
+      'import game from "./game.js";',
+      'import { App } from "./ui/App.js";',
+      'import "./style.css";',
+      "",
+      ...hot,
+      'const root = document.getElementById("root");',
+      'if (root === null) throw new Error("Missing #root element.");',
+      "const appRoot = root as typeof root & { __threenativeRoot?: ReturnType<typeof createRoot> };",
+      "const reactRoot = appRoot.__threenativeRoot ?? createRoot(appRoot);",
+      "appRoot.__threenativeRoot = reactRoot;",
+      "reactRoot.render(createElement(App, { game }));",
+      "",
+    ].join("\n")}`;
+  }
+  return `${[
+    'import { acceptHotUpdate } from "@threenative/core/hot";',
+    'import game from "./game.js";',
+    'import "./style.css";',
+    "",
+    'const app = document.querySelector<HTMLElement>("#app");',
+    'if (app === null) throw new Error("Missing #app element.");',
+    "",
+    "// No DOM readout here: the first frame is the scene alone. A HUD you add belongs in one layer —",
+    "// drawn in the scene so it survives on native, never a DOM copy of the same numbers on top of it.",
+    "",
+    ...hot,
+    "void game",
+    "  .start()",
+    "  .then(() => {",
+    "    const canvas = game.ctx?.renderer.domElement;",
+    "    if (canvas !== undefined) app.prepend(canvas);",
+    "  })",
+    "  .catch((error: unknown) => {",
+    '    const failure = document.createElement("div");',
+    '    failure.id = "threenative-canvas-error";',
+    '    failure.dataset.threenativeCanvasError = "true";',
+    '    failure.setAttribute("role", "alert");',
+    "    failure.textContent = error instanceof Error ? error.message : String(error);",
+    "    app.replaceChildren(failure);",
+    "  });",
+    "",
+  ].join("\n")}`;
+}
+
+/** The main delta a kit declares. Only `adventure` sets `handWritten`, with its reason in kit.json. */
+export function kitMainDelta(kit: string, root: string): IMainPlumbingDelta {
+  const manifest = JSON.parse(readFileSync(path.join(root, kit, "kit.json"), "utf8")) as {
+    scaffold?: { mainHandWritten?: boolean };
+  };
+  return {
+    handWritten: manifest.scaffold?.mainHandWritten === true,
+    react: kitPlumbingDelta(kit, root).react,
+  };
+}
