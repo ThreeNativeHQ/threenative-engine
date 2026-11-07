@@ -175,7 +175,7 @@ const SCAFFOLD_TREE_HASHES: Readonly<Record<string, IScaffoldTreePin>> = {
     shared: "2c843b749255bde8eb0c128b0e5b084359e1e7f226b940b1982ea4c1f625d4d9",
     kit: "199ccf6490e21699b6bf4e817c6f2ac222dbbdd1d05207f04b46dc6ed07c7e8d",
   },
-  // scaffold-pin:end
+// scaffold-pin:end
 };
 
 describe("create-threenative", () => {
