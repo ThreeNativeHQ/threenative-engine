@@ -354,6 +354,25 @@ git apply "$SCRIPTS/patches/0026-vk-ps4-cs-stage-registers.patch"
 # compute dispatch then ran with a Vsharp where its descriptor table pointer belongs, and the host
 # device was lost on the first one.
 git apply "$SCRIPTS/patches/0028-vk-ps4-cs-input-usage-slots.patch"
+# The GPU reads a table it reaches by pointer when it EXECUTES the draw, not when
+# the CPU recorded it, and every queued draw in a command buffer shared the one
+# mutable V# table in that command buffer (`cmd->gnm_vertex_buffers`, memset and
+# refilled per draw): all queued draws resolved against the LAST draw's table, so
+# the 1-attribute fullscreen pass left slot 1 zeroed and the mesh lost its normal
+# V# (dfmt 0 -> VK_FORMAT_UNDEFINED in shadPS4 -> host fault on
+# SET_VERTEX_ATTRIBUTE_A(1), Xid 69). Confirmed by breadcrumb: draws 1-3 of a
+# frame all emitted table 0x20009d544. Each draw now takes its own immutable copy
+# from the command buffer itself (sceGnmCmdAllocInside, the allocator the clear
+# shader's colour and the indirect/dispatch staging already use), which is
+# GPU-visible, unique per draw, and released with the command buffer. The same
+# audit found the descriptor-set memory: one buffer per set re-composed at every
+# bind with that bind's dynamic offsets, i.e. the same reuse, so 0029 composes a
+# per-bind copy there too. Audited and left alone: the fetch-shader pointer
+# (per pipeline, written once at creation), the descriptor bindings' own V#/T#/S#
+# arrays (per set, written only by vkUpdateDescriptorSets, which is illegal while
+# the set is in use), push constants and every Set*UserData descriptor (copied
+# inline into the PM4 stream).
+git apply "$SCRIPTS/patches/0029-vk-ps4-per-draw-vertex-buffer-table.patch"
 # The Makefile compiles TEST_SRC relative to the vulkan-ps4 tree.
 cp "$SCRIPTS/e2-triangle.c" "$SRC/e2-triangle.c"
 make -f Makefile.orbis -j"$JOBS" TEST_SRC=../e2-triangle.c self > "$LOGS/e2-triangle.log" 2>&1

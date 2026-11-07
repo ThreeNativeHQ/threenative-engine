@@ -216,8 +216,10 @@ const EXPERIMENTS = {
     // first frame, and past that 300 frames of jitless JS run on a software-rendered GPU.
     timeoutMs: 600_000,
     // Both captures land while the player presents. The cube turns every frame, so two frames at
-    // different times differ only if the loop really ran.
-    screenshots: ['20', '40'],
+    // different times differ only if the loop really ran. The window is measured, not guessed: the
+    // ICD's own flip log puts the first present at 195 ms and frame 870 at 14.8 s, so a capture
+    // taken at 20 s or later lands after the guest is gone and only ever holds a dead window.
+    screenshots: ['8', '12'],
     build: (outDir, toolchain) => buildE5(outDir, toolchain, sceneRoot),
     // run.cpp counts presented frames on PS4 and prints one line per 100 (TN_PLAYER_FRAMES). The
     // marker waits for the 300-frame box, so a run that never gets there ends at the timeout and is
