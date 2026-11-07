@@ -1,7 +1,7 @@
 import { GPUSceneBVH, type ICtx, RadianceCache } from "@threenative/core";
 import { Box3, Color, type Mesh, type Object3D } from "three";
 import { normalize } from "three/tsl";
-import type { IGiOptions } from "./giCache.js";
+import { type IGiOptions, skyRadiance } from "./giCache.js";
 
 /**
  * PRD-831: the GI field as a `RadianceCache` that traces the packed scene on the GPU, in place of `giCache.ts`'s CPU bake.
@@ -15,6 +15,26 @@ export interface IGiTracedField {
   readonly radiance: NonNullable<NonNullable<IGiOptions["field"]>["radiance"]>;
   /** True once every probe has been traced. */
   ready(): boolean;
+}
+
+/**
+ * The baked sky's mean radiance over the upper hemisphere, solid-angle weighted, times `gain`: the flat sky an escaping
+ * trace ray reads (the trace kernel takes one sky colour). Black when no sky was baked.
+ */
+export function upperSkyMean(gain = 1): Color {
+  const sky = skyRadiance.current;
+  if (sky === undefined) return new Color(0, 0, 0);
+  const sum = [0, 0, 0];
+  let weight = 0;
+  for (let y = 0; y < sky.height / 2; y += 1) {
+    const w = Math.sin(((y + 0.5) / sky.height) * Math.PI);
+    for (let x = 0; x < sky.width; x += 1)
+      for (let c = 0; c < 3; c += 1)
+        sum[c] = (sum[c] ?? 0) + (sky.data[(y * sky.width + x) * 3 + c] ?? 0) * w;
+    weight += w * sky.width;
+  }
+  const at = (c: number) => ((sum[c] ?? 0) / Math.max(weight, 1e-9)) * (sky.scale[c] ?? 1) * gain;
+  return new Color(at(0), at(1), at(2));
 }
 
 type TracedCtx = Pick<ICtx, "add" | "beforeRender" | "camera" | "scene">;
