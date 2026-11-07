@@ -226,6 +226,31 @@ describe("defineScreenSpaceGi", () => {
     expect(calls[0]?.args.every((node) => node !== undefined)).toBe(true);
   });
 
+  it("hands the fallback tier the receiver's normal as well as the ray, in both gathers", () => {
+    // A cache read along a ray must still be taken from the receiver's side of its surface. Offset along the ray
+    // instead, a corner's reads land half a cell inside the next wall, and `hit - cache` draws a black line there.
+    for (const probes of [
+      undefined,
+      { downsampleFactor: 16, viewport: { width: 1280, height: 720 } },
+    ]) {
+      const { tsl } = stubTsl();
+      const calls: unknown[][] = [];
+      defineScreenSpaceGi(tsl)(chain(), chain(), chain(), {
+        camera,
+        fallback: (...args: unknown[]) => {
+          calls.push(args);
+          return chain();
+        },
+        ...(probes === undefined ? {} : { probes }),
+      });
+      expect(calls.length).toBeGreaterThan(0);
+      for (const args of calls) {
+        expect(args).toHaveLength(3);
+        expect(args.every((node) => node !== undefined)).toBe(true);
+      }
+    }
+  });
+
   describe("with screen probes", () => {
     const viewport = { width: 1280, height: 720 };
 

@@ -890,6 +890,7 @@ function irradianceAt(
     position: Node<"vec3">,
     normal: Node<"vec3">,
     reflection?: Node<"vec3">,
+    along?: Node<"vec3">,
   ): { irradiance: Node<"vec3">; visibility: Node<"float"> } => {
     // A node of its own per reader (a material, a post pass), over the one texture.
     const volumeNode = texture3D(cache);
@@ -910,15 +911,19 @@ function irradianceAt(
     ];
     const lower = [ax.floor(), ay.floor(), az.floor()];
     const fraction = [ax.sub(nth(lower, 0)), ay.sub(nth(lower, 1)), az.sub(nth(lower, 2))];
-    const squares = [n.x.mul(n.x), n.y.mul(n.y), n.z.mul(n.z)];
+    // The cube's faces are read along `along` when a caller asks for the light along a direction (a gather's ray),
+    // while the read itself stays half a cell off the receiver's surface. Offsetting along the ray instead put a
+    // corner's reads half a cell into the next wall, and the gather's `hit - cache` drew black lines at every corner.
+    const f = along ?? n;
+    const squares = [f.x.mul(f.x), f.y.mul(f.y), f.z.mul(f.z)];
     const faceIndex = [
-      n.x.lessThan(0).select(float(1), float(0)),
-      n.y.lessThan(0).select(float(3), float(2)),
-      n.z.lessThan(0).select(float(5), float(4)),
+      f.x.lessThan(0).select(float(1), float(0)),
+      f.y.lessThan(0).select(float(3), float(2)),
+      f.z.lessThan(0).select(float(5), float(4)),
     ];
     // The environment share is read along the reflection when there is one (a floor that looks at a doorway sees
     // the sky there, whatever its normal sees), through the same three faces of the ambient cube.
-    const r = reflection ?? n;
+    const r = reflection ?? f;
     const squaresR = [r.x.mul(r.x), r.y.mul(r.y), r.z.mul(r.z)];
     const faceIndexR = [
       r.x.lessThan(0).select(float(1), float(0)),
@@ -1099,7 +1104,8 @@ function irradianceAt(
  * nothing on screen would have returned (the tier below its own), with the pixel's world position and normal.
  */
 export const giCache: {
-  irradiance?: (position: Node<"vec3">, normal: Node<"vec3">) => Node<"vec3">;
+  /** `along`, when set, reads the light arriving along that direction at a receiver whose surface faces `normal`. */
+  irradiance?: (position: Node<"vec3">, normal: Node<"vec3">, along?: Node<"vec3">) => Node<"vec3">;
   /** The traced field's radiance along a direction, which the gather's per-ray fallback prefers (see IGiOptions.field). */
   radiance?: (position: Node<"vec3">, direction: Node<"vec3">) => Node<"vec3">;
   /**
@@ -1140,15 +1146,27 @@ export function cacheFallback(
   camera: PerspectiveCamera,
   /** "ray" reads the radiance along the direction when the field has it (a gather's per-ray tier); "normal" reads irradiance. */
   along: "normal" | "ray" = "normal",
-): ((position: Node<"vec3">, normal: Node<"vec3">) => Node<"vec3">) | undefined {
-  const read = (along === "ray" ? giCache.radiance : undefined) ?? giCache.irradiance;
-  if (read === undefined) return undefined;
+):
+  | ((position: Node<"vec3">, direction: Node<"vec3">, normal?: Node<"vec3">) => Node<"vec3">)
+  | undefined {
+  const radiance = along === "ray" ? giCache.radiance : undefined;
+  const irradiance = giCache.irradiance;
+  if (radiance === undefined && irradiance === undefined) return undefined;
   const live = (index: number) =>
     uniform(0).onRenderUpdate(() => camera.matrixWorld.elements[index] ?? 0);
   const column = (a: number) => vec3(live(a), live(a + 1), live(a + 2));
   const [right, up, back, at] = [column(0), column(4), column(8), column(12)];
   const toWorld = (v: Node<"vec3">) => right.mul(v.x).add(up.mul(v.y)).add(back.mul(v.z));
-  return (position, normal) => read(toWorld(position).add(at), toWorld(normal).normalize());
+  return (position, direction, normal) => {
+    const world = toWorld(position).add(at);
+    const towards = toWorld(direction).normalize();
+    if (radiance !== undefined) return radiance(world, towards);
+    // The bake keeps an irradiance cube: read it along the ray, from the receiver's side of the surface.
+    const read = irradiance as NonNullable<typeof irradiance>;
+    return normal === undefined || along !== "ray"
+      ? read(world, towards)
+      : read(world, toWorld(normal).normalize(), towards);
+  };
 }
 
 /** What the bake's rays kept of each hit: enough to tell what a surface returns. */
@@ -1961,9 +1979,9 @@ function bakeGi(gameCtx: IRayContext, root: Object3D, options: IGiOptions): IGiR
         });
   // The screen-space gather's tier below reads the same as a material does, emitters included, so a ray that hits
   // the emitter on screen replaces its direct light instead of adding it twice.
-  giCache.irradiance = (position, normal) => {
-    const base = read(position, normal).irradiance;
-    const light = emitterLight(emitters, position, normal);
+  giCache.irradiance = (position, normal, along) => {
+    const base = read(position, normal, undefined, along).irradiance;
+    const light = emitterLight(emitters, position, along ?? normal);
     return light === undefined ? base : base.add(light);
   };
   const traceRadiance = traceField?.radiance;

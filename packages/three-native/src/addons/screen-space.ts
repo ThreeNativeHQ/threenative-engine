@@ -427,7 +427,7 @@ export interface IScreenSpaceGiOptions {
    * One value per pixel (the cache's mean over the hemisphere) made every hit into a dark corner a loss: its rays find
    * the shadowed walls nearby while its bright directions leave the screen. Missing means 0, as three's SSGINode.
    */
-  readonly fallback?: (position: TslNode, normal: TslNode) => TslNode;
+  readonly fallback?: (position: TslNode, direction: TslNode, normal: TslNode) => TslNode;
   /**
    * Gather with screen probes instead of per-pixel rays (Unreal's ScreenProbeGather): one probe per
    * `downsampleFactor` pixel tile traces an octahedron of rays, the probe radiance is turned into an irradiance
@@ -622,7 +622,7 @@ export function defineScreenSpaceGi(tsl: IScreenSpaceTsl) {
             const trace = march(origin, direction, position.z);
             If(trace.hitDistance.greaterThanEqual(0), () => {
               const hit = shade(trace.hitCoordinate, trace.hitDistance, direction);
-              const fallback = options.fallback?.(position, direction) ?? vec3(0, 0, 0);
+              const fallback = options.fallback?.(position, direction, normal) ?? vec3(0, 0, 0);
               gathered.assign(gathered.add(hit.radiance.sub(fallback).mul(hit.weight)));
               hits.assign(hits.add(hit.weight));
             });
@@ -774,7 +774,7 @@ function defineScreenProbes(
       If(trace.hitDistance.greaterThanEqual(0), () => {
         // What the lit colour the ray found adds over the cache along the same ray, and its weight.
         const hit = shade(trace.hitCoordinate, trace.hitDistance, direction);
-        const believed = options.fallback?.(position, direction) ?? vec3(0, 0, 0);
+        const believed = options.fallback?.(position, direction, normal) ?? vec3(0, 0, 0);
         result.assign(vec4(hit.radiance.sub(believed).mul(hit.weight), hit.weight));
       });
     });

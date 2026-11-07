@@ -1038,7 +1038,8 @@ export class WorldEnvironment {
           const fallback =
             cache === undefined
               ? undefined
-              : (position: Node<"vec3">, normal: Node<"vec3">) => cache(position, normal).mul(gain);
+              : (position: Node<"vec3">, direction: Node<"vec3">, normal: Node<"vec3">) =>
+                  cache(position, direction, normal).mul(gain);
           const gi = (ssgi as unknown as (...args: unknown[]) => ReturnType<typeof ssgi>)(
             base,
             depth(),
