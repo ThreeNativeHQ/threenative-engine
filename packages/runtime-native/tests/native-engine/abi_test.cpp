@@ -855,6 +855,29 @@ void source_guard() {
     CHECK(tn_set(meshes[2], "position.x", &far, &d.value) == TN_OK);
     CHECK(changed(2).empty());  // sources 0 and 1
     CHECK((changed(2) == std::vector<double>{2}));
+    // PRD-828: a second list watches the sources' ancestors, all checked by __tnGuardCheckAncestors.
+    tn_handle_t holder{}, still{};
+    CHECK(tn_construct(ctx, "Group", nullptr, 0, &holder, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Group", nullptr, 0, &still, &d.value) == TN_OK);
+    const tn_value_t ancestorItems[2] = {ref(holder), ref(still)};
+    tn_value_t lists[2]{list, {}};
+    lists[1].kind = TN_VALUE_ARRAY;
+    lists[1].count = 2;
+    lists[1].values = ancestorItems;
+    CHECK(tn_invoke(scene, "__tnGuardWatch", lists, 2, &result, &d.value) == TN_OK && result.number == 3);
+    const auto ancestorsMoved = [&]() {
+        tn_value_t out{};
+        CHECK(tn_invoke(scene, "__tnGuardCheckAncestors", nullptr, 0, &out, &d.value) == TN_OK);
+        CHECK(out.kind == TN_VALUE_NUMBERS);
+        return std::vector<double>(out.numbers, out.numbers + out.count);
+    };
+    CHECK(ancestorsMoved().empty());
+    const tn_value_t lifted = num(2);
+    CHECK(tn_set(holder, "position.y", &lifted, &d.value) == TN_OK);
+    CHECK((ancestorsMoved() == std::vector<double>{0}));
+    CHECK(ancestorsMoved().empty());  // answered once, then no longer watched
+    CHECK(tn_invoke(scene, "__tnGuardWatch", &list, 1, &result, &d.value) == TN_OK);
+    CHECK(ancestorsMoved().empty());  // a watch without the second list watches no ancestor
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 

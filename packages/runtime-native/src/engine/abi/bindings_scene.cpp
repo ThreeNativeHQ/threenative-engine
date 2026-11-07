@@ -185,6 +185,9 @@ struct SourceGuard {
     };
     std::vector<Entry> entries;
     std::size_t cursor = 0;
+    // The merged sources' ancestors (PRD-828): few, and one moved parent moves thousands of sources, so all of
+    // them are checked every frame, as core's #checkAncestors did in JS.
+    std::vector<Entry> ancestors;
 
     static void lanesOf(Object3D& object, std::array<double, 15>& into) {
         into = {object.position.x, object.position.y, object.position.z, object.quaternion.x,
@@ -430,7 +433,8 @@ void registerObject3D(ClassBinding& b) {
     };
     // Engine-internal: core's AutoBatch guard. `__tnGuardWatch(sources)` replaces the watched list with
     // each source's state now; `__tnGuardCheck(limit)` compares up to `limit` sources from where the last
-    // check stopped and answers the indices that changed, which it stops watching.
+    // check stopped and answers the indices that changed, which it stops watching. An optional second list
+    // watches the sources' ancestors, checked whole by `__tnGuardCheckAncestors()`.
     b.methods["__tnGuardWatch"] = [](void* self, const Args& a, Store& store) {
         SourceGuard& guard = sourceGuardOf(*as<Object3D>(self));
         guard.entries.clear();
@@ -440,7 +444,26 @@ void registerObject3D(ClassBinding& b) {
             SourceGuard::watch(objectArg(store, ref), entry);
             guard.entries.push_back(std::move(entry));
         }
+        guard.ancestors.clear();
+        if (a.size() > 1)
+            for (const Value& ref : refsOf(a.at(1))) {
+                SourceGuard::Entry entry;
+                SourceGuard::watch(objectArg(store, ref), entry);
+                guard.ancestors.push_back(std::move(entry));
+            }
         return Value::of(double(guard.entries.size()));
+    };
+    // `__tnGuardCheckAncestors()` answers the indices of the watched ancestors that moved, and stops watching them.
+    b.methods["__tnGuardCheckAncestors"] = [](void* self, const Args&, Store&) {
+        SourceGuard& guard = sourceGuardOf(*as<Object3D>(self));
+        std::vector<double> changed;
+        for (std::size_t index = 0; index < guard.ancestors.size(); ++index) {
+            SourceGuard::Entry& entry = guard.ancestors[index];
+            if (entry.out || SourceGuard::same(entry)) continue;
+            entry.out = true;
+            changed.push_back(double(index));
+        }
+        return Value::list(std::move(changed));
     };
     b.methods["__tnGuardCheck"] = [](void* self, const Args& a, Store&) {
         SourceGuard& guard = sourceGuardOf(*as<Object3D>(self));
