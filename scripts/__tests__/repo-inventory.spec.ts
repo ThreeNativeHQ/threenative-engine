@@ -10,6 +10,7 @@ import {
   nodeEngineRange,
   templateNames,
   workspacePackageNames,
+  workspacePackageNamesFromTree,
 } from "../lib/repo-inventory.mjs";
 
 const templates = path.join(REPO_ROOT, "packages", "create-threenative", "templates");
@@ -51,5 +52,15 @@ describe("repo inventory", () => {
   it("should read the Node floor from the one place the repository declares it", () => {
     expect(nodeEngineRange()).toMatch(/^>=?\d+\.\d+\.\d+$/u);
     expect(minimumNodeVersion()).toBe("20.19.0");
+  });
+
+  it("reads the same package list from the Git tree a sparse checkout leaves empty", () => {
+    // The CI scope job checks out `scripts/` and each `kit.json` only, so the working tree has no
+    // package manifest at all; the tree listing is what fails closed on a stale policy name.
+    expect(workspacePackageNamesFromTree()).toEqual(workspacePackageNames());
+  });
+
+  it("names a package directory that is not in the tree, so a rename cannot pass", () => {
+    expect(workspacePackageNamesFromTree()).not.toContain("terrain-that-moved");
   });
 });

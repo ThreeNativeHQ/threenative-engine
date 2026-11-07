@@ -7,6 +7,7 @@
 //
 // Plain ESM on purpose: CI runs `node scripts/*.mjs` on Node 20, which cannot import `.ts`.
 // `repo-inventory.d.mts` carries the types for the TypeScript callers.
+import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -32,6 +33,31 @@ function shipping(directory, marker) {
  */
 export function workspacePackageNames(root = REPO_ROOT) {
   return shipping(path.join(root, "packages"), "package.json");
+}
+
+/**
+ * The same list read from the Git tree instead of the working tree.
+ *
+ * The CI scope job checks out `scripts/` and each `kit.json` only — 20 MB against 488 MB — so no
+ * package manifest is on disk there and `workspacePackageNames` sees nothing. Names are trees, not
+ * blobs, so `ls-tree` answers without fetching a byte.
+ */
+export function workspacePackageNamesFromTree(root = REPO_ROOT) {
+  const listing = execFileSync(
+    "git",
+    ["-C", root, "ls-tree", "-r", "--name-only", "HEAD", "--", "packages"],
+    {
+      encoding: "utf8",
+    },
+  );
+  return [
+    ...new Set(
+      listing
+        .split("\n")
+        .map((line) => /^packages\/([^/]+)\/package\.json$/u.exec(line)?.[1])
+        .filter((name) => name !== undefined),
+    ),
+  ].sort((left, right) => left.localeCompare(right));
 }
 
 /** Kit directory names. A directory is a kit when it ships `kit.json`, which is the lookup data. */
