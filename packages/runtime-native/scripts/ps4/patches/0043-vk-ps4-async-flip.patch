@@ -1,0 +1,313 @@
+vulkan-ps4: present flips without waiting; acquire waits until the image is off screen
+
+--- a/include/vk_ps4_internal.h
++++ b/include/vk_ps4_internal.h
+@@ -695,17 +695,18 @@
+     uint32_t current_image;
+     /* Per-image in-flight tracking for AcquireNextImageKHR.
+      *
+-     * image_in_flight[] is the authoritative tracking — set to true
+-     * when an image is acquired and cleared when QueuePresentKHR
+-     * completes the flip.  This is independent of whether the caller
+-     * passed a fence, so semaphore-only sync patterns work correctly.
+-     *
+-     * image_fences[] stores the caller's fence (if provided) as an
+-     * optimization: when all images are in-flight, we wait on the
+-     * fence rather than busy-spinning.  May be NULL if the caller
+-     * used semaphore-only sync. */
++     * image_in_flight[] is true from acquire until QueuePresentKHR:
++     * the caller holds the image.
++     * flip_seq[p] is the flip that showed image p, counted from 1.
++     * Image p is off screen once flips_completed passes flip_seq[p],
++     * so a flip is only replaced on screen when a later one shows.
++     * flips_completed counts the flips the display finished, and
++     * flip_count_base is the display count when this swapchain opened. */
+     bool image_in_flight[GNM_VIDEO_OUT_MAX_BUFFERS];
+-    VkFence image_fences[GNM_VIDEO_OUT_MAX_BUFFERS];
++    uint64_t flip_seq[GNM_VIDEO_OUT_MAX_BUFFERS];
++    uint64_t flips_submitted;
++    uint64_t flips_completed;
++    uint64_t flip_count_base;
+ };
+ 
+ /* === Utility macros === */
+@@ -719,6 +720,10 @@
+ void *vk_ps4_alloc_zero(const VkAllocationCallbacks *alloc, size_t size, size_t alignment);
+ void vk_ps4_free(const VkAllocationCallbacks *alloc, void *ptr);
+ 
++/* === Clock helpers (vk_ps4_sync.c) === */
++uint64_t vk_ps4_now_ns(void);
++void vk_ps4_sleep_us(uint32_t us);
++
+ /* === Format mapping === */
+ GnmDataFormat vk_ps4_vk_format_to_gnm(VkFormat format);
+ GnmDataFormat vk_ps4_vk_format_to_gnm_buffer(VkFormat format);
+--- a/src/vk_ps4_swapchain.c
++++ b/src/vk_ps4_swapchain.c
+@@ -11,6 +11,52 @@
+ 
+ #include <string.h>
+ 
++#ifdef __ORBIS__
++#include <orbis/VideoOut.h>  /* sceVideoOutSubmitFlip, sceVideoOutGetFlipStatus */
++#endif
++
++/* === Flip helpers ===
++ * A flip is queued and shown at a later vblank.  Present never waits for it:
++ * the CPU records the next frame while the display works. */
++
++/* Queue one flip for buffer `index`.  Returns 0 (GNM_ERROR_OK) on success. */
++static int32_t vk_ps4_flip_submit(GnmVideoOut *vo, uint32_t index, int64_t flip_arg) {
++#ifdef __ORBIS__
++    return sceVideoOutSubmitFlip(vo->handle, (int32_t)index, GNM_VIDEO_OUT_FLIP_VSYNC, flip_arg);
++#else
++    /* The host has no display: keep the old call, which reports UNSUPPORTED. */
++    return (int32_t)sceGnmVideoOutSubmitFlipAndWait(
++        vo, index, flip_arg, GNM_VIDEO_OUT_FLIP_VSYNC);
++#endif
++}
++
++/* Flips the display finished, or UINT64_MAX when it cannot say (host). */
++static uint64_t vk_ps4_flip_total(GnmVideoOut *vo) {
++#ifdef __ORBIS__
++    OrbisVideoOutFlipStatus status;
++    memset(&status, 0, sizeof(status));
++    if (sceVideoOutGetFlipStatus(vo->handle, &status) != 0) {
++        return UINT64_MAX;
++    }
++    return (uint64_t)status.num;
++#else
++    (void)vo;
++    return UINT64_MAX;
++#endif
++}
++
++/* Refresh flips_completed.  A host has no display: every flip counts as done. */
++static void vk_ps4_flip_poll(VkPs4Swapchain *sc) {
++    const uint64_t total = vk_ps4_flip_total(&sc->video_out);
++    if (total == UINT64_MAX) {
++        sc->flips_completed = sc->flips_submitted;
++    } else if (total > sc->flip_count_base) {
++        sc->flips_completed = total - sc->flip_count_base;
++    } else {
++        sc->flips_completed = 0;
++    }
++}
++
+ VKAPI_ATTR VkResult VKAPI_CALL
+ vk_ps4_CreateSwapchainKHR(VkDevice device, const VkSwapchainCreateInfoKHR *pCreateInfo,
+                           const VkAllocationCallbacks *pAllocator, VkSwapchainKHR *pSwapchain) {
+@@ -51,8 +97,9 @@
+     }
+     sceGnmVideoOutInitDefaultCreateInfo(&vo_info, width, height);
+ 
+-    /* Set number of buffers from swapchain create info */
+-    vo_info.numbuffers = pCreateInfo->minImageCount;
++    /* Set the buffer count.  Three buffers let the CPU run one frame ahead of
++     * the display, so a record and a flip overlap. */
++    vo_info.numbuffers = pCreateInfo->minImageCount < 3 ? 3 : pCreateInfo->minImageCount;
+     if (vo_info.numbuffers > GNM_VIDEO_OUT_MAX_BUFFERS) {
+         vo_info.numbuffers = GNM_VIDEO_OUT_MAX_BUFFERS;
+     }
+@@ -72,6 +119,12 @@
+     }
+     vk_ps4_log_raw("CreateSwapchainKHR: VideoOutOpen OK");
+ 
++    /* Flips the display made before this swapchain: count from zero from here. */
++    sc->flip_count_base = vk_ps4_flip_total(&sc->video_out);
++    if (sc->flip_count_base == UINT64_MAX) {
++        sc->flip_count_base = 0;
++    }
++
+     /* Create VkImage wrappers for each VideoOut buffer */
+     sc->image_count = vo_info.numbuffers;
+     sc->images = vk_ps4_alloc_zero(alloc, sc->image_count * sizeof(VkPs4Image), 16);
+@@ -187,6 +240,7 @@
+ VKAPI_ATTR VkResult VKAPI_CALL
+ vk_ps4_AcquireNextImageKHR(VkDevice device, VkSwapchainKHR swapchain, uint64_t timeout,
+                            VkSemaphore semaphore, VkFence fence, uint32_t *pImageIndex) {
++    (void)device;  /* the display, not the device, says when an image is free */
+     if (!swapchain || !pImageIndex) {
+         return VK_ERROR_INITIALIZATION_FAILED;
+     }
+@@ -195,97 +249,34 @@
+         return VK_ERROR_SURFACE_LOST_KHR;
+     }
+ 
+-    /* Find an available image.  An image is available if it is not
+-     * in-flight (image_in_flight[idx] == false).  If the caller
+-     * previously passed a fence, we check it as an optimization to
+-     * reclaim images whose GPU work has completed even before the
+-     * present call.  We search starting from current_image to
+-     * distribute load across buffers. */
++    /* An image is free when no caller holds it and the display moved past
++     * its flip.  Poll the flip count until one frees, within `timeout`.
++     * Round robin from current_image hands out the oldest image first. */
++    const uint64_t deadline = vk_ps4_now_ns() + timeout;
+     uint32_t acquired = sc->image_count;  /* invalid sentinel */
+-    for (uint32_t attempt = 0; attempt < sc->image_count; attempt++) {
+-        uint32_t idx = (sc->current_image + attempt) % sc->image_count;
+-        if (!sc->image_in_flight[idx]) {
+-            /* Image is free */
++    for (;;) {
++        vk_ps4_flip_poll(sc);
++        for (uint32_t attempt = 0; attempt < sc->image_count; attempt++) {
++            const uint32_t idx = (sc->current_image + attempt) % sc->image_count;
++            if (sc->image_in_flight[idx]) continue;
++            if (sc->flip_seq[idx] != 0 && sc->flips_completed <= sc->flip_seq[idx]) continue;
+             acquired = idx;
+             break;
+         }
+-        /* Image is in-flight — check if its fence has been signaled.
+-         * If so, the GPU work is done and we can reclaim it early
+-         * (even before QueuePresentKHR clears the in-flight flag). */
+-        if (sc->image_fences[idx]) {
+-            VkPs4Fence *f = (VkPs4Fence *)sc->image_fences[idx];
+-            bool done = f->signaled;
+-            if (!done && f->label) {
+-                done = (*f->label == f->signal_value);
+-            }
+-            if (done) {
+-                sc->image_in_flight[idx] = false;
+-                sc->image_fences[idx] = NULL;
+-                acquired = idx;
+-                break;
+-            }
++        if (acquired < sc->image_count) {
++            break;
+         }
+-    }
+-
+-    if (acquired >= sc->image_count) {
+-        /* All images are in flight.  Wait for any one to become available.
+-         * Collect all in-flight fences and wait with waitAll=false so
+-         * we wait up to `timeout` for ANY fence, not the full timeout
+-         * per fence. */
+-        VkFence wait_fences[GNM_VIDEO_OUT_MAX_BUFFERS];
+-        uint32_t wait_count = 0;
+-        for (uint32_t i = 0; i < sc->image_count; i++) {
+-            if (sc->image_fences[i]) {
+-                wait_fences[wait_count++] = sc->image_fences[i];
+-            }
++        if (timeout == 0) {
++            return VK_NOT_READY;
+         }
+-        if (wait_count > 0) {
+-            VkResult wr = vk_ps4_WaitForFences(
+-                device, wait_count, wait_fences, VK_FALSE, timeout
+-            );
+-            if (wr != VK_SUCCESS) {
+-                return wr;  /* VK_TIMEOUT or error */
+-            }
+-            /* Find which fence signaled and reclaim its image. */
+-            for (uint32_t i = 0; i < sc->image_count; i++) {
+-                if (sc->image_fences[i]) {
+-                    VkPs4Fence *f = (VkPs4Fence *)sc->image_fences[i];
+-                    bool done = f->signaled;
+-                    if (!done && f->label) {
+-                        done = (*f->label == f->signal_value);
+-                    }
+-                    if (done) {
+-                        sc->image_in_flight[i] = false;
+-                        sc->image_fences[i] = NULL;
+-                        acquired = i;
+-                        break;
+-                    }
+-                }
+-            }
+-            if (acquired >= sc->image_count) {
+-                /* WaitForFences returned success but we didn't find
+-                 * a signaled fence — shouldn't happen, but handle it. */
+-                acquired = sc->current_image;
+-            }
+-        } else {
+-            /* No fences to wait on (all semaphore-only sync).
+-             * Wait for all GPU work to complete before reusing the
+-             * image, since we have no per-image fence to wait on.
+-             * This is conservative but correct — without it, the GPU
+-             * may still be rendering to the buffer we're about to
+-             * hand back to the caller. */
+-            vk_ps4_DeviceWaitIdle(device);
+-            /* Clear all in-flight flags since the GPU is now idle. */
+-            for (uint32_t i = 0; i < sc->image_count; i++) {
+-                sc->image_in_flight[i] = false;
+-            }
+-            acquired = sc->current_image;
++        if (timeout != UINT64_MAX && vk_ps4_now_ns() >= deadline) {
++            return VK_TIMEOUT;
+         }
++        vk_ps4_sleep_us(100);
+     }
+ 
+     /* Mark this image as in-flight */
+     sc->image_in_flight[acquired] = true;
+-    sc->image_fences[acquired] = fence;  /* may be NULL */
+     sc->current_image = (acquired + 1) % sc->image_count;
+     *pImageIndex = acquired;
+ 
+@@ -329,10 +320,8 @@
+         }
+     }
+ 
+-    /* Submit flip for each swapchain.  After the flip completes
+-     * (sceGnmVideoOutSubmitFlipAndWait is blocking), the image is
+-     * no longer in flight — clear its fence so AcquireNextImageKHR
+-     * can reclaim it. */
++    /* Queue one flip per swapchain and return at once.  The display shows it
++     * at a later vblank, and AcquireNextImageKHR waits for that, not Present. */
+     for (uint32_t i = 0; i < pPresentInfo->swapchainCount; i++) {
+         VkPs4Swapchain *sc = (VkPs4Swapchain *)pPresentInfo->pSwapchains[i];
+         if (!sc) continue;
+@@ -342,17 +331,14 @@
+         if (image_index < sc->image_count) {
+             vk_ps4_log("QueuePresent: flip img=%u frame=%lld",
+                        image_index, (long long)sc->video_out.frame);
+-            sceGnmVideoOutSubmitFlipAndWait(
+-                &sc->video_out, image_index, (int64_t)sc->video_out.frame,
+-                GNM_VIDEO_OUT_FLIP_VSYNC
+-            );
++            if (vk_ps4_flip_submit(&sc->video_out, image_index,
++                                   (int64_t)sc->video_out.frame) == 0) {
++                sc->flip_seq[image_index] = ++sc->flips_submitted;
++            }
+             sc->video_out.frame++;
+-            vk_ps4_log_raw("QueuePresent: flip done");
+-            /* The flip is complete — the display engine is done
+-             * with the buffer.  Clear the in-flight tracking so
+-             * AcquireNextImageKHR can reclaim this image. */
++            /* The caller gave the image back.  flip_seq keeps it away from
++             * the caller until the display replaces it. */
+             sc->image_in_flight[image_index] = false;
+-            sc->image_fences[image_index] = NULL;
+         }
+     }
+ 
+@@ -413,7 +399,7 @@
+     return VK_SUCCESS;
+ }
+ 
+-/* The one format the VideoOut scanout presents faithfully. sceGnmVideoOutSubmitFlipAndWait
++/* The one format the VideoOut scanout presents faithfully. sceVideoOutSubmitFlip
+  * takes no pixel format, so the display reads each buffer as RGBA8 in memory order: an
+  * R8G8B8A8_UNORM swapchain image (FMT 8_8_8_8, swizzle X,Y,Z,W) lands correctly, while a
+  * B8G8R8A8_UNORM one (swizzle Z,Y,X,W) writes B first and would reach the screen with red and
+--- a/src/vk_ps4_sync.c
++++ b/src/vk_ps4_sync.c
+@@ -28,7 +28,7 @@
+ /* Get current time in nanoseconds (monotonic).
+  * On host: clock_gettime(CLOCK_MONOTONIC).
+  * On PS4: sceKernelGetProcessTime() returns microseconds. */
+-static uint64_t vk_ps4_now_ns(void) {
++uint64_t vk_ps4_now_ns(void) {
+ #ifndef __ORBIS__
+     struct timespec ts;
+     clock_gettime(CLOCK_MONOTONIC, &ts);
+@@ -39,7 +39,7 @@
+ }
+ 
+ /* Sleep for approximately `us` microseconds to avoid burning CPU. */
+-static void vk_ps4_sleep_us(uint32_t us) {
++void vk_ps4_sleep_us(uint32_t us) {
+ #ifdef __ORBIS__
+     sceKernelUsleep(us);
+ #else

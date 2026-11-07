@@ -457,6 +457,11 @@ git apply "$SCRIPTS/patches/0038-vk-ps4-filter-linear-formats.patch"
 # Dawn creates and destroys swapchain semaphores every frame: two GPU maps and unmaps per frame,
 # each one a shadPS4 memory-tracker re-sync on its GPU thread. Labels now come from a pooled slab.
 git apply "$SCRIPTS/patches/0039-vk-ps4-pooled-sync-labels.patch"
+# QueuePresent called sceGnmVideoOutSubmitFlipAndWait, which blocks until the flip shows: every
+# frame waited one vblank more than its work, so a 20 ms frame presented at 30 fps. Present now
+# queues the flip (sceVideoOutSubmitFlip) and returns; Acquire hands back an image only once a
+# later flip completed (sceVideoOutGetFlipStatus), so the display never reads an image in reuse.
+git apply "$SCRIPTS/patches/0043-vk-ps4-async-flip.patch"
 # The Makefile compiles TEST_SRC relative to the vulkan-ps4 tree.
 cp "$SCRIPTS/e2-triangle.c" "$SRC/e2-triangle.c"
 make -f Makefile.orbis -j"$JOBS" TEST_SRC=../e2-triangle.c self > "$LOGS/e2-triangle.log" 2>&1
