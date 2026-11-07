@@ -232,7 +232,10 @@ describe("ProbeVolume", () => {
     const at = new Vector3(0.7, 1.2, 0.4);
     const up = new Vector3(0, 1, 0);
     expect(subject.sampleRadiance(at, up).x).toBeCloseTo(0.282095 + 0.5 * 0.488603, 4);
-    expect(subject.sampleRadiance(at, up.clone().negate()).x).toBeCloseTo(0.282095 - 0.5 * 0.488603, 4);
+    expect(subject.sampleRadiance(at, up.clone().negate()).x).toBeCloseTo(
+      0.282095 - 0.5 * 0.488603,
+      4,
+    );
     expect(subject.sampleIrradiance(at, up).x).toBeCloseTo(0.886227 + 0.5 * 1.023328, 4);
     expect(subject.sampleRadianceNode()).toBeDefined();
   });
