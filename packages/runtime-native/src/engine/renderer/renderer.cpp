@@ -1248,6 +1248,9 @@ void Renderer::releaseTargets() {
     if (emissiveView_) wgpuTextureViewRelease(emissiveView_);
     if (emissiveTexture_) wgpuTextureRelease(emissiveTexture_);
     emissiveView_ = nullptr; emissiveTexture_ = nullptr;
+    if (indirectView_) wgpuTextureViewRelease(indirectView_);
+    if (indirectTexture_) wgpuTextureRelease(indirectTexture_);
+    indirectView_ = nullptr; indirectTexture_ = nullptr;
     for (const auto& [name, view] : mrtViews_) wgpuTextureViewRelease(view);
     for (const auto& [name, texture] : mrtTextures_) wgpuTextureRelease(texture);
     mrtViews_.clear();
@@ -2829,7 +2832,7 @@ const shader::StageModule* Renderer::auxFragment(Program& program, uint8_t mask,
     std::string slotKey;
     if (slots.empty()) {
         if (program.auxBuilt >> mask & 1u) return program.aux[mask].get();
-        program.auxBuilt |= uint16_t(1u << mask);
+        program.auxBuilt |= uint32_t(1u << mask);
     } else {
         slotKey = (zeroNamed ? "z" : "n") + std::to_string(mask) + "|";
         for (const auto& name : slots) slotKey += std::to_string(name.size()) + ":" + name + ";";
@@ -2875,6 +2878,10 @@ const shader::StageModule* Renderer::auxFragment(Program& program, uint8_t mask,
                 f.construct(shader::Type::vec(4), {f.constant(0.f), f.constant(1.f), f.constant(0.f), f.constant(1.f)}));
         if (mask & kAuxAlbedo) outputs.push_back(zeroNamed ? zero() : f.construct(shader::Type::vec(4), {source.albedo, f.constant(1.f)}));
         if (mask & kAuxEmissive) outputs.push_back(zeroNamed ? zero() : f.construct(shader::Type::vec(4), {source.emissive, f.constant(1.f)}));
+        // An unlit program (Basic) has no light, so it adds no indirect light either: zero there.
+        if (mask & kAuxIndirect)
+            outputs.push_back(zeroNamed || source.indirectDiffuse == shader::kInvalid ? zero()
+                : f.construct(shader::Type::vec(4), {source.indirectDiffuse, f.constant(1.f)}));
         for (const auto& name : slots) {
             const auto found = std::find_if(variant.nodes.mrt.begin(), variant.nodes.mrt.end(),
                                             [&](const shader::MrtOutput& slot) { return slot.name == name; });
@@ -3828,7 +3835,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     // positions: the normal pass (it shares the colour vertex stage) and TRAA's velocity pass (its own
     // vertex stage, flagged the same way below). Every other frame is compiled as three's is.
     const bool invariantPosition = (postEffects_ && (postEffects_->reads("normal") || postEffects_->reads("albedo") ||
-        postEffects_->reads("emissive") || postEffects_->reads("metalness") || postEffects_->reads("roughness"))) || traa_;
+        postEffects_->reads("emissive") || postEffects_->reads("indirectDiffuse") || postEffects_->reads("metalness") ||
+        postEffects_->reads("roughness"))) || traa_;
     auto variantOf = [invariantPosition](const DrawItem& item) {
         shader::VertexVariant v;
         v.invariantPosition = invariantPosition;
@@ -4996,12 +5004,14 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     const bool materialPass = postEffects_ && (postEffects_->reads("metalness") || postEffects_->reads("roughness"));
     const bool albedoPass = postEffects_ && postEffects_->reads("albedo");
     const bool emissivePass = postEffects_ && postEffects_->reads("emissive");
+    const bool indirectPass = postEffects_ && postEffects_->reads("indirectDiffuse");
     // The target feeds a post pass: with no post graph there is nothing to bind it to, and the frame keeps its own
     // colour alone. The graph asks for it by name (collectPostSources), in a pass or in the output program.
     const bool translucentPass =
         postEffects_ && (translucentRequested_ || postEffects_->reads("translucent"));
     const uint8_t auxMask = uint8_t((normalPass ? kAuxNormal : 0) | (materialPass ? kAuxMaterial : 0) |
-                                    (albedoPass ? kAuxAlbedo : 0) | (emissivePass ? kAuxEmissive : 0));
+                                    (albedoPass ? kAuxAlbedo : 0) | (emissivePass ? kAuxEmissive : 0) |
+                                    (indirectPass ? kAuxIndirect : 0));
     // A material's own mrt() slots (three's custom MRT outputs): the frame's union, in name order so the pass's
     // attachments and every fragment's outputs agree from one frame to the next. A slot the material names is a
     // further colour target; one it does not name is zero there, which keeps every pipeline of the pass equal.
@@ -5178,6 +5188,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         target(materialPass, materialTexture_, materialView_, {"metalness", "roughness"});
         target(albedoPass, albedoTexture_, albedoView_, {"albedo"});
         target(emissivePass, emissiveTexture_, emissiveView_, {"emissive"});
+        target(indirectPass, indirectTexture_, indirectView_, {"indirectDiffuse"});
         target(translucentPass, translucentTexture_, translucentView_, {"translucent"});
         // A custom MRT slot's target, allocated on first use at the scene's size and readable by the post graph under
         // the slot's own name (three's PassNode.getTextureNode(slot)).
@@ -6522,6 +6533,7 @@ void Renderer::encodeFrame(FrameJob& job) {
         attach(kAuxMaterial, materialView_, {0, 1, 0, 1});  // no surface: metalness 0, roughness 1
         attach(kAuxAlbedo, albedoView_, {0, 0, 0, 0});
         attach(kAuxEmissive, emissiveView_, {0, 0, 0, 0});
+        attach(kAuxIndirect, indirectView_, {0, 0, 0, 0});
         for (const auto& name : job.auxMrt) {
             const auto found = mrtViews_.find(name);
             attachView(found == mrtViews_.end() ? nullptr : found->second, {0, 0, 0, 0});
@@ -6785,6 +6797,7 @@ GpuStatus Renderer::readProbePixels(ReadbackCallback done) {
 GpuStatus Renderer::readNormalPixels(ReadbackCallback done) { return readRgba16(normalTexture_, std::move(done)); }
 GpuStatus Renderer::readAlbedoPixels(ReadbackCallback done) { return readRgba16(albedoTexture_, std::move(done)); }
 GpuStatus Renderer::readEmissivePixels(ReadbackCallback done) { return readRgba16(emissiveTexture_, std::move(done)); }
+GpuStatus Renderer::readIndirectPixels(ReadbackCallback done) { return readRgba16(indirectTexture_, std::move(done)); }
 
 GpuStatus Renderer::readMrtPixels(std::string_view slot, uint32_t x, uint32_t y, uint32_t width, uint32_t height,
                                   ReadbackCallback done) {
