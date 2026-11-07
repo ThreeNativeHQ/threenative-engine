@@ -47,6 +47,7 @@
  *   node corpus/tailwind-parity.mjs --family PRD-844 [--group mask]
  *   node corpus/tailwind-parity.mjs --sheet PRD-844 # contact sheets for a fresh visual judge
  *   node corpus/tailwind-parity.mjs --ratchet       # fail below the committed floor
+ *   node corpus/tailwind-parity.mjs --floor         # rewrite the floor from a measured run
  */
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -420,241 +421,205 @@ const tab = [{ t: "key", key: "Tab" }];
  * media variant needs, and `exempt` the reason a cell cannot be staged yet (with its owner).
  */
 const VARIANT_STAGE = {
-  "*": { class: "*:bg-red-500", base: "bg-blue-500", inner: 2 },
-  "**": { class: "**:bg-red-500", base: "bg-blue-500", inner: 2 },
-  not: { class: "not-first:bg-red-500", base: "bg-blue-500", before: 1 },
-  group: { class: "group-hover:bg-red-500", base: "bg-blue-500", wrap: "group", drive: [hover] },
+  "*": { class: "*:bg-red-500", inner: 2 },
+  "**": { class: "**:bg-red-500", inner: 2 },
+  not: { class: "not-first:bg-red-500", before: 1 },
+  group: { class: "group-hover:bg-red-500", wrap: "group", drive: [hover] },
   peer: {
     class: "peer-checked:bg-red-500",
-    base: "bg-blue-500",
     peer: true,
     exempt: { owner: P851, why: "peer-* needs a checked control, and the engine paints no form controls" },
   },
-  "first-letter": { class: "first-letter:text-red-400", base: "text-blue-400", text: "Abc" },
-  "first-line": { class: "first-line:text-red-400", base: "text-blue-400", text: "Abc" },
-  marker: { class: "marker:text-red-400", base: "text-blue-400", list: 2 },
+  "first-letter": { class: "first-letter:text-red-400", text: "Abc" },
+  "first-line": { class: "first-line:text-red-400", text: "Abc" },
+  marker: { class: "marker:text-red-400", list: 2 },
   selection: {
     class: "selection:bg-yellow-300",
-    base: "bg-blue-500",
     text: "Abc",
     exempt: { owner: P851, why: "::selection needs a text selection, and the engine has no selection model" },
   },
   backdrop: {
     class: "backdrop:bg-black/50",
-    base: "bg-blue-500",
     exempt: { owner: P851, why: "::backdrop needs a top-layer dialog, which the engine does not paint" },
   },
   "details-content": {
     class: "details-content:text-red-400",
-    base: "text-blue-400",
     exempt: { owner: P851, why: "::details-content needs a <details> element, which the engine does not paint" },
   },
   file: {
     class: "file:text-red-400",
-    base: "text-blue-400",
     exempt: { owner: P851, why: "::file-selector-button needs a file input" },
   },
   placeholder: {
     class: "placeholder:text-red-400",
-    base: "text-blue-400",
     exempt: { owner: P851, why: "::placeholder needs a text input, which the engine does not paint" },
   },
-  before: { class: "before:content-['x']", base: "bg-blue-500" },
-  after: { class: "after:content-['x']", base: "bg-blue-500" },
-  first: { class: "first:bg-red-500", base: "bg-blue-500" },
-  last: { class: "last:bg-red-500", base: "bg-blue-500", after: 2 },
-  only: { class: "only:bg-red-500", base: "bg-blue-500" },
-  odd: { class: "odd:bg-red-500", base: "bg-blue-500" },
-  even: { class: "even:bg-red-500", base: "bg-blue-500", before: 1 },
-  "first-of-type": { class: "first-of-type:bg-red-500", base: "bg-blue-500" },
-  "last-of-type": { class: "last-of-type:bg-red-500", base: "bg-blue-500", after: 2 },
-  "only-of-type": { class: "only-of-type:bg-red-500", base: "bg-blue-500" },
+  before: { class: "before:content-['x']" },
+  after: { class: "after:content-['x']" },
+  first: { class: "first:bg-red-500" },
+  last: { class: "last:bg-red-500", after: 2 },
+  only: { class: "only:bg-red-500" },
+  odd: { class: "odd:bg-red-500" },
+  even: { class: "even:bg-red-500", before: 1 },
+  "first-of-type": { class: "first-of-type:bg-red-500" },
+  "last-of-type": { class: "last-of-type:bg-red-500", after: 2 },
+  "only-of-type": { class: "only-of-type:bg-red-500" },
   visited: {
     class: "visited:text-red-400",
-    base: "text-blue-400",
     exempt: { owner: P849, why: "the engine has no navigation, so nothing is ever :visited" },
   },
   target: {
     class: "target:bg-red-500",
-    base: "bg-blue-500",
     exempt: { owner: P849, why: ":target needs a URL fragment, which neither subject sets" },
   },
   open: {
     class: "open:bg-red-500",
-    base: "bg-blue-500",
     exempt: { owner: P851, why: "open: needs <details>/<dialog> open state, which the engine does not paint" },
   },
   default: {
     class: "default:bg-red-500",
-    base: "bg-blue-500",
     exempt: { owner: P851, why: "default: needs a checked or default-selected control" },
   },
   checked: {
     class: "checked:bg-red-500",
-    base: "bg-blue-500",
     exempt: { owner: P851, why: "checked: needs a form control" },
   },
   indeterminate: {
     class: "indeterminate:bg-red-500",
-    base: "bg-blue-500",
     exempt: { owner: P851, why: "indeterminate: needs a form control" },
   },
   autofill: {
     class: "autofill:bg-red-500",
-    base: "bg-blue-500",
     exempt: { owner: P851, why: "autofill: needs an autofilled text field" },
   },
   "placeholder-shown": {
     class: "placeholder-shown:bg-red-500",
-    base: "bg-blue-500",
     exempt: { owner: P851, why: "placeholder-shown: needs a text field" },
   },
   optional: {
     class: "optional:bg-red-500",
-    base: "bg-blue-500",
     exempt: { owner: P851, why: "optional: needs a form control" },
   },
   required: {
     class: "required:bg-red-500",
-    base: "bg-blue-500",
     exempt: { owner: P851, why: "required: needs a form control" },
   },
   valid: {
     class: "valid:bg-red-500",
-    base: "bg-blue-500",
     exempt: { owner: P851, why: "valid: needs a form control with constraints" },
   },
   invalid: {
     class: "invalid:bg-red-500",
-    base: "bg-blue-500",
     exempt: { owner: P851, why: "invalid: needs a form control with constraints" },
   },
   "user-valid": {
     class: "user-valid:bg-red-500",
-    base: "bg-blue-500",
     exempt: { owner: P851, why: "user-valid: needs a form control the user has edited" },
   },
   "user-invalid": {
     class: "user-invalid:bg-red-500",
-    base: "bg-blue-500",
     exempt: { owner: P851, why: "user-invalid: needs a form control the user has edited" },
   },
   "in-range": {
     class: "in-range:bg-red-500",
-    base: "bg-blue-500",
     exempt: { owner: P851, why: "in-range: needs a range or number control" },
   },
   "out-of-range": {
     class: "out-of-range:bg-red-500",
-    base: "bg-blue-500",
     exempt: { owner: P851, why: "out-of-range: needs a range or number control" },
   },
   "read-only": {
     class: "read-only:bg-red-500",
-    base: "bg-blue-500",
     exempt: { owner: P851, why: "read-only: needs a text field" },
   },
-  empty: { class: "empty:bg-red-500", base: "bg-blue-500" },
-  "focus-within": { class: "focus-within:bg-red-500", base: "bg-blue-500", wrap: "fw", inner: 1, drive: tab },
-  hover: { class: "hover:bg-red-500", base: "bg-blue-500", drive: [hover] },
-  focus: { class: "focus:bg-red-500", base: "bg-blue-500", tag: "button", drive: tab },
-  "focus-visible": { class: "focus-visible:bg-red-500", base: "bg-blue-500", tag: "button", drive: tab },
-  active: { class: "active:bg-red-500", base: "bg-blue-500", tag: "button", drive: press },
-  enabled: { class: "enabled:bg-red-500", base: "bg-blue-500", tag: "button" },
-  disabled: { class: "disabled:bg-red-500", base: "bg-blue-500", tag: "button", attrs: { disabled: "" } },
-  inert: { class: "inert:bg-red-500", base: "bg-blue-500", attrs: { inert: "" } },
-  in: { class: "in-[.inhost]:bg-red-500", base: "bg-blue-500", wrap: "inhost" },
-  has: { class: "has-[:checked]:bg-red-500", base: "bg-blue-500", inner: 1, inside: "checked" },
-  aria: { class: "aria-expanded:bg-red-500", base: "bg-blue-500", attrs: { "aria-expanded": "true" } },
-  data: { class: "data-[active]:bg-red-500", base: "bg-blue-500", attrs: { "data-active": "" } },
-  nth: { class: "nth-3:bg-red-500", base: "bg-blue-500", before: 2 },
-  "nth-last": { class: "nth-last-2:bg-red-500", base: "bg-blue-500", after: 1 },
-  "nth-of-type": { class: "nth-of-type-2:bg-red-500", base: "bg-blue-500", before: 1 },
-  "nth-last-of-type": { class: "nth-last-of-type-2:bg-red-500", base: "bg-blue-500", after: 1 },
-  supports: { class: "supports-[display:grid]:bg-red-500", base: "bg-blue-500" },
-  "motion-safe": { class: "motion-safe:bg-red-500", base: "bg-blue-500", env: { reducedMotion: false } },
-  "motion-reduce": { class: "motion-reduce:bg-red-500", base: "bg-blue-500", env: { reducedMotion: true } },
+  empty: { class: "empty:bg-red-500" },
+  "focus-within": { class: "focus-within:bg-red-500", wrap: "fw", inner: 1, drive: tab },
+  hover: { class: "hover:bg-red-500", drive: [hover] },
+  focus: { class: "focus:bg-red-500", tag: "button", drive: tab },
+  "focus-visible": { class: "focus-visible:bg-red-500", tag: "button", drive: tab },
+  active: { class: "active:bg-red-500", tag: "button", drive: press },
+  enabled: { class: "enabled:bg-red-500", tag: "button" },
+  disabled: { class: "disabled:bg-red-500", tag: "button", attrs: { disabled: "" } },
+  inert: { class: "inert:bg-red-500", attrs: { inert: "" } },
+  in: { class: "in-[.inhost]:bg-red-500", wrap: "inhost" },
+  has: { class: "has-[:checked]:bg-red-500", inner: 1, inside: "checked" },
+  aria: { class: "aria-expanded:bg-red-500", attrs: { "aria-expanded": "true" } },
+  data: { class: "data-[active]:bg-red-500", attrs: { "data-active": "" } },
+  nth: { class: "nth-3:bg-red-500", before: 2 },
+  "nth-last": { class: "nth-last-2:bg-red-500", after: 1 },
+  "nth-of-type": { class: "nth-of-type-2:bg-red-500", before: 1 },
+  "nth-last-of-type": { class: "nth-last-of-type-2:bg-red-500", after: 1 },
+  supports: { class: "supports-[display:grid]:bg-red-500" },
+  "motion-safe": { class: "motion-safe:bg-red-500", env: { reducedMotion: false } },
+  "motion-reduce": { class: "motion-reduce:bg-red-500", env: { reducedMotion: true } },
   starting: {
     class: "starting:bg-red-500",
-    base: "bg-blue-500",
     exempt: { owner: P847, why: "@starting-style needs a transition to sample, which the motion bar drives" },
   },
   "contrast-more": {
     class: "contrast-more:bg-red-500",
-    base: "bg-blue-500",
     exempt: { owner: P849, why: "the engine's device descriptor has no prefers-contrast input yet" },
   },
   "contrast-less": {
     class: "contrast-less:bg-red-500",
-    base: "bg-blue-500",
     exempt: { owner: P849, why: "the engine's device descriptor has no prefers-contrast input yet" },
   },
   "forced-colors": {
     class: "forced-colors:bg-red-500",
-    base: "bg-blue-500",
     exempt: { owner: P849, why: "the engine's device descriptor has no forced-colors input yet" },
   },
   "inverted-colors": {
     class: "inverted-colors:bg-red-500",
-    base: "bg-blue-500",
     exempt: { owner: P849, why: "the engine's device descriptor has no inverted-colors input yet" },
   },
-  max: { class: "max-2xl:bg-red-500", base: "bg-blue-500" },
-  sm: { class: "sm:bg-red-500", base: "bg-blue-500" },
-  md: { class: "md:bg-red-500", base: "bg-blue-500" },
-  lg: { class: "lg:bg-red-500", base: "bg-blue-500" },
-  xl: { class: "xl:bg-red-500", base: "bg-blue-500" },
+  max: { class: "max-2xl:bg-red-500" },
+  sm: { class: "sm:bg-red-500" },
+  md: { class: "md:bg-red-500" },
+  lg: { class: "lg:bg-red-500" },
+  xl: { class: "xl:bg-red-500" },
   "2xl": {
     class: "2xl:bg-red-500",
-    base: "bg-blue-500",
     viewport: { width: 1600, height: PANEL_H },
   },
-  min: { class: "min-xl:bg-red-500", base: "bg-blue-500" },
+  min: { class: "min-xl:bg-red-500" },
   "@max": {
     class: "@max-lg:bg-red-500",
-    base: "bg-blue-500",
     exempt: { owner: P848, why: "container queries need a sized container ancestor, which the engine's @container support is proven by PRD-848" },
   },
   "@": {
     class: "@lg:bg-red-500",
-    base: "bg-blue-500",
     exempt: { owner: P848, why: "container queries need a sized container ancestor" },
   },
   "@min": {
     class: "@min-lg:bg-red-500",
-    base: "bg-blue-500",
     exempt: { owner: P848, why: "container queries need a sized container ancestor" },
   },
   // A portrait viewport is the state `portrait:` describes; the first cell is still in frame.
-  portrait: { class: "portrait:bg-red-500", base: "bg-blue-500", viewport: { width: 720, height: 1280 } },
-  landscape: { class: "landscape:bg-red-500", base: "bg-blue-500" },
-  ltr: { class: "ltr:bg-red-500", base: "bg-blue-500" },
-  rtl: { class: "rtl:bg-red-500", base: "bg-blue-500", attrs: { dir: "rtl" } },
-  dark: { class: "dark:bg-red-500", base: "bg-blue-500", env: { dark: true } },
+  portrait: { class: "portrait:bg-red-500", viewport: { width: 720, height: 1280 } },
+  landscape: { class: "landscape:bg-red-500" },
+  ltr: { class: "ltr:bg-red-500" },
+  rtl: { class: "rtl:bg-red-500", attrs: { dir: "rtl" } },
+  dark: { class: "dark:bg-red-500", env: { dark: true } },
   print: {
     class: "print:bg-red-500",
-    base: "bg-blue-500",
     exempt: { owner: P849, why: "a game host never prints; both sides must agree the rule is inactive (PRD-849 decision)" },
   },
   noscript: {
     class: "noscript:bg-red-500",
-    base: "bg-blue-500",
     exempt: { owner: P849, why: "a game host always runs script; both sides agree the rule is inactive (PRD-849 decision)" },
   },
   "pointer-none": {
     class: "pointer-none:bg-red-500",
-    base: "bg-blue-500",
     exempt: { owner: P849, why: "the engine reports a mouse or a touch pointer, never none" },
   },
-  "pointer-coarse": { class: "pointer-coarse:bg-red-500", base: "bg-blue-500", env: { touch: true } },
-  "pointer-fine": { class: "pointer-fine:bg-red-500", base: "bg-blue-500" },
+  "pointer-coarse": { class: "pointer-coarse:bg-red-500", env: { touch: true } },
+  "pointer-fine": { class: "pointer-fine:bg-red-500" },
   "any-pointer-none": {
     class: "any-pointer-none:bg-red-500",
-    base: "bg-blue-500",
     exempt: { owner: P849, why: "the engine reports a mouse or a touch pointer, never none" },
   },
-  "any-pointer-coarse": { class: "any-pointer-coarse:bg-red-500", base: "bg-blue-500", env: { touch: true } },
-  "any-pointer-fine": { class: "any-pointer-fine:bg-red-500", base: "bg-blue-500" },
+  "any-pointer-coarse": { class: "any-pointer-coarse:bg-red-500", env: { touch: true } },
+  "any-pointer-fine": { class: "any-pointer-fine:bg-red-500" },
 };
 
 // -------------------------------------------------------------------------------------------------
@@ -1186,6 +1151,32 @@ async function driveWeb(page, steps) {
   }
 }
 
+/** The two subjects' handles, so a relaunched browser is the one every capture uses. */
+let site;
+let browser;
+
+/**
+ * One web capture, with one relaunch.
+ *
+ * A long run paints several hundred page loads, and a browser process that dies part-way through is
+ * a flake in the harness rather than a parity finding: it is relaunched and the panel repeated
+ * once. Only a second failure reaches the caller.
+ */
+async function webPanel(panel, options) {
+  try {
+    return await chromiumPanel(browser, site.base, panel, options);
+  } catch (error) {
+    console.warn(`tailwind-parity: relaunching Chromium after: ${error.message}`);
+    try {
+      await browser.close();
+    } catch {
+      // The process is gone; closing it again is not a new failure.
+    }
+    browser = await chromium.launch({ args: CHROMIUM_ARGS });
+    return chromiumPanel(browser, site.base, panel, options);
+  }
+}
+
 /** One panel in pinned headless Chromium, through the real component, optionally driven. */
 async function chromiumPanel(browser, base, panel, { strip = false, drive = [] } = {}) {
   const context = await browser.newContext({
@@ -1231,8 +1222,13 @@ function cratePanel(panel, dir, { drive = [] } = {}) {
   const run = spawnSync(
     "cargo",
     ["run", "--release", "--quiet", "--example", "oracle", "--", dir, String(panel.width), String(panel.height), "1"],
-    { cwd: crate, encoding: "utf8" },
+    // A panel the engine does not finish in two minutes is a result, not a reason to hang the
+    // meter: it is reported against the cell's own stage and the run continues to the next panel.
+    { cwd: crate, encoding: "utf8", timeout: 120_000 },
   );
+  if (run.signal !== null || run.error?.code === "ETIMEDOUT") {
+    return { refused: `the engine did not finish ${panel.id} within 120 s` };
+  }
   if (run.status !== 0) {
     // A stage the engine refuses to build is a result, not a crash: every cell of this panel is
     // reported against the engine's own words, and the rest of the run still scores.
@@ -1398,17 +1394,17 @@ if (flag("check")) {
 
   if (!flag("no-vacuity")) {
     rmSync(outRoot, { force: true, recursive: true });
-    const site = await serveWeb();
-    const browser = await chromium.launch({ args: CHROMIUM_ARGS });
+    site = await serveWeb();
+    browser = await chromium.launch({ args: CHROMIUM_ARGS });
     try {
       const vacuous = [];
       for (const panel of scene.panels.filter(selected)) {
         if (panel.cells.every((cell) => cell.exempt !== undefined)) continue;
         // The driver's coordinates come from the same measurement the meter hands the engine.
-        const probeBoxes = (await chromiumPanel(browser, site.base, panel)).boxes;
+        const probeBoxes = (await webPanel(panel)).boxes;
         const drive = panel.cells.map((cell) => driverFor(cell, probeBoxes));
-        const withClass = await chromiumPanel(browser, site.base, panel, { drive });
-        const without = await chromiumPanel(browser, site.base, panel, { drive, strip: true });
+        const withClass = await webPanel(panel, { drive });
+        const without = await webPanel(panel, { drive, strip: true });
         for (const cell of panel.cells) {
           if (cell.exempt !== undefined) continue;
           const box = withClass.boxes.find((candidate) => candidate.n === cell.first);
@@ -1470,8 +1466,8 @@ const same = (a, b) => a.length === b.length && Buffer.compare(a, b) === 0;
 const MOTION = /animation/u;
 
 rmSync(outRoot, { force: true, recursive: true });
-const site = await serveWeb();
-const browser = await chromium.launch({ args: CHROMIUM_ARGS });
+site = await serveWeb();
+browser = await chromium.launch({ args: CHROMIUM_ARGS });
 const report = [];
 try {
   for (const panel of panels) {
@@ -1479,15 +1475,15 @@ try {
     mkdirSync(join(dir, "web"), { recursive: true });
     mkdirSync(join(dir, "native"), { recursive: true });
     const motion = MOTION.test(panel.css);
-    const probeBoxes = (await chromiumPanel(browser, site.base, panel)).boxes;
+    const probeBoxes = (await webPanel(panel)).boxes;
     const drive = panel.cells.map((cell) => driverFor(cell, probeBoxes));
-    const web = await chromiumPanel(browser, site.base, panel, { drive });
+    const web = await webPanel(panel, { drive });
     const native = cratePanel(panel, join(dir, "native"), { drive });
     // Two capture runs per side: a subject that does not paint the same frame twice cannot be
     // compared with one that does, and a difference would otherwise read as a parity gap. A panel
     // with a running keyframe animation is compared by the motion bar at fixed times instead.
     if (!motion) {
-      const webAgain = await chromiumPanel(browser, site.base, panel);
+      const webAgain = await webPanel(panel);
       const nativeAgain = cratePanel(panel, join(dir, "native-again"), { drive });
       if (!same(web.png.data, webAgain.png.data)) {
         throw new Error(`TN_PARITY_NONDETERMINISTIC Chromium painted ${panel.id} twice differently`);
@@ -1528,6 +1524,14 @@ if (wants.sheet !== undefined) {
   } finally {
     await browser2.close();
   }
+}
+
+if (flag("floor")) {
+  // The ratchet's baseline: the units that pass today, so a later change that turns one of them red
+  // is a red gate even while the batch's other families are still open.
+  const units = report.filter((cell) => cell.pass).map((cell) => cell.unit);
+  writeFileSync(floorFile, `${JSON.stringify({ passed, units }, null, 2)}\n`);
+  console.log(`tailwind-parity --floor: ${passed} units in ${floorFile}`);
 }
 
 if (flag("ratchet")) {
