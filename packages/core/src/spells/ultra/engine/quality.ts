@@ -1,7 +1,6 @@
 // Ported from Ultra Elements src/engine/quality.js @698b720 (MIT, Copyright (c) 2026 Humpalumps). JavaScript copied verbatim; GLSL transliterated to TSL.
 // Engine: the tier comes from `?q=` when there is a location; there is no `matchMedia` probe on the
 // native host, so `mobile` is `?mobile` only.
-import { readLaunchValue } from "../../../debug.js";
 
 // Quality tiers. Spells author counts at High; emission is multiplied by Q.emission (tier x auto).
 // Anything here that changes a shader define or a target size only changes on an explicit tier
@@ -81,12 +80,11 @@ export const TIERS = {
 };
 export type TierName = keyof typeof TIERS;
 
-// Query-only on purpose: a spell's tier is a page a person opens, and neither knob has an
-// environment variable or a global a host would set. `?mobile` naming itself is the ask.
-export const mobile = readLaunchValue({ environment: "", query: "mobile" }) !== undefined;
-const asked = readLaunchValue({ environment: "", query: "q" });
+const args = new URLSearchParams(globalThis.location?.search ?? "");
+export const mobile = args.has("mobile");
+const asked = args.get("q");
 export const tierName: TierName =
-  asked !== undefined && asked in TIERS ? (asked as TierName) : mobile ? "low" : "high";
+  asked !== null && asked in TIERS ? (asked as TierName) : mobile ? "low" : "high";
 
 // live values; auto scales multiply on top (auto.emission, auto.steps)
 export const Q = {

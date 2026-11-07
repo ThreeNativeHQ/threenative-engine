@@ -200,10 +200,13 @@ export function assertSupportedNodeVersion(version = process.versions.node): voi
     .exec(version)
     ?.slice(1)
     .map((part) => Number.parseInt(part, 10)) ?? [-1, -1, -1];
+  // A range that names fewer parts than the running version (`>=20.19`) pins only the parts it
+  // names: the rest are zero, never "below".
   const below = (index: number): boolean => {
-    const [have, want] = [current[index], minimum[index]];
-    if (have === undefined || want === undefined) return true;
-    const higher = current.slice(0, index).every((value, at) => value === minimum[at]);
+    const have = current[index];
+    if (have === undefined) return false;
+    const want = minimum[index] ?? 0;
+    const higher = current.slice(0, index).every((value, at) => value === (minimum[at] ?? 0));
     return higher && have < want;
   };
   if ([0, 1, 2].some(below))

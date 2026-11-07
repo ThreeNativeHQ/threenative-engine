@@ -41,11 +41,10 @@ const TEMPLATE_ROOT = path.join(
   path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."),
   "packages/create-threenative/templates",
 );
-// One inventory owns "what a kit is" (a template directory that ships `kit.json`): this reader is
-// the scaffolder's own and parses each manifest, while the list of names comes from repo-inventory.
-export const TEMPLATE_NAMES: readonly ScaffoldTemplate[] = templateNames(TEMPLATE_ROOT).filter(
-  (name) => discoverTemplateNames(TEMPLATE_ROOT).includes(name),
-);
+// One inventory owns "what a kit is" (a template directory that ships `kit.json`), and it reads it
+// from the repository root; `discoverTemplateNames` reads the same directories from the templates
+// folder for the scaffolder's own callers. Every visual lane iterates this list, so it stays derived.
+export const TEMPLATE_NAMES: readonly ScaffoldTemplate[] = templateNames();
 export const RENDER_LAYER_FILES = [
   "palette.ts",
   "camera.ts",
