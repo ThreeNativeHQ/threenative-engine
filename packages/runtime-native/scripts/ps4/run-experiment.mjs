@@ -114,6 +114,19 @@ function captureTimes(fallback = []) {
 // the key dump_shaders; the camelCase dumpShaders spelling belongs to the config.toml migration.
 const DUMP_SHADERS = process.env.TN_PS4_DUMP_SHADERS === '1';
 
+// A lost host device leaves one line: the driver reports VK_ERROR_DEVICE_LOST from vkQueueSubmit
+// and says nothing about which access caused it (vk_scheduler.cpp:241 at v.0.21.0). The Khronos
+// validation layer is the only account that does, and shadPS4 already routes its messages into
+// its log (DebugUtilsCallback, vk_platform.cpp:307-365): GPU-assisted validation names the
+// out-of-range read the driver faulted on, which core and sync validation cannot see because
+// they stop at the dispatch call. All three are opt-in and off by default: GPU-AV serializes
+// every dispatch and turns a 20 s boot into minutes. The layer is not bundled with shadPS4, so
+// the loader needs VK_LAYER_PATH pointed at a Vulkan SDK (TN_PS4_VK_LAYER_PATH, or the caller's
+// own VK_LAYER_PATH passes through). Crash diagnostics is a second, separate layer.
+const VK_VALIDATION = process.env.TN_PS4_VK_VALIDATION === '1';
+const VK_CRASH_DIAGNOSTIC = process.env.TN_PS4_VK_CRASH_DIAGNOSTIC === '1';
+const VK_LAYER_PATH = process.env.TN_PS4_VK_LAYER_PATH ?? '';
+
 // One entry per experiment; build and boot are shared, only the build step, the marker and the
 // pass rule differ.
 const EXPERIMENTS = {
@@ -734,6 +747,7 @@ async function boot(experiment, built, appimage, outDir) {
   // bus that helper lands on the owner's real desktop, not on the private Xvfb display.
   for (const name of ['WAYLAND_DISPLAY', 'WAYLAND_SOCKET', 'DESKTOP_STARTUP_ID', 'DBUS_SESSION_BUS_ADDRESS', 'QT_QPA_PLATFORM']) delete env[name];
   Object.assign(env, {
+    ...(VK_LAYER_PATH ? { VK_LAYER_PATH } : {}),
     HOME: home,
     XDG_DATA_HOME: path.join(home, '.local/share'),
     XDG_CONFIG_HOME: path.join(home, '.config'),
@@ -754,9 +768,24 @@ async function boot(experiment, built, appimage, outDir) {
   // A partial config is enough: Load() merges each named group over the defaults
   // (src/core/emulator_settings.cpp:363-386 at v.0.21.0), and these two are the whole point of
   // the run. Every experiment gets it; E1 does not care.
+  // Each key is the setting's own field name: the JSON groups are the NLOHMANN_DEFINE_TYPE
+  // serializations of GPUSettings/VulkanSettings (emulator_settings.h:412-458, :477-490), so
+  // `readbacks_mode` and `vkvalidation_gpu_enabled` are snake_case here and camelCase only in the
+  // config.toml spelling emulator_settings.cpp:606-649 reads.
+  const vulkan = {
+    ...(VK_VALIDATION
+      ? {
+          vkvalidation_enabled: true,
+          vkvalidation_core_enabled: true,
+          vkvalidation_sync_enabled: true,
+          vkvalidation_gpu_enabled: true,
+        }
+      : {}),
+    ...(VK_CRASH_DIAGNOSTIC ? { vkcrash_diagnostic_enabled: true } : {}),
+  };
   await writeFile(
     path.join(env.XDG_DATA_HOME, 'shadPS4', 'config.json'),
-    `${JSON.stringify({ GPU: { readbacks_mode: READBACKS_MODE, readback_linear_images_enabled: true, ...(DUMP_SHADERS ? { dump_shaders: true } : {}) } }, null, 2)}\n`,
+    `${JSON.stringify({ GPU: { readbacks_mode: READBACKS_MODE, readback_linear_images_enabled: true, ...(DUMP_SHADERS ? { dump_shaders: true } : {}) }, ...(Object.keys(vulkan).length ? { Vulkan: vulkan } : {}) }, null, 2)}\n`,
   );
   await mkdir(env.XDG_CONFIG_HOME, { recursive: true });
   await mkdir(env.XDG_CACHE_HOME, { recursive: true });

@@ -345,6 +345,15 @@ git apply "$SCRIPTS/patches/0025-vk-ps4-clear-ps-code-256-aligned.patch"
 # flatten_extended_userdata_pass.cpp:832 "ReadConst base low not from constant memory".
 # The pipeline copies the whole GnmCsStageRegisters word set before patching the address.
 git apply "$SCRIPTS/patches/0026-vk-ps4-cs-stage-registers.patch"
+# The CS input-usage slot table follows the whole GnmCsShader header (0x24 bytes: CommonData 8 +
+# COMPUTE_PGM_LO..NUM_THREAD_Z 0x1c), the same way sceGnmVsShaderInputUsageSlotTable follows
+# GnmVsShader. It was read at +sizeof(GnmShaderCommonData) = +8, inside COMPUTE_PGM_LO, so the one
+# slot it yielded was noise (usagetype 0xcc, apislot 0, startregister 0) and binding 0's Vsharp
+# went to CS user SGPRs 0-3 -- while the shader's descriptor-set base is SGPR2/3 (psbc's
+# PTR_INDIRECTRESOURCETABLE slot: type 0x1c, apislot 0, startregister 2 at the real offset). Every
+# compute dispatch then ran with a Vsharp where its descriptor table pointer belongs, and the host
+# device was lost on the first one.
+git apply "$SCRIPTS/patches/0028-vk-ps4-cs-input-usage-slots.patch"
 # The Makefile compiles TEST_SRC relative to the vulkan-ps4 tree.
 cp "$SCRIPTS/e2-triangle.c" "$SRC/e2-triangle.c"
 make -f Makefile.orbis -j"$JOBS" TEST_SRC=../e2-triangle.c self > "$LOGS/e2-triangle.log" 2>&1
