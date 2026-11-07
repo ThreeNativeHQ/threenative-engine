@@ -373,6 +373,25 @@ git apply "$SCRIPTS/patches/0028-vk-ps4-cs-input-usage-slots.patch"
 # the set is in use), push constants and every Set*UserData descriptor (copied
 # inline into the PM4 stream).
 git apply "$SCRIPTS/patches/0029-vk-ps4-per-draw-vertex-buffer-table.patch"
+# A clear is a DRAW (vk_ps4_clear_color_draw), so it rasterized through whatever viewport the
+# previous draw left in the context, and the first draw of a command buffer through the device's
+# init state: neither belongs to the target being cleared. The clear now names the target's own
+# viewport (extent -> scale/offset, the same mapping vk_ps4_CmdSetViewport derives from a Vulkan
+# one) before it draws.
+git apply "$SCRIPTS/patches/0030-vk-ps4-clear-draw-viewport.patch"
+# A tiled colour target was cleared by that draw alone, and the draw was measured covering part of
+# its target and none of another: on the E3TEX repro, an R8G8B8A8 offscreen target came back with
+# the clear colour over its top quarter only (0,0,64 over rows 0..63 of 256, black below, read back
+# by the sampling pass as a 25% band) and the same image as 16_16_16_16 float carried no clear at
+# all (background (0,0,0) where the guest asked for (0,0,64)). The clear's own CB_COLOR0_INFO /
+# ATTRIB / extent (breadcrumbs: base, pitch, slice, tile mode 10, info fmt/ntype) matched the
+# triangle draw's word for word, so the target was never the disagreement -- the clear draw was.
+# A whole-surface clear of a CONSTANT colour does not depend on the tiling at all: every byte takes
+# the same value, so a linear FillMemory over the RT's own byte size produces the tiled layout's
+# image. Uniform-word clears (every format up to 32 bpp, plus a 64 bpp one whose two words repeat)
+# now go through FillMemory; only a colour the one 32-bit word cannot express, or a sub-rect
+# clear, still needs the draw.
+git apply "$SCRIPTS/patches/0031-vk-ps4-clear-whole-surface-fill.patch"
 # The Makefile compiles TEST_SRC relative to the vulkan-ps4 tree.
 cp "$SCRIPTS/e2-triangle.c" "$SRC/e2-triangle.c"
 make -f Makefile.orbis -j"$JOBS" TEST_SRC=../e2-triangle.c self > "$LOGS/e2-triangle.log" 2>&1
