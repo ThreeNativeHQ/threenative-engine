@@ -31,7 +31,12 @@
       },
       { "id": "GameState", "path": "probe.sweepFrames", "gte": 600, "changed": true },
       { "id": "GameState", "path": "probe.sweepSteps", "gte": 8, "changed": true },
-      { "id": "GameState", "path": "probe.sweepSteps", "lte": 12, "changed": true },
+      {
+        "id": "GameState",
+        "path": "probe.sweepSteps",
+        "lte": 12,
+        "allowTrivial": "0 before the sweep is below the bound; the gte assertion proves the sweep ran"
+      },
       { "id": "GameState", "path": "probe.sweepRefreshFrames", "gte": 1, "changed": true },
       { "id": "GameState", "path": "probe.sweepDuty", "gte": 0.001, "changed": true },
       {
