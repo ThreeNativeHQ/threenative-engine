@@ -71,10 +71,14 @@ across the three groups, 36 cells do not discriminate.
   units, so a mask unit needs them as companions. Adding `mask-linear-from-20%`/`to-80%` as companions on both
   arms made it worse (40 of 50 stopped discriminating) because the mask then hid the probe in both arms; the
   staging that works is per-unit and is not written yet.
-- **Blend: 0 of 4 pass, 3 do not discriminate.** `mix-blend-hue` scores 0.5069 and fails: `blitz-paint` never reads `mix-blend-mode`, and
-  `layers.rs` hardcodes `Mix::Normal` in `maybe_push_layer`. The fix is to thread the computed blend mode to that
-  call — five call sites — and to give the probe a coloured backdrop for the unit to blend with. `bg-blend-*`
-  needs two background layers on the probe; `isolate`/`isolation-auto` need a blended child to isolate, so those
-  three are staging.
+- **Blend: 0 of 4 pass, 3 do not discriminate.** `mix-blend-hue` scores 0.5069: `blitz-paint` never reads
+  `mix-blend-mode` and `layers.rs` hardcodes `Mix::Normal` in `maybe_push_layer`. A patch that threads the
+  computed mode was written and then **reverted unproven**: it compiled — the styles field's type is
+  `style::properties::longhands::mix_blend_mode::computed_value::T`, and peniko 0.6.1's `Mix` has no
+  `plus-lighter` (its `PlusLighter` belongs to `Compose`, so CSS's `plus-lighter` was mapped to `Screen`) — but
+  `mix-blend-hue` still measured 0.5069, so the mode was not reaching the pixels through that path. Landing a
+  vendor hunk nothing proves is what `vendor/PATCHES.md` forbids, so the next attempt starts from here rather
+  than from a claim. `bg-blend-*` needs two background layers on the probe; `isolate`/`isolation-auto` need a
+  blended child to isolate, so those three are staging.
 - **Clip: 0 of 2, and neither is non-discriminating** — both measure a real mismatch. `clip-path` with an
   `inset()` radius is `render/clip_path.rs`'s upstream TODO.
