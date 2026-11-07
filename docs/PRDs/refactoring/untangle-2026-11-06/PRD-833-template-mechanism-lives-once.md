@@ -1,6 +1,6 @@
 # PRD-833 — Template mechanism lives once
 
-**Status:** PARTIAL — Phases 1 and 3 landed; Phase 2 (shared build plumbing) and AC-2 (the visual judge on starter, racing and snow) are open.
+**Status:** PARTIAL — Phases 1 and 3 landed, Phase 2 box 2 (the patch manifest) landed; Phase 2 box 1 (one source for `vite.config.ts`/`main.ts`/`tsconfig.json`) and AC-2 (the visual judge on starter, racing and snow) are open.
 **Priority:** P1 — open Phase 2 deletes 84 template copies of 7 render-mechanism files, where a fix to one kit leaves 11 kits wrong with every test green.
 **Complexity:** 6 (MEDIUM); risk override: the moved files measure the environment and wire the backlight, so the owner's visual-judge rule applies
 **Owner:** ThreeNative maintainers
@@ -54,11 +54,11 @@ Report ids B1, F1, F2, F3, F4, F8, B2. Root `AGENTS.md` puts "plumbing every gam
 - [x] One core WebGL-fallback predicate; no `quality.ts` defines its own. Each kit's `quality.ts` is now a three-line re-export of `IMaterialLightingEnvironment`, `isWebGLFallbackRenderer` and `materialLightingEnabled` from the subpath, and the starter's `rendererGate.ts` is deleted. The charter and portability checks were extended deliberately, not bypassed: `constraints.spec.ts` admits `render/environment/**` with a tighter assertion that the block originates no material, light, colour or shader (only the sampling quad's own material and the node twin of the *game's* material, and tone mapping only as the readback's save/restore), and `check-core-boundary.ts` admits the mechanism names with the same proof. proof: the `rg` above returns nothing; `npx vitest run packages/core/__tests__/constraints.spec.ts` → 4 passed.
 
 #### Phase 2: One source for shared plumbing
-**Status:** NOT STARTED
+**Status:** PARTIAL — the patch manifest landed; the build-plumbing restamp is open
 **Files:** `packages/create-threenative/src/index.ts`, `template-assets/`, `templates/*/kit.json`, `packages/create-threenative/package.json`.
 
 - [ ] `vite.config.ts`, `main.ts` and `tsconfig.json` are restamped from one source with a per-kit plugin delta, and each kit reproduces today's bytes. proof: `pnpm --filter create-threenative exec vitest run __tests__/scaffold.spec.ts`
-- [ ] The patch filename lives in one manifest that `prepack` reads. proof: `rg -c 'three@0\.' packages/create-threenative/src packages/create-threenative/package.json` drops to the manifest only, plus `pnpm --filter create-threenative pack` ships the patch
+- [x] The patch filename lives in one manifest that `prepack` reads: `template-assets/patches/manifest.json` names each patch with its repository source, `packages/create-threenative/scripts/sync-patches.mjs` (run by `prepack` and `pnpm sync:patches`) copies exactly those into the tarball, `copyFrameworkPatches` resolves a kit's `patchedDependencies` through it, and `__tests__/framework-patches.spec.ts` holds every kit to it (shown red by dropping an entry: both the kit check and the shipped-set check fail, naming each kit). proof: `rg -c 'three@0\.' packages/create-threenative/src packages/create-threenative/package.json` returns nothing, and `pnpm --filter create-threenative pack` lists `package/template-assets/patches/{manifest.json,three@0.187.0.patch,vite@8.2.0.patch,@tailwindcss__node@4.3.3.patch}` in the tarball.
 
 #### Phase 3: Scaffold pins split
 **Status:** DONE
