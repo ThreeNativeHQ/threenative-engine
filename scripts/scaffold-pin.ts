@@ -31,9 +31,14 @@ export interface IScaffoldPin {
 export function readPins(source: string): Readonly<Record<string, IScaffoldPin>> {
   const block = source.slice(source.indexOf(BEGIN), source.indexOf(END));
   const pins: Record<string, IScaffoldPin> = {};
-  for (const [, kit, shared, contents] of block.matchAll(
-    /^ {2}"([^"]+)": \{ shared: "([0-9a-f]{64})", kit: "([0-9a-f]{64})" \},$/gmu,
+  // One hash per line: a single-line row is longer than the formatter's width, and the formatter
+  // would wrap it into something this reader no longer recognises.
+  // One hash per line, and the key quoted only when it has to be: a single-line row is longer than
+  // the formatter's width, and the formatter unquotes a plain identifier, so this reads both forms.
+  for (const [, quoted, bare, shared, contents] of block.matchAll(
+    /^ {2}(?:"([^"]+)"|([a-z][a-z0-9-]*)): \{\n {4}shared: "([0-9a-f]{64})",\n {4}kit: "([0-9a-f]{64})",\n {2}\},$/gmu,
   )) {
+    const kit = quoted ?? bare;
     if (kit === undefined || shared === undefined || contents === undefined) continue;
     pins[kit] = { kit: contents, shared };
   }
@@ -45,7 +50,8 @@ export function formatPins(pins: Readonly<Record<string, IScaffoldPin>>): string
   return Object.entries(pins)
     .sort(([left], [right]) => left.localeCompare(right))
     .map(
-      ([kit, pin]) => `  ${JSON.stringify(kit)}: { shared: "${pin.shared}", kit: "${pin.kit}" },`,
+      ([kit, pin]) =>
+        `  ${/^[a-z][a-z0-9]*$/u.test(kit) ? kit : JSON.stringify(kit)}: {\n    shared: "${pin.shared}",\n    kit: "${pin.kit}",\n  },`,
     )
     .join("\n");
 }
