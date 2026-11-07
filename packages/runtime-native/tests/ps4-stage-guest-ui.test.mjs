@@ -114,6 +114,16 @@ test('a VS input is its attribute location on both sides, so a skipped location 
   assert.match(readFileSync(path.join(root, 'scripts/ps4/patches/0060-vk-ps4-vertex-table-by-semantic.patch'), 'utf8'), /^\+\s+if \(vi->pVertexAttributeDescriptions\[j\]\.location == pipe->vs_input_semantics\[i\]\.semantic\) \{/mu);
 });
 
+test('base_vertex has its own user SGPR and the driver writes it, so gl_VertexIndex is exact (PRD-784)', () => {
+  // base_vertex sat in the high half of the 64-bit vertex buffer table pointer: the cloth VS added the
+  // pointer's high dword to every vertex index (a torn pennant), and writing base_vertex zeroed the pointer.
+  const build = readFileSync(path.join(root, 'scripts/ps4/e2-build.sh'), 'utf8');
+  assert.match(build, /git apply "\$SCRIPTS\/patches\/0063-opengnm-psbc-vertex-buffer-table-64bit\.patch"/u);
+  assert.match(build, /git apply "\$SCRIPTS\/patches\/0061-opengnm-psbc-base-vertex-slot\.patch"/u);
+  assert.match(readFileSync(path.join(root, 'scripts/ps4/patches/0063-opengnm-psbc-vertex-buffer-table-64bit.patch'), 'utf8'), /^\+\s+state->args->user_sgprs_locs\.shader_data\[AC_UD_VS_VERTEX_BUFFERS\]\.num_sgprs\+\+;/mu);
+  assert.match(readFileSync(path.join(root, 'scripts/ps4/patches/0061-opengnm-psbc-base-vertex-slot.patch'), 'utf8'), /^\+\s+\.apislot = 0xFE,/mu);
+});
+
 test('refuses a UI with no stylesheet', () => {
   const { app, scene: dir } = scene({ 'a.png': 'x' });
   assert.throws(() => stageGuestUi(dir, app, {}), /TN_PS4_UI_NO_CSS/u);

@@ -193,6 +193,13 @@ git apply "$SCRIPTS/patches/0056-opengnm-psbc-front-face-float.patch"
 # A VS input is named by its attribute location and reads vs_inputs[location]: dense indices broke a VS
 # that skips a location (the pennant reads uv at 1 and no position), so its UVs were undefined (PRD-784 visuals).
 git apply "$SCRIPTS/patches/0059-opengnm-psbc-vs-inputs-by-location.patch"
+# The vertex buffer table base is a 64-bit pointer (the driver and the fetch shader use both SGPRs), so
+# its high half gets its own user SGPR; base_vertex had taken it, which shifted every gl_VertexIndex
+# by the pointer's high dword and tore the cloth pennant (PRD-784 visuals).
+git apply "$SCRIPTS/patches/0063-opengnm-psbc-vertex-buffer-table-64bit.patch"
+# gl_VertexIndex adds base_vertex from a user SGPR, and the driver writes it only for an apislot 0xFE
+# slot: psbc emitted none, so the VS read whatever that SGPR held (PRD-784 visuals).
+git apply "$SCRIPTS/patches/0061-opengnm-psbc-base-vertex-slot.patch"
 
 # === 3. opengnm (orbis) ======================================================
 cd "$SRC/opengnm"
