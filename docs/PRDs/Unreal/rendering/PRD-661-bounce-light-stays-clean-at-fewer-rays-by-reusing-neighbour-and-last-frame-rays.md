@@ -8,7 +8,7 @@ prd_contract: v1
 **Priority:** P3 — Phase 1 is open: Unreal ships its ReSTIR gather in no quality tier, so this PRD builds only if the screen probe gather of PRD-640 stays noisy or over budget.
 **Complexity:** 7 (HIGH) — 4–6 files: reservoirs, resampling, upsample, specs (+1), new module `restir-gather.ts` (+2), state across frames: a reservoir history (+2), native proof (+1), changes the frame cost of the high tier (+1); risk override: none
 **Owner:** João
-**Depends on:** PRD-640 Phase 2 (`docs/PRDs/Unreal/gi/PRD-640-pixels-gather-bounce-light-from-screen-probes-and-the-radiance-cache-answers-the-rest.md`, on `feat/unreal-look-epic`): the screen probe gather this PRD competes with. PRD-641 (the GI temporal filter, same folder) sets the noise threshold. [PRD-603](PRD-603-probes-refresh-by-tracing-the-packed-scene-not-by-drawing-it-six-times.md) Phase 2 (the BVH trace and the radiance cache that a miss reads). PRD-644 (the GI tier table) takes the new method as a value.
+**Depends on:** PRD-640 Phase 2 (`docs/PRDs/Unreal/gi/PRD-640-pixels-gather-bounce-light-from-screen-probes-and-the-radiance-cache-answers-the-rest.md`, on `feat/unreal-look-epic`): the screen probe gather this PRD competes with. PRD-641 (the GI temporal filter, same folder) sets the noise threshold. [PRD-603](../../done/PRD-603-probes-refresh-by-tracing-the-packed-scene-not-by-drawing-it-six-times.md) Phase 2 (the BVH trace and the radiance cache that a miss reads). PRD-644 (the GI tier table) takes the new method as a value.
 
 ## Context
 

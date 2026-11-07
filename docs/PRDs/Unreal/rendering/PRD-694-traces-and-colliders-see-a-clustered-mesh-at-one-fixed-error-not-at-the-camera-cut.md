@@ -8,7 +8,7 @@ prd_contract: v1
 **Priority:** P2 — Phase 1 is open: two red tests decide whether `GPUSceneBVH` and a static trimesh collider read the camera cut buffer of a `ClusteredMesh`, which the code read below suggests. If a collider of a dense body is empty before the first frame, raise this PRD to P1.
 **Complexity:** 4 (MEDIUM) — 1–5 implementation files (+1), a view-independent cut is a small new mechanism that reuses the DAG invariant (+1), the change crosses `packages/core` and `packages/physics` (+1), native proof on the owned host (+1); risk override: none
 **Owner:** João
-**Depends on:** None. Builds on the shipped cluster DAG (`packages/assets/src/virtual/dag.ts`) and `ClusteredMesh` (`packages/core/src/clustered-mesh.ts`). Composes with [PRD-603](PRD-603-probes-refresh-by-tracing-the-packed-scene-not-by-drawing-it-six-times.md), which traces `GPUSceneBVH`, and with [PRD-695](PRD-695-a-clustered-mesh-takes-its-own-cut-in-every-view-that-draws-it.md), which owns the views that rasterize.
+**Depends on:** None. Builds on the shipped cluster DAG (`packages/assets/src/virtual/dag.ts`) and `ClusteredMesh` (`packages/core/src/clustered-mesh.ts`). Composes with [PRD-603](../../done/PRD-603-probes-refresh-by-tracing-the-packed-scene-not-by-drawing-it-six-times.md), which traces `GPUSceneBVH`, and with [PRD-695](PRD-695-a-clustered-mesh-takes-its-own-cut-in-every-view-that-draws-it.md), which owns the views that rasterize.
 
 ## Context
 

@@ -307,7 +307,7 @@ GPU capture/visual judging and desktop V8 execution remain unverified. No enviro
 - 2026-10-19 (gap ownership): a residual that no installed capability closes goes to a PRD. Read
   the Unreal source for the algorithm and cite the path; never copy its code, shaders or comments.
   Existing owners, checked before filing: dynamic off-screen GI —
-  [PRD-603](../Unreal/rendering/PRD-603-probes-refresh-by-tracing-the-packed-scene-not-by-drawing-it-six-times.md),
+  [PRD-603](PRD-603-probes-refresh-by-tracing-the-packed-scene-not-by-drawing-it-six-times.md),
   [PRD-604](../Unreal/rendering/PRD-604-a-surface-is-lit-only-by-probes-that-can-see-it.md),
   [PRD-605](../Unreal/rendering/PRD-605-the-probe-field-follows-the-camera-in-nested-rings.md),
   [PRD-VQ-09](../rendering/PRD-VQ-09-incremental-diffuse-relighting.md); off-screen reflections —

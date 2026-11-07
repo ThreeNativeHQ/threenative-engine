@@ -37,6 +37,12 @@ describe("threenative-engine-mcp", () => {
     // `tak` and `hav`, which the raw set never matched, so they survived the post-stem filter.
     expect(capabilitySituationTokens("makes gives takes having")).toEqual([]);
   });
+  it("finds the traced probe field by its Unreal name (PRD-603)", () => {
+    expect(searchResults("lumen radiance cache").map((r) => r.symbol)[0]).toBe("RadianceCache");
+    expect(
+      searchResults("lamp that switches off and the bounce light follows").map((r) => r.symbol),
+    ).toContain("RadianceCache");
+  });
   it("finds the global illumination and shadow quality tier watchers by Unreal's names", () => {
     const symbols = (situation: string) => searchResults(situation).map((r) => r.symbol);
     expect(symbols("global illumination quality")).toContain("GIBudget");
