@@ -11,23 +11,23 @@ targets could not be built and are named below.
 | `src/audio/` | 1471 | 1301 | 88.44% |
 | `src/canvas/` | 1334 | 1110 | 83.21% |
 | `src/cli/` | 1691 | 1243 | 73.51% |
-| `src/engine/` | 42854 | 35974 | 83.95% |
+| `src/engine/` | 42966 | 36068 | 83.95% |
 | `src/fs/` | 235 | 189 | 80.43% |
 | `src/http/` | 410 | 377 | 91.95% |
-| `src/js/` | 2838 | 2230 | 78.58% |
-| `src/platform/` | 1507 | 1047 | 69.48% |
+| `src/js/` | 2838 | 2232 | 78.65% |
+| `src/platform/` | 1509 | 1047 | 69.38% |
 | `src/raytracing/` | 643 | 543 | 84.45% |
 | `src/runtime.cpp` | 2410 | 1867 | 77.47% |
 | `src/screenshot_gate.cpp` | 27 | 24 | 88.89% |
 | `src/storage/` | 370 | 329 | 88.92% |
 | `src/utils/` | 0 | 0 | 0.00% |
 | `src/vfs/` | 239 | 195 | 81.59% |
-| `src/webgpu/` | 10076 | 7736 | 76.78% |
+| `src/webgpu/` | 10074 | 7734 | 76.77% |
 | `src/webtransport/` | 1391 | 1078 | 77.50% |
 | `src/workers/` | 615 | 527 | 85.69% |
-| **TOTAL** | **68184** | **55830** | **81.88%** |
+| **TOTAL** | **68296** | **55924** | **81.88%** |
 
-Source digest: `sha256:912b64dc9ce4a32edd2d6b081c0610ff19359d216b2ee0749375cca8f247a3ce`
+Source digest: `sha256:f502dbe9301567bb14b6a11cbdc186de200a5cd170c88109722c567d6e0f4ae4`
 
 The default `pnpm budgets` gate reads this committed measurement without configuring or compiling
 the native host. Any native source, native C++ test, CTest registration, or coverage aggregation
@@ -61,6 +61,7 @@ change requires this opt-in command to refresh the record.
 - `src/adapters/v8/math_bridge.cpp`
 - `src/adapters/v8/tsl.cpp`
 - `src/debug/debug_server.cpp`
+- `src/engine/player/gamepads.cpp`
 - `src/engine/player/v8_main.cpp`
 - `src/engine/wasm/web_host.cpp`
 - `src/engine/world/physics_sync.cpp`
@@ -70,6 +71,7 @@ change requires this opt-in command to refresh the record.
 - `src/metahuman/native_bindings.cpp`
 - `src/physics/native_bindings.cpp`
 - `src/platform/android_main.cpp`
+- `src/platform/ps4_main.cpp`
 - `src/platform/surface_android.cpp`
 - `src/platform/surface_metal.mm`
 - `src/raytracing/dxr_rt.cpp`
