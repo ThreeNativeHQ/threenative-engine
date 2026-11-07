@@ -67,7 +67,11 @@ describe("the MCP client", () => {
     try {
       await new Promise((resolve) => setTimeout(resolve, 100));
       expect(client.alive()).toBe(false);
-      await expect(client.request("tools/list")).rejects.toThrow(/is not running/u);
+      // Either refusal is right here: the request is not sent to a dead server, and the message
+      // names it rather than waiting out the deadline.
+      await expect(client.request("tools/list")).rejects.toThrow(
+        /gone server (exited|is not running)/u,
+      );
     } finally {
       client.close();
     }

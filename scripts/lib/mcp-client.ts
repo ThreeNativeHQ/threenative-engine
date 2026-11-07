@@ -14,6 +14,8 @@ export interface IMcpServerOptions {
   readonly args: readonly string[];
   /** Working directory: the project whose `node_modules` the server resolves from. */
   readonly cwd?: string;
+  /** Extra environment, merged over `process.env`. */
+  readonly env?: NodeJS.ProcessEnv;
   /** Per-request deadline, in milliseconds. */
   readonly timeoutMs?: number;
   /** What the failure calls this server, e.g. `"terrain server"`. */
@@ -24,6 +26,14 @@ export interface IMcpServerOptions {
 export interface IMcpClient {
   /** Sends one request and resolves with its `result`. */
   request(method: string, params?: Record<string, unknown>): Promise<Record<string, unknown>>;
+  /** Sends a one-way notification, which takes no reply. */
+  notify(method: string, params?: Record<string, unknown>): void;
+  /**
+   * The protocol handshake: `initialize`, then the `notifications/initialized` that tells the server
+   * the client is ready. Retries the `initialize` once on a timeout, because the first request is
+   * the one that pays for a cold server's start.
+   */
+  initialize(name: string, version?: string): Promise<Record<string, unknown>>;
   /** Everything the server wrote to stderr so far, for a failure that needs it. */
   stderr(): string;
   /** Whether the server is still running. */
@@ -71,6 +81,7 @@ export function startMcpServer(options: IMcpServerOptions): IMcpClient {
 
   const child: ChildProcessWithoutNullStreams = spawn(options.command, [...options.args], {
     cwd: options.cwd,
+    env: options.env === undefined ? undefined : { ...process.env, ...options.env },
     stdio: ["pipe", "pipe", "pipe"],
   });
   child.stderr.on("data", (chunk: Buffer) => {
@@ -89,6 +100,11 @@ export function startMcpServer(options: IMcpServerOptions): IMcpClient {
     fail(new McpError("TN_MCP_EXITED", `${label} could not start: ${error.message}`));
   });
   child.once("exit", (code, signal) => {
+    if (!closed)
+      terminal = new McpError(
+        "TN_MCP_EXITED",
+        `${label} exited (${code === null ? `signal ${String(signal)}` : `code ${String(code)}`}).`,
+      );
     if (closed || pending.size === 0) return;
     const detail = stderr.trim().slice(-500);
     fail(
@@ -125,6 +141,42 @@ export function startMcpServer(options: IMcpServerOptions): IMcpClient {
     entry.resolve(parsed.result ?? {});
   });
 
+  let terminal: Error | undefined;
+
+  const request = (method: string, params: Record<string, unknown> = {}) => {
+    if (terminal !== undefined) return Promise.reject(terminal);
+    const id = nextId++;
+    return new Promise<Record<string, unknown>>((resolve, reject) => {
+      if (child.exitCode !== null || child.signalCode !== null) {
+        reject(
+          new McpError(
+            "TN_MCP_EXITED",
+            `${label} is not running, so ${method} cannot be asked: ${stderr.trim().slice(-500)}`,
+          ),
+        );
+        return;
+      }
+      const timer = setTimeout(() => {
+        pending.delete(id);
+        const detail = stderr.trim().slice(-500);
+        reject(
+          new McpError(
+            "TN_MCP_TIMEOUT",
+            `${label} ${method} timed out after ${String(timeoutMs)}ms${detail === "" ? "" : `: ${detail}`}`,
+          ),
+        );
+      }, timeoutMs);
+      pending.set(id, { method, reject, resolve, timer });
+      try {
+        child.stdin.write(`${JSON.stringify({ id, jsonrpc: "2.0", method, params })}\n`);
+      } catch (error) {
+        clearTimeout(timer);
+        pending.delete(id);
+        reject(new McpError("TN_MCP_EXITED", `${label} ${method}: ${String(error)}`));
+      }
+    });
+  };
+
   return {
     alive: () => !closed && child.exitCode === null && child.signalCode === null,
     close: () => {
@@ -133,37 +185,23 @@ export function startMcpServer(options: IMcpServerOptions): IMcpClient {
       lines.close();
       child.kill();
     },
-    request: (method, params = {}) => {
-      const id = nextId++;
-      return new Promise<Record<string, unknown>>((resolve, reject) => {
-        if (child.exitCode !== null || child.signalCode !== null) {
-          reject(
-            new McpError(
-              "TN_MCP_EXITED",
-              `${label} is not running, so ${method} cannot be asked: ${stderr.trim().slice(-500)}`,
-            ),
-          );
-          return;
-        }
-        const timer = setTimeout(() => {
-          pending.delete(id);
-          const detail = stderr.trim().slice(-500);
-          reject(
-            new McpError(
-              "TN_MCP_TIMEOUT",
-              `${label} ${method} timed out after ${String(timeoutMs)}ms${detail === "" ? "" : `: ${detail}`}`,
-            ),
-          );
-        }, timeoutMs);
-        pending.set(id, { method, reject, resolve, timer });
-        try {
-          child.stdin.write(`${JSON.stringify({ id, jsonrpc: "2.0", method, params })}\n`);
-        } catch (error) {
-          clearTimeout(timer);
-          pending.delete(id);
-          reject(new McpError("TN_MCP_EXITED", `${label} ${method}: ${String(error)}`));
-        }
+    request,
+    notify: (method, params) => {
+      if (child.exitCode !== null) return;
+      child.stdin.write(
+        `${JSON.stringify({ jsonrpc: "2.0", method, ...(params === undefined ? {} : { params }) })}\n`,
+      );
+    },
+    initialize: async (name, version = "0") => {
+      const params = initializeParams(name, version);
+      const result = await request("initialize", params).catch(async (error: unknown) => {
+        // One re-send, for this request only: a cold server can miss the first deadline, and the
+        // timed-out id is already gone from `pending`, so a late reply cannot complete twice.
+        if (!(error instanceof McpError) || error.code !== "TN_MCP_TIMEOUT") throw error;
+        return await request("initialize", params);
       });
+      child.stdin.write('{"jsonrpc":"2.0","method":"notifications/initialized"}\n');
+      return result;
     },
     stderr: () => stderr,
   };

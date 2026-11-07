@@ -13,7 +13,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { initializeParams, startMcpServer } from "./lib/mcp-client.js";
+import { startMcpServer } from "./lib/mcp-client.js";
 
 const REPO = path.resolve(import.meta.dirname, "..");
 /** One row per server this capture covers. `statusTool` is the tool whose reply shape is recorded;
@@ -78,7 +78,7 @@ async function main(): Promise<void> {
     label: `${SELECTED.label} MCP server`,
   });
   try {
-    const initialized = await client.request("initialize", initializeParams("tool-snapshot"));
+    const initialized = await client.initialize("tool-snapshot");
     const listed = await client.request("tools/list");
     const status =
       SELECTED.statusTool === undefined
