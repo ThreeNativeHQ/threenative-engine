@@ -66,6 +66,10 @@ const FTP_DIR = '/data/pkg'; // where the console's Package Installer looks for 
 // /app0/game.js, the packed assets when the scene has any, and the metadata the identity lives in.
 const SFO = 'sce_sys/param.sfo';
 const FILES = ['eboot.bin', 'game.js', SFO, 'sce_sys/icon0.png'];
+// The rights blob the toolchain's own samples ship in their .gp4 (samples/threading/Makefile). A
+// package without it installs, then refuses to launch with the console's "data is corrupted" banner.
+const RIGHTS = 'sce_sys/about/right.sprx';
+const RIGHTS_SOURCE = path.join(OO, 'src/modules/right.sprx');
 const USAGE = 'usage: node packages/runtime-native/scripts/ps4/send-to-console.mjs --host <address> [--dry-run] [--scene <dir>] [--out <dir>] [--jobs N] [--ftp-port N] [--pkg-dir <path>] [--icon <png>] [--pkg <file>] [--build-only] [--prebuilt]';
 // The E2 driver archives e5-build.sh links, built by e2-build.sh into $TN_PS4_E2_DIR.
 const E2_DIR = process.env.TN_PS4_E2_DIR ?? path.join(homedir(), '.cache/tmp-tn/prd784/e2');
@@ -252,20 +256,35 @@ function readIdentity(appDir) {
 
 // A nested file needs its directory in the .gp4 rootdir, and create-gp4 writes only the canned
 // ones: it lists "native/assets.tnpk" under <files> and adds nothing under <rootdir>. One level is
-// what the player's /app0/native/assets.tnpk asks for; anything deeper is refused, not mis-packed.
+// what the player's /app0/native/assets.tnpk asks for. A deeper path (sce_sys/about/right.sprx) is
+// accepted only when create-gp4 already emitted its parent dir, so nothing is ever mis-packed.
 async function addMissingDirs(gp4Path) {
   const text = await readFile(gp4Path, 'utf8');
   const parents = new Set();
   for (const [, targ] of text.matchAll(/<file targ_path="([^"]+)"/g)) {
     const parts = targ.split('/');
     if (parts.length === 1) continue;
-    if (parts.length > 2) die(`${targ} is nested deeper than one directory: write its .gp4 rootdir by hand`);
+    if (parts.length > 2) {
+      if (!text.includes(`<dir targ_name="${parts[parts.length - 2]}"`))
+        die(`${targ} is nested deeper than one directory and its parent dir is not in the .gp4`);
+      continue;
+    }
     parents.add(parts[0]);
   }
   const missing = [...parents].filter(dir => !text.includes(`<dir targ_name="${dir}"`));
   if (missing.length === 0) return;
   const added = missing.map(dir => `\t\t<dir targ_name="${dir}" />\n`).join('');
   await writeFile(gp4Path, text.replace('\t</rootdir>', `${added}\t</rootdir>`));
+}
+
+// The rights blob is part of the package, not of the game: the toolchain's samples ship it and a
+// package without it has no licence to launch under, which the console reports as corrupt data.
+async function stageRights(appDir) {
+  if (!existsSync(RIGHTS_SOURCE)) return '';
+  const target = path.join(appDir, RIGHTS);
+  await mkdir(path.dirname(target), { recursive: true });
+  await copyFile(RIGHTS_SOURCE, target);
+  return RIGHTS;
 }
 
 // PkgTool.Core is a self-contained .NET Core 3.0 build: its crypto loads libssl.so.1.1 and dies
@@ -301,6 +320,8 @@ async function buildPackage(appDir, outDir, contentId) {
   const pkgDir = path.join(outDir, 'pkg');
   await mkdir(pkgDir, { recursive: true });
   const files = [...FILES];
+  const rights = await stageRights(appDir);
+  if (rights) files.push(rights);
   if (existsSync(path.join(appDir, 'native/assets.tnpk'))) files.push('native/assets.tnpk');
   // The native-css HUD the player reads from /app0/ui (stage-guest-ui.mjs), when the scene has one.
   if (existsSync(path.join(appDir, 'ui')))
@@ -360,6 +381,9 @@ async function selfCheck() {
   const patched = await readFile(gp4, 'utf8');
   assert.match(patched, /<dir targ_name="native" \/>\n\t<\/rootdir>/);
   assert.equal(patched.match(/targ_name="native"/g)?.length, 1, 'a second run must not duplicate the dir');
+  const rights = await stageRights(scratch);
+  assert.equal(rights, 'sce_sys/about/right.sprx', 'the rights blob rides the package');
+  assert.ok(statSync(path.join(scratch, rights)).size > 0, 'and it is copied, not just named');
   log('self-check ok');
 }
 
