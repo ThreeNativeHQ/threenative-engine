@@ -53,10 +53,10 @@ Engine facts behind the gaps:
 ## Meter status (measured 2026-11-07, crate subject)
 
 ```
-tailwind-parity: 174/503 (34.6 %)  [230 do not discriminate, 31 exempt, 4 permanently inactive, 1 refused]
+tailwind-parity: 174/503 (34.6 %)  [227 do not discriminate, 31 exempt, 4 permanently inactive, 1 refused]
 ```
 
-A cell is evidence only when it discriminates (see Meter, item 3). The 230 non-discriminating cells
+A cell is evidence only when it discriminates (see Meter, item 3). The 227 non-discriminating cells
 are the scene's own staging gaps; the 31 pending exemptions are unproven units their owner PRD
 removes; the 1 refused stages are the engine's closed `TAGS` list and a multicolumn panel it does
 not finish.
@@ -66,7 +66,14 @@ than in the scene: an animation sampled at the exact end of an iteration kept th
 iteration's frame (blitz-dom hunk 15, `animate-ping`), a client rect reported the element's
 *untransformed* box so every transform unit measured as an edge miss while its pixels matched
 (blitz-dom hunk 16), and the motion arm tested each cell's discrimination per sample, which fails
-every keyframe that starts from the element's own style (meter, motion bar).
+every keyframe that starts from the element's own style (meter, motion bar). Three scroll cells
+moved the other way and now measure a real mismatch: the client rect began reporting the box the
+engine paints, which is what exposed the wheel-routing difference PRD-848 owns.
+
+70 cells now measure a real difference (pixels or an edge) rather than a vacuous match. They are the
+engine gaps the family PRDs exist for: `bg-clip-text`, `bg-repeat`/`bg-origin-border`/`bg-fixed`
+(0.22 to 0.42), `inset-ring-*`/`inset-shadow-*`, `contents`/`hidden`/`fixed`/`static` at 0.0, and
+the filter and mask families.
 
 For comparison, `427/507` cells have matching pixels *and* boxes, but 309 of those do not
 discriminate, so a pixel comparison overstates what is proven; a pixel-only discrimination test
