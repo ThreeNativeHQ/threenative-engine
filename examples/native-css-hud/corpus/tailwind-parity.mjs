@@ -1032,6 +1032,43 @@ const COMPANIONS = [
   // four `decoration-*`/`underline-offset-*` units were inert on a probe with no line to style.
   [/^text-decoration-(thickness|style|color)$|^text-underline-offset$/u, "underline"],
 ];
+/**
+ * The companion a mask unit needs to be a mask at all.
+ *
+ * Tailwind's mask utilities assemble one image from per-axis sub-masks, and every default end of
+ * those gradients is *opaque*: `mask-b-from-40` on its own paints a white gradient that hides
+ * nothing, and `mask-linear-45` paints `linear-gradient(45deg)` — an image with no stops, which is
+ * invalid, so `mask-image` falls back to `none`. Both measured "does nothing" on both subjects for
+ * that reason, and the transparency has to come from another utility on the same axis.
+ */
+function maskCompanions(probe) {
+  const axis = /^mask-(linear|conic|radial)(-\d+)?$/u.exec(probe);
+  if (axis !== null) return [`mask-${axis[1]}-from-transparent`];
+  const edge = /^mask-(t|b|l|r|x|y|tl|tr|bl|br)-(from|to)(-|$)/u.exec(probe);
+  if (edge !== null) {
+    const opposite = `mask-${edge[1]}-${edge[2] === "from" ? "to" : "from"}-transparent`;
+    // A colour stop is invisible to an alpha mask — `match-source` on a gradient reads its alpha
+    // channel, and black and red are both opaque — so a colour unit also needs the mask evaluated in
+    // luminance, where the colour *is* the mask.
+    // A *colour* stop, not a position: the palette names are the ones Tailwind emits, and a position
+    // utility ends in a bare number (`mask-b-from-40`) that must keep its alpha-mask staging.
+    const colour =
+      /-(slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose|black|white|transparent)-\d*$/u.test(
+        probe,
+      );
+    return colour ? [opposite, "mask-luminance"] : [opposite];
+  }
+  // A functional mask unit modifies an image it does not create: `mask-cover`, `mask-top`,
+  // `mask-no-clip` and friends need one to modify.
+  if (
+    /^mask-(add|subtract|intersect|exclude|alpha|luminance|match-source|cover|contain|auto|repeat|no-repeat|top|bottom|left|right|center|circle|ellipse|no-clip|none)(-|$)/u.test(
+      probe,
+    )
+  )
+    return ["mask-linear-from-transparent"];
+  return [];
+}
+
 /** The companion classes a unit needs: one per custom-property family it only sets. */
 function companionsFor(unit) {
   const found = [];
@@ -1407,6 +1444,7 @@ function utilityEntry(unit, classCss, byProperty) {
       ...EXTRA_STAGING.filter(([pattern]) => pattern.test(unit.probe)).flatMap(
         ([, classes]) => classes,
       ),
+      ...maskCompanions(unit.probe),
     ],
     inner:
       /^(space|divide)$/u.test(unit.root) || unit.props.some((p) => CONTAINER_PROPS.has(p))
