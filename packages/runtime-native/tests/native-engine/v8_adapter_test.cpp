@@ -771,7 +771,7 @@ void tslApi() {
             };
             checks.push(bad(() => float({})), bad(() => float(NaN)), bad(() => uint(-1)),
                 bad(() => uniform(vec3(1)).setName('')), bad(() => instancedArray(0, 'vec4')),
-                bad(() => float(0).toVar()), bad(() => float(0).assign(1)),
+                float(0).toVar() !== undefined, bad(() => float(0).assign(1)),
                 bad(() => Fn(() => Loop(1.5, () => {}))()),
                 bad(() => Fn(() => If(float(0).equal(0), 7))()));
             let branch;
@@ -779,6 +779,7 @@ void tslApi() {
                 try { If(float(0).equal(0), () => { throw new Error('original'); }); }
                 catch (e) { checks.push(e.message === 'original'); }
                 const acc = float(0).toVar();
+                checks.push(float(1).toVar('named') !== undefined);  // three's toVar(name): prd476's substep count
                 Loop(2, ({ i }) => {
                     branch = If(i.lessThan(1), () => acc.assign(1)).Else(() => acc.assign(2));
                 });
@@ -788,8 +789,8 @@ void tslApi() {
             return checks.map(Number).join('');
         })()
     )JS");
-    CHECK(got == "111111111111111111");
-    if (got != "111111111111111111") std::fprintf(stderr, "TSL API got %s\n", got.c_str());
+    CHECK(got == "11111111111111111111");
+    if (got != "11111111111111111111") std::fprintf(stderr, "TSL API got %s\n", got.c_str());
 
     // Compare the actual native DAG, not just the presence of fluent methods. r185's
     // stepElement/mixElement/smoothstepElement reorder the fluent receiver to the last argument.

@@ -578,7 +578,7 @@ ExprId Program::loadStorage(uint32_t buffer, ExprId index, Where where) {
     return ordered(e);
 }
 
-ExprId Program::atomicAdd(uint32_t buffer, ExprId index, ExprId value, Where where) {
+ExprId Program::atomicAdd(uint32_t buffer, ExprId index, ExprId value, Where where, uint8_t function) {
     if (index == kInvalid || value == kInvalid) return kInvalid;
     if (buffer >= storage_.size()) return fail("atomicAdd", "no such storage buffer", where);
     const Storage& storage = storage_[buffer];
@@ -590,7 +590,8 @@ ExprId Program::atomicAdd(uint32_t buffer, ExprId index, ExprId value, Where whe
     if (exprs_[value].type != storage.element)
         return fail("atomicAdd " + storage.name,
                     "a " + exprs_[value].type.name() + " into " + storage.element.name() + " elements", where);
-    return ordered(Expr{Op::AtomicAdd, storage.element, {index, value}, 2, buffer});
+    if (function >= kAtomicFunctions.size()) return fail("atomicAdd " + storage.name, "no such atomic function", where);
+    return ordered(Expr{Op::AtomicAdd, storage.element, {index, value}, 2, buffer | uint64_t(function) << 32});
 }
 
 void Program::store(uint32_t buffer, ExprId index, ExprId value, Where where) {
@@ -616,14 +617,14 @@ void Program::store(uint32_t buffer, ExprId index, ExprId value, Where where) {
     emit(Stmt{StmtKind::Store, buffer, index, value});
 }
 
-uint32_t Program::storageTexture2d(std::string_view name, std::string_view format) {
+uint32_t Program::storageTexture2d(std::string_view name, std::string_view format, bool volume) {
     if (format != "rgba16float" && format != "rgba32float" && format != "rgba8unorm") {
         fail("storageTexture2d", "unsupported storage texture format " + std::string(format), Where::current());
         return kInvalid;
     }
     for (uint32_t i = 0; i < storageTextures_.size(); ++i)
-        if (storageTextures_[i].name == name && storageTextures_[i].format == format) return i;
-    storageTextures_.push_back({std::string(name), std::string(format)});
+        if (storageTextures_[i].name == name && storageTextures_[i].format == format && storageTextures_[i].volume == volume) return i;
+    storageTextures_.push_back({std::string(name), std::string(format), volume});
     return static_cast<uint32_t>(storageTextures_.size() - 1);
 }
 
@@ -632,8 +633,10 @@ void Program::textureStore(uint32_t texture, ExprId coordinate, ExprId value, Wh
         fail("textureStore", "requires a compute stage, storage texture, coordinate and value", where); return;
     }
     const Type coord = exprs_[coordinate].type;
-    if ((coord != Type::vec(2, Type::Scalar::U32) && coord != Type::vec(2, Type::Scalar::I32)) || exprs_[value].type != Type::vec(4)) {
-        fail("textureStore", "requires an integer vec2 coordinate and a vec4<f32> value", where); return;
+    const uint8_t lanes = storageTextures_[texture].volume ? 3 : 2;
+    if ((coord != Type::vec(lanes, Type::Scalar::U32) && coord != Type::vec(lanes, Type::Scalar::I32)) || exprs_[value].type != Type::vec(4)) {
+        fail("textureStore", lanes == 3 ? "requires an integer vec3 coordinate and a vec4<f32> value"
+                                        : "requires an integer vec2 coordinate and a vec4<f32> value", where); return;
     }
     emit(Stmt{StmtKind::TextureStore, texture, coordinate, value});
 }
@@ -992,7 +995,7 @@ void Program::dumpBlock(uint32_t block, int depth, std::string& out, std::vector
                 const Expr& e = exprs_[s.b];
                 std::string read = e.op == Op::LoadVar ? "load v" + std::to_string(e.immediate)
                                    : e.op == Op::AtomicAdd
-                                       ? "atomicAdd " + storage_[e.immediate].name + "[" +
+                                       ? std::string(atomicFunction(e.immediate)) + " " + storage_[atomicBuffer(e.immediate)].name + "[" +
                                              describe(e.args[0], numbering) + "], " + describe(e.args[1], numbering)
                                        : "load " + storage_[e.immediate].name + "[" + describe(e.args[0], numbering) + "]";
                 const int n = next++;

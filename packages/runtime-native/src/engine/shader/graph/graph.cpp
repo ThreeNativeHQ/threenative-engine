@@ -240,7 +240,10 @@ ExprId Lowerer::emit(Node node) {
     switch (d.kind) {
         case Kind::AtomicAdd: {
             const auto& target = *d.args[0];
-            return program_.atomicAdd(ensureStorage(target), index(d.args[0]), convert(expression(d.args[1]), target.type));
+            uint8_t function = 0;  // an AtomicAdd node's name is the builtin (atomicMax, ...); empty is atomicAdd
+            while (!d.name.empty() && function < kAtomicFunctions.size() && d.name != kAtomicFunctions[function]) ++function;
+            return program_.atomicAdd(ensureStorage(target), index(d.args[0]), convert(expression(d.args[1]), target.type),
+                                      Where::current(), function);
         }
         case Kind::AtomicStore: throw std::runtime_error("atomicStore has no return value");
         case Kind::WgslFunction: throw std::runtime_error("wgslFn must be called before use");
@@ -301,6 +304,8 @@ ExprId Lowerer::emit(Node node) {
             return program_.textureSize(d.name == "depth" ? program_.textureDepth(d.name) : program_.texture2d(d.name), d.args.empty() ? program_.constant(int32_t(0)) : expression(d.args[0]));
         case Kind::StorageTexture:
             if (d.args.empty()) throw std::runtime_error("storageTexture requires coordinates when read");
+            if (static_cast<const tn::engine::Texture*>(d.object.get())->volume)
+                throw std::runtime_error("a Storage3DTexture is read with texture3D, not storageTexture(...).sample");
             return program_.textureLoad(program_.texture2d(d.name), convert(expression(d.args[0]), Type::vec(2, Type::Scalar::I32)), program_.constant(int32_t(0)));
         case Kind::TextureLoad: {
             const auto loaded = program_.textureLoad(d.bits == 1 || d.name == "depth" ? program_.textureDepth(d.name) : program_.texture2d(d.name), expression(d.args[0]), d.args.size() < 2 ? program_.constant(int32_t(0)) : expression(d.args[1]));
@@ -570,8 +575,8 @@ void Lowerer::statement(Node node) {
         case Kind::Call: case Kind::AtomicAdd: (void)expression(node); return;
         case Kind::TextureStore: {
             const auto* texture = static_cast<const tn::engine::Texture*>(s.object.get());
-            program_.textureStore(program_.storageTexture2d(s.name, texture->storageFormat()),
-                                  convert(expression(s.args[0]), Type::vec(2, Type::Scalar::U32)),
+            program_.textureStore(program_.storageTexture2d(s.name, texture->storageFormat(), texture->volume),
+                                  convert(expression(s.args[0]), Type::vec(texture->volume ? 3 : 2, Type::Scalar::U32)),
                                   convert(expression(s.args[1]), Type::vec(4)));
             return;
         }

@@ -101,7 +101,7 @@ StageModule buildStage(const Program& program, uint32_t group) {
             Binding{group, binding++, BindingKind::Storage, "s_" + storage.name, roundUp(element.size, element.align)});
     }
     for (const auto& texture : program.storageTextures_)
-        module.bindings.push_back(Binding{group, binding++, BindingKind::StorageTexture, "st_" + texture.name});
+        module.bindings.push_back(Binding{group, binding++, BindingKind::StorageTexture, "st_" + texture.name, 0, false, false, texture.volume});
     for (std::size_t i = 0; i < program.textures_.size(); ++i) {
         const std::string& name = program.textures_[i];
         const bool values = program.textureKinds_[i] == Program::TextureKind::DepthCubeValues;

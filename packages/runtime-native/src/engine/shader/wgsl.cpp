@@ -308,7 +308,8 @@ void WgslEmitter::block(uint32_t index, int depth, std::string& out) const {
                     out += indent + "let l" + std::to_string(s.b) + " = " +
                            (storage.atomic ? "atomicLoad(&" + at + ")" : at) + ";\n";
                 } else if (e.op == Op::AtomicAdd) {
-                    out += indent + "let l" + std::to_string(s.b) + " = atomicAdd(&s_" + p_.storage_[e.immediate].name +
+                    out += indent + "let l" + std::to_string(s.b) + " = " + atomicFunction(e.immediate) + "(&s_" +
+                           p_.storage_[atomicBuffer(e.immediate)].name +
                            "[" + expr(e.args[0]) + "], " + expr(e.args[1]) + ");\n";
                 }
                 break;
@@ -412,7 +413,7 @@ WgslModule WgslEmitter::emit(const Program& program, uint32_t group) {
 
     for (const auto& texture : program.storageTextures_)
         out += "@group(" + std::to_string(group) + ") @binding(" + std::to_string(binding++) + ") var st_" + texture.name +
-               ": texture_storage_2d<" + texture.format + ", write>;\n";
+               (texture.volume ? ": texture_storage_3d<" : ": texture_storage_2d<") + texture.format + ", write>;\n";
     for (std::size_t i = 0; i < program.textures_.size(); ++i) {
         const std::string& name = program.textures_[i];
         const auto kind = program.textureKinds_[i];

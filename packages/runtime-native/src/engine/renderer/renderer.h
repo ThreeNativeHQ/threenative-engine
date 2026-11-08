@@ -1075,11 +1075,14 @@ private:
             // A DataArrayTexture: `depth` layers of one 2D texture, sampled as a 2DArray view. Part of the key
             // because the same width/height/depth with and without it needs a different view dimension.
             bool array = false;
+            // A 3D texture: a Data3DTexture (kVolume) or a Storage3DTexture (kStorage), with a 3D view.
+            bool volume = false;
             uint16_t wrapS = 0, wrapT = 0, wrapR = 0, magFilter = 0, minFilter = 0;
             double anisotropy = 0;
             [[nodiscard]] bool operator==(const Key& other) const {
                 return kind == other.kind && width == other.width && height == other.height && depth == other.depth &&
                        levels == other.levels && format == other.format && usage == other.usage && array == other.array &&
+                       volume == other.volume &&
                        wrapS == other.wrapS && wrapT == other.wrapT && wrapR == other.wrapR &&
                        magFilter == other.magFilter && minFilter == other.minFilter && anisotropy == other.anisotropy;
             }

@@ -1850,6 +1850,7 @@ Renderer::MaterialTexture::Key Renderer::materialTextureKey(const Texture& textu
     // A DataArrayTexture stores `depth` 2D images in one 2D texture; a Data3DTexture is one 3D image.
     key.depth = texture.volume || texture.array ? texture.depth : 1;
     key.array = texture.array;
+    key.volume = texture.volume;
     key.texelBytes = texture.bytesPerTexel();
     key.wrapS = texture.wrapS;
     key.wrapT = texture.wrapT;
@@ -1894,7 +1895,7 @@ Renderer::MaterialTexture::Key Renderer::materialTextureKey(const Texture& textu
 
 WGPUTexture Renderer::createMaterialTexture(const MaterialTexture::Key& key) {
     WGPUTextureDescriptor desc = {};
-    desc.dimension = key.kind == MaterialTexture::kVolume ? WGPUTextureDimension_3D : WGPUTextureDimension_2D;
+    desc.dimension = key.volume ? WGPUTextureDimension_3D : WGPUTextureDimension_2D;
     desc.size = {key.width, key.height, key.depth};
     desc.format = key.format;
     desc.usage = key.usage;
@@ -2042,7 +2043,7 @@ const Renderer::MaterialTexture* Renderer::materialTexture(const Texture& textur
         record.texture = createMaterialTexture(key);
         if (key.kind != MaterialTexture::kStorage) uploadMaterialTexture(record.texture, texture, key);
         WGPUTextureViewDescriptor view = {};
-        view.dimension = key.kind == MaterialTexture::kVolume ? WGPUTextureViewDimension_3D
+        view.dimension = key.volume ? WGPUTextureViewDimension_3D
                         : key.array ? WGPUTextureViewDimension_2DArray : WGPUTextureViewDimension_2D;
         view.mipLevelCount = key.levels;
         view.arrayLayerCount = key.array ? key.depth : 1;

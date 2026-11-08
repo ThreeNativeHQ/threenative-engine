@@ -526,13 +526,14 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
             : g::vec2({args.size() == 1 ? arg(0) : g::float_(0)})};
         return node;
     }
-    // ivec3 / ivec4 (ConvertType): each component an int, one argument splats.
-    if (name == "ivec3" || name == "ivec4") {
-        const uint8_t lanes = name == "ivec3" ? 3 : 4;
+    // ivec3 / ivec4 / uvec3 / uvec4 (ConvertType): each component an int or uint, one argument splats.
+    if (name == "ivec3" || name == "ivec4" || name == "uvec3" || name == "uvec4") {
+        const uint8_t lanes = name.back() == '3' ? 3 : 4;
+        const bool unsigned_ = name[0] == 'u';
         if (args.size() != 1 && args.size() != lanes) throw std::runtime_error("invalid " + name + " argument count");
         auto node = std::make_shared<g::NodeData>();
-        node->kind = g::Kind::Join; node->type = Type::vec(lanes, Type::Scalar::I32);
-        for (size_t i = 0; i < args.size(); ++i) node->args.push_back(tslCall("int", nullptr, {args[i]}, serial));
+        node->kind = g::Kind::Join; node->type = Type::vec(lanes, unsigned_ ? Type::Scalar::U32 : Type::Scalar::I32);
+        for (size_t i = 0; i < args.size(); ++i) node->args.push_back(tslCall(unsigned_ ? "uint" : "int", nullptr, {args[i]}, serial));
         return node;
     }
     // bool(x) (ConvertType): true where the number is not zero, as WGSL's bool() of it.
@@ -741,7 +742,8 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         return receiver->node;
     }
     if (!method && name == "storageTexture") {
-        if (args.empty() || args.size() > 3 || args[0].kind != TslArg::Kind::Object || !args[0].object || args[0].cls != "StorageTexture")
+        if (args.empty() || args.size() > 3 || args[0].kind != TslArg::Kind::Object || !args[0].object ||
+            (args[0].cls != "StorageTexture" && args[0].cls != "Storage3DTexture"))
             throw std::runtime_error("storageTexture needs an engine StorageTexture and optional coordinates and value");
         const auto* texture = static_cast<const engine::Texture*>(args[0].object.get());
         auto node = std::make_shared<g::NodeData>();
@@ -783,8 +785,10 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
     // vec3(0.5) by default; `level` is an explicit mip.
     if (name == "texture3D") {
         if (args.empty() || args.size() > 3) throw std::runtime_error("texture3D takes 1 to 3 arguments");
-        if (args[0].kind != TslArg::Kind::Object || !args[0].object || args[0].cls != "Data3DTexture")
-            throw std::runtime_error("texture3D needs an engine Data3DTexture");
+        // A Storage3DTexture a kernel writes is sampled the same way (prd476's density volume).
+        if (args[0].kind != TslArg::Kind::Object || !args[0].object ||
+            (args[0].cls != "Data3DTexture" && args[0].cls != "Storage3DTexture"))
+            throw std::runtime_error("texture3D needs an engine Data3DTexture or Storage3DTexture");
         const auto* source = static_cast<const engine::Texture*>(args[0].object.get());
         if (!source->sampleable()) throw std::runtime_error("texture3D needs a Data3DTexture with texels");
         const auto half = [] { return g::float_(0.5); };
@@ -1532,7 +1536,9 @@ bool TslScopes::call(const std::string& name, const TslArg* receiver, const std:
         statements.push_back(node); out = target;
         return true;
     }
-    if (name == "atomicAdd" || name == "atomicStore") {
+    const bool readModifyWrite = std::find_if(engine::shader::kAtomicFunctions.begin(), engine::shader::kAtomicFunctions.end(),
+        [&](const char* function) { return name == function; }) != engine::shader::kAtomicFunctions.end();
+    if (readModifyWrite || name == "atomicStore") {
         arity(2);
         auto& statements = open().back().statements;
         const auto target = input(args[0]);
@@ -1541,8 +1547,9 @@ bool TslScopes::call(const std::string& name, const TslArg* receiver, const std:
             (target->type != Type::u32() && target->type != Type::i32()))
             throw std::runtime_error(name + " requires an integer element of a toAtomic storage buffer");
         auto node = std::make_shared<g::NodeData>();
-        node->kind = name == "atomicAdd" ? g::Kind::AtomicAdd : g::Kind::AtomicStore;
-        node->type = name == "atomicAdd" ? target->type : Type{};
+        node->kind = readModifyWrite ? g::Kind::AtomicAdd : g::Kind::AtomicStore;
+        node->type = readModifyWrite ? target->type : Type{};
+        if (readModifyWrite) node->name = name;  // the builtin it lowers to
         node->args = {target, input(args[1])}; statements.push_back(node); out = node;
         return true;
     }

@@ -331,7 +331,8 @@ void Tsl::call(const Call& call, const v8::FunctionCallbackInfo<v8::Value>& info
         return result(scoped("textureStore", nullptr, {
             argument(name, 0, info.Length(), info[0]), abi::TslArg::of(arg(1)), abi::TslArg::of(arg(2))}));
     }
-    if (name == "atomicAdd" || name == "atomicStore") {
+    if (name == "atomicAdd" || name == "atomicSub" || name == "atomicMax" || name == "atomicMin" || name == "atomicAnd" ||
+        name == "atomicOr" || name == "atomicXor" || name == "atomicStore") {
         arity(2); statement();
         return result(scoped(name.c_str(), nullptr, {abi::TslArg::of(arg(0)), abi::TslArg::of(arg(1))}));
     }
@@ -351,7 +352,7 @@ void Tsl::call(const Call& call, const v8::FunctionCallbackInfo<v8::Value>& info
             call.method ? std::vector<abi::TslArg>{} : std::vector<abi::TslArg>{abi::TslArg::of(arg(0))}));
     }
     if (name == "toVar") {
-        arity(0);
+        if (info.Length() > 1) arity(0);  // three's toVar(name): the engine names its own variables
         // Outside a function body there is no stack to declare a variable in (rain's fragment node names its
         // terms this way); the expression itself is the value, read where it is used, as the browser back end
         // answers it (browser-tsl.ts).
@@ -717,11 +718,11 @@ void Tsl::install(v8::Local<v8::Context> context, v8::Local<v8::Object> target) 
                              "exp",        "exp2",  "log2",    "normalize", "length", "atan",     "min",      "max",
                              "mod", "fwidth", "saturation", "mat2", "hash",
                              "pow",        "step",  "dot",     "distance",  "cross",  "mix",      "clamp",
-                             "smoothstep", "select", "nodeObject", "color", "ivec2", "ivec3", "ivec4", "uvec2", "bool", "storageTexture", "textureStore", "textureLoad", "textureSize", "reflect", "convertToTexture", "rtt", "mrt",
+                             "smoothstep", "select", "nodeObject", "color", "ivec2", "ivec3", "ivec4", "uvec2", "uvec3", "uvec4", "bool", "storageTexture", "textureStore", "textureLoad", "textureSize", "reflect", "convertToTexture", "rtt", "mrt",
                              "dFdx", "dFdy", "lengthSq", "viewportSharedTexture", "viewportDepthTexture", "linearDepth",
                              "toneMappingColor", "ao", "ssr", "denoise", "smaa", "bloom", "traa", "film", "lut3D", "renderOutput", "pipelineOutput", "struct", "luminance", "viewZToOrthographicDepth", "viewZToPerspectiveDepth", "logarithmicDepthToViewZ", "oneMinus", "varying", "setUniform", "setUniforms",
                              "mx_noise_float", "mx_worley_noise_float", "mx_worley_noise_vec2", "pmremTexture", "reflector", "transformDirection",
-                             "atomicAdd", "atomicStore", "atomicLoad", "lightShadowMatrix", "lights", "wgslFunction", "texture3D", "getViewPosition", "bumpMap", "normalMap", "transformNormalToView", "property", "varyingProperty", "instanceMatrix", "radians", "degrees", "inverseSqrt", "ceil", "sinh", "cosh", "tan", "tanh", "asin", "asinh", "acos", "acosh", "atanh", "sign", "round", "reciprocal", "trunc", "transpose", "determinant", "inverse", "difference", "pow2", "pow3", "pow4", "transformNormalByViewMatrix", "transformNormalByInverseViewMatrix", "cbrt", "saturate", "refract", "faceForward", "rand", "mixElement", "smoothstepElement", "stepElement", "faceforward", "inversesqrt", "notEqual", "xor", "bitAnd", "bitNot", "bitOr", "bitXor", "shiftLeft", "shiftRight", "incrementBefore", "decrementBefore", "increment", "decrement", "mat3", "mat4"})
+                             "atomicAdd", "atomicSub", "atomicMax", "atomicMin", "atomicAnd", "atomicOr", "atomicXor", "atomicStore", "atomicLoad", "lightShadowMatrix", "lights", "wgslFunction", "texture3D", "getViewPosition", "bumpMap", "normalMap", "transformNormalToView", "property", "varyingProperty", "instanceMatrix", "radians", "degrees", "inverseSqrt", "ceil", "sinh", "cosh", "tan", "tanh", "asin", "asinh", "acos", "acosh", "atanh", "sign", "round", "reciprocal", "trunc", "transpose", "determinant", "inverse", "difference", "pow2", "pow3", "pow4", "transformNormalByViewMatrix", "transformNormalByInverseViewMatrix", "cbrt", "saturate", "refract", "faceForward", "rand", "mixElement", "smoothstepElement", "stepElement", "faceforward", "inversesqrt", "notEqual", "xor", "bitAnd", "bitNot", "bitOr", "bitXor", "shiftLeft", "shiftRight", "incrementBefore", "decrementBefore", "increment", "decrement", "mat3", "mat4"})
         module->Set(context, str(isolate_, name), function(context, name, false)->GetFunction(context).ToLocalChecked())
             .Check();
     for (auto& [name, node] : abi::tslConstants())

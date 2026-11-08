@@ -1010,43 +1010,54 @@ void registerTextureBindings(Registry& classes) {
     registerTextureClass(classes["DataTexture"], true, "DataTexture");
     classes["DataTexture"].ctorTakesBytes = true;
     classes["DataTexture"].settersTakeBytes = {"image.data"};
-    auto& storage = classes["StorageTexture"];
-    registerTextureFields(storage, "StorageTexture");
-    storage.ctor = [](const Args& a, Store&) -> std::shared_ptr<void> {
-        const double width = optional(a, 0, 1), height = optional(a, 1, 1);
-        if (a.size() > 2 || !(width >= 1 && width <= 16384 && height >= 1 && height <= 16384) ||
-            width != std::floor(width) || height != std::floor(height))
-            throw Unsupported{"StorageTexture needs integer extents in [1, 16384]"};
-        auto texture = std::make_shared<Texture>();
-        texture->storageTexture = true;
-        texture->width = uint32_t(width); texture->height = uint32_t(height);
-        texture->minFilter = texture->magFilter = uint16_t(TextureFilter::Linear);
-        return texture;
-    };
-    storage.getters["isStorageTexture"] = [](void*) { return Value::of(true); };
-    storage.getters["mipmapsAutoUpdate"] = [](void* self) { return Value::of(as<Texture>(self)->mipmapsAutoUpdate); };
-    storage.setters["mipmapsAutoUpdate"] = [](void* self, const Value& v) { as<Texture>(self)->mipmapsAutoUpdate = flag(v); };
-    for (const bool isType : {true, false}) {
-        storage.setters[isType ? "type" : "format"] = [isType](void* self, const Value& v) {
-            const double n = number(v);
-            if (!(n >= 0 && n <= UINT16_MAX) || n != std::floor(n))
-                throw Unsupported{"TN_NATIVE_STORAGE_TEXTURE_FORMAT: type/format must be an unsigned 16-bit integer"};
+    // three's StorageTexture(width, height) and Storage3DTexture(width, height, depth): a texture a compute kernel
+    // writes and a material samples. The 3D one is a volume (prd476's density), sampled with texture3D.
+    for (const bool volume : {false, true}) {
+        const std::string name = volume ? "Storage3DTexture" : "StorageTexture";
+        const double limit = volume ? 2048 : 16384;  // WebGPU's default maxTextureDimension3D and maxTextureDimension2D
+        const std::string extents = name + " needs integer extents in [1, " + (volume ? "2048" : "16384") + "]";
+        const auto whole = [limit](double n) { return n >= 1 && n <= limit && n == std::floor(n); };
+        auto& storage = classes[name];
+        registerTextureFields(storage, name.c_str());
+        storage.ctor = [volume, extents, whole](const Args& a, Store&) -> std::shared_ptr<void> {
+            const double width = optional(a, 0, 1), height = optional(a, 1, 1), depth = volume ? optional(a, 2, 1) : 1;
+            if (a.size() > (volume ? 3u : 2u) || !whole(width) || !whole(height) || !whole(depth)) throw Unsupported{extents};
+            auto texture = std::make_shared<Texture>();
+            texture->storageTexture = true;
+            texture->volume = volume;
+            texture->width = uint32_t(width); texture->height = uint32_t(height); texture->depth = uint32_t(depth);
+            texture->minFilter = texture->magFilter = uint16_t(TextureFilter::Linear);
+            return texture;
+        };
+        storage.getters["isStorageTexture"] = [](void*) { return Value::of(true); };
+        if (volume) {
+            storage.getters["is3DTexture"] = [](void*) { return Value::of(true); };
+            textureNumber<Texture>(storage, "wrapR", &Texture::wrapR);
+        }
+        storage.getters["mipmapsAutoUpdate"] = [](void* self) { return Value::of(as<Texture>(self)->mipmapsAutoUpdate); };
+        storage.setters["mipmapsAutoUpdate"] = [](void* self, const Value& v) { as<Texture>(self)->mipmapsAutoUpdate = flag(v); };
+        for (const bool isType : {true, false}) {
+            storage.setters[isType ? "type" : "format"] = [isType](void* self, const Value& v) {
+                const double n = number(v);
+                if (!(n >= 0 && n <= UINT16_MAX) || n != std::floor(n))
+                    throw Unsupported{"TN_NATIVE_STORAGE_TEXTURE_FORMAT: type/format must be an unsigned 16-bit integer"};
+                auto* texture = as<Texture>(self);
+                (isType ? texture->type : texture->format) = uint16_t(n);
+                texture->needsUpdate();
+            };
+        }
+        storage.methods["setSize"] = [volume, name, extents, whole](void* self, const Args& a, Store&) {
+            if (a.size() != (volume ? 3u : 2u))
+                throw Unsupported{name + (volume ? ".setSize needs width, height and depth" : ".setSize needs width and height")};
+            const double w = number(a[0]), h = number(a[1]), d = volume ? number(a[2]) : 1;
+            if (!whole(w) || !whole(h) || !whole(d)) throw Unsupported{extents};
             auto* texture = as<Texture>(self);
-            (isType ? texture->type : texture->format) = uint16_t(n);
-            texture->needsUpdate();
+            if (texture->width != w || texture->height != h || texture->depth != d) {
+                texture->width = uint32_t(w); texture->height = uint32_t(h); texture->depth = uint32_t(d); texture->needsUpdate();
+            }
+            return Value{};
         };
     }
-    storage.methods["setSize"] = [](void* self, const Args& a, Store&) {
-        if (a.size() != 2) throw Unsupported{"StorageTexture.setSize needs width and height"};
-        const double w = number(a[0]), h = number(a[1]);
-        if (!(w >= 1 && w <= 16384 && h >= 1 && h <= 16384) || w != std::floor(w) || h != std::floor(h))
-            throw Unsupported{"StorageTexture needs integer extents in [1, 16384]"};
-        auto* texture = as<Texture>(self);
-        if (texture->width != w || texture->height != h) {
-            texture->width = uint32_t(w); texture->height = uint32_t(h); texture->needsUpdate();
-        }
-        return Value{};
-    };
     auto& depth = classes["DepthTexture"];
     registerTextureFields(depth, "DepthTexture");
     depth.ctor = [](const Args& a, Store&) -> std::shared_ptr<void> {

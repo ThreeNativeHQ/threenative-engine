@@ -123,6 +123,8 @@ const FUNCTIONS = [
   "ivec3",
   "ivec4",
   "uvec2",
+  "uvec3",
+  "uvec4",
   "bool",
   "storageTexture",
   "textureLoad",
@@ -665,7 +667,17 @@ export function defineTsl(
     return Object.assign(inline, { setLayout: () => inline });
   };
   exports.Fn = withFnBuilder(exports.Fn as Parameters<typeof withFnBuilder>[0]);
-  for (const name of ["atomicAdd", "atomicStore", "textureStore"])
+  for (const name of [
+    "atomicAdd",
+    "atomicSub",
+    "atomicMax",
+    "atomicMin",
+    "atomicAnd",
+    "atomicOr",
+    "atomicXor",
+    "atomicStore",
+    "textureStore",
+  ])
     exports[name] = (...args: unknown[]) => {
       statement(name);
       return wrap(call(name, null, args));
