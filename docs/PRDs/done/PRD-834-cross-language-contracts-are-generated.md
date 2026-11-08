@@ -5,7 +5,7 @@
 **Complexity:** 6 (MEDIUM)
 **Owner:** ThreeNative maintainers
 **Depends on:** PRD-832 (its Phase 3 lands the generator pattern on `tnw_web_frame`)
-**Batch:** [Untangle report, 2026-11-06](README.md) — R2
+**Batch:** [Untangle report, 2026-11-06](../refactoring/untangle-2026-11-06/README.md) — R2
 
 ## Context
 

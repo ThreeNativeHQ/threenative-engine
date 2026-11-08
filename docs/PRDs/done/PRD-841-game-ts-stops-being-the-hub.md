@@ -5,7 +5,7 @@
 **Complexity:** 4 (MEDIUM)
 **Owner:** ThreeNative maintainers
 **Depends on:** None
-**Batch:** [Untangle report, 2026-11-06](README.md) — N4
+**Batch:** [Untangle report, 2026-11-06](../refactoring/untangle-2026-11-06/README.md) — N4
 
 ## Context
 
