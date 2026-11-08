@@ -1,6 +1,6 @@
 # PRD-839 — The CI contract is a model, not text matches
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS (Phases 1-3 done and verified locally; AC-1 and AC-2 open)
 **Priority:** P2 — open Phase 1 replaces 594 raw-text assertions on `ci.yml`, which one in three CI commits has to patch, and Phase 3 drops a proof that splices a historical workflow.
 **Complexity:** 5 (MEDIUM)
 **Owner:** ThreeNative maintainers
@@ -28,7 +28,7 @@ becomes explicit cases against the live model.
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local]: The CI contract specs pass, and a `pnpm ci:local --affected` plan for a sample diff is unchanged before and after. proof: `pnpm exec vitest run scripts/__tests__/ci-structure.spec.ts scripts/__tests__/ci-needs.spec.ts scripts/__tests__/ci-integration-scope.spec.ts` plus a plan diff
+- [ ] AC-1 [local]: The CI contract specs pass, and a `pnpm ci:local --affected` plan for a sample diff is unchanged before and after. proof: `pnpm exec vitest run scripts/__tests__/ci-structure.spec.ts scripts/__tests__/ci-needs.spec.ts scripts/__tests__/ci-integration-scope.spec.ts` plus a plan diff. Plan diff done 2026-11-08: `node scripts/ci-change-scope.mjs --event pull_request --target develop --base B --head H --local --queue-lane --format json` for 11 real commit ranges, before (`5bd45931a`) and after: all 11 identical once the 40-character candidate SHA is normalized. Left open on purpose: 357 of 358 tests pass, and the one failure (QuickJS packaged fallback, missing `@threenative/assets` build) is the same on the unchanged spec. Close this box on a machine where that package builds.
 - [ ] AC-2 [shared]: One real PR run selects the same jobs as the last comparable run. proof: the `ci.yml` run on the PRD's PR, job list compared
 
 ## Integration Ledger
@@ -40,20 +40,25 @@ becomes explicit cases against the live model.
 ## Execution Phases
 
 #### Phase 1: Workflow model
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** `scripts/ci-workflow.ts`, `scripts/__tests__/ci-structure.spec.ts`.
 
-- [ ] `ci-workflow.ts` returns jobs with `if`, `needs`, steps, `with` and `env`, and an absent field throws. proof: `pnpm exec vitest run scripts/__tests__/ci-structure.spec.ts`
-- [ ] The job-shape invariants read the model, and the text-assertion count in the spec drops by at least half. proof: `rg -c 'toContain\(|indexOf\(' scripts/__tests__/ci-structure.spec.ts` against the 594 baseline
+- [x] `ci-workflow.ts` returns jobs with `if`, `needs`, steps, `with` and `env`, and an absent field throws. proof: `pnpm exec vitest run scripts/__tests__/ci-structure.spec.ts` -> 200 passed, 1 failed. The failure is "selects QuickJS for the packaged fallback", which cannot resolve `@threenative/assets` (no `dist`, and `pnpm --filter @threenative/assets build` fails in this worktree). The same test fails the same way on the unchanged spec from `5bd45931a`. The new test "fails closed when the workflow model is asked for a field, job or step that is absent" passes: `ci.job`, `job.require`, `job.step`, `job.stepById`, `step.require` and `parseWorkflow` throw named errors (`CI_WORKFLOW_NO_JOB`, `CI_WORKFLOW_MISSING_FIELD`, `CI_WORKFLOW_STEP`, `CI_WORKFLOW_SHAPE`). 2026-11-08
+- [x] The job-shape invariants read the model, and the text-assertion count in the spec drops by at least half. proof: `rg -c 'toContain\(|indexOf\(' scripts/__tests__/ci-structure.spec.ts` -> 261 against a measured baseline of 593 on the unchanged file at `5bd45931a` (a 56% drop; the half-way bar is 296). Mutation spot-checks on a copy of the YAML, each restored after the run: `native-engine` cache key renamed, `golden-path-template` `needs` reduced to `[scope]`, `TN_SUITE_PHASES` shortened, `max-parallel` raised in `performance-regression.yml`, and `timeout-minutes` removed from `scope`. The matching converted test failed in all five cases. 2026-11-08
 
 #### Phase 2: Classifier split
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** new `scripts/ci/classify.mjs`, `scripts/ci/reuse.mjs`; `scripts/ci-change-scope.mjs`, `ci-integration-scope.mjs`, `ci-runner-admission.mjs`.
 
-- [ ] `classify.mjs` imports no `fs`, `child_process` or `gh` helper, and the old module re-exports it. proof: `pnpm exec vitest run scripts/__tests__/ci-needs.spec.ts scripts/__tests__/ci-integration-scope.spec.ts`
+- [x] `classify.mjs` imports no `fs`, `child_process` or `gh` helper, and the old module re-exports it. proof: `rg '^import|child_process|node:fs' scripts/ci/classify.mjs` -> no match; `pnpm exec vitest run scripts/__tests__/ci-needs.spec.ts scripts/__tests__/ci-integration-scope.spec.ts` -> 2 files, all tests pass; 13 other `ci-*` specs also pass (`ci-local`, `ci-native-chain`, `ci-efficiency`, `ci-leg-carry`, and others). `ci-change-scope.mjs` is a facade that binds `TEMPLATE_NAMES` and re-exports the pure classifier from `scripts/ci/classify.mjs` and the git, `gh` and reuse rules from `scripts/ci/reuse.mjs`. 2026-11-08
 
 #### Phase 3: Live proofs only
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** `scripts/__tests__/ci-integration-scope.spec.ts`.
 
-- [ ] The historical splice is replaced by explicit native and browser routing cases on the live model. proof: `pnpm exec vitest run scripts/__tests__/ci-integration-scope.spec.ts`
+- [x] The historical splice is replaced by explicit native and browser routing cases on the live model. proof: `pnpm exec vitest run scripts/__tests__/ci-integration-scope.spec.ts` -> 96 passed; `rg -c 49f76db scripts/__tests__/ci-integration-scope.spec.ts` -> 0. Mutation check: removing the `exposure` route made 3 of the new cases fail, and the revert made them pass. 2026-11-08
+
+## Corrections
+
+- 2026-11-08: The Context table and the Phase 1 box name a baseline of 594 `toContain` / `indexOf` matches. The same `rg -c` on the unchanged file at `5bd45931a` prints 593. Phase 1 uses 593. The half-way bar moves from 297 to 296.
+- 2026-11-08: Some `toContain` matches stay by design. They check a fragment of a shell script (a `run:` body), which the model returns as a string. The converted tests read those fragments from the parsed step through the `expectIncludes` and `expectExcludes` helpers, and read presence checks through `job.mentions()` and `job.runs()`, which ignore comments. The count therefore measures remaining raw-text matches, not remaining job-shape matches.
