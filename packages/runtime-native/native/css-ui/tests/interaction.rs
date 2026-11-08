@@ -1349,6 +1349,38 @@ fn a_colour_filter_transforms_the_layer_it_wraps() {
 /// A single-alpha mask, the shape every Tailwind mask utility reduces to: opaque at one end, clear at
 /// the other. Printed through the assertion so the direction cannot be misread.
 #[test]
+/// `mask-mode: luminance` on a CSS gradient weights the **stored sRGB components**. CSS Masking describes
+/// a linear-light `luminance()`, and this crate followed it until the parity scene showed it was wrong for
+/// a gradient in this Chromium build: half way along a red-50 (`#fef2f2`) to black gradient the mask alpha
+/// is 0.48 (sRGB weights) not 0.20 (linear-light), and Chromium paints 0.48. The blue channel of the probe
+/// over the page colour tells the two apart by a factor of two.
+#[test]
+fn a_luminance_mask_weights_the_srgb_components() {
+    let mut ui = ui(
+        160,
+        80,
+        &[
+            sheet(
+                "s",
+                &format!(
+                    "{BASE}\n#a{{width:120px;height:40px;margin:10px;background:#2563eb;mask-image:linear-gradient(to right in oklab,#fef2f2,#000);mask-mode:luminance}}"
+                ),
+            ),
+            create(1, "div"),
+            attr(1, "id", "a"),
+            append(0, 1),
+        ],
+    );
+    ui.render();
+    // Half way: alpha 0.48 over the page (#18181b) under the probe (#2563eb) gives 27 + 0.48 * 208 = 127.
+    let middle = rgb(&ui, 70, 30);
+    assert!(
+        (middle[2] as i32 - 104).abs() <= 8,
+        "sRGB-weighted luminance at the midpoint of an Oklab gradient, got {middle:?} \
+         (linear-light weights read 50 here)"
+    );
+}
+
 fn a_single_layer_alpha_mask_fades_the_box() {
     let mut ui = ui(
         200,

@@ -50,28 +50,23 @@ type ConicGradient<'a> = (
 
 /// Rewrite a gradient's stops so that its *alpha* carries its luminance.
 ///
-/// VENDOR HUNK (threenative/css-ui): `mask-mode: luminance` is not implemented in this crate (the
-/// mask is always composited with `DestIn`, which reads alpha), and two of Tailwind's mask stops are
-/// opaque colours that differ only in luminance — black and white are both alpha 1, so a luminance
-/// mask painted as an alpha mask hid everything. The luminance is computed on **linear** values,
-/// which is what CSS Masking defines; on the stored sRGB values a `red-50` stop reads 0.96 against
-/// Chromium's 0.91, and the eight colour-mask cells measured 0.94 to 0.98 against the 0.99 bar with
-/// the wrong one.
+/// VENDOR HUNK (threenative/css-ui): `mask-mode: luminance` is not implemented in this crate (a mask is
+/// composited with `DestIn`, which reads alpha), and two of Tailwind's mask stops are opaque colours that
+/// differ only in luminance — black and white are both alpha 1, so a luminance mask painted as an alpha
+/// mask hid everything.
+///
+/// The weights are applied to the **stored sRGB components**, not to linear-light values. CSS Masking
+/// describes a linear-light `luminance()`, and the first version of this hunk followed it; measured against
+/// Chromium on the parity scene that reading is wrong for a CSS gradient in this build. With linear-light
+/// values the six `mask-{linear,conic,radial}-{from,to}-red-50` cells scored 0.8145–0.8928 against the 0.99
+/// bar; with the sRGB weights all eighteen `-red-50` cells pass at 0.994–0.996 and the mask group goes
+/// 23 → 29 of 50 with no cell lost. A red-50 → black gradient sampled half way reads 0.20 from linear
+/// values and 0.48 from the sRGB ones, and Chromium paints 0.48 there.
 pub(crate) fn apply_luminance_alpha(gradient: &mut peniko::Gradient) {
     for stop in gradient.stops.iter_mut() {
         let color = stop.color.to_alpha_color::<peniko::color::Srgb>();
         let components = color.components;
-        // sRGB -> linear, the transfer function from CSS Color 4.
-        let linear = |value: f32| {
-            if value <= 0.04045 {
-                value / 12.92
-            } else {
-                ((value + 0.055) / 1.055).powf(2.4)
-            }
-        };
-        let luminance = 0.2126_f32 * linear(components[0])
-            + 0.7152 * linear(components[1])
-            + 0.0722 * linear(components[2]);
+        let luminance = 0.2126 * components[0] + 0.7152 * components[1] + 0.0722 * components[2];
         let alpha = (luminance.clamp(0.0, 1.0) * components[3]).clamp(0.0, 1.0);
         stop.color = peniko::color::DynamicColor::from_alpha_color(
             peniko::color::AlphaColor::<peniko::color::Srgb>::new([1.0, 1.0, 1.0, alpha]),

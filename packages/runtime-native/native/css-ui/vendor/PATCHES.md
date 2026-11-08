@@ -102,6 +102,21 @@ hunk 3 is ~94, almost all of it `draw_inline_decorations`, and deletes the 40-li
   fades across the box) and `a_mask_gradient_whose_stops_come_from_registered_variables_paints`, both of
   which failed before this hunk. `parity:tailwind --family PRD-845 --group mask` now measures every cell
   instead of reporting "does nothing" for ten of them.
+### 5. `mask-mode: luminance` weighted linear-light values, and Chromium weights the stored sRGB ones
+
+* **Where:** `src/gradient.rs` (`apply_luminance_alpha`).
+* **Why:** CSS Masking describes a linear-light `luminance()`, and hunk 5's first version followed it — the
+  earlier note in this file even said so. Measured against Chromium on the parity scene, that is wrong for a
+  CSS gradient in this build. The difference only shows on a gradient whose stops are *resampled* (Tailwind
+  writes `in oklab`, which this crate now resamples): with two stops both readings reduce to the same linear
+  alpha ramp between the endpoint colours, but with intermediate stops the per-stop luminance decides the
+  curve. With linear-light weights the six `mask-{linear,conic,radial}-{from,to}-red-50` cells scored
+  0.8145–0.8928 against the 0.99 bar; with the weights applied to the stored sRGB components all eighteen
+  `-red-50` cells pass at 0.994–0.996 and the mask group goes **23 → 29 of 50** with no cell lost.
+* **Proves it:** `a_luminance_mask_weights_the_srgb_components` (the midpoint of a
+  `linear-gradient(to right in oklab, #fef2f2, #000)` mask reads blue 104 with the sRGB weights and 50 with
+  the linear-light ones, so the test fails against the previous source), and
+  `parity:tailwind --family PRD-845 --group mask`.
 
 
 ## `blitz-dom-0.3.0-beta.2` — 760 added code lines
