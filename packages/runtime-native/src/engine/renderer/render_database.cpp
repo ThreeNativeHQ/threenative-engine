@@ -382,6 +382,7 @@ void RenderDatabase::vertexColorsOf(const BufferGeometry& geometry, const Materi
 // InstancedBufferGeometry's instance count: instanceCount, at most what its per-instance attributes
 // hold, as three's WebGL backend clamps it (_maxInstanceCount).
 void RenderDatabase::geometryInputsOf(const BufferGeometry& geometry, DrawItem& d) {
+    d.geometryBox = geometry.boundingBox ? std::optional<Box3>(*geometry.boundingBox) : std::nullopt;
     d.attributes->clear();
     for (const auto& [name, attribute] : geometry.attributes) {
         if (!attribute || name == "position" || name == "normal" || name == "uv" || name == "color" ||

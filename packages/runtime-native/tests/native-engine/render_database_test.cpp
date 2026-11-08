@@ -8579,6 +8579,13 @@ void virtualShadowBoundsCache() {
     item.positionNode = std::make_shared<const shader::PositionNode>();
     sample(); sample();
     CHECK(cache.shadowBoundsBuilds == settled);
+    // An impostor quad its positionNode relocates per instance states its own geometry boundingBox (three's authored
+    // bounds): that box places it, 4 m wider each side than the 2 m quad here (PRD-858).
+    const Box3 rest = sample().first;
+    item.geometryBox = Box3().setFromCenterAndSize(Vector3(0, 0, 0), Vector3(10, 2, 2));
+    CHECK(sample().first.max.x == rest.max.x + 4 && sample().first.min.x == rest.min.x - 4);
+    item.geometryBox.reset();
+    CHECK(sample().first.max.x == rest.max.x);
     // Its material's maxPositionOffset grows the union and every instance box by that many metres, so a page can
     // place the swaying instances one by one (Unreal's MaxWorldPositionOffsetDisplacement); a rigid draw ignores it.
     shader::StandardMaterial swaying;

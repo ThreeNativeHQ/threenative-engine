@@ -129,7 +129,8 @@ struct DrawCache {
     // other draw. A virtual shadow page draws only the instances whose box can reach it.
     std::vector<Box3> shadowInstanceBoxes;
     using ShadowBoundsKey = std::tuple<const BufferStore*, uint32_t, uint64_t, uint64_t,
-                                      const BufferStore*, uint32_t, uint64_t, uint64_t, uint32_t, Matrix, double>;
+                                      const BufferStore*, uint32_t, uint64_t, uint64_t, uint32_t, Matrix, double,
+                                      std::array<double, 6>>;  // the geometry box that bounds a displaced draw, else zeros
     std::optional<ShadowBoundsKey> shadowBoundsKey;
     std::weak_ptr<const BufferStore> shadowPositionsOwner, shadowInstancesOwner;
     uint64_t shadowBoundsBuilds = 0;
@@ -180,6 +181,9 @@ struct DrawItem {
      *  world space, not by the object's origin (renderers/common/StandardDrawingPipeline.js:236-241), and
      *  a shape whose vertices sit off-centre ranks the other way round. `sortOrigin` wins when it is set. */
     std::optional<std::array<double, 3>> sortCenter;
+    /** The geometry's own boundingBox, local, when it has one: three's stated bounds for a mesh whose vertices a
+     *  positionNode moves (an impostor quad relocated per instance), which a virtual shadow places it by. */
+    std::optional<Box3> geometryBox;
     const shader::StandardMaterial* material = nullptr;
     /** The material's diffuse `map`, if any: the fragment samples it at `uvTransform * vec3(uv, 1)`. */
     const Texture* map = nullptr;

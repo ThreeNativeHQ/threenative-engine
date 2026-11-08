@@ -714,6 +714,12 @@ struct Renderer::FrameJob {
     std::vector<std::vector<uint64_t>> shadowKeys;
 };
 
+/** A positionNode caster with no maxPositionOffset whose geometry states its own boundingBox: that box bounds it. */
+static bool displacedByGeometryBox(const DrawItem& item) {
+    return (item.positionNode || item.nodes->shadowPositionNode()) && item.geometryBox && !item.geometryBox->isEmpty() &&
+           !(item.material && item.material->maxPositionOffset > 0) && !item.boneMatrices && !item.morphGeometry && !item.gpuJoints;
+}
+
 const std::pair<Box3, double>& DrawCache::virtualShadowBounds(const DrawItem& item) {
     // A positionNode displaces on the GPU only: this box is the bind pose either way, so it caches like a rigid
     // draw. Rebuilding it each frame walked every instance of a swaying forest (218k) for 40 ms of plan time.
@@ -723,9 +729,14 @@ const std::pair<Box3, double>& DrawCache::virtualShadowBounds(const DrawItem& it
     // Engine/Source/Runtime/Engine/Private/InstancedStaticMesh/ISMInstanceDataManager.cpp:490 adds the material's
     // MaxWorldPositionOffsetDisplacement to every instance's bounds).
     const double margin = item.material && (item.positionNode || item.nodes->shadowPositionNode()) ? item.material->maxPositionOffset : 0;
+    const bool stated = displacedByGeometryBox(item);
+    const Box3 none;
+    const Box3& box = stated ? *item.geometryBox : none;
     const ShadowBoundsKey key{item.positions, item.positions->version(), item.positions->epoch(), item.positions->writes(),
                              instances, instances ? instances->version() : 0, instances ? instances->epoch() : 0,
-                             instances ? instances->writes() : 0, item.instanceCount, item.matrixWorld, margin};
+                             instances ? instances->writes() : 0, item.instanceCount, item.matrixWorld, margin,
+                             stated ? std::array<double, 6>{box.min.x, box.min.y, box.min.z, box.max.x, box.max.y, box.max.z}
+                                    : std::array<double, 6>{}};
     // A released store's address can be reused with the same revisions.
     if (cacheable && shadowBoundsKey == key && !shadowPositionsOwner.expired() &&
         (!instances || !shadowInstancesOwner.expired())) return shadowBounds;
@@ -736,7 +747,9 @@ const std::pair<Box3, double>& DrawCache::virtualShadowBounds(const DrawItem& it
     // stress lab's 120-rig crowd about 760 ms a frame.
     const auto* rig = item.boneMatrices && !item.morphGeometry && item.shadowObject && item.shadowObject->type() == "SkinnedMesh"
         ? static_cast<const SkinnedMesh*>(item.shadowObject) : nullptr;
-    if (rig && rig->boneReachBounds(bounds)) {
+    if (stated) {
+        bounds = box;  // where the author says the positionNode puts the vertices
+    } else if (rig && rig->boneReachBounds(bounds)) {
     } else if (item.positions->scalar() == Scalar::F32) {
         for (uint64_t idx = 0; idx + 2 < item.positions->count(); idx += 3) {
             float p[3]; item.positions->read(idx * 4, p, sizeof(p));
@@ -3465,7 +3478,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 continue;
             }
             // Bind-pose bounds cannot fit a GPU-displaced caster without clipping its shadow.
-            if (item.castShadow && shadow.atlas.options().autoDepth &&
+            if (item.castShadow && shadow.atlas.options().autoDepth && !displacedByGeometryBox(item) &&
                 (item.positionNode || item.nodes->shadowPositionNode() || item.gpuJoints))
                 throw std::runtime_error("TN_VIRTUAL_SHADOW_UNSUPPORTED: automatic depth for GPU-deformed casters; supply lightDistance and depthRange");
             const auto& [bounds, diameter] = (item.cache ? *item.cache : uncachedBounds).virtualShadowBounds(item);
@@ -4317,8 +4330,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         // A positionNode caster is placed by its boxes grown by the material's maxPositionOffset (see virtualShadowBounds).
         const auto displaced = [](const DrawItem* const drawn) { return drawn->positionNode || drawn->nodes->shadowPositionNode(); };
         const auto bounded = [&](const DrawItem* const drawn) {
-            return (!displaced(drawn) || (drawn->material && drawn->material->maxPositionOffset > 0)) && !drawn->boneMatrices &&
-                   !drawn->morphGeometry;
+            return (!displaced(drawn) || (drawn->material && drawn->material->maxPositionOffset > 0) ||
+                    displacedByGeometryBox(*drawn)) && !drawn->boneMatrices && !drawn->morphGeometry;
         };
         // FG1: an instanced caster's instances by page cell of one level, counting-sorted: cell c is reached by the
         // instances list[first[c] .. first[c + 1]), ascending.
