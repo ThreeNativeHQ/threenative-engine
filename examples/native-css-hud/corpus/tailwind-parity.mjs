@@ -128,6 +128,9 @@ const PANEL_CSS = `
 .stage-prose{font-size:14px;line-height:20px;color:#e4e4e7}
 .stage-fill{width:120px;height:40px;background:#27272a}
 .stage-flex{display:flex}
+/* A containment cell's child is bigger than the probe: paint containment is only visible when there
+   is something to clip. */
+.stage-contain > .stage-fill{width:200px;height:120px}
 /* A positioned probe's child: it fills the probe only if the probe establishes a containing block. */
 .stage-escape{position:absolute;inset:0;background:#e11d48}
 /* A space or divide unit puts a gap between the probe's children; with children as wide as the
@@ -1301,8 +1304,9 @@ function cellTree(cell) {
   // gives it are laid out the way the unit is defined to act on them.
   const container = cell.container === undefined ? "" : ` stage-${cell.container}`;
   const items = cell.items === true ? " stage-items" : "";
+  const contain = cell.contain === true ? " stage-contain" : "";
   const border = cell.borderProbe === true ? " stage-border" : "";
-  const classes = probeClass(cell.companions ?? [], cell.class) + container + border + items;
+  const classes = probeClass(cell.companions ?? [], cell.class) + container + border + items + contain;
   const probe = el(
     stage.tag ?? (CONTROL_UNIT.test(cell.unit?.probe ?? "") ? "textarea" : "div"),
     { class: classes, ...stage.attrs },
@@ -1465,7 +1469,9 @@ function utilityEntry(unit, classCss, byProperty) {
       ...maskCompanions(unit.probe),
     ],
     inner:
-      /^(space|divide)$/u.test(unit.root) || unit.props.some((p) => CONTAINER_PROPS.has(p))
+      /^(space|divide)$/u.test(unit.root) ||
+      unit.props.includes("contain") ||
+      unit.props.some((p) => CONTAINER_PROPS.has(p))
         ? 2
         : undefined,
     // A grid container property needs a grid; everything else in `CONTAINER_PROPS` is flex.
@@ -1491,6 +1497,10 @@ function utilityEntry(unit, classCss, byProperty) {
     borderProbe: unit.props.some((p) => BORDER_COLOR_PROPS.test(p)) || undefined,
     // The children a spacing unit separates are boxed to stay inside the measured region.
     items: /^(space|divide)$/u.test(unit.root) || undefined,
+    // `contain: paint` (and `strict`, which implies it) clips the element's contents to its padding
+    // box — a probe with nothing overflowing cannot show that, so a contain cell's probe gets a child
+    // larger than itself.
+    contain: unit.props.includes("contain") || undefined,
     // A `position` unit is proved by a child that escapes the flow only when its parent is
     // positioned: the contrast for these cells used `position: absolute; inset: 16px`, which moved
     // the probe's *box* as well and measured a 16px edge miss on all four sides.

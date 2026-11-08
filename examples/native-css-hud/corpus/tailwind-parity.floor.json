@@ -1,10 +1,15 @@
 {
-  "passed": 273,
+  "passed": 278,
   "units": [
     "PRD-850/paint|bg|background-size|",
     "PRD-850/paint|border|border-style,border-width|",
     "PRD-850/paint|border|--tw-border-style,border-style|",
     "PRD-850/paint|collapse|visibility|",
+    "PRD-850/paint|contain|contain|",
+    "PRD-850/paint|contain|--tw-contain-size,contain|",
+    "PRD-850/paint|contain|--tw-contain-layout,contain|",
+    "PRD-850/paint|contain|--tw-contain-paint,contain|",
+    "PRD-850/paint|contain|--tw-contain-style,contain|",
     "PRD-850/paint|divide|--tw-border-style,border-style|",
     "PRD-850/paint|inset|--tw-inset-ring-shadow,box-shadow|",
     "PRD-850/paint|invisible|visibility|",
