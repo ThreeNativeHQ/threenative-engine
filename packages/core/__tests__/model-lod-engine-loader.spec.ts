@@ -16,7 +16,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 // real asset loader over an engine-shaped scene: the baked chain must reach the mesh, and a file
 // the loader cannot read as a chain must refuse by name instead of dropping its LOD.
 const engine = vi.hoisted(() => ({
-  load: undefined as undefined | ((bytes: Uint8Array) => { scene: object; animations: object[] }),
+  load: undefined as undefined | ((bytes: Uint8Array) => { scene: object; scenes: object[]; animations: object[] }),
 }));
 vi.mock("three", async (original) => ({
   ...(await original<object>()),
@@ -166,7 +166,7 @@ async function load(
   glb: Uint8Array,
   scene: Group,
 ): Promise<{ scene: Object3D; animations: object[] }> {
-  engine.load = () => ({ animations: [], scene });
+  engine.load = () => ({ animations: [], scene, scenes: [scene] });
   stubFetch(glb);
   return createAssetLoader({ basePath: "" }).model("ship.glb");
 }

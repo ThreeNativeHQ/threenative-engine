@@ -275,7 +275,11 @@ export async function bindWebEngine(
   if (loadGltf !== undefined)
     bound.__tnLoadGltf = (bytes: Uint8Array, files?: ReadonlyMap<string, Uint8Array>) => {
       const loaded = loadGltf.call(runtime, bytes, files);
-      return { scene: wrap(loaded.scene), animations: loaded.animations.map(wrap) };
+      return {
+        scene: wrap(loaded.scene),
+        scenes: loaded.scenes.map(wrap),
+        animations: loaded.animations.map(wrap),
+      };
     };
   if (tsl !== undefined && runtime.tsl !== undefined) {
     const native = tsl.exports.reflector as (...args: unknown[]) => object;

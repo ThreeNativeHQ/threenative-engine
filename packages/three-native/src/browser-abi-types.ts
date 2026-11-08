@@ -105,7 +105,12 @@ export interface IBrowserRuntime {
   loadGltf?(
     bytes: Uint8Array,
     files?: ReadonlyMap<string, Uint8Array>,
-  ): { readonly scene: IEngineRef; readonly animations: IEngineRef[] };
+  ): {
+    readonly scene: IEngineRef;
+    readonly animations: IEngineRef[];
+    /** Every scene in file order; the default scene is one of them. */
+    readonly scenes: IEngineRef[];
+  };
 }
 
 /**
@@ -249,14 +254,21 @@ export function gltfOf(
           const data = h.alloc(Math.max(1, bytes.byteLength));
           abi.HEAPU8.set(bytes, data);
           const count = h.alloc(4);
+          const sceneCount = h.alloc(4);
           // Retried once with the exact size when the model has more clips than the first guess.
           for (let capacity = 64; ; ) {
             const out = h.alloc(HANDLE * capacity);
-            const status = load(context, data, bytes.byteLength, out, capacity, count);
+            const status = load(context, data, bytes.byteLength, out, capacity, count, sceneCount);
             const needed = new DataView(abi.HEAPU8.buffer).getUint32(count, true);
             if (status === 0) {
               const refs = Array.from({ length: needed }, (_, i) => h.keyOf(out + i * HANDLE));
-              return { scene: refs[0] as IEngineRef, animations: refs.slice(1) };
+              // [default scene, ...clips, ...every scene in file order]
+              const clipsEnd = needed - new DataView(abi.HEAPU8.buffer).getUint32(sceneCount, true);
+              return {
+                scene: refs[0] as IEngineRef,
+                animations: refs.slice(1, clipsEnd),
+                scenes: refs.slice(clipsEnd),
+              };
             }
             const reason = abi.UTF8ToString(error());
             if (reason !== "TN_WASM_GLTF_CAPACITY" || needed <= capacity) throw new Error(reason);

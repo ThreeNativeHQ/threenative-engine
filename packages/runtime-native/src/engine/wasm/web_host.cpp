@@ -48,7 +48,7 @@ namespace {
 // 9 = tnw_web_clear_target, and tnw_web_render_target flags (bit 2: autoClear false).
 // 10 = tnw_web_init_texture and tnw_web_copy_texture (PRD-762); the 6 the terrain work first took is 8's.
 // 11 = tnw_web_read_mrt (a PassNode's custom MRT attachment) and tnw_web_device_limit.
-constexpr uint32_t kWebHostAbi = 11;
+constexpr uint32_t kWebHostAbi = 12;
 
 enum WebState : int { Pending = 0, Ready = 1, Failed = 2 };
 
@@ -958,16 +958,20 @@ extern "C" const char* tnw_web_load_error() { return loadFailure.c_str(); }
 
 /**
  * A GLB through the engine's own glTF loader (PRD-540), the same C++ the V8 player's loadAsset runs:
- * the default scene, then each animation clip, as handles in `context`. `out` holds `capacity`
- * handles; `count` answers how many there are (scene + clips), so a short buffer can be retried.
+ * the default scene, then each animation clip, then every scene in file order, as handles in
+ * `context`. `out` holds `capacity` handles; `count` answers how many there are (scene + clips +
+ * scenes), so a short buffer can be retried, and `scenes` how many of them are scenes. The default
+ * scene is the same handle as its entry in the scene list, as GLTFLoader's `scene` is one of its
+ * `scenes`: a model that keeps each LOD level as a named scene (`fir_lod1`) finds every level.
  * Returns 0, or 1 with tnw_web_load_error set. A model whose images did not decode is refused by
  * name, as on V8, rather than drawn without its textures.
  */
 extern "C" int tnw_web_load_gltf(tn_context_t* context, const uint8_t* bytes, uint32_t size, tn_handle_t* out,
-                                 uint32_t capacity, uint32_t* count) {
+                                 uint32_t capacity, uint32_t* count, uint32_t* scenes) {
     loadFailure.clear();
 #if TN_WEB_GLTF
-    if (!context || !bytes || !size || !count) return loadFailure = "TN_WASM_GLTF: invalid arguments", 1;
+    if (!context || !bytes || !size || !count || !scenes)
+        return loadFailure = "TN_WASM_GLTF: invalid arguments", 1;
     gltf::LoadOptions options;
     options.readUri = [](const std::string& uri) -> std::span<const uint8_t> {
         const auto found = modelFiles.find(uri);
@@ -990,14 +994,21 @@ extern "C" int tnw_web_load_gltf(tn_context_t* context, const uint8_t* bytes, ui
             if (map && !map->hasImage()) *static_cast<bool*>(result) = true;
     }, &undecoded);
     if (undecoded) return loadFailure = "TN_NATIVE_GLTF_IMAGE_UNSUPPORTED: the model has undecoded images", 1;
-    *count = 1 + static_cast<uint32_t>(loaded.animations.size());
+    const auto clips = static_cast<uint32_t>(loaded.animations.size());
+    *scenes = static_cast<uint32_t>(loaded.scenes.size());
+    *count = 1 + clips + *scenes;
     if (!out || capacity < *count) return loadFailure = "TN_WASM_GLTF_CAPACITY", 1;
-    out[0] = tn::abi::shareObject(context, "Group", loaded.scene);
-    for (uint32_t i = 0; i < loaded.animations.size(); ++i)
+    for (uint32_t i = 0; i < clips; ++i)
         out[1 + i] = tn::abi::shareObject(context, "AnimationClip", loaded.animations[i]);
+    bool shared = false;
+    for (uint32_t i = 0; i < *scenes; ++i) {
+        out[1 + clips + i] = tn::abi::shareObject(context, "Group", loaded.scenes[i]);
+        if (loaded.scenes[i] == loaded.scene) out[0] = out[1 + clips + i], shared = true;
+    }
+    if (!shared) out[0] = tn::abi::shareObject(context, "Group", loaded.scene);
     return 0;
 #else
-    (void)context; (void)bytes; (void)size; (void)out; (void)capacity; (void)count;
+    (void)context; (void)bytes; (void)size; (void)out; (void)capacity; (void)count; (void)scenes;
     loadFailure = "TN_WASM_GLTF_UNAVAILABLE: this web engine was built without cgltf";
     return 1;
 #endif
