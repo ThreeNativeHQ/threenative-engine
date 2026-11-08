@@ -2338,6 +2338,20 @@ impl BaseDocument {
         }
 
         let node = self.get_node(node_id)?;
+        // A `display: none` element has no box, and CSSOM reports a zero rect at the origin for it —
+        // not the position it last had. Taffy leaves a stale location with a zero size (measured:
+        // `[0, 506, 0, 0]` for a hidden probe in the parity scene's `hidden` cell, against
+        // Chromium's `[0, 0, 0, 0]`), which the geometry bar then reads as a 506px edge miss.
+        if node.primary_styles().is_some_and(|style| {
+            style.clone_display().inside() == DisplayInside::None
+        }) {
+            return Some(BoundingRect {
+                x: 0.0,
+                y: 0.0,
+                width: 0.0,
+                height: 0.0,
+            });
+        }
         let pos = node.absolute_position(0.0, 0.0);
         // `absolute_position` subtracts a node's *own* scroll offset as well as its ancestors', which
         // is what paint wants for the node's contents: a scrolled box paints its subtree up by its

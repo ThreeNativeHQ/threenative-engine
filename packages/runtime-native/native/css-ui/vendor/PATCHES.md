@@ -89,7 +89,7 @@ hunk 3 is ~94, almost all of it `draw_inline_decorations`, and deletes the 40-li
   `tests/inline_box.rs::an_inline_paints_its_border_and_its_padding_box`, which fails against the
   previous vendor sources.
 
-## `blitz-dom-0.3.0-beta.2` — 727 added code lines
+## `blitz-dom-0.3.0-beta.2` — 740 added code lines
 
 ### 1. hoisted (`z-index`) children were painted one frame late, at the wrong offset
 
@@ -468,6 +468,17 @@ to delete once the query worked.
   0.914/0.96 → 0.977, and `line-through` passes (0.9823). The 32-fixture browser oracle is unchanged
   (28/28) and the crate's own suite is green. `overline` is still 0.8544: the snap did not change its
   offset, which is a separate measurement (the em-box top) and the next thing to look at there.
+
+### 21. a `display: none` element reported the position it last had
+
+* **Where:** `src/document.rs` (`untransformed_client_rect`: a `display: none` element answers a zero
+  rect at the origin).
+* **Why:** taffy leaves a stale location with a zero size, so `getBoundingClientRect()` on a hidden
+  element returned e.g. `[0, 506, 0, 0]`. CSSOM says a box-less element's rect is all zeros, and the
+  parity meter's geometry bar read the stale `y` as a 506 px edge miss on a cell whose pixels already
+  matched to 1.0.
+* **Proves it:** the parity scene's `hidden` cell passes (1.0 pixels, 0 edge misses). The crate test
+  suite and the 32-fixture browser oracle are unchanged.
 
 ## `parley-0.11.1` — 240 added code lines
 

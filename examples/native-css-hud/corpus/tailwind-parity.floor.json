@@ -1,5 +1,5 @@
 {
-  "passed": 248,
+  "passed": 249,
   "units": [
     "PRD-850/paint|bg|background-size|",
     "PRD-850/paint|border|border-style,border-width|",
@@ -93,6 +93,7 @@
     "PRD-850/misc|grid|grid-template-rows|",
     "PRD-850/misc|grow|flex-grow|",
     "PRD-850/misc|h|height|",
+    "PRD-850/misc|hidden|display|",
     "PRD-850/misc|items|align-items|",
     "PRD-850/misc|justify|justify-content|",
     "PRD-850/misc|justify|justify-items|",

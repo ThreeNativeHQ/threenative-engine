@@ -125,6 +125,8 @@ const PANEL_CSS = `
 .stage-prose{font-size:14px;line-height:20px;color:#e4e4e7}
 .stage-fill{width:120px;height:40px;background:#27272a}
 .stage-flex{display:flex}
+/* A positioned probe's child: it fills the probe only if the probe establishes a containing block. */
+.stage-escape{position:absolute;inset:0;background:#e11d48}
 /* A space or divide unit puts a gap between the probe's children; with children as wide as the
    probe, the second one lands outside the measured region and the unit measures nothing. */
 .stage-items{display:flex;width:100%}
@@ -940,7 +942,9 @@ function contrastExtras(unit) {
 /** Values a contrast should prefer for one property, best first, because keyword swaps can be invisible. */
 const PREFERRED_CONTRAST = {
   display: ["inline", "inline-block", "flow-root", "contents"],
-  position: ["absolute", "fixed", "relative"],
+  // `absolute` alone would need offsets to differ, and offsets move the probe's own box; `relative`
+  // with no offsets is what the escape child distinguishes.
+  position: ["relative"],
   // `nowrap` preserves a run of spaces as `pre` does, so a `white-space` unit measured against it
   // changed nothing; `normal` is the value that collapses, and it is the initial one.
   "white-space": ["normal"],
@@ -1301,6 +1305,9 @@ function cellTree(cell) {
     { class: classes, ...stage.attrs },
     ...probeInner(stage, cell, stage.inner ?? cell.inner),
   );
+  // A positioned probe gets an absolutely-placed child: it fills the probe when the probe is
+  // positioned and escapes to the nearest positioned ancestor when it is not.
+  if (cell.escape === true) probe.children.push(el("div", { class: "stage-escape" }));
   let children;
   if (cell.classOn === "scroller") {
     // The scroller is the element the unit styles, so it is the probe; the target the driver scrolls
@@ -1462,6 +1469,10 @@ function utilityEntry(unit, classCss, byProperty) {
     borderProbe: unit.props.some((p) => BORDER_COLOR_PROPS.test(p)) || undefined,
     // The children a spacing unit separates are boxed to stay inside the measured region.
     items: /^(space|divide)$/u.test(unit.root) || undefined,
+    // A `position` unit is proved by a child that escapes the flow only when its parent is
+    // positioned: the contrast for these cells used `position: absolute; inset: 16px`, which moved
+    // the probe's *box* as well and measured a 16px edge miss on all four sides.
+    escape: unit.props.includes("position") || undefined,
     container: unit.props.some((p) => CONTAINER_PROPS.has(p))
       ? /grid|^justify-items/u.test(unit.props.join(" ")) || /^grid-/u.test(unit.probe)
         ? "grid"
