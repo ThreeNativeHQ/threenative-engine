@@ -222,7 +222,7 @@ describe("createWebEnginePlugin", () => {
     await expect(transform(source ?? "", { loader: "js", format: "esm" })).resolves.toBeDefined();
   });
 
-  it("loads only the threaded engine, and refuses a page or a pool without worker threads", async () => {
+  it("refuses a page or a pool without worker threads everywhere but a Vite build", async () => {
     const root = await project(false);
     const wasm = path.join(root, "engine/tn-native-engine-web.mjs");
     await mkdir(path.dirname(wasm), { recursive: true });
@@ -237,6 +237,21 @@ describe("createWebEnginePlugin", () => {
     expect(loaded).not.toContain(`import(${JSON.stringify(wasm)})`);
     expect(loaded).toContain("globalThis.crossOriginIsolated !== true");
     expect(loaded).toContain("TN_WEB_THREADS_OFF: the engine's job pool started no worker thread");
+    // A shipped game loads anyway (owner, 2026-11-08): no isolation means the single-thread engine and
+    // a warning that names the fix, never a refusal.
+    const vite = createWebEnginePlugin({ engine: "threenative", wasm });
+    vite.configResolved({ root, command: "build" });
+    const shipped = (await vite.load(WEB_ENGINE_ID)) ?? "";
+    expect(shipped).toContain(`? await import(${JSON.stringify(threads)})`);
+    expect(shipped).toContain(`: await import(${JSON.stringify(wasm)})`);
+    expect(shipped).toContain(
+      "console.warn(`TN_WEB_THREADS_OFF: the engine runs without worker threads",
+    );
+    expect(shipped).toContain('on itch.io enable "SharedArrayBuffer support"');
+    expect(shipped).not.toContain("throw new Error");
+    const dev = createWebEnginePlugin({ engine: "threenative", wasm });
+    dev.configResolved({ root, command: "serve" });
+    expect(await dev.load(WEB_ENGINE_ID)).toContain("throw new Error");
   });
 
   it("loads the Wasm engine from an explicit module path when one is given", async () => {

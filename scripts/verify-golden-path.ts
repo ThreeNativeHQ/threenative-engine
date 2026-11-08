@@ -1132,8 +1132,9 @@ const STATIC_TYPES: Readonly<Record<string, string>> = {
 
 /**
  * A shipped game must start the engine with its worker threads on a host that sends no COOP/COEP
- * headers (itch.io, GitHub Pages, a plain static server). `vite preview` sends them, so the `test`
- * layer cannot see this: serve `dist/` with none and read the engine's thread report.
+ * headers (GitHub Pages, a plain static server), and still load, single-threaded and warned, where
+ * nothing can isolate it. `vite preview` sends the headers, so the `test` layer cannot see this:
+ * serve `dist/` with none and read the engine's thread report in both arms.
  */
 export async function assertStaticHostThreads(dist: string, timeoutMs = 180_000): Promise<string> {
   const server = createHttpServer((request, response) => {
@@ -1159,35 +1160,47 @@ export async function assertStaticHostThreads(dist: string, timeoutMs = 180_000)
   const { chromium } = await import("@playwright/test");
   const { WEBGPU_BROWSER_ARGS } = await import("../packages/playtest/dist/runner/index.js");
   const browser = await chromium.launch({ headless: false, args: [...WEBGPU_BROWSER_ARGS] });
-  try {
-    const page = await browser.newPage();
-    const threads = new Promise<string>((resolve, reject) => {
-      const refuse = (text: string): void => {
-        if (text.includes("TN_WEB_THREADS_OFF")) reject(new Error(text));
-      };
-      page.on("pageerror", (error) => refuse(error.message));
+  // A page error fails either arm; the thread report and the warning decide.
+  const load = async (
+    url: string,
+  ): Promise<{ report: string; warned: boolean; isolated: boolean }> => {
+    // A fresh context, so the second arm never inherits the first arm's service worker.
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    let warned = false;
+    const report = await new Promise<string>((resolve, reject) => {
+      page.on("pageerror", (error) => reject(error));
       page.on("console", (message) => {
         const text = message.text();
-        refuse(text);
-        const report = /^TN_FRAME_BUDGET:.*"threads":"([^"]*)"/u.exec(text)?.[1];
-        if (report !== undefined) resolve(report);
+        if (text.includes("TN_WEB_THREADS_OFF")) warned = true;
+        const threads = /^TN_FRAME_BUDGET:.*"threads":"([^"]*)"/u.exec(text)?.[1];
+        if (threads !== undefined) resolve(threads);
       });
       setTimeout(
         () =>
           reject(new Error(`no TN_FRAME_BUDGET window with a thread report in ${timeoutMs} ms`)),
         timeoutMs,
       ).unref();
+      page.goto(url).catch(reject);
     });
-    await page.goto(`http://127.0.0.1:${port}/`);
-    const report = await threads;
-    if (!report.startsWith("on"))
+    const isolated = (await page.evaluate(() => globalThis.crossOriginIsolated)) === true;
+    await context.close();
+    return { report, warned, isolated };
+  };
+  try {
+    const threaded = await load(`http://127.0.0.1:${port}/`);
+    if (!threaded.report.startsWith("on") || !threaded.isolated || threaded.warned)
       throw new Error(
-        `TN_WEB_THREADS_OFF: the engine reported threads "${report}" on a header-less host.`,
+        `TN_WEB_THREADS_OFF: on a header-less https-or-localhost host the engine must start its worker threads; got ${JSON.stringify(threaded)}.`,
       );
-    if ((await page.evaluate(() => globalThis.crossOriginIsolated)) !== true)
+    // `?tnIsolation=0` skips the service worker, as a host it cannot isolate would (plain http on a
+    // LAN address, an itch.io frame): the game still loads, single-threaded, and says why.
+    const fallback = await load(`http://127.0.0.1:${port}/?tnIsolation=0`);
+    if (fallback.report.startsWith("on") || fallback.isolated || !fallback.warned)
       throw new Error(
-        "TN_WEB_THREADS_OFF: the page is not cross-origin isolated on a header-less host.",
+        `TN_WEB_THREADS_FALLBACK: a page the worker cannot isolate must load single-threaded with a TN_WEB_THREADS_OFF warning; got ${JSON.stringify(fallback)}.`,
       );
+    const report = `${threaded.report}; unisolated fallback ${fallback.report}`;
     return report;
   } finally {
     await browser.close();

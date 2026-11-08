@@ -10,7 +10,10 @@ export interface IWebBrandVitePlugin {
   >;
   resolveId(source: string, importer?: string): string | null;
   load(id: string): Promise<string | null>;
-  configResolved(config: { readonly root: string }): Promise<void>;
+  configResolved(config: {
+    readonly root: string;
+    readonly command?: "build" | "serve";
+  }): Promise<void>;
   transformIndexHtml(html: string): string;
   configureServer(server: IMiddlewareServer): void;
   configurePreviewServer(server: IMiddlewareServer): void;
@@ -244,7 +247,11 @@ export function createWebBrandPlugin(): IWebBrandVitePlugin {
       // script inside a non-async function, which the engine module's top-level await cannot parse
       // in, and its host brings its own engine.
       if (config.engine === "threenative" && process.env.THREENATIVE_NATIVE_BUNDLE === undefined)
-        engine = createWebEnginePlugin({ root, engine: config.engine });
+        engine = createWebEnginePlugin({
+          root,
+          engine: config.engine,
+          strict: resolved.command !== "build",
+        });
     },
     transformIndexHtml(html) {
       if (config === undefined) throw new Error("TN_WEB_BRAND_CONFIG_MISSING");
