@@ -150,8 +150,12 @@ const PANEL_CSS = `
    contrast below 20 paints under it, which is what makes the declaration visible at all. */
 .stage-trail-over{position:relative;margin-left:40px;margin-top:-40px;z-index:20}
 .stage-items > .stage-fill{width:40px;height:20px;flex:none}
-/* A colour-only border unit needs a border to colour; the dashed grey is what the unit must beat. */
+/* A colour-only border unit needs a border to colour; the dashed grey is what the unit must beat.
+   Measured: dropping the colour here to let the utility win costs the five border-width/style cells,
+   which are worth more than the one colour cell it gains. */
 .stage-border{border-width:2px;border-style:dashed;border-color:#52525b}
+/* An aspect ratio loses to an explicit height, so the probe states one dimension only. */
+.stage-aspect{height:auto}
 /* A backdrop filter needs something to filter and something translucent to see it through: a
    saturated band behind the cell and a see-through probe over it. */
 .stage-backdrop{width:100%;height:100%;color:#fafafa;font-size:13px;line-height:16px;padding:2px;
@@ -1359,8 +1363,15 @@ function cellTree(cell) {
   // above every non-positioned box: a positioned probe is painted in DOM order instead, so the pointer
   // reaches the one it was aimed at.
   const inline = /^m(r|e)-/u.test(cell.unit?.probe ?? "") ? " stage-inline" : "";
+  const aspect = cell.aspect === true ? " stage-aspect" : "";
   const classes =
-    probeClass(cell.companions ?? [], cell.class) + container + border + items + contain + inline;
+    probeClass(cell.companions ?? [], cell.class) +
+    container +
+    border +
+    items +
+    contain +
+    inline +
+    aspect;
   const probe = el(
     /^(transition|duration|delay|ease)/u.test(cell.unit?.probe ?? "")
       ? "button"
@@ -1537,6 +1548,9 @@ function utilityEntry(unit, classCss, byProperty) {
       ...EXTRA_STAGING.filter(([pattern]) => pattern.test(unit.probe)).flatMap(
         ([, classes]) => classes,
       ),
+      ...(unit.props.some((p) => p === "transform-origin" || p === "transform-box")
+        ? ["scale-50"]
+        : []),
       ...maskCompanions(unit.probe),
     ],
     inner:
@@ -1567,7 +1581,11 @@ function utilityEntry(unit, classCss, byProperty) {
     classOn: /^scroll-p/u.test(unit.probe) ? "scroller" : undefined,
     borderProbe: unit.props.some((p) => BORDER_COLOR_PROPS.test(p)) || undefined,
     // The children a spacing unit separates are boxed to stay inside the measured region.
-    items: /^(space|divide)$/u.test(unit.root) || /^order-/u.test(unit.probe) || undefined,
+    items:
+      /^(space|divide)$/u.test(unit.root) ||
+      /^order-/u.test(unit.probe) ||
+      /^(flex|grow|shrink|gap|self|justify-self|place-self)/u.test(unit.probe) ||
+      undefined,
     // An *end* margin (bottom, right, inline-end, block-end) moves the next box, not this one: with
     // the probe alone in its stage the declaration has nothing to shift and the cell reads "does
     // nothing". `order` needs a second item to be ordered against, and `z-index` two boxes to order.
@@ -1575,16 +1593,26 @@ function utilityEntry(unit, classCss, byProperty) {
       /^m(r|e|b|be|bs|block|inline)-/u.test(unit.probe) ||
       /^order-/u.test(unit.probe) ||
       /^z-/u.test(unit.probe) ||
+      /^(flex|grow|shrink|gap)/u.test(unit.probe) ||
       undefined,
     zOverlap: /^z-/u.test(unit.probe) || undefined,
-    // `contain: paint` (and `strict`, which implies it) clips the element's contents to its padding
-    // box — a probe with nothing overflowing cannot show that, so a contain cell's probe gets a child
-    // larger than itself.
-    contain: unit.props.includes("contain") || undefined,
     // A drop shadow's colour is usually near-black, and the cell's own background is `#18181b`: the
     // shadow is painted but invisible on it, so the cell cannot tell a correct engine from one that
     // dropped the declaration.
-    lightStage: /^(drop|inset)-?shadow|^shadow/u.test(unit.probe) || undefined,
+    lightStage: /^(drop|inset)-?shadow|^shadow|^text-shadow/u.test(unit.probe) || undefined,
+    // `overflow: clip` cuts a child at the padding box, so a probe with nothing overflowing cannot
+    // show it — the same oversized child that proves `contain: paint` proves this.
+    contain:
+      unit.props.includes("contain") ||
+      unit.props.some((p) => p.startsWith("overflow")) ||
+      undefined,
+    // `aspect-ratio` is ignored when both dimensions are set, and the staged probe sets both.
+    aspect: unit.props.includes("aspect-ratio") || undefined,
+    // `transform-origin` and `transform-box` move nothing until something transforms.
+    origin: unit.props.some((p) => p === "transform-origin" || p === "transform-box") || undefined,
+    // A flex or grid child's size and alignment are decided against its siblings.
+    siblings:
+      /^(flex|grow|shrink|basis|gap|self|justify-self|place-self)/u.test(unit.probe) || undefined,
     // `caption-*` moves a table's caption, so the staged table needs one.
     caption: unit.props.includes("caption-side") || undefined,
     // A `position` unit is proved by a child that escapes the flow only when its parent is

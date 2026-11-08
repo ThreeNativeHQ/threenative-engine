@@ -50,6 +50,26 @@ Run the meter per group and fix what fails. Expected engine work:
 
 ## Decisions
 
+**Seven misc cells needed a second item, one dimension, or something to transform.** `flex`, `gap-40`,
+`shrink`, `self-end` and `justify-self-end` are decided against a *sibling*, so those cells now stage a
+flex row with a trailing item; `aspect-square` was ignored because the staged probe sets both width and
+height, so it states one; `origin-right` moves nothing until something transforms, so it stages a
+`scale-50` companion. Measured: misc 144 → 146, and the whole scene 307 → **311 of 503**.
+
+Two measured trade-offs, both taken deliberately:
+
+- `.stage-border` keeps its dashed grey. Removing its colour lets a border-colour unit win the cascade
+  as intended, but it costs the five border-*width*/style cells that the colour is what discriminates —
+  five for one is the wrong way round.
+- `basis` was dropped from the sibling staging: `flex-basis` needs a *constrained* flex line, and a row
+  with one extra item is not one, so it lost the cell it used to pass.
+
+Three type cells (`truncate` 0.9897, `wrap-anywhere` 0.9933, `break-words`) sit within a thousandth of
+the 0.99 bar and pass in a type-only run but not in a full one: marginal, not regressions, and recorded
+here rather than chased.
+
+## Decisions
+
 **A break or an ellipsis is measured with wide identical glyphs, not a dense word.** The earlier run was
 a long word: `truncate` read 0.9747 and `wrap-anywhere` 0.9260, and the diff was spread across the whole
 line — which is what this engine's glyph anti-aliasing does to *any* dense run (0.982 is its floor), not
