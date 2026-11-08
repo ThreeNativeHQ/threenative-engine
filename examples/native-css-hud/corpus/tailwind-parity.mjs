@@ -111,7 +111,12 @@ const PANEL_CSS = `
 .stage-col{display:flex;flex-direction:column;gap:6px;width:100%}
 .stage-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;width:100%}
 .stage-scroll{width:100%;height:${CELL_H - 44}px;overflow:auto}
-.stage-scroll-body{height:600px;display:flex;flex-direction:column;gap:44px}
+/* Both axes overflow: a scroll cell's inline scroll-margin units only move a scroller that can
+   scroll inline, and a body the width of its scroller has nothing to scroll horizontally. */
+.stage-scroll-body{height:600px;min-width:600px;display:flex;flex-direction:column;gap:44px}
+/* A scrollIntoView cell's content starts right of the scrollport, so an inline scroll-margin has an
+   offset to subtract from: at x = 0 every inline margin clamps to the same zero. */
+.stage-scroll-deep{padding-left:240px}
 .stage-table{border-collapse:separate;border-spacing:0;width:100%}
 .stage-table td,.stage-table th{border:1px solid #52525b;padding:3px 5px;color:#e4e4e7;font-size:13px}
 .stage-prose{font-size:14px;line-height:20px;color:#e4e4e7}
@@ -1102,7 +1107,21 @@ function layoutStage(cell, probe, classes, before, after) {
       el(
         "div",
         { class: "stage-scroll" },
-        el("div", { class: "stage-scroll-body" }, ...siblings, ...fillers(2)),
+        el(
+          "div",
+          {
+            class:
+              cell.scrollInto === true
+                ? "stage-scroll-body stage-scroll-deep"
+                : "stage-scroll-body",
+          },
+          // A `scrollIntoView` cell's probe has to be *below* the fold: at the top of the content,
+          // scrolling to it is a no-op and `scroll-margin` cannot be seen. Four fillers put it far
+          // enough down that the margin changes where the scroller stops.
+          ...(cell.scrollInto === true
+            ? [...fillers(4), ...siblings]
+            : [...siblings, ...fillers(2)]),
+        ),
       ),
     ];
   }
@@ -1295,6 +1314,7 @@ function utilityEntry(unit, classCss, byProperty) {
         ? 2
         : undefined,
     // A grid container property needs a grid; everything else in `CONTAINER_PROPS` is flex.
+    scrollInto: /^scroll-m/u.test(unit.probe) || undefined,
     borderProbe: unit.props.some((p) => BORDER_COLOR_PROPS.test(p)) || undefined,
     container: unit.props.some((p) => CONTAINER_PROPS.has(p))
       ? /grid|^justify-items/u.test(unit.props.join(" ")) || /^grid-/u.test(unit.probe)
@@ -1312,8 +1332,12 @@ function utilityEntry(unit, classCss, byProperty) {
     // `scroll-m*`/`scroll-p*`/`snap-*`/`sticky` change nothing until something scrolls, so the cell
     // is captured after one wheel of the same size on both subjects. A caret only paints in a
     // focused field, so a control unit is captured after the Tab that focuses it.
-    drive:
-      layout === "scroll"
+    // `scroll-m*` moves a scroller only when something scrolls *to* the element, so the cell is
+    // captured after a `scrollIntoView` on the probe — the same step on both subjects. The rest of
+    // the scroll family changes under a wheel.
+    drive: /^scroll-m/u.test(unit.probe)
+      ? [{ t: "scrollIntoView", id: undefined }]
+      : layout === "scroll"
         ? [{ t: "wheel", at: "probe", dy: 140 }]
         : CONTROL_UNIT.test(unit.probe)
           ? [{ t: "key", key: "Tab" }]
@@ -1570,34 +1594,27 @@ async function serveWeb() {
 /** One Playwright action for one step of the corpus's input grammar. */
 async function driveStep(page, step) {
   if (step.t === "key") return void (await page.keyboard.press(step.key));
+  if (step.t === "scrollIntoView") {
+    // The same request the engine gets: align the element's scroll-margin box with every scrollable
+    // ancestor's scroll-padding edge. `block: "start"` is the alignment both sides implement; the
+    // scene's `scroll-m*` units are what it is measuring.
+    await page.evaluate(
+      (id) =>
+        document
+          .querySelector(`[data-n="${id}"]`)
+          ?.scrollIntoView({ block: "start", inline: "start" }),
+      step.id,
+    );
+    return void (await settleScroll(page));
+  }
   if (step.t === "advance") return void (await page.waitForTimeout(step.ms));
   if (step.t === "wheel") {
     // A real wheel needs the pointer over the scroller first: Chromium routes it to the element
     // under the cursor, which is how the engine's `wheel` takes its position too.
     await page.mouse.move(step.x, step.y);
     await page.mouse.wheel(step.dx ?? 0, step.dy);
-    // Chromium applies a wheel's scroll on the compositor, not in the event's own task: measured on
-    // a `.stage-scroll` cell, `scrollTop` is still 0 when the wheel resolves and 140 two animation
-    // frames later. The engine scrolls inside the event and re-renders, so a capture taken straight
-    // after the wheel compares a scrolled frame against an unscrolled one — which is what the family
-    // read as a 140 px wheel-routing difference. Wait for every scroll offset to stop moving.
-    return void (await page.evaluate(async () => {
-      const offsets = () =>
-        [...document.querySelectorAll("*")].map((el) => el.scrollTop + el.scrollLeft).join(",");
-      // Stability is only meaningful *after* the scroll has begun: the first two frames after the
-      // wheel are both still 0, so a one-frame-stable test returns before anything moved. Four
-      // frames of patience, then two consecutive identical reads, is the shortest wait that cannot
-      // mistake "not started" for "settled".
-      let last = offsets();
-      let stable = 0;
-      for (let frame = 0; frame < 30; frame += 1) {
-        await new Promise((resolve) => requestAnimationFrame(resolve));
-        const next = offsets();
-        stable = frame >= 3 && next === last ? stable + 1 : 0;
-        last = next;
-        if (stable >= 2) return;
-      }
-    }));
+    await settleScroll(page);
+    return undefined;
   }
   if (step.t !== "pointer") return undefined;
   if (step.type === "move") return void (await page.mouse.move(step.x, step.y));
@@ -1605,6 +1622,34 @@ async function driveStep(page, step) {
   if (step.type === "up") return void (await page.mouse.up());
   if (step.type === "cancel") return void (await page.mouse.move(0, 0));
   return undefined;
+}
+
+/**
+ * Wait until every scroll offset in the page has stopped moving.
+ *
+ * Chromium applies a scroll on the compositor, not in the task that asked for it: measured on a
+ * `.stage-scroll` cell, `scrollTop` is still 0 when a wheel or a `scrollIntoView` resolves and 140
+ * two animation frames later. The engine scrolls inside the call and re-renders, so a capture taken
+ * straight after the request compares a scrolled frame against an unscrolled one — which is what the
+ * scroll family read as a wheel-routing difference, and then as a nondeterministic paint.
+ *
+ * Stability is only meaningful *after* the scroll has begun: the first two frames after the request
+ * are both still 0. Four frames of patience, then two consecutive identical reads.
+ */
+async function settleScroll(page) {
+  await page.evaluate(async () => {
+    const offsets = () =>
+      [...document.querySelectorAll("*")].map((el) => el.scrollTop + el.scrollLeft).join(",");
+    let last = offsets();
+    let stable = 0;
+    for (let frame = 0; frame < 30; frame += 1) {
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      const next = offsets();
+      stable = frame >= 3 && next === last ? stable + 1 : 0;
+      last = next;
+      if (stable >= 2) return;
+    }
+  });
 }
 
 /** Playwright steps for a cell's driver, at coordinates the caller measured on the engine's behalf. */
@@ -1620,7 +1665,7 @@ async function driveWeb(page, steps) {
  * both subjects: the browser's animations are paused and given a `currentTime`, and the engine is
  * advanced by `drive.json`, so the two sides compare the same frame at the same time.
  */
-const MOTION_SAMPLES = [0, 250, 500, 750, 1000];
+const motionSamples = [0, 250, 500, 750, 1000];
 
 /** The two subjects' handles, so a relaunched browser is the one every capture uses. */
 let site;
@@ -1813,9 +1858,9 @@ function crop(png, box) {
  * a missing 40-level colour change still scores SSIM 0.987 there. The probe's own box is where the
  * unit lands.
  */
-const PROBE_PAD = 20;
+const probePad = 20;
 /** The label band at the top of a cell: the region never reaches into it, so no region holds glyphs. */
-const LABEL_H = 26;
+const labelH = 26;
 
 function measureRegion(cellBox, probeBox) {
   if (probeBox === undefined) return cellBox;
@@ -1824,22 +1869,22 @@ function measureRegion(cellBox, probeBox) {
   // first cell's label band and compares glyphs, which measured 0.0 for a unit that is right on both
   // subjects. The cell's own stage is what such a unit is measured over.
   if (probeBox.w < 1 || probeBox.h < 1)
-    return { x: cellBox.x, y: cellBox.y + LABEL_H, w: cellBox.w, h: cellBox.h - LABEL_H };
+    return { x: cellBox.x, y: cellBox.y + labelH, w: cellBox.w, h: cellBox.h - labelH };
   // A probe scrolled out of its cell (`sticky`, `scroll-*`, `snap-*`: the driver's wheel moves it
   // above the cell's own box) leaves a region clamped to a sliver, and an SSIM over one row of
   // pixels is `NaN` — which the report printed as 0.0 for all 31 scroll cells. When nothing of the
   // probe is inside the cell, the cell's stage is what the unit changed.
-  const stage = { x: cellBox.x, y: cellBox.y + LABEL_H, w: cellBox.w, h: cellBox.h - LABEL_H };
+  const stage = { x: cellBox.x, y: cellBox.y + labelH, w: cellBox.w, h: cellBox.h - labelH };
   const inside =
     probeBox.y + probeBox.h > stage.y &&
     probeBox.y < stage.y + stage.h &&
     probeBox.x + probeBox.w > stage.x &&
     probeBox.x < stage.x + stage.w;
   if (!inside) return stage;
-  const left = Math.max(cellBox.x, probeBox.x - PROBE_PAD);
-  const top = Math.max(cellBox.y + LABEL_H, probeBox.y - PROBE_PAD);
-  const right = Math.min(cellBox.x + cellBox.w, probeBox.x + probeBox.w + PROBE_PAD);
-  const bottom = Math.min(cellBox.y + cellBox.h, probeBox.y + probeBox.h + PROBE_PAD);
+  const left = Math.max(cellBox.x, probeBox.x - probePad);
+  const top = Math.max(cellBox.y + labelH, probeBox.y - probePad);
+  const right = Math.min(cellBox.x + cellBox.w, probeBox.x + probeBox.w + probePad);
+  const bottom = Math.min(cellBox.y + cellBox.h, probeBox.y + probeBox.h + probePad);
   return { x: left, y: top, w: Math.max(1, right - left), h: Math.max(1, bottom - top) };
 }
 
@@ -1888,7 +1933,7 @@ function blindCells(panel, samples) {
  */
 async function measureMotion(panel, dir, drive) {
   const samples = [];
-  for (const sample of MOTION_SAMPLES) {
+  for (const sample of motionSamples) {
     const web = await webPanel(panel, { drive, sample });
     const native = cratePanel(panel, join(dir, `native-t${sample}`), { drive, sample });
     if (native.refused !== undefined) {
@@ -1900,7 +1945,7 @@ async function measureMotion(panel, dir, drive) {
     }
     const stripped = await webPanel(panel, { drive, strip: true, sample });
     samples.push({ sample, web, native, vacuous: vacuityOf(panel, web, stripped) });
-    if (sample === MOTION_SAMPLES.at(-1)) {
+    if (sample === motionSamples.at(-1)) {
       writeFileSync(join(dir, "web", "frame.png"), PNG.sync.write(web.png));
       writeFileSync(join(dir, "native", "frame.png"), PNG.sync.write(native.png));
     }
@@ -2043,6 +2088,7 @@ function driverFor(cell, boxes) {
   const x = Math.round(box.x + box.w / 2);
   const y = Math.round(box.y + box.h / 2);
   return cell.drive.map((step) => {
+    if (step.t === "scrollIntoView") return { t: "scrollIntoView", id: cell.probe };
     if (step.at !== "probe") return step;
     if (step.t === "wheel") return { t: "wheel", x, y, dx: step.dx ?? 0, dy: step.dy };
     return { t: "pointer", type: step.type, x, y };

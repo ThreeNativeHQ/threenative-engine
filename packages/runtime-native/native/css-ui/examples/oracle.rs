@@ -122,6 +122,13 @@ fn drive_steps(ui: &mut CssUi, drive: &str, width: u32, height: u32) -> Result<(
                     .ok_or_else(|| "advance: no \"ms\"".to_string())?;
                 ui.set_time(ui.time() + ms);
             }
+            "scrollIntoView" => {
+                let id = step
+                    .get("id")
+                    .and_then(Value::as_u64)
+                    .ok_or_else(|| "scrollIntoView: no \"id\"".to_string())?;
+                ui.scroll_into_view(id as u32);
+            }
             "wheel" => {
                 ui.wheel(
                     (step.get("x").and_then(Value::as_f64).unwrap_or(0.0) / width as f64) as f32,

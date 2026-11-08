@@ -89,7 +89,7 @@ hunk 3 is ~94, almost all of it `draw_inline_decorations`, and deletes the 40-li
   `tests/inline_box.rs::an_inline_paints_its_border_and_its_padding_box`, which fails against the
   previous vendor sources.
 
-## `blitz-dom-0.3.0-beta.2` — 674 added code lines
+## `blitz-dom-0.3.0-beta.2` — 727 added code lines
 
 ### 1. hoisted (`z-index`) children were painted one frame late, at the wrong offset
 
@@ -371,7 +371,7 @@ hunk 3 is ~94, almost all of it `draw_inline_decorations`, and deletes the 40-li
   scroll` stops reporting the 140 px lie: 30 of 31 cells are now honestly "does not discriminate"
   (they need a `scrollIntoView` driver or a snap implementation) instead of a false failure.
 
-## `stylo-0.20.0` — 118 added code lines, and `stylo_atoms-0.20.0` — 4 added lines
+## `stylo-0.20.0` — 118 added code lines and 22 TOML lines, and `stylo_atoms-0.20.0` — 4 added lines
 
 ### 1. the servo build had no `prefers-reduced-motion`, and no way to carry the preference
 
@@ -391,6 +391,18 @@ hunk 3 is ~94, almost all of it `draw_inline_decorations`, and deletes the 40-li
   `set_env(false, true)`, and blue again when the preference is cleared; it fails against the
   previous vendor sources. The parity meter's `--family PRD-847` moves from 1/5 to **3/5**:
   `motion-safe:bg-red-500` and `motion-reduce:bg-red-500` go from 0.6492 to 1.0.
+
+### 3. `scroll-margin` and `scroll-padding` were Gecko-only, so the servo build never parsed them
+
+* **Where:** `properties/longhands.toml` (16 `scroll-margin-*`/`scroll-padding-*` longhands lose
+  `engine = "gecko"`) and `properties/shorthands.toml` (the six shorthands).
+* **Why:** the codegen skips a longhand whose `engine` is not the build's (`declare_longhand`), so
+  Servo's build had no `scroll-margin`/`scroll-padding` at all: Tailwind's `scroll-m*`/`scroll-p*`
+  utilities parsed to nothing, and no driver could move a scroller by them. The rest of the engine's
+  scroll support already existed — this was the missing half.
+* **Proves it:** `tests/interaction.rs::scroll_into_view_honours_scroll_margin_and_scroll_padding`
+  reads both back through `scrollIntoView` (below), and the parity meter's scroll group moves from
+  0 of 31 to **7 of 31** with 23 cells still needing drivers rather than a missing property.
 
 ### 2. the same for `prefers-contrast`, `forced-colors` and `inverted-colors`
 
@@ -428,6 +440,20 @@ to delete once the query worked.
   box is `(40, 20)` (fine, not coarse) and the same document on a finger is `(20, 40)`; it fails
   against the previous vendor sources. The parity meter's `any-pointer-coarse:` cell stops reporting
   a real mismatch.
+
+### 20. `scrollIntoView` scrolled only the viewport, and ignored `scroll-margin`/`scroll-padding`
+
+* **Where:** `src/scrolling.rs` (the new `scroll_node_into_view`; `scroll_into_view` is left as the
+  viewport-only entry point it was).
+* **Why:** `Element.scrollIntoView()` aligns the element's *scroll-margin* box with every scrollable
+  ancestor's *scroll-padding* edge, innermost first. The engine had a viewport-only version and read
+  neither property, so Tailwind's `scroll-m*`/`scroll-p*` units had no consumer at all. The walk
+  reads everything out of the tree into plain numbers before scrolling, because the mutable scroll
+  cannot overlap the borrows the computation needs.
+* **Proves it:** `tests/interaction.rs::scroll_into_view_honours_scroll_margin_and_scroll_padding` —
+  an item 200px down a scroller aligns at 200 with nothing declared, and at 110 with
+  `scroll-margin-top: 60px` plus `scroll-padding-top: 30px`; the test fails against the previous
+  vendor sources. The meter's scroll group goes 0/31 → 7/31.
 
 ## `parley-0.11.1` — 240 added code lines
 

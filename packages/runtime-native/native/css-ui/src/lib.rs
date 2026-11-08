@@ -1345,6 +1345,22 @@ impl CssUi {
         moved
     }
 
+    /// Scroll every scrollable ancestor of `id` so the element is visible, honouring its
+    /// `scroll-margin` and each ancestor's `scroll-padding` — `scrollIntoView({ block: "start",
+    /// inline: "start" })`. Returns whether anything scrolled.
+    pub fn scroll_into_view(&mut self, id: u32) -> bool {
+        let Some(node) = self.ids.get(&id).copied() else {
+            return false;
+        };
+        self.doc.resolve(self.animation_seconds());
+        let moved = self.doc.scroll_node_into_view(node);
+        if moved {
+            self.dirty = true;
+            self.sync_dirty();
+        }
+        moved
+    }
+
     /// `[scrollLeft, scrollTop]` of an element, in CSS pixels.
     pub fn scroll_offset(&mut self, id: u32) -> Option<[f64; 2]> {
         let node = *self.ids.get(&id)?;

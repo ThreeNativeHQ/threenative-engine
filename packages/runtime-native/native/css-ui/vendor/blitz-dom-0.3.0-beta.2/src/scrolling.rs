@@ -699,6 +699,87 @@ impl BaseDocument {
         self.scroll_to(root_id, x, y, behavior);
     }
 
+    /// Scroll every scrollable ancestor of `node_id` so the element is visible, the way
+    /// `Element.scrollIntoView({ block: "start", inline: "start" })` does — with the element's
+    /// `scroll-margin` and each scroller's `scroll-padding` honoured.
+    ///
+    /// VENDOR HUNK (threenative/css-ui): `scroll_into_view` above scrolls the *viewport* only, and
+    /// Stylo's servo build did not even parse `scroll-margin`/`scroll-padding` (the longhands were
+    /// `engine = "gecko"`; see `PATCHES.md`). Together those two made Tailwind's `scroll-m*` and
+    /// `scroll-p*` utilities unprovable: nothing in the engine read them, so no driver could move a
+    /// scroller by them.
+    ///
+    /// Returns whether anything scrolled.
+    pub fn scroll_node_into_view(&mut self, node_id: NodeId) -> bool {
+        let Some(style) = self.get_node(node_id).and_then(|n| n.primary_styles()) else {
+            return false;
+        };
+        let px = |value: &style::values::computed::Length| value.px() as f64;
+        let margin_top = px(&style.clone_scroll_margin_top());
+        let margin_left = px(&style.clone_scroll_margin_left());
+        drop(style);
+
+        let mut moved = false;
+        // Nearest scroller first, then outwards: each one is aligned against the element's position
+        // *after* the inner scrolls, which is what a browser's scroll chain does.
+        let mut current = self.get_node(node_id).and_then(|node| node.parent);
+        while let Some(ancestor) = current {
+            current = self.get_node(ancestor).and_then(|node| node.parent);
+            let (offset, max) = self.scroll_state(ScrollTarget::Node(ancestor), true);
+            if max.x <= 0.0 && max.y <= 0.0 {
+                continue;
+            }
+            // Everything below is read out of the tree into plain numbers, so the mutable scroll
+            // below does not overlap a borrow of the nodes it was computed from.
+            let computed = (|| {
+                let container = self.get_node(ancestor)?;
+                let container_style = container.primary_styles()?;
+                // `auto` is zero and a percentage resolves against the scrollport; every cell the
+                // parity scene stages uses a length, so a percentage is read as zero here.
+                let pad = |value: &style::values::computed::NonNegativeLengthPercentageOrAuto| {
+                    use style::values::generics::length::GenericLengthPercentageOrAuto;
+                    match value {
+                        GenericLengthPercentageOrAuto::LengthPercentage(lp) => {
+                            lp.0.resolve(style::values::computed::Length::new(0.0)).px() as f64
+                        },
+                        GenericLengthPercentageOrAuto::Auto => 0.0,
+                    }
+                };
+                let pad_top = pad(&container_style.clone_scroll_padding_top());
+                let pad_left = pad(&container_style.clone_scroll_padding_left());
+                let layout = container.final_layout();
+                let container_pos = container.absolute_position(0.0, 0.0);
+                let element = self.get_node(node_id)?;
+                let element_pos = element.absolute_position(0.0, 0.0);
+                // The element's box in the scroller's *content* coordinates: client coordinates
+                // carry the scroller's own scroll, so add it back and start from the padding edge.
+                let content_x = element_pos.x as f64 - container_pos.x as f64 + offset.x
+                    - layout.border.left as f64
+                    - layout.padding.left as f64;
+                let content_y = element_pos.y as f64 - container_pos.y as f64 + offset.y
+                    - layout.border.top as f64
+                    - layout.padding.top as f64;
+                let want_x = (content_x - margin_left - pad_left).clamp(0.0, max.x);
+                let want_y = (content_y - margin_top - pad_top).clamp(0.0, max.y);
+                Some((want_x, want_y))
+            })();
+            let Some((want_x, want_y)) = computed else {
+                continue;
+            };
+            if (want_x - offset.x).abs() < 0.5 && (want_y - offset.y).abs() < 0.5 {
+                continue;
+            }
+            self.scroll_to(
+                ancestor,
+                if max.x > 0.0 { want_x } else { offset.x },
+                if max.y > 0.0 { want_y } else { offset.y },
+                ScrollBehavior::Instant,
+            );
+            moved = true;
+        }
+        moved
+    }
+
     /// Resolve a URL fragment (the `#...` part of a URL) to a scroll target.
     ///
     /// Returns `None` if the fragment matches no element and is not a top-of-document

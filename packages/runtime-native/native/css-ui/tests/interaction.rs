@@ -487,6 +487,76 @@ fn a_transformed_element_is_hit_where_it_is_painted() {
 }
 
 #[test]
+fn scroll_into_view_honours_scroll_margin_and_scroll_padding() {
+    // Chromium's `scrollIntoView({ block: "start" })` aligns the element's *scroll-margin* box with
+    // the scroller's *scroll-padding* edge, which is what Tailwind's `scroll-m*`/`scroll-p*` mean.
+    let plain = ui(
+        320,
+        300,
+        &[
+            sheet(
+                "s",
+                &format!(
+                    "{BASE}\n.sc{{position:absolute;left:10px;top:10px;width:200px;height:100px;overflow:auto}}\n\
+                     .body{{height:600px;padding-top:200px}}\n.item{{width:100px;height:40px}}"
+                ),
+            ),
+            create(1, "div"),
+            attr(1, "class", "sc"),
+            create(2, "div"),
+            attr(2, "class", "body"),
+            create(3, "div"),
+            attr(3, "class", "item"),
+            append(0, 1),
+            append(1, 2),
+            append(2, 3),
+        ],
+    );
+    let mut scrolled = plain;
+    // The item sits 200px down the scroller's content: with no margin or padding, `start` puts its
+    // top at the scrollport's top.
+    assert!(scrolled.scroll_into_view(3), "it scrolled");
+    scrolled.render();
+    assert_eq!(
+        scrolled.scroll_offset(1),
+        Some([0.0, 200.0]),
+        "aligned to the scrollport"
+    );
+
+    // The same alignment with `scroll-margin-top: 60px` and `scroll-padding-top: 30px` leaves both
+    // above the fold: 200 - 60 - 30.
+    let mut padded = ui(
+        320,
+        300,
+        &[
+            sheet(
+                "s",
+                &format!(
+                    "{BASE}\n.sc{{position:absolute;left:10px;top:10px;width:200px;height:100px;overflow:auto;scroll-padding-top:30px}}\n\
+                     .body{{height:600px;padding-top:200px}}\n.item{{width:100px;height:40px;scroll-margin-top:60px}}"
+                ),
+            ),
+            create(1, "div"),
+            attr(1, "class", "sc"),
+            create(2, "div"),
+            attr(2, "class", "body"),
+            create(3, "div"),
+            attr(3, "class", "item"),
+            append(0, 1),
+            append(1, 2),
+            append(2, 3),
+        ],
+    );
+    assert!(padded.scroll_into_view(3), "it scrolled");
+    padded.render();
+    assert_eq!(
+        padded.scroll_offset(1),
+        Some([0.0, 110.0]),
+        "200 - 60 of scroll margin - 30 of scroll padding"
+    );
+}
+
+#[test]
 fn a_scrolled_box_keeps_its_own_rect_and_moves_its_content() {
     let mut ui = ui(
         320,
