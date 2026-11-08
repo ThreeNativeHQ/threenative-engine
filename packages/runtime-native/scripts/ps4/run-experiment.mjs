@@ -2,12 +2,16 @@
 // PRD-784 PS4 experiments: build a guest program with the OpenOrbis toolchain, boot it in the
 // shadPS4 emulator headless, and pass only when the guest prints its marker.
 //
-// Usage: node packages/runtime-native/scripts/ps4/run-experiment.mjs <e1|e2|e3|e4|e5> [--scene <game dir>]
+// Usage: node packages/runtime-native/scripts/ps4/run-experiment.mjs <e1|e2|e3|e4|e5|deploy|deps> [--scene <game dir>]
+//        node packages/runtime-native/scripts/ps4/run-experiment.mjs --self-check
+// `deploy` is the preview `pnpm ps4` runs: it boots the app folder send-to-console.mjs built and judges that
+// the game booted and drew (a static start screen passes). `deps` only fetches the toolchain and emulator.
 //
 // Every product stays under the scratch root (sibling of the dependency root), one directory per
 // experiment (<scratch>/e1, <scratch>/e2, <scratch>/e3, <scratch>/e4), never in the repo.
 // shadPS4 reads no raw ELF: it wants a SELF (eboot.bin), which create-fself writes from our ELF.
 // No Sony firmware module is downloaded or required; a run that asks for one fails.
+import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { createReadStream, existsSync } from 'node:fs';
@@ -82,8 +86,8 @@ let sceneRoot = DEFAULT_E5_SCENE;
 // same refusal as no name at all: the usage line, one place.
 function parseArgs(argv) {
   const [name, ...rest] = argv;
-  if (!EXPERIMENTS[name])
-    throw new Error(`usage: node packages/runtime-native/scripts/ps4/run-experiment.mjs <${Object.keys(EXPERIMENTS).join('|')}> [--scene <game dir>]`);
+  if (!EXPERIMENTS[name] && name !== 'deps')
+    throw new Error(`usage: node packages/runtime-native/scripts/ps4/run-experiment.mjs <${[...Object.keys(EXPERIMENTS), 'deps'].join('|')}> [--scene <game dir>]`);
   let scene = process.env.TN_PS4_SCENE ?? '';
   for (let i = 0; i < rest.length; i++) {
     if (rest[i] !== '--scene' || rest[i + 1] === undefined)
@@ -264,6 +268,23 @@ const EXPERIMENTS = {
     failurePattern: /(?:TN_PLAYER_V8_GAME:|TN_V8_UPDATE_FAILED|TN_V8_FRAME_FAILED|TN_PLAYER_NO_SCENE)[^\n]*|TN_PS4_E5 stage=exit status=[1-9]|[\w./_-]+\.cpp:\d+ \w+: Assertion Failed!(?:\n[^\n]{0,80})?/,
     verdict: (match, frame, log, shots) => judgeE5(match, frame, log, shots),
   },
+};
+
+// The deploy preview: the same player, marker and failure patterns as e5, over the app folder
+// send-to-console.mjs already built (the package carries those same bytes). The verdict drops E5's
+// moving-cube rule: a game's start screen may be static. Captures come late because a loaded host
+// boots slowly; TN_PS4_SCREENSHOT_AT overrides.
+EXPERIMENTS.deploy = {
+  ...EXPERIMENTS.e5,
+  screenshots: ['30', '45'],
+  build: async outDir => {
+    const appDir = path.join(outDir, 'out', 'app');
+    const eboot = path.join(appDir, 'eboot.bin');
+    if (!existsSync(eboot) || !existsSync(path.join(appDir, 'game.js')))
+      throw new Error(`no built app in ${appDir}: run \`pnpm ps4 <game dir>\`, which builds it first`);
+    return { appDir, artifacts: { eboot } };
+  },
+  verdict: (match, frame, log, shots) => judgeE5(match, frame, log, shots, { motion: false }),
 };
 
 // TN_PS4_GDB=<gdb command file> debugs the emulator instead of only running it. shadPS4 executes
@@ -566,29 +587,38 @@ function differingFraction(a, b, rect) {
 // scene's own clear colour with the game drawn inside it, and two frames at different times differ
 // (the cube moved). The guest's own count is what the marker carries; the frames are judged on the
 // host, because a guest GPU readback reads stale memory on shadPS4 (see judgePresented).
-async function judgeE5(match, frame, log, captures) {
+// `motion: false` is the deploy rule (`pnpm ps4`): a game's start screen may be static, so the pass is
+// "booted, presented frames, and a captured frame is drawn" -- no second frame, no moving cube, no
+// upper bound on the drawn share (a full-screen scene is mostly one colour), no frame-time windows.
+async function judgeE5(match, frame, log, captures, { motion = true } = {}) {
   const frames = Number(match[1]);
   const info = ` frames=${frames}`;
   if (!(frames >= E5_FRAMES_MIN))
     return { ok: false, reason: `TN_PLAYER_FRAMES ${frames}: the player presented fewer than ${E5_FRAMES_MIN} frames`, info };
-  // A capture under 1% non-black was taken before the guest's first drawn frame (shadPS4 paints a few
-  // grey pixels outside the game window from launch): boot, skipped.
   let rasters;
   try {
     rasters = captures.map(file => ({ file, raster: readPpm(pngToPpm(file)) }));
   } catch (error) {
     return { ok: false, reason: `a host screenshot is unreadable: ${error.message}`, info };
   }
+  return judgeE5Rasters({ frames, info, log, rasters, motion });
+}
+
+// The decision over decoded captures, pure so the self-check can feed it synthetic frames.
+function judgeE5Rasters({ frames, info, log, rasters, motion }) {
+  const captures = rasters.map(({ file }) => file);
+  // A capture under 1% non-black was taken before the guest's first drawn frame (shadPS4 paints a few
+  // grey pixels outside the game window from launch): boot, skipped.
   const lit = ({ pixels, width, height }) => {
     let count = 0;
     for (let at = 0; at < pixels.length; at += 3) if (pixels[at] || pixels[at + 1] || pixels[at + 2]) count += 1;
     return count / (width * height) >= 0.01;
   };
   const drawn = rasters.filter(({ raster }) => lit(raster));
-  if (drawn.length < 2)
+  if (drawn.length < (motion ? 2 : 1))
     return {
       ok: false,
-      reason: `${drawn.length} of ${captures.length} host screenshot(s) show anything but black (${captures.map(f => path.basename(f)).join(', ')}): a green run needs two drawn frames, at different times, to prove the cube moved`,
+      reason: `${drawn.length} of ${captures.length} host screenshot(s) show anything but black (${captures.map(f => path.basename(f)).join(', ')}): a green run needs ${motion ? 'two drawn frames, at different times, to prove the cube moved' : 'one drawn frame'}`,
       info,
     };
   const shots = drawn.map(({ file }) => file);
@@ -597,7 +627,7 @@ async function judgeE5(match, frame, log, captures) {
   const clear = e5ClearColour(last);
   // The largest change from the first drawn frame: a cube turned by a multiple of 90 degrees looks the
   // same, so the first and last frames alone can alias to "did not move" (Cube Spin: 3.2% at +6 s, 0.59% at +12 s).
-  const moved = Math.max(...drawn.slice(1).map(({ raster }) => differingFraction(first, raster)));
+  const moved = Math.max(0, ...drawn.slice(1).map(({ raster }) => differingFraction(first, raster)));
   // run.cpp averages the game's JS update and the whole frame over each 100 presented frames.
   const windows = [...log.matchAll(/TN_PLAYER_FRAMES \d+ js_ms=([\d.]+) frame_ms=([\d.]+)(?: kernel_frame_ms=([\d.]+))?/g)];
   // The first window has no start time and prints 0: the last window with a real measurement counts.
@@ -608,9 +638,9 @@ async function judgeE5(match, frame, log, captures) {
   // window, or the game runs at the wrong speed (musl's CLOCK_MONOTONIC once read CPU time).
   const skewed = windows.filter(w => w[3] !== undefined && Number(w[3]) > 0 && Number(w[2]) > 0)
     .find(w => Math.abs(Number(w[2]) / Number(w[3]) - 1) > E5_CLOCK_SKEW_MAX);
-  if (!timing)
+  if (!timing && motion)
     return { ok: false, reason: `no measured 100-frame window: ${windows.length} TN_PLAYER_FRAMES line(s), none with frame_ms > 0 (did the guest stdout reach the log?)`, info: detail };
-  if (skewed)
+  if (skewed && motion)
     return { ok: false, reason: `steady_clock frame_ms=${skewed[2]} disagrees with libkernel's kernel_frame_ms=${skewed[3]} by more than ${E5_CLOCK_SKEW_MAX * 100}%: the guest clock is not wall time`, info: detail };
   // A scene with no background clears to black, and judgePresented treats black as "nothing
   // presented" (right for E2/E3, whose clear is not black). E5 instead measures the share of the
@@ -634,10 +664,10 @@ async function judgeE5(match, frame, log, captures) {
     for (let x = x0; x <= x1; x++)
       if (Math.max(...[0, 1, 2].map(c => Math.abs(px(x, y, c) - clear[c]))) > E2_TOLERANCE) off += 1;
   const drawnShare = total ? off / total : 0;
-  if (drawnShare < E2_DRAWN_MIN || drawnShare > E2_DRAWN_MAX)
+  if (drawnShare < E2_DRAWN_MIN || (motion && drawnShare > E2_DRAWN_MAX))
     return {
       ok: false,
-      reason: `${(drawnShare * 100).toFixed(2)}% of ${shots.at(-1)} differs from the clear, outside the ${E2_DRAWN_MIN * 100}-${E2_DRAWN_MAX * 100}% band a drawn scene covers`,
+      reason: `${(drawnShare * 100).toFixed(2)}% of ${shots.at(-1)} differs from the clear, outside the ${E2_DRAWN_MIN * 100}-${motion ? E2_DRAWN_MAX * 100 : 100}% band a drawn scene covers`,
       info: detail,
       image: shots.at(-1),
     };
@@ -652,7 +682,7 @@ async function judgeE5(match, frame, log, captures) {
   if (win[2] < 0) win = [0, 0, last.width - 1, last.height - 1];
   const movedWindow = Math.max(...drawn.slice(1).map(({ raster }) => differingFraction(first, raster, win)));
   const verdict = { ok: true, detail: ` drawn=${(drawnShare * 100).toFixed(2)}% moved_window=${(movedWindow * 100).toFixed(2)}%`, info: detail, image: shots.at(-1) };
-  if (movedWindow < E5_MOVED_MIN)
+  if (motion && movedWindow < E5_MOVED_MIN)
     return {
       ok: false,
       reason: `${(movedWindow * 100).toFixed(2)}% of the guest window differs at most between ${shots[0]} and any later drawn frame (${shots.slice(1).map(f => path.basename(f)).join(", ")}), below the ${E5_MOVED_MIN * 100}% a moving cube must change`,
@@ -1101,7 +1131,34 @@ async function boot(experiment, built, appimage, outDir) {
   return { match, failure, output, log, logFile };
 }
 
+// The verdict rules fail silently when they drift (a static start screen once failed as "no motion"),
+// so --self-check feeds judgeE5Rasters synthetic frames: no emulator, no screenshots.
+function selfCheck() {
+  const size = 64;
+  const frame = (clear, square) => {
+    const pixels = new Uint8Array(size * size * 3);
+    for (let at = 0; at < pixels.length; at += 3) pixels.set(clear, at);
+    if (square) for (let y = square[1]; y < square[1] + 20; y++) for (let x = square[0]; x < square[0] + 20; x++) pixels.set([200, 60, 60], (y * size + x) * 3);
+    return { width: size, height: size, pixels };
+  };
+  const rasters = list => list.map((raster, i) => ({ file: `/shots/screen-${i}.png`, raster }));
+  const timed = 'TN_PLAYER_FRAMES 300 js_ms=1.0 frame_ms=16.0 kernel_frame_ms=16.0\n';
+  const judge = (list, motion, log = timed) => judgeE5Rasters({ frames: 300, info: '', log, rasters: rasters(list), motion });
+  const scene = frame([30, 30, 30], [10, 10]);
+  const turned = frame([30, 30, 30], [34, 34]);
+  assert.equal(judge([scene, scene], true).ok, false, 'E5 still fails a frozen cube');
+  assert.match(judge([scene, scene], true).reason, /a moving cube must change/);
+  assert.equal(judge([scene, turned], true).ok, true, 'E5 still passes a moving cube');
+  assert.equal(judge([scene, scene], false, '').ok, true, 'deploy passes a static start screen with no frame windows');
+  assert.equal(judge([frame([0, 0, 0]), scene], false).ok, true, 'deploy skips the boot-black capture');
+  assert.equal(judge([frame([0, 0, 0]), frame([0, 0, 0])], false).ok, false, 'deploy fails a black screen');
+  assert.equal(judge([frame([30, 30, 30])], false).ok, false, 'deploy fails a frame that is only the clear colour');
+  assert.match(judge([frame([30, 30, 30])], false).reason, /differs from the clear/);
+  console.log('run-experiment self-check ok');
+}
+
 async function main(argv) {
+  if (argv[2] === '--self-check') return selfCheck() ?? 0;
   let options;
   try {
     options = parseArgs(argv.slice(2));
@@ -1117,11 +1174,17 @@ async function main(argv) {
   // their eboots and stamps live in e3's out/<guest>/ folders, so the shared directory holds no
   // shared product.
   const sharedE3 = new Set(['e3cs', 'e3tex', 'e3tex8', 'e3texmsaa']);
-  const outDir = path.join(SCRATCH_ROOT, sharedE3.has(name) ? 'e3' : name);
+  // e2 and e5 (and the deploy preview, which boots the e5 folder) honour the dirs the build scripts honour.
+  const dirVar = { e2: 'TN_PS4_E2_DIR', e5: 'TN_PS4_E5_DIR', deploy: 'TN_PS4_E5_DIR' }[name];
+  const outDir = (dirVar && process.env[dirVar]) || path.join(SCRATCH_ROOT, sharedE3.has(name) ? 'e3' : name === 'deploy' ? 'e5' : name);
   await mkdir(outDir, { recursive: true });
 
   const toolchain = await ensureToolchain();
   const appimage = await ensureEmulator();
+  if (name === 'deps') {
+    console.log(`${label} toolchain ${toolchain}, emulator ${appimage}`);
+    return 0;
+  }
   let built;
   try {
     built = await experiment.build(outDir, toolchain);

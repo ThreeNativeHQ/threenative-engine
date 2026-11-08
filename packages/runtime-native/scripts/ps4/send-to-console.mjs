@@ -4,7 +4,11 @@
 // Usage:
 //   node packages/runtime-native/scripts/ps4/send-to-console.mjs --host <console address> [--dry-run]
 //     [--scene <game dir>] [--out <dir>] [--jobs N] [--ftp-port N] [--pkg-dir <path>] [--icon <png>]
-//     [--pkg <file>]
+//     [--pkg <file>] [--build-only] [--prebuilt]
+//
+// `pnpm ps4 <game dir> [--console <address>]` (ps4.mjs) is the one-command front end over this
+// script and the emulator preview. --build-only builds the app and the package and needs no
+// --host; --prebuilt skips the app build and reuses the app folder already in --out.
 //
 // Without --dry-run the same steps run: the package is uploaded over FTP and the console installs
 // it. --dry-run runs the local build and package steps, performs no network I/O at all, and exits 0
@@ -35,11 +39,12 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, statSync } from 'node:fs';
 import { copyFile, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { stageGuestUi } from './stage-guest-ui.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PKG_ROOT = path.resolve(HERE, '../..');
@@ -61,7 +66,10 @@ const FTP_DIR = '/data/pkg'; // where the console's Package Installer looks for 
 // /app0/game.js, the packed assets when the scene has any, and the metadata the identity lives in.
 const SFO = 'sce_sys/param.sfo';
 const FILES = ['eboot.bin', 'game.js', SFO, 'sce_sys/icon0.png'];
-const USAGE = 'usage: node packages/runtime-native/scripts/ps4/send-to-console.mjs --host <address> [--dry-run] [--scene <dir>] [--out <dir>] [--jobs N] [--ftp-port N] [--pkg-dir <path>] [--icon <png>] [--pkg <file>]';
+const USAGE = 'usage: node packages/runtime-native/scripts/ps4/send-to-console.mjs --host <address> [--dry-run] [--scene <dir>] [--out <dir>] [--jobs N] [--ftp-port N] [--pkg-dir <path>] [--icon <png>] [--pkg <file>] [--build-only] [--prebuilt]';
+// The E2 driver archives e5-build.sh links, built by e2-build.sh into $TN_PS4_E2_DIR.
+const E2_DIR = process.env.TN_PS4_E2_DIR ?? path.join(homedir(), '.cache/tmp-tn/prd784/e2');
+const E2_ARCHIVES = ['src/vulkan-ps4/libvulkan_ps4.a', 'src/opengnm/libopengnm.a', 'src/opengnm-psbc/libpsbc.orbis.a'];
 // Each flag's option and how its value is read: the four local paths resolve against the cwd,
 // the two numbers are numbers, and --host/--pkg-dir are the console's address and a directory on
 // the console's own disk, so they are passed through untouched.
@@ -85,13 +93,13 @@ function die(message) {
   process.exit(1);
 }
 
-// --host is the one thing the script cannot default: everything else holds the value E5 uses.
+// --host is the one thing the script cannot default (--build-only needs none): everything else holds the value E5 uses.
 function parseArgs(argv) {
-  const options = { host: '', scene: DEFAULT_SCENE, out: DEFAULT_OUT, dryRun: false, jobs: '8', ftpPort: FTP_PORT, ftpDir: FTP_DIR, icon: '', pkg: '' };
+  const options = { host: '', scene: DEFAULT_SCENE, out: DEFAULT_OUT, dryRun: false, buildOnly: false, prebuilt: false, jobs: '8', ftpPort: FTP_PORT, ftpDir: FTP_DIR, icon: '', pkg: '' };
   for (let i = 0; i < argv.length; i++) {
     const flag = argv[i];
-    if (flag === '--dry-run') {
-      options.dryRun = true;
+    if (flag === '--dry-run' || flag === '--build-only' || flag === '--prebuilt') {
+      options[{ '--dry-run': 'dryRun', '--build-only': 'buildOnly', '--prebuilt': 'prebuilt' }[flag]] = true;
       continue;
     }
     const entry = FLAGS[flag];
@@ -100,7 +108,7 @@ function parseArgs(argv) {
     if (value === undefined) die(`${flag} needs a value`);
     options[entry[0]] = entry[1](value);
   }
-  if (!options.host) die(`--host <console address> is required, the only value with no E5 default\n${USAGE}`);
+  if (!options.host && !options.buildOnly) die(`--host <console address> is required, the only value with no E5 default\n${USAGE}`);
   if (!Number.isInteger(options.ftpPort) || options.ftpPort <= 0) die(`--ftp-port ${options.ftpPort} is not a port`);
   return options;
 }
@@ -116,6 +124,11 @@ function run(cmd, args, options = {}) {
 // Both the prebuilts and the CMake tree are stamps: e5-build.sh refuses to link without them and
 // neither is rebuilt while it exists. They are made here because a fresh machine lacks both.
 function ensureBuildTree(out) {
+  // e5-build.sh dies on a missing driver archive; a fresh machine has none, so build them here.
+  if (E2_ARCHIVES.some(archive => !existsSync(path.join(E2_DIR, archive)))) {
+    log(`building the PS4 Vulkan driver archives into ${E2_DIR} (e2-build.sh)`);
+    run('bash', [path.join(HERE, 'e2-build.sh'), '--out', E2_DIR], { stdio: 'inherit', env: { ...process.env, OO_PS4_TOOLCHAIN: OO } });
+  }
   if (!existsSync(path.join(out, 'deps/third_party/v8/libv8_monolith.a'))) {
     log(`staging the PS4 prebuilts into ${path.join(out, 'deps/third_party')}`);
     run('bash', [path.join(HERE, 'ps4-deps.sh'), '--out', out], { stdio: 'inherit' });
@@ -135,20 +148,32 @@ function ensureBuildTree(out) {
 // assets beside it. A scene with no asset files gets no native/assets.tnpk, which is a fact about
 // the scene and not a failure.
 async function buildApp(options) {
+  // The scene is checked first: a wrong --scene fails in a second, not after the link.
+  const entry = path.join(options.scene, 'src', 'game.ts');
+  if (!existsSync(entry)) die(`scene ${options.scene} has no src/game.ts (--scene names a game project)`);
+  const appDir = path.join(options.out, 'out', 'app');
+  if (options.prebuilt) {
+    if (!existsSync(path.join(appDir, 'eboot.bin')) || !existsSync(path.join(appDir, 'game.js')))
+      die(`--prebuilt needs the app folder ${appDir} (eboot.bin and game.js): run without --prebuilt first`);
+    await ensureIcon(appDir, options.icon);
+    return appDir;
+  }
   ensureBuildTree(options.out);
   log(`building the E5 app folder in ${options.out}`);
   run('bash', [path.join(HERE, 'e5-build.sh'), '--out', options.out, '--jobs', `${options.jobs}`], {
     stdio: 'inherit',
-    env: { ...process.env, OO_PS4_TOOLCHAIN: OO, TN_PS4_E5_DIR: options.out },
+    env: { ...process.env, OO_PS4_TOOLCHAIN: OO, TN_PS4_E5_DIR: options.out, TN_PS4_E2_DIR: E2_DIR },
   });
-  const appDir = path.join(options.out, 'out', 'app');
-  const entry = path.join(options.scene, 'src', 'game.ts');
-  if (!existsSync(entry)) die(`scene ${options.scene} has no src/game.ts (--scene names a game project)`);
+  // A scene with a native-css HUD names it in src/native.tsx (the entry run-experiment.mjs bundles).
+  const nativeEntry = existsSync(path.join(options.scene, 'src', 'native.tsx')) ? path.join(options.scene, 'src', 'native.tsx') : entry;
   run(process.execPath, [
     path.join(PKG_ROOT, 'scripts/bundle-native-engine.mjs'),
-    '--engine', 'native', '--game-runtime', 'v8', '--entry', entry,
+    '--engine', 'native', '--game-runtime', 'v8', '--entry', nativeEntry,
     '--out', path.join(appDir, 'game.js'), '--assets', options.scene,
   ], { stdio: 'inherit' });
+  const ui = stageGuestUi(options.scene, appDir);
+  if (nativeEntry !== entry && !ui)
+    die(`scene ${options.scene} has src/native.tsx but no built UI (build ${path.join(options.scene, '.threenative/build/ui-css')} or set TN_PS4_UI_DIR)`);
   for (const file of [path.join(appDir, 'eboot.bin'), path.join(appDir, 'game.js'), path.join(appDir, SFO)])
     if (!existsSync(file)) die(`the build wrote no ${file}`);
   await ensureIcon(appDir, options.icon);
@@ -177,6 +202,23 @@ async function ensureIcon(appDir, icon) {
 function sfoField(listing, name) {
   const match = listing.match(new RegExp(`^${name} : \\S+\\([^)]*\\) = (.+)$`, 'm'));
   return match ? match[1].trim() : '';
+}
+
+// A package installs under its CONTENT_ID, so two games sharing one overwrite each other on the
+// console. The id comes from the game folder's name: stable across machines, one per game.
+// TITLE_ID is 4 letters + 5 digits and CONTENT_ID is 36 characters (PkgTool pkg_build checks both).
+// 100000 title ids make a clash between two game names unlikely, not impossible; rename a folder to move.
+export function deriveIdentity(scene) {
+  const title = path.basename(path.resolve(scene));
+  const digest = createHash('sha256').update(title).digest('hex');
+  const titleId = `TNPS${String(Number.parseInt(digest.slice(0, 8), 16) % 100000).padStart(5, '0')}`;
+  return { title: title.slice(0, 100), titleId, contentId: `IV0000-${titleId}_00-TN${digest.slice(8, 22).toUpperCase()}` };
+}
+
+// e5-build.sh writes the E5 identity; the package is installed under the game's own.
+function writeIdentity(appDir, { title, titleId, contentId }) {
+  for (const [key, maxsize, value] of [['CONTENT_ID', 48, contentId], ['TITLE_ID', 12, titleId], ['TITLE', 128, title]])
+    run(PKGTOOL, ['sfo_setentry', path.join(appDir, SFO), key, '--type', 'Utf8', '--maxsize', `${maxsize}`, '--value', value], { env: { ...process.env, ...DOTNET } });
 }
 
 function readIdentity(appDir) {
@@ -239,6 +281,10 @@ async function buildPackage(appDir, outDir, contentId) {
   await mkdir(pkgDir, { recursive: true });
   const files = [...FILES];
   if (existsSync(path.join(appDir, 'native/assets.tnpk'))) files.push('native/assets.tnpk');
+  // The native-css HUD the player reads from /app0/ui (stage-guest-ui.mjs), when the scene has one.
+  if (existsSync(path.join(appDir, 'ui')))
+    for (const entry of readdirSync(path.join(appDir, 'ui'), { recursive: true, withFileTypes: true }))
+      if (entry.isFile()) files.push(path.relative(appDir, path.join(entry.parentPath, entry.name)));
   const gp4 = path.join(appDir, `${contentId}.gp4`);
   const pkgPath = path.join(pkgDir, `${contentId}.pkg`);
   run(CREATE_GP4, ['-out', gp4, `--content-id=${contentId}`, '--files', files.join(' ')], { cwd: appDir, env: { ...process.env, ...DOTNET } });
@@ -271,6 +317,18 @@ async function selfCheck() {
   assert.equal(sfoField(listing, 'TITLE'), '');
   const options = parseArgs(['--host', '10.0.0.2', '--dry-run']);
   assert.deepEqual([options.host, options.dryRun, options.ftpPort, options.ftpDir], ['10.0.0.2', true, 2121, '/data/pkg']);
+  const build = parseArgs(['--build-only', '--prebuilt']);
+  assert.deepEqual([build.host, build.buildOnly, build.prebuilt, build.dryRun], ['', true, true, false], '--build-only needs no --host');
+  // Two games must install side by side: distinct ids, each in the console's fixed shape, stable per name.
+  const [one, two] = ['cube-spin', 'starter'].map(name => deriveIdentity(`/games/${name}`));
+  assert.notEqual(one.contentId, two.contentId);
+  assert.notEqual(one.titleId, two.titleId);
+  for (const id of [one, two]) {
+    assert.match(id.titleId, /^[A-Z]{4}\d{5}$/);
+    assert.equal(id.contentId.length, 36);
+    assert.ok(id.contentId.includes(id.titleId), 'CONTENT_ID carries the TITLE_ID');
+  }
+  assert.deepEqual(deriveIdentity('/elsewhere/cube-spin'), one, 'the id follows the folder name, not the path');
   assert.match(curlSteps('h', 2121, '/data/pkg', '/tmp/a.pkg').upload.join(' '), /ftp:\/\/h:2121\/data\/pkg\/a\.pkg$/);
   const scratch = await mkdtemp(path.join(tmpdir(), 'tn-send-check-'));
   const gp4 = path.join(scratch, 'project.gp4');
@@ -294,8 +352,13 @@ async function main() {
   }
   const options = parseArgs(argv);
   const appDir = await buildApp(options);
+  writeIdentity(appDir, deriveIdentity(options.scene));
   const { titleId, contentId } = readIdentity(appDir);
   const built = options.pkg ? { pkgPath: options.pkg, gp4: '', why: '' } : await buildPackage(appDir, options.out, contentId);
+  if (options.buildOnly) {
+    log(`package:  ${built.pkgPath} (${human(statSync(built.pkgPath).size)}); TITLE_ID ${titleId}, CONTENT_ID ${contentId}; --build-only: nothing sent`);
+    return;
+  }
   const steps = curlSteps(options.host, options.ftpPort, options.ftpDir, built.pkgPath);
   const pkgBytes = existsSync(built.pkgPath) ? ` (${human(statSync(built.pkgPath).size)})` : ' (not built here)';
 
