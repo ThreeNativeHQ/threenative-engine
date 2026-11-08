@@ -68,7 +68,7 @@ npx threenative doctor --fix # refresh agent files
 Each is on by default with a named override. Detail: `node_modules/create-threenative/agent-docs/references/conventions.md#<id>`.
 
 - **Look** `#look`: filmic curve, metered auto exposure. Override: `tonemapMode: "aces"`; `autoExposureEnabled: false` + `exposure`. Marker: `TN_WORLD_ENVIRONMENT`.
-- **Ambient occlusion** `#ao-indirect`: darkens indirect light only; the sun keeps its light. Override: `gtaoIndirectOnly: false` (whole frame); `gtaoEnabled: false`. Marker: `TN_WORLD_ENVIRONMENT`.
+- **Ambient occlusion** `#ao-indirect`: darkens indirect light only, not the sun. Override: `gtaoIndirectOnly: false`; `gtaoEnabled: false`. Marker: `TN_WORLD_ENVIRONMENT`.
 - **Quality tier (`src/render/quality.ts`)** `#quality`: GPU class picks `high`, `medium` or `low`. Override: `setupPost(..., { tier: "low" })`. Marker: `TN_QUALITY_TIER`.
 - **Resolution scale** `#resolution`: `"auto"`, 0.85 on mobile-low. Override: numeric `resolutionScale`. Marker: `TN_FRAME_BUDGET`.
 - **Budget real time for the look** `#frame-budget`: frame meter and scene verdict on. Override: `frameBudget: false`. Marker: `TN_FRAME_BUDGET`, `TN_SCENE_WARNING`.

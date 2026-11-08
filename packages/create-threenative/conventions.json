@@ -12,8 +12,8 @@
     {
       "id": "ao-indirect",
       "name": "Ambient occlusion",
-      "default": "darkens indirect light only; the sun keeps its light",
-      "override": "`gtaoIndirectOnly: false` (whole frame); `gtaoEnabled: false`",
+      "default": "darkens indirect light only, not the sun",
+      "override": "`gtaoIndirectOnly: false`; `gtaoEnabled: false`",
       "marker": "TN_WORLD_ENVIRONMENT",
       "kits": [
         "adventure",
