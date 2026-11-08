@@ -452,6 +452,19 @@ void registerBufferGeometry(ClassBinding& b) {
         BufferGeometry* geometry = as<BufferGeometry>(self);
         return shareAttribute(store, geometry->index);
     };
+    b.members["indirect"] = [](void* self, const Args&, Store& store) {
+        BufferGeometry* geometry = as<BufferGeometry>(self);
+        return shareAttribute(store, geometry->indirect);
+    };
+    b.getters["indirectOffset"] = [](void* self) { return Value::of(as<BufferGeometry>(self)->indirectOffset); };
+    // three keeps both fields writable; a game that assigns either reaches the engine as setIndirect does.
+    b.setters["indirect"] = [](void* self, const Value& value, Store& store) {
+        as<BufferGeometry>(self)->indirect = value.kind == Value::Kind::Ref ? sharedAttributeArg(store, value) : nullptr;
+    };
+    b.setters["indirectOffset"] = [](void* self, const Value& value) {
+        if (value.kind != Value::Kind::Number) throw Unsupported{"indirectOffset is one number"};
+        as<BufferGeometry>(self)->indirectOffset = value.number;
+    };
     b.members["boundingBox"] = [](void* self, const Args&, Store& store) {
         return store.share("Box3", as<BufferGeometry>(self)->boundingBox);
     };
@@ -573,6 +586,20 @@ void registerBufferGeometry(ClassBinding& b) {
     b.methods["setDrawRange"] = [](void* self, const Args& a, Store&) {
         as<BufferGeometry>(self)->setDrawRange(number(a.at(0)), number(a.at(1)));
         return chain();
+    };
+    b.methods["setIndirect"] = [](void* self, const Args& a, Store& store) {
+        BufferGeometry* geometry = as<BufferGeometry>(self);
+        const Value& attribute = a.at(0);
+        const Value& offset = a.size() > 1 ? a.at(1) : Value{};
+        // three's offset is one number or one per record; the engine draws one record per geometry.
+        if (offset.kind == Value::Kind::Numbers || offset.kind == Value::Kind::Array)
+            throw Unsupported{"setIndirect: the engine draws one indirect record per geometry, not a list of offsets"};
+        geometry->setIndirect(attribute.kind == Value::Kind::Ref ? sharedAttributeArg(store, attribute) : nullptr,
+                              offset.kind == Value::Kind::Number ? offset.number : 0);
+        return chain();
+    };
+    b.methods["getIndirect"] = [](void* self, const Args&, Store& store) {
+        return shareAttribute(store, as<BufferGeometry>(self)->indirect);
     };
     b.methods["computeBoundingBox"] = [](void* self, const Args&, Store&) {
         as<BufferGeometry>(self)->computeBoundingBox();

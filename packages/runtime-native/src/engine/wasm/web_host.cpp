@@ -48,7 +48,8 @@ namespace {
 // 9 = tnw_web_clear_target, and tnw_web_render_target flags (bit 2: autoClear false).
 // 10 = tnw_web_init_texture and tnw_web_copy_texture (PRD-762); the 6 the terrain work first took is 8's.
 // 11 = tnw_web_read_mrt (a PassNode's custom MRT attachment) and tnw_web_device_limit.
-constexpr uint32_t kWebHostAbi = 12;
+// 12 = tnw_web_load_gltf also returns every scene and their count. 13 = tnw_web_device_feature.
+constexpr uint32_t kWebHostAbi = 13;
 
 enum WebState : int { Pending = 0, Ready = 1, Failed = 2 };
 
@@ -228,10 +229,14 @@ void onAdapter(WGPURequestAdapterStatus status, WGPUAdapter adapter, WGPUStringV
     callback.callback = onDevice;
     // The features the desktop host asks for (webgpu/context.cpp buildRequiredFeatures), each when
     // the adapter has it: without float32-filterable a linear-filtered FloatType texture is refused.
+    // indirect-first-instance is what core's GPU world scene gates on (world-gpu-scene.ts), so a device
+    // that has it must be asked for it here: a feature not requested is a feature wgpuDeviceHasFeature
+    // answers false for, whatever the adapter holds (PRD-857).
     std::vector<WGPUFeatureName> features;
     for (WGPUFeatureName feature : {WGPUFeatureName_TimestampQuery, WGPUFeatureName_Float32Filterable, WGPUFeatureName_Float32Blendable,
                                     WGPUFeatureName_RG11B10UfloatRenderable, WGPUFeatureName_TextureCompressionBC,
-                                    WGPUFeatureName_TextureCompressionETC2, WGPUFeatureName_TextureCompressionASTC})
+                                    WGPUFeatureName_TextureCompressionETC2, WGPUFeatureName_TextureCompressionASTC,
+                                    WGPUFeatureName_IndirectFirstInstance})
         if (wgpuAdapterHasFeature(adapter, feature)) features.push_back(feature);
     WGPUDeviceDescriptor desc = {};
     desc.requiredFeatureCount = features.size();
@@ -763,6 +768,25 @@ extern "C" double tnw_web_device_limit(int field) {
     switch (field) {
         case 0: return double(limits.maxColorAttachments);
         case 1: return double(limits.maxColorAttachmentBytesPerSample);
+        default: return 0;
+    }
+}
+
+/**
+ * A device feature three reads by name (`renderer.backend.hasFeature`): 1 when the device has it, else 0.
+ * 1 = `indirect-first-instance`, asked of the device. The host requests it from the adapter (onAdapter),
+ * so a device that reports it is one an indirect record's non-zero firstInstance may be read from.
+ * 0 = `core-features-and-limits`, which three reads as `compatibilityMode = !device.features.has(...)`; a
+ * false answer silently costs MSAA and switches three's depth-texture, MRT-blending and texture paths.
+ * Answer about the device, not about the header: compatibility mode is a level a caller opts into, this
+ * host never requests one, so every device it creates is a core device (webgpu/bindings.cpp answers the
+ * native shim the same way). Any other number names no feature and answers 0.
+ */
+extern "C" int tnw_web_device_feature(int which) {
+    if (!renderer) return 0;
+    switch (which) {
+        case 0: return 1;
+        case 1: return renderer->deviceHasFeature(WGPUFeatureName_IndirectFirstInstance) ? 1 : 0;
         default: return 0;
     }
 }

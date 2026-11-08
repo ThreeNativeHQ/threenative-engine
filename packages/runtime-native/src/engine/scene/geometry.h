@@ -13,9 +13,8 @@
 //     (PRD-508 phase 3).
 //   - `onUpload`/`onUploadCallback`, `toJSON`, `clone` and `dispose`: a callback, a serializer and a
 //     GPU lifecycle that belong to the renderer (PRD-514), not the object model.
-//   - BufferGeometry's `computeTangents`, `setIndirect`/`getIndirect`, `lookAt`,
-//     `applyQuaternion`, `toJSON`: tangents and the indirect draw buffer are later work; the rest is
-//     a serializer or a call the caller can write.
+//   - BufferGeometry's `computeTangents`, `lookAt`, `applyQuaternion`, `toJSON`: tangents are later
+//     work; the rest is a serializer or a call the caller can write.
 
 #include "engine/foundation/buffers.h"
 #include "engine/scene/object3d.h"
@@ -138,6 +137,13 @@ public:
 
     std::map<std::string, std::shared_ptr<BufferAttribute>> attributes;
     std::shared_ptr<BufferAttribute> index;
+    /**
+     * three's `setIndirect(attribute, offset)`: the storage attribute holding this geometry's indirect
+     * draw records, and the byte offset of the record that draws it. three also takes one offset per
+     * record; the engine draws one record per geometry, which is what a GPU scene submits.
+     */
+    std::shared_ptr<BufferAttribute> indirect;
+    double indirectOffset = 0;
     // three's morphAttributes.position / .normal (one attribute per target) and morphTargetsRelative.
     std::vector<std::shared_ptr<BufferAttribute>> morphPositions;
     std::vector<std::shared_ptr<BufferAttribute>> morphNormals;
@@ -166,6 +172,11 @@ public:
     [[nodiscard]] std::shared_ptr<BufferAttribute> getIndex() const { return index; }
     void setIndex(const std::shared_ptr<BufferAttribute>& attribute);
     void setIndexFromArray(const std::vector<uint32_t>& values);
+    [[nodiscard]] std::shared_ptr<BufferAttribute> getIndirect() const { return indirect; }
+    void setIndirect(const std::shared_ptr<BufferAttribute>& attribute, double offset = 0) {
+        indirect = attribute;
+        indirectOffset = offset;
+    }
 
     void setAttribute(const std::string& name, std::shared_ptr<BufferAttribute> attribute);
     [[nodiscard]] std::shared_ptr<BufferAttribute> getAttribute(const std::string& name) const;

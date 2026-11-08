@@ -30,6 +30,8 @@ const PINNED: Record<number, string> = {
   11: "6ca2e45be11e2c12",
   // 12 = tnw_web_load_gltf also returns every scene and their count, so a model's LOD scenes load (PRD-762).
   12: "80a495e5bacd3b79",
+  // 13 = tnw_web_device_feature: a device feature by name, so renderer.backend.hasFeature answers (PRD-857).
+  13: "9334aa80ff32775c",
 };
 
 function signatures(): string[] {

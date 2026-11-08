@@ -915,6 +915,8 @@ public:
     }
     /** Device limit reads so far; a test bounds it. */
     uint32_t deviceLimitReads() const { return deviceLimitReads_; }
+    /** Whether the device has a feature enabled (a feature the device was not asked for answers false). */
+    bool deviceHasFeature(WGPUFeatureName feature) const { return wgpuDeviceHasFeature(device_, feature) != 0; }
     const GeometryCache& geometry() const { return geometry_->cache; }
     const PipelineCache& pipelines() const { return *pipelines_; }
     const PipelineLayoutCache& layouts() const { return *layouts_; }

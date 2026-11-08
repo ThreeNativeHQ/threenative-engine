@@ -1,6 +1,6 @@
 # PRD-857: The GPU world scene runs on the owned engine
 
-**Status:** NOT STARTED
+**Status:** PARTIAL — Phase 1 code in (2026-11-08); the sandbox reading and the native usage test are open.
 **Priority:** P1 — a cooked forest world draws 19.5 M main-pass triangles on the CPU world path on the default engine, because the GPU world scene is off there (all boxes open).
 **Complexity:** 6 (MEDIUM-HIGH)
 **Depends on:** [PRD-762](PRD-762-an-mcp-terrain-runs-on-the-default-engine.md) (the MCP terrain path and its sandbox)
@@ -25,8 +25,10 @@ Without gap 4, turning the scene on draws `capacity` instances from a partly fil
 ### Phase 1 — the facade and the device answer truthfully
 
 - [ ] `renderer.backend.hasFeature` answers `core-features-and-limits` (true) and `indirect-first-instance` (the device's own answer), and the Wasm host requests `indirect-first-instance` when the adapter has it (web host ABI bump). proof: a facade spec, `web-host-abi.spec.ts`, and `TN_WORLD_GPU_SCENE` in the sandbox no longer reads `backend=webgpu-without-hasFeature`
-- [ ] `IndirectStorageBufferAttribute` and `BufferGeometry.setIndirect` / `indirect` / `indirectOffset` exist on the facade and in `api/native-registry.json`. proof: a facade spec against a fake runtime
+  2026-11-08: code in — `hasFeature` on `backend`, `tnw_web_device_feature`, `IndirectFirstInstance` requested, web host ABI 13 pinned `9334aa80ff32775c`; `browser-renderer.spec.ts` red (`hasFeature is not a function`) then green. Open: the sandbox reading.
+- [x] `IndirectStorageBufferAttribute` and `BufferGeometry.setIndirect` / `indirect` / `indirectOffset` exist on the facade and in `api/native-registry.json`. proof: a facade spec against a fake runtime — 2026-11-08: `indirect-storage.spec.ts` red (`Indirect is not a constructor`) then green; the pair crosses the ABI (`bindings_geometry.cpp`, `geometry.h`), registry and catalog on `BufferGeometry` and its 19 generator classes; `three-native/__tests__` 540/540, `tsc` 0, `pnpm wasm:build` 0.
 - [ ] A storage buffer bound as storage and as vertex or indirect data carries every usage it is bound with. proof: a native renderer test
+  2026-11-08: `GeometryCache` keeps each entry's usage and re-creates with the union when a later sync needs more (one AND on the common path); compiles in `pnpm wasm:build`. Open: the native test (`renderer_caches_test.cpp`, needs `pnpm native:build`). A re-create re-uploads the CPU copy, so a GPU-written buffer shows CPU data for the first frame after it widens.
 
 ### Phase 2 — the engine draws indirect
 

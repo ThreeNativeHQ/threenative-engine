@@ -2851,12 +2851,11 @@
         },
         {
           "name": "indirect",
-          "type": "IndirectStorageBufferAttribute | null",
+          "type": "BufferAttribute | null",
           "mutable": true,
           "lifetime": "owned",
           "status": {
-            "kind": "unsupported",
-            "diagnostic": "TN_NATIVE_UNSUPPORTED_INDIRECT_STORAGE"
+            "kind": "supported"
           }
         },
         {
@@ -2865,8 +2864,7 @@
           "mutable": true,
           "lifetime": "owned",
           "status": {
-            "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "kind": "supported"
           }
         },
         {
@@ -3278,12 +3276,11 @@
           "overloads": [
             {
               "parameters": [],
-              "returns": "IndirectStorageBufferAttribute | null"
+              "returns": "BufferAttribute | null"
             }
           ],
           "status": {
-            "kind": "unsupported",
-            "diagnostic": "TN_NATIVE_UNSUPPORTED_INDIRECT_STORAGE"
+            "kind": "supported"
           }
         },
         {
@@ -3568,7 +3565,7 @@
               "parameters": [
                 {
                   "name": "indirect",
-                  "type": "IndirectStorageBufferAttribute | null",
+                  "type": "BufferAttribute | null",
                   "optional": false
                 },
                 {
@@ -3581,8 +3578,7 @@
             }
           ],
           "status": {
-            "kind": "unsupported",
-            "diagnostic": "TN_NATIVE_UNSUPPORTED_INDIRECT_STORAGE"
+            "kind": "supported"
           }
         },
         {

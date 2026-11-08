@@ -246,6 +246,39 @@ describe("the Wasm engine's web host ABI", () => {
   });
 });
 
+describe("the owned engine's device features", () => {
+  async function features(answer: (which: number) => number) {
+    const { Renderer, canvas, module } = host();
+    const asked: number[] = [];
+    Reflect.set(module, "_tnw_web_device_feature", (which: number) => {
+      asked.push(which);
+      return answer(which);
+    });
+    const renderer = new Renderer({ canvas }) as {
+      init(): Promise<unknown>;
+      backend: { hasFeature(name: string): boolean };
+    };
+    await renderer.init();
+    return { renderer, asked };
+  }
+
+  it("answers three's two gate names from the device, and no other name", async () => {
+    let indirect = 0;
+    const { renderer, asked } = await features((which) => (which === 0 ? 1 : indirect));
+    // The engine never requests a compatibility device, so the host answers core-features-and-limits; a
+    // false answer would drop MSAA and move three onto its compatibility paths (web_host.cpp).
+    expect(renderer.backend.hasFeature("core-features-and-limits")).toBe(true);
+    // indirect-first-instance is the device's own answer: the host requests it from the adapter, and core
+    // keeps its GPU world scene off on a device that cannot report it (world-gpu-scene.ts).
+    expect(renderer.backend.hasFeature("indirect-first-instance")).toBe(false);
+    indirect = 1;
+    expect(renderer.backend.hasFeature("indirect-first-instance")).toBe(true);
+    // A name the host publishes no answer for is a feature this device does not have, asked of nobody.
+    expect(renderer.backend.hasFeature("float32-filterable")).toBe(false);
+    expect(asked).toEqual([0, 1, 1]);
+  });
+});
+
 describe("the Wasm engine's temporal pass readout", () => {
   async function readout(fields: Record<number, number>) {
     const { Renderer, canvas, scene, camera } = host((field) => fields[field] ?? 0);

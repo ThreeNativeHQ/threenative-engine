@@ -279,9 +279,10 @@ export class RenderPipeline {
 export { PassNode };
 // three's NodeUpdateType, the constants a node's update schedule names.
 export const NodeUpdateType = Object.freeze({ NONE: "none", FRAME: "frame", RENDER: "render", OBJECT: "object" });
-// three's StorageBufferAttribute and StorageInstancedBufferAttribute: BufferAttributes that TSL storage() binds
-// as storage buffers (defined with the storage nodes, in core-tsl.mjs).
-export { StorageBufferAttribute, StorageInstancedBufferAttribute };
+// three's StorageBufferAttribute, StorageInstancedBufferAttribute and IndirectStorageBufferAttribute: BufferAttributes
+// that TSL storage() binds as storage buffers, and that a geometry's setIndirect() takes (defined with the storage
+// nodes, in core-tsl.mjs).
+export { StorageBufferAttribute, StorageInstancedBufferAttribute, IndirectStorageBufferAttribute };
 export const MeshLambertNodeMaterial = unsupportedExport("MeshLambertNodeMaterial");
 export const MeshMatcapNodeMaterial = unsupportedExport("MeshMatcapNodeMaterial");
 export const MeshNormalNodeMaterial = unsupportedExport("MeshNormalNodeMaterial");

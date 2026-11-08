@@ -385,6 +385,7 @@ uuid: string;
 name: string;
 readonly type: string | "BufferGeometry";
 index: BufferAttribute | null;
+indirect: BufferAttribute | null;
 indirectOffset: number | number[];
 morphAttributes: { position?: Array<BufferAttribute | InterleavedBufferAttribute> | undefined; normal?: Array<BufferAttribute | InterleavedBufferAttribute> | undefined; color?: Array<BufferAttribute | InterleavedBufferAttribute> | undefined; };
 morphTargetsRelative: boolean;
@@ -431,6 +432,8 @@ readonly revision: number;
 
   getIndex(): BufferAttribute | null;
 
+  getIndirect(): BufferAttribute | null;
+
   hasAttribute(name: string): boolean;
   /** callback listener: EventListener */
   hasEventListener(type: string, listener: EventListener): boolean;
@@ -456,6 +459,8 @@ readonly revision: number;
   setFromPoints(points: Vector3[] | Vector2[]): this;
 
   setIndex(index: BufferAttribute | number[] | null): this;
+
+  setIndirect(indirect: BufferAttribute | null, indirectOffset?: number | number[]): this;
 
   toNonIndexed(): BufferGeometry;
 

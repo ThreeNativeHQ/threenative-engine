@@ -101,12 +101,15 @@ export function defineStorage(
     itemSize: number,
   ) => { count: number; itemSize: number; needsUpdate: boolean },
 ) {
-  const make = (flag: string) => {
+  // `flags`: the type flags three's class chain carries — `IndirectStorageBufferAttribute` extends
+  // `StorageBufferAttribute`, so an indirect record buffer is a storage buffer too. `Default` is the array
+  // a class allocates when the caller passes a count: an indirect record is uint32 words.
+  const make = (flags: readonly string[], Default: TypedArrayClass = Float32Array) => {
     const Attribute = class extends BufferAttribute {
       constructor(
         count: number | StorageArray,
         itemSize: number,
-        typeClass: TypedArrayClass = Float32Array,
+        typeClass: TypedArrayClass = Default,
       ) {
         const array = ArrayBuffer.isView(count)
           ? (count as StorageArray)
@@ -118,11 +121,18 @@ export function defineStorage(
         this.needsUpdate = true;
       }
     };
-    Object.defineProperty(Attribute.prototype, flag, { value: true });
+    for (const flag of flags) Object.defineProperty(Attribute.prototype, flag, { value: true });
     return Attribute;
   };
-  const StorageBufferAttribute = make("isStorageBufferAttribute");
-  const StorageInstancedBufferAttribute = make("isStorageInstancedBufferAttribute");
+  const StorageBufferAttribute = make(["isStorageBufferAttribute"]);
+  const StorageInstancedBufferAttribute = make(["isStorageInstancedBufferAttribute"]);
+  // three's IndirectStorageBufferAttribute (renderers/common/IndirectStorageBufferAttribute.js): a
+  // uint32 storage attribute a kernel fills with indirect draw records, and the attribute a geometry's
+  // `setIndirect` takes. Its flag matters to the renderer that reads `geometry.indirect`.
+  const IndirectStorageBufferAttribute = make(
+    ["isIndirectStorageBufferAttribute", "isStorageBufferAttribute"],
+    Uint32Array,
+  );
 
   const storage = (
     value: {
@@ -168,6 +178,7 @@ export function defineStorage(
   return {
     StorageBufferAttribute,
     StorageInstancedBufferAttribute,
+    IndirectStorageBufferAttribute,
     storage,
     attributeArray: array(StorageBufferAttribute),
     instancedArray: array(StorageInstancedBufferAttribute),
