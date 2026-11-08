@@ -94,7 +94,12 @@ cells are the driver gaps above, and 2 of the 5 grid-and-query cells are exempt.
   cell left in the batch. The thirteen that do not discriminate are staging: a border-spacing or caption needs a
   table whose cells carry borders and whose caption is content; `clear-*`/`break-*` need a float to clear and a box
   that can fragment.
-- **Scroll (0/31, 29 do not discriminate).** The wheel driver is built: a scroll cell is captured after one
+- **`scroll-p*` staging is right and still does not discriminate (measured).** The unit's class now goes
+  on the *scroller* — which becomes the probe — with a distinct target inside it that the driver seeks, so
+  the cell measures 0.9984 against a 0.99 bar. Both arms stop within 160px of each other and the frame
+  they show is too similar to tell: the next attempt needs a marker at a fixed offset inside the scroll
+  content, so the stopped position is visible rather than inferred.
+- **Scroll (7/31, 23 do not discriminate).** The wheel driver is built: a scroll cell is captured after one
   `wheel` of 140 px, dispatched at the probe's centre in Chromium and by `drive.json` on the engine, and each
   scroll cell now has its own panel because twelve wheels in one frame is not the same input on both subjects —
   the first one moves the layout under the coordinates the others aim at.
