@@ -39,7 +39,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { copyFile, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
@@ -121,6 +121,25 @@ function run(cmd, args, options = {}) {
   return `${result.stdout ?? ''}${result.stderr ?? ''}`;
 }
 
+// The native cook writes EXT_meshopt_compression into every model, and the player decodes it only when
+// the tree was configured with third_party/meshopt (NativeEngineCore.cmake adds tn_engine_meshopt then);
+// without it a game that loads a .glb stops at start with TN_NATIVE_GLTF_EXTENSION_UNSUPPORTED. So the
+// sources are staged (the same fetch ps4-deps.sh runs) and a tree configured without them is
+// configured again. CMake decides at configure time, so the target in build.ninja is the proof.
+export function meshoptConfigured(ninjaText) {
+  return ninjaText.includes('tn_engine_meshopt');
+}
+
+function ensureMeshopt() {
+  const dir = path.join(PKG_ROOT, 'third_party/meshopt');
+  const present = () => ['meshoptimizer.h', 'vertexcodec.cpp'].every(file => existsSync(path.join(dir, file)));
+  if (!present()) {
+    log('fetching meshopt into the staged third_party (download-deps.mjs --only meshopt)');
+    run(process.execPath, [path.join(PKG_ROOT, 'scripts/download-deps.mjs'), '--only', 'meshopt'], { stdio: 'inherit' });
+  }
+  if (!present()) die(`no meshoptimizer sources in ${dir}: models would fail on the console with TN_NATIVE_GLTF_EXTENSION_UNSUPPORTED (node packages/runtime-native/scripts/download-deps.mjs --only meshopt)`);
+}
+
 // Both the prebuilts and the CMake tree are stamps: e5-build.sh refuses to link without them and
 // neither is rebuilt while it exists. They are made here because a fresh machine lacks both.
 function ensureBuildTree(out) {
@@ -133,7 +152,9 @@ function ensureBuildTree(out) {
     log(`staging the PS4 prebuilts into ${path.join(out, 'deps/third_party')}`);
     run('bash', [path.join(HERE, 'ps4-deps.sh'), '--out', out], { stdio: 'inherit' });
   }
-  if (!existsSync(path.join(out, 'build/build.ninja'))) {
+  ensureMeshopt();
+  const ninja = path.join(out, 'build/build.ninja');
+  if (!existsSync(ninja) || !meshoptConfigured(readFileSync(ninja, 'utf8'))) {
     log(`configuring the tn-ps4 CMake tree at ${path.join(out, 'build')}`);
     run('cmake', ['--preset', 'tn-ps4', '-B', path.join(out, 'build')], {
       cwd: PKG_ROOT,
@@ -329,6 +350,8 @@ async function selfCheck() {
     assert.ok(id.contentId.includes(id.titleId), 'CONTENT_ID carries the TITLE_ID');
   }
   assert.deepEqual(deriveIdentity('/elsewhere/cube-spin'), one, 'the id follows the folder name, not the path');
+  assert.equal(meshoptConfigured('build tn_engine_meshopt: CXX_STATIC_LIBRARY_LINKER__tn_engine_meshopt_'), true);
+  assert.equal(meshoptConfigured('build libtn_engine_assets.a: CXX_STATIC_LIBRARY_LINKER__tn_engine_assets_'), false, 'a tree configured without meshopt is configured again');
   assert.match(curlSteps('h', 2121, '/data/pkg', '/tmp/a.pkg').upload.join(' '), /ftp:\/\/h:2121\/data\/pkg\/a\.pkg$/);
   const scratch = await mkdtemp(path.join(tmpdir(), 'tn-send-check-'));
   const gp4 = path.join(scratch, 'project.gp4');
