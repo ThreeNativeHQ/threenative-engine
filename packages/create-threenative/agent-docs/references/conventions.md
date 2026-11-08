@@ -212,6 +212,13 @@ Default: CLI, then `display.fullscreen`, then `window.maximized`. Override: `--w
 
 Desktop mode precedence is CLI (`--windowed`, `--maximized`, `--fullscreen`) over `display.fullscreen` over `window.maximized`; with both false, `window.width`/`height` size the normal window.
 
+<a id="cpu-priority"></a>
+## CPU priority
+
+Default: game threads first. Override: `display.priority: "normal"`. Reports: TN_PROCESS_PRIORITY.
+
+A shipped native game asks the OS for more CPU than other programs: its game, render and present threads take a higher priority (desktop nice -10, Android nice -4 plus an ADPF hint session) and its own background work (shader compiles, workers, HUD processes) yields. It needs no admin rights; a refused raise is reported, not fatal. `TN_PROCESS_PRIORITY` states what the OS applied. Set `display.priority: "normal"` only when the user asks for the OS default; the web build ignores it.
+
 <a id="terrain"></a>
 ## Terrain
 

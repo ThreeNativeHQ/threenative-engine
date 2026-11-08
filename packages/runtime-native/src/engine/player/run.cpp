@@ -15,7 +15,12 @@
 #include <dirent.h>
 #include <dlfcn.h>
 #include <sched.h>
+#include <sys/resource.h>
 #endif
+#if !defined(_WIN32)
+#include <pthread.h>
+#endif
+#include <cerrno>
 #if defined(__linux__)
 #include <linux/perf_event.h>
 #include <sys/syscall.h>
@@ -224,6 +229,7 @@ struct SurfaceConfig {
     uint32_t width = kWidth, height = kHeight;
     bool vsync = kSurfaceVsync;
     std::string title = "ThreeNative native engine";
+    bool priority = true;  // PRD-859: TN_PLAYER_PRIORITY=normal (`display.priority: "normal"`) keeps the OS default
     std::string problem;
 };
 
@@ -246,6 +252,11 @@ SurfaceConfig readSurfaceConfig() {
         if (std::strcmp(text, "0") == 0 || std::strcmp(text, "off") == 0) config.vsync = false;
         else if (std::strcmp(text, "1") == 0 || std::strcmp(text, "on") == 0) config.vsync = true;
         else config.problem = std::string("TN_PLAYER_VSYNC must be 0, 1, off or on, got '") + text + "'";
+    }
+    if (const char* text = std::getenv("TN_PLAYER_PRIORITY"); text != nullptr && text[0] != '\0') {
+        if (std::strcmp(text, "normal") == 0) config.priority = false;
+        else if (std::strcmp(text, "game") != 0)
+            config.problem = std::string("TN_PLAYER_PRIORITY must be game or normal, got '") + text + "'";
     }
     return config;
 }
@@ -491,6 +502,16 @@ json::Value frameTiming(double gameMs, double renderMs, double cpuMs, double fra
     return V::makeObject(std::move(members));
 }
 
+/**
+ * PRD-859: a frame-critical thread names itself, so the priority sweep keeps it raised and lowers every other thread.
+ * Runs on that thread, as its first job.
+ */
+void frameCriticalThread(const char* name) {
+#if defined(__linux__)
+    pthread_setname_np(pthread_self(), name);
+#endif
+}
+
 #if defined(__linux__) && !defined(__ANDROID__)
 /**
  * PRD-610: the game thread keeps its own cores. It takes one L3 domain (a Ryzen CCD), or one physical
@@ -504,7 +525,6 @@ json::Value frameTiming(double gameMs, double renderMs, double cpuMs, double fra
  */
 struct ThreadPlacement {
     cpu_set_t helpers{};
-    bool active = false;
     std::chrono::steady_clock::time_point lastSweep{};
 
     static long readNumber(const std::string& path) {
@@ -532,9 +552,99 @@ struct ThreadPlacement {
         }
         return set;
     }
+    /**
+     * PRD-859: the game thread wins the CPU. The frame-critical threads (the game thread, and the threads that name
+     * themselves `tn-gpu` and `tn-render`) ask for nice -10 (Unreal's TPri_AboveNormal on Unix), through setpriority
+     * when RLIMIT_NICE allows it, else rtkit. Every other thread and child process yields at nice +10 (TPri_Lowest),
+     * which needs no privilege. TN_PLAYER_PRIORITY=normal turns both off. A failed raise is reported, never fatal.
+     */
+    static constexpr int kRaised = -10, kLowered = 10;
+    bool placed = false, priority = false;
+    pid_t game = 0;
+    std::set<int> tried;              // tids a raise was asked for, once each
+    std::string source = "none", reason, rtkitProblem, reported;
+    struct Readout { int game = INT_MIN, render = INT_MIN, present = INT_MIN, background = INT_MAX; };
+    Readout readout;
+
+    static int niceOf(int tid) {
+        errno = 0;
+        const int value = getpriority(PRIO_PROCESS, static_cast<id_t>(tid));
+        return errno == 0 ? value : INT_MIN;
+    }
+    static std::string commOf(int pid, const char* tid) {
+        char name[32] = {};
+        if (std::FILE* file = std::fopen(("/proc/" + std::to_string(pid) + "/task/" + tid + "/comm").c_str(), "r")) {
+            if (!std::fgets(name, sizeof name, file)) name[0] = 0;
+            std::fclose(file);
+        }
+        std::string text = name;
+        while (!text.empty() && (text.back() == '\n' || text.back() == ' ')) text.pop_back();
+        return text;
+    }
+    /** rtkit's MakeThreadHighPriority over the system bus, through libsystemd loaded at run time (no build dependency). */
+    bool rtkitRaise(int tid) {
+        struct BusError { const char* name; const char* message; int needFree; };
+        using Open = int (*)(void**);
+        using Call = int (*)(void*, const char*, const char*, const char*, const char*, BusError*, void**, const char*, ...);
+        using Free = void (*)(BusError*);
+        static void* library = dlopen("libsystemd.so.0", RTLD_NOW | RTLD_LOCAL);
+        static const auto open = library ? reinterpret_cast<Open>(dlsym(library, "sd_bus_open_system")) : nullptr;
+        static const auto call = library ? reinterpret_cast<Call>(dlsym(library, "sd_bus_call_method")) : nullptr;
+        static const auto release = library ? reinterpret_cast<Free>(dlsym(library, "sd_bus_error_free")) : nullptr;
+        static void* bus = nullptr;  // ponytail: opened once and kept for the process; the sweep is its only user
+        if (!open || !call || !release) return rtkitProblem = "no-libsystemd", false;
+        if (!bus) {
+            if (const int status = open(&bus); status < 0) return bus = nullptr, rtkitProblem = "no-system-bus:" + std::to_string(-status), false;
+        }
+        BusError error{nullptr, nullptr, 0};
+        const int status = call(bus, "org.freedesktop.RealtimeKit1", "/org/freedesktop/RealtimeKit1", "org.freedesktop.RealtimeKit1",
+                                "MakeThreadHighPriority", &error, nullptr, "ti", static_cast<uint64_t>(tid), static_cast<int32_t>(kRaised));
+        if (status < 0) rtkitProblem = error.name ? error.name : "errno:" + std::to_string(-status);
+        release(&error);
+        return status >= 0;
+    }
+    void raise(int tid) {
+        if (!tried.insert(tid).second || niceOf(tid) <= kRaised) return;
+        if (setpriority(PRIO_PROCESS, static_cast<id_t>(tid), kRaised) == 0) {
+            source = "setpriority";
+            return;
+        }
+        const int error = errno;
+        if (rtkitRaise(tid)) {
+            source = "rtkit";
+            return;
+        }
+        // Unreal's rule: a refused raise is logged once and is not an error, since Unix does not let a user raise by default.
+        if (reason.empty())
+            std::fprintf(stderr, "TN_PROCESS_PRIORITY_RAISE_REFUSED: setpriority %s, rtkit %s; the frame-critical threads keep nice 0.\n",
+                         error == EACCES ? "EACCES" : error == EPERM ? "EPERM" : std::to_string(error).c_str(), rtkitProblem.c_str());
+        reason = error == EACCES ? "EACCES" : error == EPERM ? "EPERM" : std::to_string(error);
+    }
+    /** Background work yields: nice +10, set only while lower, so a repeated sweep makes no extra syscall. */
+    void lower(int tid) {
+        if (const int value = niceOf(tid); value != INT_MIN && value < kLowered) setpriority(PRIO_PROCESS, static_cast<id_t>(tid), kLowered);
+        readout.background = std::min(readout.background, niceOf(tid));
+    }
+    void report() {
+        const auto value = [](int nice) { return nice == INT_MIN || nice == INT_MAX ? std::string("none") : std::to_string(nice); };
+        std::string line = "game=" + value(readout.game) + " render=" + value(readout.render) + " present=" + value(readout.present) +
+                           " background=" + value(readout.background) + " source=" + (priority ? source : "none");
+        if (priority && source == "none" && !reason.empty()) line += " reason=" + reason + " rtkit=" + rtkitProblem;
+        line += priority ? " override=none" : " override=normal";
+        if (line == reported) return;
+        reported = line;
+        std::printf("TN_PROCESS_PRIORITY %s\n", line.c_str());
+        std::fflush(stdout);
+    }
     void start() {
+        game = static_cast<pid_t>(syscall(SYS_gettid));
+        priority = surfaceConfig().priority;
+        placed = place();
+        sweep();
+    }
+    bool place() {
         cpu_set_t allowed;
-        if (sched_getaffinity(0, sizeof allowed, &allowed) != 0 || CPU_COUNT(&allowed) < 4) return;
+        if (sched_getaffinity(0, sizeof allowed, &allowed) != 0 || CPU_COUNT(&allowed) < 4) return false;
         int chosen = -1;
         // The fastest cores by max frequency first (P-cores on a hybrid CPU), then the last CPPC rank among them.
         const auto cpuFile = [](int c, const char* name) { return "/sys/devices/system/cpu/cpu" + std::to_string(c) + name; };
@@ -558,24 +668,38 @@ struct ThreadPlacement {
         }
         if (CPU_COUNT(&main) == 0) CPU_SET(chosen, &main);
         CPU_XOR(&helpers, &allowed, &main);
-        if (CPU_COUNT(&helpers) == 0 || sched_setaffinity(0, sizeof main, &main) != 0) return;
-        active = true;
-        sweep();
+        if (CPU_COUNT(&helpers) == 0 || sched_setaffinity(0, sizeof main, &main) != 0) return false;
         std::string cpus;
         for (int c = 0; c < CPU_SETSIZE; ++c)
             if (CPU_ISSET(c, &main)) cpus += (cpus.empty() ? "" : ",") + std::to_string(c);
         std::printf("TN_THREAD_PLACEMENT main=%s helpers=%d\n", cpus.c_str(), CPU_COUNT(&helpers));
+        return true;
     }
-    /** Moves every thread but the calling (game) one, and every descendant process, onto the helpers. */
+    /**
+     * Moves every thread but the game one, and every descendant process, onto the helpers; raises the frame-critical
+     * threads of the player and lowers the rest (PRD-859).
+     */
     void moveTasks(int pid, bool self) {
         const std::string root = "/proc/" + std::to_string(pid) + "/task";
         DIR* tasks = opendir(root.c_str());
         if (!tasks) return;
-        const pid_t me = static_cast<pid_t>(syscall(SYS_gettid));
         while (const dirent* entry = readdir(tasks)) {
             const int tid = std::atoi(entry->d_name);
             if (tid <= 0) continue;
-            if (!self || tid != me) sched_setaffinity(tid, sizeof helpers, &helpers);
+            if (placed && (!self || tid != game)) sched_setaffinity(tid, sizeof helpers, &helpers);
+            const std::string name = self ? commOf(pid, entry->d_name) : std::string();
+            int* critical = !self ? nullptr : tid == game ? &readout.game : name == "tn-render" ? &readout.render
+                                                         : name == "tn-gpu" ? &readout.present : nullptr;
+            if (critical) {
+                if (priority) raise(tid);
+                *critical = niceOf(tid);
+            } else if (self && name.rfind("SDLAudio", 0) == 0) {
+                // SDL raises its own audio device threads (time-critical playback); they keep what SDL set.
+            } else if (priority) {
+                lower(tid);
+            } else {
+                readout.background = std::min(readout.background, niceOf(tid));
+            }
             // Children are listed per thread; WebKit's processes hang off the overlay's thread.
             if (std::FILE* file = std::fopen((root + "/" + entry->d_name + "/children").c_str(), "r")) {
                 int child = 0;
@@ -587,11 +711,13 @@ struct ThreadPlacement {
     }
     void sweep() {
         lastSweep = std::chrono::steady_clock::now();
+        readout = {};
         moveTasks(static_cast<int>(getpid()), true);
+        report();
     }
-    /** Threads started after `start` inherit the game thread's core; a sweep a second moves them. */
+    /** Threads started after `start` inherit the game thread's core and nice value; a sweep a second moves them. */
     void sweepIfDue() {
-        if (active && std::chrono::steady_clock::now() - lastSweep >= std::chrono::seconds(1)) sweep();
+        if (game != 0 && std::chrono::steady_clock::now() - lastSweep >= std::chrono::seconds(1)) sweep();
     }
 };
 #else
@@ -780,10 +906,14 @@ int Session::initialize() {
 #if !defined(__ANDROID__)
     if (const char* flag = flags::read<flags::GpuThread>(); presenter && !(flag && std::strcmp(flag, "0") == 0)) {
         gpuThread = std::make_shared<GpuThread>();
+        gpuThread->post([] { frameCriticalThread("tn-gpu"); });
+        gpuThread->wait();
         renderer->gpu().setThread(gpuThread);
         // Only a game that fences its own renderer touches (setRenderBarrier) can share the renderer with a thread.
         if (const char* rt = flags::read<flags::RenderThread>(); !gpuTiming && !(rt && std::strcmp(rt, "0") == 0) && game.setRenderBarrier) {
             renderThread = std::make_shared<GpuThread>();
+            renderThread->post([] { frameCriticalThread("tn-render"); });
+            renderThread->wait();
             renderer->collectFrame();
             game.setRenderBarrier([this] { waitRenderThread(false); });
         }
