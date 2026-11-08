@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "bake": "node scripts/bake.mjs",
-    "dev": "pnpm bake && vite",
+    "dev": "pnpm bake && node scripts/prep-fab-temperate.mjs --auto && vite",
     "build": "pnpm bake && vite build",
     "build:engine": "node ../../packages/create-threenative/dist/threenative.js build --target web --outDir dist-engine",
     "build:desktop": "pnpm bake && node scripts/stage-native-assets.mjs && node ../../packages/runtime-native/scripts/bundle.mjs --project . --entry src/game.ts --target desktop --output dist/strata-terrain-native.js",

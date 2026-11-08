@@ -13,8 +13,9 @@ Read `/AGENTS.md` first. This example consumes build-baked arrays, not runtime r
 - The forest uses the owner's licensed Project Nature Spruce Forest, Grass Library, Ground Foliage,
   Meadow Flowers and Fern Collection, plus Epic Kite Demo photoscanned rocks. `src/render/pack.ts`
   loads this example's gitignored `local-assets/temperate/`; `scripts/prep-fab-temperate.mjs`
-  repairs atlas/opacity bindings and calls the installed asset cook. Set `FAB_TEMPERATE` to the
-  imported library. Licensed bytes are LOCAL-ONLY and never committed; provenance is in `CREDITS.md`.
+  repairs atlas/opacity bindings and calls the installed asset cook. `pnpm dev` runs it with `--auto`:
+  the library defaults to the asset MCP's import folder `~/.cache/threenative-fab/temperate`
+  (`FAB_TEMPERATE` overrides), a machine without it skips, and an unchanged library skips on a stamp. Licensed bytes are LOCAL-ONLY and never committed; provenance is in `CREDITS.md`.
   Missing models keep the procedural spruce, rock, fern, grass and flower fallback drawing.
   Cutout vegetation draws with its imported albedo, normal map and cutoff, lit by the CC0
   Kloofendal HDRI as each material's `envMap` (`local-assets/prepared/kloofendal_48d_2k.hdr`,
