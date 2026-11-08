@@ -3322,12 +3322,22 @@ void indirectRecord() {
         const auto one = frame();
         setInstances(2);
         const auto two = frame();
+        // The GPU copy is what an indirect draw reads (PRD-857): core's cull kernel writes the instance buffer on the
+        // GPU and the CPU bytes never change. A CPU write with no needsUpdate leaves the GPU copy as it was, so the
+        // GPU copy and the CPU bytes now disagree the same way: both instances on the right in the CPU bytes only.
+        const float right[32] = {0.6f, 0, 0, 0, 0, 0.6f, 0, 0, 0, 0, 0.6f, 0, 1.25f, 0, 0, 1,
+                                 0.6f, 0, 0, 0, 0, 0.6f, 0, 0, 0, 0, 0.6f, 0, 1.25f, 0, 0, 1};
+        matrices.write(0, right, sizeof right);
+        const auto gpuCopy = frame();
+        matrices.write(0, placed, sizeof placed);
+        matrices.needsUpdate();
         item.indirect = nullptr; item.indirectOffset = 0;
         const auto direct = frame();
-        std::printf("indirect record (stable %d): one %d|%d, two %d|%d, direct %d|%d\n", stable, one[0], one[1], two[0], two[1],
-                    direct[0], direct[1]);
+        std::printf("indirect record (stable %d): one %d|%d, two %d|%d, gpu copy %d|%d, direct %d|%d\n", stable, one[0], one[1],
+                    two[0], two[1], gpuCopy[0], gpuCopy[1], direct[0], direct[1]);
         CHECK(one[0] > 20 && one[1] == 0);  // the record's one instance, not the capacity's two
         CHECK(two[0] > 20 && two[1] > 20);  // a rewritten record draws what it now says
+        CHECK(gpuCopy[0] > 20 && gpuCopy[1] > 20);  // the GPU's instances, not the CPU bytes
         CHECK(direct[0] > 20 && direct[1] > 20);
     }
 }

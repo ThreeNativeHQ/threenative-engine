@@ -3691,6 +3691,10 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     uint32_t instanceCopies = 0;
     for (const auto& [depth, drawn] : opaque) {
         if (!drawn->instanceMatrices) continue;
+        if (drawn->indirect) {  // read in place as a vertex buffer; nothing to pack
+            instanceBases[drawn] = 0.0;
+            continue;
+        }
         const uint64_t floats = uint64_t{drawn->instanceCount} * 20;
         const BufferStore& matrixStore = *drawn->instanceMatrices;
         const BufferStore* colorStore = drawn->instanceColors;
@@ -3858,7 +3862,10 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         v.instanced = item.instanceMatrices != nullptr;
         v.instanceColor = item.instanceColors != nullptr;
         v.vertexColors = item.colorSize;
-        v.instanceStorage = v.instanced;
+        // An indirect draw's instances live where the GPU wrote them (core's cull kernel, PRD-857): bound as an
+        // instance-step vertex buffer, as three binds a StorageInstancedBufferAttribute, `firstInstance` from the
+        // record offsets the fetch. The packed frame copy reads the CPU store, which the GPU never writes back.
+        v.instanceStorage = v.instanced && !item.indirect;
         v.skinned = item.boneMatrices != nullptr;
         v.skinnedPalette = item.boneStride != 0;
         v.skinInstanceValues = item.shadowGroup && item.boneMatrices != nullptr;
@@ -4312,7 +4319,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         // depth a page writes is unchanged and only the instances its scissor clipped are gone.
         const bool cullInstances = virtualMap && shadowInstanceCullEnabled();
         const auto instanceBoxes = [&](const DrawItem* drawn) -> const std::vector<Box3>* {
-            if (!cullInstances || !drawn->instanceMatrices || !bounded(drawn) || drawn->gpuJoints) return nullptr;
+            // An indirect caster's instances are the GPU's: its record already chose them.
+            if (!cullInstances || !drawn->instanceMatrices || drawn->indirect || !bounded(drawn) || drawn->gpuJoints) return nullptr;
             return casterOf(drawn).instances;
         };
         // The cells a box reaches. A box with no finite extent (a NaN matrix) cannot be placed: it reaches every cell,
@@ -4925,7 +4933,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             current.buffers.insert(current.buffers.end(), {reinterpret_cast<uintptr_t>(item.instanceMatrices),
                 item.instanceMatrices ? item.instanceMatrices->count() : 0});
             // A store rewritten with the same matrices did not move: compare the contents, not the writes.
-            if (item.instanceMatrices)
+            if (item.instanceMatrices && !item.indirect)  // ponytail: GPU-placed instances count as still for TRAA
                 current.instanceHash = std::hash<std::string_view>{}(std::string_view(
                     reinterpret_cast<const char*>(static_cast<const BufferStore&>(*item.instanceMatrices).data()),
                     std::size_t{item.instanceCount} * 64));
