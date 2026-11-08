@@ -28,6 +28,14 @@ namespace tn::engine {
 
 namespace {
 
+// three's geometry.setIndirect (PRD-857), read every frame: a GPU world scene points a geometry at its key's
+// record after the mesh is built, and points it at a grown buffer when the scene resizes.
+void indirectOf(const Mesh& mesh, DrawItem& d) {
+    const BufferGeometry* geometry = mesh.geometry.get();
+    d.indirect = geometry && geometry->indirect ? geometry->indirect->store.get() : nullptr;
+    d.indirectOffset = d.indirect ? static_cast<uint64_t>(geometry->indirectOffset) : 0;
+}
+
 // What a material's node graphs read from outside the material: the texture pmremTexture
 // prefilters and the reflectors a reflector() node samples. One pmrem source per material: a second,
 // different one is refused rather than silently sharing the first one's. Reflectors are a list, as
@@ -544,6 +552,7 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
         r.draw->item.renderOrder = mesh.renderOrder();
         // A game moves an InstancedBufferGeometry's instanceCount every frame (Midway's particles).
         if (mesh.geometry && mesh.geometry->instanced) geometryInputsOf(*mesh.geometry, r.draw->item);
+        indirectOf(mesh, r.draw->item);
         return r;
     }
     r.draw = std::make_unique<Record::Draw>();
@@ -557,6 +566,7 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
     d.normals = r.buffers[1];
     d.uvs = r.buffers[2];
     d.indices = r.buffers[3];
+    indirectOf(mesh, d);
     // The diffuse map is sampled only when its image is decoded and the geometry carries uv; an
     // image-less glTF placeholder (source only) keeps drawing its flat colour as before.
     if (d.uvs != nullptr) {

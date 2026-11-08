@@ -251,6 +251,10 @@ struct DrawItem {
     BufferStore* instanceMatrices = nullptr;
     BufferStore* instanceColors = nullptr;
     uint32_t instanceCount = 1;
+    // three's geometry.setIndirect (PRD-857): the record a GPU kernel fills, read by the draw in place of
+    // instanceCount; the byte offset of this geometry's record in it. Null draws direct.
+    BufferStore* indirect = nullptr;
+    uint64_t indirectOffset = 0;
     bool sprite = false, spriteSizeAttenuation = true;
     std::array<double, 2> spriteCenter{0.5, 0.5};
     double spriteRotation = 0;

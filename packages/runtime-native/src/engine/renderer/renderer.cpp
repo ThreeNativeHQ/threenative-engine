@@ -605,6 +605,8 @@ struct Renderer::MainRow {
     uint64_t indexSize = 0;
     uint32_t count = 0;      // indices, or vertices for a non-indexed draw
     uint32_t instances = 0;  // this frame's; 0 while out of view
+    WGPUBuffer indirect = nullptr;  // the geometry's own GPU-filled record (PRD-857), drawn in place of the pass's
+    uint64_t indirectOffset = 0;
     uint64_t seen = 0;
     std::vector<uint64_t> words;  // the draw's row of the per-draw bundle key: unchanged, the commands are too
     // sortDraws' state order: the background first, then renderOrder, then state.
@@ -5629,6 +5631,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     };
     const auto syncNamed = [&](const Planned& p) {
         const DrawItem& item = *p.item;
+        // A GPU-filled indirect record (PRD-857) is a storage buffer the draw also reads as indirect args.
+        if (item.indirect) geometry_->cache.sync(*item.indirect, WGPUBufferUsage_Indirect);
         if (!item.colors && !item.instanceMatrices && !item.instanceColors && item.attributes->empty()) return;
         for (const shader::VertexAttribute& a : p.program->vertex.attributes)
             if (BufferStore* source = vertexSourceOf(item, a)) geometry_->cache.sync(*source, WGPUBufferUsage_Vertex);
@@ -5660,6 +5664,10 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             };
             appendStore(item.indices);
             for (const auto& attribute : p.program->vertex.attributes) appendStore(vertexSourceOf(item, attribute));
+            if (item.indirect) {
+                const Handle handle = geometry_->cache.sync(*item.indirect, WGPUBufferUsage_Indirect);
+                key.insert(key.end(), {handle.type, handle.context, handle.index, handle.generation, item.indirectOffset});
+            }
         }
     };
     bundleKeyOf(plan, job.bundleKey, &job.bundleRows);
@@ -5737,6 +5745,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 const auto resolved = geometry_->cache.resolved(*source);
                 row.vertex.push_back({a.location, geometry_->gpu.buffer(resolved.buffer), offset, resolved.bytes - offset});
             }
+            row.indirect = item.indirect ? geometry_->gpu.buffer(geometry_->cache.resolved(*item.indirect).buffer) : nullptr;
+            row.indirectOffset = item.indirectOffset;
             row.index = nullptr;
             if (item.indices) {
                 const auto indices = geometry_->cache.resolved(*item.indices);
@@ -6128,12 +6138,17 @@ void Renderer::encodeFrame(FrameJob& job) {
                 boundIndex = item.indices;
             }
             const uint32_t count = static_cast<uint32_t>(indices.bytes / (wide ? 4 : 2));
-            TN_ENCODE(DrawIndexed, count, item.instanceCount, 0, 0, 0);
+            // The record's instance count is the GPU's; the tally below stays the CPU upper bound (capacity).
+            if (item.indirect)
+                TN_ENCODE(DrawIndexedIndirect, geometry_->gpu.buffer(geometry_->cache.resolved(*item.indirect).buffer), item.indirectOffset);
+            else TN_ENCODE(DrawIndexed, count, item.instanceCount, 0, 0, 0);
             if (tally != Tally::Extra)
                 (counted ? lastFrame_.triangles : lastFrame_.shadowTriangles) += uint64_t{item.instanceCount} * (count / 3);  // three's Info.update
         } else {
             const uint32_t count = static_cast<uint32_t>(geometry_->cache.resolved(*item.positions).bytes / 12);
-            TN_ENCODE(Draw, count, item.instanceCount, 0, 0);
+            if (item.indirect)
+                TN_ENCODE(DrawIndirect, geometry_->gpu.buffer(geometry_->cache.resolved(*item.indirect).buffer), item.indirectOffset);
+            else TN_ENCODE(Draw, count, item.instanceCount, 0, 0);
             if (tally != Tally::Extra)
                 (counted ? lastFrame_.triangles : lastFrame_.shadowTriangles) += uint64_t{item.instanceCount} * (count / 3);
         }
@@ -6280,9 +6295,11 @@ void Renderer::encodeFrame(FrameJob& job) {
             wgpuRenderBundleEncoderSetBindGroup(bundle, 1, row.mapGroup, row.fragmentBlock ? 1 : 0, &row.fragmentOffset);
             if (row.index) {
                 if (index != row.index) wgpuRenderBundleEncoderSetIndexBuffer(bundle, index = row.index, row.indexFormat, 0, row.indexSize);
-                wgpuRenderBundleEncoderDrawIndexedIndirect(bundle, pass.indirect, r * 20);
+                wgpuRenderBundleEncoderDrawIndexedIndirect(bundle, row.indirect ? row.indirect : pass.indirect,
+                                                           row.indirect ? row.indirectOffset : r * 20);
             } else {
-                wgpuRenderBundleEncoderDrawIndirect(bundle, pass.indirect, r * 20);
+                wgpuRenderBundleEncoderDrawIndirect(bundle, row.indirect ? row.indirect : pass.indirect,
+                                                    row.indirect ? row.indirectOffset : r * 20);
             }
         }
         WGPURenderBundleDescriptor finish{};
