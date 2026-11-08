@@ -76,6 +76,8 @@ public:
     }
     ExprId expression(Node node);
     void statements(const std::vector<Node>& list);
+    /** An input changed value: no memoized read of it may survive. Variables and lowered bodies stay shared. */
+    void inputsChanged() { exprs_.clear(); temps_.clear(); }
 
 private:
     void statement(Node node);
@@ -186,9 +188,10 @@ ExprId Lowerer::expression(Node node) {
     const bool shared = uses_[node.get()] > 1 && (kind == Kind::Unary || kind == Kind::Binary ||
         kind == Kind::Math || kind == Kind::Join || kind == Kind::Pmrem ||
         kind == Kind::RenderOutput || kind == Kind::WgslCall);
-    // TextureNode generates a sampled temporary even for a single use.
+    // TextureNode generates a sampled temporary even for a single use. A Fn call is statements, and three
+    // caches its output for the build: re-lowered per read, a loop in it would run once per read.
     const bool sampled = kind == Kind::Texture || kind == Kind::TextureLoad || kind == Kind::RenderTexture ||
-        kind == Kind::Reflector || kind == Kind::ViewportDepth;
+        kind == Kind::Reflector || kind == Kind::ViewportDepth || kind == Kind::Call;
     if (id != kInvalid && (shared || sampled)) {
         id = program_.load(program_.var(program_.expr(id).type, id));
         temps_[node.get()] = {scopes_.back(), id};
@@ -1066,6 +1069,11 @@ Lowering::Lowering(Program& program, std::unordered_map<std::string, ExprId> inp
                    std::optional<ToneMapping> toneMapping, bool srgb, Node custom)
     : impl_(std::make_unique<Impl>(program, std::move(inputs), toneMapping, srgb, custom)) {}
 Lowering::~Lowering() = default;
+void Lowering::input(const std::string& name, std::optional<ExprId> value) {
+    if (value) impl_->inputs.insert_or_assign(name, *value);
+    else impl_->inputs.erase(name);
+    impl_->lowerer.inputsChanged();
+}
 ExprId Lowering::lower(const Graph& graph) {
     impl_->lowerer.analyze(graph);
     impl_->lowerer.declareHoisted();

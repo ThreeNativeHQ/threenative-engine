@@ -1,5 +1,6 @@
 #include "check.h"
 #include "engine/shader/graph/graph.h"
+#include "engine/shader/standard.h"
 #include "engine/shader/tsl/tsl.h"
 #include "engine/shader/wgsl.h"
 #include <cstdio>
@@ -91,6 +92,45 @@ void scopes() {
     }
 }
 }
+// One Fn call read by two statements lowers once, as three caches a call's output for the build. A call is
+// statements (loops, samples), so re-lowering it per read repeats them: the world impostor's ray march read
+// by colour, normal and coverage ran twice a fragment, 46 ms against three's 10 ms (PRD-858).
+void callOnce() {
+    g::Block inner;
+    const auto acc = inner.var(g::float_(0));
+    inner.Loop(4, [&](g::Node) { inner.assign(acc, g::add(acc, g::mul(g::uniform("x", Type::f32()), g::float_(2)))); });
+    auto body = std::make_shared<g::NodeData>(*inner.node());
+    body->args = {acc};
+    auto invocation = std::make_shared<g::NodeData>();
+    invocation->kind = g::Kind::Call; invocation->type = Type::f32(); invocation->args = {body};
+    g::Block block;
+    const auto out = g::storage("out", Type::f32());
+    block.assign(out.element(g::int_(0)), invocation);
+    block.assign(out.element(g::int_(1)), g::add(invocation, g::float_(1)));
+    Program p(Stage::Compute); tsl::Build build(p);
+    g::lower(block.node(), p);
+    CHECK(p.ok());
+    CHECK(occurrences(p.dump(), "mul(") == 1);
+    CHECK(WgslEmitter::emit(p).ok());
+}
+// A Fn body the normalNode shares with the colorNode lowers its loop once in the material's fragment. The normal
+// lowered apart from the other slots, so the world impostor's march ran once for the normal and again for colour
+// and coverage (PRD-858).
+void normalSharesSlots() {
+    g::Block inner;
+    const auto acc = inner.var(g::float_(0));
+    inner.Loop(4, [&](g::Node) { inner.assign(acc, g::add(acc, g::mul(g::uniform("x", Type::f32()), g::float_(2)))); });
+    auto march = std::make_shared<g::NodeData>(*inner.node());
+    march->args = {g::vec4({acc, acc, g::float_(1), g::float_(1)})};
+    VertexVariant variant;
+    variant.nodes.normalNode = g::swizzle(march, "xyz");
+    variant.nodes.colorNode = march;
+    const auto programs = buildStandard(StandardMaterial{}, variant);
+    CHECK(programs.diagnostics.empty());
+    const auto wgsl = WgslEmitter::emit(programs.fragment, 1);
+    CHECK(wgsl.ok());
+    CHECK(occurrences(wgsl.code, "for (") == 1);
+}
 // Live TSL compares like r185 OperatorNode: a uint index against a float uniform is promoted, not
 // refused (PRD-857: the GPU world scene's `instanceIndex.greaterThanEqual(counts.w)`).
 void mixedCompare() {
@@ -122,4 +162,4 @@ void mixedCompare() {
         CHECK(WgslEmitter::emit(p).ok());
     }
 }
-TN_TEST_MAIN({"shared", [] { shared(); probe(); mixedCompare(); }}, {"scopes", scopes})
+TN_TEST_MAIN({"shared", [] { shared(); probe(); mixedCompare(); callOnce(); normalSharesSlots(); }}, {"scopes", scopes})

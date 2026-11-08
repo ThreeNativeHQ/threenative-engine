@@ -1417,7 +1417,11 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
         ? f.call("normalize", {f.call("cross", {f.call("dFdx", {f.varying("positionView", Type::vec(3))}),
                                                  f.call("dFdy", {f.varying("positionView", Type::vec(3))})})})
         : normalViewGeometry);
-    ExprId n = nodeValue(f, variant.nodes.normalNode, Type::vec(3), normalViewFaced, normalViewFaced, normalViewGeometry);
+    // The normalNode lowers through the slots' one lowering, so a node it shares with them (the world impostor's
+    // ray march feeds normal, colour and coverage) lowers once, as three builds a material once (PRD-858). Inside
+    // the normalNode, normalView is the flipped geometry normal; the slots after it read the normal it made.
+    graph::Lowering slots(f, {{"viewMipBias", kInvalid}, {"normalView", normalViewFaced}, {"normalViewGeometry", normalViewGeometry}});
+    ExprId n = slotValue(f, slots, variant.nodes.normalNode, Type::vec(3), normalViewFaced);
     const ExprId positionViewDirection = f.call("normalize", {f.neg(f.varying("positionView", Type::vec(3)))});
     const ExprId positionWorld = lights.shadowed() ? f.varying("positionWorld", Type::vec(3)) : kInvalid;
     if (variant.normalMap && !variant.nodes.normalNode) n = perturbedNormal(f, variant, normalViewFaced);
@@ -1426,7 +1430,13 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     // normalize((vec4(normalView, 0) * viewMatrix).xyz).
     const ExprId normalWorld = f.call("normalize", {f.swizzle(f.mul(f.construct(Type::vec(4), {n, f.constant(0.0f)}),
                                                                      f.uniform("viewMatrix", Type::mat(4, 4))), "xyz")});
-    graph::Lowering slots = slotLowering(f, variant, n);
+    {
+        std::unordered_map<std::string, ExprId> inputs;
+        materialInputs(f, variant, inputs);
+        for (const auto& [name, value] : inputs) slots.input(name, value);
+        slots.input("normalView", n);
+        slots.input("normalViewGeometry", std::nullopt);
+    }
     discardMasked(f, slots, variant);
     const ExprId diffuse = slotValue(f, slots, variant.nodes.colorNode, Type::vec(4), f.uniform("diffuse", Type::vec(4)));
     const ExprId texel = variant.nodes.colorNode ? kInvalid : mapTexel(f, variant);

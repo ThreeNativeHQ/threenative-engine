@@ -285,6 +285,8 @@ public:
     Lowering(const Lowering&) = delete;
     Lowering& operator=(const Lowering&) = delete;
     ExprId lower(const Graph& graph);
+    /** Sets (or, with nullopt, removes) an input for the graphs lowered after this call. */
+    void input(const std::string& name, std::optional<ExprId> value);
 
 private:
     struct Impl;
