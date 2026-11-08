@@ -122,7 +122,7 @@ tailwind-parity: 288/503 (57.3 %)  [132 do not discriminate, 29 exempt, 4 perman
 | `PRD-849/media` | 13/22 | 1 |
 | `PRD-849/pseudo` | 2/8 | 2 |
 | `PRD-849/selectors` | 10/32 | 19 |
-| `PRD-850/misc` | 130/182 | 44 |
+| `PRD-850/misc` | 137/182 | 38 |
 | `PRD-850/paint` | 10/39 | 23 |
 | `PRD-850/type` | 17/41 | 16 |
 | `PRD-851/paint` | 0/5 | 5 |

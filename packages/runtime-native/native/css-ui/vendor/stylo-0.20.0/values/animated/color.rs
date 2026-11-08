@@ -67,8 +67,19 @@ impl Animate for Color {
     fn animate(&self, other: &Self, procedure: Procedure) -> Result<Self, ()> {
         let (left_weight, right_weight) = procedure.weights();
 
+        // Two absolute colors interpolate in the space `best_interpolation_between` names: Oklab
+        // unless both are legacy sRGB syntax. A color transition of a `oklch()` value against a
+        // legacy one therefore runs in Oklab, and sRGB here paints a different colour between the
+        // ends — the same value at both ends, a few units per channel apart in the middle.
+        let interpolation = match (self, other) {
+            (Self::Absolute(left), Self::Absolute(right)) => {
+                ColorInterpolationMethod::best_interpolation_between(left, right)
+            },
+            _ => ColorInterpolationMethod::srgb(),
+        };
+
         Ok(Self::from_color_mix(ColorMix {
-            interpolation: ColorInterpolationMethod::srgb(),
+            interpolation,
             items: OwnedSlice::from_slice(&[
                 GenericColorMixItem {
                     color: self.clone(),

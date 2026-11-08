@@ -113,8 +113,17 @@ Every transition cell now reads the same shape: 1.0000 at rest, 0.94–0.98 at t
 same size for `linear` and for both `cubic-bezier` curves, is an **interpolation space** difference:
 Tailwind 4's colours are `oklch()`, and CSS Color 4 interpolates `oklch()` values in **oklab**, while
 this engine interpolates in sRGB. The two agree exactly at both ends and differ by a few units per
-channel in between, which is the 0.96. Next step: interpolate `oklch()` colours in oklab for transitions
-and animations.
+channel in between, which is the 0.96. **Fixed, and it took the group with it.** Stylo's generic `Animate for Color` hardcoded
+`ColorInterpolationMethod::srgb()`, where CSS Color 4 names Oklab unless *both* ends are legacy sRGB
+syntax — and Tailwind's palette is `oklch()`. Both absolute ends now use
+`best_interpolation_between`, with sRGB kept for the non-absolute cases (`currentColor`, a colour
+function, `color-mix`). Proven red-green: the new test fails on the previous code with exactly the sRGB
+blend `[135, 74, 152]` and passes with the Oklab one `[153, 102, 164]`.
+
+Measured: the transition group 131 → **137 of 182** — `transition` 0.9999, `duration-75` 0.9999,
+`duration-initial` 0.9999, `delay-75` 0.9992, `ease-in` 0.9995, `ease-initial` 0.9999 — and the scene
+290 → **295 of 503**. `transition-none` stays inert by design (`transition: none` has nothing to show)
+and is the group's only remaining "does nothing".
 
 So the remaining difference is in *when* each subject starts the clock, not in the curve or the chain:
 at 0 ms and at every sample from 150 ms on, the two agree exactly, and only the two mid-flight samples

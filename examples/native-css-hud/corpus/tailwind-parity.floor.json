@@ -1,5 +1,5 @@
 {
-  "passed": 289,
+  "passed": 295,
   "units": [
     "PRD-850/paint|bg|background-size|",
     "PRD-850/paint|border|border-style,border-width|",
@@ -234,6 +234,11 @@
     "PRD-844/filter|saturate|--tw-saturate,filter|",
     "PRD-844/filter|sepia|--tw-sepia,filter|",
     "PRD-848/flow|table|display|",
+    "PRD-850/misc|delay|transition-delay|",
+    "PRD-850/misc|duration|--tw-duration,transition-duration|",
+    "PRD-850/misc|duration|--tw-duration|",
+    "PRD-850/misc|ease|--tw-ease,transition-timing-function|",
+    "PRD-850/misc|ease|--tw-ease|",
     "PRD-848/scroll|scroll|scroll-padding|",
     "PRD-848/scroll|scroll|scroll-padding-bottom|",
     "PRD-848/scroll|scroll|scroll-padding-block-end|",
@@ -244,6 +249,7 @@
     "PRD-848/scroll|scroll|scroll-padding-top|",
     "PRD-848/scroll|scroll|scroll-padding-inline|",
     "PRD-848/scroll|scroll|scroll-padding-block|",
+    "PRD-850/misc|transition|transition-duration,transition-property,transition-timing-function|",
     "PRD-849/selectors|variant|*",
     "PRD-849/selectors|variant|**",
     "PRD-849/selectors|variant|not",

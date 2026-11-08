@@ -373,7 +373,25 @@ hunk 3 is ~94, almost all of it `draw_inline_decorations`, and deletes the 40-li
 
 ## `stylo-0.20.0` — 118 added code lines and 22 TOML lines, and `stylo_atoms-0.20.0` — 4 added lines
 
-### 1. the servo build had no `prefers-reduced-motion`, and no way to carry the preference
+### 1. a colour transition to an `oklch()` value interpolated in sRGB
+
+* **Where:** `values/animated/color.rs` (`Animate for Color`): the `ColorInterpolationMethod` is
+  `best_interpolation_between` for two `Absolute` colors and `srgb()` otherwise, where the whole
+  implementation had `srgb()` hardcoded. (`AbsoluteColor::animate` in the same file was already
+  correct; the transitions of a `<color>`-typed property go through the generic `Color` one.)
+* **Why:** CSS Color 4 names Oklab as the interpolation space unless **both** ends are legacy sRGB
+  syntax, and Tailwind 4's whole palette is `oklch()`. A legacy start (`#2563eb` from a staged
+  declaration) against an `oklch()` end therefore has to interpolate in Oklab; in sRGB the two ends
+  agree exactly and the middle is a dozen units per channel off, which is precisely what a parity
+  sample mid-transition sees and a sample at rest does not.
+* **Proves it:** `a_colour_transition_to_an_oklch_value_interpolates_in_oklab` (fails on the previous
+  code with the sRGB blend `[135, 74, 152]`, passes with the Oklab one `[153, 102, 164]`), and
+  `parity:tailwind --family PRD-850 --group misc`: the whole transition group went from two cells at
+  0.94–0.98 to six passing at 0.9992–0.9999 (`transition`, `transition-none`'s neighbours,
+  `duration-75`, `duration-initial`, `delay-75`, `ease-in`, `ease-initial`), the group 131 → 137 of
+  182, and the scene 290 → **295 of 503**.
+
+### 2. the servo build had no `prefers-reduced-motion`, and no way to carry the preference
 
 * **Where:** `servo/media_features.rs` (a new `eval_prefers_reduced_motion` and its
   `feature!` entry, `MEDIA_FEATURES` 15 → 16), `device/servo.rs` (`ExtraDeviceData` gains
@@ -404,7 +422,7 @@ hunk 3 is ~94, almost all of it `draw_inline_decorations`, and deletes the 40-li
   reads both back through `scrollIntoView` (below), and the parity meter's scroll group moves from
   0 of 31 to **7 of 31** with 23 cells still needing drivers rather than a missing property.
 
-### 2. the same for `prefers-contrast`, `forced-colors` and `inverted-colors`
+### 4. the same for `prefers-contrast`, `forced-colors` and `inverted-colors`
 
 * **Where:** the three hunks above, repeated for three more features: `queries/values.rs`
   (`PrefersContrast`, `InvertedColors`), `device/servo.rs` (three fields, their accessors, and
@@ -428,7 +446,7 @@ hunk 3 is ~94, almost all of it `draw_inline_decorations`, and deletes the 40-li
 instead of injecting the `transition-duration: 0s !important` sheet — the workaround the PRD asked
 to delete once the query worked.
 
-### 19. `any-pointer` was a platform guess, not the device's own pointer
+### 5. `any-pointer` was a platform guess, not the device's own pointer
 
 * **Where:** `src/document.rs` (`make_device` passes the primary's `PointerCapabilities` as the
   all-pointer union instead of `PointerCapabilities::default()`).
@@ -441,7 +459,7 @@ to delete once the query worked.
   against the previous vendor sources. The parity meter's `any-pointer-coarse:` cell stops reporting
   a real mismatch.
 
-### 20. `scrollIntoView` scrolled only the viewport, and ignored `scroll-margin`/`scroll-padding`
+### 6. `scrollIntoView` scrolled only the viewport, and ignored `scroll-margin`/`scroll-padding`
 
 * **Where:** `src/scrolling.rs` (the new `scroll_node_into_view`; `scroll_into_view` is left as the
   viewport-only entry point it was).
@@ -466,7 +484,7 @@ to delete once the query worked.
   relative to its parent's content box — so neither is subtracted now, and the group goes **7/31 →
   14/31** (every block-axis `scroll-m*` and `scroll-p*` cell passes at 1.0000).
 
-### 4. a decoration line was drawn half a pixel off, so a 1px underline covered two rows
+### 7. a decoration line was drawn half a pixel off, so a 1px underline covered two rows
 
 * **Where:** `src/text.rs` (`draw_decoration_line`: both edges of the line are snapped to whole device
   pixels; the `snap` argument carries it).
@@ -480,7 +498,7 @@ to delete once the query worked.
   (28/28) and the crate's own suite is green. `overline` is still 0.8544: the snap did not change its
   offset, which is a separate measurement (the em-box top) and the next thing to look at there.
 
-### 21. a `display: none` element reported the position it last had
+### 8. a `display: none` element reported the position it last had
 
 * **Where:** `src/document.rs` (`untransformed_client_rect`: a `display: none` element answers a zero
   rect at the origin).
@@ -491,7 +509,7 @@ to delete once the query worked.
 * **Proves it:** the parity scene's `hidden` cell passes (1.0 pixels, 0 edge misses). The crate test
   suite and the 32-fixture browser oracle are unchanged.
 
-### 2. a colour matrix and a component transfer were dropped, so every CSS colour filter painted nothing
+### 9. a colour matrix and a component transfer were dropped, so every CSS colour filter painted nothing
 
 * **Where:** `src/scene.rs` (the new `ColourLayer`: a filter that is exactly one per-pixel colour
   function renders its layer into its own `RenderContext`, the pixels are transformed, and the result
@@ -516,7 +534,7 @@ to delete once the query worked.
   hue-rotate, invert, saturate and sepia go from 0.20–0.88 to **1.0000**, and the two cells that
   already passed (blur, backdrop-opacity) are unchanged. The 32-fixture browser oracle stays 28/28.
 
-### 5. `mask-mode: luminance` fell back to alpha, so a colour mask hid everything
+### 10. `mask-mode: luminance` fell back to alpha, so a colour mask hid everything
 
 * **Where:** `src/gradient.rs` (the new `apply_luminance_alpha`), `src/render/mask.rs` (reads the
   layer's `mask-mode` and passes it down), `src/render/background.rs` (`draw_image_layer` and
@@ -533,7 +551,7 @@ to delete once the query worked.
   not the mode). The 32-fixture browser oracle is unchanged (28/28) and the crate's 57 tests are
   green. Raster and SVG image masks are still alpha-only, which the hunk says.
 
-### 6. an overline's top edge was one thickness above the ascent
+### 11. an overline's top edge was one thickness above the ascent
 
 * **Where:** `src/text.rs` (the overline's offset is `ascent`, not `ascent + size`).
 * **Why:** measured against Chromium on the parity scene's `overline` cell, the engine's line was one
@@ -545,7 +563,7 @@ to delete once the query worked.
   Chromium trims it). `GlyphRun` exposes `glyphs()` and the run's `clusters()`, not per-line clusters,
   so trimming needs the line's portion of the run — that is the next measurement here.
 
-### 7. an inset box shadow ignored its spread, so a ring with no blur painted nothing
+### 12. an inset box shadow ignored its spread, so a ring with no blur painted nothing
 
 * **Where:** `src/render/box_shadow.rs` (`draw_inset_box_shadow`: the `DestOut` cut-out is the border
   box deflated by the shadow's `spread`).
@@ -560,7 +578,7 @@ to delete once the query worked.
   (28/28). `inset-shadow-red-50` now discriminates for the first time and measures 0.9809 — its blur
   kernel is the next question there.
 
-### 9. `mix-blend-mode` was never read, so every blend painted as `Normal`
+### 13. `mix-blend-mode` was never read, so every blend painted as `Normal`
 
 * **Where:** `src/render.rs` (`peniko_mix` maps the computed `mix-blend-mode`; the element's effect
   layer is pushed when the mode is not `Normal`), `src/layers.rs` (`maybe_with_layer` /
@@ -577,7 +595,7 @@ to delete once the query worked.
   `color-burn`, `soft-light`), so the layer is composited as `Normal` anyway. Separable modes work;
   the non-separable ones are a `vello_cpu` limitation, not this crate's.
 
-### 22. a perspective-free 3D transform was dropped instead of projected
+### 14. a perspective-free 3D transform was dropped instead of projected
 
 * **Where:** `src/stylo_to_kurbo.rs` (`resolve_2d_transform`: a matrix with no perspective row keeps
   its 2D submatrix instead of being filtered out).
@@ -591,7 +609,7 @@ to delete once the query worked.
   does not have. The parity meter's `transform3d` family goes 1/9 → **3/9** (both rotations 0.9991 and
   0.9996) and the whole scene 272 → **274/503 (54.5 %)**.
 
-### 10. a wavy decoration's wavelength was four pixels where Chromium's is six
+### 15. a wavy decoration's wavelength was four pixels where Chromium's is six
 
 * **Where:** `src/text.rs` (`draw_decoration_line`: `half_wave` is three thicknesses, not two).
 * **Why:** measured on the parity scene's `decoration-wavy` cell — the decoration's lowest lit row per
@@ -607,7 +625,7 @@ to delete once the query worked.
   or the position. Both constants are fitted to a measurement, and the hunk says so because Chromium
   does not document the squiggle's geometry.
 
-### 11. a decoration ran through the white space a line ends with
+### 16. a decoration ran through the white space a line ends with
 
 * **Where:** `src/text.rs` (the decoration range subtracts the trailing spaces of the run, for the
   glyph run that reaches that run's end).

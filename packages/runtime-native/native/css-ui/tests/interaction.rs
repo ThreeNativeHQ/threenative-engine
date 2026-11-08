@@ -800,6 +800,53 @@ fn a_bezier_timing_function_matches_the_curve() {
     assert_eq!(rgb(&ui, 50, 30), [0xef, 0x44, 0x44], "and arrived");
 }
 
+/// A colour transition between a legacy sRGB value and an `oklch()` one interpolates in **Oklab**: CSS
+/// Color 4 picks Oklab whenever either end is not legacy syntax, and Tailwind 4's palette is `oklch()`.
+/// The two spaces agree exactly at both ends and differ by a dozen units in the middle, which is what a
+/// mid-flight parity sample sees and nothing else does.
+#[test]
+fn a_colour_transition_to_an_oklch_value_interpolates_in_oklab() {
+    let mut ui = ui(
+        320,
+        200,
+        &[
+            sheet(
+                "s",
+                &format!(
+                    "{BASE}\n.a{{width:100px;height:40px;margin:10px;background:#2563eb;transition:background-color 150ms cubic-bezier(0.4,0,0.2,1)}}\n.a:hover{{background:oklch(63.7% 0.237 25.331)}}"
+                ),
+            ),
+            create(1, "div"),
+            attr(1, "class", "a"),
+            append(0, 1),
+        ],
+    );
+    hover(&mut ui, 50.0, 30.0);
+    ui.render();
+    // Oklab at a third and two thirds of the curve; the sRGB blend of the same pair is (135,74,152) and
+    // (234,48,68), a dozen units away.
+    ui.set_time(50.0);
+    ui.render();
+    let third = rgb(&ui, 50, 30);
+    assert!(
+        third
+            .iter()
+            .zip([153u8, 102, 164])
+            .all(|(a, b)| (*a as i32 - b as i32).abs() <= 2),
+        "Oklab a third of the way, got {third:?}"
+    );
+    ui.set_time(100.0);
+    ui.render();
+    let two_thirds = rgb(&ui, 50, 30);
+    assert!(
+        two_thirds
+            .iter()
+            .zip([237u8, 63, 77])
+            .all(|(a, b)| (*a as i32 - b as i32).abs() <= 2),
+        "Oklab two thirds of the way, got {two_thirds:?}"
+    );
+}
+
 /// `@property`-registered custom properties, which is how Tailwind 4 ships `--tw-*`: a registered
 /// property has a declared syntax and an initial value, and a var chain that reads one must see the
 /// value the cascade computed for it. The parity stylesheet registers every `--tw-*` it uses, so a
