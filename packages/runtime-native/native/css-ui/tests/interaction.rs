@@ -515,7 +515,7 @@ fn scroll_into_view_honours_scroll_margin_and_scroll_padding() {
     let mut scrolled = plain;
     // The item sits 200px down the scroller's content: with no margin or padding, `start` puts its
     // top at the scrollport's top.
-    assert!(scrolled.scroll_into_view(3), "it scrolled");
+    assert!(scrolled.scroll_into_view(3, false, false), "it scrolled");
     scrolled.render();
     assert_eq!(
         scrolled.scroll_offset(1),
@@ -547,7 +547,7 @@ fn scroll_into_view_honours_scroll_margin_and_scroll_padding() {
             append(2, 3),
         ],
     );
-    assert!(padded.scroll_into_view(3), "it scrolled");
+    assert!(padded.scroll_into_view(3, false, false), "it scrolled");
     padded.render();
     assert_eq!(
         padded.scroll_offset(1),
@@ -1127,6 +1127,51 @@ fn mix_blend_mode_composites_the_element_against_its_backdrop() {
     ui.render();
     assert_eq!(rgb(&ui, 16, 16), [0, 0, 0], "blue multiplied over red is black");
     assert_eq!(rgb(&ui, 48, 48), [255, 0, 0], "the backdrop outside it is untouched");
+}
+
+#[test]
+fn a_gradient_background_takes_its_position() {
+    // Tailwind's `bg-top` moves a *gradient* image to the top of the box; the parity scene's cell
+    // stages exactly that (with a repeating gradient as the contrast) and measured 0.2243 against
+    // Chromium, so the first question is whether the position reaches the paint at all.
+    let document = |position: &str| {
+        ui(
+            64,
+            64,
+            &[
+                sheet(
+                    "s",
+                    &format!(
+                        "{BASE}\n#a{{width:64px;height:64px;\
+                         background-image:repeating-linear-gradient(45deg,#f59e0b 0 6px,#2563eb 6px 12px);\
+                         background-size:24px 24px;background-position:{position};background-repeat:repeat}}"
+                    ),
+                ),
+                create(1, "div"),
+                attr(1, "id", "a"),
+                append(0, 1),
+            ],
+        )
+    };
+    let mut left = document("left");
+    left.render();
+    let mut top = document("top");
+    top.render();
+    let mut centre_top = document("center top");
+    centre_top.render();
+    let column = |ui: &threenative_css_ui::CssUi, x: u32| {
+        (0..64).map(|y| rgb(ui, x, y)).collect::<Vec<_>>()
+    };
+    assert_ne!(
+        column(&left, 0),
+        column(&top, 0),
+        "`background-position: left` and `top` must paint the same image differently"
+    );
+    assert_eq!(
+        column(&top, 0),
+        column(&centre_top, 0),
+        "`background-position: top` is `center top`, not `left top`"
+    );
 }
 
 #[test]

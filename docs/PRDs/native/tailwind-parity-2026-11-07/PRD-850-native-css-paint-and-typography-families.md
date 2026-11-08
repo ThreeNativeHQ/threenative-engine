@@ -68,14 +68,16 @@ Measured with `pnpm --filter threenative-native-css-hud parity:tailwind --family
   (2) need an `<img>`; `transform`/`transform-fill` (2) need a transform to change; `mb-40`/`mr-40`/
   `me-40`/`mbe-40` need a following sibling in block flow; `aspect-square` needs the probe's height
   to stop being fixed by the staging; `z-40` needs stacked siblings.
-- **`bg-top`, `bg-repeat` and `bg-origin-border` all measure exactly 0.2243 (open).** Three different
-  units with one identical score, no edge misses and a measured region of 148×68 at the probe: that is
-  one cause, not three, and it is in how the probe's *gradient image* is tiled and positioned (all three
-  units move the image, none of them changes its stops). The frames were compared and the regions carry
-  the same few flat colours on both sides with different arrangements, which is the signature of a
-  shifted/inverted tiling rather than a missing feature. Not resolved: the investigation stopped at
-  "same palette, different arrangement", and the next attempt should read the computed
-  `background-position`/`background-size` the engine resolves for one of them the way the mask work did.
+- **`bg-top`, `bg-repeat` and `bg-origin-border` all measure exactly 0.2243: a tiling *phase* (open).**
+  One cause, not three — all three units move a repeating gradient image, none changes its stops. The
+  contrast that stages these cells is `repeating-linear-gradient(45deg, …)` at `background-size: 24px
+  24px`, so a fraction of a tile is worth 1.0 of SSIM on a high-frequency pattern. Measured along the
+  same row inside the probe, the stripe transitions are `8, 12, 20, 29, 32, 36, 44, 53` in Chromium and
+  `10, 18, 26, 32, 34, 42, 50, 56` here — a phase difference, not a missing image.
+  `tests/interaction.rs::a_gradient_background_takes_its_position` already pins the two things that
+  *are* right (a repeating gradient moves with `background-position`, and `top` resolves to
+  `center top`), so what is left is the tiling origin itself: the next attempt should compare
+  `background-size: 24px 24px` against `auto` for one cell.
 - **A box shadow's blur is already Chromium's, and a spec-based "fix" broke a reference frame.**
   CSS defines the blur radius as twice the standard deviation, so the outset path was changed to pass
   `blur * 0.5`. The parity scene's `shadow-red-50` cell improved (0.9661 → 0.9756) — and the crate's
