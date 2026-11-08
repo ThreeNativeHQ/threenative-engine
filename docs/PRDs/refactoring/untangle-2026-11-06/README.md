@@ -22,12 +22,12 @@ Verified by the coordinator (re-ran the command): B1/F2 (7 render files, 12 copi
 | PRD | Report id | Goal | Priority |
 | --- | --- | --- | --- |
 | [PRD-832](../../done/PRD-832-urgent-single-sources.md) | Q1-Q5, R2 slice | Urgent single sources: kit inventory, render drift guard, launch flags, tone curve, core version, named `tnw_web_frame` fields | P1 |
-| [PRD-833](PRD-833-template-mechanism-lives-once.md) | R1 | Template mechanism lives once | P1 |
+| [PRD-833](../../done/PRD-833-template-mechanism-lives-once.md) | R1 | Template mechanism lives once | P1 |
 | [PRD-835](PRD-835-one-registry-entry-per-assertion.md) | R3 | One registry entry per assertion | P1 |
 | [PRD-840](PRD-840-platform-difference-is-a-value.md) | N3 | Platform difference is a value, not a scattered `#ifdef` | P1 |
 | [PRD-834](PRD-834-cross-language-contracts-are-generated.md) | R2 | Cross-language contracts are generated | P2 |
 | [PRD-836](../../done/PRD-836-one-committed-capability-manifest.md) | R4 | One committed capability manifest | P2 |
-| [PRD-837](PRD-837-core-owns-each-shared-fact-once.md) | R5 | Core owns each shared fact once | P2 |
+| [PRD-837](../../done/PRD-837-core-owns-each-shared-fact-once.md) | R5 | Core owns each shared fact once | P2 |
 | [PRD-838](PRD-838-scripts-share-one-runtime-layer.md) | N1 | Scripts share one runtime layer | P2 |
 | [PRD-839](PRD-839-ci-contract-is-a-model-not-text.md) | N2 | The CI contract is a model, not text matches | P2 |
 | [PRD-841](PRD-841-game-ts-stops-being-the-hub.md) | N4 | `game.ts` stops being the hub | P2 |

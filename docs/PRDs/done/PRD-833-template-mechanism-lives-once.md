@@ -1,11 +1,11 @@
 # PRD-833 — Template mechanism lives once
 
-**Status:** PARTIAL — all three phases landed and AC-1 is green; AC-2 (the visual judge on starter, racing and snow) is open.
+**Status:** DONE — all three phases landed, AC-1 is green and the AC-2 visual judge returned NEUTRAL (2026-11-08).
 **Priority:** P1 — all phases landed; AC-1 is green and AC-2 is the one open verification (a before/after visual judge), so the tier rates that judge rather than a copy count.
 **Complexity:** 6 (MEDIUM); risk override: the moved files measure the environment and wire the backlight, so the owner's visual-judge rule applies
 **Owner:** ThreeNative maintainers
 **Depends on:** PRD-832 (its Phase 1 drift spec guards the copies until this PRD deletes them)
-**Batch:** [Untangle report, 2026-11-06](README.md) — R1
+**Batch:** [Untangle report, 2026-11-06](../refactoring/untangle-2026-11-06/README.md) — R1
 
 ## Context
 
@@ -35,7 +35,7 @@ Report ids B1, F1, F2, F3, F4, F8, B2. Root `AGENTS.md` puts "plumbing every gam
 ## Acceptance Criteria
 
 - [x] AC-1 [local]: A freshly scaffolded starter builds and passes its golden playtest. proof: `TN_GOLDEN_PATH_SCENARIOS=1 TN_PLAYTEST_ALLOW_SOFTWARE=1 TN_GOLDEN_PATH_TEMPLATES=starter,platformer pnpm verify:golden-path` → **EXIT=0**, every layer reached for both kits (`scaffold, install, mcp, dev, driving, test, driving, build, assert`) with `TN_GOLDEN_PATH_FAILED` absent. That is the lane CI's `golden-path-template` job runs for these two kits; starter and platformer are the two kits `pnpm test:templates` excludes because that job already boots them (`ALREADY_BOOTED_TEMPLATES`). The same command **unfiltered** (`TN_GOLDEN_PATH_SCENARIOS` unset, so each project's own `pnpm test` — eslint included — runs) found a real defect that CI's lane cannot see: eleven kits shipped an orphaned `import type { QualityTier }` after Phase 1 deleted its last reader, and a freshly scaffolded `action-rpg` failed `pnpm test` on `@typescript-eslint/no-unused-vars`. Fixed here, re-pinned, and proven green in a scaffolded project (`pnpm exec eslint src` → 0 errors, 4 pre-existing warnings).
-- [ ] AC-2 [local]: The visual judge returns NEUTRAL or better on starter, racing and snow, same pose before and after. proof: judge verdict recorded on this box
+- [x] AC-2 [local]: The visual judge returns NEUTRAL or better on starter, racing and snow, same pose before and after. proof: judge verdict recorded on this box. Judge 2026-11-08 (fresh read-only Opus subagent, `judge-632`): BEFORE `b48c653c1` (origin/develop) vs AFTER `5bd45931a` (this PR), headed WebGPU on NVIDIA turing (RTX 2080) for all 44 images, 2 runs per arm, BEFORE/AFTER burned in; images and `manifest.md` in `~/Downloads/pr632-visual-judge/`. Criteria set before judging: no visible change in exposure, colour, sky and environment light, shadows, LOD and geometry presence, fog or sharpness beyond the same-arm run-to-run noise. Verdict: **NEUTRAL, PASS** — starter (noise RMSE 0.0006-0.0012, cross-arm 0.0007-0.0010, mean luminance 0.5785-0.5787 in all four runs), racing (cross-arm 0.0002-0.0006, below the noise), snow (cross-arm 0.0002-0.0016 inside the 0.0011-0.0016 noise); sky, exposure, shadows, fog, distant trees and characters match.
 
 ## Integration Ledger
 
