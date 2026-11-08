@@ -1,6 +1,6 @@
 # PRD-839 — The CI contract is a model, not text matches
 
-**Status:** IN PROGRESS (Phases 1-3 done and verified locally; AC-1 and AC-2 open)
+**Status:** IN PROGRESS (Phases 1-3 and AC-1 done and verified locally; AC-2 needs the next PR CI run)
 **Priority:** P2 — open Phase 1 replaces 594 raw-text assertions on `ci.yml`, which one in three CI commits has to patch, and Phase 3 drops a proof that splices a historical workflow.
 **Complexity:** 5 (MEDIUM)
 **Owner:** ThreeNative maintainers
@@ -28,7 +28,7 @@ becomes explicit cases against the live model.
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local]: The CI contract specs pass, and a `pnpm ci:local --affected` plan for a sample diff is unchanged before and after. proof: `pnpm exec vitest run scripts/__tests__/ci-structure.spec.ts scripts/__tests__/ci-needs.spec.ts scripts/__tests__/ci-integration-scope.spec.ts` plus a plan diff. Plan diff done 2026-11-08: `node scripts/ci-change-scope.mjs --event pull_request --target develop --base B --head H --local --queue-lane --format json` for 11 real commit ranges, before (`5bd45931a`) and after: all 11 identical once the 40-character candidate SHA is normalized. Left open on purpose: 357 of 358 tests pass, and the one failure (QuickJS packaged fallback, missing `@threenative/assets` build) is the same on the unchanged spec. Close this box on a machine where that package builds.
+- [x] AC-1 [local]: The CI contract specs pass, and a `pnpm ci:local --affected` plan for a sample diff is unchanged before and after. proof: `pnpm exec vitest run scripts/__tests__/ci-structure.spec.ts scripts/__tests__/ci-needs.spec.ts scripts/__tests__/ci-integration-scope.spec.ts` plus a plan diff. Plan diff done 2026-11-08: `node scripts/ci-change-scope.mjs --event pull_request --target develop --base B --head H --local --queue-lane --format json` for 11 real commit ranges, before (`5bd45931a`) and after: all 11 identical once the 40-character candidate SHA is normalized. Spec run 2026-11-08 on the integration worktree (`refactor/untangle-832-842` after the lane merge, every package built): `npx vitest run scripts/__tests__/ci-*.spec.ts` → **28 files, 889 passed**, including the three named specs and the QuickJS packaged-fallback case that the lane worktree could not resolve (it lacked a built `@threenative/assets`). `pnpm typecheck` → EXIT=0.
 - [ ] AC-2 [shared]: One real PR run selects the same jobs as the last comparable run. proof: the `ci.yml` run on the PRD's PR, job list compared
 
 ## Integration Ledger
