@@ -229,6 +229,21 @@ describe("native scene pass translucent target", () => {
   });
 });
 
+describe("native scene pass indirect diffuse target", () => {
+  it("names its texture whenever a graph reads it: the read is what draws it", () => {
+    const api = definePass(tsl);
+    const scenePass = api.pass({}, {});
+    // Each lit draw's indirect diffuse light (PRD-635): the engine writes it while the post graph reads the name, so a
+    // screen-space occlusion can darken that share alone. Upstream three has no such output, so no MRT slot names it.
+    expect(scenePass.getTextureNode("indirectDiffuse")).toEqual({
+      source: { name: "indirectDiffuse" },
+    });
+    expect(() => api.mrt({ output: api.output, indirectDiffuse: api.output })).toThrow(
+      /TN_NATIVE_MRT_UNSUPPORTED: indirectDiffuse/u,
+    );
+  });
+});
+
 describe("native scene pass MRT", () => {
   it("accepts the normal target as normalView or as vec4(normalView, 0)", () => {
     expect(mrt({ output, normal: normalView }).outputs.normal).toBe(normalView);
