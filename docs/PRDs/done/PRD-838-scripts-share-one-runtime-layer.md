@@ -5,7 +5,7 @@
 **Complexity:** 5 (MEDIUM)
 **Owner:** ThreeNative maintainers
 **Depends on:** PRD-832 (its Phase 1 creates `scripts/lib/repo-inventory.ts`, the first shared module)
-**Batch:** [Untangle report, 2026-11-06](README.md) — N1
+**Batch:** [Untangle report, 2026-11-06](../refactoring/untangle-2026-11-06/README.md) — N1
 
 ## Context
 
