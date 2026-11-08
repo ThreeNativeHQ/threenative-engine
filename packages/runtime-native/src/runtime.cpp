@@ -5,6 +5,7 @@
 #include "mystral/runtime.h"
 #include "mystral/platform/window.h"
 #include "mystral/platform/input.h"
+#include "mystral/platform/resize_plan.h"
 #include "mystral/platform/crash_policy.h"
 #include "mystral/platform/ui_overlay.h"
 #include "mystral/webgpu/context.h"
@@ -4068,26 +4069,14 @@ private:
     }
 
     void dispatchResizeEvent(const platform::ResizeEventData& e) {
-        // Update internal dimensions
-        width_ = e.width;
-        height_ = e.height;
-
-        // Touch coordinates are normalized by SDL and scaled back up with getWindowSize(), so
-        // the platform window has to track the canvas. A landscape-locked Android activity on
-        // a portrait display resizes to 2400x1080 through this path while the platform size
-        // stayed 1080x2400, which scaled every finger into the wrong half of the screen and
-        // made a two-finger gesture read as two contacts on the same side.
-        platform::syncWindowSize(e.width, e.height);
-
-        // The swapchain is deliberately NOT reconfigured here, and `Runtime::resize()` — which
-        // would — is still unreachable. Calling it from this path was tried and aborts the
-        // process: a launch rotates the display twice before the first frame, and reconfiguring
-        // the surface from inside the resize callback tears it down under the frame in flight.
-        // A Pixel 8 died with signal 6 immediately after TN_NATIVE_SMOKE_FIRST_FRAME.
-        //
-        // Doing this correctly means deferring the reconfigure to a frame boundary, where no
-        // surface texture is acquired. That is real work and is not attempted here; what is
-        // recorded is that the obvious version is wrong.
+        // The decision lives in platform/resize_plan.h, where a desktop test pins it: sync the
+        // platform window (a landscape-locked Android activity on a portrait display otherwise
+        // scales every finger into the wrong half of the screen) and do NOT reconfigure the surface.
+        const auto plan = platform::planResizeEvent(e.width, e.height);
+        width_ = plan.width;
+        height_ = plan.height;
+        if (plan.syncPlatformWindow) platform::syncWindowSize(plan.width, plan.height);
+        if (plan.reconfigureSurface) resize(plan.width, plan.height);
 
         // Update window.innerWidth/innerHeight
         auto window = jsEngine_->getGlobal();

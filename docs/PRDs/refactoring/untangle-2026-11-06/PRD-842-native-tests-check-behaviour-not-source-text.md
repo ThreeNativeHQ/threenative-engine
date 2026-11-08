@@ -1,6 +1,6 @@
 # PRD-842 — Native tests check behaviour, not source text
 
-**Status:** PARTIAL — Phase 1 and Phase 2 box 1 done. Phase 2 box 2 and AC-2 stay open: 5 test files still read `.cpp` or `.mm` as text beyond the ABI spec, 2 of them by decision (wire contracts). See the tables in Phase 2. AC-1 passed.
+**Status:** PARTIAL — Phase 1 and Phase 2 box 1 done. Phase 2 box 2 and AC-2 stay open: the iOS WebUI order tests and the `ui_overlay.cpp` and `window.cpp` slices in `ui-layer-host-contract.test.mjs` still read source as text. The other text readers are named wire contracts. AC-1 passed.
 **Priority:** P2 — the open box replaces regex assertions over `runtime.cpp`, `bindings.cpp` and platform sources, which go red on renames and stay green on behaviour regressions.
 **Complexity:** 5 (MEDIUM)
 **Owner:** ThreeNative maintainers
@@ -57,11 +57,11 @@ real wire. Both timer implementations stay (see the Decision below).
 ## Acceptance Criteria
 
 - [x] AC-1 [local]: The native host runs with timers and shims intact. proof: `pnpm native:verify:desktop` exit 0 (2026-11-08): `native contract lane passed: 54 of 54 targets` (includes `threenative-timer-delivery-test`, `-timer-engine-first-test`, `-shim-bootstrap-test` in 3 modes, `-webgpu-wrapper-bag-test`, `-image-decode-teardown-test`, `-worker-production-test`), desktop core gate 300 frames at 1280x720 with a screenshot, `tests/external-bundle-discovery`, `host-cli` and `host-window` 18 of 18 tests
-- [ ] AC-2 [local]: The source-text test count drops to the ABI digest only. Not met: 18 readers before, 6 now (the ABI spec plus 5 files: 2 classed as wire contracts by the Decision of 2026-11-08, 3 open), see Phase 2. proof: `rg -l 'readFileSync\([^)]*\.(cpp|mm)' packages/runtime-native/tests packages/three-native/__tests__` lists only the ABI spec
+- [ ] AC-2 [local]: Source-text tests remain only for the ABI digest and the named wire contracts. Not met: 18 readers before, 4 now (the ABI spec, 2 other named wire contracts, and `ui-layer-host-contract` with its open tests), see Phase 2. proof: `rg -l 'readFileSync\([^)]*\.(cpp|mm)' packages/runtime-native/tests packages/three-native/__tests__` lists only the ABI spec and the named wire contracts
 
 ## Integration Ledger
 
-Integration: tests, four new native test targets and host-run vitest files. Three small runtime seams for testing: `vfs::resolveFetchPath` (same mapping, moved into `embedded_bundle.h`), the `TN_WINDOW_MODE` host marker, and `buffer_map_state.h` (the buffer-map state moved out of `context.cpp`). No behaviour change.
+Integration: tests, five new native test targets and host-run vitest files. Four small seams in runtime source, with no behaviour change: `vfs::resolveFetchPath` (same mapping, in `embedded_bundle.h`), the `TN_WINDOW_MODE` host marker, `buffer_map_state.h` (the buffer-map state moved out of `context.cpp`), `platform/resize_plan.h` (the resize decision) and `canvas/font_backend.h` (platform to font backend, dispatched through `makeFontMgr<Backend>()`).
 
 ## Execution Phases
 
@@ -78,7 +78,7 @@ Integration: tests, four new native test targets and host-run vitest files. Thre
 
 - [x] Shim bootstrap and fast-path selection are asserted by running the host, and the 7 historical block names are gone. `tests/js-engine-fast-path.test.mjs` is deleted. proof: `threenative-shim-bootstrap-test` passes in three modes (default, `--worker-rollback`, `--callback-retention`), `threenative-webgpu-wrapper-bag-test` passes, and `rg SCRIPT_FOR_BLOCK packages/runtime-native/tests` returns nothing. Red checks: skipping the streams shim makes `Runtime::create` fail (`Web Streams not available`), and passing the borrowed `document.addEventListener` handle makes `--callback-retention` fail (`listener:0`). `embedded_bundle_test` tests the VFS container only, so it does not carry this claim.
 - [ ] The remaining text specs on `bindings.cpp`, `runtime.cpp` and `browser-renderer.ts` are replaced by behaviour checks or deleted when a behaviour test already covers them. proof: AC-2
-  Done: 12 of the 18 `.cpp|.mm` readers are gone. Left: 5 files plus the ABI spec (second table). `ios-packaging` and the bridge-name tests of `ui-layer-host-contract` are wire contracts by Decision. `android-canvas-skia`, `resize-event-no-reconfigure` and `ios-contract` are open, as are the iOS and slice tests of `ui-layer-host-contract`. `rg -l 'readFileSync\([^)]*\.(cpp|mm)' packages/runtime-native/tests packages/three-native/__tests__` lists them.
+  Done: 14 of the 18 `.cpp|.mm` readers are gone. Left: the ABI spec, `ios-packaging`, `ios-contract` and `ui-layer-host-contract` (wire contracts by the Decision below). Open: the iOS WebUI order tests and the `ui_overlay.cpp` and `window.cpp` slices in `ui-layer-host-contract.test.mjs`. `rg -l 'readFileSync\([^)]*\.(cpp|mm)' packages/runtime-native/tests packages/three-native/__tests__` lists them.
 
 Every removed assertion and the test that covers it:
 
@@ -116,31 +116,46 @@ Restored on 2026-11-08 (the lead ruled that a deleted check must be converted, n
 | `web-host-refusal` | `web-host-refusal.test.mjs` runs the built Wasm host in Chromium (WebGPU, private Xvfb) through `fixtures/web-host-refusal-probe.mjs`: the read returns 0, the error names the slot, the host is still Ready after two reads | replacing `refuse()` with `fail()` in `tnw_web_read_mrt` leaves the host Failed and fails it |
 
 
-Still not covered by a behaviour test (the text assertion stays in the file; each one is an open item):
+Two more rows of the restored table, added on 2026-11-08 after the lead asked for a deterministic seam:
 
-- `android-canvas-skia`: `sharedFontMgr()` must use `SkFontMgr_New_Android` under `__ANDROID__`. Tried on 2026-11-08 on the local `threenative_api35` emulator (QuickJS build, because `third_party/v8-android/build-receipt.json` is missing and `verifyV8Dependency` stops the V8 build). With the Android branch changed to `SkFontMgr::RefEmpty()`, `measureText` still returned 48 for both `"iiii"` and `"MMMM"`, and `getImageData` returned no ink even after a `fillRect`. No width or pixel marker tells the two font managers apart, so the text test stays.
-- `resize-event-no-reconfigure`: `dispatchResizeEvent` must not call `resizeSurface`, `configureSurface` or `resize(`. Tried on the same emulator: adding `resize(e.width, e.height)` aborted with SIGABRT in 1 of 3 runs with two display flips during launch and 1 of 3 with six flips. The other runs passed or timed out. An abort that shows in 1 run of 3 cannot gate a merge, so the text test stays. No wired CI job rotates the display during launch either: `android-emulator-parity` runs conformance only.
-
-Files that still read `.cpp` or `.mm` as text:
-
-| File | Class | Why it stays |
+| Behaviour | Test | Red check |
 | --- | --- | --- |
-| `android-canvas-skia.test.mjs` | open | The `canvas2d.cpp` font manager text test (see above). The rest of the file runs the Android build checks |
-| `resize-event-no-reconfigure.test.mjs` | open | The `runtime.cpp` resize text test (see above) |
-| `ios-contract.test.mjs` | open | One lint: `ios/main.mm` must not mention `WebView`, `WKWebView` or `React Native`. The macOS `build-ios-simulator` job compiles and runs the app and does not look for the absence of a web view. This lane could not run macOS |
-| `ios-packaging.test.mjs` | wire | `TNMaxFps` is written by `package-ios.mjs` into `Info.plist` and read by `ios/main.mm`. See the Decision below |
-| `ui-layer-host-contract.test.mjs` | wire and open | Tests 1-4 compare the bridge names across the Java, Objective-C, Rust and C++ hosts and `core/src/ui-bridge.ts`. That is one wire (see the Decision below). The iOS tests on `ui_overlay_ios.mm` and `main.mm`, and the slices of `ui_overlay.cpp` and `window.cpp`, are open: they need macOS or a device |
-| `web-host-abi.spec.ts` | wire | The ABI digest. It stays by design |
+| `resize-event-no-reconfigure`: a resize event syncs the platform window and does not reconfigure the surface | `planResizeEvent` in `include/mystral/platform/resize_plan.h` holds the decision. `dispatchResizeEvent` calls it and obeys the plan. `threenative-platform-policy-test` (contract lane, 56 targets now) asserts `syncPlatformWindow` and `!reconfigureSurface` | returning `reconfigureSurface = true` fails it (`FAIL !plan.reconfigureSurface`). With that value, the call site reaches `resize()`, the call that aborted a Pixel 8. The test file `resize-event-no-reconfigure.test.mjs` is deleted |
+| `android-canvas-skia`: Android builds the system font manager, not Fontconfig or the empty manager | `fontBackendFor` in `include/mystral/canvas/font_backend.h` maps platform to backend. `canvas2d.cpp` builds the manager through `makeFontMgr<Backend>()`, and a backend that the mapping picks but the file does not define fails to link. `font_backend.h` also holds a `static_assert` that the Android build checks, outside the Skia `#if`, so every Android compile runs it. The same policy test asserts the mapping | mapping Android to `FontConfig` fails the policy test, and `g++ -D__ANDROID__ -fsyntax-only` fails with `static assertion failed: Android canvas text needs the Android system font manager`. The gradle Android build compiled the new code and the first proof passed 4/4 on the emulator |
 
-`web-host-refusal.test.mjs` no longer reads source. It needs `pnpm wasm:build` and Chromium with WebGPU, so it skips when `build/wasm` is absent. No CI job builds the Wasm host and runs it yet. That wiring is open.
+Limit of the font check: the factories share one return type, `sk_sp<SkFontMgr>`, so the build pins which backend a platform picks and not the body of the Android factory. Swapping `SkFontMgr_New_Android` for `SkFontMgr::RefEmpty()` inside `makeFontMgr<AndroidSystem>()` still compiles. No Android gradle build can catch that swap today (see the Finding below). The old text test caught it in a Skia-enabled build only.
+
+## Finding (2026-11-08): the Android gradle build ships no Skia canvas
+
+`packages/runtime-native/android/app/build.gradle.kts:380` passes `-DTN_ENABLE_CANVAS2D=OFF`. The Android APK compiles `canvas2d.cpp` without `MYSTRAL_HAS_SKIA`, so `SkFontMgr_New_Android` is not in the APK. Measured on the QuickJS build, x86_64 emulator `threenative_api35` (API 35, swiftshader), real source:
+
+- `measureText("iiii").width` and `measureText("MMMM").width` both return 57.6 at `24px sans-serif`. That is exactly `length * size * 0.6`, the no-Skia estimate in `Canvas2DContext::measureText`.
+- `getImageData` returns 15 360 bytes with no ink after a `fillRect` and after a `fillText`. The no-Skia stub does not draw.
+
+So an Android game that uses canvas text gets an estimated width and no pixels. The earlier emulator run in this lane (a `RefEmpty` mutation that read 48 for both strings) hit the same stub. It proved nothing about fonts, and its result is withdrawn. The finding is not fixed here. The owner decides whether Android should ship Skia canvas. The V8 build could not run on this machine (`third_party/v8-android/build-receipt.json` is missing), so the numbers come from QuickJS. The canvas path does not depend on the JS engine, but no V8 run confirms it.
 
 ## Decision (2026-11-08): cross-language wire contracts
 
-A test that compares two source files, written in two languages, that must agree on one name or key checks a wire. It has no seam to call, because the other side runs on another platform. These tests stay as text checks and are classed with the ABI digest:
+A wire contract is a test that compares two source files, written in different languages or built for different platforms, that must agree on one name or value. Neither side has a seam to call from a desktop test, because the other side runs on a device. These tests stay as text checks beside the ABI digest. Each names its wire and the evidence that it is one:
 
-- The UI bridge names (page-facing object, inbound global, hit-region handling) across the four hosts and `ui-bridge.ts`.
-- The `TNMaxFps` key from `package-ios.mjs` to `ios/main.mm`.
+| Wire | Between | Evidence |
+| --- | --- | --- |
+| `TNMaxFps` plist key (`ios-packaging.test.mjs`) | `scripts/package-ios.mjs:186` writes it into `Info.plist`, and `ios/main.mm:97` reads it | `rg TNMaxFps scripts ios` finds exactly these two sites. The key is a string in two languages, and a rename in one breaks the frame cap on iOS only |
+| UI bridge names (`ui-layer-host-contract.test.mjs`, tests 1-4) | `core/src/ui-bridge.ts` (`UI_BRIDGE_GLOBALS`), `TnUiOverlay.java`, `ui_overlay_ios.mm`, the Rust `abi.rs` and `offscreen.rs`, and `ui_overlay.cpp` | The page-facing object `tnHost` and the inbound global `__tnUiReceive` must be the same string in five sources. The test reads the names from `ui-bridge.ts` instead of restating them |
+| No web view in the iOS app shell (`ios-contract.test.mjs`) | `ios/main.mm` and `ios/ui_overlay_ios.mm` | `rg -c WebView ios/` finds 12 hits, all in `ui_overlay_ios.mm`, and none in `main.mm`. The shell draws through the owned renderer, and the web UI reaches the page only through the bridge above. This is the weakest case: its form is a single-file lint. The lead classed it as a wire, and the boundary is the shell and overlay split |
 
-This Decision does not cover single-file lints (the `ios-contract` web view ban) or slices of one C++ file. Those stay open.
+The Decision does not cover the other tests in `ui-layer-host-contract.test.mjs`: the iOS WebUI order tests on `ui_overlay_ios.mm` and `main.mm`, and the slices of `ui_overlay.cpp` and `window.cpp`. They compare one platform's own source with itself and stay open.
 
 iOS removals in this lane (the `jsc_engine.mm` text match and the `ios-contract` text tests) are covered only by the macOS `build-ios-simulator` job. Unverified here.
+
+`web-host-refusal.test.mjs` no longer reads source. It needs `pnpm wasm:build` and Chromium with WebGPU, so it skips when `build/wasm` is absent. No CI job builds the Wasm host and runs it yet. That wiring is open.
+
+Files that still read `.cpp` or `.mm` as text:
+
+| File | Class |
+| --- | --- |
+| `web-host-abi.spec.ts` | wire (ABI digest, by design) |
+| `ios-packaging.test.mjs` | wire (`TNMaxFps`) |
+| `ios-contract.test.mjs` | wire (shell and overlay split) |
+| `ui-layer-host-contract.test.mjs` | wire for tests 1-4. Open for the iOS WebUI order tests and the `ui_overlay.cpp` and `window.cpp` slices |
+

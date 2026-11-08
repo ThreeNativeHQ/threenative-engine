@@ -2655,6 +2655,11 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
             "-Wl,--wrap=close")
     endif()
 
+    # Pure platform decisions (resize plan, font backend) that only a device would otherwise show.
+    add_executable(threenative-platform-policy-test EXCLUDE_FROM_ALL
+        tests/platform_policy_test.cpp)
+    target_link_libraries(threenative-platform-policy-test PRIVATE mystral-runtime)
+
     # Same lane for the embedded-bundle VFS: synthesizes real container files
     # and proves the loader accepts the documented format and rejects damage.
     add_executable(threenative-embedded-bundle-test EXCLUDE_FROM_ALL
@@ -2806,6 +2811,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     tn_register_contract_test(threenative-dom-dispatch-lifetime-test)
     tn_register_contract_test(threenative-worker-production-test)
     tn_register_contract_test(threenative-embedded-bundle-test)
+    tn_register_contract_test(threenative-platform-policy-test)
     tn_register_contract_test(threenative-frame-op-stream-replay-test)
     tn_register_contract_test(threenative-handle-lifetime-test v8)
     tn_register_contract_test(threenative-input-restart-test)

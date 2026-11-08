@@ -91,6 +91,9 @@ export const executionContracts = {
   "threenative-embedded-bundle-test": {
     invocations: [{ args: [], passLine: "embedded_bundle bindings: all assertions passed" }],
   },
+  "threenative-platform-policy-test": {
+    invocations: [{ args: [], passLine: "native platform policy contract passed" }],
+  },
   "threenative-handle-lifetime-test": {
     invocations: [
       {
