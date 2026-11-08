@@ -88,9 +88,13 @@ Measured with `pnpm --filter threenative-native-css-hud parity:tailwind --family
   shape at +4 and +12 from a tile origin five pixels later. That is a **5 px origin offset**, not a
   scale or a repeat difference, and `background-origin`'s default (`padding-box`), its mapping and
   `box_rect` were all read and are correct — so the offset is in how the gradient's *tile rectangle* is
-  derived from the origin box (the padding box is 116×36 here, and 24 px tiles centred in it land five
-  pixels from where the engine puts them). The next attempt should print the resolved tile rect for
-  both engines instead of inferring it from stripes.
+  derived from the origin box (the padding box is 116×36 here).
+  A negative result narrows it further: a `TN_BG_DEBUG` print inside `draw_gradient_layer` **never
+  fires** for that panel, so the stripes in the engine's own frame do not come from the gradient layer
+  path at all. The next attempt starts by finding which path paints them (the cell's contrast rule is
+  `:where(.c3) .probe{background-image: repeating-linear-gradient(…)}`, and something resolves it
+  elsewhere — a raster image layer, or a background on a different box), rather than by adjusting the
+  tile rect.
 - **A box shadow's blur is already Chromium's, and a spec-based "fix" broke a reference frame.**
   CSS defines the blur radius as twice the standard deviation, so the outset path was changed to pass
   `blur * 0.5`. The parity scene's `shadow-red-50` cell improved (0.9661 → 0.9756) — and the crate's
