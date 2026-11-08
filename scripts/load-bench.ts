@@ -164,12 +164,21 @@ async function visit(
   arm: ILoadRun["arm"],
   network: IArgs["network"],
   cpuProfile?: string,
+  marksFile?: string,
 ): Promise<ILoadRun & { adapter: string }> {
   const context = await chromium.launchPersistentContext(profile, {
-    args: [...WEBGPU_BROWSER_ARGS],
+    // TN_LOAD_BENCH_CHROME_ARGS adds browser switches for one experiment, e.g. a Dawn toggle.
+    args: [
+      ...WEBGPU_BROWSER_ARGS,
+      ...(process.env.TN_LOAD_BENCH_CHROME_ARGS?.split(" ").filter(Boolean) ?? []),
+    ],
     headless: false,
     viewport: { height: 720, width: 1280 },
   });
+  // TN_LOAD_BENCH_INIT=<file.js> runs a probe before the page's own scripts (for example, one that
+  // logs a hash of every shader module), so a stage can be attributed without rebuilding the game.
+  if (process.env.TN_LOAD_BENCH_INIT)
+    await context.addInitScript({ path: process.env.TN_LOAD_BENCH_INIT });
   try {
     const page = await context.newPage();
     const stages: Record<string, number> = {};
@@ -201,6 +210,22 @@ async function visit(
       await cdp.send("Profiler.enable");
       await cdp.send("Profiler.setSamplingInterval", { interval: 200 });
       await cdp.send("Profiler.start");
+      // TN_LOAD_BENCH_TRACE=1: a whole-browser trace too, for the GPU process the CPU profile cannot see.
+      if (process.env.TN_LOAD_BENCH_TRACE === "1")
+        await cdp.send("Tracing.start", {
+          transferMode: "ReturnAsStream",
+          traceConfig: {
+            includedCategories: [
+              "toplevel",
+              "gpu",
+              "dawn",
+              "disabled-by-default-gpu.dawn",
+              "gpu.capture",
+              "v8.execute",
+              "blink",
+            ],
+          },
+        });
     }
     started = Date.now();
     await page.goto(url, { waitUntil: "commit" });
@@ -210,7 +235,22 @@ async function visit(
       await writeFile(cpuProfile, JSON.stringify(profile));
       // Every TN_ line with its time since navigation, beside the profile it explains.
       await writeFile(`${cpuProfile}.marks.txt`, `${marks.join("\n")}\n`);
+      if (process.env.TN_LOAD_BENCH_TRACE === "1") {
+        const done = new Promise<{ stream?: string }>((resolve) =>
+          cdp.once("Tracing.tracingComplete", resolve),
+        );
+        await cdp.send("Tracing.end");
+        const { stream } = await done;
+        const chunks: string[] = [];
+        for (let eof = false; stream !== undefined && !eof; ) {
+          const chunk = await cdp.send("IO.read", { handle: stream });
+          chunks.push(chunk.data);
+          eof = chunk.eof;
+        }
+        await writeFile(`${cpuProfile}.trace.json`, chunks.join(""));
+      }
     }
+    if (marksFile !== undefined) await writeFile(marksFile, `${marks.join("\n")}\n`);
     const readyMs = await page.evaluate(() => Math.round(performance.now()));
     const adapter = await page.evaluate(async () => {
       const gpu = (navigator as Navigator & { gpu?: { requestAdapter(): Promise<unknown> } }).gpu;
@@ -245,10 +285,14 @@ export async function measure(args: IArgs & { dist: string }) {
     for (let cycle = 0; cycle < args.runs; cycle += 1) {
       const profile = await mkdtemp(path.join(tmpdir(), "tn-load-bench-"));
       try {
-        runs.push(await visit(server.url, profile, "first", args.network));
+        // TN_LOAD_BENCH_MARKS=<dir> keeps every visit's TN_ lines, to compare one stage across visits.
+        const marks = (n: number) =>
+          process.env.TN_LOAD_BENCH_MARKS &&
+          path.join(process.env.TN_LOAD_BENCH_MARKS, `${cycle}-${n}.txt`);
+        runs.push(await visit(server.url, profile, "first", args.network, undefined, marks(0)));
         const profileOut = cycle === 0 ? args.cpuProfile : undefined;
-        runs.push(await visit(server.url, profile, "repeat", args.network, profileOut));
-        runs.push(await visit(server.url, profile, "repeat", args.network));
+        runs.push(await visit(server.url, profile, "repeat", args.network, profileOut, marks(1)));
+        runs.push(await visit(server.url, profile, "repeat", args.network, undefined, marks(2)));
       } finally {
         await rm(profile, { force: true, recursive: true });
       }
