@@ -11,23 +11,23 @@ targets could not be built and are named below.
 | `src/audio/` | 1471 | 1301 | 88.44% |
 | `src/canvas/` | 1334 | 1110 | 83.21% |
 | `src/cli/` | 1691 | 1243 | 73.51% |
-| `src/engine/` | 43310 | 36317 | 83.85% |
+| `src/engine/` | 43273 | 36221 | 83.70% |
 | `src/fs/` | 235 | 189 | 80.43% |
 | `src/http/` | 410 | 377 | 91.95% |
 | `src/js/` | 2838 | 2230 | 78.58% |
-| `src/platform/` | 1509 | 1047 | 69.38% |
+| `src/platform/` | 1507 | 1047 | 69.48% |
 | `src/raytracing/` | 643 | 543 | 84.45% |
 | `src/runtime.cpp` | 2410 | 1867 | 77.47% |
 | `src/screenshot_gate.cpp` | 27 | 24 | 88.89% |
 | `src/storage/` | 370 | 329 | 88.92% |
 | `src/utils/` | 0 | 0 | 0.00% |
 | `src/vfs/` | 239 | 195 | 81.59% |
-| `src/webgpu/` | 10074 | 7737 | 76.80% |
+| `src/webgpu/` | 10076 | 7745 | 76.87% |
 | `src/webtransport/` | 1391 | 1078 | 77.50% |
-| `src/workers/` | 615 | 527 | 85.69% |
-| **TOTAL** | **68640** | **56174** | **81.84%** |
+| `src/workers/` | 615 | 524 | 85.20% |
+| **TOTAL** | **68603** | **56083** | **81.75%** |
 
-Source digest: `sha256:067503f7fb1fd668ac4f41780484b348255300f6ee2e8aa6548c1afa8d29a4ba`
+Source digest: `sha256:2f9ed85cc1717a794e64a27b65fa0b8af957a162c1733396241ce64111e31162`
 
 The default `pnpm budgets` gate reads this committed measurement without configuring or compiling
 the native host. Any native source, native C++ test, CTest registration, or coverage aggregation
@@ -61,7 +61,6 @@ change requires this opt-in command to refresh the record.
 - `src/adapters/v8/math_bridge.cpp`
 - `src/adapters/v8/tsl.cpp`
 - `src/debug/debug_server.cpp`
-- `src/engine/player/gamepads.cpp`
 - `src/engine/player/v8_main.cpp`
 - `src/engine/wasm/web_host.cpp`
 - `src/engine/world/physics_sync.cpp`
@@ -71,7 +70,6 @@ change requires this opt-in command to refresh the record.
 - `src/metahuman/native_bindings.cpp`
 - `src/physics/native_bindings.cpp`
 - `src/platform/android_main.cpp`
-- `src/platform/ps4_main.cpp`
 - `src/platform/surface_android.cpp`
 - `src/platform/surface_metal.mm`
 - `src/raytracing/dxr_rt.cpp`
