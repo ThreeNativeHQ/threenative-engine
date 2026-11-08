@@ -16,7 +16,7 @@
  * **Staticness is authored, never guessed.** A heuristic that decides an object has "not moved in
  * 60 frames" is a correctness bug with no reproduction, so nothing here watches gameplay. What the
  * engine does do is check the promise where it is cheap to check it: the root's own local transform
- * is compared against what was frozen, once per frame, and a root the author moved thaws and
+ * and its parent's world matrix are compared against what was frozen, once per frame, and a root the author moved thaws and
  * refreezes itself. That is O(static roots), not O(objects), and it turns the most common way to
  * get this wrong into a non-event. Writes deeper inside a frozen subtree are the author's to
  * announce with `invalidateStatic`, and `TN_RENDERLIST_VALIDATE=1` is what proves they did.
@@ -47,7 +47,9 @@ interface IFrozenRoot {
  */
 const frozen = new Map<Object3D, IFrozenRoot>();
 
-const SNAPSHOT_LENGTH = 3 + 4 + 3 + 16;
+/** Position, quaternion, scale, local matrix, then the parent's world matrix (identity with none). */
+const SNAPSHOT_LENGTH = 3 + 4 + 3 + 16 + 16;
+const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
 
 function writeSnapshot(root: Object3D, into: Float64Array): void {
   const position: Vector3 = root.position;
@@ -66,6 +68,12 @@ function writeSnapshot(root: Object3D, into: Float64Array): void {
   into[9] = scale.z;
   for (let element = 0; element < 16; element += 1)
     into[10 + element] = matrix.elements[element] ?? 0;
+  // The frozen world matrix is the parent's times the root's own, so a root attached after it froze,
+  // or one whose ancestor moved, is as stale as one the author moved. A streamed world freezes each
+  // draw before it joins the world root, and a seated world (`world.position.y = -ground`) drew
+  // every tree at the package's absolute height.
+  const parent = root.parent?.matrixWorld.elements ?? IDENTITY;
+  for (let element = 0; element < 16; element += 1) into[26 + element] = parent[element] ?? 0;
 }
 
 function snapshotMatches(root: Object3D, snapshot: Float64Array, scratch: Float64Array): boolean {
@@ -122,6 +130,15 @@ export function worldSilencedByFreeze(object: Object3D): boolean {
   return worldSilenced.has(object);
 }
 
+/** Gives a frozen subtree its compose flags back, so the next update recomposes it. */
+function thaw(root: Object3D): void {
+  if (worldSilenced.delete(root)) root.matrixWorldAutoUpdate = true;
+  root.traverse((child) => {
+    if (composeSilenced.delete(child)) child.matrixAutoUpdate = true;
+    child.matrixWorldNeedsUpdate = true;
+  });
+}
+
 /** Freezes the subtree in place and answers how many objects stopped recomposing. */
 function freeze(root: Object3D): number {
   root.updateMatrixWorld(true);
@@ -150,8 +167,11 @@ function freeze(root: Object3D): number {
  * `invalidateStatic` does and the reason a generator can emit the call unconditionally.
  */
 export function markStatic(root: Object3D): number {
-  const objects = freeze(root);
   const existing = frozen.get(root);
+  // A second mark re-arms: thaw first, or `freeze`'s update skips the root's own world compose (the
+  // first freeze turned it off) and the subtree keeps the world matrix of its first parent.
+  if (existing !== undefined) thaw(root);
+  const objects = freeze(root);
   const snapshot = existing?.snapshot ?? new Float64Array(SNAPSHOT_LENGTH);
   writeSnapshot(root, snapshot);
   const version = (existing?.version ?? 0) + 1;
@@ -186,17 +206,8 @@ export function unmarkStatic(root: Object3D): void {
 export function invalidateStatic(object: Object3D): number | undefined {
   let node: Object3D | null = object;
   while (node !== null) {
-    if (frozen.has(node)) {
-      // Thaw the flags first: `freeze` starts with a forced update, and an object left with
-      // `matrixAutoUpdate` off would recompose its world matrix from a stale local one.
-      const root = node;
-      root.traverse((child) => {
-        if (composeSilenced.delete(child)) child.matrixAutoUpdate = true;
-        child.matrixWorldNeedsUpdate = true;
-      });
-      if (worldSilenced.delete(root)) root.matrixWorldAutoUpdate = true;
-      return markStatic(root);
-    }
+    // `markStatic` thaws a frozen root before it freezes it again.
+    if (frozen.has(node)) return markStatic(node);
     node = node.parent;
   }
   return undefined;
@@ -244,11 +255,6 @@ export function refreshStaticTransforms(): void {
   if (frozen.size === 0) return;
   for (const entry of frozen.values()) {
     if (snapshotMatches(entry.root, entry.snapshot, scratch)) continue;
-    if (worldSilenced.delete(entry.root)) entry.root.matrixWorldAutoUpdate = true;
-    entry.root.traverse((child) => {
-      if (composeSilenced.delete(child)) child.matrixAutoUpdate = true;
-      child.matrixWorldNeedsUpdate = true;
-    });
     markStatic(entry.root);
     rearmedSinceCensus += 1;
   }

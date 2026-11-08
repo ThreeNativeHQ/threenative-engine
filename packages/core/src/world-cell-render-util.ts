@@ -1,5 +1,10 @@
 import { BufferGeometry, InstancedMesh, type Material, type Mesh, type Object3D } from "three";
-import { isStatic, markStatic } from "./static-transform.js";
+import {
+  composeSilencedByFreeze,
+  isStatic,
+  markStatic,
+  worldSilencedByFreeze,
+} from "./static-transform.js";
 import type { SharedBatch } from "./world-cell-batches.js";
 import { clusterOf } from "./world-cell-data.js";
 
@@ -193,10 +198,16 @@ export function freshMeshFor(
   next.receiveShadow = old.receiveShadow;
   next.renderOrder = old.renderOrder;
   next.userData = old.userData;
+  next.position.copy(old.position);
+  next.quaternion.copy(old.quaternion);
+  next.scale.copy(old.scale);
   next.matrix.copy(old.matrix);
-  next.matrixAutoUpdate = old.matrixAutoUpdate;
   next.matrixWorld.copy(old.matrixWorld);
-  next.matrixWorldAutoUpdate = old.matrixWorldAutoUpdate;
+  // The authored flags, not the freeze's: a copied `matrixWorldAutoUpdate = false` reads to the new
+  // freeze as a game-owned world matrix, and a seated world drew every dressed tree at the package's
+  // absolute height.
+  next.matrixAutoUpdate = old.matrixAutoUpdate || composeSilencedByFreeze(old);
+  next.matrixWorldAutoUpdate = old.matrixWorldAutoUpdate || worldSilencedByFreeze(old);
   // A dressed batch is frozen, and the freeze is keyed by the object: a replacement that did not
   // re-arm it would compose its own world matrix every walk forever.
   if (isStatic(old)) markStatic(next);
