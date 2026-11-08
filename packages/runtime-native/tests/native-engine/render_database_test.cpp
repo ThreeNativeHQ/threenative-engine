@@ -2273,6 +2273,21 @@ void arrayRenderTarget() {
     const auto diffuse = texel(*baked, 0, 0);
     std::fprintf(stderr, "diffuseColor into output: %.3f %.3f %.3f\n", diffuse[0], diffuse[1], diffuse[2]);
     CHECK(std::abs(diffuse[0] - 0.5f) < 2e-3f && std::abs(diffuse[1] - 0.25f) < 2e-3f && std::abs(diffuse[2] - 1.0f) < 2e-3f);
+    // A colorNode replaces the material colour in three's diffuseColor, so the scene MRT's albedo target reads the
+    // node's colour. The engine refused the whole program (TN_NATIVE_DIFFUSE_COLOR), and grass with a colorNode drew black.
+    const auto noded = RenderTarget::make(8, 8, kTextureHalfFloatType);
+    noded->texture->name = "output";
+    auto tinted = std::make_shared<Material>(MaterialType::Standard);
+    tinted->nodes.colorNode = shader::graph::vec4({shader::graph::float_(0.2), shader::graph::float_(0.6), shader::graph::float_(0.4), shader::graph::float_(1)});
+    tinted->nodes.mrt.push_back({"output", shader::graph::materialInput("diffuseColor", shader::Type::vec(4))});
+    Mesh tintedCard(makePlaneGeometry(2, 2), tinted);
+    Scene tintedScene;
+    tintedScene.add(tintedCard);
+    tintedScene.updateMatrixWorld(true);
+    CHECK(renderToTarget(renderer, *noded, tintedScene, camera, {0, 0, 0, 0}, false).empty());
+    const auto fromNode = texel(*noded, 0, 0);
+    std::fprintf(stderr, "colorNode diffuseColor into output: %.3f %.3f %.3f\n", fromNode[0], fromNode[1], fromNode[2]);
+    CHECK(std::abs(fromNode[0] - 0.2f) < 2e-3f && std::abs(fromNode[1] - 0.6f) < 2e-3f && std::abs(fromNode[2] - 0.4f) < 2e-3f);
 }
 
 void renderTarget() {

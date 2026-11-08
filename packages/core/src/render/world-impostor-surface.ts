@@ -146,6 +146,13 @@ const GEOMETRY_MAPS = [
   "transmissionMap",
 ] as const;
 
+/**
+ * The node twins of those maps: a source's surface nodes describe its own mesh (a crown's ao and
+ * emissive sample its texture through `attribute("uv")`), which the quad does not have. Its scalar
+ * roughness and metalness stay; colour, normal, coverage and the cutout are the atlas's own nodes.
+ */
+const SURFACE_NODES = ["aoNode", "emissiveNode", "roughnessNode", "metalnessNode", "maskNode"] as const;
+
 /** One `mat4` node per CPU instance-matrix attribute, derived once and kept live with its source. */
 const INSTANCE_COLUMNS = new WeakMap<InstancedBufferAttribute, InstancedInterleavedBuffer>();
 
@@ -420,6 +427,7 @@ export class WorldImpostorSurface {
       throw new Error("WorldImpostorSurface requires a baked atlas.");
     const material = cloneLitMaterial(options.source);
     for (const key of GEOMETRY_MAPS) Reflect.set(material, key, null);
+    for (const key of SURFACE_NODES) Reflect.set(material, key, null);
     // Albedo and coverage are baked into the atlas; a vertex-colour attribute the quad does not
     // have, an opacity multiplier or an opacity node would apply the source's own colour and
     // coverage a second time on top of the baked one.
@@ -509,6 +517,9 @@ export class WorldImpostorSurface {
       transformNormal(fragment.normalAsset, instanceViewMatrixNode(builder)),
     )();
     material.positionNode = positionNode;
+    // A source's shadow position (a wind-swept crown casts its rest pose) would bypass the billboard
+    // above in the shadow draw: the quad must cast through its own positionNode.
+    material.castShadowPositionNode = null;
 
     const geometry = new BufferGeometry();
     geometry.setAttribute(
