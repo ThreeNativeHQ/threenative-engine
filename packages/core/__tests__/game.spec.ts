@@ -813,7 +813,8 @@ describe("IGame", () => {
     const game = defineGame({
       camera: { projection: "perspective", fov: 60, near: 0.1, far: 2_000 },
       renderer: {
-        projection: false, minimumProjectedPixels: 2,
+        projection: false,
+        minimumProjectedPixels: 2,
         canvas,
         preferWebGPU: false,
         webgl2Factory: () => ({

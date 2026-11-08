@@ -9,8 +9,16 @@
     { "name": "fullscreen", "at": "display.fullscreen" },
     { "name": "maximized", "at": "window.maximized" },
     { "name": "resizable", "at": "window.resizable" },
-    { "name": "maxFps", "at": "maxFps", "flattenedBy": "packages/runtime-native/scripts/package-desktop.mjs" },
-    { "name": "uiRenderer", "at": "uiRenderer", "flattenedBy": "packages/runtime-native/scripts/package-desktop.mjs" },
+    {
+      "name": "maxFps",
+      "at": "maxFps",
+      "flattenedBy": "packages/runtime-native/scripts/package-desktop.mjs"
+    },
+    {
+      "name": "uiRenderer",
+      "at": "uiRenderer",
+      "flattenedBy": "packages/runtime-native/scripts/package-desktop.mjs"
+    },
     { "name": "bootSplash", "at": "bootSplash" },
     { "name": "backgroundColor", "at": "bootSplash.backgroundColor" }
   ]
