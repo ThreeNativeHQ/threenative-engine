@@ -45,6 +45,17 @@ describe("starter post import bindings", () => {
     expect(await readFile(outfile, "utf8")).not.toContain("TN_NATIVE_ENGINE_UNBOUND:");
   });
 
+  // PRD-784 P5-9: FluidField2D (prd249) imports three/tsl's compute(), which the facade did not export.
+  it("bundles three/tsl compute as node.compute", async () => {
+    const directory = await mkdtemp(path.resolve("packages/runtime-native/.starter-post-"));
+    directories.push(directory);
+    const entry = path.join(directory, "entry.ts");
+    const outfile = path.join(directory, "game.js");
+    await writeFile(entry, `import { compute } from "three/tsl"; globalThis.bound = compute;`);
+    await bundleNativeEngine({ entry, outfile, boot: false, host: false });
+    expect(await readFile(outfile, "utf8")).not.toContain("TN_NATIVE_ENGINE_UNBOUND:");
+  });
+
   it("bundles defineGame without a web-only renderer import", async () => {
     // Every game reaches game.ts and renderer.ts; neither may drag an unbound import onto native.
     const directory = await mkdtemp(path.resolve("packages/runtime-native/.starter-post-"));
