@@ -1,4 +1,5 @@
 import { CaptureGuardError } from "../capture.js";
+import { PRESENTATION_BOUND_MS } from "./shared.js";
 
 /**
  * Retake a capture until it is not blank, or until `boundMs` has passed, then report the last
@@ -24,5 +25,26 @@ export async function retakeWhileBlank<T>(
     } catch (error) {
       if (!(error instanceof CaptureGuardError) || now() >= deadline) throw error;
     }
+  }
+}
+
+/**
+ * The one capture path of every lane. Shoot once; when the frame is blank, wait `grace` and
+ * retake until the surface shows something or `boundMs` passes, then fail closed with the last
+ * blank verdict. `capture` receives `true` on a retake, for the browser lane's fallbacks that
+ * only make sense once a first shot stands. Any error that is not a blank verdict is final: a
+ * closed page or a dead device is not a world that has yet to present.
+ */
+export async function captureWithRetry<T>(
+  capture: (retake: boolean) => Promise<T>,
+  grace: () => Promise<void>,
+  boundMs: number = PRESENTATION_BOUND_MS,
+  now: () => number = Date.now,
+): Promise<T> {
+  try {
+    return await capture(false);
+  } catch (error) {
+    if (!(error instanceof CaptureGuardError)) throw error;
+    return retakeWhileBlank(() => capture(true), grace, boundMs, now);
   }
 }

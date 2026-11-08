@@ -29,7 +29,7 @@ describe("generated assertion validators", () => {
     }), "generated-validator-proof.json")).toThrow(/assert\.movement\.minAxisDelta.*must be \{ axis: string, min: number \}/u);
 
     expect(() => validatePlaytestScenario(scenario({
-      reachability: { artifact: "character.json", entities: "platforms" },
-    }), "generated-validator-proof.json")).toThrow(/assert\.reachability\.entities.*string\[\] \(minimum 2\)/u);
+      framebufferCoverage: { backdrop: "dark", tolerance: 1, window: { endStep: "b", startStep: "a" } },
+    }), "generated-validator-proof.json")).toThrow(/assert\.framebufferCoverage\.backdrop.*integer 0\.\.255/u);
   });
 });

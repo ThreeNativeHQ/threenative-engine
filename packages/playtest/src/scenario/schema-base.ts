@@ -8,7 +8,9 @@ import { PLAYTEST_ASSERTION_REGISTRY } from "../assertions.js";
 export const NUMERIC_COMPARISON_KEYS = ["gte", "lte"] as const;
 export const MIN_TRIVIALITY_REASON_LENGTH = 20;
 
+/** The scenario file's `target` vocabulary. It stays as authored; the lane a run executes on is `PlaytestLane`. */
 export type PlaytestTarget = "web" | "desktop" | "bevy";
+export type { PlaytestLane } from "../lanes.js";
 export type PlaytestInputDelivery = "deterministic" | "focused-dom";
 
 export interface IPlaytestViewport {
@@ -232,21 +234,6 @@ export interface IPlaytestSettledAssertion {
   minBodies?: number;
   minMeanPoseDistance?: number;
   requiredOn?: PlaytestTarget[];
-}
-
-export interface IPlaytestOccludedAssertion {
-  allowTrivial?: string;
-  entity?: string;
-  target?: string;
-}
-
-export interface IPlaytestOverlayNodeAssertion {
-  attribute?: string;
-  equals?: unknown;
-  overlayId: string;
-  selector: string;
-  textIncludes?: string;
-  visible?: boolean;
 }
 
 /**
@@ -632,13 +619,6 @@ export interface IPlaytestAerodynamicsAssertion {
   }>;
 }
 
-export interface IPlaytestReachabilityAssertion {
-  artifact: string;
-  entities: string[];
-  /** Loaded from artifact by loadPlaytestScenario; not authored in scenario JSON. */
-  envelope?: { fallDistanceToGround: number; forwardReach: number; maxRise: number };
-}
-
 export interface IPlaytestWorldRuntimeAssertion {
   agent: string;
   core: string;
@@ -718,13 +698,10 @@ export interface IPlaytestScenarioAssertions {
   geometry?: IPlaytestGeometryCaptureRequest;
   hud?: IPlaytestPathAssertion[];
   movement?: IPlaytestMovementAssertion;
-  occluded?: IPlaytestOccludedAssertion[];
-  overlayNodes?: IPlaytestOverlayNodeAssertion[];
   parity?: IPlaytestParityAssertion;
   performance?: IPlaytestPerformanceAssertion;
   pipelineCensus?: IPlaytestPipelineCensusAssertion;
   renderChain?: IPlaytestRenderChainAssertion;
-  reachability?: IPlaytestReachabilityAssertion;
   resources?: IPlaytestResourceAssertion[];
   settled?: IPlaytestSettledAssertion[];
   signals?: IPlaytestSignalAssertion[];

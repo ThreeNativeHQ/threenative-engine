@@ -34,7 +34,6 @@ import {
 } from "./browser.js";
 import {
   provideDisplay,
-  runNeedsPixels,
   type IProvidedDisplay,
 } from "./captureEnvironment.js";
 import {
@@ -123,7 +122,7 @@ export async function sampleVisualElementBounds(
 export function buildObservations(candidate: Partial<IPlaytestObservations>): IPlaytestObservations {
   const observations = {} as IPlaytestObservations;
   for (const field of [...STANDALONE_PLAYTEST_OBSERVATION_FIELDS, ...HOST_PLAYTEST_OBSERVATION_FIELDS]) {
-    const value = candidate[field];
+    const value = candidate[field as keyof IPlaytestObservations];
     if (value !== undefined) Object.assign(observations, { [field]: value });
   }
   return observations;

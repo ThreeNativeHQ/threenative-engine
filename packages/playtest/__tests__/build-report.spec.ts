@@ -181,7 +181,7 @@ test("a budget the target cannot observe is refused before the run, not dropped"
       buildReportPath: report,
       target: "android",
     })),
-  ).rejects.toThrow(/cannot observe.*measured on: web, desktop, bevy/su);
+  ).rejects.toThrow(/cannot observe.*measured on: browser, desktop/su);
 });
 
 test("the browser lane is told which build it is exercising, or it is not", async () => {

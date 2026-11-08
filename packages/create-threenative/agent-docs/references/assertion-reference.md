@@ -12,7 +12,7 @@ trivially fails `TN_PLAYTEST_SCENARIO_ASSERTS_NOTHING`.
 
 Bounds display-referred luminance from a captured PNG frame, using a shared 256-bin histogram. **Use when** that is the thing the scenario must prove.
 
-- **Supported on:** web, desktop, bevy · **Requires:** browser.screenshot
+- **Supported on:** browser, android, desktop, ios · **Requires:** browser.screenshot
 
 | Field | Type | Required |
 | --- | --- | --- |
@@ -48,7 +48,7 @@ Bounds display-referred luminance from a captured PNG frame, using a shared 256-
 
 Reports the device's thermal, power and battery state around the run and judges whether the run is comparable with a cool one. **Use when** that is the thing the scenario must prove.
 
-- **Supported on:** web, desktop, bevy · **Requires:** device.metrics
+- **Supported on:** android · **Requires:** device.metrics
 
 | Field | Type | Required |
 | --- | --- | --- |
@@ -70,7 +70,7 @@ Reports the device's thermal, power and battery state around the run and judges 
 
 Samples the framebuffer on every render frame inside a labeled loading window and requires every coarse-grid RGB sample to match the declared backdrop. **Use when** that is the thing the scenario must prove.
 
-- **Supported on:** web, desktop, bevy · **Requires:** browser.screenshot
+- **Supported on:** browser, android · **Requires:** browser.screenshot
 
 | Field | Type | Required |
 | --- | --- | --- |
@@ -101,35 +101,11 @@ Samples the framebuffer on every render frame inside a labeled loading window an
 }
 ```
 
-### `reachability`
-
-Checks every consecutive platform against a measured static movement-envelope fit; it does not simulate traversal, walls, ceilings, run-up, or air control. **Use when** that is the thing the scenario must prove.
-
-- **Supported on:** web, desktop, bevy · **Requires:** entity.observe
-
-| Field | Type | Required |
-| --- | --- | --- |
-| `artifact` | string | yes |
-| `entities` | string[] (minimum 2) | yes |
-
-
-```json
-{
-  "reachability": {
-    "artifact": "artifacts/character-envelope/player.json",
-    "entities": [
-      "platform.a",
-      "platform.b"
-    ]
-  }
-}
-```
-
 ### `aerodynamics`
 
 Proves aerodynamic force telemetry and signed control-surface delivery for a flight entity. **Use when** that is the thing the scenario must prove.
 
-- **Supported on:** web, desktop, bevy · **Requires:** runtime.fixedStep, runtime.physics
+- **Supported on:** browser, android, desktop, ios · **Requires:** runtime.fixedStep, runtime.physics
 
 | Field | Type | Required |
 | --- | --- | --- |
@@ -160,7 +136,7 @@ Proves aerodynamic force telemetry and signed control-surface delivery for a fli
 
 Proves screenshot change, populated coordinate or DOM element-bound regions, dark-pixel bounds, and sustained projected entity visibility. **Use when** that is the thing the scenario must prove.
 
-- **Supported on:** web · **Requires:** browser.screenshot
+- **Supported on:** browser · **Requires:** browser.screenshot
 
 | Field | Type | Required |
 | --- | --- | --- |
@@ -197,7 +173,7 @@ Proves screenshot change, populated coordinate or DOM element-bound regions, dar
 
 Proves the subject moved, reached a minimum velocity, or changed rotation during held input. **Use when** that is the thing the scenario must prove.
 
-- **Supported on:** web, desktop, bevy · **Requires:** entity.observe
+- **Supported on:** browser, android, desktop, ios · **Requires:** entity.observe
 
 | Field | Type | Required |
 | --- | --- | --- |
@@ -233,7 +209,7 @@ Proves the subject moved, reached a minimum velocity, or changed rotation during
 
 Proves a camera follows an entity or keeps a target in view. **Use when** that is the thing the scenario must prove.
 
-- **Supported on:** web, desktop, bevy · **Requires:** camera.observe, entity.observe
+- **Supported on:** browser, android, desktop, ios · **Requires:** camera.observe, entity.observe
 
 | Field | Type | Required |
 | --- | --- | --- |
@@ -258,7 +234,7 @@ Proves a camera follows an entity or keeps a target in view. **Use when** that i
 
 Proves a live entity component value after the scenario or at named steps. **Use when** that is the thing the scenario must prove.
 
-- **Supported on:** web, desktop, bevy · **Requires:** runtime.components
+- **Supported on:** browser, android, desktop, ios · **Requires:** runtime.components
 
 | Field | Type | Required |
 | --- | --- | --- |
@@ -291,7 +267,7 @@ Proves a live entity component value after the scenario or at named steps. **Use
 
 Proves resource state after the scenario through equals, gte, lte, textIncludes, or changed checks. **Use when** that is the thing the scenario must prove.
 
-- **Supported on:** web, desktop, bevy · **Requires:** runtime.resources
+- **Supported on:** browser, android, desktop, ios · **Requires:** runtime.resources
 
 | Field | Type | Required |
 | --- | --- | --- |
@@ -325,7 +301,7 @@ Proves resource state after the scenario through equals, gte, lte, textIncludes,
 
 Proves the final count of entities carrying a bounded runtime tag. **Use when** that is the thing the scenario must prove.
 
-- **Supported on:** web, desktop, bevy · **Requires:** runtime.tags
+- **Supported on:** browser, android, desktop, ios · **Requires:** runtime.tags
 
 | Field | Type | Required |
 | --- | --- | --- |
@@ -351,7 +327,7 @@ Proves the final count of entities carrying a bounded runtime tag. **Use when** 
 
 Proves a named Godot signal was emitted by the application during the run or at a labeled step. **Use when** that is the thing the scenario must prove.
 
-- **Supported on:** web, desktop, bevy · **Requires:** runtime.events
+- **Supported on:** browser, android, desktop, ios · **Requires:** runtime.events
 
 | Field | Type | Required |
 | --- | --- | --- |
@@ -379,7 +355,7 @@ Proves a named Godot signal was emitted by the application during the run or at 
 
 Proves an observed entity's final runtime-owned state-machine state. **Use when** that is the thing the scenario must prove.
 
-- **Supported on:** web, desktop, bevy · **Requires:** runtime.state
+- **Supported on:** browser, android, desktop, ios · **Requires:** runtime.state
 
 | Field | Type | Required |
 | --- | --- | --- |
@@ -402,7 +378,7 @@ Proves an observed entity's final runtime-owned state-machine state. **Use when*
 
 Proves retained UI/HUD text or values after the scenario. **Use when** that is the thing the scenario must prove.
 
-- **Supported on:** web · **Requires:** browser.dom
+- **Supported on:** browser · **Requires:** browser.dom
 
 | Field | Type | Required |
 | --- | --- | --- |
@@ -428,41 +404,11 @@ Proves retained UI/HUD text or values after the scenario. **Use when** that is t
 }
 ```
 
-### `overlayNodes`
-
-Proves DOM state inside a same-origin webview overlay iframe. **Use when** that is the thing the scenario must prove.
-
-- **Supported on:** web · **Requires:** browser.dom
-
-| Field | Type | Required |
-| --- | --- | --- |
-| `overlayId` | string | yes |
-| `selector` | string | yes |
-| `attribute` | string | no |
-| `equals` | json | no |
-| `textIncludes` | string | no |
-| `visible` | boolean | no |
-
-
-```json
-{
-  "overlayNodes": [
-    {
-      "attribute": "data-aiming",
-      "equals": "true",
-      "overlayId": "game-ui",
-      "selector": "[data-testid=fps-crosshair]",
-      "visible": false
-    }
-  ]
-}
-```
-
 ### `diagnostics`
 
 Proves console, network, runtime, and readiness diagnostics stayed clean. **Use when** that is the thing the scenario must prove.
 
-- **Supported on:** web, desktop · **Requires:** browser.console, browser.network, runtime.diagnostics
+- **Supported on:** browser, android, desktop, ios · **Requires:** browser.console, browser.network, runtime.diagnostics
 
 | Field | Type | Required |
 | --- | --- | --- |
@@ -490,7 +436,7 @@ Proves console, network, runtime, and readiness diagnostics stayed clean. **Use 
 
 Proves a live render sample exists and optionally bounds frame time, an fps floor, per-phase frame budget, whole-frame or per-pass draw calls and triangles. **Use when** that is the thing the scenario must prove.
 
-- **Supported on:** web, desktop, bevy · **Requires:** runtime.performance
+- **Supported on:** browser, desktop · **Requires:** runtime.performance
 
 | Field | Type | Required |
 | --- | --- | --- |
@@ -522,7 +468,7 @@ Proves a live render sample exists and optionally bounds frame time, an fps floo
 
 PRD-222 Tier 2: proves the fps ratio of a parity pair — the same scene on the same device, once in the browser and once native. Lives in the second run and names the first run's saved report; refuses a pair whose halves ran on different devices, a thermally confounded half, or a missing series on either side. **Use when** that is the thing the scenario must prove.
 
-- **Supported on:** web, desktop, bevy · **Requires:** runtime.performance
+- **Supported on:** browser, android, desktop, ios · **Requires:** runtime.performance
 
 | Field | Type | Required |
 | --- | --- | --- |
@@ -547,7 +493,7 @@ PRD-222 Tier 2: proves the fps ratio of a parity pair — the same scene on the 
 
 Proves projected entity visibility in the viewport. **Use when** that is the thing the scenario must prove.
 
-- **Supported on:** web · **Requires:** entity.bounds
+- **Supported on:** browser, android, desktop, ios · **Requires:** entity.bounds
 
 | Field | Type | Required |
 | --- | --- | --- |
@@ -574,7 +520,7 @@ Proves projected entity visibility in the viewport. **Use when** that is the thi
 
 Proves which labelled audio cues the game actually played, and how often. **Use when** that is the thing the scenario must prove.
 
-- **Supported on:** web, desktop · **Requires:** runtime.audio
+- **Supported on:** browser, desktop · **Requires:** runtime.audio
 
 | Field | Type | Required |
 | --- | --- | --- |
@@ -599,7 +545,7 @@ Proves which labelled audio cues the game actually played, and how often. **Use 
 
 Proves runtime world metadata exposed by the application bridge. **Use when** that is the thing the scenario must prove.
 
-- **Supported on:** web, desktop, bevy · **Requires:** runtime.world
+- **Supported on:** browser, android, desktop, ios · **Requires:** runtime.world
 
 | Field | Type | Required |
 | --- | --- | --- |
@@ -619,7 +565,7 @@ Proves runtime world metadata exposed by the application bridge. **Use when** th
 
 Proves contact or trigger evidence appeared in the effect log. **Use when** that is the thing the scenario must prove.
 
-- **Supported on:** web, desktop, bevy · **Requires:** runtime.contacts
+- **Supported on:** browser, android, desktop, ios · **Requires:** runtime.contacts
 
 | Field | Type | Required |
 | --- | --- | --- |
@@ -649,7 +595,7 @@ Proves contact or trigger evidence appeared in the effect log. **Use when** that
 
 Proves an observed cohort of matching physics bodies is asleep in a retained physics-debug sample. **Use when** that is the thing the scenario must prove.
 
-- **Supported on:** web, desktop, bevy · **Requires:** runtime.physics
+- **Supported on:** browser, android, desktop, ios · **Requires:** runtime.physics
 
 | Field | Type | Required |
 | --- | --- | --- |
@@ -673,35 +619,11 @@ Proves an observed cohort of matching physics bodies is asleep in a retained phy
 }
 ```
 
-### `occluded`
-
-Proves rendered scene geometry occludes the segment between an origin entity and target. **Use when** that is the thing the scenario must prove.
-
-- **Supported on:** web, desktop, bevy · **Requires:** runtime.physics
-
-| Field | Type | Required |
-| --- | --- | --- |
-| `entity` | string | no |
-| `target` | string | no |
-| `allowTrivial` | triviality reason | no |
-
-
-```json
-{
-  "occluded": [
-    {
-      "entity": "listener",
-      "target": "emitter"
-    }
-  ]
-}
-```
-
 ### `animation`
 
 Proves animation evidence appeared in the effect log or runtime observation. **Use when** that is the thing the scenario must prove.
 
-- **Supported on:** web, desktop, bevy · **Requires:** runtime.animation
+- **Supported on:** browser, android, desktop, ios · **Requires:** runtime.animation
 
 | Field | Type | Required |
 | --- | --- | --- |
@@ -734,7 +656,7 @@ Proves animation evidence appeared in the effect log or runtime observation. **U
 
 Bounds the room the game is played in — the lights, materials, fog and camera framing the renderer was handed. Fails closed on a bridge that does not report the scene. **Use when** that is the thing the scenario must prove.
 
-- **Supported on:** web, desktop, bevy · **Requires:** scene.observe
+- **Supported on:** browser, android, desktop, ios · **Requires:** scene.observe
 
 | Field | Type | Required |
 | --- | --- | --- |
@@ -758,7 +680,7 @@ Bounds the room the game is played in — the lights, materials, fog and camera 
 
 Bounds on named nodes of the scene graph — where an object is, whether it is on screen, whether its textures loaded. **Use when** that is the thing the scenario must prove.
 
-- **Supported on:** web, desktop, bevy · **Requires:** scene.nodes
+- **Supported on:** browser, android, desktop, ios · **Requires:** scene.nodes
 
 | Field | Type | Required |
 | --- | --- | --- |
@@ -791,7 +713,7 @@ Bounds on named nodes of the scene graph — where an object is, whether it is o
 
 Bounds how far a planted foot slides while the subject moves, measured every tick from named foot nodes' world positions, so it holds a procedural rig to the feet-meet-the-floor convention as well as a clip. Browser target only; another target fails it as unobserved. **Use when** that is the thing the scenario must prove.
 
-- **Supported on:** web · **Requires:** entity.observe, scene.nodes
+- **Supported on:** browser · **Requires:** entity.observe, scene.nodes
 
 | Field | Type | Required |
 | --- | --- | --- |
@@ -822,7 +744,7 @@ Bounds how far a planted foot slides while the subject moves, measured every tic
 
 Bounds the share of the run in which solid geometry stood between the camera and the subject's world bounds centre, so a camera that clips through a pillar or a wall that eats the framing fails. Browser target only; another target fails it as unobserved. **Use when** that is the thing the scenario must prove.
 
-- **Supported on:** web · **Requires:** camera.observe, entity.observe
+- **Supported on:** browser · **Requires:** camera.observe, entity.observe
 
 | Field | Type | Required |
 | --- | --- | --- |
@@ -842,7 +764,7 @@ Bounds the share of the run in which solid geometry stood between the camera and
 
 Bounds the engine's own work counters, read off each TN_FRAME_BUDGET window's counters.engine (and counters.bridgeCrossings): JS-to-Wasm crossings, children reads, scene-walk visits, hierarchy moves, matrix composes, handle shares, content classification, GPU allocations, physics crossings and any counter an engine module adds to globalThis.__tnEngineCost. Each window must hold every bound; a run with fewer windows than minWindows, or a window missing a bounded counter, fails closed. A failure names the counter, the window and the top caller of the TN_BRIDGE_CENSUS before it. **Use when** that is the thing the scenario must prove.
 
-- **Supported on:** web · **Requires:** browser.console
+- **Supported on:** browser · **Requires:** browser.console
 
 | Field | Type | Required |
 | --- | --- | --- |
@@ -872,7 +794,7 @@ Bounds the engine's own work counters, read off each TN_FRAME_BUDGET window's co
 
 Audits the text the page draws for the player: developer left-overs such as debug, TODO, placeholder or an unresolved undefined, and text whose colour is too close to its backing colour. Browser target only; another target fails it as unobserved. **Use when** that is the thing the scenario must prove.
 
-- **Supported on:** web · **Requires:** browser.dom
+- **Supported on:** browser · **Requires:** browser.dom
 
 | Field | Type | Required |
 | --- | --- | --- |
@@ -893,7 +815,7 @@ Audits the text the page draws for the player: developer left-overs such as debu
 
 Relates a tick-stamped effect to the tick-stamped cause that must precede it — the 'because' a terminal state needs. **Use when** that is the thing the scenario must prove.
 
-- **Supported on:** web, desktop, bevy · **Requires:** runtime.transitions
+- **Supported on:** browser, android, desktop, ios · **Requires:** runtime.transitions
 
 | Field | Type | Required |
 | --- | --- | --- |
@@ -929,7 +851,7 @@ Relates a tick-stamped effect to the tick-stamped cause that must precede it —
 
 Bounds when the application's startup milestones happened: the world entered, first-use compilation settled, readiness reached — in milliseconds since navigation, from the runtime's own startup timeline. **Use when** that is the thing the scenario must prove.
 
-- **Supported on:** web, desktop, bevy · **Requires:** runtime.startup
+- **Supported on:** browser, android, desktop, ios · **Requires:** runtime.startup
 
 | Field | Type | Required |
 | --- | --- | --- |
@@ -953,7 +875,7 @@ Bounds when the application's startup milestones happened: the world entered, fi
 
 Bounds node-builder state builds and render-pipeline creations after a complete runtime capture proves that explicit shader warm-up settled; a named streamed scope must also prove its target-bound first visible world frame, and missing, incomplete, or malformed census evidence fails closed. **Use when** that is the thing the scenario must prove.
 
-- **Supported on:** web, desktop, bevy · **Requires:** runtime.pipelineCensus
+- **Supported on:** browser, android, desktop, ios · **Requires:** runtime.pipelineCensus
 
 | Field | Type | Required |
 | --- | --- | --- |
@@ -977,7 +899,7 @@ Bounds node-builder state builds and render-pipeline creations after a complete 
 
 Proves the render chain reports its quality tier, authored stage ids/order, graph-output changes for named stages, and, when asserted, a bounded temporal-history rejection fraction. **Use when** that is the thing the scenario must prove.
 
-- **Supported on:** web, desktop, bevy · **Requires:** runtime.renderChain
+- **Supported on:** browser, android, desktop, ios · **Requires:** runtime.renderChain
 
 | Field | Type | Required |
 | --- | --- | --- |
@@ -1011,6 +933,28 @@ Proves the render chain reports its quality tier, authored stage ids/order, grap
         "watercolor"
       ]
     }
+  }
+}
+```
+
+### `geometry`
+
+Arms a per-object geometry capture (triangles, draws, projected size) and requires the bridge to report a captured frame; the request carries no bounds of its own. **Use when** that is the thing the scenario must prove.
+
+- **Supported on:** browser, android, desktop, ios · **Requires:** runtime.geometry
+
+| Field | Type | Required |
+| --- | --- | --- |
+| `limit` | number | no |
+| `sort` | string | no |
+| `timeoutMs` | positive number | no |
+
+
+```json
+{
+  "geometry": {
+    "limit": 20,
+    "sort": "triangles"
   }
 }
 ```

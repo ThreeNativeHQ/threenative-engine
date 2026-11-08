@@ -4,7 +4,7 @@ import { expect, test, vi } from "vitest";
 import * as cpuWindow from "../src/runner/linuxCpuWindow.js";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { playtestDiagnostic } from "../src/index.js";
-import { runDevicePlaytest } from "../src/runner/androidRunner.js";
+import { runDevicePlaytest } from "../src/runner/deviceRunner.js";
 import { PlaytestBridgeError } from "../src/runner/bridgeClient.js";
 import { runDesktopPlaytest } from "../src/runner/desktopRunner.js";
 import { DeviceMailboxTransport, type IDevicePlaytestTransport } from "../src/runner/deviceTransport.js";

@@ -5,8 +5,8 @@ import { expect, test } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { inspectFrame } from "../src/capture.js";
 import { PLAYTEST_PROTOCOL_LIMITS, PLAYTEST_PROTOCOL_VERSION } from "../src/protocol.js";
-import { runDevicePlaytest } from "../src/runner/androidRunner.js";
-import { runNeedsPixels } from "../src/runner/captureEnvironment.js";
+import { runDevicePlaytest } from "../src/runner/deviceRunner.js";
+import { requiresPixels } from "../src/runner/captureEnvironment.js";
 import { preflightDisplay } from "../src/runner/runner-support.js";
 import { validatePlaytestScenario } from "../src/scenario.js";
 import type { IDevicePlaytestTransport } from "../src/runner/deviceTransport.js";
@@ -31,8 +31,11 @@ for (let value = 0; value < 256; value += 1) {
   darkPng.data.set([shade, shade, shade, 255], value * 4);
 }
 const darkPixels = PNG.sync.write(darkPng);
+const blankPng = new PNG({ width: 256, height: 1 });
+for (let value = 0; value < 256; value += 1) blankPng.data.set([0, 0, 0, 255], value * 4);
+const blankPixels = PNG.sync.write(blankPng);
 
-async function run(target: "android" | "desktop" | "ios", assert: unknown, screenshots: false | "after" = false, earlyAfter = false) {
+async function run(target: "android" | "desktop" | "ios", assert: unknown, screenshots: false | "after" = false, earlyAfter = false, blankShots = 0) {
   const projectPath = await makeTempDir("tone-runner-");
   await writeFile(join(projectPath, "tone.json"), JSON.stringify({ schemaVersion: 1, name: "tone", assert, artifacts: { screenshots }, steps: earlyAfter ? [{ screenshot: "after", waitTicks: 1 }, { waitTicks: 1 }] : [{ label: "landed", waitTicks: 1 }] }));
   let tick = 0;
@@ -55,7 +58,7 @@ async function run(target: "android" | "desktop" | "ios", assert: unknown, scree
     mailboxPaths: { request: "request", response: "response" },
     driver: {
       prepare: async () => undefined, stop: async () => undefined, isAlive: async () => true, captureConsole: async () => [],
-      screenshot: async (path) => { captured.push(basename(path)); await writeFile(path, earlyAfter && captured.length > 1 ? darkPixels : pixels); },
+      screenshot: async (path) => { captured.push(basename(path)); await writeFile(path, captured.length <= blankShots ? blankPixels : earlyAfter && captured.length > 1 ? darkPixels : pixels); },
     },
   });
   return { report, captured, projectPath };
@@ -98,6 +101,15 @@ test("ordinary captures retain tone even without tone assertions", async () => {
 test("browser tone-only assertions require a pixel lane", () => {
   const scenario = validatePlaytestScenario({ schemaVersion: 1, name: "tone", steps: [{ waitTicks: 1 }], artifacts: { screenshots: false }, assert: { tone: [{ mean: { min: 1 } }] } }, "tone.json");
   const config = { headless: true, captureArtifactScreenshots: false };
-  expect(runNeedsPixels(config as never, scenario)).toBe(true);
+  expect(requiresPixels(scenario)).toBe(true);
   expect(preflightDisplay(config as never, scenario, {}, "linux")?.code).toBe("TN_PLAYTEST_HEADLESS_WEBGPU");
+});
+
+test.each(["android", "desktop", "ios"] as const)("%s retakes a blank frame through the shared capture retry, as the browser lane does", async (target) => {
+  // Only the browser lane used to wait for a world to present. A device that showed its first
+  // frame a few presents late failed on TN_CAPTURE_BLANK; the lanes now share `captureWithRetry`.
+  const { report, captured } = await run(target, { tone: [{ atStep: "landed", mean: { min: 100 } }, { p99: { min: 200 } }], diagnostics: {} }, "after", false, 2);
+  expect(captured.length).toBeGreaterThan(2);
+  expect(report.diagnostics.map(({ code }) => code)).not.toContain("TN_CAPTURE_BLANK");
+  expect(report.pass).toBe(true);
 });

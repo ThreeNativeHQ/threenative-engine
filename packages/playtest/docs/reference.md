@@ -77,8 +77,8 @@ bridge never supplies these host measurements. The offline command
 
 `--target browser|android|desktop|ios` runs the same scenario file against a browser, an Android
 device or emulator, a native desktop executable, and an iOS simulator or device
-(`runner/androidRunner.ts`, `runner/desktopRunner.ts`, `runner/iosRunner.ts`,
-`runner/deviceTransport.ts`). Desktop requires `--executable`, and the game bundle reaches the host
+(`runner/deviceRunner.ts` holds the flow the three device lanes share; `runner/androidRunner.ts`,
+`runner/desktopRunner.ts` and `runner/iosRunner.ts` only start their lane; `runner/deviceTransport.ts`). Desktop requires `--executable`, and the game bundle reaches the host
 through repeatable `--host-arg` (`--host-arg run --host-arg dist/game.js`) — without it the host
 launches with no game and the run reports `TN_PLAYTEST_BRIDGE_MISSING` at zero frames. The runner
 owns a temporary local

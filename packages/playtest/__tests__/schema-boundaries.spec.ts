@@ -24,7 +24,6 @@ import {
   validateParityConfig,
   validatePlaytestScenario,
   validatePointer,
-  validateReachabilityAssertion,
   validateSetup,
   validateSetupEntity,
   validateSetupResource,
@@ -282,10 +281,6 @@ describe("scenario schema boundaries", () => {
           reachesPositionWithin: { atStep: "goal", maxDistance: 1, position: [1, 0, 0] },
           rotationChanged: true,
         },
-        occluded: [{ allowTrivial: reason, entity: "player", target: "wall" }],
-        overlayNodes: [
-          { attribute: "aria-label", equals: 10, overlayId: "hud", selector: "#score", textIncludes: "10", visible: true },
-        ],
         performance: {
           maxDrawCalls: 10,
           maxFrameMsP95: 5,
@@ -293,7 +288,6 @@ describe("scenario schema boundaries", () => {
           maxTriangles: 100,
           minFps: 60,
         },
-        reachability: { artifact: "artifacts/reach.json", entities: ["platform.a", "platform.b"] },
         renderChain: { tier: "high", velocity: { maxRejectionFraction: 0.2 } },
         resources: [
           {
@@ -420,7 +414,6 @@ describe("scenario schema boundaries", () => {
     const reason = "This held value is intentional until the later transition is sampled.";
     expect(validateWorldAssertion({ seed: null }, "world.json")).toEqual({ seed: null });
     expect(validateWorldAssertion({ runtime: { agent: "a", core: "c", portable: false, randomState: 0, rapier: "r", step: 1 }, seed: 0 }, "world.json")).toMatchObject({ runtime: { portable: false, step: 1 } });
-    expect(validateReachabilityAssertion({ artifact: "reach.json", entities: ["a", "b", "c"] }, "reach.json")).toEqual({ artifact: "reach.json", entities: ["a", "b", "c"] });
     expect(validateSetupResource({ id: "state", path: "game.score", value: 1 }, "setup.json", 0)).toEqual({ id: "state", path: "game.score", value: 1 });
     expect(validateSetupEntity({ entity: "player", scale: [1, 1, 1] }, "setup.json", 0)).toEqual({ entity: "player", scale: [1, 1, 1] });
     expect(validateAssertions({
@@ -517,7 +510,6 @@ describe("scenario schema boundaries", () => {
     expect(() => validateAssertions({ signals: [] }, "invalid.json")).toThrow(/signals.*at least one/u);
     expect(() => validateAssertions({ camera: {} }, "invalid.json")).toThrow(/camera.*within|targetInViewport/u);
     expect(() => validateAssertions({ world: { seed: "random" } }, "invalid.json")).toThrow(/world\.seed/u);
-    expect(() => validateAssertions({ reachability: { artifact: "", entities: ["a"] } }, "invalid.json")).toThrow(/reachability/u);
     expect(() => validateAssertions({ renderChain: "high" }, "invalid.json")).toThrow(/renderChain.*object/u);
     expect(() => validateAssertions({ pipelineCensus: "zero" }, "invalid.json")).toThrow(/pipelineCensus.*object/u);
     expect(() => validateAssertions({ pipelineCensus: { maxNodeBuildsAfterWarmUpSettled: "zero" } }, "invalid.json")).toThrow(/maxNodeBuildsAfterWarmUpSettled.*non-negative integer/u);
@@ -615,22 +607,19 @@ describe("scenario schema boundaries", () => {
     expect(() => validateStepLabels([{ label: " ", release: true, waitTicks: 1 }] as never, undefined, "invalid.json")).toThrow(/non-empty/u);
   });
 
-  it("rejects malformed runtime, reachability, and assertion cardinality values", () => {
+  it("rejects malformed runtime and assertion cardinality values", () => {
     expect(() => validateWorldAssertion({ runtime: { agent: "a", core: "c", portable: "yes", randomState: 1, rapier: null, step: 1 }, seed: 1 }, "invalid.json")).toThrow(/portable/u);
     expect(() => validateWorldAssertion({ runtime: { agent: "a", core: "c", randomState: 1.5, rapier: null, step: 1 }, seed: 1 }, "invalid.json")).toThrow(/randomState/u);
     expect(() => validateWorldAssertion({ runtime: { agent: "a", core: "c", randomState: 1, rapier: 4, step: 1 }, seed: 1 }, "invalid.json")).toThrow(/rapier/u);
     expect(() => validateWorldAssertion({ runtime: { agent: "a", core: "c", randomState: 1, rapier: null, step: 0 }, seed: 1 }, "invalid.json")).toThrow(/positive/u);
     expect(() => validateWorldAssertion({ runtime: { agent: "a", core: "c", randomState: 1, rapier: null }, seed: 1 }, "invalid.json")).toThrow(/positive/u);
-    expect(() => validateReachabilityAssertion({ artifact: "", entities: ["a", "b"] }, "invalid.json")).toThrow(/artifact/u);
-    expect(() => validateReachabilityAssertion({ artifact: "reach.json", entities: ["a", ""] }, "invalid.json")).toThrow(/entities/u);
-    expect(() => validateReachabilityAssertion({ artifact: "reach.json", entities: ["a", "a"] }, "invalid.json")).toThrow(/repeat/u);
     expect(() => validateAimTarget(null, "invalid.json", 0)).toThrow(/object/u);
     expect(() => validateAimTarget({ entity: "player", x: 1, z: 2 }, "invalid.json", 0)).toThrow(/both forms/u);
     expect(() => validatePointer(null, "invalid.json", 0, 0)).toThrow(/object/u);
     expect(() => validateAssertions({ signals: {} }, "invalid.json")).toThrow(/signals.*array/u);
     expect(() => validateAssertions({ aerodynamics: [{ entity: "plane", torques: [{ axis: "q", label: "turn", sign: "positive" }] }] }, "invalid.json")).toThrow(/axis/u);
     expect(() => validateAssertions({ aerodynamics: [{ entity: "plane", torques: [{ axis: "y", label: "turn", sign: "sideways" }] }] }, "invalid.json")).toThrow(/negative.*positive/u);
-    expect(validateAssertions({ components: [{ atSteps: [{ label: "start" }], component: "Transform", entity: "player" }], overlayNodes: [{ overlayId: "hud", selector: "#score" }] }, "valid.json")).toMatchObject({ components: [{ atSteps: [{ label: "start" }] }], overlayNodes: [{ overlayId: "hud" }] });
+    expect(validateAssertions({ components: [{ atSteps: [{ label: "start" }], component: "Transform", entity: "player" }] }, "valid.json")).toMatchObject({ components: [{ atSteps: [{ label: "start" }] }] });
   });
 
   it("keeps typed accessor boundaries fail-closed", () => {
