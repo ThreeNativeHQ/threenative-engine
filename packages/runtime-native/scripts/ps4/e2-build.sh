@@ -200,6 +200,9 @@ git apply "$SCRIPTS/patches/0063-opengnm-psbc-vertex-buffer-table-64bit.patch"
 # gl_VertexIndex adds base_vertex from a user SGPR, and the driver writes it only for an apislot 0xFE
 # slot: psbc emitted none, so the VS read whatever that SGPR held (PRD-784 visuals).
 git apply "$SCRIPTS/patches/0061-opengnm-psbc-base-vertex-slot.patch"
+# InstanceIndex = instance_id + start_instance, and the driver writes start_instance only for an apislot 0xFF
+# slot: psbc emitted none, so instanced draws read a stale SGPR as firstInstance (PRD-784 capability sweep).
+git apply "$SCRIPTS/patches/0064-opengnm-psbc-start-instance-slot.patch"
 
 # === 3. opengnm (orbis) ======================================================
 cd "$SRC/opengnm"
@@ -530,6 +533,9 @@ git apply "$SCRIPTS/patches/0058-vk-ps4-storage-buffer-byte-range.patch"
 # V# i and instancing mode i follow semantic i (a location), not the dense list of declared attributes, so an
 # attribute the VS does not read no longer shifts the later ones (PRD-784 visuals).
 git apply "$SCRIPTS/patches/0060-vk-ps4-vertex-table-by-semantic.patch"
+# radv's GFX7/8 VS reads InstanceID from v1 = InstanceID / VGT_INSTANCE_STEP_RATE_0, which nothing set: at its
+# cleared 0 every instance read 0, so instanced meshes and GPU particles drew instance 0 only (PRD-784 sweep).
+git apply "$SCRIPTS/patches/0065-vk-ps4-instance-step-rate.patch"
 # The Makefile compiles TEST_SRC relative to the vulkan-ps4 tree.
 cp "$SCRIPTS/e2-triangle.c" "$SRC/e2-triangle.c"
 make -f Makefile.orbis -j"$JOBS" TEST_SRC=../e2-triangle.c self > "$LOGS/e2-triangle.log" 2>&1

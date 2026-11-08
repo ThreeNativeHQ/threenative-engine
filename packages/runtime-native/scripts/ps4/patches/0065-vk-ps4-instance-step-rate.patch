@@ -1,0 +1,13 @@
+--- a/src/vk_ps4_command.c
++++ b/src/vk_ps4_command.c
+@@ -1256,6 +1256,10 @@
+      * inherit the default state from the primary. */
+     if (cmd->level == VK_COMMAND_BUFFER_LEVEL_PRIMARY) {
+         sceGnmDrawCmdInitDefaultHardwareState(&cmd->gnm_cmd);
++        /* psbc compiles a GFX7/8 VS, which reads InstanceID from v1 = InstanceID / VGT_INSTANCE_STEP_RATE_0
++         * (radv writes 1 at init, ac_cmdbuf.c). Left at its cleared 0, every instance read v1 = 0 under
++         * shadPS4, so an instanced draw stacked every instance on instance 0 (PRD-784). */
++        sceGnmDrawCmdSetInstanceStepRate(&cmd->gnm_cmd, 1, 1);
+     }
+ 
+     cmd->is_recording = true;
