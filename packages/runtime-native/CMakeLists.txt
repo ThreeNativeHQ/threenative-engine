@@ -2629,6 +2629,10 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         tests/wgpu_null_handle_test.cpp)
     target_link_libraries(threenative-wgpu-null-handle-test PRIVATE mystral-runtime)
 
+    add_executable(threenative-buffer-map-lifetime-test EXCLUDE_FROM_ALL
+        tests/buffer_map_lifetime_test.cpp)
+    target_link_libraries(threenative-buffer-map-lifetime-test PRIVATE mystral-runtime)
+
     add_executable(threenative-surface-format-selection-test EXCLUDE_FROM_ALL
         tests/surface_format_selection_test.cpp)
     target_include_directories(threenative-surface-format-selection-test PRIVATE
@@ -2661,9 +2665,11 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     if(TARGET dawn::webgpu)
         target_link_libraries(threenative-wgpu-null-handle-test PRIVATE dawn::webgpu)
         target_link_libraries(threenative-surface-format-selection-test PRIVATE dawn::webgpu)
+        target_link_libraries(threenative-buffer-map-lifetime-test PRIVATE dawn::webgpu)
     elseif(TARGET wgpu::wgpu)
         target_link_libraries(threenative-wgpu-null-handle-test PRIVATE wgpu::wgpu)
         target_link_libraries(threenative-surface-format-selection-test PRIVATE wgpu::wgpu)
+        target_link_libraries(threenative-buffer-map-lifetime-test PRIVATE wgpu::wgpu)
     endif()
 
     # rg11b10ufloat-renderable: the feature behind three's SSGI target format. The oracle
@@ -2861,6 +2867,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     tn_register_contract_test(threenative-webgpu-bindings-reentrancy-test)
     tn_register_contract_test(threenative-rg11b10-renderable-test)
     tn_register_contract_test(threenative-wgpu-null-handle-test)
+    tn_register_contract_test(threenative-buffer-map-lifetime-test)
     tn_register_contract_test(threenative-surface-format-selection-test)
     tn_register_contract_test(threenative-presentation-pacing-test)
     tn_register_contract_test(threenative-webgpu-comprehensive-test)

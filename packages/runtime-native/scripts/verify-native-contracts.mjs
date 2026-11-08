@@ -244,6 +244,9 @@ export const executionContracts = {
   "threenative-wgpu-null-handle-test": {
     invocations: [{ args: [], passLine: "native wgpu NULL-handle contract passed" }],
   },
+  "threenative-buffer-map-lifetime-test": {
+    invocations: [{ args: [], passLine: "native buffer map lifetime contract passed" }],
+  },
   "threenative-surface-format-selection-test": {
     invocations: [{ args: [], passLine: "surface-format-selection: PASS" }],
   },

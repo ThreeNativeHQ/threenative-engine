@@ -6,10 +6,11 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { PNG } from "pngjs";
 import { afterAll, test } from "vitest";
 
 import { desktopBuildDirectory, nativeTestExecutable } from "../scripts/native-test-lane.mjs";
@@ -192,4 +193,51 @@ hostTest("the pump keeps stamping while the loop is paused, so a hidden window i
   const pump = JSON.parse(line.slice("TN_PUMP_SILENCE:".length));
   assert.equal(pump.observed, true);
   assert.ok(pump.maxGapMs < 250, `the paused 1.5 s read as a ${pump.maxGapMs} ms pump silence`);
+});
+
+// The playtest runner takes desktop screenshots through a file mailbox: it writes the destination
+// path into `tn-playtest-screenshot-request.txt` under TN_PLAYTEST_MAILBOX_ROOT, and the host saves
+// the next presented frame there after the present. A game that clears the canvas to magenta each
+// frame must come back as a magenta PNG, and the request file must be consumed.
+hostTest("a screenshot request in the playtest mailbox saves the presented frame", () => {
+  const source = `
+    (async () => {
+      const canvas = document.getElementById("canvas") ?? document.createElement("canvas");
+      const adapter = await navigator.gpu.requestAdapter();
+      const device = await adapter.requestDevice();
+      const context = canvas.getContext("webgpu");
+      context.configure({ device, format: navigator.gpu.getPreferredCanvasFormat(), alphaMode: "opaque" });
+      function frame() {
+        const encoder = device.createCommandEncoder();
+        encoder.beginRenderPass({ colorAttachments: [{
+          view: context.getCurrentTexture().createView(),
+          clearValue: { r: 1, g: 0, b: 1, a: 1 }, loadOp: "clear", storeOp: "store" }] }).end();
+        device.queue.submit([encoder.finish()]);
+        requestAnimationFrame(frame);
+      }
+      requestAnimationFrame(frame);
+    })();
+    setTimeout(() => process.exit(0), 20000);
+  `;
+  const game = packageGame("shot", { window: { height: 64, width: 64 } }, source);
+  const mailbox = join(scratch, "mailbox");
+  mkdirSync(mailbox, { recursive: true });
+  const request = join(mailbox, "tn-playtest-screenshot-request.txt");
+  const png = join(scratch, "shot.png");
+  const script = `
+    TN_PLAYTEST_MAILBOX_ROOT=${JSON.stringify(mailbox)} ${JSON.stringify(game)} >${JSON.stringify(`${game}.log`)} 2>&1 &
+    pid=$!
+    sleep 3
+    printf '%s' ${JSON.stringify(png)} > ${JSON.stringify(request)}
+    for i in $(seq 1 100); do [ -s ${JSON.stringify(png)} ] && break; sleep 0.1; done
+    kill $pid
+    wait $pid 2>/dev/null
+    cat ${JSON.stringify(`${game}.log`)}
+  `;
+  const log = spawnSync("sh", [xvfb, "sh", "-c", script], { encoding: "utf8", timeout: 90_000 }).stdout;
+  assert.ok(existsSync(png), `no screenshot was saved\n${log.slice(-800)}`);
+  assert.equal(existsSync(request), false, "the host consumes the request file");
+  const { data, height, width } = PNG.sync.read(readFileSync(png));
+  assert.ok(width > 0 && height > 0);
+  assert.deepEqual([...data.subarray(0, 4)], [255, 0, 255, 255], "the saved frame is the game's magenta clear");
 });
