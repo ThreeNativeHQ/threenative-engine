@@ -1686,6 +1686,16 @@ void materialSlots() {
     )JS");
     CHECK(got == "true,true");
     if (got != "true,true") std::fprintf(stderr, "material slots: %s\n", got.c_str());
+    // three's `source.dataReady = false` (the texels are written by copyTextureToTexture), then `image.data = new
+    // Uint8Array(0)` to release the CPU copy: prd493's terrain splat stacks its layers this way.
+    const std::string stacked = run(rt, adapter, R"JS(
+        const layers = new DataArrayTexture(new Uint8Array(8), 1, 1, 2);
+        layers.source.dataReady = false;
+        layers.image.data = new Uint8Array(0);
+        [layers.source.dataReady, layers.image.width].join()
+    )JS");
+    CHECK(stacked == "false,1");
+    if (stacked != "false,1") std::fprintf(stderr, "texels on the GPU: %s\n", stacked.c_str());
     // Diagnostic observation must never suppress a setter or its material version increment.
     auto& stats = tn::engine::Material::diagnostics();
     const auto saved = stats;

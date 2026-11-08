@@ -41,13 +41,15 @@ Two examples package and then stop at run time on the desktop V8 player:
 - [ ] `CubeCamera`, `CubeRenderTarget`, `RenderTarget3D` and a `three-mesh-bvh/webgpu` facade; prd268 packages and starts. proof: AC-1 and AC-2 for prd268
 - [x] prd493's TSL names: `element`, `instancedBufferAttribute`, `instancedDynamicBufferAttribute`, `positionView`, `transformNormal`, `varyingProperty`. proof: only core's world modules import them (`world-impostor-surface.ts`, `world-impostor.ts`), and the prd493 player run never calls them, so the facade refuses each at use by name (`unsupportedExport`), as it does `cubeTexture`. The bundler on prd493 was red (12 `TN_NATIVE_ENGINE_UNBOUND` lines), then green. `player-imports.mjs` imports all twelve names and checks each `TN_NATIVE_UNSUPPORTED_<NAME>` refusal. Its run passes these checks and then stops at `RenderPipeline.render syncs edited uniforms`, a check that the batched `setUniforms` path from #625 bypasses. That stop exists before this change.
 - [x] prd493's `three/webgpu` names: `BundleGroup`, `EventNode`, `IndirectStorageBufferAttribute`. proof: the same refusal at use and the same `player-imports.mjs` checks as the box above. Only `world-cell-render-bundles.ts`, `world-impostor-surface.ts` and `world-gpu-scene.ts` import them.
-- [ ] `CompressedArrayTexture`, `InstancedInterleavedBuffer` and `TextureUtils`; prd493 packages and starts. proof: AC-1 and AC-2 for prd493
-  - Progress: the three names are refused at use and covered by the same `player-imports.mjs` checks. AC-1 holds for prd493. Three player stops are fixed, each red-green:
-    - `texture(array, uv).depth(layer)` on V8 (`tsl_api` red `depth is not a function`).
-    - `material.userData` on V8 (the facade now gives every engine class with `dispose` a `userData`, as Wasm does).
-    - `mesh.morphTargetInfluences = [...]` on V8 (`geometry_lifecycle` red, then green).
-  - The asset cook also packs an empty web-root file as a 0-byte entry (`native-package.spec.ts` red, then green), because prd493's world has an empty `placements.bin`.
-  - Open: the first frame is blank (`TN_CAPTURE_BLANK`). The terrain layers do not stack into one array texture: neither engine back end has `renderer.initTexture` or `renderer.copyTextureToTexture`, so 16 layers bind 51 samplers.
+- [x] `CompressedArrayTexture`, `InstancedInterleavedBuffer` and `TextureUtils`; prd493 packages and starts. proof: the three names are refused at use, with the same `player-imports.mjs` checks as the boxes above. AC-1: the bundler exits 0. AC-2: `terrain-splat-desktop.playtest.json --target desktop` (with `--assets`) passes, with 0 `TN_TSL` or `TN_NATIVE_UNSUPPORTED` lines. `TN_TERRAIN_SPLAT layers=16 samplers=5 stacked=4`, and `after.png` shows both layer sets and their blend. The run found these stops, each fixed with a red-green test:
+  - `texture(array, uv).depth(layer)` on V8: `tsl_api` red (`depth is not a function`), then green.
+  - `material.userData` on V8: the facade now gives every engine class with `dispose` a `userData`, as Wasm does. The proof is the player run, which was red and is now green.
+  - `mesh.morphTargetInfluences = [...]` on V8: `geometry_lifecycle` red, then green.
+  - An empty web-root file (prd493's `placements.bin`) is now packed as a 0-byte entry: `native-package.spec.ts` red, then green.
+  - V8 now has `renderer.initTexture` and `renderer.copyTextureToTexture`, on the engine calls the Wasm back end already uses. The player queues them until its renderer opens, because `loadTerrainSplat` stacks its layers during startup. Without them, 16 layers bound 51 samplers and the frame was blank (`TN_CAPTURE_BLANK`).
+  - `source.dataReady` now lives on the engine `Source`, as in three, and `image.data = new Uint8Array(0)` releases the CPU texels the GPU holds. `material_slots` red (`image.data must be a typed array ...`), then green.
+  - The catalog adds `Source.dataReady`, and `native-registry.json` is refreshed.
+  - No visual judge: no frame drew before on the native player, and the Wasm path keeps the same copy arguments (`textureCopyArguments`, now shared). prd249 desktop still passes.
 
 ## Decisions
 

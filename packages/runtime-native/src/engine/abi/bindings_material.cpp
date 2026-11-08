@@ -1006,6 +1006,8 @@ void registerTextureBindings(Registry& classes) {
     source.setters["needsUpdate"] = [](void* self, const Value& v) {
         if (flag(v)) ++as<TextureSource>(self)->version;
     };
+    source.getters["dataReady"] = [](void* self) { return Value::of(as<TextureSource>(self)->dataReady); };
+    source.setters["dataReady"] = [](void* self, const Value& v) { as<TextureSource>(self)->dataReady = flag(v); };
     registerTextureClass(classes["Texture"], false, "Texture");
     registerTextureClass(classes["DataTexture"], true, "DataTexture");
     classes["DataTexture"].ctorTakesBytes = true;
@@ -1263,6 +1265,8 @@ void registerTextureBindings(Registry& classes) {
         auto* texture = as<DataTexture>(self);
         const std::size_t texels = std::size_t(texture->width) * texture->height * texture->depth;
         const std::size_t count = v.bytes.empty() ? v.numbers.size() : v.bytes.size() / typedArrayElementBytes(v.text);
+        // An empty array releases the CPU copy of texels the GPU holds (`source.dataReady = false`), as in three.
+        if (v.kind == Value::Kind::Numbers && count == 0 && !texture->dataReady) return std::vector<uint8_t>().swap(texture->data);
         if (v.kind != Value::Kind::Numbers || texels == 0 || count != texels * 4)
             throw Unsupported{"image.data must be a typed array of width * height * depth * 4 values"};
         const uint32_t depth = texture->depth;

@@ -3717,6 +3717,7 @@ readonly mapSize: Vector2;
 /** Catalog supported: three/Source. */
 export declare class Source {
 constructor();
+dataReady: boolean;
 readonly version: number;
 }
 

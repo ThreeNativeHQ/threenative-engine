@@ -142,3 +142,46 @@ export function defineRenderTargets(
     },
   });
 }
+
+/** three's Box2 and Box3 as a texture copy reads them: a region by its corners. */
+export interface IRegionLike {
+  readonly isBox3?: boolean;
+  readonly min: { readonly x: number; readonly y: number; readonly z?: number };
+  readonly max: { readonly x: number; readonly y: number; readonly z?: number };
+}
+
+/** A Vector2 or Vector3: the destination origin of a texture copy, z the array layer. */
+export interface IPositionLike {
+  readonly x: number;
+  readonly y: number;
+  readonly z?: number;
+}
+
+/**
+ * three's copyTextureToTexture arguments as both back ends' engine call takes them: the source origin and extent
+ * (a negative width takes the source's image size), the destination origin (z the array layer), and the two levels.
+ */
+export function textureCopyArguments(
+  srcRegion: IRegionLike | null,
+  dstPosition: IPositionLike | null,
+  srcLevel: number,
+  dstLevel: number,
+): [number, number, number, number, number, number, number, number, number, number, number] {
+  const { min, max } = srcRegion ?? {};
+  // A Box2 has no z: its depth is one layer, a Box3's its own.
+  const size =
+    min && max ? [max.x - min.x, max.y - min.y, (max.z ?? 1) - (min.z ?? 0)] : [-1, -1, 1];
+  return [
+    min?.x ?? 0,
+    min?.y ?? 0,
+    min?.z ?? 0,
+    size[0] as number,
+    size[1] as number,
+    srcRegion?.isBox3 ? (size[2] as number) : 1,
+    dstPosition?.x ?? 0,
+    dstPosition?.y ?? 0,
+    dstPosition?.z ?? 0,
+    srcLevel,
+    dstLevel,
+  ];
+}

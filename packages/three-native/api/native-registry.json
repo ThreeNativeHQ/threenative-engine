@@ -7973,8 +7973,8 @@
     "Source": {
       "constructor": false,
       "methods": [],
-      "getters": ["version"],
-      "setters": ["needsUpdate"],
+      "getters": ["dataReady", "version"],
+      "setters": ["dataReady", "needsUpdate"],
       "members": [],
       "callbacks": [],
       "events": [],
