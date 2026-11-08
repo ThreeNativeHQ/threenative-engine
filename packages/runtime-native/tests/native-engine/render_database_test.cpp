@@ -5304,6 +5304,22 @@ void alphaTestNode() {
     leaf->alphaTest = 0.1;
     leaf->nodes.alphaTestNode = g::float_(0.9); leaf->needsUpdate();
     const double shadowRaises = dark();
+    // A cutoff that samples the node's own texture (texture(object), as the far-tree impostor reads its atlas) binds
+    // that texture in the shadow pass too (PRD-858): red 51 cuts at 0.2 and keeps the footprint, red 230 at 0.9 does not.
+    const auto cutoff = [&](uint8_t red) {
+        auto texture = std::make_shared<Texture>();
+        texture->width = 1; texture->height = 1;
+        texture->data = {red, 0, 0, 255};
+        texture->needsUpdate();
+        leaf->nodes.alphaTestNode =
+            g::swizzle(g::objectTexture(texture, "nodeMapT" + std::to_string(texture->ident.value()), g::uv()), "x");
+        leaf->needsUpdate();
+        return dark();
+    };
+    const double textureLowers = cutoff(51), textureRaises = cutoff(230);
+    std::printf("alphaTestNode shadow from a node texture: 0.2 %.3f, 0.9 %.3f\n", textureLowers, textureRaises);
+    CHECK(textureLowers > 0.95);
+    CHECK(textureRaises < 0.05);
     std::printf("alphaTestNode: colour flat %.3f, node 0.2 %.3f, node alone %.3f, node 0.9 %.3f; shadow flat %.3f, node 0.2 %.3f, node 0.9 %.3f\n",
                 flatDiscard, nodeLowers, nodeAlone, nodeRaises, shadowFlat, shadowLowers, shadowRaises);
     CHECK(flatDiscard < 0.05);

@@ -3013,11 +3013,14 @@ Renderer::Program& Renderer::depthProgram(const shader::VertexVariant& variant, 
             const auto& errors = vertex.wgsl.ok() ? fragment.wgsl.errors : vertex.wgsl.errors;
             throw std::runtime_error("TN_NATIVE_SHADER_INVALID: masked shadow depth program: " + (errors.empty() ? std::string("no reason") : errors.front()));
         }
-        // The depth fragment binds the diffuse map and the node's uniforms only: a texture, storage or sampler an
-        // alphaTestNode reads would stay unbound and cut against zero, so the caster fails closed.
+        // The depth fragment binds the diffuse map, the node's own textures (texture(object), an impostor's atlas) and
+        // its uniforms: a storage or any other texture an alphaTestNode reads would stay unbound and cut against zero,
+        // so the caster fails closed.
         for (const auto& binding : fragment.bindings)
-            if (binding.kind != shader::BindingKind::Uniform && binding.name != "t_map" && binding.name != "smp_map")
-                throw std::runtime_error("TN_NATIVE_SHADOW_ALPHA_UNSUPPORTED: alphaTestNode reads " + binding.name + "; a shadow caster's cutoff supports uniforms, uv and the diffuse map only");
+            if (binding.kind != shader::BindingKind::Uniform && binding.name != "t_map" && binding.name != "smp_map" &&
+                !graphTextureBinding(binding.kind == shader::BindingKind::Sampler && binding.name.rfind("smp_", 0) == 0
+                                         ? "t_" + binding.name.substr(4) : binding.name))
+                throw std::runtime_error("TN_NATIVE_SHADOW_ALPHA_UNSUPPORTED: alphaTestNode reads " + binding.name + "; a shadow caster's cutoff supports uniforms, uv, the diffuse map and the node's own textures only");
         return built(std::move(vertex), std::move(fragment));
     }
     // three's shadow pass draws with the default positionNode, the same transform as a basic material.
@@ -4850,6 +4853,11 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                     mixStore(item.positions); mixStore(item.indices); mixStore(item.instanceMatrices); mixStore(item.uvs);
                     mix(reinterpret_cast<uintptr_t>(p.pipeline)); mix(reinterpret_cast<uintptr_t>(item.map)); mix(item.map ? item.map->version() : 0);
                     mix(std::bit_cast<uint32_t>(item.material->alphaTest)); mix(std::bit_cast<uint32_t>(item.material->opacity));
+                    // A cutoff that samples the node's own textures casts what they hold (PRD-858).
+                    if (item.nodeTextures)
+                        for (const auto& [label, texture] : *item.nodeTextures) {
+                            mix(reinterpret_cast<uintptr_t>(texture)); mix(texture ? texture->version() : 0);
+                        }
                 }
             }
             uint64_t& last = mapSignatures_[i];
@@ -5630,18 +5638,23 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                                .first->second;
         if (cache) { cache->mapGroupKey = groupKey; cache->mapGroup = p.mapGroup; }
     }
-    // A masked caster's depth program samples the caster's map: its group binds that texture (PRD-651).
+    // A masked caster's depth program samples the caster's map (PRD-651) and its node's own textures (an impostor's
+    // atlas, PRD-858): its group binds them.
     for (ShadowPass& pass : shadowPasses)
         for (Planned& draw : pass.draws) {
-            if (!draw.item->map || !probesOf(*draw.program).fragmentPerDraw) continue;
-            const MaterialTexture* map = materialTexture(*draw.item->map);
+            if ((!draw.item->map && !draw.item->nodeTextures) || !probesOf(*draw.program).fragmentPerDraw) continue;
+            const MaterialTexture* map = draw.item->map ? materialTexture(*draw.item->map) : nullptr;
+            const WGPUTextureView mapView = map ? map->view : nullptr;
+            const WGPUSampler mapSampler = map ? map->sampler : nullptr;
             const std::string key = "depth|" + std::to_string(reinterpret_cast<uintptr_t>(draw.program)) + "|" +
-                                    std::to_string(reinterpret_cast<uintptr_t>(map->view)) + "|" +
-                                    std::to_string(reinterpret_cast<uintptr_t>(map->sampler));
+                                    std::to_string(reinterpret_cast<uintptr_t>(mapView)) + "|" +
+                                    std::to_string(reinterpret_cast<uintptr_t>(mapSampler)) + graphKeyOf(*draw.item);
             const auto found = mapGroups_.find(key);
             draw.mapGroup = found != mapGroups_.end() ? found->second
                 : mapGroups_.emplace(key, bindGroup(draw.program->layouts[1], draw.program->fragment, uniformBuffer_,
-                                                    lutView_, lutSampler_, map->view, map->sampler)).first->second;
+                                                    lutView_, lutSampler_, mapView, mapSampler, nullptr, nullptr, nullptr,
+                                                    nullptr, nullptr, nullptr, nullptr, nullptr, draw.item->nodeTextures))
+                      .first->second;
         }
     const uint64_t groupsChosenAt = groupEpoch_;
     for (const auto& [index, pipeline] : responsiveDraws) {
