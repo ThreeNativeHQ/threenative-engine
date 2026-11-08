@@ -888,7 +888,11 @@ constructor();
 
   intersectsBox(box: Box3): boolean;
 
+  intersectsObject(object: Object3D): boolean;
+
   intersectsSphere(sphere: Sphere): boolean;
+
+  intersectsSprite(sprite: Sprite): boolean;
 
   set(p0: Plane, p1: Plane, p2: Plane, p3: Plane, p4: Plane, p5: Plane): Frustum;
 

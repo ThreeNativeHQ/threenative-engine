@@ -6781,6 +6781,25 @@
           }
         },
         {
+          "name": "intersectsObject",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "object",
+                  "type": "Object3D",
+                  "optional": false
+                }
+              ],
+              "returns": "boolean"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
           "name": "intersectsSphere",
           "async": false,
           "overloads": [
@@ -6789,6 +6808,25 @@
                 {
                   "name": "sphere",
                   "type": "Sphere",
+                  "optional": false
+                }
+              ],
+              "returns": "boolean"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "intersectsSprite",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "sprite",
+                  "type": "Sprite",
                   "optional": false
                 }
               ],

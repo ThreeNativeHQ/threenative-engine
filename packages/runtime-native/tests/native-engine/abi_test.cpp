@@ -369,6 +369,33 @@ void scene() {
 
 // PRD-508 phase 3: a catalogued class whose registry lacks a member refuses it by name, so an
 // uncatalogued method is a status a caller can read, never a crash.
+// PRD-762: core's world cull asks Frustum.intersectsObject (three r185), and the kit threw on it.
+void frustum_intersects_object() {
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+    tn_handle_t camera{}, frustum{}, geometry{}, material{}, mesh{};
+    CHECK(tn_construct(ctx, "PerspectiveCamera", nullptr, 0, &camera, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Frustum", nullptr, 0, &frustum, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "BoxGeometry", nullptr, 0, &geometry, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "MeshBasicMaterial", nullptr, 0, &material, &d.value) == TN_OK);
+    const tn_value_t parts[2] = {ref(geometry), ref(material)};
+    CHECK(tn_construct(ctx, "Mesh", parts, 2, &mesh, &d.value) == TN_OK);
+    tn_value_t result{}, projection{};
+    CHECK(tn_get(camera, "projectionMatrix", &projection, &d.value) == TN_OK);
+    CHECK(tn_invoke(frustum, "setFromProjectionMatrix", &projection, 1, &result, &d.value) == TN_OK);
+    const tn_value_t force = num(1), object = ref(mesh);
+    for (const double z : {-5.0, 5.0, -1.0e6}) {
+        const tn_value_t depth = num(z);
+        CHECK(tn_set(mesh, "position.z", &depth, &d.value) == TN_OK);
+        CHECK(tn_invoke(mesh, "updateMatrixWorld", &force, 1, &result, &d.value) == TN_OK);
+        CHECK(tn_invoke(frustum, "intersectsObject", &object, 1, &result, &d.value) == TN_OK);
+        CHECK(result.kind == TN_VALUE_BOOL && bool(result.boolean) == (z == -5.0));
+    }
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
 void unsupported_member() {
     const tn_version_info_t own = tn_engine_version();
     tn_context_t* ctx = nullptr;
@@ -2587,6 +2614,27 @@ void join_converts_integer_parts() {
     CHECK(buildStage(program).wgsl.ok());
 }
 
+// PRD-762, the forest kit's sky: three r185's JoinNode cuts an input that runs past the vector's length
+// to the components left (it logs, and builds), and drops any input after it; the engine refused.
+void join_truncates_overflow() {
+    namespace g = tn::engine::shader::graph;
+    using tn::abi::TslArg;
+    using namespace tn::engine::shader;
+    uint64_t serial = 0;
+    const auto pair = tn::abi::tslCall("vec2", nullptr, {TslArg::of(0.25), TslArg::of(0.5)}, serial);
+    const auto quad = tn::abi::tslCall("vec4", nullptr, {TslArg::of(0.1), TslArg::of(0.2), TslArg::of(0.3), TslArg::of(0.4)}, serial);
+    const auto cut = tn::abi::tslCall("vec3", nullptr, {TslArg::of(pair), TslArg::of(pair)}, serial);
+    const auto past = tn::abi::tslCall("vec3", nullptr, {TslArg::of(quad), TslArg::of(0.9)}, serial);
+    const auto root = g::vec4({g::swizzle(cut, "z"), g::swizzle(past, "z"), g::float_(0), g::float_(1)});
+    Program program(Stage::Fragment);
+    tn::engine::shader::tsl::Build scope(program);
+    program.output("color", g::lower(root, program));
+    const auto built = buildStage(program);
+    if (!built.wgsl.ok() && !program.diagnostics().empty())
+        std::printf("join_truncates_overflow: %s\n", program.diagnostics().front().reason.c_str());
+    CHECK(built.wgsl.ok());
+}
+
 void struct_function_return() {
     namespace g = tn::engine::shader::graph;
     using tn::abi::TslArg;
@@ -3453,7 +3501,7 @@ void binding_fn() {
     CHECK(watch.expired() && !copy);
 }
 
-TN_TEST_MAIN({"denoise_over_a_red_field_keeps_one_lane", denoise_over_a_red_field_keeps_one_lane}, {"binding_fn", binding_fn}, {"tsl_ssr_parameters", tsl_ssr_parameters}, {"tsl_texture_store", tsl_texture_store}, {"tsl_mat4_element", tsl_mat4_element}, {"body_result_lowers_once", body_result_lowers_once}, {"body_result_in_a_branch", body_result_in_a_branch}, {"join_converts_integer_parts", join_converts_integer_parts}, {"struct_function_return", struct_function_return}, {"authored_output", authored_output}, {"fragment_node_vec3_is_opaque", fragment_node_vec3_is_opaque}, {"rtt_quad_depth_has_a_vertex_output", rtt_quad_depth_has_a_vertex_output}, {"post_output_depth_has_a_vertex_output", post_output_depth_has_a_vertex_output}, {"skinned_bounds_before_the_first_frame", skinned_bounds_before_the_first_frame}, {"tsl_mat2_scalar_order", tsl_mat2_scalar_order}, {"tsl_bump_map", tsl_bump_map}, {"tsl_normal_map", tsl_normal_map}, {"tsl_flat_varying", tsl_flat_varying}, {"vertex_position_world", vertex_position_world}, {"starter_post_bindings", starter_post_bindings}, {"gpu_bind_escape", gpu_bind_escape}, {"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene},
+TN_TEST_MAIN({"denoise_over_a_red_field_keeps_one_lane", denoise_over_a_red_field_keeps_one_lane}, {"binding_fn", binding_fn}, {"tsl_ssr_parameters", tsl_ssr_parameters}, {"tsl_texture_store", tsl_texture_store}, {"tsl_mat4_element", tsl_mat4_element}, {"body_result_lowers_once", body_result_lowers_once}, {"body_result_in_a_branch", body_result_in_a_branch}, {"join_converts_integer_parts", join_converts_integer_parts}, {"join_truncates_overflow", join_truncates_overflow}, {"struct_function_return", struct_function_return}, {"authored_output", authored_output}, {"fragment_node_vec3_is_opaque", fragment_node_vec3_is_opaque}, {"rtt_quad_depth_has_a_vertex_output", rtt_quad_depth_has_a_vertex_output}, {"post_output_depth_has_a_vertex_output", post_output_depth_has_a_vertex_output}, {"skinned_bounds_before_the_first_frame", skinned_bounds_before_the_first_frame}, {"tsl_mat2_scalar_order", tsl_mat2_scalar_order}, {"tsl_bump_map", tsl_bump_map}, {"tsl_normal_map", tsl_normal_map}, {"tsl_flat_varying", tsl_flat_varying}, {"vertex_position_world", vertex_position_world}, {"starter_post_bindings", starter_post_bindings}, {"gpu_bind_escape", gpu_bind_escape}, {"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene}, {"frustum_intersects_object", frustum_intersects_object},
              {"unsupported_member", unsupported_member}, {"material", material}, {"light", light}, {"spot_target_in_scene", spot_target_in_scene}, {"hierarchy_revision", hierarchy_revision}, {"matrix_evaluations", matrix_evaluations}, {"source_guard", source_guard}, {"shadow_camera_in_scene", shadow_camera_in_scene}, {"lifetime", lifetime},
              {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_set_uniforms", tsl_set_uniforms}, {"tsl_matrix_columns", tsl_matrix_columns}, {"tsl_statements", tsl_statements}, {"tsl_loop_nested", tsl_loop_nested}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind}, {"euler_order_field", euler_order_field}, {"object_addresses", object_addresses}, {"geometry_shapes", geometry_shapes}, {"typed_bytes", typed_bytes}, {"array_offset", array_offset}, {"data_texture_bytes", data_texture_bytes}, {"material_events", material_events}, {"attribute_view_writes", attribute_view_writes},
              {"attribute_defer", attribute_defer}, {"material_uuid", material_uuid}, {"material_alpha_hash", material_alpha_hash}, {"matrix_walk_count", matrix_walk_count}, {"geometry_index_null", geometry_index_null}, {"world_space_conversions", world_space_conversions},

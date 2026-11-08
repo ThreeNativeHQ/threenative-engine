@@ -2486,7 +2486,9 @@
         "containsPoint",
         "copy",
         "intersectsBox",
+        "intersectsObject",
         "intersectsSphere",
+        "intersectsSprite",
         "set",
         "setFromProjectionMatrix"
       ],
