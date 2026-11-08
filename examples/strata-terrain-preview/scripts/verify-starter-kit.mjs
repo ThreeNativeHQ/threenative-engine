@@ -307,6 +307,28 @@ function edgeCandidates(fir, dry) {
   return candidates;
 }
 
+/** The newest modification time of any file under `path`, or 0 when it does not exist. */
+function newestMtime(path) {
+  if (!existsSync(path)) return 0;
+  const stat = statSync(path);
+  if (!stat.isDirectory()) return stat.mtimeMs;
+  return Math.max(0, ...readdirSync(path).map((name) => newestMtime(join(path, name))));
+}
+
+/**
+ * Why a package's built output is older than its `src/`, or undefined. `pnpm pack` ships `dist/` as it
+ * is, so a source fix with no rebuild packs the old code and the kit proves nothing about the fix.
+ */
+export function staleBuild(directory) {
+  const dist = join(directory, "dist");
+  if (!existsSync(dist)) return undefined;
+  const source = newestMtime(join(directory, "src"));
+  const built = newestMtime(dist);
+  return source > built
+    ? `${directory}: src/ is newer than dist/ (${new Date(source).toISOString()} > ${new Date(built).toISOString()}); run its build first`
+    : undefined;
+}
+
 /** Hash every package file, including models, textures and sidecars. */
 export function packageHashes(directory) {
   return Object.fromEntries(
@@ -502,6 +524,10 @@ async function main() {
     const packs = join(temporary, "packs");
     mkdirSync(packs);
     const archives = {};
+    const stale = [...gamePackages, terrainPackage]
+      .map(({ directory }) => staleBuild(join(REPO, directory)))
+      .filter((reason) => reason !== undefined);
+    assert(stale.length === 0, `TN_KIT_STALE_BUILD: ${stale.join("; ")}`);
     for (const { name, directory } of [...gamePackages, terrainPackage]) {
       const before = new Set(readdirSync(packs));
       run("pnpm", ["pack", "--pack-destination", packs], { cwd: join(REPO, directory) });

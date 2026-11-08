@@ -5,7 +5,15 @@
  * the same directory kept the old `capture.json` and PNGs. `prepareArtifacts` owns the pair: it
  * refuses a path that would delete a source checkout, then empties the directory it may write.
  */
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
@@ -53,5 +61,23 @@ it("refuses an artifact directory inside the kept game instead of emptying it", 
     ]);
   } finally {
     rmSync(base, { force: true, recursive: true });
+  }
+});
+
+it("refuses to pack a package whose src is newer than its dist", async () => {
+  const { staleBuild } = await import(verifierUrl);
+  const root = mkdtempSync(join(tmpdir(), "tn-stale-build-"));
+  try {
+    mkdirSync(join(root, "src"));
+    mkdirSync(join(root, "dist"));
+    writeFileSync(join(root, "src", "a.ts"), "export {};");
+    writeFileSync(join(root, "dist", "a.js"), "export {};");
+    utimesSync(join(root, "dist", "a.js"), new Date(2026, 0, 2), new Date(2026, 0, 2));
+    utimesSync(join(root, "src", "a.ts"), new Date(2026, 0, 1), new Date(2026, 0, 1));
+    expect(staleBuild(root)).toBeUndefined();
+    utimesSync(join(root, "src", "a.ts"), new Date(2026, 0, 3), new Date(2026, 0, 3));
+    expect(staleBuild(root)).toMatch(/src\/ is newer than dist\//);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
   }
 });
