@@ -43,7 +43,7 @@ old `inline_fragment_rects` loop moved into `inline_fragments` so paint can shar
 hunk 3 is ~94, almost all of it `draw_inline_decorations`, and deletes the 40-line
 `draw_inline_backgrounds` it replaces.
 
-## `blitz-paint-0.3.0-beta.2` — 125 added code lines
+## `blitz-paint-0.3.0-beta.2` — 139 added code lines
 
 ### 1. `outline-offset` was ignored: the outline was drawn inside the border box
 
@@ -454,6 +454,20 @@ to delete once the query worked.
   an item 200px down a scroller aligns at 200 with nothing declared, and at 110 with
   `scroll-margin-top: 60px` plus `scroll-padding-top: 30px`; the test fails against the previous
   vendor sources. The meter's scroll group goes 0/31 → 7/31.
+
+### 4. a decoration line was drawn half a pixel off, so a 1px underline covered two rows
+
+* **Where:** `src/text.rs` (`draw_decoration_line`: both edges of the line are snapped to whole device
+  pixels; the `snap` argument carries it).
+* **Why:** the line is a stroke centred at `baseline - offset + size/2`, and at a fractional
+  coordinate a 1px stroke covers two rows at 50 % each. A browser pixel-aligns the decoration
+  rectangle: measured on the parity scene's `underline` cell, Chromium paints one crisp row at y=52
+  and the engine painted rows 52 and 53 — visible as a soft, thicker line, SSIM 0.9604 against a 0.98
+  bar for a decoration whose *position* already matched Chromium's to the row.
+* **Proves it:** the parity meter's `underline` goes 0.9604 → 0.9777, `decoration-2`/`decoration-red-50`
+  0.914/0.96 → 0.977, and `line-through` passes (0.9823). The 32-fixture browser oracle is unchanged
+  (28/28) and the crate's own suite is green. `overline` is still 0.8544: the snap did not change its
+  offset, which is a separate measurement (the em-box top) and the next thing to look at there.
 
 ## `parley-0.11.1` — 240 added code lines
 

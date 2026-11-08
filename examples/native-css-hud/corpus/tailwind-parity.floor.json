@@ -1,5 +1,5 @@
 {
-  "passed": 247,
+  "passed": 248,
   "units": [
     "PRD-850/paint|bg|background-size|",
     "PRD-850/paint|border|border-style,border-width|",
@@ -140,6 +140,7 @@
     "PRD-850/type|tracking|--tw-tracking,letter-spacing|",
     "PRD-850/type|diagonal|--tw-numeric-fraction,font-variant-numeric|",
     "PRD-850/type|leading|--tw-leading,line-height|",
+    "PRD-850/type|line|text-decoration-line|",
     "PRD-850/type|lining|--tw-numeric-figure,font-variant-numeric|",
     "PRD-850/type|lowercase|text-transform|",
     "PRD-850/type|no|text-decoration-line|",

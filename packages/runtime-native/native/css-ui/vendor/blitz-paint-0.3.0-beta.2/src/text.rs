@@ -239,6 +239,7 @@ fn draw_decoration_line(
     deco_style: TextDecorationStyle,
     inset_start: f64,
     inset_end: f64,
+    snap: bool,
 ) {
     // Inset the line from the box's start/end edges (assumes LTR: start is the left edge).
     // Negative insets extend the line past the text.
@@ -247,7 +248,16 @@ fn draw_decoration_line(
     if w <= 0.0 {
         return;
     }
-    let y = (baseline - offset + size / 2.0) as f64;
+    // VENDOR HUNK (threenative/css-ui): the line's edges are snapped to whole device pixels. A
+    // decoration is a rectangle and a browser pixel-aligns it, while a stroke centred at a fractional
+    // coordinate spreads a 1px line over two half-covered rows — measured as the difference between
+    // the parity scene's two `underline` frames (Chromium one crisp row, the engine two at 50 % each)
+    // and worth `line-through` passing on its own.
+    let y = (if snap {
+        ((baseline as f64 - offset as f64) * scale).round() / scale
+    } else {
+        (baseline - offset) as f64
+    }) + size as f64 / 2.0;
     let size = size as f64;
     let butt_stroke = Stroke::new(size).with_caps(Cap::Butt);
 
@@ -411,6 +421,8 @@ fn flush_line_decorations(
                 deco.style,
                 inset_start,
                 inset_end,
+                // Only the underline is pixel-snapped (see `draw_decoration_line`).
+                true,
             );
         }
         if deco.line.contains(TextDecorationLine::OVERLINE) {
@@ -447,6 +459,7 @@ fn flush_line_decorations(
                 deco.style,
                 inset_start,
                 inset_end,
+                true,
             );
         }
         if deco.line.contains(TextDecorationLine::LINE_THROUGH) {
@@ -479,6 +492,7 @@ fn flush_line_decorations(
                 deco.style,
                 inset_start,
                 inset_end,
+                true,
             );
         }
     }
