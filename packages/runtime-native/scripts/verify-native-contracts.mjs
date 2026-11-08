@@ -216,6 +216,16 @@ export const executionContracts = {
   "threenative-timer-engine-first-test": {
     invocations: [{ args: [], passLine: "native engine-first timer delivery contract passed" }],
   },
+  "threenative-webgpu-wrapper-bag-test": {
+    invocations: [{ args: [], passLine: "native webgpu wrapper bag contract " }],
+  },
+  "threenative-shim-bootstrap-test": {
+    invocations: [
+      { args: [], passLine: "native shim bootstrap contract passed" },
+      { args: ["--worker-rollback"], passLine: "native worker rollback contract passed" },
+      { args: ["--callback-retention"], passLine: "native callback retention contract passed" },
+    ],
+  },
   "threenative-video-recorder-state-test": {
     invocations: [{ args: [], passLine: "native video recorder missing-state guard passed" }],
   },

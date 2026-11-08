@@ -4,9 +4,8 @@ import vm from "node:vm";
 import {
   createGuestContext,
   createRecordingConsole,
-  extractEmbeddedJs,
   guest,
-  readRuntimeCpp,
+  readRuntimeScript,
 } from "./embedded-js.mjs";
 
 // Storage and the document.createElement stubs. localStorage is the persistence
@@ -50,7 +49,7 @@ function makeNativeStorageRecorder() {
 
 function setupStorageContext(natives = {}) {
   const context = createGuestContext(natives);
-  vm.runInContext(extractEmbeddedJs(readRuntimeCpp(), "storagePolyfill"), context);
+  vm.runInContext(readRuntimeScript("storage-polyfill"), context);
   return context;
 }
 
@@ -147,8 +146,7 @@ function setupDocumentContext(natives = {}, globals = {}) {
     ...natives,
     ...globals,
   });
-  const source = readRuntimeCpp();
-  vm.runInContext(extractEmbeddedJs(source, "createElementSetup"), context);
+  vm.runInContext(readRuntimeScript("create-element-setup"), context);
   return { context, consoleShim };
 }
 
@@ -191,7 +189,7 @@ test("imageSupportInit probes WebP once without throwing when decoding is absent
   const noWebp = setupDocumentContext({
     __nativeCanvasToDataURL: () => "data:image/png;base64,AAAA",
   });
-  vm.runInContext(extractEmbeddedJs(readRuntimeCpp(), "imageSupportInit"), noWebp.context);
+  vm.runInContext(readRuntimeScript("image-support-init"), noWebp.context);
   assert.ok(
     noWebp.consoleShim.lines.some((line) => line.includes("WebP format support: NO")),
     JSON.stringify(noWebp.consoleShim.lines),
@@ -201,7 +199,7 @@ test("imageSupportInit probes WebP once without throwing when decoding is absent
     __nativeCanvasToDataURL: () => { throw new Error("decoder missing"); },
   });
   assert.doesNotThrow(() =>
-    vm.runInContext(extractEmbeddedJs(readRuntimeCpp(), "imageSupportInit"), brokenCanvas.context),
+    vm.runInContext(readRuntimeScript("image-support-init"), brokenCanvas.context),
   );
   assert.ok(
     brokenCanvas.consoleShim.lines.some((line) => line.includes("[Mystral] Error checking image format support")),

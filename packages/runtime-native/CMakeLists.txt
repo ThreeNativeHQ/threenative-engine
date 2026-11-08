@@ -2496,6 +2496,14 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         TN_TIMER_ENGINE_FIRST_TEST)
     target_link_libraries(threenative-timer-engine-first-test PRIVATE mystral-runtime)
 
+    add_executable(threenative-shim-bootstrap-test EXCLUDE_FROM_ALL
+        tests/shim_bootstrap_test.cpp)
+    target_link_libraries(threenative-shim-bootstrap-test PRIVATE mystral-runtime)
+
+    add_executable(threenative-webgpu-wrapper-bag-test EXCLUDE_FROM_ALL
+        tests/webgpu_wrapper_bag_test.cpp)
+    target_link_libraries(threenative-webgpu-wrapper-bag-test PRIVATE mystral-runtime)
+
     # WebTransport contracts. The wire test includes webtransport.cpp textually
     # because its helpers live in an anonymous namespace; it links quiche alone
     # — mystral-runtime already defines the same TU, and linking both would
@@ -2820,6 +2828,8 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         PROPERTIES LABELS "native-contract")
     tn_register_contract_test(threenative-timer-delivery-test)
     tn_register_contract_test(threenative-timer-engine-first-test)
+    tn_register_contract_test(threenative-shim-bootstrap-test)
+    tn_register_contract_test(threenative-webgpu-wrapper-bag-test)
     tn_register_contract_test(threenative-async-pipeline-thread-test)
     tn_register_contract_test(threenative-pipeline-cache-api-test)
     tn_register_contract_test(threenative-pipeline-cache-lifecycle-test)
