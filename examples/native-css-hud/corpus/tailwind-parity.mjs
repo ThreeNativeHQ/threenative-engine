@@ -928,6 +928,11 @@ const CONTRAST_EXTRAS = [
     "background-image:repeating-linear-gradient(45deg,#f59e0b 0 6px,#2563eb 6px 12px);background-size:24px 24px",
   ],
   [/^position$/u, "inset:16px"],
+  // The contrast for a `transform` unit came from another class in the set that also composes
+  // Tailwind's transform variables (`transform: translateZ(0) var(--tw-rotate-x,) …`), so both arms
+  // rotated once the staged variable supplied a function. A contrast that *replaces* the chain is what
+  // makes a dropped `transform` visible.
+  [/^transform$/u, "transform:none"],
   [/^z-index$/u, "position:relative"],
   [
     /^(top|right|bottom|left|inset|inset-(block|inline|s|e|bs|be|start|end))$/u,
@@ -1282,6 +1287,16 @@ const EXTRA_STAGING = [
   [/^via-/u, ["bg-linear-to-r", "from-red-500"]],
   [/^from-/u, ["bg-linear-to-r", "to-blue-500"]],
   [/^to-/u, ["bg-linear-to-r", "from-red-500"]],
+  // `transform` composes Tailwind's transform custom properties and paints nothing until one is set,
+  // and Tailwind 4's `rotate-*`/`scale-*` set the *individual* properties instead — so a rotating
+  // companion would apply with or without the unit. An arbitrary custom property sets the variable
+  // and nothing else, which is what `transform` consumes.
+  // `transform` is `transform: var(--tw-rotate-x,) var(--tw-rotate-y,) var(--tw-rotate-z,)
+  // var(--tw-skew-x,) var(--tw-skew-y,)` — each variable holds a *function*, and an unset one expands
+  // to nothing, so the declaration is invalid until one is set. One arbitrary property supplies a
+  // rotate function; the empty fallbacks drop out, and dropping the unit class then leaves no
+  // transform at all.
+  [/^transform(-fill)?$/u, ["[--tw-rotate-z:rotateZ(45deg)]"]],
 ];
 
 const CONTAINER_PROPS = new Set([
