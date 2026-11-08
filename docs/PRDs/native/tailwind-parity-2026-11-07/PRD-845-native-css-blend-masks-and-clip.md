@@ -145,11 +145,27 @@ under test — costs **eight** cells (`--tw-duration`, `--tw-ease`, `--tw-ring-c
 *only* sets a custom property needs its contrast on that property. Reverted. The mask clobbering has to be
 fixed in the mask path or by naming the variables, not by a blanket rule.
 
-**What is left in the family, measured.** The `-to-40` position units and the combined `x`/`y` axes paint
-*no mask at all* in this engine — the probe is the plain blue `235` where the browser fades `79…108` — while
-the `-to-red-50` colour units work at 0.9966. The difference between them is which variable the unit sets
-(`-to-position` versus `-to-color`) and, for `x`/`y`, that two real layers must be intersected rather than
-one. That is the next experiment, and the debug print that found this turn's bug is the tool for it.
+**What is left in the family, measured with the element's class in the print:**
+
+```
+MASKDBG kinds=LLLLLL class=probe mask-x-from-black mask-x-to-40        <- six layers, mask IS applied
+MASKDBG kinds=LLL    class=probe ... (one real layer)                  <- paints correctly
+```
+
+So the `-to-40` and combined-axis cells *do* have their mask applied — six layers, of which the identity
+ones are skipped, leaving **two** real gradients (`--tw-mask-left` and `--tw-mask-right`) that must be
+intersected. That is exactly the case this backend cannot do: a second layer inside the mask's `DestIn`
+layer pushed with anything but `SrcOver` is a no-op, so the mask ends up painting nothing and the element
+stays *unmasked* (`235` where the browser fades `79…108`). One real layer works; two do not.
+
+Fixing it needs the intersection of two gradients computed either on the CPU (multiplying their alpha
+profiles — only exact when they are co-linear) or a renderer that honours nested `SrcIn`. Both are larger
+than a hunk.
+
+Tried and reverted with its cost measured: skipping custom properties in the contrast for any unit that
+also paints something, so the contrast stops clobbering `--tw-mask-*`. It changed no mask pixel and cost
+four cells (`--tw-drop-shadow`, `--tw-outline-style`, `--tw-numeric-figure`, `--tw-numeric-fraction`), which
+need their contrast *on* the custom property.
 
 Two tests pin it: `a_tailwind_three_layer_mask_composition_paints` (six layers, intersected, fading) and
 `a_mask_gradient_whose_stops_come_from_registered_variables_paints`. The earlier version of the first one
