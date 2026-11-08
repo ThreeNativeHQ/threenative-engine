@@ -1,4 +1,5 @@
 #include "engine/player/world_walk.h"
+#include "mystral/console_markers.h"
 
 #include <algorithm>
 #include <chrono>
@@ -392,7 +393,7 @@ json::Value WorldWalk::snapshot() const {
         {"residentCells", n(world_ ? world_->residentKeys().size() : 0)}, {"peakResidentCells", n(peakResident_)},
         {"visitedCells", n(visited_.size())}, {"completedLoads", n(completedLoads_)}, {"loadAttempts", n(attempts_)},
         {"evictions", n(evictions_ + (world_ ? world_->evictions() : 0))}, {"renderedWorldFrames", n(renderedWorldFrames_)},
-        {"TN_FRAME_BUDGET", V::makeObject({{"admissionMs", n(frameMs_)}, {"admissionBytes", n(frameBytes_)},
+        {TN_MARKER_FRAME_BUDGET, V::makeObject({{"admissionMs", n(frameMs_)}, {"admissionBytes", n(frameBytes_)},
             {"maxAdmissionMs", n(maxMs_)}, {"maxAdmissionBytes", n(maxBytes_)}, {"admissionMsAllowance", n(kMsAllowance)},
             {"admissionByteAllowance", n(kByteAllowance)}, {"violations", n(budgetViolations_)}})},
         {"gpuBufferBytes", n(bytes[0])}, {"gpuTextureBytes", n(bytes[1])},

@@ -1,0 +1,14 @@
+{
+  "$comment": "The console markers the perf tooling parses: a name per `TN_*` line a producer prints and `threenative-playtest perf` and the evaluators read. Generation writes the TypeScript constants for playtest, core and three-native and the C++ macros from this file, so a rename lands in every language or the drift spec fails. Playtest must not import core, and core treats playtest as an optional peer, so each package gets a generated copy instead of an import.",
+  "version": 1,
+  "markers": [
+    { "name": "bridgeCensus", "marker": "TN_BRIDGE_CENSUS" },
+    { "name": "frameBudget", "marker": "TN_FRAME_BUDGET" },
+    { "name": "frameHitch", "marker": "TN_FRAME_HITCH" },
+    { "name": "hostGap", "marker": "TN_HOST_GAP" },
+    { "name": "playerFrame", "marker": "TN_PLAYER_FRAME" },
+    { "name": "presentsTick", "marker": "TN_PRESENTS_TICK" },
+    { "name": "projection", "marker": "TN_PROJECTION" },
+    { "name": "slowPhase", "marker": "TN_SLOW_PHASE" }
+  ]
+}

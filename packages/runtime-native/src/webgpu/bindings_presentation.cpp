@@ -6,6 +6,7 @@
 #include "bindings_presentation.h"
 #include "bindings_state.h"
 #include "mystral/platform/window.h"
+#include "mystral/console_markers.h"
 #include "mystral/cold_start.h"
 #include "mystral/pump_silence.h"
 #include "mystral/js/engine.h"
@@ -674,7 +675,7 @@ static void emitPlayerFrameMetrics(uint64_t presentCpuNs, uint64_t presentEndCpu
     if (!enabled) return;
     if (previousCpuNs != 0 && presentEndCpuNs >= previousCpuNs + presentCpuNs) {
         const double frameCpuMs = double(presentEndCpuNs - previousCpuNs - presentCpuNs) / 1e6;
-        std::cout << "TN_PLAYER_FRAME:{\"cpuFrameCpuMs\":" << frameCpuMs << ",\"presentCpuMs\":" << double(presentCpuNs) / 1e6
+        std::cout << TN_MARKER_PLAYER_FRAME ":{\"cpuFrameCpuMs\":" << frameCpuMs << ",\"presentCpuMs\":" << double(presentCpuNs) / 1e6
                   << "}" << std::endl;
     }
     previousCpuNs = readRenderThreadCpuNs();
@@ -781,7 +782,7 @@ void presentPendingSurface(BindingsState* state) {
  */
 void reportPresentTick(BindingsState* state, uint64_t frames) {
     std::ostringstream output;
-    output << "TN_PRESENTS_TICK:{\"frames\":" << frames << ",\"presents\":" << state->profiling.presentCount
+    output << TN_MARKER_PRESENTS_TICK ":{\"frames\":" << frames << ",\"presents\":" << state->profiling.presentCount
            << ",\"textureMB\":" << (state->profiling.textureBytesLive / 1048576)
            << ",\"textures\":" << state->profiling.textureCountLive
            << ",\"bufferMB\":" << (state->profiling.bufferBytesLive / 1048576) << ",\"capHz\":" << getPresentationCapHz()

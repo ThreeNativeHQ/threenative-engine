@@ -1549,6 +1549,7 @@ add_custom_command(
         "-DOUTPUT=${TN_RUNTIME_SCRIPT_HEADER}"
         "-DSOURCE_DIR=${TN_RUNTIME_SCRIPT_DIR}"
         "-DSCRIPT_NAMES=${TN_RUNTIME_SCRIPT_NAMES}"
+        -DSCRIPT_ENUM=ON
         -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/EmbedRuntimeScripts.cmake"
     DEPENDS
         "${CMAKE_CURRENT_SOURCE_DIR}/cmake/EmbedRuntimeScripts.cmake"

@@ -31,7 +31,7 @@ const runtimeSource = readFileSync(join(root, "src/runtime.cpp"), "utf8");
 function installerSource() {
   assert.match(
     runtimeSource,
-    /evalRuntimeScriptWithResult\(\s*\*jsEngine_, "scheduler-yield"/u,
+    /evalRuntimeScriptWithResult\(\s*\*jsEngine_, runtime_scripts::Script::scheduler_yield/u,
     "runtime.cpp must still load the scheduler-yield runtime script",
   );
   return readFileSync(join(root, "src/runtime-scripts/scheduler-yield.js"), "utf8");

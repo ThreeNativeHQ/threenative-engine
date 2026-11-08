@@ -43,6 +43,7 @@
 #include "engine/renderer/render_database.h"
 #include "engine/scene/projected_cull.h"
 #include "engine/world/loop/fixed_step.h"
+#include "mystral/console_markers.h"
 #include "mystral/webgpu/context.h"
 #include "mystral/webgpu/presentation.h"
 #include "mystral/webgpu_compat.h"
@@ -1241,7 +1242,7 @@ int Session::initialize() {
                 members.emplace_back("measuredFrames", json::Value::makeNumber(double(measuredFrames)));
                 sample = json::Value::makeObject(std::move(members));
             }
-            std::printf("TN_PLAYER_FRAME:%s\n", json::stringify(sample).c_str());
+            std::printf(TN_MARKER_PLAYER_FRAME ":%s\n", json::stringify(sample).c_str());
             std::fflush(stdout);
             previousCrossings = (game.bridgeCalls ? game.bridgeCalls() : 0);
             updateMs = 0;

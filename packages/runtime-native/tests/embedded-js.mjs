@@ -45,7 +45,7 @@ export function extractEmbeddedJs(source, blockName) {
         "add it to SCRIPT_FOR_BLOCK or update the owning tests",
     );
   }
-  if (!source.includes(`evalRuntimeScript(*jsEngine_, "${script}"`)) {
+  if (!source.includes(`evalRuntimeScript(*jsEngine_, runtime_scripts::Script::${script.replaceAll("-", "_")}`)) {
     throw new Error(
       `runtime.cpp no longer loads the runtime script "${script}" — ` +
         "the shim was renamed or removed; update the owning tests",

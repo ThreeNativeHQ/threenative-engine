@@ -1,6 +1,6 @@
 # PRD-834 — Cross-language contracts are generated from one manifest
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS (Phases 1, 2 and Phase 3 box 2 done 2026-11-08. Phase 3 box 1 waits for PRD-841.)
 **Priority:** P2 — the open boxes replace hand-mirrored opcodes, console markers, config keys and hook names, where a rename in one language compiles and fails silently in the other.
 **Complexity:** 6 (MEDIUM)
 **Owner:** ThreeNative maintainers
@@ -26,6 +26,16 @@ One manifest per contract, emitted by the generator that PRD-832 extends: a C++ 
 TS const. An unknown id, key or name fails closed at boot or at replay, and names the producer. Ids
 stay frozen and append-only. `render` folds into `renderer`, with a named error for the old key.
 
+## Corrections (2026-11-08)
+
+Each one is measured, not assumed.
+
+- **The opcode table has 35 ops, not 60.** `kFrameOpNames` in `bindings_frame_stream.cpp` held 35 names, and the JS recorder used the same 35 ids (1 to 35, dense).
+- **The recorder cannot import its constants.** `frame-op-stream.js` is one arrow-function expression: the host evaluates it as a script, and four test files evaluate its text with `Function(...)`. The generator therefore rewrites a marked region inside the file (`// <generated frame-ops>`), and the C++ side gets a generated header.
+- **Core cannot import marker names from `protocol.ts`.** `@threenative/playtest` is an optional peer of core, and playtest must not depend on core. One manifest (`packages/three-native/api/console-markers.json`) now generates a TypeScript copy for playtest, core and three-native plus the C++ macros. `protocol.ts` exports the playtest copy once. The `rg` proof is rewritten for that shape.
+- **The frame-budget window type is declared once for readers.** `IFrameBudgetWindowJson` moved to `protocol.ts`. Core writes the richer `IFrameBudgetWindow`, and a type test holds it assignable to the reader type. Core cannot import the reader type at run time for the same peer reason.
+- **The hook-name module is a core module plus a pinned literal.** `packages/core/src/engine-hooks.ts` owns `COPY_MATRIX_WORLD_HOOK`. The C++ definition and the V8 adapter's probe are esbuild or native inputs that cannot import core source, so a spec pins their literals to the constant.
+
 ## Acceptance Criteria
 
 - [ ] AC-1 [local]: The native desktop host still runs and draws. proof: `pnpm native:verify:desktop` (300 frames, non-blank)
@@ -42,21 +52,21 @@ stay frozen and append-only. `render` folds into `renderer`, with a named error 
 ## Execution Phases
 
 #### Phase 1: Frame-op opcode manifest
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** new opcode manifest; generator; `frame-op-stream.js`; `bindings_frame_stream.cpp`; the drift test in `packages/runtime-native/tests/`.
 
-- [ ] The JS `OP` object, the C++ name table and the `case` labels come from one manifest, and inserting an op in the middle fails the drift test. proof: `node --test packages/runtime-native/tests/` drift lane plus `pnpm native:build`
+- [x] The JS opcode constants, the C++ name table and the `case` labels come from one manifest, and inserting an op in the middle fails the drift test. `packages/three-native/api/frame-ops.json` (35 ops, ids dense from 1 and append-only) feeds `packages/three-native/scripts/generate.ts`, the generator PRD-832 Phase 3 extended. It writes `runtime-native/src/webgpu/frame_ops.h` (enum `TnFrameOp`, `kFrameOpNames`, `kFrameOpCount`) and rewrites the marked `OP_*` region in `frame-op-stream.js`. Every `emit(`, `reusable(` and `wrapDestroy(` site names its op, and every replay `case` names its enumerator. Red first: with an op inserted at position 4 the new spec failed on the replay-case and frozen-pair checks (`render.setPipeline moved from 4`). It passes with the manifest restored. proof: `pnpm exec vitest run packages/three-native/__tests__/frame-ops.spec.ts` → 5 passed; `pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config.ts tests/frame-op-stream.test.mjs tests/frame-plan-transport.test.mjs tests/frame-plan-auto.test.mjs tests/js-engine-fast-path.test.mjs` → 56 passed (the lookup-guard table now finds each case by its generated label); `pnpm native:build` → exit 0 (411 steps); `ninja -C build/tn-linux threenative-frame-op-stream-replay-test` then the binary → `frame op stream replay contract passed`. The replay default now names `frame_ops.h` and the manifest when it meets an opcode no table declares.
 
 #### Phase 2: Marker manifest
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** `packages/playtest/src/protocol.ts`, `perf.ts`, `evaluators/engine-cost.ts`, `evaluators/frame-cost.ts`, `packages/core/src/frame-budget.ts`, a generated C++ header.
 
-- [ ] Marker names and the frame-budget window type are exported once from `protocol.ts`. Core, the evaluators and C++ printers import them. proof: `pnpm --filter @threenative/playtest exec vitest run __tests__/perf.spec.ts` plus `rg -n '"TN_FRAME_BUDGET"' packages --glob '!**/protocol.ts' --glob '!**/__tests__/**'` returns nothing
-- [ ] `__tnCopyMatrixWorld` comes from one hook-name module, and a host missing it reports once at adapter install. proof: `pnpm --filter @threenative/core exec vitest run __tests__/` for animation and interpolation
+- [x] Marker names and the frame-budget window type are declared once. `packages/three-native/api/console-markers.json` (8 markers: bridge census, frame budget, frame hitch, host gap, player frame, presents tick, projection, slow phase) generates `CONSOLE_MARKER` for playtest, core and three-native and the `TN_MARKER_*` macros in `runtime-native/include/mystral/console_markers.h`. `protocol.ts` exports `CONSOLE_MARKER` and `IFrameBudgetWindowJson`. `perf.ts`, `engine-cost.ts` and `frame-cost.ts` build their line prefixes from it, and core (`frame-budget.ts`, `projection-marker.ts`), three-native (`bridge-meter.ts`) and the six C++ printers (`runtime.cpp` ×2, `bindings_presentation.cpp` ×2, `cold_start.h`, `run.cpp`) use the generated copy (see the Corrections note for why they cannot import `protocol.ts`). Red first: a hand-typed `"TN_FRAME_BUDGET"` in `core/src/frame-budget.ts` failed `console-markers.spec.ts`, and renaming `hitches` on core's window failed the root typecheck at `frame-budget-window-contract.spec.ts`. proof: `pnpm exec vitest run packages/three-native/__tests__/console-markers.spec.ts` → 3 passed; `pnpm exec vitest run packages/playtest/__tests__` → 1971 passed, 1 file failed (`generated-shooter-input.spec.ts` needs `create-threenative/dist`, absent in this worktree, unrelated); `pnpm exec tsc --noEmit -p tsconfig.json` shows no error under `packages/{core,playtest,three-native}`; `rg -n '"TN_(FRAME_BUDGET|PROJECTION|HOST_GAP|PLAYER_FRAME|FRAME_HITCH|SLOW_PHASE|PRESENTS_TICK|BRIDGE_CENSUS)"' packages/*/src --glob '!**/generated/**'` returns nothing; `pnpm native:build` → exit 0.
+- [x] `__tnCopyMatrixWorld` comes from one hook-name module, and a host missing it reports once at adapter install. `packages/core/src/engine-hooks.ts` exports `COPY_MATRIX_WORLD_HOOK`, `hasCopyMatrixWorldHook` and `copyMatrixWorld`. `animation.ts` (two sites) and `interpolation.ts` call them. `engine-hooks.spec.ts` pins the C++ definition in `bindings_scene.cpp` and the V8 adapter probe in `adapters/v8/math/entry.js` to the constant. The adapter install (`__tnMathInstall`) prints `TN_ENGINE_HOOK_MISSING` once when the host's `Object3D` lacks the hook. proof: `pnpm exec vitest run packages/core/__tests__/engine-hooks.spec.ts packages/core/__tests__/animation.spec.ts packages/core/__tests__/loop-interpolation.spec.ts packages/core/__tests__/frame-budget-window-contract.spec.ts packages/core/__tests__/frame-budget.spec.ts` → 120 passed. `pnpm native:verify:desktop` exited 0 on this tree (`desktop core gate passed: 300 frames, 1280x720`) with no `TN_ENGINE_HOOK_MISSING` line. Unverified: the report path itself, because that log does not show the JS-math install running, so the one-line message has no red-green yet.
 
 #### Phase 3: Config keys and script names
-**Status:** NOT STARTED
+**Status:** IN PROGRESS (box 2 done, box 1 waits for PRD-841's `game.ts` and `game-startup.ts` refactor)
 **Files:** `packages/core/src/config.ts`, `game.ts`, `game-startup.ts`, `packages/runtime-native/src/platform/window.cpp`, `runtime.cpp`, `audio_bindings.cpp`, `CMakeLists.txt`.
 
 - [ ] C++ reads config keys from a generated list. `render` is folded into `renderer`, and the old key throws with the new name. proof: `pnpm --filter @threenative/core exec vitest run __tests__/game.spec.ts` plus `pnpm native:verify:desktop`
-- [ ] Embedded scripts are named by a generated enum, and a missing script aborts boot with its name. proof: `pnpm native:build` plus the embedded-bundle C++ test
+- [x] Embedded scripts are named by a generated enum, and a missing script aborts boot with its name. `cmake/EmbedRuntimeScripts.cmake` now also writes `enum class Script` (one enumerator per name in `TN_RUNTIME_SCRIPT_NAMES`), `kScriptNames` and `require(Script)`, which prints `TN_EMBEDDED_SCRIPT_MISSING` with the script name and aborts. All 20 call sites (`runtime.cpp`, `audio_bindings.cpp`, `canvas2d_bindings.cpp`, `bindings.cpp`, `webtransport.cpp`) pass an enumerator, so a typo is a compile error. The math script keeps its one string lookup because its header has a single script. A script file with no payload fails at generation and names the file. Red first: a misspelled enumerator in `runtime.cpp` failed `embedded-script-enum.test.mjs` (`storage_polyfil`). proof: `pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config.ts tests/embedded-script-enum.test.mjs` → 5 passed; the source-reading contract tests that matched `"script-name"` text now match the enumerator (`embedded-js.mjs`, `runtime-next-contract`, `scheduler-yield`, `dom-event-constructors`) and pass; `pnpm native:build` → exit 0; `ninja -C build/tn-linux threenative-embedded-bundle-test` then the binary → `embedded_bundle bindings: all assertions passed`.

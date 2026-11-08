@@ -2060,8 +2060,8 @@ bool initBindings(js::Engine* engine) {
 
     // Register the JS dispatcher target. The embedded polyfill defines
     // globalThis.__wtDispatch; we freeze it after eval.
-    const auto script = runtime_scripts::find("webtransport-polyfill");
-    if (!script.data || !engine->eval(std::string(script.data, script.size).c_str(), "webtransport-polyfill.js")) {
+    const auto script = runtime_scripts::require(runtime_scripts::Script::webtransport_polyfill);
+    if (!engine->eval(std::string(script.data, script.size).c_str(), "webtransport-polyfill.js")) {
         std::cerr << "[WebTransport] polyfill eval failed: " << engine->getException() << std::endl;
         return false;
     }
@@ -2102,8 +2102,7 @@ bool hasActiveSessions() { return false; }
 bool initBindings(js::Engine* engine) {
     // Provide a WebTransport that always rejects so feature-detecting code can
     // handle the absence gracefully.
-    const auto script = runtime_scripts::find("webtransport-stub");
-    if (!script.data) return false;
+    const auto script = runtime_scripts::require(runtime_scripts::Script::webtransport_stub);
     const std::string source(script.data, script.size);
     return engine->eval(source.c_str(), "webtransport-stub.js");
 }
