@@ -1714,6 +1714,12 @@ const LABEL_H = 26;
 
 function measureRegion(cellBox, probeBox) {
   if (probeBox === undefined) return cellBox;
+  // A unit that removes the probe's box — `display: none`, `hidden`, `contents`, `sr-only`'s
+  // `clip-path` — reports a zero-area rect at the viewport origin. Cropping that sliver lands in the
+  // first cell's label band and compares glyphs, which measured 0.0 for a unit that is right on both
+  // subjects. The cell's own stage is what such a unit is measured over.
+  if (probeBox.w < 1 || probeBox.h < 1)
+    return { x: cellBox.x, y: cellBox.y + LABEL_H, w: cellBox.w, h: cellBox.h - LABEL_H };
   const left = Math.max(cellBox.x, probeBox.x - PROBE_PAD);
   const top = Math.max(cellBox.y + LABEL_H, probeBox.y - PROBE_PAD);
   const right = Math.min(cellBox.x + cellBox.w, probeBox.x + probeBox.w + PROBE_PAD);
