@@ -99,8 +99,22 @@ differences left between the test and the panel are that the panel's rules sit i
 `base` / `utilities` blocks and that the probe is a `<button>` with the theme's `:root, :host` variables.
 Bisected, and not it: the same declarations wrapped in `@layer theme` for the variables and
 `@layer utilities` for the utility still animate correctly, so the panel's cascade layers are not the
-cause. That leaves the `<button>` probe and the theme's `:root, :host` selector list, both of which the
-next run can vary one at a time.
+cause. Neither is the `<button>` probe with Tailwind's preflight, nor the theme's `:root, :host` selector
+list, nor the `@property` registrations — the test carries all four now and still animates.
+
+**What it was: two focus cells sharing a panel.** The drive runs every cell's steps in sequence, so a
+panel with two focus-driven cells focuses the second and *blurs* the first: the frame measured one cell
+mid-revert and the other mid-transition. A cell whose drive contains a `focus` step now gets a panel of
+its own. Measured: the misc group 130 → **131/182**, non-discriminating 126 → **124**, and
+`ease-initial` went from 0.6511 to 0.9615 purely because it is no longer reading a neighbour's blur.
+
+Every transition cell now reads the same shape: 1.0000 at rest, 0.94–0.98 at the two mid-flight samples,
+1.0000 again from 150 ms on. A difference that exists only between the ends of a transition, and is the
+same size for `linear` and for both `cubic-bezier` curves, is an **interpolation space** difference:
+Tailwind 4's colours are `oklch()`, and CSS Color 4 interpolates `oklch()` values in **oklab**, while
+this engine interpolates in sRGB. The two agree exactly at both ends and differ by a few units per
+channel in between, which is the 0.96. Next step: interpolate `oklch()` colours in oklab for transitions
+and animations.
 
 So the remaining difference is in *when* each subject starts the clock, not in the curve or the chain:
 at 0 ms and at every sample from 150 ms on, the two agree exactly, and only the two mid-flight samples

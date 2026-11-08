@@ -1631,10 +1631,14 @@ function variantEntry(variant) {
 function bucketEntries(entries) {
   const buckets = new Map();
   for (const entry of entries) {
-    const key =
-      entry.alone === true || entry.needsRefusedTag === true
-        ? `alone|${entry.id}`
-        : `${entry.owner}|${entry.group}`;
+    // A driven *focus* cell owns the document's focus, so two of them in one panel measure each
+    // other's blur: the drive runs every cell's steps in sequence, and the second focus takes the
+    // element from the first. Each gets a panel of its own.
+    const solitary =
+      entry.alone === true ||
+      entry.needsRefusedTag === true ||
+      (entry.drive ?? []).some((step) => step.t === "focus");
+    const key = solitary ? `alone|${entry.id}` : `${entry.owner}|${entry.group}`;
     const bucket = buckets.get(key) ?? { owner: entry.owner, group: entry.group, entries: [] };
     bucket.entries.push(entry);
     buckets.set(key, bucket);

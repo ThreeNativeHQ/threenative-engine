@@ -902,16 +902,17 @@ fn the_tailwind_transition_utility_animates() {
             sheet(
                 "s",
                 &format!(
-                    "@layer theme{{:root{{--default-transition-duration:150ms;--default-transition-timing-function:cubic-bezier(0.4,0,0.2,1)}}}}\n{BASE}\n@layer utilities{{\n.a{{width:100px;height:40px;margin:10px;background:#2563eb;transition-property:color,background-color,border-color,outline-color,text-decoration-color,fill,stroke,--tw-gradient-from,--tw-gradient-via,--tw-gradient-to,opacity,box-shadow,transform,translate,scale,rotate,filter,-webkit-backdrop-filter,backdrop-filter,display,content-visibility,overlay,pointer-events;transition-timing-function:var(--tw-ease,var(--default-transition-timing-function));transition-duration:var(--tw-duration,var(--default-transition-duration))}}\n.a:focus{{background:#fb2c36}}\n}}"
+                    "@property --tw-duration{{syntax:\"*\";inherits:false}}\n@property --tw-ease{{syntax:\"*\";inherits:false}}\n@layer theme{{:root, :host{{--default-transition-duration:150ms;--default-transition-timing-function:cubic-bezier(0.4,0,0.2,1)}}}}\n{BASE}\n@layer base{{\nbutton{{background-color:transparent;border:0;padding:0}}\n}}\n@layer utilities{{\n.a{{width:100px;height:40px;margin:10px;background:#2563eb;transition-property:color,background-color,border-color,outline-color,text-decoration-color,fill,stroke,--tw-gradient-from,--tw-gradient-via,--tw-gradient-to,opacity,box-shadow,transform,translate,scale,rotate,filter,-webkit-backdrop-filter,backdrop-filter,display,content-visibility,overlay,pointer-events;transition-timing-function:var(--tw-ease,var(--default-transition-timing-function));transition-duration:var(--tw-duration,var(--default-transition-duration))}}\n.a:focus{{background:#fb2c36}}\n}}"
                 ),
             ),
-            create(1, "div"),
+            // The panel's probe is a `<button>` under Tailwind's preflight, and the theme's variables
+            // are declared for `:root, :host` — the two things the passing flat test did not have.
+            create(1, "button"),
             attr(1, "class", "a"),
-            attr(1, "tabindex", "0"),
             append(0, 1),
         ],
     );
-    assert!(ui.focus(1), "the box takes focus");
+    assert!(ui.focus(1), "the button takes focus");
     ui.render();
     assert_eq!(rgb(&ui, 50, 30), [0x25, 0x63, 0xeb], "the focus has not moved it yet");
     ui.set_time(50.0);
