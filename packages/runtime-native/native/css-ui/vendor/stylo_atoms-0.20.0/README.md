@@ -25,13 +25,13 @@ Coordination of Stylo development happens:
 
 The branches are as follows:
 
-- [**upstream**](https://github.com/servo/style/tree/upstream) has upstream [mozilla-central](https://searchfox.org/mozilla-central/source/servo) filtered to the paths we care about ([style.paths](style.paths)), but is otherwise unmodified.
+- [**upstream**](https://github.com/servo/style/tree/upstream) has upstream [mozilla-central](https://searchfox.org/mozilla-central/source/servo) filtered to the paths we care about ([style.paths](https://github.com/servo/style/blob/upstream/style.paths)), but is otherwise unmodified.
 - [**main**](https://github.com/servo/style/tree/ci) adds our downstream patches, plus the scripts and workflows for syncing with mozilla-central on top of **upstream**.
 
 > [!WARNING]
 > This repo syncs from upstream by creating a new branch and then rebasing our changes on top of it. This means that `git pull` will not work across syncs (you will need to use `git fetch`, `git reset` and `git rebase`).
 
-More information on the syncing process is available in [SYNCING.md](SYNCING.md)
+More information on the syncing process is available in [SYNCING.md](https://github.com/servo/style/blob/upstream/SYNCING.md)
 
 ## Crates
 
