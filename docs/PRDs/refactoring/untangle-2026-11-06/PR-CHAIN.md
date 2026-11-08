@@ -1,0 +1,64 @@
+# Untangle batch — what is left before PR #632 merges
+
+**Written:** 2026-11-08, on `refactor/untangle-832-842` (PR #632).
+**Purpose:** one ordered list of the open work, so that any session can continue it. Update the tables when a step lands.
+
+## Rules this chain follows
+
+- One PR for the whole batch, as the owner asked. Lanes work on local `lane/untangle-<n>` branches in `.worktrees/untangle-<n>/`, open no PR and do not push. The lead merges each lane into `refactor/untangle-832-842`.
+- A PRD box ticks only when its proof ran and passed, with the result written in the box.
+- A box that can change pixels ticks only with a fresh visual-judge verdict: headed, `--browser-recipe webgpu`, `adapter.info` checked, at least two runs per arm.
+- The commit that finishes a PRD moves it to `docs/PRDs/done/` and fixes the README links.
+
+## State
+
+| PRD | Label | State | What is left |
+| --- | --- | --- | --- |
+| [PRD-832](../../done/PRD-832-urgent-single-sources.md) | `prd:100%` | ✅ done | nothing |
+| [PRD-833](../../done/PRD-833-template-mechanism-lives-once.md) | `prd:100%` | ✅ done | nothing (judge NEUTRAL on starter, racing and snow) |
+| [PRD-835](../../done/PRD-835-one-registry-entry-per-assertion.md) | `prd:100%` | ✅ done | nothing |
+| [PRD-836](../../done/PRD-836-one-committed-capability-manifest.md) | `prd:100%` | ✅ done | nothing |
+| [PRD-837](../../done/PRD-837-core-owns-each-shared-fact-once.md) | `prd:100%` | ✅ done | nothing (judge NEUTRAL on Strata forest and abyss) |
+| [PRD-838](../../done/PRD-838-scripts-share-one-runtime-layer.md) | `prd:100%` | ✅ done | nothing (`pnpm visuals` needs owner scores, see below) |
+| [PRD-839](PRD-839-ci-contract-is-a-model-not-text.md) | `prd:75%` | ⚠️ merged | AC-2: the job list of the next PR CI run |
+| [PRD-842](PRD-842-native-tests-check-behaviour-not-source-text.md) | `prd:50%` | ⚠️ merged | Phase 2 box 2 and AC-2: seven iOS simulator checks on CI |
+| [PRD-841](PRD-841-game-ts-stops-being-the-hub.md) | lane | ⚠️ lane `untangle-841` | AC-2: the starter golden path failed once with `TN_PLAYTEST_BRIDGE_MISSING`; a baseline run decides if the boot refactor causes it |
+| [PRD-834](PRD-834-cross-language-contracts-are-generated.md) | lane `prd:75%` | ⚠️ lane `untangle-834` | Phase 3 box 1 (`render` → `renderer` fold, about 30 call sites), AC-1, AC-2 |
+| [PRD-840](PRD-840-platform-difference-is-a-value.md) | lane | ⚠️ lane `untangle-840` | phases 1–3 are committed on the lane; AC-1 parity, AC-2 visual judge, AC-3 paired bench |
+
+The PR label is `prd:50%` until the merged phase boxes reach 75% of the batch.
+
+## Sequence
+
+```mermaid
+flowchart TD
+  A["Step 1 — lane 841<br/>golden-path verdict, fix if the boot refactor broke it<br/>tick AC-1, AC-2"]
+  B["Step 2 — merge 841 into the PR branch"]
+  C["Step 3 — merge the PR branch into lane 834<br/>resolve the 842 test and runtime.cpp conflicts<br/>fold render into renderer, AC-1, AC-2"]
+  D["Step 4 — lane 840<br/>pnpm parity, paired bench:engines (5 runs per arm),<br/>web and native captures"]
+  E["Step 5 — fresh Opus judge on the PRD-840 captures<br/>tick AC-2"]
+  F["Step 6 — merge 834 and 840<br/>focused checks: typecheck, lint, core and playtest suites,<br/>native:build, wasm:build, native:verify:desktop"]
+  G["Step 7 — push, add the release-proof label<br/>one ci.yml run plus build-ios-simulator"]
+  H["Step 8 — close the CI boxes<br/>PRD-839 AC-2 job-list diff, PRD-842 iOS checks"]
+  I["Step 9 — every PRD at 100% and in done/<br/>label prd:100%, PR body updated"]
+  J["Step 10 — merge queue, full board, squash-merge"]
+  A --> B --> C --> F
+  D --> E --> F
+  F --> G --> H --> I --> J
+```
+
+## Step details
+
+| Step | Proof that closes it | Risk |
+| --- | --- | --- |
+| 1 | `TN_GOLDEN_PATH_SCENARIOS=1 TN_GOLDEN_PATH_TEMPLATES=starter pnpm verify:golden-path` → EXIT=0 on a real GPU; `npx vitest run packages/core/__tests__/game.spec.ts packages/core/__tests__/game-stop-order.spec.ts` | ⚠️ the first run gave 0 frames; the cause can be a boot exception or a slow software adapter |
+| 3 | `pnpm --filter @threenative/core exec vitest run __tests__/game.spec.ts`, `pnpm scaffold:pin --check`, `pnpm native:verify:desktop`, playtest `perf` on the starter with windows > 0 | ⚠️ the fold changes a public config key; the old key must throw `TN_GAME_RENDER_KEY_RENAMED` |
+| 4 | `pnpm parity` before and after; `pnpm bench:engines` medians and spread on web and native | ⚠️ the largest change: `renderer.cpp` split into files under 3 000 lines; each host keeps its current render choices, so no picture or cost should move |
+| 7 | the `ci.yml` run and `native-release.yml` `build-ios-simulator` on the PR head | ❌ the iOS checks never ran: Objective-C++ cannot compile on Linux, so a first red is likely a harness mistake |
+| 8 | `diff` of `gh run view <id> --json jobs` against run `42452768709` | ✅ low |
+
+## Items for the owner
+
+- **`pnpm visuals` cannot exit 0 on any branch.** `docs/verification/visuals/scores.json` dates from 2026-08-21, misses 10 kits and names the renamed `defense` kit. The gate also fails any kit below `VISUAL_SCORE_FLOOR = 4` (`scripts/visual-gate.ts:344`), and the existing model scores hold racing 2 and four kits at 3. Only the owner can re-score the kits or change the floor.
+- **Android canvas text is a stub in the shipped APK.** `packages/runtime-native/android/app/build.gradle.kts:380` sets `-DTN_ENABLE_CANVAS2D=OFF`, so `canvas2d.cpp` builds without Skia. On the emulator `measureText` returns `length × size × 0.6`, and `getImageData` returns no ink. Recorded as a Finding in PRD-842, not fixed here.
+- **The Android V8 build needs `third_party/v8-android/build-receipt.json`**, which no checkout has. The emulator proofs in this batch used the QuickJS build.
