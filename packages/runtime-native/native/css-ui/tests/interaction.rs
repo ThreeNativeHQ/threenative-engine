@@ -1346,6 +1346,34 @@ fn a_colour_filter_transforms_the_layer_it_wraps() {
 /// is what this panel does, while the same declarations paint a correct fade without that block.
 /// A mask inside a clipping ancestor: the staged probe sits in a `overflow: hidden` cell, as every
 /// parity cell does, and the mask has to survive that clip layer.
+/// A single-alpha mask, the shape every Tailwind mask utility reduces to: opaque at one end, clear at
+/// the other. Printed through the assertion so the direction cannot be misread.
+#[test]
+fn a_single_layer_alpha_mask_fades_the_box() {
+    let mut ui = ui(
+        200,
+        120,
+        &[
+            sheet(
+                "s",
+                &format!(
+                    "{BASE}\n#a{{width:120px;height:80px;margin:10px;background:#2563eb;mask-image:linear-gradient(to top, black 0%, transparent 100%)}}"
+                ),
+            ),
+            create(1, "div"),
+            attr(1, "id", "a"),
+            append(0, 1),
+        ],
+    );
+    ui.render();
+    let column: Vec<[u8; 3]> = (16..88).step_by(8).map(|y| rgb(&ui, 70, y)).collect();
+    let blues: Vec<u8> = column.iter().map(|c| c[2]).collect();
+    assert!(
+        blues.iter().any(|b| *b < 200) && blues.iter().any(|b| *b > 60),
+        "a fade runs down the box: {blues:?}"
+    );
+}
+
 #[test]
 fn a_mask_paints_inside_a_clipping_ancestor() {
     let mut ui = ui(

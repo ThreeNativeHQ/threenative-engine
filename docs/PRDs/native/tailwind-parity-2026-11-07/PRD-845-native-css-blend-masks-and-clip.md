@@ -94,6 +94,17 @@ rules and drop them in halves. That is the one piece of tooling standing between
 answer, and it is worth building once: the same bisect applies to every family whose cells are inert in a
 panel but correct in isolation.
 
+**Built, and the answer is that it is not a rule at all.** A tokenizer that skips strings and comments
+slices the sheet correctly, and the bisect over it gives one clean working configuration: **the panel's own
+staging plus a single mask utility rule fades correctly** (measured 51 → 206 down the probe). Everything
+else fails regardless of what is dropped — halving the 39 utility rules either way, dropping all 35
+`@property` blocks, dropping the mask ones alone. So the break is *cumulative*, not a rule, and the next
+hypothesis is the sheet's size: 36 KB of CSS parses to no mask while 17 KB with the same staging and one
+mask rule works. A reduce-from-the-end test would confirm a threshold in one pass.
+
+A single-layer alpha mask is confirmed correct on its own (`a_single_layer_alpha_mask_fades_the_box`), so
+the mask pipeline is not in question — only what this panel's sheet does to it.
+
 ## Open: the eight colour-mask cells differ by a mask *curve*, measured (2026-11-07)
 
 `mask-mode: luminance` now paints (gradient stops rewritten so their alpha carries their luminance,
