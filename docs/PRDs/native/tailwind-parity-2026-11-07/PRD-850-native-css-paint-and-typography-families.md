@@ -50,16 +50,19 @@ Run the meter per group and fix what fails. Expected engine work:
 
 ## Open
 
-Measured with `pnpm --filter threenative-native-css-hud parity:tailwind --family PRD-850`: **133 of
-262 units pass** (misc 111/182, paint 10/39, type 12/41).
+Measured with `pnpm --filter threenative-native-css-hud parity:tailwind --family PRD-850`: **138 of
+262 units pass** (misc 116/182, paint 10/39, type 12/41).
 
 - **The container staging rule earned 12 units** (`misc` 99 → 111): a unit whose emitted properties
   are container properties (`justify-content`, `justify-items`, `align-items`, `align-content`, the
   gaps, the grid track and auto properties, `flex-direction`, `flex-wrap`) stages the probe *as* that
   container, with two children and the matching display. Before it, twelve units were inert by
   construction: `justify-end` on a plain block asks a box with nothing to lay out.
-- **What the rest of the group needs, in short-list order.** Colour-only `border-*` (6) need a border
-  width on the probe; `touch-*` (4) and `overflow-clip` (3) change nothing a single frame can see
+- **Colour-only border units earned 5 more**: those probes now carry a dashed 2px border in a grey
+  the unit must beat (`border-e-red-50` emits `border-inline-end-color` and nothing else), and the
+  six single-side border colours pass at 0.9961-0.9973. `border-red-50` (all four sides at once)
+  still does not discriminate.
+- **What the rest of the group needs, in short-list order.** `touch-*` (4) and `overflow-clip` (3) change nothing a single frame can see
   (`touch-action` is an input policy, and a clipped overflow needs content to clip); `space-*` and
   `divide-*` (4) put the unit on the *parent*, which the staging does for `divide-x` only; `object-*`
   (2) need an `<img>`; `transform`/`transform-fill` (2) need a transform to change; `mb-40`/`mr-40`/
