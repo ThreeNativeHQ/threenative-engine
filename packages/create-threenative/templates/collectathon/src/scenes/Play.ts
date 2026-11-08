@@ -28,6 +28,7 @@ import { GRASS_SHARE } from "../render/quality.js";
 import { setupSky, skyPixels, skyTexture } from "../render/sky.js";
 import { loadSurfaces, updateSurfaceSampling } from "../render/surface.js";
 import { TouchControls } from "../render/touch-controls.js";
+import { primeRipplePixels, ripplePixels } from "../render/water.js";
 import { type GameState, HUD_PILL } from "../state.js";
 
 export type { GameCtx };
@@ -94,8 +95,10 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     // The sky is the same every run of this build: paint it once, then read the pixels back.
     const painted = await ctx.assets.memo("sky", () => ({
       fill: skyPixels(0.3, 128),
+      ripples: ripplePixels(),
       sky: skyPixels(),
     }));
+    primeRipplePixels(painted.ripples);
     this.#sky = skyTexture(1, 2048, painted.sky);
     this.#fill = skyTexture(0.3, 128, painted.fill);
     setupSky(ctx.scene, this.#sky, this.#fill);

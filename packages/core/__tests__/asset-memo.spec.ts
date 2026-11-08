@@ -61,6 +61,16 @@ describe("ctx.assets.memo (PRD-860)", () => {
     );
   });
 
+  it("takes a build typed by an interface, the shape a generator module exports", async () => {
+    interface IPainted {
+      readonly sky: Float32Array;
+      readonly mask: Uint8Array;
+    }
+    const paint = (): IPainted => ({ mask: new Uint8Array([1]), sky: new Float32Array([0.5]) });
+    const painted: IPainted = await createAssetMemo("game")("painted", paint);
+    expect([...painted.mask]).toEqual([1]);
+  });
+
   it("rebuilds over a corrupt entry instead of failing the load", async () => {
     const build = vi.fn(() => ({ v: new Float64Array([3]) }));
     const memo = createAssetMemo("game");

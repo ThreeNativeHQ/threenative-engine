@@ -25,8 +25,10 @@ export type MemoArray =
   | Uint32Array;
 
 export type MemoArrays = Readonly<Record<string, MemoArray>>;
+/** Every field a typed array: a record or an interface, which has no index signature. */
+export type MemoShape<T> = { readonly [K in keyof T]: MemoArray };
 
-export type AssetMemo = <T extends MemoArrays>(
+export type AssetMemo = <T extends MemoShape<T>>(
   key: string,
   build: () => T | Promise<T>,
 ) => Promise<T>;
@@ -149,7 +151,7 @@ export function createAssetMemo(namespace: string): AssetMemo {
     })().catch(() => undefined);
     return opened;
   };
-  const checked = <T extends MemoArrays>(key: string, value: T): T => {
+  const checked = <T extends MemoShape<T>>(key: string, value: T): T => {
     if (typeof value !== "object" || value === null)
       throw invalid(`build for "${key}" returned no object.`);
     for (const [field, array] of Object.entries(value))
@@ -158,7 +160,7 @@ export function createAssetMemo(namespace: string): AssetMemo {
     return value;
   };
 
-  return async <T extends MemoArrays>(key: string, build: () => T | Promise<T>): Promise<T> => {
+  return async <T extends MemoShape<T>>(key: string, build: () => T | Promise<T>): Promise<T> => {
     if (typeof key !== "string" || key === "") throw invalid("key must be a non-empty string.");
     const started = now();
     if (reason !== undefined) {
@@ -183,7 +185,7 @@ export function createAssetMemo(namespace: string): AssetMemo {
       }
     }
     const value = checked(key, await build());
-    const encoded = encodeMemo(value);
+    const encoded = encodeMemo(value as MemoArrays);
     const builtMs = Math.round(now() - started);
     if (cache === undefined) {
       report({ hit: false, key, ms: builtMs, reason: "cache storage refused to open" });
