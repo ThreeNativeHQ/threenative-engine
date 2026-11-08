@@ -50,8 +50,8 @@ Run the meter per group and fix what fails. Expected engine work:
 
 ## Open
 
-Measured with `pnpm --filter threenative-native-css-hud parity:tailwind --family PRD-850`: **139 of
-262 units pass** (misc 116/182, paint 10/39, type 13/41).
+Measured with `pnpm --filter threenative-native-css-hud parity:tailwind --family PRD-850`: **143 of
+262 units pass** (misc 120/182, paint 10/39, type 13/41).
 
 - **The container staging rule earned 12 units** (`misc` 99 → 111): a unit whose emitted properties
   are container properties (`justify-content`, `justify-items`, `align-items`, `align-content`, the
@@ -79,6 +79,16 @@ Measured with `pnpm --filter threenative-native-css-hud parity:tailwind --family
   0.41, `bg-repeat`/`bg-origin-border`/`bg-fixed` 0.22, `bg-top` 0.22, `text-shadow-*`, and the
   `contain-*`/`will-change`/`color-scheme`/`scrollbar-*` family, which needs a painted consumer
   before it can discriminate at all.
+
+- **Four `type` cells cannot discriminate with this font, and one pair cannot on Linux.** `tabular-nums`,
+  `proportional-nums`, `normal-nums`, `ordinal`, `slashed-zero` and `font-stretch-50%` need a font whose
+  digits or width axis differ between the values: Noto Sans' digits are tabular already and its static
+  faces carry no width axis, so the frame is identical either way. `antialiased`/`subpixel-antialiased`
+  set `-webkit-font-smoothing`, which Chromium ignores on Linux. These are properties of the *corpus
+  font and platform*, not staging gaps: proving them needs a font with `zero`/`ord` features and a
+  variable width axis, which is a corpus change, not a scene one. `whitespace-pre` was the one in that
+  group that was a staging fault — its probe text had single spaces and its contrast was `nowrap`, which
+  preserves a run exactly as `pre` does — and it passes now.
 
 ## Execution Phases
 
