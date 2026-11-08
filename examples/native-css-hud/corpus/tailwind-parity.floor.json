@@ -1,5 +1,5 @@
 {
-  "passed": 175,
+  "passed": 180,
   "units": [
     "PRD-850/paint|bg|background-size|",
     "PRD-850/paint|border|border-style,border-width|",
@@ -14,8 +14,11 @@
     "PRD-850/misc|bottom|bottom|",
     "PRD-850/misc|col|grid-column-end|",
     "PRD-850/misc|col|grid-column-start|",
+    "PRD-850/misc|end|inset-inline-end|",
     "PRD-850/misc|inset|inset|",
+    "PRD-850/misc|inset|inset-block-end|",
     "PRD-850/misc|inset|inset-block-start|",
+    "PRD-850/misc|inset|inset-inline-end|",
     "PRD-850/misc|inset|inset-inline-start|",
     "PRD-850/misc|left|left|",
     "PRD-850/misc|m|margin|",
@@ -172,6 +175,8 @@
     "PRD-849/media|variant|landscape",
     "PRD-849/media|variant|pointer-fine",
     "PRD-849/media|variant|any-pointer-fine",
+    "PRD-847/motion|variant|motion-safe",
+    "PRD-847/motion|variant|motion-reduce",
     "PRD-849/media|variant|2xl",
     "PRD-849/media|variant|portrait",
     "PRD-849/selectors|variant|dark",

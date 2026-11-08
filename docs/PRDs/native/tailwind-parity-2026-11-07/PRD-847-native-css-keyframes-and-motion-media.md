@@ -28,7 +28,7 @@ media query then does the job. Delete the `animation`, `animation-name` and `@ke
 ## Acceptance Criteria
 
 - [ ] AC-1 [local]: every `animate-*` unit and a custom `@keyframes` unit (fill mode, iteration count, direction, steps) pass the meter at all 5 time samples on crate and host, and the judge returns SAME. proof: `parity:tailwind --family PRD-847` plus `--host`, and the judge on `--sheet PRD-847` — Evidence: pending.
-- [ ] AC-2 [local]: `motion-safe:` and `motion-reduce:` match Chromium with reduced motion off and on. proof: `parity:tailwind --family PRD-847 --env reduced-motion` — Evidence: pending.
+- [x] AC-2 [local]: `motion-safe:` and `motion-reduce:` match Chromium with reduced motion off and on. proof: `parity:tailwind --family PRD-847` (the scene stages each variant on its own panel carrying `env.reducedMotion`, which Chromium gets as a context option and the engine as `env.json`) — Evidence: **both units pass, SSIM 1.0** (they measured 0.6492 for both before, which was "the media feature does not exist"). The fix is a vendored Stylo hunk: Servo's media-feature list had no `prefers-reduced-motion`, so neither `reduce` nor `no-preference` matched — the exact two queries Tailwind compiles these variants to. `tests/interaction.rs::reduced_motion_is_a_media_query_the_stylesheet_sees` proves the query in the crate, and the `transition-duration: 0s` workaround is deleted along with its `REDUCED_MOTION_CSS` sheet, because the media query now does the job.
 - [ ] AC-3 [local]: `starting:` and `transition-behavior` units pass the meter and the judge. proof: as AC-1 — Evidence: pending.
 
 ## Integration Ledger
@@ -66,15 +66,12 @@ media query then does the job. Delete the `animation`, `animation-name` and `@ke
 **Status:** PARTIAL
 **Files:** the Stylo device media hook (vendored), `native/css-ui/src/lib.rs` (delete the workaround), `vendor/PATCHES.md`.
 
-- [ ] `prefers-reduced-motion` matches, and the workaround is gone. proof: AC-2 plus `rg -n 'transition-duration: 0s' packages/runtime-native/native/css-ui/src` returns nothing
-  Evidence: NOT met, and root-caused: `motion-safe:bg-red-500` and `motion-reduce:bg-red-500` both score 0.6492 —
-  the same wrong frame from both — because Stylo's servo build has no `prefers-reduced-motion` media feature
-  (`stylo-0.20.0/servo/media_features.rs` lists `prefers-color-scheme` and none of the preference pair). No
-  public API reaches the media-feature table, so the fix is a vendored Stylo hunk (5.6 MB of source for one
-  table entry) plus a device input, or a `css-ui` stylesheet rewrite turning the two queries into `all`/`not
-  all`. Neither is in this increment; the workaround stays until the media feature exists, because deleting it
-  now would only make reduced motion work for transitions the sheet happens to name. This is the family's
-  `## Blocked on`: the owner picks the vendor or the rewrite.
+- [x] `prefers-reduced-motion` matches, and the workaround is gone. proof: AC-2 plus `rg -n 'transition-duration: 0s' packages/runtime-native/native/css-ui/src` returns nothing
+  Evidence: met by vendoring Stylo 0.20.0 rather than rewriting stylesheets — three hunks (the value, the device
+  field, the feature entry) plus one line in `stylo_atoms`' atom list, `blitz-dom` hunk 18 carrying the flag
+  through `make_device`, and `css-ui`'s `set_env` calling `set_reduced_motion` instead of injecting the sheet.
+  `vendor/PATCHES.md` records the measurement: both variants 0.6492 → 1.0. The vendor is the same scaffold
+  PRD-849's `contrast-more:`/`forced-colors:`/`inverted-colors:` need, so it is paid for once.
 
 #### Phase 3: Starting style and discrete transitions
 **Status:** PARTIAL
@@ -84,7 +81,7 @@ media query then does the job. Delete the `animation`, `animation-name` and `@ke
 
 ## Open
 
-Measured with `pnpm --filter threenative-native-css-hud parity:tailwind --family PRD-847`: **1 of 5 units pass**,
+Measured with `pnpm --filter threenative-native-css-hud parity:tailwind --family PRD-847`: **3 of 5 units pass**,
 1 does not discriminate and 1 is exempt.
 
 - **The bar exists and it works, and it caught two engine defects.** Five samples per motion panel, a virtual
@@ -93,9 +90,10 @@ Measured with `pnpm --filter threenative-native-css-hud parity:tailwind --family
   rect that ignored the transform being animated (hunk 16). The browser arm also needed fixing: the pinned
   `currentTime` lands in the next compositor frame, so the capture waits for two animation frames — without
   that, one run measured the 500 ms sample as 0.5984 (the 0 ms frame) and the next as 0.9959.
-- **`motion-safe:` and `motion-reduce:` are both wrong, identically.** Both score 0.6492, which is what
-  "the media feature does not exist" looks like: the engine resolves neither query, so both cells paint the
-  variant's utility and differ from Chromium the same way.
+- **`motion-safe:` and `motion-reduce:` now match at 1.0.** They were both 0.6492, which is what "the media
+  feature does not exist" looks like: the engine resolved neither query, so both cells painted the variant's
+  utility and differed from Chromium the same way. The vendored Stylo hunk is the fix, and the engine's own
+  note in `css-ui/src/lib.rs` (which explained the sheet) is rewritten to say the query answers.
 - **`transition-discrete` needs a staged transition,** not a static frame: `transition-behavior` only shows when
   something changes, which is a driver this scene does not have yet.
 - **`@starting-style` stays exempt** until the transition driver exists.

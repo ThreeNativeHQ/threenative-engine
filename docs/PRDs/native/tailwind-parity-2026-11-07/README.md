@@ -53,15 +53,19 @@ Engine facts behind the gaps:
 ## Meter status (measured 2026-11-07, crate subject)
 
 ```
-tailwind-parity: 175/503 (34.8 %)  [230 do not discriminate, 31 exempt, 4 permanently inactive, 1 refused]
+tailwind-parity: 180/503 (35.8 %)  [232 do not discriminate, 31 exempt, 4 permanently inactive, 1 refused]
 ```
 
-A cell is evidence only when it discriminates (see Meter, item 3). The 230 non-discriminating cells
+A cell is evidence only when it discriminates (see Meter, item 3). The 232 non-discriminating cells
 are the scene's own staging gaps; the 31 pending exemptions are unproven units their owner PRD
 removes; the 1 refused stages are the engine's closed `TAGS` list and a multicolumn panel it does
 not finish.
 
-The last unit of that number is a meter fix: a unit that removes the probe's box (`display: none`,
+The 5 units after 175 are the reduced-motion media feature (2: PRD-847 AC-2, the first AC in the
+batch to tick), three scroll cells that stopped being falsely failed when the engine's client rect
+for a scrolled box was fixed, and `contents`.
+
+The unit before that was a meter fix: a unit that removes the probe's box (`display: none`,
 `hidden`, `contents`) reports a zero-area rect, and cropping that sliver landed in the first cell's
 label band and compared glyphs — `contents` measured 0.0 for a unit both subjects got right.
 
