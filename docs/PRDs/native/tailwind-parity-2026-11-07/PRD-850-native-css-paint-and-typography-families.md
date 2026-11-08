@@ -68,6 +68,15 @@ Measured with `pnpm --filter threenative-native-css-hud parity:tailwind --family
   (2) need an `<img>`; `transform`/`transform-fill` (2) need a transform to change; `mb-40`/`mr-40`/
   `me-40`/`mbe-40` need a following sibling in block flow; `aspect-square` needs the probe's height
   to stop being fixed by the staging; `z-40` needs stacked siblings.
+- **A box shadow's blur is already Chromium's, and a spec-based "fix" broke a reference frame.**
+  CSS defines the blur radius as twice the standard deviation, so the outset path was changed to pass
+  `blur * 0.5`. The parity scene's `shadow-red-50` cell improved (0.9661 → 0.9756) — and the crate's
+  own Chrome-derived `matches_the_chrome_reference_frame` started failing, because that fixture's
+  panel shadow was tuned against Chrome with the value as-is. The change was reverted: a test that
+  reproduces Chrome by construction outranks a spec reading that improves one cell by 0.01 and breaks
+  another frame. What is left on `shadow-red-50` (0.9661) and `inset-shadow-red-50` (0.9809) is
+  therefore something else — Tailwind stacks *two* shadow layers, so the second layer's interaction is
+  the place to look, not the kernel.
 - **Two decoration defects left, measured row by row.** `underline-offset-8` puts the line on row
   60 where Chromium puts it on 59 (the auto position matches to the row, so the difference is how an
   explicit offset is rounded: this crate rounds the line's top, Chromium's rasteriser does not).

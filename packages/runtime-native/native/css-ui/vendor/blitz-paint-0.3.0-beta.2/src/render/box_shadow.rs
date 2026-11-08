@@ -144,6 +144,9 @@ impl ElementCx<'_, '_> {
                 cutout,
                 Color::WHITE,
                 radius,
+                // Not halved, unlike the outset path: measured, halving it moved the inset shadow
+                // *away* from Chromium (0.9809 -> 0.9638) because the `DestOut` cut-out is the
+                // blurred rect itself, so this path's geometry needs its own measurement.
                 shadow.base.blur.px() as f64 * self.scale,
             );
 
