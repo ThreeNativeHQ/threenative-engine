@@ -70,6 +70,11 @@ each refused row from `native-css-compat.ts` in the commit that turns its group 
 **Files:** `vendor/blitz-dom-0.3.0-beta.2/src/{scrolling.rs,layout/mod.rs}`, `corpus/interactions.mjs`.
 
 - [ ] Sticky and snap pass after scroll input, and their rows leave the denylist. proof: AC-2
+  Evidence: NOT met, and the group now measures honestly (0/31, 30 non-discriminating) after two fixes that
+  removed a false 140 px failure: the engine's client rect for a scrolled box (blitz-dom hunk 17) and the
+  compositor delay on Chromium's wheel. What is left is drivers plus one upstream gate: `scroll-margin-*` and
+  `scroll-padding-*` are Gecko-only in Stylo 0.20, so the 21 `scroll-m*` cells need a vendored Stylo hunk before
+  any driver can prove them.
 
 #### Phase 3: Grid, clamp, queries and logical properties
 **Status:** PARTIAL
@@ -81,8 +86,8 @@ each refused row from `native-css-compat.ts` in the commit that turns its group 
 ## Open
 
 Measured with `pnpm --filter threenative-native-css-hud parity:tailwind --family PRD-848`: **19 of 69 units pass**
-across the four groups (flow 1/15, logical 12/18, scroll 6/31, grid-and-query 1/5), with 31 cells that do not
-discriminate.
+across the four groups (flow 1/15, logical 18/18, scroll 0/31, grid-and-query 0/5); the scroll group's 30 non-discriminating
+cells are the driver gaps above, and 2 of the 5 grid-and-query cells are exempt.
 
 - **Flow (1/15).** The tag gate is open (see Phase 1) and every cell but one is measured. `columns-12` with a float
   does not finish in the meter's 60 s budget — a real engine hang in the multicolumn path, and the only refused
@@ -93,12 +98,23 @@ discriminate.
   `wheel` of 140 px, dispatched at the probe's centre in Chromium and by `drive.json` on the engine, and each
   scroll cell now has its own panel because twelve wheels in one frame is not the same input on both subjects —
   the first one moves the layout under the coordinates the others aim at.
-  - With the cells grouped, the family measured 0/31 with **29 real mismatches**: after the same wheel the engine's
-    scroller was 140 px down and Chromium's was not (edge diff 140 on the top edge). That is the wheel-routing
-    difference PRD-848 exists to find, and it is still unfixed.
-  - With the cells alone (the fair comparison) **29 cells change nothing at all**, and that is the honest answer
-    for what is staged: `scroll-margin` and `scroll-padding` only move a scroller when a *snap* or a
-    `scrollIntoView` lands on them, not on a manual wheel. Those need a `scrollIntoView` driver; `snap-*` needs the
-    wheel, which now exists. `sticky` needs the scroller to actually move under it.
+  - **The "140 px wheel-routing difference" was two defects, neither of them routing.** Chromium applies a
+    wheel on the compositor: measured on a `.stage-scroll` cell, `scrollTop` is 0 when `page.mouse.wheel`
+    resolves and 140 two animation frames later, so the capture compared a scrolled engine frame against an
+    unscrolled browser one. The engine, separately, reported a *scrolled container* 140 px above its own box,
+    because `absolute_position` subtracts a node's own scroll offset (right for paint, wrong for a client rect —
+    blitz-dom hunk 17). Both are fixed and both have a check; the family now says what is true: **0/31 with 30
+    cells honestly non-discriminating** instead of 6 false failures.
+  - **A probe scrolled out of its cell collapsed the region** to a one-row crop, and SSIM over that is `NaN`
+    (printed as 0.0 for all 31). The region now falls back to the cell's own stage when nothing of the probe is
+    inside it.
+  - What the group still needs is drivers, not pixels: `scroll-margin`/`scroll-padding` only move a scroller when
+    a *snap* or a `scrollIntoView` lands on them, `snap-*` needs snap, `overscroll-*` needs a scroller at its
+    limit, and `sticky` needs the scroller to move under it.
+  - **Two of those are gated upstream (measured, not guessed).** Stylo 0.20 builds `scroll-margin-*` and
+    `scroll-padding-*` for **Gecko only** (`properties/longhands.toml`, `engine = "gecko"`), so the servo build
+    the engine uses does not parse them at all — the 21 `scroll-m*` cells cannot be proven by any driver until a
+    vendored Stylo hunk adds them to the servo build. `overscroll-behavior-*` is present but behind
+    `servo_pref = "layout.unimplemented"`.
 - **Logical (12/18) and grid-and-query (1/5).** The logical cells that do not discriminate are `border-*-start`-style
   longhands on a probe with no border width, and the query cells need a sized container ancestor.
