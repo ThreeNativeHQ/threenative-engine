@@ -85,4 +85,16 @@ arms on the Linux desktop (Ryzen, 24 CPUs): the default (`source=setpriority`), 
 (`source=rtkit`), `prlimit --nice=0` with no system bus (`source=none reason=EACCES`, nice values
 unchanged, the player still runs) and the override. Background threads read 16, not 10, on this host
 because ananicy-cpp files `node` (the test parent) as `BG_CPUIO`; the player only lowers, never raises,
-a background thread. Windows, macOS and Android are not covered by this record.
+a background thread. Windows and macOS are not covered by this record.
+
+Android (legacy `mystral` host, `src/platform/android_main.cpp`): the SDL game thread is set to nice -4,
+which equals the `THREAD_PRIORITY_DISPLAY` that SDL's own `SDLMain` already applies
+(`SDLActivity.java:2174`). The gain is elsewhere: every other app thread moves to `SCHED_BATCH` at nice
++10, except the Java main thread, `RenderThread`, `hwui*`, binder threads (`binder:`/`Binder:`, whose
+priority the binder driver sets per call) and `SDLAudio*`; and an ADPF hint session (API 33+, resolved
+with `dlsym`) gets each frame's work time from `paceToPresentationCap()`. On the `threenative_api35`
+emulator (x86_64, `-gpu host`, RTX 2080 adapter, QuickJS build) the device smoke passed and logcat
+read `TN_PROCESS_PRIORITY game=-4 background=10 batch=21/21 source=setpriority adpf=on override=none`;
+`/proc/<pid>/task/*/stat` read 19 threads at policy 3 (`SCHED_BATCH`). `display.priority: "normal"`
+(manifest `TN_PRIORITY`) read `batch=0/20 source=none adpf=off override=normal`. A physical device is
+not covered by this record.

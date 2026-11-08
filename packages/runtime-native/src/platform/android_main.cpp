@@ -120,7 +120,10 @@ int niceOf(int tid) {
 /** Threads the platform owns and the frame waits on keep their priority. */
 bool keeps(int tid, const std::string& name) {
     return tid == g_priority.game || tid == getpid() || name == "RenderThread" || name.rfind("hwui", 0) == 0 ||
-           name.rfind("Binder:", 0) == 0 || name.rfind("HwBinder:", 0) == 0 || name.rfind("SDLAudio", 0) == 0;
+           // Android 12+ names binder threads `binder:<pid>_<n>`; older releases use `Binder:`. The binder
+           // driver sets their priority per call, so a sweep would only fight it.
+           name.rfind("Binder:", 0) == 0 || name.rfind("binder:", 0) == 0 || name.rfind("HwBinder:", 0) == 0 ||
+           name.rfind("SDLAudio", 0) == 0;
 }
 
 void openSession(int64_t targetNs) {
