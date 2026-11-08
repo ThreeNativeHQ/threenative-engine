@@ -57,8 +57,19 @@ recipe — a `hover:bg-red-500` companion plus a pointer move onto the probe, sa
 five points — does not run yet: the hover drive is intercepted by a sibling cell's `position: fixed`
 probe (Playwright refuses after 60 s), and a positioned probe does not lift above it. Attempted and
 reverted; `.stage-escape` now carries `pointer-events:none` so an overflow decoration can never eat a
-drive's pointer again. Next step: a pointer drive by coordinates with a `matches(':hover')` check, or a
-panel where no unit is `position: fixed`.
+drive's pointer again.
+
+A second attempt — a `<button>` probe with a `focus:bg-red-500` companion and a Tab — was also reverted:
+the engine's Tab and Chromium's both move focus to the *first* stop in the document, so a single Tab
+reaches the first panel's control and never the cell's probe, and the engine has no focus-by-id command.
+The staged companion did flip the colour (`ease-in` read 0.9596 that way), which is what proved the
+driver can work and the addressing cannot.
+
+The motion clock now samples 0, 50, 100, 150, 250, 500, 750 and 1000 ms instead of 0, 250, 500, 750 and
+1000: a Tailwind transition is 0–200 ms (the default is 150), so the old grid could not see a duration, a
+delay or an easing change at all. Measured, that changes no verdict today — the transition group still
+has no driver — and `animate-ping` reads 0.9917 rather than a bare 1.0000, i.e. the fine samples see a
+difference in the first 150 ms that the coarse grid could not.
 
 ## Open
 

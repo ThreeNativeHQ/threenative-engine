@@ -1913,7 +1913,10 @@ async function driveWeb(page, steps) {
  * both subjects: the browser's animations are paused and given a `currentTime`, and the engine is
  * advanced by `drive.json`, so the two sides compare the same frame at the same time.
  */
-const motionSamples = [0, 250, 500, 750, 1000];
+// A keyframe animation runs for a second, but a *transition* is 0-200ms (Tailwind's default is 150),
+// and samples 250ms apart cannot tell `duration-75` from the default, or a delayed start from an
+// immediate one. The first four points cover that range; the rest still judge a one-second animation.
+const motionSamples = [0, 50, 100, 150, 250, 500, 750, 1000];
 
 /** The two subjects' handles, so a relaunched browser is the one every capture uses. */
 let site;
