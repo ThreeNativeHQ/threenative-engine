@@ -1042,6 +1042,35 @@ fn a_colour_filter_transforms_the_layer_it_wraps() {
 }
 
 #[test]
+fn a_zero_degree_gradient_runs_to_the_top() {
+    // CSS `linear-gradient(0deg, a, b)` goes from the *bottom* to the top, so the top of the box is
+    // the last stop. Tailwind's mask utilities rely on it (`--tw-mask-linear-position: 0deg`), and a
+    // flipped angle inverted every luminance mask in the parity scene.
+    let mut ui = ui(
+        64,
+        64,
+        &[
+            sheet(
+                "s",
+                &format!(
+                    "{BASE}\n#a{{width:64px;height:64px;background:linear-gradient(0deg,#ff0000,#0000ff)}}"
+                ),
+            ),
+            create(1, "div"),
+            attr(1, "id", "a"),
+            append(0, 1),
+        ],
+    );
+    ui.render();
+    let top = rgb(&ui, 32, 2);
+    let bottom = rgb(&ui, 32, 61);
+    assert!(
+        top[2] > 200 && bottom[0] > 200,
+        "0deg is `to top`: blue at the top, red at the bottom; got top {top:?} bottom {bottom:?}"
+    );
+}
+
+#[test]
 fn a_single_click_keeps_its_ancestor_messages_in_one_dispatch() {
     let mut ui = ui(
         64,

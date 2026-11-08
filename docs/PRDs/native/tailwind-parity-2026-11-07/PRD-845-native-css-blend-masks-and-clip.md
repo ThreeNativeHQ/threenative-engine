@@ -37,6 +37,26 @@ the commit that turns their units green.
 | --- | --- | --- | --- |
 | Blend, mask, clip on native | game Tailwind class → `css-ui` paint → vello_cpu layer | Rows deleted from `native-css-compat.ts` | AC-1 to AC-3 |
 
+## Open: the eight colour-mask cells differ by a mask *curve*, measured (2026-11-07)
+
+`mask-mode: luminance` now paints (gradient stops rewritten so their alpha carries their luminance,
+see `vendor/PATCHES.md`), and the cells moved from 0.52–0.72 to 0.945–0.982 — close, and not the
+mode. Sampling the probe of `mask-linear-from-red-50` in both frames at the same rows:
+
+| row (probe) | Chromium | this crate | implied mask alpha |
+| --- | --- | --- | --- |
+| top +4 | rgb(24,25,30) | rgb(26,33,49) | 0.02 / 0.11 |
+| middle | rgb(28,52,106) | rgb(31,60,125) | **0.38** / **0.47** |
+| bottom −4 | rgb(34,87,203) | rgb(36,87,200) | 0.85 / 0.83 |
+
+The direction agrees (the gradient is `linear-gradient(0deg, red-50 0%, black 100%)`, so the mask is
+opaque at the bottom) and the ends agree; the **middle is 0.09 of alpha off**. That is the luminance
+formula, not the geometry: sRGB-space luminance of the interpolated mid colour is 0.48, linear-light
+is 0.21, and Chromium's 0.38 is neither — so Chromium either interpolates the gradient in another
+space before taking luminance or applies a different transfer. The next attempt starts from this
+table, and `tests/interaction.rs::a_zero_degree_gradient_runs_to_the_top` already pins the direction
+(a flipped `0deg` was the first hypothesis and it was wrong).
+
 ## Execution Phases
 
 #### Phase 1: Blend modes
