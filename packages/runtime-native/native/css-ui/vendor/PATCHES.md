@@ -89,7 +89,7 @@ hunk 3 is ~94, almost all of it `draw_inline_decorations`, and deletes the 40-li
   `tests/inline_box.rs::an_inline_paints_its_border_and_its_padding_box`, which fails against the
   previous vendor sources.
 
-## `blitz-dom-0.3.0-beta.2` — 740 added code lines
+## `blitz-dom-0.3.0-beta.2` — 760 added code lines
 
 ### 1. hoisted (`z-index`) children were painted one frame late, at the wrong offset
 
@@ -576,6 +576,20 @@ to delete once the query worked.
   `None` for the non-separable modes (`hue`, `saturation`, `color`, `luminosity`, `color-dodge`,
   `color-burn`, `soft-light`), so the layer is composited as `Normal` anyway. Separable modes work;
   the non-separable ones are a `vello_cpu` limitation, not this crate's.
+
+### 22. a perspective-free 3D transform was dropped instead of projected
+
+* **Where:** `src/stylo_to_kurbo.rs` (`resolve_2d_transform`: a matrix with no perspective row keeps
+  its 2D submatrix instead of being filtered out).
+* **Why:** outside a 3D rendering context CSS Transforms 2 paints a 3D transform as its projection onto
+  the plane — its own example paints `rotateY(50deg)` narrower — and this crate dropped every matrix
+  that merely *contained* a 3D function, so `rotate-x-45` and `rotate-y-45` painted an untransformed
+  box (0.6410 and 0.7942 against Chromium).
+* **Proves it:** `tests/interaction.rs::a_perspective_free_3d_rotation_paints_its_2d_projection` — a
+  100×40 box with `rotateY(45deg)` reports 70.71 wide, and one with `perspective(500px) rotateY(45deg)`
+  keeps its layout width because a perspective row still needs a projective rasterisation this backend
+  does not have. The parity meter's `transform3d` family goes 1/9 → **3/9** (both rotations 0.9991 and
+  0.9996) and the whole scene 272 → **274/503 (54.5 %)**.
 
 ## `parley-0.11.1` — 240 added code lines
 

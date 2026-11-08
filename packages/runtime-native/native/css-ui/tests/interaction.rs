@@ -1249,6 +1249,45 @@ fn an_italic_run_is_slanted_when_the_family_has_no_italic_face() {
 }
 
 #[test]
+fn a_perspective_free_3d_rotation_paints_its_2d_projection() {
+    // Outside a 3D rendering context a `rotateY(45deg)` is painted as its projection onto the plane
+    // (CSS Transforms 2's own example paints it narrower), so a 100x40 box becomes 70.7 wide. The
+    // parity scene's `rotate-y-45` cell measured 0.7942 against Chromium while this crate dropped the
+    // transform entirely.
+    let mut ui = ui(
+        200,
+        120,
+        &[
+            sheet(
+                "s",
+                &format!(
+                    "{BASE}\n#a{{position:absolute;left:20px;top:20px;width:100px;height:40px;background:#2563eb;transform:rotateY(45deg)}}\n\
+                     #b{{position:absolute;left:20px;top:80px;width:100px;height:40px;background:#2563eb;transform:perspective(500px) rotateY(45deg)}}"
+                ),
+            ),
+            create(1, "div"),
+            attr(1, "id", "a"),
+            create(2, "div"),
+            attr(2, "id", "b"),
+            append(0, 1),
+            append(0, 2),
+        ],
+    );
+    let projected = ui.node_box(1).expect("the rotated box");
+    assert!(
+        (projected[2] - 70.71).abs() < 0.5,
+        "rotateY(45deg) projects a 100px box to 70.7px, got {projected:?}"
+    );
+    // A perspective row still needs a projective rasterisation this backend does not have, so the
+    // box stays its layout size rather than pretending to be projected.
+    let with_perspective = ui.node_box(2).expect("the perspective box");
+    assert_eq!(
+        with_perspective[2], 100.0,
+        "a perspective transform is not approximated"
+    );
+}
+
+#[test]
 fn a_single_click_keeps_its_ancestor_messages_in_one_dispatch() {
     let mut ui = ui(
         64,

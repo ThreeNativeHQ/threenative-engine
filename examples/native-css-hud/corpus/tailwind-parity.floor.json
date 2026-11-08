@@ -1,5 +1,5 @@
 {
-  "passed": 271,
+  "passed": 273,
   "units": [
     "PRD-850/paint|bg|background-size|",
     "PRD-850/paint|border|border-style,border-width|",
@@ -195,6 +195,8 @@
     "PRD-845/mask|mask|--tw-mask-bottom,--tw-mask-bottom-from-position,--tw-mask-linear,--tw-mask-top,--tw-mask-top-from-position,mask-composite,mask-image|",
     "PRD-845/mask|mask|--tw-mask-bottom,--tw-mask-bottom-from-color,--tw-mask-linear,--tw-mask-top,--tw-mask-top-from-color,mask-composite,mask-image|",
     "PRD-845/mask|mask|--tw-mask-bottom,--tw-mask-bottom-to-color,--tw-mask-linear,--tw-mask-top,--tw-mask-top-to-color,mask-composite,mask-image|",
+    "PRD-846/transform3d|rotate|--tw-rotate-x,transform|",
+    "PRD-846/transform3d|rotate|--tw-rotate-y,transform|",
     "PRD-846/transform3d|rotate|--tw-rotate-z,transform|",
     "PRD-848/scroll|scroll|scroll-margin|",
     "PRD-848/scroll|scroll|scroll-margin-bottom|",

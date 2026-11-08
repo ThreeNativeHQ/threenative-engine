@@ -37,6 +37,20 @@ Delete the 3D rows from `native-css-compat.ts` in the commit that turns their un
 | --- | --- | --- | --- |
 | 3D transforms on native | game Tailwind class → `css-ui` paint and hit test | 3D rows deleted from `native-css-compat.ts` | AC-1, AC-2 |
 
+## Open: two of the nine paint without a projective rasteriser (2026-11-07)
+
+A 3D transform **without** a perspective row is painted as its 2D projection, which is what a browser
+does outside a 3D rendering context (CSS Transforms 2's own example paints `rotateY(50deg)` narrower).
+That hunk takes `rotate-x-45` and `rotate-y-45` from an untransformed box (0.6410 and 0.7942) to
+**0.9991 and 0.9996**, so the family is 3 of 9.
+
+What is left, with its reason: `scale-z-50` and `translate-z-40` have no 2D effect at all (a z scale or
+translation changes nothing on the plane without perspective), `backface-hidden` needs a 3D rendering
+context to hide a face, `transform-3d` (`preserve-3d`) changes no pixel on its own, and the two
+`perspective-*` cells need the projective rasterisation this PRD describes. The crate test pins both
+halves: the projection is 70.71 for a 100px box at 45°, and a matrix with a perspective row is
+deliberately *not* approximated.
+
 ## Execution Phases
 
 #### Phase 1: Projective paint
