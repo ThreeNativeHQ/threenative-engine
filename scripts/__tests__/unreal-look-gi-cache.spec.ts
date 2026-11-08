@@ -22,6 +22,7 @@ import {
   cacheFallback,
   giCache,
   gridOver,
+  inLumenScene,
   installGi,
   markTwoSidedFoliage,
   meanField,
@@ -929,5 +930,33 @@ describe("the world-space GI cache against closed forms (PRD-631 L7)", () => {
       giCache.irradiance = saved.irradiance;
       giCache.radiance = saved.radiance;
     }
+  });
+
+  it("a primitive too small for Lumen's scene stays out of the bake and lights nothing through it (MeshCardsMinSize, PRD-831)", () => {
+    const box = (x: number, y: number, z: number, emissive = 0) =>
+      new Mesh(
+        new BoxGeometry(x, y, z),
+        new MeshStandardMaterial({ emissive: new Color(1, 0.7, 0.3), emissiveIntensity: emissive }),
+      );
+    // Unreal tracks a primitive when the largest face of its bounds is over 10 cm squared, at its world scale.
+    expect(inLumenScene(box(0.05, 0.05, 0.05))).toBe(false); // the neon corridor's emitter cube
+    expect(inLumenScene(box(0.12, 0.06, 7))).toBe(true); // a neon strip
+    const scaled = box(0.05, 0.05, 0.05);
+    scaled.scale.setScalar(4);
+    scaled.updateMatrixWorld(true);
+    expect(inLumenScene(scaled)).toBe(true);
+    // The 5 cm cube at 30000 nits: no analytic emitter, so no light from it but what the screen traces see.
+    const wall = new Mesh(
+      new BoxGeometry(0.2, 4, 4).translate(3, 0, 0),
+      new MeshStandardMaterial({ color: new Color(0.5, 0.5, 0.5), side: DoubleSide }),
+    );
+    const scene = new Group().add(box(0.05, 0.05, 0.05, 30000), wall);
+    skyRadiance.current = { data: new Float32Array(6), width: 2, height: 1, scale: [1, 1, 1] };
+    installGi(rayContext(scene), scene, { bounces: 1, sun: noSun });
+    expect(giCache.emitters).toBe(0);
+    // Control: a 0.5 m source is in Lumen's scene and stays an analytic emitter.
+    const lit = new Group().add(box(0.5, 0.5, 0.5, 10), wall.clone());
+    installGi(rayContext(lit), lit, { bounces: 1, sun: noSun });
+    expect(giCache.emitters).toBe(1);
   });
 });

@@ -1439,8 +1439,31 @@ function physicalTwin() {
   }
 }
 
+/** Unreal's `r.LumenScene.SurfaceCache.MeshCardsMinSize`, 10 cm, in metres. */
+const MESH_CARDS_MIN_SIZE = 0.1;
+
 /**
- * `bakeGi` with the translucent surfaces out of the bake. Unreal's Lumen scene holds none (a translucent material is not
+ * Whether Unreal's Lumen scene tracks a primitive: the largest face of its bounding box, at its world scale, must be larger
+ * than `MeshCardsMinSize` squared (UE 5.8.3: Engine/Source/Runtime/Renderer/Private/Lumen/LumenScene.cpp:875-884,
+ * LumenMeshCards.cpp:128-132; a 0.2 factor applies to a primitive flagged as an emissive light source, which no
+ * calibration scene sets). A smaller primitive has no surface cache card, so Lumen's rays pass it and only the screen
+ * traces see it: the neon corridor's 5 cm emitter cube lit the whole bake in ThreeNative and none of Unreal's (PRD-831).
+ */
+export function inLumenScene(mesh: Mesh): boolean {
+  mesh.geometry.computeBoundingBox();
+  const box = mesh.geometry.boundingBox;
+  if (box === null) return true;
+  const size = box
+    .getSize(new Vector3())
+    .multiply(mesh.getWorldScale(new Vector3()))
+    .toArray()
+    .map(Math.abs);
+  const [x = 0, y = 0, z = 0] = size;
+  return Math.max(y * z, x * z, x * y) > MESH_CARDS_MIN_SIZE * MESH_CARDS_MIN_SIZE;
+}
+
+/**
+ * `bakeGi` with the translucent surfaces and the primitives too small for Lumen's scene (`inLumenScene`) out of the bake. Unreal's Lumen scene holds none (a translucent material is not
  * a card: UE 5.8.3, Engine/Source/Runtime/Renderer/Private/Lumen/LumenSceneRendering.cpp, `bOpaqueOrMasked`), so a ray
  * passes a pane of glass and the pane neither shades a probe nor bounces light. Layer 0 is what every ray query tests, and
  * the bake is synchronous, so the layer is off only while it runs.
@@ -1450,21 +1473,22 @@ export function installGi(
   root: Object3D,
   options: IGiOptions,
 ): IGiReport | undefined {
-  const glass: Mesh[] = [];
+  const outside: Mesh[] = [];
+  const small: string[] = [];
+  root.updateMatrixWorld(true);
   root.traverse((object) => {
     const mesh = object as Mesh;
-    if (
-      mesh.isMesh &&
-      [mesh.material].flat().some((m) => m.transparent) &&
-      mesh.layers.isEnabled(0)
-    )
-      glass.push(mesh);
+    if (!mesh.isMesh || !mesh.layers.isEnabled(0)) return;
+    const tracked = inLumenScene(mesh);
+    if (!tracked) small.push(mesh.name);
+    if (!tracked || [mesh.material].flat().some((m) => m.transparent)) outside.push(mesh);
   });
-  for (const mesh of glass) mesh.layers.disable(0);
+  if (small.length > 0) console.info(`TN_GI_SMALL_PRIMITIVES ${JSON.stringify(small)}`);
+  for (const mesh of outside) mesh.layers.disable(0);
   try {
     return bakeGi(gameCtx, root, options);
   } finally {
-    for (const mesh of glass) mesh.layers.enable(0);
+    for (const mesh of outside) mesh.layers.enable(0);
   }
 }
 
@@ -1614,6 +1638,8 @@ function bakeGi(gameCtx: IRayContext, root: Object3D, options: IGiOptions): IGiR
       (v) => v * (m.emissiveIntensity ?? 1),
     );
     if ((radiance[0] ?? 0) + (radiance[1] ?? 0) + (radiance[2] ?? 0) <= 0) return;
+    // A primitive outside Lumen's scene lights nothing through the cache: only the screen traces see it (`inLumenScene`).
+    if (!inLumenScene(mesh)) return;
     // The tight sphere: a loader may have set one from the bounding box, which is sqrt(3) too large for a sphere.
     mesh.geometry.computeBoundingSphere();
     const bound = mesh.geometry.boundingSphere;
