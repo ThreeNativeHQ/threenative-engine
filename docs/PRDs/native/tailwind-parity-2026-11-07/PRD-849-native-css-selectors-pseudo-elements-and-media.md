@@ -33,7 +33,7 @@ the `:has()` row from `native-css-compat.ts` when its units pass.
 
 - [ ] AC-1 [local]: every relational and structural variant unit passes the meter on crate and host, and the judge returns SAME. proof: `parity:tailwind --family PRD-849 --group selectors` plus `--host`, and the judge on `--sheet PRD-849` — Evidence: pending.
 - [ ] AC-2 [local]: every pseudo-element variant unit passes, and the judge returns SAME. proof: `--group pseudo` — Evidence: pending.
-- [ ] AC-3 [local]: every media and environment variant passes with its emulated input on and off, and the judge returns SAME. proof: `--group media --env all` — Evidence: pending.
+- [ ] AC-3 [local]: every media and environment variant passes with its emulated input on and off, and the judge returns SAME. proof: `--group media --env all` — Evidence: NOT met, but the environment arm is now 15 of 22 scored cells, up from 13 of 24. `contrast-more:` and `forced-colors:` pass and left the exemption list: the engine answers those queries through three vendored Stylo hunks (see `vendor/PATCHES.md`), and Chromium through `page.emulateMedia`. Four exemptions remain and each names the *reference browser's* limit rather than the engine's: `prefers-contrast: less` is not a Playwright value and the DevTools feature list that offers it only applies with an empty `media`, which breaks the viewport queries in the same run (measured); `inverted-colors` is ignored by Chromium's emulation entirely; `pointer-none`/`any-pointer-none` need a device with no pointer at all. `ltr:` still measures a real mismatch — Stylo's `:dir()` matching is the next thing to fix in this group — and `rtl:` cannot discriminate until the scene stages a `dir="rtl"` context.
 
 ## Integration Ledger
 
@@ -50,6 +50,27 @@ the `:has()` row from `native-css-compat.ts` when its units pass.
   therefore *permanently inactive* and are the only units outside the meter's denominator (507 units,
   503 scored). Every other exemption the scene names is *pending*: it stays in the denominator and
   counts as a failure until its owner PRD lands the device input or the control.
+
+## Open
+
+Measured with `pnpm --filter threenative-native-css-hud parity:tailwind --family PRD-849` per group.
+
+- **Media (15 of 22 scored cells).** The four preference queries (`prefers-reduced-motion` in PRD-847,
+  `prefers-contrast`, `forced-colors`, `inverted-colors`) now exist in the vendored Stylo and are read
+  from the device; `contrast-more:` and `forced-colors:` pass, the latter staged on `mt-8` because
+  that mode rewrites every painted colour (Canvas white, as in Chromium) so a colour cannot
+  discriminate in it. Two exemptions are the *reference browser's* limit, measured: `prefers-contrast:
+  less` is not a Playwright value and the DevTools feature list that offers it applies only with an
+  empty `media`, which breaks the viewport queries in the same run; Chromium's emulation ignores
+  `inverted-colors` entirely. `pointer-none`/`any-pointer-none` need a device with no pointer.
+- **`:dir()` does not match.** `ltr:bg-red-500` measures a real mismatch (0.6492) and the cause is
+  narrowed: `:dir(ltr)` on an element whose computed direction is the initial `ltr` does not match in
+  the engine (measured with a two-rule stylesheet), while Chromium matches it. That is the selector
+  engine in the vendored Stylo — the same crate the media features live in — and it is the next
+  selector gap in this PRD to fix. `rtl:` cannot discriminate until the scene stages a `dir="rtl"`
+  context, which belongs with the same fix.
+- **`any-pointer` was misreported** and is fixed (blitz-dom hunk 19): a desktop answered
+  `(any-pointer: coarse)`, so `any-pointer-coarse:` fired on a mouse.
 
 ## Execution Phases
 
@@ -70,7 +91,11 @@ the `:has()` row from `native-css-compat.ts` when its units pass.
 **Files:** `native/css-ui/src/lib.rs` (device descriptor), `corpus/tailwind-parity.mjs` (`--env`), the guide, the floor.
 
 - [ ] Media variants pass with each input on and off, and the floor rises. proof: AC-3 plus `parity:tailwind --ratchet`
-  Evidence: NOT met, but the scaffold this needs now exists and PRD-847 used it end to end. The vendored
+  Evidence: PARTIAL — `contrast-more:` and `forced-colors:` pass; the other five findings are the browser's
+  emulation limits or two remaining staging gaps, listed in AC-3. The scaffold this needed was the vendored
+  Stylo, and the three features went in as predicted: value, device field, evaluator, `feature!` entry, atom,
+  plus the `CssUi::set_media_preferences` descriptor. The original note (which follows) is what the recipe
+  predicted; the outcome matched it. The vendored
   `stylo-0.20.0` + `stylo_atoms-0.20.0` (see `vendor/PATCHES.md`) took `prefers-reduced-motion` from "no such
   media feature" to a passing variant in five small edits, and `contrast-more:`/`contrast-less:`,
   `forced-colors:` and `inverted-colors:` are the same five each: a value in `queries/values.rs`, a field plus
