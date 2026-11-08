@@ -780,6 +780,9 @@ void tslApi() {
                 catch (e) { checks.push(e.message === 'original'); }
                 const acc = float(0).toVar();
                 checks.push(float(1).toVar('named') !== undefined);  // three's toVar(name): prd476's substep count
+                // TextureNode.depth(layer) on a DataArrayTexture: prd493's terrain splat reads its layers this way.
+                const layers = new DataArrayTexture(new Uint8Array(8), 1, 1, 2);
+                checks.push(typeof tsl.texture(layers, tsl.uv()).depth(tsl.int(1)) === 'object');
                 Loop(2, ({ i }) => {
                     branch = If(i.lessThan(1), () => acc.assign(1)).Else(() => acc.assign(2));
                 });
@@ -789,8 +792,8 @@ void tslApi() {
             return checks.map(Number).join('');
         })()
     )JS");
-    CHECK(got == "11111111111111111111");
-    if (got != "11111111111111111111") std::fprintf(stderr, "TSL API got %s\n", got.c_str());
+    CHECK(got == "1111111111111111111111");
+    if (got != "1111111111111111111111") std::fprintf(stderr, "TSL API got %s\n", got.c_str());
 
     // Compare the actual native DAG, not just the presence of fluent methods. r185's
     // stepElement/mixElement/smoothstepElement reorder the fluent receiver to the last argument.
@@ -1660,6 +1663,15 @@ void geometryLifecycle() {
     )JS");
     CHECK(got == "true,BoxGeometry,true,1,9,36,1,true,1,true,0");
     if (got != "true,BoxGeometry,true,1,9,36,1,true,1,true,0") std::fprintf(stderr, "geometry lifecycle: %s\n", got.c_str());
+    // three's mesh.morphTargetInfluences is a plain array a game may replace whole (core's projection and LOD rebuild
+    // copy it from another mesh), as the Wasm back end accepts (browser-backend.ts).
+    const std::string influences = run(rt, adapter, R"JS(
+        const mesh = new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial());
+        mesh.morphTargetInfluences = [0.25, 0.5];
+        mesh.morphTargetInfluences.join()
+    )JS");
+    CHECK(influences == "0.25,0.5");
+    if (influences != "0.25,0.5") std::fprintf(stderr, "whole morph influences: %s\n", influences.c_str());
 }
 
 // three keeps a material's slots as own fields; games find textures with Object.values(material).

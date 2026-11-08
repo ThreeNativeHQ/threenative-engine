@@ -192,10 +192,24 @@ Object.assign(DataArrayTexture.prototype, { isArrayTexture: true, isDataArrayTex
 export const LineLoop = unsupportedExport("LineLoop");
 export const Points = unsupportedExport("Points");
 export const WebGLRenderer = unsupportedExport("WebGLRenderer");
+export const CompressedArrayTexture = unsupportedExport("CompressedArrayTexture");
+export const InstancedInterleavedBuffer = unsupportedExport("InstancedInterleavedBuffer");
+export const TextureUtils = unsupportedExport("TextureUtils");
 export const { AudioContext, AudioListener, Audio, PositionalAudio, AudioLoader } = audio;
 
 // Native traversal and child enumeration are host callbacks, not a second JS scene graph.
 const bags = new WeakMap();
+// three's userData is the game's object, kept with the wrapper; a game may also replace it (`x.userData = {...}`).
+const userData = {
+  configurable: true,
+  get() {
+    if (!bags.has(this)) bags.set(this, {});
+    return bags.get(this);
+  },
+  set(value) {
+    bags.set(this, value);
+  },
+};
 for (const name of [
   "Object3D",
   "Scene",
@@ -225,12 +239,7 @@ for (const name of [
         return parent.call(this) ?? null;
       },
     },
-    userData: {
-      get() {
-        if (!bags.has(this)) bags.set(this, {});
-        return bags.get(this);
-      },
-    },
+    userData,
   });
   // The engine's walk (`__walk`, shared with the Wasm back end): one call for the whole subtree.
   prototype.traverse = function (callback) {
@@ -242,6 +251,13 @@ for (const name of [
 }
 defineTypeFlags(globalThis);
 defineReleaseNoops(globalThis);
+// three gives Material, Texture and BufferGeometry a userData too: as on Wasm (browser-backend.ts), every engine
+// class with a dispose method (prd493's terrain splat writes material.userData.TN_TERRAIN_SPLAT).
+for (const name of Object.getOwnPropertyNames(globalThis)) {
+  const prototype = typeof globalThis[name] === "function" ? globalThis[name].prototype : undefined;
+  if (typeof prototype?.dispose === "function" && !Object.hasOwn(prototype, "userData"))
+    Object.defineProperty(prototype, "userData", userData);
+}
 const geometries = [
   BoxGeometry,
   CircleGeometry,

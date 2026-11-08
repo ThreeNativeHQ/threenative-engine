@@ -488,6 +488,8 @@ describe("assets.nativePackage", () => {
     glb.writeUInt32LE(12, 8);
     await writeFile(path.join(web, "ship.glb"), glb);
     await writeFile(path.join(web, ".DS_Store"), Buffer.from("finder"));
+    // An empty file the web serves as 0 bytes (prd493's world with no placements): the game fetches it too.
+    await writeFile(path.join(web, "placements.bin"), Buffer.alloc(0));
 
     for (let run = 0; run < 2; run++) {
       await compileAssets({
@@ -505,6 +507,7 @@ describe("assets.nativePackage", () => {
       expect(entries, `run ${String(run)}`).toEqual([
         ["/assets/cockpit/panel.jpg", NativeEntryKind.Texture, 12 + 4 * 2 * 4, 4 * 2 * 4],
         ["/assets/dawn-sky.hdr", NativeEntryKind.Buffer, 7, 0],
+        ["/assets/placements.bin", NativeEntryKind.Buffer, 0, 0],
         ["/assets/ship.glb", NativeEntryKind.Scene, 12, 0],
       ]);
     }

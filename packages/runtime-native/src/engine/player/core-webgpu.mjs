@@ -319,6 +319,9 @@ NodeMaterial.prototype.isNodeMaterial = true;
 export const RendererUtils = defineRendererUtils(Color);
 // Refused at use: only VirtualShadowNode.setup builds one, and the engine draws that map in C++.
 export const AssignNode = unsupportedExport("AssignNode");
+export const BundleGroup = unsupportedExport("BundleGroup");
+export const EventNode = unsupportedExport("EventNode");
+export const IndirectStorageBufferAttribute = unsupportedExport("IndirectStorageBufferAttribute");
 
 WebGPURenderer.prototype.SphereReflectionCapture = defineSphereReflectionCapture(
   async (scene, x, y, z, size, face, renderer) => {

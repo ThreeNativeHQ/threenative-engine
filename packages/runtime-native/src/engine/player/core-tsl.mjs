@@ -131,6 +131,12 @@ export const Stack = unsupportedExport("Stack");
 export const getShadowMaterial = unsupportedExport("getShadowMaterial");
 export const shadow = unsupportedExport("shadow");
 export const shadowPositionWorld = unsupportedExport("shadowPositionWorld");
+export const element = unsupportedExport("element");
+export const instancedBufferAttribute = unsupportedExport("instancedBufferAttribute");
+export const instancedDynamicBufferAttribute = unsupportedExport("instancedDynamicBufferAttribute");
+export const positionView = unsupportedExport("positionView");
+export const transformNormal = unsupportedExport("transformNormal");
+export const varyingProperty = unsupportedExport("varyingProperty");
 // Core's rough diffuse lighting model reads these on three's renderer only; the engine shades roughDiffuse in C++.
 // biome-ignore lint/style/useNamingConvention: the name is three/tsl's export, which core imports.
 export const F_Schlick = unsupportedExport("F_Schlick");
