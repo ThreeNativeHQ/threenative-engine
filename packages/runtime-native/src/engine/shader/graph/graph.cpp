@@ -363,12 +363,18 @@ ExprId Lowerer::emit(Node node) {
                 if (d.args[1]->kind == Kind::Constant && literal(b, at)) b = program_.construct(at, {b});
                 else if (d.args[0]->kind == Kind::Constant && literal(a, bt)) a = program_.construct(bt, {a});
             }
-            if (d.bits == 1) {
+            // r185 promotes both operands of an arithmetic or comparison operator to the higher component
+            // rank, uint < int < float (OperatorNode.generate, NodeBuilder.getPromotedComponentType), live
+            // TSL as well as a serialized upstream graph: `instanceIndex.greaterThanEqual(floatUniform)` and
+            // `floatValue.add(intValue)` compile on three, so they compile here (PRD-857).
+            const bool promotes = d.binary == BinOp::Add || d.binary == BinOp::Sub || d.binary == BinOp::Mul ||
+                                  d.binary == BinOp::Div || d.binary == BinOp::Less || d.binary == BinOp::Greater ||
+                                  d.binary == BinOp::Equal || d.binary == BinOp::LessEqual || d.binary == BinOp::GreaterEqual;
+            if (promotes) {
                 auto at = program_.expr(a).type, bt = program_.expr(b).type;
                 if (at.numeric() && bt.numeric() && !at.isMatrix() && !bt.isMatrix() && at.scalar != bt.scalar) {
-                    const bool compare = d.binary == BinOp::Less || d.binary == BinOp::Greater || d.binary == BinOp::Equal ||
-                                         d.binary == BinOp::LessEqual || d.binary == BinOp::GreaterEqual;
-                    const auto scalar = compare && at.isScalar() && bt.isScalar() ? Type::Scalar::F32 : at.rows >= bt.rows ? at.scalar : bt.scalar;
+                    const auto rank = [](Type::Scalar s) { return s == Type::Scalar::F32 ? 3 : s == Type::Scalar::I32 ? 2 : 1; };
+                    const auto scalar = rank(at.scalar) >= rank(bt.scalar) ? at.scalar : bt.scalar;
                     if (at.scalar != scalar) a = program_.construct(Type::vec(at.rows, scalar), {a});
                     if (bt.scalar != scalar) b = program_.construct(Type::vec(bt.rows, scalar), {b});
                 }

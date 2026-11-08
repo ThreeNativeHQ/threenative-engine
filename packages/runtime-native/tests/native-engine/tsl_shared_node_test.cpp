@@ -2,6 +2,7 @@
 #include "engine/shader/graph/graph.h"
 #include "engine/shader/tsl/tsl.h"
 #include "engine/shader/wgsl.h"
+#include <cstdio>
 #include <string>
 
 using namespace tn::engine::shader;
@@ -90,4 +91,35 @@ void scopes() {
     }
 }
 }
-TN_TEST_MAIN({"shared", [] { shared(); probe(); }}, {"scopes", scopes})
+// Live TSL compares like r185 OperatorNode: a uint index against a float uniform is promoted, not
+// refused (PRD-857: the GPU world scene's `instanceIndex.greaterThanEqual(counts.w)`).
+void mixedCompare() {
+    for (int op = 0; op < 4; ++op) {
+        g::Block block;
+        const auto limit = g::uniform("limit", Type::f32(), {4});
+        const auto index = g::instanceIndex();
+        const g::Node test = op == 0 ? g::greaterThanEqual(index, limit) : op == 1 ? g::lessThanEqual(index, limit)
+                           : op == 2 ? g::lessThan(index, limit) : g::greaterThan(limit, index);
+        const auto out = g::storage("out", Type::u32());
+        block.If(test, [&] { block.assign(out.element(g::int_(0)), g::uint_(1u)); });
+        Program p(Stage::Compute); tsl::Build build(p);
+        g::lower(block.node(), p);
+        if (!p.ok()) std::fprintf(stderr, "mixedCompare op %d: %s\n", op, (p.diagnostics().front().node + ": " + p.diagnostics().front().reason).c_str());
+        CHECK(p.ok());
+        CHECK(WgslEmitter::emit(p).ok());
+    }
+    // Arithmetic: f32 + i32 is an f32 on three, whichever side the integer is on.
+    for (int side = 0; side < 2; ++side) {
+        g::Block block;
+        const auto f = g::uniform("f", Type::f32(), {0.5f});
+        const auto i = g::storage("ints", Type::i32()).element(g::int_(0));
+        const auto out = g::storage("out", Type::f32());
+        block.assign(out.element(g::int_(0)), side == 0 ? g::add(f, i) : g::add(i, f));
+        Program p(Stage::Compute); tsl::Build build(p);
+        g::lower(block.node(), p);
+        if (!p.ok()) std::fprintf(stderr, "mixedAdd side %d: %s\n", side, (p.diagnostics().front().node + ": " + p.diagnostics().front().reason).c_str());
+        CHECK(p.ok());
+        CHECK(WgslEmitter::emit(p).ok());
+    }
+}
+TN_TEST_MAIN({"shared", [] { shared(); probe(); mixedCompare(); }}, {"scopes", scopes})

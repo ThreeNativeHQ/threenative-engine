@@ -1,4 +1,4 @@
-import type { BufferAttribute } from "three";
+import type { BufferAttribute, Matrix4 } from "three";
 import type {
   IndirectStorageBufferAttribute,
   ReadbackBuffer,
@@ -6,6 +6,33 @@ import type {
   StorageInstancedBufferAttribute,
 } from "three/webgpu";
 import type { IKernelOcclusion } from "./render/depth-pyramid.js";
+
+/**
+ * The six frustum planes of `matrix` (projection times view) into `out` as `[nx, ny, nz, d]` rows,
+ * the planes three's `Frustum.setFromProjectionMatrix` writes with its default (WebGL) near plane.
+ * Read straight from the elements, not through a `Frustum`: the owned engine's facade has no
+ * `planes` array (`planes.entries()` threw and stopped the render loop, PRD-857), and one
+ * `elements` read replaces 24 bridged getters a frame.
+ */
+export function frustumPlanes(matrix: Matrix4, out: Float32Array): void {
+  const m = matrix.elements;
+  // [column, sign]: left, right, bottom, top, far, near; each plane is row 3 plus sign times row k.
+  const rows = [0, -1, 0, 1, 1, 1, 1, -1, 2, -1, 2, 1] as const;
+  for (let plane = 0; plane < 6; plane += 1) {
+    const k = rows[plane * 2] as number;
+    const sign = rows[plane * 2 + 1] as number;
+    const x = (m[3] as number) + sign * (m[k] as number);
+    const y = (m[7] as number) + sign * (m[4 + k] as number);
+    const z = (m[11] as number) + sign * (m[8 + k] as number);
+    const w = (m[15] as number) + sign * (m[12 + k] as number);
+    const inverse = 1 / Math.hypot(x, y, z);
+    const at = plane * 4;
+    out[at] = x * inverse;
+    out[at + 1] = y * inverse;
+    out[at + 2] = z * inverse;
+    out[at + 3] = w * inverse;
+  }
+}
 
 /** `DrawIndexedIndirect`: indexCount, instanceCount, firstIndex, baseVertex, firstInstance. */
 export const DRAW_ARGS_WORDS = 5;

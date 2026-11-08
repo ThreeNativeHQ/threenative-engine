@@ -43,7 +43,6 @@ import {
   type BufferAttribute,
   type Camera,
   type DepthTexture,
-  Frustum,
   Matrix4,
   PerspectiveCamera,
   Vector3,
@@ -176,6 +175,7 @@ import {
   VEC4_WORDS,
   addRange,
   argsWords,
+  frustumPlanes,
   growBuffer,
   storageAttribute,
 } from "./world-gpu-types.js";
@@ -260,20 +260,10 @@ export function gpuSceneUnsupported(renderer: IRendererLike): string {
 
 /** The six planes of a camera's frustum, as the kernel reads them, into `out`. */
 function cameraPlanes(camera: Camera, out: Float32Array): void {
-  _cullFrustum.setFromProjectionMatrix(
-    _proj.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse),
-  );
-  for (const [index, plane] of _cullFrustum.planes.entries()) {
-    const at = index * 4;
-    out[at] = plane.normal.x;
-    out[at + 1] = plane.normal.y;
-    out[at + 2] = plane.normal.z;
-    out[at + 3] = plane.constant;
-  }
+  frustumPlanes(_proj.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse), out);
 }
 
 const _proj = new Matrix4();
-const _cullFrustum = new Frustum();
 const _eye = new Vector3();
 
 /** Camera travel in one dispatch that the occlusion test reads as a cut rather than a turn. */

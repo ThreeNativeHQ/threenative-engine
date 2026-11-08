@@ -1,7 +1,6 @@
 import {
   type Box3,
   type Camera,
-  Frustum,
   type InstancedMesh,
   type Material,
   Matrix4,
@@ -48,6 +47,7 @@ import {
   type WorldGpuScene,
   liveKeyInstances,
 } from "./world-gpu-scene.js";
+import { frustumPlanes } from "./world-gpu-types.js";
 
 /**
  * The mesh a key draws: its shape, its level's material, and the dress that points it at the GPU
@@ -105,7 +105,6 @@ export interface ICellGpuDressHost {
 
 /** The scratch a draw's own planes are built in, reused per frame. */
 const _gpuEye = new Vector3();
-const _cullFrustum = new Frustum();
 const _cullProjScreen = new Matrix4();
 
 export class CellGpuDress {
@@ -632,16 +631,10 @@ export class CellGpuDress {
     // The dispatch's own camera, its own planes: this is asked for inside the dispatch that is
     // running, so the eye and the six planes are the ones the kernel is reading now.
     const planes = this.#gpuPlanes;
-    _cullFrustum.setFromProjectionMatrix(
+    frustumPlanes(
       _cullProjScreen.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse),
+      planes,
     );
-    for (const [index, plane] of _cullFrustum.planes.entries()) {
-      const at = index * 4;
-      planes[at] = plane.normal.x;
-      planes[at + 1] = plane.normal.y;
-      planes[at + 2] = plane.normal.z;
-      planes[at + 3] = plane.constant;
-    }
     _gpuEye.setFromMatrixPosition(camera.matrixWorld);
     const expected = liveKeyInstances(
       this.#host.gpuScene().placements,

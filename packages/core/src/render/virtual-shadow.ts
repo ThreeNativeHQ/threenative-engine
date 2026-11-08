@@ -4,7 +4,6 @@ import {
   type Camera,
   type DirectionalLight,
   FrontSide,
-  Frustum,
   type InstancedMesh,
   type Material,
   Matrix4,
@@ -55,6 +54,7 @@ import {
 } from "three/webgpu";
 import { shadowRedrawGpuMs } from "../render-pass-budget.js";
 import { DEFAULT_TARGET_FPS } from "../target-fps.js";
+import { frustumPlanes } from "../world-gpu-types.js";
 import { isLeafReceiver } from "./soft-shadow.js";
 import {
   COST_SMOOTHING,
@@ -196,7 +196,6 @@ const _forward = new Vector3();
 /** A level's own light frustum, read once per level render and handed to its dispatch. */
 const _shadowProjection = new Matrix4();
 const _oldWorld = new Matrix4();
-const _shadowFrustum = new Frustum();
 const _shadowPlanes = new Float32Array(24);
 /** The depth row a level's map was drawn under, and the one this frame proposes: uploaded float32. */
 const _drawnDepth = new Float32Array(4);
@@ -1704,15 +1703,8 @@ export class VirtualShadowNode extends ShadowBaseNode {
       shadow.camera.projectionMatrix,
       shadow.camera.matrixWorldInverse,
     );
-    _shadowFrustum.setFromProjectionMatrix(_shadowProjection);
     const planes = _shadowPlanes;
-    for (const [at, plane] of _shadowFrustum.planes.entries()) {
-      const offset = at * 4;
-      planes[offset] = plane.normal.x;
-      planes[offset + 1] = plane.normal.y;
-      planes[offset + 2] = plane.normal.z;
-      planes[offset + 3] = plane.constant;
-    }
+    frustumPlanes(_shadowProjection, planes);
     // Every compute leaves the one node frame every node shares with its fields at their bare
     // defaults — `scene` among them, which `Nodes.getNodeFrame()` sets with no arguments
     // (three.webgpu.js:56215, reached from `Renderer.compute` at 62235) and nothing puts back; the

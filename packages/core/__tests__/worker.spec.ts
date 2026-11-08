@@ -953,6 +953,31 @@ describe("worker game host (PRD-752)", () => {
     handle.stop();
   });
 
+  // PRD-857: a frame that threw in a running worker game removed the canvas and printed nothing.
+  it("prints a worker error that arrives after ready, since nothing awaits ready any more", async () => {
+    const { scope, worker } = link();
+    const { container } = page();
+    serveWorkerGame({ start: async () => undefined }, scope);
+    const handle = startWorkerGame(
+      worker as unknown as Worker,
+      container as unknown as HTMLElement,
+    );
+    await handle.ready;
+    const printed = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      worker.dispatchEvent(
+        Object.assign(new Event("error"), { message: "Uncaught TypeError: planes.entries" }),
+      );
+      expect(printed).toHaveBeenCalledWith(
+        "TN_WORKER_FAILED: the running worker game stopped: Uncaught TypeError: planes.entries",
+      );
+      expect(worker.terminate).toHaveBeenCalledTimes(1);
+    } finally {
+      printed.mockRestore();
+      handle.stop();
+    }
+  });
+
   it("stop terminates the worker and forwards nothing more", async () => {
     const { scope, toWorker, worker } = link();
     const { container, view } = page();

@@ -711,6 +711,7 @@ export function startWorkerGame(
     }
   };
 
+  let started = false;
   let resolveReady: () => void = () => undefined;
   let rejectReady: (error: Error) => void = () => undefined;
   const ready = new Promise<void>((resolve, reject) => {
@@ -789,6 +790,7 @@ export function startWorkerGame(
         installMirror(message.name, message.epoch);
         break;
       case "tn-worker-started":
+        started = true;
         resolveReady();
         break;
       case "tn-worker-failed":
@@ -834,6 +836,12 @@ export function startWorkerGame(
   listen(worker, "message", onWorkerMessage);
   const onWorkerError = (event: Event): void => {
     const message = (event as ErrorEvent).message;
+    // Once started, nothing awaits `ready`: without this line a frame that threw removed the canvas
+    // and printed nothing (PRD-857).
+    if (started && !stopped)
+      console.error(
+        `TN_WORKER_FAILED: the running worker game stopped: ${message || `worker ${event.type}`}`,
+      );
     stop(new Error(message || `TN_WORKER_FAILED: worker ${event.type}.`));
   };
   listen(worker, "error", onWorkerError);
