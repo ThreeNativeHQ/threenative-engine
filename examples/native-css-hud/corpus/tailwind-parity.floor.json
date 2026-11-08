@@ -1,5 +1,5 @@
 {
-  "passed": 312,
+  "passed": 314,
   "units": [
     "PRD-850/paint|bg|--tw-gradient-position,background-image|",
     "PRD-850/paint|bg|background-size|",
@@ -234,6 +234,7 @@
     "PRD-848/scroll|scroll|scroll-margin-block-start|",
     "PRD-848/scroll|scroll|scroll-margin-inline-end|",
     "PRD-848/scroll|scroll|scroll-margin-left|",
+    "PRD-848/scroll|scroll|scroll-margin-right|",
     "PRD-848/scroll|scroll|scroll-margin-inline-start|",
     "PRD-848/scroll|scroll|scroll-margin-top|",
     "PRD-848/scroll|scroll|scroll-margin-inline|",
@@ -262,6 +263,7 @@
     "PRD-848/scroll|scroll|scroll-padding-block-start|",
     "PRD-848/scroll|scroll|scroll-padding-inline-end|",
     "PRD-848/scroll|scroll|scroll-padding-left|",
+    "PRD-848/scroll|scroll|scroll-padding-right|",
     "PRD-848/scroll|scroll|scroll-padding-inline-start|",
     "PRD-848/scroll|scroll|scroll-padding-top|",
     "PRD-848/scroll|scroll|scroll-padding-inline|",

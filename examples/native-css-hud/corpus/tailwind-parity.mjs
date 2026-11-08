@@ -1580,11 +1580,29 @@ function utilityEntry(unit, classCss, byProperty) {
       ? (() => {
           // `scroll-mb-40` is `scroll-m` + `b` + `40`, so the axis is what sits between the unit's
           // first two segments and its value — a `-b-` search missed every one of them.
+          // Both spellings: the physical one (`scroll-mr-40`, `scroll-pl-4`) and the logical one
+          // (`scroll-be-40`). A physical `-r-` is the inline *end* in a horizontal-tb LTR document, and
+          // `-t-` is the block *start* — the alignment the driver asks for is what makes the margin or
+          // padding visible at all, so a missed axis made the cell measure a scroll it had not asked for.
           const axis = /^scroll-[mp]([a-z-]+)-\d/u.exec(unit.probe)?.[1] ?? "";
-          return {
-            block: ["b", "be", "block-end"].includes(axis) ? "end" : "start",
-            inline: ["e", "end", "inline-end"].includes(axis) ? "end" : "start",
+          const ends = {
+            b: ["end", "start"],
+            be: ["end", "start"],
+            "block-end": ["end", "start"],
+            t: ["start", "start"],
+            bs: ["start", "start"],
+            "block-start": ["start", "start"],
+            e: ["start", "end"],
+            r: ["start", "end"],
+            end: ["start", "end"],
+            "inline-end": ["start", "end"],
+            l: ["start", "start"],
+            s: ["start", "start"],
+            start: ["start", "start"],
+            "inline-start": ["start", "start"],
           };
+          const [block, inline] = ends[axis] ?? ["start", "start"];
+          return { block, inline };
         })()
       : undefined,
     // `scroll-p*` sets the *scroller's* padding, so the unit's class goes on the scroller — the probe

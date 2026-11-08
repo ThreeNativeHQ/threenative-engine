@@ -49,6 +49,15 @@ each refused row from `native-css-compat.ts` in the commit that turns its group 
 | --- | --- | --- | --- |
 | Layout families on native | game Tailwind class → `css-ui` layout (blitz-dom, taffy) | Table, float, column, sticky, subgrid, snap and container rows deleted from `native-css-compat.ts` | AC-1 to AC-4 |
 
+## Decisions
+
+**A `scroll-m*`/`scroll-p*` cell needs the axis the unit names, and the physical spellings were missed.**
+`scroll-mr-40` and `scroll-pr-40` asked the driver for a `start`/`start` alignment, which is the axis
+`scroll-ml-*` needs: the margin on the *inline end* is invisible when something scrolls to the inline
+start. The alignment table now carries both spellings — `b/be/block-end` and `t/bs/block-start` for the
+block axis, `e/r/end/inline-end` and `l/s/start/inline-start` for the inline one. Measured: the scroll
+group 20 → **22 of 31**, non-discriminating 10 → 8, the scene 313 → **314 of 503**.
+
 ## Open: the scroll group is 14 of 31, and the offset arithmetic is settled (2026-11-07)
 
 `scrollIntoView` now aligns with Chromium to the pixel: the element's position was taken relative to
