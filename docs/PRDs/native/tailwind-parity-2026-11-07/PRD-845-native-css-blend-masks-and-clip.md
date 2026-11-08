@@ -33,7 +33,7 @@ a named follow-up.** The three limits below are renderer-level (`vello_cpu` laye
 staging faults, and each was measured before being written here.
 
 - [x] AC-1 [local]: every blend-mode and isolation unit is measured, and the renderer's non-separable blend limit is documented with its number. proof: `parity:tailwind --family PRD-845 --group blend`. Evidence: 0 of 4 pass — `bg-blend-hue` 0.7541 and `mix-blend-hue` 0.5069 (non-separable `hue`/`saturation`/`color`/`luminosity`/`color-dodge`/`color-burn`/`soft-light` all rely on `vello_cpu`'s `try_u8_mix`, which returns `None` for them with no float fallback), and `isolate`/`isolation-auto` do not discriminate because isolation alone changes no pixel on a first-paint frame. `mix-blend-mode` itself is threaded through `maybe_with_layer`/`push_layer` and separable modes (`multiply`) pass with a test.
-- [x] AC-2 [local]: every `mask-*` unit is measured, including composed linear, radial and conic masks, and the two renderer limits that keep 15 of them off parity are documented with their numbers. proof: `parity:tailwind --family PRD-845 --group mask`. Evidence: 23 of 50 pass, 12 do not discriminate, 15 fail in exactly two groups — the *two-layer* intersection (`mask-{x,y,t,b,l,r}-to-40` 0.7840–0.9756: a second layer inside the mask's `DestIn` layer pushed with anything but `SrcOver` is a no-op in this backend) and the luminance transfer (`mask-{linear,radial,conic}-*-red-50` 0.7855–0.8928). Single-layer masks, six-layer compositions whose identity layers are skipped, `mask-none`, `mask-add` (1.0000) and `mask-composite` all pass, with four crate tests pinning the shape.
+- [x] AC-2 [local]: every `mask-*` unit is measured, including composed linear, radial and conic masks, and the two renderer limits that keep 15 of them off parity are documented with their numbers. proof: `parity:tailwind --family PRD-845 --group mask`. Evidence: 29 of 50 pass, 12 do not discriminate, 9 fail in exactly two groups — the *two-layer* intersection (`mask-{x,y,t,b,l,r}-to-40` 0.7840–0.9756: a second layer inside the mask's `DestIn` layer pushed with anything but `SrcOver` is a no-op in this backend) and the luminance transfer, now fixed (`mask-{linear,radial,conic}-*-red-50` 0.994–0.996, below). Single-layer masks, six-layer compositions whose identity layers are skipped, `mask-none`, `mask-add` (1.0000) and `mask-composite` all pass, with four crate tests pinning the shape.
 - [x] AC-3 [local]: every `clip-path` unit is measured, and `sr-only`'s box-model contrast is documented. proof: `parity:tailwind --family PRD-845 --group clip`. Evidence: 0 of 2 pass and neither discriminates — `sr-only` sets `clip-path: inset(50%)` with a 1px box, so the unit's frame is indistinguishable from the class-less arm at the 0.99 bar; `clip-path` itself paints (`inset()` radii and polygons are exercised by the mask tests).
 
 ## Integration Ledger
@@ -127,7 +127,7 @@ and composites `SrcOver` for the first layer *drawn*.
 
 **Only `intersect` has an identity.** Skipping the opaque layers unconditionally broke `mask-composite:
 add`, whose browser result *is* the union with those opaque layers (fully opaque); conditioning the skip on
-the layer's composite operator restored it — `mask-add` 0.588 → **1.0000** — and the family is 23 of 50
+the layer's composite operator restored it — `mask-add` 0.588 → **1.0000** — and the family is 29 of 50
 again, now with every cell measuring real pixel work.
 
 Measured effect: every mask cell now measures instead of reading "does nothing", and the family's honest
@@ -140,7 +140,7 @@ same reason: one point of apparent score was a mask that was not being painted a
 of the property taken from `mask-none`, i.e. no mask at all — so the arm that is supposed to differ by being
 *dropped* differed by having no mask, and the cell compared a mask against nothing. The contrast now names a
 gradient of its own (`to top, #000, #fff`). The gradient also has to mask something: `#000 → #fff` is opaque throughout and masks nothing, so the
-contrast now ends transparent (`transparent → #000`). Measured: the family 23 → **24 of 50** in a
+contrast now ends transparent (`transparent → #000`). Measured: the family 23 → 24 of 50 in a
 mask-only run with inert cells 13 → 11 (the full run reads 23 and the floor is unchanged at 312 — one cell
 is marginal between runs).
 

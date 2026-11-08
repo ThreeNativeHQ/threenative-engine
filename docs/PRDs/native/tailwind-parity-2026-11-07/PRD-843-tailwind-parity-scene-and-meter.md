@@ -39,14 +39,14 @@ attributed to the PRD that owns it, and a ratchet that cannot quietly fall.
   Evidence: `507 units (419 utility, 88 variant), 0 unowned, 33 named exemptions, 119 panels`; `--check`
   exits 1 naming 98 counterfactual cells, and every one of them carries the owner PRD that must account for
   it (`PRD-846/transform3d|scale|--tw-scale-z,scale|  counterfactual 1`, and so on) — no cell is
-  unattributed, which is what this AC now claims. The scored report reads the same cells as **95 do not
-  discriminate**, 29 exempt, 4 permanently inactive, 1 refused; the difference is cells whose verdict moves
+  unattributed, which is what this AC now claims. The scored report reads the same cells as **93 do not
+  discriminate**, 29 exempt, 4 permanently inactive, 0 refused; the difference is cells whose verdict moves
   with the frame the browser happens to be on. Three staging gates were added this session so the count
   cannot quietly regress: a probe-carrying cell whose class list does not start with `probe` fails the
   check, a measured cell that names no probe fails it, and the vacuity arm now waits for the pin.
 - [x] AC-2 [local]: the meter prints a baseline from the crate subject and from the host subject, and `--ratchet` fails below the committed floor. proof: `parity:tailwind` and `parity:tailwind --host`
-  Evidence: the crate subject prints `tailwind-parity: 319/503 (63.4 %)  [95 do not discriminate, 29 exempt, 4 permanently inactive, 1 refused]`, `--floor` writes the ratchet baseline from the same run, and
-  `--ratchet` prints `319 >= 319` on a clean tree and exits non-zero below the committed floor. The host
+  Evidence: the crate subject prints `tailwind-parity: 327/503 (65 %)  [93 do not discriminate, 29 exempt, 4 permanently inactive, 0 refused]`, `--floor` writes the ratchet baseline from the same run, and
+  `--ratchet` prints `326 >= 326` on a clean tree and exits non-zero below the committed floor. The host
   subject (`corpus/host.mjs`) turns each selected panel into its own generated project, builds and packages
   it against the checkout's `TN_ENABLE_CSS_UI=1` host, photographs it with
   `packages/playtest --target desktop --executable`, and scores it by the same bars against the same
@@ -129,7 +129,7 @@ context options in Chromium, `env.json` in the engine. There is no `--env <input
 ## Open
 
 **Nothing open at the re-scoped bar.** The meter owns every unit, names every non-discriminating cell by
-its owner PRD, prints both subjects, and the ratchet holds at 319. Two follow-ups it hands over, each
+its owner PRD, prints both subjects, and the ratchet holds at 326. Two follow-ups it hands over, each
 measured above rather than claimed: the host's three seams (an `advance` for motion panels, a device
 descriptor, per-node boxes) and the scaffolded end-to-end desktop build for a starter. The scene's own
 history — the 152 non-discriminating cells it started this session with, and their classification — is

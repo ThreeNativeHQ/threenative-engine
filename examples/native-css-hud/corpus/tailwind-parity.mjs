@@ -108,6 +108,13 @@ const PANEL_CSS = `
   position:relative}
 .probe-outline{outline:2px solid #52525b}
 .stage-row{display:flex;gap:6px;width:100%}
+/* A colour-only border unit needs a border with no colour of its own: the colour the width/style staging
+   sets is later in the sheet than the utility, so both arms would paint the same grey. */
+.stage-border-colour{border-width:3px;border-style:solid;color:#52525b}
+/* An inline-level box only shows vertical-align inside a line box. */
+.stage-line{font-size:16px;line-height:26px}
+/* A flex item's flex shorthand decides its width, and flex: calc(1/2 * 100%) loses to a set width. */
+.stage-basis{width:auto}
 .stage-col{display:flex;flex-direction:column;gap:6px;width:100%}
 .stage-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;width:100%}
 .stage-scroll{width:100%;height:${CELL_H - 44}px;overflow:auto}
@@ -1063,6 +1070,9 @@ const COMPANIONS = [
   [/^--tw-inset-shadow/u, "inset-shadow-sm"],
   [/^--tw-shadow/u, "shadow"],
   [/^--tw-inset-ring/u, "inset-ring"],
+  // The offset colour paints in the gap between the ring and the box, and a gap only exists with an
+  // offset width: `ring-2` alone leaves the colour under the ring.
+  [/^--tw-ring-offset-color$/u, "ring ring-offset-2"],
   [/^--tw-ring-/u, "ring"],
   [
     /^--tw-blur|^--tw-brightness|^--tw-contrast|^--tw-grayscale|^--tw-hue-rotate|^--tw-invert|^--tw-saturate|^--tw-sepia|^--tw-drop-shadow/u,
@@ -1073,7 +1083,9 @@ const COMPANIONS = [
   [/^--tw-divide-/u, "divide-x"],
   [/^--tw-border-spacing/u, "border-spacing-1"],
   [/^--tw-ordinal|^--tw-slashed-zero|^--tw-numeric/u, "tabular-nums"],
-  [/^--tw-text-shadow/u, "text-shadow-sm"],
+  // A shadow colour needs a shadow big enough to see: the 1px `-sm` shadow is inside the glyph
+  // anti-aliasing noise of the cell's own text.
+  [/^--tw-text-shadow/u, "text-shadow-lg"],
   [/^--tw-duration|^--tw-ease|^--tw-delay/u, "transition"],
   // A decoration's thickness, style and colour paint nothing unless something is underlined: the
   // four `decoration-*`/`underline-offset-*` units were inert on a probe with no line to style.
@@ -1236,6 +1248,9 @@ function listStage(count, probe, classes, attrs, listClass = "stage-list") {
 /** The wrapper a layout needs around the probe. */
 function layoutStage(cell, probe, classes, before, after) {
   const siblings = [...before, probe, ...after];
+  if (cell.layout === "line") {
+    return [el("div", { class: "stage-line" }, text("Xg"), probe, text("Xg"))];
+  }
   if (cell.layout === "row")
     return [el("div", { class: "stage-row" }, ...siblings, el("div", { class: "stage-fill" }))];
   if (cell.layout === "grid")
@@ -1330,7 +1345,8 @@ const EXTRA_STAGING = [
   [/^bg-blend-/u, ["bg-linear-to-r", "from-red-500", "to-blue-500"]],
   // A *position* unit (`from-40%`, `via-40%`) sets no colour of its own: the stop it positions has to
   // come from a colour companion, or the gradient has an empty `--tw-gradient-stops` and paints nothing.
-  [/^(from|via|to)-\d/u, ["bg-linear-to-r", "from-red-500", "to-blue-500"]],
+  [/^via-\d/u, ["bg-linear-to-r", "from-red-500", "via-red-500", "to-blue-500"]],
+  [/^(from|to)-\d/u, ["bg-linear-to-r", "from-red-500", "to-blue-500"]],
   [/^via-/u, ["bg-linear-to-r", "from-red-500"]],
   [/^from-/u, ["bg-linear-to-r", "to-blue-500"]],
   [/^to-/u, ["bg-linear-to-r", "from-red-500"]],
@@ -1344,6 +1360,8 @@ const EXTRA_STAGING = [
   // rotate function; the empty fallbacks drop out, and dropping the unit class then leaves no
   // transform at all.
   [/^transform(-fill)?$/u, ["[--tw-rotate-z:rotateZ(45deg)]"]],
+  // A tab is one space wide under every value of `white-space` but `pre`.
+  [/^tab-/u, ["whitespace-pre"]],
 ];
 
 const CONTAINER_PROPS = new Set([
@@ -1377,13 +1395,22 @@ function cellTree(cell) {
   const items = cell.items === true ? " stage-items" : "";
   const contain = cell.contain === true ? " stage-contain" : "";
   const light = cell.lightStage === true ? " light-stage" : "";
-  const border = cell.borderProbe === true ? " stage-border" : "";
+  const border =
+    cell.borderProbe === true
+      ? " stage-border"
+      : cell.borderColourProbe === true
+        ? " stage-border-colour"
+        : "";
   // A transition cell is hovered by a pointer, and a sibling cell's `position: fixed` probe paints
   // above every non-positioned box: a positioned probe is painted in DOM order instead, so the pointer
   // reaches the one it was aimed at.
-  const inline = /^m(r|e)-/u.test(cell.unit?.probe ?? "") ? " stage-inline" : "";
+  const inline =
+    /^m(r|e)-/u.test(cell.unit?.probe ?? "") || cell.unit?.props?.includes("vertical-align")
+      ? " stage-inline"
+      : "";
   const aspect = cell.aspect === true ? " stage-aspect" : "";
   const scrollbar = cell.scrollbar === true ? " stage-scrollbar" : "";
+  const basis = cell.basis === true ? " stage-basis" : "";
   const classes =
     probeClass(cell.companions ?? [], cell.class) +
     container +
@@ -1392,7 +1419,8 @@ function cellTree(cell) {
     contain +
     inline +
     aspect +
-    scrollbar;
+    scrollbar +
+    basis;
   const probe = el(
     /^(transition|duration|delay|ease)/u.test(cell.unit?.probe ?? "")
       ? "button"
@@ -1623,7 +1651,16 @@ function utilityEntry(unit, classCss, byProperty) {
     // becomes that element and the scroll target is a filler inside it, which is what a scroller with
     // scroll padding is.
     classOn: /^scroll-p/u.test(unit.probe) ? "scroller" : undefined,
-    borderProbe: unit.props.some((p) => BORDER_COLOR_PROPS.test(p)) || undefined,
+    // Two border stagings: a width/style unit needs a coloured border to be visible, while a *colour*
+    // unit needs a border with no staging colour — see `.stage-border-colour`.
+    borderColourProbe:
+      (unit.props.some((p) => /^border-.*(?:-color|^border-color)$|^border-color$/u.test(p)) &&
+        !unit.props.some((p) => /^border-.*(?:width|style)$/u.test(p))) ||
+      undefined,
+    borderProbe:
+      (unit.props.some((p) => BORDER_COLOR_PROPS.test(p)) &&
+        unit.props.some((p) => /^border-.*(?:width|style)$/u.test(p))) ||
+      undefined,
     // The children a spacing unit separates are boxed to stay inside the measured region.
     items:
       /^(space|divide)$/u.test(unit.root) ||
@@ -1652,6 +1689,11 @@ function utilityEntry(unit, classCss, byProperty) {
       undefined,
     // `aspect-ratio` is ignored when both dimensions are set, and the staged probe sets both.
     aspect: unit.props.includes("aspect-ratio") || undefined,
+    // `vertical-align` applies to an inline-level box inside a line box: with the probe alone in a block
+    // it aligns against nothing and the cell reads "does nothing".
+    layout: unit.props.includes("vertical-align") ? "line" : undefined,
+    // A `flex` shorthand sets the item's width, which loses to the staged probe's own `width: 120px`.
+    basis: unit.props.includes("flex") || undefined,
     // `overflow: clip` cuts a child at the padding box, so a probe with nothing overflowing cannot show
     // it. Only the `overflow` units get the child: giving one to the `contain` cells as well costs eight
     // misc cells, because those already passed without it.
@@ -2750,6 +2792,10 @@ try {
   for (const panel of panels) {
     const dir = join(outRoot, panel.id);
     mkdirSync(join(dir, "web"), { recursive: true });
+    // Both output directories up front: `webPanel` does not create its own before writing, and a panel
+    // that returns early (a pin that never settles) left the write below with no directory and killed the
+    // whole run with ENOENT instead of failing that one panel.
+    mkdirSync(join(dir, "web"), { recursive: true });
     mkdirSync(join(dir, "native"), { recursive: true });
     const motion = MOTION.test(panel.css);
     const probeBoxes = (await webPanel(panel)).boxes;
@@ -2780,7 +2826,17 @@ try {
           `TN_PARITY_NONDETERMINISTIC Chromium painted ${panel.id} twice differently`,
         );
       }
-      if (native.refused === undefined && !same(native.png.data, nativeAgain.png.data)) {
+      // A refusal on either run is the panel's answer, not a crash: without this the determinism arm
+      // read `nativeAgain.png` on a refused run and died with a TypeError, which says nothing about the
+      // engine and loses the other 500 cells of the run.
+      if (native.refused !== undefined || nativeAgain.refused !== undefined) {
+        const refused = native.refused ?? nativeAgain.refused;
+        report.push(
+          ...panel.cells.map((cell) => ({ ...cell, pass: false, why: refused, ssim: 0 })),
+        );
+        continue;
+      }
+      if (!same(native.png.data, nativeAgain.png.data)) {
         throw new Error(
           `TN_PARITY_NONDETERMINISTIC the engine painted ${panel.id} twice differently`,
         );

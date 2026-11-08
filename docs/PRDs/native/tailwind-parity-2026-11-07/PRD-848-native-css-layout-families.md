@@ -142,6 +142,26 @@ non-discriminating count drops by 5.
 - [x] Logical, grid-auto and display units pass, and the floor rises. proof: AC-4 plus `parity:tailwind --ratchet`
   Evidence: logical is **18 of 18**, and the ratchet floor protects the batch's 319 units (it refuses to fall below).
 
+### A table's row and row group now have a layout box (measured 2026-11-08)
+
+`TableTreeWrapper` exposed the **cells only**, so a `tr` and a `tbody` were in the box tree but never in
+taffy's grid: neither was ever laid out and both stayed as zero-width boxes at the table's origin. A
+browser gives `tr` the row's area and `tbody` the union of its rows across the table's content width, and
+the meter reads exactly those boxes for its 1-px edge bar — which is why `border-collapse`, `table-fixed`
+and the three `border-spacing` cells each failed on a `tbody` miss of 300 px and more.
+
+`TableContext` now records each cell's row and grows each row (and its group) as taffy reports the cells; a
+row spans the table's *content* width from x=0 rather than from its first cell, because with
+`border-spacing: 160px` the first cell starts 160 px in. Red-green in
+`tests/table_boxes.rs::a_row_and_its_group_span_the_table_instead_of_collapsing_to_nothing`: `tbody` reads
+`[0.0, 0.0, 0.0, 0.0]` against a 200 px table before the hunk and `[0.0, 0.0, 190.0, 62.0]` after it. On the
+meter the `tbody` edge miss falls from **309.5 px to 34.5 px** (`border-collapse`) and **308 px to 36 px**
+(`table-fixed`).
+
+The group still reads 2 of 15: closing those cells needs the two things measured below the surface — a
+`<caption>` is still never laid out (`collect_table_cells`'s caption arm says "Probably a table caption:
+ignore", so `caption-top` stays at 0.3121) and the table's own bottom edge is short by 15–20 px.
+
 ## Documented limit: this engine's table layout
 
 `border-collapse` 0.5444, `border-spacing-x-40` 0.6812, `table-fixed` 0.7259, `border-spacing-y-40` 0.9879,
